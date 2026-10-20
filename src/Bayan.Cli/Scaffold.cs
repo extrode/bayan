@@ -29,7 +29,7 @@ public static class Scaffold
         if (o.Layout == Layout.Script)
         {
             var file = Path.Combine(Path.GetDirectoryName(full)!, names.Kebab + ".byn");
-            var shown = Path.Combine(Path.GetDirectoryName(o.Target.TrimEnd(Path.DirectorySeparatorChar)) ?? "", names.Kebab + ".byn");
+            var shown = Path.IsPathRooted(o.Target) ? file : Path.GetRelativePath(Environment.CurrentDirectory, file);
             if (File.Exists(file))
             {
                 stderr.WriteLine($"bayan: `{shown}` already exists");

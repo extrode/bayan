@@ -108,6 +108,10 @@ public sealed class ScaffoldTests
         var (again, _, stderr) = Run("new", target, "--script");
         Assert.Equal(CliApp.ExitUsage, again);
         Assert.Equal($"bayan: `{shown}` already exists\n", stderr);
+
+        var dotted = Path.Combine(Fresh("camel-script-dot"), "myTool");
+        var (_, dotOut, _) = Run("new", dotted + Path.DirectorySeparatorChar + ".", "--script");
+        Assert.Equal($"created script `{Path.Combine(Path.GetDirectoryName(dotted)!, "my-tool.byn")}`; run it with `bayan {Path.Combine(Path.GetDirectoryName(dotted)!, "my-tool.byn")}`\n", dotOut);
     }
 
     [Fact]

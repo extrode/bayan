@@ -42,6 +42,9 @@ public sealed class ManifestTests
     [InlineData("1.0.0-a/b", false)]
     [InlineData("1.0.0-a\\b", false)]
     [InlineData("1.0.0-x-y.2", true)]
+    [InlineData("1.0.0-rc.1+build.5", true)]
+    [InlineData("1.0.0+", false)]
+    [InlineData("1.0.0+a/b", false)]
     [InlineData("123456789012345678.0.0", true)]
     public void SemanticVersions(string version, bool valid) => Assert.Equal(valid, Manifest.IsSemanticVersion(version));
 
@@ -67,6 +70,8 @@ public sealed class ManifestTests
     [InlineData("1.0.0", "1.0.0-rc.1", 1)]
     [InlineData("1.0.0-alpha", "1.0.0-beta", -1)]
     [InlineData("2.0.0", "2.0.0", 0)]
+    [InlineData("1.0.0+build.5", "1.0.0", 0)]
+    [InlineData("1.0.0-rc.1+x", "1.0.0", -1)]
     public void VersionOrder(string a, string b, int sign) => Assert.Equal(sign, Math.Sign(Manifest.CompareVersions(a, b)));
 
     [Fact]
