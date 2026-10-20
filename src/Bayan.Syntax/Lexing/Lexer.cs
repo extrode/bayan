@@ -22,15 +22,10 @@ public static class Lexer
         return new LexResult(source, state.Tokens, state.Count, diagnostics.Items);
     }
 
-    internal static bool IsIdentifierStart(Rune r) =>
-        r.Value == '_' || Rune.GetUnicodeCategory(r) is UnicodeCategory.UppercaseLetter
-            or UnicodeCategory.LowercaseLetter or UnicodeCategory.TitlecaseLetter or UnicodeCategory.ModifierLetter
-            or UnicodeCategory.OtherLetter or UnicodeCategory.LetterNumber;
+    internal static bool IsIdentifierStart(Rune r) => Nfc.InRanges(UnicodeTables.IdentStartRanges, r.Value);
 
     internal static bool IsIdentifierContinue(Rune r) =>
-        IsIdentifierStart(r) || r.Value is 0x200C or 0x200D || Rune.GetUnicodeCategory(r) is
-            UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark
-            or UnicodeCategory.DecimalDigitNumber or UnicodeCategory.ConnectorPunctuation;
+        IsIdentifierStart(r) || Nfc.InRanges(UnicodeTables.IdentContinueRanges, r.Value);
 
     /// <summary>Length of the bidi control character at <paramref name="pos"/>, or 0.</summary>
     internal static int BidiControlAt(ReadOnlySpan<byte> text, int pos, out int codePoint)
@@ -430,9 +425,9 @@ internal ref struct LexerState
         if (!ascii)
         {
             var text = Encoding.UTF8.GetString(span);
-            if (!text.IsNormalized(NormalizationForm.FormC))
+            if (!Nfc.IsNfc(text))
             {
-                var normalized = text.Normalize(NormalizationForm.FormC);
+                var normalized = Nfc.ToNfc(text);
                 Report(DiagnosticCodes.IdentifierNotNfc, new TextSpan(start, _pos - start), [text],
                     label: "same letters, different encoding",
                     help: "identifiers that look the same must be byte-identical; use the composed (NFC) form",
