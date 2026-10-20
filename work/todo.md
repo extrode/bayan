@@ -46,3 +46,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `List<T>` copied by value (`var b = a; b.add(…)` ×N) shares and reallocs storage: heap use-after-free under the default allocator (ASan, review of spec 001); pre-existing since v0.1, needs `unique`/`move` (spec §9) or a BYN2762-style copy ban
 - `Io.readText` abandons the whole file buffer from `context.allocator` when the bytes are not UTF-8 (`bayan-rt.c` read path)
 - `Io.run` (POSIX): only the pipe fds are `FD_CLOEXEC`; `byn_io_open` uses `fopen` without `"e"`, so open files are inherited by children
+- Suite flake: the first `dotnet test` after landing the review fixes failed 10 tests in 1 m 20 s; four later runs (one with a cold `BAYAN_CACHE`) passed in 35–55 s; failure output not captured (spec 001)
