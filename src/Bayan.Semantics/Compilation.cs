@@ -8,7 +8,8 @@ using Bayan.Syntax.Text;
 namespace Bayan.Semantics;
 
 /// <param name="Library">A library has no <c>main</c>, so none is required.</param>
-public sealed record CompilationOptions(bool IncludeTests = false, bool Library = false);
+/// <param name="SkipOwnershipCheck">Test-only: skips the static ownership check, so the debug-build checker can be exercised.</param>
+public sealed record CompilationOptions(bool IncludeTests = false, bool Library = false, bool SkipOwnershipCheck = false);
 
 /// <summary>
 /// A whole program: the entry module plus every module it imports, transitively. Construction
@@ -779,7 +780,7 @@ public sealed class Compilation
             foreach (var fn in module.AllFunctions)
             {
                 // Ownership is checked once, on the template, where every type parameter counts as unique.
-                if (fn.Body is not null && !fn.IsInstance) OwnershipAnalysis.Analyze(this, fn);
+                if (fn.Body is not null && !fn.IsInstance && !Options.SkipOwnershipCheck) OwnershipAnalysis.Analyze(this, fn);
                 // Like ownership, the lint judges the source once, on the template.
                 if (fn.Body is not null && !fn.IsInstance) NeverReassignedVarLint.Analyze(this, fn);
                 if (fn.Body is not null && !fn.IsGeneric)

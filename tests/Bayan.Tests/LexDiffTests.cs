@@ -13,7 +13,7 @@ public sealed class LexDiffTests
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.FromPath(Path.Combine(Golden.RepoRoot, "tools", "lex-diff", "main.byn"));
         Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items));
-        var build = Toolchain.Build(CliApp.EmitC(c), BuildMode.Safe);
+        var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Safe), BuildMode.Safe);
         Assert.True(build.Succeeded, build.Errors);
         return build.ExecutablePath!;
     });

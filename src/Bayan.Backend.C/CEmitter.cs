@@ -40,14 +40,18 @@ public sealed class CEmitter
         "bool", "true", "false", "main", "errno", "stdin", "stdout", "stderr", "NULL", "asm", "typeof",
     };
 
-    private CEmitter(LoweredProgram program)
+    private CEmitter(LoweredProgram program, bool ownershipChecks)
     {
         _program = program;
+        OwnershipChecks = ownershipChecks;
         _packageRoot = program.Compilation.PackageRoot;
         for (var i = 0; i < program.Tests.Count; i++) _testIndex[program.Tests[i].Function.Symbol] = i;
     }
 
-    public static string Emit(LoweredProgram program) => new CEmitter(program).Run();
+    /// <summary>Debug builds only: emit the runtime ownership checker.</summary>
+    internal bool OwnershipChecks { get; }
+
+    public static string Emit(LoweredProgram program, bool ownershipChecks = false) => new CEmitter(program, ownershipChecks).Run();
 
     private string Run()
     {
@@ -859,6 +863,8 @@ internal sealed class FunctionEmitter
                 return l.Local is ParameterSymbol { IsByRef: true } ? $"(*{_names[l.Local]})" : _names[l.Local];
             case BoundThis:
                 return "(*self)";
+            case BoundMove m:
+                return Expr(m.Operand);
             case BoundField f:
                 return $"{Expr(f.Receiver)}.{CEmitter.FieldName(f.Field.Name)}";
             case BoundTupleElement t:

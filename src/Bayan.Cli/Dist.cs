@@ -80,7 +80,7 @@ internal static class Dist
             return CliApp.ExitUsage;
         }
 
-        var cSource = CliApp.EmitC(compiled.Compilation);
+        var cSource = CliApp.EmitC(compiled.Compilation, buildMode);
         var staging = Path.Combine(distDir, $".{version}.tmp");
         if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
         var sums = new List<(string Name, string Hash)>();

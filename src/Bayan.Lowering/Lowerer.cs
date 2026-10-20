@@ -138,6 +138,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         BoundLiteral or BoundDefault or BoundLocal or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray or LVoid => true,
         BoundField f => IsTrivial(f.Receiver),
         BoundTupleElement t => IsTrivial(t.Receiver),
+        BoundMove m => IsTrivial(m.Operand),
         LOptionalValue v => IsTrivial(v.Optional),
         LUnionTag t => IsTrivial(t.Union),
         LUnionField f => IsTrivial(f.Union),
@@ -766,7 +767,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case BoundTry t:
                 return Try(t);
             case BoundMove m:
-                return Expr(m.Operand);
+                return new BoundMove(m.Syntax, Expr(m.Operand));
             case BoundCatch c:
                 return Catch(c);
             case BoundJump j:
