@@ -66,13 +66,14 @@ public static class Toolchain
 
     /// <summary>
     /// Compiles <paramref name="cSource"/> to an executable in the cache (reused when the source,
-    /// runtime, mode and compiler are unchanged) and copies it to <paramref name="output"/> if given.
+    /// runtime, mode, target and compiler are unchanged) and copies it to <paramref name="output"/>
+    /// if given. A <paramref name="target"/> other than the host needs zig.
     /// </summary>
-    public static NativeBuild Build(string cSource, BuildMode mode, string? output = null)
+    public static NativeBuild Build(string cSource, BuildMode mode, string? output = null, string? target = null)
     {
         try
         {
-            return BuildCached(cSource, mode, output);
+            return BuildCached(cSource, mode, output, target ?? Targets.Host);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -84,33 +85,41 @@ public static class Toolchain
         }
     }
 
-    private static NativeBuild BuildCached(string cSource, BuildMode mode, string? output)
+    private static NativeBuild BuildCached(string cSource, BuildMode mode, string? output, string? target)
     {
         var compiler = FindCompiler();
         if (compiler is null)
             return new NativeBuild(null, "no C compiler found: install zig (https://ziglang.org) or set BAYAN_CC");
-        var key = Hash(cSource + "\0" + RuntimeHeader + "\0" + RuntimeSource + "\0" + mode + "\0" + string.Join(" ", compiler));
+        var cross = target != Targets.Host;
+        if (cross && (target is null || Targets.Triple(target) is null))
+            return new NativeBuild(null, $"unknown target `{target}`; targets are {string.Join(", ", Targets.All)}");
+        if (cross && !(compiler.Length > 1 && compiler[1] == "cc" && Path.GetFileNameWithoutExtension(compiler[0]) == "zig"))
+            return new NativeBuild(null, $"building for {target} on this machine needs zig (https://ziglang.org); the C compiler is `{string.Join(" ", compiler)}`");
+        var key = Hash(cSource + "\0" + RuntimeHeader + "\0" + RuntimeSource + "\0" + mode + "\0" + target + "\0" + string.Join(" ", compiler));
         var dir = Path.Combine(CacheDirectory, key[..16]);
-        var exe = Path.Combine(dir, OperatingSystem.IsWindows() ? "program.exe" : "program");
+        var targetOs = target ?? (OperatingSystem.IsWindows() ? "windows" : "");
+        var exe = Path.Combine(dir, Targets.ExecutableName("program", targetOs));
         if (!File.Exists(exe))
         {
             Directory.CreateDirectory(dir);
             File.WriteAllText(Path.Combine(dir, "bayan-rt.h"), RuntimeHeader);
             File.WriteAllText(Path.Combine(dir, "bayan-rt.c"), RuntimeSource);
             File.WriteAllText(Path.Combine(dir, "main.c"), cSource);
-            var temp = exe + "." + Environment.ProcessId + ".tmp" + (OperatingSystem.IsWindows() ? ".exe" : "");
-            var args = new List<string>(compiler[1..])
-            {
+            var temp = exe + "." + Environment.ProcessId + ".tmp" + Path.GetExtension(exe);
+            var args = new List<string>(compiler[1..]);
+            if (cross) args.AddRange(["-target", Targets.Triple(target!)!]);
+            args.AddRange(
+            [
                 "-std=c11", "-fwrapv", "-ffp-contract=off", "-w",
                 "-I", dir, Path.Combine(dir, "main.c"), Path.Combine(dir, "bayan-rt.c"), "-o", temp,
-            };
+            ]);
             args.AddRange(mode switch
             {
                 BuildMode.Debug => ["-O0", "-g"],
                 BuildMode.Safe => ["-O2"],
                 _ => ["-O2", "-DBYN_FAST"],
             });
-            if (!OperatingSystem.IsWindows()) args.Add("-lm");
+            if (!targetOs.StartsWith("windows", StringComparison.Ordinal)) args.Add("-lm");
             var (code, stdout, stderr) = Exec(compiler[0], args);
             if (code != 0 || !File.Exists(temp))
                 return new NativeBuild(null, $"C compiler failed (exit {code}):\n{stdout}{stderr}");

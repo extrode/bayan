@@ -167,7 +167,7 @@ public static class Scaffold
         else stdout.WriteLine("note: `git init` failed, so no repository was created");
     }
 
-    private static (int Code, string Stdout) Git(string git, string dir, params string[] args)
+    internal static (int Code, string Stdout) Git(string git, string dir, params string[] args)
     {
         var psi = new System.Diagnostics.ProcessStartInfo(git)
         {

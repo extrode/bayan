@@ -1,0 +1,44 @@
+=== 0.1.0/BUILDINFO.json
+{
+  "package": "local/tally",
+  "version": "0.1.0",
+  "compiler": "bayan 0.1.0-dev",
+  "mode": "safe",
+  "targets": [
+    "linux-x64",
+    "macos-arm64",
+    "windows-x64"
+  ],
+  "source": null,
+  "inputs": "sha256:195d11710b8aac9b9fa596a6a352849b5d6b1accd922e8bea003b5e514643ad6"
+}
+=== 0.1.0/SHA256SUMS
+<sha256>  linux-x64/tally
+<sha256>  macos-arm64/tally
+<sha256>  windows-x64/tally.exe
+=== 0.1.0/linux-x64/tally
+=== 0.1.0/macos-arm64/tally
+=== 0.1.0/windows-x64/tally.exe
+=== latest/BUILDINFO.json
+{
+  "package": "local/tally",
+  "version": "0.1.0",
+  "compiler": "bayan 0.1.0-dev",
+  "mode": "safe",
+  "targets": [
+    "linux-x64",
+    "macos-arm64",
+    "windows-x64"
+  ],
+  "source": null,
+  "inputs": "sha256:195d11710b8aac9b9fa596a6a352849b5d6b1accd922e8bea003b5e514643ad6"
+}
+=== latest/SHA256SUMS
+<sha256>  linux-x64/tally
+<sha256>  macos-arm64/tally
+<sha256>  windows-x64/tally.exe
+=== latest/VERSION
+0.1.0
+=== latest/linux-x64/tally
+=== latest/macos-arm64/tally
+=== latest/windows-x64/tally.exe
