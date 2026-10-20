@@ -1,3 +1,6 @@
+using Bayan.Backend.C;
+using Bayan.Lowering;
+using Bayan.Semantics;
 using Bayan.Syntax.Ast;
 using Bayan.Syntax.Diagnostics;
 using Bayan.Syntax.Lexing;
@@ -20,6 +23,9 @@ public static class CliApp
         commands:
           lex <file>           print the token stream
           parse [--ast] <file> check syntax; with --ast print the syntax tree
+          check <path>         report diagnostics for a program (a file or directory)
+          build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--emit-c]
+          run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]
           explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
           --version            print the compiler version
           --help               print this message
@@ -51,6 +57,12 @@ public static class CliApp
                 return Parse(rest, stdout, stderr);
             case "explain":
                 return Explain(rest, stdout, stderr);
+            case "check":
+                return Check(rest, stdout, stderr);
+            case "build":
+                return Build(rest, stdout, stderr);
+            case "run":
+                return RunProgram(rest, stderr);
             default:
                 stderr.WriteLine($"bayan: unknown command `{args[0]}`");
                 stderr.WriteLine(Usage);
@@ -80,6 +92,120 @@ public static class CliApp
             stderr.Write(DiagnosticRenderer.RenderAll(tree.Diagnostics, includePath: true));
         }
         return tree.Diagnostics.Any(d => d.IsError) ? ExitFailure : ExitOk;
+    }
+
+    private sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, string[] ProgramArgs);
+
+    private static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput)
+    {
+        string? path = null, output = null;
+        var mode = BuildMode.Safe;
+        var emitC = false;
+        var programArgs = Array.Empty<string>();
+        for (var i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--":
+                    programArgs = args[(i + 1)..];
+                    i = args.Length;
+                    break;
+                case "--mode" when i + 1 < args.Length:
+                    if (!Toolchain.TryParseMode(args[++i], out mode))
+                    {
+                        stderr.WriteLine($"bayan: unknown mode `{args[i]}` (expected debug, safe or fast)");
+                        return null;
+                    }
+                    break;
+                case "-o" when allowOutput && i + 1 < args.Length:
+                    output = args[++i];
+                    break;
+                case "--emit-c" when allowOutput:
+                    emitC = true;
+                    break;
+                default:
+                    if (path is not null || args[i].StartsWith('-'))
+                    {
+                        stderr.WriteLine($"bayan: unexpected argument `{args[i]}`");
+                        return null;
+                    }
+                    path = args[i];
+                    break;
+            }
+        }
+        if (path is null)
+        {
+            stderr.WriteLine("bayan: expected a file or directory");
+            return null;
+        }
+        return new BuildOptions(path, mode, output, emitC, programArgs);
+    }
+
+    /// <summary>Compiles a program; prints diagnostics; null on errors.</summary>
+    private static Compilation? Compile(string path, TextWriter stderr, bool includeTests = false)
+    {
+        if (!File.Exists(path) && !Directory.Exists(path))
+        {
+            stderr.WriteLine($"bayan: not found: {path}");
+            return null;
+        }
+        var c = Compilation.FromPath(path, new CompilationOptions(includeTests));
+        if (c.Diagnostics.Count > 0) stderr.Write(DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
+        return c.Diagnostics.HasErrors ? null : c;
+    }
+
+    /// <summary>The C translation unit for an error-free compilation.</summary>
+    public static string EmitC(Compilation c) => CEmitter.Emit(Lowerer.Lower(c));
+
+    private static int Check(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
+        return Compile(o.Path, stderr) is null ? ExitFailure : ExitOk;
+    }
+
+    private static int Build(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        if (ParseBuildOptions(args, stderr, allowOutput: true) is not { } o) return ExitUsage;
+        if (Compile(o.Path, stderr) is not { } c) return ExitFailure;
+        var source = EmitC(c);
+        if (o.EmitC)
+        {
+            stdout.Write(source);
+            return ExitOk;
+        }
+        var output = o.Output ?? DefaultOutput(o.Path);
+        var result = Toolchain.Build(source, o.Mode, output);
+        if (!result.Succeeded)
+        {
+            stderr.WriteLine("bayan: " + result.Errors);
+            return ExitFailure;
+        }
+        return ExitOk;
+    }
+
+    private static string DefaultOutput(string path)
+    {
+        var full = Path.GetFullPath(path);
+        var name = Directory.Exists(full) ? Path.GetFileName(full.TrimEnd(Path.DirectorySeparatorChar)) : Path.GetFileNameWithoutExtension(full);
+        if (name == "main" && !Directory.Exists(full)) name = Path.GetFileName(Path.GetDirectoryName(full)!);
+        return name + (OperatingSystem.IsWindows() ? ".exe" : "");
+    }
+
+    private static int RunProgram(string[] args, TextWriter stderr)
+    {
+        if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
+        if (Compile(o.Path, stderr) is not { } c) return ExitFailure;
+        var result = Toolchain.Build(EmitC(c), o.Mode);
+        if (!result.Succeeded)
+        {
+            stderr.WriteLine("bayan: " + result.Errors);
+            return ExitFailure;
+        }
+        var psi = new System.Diagnostics.ProcessStartInfo(result.ExecutablePath!) { UseShellExecute = false };
+        foreach (var a in o.ProgramArgs) psi.ArgumentList.Add(a);
+        using var process = System.Diagnostics.Process.Start(psi)!;
+        process.WaitForExit();
+        return process.ExitCode;
     }
 
     private static int Explain(string[] args, TextWriter stdout, TextWriter stderr)

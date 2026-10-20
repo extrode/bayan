@@ -1,0 +1,2 @@
+panic: value out of range for the target type
+  at overflow-cast.byn:2
