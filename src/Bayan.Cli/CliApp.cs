@@ -33,17 +33,23 @@ public static class CliApp
           run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]
           test <path>          compile and run the tests, each in its own process [--mode debug|safe|fast]
                                [--json: print the results as JSON instead]
+                               [--changed [--base <ref>]: only modules with files changed since HEAD or <ref>]
           dist [<dir>]         build release binaries into dist/<version>/ [--target <t>|all] [--mode m]
                                [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]
           clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]
           cache stats          show the shared build cache's location and size
           explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
           <script>.byn         run a script, so `#!/usr/bin/env bayan` works
-          --version            print the compiler version
+          doctor               check the C compiler, zig, git and the build cache, with fixes
+          --version            print the compiler version and the commit it was built from
           --help               print this message
 
         check, build, run and test take a project directory (one with `package.byn`; the default
         inside a project), a script (a file starting with `#!`), or a file or directory of `.byn` files.
+
+        options for every command:
+          --color auto|always|never
+                               color for terminals (auto: on unless piped or NO_COLOR is set)
 
         options for check, build, run and test:
           --diagnostics json   print each diagnostic to stderr as one JSON object per line
@@ -61,8 +67,22 @@ public static class CliApp
         matters, run `bayan build` first or read `--diagnostics json`.
         """;
 
-    public static int Run(string[] args, TextWriter stdout, TextWriter stderr)
+    /// <summary>Whether stdout and stderr are terminals, which turns color on unless <c>NO_COLOR</c> is set.</summary>
+    public readonly record struct Terminal(bool Stdout, bool Stderr);
+
+    [ThreadStatic] private static bool s_colorOut;
+    [ThreadStatic] private static bool s_colorErr;
+
+    public static string VersionLine => $"bayan {Version} (commit {BuildInfo.Commit})";
+
+    public static int Run(string[] args, TextWriter stdout, TextWriter stderr) => Run(args, stdout, stderr, default);
+
+    public static int Run(string[] args, TextWriter stdout, TextWriter stderr, Terminal terminal)
     {
+        if (TakeColor(ref args, stderr) is not { } color) return ExitUsage;
+        var noColor = Environment.GetEnvironmentVariable("NO_COLOR") is { Length: > 0 };
+        s_colorOut = color == "always" || (color == "auto" && terminal.Stdout && !noColor);
+        s_colorErr = color == "always" || (color == "auto" && terminal.Stderr && !noColor);
         if (args.Length == 0)
         {
             stderr.WriteLine(Usage);
@@ -74,8 +94,10 @@ public static class CliApp
         {
             case "--version":
             case "version":
-                stdout.WriteLine($"bayan {Version}");
+                stdout.WriteLine(VersionLine);
                 return ExitOk;
+            case "doctor":
+                return Doctor.Run(rest, stdout);
             case "--help":
             case "-h":
             case "help":
@@ -139,13 +161,14 @@ public static class CliApp
         return tree.Diagnostics.Any(d => d.IsError) ? ExitFailure : ExitOk;
     }
 
-    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false);
+    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null);
 
     private static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
-        bool emitC = false, json = false, testJson = false;
+        bool emitC = false, json = false, testJson = false, changed = false;
+        string? baseRef = null;
         var programArgs = Array.Empty<string>();
         for (var i = 0; i < args.Length; i++)
         {
@@ -187,6 +210,13 @@ public static class CliApp
                         return null;
                     }
                     break;
+                case "--changed" when allowTestJson:
+                    changed = true;
+                    break;
+                case "--base" when allowTestJson && i + 1 < args.Length:
+                    baseRef = args[++i];
+                    changed = true;
+                    break;
                 case "--json" when allowTestJson:
                     testJson = true;
                     break;
@@ -211,7 +241,7 @@ public static class CliApp
             stderr.WriteLine($"bayan: not found: {path}");
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson);
+        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef);
     }
 
     /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
@@ -252,8 +282,48 @@ public static class CliApp
     private static void Report(BuildOptions o, IReadOnlyList<Diagnostic> diagnostics, TextWriter stderr)
     {
         if (diagnostics.Count == 0) return;
-        stderr.Write(o.Json ? DiagnosticJson.RenderAll(diagnostics) : DiagnosticRenderer.RenderAll(diagnostics, includePath: true));
+        stderr.Write(o.Json ? DiagnosticJson.RenderAll(diagnostics) : DiagnosticRenderer.RenderAll(diagnostics, includePath: true, color: s_colorErr));
     }
+
+    /// <summary>
+    /// Removes <c>--color auto|always|never</c> (or <c>--color=…</c>) from before any <c>--</c>;
+    /// null after reporting a bad value.
+    /// </summary>
+    private static string? TakeColor(ref string[] args, TextWriter stderr)
+    {
+        var color = "auto";
+        // A script's arguments are its own (`bayan tool.byn --color never`).
+        if (args is [var first, ..] && first.EndsWith(".byn", StringComparison.Ordinal) && File.Exists(first)) return color;
+        var kept = new List<string>(args.Length);
+        for (var i = 0; i < args.Length; i++)
+        {
+            string? value = null;
+            if (args[i] == "--")
+            {
+                kept.AddRange(args[i..]);
+                break;
+            }
+            if (args[i] == "--color" && i + 1 < args.Length) value = args[++i];
+            else if (args[i].StartsWith("--color=", StringComparison.Ordinal)) value = args[i]["--color=".Length..];
+            else if (args[i] == "--color") value = "";
+            if (value is null)
+            {
+                kept.Add(args[i]);
+                continue;
+            }
+            if (value is not ("auto" or "always" or "never"))
+            {
+                stderr.WriteLine($"bayan: unknown color setting `{value}` (expected auto, always or never)");
+                return null;
+            }
+            color = value;
+        }
+        args = [.. kept];
+        return color;
+    }
+
+    private static string Paint(string style, string text) =>
+        s_colorOut ? style + text + DiagnosticRenderer.Reset : text;
 
     /// <summary>An app's code is <c>src/app/</c>; a library's is <c>src/&lt;name&gt;/</c> with the name in camelCase.</summary>
     public static string EntryModule(Manifest manifest) =>
@@ -411,13 +481,20 @@ public static class CliApp
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName + "-test", HostTarget))
             : null;
+        var selected = Enumerable.Range(0, program.Tests.Count).ToList();
+        if (o.Changed)
+        {
+            if (ChangedModules(compiled, o, stderr) is not { } changed) return ExitUsage;
+            selected = selected.Where(i => changed.All || changed.Directories.Contains(ModuleOf(compiled, program.Tests[i].Test))).ToList();
+        }
         if (BuildNative(source, o.Mode, stderr, output) is not { } executable) return ExitToolchain;
-        var count = program.Tests.Count;
+        var count = selected.Count;
+        var skipped = program.Tests.Count - count;
         var human = o.TestJson ? TextWriter.Null : stdout;
-        human.WriteLine($"running {count} test{(count == 1 ? "" : "s")}");
+        human.WriteLine($"running {count} test{(count == 1 ? "" : "s")}{(o.Changed ? $" ({skipped} in unchanged modules skipped)" : "")}");
         var results = new List<TestResult>();
         var total = System.Diagnostics.Stopwatch.StartNew();
-        for (var i = 0; i < count; i++)
+        foreach (var i in selected)
         {
             var test = program.Tests[i].Test;
             var outcome = RunTest(executable, i);
@@ -437,13 +514,19 @@ public static class CliApp
                 TestStatus.Panic => "PANIC",
                 _ => "TIME ",
             };
-            human.WriteLine($"  {label}  {test.Name}  ({FormatMs(outcome.Elapsed)})");
+            var style = status switch
+            {
+                TestStatus.Pass => DiagnosticRenderer.Green,
+                TestStatus.Timeout => DiagnosticRenderer.Yellow,
+                _ => DiagnosticRenderer.Bold + DiagnosticRenderer.Red,
+            };
+            human.WriteLine($"  {Paint(style, label)}  {test.Name}  ({FormatMs(outcome.Elapsed)})");
             if (status == TestStatus.Pass) continue;
             foreach (var l in details.Split('\n'))
                 human.WriteLine("         " + l.TrimEnd('\r'));
         }
         total.Stop();
-        var report = new TestReport(compiled.Manifest?.Name, ModeName(o.Mode), HostTarget, results, total.Elapsed);
+        var report = new TestReport(compiled.Manifest?.Name, ModeName(o.Mode), HostTarget, results, total.Elapsed, skipped);
         int passed = report.Count(TestStatus.Pass), failed = report.Count(TestStatus.Fail), panicked = count - passed - failed;
         var summary = $"{passed} passed";
         if (failed > 0) summary += $", {failed} failed";
@@ -462,6 +545,59 @@ public static class CliApp
     }
 
     private sealed record TestOutcome(int ExitCode, bool TimedOut, string Stdout, string Stderr, TimeSpan Elapsed);
+
+    private sealed record ChangedSet(bool All, HashSet<string> Directories);
+
+    /// <summary>
+    /// The module directories with files that differ from <c>HEAD</c> (or <c>--base</c>) in the
+    /// working tree, untracked files included; a changed <c>package.byn</c> selects everything.
+    /// Read-only git. Null after reporting why git couldn't answer.
+    /// </summary>
+    private static ChangedSet? ChangedModules(Compiled compiled, BuildOptions o, TextWriter stderr)
+    {
+        var dir = compiled.ProjectRoot ?? (Directory.Exists(o.Path) ? Path.GetFullPath(o.Path) : Path.GetDirectoryName(Path.GetFullPath(o.Path))!);
+        if (Toolchain.FindOnPath("git") is not { } git)
+        {
+            stderr.WriteLine("bayan: `--changed` needs git, which isn't installed");
+            return null;
+        }
+        if (Scaffold.Git(git, dir, "rev-parse", "--show-toplevel") is not (0, var top))
+        {
+            stderr.WriteLine($"bayan: `--changed` needs a git repository, and `{o.Path}` isn't in one");
+            return null;
+        }
+        var baseRef = o.Base ?? "HEAD";
+        if (Scaffold.Git(git, top, "diff", "--name-only", baseRef, "--") is not (0, var diff))
+        {
+            stderr.WriteLine($"bayan: git can't compare the working tree with `{baseRef}`");
+            return null;
+        }
+        var untracked = Scaffold.Git(git, top, "ls-files", "--others", "--exclude-standard", "--full-name") is (0, var u) ? u : "";
+        var set = new ChangedSet(false, new HashSet<string>(StringComparer.Ordinal));
+        foreach (var relative in (diff + "\n" + untracked).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var full = Path.GetFullPath(Path.Combine(top, relative));
+            if (compiled.ProjectRoot is { } root && full == Path.Combine(root, "package.byn")) return set with { All = true };
+            if (full.EndsWith(".byn", StringComparison.Ordinal)) set.Directories.Add(ModuleDirectory(compiled, full));
+        }
+        return set;
+    }
+
+    private static string ModuleOf(Compiled compiled, Semantics.Symbols.TestSymbol test)
+    {
+        if (test.Location is not { } at) return "";
+        var path = at.Source.Path;
+        return ModuleDirectory(compiled, Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(compiled.Compilation.DisplayRoot, path)));
+    }
+
+    /// <summary>A file's module directory; a project's <c>tests/</c> files belong to the entry module.</summary>
+    private static string ModuleDirectory(Compiled compiled, string file)
+    {
+        var dir = Path.GetDirectoryName(file)!;
+        if (compiled.ProjectRoot is { } root && dir == Path.Combine(root, "tests"))
+            return Path.Combine(root, "src", EntryModule(compiled.Manifest!));
+        return dir;
+    }
 
     private static TestOutcome RunTest(string executable, int index)
     {

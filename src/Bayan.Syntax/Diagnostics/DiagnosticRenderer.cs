@@ -5,7 +5,8 @@ using Bayan.Syntax.Text;
 namespace Bayan.Syntax.Diagnostics;
 
 /// <summary>
-/// Renders a diagnostic as plain text. The format is snapshot-tested; change it deliberately.
+/// Renders a diagnostic as text, optionally with ANSI colors that add nothing else. The format is
+/// snapshot-tested; change it deliberately.
 /// <code>
 /// error BYN2104: `total` is immutable
 ///
@@ -20,17 +21,34 @@ public static class DiagnosticRenderer
 {
     private const string Bar = "│";
 
+    public const string Reset = "\u001b[0m";
+    public const string Bold = "\u001b[1m";
+    public const string Red = "\u001b[31m";
+    public const string Green = "\u001b[32m";
+    public const string Yellow = "\u001b[33m";
+    public const string Blue = "\u001b[34m";
+    public const string Cyan = "\u001b[36m";
+
     /// <param name="includePath">Adds a <c>--> file:line:col</c> line; used when a compilation spans several files.</param>
-    public static string Render(Diagnostic diagnostic, bool includePath = false)
+    /// <param name="color">Wraps the parts in ANSI escapes; removing them gives the plain text.</param>
+    public static string Render(Diagnostic diagnostic, bool includePath = false, bool color = false)
     {
         var sb = new StringBuilder();
-        sb.Append(SeverityName(diagnostic.Severity)).Append(' ').Append(diagnostic.Code)
-          .Append(": ").Append(diagnostic.Message).Append('\n');
+        var accent = diagnostic.Severity switch
+        {
+            Severity.Error => Red,
+            Severity.Warning => Yellow,
+            _ => Cyan,
+        };
+        string Paint(string style, string text) => color ? style + text + Reset : text;
+        var bar = Paint(Blue, Bar);
+        sb.Append(Paint(Bold + accent, SeverityName(diagnostic.Severity) + " " + diagnostic.Code))
+          .Append(Paint(Bold, ": " + diagnostic.Message)).Append('\n');
         if (diagnostic.Source is not { } source) return sb.ToString();
         if (includePath)
         {
             var (l, c) = source.GetLinePosition(diagnostic.Span.Start);
-            sb.Append("  --> ").Append(source.Path).Append(':').Append(l).Append(':').Append(c).Append('\n');
+            sb.Append(Paint(Blue, "  -->")).Append(' ').Append(source.Path).Append(':').Append(l).Append(':').Append(c).Append('\n');
         }
         sb.Append('\n');
 
@@ -43,43 +61,43 @@ public static class DiagnosticRenderer
 
         var widestLine = Math.Max(line + 1, fixLines is null ? 0 : fixFirstLine + fixLines.Length);
         var width = widestLine.ToString(CultureInfo.InvariantCulture).Length;
-        var blank = "  " + new string(' ', width) + " " + Bar;
+        var blank = "  " + new string(' ', width) + " " + bar;
 
-        sb.Append("  ").Append(LineNumber(line + 1, width)).Append(' ').Append(Bar).Append(' ')
+        sb.Append("  ").Append(Paint(Blue, LineNumber(line + 1, width))).Append(' ').Append(bar).Append(' ')
           .Append(Display(source.GetText(lineSpan))).Append('\n');
 
         var underlineStart = diagnostic.Span.Start;
         var underlineEnd = Math.Min(diagnostic.Span.End, lineSpan.End);
         var prefix = source.GetText(TextSpan.FromBounds(lineSpan.Start, underlineStart));
         var underlined = source.GetText(TextSpan.FromBounds(underlineStart, underlineEnd));
+        var carets = new string('^', Math.Max(1, RuneCount(underlined)));
         sb.Append(blank).Append(' ').Append(Indent(prefix))
-          .Append('^', Math.Max(1, RuneCount(underlined)));
-        if (diagnostic.Label is { } label) sb.Append(' ').Append(label);
+          .Append(Paint(Bold + accent, diagnostic.Label is { } label ? carets + " " + label : carets));
         sb.Append('\n');
 
         if (diagnostic.Help is null && fixLines is null) return sb.ToString();
 
         sb.Append(blank).Append('\n');
-        if (diagnostic.Help is { } help) sb.Append("  help: ").Append(help.Replace("\n", "\n        ")).Append('\n');
+        if (diagnostic.Help is { } help) sb.Append("  ").Append(Paint(Bold + Cyan, "help:")).Append(' ').Append(help.Replace("\n", "\n        ")).Append('\n');
         if (fixLines is not null)
         {
             for (var i = 0; i < fixLines.Length; i++)
             {
-                sb.Append(blank).Append(' ').Append(LineNumber(fixFirstLine + i + 1, width))
-                  .Append(' ').Append(Bar).Append(' ').Append(Display(fixLines[i])).Append('\n');
+                sb.Append(blank).Append(' ').Append(Paint(Blue, LineNumber(fixFirstLine + i + 1, width)))
+                  .Append(' ').Append(bar).Append(' ').Append(Display(fixLines[i])).Append('\n');
             }
         }
         return sb.ToString();
     }
 
     /// <summary>Renders diagnostics in source order, separated by blank lines.</summary>
-    public static string RenderAll(IEnumerable<Diagnostic> diagnostics, bool includePath = false)
+    public static string RenderAll(IEnumerable<Diagnostic> diagnostics, bool includePath = false, bool color = false)
     {
         var sb = new StringBuilder();
         foreach (var d in Sort(diagnostics))
         {
             if (sb.Length > 0) sb.Append('\n');
-            sb.Append(Render(d, includePath));
+            sb.Append(Render(d, includePath, color));
         }
         return sb.ToString();
     }

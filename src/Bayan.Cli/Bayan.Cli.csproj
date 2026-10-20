@@ -18,4 +18,20 @@
   <ItemGroup>
     <EmbeddedResource Include="../../docs/diagnostics/*.md" LogicalName="diagnostics/%(Filename).md" />
   </ItemGroup>
+  <!-- The version line names the commit this was built from; "unknown" outside git. -->
+  <Target Name="BayanBuildInfo" BeforeTargets="CoreCompile">
+    <Exec Command="git rev-parse --short=12 HEAD" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMSBuild="true" IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true" StandardOutputImportance="low" StandardErrorImportance="low" EchoOff="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="BayanCommit" />
+      <Output TaskParameter="ExitCode" PropertyName="BayanGitExit" />
+    </Exec>
+    <PropertyGroup>
+      <BayanCommit Condition="'$(BayanGitExit)' != '0'">unknown</BayanCommit>
+      <BayanBuildInfoFile>$(IntermediateOutputPath)BuildInfo.g.cs</BayanBuildInfoFile>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(BayanBuildInfoFile)" Lines="namespace Bayan.Cli%3B;internal static class BuildInfo { public const string Commit = &quot;$(BayanCommit)&quot;%3B }" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(BayanBuildInfoFile)" />
+      <FileWrites Include="$(BayanBuildInfoFile)" />
+    </ItemGroup>
+  </Target>
 </Project>
