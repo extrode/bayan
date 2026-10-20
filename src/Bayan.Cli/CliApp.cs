@@ -16,6 +16,8 @@ public static class CliApp
     public const int ExitOk = 0;
     public const int ExitFailure = 1;
     public const int ExitUsage = 2;
+    public const int ExitTestFailure = 3;
+    public const int ExitToolchain = 4;
 
     private const string Usage = """
         usage: bayan <command> [args]
@@ -30,6 +32,21 @@ public static class CliApp
           explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
           --version            print the compiler version
           --help               print this message
+
+        options for check, build, run and test:
+          --diagnostics json   print each diagnostic to stderr as one JSON object per line
+                               (code, severity, file, span, message, label, help, fixes)
+
+        exit codes:
+          0  success
+          1  compile errors
+          2  usage errors (unknown command or option, missing path)
+          3  test failures
+          4  toolchain problems (no C compiler, unwritable cache, C compiler failure)
+
+        `bayan run` exits 1 when compilation fails and otherwise passes the program's own exit code
+        through unchanged, so it cannot tell a build failure from a program that exits 1. When that
+        matters, run `bayan build` first or read `--diagnostics json`.
         """;
 
     public static int Run(string[] args, TextWriter stdout, TextWriter stderr)
@@ -97,13 +114,13 @@ public static class CliApp
         return tree.Diagnostics.Any(d => d.IsError) ? ExitFailure : ExitOk;
     }
 
-    private sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, string[] ProgramArgs);
+    private sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs);
 
     private static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput)
     {
         string? path = null, output = null;
         var mode = BuildMode.Safe;
-        var emitC = false;
+        bool emitC = false, json = false;
         var programArgs = Array.Empty<string>();
         for (var i = 0; i < args.Length; i++)
         {
@@ -118,6 +135,16 @@ public static class CliApp
                     {
                         stderr.WriteLine($"bayan: unknown mode `{args[i]}` (expected debug, safe or fast)");
                         return null;
+                    }
+                    break;
+                case "--diagnostics" when i + 1 < args.Length:
+                    switch (args[++i])
+                    {
+                        case "json": json = true; break;
+                        case "text": json = false; break;
+                        default:
+                            stderr.WriteLine($"bayan: unknown diagnostics format `{args[i]}` (expected json or text)");
+                            return null;
                     }
                     break;
                 case "-o" when allowOutput && i + 1 < args.Length:
@@ -141,20 +168,30 @@ public static class CliApp
             stderr.WriteLine("bayan: expected a file or directory");
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, programArgs);
-    }
-
-    /// <summary>Compiles a program; prints diagnostics; null on errors.</summary>
-    private static Compilation? Compile(string path, TextWriter stderr, bool includeTests = false)
-    {
         if (!File.Exists(path) && !Directory.Exists(path))
         {
             stderr.WriteLine($"bayan: not found: {path}");
             return null;
         }
-        var c = Compilation.FromPath(path, new CompilationOptions(includeTests));
-        if (c.Diagnostics.Count > 0) stderr.Write(DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
+        return new BuildOptions(path, mode, output, emitC, json, programArgs);
+    }
+
+    /// <summary>Compiles a program; prints diagnostics; null on errors.</summary>
+    private static Compilation? Compile(BuildOptions o, TextWriter stderr, bool includeTests = false)
+    {
+        var c = Compilation.FromPath(o.Path, new CompilationOptions(includeTests));
+        if (c.Diagnostics.Count > 0)
+            stderr.Write(o.Json ? DiagnosticJson.RenderAll(c.Diagnostics.Items) : DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
         return c.Diagnostics.HasErrors ? null : c;
+    }
+
+    /// <summary>Builds, or reports why the toolchain could not.</summary>
+    private static string? BuildNative(string source, BuildMode mode, TextWriter stderr, string? output = null)
+    {
+        var result = Toolchain.Build(source, mode, output);
+        if (result.Succeeded) return result.ExecutablePath;
+        stderr.WriteLine("bayan: " + result.Errors);
+        return null;
     }
 
     /// <summary>The C translation unit for an error-free compilation.</summary>
@@ -163,13 +200,13 @@ public static class CliApp
     private static int Check(string[] args, TextWriter stdout, TextWriter stderr)
     {
         if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
-        return Compile(o.Path, stderr) is null ? ExitFailure : ExitOk;
+        return Compile(o, stderr) is null ? ExitFailure : ExitOk;
     }
 
     private static int Build(string[] args, TextWriter stdout, TextWriter stderr)
     {
         if (ParseBuildOptions(args, stderr, allowOutput: true) is not { } o) return ExitUsage;
-        if (Compile(o.Path, stderr) is not { } c) return ExitFailure;
+        if (Compile(o, stderr) is not { } c) return ExitFailure;
         var source = EmitC(c);
         if (o.EmitC)
         {
@@ -177,13 +214,7 @@ public static class CliApp
             return ExitOk;
         }
         var output = o.Output ?? DefaultOutput(o.Path);
-        var result = Toolchain.Build(source, o.Mode, output);
-        if (!result.Succeeded)
-        {
-            stderr.WriteLine("bayan: " + result.Errors);
-            return ExitFailure;
-        }
-        return ExitOk;
+        return BuildNative(source, o.Mode, stderr, output) is null ? ExitToolchain : ExitOk;
     }
 
     private static string DefaultOutput(string path)
@@ -197,14 +228,9 @@ public static class CliApp
     private static int RunProgram(string[] args, TextWriter stderr)
     {
         if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
-        if (Compile(o.Path, stderr) is not { } c) return ExitFailure;
-        var result = Toolchain.Build(EmitC(c), o.Mode);
-        if (!result.Succeeded)
-        {
-            stderr.WriteLine("bayan: " + result.Errors);
-            return ExitFailure;
-        }
-        var psi = new System.Diagnostics.ProcessStartInfo(result.ExecutablePath!) { UseShellExecute = false };
+        if (Compile(o, stderr) is not { } c) return ExitFailure;
+        if (BuildNative(EmitC(c), o.Mode, stderr) is not { } executable) return ExitToolchain;
+        var psi = new System.Diagnostics.ProcessStartInfo(executable) { UseShellExecute = false };
         foreach (var a in o.ProgramArgs) psi.ArgumentList.Add(a);
         using var process = System.Diagnostics.Process.Start(psi)!;
         process.WaitForExit();
@@ -217,21 +243,16 @@ public static class CliApp
     private static int Test(string[] args, TextWriter stdout, TextWriter stderr)
     {
         if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
-        if (Compile(o.Path, stderr, includeTests: true) is not { } c) return ExitFailure;
+        if (Compile(o, stderr, includeTests: true) is not { } c) return ExitFailure;
         var program = Lowerer.Lower(c);
-        var result = Toolchain.Build(CEmitter.Emit(program), o.Mode);
-        if (!result.Succeeded)
-        {
-            stderr.WriteLine("bayan: " + result.Errors);
-            return ExitFailure;
-        }
+        if (BuildNative(CEmitter.Emit(program), o.Mode, stderr) is not { } executable) return ExitToolchain;
         var count = program.Tests.Count;
         stdout.WriteLine($"running {count} test{(count == 1 ? "" : "s")}");
         int passed = 0, failed = 0, panicked = 0;
         var total = System.Diagnostics.Stopwatch.StartNew();
         for (var i = 0; i < count; i++)
         {
-            var outcome = RunTest(result.ExecutablePath!, i);
+            var outcome = RunTest(executable, i);
             var (status, tally) = outcome.ExitCode switch
             {
                 0 => ("ok   ", 0),
@@ -254,7 +275,7 @@ public static class CliApp
         if (panicked > 0) summary += $", {panicked} panicked";
         stdout.WriteLine();
         stdout.WriteLine($"{count} test{(count == 1 ? "" : "s")}: {summary}  ({FormatMs(total.Elapsed)})");
-        return failed + panicked == 0 ? ExitOk : ExitFailure;
+        return failed + panicked == 0 ? ExitOk : ExitTestFailure;
     }
 
     private sealed record TestOutcome(int ExitCode, bool TimedOut, string Stdout, string Stderr, TimeSpan Elapsed);
@@ -296,7 +317,7 @@ public static class CliApp
         if (text is null)
         {
             stderr.WriteLine($"bayan: no explanation for `{args[0]}`");
-            return ExitFailure;
+            return ExitUsage;
         }
         stdout.Write(text);
         return ExitOk;
