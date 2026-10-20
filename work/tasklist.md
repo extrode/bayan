@@ -36,7 +36,7 @@ tick.
 ## Current work: Bayan v0.1 bootstrap compiler (detail: `docs/bayan-handoff.md`)
 
 - [x] **T1 — M0 skeleton** — done when: CI green on linux-x64/osx-arm64/win-x64; bayan --version runs from the AOT binary
-- [ ] **T2 — M1 lexer** — done when: lex/ golden cases cover every token kind and lexer diagnostic; 1 MB file allocates only the token array
+- [x] **T2 — M1 lexer** — done when: lex/ golden cases cover every token kind and lexer diagnostic; 1 MB file allocates only the token array
 - [ ] **T3 — M2 parser** — done when: parse/ cases cover every v0.1 construct; diag/ cases cover common syntax errors
 - [ ] **T4 — M3 semantics I** — done when: every names/types/mutability rule has passing and failing diag/ cases
 - [ ] **T5 — M4 C backend hello world** — done when: examples/hello runs on all platforms; run/ cases per handoff M4
