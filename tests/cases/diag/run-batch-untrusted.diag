@@ -7,21 +7,21 @@ error BYN2786: `Untrusted<string>` cannot be passed to `Io.runBatch`: it is `Unt
 
 error BYN2786: `Untrusted<string>` cannot be passed to `Io.runBatch`: it is `Untrusted`
 
-  8 │     try Io.runBatch("build.cmd", ["a", name]);
-    │                                        ^^^^
+  8 │     try Io.runBatch("./build.cmd", ["a", name]);
+    │                                          ^^^^
     │
   help: check the value, then clear the mark with `trust(x, reason: "…")`
 
 error BYN2786: `List<Untrusted<string>>` cannot be passed to `Io.runBatch`: it is `Untrusted`
 
-  9 │     try Io.runBatch("build.cmd", many);
-    │                                  ^^^^
+  9 │     try Io.runBatch("./build.cmd", many);
+    │                                    ^^^^
     │
   help: check the value, then clear the mark with `trust(x, reason: "…")`
 
 error BYN2786: `Span<Untrusted<string>>` cannot be passed to `Io.runBatch`: it is `Untrusted`
 
-  10 │     try Io.runBatch("build.cmd", span);
-     │                                  ^^^^
+  10 │     try Io.runBatch("./build.cmd", span);
+     │                                    ^^^^
      │
   help: check the value, then clear the mark with `trust(x, reason: "…")`
