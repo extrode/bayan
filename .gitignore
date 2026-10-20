@@ -8,3 +8,4 @@ tmp/
 TestResults/
 .claude/worktrees/
 *.o
+.DS_Store
