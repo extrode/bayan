@@ -74,7 +74,7 @@ public sealed class RunTests
             Toolchain.TryParseMode(firstLine["// mode: ".Length..].Trim(), out mode);
         var c = Compilation.Create([source], dir);
         if (c.Diagnostics.HasErrors) return new Outcome("", "", 0, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
-        var build = Toolchain.Build(CliApp.EmitC(c), mode);
+        var build = Toolchain.Build(CliApp.EmitC(c, mode), mode);
         if (!build.Succeeded) return new Outcome("", "", 0, build.Errors);
         var work = Path.Combine(Golden.RepoRoot, "tmp", "run", Path.ChangeExtension(name, null).Replace('/', '_').Replace('\\', '_'));
         if (Directory.Exists(work)) Directory.Delete(work, recursive: true);

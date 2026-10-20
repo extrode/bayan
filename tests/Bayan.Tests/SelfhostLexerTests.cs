@@ -23,7 +23,7 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.FromPath(Path.Combine(LexerDir, "main.byn"));
         if (c.Diagnostics.HasErrors) return (null, string.Join("\n", c.Diagnostics.Items));
-        var build = Toolchain.Build(CliApp.EmitC(c), BuildMode.Fast);
+        var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
         return build.Succeeded ? (build.ExecutablePath, "") : (null, build.Errors);
     });
 

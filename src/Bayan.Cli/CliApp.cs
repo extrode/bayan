@@ -364,7 +364,7 @@ public static class CliApp
     }
 
     /// <summary>The C translation unit for an error-free compilation.</summary>
-    public static string EmitC(Compilation c) => CEmitter.Emit(Lowerer.Lower(c));
+    public static string EmitC(Compilation c, BuildMode mode) => CEmitter.Emit(Lowerer.Lower(c), mode == BuildMode.Debug);
 
     public static string ModeName(BuildMode mode) => mode switch
     {
@@ -407,7 +407,7 @@ public static class CliApp
         if (ParseBuildOptions(args, stderr, allowOutput: true) is not { } o) return ExitUsage;
         if (Compile(o, stderr) is not { } compiled) return ExitFailure;
         if (RefuseLibrary(compiled, "build", stderr)) return ExitUsage;
-        var source = EmitC(compiled.Compilation);
+        var source = EmitC(compiled.Compilation, o.Mode);
         if (o.EmitC)
         {
             stdout.Write(source);
@@ -441,7 +441,7 @@ public static class CliApp
         }
         if (Compile(o, stderr) is not { } compiled) return ExitFailure;
         if (RefuseLibrary(compiled, "run", stderr)) return ExitUsage;
-        var source = EmitC(compiled.Compilation);
+        var source = EmitC(compiled.Compilation, o.Mode);
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName, HostTarget))
             : null;
@@ -489,7 +489,7 @@ public static class CliApp
         if (ParseBuildOptions(args, stderr, allowOutput: false, allowTestJson: true) is not { } o) return ExitUsage;
         if (Compile(o, stderr, includeTests: true) is not { } compiled) return ExitFailure;
         var program = Lowerer.Lower(compiled.Compilation);
-        var source = CEmitter.Emit(program);
+        var source = CEmitter.Emit(program, o.Mode == BuildMode.Debug);
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName + "-test", HostTarget))
             : null;
