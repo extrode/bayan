@@ -27,8 +27,8 @@ Each milestone task ends with `dotnet test -v q` green, a docs page + `diag/` ca
 - [x] T13 Union patterns in `switch`/`is` + exhaustiveness — files: `BoundNodes.cs`, binder, `Lowerer.cs` — covers: R4, L4 — done when: payload binding `run/` case; missing variant `diag/` names the variant.
 
 ## M19 Generics
-- [ ] T14 Generic functions (inference, monomorphization, mangling) — files: `Types.cs`, `Symbols.cs`, `BinderCalls.cs`, `Compilation.cs`, `CEmitter.cs` — covers: R6 — done when: one function at three types correct; emitted C has exactly three instantiations; illegal template ops `diag/`.
-- [ ] T15 Generic structs/unions — files: `TypeResolver.cs`, binder, `CEmitter.cs` — covers: R6 — done when: `Pair<A,B>` and a generic union `run/` cases.
+- [x] T14 Generic functions (inference, monomorphization, mangling) — files: `Types.cs`, `Symbols.cs`, `BinderCalls.cs`, `Compilation.cs`, `CEmitter.cs` — covers: R6 — done when: one function at three types correct; emitted C has exactly three instantiations; illegal template ops `diag/`.
+- [x] T15 Generic structs/unions — files: `TypeResolver.cs`, binder, `CEmitter.cs` — covers: R6 — done when: `Pair<A,B>` and a generic union `run/` cases.
 
 ## M20–M21 Map and Owned
 - [x] T16 `Map<K,V>` — files: `Types.cs`, `TypeResolver.cs`, `BuiltinMembers.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R7, L3 — done when: 10,000 inserts with repeats + removals `run/` case; bad key type `diag/`.
@@ -42,7 +42,7 @@ Each milestone task ends with `dotnet test -v q` green, a docs page + `diag/` ca
 ## M23 Corpus and timing
 - [x] T21 10,000-input corpus via `--many` — covers: R11, L1, L2 — done when: corpus test passes; no panic; spans inside input.
 - [x] T22 Timing check — covers: R10 — done when: median of 5 Bayan ≤ 10× C#; `BAYAN_SKIP_TIMING` opt-out.
-- [ ] T23 Handoff Questions 40–54, progress log, spec sections touched — covers: R12 — done when: handoff updated.
+- [x] T23 Handoff Questions 40–54, progress log, spec sections touched — covers: R12 — done when: handoff updated.
 
 ## Laws
 - [ ] T24 enact L001 lexer equivalence (drafted proposed; user enacts)
