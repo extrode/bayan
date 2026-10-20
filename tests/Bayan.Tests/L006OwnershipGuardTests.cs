@@ -1,0 +1,410 @@
+using Bayan.Semantics;
+using Bayan.Syntax.Text;
+
+namespace Bayan.Tests;
+
+/// <summary>
+/// L006 (docs/laws/006-unique-never-aliases.md): every way to create a second owner of a unique value is
+/// rejected with its ownership diagnostic, and the same program written with a copy, a reassignment or a
+/// shorter borrow is accepted. Each row is bound and analyzed as the diag goldens are, and the exact error
+/// codes it reports are compared (warnings ignored).
+/// </summary>
+[Trait("Law", "L006")]
+public sealed class L006OwnershipGuardTests
+{
+    private const string Prelude = """
+        error enum E { bad, }
+        void step() fails E { }
+        void consume(move List<i64> xs) {
+            print($"{xs.length}");
+        }
+        struct Ledger {
+            List<i64> items;
+        }
+        union Slot {
+            Empty,
+            Full(List<i64> items),
+        }
+
+        """;
+
+    public static TheoryData<string, string, string> Rejected => new()
+    {
+        // Use of a moved local on any path (BYN2781).
+        { "use after move, straight-line", """
+            void main() {
+                var a = List<i64>();
+                var b = move a;
+                a.add(1);
+                print($"{b.length}");
+            }
+            """, "BYN2781" },
+        { "use after move, later for iteration", """
+            void main() {
+                let a = List<i64>();
+                for (let i in 0..3) {
+                    consume(move a);
+                }
+            }
+            """, "BYN2781" },
+        { "use after move, later while iteration", """
+            void main() {
+                let a = List<i64>();
+                var i = 0;
+                while (i < 3) {
+                    consume(move a);
+                    i += 1;
+                }
+            }
+            """, "BYN2781" },
+        { "use after move, after if", """
+            void main(ReadOnlySpan<string> args) {
+                let a = List<i64>();
+                if (args.length > 0) {
+                    consume(move a);
+                }
+                print($"{a.length}");
+            }
+            """, "BYN2781" },
+        { "use after move, after switch", """
+            void main(ReadOnlySpan<string> args) {
+                let a = List<i64>();
+                switch (args.length) {
+                    case 0:
+                        consume(move a);
+                    default:
+                        print("kept");
+                }
+                print($"{a.length}");
+            }
+            """, "BYN2781" },
+        { "use after move, defer at scope exit", """
+            void main() {
+                let xs = List<i64>();
+                defer print($"{xs.length}");
+                consume(move xs);
+            }
+            """, "BYN2781" },
+        { "use after move, errdefer on failing exit", """
+            List<i64> build() fails E {
+                let xs = List<i64>();
+                errdefer print($"{xs.length}");
+                consume(move xs);
+                try step();
+                return List<i64>();
+            }
+            void main() { }
+            """, "BYN2781" },
+
+        // Implicit copy of a unique value or of a type holding one (BYN2780).
+        { "implicit copy, List", """
+            void main() {
+                let a = List<i64>();
+                let b = a;
+            }
+            """, "BYN2780" },
+        { "implicit copy, Map", """
+            void main() {
+                let m = Map<string, i64>();
+                let n = m;
+            }
+            """, "BYN2780" },
+        { "implicit copy, StrBuf", """
+            void main() {
+                let sb = StrBuf();
+                let other = sb;
+            }
+            """, "BYN2780" },
+        { "implicit copy, struct with a List field", """
+            void main() {
+                let ledger = Ledger { items = List<i64>() };
+                let c = ledger;
+            }
+            """, "BYN2780" },
+        { "implicit copy, union with a unique payload", """
+            void main() {
+                let s = Slot.Full(List<i64>());
+                let t = s;
+            }
+            """, "BYN2780" },
+        { "implicit copy, tuple holding a List", """
+            void main() {
+                let t = (List<i64>(), 1);
+                let u = t;
+            }
+            """, "BYN2780" },
+        { "implicit copy, List into a tuple", """
+            void main() {
+                let xs = List<i64>();
+                let t = (xs, 1);
+            }
+            """, "BYN2780" },
+        { "implicit copy, optional holding a List", """
+            void main() {
+                List<i64>? o = List<i64>();
+                let p = o;
+            }
+            """, "BYN2780" },
+        { "implicit copy, List into an optional", """
+            void main() {
+                let xs = List<i64>();
+                List<i64>? o = xs;
+            }
+            """, "BYN2780" },
+        { "implicit copy, ref parameter stored", """
+            void keep(ref List<i64> shared, ref Ledger ledger) {
+                ledger.items = shared;
+            }
+            void main() { }
+            """, "BYN2780" },
+
+        // A borrow stored somewhere that outlives its owner (BYN3002, BYN3003), or a borrowed binding stored (BYN2780).
+        { "span stored past its owner", """
+            void main() {
+                var outer = List<i64>().asSpan();
+                {
+                    let xs = List<i64>();
+                    outer = xs.asSpan();
+                }
+                print($"{outer.length}");
+            }
+            """, "BYN3002" },
+        { "span returned past its owner", """
+            Span<i64> leak() {
+                let xs = List<i64>();
+                return xs.asSpan();
+            }
+            void main() { }
+            """, "BYN3003" },
+        { "slice returned past its owner", """
+            Span<i64> leak() {
+                let buf = stackalloc i64[4];
+                return buf[1..];
+            }
+            void main() { }
+            """, "BYN3003" },
+        { "borrowed loop binding stored", """
+            void main() {
+                let lists = List<List<i64>>();
+                var kept = List<i64>();
+                for (let xs in lists) kept = xs;
+            }
+            """, "BYN2780" },
+        { "borrowed loop binding's span stored past its owner", """
+            void main() {
+                var outer = List<i64>().asSpan();
+                {
+                    let lists = List<List<i64>>();
+                    for (let xs in lists) outer = xs.asSpan();
+                }
+                print($"{outer.length}");
+            }
+            """, "BYN3002" },
+        { "borrowed pattern binding stored", """
+            void main() {
+                let s = Slot.Full(List<i64>());
+                var kept = List<i64>();
+                if (s is .Full(let items)) kept = items;
+            }
+            """, "BYN2780" },
+        { "borrowed pattern binding's span stored past its owner", """
+            void main() {
+                var outer = List<i64>().asSpan();
+                {
+                    let s = Slot.Full(List<i64>());
+                    switch (s) {
+                        case .Full(let items):
+                            outer = items.asSpan();
+                        default:
+                            print("empty");
+                    }
+                }
+                print($"{outer.length}");
+            }
+            """, "BYN3002" },
+
+        // A move out of a field, element or plain parameter (BYN2782).
+        { "move out of a struct field", """
+            void main() {
+                let ledger = Ledger { items = List<i64>() };
+                let items = move ledger.items;
+            }
+            """, "BYN2782" },
+        { "move out of a list element", """
+            void main() {
+                let lists = List<List<i64>>();
+                let first = move lists[0];
+            }
+            """, "BYN2782" },
+        { "move out of a plain parameter", """
+            void take(List<i64> plain) {
+                let mine = move plain;
+            }
+            void main() { }
+            """, "BYN2782" },
+
+        // Moving a borrowed binding (BYN2783).
+        { "move a borrowed for variable", """
+            void main() {
+                let lists = List<List<i64>>();
+                for (let xs in lists) {
+                    let stolen = move xs;
+                }
+            }
+            """, "BYN2783" },
+        { "move a borrowed pattern binding", """
+            void main() {
+                let s = Slot.Full(List<i64>());
+                if (s is .Full(let items)) {
+                    let stolen = move items;
+                }
+            }
+            """, "BYN2783" },
+    };
+
+    public static TheoryData<string, string> Accepted => new()
+    {
+        { "explicit copy, List", """
+            void main() {
+                using let arena = Arena();
+                let a = List<i64>();
+                let b = a.copy(to: arena);
+                print($"{a.length} {b.length}");
+            }
+            """ },
+        { "explicit copy, Map", """
+            void main() {
+                using let arena = Arena();
+                let m = Map<string, i64>();
+                let n = m.copy(to: arena);
+                print($"{m.length} {n.length}");
+            }
+            """ },
+        { "explicit copy, StrBuf", """
+            void main() {
+                using let arena = Arena();
+                let sb = StrBuf();
+                let other = sb.copy(to: arena);
+                print($"{sb.asString()} {other.asString()}");
+            }
+            """ },
+        { "explicit copy into a struct field", """
+            void main() {
+                using let arena = Arena();
+                let xs = List<i64>();
+                let ledger = Ledger { items = xs.copy(to: arena) };
+                print($"{xs.length} {ledger.items.length}");
+            }
+            """ },
+        { "reassigned before use, straight-line", """
+            void main() {
+                var a = List<i64>();
+                var b = move a;
+                a = List<i64>();
+                a.add(1);
+                print($"{a.length} {b.length}");
+            }
+            """ },
+        { "reassigned before the next for iteration", """
+            void main() {
+                var b = List<i64>();
+                for (let i in 0..3) {
+                    consume(move b);
+                    b = List<i64>();
+                }
+            }
+            """ },
+        { "reassigned before the next while iteration", """
+            void main() {
+                var b = List<i64>();
+                var i = 0;
+                while (i < 3) {
+                    consume(move b);
+                    b = List<i64>();
+                    i += 1;
+                }
+            }
+            """ },
+        { "reassigned in the moving branch", """
+            void main(ReadOnlySpan<string> args) {
+                var a = List<i64>();
+                if (args.length > 0) {
+                    consume(move a);
+                    a = List<i64>();
+                }
+                print($"{a.length}");
+            }
+            """ },
+        { "defer reads a local moved then reassigned", """
+            void main() {
+                var xs = List<i64>();
+                defer print($"{xs.length}");
+                consume(move xs);
+                xs = List<i64>();
+            }
+            """ },
+        { "errdefer with a return move success path", """
+            List<i64> build() fails E {
+                let xs = List<i64>();
+                errdefer print($"{xs.length}");
+                try step();
+                return move xs;
+            }
+            void main() { }
+            """ },
+        { "borrow ends before its owner", """
+            void main() {
+                var xs = List<i64>();
+                xs.add(1);
+                {
+                    let view = xs.asSpan();
+                    print($"{view[0]}");
+                }
+                xs.add(2);
+            }
+            """ },
+        { "borrowed loop binding read in place", """
+            void main() {
+                let lists = List<List<i64>>();
+                for (let xs in lists) {
+                    let view = xs.asSpan();
+                    print($"{view.length}");
+                }
+            }
+            """ },
+        { "borrowed pattern binding copied", """
+            void main() {
+                using let arena = Arena();
+                let s = Slot.Full(List<i64>());
+                var kept = List<i64>();
+                if (s is .Full(let items)) kept = items.copy(to: arena);
+                print($"{kept.length}");
+            }
+            """ },
+        { "move out of a move parameter", """
+            void take(move List<i64> owned) {
+                let mine = move owned;
+                print($"{mine.length}");
+            }
+            void main() { }
+            """ },
+    };
+
+    [Theory]
+    [MemberData(nameof(Rejected))]
+    public void RejectsSecondOwner(string name, string program, string codes) => Check(name, program, codes);
+
+    [Theory]
+    [MemberData(nameof(Accepted))]
+    public void AcceptsSingleOwner(string name, string program) => Check(name, program, "");
+
+    private static void Check(string name, string program, string expected)
+    {
+        var source = Prelude + program + "\n";
+        var c = Compilation.Create([new SourceText("l006.byn", System.Text.Encoding.UTF8.GetBytes(source))], ".");
+        var errors = c.Diagnostics.Items.Where(d => d.IsError).ToList();
+        var reported = string.Join(" ", errors.Select(d => d.Code).Order());
+        Assert.True(reported == expected,
+            $"{name}: expected [{expected}], got [{reported}]: {string.Join("; ", errors.Select(e => e.Code + " " + e.Message))}\n{source}");
+    }
+}
