@@ -373,6 +373,32 @@ Phase 1 tool: `tools/lex-diff/` (M15). Phase 2: `selfhost/lexer/` checked agains
 - `error` and `flags` are keywords, so they can't be names.
 - No `catch { block }`; no bytes→string conversion (decode appends `$"{(char)cp}"` per scalar); no hex format specifier; no `const string[]`; no delegates; no `List.removeRange`.
 
+### Road to self-hosting (decided 2026-10-21)
+
+Run unattended, one spec at a time, each merged into `dev` (unpushed) with its worker spend in the progress log. Decisions:
+
+- **Interfaces (§3.15):** static dispatch on constraints (monomorphized), `dyn ref I` fat pointers, default methods, and `IEnumerator` with an associated `Item` so `for … in` works on user types. `static abstract` members and retroactive conformance wait.
+- **Delegates (§3.16):** `delegate` types, named functions as values and non-capturing lambdas. Capturing closures wait.
+- **Regions (§9.4):** deferred past bootstrap; syntax nodes and tokens keep byte offsets into a source buffer, as `selfhost/lexer/` does.
+- **Finish line:** the Bayan compiler does `lex`, `parse`, `check`, `build` (incl. `--emit-c`) and `run`; stage 2's generated C is byte-identical to stage 3's; `bootstrap/bayan.c` is committed. `new`, `init`, `test`, the cache and `--json` stay in the C# CLI for now.
+- **Port friction:** an argument that is a bare identifier equal to its parameter's name counts as named (BYN2305); `error` and `flags` become contextual keywords (both lexers, L001); unsuffixed integer literals stay `i32` (§25).
+- **Laws:** a law a spec proposes is enacted in the same change as its passing proof (standing authorization, 2026-10-21); a law without a proof stays proposed.
+
+Spec order (numbers are provisional; a spec may split):
+
+| Spec | Scope |
+|---|---|
+| 003 | Ownership verification: ownership program generator, debug runtime ownership checker, `take()`, `switch (move x)`; L006 `take()` row back as an amendment; prove L008 |
+| 004 | Port friction: implied argument names, contextual `error`/`flags`, returning borrows from a method's own fields, fallible bytes→string decode, `catch { block }`, `const` string arrays, `List.removeRange`, `toHex()` (format specifiers stay deferred, Appendix B) |
+| 005 | Terminal style (remaining work of M12 — CLI completeness and machine-readable output), before any renderer is ported again |
+| 006 | Interfaces and iterators (subset above) |
+| 007 | Delegates and non-capturing lambdas |
+| 008 | `HashMap` and `Symbol` interning (§3.3) |
+| 009 | Parser in Bayan (`selfhost/parser/`), checked against `bayan parse --ast` on every parse golden |
+| 010 | Semantics in Bayan (binder, flow, ownership), checked against every `diag/` golden |
+| 011 | Lowering and the C emitter in Bayan, checked against `--emit-c` on every `run/` golden |
+| 012 | Driver (`check`/`build`/`run`) and bootstrap: stage 1/2/3, byte-identical stage 2 and 3, `bootstrap/bayan.c` |
+
 ## Testing the compiler itself
 
 - Golden tests for every phase (above).
