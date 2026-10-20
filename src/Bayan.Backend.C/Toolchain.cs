@@ -90,14 +90,56 @@ public static class Toolchain
     }
 
     /// <summary>
-    /// The C compiler for <c>sanitize</c> builds: <c>/usr/bin/clang</c> if present, else <c>clang</c>
-    /// from <c>PATH</c>; zig cc ships no AddressSanitizer runtime.
+    /// The C compiler for <c>sanitize</c> builds, probed once: <c>$BAYAN_CC</c> if it can build and run an
+    /// AddressSanitizer program, else <c>/usr/bin/clang</c>, else <c>clang</c> from <c>PATH</c>; zig cc
+    /// ships no AddressSanitizer runtime. Null when none works.
     /// </summary>
-    public static string? SanitizerCompiler { get; } =
-        File.Exists("/usr/bin/clang") ? "/usr/bin/clang" : FindOnPath("clang");
+    public static string[]? SanitizerCompiler => sanitizer.Value;
+
+    private static readonly Lazy<string[]?> sanitizer = new(() => ProbeSanitizer(SanitizerCandidates()));
+
+    /// <summary>Test seam: replaces the probed sanitizer compiler; null restores the probe.</summary>
+    internal static string[]? SanitizerOverride { get; set; }
 
     /// <summary>Whether <c>sanitize</c> builds get AddressSanitizer on this machine.</summary>
-    public static bool AsanAvailable => SanitizerCompiler is not null;
+    public static bool AsanAvailable => (SanitizerOverride ?? SanitizerCompiler) is not null;
+
+    private static IEnumerable<string[]> SanitizerCandidates()
+    {
+        if (Environment.GetEnvironmentVariable("BAYAN_CC") is { Length: > 0 } cc)
+            yield return cc.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (File.Exists("/usr/bin/clang")) yield return ["/usr/bin/clang"];
+        if (FindOnPath("clang") is { } clang) yield return [clang];
+    }
+
+    /// <summary>The first of <paramref name="candidates"/> that compiles, links and runs an AddressSanitizer program.</summary>
+    internal static string[]? ProbeSanitizer(IEnumerable<string[]> candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (candidate.Length == 0) continue;
+            var work = Path.Combine(Path.GetTempPath(), "bayan-asan-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(work);
+                File.WriteAllText(Path.Combine(work, "probe.c"), "int main(void) { return 0; }\n");
+                var exe = Path.Combine(work, OperatingSystem.IsWindows() ? "probe.exe" : "probe");
+                var args = new List<string>(candidate[1..]) { "-fsanitize=address", "probe.c", "-o", exe };
+                if (Exec(candidate[0], args, work).Code == 0 && File.Exists(exe) && Exec(exe, [], work).Code == 0)
+                    return candidate;
+            }
+            catch (Exception e) when (e is System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException)
+            {
+                // This candidate cannot do it; try the next.
+            }
+            finally
+            {
+                try { Directory.Delete(work, recursive: true); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            }
+        }
+        return null;
+    }
 
     public static string? FindOnPath(string name)
     {
@@ -128,17 +170,14 @@ public static class Toolchain
         {
             return new NativeBuild(null, $"cannot write the build output or cache ({CacheDirectory}): {e.Message}");
         }
-        catch (System.ComponentModel.Win32Exception e)
-        {
-            return new NativeBuild(null, $"cannot run the C compiler `{string.Join(" ", FindCompiler() ?? [])}`: {e.Message}");
-        }
     }
 
     private static NativeBuild BuildCached(string cSource, BuildMode mode, string? output, string? target, bool sanitize)
     {
         var cross = target != Targets.Host;
-        var asan = sanitize && !cross && SanitizerCompiler is not null;
-        string[]? compiler = asan ? [SanitizerCompiler!] : FindCompiler();
+        var sanitizerCompiler = sanitize && !cross ? SanitizerOverride ?? SanitizerCompiler : null;
+        var asan = sanitizerCompiler is not null;
+        var compiler = sanitizerCompiler ?? FindCompiler();
         if (compiler is null)
             return new NativeBuild(null, "no C compiler found: install zig (https://ziglang.org) or set BAYAN_CC");
         if (cross && (target is null || Targets.Triple(target) is null))
@@ -161,8 +200,15 @@ public static class Toolchain
         var hit = Lookup(key, exeName) is not null;
         if (!hit)
         {
-            var failure = Compile(compiler, flags, cSource, key, exeName, windows: targetOs.StartsWith("windows", StringComparison.Ordinal));
-            if (failure is not null) return new NativeBuild(null, failure);
+            try
+            {
+                var failure = Compile(compiler, flags, cSource, key, exeName, windows: targetOs.StartsWith("windows", StringComparison.Ordinal));
+                if (failure is not null) return new NativeBuild(null, failure);
+            }
+            catch (System.ComponentModel.Win32Exception e)
+            {
+                return new NativeBuild(null, $"cannot run the C compiler `{string.Join(" ", compiler)}`: {e.Message}");
+            }
         }
         var exe = Path.Combine(Programs, key, exeName);
         if (output is null) return new NativeBuild(exe, "", hit, key);

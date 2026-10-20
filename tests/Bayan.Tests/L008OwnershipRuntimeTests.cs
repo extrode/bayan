@@ -14,9 +14,17 @@ namespace Bayan.Tests;
 /// that compiles runs its debug build to exit 0 with no ownership-checker panic and, where the C compiler
 /// supports it, no AddressSanitizer report. Seeds 1..24 of 16 functions; <c>BAYAN_L008_SEEDS</c> raises the count.
 /// </summary>
-public sealed class L008OwnershipRuntimeTests(ITestOutputHelper output)
+public sealed class L008OwnershipRuntimeTests(ITestOutputHelper output) : IDisposable
 {
     private const int Size = 16;
+
+    /// <summary>Unique per test instance, so concurrent test processes never share a working directory.</summary>
+    private readonly string runRoot = Path.Combine(Golden.RepoRoot, "tmp", "l008", Guid.NewGuid().ToString("N"));
+
+    public void Dispose()
+    {
+        if (Directory.Exists(runRoot)) Directory.Delete(runRoot, recursive: true);
+    }
 
     private sealed record Run(int ExitCode, string Stderr, string? Error);
 
@@ -90,14 +98,13 @@ public sealed class L008OwnershipRuntimeTests(ITestOutputHelper output)
         Assert.Equal("debug C has no byn_own_ checker hooks", Failure(BuildAndRun(c, "no-hooks", BuildMode.Safe)));
     }
 
-    private static Run BuildAndRun(Compilation c, string name, BuildMode emit = BuildMode.Debug)
+    private Run BuildAndRun(Compilation c, string name, BuildMode emit = BuildMode.Debug)
     {
         var code = CliApp.EmitC(c, emit);
         if (!code.Contains("byn_own_", StringComparison.Ordinal)) return new Run(0, "", "debug C has no byn_own_ checker hooks");
         var build = Toolchain.Build(code, BuildMode.Debug, sanitize: Toolchain.AsanAvailable);
         if (!build.Succeeded) return new Run(0, "", $"build failed:\n{build.Errors}");
-        var work = Path.Combine(Golden.RepoRoot, "tmp", "l008", name);
-        if (Directory.Exists(work)) Directory.Delete(work, recursive: true);
+        var work = Path.Combine(runRoot, name);
         Directory.CreateDirectory(work);
         var psi = new ProcessStartInfo(build.ExecutablePath!)
         {
