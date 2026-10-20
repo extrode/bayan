@@ -124,17 +124,18 @@ void byn_w_i64(byn_writer* w, int64_t v) {
     }
 }
 
-/* Shortest text that reads back as the same value, laid out like C#'s default double format:
- * fixed notation for exponents in [-4, 15), otherwise d.dddE+XX. */
+/* Shortest text that reads back as the same value: fixed notation for 1e-5 <= |v| < 1e15
+ * (.NET's thresholds), otherwise d.ddde<exp> with a lowercase `e`, no `+` and no leading
+ * zeros, so the text is a valid Bayan literal and valid JSON. nan, inf, -inf, -0. */
 static void byn_w_float(byn_writer* w, double v, int max_digits, bool single) {
     char sci[40], out[64];
     if (v != v) {
-        byn_w_bytes(w, (const uint8_t*)"NaN", 3);
+        byn_w_bytes(w, (const uint8_t*)"nan", 3);
         return;
     }
     if (v == 1.0 / 0.0 || v == -1.0 / 0.0) {
         if (v < 0) byn_w_bytes(w, (const uint8_t*)"-", 1);
-        byn_w_bytes(w, (const uint8_t*)"Infinity", 8);
+        byn_w_bytes(w, (const uint8_t*)"inf", 3);
         return;
     }
     if (v == 0) {
@@ -157,13 +158,13 @@ static void byn_w_float(byn_writer* w, double v, int max_digits, bool single) {
     int exp = atoi(sci + i + 1);
     while (n > 1 && digits[n - 1] == '0') n--;
     if (negative) out[len++] = '-';
-    if (exp >= 15 || exp < -4) {
+    if (exp >= 15 || exp < -5) {
         out[len++] = digits[0];
         if (n > 1) {
             out[len++] = '.';
             for (int k = 1; k < n; k++) out[len++] = digits[k];
         }
-        len += snprintf(out + len, sizeof out - (size_t)len, "E%c%02d", exp < 0 ? '-' : '+', exp < 0 ? -exp : exp);
+        len += snprintf(out + len, sizeof out - (size_t)len, "e%d", exp);
     } else if (exp < 0) {
         out[len++] = '0';
         out[len++] = '.';
