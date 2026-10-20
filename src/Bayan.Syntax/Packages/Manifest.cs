@@ -190,12 +190,21 @@ public sealed class Manifest
     public static bool IsPackageName(string text) =>
         text.Split('/') is [var ns, var name] && IsKebabName(ns) && IsKebabName(name);
 
+    /// <summary>
+    /// <c>MAJOR.MINOR.PATCH</c> (each at most 18 digits, so it fits a <c>long</c>), optionally
+    /// <c>-</c> and dot-separated identifiers of <c>[0-9A-Za-z-]</c> (semver 2.0 §9).
+    /// </summary>
     public static bool IsSemanticVersion(string text)
     {
-        var core = text.Split('-', 2)[0];
-        return core.Split('.') is [var a, var b, var c]
-            && new[] { a, b, c }.All(p => p.Length > 0 && p.All(char.IsAsciiDigit) && (p == "0" || p[0] != '0'))
-            && (core.Length == text.Length || text.Length > core.Length + 1);
+        var build = text.Split('+', 2);
+        var parts = build[0].Split('-', 2);
+        return parts[0].Split('.') is [var a, var b, var c]
+            && new[] { a, b, c }.All(p => p.Length is > 0 and <= 18 && p.All(char.IsAsciiDigit) && (p == "0" || p[0] != '0'))
+            && (parts.Length == 1 || Identifiers(parts[1]))
+            && (build.Length == 1 || Identifiers(build[1]));
+
+        static bool Identifiers(string text) =>
+            text.Split('.').All(id => id.Length > 0 && id.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '-'));
     }
 
     /// <summary>
@@ -217,7 +226,7 @@ public sealed class Manifest
 
     private static (long[] Core, string? Pre) SplitVersion(string v)
     {
-        var parts = v.Split('-', 2);
+        var parts = v.Split('+', 2)[0].Split('-', 2);
         var core = parts[0].Split('.').Select(p => long.Parse(p, CultureInfo.InvariantCulture)).ToArray();
         return (core, parts.Length > 1 ? parts[1] : null);
     }

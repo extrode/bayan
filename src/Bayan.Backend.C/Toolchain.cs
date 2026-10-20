@@ -55,11 +55,14 @@ public static class Toolchain
         }
     }
 
-    private static string Programs => Path.Combine(CacheDirectory, "v1", "programs");
+    /// <summary>Everything this version of the cache layout writes: <c>&lt;cache&gt;/v1</c>.</summary>
+    public static string CacheData => Path.Combine(CacheDirectory, "v1");
 
-    private static string Scripts => Path.Combine(CacheDirectory, "v1", "scripts");
+    private static string Programs => Path.Combine(CacheData, "programs");
 
-    private static string Staging => Path.Combine(CacheDirectory, "v1", "tmp");
+    private static string Scripts => Path.Combine(CacheData, "scripts");
+
+    private static string Staging => Path.Combine(CacheData, "tmp");
 
     public static bool TryParseMode(string text, out BuildMode mode)
     {
@@ -278,12 +281,29 @@ public static class Toolchain
     }
 
     /// <summary>
-    /// The key under which a script's program is remembered: compiler version, mode, host and the
-    /// script's bytes (its <c>#:</c> directives included). The C compiler isn't part of it, so a
-    /// remembered script starts even when no C compiler is installed.
+    /// The key under which a script's program is remembered: compiler version and build, mode, host
+    /// and the script's bytes (its <c>#:</c> directives included). The C compiler isn't part of it,
+    /// so a remembered script starts even when no C compiler is installed.
     /// </summary>
-    public static string ScriptKey(byte[] script, BuildMode mode) =>
-        Hash(string.Join("\0", "script", CompilerVersion, mode, Targets.Host, Convert.ToHexStringLower(SHA256.HashData(script))));
+    public static string ScriptKey(byte[] script, BuildMode mode, string? build = null) =>
+        Hash(string.Join("\0", "script", CompilerVersion, build ?? CompilerBuild, mode, Targets.Host, Convert.ToHexStringLower(SHA256.HashData(script))));
+
+    /// <summary>
+    /// Size and last-write time of the running compiler and its <c>Bayan*.dll</c> assemblies (any
+    /// case; none under NativeAOT), so a rebuilt dev compiler doesn't start scripts the old one
+    /// remembered.
+    /// </summary>
+    public static string CompilerBuild { get; } = ComputeCompilerBuild();
+
+    private static string ComputeCompilerBuild()
+    {
+        var files = new List<string>();
+        if (Environment.ProcessPath is { } exe) files.Add(exe);
+        if (Directory.Exists(AppContext.BaseDirectory))
+            files.AddRange(Directory.EnumerateFiles(AppContext.BaseDirectory, "Bayan*.dll", new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive }).Order(StringComparer.Ordinal));
+        var parts = files.Select(f => new FileInfo(f)).Where(f => f.Exists).Select(f => $"{f.Name}:{f.Length}:{f.LastWriteTimeUtc.Ticks}");
+        return string.Join(";", parts.Prepend(CompilerVersion));
+    }
 
     public static CacheStats Stats()
     {

@@ -28,14 +28,15 @@ public static class Scaffold
         if (Names(dirName, o.Layout, stderr) is not { } names) return CliApp.ExitUsage;
         if (o.Layout == Layout.Script)
         {
-            var file = full + ".byn";
+            var file = Path.Combine(Path.GetDirectoryName(full)!, names.Kebab + ".byn");
+            var shown = Path.IsPathRooted(o.Target) ? file : Path.GetRelativePath(Environment.CurrentDirectory, file);
             if (File.Exists(file))
             {
-                stderr.WriteLine($"bayan: `{o.Target}.byn` already exists");
+                stderr.WriteLine($"bayan: `{shown}` already exists");
                 return CliApp.ExitUsage;
             }
             Write(Path.GetDirectoryName(file)!, Files(names, o), stdout: null);
-            stdout.WriteLine($"created script `{o.Target}.byn`; run it with `bayan {o.Target}.byn`");
+            stdout.WriteLine($"created script `{shown}`; run it with `bayan {shown}`");
             return CliApp.ExitOk;
         }
         if (Directory.Exists(full) && Directory.EnumerateFileSystemEntries(full).Any())
