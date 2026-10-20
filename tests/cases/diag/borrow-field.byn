@@ -1,0 +1,3 @@
+struct Window {
+    Span<u8> bytes;
+}

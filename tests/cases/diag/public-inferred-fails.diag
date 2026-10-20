@@ -1,0 +1,4 @@
+error BYN2607: public function `parse` must list its errors
+
+  1 │ public i64 parse(string s) fails {
+    │                            ^^^^^

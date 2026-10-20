@@ -1,0 +1,4 @@
+error BYN2407: `continue pick` refers to a `switch`, not a loop
+
+  4 │         continue pick;
+    │                  ^^^^

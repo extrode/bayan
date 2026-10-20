@@ -1,0 +1,4 @@
+error BYN2214: `^` is only allowed inside an index or slice
+
+  1 │ let i = ^1;
+    │         ^^

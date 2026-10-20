@@ -1,0 +1,4 @@
+error BYN2608: `i64` is not an error enum
+
+  1 │ i64 f() fails i64 {
+    │               ^^^

@@ -1,0 +1,4 @@
+error BYN2218: `invalid` needs a known type here
+
+  1 │ let e = .invalid;
+    │         ^^^^^^^^

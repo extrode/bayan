@@ -1,0 +1,5 @@
+never fail() {
+    print("x");
+}
+
+fail();

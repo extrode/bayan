@@ -1,0 +1,3 @@
+i64 big = 5;
+i32 small = big;
+bool flag = 1;

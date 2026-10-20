@@ -13,13 +13,17 @@ public static class Golden
     public static bool UpdateMode =>
         Environment.GetEnvironmentVariable("BAYAN_UPDATE") is "1" or "true";
 
-    /// <summary>Input files for <paramref name="kind"/>, relative to <see cref="CasesRoot"/>, sorted.</summary>
+    /// <summary>
+    /// Input files for <paramref name="kind"/>, relative to <see cref="CasesRoot"/>, sorted. A
+    /// subdirectory is one multi-module case whose entry is its <c>main.byn</c>.
+    /// </summary>
     public static TheoryData<string> Cases(string kind, string inputExtension = ".byn")
     {
         var data = new TheoryData<string>();
         var dir = Path.Combine(CasesRoot, kind);
         if (!Directory.Exists(dir)) return data;
         foreach (var file in Directory.EnumerateFiles(dir, "*" + inputExtension, SearchOption.AllDirectories)
+                                      .Where(f => Path.GetDirectoryName(f) == dir || Path.GetFileName(f) == "main" + inputExtension)
                                       .Order(StringComparer.Ordinal))
         {
             data.Add(Path.GetRelativePath(CasesRoot, file).Replace('\\', '/'));

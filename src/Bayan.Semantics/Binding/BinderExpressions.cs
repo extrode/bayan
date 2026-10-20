@@ -1,0 +1,1161 @@
+using System.Globalization;
+using System.Numerics;
+using System.Text;
+using Bayan.Semantics.Symbols;
+using Bayan.Syntax.Ast;
+using Bayan.Syntax.Diagnostics;
+using Bayan.Syntax.Parsing;
+using Bayan.Syntax.Text;
+
+namespace Bayan.Semantics.Binding;
+
+internal sealed partial class Binder
+{
+    /// <summary>Set while binding an argument that accepts <c>$"…"</c>.</summary>
+    private bool _interpolationAllowed;
+
+    // ── Entry points ─────────────────────────────────────────────────────────────
+
+    /// <summary>Binds a value. <paramref name="expected"/> only guides literals and target-typed forms; no conversion is applied.</summary>
+    private BoundExpr BindExpr(Expr e, TypeSymbol? expected = null)
+    {
+        var bound = BindExprOrType(e, expected);
+        switch (bound)
+        {
+            case BoundTypeRef t:
+                Report(DiagnosticCodes.NotAValue, e.Span, [t.Referenced.DisplayName, "type"]);
+                return new BoundErrorExpr(e);
+            case BoundModuleRef m:
+                Report(DiagnosticCodes.NotAValue, e.Span, [m.Module.Name, "module"]);
+                return new BoundErrorExpr(e);
+            default:
+                return bound;
+        }
+    }
+
+    private BoundExpr BindConverted(Expr e, TypeSymbol target, bool argument = false)
+    {
+        var bound = BindExpr(e, target);
+        return Convert(bound, target, e.Span, argument);
+    }
+
+    /// <summary>An expression statement: the value is discarded.</summary>
+    private BoundExpr BindStatementExpression(Expr e)
+    {
+        var bound = BindExpr(e);
+        return bound;
+    }
+
+    private BoundExpr Convert(BoundExpr value, TypeSymbol target, TextSpan span, bool argument = false)
+    {
+        if (value.Type.Equals(target) || target.IsError || value.Type.IsError) return value;
+        if (value.Constant is { Value: Int128 n } && (target.IsInteger || target.IsFloat || target is OptionalType { Inner.IsNumeric: true }) && value.Type.IsInteger)
+        {
+            var inner = target is OptionalType o ? o.Inner : target;
+            if (inner.IsInteger && !Fits(n, (PrimitiveType)inner))
+            {
+                Report(DiagnosticCodes.LiteralOutOfRange, span, [n.ToString(), $"`{inner.DisplayName}`"],
+                    help: RangeHelp((PrimitiveType)inner));
+                return new BoundErrorExpr(value.Syntax);
+            }
+            var literal = Literal(value.Syntax, inner, inner.IsFloat ? (object)(double)n : n);
+            return inner == target ? literal : new BoundConversion(value.Syntax, literal, target, ConversionKind.ToOptional);
+        }
+        if (value.Constant is { Value: double d } && target is PrimitiveType { Kind: PrimitiveKind.F32 } && value.Syntax is LiteralExpr)
+            return Literal(value.Syntax, target, (double)(float)d);
+        if (Conversions.Implicit(value.Type, target, argument) is { } kind)
+        {
+            if (kind == ConversionKind.Identity) return value;
+            if (kind == ConversionKind.NullToOptional) return new BoundDefault(value.Syntax, target);
+            var converted = new BoundConversion(value.Syntax, value, target, kind);
+            return value.Constant is { } c && kind == ConversionKind.Widen ? converted with { Constant = WidenConstant(c, target) } : converted;
+        }
+        ReportMismatch(value, target, span);
+        return new BoundErrorExpr(value.Syntax);
+    }
+
+    private static ConstantValue WidenConstant(ConstantValue c, TypeSymbol target) =>
+        target.IsFloat && c.Value is Int128 n ? new ConstantValue((double)n) : c;
+
+    private void ReportMismatch(BoundExpr value, TypeSymbol target, TextSpan span)
+    {
+        string? help = null;
+        Fix? fix = null;
+        if (Conversions.Explicit(value.Type, target) is ConversionKind.NumericCast or ConversionKind.CharToInteger or ConversionKind.IntegerToChar)
+        {
+            var text = Source.GetText(span);
+            var wrapped = value.Syntax is NameExpr or LiteralExpr or MemberExpr or CallExpr or ParenExpr or IndexExpr ? text : "(" + text + ")";
+            help = value.Type.IsNumeric && target.IsNumeric
+                ? $"`{value.Type.DisplayName}` does not convert to `{target.DisplayName}` without loss; cast it if the value always fits"
+                : "cast it explicitly";
+            fix = new Fix(span, $"({target.DisplayName}){wrapped}");
+        }
+        else if (value.Type is OptionalType o && o.Inner.Equals(target))
+        {
+            help = "the value may be absent; unwrap it with `??`, `is { } v`, or `?? return`";
+        }
+        else if (value.Type is ListType && target is SpanType)
+        {
+            help = "a `List` becomes a `Span` implicitly only as a call argument; use `.asSpan` here";
+        }
+        Report(DiagnosticCodes.TypeMismatch, span, [value.Type.DisplayName, target.DisplayName], help: help, fix: fix);
+    }
+
+    private static string RangeHelp(PrimitiveType t)
+    {
+        var (min, max) = t.Range;
+        return $"`{t.Name}` holds {min} to {max}";
+    }
+
+    private static bool Fits(Int128 n, PrimitiveType t)
+    {
+        var (min, max) = t.Range;
+        return n >= min && n <= max;
+    }
+
+    private static BoundLiteral Literal(Node syntax, TypeSymbol type, object value)
+    {
+        var c = new ConstantValue(value);
+        return new BoundLiteral(syntax, type, c) { Constant = c };
+    }
+
+    // ── Dispatch ─────────────────────────────────────────────────────────────────
+
+    private BoundExpr BindExprOrType(Expr e, TypeSymbol? expected = null)
+    {
+        switch (e)
+        {
+            case LiteralExpr l:
+                return BindLiteral(l, expected);
+            case ParenExpr p:
+                return BindExprOrType(p.Inner, expected);
+            case NameExpr n:
+                return BindName(n);
+            case ThisExpr t:
+                if (_struct is null || _fn is null || _fn.IsStatic || _fn.Kind is not (FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor))
+                {
+                    Report(DiagnosticCodes.ThisOutsideMethod, t.Span, []);
+                    return new BoundErrorExpr(t);
+                }
+                return new BoundThis(t, _struct);
+            case MemberExpr m:
+                return BindMember(m);
+            case TargetMemberExpr t:
+                return BindTargetMember(t, expected);
+            case CallExpr c:
+                return BindCall(c, expected);
+            case IndexExpr i:
+                return BindIndex(i);
+            case UnaryExpr u:
+                return BindUnary(u, expected);
+            case BinaryExpr b:
+                return BindBinary(b, expected);
+            case RangeExpr r:
+                return BindRange(r, expected);
+            case ConditionalExpr c:
+                return BindConditional(c, expected);
+            case CastExpr c:
+                return BindCast(c);
+            case IsExpr i:
+            {
+                var value = BindExpr(i.Value);
+                var pattern = BindPattern(i.Pattern, value.Type);
+                return new BoundIs(i, value, pattern);
+            }
+            case SwitchExpr s:
+                return BindSwitchExpr(s, expected);
+            case TryExpr t:
+                return BindTry(t, expected);
+            case CatchExpr c:
+                return BindCatch(c, expected);
+            case JumpExpr j:
+                return new BoundJump(j, BindStatement(j.Jump));
+            case StructLiteralExpr s:
+                return BindStructLiteral(s, expected);
+            case WithExpr w:
+                return BindWith(w);
+            case CollectionExpr c:
+                return BindCollection(c, expected);
+            case TupleExpr t:
+                return BindTuple(t, expected);
+            case InterpolatedExpr i:
+                return BindInterpolated(i);
+            case StackallocExpr s:
+                return BindStackalloc(s);
+            case SpreadExpr s:
+                Report(DiagnosticCodes.Unsupported, s.Span, ["spreads (`..xs`)"]);
+                return new BoundErrorExpr(s);
+            case ErrorExpr:
+                return new BoundErrorExpr(e);
+            default:
+                Report(DiagnosticCodes.Unsupported, e.Span, ["this expression"]);
+                return new BoundErrorExpr(e);
+        }
+    }
+
+    // ── Literals ─────────────────────────────────────────────────────────────────
+
+    private BoundExpr BindLiteral(LiteralExpr l, TypeSymbol? expected, bool negate = false, TextSpan? whole = null)
+    {
+        var target = expected is OptionalType o ? o.Inner : expected;
+        switch (l.Kind)
+        {
+            case LiteralKind.Integer:
+            {
+                var parsed = ParseInteger(l.Text);
+                if (negate) parsed = -parsed;
+                if (l.Suffix is { } suffix)
+                {
+                    TypeSymbol? suffixed = suffix.Text switch
+                    {
+                        "u" => parsed <= uint.MaxValue ? PrimitiveType.U32 : PrimitiveType.U64,
+                        "l" => PrimitiveType.I64,
+                        "ul" => PrimitiveType.U64,
+                        "f" => PrimitiveType.F32,
+                        _ => null,
+                    };
+                    if (suffixed is null)
+                    {
+                        Report(DiagnosticCodes.Unsupported, suffix.Span, [$"the unit suffix `{suffix.Text}`"]);
+                        return new BoundErrorExpr(l);
+                    }
+                    if (suffixed.IsFloat) return Literal(l, suffixed, (double)parsed);
+                    return CheckedIntegerLiteral(l, whole ?? l.Span, parsed, (PrimitiveType)suffixed);
+                }
+                if (target is PrimitiveType { IsFloat: true } ft) return Literal(l, ft, (double)parsed);
+                if (target is PrimitiveType { IsInteger: true } it) return CheckedIntegerLiteral(l, whole ?? l.Span, parsed, it);
+                var natural = parsed >= int.MinValue && parsed <= int.MaxValue ? PrimitiveType.I32
+                    : parsed >= long.MinValue && parsed <= long.MaxValue ? PrimitiveType.I64
+                    : PrimitiveType.U64;
+                return CheckedIntegerLiteral(l, whole ?? l.Span, parsed, natural);
+            }
+            case LiteralKind.Float:
+            {
+                var text = l.Text.Replace("_", "");
+                var value = double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture);
+                if (negate) value = -value;
+                if (l.Suffix is { Text: "f" } || target is PrimitiveType { Kind: PrimitiveKind.F32 })
+                    return Literal(l, PrimitiveType.F32, (double)(float)value);
+                if (l.Suffix is { } s)
+                {
+                    Report(DiagnosticCodes.Unsupported, s.Span, [$"the suffix `{s.Text}`"]);
+                    return new BoundErrorExpr(l);
+                }
+                return Literal(l, PrimitiveType.F64, value);
+            }
+            case LiteralKind.Char:
+            {
+                var value = LiteralDecoder.DecodeChar(l.Text);
+                if (value < 0) return new BoundErrorExpr(l);
+                if (target is PrimitiveType { Kind: PrimitiveKind.U8 } && value < 0x80)
+                    return Literal(l, PrimitiveType.U8, (Int128)value);
+                return Literal(l, PrimitiveType.Char, new Rune(value));
+            }
+            case LiteralKind.String:
+                return Literal(l, PrimitiveType.String, l.Text);
+            case LiteralKind.RawString:
+                return Literal(l, PrimitiveType.String, l.Text);
+            case LiteralKind.True:
+                return Literal(l, PrimitiveType.Bool, true);
+            case LiteralKind.False:
+                return Literal(l, PrimitiveType.Bool, false);
+            case LiteralKind.Null:
+                if (expected is OptionalType) return new BoundDefault(l, expected);
+                return new BoundLiteral(l, NullType.Instance, new ConstantValue("null"));
+            default:
+                Report(DiagnosticCodes.Unsupported, l.Span, [l.Kind == LiteralKind.CString ? "C string literals" : "UTF-16 string literals"]);
+                return new BoundErrorExpr(l);
+        }
+    }
+
+    private BoundExpr CheckedIntegerLiteral(LiteralExpr l, TextSpan span, BigInteger value, PrimitiveType type)
+    {
+        if (value < (BigInteger)type.Range.Min || value > (BigInteger)type.Range.Max)
+        {
+            Report(DiagnosticCodes.LiteralOutOfRange, span, [value.ToString(CultureInfo.InvariantCulture), $"`{type.Name}`"], help: RangeHelp(type));
+            return new BoundErrorExpr(l);
+        }
+        return Literal(l, type, (Int128)value);
+    }
+
+    private static BigInteger ParseInteger(string text)
+    {
+        text = text.Replace("_", "");
+        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            return BigInteger.Parse("0" + text[2..], NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture);
+        if (text.StartsWith("0b", StringComparison.OrdinalIgnoreCase))
+        {
+            BigInteger v = 0;
+            foreach (var ch in text[2..]) v = v * 2 + (ch - '0');
+            return v;
+        }
+        return BigInteger.Parse(text, CultureInfo.InvariantCulture);
+    }
+
+    private static bool IsUntypedLiteral(Expr e) => e switch
+    {
+        LiteralExpr { Kind: LiteralKind.Integer or LiteralKind.Float or LiteralKind.Char or LiteralKind.Null, Suffix: null } => true,
+        UnaryExpr { Op: UnaryOp.Negate or UnaryOp.Plus, Operand: var o } => IsUntypedLiteral(o),
+        ParenExpr p => IsUntypedLiteral(p.Inner),
+        BinaryExpr { Op: not (BinaryOp.Lt or BinaryOp.Gt or BinaryOp.Le or BinaryOp.Ge or BinaryOp.Eq or BinaryOp.Ne or BinaryOp.LogicalAnd or BinaryOp.LogicalOr or BinaryOp.Coalesce) } b =>
+            IsUntypedLiteral(b.Left) && IsUntypedLiteral(b.Right),
+        _ => false,
+    };
+
+    // ── Names ────────────────────────────────────────────────────────────────────
+
+    private BoundExpr BindName(NameExpr n)
+    {
+        var name = n.Name.Text;
+        if (n.TypeArgs.Length > 0)
+        {
+            var t = _types.Resolve(new NamedType(n.Span, [n.Name], n.TypeArgs));
+            return t.IsError ? new BoundErrorExpr(n) : new BoundTypeRef(n, t);
+        }
+        if (_scope.Lookup(name) is { } local)
+        {
+            if (local.Kind == LocalKind.Const && local.Constant is { } c)
+                return new BoundLiteral(n, local.Type, c) { Constant = c };
+            return new BoundLocal(n, local);
+        }
+        if (_struct is not null && LookupMember(_struct, name) is { } member)
+            return BindImplicitThisMember(n, member);
+        if (Module.Constants.TryGetValue(name, out var constant)) return ConstantRef(n, constant);
+        if (Module.Functions.TryGetValue(name, out var fns)) return new BoundMethodGroup(n, null, fns[0]);
+        if (Module.Types.TryGetValue(name, out var type))
+            return new BoundTypeRef(n, _types.Resolve(new NamedType(n.Span, [n.Name], [])));
+        if (_file.Imports.TryGetValue(name, out var module)) return new BoundModuleRef(n, module);
+        if (_c.Builtins.Find(name) is { } builtin) return new BoundMethodGroup(n, null, builtin);
+        if (PrimitiveType.ByName.TryGetValue(name, out var primitive)) return new BoundTypeRef(n, primitive);
+        if (name is "List" or "Span" or "Arena" or "StrBuf")
+            return new BoundTypeRef(n, _types.Resolve(new NamedType(n.Span, [n.Name], [])));
+        ReportUndefined(n.Name);
+        return new BoundErrorExpr(n);
+    }
+
+    private void ReportUndefined(Name name)
+    {
+        var candidates = new List<string>();
+        for (var s = _scope; s is not null; s = s.Parent) candidates.AddRange(s.Locals.Keys);
+        if (_struct is not null)
+        {
+            candidates.AddRange(_struct.Fields.Select(f => f.Name));
+            candidates.AddRange(_struct.Properties.Select(f => f.Name));
+            candidates.AddRange(_struct.Methods.Select(f => f.Name));
+        }
+        candidates.AddRange(Module.Functions.Keys);
+        candidates.AddRange(Module.Constants.Keys);
+        candidates.AddRange(Module.Types.Keys);
+        candidates.AddRange(_file.Imports.Keys);
+        candidates.AddRange(["print", "panic", "assert"]);
+        var suggestion = Suggest(name.Text, candidates);
+        Report(DiagnosticCodes.UndefinedName, name.Span, [name.Text],
+            help: suggestion is null ? null : $"did you mean `{suggestion}`?",
+            fix: suggestion is null ? null : new Fix(name.Span, suggestion));
+    }
+
+    internal static string? Suggest(string name, IEnumerable<string> candidates)
+    {
+        string? best = null;
+        var bestDistance = int.MaxValue;
+        foreach (var c in candidates.Distinct())
+        {
+            if (c == name) continue;
+            var d = Distance(name.ToLowerInvariant(), c.ToLowerInvariant());
+            if (d < bestDistance) (best, bestDistance) = (c, d);
+        }
+        return best is not null && bestDistance <= Math.Max(1, name.Length / 3) ? best : null;
+    }
+
+    private static int Distance(string a, string b)
+    {
+        var d = new int[a.Length + 1, b.Length + 1];
+        for (var i = 0; i <= a.Length; i++) d[i, 0] = i;
+        for (var j = 0; j <= b.Length; j++) d[0, j] = j;
+        for (var i = 1; i <= a.Length; i++)
+            for (var j = 1; j <= b.Length; j++)
+                d[i, j] = Math.Min(Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1), d[i - 1, j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+        return d[a.Length, b.Length];
+    }
+
+    private BoundExpr ConstantRef(Node syntax, ConstSymbol c)
+    {
+        _c.BindConstant(c);
+        if (c.Value is null) return new BoundErrorExpr(syntax);
+        return new BoundLiteral(syntax, c.Type, c.Value) { Constant = c.Value };
+    }
+
+    private static Symbol? LookupMember(StructSymbol s, string name) =>
+        (Symbol?)s.FindField(name) ?? (Symbol?)s.FindProperty(name) ?? s.FindMethods(name).FirstOrDefault();
+
+    private BoundExpr BindImplicitThisMember(NameExpr n, Symbol member)
+    {
+        var inInstance = _fn is { IsStatic: false, Kind: FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor };
+        if (member is FunctionSymbol { IsStatic: true } staticMethod) return new BoundMethodGroup(n, null, staticMethod);
+        if (!inInstance)
+        {
+            Report(DiagnosticCodes.InstanceMemberWithoutThis, n.Span, [n.Name.Text],
+                help: _fn is { IsStatic: true } ? "a `static` method has no `this`" : "field defaults cannot read other fields");
+            return new BoundErrorExpr(n);
+        }
+        var self = new BoundThis(n, _struct!);
+        return member switch
+        {
+            FieldSymbol f => new BoundField(n, self, f),
+            PropertySymbol p => new BoundCall(n, p.Getter, self, [], p.Type),
+            FunctionSymbol m => new BoundMethodGroup(n, self, m),
+            _ => new BoundErrorExpr(n),
+        };
+    }
+
+    // ── Members ──────────────────────────────────────────────────────────────────
+
+    private BoundExpr BindMember(MemberExpr m)
+    {
+        if (m.NullConditional)
+        {
+            Report(DiagnosticCodes.Unsupported, m.Span, ["`?.`"]);
+            return new BoundErrorExpr(m);
+        }
+        var target = BindExprOrType(m.Target);
+        var name = m.Member.Text;
+        switch (target)
+        {
+            case BoundErrorExpr:
+                return target;
+            case BoundModuleRef mod:
+                return BindModuleMember(m, mod.Module);
+            case BoundTypeRef { Referenced: ErrorSetSymbol set }:
+                if (set.Find(name) is { } variant) return new BoundErrorVariant(m, variant);
+                Report(DiagnosticCodes.UnknownVariant, m.Member.Span, [name, set.Name],
+                    help: Suggest(name, set.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
+                return new BoundErrorExpr(m);
+            case BoundTypeRef { Referenced: StructSymbol s }:
+            {
+                var method = s.FindMethods(name).FirstOrDefault();
+                if (method is { IsStatic: true })
+                {
+                    CheckAccess(method.Access, method.Owner, method.Module, m.Member);
+                    return new BoundMethodGroup(m, null, method);
+                }
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, s.Name],
+                    help: method is not null || s.FindField(name) is not null || s.FindProperty(name) is not null
+                        ? $"`{name}` belongs to a `{s.Name}` value, not the type" : null);
+                return new BoundErrorExpr(m);
+            }
+            case BoundTypeRef t:
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, t.Referenced.DisplayName]);
+                return new BoundErrorExpr(m);
+        }
+        return BindValueMember(m, target, m.Member);
+    }
+
+    private BoundExpr BindModuleMember(MemberExpr m, ModuleSymbol module)
+    {
+        var name = m.Member.Text;
+        if (module.Constants.TryGetValue(name, out var c))
+        {
+            CheckAccess(Compilation.AccessOf(c.Decl is { } ? Modifiers.None : Modifiers.None), null, module, m.Member, publicRequired: true);
+            return ConstantRef(m, c);
+        }
+        if (module.Functions.TryGetValue(name, out var fns))
+        {
+            CheckAccess(fns[0].Access, null, module, m.Member);
+            return new BoundMethodGroup(m, null, fns[0]);
+        }
+        if (module.Types.ContainsKey(name))
+            return new BoundTypeRef(m, _types.Resolve(new NamedType(m.Span, [((NameExpr)m.Target).Name, m.Member], [])));
+        Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, "module " + module.Name]);
+        return new BoundErrorExpr(m);
+    }
+
+    /// <summary>Reports a member the current code may not see. Module constants are always module-private in v0.1.</summary>
+    private void CheckAccess(Accessibility access, StructSymbol? owner, ModuleSymbol module, Name name, bool publicRequired = false)
+    {
+        if (publicRequired && module != Module)
+        {
+            Report(DiagnosticCodes.NotVisible, name.Span, [name.Text], label: "module constants are not visible outside their module");
+            return;
+        }
+        switch (access)
+        {
+            case Accessibility.Private when owner is not null && owner != _struct:
+                Report(DiagnosticCodes.NotVisible, name.Span, [name.Text], label: $"`private` to `{owner.Name}`");
+                break;
+            case Accessibility.Module or Accessibility.Private when module != Module && module != _c.Builtins.Module:
+                Report(DiagnosticCodes.NotVisible, name.Span, [name.Text], label: "not `public`",
+                    help: $"mark `{name.Text}` `public` to use it from another module");
+                break;
+        }
+    }
+
+    private BoundExpr BindValueMember(Node syntax, BoundExpr target, Name member)
+    {
+        var name = member.Text;
+        switch (target.Type)
+        {
+            case StructSymbol s:
+            {
+                if (s.FindField(name) is { } f)
+                {
+                    CheckAccess(f.Access, s, s.Module, member);
+                    return new BoundField(syntax, target, f);
+                }
+                if (s.FindProperty(name) is { } p)
+                {
+                    CheckAccess(p.Access, s, s.Module, member);
+                    return new BoundCall(syntax, p.Getter, target, [], p.Type);
+                }
+                if (s.FindMethods(name).FirstOrDefault() is { } method)
+                {
+                    CheckAccess(method.Access, s, s.Module, member);
+                    return new BoundMethodGroup(syntax, method.IsStatic ? null : target, method);
+                }
+                break;
+            }
+            case Symbols.TupleType t:
+            {
+                var index = t.IndexOf(name);
+                if (index >= 0) return new BoundTupleElement(syntax, target, index, t.Fields[index].Type);
+                break;
+            }
+            case OptionalType o:
+                Report(DiagnosticCodes.MemberOfOptional, member.Span, [name, o.DisplayName],
+                    help: $"check it first: `if ({Source.GetText(target.Syntax.Span)} is {{ }} value) {{ … value.{name} … }}`");
+                return new BoundErrorExpr(syntax);
+            case ErrorType:
+                return new BoundErrorExpr(syntax);
+        }
+        if (BuiltinMembers.Property(target.Type, name) is { } builtin)
+            return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
+        if (BuiltinMembers.HasMethod(target.Type, name))
+            return new BoundBuiltinGroup(syntax, target, name);
+        Report(DiagnosticCodes.UnknownMember, member.Span, [name, target.Type.DisplayName],
+            help: MemberSuggestion(target.Type, name));
+        return new BoundErrorExpr(syntax);
+    }
+
+    private static string? MemberSuggestion(TypeSymbol type, string name)
+    {
+        if (name is "Length" or "Count" or "count" or "size" or "len") return "the size of anything is `length`";
+        IEnumerable<string> names = type switch
+        {
+            StructSymbol s => s.Fields.Select(f => f.Name).Concat(s.Properties.Select(p => p.Name)).Concat(s.Methods.Select(m => m.Name)),
+            _ => BuiltinMembers.Names(type),
+        };
+        return Suggest(name, names) is { } s2 ? $"did you mean `{s2}`?" : null;
+    }
+
+    private BoundExpr BindTargetMember(TargetMemberExpr t, TypeSymbol? expected)
+    {
+        var target = expected is OptionalType o ? o.Inner : expected;
+        switch (target)
+        {
+            case ErrorSetSymbol set:
+                if (set.Find(t.Member.Text) is { } v) return new BoundErrorVariant(t, v);
+                Report(DiagnosticCodes.UnknownVariant, t.Member.Span, [t.Member.Text, set.Name]);
+                return new BoundErrorExpr(t);
+            case ErrorUnionType u:
+            {
+                var matches = u.Sets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null).ToList();
+                if (matches.Count == 1) return new BoundErrorVariant(t, matches[0]!);
+                if (matches.Count > 1)
+                    Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);
+                else
+                    Report(DiagnosticCodes.UnknownVariant, t.Member.Span, [t.Member.Text, u.DisplayName]);
+                return new BoundErrorExpr(t);
+            }
+            case StructSymbol s when s.FindMethods(t.Member.Text).FirstOrDefault() is { IsStatic: true } m:
+                return new BoundMethodGroup(t, null, m);
+            case null or ErrorType:
+                if (target is null)
+                    Report(DiagnosticCodes.NoTargetType, t.Span, [t.Member.Text]);
+                return new BoundErrorExpr(t);
+            default:
+                Report(DiagnosticCodes.UnknownMember, t.Member.Span, [t.Member.Text, target.DisplayName]);
+                return new BoundErrorExpr(t);
+        }
+    }
+
+    // ── Indexing ─────────────────────────────────────────────────────────────────
+
+    private BoundExpr BindIndex(IndexExpr i)
+    {
+        var target = BindExpr(i.Target);
+        if (target.Type.IsError) { BindExpr(i.Index); return new BoundErrorExpr(i); }
+        if (target.Type.IsString)
+        {
+            if (i.Index is RangeExpr range) return BindSlice(i, target, range, PrimitiveType.String);
+            ReportStringIndexer(i);
+            BindExpr(i.Index);
+            return new BoundErrorExpr(i);
+        }
+        TypeSymbol? element = target.Type switch
+        {
+            SpanType s => s.Element,
+            ListType l => l.Element,
+            Symbols.ArrayType a => a.Element,
+            _ => null,
+        };
+        if (element is null)
+        {
+            Report(DiagnosticCodes.NotIndexable, i.Target.Span, [target.Type.DisplayName]);
+            BindExpr(i.Index);
+            return new BoundErrorExpr(i);
+        }
+        if (i.Index is RangeExpr r) return BindSlice(i, target, r, new SpanType(element));
+        var fromEnd = i.Index is UnaryExpr { Op: UnaryOp.FromEnd };
+        var indexSyntax = i.Index is UnaryExpr { Op: UnaryOp.FromEnd } u ? u.Operand : i.Index;
+        var index = BindIndexValue(indexSyntax);
+        if (target.Type is Symbols.ArrayType array && index.Constant is { Value: Int128 n })
+        {
+            var effective = fromEnd ? array.Length - n : n;
+            if (effective < 0 || effective >= array.Length || (fromEnd && n == 0))
+                Report(DiagnosticCodes.IndexOutOfRange, i.Index.Span, [fromEnd ? "^" + n : n.ToString(), array.DisplayName]);
+        }
+        return new BoundIndex(i, target, index, fromEnd, element);
+    }
+
+    private BoundExpr BindIndexValue(Expr syntax)
+    {
+        var index = BindExpr(syntax, PrimitiveType.I64);
+        if (index.Type.IsError) return index;
+        if (!index.Type.IsInteger)
+        {
+            Report(DiagnosticCodes.TypeMismatch, syntax.Span, [index.Type.DisplayName, "an integer index"]);
+            return new BoundErrorExpr(syntax);
+        }
+        if (index.Type.IsUnsignedInteger && ((PrimitiveType)index.Type).Bits == 64)
+            return new BoundConversion(syntax, index, PrimitiveType.I64, ConversionKind.NumericCast);
+        return Convert(index, PrimitiveType.I64, syntax.Span);
+    }
+
+    private BoundExpr BindSlice(IndexExpr i, BoundExpr target, RangeExpr r, TypeSymbol type)
+    {
+        BoundExpr? Bound(Expr? e, out bool fromEnd)
+        {
+            fromEnd = e is UnaryExpr { Op: UnaryOp.FromEnd };
+            if (e is null) return null;
+            return BindIndexValue(e is UnaryExpr { Op: UnaryOp.FromEnd } u ? u.Operand : e);
+        }
+        var start = Bound(r.Start, out var startFromEnd);
+        var end = Bound(r.End, out var endFromEnd);
+        return new BoundSlice(i, target, start, startFromEnd, end, endFromEnd, r.Inclusive, type);
+    }
+
+    /// <summary>BYN2201: strings have no indexer (spec §3.2); offer the four alternatives.</summary>
+    private void ReportStringIndexer(IndexExpr i)
+    {
+        var s = Source.GetText(i.Target.Span);
+        var index = Source.GetText(i.Index.Span);
+        Report(DiagnosticCodes.StringIndexer, TextSpan.FromBounds(i.Target.Span.End, i.Span.End), [],
+            label: "strings have no indexer",
+            help: $"""
+                `string` is UTF-8, so position {index} is not a character. Choose what you mean:
+                  `{s}.bytes[{index}]`   the byte at offset {index} (applied below)
+                  `{s}.runeAt({index})`  the character starting at byte offset {index}
+                  `for (let c in {s})`   each character in turn
+                  `{s}.graphemes`        user-perceived characters
+                """,
+            fix: new Fix(i.Span, $"{s}.bytes[{index}]"));
+    }
+
+    // ── Operators ────────────────────────────────────────────────────────────────
+
+    private BoundExpr BindUnary(UnaryExpr u, TypeSymbol? expected)
+    {
+        if (u.Op == UnaryOp.Negate && u.Operand is LiteralExpr { Kind: LiteralKind.Integer or LiteralKind.Float } lit)
+            return BindLiteral(lit, expected, negate: true, whole: u.Span) is var l && l is BoundLiteral bl ? bl with { Syntax = u } : l;
+        if (u.Op == UnaryOp.FromEnd)
+        {
+            Report(DiagnosticCodes.FromEndOutsideIndex, u.Span, []);
+            return new BoundErrorExpr(u);
+        }
+        var operand = BindExpr(u.Operand, u.Op == UnaryOp.Not ? PrimitiveType.Bool : expected);
+        var t = operand.Type;
+        if (t.IsError) return new BoundErrorExpr(u);
+        var ok = u.Op switch
+        {
+            UnaryOp.Not => t.IsBool,
+            UnaryOp.Complement => t.IsInteger,
+            UnaryOp.Negate => t.IsSignedInteger || t.IsFloat,
+            UnaryOp.Plus => t.IsNumeric,
+            _ => false,
+        };
+        if (!ok)
+        {
+            Report(DiagnosticCodes.BadUnaryOperand, u.Span, [UnaryText(u.Op), t.DisplayName],
+                help: u.Op == UnaryOp.Negate && t.IsUnsignedInteger ? "unsigned values cannot be negative; cast to a signed type first" : null);
+            return new BoundErrorExpr(u);
+        }
+        var result = new BoundUnary(u, u.Op, operand, t);
+        if (operand.Constant is { } c && ConstantFolding.Unary(u.Op, c, t) is { } folded)
+        {
+            if (folded.Value is Int128 n && t is PrimitiveType p && !Fits(n, p))
+            {
+                Report(DiagnosticCodes.ConstantOverflow, u.Span, [t.DisplayName]);
+                return new BoundErrorExpr(u);
+            }
+            return result with { Constant = folded };
+        }
+        return result;
+    }
+
+    private static string UnaryText(UnaryOp op) => op switch
+    {
+        UnaryOp.Not => "!",
+        UnaryOp.Complement => "~",
+        UnaryOp.Negate => "-",
+        UnaryOp.Plus => "+",
+        _ => "^",
+    };
+
+    internal static string BinaryText(BinaryOp op) => op switch
+    {
+        BinaryOp.Add => "+", BinaryOp.Sub => "-", BinaryOp.Mul => "*", BinaryOp.Div => "/", BinaryOp.Rem => "%",
+        BinaryOp.AddWrap => "+%", BinaryOp.SubWrap => "-%", BinaryOp.MulWrap => "*%",
+        BinaryOp.AddSat => "+|", BinaryOp.SubSat => "-|", BinaryOp.MulSat => "*|",
+        BinaryOp.Shl => "<<", BinaryOp.Shr => ">>",
+        BinaryOp.Lt => "<", BinaryOp.Gt => ">", BinaryOp.Le => "<=", BinaryOp.Ge => ">=", BinaryOp.Eq => "==", BinaryOp.Ne => "!=",
+        BinaryOp.BitAnd => "&", BinaryOp.BitOr => "|", BinaryOp.BitXor => "^",
+        BinaryOp.LogicalAnd => "&&", BinaryOp.LogicalOr => "||", BinaryOp.Coalesce => "??",
+        _ => op.ToString(),
+    };
+
+    internal static bool IsComparison(BinaryOp op) => op is BinaryOp.Lt or BinaryOp.Gt or BinaryOp.Le or BinaryOp.Ge or BinaryOp.Eq or BinaryOp.Ne;
+
+    private BoundExpr BindBinary(BinaryExpr b, TypeSymbol? expected)
+    {
+        switch (b.Op)
+        {
+            case BinaryOp.LogicalAnd or BinaryOp.LogicalOr:
+            {
+                var l = BindConverted(b.Left, PrimitiveType.Bool);
+                var r = BindConverted(b.Right, PrimitiveType.Bool);
+                var result = new BoundBinary(b, b.Op, l, r, PrimitiveType.Bool);
+                if (l.Constant is { } lc && r.Constant is { } rc)
+                    return result with { Constant = ConstantFolding.Binary(b.Op, lc, rc, PrimitiveType.Bool) };
+                return result;
+            }
+            case BinaryOp.Coalesce:
+                return BindCoalesce(b, expected);
+        }
+
+        var arithmetic = !IsComparison(b.Op);
+        BoundExpr left, right;
+        if (IsUntypedLiteral(b.Left) && !IsUntypedLiteral(b.Right))
+        {
+            right = BindExpr(b.Right, arithmetic ? expected : null);
+            left = BindExpr(b.Left, right.Type is OptionalType o ? o.Inner : right.Type);
+        }
+        else
+        {
+            left = BindExpr(b.Left, arithmetic ? expected : null);
+            var hint = b.Op is BinaryOp.Shl or BinaryOp.Shr ? PrimitiveType.I32 : left.Type is OptionalType o ? o.Inner : left.Type;
+            right = BindExpr(b.Right, hint);
+        }
+        if (left.Type.IsError || right.Type.IsError) return new BoundErrorExpr(b);
+
+        if (b.Op is BinaryOp.Shl or BinaryOp.Shr)
+        {
+            if (!left.Type.IsInteger || !right.Type.IsInteger)
+                return BadOperands(b, left, right);
+            var shift = new BoundBinary(b, b.Op, left, right, left.Type);
+            return Fold(shift, left, right, left.Type);
+        }
+
+        var common = Conversions.Common(left.Type, right.Type);
+        if (common is null && left.Constant is { Value: Int128 } && right.Type.IsInteger) common = right.Type;
+        if (common is null && right.Constant is { Value: Int128 } && left.Type.IsInteger) common = left.Type;
+        if (common is null) return BadOperands(b, left, right);
+
+        if (common.IsString && b.Op == BinaryOp.Add)
+        {
+            if (left.Constant is { Value: string ls } && right.Constant is { Value: string rs })
+                return Literal(b, PrimitiveType.String, ls + rs) with { Syntax = b };
+            Report(DiagnosticCodes.StringConcatenation, b.Span, [],
+                help: "use interpolation into an output: `print($\"{a}{b}\")` or `buf.append($\"{a}{b}\")`");
+            return new BoundErrorExpr(b);
+        }
+
+        if (!OperatorApplies(b.Op, common)) return BadOperands(b, left, right);
+        left = Convert(left, common, b.Left.Span);
+        right = Convert(right, common, b.Right.Span);
+        var type = IsComparison(b.Op) ? PrimitiveType.Bool : common;
+        var bound = new BoundBinary(b, b.Op, left, right, type);
+        return Fold(bound, left, right, common);
+    }
+
+    private BoundExpr Fold(BoundBinary bound, BoundExpr left, BoundExpr right, TypeSymbol operandType)
+    {
+        if (left.Constant is not { } lc || right.Constant is not { } rc) return bound;
+        var folded = ConstantFolding.Binary(bound.Op, lc, rc, operandType);
+        if (folded is null)
+        {
+            if (bound.Op is BinaryOp.Div or BinaryOp.Rem && rc.Value is Int128 { } z && z == 0)
+            {
+                Report(DiagnosticCodes.DivisionByZero, bound.Syntax.Span, []);
+                return new BoundErrorExpr(bound.Syntax);
+            }
+            return bound;
+        }
+        if (folded.Value is Int128 n && bound.Type is PrimitiveType { IsInteger: true } p && !Fits(n, p))
+        {
+            Report(DiagnosticCodes.ConstantOverflow, bound.Syntax.Span, [p.Name]);
+            return new BoundErrorExpr(bound.Syntax);
+        }
+        return bound with { Constant = folded };
+    }
+
+    private static bool OperatorApplies(BinaryOp op, TypeSymbol t) => op switch
+    {
+        BinaryOp.Add or BinaryOp.Sub or BinaryOp.Mul or BinaryOp.Div or BinaryOp.Rem => t.IsNumeric,
+        BinaryOp.AddWrap or BinaryOp.SubWrap or BinaryOp.MulWrap or BinaryOp.AddSat or BinaryOp.SubSat or BinaryOp.MulSat => t.IsInteger,
+        BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor => t.IsInteger || t.IsBool,
+        BinaryOp.Lt or BinaryOp.Gt or BinaryOp.Le or BinaryOp.Ge => t.IsNumeric || t == PrimitiveType.Char || t.IsString,
+        BinaryOp.Eq or BinaryOp.Ne => IsEquatable(t),
+        _ => false,
+    };
+
+    internal static bool IsEquatable(TypeSymbol t) => t switch
+    {
+        PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
+        OptionalType o => IsEquatable(o.Inner),
+        ErrorSetSymbol or ErrorUnionType => true,
+        StructSymbol s => s.Fields.All(f => IsEquatable(f.Type)),
+        Symbols.TupleType tt => tt.Fields.All(f => IsEquatable(f.Type)),
+        Symbols.ArrayType a => IsEquatable(a.Element),
+        _ => false,
+    };
+
+    private BoundExpr BadOperands(BinaryExpr b, BoundExpr left, BoundExpr right)
+    {
+        string? help = null;
+        if (left.Type.IsNumeric && right.Type.IsNumeric)
+            help = $"convert one side explicitly, e.g. `({(Conversions.IsWidening((PrimitiveType)right.Type, PrimitiveType.I64) && left.Type.IsSignedInteger ? left.Type : right.Type).DisplayName})…`; mixed signedness never converts implicitly";
+        else if (left.Type == PrimitiveType.Char && right.Type.IsInteger)
+            help = "a `char` is a Unicode scalar, not a number; use `(u32)c` for its value";
+        Report(DiagnosticCodes.BadBinaryOperands, b.Span, [BinaryText(b.Op), left.Type.DisplayName, right.Type.DisplayName], help: help);
+        return new BoundErrorExpr(b);
+    }
+
+    private BoundExpr BindCoalesce(BinaryExpr b, TypeSymbol? expected)
+    {
+        var left = BindExpr(b.Left, expected is null ? null : new OptionalType(expected));
+        if (left.Type.IsError) { BindExpr(b.Right); return new BoundErrorExpr(b); }
+        if (left.Type is not OptionalType o)
+        {
+            Report(DiagnosticCodes.CoalesceNotOptional, b.Left.Span, [left.Type.DisplayName]);
+            BindExpr(b.Right);
+            return new BoundErrorExpr(b);
+        }
+        var right = BindExpr(b.Right, o.Inner);
+        if (right.Type.IsNever) return new BoundCoalesce(b, left, right, o.Inner);
+        if (right.Type is OptionalType && right.Type.Equals(o))
+            return new BoundCoalesce(b, left, right, o);
+        right = Convert(right, o.Inner, b.Right.Span);
+        return new BoundCoalesce(b, left, right, o.Inner);
+    }
+
+    private BoundExpr BindRange(RangeExpr r, TypeSymbol? expected)
+    {
+        if (r.Start is null || r.End is null)
+        {
+            Report(DiagnosticCodes.OpenRange, r.Span, [], help: "open ranges (`a..`, `..b`) are only valid inside `[ ]`");
+            return new BoundErrorExpr(r);
+        }
+        var hint = expected is RangeType rt ? rt.Element : null;
+        BoundExpr start, end;
+        if (IsUntypedLiteral(r.Start) && !IsUntypedLiteral(r.End))
+        {
+            end = BindExpr(r.End, hint);
+            start = BindExpr(r.Start, end.Type);
+        }
+        else
+        {
+            start = BindExpr(r.Start, hint);
+            end = BindExpr(r.End, start.Type);
+        }
+        if (start.Type.IsError || end.Type.IsError) return new BoundErrorExpr(r);
+        var common = Conversions.Common(start.Type, end.Type);
+        if (common is null || !(common.IsInteger || common == PrimitiveType.Char))
+        {
+            Report(DiagnosticCodes.BadBinaryOperands, r.Span, [r.Inclusive ? "..=" : "..", start.Type.DisplayName, end.Type.DisplayName],
+                help: "range ends must be integers or chars of the same type");
+            return new BoundErrorExpr(r);
+        }
+        return new BoundRange(r, Convert(start, common, r.Start.Span), Convert(end, common, r.End.Span), r.Inclusive, new RangeType(common));
+    }
+
+    private BoundExpr BindConditional(ConditionalExpr c, TypeSymbol? expected)
+    {
+        var cond = BindCondition(c.Condition);
+        var a = BindExpr(c.WhenTrue, expected);
+        var b = BindExpr(c.WhenFalse, expected ?? a.Type);
+        var type = expected is not null && Conversions.Implicit(a.Type, expected) is not null && Conversions.Implicit(b.Type, expected) is not null
+            ? expected
+            : Conversions.Common(a.Type, b.Type);
+        if (type is null)
+        {
+            Report(DiagnosticCodes.BranchTypeMismatch, c.Span, [a.Type.DisplayName, b.Type.DisplayName]);
+            return new BoundErrorExpr(c);
+        }
+        if (type is NullType)
+        {
+            Report(DiagnosticCodes.CannotInferType, c.Span, ["null"]);
+            return new BoundErrorExpr(c);
+        }
+        a = Convert(a, type, c.WhenTrue.Span);
+        b = Convert(b, type, c.WhenFalse.Span);
+        var result = new BoundConditional(c, cond, a, b, type);
+        if (cond.Constant is { Value: bool v} && (v ? a : b).Constant is { } k) return result with { Constant = k };
+        return result;
+    }
+
+    private BoundExpr BindCast(CastExpr c)
+    {
+        var target = _types.Resolve(c.Type);
+        var operand = BindExpr(c.Operand, target.IsNumeric ? null : target);
+        if (target.IsError || operand.Type.IsError) return new BoundErrorExpr(c);
+        if (operand.Constant is { Value: Int128 } && target.IsInteger && operand.Syntax is LiteralExpr or UnaryExpr)
+        {
+            // `(u8)300` is a compile-time error rather than a runtime trap.
+            return Convert(operand, target, c.Span);
+        }
+        var kind = Conversions.Explicit(operand.Type, target);
+        if (kind is null)
+        {
+            Report(DiagnosticCodes.InvalidCast, c.Span, [operand.Type.DisplayName, target.DisplayName]);
+            return new BoundErrorExpr(c);
+        }
+        if (kind == ConversionKind.Identity) return operand;
+        if (kind == ConversionKind.NullToOptional) return new BoundDefault(c, target);
+        var conv = new BoundConversion(c, operand, target, kind.Value);
+        if (operand.Constant is { } k && ConstantFolding.Cast(k, operand.Type, target) is { } folded) return conv with { Constant = folded };
+        return conv;
+    }
+
+    // ── Composite values ─────────────────────────────────────────────────────────
+
+    private BoundExpr BindStructLiteral(StructLiteralExpr s, TypeSymbol? expected)
+    {
+        TypeSymbol type;
+        if (s.Type is { } t) type = _types.Resolve(t);
+        else if (expected is OptionalType { Inner: StructSymbol inner }) type = inner;
+        else if (expected is not null) type = expected;
+        else
+        {
+            Report(DiagnosticCodes.NoTargetType, s.Span, ["{ … }"], help: "name the type: `Point { x = 1 }`");
+            return new BoundErrorExpr(s);
+        }
+        if (type.IsError) return new BoundErrorExpr(s);
+        if (type is not StructSymbol st)
+        {
+            Report(DiagnosticCodes.NotAStruct, s.Span, [type.DisplayName]);
+            return new BoundErrorExpr(s);
+        }
+        if (st.Constructors.Count > 0 && st != _struct)
+        {
+            Report(DiagnosticCodes.LiteralWithConstructor, s.Span, [st.Name],
+                help: $"call the constructor: `{st.Name}({string.Join(", ", st.Constructors[0].Parameters.Select(p => p.Name + ": …"))})`");
+            return new BoundErrorExpr(s);
+        }
+        var values = new BoundExpr?[st.Fields.Count];
+        foreach (var init in s.Fields)
+        {
+            var field = st.FindField(init.Name.Text);
+            if (field is null)
+            {
+                Report(DiagnosticCodes.UnknownMember, init.Name.Span, [init.Name.Text, st.Name],
+                    help: Suggest(init.Name.Text, st.Fields.Select(f => f.Name)) is { } sug ? $"did you mean `{sug}`?" : null);
+                BindExpr(init.Value);
+                continue;
+            }
+            CheckAccess(field.Access, st, st.Module, init.Name);
+            if (values[field.Index] is not null)
+            {
+                Report(DiagnosticCodes.DuplicateFieldInit, init.Name.Span, [field.Name]);
+                continue;
+            }
+            values[field.Index] = BindConverted(init.Value, field.Type);
+        }
+        var missing = new List<string>();
+        for (var i = 0; i < values.Length; i++)
+        {
+            if (values[i] is not null) continue;
+            var f = st.Fields[i];
+            if (f.IsRequired || !f.HasDefault)
+            {
+                missing.Add(f.Name);
+                values[i] = new BoundErrorExpr(s);
+            }
+            else
+            {
+                values[i] = f.Default ?? new BoundErrorExpr(s);
+            }
+        }
+        if (missing.Count > 0)
+        {
+            var first = st.FindField(missing[0])!;
+            Report(DiagnosticCodes.MissingFields, s.Span, [st.Name, string.Join("`, `", missing)],
+                label: missing.Count == 1 && first.IsRequired ? "`" + first.Name + "` is `required`" : null,
+                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + " = …"))} }}`");
+            return new BoundErrorExpr(s);
+        }
+        return new BoundStructLiteral(s, st, values!);
+    }
+
+    private BoundExpr BindWith(WithExpr w)
+    {
+        var target = BindExpr(w.Target);
+        if (target.Type.IsError) return new BoundErrorExpr(w);
+        if (target.Type is not StructSymbol st)
+        {
+            Report(DiagnosticCodes.NotAStruct, w.Target.Span, [target.Type.DisplayName]);
+            return new BoundErrorExpr(w);
+        }
+        var updates = new List<(FieldSymbol, BoundExpr)>();
+        foreach (var init in w.Fields)
+        {
+            var field = st.FindField(init.Name.Text);
+            if (field is null)
+            {
+                Report(DiagnosticCodes.UnknownMember, init.Name.Span, [init.Name.Text, st.Name]);
+                continue;
+            }
+            CheckAccess(field.Access, st, st.Module, init.Name);
+            if (updates.Any(u => u.Item1 == field))
+            {
+                Report(DiagnosticCodes.DuplicateFieldInit, init.Name.Span, [field.Name]);
+                continue;
+            }
+            updates.Add((field, BindConverted(init.Value, field.Type)));
+        }
+        return new BoundWith(w, target, updates.ToArray());
+    }
+
+    private BoundExpr BindCollection(CollectionExpr c, TypeSymbol? expected)
+    {
+        var target = expected is OptionalType o ? o.Inner : expected;
+        TypeSymbol? element = target switch
+        {
+            ListType l => l.Element,
+            SpanType s => s.Element,
+            Symbols.ArrayType a => a.Element,
+            _ => null,
+        };
+        if (element is null)
+        {
+            if (target is null || target.IsError)
+            {
+                if (target is null)
+                    Report(DiagnosticCodes.NoTargetType, c.Span, ["[ … ]"], help: "declare the type: `List<i64> xs = [1, 2];`");
+            }
+            else
+            {
+                Report(DiagnosticCodes.TypeMismatch, c.Span, ["a collection literal", target.DisplayName]);
+            }
+            foreach (var e in c.Elements) BindExpr(e);
+            return new BoundErrorExpr(c);
+        }
+        var elements = c.Elements.Select(e => BindConverted(e, element)).ToArray();
+        if (target is Symbols.ArrayType at && at.Length != elements.Length)
+            Report(DiagnosticCodes.ArrayLengthMismatch, c.Span, [at.DisplayName, elements.Length]);
+        return new BoundCollection(c, target!, elements);
+    }
+
+    private BoundExpr BindTuple(TupleExpr t, TypeSymbol? expected)
+    {
+        var target = expected is OptionalType o ? o.Inner : expected;
+        if (target is Symbols.TupleType tt && tt.Fields.Count == t.Elements.Length)
+        {
+            var values = new BoundExpr[t.Elements.Length];
+            for (var i = 0; i < values.Length; i++)
+            {
+                var e = t.Elements[i];
+                if (e.Name is { } n && tt.Fields[i].Name is { } fieldName && n.Text != fieldName)
+                    Report(DiagnosticCodes.TupleNameMismatch, n.Span, [n.Text, fieldName]);
+                values[i] = BindConverted(e.Value, tt.Fields[i].Type);
+            }
+            return new BoundTuple(t, tt, values);
+        }
+        var elements = t.Elements.Select(e => BindExpr(e.Value)).ToArray();
+        if (elements.Any(e => e.Type.IsError)) return new BoundErrorExpr(t);
+        var fields = new List<TupleField>();
+        for (var i = 0; i < elements.Length; i++)
+        {
+            var type = elements[i].Type;
+            if (type is NullType or PrimitiveType { Kind: PrimitiveKind.Void or PrimitiveKind.Never })
+            {
+                Report(DiagnosticCodes.CannotInferType, t.Elements[i].Span, [Source.GetText(t.Elements[i].Span)]);
+                return new BoundErrorExpr(t);
+            }
+            fields.Add(new TupleField(t.Elements[i].Name?.Text, type));
+        }
+        var tupleType = new Symbols.TupleType(fields);
+        return new BoundTuple(t, tupleType, elements);
+    }
+
+    private BoundExpr BindStackalloc(StackallocExpr s)
+    {
+        var element = _types.Resolve(s.Element);
+        var count = BindConverted(s.Count, PrimitiveType.I64);
+        if (element.IsError || count.Type.IsError) return new BoundErrorExpr(s);
+        if (count.Constant is not { Value: Int128 n })
+        {
+            Report(DiagnosticCodes.NotConstant, s.Count.Span, ["a `stackalloc` length"],
+                help: "v0.1 supports only constant lengths: `stackalloc u8[64]`");
+            return new BoundErrorExpr(s);
+        }
+        if (n <= 0 || n > 1 << 20)
+        {
+            Report(DiagnosticCodes.LiteralOutOfRange, s.Count.Span, [n.ToString(), "a `stackalloc` length (1 to 1048576)"]);
+            return new BoundErrorExpr(s);
+        }
+        return new BoundStackalloc(s, element, (long)n, new SpanType(element));
+    }
+
+    private BoundExpr BindInterpolated(InterpolatedExpr i)
+    {
+        if (!_interpolationAllowed)
+        {
+            Report(DiagnosticCodes.InterpolationNotAllowed, i.Span, [],
+                help: "an interpolated string writes into an output; pass it to `print`, `panic`, `assert` or `StrBuf.append`");
+            return new BoundErrorExpr(i);
+        }
+        _interpolationAllowed = false;
+        var parts = new List<BoundInterpolationPart>();
+        foreach (var part in i.Parts)
+        {
+            if (part is InterpolationText text)
+            {
+                parts.Add(new BoundInterpolationPart(text.Text, null));
+                continue;
+            }
+            var hole = (InterpolationHole)part;
+            var value = BindExpr(hole.Expr);
+            if (!value.Type.IsError && !IsFormattable(value.Type))
+                Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName],
+                    help: value.Type is StructSymbol s ? $"give `{s.Name}` a `void formatInto(ref StrBuf out)` method" : null);
+            parts.Add(new BoundInterpolationPart(null, value));
+        }
+        _interpolationAllowed = true;
+        return new BoundInterpolated(i, parts.ToArray());
+    }
+
+    internal static bool IsFormattable(TypeSymbol t) => t switch
+    {
+        PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
+        ErrorSetSymbol or ErrorUnionType => true,
+        OptionalType o => IsFormattable(o.Inner),
+        StructSymbol => true,
+        Symbols.TupleType tt => tt.Fields.All(f => IsFormattable(f.Type)),
+        _ => false,
+    };
+}
+
+/// <summary>A function named but not yet called (only valid as a callee).</summary>
+internal sealed record BoundMethodGroup(Node Syntax, BoundExpr? Receiver, FunctionSymbol Function) : BoundExpr(Syntax, ErrorType.Instance);
+
+/// <summary>A built-in method named but not yet called.</summary>
+internal sealed record BoundBuiltinGroup(Node Syntax, BoundExpr Receiver, string Name) : BoundExpr(Syntax, ErrorType.Instance);

@@ -1,0 +1,4 @@
+error BYN2303: `x` is passed twice
+
+  2 │ print($"{twice(x: 1, x: 2)}");
+    │                      ^^^^

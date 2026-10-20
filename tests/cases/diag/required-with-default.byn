@@ -1,0 +1,3 @@
+struct Limit {
+    required i64 max = 10;
+}

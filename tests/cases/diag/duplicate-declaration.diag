@@ -1,0 +1,4 @@
+error BYN2006: `area` is declared twice
+
+  3 │ i64 area(i64 w) => w * w;
+    │     ^^^^ already declared on line 1

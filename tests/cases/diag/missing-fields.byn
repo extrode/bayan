@@ -1,0 +1,6 @@
+struct Point {
+    i64 x;
+    i64 y;
+}
+
+let p = Point { x = 1 };

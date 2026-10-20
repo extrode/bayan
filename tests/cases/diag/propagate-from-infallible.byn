@@ -1,0 +1,14 @@
+error enum ParseError {
+    empty,
+}
+
+i64 parse(string s) fails ParseError {
+    return .empty if s.isEmpty;
+    return 1;
+}
+
+i64 total(string s) {
+    return try parse(s);
+}
+
+print($"{total("1")}");

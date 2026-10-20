@@ -1,0 +1,4 @@
+struct Node {
+    i64 value;
+    Node? next;
+}

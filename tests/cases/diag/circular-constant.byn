@@ -1,0 +1,3 @@
+const i64 first = second + 1;
+const i64 second = first;
+print($"{first}");

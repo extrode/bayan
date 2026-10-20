@@ -1,0 +1,6 @@
+error BYN2404: `fail` returns `never` but can reach its end
+
+  3 │ }
+    │ ^
+    │
+  help: end every path with `panic(…)` or a call that never returns

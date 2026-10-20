@@ -1,0 +1,21 @@
+error BYN2104: `total` is immutable
+
+  2 │ total += 1;
+    │ ^^^^^ declared with `let` on line 1
+    │
+  help: declare it with `var` if it should change
+    │ 1 │ var total = 0;
+
+error BYN2104: `n` is immutable
+
+  5 │     n = n + 1;
+    │     ^ parameters are immutable
+    │
+  help: copy it into a local `var`, or take it by `ref` if the caller's value should change
+
+error BYN2104: `i` is immutable
+
+  9 │     i = 0;
+    │     ^ loop variables are immutable
+    │
+  help: declare it with `for (var …)` to change the copy

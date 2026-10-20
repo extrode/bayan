@@ -1,0 +1,13 @@
+error enum IoError {
+    full,
+}
+
+void flush() fails IoError {
+    return .full if false;
+}
+
+void work() fails IoError {
+    defer try flush();
+}
+
+work() catch return;

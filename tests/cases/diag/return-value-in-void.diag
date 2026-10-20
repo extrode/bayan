@@ -1,0 +1,6 @@
+error BYN2403: `log` returns nothing, but `return` has a value
+
+  2 │     return 1;
+    │            ^
+    │
+  help: declare a return type instead of `void`, or remove the value

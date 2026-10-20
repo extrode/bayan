@@ -1,0 +1,4 @@
+error BYN2011: type alias `Alpha` refers to itself
+
+  1 │ type Alpha = Beta;
+    │      ^^^^^

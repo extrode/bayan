@@ -1523,8 +1523,11 @@ public sealed class Parser
             case TokenKind.InterpolatedStringStart:
                 return ParseInterpolated();
             case TokenKind.Dot when Peek(1) == TokenKind.Identifier:
+            {
                 Advance();
-                return new TargetMemberExpr(SpanFrom(start), NameOf(Advance()));
+                var member = NameOf(Advance());
+                return new TargetMemberExpr(SpanFrom(start), member);
+            }
             case TokenKind.OpenParen:
                 return ParseParenOrTuple();
             case TokenKind.OpenBracket:

@@ -1,0 +1,6 @@
+error BYN2101: `let total` needs a value
+
+  1 │ let total;
+    │     ^^^^^
+    │
+  help: give it a value, or declare it with `var` and assign it on every path before use

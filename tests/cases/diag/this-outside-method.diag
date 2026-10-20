@@ -1,0 +1,4 @@
+error BYN2018: `this` is only available inside instance methods
+
+  1 │ i64 size() => this.length;
+    │               ^^^^

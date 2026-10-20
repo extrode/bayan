@@ -1,0 +1,7 @@
+error BYN2005: `round` is not visible here
+  --> main.byn:2:15
+
+  2 │ let c = money.round(1);
+    │               ^^^^^ not `public`
+    │
+  help: mark `round` `public` to use it from another module

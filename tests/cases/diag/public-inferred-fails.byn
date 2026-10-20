@@ -1,0 +1,3 @@
+public i64 parse(string s) fails {
+    return 1;
+}
