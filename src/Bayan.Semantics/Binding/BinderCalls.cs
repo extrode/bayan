@@ -758,7 +758,8 @@ internal sealed partial class Binder
         }
     }
 
-    /// <summary>In an owning switch, a pattern may not bind a value and a part of it, or both sides of an `and`: each would own the same storage (L006).</summary>
+    /// <summary>In an owning switch, a pattern may not bind a value and a part of it, both sides of an `and`, or the same field
+    /// twice: each would own the same storage (L006).</summary>
     private void CheckOwningOverlap(BoundPattern p)
     {
         switch (p)
@@ -767,6 +768,10 @@ internal sealed partial class Binder
             case BoundPropertyPattern { Designation: not null } pp when pp.Subpatterns.Any(s => HasBindings(s.Pattern)):
                 Report(DiagnosticCodes.OwningPatternOverlap, p.Syntax.Span, [Source.GetText(p.Syntax.Span)],
                     help: "bind the whole value or its parts, not both");
+                break;
+            case BoundPropertyPattern pp when RepeatsField(pp):
+                Report(DiagnosticCodes.OwningPatternOverlap, p.Syntax.Span, [Source.GetText(p.Syntax.Span)],
+                    help: "bind each field once");
                 break;
             case BoundBinaryPattern b:
                 CheckOwningOverlap(b.Left);
@@ -782,6 +787,19 @@ internal sealed partial class Binder
                 foreach (var s in up.Subpatterns) CheckOwningOverlap(s);
                 break;
         }
+    }
+
+    /// <summary>Whether two subpatterns with bindings reach the same field (one path is a prefix of the other).</summary>
+    private static bool RepeatsField(BoundPropertyPattern pp)
+    {
+        var bound = pp.Subpatterns.Where(s => HasBindings(s.Pattern)).ToList();
+        for (var i = 0; i < bound.Count; i++)
+            for (var j = i + 1; j < bound.Count; j++)
+            {
+                var n = Math.Min(bound[i].Path.Length, bound[j].Path.Length);
+                if (bound[i].Path.Take(n).SequenceEqual(bound[j].Path.Take(n))) return true;
+            }
+        return false;
     }
 
     private static bool HasBindings(BoundPattern p) => p switch

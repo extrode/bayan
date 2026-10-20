@@ -759,6 +759,10 @@ internal sealed class FunctionEmitter
     private HashSet<LocalSymbol>? _reads;
     private HashSet<LocalSymbol>? _moves;
     private HashSet<LocalSymbol> _unsequenced = [];
+    // The locals the statement being emitted moves (from the dry run).
+    private HashSet<LocalSymbol> _moved = [];
+    // Owning pattern bindings of a `switch (move x)` before their arm's LClaim: a guard has not selected the arm yet.
+    private readonly HashSet<LocalSymbol> _unclaimed = [];
     // Ownership checks: claims for the owned places the statement being emitted passes by pointer (ref, out, a method's
     // receiver), run once it is done, so storage the callee allocated through the pointer has its owner.
     private List<string> _afterCalls = [];
@@ -773,6 +777,27 @@ internal sealed class FunctionEmitter
         var n = 0;
         foreach (var l in f.Locals)
             _names[l] = l.Kind == LocalKind.Temp ? "t" + n++ : "l" + n++ + "_" + l.Name;
+        FindClaims(f.Body);
+    }
+
+    private void FindClaims(BoundStmt s)
+    {
+        switch (s)
+        {
+            case BoundBlock b:
+                foreach (var inner in b.Statements) FindClaims(inner);
+                break;
+            case BoundIf i:
+                FindClaims(i.Then);
+                if (i.Else is not null) FindClaims(i.Else);
+                break;
+            case LLoop l:
+                FindClaims(l.Body);
+                break;
+            case LClaim c:
+                _unclaimed.Add(c.Local);
+                break;
+        }
     }
 
     private bool ReturnsValue => !_fn.ReturnType.IsVoid && !_fn.ReturnType.IsNever && _fn.Kind != FunctionKind.Constructor;
@@ -874,12 +899,16 @@ internal sealed class FunctionEmitter
 
     /// <summary>A mutation of <paramref name="receiver"/> that may allocate; an owned receiver then owns the storage.</summary>
     private string Claimed(string call, BoundExpr receiver, Node syntax) =>
-        _c.OwnershipChecks && OwnerRoot(receiver) is not null ? $"({call}, {_c.OwnClaim(receiver.Type)}(&{Place(receiver)}, {Loc(syntax)}))" : call;
+        _c.OwnershipChecks && Claimant(receiver) is not null ? $"({call}, {_c.OwnClaim(receiver.Type)}(&{Place(receiver)}, {Loc(syntax)}))" : call;
 
-    /// <summary>After the call, an owned <paramref name="place"/> passed by pointer owns its storage.</summary>
+    /// <summary>The owned local a claim on <paramref name="place"/> goes to, or null (none, or a binding its arm has not claimed yet).</summary>
+    private LocalSymbol? Claimant(BoundExpr place) => OwnerRoot(place) is { } root && !_unclaimed.Contains(root) ? root : null;
+
+    /// <summary>After the call, an owned <paramref name="place"/> passed by pointer owns its storage, unless the
+    /// statement moves it (the moved-to owner has the storage by then).</summary>
     private void ClaimAfterCall(BoundExpr place, Node syntax)
     {
-        if (_c.OwnershipChecks && OwnerRoot(place) is not null && CEmitter.OwnsStorage(place.Type))
+        if (_c.OwnershipChecks && Claimant(place) is { } root && !_moved.Contains(root) && CEmitter.OwnsStorage(place.Type))
             _afterCalls.Add($"{_c.OwnClaim(place.Type)}(&{Place(place)}, {Loc(syntax)});");
     }
 
@@ -900,6 +929,7 @@ internal sealed class FunctionEmitter
         if (s is BoundIf i) Expr(i.Condition);
         else Statement(s);
         _sb.Length = mark;
+        _moved = _moves;
         _reads.IntersectWith(_moves);
         _unsequenced = _reads;
         _reads = _moves = null;
@@ -994,6 +1024,7 @@ internal sealed class FunctionEmitter
                 Line($"byn_arena_free({Expr(f.Arena)});");
                 break;
             case LClaim c:
+                _unclaimed.Remove(c.Local);
                 if (_c.OwnershipChecks && IsOwner(c.Local) && CEmitter.OwnsStorage(c.Local.Type))
                     Line($"{_c.OwnClaim(c.Local.Type)}(&{_names[c.Local]}, {Loc(c.Syntax)});");
                 break;

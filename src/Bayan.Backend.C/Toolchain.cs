@@ -112,7 +112,13 @@ public static class Toolchain
         if (FindOnPath("clang") is { } clang) yield return [clang];
     }
 
-    /// <summary>The first of <paramref name="candidates"/> that compiles, links and runs an AddressSanitizer program.</summary>
+    /// <summary>Test seams: how long the probe waits for a candidate to compile, and for its program to run.</summary>
+    internal static TimeSpan ProbeCompileTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    internal static TimeSpan ProbeRunTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>The first of <paramref name="candidates"/> that compiles, links and runs an AddressSanitizer program;
+    /// one that takes too long is killed and rejected.</summary>
     internal static string[]? ProbeSanitizer(IEnumerable<string[]> candidates)
     {
         foreach (var candidate in candidates)
@@ -125,7 +131,7 @@ public static class Toolchain
                 File.WriteAllText(Path.Combine(work, "probe.c"), "int main(void) { return 0; }\n");
                 var exe = Path.Combine(work, OperatingSystem.IsWindows() ? "probe.exe" : "probe");
                 var args = new List<string>(candidate[1..]) { "-fsanitize=address", "probe.c", "-o", exe };
-                if (Exec(candidate[0], args, work).Code == 0 && File.Exists(exe) && Exec(exe, [], work).Code == 0)
+                if (Exec(candidate[0], args, work, ProbeCompileTimeout).Code == 0 && File.Exists(exe) && Exec(exe, [], work, ProbeRunTimeout).Code == 0)
                     return candidate;
             }
             catch (Exception e) when (e is System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException)
@@ -380,7 +386,8 @@ public static class Toolchain
         return new CacheStats(CacheDirectory, programs, bytes, scripts);
     }
 
-    private static (int Code, string Stdout, string Stderr) Exec(string file, IEnumerable<string> args, string workingDirectory)
+    /// <summary>Runs <paramref name="file"/>; past <paramref name="timeout"/> it is killed and the code is -1.</summary>
+    private static (int Code, string Stdout, string Stderr) Exec(string file, IEnumerable<string> args, string workingDirectory, TimeSpan? timeout = null)
     {
         var psi = new ProcessStartInfo(file)
         {
@@ -392,9 +399,14 @@ public static class Toolchain
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEnd();
-        p.WaitForExit();
-        return (p.ExitCode, stdout.Result, stderr);
+        var stderr = p.StandardError.ReadToEndAsync();
+        if (!p.WaitForExit(timeout ?? Timeout.InfiniteTimeSpan))
+        {
+            try { p.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { }
+            return (-1, "", "");
+        }
+        return (p.ExitCode, stdout.Result, stderr.Result);
     }
 
     private static string Hash(string text) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
