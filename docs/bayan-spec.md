@@ -792,7 +792,9 @@ Every diagnostic states **what**, **where**, **why** and a **fix** (machine-appl
 | `bayan new X`, `bayan init` | Create an app (`--lib` library, `--script` script) in a new or existing directory (§21.4) |
 | `bayan run` | Build and run a program or script |
 | `bayan build` | Build (`--mode debug\|safe\|fast\|small`, `--target`) |
-| `bayan test` | Tests (`--tier`, `--mutate`, `--explore`, `--sanitize`, `--update`, `--triage`) |
+| `bayan test` | Tests (`--json`, `--tier`, `--mutate`, `--explore`, `--sanitize`, `--update`, `--triage`) |
+| `bayan dist` | Release builds into `dist/<version>/` (`--target t\|all`, `--mode`, `--force`, `--allow-dirty`; §21.4) |
+| `bayan clean` | Remove `out/` (`--dist` also `dist/`, `--cache` the build cache) |
 | `bayan fmt` | Format (`--explicit`, `--terse`, `--prose`, `--from-prose`, `--check-prose`) |
 | `bayan lint`, `bayan doc`, `bayan repl`, `bayan lsp` | |
 | `bayan pkg` | Packages (`add`, `audit`, `export --json`) |
@@ -824,6 +826,8 @@ The language server runs inside the compiler process. `dbg(expr)` prints the exp
 **Names.** A project directory is named in kebab-case (`my-app`) or camelCase (`myApp`). The package name is `local/<kebab-case>` until published; a library's module is the camelCase form, so it can be imported.
 
 **Layout.** In a project, `src/` holds the modules (`src/orders/` is `import orders;`), the entry module is `src/app/` for an app and `src/<name>/` for a library, and in test builds every `tests/*.test.byn` joins the entry module. Commands given no path use the current directory when it has a `package.byn`. A library has no program, so `bayan build` and `bayan run` on one are usage errors. A file starting with `#!` is a script and compiles alone, and `bayan <file>.byn` runs it.
+
+**Outputs.** In a project, `bayan build`, `run` and `test` write to `out/<mode>/<target>/` (the binary, the test binary `<name>-test`, and the emitted C in `c/` for inspection), and `bayan test` writes `out/test/results.json`, the same JSON that `bayan test --json` prints. `out/` is disposable. `--target` takes `linux-x64`, `linux-arm64`, `macos-x64`, `macos-arm64`, `windows-x64`, `windows-arm64`, `wasm32` or `host`; any target other than the host needs zig. `bayan dist` builds the targets in `dist.targets` (or `--target`, `all` for every one) into `dist/<version>/<target>/`, with `SHA256SUMS` (`sha256sum` format) and `BUILDINFO.json` (package, version, compiler, mode, targets, source commit and dirtiness, a hash of the inputs; no timestamps). A version directory is immutable: `bayan dist` refuses to rebuild one without `--force` and says to bump the version. It refuses a dirty git tree without `--allow-dirty`. `dist/latest/` is a copy (not a symlink) of the highest semantic version present, plus a `VERSION` file. Libraries get distributions once FFI export exists; scripts have none. `bayan clean` removes `out/`, and `dist/` or the cache only when asked.
 
 **Version control.** Bayan reads git and never writes history: `bayan new` and `bayan init` run `git init` only when git is installed, `--vcs none` isn't given, and the directory isn't already inside a work tree; they never commit, branch or configure.
 
