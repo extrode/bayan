@@ -14,3 +14,4 @@
 - M8: tally-lite example; v0.1 exit criterion met
 - ReadOnlySpan<T>, BYN2310, shortest round-trip float formatting
 - T11 — M12a JSON diagnostics and exit codes
+- bayan new/init, package.byn reader, project builds, scripts
