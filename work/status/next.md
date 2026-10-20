@@ -1,6 +1,6 @@
 # Next
 
-T2 — M1 lexer
+T4 — M3 semantics I
 
-Pulled from `work/tasklist.md` by `tools/task.js`. One task only — if this needs
+Pulled from `work/tasklist.md` by `tools/status-roll.js`. One task only — if this needs
 splitting, split it in the tasklist first.
