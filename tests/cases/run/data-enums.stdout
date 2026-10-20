@@ -1,0 +1,17 @@
+count 3
+0 mercury mercury the swift 3.303e23 2439700 hot
+  gravity 3.7030267229659395
+1 venus venus the bright 4.869e24 6051800 hot
+  gravity 8.871391908774457
+2 earth earth home 5.976e24 6378140 mild
+  gravity 9.802652743337129
+earth
+true true 4
+venus null null
+first the swift 3.303e23
+earth null null
+parsed mercury 0 2439700
+ifKeyword 'if' 0 i true word
+plus '+' 6 + false symbol
+star '*' 7 * false symbol
+total 13

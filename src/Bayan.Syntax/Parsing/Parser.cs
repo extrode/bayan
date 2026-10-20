@@ -524,23 +524,29 @@ public sealed class Parser
         return new ErrorEnumDecl(SpanFrom(start), modifiers, name, variants.ToArray());
     }
 
-    /// <summary><c>enum Name { a, b, c }</c>; a trailing <c>,</c> or <c>;</c> after the last member is allowed.</summary>
+    /// <summary>
+    /// <c>enum Name { a, b, c }</c> or <c>enum Name(T x) { a(1), b(2); }</c>; a trailing <c>,</c> or <c>;</c>
+    /// after the last member is allowed.
+    /// </summary>
     private EnumDecl ParseEnum(int start, Modifiers modifiers)
     {
         Advance();
         var name = ExpectName("an enum name");
+        var parameters = Kind == TokenKind.OpenParen ? ParseParams() : null;
         var open = Expect(TokenKind.OpenBrace);
         var members = new List<EnumMember>();
         while (Kind == TokenKind.Identifier)
         {
             var doc = DocOf(Current);
+            var memberStart = Current.Start;
             var member = ExpectName("a member name");
-            members.Add(new EnumMember(member.Span, member, doc));
+            var args = Kind == TokenKind.OpenParen ? ParseArguments() : null;
+            members.Add(new EnumMember(SpanFrom(memberStart), member, doc, args));
             if (!Accept(TokenKind.Comma)) break;
         }
         Accept(TokenKind.Semicolon);
         ExpectClose(open, "enum");
-        return new EnumDecl(SpanFrom(start), modifiers, name, members.ToArray());
+        return new EnumDecl(SpanFrom(start), modifiers, name, parameters, members.ToArray());
     }
 
     private TypeAliasDecl ParseTypeAlias(int start, Modifiers modifiers)

@@ -126,9 +126,11 @@ public static class AstDump
                             + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
                     break;
                 case EnumDecl d:
-                    Line(depth, $"Enum {Mods(d.Modifiers)}{d.Name.Text}");
+                    Line(depth, $"Enum {Mods(d.Modifiers)}{d.Name.Text}{(d.Params is null ? "" : Params(d.Params))}");
                     foreach (var m in d.Members)
-                        Line(depth + 1, "Member " + m.Name.Text + (m.Doc is null ? "" : " doc " + TokenDump.Escape(m.Doc)));
+                        Line(depth + 1, "Member " + m.Name.Text
+                            + (m.Args is null ? "" : "(" + string.Join(", ", m.Args.Select(a => (a.Name is null ? "" : a.Name.Text + ": ") + AstDump.Expr(a.Value))) + ")")
+                            + (m.Doc is null ? "" : " doc " + TokenDump.Escape(m.Doc)));
                     break;
                 case TypeAliasDecl d:
                     Line(depth, $"TypeAlias {Mods(d.Modifiers)}{d.Name.Text} = {Type(d.Target)}");

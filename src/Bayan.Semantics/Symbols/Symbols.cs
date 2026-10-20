@@ -343,6 +343,9 @@ public sealed class EnumSymbol(string name, Location location, ModuleSymbol modu
 
     public List<EnumMemberSymbol> Members { get; } = new();
 
+    /// <summary>The associated data of <c>enum Name(T x, …)</c>, in declaration order; empty for a plain enum.</summary>
+    public List<EnumFieldSymbol> Fields { get; } = new();
+
     /// <summary><c>Name.fromOrdinal(i64)</c> and <c>Name.parse(string)</c>.</summary>
     public FunctionSymbol FromOrdinal { get; set; } = null!;
 
@@ -351,6 +354,18 @@ public sealed class EnumSymbol(string name, Location location, ModuleSymbol modu
     public override string DisplayName => Name;
 
     public EnumMemberSymbol? Find(string name) => Members.Find(m => m.Name == name);
+
+    public EnumFieldSymbol? FindField(string name) => Fields.Find(f => f.Name == name);
+}
+
+/// <summary>A parameter of a data enum, read as <c>e.name</c>; one static table per field, indexed by ordinal.</summary>
+public sealed class EnumFieldSymbol(string name, Location location, EnumSymbol @enum, TypeSymbol type, int index) : Symbol(name, location)
+{
+    public EnumSymbol Enum { get; } = @enum;
+
+    public TypeSymbol Type { get; } = type;
+
+    public int Index { get; } = index;
 }
 
 public sealed class EnumMemberSymbol(string name, Location location, EnumSymbol @enum, int ordinal, string? doc) : Symbol(name, location)
@@ -360,4 +375,7 @@ public sealed class EnumMemberSymbol(string name, Location location, EnumSymbol 
     public int Ordinal { get; } = ordinal;
 
     public string? Doc { get; } = doc;
+
+    /// <summary>The constant value of each field of a data enum, by field index (null after an error).</summary>
+    public ConstantValue?[] Values { get; set; } = [];
 }

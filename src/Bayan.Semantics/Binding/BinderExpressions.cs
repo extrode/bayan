@@ -562,6 +562,8 @@ internal sealed partial class Binder
                 if (index >= 0) return new BoundTupleElement(syntax, target, index, t.Fields[index].Type);
                 break;
             }
+            case EnumSymbol e when e.FindField(name) is { } f:
+                return new BoundBuiltinCall(syntax, BuiltinMember.EnumField, target, [Literal(syntax, PrimitiveType.I32, (Int128)f.Index)], f.Type);
             case OptionalType o:
                 Report(DiagnosticCodes.MemberOfOptional, member.Span, [name, o.DisplayName],
                     help: $"check it first: `if ({Source.GetText(target.Syntax.Span)} is {{ }} value) {{ … value.{name} … }}`");
@@ -584,6 +586,7 @@ internal sealed partial class Binder
         IEnumerable<string> names = type switch
         {
             StructSymbol s => s.Fields.Select(f => f.Name).Concat(s.Properties.Select(p => p.Name)).Concat(s.Methods.Select(m => m.Name)),
+            EnumSymbol e => e.Fields.Select(f => f.Name).Concat(BuiltinMembers.Names(type)),
             _ => BuiltinMembers.Names(type),
         };
         return Suggest(name, names) is { } s2 ? $"did you mean `{s2}`?" : null;

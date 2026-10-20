@@ -418,6 +418,7 @@ public sealed class Compilation
     private void DeclareEnumMembers(EnumSymbol e)
     {
         var source = e.File.Source;
+        DeclareEnumFields(e);
         foreach (var m in e.Decl.Members)
         {
             Naming.CheckValue(this, source, m.Name);
@@ -442,6 +443,39 @@ public sealed class Compilation
             Builtin = BuiltinFunction.EnumParse, ReturnType = optional, Access = Accessibility.Public, IsStatic = true,
         };
         e.Parse.Parameters.Add(new ParameterSymbol("name", null, PrimitiveType.String, ParamModifier.None, 0));
+    }
+
+    /// <summary>The parameters of <c>enum Name(T x, …)</c>: numbers, <c>bool</c>, <c>char</c>, <c>string</c> or a plain enum (BYN2724).</summary>
+    private void DeclareEnumFields(EnumSymbol e)
+    {
+        if (e.Decl.Params is null) return;
+        var source = e.File.Source;
+        var types = new TypeResolver(this, e.File, null);
+        foreach (var p in e.Decl.Params)
+        {
+            Naming.CheckValue(this, source, p.Name);
+            var type = types.Resolve(p.Type);
+            const string help = "enum data is stored in static tables; use a number type, `bool`, `char`, `string` or a plain enum";
+            if (p.Modifier != ParamModifier.None)
+                Report(DiagnosticCodes.InvalidEnumParameter, source, p.Span, [p.Name.Text], label: $"`{p.Modifier.ToString().ToLowerInvariant()}` is not allowed here", help: help);
+            else if (p.Default is not null)
+                Report(DiagnosticCodes.InvalidEnumParameter, source, p.Default.Span, [p.Name.Text], label: "a default value is not allowed here", help: help);
+            else if (!type.IsError && type is not (PrimitiveType { IsNumeric: true } or PrimitiveType { Kind: PrimitiveKind.Bool or PrimitiveKind.Char or PrimitiveKind.String } or EnumSymbol { Decl.Params: null }))
+                Report(DiagnosticCodes.InvalidEnumParameter, source, p.Type.Span, [p.Name.Text], label: $"`{type.DisplayName}` has no static form", help: help);
+            else if (e.FindField(p.Name.Text) is { } existing)
+                Report(DiagnosticCodes.DuplicateEnumMember, source, p.Name.Span, [e.Name, p.Name.Text],
+                    label: $"already declared on line {existing.Location!.Value.Line}");
+            else if (p.Name.Text is "name" or "ordinal")
+                Report(DiagnosticCodes.DuplicateEnumMember, source, p.Name.Span, [e.Name, p.Name.Text],
+                    label: "every enum has it", help: "rename the parameter");
+            else
+            {
+                e.Fields.Add(new EnumFieldSymbol(p.Name.Text, Loc(e.File, p.Name), e, type, e.Fields.Count));
+                continue;
+            }
+            // Kept with an error type so the arguments still line up and report nothing more.
+            e.Fields.Add(new EnumFieldSymbol(p.Name.Text, Loc(e.File, p.Name), e, ErrorType.Instance, e.Fields.Count));
+        }
     }
 
     private void DeclareMembers(StructSymbol s)
@@ -614,6 +648,9 @@ public sealed class Compilation
         foreach (var module in Modules)
             foreach (var c in module.AllConstants)
                 BindConstant(c);
+        foreach (var module in Modules)
+            foreach (var e in module.Enums)
+                new Binder(this, e.File, null, null).BindEnumArguments(e);
         foreach (var (variant, attribute, file) in _exitCodes)
             variant.ExitCode = new Binder(this, file, null, null).BindExitCode(attribute);
         foreach (var module in Modules)

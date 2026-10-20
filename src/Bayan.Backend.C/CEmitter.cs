@@ -426,6 +426,11 @@ public sealed class CEmitter
     internal string EnumValues(EnumSymbol e) => Static(CType(e) + "_values", () =>
         $"static const {CType(e)} {CType(e)}_values[] = {{{string.Join(", ", e.Members.Select(m => m.Ordinal))}}};\n\n");
 
+    /// <summary>The values of field <paramref name="f"/> of a data enum, indexed by ordinal.</summary>
+    internal string EnumField(EnumFieldSymbol f) => Static($"{CType(f.Enum)}_f_{f.Name}", () =>
+        $"static const {CType(f.Type)} {CType(f.Enum)}_f_{f.Name}[] = {{\n"
+        + string.Concat(f.Enum.Members.Select(m => $"    {Constant(m.Values[f.Index]!, f.Type)},\n")) + "};\n\n");
+
     /// <summary>A <c>const T[N]</c>, read in place: <c>(*(T*)&amp;name)</c>.</summary>
     internal string StaticArray(ConstSymbol c)
     {
@@ -934,6 +939,11 @@ internal sealed class FunctionEmitter
                 return $"{_c.EnumNames((EnumSymbol)r.Type)}[{Expr(r)}]";
             case BuiltinMember.EnumOrdinal:
                 return $"((int32_t){Expr(r)})";
+            case BuiltinMember.EnumField:
+            {
+                var e = (EnumSymbol)r.Type;
+                return $"{_c.EnumField(e.Fields[(int)(Int128)((BoundLiteral)b.Arguments[0]).Value.Value])}[{Expr(r)}]";
+            }
             case BuiltinMember.ResultIsOk:
                 return $"({Expr(r)}.err == 0)";
             case BuiltinMember.ResultValue or BuiltinMember.ResultError:

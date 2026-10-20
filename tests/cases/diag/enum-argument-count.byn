@@ -1,0 +1,9 @@
+enum Planet(f64 mass, f64 radius) {
+    mercury(3.3e23),
+    venus(4.9e24, 6.1e6, 0.0),
+    earth,
+    mars(mass: 6.4e23, size: 3.4e6),
+    jupiter("big", 7.1e7),
+}
+
+enum Color { red(1), green }
