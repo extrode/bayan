@@ -868,7 +868,7 @@ public sealed class Compilation
                 Instantiating(site, span, () => DeclareMembers(instance));
                 if (instance.IsGeneric) return instance;
                 foreach (var f in instance.Fields.Where(f => f.Decl.Default is not null))
-                    _instantiationWork.Enqueue((site, span, () => f.Default = new Binder(this, instance.File, null, instance).BindFieldDefault(f)));
+                    _instantiationWork.Enqueue((site, span, () => FieldDefault(instance, f, site, span)));
                 foreach (var fn in instance.Methods.Concat(instance.Properties.Select(p => p.Getter!)).Concat(instance.Constructors))
                     _instantiationWork.Enqueue((site, span, () => BindFunction(fn)));
                 return instance;
@@ -886,6 +886,14 @@ public sealed class Compilation
             default:
                 throw new InvalidOperationException($"`{template.DisplayName}` is not generic");
         }
+    }
+
+    /// <summary>A field default of a struct; an instance's is bound on first use, as a literal can need it before the worklist drains.</summary>
+    internal BoundExpr? FieldDefault(StructSymbol s, FieldSymbol f, SourceText site, TextSpan span)
+    {
+        if (f.Default is null && f.HasDefault && s.Template is not null)
+            Instantiating(site, span, () => f.Default ??= new Binder(this, s.File, null, s).BindFieldDefault(f));
+        return f.Default;
     }
 
     /// <summary>The template a function was instantiated from: itself for a generic function, its twin for a member of a generic struct.</summary>

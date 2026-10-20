@@ -1091,7 +1091,7 @@ internal sealed partial class Binder
             }
             else
             {
-                values[i] = f.Default ?? new BoundErrorExpr(s);
+                values[i] = _c.FieldDefault(st, f, Source, s.Span) ?? new BoundErrorExpr(s);
             }
         }
         if (missing.Count > 0)

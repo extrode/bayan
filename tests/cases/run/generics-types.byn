@@ -29,6 +29,11 @@ struct Box<T> {
     }
 }
 
+struct Slot<T> {
+    T? value = null;
+    i64 uses = 0;
+}
+
 string show<T>(Option2<T> o) => o switch {
     .Some(let v) => $"some {v}",
     .Nothing => "nothing",
@@ -80,3 +85,7 @@ bySuit.set(.hearts, 3);
 var byName = Map<string, i64>();
 byName.set("x", 10);
 print($"{total(bySuit)} {total(byName)}");
+
+let empty = Slot<i64> { };
+let full = Slot<string> { value = "s" };
+print($"{empty.value} {full.value} {empty.uses + full.uses}");

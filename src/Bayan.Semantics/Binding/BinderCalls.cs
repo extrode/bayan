@@ -331,7 +331,7 @@ internal sealed partial class Binder
                         help: $"set {(missing.Count == 1 ? "it" : "them")}: `{s.Name} {{ {string.Join(", ", missing.Select(m => m + " = …"))} }}`");
                     return new BoundErrorExpr(c);
                 }
-                return new BoundStructLiteral(c, s, s.Fields.Select(f => f.Default ?? new BoundErrorExpr(c)).ToArray());
+                return new BoundStructLiteral(c, s, s.Fields.Select(f => _c.FieldDefault(s, f, Source, c.Span) ?? new BoundErrorExpr(c)).ToArray());
             }
             case ListType l:
                 if (c.Args.Length > 0)
