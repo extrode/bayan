@@ -151,6 +151,9 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NotAnErrorSet = Error("BYN2608", "`{0}` is not an error enum");
     public static readonly DiagnosticDescriptor EmptyErrorSet = Error("BYN2609", "error enum `{0}` has no variants");
     public static readonly DiagnosticDescriptor JumpOutOfDefer = Error("BYN2610", "`{0}` cannot leave a `defer` or `errdefer` body");
+    public static readonly DiagnosticDescriptor UnknownAttribute = Error("BYN2770", "unknown attribute `{0}`");
+    public static readonly DiagnosticDescriptor InvalidMainSignature = Error("BYN2771", "`main` must return `void` or `i32` and take nothing or `ReadOnlySpan<string> args`");
+    public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`[ExitCode]` needs one integer constant from 1 to 255");
     public static readonly DiagnosticDescriptor BorrowField = Error("BYN3001", "a struct field cannot hold a borrowed `{0}`");
     public static readonly DiagnosticDescriptor BorrowOutlivesSource = Error("BYN3002", "{0} does not live as long as `{1}`, which borrows it");
     public static readonly DiagnosticDescriptor BorrowReturned = Error("BYN3003", "cannot return a borrow of {0}, which is freed when `{1}` returns");

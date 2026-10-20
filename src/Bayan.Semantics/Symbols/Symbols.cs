@@ -205,6 +205,12 @@ public enum BuiltinFunction
     ListNew,
     ArenaNew,
     StrBufNew,
+    IoReadFile,
+    IoReadText,
+    IoWriteFile,
+    IoMonotonicNanos,
+    IoStdout,
+    IoStderr,
 }
 
 public enum LocalKind { Let, Var, Const, Parameter, ForVariable, PatternVariable, Temp }
@@ -293,6 +299,9 @@ public sealed class ErrorVariantSymbol(string name, Location location, ErrorSetS
     public uint Code { get; } = code;
 
     public string? Doc { get; } = doc;
+
+    /// <summary>The process exit code when <c>main</c> fails with this variant: <c>[ExitCode(n)]</c>, else 1.</summary>
+    public int ExitCode { get; set; } = 1;
 
     /// <summary>First line of the doc comment, or the variant name (spec §6.6).</summary>
     public string Summary => Doc is { Length: > 0 } d ? d.Split('\n')[0].Trim() : Name;

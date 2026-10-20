@@ -327,8 +327,9 @@ internal sealed partial class Binder
         if (_file.Imports.TryGetValue(name, out var module)) return new BoundModuleRef(n, module);
         if (_c.Builtins.Find(name) is { } builtin) return new BoundMethodGroup(n, null, builtin);
         if (PrimitiveType.ByName.TryGetValue(name, out var primitive)) return new BoundTypeRef(n, primitive);
-        if (name is "List" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf")
+        if (name is "List" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError")
             return new BoundTypeRef(n, _types.Resolve(new NamedType(n.Span, [n.Name], [])));
+        if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
         ReportUndefined(n.Name);
         return new BoundErrorExpr(n);
     }
@@ -347,7 +348,7 @@ internal sealed partial class Binder
         candidates.AddRange(Module.Constants.Keys);
         candidates.AddRange(Module.Types.Keys);
         candidates.AddRange(_file.Imports.Keys);
-        candidates.AddRange(["print", "panic", "assert"]);
+        candidates.AddRange(["print", "panic", "assert", "Io"]);
         var suggestion = Suggest(name.Text, candidates);
         Report(DiagnosticCodes.UndefinedName, name.Span, [name.Text],
             help: suggestion is null ? null : $"did you mean `{suggestion}`?",
@@ -442,6 +443,18 @@ internal sealed partial class Binder
                     help: method is not null || s.FindField(name) is not null || s.FindProperty(name) is not null
                         ? $"`{name}` belongs to a `{s.Name}` value, not the type" : null);
                 return new BoundErrorExpr(m);
+            }
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Io } io }:
+            {
+                if (_c.Builtins.FindIo(name) is not { } member)
+                {
+                    Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, io.Name],
+                        help: Suggest(name, ["readFile", "readText", "writeFile", "monotonicNanos", "stdout", "stderr"]) is { } near ? $"did you mean `{near}`?" : null);
+                    return new BoundErrorExpr(m);
+                }
+                // `stdout` and `stderr` read like properties; the rest are called.
+                if (member.Builtin is BuiltinFunction.IoStdout or BuiltinFunction.IoStderr) return new BoundCall(m, member, null, [], member.ReturnType);
+                return new BoundMethodGroup(m, null, member);
             }
             case BoundTypeRef t:
                 Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, t.Referenced.DisplayName]);

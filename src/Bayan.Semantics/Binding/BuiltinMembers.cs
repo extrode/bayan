@@ -6,7 +6,7 @@ namespace Bayan.Semantics.Binding;
 internal sealed record BuiltinMethod(
     BuiltinMember Member, (string Name, TypeSymbol Type)[] Parameters, TypeSymbol Returns, bool Mutating = false, bool AcceptsInterpolation = false);
 
-/// <summary>Members of strings, spans, lists, arrays, results, <c>Arena</c>, <c>StrBuf</c> and <c>char</c> (spec §3, §16).</summary>
+/// <summary>Members of strings, spans, lists, arrays, results, <c>Arena</c>, <c>StrBuf</c>, <c>Io.stdout</c>/<c>Io.stderr</c> and <c>char</c> (spec §3, §16).</summary>
 internal static class BuiltinMembers
 {
     /// <summary>A built-in property (read without parentheses), or null.</summary>
@@ -45,13 +45,14 @@ internal static class BuiltinMembers
             new(BuiltinMember.StrBufAppend, [("text", PrimitiveType.String)], PrimitiveType.Void, Mutating: true, AcceptsInterpolation: true),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "asString") => new(BuiltinMember.StrBufAsString, [], PrimitiveType.String),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "clear") => new(BuiltinMember.StrBufClear, [], PrimitiveType.Void, Mutating: true),
+        (BuiltinType { Kind: BuiltinKind.IoStream }, "write") => new(BuiltinMember.IoWrite, [("text", PrimitiveType.String)], PrimitiveType.Void),
         _ => null,
     };
 
     public static bool HasMethod(TypeSymbol type, string name) => Method(type, name) is not null;
 
     private static readonly string[] Candidates =
-        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "add", "asSpan", "clear", "removeLast", "reset", "append", "asString"];
+        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "add", "asSpan", "clear", "removeLast", "reset", "append", "asString", "write"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>
