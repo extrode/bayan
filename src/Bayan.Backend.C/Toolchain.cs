@@ -139,7 +139,7 @@ public static class Toolchain
         flags.AddRange(["-std=c11", "-fwrapv", "-ffp-contract=off", "-w"]);
         flags.AddRange(mode switch
         {
-            BuildMode.Debug => ["-O0", "-g"],
+            BuildMode.Debug => ["-O0", "-g", "-DBYN_DEBUG"],
             BuildMode.Safe => ["-O2"],
             _ => ["-O2", "-DBYN_FAST"],
         });

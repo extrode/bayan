@@ -53,6 +53,127 @@ void byn_unreachable(const char* file, int line) {
     byn_panic("reached code the compiler proved unreachable", file, line);
 }
 
+/* ── Ownership checker ───────────────────────────────────────────────────── */
+
+#ifdef BYN_DEBUG
+/* Owned storage by address: an open-addressed table with linear probing; a free slot has NULL storage. */
+typedef struct byn_own_rec {
+    const void* storage;
+    const void* place;
+    const char* type;
+    const char* file;
+    int line;
+} byn_own_rec;
+
+static byn_own_rec* byn_own_table;
+static size_t byn_own_cap;
+static size_t byn_own_count;
+
+static size_t byn_own_home(const void* storage) {
+    return (size_t)(((uint64_t)(uintptr_t)storage * UINT64_C(0x9E3779B97F4A7C15)) >> 20) & (byn_own_cap - 1);
+}
+
+static byn_own_rec* byn_own_find(const void* storage) {
+    if (byn_own_cap == 0) return NULL;
+    for (size_t s = byn_own_home(storage);; s = (s + 1) & (byn_own_cap - 1)) {
+        if (byn_own_table[s].storage == storage) return &byn_own_table[s];
+        if (!byn_own_table[s].storage) return NULL;
+    }
+}
+
+static byn_own_rec* byn_own_insert(const void* storage) {
+    byn_own_rec* r = byn_own_find(storage);
+    if (r) return r;
+    if ((byn_own_count + 1) * 2 > byn_own_cap) {
+        byn_own_rec* old = byn_own_table;
+        size_t n = byn_own_cap;
+        byn_own_cap = n ? n * 2 : 1024;
+        byn_own_table = (byn_own_rec*)calloc(byn_own_cap, sizeof *byn_own_table);
+        if (!byn_own_table) byn_panic("out of memory", NULL, 0);
+        for (size_t i = 0; i < n; i++) {
+            if (!old[i].storage) continue;
+            size_t s = byn_own_home(old[i].storage);
+            while (byn_own_table[s].storage) s = (s + 1) & (byn_own_cap - 1);
+            byn_own_table[s] = old[i];
+        }
+        free(old);
+    }
+    size_t s = byn_own_home(storage);
+    while (byn_own_table[s].storage) s = (s + 1) & (byn_own_cap - 1);
+    byn_own_table[s].storage = storage;
+    byn_own_table[s].place = NULL;
+    byn_own_count++;
+    return &byn_own_table[s];
+}
+
+/* Backward-shift deletion: later entries of the probe run move into the hole. */
+static void byn_own_remove(byn_own_rec* r) {
+    size_t mask = byn_own_cap - 1;
+    size_t i = (size_t)(r - byn_own_table);
+    for (size_t j = (i + 1) & mask; byn_own_table[j].storage; j = (j + 1) & mask) {
+        size_t home = byn_own_home(byn_own_table[j].storage);
+        if (((j - home) & mask) >= ((j - i) & mask)) {
+            byn_own_table[i] = byn_own_table[j];
+            i = j;
+        }
+    }
+    byn_own_table[i].storage = NULL;
+    byn_own_count--;
+}
+
+void byn_own_claim(const void* storage, const void* place, const char* type, const char* file, int line) {
+    if (!storage) return;
+    byn_own_rec* r = byn_own_insert(storage);
+    if (r->place == place) return;
+    if (r->place) {
+        byn_panic_begin();
+        fprintf(stderr, "second owner of %s: owned since %s:%d", type, r->file, r->line);
+        byn_panic_end(file, line);
+    }
+    r->place = place;
+    r->type = type;
+    r->file = file;
+    r->line = line;
+}
+
+void byn_own_release(const void* storage) {
+    byn_own_rec* r = storage ? byn_own_find(storage) : NULL;
+    if (r) byn_own_remove(r);
+}
+
+void byn_own_drop(const void* storage, const void* place) {
+    byn_own_rec* r = storage ? byn_own_find(storage) : NULL;
+    if (r && r->place == place) byn_own_remove(r);
+}
+
+void byn_own_read(const byn_own_slot* slot, const char* type, const char* file, int line) {
+    if (BYN_UNLIKELY(slot->line != 0)) {
+        byn_panic_begin();
+        fprintf(stderr, "use of moved %s: moved at %s:%d", type, slot->file, slot->line);
+        byn_panic_end(file, line);
+    }
+}
+
+void byn_own_rekey(const void* from, const void* to) {
+    if (from == to) return;
+    byn_own_rec* r = from ? byn_own_find(from) : NULL;
+    /* Nothing stale may stay at the new address. */
+    byn_own_release(to);
+    if (!r) return;
+    byn_own_rec moved = *r;
+    byn_own_remove(r);
+    moved.storage = to;
+    *byn_own_insert(to) = moved;
+}
+
+void byn_own_forget(const void* lo, const void* hi) {
+    for (size_t i = 0; i < byn_own_cap; i++)
+        while (byn_own_table[i].storage && (const uint8_t*)byn_own_table[i].storage >= (const uint8_t*)lo
+               && (const uint8_t*)byn_own_table[i].storage < (const uint8_t*)hi)
+            byn_own_remove(&byn_own_table[i]);
+}
+#endif
+
 /* ── Output ──────────────────────────────────────────────────────────────── */
 
 static uint8_t byn_out_buf[1 << 14];
@@ -118,6 +239,9 @@ void byn_w_bytes(byn_writer* w, const uint8_t* p, int64_t n) {
             /* A fresh block, not a resize: text already taken with asString() keeps pointing at the old one. */
             uint8_t* p = (uint8_t*)w->alloc->resize(w->alloc, NULL, 0, grown);
             if (w->len > 0) memcpy(p, w->buf, (size_t)w->len);
+#ifdef BYN_DEBUG
+            byn_own_rekey(w->buf, p);
+#endif
             w->buf = p;
             w->cap = grown;
             break;
@@ -340,6 +464,9 @@ void byn_arena_reset(byn_arena* a) {
     byn_chunk* c = a->chunks;
     while (c) {
         byn_chunk* next = c->next;
+#ifdef BYN_DEBUG
+        byn_own_forget(c->data, c->data + c->size);
+#endif
         free(c);
         c = next;
     }
@@ -368,7 +495,13 @@ void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size,
     if (need <= *cap) return;
     int64_t grown = *cap < 4 ? 4 : *cap * 2;
     if (grown < need) grown = need;
+#ifdef BYN_DEBUG
+    void* old = *ptr;
+#endif
     *ptr = alloc->resize(alloc, *ptr, *cap * elem_size, grown * elem_size);
+#ifdef BYN_DEBUG
+    byn_own_rekey(old, *ptr);
+#endif
     *cap = grown;
 }
 
@@ -431,7 +564,13 @@ static void byn_map_rehash(byn_map_hdr* h, uint8_t** keys, int64_t ksize, uint8_
     h->len = h->live = j;
     if (cap > h->cap) {
         byn_alloc* a = h->alloc;
+#ifdef BYN_DEBUG
+        uint8_t* old = *keys;
+#endif
         *keys = a->resize(a, *keys, h->cap * ksize, cap * ksize);
+#ifdef BYN_DEBUG
+        byn_own_rekey(old, *keys);
+#endif
         *vals = a->resize(a, *vals, h->cap * vsize, cap * vsize);
         h->hashes = a->resize(a, h->hashes, h->cap * (int64_t)sizeof(uint64_t), cap * (int64_t)sizeof(uint64_t));
         h->dead = a->resize(a, h->dead, h->cap * (int64_t)sizeof(bool), cap * (int64_t)sizeof(bool));
