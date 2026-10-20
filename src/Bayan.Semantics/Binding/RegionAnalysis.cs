@@ -518,7 +518,9 @@ internal sealed class RegionAnalysis
         BoundUnionNew u => u.Payload,
         BoundTuple t => t.Elements,
         BoundWith w => w.Updates.Select(u => u.Value),
-        BoundCall { Function.Kind: FunctionKind.Constructor } c => c.Arguments,
+        // A `ref` or `out` argument is passed in place, not stored.
+        BoundCall { Function.Kind: FunctionKind.Constructor } c => c.Arguments.Where((_, i) =>
+            i >= c.Function.Parameters.Count || c.Function.Parameters[i].Modifier is not (Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out)),
         BoundBuiltinCall { Member: BuiltinMember.ListAdd } b => [b.Arguments[0]],
         BoundBuiltinCall { Member: BuiltinMember.MapSet } b => [b.Arguments[1]],
         _ => [],
