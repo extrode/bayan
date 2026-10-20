@@ -584,6 +584,9 @@ internal sealed partial class Binder
             }
             case EnumSymbol e when e.FindField(name) is { } f:
                 return new BoundBuiltinCall(syntax, BuiltinMember.EnumField, target, [Literal(syntax, PrimitiveType.I32, (Int128)f.Index)], f.Type);
+            // Any other member reads through the pointer: `o.field`, `o.method()`.
+            case OwnedType o when name != "value" && !o.Inner.IsError:
+                return BindValueMember(syntax, new BoundBuiltinCall(target.Syntax, BuiltinMember.OwnedValue, target, [], o.Inner), member);
             case OptionalType o:
                 Report(DiagnosticCodes.MemberOfOptional, member.Span, [name, o.DisplayName],
                     help: $"check it first: `if ({Source.GetText(target.Syntax.Span)} is {{ }} value) {{ … value.{name} … }}`");
@@ -895,16 +898,20 @@ internal sealed partial class Binder
         _ => false,
     };
 
-    internal static bool IsEquatable(TypeSymbol t) => t switch
+    internal static bool IsEquatable(TypeSymbol t) => IsEquatable(t, []);
+
+    /// <summary><c>Owned</c> compares the values it points to; a type reached again through one is assumed equatable.</summary>
+    private static bool IsEquatable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
-        OptionalType o => IsEquatable(o.Inner),
-        ResultType r => IsEquatable(r.Value),
+        OptionalType o => IsEquatable(o.Inner, seen),
+        ResultType r => IsEquatable(r.Value, seen),
+        OwnedType o => IsEquatable(o.Inner, seen),
         ErrorSetSymbol or ErrorUnionType or EnumSymbol => true,
-        StructSymbol s => s.Fields.All(f => IsEquatable(f.Type)),
-        UnionSymbol u => u.Variants.All(v => v.Fields.All(f => IsEquatable(f.Type))),
-        Symbols.TupleType tt => tt.Fields.All(f => IsEquatable(f.Type)),
-        Symbols.ArrayType a => IsEquatable(a.Element),
+        StructSymbol s => !seen.Add(s) || s.Fields.All(f => IsEquatable(f.Type, seen)),
+        UnionSymbol u => !seen.Add(u) || u.Variants.All(v => v.Fields.All(f => IsEquatable(f.Type, seen))),
+        Symbols.TupleType tt => tt.Fields.All(f => IsEquatable(f.Type, seen)),
+        Symbols.ArrayType a => IsEquatable(a.Element, seen),
         _ => false,
     };
 
@@ -1215,16 +1222,20 @@ internal sealed partial class Binder
         return new BoundInterpolated(i, parts.ToArray());
     }
 
-    internal static bool IsFormattable(TypeSymbol t) => t switch
+    internal static bool IsFormattable(TypeSymbol t) => IsFormattable(t, []);
+
+    /// <summary><c>Owned</c> formats the value it points to; a type reached again through one is assumed formattable.</summary>
+    private static bool IsFormattable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
         ErrorSetSymbol or ErrorUnionType or EnumSymbol => true,
-        OptionalType o => IsFormattable(o.Inner),
-        ResultType r => IsFormattable(r.Value),
+        OptionalType o => IsFormattable(o.Inner, seen),
+        ResultType r => IsFormattable(r.Value, seen),
+        OwnedType o => IsFormattable(o.Inner, seen),
         StructSymbol => true,
-        UnionSymbol u => u.Variants.All(v => v.Fields.All(f => IsFormattable(f.Type))),
-        Symbols.TupleType tt => tt.Fields.All(f => IsFormattable(f.Type)),
-        MapType m => IsFormattable(m.KeyType) && IsFormattable(m.ValueType),
+        UnionSymbol u => !seen.Add(u) || u.Variants.All(v => v.Fields.All(f => IsFormattable(f.Type, seen))),
+        Symbols.TupleType tt => tt.Fields.All(f => IsFormattable(f.Type, seen)),
+        MapType m => IsFormattable(m.KeyType, seen) && IsFormattable(m.ValueType, seen),
         _ => false,
     };
 }

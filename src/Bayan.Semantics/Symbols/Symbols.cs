@@ -210,6 +210,7 @@ public enum BuiltinFunction
     ArenaNew,
     StrBufNew,
     StrBufGrow,
+    OwnedNew,
     IoReadFile,
     IoReadText,
     IoWriteFile,

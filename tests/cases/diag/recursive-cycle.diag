@@ -1,0 +1,6 @@
+error BYN2761: `Tree` contains itself by value: Tree → Forest → Tree
+
+  1 │ struct Tree {
+    │        ^^^^
+    │
+  help: a value cannot contain itself; store the inner one as `Owned<Tree>` (or in a `List<Tree>`)

@@ -211,6 +211,8 @@ public sealed class CEmitter
         BuiltinType { Kind: BuiltinKind.StrBuf } => "byn_writer",
         BuiltinType { Kind: BuiltinKind.IoStream } => "int32_t",
         BuiltinType { Kind: BuiltinKind.ProcessResult } => "byn_process",
+        // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
+        OwnedType o => CType(o.Inner) + "*",
         _ => Named(t),
     };
 
@@ -227,6 +229,7 @@ public sealed class CEmitter
         ResultType r => "res_" + Key(r.Value),
         SpanType s => "span_" + Key(s.Element),
         ListType l => "list_" + Key(l.Element),
+        OwnedType o => "own_" + Key(o.Inner),
         MapType m => "map_" + Key(m.KeyType) + "_" + Key(m.ValueType),
         ArrayType a => $"arr{a.Length}_" + Key(a.Element),
         TupleType tt => $"tup{tt.Fields.Count}_" + string.Join("_", tt.Fields.Select(f => Key(f.Type))),
@@ -340,6 +343,8 @@ public sealed class CEmitter
                 return $"byn_str_eq({a}, {b})";
             case PrimitiveType or ErrorSetSymbol or ErrorUnionType or EnumSymbol:
                 return $"({a} == {b})";
+            case OwnedType o:
+                return Equal(o.Inner, $"(*{a})", $"(*{b})");
         }
         var ct = CType(t);
         var name = "bynh_eq_" + Key(t);
@@ -453,6 +458,8 @@ public sealed class CEmitter
                 return $"byn_w_error({w}, {v});";
             case EnumSymbol e:
                 return $"byn_w_str({w}, {EnumNames(e)}[{v}]);";
+            case OwnedType o:
+                return Format(o.Inner, $"(*{v})", w);
         }
         var ct = CType(t);
         var name = "bynh_fmt_" + Key(t);
@@ -919,6 +926,15 @@ internal sealed class FunctionEmitter
             }
             case BuiltinFunction.StrBufGrow:
                 return "byn_strbuf_grow(byn_context)";
+            case BuiltinFunction.OwnedNew:
+            {
+                var inner = ((OwnedType)c.Type).Inner;
+                var it = _c.CType(inner);
+                var name = "bynh_own_" + _c.Key(inner);
+                _c.Helper(name, $"static {it}* {name}({it} v)", () =>
+                    $"{{\n    return ({it}*)byn_copy_bytes(&v, (int64_t)sizeof v, byn_context);\n}}\n");
+                return $"{name}({Expr(c.Arguments[0])})";
+            }
             case BuiltinFunction.IoReadFile:
             {
                 var list = _c.CType(fn.ReturnType);
@@ -1093,6 +1109,8 @@ internal sealed class FunctionEmitter
             }
             case BuiltinMember.ResultIsOk:
                 return $"({Expr(r)}.err == 0)";
+            case BuiltinMember.OwnedValue:
+                return $"(*{Expr(r)})";
             case BuiltinMember.ResultValue or BuiltinMember.ResultError:
             {
                 var value = b.Member == BuiltinMember.ResultValue;

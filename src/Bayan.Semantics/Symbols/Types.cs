@@ -197,6 +197,16 @@ public sealed class MapType(TypeSymbol key, TypeSymbol value) : ConstructedType
         t.IsInteger || t.IsString || t == PrimitiveType.Char || t.IsBool || t is EnumSymbol { Fields.Count: 0 };
 }
 
+/// <summary><c>Owned&lt;T&gt;</c>: a non-null pointer to a <c>T</c> copied into the context allocator; copies share it.</summary>
+public sealed class OwnedType(TypeSymbol inner) : ConstructedType
+{
+    public TypeSymbol Inner { get; } = inner;
+
+    protected override object Key => Inner;
+
+    public override string DisplayName => $"Owned<{Inner.DisplayName}>";
+}
+
 /// <summary><c>T[N]</c>: a fixed-size inline array.</summary>
 public sealed class ArrayType(TypeSymbol element, long length) : ConstructedType
 {

@@ -662,9 +662,7 @@ public sealed class Compilation
                         : "store a `List` copied with `.copy(to: alloc)` instead; storing borrows in structs arrives in a later version");
             }
         }
-        if (Contains(s, s, new HashSet<TypeSymbol>()))
-            Report(DiagnosticCodes.RecursiveStruct, s.File.Source, s.Decl.Name.Span, [s.Name],
-                help: "a struct cannot contain itself by value; store a `List` of it or an index instead");
+        CheckRecursion(s, s.Name, s.File.Source, s.Decl.Name.Span);
     }
 
     private void CheckUnionShape(UnionSymbol u)
@@ -678,12 +676,23 @@ public sealed class Compilation
                         help: "store a `List` copied with `.copy(to: alloc)` instead");
             }
         }
-        if (Contains(u, u, new HashSet<TypeSymbol>()))
-            Report(DiagnosticCodes.RecursiveUnion, u.File.Source, u.Decl.Name.Span, [u.Name],
-                help: "a union cannot contain itself by value; store a `List` of it or an index instead");
+        CheckRecursion(u, u.Name, u.File.Source, u.Decl.Name.Span);
     }
 
-    private static bool Contains(TypeSymbol t, TypeSymbol target, HashSet<TypeSymbol> seen)
+    /// <summary>Structs and unions already reported as part of a cycle, so a cycle is reported once.</summary>
+    private readonly HashSet<TypeSymbol> _inReportedCycle = new();
+
+    /// <summary>By-value containment of itself (BYN2761); <c>Owned</c> and <c>List</c> break a cycle.</summary>
+    private void CheckRecursion(TypeSymbol t, string name, SourceText source, TextSpan span)
+    {
+        if (_inReportedCycle.Contains(t) || Cycle(t, t, new HashSet<TypeSymbol>()) is not { } path) return;
+        _inReportedCycle.UnionWith(path);
+        Report(DiagnosticCodes.RecursiveByValue, source, span, [name, string.Join(" → ", path.Prepend(t).Select(p => p.DisplayName))],
+            help: $"a value cannot contain itself; store the inner one as `Owned<{name}>` (or in a `List<{name}>`)");
+    }
+
+    /// <summary>The structs and unions on a by-value path from <paramref name="t"/> back to <paramref name="target"/>, ending with it; null if there is none.</summary>
+    private static List<TypeSymbol>? Cycle(TypeSymbol t, TypeSymbol target, HashSet<TypeSymbol> seen)
     {
         IEnumerable<TypeSymbol> parts = t switch
         {
@@ -696,10 +705,12 @@ public sealed class Compilation
         };
         foreach (var p in parts)
         {
-            if (p == target) return true;
-            if (seen.Add(p) && Contains(p, target, seen)) return true;
+            if (p == target) return [p];
+            if (!seen.Add(p) || Cycle(p, target, seen) is not { } rest) continue;
+            if (p is StructSymbol or UnionSymbol) rest.Insert(0, p);
+            return rest;
         }
-        return false;
+        return null;
     }
 
     // ── Bodies ───────────────────────────────────────────────────────────────────

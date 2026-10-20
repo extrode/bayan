@@ -23,6 +23,8 @@ internal sealed partial class Binder
         var callee = c.Callee is TargetMemberExpr t ? BindTargetMember(t, expected) : BindExprOrType(c.Callee);
         switch (callee)
         {
+            case BoundMethodGroup { Function.Builtin: BuiltinFunction.OwnedNew }:
+                return BindOwned(c, (expected as OwnedType)?.Inner);
             case BoundMethodGroup g:
                 return BindFunctionCall(c, g.Function, g.Receiver);
             case BoundBuiltinGroup b:
@@ -228,6 +230,8 @@ internal sealed partial class Binder
                     BindArgumentsForRecovery(c);
                 }
                 return new BoundCollection(c, m, []);
+            case OwnedType o:
+                return BindOwned(c, o.Inner);
             case BuiltinType { Kind: BuiltinKind.Arena }:
                 return new BoundCall(c, _c.Builtins.ArenaNew, null, BindArguments(c, _c.Builtins.ArenaNew.Parameters, _c.Builtins.ArenaNew, false, "Arena"), type);
             case BuiltinType { Kind: BuiltinKind.StrBuf } when c.Args.Length == 0:
@@ -243,6 +247,26 @@ internal sealed partial class Binder
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
         }
+    }
+
+    /// <summary><c>Owned(value)</c> or <c>Owned&lt;T&gt;(value)</c>: the value's type comes from <paramref name="inner"/>, else from the argument.</summary>
+    private BoundExpr BindOwned(CallExpr c, TypeSymbol? inner)
+    {
+        BoundExpr value;
+        if (inner is null && c.Args is [{ Name: null, Modifier: ArgModifier.None } arg])
+        {
+            value = BindExpr(arg.Value);
+            inner = DefaultType(value, arg.Value);
+            if (inner.IsError || inner.IsNever) return value;
+            value = Convert(value, inner, arg.Value.Span, argument: true);
+        }
+        else
+        {
+            var ps = new[] { new ParameterSymbol("value", null, inner ?? ErrorType.Instance, ParamModifier.None, 0) };
+            value = BindArguments(c, ps, null, enforceNames: false, "Owned")[0];
+            if (inner is null || inner.IsError) return new BoundErrorExpr(c);
+        }
+        return new BoundCall(c, _c.Builtins.OwnedNew, null, [value], new OwnedType(inner));
     }
 
     private BoundExpr BindBuiltinMethodCall(CallExpr c, BoundExpr receiver, string name)
@@ -817,6 +841,10 @@ internal sealed partial class Binder
                 return CheckWritable(i.Target, span, why);
             case BoundStaticArray:
                 Report(DiagnosticCodes.MutateTemporary, span, [], label: why is null ? "a `const` never changes" : why + "; a `const` never changes");
+                return false;
+            case BoundBuiltinCall { Member: BuiltinMember.OwnedValue }:
+                Report(DiagnosticCodes.MutateTemporary, span, [], label: why is null ? "an `Owned` value is read-only" : why + "; an `Owned` value is read-only",
+                    help: "build a new value and wrap it with `Owned(…)`");
                 return false;
             default:
                 Report(DiagnosticCodes.MutateTemporary, span, [], label: why);

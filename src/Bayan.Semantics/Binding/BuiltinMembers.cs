@@ -6,7 +6,7 @@ namespace Bayan.Semantics.Binding;
 internal sealed record BuiltinMethod(
     BuiltinMember Member, (string Name, TypeSymbol Type)[] Parameters, TypeSymbol Returns, bool Mutating = false);
 
-/// <summary>Members of strings, spans, lists, maps, arrays, results, <c>Arena</c>, <c>StrBuf</c>, <c>Io.stdout</c>/<c>Io.stderr</c>, <c>ProcessResult</c>, <c>char</c> and enums (spec §3, §16).</summary>
+/// <summary>Members of strings, spans, lists, maps, arrays, results, <c>Owned</c>, <c>Arena</c>, <c>StrBuf</c>, <c>Io.stdout</c>/<c>Io.stderr</c>, <c>ProcessResult</c>, <c>char</c> and enums (spec §3, §16).</summary>
 internal static class BuiltinMembers
 {
     /// <summary>A built-in property (read without parentheses), or null.</summary>
@@ -29,6 +29,7 @@ internal static class BuiltinMembers
         (ResultType, "isOk") => (BuiltinMember.ResultIsOk, PrimitiveType.Bool),
         (ResultType r, "value") => (BuiltinMember.ResultValue, r.Value),
         (ResultType r, "err") => (BuiltinMember.ResultError, r.Error),
+        (OwnedType o, "value") => (BuiltinMember.OwnedValue, o.Inner),
         (EnumSymbol, "name") => (BuiltinMember.EnumName, PrimitiveType.String),
         (EnumSymbol, "ordinal") => (BuiltinMember.EnumOrdinal, PrimitiveType.I32),
         _ => null,
