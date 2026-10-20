@@ -60,7 +60,7 @@ public static class DiagnosticRenderer
         if (diagnostic.Help is null && fixLines is null) return sb.ToString();
 
         sb.Append(blank).Append('\n');
-        if (diagnostic.Help is { } help) sb.Append("  help: ").Append(help).Append('\n');
+        if (diagnostic.Help is { } help) sb.Append("  help: ").Append(help.Replace("\n", "\n        ")).Append('\n');
         if (fixLines is not null)
         {
             for (var i = 0; i < fixLines.Length; i++)
