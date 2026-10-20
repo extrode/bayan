@@ -23,15 +23,15 @@ Each milestone task ends with `dotnet test -v q` green, a docs page + `diag/` ca
 - [x] T11 Enums with associated data — files: `Parser.cs`, `ConstantFolding.cs`, `CEmitter.cs` — covers: R5 — done when: `run/` Planet case; non-constant argument `diag/`.
 
 ## M18 Unions
-- [ ] T12 Union declarations, construction, format, equality — files: `Parser.cs`, `Nodes.cs`, `Symbols.cs`, `Types.cs`, `CEmitter.cs` — covers: R4 — done when: `run/` prints `Circle(r: 1)`, equality by tag+payload.
-- [ ] T13 Union patterns in `switch`/`is` + exhaustiveness — files: `BoundNodes.cs`, binder, `Lowerer.cs` — covers: R4, L4 — done when: payload binding `run/` case; missing variant `diag/` names the variant.
+- [x] T12 Union declarations, construction, format, equality — files: `Parser.cs`, `Nodes.cs`, `Symbols.cs`, `Types.cs`, `CEmitter.cs` — covers: R4 — done when: `run/` prints `Circle(r: 1)`, equality by tag+payload.
+- [x] T13 Union patterns in `switch`/`is` + exhaustiveness — files: `BoundNodes.cs`, binder, `Lowerer.cs` — covers: R4, L4 — done when: payload binding `run/` case; missing variant `diag/` names the variant.
 
 ## M19 Generics
 - [ ] T14 Generic functions (inference, monomorphization, mangling) — files: `Types.cs`, `Symbols.cs`, `BinderCalls.cs`, `Compilation.cs`, `CEmitter.cs` — covers: R6 — done when: one function at three types correct; emitted C has exactly three instantiations; illegal template ops `diag/`.
 - [ ] T15 Generic structs/unions — files: `TypeResolver.cs`, binder, `CEmitter.cs` — covers: R6 — done when: `Pair<A,B>` and a generic union `run/` cases.
 
 ## M20–M21 Map and Owned
-- [ ] T16 `Map<K,V>` — files: `Types.cs`, `TypeResolver.cs`, `BuiltinMembers.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R7, L3 — done when: 10,000 inserts with repeats + removals `run/` case; bad key type `diag/`.
+- [x] T16 `Map<K,V>` — files: `Types.cs`, `TypeResolver.cs`, `BuiltinMembers.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R7, L3 — done when: 10,000 inserts with repeats + removals `run/` case; bad key type `diag/`.
 - [ ] T17 `Owned<T>` and recursive types — files: `Types.cs`, binder, `RegionAnalysis.cs`, `CEmitter.cs` — covers: R8 — done when: expression-tree `run/`; node escaping arena `diag/`; direct recursion `diag/`.
 
 ## M22 Bayan lexer
@@ -40,8 +40,8 @@ Each milestone task ends with `dotnet test -v q` green, a docs page + `diag/` ca
 - [x] T20 `SelfhostLexerTests` differential harness — files: `tests/Bayan.Tests/SelfhostLexerTests.cs` — covers: R11 — done when: a theory over every `lex/` golden passes; disagreement names file + first line.
 
 ## M23 Corpus and timing
-- [ ] T21 10,000-input corpus via `--many` — covers: R11, L1, L2 — done when: corpus test passes; no panic; spans inside input.
-- [ ] T22 Timing check — covers: R10 — done when: median of 5 Bayan ≤ 10× C#; `BAYAN_SKIP_TIMING` opt-out.
+- [x] T21 10,000-input corpus via `--many` — covers: R11, L1, L2 — done when: corpus test passes; no panic; spans inside input.
+- [x] T22 Timing check — covers: R10 — done when: median of 5 Bayan ≤ 10× C#; `BAYAN_SKIP_TIMING` opt-out.
 - [ ] T23 Handoff Questions 40–54, progress log, spec sections touched — covers: R12 — done when: handoff updated.
 
 ## Laws
