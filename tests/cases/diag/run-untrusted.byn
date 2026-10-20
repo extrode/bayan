@@ -1,0 +1,7 @@
+void main() fails IoError {
+    Untrusted<string> program = Untrusted("git");
+    Untrusted<string> name = Untrusted("x");
+    try Io.run(program, ["status"]);
+    try Io.run("git", ["log", name]);
+    try Io.run("git", ["log", trust(name, reason: "checked against the branch list")]);
+}
