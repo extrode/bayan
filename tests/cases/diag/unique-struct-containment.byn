@@ -1,0 +1,17 @@
+// A struct with a unique field is unique itself, so copying it is BYN2780.
+struct Ledger {
+    List<i64> xs;
+}
+
+struct Point {
+    i64 x;
+    i64 y;
+}
+
+void main() {
+    let ledger = Ledger { xs = List<i64>() };
+    let copy = ledger;
+    let p = Point { x = 1, y = 2 };
+    let q = p;
+    print($"{copy.xs.length} {q.x}");
+}

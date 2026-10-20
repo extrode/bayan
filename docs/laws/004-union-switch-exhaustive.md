@@ -1,13 +1,16 @@
 ---
 id: L004
 title: A switch over a union compiles only when it covers every variant
-status: proposed
+status: enacted
 kind: guard
 scope: src/Bayan.Semantics/Binding/BinderCalls.cs
+proof: tests/Bayan.Tests/L004UnionSwitchTests.cs
+check: dotnet test --filter Law=L004
+enacted: 2026-10-20
 ---
 
 ## Statement
-For every `union` declaration and every `switch` (statement or expression) whose subject has that union type, compilation reports no BYN2410 if and only if each variant is matched by an irrefutable arm (a variant pattern whose subpatterns are all bindings or `_`) or a default arm exists; when BYN2410 is reported it names every uncovered variant.
+For every `union` and every `switch` statement or expression whose subject has that union type, BYN2410 is reported if and only if some variant is not covered, where a variant is covered by an arm with no `when` guard whose pattern (or one alternative of an `or` pattern) is that variant with only bindings or `_` as subpatterns, or by an arm with no `when` guard whose whole pattern is irrefutable (`_`, `let x`, `var x`, or `default:`), which covers every variant. When reported, BYN2410 names every uncovered variant. (Nested refutable subpatterns never count as covering; this is deliberately conservative.)
 
 ## Counterexample looks like
-`union S { A, B(i64 x), C }` with arms `.A` and `.B(let x)` and no default compiling cleanly, or arms `.A`, `.B(1)`, `.C` (refutable `.B`) compiling cleanly.
+`union S { A, B(i64 x), C }` with arms `.A`, `.B(var x) when x > 0` and `.C` compiling cleanly, or arms `.A or .C` and `.B(var x)` reporting BYN2410, or arms `.A` and `let s =>` reporting BYN2410.

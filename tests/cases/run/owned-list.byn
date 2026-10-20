@@ -3,8 +3,8 @@ struct Node {
     Owned<Node>? next;
 
     i64 total() {
-        let n = next ?? return item;
-        return item + n.total();
+        if (next is { } n) return item + n.total();
+        return item;
     }
 }
 
@@ -13,7 +13,12 @@ struct Tree {
     List<Tree> children;
 }
 
-Owned<Node>? push(Owned<Node>? head, i64 item) => Owned(Node { item = item, next = head });
+Owned<Node>? push(move Owned<Node>? head, i64 item) => Owned(Node { item = item, next = move head });
+
+string show(Owned<Node>? head) {
+    if (head is { } n) return $"{n.item} {show(n.next)}";
+    return "";
+}
 
 i64 count(Tree t) {
     i64 n = 1;
@@ -28,17 +33,10 @@ void main() {
     context (allocator: arena) {
         Owned<Node>? head = null;
         for (let i in 1..6) {
-            head = push(head, i);
+            head = push(move head, i);
         }
-        var cursor = head;
-        var text = "";
-        while (true) {
-            let n = cursor ?? break;
-            text = $"{text}{n.item} ";
-            cursor = n.next;
-        }
-        print(text);
-        let h = head ?? return;
+        print(show(head));
+        if (head is not { } h) return;
         print($"{h.total()} {h.item} {h.value.item}");
         let two = Owned(Node { item = 2, next = Owned(Node { item = 1, next = null }) });
         print($"{two}");
@@ -47,7 +45,7 @@ void main() {
         var root = Tree { name = "root", children = List<Tree>() };
         var leaf = Tree { name = "leaf", children = List<Tree>() };
         leaf.children.add(Tree { name = "deep", children = List<Tree>() });
-        root.children.add(leaf);
+        root.children.add(move leaf);
         root.children.add(Tree { name = "other", children = List<Tree>() });
         print($"{count(root)}");
     }

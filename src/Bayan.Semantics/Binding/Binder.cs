@@ -440,7 +440,7 @@ internal sealed partial class Binder
         if (d.Using) CheckDisposable(d, type);
         var local = DeclareLocal(d.Name, type, kind);
         local.IsUsing = d.Using;
-        if (kind == LocalKind.Let && !d.Using && Source.GetText(new TextSpan(d.Span.Start, 3)) == "let")
+        if (kind is LocalKind.Let or LocalKind.Var && !d.Using && Source.GetText(new TextSpan(d.Span.Start, 3)) == (kind == LocalKind.Let ? "let" : "var"))
             local.KeywordSpan = new TextSpan(d.Span.Start, 3);
         if (kind == LocalKind.Const) local.Constant = init?.Constant;
         return new BoundLocalDecl(d, local, init);
@@ -494,6 +494,7 @@ internal sealed partial class Binder
             else if (!declared.IsError) element = declared;
         }
         var variable = DeclareLocal(f.Variable, element, f.Kind == BindingKind.Var ? LocalKind.Var : LocalKind.ForVariable);
+        variable.BorrowsSubject = true;
         _targets.Add(target);
         var body = BindBody(f.Body);
         _targets.RemoveAt(_targets.Count - 1);

@@ -1,7 +1,7 @@
 i64 countOf<K>(K key) {
     var m = Map<K, i64>();
-    m.set(key, 1);
-    return m.count;
+    m[key] = 1;
+    return m.length;
 }
 
 bool same<T>(T a, T b) => a == b;
@@ -13,7 +13,7 @@ struct Index<K> {
 
 print($"{countOf(1.5)}");
 print($"{countOf("fine")}");
-var xs = List<i64>();
+let xs = List<i64>();
 print($"{same(a: xs, b: xs)}");
 print(show(Arena()));
 Index<f64> idx;

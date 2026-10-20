@@ -79,9 +79,25 @@ internal sealed partial class Binder
             var converted = new BoundConversion(value.Syntax, value, target, kind);
             return value.Constant is { } c && kind == ConversionKind.Widen ? converted with { Constant = WidenConstant(c, target) } : converted;
         }
+        if (_sinkArgument && ContainsUntrusted(value.Type))
+        {
+            Report(DiagnosticCodes.UntrustedSink, span, [value.Type.DisplayName, "Io.runBatch"],
+                help: "check the value, then clear the mark with `trust(x, reason: \"…\")`");
+            return new BoundErrorExpr(value.Syntax);
+        }
         ReportMismatch(value, target, span);
         return new BoundErrorExpr(value.Syntax);
     }
+
+    private static bool ContainsUntrusted(TypeSymbol t) => t switch
+    {
+        UntrustedType => true,
+        ListType l => ContainsUntrusted(l.Element),
+        SpanType s => ContainsUntrusted(s.Element),
+        Symbols.ArrayType a => ContainsUntrusted(a.Element),
+        OptionalType o => ContainsUntrusted(o.Inner),
+        _ => false,
+    };
 
     private static ConstantValue WidenConstant(ConstantValue c, TypeSymbol target) =>
         target.IsFloat && c.Value is Int128 n ? new ConstantValue((double)n) : c;
@@ -175,6 +191,8 @@ internal sealed partial class Binder
                 return BindSwitchExpr(s, expected);
             case TryExpr t:
                 return BindTry(t, expected);
+            case MoveExpr m:
+                return BindMove(m, BindExpr(m.Operand, expected));
             case CatchExpr c:
                 return BindCatch(c, expected);
             case JumpExpr j:
@@ -465,11 +483,11 @@ internal sealed partial class Binder
                 if (_c.Builtins.FindIo(name) is not { } member)
                 {
                     Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, io.Name],
-                        help: Suggest(name, ["readFile", "readText", "writeFile", "listDir", "run", "monotonicNanos", "stdout", "stderr"]) is { } near ? $"did you mean `{near}`?" : null);
+                        help: Suggest(name, ["readFile", "readText", "writeFile", "listDir", "run", "runBatch", "monotonicNanos", "stdout", "stderr", "stdin"]) is { } near ? $"did you mean `{near}`?" : null);
                     return new BoundErrorExpr(m);
                 }
-                // `stdout` and `stderr` read like properties; the rest are called.
-                if (member.Builtin is BuiltinFunction.IoStdout or BuiltinFunction.IoStderr) return new BoundCall(m, member, null, [], member.ReturnType);
+                // `stdout`, `stderr` and `stdin` read like properties; the rest are called.
+                if (member.Builtin is BuiltinFunction.IoStdout or BuiltinFunction.IoStderr or BuiltinFunction.IoStdin) return new BoundCall(m, member, null, [], member.ReturnType);
                 return new BoundMethodGroup(m, null, member);
             }
             case BoundTypeRef t:
@@ -676,6 +694,11 @@ internal sealed partial class Binder
             ReportStringIndexer(i);
             BindExpr(i.Index);
             return new BoundErrorExpr(i);
+        }
+        if (target.Type is MapType map)
+        {
+            var key = BindConverted(i.Index, map.KeyType);
+            return key.Type.IsError ? new BoundErrorExpr(i) : new BoundBuiltinCall(i, BuiltinMember.MapIndex, target, [key], map.ValueType);
         }
         TypeSymbol? element = target.Type switch
         {
@@ -927,6 +950,7 @@ internal sealed partial class Binder
         OptionalType o => IsEquatable(o.Inner, seen),
         ResultType r => IsEquatable(r.Value, seen),
         OwnedType o => IsEquatable(o.Inner, seen),
+        UntrustedType u => IsEquatable(u.Inner, seen),
         ErrorSetSymbol or ErrorUnionType or EnumSymbol or TypeParameterType => true,
         StructSymbol s => !seen.Add(s) || s.Fields.All(f => IsEquatable(f.Type, seen)),
         UnionSymbol u => !seen.Add(u) || u.Variants.All(v => v.Fields.All(f => IsEquatable(f.Type, seen))),
@@ -1234,30 +1258,48 @@ internal sealed partial class Binder
             }
             var hole = (InterpolationHole)part;
             var value = BindExpr(hole.Expr);
-            if (!value.Type.IsError && !IsFormattable(value.Type))
-                Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName],
+            if (!value.Type.IsError && WhyNotFormattable(value.Type, []) is { } why)
+                Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName], label: why == "" ? null : why,
                     help: value.Type is StructSymbol s ? $"give `{s.Name}` a `void formatInto(ref StrBuf out)` method" : null);
             parts.Add(new BoundInterpolationPart(null, value));
         }
         return new BoundInterpolated(i, parts.ToArray());
     }
 
-    internal static bool IsFormattable(TypeSymbol t) => IsFormattable(t, []);
+    internal static bool IsFormattable(TypeSymbol t) => WhyNotFormattable(t, []) is null;
 
-    /// <summary><c>Owned</c> formats the value it points to; a type reached again through one is assumed formattable.</summary>
-    private static bool IsFormattable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
+    /// <summary>
+    /// Null when <paramref name="t"/> formats; otherwise the part that does not ("" for <paramref name="t"/> itself).
+    /// <c>Owned</c> formats the value it points to; a type reached again is assumed formattable.
+    /// </summary>
+    private static string? WhyNotFormattable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
-        PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
-        ErrorSetSymbol or ErrorUnionType or EnumSymbol => true,
-        OptionalType o => IsFormattable(o.Inner, seen),
-        ResultType r => IsFormattable(r.Value, seen),
-        OwnedType o => IsFormattable(o.Inner, seen),
-        StructSymbol or TypeParameterType => true,
-        UnionSymbol u => !seen.Add(u) || u.Variants.All(v => v.Fields.All(f => IsFormattable(f.Type, seen))),
-        Symbols.TupleType tt => tt.Fields.All(f => IsFormattable(f.Type, seen)),
-        MapType m => IsFormattable(m.KeyType, seen) && IsFormattable(m.ValueType, seen),
-        _ => false,
+        PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never) ? null : "",
+        ErrorSetSymbol or ErrorUnionType or EnumSymbol or TypeParameterType => null,
+        OptionalType o => Part("the value", o.Inner, seen),
+        ResultType r => Part("the value", r.Value, seen),
+        OwnedType o => WhyNotFormattable(o.Inner, seen),
+        StructSymbol s => HasFormatInto(s) || !seen.Add(s) ? null
+            : s.Fields.Select(f => Part($"field `{f.Name}`", f.Type, seen)).FirstOrDefault(w => w is not null),
+        UnionSymbol u => !seen.Add(u) ? null
+            : u.Variants.SelectMany(v => v.Fields.Select(f => Part($"`{v.Name}` field `{f.Name}`", f.Type, seen))).FirstOrDefault(w => w is not null),
+        Symbols.TupleType tt => tt.Fields.Select((f, i) => Part($"element {i + 1}", f.Type, seen)).FirstOrDefault(w => w is not null),
+        MapType m => Part("the key", m.KeyType, seen) ?? Part("the value", m.ValueType, seen),
+        // Lists, spans and arrays do not format; an unformattable element is still named.
+        ListType l => Part("an element", l.Element, seen) ?? "",
+        SpanType sp => Part("an element", sp.Element, seen) ?? "",
+        ArrayType a => Part("an element", a.Element, seen) ?? "",
+        _ => "",
     };
+
+    /// <summary>Why <paramref name="part"/> of a type does not format, naming it when it is the culprit.</summary>
+    private static string? Part(string name, TypeSymbol part, HashSet<TypeSymbol> seen) =>
+        WhyNotFormattable(part, seen) is { } why ? why == "" ? $"{name} is `{part.DisplayName}`" : why : null;
+
+    /// <summary>Matches the C emitter's <c>formatInto</c> lookup.</summary>
+    private static bool HasFormatInto(StructSymbol s) =>
+        s.Methods.Any(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 1
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } });
 }
 
 /// <summary>A function named but not yet called (only valid as a callee).</summary>

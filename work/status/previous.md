@@ -1,3 +1,3 @@
 # Previous
 
-Spec 001, self-hosting step 1 (`docs/specs/001-self-hosted-lexer/`): the compiler-writing subset (M13–M21) and a Bayan lexer in `selfhost/lexer/` that matches the C# lexer on every `lex/` golden and a 10,000-input corpus (M22–M23). 476 tests pass. Laws L001–L004 proposed, awaiting enactment.
+Spec 002, ownership and law alignment (`docs/specs/002-ownership-and-law-alignment/`): `unique` collections with `move`/`.copy(to:)`, the spec §16 Map API, shared Unicode tables with `bayan lex --json`, `Untrusted<T>` and `Io.runBatch`, the BYN2311 `var` lint. Laws L001–L004 enacted and proven; L005, L006 proposed. 597 tests pass.

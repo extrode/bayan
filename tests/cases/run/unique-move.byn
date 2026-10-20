@@ -1,0 +1,42 @@
+// Moving unique values between owners: locals, a struct field, a list and a `move` parameter.
+struct Bag {
+    string name;
+    List<i64> items;
+}
+
+i64 sum(move List<i64> xs) {
+    i64 total = 0;
+    for (let x in xs) total += x;
+    return total;
+}
+
+void main() {
+    var a = List<i64>();
+    a.add(1);
+    a.add(2);
+    let b = move a;
+    print($"b {b.length}");
+
+    var bag = Bag { name = "bag", items = move b };
+    bag.items.add(3);
+    print($"{bag.name} {bag.items.length}");
+
+    var lists = List<List<i64>>();
+    var c = List<i64>();
+    c.add(4);
+    lists.add(move c);
+    print($"lists {lists.length} {lists[0].length}");
+
+    var d = List<i64>();
+    d.add(5);
+    d.add(6);
+    print($"sum {sum(move d)}");
+
+    d = List<i64>();
+    d.add(7);
+    print($"d {d.length} {d[0]}");
+
+    i64 n = 8;
+    let m = move n;
+    print($"{n} {m}");
+}

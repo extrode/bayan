@@ -3,16 +3,16 @@ struct Point {
     i64 y;
 }
 
-T pick<T>(bool first, T a, T b) => first ? a : b;
+T pick<T>(bool first, move T a, move T b) => first ? move a : move b;
 
-T? first<T>(ReadOnlySpan<T> xs) {
-    if (xs.length == 0) return null;
-    return xs[0];
+string first<T>(ReadOnlySpan<T> xs) {
+    if (xs.length == 0) return "null";
+    return $"{xs[0]}";
 }
 
 bool same<T>(T a, T b) => a == b;
 
-T twice<T>(T x) => pick(first: false, a: x, b: x);
+T twice<T>(move T x, move T y) => pick(first: false, a: move x, b: move y);
 
 i64 countDown<T>(T x, i64 n) {
     if (n == 0) return 0;
@@ -30,9 +30,9 @@ var xs = List<i64>();
 xs.add(7);
 xs.add(8);
 print($"{first(xs)}");
-var none = List<string>();
+let none = List<string>();
 print($"{first(none)}");
 
 print($"{same(a: 1, b: 1)} {same(a: "a", b: "b")} {same(a: p, b: Point { x = 1, y = 2 })}");
-print(twice("echo"));
+print(twice(x: "echo", y: "echo"));
 print($"{countDown("x", 3)}");

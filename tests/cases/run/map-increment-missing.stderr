@@ -1,0 +1,2 @@
+panic: key not found in map
+  at map-increment-missing.byn:6

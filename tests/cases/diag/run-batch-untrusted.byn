@@ -1,0 +1,12 @@
+void main() fails IoError {
+    Untrusted<string> path = Untrusted("./build.cmd");
+    Untrusted<string> name = Untrusted("x");
+    List<Untrusted<string>> many = List<Untrusted<string>>();
+    Span<Untrusted<string>> span = many.asSpan();
+    List<string> none = List<string>();
+    try Io.runBatch(path, none.asSpan());
+    try Io.runBatch("./build.cmd", ["a", name]);
+    try Io.runBatch("./build.cmd", many);
+    try Io.runBatch("./build.cmd", span);
+    try Io.runBatch("./build.cmd", [trust(name, reason: "checked against the allow list")]);
+}

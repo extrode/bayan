@@ -1,0 +1,16 @@
+struct Holder {
+    List<i64> items;
+}
+
+void use(Arena a) {
+    let lists = List<List<i64>>();
+    let l = lists.copy(to: a);
+    let maps = Map<string, StrBuf>();
+    let m = maps.copy(to: a);
+    let keyed = Map<i64, Holder>();
+    let k = keyed.copy(to: a);
+    let owned = List<Owned<i64>?>();
+    let o = owned.copy(to: a);
+    let fine = Map<string, i64[2]>();
+    let f = fine.copy(to: a);
+}

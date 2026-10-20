@@ -25,6 +25,10 @@ internal sealed partial class Binder
         {
             case BoundMethodGroup { Function.Builtin: BuiltinFunction.OwnedNew }:
                 return BindOwned(c, (expected as OwnedType)?.Inner);
+            case BoundMethodGroup { Function.Builtin: BuiltinFunction.UntrustedNew }:
+                return BindUntrusted(c, (expected as UntrustedType)?.Inner);
+            case BoundMethodGroup { Function.Builtin: BuiltinFunction.Trust }:
+                return BindTrust(c);
             case BoundMethodGroup g:
                 return BindFunctionCall(c, g.Function, g.Receiver, g.TypeArgs);
             case BoundBuiltinGroup b:
@@ -60,6 +64,9 @@ internal sealed partial class Binder
     /// <summary>Binding the argument of <c>print</c>, which also takes an enum and prints its name.</summary>
     private bool _printArgument;
 
+    /// <summary>Binding an argument of <c>Io.runBatch</c>, a sink where an <c>Untrusted&lt;T&gt;</c> value is BYN2786.</summary>
+    private bool _sinkArgument;
+
     private BoundExpr BindFunctionCall(CallExpr c, FunctionSymbol fn, BoundExpr? receiver, TypeSyntax[]? typeArgs = null)
     {
         if (fn.TypeParameters.Count > 0 || typeArgs is { Length: > 0 })
@@ -71,10 +78,11 @@ internal sealed partial class Binder
             }
             fn = instance;
         }
-        var outer = _printArgument;
+        var (outer, outerSink) = (_printArgument, _sinkArgument);
         _printArgument = fn.Builtin == BuiltinFunction.Print;
+        _sinkArgument = fn.Builtin == BuiltinFunction.IoRunBatch;
         var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
-        _printArgument = outer;
+        (_printArgument, _sinkArgument) = (outer, outerSink);
         if (receiver is not null && fn.HasThis)
             _c.MutationChecks.Add(new MutationCheck(this, fn, receiver));
         if (fn.Fails && !ReferenceEquals(_handled, c))
@@ -277,7 +285,8 @@ internal sealed partial class Binder
     private BoundExpr BindArgument(Argument arg, ParameterSymbol p)
     {
         var wanted = p.Modifier switch { ParamModifier.Ref => ArgModifier.Ref, ParamModifier.Out => ArgModifier.Out, _ => ArgModifier.None };
-        var given = arg.Modifier == ArgModifier.In ? ArgModifier.None : arg.Modifier;
+        // `move x` hands a value to a plain or `move` parameter.
+        var given = arg.Modifier == ArgModifier.In || (arg.Modifier == ArgModifier.Move && wanted == ArgModifier.None) ? ArgModifier.None : arg.Modifier;
         if (given != wanted)
         {
             var keyword = wanted == ArgModifier.None ? null : wanted.ToString().ToLowerInvariant();
@@ -303,6 +312,7 @@ internal sealed partial class Binder
     private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type)
     {
         var value = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, type);
+        if (arg.Modifier == ArgModifier.Move) value = BindMove(arg, value);
         return type is null ? value : Convert(value, type, arg.Value.Span, argument: true);
     }
 
@@ -388,14 +398,112 @@ internal sealed partial class Binder
         return new BoundCall(c, _c.Builtins.OwnedNew, null, [value], new OwnedType(inner));
     }
 
+    /// <summary><c>Untrusted(value)</c>: the value's type comes from the argument, or from the expected <c>Untrusted&lt;T&gt;</c>.</summary>
+    private BoundExpr BindUntrusted(CallExpr c, TypeSymbol? inner)
+    {
+        BoundExpr value;
+        if (inner is null && c.Args is [{ Name: null, Modifier: ArgModifier.None } arg])
+        {
+            value = BindExpr(arg.Value);
+            inner = DefaultType(value, arg.Value);
+            if (inner.IsError || inner.IsNever) return value;
+            value = Convert(value, inner, arg.Value.Span, argument: true);
+        }
+        else
+        {
+            var ps = new[] { new ParameterSymbol("value", null, inner ?? ErrorType.Instance, ParamModifier.None, 0) };
+            value = BindArguments(c, ps, null, enforceNames: false, "Untrusted")[0];
+            if (inner is null || inner.IsError) return new BoundErrorExpr(c);
+        }
+        return new BoundCall(c, _c.Builtins.UntrustedNew, null, [value], new UntrustedType(inner));
+    }
+
+    /// <summary><c>trust(value, reason: "…")</c>: <c>Untrusted&lt;T&gt;</c> to <c>T</c>, with a non-empty literal reason.</summary>
+    private BoundExpr BindTrust(CallExpr c)
+    {
+        var value = c.Args.Length > 0 && c.Args[0].Name is null ? BindExpr(c.Args[0].Value) : null;
+        if (value is null || c.Args.Length != 2 || c.Args[1].Name?.Text != "reason")
+        {
+            BindArgumentsForRecovery(c);
+            Report(DiagnosticCodes.TrustReason, c.Span, [], help: "write `trust(x, reason: \"why this value is safe\")`");
+            return new BoundErrorExpr(c);
+        }
+        var reason = c.Args[1].Value;
+        BindExpr(reason);
+        if (reason is not LiteralExpr { Kind: LiteralKind.String, Text.Length: > 0 })
+            Report(DiagnosticCodes.TrustReason, reason.Span, [], help: "explain why the value is safe, in a string literal such as `reason: \"validated upstream\"`");
+        if (value.Type.IsError) return value;
+        if (value.Type is not UntrustedType u)
+        {
+            Convert(value, new UntrustedType(value.Type), c.Args[0].Value.Span, argument: true);
+            return new BoundErrorExpr(c);
+        }
+        return new BoundCall(c, _c.Builtins.Trust, null, [value], u.Inner);
+    }
+
     private BoundExpr BindBuiltinMethodCall(CallExpr c, BoundExpr receiver, string name)
     {
         var m = BuiltinMembers.Method(receiver.Type, name)!;
         var ps = m.Parameters.Select((p, i) => new ParameterSymbol(p.Name, null, p.Type, ParamModifier.None, i)).ToList();
         var args = BindArguments(c, ps, null, enforceNames: false, displayName: name);
         if (m.Mutating) CheckWritable(receiver, receiver.Syntax.Span, $"`{name}` modifies it");
-        var returns = m.Returns is SpanType span && receiver is BoundStaticArray ? new SpanType(span.Element, readOnly: true) : m.Returns;
+        if (m.Member == BuiltinMember.MapSlot && !IsDefaultable(m.Returns))
+            Report(DiagnosticCodes.MapSlotNoDefault, c.Span, [m.Returns.DisplayName],
+                help: "read with `map[key]` or `map.getOr(key, fallback)`, and write with `map[key] = value`");
+        if (m.Member is BuiltinMember.ListCopy or BuiltinMember.MapCopy)
+        {
+            var held = m.Member == BuiltinMember.ListCopy
+                ? TypeFacts.UniquePart(((ListType)receiver.Type).Element)
+                : TypeFacts.UniquePart(((MapType)receiver.Type).KeyType) ?? TypeFacts.UniquePart(((MapType)receiver.Type).ValueType);
+            if (held is not null)
+                Report(DiagnosticCodes.CopyUniqueElement, c.Span, [receiver.Type.DisplayName, held.DisplayName],
+                    help: "build the copy with a loop that copies each element, or share the original by `ref`");
+        }
+        var returns = m.Returns is SpanType span && receiver is BoundStaticArray ? new SpanType(span.Element, readOnly: true)
+            : m.Member == BuiltinMember.IoReadAll ? new ResultType(m.Returns, _c.Builtins.IoError)
+            : m.Returns;
         return new BoundBuiltinCall(c, m.Member, receiver, args, returns);
+    }
+
+    /// <summary>Whether <c>map.slot</c> can insert a default <paramref name="t"/>: numbers, <c>bool</c>, <c>char</c>, <c>string</c>, optionals and structs whose fields all have defaults.</summary>
+    private static bool IsDefaultable(TypeSymbol t) => t switch
+    {
+        PrimitiveType { Kind: PrimitiveKind.Char } => true,
+        OptionalType => true,
+        StructSymbol s => s.IsDefaultable,
+        _ => t.IsNumeric || t.IsBool || t.IsString,
+    };
+
+    // ── Ownership ────────────────────────────────────────────────────────────────
+
+    /// <summary><c>move x</c> (or a <c>move</c> argument): only a local or a <c>move</c> parameter can be moved (spec §9.3).</summary>
+    private BoundExpr BindMove(Node syntax, BoundExpr operand)
+    {
+        if (operand.Type.IsError) return operand;
+        switch (operand)
+        {
+            case BoundLocal { Local: { BorrowsSubject: true } l } when TypeFacts.IsUnique(l.Type):
+                Report(DiagnosticCodes.MutateBorrow, operand.Syntax.Span, [l.Name], label: "moving it would take the value out of what it borrows from",
+                    help: "move or copy the value it was bound to instead");
+                return new BoundMove(syntax, operand);
+            case BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var } or ParameterSymbol { Modifier: ParamModifier.Move } }:
+            case BoundLocal { Local.BorrowsSubject: true }:
+                return new BoundMove(syntax, operand);
+        }
+        var (what, help) = operand switch
+        {
+            BoundLocal { Local: ParameterSymbol { IsByRef: true } p } => ($"`{p.Modifier.ToString().ToLowerInvariant()}` parameter `{p.Name}`", "the caller still owns it; copy it with `.copy(to: alloc)`"),
+            BoundLocal { Local: ParameterSymbol p } => ($"parameter `{p.Name}`", $"a plain parameter is borrowed from the caller; declare it `move {p.Name}` to take ownership"),
+            BoundLocal { Local: var l } => ($"`{l.Name}`", "only a local variable or a `move` parameter can be moved"),
+            BoundField f => ($"field `{f.Field.Name}`", "its owner keeps it; move the whole value, or copy the field with `.copy(to: alloc)`"),
+            BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } => ("an element", "the collection keeps it; copy the element with `.copy(to: alloc)`"),
+            BoundTupleElement => ("a tuple element", "move the whole tuple instead"),
+            BoundThis => ("`this`", "a method borrows `this`"),
+            BoundCall or BoundBuiltinCall or BoundStructLiteral or BoundCollection or BoundLiteral => ("a fresh value", "a fresh value needs no `move`; remove it"),
+            _ => ("this expression", "only a local variable or a `move` parameter can be moved"),
+        };
+        Report(DiagnosticCodes.CannotMove, operand.Syntax.Span, [what], help: help);
+        return new BoundMove(syntax, operand);
     }
 
     // ── Failure handling ─────────────────────────────────────────────────────────
@@ -537,7 +645,12 @@ internal sealed partial class Binder
             case DiscardPattern:
                 return new BoundBindPattern(p, input, null);
             case VarPattern v:
-                return new BoundBindPattern(p, input, DeclareLocal(v.Name, input, LocalKind.PatternVariable));
+            {
+                var local = DeclareLocal(v.Name, input, v.IsLet ? LocalKind.PatternVariable : LocalKind.Var);
+                local.BorrowsSubject = true;
+                if (!v.IsLet) local.KeywordSpan = new TextSpan(v.Span.Start, 3);
+                return new BoundBindPattern(p, input, local);
+            }
             case ConstantPattern c:
                 return BindConstantPattern(c, input);
             case RelationalPattern r:
@@ -706,6 +819,7 @@ internal sealed partial class Binder
             if (ok) subs.Add(new BoundSubpattern(steps.ToArray(), pattern));
         }
         var designation = pp.Designation is { } d ? DeclareLocal(d, valueType, LocalKind.PatternVariable) : null;
+        if (designation is not null) designation.BorrowsSubject = true;
         return new BoundPropertyPattern(pp, input, valueType, subs.ToArray(), designation);
     }
 
@@ -755,7 +869,7 @@ internal sealed partial class Binder
         foreach (var (pattern, guard) in arms)
         {
             if (pattern is null) return true;
-            if (guard is not null && guard.Constant is not { Value: true }) continue;
+            if (guard is not null) continue;
             if (Irrefutable(pattern)) return true;
             Collect(pattern, type, covered);
         }
@@ -763,7 +877,7 @@ internal sealed partial class Binder
         if (statement && (domain is null || domain.Contains(Some))) return false;
         var missing = domain?.Where(k => !covered.Contains(k)).Select(k => k == Some ? "a value" : k).ToList();
         Report(DiagnosticCodes.NonExhaustive, span, [type.DisplayName],
-            label: missing is { Count: > 0 } ? "not covered: " + string.Join(", ", missing.Take(6)) + (missing.Count > 6 ? ", …" : "") : null,
+            label: missing is { Count: > 0 } ? "not covered: " + string.Join(", ", missing) : null,
             help: statement ? "add the missing cases or a `default:` section" : "add the missing arms, or `_ => …` for the rest");
         return false;
     }
@@ -855,6 +969,7 @@ internal sealed partial class Binder
             BindExpr(a.Value);
             return new BoundErrorStmt(a);
         }
+        target = MapWriteTarget(target);
         CheckWritable(target, a.Target.Span, null);
         if (op is null)
             return new BoundAssign(a, target, BindConverted(a.Value, target.Type), null);
@@ -901,10 +1016,15 @@ internal sealed partial class Binder
             Report(DiagnosticCodes.BadUnaryOperand, i.Span, [i.Increment ? "++" : "--", target.Type.DisplayName]);
             return new BoundErrorStmt(i);
         }
+        target = MapWriteTarget(target);
         CheckWritable(target, i.Target.Span, null);
         var one = Literal(i, target.Type, (Int128)1);
         return new BoundAssign(i, target, one, i.Increment ? BinaryOp.Add : BinaryOp.Sub);
     }
+
+    /// <summary><c>map[k]</c> as an assignment target: <c>=</c> inserts <c>k</c> when missing; <c>op=</c>, <c>++</c> and <c>--</c> read it first and panic (lowering).</summary>
+    private static BoundExpr MapWriteTarget(BoundExpr target) =>
+        target is BoundBuiltinCall { Member: BuiltinMember.MapIndex } b ? b with { Member = BuiltinMember.MapIndexSet } : target;
 
     /// <summary>
     /// Reports when <paramref name="target"/> may not be written. Writes through <c>this</c> make
@@ -917,6 +1037,7 @@ internal sealed partial class Binder
         BoundField f => WritesThis(f.Receiver),
         BoundTupleElement t => WritesThis(t.Receiver),
         BoundIndex { Target.Type: not SpanType } i => WritesThis(i.Target),
+        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b => WritesThis(b.Receiver),
         _ => false,
     };
 
@@ -924,9 +1045,14 @@ internal sealed partial class Binder
 
     internal bool CheckWritable(BoundExpr target, TextSpan span, string? why)
     {
+        if (WrittenLocal(target) is { } written) written.Written = true;
         switch (target)
         {
             case BoundErrorExpr:
+                return false;
+            case BoundLocal { Local: { BorrowsSubject: true } l } when TypeFacts.IsUnique(l.Type):
+                Report(DiagnosticCodes.MutateBorrow, span, [l.Name], label: why,
+                    help: "a loop or pattern variable of a unique type borrows from its subject; change the subject itself, or work on a `.copy(to: alloc)`");
                 return false;
             case BoundLocal { Local: var l }:
                 if (l.IsMutable || l is ParameterSymbol { IsByRef: true }) return true;
@@ -962,6 +1088,8 @@ internal sealed partial class Binder
                 return true;
             case BoundIndex i:
                 return CheckWritable(i.Target, span, why);
+            case BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b:
+                return CheckWritable(b.Receiver, span, why);
             case BoundStaticArray:
                 Report(DiagnosticCodes.MutateTemporary, span, [], label: why is null ? "a `const` never changes" : why + "; a `const` never changes");
                 return false;
@@ -974,6 +1102,17 @@ internal sealed partial class Binder
                 return false;
         }
     }
+
+    /// <summary>The local a write lands in, even when the write is rejected (<c>x.f</c>, <c>x[i]</c>, <c>x.t.0</c>).</summary>
+    private static LocalSymbol? WrittenLocal(BoundExpr e) => e switch
+    {
+        BoundLocal l => l.Local,
+        BoundField f => WrittenLocal(f.Receiver),
+        BoundTupleElement t => WrittenLocal(t.Receiver),
+        BoundIndex { Target.Type: not SpanType } i => WrittenLocal(i.Target),
+        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b => WrittenLocal(b.Receiver),
+        _ => null,
+    };
 
     private void ReportImmutable(LocalSymbol l, TextSpan span, string? why)
     {

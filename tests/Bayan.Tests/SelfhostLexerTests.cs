@@ -49,14 +49,22 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
     }
 
     /// <summary><see cref="Run"/> with stdout kept as bytes, so invalid UTF-8 is compared as printed.</summary>
-    private static (int Exit, byte[] Out, string Err) RunBytes(string program, params string[] args)
+    private static (int Exit, byte[] Out, string Err) RunBytes(string program, params string[] args) => RunBytes(program, null, args);
+
+    /// <summary><see cref="RunBytes(string, string[])"/> with <paramref name="input"/> fed to stdin.</summary>
+    private static (int Exit, byte[] Out, string Err) RunBytes(string program, byte[]? input, params string[] args)
     {
-        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(program) { RedirectStandardInput = input is not null, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         var stdout = new MemoryStream();
         var copy = p.StandardOutput.BaseStream.CopyToAsync(stdout);
         var stderr = p.StandardError.ReadToEndAsync();
+        if (input is not null)
+        {
+            p.StandardInput.BaseStream.Write(input);
+            p.StandardInput.Close();
+        }
         p.WaitForExit();
         copy.Wait();
         return (p.ExitCode, stdout.ToArray(), stderr.Result);
@@ -77,6 +85,31 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
         var (exit, stdout, stderr) = Run(LexDiffTests.LexDiff.Value, "--left", Built, "--golden", ".tokens", Path.Combine(Golden.CasesRoot, "lex"));
         Assert.True(exit == 0, stdout + stderr);
         Assert.Matches(@"^\d+ files, 0 differ\r?\n$", stderr);
+    }
+
+    /// <summary>Spec 002 R7, R8: <c>bayan-lex --json</c> fed on stdin prints exactly <see cref="TokenDump.ToJson"/>.</summary>
+    [Fact]
+    public void JsonOnStdinMatchesTheReferenceLexer()
+    {
+        foreach (var input in Directory.GetFiles(Path.Combine(Golden.CasesRoot, "lex"), "*.byn").Order(StringComparer.Ordinal))
+        {
+            var bytes = File.ReadAllBytes(input);
+            var (exit, stdout, stderr) = RunBytes(Built, bytes, "--json");
+            var result = Lexer.Lex(new SourceText(input, bytes));
+            var expected = Encoding.UTF8.GetBytes(TokenDump.ToJson(result));
+            Assert.True(expected.AsSpan().SequenceEqual(stdout),
+                $"{input}: --json differs\nexpected: {Encoding.UTF8.GetString(expected)}\nactual:   {Encoding.UTF8.GetString(stdout)}\n{stderr}");
+            Assert.Equal(result.Diagnostics.Any(d => d.IsError) ? 1 : 0, exit);
+        }
+    }
+
+    [Fact]
+    public void JsonOnAMissingPathExitsFour()
+    {
+        var (exit, stdout, stderr) = Run(Built, "--json", Path.Combine(Golden.RepoRoot, "tmp", "no-such-file.byn"));
+        Assert.Equal(4, exit);
+        Assert.Empty(stdout);
+        Assert.NotEmpty(stderr);
     }
 
     /// <summary>
@@ -229,6 +262,77 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
             Assert.Fail($"{Path.Combine(dir, names[i])}: Bayan and C# lexers disagree\n{failure}");
         }
         Assert.True(exit == 0 && !stderr.Contains("panic:"), $"exit {exit}\n{stderr}");
+    }
+
+    /// <summary>Every corpus input and <c>lex/</c> case with its <c>bayan-lex --json</c> run on stdin, made once for L001 and L002.</summary>
+    private static readonly Lazy<(byte[] Input, int Exit, byte[] Out, string Err, bool TimedOut)[]> StdinRuns = new(() =>
+    {
+        var built = Built;
+        var inputs = Directory.GetFiles(Path.Combine(Golden.CasesRoot, "lex"), "*.byn").Order(StringComparer.Ordinal)
+            .Select(File.ReadAllBytes).Concat(GenerateCorpus()).ToArray();
+        var runs = new (byte[], int, byte[], string, bool)[inputs.Length];
+        // sequential: concurrent Process.Start calls leak stdin pipe ends into each other's children, which then never see EOF
+        Parallel.For(0, inputs.Length, new ParallelOptions { MaxDegreeOfParallelism = 1 }, i =>
+        {
+            var psi = new ProcessStartInfo(built) { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            psi.ArgumentList.Add("--json");
+            using var p = Process.Start(psi)!;
+            var stdout = new MemoryStream();
+            var copy = p.StandardOutput.BaseStream.CopyToAsync(stdout);
+            var stderr = p.StandardError.ReadToEndAsync();
+            try
+            {
+                p.StandardInput.BaseStream.Write(inputs[i]);
+                p.StandardInput.Close();
+            }
+            catch (IOException)
+            {
+                // the lexer died before reading everything; its exit code says so
+            }
+            var done = p.WaitForExit(30_000);
+            if (!done) p.Kill(entireProcessTree: true);
+            p.WaitForExit();
+            copy.Wait();
+            runs[i] = (inputs[i], done ? p.ExitCode : -1, stdout.ToArray(), stderr.Result, !done);
+        });
+        return runs;
+    });
+
+    private static string Hex(byte[] bytes) => Convert.ToHexString(bytes);
+
+    /// <summary>Law L001: on every corpus input and <c>lex/</c> case, <c>bayan-lex --json</c> on stdin prints exactly <see cref="TokenDump.ToJson"/>.</summary>
+    [Fact]
+    [Trait("Law", "L001")]
+    public void BayanLexJsonEqualsTheReferenceLexerOnEveryInput()
+    {
+        var runs = StdinRuns.Value;
+        for (var i = 0; i < runs.Length; i++)
+        {
+            var (input, _, actual, stderr, _) = runs[i];
+            var expected = Encoding.UTF8.GetBytes(TokenDump.ToJson(Lexer.Lex(new SourceText("<stdin>", input))));
+            if (expected.AsSpan().SequenceEqual(actual)) continue;
+            Assert.Fail($"input {i} ({Hex(input)}): --json differs\nexpected: {Encoding.UTF8.GetString(expected)}\nactual:   {Encoding.UTF8.GetString(actual)}\n{stderr}");
+        }
+    }
+
+    /// <summary>Law L002: on every input <c>bayan-lex</c> exits 0 or 1 in time and every span in its output lies in <c>[0, length]</c>.</summary>
+    [Fact]
+    [Trait("Law", "L002")]
+    public void BayanLexNeverPanicsAndKeepsSpansInsideTheInput()
+    {
+        var runs = StdinRuns.Value;
+        for (var i = 0; i < runs.Length; i++)
+        {
+            var (input, exit, stdout, stderr, timedOut) = runs[i];
+            Assert.False(timedOut, $"input {i} ({Hex(input)}): timed out");
+            Assert.True(exit is 0 or 1, $"input {i} ({Hex(input)}): exit {exit}\n{stderr}");
+            foreach (Match m in Regex.Matches(Encoding.Latin1.GetString(stdout), "\"start\":(\\d+),\"end\":(\\d+)"))
+            {
+                var start = long.Parse(m.Groups[1].Value);
+                var end = long.Parse(m.Groups[2].Value);
+                Assert.True(start <= end && end <= input.Length, $"input {i} ({Hex(input)}): span {start}..{end} outside [0, {input.Length}]");
+            }
+        }
     }
 
     /// <summary>Spec 001 R10: the Bayan lexer, built in fast mode, is within 10x of the C# lexer on 1 MB.</summary>

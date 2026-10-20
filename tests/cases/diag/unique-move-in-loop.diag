@@ -1,0 +1,6 @@
+error BYN2781: `a` is used after it was moved
+
+  10 │         consume(move a);
+     │                      ^ moved on line 10
+     │
+  help: assign `a` a new value before using it again, or move a `.copy(to: alloc)` of it instead

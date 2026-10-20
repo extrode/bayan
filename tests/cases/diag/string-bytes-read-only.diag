@@ -10,7 +10,7 @@ error BYN2106: cannot modify this value
 
 error BYN2202: expected `Span<u8>`, found `ReadOnlySpan<u8>`
 
-  12 │ var buffer = StrBuf(s.bytes);
+  12 │ let buffer = StrBuf(s.bytes);
      │                     ^^^^^^^
 
 error BYN2202: expected `Span<u8>`, found `ReadOnlySpan<u8>`

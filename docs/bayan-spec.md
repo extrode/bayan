@@ -154,6 +154,7 @@ distinct type UserId = i64;      // a unit without arithmetic
 - `ReadOnlySpan<T>`: a borrowed view whose elements cannot be assigned. `Span<T>` → `ReadOnlySpan<T>` is implicit. `string.bytes` is a `ReadOnlySpan<u8>`, so strings stay immutable and valid UTF-8. A `Span<T>` parameter never written through gets lint BYN2310 ("use `ReadOnlySpan<T>`").
 - `List<T>`, `Map<K, V>`, `HashMap<K, V>`, `Set<T>`, `Pool<T>`, `Ring<T, const int N>`, `NonEmpty<T>`: standard library, allocator-backed.
 - `Map` **preserves insertion order**; `HashMap` is unordered and faster.
+- Every allocator-backed collection (`List`, `Map`, `HashMap`, `Set`, `Pool`) and `StrBuf` is **`unique`** (§3.11): assigning or storing one moves it, and a copy is explicit, `xs.copy(to: alloc)`. Reading without owning goes through `ReadOnlySpan<T>`, a read-only parameter or `ref`.
 - Hashing is **seeded** by default (hash-flooding resistance); tests use a fixed seed.
 
 ### 3.6 Optionals
@@ -200,6 +201,9 @@ public struct Order : IEquatable<Order>, IJsonEncode {
 
 ### 3.11 Move-only types
 `unique struct` cannot be copied; use `move`. Cleanup is derived (disposes fields in reverse declaration order) and runs exactly once, at scope end or by the final owner.
+
+- **A type with a `unique` part is `unique`.** A struct with a `unique` field, a union with a `unique` payload, and a tuple, array or optional of a `unique` type are all `unique`, without being declared so. A struct holding a `List` is therefore move-only.
+- An implicit copy of a `unique` value is a compile error whose fixes are `move x`, `x.copy(to: alloc)` (when the type has one) or passing it by `ref`.
 
 ### 3.12 Unions
 
@@ -373,7 +377,7 @@ No user-defined operator symbols. Operator implementations must not allocate, su
 `order with { status = .shipped }` (C# syntax).
 
 ### 6.5 Patterns
-All C# patterns: constant, relational, `and`/`or`/`not`, property and extended property, positional, list patterns with slices (`[var first, .. var rest]`), `var`, `_`, `when` guards. Additions:
+All C# patterns: constant, relational, `and`/`or`/`not`, property and extended property, positional, list patterns with slices (`[var first, .. var rest]`), `var`, `_`, `when` guards. A binding is `let x` (immutable) or `var x` (mutable), as for locals, and the lint that suggests `let` for a never-reassigned `var` (§7.1) applies to pattern bindings too. An arm whose whole pattern is irrefutable (`_`, `let x`, `var x`) covers every case, like `default:`; an arm with a `when` guard never counts toward exhaustiveness. Additions:
 
 ```csharp
 x is 500..=599                          // range
@@ -657,8 +661,11 @@ The compiler infers which functions may suspend (calls through `dyn` are assumed
 ### 15.1 Taint tracking
 - **Sources** produce `Untrusted<T>`: HTTP requests (body, query, headers, cookies), stdin, command-line arguments, external files, text from C.
 - **Sinks** reject `Untrusted<T>`: raw SQL, raw HTML, shell commands, file paths, redirect URLs.
+- **Processes.** `Io.run(program, args)` never goes through a shell, and refuses `.bat`/`.cmd` files on Windows (`cmd.exe` re-parses their arguments). `Io.runBatch(path, args)` runs a batch file: it runs the system directory's `cmd.exe /d /e:ON /v:OFF /s /c` with the path and each argument in double quotes, and fails with `invalidInput` without starting anything when the path does not end in `.bat`/`.cmd`, has no `/` or `\` (a bare name would make `cmd.exe` search the current directory and `PATH`; write `.\build.cmd`), or the path or an argument holds NUL, CR, LF, `"` or `%`. Off Windows it fails with `unsupported`. Its arguments are a sink: an `Untrusted<T>` argument (or a list, span or array of them) is a compile error (BYN2786). `IoError` gains `invalidInput` and `unsupported`, so its codes are 1–7.
+- **Standard streams.** `Io.stdout.write(text)` and `Io.stderr.write(text)` write without a newline (stdout is buffered with `print`). `Io.stdin.readAll()` returns `Result<string, IoError>`: the rest of standard input, bytes as-is (binary mode on Windows, not checked for UTF-8), allocated from `context.allocator`. For now it is a plain `string`, not `Untrusted<string>`.
 - **Clearing taint:** `parse`/`validate` (yielding `T.Validated`), escaped forms (interpolated SQL parameters, HTML escaping), or explicit `trust(x, reason: "…")`.
 - Terminal output and logs escape control characters in untrusted values.
+- **Implemented so far:** `Untrusted<T>` has the C representation of `T`; `Untrusted(x)` wraps and `trust(x, reason: "…")` unwraps, with a non-empty string literal as the reason. There is no implicit conversion either way. Sources are not yet wrapped.
 
 ### 15.2 Secrets
 `Secret<T>` and `[Secret]` fields: excluded from debug output, logs, `dbg`, `Json`, `Diff` and every derivation; constant-time equality; zeroed on dispose.
@@ -683,6 +690,7 @@ Decoders default to safe limits (JSON nesting depth 128, maximum size). Per-requ
 - **Queries** (never allocate): `isEmpty contains indexOf lastIndexOf startsWith endsWith count any all none tryFirst tryLast`.
 - **Views** (never allocate): `take skip takeLast skipLast reversed() stride chunks windows splitAt split lines trim where select`.
 - **New data** (allocate from context; each has an `xInto` form): `toList sorted() distinct join upper() lower() replace() pad()`, spread `[..a, ..b]`.
+- Collections copy explicitly: `xs.copy(to: alloc)` for `List`, `Map` and `StrBuf` returns an independent value of the same type (not allowed when an element, key or value holds a `List`, `Map`, `StrBuf` or `Owned`).
 - `first` / `last` exist only on `NonEmpty<T>`; `tryFirst` / `tryLast` everywhere.
 - Compile-time work: bounds checks removed when provably in range; constant slices of fixed arrays have type `T[N]`; `xs[^1]` lowers to `xs[xs.length - 1]`; slice chains fuse.
 - Maps: reading `map[k]` panics if missing; `map.getOr(k, fallback)` reads without inserting; `ref map.slot(k)` gets or inserts a default (requires `V : default`).

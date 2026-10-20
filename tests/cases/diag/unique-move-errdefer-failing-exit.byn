@@ -1,0 +1,36 @@
+// An `errdefer` runs at a failing exit: a `try` reached with `xs` moved is a use after move (BYN2781).
+error enum E { bad, }
+
+void step() fails E { }
+
+void consume(move List<i64> xs) {
+    print($"{xs.length}");
+}
+
+List<i64> build() fails E {
+    let xs = List<i64>();
+    errdefer print($"{xs.length}");
+    consume(move xs);
+    try step();
+    return List<i64>();
+}
+
+// `return .bad` is a failing exit too.
+void failing(bool fail) fails E {
+    let ys = List<i64>();
+    errdefer print($"{ys.length}");
+    consume(move ys);
+    return .bad if fail;
+}
+
+error enum F { a, b, }
+
+i64 pick() fails F => 1;
+
+// A `catch` naming one variant propagates the rest: a failing exit.
+i64 partial() fails F {
+    let zs = List<i64>();
+    errdefer print($"{zs.length}");
+    consume(move zs);
+    return pick() catch (F.a) 0;
+}

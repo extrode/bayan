@@ -19,6 +19,8 @@ public sealed class Builtins
         StrBufGrow = Make("StrBuf", BuiltinFunction.StrBufGrow, BuiltinType.StrBuf);
         // The value's type varies: the binder types each call (see `BindOwned`).
         OwnedNew = Make("Owned", BuiltinFunction.OwnedNew, ErrorType.Instance);
+        UntrustedNew = Make("Untrusted", BuiltinFunction.UntrustedNew, ErrorType.Instance);
+        Trust = Make("trust", BuiltinFunction.Trust, ErrorType.Instance);
 
         // `IoError` is declared from source so its variants carry docs and locations like any other set.
         var source = SourceText.FromString("<builtin>", IoErrorSource);
@@ -31,9 +33,12 @@ public sealed class Builtins
         IoListDir = MakeIo("listDir", BuiltinFunction.IoListDir, new ListType(PrimitiveType.String), ("path", PrimitiveType.String));
         IoRun = MakeIo("run", BuiltinFunction.IoRun, BuiltinType.ProcessResult,
             ("program", PrimitiveType.String), ("args", new SpanType(PrimitiveType.String, readOnly: true)));
+        IoRunBatch = MakeIo("runBatch", BuiltinFunction.IoRunBatch, BuiltinType.ProcessResult,
+            ("path", PrimitiveType.String), ("args", new SpanType(PrimitiveType.String, readOnly: true)));
         IoMonotonicNanos = Make("monotonicNanos", BuiltinFunction.IoMonotonicNanos, PrimitiveType.I64);
         IoStdout = Make("stdout", BuiltinFunction.IoStdout, BuiltinType.IoStream);
         IoStderr = Make("stderr", BuiltinFunction.IoStderr, BuiltinType.IoStream);
+        IoStdin = Make("stdin", BuiltinFunction.IoStdin, BuiltinType.IoInput);
     }
 
     private const string IoErrorSource = """
@@ -48,10 +53,14 @@ public sealed class Builtins
             notADirectory,
             /// An input or output operation failed.
             other,
+            /// An argument cannot be passed exactly, so nothing was done.
+            invalidInput,
+            /// The operation is not available on this platform.
+            unsupported,
         }
         """;
 
-    /// <summary><c>error enum IoError</c>: its variants are numbered first, so their codes are 1 to 5 (the runtime returns them).</summary>
+    /// <summary><c>error enum IoError</c>: its variants are numbered first, so their codes are 1 to 7 (the runtime returns them).</summary>
     public ErrorSetSymbol IoError { get; }
 
     /// <summary><c>List&lt;u8&gt; Io.readFile(string path) fails IoError</c>.</summary>
@@ -77,6 +86,12 @@ public sealed class Builtins
 
     public FunctionSymbol IoStderr { get; }
 
+    /// <summary><c>Io.stdin</c>: a stream with <c>Result&lt;string, IoError&gt; readAll()</c>.</summary>
+    public FunctionSymbol IoStdin { get; }
+
+    /// <summary><c>ProcessResult Io.runBatch(string path, ReadOnlySpan&lt;string&gt; args) fails IoError</c>: a <c>.bat</c>/<c>.cmd</c> file through <c>cmd.exe</c>.</summary>
+    public FunctionSymbol IoRunBatch { get; }
+
     /// <summary>A static member of <c>Io</c>, or null.</summary>
     public FunctionSymbol? FindIo(string name) => name switch
     {
@@ -85,9 +100,11 @@ public sealed class Builtins
         "writeFile" => IoWriteFile,
         "listDir" => IoListDir,
         "run" => IoRun,
+        "runBatch" => IoRunBatch,
         "monotonicNanos" => IoMonotonicNanos,
         "stdout" => IoStdout,
         "stderr" => IoStderr,
+        "stdin" => IoStdin,
         _ => null,
     };
 
@@ -102,6 +119,12 @@ public sealed class Builtins
 
     /// <summary><c>Owned(T value)</c>: copies the value into <c>context.allocator</c>.</summary>
     public FunctionSymbol OwnedNew { get; }
+
+    /// <summary><c>Untrusted(T value)</c>: marks the value as coming from outside the program.</summary>
+    public FunctionSymbol UntrustedNew { get; }
+
+    /// <summary><c>trust(Untrusted&lt;T&gt; value, string reason)</c>: clears the mark.</summary>
+    public FunctionSymbol Trust { get; }
 
     public ModuleSymbol Module { get; }
 
@@ -120,6 +143,8 @@ public sealed class Builtins
         "panic" => Panic,
         "assert" => Assert,
         "Owned" => OwnedNew,
+        "Untrusted" => UntrustedNew,
+        "trust" => Trust,
         _ => null,
     };
 

@@ -11,7 +11,7 @@ namespace Bayan.Tests;
 /// <c>tests/cases/run/*.byn</c>: compiled with the C backend and run. Expected <c>*.stdout</c>
 /// always; <c>*.stderr</c> and <c>*.exitcode</c> only when non-empty / non-zero. A first line
 /// <c>// mode: fast</c> (or <c>debug</c>) picks the build mode; the default is <c>safe</c>. An optional
-/// <c>*.args</c> holds one command-line argument per line. A line <c>// os: unix</c> among the first two skips the case on Windows. Each case runs in its own empty directory
+/// <c>*.args</c> holds one command-line argument per line, and an optional <c>*.stdin</c> the bytes fed to standard input (otherwise it is empty). A line <c>// os: unix</c> among the first two skips the case on Windows. Each case runs in its own empty directory
 /// under <c>tmp/run/</c>, so it may write files.
 /// </summary>
 public sealed class RunTests
@@ -81,6 +81,7 @@ public sealed class RunTests
         Directory.CreateDirectory(work);
         var psi = new ProcessStartInfo(build.ExecutablePath!)
         {
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -90,6 +91,13 @@ public sealed class RunTests
         if (File.Exists(argsFile))
             foreach (var arg in File.ReadAllLines(argsFile)) psi.ArgumentList.Add(arg);
         using var p = Process.Start(psi)!;
+        var stdinFile = Path.ChangeExtension(input, ".stdin");
+        if (File.Exists(stdinFile))
+        {
+            var bytes = File.ReadAllBytes(stdinFile);
+            p.StandardInput.BaseStream.Write(bytes);
+        }
+        p.StandardInput.Close();
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
         // Generous: after a runtime change every case cold-compiles at once (Warm), and a trivial run can wait 20 s+ for CPU.

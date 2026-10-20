@@ -215,10 +215,11 @@ public sealed class CEmitter
         UnionSymbol u => Named(u, $"byn_{u.Module.CName}_{u.Name}{TypeArgs(u.TypeArguments)}"),
         BuiltinType { Kind: BuiltinKind.Arena } => "byn_arena*",
         BuiltinType { Kind: BuiltinKind.StrBuf } => "byn_writer",
-        BuiltinType { Kind: BuiltinKind.IoStream } => "int32_t",
+        BuiltinType { Kind: BuiltinKind.IoStream or BuiltinKind.IoInput } => "int32_t",
         BuiltinType { Kind: BuiltinKind.ProcessResult } => "byn_process",
         // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
         OwnedType o => CType(o.Inner) + "*",
+        UntrustedType u => CType(u.Inner),
         _ => Named(t),
     };
 
@@ -236,6 +237,7 @@ public sealed class CEmitter
         SpanType s => "span_" + Key(s.Element),
         ListType l => "list_" + Key(l.Element),
         OwnedType o => "own_" + Key(o.Inner),
+        UntrustedType u => Key(u.Inner),
         MapType m => "map_" + Key(m.KeyType) + "_" + Key(m.ValueType),
         ArrayType a => $"arr{a.Length}_" + Key(a.Element),
         TupleType tt => $"tup{tt.Fields.Count}_" + string.Join("_", tt.Fields.Select(f => Key(f.Type))),
@@ -351,6 +353,8 @@ public sealed class CEmitter
                 return $"({a} == {b})";
             case OwnedType o:
                 return Equal(o.Inner, $"(*{a})", $"(*{b})");
+            case UntrustedType u:
+                return Equal(u.Inner, a, b);
         }
         var ct = CType(t);
         var name = "bynh_eq_" + Key(t);
@@ -400,8 +404,8 @@ public sealed class CEmitter
             $"{{\n    return {Equal(key, $"*(const {ct}*)a", $"*(const {ct}*)b")};\n}}\n");
     }
 
-    /// <summary><c>set</c>, <c>get</c>, <c>containsKey</c> and <c>remove</c> of <paramref name="t"/>; <paramref name="map"/> is an lvalue for the mutating ones.</summary>
-    internal string MapMethod(BuiltinMember member, MapType t, string map, string[] args)
+    /// <summary>Index, <c>slot</c>, <c>getOr</c>, <c>contains</c> and <c>remove</c> of <paramref name="t"/>; <paramref name="map"/> is an lvalue for the mutating ones.</summary>
+    internal string MapMethod(BuiltinMember member, MapType t, string map, string[] args, string loc)
     {
         var mt = CType(t);
         var kt = CType(t.KeyType);
@@ -411,24 +415,31 @@ public sealed class CEmitter
         var find = $"byn_map_find(&m.h, m.keys, (int64_t)sizeof({kt}), &k, {hash}(k), {eq})";
         switch (member)
         {
-            case BuiltinMember.MapSet:
+            case BuiltinMember.MapIndexSet or BuiltinMember.MapSlot:
             {
-                var name = "bynh_set_" + Key(t);
-                Helper(name, $"static void {name}({mt}* m, {kt} k, {vt} v)", () =>
+                // A missing key is inserted with `d`: zero for a write target, the value type's default for `slot`.
+                var name = "bynh_slot_" + Key(t);
+                Helper(name, $"static {vt}* {name}({mt}* m, {kt} k, {vt} d)", () =>
                     $"{{\n    if (!m->h.alloc) m->h.alloc = byn_context;\n    bool added;\n" +
                     $"    int64_t i = byn_map_insert(&m->h, (void**)&m->keys, (int64_t)sizeof({kt}), (void**)&m->vals, (int64_t)sizeof({vt}), &k, {hash}(k), {eq}, &added);\n" +
-                    "    if (added) m->keys[i] = k;\n    m->vals[i] = v;\n}\n");
-                return $"{name}(&{map}, {args[0]}, {args[1]})";
+                    "    if (added) {\n        m->keys[i] = k;\n        m->vals[i] = d;\n    }\n    return &m->vals[i];\n}\n");
+                return $"(*{name}(&{map}, {args[0]}, {(member == BuiltinMember.MapSlot ? args[1] : $"(({vt}){{0}})")}))";
             }
-            case BuiltinMember.MapGet:
+            case BuiltinMember.MapIndex:
             {
-                var opt = CType(new OptionalType(t.ValueType));
-                var name = "bynh_get_" + Key(t);
-                Helper(name, $"static {opt} {name}({mt} m, {kt} k)", () =>
-                    $"{{\n    int64_t i = {find};\n    if (i < 0) return ({opt}){{0}};\n    return ({opt}){{true, m.vals[i]}};\n}}\n");
-                return $"{name}({map}, {args[0]})";
+                var name = "bynh_index_" + Key(t);
+                Helper(name, $"static {vt} {name}({mt} m, {kt} k, const char* file, int line)", () =>
+                    $"{{\n    int64_t i = {find};\n    if (i < 0) byn_panic(\"key not found in map\", file, line);\n    return m.vals[i];\n}}\n");
+                return $"{name}({map}, {args[0]}, {loc})";
             }
-            case BuiltinMember.MapContainsKey:
+            case BuiltinMember.MapGetOr:
+            {
+                var name = "bynh_get_or_" + Key(t);
+                Helper(name, $"static {vt} {name}({mt} m, {kt} k, {vt} d)", () =>
+                    $"{{\n    int64_t i = {find};\n    return i < 0 ? d : m.vals[i];\n}}\n");
+                return $"{name}({map}, {args[0]}, {args[1]})";
+            }
+            case BuiltinMember.MapContains:
             {
                 var name = "bynh_has_" + Key(t);
                 Helper(name, $"static bool {name}({mt} m, {kt} k)", () => $"{{\n    return {find} >= 0;\n}}\n");
@@ -941,6 +952,8 @@ internal sealed class FunctionEmitter
                     $"{{\n    return ({it}*)byn_copy_bytes(&v, (int64_t)sizeof v, byn_context);\n}}\n");
                 return $"{name}({Expr(c.Arguments[0])})";
             }
+            case BuiltinFunction.UntrustedNew or BuiltinFunction.Trust:
+                return Expr(c.Arguments[0]);
             case BuiltinFunction.IoReadFile:
             {
                 var list = _c.CType(fn.ReturnType);
@@ -973,12 +986,21 @@ internal sealed class FunctionEmitter
                     "{\n    return byn_io_run(program, args.ptr, args.len, out, byn_context);\n}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, {result ?? "NULL"})";
             }
+            case BuiltinFunction.IoRunBatch:
+            {
+                var span = _c.CType(fn.Parameters[1].Type);
+                var name = _c.Helper("bynh_io_run_batch", $"static uint32_t bynh_io_run_batch(byn_str path, {span} args, byn_process* out)", () =>
+                    "{\n    return byn_io_run_batch(path, args.ptr, args.len, out, byn_context);\n}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, {result ?? "NULL"})";
+            }
             case BuiltinFunction.IoMonotonicNanos:
                 return "byn_io_monotonic_nanos()";
             case BuiltinFunction.IoStdout:
                 return "INT32_C(1)";
             case BuiltinFunction.IoStderr:
                 return "INT32_C(2)";
+            case BuiltinFunction.IoStdin:
+                return "INT32_C(0)";
             case BuiltinFunction.EnumFromOrdinal:
             {
                 var e = (EnumSymbol)((OptionalType)fn.ReturnType).Inner;
@@ -1041,6 +1063,17 @@ internal sealed class FunctionEmitter
                     $"{{\n    {list} r = {{NULL, 0, 0, a}};\n    if (s.len > 0) {{\n        r.ptr = ({et}*)byn_copy_bytes(s.ptr, s.len * (int64_t)sizeof({et}), a);\n        r.len = r.cap = s.len;\n    }}\n    return r;\n}}\n");
                 return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
             }
+            case BuiltinMember.ListCopy:
+            {
+                var lt = _c.CType(r.Type);
+                var et = _c.CType(((ListType)r.Type).Element);
+                var name = "bynh_copy_" + _c.Key(r.Type);
+                _c.Helper(name, $"static {lt} {name}({lt} l, byn_alloc* a)", () =>
+                    $"{{\n    {lt} r = {{NULL, 0, 0, a}};\n    if (l.len > 0) {{\n        r.ptr = ({et}*)byn_copy_bytes(l.ptr, l.len * (int64_t)sizeof({et}), a);\n        r.len = r.cap = l.len;\n    }}\n    return r;\n}}\n");
+                return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
+            }
+            case BuiltinMember.StrBufCopy:
+                return $"byn_strbuf_copy({Expr(r)}, byn_arena_alloc({arg}))";
             case BuiltinMember.ListAdd:
             {
                 var lt = _c.CType(r.Type);
@@ -1069,7 +1102,7 @@ internal sealed class FunctionEmitter
                     $"{{\n    if (l->len == 0) byn_panic(\"removeLast on an empty list\", file, line);\n    return l->ptr[--l->len];\n}}\n");
                 return $"{name}(&{Expr(r)}, {Loc(b.Syntax)})";
             }
-            case BuiltinMember.MapCount:
+            case BuiltinMember.MapLength:
                 return $"{Expr(r)}.h.live";
             case BuiltinMember.MapClear:
                 return $"byn_map_clear(&{Expr(r)}.h)";
@@ -1082,8 +1115,20 @@ internal sealed class FunctionEmitter
                 var m = Expr(r);
                 return $"(({_c.CType(b.Type)}){{{m}.keys[{arg}], {m}.vals[{arg}]}})";
             }
-            case BuiltinMember.MapSet or BuiltinMember.MapGet or BuiltinMember.MapContainsKey or BuiltinMember.MapRemove:
-                return _c.MapMethod(b.Member, (MapType)r.Type, Expr(r), b.Arguments.Select(Expr).ToArray());
+            case BuiltinMember.MapCopy:
+            {
+                var mt = _c.CType(r.Type);
+                var map = (MapType)r.Type;
+                var kt = _c.CType(map.KeyType);
+                var vt = _c.CType(map.ValueType);
+                var name = "bynh_copy_" + _c.Key(r.Type);
+                _c.Helper(name, $"static {mt} {name}({mt} m, byn_alloc* a)", () =>
+                    $"{{\n    {mt} r;\n    byn_map_copy(&m.h, m.keys, (int64_t)sizeof({kt}), (void**)&r.keys, m.vals, (int64_t)sizeof({vt}), (void**)&r.vals, &r.h, a);\n    return r;\n}}\n");
+                return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
+            }
+            case BuiltinMember.MapIndex or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapGetOr
+                or BuiltinMember.MapContains or BuiltinMember.MapRemove:
+                return _c.MapMethod(b.Member, (MapType)r.Type, Expr(r), b.Arguments.Select(Expr).ToArray(), Loc(b.Syntax));
             case BuiltinMember.ArrayLength:
                 return $"((void){Expr(r)}, INT64_C({((ArrayType)r.Type).Length}))";
             case BuiltinMember.ArrayAsSpan:
@@ -1094,6 +1139,13 @@ internal sealed class FunctionEmitter
                 return $"byn_w_str(&{Expr(r)}, {arg})";
             case BuiltinMember.IoWrite:
                 return $"byn_io_write({Expr(r)}, {arg})";
+            case BuiltinMember.IoReadAll:
+            {
+                var res = _c.CType(b.Type);
+                var name = _c.Helper("bynh_io_read_all", $"static {res} bynh_io_read_all(int32_t fd)", () =>
+                    $"{{\n    (void)fd;\n    {res} r = {{0}};\n    r.err = byn_io_read_stdin(&r.value, byn_context);\n    return r;\n}}\n");
+                return $"{name}({Expr(r)})";
+            }
             case BuiltinMember.StrBufAsString:
                 return $"byn_strbuf_str({Expr(r)})";
             case BuiltinMember.ProcessExitCode:

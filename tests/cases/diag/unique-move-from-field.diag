@@ -1,0 +1,34 @@
+error BYN2782: cannot move out of field `items`
+
+  11 │     let a = move bag.items;
+     │                  ^^^^^^^^^
+     │
+  help: its owner keeps it; move the whole value, or copy the field with `.copy(to: alloc)`
+
+error BYN2782: cannot move out of an element
+
+  12 │     let b = move lists[0];
+     │                  ^^^^^^^^
+     │
+  help: the collection keeps it; copy the element with `.copy(to: alloc)`
+
+error BYN2782: cannot move out of parameter `plain`
+
+  13 │     let c = move plain;
+     │                  ^^^^^
+     │
+  help: a plain parameter is borrowed from the caller; declare it `move plain` to take ownership
+
+error BYN2782: cannot move out of `ref` parameter `shared`
+
+  14 │     let d = move shared;
+     │                  ^^^^^^
+     │
+  help: the caller still owns it; copy it with `.copy(to: alloc)`
+
+error BYN2782: cannot move out of a fresh value
+
+  15 │     let e = move make();
+     │                  ^^^^^^
+     │
+  help: a fresh value needs no `move`; remove it

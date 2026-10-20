@@ -131,6 +131,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ArgumentMustBeNamed = Error("BYN2305", "argument for `{0}` must be named");
     public static readonly DiagnosticDescriptor ArgumentModifierMismatch = Error("BYN2306", "argument for `{0}` must be passed as {1}");
     public static readonly DiagnosticDescriptor SpanParameterNeverWritten = Warning("BYN2310", "`{0}` is never written through; use `ReadOnlySpan<{1}>`");
+    public static readonly DiagnosticDescriptor NeverReassignedVar = Warning("BYN2311", "`{0}` is never reassigned; declare it with `let`");
     public static readonly DiagnosticDescriptor MissingReturn = Error("BYN2401", "`{0}` must return `{1}` on every path");
     public static readonly DiagnosticDescriptor MissingReturnValue = Error("BYN2402", "this function returns `{0}`; `return` needs a value");
     public static readonly DiagnosticDescriptor ReturnValueInVoid = Error("BYN2403", "`{0}` returns nothing, but `return` has a value");
@@ -173,10 +174,19 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor TypeParameterMember = Error("BYN2744", "`{0}` is not a member of type parameter `{1}`");
     public static readonly DiagnosticDescriptor InvalidMapKey = Error("BYN2760", "`{0}` cannot be a `Map` key");
     public static readonly DiagnosticDescriptor RecursiveByValue = Error("BYN2761", "`{0}` contains itself by value: {1}");
+    // BYN2762 (a `Map` or `StrBuf` cannot be copied) is retired: replaced by BYN2780 in spec 002. Never reuse it.
     public static readonly DiagnosticDescriptor SharedStorageCopy = Error("BYN2762", "a `{0}` cannot be copied");
     public static readonly DiagnosticDescriptor UnknownAttribute = Error("BYN2770", "unknown attribute `{0}`");
     public static readonly DiagnosticDescriptor InvalidMainSignature = Error("BYN2771", "`main` must return `void` or `i32` and take nothing or `ReadOnlySpan<string> args`");
+    public static readonly DiagnosticDescriptor UntrustedSink = Error("BYN2786", "`{0}` cannot be passed to `{1}`: it is `Untrusted`");
+    public static readonly DiagnosticDescriptor TrustReason = Error("BYN2787", "`trust` needs a reason: a non-empty string literal");
     public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`[ExitCode]` needs one integer constant from 1 to 255");
+    public static readonly DiagnosticDescriptor ImplicitCopy = Error("BYN2780", "implicit copy of a unique value: {0}");
+    public static readonly DiagnosticDescriptor UseAfterMove = Error("BYN2781", "`{0}` is used after it was moved");
+    public static readonly DiagnosticDescriptor CannotMove = Error("BYN2782", "cannot move out of {0}");
+    public static readonly DiagnosticDescriptor MutateBorrow = Error("BYN2783", "`{0}` borrows from what it was bound to and cannot be changed or moved");
+    public static readonly DiagnosticDescriptor CopyUniqueElement = Error("BYN2784", "a `{0}` holding `{1}` cannot be copied: the copy would share its storage");
+    public static readonly DiagnosticDescriptor MapSlotNoDefault = Error("BYN2785", "`slot` needs a default value, and `{0}` has none");
     public static readonly DiagnosticDescriptor BorrowField = Error("BYN3001", "a struct field cannot hold a borrowed `{0}`");
     public static readonly DiagnosticDescriptor BorrowOutlivesSource = Error("BYN3002", "{0} does not live as long as `{1}`, which borrows it");
     public static readonly DiagnosticDescriptor BorrowReturned = Error("BYN3003", "cannot return a borrow of {0}, which is freed when `{1}` returns");

@@ -257,6 +257,9 @@ public sealed record SwitchExpr(TextSpan Span, Expr Value, SwitchArm[] Arms) : E
 
 public sealed record TryExpr(TextSpan Span, Expr Operand) : Expr(Span);
 
+/// <summary><c>move x</c>: hands the value of a unique local over, leaving the local unusable.</summary>
+public sealed record MoveExpr(TextSpan Span, Expr Operand) : Expr(Span);
+
 /// <summary>
 /// <c>e catch h</c>, <c>e catch (x) h</c> (binds the error) or <c>e catch (Set.variant) h</c>
 /// (handles one variant; <see cref="Variant"/> set).

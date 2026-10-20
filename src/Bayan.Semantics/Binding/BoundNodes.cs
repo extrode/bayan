@@ -48,9 +48,11 @@ public sealed record BoundCall(Node Syntax, FunctionSymbol Function, BoundExpr? 
 public enum BuiltinMember
 {
     StringLength, StringBytes, StringIsEmpty, StringCopy, StringStartsWith, StringEndsWith, StringContains,
-    SpanLength, SpanIsEmpty, SpanCopy,
+    SpanLength, SpanIsEmpty, SpanCopy, ListCopy, MapCopy, StrBufCopy,
     ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListClear, ListRemoveLast,
-    MapCount, MapSet, MapGet, MapContainsKey, MapRemove, MapClear,
+    MapLength, MapGetOr, MapContains, MapRemove, MapClear,
+    /// <summary><c>map[k]</c> read (panics when missing), <c>map[k]</c> as a write target (inserts when missing), and <c>map.slot(k)</c> (inserts the default).</summary>
+    MapIndex, MapIndexSet, MapSlot,
     /// <summary>Lowering of <c>for</c> over a map: entry slots (live or removed), whether slot i is live, and its entry.</summary>
     MapSlotCount, MapSlotLive, MapSlotEntry,
     ArrayLength, ArrayAsSpan,
@@ -61,6 +63,7 @@ public enum BuiltinMember
     /// <summary><c>o.value</c> of an <c>Owned&lt;T&gt;</c>, also inserted for member access through it.</summary>
     OwnedValue,
     IoWrite,
+    IoReadAll,
     EnumName, EnumOrdinal,
     /// <summary>A data-enum field; the argument is the field index.</summary>
     EnumField,
@@ -140,6 +143,9 @@ public sealed record BoundInterpolationPart(string? Text, BoundExpr? Value);
 public sealed record BoundInterpolated(Node Syntax, BoundInterpolationPart[] Parts) : BoundExpr(Syntax, PrimitiveType.String);
 
 /// <summary><c>try f()</c>: on failure, runs <c>errdefer</c>s and fails the enclosing function with the same error.</summary>
+/// <summary><c>move x</c> of a local or <c>move</c> parameter: the value is handed over and <c>x</c> may not be read until reassigned.</summary>
+public sealed record BoundMove(Node Syntax, BoundExpr Operand) : BoundExpr(Syntax, Operand.Type);
+
 public sealed record BoundTry(Node Syntax, BoundExpr Operand, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
 /// <summary>

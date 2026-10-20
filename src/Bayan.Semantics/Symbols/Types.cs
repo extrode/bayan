@@ -234,6 +234,16 @@ public sealed class OwnedType(TypeSymbol inner) : ConstructedType
     public override string DisplayName => $"Owned<{Inner.DisplayName}>";
 }
 
+/// <summary><c>Untrusted&lt;T&gt;</c>: a <c>T</c> from outside the program; no implicit conversion either way, and the same C type as <c>T</c>.</summary>
+public sealed class UntrustedType(TypeSymbol inner) : ConstructedType
+{
+    public TypeSymbol Inner { get; } = inner;
+
+    protected override object Key => Inner;
+
+    public override string DisplayName => $"Untrusted<{Inner.DisplayName}>";
+}
+
 /// <summary><c>T[N]</c>: a fixed-size inline array.</summary>
 public sealed class ArrayType(TypeSymbol element, long length) : ConstructedType
 {
@@ -312,6 +322,8 @@ public enum BuiltinKind
     Io,
     /// <summary><c>Io.stdout</c> or <c>Io.stderr</c>; the value is the file descriptor.</summary>
     IoStream,
+    /// <summary><c>Io.stdin</c>; it has no state.</summary>
+    IoInput,
     /// <summary>What <c>Io.run</c> returns: <c>exitCode</c>, <c>stdout</c>, <c>stderr</c>.</summary>
     ProcessResult,
 }
@@ -336,6 +348,7 @@ public sealed class BuiltinType : TypeSymbol
     public static readonly BuiltinType StrBuf = new(BuiltinKind.StrBuf, "StrBuf");
     public static readonly BuiltinType Io = new(BuiltinKind.Io, "Io");
     public static readonly BuiltinType IoStream = new(BuiltinKind.IoStream, "IoStream");
+    public static readonly BuiltinType IoInput = new(BuiltinKind.IoInput, "IoInput");
     public static readonly BuiltinType ProcessResult = new(BuiltinKind.ProcessResult, "ProcessResult");
 }
 

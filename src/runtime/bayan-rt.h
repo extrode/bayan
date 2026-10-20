@@ -164,6 +164,9 @@ int64_t byn_map_insert(byn_map_hdr* h, void** keys, int64_t ksize, void** vals, 
                        uint64_t hash, byn_key_eq eq, bool* added);
 bool byn_map_remove(byn_map_hdr* h, const void* keys, int64_t ksize, const void* key, uint64_t hash, byn_key_eq eq);
 void byn_map_clear(byn_map_hdr* h);
+/* Copies the live entries of `src` in insertion order into fresh storage from `to`; `dst` gets the new header. */
+void byn_map_copy(const byn_map_hdr* src, const void* keys, int64_t ksize, void** dkeys, const void* vals, int64_t vsize,
+                  void** dvals, byn_map_hdr* dst, byn_alloc* to);
 
 /* ── Program entry and Io ────────────────────────────────────────────────── */
 
@@ -180,11 +183,15 @@ byn_str* byn_args(int* argc, char** argv);
 #define BYN_IO_INVALID_UTF8 3u
 #define BYN_IO_NOT_A_DIRECTORY 4u
 #define BYN_IO_OTHER 5u
+#define BYN_IO_INVALID_INPUT 6u
+#define BYN_IO_UNSUPPORTED 7u
 
 /* Reads a whole file into memory from `alloc`. Returns 0 or an `IoError` code. */
 uint32_t byn_io_read(byn_str path, uint8_t** ptr, int64_t* len, byn_alloc* alloc);
 /* As byn_io_read, and the bytes must be UTF-8. `out` may be NULL. */
 uint32_t byn_io_read_text(byn_str path, byn_str* out, byn_alloc* alloc);
+/* `Io.stdin.readAll`: the rest of standard input, bytes as-is (not checked for UTF-8), from `alloc`. */
+uint32_t byn_io_read_stdin(byn_str* out, byn_alloc* alloc);
 uint32_t byn_io_write_file(byn_str path, const uint8_t* ptr, int64_t len);
 /* `Io.listDir`: entry names without `.` and `..`, sorted by byte order, allocated from `alloc`. */
 uint32_t byn_io_list_dir(byn_str path, byn_str** ptr, int64_t* len, byn_alloc* alloc);
@@ -200,6 +207,13 @@ typedef struct byn_process {
  * never through a shell, and waits for it. Both streams are captured into `alloc`. `out` may be NULL.
  * On Windows a batch file (`.bat`, `.cmd`) is refused with `permissionDenied`, since cmd.exe would re-parse the arguments. */
 uint32_t byn_io_run(byn_str program, const byn_str* args, int64_t nargs, byn_process* out, byn_alloc* alloc);
+/* `Io.runBatch`'s command line: `cmd.exe /d /e:ON /v:OFF /s /c ""<path>" "<a1>" … "<an>""`, each argument
+ * in double quotes as-is. False, with nothing built, when the path or an argument holds NUL, CR, LF, `"` or `%`,
+ * or the path does not end in `.bat` or `.cmd` (any case). Otherwise `out` is from malloc. Compiled on every host. */
+bool byn_batch_cmdline(byn_str path, const byn_str* args, int64_t nargs, byn_str* out);
+/* `Io.runBatch`: runs the batch file through the system directory's cmd.exe with that command line and
+ * captures it like byn_io_run. A refused argument is `invalidInput` (nothing starts); off Windows, `unsupported`. */
+uint32_t byn_io_run_batch(byn_str path, const byn_str* args, int64_t nargs, byn_process* out, byn_alloc* alloc);
 /* `Io.stdout.write` (fd 1, buffered with print) and `Io.stderr.write` (fd 2). No newline. */
 void byn_io_write(int32_t fd, byn_str s);
 int64_t byn_io_monotonic_nanos(void);
@@ -208,6 +222,8 @@ int64_t byn_io_monotonic_nanos(void);
 
 /* `StrBuf(buf)` is a strict writer over caller-provided bytes; `StrBuf()` grows from `alloc`. */
 static inline byn_str byn_strbuf_str(byn_writer w) { return (byn_str){w.buf, w.len}; }
+/* A growable StrBuf holding the same text in fresh storage from `to`. */
+byn_writer byn_strbuf_copy(byn_writer w, byn_alloc* to);
 static inline byn_writer byn_strbuf_grow(byn_alloc* alloc) {
     return (byn_writer){NULL, 0, 0, BYN_WRITE_GROW, NULL, 0, alloc};
 }

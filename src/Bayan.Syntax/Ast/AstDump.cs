@@ -558,6 +558,9 @@ public static class AstDump
                 case TryExpr e:
                     Sexp(sb, "try", e.Operand);
                     break;
+                case MoveExpr e:
+                    Sexp(sb, "move", e.Operand);
+                    break;
                 case CatchExpr e:
                     sb.Append("(catch ");
                     Expr(sb, e.Operand);
