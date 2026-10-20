@@ -792,12 +792,16 @@ Every diagnostic states **what**, **where**, **why** and a **fix** (machine-appl
 | `bayan new X`, `bayan init` | Create an app (`--lib` library, `--script` script) in a new or existing directory (§21.4) |
 | `bayan run` | Build and run a program or script |
 | `bayan build` | Build (`--mode debug\|safe\|fast\|small`, `--target`) |
-| `bayan test` | Tests (`--json`, `--tier`, `--mutate`, `--explore`, `--sanitize`, `--update`, `--triage`) |
+| `bayan test` | Tests (`--json`, `--changed [--base <ref>]`, `--tier`, `--mutate`, `--explore`, `--sanitize`, `--update`, `--triage`) |
 | `bayan dist` | Release builds into `dist/<version>/` (`--target t\|all`, `--mode`, `--force`, `--allow-dirty`; §21.4) |
 | `bayan clean` | Remove `out/` (`--dist` also `dist/`, `--cache` the build cache) |
 | `bayan cache stats` | Location, entries and size of the shared build cache (§21.4) |
+| `bayan doctor` | Check the compiler, host target, C compiler, `zig`, git and cache; every failure prints a fix; exits 4 on any failure |
+| `bayan --version` | Compiler version and the commit it was built from |
 | `bayan fmt` | Format (`--explicit`, `--terse`, `--prose`, `--from-prose`, `--check-prose`) |
 | `bayan lint`, `bayan doc`, `bayan repl`, `bayan lsp` | |
+
+Every command takes `--color auto|always|never` (before any `--`). `auto` colors output that goes to a terminal, unless `NO_COLOR` is set. `bayan test --changed` runs only the tests of modules with a file that differs from `HEAD` (or `--base <ref>`, which implies `--changed`), untracked files included; a changed `package.byn` runs everything. It uses git read-only.
 | `bayan pkg` | Packages (`add`, `audit`, `export --json`) |
 | `bayan expand X` | Show every derived member |
 | `bayan explain CODE` | Long explanation of a diagnostic |
