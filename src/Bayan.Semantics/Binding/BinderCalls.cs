@@ -214,6 +214,13 @@ internal sealed partial class Binder
                     BindArgumentsForRecovery(c);
                 }
                 return new BoundCollection(c, l, []);
+            case MapType m:
+                if (c.Args.Length > 0)
+                {
+                    Report(DiagnosticCodes.TooManyArguments, c.Args[0].Span, [m.DisplayName, 0]);
+                    BindArgumentsForRecovery(c);
+                }
+                return new BoundCollection(c, m, []);
             case BuiltinType { Kind: BuiltinKind.Arena }:
                 return new BoundCall(c, _c.Builtins.ArenaNew, null, BindArguments(c, _c.Builtins.ArenaNew.Parameters, _c.Builtins.ArenaNew, false, "Arena"), type);
             case BuiltinType { Kind: BuiltinKind.StrBuf } when c.Args.Length == 0:

@@ -332,7 +332,7 @@ internal sealed partial class Binder
         if (_file.Imports.TryGetValue(name, out var module)) return new BoundModuleRef(n, module);
         if (_c.Builtins.Find(name) is { } builtin) return new BoundMethodGroup(n, null, builtin);
         if (PrimitiveType.ByName.TryGetValue(name, out var primitive)) return new BoundTypeRef(n, primitive);
-        if (name is "List" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "ProcessResult")
+        if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "ProcessResult")
             return new BoundTypeRef(n, _types.Resolve(new NamedType(n.Span, [n.Name], [])));
         if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
         ReportUndefined(n.Name);
@@ -1200,6 +1200,7 @@ internal sealed partial class Binder
         ResultType r => IsFormattable(r.Value),
         StructSymbol => true,
         Symbols.TupleType tt => tt.Fields.All(f => IsFormattable(f.Type)),
+        MapType m => IsFormattable(m.KeyType) && IsFormattable(m.ValueType),
         _ => false,
     };
 }

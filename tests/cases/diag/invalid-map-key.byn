@@ -1,0 +1,18 @@
+struct Point { i64 x; }
+
+enum Planet(f64 mass) { earth(6e24) }
+
+Map<f64, i64> byWeight() => Map<f64, i64>();
+
+void keys() {
+    var points = Map<Point, string>();
+    var planets = Map<Planet, i64>();
+    var nested = Map<string?, i64>();
+    var wrong = Map<string>();
+}
+
+void compare() {
+    var a = Map<string, i64>();
+    var b = Map<string, i64>();
+    if (a == b) print("same");
+}

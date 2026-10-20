@@ -479,6 +479,7 @@ internal sealed partial class Binder
             RangeType r => r.Element,
             SpanType s => s.Element,
             ListType l => l.Element,
+            MapType m => m.Entry,
             Symbols.ArrayType a => a.Element,
             PrimitiveType { Kind: PrimitiveKind.String } => PrimitiveType.Char,
             ErrorType => ErrorType.Instance,

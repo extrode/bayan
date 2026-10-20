@@ -29,6 +29,7 @@ public sealed class CEmitter
     private readonly List<string> _staticOrder = new();
 
     private readonly Dictionary<string, string> _files = new(StringComparer.Ordinal);
+    private bool _hashes;
     private readonly Dictionary<FunctionSymbol, int> _testIndex = new();
 
     private static readonly HashSet<string> CKeywords = new(StringComparer.Ordinal)
@@ -100,6 +101,8 @@ public sealed class CEmitter
     {
         var sb = new StringBuilder();
         sb.Append("int main(int argc, char** argv) {\n    uint32_t err = 0;\n");
+        // Map hashing is seeded per run; tests get a fixed seed so they are reproducible.
+        if (_hashes) sb.Append("    byn_hash_seed_init(argc == 3 && strcmp(argv[1], \"--test\") == 0);\n");
         if (_program.Tests.Count > 0)
         {
             sb.Append("    if (argc == 3 && strcmp(argv[1], \"--test\") == 0) {\n        switch (atoi(argv[2])) {\n");
@@ -222,6 +225,7 @@ public sealed class CEmitter
         ResultType r => "res_" + Key(r.Value),
         SpanType s => "span_" + Key(s.Element),
         ListType l => "list_" + Key(l.Element),
+        MapType m => "map_" + Key(m.KeyType) + "_" + Key(m.ValueType),
         ArrayType a => $"arr{a.Length}_" + Key(a.Element),
         TupleType tt => $"tup{tt.Fields.Count}_" + string.Join("_", tt.Fields.Select(f => Key(f.Type))),
         _ => throw new InvalidOperationException($"no C type for {t.DisplayName}"),
@@ -267,6 +271,11 @@ public sealed class CEmitter
                     members.Add((PrimitiveType.I64, "int64_t len"));
                     members.Add((PrimitiveType.I64, "int64_t cap"));
                     members.Add((PrimitiveType.I64, "byn_alloc* alloc"));
+                    break;
+                case MapType m:
+                    members.Add((PrimitiveType.I64, "byn_map_hdr h"));
+                    members.Add((PrimitiveType.I64, $"{CType(m.KeyType)}* keys"));
+                    members.Add((PrimitiveType.I64, $"{CType(m.ValueType)}* vals"));
                     break;
                 case ArrayType a:
                     members.Add((a.Element, $"{CType(a.Element)} v[{a.Length}]"));
@@ -337,6 +346,69 @@ public sealed class CEmitter
         return $"{name}({a}, {b})";
     }
 
+    /// <summary>The hash of a key: seeded FNV-1a over its bytes (a string's text).</summary>
+    private string KeyHash(TypeSymbol key)
+    {
+        _hashes = true;
+        var name = "bynh_hash_" + Key(key);
+        return Helper(name, $"static uint64_t {name}({CType(key)} k)", () => key.IsString
+            ? "{\n    return byn_hash_bytes(k.ptr, k.len);\n}\n"
+            : "{\n    return byn_hash_bytes(&k, (int64_t)sizeof k);\n}\n");
+    }
+
+    /// <summary>Key equality through pointers, for <c>byn_map_*</c>.</summary>
+    private string KeyEq(TypeSymbol key)
+    {
+        var ct = CType(key);
+        var name = "bynh_keq_" + Key(key);
+        return Helper(name, $"static bool {name}(const void* a, const void* b)", () =>
+            $"{{\n    return {Equal(key, $"*(const {ct}*)a", $"*(const {ct}*)b")};\n}}\n");
+    }
+
+    /// <summary><c>set</c>, <c>get</c>, <c>containsKey</c> and <c>remove</c> of <paramref name="t"/>; <paramref name="map"/> is an lvalue for the mutating ones.</summary>
+    internal string MapMethod(BuiltinMember member, MapType t, string map, string[] args)
+    {
+        var mt = CType(t);
+        var kt = CType(t.KeyType);
+        var vt = CType(t.ValueType);
+        var hash = KeyHash(t.KeyType);
+        var eq = KeyEq(t.KeyType);
+        var find = $"byn_map_find(&m.h, m.keys, (int64_t)sizeof({kt}), &k, {hash}(k), {eq})";
+        switch (member)
+        {
+            case BuiltinMember.MapSet:
+            {
+                var name = "bynh_set_" + Key(t);
+                Helper(name, $"static void {name}({mt}* m, {kt} k, {vt} v)", () =>
+                    $"{{\n    if (!m->h.alloc) m->h.alloc = byn_context;\n    bool added;\n" +
+                    $"    int64_t i = byn_map_insert(&m->h, (void**)&m->keys, (int64_t)sizeof({kt}), (void**)&m->vals, (int64_t)sizeof({vt}), &k, {hash}(k), {eq}, &added);\n" +
+                    "    if (added) m->keys[i] = k;\n    m->vals[i] = v;\n}\n");
+                return $"{name}(&{map}, {args[0]}, {args[1]})";
+            }
+            case BuiltinMember.MapGet:
+            {
+                var opt = CType(new OptionalType(t.ValueType));
+                var name = "bynh_get_" + Key(t);
+                Helper(name, $"static {opt} {name}({mt} m, {kt} k)", () =>
+                    $"{{\n    int64_t i = {find};\n    if (i < 0) return ({opt}){{0}};\n    return ({opt}){{true, m.vals[i]}};\n}}\n");
+                return $"{name}({map}, {args[0]})";
+            }
+            case BuiltinMember.MapContainsKey:
+            {
+                var name = "bynh_has_" + Key(t);
+                Helper(name, $"static bool {name}({mt} m, {kt} k)", () => $"{{\n    return {find} >= 0;\n}}\n");
+                return $"{name}({map}, {args[0]})";
+            }
+            default:
+            {
+                var name = "bynh_remove_" + Key(t);
+                Helper(name, $"static bool {name}({mt}* m, {kt} k)", () =>
+                    $"{{\n    return byn_map_remove(&m->h, m->keys, (int64_t)sizeof({kt}), &k, {hash}(k), {eq});\n}}\n");
+                return $"{name}(&{map}, {args[0]})";
+            }
+        }
+    }
+
     /// <summary>A statement that writes <paramref name="v"/> to the writer <c>w</c>.</summary>
     internal string Format(TypeSymbol t, string v, string w)
     {
@@ -393,6 +465,15 @@ public sealed class CEmitter
                         sb.Append("    ").Append(Format(tt.Fields[i].Type, $"v.item{i + 1}", "w")).Append('\n');
                     }
                     Text(")");
+                    break;
+                case MapType m:
+                    sb.Append("    byn_w_str(w, BYN_STR(\"{\", 1));\n    bool first = true;\n");
+                    sb.Append("    for (int64_t i = 0; i < v.h.len; i++) {\n        if (v.h.dead[i]) continue;\n");
+                    sb.Append("        if (!first) byn_w_str(w, BYN_STR(\", \", 2));\n        first = false;\n");
+                    sb.Append("        ").Append(Format(m.KeyType, "v.keys[i]", "w")).Append('\n');
+                    sb.Append("        byn_w_str(w, BYN_STR(\": \", 2));\n");
+                    sb.Append("        ").Append(Format(m.ValueType, "v.vals[i]", "w")).Append("\n    }\n");
+                    Text("}");
                     break;
                 default:
                     throw new InvalidOperationException($"cannot format {t.DisplayName}");
@@ -735,6 +816,8 @@ internal sealed class FunctionEmitter
                 return $"(({_c.CType(t.Type)}){{{string.Join(", ", t.Elements.Select(Expr))}}})";
             case BoundCollection { Type: ListType l }:
                 return $"(({_c.CType(l)}){{NULL, 0, 0, byn_context}})";
+            case BoundCollection { Type: MapType m }:
+                return $"(({_c.CType(m)}){{{{.alloc = byn_context}}, NULL, NULL}})";
             case BoundCollection { Type: ArrayType a } col:
                 return col.Elements.Length == 0 ? $"(({_c.CType(a)}){{0}})" : $"(({_c.CType(a)}){{{{{string.Join(", ", col.Elements.Select(Expr))}}}}})";
             case BoundIndex i:
@@ -915,6 +998,21 @@ internal sealed class FunctionEmitter
                     $"{{\n    if (l->len == 0) byn_panic(\"removeLast on an empty list\", file, line);\n    return l->ptr[--l->len];\n}}\n");
                 return $"{name}(&{Expr(r)}, {Loc(b.Syntax)})";
             }
+            case BuiltinMember.MapCount:
+                return $"{Expr(r)}.h.live";
+            case BuiltinMember.MapClear:
+                return $"byn_map_clear(&{Expr(r)}.h)";
+            case BuiltinMember.MapSlotCount:
+                return $"{Expr(r)}.h.len";
+            case BuiltinMember.MapSlotLive:
+                return $"(!{Expr(r)}.h.dead[{arg}])";
+            case BuiltinMember.MapSlotEntry:
+            {
+                var m = Expr(r);
+                return $"(({_c.CType(b.Type)}){{{m}.keys[{arg}], {m}.vals[{arg}]}})";
+            }
+            case BuiltinMember.MapSet or BuiltinMember.MapGet or BuiltinMember.MapContainsKey or BuiltinMember.MapRemove:
+                return _c.MapMethod(b.Member, (MapType)r.Type, Expr(r), b.Arguments.Select(Expr).ToArray());
             case BuiltinMember.ArrayLength:
                 return $"((void){Expr(r)}, INT64_C({((ArrayType)r.Type).Length}))";
             case BuiltinMember.ArrayAsSpan:

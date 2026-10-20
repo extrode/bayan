@@ -505,6 +505,31 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             return;
         }
 
+        if (iterable.Type is MapType)
+        {
+            // Entries in insertion order; removed entries stay as tombstones until the next rehash.
+            var map = Spill(iterable);
+            var slot = NewTemp(PrimitiveType.I64);
+            EmitAssign(Local(syntax, slot), I64(syntax, 0));
+            var (brk, cont) = EnterLoop(f.Target);
+            var body = Capture(() =>
+            {
+                var count = new BoundBuiltinCall(syntax, BuiltinMember.MapSlotCount, map, [], PrimitiveType.I64);
+                Emit(new BoundIf(syntax, Not(new BoundBinary(syntax, BinaryOp.Lt, Local(syntax, slot), count, PrimitiveType.Bool)),
+                    Block(syntax, [new LGoto(syntax, brk)]), null));
+                var live = new BoundBuiltinCall(syntax, BuiltinMember.MapSlotLive, map, [Local(syntax, slot)], PrimitiveType.Bool);
+                Emit(new BoundIf(syntax, Not(live), Block(syntax, [new LGoto(syntax, cont)]), null));
+                EmitAssign(variable, new BoundBuiltinCall(syntax, BuiltinMember.MapSlotEntry, map, [Local(syntax, slot)], f.Variable.Type));
+                Statement(f.Body);
+                Emit(new LLabel(syntax, cont));
+                Emit(new BoundAssign(syntax, Local(syntax, slot),
+                    new BoundBinary(syntax, BinaryOp.AddWrap, Local(syntax, slot), I64(syntax, 1), PrimitiveType.I64), null));
+            });
+            Emit(new LLoop(syntax, Block(syntax, body)));
+            Emit(new LLabel(syntax, brk));
+            return;
+        }
+
         // Spans and lists are small headers: iterate over a copy. Arrays are iterated in place.
         var sequence = iterable.Type is Semantics.Symbols.ArrayType && IsLvalue(iterable) ? iterable : Spill(iterable);
         var lengthMember = iterable.Type switch
@@ -911,6 +936,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             return WriteParts(b, WriteSink.StrBuf, target, i);
         }
         var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast
+            or BuiltinMember.MapSet or BuiltinMember.MapRemove or BuiltinMember.MapClear
             or BuiltinMember.StrBufAppend or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan;
         var operands = new List<BoundExpr> { b.Receiver };
         operands.AddRange(b.Arguments);

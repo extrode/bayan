@@ -132,6 +132,39 @@ void* byn_copy_bytes(const void* p, int64_t n, byn_alloc* to);
 /* Makes room for `need` elements: grows *ptr (capacity *cap) through alloc. */
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc);
 
+/* ── Maps ────────────────────────────────────────────────────────────────── */
+
+/* Seeds every key hash; `main` sets it (0 under `--test`, else time xor pid). */
+extern uint64_t byn_hash_seed;
+void byn_hash_seed_init(bool fixed);
+/* FNV-1a 64 over n bytes, starting from the seed. */
+uint64_t byn_hash_bytes(const void* p, int64_t n);
+
+/* The untyped part of `Map<K, V>`: entries are dense arrays in insertion order (keys and values live in the
+ * typed struct), removed entries are tombstones until a rehash compacts them, and `index` is an open-addressed
+ * table of entry numbers (-1 empty) with `icap` slots, a power of two at least twice `cap`. */
+typedef struct byn_map_hdr {
+    int32_t* index;
+    uint64_t* hashes;
+    bool* dead;
+    int64_t icap;
+    int64_t cap;
+    int64_t len;
+    int64_t live;
+    byn_alloc* alloc;
+} byn_map_hdr;
+
+/* Compares a stored key with a probe key (both point at a K). */
+typedef bool (*byn_key_eq)(const void* a, const void* b);
+
+/* The entry holding `key`, or -1. */
+int64_t byn_map_find(const byn_map_hdr* h, const void* keys, int64_t ksize, const void* key, uint64_t hash, byn_key_eq eq);
+/* The entry for `key`; a new one is appended (*added set) and the caller stores the key. */
+int64_t byn_map_insert(byn_map_hdr* h, void** keys, int64_t ksize, void** vals, int64_t vsize, const void* key,
+                       uint64_t hash, byn_key_eq eq, bool* added);
+bool byn_map_remove(byn_map_hdr* h, const void* keys, int64_t ksize, const void* key, uint64_t hash, byn_key_eq eq);
+void byn_map_clear(byn_map_hdr* h);
+
 /* ── Program entry and Io ────────────────────────────────────────────────── */
 
 /* True if the bytes are well-formed UTF-8 (no overlongs, surrogates or values above U+10FFFF). */

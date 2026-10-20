@@ -1460,7 +1460,8 @@ public sealed class Parser
         {
             switch (Kind)
             {
-                case TokenKind.Dot when Peek(1) == TokenKind.Identifier:
+                // `set` is reserved (`error set`) but names `Map.set`.
+                case TokenKind.Dot when Peek(1) is TokenKind.Identifier or TokenKind.SetKeyword:
                     Advance();
                     {
                         var member = NameOf(Advance());

@@ -1,0 +1,44 @@
+error BYN2760: `f64` cannot be a `Map` key
+
+  5 │ Map<f64, i64> byWeight() => Map<f64, i64>();
+    │     ^^^
+    │
+  help: use an integer type, `char`, `bool`, `string` or a plain enum as the key
+
+error BYN2760: `f64` cannot be a `Map` key
+
+  5 │ Map<f64, i64> byWeight() => Map<f64, i64>();
+    │                                 ^^^
+    │
+  help: use an integer type, `char`, `bool`, `string` or a plain enum as the key
+
+error BYN2760: `Point` cannot be a `Map` key
+
+  8 │     var points = Map<Point, string>();
+    │                      ^^^^^
+    │
+  help: use an integer type, `char`, `bool`, `string` or a plain enum as the key
+
+error BYN2760: `Planet` cannot be a `Map` key
+
+  9 │     var planets = Map<Planet, i64>();
+    │                       ^^^^^^
+    │
+  help: use an integer type, `char`, `bool`, `string` or a plain enum as the key
+
+error BYN2760: `string?` cannot be a `Map` key
+
+  10 │     var nested = Map<string?, i64>();
+     │                      ^^^^^^^
+     │
+  help: use an integer type, `char`, `bool`, `string` or a plain enum as the key
+
+error BYN2023: `Map` takes 2 type argument(s), not 1
+
+  11 │     var wrong = Map<string>();
+     │                 ^^^^^^^^^^^
+
+error BYN2208: `==` cannot be applied to `Map<string, i64>` and `Map<string, i64>`
+
+  17 │     if (a == b) print("same");
+     │         ^^^^^^
