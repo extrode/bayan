@@ -1,0 +1,1098 @@
+using Bayan.Semantics;
+using Bayan.Semantics.Binding;
+using Bayan.Semantics.Symbols;
+using Bayan.Syntax.Ast;
+using OptionalType = Bayan.Semantics.Symbols.OptionalType;
+
+namespace Bayan.Lowering;
+
+/// <summary>Turns a bound, error-free compilation into a <see cref="LoweredProgram"/>.</summary>
+public static class Lowerer
+{
+    public static LoweredProgram Lower(Compilation c)
+    {
+        if (c.Diagnostics.HasErrors) throw new InvalidOperationException("cannot lower a compilation with errors");
+        var functions = new List<LoweredFunction>();
+        var tests = new List<(TestSymbol, LoweredFunction)>();
+        foreach (var module in c.Modules)
+        {
+            foreach (var fn in module.AllFunctions)
+            {
+                if (fn.Body is null || fn.Kind == FunctionKind.Test) continue;
+                functions.Add(new FunctionLowerer(fn).Lower());
+            }
+            foreach (var t in module.Tests)
+                tests.Add((t, new FunctionLowerer(t.Function).Lower()));
+        }
+        return new LoweredProgram(c, functions, c.EntryModule.Main, tests);
+    }
+}
+
+internal sealed class FunctionLowerer(FunctionSymbol fn)
+{
+    private readonly FunctionSymbol _fn = fn;
+    private readonly List<LocalSymbol> _locals = new();
+    private readonly HashSet<LocalSymbol> _seen = new();
+    private readonly List<Scope> _scopes = new();
+    private readonly Dictionary<JumpTarget, (string Break, string? Continue, int Depth)> _targets = new();
+    private List<BoundStmt> _out = new();
+    private int _labels;
+    private int _contextSlots;
+
+    private sealed class Scope
+    {
+        public List<Cleanup> Cleanups { get; } = new();
+    }
+
+    private abstract record Cleanup;
+
+    private sealed record DeferCleanup(BoundStmt Body) : Cleanup;
+
+    private sealed record ErrdeferCleanup(LocalSymbol? Error, BoundStmt Body) : Cleanup;
+
+    private sealed record RestoreContext(Node Syntax, int Slot) : Cleanup;
+
+    private sealed record FreeArena(Node Syntax, LocalSymbol Arena) : Cleanup;
+
+    public LoweredFunction Lower()
+    {
+        var body = _fn.Body!;
+        _scopes.Add(new Scope());
+        if (_fn.Kind == FunctionKind.Constructor)
+        {
+            var s = _fn.Owner!;
+            var defaults = s.Fields.Select(f => f.Default ?? new BoundDefault(body.Syntax, f.Type)).ToArray();
+            Emit(new BoundAssign(body.Syntax, new BoundThis(body.Syntax, s), new BoundStructLiteral(body.Syntax, s, defaults), null));
+        }
+        foreach (var s in body.Statements) Statement(s);
+        EmitCleanups(0, null);
+        _scopes.RemoveAt(0);
+        if (_fn.Kind == FunctionKind.Constructor) Emit(new LReturn(body.Syntax, null));
+        return new LoweredFunction(_fn, _locals, _contextSlots, new BoundBlock(body.Syntax, _out.ToArray()));
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────────
+
+    private void Emit(BoundStmt s) => _out.Add(s);
+
+    private void Note(LocalSymbol l)
+    {
+        if (l is ParameterSymbol) return;
+        if (_seen.Add(l)) _locals.Add(l);
+    }
+
+    private LocalSymbol NewTemp(TypeSymbol type)
+    {
+        var t = new LocalSymbol("t", null, type, LocalKind.Temp);
+        Note(t);
+        return t;
+    }
+
+    private string NewLabel(string kind) => $"{kind}_{++_labels}";
+
+    /// <summary>Runs <paramref name="action"/> with a fresh output buffer and returns what it emitted.</summary>
+    private List<BoundStmt> Capture(Action action)
+    {
+        var saved = _out;
+        _out = new List<BoundStmt>();
+        try
+        {
+            action();
+            return _out;
+        }
+        finally
+        {
+            _out = saved;
+        }
+    }
+
+    private (BoundExpr Value, List<BoundStmt> Pre) CaptureExpr(BoundExpr e, bool lvalue = false)
+    {
+        BoundExpr value = null!;
+        var pre = Capture(() => value = lvalue ? Lvalue(e) : Expr(e));
+        return (value, pre);
+    }
+
+    private static BoundBlock Block(Node syntax, IEnumerable<BoundStmt> statements) => new(syntax, statements.ToArray());
+
+    private static BoundLiteral Bool(Node syntax, bool value) => new(syntax, PrimitiveType.Bool, new ConstantValue(value)) { Constant = new ConstantValue(value) };
+
+    private static BoundLiteral I64(Node syntax, long value) =>
+        new(syntax, PrimitiveType.I64, new ConstantValue((Int128)value)) { Constant = new ConstantValue((Int128)value) };
+
+    private static BoundExpr Not(BoundExpr e) => new BoundUnary(e.Syntax, UnaryOp.Not, e, PrimitiveType.Bool);
+
+    private static BoundExpr And(BoundExpr a, BoundExpr b) =>
+        a is BoundLiteral { Value.Value: true } ? b : b is BoundLiteral { Value.Value: true } ? a : new BoundBinary(a.Syntax, BinaryOp.LogicalAnd, a, b, PrimitiveType.Bool);
+
+    private static BoundExpr Or(BoundExpr a, BoundExpr b) => new BoundBinary(a.Syntax, BinaryOp.LogicalOr, a, b, PrimitiveType.Bool);
+
+    private static BoundExpr Local(Node syntax, LocalSymbol l) => new BoundLocal(syntax, l);
+
+    private static bool IsNever(BoundExpr e) => e is LNever;
+
+    /// <summary>Cheap and free of effects: safe to evaluate more than once or later.</summary>
+    private static bool IsTrivial(BoundExpr e) => e switch
+    {
+        BoundLiteral or BoundDefault or BoundLocal or BoundThis or BoundErrorVariant or LVoid => true,
+        BoundField f => IsTrivial(f.Receiver),
+        BoundTupleElement t => IsTrivial(t.Receiver),
+        LOptionalValue v => IsTrivial(v.Optional),
+        _ => false,
+    };
+
+    private static bool IsLvalue(BoundExpr e) => e switch
+    {
+        BoundLocal or BoundThis or BoundIndex or LIndexUnchecked => true,
+        BoundField f => IsLvalue(f.Receiver),
+        BoundTupleElement t => IsLvalue(t.Receiver),
+        LOptionalValue v => IsLvalue(v.Optional),
+        _ => false,
+    };
+
+    private static bool HasEffects(BoundExpr e) => e switch
+    {
+        BoundCall or BoundBuiltinCall or LAssignExpr or LSequence or LNextChar => true,
+        _ => !IsTrivial(e) && BoundTree.Children(e).OfType<BoundExpr>().Any(HasEffects) || e is LOptionalValue v && HasEffects(v.Optional),
+    };
+
+    private BoundExpr Spill(BoundExpr e)
+    {
+        if (IsNever(e) || e is LVoid) return e;
+        var t = NewTemp(e.Type);
+        EmitAssign(Local(e.Syntax, t), e);
+        return Local(e.Syntax, t);
+    }
+
+    /// <summary>Stores <paramref name="value"/> in <paramref name="target"/>, or just evaluates it when it does not complete.</summary>
+    private void EmitAssign(BoundExpr target, BoundExpr value)
+    {
+        if (IsNever(value)) return;
+        if (value.Type.IsNever || value is LVoid)
+        {
+            EmitEffect(value);
+            return;
+        }
+        Emit(new BoundAssign(value.Syntax, target, value, null));
+    }
+
+    private void EmitEffect(BoundExpr value)
+    {
+        if (IsNever(value) || value is LVoid || IsTrivial(value)) return;
+        Emit(new BoundExprStmt(value.Syntax, value));
+    }
+
+    /// <summary>
+    /// Lowers operands so they are evaluated left to right: when a later operand needs statements
+    /// first, or two operands have effects (C leaves their order unspecified), earlier operands
+    /// are stored in temporaries. Operands in <paramref name="lvalues"/> stay addressable.
+    /// </summary>
+    private BoundExpr[]? Operands(IReadOnlyList<BoundExpr> operands, Func<int, bool>? lvalues = null)
+    {
+        var n = operands.Count;
+        var values = new BoundExpr[n];
+        var pres = new List<BoundStmt>[n];
+        for (var i = 0; i < n; i++)
+            (values[i], pres[i]) = CaptureExpr(operands[i], lvalues?.Invoke(i) ?? false);
+        var barrier = -1;
+        for (var i = 0; i < n; i++)
+            if (pres[i].Count > 0) barrier = i;
+        var effects = Enumerable.Range(0, n).Where(i => HasEffects(values[i])).ToList();
+        if (effects.Count >= 2) barrier = Math.Max(barrier, effects[^1]);
+        for (var i = 0; i < n; i++)
+        {
+            _out.AddRange(pres[i]);
+            if (IsNever(values[i])) return null;
+            if (i < barrier && !IsTrivial(values[i]) && !(lvalues?.Invoke(i) ?? false) && values[i] is not LVoid)
+                values[i] = Spill(values[i]);
+        }
+        return values;
+    }
+
+    // ── Cleanup ──────────────────────────────────────────────────────────────────
+
+    /// <summary>Emits the cleanups of scopes <paramref name="depth"/> and deeper, innermost first; errdefers only when failing with <paramref name="error"/>.</summary>
+    private void EmitCleanups(int depth, LocalSymbol? error)
+    {
+        for (var i = _scopes.Count - 1; i >= depth; i--)
+        {
+            var cleanups = _scopes[i].Cleanups;
+            for (var j = cleanups.Count - 1; j >= 0; j--)
+                EmitCleanup(i, cleanups[j], error);
+        }
+    }
+
+    private void EmitCleanup(int scopeIndex, Cleanup cleanup, LocalSymbol? error)
+    {
+        switch (cleanup)
+        {
+            case DeferCleanup d:
+                LowerOutside(scopeIndex, d.Body);
+                break;
+            case ErrdeferCleanup e when error is not null:
+                if (e.Error is { } binding)
+                {
+                    Note(binding);
+                    Emit(new BoundAssign(e.Body.Syntax, Local(e.Body.Syntax, binding), Local(e.Body.Syntax, error), null));
+                }
+                LowerOutside(scopeIndex, e.Body);
+                break;
+            case RestoreContext r:
+                Emit(new LSetContext(r.Syntax, null, r.Slot));
+                break;
+            case FreeArena f:
+                Emit(new LFreeArena(f.Syntax, Local(f.Syntax, f.Arena)));
+                break;
+        }
+    }
+
+    /// <summary>Lowers a cleanup body as if its own scope and everything inside it had already ended.</summary>
+    private void LowerOutside(int scopeIndex, BoundStmt body)
+    {
+        var saved = _scopes.GetRange(scopeIndex, _scopes.Count - scopeIndex);
+        _scopes.RemoveRange(scopeIndex, _scopes.Count - scopeIndex);
+        try
+        {
+            Statement(body);
+        }
+        finally
+        {
+            _scopes.AddRange(saved);
+        }
+    }
+
+    // ── Statements ───────────────────────────────────────────────────────────────
+
+    private void Statement(BoundStmt s)
+    {
+        switch (s)
+        {
+            case BoundBlock b:
+                _scopes.Add(new Scope());
+                foreach (var inner in b.Statements) Statement(inner);
+                EmitCleanups(_scopes.Count - 1, null);
+                _scopes.RemoveAt(_scopes.Count - 1);
+                break;
+            case BoundLocalDecl d:
+                Note(d.Local);
+                if (d.Initializer is not null) EmitAssign(Local(d.Syntax, d.Local), Expr(d.Initializer));
+                if (d.Local.IsUsing && d.Local.Type is BuiltinType { Kind: BuiltinKind.Arena })
+                    _scopes[^1].Cleanups.Add(new FreeArena(d.Syntax, d.Local));
+                break;
+            case BoundExprStmt e:
+                EmitEffect(Expr(e.Expr));
+                break;
+            case BoundAssign a:
+                Assign(a);
+                break;
+            case BoundReturn r:
+                Return(r);
+                break;
+            case BoundFail f:
+            {
+                var code = Expr(f.Error);
+                if (IsNever(code)) break;
+                var error = NewTemp(f.Error.Type);
+                EmitAssign(Local(f.Syntax, error), code);
+                EmitCleanups(0, error);
+                Emit(new LReturnError(f.Syntax, Local(f.Syntax, error)));
+                break;
+            }
+            case BoundBreak b:
+            {
+                var (brk, _, depth) = _targets[b.Target];
+                EmitCleanups(depth, null);
+                Emit(new LGoto(b.Syntax, brk));
+                break;
+            }
+            case BoundContinue c:
+            {
+                var (_, cont, depth) = _targets[c.Target];
+                EmitCleanups(depth, null);
+                Emit(new LGoto(c.Syntax, cont!));
+                break;
+            }
+            case BoundIf i:
+                If(i);
+                break;
+            case BoundWhile w:
+                While(w);
+                break;
+            case BoundDoWhile d:
+                DoWhile(d);
+                break;
+            case BoundFor f:
+                For(f);
+                break;
+            case BoundSwitch sw:
+                Switch(sw);
+                break;
+            case BoundDefer d:
+                _scopes[^1].Cleanups.Add(new DeferCleanup(d.Body));
+                break;
+            case BoundErrdefer e:
+                _scopes[^1].Cleanups.Add(new ErrdeferCleanup(e.Error, e.Body));
+                break;
+            case BoundContext c:
+            {
+                var arena = Expr(c.Allocator);
+                if (IsNever(arena)) break;
+                var slot = _contextSlots++;
+                Emit(new LSetContext(c.Syntax, arena, slot));
+                _scopes.Add(new Scope());
+                _scopes[^1].Cleanups.Add(new RestoreContext(c.Syntax, slot));
+                foreach (var inner in c.Body.Statements) Statement(inner);
+                EmitCleanups(_scopes.Count - 1, null);
+                _scopes.RemoveAt(_scopes.Count - 1);
+                break;
+            }
+            default:
+                throw new InvalidOperationException($"cannot lower {s.GetType().Name}");
+        }
+    }
+
+    private void Assign(BoundAssign a)
+    {
+        if (a.Op is null)
+        {
+            var parts = Operands([a.Target, a.Value], i => i == 0);
+            if (parts is null) return;
+            EmitAssign(parts[0], parts[1]);
+            return;
+        }
+        // `t op= v`: the target is evaluated once, so its index (if any) must be stable.
+        var target = Lvalue(a.Target);
+        if (target is BoundIndex { Index: var index } bi && !IsTrivial(index))
+            target = bi with { Index = Spill(index) };
+        var value = Expr(a.Value);
+        if (IsNever(value)) return;
+        EmitAssign(target, new BoundBinary(a.Syntax, a.Op.Value, target, value, target.Type));
+    }
+
+    private void Return(BoundReturn r)
+    {
+        BoundExpr? value = null;
+        if (r.Value is not null)
+        {
+            value = Expr(r.Value);
+            if (IsNever(value)) return;
+            if (value.Type.IsVoid || value is LVoid)
+            {
+                EmitEffect(value);
+                value = null;
+            }
+            else if (!IsTrivial(value) && _scopes.Any(s => s.Cleanups.Count > 0))
+            {
+                value = Spill(value);
+            }
+        }
+        EmitCleanups(0, null);
+        Emit(new LReturn(r.Syntax, value));
+    }
+
+    private void If(BoundIf i)
+    {
+        var condition = Expr(i.Condition);
+        if (IsNever(condition)) return;
+        var then = Capture(() => Statement(i.Then));
+        var otherwise = i.Else is null ? null : Capture(() => Statement(i.Else));
+        Emit(new BoundIf(i.Syntax, condition, Block(i.Then.Syntax, then), otherwise is null ? null : Block(i.Else!.Syntax, otherwise)));
+    }
+
+    /// <summary>Lowers <paramref name="body"/> as a loop body with fresh break/continue labels.</summary>
+    private (string Break, string Continue) EnterLoop(JumpTarget target)
+    {
+        var brk = NewLabel("break");
+        var cont = NewLabel("continue");
+        _targets[target] = (brk, cont, _scopes.Count);
+        return (brk, cont);
+    }
+
+    /// <summary><c>if (!condition) goto label;</c> with the condition's statements first.</summary>
+    private void ExitUnless(BoundExpr condition, string label)
+    {
+        var c = Expr(condition);
+        if (IsNever(c)) return;
+        Emit(new BoundIf(condition.Syntax, Not(c), Block(condition.Syntax, [new LGoto(condition.Syntax, label)]), null));
+    }
+
+    private void While(BoundWhile w)
+    {
+        var (brk, cont) = EnterLoop(w.Target);
+        var body = Capture(() =>
+        {
+            ExitUnless(w.Condition, brk);
+            Statement(w.Body);
+            Emit(new LLabel(w.Syntax, cont));
+        });
+        Emit(new LLoop(w.Syntax, Block(w.Syntax, body)));
+        Emit(new LLabel(w.Syntax, brk));
+    }
+
+    private void DoWhile(BoundDoWhile d)
+    {
+        var (brk, cont) = EnterLoop(d.Target);
+        var body = Capture(() =>
+        {
+            Statement(d.Body);
+            Emit(new LLabel(d.Syntax, cont));
+            ExitUnless(d.Condition, brk);
+        });
+        Emit(new LLoop(d.Syntax, Block(d.Syntax, body)));
+        Emit(new LLabel(d.Syntax, brk));
+    }
+
+    private void For(BoundFor f)
+    {
+        Note(f.Variable);
+        var syntax = f.Syntax;
+        var variable = Local(syntax, f.Variable);
+        if (f.Iterable is BoundRange range)
+        {
+            var bounds = Operands([range.Start, range.End]);
+            if (bounds is null) return;
+            var i = NewTemp(range.Start.Type);
+            var end = NewTemp(range.End.Type);
+            EmitAssign(Local(syntax, i), bounds[0]);
+            EmitAssign(Local(syntax, end), bounds[1]);
+            var (brk, cont) = EnterLoop(f.Target);
+            var cmp = range.Inclusive ? BinaryOp.Le : BinaryOp.Lt;
+            var body = Capture(() =>
+            {
+                Emit(new BoundIf(syntax, Not(new BoundBinary(syntax, cmp, Local(syntax, i), Local(syntax, end), PrimitiveType.Bool)),
+                    Block(syntax, [new LGoto(syntax, brk)]), null));
+                EmitAssign(variable, Local(syntax, i));
+                Statement(f.Body);
+                Emit(new LLabel(syntax, cont));
+                if (range.Inclusive)
+                    Emit(new BoundIf(syntax, new BoundBinary(syntax, BinaryOp.Eq, Local(syntax, i), Local(syntax, end), PrimitiveType.Bool),
+                        Block(syntax, [new LGoto(syntax, brk)]), null));
+                Emit(new BoundAssign(syntax, Local(syntax, i),
+                    new BoundBinary(syntax, BinaryOp.AddWrap, Local(syntax, i), One(syntax, i.Type), i.Type), null));
+            });
+            Emit(new LLoop(syntax, Block(syntax, body)));
+            Emit(new LLabel(syntax, brk));
+            return;
+        }
+
+        var iterable = Expr(f.Iterable);
+        if (IsNever(iterable)) return;
+        if (iterable.Type.IsString)
+        {
+            var text = Spill(iterable);
+            var pos = NewTemp(PrimitiveType.I64);
+            EmitAssign(Local(syntax, pos), I64(syntax, 0));
+            var (brk, cont) = EnterLoop(f.Target);
+            var body = Capture(() =>
+            {
+                var length = new BoundBuiltinCall(syntax, BuiltinMember.StringLength, text, [], PrimitiveType.I64);
+                Emit(new BoundIf(syntax, Not(new BoundBinary(syntax, BinaryOp.Lt, Local(syntax, pos), length, PrimitiveType.Bool)),
+                    Block(syntax, [new LGoto(syntax, brk)]), null));
+                EmitAssign(variable, new LNextChar(syntax, text, pos));
+                Statement(f.Body);
+                Emit(new LLabel(syntax, cont));
+            });
+            Emit(new LLoop(syntax, Block(syntax, body)));
+            Emit(new LLabel(syntax, brk));
+            return;
+        }
+
+        // Spans and lists are small headers: iterate over a copy. Arrays are iterated in place.
+        var sequence = iterable.Type is Semantics.Symbols.ArrayType && IsLvalue(iterable) ? iterable : Spill(iterable);
+        var lengthMember = iterable.Type switch
+        {
+            SpanType => BuiltinMember.SpanLength,
+            ListType => BuiltinMember.ListLength,
+            _ => BuiltinMember.ArrayLength,
+        };
+        var index = NewTemp(PrimitiveType.I64);
+        EmitAssign(Local(syntax, index), I64(syntax, 0));
+        var (b, c) = EnterLoop(f.Target);
+        var loopBody = Capture(() =>
+        {
+            var length = new BoundBuiltinCall(syntax, lengthMember, sequence, [], PrimitiveType.I64);
+            Emit(new BoundIf(syntax, Not(new BoundBinary(syntax, BinaryOp.Lt, Local(syntax, index), length, PrimitiveType.Bool)),
+                Block(syntax, [new LGoto(syntax, b)]), null));
+            EmitAssign(variable, new LIndexUnchecked(syntax, sequence, Local(syntax, index), f.Variable.Type));
+            Statement(f.Body);
+            Emit(new LLabel(syntax, c));
+            Emit(new BoundAssign(syntax, Local(syntax, index),
+                new BoundBinary(syntax, BinaryOp.AddWrap, Local(syntax, index), I64(syntax, 1), PrimitiveType.I64), null));
+        });
+        Emit(new LLoop(syntax, Block(syntax, loopBody)));
+        Emit(new LLabel(syntax, b));
+    }
+
+    private static BoundLiteral One(Node syntax, TypeSymbol type) =>
+        new(syntax, type, new ConstantValue((Int128)1)) { Constant = new ConstantValue((Int128)1) };
+
+    private void Switch(BoundSwitch sw)
+    {
+        var value = Expr(sw.Value);
+        if (IsNever(value)) return;
+        if (!IsTrivial(value)) value = Spill(value);
+        var end = NewLabel("switch_end");
+        _targets[sw.Target] = (end, null, _scopes.Count);
+        BoundSwitchSection? fallback = null;
+        foreach (var section in sw.Sections)
+        {
+            if (section.Pattern is null)
+            {
+                fallback = section;
+                continue;
+            }
+            var body = Capture(() =>
+            {
+                _scopes.Add(new Scope());
+                foreach (var s in section.Body) Statement(s);
+                EmitCleanups(_scopes.Count - 1, null);
+                _scopes.RemoveAt(_scopes.Count - 1);
+                Emit(new LGoto(section.Syntax, end));
+            });
+            var match = Match(section.Pattern, value);
+            if (section.Guard is null)
+            {
+                Emit(new BoundIf(section.Syntax, match, Block(section.Syntax, body), null));
+                continue;
+            }
+            var (guard, pre) = CaptureExpr(section.Guard);
+            if (pre.Count == 0)
+            {
+                Emit(new BoundIf(section.Syntax, And(match, guard), Block(section.Syntax, body), null));
+            }
+            else
+            {
+                pre.Add(new BoundIf(section.Syntax, guard, Block(section.Syntax, body), null));
+                Emit(new BoundIf(section.Syntax, match, Block(section.Syntax, pre), null));
+            }
+        }
+        if (fallback is not null)
+        {
+            _scopes.Add(new Scope());
+            foreach (var s in fallback.Body) Statement(s);
+            EmitCleanups(_scopes.Count - 1, null);
+            _scopes.RemoveAt(_scopes.Count - 1);
+        }
+        Emit(new LLabel(sw.Syntax, end));
+    }
+
+    // ── Expressions ──────────────────────────────────────────────────────────────
+
+    /// <summary>Lowers an expression that must stay addressable (assignment target, <c>ref</c> argument, mutating receiver).</summary>
+    private BoundExpr Lvalue(BoundExpr e)
+    {
+        switch (e)
+        {
+            case BoundLocal l:
+                Note(l.Local);
+                return l;
+            case BoundThis:
+                return e;
+            case BoundField f:
+                return f with { Receiver = IsLvalueShape(f.Receiver) ? Lvalue(f.Receiver) : Spill(Expr(f.Receiver)) };
+            case BoundTupleElement t:
+                return t with { Receiver = IsLvalueShape(t.Receiver) ? Lvalue(t.Receiver) : Spill(Expr(t.Receiver)) };
+            case BoundIndex i:
+            {
+                var arrayTarget = i.Target.Type is Semantics.Symbols.ArrayType;
+                var parts = Operands([i.Target, i.Index], k => k == 0 && arrayTarget && IsLvalueShape(i.Target));
+                if (parts is null) return new LNever(e.Syntax, e.Type);
+                var target = arrayTarget && !IsLvalue(parts[0]) ? Spill(parts[0]) : parts[0];
+                return i with { Target = target, Index = parts[1] };
+            }
+            default:
+                return Spill(Expr(e));
+        }
+    }
+
+    private static bool IsLvalueShape(BoundExpr e) => e switch
+    {
+        BoundLocal or BoundThis or BoundIndex => true,
+        BoundField f => IsLvalueShape(f.Receiver),
+        BoundTupleElement t => IsLvalueShape(t.Receiver),
+        _ => false,
+    };
+
+    private BoundExpr Expr(BoundExpr e)
+    {
+        switch (e)
+        {
+            case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant:
+                return e;
+            case BoundLocal l:
+                Note(l.Local);
+                return e;
+            case BoundField f:
+            {
+                var receiver = Expr(f.Receiver);
+                return IsNever(receiver) ? new LNever(e.Syntax, e.Type) : f with { Receiver = receiver };
+            }
+            case BoundTupleElement t:
+            {
+                var receiver = Expr(t.Receiver);
+                return IsNever(receiver) ? new LNever(e.Syntax, e.Type) : t with { Receiver = receiver };
+            }
+            case BoundCall c:
+                return Call(c);
+            case BoundBuiltinCall b:
+                return BuiltinCall(b);
+            case BoundUnary u:
+            {
+                var operand = Expr(u.Operand);
+                return IsNever(operand) ? new LNever(e.Syntax, e.Type) : u with { Operand = operand };
+            }
+            case BoundBinary { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } b:
+                return ShortCircuit(b);
+            case BoundBinary b:
+            {
+                var parts = Operands([b.Left, b.Right]);
+                return parts is null ? new LNever(e.Syntax, e.Type) : b with { Left = parts[0], Right = parts[1] };
+            }
+            case BoundConversion c:
+            {
+                var lvalue = c.Kind == ConversionKind.ArrayToSpan;
+                var operand = lvalue ? Lvalue(c.Operand) : Expr(c.Operand);
+                if (IsNever(operand)) return new LNever(e.Syntax, e.Type);
+                if (c.Kind == ConversionKind.FromNever) return operand;
+                if (c.Kind is ConversionKind.ListToSpan && !IsTrivial(operand)) operand = Spill(operand);
+                return c with { Operand = operand };
+            }
+            case BoundConditional c:
+                return Conditional(c);
+            case BoundCoalesce c:
+                return Coalesce(c);
+            case BoundStructLiteral s:
+            {
+                var fields = Operands(s.Fields);
+                return fields is null ? new LNever(e.Syntax, e.Type) : s with { Fields = fields };
+            }
+            case BoundWith w:
+            {
+                var target = Expr(w.Target);
+                if (IsNever(target)) return target;
+                var copy = NewTemp(w.Type);
+                EmitAssign(Local(w.Syntax, copy), target);
+                foreach (var (field, value) in w.Updates)
+                {
+                    var v = Expr(value);
+                    if (IsNever(v)) return new LNever(e.Syntax, e.Type);
+                    EmitAssign(new BoundField(w.Syntax, Local(w.Syntax, copy), field), v);
+                }
+                return Local(w.Syntax, copy);
+            }
+            case BoundTuple t:
+            {
+                var elements = Operands(t.Elements);
+                return elements is null ? new LNever(e.Syntax, e.Type) : t with { Elements = elements };
+            }
+            case BoundCollection c:
+                return Collection(c);
+            case BoundIndex i:
+            {
+                var arrayTarget = i.Target.Type is Semantics.Symbols.ArrayType;
+                var parts = Operands([i.Target, i.Index], k => k == 0 && arrayTarget && IsLvalueShape(i.Target));
+                if (parts is null) return new LNever(e.Syntax, e.Type);
+                var target = arrayTarget && !IsLvalue(parts[0]) ? Spill(parts[0]) : parts[0];
+                return i with { Target = target, Index = parts[1] };
+            }
+            case BoundSlice s:
+                return Slice(s);
+            case BoundIs i:
+            {
+                var value = Expr(i.Value);
+                if (IsNever(value)) return new LNever(e.Syntax, e.Type);
+                if (!IsTrivial(value)) value = Spill(value);
+                return Match(i.Pattern, value);
+            }
+            case BoundSwitchExpr s:
+                return SwitchExpr(s);
+            case BoundTry t:
+                return Try(t);
+            case BoundCatch c:
+                return Catch(c);
+            case BoundJump j:
+                Statement(j.Jump);
+                return new LNever(e.Syntax, e.Type);
+            case BoundStackalloc s:
+            {
+                var storage = NewTemp(new Semantics.Symbols.ArrayType(s.Element, s.Count));
+                Emit(new BoundAssign(s.Syntax, Local(s.Syntax, storage), new BoundDefault(s.Syntax, storage.Type), null));
+                return new BoundConversion(s.Syntax, Local(s.Syntax, storage), s.Type, ConversionKind.ArrayToSpan);
+            }
+            case BoundInterpolated:
+                throw new InvalidOperationException("interpolation outside an output call");
+            default:
+                throw new InvalidOperationException($"cannot lower {e.GetType().Name}");
+        }
+    }
+
+    private BoundExpr ShortCircuit(BoundBinary b)
+    {
+        var left = Expr(b.Left);
+        if (IsNever(left)) return left;
+        var (right, pre) = CaptureExpr(b.Right);
+        if (pre.Count == 0 && !IsNever(right)) return b with { Left = left, Right = right };
+        // `t = left; if (t) { pre; t = right; }` for &&, `if (!t)` for ||.
+        var t = NewTemp(PrimitiveType.Bool);
+        EmitAssign(Local(b.Syntax, t), left);
+        pre.Add(new BoundAssign(b.Syntax, Local(b.Syntax, t), right, null));
+        if (IsNever(right)) pre.RemoveAt(pre.Count - 1);
+        BoundExpr test = Local(b.Syntax, t);
+        if (b.Op == BinaryOp.LogicalOr) test = Not(test);
+        Emit(new BoundIf(b.Syntax, test, Block(b.Syntax, pre), null));
+        return Local(b.Syntax, t);
+    }
+
+    private BoundExpr Conditional(BoundConditional c)
+    {
+        var condition = Expr(c.Condition);
+        if (IsNever(condition)) return condition;
+        var (whenTrue, preTrue) = CaptureExpr(c.WhenTrue);
+        var (whenFalse, preFalse) = CaptureExpr(c.WhenFalse);
+        if (preTrue.Count == 0 && preFalse.Count == 0 && !IsNever(whenTrue) && !IsNever(whenFalse)
+            && !whenTrue.Type.IsNever && !whenFalse.Type.IsNever)
+            return c with { Condition = condition, WhenTrue = whenTrue, WhenFalse = whenFalse };
+        var result = NewTemp(c.Type);
+        var target = Local(c.Syntax, result);
+        var t = Capture(() => { _out.AddRange(preTrue); EmitAssign(target, whenTrue); });
+        var f = Capture(() => { _out.AddRange(preFalse); EmitAssign(target, whenFalse); });
+        Emit(new BoundIf(c.Syntax, condition, Block(c.Syntax, t), Block(c.Syntax, f)));
+        return c.Type.IsNever ? new LNever(c.Syntax, c.Type) : target;
+    }
+
+    private BoundExpr Coalesce(BoundCoalesce c)
+    {
+        var left = Expr(c.Left);
+        if (IsNever(left)) return left;
+        if (!IsTrivial(left)) left = Spill(left);
+        var keepsOptional = c.Type is OptionalType;
+        BoundExpr present = keepsOptional ? left : new LOptionalValue(c.Syntax, left, ((OptionalType)c.Left.Type).Inner);
+        var (right, pre) = CaptureExpr(c.Right);
+        if (pre.Count == 0 && !IsNever(right) && !right.Type.IsNever)
+            return new BoundConditional(c.Syntax, new LOptionalHas(c.Syntax, left), present, right, c.Type);
+        var result = NewTemp(c.Type);
+        var target = Local(c.Syntax, result);
+        var missing = Capture(() => { _out.AddRange(pre); EmitAssign(target, right); });
+        Emit(new BoundIf(c.Syntax, new LOptionalHas(c.Syntax, left),
+            Block(c.Syntax, [new BoundAssign(c.Syntax, target, present, null)]), Block(c.Syntax, missing)));
+        return target;
+    }
+
+    private BoundExpr Collection(BoundCollection c)
+    {
+        switch (c.Type)
+        {
+            case ListType l:
+            {
+                if (c.Elements.Length == 0) return c;
+                var list = NewTemp(l);
+                EmitAssign(Local(c.Syntax, list), c with { Elements = [] });
+                foreach (var element in c.Elements)
+                {
+                    var v = Expr(element);
+                    if (IsNever(v)) return new LNever(c.Syntax, c.Type);
+                    Emit(new BoundExprStmt(c.Syntax, new BoundBuiltinCall(c.Syntax, BuiltinMember.ListAdd, Local(c.Syntax, list), [v], PrimitiveType.Void)));
+                }
+                return Local(c.Syntax, list);
+            }
+            case SpanType s:
+            {
+                if (c.Elements.Length == 0) return new BoundDefault(c.Syntax, s);
+                var array = new Semantics.Symbols.ArrayType(s.Element, c.Elements.Length);
+                var elements = Operands(c.Elements);
+                if (elements is null) return new LNever(c.Syntax, c.Type);
+                var storage = NewTemp(array);
+                EmitAssign(Local(c.Syntax, storage), new BoundCollection(c.Syntax, array, elements));
+                return new BoundConversion(c.Syntax, Local(c.Syntax, storage), s, ConversionKind.ArrayToSpan);
+            }
+            default:
+            {
+                var elements = Operands(c.Elements);
+                return elements is null ? new LNever(c.Syntax, c.Type) : c with { Elements = elements };
+            }
+        }
+    }
+
+    private BoundExpr Slice(BoundSlice s)
+    {
+        var operands = new List<BoundExpr> { s.Target };
+        if (s.Start is not null) operands.Add(s.Start);
+        if (s.End is not null) operands.Add(s.End);
+        var arrayTarget = s.Target.Type is Semantics.Symbols.ArrayType;
+        var parts = Operands(operands, k => k == 0 && arrayTarget && IsLvalueShape(s.Target));
+        if (parts is null) return new LNever(s.Syntax, s.Type);
+        var target = arrayTarget && !IsLvalue(parts[0]) ? Spill(parts[0]) : parts[0];
+        if (!IsTrivial(target) && !arrayTarget) target = Spill(target);
+        var k = 1;
+        var start = s.Start is null ? null : parts[k++];
+        var end = s.End is null ? null : parts[k];
+        return s with { Target = target, Start = start, End = end };
+    }
+
+    private BoundExpr Call(BoundCall c)
+    {
+        switch (c.Function.Builtin)
+        {
+            case BuiltinFunction.Print when c.Arguments[0] is BoundInterpolated i:
+                return Write(c, WriteSink.Print, null, i);
+            case BuiltinFunction.Panic when c.Arguments[0] is BoundInterpolated i:
+                Write(c, WriteSink.Panic, null, i);
+                return new LNever(c.Syntax, c.Type);
+            case BuiltinFunction.Assert:
+            {
+                var condition = Expr(c.Arguments[0]);
+                if (IsNever(condition)) return condition;
+                var text = _fn.File!.Source.GetText(c.Arguments[0].Syntax.Span);
+                Emit(new BoundIf(c.Syntax, Not(condition), Block(c.Syntax, [new LPanic(c.Syntax, "assertion failed: " + text)]), null));
+                return new LVoid(c.Syntax);
+            }
+        }
+        if (c.Function.Fails) throw new InvalidOperationException($"call of failing `{c.Function.Name}` outside try/catch");
+        var lowered = CallParts(c);
+        if (lowered is null) return new LNever(c.Syntax, c.Type);
+        if (c.Type.IsNever)
+        {
+            Emit(new BoundExprStmt(c.Syntax, lowered));
+            return new LNever(c.Syntax, c.Type);
+        }
+        if (c.Type.IsVoid)
+        {
+            Emit(new BoundExprStmt(c.Syntax, lowered));
+            return new LVoid(c.Syntax);
+        }
+        return lowered;
+    }
+
+    /// <summary>Lowers the receiver and arguments of a call; the receiver and <c>ref</c>/<c>out</c> arguments stay addressable.</summary>
+    private BoundCall? CallParts(BoundCall c)
+    {
+        var operands = new List<BoundExpr>();
+        var hasReceiver = c.Receiver is not null && c.Function.HasThis;
+        if (hasReceiver) operands.Add(c.Receiver!);
+        operands.AddRange(c.Arguments);
+        var offset = hasReceiver ? 1 : 0;
+        bool Addressable(int k)
+        {
+            if (hasReceiver && k == 0) return IsLvalueShape(c.Receiver!);
+            var p = k - offset;
+            return p < c.Function.Parameters.Count && c.Function.Parameters[p].IsByRef;
+        }
+        var parts = Operands(operands, Addressable);
+        if (parts is null) return null;
+        BoundExpr? receiver = null;
+        if (hasReceiver)
+        {
+            receiver = parts[0];
+            if (!IsLvalue(receiver)) receiver = Spill(receiver);
+        }
+        return c with { Receiver = receiver, Arguments = parts[offset..] };
+    }
+
+    private BoundExpr BuiltinCall(BoundBuiltinCall b)
+    {
+        if (b.Member == BuiltinMember.StrBufAppend && b.Arguments[0] is BoundInterpolated i)
+        {
+            var target = Lvalue(b.Receiver);
+            if (IsNever(target)) return target;
+            return WriteParts(b, WriteSink.StrBuf, target, i);
+        }
+        var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast
+            or BuiltinMember.StrBufAppend or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan;
+        var operands = new List<BoundExpr> { b.Receiver };
+        operands.AddRange(b.Arguments);
+        var parts = Operands(operands, k => k == 0 && mutating && IsLvalueShape(b.Receiver));
+        if (parts is null) return new LNever(b.Syntax, b.Type);
+        var receiver = parts[0];
+        if (mutating && !IsLvalue(receiver)) receiver = Spill(receiver);
+        else if (!mutating && !IsTrivial(receiver) && b.Member is BuiltinMember.ListAsSpan or BuiltinMember.StrBufAsString) receiver = Spill(receiver);
+        var lowered = b with { Receiver = receiver, Arguments = parts[1..] };
+        if (b.Type.IsVoid)
+        {
+            Emit(new BoundExprStmt(b.Syntax, lowered));
+            return new LVoid(b.Syntax);
+        }
+        return lowered;
+    }
+
+    private BoundExpr Write(BoundCall c, WriteSink sink, BoundExpr? target, BoundInterpolated text) => WriteParts(c, sink, target, text);
+
+    private BoundExpr WriteParts(BoundExpr call, WriteSink sink, BoundExpr? target, BoundInterpolated text)
+    {
+        var values = text.Parts.Where(p => p.Value is not null).Select(p => p.Value!).ToList();
+        var lowered = Operands(values);
+        if (lowered is null) return new LNever(call.Syntax, call.Type);
+        var k = 0;
+        var parts = text.Parts.Select(p => p.Value is null ? p : new BoundInterpolationPart(null, lowered[k++])).ToArray();
+        Emit(new LWrite(call.Syntax, sink, target, parts));
+        return new LVoid(call.Syntax);
+    }
+
+    private BoundExpr SwitchExpr(BoundSwitchExpr s)
+    {
+        var value = Expr(s.Value);
+        if (IsNever(value)) return value;
+        if (!IsTrivial(value)) value = Spill(value);
+        var result = s.Type.IsNever ? null : NewTemp(s.Type);
+        var end = NewLabel("switch_end");
+        foreach (var arm in s.Arms)
+        {
+            var match = Match(arm.Pattern, value);
+            var body = Capture(() =>
+            {
+                var v = Expr(arm.Value);
+                if (result is not null) EmitAssign(Local(arm.Syntax, result), v);
+                else EmitEffect(v);
+                Emit(new LGoto(arm.Syntax, end));
+            });
+            if (arm.Guard is null)
+            {
+                Emit(new BoundIf(arm.Syntax, match, Block(arm.Syntax, body), null));
+                continue;
+            }
+            var (guard, pre) = CaptureExpr(arm.Guard);
+            if (pre.Count == 0)
+            {
+                Emit(new BoundIf(arm.Syntax, And(match, guard), Block(arm.Syntax, body), null));
+            }
+            else
+            {
+                pre.Add(new BoundIf(arm.Syntax, guard, Block(arm.Syntax, body), null));
+                Emit(new BoundIf(arm.Syntax, match, Block(arm.Syntax, pre), null));
+            }
+        }
+        Emit(new LPanic(s.Syntax, "no switch arm matched"));
+        Emit(new LLabel(s.Syntax, end));
+        return result is null ? new LNever(s.Syntax, s.Type) : Local(s.Syntax, result);
+    }
+
+    // ── Failure ──────────────────────────────────────────────────────────────────
+
+    /// <summary>Emits the failing call; returns its error local and its result (or <see cref="LVoid"/>).</summary>
+    private (LocalSymbol Error, BoundExpr Result)? FailingCall(BoundExpr operand)
+    {
+        var call = (BoundCall)operand;
+        var lowered = CallParts(call);
+        if (lowered is null) return null;
+        var error = NewTemp(PrimitiveType.U32);
+        var result = call.Type.IsVoid || call.Type.IsNever ? null : NewTemp(call.Type);
+        Emit(new LFailingCall(call.Syntax, error, lowered, result));
+        return (error, result is null ? new LVoid(call.Syntax) : Local(call.Syntax, result));
+    }
+
+    private BoundExpr Failed(Node syntax, LocalSymbol error) =>
+        new BoundBinary(syntax, BinaryOp.Ne, Local(syntax, error), new BoundLiteral(syntax, PrimitiveType.U32, new ConstantValue((Int128)0)), PrimitiveType.Bool);
+
+    /// <summary>Runs the cleanups (errdefers included) and fails the function with <paramref name="error"/>.</summary>
+    private List<BoundStmt> Propagate(Node syntax, LocalSymbol error) => Capture(() =>
+    {
+        EmitCleanups(0, error);
+        Emit(new LReturnError(syntax, Local(syntax, error)));
+    });
+
+    private BoundExpr Try(BoundTry t)
+    {
+        if (FailingCall(t.Operand) is not var (error, result)) return new LNever(t.Syntax, t.Type);
+        Emit(new BoundIf(t.Syntax, Failed(t.Syntax, error), Block(t.Syntax, Propagate(t.Syntax, error)), null));
+        return result;
+    }
+
+    private BoundExpr Catch(BoundCatch c)
+    {
+        if (FailingCall(c.Operand) is not var (error, result)) return new LNever(c.Syntax, c.Type);
+        var target = result is BoundLocal r ? r : null;
+        var handler = Capture(() =>
+        {
+            if (c.Binding is { } binding)
+            {
+                Note(binding);
+                Emit(new BoundAssign(c.Syntax, Local(c.Syntax, binding), Local(c.Syntax, error), null));
+            }
+            var h = Expr(c.Handler);
+            if (target is not null) EmitAssign(target, h);
+            else EmitEffect(h);
+        });
+        if (c.Variant is { } variant)
+        {
+            var other = new BoundBinary(c.Syntax, BinaryOp.Ne, Local(c.Syntax, error),
+                new BoundErrorVariant(c.Syntax, variant), PrimitiveType.Bool);
+            handler.Insert(0, new BoundIf(c.Syntax, other, Block(c.Syntax, Propagate(c.Syntax, error)), null));
+        }
+        Emit(new BoundIf(c.Syntax, Failed(c.Syntax, error), Block(c.Syntax, handler), null));
+        return result;
+    }
+
+    // ── Patterns ─────────────────────────────────────────────────────────────────
+
+    /// <summary>A condition that tests <paramref name="value"/> (trivial) and binds the pattern's variables as it goes.</summary>
+    private BoundExpr Match(BoundPattern p, BoundExpr value)
+    {
+        var syntax = p.Syntax;
+        var optional = value.Type as OptionalType;
+        BoundExpr Inner() => new LOptionalValue(syntax, value, optional!.Inner);
+        switch (p)
+        {
+            case BoundBindPattern { Local: null }:
+                return Bool(syntax, true);
+            case BoundBindPattern { Local: { } local }:
+                Note(local);
+                return new LSequence(syntax, [new LAssignExpr(syntax, Local(syntax, local), value)], Bool(syntax, true));
+            case BoundConstantPattern c when c.Value is BoundDefault && optional is not null:
+                return Not(new LOptionalHas(syntax, value));
+            case BoundConstantPattern c:
+                return optional is not null && c.Value.Type is not OptionalType
+                    ? And(new LOptionalHas(syntax, value), Equal(syntax, Inner(), c.Value))
+                    : Equal(syntax, value, c.Value);
+            case BoundRelationalPattern r:
+            {
+                var v = optional is not null ? Inner() : value;
+                var test = new BoundBinary(syntax, r.Op, v, r.Value, PrimitiveType.Bool);
+                return optional is not null ? And(new LOptionalHas(syntax, value), test) : test;
+            }
+            case BoundRangePattern r:
+            {
+                var v = optional is not null ? Inner() : value;
+                var test = And(new BoundBinary(syntax, BinaryOp.Ge, v, r.Start, PrimitiveType.Bool),
+                    new BoundBinary(syntax, r.Inclusive ? BinaryOp.Le : BinaryOp.Lt, v, r.End, PrimitiveType.Bool));
+                return optional is not null ? And(new LOptionalHas(syntax, value), test) : test;
+            }
+            case BoundNotPattern n:
+                return Not(Match(n.Operand, value));
+            case BoundBinaryPattern b:
+                return b.IsAnd ? And(Match(b.Left, value), Match(b.Right, value)) : Or(Match(b.Left, value), Match(b.Right, value));
+            case BoundPropertyPattern pp:
+            {
+                var tests = new List<BoundExpr>();
+                var subject = value;
+                if (optional is not null)
+                {
+                    tests.Add(new LOptionalHas(syntax, value));
+                    subject = Inner();
+                }
+                foreach (var sub in pp.Subpatterns)
+                {
+                    var member = subject;
+                    foreach (var step in sub.Path) member = Step(syntax, member, step);
+                    tests.Add(Match(sub.Pattern, member));
+                }
+                if (pp.Designation is { } d)
+                {
+                    Note(d);
+                    tests.Add(new LSequence(syntax, [new LAssignExpr(syntax, Local(syntax, d), subject)], Bool(syntax, true)));
+                }
+                return tests.Count == 0 ? Bool(syntax, true) : tests.Aggregate(And);
+            }
+            default:
+                throw new InvalidOperationException($"cannot lower pattern {p.GetType().Name}");
+        }
+    }
+
+    private static BoundExpr Step(Node syntax, BoundExpr receiver, BoundMemberStep step)
+    {
+        if (step.Field is { } f) return new BoundField(syntax, receiver, f);
+        if (step.Property is { } p) return new BoundCall(syntax, p.Getter, receiver, [], p.Type);
+        if (step.Builtin is { } b) return new BoundBuiltinCall(syntax, b, receiver, [], step.Type);
+        return new BoundTupleElement(syntax, receiver, step.TupleIndex, step.Type);
+    }
+
+    private static BoundExpr Equal(Node syntax, BoundExpr a, BoundExpr b) => new BoundBinary(syntax, BinaryOp.Eq, a, b, PrimitiveType.Bool);
+}
