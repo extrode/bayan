@@ -339,6 +339,91 @@ public sealed class CEmitter
         return name;
     }
 
+    // ── Ownership checker (debug builds) ────────────────────────────────────────
+
+    /// <summary>The storage a <paramref name="t"/> at lvalue <paramref name="at"/> owns by value: a List's elements, a Map's keys,
+    /// a growable StrBuf's bytes, an Owned box, through struct fields and tuple items (not optionals, unions or arrays).</summary>
+    private static void StorageParts(TypeSymbol t, string at, List<(string Storage, string Place, string Type)> parts)
+    {
+        switch (t)
+        {
+            case ListType:
+                parts.Add(($"{at}.ptr", "&" + at, t.DisplayName));
+                break;
+            case MapType:
+                parts.Add(($"{at}.keys", "&" + at, t.DisplayName));
+                break;
+            case BuiltinType { Kind: BuiltinKind.StrBuf }:
+                parts.Add(($"({at}.mode == BYN_WRITE_GROW ? {at}.buf : NULL)", "&" + at, t.DisplayName));
+                break;
+            case OwnedType:
+                parts.Add((at, "&" + at, t.DisplayName));
+                break;
+            case UntrustedType u:
+                StorageParts(u.Inner, at, parts);
+                break;
+            case TupleType tt:
+                for (var i = 0; i < tt.Fields.Count; i++) StorageParts(tt.Fields[i].Type, $"{at}.item{i + 1}", parts);
+                break;
+            case StructSymbol s:
+                foreach (var f in s.Fields) StorageParts(f.Type, $"{at}.{FieldName(f.Name)}", parts);
+                break;
+        }
+    }
+
+    internal static bool OwnsStorage(TypeSymbol t)
+    {
+        var parts = new List<(string, string, string)>();
+        StorageParts(t, "v", parts);
+        return parts.Count > 0;
+    }
+
+    private string OwnStatements(TypeSymbol t, string at, Func<(string Storage, string Place, string Type), string> line)
+    {
+        var parts = new List<(string Storage, string Place, string Type)>();
+        StorageParts(t, at, parts);
+        return string.Concat(parts.Select(p => "    " + line(p) + ";\n"));
+    }
+
+    /// <summary>Records <c>*p</c> as the owner of its storage.</summary>
+    internal string OwnClaim(TypeSymbol t)
+    {
+        var ct = CType(t);
+        var name = "bynh_chk_claim_" + Key(t);
+        return Helper(name, $"static void {name}({ct}* p, const char* file, int line)", () =>
+            "{\n" + OwnStatements(t, "(*p)", p => $"byn_own_claim({p.Storage}, {p.Place}, {CString(p.Type)}, file, line)") + "}\n");
+    }
+
+    /// <summary>Stores <c>v</c> into <c>*p</c>: storage <c>*p</c> owned is let go, the local's moved slot (if any) is cleared,
+    /// and with <c>claim</c> <c>*p</c> owns the new storage.</summary>
+    internal string OwnSet(TypeSymbol t)
+    {
+        var ct = CType(t);
+        var name = "bynh_chk_set_" + Key(t);
+        return Helper(name, $"static {ct} {name}({ct}* p, {ct} v, byn_own_slot* s, bool claim, const char* file, int line)", () =>
+            "{\n" + OwnStatements(t, "(*p)", p => $"byn_own_drop({p.Storage}, {p.Place})") +
+            $"    *p = v;\n    if (s) s->line = 0;\n    if (claim) {OwnClaim(t)}(p, file, line);\n    return v;\n}}\n");
+    }
+
+    /// <summary><c>move</c> of a local: its storage leaves it, and its moved slot (if given) records where.</summary>
+    internal string OwnMove(TypeSymbol t)
+    {
+        var ct = CType(t);
+        var name = "bynh_chk_move_" + Key(t);
+        return Helper(name, $"static {ct}* {name}({ct}* p, byn_own_slot* s, const char* file, int line)", () =>
+            "{\n" + OwnStatements(t, "(*p)", p => $"byn_own_release({p.Storage})") +
+            "    if (s) {\n        s->file = file;\n        s->line = line;\n    }\n    return p;\n}\n");
+    }
+
+    /// <summary>A returned value's storage leaves the function.</summary>
+    internal string OwnReturn(TypeSymbol t)
+    {
+        var ct = CType(t);
+        var name = "bynh_chk_ret_" + Key(t);
+        return Helper(name, $"static {ct} {name}({ct} v)", () =>
+            "{\n" + OwnStatements(t, "v", p => $"byn_own_release({p.Storage})") + "    return v;\n}\n");
+    }
+
     internal static string IntSuffix(TypeSymbol t) => ((PrimitiveType)t).Kind switch
     {
         PrimitiveKind.Isize => "i64",
@@ -666,6 +751,11 @@ internal sealed class FunctionEmitter
     private readonly StringBuilder _sb = new();
     private readonly string _file;
     private int _indent = 1;
+    // Ownership checks: the statement being emitted is first emitted dry to find locals it both reads and moves,
+    // whose C evaluation order is unspecified, so their moved slots are not set there.
+    private HashSet<LocalSymbol>? _reads;
+    private HashSet<LocalSymbol>? _moves;
+    private HashSet<LocalSymbol> _unsequenced = [];
 
     public FunctionEmitter(CEmitter c, LoweredFunction f)
     {
@@ -709,6 +799,8 @@ internal sealed class FunctionEmitter
             if (l.Type.IsVoid || l.Type.IsNever) continue;
             Line($"{_c.CType(l.Type)} {_names[l]} = {{0}};");
         }
+        foreach (var l in _fn.Parameters.Concat<LocalSymbol>(_f.Locals))
+            if (HasSlot(l)) Line($"byn_own_slot {Slot(l)} = {{0}};");
         for (var i = 0; i < _f.ContextSlots; i++) Line($"byn_alloc* ctx{i} = byn_context;");
         foreach (var s in _f.Body.Statements) Statement(s);
         if (_fn.Kind == FunctionKind.Constructor) Line("return self_v;");
@@ -724,6 +816,81 @@ internal sealed class FunctionEmitter
 
     private string Loc(Node syntax) => $"{_file}, {LineOf(syntax)}";
 
+    // ── Ownership checks ─────────────────────────────────────────────────────────
+
+    /// <summary>A local, owning pattern binding (of <c>switch (move x)</c>) or <c>move</c> parameter this function owns.</summary>
+    private static bool IsOwner(LocalSymbol l) =>
+        l is { Kind: LocalKind.Let or LocalKind.Var or LocalKind.PatternVariable, BorrowsSubject: false } or ParameterSymbol { Modifier: ParamModifier.Move };
+
+    /// <summary>Whether <paramref name="l"/> has a moved slot: an owned local of a unique type.</summary>
+    private bool HasSlot(LocalSymbol l) => _c.OwnershipChecks && IsOwner(l) && Bayan.Semantics.TypeFacts.IsUnique(l.Type);
+
+    private string Slot(LocalSymbol l) => "own_" + _names[l];
+
+    /// <summary>The owned local <paramref name="e"/> lives in by value (through fields and tuple items), or null.</summary>
+    private static LocalSymbol? OwnerRoot(BoundExpr e) => e switch
+    {
+        BoundLocal l when IsOwner(l.Local) => l.Local,
+        BoundField f => OwnerRoot(f.Receiver),
+        BoundTupleElement t => OwnerRoot(t.Receiver),
+        _ => null,
+    };
+
+    /// <summary>The local <paramref name="e"/> lives in by value, or null.</summary>
+    private static LocalSymbol? Root(BoundExpr e) => e switch
+    {
+        BoundLocal l => l.Local,
+        BoundField f => Root(f.Receiver),
+        BoundTupleElement t => Root(t.Receiver),
+        _ => null,
+    };
+
+    /// <summary>A store target as an lvalue, without checking its local was not moved.</summary>
+    private string Place(BoundExpr e) => e switch
+    {
+        BoundLocal l => l.Local is ParameterSymbol { IsByRef: true } ? $"(*{_names[l.Local]})" : _names[l.Local],
+        BoundField f => $"{Place(f.Receiver)}.{CEmitter.FieldName(f.Field.Name)}",
+        BoundTupleElement t => $"{Place(t.Receiver)}.item{t.Index + 1}",
+        _ => Expr(e),
+    };
+
+    /// <summary><c>target = value</c> through the checker, or null when it needs no hook (temporaries, storage-free types).</summary>
+    private string? CheckedStore(BoundExpr target, BoundExpr value)
+    {
+        if (!_c.OwnershipChecks) return null;
+        var root = Root(target);
+        var slot = target is BoundLocal { Local: var l } && HasSlot(l);
+        if (root is { Kind: LocalKind.Temp } || (!slot && !CEmitter.OwnsStorage(target.Type))) return null;
+        var claim = root is not null && IsOwner(root) ? "true" : "false";
+        return $"{_c.OwnSet(target.Type)}(&{Place(target)}, {Expr(value)}, {(slot ? "&" + Slot(((BoundLocal)target).Local) : "NULL")}, {claim}, {Loc(target.Syntax)})";
+    }
+
+    /// <summary>A mutation of <paramref name="receiver"/> that may allocate; an owned receiver then owns the storage.</summary>
+    private string Claimed(string call, BoundExpr receiver, Node syntax) =>
+        _c.OwnershipChecks && OwnerRoot(receiver) is not null ? $"({call}, {_c.OwnClaim(receiver.Type)}(&{Place(receiver)}, {Loc(syntax)}))" : call;
+
+    private void ClaimMapEntry(BoundAssign a)
+    {
+        if (_c.OwnershipChecks && a.Target is BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot, Receiver: { } map }
+            && OwnerRoot(map) is not null)
+            Line($"{_c.OwnClaim(map.Type)}(&{Place(map)}, {Loc(a.Syntax)});");
+    }
+
+    /// <summary>Emits <paramref name="s"/> (or an if's condition) dry to find the locals it both reads and moves.</summary>
+    private void FindUnsequenced(BoundStmt s)
+    {
+        _unsequenced = [];
+        _reads = [];
+        _moves = [];
+        var mark = _sb.Length;
+        if (s is BoundIf i) Expr(i.Condition);
+        else Statement(s);
+        _sb.Length = mark;
+        _reads.IntersectWith(_moves);
+        _unsequenced = _reads;
+        _reads = _moves = null;
+    }
+
     // ── Statements ───────────────────────────────────────────────────────────────
 
     private void Block(BoundStmt s)
@@ -736,6 +903,7 @@ internal sealed class FunctionEmitter
 
     private void Statement(BoundStmt s)
     {
+        if (_c.OwnershipChecks && _reads is null && s is not (BoundBlock or LLoop or LLabel or LGoto)) FindUnsequenced(s);
         switch (s)
         {
             case BoundBlock b:
@@ -746,8 +914,13 @@ internal sealed class FunctionEmitter
             case BoundExprStmt e:
                 Line($"(void){Expr(e.Expr)};");
                 break;
+            case BoundAssign a when a.Op is null && CheckedStore(a.Target, a.Value) is { } store:
+                Line($"(void){store};");
+                ClaimMapEntry(a);
+                break;
             case BoundAssign a:
                 Line($"{Expr(a.Target)} = {Expr(a.Value)};");
+                ClaimMapEntry(a);
                 break;
             case BoundIf i:
                 Line($"if ({Expr(i.Condition)}) {{");
@@ -812,12 +985,15 @@ internal sealed class FunctionEmitter
         }
         if (_fn.Fails)
         {
-            if (r.Value is not null) Line($"*byn_out = {Expr(r.Value)};");
+            if (r.Value is not null) Line($"*byn_out = {Returned(r.Value)};");
             Line("return 0;");
             return;
         }
-        Line(r.Value is null ? "return;" : $"return {Expr(r.Value)};");
+        Line(r.Value is null ? "return;" : $"return {Returned(r.Value)};");
     }
+
+    private string Returned(BoundExpr value) =>
+        _c.OwnershipChecks && CEmitter.OwnsStorage(value.Type) ? $"{_c.OwnReturn(value.Type)}({Expr(value)})" : Expr(value);
 
     private void Write(LWrite w)
     {
@@ -841,6 +1017,7 @@ internal sealed class FunctionEmitter
             if (part.Text is { Length: > 0 } text) Line($"byn_w_str(w, {CEmitter.StringLiteral(text)});");
             else if (part.Value is { } value) Line(_c.Format(value.Type, Expr(value), "w"));
         }
+        if (_c.OwnershipChecks && w.Sink == WriteSink.StrBuf && OwnerRoot(w.Target!) is not null) Line($"{_c.OwnClaim(w.Target!.Type)}(w, {Loc(w.Syntax)});");
         if (w.Sink == WriteSink.Print) Line("byn_w_println(w);");
         else if (w.Sink == WriteSink.Panic) Line($"byn_panic_str((byn_str){{wb, wv.len}}, {Loc(w.Syntax)});");
         _indent--;
@@ -859,10 +1036,16 @@ internal sealed class FunctionEmitter
                 return _c.Constant(l.Value, l.Type);
             case BoundDefault d:
                 return $"(({_c.CType(d.Type)}){{0}})";
+            case BoundLocal l when HasSlot(l.Local):
+                _reads?.Add(l.Local);
+                return $"(*(byn_own_read(&{Slot(l.Local)}, {CEmitter.CString(l.Type.DisplayName)}, {Loc(l.Syntax)}), &{_names[l.Local]}))";
             case BoundLocal l:
                 return l.Local is ParameterSymbol { IsByRef: true } ? $"(*{_names[l.Local]})" : _names[l.Local];
             case BoundThis:
                 return "(*self)";
+            case BoundMove { Operand: BoundLocal l } m when HasSlot(l.Local):
+                _moves?.Add(l.Local);
+                return $"(*{_c.OwnMove(l.Type)}(&{_names[l.Local]}, {(_unsequenced.Contains(l.Local) ? "NULL" : "&" + Slot(l.Local))}, {Loc(m.Syntax)}))";
             case BoundMove m:
                 return Expr(m.Operand);
             case BoundField f:
@@ -916,7 +1099,7 @@ internal sealed class FunctionEmitter
             case LOptionalValue v:
                 return $"{Expr(v.Optional)}.value";
             case LAssignExpr a:
-                return $"({Expr(a.Target)} = {Expr(a.Value)})";
+                return CheckedStore(a.Target, a.Value) ?? $"({Expr(a.Target)} = {Expr(a.Value)})";
             case LSequence s:
                 return "(" + string.Join(", ", s.Effects.Select(Expr).Append(Expr(s.Value))) + ")";
             case LIndexUnchecked u:
@@ -1029,7 +1212,13 @@ internal sealed class FunctionEmitter
         }
         if (fn.HasThis && fn.Kind != FunctionKind.Constructor) args.Add("&" + Expr(c.Receiver!));
         for (var i = 0; i < c.Arguments.Length; i++)
-            args.Add(fn.Parameters[i].IsByRef ? "&" + Expr(c.Arguments[i]) : Expr(c.Arguments[i]));
+        {
+            // An `out` argument initializes a moved-from local again.
+            if (fn.Parameters[i].Modifier == ParamModifier.Out && c.Arguments[i] is BoundLocal { Local: var o } && HasSlot(o))
+                args.Add($"({Slot(o)}.line = 0, &{_names[o]})");
+            else
+                args.Add(fn.Parameters[i].IsByRef ? "&" + Expr(c.Arguments[i]) : Expr(c.Arguments[i]));
+        }
         if (result is not null) args.Add(result);
         return $"{_c.FunctionName(fn)}({string.Join(", ", args)})";
     }
@@ -1087,7 +1276,7 @@ internal sealed class FunctionEmitter
                 var name = "bynh_add_" + _c.Key(r.Type);
                 _c.Helper(name, $"static void {name}({lt}* l, {et} v)", () =>
                     $"{{\n    if (!l->alloc) l->alloc = byn_context;\n    byn_list_reserve((void**)&l->ptr, &l->cap, l->len + 1, (int64_t)sizeof({et}), l->alloc);\n    l->ptr[l->len++] = v;\n}}\n");
-                return $"{name}(&{Expr(r)}, {arg})";
+                return Claimed($"{name}(&{Expr(r)}, {arg})", r, b.Syntax);
             }
             case BuiltinMember.ListAsSpan:
             {
@@ -1142,7 +1331,7 @@ internal sealed class FunctionEmitter
             case BuiltinMember.ArenaReset:
                 return $"byn_arena_reset({Expr(r)})";
             case BuiltinMember.StrBufAppend:
-                return $"byn_w_str(&{Expr(r)}, {arg})";
+                return Claimed($"byn_w_str(&{Expr(r)}, {arg})", r, b.Syntax);
             case BuiltinMember.IoWrite:
                 return $"byn_io_write({Expr(r)}, {arg})";
             case BuiltinMember.IoReadAll:
