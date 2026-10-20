@@ -18,4 +18,4 @@ error BYN2225: `Map<string, Untrusted<string>>` cannot be formatted
 error BYN2225: `List<Untrusted<string>>` cannot be formatted
 
   14 │     print($"{xs}");
-     │              ^^
+     │              ^^ an element is `Untrusted<string>`

@@ -1285,6 +1285,10 @@ internal sealed partial class Binder
             : u.Variants.SelectMany(v => v.Fields.Select(f => Part($"`{v.Name}` field `{f.Name}`", f.Type, seen))).FirstOrDefault(w => w is not null),
         Symbols.TupleType tt => tt.Fields.Select((f, i) => Part($"element {i + 1}", f.Type, seen)).FirstOrDefault(w => w is not null),
         MapType m => Part("the key", m.KeyType, seen) ?? Part("the value", m.ValueType, seen),
+        // Lists, spans and arrays do not format; an unformattable element is still named.
+        ListType l => Part("an element", l.Element, seen) ?? "",
+        SpanType sp => Part("an element", sp.Element, seen) ?? "",
+        ArrayType a => Part("an element", a.Element, seen) ?? "",
         _ => "",
     };
 
