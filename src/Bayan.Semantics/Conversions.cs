@@ -21,6 +21,8 @@ public static class Conversions
             if (from is ErrorSetSymbol && from.Equals(r.Error)) return ConversionKind.ErrorToResult;
             if (from.Equals(r.Value) || Implicit(from, r.Value) is ConversionKind.Widen) return ConversionKind.ToResult;
         }
+        // A writable view may be read through a read-only one; never the reverse.
+        if (from is SpanType ws && to is SpanType { ReadOnly: true } rs && ws.Element.Equals(rs.Element)) return ConversionKind.Identity;
         if (argument && to is SpanType span)
         {
             if (from is ListType list && list.Element.Equals(span.Element)) return ConversionKind.ListToSpan;

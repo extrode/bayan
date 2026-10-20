@@ -48,3 +48,13 @@ void main() {
     print($"{kept2.length}");
     arena.reset();
 }
+
+void fillLocal() {
+    let buf = stackalloc u8[16];
+    var sb = StrBuf(buf);
+    sb.append("hi");
+    string[1] names = ["x"];
+    let view = names.asSpan();
+    view[0] = sb.asString();
+    print(names[0]);
+}

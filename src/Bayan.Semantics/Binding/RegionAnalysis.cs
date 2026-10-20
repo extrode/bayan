@@ -69,6 +69,8 @@ internal sealed class RegionAnalysis
             var callerOwned = p.Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out || p.Type == BuiltinType.Arena;
             _depthOf[p] = callerOwned ? 0 : 1;
             _declaredAt[p] = -1;
+            // What a parameter points to belongs to the caller; the marker keeps that known after unions.
+            if (MayBorrow(p.Type, [])) _locals[p] = new Borrow([new Region(0, "the caller's data")], []);
         }
         // The first pass collects what each local may borrow (a loop can store into a local
         // after its first use); the second reports against the complete picture.
@@ -367,7 +369,16 @@ internal sealed class RegionAnalysis
             Store(root, value, span);
             return;
         }
-        if (_reporting) CheckOutlives(value, 0, "this", span);
+        if (!_reporting) return;
+        // A store through a span lands where the span points: it must live as long as the
+        // longest-lived storage the span may point into (the caller's, when that is unknown).
+        if (target is BoundIndex { Target.Type: SpanType } i && RootLocal(i.Target) is { } view)
+        {
+            var sources = _locals.GetValueOrDefault(view, Borrow.None).Regions;
+            CheckOutlives(value, sources.IsEmpty ? 0 : sources.Min(r => r.Depth), view.Name, span);
+            return;
+        }
+        CheckOutlives(value, 0, "this", span);
     }
 
     private void CheckOutlives(Borrow value, int depth, string holder, TextSpan span)
@@ -469,6 +480,8 @@ internal sealed class RegionAnalysis
         BoundLocal l => l.Local,
         BoundField f => StoreRoot(f.Receiver),
         BoundTupleElement t => StoreRoot(t.Receiver),
+        // A span's elements live wherever it points (often the caller's frame): not in the span local.
+        BoundIndex { Target.Type: SpanType } => null,
         BoundIndex i => StoreRoot(i.Target),
         _ => null,
     };

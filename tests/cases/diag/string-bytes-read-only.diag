@@ -1,0 +1,19 @@
+error BYN2106: cannot modify this value
+
+  5 │ b[0] = 65;
+    │ ^^^^ the bytes of a `string` are read-only
+
+error BYN2106: cannot modify this value
+
+  7 │ tail[0] = 66;
+    │ ^^^^^^^ the bytes of a `string` are read-only
+
+error BYN2202: expected `Span<u8>`, found `read-only Span<u8>`
+
+  8 │ var buffer = StrBuf(s.bytes);
+    │                     ^^^^^^^
+
+error BYN2202: expected `Span<u8>`, found `read-only Span<u8>`
+
+  9 │ print($"{first(s.bytes)}");
+    │                ^^^^^^^

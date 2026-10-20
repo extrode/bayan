@@ -13,7 +13,7 @@ internal static class BuiltinMembers
     public static (BuiltinMember Member, TypeSymbol Type)? Property(TypeSymbol type, string name) => (type, name) switch
     {
         ({ IsString: true }, "length") => (BuiltinMember.StringLength, PrimitiveType.I64),
-        ({ IsString: true }, "bytes") => (BuiltinMember.StringBytes, new SpanType(PrimitiveType.U8)),
+        ({ IsString: true }, "bytes") => (BuiltinMember.StringBytes, new SpanType(PrimitiveType.U8, readOnly: true)),
         ({ IsString: true }, "isEmpty") => (BuiltinMember.StringIsEmpty, PrimitiveType.Bool),
         (SpanType, "length") => (BuiltinMember.SpanLength, PrimitiveType.I64),
         (SpanType, "isEmpty") => (BuiltinMember.SpanIsEmpty, PrimitiveType.Bool),

@@ -608,7 +608,7 @@ internal sealed partial class Binder
             BindExpr(i.Index);
             return new BoundErrorExpr(i);
         }
-        if (i.Index is RangeExpr r) return BindSlice(i, target, r, new SpanType(element));
+        if (i.Index is RangeExpr r) return BindSlice(i, target, r, new SpanType(element, target.Type is SpanType { ReadOnly: true }));
         var fromEnd = i.Index is UnaryExpr { Op: UnaryOp.FromEnd };
         var indexSyntax = i.Index is UnaryExpr { Op: UnaryOp.FromEnd } u ? u.Operand : i.Index;
         var index = BindIndexValue(indexSyntax);
