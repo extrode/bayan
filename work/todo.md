@@ -26,3 +26,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 
 - (nothing yet)
 - Implement the `borrows a` narrowing clause (spec §9.4 rule 4); until then array-literal args make call results borrow the literal (handoff Q33).
+- `src/runtime/bayan-rt.c:160` switches to `1E+15` at exponent 15, but .NET 10 `(1e15).ToString()` prints `1000000000000000`; recheck Q23's "like C#" boundary (review 246772b..5f5ec5c).
+- `src/runtime/bayan-rt.c:277-278,337-342` list/arena growth (`cap * 2`, `grown * elem_size`, `n + 15`) is not overflow-checked (review 246772b..5f5ec5c).
+- `src/Bayan.Backend.C/Toolchain.cs:79-84` concurrent builds of one program rewrite the same cache dir; cache key omits the C compiler version (review 246772b..5f5ec5c).
