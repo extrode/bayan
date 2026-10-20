@@ -30,12 +30,12 @@ Light versus dark is detected from `COLORFGBG` where available; otherwise Bayan 
 | Condition | Colour |
 |---|---|
 | `--color always` | On |
-| `--color never`, or `NO_COLOR` set to any value | Off |
+| `--color never`, or `NO_COLOR` set to a non-empty value (per no-color.org) | Off |
 | stdout is not a terminal (piped, redirected, CI log without TTY) | Off |
 | `TERM=dumb` | Off |
 | Otherwise | On |
 
-`FORCE_COLOR` is honoured for CI systems that render ANSI colour in logs.
+`FORCE_COLOR` is honoured for CI systems that render ANSI colour in logs. An empty `NO_COLOR` is treated as unset. `--color` always overrides both variables.
 
 ## 3. Symbols
 
