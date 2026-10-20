@@ -145,6 +145,18 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         _ => false,
     };
 
+    /// <summary>Trivial and free of <c>move</c>: a move records its slot, so it must be evaluated exactly once.</summary>
+    private static bool IsRepeatable(BoundExpr e) => e switch
+    {
+        BoundMove => false,
+        BoundField f => IsRepeatable(f.Receiver),
+        BoundTupleElement t => IsRepeatable(t.Receiver),
+        LOptionalValue v => IsRepeatable(v.Optional),
+        LUnionTag t => IsRepeatable(t.Union),
+        LUnionField f => IsRepeatable(f.Union),
+        _ => IsTrivial(e),
+    };
+
     private static bool IsLvalue(BoundExpr e) => e switch
     {
         BoundLocal or BoundThis or BoundIndex or LIndexUnchecked or BoundStaticArray => true,
@@ -580,7 +592,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     {
         var value = Expr(sw.Value);
         if (IsNever(value)) return;
-        if (!IsTrivial(value)) value = Spill(value);
+        if (!IsRepeatable(value)) value = Spill(value);
         var end = NewLabel("switch_end");
         _targets[sw.Target] = (end, null, _scopes.Count);
         BoundSwitchSection? fallback = null;
@@ -759,7 +771,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             {
                 var value = Expr(i.Value);
                 if (IsNever(value)) return new LNever(e.Syntax, e.Type);
-                if (!IsTrivial(value)) value = Spill(value);
+                if (!IsRepeatable(value)) value = Spill(value);
                 return Match(i.Pattern, value);
             }
             case BoundSwitchExpr s:
@@ -830,7 +842,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     {
         var left = Expr(c.Left);
         if (IsNever(left)) return left;
-        if (!IsTrivial(left)) left = Spill(left);
+        if (!IsRepeatable(left)) left = Spill(left);
         var keepsOptional = c.Type is OptionalType;
         BoundExpr present = keepsOptional ? left : new LOptionalValue(c.Syntax, left, ((OptionalType)c.Left.Type).Inner);
         var (right, pre) = CaptureExpr(c.Right);
@@ -1030,7 +1042,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     {
         var value = Expr(s.Value);
         if (IsNever(value)) return value;
-        if (!IsTrivial(value)) value = Spill(value);
+        if (!IsRepeatable(value)) value = Spill(value);
         var result = s.Type.IsNever ? null : NewTemp(s.Type);
         var end = NewLabel("switch_end");
         foreach (var arm in s.Arms)
