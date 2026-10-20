@@ -1,0 +1,54 @@
+// In `switch (move …)` a `when` guard only reads the arm's bindings (BYN2791): a guard that fails gives the value back.
+struct Bag {
+    List<i64> items;
+
+    public i64 grow() {
+        this.items.add(1);
+        return this.items.length;
+    }
+}
+
+union Slot {
+    Full(Bag b),
+    Empty,
+}
+
+bool bump(ref List<i64> xs) {
+    xs.add(7);
+    return true;
+}
+
+bool fill(out List<i64> xs) {
+    xs = List<i64>();
+    return true;
+}
+
+bool keep(move Bag b) => true;
+
+void inspect(move Slot s, move Slot t) {
+    switch (move s) {
+        case .Full(var x) when x.grow() > 5:
+            print("call");
+        case .Full(var x) when x.items.removeLast() > 0:
+            print("builtin");
+        case .Full(var x) when x.items.take().length > 0:
+            print("take");
+        case .Full(var x) when bump(ref x.items):
+            print("ref");
+        case .Full(var x) when fill(out x.items):
+            print("out");
+        case .Full(let x) when keep(move x):
+            print("move");
+        case .Full(let x) when x.items.length > 0:
+            print("read");
+        default:
+    }
+    let n = (move t) switch {
+        .Full(var y) when y.grow() > 5 => 1,
+        .Full(var y) when bump(ref y.items) => 2,
+        .Full(let y) when keep(move y) => 3,
+        .Full(let y) when y.items.length > 0 => 4,
+        _ => 0,
+    };
+    print($"{n}");
+}

@@ -367,6 +367,17 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """, "BYN2790" },
+        { "switch (move) guard mutates its binding", """
+            void main() {
+                let s = Slot.Full(List<i64>());
+                switch (move s) {
+                    case .Full(var items) when items.removeLast() > 0:
+                        consume(move items);
+                    default:
+                        print("other");
+                }
+            }
+            """, "BYN2791" },
         { "take on a let local", """
             void main() {
                 let xs = List<i64>();
@@ -530,6 +541,37 @@ public sealed class L006OwnershipGuardTests
                     case Two { first: let a, second: let b }:
                         consume(move a);
                         consume(move b);
+                    default:
+                        print("other");
+                }
+            }
+            """ },
+        { "switch (move) binds disjoint parts through one field twice", """
+            struct Inner {
+                List<i64> b;
+                List<i64> c;
+            }
+            struct Outer {
+                Inner a;
+            }
+            void main() {
+                let o = Outer { a = Inner { b = List<i64>(), c = List<i64>() } };
+                switch (move o) {
+                    case { a: { b: let x }, a: { c: let y } }:
+                        consume(move x);
+                        consume(move y);
+                    default:
+                        print("other");
+                }
+            }
+            """ },
+        { "switch (move) binds a field and a copy of its length", """
+            void main() {
+                let l = Ledger { items = List<i64>() };
+                switch (move l) {
+                    case { items: let x, items.length: let n }:
+                        consume(move x);
+                        print($"{n}");
                     default:
                         print("other");
                 }

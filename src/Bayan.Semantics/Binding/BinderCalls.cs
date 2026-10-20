@@ -487,6 +487,7 @@ internal sealed partial class Binder
     private BoundExpr BindMove(Node syntax, BoundExpr operand)
     {
         if (operand.Type.IsError) return operand;
+        if (CheckGuardWrite(operand, syntax.Span, "it is moved")) return new BoundMove(syntax, operand);
         switch (operand)
         {
             case BoundLocal { Local: { BorrowsSubject: true } l } when TypeFacts.IsUnique(l.Type):
@@ -648,6 +649,7 @@ internal sealed partial class Binder
             var pattern = BindPattern(arm.Pattern, value.Type);
             _patternOwns = false;
             if (owns) CheckOwningOverlap(pattern);
+            if (owns && arm.Guard is { } ag) GuardBindings(pattern, ag.Span);
             var guard = arm.Guard is { } g ? BindCondition(g) : null;
             var result = BindExpr(arm.Value, expected);
             PopScope();
@@ -759,13 +761,13 @@ internal sealed partial class Binder
     }
 
     /// <summary>In an owning switch, a pattern may not bind a value and a part of it, both sides of an `and`, or the same field
-    /// twice: each would own the same storage (L006).</summary>
+    /// twice: each would own the same storage (L006). Only bindings of a unique type own storage.</summary>
     private void CheckOwningOverlap(BoundPattern p)
     {
         switch (p)
         {
-            case BoundBinaryPattern b when b.IsAnd && HasBindings(b.Left) && HasBindings(b.Right):
-            case BoundPropertyPattern { Designation: not null } pp when pp.Subpatterns.Any(s => HasBindings(s.Pattern)):
+            case BoundBinaryPattern b when b.IsAnd && Overlap(OwningPaths(b.Left), OwningPaths(b.Right)):
+            case BoundPropertyPattern { Designation: { } d } pp when TypeFacts.IsUnique(d.Type) && pp.Subpatterns.Any(s => OwningPaths(s.Pattern).Any()):
                 Report(DiagnosticCodes.OwningPatternOverlap, p.Syntax.Span, [Source.GetText(p.Syntax.Span)],
                     help: "bind the whole value or its parts, not both");
                 break;
@@ -789,17 +791,68 @@ internal sealed partial class Binder
         }
     }
 
-    /// <summary>Whether two subpatterns with bindings reach the same field (one path is a prefix of the other).</summary>
+    /// <summary>Whether bindings of two subpatterns reach the same storage (one binding's path is a prefix of the other's).</summary>
     private static bool RepeatsField(BoundPropertyPattern pp)
     {
-        var bound = pp.Subpatterns.Where(s => HasBindings(s.Pattern)).ToList();
-        for (var i = 0; i < bound.Count; i++)
-            for (var j = i + 1; j < bound.Count; j++)
-            {
-                var n = Math.Min(bound[i].Path.Length, bound[j].Path.Length);
-                if (bound[i].Path.Take(n).SequenceEqual(bound[j].Path.Take(n))) return true;
-            }
+        var paths = pp.Subpatterns.Select(s => OwningPaths(s.Pattern).Select(q => s.Path.Concat(q).ToArray()).ToList()).ToList();
+        for (var i = 0; i < paths.Count; i++)
+            for (var j = i + 1; j < paths.Count; j++)
+                if (Overlap(paths[i], paths[j])) return true;
         return false;
+    }
+
+    /// <summary>Whether a path of <paramref name="a"/> is a prefix of (or equal to) a path of <paramref name="b"/>, or the other way round.</summary>
+    private static bool Overlap(IEnumerable<object[]> a, IEnumerable<object[]> b) =>
+        a.Any(x => b.Any(y =>
+        {
+            var n = Math.Min(x.Length, y.Length);
+            return x.Take(n).SequenceEqual(y.Take(n));
+        }));
+
+    /// <summary>The paths from <paramref name="p"/>'s input to each binding of a unique type: member steps, and (variant, index) for union elements.</summary>
+    private static IEnumerable<object[]> OwningPaths(BoundPattern p) => p switch
+    {
+        BoundBindPattern { Local: { } l } when TypeFacts.IsUnique(l.Type) => [[]],
+        BoundNotPattern n => OwningPaths(n.Operand),
+        BoundBinaryPattern b => OwningPaths(b.Left).Concat(OwningPaths(b.Right)),
+        BoundPropertyPattern pp => (pp.Designation is { } d && TypeFacts.IsUnique(d.Type) ? [[]] : Enumerable.Empty<object[]>())
+            .Concat(pp.Subpatterns.SelectMany(s => OwningPaths(s.Pattern).Select(q => s.Path.Concat(q).ToArray()))),
+        BoundUnionPattern up => up.Subpatterns.SelectMany((s, i) => OwningPaths(s).Select(q => q.Prepend((up.Variant, i)).ToArray())),
+        _ => [],
+    };
+
+    /// <summary>Marks the bindings of an owning switch arm read-only inside its <c>when</c> guard (BYN2791).</summary>
+    private static void GuardBindings(BoundPattern p, TextSpan guard)
+    {
+        switch (p)
+        {
+            case BoundBindPattern { Local: { } l }:
+                l.GuardSpan = guard;
+                break;
+            case BoundNotPattern n:
+                GuardBindings(n.Operand, guard);
+                break;
+            case BoundBinaryPattern b:
+                GuardBindings(b.Left, guard);
+                GuardBindings(b.Right, guard);
+                break;
+            case BoundPropertyPattern pp:
+                if (pp.Designation is { } d) d.GuardSpan = guard;
+                foreach (var s in pp.Subpatterns) GuardBindings(s.Pattern, guard);
+                break;
+            case BoundUnionPattern up:
+                foreach (var s in up.Subpatterns) GuardBindings(s, guard);
+                break;
+        }
+    }
+
+    /// <summary>Reports a write at <paramref name="span"/> to an owning switch binding, or a part of it, inside its arm's guard.</summary>
+    internal bool CheckGuardWrite(BoundExpr target, TextSpan span, string? why)
+    {
+        if (WrittenLocal(target) is not { GuardSpan: { } g } l || span.Start < g.Start || span.End > g.End) return false;
+        Report(DiagnosticCodes.OwningBindingMutatedInGuard, span, [l.Name], label: why,
+            help: "read it in the guard and change it in the arm's body");
+        return true;
     }
 
     private static bool HasBindings(BoundPattern p) => p switch
@@ -1136,6 +1189,7 @@ internal sealed partial class Binder
     internal bool CheckWritable(BoundExpr target, TextSpan span, string? why)
     {
         if (WrittenLocal(target) is { } written) written.Written = true;
+        if (CheckGuardWrite(target, span, why)) return false;
         switch (target)
         {
             case BoundErrorExpr:

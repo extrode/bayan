@@ -7,14 +7,16 @@ namespace Bayan.Tests;
 public sealed class ToolchainSanitizerTests : IDisposable
 {
     private readonly string dir = Path.Combine(Golden.RepoRoot, "tmp", "asan-tests", Guid.NewGuid().ToString("N"));
+    private readonly TimeSpan compileTimeout = Toolchain.ProbeCompileTimeout;
+    private readonly TimeSpan runTimeout = Toolchain.ProbeRunTimeout;
 
     public ToolchainSanitizerTests() => Directory.CreateDirectory(dir);
 
     public void Dispose()
     {
         Toolchain.SanitizerOverride = null;
-        Toolchain.ProbeCompileTimeout = TimeSpan.FromSeconds(30);
-        Toolchain.ProbeRunTimeout = TimeSpan.FromSeconds(10);
+        Toolchain.ProbeCompileTimeout = compileTimeout;
+        Toolchain.ProbeRunTimeout = runTimeout;
         Directory.Delete(dir, recursive: true);
     }
 

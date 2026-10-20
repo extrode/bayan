@@ -289,15 +289,24 @@ public sealed class OwnershipCheckerTests
 
         """;
 
-    // A claim after a call is not made for a receiver the statement moves, nor for a binding a guard has not selected yet.
+    // A claim after a call is not made for a receiver the statement moves.
     [Theory]
     [InlineData(GrowThenMoveReceiver, "1\n")]
-    [InlineData(GrowInGuard, "small 3\n")]
     public async Task DebugBuildDoesNotClaimStorageItsOwnerGaveUp(string program, string expected)
     {
         var (code, stdout) = await Run(CliApp.EmitC(Compile(program, skip: false), BuildMode.Debug), BuildMode.Debug);
         Assert.Equal(0, code);
         Assert.Equal(expected, stdout);
+    }
+
+    // A guard that grows its binding would leave the next arm a stale copy of the subject; the binder rejects it
+    // (BYN2791), so the static switch does not let it reach the debug checker, which no longer skips claims in guards.
+    [Fact]
+    public void StaticSwitchDoesNotSilenceAGuardThatGrowsItsBinding()
+    {
+        var source = new SourceText("c.byn", System.Text.Encoding.UTF8.GetBytes(GrowInGuard));
+        var c = Compilation.Create([source], ".", new CompilationOptions(SkipOwnershipCheck: true));
+        Assert.Equal(["BYN2791"], c.Diagnostics.Items.Where(d => d.IsError).Select(d => d.Code));
     }
 
     private const string GrowThroughRef = """
