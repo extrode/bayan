@@ -37,7 +37,7 @@ L006's accepted `take()` row was dropped when L006 was enacted, to come back wit
 
 ## Requirements
 
-- R1 `x.take()` is accepted on a `List`, `Map` or `StrBuf` value reached through a local, a field, an element or a `ref`, and on an optional of a `unique` type. It returns the value and leaves the place holding the type's empty value (an empty collection or `StrBuf`; `null` for an optional). The place stays usable.
+- R1 `x.take()` is accepted on a `List` or `Map` value reached through a local, a field, an element or a `ref`, on a `StrBuf` local or `ref` (a `StrBuf` cannot be a struct field, BYN3001), and on an optional of a `unique` type. It returns the value and leaves the place holding the type's empty value (an empty collection or `StrBuf`; `null` for an optional). The place stays usable.
 - R2 `take()` on any other type is a compile error with its own diagnostic. `take()` on a place that can't be written (a `let` local, a read-only parameter, a `ReadOnlySpan` element) reports the existing mutation diagnostic, as `clear()` does. Both have `diag/` goldens.
 - R3 A move out of a field or element (`move a.items`) stays an error (BYN2782), and its message suggests `take()` when the field's type supports it.
 - R4 `switch (move x)` moves `x` into the switch: the pattern bindings own the parts they bind, `x` is moved from afterwards on every path, and bindings may themselves be moved or stored. Only a local or a `move` parameter can be the subject; anything else is a compile error with its own diagnostic and golden.
