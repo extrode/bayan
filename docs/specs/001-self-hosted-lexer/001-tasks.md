@@ -10,8 +10,8 @@ Each milestone task ends with `dotnet test -v q` green, a docs page + `diag/` ca
 - [x] T4 Builtin `Io` + `IoError` — files: `Builtins.cs`, `BuiltinMembers.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R2 — done when: `run/` cases copy file (byte-identical), missing file handled, invalid UTF-8 text fails / bytes succeed, stdout/stderr write without newline.
 
 ## M14 Growable strings
-- [ ] T5 Growable `StrBuf()` — files: `Builtins.cs`, `RegionAnalysis.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R3 — done when: `run/` 100,000 appends in an arena gives the summed length; no buffer size in source.
-- [ ] T6 `$"…"` as a `string` expression anywhere — files: `BinderExpressions.cs`, `Lowerer.cs` — covers: R3 — done when: BYN2224 lifted where an allocator exists; `run/` case; region diag case for escape.
+- [x] T5 Growable `StrBuf()` — files: `Builtins.cs`, `RegionAnalysis.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R3 — done when: `run/` 100,000 appends in an arena gives the summed length; no buffer size in source.
+- [x] T6 `$"…"` as a `string` expression anywhere — files: `BinderExpressions.cs`, `Lowerer.cs` — covers: R3 — done when: BYN2224 lifted where an allocator exists; `run/` case; region diag case for escape.
 
 ## M15 Processes, directories, lex-diff
 - [ ] T7 `Io.listDir` + `Io.run` — files: `Builtins.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R13 — done when: `run/` cases spawn `bayan --version` (exit 0, stdout `bayan `), missing program → error handled, three-file dir lists 3.
