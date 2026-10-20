@@ -387,6 +387,8 @@ Type patterns apply only to `dyn` values and unions. `switch` must be exhaustive
 ### 6.6 Interpolation
 `$"{x}"` uses an interpolation handler; formatting writes into the destination buffer. `$"{e}"` on an error prints the variant's doc-comment summary (fallback: its name; public errors without docs warn). `log.info($"user {user.id}")` captures `user.id` as a structured field.
 
+**Floats** (`f64`, `f32`) format as the shortest digits that round-trip to the same value. Fixed notation when `1e-5 ≤ |x| < 1e15`, exponential outside it, spelled lowercase with no `+` and no leading zeros (`1e15`, `1.5e-7`, `-2.25e20`), so the text is a valid Bayan literal and valid JSON. Integral values print without a decimal point (`42`); `-0.0` prints `-0`; special values print `nan`, `inf`, `-inf` (`Json.encode` rejects them with `JsonError.nonFinite`). Fixed-format control (`{x:F2}`) is deferred to the format-specifier design.
+
 ---
 
 ## 7. Statements
