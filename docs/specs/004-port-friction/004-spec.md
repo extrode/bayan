@@ -1,5 +1,5 @@
 # 004 — Port friction: argument names, contextual keywords, literal inference, borrows of own fields, decode, `catch { }`, string arrays, `removeRange`, `toHex`
-Status: draft
+Status: planned
 Created: 2026-10-21
 
 ## Problem
@@ -54,7 +54,7 @@ The decisions for each are recorded in the handoff's *Road to self-hosting*; thi
   Goldens cover a literal constrained to `i64`, an unconstrained `i32`, and a literal constrained by a comparison, by an argument and by an assignment.
 - R6 A method may return a borrow (a span, slice or `string` view) of storage owned by its own receiver's fields. At the call site the result borrows the receiver: the existing region rules apply to it as to any borrow of the receiver (it may not outlive the receiver, and the receiver may not be modified while it is alive). Returning a borrow of a local's storage stays BYN3003.
 - R7 A fallible decode turns a byte span into a `string`:
-  - It fails with an error naming the byte offset of the first invalid UTF-8 sequence.
+  - It fails with a UTF-8 error, and the byte offset of the first invalid sequence is available from the same bytes (an error payload once error variants carry one; Q71).
   - On success, the result does not borrow the argument.
   - An empty span decodes to the empty string. Overlong forms, surrogates and code points above U+10FFFF are invalid.
 - R8 `f() catch { block }` and `f() catch (e) { block }` run the block when `f` fails. For a call of type `void`, the block may complete normally. Otherwise the block must not complete normally (it ends in `return`, `break`, `continue`, a panic or another `never` expression), and a block that can complete normally is a compile error. Flow and ownership analysis see the block as one path.
@@ -69,7 +69,7 @@ The decisions for each are recorded in the handoff's *Road to self-hosting*; thi
 - Given `let error = 3; struct S { i64 flags; }`, the program compiles. `error set E { … }` still declares an error set. `bayan lex` output for the new forms is identical between the C# and Bayan lexers.
 - Given `var i = 0; while (i < xs.length) { i += 1; }`, the typed dump shows `i: i64`; given `var n = 0; n += 1;`, it shows `n: i32`. Two runs of the dump on the same input are byte-identical.
 - Given `struct Lexer { List<Token> toks; Span<Token> tokens() => toks.asSpan(); }`, it compiles. A caller that keeps `tokens()` alive across a `lexer.toks.add(…)` gets BYN3004.
-- Given bytes `[0x68, 0x69]`, decode returns `"hi"`; given `[0x68, 0xC0, 0x80]`, it fails naming offset 1.
+- Given bytes `[0x68, 0x69]`, decode returns `"hi"`; given `[0x68, 0xC0, 0x80]`, it fails, and the offset reported for those bytes is 1.
 - Given `let n = parse(s) catch { return -1; };`, it compiles and returns `-1` on failure; given `let n = parse(s) catch { log("x"); };`, compile fails with the R8 diagnostic.
 - Given `const string[] NAMES = ["a", "b"];`, `NAMES[1]` is `"b"` and `NAMES.length` is 2.
 - Given `[1,2,3,4,5]`, `removeRange(1, 3)` leaves `[1,4,5]`; `removeRange(3, 2)` panics.
@@ -83,5 +83,5 @@ The decisions for each are recorded in the handoff's *Road to self-hosting*; thi
 ## Open questions
 
 None blocking. Recorded as handoff Questions when the plan lands, with the conservative option implemented:
-- The decode's name and error type: chosen in the plan, consistent with §15 (`Io`) naming.
+- The decode's name and error type: `string.from` / `string.tryFrom` with `Utf8Error`, the offset through `string.invalidUtf8At` (plan, Q71).
 - R2's swapped-names diagnostic fires only when every implied name matches some parameter. A mix of implied names and other arguments falls back to BYN2305 for the others.
