@@ -1,0 +1,224 @@
+// Diagnostics: the lexer's message table, the diagnostic record and the plain-text renderer. Ports
+// the lexer parts of `src/Bayan.Syntax/Diagnostics/{Diagnostic,DiagnosticCodes,DiagnosticRenderer}.cs`.
+
+/// The lexer's entries of the message table (BYN0001–BYN0016), in code order.
+enum DiagnosticCode {
+    bidiControl,
+    unexpectedCharacter,
+    unterminatedString,
+    unterminatedComment,
+    identifierNotNfc,
+    invalidEscape,
+    emptyCharLiteral,
+    unterminatedCharLiteral,
+    charLiteralTooLong,
+    invalidNumber,
+    suffixOnHexOrBinary,
+    reservedKeyword,
+    invalidUnicodeEscape,
+    unescapedCloseBrace,
+    invalidUtf8,
+    interpolationTooDeep,
+}
+
+/// `BYN0001` for the first code, and so on.
+string codeText(DiagnosticCode code) {
+    let n = code.ordinal + 1;
+    return n < 10 ? $"BYN000{n}" : $"BYN00{n}";
+}
+
+/// The message template, in `string.Format` syntax.
+string messageFormat(DiagnosticCode code) => code switch {
+    .bidiControl => "bidirectional control character U+{0} is not allowed outside string literals",
+    .unexpectedCharacter => "unexpected character `{0}`",
+    .unterminatedString => "unterminated string literal",
+    .unterminatedComment => "unterminated block comment",
+    .identifierNotNfc => "identifier `{0}` is not in Unicode normalization form C",
+    .invalidEscape => "invalid escape sequence `{0}`",
+    .emptyCharLiteral => "empty char literal",
+    .unterminatedCharLiteral => "unterminated char literal",
+    .charLiteralTooLong => "a char literal holds exactly one Unicode scalar",
+    .invalidNumber => "invalid numeric literal: {0}",
+    .suffixOnHexOrBinary => "unit suffix `{0}` is not allowed on a {1} literal",
+    .reservedKeyword => "`{0}` is reserved and cannot be used as an identifier",
+    .invalidUnicodeEscape => "`{0}` is not a Unicode scalar value",
+    .unescapedCloseBrace => "`}}` in an interpolated string must be doubled",
+    .invalidUtf8 => "source is not valid UTF-8 (byte 0x{0})",
+    .interpolationTooDeep => "interpolated strings are nested too deeply",
+};
+
+/// `string.Format` for the templates above: `{0}`/`{1}` are replaced, `{{`/`}}` are unescaped.
+string format(string template, string arg0, string arg1) {
+    var sb = StrBuf();
+    let t = template.bytes;
+    var i = 0;
+    while (i < t.length) {
+        let b = t[i];
+        if ((b == '{' || b == '}') && i + 1 < t.length && t[i + 1] == b) {
+            sb.append(template[i..i + 1]);
+            i += 2;
+        } else if (b == '{' && i + 2 < t.length && t[i + 2] == '}') {
+            sb.append(t[i + 1] == '0' ? arg0 : arg1);
+            i += 3;
+        } else {
+            sb.append(template[i..i + 1]);
+            i += 1;
+        }
+    }
+    return $"{sb.asString()}";
+}
+
+/// A compiler diagnostic; every lexer diagnostic is an error (`error` is a keyword, so there is no
+/// `Severity` enum). An empty `label` or `help` means none; `hasFix` says whether the
+/// machine-applicable edit (replace `fixSpan` with `fixReplacement`) is present.
+struct Diagnostic {
+    string code;
+    TextSpan span;
+    string message;
+    string label;
+    string help;
+    bool hasFix;
+    TextSpan fixSpan;
+    string fixReplacement;
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────────────
+
+const string bar = "│";
+
+/// Renders a diagnostic as plain text (the format `DiagnosticRendererTests` fixes):
+///
+///     error BYN2104: `total` is immutable
+///
+///       12 │     total += line.price;
+///          │     ^^^^^ declared with `let` on line 9
+///          │
+///       help: declare it with `var` if it should change
+///          │  9 │     var total = 0;
+void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
+    sb.append($"error {diagnostic.code}: {diagnostic.message}\n");
+    sb.append("\n");
+
+    let line = source.getLineIndex(diagnostic.span.start);
+    let lineSpan = source.getLineSpan(line);
+
+    var fixLines = List<string>();
+    i64 fixFirstLine = 0;
+    if (diagnostic.hasFix) fixFirstLine = applyFix(ref source, diagnostic.fixSpan, diagnostic.fixReplacement, ref fixLines);
+
+    var widestLine = line + 1;
+    if (diagnostic.hasFix && fixFirstLine + fixLines.length > widestLine) widestLine = fixFirstLine + fixLines.length;
+    let width = $"{widestLine}".length;
+    var blankBuf = StrBuf();
+    blankBuf.append("  ");
+    for (let i in 0..width) blankBuf.append(" ");
+    blankBuf.append($" {bar}");
+    let blank = blankBuf.asString();
+
+    sb.append($"  {lineNumber(number: line + 1, width: width)} {bar} ");
+    display(ref sb, source.bytes.asSpan()[lineSpan.start..lineSpan.end]);
+    sb.append("\n");
+
+    let underlineStart = diagnostic.span.start;
+    var underlineEnd = diagnostic.span.end < lineSpan.end ? diagnostic.span.end : lineSpan.end;
+    if (underlineEnd < underlineStart) underlineEnd = underlineStart;
+    var carets = runeCount(source.bytes.asSpan()[underlineStart..underlineEnd]);
+    if (carets < 1) carets = 1;
+    sb.append($"{blank} ");
+    indent(ref sb, source.bytes.asSpan()[lineSpan.start..underlineStart]);
+    for (let i in 0..carets) sb.append("^");
+    if (!diagnostic.label.isEmpty) sb.append($" {diagnostic.label}");
+    sb.append("\n");
+
+    if (diagnostic.help.isEmpty && !diagnostic.hasFix) return;
+
+    sb.append($"{blank}\n");
+    if (!diagnostic.help.isEmpty) {
+        sb.append("  help: ");
+        let h = diagnostic.help;
+        i64 from = 0;
+        for (let i in 0..h.length) {
+            if (h.bytes[i] == 0x0A) {
+                sb.append(h[from..i]);
+                sb.append("\n        ");
+                from = i + 1;
+            }
+        }
+        sb.append(h[from..]);
+        sb.append("\n");
+    }
+    if (diagnostic.hasFix) {
+        for (let i in 0..fixLines.length) {
+            sb.append($"{blank} {lineNumber(number: fixFirstLine + i + 1, width: width)} {bar} ");
+            display(ref sb, fixLines[i].bytes);
+            sb.append("\n");
+        }
+    }
+}
+
+/// Renders diagnostics in source order (a stable sort by span start), separated by blank lines.
+void renderAll(ref StrBuf sb, ref SourceText source, ReadOnlySpan<Diagnostic> diagnostics) {
+    var order = List<i64>();
+    for (let i in 0..diagnostics.length) {
+        order.add(i);
+        var j = order.length - 1;
+        while (j > 0 && diagnostics[order[j - 1]].span.start > diagnostics[i].span.start) {
+            order[j] = order[j - 1];
+            j -= 1;
+        }
+        order[j] = i;
+    }
+    for (let k in 0..order.length) {
+        if (k > 0) sb.append("\n");
+        render(ref sb, ref source, diagnostics[order[k]]);
+    }
+}
+
+string lineNumber(i64 number, i64 width) {
+    let digits = $"{number}";
+    var sb = StrBuf();
+    for (let i in digits.length..width) sb.append(" ");
+    sb.append(digits);
+    return $"{sb.asString()}";
+}
+
+/// Fills `lines` with the lines touched by the fix, replacement applied; returns the first line's index.
+i64 applyFix(ref SourceText source, TextSpan fix, string replacement, ref List<string> lines) {
+    let firstLine = source.getLineIndex(fix.start);
+    let lastLine = source.getLineIndex(fix.end);
+    let start = source.getLineSpan(firstLine).start;
+    let end = source.getLineSpan(lastLine).end;
+    let text = $"{source.getText(TextSpan.fromBounds(start: start, end: fix.start))}{replacement}{source.getText(TextSpan.fromBounds(start: fix.end, end: end))}";
+    i64 from = 0;
+    for (let i in 0..text.length) {
+        if (text.bytes[i] == 0x0A) {
+            lines.add(text[from..i]);
+            from = i + 1;
+        }
+    }
+    lines.add(text[from..]);
+    return firstLine;
+}
+
+/// Source text as shown in a diagnostic: control and bidi characters become U+FFFD, one scalar for
+/// one, so carets still line up and the terminal cannot be made to reorder text.
+void display(ref StrBuf sb, ReadOnlySpan<u8> text) {
+    i64 pos = 0;
+    while (pos < text.length) {
+        let d = decodeAt(text, pos);
+        let v = d.value;
+        let hidden = (v < 0x20 && v != 0x09) || v == 0x7F || (v >= 0x202A && v <= 0x202E) || (v >= 0x2066 && v <= 0x2069);
+        sb.append($"{(char)(hidden ? replacementCharacter : v)}");
+        pos += d.length;
+    }
+}
+
+/// Whitespace that lines up with `prefix`, keeping its tabs.
+void indent(ref StrBuf sb, ReadOnlySpan<u8> prefix) {
+    i64 pos = 0;
+    while (pos < prefix.length) {
+        let d = decodeAt(prefix, pos);
+        sb.append(d.value == 0x09 ? "\t" : " ");
+        pos += d.length;
+    }
+}

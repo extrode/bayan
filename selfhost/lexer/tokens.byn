@@ -1,0 +1,337 @@
+// Tokens: kinds, flags, the token struct and keywords. Ports `TokenKind.cs`, `Token.cs` and
+// `Keywords.cs` from `src/Bayan.Syntax/Lexing/`.
+
+/// Member names are the C# `TokenKind` names with the first letter lowered; the dump raises it again.
+enum TokenKind {
+    endOfFile,
+
+    // Names and literals
+    identifier,
+    integerLiteral,
+    floatLiteral,
+    /// A suffix glued to a numeric literal: `5s`, `1u`, `1.5dec`.
+    numericSuffix,
+    charLiteral,
+    stringLiteral,
+    rawStringLiteral,
+    cStringLiteral,
+    u16StringLiteral,
+
+    // Interpolated strings: $"a{x}b" lexes as Start Text HoleStart … HoleEnd Text End.
+    interpolatedStringStart,
+    interpolatedStringText,
+    interpolationStart,
+    interpolationEnd,
+    interpolatedStringEnd,
+
+    // Punctuation
+    openParen,
+    closeParen,
+    openBracket,
+    closeBracket,
+    openBrace,
+    closeBrace,
+    semicolon,
+    comma,
+    dot,
+    dotDot,
+    dotDotEquals,
+    colon,
+    question,
+    questionQuestion,
+    questionQuestionEquals,
+    questionDot,
+    fatArrow,
+    at,
+    hash,
+
+    // Operators. `>>` and `>>=` are not tokens: the parser joins adjacent `>` tokens so that
+    // `List<List<i64>>` closes two type argument lists.
+    plus,
+    minus,
+    star,
+    slash,
+    percent,
+    plusPercent,
+    minusPercent,
+    starPercent,
+    plusBar,
+    minusBar,
+    starBar,
+    plusPlus,
+    minusMinus,
+    amp,
+    ampAmp,
+    bar,
+    barBar,
+    caret,
+    tilde,
+    bang,
+    equals,
+    equalsEquals,
+    bangEquals,
+    less,
+    lessEquals,
+    greater,
+    greaterEquals,
+    lessLess,
+    plusEquals,
+    minusEquals,
+    starEquals,
+    slashEquals,
+    percentEquals,
+    ampEquals,
+    barEquals,
+    caretEquals,
+    lessLessEquals,
+
+    // Keywords (spec §2.4). Order matters only for KeywordFirst/KeywordLast.
+    structKeyword,
+    uniqueKeyword,
+    unionKeyword,
+    enumKeyword,
+    flagsKeyword,
+    openKeyword,
+    extensibleKeyword,
+    interfaceKeyword,
+    delegateKeyword,
+    extensionKeyword,
+    derivationKeyword,
+    attributeKeyword,
+    errorKeyword,
+    setKeyword,
+    unitKeyword,
+    distinctKeyword,
+    typeKeyword,
+    importKeyword,
+    asKeyword,
+    publicKeyword,
+    privateKeyword,
+    staticKeyword,
+    readonlyKeyword,
+    requiredKeyword,
+    constKeyword,
+    letKeyword,
+    varKeyword,
+    embedKeyword,
+    externKeyword,
+    unsafeKeyword,
+    ifKeyword,
+    elseKeyword,
+    unlessKeyword,
+    switchKeyword,
+    caseKeyword,
+    defaultKeyword,
+    forKeyword,
+    inKeyword,
+    whileKeyword,
+    doKeyword,
+    breakKeyword,
+    continueKeyword,
+    returnKeyword,
+    yieldKeyword,
+    deferKeyword,
+    errdeferKeyword,
+    usingKeyword,
+    contextKeyword,
+    failsKeyword,
+    tryKeyword,
+    catchKeyword,
+    neverKeyword,
+    noallocKeyword,
+    nosuspendKeyword,
+    suspendsKeyword,
+    asyncKeyword,
+    awaitKeyword,
+    isKeyword,
+    andKeyword,
+    orKeyword,
+    notKeyword,
+    withKeyword,
+    moveKeyword,
+    refKeyword,
+    outKeyword,
+    thisKeyword,
+    nullKeyword,
+    trueKeyword,
+    falseKeyword,
+    comptimeKeyword,
+    checkedKeyword,
+    testKeyword,
+    propertyKeyword,
+    fuzzKeyword,
+    modelKeyword,
+    // Accepted for C# compatibility.
+    foreachKeyword,
+    newKeyword,
+    // Lexed so the parser can explain that it does not exist.
+    gotoKeyword,
+    // Reserved: no meaning yet, may not be used as identifiers.
+    actorKeyword,
+    effectKeyword,
+    macroKeyword,
+    selectKeyword,
+    becomeKeyword,
+}
+
+bool isKeyword(TokenKind kind) =>
+    kind.ordinal >= TokenKind.structKeyword.ordinal && kind.ordinal <= TokenKind.becomeKeyword.ordinal;
+
+bool isReservedKeyword(TokenKind kind) =>
+    kind.ordinal >= TokenKind.actorKeyword.ordinal && kind.ordinal <= TokenKind.becomeKeyword.ordinal;
+
+bool isStringLiteral(TokenKind kind) => kind switch {
+    .stringLiteral or .rawStringLiteral or .cStringLiteral or .u16StringLiteral => true,
+    _ => false,
+};
+
+/// The C# name of `kind`: its member name with the first byte upper-cased (plan Q52).
+string kindName(TokenKind kind) {
+    let name = kind.name;
+    return $"{(char)(name.bytes[0] - 0x20)}{name[1..]}";
+}
+
+/// Source text of fixed tokens, for messages ("expected `;`").
+string kindText(TokenKind kind) {
+    if (isKeyword(kind)) return keywordText(kind);
+    return kind switch {
+        .endOfFile => "end of file",
+        .identifier => "identifier",
+        .integerLiteral => "integer literal",
+        .floatLiteral => "float literal",
+        .numericSuffix => "numeric suffix",
+        .charLiteral => "char literal",
+        .stringLiteral or .rawStringLiteral or .cStringLiteral or .u16StringLiteral => "string literal",
+        .interpolatedStringStart => "$\"",
+        .interpolatedStringText => "interpolated text",
+        .interpolationStart => "{",
+        .interpolationEnd => "}",
+        .interpolatedStringEnd => "\"",
+        .openParen => "(",
+        .closeParen => ")",
+        .openBracket => "[",
+        .closeBracket => "]",
+        .openBrace => "{",
+        .closeBrace => "}",
+        .semicolon => ";",
+        .comma => ",",
+        .dot => ".",
+        .dotDot => "..",
+        .dotDotEquals => "..=",
+        .colon => ":",
+        .question => "?",
+        .questionQuestion => "??",
+        .questionQuestionEquals => "??=",
+        .questionDot => "?.",
+        .fatArrow => "=>",
+        .at => "@",
+        .hash => "#",
+        .plus => "+",
+        .minus => "-",
+        .star => "*",
+        .slash => "/",
+        .percent => "%",
+        .plusPercent => "+%",
+        .minusPercent => "-%",
+        .starPercent => "*%",
+        .plusBar => "+|",
+        .minusBar => "-|",
+        .starBar => "*|",
+        .plusPlus => "++",
+        .minusMinus => "--",
+        .amp => "&",
+        .ampAmp => "&&",
+        .bar => "|",
+        .barBar => "||",
+        .caret => "^",
+        .tilde => "~",
+        .bang => "!",
+        .equals => "=",
+        .equalsEquals => "==",
+        .bangEquals => "!=",
+        .less => "<",
+        .lessEquals => "<=",
+        .greater => ">",
+        .greaterEquals => ">=",
+        .lessLess => "<<",
+        .plusEquals => "+=",
+        .minusEquals => "-=",
+        .starEquals => "*=",
+        .slashEquals => "/=",
+        .percentEquals => "%=",
+        .ampEquals => "&=",
+        .barEquals => "|=",
+        .caretEquals => "^=",
+        .lessLessEquals => "<<=",
+        _ => kindName(kind),
+    };
+}
+
+/// Whitespace or a comment separates this token from the previous one.
+const u8 triviaBefore = 1;
+/// A line break separates this token from the previous one.
+const u8 newlineBefore = 2;
+
+/// A token is a kind plus byte offsets: no text is copied. A run of `///` lines directly before the
+/// token is attached as its doc span.
+struct Token {
+    TokenKind kind;
+    u8 tokenFlags;
+    i64 start;
+    i64 length;
+    i64 docStart;
+    i64 docLength;
+
+    i64 end => start + length;
+    bool hasDoc => docLength > 0;
+    bool hasTriviaBefore => (tokenFlags & triviaBefore) != 0;
+    bool hasNewlineBefore => (tokenFlags & newlineBefore) != 0;
+}
+
+// ── Keywords ──────────────────────────────────────────────────────────────────────
+
+/// The keyword text of a keyword kind: its member name without `Keyword`.
+string keywordText(TokenKind kind) {
+    let name = kind.name;
+    return name[0..name.length - 7];
+}
+
+/// Keyword kinds bucketed by first letter, so lookup compares a handful of byte strings.
+struct Keywords {
+    /// Keyword ordinals grouped by first letter `a`..`z`.
+    List<i32> byFirstByte;
+    /// `bucketStart[l]..bucketStart[l + 1]` is the bucket of letter `l` in `byFirstByte`.
+    List<i64> bucketStart;
+
+    static Keywords build() {
+        var keywords = Keywords { byFirstByte = List<i32>(), bucketStart = List<i64>() };
+        for (let letter in 0..26) {
+            keywords.bucketStart.add(keywords.byFirstByte.length);
+            for (let ordinal in TokenKind.structKeyword.ordinal..=TokenKind.becomeKeyword.ordinal) {
+                let kind = TokenKind.fromOrdinal(ordinal) ?? .identifier;
+                if (kind.name.bytes[0] - 0x61 == letter) keywords.byFirstByte.add(ordinal);
+            }
+        }
+        keywords.bucketStart.add(keywords.byFirstByte.length);
+        return keywords;
+    }
+
+    /// The keyword kind for an ASCII identifier, or `identifier`.
+    TokenKind lookup(ReadOnlySpan<u8> text) {
+        if (text.length < 2 || text[0] < 0x61 || text[0] > 0x7A) return .identifier;
+        let letter = text[0] - 0x61;
+        for (let i in bucketStart[letter]..bucketStart[letter + 1]) {
+            let kind = TokenKind.fromOrdinal(byFirstByte[i]) ?? .identifier;
+            if (sameBytes(a: text, b: kind.name.bytes[0..kind.name.length - 7])) return kind;
+        }
+        return .identifier;
+    }
+}
+
+bool sameBytes(ReadOnlySpan<u8> a, ReadOnlySpan<u8> b) {
+    if (a.length != b.length) return false;
+    for (let i in 0..a.length) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
+}

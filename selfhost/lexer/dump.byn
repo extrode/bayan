@@ -1,0 +1,49 @@
+// Text form of a token stream, as printed by `bayan lex` and kept in the `lex/` goldens. Ports
+// `src/Bayan.Syntax/Lexing/TokenDump.cs`.
+
+void dump(ref StrBuf sb, ref LexResult result) {
+    for (let token in result.tokens) {
+        let position = result.source.getLinePosition(token.start);
+        if (token.hasDoc) {
+            sb.append("    doc ");
+            escape(ref sb, result.source.bytes.asSpan()[token.docStart..token.docStart + token.docLength]);
+            sb.append("\n");
+        }
+        sb.append($"{position.line}:{position.column} {kindName(token.kind)}");
+        if (token.length > 0) {
+            sb.append(" ");
+            escape(ref sb, result.source.bytes.asSpan()[token.start..token.end]);
+        }
+        sb.append("\n");
+    }
+    if (result.diagnostics.length > 0) {
+        sb.append("\n");
+        let diagnostics = result.diagnostics;
+        renderAll(ref sb, ref result.source, diagnostics.asSpan());
+    }
+}
+
+/// Backtick-quoted text with line breaks, tabs and invisible characters made visible.
+void escape(ref StrBuf sb, ReadOnlySpan<u8> text) {
+    sb.append("`");
+    i64 pos = 0;
+    while (pos < text.length) {
+        let d = decodeAt(text, pos);
+        let v = d.value;
+        if (v == 0x0A) {
+            sb.append("\\n");
+        } else if (v == 0x0D) {
+            sb.append("\\r");
+        } else if (v == 0x09) {
+            sb.append("\\t");
+        } else if (v < 0x20 || v == 0x7F || (v >= 0x202A && v <= 0x202E) || (v >= 0x2066 && v <= 0x2069) || v == 0xFEFF) {
+            sb.append("\\u{");
+            appendHex(ref sb, v, 1);
+            sb.append("}");
+        } else {
+            sb.append($"{(char)v}");
+        }
+        pos += d.length;
+    }
+    sb.append("`");
+}
