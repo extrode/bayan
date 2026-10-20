@@ -1,0 +1,2 @@
+panic: result holds an error
+  at errors-result.byn:28

@@ -6,7 +6,7 @@ namespace Bayan.Semantics.Binding;
 internal sealed record BuiltinMethod(
     BuiltinMember Member, (string Name, TypeSymbol Type)[] Parameters, TypeSymbol Returns, bool Mutating = false, bool AcceptsInterpolation = false);
 
-/// <summary>Members of strings, spans, lists, arrays, <c>Arena</c>, <c>StrBuf</c> and <c>char</c> (spec §3, §16).</summary>
+/// <summary>Members of strings, spans, lists, arrays, results, <c>Arena</c>, <c>StrBuf</c> and <c>char</c> (spec §3, §16).</summary>
 internal static class BuiltinMembers
 {
     /// <summary>A built-in property (read without parentheses), or null.</summary>
@@ -22,6 +22,9 @@ internal static class BuiltinMembers
         (Symbols.ArrayType, "length") => (BuiltinMember.ArrayLength, PrimitiveType.I64),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "length") => (BuiltinMember.StrBufLength, PrimitiveType.I64),
         (PrimitiveType { Kind: PrimitiveKind.Char }, "value") => (BuiltinMember.CharValue, PrimitiveType.U32),
+        (ResultType, "isOk") => (BuiltinMember.ResultIsOk, PrimitiveType.Bool),
+        (ResultType r, "value") => (BuiltinMember.ResultValue, r.Value),
+        (ResultType r, "err") => (BuiltinMember.ResultError, r.Error),
         _ => null,
     };
 

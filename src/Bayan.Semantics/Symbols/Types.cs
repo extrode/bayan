@@ -226,6 +226,21 @@ public sealed class TupleType(IReadOnlyList<TupleField> fields) : ConstructedTyp
     }
 }
 
+/// <summary><c>Result&lt;T, E&gt;</c>: a value or an error from <see cref="Error"/> (spec §3.8).</summary>
+public sealed class ResultType(TypeSymbol value, TypeSymbol error) : ConstructedType
+{
+    public TypeSymbol Value { get; } = value;
+
+    /// <summary>An <see cref="ErrorSetSymbol"/>.</summary>
+    public TypeSymbol Error { get; } = error;
+
+    protected override object Key => (Value, Error);
+
+    public override string DisplayName => $"Result<{Value.DisplayName}, {Error.DisplayName}>";
+
+    public override bool IsBorrow => Value.IsBorrow;
+}
+
 /// <summary>Built-in nominal types with runtime support.</summary>
 public enum BuiltinKind
 {

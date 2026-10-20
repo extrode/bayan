@@ -180,6 +180,7 @@ public sealed class CEmitter
         BuiltinType b => b.Kind == BuiltinKind.Arena ? "arena" : "strbuf",
         StructSymbol s => s.Module.CName + "__" + s.Name,
         OptionalType o => "opt_" + Key(o.Inner),
+        ResultType r => "res_" + Key(r.Value),
         SpanType s => "span_" + Key(s.Element),
         ListType l => "list_" + Key(l.Element),
         ArrayType a => $"arr{a.Length}_" + Key(a.Element),
@@ -213,6 +214,10 @@ public sealed class CEmitter
                 case OptionalType o:
                     members.Add((PrimitiveType.Bool, "bool has"));
                     members.Add((o.Inner, $"{CType(o.Inner)} value"));
+                    break;
+                case ResultType r:
+                    members.Add((PrimitiveType.U32, "uint32_t err"));
+                    members.Add((r.Value, $"{CType(r.Value)} value"));
                     break;
                 case SpanType sp:
                     members.Add((PrimitiveType.I64, $"{CType(sp.Element)}* ptr"));
@@ -283,6 +288,7 @@ public sealed class CEmitter
             List<string> tests = t switch
             {
                 OptionalType o => [$"a.has == b.has && (!a.has || {Equal(o.Inner, "a.value", "b.value")})"],
+                ResultType r => [$"a.err == b.err && (a.err != 0 || {Equal(r.Value, "a.value", "b.value")})"],
                 StructSymbol s => s.Fields.Select(f => Equal(f.Type, "a." + FieldName(f.Name), "b." + FieldName(f.Name))).ToList(),
                 TupleType tt => tt.Fields.Select((f, i) => Equal(f.Type, $"a.item{i + 1}", $"b.item{i + 1}")).ToList(),
                 _ => throw new InvalidOperationException($"no equality for {t.DisplayName}"),
@@ -322,6 +328,9 @@ public sealed class CEmitter
                 case OptionalType o:
                     sb.Append($"    if (v.has) {Format(o.Inner, "v.value", "w")}\n");
                     sb.Append("    else byn_w_str(w, BYN_STR(\"null\", 4));\n");
+                    break;
+                case ResultType r:
+                    sb.Append($"    if (v.err) byn_w_error(w, v.err);\n    else {Format(r.Value, "v.value", "w")}\n");
                     break;
                 case StructSymbol s when FormatInto(s) is { } method:
                     sb.Append($"    {FunctionName(method)}(&v, w);\n");
@@ -769,6 +778,18 @@ internal sealed class FunctionEmitter
                 return $"byn_strbuf_str({Expr(r)})";
             case BuiltinMember.CharValue:
                 return $"((uint32_t){Expr(r)})";
+            case BuiltinMember.ResultIsOk:
+                return $"({Expr(r)}.err == 0)";
+            case BuiltinMember.ResultValue or BuiltinMember.ResultError:
+            {
+                var value = b.Member == BuiltinMember.ResultValue;
+                var res = _c.CType(r.Type);
+                var name = (value ? "bynh_value_" : "bynh_error_") + _c.Key(r.Type);
+                var message = value ? "result holds an error" : "result holds a value";
+                _c.Helper(name, $"static {_c.CType(b.Type)} {name}({res} r, const char* file, int line)", () =>
+                    $"{{\n    if ({(value ? "r.err" : "!r.err")}) byn_panic(\"{message}\", file, line);\n    return {(value ? "r.value" : "r.err")};\n}}\n");
+                return $"{name}({Expr(r)}, {Loc(b.Syntax)})";
+            }
             default:
                 throw new InvalidOperationException($"cannot emit {b.Member}");
         }
@@ -863,6 +884,10 @@ internal sealed class FunctionEmitter
                 return $"(({_c.CType(to)}){{true, {v}}})";
             case ConversionKind.NullToOptional:
                 return $"(({_c.CType(to)}){{0}})";
+            case ConversionKind.ToResult:
+                return $"(({_c.CType(to)}){{0, {v}}})";
+            case ConversionKind.ErrorToResult:
+                return $"(({_c.CType(to)}){{{v}}})";
             case ConversionKind.ListToSpan:
                 return $"(({_c.CType(to)}){{{v}.ptr, {v}.len}})";
             case ConversionKind.ArrayToSpan:

@@ -16,6 +16,11 @@ public static class Conversions
         if (from is NullType) return to is OptionalType ? ConversionKind.NullToOptional : null;
         if (from is PrimitiveType f && to is PrimitiveType t && IsWidening(f, t)) return ConversionKind.Widen;
         if (to is OptionalType o && (from.Equals(o.Inner) || Implicit(from, o.Inner) is ConversionKind.Widen)) return ConversionKind.ToOptional;
+        if (to is ResultType r)
+        {
+            if (from is ErrorSetSymbol && from.Equals(r.Error)) return ConversionKind.ErrorToResult;
+            if (from.Equals(r.Value) || Implicit(from, r.Value) is ConversionKind.Widen) return ConversionKind.ToResult;
+        }
         if (argument && to is SpanType span)
         {
             if (from is ListType list && list.Element.Equals(span.Element)) return ConversionKind.ListToSpan;

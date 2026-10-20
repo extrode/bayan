@@ -54,6 +54,7 @@ public enum BuiltinMember
     ArenaReset,
     StrBufAppend, StrBufLength, StrBufAsString, StrBufClear,
     CharValue,
+    ResultIsOk, ResultValue, ResultError,
 }
 
 public sealed record BoundBuiltinCall(Node Syntax, BuiltinMember Member, BoundExpr Receiver, BoundExpr[] Arguments, TypeSymbol Type)
@@ -78,6 +79,10 @@ public enum ConversionKind
     NullToOptional,
     ListToSpan,
     ArrayToSpan,
+    /// <summary>A value becomes a successful <c>Result</c>.</summary>
+    ToResult,
+    /// <summary>An error becomes a failed <c>Result</c>.</summary>
+    ErrorToResult,
     /// <summary>A <c>never</c> expression in a position of another type.</summary>
     FromNever,
 }
