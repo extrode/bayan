@@ -191,7 +191,7 @@ internal sealed class OwnershipAnalysis
                 var next = state.Clone();
                 foreach (var section in sw.Sections)
                 {
-                    var branch = next.Clone();
+                    var branch = Bind(section.Pattern, next.Clone());
                     if (section.Guard is not null) next = next.Join(branch = Expr(section.Guard, branch));
                     after = after.Join(Block(section.Body, branch.Clone()));
                 }
@@ -211,6 +211,16 @@ internal sealed class OwnershipAnalysis
             default:
                 return state;
         }
+    }
+
+    /// <summary>A pattern's bindings hold a fresh value each time it matches, as a declaration does.</summary>
+    private static State Bind(BoundPattern? pattern, State state)
+    {
+        if (pattern is null) return state;
+        foreach (var node in BoundTree.Descendants(pattern))
+            if (node is BoundBindPattern { Local: { } b }) state.Moved.Remove(b);
+            else if (node is BoundPropertyPattern { Designation: { } d }) state.Moved.Remove(d);
+        return state;
     }
 
     /// <summary>Registers a cleanup: the locals <paramref name="body"/> reads (not those it only assigns) and moves.</summary>
@@ -306,7 +316,7 @@ internal sealed class OwnershipAnalysis
                 var next = state.Clone();
                 foreach (var arm in s.Arms)
                 {
-                    var branch = next.Clone();
+                    var branch = Bind(arm.Pattern, next.Clone());
                     if (arm.Guard is not null) next = next.Join(branch = Expr(arm.Guard, branch));
                     after = after.Join(Expr(arm.Value, branch.Clone()));
                 }

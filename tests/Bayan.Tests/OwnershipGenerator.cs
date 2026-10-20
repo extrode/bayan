@@ -32,9 +32,6 @@ namespace Bayan.Tests;
 /// </summary>
 internal static class OwnershipGenerator
 {
-    /// <summary>Off until <c>switch (move x)</c> lands; T7 turns it on.</summary>
-    private const bool SwitchMove = false;
-
     private const string Prelude = """
         error enum E { bad, }
         void step() fails E { }
@@ -189,7 +186,7 @@ internal static class OwnershipGenerator
                 case 5: return Borrow();
                 case 6: return depth < 2 && Loop(depth);
                 case 7: return depth < 2 && Branch(depth);
-                case 8: return SwitchMove && SwitchMoveSlot();
+                case 8: return SwitchMoveSlot();
                 case 9: return Reassign();
                 case 10:
                 case 11: return Read();
