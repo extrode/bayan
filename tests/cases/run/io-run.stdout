@@ -1,0 +1,4 @@
+script: exit 3, stdout [hi], stderr [oops]
+vector: exit 0, stdout [a "b" c|], stderr []
+signal: exit 137, stdout [], stderr []
+big: exit 0, 300000 + 300000 bytes

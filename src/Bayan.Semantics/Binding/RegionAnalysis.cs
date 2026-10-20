@@ -312,10 +312,12 @@ internal sealed class RegionAnalysis
                 break;
             }
         }
-        // Rule 4: a returned borrow derives from every argument.
-        var result = args.Aggregate(receiver, (acc, a) => acc.Union(a));
-        // Allocated from `context.allocator`: a list, a growable `StrBuf`, or the text `Io.readText` returns (Q29).
-        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.StrBufGrow))
+        // Rule 4: a returned borrow derives from every argument. `Io` results are fresh copies and borrow none.
+        var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun
+            ? Borrow.None
+            : args.Aggregate(receiver, (acc, a) => acc.Union(a));
+        // Allocated from `context.allocator`: a list, a growable `StrBuf`, or the text `Io.readText` and `Io.run` return (Q29).
+        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.StrBufGrow))
             result = result.Union(_contexts.Peek());
         return result;
     }
@@ -501,7 +503,7 @@ internal sealed class RegionAnalysis
     {
         PrimitiveType p => p.IsString,
         SpanType or ListType => true,
-        BuiltinType b => b.Kind == BuiltinKind.StrBuf,
+        BuiltinType b => b.Kind is BuiltinKind.StrBuf or BuiltinKind.ProcessResult,
         OptionalType o => MayBorrow(o.Inner, seen),
         ResultType r => MayBorrow(r.Value, seen),
         ArrayType a => MayBorrow(a.Element, seen),

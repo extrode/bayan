@@ -11,7 +11,7 @@ namespace Bayan.Tests;
 /// <c>tests/cases/run/*.byn</c>: compiled with the C backend and run. Expected <c>*.stdout</c>
 /// always; <c>*.stderr</c> and <c>*.exitcode</c> only when non-empty / non-zero. A first line
 /// <c>// mode: fast</c> (or <c>debug</c>) picks the build mode; the default is <c>safe</c>. An optional
-/// <c>*.args</c> holds one command-line argument per line. Each case runs in its own empty directory
+/// <c>*.args</c> holds one command-line argument per line. A line <c>// os: unix</c> among the first two skips the case on Windows. Each case runs in its own empty directory
 /// under <c>tmp/run/</c>, so it may write files.
 /// </summary>
 public sealed class RunTests
@@ -45,6 +45,7 @@ public sealed class RunTests
     [MemberData(nameof(Cases))]
     public void RunGolden(string name)
     {
+        if (OperatingSystem.IsWindows() && File.ReadLines(Path.Combine(Golden.CasesRoot, name)).Take(2).Contains("// os: unix")) return;
         _ = Warm.Value;
         var outcome = Get(name);
         if (outcome.BuildError is { } error) Assert.Fail($"{name} did not build:\n{error}");

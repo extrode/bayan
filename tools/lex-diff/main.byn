@@ -1,0 +1,116 @@
+// lex-diff: runs a lexer command on every `.byn` file in a directory and compares its output, line by
+// line, with a second command or with golden files.
+//
+//     lex-diff --left "<cmd>" (--right "<cmd>" | --golden <ext>) <dir>
+//
+// A `<cmd>` is split on spaces into a program and its arguments (no quoting); the `.byn` path is
+// appended as the last argument. Only stdout is compared, after CRLF becomes LF and one trailing
+// newline is ignored. The first difference in each file prints `<file>:<line>: <left> | <right>`.
+// Exit 0 if every file agrees, 1 if any differs, 2 on a usage error or a command that cannot start.
+
+const i32 usageError = 2;
+
+i32 usage(string message) {
+    Io.stderr.write($"lex-diff: {message}\nusage: lex-diff --left \"<cmd>\" (--right \"<cmd>\" | --golden <ext>) <dir>\n");
+    return usageError;
+}
+
+i32 failure(string message) {
+    Io.stderr.write($"lex-diff: {message}\n");
+    return usageError;
+}
+
+/// The words of `cmd`, split on spaces.
+List<string> words(string cmd) {
+    List<string> result = List<string>();
+    i64 start = 0;
+    for (let i in 0..=cmd.length) {
+        if (i == cmd.length || cmd.bytes[i] == 0x20) {
+            if (i > start) result.add(cmd[start..i]);
+            start = i + 1;
+        }
+    }
+    return result;
+}
+
+/// The lines of `text`, without a final empty line and without the `\r` of a CRLF.
+List<string> lines(string text) {
+    List<string> result = List<string>();
+    i64 start = 0;
+    for (let i in 0..text.length) {
+        if (text.bytes[i] == 0x0A) {
+            let end = i > start && text.bytes[i - 1] == 0x0D ? i - 1 : i;
+            result.add(text[start..end]);
+            start = i + 1;
+        }
+    }
+    if (start < text.length) result.add(text[start..]);
+    return result;
+}
+
+/// Runs `cmd` on `path` and returns its standard output.
+string run(List<string> cmd, string path) fails IoError {
+    List<string> args = List<string>();
+    for (let i in 1..cmd.length) args.add(cmd[i]);
+    args.add(path);
+    let r = try Io.run(cmd[0], args.asSpan());
+    return r.stdout;
+}
+
+/// Prints the first difference and returns true, or returns false if the texts agree.
+bool differs(string file, string left, string right) {
+    let a = lines(left);
+    let b = lines(right);
+    var line = 0;
+    while (line < a.length && line < b.length && a[line] == b[line]) line += 1;
+    if (line == a.length && line == b.length) return false;
+    let l = line < a.length ? a[line] : "<end of file>";
+    let r = line < b.length ? b[line] : "<end of file>";
+    print($"{file}:{line + 1}: {l} | {r}");
+    return true;
+}
+
+i32 main(ReadOnlySpan<string> args) {
+    var left = "";
+    var right = "";
+    var golden = "";
+    var dir = "";
+    var i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+        if (arg == "--left" || arg == "--right" || arg == "--golden") {
+            if (i + 1 == args.length) return usage($"`{arg}` needs a value");
+            if (arg == "--left") left = args[i + 1];
+            if (arg == "--right") right = args[i + 1];
+            if (arg == "--golden") golden = args[i + 1];
+            i += 2;
+        } else {
+            if (arg.startsWith("--")) return usage($"unknown option `{arg}`");
+            if (!dir.isEmpty) return usage("give one directory");
+            dir = arg;
+            i += 1;
+        }
+    }
+    if (left.isEmpty) return usage("`--left` is required");
+    if (right.isEmpty == golden.isEmpty) return usage("give exactly one of `--right` and `--golden`");
+    if (dir.isEmpty) return usage("give a directory");
+    let leftCmd = words(left);
+    let rightCmd = words(right);
+    if (leftCmd.isEmpty) return usage("`--left` names no program");
+    let names = Io.listDir(dir) catch return failure($"cannot list `{dir}`");
+    var files = 0;
+    var differ = 0;
+    for (let name in names) {
+        if (!name.endsWith(".byn")) continue;
+        let path = $"{dir}/{name}";
+        files += 1;
+        let a = run(leftCmd, path) catch return failure($"cannot run `{left}`");
+        // A missing golden reads as empty, so it differs at line 1.
+        let b = golden.isEmpty
+            ? run(rightCmd, path) catch return failure($"cannot run `{right}`")
+            : Io.readText($"{path[0..path.length - 4]}{golden}") catch "";
+        if (differs(file: path, left: a, right: b)) differ += 1;
+    }
+    Io.stderr.write($"{files} files, {differ} differ\n");
+    return differ == 0 ? 0 : 1;
+}

@@ -6,7 +6,7 @@ namespace Bayan.Semantics.Binding;
 internal sealed record BuiltinMethod(
     BuiltinMember Member, (string Name, TypeSymbol Type)[] Parameters, TypeSymbol Returns, bool Mutating = false);
 
-/// <summary>Members of strings, spans, lists, arrays, results, <c>Arena</c>, <c>StrBuf</c>, <c>Io.stdout</c>/<c>Io.stderr</c>, <c>char</c> and enums (spec §3, §16).</summary>
+/// <summary>Members of strings, spans, lists, arrays, results, <c>Arena</c>, <c>StrBuf</c>, <c>Io.stdout</c>/<c>Io.stderr</c>, <c>ProcessResult</c>, <c>char</c> and enums (spec §3, §16).</summary>
 internal static class BuiltinMembers
 {
     /// <summary>A built-in property (read without parentheses), or null.</summary>
@@ -21,6 +21,9 @@ internal static class BuiltinMembers
         (ListType, "isEmpty") => (BuiltinMember.ListIsEmpty, PrimitiveType.Bool),
         (Symbols.ArrayType, "length") => (BuiltinMember.ArrayLength, PrimitiveType.I64),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "length") => (BuiltinMember.StrBufLength, PrimitiveType.I64),
+        (BuiltinType { Kind: BuiltinKind.ProcessResult }, "exitCode") => (BuiltinMember.ProcessExitCode, PrimitiveType.I32),
+        (BuiltinType { Kind: BuiltinKind.ProcessResult }, "stdout") => (BuiltinMember.ProcessStdout, PrimitiveType.String),
+        (BuiltinType { Kind: BuiltinKind.ProcessResult }, "stderr") => (BuiltinMember.ProcessStderr, PrimitiveType.String),
         (PrimitiveType { Kind: PrimitiveKind.Char }, "value") => (BuiltinMember.CharValue, PrimitiveType.U32),
         (ResultType, "isOk") => (BuiltinMember.ResultIsOk, PrimitiveType.Bool),
         (ResultType r, "value") => (BuiltinMember.ResultValue, r.Value),
@@ -54,7 +57,7 @@ internal static class BuiltinMembers
     public static bool HasMethod(TypeSymbol type, string name) => Method(type, name) is not null;
 
     private static readonly string[] Candidates =
-        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "add", "asSpan", "clear", "removeLast", "reset", "append", "asString", "write", "name", "ordinal"];
+        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "add", "asSpan", "clear", "removeLast", "reset", "append", "asString", "write", "name", "ordinal", "exitCode", "stdout", "stderr"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>

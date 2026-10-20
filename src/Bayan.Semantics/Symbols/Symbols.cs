@@ -211,6 +211,8 @@ public enum BuiltinFunction
     IoReadFile,
     IoReadText,
     IoWriteFile,
+    IoListDir,
+    IoRun,
     IoMonotonicNanos,
     IoStdout,
     IoStderr,

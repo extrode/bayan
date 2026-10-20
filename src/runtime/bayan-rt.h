@@ -144,13 +144,27 @@ byn_str* byn_args(int argc, char** argv);
 #define BYN_IO_NOT_FOUND 1u
 #define BYN_IO_PERMISSION_DENIED 2u
 #define BYN_IO_INVALID_UTF8 3u
-#define BYN_IO_OTHER 4u
+#define BYN_IO_NOT_A_DIRECTORY 4u
+#define BYN_IO_OTHER 5u
 
 /* Reads a whole file into memory from `alloc`. Returns 0 or an `IoError` code. */
 uint32_t byn_io_read(byn_str path, uint8_t** ptr, int64_t* len, byn_alloc* alloc);
 /* As byn_io_read, and the bytes must be UTF-8. `out` may be NULL. */
 uint32_t byn_io_read_text(byn_str path, byn_str* out, byn_alloc* alloc);
 uint32_t byn_io_write_file(byn_str path, const uint8_t* ptr, int64_t len);
+/* `Io.listDir`: entry names without `.` and `..`, sorted by byte order, allocated from `alloc`. */
+uint32_t byn_io_list_dir(byn_str path, byn_str** ptr, int64_t* len, byn_alloc* alloc);
+
+/* `ProcessResult`: a child killed by a signal reports 128 + the signal number. */
+typedef struct byn_process {
+    int32_t exit_code;
+    byn_str out;
+    byn_str err;
+} byn_process;
+
+/* `Io.run`: spawns `program` (looked up on PATH when it has no path separator) with `args`,
+ * never through a shell, and waits for it. Both streams are captured into `alloc`. `out` may be NULL. */
+uint32_t byn_io_run(byn_str program, const byn_str* args, int64_t nargs, byn_process* out, byn_alloc* alloc);
 /* `Io.stdout.write` (fd 1, buffered with print) and `Io.stderr.write` (fd 2). No newline. */
 void byn_io_write(int32_t fd, byn_str s);
 int64_t byn_io_monotonic_nanos(void);
