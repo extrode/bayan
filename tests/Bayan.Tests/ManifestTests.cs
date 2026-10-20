@@ -39,6 +39,9 @@ public sealed class ManifestTests
     [InlineData("01.0.0", false)]
     [InlineData("1.0.0-", false)]
     [InlineData("1.0.0-rc..1", false)]
+    [InlineData("1.0.0-a/b", false)]
+    [InlineData("1.0.0-a\\b", false)]
+    [InlineData("1.0.0-x-y.2", true)]
     [InlineData("123456789012345678.0.0", true)]
     public void SemanticVersions(string version, bool valid) => Assert.Equal(valid, Manifest.IsSemanticVersion(version));
 
