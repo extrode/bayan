@@ -10,6 +10,9 @@ left null true
 none null true
 element 2 left 0
 reused 7
+pick
+pick
+nested 1 left 0
 map element 1 left 0
 ref 2 left 0
 reused 11

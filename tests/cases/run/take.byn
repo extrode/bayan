@@ -13,6 +13,11 @@ i64 sum(move List<i64> xs) {
 
 List<i64> drain(ref List<i64> xs) => xs.take();
 
+i64 pick() {
+    print("pick");
+    return 0;
+}
+
 void main() {
     var ledger = Ledger { name = "ledger", items = List<i64>(), pending = null };
     ledger.items.add(1);
@@ -55,6 +60,13 @@ void main() {
     print($"element {first.length} left {lists[0].length}");
     lists[0].add(7);
     print($"reused {lists[0][0]}");
+
+    var nested = List<List<List<i64>>>();
+    nested.add(List<List<i64>>());
+    nested[0].add(List<i64>());
+    nested[0][0].add(12);
+    let inner = nested[pick()][pick()].take();
+    print($"nested {inner.length} left {nested[0][0].length}");
 
     var groups = Map<string, List<i64>>();
     var g = List<i64>();

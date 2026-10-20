@@ -966,10 +966,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         {
             var place = Lvalue(b.Receiver);
             if (IsNever(place)) return place;
-            if (place is BoundIndex { Index: var index } bi && !IsTrivial(index))
-                place = bi with { Index = Spill(index) };
-            else if (place is BoundBuiltinCall { Member: BuiltinMember.MapIndexSet, Arguments: [var key] } mb && !IsTrivial(key))
-                place = mb with { Arguments = [Spill(key)] };
+            place = Stable(place);
             // `map[k].take()` reads through the panicking index, so a missing key is not inserted.
             var taken = Spill(place is BoundBuiltinCall { Member: BuiltinMember.MapIndexSet } read ? read with { Member = BuiltinMember.MapIndex } : place);
             EmitAssign(place, b.Member == BuiltinMember.StrBufTake
@@ -998,6 +995,22 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         }
         return lowered;
     }
+
+    /// <summary>
+    /// <paramref name="place"/> with every index, key and non-addressable receiver in it stored in a
+    /// temporary, innermost first, so reading it and then writing it names the same storage.
+    /// </summary>
+    private BoundExpr Stable(BoundExpr place) => place switch
+    {
+        BoundField f => f with { Receiver = Stable(f.Receiver) },
+        BoundTupleElement t => t with { Receiver = Stable(t.Receiver) },
+        LOptionalValue v => v with { Optional = Stable(v.Optional) },
+        // A list's elements live behind its pointer, so a copy of a non-addressable list still names them.
+        BoundIndex i => i with { Target = Stable(i.Target), Index = IsTrivial(i.Index) ? i.Index : Spill(i.Index) },
+        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b =>
+            b with { Receiver = Stable(b.Receiver), Arguments = b.Arguments.Select(a => IsTrivial(a) ? a : Spill(a)).ToArray() },
+        _ => IsTrivial(place) || IsLvalue(place) ? place : Spill(place),
+    };
 
     private BoundExpr Write(BoundCall c, WriteSink sink, BoundExpr? target, BoundInterpolated text) => WriteParts(c, sink, target, text);
 
