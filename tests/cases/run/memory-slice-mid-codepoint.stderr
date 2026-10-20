@@ -1,0 +1,2 @@
+panic: string slice splits a code point
+  at memory-slice-mid-codepoint.byn:2
