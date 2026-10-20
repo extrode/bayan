@@ -357,16 +357,22 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
         {
             var parts = Operands([a.Target, a.Value], i => i == 0);
             if (parts is null) return;
-            EmitAssign(parts[0], parts[1]);
+            // C leaves `*at(xs, i) = f(&xs)` unsequenced: the value is computed first, so a call
+            // that grows the list cannot leave the store pointing at freed storage.
+            var assigned = IsTrivial(parts[1]) ? parts[1] : Spill(parts[1]);
+            EmitAssign(parts[0], assigned);
             return;
         }
         // `t op= v`: the target is evaluated once, so its index (if any) must be stable.
         var target = Lvalue(a.Target);
         if (target is BoundIndex { Index: var index } bi && !IsTrivial(index))
             target = bi with { Index = Spill(index) };
+        // The old value is read before `v` runs, which may change or move the target.
+        var current = IsTrivial(a.Value) ? target : Spill(target);
         var value = Expr(a.Value);
         if (IsNever(value)) return;
-        EmitAssign(target, new BoundBinary(a.Syntax, a.Op.Value, target, value, target.Type));
+        if (!IsTrivial(value)) value = Spill(value);
+        EmitAssign(target, new BoundBinary(a.Syntax, a.Op.Value, current, value, target.Type));
     }
 
     private void Return(BoundReturn r)
@@ -381,7 +387,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
                 EmitEffect(value);
                 value = null;
             }
-            else if (!IsTrivial(value) && _scopes.Any(s => s.Cleanups.Count > 0))
+            // Cleanups run after the value is read: a `defer` that changes a local must not change the result.
+            else if (value is not (BoundLiteral or BoundDefault or BoundErrorVariant) && _scopes.Any(s => s.Cleanups.Count > 0))
             {
                 value = Spill(value);
             }
