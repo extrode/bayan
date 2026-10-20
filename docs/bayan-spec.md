@@ -789,6 +789,7 @@ Every diagnostic states **what**, **where**, **why** and a **fix** (machine-appl
 
 | Command | Purpose |
 |---|---|
+| `bayan new X`, `bayan init` | Create an app (`--lib` library, `--script` script) in a new or existing directory (§21.4) |
 | `bayan run` | Build and run a program or script |
 | `bayan build` | Build (`--mode debug\|safe\|fast\|small`, `--target`) |
 | `bayan test` | Tests (`--tier`, `--mutate`, `--explore`, `--sanitize`, `--update`, `--triage`) |
@@ -815,6 +816,16 @@ Exit codes, documented in `bayan --help`:
 `bayan run` uses the CLI's codes until the program starts (1 for compile errors, 4 for toolchain problems), then passes the program's own exit code through unchanged, as `cargo run` and `go run` do. It therefore cannot tell a build failure from a program that exits 1; anything that needs the distinction runs `bayan build` first or reads `--diagnostics json`.
 
 The language server runs inside the compiler process. `dbg(expr)` prints the expression text and value and is an error in release builds.
+
+### 21.4 Projects, outputs and VCS
+
+**Projects.** `bayan new <name>` creates an app: `package.byn`, `README.md`, `.gitignore` (`/out/`, `/dist/`, `/gen/`; `bayan.lock` stays committed), `.gitattributes` (LF; `*.byn linguist-language=C#`), `.editorconfig`, `src/app/main.byn`, `tests/app.test.byn`, `testdata/` and `docs/`. `--lib` puts the code in `src/<name>/<name>.byn` and tests in `tests/<name>.test.byn`; `--script` writes a single `<name>.byn` starting with `#!/usr/bin/env bayan` and `#:io threaded`, with no manifest and no git. `bayan init` does the same in an existing directory, adding only missing files and listing the ones it skipped; it refuses a directory that has a `package.byn`. `--ci github` adds `.github/workflows/bayan.yml`. A fresh project builds and passes its tests with no edits.
+
+**Names.** A project directory is named in kebab-case (`my-app`) or camelCase (`myApp`). The package name is `local/<kebab-case>` until published; a library's module is the camelCase form, so it can be imported.
+
+**Layout.** In a project, `src/` holds the modules (`src/orders/` is `import orders;`), the entry module is `src/app/` for an app and `src/<name>/` for a library, and in test builds every `tests/*.test.byn` joins the entry module. Commands given no path use the current directory when it has a `package.byn`. A library has no program, so `bayan build` and `bayan run` on one are usage errors. A file starting with `#!` is a script and compiles alone, and `bayan <file>.byn` runs it.
+
+**Version control.** Bayan reads git and never writes history: `bayan new` and `bayan init` run `git init` only when git is installed, `--vcs none` isn't given, and the directory isn't already inside a work tree; they never commit, branch or configure.
 
 ### 21.3 Performance targets
 Incremental rebuild under 100 ms on a reference project; cold-build budget tracked in CI.

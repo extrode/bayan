@@ -1,0 +1,51 @@
+=== tally/.editorconfig
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+=== tally/.gitattributes
+* text=auto eol=lf
+*.byn linguist-language=C#
+=== tally/.gitignore
+/out/
+/dist/
+/gen/
+=== tally/README.md
+# tally
+
+A Bayan library. Its code is in `src/tally/`; other packages use it with `import tally;`.
+
+## Test
+
+```
+bayan test
+```
+=== tally/docs/.gitkeep
+=== tally/package.byn
+Package {
+    name    = "local/tally",      // `local/` until published under a verified namespace
+    version = "0.1.0",
+    edition = 2027,
+    kind    = .lib,
+    capabilities = [],
+    deps    = [],
+    dist = Dist {
+        targets = [.host],        // the machine that builds it
+        mode    = .safe,
+    },
+}
+=== tally/src/tally/tally.byn
+/// Returns twice `x`.
+public i64 twice(i64 x) {
+    return x * 2;
+}
+=== tally/testdata/.gitkeep
+=== tally/tests/tally.test.byn
+test "twice doubles" {
+    assert(twice(21) == 42);
+}

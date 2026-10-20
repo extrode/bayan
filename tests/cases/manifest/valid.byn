@@ -1,0 +1,14 @@
+Package {
+    name    = "local/tally",      // `local/` until published
+    version = "0.1.0-beta.1",
+    edition = 2027,
+    kind    = .app,
+    codes = "TLY",
+    capabilities = [.fs, .net],
+    deps    = [],
+    test = Tests { diffCoverage = 80, nightly = [.fuzz] },
+    dist = Dist {
+        targets = [.host, .linuxX64],
+        mode    = .fast,
+    },
+}

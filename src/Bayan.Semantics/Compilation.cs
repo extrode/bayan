@@ -7,7 +7,8 @@ using Bayan.Syntax.Text;
 
 namespace Bayan.Semantics;
 
-public sealed record CompilationOptions(bool IncludeTests = false);
+/// <param name="Library">A library has no <c>main</c>, so none is required.</param>
+public sealed record CompilationOptions(bool IncludeTests = false, bool Library = false);
 
 /// <summary>
 /// A whole program: the entry module plus every module it imports, transitively. Construction
@@ -19,13 +20,17 @@ public sealed class Compilation
     private readonly List<ModuleSymbol> _loading = new();
     private uint _nextErrorCode = 1;
 
-    private Compilation(string packageRoot, CompilationOptions options)
+    private Compilation(string packageRoot, CompilationOptions options, string? displayRoot)
     {
         PackageRoot = packageRoot;
         Options = options;
+        DisplayRoot = displayRoot ?? packageRoot;
     }
 
     public string PackageRoot { get; }
+
+    /// <summary>Imported files are named relative to this (the project root, in a project).</summary>
+    public string DisplayRoot { get; }
 
     public CompilationOptions Options { get; }
 
@@ -57,10 +62,28 @@ public sealed class Compilation
         return Create(sources, dir, options);
     }
 
-    /// <summary>Compiles <paramref name="entryFiles"/> as the entry module; imports resolve under <paramref name="packageRoot"/>.</summary>
-    public static Compilation Create(IReadOnlyList<SourceText> entryFiles, string packageRoot, CompilationOptions? options = null)
+    /// <summary>
+    /// Compiles a project (a directory with <c>package.byn</c>): the entry module is
+    /// <c>src/app/</c> for an app and <c>src/&lt;name&gt;/</c> for a library, imports resolve under
+    /// <c>src/</c>, and with tests every <c>tests/*.test.byn</c> joins the entry module. Files are
+    /// named relative to the project root.
+    /// </summary>
+    public static Compilation FromProject(string root, string entryModule, CompilationOptions options)
     {
-        var c = new Compilation(packageRoot, options ?? new CompilationOptions());
+        var src = Path.Combine(root, "src");
+        var entry = Path.Combine(src, entryModule);
+        var files = Directory.Exists(entry) ? ModuleFiles(entry, options.IncludeTests).ToList() : [];
+        var tests = Path.Combine(root, "tests");
+        if (options.IncludeTests && Directory.Exists(tests))
+            files.AddRange(Directory.EnumerateFiles(tests, "*.test.byn").Order(StringComparer.Ordinal));
+        var sources = files.Select(f => new SourceText(Path.GetRelativePath(root, f).Replace('\\', '/'), File.ReadAllBytes(f))).ToList();
+        return Create(sources, src, options, displayRoot: root);
+    }
+
+    /// <summary>Compiles <paramref name="entryFiles"/> as the entry module; imports resolve under <paramref name="packageRoot"/>.</summary>
+    public static Compilation Create(IReadOnlyList<SourceText> entryFiles, string packageRoot, CompilationOptions? options = null, string? displayRoot = null)
+    {
+        var c = new Compilation(packageRoot, options ?? new CompilationOptions(), displayRoot);
         c.EntryModule = c.LoadModule("main", packageRoot, entryFiles, null);
         // Syntax errors stop here: binding a broken tree mostly reports their echoes.
         if (c.Diagnostics.HasErrors) return c;
@@ -124,7 +147,7 @@ public sealed class Compilation
                     help: $"a module is a directory of `.byn` files; expected `{Path.GetRelativePath(PackageRoot, dir)}/` next to the entry file");
                 return;
             }
-            var sources = files.Select(f => new SourceText(Path.GetRelativePath(PackageRoot, f).Replace('\\', '/'), File.ReadAllBytes(f)));
+            var sources = files.Select(f => new SourceText(Path.GetRelativePath(DisplayRoot, f).Replace('\\', '/'), File.ReadAllBytes(f)));
             module = LoadModule(name, dir, sources.ToList(), file.Module);
         }
         if (!file.Imports.TryAdd(alias, module))
@@ -518,7 +541,7 @@ public sealed class Compilation
                     RegionAnalysis.Analyze(this, fn);
                     SpanParameterLint.Analyze(this, fn);
                 }
-        if (EntryModule.Main is null && !Options.IncludeTests && EntryModule.Files.Count > 0 && !Diagnostics.HasErrors)
+        if (EntryModule.Main is null && !Options.IncludeTests && !Options.Library && EntryModule.Files.Count > 0 && !Diagnostics.HasErrors)
             Report(DiagnosticCodes.NoMain, EntryModule.Files[0].Source, new TextSpan(0, 0), []);
     }
 
