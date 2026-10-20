@@ -26,6 +26,7 @@ public static class CliApp
           check <path>         report diagnostics for a program (a file or directory)
           build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--emit-c]
           run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]
+          test <path>          compile and run the tests, each in its own process [--mode debug|safe|fast]
           explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
           --version            print the compiler version
           --help               print this message
@@ -63,6 +64,8 @@ public static class CliApp
                 return Build(rest, stdout, stderr);
             case "run":
                 return RunProgram(rest, stderr);
+            case "test":
+                return Test(rest, stdout, stderr);
             default:
                 stderr.WriteLine($"bayan: unknown command `{args[0]}`");
                 stderr.WriteLine(Usage);
@@ -207,6 +210,80 @@ public static class CliApp
         process.WaitForExit();
         return process.ExitCode;
     }
+
+    /// <summary>A test that runs longer than this is stopped and reported as timed out.</summary>
+    private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(60);
+
+    private static int Test(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
+        if (Compile(o.Path, stderr, includeTests: true) is not { } c) return ExitFailure;
+        var program = Lowerer.Lower(c);
+        var result = Toolchain.Build(CEmitter.Emit(program), o.Mode);
+        if (!result.Succeeded)
+        {
+            stderr.WriteLine("bayan: " + result.Errors);
+            return ExitFailure;
+        }
+        var count = program.Tests.Count;
+        stdout.WriteLine($"running {count} test{(count == 1 ? "" : "s")}");
+        int passed = 0, failed = 0, panicked = 0;
+        var total = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < count; i++)
+        {
+            var outcome = RunTest(result.ExecutablePath!, i);
+            var (status, tally) = outcome.ExitCode switch
+            {
+                0 => ("ok   ", 0),
+                1 => ("FAIL ", 1),
+                _ => ("PANIC", 2),
+            };
+            if (outcome.TimedOut) (status, tally) = ("TIME ", 2);
+            if (tally == 0) passed++;
+            else if (tally == 1) failed++;
+            else panicked++;
+            stdout.WriteLine($"  {status}  {program.Tests[i].Test.Name}  ({FormatMs(outcome.Elapsed)})");
+            if (tally == 0) continue;
+            var details = outcome.TimedOut ? $"timed out after {TestTimeout.TotalSeconds:0} s" : (outcome.Stdout + outcome.Stderr).TrimEnd();
+            foreach (var line in details.Split('\n'))
+                stdout.WriteLine("         " + line.TrimEnd('\r'));
+        }
+        total.Stop();
+        var summary = $"{passed} passed";
+        if (failed > 0) summary += $", {failed} failed";
+        if (panicked > 0) summary += $", {panicked} panicked";
+        stdout.WriteLine();
+        stdout.WriteLine($"{count} test{(count == 1 ? "" : "s")}: {summary}  ({FormatMs(total.Elapsed)})");
+        return failed + panicked == 0 ? ExitOk : ExitFailure;
+    }
+
+    private sealed record TestOutcome(int ExitCode, bool TimedOut, string Stdout, string Stderr, TimeSpan Elapsed);
+
+    private static TestOutcome RunTest(string executable, int index)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo(executable)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        psi.ArgumentList.Add("--test");
+        psi.ArgumentList.Add(index.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        var stdout = p.StandardOutput.ReadToEndAsync();
+        var stderr = p.StandardError.ReadToEndAsync();
+        if (!p.WaitForExit(TestTimeout))
+        {
+            p.Kill(entireProcessTree: true);
+            p.WaitForExit();
+            return new TestOutcome(-1, true, stdout.Result, stderr.Result, clock.Elapsed);
+        }
+        return new TestOutcome(p.ExitCode, false, stdout.Result, stderr.Result, clock.Elapsed);
+    }
+
+    private static string FormatMs(TimeSpan t) =>
+        t.TotalMilliseconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " ms";
 
     private static int Explain(string[] args, TextWriter stdout, TextWriter stderr)
     {
