@@ -36,4 +36,22 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor UnescapedCloseBrace = Error("BYN0014", "`}}` in an interpolated string must be doubled");
     public static readonly DiagnosticDescriptor InvalidUtf8 = Error("BYN0015", "source is not valid UTF-8 (byte 0x{0})");
     public static readonly DiagnosticDescriptor InterpolationTooDeep = Error("BYN0016", "interpolated strings are nested too deeply");
+
+    // ── Parser 1000–1999 ─────────────────────────────────────────────────────────────
+    public static readonly DiagnosticDescriptor Expected = Error("BYN1001", "expected {0}, found {1}");
+    public static readonly DiagnosticDescriptor ExpectedExpression = Error("BYN1002", "expected an expression, found {0}");
+    public static readonly DiagnosticDescriptor ExpectedType = Error("BYN1003", "expected a type, found {0}");
+    public static readonly DiagnosticDescriptor ExpectedMember = Error("BYN1004", "expected a field, property, constructor or method, found {0}");
+    public static readonly DiagnosticDescriptor MissingSemicolon = Error("BYN1005", "expected `;` after the statement");
+    public static readonly DiagnosticDescriptor UnlessWithElse = Error("BYN1006", "`unless` cannot have an `else` branch");
+    public static readonly DiagnosticDescriptor UnlessNegated = Error("BYN1007", "`unless` with a negated condition is a double negative");
+    public static readonly DiagnosticDescriptor PostfixNotSimple = Error("BYN1008", "a postfix `{0}` applies only to a simple statement");
+    public static readonly DiagnosticDescriptor PostfixChained = Error("BYN1009", "postfix conditions cannot be chained");
+    public static readonly DiagnosticDescriptor Goto = Error("BYN1010", "`goto` does not exist in Bayan");
+    public static readonly DiagnosticDescriptor InvalidAssignmentTarget = Error("BYN1011", "cannot assign to this expression");
+    public static readonly DiagnosticDescriptor InvalidExpressionStatement = Error("BYN1012", "this expression does nothing as a statement");
+    public static readonly DiagnosticDescriptor TernaryInCollection = Error("BYN1013", "a conditional expression inside a collection literal must be parenthesized");
+    public static readonly DiagnosticDescriptor StackedCaseLabels = Error("BYN1014", "stacked `case` labels");
+    public static readonly DiagnosticDescriptor CStyleFor = Error("BYN1015", "C-style `for` loops do not exist in Bayan");
+    public static readonly DiagnosticDescriptor ModifierNotAllowed = Error("BYN1016", "`{0}` is not allowed here");
 }

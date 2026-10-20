@@ -1,0 +1,76 @@
+CompilationUnit
+  Function main() -> void
+    Block
+      Let a = 1
+      Var b = 2
+      Const c = 3
+      Let d: i64 = 4
+      Var e: u8 = 5
+      Var f: i64 = 6
+      Var m: Money
+      Using Let arena = (call Arena)
+      Assign b = 7
+      Assign b += 1
+      Assign b -= 1
+      Assign b *= 2
+      Assign b /= 2
+      Assign b %= 3
+      Assign b <<= 1
+      Assign b >>= 1
+      Assign b &= 1
+      Assign b |= 2
+      Assign b ^= 3
+      Assign (. m cents) = 9
+      Assign (index xs 0) = 1
+      Inc b
+      Dec b
+      Inc b
+      Assign _ = (call f)
+      If (> a 0)
+        Block
+          Expr (call print "pos")
+      Else
+        If (< a 0)
+          Expr (call print "neg")
+        Else
+          Block
+            Expr (call print "zero")
+      Unless ok
+        Block
+          Expr (call retry)
+      While (> b 0)
+        Dec b
+      DoWhile (< b 10)
+        Block
+          Inc b
+      For Let i in (.. 0 10)
+        Block
+          Assign total += i
+      For Let x in xs
+        Expr (call print x)
+      For Var i: i64 in (..= 0 n)
+        Block
+      For Var y in ys
+        Block
+      Label outer
+        For Let row in grid
+          Block
+            For Let cell in row
+              Block
+                Guarded if (== cell 0)
+                  Break outer
+                Continue outer
+      Defer
+        Expr (call close f)
+      Errdefer
+        Expr (call rollback)
+      Errdefer (e)
+        Block
+          Expr (call log e)
+      Context allocator: arena
+        Block
+          Expr (call work)
+      Block
+        Expr (call nested)
+      Empty
+      Return

@@ -1,0 +1,11 @@
+i64 f(i64 n) {
+    return 0 if n == 0;
+    return .notFound unless db.find(id) is { } order;
+    d++ if debtor.amount == 0;
+    total = 0 unless keep;
+    panic("bad") if n < 0;
+    log(n) if verbose;
+    break if done;
+    continue unless ready;
+    return n;
+}

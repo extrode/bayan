@@ -1,4 +1,7 @@
+using Bayan.Syntax.Ast;
+using Bayan.Syntax.Diagnostics;
 using Bayan.Syntax.Lexing;
+using Bayan.Syntax.Parsing;
 using Bayan.Syntax.Text;
 
 namespace Bayan.Cli;
@@ -16,6 +19,7 @@ public static class CliApp
 
         commands:
           lex <file>           print the token stream
+          parse [--ast] <file> check syntax; with --ast print the syntax tree
           explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
           --version            print the compiler version
           --help               print this message
@@ -43,6 +47,8 @@ public static class CliApp
                 return ExitOk;
             case "lex":
                 return Lex(rest, stdout, stderr);
+            case "parse":
+                return Parse(rest, stdout, stderr);
             case "explain":
                 return Explain(rest, stdout, stderr);
             default:
@@ -58,6 +64,22 @@ public static class CliApp
         var result = Lexer.Lex(source);
         stdout.Write(TokenDump.Dump(result));
         return result.Diagnostics.Any(d => d.IsError) ? ExitFailure : ExitOk;
+    }
+
+    private static int Parse(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        var printAst = args.Contains("--ast");
+        if (!TryReadSingleFile(args.Where(a => a != "--ast").ToArray(), stderr, out var source)) return ExitUsage;
+        var tree = SyntaxTree.Parse(source);
+        if (printAst)
+        {
+            stdout.Write(AstDump.Dump(tree));
+        }
+        else if (tree.Diagnostics.Count > 0)
+        {
+            stderr.Write(DiagnosticRenderer.RenderAll(tree.Diagnostics, includePath: true));
+        }
+        return tree.Diagnostics.Any(d => d.IsError) ? ExitFailure : ExitOk;
     }
 
     private static int Explain(string[] args, TextWriter stdout, TextWriter stderr)

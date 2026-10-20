@@ -1,0 +1,6 @@
+error BYN1009: postfix conditions cannot be chained
+
+  2 │     work() if a if b;
+    │                 ^^ a second condition
+    │
+  help: combine the conditions with `&&` in one postfix `if`

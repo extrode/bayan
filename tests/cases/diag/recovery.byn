@@ -1,0 +1,5 @@
+void f() {
+    let x = (;
+    let y = 2;
+    print(y);
+}

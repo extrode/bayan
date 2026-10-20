@@ -1,0 +1,288 @@
+using Bayan.Syntax.Text;
+
+namespace Bayan.Syntax.Ast;
+
+/// <summary>Base of every syntax node. Spans are byte ranges in the node's source.</summary>
+public abstract record Node(TextSpan Span);
+
+/// <summary>An identifier with its span; <see cref="Text"/> is the decoded name.</summary>
+public sealed record Name(TextSpan Span, string Text) : Node(Span)
+{
+    public override string ToString() => Text;
+}
+
+[Flags]
+public enum Modifiers
+{
+    None = 0,
+    Public = 1 << 0,
+    Private = 1 << 1,
+    Static = 1 << 2,
+    Readonly = 1 << 3,
+    Required = 1 << 4,
+    Const = 1 << 5,
+    Unique = 1 << 6,
+    Extern = 1 << 7,
+    Unsafe = 1 << 8,
+}
+
+// ── Compilation unit and declarations ────────────────────────────────────────────
+
+public sealed record CompilationUnit(TextSpan Span, Decl[] Members) : Node(Span);
+
+public abstract record Decl(TextSpan Span) : Node(Span)
+{
+    /// <summary>The <c>///</c> doc comment text (markers stripped), if any.</summary>
+    public string? Doc { get; init; }
+}
+
+public sealed record ImportDecl(TextSpan Span, Name[] Path, Name? Alias) : Decl(Span);
+
+/// <summary>A statement written at module level; together they form the implicit <c>main</c>.</summary>
+public sealed record GlobalStatement(TextSpan Span, Stmt Statement) : Decl(Span);
+
+public enum ParamModifier { None, Ref, Move, Out, In }
+
+public sealed record Param(TextSpan Span, ParamModifier Modifier, TypeSyntax Type, Name Name, Expr? Default) : Node(Span);
+
+/// <summary><c>fails</c> clause: <see cref="Errors"/> empty means the set is inferred.</summary>
+public sealed record FailsClause(TextSpan Span, TypeSyntax[] Errors) : Node(Span);
+
+/// <summary>A function or method. Exactly one of <see cref="Body"/> and <see cref="ExpressionBody"/> is set, or neither for a declaration.</summary>
+public sealed record FunctionDecl(
+    TextSpan Span, Modifiers Modifiers, TypeSyntax ReturnType, Name Name, Param[] Params,
+    FailsClause? Fails, BlockStmt? Body, Expr? ExpressionBody) : Decl(Span);
+
+public sealed record StructDecl(TextSpan Span, Modifiers Modifiers, Name Name, Decl[] Members) : Decl(Span);
+
+public sealed record FieldDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr? Default) : Decl(Span);
+
+/// <summary>A getter-only property: <c>T name => expr;</c>.</summary>
+public sealed record PropertyDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr Body) : Decl(Span);
+
+public sealed record ConstructorDecl(TextSpan Span, Modifiers Modifiers, Name Name, Param[] Params, BlockStmt Body) : Decl(Span);
+
+public sealed record ErrorVariant(TextSpan Span, Name Name, string? Doc) : Node(Span);
+
+/// <summary><c>error enum Name { a, b }</c>.</summary>
+public sealed record ErrorEnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, ErrorVariant[] Variants) : Decl(Span);
+
+/// <summary><c>type Name = T;</c> — a plain alias.</summary>
+public sealed record TypeAliasDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax Target) : Decl(Span);
+
+/// <summary><c>test "name" { … }</c>.</summary>
+public sealed record TestDecl(TextSpan Span, string Title, BlockStmt Body) : Decl(Span);
+
+// ── Types ────────────────────────────────────────────────────────────────────────
+
+public abstract record TypeSyntax(TextSpan Span) : Node(Span);
+
+/// <summary><c>Name</c> or <c>Name&lt;A, B&gt;</c>, optionally qualified (<c>m.Name</c>).</summary>
+public sealed record NamedType(TextSpan Span, Name[] Path, TypeSyntax[] Args) : TypeSyntax(Span);
+
+public sealed record OptionalType(TextSpan Span, TypeSyntax Inner) : TypeSyntax(Span);
+
+/// <summary><c>T[N]</c>.</summary>
+public sealed record ArrayType(TextSpan Span, TypeSyntax Element, Expr Size) : TypeSyntax(Span);
+
+public sealed record TupleTypeElement(TextSpan Span, TypeSyntax Type, Name? Name) : Node(Span);
+
+public sealed record TupleType(TextSpan Span, TupleTypeElement[] Elements) : TypeSyntax(Span);
+
+// ── Statements ───────────────────────────────────────────────────────────────────
+
+public abstract record Stmt(TextSpan Span) : Node(Span);
+
+public sealed record BlockStmt(TextSpan Span, Stmt[] Statements) : Stmt(Span);
+
+public enum BindingKind { Let, Var, Const }
+
+/// <summary><c>let x = e;</c>, <c>var T x = e;</c>, C#-style <c>T x = e;</c> (a <c>var</c>), optionally <c>using</c>.</summary>
+public sealed record LocalDecl(TextSpan Span, BindingKind Kind, bool Using, TypeSyntax? Type, Name Name, Expr? Init) : Stmt(Span);
+
+public sealed record ExprStmt(TextSpan Span, Expr Expr) : Stmt(Span);
+
+public enum AssignOp { Assign, Add, Sub, Mul, Div, Rem, And, Or, Xor, Shl, Shr, Coalesce }
+
+public sealed record AssignStmt(TextSpan Span, Expr Target, AssignOp Op, Expr Value) : Stmt(Span);
+
+public sealed record IncDecStmt(TextSpan Span, Expr Target, bool Increment) : Stmt(Span);
+
+public sealed record ReturnStmt(TextSpan Span, Expr? Value) : Stmt(Span);
+
+public sealed record BreakStmt(TextSpan Span, Name? Label) : Stmt(Span);
+
+public sealed record ContinueStmt(TextSpan Span, Name? Label) : Stmt(Span);
+
+public sealed record IfStmt(TextSpan Span, Expr Condition, Stmt Then, Stmt? Else) : Stmt(Span);
+
+public sealed record UnlessStmt(TextSpan Span, Expr Condition, Stmt Body) : Stmt(Span);
+
+/// <summary>A simple statement with a postfix <c>if</c>/<c>unless</c> (spec §7.3); the condition is evaluated first.</summary>
+public sealed record GuardedStmt(TextSpan Span, Stmt Statement, bool Unless, Expr Condition) : Stmt(Span);
+
+public sealed record WhileStmt(TextSpan Span, Expr Condition, Stmt Body) : Stmt(Span);
+
+public sealed record DoWhileStmt(TextSpan Span, Stmt Body, Expr Condition) : Stmt(Span);
+
+/// <summary><c>for (let x in e)</c>.</summary>
+public sealed record ForStmt(TextSpan Span, BindingKind Kind, TypeSyntax? Type, Name Variable, Expr Iterable, Stmt Body) : Stmt(Span);
+
+public sealed record LabeledStmt(TextSpan Span, Name Label, Stmt Statement) : Stmt(Span);
+
+/// <summary>One <c>case</c> label: a pattern and optional <c>when</c> guard. A null pattern is <c>default</c>.</summary>
+public sealed record SwitchLabel(TextSpan Span, Pattern? Pattern, Expr? Guard) : Node(Span);
+
+public sealed record SwitchSection(TextSpan Span, SwitchLabel Label, Stmt[] Statements) : Node(Span);
+
+public sealed record SwitchStmt(TextSpan Span, Expr Value, SwitchSection[] Sections) : Stmt(Span);
+
+public sealed record DeferStmt(TextSpan Span, Stmt Body) : Stmt(Span);
+
+/// <summary><c>errdefer stmt;</c> or <c>errdefer (e) { … }</c>.</summary>
+public sealed record ErrdeferStmt(TextSpan Span, Name? Error, Stmt Body) : Stmt(Span);
+
+public sealed record NamedArg(TextSpan Span, Name Name, Expr Value) : Node(Span);
+
+/// <summary><c>context (allocator: a) { … }</c>.</summary>
+public sealed record ContextStmt(TextSpan Span, NamedArg[] Values, BlockStmt Body) : Stmt(Span);
+
+public sealed record EmptyStmt(TextSpan Span) : Stmt(Span);
+
+/// <summary>Placeholder after a parse error, so later phases see a complete tree.</summary>
+public sealed record ErrorStmt(TextSpan Span) : Stmt(Span);
+
+// ── Expressions ──────────────────────────────────────────────────────────────────
+
+public abstract record Expr(TextSpan Span) : Node(Span);
+
+public enum LiteralKind { Integer, Float, Char, String, RawString, CString, U16String, True, False, Null }
+
+/// <summary>A literal; <see cref="Suffix"/> is the unit/width suffix of a number (<c>dec</c>, <c>u</c>, …).</summary>
+public sealed record LiteralExpr(TextSpan Span, LiteralKind Kind, string Text, Name? Suffix) : Expr(Span);
+
+public abstract record InterpolationPart(TextSpan Span) : Node(Span);
+
+/// <summary>Literal text with escapes and doubled braces decoded.</summary>
+public sealed record InterpolationText(TextSpan Span, string Text) : InterpolationPart(Span);
+
+public sealed record InterpolationHole(TextSpan Span, Expr Expr) : InterpolationPart(Span);
+
+public sealed record InterpolatedExpr(TextSpan Span, InterpolationPart[] Parts) : Expr(Span);
+
+public sealed record NameExpr(TextSpan Span, Name Name, TypeSyntax[] TypeArgs) : Expr(Span);
+
+public sealed record ThisExpr(TextSpan Span) : Expr(Span);
+
+public sealed record MemberExpr(TextSpan Span, Expr Target, Name Member, bool NullConditional) : Expr(Span)
+{
+    /// <summary>Explicit type arguments of a generic method call, <c>x.f&lt;T&gt;()</c>.</summary>
+    public TypeSyntax[] TypeArgs { get; init; } = [];
+}
+
+/// <summary><c>.member</c> resolved from the target type.</summary>
+public sealed record TargetMemberExpr(TextSpan Span, Name Member) : Expr(Span);
+
+public enum ArgModifier { None, Ref, Move, Out, In }
+
+public sealed record Argument(TextSpan Span, Name? Name, ArgModifier Modifier, Expr Value) : Node(Span);
+
+public sealed record CallExpr(TextSpan Span, Expr Callee, Argument[] Args) : Expr(Span);
+
+public sealed record IndexExpr(TextSpan Span, Expr Target, Expr Index) : Expr(Span);
+
+public enum UnaryOp { Plus, Negate, Not, Complement, FromEnd }
+
+public sealed record UnaryExpr(TextSpan Span, UnaryOp Op, Expr Operand) : Expr(Span);
+
+public enum BinaryOp
+{
+    Add, Sub, Mul, Div, Rem,
+    AddWrap, SubWrap, MulWrap,
+    AddSat, SubSat, MulSat,
+    Shl, Shr,
+    Lt, Gt, Le, Ge, Eq, Ne,
+    BitAnd, BitOr, BitXor,
+    LogicalAnd, LogicalOr,
+    Coalesce,
+}
+
+public sealed record BinaryExpr(TextSpan Span, BinaryOp Op, Expr Left, Expr Right) : Expr(Span);
+
+/// <summary><c>a..b</c> / <c>a..=b</c>; either end may be omitted (<c>..b</c>, <c>a..</c>).</summary>
+public sealed record RangeExpr(TextSpan Span, Expr? Start, Expr? End, bool Inclusive) : Expr(Span);
+
+public sealed record ConditionalExpr(TextSpan Span, Expr Condition, Expr WhenTrue, Expr WhenFalse) : Expr(Span);
+
+public sealed record CastExpr(TextSpan Span, TypeSyntax Type, Expr Operand) : Expr(Span);
+
+public sealed record IsExpr(TextSpan Span, Expr Value, Pattern Pattern) : Expr(Span);
+
+public sealed record SwitchArm(TextSpan Span, Pattern Pattern, Expr? Guard, Expr Value) : Node(Span);
+
+public sealed record SwitchExpr(TextSpan Span, Expr Value, SwitchArm[] Arms) : Expr(Span);
+
+public sealed record TryExpr(TextSpan Span, Expr Operand) : Expr(Span);
+
+/// <summary>
+/// <c>e catch h</c>, <c>e catch (x) h</c> (binds the error) or <c>e catch (Set.variant) h</c>
+/// (handles one variant; <see cref="Variant"/> set).
+/// </summary>
+public sealed record CatchExpr(TextSpan Span, Expr Operand, Name? Binding, Expr? Variant, Expr Handler) : Expr(Span);
+
+/// <summary><c>return e</c>, <c>break</c>, <c>continue</c> used as a <c>never</c> expression after <c>??</c> or <c>catch</c>.</summary>
+public sealed record JumpExpr(TextSpan Span, Stmt Jump) : Expr(Span);
+
+public sealed record FieldInit(TextSpan Span, Name Name, Expr Value) : Node(Span);
+
+/// <summary><c>T { f = v }</c> or target-typed <c>{ f = v }</c> (<see cref="Type"/> null).</summary>
+public sealed record StructLiteralExpr(TextSpan Span, TypeSyntax? Type, FieldInit[] Fields) : Expr(Span);
+
+/// <summary><c>e with { f = v }</c>.</summary>
+public sealed record WithExpr(TextSpan Span, Expr Target, FieldInit[] Fields) : Expr(Span);
+
+public sealed record SpreadExpr(TextSpan Span, Expr Operand) : Expr(Span);
+
+public sealed record CollectionExpr(TextSpan Span, Expr[] Elements) : Expr(Span);
+
+public sealed record TupleElement(TextSpan Span, Name? Name, Expr Value) : Node(Span);
+
+public sealed record TupleExpr(TextSpan Span, TupleElement[] Elements) : Expr(Span);
+
+public sealed record ParenExpr(TextSpan Span, Expr Inner) : Expr(Span);
+
+/// <summary><c>stackalloc T[n]</c>.</summary>
+public sealed record StackallocExpr(TextSpan Span, TypeSyntax Element, Expr Count) : Expr(Span);
+
+/// <summary>Placeholder after a parse error.</summary>
+public sealed record ErrorExpr(TextSpan Span) : Expr(Span);
+
+// ── Patterns ─────────────────────────────────────────────────────────────────────
+
+public abstract record Pattern(TextSpan Span) : Node(Span);
+
+/// <summary>A constant: literal, <c>.member</c>, a qualified name or a range.</summary>
+public sealed record ConstantPattern(TextSpan Span, Expr Value) : Pattern(Span);
+
+public sealed record RelationalPattern(TextSpan Span, BinaryOp Op, Expr Value) : Pattern(Span);
+
+public sealed record VarPattern(TextSpan Span, Name Name) : Pattern(Span);
+
+public sealed record DiscardPattern(TextSpan Span) : Pattern(Span);
+
+public sealed record NotPattern(TextSpan Span, Pattern Operand) : Pattern(Span);
+
+public sealed record BinaryPattern(TextSpan Span, bool IsAnd, Pattern Left, Pattern Right) : Pattern(Span);
+
+public sealed record PropertySubpattern(TextSpan Span, Name[] Path, Pattern Pattern) : Node(Span);
+
+/// <summary><c>Type { a: p } name</c>; <c>{ } v</c> matches any non-null value.</summary>
+public sealed record PropertyPattern(TextSpan Span, TypeSyntax? Type, PropertySubpattern[] Properties, Name? Designation) : Pattern(Span);
+
+/// <summary><c>Name(p, q)</c> or <c>(p, q)</c>.</summary>
+public sealed record PositionalPattern(TextSpan Span, TypeSyntax? Type, Pattern[] Elements) : Pattern(Span);
+
+/// <summary><c>..</c> or <c>.. var rest</c> inside a list pattern.</summary>
+public sealed record SlicePattern(TextSpan Span, Pattern? Inner) : Pattern(Span);
+
+public sealed record ListPattern(TextSpan Span, Pattern[] Elements) : Pattern(Span);
