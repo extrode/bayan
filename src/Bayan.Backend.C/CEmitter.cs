@@ -203,6 +203,7 @@ public sealed class CEmitter
         },
         ErrorSetSymbol or ErrorUnionType => "uint32_t",
         EnumSymbol e => $"byn_{e.Module.CName}_{e.Name}",
+        UnionSymbol u => Named(u, $"byn_{u.Module.CName}_{u.Name}"),
         BuiltinType { Kind: BuiltinKind.Arena } => "byn_arena*",
         BuiltinType { Kind: BuiltinKind.StrBuf } => "byn_writer",
         BuiltinType { Kind: BuiltinKind.IoStream } => "int32_t",
@@ -218,6 +219,7 @@ public sealed class CEmitter
         BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", _ => "iostream" },
         StructSymbol s => s.Module.CName + "__" + s.Name,
         EnumSymbol e => e.Module.CName + "__" + e.Name,
+        UnionSymbol u => u.Module.CName + "__" + u.Name,
         OptionalType o => "opt_" + Key(o.Inner),
         ResultType r => "res_" + Key(r.Value),
         SpanType s => "span_" + Key(s.Element),
@@ -227,9 +229,9 @@ public sealed class CEmitter
         _ => throw new InvalidOperationException($"no C type for {t.DisplayName}"),
     };
 
-    private string Named(TypeSymbol t)
+    private string Named(TypeSymbol t, string? name = null)
     {
-        var name = "bynt_" + Key(t);
+        name ??= "bynt_" + Key(t);
         if (_types.TryAdd(name, t)) _typeOrder.Add(name);
         return name;
     }
@@ -244,6 +246,7 @@ public sealed class CEmitter
             if (!done.Add(name)) return;
             var t = _types[name];
             var members = new List<(TypeSymbol Type, string Decl)>();
+            var payloads = new List<TypeSymbol>();
             switch (t)
             {
                 case StructSymbol s:
@@ -274,8 +277,19 @@ public sealed class CEmitter
                 case TupleType tt:
                     for (var i = 0; i < tt.Fields.Count; i++) members.Add((tt.Fields[i].Type, $"{CType(tt.Fields[i].Type)} item{i + 1}"));
                     break;
+                case UnionSymbol u:
+                {
+                    // Unit variants have no struct; a union of only unit variants has no `u`.
+                    members.Add((PrimitiveType.I32, "int32_t tag"));
+                    var variants = u.Variants.Where(v => v.Fields.Count > 0).ToList();
+                    if (variants.Count > 0)
+                        members.Add((PrimitiveType.I32, "union {\n" + string.Concat(variants.Select(v =>
+                            $"        struct {{ {string.Concat(v.Fields.Select(f => $"{CType(f.Type)} {FieldName(f.Name)}; "))}}} {FieldName(v.Name)};\n")) + "    } u"));
+                    payloads.AddRange(variants.SelectMany(v => v.Fields).Select(f => f.Type));
+                    break;
+                }
             }
-            foreach (var (type, _) in members)
+            foreach (var type in members.Select(m => m.Type).Concat(payloads))
                 if (type is not PrimitiveType && CType(type) is var dep && _types.ContainsKey(dep)) Define(dep);
             defs.Append($"struct {name} {{\n");
             foreach (var (_, decl) in members) defs.Append("    ").Append(decl).Append(";\n");
@@ -322,6 +336,16 @@ public sealed class CEmitter
         var name = "bynh_eq_" + Key(t);
         Helper(name, $"static bool {name}({ct} a, {ct} b)", () =>
         {
+            if (t is UnionSymbol u)
+            {
+                var sb = new StringBuilder("{\n    if (a.tag != b.tag) return false;\n    switch (a.tag) {\n");
+                foreach (var v in u.Variants.Where(v => v.Fields.Count > 0))
+                {
+                    var fields = v.Fields.Select(f => Equal(f.Type, $"a.u.{FieldName(v.Name)}.{FieldName(f.Name)}", $"b.u.{FieldName(v.Name)}.{FieldName(f.Name)}"));
+                    sb.Append($"    case {v.Tag}: return {string.Join("\n        && ", fields)};\n");
+                }
+                return sb.Append("    default: return true;\n    }\n}\n").ToString();
+            }
             if (t is ArrayType arr)
                 return $"{{\n    for (int64_t i = 0; i < {arr.Length}; i++)\n        if (!{Equal(arr.Element, "a.v[i]", "b.v[i]")}) return false;\n    return true;\n}}\n";
             List<string> tests = t switch
@@ -384,6 +408,23 @@ public sealed class CEmitter
                         sb.Append("    ").Append(Format(s.Fields[i].Type, "v." + FieldName(s.Fields[i].Name), "w")).Append('\n');
                     }
                     if (s.Fields.Count > 0) Text(" }");
+                    break;
+                case UnionSymbol u:
+                    sb.Append("    switch (v.tag) {\n");
+                    foreach (var variant in u.Variants)
+                    {
+                        sb.Append($"    case {variant.Tag}:\n");
+                        Text(variant.Fields.Count == 0 ? variant.Name : variant.Name + "(");
+                        for (var i = 0; i < variant.Fields.Count; i++)
+                        {
+                            var f = variant.Fields[i];
+                            Text((i > 0 ? ", " : "") + f.Name + ": ");
+                            sb.Append("    ").Append(Format(f.Type, $"v.u.{FieldName(variant.Name)}.{FieldName(f.Name)}", "w")).Append('\n');
+                        }
+                        if (variant.Fields.Count > 0) Text(")");
+                        sb.Append("        break;\n");
+                    }
+                    sb.Append("    }\n");
                     break;
                 case TupleType tt:
                     Text("(");
@@ -728,6 +769,10 @@ internal sealed class FunctionEmitter
                 return s.Fields.Length == 0 ? $"(({_c.CType(s.Struct)}){{0}})" : $"(({_c.CType(s.Struct)}){{{string.Join(", ", s.Fields.Select(Expr))}}})";
             case BoundTuple t:
                 return $"(({_c.CType(t.Type)}){{{string.Join(", ", t.Elements.Select(Expr))}}})";
+            case BoundUnionNew u:
+                return u.Payload.Length == 0
+                    ? $"(({_c.CType(u.Type)}){{.tag = {u.Variant.Tag}}})"
+                    : $"(({_c.CType(u.Type)}){{.tag = {u.Variant.Tag}, .u.{CEmitter.FieldName(u.Variant.Name)} = {{{string.Join(", ", u.Payload.Select(Expr))}}}}})";
             case BoundCollection { Type: ListType l }:
                 return $"(({_c.CType(l)}){{NULL, 0, 0, byn_context}})";
             case BoundCollection { Type: ArrayType a } col:
@@ -746,6 +791,10 @@ internal sealed class FunctionEmitter
                 return _c.StaticArray(a.Const);
             case LOptionalHas h:
                 return $"{Expr(h.Optional)}.has";
+            case LUnionTag u:
+                return $"{Expr(u.Union)}.tag";
+            case LUnionField u:
+                return $"{Expr(u.Union)}.u.{CEmitter.FieldName(u.Variant.Name)}.{CEmitter.FieldName(u.Variant.Fields[u.Index].Name)}";
             case LOptionalValue v:
                 return $"{Expr(v.Optional)}.value";
             case LAssignExpr a:

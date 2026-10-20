@@ -150,6 +150,9 @@ public sealed record BoundErrorVariant(Node Syntax, ErrorVariantSymbol Variant) 
 /// <summary><c>Color.red</c> or a target-typed <c>.red</c>.</summary>
 public sealed record BoundEnumMember(Node Syntax, EnumMemberSymbol Member) : BoundExpr(Syntax, Member.Enum);
 
+/// <summary><c>Shape.Circle(1)</c>, <c>Shape.None</c> or a target-typed <c>.Circle(1)</c>.</summary>
+public sealed record BoundUnionNew(Node Syntax, UnionVariantSymbol Variant, BoundExpr[] Payload) : BoundExpr(Syntax, Variant.Union);
+
 /// <summary><c>Color.values</c>: a <c>ReadOnlySpan</c> over the enum's static table of members.</summary>
 public sealed record BoundEnumValues(Node Syntax, EnumSymbol Enum, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
@@ -256,4 +259,11 @@ public sealed record BoundMemberStep(FieldSymbol? Field, PropertySymbol? Propert
 /// <see cref="Designation"/> see the unwrapped value (<see cref="ValueType"/>).
 /// </summary>
 public sealed record BoundPropertyPattern(Node Syntax, TypeSymbol InputType, TypeSymbol ValueType, BoundSubpattern[] Subpatterns, LocalSymbol? Designation)
+    : BoundPattern(Syntax, InputType);
+
+/// <summary>
+/// <c>.Circle(let r)</c> or <c>.None</c>: a tag test, then each subpattern on its payload field.
+/// On an optional input the value must be present.
+/// </summary>
+public sealed record BoundUnionPattern(Node Syntax, TypeSymbol InputType, UnionVariantSymbol Variant, BoundPattern[] Subpatterns)
     : BoundPattern(Syntax, InputType);

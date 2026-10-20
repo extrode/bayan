@@ -51,6 +51,8 @@ public sealed class ModuleSymbol(string name, string directory) : Symbol(name, n
 
     public List<EnumSymbol> Enums { get; } = new();
 
+    public List<UnionSymbol> Unions { get; } = new();
+
     public List<FunctionSymbol> AllFunctions { get; } = new();
 
     public List<TestSymbol> Tests { get; } = new();
@@ -360,4 +362,39 @@ public sealed class EnumMemberSymbol(string name, Location location, EnumSymbol 
     public int Ordinal { get; } = ordinal;
 
     public string? Doc { get; } = doc;
+}
+
+/// <summary>A tagged <c>union</c>: variants in declaration order, each with positional payload fields.</summary>
+public sealed class UnionSymbol(string name, Location location, ModuleSymbol module, Accessibility access, UnionDecl decl, FileContext file)
+    : TypeSymbol
+{
+    public string Name { get; } = name;
+
+    public Location Location { get; } = location;
+
+    public ModuleSymbol Module { get; } = module;
+
+    public Accessibility Access { get; } = access;
+
+    public UnionDecl Decl { get; } = decl;
+
+    public FileContext File { get; } = file;
+
+    public List<UnionVariantSymbol> Variants { get; } = new();
+
+    public override string DisplayName => Name;
+
+    public UnionVariantSymbol? Find(string name) => Variants.Find(v => v.Name == name);
+}
+
+/// <summary>A union variant; its tag is its declaration index. Unit variants have no fields.</summary>
+public sealed class UnionVariantSymbol(string name, Location location, UnionSymbol union, int tag, string? doc) : Symbol(name, location)
+{
+    public UnionSymbol Union { get; } = union;
+
+    public int Tag { get; } = tag;
+
+    public string? Doc { get; } = doc;
+
+    public List<ParameterSymbol> Fields { get; } = new();
 }

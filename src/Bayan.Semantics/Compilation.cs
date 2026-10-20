@@ -172,6 +172,9 @@ public sealed class Compilation
             foreach (var e in module.Enums)
                 DeclareEnumMembers(e);
         foreach (var module in Modules)
+            foreach (var u in module.Unions)
+                DeclareUnionVariants(u);
+        foreach (var module in Modules)
         {
             foreach (var s in module.Structs) DeclareMembers(s);
             foreach (var f in module.AllFunctions.Where(f => f.Owner is null && f.Kind != FunctionKind.Main && f.Kind != FunctionKind.Test))
@@ -180,6 +183,7 @@ public sealed class Compilation
         foreach (var module in Modules)
         {
             foreach (var s in module.Structs) CheckStructShape(s);
+            foreach (var u in module.Unions) CheckUnionShape(u);
         }
         if (EntryModule.Main is { Kind: FunctionKind.Function } main) CheckMainSignature(main);
     }
@@ -251,6 +255,13 @@ public sealed class Compilation
                     var sym = new EnumSymbol(e.Name.Text, Loc(file, e.Name), module, AccessOf(e.Modifiers), e, file);
                     if (AddType(file, e.Name, sym)) module.Enums.Add(sym);
                     Naming.CheckType(this, file.Source, e.Name);
+                    break;
+                }
+                case UnionDecl u:
+                {
+                    var sym = new UnionSymbol(u.Name.Text, Loc(file, u.Name), module, AccessOf(u.Modifiers), u, file);
+                    if (AddType(file, u.Name, sym)) module.Unions.Add(sym);
+                    Naming.CheckType(this, file.Source, u.Name);
                     break;
                 }
                 case TypeAliasDecl a:
@@ -373,6 +384,7 @@ public sealed class Compilation
         StructSymbol s => s.Location,
         ErrorSetSymbol e => e.Location,
         EnumSymbol e => e.Location,
+        UnionSymbol u => u.Location,
         AliasPlaceholder a => new Location(a.File.Source, a.Decl.Name.Span),
         _ => null,
     };
@@ -442,6 +454,38 @@ public sealed class Compilation
             Builtin = BuiltinFunction.EnumParse, ReturnType = optional, Access = Accessibility.Public, IsStatic = true,
         };
         e.Parse.Parameters.Add(new ParameterSymbol("name", null, PrimitiveType.String, ParamModifier.None, 0));
+    }
+
+    private void DeclareUnionVariants(UnionSymbol u)
+    {
+        var file = u.File;
+        var types = new TypeResolver(this, file, null);
+        foreach (var v in u.Decl.Variants)
+        {
+            Naming.CheckType(this, file.Source, v.Name);
+            if (u.Find(v.Name.Text) is { } existing)
+            {
+                Report(DiagnosticCodes.DuplicateUnionVariant, file.Source, v.Name.Span, [u.Name, v.Name.Text],
+                    label: $"already declared on line {existing.Location!.Value.Line}");
+                continue;
+            }
+            var sym = new UnionVariantSymbol(v.Name.Text, Loc(file, v.Name), u, u.Variants.Count, v.Doc);
+            var names = new Dictionary<string, Location>(StringComparer.Ordinal);
+            foreach (var f in v.Fields)
+            {
+                Naming.CheckValue(this, file.Source, f.Name);
+                if (names.TryGetValue(f.Name.Text, out var prev))
+                {
+                    ReportDuplicate(file.Source, f.Name, prev);
+                    continue;
+                }
+                names[f.Name.Text] = Loc(file, f.Name);
+                sym.Fields.Add(new ParameterSymbol(f.Name.Text, Loc(file, f.Name), types.Resolve(f.Type), ParamModifier.None, sym.Fields.Count));
+            }
+            u.Variants.Add(sym);
+        }
+        if (u.Variants.Count == 0)
+            Report(DiagnosticCodes.EmptyUnion, file.Source, u.Decl.Name.Span, [u.Name], help: "add the variants, or remove the union");
     }
 
     private void DeclareMembers(StructSymbol s)
@@ -589,11 +633,28 @@ public sealed class Compilation
                 help: "a struct cannot contain itself by value; store a `List` of it or an index instead");
     }
 
-    private static bool Contains(TypeSymbol t, StructSymbol target, HashSet<TypeSymbol> seen)
+    private void CheckUnionShape(UnionSymbol u)
+    {
+        foreach (var v in u.Variants)
+        {
+            foreach (var f in v.Fields)
+            {
+                if (f.Type.IsBorrow)
+                    Report(DiagnosticCodes.BorrowPayload, u.File.Source, f.Location!.Value.Span, [f.Type.DisplayName],
+                        help: "store a `List` copied with `.copy(to: alloc)` instead");
+            }
+        }
+        if (Contains(u, u, new HashSet<TypeSymbol>()))
+            Report(DiagnosticCodes.RecursiveUnion, u.File.Source, u.Decl.Name.Span, [u.Name],
+                help: "a union cannot contain itself by value; store a `List` of it or an index instead");
+    }
+
+    private static bool Contains(TypeSymbol t, TypeSymbol target, HashSet<TypeSymbol> seen)
     {
         IEnumerable<TypeSymbol> parts = t switch
         {
             StructSymbol s => s.Fields.Select(f => f.Type),
+            UnionSymbol u => u.Variants.SelectMany(v => v.Fields).Select(f => f.Type),
             OptionalType o => [o.Inner],
             ArrayType a => [a.Element],
             TupleType tt => tt.Fields.Select(f => f.Type),

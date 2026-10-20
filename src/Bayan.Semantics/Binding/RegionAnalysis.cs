@@ -509,6 +509,7 @@ internal sealed class RegionAnalysis
         ArrayType a => MayBorrow(a.Element, seen),
         TupleType tt => tt.Fields.Any(f => MayBorrow(f.Type, seen)),
         StructSymbol s => seen.Add(s) && s.Fields.Any(f => MayBorrow(f.Type, seen)),
+        UnionSymbol u => seen.Add(u) && u.Variants.Any(v => v.Fields.Any(f => MayBorrow(f.Type, seen))),
         _ => false,
     };
 
@@ -520,6 +521,7 @@ internal sealed class RegionAnalysis
         ArrayType a => ContainsList(a.Element, seen),
         TupleType tt => tt.Fields.Any(f => ContainsList(f.Type, seen)),
         StructSymbol s => seen.Add(s) && s.Fields.Any(f => ContainsList(f.Type, seen)),
+        UnionSymbol u => seen.Add(u) && u.Variants.Any(v => v.Fields.Any(f => ContainsList(f.Type, seen))),
         _ => false,
     };
 

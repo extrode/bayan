@@ -130,6 +130,12 @@ public static class AstDump
                     foreach (var m in d.Members)
                         Line(depth + 1, "Member " + m.Name.Text + (m.Doc is null ? "" : " doc " + TokenDump.Escape(m.Doc)));
                     break;
+                case UnionDecl d:
+                    Line(depth, $"Union {Mods(d.Modifiers)}{d.Name.Text}");
+                    foreach (var v in d.Variants)
+                        Line(depth + 1, "Variant " + v.Name.Text + (v.Fields.Length == 0 ? "" : "(" + string.Join(", ", v.Fields.Select(f => Type(f.Type) + " " + f.Name.Text)) + ")")
+                            + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
+                    break;
                 case TypeAliasDecl d:
                     Line(depth, $"TypeAlias {Mods(d.Modifiers)}{d.Name.Text} = {Type(d.Target)}");
                     break;
@@ -353,7 +359,7 @@ public static class AstDump
                     sb.Append(')');
                     break;
                 case VarPattern p:
-                    sb.Append("(var ").Append(p.Name.Text).Append(')');
+                    sb.Append(p.IsLet ? "(let " : "(var ").Append(p.Name.Text).Append(')');
                     break;
                 case DiscardPattern:
                     sb.Append('_');
@@ -385,6 +391,15 @@ public static class AstDump
                 case PositionalPattern p:
                     sb.Append("(pos");
                     if (p.Type is not null) sb.Append(' ').Append(Type(p.Type));
+                    foreach (var e in p.Elements)
+                    {
+                        sb.Append(' ');
+                        Pattern(sb, e);
+                    }
+                    sb.Append(')');
+                    break;
+                case VariantPattern p:
+                    sb.Append("(variant .").Append(p.Variant.Member.Text);
                     foreach (var e in p.Elements)
                     {
                         sb.Append(' ');
