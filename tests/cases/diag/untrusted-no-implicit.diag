@@ -1,0 +1,24 @@
+error BYN2202: expected `string`, found `Untrusted<string>`
+
+  6 │ string s = u;
+    │            ^
+
+error BYN2202: expected `Untrusted<string>`, found `string`
+
+  7 │ Untrusted<string> v = "y";
+    │                       ^^^
+
+error BYN2202: expected `string`, found `Untrusted<string>`
+
+  8 │ show(u);
+    │      ^
+
+error BYN2225: `Untrusted<string>` cannot be formatted
+
+  9 │ print($"{u}");
+    │          ^
+
+error BYN2202: expected `Untrusted<string>`, found `string`
+
+  10 │ print(trust("z", reason: "not wrapped"));
+     │             ^^^

@@ -601,6 +601,7 @@ internal sealed class RegionAnalysis
         PrimitiveType p => p.IsString,
         SpanType or ListType or MapType or OwnedType => true,
         BuiltinType b => b.Kind is BuiltinKind.StrBuf or BuiltinKind.ProcessResult,
+        UntrustedType u => MayBorrow(u.Inner, seen),
         OptionalType o => MayBorrow(o.Inner, seen),
         ResultType r => MayBorrow(r.Value, seen),
         ArrayType a => MayBorrow(a.Element, seen),
@@ -613,6 +614,7 @@ internal sealed class RegionAnalysis
     private static bool ContainsList(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         ListType or MapType or OwnedType => true,
+        UntrustedType u => ContainsList(u.Inner, seen),
         OptionalType o => ContainsList(o.Inner, seen),
         ResultType r => ContainsList(r.Value, seen),
         ArrayType a => ContainsList(a.Element, seen),

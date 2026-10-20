@@ -932,6 +932,7 @@ internal sealed partial class Binder
         OptionalType o => IsEquatable(o.Inner, seen),
         ResultType r => IsEquatable(r.Value, seen),
         OwnedType o => IsEquatable(o.Inner, seen),
+        UntrustedType u => IsEquatable(u.Inner, seen),
         ErrorSetSymbol or ErrorUnionType or EnumSymbol or TypeParameterType => true,
         StructSymbol s => !seen.Add(s) || s.Fields.All(f => IsEquatable(f.Type, seen)),
         UnionSymbol u => !seen.Add(u) || u.Variants.All(v => v.Fields.All(f => IsEquatable(f.Type, seen))),

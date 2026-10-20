@@ -1,0 +1,10 @@
+void show(string s) {
+    print(s);
+}
+
+Untrusted<string> u = Untrusted("x");
+string s = u;
+Untrusted<string> v = "y";
+show(u);
+print($"{u}");
+print(trust("z", reason: "not wrapped"));

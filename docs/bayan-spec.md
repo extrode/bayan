@@ -664,6 +664,7 @@ The compiler infers which functions may suspend (calls through `dyn` are assumed
 - **Processes.** `Io.run(program, args)` never goes through a shell, and refuses `.bat`/`.cmd` files on Windows (`cmd.exe` re-parses their arguments). `Io.runBatch(path, args)` runs a batch file: it escapes each argument for `cmd.exe` when that can be done exactly and otherwise fails without starting anything. Its arguments are a sink: an `Untrusted<T>` argument is a compile error.
 - **Clearing taint:** `parse`/`validate` (yielding `T.Validated`), escaped forms (interpolated SQL parameters, HTML escaping), or explicit `trust(x, reason: "…")`.
 - Terminal output and logs escape control characters in untrusted values.
+- **Implemented so far:** `Untrusted<T>` has the C representation of `T`; `Untrusted(x)` wraps and `trust(x, reason: "…")` unwraps, with a non-empty string literal as the reason. There is no implicit conversion either way. Sources are not yet wrapped.
 
 ### 15.2 Secrets
 `Secret<T>` and `[Secret]` fields: excluded from debug output, logs, `dbg`, `Json`, `Diff` and every derivation; constant-time equality; zeroed on dispose.

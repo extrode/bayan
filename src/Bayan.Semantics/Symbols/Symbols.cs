@@ -244,6 +244,8 @@ public enum BuiltinFunction
     StrBufNew,
     StrBufGrow,
     OwnedNew,
+    UntrustedNew,
+    Trust,
     IoReadFile,
     IoReadText,
     IoWriteFile,

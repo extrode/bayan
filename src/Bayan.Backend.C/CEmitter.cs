@@ -219,6 +219,7 @@ public sealed class CEmitter
         BuiltinType { Kind: BuiltinKind.ProcessResult } => "byn_process",
         // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
         OwnedType o => CType(o.Inner) + "*",
+        UntrustedType u => CType(u.Inner),
         _ => Named(t),
     };
 
@@ -236,6 +237,7 @@ public sealed class CEmitter
         SpanType s => "span_" + Key(s.Element),
         ListType l => "list_" + Key(l.Element),
         OwnedType o => "own_" + Key(o.Inner),
+        UntrustedType u => Key(u.Inner),
         MapType m => "map_" + Key(m.KeyType) + "_" + Key(m.ValueType),
         ArrayType a => $"arr{a.Length}_" + Key(a.Element),
         TupleType tt => $"tup{tt.Fields.Count}_" + string.Join("_", tt.Fields.Select(f => Key(f.Type))),
@@ -351,6 +353,8 @@ public sealed class CEmitter
                 return $"({a} == {b})";
             case OwnedType o:
                 return Equal(o.Inner, $"(*{a})", $"(*{b})");
+            case UntrustedType u:
+                return Equal(u.Inner, a, b);
         }
         var ct = CType(t);
         var name = "bynh_eq_" + Key(t);
@@ -948,6 +952,8 @@ internal sealed class FunctionEmitter
                     $"{{\n    return ({it}*)byn_copy_bytes(&v, (int64_t)sizeof v, byn_context);\n}}\n");
                 return $"{name}({Expr(c.Arguments[0])})";
             }
+            case BuiltinFunction.UntrustedNew or BuiltinFunction.Trust:
+                return Expr(c.Arguments[0]);
             case BuiltinFunction.IoReadFile:
             {
                 var list = _c.CType(fn.ReturnType);

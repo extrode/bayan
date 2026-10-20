@@ -25,6 +25,10 @@ internal sealed partial class Binder
         {
             case BoundMethodGroup { Function.Builtin: BuiltinFunction.OwnedNew }:
                 return BindOwned(c, (expected as OwnedType)?.Inner);
+            case BoundMethodGroup { Function.Builtin: BuiltinFunction.UntrustedNew }:
+                return BindUntrusted(c, (expected as UntrustedType)?.Inner);
+            case BoundMethodGroup { Function.Builtin: BuiltinFunction.Trust }:
+                return BindTrust(c);
             case BoundMethodGroup g:
                 return BindFunctionCall(c, g.Function, g.Receiver, g.TypeArgs);
             case BoundBuiltinGroup b:
@@ -386,6 +390,49 @@ internal sealed partial class Binder
             if (inner is null || inner.IsError) return new BoundErrorExpr(c);
         }
         return new BoundCall(c, _c.Builtins.OwnedNew, null, [value], new OwnedType(inner));
+    }
+
+    /// <summary><c>Untrusted(value)</c>: the value's type comes from the argument, or from the expected <c>Untrusted&lt;T&gt;</c>.</summary>
+    private BoundExpr BindUntrusted(CallExpr c, TypeSymbol? inner)
+    {
+        BoundExpr value;
+        if (inner is null && c.Args is [{ Name: null, Modifier: ArgModifier.None } arg])
+        {
+            value = BindExpr(arg.Value);
+            inner = DefaultType(value, arg.Value);
+            if (inner.IsError || inner.IsNever) return value;
+            value = Convert(value, inner, arg.Value.Span, argument: true);
+        }
+        else
+        {
+            var ps = new[] { new ParameterSymbol("value", null, inner ?? ErrorType.Instance, ParamModifier.None, 0) };
+            value = BindArguments(c, ps, null, enforceNames: false, "Untrusted")[0];
+            if (inner is null || inner.IsError) return new BoundErrorExpr(c);
+        }
+        return new BoundCall(c, _c.Builtins.UntrustedNew, null, [value], new UntrustedType(inner));
+    }
+
+    /// <summary><c>trust(value, reason: "…")</c>: <c>Untrusted&lt;T&gt;</c> to <c>T</c>, with a non-empty literal reason.</summary>
+    private BoundExpr BindTrust(CallExpr c)
+    {
+        var value = c.Args.Length > 0 && c.Args[0].Name is null ? BindExpr(c.Args[0].Value) : null;
+        if (value is null || c.Args.Length != 2 || c.Args[1].Name?.Text != "reason")
+        {
+            BindArgumentsForRecovery(c);
+            Report(DiagnosticCodes.TrustReason, c.Span, [], help: "write `trust(x, reason: \"why this value is safe\")`");
+            return new BoundErrorExpr(c);
+        }
+        var reason = c.Args[1].Value;
+        BindExpr(reason);
+        if (reason is not LiteralExpr { Kind: LiteralKind.String, Text.Length: > 0 })
+            Report(DiagnosticCodes.TrustReason, reason.Span, [], help: "explain why the value is safe, in a string literal such as `reason: \"validated upstream\"`");
+        if (value.Type.IsError) return value;
+        if (value.Type is not UntrustedType u)
+        {
+            Convert(value, new UntrustedType(value.Type), c.Args[0].Value.Span, argument: true);
+            return new BoundErrorExpr(c);
+        }
+        return new BoundCall(c, _c.Builtins.Trust, null, [value], u.Inner);
     }
 
     private BoundExpr BindBuiltinMethodCall(CallExpr c, BoundExpr receiver, string name)
