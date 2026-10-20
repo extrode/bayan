@@ -1,0 +1,26 @@
+CompilationUnit
+  Import money
+  Import app.users as u
+  TypeAlias Cents = i64
+  doc `Things that go wrong with money.`
+  ErrorEnum public MoneyError
+    Variant invalid doc `The text is not a number.`
+    Variant tooPrecise doc `Too many digits after the point.`
+  doc `Adds two amounts.`
+  Function public add(i64 a, i64 b) -> i64 => (+ a b)
+  Function bump(ref i64 total, i64 by = 1) -> void
+    Block
+      Assign total += by
+  Function parse(string text) -> Money fails MoneyError
+    Block
+      Return (struct Money (cents 0))
+  Function parseAny(string text) -> Money fails MoneyError, ParseError => (struct Money (cents 1))
+  Function helper() -> i64 fails
+    Block
+      Return 0
+  Function names(Span<(string name, i64 cents)> pairs, move Owned<Buf> buf) -> List<string>
+    Block
+      Return (list)
+  Test `adds`
+    Block
+      Expr (call assert (== (call add 1 2) 3))

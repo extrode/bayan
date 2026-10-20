@@ -1,0 +1,6 @@
+error BYN1001: expected `}`, found `void`
+
+  5 │ void g() {}
+    │ ^^^^
+    │
+  help: the block opened on line 2 is not closed

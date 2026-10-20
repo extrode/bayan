@@ -1,0 +1,15 @@
+CompilationUnit
+  Function name(Day d) -> string
+    Block
+      Switch d
+        Case (or .sat .sun)
+          Return "weekend"
+        Case .mon
+          Expr (call print "ugh")
+          Break
+        Case (var other) when (. other isHoliday)
+          Return "holiday"
+        Default
+          Return "weekday"
+      Let size = (switch n (0 => "none") ((or 1 2) => "few") ((< 10) => "some") (_ => "many"))
+      Return size

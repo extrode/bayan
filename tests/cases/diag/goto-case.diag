@@ -1,0 +1,6 @@
+error BYN1010: `goto` does not exist in Bayan
+
+  4 │             goto case 2;
+    │             ^^^^ `goto case` does not exist
+    │
+  help: switch sections never fall through; combine patterns with `or`, or move shared code into a function

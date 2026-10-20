@@ -1,0 +1,20 @@
+CompilationUnit
+  Function f(i64 n) -> i64
+    Block
+      Guarded if (== n 0)
+        Return 0
+      Guarded unless (is (call (. db find) id) (props) order)
+        Return .notFound
+      Guarded if (== (. debtor amount) 0)
+        Inc d
+      Guarded unless keep
+        Assign total = 0
+      Guarded if (< n 0)
+        Expr (call panic "bad")
+      Guarded if verbose
+        Expr (call log n)
+      Guarded if done
+        Break
+      Guarded unless ready
+        Continue
+      Return n

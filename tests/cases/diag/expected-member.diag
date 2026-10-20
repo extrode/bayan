@@ -1,0 +1,9 @@
+error BYN1003: expected a type, found `,`
+
+  1 │ void f(i64 a, , i64 b) {}
+    │               ^
+
+error BYN1004: expected a field, property, constructor or method, found `+`
+
+  4 │     + ;
+    │     ^

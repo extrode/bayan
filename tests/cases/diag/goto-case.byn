@@ -1,0 +1,8 @@
+void f(i64 n) {
+    switch (n) {
+        case 1:
+            goto case 2;
+        case 2:
+            break;
+    }
+}
