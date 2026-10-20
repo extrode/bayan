@@ -9,9 +9,9 @@ void main() {
     lists.add(List<i64>());
     for (var xs in lists) xs.add(1);
     for (let xs in lists) {
-        var stolen = move xs;
+        let stolen = move xs;
     }
-    var slot = Slot.Full(List<i64>());
+    let slot = Slot.Full(List<i64>());
     if (slot is .Full(var items)) items.add(2);
     for (let xs in lists) print($"{xs.length}");
 }

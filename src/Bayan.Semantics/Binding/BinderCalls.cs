@@ -646,8 +646,9 @@ internal sealed partial class Binder
                 return new BoundBindPattern(p, input, null);
             case VarPattern v:
             {
-                var local = DeclareLocal(v.Name, input, LocalKind.PatternVariable);
+                var local = DeclareLocal(v.Name, input, v.IsLet ? LocalKind.PatternVariable : LocalKind.Var);
                 local.BorrowsSubject = true;
+                if (!v.IsLet) local.KeywordSpan = new TextSpan(v.Span.Start, 3);
                 return new BoundBindPattern(p, input, local);
             }
             case ConstantPattern c:
@@ -1044,6 +1045,7 @@ internal sealed partial class Binder
 
     internal bool CheckWritable(BoundExpr target, TextSpan span, string? why)
     {
+        if (WrittenLocal(target) is { } written) written.Written = true;
         switch (target)
         {
             case BoundErrorExpr:
@@ -1100,6 +1102,17 @@ internal sealed partial class Binder
                 return false;
         }
     }
+
+    /// <summary>The local a write lands in, even when the write is rejected (<c>x.f</c>, <c>x[i]</c>, <c>x.t.0</c>).</summary>
+    private static LocalSymbol? WrittenLocal(BoundExpr e) => e switch
+    {
+        BoundLocal l => l.Local,
+        BoundField f => WrittenLocal(f.Receiver),
+        BoundTupleElement t => WrittenLocal(t.Receiver),
+        BoundIndex { Target.Type: not SpanType } i => WrittenLocal(i.Target),
+        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b => WrittenLocal(b.Receiver),
+        _ => null,
+    };
 
     private void ReportImmutable(LocalSymbol l, TextSpan span, string? why)
     {

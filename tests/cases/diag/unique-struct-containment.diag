@@ -1,7 +1,7 @@
 error BYN2780: implicit copy of a unique value: `Ledger` is unique because field `xs` is a `List<i64>`
 
-  13 │     var copy = ledger;
+  13 │     let copy = ledger;
      │                ^^^^^^
      │
   help: `move ledger` hands the value over; passing it by `ref` shares it instead
-     │ 13 │     var copy = move ledger;
+     │ 13 │     let copy = move ledger;

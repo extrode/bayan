@@ -2,7 +2,7 @@
 void main() {
     var a = List<i64>();
     a.add(1);
-    var b = move a;
+    let b = move a;
     print($"{a.length}");
     a.add(2);
     a = List<i64>();

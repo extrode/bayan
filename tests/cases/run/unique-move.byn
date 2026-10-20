@@ -14,7 +14,7 @@ void main() {
     var a = List<i64>();
     a.add(1);
     a.add(2);
-    var b = move a;
+    let b = move a;
     print($"b {b.length}");
 
     var bag = Bag { name = "bag", items = move b };

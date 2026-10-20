@@ -29,6 +29,11 @@ public sealed class L004UnionSwitchTests
         { "default only", ["default"], "" },
         { "two missing", [".B(let x)"], ".A, .C" },
         { "none covered but one", [".C"], ".A, .B" },
+        { "let binding covers rest", [".A", "let s"], "" },
+        { "var binding covers rest", [".A", "var s"], "" },
+        { "let binding only", ["let s"], "" },
+        { "guarded binding", [".A", "let s when true"], ".B, .C" },
+        { "guarded wildcard", ["_ when true"], ".A, .B, .C" },
     };
 
     [Theory]

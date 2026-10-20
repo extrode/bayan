@@ -4,7 +4,7 @@ void consume(move List<i64> xs) {
 }
 
 void main(ReadOnlySpan<string> args) {
-    var a = List<i64>();
+    let a = List<i64>();
     if (args.length > 0) {
         consume(move a);
     } else {

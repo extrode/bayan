@@ -47,17 +47,17 @@ var b = Map<string, i64>();
 b = fresh("y", 2);
 var s = Store { name = "s", data = fresh("z", 3) };
 s.data = fresh("w", 4);
-var full = Slot.Full(fresh("v", 5));
+let full = Slot.Full(fresh("v", 5));
 var list = List<Map<string, i64>>();
 list.add(fresh("u", 6));
 var nested = Map<i64, Map<string, i64>>();
 nested[1] = fresh("t", 7);
 Map<string, i64>[2] arr = [fresh("q", 8), Map<string, i64>()];
-var pair = (fresh("p", 9), 1);
-var o = Owned(fresh("o", 10));
-var r = found();
+let pair = (fresh("p", 9), 1);
+let o = Owned(fresh("o", 10));
+let r = found();
 Map<string, i64>? maybe = fresh("n", 11);
-var c = passThrough(fresh("m", 12));
+let c = passThrough(fresh("m", 12));
 
 // Receivers, `for` sources, read-only and `ref` arguments, formatting.
 a["x2"] = 2;
@@ -79,6 +79,6 @@ struct Named {
     Map<i64, i64> m;
 }
 
-var named = Named { name = "n", m = Map<i64, i64>() };
-var renamed = named with { m = Map<i64, i64>() };
+let named = Named { name = "n", m = Map<i64, i64>() };
+let renamed = named with { m = Map<i64, i64>() };
 print($"{renamed.name} {renamed.m.length}");

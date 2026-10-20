@@ -9,7 +9,7 @@ let b = s.bytes;
 b[0] = 65;
 let tail = s.bytes[1..];
 tail[0] = 66;
-var buffer = StrBuf(s.bytes);
+let buffer = StrBuf(s.bytes);
 clear(s.bytes);
 let bytes = stackalloc u8[4];
 clear(bytes);

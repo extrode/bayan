@@ -6,6 +6,6 @@ struct Pair<A, B> {
     B b;
 }
 
-var x = pick<i64, string>(first: true, a: 1, b: 2);
-var y = plain<i64>(1);
+let x = pick<i64, string>(first: true, a: 1, b: 2);
+let y = plain<i64>(1);
 Pair<i64> p;

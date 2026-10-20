@@ -780,6 +780,8 @@ public sealed class Compilation
             {
                 // Ownership is checked once, on the template, where every type parameter counts as unique.
                 if (fn.Body is not null && !fn.IsInstance) OwnershipAnalysis.Analyze(this, fn);
+                // Like ownership, the lint judges the source once, on the template.
+                if (fn.Body is not null && !fn.IsInstance) NeverReassignedVarLint.Analyze(this, fn);
                 if (fn.Body is not null && !fn.IsGeneric)
                 {
                     if (fn.IsInstance)

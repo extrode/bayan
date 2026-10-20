@@ -30,7 +30,7 @@ var xs = List<i64>();
 xs.add(7);
 xs.add(8);
 print($"{first(xs)}");
-var none = List<string>();
+let none = List<string>();
 print($"{first(none)}");
 
 print($"{same(a: 1, b: 1)} {same(a: "a", b: "b")} {same(a: p, b: Point { x = 1, y = 2 })}");

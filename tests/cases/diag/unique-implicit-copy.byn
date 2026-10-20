@@ -3,14 +3,14 @@ void main() {
     using let arena = Arena();
     var a = List<i64>();
     a.add(1);
-    var b = a;
-    var m = Map<string, i64>();
-    var n = m;
+    let b = a;
+    let m = Map<string, i64>();
+    let n = m;
     var sb = StrBuf();
     sb.append("x");
-    var other = sb;
+    let other = sb;
     print($"{a.length} {b.length} {m.length} {n.length} {sb.asString()} {other.asString()}");
-    var fine = a.copy(to: arena);
-    var moved = move m;
+    let fine = a.copy(to: arena);
+    let moved = move m;
     print($"{fine.length} {moved.length}");
 }
