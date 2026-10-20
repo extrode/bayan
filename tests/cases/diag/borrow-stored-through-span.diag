@@ -1,0 +1,6 @@
+error BYN3002: `sb` does not live as long as `dst`, which borrows it
+
+  5 │     dst[0] = sb.asString();
+    │              ^^^^^^^^^^^^^ `sb` is freed at the end of its block
+    │
+  help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough

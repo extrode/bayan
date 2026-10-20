@@ -367,7 +367,9 @@ internal sealed class RegionAnalysis
             Store(root, value, span);
             return;
         }
-        if (_reporting) CheckOutlives(value, 0, "this", span);
+        if (!_reporting) return;
+        var holder = target is BoundIndex { Target.Type: SpanType } i && RootLocal(i.Target) is { } view ? view.Name : "this";
+        CheckOutlives(value, 0, holder, span);
     }
 
     private void CheckOutlives(Borrow value, int depth, string holder, TextSpan span)
@@ -469,6 +471,8 @@ internal sealed class RegionAnalysis
         BoundLocal l => l.Local,
         BoundField f => StoreRoot(f.Receiver),
         BoundTupleElement t => StoreRoot(t.Receiver),
+        // A span's elements live wherever it points (often the caller's frame): not in the span local.
+        BoundIndex { Target.Type: SpanType } => null,
         BoundIndex i => StoreRoot(i.Target),
         _ => null,
     };
