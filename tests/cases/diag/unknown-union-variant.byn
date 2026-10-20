@@ -1,0 +1,9 @@
+union Shape { Circle(f32 r), None }
+
+void main() {
+    let s = Shape.Square(1);
+    Shape t = .Circle(2);
+    if (t is .Triangle(let x)) {
+        print("never");
+    }
+}

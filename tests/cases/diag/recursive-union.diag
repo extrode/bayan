@@ -1,0 +1,6 @@
+error BYN2707: union `Expr` contains itself
+
+  1 │ union Expr {
+    │       ^^^^
+    │
+  help: a union cannot contain itself by value; store a `List` of it or an index instead

@@ -45,8 +45,8 @@ describe(n);
 
 print($"{c == Shape.Circle(1)} {c == Shape.Circle(2)} {c != r} {n == Shape.None} {r == .Rect(2, 2)}");
 
-if (r is .Rect(let w, let h)) {
-    print($"is rect {w}x{h}");
+if (r is .Rect(let rw, let rh)) {
+    print($"is rect {rw}x{rh}");
 }
 if (c is .Rect(_, _)) {
     print("unreachable");

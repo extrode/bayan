@@ -1,0 +1,10 @@
+CompilationUnit
+  Union Shape
+    Variant Circle(f32 r)
+    Variant Rect(f32 w, f32 h)
+    Variant None doc `Nothing at all.`
+  Union public Token
+    Variant Number(i64 value)
+    Variant Word(string text)
+    Variant End
+  Function area(Shape s) -> f32 => (switch s ((variant .Circle (let r)) => (* r r)) ((pos Shape.Rect (var w) _) => w) (.None => 0))

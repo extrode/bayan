@@ -1,0 +1,6 @@
+error BYN2702: union `Nothing` has no variants
+
+  1 │ union Nothing { }
+    │       ^^^^^^^
+    │
+  help: add the variants, or remove the union
