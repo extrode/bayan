@@ -81,9 +81,18 @@ public sealed class L008OwnershipRuntimeTests(ITestOutputHelper output)
         return null;
     }
 
-    private static Run BuildAndRun(Compilation c, string name)
+    /// <summary>The proof can fail: C with no checker hooks (here safe-mode C, which emits none) fails the proof.</summary>
+    [Fact]
+    public void CodeWithoutCheckerHooksFails()
     {
-        var code = CliApp.EmitC(c, BuildMode.Debug);
+        var c = Compilation.Create([SourceText.FromString("gen-1.byn", OwnershipGenerator.Generate(1, Size))], ".");
+        Assert.False(c.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
+        Assert.Equal("debug C has no byn_own_ checker hooks", Failure(BuildAndRun(c, "no-hooks", BuildMode.Safe)));
+    }
+
+    private static Run BuildAndRun(Compilation c, string name, BuildMode emit = BuildMode.Debug)
+    {
+        var code = CliApp.EmitC(c, emit);
         if (!code.Contains("byn_own_", StringComparison.Ordinal)) return new Run(0, "", "debug C has no byn_own_ checker hooks");
         var build = Toolchain.Build(code, BuildMode.Debug, sanitize: Toolchain.AsanAvailable);
         if (!build.Succeeded) return new Run(0, "", $"build failed:\n{build.Errors}");

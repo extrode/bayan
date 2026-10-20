@@ -288,6 +288,31 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """, "BYN2781" },
+        { "switch (move s) binding moved then reused in the same arm", """
+            void main() {
+                let s = Slot.Full(List<i64>());
+                switch (move s) {
+                    case .Full(let items):
+                        consume(move items);
+                        print($"{items.length}");
+                    default:
+                        print("empty");
+                }
+            }
+            """, "BYN2781" },
+        { "switch (move s) in a loop, s declared outside", """
+            void main() {
+                let s = Slot.Full(List<i64>());
+                for (let i in 0..3) {
+                    switch (move s) {
+                        case .Full(let items):
+                            consume(move items);
+                        default:
+                            print("empty");
+                    }
+                }
+            }
+            """, "BYN2781" },
         { "switch (move) of a struct field", """
             void main() {
                 let ledger = Ledger { items = List<i64>() };
