@@ -1,0 +1,6 @@
+i64 twice(i64 x) => x * 2;
+
+enum Size(i64 bytes) {
+    small(1),
+    large(twice(512)),
+}

@@ -75,10 +75,11 @@ public sealed record ErrorVariant(TextSpan Span, Name Name, string? Doc) : Node(
 /// <summary><c>error enum Name { a, b }</c>.</summary>
 public sealed record ErrorEnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, ErrorVariant[] Variants) : Decl(Span);
 
-public sealed record EnumMember(TextSpan Span, Name Name, string? Doc) : Node(Span);
+/// <summary>A member; <see cref="Args"/> is <c>null</c> without parentheses.</summary>
+public sealed record EnumMember(TextSpan Span, Name Name, string? Doc, Argument[]? Args) : Node(Span);
 
-/// <summary><c>enum Name { a, b }</c>: a plain enum (no associated data).</summary>
-public sealed record EnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, EnumMember[] Members) : Decl(Span);
+/// <summary><c>enum Name { a, b }</c>, or <c>enum Name(T x) { a(1), b(2); }</c> with associated data (<see cref="Params"/> non-null).</summary>
+public sealed record EnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, Param[]? Params, EnumMember[] Members) : Decl(Span);
 
 /// <summary><c>type Name = T;</c> — a plain alias.</summary>
 public sealed record TypeAliasDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax Target) : Decl(Span);

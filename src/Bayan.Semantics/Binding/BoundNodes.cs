@@ -57,6 +57,8 @@ public enum BuiltinMember
     ResultIsOk, ResultValue, ResultError,
     IoWrite,
     EnumName, EnumOrdinal,
+    /// <summary>A data-enum field; the argument is the field index.</summary>
+    EnumField,
     ProcessExitCode, ProcessStdout, ProcessStderr,
 }
 

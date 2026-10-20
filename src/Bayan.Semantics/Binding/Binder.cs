@@ -161,6 +161,29 @@ internal sealed partial class Binder
         return value;
     }
 
+    /// <summary>The arguments of each member of a data enum, matched like call arguments; each must be a constant (BYN2723).</summary>
+    public void BindEnumArguments(EnumSymbol e)
+    {
+        var ps = e.Fields.Select(f => new ParameterSymbol(f.Name, f.Location, f.Type, ParamModifier.None, f.Index)).ToList();
+        foreach (var d in e.Decl.Members)
+        {
+            if (e.Find(d.Name.Text) is not { Values.Length: 0 } member) continue;
+            if (d.Args is null && e.Decl.Params is null) continue;
+            var name = $"{e.Name}.{member.Name}";
+            var args = BindArguments(new CallExpr(d.Span, new NameExpr(d.Name.Span, d.Name, []), d.Args ?? []), ps, null, enforceNames: false, displayName: name);
+            member.Values = new ConstantValue?[args.Length];
+            for (var i = 0; i < args.Length; i++)
+            {
+                var arg = args[i];
+                if (arg.Type.IsError || ps[i].Type.IsError) continue;
+                if (arg is BoundEnumMember em) member.Values[i] = new ConstantValue((Int128)em.Member.Ordinal);
+                else if (arg.Constant is { } value) member.Values[i] = value;
+                else Report(DiagnosticCodes.EnumArgumentNotConstant, arg.Syntax.Span, [ps[i].Name, name],
+                    label: "computed at run time", help: "enum data is static; use literals and `const`s only");
+            }
+        }
+    }
+
     public void BindModuleConstant(ConstSymbol c)
     {
         var decl = c.Decl;

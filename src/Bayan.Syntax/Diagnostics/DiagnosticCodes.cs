@@ -155,6 +155,8 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor UnknownEnumMember = Error("BYN2720", "`{0}` is not a member of `{1}`");
     public static readonly DiagnosticDescriptor DuplicateEnumMember = Error("BYN2721", "enum `{0}` already has a member `{1}`");
     public static readonly DiagnosticDescriptor EmptyEnum = Error("BYN2722", "enum `{0}` has no members");
+    public static readonly DiagnosticDescriptor EnumArgumentNotConstant = Error("BYN2723", "argument `{0}` of `{1}` must be a compile-time constant");
+    public static readonly DiagnosticDescriptor InvalidEnumParameter = Error("BYN2724", "enum parameter `{0}` must be a number, `bool`, `char`, `string` or a plain enum");
     public static readonly DiagnosticDescriptor UnknownAttribute = Error("BYN2770", "unknown attribute `{0}`");
     public static readonly DiagnosticDescriptor InvalidMainSignature = Error("BYN2771", "`main` must return `void` or `i32` and take nothing or `ReadOnlySpan<string> args`");
     public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`[ExitCode]` needs one integer constant from 1 to 255");
