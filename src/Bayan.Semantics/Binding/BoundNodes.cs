@@ -127,7 +127,7 @@ public sealed record BoundSwitchExpr(Node Syntax, BoundExpr Value, BoundSwitchAr
 /// <summary>One piece of <c>$"…"</c>: literal text or a value to format.</summary>
 public sealed record BoundInterpolationPart(string? Text, BoundExpr? Value);
 
-/// <summary><c>$"…"</c>. Only valid as an argument to an output sink (<c>print</c>, <c>panic</c>, <c>StrBuf.append</c>).</summary>
+/// <summary><c>$"…"</c>. Written straight into an output sink (<c>print</c>, <c>panic</c>, <c>StrBuf.append</c>); elsewhere a string from <c>context.allocator</c>.</summary>
 public sealed record BoundInterpolated(Node Syntax, BoundInterpolationPart[] Parts) : BoundExpr(Syntax, PrimitiveType.String);
 
 /// <summary><c>try f()</c>: on failure, runs <c>errdefer</c>s and fails the enclosing function with the same error.</summary>

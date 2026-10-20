@@ -40,10 +40,13 @@ BYN_NORETURN void byn_unreachable(const char* file, int line);
 typedef enum byn_writer_mode {
     BYN_WRITE_STDOUT,   /* flush to standard output when full */
     BYN_WRITE_TRUNCATE, /* drop what does not fit (panic messages) */
-    BYN_WRITE_STRICT,   /* panic when full (StrBuf) */
+    BYN_WRITE_STRICT,   /* panic when full (StrBuf(buf)) */
+    BYN_WRITE_GROW,     /* grow through alloc when full (StrBuf()) */
 } byn_writer_mode;
 
-/* Formats text into caller-provided bytes; no allocation. */
+typedef struct byn_alloc byn_alloc;
+
+/* Formats text into caller-provided bytes; only BYN_WRITE_GROW allocates. */
 typedef struct byn_writer {
     uint8_t* buf;
     int64_t cap;
@@ -51,6 +54,7 @@ typedef struct byn_writer {
     byn_writer_mode mode;
     const char* file;
     int line;
+    byn_alloc* alloc;
 } byn_writer;
 
 void byn_w_bytes(byn_writer* w, const uint8_t* p, int64_t n);
@@ -106,7 +110,6 @@ static inline void byn_slice_range(int64_t len, int64_t start, int start_mode, i
 
 /* ── Allocators ──────────────────────────────────────────────────────────── */
 
-typedef struct byn_alloc byn_alloc;
 struct byn_alloc {
     /* Grows (or allocates, when old is NULL) a block; the old block's bytes are kept. */
     void* (*resize)(byn_alloc* self, void* old, int64_t old_size, int64_t new_size);
@@ -154,8 +157,11 @@ int64_t byn_io_monotonic_nanos(void);
 
 /* ── StrBuf ──────────────────────────────────────────────────────────────── */
 
-/* A StrBuf is a strict writer over caller-provided bytes. */
+/* `StrBuf(buf)` is a strict writer over caller-provided bytes; `StrBuf()` grows from `alloc`. */
 static inline byn_str byn_strbuf_str(byn_writer w) { return (byn_str){w.buf, w.len}; }
+static inline byn_writer byn_strbuf_grow(byn_alloc* alloc) {
+    return (byn_writer){NULL, 0, 0, BYN_WRITE_GROW, NULL, 0, alloc};
+}
 
 /* ── Chars ───────────────────────────────────────────────────────────────── */
 

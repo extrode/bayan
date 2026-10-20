@@ -11,9 +11,6 @@ namespace Bayan.Semantics.Binding;
 
 internal sealed partial class Binder
 {
-    /// <summary>Set while binding an argument that accepts <c>$"…"</c>.</summary>
-    private bool _interpolationAllowed;
-
     // ── Entry points ─────────────────────────────────────────────────────────────
 
     /// <summary>Binds a value. <paramref name="expected"/> only guides literals and target-typed forms; no conversion is applied.</summary>
@@ -1136,13 +1133,6 @@ internal sealed partial class Binder
 
     private BoundExpr BindInterpolated(InterpolatedExpr i)
     {
-        if (!_interpolationAllowed)
-        {
-            Report(DiagnosticCodes.InterpolationNotAllowed, i.Span, [],
-                help: "an interpolated string writes into an output; pass it to `print`, `panic`, `assert` or `StrBuf.append`");
-            return new BoundErrorExpr(i);
-        }
-        _interpolationAllowed = false;
         var parts = new List<BoundInterpolationPart>();
         foreach (var part in i.Parts)
         {
@@ -1158,7 +1148,6 @@ internal sealed partial class Binder
                     help: value.Type is StructSymbol s ? $"give `{s.Name}` a `void formatInto(ref StrBuf out)` method" : null);
             parts.Add(new BoundInterpolationPart(null, value));
         }
-        _interpolationAllowed = true;
         return new BoundInterpolated(i, parts.ToArray());
     }
 

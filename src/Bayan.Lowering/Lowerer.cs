@@ -19,18 +19,19 @@ public static class Lowerer
             foreach (var fn in module.AllFunctions)
             {
                 if (fn.Body is null || fn.Kind == FunctionKind.Test) continue;
-                functions.Add(new FunctionLowerer(fn).Lower());
+                functions.Add(new FunctionLowerer(fn, c.Builtins).Lower());
             }
             foreach (var t in module.Tests)
-                tests.Add((t, new FunctionLowerer(t.Function).Lower()));
+                tests.Add((t, new FunctionLowerer(t.Function, c.Builtins).Lower()));
         }
         return new LoweredProgram(c, functions, c.EntryModule.Main, tests);
     }
 }
 
-internal sealed class FunctionLowerer(FunctionSymbol fn)
+internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 {
     private readonly FunctionSymbol _fn = fn;
+    private readonly Builtins _builtins = builtins;
     private readonly List<LocalSymbol> _locals = new();
     private readonly HashSet<LocalSymbol> _seen = new();
     private readonly List<Scope> _scopes = new();
@@ -726,8 +727,14 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
                 Emit(new BoundAssign(s.Syntax, Local(s.Syntax, storage), new BoundDefault(s.Syntax, storage.Type), null));
                 return new BoundConversion(s.Syntax, Local(s.Syntax, storage), s.Type, ConversionKind.ArrayToSpan);
             }
-            case BoundInterpolated:
-                throw new InvalidOperationException("interpolation outside an output call");
+            case BoundInterpolated i:
+            {
+                // Outside an output call the text goes into a temporary growable `StrBuf` (from `context.allocator`).
+                var buf = NewTemp(BuiltinType.StrBuf);
+                Emit(new BoundAssign(i.Syntax, Local(i.Syntax, buf), new BoundCall(i.Syntax, _builtins.StrBufGrow, null, [], BuiltinType.StrBuf), null));
+                if (IsNever(WriteParts(i, WriteSink.StrBuf, Local(i.Syntax, buf), i))) return new LNever(e.Syntax, e.Type);
+                return new BoundBuiltinCall(i.Syntax, BuiltinMember.StrBufAsString, Local(i.Syntax, buf), [], PrimitiveType.String);
+            }
             default:
                 throw new InvalidOperationException($"cannot lower {e.GetType().Name}");
         }

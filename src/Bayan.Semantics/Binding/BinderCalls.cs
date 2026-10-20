@@ -50,8 +50,7 @@ internal sealed partial class Binder
 
     private BoundExpr BindFunctionCall(CallExpr c, FunctionSymbol fn, BoundExpr? receiver)
     {
-        var interpolation = fn.Builtin is BuiltinFunction.Print or BuiltinFunction.Panic;
-        var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin, interpolation);
+        var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
         if (receiver is not null && fn.HasThis)
             _c.MutationChecks.Add(new MutationCheck(this, fn, receiver));
         if (fn.Fails && !ReferenceEquals(_handled, c))
@@ -63,7 +62,7 @@ internal sealed partial class Binder
         return new BoundCall(c, fn, receiver, args, fn.ReturnType);
     }
 
-    private BoundExpr[] BindArguments(CallExpr c, IReadOnlyList<ParameterSymbol> ps, FunctionSymbol? fn, bool enforceNames, bool interpolation, string? displayName = null)
+    private BoundExpr[] BindArguments(CallExpr c, IReadOnlyList<ParameterSymbol> ps, FunctionSymbol? fn, bool enforceNames, string? displayName = null)
     {
         var name = displayName ?? fn?.Name ?? "?";
         var result = new BoundExpr?[ps.Count];
@@ -82,7 +81,7 @@ internal sealed partial class Binder
                     var s = Suggest(n.Text, ps.Select(x => x.Name));
                     Report(DiagnosticCodes.UnknownParameter, n.Span, [name, n.Text],
                         help: s is null ? null : $"did you mean `{s}`?", fix: s is null ? null : new Fix(n.Span, s));
-                    BindArgumentValue(arg, null, interpolation);
+                    BindArgumentValue(arg, null);
                     mismatched = true;
                     continue;
                 }
@@ -92,14 +91,14 @@ internal sealed partial class Binder
                 if (sawNamed)
                 {
                     Report(DiagnosticCodes.PositionalAfterNamed, arg.Span, []);
-                    BindArgumentValue(arg, null, interpolation);
+                    BindArgumentValue(arg, null);
                     mismatched = true;
                     continue;
                 }
                 if (positional >= ps.Count)
                 {
                     Report(DiagnosticCodes.TooManyArguments, arg.Span, [name, ps.Count]);
-                    BindArgumentValue(arg, null, interpolation);
+                    BindArgumentValue(arg, null);
                     positional++;
                     continue;
                 }
@@ -113,7 +112,7 @@ internal sealed partial class Binder
                 Report(DiagnosticCodes.DuplicateArgument, arg.Span, [p.Name]);
                 continue;
             }
-            result[p.Ordinal] = BindArgument(arg, p, interpolation);
+            result[p.Ordinal] = BindArgument(arg, p);
         }
         var missing = new List<string>();
         for (var i = 0; i < ps.Count; i++)
@@ -141,7 +140,7 @@ internal sealed partial class Binder
         return null;
     }
 
-    private BoundExpr BindArgument(Argument arg, ParameterSymbol p, bool interpolation)
+    private BoundExpr BindArgument(Argument arg, ParameterSymbol p)
     {
         var wanted = p.Modifier switch { ParamModifier.Ref => ArgModifier.Ref, ParamModifier.Out => ArgModifier.Out, _ => ArgModifier.None };
         var given = arg.Modifier == ArgModifier.In ? ArgModifier.None : arg.Modifier;
@@ -164,22 +163,12 @@ internal sealed partial class Binder
             CheckWritable(place, arg.Value.Span, $"it is passed as `{(wanted == ArgModifier.Ref ? "ref" : "out")}`");
             return place;
         }
-        return BindArgumentValue(arg, p.Type, interpolation);
+        return BindArgumentValue(arg, p.Type);
     }
 
-    private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type, bool interpolation)
+    private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type)
     {
-        BoundExpr value;
-        if (interpolation && arg.Value is InterpolatedExpr)
-        {
-            _interpolationAllowed = true;
-            value = BindExpr(arg.Value, type);
-            _interpolationAllowed = false;
-        }
-        else
-        {
-            value = BindExpr(arg.Value, type);
-        }
+        var value = BindExpr(arg.Value, type);
         return type is null ? value : Convert(value, type, arg.Value.Span, argument: true);
     }
 
@@ -191,7 +180,7 @@ internal sealed partial class Binder
             {
                 var ctor = s.Constructors[0];
                 CheckAccess(ctor.Access, s, s.Module, new Name(c.Callee.Span, s.Name));
-                var args = BindArguments(c, ctor.Parameters, ctor, enforceNames: true, interpolation: false);
+                var args = BindArguments(c, ctor.Parameters, ctor, enforceNames: true);
                 return new BoundCall(c, ctor, null, args, s);
             }
             case StructSymbol s:
@@ -220,9 +209,11 @@ internal sealed partial class Binder
                 }
                 return new BoundCollection(c, l, []);
             case BuiltinType { Kind: BuiltinKind.Arena }:
-                return new BoundCall(c, _c.Builtins.ArenaNew, null, BindArguments(c, _c.Builtins.ArenaNew.Parameters, _c.Builtins.ArenaNew, false, false, "Arena"), type);
+                return new BoundCall(c, _c.Builtins.ArenaNew, null, BindArguments(c, _c.Builtins.ArenaNew.Parameters, _c.Builtins.ArenaNew, false, "Arena"), type);
+            case BuiltinType { Kind: BuiltinKind.StrBuf } when c.Args.Length == 0:
+                return new BoundCall(c, _c.Builtins.StrBufGrow, null, [], type);
             case BuiltinType { Kind: BuiltinKind.StrBuf }:
-                return new BoundCall(c, _c.Builtins.StrBufNew, null, BindArguments(c, _c.Builtins.StrBufNew.Parameters, _c.Builtins.StrBufNew, false, false, "StrBuf"), type);
+                return new BoundCall(c, _c.Builtins.StrBufNew, null, BindArguments(c, _c.Builtins.StrBufNew.Parameters, _c.Builtins.StrBufNew, false, "StrBuf"), type);
             case ErrorType:
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
@@ -238,7 +229,7 @@ internal sealed partial class Binder
     {
         var m = BuiltinMembers.Method(receiver.Type, name)!;
         var ps = m.Parameters.Select((p, i) => new ParameterSymbol(p.Name, null, p.Type, ParamModifier.None, i)).ToList();
-        var args = BindArguments(c, ps, null, enforceNames: false, interpolation: m.AcceptsInterpolation, displayName: name);
+        var args = BindArguments(c, ps, null, enforceNames: false, displayName: name);
         if (m.Mutating) CheckWritable(receiver, receiver.Syntax.Span, $"`{name}` modifies it");
         return new BoundBuiltinCall(c, m.Member, receiver, args, m.Returns);
     }
