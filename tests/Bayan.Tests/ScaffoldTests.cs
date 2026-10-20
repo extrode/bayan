@@ -96,6 +96,21 @@ public sealed class ScaffoldTests
     }
 
     [Fact]
+    public void ACamelScriptNameWritesAndChecksTheKebabFile()
+    {
+        var dir = Fresh("camel-script");
+        var target = Path.Combine(dir, "myTool");
+        var shown = Path.Combine(dir, "my-tool.byn");
+        var (exit, stdout, _) = Run("new", target, "--script");
+        Assert.Equal(CliApp.ExitOk, exit);
+        Assert.Equal($"created script `{shown}`; run it with `bayan {shown}`\n", stdout);
+        Assert.True(File.Exists(shown));
+        var (again, _, stderr) = Run("new", target, "--script");
+        Assert.Equal(CliApp.ExitUsage, again);
+        Assert.Equal($"bayan: `{shown}` already exists\n", stderr);
+    }
+
+    [Fact]
     public void InitAddsOnlyMissingFilesAndListsWhatItSkipped()
     {
         var dir = Path.Combine(Fresh("init"), "tally");

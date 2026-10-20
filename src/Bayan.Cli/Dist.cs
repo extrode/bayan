@@ -252,7 +252,7 @@ internal static class Dist
             Remove(Path.Combine(root, "out"), "out/", stdout);
             if (dist) Remove(Path.Combine(root, "dist"), "dist/", stdout);
         }
-        if (cache) Remove(Toolchain.CacheDirectory, Toolchain.CacheDirectory, stdout);
+        if (cache) Remove(Toolchain.CacheData, Toolchain.CacheData, stdout);
         return CliApp.ExitOk;
     }
 
