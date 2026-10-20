@@ -29,9 +29,13 @@ public static class CliApp
           lex <file>           print the token stream
           parse [--ast] <file> check syntax; with --ast print the syntax tree
           check <path>         report diagnostics for a program (a file or directory)
-          build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--emit-c]
+          build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--target <t>] [--emit-c]
           run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]
           test <path>          compile and run the tests, each in its own process [--mode debug|safe|fast]
+                               [--json: print the results as JSON instead]
+          dist [<dir>]         build release binaries into dist/<version>/ [--target <t>|all] [--mode m]
+                               [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]
+          clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]
           explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
           <script>.byn         run a script, so `#!/usr/bin/env bayan` works
           --version            print the compiler version
@@ -92,6 +96,10 @@ public static class CliApp
                 return Test(rest, stdout, stderr);
             case "new":
                 return Scaffold.New(rest, stdout, stderr);
+            case "dist":
+                return Dist.Run(rest, stdout, stderr);
+            case "clean":
+                return Dist.Clean(rest, stdout, stderr);
             case "init":
                 return Scaffold.Init(rest, stdout, stderr);
             case var file when file.EndsWith(".byn", StringComparison.Ordinal) && File.Exists(file):
@@ -128,13 +136,13 @@ public static class CliApp
         return tree.Diagnostics.Any(d => d.IsError) ? ExitFailure : ExitOk;
     }
 
-    private sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs);
+    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false);
 
-    private static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput)
+    private static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false)
     {
-        string? path = null, output = null;
+        string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
-        bool emitC = false, json = false;
+        bool emitC = false, json = false, testJson = false;
         var programArgs = Array.Empty<string>();
         for (var i = 0; i < args.Length; i++)
         {
@@ -167,6 +175,18 @@ public static class CliApp
                 case "--emit-c" when allowOutput:
                     emitC = true;
                     break;
+                case "--target" when allowOutput && i + 1 < args.Length:
+                    target = args[++i];
+                    if (target == "host") target = null;
+                    else if (!Targets.IsKnown(target))
+                    {
+                        stderr.WriteLine($"bayan: unknown target `{target}` (expected host, {string.Join(", ", Targets.All)})");
+                        return null;
+                    }
+                    break;
+                case "--json" when allowTestJson:
+                    testJson = true;
+                    break;
                 default:
                     if (path is not null || args[i].StartsWith('-'))
                     {
@@ -188,18 +208,18 @@ public static class CliApp
             stderr.WriteLine($"bayan: not found: {path}");
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, json, programArgs);
+        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson);
     }
 
     /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
-    private sealed record Compiled(Compilation Compilation, Manifest? Manifest, string? ProjectRoot);
+    internal sealed record Compiled(Compilation Compilation, Manifest? Manifest, string? ProjectRoot);
 
     /// <summary>
     /// Compiles a project directory (one with <c>package.byn</c>), a script (a file starting with
     /// <c>#!</c>, compiled alone) or a file or directory (the whole directory is the entry module).
     /// Prints diagnostics; null on errors.
     /// </summary>
-    private static Compiled? Compile(BuildOptions o, TextWriter stderr, bool includeTests = false)
+    internal static Compiled? Compile(BuildOptions o, TextWriter stderr, bool includeTests = false)
     {
         Compilation c;
         Manifest? manifest = null;
@@ -245,7 +265,7 @@ public static class CliApp
     }
 
     /// <summary>A library has nothing to build or run until FFI export exists.</summary>
-    private static bool RefuseLibrary(Compiled compiled, string command, TextWriter stderr)
+    internal static bool RefuseLibrary(Compiled compiled, string command, TextWriter stderr)
     {
         if (compiled.Manifest is not { Kind: PackageKind.Lib } m) return false;
         stderr.WriteLine($"bayan: `{m.Name}` is a library, so there is no program to {command}; `bayan test` runs its tests");
@@ -253,9 +273,9 @@ public static class CliApp
     }
 
     /// <summary>Builds, or reports why the toolchain could not.</summary>
-    private static string? BuildNative(string source, BuildMode mode, TextWriter stderr, string? output = null)
+    internal static string? BuildNative(string source, BuildMode mode, TextWriter stderr, string? output = null, string? target = null)
     {
-        var result = Toolchain.Build(source, mode, output);
+        var result = Toolchain.Build(source, mode, output, target);
         if (result.Succeeded) return result.ExecutablePath;
         stderr.WriteLine("bayan: " + result.Errors);
         return null;
@@ -263,6 +283,36 @@ public static class CliApp
 
     /// <summary>The C translation unit for an error-free compilation.</summary>
     public static string EmitC(Compilation c) => CEmitter.Emit(Lowerer.Lower(c));
+
+    public static string ModeName(BuildMode mode) => mode switch
+    {
+        BuildMode.Debug => "debug",
+        BuildMode.Safe => "safe",
+        _ => "fast",
+    };
+
+    /// <summary>
+    /// A project's <c>out/&lt;mode&gt;/&lt;target&gt;/</c>, with the emitted C written to its
+    /// <c>c/</c> for inspection; null outside a project.
+    /// </summary>
+    private static string? PrepareOut(Compiled compiled, BuildMode mode, string target, string source)
+    {
+        if (compiled.ProjectRoot is not { } root) return null;
+        var dir = Path.Combine(root, "out", ModeName(mode), target);
+        var c = Path.Combine(dir, "c");
+        Directory.CreateDirectory(c);
+        WriteIfChanged(Path.Combine(c, "main.c"), source);
+        WriteIfChanged(Path.Combine(c, "bayan-rt.h"), Toolchain.RuntimeHeader);
+        WriteIfChanged(Path.Combine(c, "bayan-rt.c"), Toolchain.RuntimeSource);
+        return dir;
+    }
+
+    private static void WriteIfChanged(string path, string text)
+    {
+        if (!File.Exists(path) || File.ReadAllText(path) != text) File.WriteAllText(path, text);
+    }
+
+    internal static string HostTarget => Targets.Host ?? "host";
 
     private static int Check(string[] args, TextWriter stdout, TextWriter stderr)
     {
@@ -281,17 +331,20 @@ public static class CliApp
             stdout.Write(source);
             return ExitOk;
         }
-        var output = o.Output ?? DefaultOutput(o.Path, compiled.Manifest);
-        return BuildNative(source, o.Mode, stderr, output) is null ? ExitToolchain : ExitOk;
+        var target = o.Target ?? HostTarget;
+        string output;
+        if (o.Output is not null) output = o.Output;
+        else if (PrepareOut(compiled, o.Mode, target, source) is { } dir) output = Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName, target));
+        else output = DefaultOutput(o.Path, target);
+        return BuildNative(source, o.Mode, stderr, output, o.Target) is null ? ExitToolchain : ExitOk;
     }
 
-    private static string DefaultOutput(string path, Manifest? manifest)
+    private static string DefaultOutput(string path, string target)
     {
-        if (manifest is not null) return manifest.ShortName + (OperatingSystem.IsWindows() ? ".exe" : "");
         var full = Path.GetFullPath(path);
         var name = Directory.Exists(full) ? Path.GetFileName(full.TrimEnd(Path.DirectorySeparatorChar)) : Path.GetFileNameWithoutExtension(full);
         if (name == "main" && !Directory.Exists(full)) name = Path.GetFileName(Path.GetDirectoryName(full)!);
-        return name + (OperatingSystem.IsWindows() ? ".exe" : "");
+        return Targets.ExecutableName(name, target);
     }
 
     private static int RunProgram(string[] args, TextWriter stderr)
@@ -299,7 +352,11 @@ public static class CliApp
         if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
         if (Compile(o, stderr) is not { } compiled) return ExitFailure;
         if (RefuseLibrary(compiled, "run", stderr)) return ExitUsage;
-        if (BuildNative(EmitC(compiled.Compilation), o.Mode, stderr) is not { } executable) return ExitToolchain;
+        var source = EmitC(compiled.Compilation);
+        var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
+            ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName, HostTarget))
+            : null;
+        if (BuildNative(source, o.Mode, stderr, output) is not { } executable) return ExitToolchain;
         var psi = new System.Diagnostics.ProcessStartInfo(executable) { UseShellExecute = false };
         foreach (var a in o.ProgramArgs) psi.ArgumentList.Add(a);
         using var process = System.Diagnostics.Process.Start(psi)!;
@@ -312,40 +369,61 @@ public static class CliApp
 
     private static int Test(string[] args, TextWriter stdout, TextWriter stderr)
     {
-        if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
+        if (ParseBuildOptions(args, stderr, allowOutput: false, allowTestJson: true) is not { } o) return ExitUsage;
         if (Compile(o, stderr, includeTests: true) is not { } compiled) return ExitFailure;
         var program = Lowerer.Lower(compiled.Compilation);
-        if (BuildNative(CEmitter.Emit(program), o.Mode, stderr) is not { } executable) return ExitToolchain;
+        var source = CEmitter.Emit(program);
+        var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
+            ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName + "-test", HostTarget))
+            : null;
+        if (BuildNative(source, o.Mode, stderr, output) is not { } executable) return ExitToolchain;
         var count = program.Tests.Count;
-        stdout.WriteLine($"running {count} test{(count == 1 ? "" : "s")}");
-        int passed = 0, failed = 0, panicked = 0;
+        var human = o.TestJson ? TextWriter.Null : stdout;
+        human.WriteLine($"running {count} test{(count == 1 ? "" : "s")}");
+        var results = new List<TestResult>();
         var total = System.Diagnostics.Stopwatch.StartNew();
         for (var i = 0; i < count; i++)
         {
+            var test = program.Tests[i].Test;
             var outcome = RunTest(executable, i);
-            var (status, tally) = outcome.ExitCode switch
+            var status = outcome.TimedOut ? TestStatus.Timeout : outcome.ExitCode switch
             {
-                0 => ("ok   ", 0),
-                1 => ("FAIL ", 1),
-                _ => ("PANIC", 2),
+                0 => TestStatus.Pass,
+                1 => TestStatus.Fail,
+                _ => TestStatus.Panic,
             };
-            if (outcome.TimedOut) (status, tally) = ("TIME ", 2);
-            if (tally == 0) passed++;
-            else if (tally == 1) failed++;
-            else panicked++;
-            stdout.WriteLine($"  {status}  {program.Tests[i].Test.Name}  ({FormatMs(outcome.Elapsed)})");
-            if (tally == 0) continue;
             var details = outcome.TimedOut ? $"timed out after {TestTimeout.TotalSeconds:0} s" : (outcome.Stdout + outcome.Stderr).TrimEnd();
-            foreach (var line in details.Split('\n'))
-                stdout.WriteLine("         " + line.TrimEnd('\r'));
+            var (file, line) = test.Location is { } at ? (at.Source.Path, at.Source.GetLinePosition(at.Span.Start).Line) : ("", 0);
+            results.Add(new TestResult(test.Name, file, line, status, outcome.Elapsed, status == TestStatus.Pass ? "" : details));
+            var label = status switch
+            {
+                TestStatus.Pass => "ok   ",
+                TestStatus.Fail => "FAIL ",
+                TestStatus.Panic => "PANIC",
+                _ => "TIME ",
+            };
+            human.WriteLine($"  {label}  {test.Name}  ({FormatMs(outcome.Elapsed)})");
+            if (status == TestStatus.Pass) continue;
+            foreach (var l in details.Split('\n'))
+                human.WriteLine("         " + l.TrimEnd('\r'));
         }
         total.Stop();
+        var report = new TestReport(compiled.Manifest?.Name, ModeName(o.Mode), HostTarget, results, total.Elapsed);
+        int passed = report.Count(TestStatus.Pass), failed = report.Count(TestStatus.Fail), panicked = count - passed - failed;
         var summary = $"{passed} passed";
         if (failed > 0) summary += $", {failed} failed";
         if (panicked > 0) summary += $", {panicked} panicked";
-        stdout.WriteLine();
-        stdout.WriteLine($"{count} test{(count == 1 ? "" : "s")}: {summary}  ({FormatMs(total.Elapsed)})");
-        return failed + panicked == 0 ? ExitOk : ExitTestFailure;
+        human.WriteLine();
+        human.WriteLine($"{count} test{(count == 1 ? "" : "s")}: {summary}  ({FormatMs(total.Elapsed)})");
+        var json = report.ToJson();
+        if (o.TestJson) stdout.Write(json);
+        if (compiled.ProjectRoot is { } root)
+        {
+            var testDir = Path.Combine(root, "out", "test");
+            Directory.CreateDirectory(testDir);
+            File.WriteAllText(Path.Combine(testDir, "results.json"), json);
+        }
+        return passed == count ? ExitOk : ExitTestFailure;
     }
 
     private sealed record TestOutcome(int ExitCode, bool TimedOut, string Stdout, string Stderr, TimeSpan Elapsed);
