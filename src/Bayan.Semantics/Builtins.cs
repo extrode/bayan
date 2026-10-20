@@ -17,6 +17,8 @@ public sealed class Builtins
         ArenaNew = Make("Arena", BuiltinFunction.ArenaNew, BuiltinType.Arena);
         StrBufNew = Make("StrBuf", BuiltinFunction.StrBufNew, BuiltinType.StrBuf, ("buffer", new SpanType(PrimitiveType.U8)));
         StrBufGrow = Make("StrBuf", BuiltinFunction.StrBufGrow, BuiltinType.StrBuf);
+        // The value's type varies: the binder types each call (see `BindOwned`).
+        OwnedNew = Make("Owned", BuiltinFunction.OwnedNew, ErrorType.Instance);
 
         // `IoError` is declared from source so its variants carry docs and locations like any other set.
         var source = SourceText.FromString("<builtin>", IoErrorSource);
@@ -98,6 +100,9 @@ public sealed class Builtins
     /// <summary><c>StrBuf()</c>: text output that grows from <c>context.allocator</c>.</summary>
     public FunctionSymbol StrBufGrow { get; }
 
+    /// <summary><c>Owned(T value)</c>: copies the value into <c>context.allocator</c>.</summary>
+    public FunctionSymbol OwnedNew { get; }
+
     public ModuleSymbol Module { get; }
 
     /// <summary><c>print(string)</c>: writes the text and a newline to standard output.</summary>
@@ -114,6 +119,7 @@ public sealed class Builtins
         "print" => Print,
         "panic" => Panic,
         "assert" => Assert,
+        "Owned" => OwnedNew,
         _ => null,
     };
 

@@ -327,7 +327,7 @@ internal sealed class RegionAnalysis
         var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun
             ? Borrow.None
             : args.Aggregate(receiver, (acc, a) => acc.Union(a));
-        // Allocated from `context.allocator`: a list, a growable `StrBuf`, or the text `Io.readText` and `Io.run` return (Q29).
+        // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText` and `Io.run` return (Q29).
         if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.StrBufGrow))
             result = result.Union(_contexts.Peek());
         return result;
@@ -513,7 +513,7 @@ internal sealed class RegionAnalysis
     private static bool MayBorrow(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.IsString,
-        SpanType or ListType or MapType => true,
+        SpanType or ListType or MapType or OwnedType => true,
         BuiltinType b => b.Kind is BuiltinKind.StrBuf or BuiltinKind.ProcessResult,
         OptionalType o => MayBorrow(o.Inner, seen),
         ResultType r => MayBorrow(r.Value, seen),
@@ -526,7 +526,7 @@ internal sealed class RegionAnalysis
 
     private static bool ContainsList(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
-        ListType or MapType => true,
+        ListType or MapType or OwnedType => true,
         OptionalType o => ContainsList(o.Inner, seen),
         ResultType r => ContainsList(r.Value, seen),
         ArrayType a => ContainsList(a.Element, seen),
