@@ -251,6 +251,7 @@ public enum BuiltinFunction
     IoWriteFile,
     IoListDir,
     IoRun,
+    IoRunBatch,
     IoMonotonicNanos,
     IoStdout,
     IoStderr,

@@ -188,7 +188,7 @@ public sealed class Compilation
         if (EntryModule.Main is { Kind: FunctionKind.Function } main) CheckMainSignature(main);
     }
 
-    /// <summary><c>IoError</c> is numbered first, so the runtime can return its codes 1 to 5 directly.</summary>
+    /// <summary><c>IoError</c> is numbered first, so the runtime can return its codes 1 to 7 directly.</summary>
     private void DeclareBuiltinVariants()
     {
         var set = Builtins.IoError;

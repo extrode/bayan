@@ -798,12 +798,61 @@ uint32_t byn_io_list_dir(byn_str path, byn_str** ptr, int64_t* len, byn_alloc* a
     return 0;
 }
 
-#ifdef _WIN32
 static void byn_bytes_add(byn_bytes* b, const void* p, int64_t n) {
     byn_bytes_reserve(b, n);
     memcpy(b->ptr + b->len, p, (size_t)n);
     b->len += n;
 }
+
+/* Whether `s` can be quoted for cmd.exe exactly: no NUL, CR or LF (they end the command), no `"`
+ * (it would close the quotes) and no `%` (expanded even inside quotes). */
+static bool byn_batch_safe(byn_str s) {
+    for (int64_t i = 0; i < s.len; i++) {
+        uint8_t c = s.ptr[i];
+        if (c == 0 || c == '\r' || c == '\n' || c == '"' || c == '%') return false;
+    }
+    return true;
+}
+
+bool byn_batch_cmdline(byn_str path, const byn_str* args, int64_t nargs, byn_str* out) {
+    if (path.len < 4 || !byn_batch_safe(path)) return false;
+    char ext[4];
+    for (int i = 0; i < 4; i++) {
+        uint8_t c = path.ptr[path.len - 4 + i];
+        ext[i] = (char)(c >= 'A' && c <= 'Z' ? c + 32 : c);
+    }
+    if (memcmp(ext, ".bat", 4) != 0 && memcmp(ext, ".cmd", 4) != 0) return false;
+    for (int64_t i = 0; i < nargs; i++)
+        if (!byn_batch_safe(args[i])) return false;
+    byn_bytes b = {NULL, 0, 0};
+    const char* head = "cmd.exe /d /e:ON /v:OFF /s /c \"\"";
+    byn_bytes_add(&b, head, (int64_t)strlen(head));
+    byn_bytes_add(&b, path.ptr, path.len);
+    byn_bytes_add(&b, "\"", 1);
+    for (int64_t i = 0; i < nargs; i++) {
+        byn_bytes_add(&b, " \"", 2);
+        byn_bytes_add(&b, args[i].ptr, args[i].len);
+        byn_bytes_add(&b, "\"", 1);
+    }
+    byn_bytes_add(&b, "\"", 1);
+    *out = (byn_str){b.ptr, b.len};
+    return true;
+}
+
+/* Checks both captured streams are UTF-8 and copies them into `alloc`; frees them either way. */
+static uint32_t byn_process_finish(byn_bytes* streams, int32_t code, byn_process* out, byn_alloc* alloc) {
+    uint32_t result = 0;
+    if (!byn_utf8_valid(streams[0].ptr, streams[0].len) || !byn_utf8_valid(streams[1].ptr, streams[1].len))
+        result = BYN_IO_INVALID_UTF8;
+    else if (out)
+        *out = (byn_process){code, byn_str_copy((byn_str){streams[0].ptr, streams[0].len}, alloc),
+                             byn_str_copy((byn_str){streams[1].ptr, streams[1].len}, alloc)};
+    free(streams[0].ptr);
+    free(streams[1].ptr);
+    return result;
+}
+
+#ifdef _WIN32
 
 /* Appends one argument quoted so that CommandLineToArgvW and the MSVC runtime read it back unchanged. */
 static void byn_quote_arg(byn_bytes* b, byn_str s) {
@@ -899,27 +948,9 @@ static DWORD WINAPI byn_drain_pipe(LPVOID arg) {
     }
     return 0;
 }
-#endif
 
-uint32_t byn_io_run(byn_str program, const byn_str* args, int64_t nargs, byn_process* out, byn_alloc* alloc) {
-    if (program.len == 0 || memchr(program.ptr, 0, (size_t)program.len)) return BYN_IO_NOT_FOUND;
-    for (int64_t i = 0; i < nargs; i++)
-        if (memchr(args[i].ptr, 0, (size_t)args[i].len)) return BYN_IO_OTHER;
-    byn_bytes streams[2] = {{NULL, 0, 0}, {NULL, 0, 0}};
-    int32_t code;
-#ifdef _WIN32
-    wchar_t* app = byn_find_program(program);
-    if (!app) return BYN_IO_NOT_FOUND;
-    /* CreateProcessW runs a batch file through cmd.exe, which re-parses the arguments (BatBadBut). */
-    if (byn_is_batch(app, wcslen(app))) {
-        free(app);
-        return BYN_IO_PERMISSION_DENIED;
-    }
-    byn_bytes line = {NULL, 0, 0};
-    byn_quote_arg(&line, program);
-    for (int64_t i = 0; i < nargs; i++) byn_quote_arg(&line, args[i]);
-    wchar_t* wline = byn_wide(line.ptr, line.len);
-    free(line.ptr);
+/* Runs `app` with the command line `wline` (both freed here), capturing both streams into `streams`. */
+static uint32_t byn_win_spawn(wchar_t* app, wchar_t* wline, byn_bytes* streams, int32_t* code) {
     SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
     HANDLE reads[2];
     HANDLE writes[2];
@@ -972,9 +1003,34 @@ uint32_t byn_io_run(byn_str program, const byn_str* args, int64_t nargs, byn_pro
     DWORD status = 0;
     GetExitCodeProcess(pi.hProcess, &status);
     CloseHandle(pi.hProcess);
-    code = (int32_t)status;
+    *code = (int32_t)status;
     streams[0] = drains[0].bytes;
     streams[1] = drains[1].bytes;
+    return 0;
+}
+#endif
+
+uint32_t byn_io_run(byn_str program, const byn_str* args, int64_t nargs, byn_process* out, byn_alloc* alloc) {
+    if (program.len == 0 || memchr(program.ptr, 0, (size_t)program.len)) return BYN_IO_NOT_FOUND;
+    for (int64_t i = 0; i < nargs; i++)
+        if (memchr(args[i].ptr, 0, (size_t)args[i].len)) return BYN_IO_OTHER;
+    byn_bytes streams[2] = {{NULL, 0, 0}, {NULL, 0, 0}};
+    int32_t code;
+#ifdef _WIN32
+    wchar_t* app = byn_find_program(program);
+    if (!app) return BYN_IO_NOT_FOUND;
+    /* CreateProcessW runs a batch file through cmd.exe, which re-parses the arguments (BatBadBut). */
+    if (byn_is_batch(app, wcslen(app))) {
+        free(app);
+        return BYN_IO_PERMISSION_DENIED;
+    }
+    byn_bytes line = {NULL, 0, 0};
+    byn_quote_arg(&line, program);
+    for (int64_t i = 0; i < nargs; i++) byn_quote_arg(&line, args[i]);
+    wchar_t* wline = byn_wide(line.ptr, line.len);
+    free(line.ptr);
+    uint32_t err = byn_win_spawn(app, wline, streams, &code);
+    if (err != 0) return err;
 #else
     char** argv = (char**)malloc(sizeof(char*) * (size_t)(nargs + 2));
     if (!argv) byn_panic("out of memory", NULL, 0);
@@ -1038,15 +1094,35 @@ uint32_t byn_io_run(byn_str program, const byn_str* args, int64_t nargs, byn_pro
     while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
     code = WIFSIGNALED(status) ? 128 + WTERMSIG(status) : WEXITSTATUS(status);
 #endif
-    uint32_t result = 0;
-    if (!byn_utf8_valid(streams[0].ptr, streams[0].len) || !byn_utf8_valid(streams[1].ptr, streams[1].len))
-        result = BYN_IO_INVALID_UTF8;
-    else if (out)
-        *out = (byn_process){code, byn_str_copy((byn_str){streams[0].ptr, streams[0].len}, alloc),
-                             byn_str_copy((byn_str){streams[1].ptr, streams[1].len}, alloc)};
-    free(streams[0].ptr);
-    free(streams[1].ptr);
-    return result;
+    return byn_process_finish(streams, code, out, alloc);
+}
+
+uint32_t byn_io_run_batch(byn_str path, const byn_str* args, int64_t nargs, byn_process* out, byn_alloc* alloc) {
+#ifdef _WIN32
+    byn_str line;
+    if (!byn_batch_cmdline(path, args, nargs, &line)) return BYN_IO_INVALID_INPUT;
+    /* cmd.exe from the system directory: neither PATH nor %ComSpec% can redirect it. */
+    wchar_t sys[MAX_PATH];
+    UINT sn = GetSystemDirectoryW(sys, MAX_PATH);
+    if (sn == 0 || sn >= MAX_PATH - 9) {
+        free((void*)line.ptr);
+        return byn_win_error(GetLastError());
+    }
+    wchar_t* app = (wchar_t*)malloc(sizeof(wchar_t) * (sn + 9));
+    if (!app) byn_panic("out of memory", NULL, 0);
+    memcpy(app, sys, sizeof(wchar_t) * sn);
+    wcscpy(app + sn, L"\\cmd.exe");
+    wchar_t* wline = byn_wide(line.ptr, line.len);
+    free((void*)line.ptr);
+    byn_bytes streams[2] = {{NULL, 0, 0}, {NULL, 0, 0}};
+    int32_t code;
+    uint32_t err = byn_win_spawn(app, wline, streams, &code);
+    if (err != 0) return err;
+    return byn_process_finish(streams, code, out, alloc);
+#else
+    (void)path, (void)args, (void)nargs, (void)out, (void)alloc;
+    return BYN_IO_UNSUPPORTED;
+#endif
 }
 
 void byn_io_write(int32_t fd, byn_str s) {

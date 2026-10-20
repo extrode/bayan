@@ -79,9 +79,25 @@ internal sealed partial class Binder
             var converted = new BoundConversion(value.Syntax, value, target, kind);
             return value.Constant is { } c && kind == ConversionKind.Widen ? converted with { Constant = WidenConstant(c, target) } : converted;
         }
+        if (_sinkArgument && ContainsUntrusted(value.Type))
+        {
+            Report(DiagnosticCodes.UntrustedSink, span, [value.Type.DisplayName, "Io.runBatch"],
+                help: "check the value, then clear the mark with `trust(x, reason: \"…\")`");
+            return new BoundErrorExpr(value.Syntax);
+        }
         ReportMismatch(value, target, span);
         return new BoundErrorExpr(value.Syntax);
     }
+
+    private static bool ContainsUntrusted(TypeSymbol t) => t switch
+    {
+        UntrustedType => true,
+        ListType l => ContainsUntrusted(l.Element),
+        SpanType s => ContainsUntrusted(s.Element),
+        Symbols.ArrayType a => ContainsUntrusted(a.Element),
+        OptionalType o => ContainsUntrusted(o.Inner),
+        _ => false,
+    };
 
     private static ConstantValue WidenConstant(ConstantValue c, TypeSymbol target) =>
         target.IsFloat && c.Value is Int128 n ? new ConstantValue((double)n) : c;
@@ -465,7 +481,7 @@ internal sealed partial class Binder
                 if (_c.Builtins.FindIo(name) is not { } member)
                 {
                     Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, io.Name],
-                        help: Suggest(name, ["readFile", "readText", "writeFile", "listDir", "run", "monotonicNanos", "stdout", "stderr", "stdin"]) is { } near ? $"did you mean `{near}`?" : null);
+                        help: Suggest(name, ["readFile", "readText", "writeFile", "listDir", "run", "runBatch", "monotonicNanos", "stdout", "stderr", "stdin"]) is { } near ? $"did you mean `{near}`?" : null);
                     return new BoundErrorExpr(m);
                 }
                 // `stdout`, `stderr` and `stdin` read like properties; the rest are called.

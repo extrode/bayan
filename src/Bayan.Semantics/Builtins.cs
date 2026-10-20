@@ -33,6 +33,8 @@ public sealed class Builtins
         IoListDir = MakeIo("listDir", BuiltinFunction.IoListDir, new ListType(PrimitiveType.String), ("path", PrimitiveType.String));
         IoRun = MakeIo("run", BuiltinFunction.IoRun, BuiltinType.ProcessResult,
             ("program", PrimitiveType.String), ("args", new SpanType(PrimitiveType.String, readOnly: true)));
+        IoRunBatch = MakeIo("runBatch", BuiltinFunction.IoRunBatch, BuiltinType.ProcessResult,
+            ("path", PrimitiveType.String), ("args", new SpanType(PrimitiveType.String, readOnly: true)));
         IoMonotonicNanos = Make("monotonicNanos", BuiltinFunction.IoMonotonicNanos, PrimitiveType.I64);
         IoStdout = Make("stdout", BuiltinFunction.IoStdout, BuiltinType.IoStream);
         IoStderr = Make("stderr", BuiltinFunction.IoStderr, BuiltinType.IoStream);
@@ -51,10 +53,14 @@ public sealed class Builtins
             notADirectory,
             /// An input or output operation failed.
             other,
+            /// An argument cannot be passed exactly, so nothing was done.
+            invalidInput,
+            /// The operation is not available on this platform.
+            unsupported,
         }
         """;
 
-    /// <summary><c>error enum IoError</c>: its variants are numbered first, so their codes are 1 to 5 (the runtime returns them).</summary>
+    /// <summary><c>error enum IoError</c>: its variants are numbered first, so their codes are 1 to 7 (the runtime returns them).</summary>
     public ErrorSetSymbol IoError { get; }
 
     /// <summary><c>List&lt;u8&gt; Io.readFile(string path) fails IoError</c>.</summary>
@@ -83,6 +89,9 @@ public sealed class Builtins
     /// <summary><c>Io.stdin</c>: a stream with <c>Result&lt;string, IoError&gt; readAll()</c>.</summary>
     public FunctionSymbol IoStdin { get; }
 
+    /// <summary><c>ProcessResult Io.runBatch(string path, ReadOnlySpan&lt;string&gt; args) fails IoError</c>: a <c>.bat</c>/<c>.cmd</c> file through <c>cmd.exe</c>.</summary>
+    public FunctionSymbol IoRunBatch { get; }
+
     /// <summary>A static member of <c>Io</c>, or null.</summary>
     public FunctionSymbol? FindIo(string name) => name switch
     {
@@ -91,6 +100,7 @@ public sealed class Builtins
         "writeFile" => IoWriteFile,
         "listDir" => IoListDir,
         "run" => IoRun,
+        "runBatch" => IoRunBatch,
         "monotonicNanos" => IoMonotonicNanos,
         "stdout" => IoStdout,
         "stderr" => IoStderr,

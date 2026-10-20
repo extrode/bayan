@@ -986,6 +986,13 @@ internal sealed class FunctionEmitter
                     "{\n    return byn_io_run(program, args.ptr, args.len, out, byn_context);\n}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, {result ?? "NULL"})";
             }
+            case BuiltinFunction.IoRunBatch:
+            {
+                var span = _c.CType(fn.Parameters[1].Type);
+                var name = _c.Helper("bynh_io_run_batch", $"static uint32_t bynh_io_run_batch(byn_str path, {span} args, byn_process* out)", () =>
+                    "{\n    return byn_io_run_batch(path, args.ptr, args.len, out, byn_context);\n}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, {result ?? "NULL"})";
+            }
             case BuiltinFunction.IoMonotonicNanos:
                 return "byn_io_monotonic_nanos()";
             case BuiltinFunction.IoStdout:
