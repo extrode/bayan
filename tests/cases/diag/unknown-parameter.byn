@@ -1,0 +1,2 @@
+i64 area(i64 width, i64 height) => width * height;
+print($"{area(widht: 3, height: 4)}");

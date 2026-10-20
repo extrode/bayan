@@ -1,0 +1,5 @@
+void log() {
+    return 1;
+}
+
+log();

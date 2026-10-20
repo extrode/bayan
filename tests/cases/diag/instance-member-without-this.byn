@@ -1,0 +1,5 @@
+struct Counter {
+    i64 count;
+
+    static i64 twice() => count * 2;
+}

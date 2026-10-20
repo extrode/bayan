@@ -1,0 +1,4 @@
+error BYN2302: `twice` takes 1 argument(s)
+
+  2 │ print($"{twice(1, 2)}");
+    │                   ^

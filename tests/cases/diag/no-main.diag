@@ -1,0 +1,4 @@
+error BYN2014: the program has no entry point
+
+  1 │ i64 twice(i64 x) => x * 2;
+    │ ^

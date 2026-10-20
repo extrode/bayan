@@ -1,0 +1,6 @@
+error BYN2017: `count` needs an instance
+
+  4 │     static i64 twice() => count * 2;
+    │                           ^^^^^
+    │
+  help: a `static` method has no `this`

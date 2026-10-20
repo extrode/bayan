@@ -1,0 +1,5 @@
+error BYN2015: top-level statements are allowed only in the entry module
+  --> money/money.byn:1:1
+
+  1 │ print("loaded");
+    │ ^^^^^^^^^^^^^^^

@@ -1,0 +1,11 @@
+struct Ratio {
+    i64 num;
+    i64 den;
+
+    public Ratio(i64 num, i64 den) {
+        this.num = num;
+        this.den = den;
+    }
+}
+
+let r = Ratio { num = 1, den = 0 };

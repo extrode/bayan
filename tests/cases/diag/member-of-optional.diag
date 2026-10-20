@@ -1,0 +1,6 @@
+error BYN2211: `x` is not a member of `Point?`; the value may be null
+
+  6 │ let x = p.x;
+    │           ^
+    │
+  help: check it first: `if (p is { } value) { … value.x … }`

@@ -1,0 +1,4 @@
+error BYN2402: this function returns `i64`; `return` needs a value
+
+  2 │     return;
+    │     ^^^^^^

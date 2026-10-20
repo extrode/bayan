@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Bayan.Syntax/Bayan.Syntax.csproj" />
+    <ProjectReference Include="../../src/Bayan.Semantics/Bayan.Semantics.csproj" />
     <ProjectReference Include="../../src/Bayan.Cli/Bayan.Cli.csproj" />
   </ItemGroup>
 </Project>

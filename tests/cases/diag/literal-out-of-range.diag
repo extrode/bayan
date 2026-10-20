@@ -1,0 +1,13 @@
+error BYN2203: 300 does not fit in `u8`
+
+  1 │ u8 b = 300;
+    │        ^^^
+    │
+  help: `u8` holds 0 to 255
+
+error BYN2203: -129 does not fit in `i8`
+
+  2 │ i8 c = -129;
+    │        ^^^^
+    │
+  help: `i8` holds -128 to 127

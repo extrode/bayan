@@ -1,0 +1,8 @@
+void f() {
+    return;
+    print("done");
+}
+
+f();
+panic("stop");
+print("after");

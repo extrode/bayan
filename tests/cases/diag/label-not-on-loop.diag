@@ -1,0 +1,4 @@
+error BYN2408: label `done` must be on a loop or `switch`
+
+  1 │ done: print("x");
+    │ ^^^^

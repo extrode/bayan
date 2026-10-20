@@ -1,0 +1,6 @@
+error BYN2220: `i64` cannot be called
+
+  2 │ let y = i64(x);
+    │         ^^^
+    │
+  help: convert with a cast: `(i64)x`

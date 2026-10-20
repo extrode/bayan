@@ -1,0 +1,13 @@
+error BYN2410: `switch` does not handle every `MoneyError`
+
+  7 │ let n = e switch {
+    │         ^ not covered: .tooPrecise
+    │
+  help: add the missing arms, or `_ => …` for the rest
+
+error BYN2410: `switch` does not handle every `bool`
+
+  11 │ let m = ok switch {
+     │         ^^ not covered: false
+     │
+  help: add the missing arms, or `_ => …` for the rest

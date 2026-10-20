@@ -1,0 +1,4 @@
+error BYN2228: `overflow` is not a variant of `MoneyError`
+
+  5 │ let e = MoneyError.overflow;
+    │                    ^^^^^^^^

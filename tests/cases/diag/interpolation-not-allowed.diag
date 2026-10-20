@@ -1,0 +1,6 @@
+error BYN2224: an interpolated string must be passed directly to an output
+
+  2 │ let msg = $"total {n}";
+    │           ^^^^^^^^^^^^
+    │
+  help: an interpolated string writes into an output; pass it to `print`, `panic`, `assert` or `StrBuf.append`

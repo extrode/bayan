@@ -1,0 +1,7 @@
+error BYN2008: type name `point` must be PascalCase
+
+  1 │ struct point {
+    │        ^^^^^
+    │
+  help: rename it `Point`
+    │ 1 │ struct Point {
