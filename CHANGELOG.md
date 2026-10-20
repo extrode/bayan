@@ -12,3 +12,4 @@
 - M6: memory run goldens, region analysis BYN3002-3005
 - M7: bayan test with per-test child processes
 - M8: tally-lite example; v0.1 exit criterion met
+- ReadOnlySpan<T>, BYN2310, shortest round-trip float formatting
