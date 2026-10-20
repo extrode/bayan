@@ -44,3 +44,9 @@ tick.
 - [x] **T7 — M6 memory basics** — done when: run/ cases for slicing and arenas; diag/ for borrow escape, mutation while borrowed
 - [x] **T8 — M7 tests** — done when: bayan test reports passing, failing and panicking tests correctly
 - [x] **T9 — M8 tally-lite** — done when: bayan run prints the sample transfers; bayan test examples/tally-lite passes
+- [x] **T10 — Q34 ReadOnlySpan and float formatting** — done when: ReadOnlySpan<T> conversions and BYN2310; float output per addendum 001 §1
+- [x] **T11 — M12a JSON diagnostics and exit codes** — done when: `--diagnostics json` goldens; exit codes 0-4 asserted in CLI tests
+- [x] **T12 — M9 bayan new and init** — done when: tests/cases/new goldens; fresh app runs and tests; init adds missing files only
+- [ ] **T13 — M10 out/ and dist/** — done when: layout goldens; dist immutability and latest selection
+- [ ] **T14 — M11 global cache and worktrees** — done when: second worktree compiles nothing; parallel builds never corrupt the cache; moving a project keeps cache hits
+- [ ] **T15 — M12b CLI completeness** — done when: test --json, color, doctor, test --changed, --version with commit
