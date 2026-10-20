@@ -33,3 +33,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `Scaffold.Git` trims stdout, so `test --changed` with `-z` loses leading whitespace of the first file name.
 - Test timeout detail prints "timed out after 0 s" for sub-second `BAYAN_TEST_TIMEOUT_MS`.
 - `test --changed` on macOS: git reports NFC paths, so a module directory with a non-ASCII name stored in NFD never matches and its tests are skipped. Review 1557d6fd639d..29c1d013a33e.
+- `catch { … }` with a block body does not parse; it is read as a struct literal (found in M15, spec 001).
+- `bayan run` on a single file compiles every `.byn` in that file's directory (found in M15, spec 001).

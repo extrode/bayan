@@ -14,12 +14,12 @@ Each milestone task ends with `dotnet test -v q` green, a docs page + `diag/` ca
 - [x] T6 `$"…"` as a `string` expression anywhere — files: `BinderExpressions.cs`, `Lowerer.cs` — covers: R3 — done when: BYN2224 lifted where an allocator exists; `run/` case; region diag case for escape.
 
 ## M15 Processes, directories, lex-diff
-- [ ] T7 `Io.listDir` + `Io.run` — files: `Builtins.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R13 — done when: `run/` cases spawn `bayan --version` (exit 0, stdout `bayan `), missing program → error handled, three-file dir lists 3.
-- [ ] T8 `tools/lex-diff/main.byn` + CLI test — files: `tools/lex-diff/main.byn`, `tests/Bayan.Tests/LexDiffTests.cs` — covers: R14 — done when: `bayan lex` vs goldens exits 0; tampered copy exits 1 naming file and line.
+- [x] T7 `Io.listDir` + `Io.run` — files: `Builtins.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R13 — done when: `run/` cases spawn `bayan --version` (exit 0, stdout `bayan `), missing program → error handled, three-file dir lists 3.
+- [x] T8 `tools/lex-diff/main.byn` + CLI test — files: `tools/lex-diff/main.byn`, `tests/Bayan.Tests/LexDiffTests.cs` — covers: R14 — done when: `bayan lex` vs goldens exits 0; tampered copy exits 1 naming file and line.
 
 ## M16–M17 Enums
-- [ ] T9 Plain enums + members + exhaustive switch — files: `Parser.cs`, `Nodes.cs`, `Symbols.cs`, binder, `CEmitter.cs` — covers: R5 — done when: `run/` goldens for `count/values/name/ordinal/fromOrdinal/parse`; missing-member `diag/`.
-- [ ] T10 Module-level `const T[N]` static data — files: binder, `CEmitter.cs` — covers: R9 (tables) — done when: `run/` reads a static array; non-literal const array is a diagnostic (Q51).
+- [x] T9 Plain enums + members + exhaustive switch — files: `Parser.cs`, `Nodes.cs`, `Symbols.cs`, binder, `CEmitter.cs` — covers: R5 — done when: `run/` goldens for `count/values/name/ordinal/fromOrdinal/parse`; missing-member `diag/`.
+- [x] T10 Module-level `const T[N]` static data — files: binder, `CEmitter.cs` — covers: R9 (tables) — done when: `run/` reads a static array; non-literal const array is a diagnostic (Q51).
 - [ ] T11 Enums with associated data — files: `Parser.cs`, `ConstantFolding.cs`, `CEmitter.cs` — covers: R5 — done when: `run/` Planet case; non-constant argument `diag/`.
 
 ## M18 Unions
