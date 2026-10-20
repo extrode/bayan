@@ -162,13 +162,6 @@ error BYN2762: a `Map` cannot be copied
 error BYN2762: a `Map` cannot be copied
 
   67 │     var v = s with { data = a };
-     │             ^^^^^^^^^^^^^^^^^^^ `Store` holds a `Map<i64, i64>` by value
-     │
-  help: pass it by `ref`, or build a new `Map` and copy the contents into it
-
-error BYN2762: a `Map` cannot be copied
-
-  67 │     var v = s with { data = a };
      │                             ^
      │
   help: pass it by `ref`, or build a new `Map` and copy the contents into it
@@ -186,3 +179,24 @@ error BYN2762: a `StrBuf` cannot be copied
      │                ^^
      │
   help: pass it by `ref`, or build a new `StrBuf` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  80 │     for (var m in maps) m.set(1, 1);
+     │                   ^^^^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `StrBuf` cannot be copied
+
+  82 │     for (var b in bufs) b.append("y");
+     │                   ^^^^
+     │
+  help: pass it by `ref`, or build a new `StrBuf` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  93 │     var kept = n with { name = "x" };
+     │                ^^^^^^^^^^^^^^^^^^^^^ `Named` holds a `Map<i64, i64>` by value
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it

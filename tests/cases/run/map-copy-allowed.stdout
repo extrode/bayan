@@ -7,3 +7,4 @@ list: {u: 6}
 {x: 2, x2: 2, counted: 1} {y: 2} {m: 12} Store { name: s, data: {w: 4, z2: 30, z: 1} } ({p: 9}, 1)
 {n: 11} {r: 5} {t: 7}
 full: 1
+n 0
