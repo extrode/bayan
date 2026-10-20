@@ -3,6 +3,7 @@ string describe(string path) => Io.readText(path) catch (e) switch {
     .notFound => "not found",
     .permissionDenied => "permission denied",
     .invalidUtf8 => "not UTF-8",
+    .notADirectory => "not a directory",
     .other => "other error",
 };
 

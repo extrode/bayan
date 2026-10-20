@@ -195,6 +195,7 @@ public sealed class CEmitter
         BuiltinType { Kind: BuiltinKind.Arena } => "byn_arena*",
         BuiltinType { Kind: BuiltinKind.StrBuf } => "byn_writer",
         BuiltinType { Kind: BuiltinKind.IoStream } => "int32_t",
+        BuiltinType { Kind: BuiltinKind.ProcessResult } => "byn_process",
         _ => Named(t),
     };
 
@@ -203,7 +204,7 @@ public sealed class CEmitter
     {
         PrimitiveType p => p.Kind == PrimitiveKind.String ? "str" : p.Name,
         ErrorSetSymbol or ErrorUnionType => "err",
-        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", _ => "iostream" },
+        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", _ => "iostream" },
         StructSymbol s => s.Module.CName + "__" + s.Name,
         OptionalType o => "opt_" + Key(o.Inner),
         ResultType r => "res_" + Key(r.Value),
@@ -740,6 +741,21 @@ internal sealed class FunctionEmitter
                     "{\n    return byn_io_write_file(path, bytes.ptr, bytes.len);\n}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])})";
             }
+            case BuiltinFunction.IoListDir:
+            {
+                var list = _c.CType(fn.ReturnType);
+                var name = _c.Helper("bynh_io_list_dir", $"static uint32_t bynh_io_list_dir(byn_str path, {list}* out)", () =>
+                    $"{{\n    byn_str* p = NULL;\n    int64_t n = 0;\n    uint32_t err = byn_io_list_dir(path, &p, &n, byn_context);\n" +
+                    $"    if (err == 0 && out) *out = ({list}){{p, n, n, byn_context}};\n    return err;\n}}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {result ?? "NULL"})";
+            }
+            case BuiltinFunction.IoRun:
+            {
+                var span = _c.CType(fn.Parameters[1].Type);
+                var name = _c.Helper("bynh_io_run", $"static uint32_t bynh_io_run(byn_str program, {span} args, byn_process* out)", () =>
+                    "{\n    return byn_io_run(program, args.ptr, args.len, out, byn_context);\n}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, {result ?? "NULL"})";
+            }
             case BuiltinFunction.IoMonotonicNanos:
                 return "byn_io_monotonic_nanos()";
             case BuiltinFunction.IoStdout:
@@ -829,6 +845,12 @@ internal sealed class FunctionEmitter
                 return $"byn_io_write({Expr(r)}, {arg})";
             case BuiltinMember.StrBufAsString:
                 return $"byn_strbuf_str({Expr(r)})";
+            case BuiltinMember.ProcessExitCode:
+                return $"{Expr(r)}.exit_code";
+            case BuiltinMember.ProcessStdout:
+                return $"{Expr(r)}.out";
+            case BuiltinMember.ProcessStderr:
+                return $"{Expr(r)}.err";
             case BuiltinMember.CharValue:
                 return $"((uint32_t){Expr(r)})";
             case BuiltinMember.ResultIsOk:

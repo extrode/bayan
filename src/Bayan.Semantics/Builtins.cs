@@ -26,6 +26,9 @@ public sealed class Builtins
         IoReadText = MakeIo("readText", BuiltinFunction.IoReadText, PrimitiveType.String, ("path", PrimitiveType.String));
         IoWriteFile = MakeIo("writeFile", BuiltinFunction.IoWriteFile, PrimitiveType.Void,
             ("path", PrimitiveType.String), ("bytes", new SpanType(PrimitiveType.U8, readOnly: true)));
+        IoListDir = MakeIo("listDir", BuiltinFunction.IoListDir, new ListType(PrimitiveType.String), ("path", PrimitiveType.String));
+        IoRun = MakeIo("run", BuiltinFunction.IoRun, BuiltinType.ProcessResult,
+            ("program", PrimitiveType.String), ("args", new SpanType(PrimitiveType.String, readOnly: true)));
         IoMonotonicNanos = Make("monotonicNanos", BuiltinFunction.IoMonotonicNanos, PrimitiveType.I64);
         IoStdout = Make("stdout", BuiltinFunction.IoStdout, BuiltinType.IoStream);
         IoStderr = Make("stderr", BuiltinFunction.IoStderr, BuiltinType.IoStream);
@@ -39,12 +42,14 @@ public sealed class Builtins
             permissionDenied,
             /// The file is not valid UTF-8.
             invalidUtf8,
+            /// The path exists but is not a directory.
+            notADirectory,
             /// An input or output operation failed.
             other,
         }
         """;
 
-    /// <summary><c>error enum IoError</c>: its variants are numbered first, so their codes are 1 to 4 (the runtime returns them).</summary>
+    /// <summary><c>error enum IoError</c>: its variants are numbered first, so their codes are 1 to 5 (the runtime returns them).</summary>
     public ErrorSetSymbol IoError { get; }
 
     /// <summary><c>List&lt;u8&gt; Io.readFile(string path) fails IoError</c>.</summary>
@@ -55,6 +60,12 @@ public sealed class Builtins
 
     /// <summary><c>void Io.writeFile(string path, ReadOnlySpan&lt;u8&gt; bytes) fails IoError</c>.</summary>
     public FunctionSymbol IoWriteFile { get; }
+
+    /// <summary><c>List&lt;string&gt; Io.listDir(string path) fails IoError</c>: entry names sorted by byte order.</summary>
+    public FunctionSymbol IoListDir { get; }
+
+    /// <summary><c>ProcessResult Io.run(string program, ReadOnlySpan&lt;string&gt; args) fails IoError</c>.</summary>
+    public FunctionSymbol IoRun { get; }
 
     /// <summary><c>i64 Io.monotonicNanos()</c>.</summary>
     public FunctionSymbol IoMonotonicNanos { get; }
@@ -70,6 +81,8 @@ public sealed class Builtins
         "readFile" => IoReadFile,
         "readText" => IoReadText,
         "writeFile" => IoWriteFile,
+        "listDir" => IoListDir,
+        "run" => IoRun,
         "monotonicNanos" => IoMonotonicNanos,
         "stdout" => IoStdout,
         "stderr" => IoStderr,

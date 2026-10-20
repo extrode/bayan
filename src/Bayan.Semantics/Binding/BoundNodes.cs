@@ -56,6 +56,7 @@ public enum BuiltinMember
     CharValue,
     ResultIsOk, ResultValue, ResultError,
     IoWrite,
+    ProcessExitCode, ProcessStdout, ProcessStderr,
 }
 
 public sealed record BoundBuiltinCall(Node Syntax, BuiltinMember Member, BoundExpr Receiver, BoundExpr[] Arguments, TypeSymbol Type)

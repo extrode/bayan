@@ -10,7 +10,14 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <dirent.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <spawn.h>
+#include <sys/wait.h>
 #include <time.h>
+#include <unistd.h>
+extern char** environ;
 #endif
 
 /* ── Panics ──────────────────────────────────────────────────────────────── */
@@ -414,6 +421,7 @@ static uint32_t byn_io_error(int e) {
     case ENOENT: return BYN_IO_NOT_FOUND;
     case EACCES:
     case EPERM: return BYN_IO_PERMISSION_DENIED;
+    case ENOTDIR: return BYN_IO_NOT_A_DIRECTORY;
     default: return BYN_IO_OTHER;
     }
 }
@@ -489,6 +497,379 @@ uint32_t byn_io_write_file(byn_str path, const uint8_t* ptr, int64_t len) {
     int closed = fclose(f);
     if ((int64_t)put != len || closed != 0) return byn_io_error(e);
     return 0;
+}
+
+/* Growable bytes from malloc: process output is drained before `alloc` sees it. */
+typedef struct byn_bytes {
+    uint8_t* ptr;
+    int64_t len;
+    int64_t cap;
+} byn_bytes;
+
+static void byn_bytes_reserve(byn_bytes* b, int64_t more) {
+    if (b->len + more <= b->cap) return;
+    int64_t grown = b->cap < 4096 ? 4096 : b->cap * 2;
+    while (grown < b->len + more) grown *= 2;
+    uint8_t* p = (uint8_t*)realloc(b->ptr, (size_t)grown);
+    if (!p) byn_panic("out of memory", NULL, 0);
+    b->ptr = p;
+    b->cap = grown;
+}
+
+static int byn_str_order(const void* a, const void* b) {
+    const byn_str* x = (const byn_str*)a;
+    const byn_str* y = (const byn_str*)b;
+    int64_t n = x->len < y->len ? x->len : y->len;
+    int c = n > 0 ? memcmp(x->ptr, y->ptr, (size_t)n) : 0;
+    if (c != 0) return c;
+    return x->len < y->len ? -1 : x->len > y->len;
+}
+
+/* Copies an entry name into `alloc` and appends it to the list; false if it is not UTF-8. */
+static bool byn_list_dir_add(byn_str** ptr, int64_t* len, int64_t* cap, const char* name, int64_t n, byn_alloc* alloc) {
+    if (!byn_utf8_valid((const uint8_t*)name, n)) return false;
+    byn_list_reserve((void**)ptr, cap, *len + 1, (int64_t)sizeof(byn_str), alloc);
+    (*ptr)[(*len)++] = byn_str_copy((byn_str){(const uint8_t*)name, n}, alloc);
+    return true;
+}
+
+#ifdef _WIN32
+/* A UTF-8 string as a NUL-terminated wide string from malloc. */
+static wchar_t* byn_wide(const uint8_t* p, int64_t n) {
+    int wn = n > 0 ? MultiByteToWideChar(CP_UTF8, 0, (const char*)p, (int)n, NULL, 0) : 0;
+    wchar_t* w = (wchar_t*)malloc(sizeof(wchar_t) * (size_t)(wn + 1));
+    if (!w) byn_panic("out of memory", NULL, 0);
+    if (wn > 0) MultiByteToWideChar(CP_UTF8, 0, (const char*)p, (int)n, w, wn);
+    w[wn] = 0;
+    return w;
+}
+
+static uint32_t byn_win_error(DWORD e) {
+    switch (e) {
+    case ERROR_FILE_NOT_FOUND:
+    case ERROR_PATH_NOT_FOUND:
+    case ERROR_INVALID_NAME:
+    case ERROR_BAD_PATHNAME: return BYN_IO_NOT_FOUND;
+    case ERROR_ACCESS_DENIED: return BYN_IO_PERMISSION_DENIED;
+    case ERROR_DIRECTORY: return BYN_IO_NOT_A_DIRECTORY;
+    default: return BYN_IO_OTHER;
+    }
+}
+#else
+/* A path as a NUL-terminated string from malloc, or NULL if it holds a NUL byte. */
+static char* byn_cstr(byn_str s) {
+    if (memchr(s.ptr, 0, (size_t)s.len)) return NULL;
+    char* c = (char*)malloc((size_t)s.len + 1);
+    if (!c) byn_panic("out of memory", NULL, 0);
+    memcpy(c, s.ptr, (size_t)s.len);
+    c[s.len] = 0;
+    return c;
+}
+#endif
+
+uint32_t byn_io_list_dir(byn_str path, byn_str** ptr, int64_t* len, byn_alloc* alloc) {
+    byn_str* names = NULL;
+    int64_t n = 0;
+    int64_t cap = 0;
+    if (memchr(path.ptr, 0, (size_t)path.len)) return BYN_IO_NOT_FOUND;
+#ifdef _WIN32
+    wchar_t* wpath = byn_wide(path.ptr, path.len);
+    DWORD attrs = GetFileAttributesW(wpath);
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        free(wpath);
+        return byn_win_error(GetLastError());
+    }
+    if (!(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        free(wpath);
+        return BYN_IO_NOT_A_DIRECTORY;
+    }
+    size_t wn = wcslen(wpath);
+    wchar_t* pattern = (wchar_t*)malloc(sizeof(wchar_t) * (wn + 3));
+    if (!pattern) byn_panic("out of memory", NULL, 0);
+    memcpy(pattern, wpath, sizeof(wchar_t) * wn);
+    if (wn > 0 && wpath[wn - 1] != L'\\' && wpath[wn - 1] != L'/') pattern[wn++] = L'\\';
+    pattern[wn++] = L'*';
+    pattern[wn] = 0;
+    free(wpath);
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(pattern, &fd);
+    free(pattern);
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD e = GetLastError();
+        if (e != ERROR_FILE_NOT_FOUND) return byn_win_error(e);
+    } else {
+        uint32_t err = 0;
+        do {
+            const wchar_t* w = fd.cFileName;
+            if (wcscmp(w, L".") == 0 || wcscmp(w, L"..") == 0) continue;
+            char name[MAX_PATH * 4];
+            int un = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, w, -1, name, (int)sizeof name, NULL, NULL);
+            if (un <= 0 || !byn_list_dir_add(&names, &n, &cap, name, un - 1, alloc)) {
+                err = BYN_IO_INVALID_UTF8;
+                break;
+            }
+        } while (FindNextFileW(h, &fd));
+        DWORD e = GetLastError();
+        FindClose(h);
+        if (err != 0) return err;
+        if (e != ERROR_NO_MORE_FILES) return byn_win_error(e);
+    }
+#else
+    char* cpath = byn_cstr(path);
+    DIR* d = opendir(cpath);
+    int e = errno;
+    free(cpath);
+    if (!d) return byn_io_error(e);
+    for (;;) {
+        errno = 0;
+        struct dirent* ent = readdir(d);
+        if (!ent) {
+            e = errno;
+            break;
+        }
+        const char* name = ent->d_name;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
+        if (!byn_list_dir_add(&names, &n, &cap, name, (int64_t)strlen(name), alloc)) {
+            closedir(d);
+            return BYN_IO_INVALID_UTF8;
+        }
+    }
+    closedir(d);
+    if (e != 0) return byn_io_error(e);
+#endif
+    if (n > 1) qsort(names, (size_t)n, sizeof(byn_str), byn_str_order);
+    *ptr = names;
+    *len = n;
+    return 0;
+}
+
+#ifdef _WIN32
+static void byn_bytes_add(byn_bytes* b, const void* p, int64_t n) {
+    byn_bytes_reserve(b, n);
+    memcpy(b->ptr + b->len, p, (size_t)n);
+    b->len += n;
+}
+
+/* Appends one argument quoted so that CommandLineToArgvW and the MSVC runtime read it back unchanged. */
+static void byn_quote_arg(byn_bytes* b, byn_str s) {
+    if (b->len > 0) byn_bytes_add(b, " ", 1);
+    bool plain = s.len > 0;
+    for (int64_t i = 0; i < s.len && plain; i++)
+        if (s.ptr[i] == ' ' || s.ptr[i] == '\t' || s.ptr[i] == '\n' || s.ptr[i] == '\v' || s.ptr[i] == '"') plain = false;
+    if (plain) {
+        byn_bytes_add(b, s.ptr, s.len);
+        return;
+    }
+    byn_bytes_add(b, "\"", 1);
+    for (int64_t i = 0;; i++) {
+        int64_t slashes = 0;
+        while (i < s.len && s.ptr[i] == '\\') i++, slashes++;
+        if (i == s.len) {
+            for (int64_t k = 0; k < slashes * 2; k++) byn_bytes_add(b, "\\", 1);
+            break;
+        }
+        int64_t count = s.ptr[i] == '"' ? slashes * 2 + 1 : slashes;
+        for (int64_t k = 0; k < count; k++) byn_bytes_add(b, "\\", 1);
+        byn_bytes_add(b, &s.ptr[i], 1);
+    }
+    byn_bytes_add(b, "\"", 1);
+}
+
+/* `program` itself if it names a path, else the first PATH entry with a PATHEXT extension that is a file. */
+static wchar_t* byn_find_program(byn_str program) {
+    wchar_t* name = byn_wide(program.ptr, program.len);
+    if (memchr(program.ptr, '/', (size_t)program.len) || memchr(program.ptr, '\\', (size_t)program.len)) return name;
+    wchar_t path[32767];
+    wchar_t exts[1024];
+    DWORD pn = GetEnvironmentVariableW(L"PATH", path, 32767);
+    if (pn == 0 || pn >= 32767) path[0] = 0;
+    DWORD en = GetEnvironmentVariableW(L"PATHEXT", exts, 1024);
+    if (en == 0 || en >= 1024) wcscpy(exts, L".COM;.EXE;.BAT;.CMD");
+    size_t nn = wcslen(name);
+    wchar_t* found = NULL;
+    for (wchar_t* dir = path; *dir && !found;) {
+        wchar_t* dend = wcschr(dir, L';');
+        size_t dn = dend ? (size_t)(dend - dir) : wcslen(dir);
+        for (wchar_t* ext = exts; *ext && dn > 0 && !found;) {
+            wchar_t* eend = wcschr(ext, L';');
+            size_t xn = eend ? (size_t)(eend - ext) : wcslen(ext);
+            wchar_t* c = (wchar_t*)malloc(sizeof(wchar_t) * (dn + nn + xn + 2));
+            if (!c) byn_panic("out of memory", NULL, 0);
+            memcpy(c, dir, sizeof(wchar_t) * dn);
+            size_t at = dn;
+            if (c[at - 1] != L'\\' && c[at - 1] != L'/') c[at++] = L'\\';
+            memcpy(c + at, name, sizeof(wchar_t) * nn);
+            memcpy(c + at + nn, ext, sizeof(wchar_t) * xn);
+            c[at + nn + xn] = 0;
+            DWORD attrs = GetFileAttributesW(c);
+            if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) found = c;
+            else free(c);
+            ext = eend ? eend + 1 : ext + xn;
+        }
+        dir = dend ? dend + 1 : dir + dn;
+    }
+    free(name);
+    return found;
+}
+
+typedef struct byn_drain {
+    HANDLE h;
+    byn_bytes bytes;
+} byn_drain;
+
+static DWORD WINAPI byn_drain_pipe(LPVOID arg) {
+    byn_drain* d = (byn_drain*)arg;
+    for (;;) {
+        byn_bytes_reserve(&d->bytes, 4096);
+        DWORD got = 0;
+        if (!ReadFile(d->h, d->bytes.ptr + d->bytes.len, 4096, &got, NULL) || got == 0) break;
+        d->bytes.len += got;
+    }
+    return 0;
+}
+#endif
+
+uint32_t byn_io_run(byn_str program, const byn_str* args, int64_t nargs, byn_process* out, byn_alloc* alloc) {
+    if (program.len == 0 || memchr(program.ptr, 0, (size_t)program.len)) return BYN_IO_NOT_FOUND;
+    for (int64_t i = 0; i < nargs; i++)
+        if (memchr(args[i].ptr, 0, (size_t)args[i].len)) return BYN_IO_OTHER;
+    byn_bytes streams[2] = {{NULL, 0, 0}, {NULL, 0, 0}};
+    int32_t code;
+#ifdef _WIN32
+    wchar_t* app = byn_find_program(program);
+    if (!app) return BYN_IO_NOT_FOUND;
+    byn_bytes line = {NULL, 0, 0};
+    byn_quote_arg(&line, program);
+    for (int64_t i = 0; i < nargs; i++) byn_quote_arg(&line, args[i]);
+    wchar_t* wline = byn_wide(line.ptr, line.len);
+    free(line.ptr);
+    SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
+    HANDLE reads[2];
+    HANDLE writes[2];
+    if (!CreatePipe(&reads[0], &writes[0], &sa, 0)) {
+        free(app);
+        free(wline);
+        return byn_win_error(GetLastError());
+    }
+    if (!CreatePipe(&reads[1], &writes[1], &sa, 0)) {
+        DWORD e = GetLastError();
+        CloseHandle(reads[0]);
+        CloseHandle(writes[0]);
+        free(app);
+        free(wline);
+        return byn_win_error(e);
+    }
+    SetHandleInformation(reads[0], HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(reads[1], HANDLE_FLAG_INHERIT, 0);
+    STARTUPINFOW si;
+    memset(&si, 0, sizeof si);
+    si.cb = sizeof si;
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = writes[0];
+    si.hStdError = writes[1];
+    PROCESS_INFORMATION pi;
+    BOOL started = CreateProcessW(app, wline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+    DWORD e = GetLastError();
+    free(app);
+    free(wline);
+    CloseHandle(writes[0]);
+    CloseHandle(writes[1]);
+    if (!started) {
+        CloseHandle(reads[0]);
+        CloseHandle(reads[1]);
+        return byn_win_error(e);
+    }
+    CloseHandle(pi.hThread);
+    byn_drain drains[2] = {{reads[0], {NULL, 0, 0}}, {reads[1], {NULL, 0, 0}}};
+    HANDLE t = CreateThread(NULL, 0, byn_drain_pipe, &drains[1], 0, NULL);
+    if (!t) byn_drain_pipe(&drains[1]);
+    byn_drain_pipe(&drains[0]);
+    if (t) {
+        WaitForSingleObject(t, INFINITE);
+        CloseHandle(t);
+    }
+    CloseHandle(reads[0]);
+    CloseHandle(reads[1]);
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD status = 0;
+    GetExitCodeProcess(pi.hProcess, &status);
+    CloseHandle(pi.hProcess);
+    code = (int32_t)status;
+    streams[0] = drains[0].bytes;
+    streams[1] = drains[1].bytes;
+#else
+    char** argv = (char**)malloc(sizeof(char*) * (size_t)(nargs + 2));
+    if (!argv) byn_panic("out of memory", NULL, 0);
+    argv[0] = byn_cstr(program);
+    for (int64_t i = 0; i < nargs; i++) argv[i + 1] = byn_cstr(args[i]);
+    argv[nargs + 1] = NULL;
+    int pipes[2][2];
+    uint32_t err = 0;
+    if (pipe(pipes[0]) != 0) err = byn_io_error(errno);
+    else if (pipe(pipes[1]) != 0) {
+        err = byn_io_error(errno);
+        close(pipes[0][0]);
+        close(pipes[0][1]);
+    }
+    pid_t pid = 0;
+    if (err == 0) {
+        for (int i = 0; i < 2; i++) {
+            fcntl(pipes[i][0], F_SETFD, FD_CLOEXEC);
+            fcntl(pipes[i][1], F_SETFD, FD_CLOEXEC);
+        }
+        posix_spawn_file_actions_t actions;
+        posix_spawn_file_actions_init(&actions);
+        posix_spawn_file_actions_adddup2(&actions, pipes[0][1], 1);
+        posix_spawn_file_actions_adddup2(&actions, pipes[1][1], 2);
+        int rc = posix_spawnp(&pid, argv[0], &actions, NULL, argv, environ);
+        posix_spawn_file_actions_destroy(&actions);
+        close(pipes[0][1]);
+        close(pipes[1][1]);
+        if (rc != 0) {
+            err = byn_io_error(rc);
+            close(pipes[0][0]);
+            close(pipes[1][0]);
+        }
+    }
+    for (int64_t i = 0; i <= nargs; i++) free(argv[i]);
+    free(argv);
+    if (err != 0) return err;
+    /* Drain both pipes together, so a child that fills one while we block on the other cannot deadlock. */
+    struct pollfd fds[2] = {{pipes[0][0], POLLIN, 0}, {pipes[1][0], POLLIN, 0}};
+    int open = 2;
+    while (open > 0) {
+        if (poll(fds, 2, -1) < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        for (int i = 0; i < 2; i++) {
+            if (fds[i].fd < 0 || !(fds[i].revents & (POLLIN | POLLHUP | POLLERR))) continue;
+            byn_bytes_reserve(&streams[i], 4096);
+            ssize_t got = read(fds[i].fd, streams[i].ptr + streams[i].len, 4096);
+            if (got > 0) streams[i].len += got;
+            else if (got == 0 || errno != EINTR) {
+                close(fds[i].fd);
+                fds[i].fd = -1;
+                open--;
+            }
+        }
+    }
+    for (int i = 0; i < 2; i++)
+        if (fds[i].fd >= 0) close(fds[i].fd);
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    code = WIFSIGNALED(status) ? 128 + WTERMSIG(status) : WEXITSTATUS(status);
+#endif
+    uint32_t result = 0;
+    if (!byn_utf8_valid(streams[0].ptr, streams[0].len) || !byn_utf8_valid(streams[1].ptr, streams[1].len))
+        result = BYN_IO_INVALID_UTF8;
+    else if (out)
+        *out = (byn_process){code, byn_str_copy((byn_str){streams[0].ptr, streams[0].len}, alloc),
+                             byn_str_copy((byn_str){streams[1].ptr, streams[1].len}, alloc)};
+    free(streams[0].ptr);
+    free(streams[1].ptr);
+    return result;
 }
 
 void byn_io_write(int32_t fd, byn_str s) {

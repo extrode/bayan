@@ -255,6 +255,8 @@ public enum BuiltinKind
     Io,
     /// <summary><c>Io.stdout</c> or <c>Io.stderr</c>; the value is the file descriptor.</summary>
     IoStream,
+    /// <summary>What <c>Io.run</c> returns: <c>exitCode</c>, <c>stdout</c>, <c>stderr</c>.</summary>
+    ProcessResult,
 }
 
 public sealed class BuiltinType : TypeSymbol
@@ -277,6 +279,7 @@ public sealed class BuiltinType : TypeSymbol
     public static readonly BuiltinType StrBuf = new(BuiltinKind.StrBuf, "StrBuf");
     public static readonly BuiltinType Io = new(BuiltinKind.Io, "Io");
     public static readonly BuiltinType IoStream = new(BuiltinKind.IoStream, "IoStream");
+    public static readonly BuiltinType ProcessResult = new(BuiltinKind.ProcessResult, "ProcessResult");
 }
 
 /// <summary>The type of a caught error when the call can fail with more than one set.</summary>

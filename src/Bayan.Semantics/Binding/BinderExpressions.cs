@@ -324,7 +324,7 @@ internal sealed partial class Binder
         if (_file.Imports.TryGetValue(name, out var module)) return new BoundModuleRef(n, module);
         if (_c.Builtins.Find(name) is { } builtin) return new BoundMethodGroup(n, null, builtin);
         if (PrimitiveType.ByName.TryGetValue(name, out var primitive)) return new BoundTypeRef(n, primitive);
-        if (name is "List" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError")
+        if (name is "List" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "ProcessResult")
             return new BoundTypeRef(n, _types.Resolve(new NamedType(n.Span, [n.Name], [])));
         if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
         ReportUndefined(n.Name);
@@ -446,7 +446,7 @@ internal sealed partial class Binder
                 if (_c.Builtins.FindIo(name) is not { } member)
                 {
                     Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, io.Name],
-                        help: Suggest(name, ["readFile", "readText", "writeFile", "monotonicNanos", "stdout", "stderr"]) is { } near ? $"did you mean `{near}`?" : null);
+                        help: Suggest(name, ["readFile", "readText", "writeFile", "listDir", "run", "monotonicNanos", "stdout", "stderr"]) is { } near ? $"did you mean `{near}`?" : null);
                     return new BoundErrorExpr(m);
                 }
                 // `stdout` and `stderr` read like properties; the rest are called.
