@@ -35,7 +35,7 @@ Each milestone task ends with `dotnet test -v q` green, a docs page + `diag/` ca
 - [ ] T17 `Owned<T>` and recursive types — files: `Types.cs`, binder, `RegionAnalysis.cs`, `CEmitter.cs` — covers: R8 — done when: expression-tree `run/`; node escaping arena `diag/`; direct recursion `diag/`.
 
 ## M22 Bayan lexer
-- [ ] T18 `tools/Bayan.UnicodeGen` + `selfhost/lexer/unicode-tables.byn` — covers: R9 — done when: generator asserts pass and the table file is checked in.
+- [x] T18 `tools/Bayan.UnicodeGen` + `selfhost/lexer/unicode-tables.byn` — covers: R9 — done when: generator asserts pass and the table file is checked in.
 - [ ] T19 Port lexer to `selfhost/lexer/*.byn` — covers: R9 — done when: builds with the bootstrap compiler; `lex-diff --golden .tokens tests/cases/lex` exits 0.
 - [ ] T20 `SelfhostLexerTests` differential harness — files: `tests/Bayan.Tests/SelfhostLexerTests.cs` — covers: R11 — done when: a theory over every `lex/` golden passes; disagreement names file + first line.
 
