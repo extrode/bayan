@@ -1,0 +1,9 @@
+List<Untrusted<string>> names = [];
+names.add(Untrusted("ada"));
+names.add(Untrusted("grace"));
+for (let n in names) {
+    string s = trust(n, reason: "demo input");
+    print(s);
+}
+Untrusted<i64> a = Untrusted(3);
+print($"{a == Untrusted(3)}");

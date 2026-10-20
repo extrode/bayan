@@ -234,6 +234,16 @@ public sealed class OwnedType(TypeSymbol inner) : ConstructedType
     public override string DisplayName => $"Owned<{Inner.DisplayName}>";
 }
 
+/// <summary><c>Untrusted&lt;T&gt;</c>: a <c>T</c> from outside the program; no implicit conversion either way, and the same C type as <c>T</c>.</summary>
+public sealed class UntrustedType(TypeSymbol inner) : ConstructedType
+{
+    public TypeSymbol Inner { get; } = inner;
+
+    protected override object Key => Inner;
+
+    public override string DisplayName => $"Untrusted<{Inner.DisplayName}>";
+}
+
 /// <summary><c>T[N]</c>: a fixed-size inline array.</summary>
 public sealed class ArrayType(TypeSymbol element, long length) : ConstructedType
 {

@@ -1,0 +1,6 @@
+Untrusted<string> u = Untrusted("x");
+string reason = "because";
+print(trust(u, reason: ""));
+print(trust(u, reason: reason));
+print(trust(u, reason: $"{reason}"));
+print(trust(u));
