@@ -11,13 +11,14 @@ wish list; the value is in recording the ones nobody has got to yet.
 
 Small, clear, and could be picked up without a design decision.
 
-- (nothing yet)
+- CI: install zig (or set `BAYAN_CC`) on all three runners so `run/` goldens execute there.
 
 ## Later
 
 Real, but needs a decision, a dependency, or more information first. Say which.
 
-- (nothing yet)
+- `(T)-x` parses as subtraction (handoff Q24); needs a language decision on cast-vs-binary for keyword types.
+- `i64.max` / `i64.min` style integer limits (Q25); needs a spec decision on syntax.
 
 ## Dropped
 
