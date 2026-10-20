@@ -37,7 +37,8 @@ BYN_NORETURN void byn_unreachable(const char* file, int line);
 
 /* ── Ownership checker (debug builds) ────────────────────────────────────── */
 
-/* Debug programs define BYN_DEBUG before including this header; safe and fast ones never see these. */
+/* Debug programs define BYN_DEBUG before including this header; safe and fast ones never see these. bayan-rt.c
+ * compiles the checker unless built with -DBYN_NDEBUG (the toolchain passes it for safe and fast builds). */
 
 #ifdef BYN_DEBUG
 /* Where a local was moved out; line 0 while it holds a value. */
