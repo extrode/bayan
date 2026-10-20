@@ -2,9 +2,10 @@
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L /* clock_gettime under -std=c11 */
 #endif
-/* One runtime serves every mode: the ownership checker and its hooks are always compiled (they do nothing until a
- * debug program claims storage), so a debug program's C links against a runtime built without -DBYN_DEBUG. */
-#ifndef BYN_DEBUG
+/* The ownership checker is compiled unless the build says otherwise: the toolchain passes -DBYN_NDEBUG for safe and
+ * fast builds, so they carry no checker, while a debug program's C still links against a runtime compiled by hand
+ * without flags. */
+#if !defined(BYN_DEBUG) && !defined(BYN_NDEBUG)
 #define BYN_DEBUG
 #endif
 #include "bayan-rt.h"

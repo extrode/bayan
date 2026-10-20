@@ -302,6 +302,16 @@ public sealed class OwnershipCheckerTests
         }
     }
 
+    [Theory]
+    [InlineData(BuildMode.Safe)]
+    [InlineData(BuildMode.Fast)]
+    public void SafeAndFastExecutablesHaveNoChecker(BuildMode mode)
+    {
+        var build = Toolchain.Build(CliApp.EmitC(Compile(SecondOwner, skip: true), mode), mode);
+        Assert.True(build.Succeeded, build.Errors);
+        Assert.DoesNotContain("second owner of", System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(build.ExecutablePath!)));
+    }
+
     private static (int Code, string Stdout, string Stderr) Exec(ProcessStartInfo psi)
     {
         using var p = Process.Start(psi)!;
