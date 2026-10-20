@@ -216,15 +216,32 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             if (pres[i].Count > 0) barrier = i;
         var effects = Enumerable.Range(0, n).Where(i => HasEffects(values[i])).ToList();
         if (effects.Count >= 2) barrier = Math.Max(barrier, effects[^1]);
+        // A move of a local a later operand reads happens first, as its own statement, so the read sees the local moved.
+        var movedFirst = Enumerable.Range(0, n).Select(i => values[i] is BoundMove { Operand: BoundLocal { Local: var l } }
+            && Enumerable.Range(i + 1, n - i - 1).Any(j => Reads(values[j], l) || pres[j].Any(s => Reads(s, l)))).ToArray();
         for (var i = 0; i < n; i++)
         {
             _out.AddRange(pres[i]);
             if (IsNever(values[i])) return null;
-            if (i < barrier && !IsTrivial(values[i]) && !(lvalues?.Invoke(i) ?? false) && values[i] is not LVoid)
+            if ((i < barrier && !IsTrivial(values[i]) || movedFirst[i]) && !(lvalues?.Invoke(i) ?? false) && values[i] is not LVoid)
                 values[i] = Spill(values[i]);
         }
         return values;
     }
+
+    /// <summary>Whether <paramref name="node"/> reads local <paramref name="l"/>.</summary>
+    private static bool Reads(BoundNode node, LocalSymbol l) => node switch
+    {
+        BoundLocal x => x.Local == l,
+        LOptionalHas h => Reads(h.Optional, l),
+        LOptionalValue v => Reads(v.Optional, l),
+        LUnionTag t => Reads(t.Union, l),
+        LUnionField f => Reads(f.Union, l),
+        LAssignExpr a => Reads(a.Target, l) || Reads(a.Value, l),
+        LSequence s => s.Effects.Any(e => Reads(e, l)) || Reads(s.Value, l),
+        LFailingCall f => Reads(f.Call, l),
+        _ => BoundTree.Children(node).Any(c => Reads(c, l)),
+    };
 
     // ── Cleanup ──────────────────────────────────────────────────────────────────
 
@@ -605,6 +622,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             }
             var body = Capture(() =>
             {
+                Claim(section.Pattern);
                 _scopes.Add(new Scope());
                 foreach (var s in section.Body) Statement(s);
                 EmitCleanups(_scopes.Count - 1, null);
@@ -1050,6 +1068,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             var match = Match(arm.Pattern, value);
             var body = Capture(() =>
             {
+                Claim(arm.Pattern);
                 var v = Expr(arm.Value);
                 if (result is not null) EmitAssign(Local(arm.Syntax, result), v);
                 else EmitEffect(v);
@@ -1205,6 +1224,31 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             }
             default:
                 throw new InvalidOperationException($"cannot lower pattern {p.GetType().Name}");
+        }
+    }
+
+    /// <summary>The selected arm's owning bindings take their storage; binding them in <see cref="Match"/> does not, as a later test may fail.</summary>
+    private void Claim(BoundPattern p)
+    {
+        switch (p)
+        {
+            case BoundBindPattern { Local: { BorrowsSubject: false } local }:
+                Emit(new LClaim(p.Syntax, local));
+                break;
+            case BoundNotPattern n:
+                Claim(n.Operand);
+                break;
+            case BoundBinaryPattern b:
+                Claim(b.Left);
+                Claim(b.Right);
+                break;
+            case BoundPropertyPattern pp:
+                foreach (var sub in pp.Subpatterns) Claim(sub.Pattern);
+                if (pp.Designation is { BorrowsSubject: false } d) Emit(new LClaim(p.Syntax, d));
+                break;
+            case BoundUnionPattern up:
+                foreach (var sub in up.Subpatterns) Claim(sub);
+                break;
         }
     }
 

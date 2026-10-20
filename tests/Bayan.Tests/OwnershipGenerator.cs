@@ -23,7 +23,8 @@ namespace Bayan.Tests;
 /// borrow     := "{ let v = x.asSpan(); print($"{v.length}"); }" | for (let e in x) over a nested list
 /// loop       := for/while; the body moves an outer x only if x is var, and reassigns it at the end
 /// branch     := if/else on t; join = Moved if moved on either side | "if (s is .Full(let items))" borrow
-/// switchMove := "switch (move s) { case .Full(let items): consume(move items); default: ... }"
+/// switchMove := "switch (move s) {" ["case .Full(let b) when b.length &gt; n: consume(move b);"]
+///               "case .Full(let items): consume(move items); default: ... }"
 /// reassign   := "x = fresh(n);" (or the type's constructor)   if x var; resets Moved
 /// read       := print of x's length or null test | "x.add(n);" if x var        if x Owned
 /// return     := "if (t &gt; 1000) return;"
@@ -378,6 +379,13 @@ internal static class OwnershipGenerator
             s.Moved = true;
             var items = Name();
             Line($"switch (move {s.Name}) {{");
+            if (Chance(50))
+            {
+                // A guard that may fail: the next arm binds the same storage.
+                var big = Name();
+                Line($"    case .Full(let {big}) when {big}.length > {Int(3)}:");
+                Line($"        consume(move {big});");
+            }
             Line($"    case .Full(let {items}):");
             Line($"        consume(move {items});");
             Line("    default:");

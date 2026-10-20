@@ -20,7 +20,7 @@ public sealed class OwnershipGeneratorTests(ITestOutputHelper output)
         var text = OwnershipGenerator.Generate(1, 8);
         Assert.Equal(text, OwnershipGenerator.Generate(1, 8));
         Assert.NotEqual(text, OwnershipGenerator.Generate(2, 8));
-        Assert.Equal("595a40e29bd718aa717a6902e5cdb1beaca857b858bac27ce81fec8a5ecd825a", Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text))));
+        Assert.Equal("2613c685363191581cc5b1b6056a8c506cf3213153a1fc3679e73bb0784f8790", Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text))));
     }
 
     [Fact]
