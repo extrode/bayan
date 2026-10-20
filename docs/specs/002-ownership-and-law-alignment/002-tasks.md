@@ -12,6 +12,6 @@ Plan: ./002-plan.md
 - [x] T9 `Untrusted<T>`, `trust`, BYN2787 — files: TypeResolver, binder, emitter, run/untrusted-trust, diag/trust-reason — covers: R10 — done when: suite green
 - [x] T10 `Io.runBatch` + `byn_batch_cmdline` + BYN2786 + native escape table test — files: bayan-rt.{h,c}, binder, emitter, tests/native/batch-cmdline.c, RuntimeNativeTests.cs, diag/run-batch-untrusted — covers: R11 — done when: suite green on macOS, escape table test passes
 - [x] T11 revise L005 statement (`%~N`), draft L006 unique-never-aliases as proposed — files: docs/laws/005-*, docs/laws/006-* — covers: law candidates — done when: files written, status proposed
-- [ ] T12 enact L005–L008 — user — done when: user sets status enacted (awaiting)
-- [ ] T13 prove L005–L008 (L006 `take()` row: Q64; L007: Q67; L008: Q66) — after T12 — done when: laws-check holds
+- [x] T12 enact L005–L008 — user — done when: user sets status enacted (L005–L007 enacted 2026-10-21 under the standing authorization; L008 stays proposed until spec 003)
+- [x] T13 prove L005–L008 (L006 `take()` row: Q64; L007: Q67; L008: Q66) — after T12 — done when: laws-check holds (L005–L007 proven; L008's proof is spec 003's generator and runtime checker)
 - [x] T14 handoff Q55/Q56 answered + new Questions, progress log, CHANGELOG, status — files: docs/bayan-handoff.md, CHANGELOG.md, work/status/* — covers: R13 — done when: written
