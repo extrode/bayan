@@ -8,3 +8,4 @@
 - M2 parser: AST, recovery, BYN1001-1016, parse/diag goldens
 - M3 semantics: names, types, mutability, flow analysis, error sets; 95 diagnostics BYN2001-3001
 - M4: lowering, C backend, runtime, bayan build/run, run goldens
+- M5: error-handling run goldens, Result<T, E>, non-exhaustive catch diag
