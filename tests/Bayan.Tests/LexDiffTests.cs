@@ -8,7 +8,7 @@ namespace Bayan.Tests;
 /// <summary><c>tools/lex-diff</c>, built by the bootstrap compiler and run against <c>bayan lex</c> and the <c>lex/</c> goldens.</summary>
 public sealed class LexDiffTests
 {
-    private static readonly Lazy<string> LexDiff = new(() =>
+    internal static readonly Lazy<string> LexDiff = new(() =>
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.FromPath(Path.Combine(Golden.RepoRoot, "tools", "lex-diff", "main.byn"));
