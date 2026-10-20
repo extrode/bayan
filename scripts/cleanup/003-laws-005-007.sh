@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cleanup for laws L005–L007 (enacted 2026-10-21): the merged feature, docs and worker branches,
 # and (second flag) the proof, gate and review scratch under tmp/.
-# Dry run by default. --execute / -e acts on worktrees and branches; --delete-scratch also removes untracked scratch.
+# Dry run by default. --execute / -e deletes the merged branches; --delete-scratch also removes untracked scratch.
 set -euo pipefail
 
 execute=0; scratch=0
