@@ -220,13 +220,83 @@ public sealed class OwnershipCheckerTests
 
         """;
 
+    private const string NestedMoveThenRead = """
+        i64 f(i64 m, List<i64> xs) => m + xs.length;
+        i64 g(move List<i64> x) => x.length;
+        void main() {
+            var a = List<i64>();
+            a.add(1);
+            print($"{f(g(move a), a)}");
+        }
+
+        """;
+
     // Operands run left to right, so a later operand reads the local an earlier one moved.
     [Theory]
     [InlineData(MoveThenReadInCall, 5)]
     [InlineData(MoveThenReadInLiteral, 8)]
     [InlineData(MoveThenReadInNestedCall, 6)]
+    [InlineData(NestedMoveThenRead, 6)]
     public void DebugBuildCatchesAReadAfterAMoveInOneExpression(string program, int line) =>
         AssertPanics(program, $"panic: use of moved List<i64>: moved at c.byn:{line}\n  at c.byn:{line}\n");
+
+    private const string GrowThenMoveReceiver = """
+        struct Bag {
+            List<i64> items;
+            public i64 grow() {
+                this.items.add(1);
+                return this.items.length;
+            }
+        }
+        Bag keep(i64 n, move Bag b) => b;
+        void main() {
+            var b = Bag { items = List<i64>() };
+            let d = keep(b.grow(), move b);
+            print($"{d.items.length}");
+        }
+
+        """;
+
+    private const string GrowInGuard = """
+        struct Bag {
+            List<i64> items;
+            public i64 grow() {
+                this.items.add(1);
+                return this.items.length;
+            }
+        }
+        union Slot {
+            Full(Bag b),
+            Empty,
+        }
+        void main() {
+            var a = List<i64>();
+            a.add(1);
+            a.add(2);
+            a.add(3);
+            let s = Slot.Full(Bag { items = move a });
+            switch (move s) {
+                case .Full(var x) when x.grow() > 5:
+                    print("big");
+                case .Full(let y):
+                    print($"small {y.items.length}");
+                default:
+                    print("empty");
+            }
+        }
+
+        """;
+
+    // A claim after a call is not made for a receiver the statement moves, nor for a binding a guard has not selected yet.
+    [Theory]
+    [InlineData(GrowThenMoveReceiver, "1\n")]
+    [InlineData(GrowInGuard, "small 3\n")]
+    public async Task DebugBuildDoesNotClaimStorageItsOwnerGaveUp(string program, string expected)
+    {
+        var (code, stdout) = await Run(CliApp.EmitC(Compile(program, skip: false), BuildMode.Debug), BuildMode.Debug);
+        Assert.Equal(0, code);
+        Assert.Equal(expected, stdout);
+    }
 
     private const string GrowThroughRef = """
         void bump(ref List<i64> x) {

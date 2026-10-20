@@ -13,6 +13,8 @@ public sealed class ToolchainSanitizerTests : IDisposable
     public void Dispose()
     {
         Toolchain.SanitizerOverride = null;
+        Toolchain.ProbeCompileTimeout = TimeSpan.FromSeconds(30);
+        Toolchain.ProbeRunTimeout = TimeSpan.FromSeconds(10);
         Directory.Delete(dir, recursive: true);
     }
 
@@ -35,6 +37,22 @@ public sealed class ToolchainSanitizerTests : IDisposable
         Assert.Null(Toolchain.ProbeSanitizer([[Script("empty.sh", "exit 0")]]));
         var working = Script("working.sh", "while [ $# -gt 0 ]; do if [ \"$1\" = -o ]; then printf '#!/bin/sh\\nexit 0\\n' > \"$2\"; chmod +x \"$2\"; fi; shift; done");
         Assert.Equal(working, Assert.Single(Toolchain.ProbeSanitizer([[failing], [working]])!));
+    }
+
+    [Fact]
+    public void ProbeKillsAndRejectsACandidateThatHangsAndTakesTheNextOne()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        // The machine's own probe runs first, with the real timeouts.
+        _ = Toolchain.SanitizerCompiler;
+        Toolchain.ProbeCompileTimeout = Toolchain.ProbeRunTimeout = TimeSpan.FromMilliseconds(500);
+        var hanging = Script("hanging.sh", "sleep 30");
+        // A "compiler" whose program hangs is rejected too.
+        var hangingProgram = Script("hanging-program.sh", "while [ $# -gt 0 ]; do if [ \"$1\" = -o ]; then printf '#!/bin/sh\\nsleep 30\\n' > \"$2\"; chmod +x \"$2\"; fi; shift; done");
+        var working = Script("working.sh", "while [ $# -gt 0 ]; do if [ \"$1\" = -o ]; then printf '#!/bin/sh\\nexit 0\\n' > \"$2\"; chmod +x \"$2\"; fi; shift; done");
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        Assert.Equal(working, Assert.Single(Toolchain.ProbeSanitizer([[hanging], [hangingProgram], [working]])!));
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"probe took {watch.Elapsed}");
     }
 
     [Fact]

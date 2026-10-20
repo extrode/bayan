@@ -355,6 +355,18 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """, "BYN2790" },
+        { "switch (move) property pattern binds a field twice", """
+            void main() {
+                var l = Ledger { items = List<i64>() };
+                switch (move l) {
+                    case { items: let x, items: let y }:
+                        consume(move x);
+                        consume(move y);
+                    default:
+                        print("other");
+                }
+            }
+            """, "BYN2790" },
         { "take on a let local", """
             void main() {
                 let xs = List<i64>();

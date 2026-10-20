@@ -216,9 +216,10 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             if (pres[i].Count > 0) barrier = i;
         var effects = Enumerable.Range(0, n).Where(i => HasEffects(values[i])).ToList();
         if (effects.Count >= 2) barrier = Math.Max(barrier, effects[^1]);
-        // A move of a local a later operand reads happens first, as its own statement, so the read sees the local moved.
-        var movedFirst = Enumerable.Range(0, n).Select(i => values[i] is BoundMove { Operand: BoundLocal { Local: var l } }
-            && Enumerable.Range(i + 1, n - i - 1).Any(j => Reads(values[j], l) || pres[j].Any(s => Reads(s, l)))).ToArray();
+        // An operand moving a local a later operand reads happens first, as its own statement, so the read sees the local moved.
+        var movedFirst = Enumerable.Range(0, n).Select(i => Enumerable.Range(i + 1, n - i - 1).Any(j =>
+            Any(values[j], x => x is BoundLocal r && Moves(values[i], r.Local))
+            || pres[j].Any(s => Any(s, x => x is BoundLocal r && Moves(values[i], r.Local))))).ToArray();
         for (var i = 0; i < n; i++)
         {
             _out.AddRange(pres[i]);
@@ -229,19 +230,22 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         return values;
     }
 
-    /// <summary>Whether <paramref name="node"/> reads local <paramref name="l"/>.</summary>
-    private static bool Reads(BoundNode node, LocalSymbol l) => node switch
+    /// <summary>Whether <paramref name="node"/> or a node inside it passes <paramref name="test"/>.</summary>
+    private static bool Any(BoundNode node, Func<BoundNode, bool> test) => test(node) || node switch
     {
-        BoundLocal x => x.Local == l,
-        LOptionalHas h => Reads(h.Optional, l),
-        LOptionalValue v => Reads(v.Optional, l),
-        LUnionTag t => Reads(t.Union, l),
-        LUnionField f => Reads(f.Union, l),
-        LAssignExpr a => Reads(a.Target, l) || Reads(a.Value, l),
-        LSequence s => s.Effects.Any(e => Reads(e, l)) || Reads(s.Value, l),
-        LFailingCall f => Reads(f.Call, l),
-        _ => BoundTree.Children(node).Any(c => Reads(c, l)),
+        BoundLocal => false,
+        LOptionalHas h => Any(h.Optional, test),
+        LOptionalValue v => Any(v.Optional, test),
+        LUnionTag t => Any(t.Union, test),
+        LUnionField f => Any(f.Union, test),
+        LAssignExpr a => Any(a.Target, test) || Any(a.Value, test),
+        LSequence s => s.Effects.Any(e => Any(e, test)) || Any(s.Value, test),
+        LFailingCall f => Any(f.Call, test),
+        _ => BoundTree.Children(node).Any(c => Any(c, test)),
     };
+
+    /// <summary>Whether <paramref name="node"/> moves local <paramref name="l"/>.</summary>
+    private static bool Moves(BoundNode node, LocalSymbol l) => Any(node, x => x is BoundMove { Operand: BoundLocal r } && r.Local == l);
 
     // ── Cleanup ──────────────────────────────────────────────────────────────────
 
