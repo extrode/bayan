@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #ifdef _WIN32
 #include <windows.h>
+#include <shellapi.h>
 #else
 #include <dirent.h>
 #include <fcntl.h>
@@ -500,21 +501,46 @@ bool byn_utf8_valid(const uint8_t* p, int64_t n) {
     return true;
 }
 
-byn_str* byn_args(int argc, char** argv) {
-    int n = argc > 1 ? argc - 1 : 0;
+static BYN_NORETURN void byn_bad_arg(int i) {
+    fprintf(stderr, "error: argument %d is not valid UTF-8\n", i);
+    fflush(stderr);
+    exit(1);
+}
+
+byn_str* byn_args(int* argc, char** argv) {
+#ifdef _WIN32
+    /* The CRT's argv is in the ANSI code page; the UTF-16 command line is what the caller passed. */
+    (void)argv;
+    int wargc = 0;
+    wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+    if (!wargv) byn_panic("out of memory", NULL, 0);
+    *argc = wargc;
+    int n = wargc > 1 ? wargc - 1 : 0;
+    byn_str* args = (byn_str*)malloc(sizeof(byn_str) * (size_t)(n > 0 ? n : 1));
+    if (!args) byn_panic("out of memory", NULL, 0);
+    for (int i = 0; i < n; i++) {
+        const wchar_t* w = wargv[i + 1];
+        int un = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, w, -1, NULL, 0, NULL, NULL);
+        if (un <= 0) byn_bad_arg(i + 1);
+        char* p = (char*)malloc((size_t)un);
+        if (!p) byn_panic("out of memory", NULL, 0);
+        WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, w, -1, p, un, NULL, NULL);
+        args[i] = (byn_str){(const uint8_t*)p, un - 1};
+    }
+    LocalFree(wargv);
+    return args;
+#else
+    int n = *argc > 1 ? *argc - 1 : 0;
     byn_str* args = (byn_str*)malloc(sizeof(byn_str) * (size_t)(n > 0 ? n : 1));
     if (!args) byn_panic("out of memory", NULL, 0);
     for (int i = 0; i < n; i++) {
         const uint8_t* p = (const uint8_t*)argv[i + 1];
         int64_t len = (int64_t)strlen(argv[i + 1]);
-        if (!byn_utf8_valid(p, len)) {
-            fprintf(stderr, "error: argument %d is not valid UTF-8\n", i + 1);
-            fflush(stderr);
-            exit(1);
-        }
+        if (!byn_utf8_valid(p, len)) byn_bad_arg(i + 1);
         args[i] = (byn_str){p, len};
     }
     return args;
+#endif
 }
 
 /* ── Io ──────────────────────────────────────────────────────────────────── */
@@ -573,9 +599,9 @@ uint32_t byn_io_read(byn_str path, uint8_t** ptr, int64_t* len, byn_alloc* alloc
         n += (int64_t)got;
         if (got == 0) break;
     }
-    int failed = ferror(f);
+    bool failed = ferror(f) != 0;
     int e = errno;
-    fclose(f);
+    if (fclose(f) != 0 && !failed) failed = true, e = errno;
     if (failed) return byn_io_error(e);
     *ptr = buf;
     *len = n;
@@ -596,9 +622,10 @@ uint32_t byn_io_write_file(byn_str path, const uint8_t* ptr, int64_t len) {
     FILE* f = byn_io_open(path, "wb");
     if (!f) return byn_io_error(errno);
     size_t put = len > 0 ? fwrite(ptr, 1, (size_t)len, f) : 0;
+    bool failed = (int64_t)put != len;
     int e = errno;
-    int closed = fclose(f);
-    if ((int64_t)put != len || closed != 0) return byn_io_error(e);
+    if (fclose(f) != 0 && !failed) failed = true, e = errno;
+    if (failed) return byn_io_error(e);
     return 0;
 }
 
@@ -778,7 +805,30 @@ static void byn_quote_arg(byn_bytes* b, byn_str s) {
     byn_bytes_add(b, "\"", 1);
 }
 
-/* `program` itself if it names a path, else the first PATH entry with a PATHEXT extension that is a file. */
+/* Whether a program name ends in `.bat` or `.cmd`; Windows ignores trailing dots and spaces. */
+static bool byn_is_batch(const wchar_t* s, size_t n) {
+    while (n > 0 && (s[n - 1] == L'.' || s[n - 1] == L' ')) n--;
+    return n >= 4 && (_wcsnicmp(s + n - 4, L".bat", 4) == 0 || _wcsnicmp(s + n - 4, L".cmd", 4) == 0);
+}
+
+/* `dir` (`dn` units), a separator, `name` and `ext` as a file path from malloc if it is a file, else NULL. */
+static wchar_t* byn_program_in(const wchar_t* dir, size_t dn, const wchar_t* name, size_t nn, const wchar_t* ext, size_t xn) {
+    wchar_t* c = (wchar_t*)malloc(sizeof(wchar_t) * (dn + nn + xn + 2));
+    if (!c) byn_panic("out of memory", NULL, 0);
+    memcpy(c, dir, sizeof(wchar_t) * dn);
+    size_t at = dn;
+    if (c[at - 1] != L'\\' && c[at - 1] != L'/') c[at++] = L'\\';
+    memcpy(c + at, name, sizeof(wchar_t) * nn);
+    memcpy(c + at + nn, ext, sizeof(wchar_t) * xn);
+    c[at + nn + xn] = 0;
+    DWORD attrs = GetFileAttributesW(c);
+    if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) return c;
+    free(c);
+    return NULL;
+}
+
+/* `program` itself if it names a path, else the first PATH entry holding it as given or with a
+ * PATHEXT extension; `.BAT` and `.CMD` are never appended. */
 static wchar_t* byn_find_program(byn_str program) {
     wchar_t* name = byn_wide(program.ptr, program.len);
     if (memchr(program.ptr, '/', (size_t)program.len) || memchr(program.ptr, '\\', (size_t)program.len)) return name;
@@ -793,20 +843,11 @@ static wchar_t* byn_find_program(byn_str program) {
     for (wchar_t* dir = path; *dir && !found;) {
         wchar_t* dend = wcschr(dir, L';');
         size_t dn = dend ? (size_t)(dend - dir) : wcslen(dir);
+        if (dn > 0) found = byn_program_in(dir, dn, name, nn, L"", 0);
         for (wchar_t* ext = exts; *ext && dn > 0 && !found;) {
             wchar_t* eend = wcschr(ext, L';');
             size_t xn = eend ? (size_t)(eend - ext) : wcslen(ext);
-            wchar_t* c = (wchar_t*)malloc(sizeof(wchar_t) * (dn + nn + xn + 2));
-            if (!c) byn_panic("out of memory", NULL, 0);
-            memcpy(c, dir, sizeof(wchar_t) * dn);
-            size_t at = dn;
-            if (c[at - 1] != L'\\' && c[at - 1] != L'/') c[at++] = L'\\';
-            memcpy(c + at, name, sizeof(wchar_t) * nn);
-            memcpy(c + at + nn, ext, sizeof(wchar_t) * xn);
-            c[at + nn + xn] = 0;
-            DWORD attrs = GetFileAttributesW(c);
-            if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) found = c;
-            else free(c);
+            if (xn > 0 && !byn_is_batch(ext, xn)) found = byn_program_in(dir, dn, name, nn, ext, xn);
             ext = eend ? eend + 1 : ext + xn;
         }
         dir = dend ? dend + 1 : dir + dn;
@@ -841,6 +882,11 @@ uint32_t byn_io_run(byn_str program, const byn_str* args, int64_t nargs, byn_pro
 #ifdef _WIN32
     wchar_t* app = byn_find_program(program);
     if (!app) return BYN_IO_NOT_FOUND;
+    /* CreateProcessW runs a batch file through cmd.exe, which re-parses the arguments (BatBadBut). */
+    if (byn_is_batch(app, wcslen(app))) {
+        free(app);
+        return BYN_IO_PERMISSION_DENIED;
+    }
     byn_bytes line = {NULL, 0, 0};
     byn_quote_arg(&line, program);
     for (int64_t i = 0; i < nargs; i++) byn_quote_arg(&line, args[i]);

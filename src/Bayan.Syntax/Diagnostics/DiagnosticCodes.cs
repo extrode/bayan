@@ -173,6 +173,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor TypeParameterMember = Error("BYN2744", "`{0}` is not a member of type parameter `{1}`");
     public static readonly DiagnosticDescriptor InvalidMapKey = Error("BYN2760", "`{0}` cannot be a `Map` key");
     public static readonly DiagnosticDescriptor RecursiveByValue = Error("BYN2761", "`{0}` contains itself by value: {1}");
+    public static readonly DiagnosticDescriptor SharedStorageCopy = Error("BYN2762", "a `{0}` cannot be copied");
     public static readonly DiagnosticDescriptor UnknownAttribute = Error("BYN2770", "unknown attribute `{0}`");
     public static readonly DiagnosticDescriptor InvalidMainSignature = Error("BYN2771", "`main` must return `void` or `i32` and take nothing or `ReadOnlySpan<string> args`");
     public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`[ExitCode]` needs one integer constant from 1 to 255");
