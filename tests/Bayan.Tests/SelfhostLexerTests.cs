@@ -49,14 +49,22 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
     }
 
     /// <summary><see cref="Run"/> with stdout kept as bytes, so invalid UTF-8 is compared as printed.</summary>
-    private static (int Exit, byte[] Out, string Err) RunBytes(string program, params string[] args)
+    private static (int Exit, byte[] Out, string Err) RunBytes(string program, params string[] args) => RunBytes(program, null, args);
+
+    /// <summary><see cref="RunBytes(string, string[])"/> with <paramref name="input"/> fed to stdin.</summary>
+    private static (int Exit, byte[] Out, string Err) RunBytes(string program, byte[]? input, params string[] args)
     {
-        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(program) { RedirectStandardInput = input is not null, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         var stdout = new MemoryStream();
         var copy = p.StandardOutput.BaseStream.CopyToAsync(stdout);
         var stderr = p.StandardError.ReadToEndAsync();
+        if (input is not null)
+        {
+            p.StandardInput.BaseStream.Write(input);
+            p.StandardInput.Close();
+        }
         p.WaitForExit();
         copy.Wait();
         return (p.ExitCode, stdout.ToArray(), stderr.Result);
@@ -77,6 +85,31 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
         var (exit, stdout, stderr) = Run(LexDiffTests.LexDiff.Value, "--left", Built, "--golden", ".tokens", Path.Combine(Golden.CasesRoot, "lex"));
         Assert.True(exit == 0, stdout + stderr);
         Assert.Matches(@"^\d+ files, 0 differ\r?\n$", stderr);
+    }
+
+    /// <summary>Spec 002 R7, R8: <c>bayan-lex --json</c> fed on stdin prints exactly <see cref="TokenDump.ToJson"/>.</summary>
+    [Fact]
+    public void JsonOnStdinMatchesTheReferenceLexer()
+    {
+        foreach (var input in Directory.GetFiles(Path.Combine(Golden.CasesRoot, "lex"), "*.byn").Order(StringComparer.Ordinal))
+        {
+            var bytes = File.ReadAllBytes(input);
+            var (exit, stdout, stderr) = RunBytes(Built, bytes, "--json");
+            var result = Lexer.Lex(new SourceText(input, bytes));
+            var expected = Encoding.UTF8.GetBytes(TokenDump.ToJson(result));
+            Assert.True(expected.AsSpan().SequenceEqual(stdout),
+                $"{input}: --json differs\nexpected: {Encoding.UTF8.GetString(expected)}\nactual:   {Encoding.UTF8.GetString(stdout)}\n{stderr}");
+            Assert.Equal(result.Diagnostics.Any(d => d.IsError) ? 1 : 0, exit);
+        }
+    }
+
+    [Fact]
+    public void JsonOnAMissingPathExitsFour()
+    {
+        var (exit, stdout, stderr) = Run(Built, "--json", Path.Combine(Golden.RepoRoot, "tmp", "no-such-file.byn"));
+        Assert.Equal(4, exit);
+        Assert.Empty(stdout);
+        Assert.NotEmpty(stderr);
     }
 
     /// <summary>

@@ -662,6 +662,7 @@ The compiler infers which functions may suspend (calls through `dyn` are assumed
 - **Sources** produce `Untrusted<T>`: HTTP requests (body, query, headers, cookies), stdin, command-line arguments, external files, text from C.
 - **Sinks** reject `Untrusted<T>`: raw SQL, raw HTML, shell commands, file paths, redirect URLs.
 - **Processes.** `Io.run(program, args)` never goes through a shell, and refuses `.bat`/`.cmd` files on Windows (`cmd.exe` re-parses their arguments). `Io.runBatch(path, args)` runs a batch file: it escapes each argument for `cmd.exe` when that can be done exactly and otherwise fails without starting anything. Its arguments are a sink: an `Untrusted<T>` argument is a compile error.
+- **Standard streams.** `Io.stdout.write(text)` and `Io.stderr.write(text)` write without a newline (stdout is buffered with `print`). `Io.stdin.readAll()` returns `Result<string, IoError>`: the rest of standard input, bytes as-is (binary mode on Windows, not checked for UTF-8), allocated from `context.allocator`. For now it is a plain `string`, not `Untrusted<string>`.
 - **Clearing taint:** `parse`/`validate` (yielding `T.Validated`), escaped forms (interpolated SQL parameters, HTML escaping), or explicit `trust(x, reason: "…")`.
 - Terminal output and logs escape control characters in untrusted values.
 - **Implemented so far:** `Untrusted<T>` has the C representation of `T`; `Untrusted(x)` wraps and `trust(x, reason: "…")` unwraps, with a non-empty string literal as the reason. There is no implicit conversion either way. Sources are not yet wrapped.

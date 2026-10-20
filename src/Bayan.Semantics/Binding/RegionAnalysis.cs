@@ -291,6 +291,9 @@ internal sealed class RegionAnalysis
                 return Lend(b.Receiver, receiver);
             case BuiltinMember.SpanCopy or BuiltinMember.StringCopy:
                 return AllocatedFrom(b.Arguments[0]);
+            case BuiltinMember.IoReadAll:
+                // Fresh text from `context.allocator`, like `Io.readText`.
+                return _contexts.Count > 0 ? _contexts.Peek() : Borrow.None;
             case BuiltinMember.ListAdd:
                 StoreInto(b.Receiver, args[0], b.Arguments[0].Syntax.Span);
                 Mutate(b.Receiver, b.Syntax.Span);

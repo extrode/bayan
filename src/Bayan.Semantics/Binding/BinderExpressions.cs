@@ -465,11 +465,11 @@ internal sealed partial class Binder
                 if (_c.Builtins.FindIo(name) is not { } member)
                 {
                     Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, io.Name],
-                        help: Suggest(name, ["readFile", "readText", "writeFile", "listDir", "run", "monotonicNanos", "stdout", "stderr"]) is { } near ? $"did you mean `{near}`?" : null);
+                        help: Suggest(name, ["readFile", "readText", "writeFile", "listDir", "run", "monotonicNanos", "stdout", "stderr", "stdin"]) is { } near ? $"did you mean `{near}`?" : null);
                     return new BoundErrorExpr(m);
                 }
-                // `stdout` and `stderr` read like properties; the rest are called.
-                if (member.Builtin is BuiltinFunction.IoStdout or BuiltinFunction.IoStderr) return new BoundCall(m, member, null, [], member.ReturnType);
+                // `stdout`, `stderr` and `stdin` read like properties; the rest are called.
+                if (member.Builtin is BuiltinFunction.IoStdout or BuiltinFunction.IoStderr or BuiltinFunction.IoStdin) return new BoundCall(m, member, null, [], member.ReturnType);
                 return new BoundMethodGroup(m, null, member);
             }
             case BoundTypeRef t:

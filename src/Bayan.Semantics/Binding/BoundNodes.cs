@@ -63,6 +63,7 @@ public enum BuiltinMember
     /// <summary><c>o.value</c> of an <c>Owned&lt;T&gt;</c>, also inserted for member access through it.</summary>
     OwnedValue,
     IoWrite,
+    IoReadAll,
     EnumName, EnumOrdinal,
     /// <summary>A data-enum field; the argument is the field index.</summary>
     EnumField,

@@ -1,5 +1,5 @@
-// Text form of a token stream, as printed by `bayan lex` and kept in the `lex/` goldens. Ports
-// `src/Bayan.Syntax/Lexing/TokenDump.cs`.
+// Text and JSON forms of a token stream, as printed by `bayan lex` (the text form is kept in the
+// `lex/` goldens). Ports `src/Bayan.Syntax/Lexing/TokenDump.cs`.
 
 void dump(ref StrBuf sb, ref LexResult result) {
     for (let token in result.tokens) {
@@ -46,4 +46,83 @@ void escape(ref StrBuf sb, ReadOnlySpan<u8> text) {
         pos += d.length;
     }
     sb.append("`");
+}
+
+/// `bayan lex --json`: one object with `tokens` and `diagnostics` (in source order), no
+/// insignificant whitespace, then `\n`. Offsets are bytes; invalid UTF-8 in source text becomes
+/// U+FFFD per maximal subpart.
+void dumpJson(ref StrBuf sb, ref LexResult result) {
+    let bytes = result.source.bytes.asSpan();
+    sb.append("{\"tokens\":[");
+    for (let i in 0..result.tokens.length) {
+        let token = result.tokens[i];
+        if (i > 0) sb.append(",");
+        sb.append($"{{\"kind\":\"{kindName(token.kind)}\",\"start\":{token.start},\"end\":{token.end},\"text\":");
+        jsonString(ref sb, bytes[token.start..token.end]);
+        sb.append(",\"doc\":");
+        if (token.hasDoc) {
+            sb.append($"{{\"start\":{token.docStart},\"end\":{token.docStart + token.docLength}}}");
+        } else {
+            sb.append("null");
+        }
+        sb.append("}");
+    }
+    sb.append("],\"diagnostics\":[");
+    let diagnostics = result.diagnostics;
+    let order = sourceOrder(diagnostics.asSpan());
+    for (let k in 0..order.length) {
+        let d = diagnostics[order[k]];
+        if (k > 0) sb.append(",");
+        sb.append($"{{\"code\":\"{d.code}\",\"severity\":\"error\",\"start\":{d.span.start},\"end\":{d.span.end},\"message\":");
+        jsonString(ref sb, d.message.bytes);
+        sb.append(",\"label\":");
+        jsonOptional(ref sb, d.label);
+        sb.append(",\"help\":");
+        jsonOptional(ref sb, d.help);
+        sb.append(",\"fixes\":[");
+        if (d.hasFix) {
+            sb.append($"{{\"start\":{d.fixSpan.start},\"end\":{d.fixSpan.end},\"replacement\":");
+            jsonString(ref sb, d.fixReplacement.bytes);
+            sb.append("}");
+        }
+        sb.append("]}");
+    }
+    sb.append("]}\n");
+}
+
+/// `null` for an empty `text` (none), else its JSON string.
+void jsonOptional(ref StrBuf sb, string text) {
+    if (text.isEmpty) {
+        sb.append("null");
+    } else {
+        jsonString(ref sb, text.bytes);
+    }
+}
+
+/// A JSON string: `\"` `\\` `\n` `\r` `\t`, other controls and DEL as `\u00XX`, the rest raw.
+void jsonString(ref StrBuf sb, ReadOnlySpan<u8> text) {
+    sb.append("\"");
+    i64 pos = 0;
+    while (pos < text.length) {
+        let d = decodeAt(text, pos);
+        let v = d.value;
+        if (v == 0x22) {
+            sb.append("\\\"");
+        } else if (v == 0x5C) {
+            sb.append("\\\\");
+        } else if (v == 0x0A) {
+            sb.append("\\n");
+        } else if (v == 0x0D) {
+            sb.append("\\r");
+        } else if (v == 0x09) {
+            sb.append("\\t");
+        } else if (v < 0x20 || v == 0x7F) {
+            sb.append("\\u");
+            appendHex(ref sb, v, 4);
+        } else {
+            sb.append($"{(char)v}");
+        }
+        pos += d.length;
+    }
+    sb.append("\"");
 }

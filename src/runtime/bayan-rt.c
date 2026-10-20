@@ -10,6 +10,8 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <shellapi.h>
+#include <fcntl.h>
+#include <io.h>
 #else
 #include <dirent.h>
 #include <fcntl.h>
@@ -615,6 +617,29 @@ uint32_t byn_io_read_text(byn_str path, byn_str* out, byn_alloc* alloc) {
     if (err != 0) return err;
     if (!byn_utf8_valid(p, n)) return BYN_IO_INVALID_UTF8;
     if (out) *out = (byn_str){p, n};
+    return 0;
+}
+
+uint32_t byn_io_read_stdin(byn_str* out, byn_alloc* alloc) {
+#ifdef _WIN32
+    /* Text mode would turn CRLF into LF and stop at Ctrl-Z. */
+    _setmode(_fileno(stdin), _O_BINARY);
+#endif
+    uint8_t* buf = NULL;
+    int64_t cap = 0;
+    int64_t n = 0;
+    for (;;) {
+        if (n == cap) {
+            int64_t grown = cap < 4096 ? 4096 : cap * 2;
+            buf = (uint8_t*)alloc->resize(alloc, buf, cap, grown);
+            cap = grown;
+        }
+        size_t got = fread(buf + n, 1, (size_t)(cap - n), stdin);
+        n += (int64_t)got;
+        if (got == 0) break;
+    }
+    if (ferror(stdin)) return byn_io_error(errno);
+    if (out) *out = (byn_str){buf, n};
     return 0;
 }
 

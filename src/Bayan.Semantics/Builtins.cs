@@ -36,6 +36,7 @@ public sealed class Builtins
         IoMonotonicNanos = Make("monotonicNanos", BuiltinFunction.IoMonotonicNanos, PrimitiveType.I64);
         IoStdout = Make("stdout", BuiltinFunction.IoStdout, BuiltinType.IoStream);
         IoStderr = Make("stderr", BuiltinFunction.IoStderr, BuiltinType.IoStream);
+        IoStdin = Make("stdin", BuiltinFunction.IoStdin, BuiltinType.IoInput);
     }
 
     private const string IoErrorSource = """
@@ -79,6 +80,9 @@ public sealed class Builtins
 
     public FunctionSymbol IoStderr { get; }
 
+    /// <summary><c>Io.stdin</c>: a stream with <c>Result&lt;string, IoError&gt; readAll()</c>.</summary>
+    public FunctionSymbol IoStdin { get; }
+
     /// <summary>A static member of <c>Io</c>, or null.</summary>
     public FunctionSymbol? FindIo(string name) => name switch
     {
@@ -90,6 +94,7 @@ public sealed class Builtins
         "monotonicNanos" => IoMonotonicNanos,
         "stdout" => IoStdout,
         "stderr" => IoStderr,
+        "stdin" => IoStdin,
         _ => null,
     };
 
