@@ -221,12 +221,14 @@ public sealed class OwnershipCheckerTests
         """;
 
     private const string NestedMoveThenRead = """
-        i64 f(i64 m, List<i64> xs) => m + xs.length;
-        i64 g(move List<i64> x) => x.length;
+        struct P {
+            List<i64> xs;
+        }
+        i64 f(P p, i64 n) => n + p.xs.length;
         void main() {
             var a = List<i64>();
             a.add(1);
-            print($"{f(g(move a), a)}");
+            print($"{f(P { xs = move a }, a.length)}");
         }
 
         """;
@@ -236,7 +238,7 @@ public sealed class OwnershipCheckerTests
     [InlineData(MoveThenReadInCall, 5)]
     [InlineData(MoveThenReadInLiteral, 8)]
     [InlineData(MoveThenReadInNestedCall, 6)]
-    [InlineData(NestedMoveThenRead, 6)]
+    [InlineData(NestedMoveThenRead, 8)]
     public void DebugBuildCatchesAReadAfterAMoveInOneExpression(string program, int line) =>
         AssertPanics(program, $"panic: use of moved List<i64>: moved at c.byn:{line}\n  at c.byn:{line}\n");
 
