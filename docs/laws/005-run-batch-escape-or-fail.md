@@ -19,6 +19,6 @@ On Windows, for every batch file and every list of argument strings, `Io.runBatc
 `tests/Bayan.Tests/L005RunBatchTests.cs`, three tests tagged `[Trait("Law", "L005")]`:
 - `EveryCaseIsRefusedOrReadBackUnchanged` runs 33 hand-written edge cases plus 4,000 argument lists generated from `Random(5005)` through a native driver over `byn_batch_cmdline`. Each case is either refused, or its command line is parsed by a model of `cmd.exe` and the batch file's `%~1`/`shift` reads, and every argument comes back unchanged.
 - `ModelReadsKnownCommandLines` checks the model itself against 21 known command lines.
-- `RunBatchIsUnsupportedOffWindows` checks that `Io.runBatch` returns `unsupported` off Windows.
+- `RunBatchIsUnsupportedOffWindows` checks that `Io.runBatch` returns `unsupported` off Windows, for a refused argument as well as an accepted one.
 
-Limits: AutoRun and DelayedExpansion are covered only through the `/d` and `/v:OFF` prefix the runtime always passes. No test starts a real `cmd.exe`, and code page 65001 and the UTF-16 conversion are not exercised. The driver caps at 16 arguments, and the generator stays under that at 12. Break-test: removing `%` from the refused set fails the property.
+Limits: AutoRun and DelayedExpansion are covered only through the `/d` and `/v:OFF` prefix the runtime always passes. No test starts a real `cmd.exe`, and code page 65001 and the UTF-16 conversion are not exercised. The generator's alphabet includes 0x1A, VT, FF, DEL, U+00A0 and U+00FF, but the model treats them as literal inside quotes; only a real `cmd.exe` run can show otherwise. The driver caps at 16 arguments, and the generator stays under that at 12. Break-test: removing `%` from the refused set fails the property.
