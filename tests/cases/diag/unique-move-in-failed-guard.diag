@@ -1,0 +1,13 @@
+error BYN2781: `x` is used after it was moved
+
+  12 │             print($"{x.length}");
+     │                      ^ moved on line 9
+     │
+  help: assign `x` a new value before using it again, or move a `.copy(to: alloc)` of it instead
+
+error BYN2781: `x` is used after it was moved
+
+  20 │         _ => x.length,
+     │              ^ moved on line 19
+     │
+  help: assign `x` a new value before using it again, or move a `.copy(to: alloc)` of it instead

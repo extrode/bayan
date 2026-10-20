@@ -858,6 +858,8 @@ bool byn_batch_cmdline(byn_str path, const byn_str* args, int64_t nargs, byn_str
         ext[i] = (char)(c >= 'A' && c <= 'Z' ? c + 32 : c);
     }
     if (memcmp(ext, ".bat", 4) != 0 && memcmp(ext, ".cmd", 4) != 0) return false;
+    /* A bare name would make cmd.exe search the current directory and PATH. */
+    if (!memchr(path.ptr, '/', (size_t)path.len) && !memchr(path.ptr, '\\', (size_t)path.len)) return false;
     for (int64_t i = 0; i < nargs; i++)
         if (!byn_batch_safe(args[i])) return false;
     byn_bytes b = {NULL, 0, 0};

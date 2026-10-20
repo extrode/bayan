@@ -1258,30 +1258,48 @@ internal sealed partial class Binder
             }
             var hole = (InterpolationHole)part;
             var value = BindExpr(hole.Expr);
-            if (!value.Type.IsError && !IsFormattable(value.Type))
-                Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName],
+            if (!value.Type.IsError && WhyNotFormattable(value.Type, []) is { } why)
+                Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName], label: why == "" ? null : why,
                     help: value.Type is StructSymbol s ? $"give `{s.Name}` a `void formatInto(ref StrBuf out)` method" : null);
             parts.Add(new BoundInterpolationPart(null, value));
         }
         return new BoundInterpolated(i, parts.ToArray());
     }
 
-    internal static bool IsFormattable(TypeSymbol t) => IsFormattable(t, []);
+    internal static bool IsFormattable(TypeSymbol t) => WhyNotFormattable(t, []) is null;
 
-    /// <summary><c>Owned</c> formats the value it points to; a type reached again through one is assumed formattable.</summary>
-    private static bool IsFormattable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
+    /// <summary>
+    /// Null when <paramref name="t"/> formats; otherwise the part that does not ("" for <paramref name="t"/> itself).
+    /// <c>Owned</c> formats the value it points to; a type reached again is assumed formattable.
+    /// </summary>
+    private static string? WhyNotFormattable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
-        PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
-        ErrorSetSymbol or ErrorUnionType or EnumSymbol => true,
-        OptionalType o => IsFormattable(o.Inner, seen),
-        ResultType r => IsFormattable(r.Value, seen),
-        OwnedType o => IsFormattable(o.Inner, seen),
-        StructSymbol or TypeParameterType => true,
-        UnionSymbol u => !seen.Add(u) || u.Variants.All(v => v.Fields.All(f => IsFormattable(f.Type, seen))),
-        Symbols.TupleType tt => tt.Fields.All(f => IsFormattable(f.Type, seen)),
-        MapType m => IsFormattable(m.KeyType, seen) && IsFormattable(m.ValueType, seen),
-        _ => false,
+        PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never) ? null : "",
+        ErrorSetSymbol or ErrorUnionType or EnumSymbol or TypeParameterType => null,
+        OptionalType o => Part("the value", o.Inner, seen),
+        ResultType r => Part("the value", r.Value, seen),
+        OwnedType o => WhyNotFormattable(o.Inner, seen),
+        StructSymbol s => HasFormatInto(s) || !seen.Add(s) ? null
+            : s.Fields.Select(f => Part($"field `{f.Name}`", f.Type, seen)).FirstOrDefault(w => w is not null),
+        UnionSymbol u => !seen.Add(u) ? null
+            : u.Variants.SelectMany(v => v.Fields.Select(f => Part($"`{v.Name}` field `{f.Name}`", f.Type, seen))).FirstOrDefault(w => w is not null),
+        Symbols.TupleType tt => tt.Fields.Select((f, i) => Part($"element {i + 1}", f.Type, seen)).FirstOrDefault(w => w is not null),
+        MapType m => Part("the key", m.KeyType, seen) ?? Part("the value", m.ValueType, seen),
+        // Lists, spans and arrays do not format; an unformattable element is still named.
+        ListType l => Part("an element", l.Element, seen) ?? "",
+        SpanType sp => Part("an element", sp.Element, seen) ?? "",
+        ArrayType a => Part("an element", a.Element, seen) ?? "",
+        _ => "",
     };
+
+    /// <summary>Why <paramref name="part"/> of a type does not format, naming it when it is the culprit.</summary>
+    private static string? Part(string name, TypeSymbol part, HashSet<TypeSymbol> seen) =>
+        WhyNotFormattable(part, seen) is { } why ? why == "" ? $"{name} is `{part.DisplayName}`" : why : null;
+
+    /// <summary>Matches the C emitter's <c>formatInto</c> lookup.</summary>
+    private static bool HasFormatInto(StructSymbol s) =>
+        s.Methods.Any(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 1
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } });
 }
 
 /// <summary>A function named but not yet called (only valid as a callee).</summary>

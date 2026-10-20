@@ -374,7 +374,10 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         else if (target is BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot, Arguments: [var key, ..] } mb && !IsTrivial(key))
             target = mb with { Arguments = [Spill(key), .. mb.Arguments[1..]] };
         // The old value is read before `v` runs, which may change or move the target.
-        var current = IsTrivial(a.Value) ? target : Spill(target);
+        // `map[k] op= v` reads through the panicking index: only `slot` inserts a missing key.
+        var current = target is BoundBuiltinCall { Member: BuiltinMember.MapIndexSet } read
+            ? Spill(read with { Member = BuiltinMember.MapIndex })
+            : IsTrivial(a.Value) ? target : Spill(target);
         var value = Expr(a.Value);
         if (IsNever(value)) return;
         if (!IsTrivial(value)) value = Spill(value);

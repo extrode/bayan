@@ -16,21 +16,24 @@ public sealed class RuntimeNativeTests
         var driver = File.ReadAllText(Path.Combine(Golden.RepoRoot, "tests", "native", "batch-cmdline.c"));
         Assert.Equal(
             """"
-            cmd.exe /d /e:ON /v:OFF /s /c ""echo.cmd" "a b""
-            cmd.exe /d /e:ON /v:OFF /s /c ""echo.cmd" """
+            cmd.exe /d /e:ON /v:OFF /s /c "".\echo.cmd" "a b""
+            cmd.exe /d /e:ON /v:OFF /s /c "".\echo.cmd" """
             refused
             refused
-            cmd.exe /d /e:ON /v:OFF /s /c ""echo.cmd" "^&|<>()!""
-            cmd.exe /d /e:ON /v:OFF /s /c ""echo.cmd" "a\""
+            cmd.exe /d /e:ON /v:OFF /s /c "".\echo.cmd" "^&|<>()!""
+            cmd.exe /d /e:ON /v:OFF /s /c "".\echo.cmd" "a\""
             refused
             refused
             refused
             cmd.exe /d /e:ON /v:OFF /s /c ""C:\dir\X.CMD" "a""
-            cmd.exe /d /e:ON /v:OFF /s /c ""run.Bat" "a""
+            cmd.exe /d /e:ON /v:OFF /s /c ""./run.Bat" "a""
             refused
             refused
-            cmd.exe /d /e:ON /v:OFF /s /c ""echo.cmd" "x" "y z""
-            cmd.exe /d /e:ON /v:OFF /s /c ""echo.cmd""
+            refused
+            cmd.exe /d /e:ON /v:OFF /s /c "".\x.bat" "a""
+            cmd.exe /d /e:ON /v:OFF /s /c ""C:\x\y.cmd" "a""
+            cmd.exe /d /e:ON /v:OFF /s /c "".\echo.cmd" "x" "y z""
+            cmd.exe /d /e:ON /v:OFF /s /c "".\echo.cmd""
             refused
 
             """".ReplaceLineEndings("\n"),
