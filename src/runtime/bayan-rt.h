@@ -37,6 +37,8 @@ BYN_NORETURN void byn_unreachable(const char* file, int line);
 
 /* ── Ownership checker (debug builds) ────────────────────────────────────── */
 
+/* Debug programs define BYN_DEBUG before including this header; safe and fast ones never see these. */
+
 #ifdef BYN_DEBUG
 /* Where a local was moved out; line 0 while it holds a value. */
 typedef struct byn_own_slot {
