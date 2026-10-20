@@ -92,10 +92,11 @@ public sealed class RunTests
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
-        if (!p.WaitForExit(20_000))
+        // Generous: after a runtime change every case cold-compiles at once (Warm), and a trivial run can wait 20 s+ for CPU.
+        if (!p.WaitForExit(120_000))
         {
             p.Kill();
-            return new Outcome("", "", 0, "timed out after 20 s");
+            return new Outcome("", "", 0, "timed out after 120 s");
         }
         var code = p.ExitCode;
         if (OperatingSystem.IsWindows() && code == 3) code = 134;
