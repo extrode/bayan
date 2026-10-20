@@ -59,8 +59,8 @@ for rel in tmp/003-* tmp/rv tmp/r8 tmp/r8.sh tmp/ndbg tmp/rv-review-correctness 
   if [ $execute -eq 1 ] && [ $scratch -eq 1 ]; then rm -rf -- "$rel"; printf 'removed: %s\n' "$rel"
   else printf 'would: rm -rf %s (needs --execute --delete-scratch)\n' "$rel"; fi
 done
-# Written outside the project by worker 003-t7.
-for f in /tmp/l008a.txt /tmp/l008b.txt; do
+# Written outside the project by worker 003-t7 and the 003-rv-d gate.
+for f in /tmp/l008a.txt /tmp/l008b.txt /tmp/claude-ce.bak; do
   if [ ! -e "$f" ]; then printf 'skip:  %s already gone\n' "$f"; continue; fi
   if [ $execute -eq 1 ] && [ $scratch -eq 1 ]; then rm -f -- "$f"; printf 'removed: %s\n' "$f"
   else printf 'would: rm -f %s (needs --execute --delete-scratch)\n' "$f"; fi
