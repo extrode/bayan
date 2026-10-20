@@ -4,4 +4,4 @@ removed 334, count 666
 iterated 666, key sum 332667
 0 present: false, 1 present: true
 last key 0, count 667
-words 500, w0 4, w499 4, w500 null
+words 500, w0 4, w499 4, w500 false

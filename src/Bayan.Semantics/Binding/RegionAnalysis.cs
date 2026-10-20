@@ -295,16 +295,18 @@ internal sealed class RegionAnalysis
                 StoreInto(b.Receiver, args[0], b.Arguments[0].Syntax.Span);
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
-            case BuiltinMember.MapSet:
-                StoreInto(b.Receiver, args[0].Union(args[1]), b.Arguments[0].Syntax.Span);
+            case BuiltinMember.MapIndexSet or BuiltinMember.MapSlot:
+                StoreInto(b.Receiver, args[0], b.Arguments[0].Syntax.Span);
                 Mutate(b.Receiver, b.Syntax.Span);
-                return Borrow.None;
+                return receiver with { Owners = [] };
             case BuiltinMember.ListRemoveLast:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return receiver with { Owners = [] };
-            case BuiltinMember.MapGet:
+            case BuiltinMember.MapIndex:
                 return receiver with { Owners = [] };
-            case BuiltinMember.MapCount or BuiltinMember.MapContainsKey:
+            case BuiltinMember.MapGetOr:
+                return (receiver with { Owners = [] }).Union(args[1]);
+            case BuiltinMember.MapLength or BuiltinMember.MapContains:
                 return Borrow.None;
             case BuiltinMember.MapRemove or BuiltinMember.MapClear:
                 Mutate(b.Receiver, b.Syntax.Span);
@@ -534,7 +536,6 @@ internal sealed class RegionAnalysis
         BoundCall { Function.Kind: FunctionKind.Constructor } c => c.Arguments.Where((_, i) =>
             i >= c.Function.Parameters.Count || c.Function.Parameters[i].Modifier is not (Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out)),
         BoundBuiltinCall { Member: BuiltinMember.ListAdd } b => [b.Arguments[0]],
-        BoundBuiltinCall { Member: BuiltinMember.MapSet } b => [b.Arguments[1]],
         _ => [],
     };
 
@@ -542,7 +543,8 @@ internal sealed class RegionAnalysis
     private static bool IsPlace(BoundExpr e) => e switch
     {
         BoundLocal or BoundThis or BoundField or BoundTupleElement or BoundIndex => true,
-        BoundBuiltinCall { Member: BuiltinMember.OwnedValue or BuiltinMember.ResultValue or BuiltinMember.MapGet } => true,
+        BoundBuiltinCall { Member: BuiltinMember.OwnedValue or BuiltinMember.ResultValue or BuiltinMember.MapIndex
+            or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapGetOr } => true,
         BoundConversion c => IsPlace(c.Operand),
         BoundConditional c => IsPlace(c.WhenTrue) || IsPlace(c.WhenFalse),
         BoundCoalesce c => IsPlace(c.Left) || IsPlace(c.Right),
@@ -589,6 +591,7 @@ internal sealed class RegionAnalysis
         // A span's elements live wherever it points (often the caller's frame): not in the span local.
         BoundIndex { Target.Type: SpanType } => null,
         BoundIndex i => StoreRoot(i.Target),
+        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b => StoreRoot(b.Receiver),
         _ => null,
     };
 

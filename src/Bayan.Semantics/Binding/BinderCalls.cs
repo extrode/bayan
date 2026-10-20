@@ -394,9 +394,21 @@ internal sealed partial class Binder
         var ps = m.Parameters.Select((p, i) => new ParameterSymbol(p.Name, null, p.Type, ParamModifier.None, i)).ToList();
         var args = BindArguments(c, ps, null, enforceNames: false, displayName: name);
         if (m.Mutating) CheckWritable(receiver, receiver.Syntax.Span, $"`{name}` modifies it");
+        if (m.Member == BuiltinMember.MapSlot && !IsDefaultable(m.Returns))
+            Report(DiagnosticCodes.MapSlotNoDefault, c.Span, [m.Returns.DisplayName],
+                help: "read with `map[key]` or `map.getOr(key, fallback)`, and write with `map[key] = value`");
         var returns = m.Returns is SpanType span && receiver is BoundStaticArray ? new SpanType(span.Element, readOnly: true) : m.Returns;
         return new BoundBuiltinCall(c, m.Member, receiver, args, returns);
     }
+
+    /// <summary>Whether <c>map.slot</c> can insert a default <paramref name="t"/>: numbers, <c>bool</c>, <c>char</c>, <c>string</c>, optionals and structs whose fields all have defaults.</summary>
+    private static bool IsDefaultable(TypeSymbol t) => t switch
+    {
+        PrimitiveType { Kind: PrimitiveKind.Char } => true,
+        OptionalType => true,
+        StructSymbol s => s.IsDefaultable,
+        _ => t.IsNumeric || t.IsBool || t.IsString,
+    };
 
     // ── Failure handling ─────────────────────────────────────────────────────────
 
@@ -855,6 +867,7 @@ internal sealed partial class Binder
             BindExpr(a.Value);
             return new BoundErrorStmt(a);
         }
+        target = MapWriteTarget(target);
         CheckWritable(target, a.Target.Span, null);
         if (op is null)
             return new BoundAssign(a, target, BindConverted(a.Value, target.Type), null);
@@ -901,10 +914,15 @@ internal sealed partial class Binder
             Report(DiagnosticCodes.BadUnaryOperand, i.Span, [i.Increment ? "++" : "--", target.Type.DisplayName]);
             return new BoundErrorStmt(i);
         }
+        target = MapWriteTarget(target);
         CheckWritable(target, i.Target.Span, null);
         var one = Literal(i, target.Type, (Int128)1);
         return new BoundAssign(i, target, one, i.Increment ? BinaryOp.Add : BinaryOp.Sub);
     }
+
+    /// <summary><c>map[k]</c> as an assignment target inserts <c>k</c> when missing instead of panicking.</summary>
+    private static BoundExpr MapWriteTarget(BoundExpr target) =>
+        target is BoundBuiltinCall { Member: BuiltinMember.MapIndex } b ? b with { Member = BuiltinMember.MapIndexSet } : target;
 
     /// <summary>
     /// Reports when <paramref name="target"/> may not be written. Writes through <c>this</c> make
@@ -917,6 +935,7 @@ internal sealed partial class Binder
         BoundField f => WritesThis(f.Receiver),
         BoundTupleElement t => WritesThis(t.Receiver),
         BoundIndex { Target.Type: not SpanType } i => WritesThis(i.Target),
+        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b => WritesThis(b.Receiver),
         _ => false,
     };
 
@@ -962,6 +981,8 @@ internal sealed partial class Binder
                 return true;
             case BoundIndex i:
                 return CheckWritable(i.Target, span, why);
+            case BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b:
+                return CheckWritable(b.Receiver, span, why);
             case BoundStaticArray:
                 Report(DiagnosticCodes.MutateTemporary, span, [], label: why is null ? "a `const` never changes" : why + "; a `const` never changes");
                 return false;

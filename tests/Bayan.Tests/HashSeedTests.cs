@@ -20,7 +20,7 @@ public sealed class HashSeedTests
     [Fact]
     public void ProgramWithoutTestsAlwaysGetsThePerRunSeed()
     {
-        var code = Emit("var m = Map<i64, i64>();\nm.set(1, 10);\nprint($\"{m.count}\");\n");
+        var code = Emit("var m = Map<i64, i64>();\nm[1] = 10;\nprint($\"{m.length}\");\n");
         Assert.Contains("byn_hash_seed_init(false);", code);
         Assert.DoesNotContain("--test", code);
     }
@@ -28,7 +28,7 @@ public sealed class HashSeedTests
     [Fact]
     public void ProgramWithTestsSeedsOnlyUnderTestAndParsesArgsAfterDispatch()
     {
-        var code = Emit("void main(ReadOnlySpan<string> args) {\n    var m = Map<i64, i64>();\n    m.set(1, 10);\n}\n", "test \"one\" {\n    assert(1 == 1);\n}\n");
+        var code = Emit("void main(ReadOnlySpan<string> args) {\n    var m = Map<i64, i64>();\n    m[1] = 10;\n}\n", "test \"one\" {\n    assert(1 == 1);\n}\n");
         Assert.Contains("byn_hash_seed_init(argc == 3 && strcmp(argv[1], \"--test\") == 0);", code);
         Assert.True(code.IndexOf("byn_args(&argc", StringComparison.Ordinal) > code.IndexOf("switch (atoi(argv[2]))", StringComparison.Ordinal));
     }
