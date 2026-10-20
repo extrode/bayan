@@ -1,0 +1,32 @@
+enter
+inner body
+inner defer
+success path
+defer 2
+defer 1
+result 42
+---
+enter
+inner body
+inner defer
+errdefer 2 saw The step was told to fail.
+defer 2
+errdefer 1
+defer 1
+result -1
+---
+end 0
+body 1
+end 1
+end 2
+---
+enter
+inner body
+inner defer
+errdefer 2 saw The step was told to fail.
+defer 2
+errdefer 1
+defer 1
+outer errdefer
+outer defer
+result -1
