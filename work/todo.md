@@ -39,3 +39,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `using` on a `Map` is BYN2226 while `List` allows it (M20, spec 001).
 - A struct with a `List` field passes the formattable check but makes `CEmitter.Format` throw (M20, spec 001).
 - Generated union format helper indents `break;` one level too deep (cosmetic, M18, spec 001).
+- BYN3002 help suggests `.copy(to: alloc)` for an `Owned` value, which has no such method; `RecursiveStruct`/`RecursiveUnion` descriptors now unreferenced in `src/` (M21)

@@ -32,7 +32,7 @@ Each milestone task ends with `dotnet test -v q` green, a docs page + `diag/` ca
 
 ## M20–M21 Map and Owned
 - [x] T16 `Map<K,V>` — files: `Types.cs`, `TypeResolver.cs`, `BuiltinMembers.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R7, L3 — done when: 10,000 inserts with repeats + removals `run/` case; bad key type `diag/`.
-- [ ] T17 `Owned<T>` and recursive types — files: `Types.cs`, binder, `RegionAnalysis.cs`, `CEmitter.cs` — covers: R8 — done when: expression-tree `run/`; node escaping arena `diag/`; direct recursion `diag/`.
+- [x] T17 `Owned<T>` and recursive types — files: `Types.cs`, binder, `RegionAnalysis.cs`, `CEmitter.cs` — covers: R8 — done when: expression-tree `run/`; node escaping arena `diag/`; direct recursion `diag/`.
 
 ## M22 Bayan lexer
 - [x] T18 `tools/Bayan.UnicodeGen` + `selfhost/lexer/unicode-tables.byn` — covers: R9 — done when: generator asserts pass and the table file is checked in.
