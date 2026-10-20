@@ -79,9 +79,9 @@ internal sealed partial class Binder
             var converted = new BoundConversion(value.Syntax, value, target, kind);
             return value.Constant is { } c && kind == ConversionKind.Widen ? converted with { Constant = WidenConstant(c, target) } : converted;
         }
-        if (_sinkArgument && ContainsUntrusted(value.Type))
+        if (_sinkArgument is { } sink && ContainsUntrusted(value.Type))
         {
-            Report(DiagnosticCodes.UntrustedSink, span, [value.Type.DisplayName, "Io.runBatch"],
+            Report(DiagnosticCodes.UntrustedSink, span, [value.Type.DisplayName, sink],
                 help: "check the value, then clear the mark with `trust(x, reason: \"…\")`");
             return new BoundErrorExpr(value.Syntax);
         }
