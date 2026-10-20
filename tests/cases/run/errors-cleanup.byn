@@ -1,0 +1,50 @@
+error enum StepError {
+    /// The step was told to fail.
+    told,
+}
+
+void note(string s) {
+    print(s);
+}
+
+i64 work(bool fail) fails StepError {
+    note("enter");
+    defer note("defer 1");
+    errdefer note("errdefer 1");
+    defer note("defer 2");
+    errdefer (e) {
+        print($"errdefer 2 saw {e}");
+    }
+    {
+        defer note("inner defer");
+        note("inner body");
+    }
+    return .told if fail;
+    note("success path");
+    return 42;
+}
+
+void loops() {
+    for (let i in 0..3) {
+        defer print($"end {i}");
+        continue if i == 0;
+        break if i == 2;
+        print($"body {i}");
+    }
+}
+
+i64 outer() fails StepError {
+    defer note("outer defer");
+    errdefer note("outer errdefer");
+    let v = try work(fail: true);
+    note("not reached");
+    return v;
+}
+
+print($"result {work(fail: false) catch -1}");
+print("---");
+print($"result {work(fail: true) catch -1}");
+print("---");
+loops();
+print("---");
+print($"result {outer() catch -1}");

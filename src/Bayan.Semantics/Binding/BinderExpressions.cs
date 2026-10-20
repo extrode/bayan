@@ -548,7 +548,12 @@ internal sealed partial class Binder
 
     private BoundExpr BindTargetMember(TargetMemberExpr t, TypeSymbol? expected)
     {
-        var target = expected is OptionalType o ? o.Inner : expected;
+        var target = expected switch
+        {
+            OptionalType o => o.Inner,
+            ResultType r => r.Error,
+            _ => expected,
+        };
         switch (target)
         {
             case ErrorSetSymbol set:
@@ -821,6 +826,7 @@ internal sealed partial class Binder
     {
         PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
         OptionalType o => IsEquatable(o.Inner),
+        ResultType r => IsEquatable(r.Value),
         ErrorSetSymbol or ErrorUnionType => true,
         StructSymbol s => s.Fields.All(f => IsEquatable(f.Type)),
         Symbols.TupleType tt => tt.Fields.All(f => IsEquatable(f.Type)),
@@ -1148,6 +1154,7 @@ internal sealed partial class Binder
         PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
         ErrorSetSymbol or ErrorUnionType => true,
         OptionalType o => IsFormattable(o.Inner),
+        ResultType r => IsFormattable(r.Value),
         StructSymbol => true,
         Symbols.TupleType tt => tt.Fields.All(f => IsFormattable(f.Type)),
         _ => false,

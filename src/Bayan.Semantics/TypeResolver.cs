@@ -75,6 +75,28 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                     if (element.IsError) return element;
                     return text == "Span" ? new SpanType(element) : new ListType(element);
                 }
+                case "Result":
+                {
+                    if (n.Args.Length != 2)
+                    {
+                        compilation.Report(DiagnosticCodes.WrongTypeArgumentCount, file.Source, n.Span, [text, 2, n.Args.Length]);
+                        return ErrorType.Instance;
+                    }
+                    var value = Resolve(n.Args[0]);
+                    var error = Resolve(n.Args[1]);
+                    if (value.IsError || error.IsError) return ErrorType.Instance;
+                    if (error is not ErrorSetSymbol)
+                    {
+                        compilation.Report(DiagnosticCodes.NotAnErrorSet, file.Source, n.Args[1].Span, [error.DisplayName]);
+                        return ErrorType.Instance;
+                    }
+                    if (value is PrimitiveType { Kind: PrimitiveKind.Void or PrimitiveKind.Never })
+                    {
+                        compilation.Report(DiagnosticCodes.Unsupported, file.Source, n.Args[0].Span, [$"`Result<{value.DisplayName}, …>`"]);
+                        return ErrorType.Instance;
+                    }
+                    return new ResultType(value, error);
+                }
                 case "Arena":
                     NoTypeArgs(n);
                     return BuiltinType.Arena;
@@ -152,7 +174,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
     private string? Suggest(string text)
     {
         var lower = text.ToLowerInvariant();
-        foreach (var name in file.Module.Types.Keys.Concat(["Span", "List", "Arena", "StrBuf"]))
+        foreach (var name in file.Module.Types.Keys.Concat(["Span", "List", "Result", "Arena", "StrBuf"]))
             if (name.Equals(text, StringComparison.OrdinalIgnoreCase)) return name;
         if (PrimitiveType.ByName.ContainsKey(lower)) return lower;
         return lower switch
