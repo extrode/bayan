@@ -4,6 +4,8 @@ title: The Bayan lexer never panics and keeps spans inside the input
 status: enacted
 kind: property
 scope: selfhost/lexer/lexer.byn
+proof: tests/Bayan.Tests/SelfhostLexerTests.cs
+check: dotnet test -v q --filter "Law=L002"
 enacted: 2026-10-20
 ---
 

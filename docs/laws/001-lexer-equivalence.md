@@ -4,6 +4,8 @@ title: The Bayan lexer and the C# lexer agree on every input
 status: enacted
 kind: property
 scope: selfhost/lexer/lexer.byn
+proof: tests/Bayan.Tests/SelfhostLexerTests.cs
+check: dotnet test -v q --filter "Law=L001"
 enacted: 2026-10-20
 ---
 
