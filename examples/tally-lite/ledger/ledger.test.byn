@@ -1,0 +1,40 @@
+test "split gives leftover cents to the first participants" {
+    let shares = splitEvenly(8550, ["alice", "bob", "chen", "dina"]);
+    assert(shares.length == 4);
+    assert(shares[0].cents == 2138);
+    assert(shares[1].cents == 2138);
+    assert(shares[2].cents == 2137);
+    assert(shares[3].cents == 2137);
+    assert(shares[3].name == "dina");
+}
+
+test "balances sum to zero and follow first appearance" {
+    var trip = List<Expense>();
+    trip.add({ payer = "alice", amount = 3000, participants = ["alice", "bob", "chen"] });
+    trip.add({ payer = "bob", amount = 1000, participants = ["alice", "bob"] });
+    let owed = balances(trip);
+    assert(owed.length == 3);
+    assert(owed[0].name == "alice" && owed[0].cents == 1500);
+    assert(owed[1].name == "bob" && owed[1].cents == -500);
+    assert(owed[2].name == "chen" && owed[2].cents == -1000);
+}
+
+test "settle pays the largest creditor from the largest debtor" {
+    var owed = List<Share>();
+    owed.add((name: "alice", cents: 15222));
+    owed.add((name: "bob", cents: -128));
+    owed.add((name: "chen", cents: -5912));
+    owed.add((name: "dina", cents: -9182));
+    let transfers = settle(owed);
+    assert(transfers.length == 3);
+    assert(transfers[0].from == "dina" && transfers[0].to == "alice" && transfers[0].cents == 9182);
+    assert(transfers[1].from == "chen" && transfers[1].cents == 5912);
+    assert(transfers[2].from == "bob" && transfers[2].cents == 128);
+}
+
+test "settled balances need no transfers" {
+    var owed = List<Share>();
+    owed.add((name: "alice", cents: 0));
+    owed.add((name: "bob", cents: 0));
+    assert(settle(owed).isEmpty);
+}
