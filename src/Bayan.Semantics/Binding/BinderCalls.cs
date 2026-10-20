@@ -743,7 +743,7 @@ internal sealed partial class Binder
             case BoundTupleElement t:
                 return CheckWritable(t.Receiver, span, why);
             case BoundIndex { Target.Type: SpanType } i:
-                if (i.Target is BoundBuiltinCall { Member: BuiltinMember.StringBytes })
+                if (i.Target.Type is SpanType { ReadOnly: true })
                 {
                     Report(DiagnosticCodes.MutateTemporary, span, [], label: "the bytes of a `string` are read-only");
                     return false;

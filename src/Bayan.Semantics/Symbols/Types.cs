@@ -153,13 +153,16 @@ public sealed class OptionalType(TypeSymbol inner) : ConstructedType
 }
 
 /// <summary><c>Span&lt;T&gt;</c>: a borrowed (pointer, length) view.</summary>
-public sealed class SpanType(TypeSymbol element) : ConstructedType
+public sealed class SpanType(TypeSymbol element, bool readOnly = false) : ConstructedType
 {
     public TypeSymbol Element { get; } = element;
 
-    protected override object Key => Element;
+    /// <summary>A view whose elements cannot be assigned (<c>string.bytes</c>): strings stay immutable and valid UTF-8.</summary>
+    public bool ReadOnly { get; } = readOnly;
 
-    public override string DisplayName => $"Span<{Element.DisplayName}>";
+    protected override object Key => (Element, ReadOnly);
+
+    public override string DisplayName => ReadOnly ? $"read-only Span<{Element.DisplayName}>" : $"Span<{Element.DisplayName}>";
 
     public override bool IsBorrow => true;
 }
