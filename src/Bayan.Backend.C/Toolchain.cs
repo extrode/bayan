@@ -89,6 +89,16 @@ public static class Toolchain
         return null;
     }
 
+    /// <summary>
+    /// The C compiler for <c>sanitize</c> builds: <c>/usr/bin/clang</c> if present, else <c>clang</c>
+    /// from <c>PATH</c>; zig cc ships no AddressSanitizer runtime.
+    /// </summary>
+    public static string? SanitizerCompiler { get; } =
+        File.Exists("/usr/bin/clang") ? "/usr/bin/clang" : FindOnPath("clang");
+
+    /// <summary>Whether <c>sanitize</c> builds get AddressSanitizer on this machine.</summary>
+    public static bool AsanAvailable => SanitizerCompiler is not null;
+
     public static string? FindOnPath(string name)
     {
         var exts = OperatingSystem.IsWindows() ? new[] { ".exe", ".cmd", ".bat" } : new[] { "" };
@@ -105,12 +115,14 @@ public static class Toolchain
     /// Compiles <paramref name="cSource"/> to an executable in the cache (reused when the compiler
     /// version, source, runtime, mode, target and C compiler are unchanged) and copies it to
     /// <paramref name="output"/> if given. A <paramref name="target"/> other than the host needs zig.
+    /// <paramref name="sanitize"/> builds for the host with AddressSanitizer when <see cref="AsanAvailable"/>,
+    /// and is ignored otherwise.
     /// </summary>
-    public static NativeBuild Build(string cSource, BuildMode mode, string? output = null, string? target = null)
+    public static NativeBuild Build(string cSource, BuildMode mode, string? output = null, string? target = null, bool sanitize = false)
     {
         try
         {
-            return BuildCached(cSource, mode, output, target ?? Targets.Host);
+            return BuildCached(cSource, mode, output, target ?? Targets.Host, sanitize);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -122,12 +134,13 @@ public static class Toolchain
         }
     }
 
-    private static NativeBuild BuildCached(string cSource, BuildMode mode, string? output, string? target)
+    private static NativeBuild BuildCached(string cSource, BuildMode mode, string? output, string? target, bool sanitize)
     {
-        var compiler = FindCompiler();
+        var cross = target != Targets.Host;
+        var asan = sanitize && !cross && SanitizerCompiler is not null;
+        string[]? compiler = asan ? [SanitizerCompiler!] : FindCompiler();
         if (compiler is null)
             return new NativeBuild(null, "no C compiler found: install zig (https://ziglang.org) or set BAYAN_CC");
-        var cross = target != Targets.Host;
         if (cross && (target is null || Targets.Triple(target) is null))
             return new NativeBuild(null, $"unknown target `{target}`; targets are {string.Join(", ", Targets.All)}");
         if (cross && !(compiler.Length > 1 && compiler[1] == "cc" && Path.GetFileNameWithoutExtension(compiler[0]) == "zig"))
@@ -143,6 +156,7 @@ public static class Toolchain
             BuildMode.Safe => ["-O2"],
             _ => ["-O2", "-DBYN_FAST"],
         });
+        if (asan) flags.AddRange(["-fsanitize=address", "-fno-omit-frame-pointer", "-g"]);
         var key = Hash(string.Join("\0", CompilerVersion, mode, target, string.Join(" ", compiler), string.Join(" ", flags), RuntimeHeader, RuntimeSource, cSource));
         var hit = Lookup(key, exeName) is not null;
         if (!hit)
