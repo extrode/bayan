@@ -190,12 +190,16 @@ public sealed class Manifest
     public static bool IsPackageName(string text) =>
         text.Split('/') is [var ns, var name] && IsKebabName(ns) && IsKebabName(name);
 
+    /// <summary>
+    /// <c>MAJOR.MINOR.PATCH</c> (each at most 18 digits, so it fits a <c>long</c>), optionally
+    /// <c>-</c> and dot-separated identifiers of <c>[0-9A-Za-z-]</c> (semver 2.0 §9).
+    /// </summary>
     public static bool IsSemanticVersion(string text)
     {
-        var core = text.Split('-', 2)[0];
-        return core.Split('.') is [var a, var b, var c]
-            && new[] { a, b, c }.All(p => p.Length > 0 && p.All(char.IsAsciiDigit) && (p == "0" || p[0] != '0'))
-            && (core.Length == text.Length || text.Length > core.Length + 1);
+        var parts = text.Split('-', 2);
+        return parts[0].Split('.') is [var a, var b, var c]
+            && new[] { a, b, c }.All(p => p.Length is > 0 and <= 18 && p.All(char.IsAsciiDigit) && (p == "0" || p[0] != '0'))
+            && (parts.Length == 1 || parts[1].Split('.').All(id => id.Length > 0 && id.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '-')));
     }
 
     /// <summary>

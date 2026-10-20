@@ -38,7 +38,26 @@ public sealed class ManifestTests
     [InlineData("1.0", false)]
     [InlineData("01.0.0", false)]
     [InlineData("1.0.0-", false)]
+    [InlineData("1.0.0-rc..1", false)]
+    [InlineData("123456789012345678.0.0", true)]
     public void SemanticVersions(string version, bool valid) => Assert.Equal(valid, Manifest.IsSemanticVersion(version));
+
+    /// <summary>A version names <c>dist/&lt;version&gt;/</c>, so it can't hold a path or overflow a <c>long</c>.</summary>
+    [Theory]
+    [InlineData("1.0.0-x/../..", false)]
+    [InlineData("99999999999999999999.0.0", false)]
+    [InlineData("1.0.0-rc.1", true)]
+    public void ManifestVersions(string version, bool valid)
+    {
+        var text = $"Package {{ name = \"local/tally\", version = \"{version}\", edition = 2027, kind = .app }}";
+        var m = Manifest.Parse(Bayan.Syntax.Text.SourceText.FromString("package.byn", text));
+        if (valid)
+        {
+            Assert.Empty(m.Diagnostics);
+            Assert.Equal(version, m.Version);
+        }
+        else Assert.Contains(m.Diagnostics, d => d.Message.Contains("`version` must be a semantic version string", StringComparison.Ordinal));
+    }
 
     [Theory]
     [InlineData("0.2.0", "0.10.0", -1)]

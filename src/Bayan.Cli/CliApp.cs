@@ -469,8 +469,11 @@ public static class CliApp
         return ExitOk;
     }
 
-    /// <summary>A test that runs longer than this is stopped and reported as timed out.</summary>
-    private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(60);
+    /// <summary>A test that runs longer than this (60 s, or <c>$BAYAN_TEST_TIMEOUT_MS</c>) is stopped and reported as timed out.</summary>
+    private static TimeSpan TestTimeout =>
+        int.TryParse(Environment.GetEnvironmentVariable("BAYAN_TEST_TIMEOUT_MS"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var ms) && ms > 0
+            ? TimeSpan.FromMilliseconds(ms)
+            : TimeSpan.FromSeconds(60);
 
     private static int Test(string[] args, TextWriter stdout, TextWriter stderr)
     {
@@ -527,10 +530,12 @@ public static class CliApp
         }
         total.Stop();
         var report = new TestReport(compiled.Manifest?.Name, ModeName(o.Mode), HostTarget, results, total.Elapsed, skipped);
-        int passed = report.Count(TestStatus.Pass), failed = report.Count(TestStatus.Fail), panicked = count - passed - failed;
+        int passed = report.Count(TestStatus.Pass), failed = report.Count(TestStatus.Fail);
+        int panicked = report.Count(TestStatus.Panic), timedOut = report.Count(TestStatus.Timeout);
         var summary = $"{passed} passed";
         if (failed > 0) summary += $", {failed} failed";
         if (panicked > 0) summary += $", {panicked} panicked";
+        if (timedOut > 0) summary += $", {timedOut} timed out";
         human.WriteLine();
         human.WriteLine($"{count} test{(count == 1 ? "" : "s")}: {summary}  ({FormatMs(total.Elapsed)})");
         var json = report.ToJson();
@@ -561,22 +566,24 @@ public static class CliApp
             stderr.WriteLine("bayan: `--changed` needs git, which isn't installed");
             return null;
         }
-        if (Scaffold.Git(git, dir, "rev-parse", "--show-toplevel") is not (0, var top))
+        if (Scaffold.Git(git, dir, "rev-parse", "--show-toplevel") is not (0, _))
         {
             stderr.WriteLine($"bayan: `--changed` needs a git repository, and `{o.Path}` isn't in one");
             return null;
         }
+        // Paths relative to `dir`, not the toplevel, which git reports with symlinks resolved;
+        // `-z` keeps non-ASCII names unquoted.
         var baseRef = o.Base ?? "HEAD";
-        if (Scaffold.Git(git, top, "diff", "--name-only", baseRef, "--") is not (0, var diff))
+        if (Scaffold.Git(git, dir, "diff", "--name-only", "-z", "--relative", baseRef, "--", ".") is not (0, var diff))
         {
             stderr.WriteLine($"bayan: git can't compare the working tree with `{baseRef}`");
             return null;
         }
-        var untracked = Scaffold.Git(git, top, "ls-files", "--others", "--exclude-standard", "--full-name") is (0, var u) ? u : "";
+        var untracked = Scaffold.Git(git, dir, "ls-files", "-z", "--others", "--exclude-standard", "--", ".") is (0, var u) ? u : "";
         var set = new ChangedSet(false, new HashSet<string>(StringComparer.Ordinal));
-        foreach (var relative in (diff + "\n" + untracked).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var relative in (diff + "\0" + untracked).Split('\0', StringSplitOptions.RemoveEmptyEntries))
         {
-            var full = Path.GetFullPath(Path.Combine(top, relative));
+            var full = Path.GetFullPath(Path.Combine(dir, relative));
             if (compiled.ProjectRoot is { } root && full == Path.Combine(root, "package.byn")) return set with { All = true };
             if (full.EndsWith(".byn", StringComparison.Ordinal)) set.Directories.Add(ModuleDirectory(compiled, full));
         }

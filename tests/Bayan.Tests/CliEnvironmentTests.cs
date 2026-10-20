@@ -223,4 +223,47 @@ public sealed partial class CliEnvironmentTests
             Assert.Contains("needs a git repository", r.Err);
         });
     }
+
+    [Fact]
+    public void TestChangedWorksThroughASymlinkedPath()
+    {
+        if (Toolchain.FindOnPath("git") is null || OperatingSystem.IsWindows()) return;
+        var app = ChangedProject("changed-symlink");
+        var link = Path.Combine(Path.GetDirectoryName(app)!, "link");
+        Directory.CreateSymbolicLink(link, app);
+        File.AppendAllText(Path.Combine(link, "src", "money", "money.byn"), "\n");
+        Assert.Equal(["cents"], Ran(Run(["test", link, "--changed"]).Out));
+    }
+
+    [Fact]
+    public void TestChangedSeesNonAsciiFileNames()
+    {
+        if (Toolchain.FindOnPath("git") is null) return;
+        var app = ChangedProject("changed-non-ascii");
+        var cafe = Path.Combine(app, "src", "money", "café.byn");
+        File.WriteAllText(cafe, "public i64 euros(i64 units) {\n    return units;\n}\n");
+        Assert.Equal(["cents"], Ran(Run(["test", app, "--changed"]).Out));
+
+        Assert.Equal(0, Git(app, "add", "-A").Code);
+        Assert.Equal(0, Git(app, "commit", "--quiet", "-m", "café").Code);
+        File.AppendAllText(cafe, "\n");
+        Assert.Equal(["cents"], Ran(Run(["test", app, "--changed"]).Out));
+    }
+
+    // ── test timeouts ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ATestThatRunsTooLongIsReportedAsTimedOut()
+    {
+        var file = Path.Combine(Fresh("timeout"), "main.byn");
+        File.WriteAllText(file, "void main() {\n}\n\ntest \"loops\" {\n    while (true) {\n    }\n}\n");
+        With("BAYAN_TEST_TIMEOUT_MS", "300", () =>
+        {
+            var (exit, stdout, _) = Run(["test", file]);
+            Assert.Equal(CliApp.ExitTestFailure, exit);
+            Assert.Matches("^  TIME   loops  \\(", stdout.Split('\n')[1]);
+            Assert.Contains("1 test: 0 passed, 1 timed out  (", stdout);
+            Assert.DoesNotContain("panicked", stdout);
+        });
+    }
 }

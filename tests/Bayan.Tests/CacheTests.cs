@@ -235,4 +235,31 @@ public sealed class CacheTests
             Assert.True(File.Exists(Exe(app)));
         });
     }
+
+    [Fact]
+    public void CleanCacheRemovesOnlyCacheData()
+    {
+        var root = Root("clean-only-data");
+        var app = NewApp(root);
+        var unrelated = Path.Combine(root, "cache", "keep.txt");
+        WithCache(root, () =>
+        {
+            Ok(Run("build", app));
+            File.WriteAllText(unrelated, "not bayan's");
+            var (exit, stdout, _) = Run("clean", "--cache", app);
+            Assert.Equal(CliApp.ExitOk, exit);
+            Assert.Contains($"removed {Toolchain.CacheData}", stdout);
+            Assert.False(Directory.Exists(Toolchain.CacheData));
+            Assert.True(File.Exists(unrelated));
+        });
+    }
+
+    [Fact]
+    public void ScriptKeysDependOnTheCompilerBuild()
+    {
+        byte[] script = "print(\"hi\");\n"u8.ToArray();
+        Assert.NotEqual(Toolchain.ScriptKey(script, BuildMode.Safe, "a"), Toolchain.ScriptKey(script, BuildMode.Safe, "b"));
+        Assert.Equal(Toolchain.ScriptKey(script, BuildMode.Safe, "a"), Toolchain.ScriptKey(script, BuildMode.Safe, "a"));
+        Assert.NotEmpty(Toolchain.CompilerBuild);
+    }
 }
