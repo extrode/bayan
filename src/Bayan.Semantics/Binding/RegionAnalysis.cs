@@ -289,7 +289,7 @@ internal sealed class RegionAnalysis
         {
             case BuiltinMember.ListAsSpan or BuiltinMember.ArrayAsSpan or BuiltinMember.StrBufAsString:
                 return Lend(b.Receiver, receiver);
-            case BuiltinMember.SpanCopy or BuiltinMember.StringCopy:
+            case BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy:
                 return AllocatedFrom(b.Arguments[0]);
             case BuiltinMember.ListAdd:
                 StoreInto(b.Receiver, args[0], b.Arguments[0].Syntax.Span);

@@ -164,6 +164,9 @@ int64_t byn_map_insert(byn_map_hdr* h, void** keys, int64_t ksize, void** vals, 
                        uint64_t hash, byn_key_eq eq, bool* added);
 bool byn_map_remove(byn_map_hdr* h, const void* keys, int64_t ksize, const void* key, uint64_t hash, byn_key_eq eq);
 void byn_map_clear(byn_map_hdr* h);
+/* Copies the live entries of `src` in insertion order into fresh storage from `to`; `dst` gets the new header. */
+void byn_map_copy(const byn_map_hdr* src, const void* keys, int64_t ksize, void** dkeys, const void* vals, int64_t vsize,
+                  void** dvals, byn_map_hdr* dst, byn_alloc* to);
 
 /* ── Program entry and Io ────────────────────────────────────────────────── */
 
@@ -208,6 +211,8 @@ int64_t byn_io_monotonic_nanos(void);
 
 /* `StrBuf(buf)` is a strict writer over caller-provided bytes; `StrBuf()` grows from `alloc`. */
 static inline byn_str byn_strbuf_str(byn_writer w) { return (byn_str){w.buf, w.len}; }
+/* A growable StrBuf holding the same text in fresh storage from `to`. */
+byn_writer byn_strbuf_copy(byn_writer w, byn_alloc* to);
 static inline byn_writer byn_strbuf_grow(byn_alloc* alloc) {
     return (byn_writer){NULL, 0, 0, BYN_WRITE_GROW, NULL, 0, alloc};
 }

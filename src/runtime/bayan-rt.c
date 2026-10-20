@@ -473,6 +473,42 @@ void byn_map_clear(byn_map_hdr* h) {
     if (h->icap > 0) memset(h->index, 0xFF, (size_t)h->icap * sizeof(int32_t));
 }
 
+void byn_map_copy(const byn_map_hdr* src, const void* keys, int64_t ksize, void** dkeys, const void* vals, int64_t vsize,
+                  void** dvals, byn_map_hdr* dst, byn_alloc* to) {
+    *dst = (byn_map_hdr){0};
+    dst->alloc = to;
+    *dkeys = NULL;
+    *dvals = NULL;
+    if (src->live == 0) return;
+    int64_t cap = 8;
+    while (cap < src->live) cap *= 2;
+    dst->cap = cap;
+    dst->icap = cap * 2;
+    *dkeys = to->resize(to, NULL, 0, cap * ksize);
+    *dvals = to->resize(to, NULL, 0, cap * vsize);
+    dst->hashes = to->resize(to, NULL, 0, cap * (int64_t)sizeof(uint64_t));
+    dst->dead = to->resize(to, NULL, 0, cap * (int64_t)sizeof(bool));
+    dst->index = to->resize(to, NULL, 0, dst->icap * (int64_t)sizeof(int32_t));
+    int64_t j = 0;
+    for (int64_t i = 0; i < src->len; i++) {
+        if (src->dead[i]) continue;
+        memcpy((uint8_t*)*dkeys + j * ksize, (const uint8_t*)keys + i * ksize, (size_t)ksize);
+        memcpy((uint8_t*)*dvals + j * vsize, (const uint8_t*)vals + i * vsize, (size_t)vsize);
+        dst->hashes[j] = src->hashes[i];
+        dst->dead[j++] = false;
+    }
+    dst->len = dst->live = j;
+    memset(dst->index, 0xFF, (size_t)dst->icap * sizeof(int32_t));
+    for (int64_t i = 0; i < j; i++) byn_map_place(dst, i);
+}
+
+byn_writer byn_strbuf_copy(byn_writer w, byn_alloc* to) {
+    byn_writer r = byn_strbuf_grow(to);
+    r.buf = (uint8_t*)byn_copy_bytes(w.buf, w.len, to);
+    r.cap = r.len = w.len;
+    return r;
+}
+
 /* ── Program entry ───────────────────────────────────────────────────────── */
 
 bool byn_utf8_valid(const uint8_t* p, int64_t n) {

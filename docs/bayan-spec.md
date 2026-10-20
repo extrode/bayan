@@ -688,6 +688,7 @@ Decoders default to safe limits (JSON nesting depth 128, maximum size). Per-requ
 - **Queries** (never allocate): `isEmpty contains indexOf lastIndexOf startsWith endsWith count any all none tryFirst tryLast`.
 - **Views** (never allocate): `take skip takeLast skipLast reversed() stride chunks windows splitAt split lines trim where select`.
 - **New data** (allocate from context; each has an `xInto` form): `toList sorted() distinct join upper() lower() replace() pad()`, spread `[..a, ..b]`.
+- Collections copy explicitly: `xs.copy(to: alloc)` for `List`, `Map` and `StrBuf` returns an independent value of the same type (not allowed when an element, key or value holds a `List`, `Map`, `StrBuf` or `Owned`).
 - `first` / `last` exist only on `NonEmpty<T>`; `tryFirst` / `tryLast` everywhere.
 - Compile-time work: bounds checks removed when provably in range; constant slices of fixed arrays have type `T[N]`; `xs[^1]` lowers to `xs[xs.length - 1]`; slice chains fuse.
 - Maps: reading `map[k]` panics if missing; `map.getOr(k, fallback)` reads without inserting; `ref map.slot(k)` gets or inserts a default (requires `V : default`).
