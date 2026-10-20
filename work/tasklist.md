@@ -43,4 +43,4 @@ tick.
 - [x] **T6 — M5 errors** — done when: run/ cases for every error form incl. cleanup order; diag/ for non-exhaustive catch and try in defer
 - [x] **T7 — M6 memory basics** — done when: run/ cases for slicing and arenas; diag/ for borrow escape, mutation while borrowed
 - [x] **T8 — M7 tests** — done when: bayan test reports passing, failing and panicking tests correctly
-- [ ] **T9 — M8 tally-lite** — done when: bayan run prints the sample transfers; bayan test examples/tally-lite passes
+- [x] **T9 — M8 tally-lite** — done when: bayan run prints the sample transfers; bayan test examples/tally-lite passes
