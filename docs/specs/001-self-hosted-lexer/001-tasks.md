@@ -4,7 +4,7 @@ Plan: ./001-plan.md
 Each milestone task ends with `dotnet test -v q` green, a docs page + `diag/` case per new diagnostic and a `run/` case per runtime feature (R12).
 
 ## M13 Program entry and I/O
-- [ ] T1 Self-hosting readiness section — files: `docs/bayan-handoff.md` — covers: R15 — done when: every row of `docs/bayan-self-hosting.md`'s table appears with status (v0.1 / M13–M23 / next spec) and the file-I/O/args correction is noted.
+- [x] T1 Self-hosting readiness section — files: `docs/bayan-handoff.md` — covers: R15 — done when: every row of `docs/bayan-self-hosting.md`'s table appears with status (v0.1 / M13–M23 / next spec) and the file-I/O/args correction is noted.
 - [ ] T2 Attributes on declarations and error variants — files: `src/Bayan.Syntax/Parsing/Parser.cs`, `Nodes.cs` — covers: R1 — done when: `[ExitCode(3)]` parses; unknown attribute name is a diagnostic with `diag/` case.
 - [ ] T3 `main` signatures + argv + exit codes — files: `Binder.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R1 — done when: `run/` args echo prints `a` / `b c`; `main` returning 7 exits 7; failing `main` exits its `[ExitCode]` or 1; non-UTF-8 argv exits 1 (Q41).
 - [ ] T4 Builtin `Io` + `IoError` — files: `Builtins.cs`, `BuiltinMembers.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R2 — done when: `run/` cases copy file (byte-identical), missing file handled, invalid UTF-8 text fails / bytes succeed, stdout/stderr write without newline.

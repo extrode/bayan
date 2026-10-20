@@ -1,6 +1,3 @@
 # Current
 
-Not yet chosen
-
-Pulled from `work/tasklist.md` by `tools/status-roll.js`. One task only — if this needs
-splitting, split it in the tasklist first.
+Spec 001, self-hosted lexer (`docs/specs/001-self-hosted-lexer/`): M13–M23 on `feat/001-self-hosted-lexer`.

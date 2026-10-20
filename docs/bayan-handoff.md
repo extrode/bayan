@@ -343,6 +343,25 @@ v0.2: DIR + interpreter (comptime, scripts), generics, interfaces, unions, enums
 v0.3: fibers and `Io.Evented`, networking, HTTP, TLS through a C wrapper, WASM.
 Formatter, LSP, prose tool and packages land across v0.2–v0.4.
 
+## Self-hosting readiness
+
+`docs/bayan-self-hosting.md` lists what a compiler needs from its own language. Spec 001 (`docs/specs/001-self-hosted-lexer/`) covers phases 1 and 2; milestones M13–M23 continue the numbering above. Correction to that doc's table: file I/O and program arguments were **not** in v0.1; M13 adds them.
+
+| Needed for | Feature | Status |
+|---|---|---|
+| Reading source files | File I/O, UTF-8 strings, slicing | strings and slicing v0.1; file I/O and args M13 |
+| Error reporting | `fails`, error unions, `defer` | v0.1; `[ExitCode]` M13 |
+| Fast allocation of syntax trees | Arenas, `context` allocator | v0.1; growable strings M14 |
+| Tokens and diagnostics | Structs, fixed arrays, `List<T>` | v0.1; enums M16–M17, static `const` arrays M16 |
+| Syntax-tree nodes | Unions + exhaustive `switch` | M18; recursion through `Owned<T>` M21 |
+| Symbol tables | `Map` / `HashMap`, `Symbol` interning | `Map` M20; `HashMap` and interning next spec |
+| Reusable passes | Generics, interfaces, iterators | generics M19; interfaces and iterators next spec |
+| Nodes referring to source text | Borrowed struct fields (full regions) | byte offsets (v0.1); full regions later spec |
+| Running `zig cc` | Spawning processes | M15 (`Io.run`, `Io.listDir`) |
+| Tests | `test` blocks, `property`, `fuzz` | `test` v0.1; `property`/`fuzz` next spec |
+
+Phase 1 tool: `tools/lex-diff/` (M15). Phase 2: `selfhost/lexer/` checked against the C# lexer by the test suite (M22–M23).
+
 ## Testing the compiler itself
 
 - Golden tests for every phase (above).
