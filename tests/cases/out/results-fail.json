@@ -34,6 +34,7 @@
     "failed": 0,
     "panicked": 2,
     "timedOut": 0,
+    "skipped": 0,
     "durationMs": 0
   }
 }

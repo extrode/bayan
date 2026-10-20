@@ -17,7 +17,7 @@ public sealed class CliTests
     {
         var (exit, stdout, _) = Run("--version");
         Assert.Equal(CliApp.ExitOk, exit);
-        Assert.Equal($"bayan {CliApp.Version}{Environment.NewLine}", stdout);
+        Assert.Matches($"^bayan {System.Text.RegularExpressions.Regex.Escape(CliApp.Version)} \\(commit ([0-9a-f]{{12}}|unknown)\\)\\r?\\n$", stdout);
     }
 
     [Fact]

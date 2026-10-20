@@ -57,6 +57,25 @@ public sealed class DiagnosticRendererTests
     }
 
     [Fact]
+    public void ColorOnlyAddsEscapes()
+    {
+        var diagnostic = new Diagnostic(
+            Severity.Error,
+            "BYN2104",
+            Ledger,
+            new TextSpan(Find(Ledger, "total +=").Start, "total".Length),
+            "`total` is immutable",
+            Label: "declared with `let` on line 9",
+            Help: "declare it with `var` if it should change",
+            Fix: new Fix(Find(Ledger, "let total"), "var total"));
+        var colored = DiagnosticRenderer.Render(diagnostic, includePath: true, color: true);
+        Assert.Equal(DiagnosticRenderer.Render(diagnostic, includePath: true), System.Text.RegularExpressions.Regex.Replace(colored, "\u001b\\[[0-9;]*m", ""));
+        Assert.StartsWith("\u001b[1m\u001b[31merror BYN2104\u001b[0m\u001b[1m: `total` is immutable\u001b[0m\n", colored);
+        Assert.Contains("\u001b[1m\u001b[31m^^^^^ declared with `let` on line 9\u001b[0m", colored);
+        Assert.Contains("\u001b[1m\u001b[36mhelp:\u001b[0m declare", colored);
+    }
+
+    [Fact]
     public void RendersWithoutHelpOrFix()
     {
         var source = SourceText.FromString("a.byn", "let x = 1;\n");

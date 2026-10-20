@@ -11,9 +11,10 @@ public sealed record TestResult(string Name, string File, int Line, TestStatus S
 /// <summary>
 /// <c>out/test/results.json</c> and <c>bayan test --json</c>: the package, mode and target, one
 /// entry per test (<c>name</c>, <c>file</c>, <c>line</c>, <c>status</c> pass/fail/panic/timeout,
-/// <c>durationMs</c>, <c>output</c> of a test that didn't pass), and a summary.
+/// <c>durationMs</c>, <c>output</c> of a test that didn't pass), and a summary (<c>skipped</c>
+/// counts tests that <c>--changed</c> left out).
 /// </summary>
-public sealed record TestReport(string? Package, string Mode, string Target, IReadOnlyList<TestResult> Tests, TimeSpan Elapsed)
+public sealed record TestReport(string? Package, string Mode, string Target, IReadOnlyList<TestResult> Tests, TimeSpan Elapsed, int Skipped = 0)
 {
     public int Count(TestStatus status) => Tests.Count(t => t.Status == status);
 
@@ -46,6 +47,7 @@ public sealed record TestReport(string? Package, string Mode, string Target, IRe
             w.WriteNumber("failed", Count(TestStatus.Fail));
             w.WriteNumber("panicked", Count(TestStatus.Panic));
             w.WriteNumber("timedOut", Count(TestStatus.Timeout));
+            w.WriteNumber("skipped", Skipped);
             w.WriteNumber("durationMs", Math.Round(Elapsed.TotalMilliseconds, 1));
             w.WriteEndObject();
             w.WriteEndObject();
