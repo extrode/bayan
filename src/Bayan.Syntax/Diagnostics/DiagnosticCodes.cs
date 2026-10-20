@@ -176,6 +176,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor SharedStorageCopy = Error("BYN2762", "a `{0}` cannot be copied");
     public static readonly DiagnosticDescriptor UnknownAttribute = Error("BYN2770", "unknown attribute `{0}`");
     public static readonly DiagnosticDescriptor InvalidMainSignature = Error("BYN2771", "`main` must return `void` or `i32` and take nothing or `ReadOnlySpan<string> args`");
+    public static readonly DiagnosticDescriptor UntrustedSink = Error("BYN2786", "`{0}` cannot be passed to `{1}`: it is `Untrusted`");
     public static readonly DiagnosticDescriptor TrustReason = Error("BYN2787", "`trust` needs a reason: a non-empty string literal");
     public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`[ExitCode]` needs one integer constant from 1 to 255");
     public static readonly DiagnosticDescriptor CopyUniqueElement = Error("BYN2784", "a `{0}` holding `{1}` cannot be copied: the copy would share its storage");

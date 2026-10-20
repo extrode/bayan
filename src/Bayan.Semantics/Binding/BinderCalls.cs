@@ -64,6 +64,9 @@ internal sealed partial class Binder
     /// <summary>Binding the argument of <c>print</c>, which also takes an enum and prints its name.</summary>
     private bool _printArgument;
 
+    /// <summary>Binding an argument of <c>Io.runBatch</c>, a sink where an <c>Untrusted&lt;T&gt;</c> value is BYN2786.</summary>
+    private bool _sinkArgument;
+
     private BoundExpr BindFunctionCall(CallExpr c, FunctionSymbol fn, BoundExpr? receiver, TypeSyntax[]? typeArgs = null)
     {
         if (fn.TypeParameters.Count > 0 || typeArgs is { Length: > 0 })
@@ -75,10 +78,11 @@ internal sealed partial class Binder
             }
             fn = instance;
         }
-        var outer = _printArgument;
+        var (outer, outerSink) = (_printArgument, _sinkArgument);
         _printArgument = fn.Builtin == BuiltinFunction.Print;
+        _sinkArgument = fn.Builtin == BuiltinFunction.IoRunBatch;
         var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
-        _printArgument = outer;
+        (_printArgument, _sinkArgument) = (outer, outerSink);
         if (receiver is not null && fn.HasThis)
             _c.MutationChecks.Add(new MutationCheck(this, fn, receiver));
         if (fn.Fails && !ReferenceEquals(_handled, c))

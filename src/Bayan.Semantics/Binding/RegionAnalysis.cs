@@ -342,11 +342,11 @@ internal sealed class RegionAnalysis
             }
         }
         // Rule 4: a returned borrow derives from every argument. `Io` results are fresh copies and borrow none.
-        var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun
+        var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch
             ? Borrow.None
             : args.Aggregate(receiver, (acc, a) => acc.Union(a));
         // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText` and `Io.run` return (Q29).
-        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.StrBufGrow))
+        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow))
             result = result.Union(_contexts.Peek());
         return result;
     }

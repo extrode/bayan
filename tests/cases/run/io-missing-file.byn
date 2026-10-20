@@ -5,6 +5,8 @@ string describe(string path) => Io.readText(path) catch (e) switch {
     .invalidUtf8 => "not UTF-8",
     .notADirectory => "not a directory",
     .other => "other error",
+    .invalidInput => "invalid input",
+    .unsupported => "unsupported",
 };
 
 void main() {
