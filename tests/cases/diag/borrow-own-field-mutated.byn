@@ -1,0 +1,30 @@
+struct Token {
+    i64 kind;
+}
+
+struct Lexer {
+    List<Token> toks;
+
+    Span<Token> tokens() => toks.asSpan();
+
+    (Span<Token>, i64) counted() => (toks.asSpan(), toks.length);
+
+    Span<Token> scratch() {
+        var local = List<Token>();
+        local.add(Token { kind = 0 });
+        return local.asSpan();
+    }
+}
+
+void main() {
+    var lexer = Lexer { toks = List<Token>() };
+    let all = lexer.tokens();
+    lexer.toks.add(Token { kind = 1 });
+    print($"{all.length}");
+    Span<Token> kept = lexer.tokens();
+    {
+        let inner = Lexer { toks = List<Token>() };
+        kept = inner.tokens();
+    }
+    print($"{kept.length}");
+}

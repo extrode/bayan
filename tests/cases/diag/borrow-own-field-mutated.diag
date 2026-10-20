@@ -1,0 +1,27 @@
+error BYN3003: cannot return a borrow of the temporary on line 10, which is freed when `counted` returns
+
+  10 │     (Span<Token>, i64) counted() => (toks.asSpan(), toks.length);
+     │                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     │
+  help: let the caller pass the buffer or allocator in, and borrow or allocate from that
+
+error BYN3003: cannot return a borrow of `local`, which is freed when `scratch` returns
+
+  15 │         return local.asSpan();
+     │                ^^^^^^^^^^^^^^
+     │
+  help: let the caller pass the buffer or allocator in, and borrow or allocate from that
+
+error BYN3004: `lexer` is modified while `all` still borrows it
+
+  22 │     lexer.toks.add(Token { kind = 1 });
+     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `all` is used again on line 23
+     │
+  help: finish using `all` first, or copy what it needs before changing `lexer`
+
+error BYN3002: `inner` does not live as long as `kept`, which borrows it
+
+  27 │         kept = inner.tokens();
+     │                ^^^^^^^^^^^^^^ `inner` is freed at the end of its block
+     │
+  help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough

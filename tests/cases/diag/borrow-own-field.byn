@@ -1,0 +1,29 @@
+struct Token {
+    i64 kind;
+}
+
+struct Lexer {
+    List<Token> toks;
+    i64[4] marks;
+
+    Span<Token> tokens() => toks.asSpan();
+
+    ReadOnlySpan<Token> rest(i64 from) => toks.asSpan()[from..];
+
+    Span<i64> firstMarks() {
+        let all = marks.asSpan();
+        return all[..2];
+    }
+}
+
+void main() {
+    var lexer = Lexer { toks = List<Token>(), marks = [0, 0, 0, 0] };
+    lexer.toks.add(Token { kind = 1 });
+    lexer.toks.add(Token { kind = 2 });
+    let all = lexer.tokens();
+    print($"{all.length} {all[0].kind}");
+    let tail = lexer.rest(from: 1);
+    print($"{tail[0].kind}");
+    lexer.toks.add(Token { kind = 3 });
+    print($"{lexer.firstMarks().length}");
+}
