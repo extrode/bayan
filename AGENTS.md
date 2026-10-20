@@ -1,0 +1,10 @@
+# Bayan — agent instructions
+
+- Source of truth: `docs/bayan-spec.md`. Work plan, milestones, open questions and progress log: `docs/bayan-handoff.md`. Read both before working.
+- Appendix A of the spec lists settled decisions; do not re-propose them. Spec gaps go to *Questions* in the handoff, with the most conservative option implemented meanwhile.
+- Update the handoff's *Progress log* at the end of every working session.
+- Stack: C# / .NET 10, NativeAOT for `src/` (`IsAotCompatible`, warnings are errors). No reflection, no `Reflection.Emit`, no parser generators.
+- Lexer works over `ReadOnlySpan<byte>` UTF-8; tokens are structs; positions are byte offsets (`TextSpan`).
+- Tests: `dotnet test -v q`. Golden cases live in `tests/cases/<kind>/`; `BAYAN_UPDATE=1 dotnet test` rewrites expected files. Every new diagnostic needs a `diag/` case, every runtime feature a `run/` case.
+- Diagnostic codes `BYN####`: 0001–0999 lexer, 1000–1999 parser, 2000–3999 semantics, 4000–4999 backend. Rendered format is fixed by `DiagnosticRendererTests`.
+- Scratch goes in `tmp/` (gitignored).
