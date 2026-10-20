@@ -5,9 +5,9 @@ Each milestone task ends with `dotnet test -v q` green, a docs page + `diag/` ca
 
 ## M13 Program entry and I/O
 - [x] T1 Self-hosting readiness section — files: `docs/bayan-handoff.md` — covers: R15 — done when: every row of `docs/bayan-self-hosting.md`'s table appears with status (v0.1 / M13–M23 / next spec) and the file-I/O/args correction is noted.
-- [ ] T2 Attributes on declarations and error variants — files: `src/Bayan.Syntax/Parsing/Parser.cs`, `Nodes.cs` — covers: R1 — done when: `[ExitCode(3)]` parses; unknown attribute name is a diagnostic with `diag/` case.
-- [ ] T3 `main` signatures + argv + exit codes — files: `Binder.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R1 — done when: `run/` args echo prints `a` / `b c`; `main` returning 7 exits 7; failing `main` exits its `[ExitCode]` or 1; non-UTF-8 argv exits 1 (Q41).
-- [ ] T4 Builtin `Io` + `IoError` — files: `Builtins.cs`, `BuiltinMembers.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R2 — done when: `run/` cases copy file (byte-identical), missing file handled, invalid UTF-8 text fails / bytes succeed, stdout/stderr write without newline.
+- [x] T2 Attributes on declarations and error variants — files: `src/Bayan.Syntax/Parsing/Parser.cs`, `Nodes.cs` — covers: R1 — done when: `[ExitCode(3)]` parses; unknown attribute name is a diagnostic with `diag/` case.
+- [x] T3 `main` signatures + argv + exit codes — files: `Binder.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R1 — done when: `run/` args echo prints `a` / `b c`; `main` returning 7 exits 7; failing `main` exits its `[ExitCode]` or 1; non-UTF-8 argv exits 1 (Q41).
+- [x] T4 Builtin `Io` + `IoError` — files: `Builtins.cs`, `BuiltinMembers.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R2 — done when: `run/` cases copy file (byte-identical), missing file handled, invalid UTF-8 text fails / bytes succeed, stdout/stderr write without newline.
 
 ## M14 Growable strings
 - [ ] T5 Growable `StrBuf()` — files: `Builtins.cs`, `RegionAnalysis.cs`, `CEmitter.cs`, `bayan-rt.{h,c}` — covers: R3 — done when: `run/` 100,000 appends in an arena gives the summed length; no buffer size in source.
