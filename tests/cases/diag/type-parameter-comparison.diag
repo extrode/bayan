@@ -1,7 +1,7 @@
 error BYN2743: `<` cannot be applied to a value of type parameter `T`
 
-  1 │ T max<T>(T a, T b) => a < b ? b : a;
-    │                       ^^^^^
+  1 │ T max<T>(move T a, move T b) => a < b ? move b : move a;
+    │                                 ^^^^^
     │
   help: type parameters have no constraints: a `T` can only be copied, compared with `==` and `!=`, passed, stored, returned and formatted
 

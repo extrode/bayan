@@ -18,6 +18,9 @@ Expr sum(i64 n) {
     return .Add(Owned(Expr.Lit(n)), Owned(sum(n - 1)));
 }
 
+// (1 + 2) * sum(4), built fresh each call.
+Expr sample() => Expr.Mul(Owned(Expr.Add(Owned(Expr.Lit(1)), Owned(Expr.Lit(2)))), Owned(sum(4)));
+
 i64 depth(Expr e) {
     switch (e) {
         case .Lit(_):
@@ -37,13 +40,13 @@ void main() {
     using let arena = Arena();
     context (allocator: arena) {
         let left = Expr.Add(Owned(Expr.Lit(1)), Owned(Expr.Lit(2)));
-        let e = Expr.Mul(Owned(left), Owned(sum(4)));
+        let e = sample();
         print($"{e}");
         print($"{eval(e)} {depth(e)}");
-        let shared = Owned(e);
-        let copy = shared;
+        let shared = Owned(sample());
+        let copy = Owned(sample());
         print($"{copy.value == e} {eval(copy.value)}");
-        let again = Expr.Mul(Owned(Expr.Add(Owned(Expr.Lit(1)), Owned(Expr.Lit(2)))), Owned(sum(4)));
+        let again = sample();
         print($"{again == e} {again == left} {shared == copy}");
         print($"{eval(sum(1000))}");
     }

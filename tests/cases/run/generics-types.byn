@@ -4,7 +4,7 @@ struct Pair<A, B> {
     A a;
     B b;
 
-    Pair<B, A> swap() => Pair<B, A> { a = b, b = a };
+    Pair<B, A> swap(move B first, move A second) => Pair<B, A> { a = move first, b = move second };
 
     bool sameFirst(Pair<A, B> other) => a == other.a;
 }
@@ -23,9 +23,9 @@ struct Box<T> {
     T value;
     List<T> history;
 
-    void put(T next) {
-        history.add(value);
-        value = next;
+    void put(move T old, move T next) {
+        history.add(move old);
+        value = move next;
     }
 }
 
@@ -39,7 +39,7 @@ string show<T>(Option2<T> o) => o switch {
     .Nothing => "nothing",
 };
 
-Option2<T> wrap<T>(T x) => .Some(x);
+Option2<T> wrap<T>(move T x) => .Some(move x);
 
 i64 total<K>(Map<K, i64> m) {
     i64 sum = 0;
@@ -48,7 +48,7 @@ i64 total<K>(Map<K, i64> m) {
 }
 
 let p = Pair<i64, string> { a = 1, b = "x" };
-let q = p.swap();
+let q = p.swap(first: p.b, second: p.a);
 print($"{p} {q} {q.a} {q.b}");
 print($"{p == Pair<i64, string> { a = 1, b = "x" }} {p.sameFirst(Pair<i64, string> { a = 2, b = "x" })}");
 Pair<Suit, bool> flag = { a = .hearts, b = true };
@@ -75,8 +75,8 @@ let text = t switch {
 print(text);
 
 var box = Box<string> { value = "a", history = List<string>() };
-box.put("b");
-box.put("c");
+box.put(old: box.value, next: "b");
+box.put(old: box.value, next: "c");
 print($"{box.value} {box.history.length}");
 
 var bySuit = Map<Suit, i64>();

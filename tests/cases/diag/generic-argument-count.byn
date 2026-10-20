@@ -1,4 +1,4 @@
-T pick<T>(bool first, T a, T b) => first ? a : b;
+T pick<T>(bool first, move T a, move T b) => first ? move a : move b;
 i64 plain(i64 n) => n;
 
 struct Pair<A, B> {

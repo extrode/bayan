@@ -1,4 +1,4 @@
-// Uses of a `Map` that read it in place or move a fresh one: none is a copy (BYN2762).
+// Uses of a `Map` that read it in place or move a fresh one: none is a copy (BYN2780).
 struct Store {
     string name;
     Map<string, i64> data;
@@ -15,8 +15,8 @@ Map<string, i64> fresh(string key, i64 value) {
     return m;
 }
 
-Map<string, i64> passThrough(Map<string, i64> m) {
-    return m;
+Map<string, i64> passThrough(move Map<string, i64> m) {
+    return move m;
 }
 
 i64 total(Map<string, i64> m) {

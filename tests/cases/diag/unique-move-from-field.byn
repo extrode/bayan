@@ -1,0 +1,19 @@
+// Only a local or a `move` parameter can be moved (BYN2782).
+struct Bag {
+    List<i64> items;
+}
+
+List<i64> make() => List<i64>();
+
+void take(List<i64> plain, ref List<i64> shared, move List<i64> owned) {
+    var bag = Bag { items = List<i64>() };
+    var lists = List<List<i64>>();
+    var a = move bag.items;
+    var b = move lists[0];
+    var c = move plain;
+    var d = move shared;
+    var e = move make();
+    var f = move owned;
+    i64 n = 1;
+    var g = move n;
+}

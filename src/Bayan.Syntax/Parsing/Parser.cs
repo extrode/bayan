@@ -1267,7 +1267,7 @@ public sealed class Parser
         TokenKind.InterpolatedStringStart or TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.OpenBrace or
         TokenKind.Dot or TokenKind.DotDot or TokenKind.DotDotEquals or TokenKind.Plus or TokenKind.Minus or TokenKind.Bang or
         TokenKind.Tilde or TokenKind.Caret or TokenKind.TrueKeyword or TokenKind.FalseKeyword or TokenKind.NullKeyword or
-        TokenKind.ThisKeyword or TokenKind.TryKeyword or TokenKind.NewKeyword or TokenKind.ReturnKeyword or
+        TokenKind.ThisKeyword or TokenKind.TryKeyword or TokenKind.NewKeyword or TokenKind.MoveKeyword or TokenKind.ReturnKeyword or
         TokenKind.BreakKeyword or TokenKind.ContinueKeyword;
 
     public Expr ParseExpression()
