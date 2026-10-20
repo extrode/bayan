@@ -151,4 +151,8 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor EmptyErrorSet = Error("BYN2609", "error enum `{0}` has no variants");
     public static readonly DiagnosticDescriptor JumpOutOfDefer = Error("BYN2610", "`{0}` cannot leave a `defer` or `errdefer` body");
     public static readonly DiagnosticDescriptor BorrowField = Error("BYN3001", "a struct field cannot hold a borrowed `{0}`");
+    public static readonly DiagnosticDescriptor BorrowOutlivesSource = Error("BYN3002", "{0} does not live as long as `{1}`, which borrows it");
+    public static readonly DiagnosticDescriptor BorrowReturned = Error("BYN3003", "cannot return a borrow of {0}, which is freed when `{1}` returns");
+    public static readonly DiagnosticDescriptor ModifiedWhileBorrowed = Error("BYN3004", "`{0}` is modified while {1} still borrows it");
+    public static readonly DiagnosticDescriptor RefAndValue = Error("BYN3005", "`{0}` is passed by `ref` and again in the same call");
 }

@@ -1,0 +1,14 @@
+void main() {
+    var xs = List<i64>();
+    xs.add(1);
+    let view = xs.asSpan();
+    xs.add(2);
+    print($"{view[0]}");
+    for (let x in xs) {
+        xs.add(x);
+    }
+    using var arena = Arena();
+    let name = "ann".copy(to: arena);
+    arena.reset();
+    print(name);
+}
