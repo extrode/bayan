@@ -4,7 +4,7 @@ namespace Bayan.Semantics.Binding;
 
 /// <summary>A built-in method: its parameters, result, and whether it writes to its receiver.</summary>
 internal sealed record BuiltinMethod(
-    BuiltinMember Member, (string Name, TypeSymbol Type)[] Parameters, TypeSymbol Returns, bool Mutating = false, bool AcceptsInterpolation = false);
+    BuiltinMember Member, (string Name, TypeSymbol Type)[] Parameters, TypeSymbol Returns, bool Mutating = false);
 
 /// <summary>Members of strings, spans, lists, arrays, results, <c>Arena</c>, <c>StrBuf</c>, <c>Io.stdout</c>/<c>Io.stderr</c> and <c>char</c> (spec §3, §16).</summary>
 internal static class BuiltinMembers
@@ -42,7 +42,7 @@ internal static class BuiltinMembers
         (Symbols.ArrayType a, "asSpan") => new(BuiltinMember.ArrayAsSpan, [], new SpanType(a.Element)),
         (BuiltinType { Kind: BuiltinKind.Arena }, "reset") => new(BuiltinMember.ArenaReset, [], PrimitiveType.Void, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "append") =>
-            new(BuiltinMember.StrBufAppend, [("text", PrimitiveType.String)], PrimitiveType.Void, Mutating: true, AcceptsInterpolation: true),
+            new(BuiltinMember.StrBufAppend, [("text", PrimitiveType.String)], PrimitiveType.Void, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "asString") => new(BuiltinMember.StrBufAsString, [], PrimitiveType.String),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "clear") => new(BuiltinMember.StrBufClear, [], PrimitiveType.Void, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.IoStream }, "write") => new(BuiltinMember.IoWrite, [("text", PrimitiveType.String)], PrimitiveType.Void),

@@ -227,6 +227,13 @@ internal sealed class RegionAnalysis
                     _ => elements,
                 };
             }
+            case BoundInterpolated i:
+            {
+                // The text is a copy formatted into `context.allocator`: it borrows that, not its holes (Q43).
+                foreach (var part in i.Parts)
+                    if (part.Value is not null) Expr(part.Value);
+                return _contexts.Count > 0 ? _contexts.Peek() : Borrow.None;
+            }
             case BoundJump j:
                 Stmt(j.Jump);
                 return Borrow.None;
@@ -307,8 +314,9 @@ internal sealed class RegionAnalysis
         }
         // Rule 4: a returned borrow derives from every argument.
         var result = args.Aggregate(receiver, (acc, a) => acc.Union(a));
-        // Allocated from `context.allocator`: a list, or the text `Io.readText` returns (Q29).
-        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin == BuiltinFunction.IoReadText)) result = result.Union(_contexts.Peek());
+        // Allocated from `context.allocator`: a list, a growable `StrBuf`, or the text `Io.readText` returns (Q29).
+        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.StrBufGrow))
+            result = result.Union(_contexts.Peek());
         return result;
     }
 

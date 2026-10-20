@@ -16,6 +16,7 @@ public sealed class Builtins
         Assert = Make("assert", BuiltinFunction.Assert, PrimitiveType.Void, ("condition", PrimitiveType.Bool));
         ArenaNew = Make("Arena", BuiltinFunction.ArenaNew, BuiltinType.Arena);
         StrBufNew = Make("StrBuf", BuiltinFunction.StrBufNew, BuiltinType.StrBuf, ("buffer", new SpanType(PrimitiveType.U8)));
+        StrBufGrow = Make("StrBuf", BuiltinFunction.StrBufGrow, BuiltinType.StrBuf);
 
         // `IoError` is declared from source so its variants carry docs and locations like any other set.
         var source = SourceText.FromString("<builtin>", IoErrorSource);
@@ -80,6 +81,9 @@ public sealed class Builtins
 
     /// <summary><c>StrBuf(Span&lt;u8&gt; buffer)</c>: text output into caller-provided bytes.</summary>
     public FunctionSymbol StrBufNew { get; }
+
+    /// <summary><c>StrBuf()</c>: text output that grows from <c>context.allocator</c>.</summary>
+    public FunctionSymbol StrBufGrow { get; }
 
     public ModuleSymbol Module { get; }
 

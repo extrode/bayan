@@ -1,0 +1,31 @@
+i64 fill(ref StrBuf sb, i64 n) {
+    i64 sum = 0;
+    for (let i in 0..n) {
+        if (i % 4 == 0) {
+            sb.append("abc");
+            sum += 3;
+        } else {
+            sb.append($"{i % 10}");
+            sum += 1;
+        }
+    }
+    return sum;
+}
+
+void main() {
+    {
+        using let arena = Arena();
+        context (allocator: arena) {
+            var sb = StrBuf();
+            let sum = fill(ref sb, 100000);
+            print($"{sb.length} {sum} {sb.length == sum}");
+            print(sb.asString()[0..12]);
+            sb.clear();
+            sb.append("again");
+            print($"{sb.asString()} {sb.length}");
+        }
+    }
+    var general = StrBuf();
+    let sum = fill(ref general, 1000);
+    print($"{general.length} {sum}");
+}

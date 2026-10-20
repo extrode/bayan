@@ -721,6 +721,8 @@ internal sealed class FunctionEmitter
                     "{\n    return (byn_writer){s.ptr, s.len, 0, BYN_WRITE_STRICT, file, line};\n}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Loc(c.Syntax)})";
             }
+            case BuiltinFunction.StrBufGrow:
+                return "byn_strbuf_grow(byn_context)";
             case BuiltinFunction.IoReadFile:
             {
                 var list = _c.CType(fn.ReturnType);
