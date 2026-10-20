@@ -1,0 +1,16 @@
+{tea: 4, cake: 5, jam: 2} count=3
+cake costs 5
+scone: null
+has jam: true, has milk: false
+remove cake: true, again: false
+  tea = 4
+  jam = 2
+  cake = 6
+{spades: 3, hearts: 2, clubs: 1}
+{0: 0, 1: 1, 4: 2, 9: 3, 16: 4}
+{b: true, a: true, n: true}
+yes no
+Inventory { owner: ada, stock: {bolts: 15, nuts: 4} }
+arena map: 7 keys, total 6972
+cleared: {} count=0
+{bread: 1}

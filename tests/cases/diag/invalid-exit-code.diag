@@ -1,0 +1,35 @@
+error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
+
+  2 │     [ExitCode(0)]
+    │               ^
+    │
+  help: 0 means success, and exit codes above 255 do not survive the operating system
+
+error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
+
+  5 │     [ExitCode(300)]
+    │               ^^^
+    │
+  help: 0 means success, and exit codes above 255 do not survive the operating system
+
+error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
+
+  8 │     [ExitCode]
+    │     ^^^^^^^^^^
+
+error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
+
+  11 │     [ExitCode("x")]
+     │               ^^^
+
+error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
+
+  14 │     [ExitCode(1, 2)]
+     │     ^^^^^^^^^^^^^^^^
+
+error BYN1016: `[ExitCode]` is not allowed here
+
+  18 │     [ExitCode(5)]
+     │     ^^^^^^^^^^^^^
+     │
+  help: the attribute is repeated

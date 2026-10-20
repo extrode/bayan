@@ -1,0 +1,88 @@
+// bayan-lex: the self-hosted lexer. Prints the same token dump as `bayan lex`.
+//
+//     bayan-lex <path>          the token dump; exit 0 if there are no error diagnostics, else 1
+//     bayan-lex --many <dir>    `== <name>` and the dump of every `*.byn` in `<dir>`, in name order,
+//                               preceded by a `span out of range` line for any span outside the input
+//     bayan-lex --time <path>   only the nanoseconds spent lexing
+//
+// Exit 2 on a usage error or an unreadable file.
+
+const i32 exitOk = 0;
+const i32 exitFailure = 1;
+const i32 exitUsage = 2;
+
+i32 usage(string message) {
+    Io.stderr.write($"bayan-lex: {message}\nusage: bayan-lex <path> | --many <dir> | --time <path>\n");
+    return exitUsage;
+}
+
+i32 fileNotFound(string path) {
+    Io.stderr.write($"bayan: file not found: {path}\n");
+    return exitUsage;
+}
+
+/// Lexes `path` and appends its dump to `sb`; returns whether any diagnostic is an error.
+bool dumpFile(ref StrBuf sb, string path, List<u8> bytes, Keywords keywords) {
+    var result = lex(SourceText.create(path, bytes), keywords);
+    dump(ref sb, ref result);
+    return !result.diagnostics.isEmpty;
+}
+
+/// Appends a `span out of range` line for every token, doc or diagnostic span outside the input.
+void checkSpans(ref StrBuf sb, ref LexResult result) {
+    let size = result.source.bytes.length;
+    for (let token in result.tokens) {
+        if (!inside(TextSpan { start = token.start, length = token.length }, size)) sb.append($"span out of range: token {token.start}+{token.length}\n");
+        if (!inside(TextSpan { start = token.docStart, length = token.docLength }, size)) sb.append($"span out of range: doc {token.docStart}+{token.docLength}\n");
+    }
+    for (let d in result.diagnostics) {
+        if (!inside(d.span, size)) sb.append($"span out of range: {d.code} {d.span.start}+{d.span.length}\n");
+        if (d.hasFix && !inside(d.fixSpan, size)) sb.append($"span out of range: {d.code} fix {d.fixSpan.start}+{d.fixSpan.length}\n");
+    }
+}
+
+bool inside(TextSpan span, i64 size) => span.start >= 0 && span.length >= 0 && span.end <= size;
+
+i32 lexOne(string path, Keywords keywords) {
+    let bytes = Io.readFile(path) catch return fileNotFound(path);
+    var sb = StrBuf();
+    let failed = dumpFile(ref sb, path, bytes, keywords);
+    Io.stdout.write(sb.asString());
+    return failed ? exitFailure : exitOk;
+}
+
+i32 lexMany(string dir, Keywords keywords) {
+    let names = Io.listDir(dir) catch return usage($"cannot list `{dir}`");
+    for (let name in names) {
+        if (!name.endsWith(".byn")) continue;
+        using let arena = Arena();
+        context (allocator: arena) {
+            let path = $"{dir}/{name}";
+            let bytes = Io.readFile(path) catch return fileNotFound(path);
+            var sb = StrBuf();
+            sb.append($"== {name}\n");
+            var result = lex(SourceText.create(path, bytes), keywords);
+            checkSpans(ref sb, ref result);
+            dump(ref sb, ref result);
+            Io.stdout.write(sb.asString());
+        }
+    }
+    return exitOk;
+}
+
+i32 lexTimed(string path, Keywords keywords) {
+    let bytes = Io.readFile(path) catch return fileNotFound(path);
+    let start = Io.monotonicNanos();
+    let result = lex(SourceText.create(path, bytes), keywords);
+    let elapsed = Io.monotonicNanos() - start;
+    print($"{elapsed}");
+    return result.tokens.isEmpty ? exitFailure : exitOk;
+}
+
+i32 main(ReadOnlySpan<string> args) {
+    let keywords = Keywords.build();
+    if (args.length == 1 && !args[0].startsWith("--")) return lexOne(args[0], keywords);
+    if (args.length == 2 && args[0] == "--many") return lexMany(args[1], keywords);
+    if (args.length == 2 && args[0] == "--time") return lexTimed(args[1], keywords);
+    return usage("expected one file, `--many <dir>` or `--time <path>`");
+}

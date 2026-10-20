@@ -131,6 +131,33 @@ public sealed class NullType : TypeSymbol
     public override string DisplayName => "null";
 }
 
+/// <summary>
+/// A type parameter <c>T</c> of a generic function, struct or union, as its template sees it.
+/// Each declaration has its own, compared by reference.
+/// </summary>
+public sealed class TypeParameterType(string name) : TypeSymbol
+{
+    public string Name { get; } = name;
+
+    public override string DisplayName => Name;
+
+    /// <summary><paramref name="t"/> mentions a type parameter, so it belongs to a template and is never emitted.</summary>
+    public static bool Occurs(TypeSymbol t) => t switch
+    {
+        TypeParameterType => true,
+        OptionalType o => Occurs(o.Inner),
+        SpanType s => Occurs(s.Element),
+        ListType l => Occurs(l.Element),
+        MapType m => Occurs(m.KeyType) || Occurs(m.ValueType),
+        ArrayType a => Occurs(a.Element),
+        TupleType tt => tt.Fields.Any(f => Occurs(f.Type)),
+        ResultType r => Occurs(r.Value),
+        StructSymbol s => s.IsGeneric,
+        UnionSymbol u => u.IsGeneric,
+        _ => false,
+    };
+}
+
 /// <summary>Base for structurally compared constructed types.</summary>
 public abstract class ConstructedType : TypeSymbol
 {
@@ -175,6 +202,36 @@ public sealed class ListType(TypeSymbol element) : ConstructedType
     protected override object Key => Element;
 
     public override string DisplayName => $"List<{Element.DisplayName}>";
+}
+
+/// <summary><c>Map&lt;K, V&gt;</c>: an insertion-ordered hash map allocated from the context allocator.</summary>
+public sealed class MapType(TypeSymbol key, TypeSymbol value) : ConstructedType
+{
+    // `Key` is taken by the structural identity below.
+    public TypeSymbol KeyType { get; } = key;
+
+    public TypeSymbol ValueType { get; } = value;
+
+    /// <summary>What <c>for (let e in m)</c> yields: <c>(K key, V value)</c>.</summary>
+    public TupleType Entry => new([new TupleField("key", KeyType), new TupleField("value", ValueType)]);
+
+    protected override object Key => (KeyType, ValueType);
+
+    public override string DisplayName => $"Map<{KeyType.DisplayName}, {ValueType.DisplayName}>";
+
+    /// <summary>Keys hash their bytes: integers, <c>char</c>, <c>bool</c>, <c>string</c> and plain enums.</summary>
+    public static bool IsValidKey(TypeSymbol t) =>
+        t.IsInteger || t.IsString || t == PrimitiveType.Char || t.IsBool || t is EnumSymbol { Fields.Count: 0 };
+}
+
+/// <summary><c>Owned&lt;T&gt;</c>: a non-null pointer to a <c>T</c> copied into the context allocator; copies share it.</summary>
+public sealed class OwnedType(TypeSymbol inner) : ConstructedType
+{
+    public TypeSymbol Inner { get; } = inner;
+
+    protected override object Key => Inner;
+
+    public override string DisplayName => $"Owned<{Inner.DisplayName}>";
 }
 
 /// <summary><c>T[N]</c>: a fixed-size inline array.</summary>
@@ -251,6 +308,12 @@ public enum BuiltinKind
     Arena,
     /// <summary>A byte buffer for <c>formatInto</c>-style output: a span plus a fill length.</summary>
     StrBuf,
+    /// <summary>The static type <c>Io</c>; it has no values.</summary>
+    Io,
+    /// <summary><c>Io.stdout</c> or <c>Io.stderr</c>; the value is the file descriptor.</summary>
+    IoStream,
+    /// <summary>What <c>Io.run</c> returns: <c>exitCode</c>, <c>stdout</c>, <c>stderr</c>.</summary>
+    ProcessResult,
 }
 
 public sealed class BuiltinType : TypeSymbol
@@ -271,6 +334,9 @@ public sealed class BuiltinType : TypeSymbol
 
     public static readonly BuiltinType Arena = new(BuiltinKind.Arena, "Arena");
     public static readonly BuiltinType StrBuf = new(BuiltinKind.StrBuf, "StrBuf");
+    public static readonly BuiltinType Io = new(BuiltinKind.Io, "Io");
+    public static readonly BuiltinType IoStream = new(BuiltinKind.IoStream, "IoStream");
+    public static readonly BuiltinType ProcessResult = new(BuiltinKind.ProcessResult, "ProcessResult");
 }
 
 /// <summary>The type of a caught error when the call can fail with more than one set.</summary>

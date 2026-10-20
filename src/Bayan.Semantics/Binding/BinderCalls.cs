@@ -23,12 +23,21 @@ internal sealed partial class Binder
         var callee = c.Callee is TargetMemberExpr t ? BindTargetMember(t, expected) : BindExprOrType(c.Callee);
         switch (callee)
         {
+            case BoundMethodGroup { Function.Builtin: BuiltinFunction.OwnedNew }:
+                return BindOwned(c, (expected as OwnedType)?.Inner);
             case BoundMethodGroup g:
-                return BindFunctionCall(c, g.Function, g.Receiver);
+                return BindFunctionCall(c, g.Function, g.Receiver, g.TypeArgs);
             case BoundBuiltinGroup b:
                 return BindBuiltinMethodCall(c, b.Receiver, b.Name);
             case BoundTypeRef tr:
                 return BindConstruction(c, tr.Referenced);
+            case BoundVariantGroup v:
+                return new BoundUnionNew(c, v.Variant, BindArguments(c, v.Variant.Fields, null, enforceNames: false, v.Variant.Name));
+            case BoundUnionNew { Payload.Length: 0 } unit:
+                Report(DiagnosticCodes.VariantHasNoPayload, c.Span, [unit.Variant.Name],
+                    help: $"write `{unit.Variant.Union.Name}.{unit.Variant.Name}` without parentheses");
+                BindArgumentsForRecovery(c);
+                return new BoundErrorExpr(c);
             case BoundErrorExpr:
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
@@ -43,15 +52,29 @@ internal sealed partial class Binder
     {
         foreach (var a in c.Args)
         {
-            if (a.Value is InterpolatedExpr) continue;
+            if (a.Value is InterpolatedExpr || _prebound.Remove(a)) continue;
             BindExprOrType(a.Value);
         }
     }
 
-    private BoundExpr BindFunctionCall(CallExpr c, FunctionSymbol fn, BoundExpr? receiver)
+    /// <summary>Binding the argument of <c>print</c>, which also takes an enum and prints its name.</summary>
+    private bool _printArgument;
+
+    private BoundExpr BindFunctionCall(CallExpr c, FunctionSymbol fn, BoundExpr? receiver, TypeSyntax[]? typeArgs = null)
     {
-        var interpolation = fn.Builtin is BuiltinFunction.Print or BuiltinFunction.Panic;
-        var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin, interpolation);
+        if (fn.TypeParameters.Count > 0 || typeArgs is { Length: > 0 })
+        {
+            if (Instantiate(c, fn, typeArgs ?? []) is not { } instance)
+            {
+                BindArgumentsForRecovery(c);
+                return new BoundErrorExpr(c);
+            }
+            fn = instance;
+        }
+        var outer = _printArgument;
+        _printArgument = fn.Builtin == BuiltinFunction.Print;
+        var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
+        _printArgument = outer;
         if (receiver is not null && fn.HasThis)
             _c.MutationChecks.Add(new MutationCheck(this, fn, receiver));
         if (fn.Fails && !ReferenceEquals(_handled, c))
@@ -63,9 +86,118 @@ internal sealed partial class Binder
         return new BoundCall(c, fn, receiver, args, fn.ReturnType);
     }
 
-    private BoundExpr[] BindArguments(CallExpr c, IReadOnlyList<ParameterSymbol> ps, FunctionSymbol? fn, bool enforceNames, bool interpolation, string? displayName = null)
+    /// <summary>Arguments bound early, without an expected type, to infer type arguments from; used in place of binding them again.</summary>
+    private readonly Dictionary<Argument, BoundExpr> _prebound = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// The instantiation a call of a generic function means: its type arguments are explicit
+    /// (<c>pick&lt;i64&gt;(…)</c>) or inferred by unifying parameter types with argument types.
+    /// </summary>
+    private FunctionSymbol? Instantiate(CallExpr c, FunctionSymbol fn, TypeSyntax[] typeArgs)
+    {
+        var parameters = fn.TypeParameters;
+        if (typeArgs.Length > 0)
+        {
+            if (typeArgs.Length != parameters.Count)
+            {
+                Report(DiagnosticCodes.GenericArgumentCount, c.Callee.Span, [fn.Name, parameters.Count, typeArgs.Length],
+                    help: parameters.Count == 0 ? $"`{fn.Name}` is not generic; remove the type arguments" : null);
+                return null;
+            }
+            var explicitArgs = typeArgs.Select(t => _types.Resolve(t)).ToArray();
+            return explicitArgs.Any(a => a.IsError) ? null : _c.InstantiateFunction(fn, explicitArgs, Source, c.Span);
+        }
+        var found = new Dictionary<TypeParameterType, TypeSymbol>();
+        var conflict = false;
+        var positional = 0;
+        var sawNamed = false;
+        foreach (var arg in c.Args)
+        {
+            ParameterSymbol? p;
+            if (arg.Name is { } n)
+            {
+                sawNamed = true;
+                p = fn.Parameters.FirstOrDefault(x => x.Name == n.Text);
+            }
+            else
+                p = sawNamed || positional >= fn.Parameters.Count ? null : fn.Parameters[positional++];
+            if (p is null || !TypeParameterType.Occurs(p.Type) || _prebound.ContainsKey(arg)) continue;
+            var value = BindExpr(arg.Value, null);
+            _prebound[arg] = value;
+            conflict |= !Unify(p.Type, value.Type, found, fn, arg.Value.Span);
+        }
+        if (conflict) return null;
+        var args = new TypeSymbol[parameters.Count];
+        for (var i = 0; i < parameters.Count; i++)
+        {
+            if (!found.TryGetValue(parameters[i], out var t))
+            {
+                Report(DiagnosticCodes.CannotInferTypeArgument, c.Callee.Span, [parameters[i].Name, fn.Name],
+                    help: $"pass an argument it can be read from, or write it out: `{fn.Name}<{string.Join(", ", parameters.Select(x => x.Name))}>(…)`");
+                return null;
+            }
+            args[i] = t;
+        }
+        return _c.InstantiateFunction(fn, args, Source, c.Span);
+    }
+
+    /// <summary>Matches a parameter type against an argument type, binding the type parameters of <paramref name="fn"/>; false on a conflict (reported).</summary>
+    private bool Unify(TypeSymbol p, TypeSymbol a, Dictionary<TypeParameterType, TypeSymbol> found, FunctionSymbol fn, TextSpan span)
+    {
+        if (a.IsError || a.IsNever || a is NullType) return true;
+        switch (p)
+        {
+            case TypeParameterType tp when fn.TypeParameters.Contains(tp):
+                if (!found.TryGetValue(tp, out var previous))
+                {
+                    found[tp] = a;
+                    return true;
+                }
+                if (Conversions.Common(previous, a) is { } common)
+                {
+                    found[tp] = common;
+                    return true;
+                }
+                Report(DiagnosticCodes.ConflictingTypeArgument, span, [tp.Name, fn.Name, previous.DisplayName, a.DisplayName],
+                    help: $"make the arguments agree, or write it out: `{fn.Name}<…>(…)`");
+                return false;
+            case Symbols.OptionalType po:
+                return Unify(po.Inner, a is Symbols.OptionalType ao ? ao.Inner : a, found, fn, span);
+            case SpanType ps:
+                return a switch
+                {
+                    SpanType sa => Unify(ps.Element, sa.Element, found, fn, span),
+                    ListType la => Unify(ps.Element, la.Element, found, fn, span),
+                    Symbols.ArrayType aa => Unify(ps.Element, aa.Element, found, fn, span),
+                    _ => true,
+                };
+            case ListType pl:
+                return a is not ListType al || Unify(pl.Element, al.Element, found, fn, span);
+            case MapType pm:
+                return a is not MapType am || Unify(pm.KeyType, am.KeyType, found, fn, span) && Unify(pm.ValueType, am.ValueType, found, fn, span);
+            case Symbols.ArrayType pa:
+                return a is not Symbols.ArrayType aa2 || Unify(pa.Element, aa2.Element, found, fn, span);
+            case Symbols.TupleType pt:
+                return a is not Symbols.TupleType at || at.Fields.Count != pt.Fields.Count
+                    || pt.Fields.Zip(at.Fields).All(f => Unify(f.First.Type, f.Second.Type, found, fn, span));
+            case ResultType pr:
+                return a is not ResultType ar || Unify(pr.Value, ar.Value, found, fn, span);
+            case StructSymbol { Template: { } ps2 } pi:
+                return a is not StructSymbol ai || ai.Template != ps2
+                    || pi.TypeArguments.Zip(ai.TypeArguments).All(x => Unify(x.First, x.Second, found, fn, span));
+            case UnionSymbol { Template: { } pu } ui:
+                return a is not UnionSymbol au || au.Template != pu
+                    || ui.TypeArguments.Zip(au.TypeArguments).All(x => Unify(x.First, x.Second, found, fn, span));
+            default:
+                return true;
+        }
+    }
+
+    private BoundExpr[] BindArguments(CallExpr c, IReadOnlyList<ParameterSymbol> ps, FunctionSymbol? fn, bool enforceNames, string? displayName = null)
     {
         var name = displayName ?? fn?.Name ?? "?";
+        // An instantiation follows its template's naming rule, so `T a, T b` asks for names at every type.
+        var rule = fn?.Template?.Parameters ?? ps;
         var result = new BoundExpr?[ps.Count];
         var sawNamed = false;
         var positional = 0;
@@ -82,7 +214,7 @@ internal sealed partial class Binder
                     var s = Suggest(n.Text, ps.Select(x => x.Name));
                     Report(DiagnosticCodes.UnknownParameter, n.Span, [name, n.Text],
                         help: s is null ? null : $"did you mean `{s}`?", fix: s is null ? null : new Fix(n.Span, s));
-                    BindArgumentValue(arg, null, interpolation);
+                    BindArgumentValue(arg, null);
                     mismatched = true;
                     continue;
                 }
@@ -92,28 +224,29 @@ internal sealed partial class Binder
                 if (sawNamed)
                 {
                     Report(DiagnosticCodes.PositionalAfterNamed, arg.Span, []);
-                    BindArgumentValue(arg, null, interpolation);
+                    BindArgumentValue(arg, null);
                     mismatched = true;
                     continue;
                 }
                 if (positional >= ps.Count)
                 {
                     Report(DiagnosticCodes.TooManyArguments, arg.Span, [name, ps.Count]);
-                    BindArgumentValue(arg, null, interpolation);
+                    BindArgumentValue(arg, null);
                     positional++;
                     continue;
                 }
                 p = ps[positional++];
-                if (enforceNames && MustBeNamed(p, ps, name) is { } reason)
+                if (enforceNames && MustBeNamed(rule[p.Ordinal], rule, name) is { } reason)
                     Report(DiagnosticCodes.ArgumentMustBeNamed, arg.Value.Span, [p.Name], help: reason,
                         fix: new Fix(new TextSpan(arg.Span.Start, 0), p.Name + ": "));
             }
             if (result[p.Ordinal] is not null)
             {
                 Report(DiagnosticCodes.DuplicateArgument, arg.Span, [p.Name]);
+                _prebound.Remove(arg);
                 continue;
             }
-            result[p.Ordinal] = BindArgument(arg, p, interpolation);
+            result[p.Ordinal] = BindArgument(arg, p);
         }
         var missing = new List<string>();
         for (var i = 0; i < ps.Count; i++)
@@ -141,7 +274,7 @@ internal sealed partial class Binder
         return null;
     }
 
-    private BoundExpr BindArgument(Argument arg, ParameterSymbol p, bool interpolation)
+    private BoundExpr BindArgument(Argument arg, ParameterSymbol p)
     {
         var wanted = p.Modifier switch { ParamModifier.Ref => ArgModifier.Ref, ParamModifier.Out => ArgModifier.Out, _ => ArgModifier.None };
         var given = arg.Modifier == ArgModifier.In ? ArgModifier.None : arg.Modifier;
@@ -153,7 +286,7 @@ internal sealed partial class Binder
         }
         if (wanted is ArgModifier.Ref or ArgModifier.Out)
         {
-            var place = BindExpr(arg.Value, p.Type);
+            var place = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, p.Type);
             if (place.Type.IsError) return place;
             if (!place.Type.Equals(p.Type))
             {
@@ -164,22 +297,12 @@ internal sealed partial class Binder
             CheckWritable(place, arg.Value.Span, $"it is passed as `{(wanted == ArgModifier.Ref ? "ref" : "out")}`");
             return place;
         }
-        return BindArgumentValue(arg, p.Type, interpolation);
+        return BindArgumentValue(arg, p.Type);
     }
 
-    private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type, bool interpolation)
+    private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type)
     {
-        BoundExpr value;
-        if (interpolation && arg.Value is InterpolatedExpr)
-        {
-            _interpolationAllowed = true;
-            value = BindExpr(arg.Value, type);
-            _interpolationAllowed = false;
-        }
-        else
-        {
-            value = BindExpr(arg.Value, type);
-        }
+        var value = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, type);
         return type is null ? value : Convert(value, type, arg.Value.Span, argument: true);
     }
 
@@ -191,7 +314,7 @@ internal sealed partial class Binder
             {
                 var ctor = s.Constructors[0];
                 CheckAccess(ctor.Access, s, s.Module, new Name(c.Callee.Span, s.Name));
-                var args = BindArguments(c, ctor.Parameters, ctor, enforceNames: true, interpolation: false);
+                var args = BindArguments(c, ctor.Parameters, ctor, enforceNames: true);
                 return new BoundCall(c, ctor, null, args, s);
             }
             case StructSymbol s:
@@ -210,7 +333,7 @@ internal sealed partial class Binder
                         help: $"set {(missing.Count == 1 ? "it" : "them")}: `{s.Name} {{ {string.Join(", ", missing.Select(m => m + " = …"))} }}`");
                     return new BoundErrorExpr(c);
                 }
-                return new BoundStructLiteral(c, s, s.Fields.Select(f => f.Default ?? new BoundErrorExpr(c)).ToArray());
+                return new BoundStructLiteral(c, s, s.Fields.Select(f => _c.FieldDefault(s, f, Source, c.Span) ?? new BoundErrorExpr(c)).ToArray());
             }
             case ListType l:
                 if (c.Args.Length > 0)
@@ -219,10 +342,21 @@ internal sealed partial class Binder
                     BindArgumentsForRecovery(c);
                 }
                 return new BoundCollection(c, l, []);
+            case MapType m:
+                if (c.Args.Length > 0)
+                {
+                    Report(DiagnosticCodes.TooManyArguments, c.Args[0].Span, [m.DisplayName, 0]);
+                    BindArgumentsForRecovery(c);
+                }
+                return new BoundCollection(c, m, []);
+            case OwnedType o:
+                return BindOwned(c, o.Inner);
             case BuiltinType { Kind: BuiltinKind.Arena }:
-                return new BoundCall(c, _c.Builtins.ArenaNew, null, BindArguments(c, _c.Builtins.ArenaNew.Parameters, _c.Builtins.ArenaNew, false, false, "Arena"), type);
+                return new BoundCall(c, _c.Builtins.ArenaNew, null, BindArguments(c, _c.Builtins.ArenaNew.Parameters, _c.Builtins.ArenaNew, false, "Arena"), type);
+            case BuiltinType { Kind: BuiltinKind.StrBuf } when c.Args.Length == 0:
+                return new BoundCall(c, _c.Builtins.StrBufGrow, null, [], type);
             case BuiltinType { Kind: BuiltinKind.StrBuf }:
-                return new BoundCall(c, _c.Builtins.StrBufNew, null, BindArguments(c, _c.Builtins.StrBufNew.Parameters, _c.Builtins.StrBufNew, false, false, "StrBuf"), type);
+                return new BoundCall(c, _c.Builtins.StrBufNew, null, BindArguments(c, _c.Builtins.StrBufNew.Parameters, _c.Builtins.StrBufNew, false, "StrBuf"), type);
             case ErrorType:
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
@@ -234,13 +368,34 @@ internal sealed partial class Binder
         }
     }
 
+    /// <summary><c>Owned(value)</c> or <c>Owned&lt;T&gt;(value)</c>: the value's type comes from <paramref name="inner"/>, else from the argument.</summary>
+    private BoundExpr BindOwned(CallExpr c, TypeSymbol? inner)
+    {
+        BoundExpr value;
+        if (inner is null && c.Args is [{ Name: null, Modifier: ArgModifier.None } arg])
+        {
+            value = BindExpr(arg.Value);
+            inner = DefaultType(value, arg.Value);
+            if (inner.IsError || inner.IsNever) return value;
+            value = Convert(value, inner, arg.Value.Span, argument: true);
+        }
+        else
+        {
+            var ps = new[] { new ParameterSymbol("value", null, inner ?? ErrorType.Instance, ParamModifier.None, 0) };
+            value = BindArguments(c, ps, null, enforceNames: false, "Owned")[0];
+            if (inner is null || inner.IsError) return new BoundErrorExpr(c);
+        }
+        return new BoundCall(c, _c.Builtins.OwnedNew, null, [value], new OwnedType(inner));
+    }
+
     private BoundExpr BindBuiltinMethodCall(CallExpr c, BoundExpr receiver, string name)
     {
         var m = BuiltinMembers.Method(receiver.Type, name)!;
         var ps = m.Parameters.Select((p, i) => new ParameterSymbol(p.Name, null, p.Type, ParamModifier.None, i)).ToList();
-        var args = BindArguments(c, ps, null, enforceNames: false, interpolation: m.AcceptsInterpolation, displayName: name);
+        var args = BindArguments(c, ps, null, enforceNames: false, displayName: name);
         if (m.Mutating) CheckWritable(receiver, receiver.Syntax.Span, $"`{name}` modifies it");
-        return new BoundBuiltinCall(c, m.Member, receiver, args, m.Returns);
+        var returns = m.Returns is SpanType span && receiver is BoundStaticArray ? new SpanType(span.Element, readOnly: true) : m.Returns;
+        return new BoundBuiltinCall(c, m.Member, receiver, args, returns);
     }
 
     // ── Failure handling ─────────────────────────────────────────────────────────
@@ -421,6 +576,20 @@ internal sealed partial class Binder
                 }
                 return new BoundPropertyPattern(p, input, tt, subs, null);
             }
+            case VariantPattern vp:
+                return BindUnionPattern(vp, input, null, vp.Variant.Member, vp.Elements);
+            case PositionalPattern { Type: NamedType { Path.Length: > 1, Args.Length: 0 } nt } pos:
+            {
+                // `Option2.Some(let v)` on an `Option2<i64>` names the generic union without its type arguments.
+                var owner = nt.Path.Length == 2 && Module.Types.TryGetValue(nt.Path[0].Text, out var named) && named is UnionSymbol { TypeParameters.Count: > 0 }
+                    && Unwrap(input) is UnionSymbol u && (u == named || u.Template == named)
+                    ? u
+                    : _types.Resolve(new NamedType(TextSpan.FromBounds(nt.Path[0].Span.Start, nt.Path[^2].Span.End), nt.Path[..^1], []));
+                if (owner is UnionSymbol or ErrorType)
+                    return BindUnionPattern(pos, input, owner, nt.Path[^1], pos.Elements);
+                Report(DiagnosticCodes.Unsupported, p.Span, ["deconstruction patterns"]);
+                return new BoundBindPattern(p, input, null);
+            }
             case PositionalPattern pos:
                 Report(DiagnosticCodes.Unsupported, p.Span, [pos.Type is null ? $"positional patterns on `{input.DisplayName}`" : "deconstruction patterns"]);
                 return new BoundBindPattern(p, input, null);
@@ -436,12 +605,44 @@ internal sealed partial class Binder
         BoundNotPattern n => HasBindings(n.Operand),
         BoundBinaryPattern b => HasBindings(b.Left) || HasBindings(b.Right),
         BoundPropertyPattern pp => pp.Designation is not null || pp.Subpatterns.Any(s => HasBindings(s.Pattern)),
+        BoundUnionPattern up => up.Subpatterns.Any(HasBindings),
         _ => false,
     };
 
+    /// <summary>
+    /// <c>.Circle(let r)</c> or <c>Shape.Circle(let r)</c>; <paramref name="owner"/> is the written union, if any.
+    /// Elements are null for a unit variant written as a constant (<c>.None</c>).
+    /// </summary>
+    private BoundPattern BindUnionPattern(Pattern p, TypeSymbol input, TypeSymbol? owner, Name name, Pattern[] elements)
+    {
+        var target = Unwrap(input);
+        UnionVariantSymbol? variant = null;
+        if (owner is not null && !owner.IsError && !target.IsError && !owner.Equals(target))
+            Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`{owner.DisplayName}.{name.Text}`", target.DisplayName]);
+        else if ((owner ?? target) is UnionSymbol u)
+        {
+            variant = u.Find(name.Text);
+            if (variant is null)
+                Report(DiagnosticCodes.UnknownUnionVariant, name.Span, [name.Text, u.Name],
+                    help: Suggest(name.Text, u.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
+            else if (variant.Fields.Count == 0)
+                Report(DiagnosticCodes.VariantHasNoPayload, p.Span, [variant.Name], help: $"match it with `.{variant.Name}`");
+            else if (elements.Length != variant.Fields.Count)
+                Report(DiagnosticCodes.VariantPatternArity, p.Span, [variant.Name, variant.Fields.Count, elements.Length],
+                    help: $"list every field: `.{variant.Name}({string.Join(", ", variant.Fields.Select(f => "let " + f.Name))})`, or `_` to skip one");
+        }
+        else if (!target.IsError && (owner ?? target) is not ErrorType)
+            Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`.{name.Text}(…)`", target.DisplayName]);
+        var ok = variant is not null && variant.Fields.Count == elements.Length && elements.Length > 0;
+        var subs = new BoundPattern[elements.Length];
+        for (var i = 0; i < subs.Length; i++)
+            subs[i] = BindPattern(elements[i], ok ? variant!.Fields[i].Type : ErrorType.Instance);
+        return ok ? new BoundUnionPattern(p, input, variant!, subs) : new BoundBindPattern(p, input, null);
+    }
+
     private void RequireConstant(BoundExpr value, TextSpan span)
     {
-        if (value.Constant is null && value is not (BoundErrorExpr or BoundErrorVariant or BoundDefault))
+        if (value.Constant is null && value is not (BoundErrorExpr or BoundErrorVariant or BoundEnumMember or BoundDefault))
             Report(DiagnosticCodes.NotConstant, span, ["a pattern"], help: "bind it with `var x` and compare in a `when` guard");
     }
 
@@ -465,6 +666,8 @@ internal sealed partial class Binder
             return new BoundConstantPattern(c, input, new BoundDefault(c.Value, input));
         }
         var value = BindExpr(c.Value, target);
+        if (value is BoundUnionNew { Payload.Length: 0 } unit && (target.IsError || unit.Type.Equals(target)))
+            return new BoundUnionPattern(c, input, unit.Variant, []);
         if (value is BoundErrorVariant ev && target is ErrorUnionType u && u.Sets.Count > 0 && !u.Sets.Contains(ev.Variant.Set))
             Report(DiagnosticCodes.PatternMismatch, c.Span, [$"`{ev.Variant.Set.Name}.{ev.Variant.Name}`", target.DisplayName]);
         else if (!(value is BoundErrorVariant && target is ErrorUnionType))
@@ -541,7 +744,7 @@ internal sealed partial class Binder
 
     /// <summary>
     /// Reports a non-exhaustive <c>switch</c>. Expressions must always be exhaustive; statements
-    /// only over finite types (<c>bool</c>, error sets, their optionals). Returns whether every
+    /// only over finite types (<c>bool</c>, error sets, enums, their optionals). Returns whether every
     /// value is covered.
     /// </summary>
     private bool CheckExhaustive(TextSpan span, TypeSymbol type, IReadOnlyList<(BoundPattern? Pattern, BoundExpr? Guard)> arms, bool statement)
@@ -572,6 +775,8 @@ internal sealed partial class Binder
     {
         PrimitiveType { Kind: PrimitiveKind.Bool } => ["true", "false"],
         ErrorSetSymbol s => s.Variants.Select(v => VariantKey(v, type)).ToList(),
+        EnumSymbol e => e.Members.Select(m => "." + m.Name).ToList(),
+        UnionSymbol u => u.Variants.Select(v => "." + v.Name).ToList(),
         ErrorUnionType { Sets.Count: > 0 } u => u.Sets.SelectMany(s => s.Variants).Select(v => VariantKey(v, type)).ToList(),
         OptionalType o => Domain(o.Inner) is { } inner ? [.. inner, "null"] : ["null", Some],
         _ => null,
@@ -598,6 +803,12 @@ internal sealed partial class Binder
                 break;
             case BoundConstantPattern { Value: BoundErrorVariant ev }:
                 covered.Add(VariantKey(ev.Variant, type));
+                break;
+            case BoundConstantPattern { Value: BoundEnumMember em }:
+                covered.Add("." + em.Member.Name);
+                break;
+            case BoundUnionPattern up when up.Subpatterns.All(Irrefutable):
+                covered.Add("." + up.Variant.Name);
                 break;
             case BoundConstantPattern { Value.Constant.Value: bool b }:
                 covered.Add(b ? "true" : "false");
@@ -751,6 +962,13 @@ internal sealed partial class Binder
                 return true;
             case BoundIndex i:
                 return CheckWritable(i.Target, span, why);
+            case BoundStaticArray:
+                Report(DiagnosticCodes.MutateTemporary, span, [], label: why is null ? "a `const` never changes" : why + "; a `const` never changes");
+                return false;
+            case BoundBuiltinCall { Member: BuiltinMember.OwnedValue }:
+                Report(DiagnosticCodes.MutateTemporary, span, [], label: why is null ? "an `Owned` value is read-only" : why + "; an `Owned` value is read-only",
+                    help: "build a new value and wrap it with `Owned(…)`");
+                return false;
             default:
                 Report(DiagnosticCodes.MutateTemporary, span, [], label: why);
                 return false;

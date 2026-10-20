@@ -49,6 +49,10 @@ public sealed class ModuleSymbol(string name, string directory) : Symbol(name, n
 
     public List<ErrorSetSymbol> ErrorSets { get; } = new();
 
+    public List<EnumSymbol> Enums { get; } = new();
+
+    public List<UnionSymbol> Unions { get; } = new();
+
     public List<FunctionSymbol> AllFunctions { get; } = new();
 
     public List<TestSymbol> Tests { get; } = new();
@@ -98,7 +102,23 @@ public sealed class StructSymbol(string name, Location location, ModuleSymbol mo
 
     public List<FunctionSymbol> Constructors { get; } = new();
 
-    public override string DisplayName => Name;
+    /// <summary>The <c>&lt;A, B&gt;</c> of a generic template; empty otherwise.</summary>
+    public List<TypeParameterType> TypeParameters { get; } = new();
+
+    /// <summary>For an instantiation: the template it was re-declared from.</summary>
+    public StructSymbol? Template { get; init; }
+
+    public IReadOnlyList<TypeSymbol> TypeArguments { get; init; } = [];
+
+    /// <summary>What each type parameter name means here: itself in a template, the argument in an instantiation.</summary>
+    public IReadOnlyDictionary<string, TypeSymbol>? TypeMap { get; set; }
+
+    /// <summary>A template, or an instantiation with a type parameter among its arguments: checked, never emitted.</summary>
+    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs);
+
+    public override string DisplayName =>
+        TypeArguments.Count > 0 ? $"{Name}<{string.Join(", ", TypeArguments.Select(a => a.DisplayName))}>" :
+        TypeParameters.Count > 0 ? $"{Name}<{string.Join(", ", TypeParameters.Select(a => a.Name))}>" : Name;
 
     public FieldSymbol? FindField(string name) => Fields.Find(f => f.Name == name);
 
@@ -189,6 +209,23 @@ public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol
     /// <summary>The method writes to <c>this</c>; callers need a mutable receiver.</summary>
     public bool IsMutating { get; set; }
 
+    /// <summary>The <c>&lt;T&gt;</c> of a generic template; empty otherwise.</summary>
+    public List<TypeParameterType> TypeParameters { get; } = new();
+
+    /// <summary>For an instantiated function: the template it was re-bound from.</summary>
+    public FunctionSymbol? Template { get; init; }
+
+    public IReadOnlyList<TypeSymbol> TypeArguments { get; init; } = [];
+
+    /// <summary>What each type parameter name means in the signature and body (the owner's included).</summary>
+    public IReadOnlyDictionary<string, TypeSymbol>? TypeMap { get; set; }
+
+    /// <summary>Has a type parameter left (a template, or a member of one): bound only to check it, never analysed, lowered or emitted.</summary>
+    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs) || Owner is { IsGeneric: true };
+
+    /// <summary>Re-bound from a template with concrete types (directly, or as a member of an instantiated struct).</summary>
+    public bool IsInstance => Template is not null || Owner?.Template is not null;
+
     public bool HasThis => Owner is not null && !IsStatic && Kind is FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor;
 
     public string DisplaySignature =>
@@ -205,6 +242,18 @@ public enum BuiltinFunction
     ListNew,
     ArenaNew,
     StrBufNew,
+    StrBufGrow,
+    OwnedNew,
+    IoReadFile,
+    IoReadText,
+    IoWriteFile,
+    IoListDir,
+    IoRun,
+    IoMonotonicNanos,
+    IoStdout,
+    IoStderr,
+    EnumFromOrdinal,
+    EnumParse,
 }
 
 public enum LocalKind { Let, Var, Const, Parameter, ForVariable, PatternVariable, Temp }
@@ -262,6 +311,12 @@ public sealed class ConstSymbol(string name, Location location, ModuleSymbol mod
 
     /// <summary>Binding state, to detect constants defined in terms of themselves.</summary>
     public int State { get; set; }
+
+    /// <summary>A <c>const T[N]</c> of literal scalars, emitted once as static data instead of inlined.</summary>
+    public bool IsStaticArray { get; set; }
+
+    /// <summary>The element values of a static array.</summary>
+    public ConstantValue[] Elements { get; set; } = [];
 }
 
 /// <summary>An <c>error enum</c>: a closed set of failure variants.</summary>
@@ -294,6 +349,9 @@ public sealed class ErrorVariantSymbol(string name, Location location, ErrorSetS
 
     public string? Doc { get; } = doc;
 
+    /// <summary>The process exit code when <c>main</c> fails with this variant: <c>[ExitCode(n)]</c>, else 1.</summary>
+    public int ExitCode { get; set; } = 1;
+
     /// <summary>First line of the doc comment, or the variant name (spec §6.6).</summary>
     public string Summary => Doc is { Length: > 0 } d ? d.Split('\n')[0].Trim() : Name;
 }
@@ -301,4 +359,110 @@ public sealed class ErrorVariantSymbol(string name, Location location, ErrorSetS
 public sealed class TestSymbol(string title, Location location, FunctionSymbol function) : Symbol(title, location)
 {
     public FunctionSymbol Function { get; } = function;
+}
+
+/// <summary>A plain <c>enum</c>: named <c>i32</c> ordinals in declaration order.</summary>
+public sealed class EnumSymbol(string name, Location location, ModuleSymbol module, Accessibility access, EnumDecl decl, FileContext file)
+    : TypeSymbol
+{
+    public string Name { get; } = name;
+
+    public Location Location { get; } = location;
+
+    public ModuleSymbol Module { get; } = module;
+
+    public Accessibility Access { get; } = access;
+
+    public EnumDecl Decl { get; } = decl;
+
+    public FileContext File { get; } = file;
+
+    public List<EnumMemberSymbol> Members { get; } = new();
+
+    /// <summary>The associated data of <c>enum Name(T x, …)</c>, in declaration order; empty for a plain enum.</summary>
+    public List<EnumFieldSymbol> Fields { get; } = new();
+
+    /// <summary><c>Name.fromOrdinal(i64)</c> and <c>Name.parse(string)</c>.</summary>
+    public FunctionSymbol FromOrdinal { get; set; } = null!;
+
+    public FunctionSymbol Parse { get; set; } = null!;
+
+    public override string DisplayName => Name;
+
+    public EnumMemberSymbol? Find(string name) => Members.Find(m => m.Name == name);
+
+    public EnumFieldSymbol? FindField(string name) => Fields.Find(f => f.Name == name);
+}
+
+/// <summary>A parameter of a data enum, read as <c>e.name</c>; one static table per field, indexed by ordinal.</summary>
+public sealed class EnumFieldSymbol(string name, Location location, EnumSymbol @enum, TypeSymbol type, int index) : Symbol(name, location)
+{
+    public EnumSymbol Enum { get; } = @enum;
+
+    public TypeSymbol Type { get; } = type;
+
+    public int Index { get; } = index;
+}
+
+public sealed class EnumMemberSymbol(string name, Location location, EnumSymbol @enum, int ordinal, string? doc) : Symbol(name, location)
+{
+    public EnumSymbol Enum { get; } = @enum;
+
+    public int Ordinal { get; } = ordinal;
+
+    public string? Doc { get; } = doc;
+
+    /// <summary>The constant value of each field of a data enum, by field index (null after an error).</summary>
+    public ConstantValue?[] Values { get; set; } = [];
+}
+
+/// <summary>A tagged <c>union</c>: variants in declaration order, each with positional payload fields.</summary>
+public sealed class UnionSymbol(string name, Location location, ModuleSymbol module, Accessibility access, UnionDecl decl, FileContext file)
+    : TypeSymbol
+{
+    public string Name { get; } = name;
+
+    public Location Location { get; } = location;
+
+    public ModuleSymbol Module { get; } = module;
+
+    public Accessibility Access { get; } = access;
+
+    public UnionDecl Decl { get; } = decl;
+
+    public FileContext File { get; } = file;
+
+    public List<UnionVariantSymbol> Variants { get; } = new();
+
+    /// <summary>The <c>&lt;A, B&gt;</c> of a generic template; empty otherwise.</summary>
+    public List<TypeParameterType> TypeParameters { get; } = new();
+
+    /// <summary>For an instantiation: the template it was re-declared from.</summary>
+    public UnionSymbol? Template { get; init; }
+
+    public IReadOnlyList<TypeSymbol> TypeArguments { get; init; } = [];
+
+    /// <summary>What each type parameter name means here: itself in a template, the argument in an instantiation.</summary>
+    public IReadOnlyDictionary<string, TypeSymbol>? TypeMap { get; set; }
+
+    /// <summary>A template, or an instantiation with a type parameter among its arguments: checked, never emitted.</summary>
+    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs);
+
+    public override string DisplayName =>
+        TypeArguments.Count > 0 ? $"{Name}<{string.Join(", ", TypeArguments.Select(a => a.DisplayName))}>" :
+        TypeParameters.Count > 0 ? $"{Name}<{string.Join(", ", TypeParameters.Select(a => a.Name))}>" : Name;
+
+    public UnionVariantSymbol? Find(string name) => Variants.Find(v => v.Name == name);
+}
+
+/// <summary>A union variant; its tag is its declaration index. Unit variants have no fields.</summary>
+public sealed class UnionVariantSymbol(string name, Location location, UnionSymbol union, int tag, string? doc) : Symbol(name, location)
+{
+    public UnionSymbol Union { get; } = union;
+
+    public int Tag { get; } = tag;
+
+    public string? Doc { get; } = doc;
+
+    public List<ParameterSymbol> Fields { get; } = new();
 }

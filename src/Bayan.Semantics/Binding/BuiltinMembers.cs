@@ -4,9 +4,9 @@ namespace Bayan.Semantics.Binding;
 
 /// <summary>A built-in method: its parameters, result, and whether it writes to its receiver.</summary>
 internal sealed record BuiltinMethod(
-    BuiltinMember Member, (string Name, TypeSymbol Type)[] Parameters, TypeSymbol Returns, bool Mutating = false, bool AcceptsInterpolation = false);
+    BuiltinMember Member, (string Name, TypeSymbol Type)[] Parameters, TypeSymbol Returns, bool Mutating = false);
 
-/// <summary>Members of strings, spans, lists, arrays, results, <c>Arena</c>, <c>StrBuf</c> and <c>char</c> (spec §3, §16).</summary>
+/// <summary>Members of strings, spans, lists, maps, arrays, results, <c>Owned</c>, <c>Arena</c>, <c>StrBuf</c>, <c>Io.stdout</c>/<c>Io.stderr</c>, <c>ProcessResult</c>, <c>char</c> and enums (spec §3, §16).</summary>
 internal static class BuiltinMembers
 {
     /// <summary>A built-in property (read without parentheses), or null.</summary>
@@ -19,12 +19,19 @@ internal static class BuiltinMembers
         (SpanType, "isEmpty") => (BuiltinMember.SpanIsEmpty, PrimitiveType.Bool),
         (ListType, "length") => (BuiltinMember.ListLength, PrimitiveType.I64),
         (ListType, "isEmpty") => (BuiltinMember.ListIsEmpty, PrimitiveType.Bool),
+        (MapType, "count") => (BuiltinMember.MapCount, PrimitiveType.I64),
         (Symbols.ArrayType, "length") => (BuiltinMember.ArrayLength, PrimitiveType.I64),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "length") => (BuiltinMember.StrBufLength, PrimitiveType.I64),
+        (BuiltinType { Kind: BuiltinKind.ProcessResult }, "exitCode") => (BuiltinMember.ProcessExitCode, PrimitiveType.I32),
+        (BuiltinType { Kind: BuiltinKind.ProcessResult }, "stdout") => (BuiltinMember.ProcessStdout, PrimitiveType.String),
+        (BuiltinType { Kind: BuiltinKind.ProcessResult }, "stderr") => (BuiltinMember.ProcessStderr, PrimitiveType.String),
         (PrimitiveType { Kind: PrimitiveKind.Char }, "value") => (BuiltinMember.CharValue, PrimitiveType.U32),
         (ResultType, "isOk") => (BuiltinMember.ResultIsOk, PrimitiveType.Bool),
         (ResultType r, "value") => (BuiltinMember.ResultValue, r.Value),
         (ResultType r, "err") => (BuiltinMember.ResultError, r.Error),
+        (OwnedType o, "value") => (BuiltinMember.OwnedValue, o.Inner),
+        (EnumSymbol, "name") => (BuiltinMember.EnumName, PrimitiveType.String),
+        (EnumSymbol, "ordinal") => (BuiltinMember.EnumOrdinal, PrimitiveType.I32),
         _ => null,
     };
 
@@ -39,19 +46,25 @@ internal static class BuiltinMembers
         (ListType l, "asSpan") => new(BuiltinMember.ListAsSpan, [], new SpanType(l.Element)),
         (ListType, "clear") => new(BuiltinMember.ListClear, [], PrimitiveType.Void, Mutating: true),
         (ListType l, "removeLast") => new(BuiltinMember.ListRemoveLast, [], l.Element, Mutating: true),
+        (MapType m, "set") => new(BuiltinMember.MapSet, [("key", m.KeyType), ("value", m.ValueType)], PrimitiveType.Void, Mutating: true),
+        (MapType m, "get") => new(BuiltinMember.MapGet, [("key", m.KeyType)], new OptionalType(m.ValueType)),
+        (MapType m, "containsKey") => new(BuiltinMember.MapContainsKey, [("key", m.KeyType)], PrimitiveType.Bool),
+        (MapType m, "remove") => new(BuiltinMember.MapRemove, [("key", m.KeyType)], PrimitiveType.Bool, Mutating: true),
+        (MapType, "clear") => new(BuiltinMember.MapClear, [], PrimitiveType.Void, Mutating: true),
         (Symbols.ArrayType a, "asSpan") => new(BuiltinMember.ArrayAsSpan, [], new SpanType(a.Element)),
         (BuiltinType { Kind: BuiltinKind.Arena }, "reset") => new(BuiltinMember.ArenaReset, [], PrimitiveType.Void, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "append") =>
-            new(BuiltinMember.StrBufAppend, [("text", PrimitiveType.String)], PrimitiveType.Void, Mutating: true, AcceptsInterpolation: true),
+            new(BuiltinMember.StrBufAppend, [("text", PrimitiveType.String)], PrimitiveType.Void, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "asString") => new(BuiltinMember.StrBufAsString, [], PrimitiveType.String),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "clear") => new(BuiltinMember.StrBufClear, [], PrimitiveType.Void, Mutating: true),
+        (BuiltinType { Kind: BuiltinKind.IoStream }, "write") => new(BuiltinMember.IoWrite, [("text", PrimitiveType.String)], PrimitiveType.Void),
         _ => null,
     };
 
     public static bool HasMethod(TypeSymbol type, string name) => Method(type, name) is not null;
 
     private static readonly string[] Candidates =
-        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "add", "asSpan", "clear", "removeLast", "reset", "append", "asString"];
+        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "add", "asSpan", "clear", "removeLast", "count", "set", "get", "containsKey", "remove", "reset", "append", "asString", "write", "name", "ordinal", "exitCode", "stdout", "stderr"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>

@@ -21,13 +21,14 @@ internal sealed partial class Binder
     private int _deferDepth;
     private int _nextLocalId;
 
-    public Binder(Compilation c, FileContext file, FunctionSymbol? fn, StructSymbol? container)
+    public Binder(Compilation c, FileContext file, FunctionSymbol? fn, StructSymbol? container,
+        IReadOnlyDictionary<string, TypeSymbol>? typeArgs = null)
     {
         _c = c;
         _file = file;
         _fn = fn;
         _struct = container;
-        _types = new TypeResolver(c, file, container);
+        _types = new TypeResolver(c, file, container, typeArgs ?? fn?.TypeMap ?? container?.TypeMap);
     }
 
     private SourceText Source => _file.Source;
@@ -161,6 +162,29 @@ internal sealed partial class Binder
         return value;
     }
 
+    /// <summary>The arguments of each member of a data enum, matched like call arguments; each must be a constant (BYN2723).</summary>
+    public void BindEnumArguments(EnumSymbol e)
+    {
+        var ps = e.Fields.Select(f => new ParameterSymbol(f.Name, f.Location, f.Type, ParamModifier.None, f.Index)).ToList();
+        foreach (var d in e.Decl.Members)
+        {
+            if (e.Find(d.Name.Text) is not { Values.Length: 0 } member) continue;
+            if (d.Args is null && e.Decl.Params is null) continue;
+            var name = $"{e.Name}.{member.Name}";
+            var args = BindArguments(new CallExpr(d.Span, new NameExpr(d.Name.Span, d.Name, []), d.Args ?? []), ps, null, enforceNames: false, displayName: name);
+            member.Values = new ConstantValue?[args.Length];
+            for (var i = 0; i < args.Length; i++)
+            {
+                var arg = args[i];
+                if (arg.Type.IsError || ps[i].Type.IsError) continue;
+                if (arg is BoundEnumMember em) member.Values[i] = new ConstantValue((Int128)em.Member.Ordinal);
+                else if (arg.Constant is { } value) member.Values[i] = value;
+                else Report(DiagnosticCodes.EnumArgumentNotConstant, arg.Syntax.Span, [ps[i].Name, name],
+                    label: "computed at run time", help: "enum data is static; use literals and `const`s only");
+            }
+        }
+    }
+
     public void BindModuleConstant(ConstSymbol c)
     {
         var decl = c.Decl;
@@ -174,10 +198,42 @@ internal sealed partial class Binder
         var value = declared is null ? BindExpr(decl.Init) : BindConverted(decl.Init, declared);
         c.Type = declared ?? DefaultType(value, decl.Init);
         if (declared is null) value = Convert(value, c.Type, decl.Init.Span);
+        if (c.Type is Symbols.ArrayType or ListType or SpanType || decl.Init is CollectionExpr)
+        {
+            BindStaticArray(c, value);
+            return;
+        }
         if (value.Constant is null && !value.Type.IsError)
             Report(DiagnosticCodes.NotConstant, decl.Init.Span, ["a `const`"]);
         c.Value = value.Constant;
         c.Bound = value;
+    }
+
+    /// <summary>A module-level <c>const T[N]</c> whose elements are literal numbers, <c>bool</c>s or <c>char</c>s becomes static data (BYN2229 otherwise).</summary>
+    private void BindStaticArray(ConstSymbol c, BoundExpr value)
+    {
+        c.Bound = value;
+        if (value.Type.IsError) return;
+        var decl = c.Decl;
+        var help = $"write `const T[N] {decl.Name.Text} = [ … ];` with `T` a number type, `bool` or `char`, and only literals or constants inside";
+        if (c.Type is not Symbols.ArrayType { Element: PrimitiveType { IsNumeric: true } or PrimitiveType { Kind: PrimitiveKind.Bool or PrimitiveKind.Char } })
+        {
+            Report(DiagnosticCodes.InvalidConstArray, decl.Type?.Span ?? decl.Init!.Span, [decl.Name.Text], help: help);
+            return;
+        }
+        if (value is not BoundCollection collection)
+        {
+            Report(DiagnosticCodes.InvalidConstArray, decl.Init!.Span, [decl.Name.Text], help: help);
+            return;
+        }
+        if (collection.Elements.Any(e => e.Type.IsError)) return;
+        if (collection.Elements.FirstOrDefault(e => e.Constant is null) is { } bad)
+        {
+            Report(DiagnosticCodes.InvalidConstArray, bad.Syntax.Span, [decl.Name.Text], label: "not a constant", help: help);
+            return;
+        }
+        c.IsStaticArray = true;
+        c.Elements = collection.Elements.Select(e => e.Constant!).ToArray();
     }
 
     /// <summary>The <c>N</c> of <c>T[N]</c>: a non-negative integer constant, or -1 after an error.</summary>
@@ -196,6 +252,29 @@ internal sealed partial class Binder
             return -1;
         }
         return (long)n;
+    }
+
+    /// <summary>The value of <c>[ExitCode(n)]</c>: one integer constant from 1 to 255, else BYN2772 and 1.</summary>
+    public int BindExitCode(AttributeSyntax attribute)
+    {
+        if (attribute.Args is not [{ Name: null, Modifier: ArgModifier.None } arg])
+        {
+            Report(DiagnosticCodes.InvalidExitCode, attribute.Span, []);
+            return 1;
+        }
+        var value = BindExpr(arg.Value);
+        if (value.Type.IsError) return 1;
+        if (!value.Type.IsInteger || value.Constant is not { Value: Int128 n })
+        {
+            Report(DiagnosticCodes.InvalidExitCode, arg.Value.Span, []);
+            return 1;
+        }
+        if (n < 1 || n > 255)
+        {
+            Report(DiagnosticCodes.InvalidExitCode, arg.Value.Span, [], help: "0 means success, and exit codes above 255 do not survive the operating system");
+            return 1;
+        }
+        return (int)n;
     }
 
     // ── Statements ───────────────────────────────────────────────────────────────
@@ -401,6 +480,7 @@ internal sealed partial class Binder
             RangeType r => r.Element,
             SpanType s => s.Element,
             ListType l => l.Element,
+            MapType m => m.Entry,
             Symbols.ArrayType a => a.Element,
             PrimitiveType { Kind: PrimitiveKind.String } => PrimitiveType.Char,
             ErrorType => ErrorType.Instance,

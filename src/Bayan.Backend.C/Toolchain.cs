@@ -147,7 +147,7 @@ public static class Toolchain
         var hit = Lookup(key, exeName) is not null;
         if (!hit)
         {
-            var failure = Compile(compiler, flags, cSource, key, exeName, linkMath: !targetOs.StartsWith("windows", StringComparison.Ordinal));
+            var failure = Compile(compiler, flags, cSource, key, exeName, windows: targetOs.StartsWith("windows", StringComparison.Ordinal));
             if (failure is not null) return new NativeBuild(null, failure);
         }
         var exe = Path.Combine(Programs, key, exeName);
@@ -194,7 +194,7 @@ public static class Toolchain
     }
 
     /// <summary>Builds into a private directory, then renames it to <c>programs/&lt;key&gt;</c>; null on success.</summary>
-    private static string? Compile(string[] compiler, List<string> flags, string cSource, string key, string exeName, bool linkMath)
+    private static string? Compile(string[] compiler, List<string> flags, string cSource, string key, string exeName, bool windows)
     {
         var work = Path.Combine(Staging, key[..16] + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
@@ -207,7 +207,8 @@ public static class Toolchain
             args.AddRange(flags);
             // Debug info names `main.c`, not this temporary directory.
             args.AddRange(["-ffile-prefix-map=" + work + "=.", "-I", ".", "main.c", "bayan-rt.c", "-o", exeName]);
-            if (linkMath) args.Add("-lm");
+            // `CommandLineToArgvW` (program arguments) is in shell32.
+            args.Add(windows ? "-lshell32" : "-lm");
             var (code, stdout, stderr) = Exec(compiler[0], args, work);
             var exe = Path.Combine(work, exeName);
             if (code != 0 || !File.Exists(exe))

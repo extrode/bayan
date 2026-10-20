@@ -11,9 +11,6 @@ namespace Bayan.Semantics.Binding;
 
 internal sealed partial class Binder
 {
-    /// <summary>Set while binding an argument that accepts <c>$"…"</c>.</summary>
-    private bool _interpolationAllowed;
-
     // ── Entry points ─────────────────────────────────────────────────────────────
 
     /// <summary>Binds a value. <paramref name="expected"/> only guides literals and target-typed forms; no conversion is applied.</summary>
@@ -27,6 +24,10 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(e);
             case BoundModuleRef m:
                 Report(DiagnosticCodes.NotAValue, e.Span, [m.Module.Name, "module"]);
+                return new BoundErrorExpr(e);
+            case BoundVariantGroup g:
+                Report(DiagnosticCodes.VariantNeedsPayload, e.Span, [g.Variant.Name],
+                    help: $"pass it: `{g.Variant.Union.Name}.{g.Variant.Name}({string.Join(", ", g.Variant.Fields.Select(f => f.Name))})`");
                 return new BoundErrorExpr(e);
             default:
                 return bound;
@@ -63,6 +64,14 @@ internal sealed partial class Binder
         }
         if (value.Constant is { Value: double d } && target is PrimitiveType { Kind: PrimitiveKind.F32 } && value.Syntax is LiteralExpr)
             return Literal(value.Syntax, target, (double)(float)d);
+        if (_printArgument && argument && value.Type is EnumSymbol && target.IsString)
+            return new BoundBuiltinCall(value.Syntax, BuiltinMember.EnumName, value, [], PrimitiveType.String);
+        if (value is BoundStaticArray && target is SpanType { ReadOnly: false })
+        {
+            Report(DiagnosticCodes.TypeMismatch, span, [value.Type.DisplayName, target.DisplayName],
+                label: "a `const` array cannot be written through", help: $"take a `ReadOnlySpan<{((SpanType)target).Element.DisplayName}>`");
+            return new BoundErrorExpr(value.Syntax);
+        }
         if (Conversions.Implicit(value.Type, target, argument) is { } kind)
         {
             if (kind == ConversionKind.Identity) return value;
@@ -309,6 +318,8 @@ internal sealed partial class Binder
         var name = n.Name.Text;
         if (n.TypeArgs.Length > 0)
         {
+            if (_scope.Lookup(name) is null && Module.Functions.TryGetValue(name, out var generic))
+                return new BoundMethodGroup(n, null, generic[0]) { TypeArgs = n.TypeArgs };
             var t = _types.Resolve(new NamedType(n.Span, [n.Name], n.TypeArgs));
             return t.IsError ? new BoundErrorExpr(n) : new BoundTypeRef(n, t);
         }
@@ -327,8 +338,9 @@ internal sealed partial class Binder
         if (_file.Imports.TryGetValue(name, out var module)) return new BoundModuleRef(n, module);
         if (_c.Builtins.Find(name) is { } builtin) return new BoundMethodGroup(n, null, builtin);
         if (PrimitiveType.ByName.TryGetValue(name, out var primitive)) return new BoundTypeRef(n, primitive);
-        if (name is "List" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf")
+        if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "ProcessResult")
             return new BoundTypeRef(n, _types.Resolve(new NamedType(n.Span, [n.Name], [])));
+        if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
         ReportUndefined(n.Name);
         return new BoundErrorExpr(n);
     }
@@ -347,7 +359,7 @@ internal sealed partial class Binder
         candidates.AddRange(Module.Constants.Keys);
         candidates.AddRange(Module.Types.Keys);
         candidates.AddRange(_file.Imports.Keys);
-        candidates.AddRange(["print", "panic", "assert"]);
+        candidates.AddRange(["print", "panic", "assert", "Io"]);
         var suggestion = Suggest(name.Text, candidates);
         Report(DiagnosticCodes.UndefinedName, name.Span, [name.Text],
             help: suggestion is null ? null : $"did you mean `{suggestion}`?",
@@ -381,6 +393,7 @@ internal sealed partial class Binder
     private BoundExpr ConstantRef(Node syntax, ConstSymbol c)
     {
         _c.BindConstant(c);
+        if (c.IsStaticArray) return new BoundStaticArray(syntax, c);
         if (c.Value is null) return new BoundErrorExpr(syntax);
         return new BoundLiteral(syntax, c.Type, c.Value) { Constant = c.Value };
     }
@@ -430,6 +443,10 @@ internal sealed partial class Binder
                 Report(DiagnosticCodes.UnknownVariant, m.Member.Span, [name, set.Name],
                     help: Suggest(name, set.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
                 return new BoundErrorExpr(m);
+            case BoundTypeRef { Referenced: EnumSymbol e }:
+                return BindEnumStatic(m, e);
+            case BoundTypeRef { Referenced: UnionSymbol u }:
+                return BindVariant(m, m.Member, u);
             case BoundTypeRef { Referenced: StructSymbol s }:
             {
                 var method = s.FindMethods(name).FirstOrDefault();
@@ -443,11 +460,55 @@ internal sealed partial class Binder
                         ? $"`{name}` belongs to a `{s.Name}` value, not the type" : null);
                 return new BoundErrorExpr(m);
             }
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Io } io }:
+            {
+                if (_c.Builtins.FindIo(name) is not { } member)
+                {
+                    Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, io.Name],
+                        help: Suggest(name, ["readFile", "readText", "writeFile", "listDir", "run", "monotonicNanos", "stdout", "stderr"]) is { } near ? $"did you mean `{near}`?" : null);
+                    return new BoundErrorExpr(m);
+                }
+                // `stdout` and `stderr` read like properties; the rest are called.
+                if (member.Builtin is BuiltinFunction.IoStdout or BuiltinFunction.IoStderr) return new BoundCall(m, member, null, [], member.ReturnType);
+                return new BoundMethodGroup(m, null, member);
+            }
             case BoundTypeRef t:
                 Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, t.Referenced.DisplayName]);
                 return new BoundErrorExpr(m);
         }
         return BindValueMember(m, target, m.Member);
+    }
+
+    /// <summary>A unit variant is a value; a variant with a payload is called like a function.</summary>
+    private BoundExpr BindVariant(Node syntax, Name member, UnionSymbol u)
+    {
+        if (u.Find(member.Text) is { } v)
+            return v.Fields.Count == 0 ? new BoundUnionNew(syntax, v, []) : new BoundVariantGroup(syntax, v);
+        Report(DiagnosticCodes.UnknownUnionVariant, member.Span, [member.Text, u.Name],
+            help: Suggest(member.Text, u.Variants.Select(x => x.Name)) is { } close ? $"did you mean `{close}`?" : null);
+        return new BoundErrorExpr(syntax);
+    }
+
+    /// <summary><c>Color.red</c>, <c>Color.count</c>, <c>Color.values</c>, <c>Color.fromOrdinal</c> and <c>Color.parse</c>.</summary>
+    private BoundExpr BindEnumStatic(MemberExpr m, EnumSymbol e)
+    {
+        var name = m.Member.Text;
+        if (e.Find(name) is { } member) return new BoundEnumMember(m, member);
+        switch (name)
+        {
+            case "count":
+                var count = new ConstantValue((Int128)e.Members.Count);
+                return new BoundLiteral(m, PrimitiveType.I64, count) { Constant = count };
+            case "values":
+                return new BoundEnumValues(m, e, new SpanType(e, readOnly: true));
+            case "fromOrdinal":
+                return new BoundMethodGroup(m, null, e.FromOrdinal);
+            case "parse":
+                return new BoundMethodGroup(m, null, e.Parse);
+        }
+        Report(DiagnosticCodes.UnknownEnumMember, m.Member.Span, [name, e.Name],
+            help: Suggest(name, e.Members.Select(v => v.Name).Concat(["count", "values", "fromOrdinal", "parse"])) is { } close ? $"did you mean `{close}`?" : null);
+        return new BoundErrorExpr(m);
     }
 
     private BoundExpr BindModuleMember(MemberExpr m, ModuleSymbol module)
@@ -513,17 +574,30 @@ internal sealed partial class Binder
                 }
                 break;
             }
+            case UnionSymbol u when u.Variants.Any(v => v.Fields.Any(f => f.Name == name)):
+                Report(DiagnosticCodes.PayloadNeedsPattern, member.Span, [u.Name, name],
+                    help: "match the variant and bind the field, as in `case .Variant(let x):`");
+                return new BoundErrorExpr(syntax);
             case Symbols.TupleType t:
             {
                 var index = t.IndexOf(name);
                 if (index >= 0) return new BoundTupleElement(syntax, target, index, t.Fields[index].Type);
                 break;
             }
+            case EnumSymbol e when e.FindField(name) is { } f:
+                return new BoundBuiltinCall(syntax, BuiltinMember.EnumField, target, [Literal(syntax, PrimitiveType.I32, (Int128)f.Index)], f.Type);
+            // Any other member reads through the pointer: `o.field`, `o.method()`.
+            case OwnedType o when name != "value" && !o.Inner.IsError:
+                return BindValueMember(syntax, new BoundBuiltinCall(target.Syntax, BuiltinMember.OwnedValue, target, [], o.Inner), member);
             case OptionalType o:
                 Report(DiagnosticCodes.MemberOfOptional, member.Span, [name, o.DisplayName],
                     help: $"check it first: `if ({Source.GetText(target.Syntax.Span)} is {{ }} value) {{ … value.{name} … }}`");
                 return new BoundErrorExpr(syntax);
             case ErrorType:
+                return new BoundErrorExpr(syntax);
+            case TypeParameterType tp:
+                Report(DiagnosticCodes.TypeParameterMember, member.Span, [name, tp.Name],
+                    help: $"type parameters have no constraints, so a `{tp.Name}` has no members");
                 return new BoundErrorExpr(syntax);
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
@@ -541,6 +615,7 @@ internal sealed partial class Binder
         IEnumerable<string> names = type switch
         {
             StructSymbol s => s.Fields.Select(f => f.Name).Concat(s.Properties.Select(p => p.Name)).Concat(s.Methods.Select(m => m.Name)),
+            EnumSymbol e => e.Fields.Select(f => f.Name).Concat(BuiltinMembers.Names(type)),
             _ => BuiltinMembers.Names(type),
         };
         return Suggest(name, names) is { } s2 ? $"did you mean `{s2}`?" : null;
@@ -570,6 +645,13 @@ internal sealed partial class Binder
                     Report(DiagnosticCodes.UnknownVariant, t.Member.Span, [t.Member.Text, u.DisplayName]);
                 return new BoundErrorExpr(t);
             }
+            case EnumSymbol e:
+                if (e.Find(t.Member.Text) is { } member) return new BoundEnumMember(t, member);
+                Report(DiagnosticCodes.UnknownEnumMember, t.Member.Span, [t.Member.Text, e.Name],
+                    help: Suggest(t.Member.Text, e.Members.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
+                return new BoundErrorExpr(t);
+            case UnionSymbol un:
+                return BindVariant(t, t.Member, un);
             case StructSymbol s when s.FindMethods(t.Member.Text).FirstOrDefault() is { IsStatic: true } m:
                 return new BoundMethodGroup(t, null, m);
             case null or ErrorType:
@@ -608,7 +690,7 @@ internal sealed partial class Binder
             BindExpr(i.Index);
             return new BoundErrorExpr(i);
         }
-        if (i.Index is RangeExpr r) return BindSlice(i, target, r, new SpanType(element, target.Type is SpanType { ReadOnly: true }));
+        if (i.Index is RangeExpr r) return BindSlice(i, target, r, new SpanType(element, target.Type is SpanType { ReadOnly: true } || target is BoundStaticArray));
         var fromEnd = i.Index is UnaryExpr { Op: UnaryOp.FromEnd };
         var indexSyntax = i.Index is UnaryExpr { Op: UnaryOp.FromEnd } u ? u.Operand : i.Index;
         var index = BindIndexValue(indexSyntax);
@@ -679,6 +761,7 @@ internal sealed partial class Binder
         var operand = BindExpr(u.Operand, u.Op == UnaryOp.Not ? PrimitiveType.Bool : expected);
         var t = operand.Type;
         if (t.IsError) return new BoundErrorExpr(u);
+        if (t is TypeParameterType tp) return TypeParameterOperator(u, UnaryText(u.Op), tp);
         var ok = u.Op switch
         {
             UnaryOp.Not => t.IsBool,
@@ -760,6 +843,8 @@ internal sealed partial class Binder
             right = BindExpr(b.Right, hint);
         }
         if (left.Type.IsError || right.Type.IsError) return new BoundErrorExpr(b);
+        if (b.Op is not (BinaryOp.Eq or BinaryOp.Ne) && (TypeParameterOf(left.Type) ?? TypeParameterOf(right.Type)) is { } tp)
+            return TypeParameterOperator(b, BinaryText(b.Op), tp);
 
         if (b.Op is BinaryOp.Shl or BinaryOp.Shr)
         {
@@ -789,6 +874,17 @@ internal sealed partial class Binder
         var type = IsComparison(b.Op) ? PrimitiveType.Bool : common;
         var bound = new BoundBinary(b, b.Op, left, right, type);
         return Fold(bound, left, right, common);
+    }
+
+    private static TypeParameterType? TypeParameterOf(TypeSymbol t) =>
+        t as TypeParameterType ?? (t as OptionalType)?.Inner as TypeParameterType;
+
+    /// <summary>Without constraints a <c>T</c> is only copied, compared with <c>==</c>/<c>!=</c>, passed, stored, returned and formatted.</summary>
+    private BoundErrorExpr TypeParameterOperator(Node syntax, string op, TypeParameterType tp)
+    {
+        Report(DiagnosticCodes.TypeParameterOperator, syntax.Span, [op, tp.Name],
+            help: $"type parameters have no constraints: a `{tp.Name}` can only be copied, compared with `==` and `!=`, passed, stored, returned and formatted");
+        return new BoundErrorExpr(syntax);
     }
 
     private BoundExpr Fold(BoundBinary bound, BoundExpr left, BoundExpr right, TypeSymbol operandType)
@@ -822,15 +918,20 @@ internal sealed partial class Binder
         _ => false,
     };
 
-    internal static bool IsEquatable(TypeSymbol t) => t switch
+    internal static bool IsEquatable(TypeSymbol t) => IsEquatable(t, []);
+
+    /// <summary><c>Owned</c> compares the values it points to; a type reached again through one is assumed equatable.</summary>
+    private static bool IsEquatable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
-        OptionalType o => IsEquatable(o.Inner),
-        ResultType r => IsEquatable(r.Value),
-        ErrorSetSymbol or ErrorUnionType => true,
-        StructSymbol s => s.Fields.All(f => IsEquatable(f.Type)),
-        Symbols.TupleType tt => tt.Fields.All(f => IsEquatable(f.Type)),
-        Symbols.ArrayType a => IsEquatable(a.Element),
+        OptionalType o => IsEquatable(o.Inner, seen),
+        ResultType r => IsEquatable(r.Value, seen),
+        OwnedType o => IsEquatable(o.Inner, seen),
+        ErrorSetSymbol or ErrorUnionType or EnumSymbol or TypeParameterType => true,
+        StructSymbol s => !seen.Add(s) || s.Fields.All(f => IsEquatable(f.Type, seen)),
+        UnionSymbol u => !seen.Add(u) || u.Variants.All(v => v.Fields.All(f => IsEquatable(f.Type, seen))),
+        Symbols.TupleType tt => tt.Fields.All(f => IsEquatable(f.Type, seen)),
+        Symbols.ArrayType a => IsEquatable(a.Element, seen),
         _ => false,
     };
 
@@ -997,7 +1098,7 @@ internal sealed partial class Binder
             }
             else
             {
-                values[i] = f.Default ?? new BoundErrorExpr(s);
+                values[i] = _c.FieldDefault(st, f, Source, s.Span) ?? new BoundErrorExpr(s);
             }
         }
         if (missing.Count > 0)
@@ -1123,13 +1224,6 @@ internal sealed partial class Binder
 
     private BoundExpr BindInterpolated(InterpolatedExpr i)
     {
-        if (!_interpolationAllowed)
-        {
-            Report(DiagnosticCodes.InterpolationNotAllowed, i.Span, [],
-                help: "an interpolated string writes into an output; pass it to `print`, `panic`, `assert` or `StrBuf.append`");
-            return new BoundErrorExpr(i);
-        }
-        _interpolationAllowed = false;
         var parts = new List<BoundInterpolationPart>();
         foreach (var part in i.Parts)
         {
@@ -1145,24 +1239,36 @@ internal sealed partial class Binder
                     help: value.Type is StructSymbol s ? $"give `{s.Name}` a `void formatInto(ref StrBuf out)` method" : null);
             parts.Add(new BoundInterpolationPart(null, value));
         }
-        _interpolationAllowed = true;
         return new BoundInterpolated(i, parts.ToArray());
     }
 
-    internal static bool IsFormattable(TypeSymbol t) => t switch
+    internal static bool IsFormattable(TypeSymbol t) => IsFormattable(t, []);
+
+    /// <summary><c>Owned</c> formats the value it points to; a type reached again through one is assumed formattable.</summary>
+    private static bool IsFormattable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
-        ErrorSetSymbol or ErrorUnionType => true,
-        OptionalType o => IsFormattable(o.Inner),
-        ResultType r => IsFormattable(r.Value),
-        StructSymbol => true,
-        Symbols.TupleType tt => tt.Fields.All(f => IsFormattable(f.Type)),
+        ErrorSetSymbol or ErrorUnionType or EnumSymbol => true,
+        OptionalType o => IsFormattable(o.Inner, seen),
+        ResultType r => IsFormattable(r.Value, seen),
+        OwnedType o => IsFormattable(o.Inner, seen),
+        StructSymbol or TypeParameterType => true,
+        UnionSymbol u => !seen.Add(u) || u.Variants.All(v => v.Fields.All(f => IsFormattable(f.Type, seen))),
+        Symbols.TupleType tt => tt.Fields.All(f => IsFormattable(f.Type, seen)),
+        MapType m => IsFormattable(m.KeyType, seen) && IsFormattable(m.ValueType, seen),
         _ => false,
     };
 }
 
 /// <summary>A function named but not yet called (only valid as a callee).</summary>
-internal sealed record BoundMethodGroup(Node Syntax, BoundExpr? Receiver, FunctionSymbol Function) : BoundExpr(Syntax, ErrorType.Instance);
+internal sealed record BoundMethodGroup(Node Syntax, BoundExpr? Receiver, FunctionSymbol Function) : BoundExpr(Syntax, ErrorType.Instance)
+{
+    /// <summary>The explicit <c>&lt;i64&gt;</c> of <c>pick&lt;i64&gt;(…)</c>.</summary>
+    public TypeSyntax[] TypeArgs { get; init; } = [];
+}
 
 /// <summary>A built-in method named but not yet called.</summary>
+/// <summary>A union variant with a payload, before its call.</summary>
+internal sealed record BoundVariantGroup(Node Syntax, UnionVariantSymbol Variant) : BoundExpr(Syntax, ErrorType.Instance);
+
 internal sealed record BoundBuiltinGroup(Node Syntax, BoundExpr Receiver, string Name) : BoundExpr(Syntax, ErrorType.Instance);

@@ -1,0 +1,13 @@
+error BYN2741: type argument `T` of `pick` is inferred as both `i32` and `string`
+
+  4 │ var x = pick(first: true, a: 1, b: "one");
+    │                                    ^^^^^
+    │
+  help: make the arguments agree, or write it out: `pick<…>(…)`
+
+error BYN2741: type argument `T` of `head` is inferred as both `string` and `i32`
+
+  6 │ var y = head(words, 0);
+    │                     ^
+    │
+  help: make the arguments agree, or write it out: `head<…>(…)`

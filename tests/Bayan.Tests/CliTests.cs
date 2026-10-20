@@ -144,6 +144,44 @@ public sealed class CliTests
     }
 
     [Fact]
+    public void RunPassesArgumentsAfterTheSeparator()
+    {
+        // The child inherits stdout, so it prints and also writes what it printed to a file.
+        var written = Path.Combine(Golden.RepoRoot, "tmp", "cli-run-args.txt");
+        if (File.Exists(written)) File.Delete(written);
+        var path = Program("cli-run-args", $$"""
+            void main(ReadOnlySpan<string> args) fails IoError {
+                let bytes = stackalloc u8[64];
+                var sb = StrBuf(bytes);
+                for (let a in args) {
+                    print(a);
+                    sb.append($"{a}\n");
+                }
+                try Io.writeFile("{{written.Replace('\\', '/')}}", sb.asString().bytes);
+            }
+
+            """);
+        var (exit, _, stderr) = Run("run", path, "--", "a", "b c");
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal("a\nb c\n", File.ReadAllText(written));
+    }
+
+    [Fact]
+    public void IoRunSpawnsTheBayanBinary()
+    {
+        var path = Program("cli-io-run-version", """
+            i32 main(ReadOnlySpan<string> args) fails IoError {
+                string[1] version = ["--version"];
+                let r = try Io.run(args[0], version.asSpan());
+                return r.exitCode == 0 && r.stdout.startsWith("bayan ") && r.stderr.isEmpty ? 0 : 1;
+            }
+
+            """);
+        var (exit, _, stderr) = Run("run", path, "--", LexDiffTests.Bayan);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+    }
+
+    [Fact]
     public void RunCannotTellAFailingMainFromACompileError()
     {
         var path = Program("cli-run-main-fails", """

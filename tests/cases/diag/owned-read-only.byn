@@ -1,0 +1,8 @@
+struct Node {
+    i64 item;
+}
+
+void main() {
+    let n = Owned(Node { item = 1 });
+    n.item = 2;
+}

@@ -69,6 +69,13 @@ public sealed record LOptionalHas(Node Syntax, BoundExpr Optional) : BoundExpr(S
 /// <summary>The value inside an optional already known to hold one.</summary>
 public sealed record LOptionalValue(Node Syntax, BoundExpr Optional, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
+/// <summary>A union's tag: its variant's declaration index.</summary>
+public sealed record LUnionTag(Node Syntax, BoundExpr Union) : BoundExpr(Syntax, PrimitiveType.I32);
+
+/// <summary>A payload field of a union already known to hold <see cref="Variant"/>.</summary>
+public sealed record LUnionField(Node Syntax, BoundExpr Union, UnionVariantSymbol Variant, int Index)
+    : BoundExpr(Syntax, Variant.Fields[Index].Type);
+
 /// <summary><c>(target = value)</c> as an expression; used for pattern bindings.</summary>
 public sealed record LAssignExpr(Node Syntax, BoundExpr Target, BoundExpr Value) : BoundExpr(Syntax, Target.Type);
 

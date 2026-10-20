@@ -161,6 +161,7 @@ public sealed class Compilation
 
     private void Declare()
     {
+        DeclareBuiltinVariants();
         foreach (var module in Modules)
             foreach (var file in module.Files)
                 DeclareFile(file);
@@ -168,15 +169,62 @@ public sealed class Compilation
             foreach (var set in module.ErrorSets)
                 DeclareVariants(set);
         foreach (var module in Modules)
+            foreach (var e in module.Enums)
+                DeclareEnumMembers(e);
+        foreach (var module in Modules)
+            foreach (var u in module.Unions)
+                DeclareUnionVariants(u);
+        foreach (var module in Modules)
         {
             foreach (var s in module.Structs) DeclareMembers(s);
-            foreach (var f in module.AllFunctions.Where(f => f.Owner is null && f.Kind != FunctionKind.Main && f.Kind != FunctionKind.Test))
+            foreach (var f in module.AllFunctions.Where(f => f.Owner is null && !f.IsInstance && f.Kind != FunctionKind.Main && f.Kind != FunctionKind.Test).ToList())
                 DeclareSignature(f, f.Decl!, f.File!);
         }
         foreach (var module in Modules)
         {
             foreach (var s in module.Structs) CheckStructShape(s);
+            foreach (var u in module.Unions) CheckUnionShape(u);
         }
+        if (EntryModule.Main is { Kind: FunctionKind.Function } main) CheckMainSignature(main);
+    }
+
+    /// <summary><c>IoError</c> is numbered first, so the runtime can return its codes 1 to 5 directly.</summary>
+    private void DeclareBuiltinVariants()
+    {
+        var set = Builtins.IoError;
+        foreach (var v in set.Decl.Variants)
+        {
+            var sym = new ErrorVariantSymbol(v.Name.Text, new Location(set.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
+            set.Variants.Add(sym);
+            ErrorVariants.Add(sym);
+        }
+    }
+
+    /// <summary><c>void</c> or <c>i32 main()</c>, optionally with <c>ReadOnlySpan&lt;string&gt; args</c> and <c>fails</c> (BYN2771).</summary>
+    private void CheckMainSignature(FunctionSymbol main)
+    {
+        var returns = main.ReturnType;
+        var returnOk = returns.IsVoid || returns.IsError || returns == PrimitiveType.I32;
+        var paramsOk = main.Parameters.Count == 0
+            || main.Parameters is [{ Modifier: ParamModifier.None } p]
+                && (p.Type.IsError || p.Type is SpanType { ReadOnly: true, Element: PrimitiveType { IsString: true } });
+        if (!returnOk || !paramsOk)
+            Report(DiagnosticCodes.InvalidMainSignature, main.File!.Source, main.Decl!.Name.Span, [],
+                help: "write `void main()`, `i32 main()`, `void main(ReadOnlySpan<string> args)` or `i32 main(ReadOnlySpan<string> args)`, each optionally with `fails`");
+    }
+
+    /// <summary>No declaration takes an attribute yet; <c>[ExitCode]</c> belongs on an error variant.</summary>
+    private void CheckAttributes(FileContext file, Decl decl)
+    {
+        foreach (var a in decl.Attributes)
+        {
+            if (a.Name.Text == "ExitCode")
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "`[ExitCode]` belongs on an error enum variant");
+            else
+                Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "the only attribute is `[ExitCode(n)]`, on an error enum variant");
+        }
+        if (decl is StructDecl s)
+            foreach (var m in s.Members) CheckAttributes(file, m);
     }
 
     private void DeclareFile(FileContext file)
@@ -185,6 +233,7 @@ public sealed class Compilation
         List<GlobalStatement>? mainStatements = null;
         foreach (var decl in file.Tree.Root.Members)
         {
+            CheckAttributes(file, decl);
             switch (decl)
             {
                 case StructDecl s:
@@ -192,6 +241,7 @@ public sealed class Compilation
                     var sym = new StructSymbol(s.Name.Text, Loc(file, s.Name), module, AccessOf(s.Modifiers), s, file);
                     if (AddType(file, s.Name, sym)) module.Structs.Add(sym);
                     Naming.CheckType(this, file.Source, s.Name);
+                    sym.TypeMap = DeclareTypeParameters(file, s.TypeParams, sym.TypeParameters);
                     break;
                 }
                 case ErrorEnumDecl e:
@@ -199,6 +249,21 @@ public sealed class Compilation
                     var sym = new ErrorSetSymbol(e.Name.Text, Loc(file, e.Name), module, AccessOf(e.Modifiers), e);
                     if (AddType(file, e.Name, sym)) module.ErrorSets.Add(sym);
                     Naming.CheckType(this, file.Source, e.Name);
+                    break;
+                }
+                case EnumDecl e:
+                {
+                    var sym = new EnumSymbol(e.Name.Text, Loc(file, e.Name), module, AccessOf(e.Modifiers), e, file);
+                    if (AddType(file, e.Name, sym)) module.Enums.Add(sym);
+                    Naming.CheckType(this, file.Source, e.Name);
+                    break;
+                }
+                case UnionDecl u:
+                {
+                    var sym = new UnionSymbol(u.Name.Text, Loc(file, u.Name), module, AccessOf(u.Modifiers), u, file);
+                    if (AddType(file, u.Name, sym)) module.Unions.Add(sym);
+                    Naming.CheckType(this, file.Source, u.Name);
+                    sym.TypeMap = DeclareTypeParameters(file, u.TypeParams, sym.TypeParameters);
                     break;
                 }
                 case TypeAliasDecl a:
@@ -215,6 +280,7 @@ public sealed class Compilation
                         Access = AccessOf(f.Modifiers), File = file, Decl = f,
                     };
                     Naming.CheckValue(this, file.Source, f.Name);
+                    sym.TypeMap = DeclareTypeParameters(file, f.TypeParams, sym.TypeParameters);
                     if (f.Name.Text == "main" && file.Module == EntryModule)
                     {
                         if (module.Main is not null)
@@ -280,8 +346,31 @@ public sealed class Compilation
     }
 
     private readonly List<AliasPlaceholder> _aliases = new();
+    private readonly List<(ErrorVariantSymbol Variant, AttributeSyntax Attribute, FileContext File)> _exitCodes = new();
     private readonly Dictionary<FunctionSymbol, TestDecl> _testBodies = new();
     private (FunctionSymbol Main, List<GlobalStatement> Statements)? _mainStatements;
+
+    /// <summary>Declares the <c>&lt;A, B&gt;</c> of a generic declaration; the map is null when there are none.</summary>
+    private Dictionary<string, TypeSymbol>? DeclareTypeParameters(FileContext file, Name[] names, List<TypeParameterType> into)
+    {
+        if (names.Length == 0) return null;
+        var map = new Dictionary<string, TypeSymbol>(StringComparer.Ordinal);
+        var seen = new Dictionary<string, Location>(StringComparer.Ordinal);
+        foreach (var name in names)
+        {
+            Naming.CheckType(this, file.Source, name);
+            if (seen.TryGetValue(name.Text, out var previous))
+            {
+                ReportDuplicate(file.Source, name, previous);
+                continue;
+            }
+            seen[name.Text] = Loc(file, name);
+            var parameter = new TypeParameterType(name.Text);
+            into.Add(parameter);
+            map[name.Text] = parameter;
+        }
+        return map;
+    }
 
     private bool AddType(FileContext file, Name name, TypeSymbol type)
     {
@@ -319,6 +408,8 @@ public sealed class Compilation
     {
         StructSymbol s => s.Location,
         ErrorSetSymbol e => e.Location,
+        EnumSymbol e => e.Location,
+        UnionSymbol u => u.Location,
         AliasPlaceholder a => new Location(a.File.Source, a.Decl.Name.Span),
         _ => null,
     };
@@ -343,15 +434,123 @@ public sealed class Compilation
             var sym = new ErrorVariantSymbol(v.Name.Text, Loc(file, v.Name), set, _nextErrorCode++, v.Doc);
             set.Variants.Add(sym);
             ErrorVariants.Add(sym);
+            var seen = false;
+            foreach (var a in v.Attributes)
+            {
+                if (a.Name.Text != "ExitCode")
+                    Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "the only attribute is `[ExitCode(n)]`");
+                else if (seen)
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "the attribute is repeated");
+                else
+                {
+                    seen = true;
+                    _exitCodes.Add((sym, a, file));
+                }
+            }
         }
         if (set.Variants.Count == 0)
             Report(DiagnosticCodes.EmptyErrorSet, file.Source, set.Decl.Name.Span, [set.Name]);
     }
 
+    private void DeclareEnumMembers(EnumSymbol e)
+    {
+        var source = e.File.Source;
+        DeclareEnumFields(e);
+        foreach (var m in e.Decl.Members)
+        {
+            Naming.CheckValue(this, source, m.Name);
+            if (e.Find(m.Name.Text) is { } existing)
+            {
+                Report(DiagnosticCodes.DuplicateEnumMember, source, m.Name.Span, [e.Name, m.Name.Text],
+                    label: $"already declared on line {existing.Location!.Value.Line}");
+                continue;
+            }
+            e.Members.Add(new EnumMemberSymbol(m.Name.Text, Loc(e.File, m.Name), e, e.Members.Count, m.Doc));
+        }
+        if (e.Members.Count == 0)
+            Report(DiagnosticCodes.EmptyEnum, source, e.Decl.Name.Span, [e.Name], help: "add the members, or remove the enum");
+        var optional = new OptionalType(e);
+        e.FromOrdinal = new FunctionSymbol("fromOrdinal", e.Location, e.Module, FunctionKind.Builtin)
+        {
+            Builtin = BuiltinFunction.EnumFromOrdinal, ReturnType = optional, Access = Accessibility.Public, IsStatic = true,
+        };
+        e.FromOrdinal.Parameters.Add(new ParameterSymbol("ordinal", null, PrimitiveType.I64, ParamModifier.None, 0));
+        e.Parse = new FunctionSymbol("parse", e.Location, e.Module, FunctionKind.Builtin)
+        {
+            Builtin = BuiltinFunction.EnumParse, ReturnType = optional, Access = Accessibility.Public, IsStatic = true,
+        };
+        e.Parse.Parameters.Add(new ParameterSymbol("name", null, PrimitiveType.String, ParamModifier.None, 0));
+    }
+
+    /// <summary>The parameters of <c>enum Name(T x, …)</c>: numbers, <c>bool</c>, <c>char</c>, <c>string</c> or a plain enum (BYN2724).</summary>
+    private void DeclareEnumFields(EnumSymbol e)
+    {
+        if (e.Decl.Params is null) return;
+        var source = e.File.Source;
+        var types = new TypeResolver(this, e.File, null);
+        foreach (var p in e.Decl.Params)
+        {
+            Naming.CheckValue(this, source, p.Name);
+            var type = types.Resolve(p.Type);
+            const string help = "enum data is stored in static tables; use a number type, `bool`, `char`, `string` or a plain enum";
+            if (p.Modifier != ParamModifier.None)
+                Report(DiagnosticCodes.InvalidEnumParameter, source, p.Span, [p.Name.Text], label: $"`{p.Modifier.ToString().ToLowerInvariant()}` is not allowed here", help: help);
+            else if (p.Default is not null)
+                Report(DiagnosticCodes.InvalidEnumParameter, source, p.Default.Span, [p.Name.Text], label: "a default value is not allowed here", help: help);
+            else if (!type.IsError && type is not (PrimitiveType { IsNumeric: true } or PrimitiveType { Kind: PrimitiveKind.Bool or PrimitiveKind.Char or PrimitiveKind.String } or EnumSymbol { Decl.Params: null }))
+                Report(DiagnosticCodes.InvalidEnumParameter, source, p.Type.Span, [p.Name.Text], label: $"`{type.DisplayName}` has no static form", help: help);
+            else if (e.FindField(p.Name.Text) is { } existing)
+                Report(DiagnosticCodes.DuplicateEnumMember, source, p.Name.Span, [e.Name, p.Name.Text],
+                    label: $"already declared on line {existing.Location!.Value.Line}");
+            else if (p.Name.Text is "name" or "ordinal")
+                Report(DiagnosticCodes.DuplicateEnumMember, source, p.Name.Span, [e.Name, p.Name.Text],
+                    label: "every enum has it", help: "rename the parameter");
+            else
+            {
+                e.Fields.Add(new EnumFieldSymbol(p.Name.Text, Loc(e.File, p.Name), e, type, e.Fields.Count));
+                continue;
+            }
+            // Kept with an error type so the arguments still line up and report nothing more.
+            e.Fields.Add(new EnumFieldSymbol(p.Name.Text, Loc(e.File, p.Name), e, ErrorType.Instance, e.Fields.Count));
+        }
+    }
+
+    private void DeclareUnionVariants(UnionSymbol u)
+    {
+        var file = u.File;
+        var types = new TypeResolver(this, file, null, u.TypeMap);
+        foreach (var v in u.Decl.Variants)
+        {
+            Naming.CheckType(this, file.Source, v.Name);
+            if (u.Find(v.Name.Text) is { } existing)
+            {
+                Report(DiagnosticCodes.DuplicateUnionVariant, file.Source, v.Name.Span, [u.Name, v.Name.Text],
+                    label: $"already declared on line {existing.Location!.Value.Line}");
+                continue;
+            }
+            var sym = new UnionVariantSymbol(v.Name.Text, Loc(file, v.Name), u, u.Variants.Count, v.Doc);
+            var names = new Dictionary<string, Location>(StringComparer.Ordinal);
+            foreach (var f in v.Fields)
+            {
+                Naming.CheckValue(this, file.Source, f.Name);
+                if (names.TryGetValue(f.Name.Text, out var prev))
+                {
+                    ReportDuplicate(file.Source, f.Name, prev);
+                    continue;
+                }
+                names[f.Name.Text] = Loc(file, f.Name);
+                sym.Fields.Add(new ParameterSymbol(f.Name.Text, Loc(file, f.Name), types.Resolve(f.Type), ParamModifier.None, sym.Fields.Count));
+            }
+            u.Variants.Add(sym);
+        }
+        if (u.Variants.Count == 0)
+            Report(DiagnosticCodes.EmptyUnion, file.Source, u.Decl.Name.Span, [u.Name], help: "add the variants, or remove the union");
+    }
+
     private void DeclareMembers(StructSymbol s)
     {
         var file = s.File;
-        var types = new TypeResolver(this, file, s);
+        var types = new TypeResolver(this, file, s, s.TypeMap);
         var names = new Dictionary<string, Location>(StringComparer.Ordinal);
         bool Unique(Name n)
         {
@@ -383,7 +582,7 @@ public sealed class Compilation
                     var prop = new PropertySymbol(p.Name.Text, Loc(file, p.Name), s, AccessOf(p.Modifiers), p) { Type = types.Resolve(p.Type) };
                     var getter = new FunctionSymbol(p.Name.Text, prop.Location, s.Module, FunctionKind.Getter)
                     {
-                        Owner = s, File = file, ReturnType = prop.Type, Access = prop.Access,
+                        Owner = s, File = file, ReturnType = prop.Type, Access = prop.Access, TypeMap = s.TypeMap,
                     };
                     prop.Getter = getter;
                     s.Module.AllFunctions.Add(getter);
@@ -393,9 +592,19 @@ public sealed class Compilation
                 case FunctionDecl m:
                 {
                     Naming.CheckValue(this, file.Source, m.Name);
+                    var typeMap = s.TypeMap;
+                    if (m.TypeParams.Length > 0)
+                    {
+                        Report(DiagnosticCodes.Unsupported, file.Source, m.TypeParams[0].Span, ["generic methods"],
+                            help: "declare a generic free function, or make the struct generic");
+                        // Declared anyway, so the signature reports nothing more.
+                        var own = DeclareTypeParameters(file, m.TypeParams, new List<TypeParameterType>())!;
+                        typeMap = s.TypeMap is null ? own : new Dictionary<string, TypeSymbol>(s.TypeMap.Concat(own.Where(p => !s.TypeMap.ContainsKey(p.Key))));
+                    }
                     var fn = new FunctionSymbol(m.Name.Text, Loc(file, m.Name), s.Module, FunctionKind.Method)
                     {
                         Owner = s, File = file, Decl = m, Access = AccessOf(m.Modifiers), IsStatic = m.Modifiers.HasFlag(Modifiers.Static),
+                        TypeMap = typeMap,
                     };
                     DeclareSignature(fn, m, file, s);
                     if (Unique(m.Name)) s.Methods.Add(fn);
@@ -406,7 +615,7 @@ public sealed class Compilation
                 {
                     var fn = new FunctionSymbol(s.Name, Loc(file, c.Name), s.Module, FunctionKind.Constructor)
                     {
-                        Owner = s, File = file, Access = AccessOf(c.Modifiers), ReturnType = s,
+                        Owner = s, File = file, Access = AccessOf(c.Modifiers), ReturnType = s, TypeMap = s.TypeMap,
                     };
                     DeclareParameters(fn, c.Params, file, types);
                     if (s.Constructors.Count > 0)
@@ -434,7 +643,7 @@ public sealed class Compilation
 
     private void DeclareSignature(FunctionSymbol fn, FunctionDecl decl, FileContext file, StructSymbol? owner = null)
     {
-        var types = new TypeResolver(this, file, owner);
+        var types = new TypeResolver(this, file, owner, fn.TypeMap);
         fn.ReturnType = types.Resolve(decl.ReturnType, allowVoid: true);
         DeclareParameters(fn, decl.Params, file, types);
         if (decl.Fails is { } fails)
@@ -488,16 +697,42 @@ public sealed class Compilation
                         : "store a `List` copied with `.copy(to: alloc)` instead; storing borrows in structs arrives in a later version");
             }
         }
-        if (Contains(s, s, new HashSet<TypeSymbol>()))
-            Report(DiagnosticCodes.RecursiveStruct, s.File.Source, s.Decl.Name.Span, [s.Name],
-                help: "a struct cannot contain itself by value; store a `List` of it or an index instead");
+        CheckRecursion(s, s.Name, s.File.Source, s.Decl.Name.Span);
     }
 
-    private static bool Contains(TypeSymbol t, StructSymbol target, HashSet<TypeSymbol> seen)
+    private void CheckUnionShape(UnionSymbol u)
+    {
+        foreach (var v in u.Variants)
+        {
+            foreach (var f in v.Fields)
+            {
+                if (f.Type.IsBorrow)
+                    Report(DiagnosticCodes.BorrowPayload, u.File.Source, f.Location!.Value.Span, [f.Type.DisplayName],
+                        help: "store a `List` copied with `.copy(to: alloc)` instead");
+            }
+        }
+        CheckRecursion(u, u.Name, u.File.Source, u.Decl.Name.Span);
+    }
+
+    /// <summary>Structs and unions already reported as part of a cycle, so a cycle is reported once.</summary>
+    private readonly HashSet<TypeSymbol> _inReportedCycle = new();
+
+    /// <summary>By-value containment of itself (BYN2761); <c>Owned</c> and <c>List</c> break a cycle.</summary>
+    private void CheckRecursion(TypeSymbol t, string name, SourceText source, TextSpan span)
+    {
+        if (_inReportedCycle.Contains(t) || Cycle(t, t, new HashSet<TypeSymbol>()) is not { } path) return;
+        _inReportedCycle.UnionWith(path);
+        Report(DiagnosticCodes.RecursiveByValue, source, span, [name, string.Join(" → ", path.Prepend(t).Select(p => p.DisplayName))],
+            help: $"a value cannot contain itself; store the inner one as `Owned<{name}>` (or in a `List<{name}>`)");
+    }
+
+    /// <summary>The structs and unions on a by-value path from <paramref name="t"/> back to <paramref name="target"/>, ending with it; null if there is none.</summary>
+    private static List<TypeSymbol>? Cycle(TypeSymbol t, TypeSymbol target, HashSet<TypeSymbol> seen)
     {
         IEnumerable<TypeSymbol> parts = t switch
         {
             StructSymbol s => s.Fields.Select(f => f.Type),
+            UnionSymbol u => u.Variants.SelectMany(v => v.Fields).Select(f => f.Type),
             OptionalType o => [o.Inner],
             ArrayType a => [a.Element],
             TupleType tt => tt.Fields.Select(f => f.Type),
@@ -505,10 +740,12 @@ public sealed class Compilation
         };
         foreach (var p in parts)
         {
-            if (p == target) return true;
-            if (seen.Add(p) && Contains(p, target, seen)) return true;
+            if (p == target) return [p];
+            if (!seen.Add(p) || Cycle(p, target, seen) is not { } rest) continue;
+            if (p is StructSymbol or UnionSymbol) rest.Insert(0, p);
+            return rest;
         }
-        return false;
+        return null;
     }
 
     // ── Bodies ───────────────────────────────────────────────────────────────────
@@ -519,6 +756,11 @@ public sealed class Compilation
             foreach (var c in module.AllConstants)
                 BindConstant(c);
         foreach (var module in Modules)
+            foreach (var e in module.Enums)
+                new Binder(this, e.File, null, null).BindEnumArguments(e);
+        foreach (var (variant, attribute, file) in _exitCodes)
+            variant.ExitCode = new Binder(this, file, null, null).BindExitCode(attribute);
+        foreach (var module in Modules)
         {
             foreach (var s in module.Structs)
             {
@@ -528,21 +770,161 @@ public sealed class Compilation
         }
         foreach (var module in Modules)
         {
-            foreach (var fn in module.AllFunctions.ToList())
+            foreach (var fn in module.AllFunctions.Where(f => !f.IsInstance).ToList())
                 BindFunction(fn);
         }
+        while (_instantiationWork.TryDequeue(out var work))
+            Instantiating(work.Site, work.Span, work.Bind);
         InferErrorSets();
         InferMutation();
         foreach (var module in Modules)
             foreach (var fn in module.AllFunctions)
-                if (fn.Body is not null)
+                if (fn.Body is not null && !fn.IsGeneric)
                 {
+                    if (fn.IsInstance)
+                    {
+                        AnalyzeInstance(fn);
+                        continue;
+                    }
                     FlowAnalysis.Analyze(this, fn);
                     RegionAnalysis.Analyze(this, fn);
                     SpanParameterLint.Analyze(this, fn);
                 }
+        if (!Diagnostics.HasErrors && _instantiationErrors.FirstOrDefault() is { } internalError)
+            throw new InvalidOperationException(
+                $"internal error: instantiating a generic reported {internalError.Code} at {internalError.Source?.Path}: {internalError.Message}");
         if (EntryModule.Main is null && !Options.IncludeTests && !Options.Library && EntryModule.Files.Count > 0 && !Diagnostics.HasErrors)
             Report(DiagnosticCodes.NoMain, EntryModule.Files[0].Source, new TextSpan(0, 0), []);
+    }
+
+    // ── Generics ─────────────────────────────────────────────────────────────────
+
+    private readonly Dictionary<(object Generic, TypeSymbol[] Args), object> _instances = new(new InstanceKeyComparer());
+    private readonly Queue<(SourceText Site, TextSpan Span, Action Bind)> _instantiationWork = new();
+    private readonly List<Diagnostic> _instantiationErrors = new();
+    private readonly HashSet<(string, SourceText?, TextSpan)> _instanceAnalysisSeen = new();
+    private DiagnosticBag? _scratch;
+
+    private sealed class InstanceKeyComparer : IEqualityComparer<(object Generic, TypeSymbol[] Args)>
+    {
+        public bool Equals((object Generic, TypeSymbol[] Args) x, (object Generic, TypeSymbol[] Args) y) =>
+            ReferenceEquals(x.Generic, y.Generic) && x.Args.SequenceEqual(y.Args);
+
+        public int GetHashCode((object Generic, TypeSymbol[] Args) key)
+        {
+            var hash = new HashCode();
+            hash.Add(key.Generic);
+            foreach (var a in key.Args) hash.Add(a);
+            return hash.ToHashCode();
+        }
+    }
+
+    private static Dictionary<string, TypeSymbol> Substitution(IReadOnlyDictionary<string, TypeSymbol>? outer, List<TypeParameterType> parameters, TypeSymbol[] args)
+    {
+        var map = outer is null ? new Dictionary<string, TypeSymbol>(StringComparer.Ordinal) : new Dictionary<string, TypeSymbol>(outer, StringComparer.Ordinal);
+        for (var i = 0; i < parameters.Count; i++) map[parameters[i].Name] = args[i];
+        return map;
+    }
+
+    /// <summary>
+    /// Runs instantiation work, whose diagnostics are not the user's: the template already reported
+    /// them. The exceptions are the rules only a type argument can break (a <c>Map</c> key, <c>==</c>
+    /// and formatting on a <c>T</c>); they are reported at <paramref name="span"/>, the use that chose
+    /// the type arguments.
+    /// </summary>
+    private void Instantiating(SourceText site, TextSpan span, Action work)
+    {
+        var outer = _scratch;
+        var bag = _scratch = new DiagnosticBag();
+        try { work(); }
+        finally { _scratch = outer; }
+        foreach (var d in bag.Items.Where(d => d.IsError))
+        {
+            if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code)
+                (_scratch ?? Diagnostics).Add(d with { Source = site, Span = span, Label = "the generic code needs this of its type arguments" });
+            else
+                _instantiationErrors.Add(d);
+        }
+    }
+
+    /// <summary>The instantiation of a generic function at <paramref name="args"/>; declared now, bound when the worklist drains.</summary>
+    internal FunctionSymbol InstantiateFunction(FunctionSymbol template, TypeSymbol[] args, SourceText site, TextSpan span)
+    {
+        if (_instances.TryGetValue((template, args), out var existing)) return (FunctionSymbol)existing;
+        var fn = new FunctionSymbol(template.Name, template.Location, template.Module, template.Kind)
+        {
+            Access = template.Access, File = template.File, Decl = template.Decl, Owner = template.Owner, IsStatic = template.IsStatic,
+            Template = template, TypeArguments = args, TypeMap = Substitution(template.Owner?.TypeMap, template.TypeParameters, args),
+        };
+        _instances[(template, args)] = fn;
+        template.Module.AllFunctions.Add(fn);
+        Instantiating(site, span, () => DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner));
+        if (!fn.IsGeneric) _instantiationWork.Enqueue((site, span, () => BindFunction(fn)));
+        return fn;
+    }
+
+    /// <summary>The instantiation of a generic struct or union at <paramref name="args"/>, with its members.</summary>
+    internal TypeSymbol InstantiateType(TypeSymbol template, TypeSymbol[] args, SourceText site, TextSpan span)
+    {
+        if (_instances.TryGetValue((template, args), out var existing)) return (TypeSymbol)existing;
+        switch (template)
+        {
+            case StructSymbol s:
+            {
+                var instance = new StructSymbol(s.Name, s.Location, s.Module, s.Access, s.Decl, s.File)
+                {
+                    Template = s, TypeArguments = args, TypeMap = Substitution(null, s.TypeParameters, args),
+                };
+                _instances[(s, args)] = instance;
+                Instantiating(site, span, () => DeclareMembers(instance));
+                if (instance.IsGeneric) return instance;
+                foreach (var f in instance.Fields.Where(f => f.Decl.Default is not null))
+                    _instantiationWork.Enqueue((site, span, () => FieldDefault(instance, f, site, span)));
+                foreach (var fn in instance.Methods.Concat(instance.Properties.Select(p => p.Getter!)).Concat(instance.Constructors))
+                    _instantiationWork.Enqueue((site, span, () => BindFunction(fn)));
+                return instance;
+            }
+            case UnionSymbol u:
+            {
+                var instance = new UnionSymbol(u.Name, u.Location, u.Module, u.Access, u.Decl, u.File)
+                {
+                    Template = u, TypeArguments = args, TypeMap = Substitution(null, u.TypeParameters, args),
+                };
+                _instances[(u, args)] = instance;
+                Instantiating(site, span, () => DeclareUnionVariants(instance));
+                return instance;
+            }
+            default:
+                throw new InvalidOperationException($"`{template.DisplayName}` is not generic");
+        }
+    }
+
+    /// <summary>A field default of a struct; an instance's is bound on first use, as a literal can need it before the worklist drains.</summary>
+    internal BoundExpr? FieldDefault(StructSymbol s, FieldSymbol f, SourceText site, TextSpan span)
+    {
+        if (f.Default is null && f.HasDefault && s.Template is not null)
+            Instantiating(site, span, () => f.Default ??= new Binder(this, s.File, null, s).BindFieldDefault(f));
+        return f.Default;
+    }
+
+    /// <summary>The template a function was instantiated from: itself for a generic function, its twin for a member of a generic struct.</summary>
+    private static FunctionSymbol? TemplateOf(FunctionSymbol fn) =>
+        fn.Template ?? (fn.Owner?.Template is { } owner ? owner.Methods.FirstOrDefault(m => m.Decl == fn.Decl && fn.Decl is not null) : null);
+
+    /// <summary>Flow and region analysis of an instantiation; what two instantiations both find is reported once.</summary>
+    private void AnalyzeInstance(FunctionSymbol fn)
+    {
+        var outer = _scratch;
+        var bag = _scratch = new DiagnosticBag();
+        try
+        {
+            FlowAnalysis.Analyze(this, fn);
+            RegionAnalysis.Analyze(this, fn);
+            SpanParameterLint.Analyze(this, fn);
+        }
+        finally { _scratch = outer; }
+        foreach (var d in bag.Items)
+            if (_instanceAnalysisSeen.Add((d.Code, d.Source, d.Span))) Diagnostics.Add(d);
     }
 
     internal void BindConstant(ConstSymbol c)
@@ -596,6 +978,15 @@ public sealed class Compilation
             changed = false;
             foreach (var fn in inferred)
             {
+                if (fn.IsInstance && TemplateOf(fn) is { } template)
+                {
+                    foreach (var set in template.ErrorSets.Where(set => !fn.ErrorSets.Contains(set)).ToList())
+                    {
+                        fn.ErrorSets.Add(set);
+                        changed = true;
+                    }
+                    continue;
+                }
                 if (fn.Body is null) continue;
                 foreach (var set in ErrorFlow.Propagated(fn.Body))
                 {
@@ -630,7 +1021,7 @@ public sealed class Compilation
                 changed = true;
             }
         } while (changed);
-        foreach (var m in MutationChecks.Where(m => m.Callee.IsMutating))
+        foreach (var m in MutationChecks.Where(m => m.Callee.IsMutating && m.Binder.Function is not { IsInstance: true }))
             m.Binder.CheckWritable(m.Receiver, m.Receiver.Syntax.Span, $"`{m.Callee.Name}` modifies it");
     }
 
@@ -638,7 +1029,7 @@ public sealed class Compilation
     internal BoundExpr? ParameterDefault(FunctionSymbol fn, ParameterSymbol p)
     {
         if (p.Default is null && p.Syntax?.Default is not null)
-            p.Default = new Binder(this, fn.File!, null, fn.Owner).BindParameterDefault(p);
+            p.Default = new Binder(this, fn.File!, null, fn.Owner, fn.TypeMap).BindParameterDefault(p);
         return p.Default;
     }
 
@@ -650,7 +1041,7 @@ public sealed class Compilation
         fn.InfersErrors || fn.Kind is FunctionKind.Main or FunctionKind.Test ? [] : fn.ErrorSets;
 
     internal void Report(DiagnosticDescriptor d, SourceText source, TextSpan span, object?[] args, string? label = null, string? help = null, Fix? fix = null) =>
-        Diagnostics.Report(d, source, span, args, label, help, fix);
+        (_scratch ?? Diagnostics).Report(d, source, span, args, label, help, fix);
 
     internal IEnumerable<AliasPlaceholder> Aliases => _aliases;
 }

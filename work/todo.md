@@ -33,3 +33,16 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `Scaffold.Git` trims stdout, so `test --changed` with `-z` loses leading whitespace of the first file name.
 - Test timeout detail prints "timed out after 0 s" for sub-second `BAYAN_TEST_TIMEOUT_MS`.
 - `test --changed` on macOS: git reports NFC paths, so a module directory with a non-ASCII name stored in NFD never matches and its tests are skipped. Review 1557d6fd639d..29c1d013a33e.
+- `catch { … }` with a block body does not parse; it is read as a struct literal (found in M15, spec 001).
+- `bayan run` on a single file compiles every `.byn` in that file's directory (found in M15, spec 001).
+- `Map.get` on a map whose value type is already optional returns `V??` without a diagnostic (M20, spec 001).
+- `using` on a `Map` is BYN2226 while `List` allows it (M20, spec 001).
+- A struct with a `List` field passes the formattable check but makes `CEmitter.Format` throw (M20, spec 001).
+- Generated union format helper indents `break;` one level too deep (cosmetic, M18, spec 001).
+- BYN3002 help suggests `.copy(to: alloc)` for an `Owned` value, which has no such method; `RecursiveStruct`/`RecursiveUnion` descriptors now unreferenced in `src/` (M21)
+- Generics (M19): `mod.f<T>(…)` type args on a member expression not wired; shape checks (borrowed fields, recursion) skip instances; polymorphic recursion (`f<T>` → `f<List<T>>`) unbounded; no target-type inference (`Option2.Nothing`, `Pair` without args); generic struct formats as `Pair { … }` without type args; `print(x)` with `x: T` rejected (use `$"{x}"`)
+- Misplaced doc comment above `BoundVariantGroup` in `BinderExpressions.cs` (belongs to `BoundBuiltinGroup`)
+- `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray` flaky under parallel runs (seen once by the M19 writer)
+- `List<T>` copied by value (`var b = a; b.add(…)` ×N) shares and reallocs storage: heap use-after-free under the default allocator (ASan, review of spec 001); pre-existing since v0.1, needs `unique`/`move` (spec §9) or a BYN2762-style copy ban
+- `Io.readText` abandons the whole file buffer from `context.allocator` when the bytes are not UTF-8 (`bayan-rt.c` read path)
+- `Io.run` (POSIX): only the pipe fds are `FD_CLOEXEC`; `byn_io_open` uses `fopen` without `"e"`, so open files are inherited by children

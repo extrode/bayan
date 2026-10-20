@@ -280,6 +280,8 @@ public sealed class Parser
         var doc = DocOf(first);
         var startIndex = _pos;
         var start = first.Start;
+        var attributes = ParseAttributes();
+        doc ??= DocOf(Current);
         var modifiers = ParseModifiers();
 
         Decl? decl;
@@ -296,6 +298,14 @@ public sealed class Parser
             case TokenKind.ErrorKeyword when Peek(1) == TokenKind.EnumKeyword:
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
                 decl = ParseErrorEnum(start, modifiers);
+                break;
+            case TokenKind.EnumKeyword when topLevel:
+                RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
+                decl = ParseEnum(start, modifiers);
+                break;
+            case TokenKind.UnionKeyword when topLevel:
+                RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
+                decl = ParseUnion(start, modifiers);
                 break;
             case TokenKind.TypeKeyword when Peek(1) == TokenKind.Identifier && Peek(2) == TokenKind.Equals:
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
@@ -331,7 +341,27 @@ public sealed class Parser
                 }
                 break;
         }
-        return decl is null ? null : decl with { Doc = doc };
+        return decl is null ? null : decl with { Doc = doc, Attributes = attributes };
+    }
+
+    private bool IsAttributeStart() =>
+        Kind == TokenKind.OpenBracket && Peek(1) == TokenKind.Identifier && Peek(2) is TokenKind.OpenParen or TokenKind.CloseBracket;
+
+    /// <summary><c>[Name]</c> or <c>[Name(args)]</c>, repeated; the names are checked by the compiler.</summary>
+    private AttributeSyntax[] ParseAttributes()
+    {
+        if (!IsAttributeStart()) return [];
+        var attributes = new List<AttributeSyntax>();
+        while (IsAttributeStart())
+        {
+            var start = Current.Start;
+            Advance();
+            var name = ExpectName("an attribute name");
+            var args = Kind == TokenKind.OpenParen ? ParseArguments() : [];
+            Expect(TokenKind.CloseBracket);
+            attributes.Add(new AttributeSyntax(SpanFrom(start), name, args));
+        }
+        return attributes.ToArray();
     }
 
     private bool IsTypeThenName(int index)
@@ -343,7 +373,20 @@ public sealed class Parser
     private bool IsFunctionStart()
     {
         var after = ScanType(_pos);
-        return after > 0 && KindAt(after) == TokenKind.Identifier && KindAt(after + 1) == TokenKind.OpenParen;
+        if (after <= 0 || KindAt(after) != TokenKind.Identifier) return false;
+        if (KindAt(after + 1) == TokenKind.Less && ScanTypeArgs(after + 1) is var close and > 0) return KindAt(close) == TokenKind.OpenParen;
+        return KindAt(after + 1) == TokenKind.OpenParen;
+    }
+
+    /// <summary><c>&lt;T, U&gt;</c> after a declaration name, or nothing.</summary>
+    private Name[] ParseTypeParams()
+    {
+        if (Kind != TokenKind.Less) return [];
+        Advance();
+        var names = new List<Name> { ExpectName("a type parameter name") };
+        while (Accept(TokenKind.Comma)) names.Add(ExpectName("a type parameter name"));
+        Expect(TokenKind.Greater);
+        return names.ToArray();
     }
 
     private ImportDecl ParseImport(int start)
@@ -361,6 +404,7 @@ public sealed class Parser
     {
         Advance();
         var name = ExpectName("a struct name");
+        var typeParams = ParseTypeParams();
         var open = Expect(TokenKind.OpenBrace);
         var members = new List<Decl>();
         while (Kind != TokenKind.CloseBrace && !AtEnd)
@@ -373,7 +417,7 @@ public sealed class Parser
             if (_pos == before) Advance();
         }
         ExpectClose(open, "struct");
-        return new StructDecl(SpanFrom(start), modifiers, name, members.ToArray());
+        return new StructDecl(SpanFrom(start), modifiers, name, members.ToArray()) { TypeParams = typeParams };
     }
 
     private void ExpectClose(Token open, string what)
@@ -418,6 +462,7 @@ public sealed class Parser
     {
         var returnType = ParseType();
         var name = ExpectName();
+        var typeParams = ParseTypeParams();
         var parameters = ParseParams();
         FailsClause? fails = null;
         if (Kind == TokenKind.FailsKeyword)
@@ -446,7 +491,7 @@ public sealed class Parser
         {
             Expect(TokenKind.OpenBrace);
         }
-        return new FunctionDecl(SpanFrom(start), modifiers, returnType, name, parameters, fails, body, expressionBody);
+        return new FunctionDecl(SpanFrom(start), modifiers, returnType, name, parameters, fails, body, expressionBody) { TypeParams = typeParams };
     }
 
     private Param[] ParseParams()
@@ -485,14 +530,78 @@ public sealed class Parser
         var name = ExpectName("an error set name");
         var open = Expect(TokenKind.OpenBrace);
         var variants = new List<ErrorVariant>();
-        while (Kind == TokenKind.Identifier)
+        while (Kind == TokenKind.Identifier || IsAttributeStart())
         {
-            var token = Advance();
-            variants.Add(new ErrorVariant(token.Span, NameOf(token), DocOf(token)));
+            var first = Current;
+            var attributes = ParseAttributes();
+            var doc = DocOf(first) ?? DocOf(Current);
+            var variant = ExpectName("a variant name");
+            variants.Add(new ErrorVariant(variant.Span, variant, doc) { Attributes = attributes });
             if (!Accept(TokenKind.Comma)) break;
         }
         ExpectClose(open, "error enum");
         return new ErrorEnumDecl(SpanFrom(start), modifiers, name, variants.ToArray());
+    }
+
+    /// <summary>
+    /// <c>enum Name { a, b, c }</c> or <c>enum Name(T x) { a(1), b(2); }</c>; a trailing <c>,</c> or <c>;</c>
+    /// after the last member is allowed.
+    /// </summary>
+    private EnumDecl ParseEnum(int start, Modifiers modifiers)
+    {
+        Advance();
+        var name = ExpectName("an enum name");
+        var parameters = Kind == TokenKind.OpenParen ? ParseParams() : null;
+        var open = Expect(TokenKind.OpenBrace);
+        var members = new List<EnumMember>();
+        while (Kind == TokenKind.Identifier)
+        {
+            var doc = DocOf(Current);
+            var memberStart = Current.Start;
+            var member = ExpectName("a member name");
+            var args = Kind == TokenKind.OpenParen ? ParseArguments() : null;
+            members.Add(new EnumMember(SpanFrom(memberStart), member, doc, args));
+            if (!Accept(TokenKind.Comma)) break;
+        }
+        Accept(TokenKind.Semicolon);
+        ExpectClose(open, "enum");
+        return new EnumDecl(SpanFrom(start), modifiers, name, parameters, members.ToArray());
+    }
+
+    /// <summary><c>union Name { Circle(f32 r), Rect(f32 w, f32 h), None }</c>; a trailing <c>,</c> or <c>;</c> is allowed.</summary>
+    private UnionDecl ParseUnion(int start, Modifiers modifiers)
+    {
+        Advance();
+        var name = ExpectName("a union name");
+        var typeParams = ParseTypeParams();
+        var open = Expect(TokenKind.OpenBrace);
+        var variants = new List<UnionVariant>();
+        while (Kind == TokenKind.Identifier)
+        {
+            var doc = DocOf(Current);
+            var variantStart = Current.Start;
+            var variant = ExpectName("a variant name");
+            var fields = new List<UnionField>();
+            if (Kind == TokenKind.OpenParen)
+            {
+                Advance();
+                while (Kind != TokenKind.CloseParen && !AtEnd)
+                {
+                    var before = _pos;
+                    var fieldStart = Current.Start;
+                    var type = ParseType();
+                    var field = ExpectName("a payload field name");
+                    fields.Add(new UnionField(SpanFrom(fieldStart), type, field));
+                    if (!Accept(TokenKind.Comma) || _pos == before) break;
+                }
+                Expect(TokenKind.CloseParen);
+            }
+            variants.Add(new UnionVariant(SpanFrom(variantStart), variant, fields.ToArray(), doc));
+            if (!Accept(TokenKind.Comma)) break;
+        }
+        Accept(TokenKind.Semicolon);
+        ExpectClose(open, "union");
+        return new UnionDecl(SpanFrom(start), modifiers, name, variants.ToArray()) { TypeParams = typeParams };
     }
 
     private TypeAliasDecl ParseTypeAlias(int start, Modifiers modifiers)
@@ -1406,7 +1515,8 @@ public sealed class Parser
         {
             switch (Kind)
             {
-                case TokenKind.Dot when Peek(1) == TokenKind.Identifier:
+                // `set` is reserved (`error set`) but names `Map.set`.
+                case TokenKind.Dot when Peek(1) is TokenKind.Identifier or TokenKind.SetKeyword:
                     Advance();
                     {
                         var member = NameOf(Advance());
@@ -1773,9 +1883,26 @@ public sealed class Parser
                     var value = ParseBinary(Prec.Shift);
                     return new RelationalPattern(SpanFrom(start), op, value);
                 }
-            case TokenKind.VarKeyword:
+            case TokenKind.VarKeyword or TokenKind.LetKeyword:
+            {
+                var isLet = Advance().Kind == TokenKind.LetKeyword;
+                return new VarPattern(SpanFrom(start), ExpectName("a variable name"), isLet);
+            }
+            case TokenKind.Dot when Peek(1) == TokenKind.Identifier && Peek(2) == TokenKind.OpenParen:
+            {
                 Advance();
-                return new VarPattern(SpanFrom(start), ExpectName("a variable name"));
+                var name = NameOf(Advance());
+                var variant = new TargetMemberExpr(SpanFrom(start), name);
+                Advance();
+                var elements = new List<Pattern>();
+                if (Kind != TokenKind.CloseParen)
+                {
+                    elements.Add(ParsePattern());
+                    while (Accept(TokenKind.Comma)) elements.Add(ParsePattern());
+                }
+                Expect(TokenKind.CloseParen);
+                return new VariantPattern(SpanFrom(start), variant, elements.ToArray());
+            }
             case TokenKind.Identifier when Text(Current) == "_" && Peek(1) is not (TokenKind.Dot or TokenKind.OpenParen):
                 Advance();
                 return new DiscardPattern(SpanFrom(start));

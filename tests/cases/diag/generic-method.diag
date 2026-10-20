@@ -1,0 +1,19 @@
+error BYN2022: generic methods is not supported in v0.1
+
+  4 │     T echo<T>(T value) => value;
+    │            ^
+    │
+  help: declare a generic free function, or make the struct generic
+
+error BYN2006: `T` is declared twice
+
+  7 │ T id<T, T>(T x) => x;
+    │         ^ already declared on line 7
+
+error BYN2008: type name `item` must be PascalCase
+
+  8 │ struct Bag<item> {
+    │            ^^^^
+    │
+  help: rename it `Item`
+    │ 8 │ struct Bag<Item> {

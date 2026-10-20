@@ -30,10 +30,15 @@ public enum Modifiers
 
 public sealed record CompilationUnit(TextSpan Span, Decl[] Members) : Node(Span);
 
+/// <summary>An attribute: <c>[Name]</c> or <c>[Name(args)]</c> before a declaration or an error variant.</summary>
+public sealed record AttributeSyntax(TextSpan Span, Name Name, Argument[] Args) : Node(Span);
+
 public abstract record Decl(TextSpan Span) : Node(Span)
 {
     /// <summary>The <c>///</c> doc comment text (markers stripped), if any.</summary>
     public string? Doc { get; init; }
+
+    public AttributeSyntax[] Attributes { get; init; } = [];
 }
 
 public sealed record ImportDecl(TextSpan Span, Name[] Path, Name? Alias) : Decl(Span);
@@ -51,9 +56,16 @@ public sealed record FailsClause(TextSpan Span, TypeSyntax[] Errors) : Node(Span
 /// <summary>A function or method. Exactly one of <see cref="Body"/> and <see cref="ExpressionBody"/> is set, or neither for a declaration.</summary>
 public sealed record FunctionDecl(
     TextSpan Span, Modifiers Modifiers, TypeSyntax ReturnType, Name Name, Param[] Params,
-    FailsClause? Fails, BlockStmt? Body, Expr? ExpressionBody) : Decl(Span);
+    FailsClause? Fails, BlockStmt? Body, Expr? ExpressionBody) : Decl(Span)
+{
+    /// <summary>The <c>&lt;T, U&gt;</c> after the name; empty for a non-generic function.</summary>
+    public Name[] TypeParams { get; init; } = [];
+}
 
-public sealed record StructDecl(TextSpan Span, Modifiers Modifiers, Name Name, Decl[] Members) : Decl(Span);
+public sealed record StructDecl(TextSpan Span, Modifiers Modifiers, Name Name, Decl[] Members) : Decl(Span)
+{
+    public Name[] TypeParams { get; init; } = [];
+}
 
 public sealed record FieldDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr? Default) : Decl(Span);
 
@@ -62,10 +74,31 @@ public sealed record PropertyDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax
 
 public sealed record ConstructorDecl(TextSpan Span, Modifiers Modifiers, Name Name, Param[] Params, BlockStmt Body) : Decl(Span);
 
-public sealed record ErrorVariant(TextSpan Span, Name Name, string? Doc) : Node(Span);
+public sealed record ErrorVariant(TextSpan Span, Name Name, string? Doc) : Node(Span)
+{
+    public AttributeSyntax[] Attributes { get; init; } = [];
+}
 
 /// <summary><c>error enum Name { a, b }</c>.</summary>
 public sealed record ErrorEnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, ErrorVariant[] Variants) : Decl(Span);
+
+/// <summary>A member; <see cref="Args"/> is <c>null</c> without parentheses.</summary>
+public sealed record EnumMember(TextSpan Span, Name Name, string? Doc, Argument[]? Args) : Node(Span);
+
+/// <summary><c>enum Name { a, b }</c>, or <c>enum Name(T x) { a(1), b(2); }</c> with associated data (<see cref="Params"/> non-null).</summary>
+public sealed record EnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, Param[]? Params, EnumMember[] Members) : Decl(Span);
+
+/// <summary>A positional payload field of a union variant: <c>f32 r</c>.</summary>
+public sealed record UnionField(TextSpan Span, TypeSyntax Type, Name Name) : Node(Span);
+
+/// <summary><c>Circle(f32 r)</c>, or <c>None</c> without a payload.</summary>
+public sealed record UnionVariant(TextSpan Span, Name Name, UnionField[] Fields, string? Doc) : Node(Span);
+
+/// <summary><c>union Name { Circle(f32 r), None }</c>: a tagged union stored inline.</summary>
+public sealed record UnionDecl(TextSpan Span, Modifiers Modifiers, Name Name, UnionVariant[] Variants) : Decl(Span)
+{
+    public Name[] TypeParams { get; init; } = [];
+}
 
 /// <summary><c>type Name = T;</c> — a plain alias.</summary>
 public sealed record TypeAliasDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax Target) : Decl(Span);
@@ -266,7 +299,8 @@ public sealed record ConstantPattern(TextSpan Span, Expr Value) : Pattern(Span);
 
 public sealed record RelationalPattern(TextSpan Span, BinaryOp Op, Expr Value) : Pattern(Span);
 
-public sealed record VarPattern(TextSpan Span, Name Name) : Pattern(Span);
+/// <summary><c>var x</c> or <c>let x</c>; both bind an immutable pattern variable.</summary>
+public sealed record VarPattern(TextSpan Span, Name Name, bool IsLet = false) : Pattern(Span);
 
 public sealed record DiscardPattern(TextSpan Span) : Pattern(Span);
 
@@ -281,6 +315,9 @@ public sealed record PropertyPattern(TextSpan Span, TypeSyntax? Type, PropertySu
 
 /// <summary><c>Name(p, q)</c> or <c>(p, q)</c>.</summary>
 public sealed record PositionalPattern(TextSpan Span, TypeSyntax? Type, Pattern[] Elements) : Pattern(Span);
+
+/// <summary><c>.Circle(let r)</c>: a target-typed union variant with payload patterns.</summary>
+public sealed record VariantPattern(TextSpan Span, TargetMemberExpr Variant, Pattern[] Elements) : Pattern(Span);
 
 /// <summary><c>..</c> or <c>.. var rest</c> inside a list pattern.</summary>
 public sealed record SlicePattern(TextSpan Span, Pattern? Inner) : Pattern(Span);

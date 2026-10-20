@@ -55,6 +55,9 @@ public static class AstDump
             return string.Join(' ', parts) + " ";
         }
 
+        private static string TypeParams(Name[] names) =>
+            names.Length == 0 ? "" : "<" + string.Join(", ", names.Select(n => n.Text)) + ">";
+
         private static string Params(Param[] parameters)
         {
             var sb = new StringBuilder("(");
@@ -80,9 +83,13 @@ public static class AstDump
             Line(depth, "doc " + TokenDump.Escape(decl.Doc));
         }
 
+        private static string Attribute(AttributeSyntax a) =>
+            $"[{a.Name.Text}" + string.Concat(a.Args.Select(arg => " " + (arg.Name is null ? "" : arg.Name.Text + ": ") + AstDump.Expr(arg.Value))) + "]";
+
         public void Decl(int depth, Decl decl)
         {
             Doc(depth, decl);
+            foreach (var a in decl.Attributes) Line(depth, "Attribute " + Attribute(a));
             switch (decl)
             {
                 case ImportDecl d:
@@ -93,7 +100,7 @@ public static class AstDump
                     break;
                 case FunctionDecl d:
                     {
-                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{Params(d.Params)} -> {Type(d.ReturnType)}";
+                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params)} -> {Type(d.ReturnType)}";
                         if (d.Fails is not null)
                             head += d.Fails.Errors.Length == 0 ? " fails" : " fails " + string.Join(", ", d.Fails.Errors.Select(Type));
                         if (d.ExpressionBody is not null) head += " => " + AstDump.Expr(d.ExpressionBody);
@@ -102,7 +109,7 @@ public static class AstDump
                         break;
                     }
                 case StructDecl d:
-                    Line(depth, $"Struct {Mods(d.Modifiers)}{d.Name.Text}");
+                    Line(depth, $"Struct {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}");
                     foreach (var member in d.Members) Decl(depth + 1, member);
                     break;
                 case FieldDecl d:
@@ -118,7 +125,21 @@ public static class AstDump
                 case ErrorEnumDecl d:
                     Line(depth, $"ErrorEnum {Mods(d.Modifiers)}{d.Name.Text}");
                     foreach (var v in d.Variants)
-                        Line(depth + 1, "Variant " + v.Name.Text + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
+                        Line(depth + 1, "Variant " + v.Name.Text + string.Concat(v.Attributes.Select(a => " " + Attribute(a)))
+                            + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
+                    break;
+                case EnumDecl d:
+                    Line(depth, $"Enum {Mods(d.Modifiers)}{d.Name.Text}{(d.Params is null ? "" : Params(d.Params))}");
+                    foreach (var m in d.Members)
+                        Line(depth + 1, "Member " + m.Name.Text
+                            + (m.Args is null ? "" : "(" + string.Join(", ", m.Args.Select(a => (a.Name is null ? "" : a.Name.Text + ": ") + AstDump.Expr(a.Value))) + ")")
+                            + (m.Doc is null ? "" : " doc " + TokenDump.Escape(m.Doc)));
+                    break;
+                case UnionDecl d:
+                    Line(depth, $"Union {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}");
+                    foreach (var v in d.Variants)
+                        Line(depth + 1, "Variant " + v.Name.Text + (v.Fields.Length == 0 ? "" : "(" + string.Join(", ", v.Fields.Select(f => Type(f.Type) + " " + f.Name.Text)) + ")")
+                            + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
                     break;
                 case TypeAliasDecl d:
                     Line(depth, $"TypeAlias {Mods(d.Modifiers)}{d.Name.Text} = {Type(d.Target)}");
@@ -343,7 +364,7 @@ public static class AstDump
                     sb.Append(')');
                     break;
                 case VarPattern p:
-                    sb.Append("(var ").Append(p.Name.Text).Append(')');
+                    sb.Append(p.IsLet ? "(let " : "(var ").Append(p.Name.Text).Append(')');
                     break;
                 case DiscardPattern:
                     sb.Append('_');
@@ -375,6 +396,15 @@ public static class AstDump
                 case PositionalPattern p:
                     sb.Append("(pos");
                     if (p.Type is not null) sb.Append(' ').Append(Type(p.Type));
+                    foreach (var e in p.Elements)
+                    {
+                        sb.Append(' ');
+                        Pattern(sb, e);
+                    }
+                    sb.Append(')');
+                    break;
+                case VariantPattern p:
+                    sb.Append("(variant .").Append(p.Variant.Member.Text);
                     foreach (var e in p.Elements)
                     {
                         sb.Append(' ');

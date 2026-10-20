@@ -1,0 +1,13 @@
+CompilationUnit
+  ErrorEnum ConfigError
+    Variant malformed [ExitCode 3] doc `The configuration is malformed.`
+    Variant other doc `Something else.`
+  doc `Runs the tool.`
+  Attribute [Experimental]
+  Attribute [Tag level: 2]
+  Function public run() -> void
+    Block
+  doc `Stops the tool.`
+  Attribute [Experimental]
+  Function stop() -> void
+    Block

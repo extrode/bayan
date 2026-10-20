@@ -1,0 +1,95 @@
+struct Store {
+    string name;
+    Map<i64, i64> data;
+}
+
+union Slot {
+    Empty,
+    Full(Map<i64, i64> data),
+}
+
+struct Holder {
+    Map<i64, i64> data;
+
+    public Holder(Map<i64, i64> data) {
+        this.data = data;
+    }
+
+    Map<i64, i64> take() {
+        return this.data;
+    }
+}
+
+Map<i64, i64> fresh() => Map<i64, i64>();
+
+Map<i64, i64> fromField(Store s) {
+    return s.data;
+}
+
+Map<i64, i64> fromElement(Map<i64, i64>[2] maps) {
+    return maps[0];
+}
+
+Map<i64, i64> fromRef(ref Map<i64, i64> m) {
+    return m;
+}
+
+Map<i64, i64> fromResult(Result<Map<i64, i64>, LookupError> r) {
+    return r.value;
+}
+
+error enum LookupError { missing }
+
+void copies(Map<i64, i64> p) {
+    var a = Map<i64, i64>();
+    a.set(1, 10);
+    var b = a;
+    let c = p;
+    var s = Store { name = "s", data = fresh() };
+    var d = s.data;
+    b = a;
+    s.data = a;
+    var t = Store { name = "t", data = a };
+    var h = Holder(a);
+    var full = Slot.Full(a);
+    var list = List<Map<i64, i64>>();
+    list.add(a);
+    var nested = Map<i64, Map<i64, i64>>();
+    nested.set(1, a);
+    Map<i64, i64>[2] arr = [a, fresh()];
+    var e = arr[1];
+    var whole = s;
+    var pair = (a, 1);
+    var o = Owned(fresh());
+    var f = o.value;
+    var g = nested.get(1);
+    var u = s with { name = "u" };
+    var v = s with { data = a };
+    Map<i64, i64>? w = a;
+}
+
+void buffers() {
+    var sb = StrBuf();
+    sb.append("x");
+    var copy = sb;
+}
+
+void loops() {
+    var maps = List<Map<i64, i64>>();
+    maps.add(Map<i64, i64>());
+    for (var m in maps) m.set(1, 1);
+    StrBuf[1] bufs = [StrBuf()];
+    for (var b in bufs) b.append("y");
+    var plain = List<i64>();
+    for (var n in plain) n += 1;
+}
+
+struct Named {
+    string name;
+    Map<i64, i64> m;
+}
+
+void withs(Named n) {
+    var kept = n with { name = "x" };
+    var replaced = n with { m = fresh() };
+}

@@ -1,0 +1,15 @@
+CompilationUnit
+  Enum Color
+    Member red
+    Member green
+    Member blue
+  Enum public Direction
+    Member north doc `Toward the top.`
+    Member south
+    Member east
+    Member west
+  Enum Planet
+    Member mercury
+    Member venus
+    Member earth
+  Enum private Empty

@@ -1,0 +1,13 @@
+enum Color { red, green, blue }
+
+public enum Direction {
+    /// Toward the top.
+    north,
+    south,
+    east,
+    west,
+}
+
+enum Planet { mercury, venus, earth; }
+
+private enum Empty { }

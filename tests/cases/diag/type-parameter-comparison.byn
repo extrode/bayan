@@ -1,0 +1,3 @@
+T max<T>(T a, T b) => a < b ? b : a;
+bool atLeast<T>(T? a, T b) => a >= b;
+bool same<T>(T a, T b) => a == b && !(a != b);

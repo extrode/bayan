@@ -1,0 +1,20 @@
+error BYN2744: `length` is not a member of type parameter `T`
+
+  1 │ i64 size<T>(T x) => x.length;
+    │                       ^^^^^^
+    │
+  help: type parameters have no constraints, so a `T` has no members
+
+error BYN2744: `toString` is not a member of type parameter `T`
+
+  2 │ string label<T>(T x) => x.toString();
+    │                           ^^^^^^^^
+    │
+  help: type parameters have no constraints, so a `T` has no members
+
+error BYN2744: `count` is not a member of type parameter `T`
+
+  7 │     i64 width() => value.count;
+    │                          ^^^^^
+    │
+  help: type parameters have no constraints, so a `T` has no members

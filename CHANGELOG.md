@@ -18,3 +18,12 @@
 - out/ and dist/ layouts, --target, test --json, dist and clean (M10)
 - shared build cache with worktree reuse, script reuse and cache stats (M11)
 - M12b CLI completeness: color, bayan doctor, test --changed, --version with commit
+- Spec 001 self-hosting step 1: `main` args and exit codes, `[ExitCode]`, attributes, `Io` files/streams/`listDir`/`run`
+- Growable `StrBuf()`, `$"…"` as a string anywhere; plain enums, enums with data, static const arrays
+- Tagged unions with payload patterns and exhaustive `switch`; user generics (monomorphized); `Map<K,V>`; `Owned<T>` recursive data
+- BYN2762: copying a `Map` or `StrBuf` out of a place is rejected (shared heap storage)
+- `tools/lex-diff` (first tool in Bayan), `tools/Bayan.UnicodeGen`, and the Bayan lexer in `selfhost/lexer/` checked against the C# lexer
+
+### Fixed
+- Windows `Io.run`: names with an extension are found, `.bat`/`.cmd` are refused; arguments are read as UTF-8 from `GetCommandLineW`
+- I/O errors report the errno of the call that failed, including `fclose`; programs without tests never get the fixed test hash seed

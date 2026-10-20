@@ -1,0 +1,16 @@
+error BYN2742: `pick` takes 1 type argument(s), not 2
+
+  9 │ var x = pick<i64, string>(first: true, a: 1, b: 2);
+    │         ^^^^^^^^^^^^^^^^^
+
+error BYN2742: `plain` takes 0 type argument(s), not 1
+
+  10 │ var y = plain<i64>(1);
+     │         ^^^^^^^^^^
+     │
+  help: `plain` is not generic; remove the type arguments
+
+error BYN2023: `Pair` takes 2 type argument(s), not 1
+
+  11 │ Pair<i64> p;
+     │ ^^^^^^^^^

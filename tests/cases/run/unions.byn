@@ -1,0 +1,89 @@
+union Shape {
+    Circle(f32 r),
+    Rect(f32 w, f32 h),
+    None,
+}
+
+public union Token { Number(i64 value), Word(string text), End }
+
+struct Slot {
+    string label;
+    Shape shape;
+}
+
+f32 area(Shape s) => s switch {
+    .Circle(let r) => 3 * r * r,
+    .Rect(let w, let h) => w * h,
+    .None => 0,
+};
+
+void describe(Shape s) {
+    switch (s) {
+        case Shape.Circle(var r) when r > 10:
+            print("big circle");
+        case .Circle(let r):
+            print($"circle {r}");
+        case .Rect(let w, _):
+            print($"rect of width {w}");
+        case Shape.None:
+            print("nothing");
+    }
+}
+
+Shape square(f32 side) => .Rect(side, side);
+
+let c = Shape.Circle(1);
+let r = square(2);
+Shape n = .None;
+print($"{c} {r} {n}");
+print($"{Shape.Rect(w: 2, h: 3)}");
+print($"{area(c)} {area(r)} {area(n)}");
+describe(c);
+describe(Shape.Circle(20));
+describe(r);
+describe(n);
+
+print($"{c == Shape.Circle(1)} {c == Shape.Circle(2)} {c != r} {n == Shape.None} {r == .Rect(2, 2)}");
+
+if (r is .Rect(let rw, let rh)) {
+    print($"is rect {rw}x{rh}");
+}
+if (c is .Rect(_, _)) {
+    print("unreachable");
+} else {
+    print("c is not a rect");
+}
+print($"{n is .None} {c is Shape.Circle(1)}");
+
+var shapes = List<Shape>();
+shapes.add(c);
+shapes.add(.Rect(1, 2));
+shapes.add(Shape.None);
+f32 total = 0;
+for (let s in shapes) {
+    total += area(s);
+    print($"list {s}");
+}
+print($"total {total}");
+
+let slot = Slot { label = "first", shape = .Circle(3) };
+print($"{slot}");
+print($"{slot == Slot { label = "first", shape = Shape.Circle(3) }}");
+
+Shape? maybe = shapes[1];
+Shape? missing = null;
+print($"{maybe} {missing}");
+print(maybe switch { null => "none", .Rect(let w, _) => $"rect {w}", _ => "other" });
+
+var tokens = List<Token>();
+tokens.add(Token.Number(42));
+tokens.add(.Word("hi"));
+tokens.add(.End);
+for (let t in tokens) {
+    let text = t switch {
+        .Number(let v) => $"number {v}",
+        .Word(let w) => $"word {w}",
+        .End => "end",
+    };
+    print($"{text} {t}");
+}

@@ -1,0 +1,16 @@
+error enum ConfigError {
+    [ExitCode(3)]
+    /// The configuration is malformed.
+    malformed,
+    /// Something else.
+    other,
+}
+
+/// Runs the tool.
+[Experimental]
+[Tag(level: 2)]
+public void run() { }
+
+[Experimental]
+/// Stops the tool.
+void stop() { }

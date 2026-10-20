@@ -18,19 +18,20 @@ public static class Lowerer
         {
             foreach (var fn in module.AllFunctions)
             {
-                if (fn.Body is null || fn.Kind == FunctionKind.Test) continue;
-                functions.Add(new FunctionLowerer(fn).Lower());
+                if (fn.Body is null || fn.Kind == FunctionKind.Test || fn.IsGeneric) continue;
+                functions.Add(new FunctionLowerer(fn, c.Builtins).Lower());
             }
             foreach (var t in module.Tests)
-                tests.Add((t, new FunctionLowerer(t.Function).Lower()));
+                tests.Add((t, new FunctionLowerer(t.Function, c.Builtins).Lower()));
         }
         return new LoweredProgram(c, functions, c.EntryModule.Main, tests);
     }
 }
 
-internal sealed class FunctionLowerer(FunctionSymbol fn)
+internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 {
     private readonly FunctionSymbol _fn = fn;
+    private readonly Builtins _builtins = builtins;
     private readonly List<LocalSymbol> _locals = new();
     private readonly HashSet<LocalSymbol> _seen = new();
     private readonly List<Scope> _scopes = new();
@@ -134,16 +135,18 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
     /// <summary>Cheap and free of effects: safe to evaluate more than once or later.</summary>
     private static bool IsTrivial(BoundExpr e) => e switch
     {
-        BoundLiteral or BoundDefault or BoundLocal or BoundThis or BoundErrorVariant or LVoid => true,
+        BoundLiteral or BoundDefault or BoundLocal or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray or LVoid => true,
         BoundField f => IsTrivial(f.Receiver),
         BoundTupleElement t => IsTrivial(t.Receiver),
         LOptionalValue v => IsTrivial(v.Optional),
+        LUnionTag t => IsTrivial(t.Union),
+        LUnionField f => IsTrivial(f.Union),
         _ => false,
     };
 
     private static bool IsLvalue(BoundExpr e) => e switch
     {
-        BoundLocal or BoundThis or BoundIndex or LIndexUnchecked => true,
+        BoundLocal or BoundThis or BoundIndex or LIndexUnchecked or BoundStaticArray => true,
         BoundField f => IsLvalue(f.Receiver),
         BoundTupleElement t => IsLvalue(t.Receiver),
         LOptionalValue v => IsLvalue(v.Optional),
@@ -388,7 +391,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
                 value = null;
             }
             // Cleanups run after the value is read: a `defer` that changes a local must not change the result.
-            else if (value is not (BoundLiteral or BoundDefault or BoundErrorVariant) && _scopes.Any(s => s.Cleanups.Count > 0))
+            else if (value is not (BoundLiteral or BoundDefault or BoundErrorVariant or BoundEnumMember) && _scopes.Any(s => s.Cleanups.Count > 0))
             {
                 value = Spill(value);
             }
@@ -504,6 +507,31 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
             return;
         }
 
+        if (iterable.Type is MapType)
+        {
+            // Entries in insertion order; removed entries stay as tombstones until the next rehash.
+            var map = Spill(iterable);
+            var slot = NewTemp(PrimitiveType.I64);
+            EmitAssign(Local(syntax, slot), I64(syntax, 0));
+            var (brk, cont) = EnterLoop(f.Target);
+            var body = Capture(() =>
+            {
+                var count = new BoundBuiltinCall(syntax, BuiltinMember.MapSlotCount, map, [], PrimitiveType.I64);
+                Emit(new BoundIf(syntax, Not(new BoundBinary(syntax, BinaryOp.Lt, Local(syntax, slot), count, PrimitiveType.Bool)),
+                    Block(syntax, [new LGoto(syntax, brk)]), null));
+                var live = new BoundBuiltinCall(syntax, BuiltinMember.MapSlotLive, map, [Local(syntax, slot)], PrimitiveType.Bool);
+                Emit(new BoundIf(syntax, Not(live), Block(syntax, [new LGoto(syntax, cont)]), null));
+                EmitAssign(variable, new BoundBuiltinCall(syntax, BuiltinMember.MapSlotEntry, map, [Local(syntax, slot)], f.Variable.Type));
+                Statement(f.Body);
+                Emit(new LLabel(syntax, cont));
+                Emit(new BoundAssign(syntax, Local(syntax, slot),
+                    new BoundBinary(syntax, BinaryOp.AddWrap, Local(syntax, slot), I64(syntax, 1), PrimitiveType.I64), null));
+            });
+            Emit(new LLoop(syntax, Block(syntax, body)));
+            Emit(new LLabel(syntax, brk));
+            return;
+        }
+
         // Spans and lists are small headers: iterate over a copy. Arrays are iterated in place.
         var sequence = iterable.Type is Semantics.Symbols.ArrayType && IsLvalue(iterable) ? iterable : Spill(iterable);
         var lengthMember = iterable.Type switch
@@ -593,7 +621,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
             case BoundLocal l:
                 Note(l.Local);
                 return l;
-            case BoundThis:
+            case BoundThis or BoundStaticArray:
                 return e;
             case BoundField f:
                 return f with { Receiver = IsLvalueShape(f.Receiver) ? Lvalue(f.Receiver) : Spill(Expr(f.Receiver)) };
@@ -614,7 +642,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
 
     private static bool IsLvalueShape(BoundExpr e) => e switch
     {
-        BoundLocal or BoundThis or BoundIndex => true,
+        BoundLocal or BoundThis or BoundIndex or BoundStaticArray => true,
         BoundField f => IsLvalueShape(f.Receiver),
         BoundTupleElement t => IsLvalueShape(t.Receiver),
         _ => false,
@@ -624,7 +652,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
     {
         switch (e)
         {
-            case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant:
+            case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
                 return e;
             case BoundLocal l:
                 Note(l.Local);
@@ -672,6 +700,11 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
             {
                 var fields = Operands(s.Fields);
                 return fields is null ? new LNever(e.Syntax, e.Type) : s with { Fields = fields };
+            }
+            case BoundUnionNew u:
+            {
+                var payload = Operands(u.Payload);
+                return payload is null ? new LNever(e.Syntax, e.Type) : u with { Payload = payload };
             }
             case BoundWith w:
             {
@@ -726,8 +759,14 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
                 Emit(new BoundAssign(s.Syntax, Local(s.Syntax, storage), new BoundDefault(s.Syntax, storage.Type), null));
                 return new BoundConversion(s.Syntax, Local(s.Syntax, storage), s.Type, ConversionKind.ArrayToSpan);
             }
-            case BoundInterpolated:
-                throw new InvalidOperationException("interpolation outside an output call");
+            case BoundInterpolated i:
+            {
+                // Outside an output call the text goes into a temporary growable `StrBuf` (from `context.allocator`).
+                var buf = NewTemp(BuiltinType.StrBuf);
+                Emit(new BoundAssign(i.Syntax, Local(i.Syntax, buf), new BoundCall(i.Syntax, _builtins.StrBufGrow, null, [], BuiltinType.StrBuf), null));
+                if (IsNever(WriteParts(i, WriteSink.StrBuf, Local(i.Syntax, buf), i))) return new LNever(e.Syntax, e.Type);
+                return new BoundBuiltinCall(i.Syntax, BuiltinMember.StrBufAsString, Local(i.Syntax, buf), [], PrimitiveType.String);
+            }
             default:
                 throw new InvalidOperationException($"cannot lower {e.GetType().Name}");
         }
@@ -904,6 +943,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
             return WriteParts(b, WriteSink.StrBuf, target, i);
         }
         var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast
+            or BuiltinMember.MapSet or BuiltinMember.MapRemove or BuiltinMember.MapClear
             or BuiltinMember.StrBufAppend or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan;
         var operands = new List<BoundExpr> { b.Receiver };
         operands.AddRange(b.Arguments);
@@ -1087,6 +1127,17 @@ internal sealed class FunctionLowerer(FunctionSymbol fn)
                     tests.Add(new LSequence(syntax, [new LAssignExpr(syntax, Local(syntax, d), subject)], Bool(syntax, true)));
                 }
                 return tests.Count == 0 ? Bool(syntax, true) : tests.Aggregate(And);
+            }
+            case BoundUnionPattern up:
+            {
+                var subject = optional is not null ? Inner() : value;
+                var tag = new ConstantValue((Int128)up.Variant.Tag);
+                var tests = new List<BoundExpr>();
+                if (optional is not null) tests.Add(new LOptionalHas(syntax, value));
+                tests.Add(Equal(syntax, new LUnionTag(syntax, subject), new BoundLiteral(syntax, PrimitiveType.I32, tag) { Constant = tag }));
+                for (var i = 0; i < up.Subpatterns.Length; i++)
+                    tests.Add(Match(up.Subpatterns[i], new LUnionField(syntax, subject, up.Variant, i)));
+                return tests.Aggregate(And);
             }
             default:
                 throw new InvalidOperationException($"cannot lower pattern {p.GetType().Name}");

@@ -11,6 +11,7 @@ namespace Bayan.Semantics.Binding;
 /// (rule 4), and a value may not be structurally modified while a borrow into it is still used
 /// (rules 5 and 6). The analysis is flow-insensitive: a local borrows from everything ever stored
 /// in it, and a borrow stays alive until the holder's last use (to the end of any loop that uses it).
+/// It also rejects storing a copy of an existing <c>Map</c> or <c>StrBuf</c> (BYN2762).
 /// </summary>
 internal sealed class RegionAnalysis
 {
@@ -93,19 +94,27 @@ internal sealed class RegionAnalysis
                 break;
             case BoundLocalDecl d:
                 Declare(d.Local, d.Syntax.Span.Start);
-                if (d.Initializer is not null) Store(d.Local, Expr(d.Initializer), d.Initializer.Syntax.Span);
+                if (d.Initializer is not null)
+                {
+                    CheckCopy(d.Initializer);
+                    Store(d.Local, Expr(d.Initializer), d.Initializer.Syntax.Span);
+                }
                 break;
             case BoundExprStmt e:
                 Expr(e.Expr);
                 break;
             case BoundAssign a:
             {
+                CheckCopy(a.Value);
                 var value = Expr(a.Value);
                 Expr(a.Target);
                 StoreInto(a.Target, value, a.Value.Syntax.Span);
                 break;
             }
             case BoundReturn r when r.Value is not null:
+                // A local or by-value parameter returned is going out of scope: it moves rather than copies.
+                if (StripConversions(r.Value) is not BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var } or ParameterSymbol { Modifier: Syntax.Ast.ParamModifier.None } })
+                    CheckCopy(r.Value);
                 CheckReturn(Expr(r.Value), r.Value.Syntax.Span);
                 break;
             case BoundFail f:
@@ -131,9 +140,12 @@ internal sealed class RegionAnalysis
                 if (_reporting)
                 {
                     var owners = iterable.Owners;
-                    if (RootLocal(f.Iterable) is { } root && f.Iterable.Type is ListType or ArrayType) owners = owners.Add(root);
+                    if (RootLocal(f.Iterable) is { } root && f.Iterable.Type is ListType or MapType or ArrayType) owners = owners.Add(root);
                     foreach (var owner in owners) _loans.Add(new Loan(owner, null, f.Syntax.Span.Start, f.Syntax.Span.End));
                 }
+                // A `var` loop variable is a by-value copy of each element.
+                if (_reporting && f.Variable.Kind == LocalKind.Var && SharedHandle(f.Variable.Type, []) is { } handle)
+                    ReportCopy(handle, f.Variable.Type, f.Iterable.Syntax.Span);
                 _depth++;
                 Declare(f.Variable, f.Syntax.Span.Start);
                 Store(f.Variable, iterable with { Owners = [] }, f.Iterable.Syntax.Span);
@@ -179,6 +191,7 @@ internal sealed class RegionAnalysis
 
     private Borrow Expr(BoundExpr e)
     {
+        foreach (var stored in StoredOperands(e)) CheckCopy(stored);
         var result = Compute(e);
         return MayBorrow(e.Type, []) ? result : Borrow.None;
     }
@@ -189,7 +202,7 @@ internal sealed class RegionAnalysis
         {
             case BoundLocal l:
                 return _locals.GetValueOrDefault(l.Local, Borrow.None);
-            case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant:
+            case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
                 return Borrow.None;
             case BoundConversion c:
             {
@@ -223,9 +236,16 @@ internal sealed class RegionAnalysis
                 return c.Type switch
                 {
                     SpanType => elements.Union(new Borrow([new Region(_depth, $"the array literal on line {Line(c.Syntax.Span)}")], [])),
-                    ListType when _contexts.Count > 0 => elements.Union(_contexts.Peek()),
+                    ListType or MapType when _contexts.Count > 0 => elements.Union(_contexts.Peek()),
                     _ => elements,
                 };
+            }
+            case BoundInterpolated i:
+            {
+                // The text is a copy formatted into `context.allocator`: it borrows that, not its holes (Q43).
+                foreach (var part in i.Parts)
+                    if (part.Value is not null) Expr(part.Value);
+                return _contexts.Count > 0 ? _contexts.Peek() : Borrow.None;
             }
             case BoundJump j:
                 Stmt(j.Jump);
@@ -275,9 +295,20 @@ internal sealed class RegionAnalysis
                 StoreInto(b.Receiver, args[0], b.Arguments[0].Syntax.Span);
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
+            case BuiltinMember.MapSet:
+                StoreInto(b.Receiver, args[0].Union(args[1]), b.Arguments[0].Syntax.Span);
+                Mutate(b.Receiver, b.Syntax.Span);
+                return Borrow.None;
             case BuiltinMember.ListRemoveLast:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return receiver with { Owners = [] };
+            case BuiltinMember.MapGet:
+                return receiver with { Owners = [] };
+            case BuiltinMember.MapCount or BuiltinMember.MapContainsKey:
+                return Borrow.None;
+            case BuiltinMember.MapRemove or BuiltinMember.MapClear:
+                Mutate(b.Receiver, b.Syntax.Span);
+                return Borrow.None;
             case BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
@@ -305,15 +336,20 @@ internal sealed class RegionAnalysis
                 break;
             }
         }
-        // Rule 4: a returned borrow derives from every argument.
-        var result = args.Aggregate(receiver, (acc, a) => acc.Union(a));
-        if (_contexts.Count > 0 && ContainsList(c.Type, [])) result = result.Union(_contexts.Peek());
+        // Rule 4: a returned borrow derives from every argument. `Io` results are fresh copies and borrow none.
+        var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun
+            ? Borrow.None
+            : args.Aggregate(receiver, (acc, a) => acc.Union(a));
+        // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText` and `Io.run` return (Q29).
+        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.StrBufGrow))
+            result = result.Union(_contexts.Peek());
         return result;
     }
 
     /// <summary>A borrow of <paramref name="source"/>'s own storage (a span of an array or list, a <c>StrBuf</c>'s text).</summary>
     private Borrow Lend(BoundExpr source, Borrow sourceBorrow)
     {
+        if (source is BoundStaticArray) return sourceBorrow;
         if (RootLocal(source) is { } root)
         {
             var depth = _depthOf.GetValueOrDefault(root, 0);
@@ -462,6 +498,76 @@ internal sealed class RegionAnalysis
         }
     }
 
+    // ── Copies of a `Map` or `StrBuf` (BYN2762) ──────────────────────────────────
+
+    /// <summary>
+    /// A <c>Map</c> or growable <c>StrBuf</c> is a header over heap storage: a copy would share that
+    /// storage, and a rehash or growth through one copy frees what the other still points to.
+    /// </summary>
+    private void CheckCopy(BoundExpr value)
+    {
+        if (!_reporting || !IsPlace(value)) return;
+        // A `with` copies only the fields it does not replace.
+        var handle = StripConversions(value) is BoundWith { Target.Type: StructSymbol target } w
+            ? target.Fields.Where(f => !w.Updates.Any(u => u.Field == f)).Select(f => SharedHandle(f.Type, [target])).FirstOrDefault(h => h is not null)
+            : SharedHandle(value.Type, []);
+        if (handle is not null) ReportCopy(handle, value.Type, value.Syntax.Span);
+    }
+
+    private void ReportCopy(TypeSymbol handle, TypeSymbol copied, TextSpan span)
+    {
+        var name = handle is MapType ? "Map" : "StrBuf";
+        Report(DiagnosticCodes.SharedStorageCopy, span, [name],
+            label: handle == copied ? null : $"`{copied.DisplayName}` holds a `{handle.DisplayName}` by value",
+            help: $"pass it by `ref`, or build a new `{name}` and copy the contents into it");
+    }
+
+    /// <summary>Operands that <paramref name="e"/> stores into a new location: elements, fields, payloads, inserted values.</summary>
+    private static IEnumerable<BoundExpr> StoredOperands(BoundExpr e) => e switch
+    {
+        BoundCollection c => c.Elements,
+        BoundStructLiteral s => s.Fields,
+        BoundUnionNew u => u.Payload,
+        BoundTuple t => t.Elements,
+        BoundWith w => w.Updates.Select(u => u.Value),
+        // A `ref` or `out` argument is passed in place, not stored.
+        BoundCall { Function.Kind: FunctionKind.Constructor } c => c.Arguments.Where((_, i) =>
+            i >= c.Function.Parameters.Count || c.Function.Parameters[i].Modifier is not (Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out)),
+        BoundBuiltinCall { Member: BuiltinMember.ListAdd } b => [b.Arguments[0]],
+        BoundBuiltinCall { Member: BuiltinMember.MapSet } b => [b.Arguments[1]],
+        _ => [],
+    };
+
+    /// <summary>Whether <paramref name="e"/> reads existing storage (a local, parameter, field, element or <c>.value</c>) rather than making a fresh value.</summary>
+    private static bool IsPlace(BoundExpr e) => e switch
+    {
+        BoundLocal or BoundThis or BoundField or BoundTupleElement or BoundIndex => true,
+        BoundBuiltinCall { Member: BuiltinMember.OwnedValue or BuiltinMember.ResultValue or BuiltinMember.MapGet } => true,
+        BoundConversion c => IsPlace(c.Operand),
+        BoundConditional c => IsPlace(c.WhenTrue) || IsPlace(c.WhenFalse),
+        BoundCoalesce c => IsPlace(c.Left) || IsPlace(c.Right),
+        BoundSwitchExpr s => s.Arms.Any(a => IsPlace(a.Value)),
+        BoundWith w => IsPlace(w.Target),
+        BoundTry t => IsPlace(t.Operand),
+        BoundCatch c => IsPlace(c.Operand) || IsPlace(c.Handler),
+        _ => false,
+    };
+
+    private static BoundExpr StripConversions(BoundExpr e) => e is BoundConversion c ? StripConversions(c.Operand) : e;
+
+    /// <summary>The <c>Map</c> or <c>StrBuf</c> a value of type <paramref name="t"/> holds by value, or null.</summary>
+    private static TypeSymbol? SharedHandle(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
+    {
+        MapType or BuiltinType { Kind: BuiltinKind.StrBuf } => t,
+        OptionalType o => SharedHandle(o.Inner, seen),
+        ResultType r => SharedHandle(r.Value, seen),
+        ArrayType a => SharedHandle(a.Element, seen),
+        TupleType tt => tt.Fields.Select(f => SharedHandle(f.Type, seen)).FirstOrDefault(h => h is not null),
+        StructSymbol s => seen.Add(s) ? s.Fields.Select(f => SharedHandle(f.Type, seen)).FirstOrDefault(h => h is not null) : null,
+        UnionSymbol u => seen.Add(u) ? u.Variants.SelectMany(v => v.Fields).Select(f => SharedHandle(f.Type, seen)).FirstOrDefault(h => h is not null) : null,
+        _ => null,
+    };
+
     // ── Helpers ──────────────────────────────────────────────────────────────────
 
     /// <summary>The local whose storage <paramref name="e"/> names (<c>x</c>, <c>x.f</c>, <c>x[i]</c>, <c>x.item1</c>), or null.</summary>
@@ -490,24 +596,26 @@ internal sealed class RegionAnalysis
     private static bool MayBorrow(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.IsString,
-        SpanType or ListType => true,
-        BuiltinType b => b.Kind == BuiltinKind.StrBuf,
+        SpanType or ListType or MapType or OwnedType => true,
+        BuiltinType b => b.Kind is BuiltinKind.StrBuf or BuiltinKind.ProcessResult,
         OptionalType o => MayBorrow(o.Inner, seen),
         ResultType r => MayBorrow(r.Value, seen),
         ArrayType a => MayBorrow(a.Element, seen),
         TupleType tt => tt.Fields.Any(f => MayBorrow(f.Type, seen)),
         StructSymbol s => seen.Add(s) && s.Fields.Any(f => MayBorrow(f.Type, seen)),
+        UnionSymbol u => seen.Add(u) && u.Variants.Any(v => v.Fields.Any(f => MayBorrow(f.Type, seen))),
         _ => false,
     };
 
     private static bool ContainsList(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
-        ListType => true,
+        ListType or MapType or OwnedType => true,
         OptionalType o => ContainsList(o.Inner, seen),
         ResultType r => ContainsList(r.Value, seen),
         ArrayType a => ContainsList(a.Element, seen),
         TupleType tt => tt.Fields.Any(f => ContainsList(f.Type, seen)),
         StructSymbol s => seen.Add(s) && s.Fields.Any(f => ContainsList(f.Type, seen)),
+        UnionSymbol u => seen.Add(u) && u.Variants.Any(v => v.Fields.Any(f => ContainsList(f.Type, seen))),
         _ => false,
     };
 

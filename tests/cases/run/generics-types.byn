@@ -1,0 +1,91 @@
+enum Suit { clubs, hearts }
+
+struct Pair<A, B> {
+    A a;
+    B b;
+
+    Pair<B, A> swap() => Pair<B, A> { a = b, b = a };
+
+    bool sameFirst(Pair<A, B> other) => a == other.a;
+}
+
+union Option2<T> {
+    Some(T v),
+    Nothing,
+}
+
+union Tree<T> {
+    Leaf(T v),
+    Node(Pair<T, T> kids),
+}
+
+struct Box<T> {
+    T value;
+    List<T> history;
+
+    void put(T next) {
+        history.add(value);
+        value = next;
+    }
+}
+
+struct Slot<T> {
+    T? value = null;
+    i64 uses = 0;
+}
+
+string show<T>(Option2<T> o) => o switch {
+    .Some(let v) => $"some {v}",
+    .Nothing => "nothing",
+};
+
+Option2<T> wrap<T>(T x) => .Some(x);
+
+i64 total<K>(Map<K, i64> m) {
+    i64 sum = 0;
+    for (let e in m) sum += e.value;
+    return sum;
+}
+
+let p = Pair<i64, string> { a = 1, b = "x" };
+let q = p.swap();
+print($"{p} {q} {q.a} {q.b}");
+print($"{p == Pair<i64, string> { a = 1, b = "x" }} {p.sameFirst(Pair<i64, string> { a = 2, b = "x" })}");
+Pair<Suit, bool> flag = { a = .hearts, b = true };
+print($"{flag}");
+
+let some = Option2<i64>.Some(5);
+Option2<i64> nothing = .Nothing;
+let word = wrap("hi");
+print($"{show(some)} {show(nothing)} {show(word)} {some}");
+print($"{some == Option2<i64>.Some(5)} {some != nothing}");
+switch (word) {
+    case Option2.Some(let w):
+        print($"matched {w}");
+    case .Nothing:
+        print("matched nothing");
+}
+if (some is .Some(let n) && n > 3) print($"big {n}");
+
+let t = Tree<i64>.Node(Pair<i64, i64> { a = 1, b = 2 });
+let text = t switch {
+    .Leaf(let v) => $"leaf {v}",
+    .Node(let kids) => $"node {kids.a} {kids.b}",
+};
+print(text);
+
+var box = Box<string> { value = "a", history = List<string>() };
+box.put("b");
+box.put("c");
+print($"{box.value} {box.history.length}");
+
+var bySuit = Map<Suit, i64>();
+bySuit.set(.clubs, 2);
+bySuit.set(.hearts, 3);
+var byName = Map<string, i64>();
+byName.set("x", 10);
+print($"{total(bySuit)} {total(byName)}");
+
+let empty = Slot<i64> { };
+let full = Slot<string> { value = "s" };
+print($"{empty.value} {full.value} {empty.uses + full.uses}");

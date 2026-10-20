@@ -1,0 +1,10 @@
+struct Point {
+    i64 x;
+
+    T echo<T>(T value) => value;
+}
+
+T id<T, T>(T x) => x;
+struct Bag<item> {
+    item thing;
+}

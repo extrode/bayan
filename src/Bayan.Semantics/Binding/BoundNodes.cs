@@ -50,11 +50,21 @@ public enum BuiltinMember
     StringLength, StringBytes, StringIsEmpty, StringCopy, StringStartsWith, StringEndsWith, StringContains,
     SpanLength, SpanIsEmpty, SpanCopy,
     ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListClear, ListRemoveLast,
+    MapCount, MapSet, MapGet, MapContainsKey, MapRemove, MapClear,
+    /// <summary>Lowering of <c>for</c> over a map: entry slots (live or removed), whether slot i is live, and its entry.</summary>
+    MapSlotCount, MapSlotLive, MapSlotEntry,
     ArrayLength, ArrayAsSpan,
     ArenaReset,
     StrBufAppend, StrBufLength, StrBufAsString, StrBufClear,
     CharValue,
     ResultIsOk, ResultValue, ResultError,
+    /// <summary><c>o.value</c> of an <c>Owned&lt;T&gt;</c>, also inserted for member access through it.</summary>
+    OwnedValue,
+    IoWrite,
+    EnumName, EnumOrdinal,
+    /// <summary>A data-enum field; the argument is the field index.</summary>
+    EnumField,
+    ProcessExitCode, ProcessStdout, ProcessStderr,
 }
 
 public sealed record BoundBuiltinCall(Node Syntax, BuiltinMember Member, BoundExpr Receiver, BoundExpr[] Arguments, TypeSymbol Type)
@@ -126,7 +136,7 @@ public sealed record BoundSwitchExpr(Node Syntax, BoundExpr Value, BoundSwitchAr
 /// <summary>One piece of <c>$"…"</c>: literal text or a value to format.</summary>
 public sealed record BoundInterpolationPart(string? Text, BoundExpr? Value);
 
-/// <summary><c>$"…"</c>. Only valid as an argument to an output sink (<c>print</c>, <c>panic</c>, <c>StrBuf.append</c>).</summary>
+/// <summary><c>$"…"</c>. Written straight into an output sink (<c>print</c>, <c>panic</c>, <c>StrBuf.append</c>); elsewhere a string from <c>context.allocator</c>.</summary>
 public sealed record BoundInterpolated(Node Syntax, BoundInterpolationPart[] Parts) : BoundExpr(Syntax, PrimitiveType.String);
 
 /// <summary><c>try f()</c>: on failure, runs <c>errdefer</c>s and fails the enclosing function with the same error.</summary>
@@ -143,6 +153,18 @@ public sealed record BoundCatch(Node Syntax, BoundExpr Operand, LocalSymbol? Bin
 public sealed record BoundJump(Node Syntax, BoundStmt Jump) : BoundExpr(Syntax, PrimitiveType.Never);
 
 public sealed record BoundErrorVariant(Node Syntax, ErrorVariantSymbol Variant) : BoundExpr(Syntax, Variant.Set);
+
+/// <summary><c>Color.red</c> or a target-typed <c>.red</c>.</summary>
+public sealed record BoundEnumMember(Node Syntax, EnumMemberSymbol Member) : BoundExpr(Syntax, Member.Enum);
+
+/// <summary><c>Shape.Circle(1)</c>, <c>Shape.None</c> or a target-typed <c>.Circle(1)</c>.</summary>
+public sealed record BoundUnionNew(Node Syntax, UnionVariantSymbol Variant, BoundExpr[] Payload) : BoundExpr(Syntax, Variant.Union);
+
+/// <summary><c>Color.values</c>: a <c>ReadOnlySpan</c> over the enum's static table of members.</summary>
+public sealed record BoundEnumValues(Node Syntax, EnumSymbol Enum, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+/// <summary>A module-level <c>const T[N]</c> of literal scalars, read in place from static data.</summary>
+public sealed record BoundStaticArray(Node Syntax, ConstSymbol Const) : BoundExpr(Syntax, Const.Type);
 
 /// <summary><c>stackalloc T[n]</c> with a constant <c>n</c>: a span over stack storage.</summary>
 public sealed record BoundStackalloc(Node Syntax, TypeSymbol Element, long Count, TypeSymbol Type) : BoundExpr(Syntax, Type);
@@ -244,4 +266,11 @@ public sealed record BoundMemberStep(FieldSymbol? Field, PropertySymbol? Propert
 /// <see cref="Designation"/> see the unwrapped value (<see cref="ValueType"/>).
 /// </summary>
 public sealed record BoundPropertyPattern(Node Syntax, TypeSymbol InputType, TypeSymbol ValueType, BoundSubpattern[] Subpatterns, LocalSymbol? Designation)
+    : BoundPattern(Syntax, InputType);
+
+/// <summary>
+/// <c>.Circle(let r)</c> or <c>.None</c>: a tag test, then each subpattern on its payload field.
+/// On an optional input the value must be present.
+/// </summary>
+public sealed record BoundUnionPattern(Node Syntax, TypeSymbol InputType, UnionVariantSymbol Variant, BoundPattern[] Subpatterns)
     : BoundPattern(Syntax, InputType);
