@@ -411,7 +411,8 @@ public sealed class CEmitter
         var ct = CType(t);
         var name = "bynh_chk_move_" + Key(t);
         return Helper(name, $"static {ct}* {name}({ct}* p, byn_own_slot* s, const char* file, int line)", () =>
-            "{\n" + OwnStatements(t, "(*p)", p => $"byn_own_release({p.Storage})") +
+            "{\n" + $"    if (s) byn_own_read(s, {CString(t.DisplayName)}, file, line);\n" +
+            OwnStatements(t, "(*p)", p => $"byn_own_release({p.Storage})") +
             "    if (s) {\n        s->file = file;\n        s->line = line;\n    }\n    return p;\n}\n");
     }
 

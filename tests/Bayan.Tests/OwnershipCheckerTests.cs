@@ -65,6 +65,52 @@ public sealed class OwnershipCheckerTests
     public void DebugBuildCatchesAReadOfAMovedLocal() =>
         AssertPanics(ReadAfterMove, "panic: use of moved List<i64>: moved at c.byn:4\n  at c.byn:5\n");
 
+    private const string DoubleMove = """
+        void main() {
+            var a = List<i64>();
+            a.add(1);
+            let b = move a;
+            let c = move a;
+            print($"{b.length} {c.length}");
+        }
+
+        """;
+
+    [Fact]
+    public void DebugBuildCatchesASecondMoveOfAMovedLocal() =>
+        AssertPanics(DoubleMove, "panic: use of moved List<i64>: moved at c.byn:4\n  at c.byn:5\n");
+
+    [Fact]
+    public async Task DebugBuildOfSwitchMoveRuns()
+    {
+        var path = Path.Combine(Golden.CasesRoot, "run/switch-move.byn");
+        var c = Compilation.Create([Golden.Load(path)], Path.GetDirectoryName(path)!);
+        Assert.False(c.Diagnostics.HasErrors);
+        var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Debug), BuildMode.Debug);
+        Assert.True(build.Succeeded, build.Errors);
+        var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        using var p = Process.Start(psi)!;
+        var stderrTask = p.StandardError.ReadToEndAsync();
+        var actual = p.StandardOutput.ReadToEnd();
+        await stderrTask;
+        await p.WaitForExitAsync();
+        Assert.Equal(0, p.ExitCode);
+        Assert.Equal(File.ReadAllText(Path.ChangeExtension(path, ".stdout")).Replace("\r\n", "\n"), actual.Replace("\r\n", "\n"));
+    }
+
+    [Fact]
+    public void DebugCMovesASwitchSubjectOnce()
+    {
+        var path = Path.Combine(Golden.CasesRoot, "run/switch-move.byn");
+        var c = Compilation.Create([Golden.Load(path)], Path.GetDirectoryName(path)!);
+        var text = File.ReadAllLines(path);
+        var lines = Enumerable.Range(0, text.Length).Where(i => text[i].TrimStart().StartsWith("switch (move ") || text[i].Contains(") switch {")).Select(i => i + 1).ToList();
+        Assert.Equal(4, lines.Count);
+        var emitted = CliApp.EmitC(c, BuildMode.Debug);
+        foreach (var line in lines)
+            Assert.Equal(1, emitted.Split('\n').Count(l => l.Contains("bynh_chk_move_") && l.Contains($", {line})") && !l.StartsWith("static")));
+    }
+
     [Theory]
     [InlineData(SecondOwner)]
     [InlineData(ReadAfterMove)]
