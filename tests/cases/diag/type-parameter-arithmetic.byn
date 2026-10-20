@@ -1,0 +1,8 @@
+T add<T>(T a, T b) => a + b;
+T negate<T>(T a) => -a;
+
+struct Counter<T> {
+    T value;
+
+    T doubled() => value * 2;
+}

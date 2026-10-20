@@ -1,0 +1,6 @@
+T? none<T>() => null;
+T orDefault<T>(T? x, T fallback) => x ?? fallback;
+
+var a = none();
+var b = orDefault(x: null, fallback: null);
+var c = none<i64>();

@@ -55,6 +55,9 @@ public static class AstDump
             return string.Join(' ', parts) + " ";
         }
 
+        private static string TypeParams(Name[] names) =>
+            names.Length == 0 ? "" : "<" + string.Join(", ", names.Select(n => n.Text)) + ">";
+
         private static string Params(Param[] parameters)
         {
             var sb = new StringBuilder("(");
@@ -97,7 +100,7 @@ public static class AstDump
                     break;
                 case FunctionDecl d:
                     {
-                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{Params(d.Params)} -> {Type(d.ReturnType)}";
+                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params)} -> {Type(d.ReturnType)}";
                         if (d.Fails is not null)
                             head += d.Fails.Errors.Length == 0 ? " fails" : " fails " + string.Join(", ", d.Fails.Errors.Select(Type));
                         if (d.ExpressionBody is not null) head += " => " + AstDump.Expr(d.ExpressionBody);
@@ -106,7 +109,7 @@ public static class AstDump
                         break;
                     }
                 case StructDecl d:
-                    Line(depth, $"Struct {Mods(d.Modifiers)}{d.Name.Text}");
+                    Line(depth, $"Struct {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}");
                     foreach (var member in d.Members) Decl(depth + 1, member);
                     break;
                 case FieldDecl d:
@@ -133,7 +136,7 @@ public static class AstDump
                             + (m.Doc is null ? "" : " doc " + TokenDump.Escape(m.Doc)));
                     break;
                 case UnionDecl d:
-                    Line(depth, $"Union {Mods(d.Modifiers)}{d.Name.Text}");
+                    Line(depth, $"Union {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}");
                     foreach (var v in d.Variants)
                         Line(depth + 1, "Variant " + v.Name.Text + (v.Fields.Length == 0 ? "" : "(" + string.Join(", ", v.Fields.Select(f => Type(f.Type) + " " + f.Name.Text)) + ")")
                             + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));

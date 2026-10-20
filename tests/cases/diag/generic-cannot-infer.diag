@@ -1,0 +1,13 @@
+error BYN2740: cannot infer type argument `T` of `none`
+
+  4 │ var a = none();
+    │         ^^^^
+    │
+  help: pass an argument it can be read from, or write it out: `none<T>(…)`
+
+error BYN2740: cannot infer type argument `T` of `orDefault`
+
+  5 │ var b = orDefault(x: null, fallback: null);
+    │         ^^^^^^^^^
+    │
+  help: pass an argument it can be read from, or write it out: `orDefault<T>(…)`

@@ -5,8 +5,9 @@ using Bayan.Syntax.Diagnostics;
 
 namespace Bayan.Semantics;
 
-/// <summary>Turns type syntax into types, in the scope of one file (and optionally one struct).</summary>
-internal sealed class TypeResolver(Compilation compilation, FileContext file, StructSymbol? container)
+/// <summary>Turns type syntax into types, in the scope of one file (and optionally one struct and the type parameters in scope).</summary>
+internal sealed class TypeResolver(Compilation compilation, FileContext file, StructSymbol? container,
+    IReadOnlyDictionary<string, TypeSymbol>? typeArgs = null)
 {
     public TypeSymbol Resolve(TypeSyntax syntax, bool allowVoid = false)
     {
@@ -36,7 +37,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             case Syntax.Ast.ArrayType a:
             {
                 var element = Resolve(a.Element);
-                var size = new Binder(compilation, file, null, container).BindArraySize(a.Size);
+                var size = new Binder(compilation, file, null, container, typeArgs).BindArraySize(a.Size);
                 return element.IsError || size < 0 ? ErrorType.Instance : new Symbols.ArrayType(element, size);
             }
             case Syntax.Ast.TupleType t:
@@ -57,6 +58,11 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
         if (n.Path.Length == 1)
         {
             var text = name.Text;
+            if (typeArgs is not null && typeArgs.TryGetValue(text, out var parameter))
+            {
+                NoTypeArgs(n);
+                return parameter;
+            }
             if (PrimitiveType.ByName.TryGetValue(text, out var p))
             {
                 NoTypeArgs(n);
@@ -113,7 +119,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                     var key = Resolve(n.Args[0]);
                     var value = Resolve(n.Args[1]);
                     if (key.IsError || value.IsError) return ErrorType.Instance;
-                    if (!MapType.IsValidKey(key))
+                    if (!MapType.IsValidKey(key) && key is not TypeParameterType)
                     {
                         compilation.Report(DiagnosticCodes.InvalidMapKey, file.Source, n.Args[0].Span, [key.DisplayName],
                             help: "use an integer type, `char`, `bool`, `string` or a plain enum as the key");
@@ -135,10 +141,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                     return ErrorType.Instance;
             }
             if (Lookup(file.Module, text) is { } local)
-            {
-                NoTypeArgs(n);
-                return Expand(local);
-            }
+                return Construct(n, Expand(local));
             if (text == "IoError")
             {
                 NoTypeArgs(n);
@@ -152,9 +155,8 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
         {
             if (Lookup(module, name.Text) is { } t)
             {
-                NoTypeArgs(n);
                 CheckVisible(t, name);
-                return Expand(t);
+                return Construct(n, Expand(t));
             }
             compilation.Report(DiagnosticCodes.UnknownType, file.Source, name.Span, [string.Join(".", n.Path.Select(x => x.Text))]);
             return ErrorType.Instance;
@@ -197,6 +199,26 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
         var target = new TypeResolver(compilation, alias.File, null).Resolve(alias.Decl.Target);
         alias.Resolving = false;
         return alias.Target ??= target;
+    }
+
+    /// <summary>Applies the type arguments of <paramref name="n"/> to a generic struct or union (instantiating it), or checks there are none.</summary>
+    private TypeSymbol Construct(NamedType n, TypeSymbol t)
+    {
+        var parameters = t switch { StructSymbol s => s.TypeParameters, UnionSymbol u => u.TypeParameters, _ => [] };
+        if (parameters.Count == 0)
+        {
+            NoTypeArgs(n);
+            return t;
+        }
+        if (n.Args.Length != parameters.Count)
+        {
+            compilation.Report(DiagnosticCodes.WrongTypeArgumentCount, file.Source, n.Span, [n.Path[^1].Text, parameters.Count, n.Args.Length]);
+            return ErrorType.Instance;
+        }
+        var args = n.Args.Select(a => Resolve(a)).ToArray();
+        if (args.Any(a => a.IsError)) return ErrorType.Instance;
+        if (args.SequenceEqual(parameters)) return t;
+        return compilation.InstantiateType(t, args, file.Source, n.Span);
     }
 
     private void NoTypeArgs(NamedType n)

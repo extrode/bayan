@@ -21,13 +21,14 @@ internal sealed partial class Binder
     private int _deferDepth;
     private int _nextLocalId;
 
-    public Binder(Compilation c, FileContext file, FunctionSymbol? fn, StructSymbol? container)
+    public Binder(Compilation c, FileContext file, FunctionSymbol? fn, StructSymbol? container,
+        IReadOnlyDictionary<string, TypeSymbol>? typeArgs = null)
     {
         _c = c;
         _file = file;
         _fn = fn;
         _struct = container;
-        _types = new TypeResolver(c, file, container);
+        _types = new TypeResolver(c, file, container, typeArgs ?? fn?.TypeMap ?? container?.TypeMap);
     }
 
     private SourceText Source => _file.Source;

@@ -166,6 +166,11 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor EmptyEnum = Error("BYN2722", "enum `{0}` has no members");
     public static readonly DiagnosticDescriptor EnumArgumentNotConstant = Error("BYN2723", "argument `{0}` of `{1}` must be a compile-time constant");
     public static readonly DiagnosticDescriptor InvalidEnumParameter = Error("BYN2724", "enum parameter `{0}` must be a number, `bool`, `char`, `string` or a plain enum");
+    public static readonly DiagnosticDescriptor CannotInferTypeArgument = Error("BYN2740", "cannot infer type argument `{0}` of `{1}`");
+    public static readonly DiagnosticDescriptor ConflictingTypeArgument = Error("BYN2741", "type argument `{0}` of `{1}` is inferred as both `{2}` and `{3}`");
+    public static readonly DiagnosticDescriptor GenericArgumentCount = Error("BYN2742", "`{0}` takes {1} type argument(s), not {2}");
+    public static readonly DiagnosticDescriptor TypeParameterOperator = Error("BYN2743", "`{0}` cannot be applied to a value of type parameter `{1}`");
+    public static readonly DiagnosticDescriptor TypeParameterMember = Error("BYN2744", "`{0}` is not a member of type parameter `{1}`");
     public static readonly DiagnosticDescriptor InvalidMapKey = Error("BYN2760", "`{0}` cannot be a `Map` key");
     public static readonly DiagnosticDescriptor RecursiveByValue = Error("BYN2761", "`{0}` contains itself by value: {1}");
     public static readonly DiagnosticDescriptor UnknownAttribute = Error("BYN2770", "unknown attribute `{0}`");
