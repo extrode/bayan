@@ -524,10 +524,11 @@ public sealed class L006OwnershipGuardTests
             }
             """ },
         { "switch (move) expression form moves the binding", """
+            i64 keep(move List<i64> xs) => xs.length;
             void main() {
                 let s = Slot.Full(List<i64>());
                 let n = (move s) switch {
-                    .Full(let items) => items.length,
+                    .Full(let items) => keep(move items),
                     .Empty => 0,
                 };
                 print($"{n}");
