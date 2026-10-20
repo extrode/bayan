@@ -252,6 +252,7 @@ public enum BuiltinFunction
     IoMonotonicNanos,
     IoStdout,
     IoStderr,
+    IoStdin,
     EnumFromOrdinal,
     EnumParse,
 }

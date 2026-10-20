@@ -26,7 +26,7 @@ public static class CliApp
         commands:
           new <name>           create an app in a new directory [--lib|--script] [--vcs git|none] [--ci github|none]
           init [<dir>]         add a project's missing files to a directory (same options as new)
-          lex <file>           print the token stream
+          lex [--json] <file>  print the token stream [--json: as one JSON object] (`-` reads stdin)
           parse [--ast] <file> check syntax; with --ast print the syntax tree
           check <path>         report diagnostics for a program (a file or directory)
           build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--target <t>] [--emit-c]
@@ -139,9 +139,18 @@ public static class CliApp
 
     private static int Lex(string[] args, TextWriter stdout, TextWriter stderr)
     {
-        if (!TryReadSingleFile(args, stderr, out var source)) return ExitUsage;
+        var json = args.Contains("--json");
+        args = args.Where(a => a != "--json").ToArray();
+        SourceText source;
+        if (args is ["-"])
+        {
+            using var input = new MemoryStream();
+            Console.OpenStandardInput().CopyTo(input);
+            source = new SourceText("<stdin>", input.ToArray());
+        }
+        else if (!TryReadSingleFile(args, stderr, out source)) return ExitUsage;
         var result = Lexer.Lex(source);
-        stdout.Write(TokenDump.Dump(result));
+        stdout.Write(json ? TokenDump.ToJson(result) : TokenDump.Dump(result));
         return result.Diagnostics.Any(d => d.IsError) ? ExitFailure : ExitOk;
     }
 

@@ -215,7 +215,7 @@ public sealed class CEmitter
         UnionSymbol u => Named(u, $"byn_{u.Module.CName}_{u.Name}{TypeArgs(u.TypeArguments)}"),
         BuiltinType { Kind: BuiltinKind.Arena } => "byn_arena*",
         BuiltinType { Kind: BuiltinKind.StrBuf } => "byn_writer",
-        BuiltinType { Kind: BuiltinKind.IoStream } => "int32_t",
+        BuiltinType { Kind: BuiltinKind.IoStream or BuiltinKind.IoInput } => "int32_t",
         BuiltinType { Kind: BuiltinKind.ProcessResult } => "byn_process",
         // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
         OwnedType o => CType(o.Inner) + "*",
@@ -979,6 +979,8 @@ internal sealed class FunctionEmitter
                 return "INT32_C(1)";
             case BuiltinFunction.IoStderr:
                 return "INT32_C(2)";
+            case BuiltinFunction.IoStdin:
+                return "INT32_C(0)";
             case BuiltinFunction.EnumFromOrdinal:
             {
                 var e = (EnumSymbol)((OptionalType)fn.ReturnType).Inner;
@@ -1094,6 +1096,13 @@ internal sealed class FunctionEmitter
                 return $"byn_w_str(&{Expr(r)}, {arg})";
             case BuiltinMember.IoWrite:
                 return $"byn_io_write({Expr(r)}, {arg})";
+            case BuiltinMember.IoReadAll:
+            {
+                var res = _c.CType(b.Type);
+                var name = _c.Helper("bynh_io_read_all", $"static {res} bynh_io_read_all(int32_t fd)", () =>
+                    $"{{\n    (void)fd;\n    {res} r = {{0}};\n    r.err = byn_io_read_stdin(&r.value, byn_context);\n    return r;\n}}\n");
+                return $"{name}({Expr(r)})";
+            }
             case BuiltinMember.StrBufAsString:
                 return $"byn_strbuf_str({Expr(r)})";
             case BuiltinMember.ProcessExitCode:

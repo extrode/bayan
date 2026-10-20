@@ -158,6 +158,15 @@ void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
 
 /// Renders diagnostics in source order (a stable sort by span start), separated by blank lines.
 void renderAll(ref StrBuf sb, ref SourceText source, ReadOnlySpan<Diagnostic> diagnostics) {
+    let order = sourceOrder(diagnostics);
+    for (let k in 0..order.length) {
+        if (k > 0) sb.append("\n");
+        render(ref sb, ref source, diagnostics[order[k]]);
+    }
+}
+
+/// Indices of `diagnostics` in source order (a stable sort by span start).
+List<i64> sourceOrder(ReadOnlySpan<Diagnostic> diagnostics) {
     var order = List<i64>();
     for (let i in 0..diagnostics.length) {
         order.add(i);
@@ -168,10 +177,7 @@ void renderAll(ref StrBuf sb, ref SourceText source, ReadOnlySpan<Diagnostic> di
         }
         order[j] = i;
     }
-    for (let k in 0..order.length) {
-        if (k > 0) sb.append("\n");
-        render(ref sb, ref source, diagnostics[order[k]]);
-    }
+    return order;
 }
 
 string lineNumber(i64 number, i64 width) {
