@@ -493,7 +493,7 @@ internal sealed partial class Binder
                 Report(DiagnosticCodes.MutateBorrow, operand.Syntax.Span, [l.Name], label: "moving it would take the value out of what it borrows from",
                     help: "move or copy the value it was bound to instead");
                 return new BoundMove(syntax, operand);
-            case BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var } or ParameterSymbol { Modifier: ParamModifier.Move } }:
+            case BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var or LocalKind.PatternVariable } or ParameterSymbol { Modifier: ParamModifier.Move } }:
             case BoundLocal { Local.BorrowsSubject: true }:
                 return new BoundMove(syntax, operand);
         }
@@ -514,6 +514,39 @@ internal sealed partial class Binder
         };
         Report(DiagnosticCodes.CannotMove, operand.Syntax.Span, [what], help: help);
         return new BoundMove(syntax, operand);
+    }
+
+    /// <summary>Whether the patterns being bound are on a <c>switch (move x)</c> subject, so their bindings own their parts (spec §9.3).</summary>
+    private bool _patternOwns;
+
+    /// <summary>A switch subject; <c>move x</c> moves a local or <c>move</c> parameter into the switch, and <paramref name="owns"/> says its bindings own their parts.</summary>
+    private BoundExpr BindSwitchSubject(Expr value, out bool owns)
+    {
+        owns = false;
+        var inner = value;
+        while (inner is ParenExpr p) inner = p.Inner;
+        if (inner is not MoveExpr m) return BindExpr(value);
+        var operand = BindExpr(m.Operand);
+        if (operand.Type.IsError) return operand;
+        if (operand is BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var or LocalKind.PatternVariable } or ParameterSymbol { Modifier: ParamModifier.Move } } local)
+        {
+            owns = !local.Local.BorrowsSubject;
+            return BindMove(m, operand);
+        }
+        var what = operand switch
+        {
+            BoundLocal { Local: ParameterSymbol p } => $"parameter `{p.Name}`",
+            BoundLocal { Local: var l } => $"`{l.Name}`",
+            BoundField f => $"field `{f.Field.Name}`",
+            BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } => "an element",
+            BoundTupleElement => "a tuple element",
+            BoundThis => "`this`",
+            BoundCall or BoundBuiltinCall or BoundStructLiteral or BoundCollection or BoundLiteral => "a fresh value",
+            _ => "this expression",
+        };
+        Report(DiagnosticCodes.SwitchMoveSubject, m.Operand.Span, [what],
+            help: "drop `move` so the bindings borrow, declare the parameter `move`, or `.take()` a collection field into a local first");
+        return operand;
     }
 
     // ── Failure handling ─────────────────────────────────────────────────────────
@@ -606,12 +639,14 @@ internal sealed partial class Binder
 
     private BoundExpr BindSwitchExpr(SwitchExpr s, TypeSymbol? expected)
     {
-        var value = BindExpr(s.Value);
+        var value = BindSwitchSubject(s.Value, out var owns);
         var arms = new List<BoundSwitchArm>();
         foreach (var arm in s.Arms)
         {
             PushScope();
+            _patternOwns = owns;
             var pattern = BindPattern(arm.Pattern, value.Type);
+            _patternOwns = false;
             var guard = arm.Guard is { } g ? BindCondition(g) : null;
             var result = BindExpr(arm.Value, expected);
             PopScope();
@@ -657,7 +692,7 @@ internal sealed partial class Binder
             case VarPattern v:
             {
                 var local = DeclareLocal(v.Name, input, v.IsLet ? LocalKind.PatternVariable : LocalKind.Var);
-                local.BorrowsSubject = true;
+                local.BorrowsSubject = !_patternOwns;
                 if (!v.IsLet) local.KeywordSpan = new TextSpan(v.Span.Start, 3);
                 return new BoundBindPattern(p, input, local);
             }
@@ -829,7 +864,7 @@ internal sealed partial class Binder
             if (ok) subs.Add(new BoundSubpattern(steps.ToArray(), pattern));
         }
         var designation = pp.Designation is { } d ? DeclareLocal(d, valueType, LocalKind.PatternVariable) : null;
-        if (designation is not null) designation.BorrowsSubject = true;
+        if (designation is not null) designation.BorrowsSubject = !_patternOwns;
         return new BoundPropertyPattern(pp, input, valueType, subs.ToArray(), designation);
     }
 

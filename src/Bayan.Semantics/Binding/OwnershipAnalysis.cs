@@ -393,7 +393,7 @@ internal sealed class OwnershipAnalysis
 
     /// <summary>A local or <c>move</c> parameter this function owns, which <c>move</c> can hand over.</summary>
     private static bool IsMovable(BoundExpr e) =>
-        e is BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var, BorrowsSubject: false } or ParameterSymbol { Modifier: ParamModifier.Move } };
+        e is BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var or LocalKind.PatternVariable, BorrowsSubject: false } or ParameterSymbol { Modifier: ParamModifier.Move } };
 
     /// <summary>Whether <paramref name="e"/> reads existing storage (a local, parameter, field, element or <c>.value</c>) rather than making a fresh value.</summary>
     private static bool IsPlace(BoundExpr e) => e switch
