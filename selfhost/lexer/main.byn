@@ -1,7 +1,8 @@
 // bayan-lex: the self-hosted lexer. Prints the same token dump as `bayan lex`.
 //
 //     bayan-lex <path>          the token dump; exit 0 if there are no error diagnostics, else 1
-//     bayan-lex --many <dir>    `== <name>` and the dump of every `*.byn` in `<dir>`, in name order
+//     bayan-lex --many <dir>    `== <name>` and the dump of every `*.byn` in `<dir>`, in name order,
+//                               preceded by a `span out of range` line for any span outside the input
 //     bayan-lex --time <path>   only the nanoseconds spent lexing
 //
 // Exit 2 on a usage error or an unreadable file.
@@ -27,6 +28,21 @@ bool dumpFile(ref StrBuf sb, string path, List<u8> bytes, Keywords keywords) {
     return !result.diagnostics.isEmpty;
 }
 
+/// Appends a `span out of range` line for every token, doc or diagnostic span outside the input.
+void checkSpans(ref StrBuf sb, ref LexResult result) {
+    let size = result.source.bytes.length;
+    for (let token in result.tokens) {
+        if (!inside(TextSpan { start = token.start, length = token.length }, size)) sb.append($"span out of range: token {token.start}+{token.length}\n");
+        if (!inside(TextSpan { start = token.docStart, length = token.docLength }, size)) sb.append($"span out of range: doc {token.docStart}+{token.docLength}\n");
+    }
+    for (let d in result.diagnostics) {
+        if (!inside(d.span, size)) sb.append($"span out of range: {d.code} {d.span.start}+{d.span.length}\n");
+        if (d.hasFix && !inside(d.fixSpan, size)) sb.append($"span out of range: {d.code} fix {d.fixSpan.start}+{d.fixSpan.length}\n");
+    }
+}
+
+bool inside(TextSpan span, i64 size) => span.start >= 0 && span.length >= 0 && span.end <= size;
+
 i32 lexOne(string path, Keywords keywords) {
     let bytes = Io.readFile(path) catch return fileNotFound(path);
     var sb = StrBuf();
@@ -45,7 +61,9 @@ i32 lexMany(string dir, Keywords keywords) {
             let bytes = Io.readFile(path) catch return fileNotFound(path);
             var sb = StrBuf();
             sb.append($"== {name}\n");
-            dumpFile(ref sb, path, bytes, keywords);
+            var result = lex(SourceText.create(path, bytes), keywords);
+            checkSpans(ref sb, ref result);
+            dump(ref sb, ref result);
             Io.stdout.write(sb.asString());
         }
     }
