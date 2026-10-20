@@ -19,8 +19,10 @@ internal sealed class OwnershipAnalysis
     private readonly Dictionary<JumpTarget, State> _breaks = new();
     private readonly Dictionary<JumpTarget, State> _continues = new();
     private readonly HashSet<(string, TextSpan)> _reported = new();
-    // Locals a `defer`/`errdefer` body uses, pinned until its scope ends: to the defer's span.
-    private readonly Dictionary<LocalSymbol, TextSpan> _pins = new();
+    // Cleanups registered in the enclosing scopes, innermost last.
+    private readonly List<Cleanup> _cleanups = new();
+    // How many cleanups were active where each loop or switch began: a jump to it runs the rest.
+    private readonly Dictionary<JumpTarget, int> _depths = new();
 
     private OwnershipAnalysis(Compilation c, FunctionSymbol fn)
     {
@@ -60,6 +62,10 @@ internal sealed class OwnershipAnalysis
             Reachable == other.Reachable && Moved.Count == other.Moved.Count && Moved.Keys.All(other.Moved.ContainsKey);
     }
 
+    /// <summary>A <c>defer</c>/<c>errdefer</c>: the locals its body reads and moves, and what was already moved when it was registered.</summary>
+    private sealed record Cleanup(TextSpan Site, bool OnFailure, HashSet<LocalSymbol> Reads,
+        List<(LocalSymbol Local, TextSpan Site)> Moves, Dictionary<LocalSymbol, TextSpan> MovedBefore);
+
     private void Report(DiagnosticDescriptor d, TextSpan span, object?[] args, string? label = null, string? help = null, Fix? fix = null)
     {
         if (_reported.Add((d.Code, span))) _c.Report(d, _source, span, args, label, help, fix);
@@ -69,10 +75,10 @@ internal sealed class OwnershipAnalysis
 
     private State Block(IEnumerable<BoundStmt> statements, State state)
     {
-        var pins = new Dictionary<LocalSymbol, TextSpan>(_pins);
+        var depth = _cleanups.Count;
         foreach (var s in statements) state = Statement(s, state);
-        _pins.Clear();
-        foreach (var (l, site) in pins) _pins[l] = site;
+        RunCleanups(state, depth, failing: false);
+        _cleanups.RemoveRange(depth, _cleanups.Count - depth);
         return state;
     }
 
@@ -110,14 +116,17 @@ internal sealed class OwnershipAnalysis
                     // A local or `move` parameter returned is going out of scope: it moves.
                     if (!IsMovable(StripConversions(r.Value))) CheckStore(r.Value);
                 }
+                RunCleanups(state, 0, failing: false);
                 return State.Unreachable();
             case BoundFail f:
-                Expr(f.Error, state);
+                RunCleanups(Expr(f.Error, state), 0, failing: true);
                 return State.Unreachable();
             case BoundBreak b:
+                RunCleanups(state, _depths.GetValueOrDefault(b.Target), failing: false);
                 Merge(_breaks, b.Target, state);
                 return State.Unreachable();
             case BoundContinue c:
+                RunCleanups(state, _depths.GetValueOrDefault(c.Target), failing: false);
                 Merge(_continues, c.Target, state);
                 return State.Unreachable();
             case BoundIf i:
@@ -131,6 +140,7 @@ internal sealed class OwnershipAnalysis
             case BoundWhile w:
             {
                 // A move in the body reaches the next iteration: repeat until the entry state is stable.
+                _depths[w.Target] = _cleanups.Count;
                 var entry = state;
                 while (true)
                 {
@@ -145,6 +155,7 @@ internal sealed class OwnershipAnalysis
             }
             case BoundDoWhile d:
             {
+                _depths[d.Target] = _cleanups.Count;
                 var entry = state;
                 while (true)
                 {
@@ -160,6 +171,7 @@ internal sealed class OwnershipAnalysis
             case BoundFor f:
             {
                 state = Expr(f.Iterable, state);
+                _depths[f.Target] = _cleanups.Count;
                 var entry = state;
                 while (true)
                 {
@@ -173,6 +185,7 @@ internal sealed class OwnershipAnalysis
             case BoundSwitch sw:
             {
                 state = Expr(sw.Value, state);
+                _depths[sw.Target] = _cleanups.Count;
                 var after = State.Unreachable();
                 // A guard that ran and failed has made its moves: later sections start from that too.
                 var next = state.Clone();
@@ -187,11 +200,11 @@ internal sealed class OwnershipAnalysis
             }
             case BoundDefer d:
                 Statement(d.Body, state.Clone());
-                Pin(d.Body, d.Syntax.Span);
+                Register(d.Body, d.Syntax.Span, onFailure: false, state);
                 return state;
             case BoundErrdefer e:
                 Statement(e.Body, state.Clone());
-                Pin(e.Body, e.Syntax.Span);
+                Register(e.Body, e.Syntax.Span, onFailure: true, state);
                 return state;
             case BoundContext c:
                 return Statement(c.Body, Expr(c.Allocator, state));
@@ -200,11 +213,41 @@ internal sealed class OwnershipAnalysis
         }
     }
 
-    /// <summary>The locals <paramref name="body"/> uses run at scope exit: moving one later in the scope is a use after move.</summary>
-    private void Pin(BoundStmt body, TextSpan site)
+    /// <summary>Registers a cleanup: the locals <paramref name="body"/> reads (not those it only assigns) and moves.</summary>
+    private void Register(BoundStmt body, TextSpan site, bool onFailure, State state)
     {
+        var assigned = new HashSet<BoundNode>(ReferenceEqualityComparer.Instance);
+        var reads = new HashSet<LocalSymbol>();
+        var moves = new List<(LocalSymbol, TextSpan)>();
         foreach (var n in BoundTree.Descendants(body))
-            if (n is BoundLocal { Local: var l }) _pins.TryAdd(l, site);
+        {
+            if (n is BoundAssign { Op: null, Target: BoundLocal target }) assigned.Add(target);
+            else if (n is BoundLocal { Local: var l } && !assigned.Contains(n)) reads.Add(l);
+            else if (n is BoundMove { Operand: BoundLocal { Local: var m } operand } move && IsMovable(operand) && TypeFacts.IsUnique(m.Type))
+                moves.Add((m, move.Syntax.Span));
+        }
+        _cleanups.Add(new Cleanup(site, onFailure, reads, moves, new(state.Moved)));
+    }
+
+    /// <summary>
+    /// Runs the cleanups from <paramref name="depth"/> up, innermost first, at an exit reached in <paramref name="state"/>:
+    /// a local one reads that was moved after it was registered is a use after move, reported at the move.
+    /// </summary>
+    private void RunCleanups(State state, int depth, bool failing)
+    {
+        if (!state.Reachable) return;
+        var moved = new Dictionary<LocalSymbol, TextSpan>(state.Moved);
+        for (var i = _cleanups.Count - 1; i >= depth; i--)
+        {
+            var c = _cleanups[i];
+            if (c.OnFailure && !failing) continue;
+            foreach (var l in c.Reads)
+                if (moved.TryGetValue(l, out var site) && !(c.MovedBefore.TryGetValue(l, out var before) && before == site))
+                    Report(DiagnosticCodes.UseAfterMove, site, [l.Name],
+                        label: $"{(c.OnFailure ? "an `errdefer`" : "a `defer`")} on line {_source.GetLinePosition(c.Site.Start).Line} uses it at scope exit",
+                        help: $"move `{l.Name}` before the `{(c.OnFailure ? "errdefer" : "defer")}`, or move a `.copy(to: alloc)` of it instead");
+            foreach (var (l, site) in c.Moves) moved[l] = site;
+        }
     }
 
     private static void Merge(Dictionary<JumpTarget, State> map, JumpTarget target, State state)
@@ -234,14 +277,12 @@ internal sealed class OwnershipAnalysis
             case BoundMove m:
                 state = Expr(m.Operand, state);
                 if (IsMovable(m.Operand) && m.Operand is BoundLocal { Local: var moved } && TypeFacts.IsUnique(moved.Type))
-                {
-                    if (state.Reachable && _pins.TryGetValue(moved, out var pin))
-                        Report(DiagnosticCodes.UseAfterMove, m.Syntax.Span, [moved.Name],
-                            label: $"a `defer` on line {_source.GetLinePosition(pin.Start).Line} uses it at scope exit",
-                            help: $"move `{moved.Name}` before the `defer`, or move a `.copy(to: alloc)` of it instead");
                     state.Moved[moved] = m.Syntax.Span;
-                }
                 return state;
+            case BoundTry t:
+                state = Expr(t.Operand, state);
+                RunCleanups(state, 0, failing: true);
+                return t.Type.IsNever ? State.Unreachable() : state;
             case BoundBinary { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } b:
             {
                 state = Expr(b.Left, state);

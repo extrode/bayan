@@ -378,6 +378,14 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         var current = target is BoundBuiltinCall { Member: BuiltinMember.MapIndexSet } read
             ? Spill(read with { Member = BuiltinMember.MapIndex })
             : IsTrivial(a.Value) ? target : Spill(target);
+        if (a.Op == BinaryOp.Coalesce)
+        {
+            // `t ??= v` is `t = t ?? v`: `v` runs only when `t` is null.
+            var optional = (OptionalType)target.Type;
+            var coalesced = Coalesce(new BoundCoalesce(a.Syntax, current, new BoundConversion(a.Syntax, a.Value, optional, ConversionKind.ToOptional), optional));
+            if (!IsNever(coalesced)) EmitAssign(target, coalesced);
+            return;
+        }
         var value = Expr(a.Value);
         if (IsNever(value)) return;
         if (!IsTrivial(value)) value = Spill(value);

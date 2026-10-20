@@ -1,0 +1,13 @@
+error BYN2781: `xs` is used after it was moved
+
+  13 │     consume(move xs);
+     │             ^^^^^^^ an `errdefer` on line 12 uses it at scope exit
+     │
+  help: move `xs` before the `errdefer`, or move a `.copy(to: alloc)` of it instead
+
+error BYN2781: `ys` is used after it was moved
+
+  22 │     consume(move ys);
+     │             ^^^^^^^ an `errdefer` on line 21 uses it at scope exit
+     │
+  help: move `ys` before the `errdefer`, or move a `.copy(to: alloc)` of it instead
