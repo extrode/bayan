@@ -189,7 +189,7 @@ internal sealed class RegionAnalysis
         {
             case BoundLocal l:
                 return _locals.GetValueOrDefault(l.Local, Borrow.None);
-            case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant:
+            case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
                 return Borrow.None;
             case BoundConversion c:
             {
@@ -315,6 +315,7 @@ internal sealed class RegionAnalysis
     /// <summary>A borrow of <paramref name="source"/>'s own storage (a span of an array or list, a <c>StrBuf</c>'s text).</summary>
     private Borrow Lend(BoundExpr source, Borrow sourceBorrow)
     {
+        if (source is BoundStaticArray) return sourceBorrow;
         if (RootLocal(source) is { } root)
         {
             var depth = _depthOf.GetValueOrDefault(root, 0);

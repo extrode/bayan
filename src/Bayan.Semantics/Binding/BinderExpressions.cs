@@ -63,6 +63,12 @@ internal sealed partial class Binder
         }
         if (value.Constant is { Value: double d } && target is PrimitiveType { Kind: PrimitiveKind.F32 } && value.Syntax is LiteralExpr)
             return Literal(value.Syntax, target, (double)(float)d);
+        if (value is BoundStaticArray && target is SpanType { ReadOnly: false })
+        {
+            Report(DiagnosticCodes.TypeMismatch, span, [value.Type.DisplayName, target.DisplayName],
+                label: "a `const` array cannot be written through", help: $"take a `ReadOnlySpan<{((SpanType)target).Element.DisplayName}>`");
+            return new BoundErrorExpr(value.Syntax);
+        }
         if (Conversions.Implicit(value.Type, target, argument) is { } kind)
         {
             if (kind == ConversionKind.Identity) return value;
@@ -382,6 +388,7 @@ internal sealed partial class Binder
     private BoundExpr ConstantRef(Node syntax, ConstSymbol c)
     {
         _c.BindConstant(c);
+        if (c.IsStaticArray) return new BoundStaticArray(syntax, c);
         if (c.Value is null) return new BoundErrorExpr(syntax);
         return new BoundLiteral(syntax, c.Type, c.Value) { Constant = c.Value };
     }
@@ -431,6 +438,8 @@ internal sealed partial class Binder
                 Report(DiagnosticCodes.UnknownVariant, m.Member.Span, [name, set.Name],
                     help: Suggest(name, set.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
                 return new BoundErrorExpr(m);
+            case BoundTypeRef { Referenced: EnumSymbol e }:
+                return BindEnumStatic(m, e);
             case BoundTypeRef { Referenced: StructSymbol s }:
             {
                 var method = s.FindMethods(name).FirstOrDefault();
@@ -461,6 +470,28 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(m);
         }
         return BindValueMember(m, target, m.Member);
+    }
+
+    /// <summary><c>Color.red</c>, <c>Color.count</c>, <c>Color.values</c>, <c>Color.fromOrdinal</c> and <c>Color.parse</c>.</summary>
+    private BoundExpr BindEnumStatic(MemberExpr m, EnumSymbol e)
+    {
+        var name = m.Member.Text;
+        if (e.Find(name) is { } member) return new BoundEnumMember(m, member);
+        switch (name)
+        {
+            case "count":
+                var count = new ConstantValue((Int128)e.Members.Count);
+                return new BoundLiteral(m, PrimitiveType.I64, count) { Constant = count };
+            case "values":
+                return new BoundEnumValues(m, e, new SpanType(e, readOnly: true));
+            case "fromOrdinal":
+                return new BoundMethodGroup(m, null, e.FromOrdinal);
+            case "parse":
+                return new BoundMethodGroup(m, null, e.Parse);
+        }
+        Report(DiagnosticCodes.UnknownEnumMember, m.Member.Span, [name, e.Name],
+            help: Suggest(name, e.Members.Select(v => v.Name).Concat(["count", "values", "fromOrdinal", "parse"])) is { } close ? $"did you mean `{close}`?" : null);
+        return new BoundErrorExpr(m);
     }
 
     private BoundExpr BindModuleMember(MemberExpr m, ModuleSymbol module)
@@ -583,6 +614,11 @@ internal sealed partial class Binder
                     Report(DiagnosticCodes.UnknownVariant, t.Member.Span, [t.Member.Text, u.DisplayName]);
                 return new BoundErrorExpr(t);
             }
+            case EnumSymbol e:
+                if (e.Find(t.Member.Text) is { } member) return new BoundEnumMember(t, member);
+                Report(DiagnosticCodes.UnknownEnumMember, t.Member.Span, [t.Member.Text, e.Name],
+                    help: Suggest(t.Member.Text, e.Members.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
+                return new BoundErrorExpr(t);
             case StructSymbol s when s.FindMethods(t.Member.Text).FirstOrDefault() is { IsStatic: true } m:
                 return new BoundMethodGroup(t, null, m);
             case null or ErrorType:
@@ -621,7 +657,7 @@ internal sealed partial class Binder
             BindExpr(i.Index);
             return new BoundErrorExpr(i);
         }
-        if (i.Index is RangeExpr r) return BindSlice(i, target, r, new SpanType(element, target.Type is SpanType { ReadOnly: true }));
+        if (i.Index is RangeExpr r) return BindSlice(i, target, r, new SpanType(element, target.Type is SpanType { ReadOnly: true } || target is BoundStaticArray));
         var fromEnd = i.Index is UnaryExpr { Op: UnaryOp.FromEnd };
         var indexSyntax = i.Index is UnaryExpr { Op: UnaryOp.FromEnd } u ? u.Operand : i.Index;
         var index = BindIndexValue(indexSyntax);
@@ -840,7 +876,7 @@ internal sealed partial class Binder
         PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
         OptionalType o => IsEquatable(o.Inner),
         ResultType r => IsEquatable(r.Value),
-        ErrorSetSymbol or ErrorUnionType => true,
+        ErrorSetSymbol or ErrorUnionType or EnumSymbol => true,
         StructSymbol s => s.Fields.All(f => IsEquatable(f.Type)),
         Symbols.TupleType tt => tt.Fields.All(f => IsEquatable(f.Type)),
         Symbols.ArrayType a => IsEquatable(a.Element),
@@ -1165,7 +1201,7 @@ internal sealed partial class Binder
     internal static bool IsFormattable(TypeSymbol t) => t switch
     {
         PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
-        ErrorSetSymbol or ErrorUnionType => true,
+        ErrorSetSymbol or ErrorUnionType or EnumSymbol => true,
         OptionalType o => IsFormattable(o.Inner),
         ResultType r => IsFormattable(r.Value),
         StructSymbol => true,

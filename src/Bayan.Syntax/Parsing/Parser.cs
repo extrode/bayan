@@ -299,6 +299,10 @@ public sealed class Parser
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
                 decl = ParseErrorEnum(start, modifiers);
                 break;
+            case TokenKind.EnumKeyword when topLevel:
+                RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
+                decl = ParseEnum(start, modifiers);
+                break;
             case TokenKind.TypeKeyword when Peek(1) == TokenKind.Identifier && Peek(2) == TokenKind.Equals:
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
                 decl = ParseTypeAlias(start, modifiers);
@@ -518,6 +522,25 @@ public sealed class Parser
         }
         ExpectClose(open, "error enum");
         return new ErrorEnumDecl(SpanFrom(start), modifiers, name, variants.ToArray());
+    }
+
+    /// <summary><c>enum Name { a, b, c }</c>; a trailing <c>,</c> or <c>;</c> after the last member is allowed.</summary>
+    private EnumDecl ParseEnum(int start, Modifiers modifiers)
+    {
+        Advance();
+        var name = ExpectName("an enum name");
+        var open = Expect(TokenKind.OpenBrace);
+        var members = new List<EnumMember>();
+        while (Kind == TokenKind.Identifier)
+        {
+            var doc = DocOf(Current);
+            var member = ExpectName("a member name");
+            members.Add(new EnumMember(member.Span, member, doc));
+            if (!Accept(TokenKind.Comma)) break;
+        }
+        Accept(TokenKind.Semicolon);
+        ExpectClose(open, "enum");
+        return new EnumDecl(SpanFrom(start), modifiers, name, members.ToArray());
     }
 
     private TypeAliasDecl ParseTypeAlias(int start, Modifiers modifiers)
