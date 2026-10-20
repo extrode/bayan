@@ -1,0 +1,15 @@
+field 2 left 0
+reused 1 3
+sum 3 left 0
+map 2 left 0
+reused 1 3
+strbuf hello left 0
+reused again
+optional 1
+left null true
+none null true
+element 2 left 0
+reused 7
+map element 1 left 0
+ref 2 left 0
+reused 11
