@@ -673,6 +673,7 @@ internal sealed partial class Binder
                 pattern = BindPattern(p, value.Type);
                 _patternOwns = false;
                 if (owns) CheckOwningOverlap(pattern);
+                if (owns && section.Label.Guard is { } lg) GuardBindings(pattern, lg.Span);
             }
             else
             {

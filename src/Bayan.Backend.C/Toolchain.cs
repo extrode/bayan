@@ -113,7 +113,7 @@ public static class Toolchain
     }
 
     /// <summary>Test seams: how long the probe waits for a candidate to compile, and for its program to run.</summary>
-    internal static TimeSpan ProbeCompileTimeout { get; set; } = TimeSpan.FromSeconds(30);
+    internal static TimeSpan ProbeCompileTimeout { get; set; } = TimeSpan.FromSeconds(120);
 
     internal static TimeSpan ProbeRunTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
@@ -404,6 +404,7 @@ public static class Toolchain
         {
             try { p.Kill(entireProcessTree: true); }
             catch (InvalidOperationException) { }
+            p.WaitForExit();
             return (-1, "", "");
         }
         return (p.ExitCode, stdout.Result, stderr.Result);

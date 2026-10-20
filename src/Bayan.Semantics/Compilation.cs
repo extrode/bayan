@@ -1026,8 +1026,11 @@ public sealed class Compilation
                 changed = true;
             }
         } while (changed);
-        foreach (var m in MutationChecks.Where(m => m.Callee.IsMutating && m.Binder.Function is not { IsInstance: true }))
-            m.Binder.CheckWritable(m.Receiver, m.Receiver.Syntax.Span, $"`{m.Callee.Name}` modifies it");
+        foreach (var m in MutationChecks.Where(m => m.Callee.IsMutating))
+        {
+            if (m.Binder.Function is not { IsInstance: true }) m.Binder.CheckWritable(m.Receiver, m.Receiver.Syntax.Span, $"`{m.Callee.Name}` modifies it");
+            else m.Binder.CheckGuardWrite(m.Receiver, m.Receiver.Syntax.Span, $"`{m.Callee.Name}` modifies it");
+        }
     }
 
     /// <summary>A parameter's default value, bound on first use.</summary>
