@@ -1,0 +1,40 @@
+let ints = [42, 1_000_000, 0xFF, 0b1010, 5u, 7ul];
+let floats = [3.14, 1e5, 2.5e-3, 1.50dec];
+let chars = ['a', '\n', '\u{1F600}'];
+let strings = ["text", c"cstr", u16"wide", "esc\t\"q\""];
+let raw = """
+    first
+      second
+    """;
+let msg = $"total {sum} for {lines.length} lines, {{braces}}";
+let nested = $"outer {$"inner {x}"}";
+let p = Point { x = 1, y = -2 };
+let q = p with { x = 3 };
+let t = (1, "a");
+let named = (x: 1, y: 2);
+let empty = [];
+let spread = [..a, ..b];
+let cast = (u8)(x + 1);
+let neg = -(a - b);
+let bits = ~a & 0xF | b << 2;
+let r = 0..n;
+let ri = 0..=n;
+let last = xs[^1];
+let mid = xs[1..^1];
+let opt = a?.b ?? c;
+let tern = a > b ? a : b;
+let tried = try parse(s);
+let caught = parse(s) catch 0;
+let early = parse(s) catch return 1;
+let handled = parse(s) catch (e) switch { .invalid => 1, .tooPrecise => 2 };
+let some = parse(s) catch (MoneyError.invalid) 0;
+let found = map.get(k) ?? return;
+let wrapped = a +% b -% c *% d;
+let saturated = a +| b -| c *| d;
+let gen = List<List<i64>>();
+let buf = stackalloc u8[64];
+let ok = true && !false;
+let nothing = null;
+let me = this;
+let call = f(x, y: 2, ref z, move w, out v);
+let chain = a.b(c).d[e].f;

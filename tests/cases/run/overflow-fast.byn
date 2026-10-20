@@ -1,0 +1,6 @@
+// mode: fast
+i64 big = 9223372036854775807;
+let more = big + 1;
+print($"wrapped {more}");
+i64 wide = 300;
+print($"{(u8)wide}");

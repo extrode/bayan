@@ -1,0 +1,2 @@
+import money;
+print("hi");

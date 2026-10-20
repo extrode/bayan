@@ -1,0 +1,28 @@
+error enum LookupError {
+    /// No entry has that key.
+    missing,
+    /// The key was blank.
+    blank,
+}
+
+Result<i64, LookupError> lookup(string key) {
+    return .blank if key.isEmpty;
+    return key switch {
+        "one" => 1,
+        "two" => 2,
+        _ => LookupError.missing,
+    };
+}
+
+i64 orZero(Result<i64, LookupError> r) => r.isOk ? r.value : 0;
+
+let a = lookup("two");
+let b = lookup("six");
+let c = lookup("");
+print($"{a} {b} {c}");
+print($"{a.isOk} {b.isOk} {orZero(a)} {orZero(b)}");
+print($"{b.err == LookupError.missing} {c.err}");
+print($"{a == lookup("two")} {b == c}");
+Result<i64, LookupError> widened = (i32)7;
+print($"{widened.value}");
+print($"{b.value}");

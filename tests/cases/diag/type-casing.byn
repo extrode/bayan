@@ -1,0 +1,3 @@
+struct point {
+    i64 x;
+}

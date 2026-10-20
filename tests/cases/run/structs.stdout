@@ -1,0 +1,6 @@
+11 12 23
+0 0 true true
+11 1 133
+line 11 12 2
+Point { x: 11, y: 12 }
+ann 30 (ann, 30)

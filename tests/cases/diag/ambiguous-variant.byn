@@ -1,0 +1,13 @@
+error enum MoneyError {
+    invalid,
+}
+
+error enum ParseError {
+    invalid,
+}
+
+void check(i64 n) fails MoneyError, ParseError {
+    return .invalid if n < 0;
+}
+
+check(1) catch return;

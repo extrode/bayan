@@ -1,0 +1,2 @@
+panic: arithmetic overflow
+  at overflow-add.byn:3

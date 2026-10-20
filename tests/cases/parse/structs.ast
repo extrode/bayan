@@ -1,0 +1,15 @@
+CompilationUnit
+  doc `A sum of money.`
+  Struct public Money
+    Field public required i64 cents
+    Field public readonly string currency = "MYR"
+    Field private i64? note
+    Field i64[4] history
+    Property public bool isZero => (== cents 0)
+    Constructor public Money(i64 cents)
+      Block
+        Assign (. this cents) = cents
+    Function public plus(Money other) -> Money => (struct Money (cents (+ cents (. other cents))))
+    Function reset() -> void
+      Block
+        Assign cents = 0

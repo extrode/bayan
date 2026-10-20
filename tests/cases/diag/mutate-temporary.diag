@@ -1,0 +1,4 @@
+error BYN2106: cannot modify this value
+
+  2 │ s.bytes[0] = 65;
+    │ ^^^^^^^^^^ a `ReadOnlySpan` cannot be written through

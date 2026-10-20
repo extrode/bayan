@@ -1,0 +1,14 @@
+struct Counter {
+    i64 n;
+    List<i64> seen;
+
+    i64 latest => record();
+
+    i64 record() {
+        n += 1;
+        return n;
+    }
+}
+
+var c = Counter { n = 0, seen = List<i64>() };
+print($"{c.latest}");

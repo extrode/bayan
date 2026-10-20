@@ -1,0 +1,4 @@
+void f(bool ok) {
+    { work(); } if ok;
+    let x = 1 if ok;
+}

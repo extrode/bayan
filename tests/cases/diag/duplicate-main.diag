@@ -1,0 +1,4 @@
+error BYN2013: the program has two entry points
+
+  1 │ print("a");
+    │ ^^^^^^^^^^ `main` is also declared on line 2

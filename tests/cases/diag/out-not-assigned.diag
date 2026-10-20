@@ -1,0 +1,13 @@
+error BYN2103: `out` parameter `value` is not assigned on every path
+
+  3 │         return false;
+    │         ^^^^^^^^^^^^
+    │
+  help: assign `value` before every `return`
+
+error BYN2103: `out` parameter `value` is not assigned on every path
+
+  10 │     return false;
+     │     ^^^^^^^^^^^^
+     │
+  help: assign `value` before every `return`

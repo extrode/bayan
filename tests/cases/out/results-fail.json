@@ -1,0 +1,40 @@
+{
+  "package": "local/tally",
+  "mode": "safe",
+  "target": "<host>",
+  "tests": [
+    {
+      "name": "greets the world",
+      "file": "tests/app.test.byn",
+      "line": 1,
+      "status": "pass",
+      "durationMs": 0,
+      "output": ""
+    },
+    {
+      "name": "wrong",
+      "file": "tests/broken.test.byn",
+      "line": 1,
+      "status": "panic",
+      "durationMs": 0,
+      "output": "panic: assertion failed: 1 == 2\n  at tests/broken.test.byn:2"
+    },
+    {
+      "name": "boom",
+      "file": "tests/broken.test.byn",
+      "line": 5,
+      "status": "panic",
+      "durationMs": 0,
+      "output": "panic: boom\n  at tests/broken.test.byn:6"
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "passed": 1,
+    "failed": 0,
+    "panicked": 2,
+    "timedOut": 0,
+    "skipped": 0,
+    "durationMs": 0
+  }
+}

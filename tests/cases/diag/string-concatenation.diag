@@ -1,0 +1,6 @@
+error BYN2209: strings cannot be joined with `+`
+
+  2 │ let greeting = "Hello, " + name;
+    │                ^^^^^^^^^^^^^^^^
+    │
+  help: use interpolation into an output: `print($"{a}{b}")` or `buf.append($"{a}{b}")`

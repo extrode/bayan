@@ -1,0 +1,3 @@
+public import money;
+readonly void f() {}
+static struct S {}

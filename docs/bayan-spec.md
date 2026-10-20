@@ -150,7 +150,8 @@ distinct type UserId = i64;      // a unit without arithmetic
 
 ### 3.5 Arrays, spans, collections
 - `T[N]`: fixed-size inline array (a value). Constant out-of-range indexes are compile errors.
-- `Span<T>`: a borrowed view (pointer, length).
+- `Span<T>`: a borrowed view (pointer, length) whose elements may be assigned.
+- `ReadOnlySpan<T>`: a borrowed view whose elements cannot be assigned. `Span<T>` → `ReadOnlySpan<T>` is implicit. `string.bytes` is a `ReadOnlySpan<u8>`, so strings stay immutable and valid UTF-8. A `Span<T>` parameter never written through gets lint BYN2310 ("use `ReadOnlySpan<T>`").
 - `List<T>`, `Map<K, V>`, `HashMap<K, V>`, `Set<T>`, `Pool<T>`, `Ring<T, const int N>`, `NonEmpty<T>`: standard library, allocator-backed.
 - `Map` **preserves insertion order**; `HashMap` is unordered and faster.
 - Hashing is **seeded** by default (hash-flooding resistance); tests use a fixed seed.
@@ -358,6 +359,7 @@ No user-defined operator symbols. Operator implementations must not allocate, su
 | Bit reinterpretation | `bitcast<T>(x)` (same size; non-plain types require `unsafe`) |
 | Units / distinct types | `(Seconds)raw`, `(i64)t` |
 | Enum ↔ number | `.ordinal` / `.value`; `T.fromOrdinal(i)` returns `T?` |
+| Views | `Span<T>` → `ReadOnlySpan<T>` implicit; as a call argument, `List<T>` and `T[N]` → `Span<T>` / `ReadOnlySpan<T>`, and `string` → `ReadOnlySpan<u8>`. Never `ReadOnlySpan<T>` → `Span<T>`. |
 | User types | `(T)x` calls `IFrom<T, U>.from` (infallible). Fallible conversions use `ITryFrom` and `try T.from(x)` |
 | `List<T>` → `Span<T>` | Implicit **only as a function argument**; otherwise `.asSpan` |
 | User-defined implicit conversions | Not allowed |
@@ -384,6 +386,8 @@ Type patterns apply only to `dyn` values and unions. `switch` must be exhaustive
 
 ### 6.6 Interpolation
 `$"{x}"` uses an interpolation handler; formatting writes into the destination buffer. `$"{e}"` on an error prints the variant's doc-comment summary (fallback: its name; public errors without docs warn). `log.info($"user {user.id}")` captures `user.id` as a structured field.
+
+**Floats** (`f64`, `f32`) format as the shortest digits that round-trip to the same value. Fixed notation when `1e-5 ≤ |x| < 1e15`, exponential outside it, spelled lowercase with no `+` and no leading zeros (`1e15`, `1.5e-7`, `-2.25e20`), so the text is a valid Bayan literal and valid JSON. Integral values print without a decimal point (`42`); `-0.0` prints `-0`; special values print `nan`, `inf`, `-inf` (`Json.encode` rejects them with `JsonError.nonFinite`). Fixed-format control (`{x:F2}`) is deferred to the format-specifier design.
 
 ---
 
@@ -675,6 +679,7 @@ Decoders default to safe limits (JSON nesting depth 128, maximum size). Per-requ
 - **`length`** is the only size name: an O(1) property everywhere. `count(p)` counts matches.
 - Slicing is substring/subarray: `s[a..b]`, `xs[1..^1]`. C#'s `Substring(start, length)` migrates to `s[start..(start + length)]`. Copies are explicit: `.copy(to: alloc)`.
 - Out-of-range slices panic in safe builds; `trySlice(a..b)` returns `Span<T>?`.
+- Read-only queries and views take `ReadOnlySpan<T>` parameters (a `Span<T>`, `List<T>`, array or, for bytes, `string` converts implicitly).
 - **Queries** (never allocate): `isEmpty contains indexOf lastIndexOf startsWith endsWith count any all none tryFirst tryLast`.
 - **Views** (never allocate): `take skip takeLast skipLast reversed() stride chunks windows splitAt split lines trim where select`.
 - **New data** (allocate from context; each has an `xInto` form): `toList sorted() distinct join upper() lower() replace() pad()`, spread `[..a, ..b]`.
@@ -784,18 +789,54 @@ Every diagnostic states **what**, **where**, **why** and a **fix** (machine-appl
 
 | Command | Purpose |
 |---|---|
+| `bayan new X`, `bayan init` | Create an app (`--lib` library, `--script` script) in a new or existing directory (§21.4) |
 | `bayan run` | Build and run a program or script |
 | `bayan build` | Build (`--mode debug\|safe\|fast\|small`, `--target`) |
-| `bayan test` | Tests (`--tier`, `--mutate`, `--explore`, `--sanitize`, `--update`, `--triage`) |
+| `bayan test` | Tests (`--json`, `--changed [--base <ref>]`, `--tier`, `--mutate`, `--explore`, `--sanitize`, `--update`, `--triage`) |
+| `bayan dist` | Release builds into `dist/<version>/` (`--target t\|all`, `--mode`, `--force`, `--allow-dirty`; §21.4) |
+| `bayan clean` | Remove `out/` (`--dist` also `dist/`, `--cache` the build cache) |
+| `bayan cache stats` | Location, entries and size of the shared build cache (§21.4) |
+| `bayan doctor` | Check the compiler, host target, C compiler, `zig`, git and cache; every failure prints a fix; exits 4 on any failure |
+| `bayan --version` | Compiler version and the commit it was built from |
 | `bayan fmt` | Format (`--explicit`, `--terse`, `--prose`, `--from-prose`, `--check-prose`) |
 | `bayan lint`, `bayan doc`, `bayan repl`, `bayan lsp` | |
+
+Every command takes `--color auto|always|never` (before any `--`). `auto` colors output that goes to a terminal, unless `NO_COLOR` is set. `bayan test --changed` runs only the tests of modules with a file that differs from `HEAD` (or `--base <ref>`, which implies `--changed`), untracked files included; a changed `package.byn` runs everything. It uses git read-only.
 | `bayan pkg` | Packages (`add`, `audit`, `export --json`) |
 | `bayan expand X` | Show every derived member |
 | `bayan explain CODE` | Long explanation of a diagnostic |
 | `bayan migrate` | Rename casing, upgrade editions, apply `[Replaced]` |
 | `bayan new test X` | Test scaffolds |
 
+`check`, `build`, `run` and `test` take `--diagnostics json`: each diagnostic goes to stderr as one JSON object per line, with `code`, `severity`, `file`, `span` (byte offsets `start`/`end` plus one-based `line`/`column`/`endLine`/`endColumn` counted in Unicode scalars), `message`, `label`, `help` and `fixes` (each a `span` and a `replacement`). `file` and `span` are null for diagnostics without a location.
+
+Exit codes, documented in `bayan --help`:
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Compile errors |
+| `2` | Usage errors (unknown command or option, missing input path) |
+| `3` | Test failures |
+| `4` | Toolchain problems (no C compiler, unwritable cache, C compiler failure) |
+
+`bayan run` uses the CLI's codes until the program starts (1 for compile errors, 4 for toolchain problems), then passes the program's own exit code through unchanged, as `cargo run` and `go run` do. It therefore cannot tell a build failure from a program that exits 1; anything that needs the distinction runs `bayan build` first or reads `--diagnostics json`.
+
 The language server runs inside the compiler process. `dbg(expr)` prints the expression text and value and is an error in release builds.
+
+### 21.4 Projects, outputs and VCS
+
+**Projects.** `bayan new <name>` creates an app: `package.byn`, `README.md`, `.gitignore` (`/out/`, `/dist/`, `/gen/`; `bayan.lock` stays committed), `.gitattributes` (LF; `*.byn linguist-language=C#`), `.editorconfig`, `src/app/main.byn`, `tests/app.test.byn`, `testdata/` and `docs/`. `--lib` puts the code in `src/<name>/<name>.byn` and tests in `tests/<name>.test.byn`; `--script` writes a single `<name>.byn` starting with `#!/usr/bin/env bayan` and `#:io threaded`, with no manifest and no git. `bayan init` does the same in an existing directory, adding only missing files and listing the ones it skipped; it refuses a directory that has a `package.byn`. `--ci github` adds `.github/workflows/bayan.yml`. A fresh project builds and passes its tests with no edits.
+
+**Names.** A project directory is named in kebab-case (`my-app`) or camelCase (`myApp`). The package name is `local/<kebab-case>` until published; a library's module is the camelCase form, so it can be imported.
+
+**Layout.** In a project, `src/` holds the modules (`src/orders/` is `import orders;`), the entry module is `src/app/` for an app and `src/<name>/` for a library, and in test builds every `tests/*.test.byn` joins the entry module. Commands given no path use the current directory when it has a `package.byn`. A library has no program, so `bayan build` and `bayan run` on one are usage errors. A file starting with `#!` is a script and compiles alone, and `bayan <file>.byn` runs it.
+
+**Outputs.** In a project, `bayan build`, `run` and `test` write to `out/<mode>/<target>/` (the binary, the test binary `<name>-test`, and the emitted C in `c/` for inspection), and `bayan test` writes `out/test/results.json`, the same JSON that `bayan test --json` prints. `out/` is disposable. `--target` takes `linux-x64`, `linux-arm64`, `macos-x64`, `macos-arm64`, `windows-x64`, `windows-arm64`, `wasm32` or `host`; any target other than the host needs zig. `bayan dist` builds the targets in `dist.targets` (or `--target`, `all` for every one) into `dist/<version>/<target>/`, with `SHA256SUMS` (`sha256sum` format) and `BUILDINFO.json` (package, version, compiler, mode, targets, source commit and dirtiness, a hash of the inputs; no timestamps). A version directory is immutable: `bayan dist` refuses to rebuild one without `--force` and says to bump the version. It refuses a dirty git tree without `--allow-dirty`. `dist/latest/` is a copy (not a symlink) of the highest semantic version present, plus a `VERSION` file. Libraries get distributions once FFI export exists; scripts have none. `bayan clean` removes `out/`, and `dist/` or the cache only when asked.
+
+**Cache.** Compiled programs live in one cache per machine, shared by every project, worktree and process: `$BAYAN_CACHE`, else `%LOCALAPPDATA%\bayan\cache` (Windows), `~/Library/Caches/bayan` (macOS), `$XDG_CACHE_HOME/bayan` or `~/.cache/bayan` (elsewhere). Keys hash the compiler version, mode, target, C compiler, flags and the emitted C, and the emitted C names files relative to the project root, so a second worktree or a moved project compiles nothing. An entry is built in a private directory and renamed into place with no lock; one whose executable no longer matches its recorded SHA-256 is rebuilt. `bayan run script.byn` remembers the program for the script's exact bytes, mode and compiler version and starts it directly next time. `out/` stays per worktree. `bayan cache stats` reports the location, entry count and size; `bayan clean --cache` empties it.
+
+**Version control.** Bayan reads git and never writes history: `bayan new` and `bayan init` run `git init` only when git is installed, `--vcs none` isn't given, and the directory isn't already inside a work tree; they never commit, branch or configure.
 
 ### 21.3 Performance targets
 Incremental rebuild under 100 ms on a reference project; cold-build budget tracked in CI.

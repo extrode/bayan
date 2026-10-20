@@ -1,0 +1,6 @@
+error BYN2107: property `latest` modifies the value
+
+  5 │     i64 latest => record();
+    │                   ^^^^^^
+    │
+  help: make it a method if it needs to change the value

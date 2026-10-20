@@ -1,0 +1,2 @@
+import mony;
+print("hi");

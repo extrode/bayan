@@ -1,0 +1,2 @@
+i64 add(i64 a, string b) => a;
+print($"{add(a: 1, "x")}");

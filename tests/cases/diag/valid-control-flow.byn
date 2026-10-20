@@ -1,0 +1,57 @@
+error enum ParseError {
+    /// Nothing to parse.
+    empty,
+    /// Not a digit.
+    notDigit,
+}
+
+i64 parse(string s) fails ParseError {
+    return .empty if s.isEmpty;
+    return 1;
+}
+
+i64 sign(i64 n) {
+    if (n < 0) {
+        return -1;
+    }
+    return n == 0 ? 0 : 1;
+}
+
+never stop() {
+    panic("stop");
+}
+
+i64 classify(i64 n) => n switch {
+    < 0 => -1,
+    0 => 0,
+    _ => 1,
+};
+
+i64 safe(string s) => parse(s) catch 0;
+
+i64 relay(string s) fails ParseError => try parse(s);
+
+i64 handled(string s) => parse(s) catch (e) switch {
+    .empty => 0,
+    .notDigit => -1,
+};
+
+outer: for (let i in 0..3) {
+    for (let j in 0..3) {
+        continue outer if j == i;
+        break outer if i == 2;
+    }
+}
+var n = 0;
+while (n < 3) {
+    n += 1;
+}
+switch (n) {
+    case 1:
+        print("one");
+    case 3:
+        print("three");
+    default:
+        print("other");
+}
+print($"{sign(-4)} {classify(2)} {safe("")} {handled("x")}");

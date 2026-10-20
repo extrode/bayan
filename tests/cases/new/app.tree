@@ -1,0 +1,72 @@
+=== tally/.editorconfig
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+=== tally/.gitattributes
+* text=auto eol=lf
+*.byn linguist-language=C#
+=== tally/.github/workflows/bayan.yml
+name: bayan
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Install zig and bayan here; neither has an official setup action yet.
+      - run: bayan build
+      - run: bayan test
+=== tally/.gitignore
+/out/
+/dist/
+/gen/
+=== tally/README.md
+# tally
+
+A Bayan app. Its code is in `src/app/`.
+
+## Run
+
+```
+bayan run
+```
+
+## Test
+
+```
+bayan test
+```
+=== tally/docs/.gitkeep
+=== tally/package.byn
+Package {
+    name    = "local/tally",      // `local/` until published under a verified namespace
+    version = "0.1.0",
+    edition = 2027,
+    kind    = .app,
+    capabilities = [],
+    deps    = [],
+    dist = Dist {
+        targets = [.host],        // the machine that builds it
+        mode    = .safe,
+    },
+}
+=== tally/src/app/main.byn
+/// The line this app prints.
+string greeting() {
+    return "Hello, world!";
+}
+
+print(greeting());
+=== tally/testdata/.gitkeep
+=== tally/tests/app.test.byn
+test "greets the world" {
+    assert(greeting() == "Hello, world!");
+}

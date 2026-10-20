@@ -1,0 +1,6 @@
+void f(i64 a, , i64 b) {}
+struct S {
+    i64 a;
+    + ;
+    i64 b;
+}

@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+            exe: bayan
+          - os: macos-latest
+            rid: osx-arm64
+            exe: bayan
+          - os: windows-latest
+            rid: win-x64
+            exe: bayan.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Test
+        run: dotnet test Bayan.slnx -c Release
+      - name: Publish (NativeAOT)
+        run: dotnet publish src/Bayan.Cli -c Release -r ${{ matrix.rid }} -o out
+      - name: Smoke test AOT binary
+        shell: bash
+        run: ./out/${{ matrix.exe }} --version

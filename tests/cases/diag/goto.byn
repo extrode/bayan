@@ -1,0 +1,5 @@
+void f() {
+    for (let i in 0..10) {
+        goto done;
+    }
+}

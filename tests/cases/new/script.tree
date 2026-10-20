@@ -1,0 +1,5 @@
+=== tally.byn
+#!/usr/bin/env bayan
+#:io threaded
+
+print("Hello, world!");

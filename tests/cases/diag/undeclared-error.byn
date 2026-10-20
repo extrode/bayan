@@ -1,0 +1,18 @@
+error enum ParseError {
+    empty,
+}
+
+error enum MoneyError {
+    invalid,
+}
+
+i64 parse(string s) fails ParseError {
+    return .empty if s.isEmpty;
+    return 1;
+}
+
+i64 total(string s) fails MoneyError {
+    return try parse(s);
+}
+
+print($"{total("1") catch 0}");

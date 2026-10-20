@@ -1,0 +1,4 @@
+error BYN2110: field `x` is set twice
+
+  5 │ let p = Point { x = 1, x = 2 };
+    │                        ^

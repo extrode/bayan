@@ -1,0 +1,6 @@
+error BYN2102: `total` is used before it is assigned
+
+  6 │ print($"{total}");
+    │          ^^^^^ declared without a value on line 2
+    │
+  help: assign it on every path before this, or give the declaration a value

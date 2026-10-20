@@ -1,0 +1,6 @@
+name local/tally
+version 0.1.0-beta.1
+edition 2027
+kind App
+targets host linux-x64
+mode fast

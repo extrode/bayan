@@ -1,0 +1,247 @@
+using Bayan.Semantics.Symbols;
+using Bayan.Syntax.Ast;
+
+namespace Bayan.Semantics.Binding;
+
+/// <summary>A compile-time value: <see cref="Int128"/> for integers, <c>double</c>, <c>bool</c>, <c>string</c>, or <see cref="System.Text.Rune"/> for chars.</summary>
+public sealed record ConstantValue(object Value)
+{
+    public Int128 Integer => (Int128)Value;
+
+    public override string ToString() => Value switch
+    {
+        bool b => b ? "true" : "false",
+        string s => "\"" + s + "\"",
+        _ => Value.ToString() ?? "",
+    };
+}
+
+/// <summary>Base of the typed tree the binder produces and lowering rewrites.</summary>
+public abstract record BoundNode(Node Syntax);
+
+// ── Expressions ──────────────────────────────────────────────────────────────────
+
+public abstract record BoundExpr(Node Syntax, TypeSymbol Type) : BoundNode(Syntax)
+{
+    /// <summary>Set when the expression is a compile-time constant.</summary>
+    public ConstantValue? Constant { get; init; }
+}
+
+public sealed record BoundLiteral(Node Syntax, TypeSymbol Type, ConstantValue Value) : BoundExpr(Syntax, Type);
+
+/// <summary>The default (zero) value of a type, or <c>null</c> of an optional.</summary>
+public sealed record BoundDefault(Node Syntax, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+public sealed record BoundLocal(Node Syntax, LocalSymbol Local) : BoundExpr(Syntax, Local.Type);
+
+public sealed record BoundThis(Node Syntax, StructSymbol Struct) : BoundExpr(Syntax, Struct);
+
+public sealed record BoundField(Node Syntax, BoundExpr Receiver, FieldSymbol Field) : BoundExpr(Syntax, Field.Type);
+
+public sealed record BoundTupleElement(Node Syntax, BoundExpr Receiver, int Index, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+/// <summary>A call. <see cref="Arguments"/> are in parameter order with defaults filled in.</summary>
+public sealed record BoundCall(Node Syntax, FunctionSymbol Function, BoundExpr? Receiver, BoundExpr[] Arguments, TypeSymbol Type)
+    : BoundExpr(Syntax, Type);
+
+/// <summary>Members of built-in types (<c>string.length</c>, <c>List.add</c>, …).</summary>
+public enum BuiltinMember
+{
+    StringLength, StringBytes, StringIsEmpty, StringCopy, StringStartsWith, StringEndsWith, StringContains,
+    SpanLength, SpanIsEmpty, SpanCopy,
+    ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListClear, ListRemoveLast,
+    ArrayLength, ArrayAsSpan,
+    ArenaReset,
+    StrBufAppend, StrBufLength, StrBufAsString, StrBufClear,
+    CharValue,
+    ResultIsOk, ResultValue, ResultError,
+}
+
+public sealed record BoundBuiltinCall(Node Syntax, BuiltinMember Member, BoundExpr Receiver, BoundExpr[] Arguments, TypeSymbol Type)
+    : BoundExpr(Syntax, Type);
+
+public sealed record BoundUnary(Node Syntax, UnaryOp Op, BoundExpr Operand, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+/// <summary>Both operands already have the operand type (after widening); comparisons have type <c>bool</c>.</summary>
+public sealed record BoundBinary(Node Syntax, BinaryOp Op, BoundExpr Left, BoundExpr Right, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+public enum ConversionKind
+{
+    Identity,
+    /// <summary>Lossless numeric widening.</summary>
+    Widen,
+    /// <summary>Explicit numeric cast; narrowing traps in checked builds, float→int saturates.</summary>
+    NumericCast,
+    CharToInteger,
+    /// <summary>Checked: the value must be a Unicode scalar.</summary>
+    IntegerToChar,
+    ToOptional,
+    NullToOptional,
+    ListToSpan,
+    ArrayToSpan,
+    /// <summary>A <c>string</c> argument viewed as its UTF-8 bytes (<c>ReadOnlySpan&lt;u8&gt;</c>).</summary>
+    StringToBytes,
+    /// <summary>A value becomes a successful <c>Result</c>.</summary>
+    ToResult,
+    /// <summary>An error becomes a failed <c>Result</c>.</summary>
+    ErrorToResult,
+    /// <summary>A <c>never</c> expression in a position of another type.</summary>
+    FromNever,
+}
+
+public sealed record BoundConversion(Node Syntax, BoundExpr Operand, TypeSymbol Type, ConversionKind Kind) : BoundExpr(Syntax, Type);
+
+public sealed record BoundConditional(Node Syntax, BoundExpr Condition, BoundExpr WhenTrue, BoundExpr WhenFalse, TypeSymbol Type)
+    : BoundExpr(Syntax, Type);
+
+/// <summary><c>a ?? b</c>: <see cref="Left"/> is optional; <see cref="Right"/> has the result type or is <c>never</c>.</summary>
+public sealed record BoundCoalesce(Node Syntax, BoundExpr Left, BoundExpr Right, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+/// <summary>A struct value with every field given, in declaration order.</summary>
+public sealed record BoundStructLiteral(Node Syntax, StructSymbol Struct, BoundExpr[] Fields) : BoundExpr(Syntax, Struct);
+
+public sealed record BoundWith(Node Syntax, BoundExpr Target, (FieldSymbol Field, BoundExpr Value)[] Updates) : BoundExpr(Syntax, Target.Type);
+
+public sealed record BoundTuple(Node Syntax, TupleType TupleType, BoundExpr[] Elements) : BoundExpr(Syntax, TupleType);
+
+/// <summary><c>[a, b]</c> as a <c>List</c>, <c>Span</c> (stack storage) or fixed array.</summary>
+public sealed record BoundCollection(Node Syntax, TypeSymbol Type, BoundExpr[] Elements) : BoundExpr(Syntax, Type);
+
+/// <summary><c>xs[i]</c> or <c>xs[^i]</c> on spans, lists and arrays; always bounds-checked.</summary>
+public sealed record BoundIndex(Node Syntax, BoundExpr Target, BoundExpr Index, bool FromEnd, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+/// <summary><c>xs[a..b]</c>: a span or (for strings) a string. Ends may be omitted or count from the end.</summary>
+public sealed record BoundSlice(
+    Node Syntax, BoundExpr Target, BoundExpr? Start, bool StartFromEnd, BoundExpr? End, bool EndFromEnd, bool Inclusive, TypeSymbol Type)
+    : BoundExpr(Syntax, Type);
+
+public sealed record BoundRange(Node Syntax, BoundExpr Start, BoundExpr End, bool Inclusive, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+public sealed record BoundIs(Node Syntax, BoundExpr Value, BoundPattern Pattern) : BoundExpr(Syntax, PrimitiveType.Bool);
+
+public sealed record BoundSwitchArm(Node Syntax, BoundPattern Pattern, BoundExpr? Guard, BoundExpr Value);
+
+public sealed record BoundSwitchExpr(Node Syntax, BoundExpr Value, BoundSwitchArm[] Arms, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+/// <summary>One piece of <c>$"…"</c>: literal text or a value to format.</summary>
+public sealed record BoundInterpolationPart(string? Text, BoundExpr? Value);
+
+/// <summary><c>$"…"</c>. Only valid as an argument to an output sink (<c>print</c>, <c>panic</c>, <c>StrBuf.append</c>).</summary>
+public sealed record BoundInterpolated(Node Syntax, BoundInterpolationPart[] Parts) : BoundExpr(Syntax, PrimitiveType.String);
+
+/// <summary><c>try f()</c>: on failure, runs <c>errdefer</c>s and fails the enclosing function with the same error.</summary>
+public sealed record BoundTry(Node Syntax, BoundExpr Operand, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+/// <summary>
+/// <c>f() catch h</c>. <see cref="Binding"/> receives the error; with <see cref="Variant"/> only that
+/// variant is handled and the rest propagate.
+/// </summary>
+public sealed record BoundCatch(Node Syntax, BoundExpr Operand, LocalSymbol? Binding, ErrorVariantSymbol? Variant, BoundExpr Handler, TypeSymbol Type)
+    : BoundExpr(Syntax, Type);
+
+/// <summary><c>return</c>, <c>break</c> or <c>continue</c> in expression position; type <c>never</c>.</summary>
+public sealed record BoundJump(Node Syntax, BoundStmt Jump) : BoundExpr(Syntax, PrimitiveType.Never);
+
+public sealed record BoundErrorVariant(Node Syntax, ErrorVariantSymbol Variant) : BoundExpr(Syntax, Variant.Set);
+
+/// <summary><c>stackalloc T[n]</c> with a constant <c>n</c>: a span over stack storage.</summary>
+public sealed record BoundStackalloc(Node Syntax, TypeSymbol Element, long Count, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+/// <summary>An expression that failed to bind; its diagnostic was already reported.</summary>
+public sealed record BoundErrorExpr(Node Syntax) : BoundExpr(Syntax, ErrorType.Instance);
+
+/// <summary>A type or module used where an expression appears (<c>Point.origin</c>, <c>money.parse</c>); never survives binding.</summary>
+public sealed record BoundTypeRef(Node Syntax, TypeSymbol Referenced) : BoundExpr(Syntax, ErrorType.Instance);
+
+public sealed record BoundModuleRef(Node Syntax, ModuleSymbol Module) : BoundExpr(Syntax, ErrorType.Instance);
+
+// ── Statements ───────────────────────────────────────────────────────────────────
+
+public abstract record BoundStmt(Node Syntax) : BoundNode(Syntax);
+
+public sealed record BoundBlock(Node Syntax, BoundStmt[] Statements) : BoundStmt(Syntax);
+
+public sealed record BoundLocalDecl(Node Syntax, LocalSymbol Local, BoundExpr? Initializer) : BoundStmt(Syntax);
+
+public sealed record BoundExprStmt(Node Syntax, BoundExpr Expr) : BoundStmt(Syntax);
+
+/// <summary><c>t = v</c>, or <c>t op= v</c> when <see cref="Op"/> is set (the target is evaluated once).</summary>
+public sealed record BoundAssign(Node Syntax, BoundExpr Target, BoundExpr Value, BinaryOp? Op) : BoundStmt(Syntax);
+
+public sealed record BoundReturn(Node Syntax, BoundExpr? Value) : BoundStmt(Syntax);
+
+/// <summary>Fails the enclosing function with <see cref="Error"/> (a value of an error-set type).</summary>
+public sealed record BoundFail(Node Syntax, BoundExpr Error) : BoundStmt(Syntax);
+
+/// <summary>Identity of a loop or switch for <c>break</c>/<c>continue</c>.</summary>
+public sealed class JumpTarget(string? label, bool isLoop)
+{
+    public string? Label { get; } = label;
+
+    public bool IsLoop { get; } = isLoop;
+
+    public int Id { get; set; }
+}
+
+public sealed record BoundBreak(Node Syntax, JumpTarget Target) : BoundStmt(Syntax);
+
+public sealed record BoundContinue(Node Syntax, JumpTarget Target) : BoundStmt(Syntax);
+
+public sealed record BoundIf(Node Syntax, BoundExpr Condition, BoundStmt Then, BoundStmt? Else) : BoundStmt(Syntax);
+
+public sealed record BoundWhile(Node Syntax, BoundExpr Condition, BoundStmt Body, JumpTarget Target) : BoundStmt(Syntax);
+
+public sealed record BoundDoWhile(Node Syntax, BoundStmt Body, BoundExpr Condition, JumpTarget Target) : BoundStmt(Syntax);
+
+/// <summary><c>for (let x in e)</c> over a range, span, list, array or string (by char).</summary>
+public sealed record BoundFor(Node Syntax, LocalSymbol Variable, BoundExpr Iterable, BoundStmt Body, JumpTarget Target) : BoundStmt(Syntax);
+
+/// <summary>A <c>case</c>; a null <see cref="Pattern"/> is <c>default</c>.</summary>
+public sealed record BoundSwitchSection(Node Syntax, BoundPattern? Pattern, BoundExpr? Guard, BoundStmt[] Body);
+
+public sealed record BoundSwitch(Node Syntax, BoundExpr Value, BoundSwitchSection[] Sections, JumpTarget Target) : BoundStmt(Syntax)
+{
+    /// <summary>Some section always matches (a <c>default</c>, or every value of a finite type is covered).</summary>
+    public bool Exhaustive { get; init; }
+}
+
+public sealed record BoundDefer(Node Syntax, BoundStmt Body) : BoundStmt(Syntax);
+
+public sealed record BoundErrdefer(Node Syntax, LocalSymbol? Error, BoundStmt Body) : BoundStmt(Syntax);
+
+/// <summary><c>context (allocator: a) { … }</c>.</summary>
+public sealed record BoundContext(Node Syntax, BoundExpr Allocator, BoundBlock Body) : BoundStmt(Syntax);
+
+/// <summary>A statement that failed to bind.</summary>
+public sealed record BoundErrorStmt(Node Syntax) : BoundStmt(Syntax);
+
+// ── Patterns ─────────────────────────────────────────────────────────────────────
+
+public abstract record BoundPattern(Node Syntax, TypeSymbol InputType) : BoundNode(Syntax);
+
+/// <summary>Equality with a constant (or error variant) of the input type.</summary>
+public sealed record BoundConstantPattern(Node Syntax, TypeSymbol InputType, BoundExpr Value) : BoundPattern(Syntax, InputType);
+
+public sealed record BoundRelationalPattern(Node Syntax, TypeSymbol InputType, BinaryOp Op, BoundExpr Value) : BoundPattern(Syntax, InputType);
+
+public sealed record BoundRangePattern(Node Syntax, TypeSymbol InputType, BoundExpr Start, BoundExpr End, bool Inclusive) : BoundPattern(Syntax, InputType);
+
+/// <summary><c>var x</c> (binds) or <c>_</c> (<see cref="Local"/> null); always matches.</summary>
+public sealed record BoundBindPattern(Node Syntax, TypeSymbol InputType, LocalSymbol? Local) : BoundPattern(Syntax, InputType);
+
+public sealed record BoundNotPattern(Node Syntax, TypeSymbol InputType, BoundPattern Operand) : BoundPattern(Syntax, InputType);
+
+public sealed record BoundBinaryPattern(Node Syntax, TypeSymbol InputType, bool IsAnd, BoundPattern Left, BoundPattern Right)
+    : BoundPattern(Syntax, InputType);
+
+/// <summary>One <c>member: pattern</c> of a property pattern; <see cref="Path"/> are field/property/tuple accesses.</summary>
+public sealed record BoundSubpattern(BoundMemberStep[] Path, BoundPattern Pattern);
+
+public sealed record BoundMemberStep(FieldSymbol? Field, PropertySymbol? Property, int TupleIndex, BuiltinMember? Builtin, TypeSymbol Type);
+
+/// <summary>
+/// <c>{ a: p } v</c>. On an optional input the value must be present, and subpatterns and
+/// <see cref="Designation"/> see the unwrapped value (<see cref="ValueType"/>).
+/// </summary>
+public sealed record BoundPropertyPattern(Node Syntax, TypeSymbol InputType, TypeSymbol ValueType, BoundSubpattern[] Subpatterns, LocalSymbol? Designation)
+    : BoundPattern(Syntax, InputType);

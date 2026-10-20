@@ -1,0 +1,4 @@
+error BYN2227: `.invalid` is ambiguous; it exists in `MoneyError`, `ParseError`
+
+  10 │     return .invalid if n < 0;
+     │            ^^^^^^^^

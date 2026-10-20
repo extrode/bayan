@@ -1,0 +1,11 @@
+error BYN2208: `+` cannot be applied to `i64` and `u64`
+
+  3 │ let c = a + b;
+    │         ^^^^^
+    │
+  help: convert one side explicitly, e.g. `(u64)…`; mixed signedness never converts implicitly
+
+error BYN2208: `+` cannot be applied to `bool` and `i32`
+
+  4 │ let d = true + 1;
+    │         ^^^^^^^^

@@ -1,0 +1,4 @@
+error BYN2023: `List` takes 1 type argument(s), not 2
+
+  1 │ List<i64, i64> xs;
+    │ ^^^^^^^^^^^^^^

@@ -1,0 +1,14 @@
+bool tryParse(string text, out i64 value) {
+    if (text.isEmpty) {
+        return false;
+    }
+    value = 1;
+    return true;
+}
+
+bool tryFirst(string text, out i64 value) {
+    return false;
+}
+
+i64 v;
+print($"{tryParse("1", out v)} {tryFirst("", out v)}");

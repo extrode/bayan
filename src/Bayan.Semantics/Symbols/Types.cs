@@ -1,0 +1,289 @@
+namespace Bayan.Semantics.Symbols;
+
+/// <summary>
+/// A type. Primitives are singletons, user types (structs, error sets) have reference identity,
+/// and constructed types (<c>T?</c>, <c>Span&lt;T&gt;</c>, tuples, …) compare structurally.
+/// </summary>
+public abstract class TypeSymbol
+{
+    /// <summary>The type as written in diagnostics.</summary>
+    public abstract string DisplayName { get; }
+
+    public override string ToString() => DisplayName;
+
+    public bool IsError => this is ErrorType;
+
+    public bool IsNever => this == PrimitiveType.Never;
+
+    public bool IsVoid => this == PrimitiveType.Void;
+
+    public bool IsBool => this == PrimitiveType.Bool;
+
+    public bool IsString => this == PrimitiveType.String;
+
+    public bool IsInteger => this is PrimitiveType { Kind: >= PrimitiveKind.I8 and <= PrimitiveKind.Usize };
+
+    public bool IsFloat => this is PrimitiveType { Kind: PrimitiveKind.F32 or PrimitiveKind.F64 };
+
+    public bool IsNumeric => IsInteger || IsFloat;
+
+    public bool IsSignedInteger => this is PrimitiveType { Kind: PrimitiveKind.I8 or PrimitiveKind.I16 or PrimitiveKind.I32 or PrimitiveKind.I64 or PrimitiveKind.Isize };
+
+    public bool IsUnsignedInteger => IsInteger && !IsSignedInteger;
+
+    /// <summary>Spans and string slices: values that point into memory owned elsewhere.</summary>
+    public virtual bool IsBorrow => false;
+}
+
+public enum PrimitiveKind
+{
+    I8, I16, I32, I64, U8, U16, U32, U64, Isize, Usize,
+    F32, F64,
+    Bool, Char, String, Void, Never,
+}
+
+public sealed class PrimitiveType : TypeSymbol
+{
+    private PrimitiveType(PrimitiveKind kind, string name, int bits)
+    {
+        Kind = kind;
+        Name = name;
+        Bits = bits;
+    }
+
+    public PrimitiveKind Kind { get; }
+
+    public string Name { get; }
+
+    /// <summary>Width of a numeric type; 0 for the others.</summary>
+    public int Bits { get; }
+
+    public override string DisplayName => Name;
+
+    /// <summary>
+    /// <c>string</c> is not treated as a borrow in v0.1: struct fields may hold strings (literals or
+    /// arena copies) so programs like tally-lite can name things. Spans stay borrows.
+    /// </summary>
+    public override bool IsBorrow => false;
+
+    public static readonly PrimitiveType I8 = new(PrimitiveKind.I8, "i8", 8);
+    public static readonly PrimitiveType I16 = new(PrimitiveKind.I16, "i16", 16);
+    public static readonly PrimitiveType I32 = new(PrimitiveKind.I32, "i32", 32);
+    public static readonly PrimitiveType I64 = new(PrimitiveKind.I64, "i64", 64);
+    public static readonly PrimitiveType U8 = new(PrimitiveKind.U8, "u8", 8);
+    public static readonly PrimitiveType U16 = new(PrimitiveKind.U16, "u16", 16);
+    public static readonly PrimitiveType U32 = new(PrimitiveKind.U32, "u32", 32);
+    public static readonly PrimitiveType U64 = new(PrimitiveKind.U64, "u64", 64);
+    public static readonly PrimitiveType Isize = new(PrimitiveKind.Isize, "isize", 64);
+    public static readonly PrimitiveType Usize = new(PrimitiveKind.Usize, "usize", 64);
+    public static readonly PrimitiveType F32 = new(PrimitiveKind.F32, "f32", 32);
+    public static readonly PrimitiveType F64 = new(PrimitiveKind.F64, "f64", 64);
+    public static readonly PrimitiveType Bool = new(PrimitiveKind.Bool, "bool", 0);
+    public static readonly PrimitiveType Char = new(PrimitiveKind.Char, "char", 32);
+    public static readonly PrimitiveType String = new(PrimitiveKind.String, "string", 0);
+    public static readonly PrimitiveType Void = new(PrimitiveKind.Void, "void", 0);
+    public static readonly PrimitiveType Never = new(PrimitiveKind.Never, "never", 0);
+
+    /// <summary>Lowercase type names: canonical names and the C# aliases (spec §3.1).</summary>
+    public static readonly IReadOnlyDictionary<string, PrimitiveType> ByName = new Dictionary<string, PrimitiveType>
+    {
+        ["i8"] = I8, ["i16"] = I16, ["i32"] = I32, ["i64"] = I64,
+        ["u8"] = U8, ["u16"] = U16, ["u32"] = U32, ["u64"] = U64,
+        ["isize"] = Isize, ["usize"] = Usize, ["f32"] = F32, ["f64"] = F64,
+        ["bool"] = Bool, ["char"] = Char, ["string"] = String, ["void"] = Void, ["never"] = Never,
+        ["sbyte"] = I8, ["short"] = I16, ["int"] = I32, ["long"] = I64,
+        ["byte"] = U8, ["ushort"] = U16, ["uint"] = U32, ["ulong"] = U64,
+        ["nint"] = Isize, ["nuint"] = Usize, ["float"] = F32, ["double"] = F64,
+    };
+
+    /// <summary>Smallest and largest value of an integer type.</summary>
+    public (Int128 Min, Int128 Max) Range => Kind switch
+    {
+        PrimitiveKind.I8 => (sbyte.MinValue, sbyte.MaxValue),
+        PrimitiveKind.I16 => (short.MinValue, short.MaxValue),
+        PrimitiveKind.I32 => (int.MinValue, int.MaxValue),
+        PrimitiveKind.I64 or PrimitiveKind.Isize => (long.MinValue, long.MaxValue),
+        PrimitiveKind.U8 => (0, byte.MaxValue),
+        PrimitiveKind.U16 => (0, ushort.MaxValue),
+        PrimitiveKind.U32 => (0, uint.MaxValue),
+        PrimitiveKind.U64 or PrimitiveKind.Usize => (0, ulong.MaxValue),
+        _ => throw new InvalidOperationException($"{Name} is not an integer type"),
+    };
+}
+
+/// <summary>The type of an expression that failed to bind; converts to and from everything, so one error does not cascade.</summary>
+public sealed class ErrorType : TypeSymbol
+{
+    public static readonly ErrorType Instance = new();
+
+    private ErrorType() { }
+
+    public override string DisplayName => "?";
+}
+
+/// <summary>The type of the <c>null</c> literal before a target type gives it one.</summary>
+public sealed class NullType : TypeSymbol
+{
+    public static readonly NullType Instance = new();
+
+    private NullType() { }
+
+    public override string DisplayName => "null";
+}
+
+/// <summary>Base for structurally compared constructed types.</summary>
+public abstract class ConstructedType : TypeSymbol
+{
+    protected abstract object Key { get; }
+
+    public override bool Equals(object? obj) => obj is ConstructedType other && GetType() == other.GetType() && Key.Equals(other.Key);
+
+    public override int GetHashCode() => HashCode.Combine(GetType(), Key);
+}
+
+public sealed class OptionalType(TypeSymbol inner) : ConstructedType
+{
+    public TypeSymbol Inner { get; } = inner;
+
+    protected override object Key => Inner;
+
+    public override string DisplayName => Inner.DisplayName + "?";
+
+    public override bool IsBorrow => Inner.IsBorrow;
+}
+
+/// <summary><c>Span&lt;T&gt;</c>: a borrowed (pointer, length) view.</summary>
+public sealed class SpanType(TypeSymbol element, bool readOnly = false) : ConstructedType
+{
+    public TypeSymbol Element { get; } = element;
+
+    /// <summary><c>ReadOnlySpan&lt;T&gt;</c>: elements cannot be assigned (<c>string.bytes</c> is one, so strings stay immutable and valid UTF-8).</summary>
+    public bool ReadOnly { get; } = readOnly;
+
+    protected override object Key => (Element, ReadOnly);
+
+    public override string DisplayName => ReadOnly ? $"ReadOnlySpan<{Element.DisplayName}>" : $"Span<{Element.DisplayName}>";
+
+    public override bool IsBorrow => true;
+}
+
+/// <summary><c>List&lt;T&gt;</c>: a growable array allocated from the context allocator.</summary>
+public sealed class ListType(TypeSymbol element) : ConstructedType
+{
+    public TypeSymbol Element { get; } = element;
+
+    protected override object Key => Element;
+
+    public override string DisplayName => $"List<{Element.DisplayName}>";
+}
+
+/// <summary><c>T[N]</c>: a fixed-size inline array.</summary>
+public sealed class ArrayType(TypeSymbol element, long length) : ConstructedType
+{
+    public TypeSymbol Element { get; } = element;
+
+    public long Length { get; } = length;
+
+    protected override object Key => (Element, Length);
+
+    public override string DisplayName => $"{Element.DisplayName}[{Length}]";
+}
+
+/// <summary>The value of <c>a..b</c>: used by <c>for</c> loops, slices and patterns.</summary>
+public sealed class RangeType(TypeSymbol element) : ConstructedType
+{
+    public TypeSymbol Element { get; } = element;
+
+    protected override object Key => Element;
+
+    public override string DisplayName => $"Range<{Element.DisplayName}>";
+}
+
+public sealed record TupleField(string? Name, TypeSymbol Type);
+
+public sealed class TupleType(IReadOnlyList<TupleField> fields) : ConstructedType
+{
+    private readonly string _key = string.Join(",", fields.Select(f => f.Type.GetHashCode() + ":" + f.Name));
+
+    public IReadOnlyList<TupleField> Fields { get; } = fields;
+
+    protected override object Key => _key;
+
+    public override bool Equals(object? obj) =>
+        obj is TupleType other && other.Fields.Count == Fields.Count &&
+        Fields.Zip(other.Fields).All(p => p.First.Name == p.Second.Name && p.First.Type.Equals(p.Second.Type));
+
+    public override int GetHashCode() => _key.GetHashCode(StringComparison.Ordinal);
+
+    public override string DisplayName =>
+        "(" + string.Join(", ", Fields.Select(f => f.Name is null ? f.Type.DisplayName : f.Type.DisplayName + " " + f.Name)) + ")";
+
+    public override bool IsBorrow => Fields.Any(f => f.Type.IsBorrow);
+
+    /// <summary>Index of the element called <paramref name="name"/> (or <c>item1</c>, <c>item2</c>, …), or -1.</summary>
+    public int IndexOf(string name)
+    {
+        for (var i = 0; i < Fields.Count; i++)
+            if (Fields[i].Name == name || "item" + (i + 1) == name) return i;
+        return -1;
+    }
+}
+
+/// <summary><c>Result&lt;T, E&gt;</c>: a value or an error from <see cref="Error"/> (spec §3.8).</summary>
+public sealed class ResultType(TypeSymbol value, TypeSymbol error) : ConstructedType
+{
+    public TypeSymbol Value { get; } = value;
+
+    /// <summary>An <see cref="ErrorSetSymbol"/>.</summary>
+    public TypeSymbol Error { get; } = error;
+
+    protected override object Key => (Value, Error);
+
+    public override string DisplayName => $"Result<{Value.DisplayName}, {Error.DisplayName}>";
+
+    public override bool IsBorrow => Value.IsBorrow;
+}
+
+/// <summary>Built-in nominal types with runtime support.</summary>
+public enum BuiltinKind
+{
+    /// <summary>A region allocator; the value is a handle to runtime state.</summary>
+    Arena,
+    /// <summary>A byte buffer for <c>formatInto</c>-style output: a span plus a fill length.</summary>
+    StrBuf,
+}
+
+public sealed class BuiltinType : TypeSymbol
+{
+    private BuiltinType(BuiltinKind kind, string name)
+    {
+        Kind = kind;
+        Name = name;
+    }
+
+    public BuiltinKind Kind { get; }
+
+    public string Name { get; }
+
+    public override string DisplayName => Name;
+
+    public override bool IsBorrow => Kind == BuiltinKind.StrBuf;
+
+    public static readonly BuiltinType Arena = new(BuiltinKind.Arena, "Arena");
+    public static readonly BuiltinType StrBuf = new(BuiltinKind.StrBuf, "StrBuf");
+}
+
+/// <summary>The type of a caught error when the call can fail with more than one set.</summary>
+public sealed class ErrorUnionType(IReadOnlyList<ErrorSetSymbol> sets) : ConstructedType
+{
+    private readonly string _key = string.Join("|", sets.Select(s => s.Module.Name + "." + s.Name));
+
+    public IReadOnlyList<ErrorSetSymbol> Sets { get; } = sets;
+
+    protected override object Key => _key;
+
+    /// <summary>With no sets, any error (an inferred set not yet known).</summary>
+    public override string DisplayName => Sets.Count == 0 ? "error" : string.Join(" | ", Sets.Select(s => s.Name));
+
+    public static TypeSymbol Of(IReadOnlyList<ErrorSetSymbol> sets) => sets.Count == 1 ? sets[0] : new ErrorUnionType(sets.ToArray());
+}

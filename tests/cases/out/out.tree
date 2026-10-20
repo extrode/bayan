@@ -1,0 +1,30 @@
+=== safe/<host>/c/bayan-rt.c
+=== safe/<host>/c/bayan-rt.h
+=== safe/<host>/c/main.c
+=== safe/<host>/tally
+=== safe/<host>/tally-test
+=== test/results.json
+{
+  "package": "local/tally",
+  "mode": "safe",
+  "target": "<host>",
+  "tests": [
+    {
+      "name": "greets the world",
+      "file": "tests/app.test.byn",
+      "line": 1,
+      "status": "pass",
+      "durationMs": 0,
+      "output": ""
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "panicked": 0,
+    "timedOut": 0,
+    "skipped": 0,
+    "durationMs": 0
+  }
+}

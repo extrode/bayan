@@ -1,0 +1,4 @@
+error BYN2205: division by zero
+
+  1 │ let x = 10 / 0;
+    │         ^^^^^^

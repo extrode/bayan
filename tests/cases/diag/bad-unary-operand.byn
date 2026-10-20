@@ -1,0 +1,3 @@
+u32 n = 5;
+let x = -n;
+let y = !n;

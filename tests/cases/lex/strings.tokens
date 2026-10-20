@@ -1,0 +1,9 @@
+1:1 StringLiteral `"text"`
+1:8 StringLiteral `"esc \"q\" \\ \n"`
+1:26 RawStringLiteral `"""\n  raw "quoted"\n  """`
+3:7 CStringLiteral `c"text"`
+3:15 U16StringLiteral `u16"wide"`
+3:25 StringLiteral `"\u{202E} allowed in strings"`
+3:48 StringLiteral `""`
+3:51 StringLiteral `"\u{48}i"`
+4:1 EndOfFile

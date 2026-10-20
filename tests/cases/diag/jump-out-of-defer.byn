@@ -1,0 +1,7 @@
+void f() {
+    defer {
+        return;
+    }
+}
+
+f();

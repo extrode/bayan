@@ -1,0 +1,3 @@
+i64 wide = 300;
+let narrow = (u8)wide;
+print($"{narrow}");

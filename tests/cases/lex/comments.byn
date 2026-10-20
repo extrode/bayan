@@ -1,0 +1,8 @@
+// line comment
+/* block
+   comment */ a
+/// Doc line one.
+/// Doc line two.
+struct S;
+//// not a doc comment
+b

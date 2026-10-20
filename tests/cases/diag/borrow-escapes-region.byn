@@ -1,0 +1,16 @@
+void main() {
+    var view = "";
+    {
+        let bytes = stackalloc u8[16];
+        var sb = StrBuf(bytes);
+        sb.append("scratch");
+        view = sb.asString();
+    }
+    print(view);
+    var kept = "";
+    {
+        using let arena = Arena();
+        kept = "copied".copy(to: arena);
+    }
+    print(kept);
+}

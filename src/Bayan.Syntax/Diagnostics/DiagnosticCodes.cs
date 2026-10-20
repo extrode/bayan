@@ -1,0 +1,165 @@
+namespace Bayan.Syntax.Diagnostics;
+
+/// <summary>
+/// The message table. Every code here has <c>docs/diagnostics/BYN####.md</c> and at least one
+/// golden case; <c>DiagnosticCodesTests</c> enforces both.
+/// </summary>
+public static class DiagnosticCodes
+{
+    private static readonly List<DiagnosticDescriptor> Registry = new();
+
+    private static DiagnosticDescriptor Error(string code, string format) => Register(new(code, Severity.Error, format));
+    private static DiagnosticDescriptor Warning(string code, string format) => Register(new(code, Severity.Warning, format));
+
+    private static DiagnosticDescriptor Register(DiagnosticDescriptor d)
+    {
+        Registry.Add(d);
+        return d;
+    }
+
+    public static IReadOnlyList<DiagnosticDescriptor> All => Registry;
+
+    // ── Lexer 0001–0999 ──────────────────────────────────────────────────────────────
+    public static readonly DiagnosticDescriptor BidiControl = Error("BYN0001", "bidirectional control character U+{0} is not allowed outside string literals");
+    public static readonly DiagnosticDescriptor UnexpectedCharacter = Error("BYN0002", "unexpected character `{0}`");
+    public static readonly DiagnosticDescriptor UnterminatedString = Error("BYN0003", "unterminated string literal");
+    public static readonly DiagnosticDescriptor UnterminatedComment = Error("BYN0004", "unterminated block comment");
+    public static readonly DiagnosticDescriptor IdentifierNotNfc = Error("BYN0005", "identifier `{0}` is not in Unicode normalization form C");
+    public static readonly DiagnosticDescriptor InvalidEscape = Error("BYN0006", "invalid escape sequence `{0}`");
+    public static readonly DiagnosticDescriptor EmptyCharLiteral = Error("BYN0007", "empty char literal");
+    public static readonly DiagnosticDescriptor UnterminatedCharLiteral = Error("BYN0008", "unterminated char literal");
+    public static readonly DiagnosticDescriptor CharLiteralTooLong = Error("BYN0009", "a char literal holds exactly one Unicode scalar");
+    public static readonly DiagnosticDescriptor InvalidNumber = Error("BYN0010", "invalid numeric literal: {0}");
+    public static readonly DiagnosticDescriptor SuffixOnHexOrBinary = Error("BYN0011", "unit suffix `{0}` is not allowed on a {1} literal");
+    public static readonly DiagnosticDescriptor ReservedKeyword = Error("BYN0012", "`{0}` is reserved and cannot be used as an identifier");
+    public static readonly DiagnosticDescriptor InvalidUnicodeEscape = Error("BYN0013", "`{0}` is not a Unicode scalar value");
+    public static readonly DiagnosticDescriptor UnescapedCloseBrace = Error("BYN0014", "`}}` in an interpolated string must be doubled");
+    public static readonly DiagnosticDescriptor InvalidUtf8 = Error("BYN0015", "source is not valid UTF-8 (byte 0x{0})");
+    public static readonly DiagnosticDescriptor InterpolationTooDeep = Error("BYN0016", "interpolated strings are nested too deeply");
+
+    // ── Parser 1000–1999 ─────────────────────────────────────────────────────────────
+    public static readonly DiagnosticDescriptor Expected = Error("BYN1001", "expected {0}, found {1}");
+    public static readonly DiagnosticDescriptor ExpectedExpression = Error("BYN1002", "expected an expression, found {0}");
+    public static readonly DiagnosticDescriptor ExpectedType = Error("BYN1003", "expected a type, found {0}");
+    public static readonly DiagnosticDescriptor ExpectedMember = Error("BYN1004", "expected a field, property, constructor or method, found {0}");
+    public static readonly DiagnosticDescriptor MissingSemicolon = Error("BYN1005", "expected `;` after the statement");
+    public static readonly DiagnosticDescriptor UnlessWithElse = Error("BYN1006", "`unless` cannot have an `else` branch");
+    public static readonly DiagnosticDescriptor UnlessNegated = Error("BYN1007", "`unless` with a negated condition is a double negative");
+    public static readonly DiagnosticDescriptor PostfixNotSimple = Error("BYN1008", "a postfix `{0}` applies only to a simple statement");
+    public static readonly DiagnosticDescriptor PostfixChained = Error("BYN1009", "postfix conditions cannot be chained");
+    public static readonly DiagnosticDescriptor Goto = Error("BYN1010", "`goto` does not exist in Bayan");
+    public static readonly DiagnosticDescriptor InvalidAssignmentTarget = Error("BYN1011", "cannot assign to this expression");
+    public static readonly DiagnosticDescriptor InvalidExpressionStatement = Error("BYN1012", "this expression does nothing as a statement");
+    public static readonly DiagnosticDescriptor TernaryInCollection = Error("BYN1013", "a conditional expression inside a collection literal must be parenthesized");
+    public static readonly DiagnosticDescriptor StackedCaseLabels = Error("BYN1014", "stacked `case` labels");
+    public static readonly DiagnosticDescriptor CStyleFor = Error("BYN1015", "C-style `for` loops do not exist in Bayan");
+    public static readonly DiagnosticDescriptor ModifierNotAllowed = Error("BYN1016", "`{0}` is not allowed here");
+
+    // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────
+    public static readonly DiagnosticDescriptor UndefinedName = Error("BYN2001", "`{0}` is not defined");
+    public static readonly DiagnosticDescriptor UnknownType = Error("BYN2002", "unknown type `{0}`");
+    public static readonly DiagnosticDescriptor UnknownMember = Error("BYN2003", "`{0}` is not a member of `{1}`");
+    public static readonly DiagnosticDescriptor UnknownModule = Error("BYN2004", "no module `{0}`");
+    public static readonly DiagnosticDescriptor NotVisible = Error("BYN2005", "`{0}` is not visible here");
+    public static readonly DiagnosticDescriptor DuplicateDeclaration = Error("BYN2006", "`{0}` is declared twice");
+    public static readonly DiagnosticDescriptor Shadowing = Error("BYN2007", "`{0}` is already a local here");
+    public static readonly DiagnosticDescriptor TypeCasing = Error("BYN2008", "type name `{0}` must be PascalCase");
+    public static readonly DiagnosticDescriptor ValueCasing = Error("BYN2009", "`{0}` must be camelCase");
+    public static readonly DiagnosticDescriptor ImportCycle = Error("BYN2010", "import cycle: {0}");
+    public static readonly DiagnosticDescriptor CircularAlias = Error("BYN2011", "type alias `{0}` refers to itself");
+    public static readonly DiagnosticDescriptor CircularConstant = Error("BYN2012", "constant `{0}` depends on itself");
+    public static readonly DiagnosticDescriptor DuplicateMain = Error("BYN2013", "the program has two entry points");
+    public static readonly DiagnosticDescriptor NoMain = Error("BYN2014", "the program has no entry point");
+    public static readonly DiagnosticDescriptor StatementOutsideEntry = Error("BYN2015", "top-level statements are allowed only in the entry module");
+    public static readonly DiagnosticDescriptor InstanceMemberWithoutThis = Error("BYN2017", "`{0}` needs an instance");
+    public static readonly DiagnosticDescriptor ThisOutsideMethod = Error("BYN2018", "`this` is only available inside instance methods");
+    public static readonly DiagnosticDescriptor NotAValue = Error("BYN2019", "`{0}` is a {1}, not a value");
+    public static readonly DiagnosticDescriptor UnknownLabel = Error("BYN2020", "no enclosing loop is labeled `{0}`");
+    public static readonly DiagnosticDescriptor UnknownParameter = Error("BYN2021", "`{0}` has no parameter `{1}`");
+    public static readonly DiagnosticDescriptor Unsupported = Error("BYN2022", "{0} is not supported in v0.1");
+    public static readonly DiagnosticDescriptor WrongTypeArgumentCount = Error("BYN2023", "`{0}` takes {1} type argument(s), not {2}");
+    public static readonly DiagnosticDescriptor NestedOptional = Error("BYN2024", "`{0}?` is already optional");
+    public static readonly DiagnosticDescriptor VoidValue = Error("BYN2025", "`void` is not a value type");
+    public static readonly DiagnosticDescriptor DeclarationAsBody = Error("BYN2026", "a declaration cannot be the whole body of a statement");
+    public static readonly DiagnosticDescriptor MissingInitializer = Error("BYN2101", "`{0} {1}` needs a value");
+    public static readonly DiagnosticDescriptor UseBeforeAssign = Error("BYN2102", "`{0}` is used before it is assigned");
+    public static readonly DiagnosticDescriptor OutNotAssigned = Error("BYN2103", "`out` parameter `{0}` is not assigned on every path");
+    public static readonly DiagnosticDescriptor ImmutableAssignment = Error("BYN2104", "`{0}` is immutable");
+    public static readonly DiagnosticDescriptor ReadonlyField = Error("BYN2105", "field `{0}` is readonly");
+    public static readonly DiagnosticDescriptor MutateTemporary = Error("BYN2106", "cannot modify this value");
+    public static readonly DiagnosticDescriptor GetterMutates = Error("BYN2107", "property `{0}` modifies the value");
+    public static readonly DiagnosticDescriptor RequiredWithDefault = Error("BYN2108", "required field `{0}` has a default value");
+    public static readonly DiagnosticDescriptor MissingFields = Error("BYN2109", "`{0}` needs a value for `{1}`");
+    public static readonly DiagnosticDescriptor DuplicateFieldInit = Error("BYN2110", "field `{0}` is set twice");
+    public static readonly DiagnosticDescriptor LiteralWithConstructor = Error("BYN2111", "`{0}` has a constructor; call it instead of using a struct literal");
+    public static readonly DiagnosticDescriptor NoConstructor = Error("BYN2112", "`{0}` has no constructor");
+    public static readonly DiagnosticDescriptor RecursiveStruct = Error("BYN2113", "struct `{0}` contains itself");
+    public static readonly DiagnosticDescriptor NotAStruct = Error("BYN2114", "`{0}` is not a struct");
+    public static readonly DiagnosticDescriptor StringIndexer = Error("BYN2201", "a `string` cannot be indexed");
+    public static readonly DiagnosticDescriptor TypeMismatch = Error("BYN2202", "expected `{1}`, found `{0}`");
+    public static readonly DiagnosticDescriptor LiteralOutOfRange = Error("BYN2203", "{0} does not fit in {1}");
+    public static readonly DiagnosticDescriptor ConstantOverflow = Error("BYN2204", "constant arithmetic overflows `{0}`");
+    public static readonly DiagnosticDescriptor DivisionByZero = Error("BYN2205", "division by zero");
+    public static readonly DiagnosticDescriptor InvalidCast = Error("BYN2206", "cannot convert `{0}` to `{1}`");
+    public static readonly DiagnosticDescriptor BadUnaryOperand = Error("BYN2207", "`{0}` cannot be applied to `{1}`");
+    public static readonly DiagnosticDescriptor BadBinaryOperands = Error("BYN2208", "`{0}` cannot be applied to `{1}` and `{2}`");
+    public static readonly DiagnosticDescriptor StringConcatenation = Error("BYN2209", "strings cannot be joined with `+`");
+    public static readonly DiagnosticDescriptor CoalesceNotOptional = Error("BYN2210", "`??` needs an optional value on the left, found `{0}`");
+    public static readonly DiagnosticDescriptor MemberOfOptional = Error("BYN2211", "`{0}` is not a member of `{1}`; the value may be null");
+    public static readonly DiagnosticDescriptor NotIndexable = Error("BYN2212", "`{0}` cannot be indexed");
+    public static readonly DiagnosticDescriptor IndexOutOfRange = Error("BYN2213", "index {0} is out of range for `{1}`");
+    public static readonly DiagnosticDescriptor FromEndOutsideIndex = Error("BYN2214", "`^` is only allowed inside an index or slice");
+    public static readonly DiagnosticDescriptor OpenRange = Error("BYN2215", "a range needs both ends here");
+    public static readonly DiagnosticDescriptor BranchTypeMismatch = Error("BYN2216", "branches have different types: `{0}` and `{1}`");
+    public static readonly DiagnosticDescriptor CannotInferType = Error("BYN2217", "cannot infer the type of `{0}`");
+    public static readonly DiagnosticDescriptor NoTargetType = Error("BYN2218", "`{0}` needs a known type here");
+    public static readonly DiagnosticDescriptor NotConstant = Error("BYN2219", "{0} must be a compile-time constant");
+    public static readonly DiagnosticDescriptor NotCallable = Error("BYN2220", "`{0}` cannot be called");
+    public static readonly DiagnosticDescriptor NotIterable = Error("BYN2221", "`{0}` cannot be iterated");
+    public static readonly DiagnosticDescriptor ArrayLengthMismatch = Error("BYN2222", "`{0}` needs exactly its length in elements, found {1}");
+    public static readonly DiagnosticDescriptor TupleNameMismatch = Error("BYN2223", "tuple element `{0}` is named `{1}` in the target type");
+    public static readonly DiagnosticDescriptor InterpolationNotAllowed = Error("BYN2224", "an interpolated string must be passed directly to an output");
+    public static readonly DiagnosticDescriptor NotFormattable = Error("BYN2225", "`{0}` cannot be formatted");
+    public static readonly DiagnosticDescriptor NotDisposable = Error("BYN2226", "`using` needs a value that owns memory, not `{0}`");
+    public static readonly DiagnosticDescriptor AmbiguousVariant = Error("BYN2227", "`.{0}` is ambiguous; it exists in `{1}`");
+    public static readonly DiagnosticDescriptor UnknownVariant = Error("BYN2228", "`{0}` is not a variant of `{1}`");
+    public static readonly DiagnosticDescriptor MissingArgument = Error("BYN2301", "missing argument `{0}` for `{1}`");
+    public static readonly DiagnosticDescriptor TooManyArguments = Error("BYN2302", "`{0}` takes {1} argument(s)");
+    public static readonly DiagnosticDescriptor DuplicateArgument = Error("BYN2303", "`{0}` is passed twice");
+    public static readonly DiagnosticDescriptor PositionalAfterNamed = Error("BYN2304", "a positional argument cannot follow a named one");
+    public static readonly DiagnosticDescriptor ArgumentMustBeNamed = Error("BYN2305", "argument for `{0}` must be named");
+    public static readonly DiagnosticDescriptor ArgumentModifierMismatch = Error("BYN2306", "argument for `{0}` must be passed as {1}");
+    public static readonly DiagnosticDescriptor SpanParameterNeverWritten = Warning("BYN2310", "`{0}` is never written through; use `ReadOnlySpan<{1}>`");
+    public static readonly DiagnosticDescriptor MissingReturn = Error("BYN2401", "`{0}` must return `{1}` on every path");
+    public static readonly DiagnosticDescriptor MissingReturnValue = Error("BYN2402", "this function returns `{0}`; `return` needs a value");
+    public static readonly DiagnosticDescriptor ReturnValueInVoid = Error("BYN2403", "`{0}` returns nothing, but `return` has a value");
+    public static readonly DiagnosticDescriptor NeverReturns = Error("BYN2404", "`{0}` returns `never` but can reach its end");
+    public static readonly DiagnosticDescriptor UnreachableCode = Warning("BYN2405", "unreachable code");
+    public static readonly DiagnosticDescriptor JumpOutsideLoop = Error("BYN2406", "`{0}` outside a loop");
+    public static readonly DiagnosticDescriptor ContinueSwitch = Error("BYN2407", "`continue {0}` refers to a `switch`, not a loop");
+    public static readonly DiagnosticDescriptor LabelNotOnLoop = Error("BYN2408", "label `{0}` must be on a loop or `switch`");
+    public static readonly DiagnosticDescriptor DuplicateDefault = Error("BYN2409", "`switch` has more than one `default` section");
+    public static readonly DiagnosticDescriptor NonExhaustive = Error("BYN2410", "`switch` does not handle every `{0}`");
+    public static readonly DiagnosticDescriptor PatternMismatch = Error("BYN2411", "{0} cannot match `{1}`");
+    public static readonly DiagnosticDescriptor TryInDefer = Error("BYN2601", "`try` is not allowed in `defer` or `errdefer`");
+    public static readonly DiagnosticDescriptor UnhandledFailure = Error("BYN2602", "`{0}` can fail; handle the error or pass it on");
+    public static readonly DiagnosticDescriptor UndeclaredError = Error("BYN2603", "`{0}` is not in the `fails` clause of `{1}`");
+    public static readonly DiagnosticDescriptor PropagateFromInfallible = Error("BYN2604", "`{0}` cannot fail, so it cannot pass on `{1}`");
+    public static readonly DiagnosticDescriptor NothingToHandle = Error("BYN2605", "`{0}` needs a call that can fail");
+    public static readonly DiagnosticDescriptor ErrdeferWithoutFails = Error("BYN2606", "`errdefer` in a function that cannot fail");
+    public static readonly DiagnosticDescriptor PublicInferredFails = Error("BYN2607", "public function `{0}` must list its errors");
+    public static readonly DiagnosticDescriptor NotAnErrorSet = Error("BYN2608", "`{0}` is not an error enum");
+    public static readonly DiagnosticDescriptor EmptyErrorSet = Error("BYN2609", "error enum `{0}` has no variants");
+    public static readonly DiagnosticDescriptor JumpOutOfDefer = Error("BYN2610", "`{0}` cannot leave a `defer` or `errdefer` body");
+    public static readonly DiagnosticDescriptor BorrowField = Error("BYN3001", "a struct field cannot hold a borrowed `{0}`");
+    public static readonly DiagnosticDescriptor BorrowOutlivesSource = Error("BYN3002", "{0} does not live as long as `{1}`, which borrows it");
+    public static readonly DiagnosticDescriptor BorrowReturned = Error("BYN3003", "cannot return a borrow of {0}, which is freed when `{1}` returns");
+    public static readonly DiagnosticDescriptor ModifiedWhileBorrowed = Error("BYN3004", "`{0}` is modified while {1} still borrows it");
+    public static readonly DiagnosticDescriptor RefAndValue = Error("BYN3005", "`{0}` is passed by `ref` and again in the same call");
+
+    // ── Manifest (`package.byn`) 3100–3199 ───────────────────────────────────────────
+    public static readonly DiagnosticDescriptor ManifestNotData = Error("BYN3100", "`package.byn` is data only: expected {0}");
+    public static readonly DiagnosticDescriptor ManifestUnknownField = Error("BYN3101", "`{0}` is not a field of `{1}`");
+    public static readonly DiagnosticDescriptor ManifestInvalidValue = Error("BYN3102", "`{0}` must be {1}");
+    public static readonly DiagnosticDescriptor ManifestMissingField = Error("BYN3103", "`package.byn` has no `{0}`");
+}

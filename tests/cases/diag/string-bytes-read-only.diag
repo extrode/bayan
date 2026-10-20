@@ -1,0 +1,19 @@
+error BYN2106: cannot modify this value
+
+  9 │ b[0] = 65;
+    │ ^^^^ a `ReadOnlySpan` cannot be written through
+
+error BYN2106: cannot modify this value
+
+  11 │ tail[0] = 66;
+     │ ^^^^^^^ a `ReadOnlySpan` cannot be written through
+
+error BYN2202: expected `Span<u8>`, found `ReadOnlySpan<u8>`
+
+  12 │ var buffer = StrBuf(s.bytes);
+     │                     ^^^^^^^
+
+error BYN2202: expected `Span<u8>`, found `ReadOnlySpan<u8>`
+
+  13 │ clear(s.bytes);
+     │       ^^^^^^^

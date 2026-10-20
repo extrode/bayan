@@ -1,0 +1,2 @@
+let Total = 0;
+print($"{Total}");

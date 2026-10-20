@@ -1,0 +1,6 @@
+error BYN2226: `using` needs a value that owns memory, not `i32`
+
+  1 │ using let n = 5;
+    │           ^
+    │
+  help: `using` is for values that own memory: `Arena` and `List<T>`

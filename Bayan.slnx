@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Bayan.Backend.C/Bayan.Backend.C.csproj" />
+    <Project Path="src/Bayan.Cli/Bayan.Cli.csproj" />
+    <Project Path="src/Bayan.Lowering/Bayan.Lowering.csproj" />
+    <Project Path="src/Bayan.Semantics/Bayan.Semantics.csproj" />
+    <Project Path="src/Bayan.Syntax/Bayan.Syntax.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Bayan.Tests/Bayan.Tests.csproj" />
+  </Folder>
+</Solution>
