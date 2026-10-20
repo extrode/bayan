@@ -194,6 +194,12 @@ Formatter, LSP, prose tool and packages land across v0.2–v0.4.
 
 *(Add questions here; the designer answers them in this file.)*
 
+1. **Doc locations.** The layout above puts `SPEC.md` and `HANDOFF.md` at the repo root; the house layout allows only `README.md`, `AGENTS.md`, `CHANGELOG.md` there and requires kebab-case names. They live at `docs/bayan-spec.md` and `docs/bayan-handoff.md`. *Current choice:* keep them there; references to `SPEC.md` in this file mean `docs/bayan-spec.md`.
+2. **Diagnostic labels.** The rendered example shows text after the carets (`declared with \`let\` on line 9`), which the diagnostic data model list (code, span, message, help, fix) doesn't mention. *Current choice:* an optional `Label` on the primary span.
+3. **`docs/diagnostics/BYN####.md` names** are uppercase, which the repo's kebab-case hook rejects for new doc files. *Current choice:* decide when the first one is written (M1); options are an ignore pattern for that directory or lowercase `byn0001.md` with `bayan explain` matching case-insensitively.
+
 ## Progress log
 
 *(Date — milestone — what changed — what's next.)*
+
+- **2026-10-20 — M0 (local; CI not yet run).** Repo initialised (`main`/`dev`). `Bayan.slnx` with `src/Bayan.{Cli,Syntax,Semantics,Lowering,Backend.C}` and `tests/Bayan.Tests` (xUnit 2). `Directory.Build.props`: net10.0, warnings as errors, `IsAotCompatible` for `src/`. `bayan --version` via `CliApp`; NativeAOT publish verified on macOS arm64. `SourceText`/`TextSpan` (byte offsets, lazy line table), `Diagnostic` + `DiagnosticRenderer` reproducing the example above byte-for-byte. Golden harness `Golden.cs` (`BAYAN_UPDATE=1`, CRLF-insensitive, first-difference report). `.github/workflows/ci.yml` for linux-x64 / osx-arm64 / win-x64 (test, AOT publish, `--version`), unverified until pushed. 17 tests pass. **Next:** push to get CI green (M0's done-criterion), then M1 lexer.

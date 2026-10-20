@@ -1,0 +1,8 @@
+bin/
+obj/
+tmp/
+.worktrees/
+*.user
+.vs/
+.idea/
+TestResults/
