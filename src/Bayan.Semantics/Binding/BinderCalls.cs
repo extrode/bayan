@@ -444,11 +444,32 @@ internal sealed partial class Binder
         if (m.Member == BuiltinMember.MapSlot && !IsDefaultable(m.Returns))
             Report(DiagnosticCodes.MapSlotNoDefault, c.Span, [m.Returns.DisplayName],
                 help: "read with `map[key]` or `map.getOr(key, fallback)`, and write with `map[key] = value`");
+        if (m.Member is BuiltinMember.ListCopy or BuiltinMember.MapCopy)
+        {
+            var held = m.Member == BuiltinMember.ListCopy
+                ? HoldsUnique(((ListType)receiver.Type).Element, [])
+                : HoldsUnique(((MapType)receiver.Type).KeyType, []) ?? HoldsUnique(((MapType)receiver.Type).ValueType, []);
+            if (held is not null)
+                Report(DiagnosticCodes.CopyUniqueElement, c.Span, [receiver.Type.DisplayName, held.DisplayName],
+                    help: "build the copy with a loop that copies each element, or share the original by `ref`");
+        }
         var returns = m.Returns is SpanType span && receiver is BoundStaticArray ? new SpanType(span.Element, readOnly: true)
             : m.Member == BuiltinMember.IoReadAll ? new ResultType(m.Returns, _c.Builtins.IoError)
             : m.Returns;
         return new BoundBuiltinCall(c, m.Member, receiver, args, returns);
     }
+
+    /// <summary>The <c>List</c>, <c>Map</c>, <c>StrBuf</c> or <c>Owned</c> that <paramref name="t"/> holds by value, or null.</summary>
+    private static TypeSymbol? HoldsUnique(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
+    {
+        ListType or MapType or OwnedType or BuiltinType { Kind: BuiltinKind.StrBuf } => t,
+        OptionalType o => HoldsUnique(o.Inner, seen),
+        ArrayType a => HoldsUnique(a.Element, seen),
+        TupleType tt => tt.Fields.Select(f => HoldsUnique(f.Type, seen)).FirstOrDefault(h => h is not null),
+        StructSymbol s => seen.Add(s) ? s.Fields.Select(f => HoldsUnique(f.Type, seen)).FirstOrDefault(h => h is not null) : null,
+        UnionSymbol u => seen.Add(u) ? u.Variants.SelectMany(v => v.Fields).Select(f => HoldsUnique(f.Type, seen)).FirstOrDefault(h => h is not null) : null,
+        _ => null,
+    };
 
     /// <summary>Whether <c>map.slot</c> can insert a default <paramref name="t"/>: numbers, <c>bool</c>, <c>char</c>, <c>string</c>, optionals and structs whose fields all have defaults.</summary>
     private static bool IsDefaultable(TypeSymbol t) => t switch

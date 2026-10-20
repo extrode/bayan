@@ -48,7 +48,7 @@ public sealed record BoundCall(Node Syntax, FunctionSymbol Function, BoundExpr? 
 public enum BuiltinMember
 {
     StringLength, StringBytes, StringIsEmpty, StringCopy, StringStartsWith, StringEndsWith, StringContains,
-    SpanLength, SpanIsEmpty, SpanCopy,
+    SpanLength, SpanIsEmpty, SpanCopy, ListCopy, MapCopy, StrBufCopy,
     ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListClear, ListRemoveLast,
     MapLength, MapGetOr, MapContains, MapRemove, MapClear,
     /// <summary><c>map[k]</c> read (panics when missing), <c>map[k]</c> as a write target (inserts when missing), and <c>map.slot(k)</c> (inserts the default).</summary>

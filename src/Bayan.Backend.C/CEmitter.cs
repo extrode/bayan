@@ -1056,6 +1056,17 @@ internal sealed class FunctionEmitter
                     $"{{\n    {list} r = {{NULL, 0, 0, a}};\n    if (s.len > 0) {{\n        r.ptr = ({et}*)byn_copy_bytes(s.ptr, s.len * (int64_t)sizeof({et}), a);\n        r.len = r.cap = s.len;\n    }}\n    return r;\n}}\n");
                 return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
             }
+            case BuiltinMember.ListCopy:
+            {
+                var lt = _c.CType(r.Type);
+                var et = _c.CType(((ListType)r.Type).Element);
+                var name = "bynh_copy_" + _c.Key(r.Type);
+                _c.Helper(name, $"static {lt} {name}({lt} l, byn_alloc* a)", () =>
+                    $"{{\n    {lt} r = {{NULL, 0, 0, a}};\n    if (l.len > 0) {{\n        r.ptr = ({et}*)byn_copy_bytes(l.ptr, l.len * (int64_t)sizeof({et}), a);\n        r.len = r.cap = l.len;\n    }}\n    return r;\n}}\n");
+                return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
+            }
+            case BuiltinMember.StrBufCopy:
+                return $"byn_strbuf_copy({Expr(r)}, byn_arena_alloc({arg}))";
             case BuiltinMember.ListAdd:
             {
                 var lt = _c.CType(r.Type);
@@ -1096,6 +1107,17 @@ internal sealed class FunctionEmitter
             {
                 var m = Expr(r);
                 return $"(({_c.CType(b.Type)}){{{m}.keys[{arg}], {m}.vals[{arg}]}})";
+            }
+            case BuiltinMember.MapCopy:
+            {
+                var mt = _c.CType(r.Type);
+                var map = (MapType)r.Type;
+                var kt = _c.CType(map.KeyType);
+                var vt = _c.CType(map.ValueType);
+                var name = "bynh_copy_" + _c.Key(r.Type);
+                _c.Helper(name, $"static {mt} {name}({mt} m, byn_alloc* a)", () =>
+                    $"{{\n    {mt} r;\n    byn_map_copy(&m.h, m.keys, (int64_t)sizeof({kt}), (void**)&r.keys, m.vals, (int64_t)sizeof({vt}), (void**)&r.vals, &r.h, a);\n    return r;\n}}\n");
+                return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
             }
             case BuiltinMember.MapIndex or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapGetOr
                 or BuiltinMember.MapContains or BuiltinMember.MapRemove:
