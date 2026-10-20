@@ -156,4 +156,10 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor BorrowReturned = Error("BYN3003", "cannot return a borrow of {0}, which is freed when `{1}` returns");
     public static readonly DiagnosticDescriptor ModifiedWhileBorrowed = Error("BYN3004", "`{0}` is modified while {1} still borrows it");
     public static readonly DiagnosticDescriptor RefAndValue = Error("BYN3005", "`{0}` is passed by `ref` and again in the same call");
+
+    // ── Manifest (`package.byn`) 3100–3199 ───────────────────────────────────────────
+    public static readonly DiagnosticDescriptor ManifestNotData = Error("BYN3100", "`package.byn` is data only: expected {0}");
+    public static readonly DiagnosticDescriptor ManifestUnknownField = Error("BYN3101", "`{0}` is not a field of `{1}`");
+    public static readonly DiagnosticDescriptor ManifestInvalidValue = Error("BYN3102", "`{0}` must be {1}");
+    public static readonly DiagnosticDescriptor ManifestMissingField = Error("BYN3103", "`package.byn` has no `{0}`");
 }

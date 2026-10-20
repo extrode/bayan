@@ -52,7 +52,7 @@ public static class Toolchain
         return null;
     }
 
-    private static string? FindOnPath(string name)
+    public static string? FindOnPath(string name)
     {
         var exts = OperatingSystem.IsWindows() ? new[] { ".exe", ".cmd", ".bat" } : new[] { "" };
         foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))

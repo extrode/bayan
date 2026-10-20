@@ -4,6 +4,7 @@ using Bayan.Semantics;
 using Bayan.Syntax.Ast;
 using Bayan.Syntax.Diagnostics;
 using Bayan.Syntax.Lexing;
+using Bayan.Syntax.Packages;
 using Bayan.Syntax.Parsing;
 using Bayan.Syntax.Text;
 
@@ -23,6 +24,8 @@ public static class CliApp
         usage: bayan <command> [args]
 
         commands:
+          new <name>           create an app in a new directory [--lib|--script] [--vcs git|none] [--ci github|none]
+          init [<dir>]         add a project's missing files to a directory (same options as new)
           lex <file>           print the token stream
           parse [--ast] <file> check syntax; with --ast print the syntax tree
           check <path>         report diagnostics for a program (a file or directory)
@@ -30,8 +33,12 @@ public static class CliApp
           run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]
           test <path>          compile and run the tests, each in its own process [--mode debug|safe|fast]
           explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
+          <script>.byn         run a script, so `#!/usr/bin/env bayan` works
           --version            print the compiler version
           --help               print this message
+
+        check, build, run and test take a project directory (one with `package.byn`; the default
+        inside a project), a script (a file starting with `#!`), or a file or directory of `.byn` files.
 
         options for check, build, run and test:
           --diagnostics json   print each diagnostic to stderr as one JSON object per line
@@ -83,6 +90,13 @@ public static class CliApp
                 return RunProgram(rest, stderr);
             case "test":
                 return Test(rest, stdout, stderr);
+            case "new":
+                return Scaffold.New(rest, stdout, stderr);
+            case "init":
+                return Scaffold.Init(rest, stdout, stderr);
+            case var file when file.EndsWith(".byn", StringComparison.Ordinal) && File.Exists(file):
+                // `#!/usr/bin/env bayan` runs `bayan script.byn [args]`.
+                return RunProgram([file, "--", .. rest], stderr);
             default:
                 stderr.WriteLine($"bayan: unknown command `{args[0]}`");
                 stderr.WriteLine(Usage);
@@ -163,9 +177,10 @@ public static class CliApp
                     break;
             }
         }
+        if (path is null && File.Exists("package.byn")) path = ".";
         if (path is null)
         {
-            stderr.WriteLine("bayan: expected a file or directory");
+            stderr.WriteLine("bayan: expected a file or directory (or run inside a project with a `package.byn`)");
             return null;
         }
         if (!File.Exists(path) && !Directory.Exists(path))
@@ -176,13 +191,65 @@ public static class CliApp
         return new BuildOptions(path, mode, output, emitC, json, programArgs);
     }
 
-    /// <summary>Compiles a program; prints diagnostics; null on errors.</summary>
-    private static Compilation? Compile(BuildOptions o, TextWriter stderr, bool includeTests = false)
+    /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
+    private sealed record Compiled(Compilation Compilation, Manifest? Manifest, string? ProjectRoot);
+
+    /// <summary>
+    /// Compiles a project directory (one with <c>package.byn</c>), a script (a file starting with
+    /// <c>#!</c>, compiled alone) or a file or directory (the whole directory is the entry module).
+    /// Prints diagnostics; null on errors.
+    /// </summary>
+    private static Compiled? Compile(BuildOptions o, TextWriter stderr, bool includeTests = false)
     {
-        var c = Compilation.FromPath(o.Path, new CompilationOptions(includeTests));
-        if (c.Diagnostics.Count > 0)
-            stderr.Write(o.Json ? DiagnosticJson.RenderAll(c.Diagnostics.Items) : DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
-        return c.Diagnostics.HasErrors ? null : c;
+        Compilation c;
+        Manifest? manifest = null;
+        string? root = null;
+        if (Directory.Exists(o.Path) && File.Exists(Path.Combine(o.Path, "package.byn")))
+        {
+            root = Path.GetFullPath(o.Path);
+            manifest = Manifest.Read(Path.Combine(root, "package.byn"));
+            Report(o, manifest.Diagnostics, stderr);
+            if (manifest.HasErrors) return null;
+            var entry = EntryModule(manifest);
+            if (!Directory.Exists(Path.Combine(root, "src", entry)))
+            {
+                stderr.WriteLine($"bayan: `{manifest.Name}` is {(manifest.Kind == PackageKind.Lib ? "a library" : "an app")}, so its code goes in `src/{entry}/`, which doesn't exist");
+                return null;
+            }
+            c = Compilation.FromProject(root, entry, new CompilationOptions(includeTests, Library: manifest.Kind == PackageKind.Lib));
+        }
+        else
+        {
+            c = Compilation.FromPath(o.Path, new CompilationOptions(includeTests), wholeDirectory: !IsScript(o.Path));
+        }
+        Report(o, c.Diagnostics.Items, stderr);
+        return c.Diagnostics.HasErrors ? null : new Compiled(c, manifest, root);
+    }
+
+    private static void Report(BuildOptions o, IReadOnlyList<Diagnostic> diagnostics, TextWriter stderr)
+    {
+        if (diagnostics.Count == 0) return;
+        stderr.Write(o.Json ? DiagnosticJson.RenderAll(diagnostics) : DiagnosticRenderer.RenderAll(diagnostics, includePath: true));
+    }
+
+    /// <summary>An app's code is <c>src/app/</c>; a library's is <c>src/&lt;name&gt;/</c> with the name in camelCase.</summary>
+    public static string EntryModule(Manifest manifest) =>
+        manifest.Kind == PackageKind.Lib ? Manifest.CamelOf(manifest.ShortName) : "app";
+
+    private static bool IsScript(string path)
+    {
+        if (!File.Exists(path)) return false;
+        Span<byte> head = stackalloc byte[2];
+        using var f = File.OpenRead(path);
+        return f.Read(head) == 2 && head[0] == '#' && head[1] == '!';
+    }
+
+    /// <summary>A library has nothing to build or run until FFI export exists.</summary>
+    private static bool RefuseLibrary(Compiled compiled, string command, TextWriter stderr)
+    {
+        if (compiled.Manifest is not { Kind: PackageKind.Lib } m) return false;
+        stderr.WriteLine($"bayan: `{m.Name}` is a library, so there is no program to {command}; `bayan test` runs its tests");
+        return true;
     }
 
     /// <summary>Builds, or reports why the toolchain could not.</summary>
@@ -206,19 +273,21 @@ public static class CliApp
     private static int Build(string[] args, TextWriter stdout, TextWriter stderr)
     {
         if (ParseBuildOptions(args, stderr, allowOutput: true) is not { } o) return ExitUsage;
-        if (Compile(o, stderr) is not { } c) return ExitFailure;
-        var source = EmitC(c);
+        if (Compile(o, stderr) is not { } compiled) return ExitFailure;
+        if (RefuseLibrary(compiled, "build", stderr)) return ExitUsage;
+        var source = EmitC(compiled.Compilation);
         if (o.EmitC)
         {
             stdout.Write(source);
             return ExitOk;
         }
-        var output = o.Output ?? DefaultOutput(o.Path);
+        var output = o.Output ?? DefaultOutput(o.Path, compiled.Manifest);
         return BuildNative(source, o.Mode, stderr, output) is null ? ExitToolchain : ExitOk;
     }
 
-    private static string DefaultOutput(string path)
+    private static string DefaultOutput(string path, Manifest? manifest)
     {
+        if (manifest is not null) return manifest.ShortName + (OperatingSystem.IsWindows() ? ".exe" : "");
         var full = Path.GetFullPath(path);
         var name = Directory.Exists(full) ? Path.GetFileName(full.TrimEnd(Path.DirectorySeparatorChar)) : Path.GetFileNameWithoutExtension(full);
         if (name == "main" && !Directory.Exists(full)) name = Path.GetFileName(Path.GetDirectoryName(full)!);
@@ -228,8 +297,9 @@ public static class CliApp
     private static int RunProgram(string[] args, TextWriter stderr)
     {
         if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
-        if (Compile(o, stderr) is not { } c) return ExitFailure;
-        if (BuildNative(EmitC(c), o.Mode, stderr) is not { } executable) return ExitToolchain;
+        if (Compile(o, stderr) is not { } compiled) return ExitFailure;
+        if (RefuseLibrary(compiled, "run", stderr)) return ExitUsage;
+        if (BuildNative(EmitC(compiled.Compilation), o.Mode, stderr) is not { } executable) return ExitToolchain;
         var psi = new System.Diagnostics.ProcessStartInfo(executable) { UseShellExecute = false };
         foreach (var a in o.ProgramArgs) psi.ArgumentList.Add(a);
         using var process = System.Diagnostics.Process.Start(psi)!;
@@ -243,8 +313,8 @@ public static class CliApp
     private static int Test(string[] args, TextWriter stdout, TextWriter stderr)
     {
         if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
-        if (Compile(o, stderr, includeTests: true) is not { } c) return ExitFailure;
-        var program = Lowerer.Lower(c);
+        if (Compile(o, stderr, includeTests: true) is not { } compiled) return ExitFailure;
+        var program = Lowerer.Lower(compiled.Compilation);
         if (BuildNative(CEmitter.Emit(program), o.Mode, stderr) is not { } executable) return ExitToolchain;
         var count = program.Tests.Count;
         stdout.WriteLine($"running {count} test{(count == 1 ? "" : "s")}");

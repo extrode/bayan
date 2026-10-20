@@ -1,0 +1,4 @@
+error BYN3100: `package.byn` is data only: expected `Package { … }`
+
+  1 │ Dist {
+    │ ^^^^^^

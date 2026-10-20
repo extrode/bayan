@@ -1,0 +1,6 @@
+Package {
+    name = "local/tally",
+    version = "0.1.0",
+    verison = "0.2.0",
+    dist = Dist { target = [.host] },
+}
