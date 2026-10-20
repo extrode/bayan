@@ -1,0 +1,6 @@
+struct unique union enum flags open extensible interface delegate extension derivation attribute
+error set unit distinct type import as public private static readonly required const let var embed extern unsafe
+if else unless switch case default for in while do break continue return yield defer errdefer using context
+fails try catch never noalloc nosuspend suspends async await
+is and or not with move ref out this null true false comptime checked
+test property fuzz model foreach new goto

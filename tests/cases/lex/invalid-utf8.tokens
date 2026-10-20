@@ -1,0 +1,20 @@
+1:1 LetKeyword `let`
+1:5 Identifier `a`
+1:7 Equals `=`
+1:9 IntegerLiteral `1`
+1:10 Semicolon `;`
+2:1 LetKeyword `let`
+2:7 Equals `=`
+2:9 IntegerLiteral `2`
+2:10 Semicolon `;`
+4:1 EndOfFile
+
+error BYN0015: source is not valid UTF-8 (byte 0xFF)
+
+  2 │ let � = 2;
+    │     ^
+
+error BYN0015: source is not valid UTF-8 (byte 0xFE)
+
+  3 │ // ok � in comment
+    │       ^

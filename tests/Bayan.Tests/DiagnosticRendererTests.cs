@@ -37,6 +37,7 @@ public sealed class DiagnosticRendererTests
         var diagnostic = new Diagnostic(
             Severity.Error,
             "BYN2104",
+            Ledger,
             new TextSpan(Find(Ledger, "total +=").Start, "total".Length),
             "`total` is immutable",
             Label: "declared with `let` on line 9",
@@ -52,14 +53,14 @@ public sealed class DiagnosticRendererTests
               help: declare it with `var` if it should change
                  │  9 │     var total = 0;
 
-            """, DiagnosticRenderer.Render(diagnostic, Ledger));
+            """, DiagnosticRenderer.Render(diagnostic));
     }
 
     [Fact]
     public void RendersWithoutHelpOrFix()
     {
         var source = SourceText.FromString("a.byn", "let x = 1;\n");
-        var diagnostic = new Diagnostic(Severity.Warning, "BYN2000", Find(source, "x"), "unused");
+        var diagnostic = new Diagnostic(Severity.Warning, "BYN2000", source, Find(source, "x"), "unused");
 
         Assert.Equal("""
             warning BYN2000: unused
@@ -67,16 +68,16 @@ public sealed class DiagnosticRendererTests
               1 │ let x = 1;
                 │     ^
 
-            """, DiagnosticRenderer.Render(diagnostic, source));
+            """, DiagnosticRenderer.Render(diagnostic));
     }
 
     [Fact]
     public void CaretsCountCodePointsNotBytes()
     {
         var source = SourceText.FromString("a.byn", "let بيان = \"é\";\n");
-        var diagnostic = new Diagnostic(Severity.Error, "BYN0005", Find(source, "بيان"), "m");
+        var diagnostic = new Diagnostic(Severity.Error, "BYN0005", source, Find(source, "بيان"), "m");
 
-        var caretLine = DiagnosticRenderer.Render(diagnostic, source).Split('\n')[3];
+        var caretLine = DiagnosticRenderer.Render(diagnostic).Split('\n')[3];
         Assert.Equal("    │     ^^^^", caretLine);
     }
 
@@ -84,18 +85,18 @@ public sealed class DiagnosticRendererTests
     public void TabsInPrefixAreKept()
     {
         var source = SourceText.FromString("a.byn", "\tx;\n");
-        var diagnostic = new Diagnostic(Severity.Error, "BYN1000", Find(source, "x"), "m");
+        var diagnostic = new Diagnostic(Severity.Error, "BYN1000", source, Find(source, "x"), "m");
 
-        Assert.Equal("    │ \t^", DiagnosticRenderer.Render(diagnostic, source).Split('\n')[3]);
+        Assert.Equal("    │ \t^", DiagnosticRenderer.Render(diagnostic).Split('\n')[3]);
     }
 
     [Fact]
     public void EmptySpanGetsOneCaret()
     {
         var source = SourceText.FromString("a.byn", "let x = 1\n");
-        var diagnostic = new Diagnostic(Severity.Error, "BYN1001", new TextSpan(9, 0), "expected `;`", Label: "here");
+        var diagnostic = new Diagnostic(Severity.Error, "BYN1001", source, new TextSpan(9, 0), "expected `;`", Label: "here");
 
-        Assert.Equal("    │          ^ here", DiagnosticRenderer.Render(diagnostic, source).Split('\n')[3]);
+        Assert.Equal("    │          ^ here", DiagnosticRenderer.Render(diagnostic).Split('\n')[3]);
     }
 
     [Fact]
@@ -103,10 +104,10 @@ public sealed class DiagnosticRendererTests
     {
         var lines = string.Concat(Enumerable.Range(1, 10).Select(i => $"x{i};\n"));
         var source = SourceText.FromString("a.byn", lines);
-        var diagnostic = new Diagnostic(Severity.Error, "BYN1002", Find(source, "x9;"), "m",
+        var diagnostic = new Diagnostic(Severity.Error, "BYN1002", source, Find(source, "x9;"), "m",
             Fix: new Fix(Find(source, "x10"), "y10"));
 
-        var rendered = DiagnosticRenderer.Render(diagnostic, source).Split('\n');
+        var rendered = DiagnosticRenderer.Render(diagnostic).Split('\n');
         Assert.Equal("   9 │ x9;", rendered[2]);
         Assert.Equal("     │ 10 │ y10;", rendered[5]);
     }
@@ -115,8 +116,25 @@ public sealed class DiagnosticRendererTests
     public void CrlfLineEndingsAreNotRendered()
     {
         var source = SourceText.FromString("a.byn", "a;\r\nb;\r\n");
-        var diagnostic = new Diagnostic(Severity.Error, "BYN1003", Find(source, "b"), "m");
+        var diagnostic = new Diagnostic(Severity.Error, "BYN1003", source, Find(source, "b"), "m");
 
-        Assert.Equal("  2 │ b;", DiagnosticRenderer.Render(diagnostic, source).Split('\n')[2]);
+        Assert.Equal("  2 │ b;", DiagnosticRenderer.Render(diagnostic).Split('\n')[2]);
+    }
+
+    [Fact]
+    public void IncludePathAddsLocationLine()
+    {
+        var source = SourceText.FromString("dir/a.byn", "a;\n  bé c;\n");
+        var diagnostic = new Diagnostic(Severity.Error, "BYN1004", source, Find(source, "c"), "m");
+
+        Assert.Equal("  --> dir/a.byn:2:6", DiagnosticRenderer.Render(diagnostic, includePath: true).Split('\n')[1]);
+    }
+
+    [Fact]
+    public void DiagnosticWithoutSourceRendersHeaderOnly()
+    {
+        var diagnostic = new Diagnostic(Severity.Error, "BYN4001", null, default, "zig not found");
+
+        Assert.Equal("error BYN4001: zig not found\n", DiagnosticRenderer.Render(diagnostic));
     }
 }

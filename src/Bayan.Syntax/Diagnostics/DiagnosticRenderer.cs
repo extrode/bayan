@@ -20,11 +20,19 @@ public static class DiagnosticRenderer
 {
     private const string Bar = "│";
 
-    public static string Render(Diagnostic diagnostic, SourceText source)
+    /// <param name="includePath">Adds a <c>--> file:line:col</c> line; used when a compilation spans several files.</param>
+    public static string Render(Diagnostic diagnostic, bool includePath = false)
     {
         var sb = new StringBuilder();
         sb.Append(SeverityName(diagnostic.Severity)).Append(' ').Append(diagnostic.Code)
-          .Append(": ").Append(diagnostic.Message).Append('\n').Append('\n');
+          .Append(": ").Append(diagnostic.Message).Append('\n');
+        if (diagnostic.Source is not { } source) return sb.ToString();
+        if (includePath)
+        {
+            var (l, c) = source.GetLinePosition(diagnostic.Span.Start);
+            sb.Append("  --> ").Append(source.Path).Append(':').Append(l).Append(':').Append(c).Append('\n');
+        }
+        sb.Append('\n');
 
         var line = source.GetLineIndex(diagnostic.Span.Start);
         var lineSpan = source.GetLineSpan(line);
@@ -38,7 +46,7 @@ public static class DiagnosticRenderer
         var blank = "  " + new string(' ', width) + " " + Bar;
 
         sb.Append("  ").Append(LineNumber(line + 1, width)).Append(' ').Append(Bar).Append(' ')
-          .Append(source.GetText(lineSpan)).Append('\n');
+          .Append(Display(source.GetText(lineSpan))).Append('\n');
 
         var underlineStart = diagnostic.Span.Start;
         var underlineEnd = Math.Min(diagnostic.Span.End, lineSpan.End);
@@ -58,11 +66,26 @@ public static class DiagnosticRenderer
             for (var i = 0; i < fixLines.Length; i++)
             {
                 sb.Append(blank).Append(' ').Append(LineNumber(fixFirstLine + i + 1, width))
-                  .Append(' ').Append(Bar).Append(' ').Append(fixLines[i]).Append('\n');
+                  .Append(' ').Append(Bar).Append(' ').Append(Display(fixLines[i])).Append('\n');
             }
         }
         return sb.ToString();
     }
+
+    /// <summary>Renders diagnostics in source order, separated by blank lines.</summary>
+    public static string RenderAll(IEnumerable<Diagnostic> diagnostics, bool includePath = false)
+    {
+        var sb = new StringBuilder();
+        foreach (var d in Sort(diagnostics))
+        {
+            if (sb.Length > 0) sb.Append('\n');
+            sb.Append(Render(d, includePath));
+        }
+        return sb.ToString();
+    }
+
+    public static IEnumerable<Diagnostic> Sort(IEnumerable<Diagnostic> diagnostics) =>
+        diagnostics.OrderBy(d => d.Source?.Path ?? "", StringComparer.Ordinal).ThenBy(d => d.Span.Start);
 
     private static string SeverityName(Severity severity) => severity switch
     {
@@ -86,6 +109,23 @@ public static class DiagnosticRenderer
                  + fix.Replacement
                  + source.GetText(TextSpan.FromBounds(fix.Span.End, end));
         return text.Split('\n');
+    }
+
+    /// <summary>
+    /// Source text as shown in a diagnostic: control and bidi characters become U+FFFD, one
+    /// scalar for one, so carets still line up and the terminal cannot be made to reorder text.
+    /// </summary>
+    private static string Display(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        foreach (var rune in text.EnumerateRunes())
+        {
+            var v = rune.Value;
+            var hidden = (v < 0x20 && v != '\t') || v == 0x7F || v is >= 0x202A and <= 0x202E or >= 0x2066 and <= 0x2069;
+            if (hidden) sb.Append('\uFFFD');
+            else sb.Append(rune.ToString());
+        }
+        return sb.ToString();
     }
 
     /// <summary>Whitespace that lines up with <paramref name="prefix"/>, keeping its tabs.</summary>
