@@ -70,6 +70,22 @@ public static class Toolchain
     /// </summary>
     public static NativeBuild Build(string cSource, BuildMode mode, string? output = null)
     {
+        try
+        {
+            return BuildCached(cSource, mode, output);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new NativeBuild(null, $"cannot write the build output or cache ({CacheDirectory}): {e.Message}");
+        }
+        catch (System.ComponentModel.Win32Exception e)
+        {
+            return new NativeBuild(null, $"cannot run the C compiler `{string.Join(" ", FindCompiler() ?? [])}`: {e.Message}");
+        }
+    }
+
+    private static NativeBuild BuildCached(string cSource, BuildMode mode, string? output)
+    {
         var compiler = FindCompiler();
         if (compiler is null)
             return new NativeBuild(null, "no C compiler found: install zig (https://ziglang.org) or set BAYAN_CC");

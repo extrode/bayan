@@ -52,7 +52,7 @@ public sealed class CliTests
     public void ExplainUnknownCodeFails(string code)
     {
         var (exit, stdout, stderr) = Run("explain", code);
-        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Equal(CliApp.ExitUsage, exit);
         Assert.Empty(stdout);
         Assert.Contains("no explanation", stderr);
     }
@@ -79,7 +79,7 @@ public sealed class CliTests
     public void CheckOfAMissingPathFails()
     {
         var (exit, _, stderr) = Run("check", "no-such-file.byn");
-        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Equal(CliApp.ExitUsage, exit);
         Assert.Contains("not found", stderr);
     }
 
@@ -111,15 +111,101 @@ public sealed class CliTests
         Assert.True(File.Exists(output));
     }
 
-    [Fact]
-    public void RunReturnsTheProgramsExitCode()
+    private static string Program(string name, string source)
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
-        var dir = Path.Combine(Golden.RepoRoot, "tmp", "cli-run");
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", name);
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, "main.byn"), "panic(\"stop\");\n");
-        var (exit, _, _) = Run("run", Path.Combine(dir, "main.byn"));
+        var path = Path.Combine(dir, "main.byn");
+        File.WriteAllText(path, source);
+        return path;
+    }
+
+    [Fact]
+    public void RunOfAProgramThatFailsToCompileExitsOne()
+    {
+        var (exit, _, stderr) = Run("run", Program("cli-run-error", "i32 x = \"no\";\n"));
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Contains("error BYN", stderr);
+    }
+
+    [Fact]
+    public void RunPassesExitZeroThrough()
+    {
+        var (exit, _, stderr) = Run("run", Program("cli-run-ok", "void main() {\n    print(\"fine\");\n}\n"));
+        Assert.True(exit == CliApp.ExitOk, stderr);
+    }
+
+    [Fact]
+    public void RunPassesTheProgramsOwnExitCodeThrough()
+    {
+        var (exit, _, _) = Run("run", Program("cli-run-panic", "panic(\"stop\");\n"));
         Assert.Equal(134, exit);
+    }
+
+    [Fact]
+    public void RunCannotTellAFailingMainFromACompileError()
+    {
+        var path = Program("cli-run-main-fails", """
+            error enum E {
+                /// It went wrong.
+                wrong,
+            }
+
+            void main() fails E {
+                return .wrong;
+            }
+
+            """);
+        var (exit, _, stderr) = Run("run", "--diagnostics", "json", path);
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.DoesNotContain("{\"code\"", stderr);
+    }
+
+    [Fact]
+    public void DiagnosticsJsonPrintsOneObjectPerLine()
+    {
+        var path = Program("cli-json", "i32 x = \"no\";\nvar y = 1;\n");
+        var (exit, stdout, stderr) = Run("check", "--diagnostics", "json", path);
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Empty(stdout);
+        var lines = stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.NotEmpty(lines);
+        foreach (var line in lines)
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(line);
+            Assert.StartsWith("BYN", doc.RootElement.GetProperty("code").GetString());
+            Assert.Equal(path, doc.RootElement.GetProperty("file").GetString());
+        }
+    }
+
+    [Theory]
+    [InlineData("build")]
+    [InlineData("run")]
+    [InlineData("test")]
+    public void DiagnosticsJsonIsAcceptedByEveryBuildingCommand(string command)
+    {
+        var path = Program("cli-json-" + command, "i32 x = \"no\";\n");
+        var (exit, _, stderr) = Run(command, "--diagnostics", "json", path);
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.StartsWith("{\"code\":\"BYN", stderr);
+    }
+
+    [Fact]
+    public void UnknownDiagnosticsFormatIsUsageError()
+    {
+        var (exit, _, stderr) = Run("check", "--diagnostics", "xml", Example("hello"));
+        Assert.Equal(CliApp.ExitUsage, exit);
+        Assert.Contains("unknown diagnostics format `xml`", stderr);
+    }
+
+    [Fact]
+    public void HelpListsTheExitCodes()
+    {
+        var (_, stdout, _) = Run("--help");
+        Assert.Contains("3  test failures", stdout);
+        Assert.Contains("4  toolchain problems", stdout);
+        Assert.Contains("cannot tell a build failure from a program that exits 1", stdout);
     }
 
     private static string TestSuite(string name, string tests)
@@ -167,7 +253,7 @@ public sealed class CliTests
 
             """);
         var (exit, stdout, _) = Run("test", dir);
-        Assert.Equal(1, exit);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
         Assert.Equal("""
             running 4 tests
               ok     passes  (T)
@@ -233,5 +319,53 @@ public sealed class CliTests
         var (exit, stdout, stderr) = Run("test", Path.Combine(Golden.RepoRoot, "examples", "tally-lite"));
         Assert.True(exit == CliApp.ExitOk, stdout + stderr);
         Assert.Contains("8 tests: 8 passed", stdout);
+    }
+}
+
+/// <summary>Changes process-wide environment variables, so it runs alone.</summary>
+[CollectionDefinition(nameof(ToolchainEnvironment), DisableParallelization = true)]
+public sealed class ToolchainEnvironment;
+
+[Collection(nameof(ToolchainEnvironment))]
+public sealed class CliToolchainTests
+{
+    private static (int Exit, string Err) RunWith(string variable, string value, params string[] args)
+    {
+        var saved = Environment.GetEnvironmentVariable(variable);
+        Environment.SetEnvironmentVariable(variable, value);
+        try
+        {
+            var stderr = new StringWriter();
+            var exit = CliApp.Run(args, new StringWriter(), stderr);
+            return (exit, stderr.ToString());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, saved);
+        }
+    }
+
+    private static string Hello => Path.Combine(Golden.RepoRoot, "examples", "hello", "main.byn");
+
+    [Theory]
+    [InlineData("build")]
+    [InlineData("run")]
+    [InlineData("test")]
+    public void AMissingCompilerIsAToolchainProblem(string command)
+    {
+        var (exit, stderr) = RunWith("BAYAN_CC", Path.Combine(Golden.RepoRoot, "tmp", "no-such-cc"), command, Hello);
+        Assert.Equal(CliApp.ExitToolchain, exit);
+        Assert.Contains("cannot run the C compiler", stderr);
+    }
+
+    [Fact]
+    public void AnUnwritableCacheIsAToolchainProblem()
+    {
+        var blocker = Path.Combine(Golden.RepoRoot, "tmp", "cache-is-a-file");
+        Directory.CreateDirectory(Path.GetDirectoryName(blocker)!);
+        File.WriteAllText(blocker, "");
+        var (exit, stderr) = RunWith("BAYAN_CACHE", blocker, "run", Hello);
+        Assert.Equal(CliApp.ExitToolchain, exit);
+        Assert.Contains("cannot write the build output or cache", stderr);
     }
 }

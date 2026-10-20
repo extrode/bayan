@@ -800,6 +800,20 @@ Every diagnostic states **what**, **where**, **why** and a **fix** (machine-appl
 | `bayan migrate` | Rename casing, upgrade editions, apply `[Replaced]` |
 | `bayan new test X` | Test scaffolds |
 
+`check`, `build`, `run` and `test` take `--diagnostics json`: each diagnostic goes to stderr as one JSON object per line, with `code`, `severity`, `file`, `span` (byte offsets `start`/`end` plus one-based `line`/`column`/`endLine`/`endColumn` counted in Unicode scalars), `message`, `label`, `help` and `fixes` (each a `span` and a `replacement`). `file` and `span` are null for diagnostics without a location.
+
+Exit codes, documented in `bayan --help`:
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Compile errors |
+| `2` | Usage errors (unknown command or option, missing input path) |
+| `3` | Test failures |
+| `4` | Toolchain problems (no C compiler, unwritable cache, C compiler failure) |
+
+`bayan run` uses the CLI's codes until the program starts (1 for compile errors, 4 for toolchain problems), then passes the program's own exit code through unchanged, as `cargo run` and `go run` do. It therefore cannot tell a build failure from a program that exits 1; anything that needs the distinction runs `bayan build` first or reads `--diagnostics json`.
+
 The language server runs inside the compiler process. `dbg(expr)` prints the expression text and value and is an error in release builds.
 
 ### 21.3 Performance targets
