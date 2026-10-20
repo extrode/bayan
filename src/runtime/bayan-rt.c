@@ -839,11 +839,14 @@ static wchar_t* byn_find_program(byn_str program) {
     DWORD en = GetEnvironmentVariableW(L"PATHEXT", exts, 1024);
     if (en == 0 || en >= 1024) wcscpy(exts, L".COM;.EXE;.BAT;.CMD");
     size_t nn = wcslen(name);
+    /* Like CreateProcess, the bare name is tried only when its final component already has an extension. */
+    wchar_t* base = wcsrchr(name, L'.');
+    int bare = base != NULL;
     wchar_t* found = NULL;
     for (wchar_t* dir = path; *dir && !found;) {
         wchar_t* dend = wcschr(dir, L';');
         size_t dn = dend ? (size_t)(dend - dir) : wcslen(dir);
-        if (dn > 0) found = byn_program_in(dir, dn, name, nn, L"", 0);
+        if (dn > 0 && bare) found = byn_program_in(dir, dn, name, nn, L"", 0);
         for (wchar_t* ext = exts; *ext && dn > 0 && !found;) {
             wchar_t* eend = wcschr(ext, L';');
             size_t xn = eend ? (size_t)(eend - ext) : wcslen(ext);

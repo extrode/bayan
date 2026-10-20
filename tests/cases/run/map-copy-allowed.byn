@@ -73,3 +73,12 @@ for (let m in list) print($"list: {m}");
 print($"{a} {b} {c} {s} {pair}");
 print($"{maybe} {r.value} {nested.get(1)}");
 if (full is .Full(let d)) print($"full: {d.count}");
+
+struct Named {
+    string name;
+    Map<i64, i64> m;
+}
+
+var named = Named { name = "n", m = Map<i64, i64>() };
+var renamed = named with { m = Map<i64, i64>() };
+print($"{renamed.name} {renamed.m.count}");

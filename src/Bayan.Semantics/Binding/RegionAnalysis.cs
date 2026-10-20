@@ -143,6 +143,9 @@ internal sealed class RegionAnalysis
                     if (RootLocal(f.Iterable) is { } root && f.Iterable.Type is ListType or MapType or ArrayType) owners = owners.Add(root);
                     foreach (var owner in owners) _loans.Add(new Loan(owner, null, f.Syntax.Span.Start, f.Syntax.Span.End));
                 }
+                // A `var` loop variable is a by-value copy of each element.
+                if (_reporting && f.Variable.Kind == LocalKind.Var && SharedHandle(f.Variable.Type, []) is { } handle)
+                    ReportCopy(handle, f.Variable.Type, f.Iterable.Syntax.Span);
                 _depth++;
                 Declare(f.Variable, f.Syntax.Span.Start);
                 Store(f.Variable, iterable with { Owners = [] }, f.Iterable.Syntax.Span);
@@ -503,10 +506,19 @@ internal sealed class RegionAnalysis
     /// </summary>
     private void CheckCopy(BoundExpr value)
     {
-        if (!_reporting || !IsPlace(value) || SharedHandle(value.Type, []) is not { } handle) return;
+        if (!_reporting || !IsPlace(value)) return;
+        // A `with` copies only the fields it does not replace.
+        var handle = StripConversions(value) is BoundWith { Target.Type: StructSymbol target } w
+            ? target.Fields.Where(f => !w.Updates.Any(u => u.Field == f)).Select(f => SharedHandle(f.Type, [target])).FirstOrDefault(h => h is not null)
+            : SharedHandle(value.Type, []);
+        if (handle is not null) ReportCopy(handle, value.Type, value.Syntax.Span);
+    }
+
+    private void ReportCopy(TypeSymbol handle, TypeSymbol copied, TextSpan span)
+    {
         var name = handle is MapType ? "Map" : "StrBuf";
-        Report(DiagnosticCodes.SharedStorageCopy, value.Syntax.Span, [name],
-            label: handle == value.Type ? null : $"`{value.Type.DisplayName}` holds a `{handle.DisplayName}` by value",
+        Report(DiagnosticCodes.SharedStorageCopy, span, [name],
+            label: handle == copied ? null : $"`{copied.DisplayName}` holds a `{handle.DisplayName}` by value",
             help: $"pass it by `ref`, or build a new `{name}` and copy the contents into it");
     }
 
