@@ -168,4 +168,4 @@ error BYN3405: a parallel closure modifies the captured `count`
 
 ## 6. Also add to the repository
 
-`docs/bayan-terminal-style.md` (provided separately) is **normative for M12 output** and for the `bayan laws` report format above. Add it to `docs/` and reference it from the handoff's M12 section.
+`docs/bayan-terminal-style.md` (provided separately) is **normative for the output of M12 — CLI completeness and machine-readable output** and for the `bayan laws` report format above. Add it to `docs/` and reference it from the handoff's section for M12 — CLI completeness and machine-readable output.
