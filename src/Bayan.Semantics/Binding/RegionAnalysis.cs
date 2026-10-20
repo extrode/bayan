@@ -65,7 +65,9 @@ internal sealed class RegionAnalysis
     {
         foreach (var p in _fn.Parameters)
         {
-            _depthOf[p] = p.Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out ? 0 : 1;
+            // An arena parameter is a handle to the caller's arena: what it allocates outlives the call.
+            var callerOwned = p.Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out || p.Type == BuiltinType.Arena;
+            _depthOf[p] = callerOwned ? 0 : 1;
             _declaredAt[p] = -1;
         }
         // The first pass collects what each local may borrow (a loop can store into a local

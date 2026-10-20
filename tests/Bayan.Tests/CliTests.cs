@@ -195,4 +195,35 @@ public sealed class CliTests
         Assert.Contains("1 test: 1 passed", stdout);
         Assert.DoesNotContain("main", stdout.Replace("running", ""));
     }
+
+    private static string BuildAndRun(string example)
+    {
+        Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
+        var output = Path.Combine(Golden.RepoRoot, "tmp", "cli-example-" + example + (OperatingSystem.IsWindows() ? ".exe" : ""));
+        var (exit, _, stderr) = Run("build", "-o", output, Example(example));
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        var psi = new System.Diagnostics.ProcessStartInfo(output) { RedirectStandardOutput = true, UseShellExecute = false };
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        var stdout = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+        Assert.Equal(0, p.ExitCode);
+        return stdout.ReplaceLineEndings("\n");
+    }
+
+    [Fact]
+    public void HelloPrintsHelloWorld() => Assert.Equal("Hello, world!\n", BuildAndRun("hello"));
+
+    [Fact]
+    public void TallyLitePrintsTheSettlement() => Assert.Equal(
+        "dina pays alice 91.82 MYR\nchen pays alice 59.12 MYR\nbob pays alice 1.28 MYR\n",
+        BuildAndRun("tally-lite"));
+
+    [Fact]
+    public void TallyLiteTestsPass()
+    {
+        Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
+        var (exit, stdout, stderr) = Run("test", Path.Combine(Golden.RepoRoot, "examples", "tally-lite"));
+        Assert.True(exit == CliApp.ExitOk, stdout + stderr);
+        Assert.Contains("8 tests: 8 passed", stdout);
+    }
 }

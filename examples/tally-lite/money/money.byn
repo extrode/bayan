@@ -1,0 +1,65 @@
+/// An amount in the smallest unit of its currency (sen for MYR).
+public type Cents = i64;
+
+public error enum MoneyError {
+    /// The amount is empty.
+    empty,
+    /// The amount must be digits with at most one decimal point.
+    notANumber,
+    /// The amount has more than two decimal places.
+    tooPrecise,
+    /// The amount is too large.
+    tooLarge,
+}
+
+public struct Money {
+    public Cents cents;
+    public string currency;
+
+    /// Writes `91.82 MYR`, or `-1.28 MYR` for a negative amount.
+    public void formatInto(ref StrBuf sb) {
+        var magnitude = cents;
+        if (cents < 0) {
+            sb.append("-");
+            magnitude = -cents;
+        }
+        let whole = magnitude / 100;
+        let fraction = magnitude % 100;
+        sb.append($"{whole}.");
+        sb.append("0") if fraction < 10;
+        sb.append($"{fraction} {currency}");
+    }
+}
+
+/// Parses `12`, `0.5` or `91.82` into cents.
+public Cents parseAmount(string text) fails MoneyError {
+    return .empty if text.isEmpty;
+    Cents whole = 0;
+    Cents fraction = 0;
+    i64 wholeDigits = 0;
+    i64 fractionDigits = 0;
+    var seenPoint = false;
+    for (let b in text.bytes) {
+        if (b == '.') {
+            return .notANumber if seenPoint;
+            seenPoint = true;
+            continue;
+        }
+        return .notANumber if b < '0' || b > '9';
+        let digit = (i64)(b - '0');
+        if (seenPoint) {
+            fractionDigits += 1;
+            return .tooPrecise if fractionDigits > 2;
+            fraction = fraction * 10 + digit;
+        } else {
+            wholeDigits += 1;
+            return .tooLarge if wholeDigits > 15;
+            whole = whole * 10 + digit;
+        }
+    }
+    return .notANumber if wholeDigits == 0 && fractionDigits == 0;
+    if (fractionDigits == 1) {
+        fraction *= 10;
+    }
+    return whole * 100 + fraction;
+}
