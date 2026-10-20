@@ -177,6 +177,166 @@ bob pays alice 1.28 MYR
 
 **Done when:** `bayan run` prints the output above and `bayan test examples/tally-lite` passes.
 
+<!-- M9–M12 come from docs/bayan-handoff-addendum-001.md; there `HANDOFF.md`/`SPEC.md` mean docs/bayan-handoff.md / docs/bayan-spec.md. -->
+
+### M9 — `bayan new` and `bayan init`
+
+```
+bayan new <name>             # app (default)
+bayan new <name> --lib       # library
+bayan new <name> --script    # single-file script
+bayan init [--lib|--script]  # in the current directory (refuses if package.byn exists)
+  --vcs git|none             # default: git, when git is installed and not already inside a repository
+  --ci github|none           # default: none
+```
+
+**Generated app layout:**
+
+```
+tally/
+  package.byn                 manifest (data only)
+  README.md                   name, one-line description, how to run and test
+  .gitignore
+  .gitattributes
+  .editorconfig
+  src/
+    app/
+      main.byn                print("Hello, world!");
+  tests/
+    app.test.byn              one passing test calling into the app module
+  testdata/                   (empty, with .gitkeep)
+  docs/                       (empty, with .gitkeep)
+  out/                        not created until the first build; ignored
+  dist/                       not created until `bayan dist`; ignored
+  gen/                        not created until a generator runs; ignored
+```
+
+**Library layout** replaces `src/app/main.byn` with `src/<name>/<name>.byn` (one public function and a doc comment) and `tests/<name>.test.byn`. **Script layout** is a single `<name>.byn` with a shebang, `#:io threaded`, and nothing else (no manifest, no git).
+
+**Generated `package.byn` (app):**
+
+```csharp
+Package {
+    name    = "local/tally",      // `local/` until the user publishes under a verified namespace
+    version = "0.1.0",
+    edition = 2027,
+    kind    = .app,
+    capabilities = [],
+    deps    = [],
+    dist = Dist {
+        targets = [.host],        // expands to the machine's own target; see M11
+        mode    = .safe,
+    },
+}
+```
+
+**`.gitignore`:**
+```
+/out/
+/dist/
+/gen/
+```
+Lockfile policy: `bayan.lock` is committed for apps and libraries alike (reproducible builds); do not ignore it.
+
+**`.gitattributes`:**
+```
+* text=auto eol=lf
+*.byn linguist-language=C#
+```
+(The `linguist-language` line gives `.byn` files C# highlighting on GitHub until Bayan has its own grammar there.)
+
+**`.editorconfig`:** UTF-8, LF, 4-space indentation, final newline, trim trailing whitespace.
+
+**`--ci github`** adds `.github/workflows/bayan.yml` running `bayan build`, `bayan test`, and (once they exist) `bayan fmt --check` and `bayan fmt --check-prose`.
+
+**Git behavior:** run `git init` only if `--vcs git` (the default), git is on `PATH`, and the target isn't already inside a work tree (`git rev-parse --is-inside-work-tree`). **Never commit, branch or configure anything.** If git is missing, print a note and continue.
+
+**Acceptance:**
+- Golden cases under `tests/cases/new/`: the full file tree plus every file's contents for app, lib and script, snapshot-tested.
+- A freshly generated app passes `bayan run` and `bayan test` with no edits.
+- `bayan init` in a non-empty directory adds missing files only and lists what it skipped.
+- Names are validated (camelCase-or-kebab directory names allowed, package names lowercase with `-`), with teaching diagnostics.
+
+### M10 — Build outputs: `out/` and `dist/`
+
+Two different directories with different jobs:
+
+| Directory | Contents | Lifetime |
+|---|---|---|
+| `out/` | Everything `bayan build`, `run` and `test` produce: emitted C, objects, binaries, test reports | Disposable; per worktree; ignored |
+| `dist/` | Versioned release artifacts from `bayan dist` | Kept; immutable per version; ignored by git by default |
+
+**`out/` layout:**
+```
+out/
+  <mode>/<target>/            e.g. out/debug/linux-x64/
+    c/                        emitted C (kept for inspection)
+    obj/
+    tally                     the binary
+  test/
+    results.json              machine-readable test results
+```
+
+**`dist/` layout:**
+```
+dist/
+  0.1.0/
+    linux-x64/tally
+    linux-arm64/tally
+    macos-arm64/tally
+    windows-x64/tally.exe
+    SHA256SUMS
+    BUILDINFO.json
+  0.2.0/
+    …
+  latest/                     a copy of the newest version directory
+    VERSION                   contains "0.2.0"
+    linux-x64/tally
+    …
+```
+
+Rules:
+- **Target names:** `linux-x64`, `linux-arm64`, `macos-x64`, `macos-arm64`, `windows-x64`, `windows-arm64`, `wasm32`. `.host` in `package.byn` resolves to the current machine. `bayan dist --target all` builds every target `zig cc` supports from the current host.
+- The version comes from `package.byn`. **A version directory is immutable:** `bayan dist` refuses to overwrite an existing `dist/<version>/` unless `--force`, and says to bump the version instead.
+- `latest/` is a **copy, not a symlink** (symlinks need privileges on Windows and break in archives). It is rebuilt atomically: write to `dist/.latest.tmp/`, then rename. "Newest" means the highest semantic version present, not the most recent build.
+- `SHA256SUMS` lists every artifact in the version directory.
+- `BUILDINFO.json`: package name and version, compiler version, mode, targets, source commit hash and whether the tree was dirty (if in a git repository), and a hash of the inputs. This is the seed of the isnād provenance chain.
+- `bayan dist` refuses to run from a **dirty git tree** unless `--allow-dirty` (recorded in `BUILDINFO.json`).
+- Libraries: `dist/<version>/<target>/` contains the static and shared libraries plus the generated C header, once FFI export exists; until then, `bayan dist` on a library reports that library distribution arrives later.
+- Scripts have no `dist`.
+- `bayan clean` removes `out/`; `--dist` also removes `dist/`; `--cache` clears the global cache (M11). Nothing is removed without one of these commands.
+
+**Acceptance:** golden tests for both layouts (tree listings, `VERSION`, `SHA256SUMS` format, `BUILDINFO.json` schema); immutability and `latest` selection tested with multiple versions; cross-compiling at least `linux-x64`, `macos-arm64` and `windows-x64` from one host in CI.
+
+### M11 — Global cache and worktrees
+
+- **Location:** `$BAYAN_CACHE` if set; otherwise `$XDG_CACHE_HOME/bayan` or `~/.cache/bayan` (Linux), `~/Library/Caches/bayan` (macOS), `%LOCALAPPDATA%\bayan\cache` (Windows).
+- **Content-addressed:** keys are hashes of (compiler version, mode, target, flags, input content). In v0.1 the unit is the emitted C file and object per module; with DIR it becomes per function.
+- **Safe under concurrency:** several worktrees and several agents may build at once. Write to a temporary file and rename atomically; never lock the whole cache; a corrupted entry is detected by its hash and rebuilt.
+- **No absolute paths in any output.** `#line` directives and debug info use paths relative to the package root, so cache entries are valid in every worktree and every checkout location.
+- `out/` is always local to the worktree; only the cache is shared.
+- **Script caching:** `bayan run script.byn` caches the compiled binary under the cache key (source, directives, compiler version); a cache hit starts the binary directly.
+- `bayan cache stats` and `bayan clean --cache`.
+
+**Acceptance:** two worktrees of the same repository building the same commit — the second build compiles nothing (asserted from cache statistics); parallel builds of the same package in two directories never corrupt the cache (stress test); moving a project directory does not invalidate its cache hits.
+
+### M12 — CLI completeness and machine-readable output
+
+Things the original handoff implied but didn't list:
+
+- **`--diagnostics json`** on `build`, `run`, `test`: one JSON object per diagnostic (code, severity, file, span, message, help, fixes). Coding agents and editors consume this instead of parsing text.
+- **`bayan test --json`** writes results to stdout in the same format as `out/test/results.json`.
+- **Exit codes:** `0` success · `1` compile errors · `2` usage errors · `3` test failures · `4` toolchain problems (missing `zig`, unwritable cache). Document them in `bayan --help`.
+- **`bayan run`** exits with the CLI code (`1`) when compilation fails; once the program starts, its exit code passes through unchanged (a failing `main` exits `1`, or its `[ExitCode]`). So `bayan run` cannot tell a build failure from a program exiting `1`: anything that needs the distinction runs `bayan build` first or reads `--diagnostics json`. (Same as `cargo run` / `go run`.) CLI tests cover a build failure, a program exiting `0`, and one exiting with a custom code.
+- **Color:** on for terminals; off when piped, when `NO_COLOR` is set, or with `--color never`.
+- **`bayan doctor`:** reports compiler version, `zig` path and version, git availability, cache location and writability, and the host target. Every failure has a fix suggestion.
+- **`bayan test --changed`** (simple version): uses `git diff --name-only` against `HEAD` (or `--base <ref>`) and runs tests in modules whose files changed. Read-only git use only.
+- **`bayan --version`** prints the compiler version and the commit it was built from.
+
+**Acceptance:** golden tests for JSON diagnostics and test output; exit codes asserted in `run/`-style CLI tests; `bayan doctor` tested with a missing `zig` (via `BAYAN_CC` pointing nowhere).
+
+**Order of work (addendum 001):** Q34 `ReadOnlySpan<T>` and float formatting first; then M12's JSON diagnostics and exit codes; then M9 → M10 → M11; then the rest of M12.
+
 ## After v0.1 (for orientation only)
 
 v0.2: DIR + interpreter (comptime, scripts), generics, interfaces, unions, enums with data, units, `Map`, iterators, `Io.Blocking`/`Threaded`, JSON/CSV, property and fuzz tests, borrowed struct fields with full region inference.
@@ -216,7 +376,7 @@ Formatter, LSP, prose tool and packages land across v0.2–v0.4.
 20. **Runtime file names.** The handoff says `bayan_rt.{h,c}`; the kebab-case hook forbids underscores. *Current choice:* `src/runtime/bayan-rt.{h,c}`, embedded in the backend and written next to `main.c` at build time.
 21. **`StrBuf`.** *Current choice:* a `byn_writer` over caller memory in strict mode: an append that doesn't fit panics (`StrBuf overflow`); `.str` borrows the bytes.
 22. **Default struct formatting.** *Current choice:* a struct with `formatInto(ref StrBuf)` formats through it; otherwise `Name { a: 1, b: 2 }`. Tuples print `(a, b)`, `null` for an empty optional, an error prints its doc-comment summary (else its name).
-23. **Float formatting.** *Current choice:* the shortest round-trip digits, laid out like C# `double.ToString()`: fixed notation for decimal exponents in [-4, 15), else `1E+15` / `1E-05`; `-0` prints `-0`.
+23. **Float formatting.** *Current choice:* the shortest round-trip digits, laid out like C# `double.ToString()`: fixed notation for decimal exponents in [-4, 15), else `1E+15` / `1E-05`; `-0` prints `-0`. *Answered (addendum 001):* shortest round-trip digits; fixed notation for `1e-5 ≤ |x| < 1e15`, exponential outside it, spelled lowercase without `+` or leading zeros (`1e15`, `1.5e-7`, `-2.25e20`); `nan`, `inf`, `-inf`; `-0`; integral values print without a decimal point. `{x:F2}` stays deferred.
 24. **`(T)-x`.** `(i64)-3.99` parses as `(i64) - 3.99` (C# has the same rule for non-keyword types). *Current choice:* unchanged; write `(i64)(-3.99)`. Logged in `work/todo.md`.
 25. **Integer limits.** The spec has no `i64.max`/`i64.min`. *Current choice:* none in v0.1; write the literal.
 26. **Panic locations.** *Current choice:* `panic: <msg>\n  at <package-relative path>:<line>` on stderr, then `abort()` (exit 134; Windows 3 is mapped to 134 by the tests).
@@ -225,9 +385,9 @@ Formatter, LSP, prose tool and packages land across v0.2–v0.4.
 29. **Region analysis precision.** *Current choice:* flow-insensitive per function. A local borrows from everything ever stored in it; a borrow stays alive until the holder's last textual use, extended to the end of any loop that uses it but doesn't declare it. Regions are blocks; by-value parameters count as function-local (returning a span of one is BYN3003). An element read (`xs[i]`) copies, so it doesn't hold a loan on `xs`. Lists created inside `context (allocator: a)` (directly, or returned by a call made there) borrow `a`.
 30. **Structural modification.** *Current choice:* `List.add/clear/removeLast`, `StrBuf.clear`, `Arena.reset`, and passing a borrow-carrying local by `ref`. Element writes (`xs[0] = 9`) and `StrBuf.append` are not structural. BYN3005 fires only when the same local is passed by `ref` and as (or inside a borrow of) another argument; reading `x.length` in the same call is allowed.
 31. **Default allocator.** *Current choice:* `List` outside any `context` uses the C heap (`General`) and is never freed in v0.1; no leak detection yet (spec §9.2's leak-checking `General` for tests is deferred).
-32. **`bayan test` output.** The spec names the command but not its report. *Current choice:* `running N tests`, then one line per test (`ok` / `FAIL` = an error escaped / `PANIC` = panic or failed `assert` / `TIME` = over 60 s) with its wall time; a failing test's stdout and stderr are shown indented below it; a summary line; exit 1 if any test didn't pass. Tests run sequentially, one child process each. Tests from every module in the package are included.
+32. **`bayan test` output.** The spec names the command but not its report. *Current choice:* `running N tests`, then one line per test (`ok` / `FAIL` = an error escaped / `PANIC` = panic or failed `assert` / `TIME` = over 60 s) with its wall time; a failing test's stdout and stderr are shown indented below it; a summary line; exit 1 if any test didn't pass. Tests run sequentially, one child process each. Tests from every module in the package are included. *Exit code (addendum 001):* test failures exit `3`.
 33. **Arena parameters and rule 4.** §9.4 rule 1 makes function locals a region, but an `Arena` passed by value is a handle to the caller's arena, and our BYN3003 help says to pass the allocator in. *Current choice:* an `Arena` parameter's region is the caller's, so `xs.copy(to: arena)` may be returned. Rule 4 (a call result borrows from every argument) stays unnarrowed because the `borrows a` clause isn't implemented yet: passing a `Span` array literal into a function whose result is stored past the literal's block is reported, even when the callee never keeps it. tally-lite passes `List<string>` instead.
-34. **Read-only spans.** The spec says strings are immutable and always valid UTF-8 but gives `s.bytes` no type. *Current choice:* `string.bytes` (and slices of it) is a `read-only Span<u8>`: its elements cannot be assigned, a writable `Span<T>` converts to it implicitly, and it does not convert to `Span<T>`, so it cannot be passed to a `Span<u8>` parameter (copy with `.copy(to:)` first). There is no syntax to name the type yet; a later `ReadOnlySpan<T>` or read-only-by-default parameter rule (§ parameters) would relax this.
+34. **Read-only spans.** The spec says strings are immutable and always valid UTF-8 but gives `s.bytes` no type. *Current choice:* `string.bytes` (and slices of it) is a `read-only Span<u8>`: its elements cannot be assigned, a writable `Span<T>` converts to it implicitly, and it does not convert to `Span<T>`, so it cannot be passed to a `Span<u8>` parameter (copy with `.copy(to:)` first). There is no syntax to name the type yet; a later `ReadOnlySpan<T>` or read-only-by-default parameter rule (§ parameters) would relax this. *Answered (addendum 001):* add `ReadOnlySpan<T>` with C# semantics: `Span<T>` → `ReadOnlySpan<T>` implicit; `List<T>` → `ReadOnlySpan<T>` and `string` → `ReadOnlySpan<u8>` implicit as arguments; `string.bytes : ReadOnlySpan<u8>`; read-only stdlib functions take `ReadOnlySpan<T>`; lint BYN2310 suggests it for a `Span<T>` parameter never written to. Span parameters stay mutable (zero-allocation C# must compile unchanged).
 
 ## Progress log
 

@@ -1,0 +1,681 @@
+/* Shared theme for generated documentation artifacts.
+ *
+ * Canonical copy: ~/.claude/tools/html/assets/artifact.css
+ * Synced into each repo at docs/assets/artifact.css by tools/html/build.js.
+ * Edit the canonical copy; a drifted repo copy fails build.js --check.
+ *
+ * Rules that are not style choices:
+ *   - Zero network. Fonts are vendored siblings, referenced with relative url().
+ *   - No absolute paths. Nothing here may start with / or a drive letter.
+ *
+ * Direction: a calm technical instrument. One family (IBM Plex Sans) carries
+ * every role through weight, size and tracking rather than a second display
+ * face. Tables are ruled, not boxed. Borders are hairlines. One accent, used
+ * only for links and state. The reference points are Linear and Stripe docs,
+ * where a great deal of structure still reads as calm.
+ *
+ * Fonts: IBM Plex Sans and IBM Plex Mono, SIL OFL 1.1, see LICENSE-fonts.txt.
+ * Icons: drawn in tools/html/shell.js, no third-party asset embedded.
+ */
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/plex-sans-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("fonts/plex-sans-600.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("fonts/plex-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  /* The fallbacks matter: if the woff2 files are missing the page must still
+   * look deliberate, so the stack names real faces rather than ending at
+   * sans-serif. */
+  --font-body: "IBM Plex Sans", "Segoe UI", "Helvetica Neue", sans-serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+
+  --t-xs: 11.5px;
+  --t-sm: 13px;
+  --t-cd: 13.5px;
+  --t-md: 15px;
+  --t-lg: 19px;
+  --t-xl: 25px;
+  --t-2xl: 33px;
+
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 18px;
+  --s-5: 26px;
+  --s-6: 40px;
+  --s-7: 64px;
+
+  --r-sm: 4px;
+  --r-md: 7px;
+  --hair: 1px;
+  --measure: 76ch;
+  --rail: 216px;
+  --page: 1180px;
+
+  --bg: #0e1013;
+  --panel: #15181d;
+  --panel-2: #1b1f26;
+  --line: #23272e;
+  --line-soft: #1a1e24;
+  --fg: #e7eaef;
+  --fg-strong: #ffffff;
+  --dim: #939ba7;
+  --accent: #66d9a5;
+  --accent-dim: #2f7d63;
+  --sev-high: #ff7b72;
+  --sev-med: #e3b341;
+  --sev-low: #8b95a1;
+  --add: #6fd08c;
+  --add-bg: rgba(111, 208, 140, 0.09);
+  --del: #ff8a80;
+  --del-bg: rgba(255, 138, 128, 0.09);
+
+  /* Diagram palette. Pre-rendered SVG has its colours baked in, so build.js
+   * rewrites each one as var(--dg-*, <original dark hex>) — see
+   * tools/html/diagram-theme.js. These are the dark values, i.e. what mermaid
+   * rendered; the fallbacks in the SVG say the same thing, so a diagram survives
+   * this block going missing. Kept separate from the page tokens above because
+   * they are a fixed contract with that table: adding a colour there without one
+   * here makes the build throw. */
+  --dg-canvas: #0f1319;
+  --dg-node-bg: #161b24;
+  --dg-node-bg-2: #1b2230;
+  --dg-cluster-bg: #141922;
+  --dg-border: #2b323d;
+  --dg-line: #8b97a8;
+  --dg-text: #e6edf3;
+  --dg-edge-label: #ebe6dd;
+  --dg-title: #f0ece6;
+  --dg-label-bg: rgba(27, 34, 48, 0.5);
+  --dg-ok-bg: #1f6f4a;
+  --dg-ok-border: #2ea36a;
+  --dg-ok-text: #eaf6ef;
+  --dg-warn-bg: #7a4a1f;
+  --dg-warn-border: #c07c34;
+  --dg-warn-text: #fdf1e3;
+  --dg-info-bg: #1f4f7a;
+  --dg-info-border: #3a86c8;
+  --dg-info-text: #e8f2fb;
+  --dg-bad-bg: #7a1f2e;
+  --dg-bad-border: #c2405a;
+  --dg-bad-text: #fdeaee;
+  /* Score badges in the hand-authored axis SVG. Deeper than the classDef fills
+   * above, so they are their own pair rather than a reuse. */
+  --dg-score-ok-bg: #14361f;
+  --dg-score-ok-fg: #5ddc9a;
+  --dg-score-bad-bg: #3a1620;
+  --dg-score-bad-fg: #ff8ba3;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #fdfdfc;
+    --panel: #f5f5f2;
+    --panel-2: #eeeeea;
+    --line: #e0e0d9;
+    --line-soft: #ebebe5;
+    --fg: #1a1c1e;
+    --fg-strong: #000000;
+    --dim: #5f666e;
+    --accent: #0d7a5f;
+    --accent-dim: #9ad4c3;
+    --sev-high: #b3261e;
+    --sev-med: #8a5b00;
+    --sev-low: #5f666e;
+    --add: #146b34;
+    --add-bg: rgba(20, 107, 52, 0.08);
+    --del: #a3251c;
+    --del-bg: rgba(163, 37, 28, 0.08);
+
+    /* The classDef families invert: a dark fill with light text becomes a light
+     * tint with dark text, same hue, so the four categories stay distinguishable
+     * at a glance in either scheme. */
+    --dg-canvas: #fbfbf9;
+    --dg-node-bg: #f5f5f2;
+    --dg-node-bg-2: #eeeeea;
+    --dg-cluster-bg: #f7f7f4;
+    --dg-border: #c9c9c2;
+    --dg-line: #5f666e;
+    --dg-text: #1a1c1e;
+    --dg-edge-label: #3a3d33;
+    --dg-title: #2a2d24;
+    --dg-label-bg: rgba(238, 238, 234, 0.5);
+    --dg-ok-bg: #dcefe4;
+    --dg-ok-border: #2e7d54;
+    --dg-ok-text: #14472e;
+    --dg-warn-bg: #f7ead8;
+    --dg-warn-border: #9a6428;
+    --dg-warn-text: #5c3a14;
+    --dg-info-bg: #ddeaf6;
+    --dg-info-border: #2f6ba3;
+    --dg-info-text: #163a5c;
+    --dg-bad-bg: #f9e0e5;
+    --dg-bad-border: #a83a50;
+    --dg-bad-text: #5c1622;
+    --dg-score-ok-bg: #dcefe4;
+    --dg-score-ok-fg: #14472e;
+    --dg-score-bad-bg: #f9e0e5;
+    --dg-score-bad-fg: #5c1622;
+  }
+}
+
+/* Explicit override wins over the media query, for a reader who wants the
+ * other one regardless of their OS setting. */
+html[data-theme="light"] {
+  --bg: #fdfdfc; --panel: #f5f5f2; --panel-2: #eeeeea; --line: #e0e0d9;
+  --line-soft: #ebebe5; --fg: #1a1c1e; --fg-strong: #000; --dim: #5f666e;
+  --accent: #0d7a5f; --accent-dim: #9ad4c3; --sev-high: #b3261e;
+  --sev-med: #8a5b00; --sev-low: #5f666e; --add: #146b34;
+  --add-bg: rgba(20,107,52,.08); --del: #a3251c; --del-bg: rgba(163,37,28,.08);
+  --dg-canvas: #fbfbf9; --dg-node-bg: #f5f5f2; --dg-node-bg-2: #eeeeea; --dg-cluster-bg: #f7f7f4;
+  --dg-border: #c9c9c2; --dg-line: #5f666e; --dg-text: #1a1c1e;
+  --dg-edge-label: #3a3d33; --dg-title: #2a2d24;
+  --dg-label-bg: rgba(238,238,234,.5);
+  --dg-ok-bg: #dcefe4; --dg-ok-border: #2e7d54; --dg-ok-text: #14472e;
+  --dg-warn-bg: #f7ead8; --dg-warn-border: #9a6428; --dg-warn-text: #5c3a14;
+  --dg-info-bg: #ddeaf6; --dg-info-border: #2f6ba3; --dg-info-text: #163a5c;
+  --dg-bad-bg: #f9e0e5; --dg-bad-border: #a83a50; --dg-bad-text: #5c1622;
+  --dg-score-ok-bg: #dcefe4; --dg-score-ok-fg: #14472e;
+  --dg-score-bad-bg: #f9e0e5; --dg-score-bad-fg: #5c1622;
+}
+html[data-theme="dark"] {
+  --bg: #0e1013; --panel: #15181d; --panel-2: #1b1f26; --line: #23272e;
+  --line-soft: #1a1e24; --fg: #e7eaef; --fg-strong: #fff; --dim: #939ba7;
+  --accent: #66d9a5; --accent-dim: #2f7d63; --sev-high: #ff7b72;
+  --sev-med: #e3b341; --sev-low: #8b95a1; --add: #6fd08c;
+  --add-bg: rgba(111,208,140,.09); --del: #ff8a80; --del-bg: rgba(255,138,128,.09);
+  --dg-canvas: #0f1319; --dg-node-bg: #161b24; --dg-node-bg-2: #1b2230; --dg-cluster-bg: #141922;
+  --dg-border: #2b323d; --dg-line: #8b97a8; --dg-text: #e6edf3;
+  --dg-edge-label: #ebe6dd; --dg-title: #f0ece6;
+  --dg-label-bg: rgba(27,34,48,.5);
+  --dg-ok-bg: #1f6f4a; --dg-ok-border: #2ea36a; --dg-ok-text: #eaf6ef;
+  --dg-warn-bg: #7a4a1f; --dg-warn-border: #c07c34; --dg-warn-text: #fdf1e3;
+  --dg-info-bg: #1f4f7a; --dg-info-border: #3a86c8; --dg-info-text: #e8f2fb;
+  --dg-bad-bg: #7a1f2e; --dg-bad-border: #c2405a; --dg-bad-text: #fdeaee;
+  --dg-score-ok-bg: #14361f; --dg-score-ok-fg: #5ddc9a;
+  --dg-score-bad-bg: #3a1620; --dg-score-bad-fg: #ff8ba3;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--bg); }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 400 var(--t-md)/1.62 var(--font-body);
+  font-feature-settings: "kern" 1, "liga" 1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.icon {
+  width: 1em;
+  height: 1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+  vertical-align: -0.14em;
+}
+
+/* --- header ------------------------------------------------------------- */
+
+.doc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-4);
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: var(--s-6) var(--s-5) var(--s-4);
+  border-bottom: var(--hair) solid var(--line);
+}
+
+.doc-title {
+  margin: 0;
+  font-size: var(--t-2xl);
+  font-weight: 600;
+  letter-spacing: -0.021em;
+  line-height: 1.18;
+  color: var(--fg-strong);
+}
+
+.doc-source {
+  margin: var(--s-2) 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  font-size: var(--t-sm);
+  color: var(--dim);
+}
+.doc-source code { background: none; border: 0; padding: 0; color: inherit; }
+
+.hub-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  flex: none;
+  padding: var(--s-1) var(--s-3) var(--s-1) var(--s-2);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: var(--t-sm);
+  color: var(--dim);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.hub-link:hover { color: var(--accent); border-color: var(--accent-dim); }
+.hub-link .icon { transform: rotate(180deg); }
+
+/* --- layout ------------------------------------------------------------- */
+
+.wrap {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  gap: var(--s-7);
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: var(--s-5) var(--s-5) var(--s-7);
+}
+.wrap:not(:has(.toc)) { grid-template-columns: minmax(0, 1fr); }
+
+main { min-width: 0; }
+main > * { max-width: var(--measure); }
+main > .table-scroll, main > pre.code, main > .finding { max-width: none; }
+
+/* --- contents rail ------------------------------------------------------ */
+
+.toc {
+  position: sticky;
+  top: var(--s-5);
+  align-self: start;
+  max-height: calc(100vh - var(--s-7));
+  overflow: auto;
+  font-size: var(--t-sm);
+}
+.toc-head {
+  margin: 0 0 var(--s-3);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: 0; }
+.toc a {
+  display: block;
+  padding: 5px 0 5px var(--s-3);
+  border-left: 2px solid var(--line);
+  color: var(--dim);
+  text-decoration: none;
+  line-height: 1.4;
+}
+.toc li.l3 a { padding-left: var(--s-5); font-size: 12.5px; }
+.toc a:hover { color: var(--fg); border-left-color: var(--dim); }
+.toc a.here { color: var(--accent); border-left-color: var(--accent); }
+
+/* --- prose -------------------------------------------------------------- */
+
+h1, h2, h3, h4, h5, h6 { color: var(--fg-strong); font-weight: 600; }
+
+h2 {
+  margin: var(--s-7) 0 var(--s-4);
+  padding-bottom: var(--s-2);
+  border-bottom: var(--hair) solid var(--line);
+  font-size: var(--t-xl);
+  letter-spacing: -0.015em;
+}
+h3 { margin: var(--s-6) 0 var(--s-3); font-size: var(--t-lg); letter-spacing: -0.008em; }
+h4 {
+  margin: var(--s-5) 0 var(--s-2);
+  font-size: var(--t-md);
+  letter-spacing: 0.005em;
+  color: var(--fg);
+}
+h5, h6 {
+  margin: var(--s-4) 0 var(--s-2);
+  font-size: var(--t-sm);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+h1 + p, h2 + p, h3 + p { margin-top: 0; }
+
+p { margin: 0 0 var(--s-4); }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
+
+strong { font-weight: 600; color: var(--fg-strong); }
+em { font-style: italic; }
+del { color: var(--dim); text-decoration-color: var(--dim); }
+
+hr { margin: var(--s-6) 0; border: 0; border-top: var(--hair) solid var(--line); }
+
+/* Anchors reveal on hover, so a heading reads clean until you want the link. */
+.anchor {
+  margin-left: 0.4em;
+  opacity: 0;
+  color: var(--dim);
+  text-decoration: none;
+  font-size: 0.72em;
+  transition: opacity 0.12s ease;
+}
+h2:hover .anchor, h3:hover .anchor, h4:hover .anchor, .anchor:focus { opacity: 1; }
+.anchor:hover { color: var(--accent); }
+
+ul, ol { margin: 0 0 var(--s-4); padding-left: 1.35em; }
+li { margin: 0 0 var(--s-2); }
+li > ul, li > ol { margin: var(--s-2) 0 0; }
+
+/* --- code --------------------------------------------------------------- */
+
+code {
+  font: 400 var(--t-cd)/1.45 var(--font-mono);
+  background: var(--panel);
+  border: var(--hair) solid var(--line-soft);
+  border-radius: var(--r-sm);
+  padding: 0.1em 0.34em;
+  overflow-wrap: break-word;
+}
+
+pre.code {
+  margin: 0 0 var(--s-4);
+  padding: var(--s-4);
+  background: var(--panel);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-md);
+  overflow-x: auto;
+}
+pre.code code {
+  display: block;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: var(--t-cd);
+  line-height: 1.55;
+  white-space: pre;
+}
+
+pre.code.diff code span { display: block; padding: 0 var(--s-2); margin: 0 calc(var(--s-2) * -1); }
+pre.code.diff .add { color: var(--add); background: var(--add-bg); }
+pre.code.diff .del { color: var(--del); background: var(--del-bg); }
+pre.code.diff .hunk { color: var(--dim); border-top: var(--hair) solid var(--line); margin-top: var(--s-2); padding-top: var(--s-2); }
+pre.code.diff .ctx { color: var(--fg); }
+
+/* --- diagrams ----------------------------------------------------------- */
+
+/* A ```mermaid fence pre-rendered to inline SVG at build time, or a ```svg fence
+   authored by hand. Same frame as a code block, because that is what it is: a
+   figure generated from the source beside it.
+
+   The palette is baked into the SVG at render time and is the dark one, so the
+   panel stays dark in light mode rather than putting dark strokes on a light
+   card. Diagrams are the one place the theme does not invert. */
+figure.diagram {
+  margin: 0 0 var(--s-4);
+  padding: var(--s-4);
+  /* The canvas the diagram sits on. mermaid never paints its own background, so
+   * this is the only place that colour exists -- which is why it was the one
+   * thing still black in light mode after the palette pass. */
+  background: var(--dg-canvas, #0f1319);
+  border: var(--hair) solid var(--dg-border, #2b323d);
+  border-radius: var(--r-md);
+  overflow-x: auto;
+}
+figure.diagram svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+
+/* mermaid measures each label in a bare page and bakes the resulting width into
+   the node, so any typography this stylesheet inherits into a label's
+   foreignObject renders text the box was never sized for. `text-rendering:
+   optimizeLegibility` and the `kern`/`liga` features on body widened two labels
+   past their nodes and Chromium clipped them mid-word ("workers can't spawn
+   worker|", "~$0.09 co|"). Pinned back to the renderer's environment, which is
+   deliberately bare apart from the fonts -- see tools/html/mermaid-render.py. */
+figure.diagram foreignObject div,
+figure.diagram foreignObject span,
+figure.diagram foreignObject p {
+  font-feature-settings: normal;
+  text-rendering: auto;
+  letter-spacing: normal;
+  word-spacing: normal;
+}
+
+/* --- tables ------------------------------------------------------------- */
+
+.table-scroll { margin: 0 0 var(--s-4); overflow-x: auto; }
+
+table { border-collapse: collapse; width: 100%; font-size: var(--t-sm); }
+
+th, td {
+  padding: var(--s-2) var(--s-3);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: var(--hair) solid var(--line);
+}
+th {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+  color: var(--dim);
+  border-bottom-color: var(--dim);
+  white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: 0; }
+td code { font-size: 12.5px; }
+
+/* --- callout ------------------------------------------------------------ */
+
+blockquote {
+  display: flex;
+  gap: var(--s-3);
+  margin: 0 0 var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  background: var(--panel);
+  border: var(--hair) solid var(--line);
+  border-left: 2px solid var(--accent-dim);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  color: var(--fg);
+}
+blockquote .icon { margin-top: 0.28em; color: var(--accent); }
+blockquote > div > :last-child { margin-bottom: 0; }
+
+/* --- chips and findings ------------------------------------------------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 1px var(--s-2);
+  border: var(--hair) solid currentColor;
+  border-radius: 999px;
+  font: 600 var(--t-xs)/1.5 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.chip::before { content: ""; width: 0.5em; height: 0.5em; border-radius: 50%; background: currentColor; }
+.chip.high { color: var(--sev-high); }
+.chip.med { color: var(--sev-med); }
+.chip.low { color: var(--sev-low); }
+
+.finding {
+  margin: 0 0 var(--s-5);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.finding-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  padding: var(--s-3) var(--s-4);
+  background: var(--panel-2);
+  border-bottom: var(--hair) solid var(--line);
+}
+.finding-head h3 { margin: 0; font-size: var(--t-md); }
+.finding-loc { font: 400 var(--t-sm)/1.4 var(--font-mono); color: var(--dim); }
+.finding-body { padding: var(--s-4); }
+.finding-body > :last-child { margin-bottom: 0; }
+.finding-body pre.code { margin-bottom: var(--s-3); }
+.finding.high { border-left: 2px solid var(--sev-high); }
+.finding.med { border-left: 2px solid var(--sev-med); }
+.finding.low { border-left: 2px solid var(--sev-low); }
+
+/* --- buttons ------------------------------------------------------------ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: var(--s-1) var(--s-3);
+  background: var(--panel);
+  color: var(--fg);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-sm);
+  font: 400 var(--t-sm)/1.6 var(--font-body);
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--accent-dim); color: var(--accent); }
+.btn:active { background: var(--panel-2); transform: translateY(1px); }
+.btn.done { color: var(--accent); border-color: var(--accent-dim); }
+
+/* --- hub ---------------------------------------------------------------- */
+
+.hub-section { margin: 0 0 var(--s-6); max-width: none; }
+.hub-section h2 { margin-top: var(--s-5); }
+
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--s-3);
+  max-width: none;
+}
+.card {
+  display: block;
+  padding: var(--s-4);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  color: var(--fg);
+  text-decoration: none;
+}
+.card:hover { border-color: var(--accent-dim); }
+.card-title { font-weight: 600; color: var(--fg-strong); }
+.card-meta {
+  margin: var(--s-2) 0 0;
+  font: 400 12.5px/1.5 var(--font-mono);
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+.card.ephemeral { border-style: dashed; }
+.card.ephemeral .card-title::after {
+  content: "scratch";
+  margin-left: 0.6em;
+  font: 600 var(--t-xs)/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sev-med);
+}
+
+/* --- footer ------------------------------------------------------------- */
+
+.doc-foot {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: var(--s-4) var(--s-5) var(--s-6);
+  border-top: var(--hair) solid var(--line);
+  font-size: var(--t-sm);
+  color: var(--dim);
+}
+.doc-foot p { margin: 0; }
+.doc-foot code { background: none; border: 0; padding: 0; color: inherit; }
+
+/* --- narrow ------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .wrap {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-4);
+    padding: var(--s-4) var(--s-4) var(--s-6);
+  }
+  .toc {
+    position: static;
+    max-height: none;
+    padding-bottom: var(--s-3);
+    border-bottom: var(--hair) solid var(--line);
+  }
+  .toc ul { columns: 2; column-gap: var(--s-4); }
+  /* Columns break between lines, not between items, unless told otherwise: at
+     390px "The invention-to-transcription axis" ended mid-word at the bottom of
+     the first column and resumed in the second, reading as two entries. */
+  .toc li { break-inside: avoid; }
+  /* Nothing to show and no column to reserve once the grid is single-column. */
+  .toc-empty { display: none; }
+  /* An 835px flowchart scaled into a 350px column has 5px labels: legible on a
+     desktop, not on a phone. Keep the diagram at its own size and let the
+     figure's overflow-x scroll it instead. !important because mermaid writes
+     the width as an inline style on the <svg>, which no selector can outrank. */
+  figure.diagram svg { max-width: none !important; width: var(--dw, 100%); }
+  .doc-head { flex-direction: column; padding: var(--s-5) var(--s-4) var(--s-3); }
+  .doc-foot { padding: var(--s-4); }
+  :root { --t-2xl: 26px; --t-xl: 21px; --t-lg: 17px; }
+}
+
+/* --- print -------------------------------------------------------------- */
+
+@media print {
+  :root {
+    --bg: #fff; --panel: #fff; --panel-2: #f4f4f2; --line: #c9c9c2;
+    --line-soft: #ddd; --fg: #111; --fg-strong: #000; --dim: #555;
+    --accent: #06614a; --accent-dim: #9ad4c3;
+    --add: #146b34; --add-bg: #f1f8f3; --del: #a3251c; --del-bg: #fdf2f1;
+    --page: none;
+    /* Diagrams print on white paper, so they take the light palette whatever the
+     * screen is set to. A dark-filled node here is a solid block of toner. */
+    --dg-canvas: #fbfbf9; --dg-node-bg: #f5f5f2; --dg-node-bg-2: #eeeeea; --dg-cluster-bg: #f7f7f4;
+    --dg-border: #c9c9c2; --dg-line: #5f666e; --dg-text: #1a1c1e;
+    --dg-edge-label: #3a3d33; --dg-title: #2a2d24;
+    --dg-label-bg: rgba(238,238,234,.5);
+    --dg-ok-bg: #dcefe4; --dg-ok-border: #2e7d54; --dg-ok-text: #14472e;
+    --dg-warn-bg: #f7ead8; --dg-warn-border: #9a6428; --dg-warn-text: #5c3a14;
+    --dg-info-bg: #ddeaf6; --dg-info-border: #2f6ba3; --dg-info-text: #163a5c;
+    --dg-bad-bg: #f9e0e5; --dg-bad-border: #a83a50; --dg-bad-text: #5c1622;
+    --dg-score-ok-bg: #dcefe4; --dg-score-ok-fg: #14472e;
+    --dg-score-bad-bg: #f9e0e5; --dg-score-bad-fg: #5c1622;
+  }
+  html, body { background: #fff; color: #111; }
+  .toc, .hub-link, .btn, .anchor { display: none; }
+  .wrap { display: block; padding: 0; max-width: none; }
+  .doc-head, .doc-foot { max-width: none; padding: 0 0 var(--s-3); }
+  main > * { max-width: none; }
+  a { color: #111; text-decoration: underline; }
+  /* Keep a heading with what it introduces, and never split a table or a code
+   * block across a page: a diff cut in half is worse than a short page. */
+  h1, h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
+  table, pre.code, blockquote, .finding { break-inside: avoid; page-break-inside: avoid; }
+  pre.code { white-space: pre-wrap; overflow: visible; }
+  @page { margin: 16mm 14mm; }
+}
