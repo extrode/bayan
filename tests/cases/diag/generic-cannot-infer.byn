@@ -1,5 +1,5 @@
 T? none<T>() => null;
-T orDefault<T>(T? x, T fallback) => x ?? fallback;
+T orDefault<T>(move T? x, move T fallback) => move x ?? move fallback;
 
 var a = none();
 var b = orDefault(x: null, fallback: null);

@@ -1,5 +1,5 @@
-T pick<T>(bool first, T a, T b) => first ? a : b;
-T head<T>(List<T> xs, T fallback) => xs.length > 0 ? xs[0] : fallback;
+T pick<T>(bool first, move T a, move T b) => first ? move a : move b;
+T head<T>(List<T> xs, move T fallback) => move fallback;
 
 var x = pick(first: true, a: 1, b: "one");
 var words = List<string>();

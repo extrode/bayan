@@ -675,8 +675,6 @@ public sealed class Compilation
         foreach (var p in parameters)
         {
             Naming.CheckValue(this, file.Source, p.Name);
-            if (p.Modifier is ParamModifier.Move)
-                Report(DiagnosticCodes.Unsupported, file.Source, p.Span, ["`move` parameters"]);
             var sym = new ParameterSymbol(p.Name.Text, Loc(file, p.Name), types.Resolve(p.Type), p.Modifier, fn.Parameters.Count) { Syntax = p };
             if (fn.Parameters.Any(q => q.Name == sym.Name))
                 ReportDuplicate(file.Source, p.Name, fn.Parameters.First(q => q.Name == sym.Name).Location!.Value);
@@ -779,6 +777,9 @@ public sealed class Compilation
         InferMutation();
         foreach (var module in Modules)
             foreach (var fn in module.AllFunctions)
+            {
+                // Ownership is checked once, on the template, where every type parameter counts as unique.
+                if (fn.Body is not null && !fn.IsInstance) OwnershipAnalysis.Analyze(this, fn);
                 if (fn.Body is not null && !fn.IsGeneric)
                 {
                     if (fn.IsInstance)
@@ -790,6 +791,7 @@ public sealed class Compilation
                     RegionAnalysis.Analyze(this, fn);
                     SpanParameterLint.Analyze(this, fn);
                 }
+            }
         if (!Diagnostics.HasErrors && _instantiationErrors.FirstOrDefault() is { } internalError)
             throw new InvalidOperationException(
                 $"internal error: instantiating a generic reported {internalError.Code} at {internalError.Source?.Path}: {internalError.Message}");

@@ -1,10 +1,10 @@
 struct Point {
     i64 x;
 
-    T echo<T>(T value) => value;
+    T echo<T>(move T value) => move value;
 }
 
-T id<T, T>(T x) => x;
+T id<T, T>(move T x) => move x;
 struct Bag<item> {
     item thing;
 }

@@ -30,8 +30,8 @@ i32 unreadable(string path) {
 }
 
 /// Lexes `path` and appends its dump (`json`: the JSON form) to `sb`; returns whether any diagnostic is an error.
-bool dumpFile(ref StrBuf sb, string path, List<u8> bytes, Keywords keywords, bool json) {
-    var result = lex(SourceText.create(path, bytes), keywords);
+bool dumpFile(ref StrBuf sb, string path, move List<u8> bytes, Keywords keywords, bool json) {
+    var result = lex(SourceText.create(path, move bytes), keywords);
     if (json) {
         dumpJson(ref sb, ref result);
     } else {
@@ -69,7 +69,7 @@ i32 lexOne(string path, Keywords keywords, bool json) {
         bytes = Io.readFile(path) catch return unreadable(path);
     }
     var sb = StrBuf();
-    let failed = dumpFile(ref sb, path == "-" ? "<stdin>" : path, bytes, keywords, json: json);
+    let failed = dumpFile(ref sb, path == "-" ? "<stdin>" : path, move bytes, keywords, json: json);
     Io.stdout.write(sb.asString());
     return failed ? exitFailure : exitOk;
 }
@@ -84,7 +84,7 @@ i32 lexMany(string dir, Keywords keywords) {
             let bytes = Io.readFile(path) catch return fileNotFound(path);
             var sb = StrBuf();
             sb.append($"== {name}\n");
-            var result = lex(SourceText.create(path, bytes), keywords);
+            var result = lex(SourceText.create(path, move bytes), keywords);
             checkSpans(ref sb, ref result);
             dump(ref sb, ref result);
             Io.stdout.write(sb.asString());
@@ -96,7 +96,7 @@ i32 lexMany(string dir, Keywords keywords) {
 i32 lexTimed(string path, Keywords keywords) {
     let bytes = Io.readFile(path) catch return fileNotFound(path);
     let start = Io.monotonicNanos();
-    let result = lex(SourceText.create(path, bytes), keywords);
+    let result = lex(SourceText.create(path, move bytes), keywords);
     let elapsed = Io.monotonicNanos() - start;
     print($"{elapsed}");
     return result.tokens.isEmpty ? exitFailure : exitOk;

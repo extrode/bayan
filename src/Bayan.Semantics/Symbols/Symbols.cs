@@ -279,6 +279,9 @@ public class LocalSymbol(string name, Location? location, TypeSymbol type, Local
     /// <summary>Compile-time value of a <c>const</c>.</summary>
     public ConstantValue? Constant { get; set; }
 
+    /// <summary>A <c>for</c> variable or pattern binding: of a unique type it borrows from the subject (spec §3.11).</summary>
+    public bool BorrowsSubject { get; set; }
+
     /// <summary>The <c>let</c> keyword, for the fix that turns it into <c>var</c>.</summary>
     public Bayan.Syntax.Text.TextSpan? KeywordSpan { get; set; }
 }

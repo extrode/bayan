@@ -18,7 +18,8 @@ void dump(ref StrBuf sb, ref LexResult result) {
     }
     if (result.diagnostics.length > 0) {
         sb.append("\n");
-        let diagnostics = result.diagnostics;
+        using var arena = Arena();
+        let diagnostics = result.diagnostics.copy(to: arena);
         renderAll(ref sb, ref result.source, diagnostics.asSpan());
     }
 }
@@ -68,10 +69,9 @@ void dumpJson(ref StrBuf sb, ref LexResult result) {
         sb.append("}");
     }
     sb.append("],\"diagnostics\":[");
-    let diagnostics = result.diagnostics;
-    let order = sourceOrder(diagnostics.asSpan());
+    let order = sourceOrder(result.diagnostics.asSpan());
     for (let k in 0..order.length) {
-        let d = diagnostics[order[k]];
+        let d = result.diagnostics[order[k]];
         if (k > 0) sb.append(",");
         sb.append($"{{\"code\":\"{d.code}\",\"severity\":\"error\",\"start\":{d.span.start},\"end\":{d.span.end},\"message\":");
         jsonString(ref sb, d.message.bytes);

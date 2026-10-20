@@ -8,7 +8,7 @@ void main() {
     {
         using let arena = Arena();
         context (allocator: arena) {
-            head = Owned(Node { item = 1, next = head });
+            head = Owned(Node { item = 1, next = move head });
         }
     }
 }

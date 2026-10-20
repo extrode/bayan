@@ -754,6 +754,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 return SwitchExpr(s);
             case BoundTry t:
                 return Try(t);
+            case BoundMove m:
+                return Expr(m.Operand);
             case BoundCatch c:
                 return Catch(c);
             case BoundJump j:
