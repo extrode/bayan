@@ -32,3 +32,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `Toolchain.Stats` throws `DirectoryNotFoundException` if an entry is discarded mid-enumeration (`bayan cache stats`, `doctor`). Review 1557d6fd639d..29c1d013a33e.
 - `Scaffold.Git` trims stdout, so `test --changed` with `-z` loses leading whitespace of the first file name.
 - Test timeout detail prints "timed out after 0 s" for sub-second `BAYAN_TEST_TIMEOUT_MS`.
+- `test --changed` on macOS: git reports NFC paths, so a module directory with a non-ASCII name stored in NFD never matches and its tests are skipped. Review 1557d6fd639d..29c1d013a33e.
