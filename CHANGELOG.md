@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Spec 002: `unique` collections with `move` and `.copy(to:)` (BYN2780-2784, BYN2762 retired); Map API per spec §16 (`map[k]`, `getOr`, `slot`, BYN2785); `bayan lex --json` and stdin for both lexers on shared Unicode tables; `Untrusted<T>`, `trust` and `Io.runBatch` (BYN2786, BYN2787); BYN2311 never-reassigned `var` lint; proofs for laws L001-L004
 - Reserved keywords `law`, `requires`, `ensures` (BYN0012 as identifiers; handoff addendum 002)
 - Solution, AOT CLI, diagnostics renderer, golden harness, CI workflow
 - UTF-8 lexer, BYN0001-0016 with docs, bayan lex/explain

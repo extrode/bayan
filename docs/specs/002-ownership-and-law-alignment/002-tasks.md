@@ -14,4 +14,4 @@ Plan: ./002-plan.md
 - [x] T11 revise L005 statement (`%~N`), draft L006 unique-never-aliases as proposed — files: docs/laws/005-*, docs/laws/006-* — covers: law candidates — done when: files written, status proposed
 - [ ] T12 enact L005, L006 — user — done when: user sets status enacted (awaiting)
 - [ ] T13 prove L005, L006 — after T12 — done when: laws-check holds
-- [ ] T14 handoff Q55/Q56 answered + new Questions, progress log, CHANGELOG, status — files: docs/bayan-handoff.md, CHANGELOG.md, work/status/* — covers: R13 — done when: written
+- [x] T14 handoff Q55/Q56 answered + new Questions, progress log, CHANGELOG, status — files: docs/bayan-handoff.md, CHANGELOG.md, work/status/* — covers: R13 — done when: written
