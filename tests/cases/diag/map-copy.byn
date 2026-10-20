@@ -42,7 +42,7 @@ error enum LookupError { missing }
 
 void copies(Map<i64, i64> p) {
     var a = Map<i64, i64>();
-    a.set(1, 10);
+    a[1] = 10;
     var b = a;
     let c = p;
     var s = Store { name = "s", data = fresh() };
@@ -55,14 +55,14 @@ void copies(Map<i64, i64> p) {
     var list = List<Map<i64, i64>>();
     list.add(a);
     var nested = Map<i64, Map<i64, i64>>();
-    nested.set(1, a);
+    nested[1] = a;
     Map<i64, i64>[2] arr = [a, fresh()];
     var e = arr[1];
     var whole = s;
     var pair = (a, 1);
     var o = Owned(fresh());
     var f = o.value;
-    var g = nested.get(1);
+    var g = nested[1];
     var u = s with { name = "u" };
     var v = s with { data = a };
     Map<i64, i64>? w = a;
@@ -77,7 +77,7 @@ void buffers() {
 void loops() {
     var maps = List<Map<i64, i64>>();
     maps.add(Map<i64, i64>());
-    for (var m in maps) m.set(1, 1);
+    for (var m in maps) m[1] = 1;
     StrBuf[1] bufs = [StrBuf()];
     for (var b in bufs) b.append("y");
     var plain = List<i64>();

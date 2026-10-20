@@ -80,10 +80,10 @@ box.put("c");
 print($"{box.value} {box.history.length}");
 
 var bySuit = Map<Suit, i64>();
-bySuit.set(.clubs, 2);
-bySuit.set(.hearts, 3);
+bySuit[.clubs] = 2;
+bySuit[.hearts] = 3;
 var byName = Map<string, i64>();
-byName.set("x", 10);
+byName["x"] = 10;
 print($"{total(bySuit)} {total(byName)}");
 
 let empty = Slot<i64> { };

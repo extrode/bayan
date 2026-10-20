@@ -105,8 +105,8 @@ error BYN2762: a `Map` cannot be copied
 
 error BYN2762: a `Map` cannot be copied
 
-  58 │     nested.set(1, a);
-     │                   ^
+  58 │     nested[1] = a;
+     │                 ^
      │
   help: pass it by `ref`, or build a new `Map` and copy the contents into it
 
@@ -147,8 +147,8 @@ error BYN2762: a `Map` cannot be copied
 
 error BYN2762: a `Map` cannot be copied
 
-  65 │     var g = nested.get(1);
-     │             ^^^^^^^^^^^^^ `Map<i64, i64>?` holds a `Map<i64, i64>` by value
+  65 │     var g = nested[1];
+     │             ^^^^^^^^^
      │
   help: pass it by `ref`, or build a new `Map` and copy the contents into it
 
@@ -182,7 +182,7 @@ error BYN2762: a `StrBuf` cannot be copied
 
 error BYN2762: a `Map` cannot be copied
 
-  80 │     for (var m in maps) m.set(1, 1);
+  80 │     for (var m in maps) m[1] = 1;
      │                   ^^^^
      │
   help: pass it by `ref`, or build a new `Map` and copy the contents into it

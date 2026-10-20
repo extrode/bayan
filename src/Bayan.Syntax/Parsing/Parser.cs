@@ -1180,6 +1180,8 @@ public sealed class Parser
             case MemberExpr { NullConditional: false }:
             case IndexExpr:
             case ErrorExpr:
+            // `map.slot(k)` is a reference; the binder checks the receiver is a map.
+            case CallExpr { Callee: MemberExpr { Member.Text: "slot", NullConditional: false } }:
                 return;
             case ParenExpr p:
                 CheckAssignable(p.Inner);

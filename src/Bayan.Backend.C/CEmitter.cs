@@ -400,8 +400,8 @@ public sealed class CEmitter
             $"{{\n    return {Equal(key, $"*(const {ct}*)a", $"*(const {ct}*)b")};\n}}\n");
     }
 
-    /// <summary><c>set</c>, <c>get</c>, <c>containsKey</c> and <c>remove</c> of <paramref name="t"/>; <paramref name="map"/> is an lvalue for the mutating ones.</summary>
-    internal string MapMethod(BuiltinMember member, MapType t, string map, string[] args)
+    /// <summary>Index, <c>slot</c>, <c>getOr</c>, <c>contains</c> and <c>remove</c> of <paramref name="t"/>; <paramref name="map"/> is an lvalue for the mutating ones.</summary>
+    internal string MapMethod(BuiltinMember member, MapType t, string map, string[] args, string loc)
     {
         var mt = CType(t);
         var kt = CType(t.KeyType);
@@ -411,24 +411,31 @@ public sealed class CEmitter
         var find = $"byn_map_find(&m.h, m.keys, (int64_t)sizeof({kt}), &k, {hash}(k), {eq})";
         switch (member)
         {
-            case BuiltinMember.MapSet:
+            case BuiltinMember.MapIndexSet or BuiltinMember.MapSlot:
             {
-                var name = "bynh_set_" + Key(t);
-                Helper(name, $"static void {name}({mt}* m, {kt} k, {vt} v)", () =>
+                // A missing key is inserted with `d`: zero for a write target, the value type's default for `slot`.
+                var name = "bynh_slot_" + Key(t);
+                Helper(name, $"static {vt}* {name}({mt}* m, {kt} k, {vt} d)", () =>
                     $"{{\n    if (!m->h.alloc) m->h.alloc = byn_context;\n    bool added;\n" +
                     $"    int64_t i = byn_map_insert(&m->h, (void**)&m->keys, (int64_t)sizeof({kt}), (void**)&m->vals, (int64_t)sizeof({vt}), &k, {hash}(k), {eq}, &added);\n" +
-                    "    if (added) m->keys[i] = k;\n    m->vals[i] = v;\n}\n");
-                return $"{name}(&{map}, {args[0]}, {args[1]})";
+                    "    if (added) {\n        m->keys[i] = k;\n        m->vals[i] = d;\n    }\n    return &m->vals[i];\n}\n");
+                return $"(*{name}(&{map}, {args[0]}, {(member == BuiltinMember.MapSlot ? args[1] : $"(({vt}){{0}})")}))";
             }
-            case BuiltinMember.MapGet:
+            case BuiltinMember.MapIndex:
             {
-                var opt = CType(new OptionalType(t.ValueType));
-                var name = "bynh_get_" + Key(t);
-                Helper(name, $"static {opt} {name}({mt} m, {kt} k)", () =>
-                    $"{{\n    int64_t i = {find};\n    if (i < 0) return ({opt}){{0}};\n    return ({opt}){{true, m.vals[i]}};\n}}\n");
-                return $"{name}({map}, {args[0]})";
+                var name = "bynh_index_" + Key(t);
+                Helper(name, $"static {vt} {name}({mt} m, {kt} k, const char* file, int line)", () =>
+                    $"{{\n    int64_t i = {find};\n    if (i < 0) byn_panic(\"key not found in map\", file, line);\n    return m.vals[i];\n}}\n");
+                return $"{name}({map}, {args[0]}, {loc})";
             }
-            case BuiltinMember.MapContainsKey:
+            case BuiltinMember.MapGetOr:
+            {
+                var name = "bynh_get_or_" + Key(t);
+                Helper(name, $"static {vt} {name}({mt} m, {kt} k, {vt} d)", () =>
+                    $"{{\n    int64_t i = {find};\n    return i < 0 ? d : m.vals[i];\n}}\n");
+                return $"{name}({map}, {args[0]}, {args[1]})";
+            }
+            case BuiltinMember.MapContains:
             {
                 var name = "bynh_has_" + Key(t);
                 Helper(name, $"static bool {name}({mt} m, {kt} k)", () => $"{{\n    return {find} >= 0;\n}}\n");
@@ -1069,7 +1076,7 @@ internal sealed class FunctionEmitter
                     $"{{\n    if (l->len == 0) byn_panic(\"removeLast on an empty list\", file, line);\n    return l->ptr[--l->len];\n}}\n");
                 return $"{name}(&{Expr(r)}, {Loc(b.Syntax)})";
             }
-            case BuiltinMember.MapCount:
+            case BuiltinMember.MapLength:
                 return $"{Expr(r)}.h.live";
             case BuiltinMember.MapClear:
                 return $"byn_map_clear(&{Expr(r)}.h)";
@@ -1082,8 +1089,9 @@ internal sealed class FunctionEmitter
                 var m = Expr(r);
                 return $"(({_c.CType(b.Type)}){{{m}.keys[{arg}], {m}.vals[{arg}]}})";
             }
-            case BuiltinMember.MapSet or BuiltinMember.MapGet or BuiltinMember.MapContainsKey or BuiltinMember.MapRemove:
-                return _c.MapMethod(b.Member, (MapType)r.Type, Expr(r), b.Arguments.Select(Expr).ToArray());
+            case BuiltinMember.MapIndex or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapGetOr
+                or BuiltinMember.MapContains or BuiltinMember.MapRemove:
+                return _c.MapMethod(b.Member, (MapType)r.Type, Expr(r), b.Arguments.Select(Expr).ToArray(), Loc(b.Syntax));
             case BuiltinMember.ArrayLength:
                 return $"((void){Expr(r)}, INT64_C({((ArrayType)r.Type).Length}))";
             case BuiltinMember.ArrayAsSpan:

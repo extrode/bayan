@@ -677,6 +677,11 @@ internal sealed partial class Binder
             BindExpr(i.Index);
             return new BoundErrorExpr(i);
         }
+        if (target.Type is MapType map)
+        {
+            var key = BindConverted(i.Index, map.KeyType);
+            return key.Type.IsError ? new BoundErrorExpr(i) : new BoundBuiltinCall(i, BuiltinMember.MapIndex, target, [key], map.ValueType);
+        }
         TypeSymbol? element = target.Type switch
         {
             SpanType s => s.Element,

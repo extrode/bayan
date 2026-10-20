@@ -147,6 +147,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     private static bool IsLvalue(BoundExpr e) => e switch
     {
         BoundLocal or BoundThis or BoundIndex or LIndexUnchecked or BoundStaticArray => true,
+        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } => true,
         BoundField f => IsLvalue(f.Receiver),
         BoundTupleElement t => IsLvalue(t.Receiver),
         LOptionalValue v => IsLvalue(v.Optional),
@@ -370,6 +371,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         var target = Lvalue(a.Target);
         if (target is BoundIndex { Index: var index } bi && !IsTrivial(index))
             target = bi with { Index = Spill(index) };
+        else if (target is BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot, Arguments: [var key, ..] } mb && !IsTrivial(key))
+            target = mb with { Arguments = [Spill(key), .. mb.Arguments[1..]] };
         // The old value is read before `v` runs, which may change or move the target.
         var current = IsTrivial(a.Value) ? target : Spill(target);
         var value = Expr(a.Value);
@@ -635,6 +638,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 var target = arrayTarget && !IsLvalue(parts[0]) ? Spill(parts[0]) : parts[0];
                 return i with { Target = target, Index = parts[1] };
             }
+            case BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b:
+                return BuiltinCall(b);
             default:
                 return Spill(Expr(e));
         }
@@ -643,6 +648,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     private static bool IsLvalueShape(BoundExpr e) => e switch
     {
         BoundLocal or BoundThis or BoundIndex or BoundStaticArray => true,
+        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } => true,
         BoundField f => IsLvalueShape(f.Receiver),
         BoundTupleElement t => IsLvalueShape(t.Receiver),
         _ => false,
@@ -943,10 +949,13 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             return WriteParts(b, WriteSink.StrBuf, target, i);
         }
         var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast
-            or BuiltinMember.MapSet or BuiltinMember.MapRemove or BuiltinMember.MapClear
+            or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapRemove or BuiltinMember.MapClear
             or BuiltinMember.StrBufAppend or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan;
         var operands = new List<BoundExpr> { b.Receiver };
         operands.AddRange(b.Arguments);
+        // `slot` inserts the value type's default: field initializers for a struct, zero otherwise.
+        if (b.Member == BuiltinMember.MapSlot && operands.Count == 2)
+            operands.Add(b.Type is StructSymbol s ? new BoundStructLiteral(b.Syntax, s, s.Fields.Select(f => f.Default ?? new BoundDefault(b.Syntax, f.Type)).ToArray()) : new BoundDefault(b.Syntax, b.Type));
         var parts = Operands(operands, k => k == 0 && mutating && IsLvalueShape(b.Receiver));
         if (parts is null) return new LNever(b.Syntax, b.Type);
         var receiver = parts[0];

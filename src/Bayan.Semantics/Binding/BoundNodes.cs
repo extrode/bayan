@@ -50,7 +50,9 @@ public enum BuiltinMember
     StringLength, StringBytes, StringIsEmpty, StringCopy, StringStartsWith, StringEndsWith, StringContains,
     SpanLength, SpanIsEmpty, SpanCopy,
     ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListClear, ListRemoveLast,
-    MapCount, MapSet, MapGet, MapContainsKey, MapRemove, MapClear,
+    MapLength, MapGetOr, MapContains, MapRemove, MapClear,
+    /// <summary><c>map[k]</c> read (panics when missing), <c>map[k]</c> as a write target (inserts when missing), and <c>map.slot(k)</c> (inserts the default).</summary>
+    MapIndex, MapIndexSet, MapSlot,
     /// <summary>Lowering of <c>for</c> over a map: entry slots (live or removed), whether slot i is live, and its entry.</summary>
     MapSlotCount, MapSlotLive, MapSlotEntry,
     ArrayLength, ArrayAsSpan,

@@ -1,6 +1,6 @@
 {tea: 4, cake: 5, jam: 2} count=3
 cake costs 5
-scone: null
+scone: 0
 has jam: true, has milk: false
 remove cake: true, again: false
   tea = 4

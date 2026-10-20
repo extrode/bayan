@@ -1,0 +1,13 @@
+{the: 3, cat: 2, saw: 1, dog: 1} length=4
+cat 2, cow -1, length=4
+contains cow: false, contains dog: true
+{the: 8, cat: 2, saw: 10, dog: 1, owl: 2}
+remove cat: true, again: false
+  the = 8
+  saw = 10
+  dog = 1
+  owl = 2
+  cat = 1
+dog 101, eel 100, length=6
+{a: Tally { hits: 2, note: new }, b: Tally { hits: 1, note: new }, c: Tally { hits: 1, note: new }, z: Tally { hits: 0, note: set }}
+cleared: {} length=0

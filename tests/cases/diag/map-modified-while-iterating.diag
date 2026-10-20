@@ -1,7 +1,7 @@
 error BYN3004: `m` is modified while the `for` loop still borrows it
 
-  5 │         m.set(e.key, e.value + 1);
-    │         ^^^^^^^^^^^^^^^^^^^^^^^^^ the loop over `m` is still running
+  5 │         m[e.key] = e.value + 1;
+    │         ^^^^^^^^ the loop over `m` is still running
     │
   help: collect the changes in another list and apply them to `m` after the loop
 
