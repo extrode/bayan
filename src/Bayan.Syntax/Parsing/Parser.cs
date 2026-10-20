@@ -127,7 +127,7 @@ public sealed class Parser
 
     private Name ExpectName(string what = "a name")
     {
-        if (Kind == TokenKind.Identifier)
+        if (IsName(Kind))
         {
             var token = Advance();
             return new Name(token.Span, Text(token));
@@ -137,6 +137,9 @@ public sealed class Parser
     }
 
     private Name NameOf(Token token) => new(token.Span, Text(token));
+
+    /// <summary>An identifier, or a declaration keyword used as a name (spec 004 R3).</summary>
+    private static bool IsName(TokenKind kind) => kind == TokenKind.Identifier || kind.IsContextualKeyword();
 
     // ── Recovery ─────────────────────────────────────────────────────────────────────
 
@@ -367,13 +370,13 @@ public sealed class Parser
     private bool IsTypeThenName(int index)
     {
         var after = ScanType(index);
-        return after > 0 && KindAt(after) == TokenKind.Identifier;
+        return after > 0 && IsName(KindAt(after));
     }
 
     private bool IsFunctionStart()
     {
         var after = ScanType(_pos);
-        if (after <= 0 || KindAt(after) != TokenKind.Identifier) return false;
+        if (after <= 0 || !IsName(KindAt(after))) return false;
         if (KindAt(after + 1) == TokenKind.Less && ScanTypeArgs(after + 1) is var close and > 0) return KindAt(close) == TokenKind.OpenParen;
         return KindAt(after + 1) == TokenKind.OpenParen;
     }
@@ -530,7 +533,7 @@ public sealed class Parser
         var name = ExpectName("an error set name");
         var open = Expect(TokenKind.OpenBrace);
         var variants = new List<ErrorVariant>();
-        while (Kind == TokenKind.Identifier || IsAttributeStart())
+        while (IsName(Kind) || IsAttributeStart())
         {
             var first = Current;
             var attributes = ParseAttributes();
@@ -554,7 +557,7 @@ public sealed class Parser
         var parameters = Kind == TokenKind.OpenParen ? ParseParams() : null;
         var open = Expect(TokenKind.OpenBrace);
         var members = new List<EnumMember>();
-        while (Kind == TokenKind.Identifier)
+        while (IsName(Kind))
         {
             var doc = DocOf(Current);
             var memberStart = Current.Start;
@@ -576,7 +579,7 @@ public sealed class Parser
         var typeParams = ParseTypeParams();
         var open = Expect(TokenKind.OpenBrace);
         var variants = new List<UnionVariant>();
-        while (Kind == TokenKind.Identifier)
+        while (IsName(Kind))
         {
             var doc = DocOf(Current);
             var variantStart = Current.Start;
@@ -642,7 +645,7 @@ public sealed class Parser
             {
                 i = ScanType(i);
                 if (i < 0) return -1;
-                if (KindAt(i) == TokenKind.Identifier) i++;
+                if (IsName(KindAt(i))) i++;
                 elements++;
                 if (KindAt(i) == TokenKind.Comma)
                 {
@@ -713,7 +716,7 @@ public sealed class Parser
             {
                 var elementStart = Current.Start;
                 var elementType = ParseType();
-                Name? name = Kind == TokenKind.Identifier ? NameOf(Advance()) : null;
+                Name? name = IsName(Kind) ? NameOf(Advance()) : null;
                 elements.Add(new TupleTypeElement(SpanFrom(elementStart), elementType, name));
             } while (Accept(TokenKind.Comma));
             Expect(TokenKind.CloseParen);
@@ -836,7 +839,7 @@ public sealed class Parser
                 Advance();
                 {
                     Name? error = null;
-                    if (Kind == TokenKind.OpenParen && Peek(1) == TokenKind.Identifier && Peek(2) == TokenKind.CloseParen)
+                    if (Kind == TokenKind.OpenParen && IsName(Peek(1)) && Peek(2) == TokenKind.CloseParen)
                     {
                         Advance();
                         error = NameOf(Advance());
@@ -875,7 +878,7 @@ public sealed class Parser
     {
         if (!IsTypeNameToken(Kind) && Kind != TokenKind.OpenParen) return false;
         var after = ScanType(_pos);
-        return after > 0 && KindAt(after) == TokenKind.Identifier && KindAt(after + 1) is TokenKind.Equals or TokenKind.Semicolon;
+        return after > 0 && IsName(KindAt(after)) && KindAt(after + 1) is TokenKind.Equals or TokenKind.Semicolon;
     }
 
     private Stmt ParseLocal(int start)
@@ -1261,7 +1264,7 @@ public sealed class Parser
         Multiplicative,
     }
 
-    private static bool CanStartExpression(TokenKind kind) => kind is
+    private static bool CanStartExpression(TokenKind kind) => kind.IsContextualKeyword() || kind is
         TokenKind.Identifier or TokenKind.IntegerLiteral or TokenKind.FloatLiteral or TokenKind.CharLiteral or
         TokenKind.StringLiteral or TokenKind.RawStringLiteral or TokenKind.CStringLiteral or TokenKind.U16StringLiteral or
         TokenKind.InterpolatedStringStart or TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.OpenBrace or
@@ -1369,7 +1372,7 @@ public sealed class Parser
         Advance();
         Name? binding = null;
         Expr? variant = null;
-        if (Kind == TokenKind.OpenParen && Peek(1) == TokenKind.Identifier && Peek(2) == TokenKind.CloseParen)
+        if (Kind == TokenKind.OpenParen && IsName(Peek(1)) && Peek(2) == TokenKind.CloseParen)
         {
             Advance();
             binding = NameOf(Advance());
@@ -1481,7 +1484,7 @@ public sealed class Parser
     {
         var after = ScanType(_pos + 1);
         if (after < 0 || KindAt(after) != TokenKind.CloseParen) return false;
-        return KindAt(after + 1) is
+        return KindAt(after + 1).IsContextualKeyword() || KindAt(after + 1) is
             TokenKind.Identifier or TokenKind.IntegerLiteral or TokenKind.FloatLiteral or TokenKind.CharLiteral or
             TokenKind.StringLiteral or TokenKind.RawStringLiteral or TokenKind.InterpolatedStringStart or
             TokenKind.OpenParen or TokenKind.Bang or TokenKind.Tilde or TokenKind.ThisKeyword or
@@ -1520,8 +1523,7 @@ public sealed class Parser
         {
             switch (Kind)
             {
-                // `set` is reserved (`error set`) but names `Map.set`.
-                case TokenKind.Dot when Peek(1) is TokenKind.Identifier or TokenKind.SetKeyword:
+                case TokenKind.Dot when IsName(Peek(1)):
                     Advance();
                     {
                         var member = NameOf(Advance());
@@ -1571,7 +1573,7 @@ public sealed class Parser
                 if (Kind == TokenKind.CloseParen) break;
                 var start = Current.Start;
                 Name? name = null;
-                if (Kind == TokenKind.Identifier && Peek(1) == TokenKind.Colon)
+                if (IsName(Kind) && Peek(1) == TokenKind.Colon)
                 {
                     name = NameOf(Advance());
                     Advance();
@@ -1637,7 +1639,7 @@ public sealed class Parser
                 return new ThisExpr(token.Span);
             case TokenKind.InterpolatedStringStart:
                 return ParseInterpolated();
-            case TokenKind.Dot when Peek(1) == TokenKind.Identifier:
+            case TokenKind.Dot when IsName(Peek(1)):
             {
                 Advance();
                 var member = NameOf(Advance());
@@ -1653,6 +1655,7 @@ public sealed class Parser
                     return new StructLiteralExpr(SpanFrom(start), null, fields);
                 }
             case TokenKind.Identifier:
+            case var kind when kind.IsContextualKeyword():
                 return ParseNameOrStructLiteral();
             case TokenKind.NeverKeyword:
                 Advance();
@@ -1707,7 +1710,7 @@ public sealed class Parser
 
     /// <summary>At <c>{</c>: is this <c>{ }</c> or <c>{ name = …</c>, i.e. a struct literal rather than a block?</summary>
     private bool IsStructLiteralBody() =>
-        Peek(1) == TokenKind.CloseBrace || (Peek(1) == TokenKind.Identifier && Peek(2) == TokenKind.Equals);
+        Peek(1) == TokenKind.CloseBrace || (IsName(Peek(1)) && Peek(2) == TokenKind.Equals);
 
     private FieldInit[] ParseFieldInits()
     {
@@ -1755,7 +1758,7 @@ public sealed class Parser
     {
         var start = Current.Start;
         Name? name = null;
-        if (Kind == TokenKind.Identifier && Peek(1) == TokenKind.Colon)
+        if (IsName(Kind) && Peek(1) == TokenKind.Colon)
         {
             name = NameOf(Advance());
             Advance();
@@ -1893,7 +1896,7 @@ public sealed class Parser
                 var isLet = Advance().Kind == TokenKind.LetKeyword;
                 return new VarPattern(SpanFrom(start), ExpectName("a variable name"), isLet);
             }
-            case TokenKind.Dot when Peek(1) == TokenKind.Identifier && Peek(2) == TokenKind.OpenParen:
+            case TokenKind.Dot when IsName(Peek(1)) && Peek(2) == TokenKind.OpenParen:
             {
                 Advance();
                 var name = NameOf(Advance());
@@ -1970,7 +1973,7 @@ public sealed class Parser
         }
         ExpectClose(open, "property pattern");
         Name? designation = null;
-        if (Kind == TokenKind.Identifier && !AtContextual("when")) designation = NameOf(Advance());
+        if (IsName(Kind) && !AtContextual("when")) designation = NameOf(Advance());
         return new PropertyPattern(SpanFrom(start), type, properties.ToArray(), designation);
     }
 

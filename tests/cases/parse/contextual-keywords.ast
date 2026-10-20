@@ -1,0 +1,49 @@
+CompilationUnit
+  TypeAlias Code = i64
+  ErrorEnum Failure
+    Variant error
+    Variant set
+    Variant law
+  Struct Names
+    Field i64 error
+    Field i64 flags
+    Field i64 unit
+    Field i64 distinct
+    Field i64 open
+    Field i64 extensible
+    Field i64 set
+    Field i64 type
+    Field i64 law
+    Field i64 derivation
+    Field i64 attribute
+    Field i64 embed
+  Function error(i64 error) -> i64 => error
+  Function flags(i64 flags) -> i64 => flags
+  Function unit(i64 unit) -> i64 => unit
+  Function distinct(i64 distinct) -> i64 => distinct
+  Function open(i64 open) -> i64 => open
+  Function extensible(i64 extensible) -> i64 => extensible
+  Function set(i64 set) -> i64 => set
+  Function type(i64 type) -> i64 => type
+  Function law(i64 law) -> i64 => law
+  Function derivation(i64 derivation) -> i64 => derivation
+  Function attribute(i64 attribute) -> i64 => attribute
+  Function embed(i64 embed) -> i64 => embed
+  Let error = 3
+  Let flags = 1
+  Var unit = 2
+  Var distinct: i64 = 4
+  Let open = true
+  Let extensible = false
+  Let set = (list 1 2)
+  Let type = 5
+  Let law = 6
+  Let derivation = 7
+  Let attribute = 8
+  Let embed = 9
+  Assign type = 1
+  Expr (call (. set add) 1)
+  Let n = (struct Names (error 1) (set 2) (type 3))
+  Let total = (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (+ (. n error) (. n flags)) (. n unit)) (. n distinct)) (. n open)) (. n extensible)) (. n set)) (. n type)) (. n law)) (. n derivation)) (. n attribute)) (. n embed))
+  Let f = (. Failure set)
+  Expr (call print (call error (type: 1)))
