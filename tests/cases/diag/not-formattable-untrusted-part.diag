@@ -1,0 +1,21 @@
+error BYN2225: `Box` cannot be formatted
+
+  8 │     print($"{b}");
+    │              ^ field `s` is `Untrusted<string>`
+    │
+  help: give `Box` a `void formatInto(ref StrBuf out)` method
+
+error BYN2225: `Untrusted<string>?` cannot be formatted
+
+  10 │     print($"{o}");
+     │              ^ the value is `Untrusted<string>`
+
+error BYN2225: `Map<string, Untrusted<string>>` cannot be formatted
+
+  12 │     print($"{m}");
+     │              ^ the value is `Untrusted<string>`
+
+error BYN2225: `List<Untrusted<string>>` cannot be formatted
+
+  14 │     print($"{xs}");
+     │              ^^

@@ -1022,7 +1022,7 @@ internal sealed partial class Binder
         return new BoundAssign(i, target, one, i.Increment ? BinaryOp.Add : BinaryOp.Sub);
     }
 
-    /// <summary><c>map[k]</c> as an assignment target inserts <c>k</c> when missing instead of panicking.</summary>
+    /// <summary><c>map[k]</c> as an assignment target: <c>=</c> inserts <c>k</c> when missing; <c>op=</c>, <c>++</c> and <c>--</c> read it first and panic (lowering).</summary>
     private static BoundExpr MapWriteTarget(BoundExpr target) =>
         target is BoundBuiltinCall { Member: BuiltinMember.MapIndex } b ? b with { Member = BuiltinMember.MapIndexSet } : target;
 

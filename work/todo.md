@@ -47,4 +47,3 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `Io.readText` abandons the whole file buffer from `context.allocator` when the bytes are not UTF-8 (`bayan-rt.c` read path)
 - `Io.run` (POSIX): only the pipe fds are `FD_CLOEXEC`; `byn_io_open` uses `fopen` without `"e"`, so open files are inherited by children
 - Terminal style (`docs/bayan-terminal-style.md`) is not implemented: `-->` location line, column-0 `help:` with `+++` fix preview, `◆`/`✗` summaries with `--ascii`, 20-error cap, `FORCE_COLOR`/`TERM=dumb`/`BAYAN_THEME`, progress line, power-assert values in `bayan test`; renderer changes must move `selfhost/lexer/diagnostics.byn` in the same commit (L001)
-- Ownership: a `defer` body is analyzed at the defer site, so a `move` after the `defer` is not flagged at scope exit (spec 002 T8 gate note).

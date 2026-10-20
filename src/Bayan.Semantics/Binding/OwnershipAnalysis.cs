@@ -19,6 +19,8 @@ internal sealed class OwnershipAnalysis
     private readonly Dictionary<JumpTarget, State> _breaks = new();
     private readonly Dictionary<JumpTarget, State> _continues = new();
     private readonly HashSet<(string, TextSpan)> _reported = new();
+    // Locals a `defer`/`errdefer` body uses, pinned until its scope ends: to the defer's span.
+    private readonly Dictionary<LocalSymbol, TextSpan> _pins = new();
 
     private OwnershipAnalysis(Compilation c, FunctionSymbol fn)
     {
@@ -67,7 +69,10 @@ internal sealed class OwnershipAnalysis
 
     private State Block(IEnumerable<BoundStmt> statements, State state)
     {
+        var pins = new Dictionary<LocalSymbol, TextSpan>(_pins);
         foreach (var s in statements) state = Statement(s, state);
+        _pins.Clear();
+        foreach (var (l, site) in pins) _pins[l] = site;
         return state;
     }
 
@@ -168,26 +173,38 @@ internal sealed class OwnershipAnalysis
             case BoundSwitch sw:
             {
                 state = Expr(sw.Value, state);
-                var after = sw.Exhaustive ? State.Unreachable() : state.Clone();
+                var after = State.Unreachable();
+                // A guard that ran and failed has made its moves: later sections start from that too.
+                var next = state.Clone();
                 foreach (var section in sw.Sections)
                 {
-                    var branch = state.Clone();
-                    if (section.Guard is not null) branch = Expr(section.Guard, branch);
-                    after = after.Join(Block(section.Body, branch));
+                    var branch = next.Clone();
+                    if (section.Guard is not null) next = next.Join(branch = Expr(section.Guard, branch));
+                    after = after.Join(Block(section.Body, branch.Clone()));
                 }
+                if (!sw.Exhaustive) after = after.Join(next);
                 return Exit(sw.Target, after);
             }
             case BoundDefer d:
                 Statement(d.Body, state.Clone());
+                Pin(d.Body, d.Syntax.Span);
                 return state;
             case BoundErrdefer e:
                 Statement(e.Body, state.Clone());
+                Pin(e.Body, e.Syntax.Span);
                 return state;
             case BoundContext c:
                 return Statement(c.Body, Expr(c.Allocator, state));
             default:
                 return state;
         }
+    }
+
+    /// <summary>The locals <paramref name="body"/> uses run at scope exit: moving one later in the scope is a use after move.</summary>
+    private void Pin(BoundStmt body, TextSpan site)
+    {
+        foreach (var n in BoundTree.Descendants(body))
+            if (n is BoundLocal { Local: var l }) _pins.TryAdd(l, site);
     }
 
     private static void Merge(Dictionary<JumpTarget, State> map, JumpTarget target, State state)
@@ -216,7 +233,14 @@ internal sealed class OwnershipAnalysis
                 return state;
             case BoundMove m:
                 state = Expr(m.Operand, state);
-                if (IsMovable(m.Operand) && m.Operand is BoundLocal { Local: var moved } && TypeFacts.IsUnique(moved.Type)) state.Moved[moved] = m.Syntax.Span;
+                if (IsMovable(m.Operand) && m.Operand is BoundLocal { Local: var moved } && TypeFacts.IsUnique(moved.Type))
+                {
+                    if (state.Reachable && _pins.TryGetValue(moved, out var pin))
+                        Report(DiagnosticCodes.UseAfterMove, m.Syntax.Span, [moved.Name],
+                            label: $"a `defer` on line {_source.GetLinePosition(pin.Start).Line} uses it at scope exit",
+                            help: $"move `{moved.Name}` before the `defer`, or move a `.copy(to: alloc)` of it instead");
+                    state.Moved[moved] = m.Syntax.Span;
+                }
                 return state;
             case BoundBinary { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } b:
             {
@@ -238,11 +262,12 @@ internal sealed class OwnershipAnalysis
             {
                 state = Expr(s.Value, state);
                 var after = State.Unreachable();
+                var next = state.Clone();
                 foreach (var arm in s.Arms)
                 {
-                    var branch = state.Clone();
-                    if (arm.Guard is not null) branch = Expr(arm.Guard, branch);
-                    after = after.Join(Expr(arm.Value, branch));
+                    var branch = next.Clone();
+                    if (arm.Guard is not null) next = next.Join(branch = Expr(arm.Guard, branch));
+                    after = after.Join(Expr(arm.Value, branch.Clone()));
                 }
                 return after;
             }

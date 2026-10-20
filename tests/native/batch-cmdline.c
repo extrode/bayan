@@ -21,24 +21,27 @@ static void show(const char* path, const char* arg) {
 }
 
 int main(void) {
-    show("echo.cmd", "a b");
-    show("echo.cmd", "");
-    show("echo.cmd", "a\"b");
-    show("echo.cmd", "%PATH%");
-    show("echo.cmd", "^&|<>()!");
-    show("echo.cmd", "a\\");
-    show("echo.cmd", "a\rb");
-    show("echo.cmd", "a\nb");
+    show(".\\echo.cmd", "a b");
+    show(".\\echo.cmd", "");
+    show(".\\echo.cmd", "a\"b");
+    show(".\\echo.cmd", "%PATH%");
+    show(".\\echo.cmd", "^&|<>()!");
+    show(".\\echo.cmd", "a\\");
+    show(".\\echo.cmd", "a\rb");
+    show(".\\echo.cmd", "a\nb");
     show("x.exe", "a");
     show("C:\\dir\\X.CMD", "a");
-    show("run.Bat", "a");
+    show("./run.Bat", "a");
     show("100%.bat", "a");
     show("echo.cmd.", "a");
+    show("echo.cmd", "a");
+    show(".\\x.bat", "a");
+    show("C:\\x\\y.cmd", "a");
     byn_str two[2] = {s("x"), s("y z")};
     byn_str line;
-    if (byn_batch_cmdline(s("echo.cmd"), two, 2, &line)) printf("%.*s\n", (int)line.len, (const char*)line.ptr);
-    if (byn_batch_cmdline(s("echo.cmd"), NULL, 0, &line)) printf("%.*s\n", (int)line.len, (const char*)line.ptr);
+    if (byn_batch_cmdline(s(".\\echo.cmd"), two, 2, &line)) printf("%.*s\n", (int)line.len, (const char*)line.ptr);
+    if (byn_batch_cmdline(s(".\\echo.cmd"), NULL, 0, &line)) printf("%.*s\n", (int)line.len, (const char*)line.ptr);
     byn_str nul = {(const uint8_t*)"a\0b", 3};
-    printf("%s\n", byn_batch_cmdline(s("echo.cmd"), &nul, 1, &line) ? "accepted" : "refused");
+    printf("%s\n", byn_batch_cmdline(s(".\\echo.cmd"), &nul, 1, &line) ? "accepted" : "refused");
     return 0;
 }

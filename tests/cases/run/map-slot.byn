@@ -13,10 +13,10 @@ print($"{words} length={words.length}");
 print($"cat {words.getOr("cat", 0)}, cow {words.getOr("cow", -1)}, length={words.length}");
 print($"contains cow: {words.contains("cow")}, contains dog: {words.contains("dog")}");
 
-// Writes and compound writes through `map[k]`: an update keeps the key's position.
+// Writes and compound writes through `map[k]` (on a present key; `slot` inserts): an update keeps the key's position.
 words["saw"] = 10;
 words["the"] += 5;
-words["owl"] += 2;
+words.slot("owl") += 2;
 print($"{words}");
 
 // A removed key goes to the end when inserted again.
