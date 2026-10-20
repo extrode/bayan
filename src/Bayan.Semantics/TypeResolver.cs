@@ -102,6 +102,24 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                     }
                     return new ResultType(value, error);
                 }
+                case "Map":
+                {
+                    if (n.Args.Length != 2)
+                    {
+                        compilation.Report(DiagnosticCodes.WrongTypeArgumentCount, file.Source, n.Span, [text, 2, n.Args.Length]);
+                        return ErrorType.Instance;
+                    }
+                    var key = Resolve(n.Args[0]);
+                    var value = Resolve(n.Args[1]);
+                    if (key.IsError || value.IsError) return ErrorType.Instance;
+                    if (!MapType.IsValidKey(key))
+                    {
+                        compilation.Report(DiagnosticCodes.InvalidMapKey, file.Source, n.Args[0].Span, [key.DisplayName],
+                            help: "use an integer type, `char`, `bool`, `string` or a plain enum as the key");
+                        return ErrorType.Instance;
+                    }
+                    return new MapType(key, value);
+                }
                 case "Arena":
                     NoTypeArgs(n);
                     return BuiltinType.Arena;
@@ -188,7 +206,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
     private string? Suggest(string text)
     {
         var lower = text.ToLowerInvariant();
-        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Result", "Arena", "StrBuf", "IoError", "ProcessResult"]))
+        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Result", "Arena", "StrBuf", "IoError", "ProcessResult"]))
             if (name.Equals(text, StringComparison.OrdinalIgnoreCase)) return name;
         if (PrimitiveType.ByName.ContainsKey(lower)) return lower;
         return lower switch

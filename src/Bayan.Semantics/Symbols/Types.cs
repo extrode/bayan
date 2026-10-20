@@ -177,6 +177,26 @@ public sealed class ListType(TypeSymbol element) : ConstructedType
     public override string DisplayName => $"List<{Element.DisplayName}>";
 }
 
+/// <summary><c>Map&lt;K, V&gt;</c>: an insertion-ordered hash map allocated from the context allocator.</summary>
+public sealed class MapType(TypeSymbol key, TypeSymbol value) : ConstructedType
+{
+    // `Key` is taken by the structural identity below.
+    public TypeSymbol KeyType { get; } = key;
+
+    public TypeSymbol ValueType { get; } = value;
+
+    /// <summary>What <c>for (let e in m)</c> yields: <c>(K key, V value)</c>.</summary>
+    public TupleType Entry => new([new TupleField("key", KeyType), new TupleField("value", ValueType)]);
+
+    protected override object Key => (KeyType, ValueType);
+
+    public override string DisplayName => $"Map<{KeyType.DisplayName}, {ValueType.DisplayName}>";
+
+    /// <summary>Keys hash their bytes: integers, <c>char</c>, <c>bool</c>, <c>string</c> and plain enums.</summary>
+    public static bool IsValidKey(TypeSymbol t) =>
+        t.IsInteger || t.IsString || t == PrimitiveType.Char || t.IsBool || t is EnumSymbol { Fields.Count: 0 };
+}
+
 /// <summary><c>T[N]</c>: a fixed-size inline array.</summary>
 public sealed class ArrayType(TypeSymbol element, long length) : ConstructedType
 {

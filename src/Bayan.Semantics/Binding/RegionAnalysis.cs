@@ -131,7 +131,7 @@ internal sealed class RegionAnalysis
                 if (_reporting)
                 {
                     var owners = iterable.Owners;
-                    if (RootLocal(f.Iterable) is { } root && f.Iterable.Type is ListType or ArrayType) owners = owners.Add(root);
+                    if (RootLocal(f.Iterable) is { } root && f.Iterable.Type is ListType or MapType or ArrayType) owners = owners.Add(root);
                     foreach (var owner in owners) _loans.Add(new Loan(owner, null, f.Syntax.Span.Start, f.Syntax.Span.End));
                 }
                 _depth++;
@@ -223,7 +223,7 @@ internal sealed class RegionAnalysis
                 return c.Type switch
                 {
                     SpanType => elements.Union(new Borrow([new Region(_depth, $"the array literal on line {Line(c.Syntax.Span)}")], [])),
-                    ListType when _contexts.Count > 0 => elements.Union(_contexts.Peek()),
+                    ListType or MapType when _contexts.Count > 0 => elements.Union(_contexts.Peek()),
                     _ => elements,
                 };
             }
@@ -282,9 +282,20 @@ internal sealed class RegionAnalysis
                 StoreInto(b.Receiver, args[0], b.Arguments[0].Syntax.Span);
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
+            case BuiltinMember.MapSet:
+                StoreInto(b.Receiver, args[0].Union(args[1]), b.Arguments[0].Syntax.Span);
+                Mutate(b.Receiver, b.Syntax.Span);
+                return Borrow.None;
             case BuiltinMember.ListRemoveLast:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return receiver with { Owners = [] };
+            case BuiltinMember.MapGet:
+                return receiver with { Owners = [] };
+            case BuiltinMember.MapCount or BuiltinMember.MapContainsKey:
+                return Borrow.None;
+            case BuiltinMember.MapRemove or BuiltinMember.MapClear:
+                Mutate(b.Receiver, b.Syntax.Span);
+                return Borrow.None;
             case BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
@@ -502,7 +513,7 @@ internal sealed class RegionAnalysis
     private static bool MayBorrow(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.IsString,
-        SpanType or ListType => true,
+        SpanType or ListType or MapType => true,
         BuiltinType b => b.Kind is BuiltinKind.StrBuf or BuiltinKind.ProcessResult,
         OptionalType o => MayBorrow(o.Inner, seen),
         ResultType r => MayBorrow(r.Value, seen),
@@ -514,7 +525,7 @@ internal sealed class RegionAnalysis
 
     private static bool ContainsList(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
-        ListType => true,
+        ListType or MapType => true,
         OptionalType o => ContainsList(o.Inner, seen),
         ResultType r => ContainsList(r.Value, seen),
         ArrayType a => ContainsList(a.Element, seen),

@@ -1,0 +1,21 @@
+void modify() {
+    var m = Map<string, i64>();
+    m.set("a", 1);
+    for (let e in m) {
+        m.set(e.key, e.value + 1);
+        m.remove(e.key);
+    }
+    for (let e in m) m.clear();
+}
+
+void escape() {
+    var outer = Map<i64, string>();
+    {
+        using var a = Arena();
+        context (allocator: a) {
+            var inner = Map<i64, i64>();
+            inner.set(1, 2);
+            outer = Map<i64, string>();
+        }
+    }
+}

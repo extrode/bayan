@@ -369,6 +369,109 @@ void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size,
     *cap = grown;
 }
 
+/* ── Maps ────────────────────────────────────────────────────────────────── */
+
+uint64_t byn_hash_seed;
+
+void byn_hash_seed_init(bool fixed) {
+    if (fixed) {
+        byn_hash_seed = 0;
+        return;
+    }
+#ifdef _WIN32
+    uint64_t pid = (uint64_t)GetCurrentProcessId();
+#else
+    uint64_t pid = (uint64_t)getpid();
+#endif
+    byn_hash_seed = (uint64_t)byn_io_monotonic_nanos() ^ (pid << 32 | pid);
+}
+
+uint64_t byn_hash_bytes(const void* p, int64_t n) {
+    const uint8_t* b = (const uint8_t*)p;
+    uint64_t h = UINT64_C(14695981039346656037) ^ byn_hash_seed;
+    for (int64_t i = 0; i < n; i++) {
+        h ^= b[i];
+        h *= UINT64_C(1099511628211);
+    }
+    return h;
+}
+
+int64_t byn_map_find(const byn_map_hdr* h, const void* keys, int64_t ksize, const void* key, uint64_t hash, byn_key_eq eq) {
+    if (h->icap == 0) return -1;
+    uint64_t mask = (uint64_t)h->icap - 1;
+    for (uint64_t s = hash & mask;; s = (s + 1) & mask) {
+        int32_t e = h->index[s];
+        if (e < 0) return -1;
+        if (!h->dead[e] && h->hashes[e] == hash && eq((const uint8_t*)keys + e * ksize, key)) return e;
+    }
+}
+
+static void byn_map_place(byn_map_hdr* h, int64_t e) {
+    uint64_t mask = (uint64_t)h->icap - 1;
+    uint64_t s = h->hashes[e] & mask;
+    while (h->index[s] >= 0) s = (s + 1) & mask;
+    h->index[s] = (int32_t)e;
+}
+
+/* Compacts away tombstones, grows the entries to `cap` and rebuilds the index. */
+static void byn_map_rehash(byn_map_hdr* h, uint8_t** keys, int64_t ksize, uint8_t** vals, int64_t vsize, int64_t cap) {
+    int64_t j = 0;
+    for (int64_t i = 0; i < h->len; i++) {
+        if (h->dead[i]) continue;
+        if (i != j) {
+            memcpy(*keys + j * ksize, *keys + i * ksize, (size_t)ksize);
+            memcpy(*vals + j * vsize, *vals + i * vsize, (size_t)vsize);
+            h->hashes[j] = h->hashes[i];
+        }
+        h->dead[j++] = false;
+    }
+    h->len = h->live = j;
+    if (cap > h->cap) {
+        byn_alloc* a = h->alloc;
+        *keys = a->resize(a, *keys, h->cap * ksize, cap * ksize);
+        *vals = a->resize(a, *vals, h->cap * vsize, cap * vsize);
+        h->hashes = a->resize(a, h->hashes, h->cap * (int64_t)sizeof(uint64_t), cap * (int64_t)sizeof(uint64_t));
+        h->dead = a->resize(a, h->dead, h->cap * (int64_t)sizeof(bool), cap * (int64_t)sizeof(bool));
+        h->index = a->resize(a, h->index, h->icap * (int64_t)sizeof(int32_t), cap * 2 * (int64_t)sizeof(int32_t));
+        h->cap = cap;
+        h->icap = cap * 2;
+    }
+    memset(h->index, 0xFF, (size_t)h->icap * sizeof(int32_t));
+    for (int64_t i = 0; i < h->len; i++) byn_map_place(h, i);
+}
+
+int64_t byn_map_insert(byn_map_hdr* h, void** keys, int64_t ksize, void** vals, int64_t vsize, const void* key,
+                       uint64_t hash, byn_key_eq eq, bool* added) {
+    int64_t e = byn_map_find(h, *keys, ksize, key, hash, eq);
+    *added = e < 0;
+    if (e >= 0) return e;
+    if (h->len == h->cap) {
+        int64_t cap = h->cap < 8 ? 8 : h->cap;
+        if ((h->live + 1) * 2 > cap) cap *= 2;
+        if (cap > INT32_MAX / 2) byn_panic("map too large", __FILE__, __LINE__);
+        byn_map_rehash(h, (uint8_t**)keys, ksize, (uint8_t**)vals, vsize, cap);
+    }
+    e = h->len++;
+    h->live++;
+    h->hashes[e] = hash;
+    h->dead[e] = false;
+    byn_map_place(h, e);
+    return e;
+}
+
+bool byn_map_remove(byn_map_hdr* h, const void* keys, int64_t ksize, const void* key, uint64_t hash, byn_key_eq eq) {
+    int64_t e = byn_map_find(h, keys, ksize, key, hash, eq);
+    if (e < 0) return false;
+    h->dead[e] = true;
+    h->live--;
+    return true;
+}
+
+void byn_map_clear(byn_map_hdr* h) {
+    h->len = h->live = 0;
+    if (h->icap > 0) memset(h->index, 0xFF, (size_t)h->icap * sizeof(int32_t));
+}
+
 /* ── Program entry ───────────────────────────────────────────────────────── */
 
 bool byn_utf8_valid(const uint8_t* p, int64_t n) {

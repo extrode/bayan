@@ -50,6 +50,9 @@ public enum BuiltinMember
     StringLength, StringBytes, StringIsEmpty, StringCopy, StringStartsWith, StringEndsWith, StringContains,
     SpanLength, SpanIsEmpty, SpanCopy,
     ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListClear, ListRemoveLast,
+    MapCount, MapSet, MapGet, MapContainsKey, MapRemove, MapClear,
+    /// <summary>Lowering of <c>for</c> over a map: entry slots (live or removed), whether slot i is live, and its entry.</summary>
+    MapSlotCount, MapSlotLive, MapSlotEntry,
     ArrayLength, ArrayAsSpan,
     ArenaReset,
     StrBufAppend, StrBufLength, StrBufAsString, StrBufClear,

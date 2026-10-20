@@ -1,0 +1,67 @@
+enum Suit { clubs, diamonds, hearts, spades }
+
+struct Inventory {
+    string owner;
+    Map<string, i64> stock;
+}
+
+void restock(ref Inventory inv, string item, i64 n) {
+    let have = inv.stock.get(item) ?? 0;
+    inv.stock.set(item, have + n);
+}
+
+// String keys: updates keep the first position, a removed key goes to the end when re-inserted.
+var prices = Map<string, i64>();
+prices.set("tea", 3);
+prices.set("cake", 5);
+prices.set("jam", 2);
+prices.set("tea", 4);
+print($"{prices} count={prices.count}");
+if (prices.get("cake") is { } cake) print($"cake costs {cake}");
+print($"scone: {prices.get("scone")}");
+print($"has jam: {prices.containsKey("jam")}, has milk: {prices.containsKey("milk")}");
+print($"remove cake: {prices.remove("cake")}, again: {prices.remove("cake")}");
+prices.set("cake", 6);
+for (let e in prices) print($"  {e.key} = {e.value}");
+
+// Enum keys.
+var counts = Map<Suit, i32>();
+Suit[6] hand = [.spades, .hearts, .spades, .clubs, .spades, .hearts];
+for (let s in hand) counts.set(s, (counts.get(s) ?? 0) + 1);
+print($"{counts}");
+
+// Integer, char and bool keys.
+var squares = Map<i64, i64>();
+for (let i in 0..5) squares.set(i * i, i);
+print($"{squares}");
+var letters = Map<char, bool>();
+for (let c in "banana") letters.set(c, true);
+print($"{letters}");
+var answers = Map<bool, string>();
+answers.set(true, "yes");
+answers.set(false, "no");
+print($"{answers.get(true)} {answers.get(false)}");
+
+// A map in a struct field.
+var inv = Inventory { owner = "ada", stock = Map<string, i64>() };
+restock(ref inv, "bolts", 10);
+restock(ref inv, "nuts", 4);
+restock(ref inv, "bolts", 5);
+print($"{inv}");
+
+// Inside a `using` arena.
+{
+    using var arena = Arena();
+    context (allocator: arena) {
+        var seen = Map<i64, i64>();
+        for (let i in 0..1000) seen.set(i % 7, i);
+        i64 total = 0;
+        for (let e in seen) total += e.value;
+        print($"arena map: {seen.count} keys, total {total}");
+    }
+}
+
+prices.clear();
+print($"cleared: {prices} count={prices.count}");
+prices.set("bread", 1);
+print($"{prices}");
