@@ -818,9 +818,9 @@ internal sealed class FunctionEmitter
 
     // ── Ownership checks ─────────────────────────────────────────────────────────
 
-    /// <summary>A local or <c>move</c> parameter this function owns (what <c>move</c> can hand over).</summary>
+    /// <summary>A local, owning pattern binding (of <c>switch (move x)</c>) or <c>move</c> parameter this function owns.</summary>
     private static bool IsOwner(LocalSymbol l) =>
-        l is { Kind: LocalKind.Let or LocalKind.Var, BorrowsSubject: false } or ParameterSymbol { Modifier: ParamModifier.Move };
+        l is { Kind: LocalKind.Let or LocalKind.Var or LocalKind.PatternVariable, BorrowsSubject: false } or ParameterSymbol { Modifier: ParamModifier.Move };
 
     /// <summary>Whether <paramref name="l"/> has a moved slot: an owned local of a unique type.</summary>
     private bool HasSlot(LocalSymbol l) => _c.OwnershipChecks && IsOwner(l) && Bayan.Semantics.TypeFacts.IsUnique(l.Type);
