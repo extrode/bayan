@@ -28,6 +28,19 @@ public sealed class LexerTests
     }
 
     [Fact]
+    public void SyntaxTakesUnicodeDataOnlyFromGeneratedTables()
+    {
+        var root = Path.Combine(Golden.RepoRoot, "src", "Bayan.Syntax");
+        string[] banned = ["Normalize(", "IsNormalized(", "GetUnicodeCategory"];
+        var offenders = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
+                && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+            .Where(f => banned.Any(File.ReadAllText(f).Contains))
+            .Select(f => Path.GetRelativePath(Golden.RepoRoot, f));
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
     public void KeywordPrefixIsIdentifier()
     {
         Assert.Equal([TokenKind.Identifier, TokenKind.EndOfFile], Kinds("letter"));
