@@ -15,3 +15,4 @@
 - ReadOnlySpan<T>, BYN2310, shortest round-trip float formatting
 - `--diagnostics json` and exit codes 0-4
 - bayan new/init, package.byn reader, project builds, scripts
+- out/ and dist/ layouts, --target, test --json, dist and clean (M10)
