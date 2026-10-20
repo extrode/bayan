@@ -50,6 +50,18 @@ public sealed class SourceText
         return TextSpan.FromBounds(start, end);
     }
 
+    /// <summary>One-based line and column; the column counts Unicode scalars, not bytes.</summary>
+    public (int Line, int Column) GetLinePosition(int offset)
+    {
+        var line = GetLineIndex(offset);
+        var start = LineStarts[line];
+        var column = 1;
+        var bytes = Bytes.Span[start..offset];
+        foreach (var b in bytes)
+            if ((b & 0xC0) != 0x80) column++;
+        return (line + 1, column);
+    }
+
     public string GetText(TextSpan span) => Encoding.UTF8.GetString(Bytes.Span.Slice(span.Start, span.Length));
 
     private static int[] ComputeLineStarts(ReadOnlySpan<byte> bytes)

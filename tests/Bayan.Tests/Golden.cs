@@ -53,6 +53,10 @@ public static class Golden
         if (result.Failure is { } failure) Assert.Fail(failure);
     }
 
+    /// <summary>Loads a case file under its bare name, so rendered paths don't depend on the checkout.</summary>
+    public static Bayan.Syntax.Text.SourceText Load(string path) =>
+        new(Path.GetFileName(path), File.ReadAllBytes(path));
+
     private static string Normalize(string text) => text.Replace("\r\n", "\n");
 
     private static string Describe(string path, string expected, string actual)

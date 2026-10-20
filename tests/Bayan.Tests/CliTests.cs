@@ -36,4 +36,24 @@ public sealed class CliTests
         Assert.Equal(CliApp.ExitUsage, exit);
         Assert.Contains("unknown command `frobnicate`", stderr);
     }
+
+    [Fact]
+    public void ExplainPrintsTheDocCaseInsensitively()
+    {
+        var (exit, stdout, _) = Run("explain", "byn0003");
+        Assert.Equal(CliApp.ExitOk, exit);
+        Assert.StartsWith("# BYN0003:", stdout);
+    }
+
+    [Theory]
+    [InlineData("BYN9999")]
+    [InlineData("BYN00")]
+    [InlineData("../BYN0001")]
+    public void ExplainUnknownCodeFails(string code)
+    {
+        var (exit, stdout, stderr) = Run("explain", code);
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Empty(stdout);
+        Assert.Contains("no explanation", stderr);
+    }
 }

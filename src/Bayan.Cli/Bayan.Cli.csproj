@@ -12,4 +12,7 @@
     <ProjectReference Include="../Bayan.Lowering/Bayan.Lowering.csproj" />
     <ProjectReference Include="../Bayan.Backend.C/Bayan.Backend.C.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../docs/diagnostics/*.md" LogicalName="diagnostics/%(Filename).md" />
+  </ItemGroup>
 </Project>

@@ -1,0 +1,3 @@
+"text" "esc \"q\" \\ \n" """
+  raw "quoted"
+  """ c"text" u16"wide" "‮ allowed in strings" "" "\u{48}i"
