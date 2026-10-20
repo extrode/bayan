@@ -1,0 +1,4 @@
+enum Color { red, green, blue }
+
+let c = Color.gren;
+Color d = .purple;

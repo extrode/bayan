@@ -125,6 +125,11 @@ public static class AstDump
                         Line(depth + 1, "Variant " + v.Name.Text + string.Concat(v.Attributes.Select(a => " " + Attribute(a)))
                             + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
                     break;
+                case EnumDecl d:
+                    Line(depth, $"Enum {Mods(d.Modifiers)}{d.Name.Text}");
+                    foreach (var m in d.Members)
+                        Line(depth + 1, "Member " + m.Name.Text + (m.Doc is null ? "" : " doc " + TokenDump.Escape(m.Doc)));
+                    break;
                 case TypeAliasDecl d:
                     Line(depth, $"TypeAlias {Mods(d.Modifiers)}{d.Name.Text} = {Type(d.Target)}");
                     break;

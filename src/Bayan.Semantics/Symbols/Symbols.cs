@@ -49,6 +49,8 @@ public sealed class ModuleSymbol(string name, string directory) : Symbol(name, n
 
     public List<ErrorSetSymbol> ErrorSets { get; } = new();
 
+    public List<EnumSymbol> Enums { get; } = new();
+
     public List<FunctionSymbol> AllFunctions { get; } = new();
 
     public List<TestSymbol> Tests { get; } = new();
@@ -212,6 +214,8 @@ public enum BuiltinFunction
     IoMonotonicNanos,
     IoStdout,
     IoStderr,
+    EnumFromOrdinal,
+    EnumParse,
 }
 
 public enum LocalKind { Let, Var, Const, Parameter, ForVariable, PatternVariable, Temp }
@@ -269,6 +273,12 @@ public sealed class ConstSymbol(string name, Location location, ModuleSymbol mod
 
     /// <summary>Binding state, to detect constants defined in terms of themselves.</summary>
     public int State { get; set; }
+
+    /// <summary>A <c>const T[N]</c> of literal scalars, emitted once as static data instead of inlined.</summary>
+    public bool IsStaticArray { get; set; }
+
+    /// <summary>The element values of a static array.</summary>
+    public ConstantValue[] Elements { get; set; } = [];
 }
 
 /// <summary>An <c>error enum</c>: a closed set of failure variants.</summary>
@@ -311,4 +321,41 @@ public sealed class ErrorVariantSymbol(string name, Location location, ErrorSetS
 public sealed class TestSymbol(string title, Location location, FunctionSymbol function) : Symbol(title, location)
 {
     public FunctionSymbol Function { get; } = function;
+}
+
+/// <summary>A plain <c>enum</c>: named <c>i32</c> ordinals in declaration order.</summary>
+public sealed class EnumSymbol(string name, Location location, ModuleSymbol module, Accessibility access, EnumDecl decl, FileContext file)
+    : TypeSymbol
+{
+    public string Name { get; } = name;
+
+    public Location Location { get; } = location;
+
+    public ModuleSymbol Module { get; } = module;
+
+    public Accessibility Access { get; } = access;
+
+    public EnumDecl Decl { get; } = decl;
+
+    public FileContext File { get; } = file;
+
+    public List<EnumMemberSymbol> Members { get; } = new();
+
+    /// <summary><c>Name.fromOrdinal(i64)</c> and <c>Name.parse(string)</c>.</summary>
+    public FunctionSymbol FromOrdinal { get; set; } = null!;
+
+    public FunctionSymbol Parse { get; set; } = null!;
+
+    public override string DisplayName => Name;
+
+    public EnumMemberSymbol? Find(string name) => Members.Find(m => m.Name == name);
+}
+
+public sealed class EnumMemberSymbol(string name, Location location, EnumSymbol @enum, int ordinal, string? doc) : Symbol(name, location)
+{
+    public EnumSymbol Enum { get; } = @enum;
+
+    public int Ordinal { get; } = ordinal;
+
+    public string? Doc { get; } = doc;
 }

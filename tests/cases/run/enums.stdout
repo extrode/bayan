@@ -1,0 +1,21 @@
+count 3 4
+0 red red warm
+1 green green cool
+2 blue blue cool
+green
+clubs is black
+diamonds is red
+hearts is red
+spades is black
+true false true false
+blue null null
+first red
+hearts null null
+parsed spades 3
+Card { suit: hearts, rank: 12 }
+true false
+hand spades
+hand diamonds
+hand hearts
+diamonds null true
+diamonds

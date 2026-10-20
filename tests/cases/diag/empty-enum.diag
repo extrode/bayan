@@ -1,0 +1,6 @@
+error BYN2722: enum `Nothing` has no members
+
+  1 │ enum Nothing { }
+    │      ^^^^^^^
+    │
+  help: add the members, or remove the enum

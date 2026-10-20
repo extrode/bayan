@@ -135,7 +135,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     /// <summary>Cheap and free of effects: safe to evaluate more than once or later.</summary>
     private static bool IsTrivial(BoundExpr e) => e switch
     {
-        BoundLiteral or BoundDefault or BoundLocal or BoundThis or BoundErrorVariant or LVoid => true,
+        BoundLiteral or BoundDefault or BoundLocal or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray or LVoid => true,
         BoundField f => IsTrivial(f.Receiver),
         BoundTupleElement t => IsTrivial(t.Receiver),
         LOptionalValue v => IsTrivial(v.Optional),
@@ -144,7 +144,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private static bool IsLvalue(BoundExpr e) => e switch
     {
-        BoundLocal or BoundThis or BoundIndex or LIndexUnchecked => true,
+        BoundLocal or BoundThis or BoundIndex or LIndexUnchecked or BoundStaticArray => true,
         BoundField f => IsLvalue(f.Receiver),
         BoundTupleElement t => IsLvalue(t.Receiver),
         LOptionalValue v => IsLvalue(v.Optional),
@@ -389,7 +389,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 value = null;
             }
             // Cleanups run after the value is read: a `defer` that changes a local must not change the result.
-            else if (value is not (BoundLiteral or BoundDefault or BoundErrorVariant) && _scopes.Any(s => s.Cleanups.Count > 0))
+            else if (value is not (BoundLiteral or BoundDefault or BoundErrorVariant or BoundEnumMember) && _scopes.Any(s => s.Cleanups.Count > 0))
             {
                 value = Spill(value);
             }
@@ -594,7 +594,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case BoundLocal l:
                 Note(l.Local);
                 return l;
-            case BoundThis:
+            case BoundThis or BoundStaticArray:
                 return e;
             case BoundField f:
                 return f with { Receiver = IsLvalueShape(f.Receiver) ? Lvalue(f.Receiver) : Spill(Expr(f.Receiver)) };
@@ -615,7 +615,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private static bool IsLvalueShape(BoundExpr e) => e switch
     {
-        BoundLocal or BoundThis or BoundIndex => true,
+        BoundLocal or BoundThis or BoundIndex or BoundStaticArray => true,
         BoundField f => IsLvalueShape(f.Receiver),
         BoundTupleElement t => IsLvalueShape(t.Receiver),
         _ => false,
@@ -625,7 +625,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     {
         switch (e)
         {
-            case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant:
+            case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
                 return e;
             case BoundLocal l:
                 Note(l.Local);

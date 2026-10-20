@@ -6,7 +6,7 @@ namespace Bayan.Semantics.Binding;
 internal sealed record BuiltinMethod(
     BuiltinMember Member, (string Name, TypeSymbol Type)[] Parameters, TypeSymbol Returns, bool Mutating = false);
 
-/// <summary>Members of strings, spans, lists, arrays, results, <c>Arena</c>, <c>StrBuf</c>, <c>Io.stdout</c>/<c>Io.stderr</c> and <c>char</c> (spec §3, §16).</summary>
+/// <summary>Members of strings, spans, lists, arrays, results, <c>Arena</c>, <c>StrBuf</c>, <c>Io.stdout</c>/<c>Io.stderr</c>, <c>char</c> and enums (spec §3, §16).</summary>
 internal static class BuiltinMembers
 {
     /// <summary>A built-in property (read without parentheses), or null.</summary>
@@ -25,6 +25,8 @@ internal static class BuiltinMembers
         (ResultType, "isOk") => (BuiltinMember.ResultIsOk, PrimitiveType.Bool),
         (ResultType r, "value") => (BuiltinMember.ResultValue, r.Value),
         (ResultType r, "err") => (BuiltinMember.ResultError, r.Error),
+        (EnumSymbol, "name") => (BuiltinMember.EnumName, PrimitiveType.String),
+        (EnumSymbol, "ordinal") => (BuiltinMember.EnumOrdinal, PrimitiveType.I32),
         _ => null,
     };
 
@@ -52,7 +54,7 @@ internal static class BuiltinMembers
     public static bool HasMethod(TypeSymbol type, string name) => Method(type, name) is not null;
 
     private static readonly string[] Candidates =
-        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "add", "asSpan", "clear", "removeLast", "reset", "append", "asString", "write"];
+        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "add", "asSpan", "clear", "removeLast", "reset", "append", "asString", "write", "name", "ordinal"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>

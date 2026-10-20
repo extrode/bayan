@@ -169,6 +169,9 @@ public sealed class Compilation
             foreach (var set in module.ErrorSets)
                 DeclareVariants(set);
         foreach (var module in Modules)
+            foreach (var e in module.Enums)
+                DeclareEnumMembers(e);
+        foreach (var module in Modules)
         {
             foreach (var s in module.Structs) DeclareMembers(s);
             foreach (var f in module.AllFunctions.Where(f => f.Owner is null && f.Kind != FunctionKind.Main && f.Kind != FunctionKind.Test))
@@ -240,6 +243,13 @@ public sealed class Compilation
                 {
                     var sym = new ErrorSetSymbol(e.Name.Text, Loc(file, e.Name), module, AccessOf(e.Modifiers), e);
                     if (AddType(file, e.Name, sym)) module.ErrorSets.Add(sym);
+                    Naming.CheckType(this, file.Source, e.Name);
+                    break;
+                }
+                case EnumDecl e:
+                {
+                    var sym = new EnumSymbol(e.Name.Text, Loc(file, e.Name), module, AccessOf(e.Modifiers), e, file);
+                    if (AddType(file, e.Name, sym)) module.Enums.Add(sym);
                     Naming.CheckType(this, file.Source, e.Name);
                     break;
                 }
@@ -362,6 +372,7 @@ public sealed class Compilation
     {
         StructSymbol s => s.Location,
         ErrorSetSymbol e => e.Location,
+        EnumSymbol e => e.Location,
         AliasPlaceholder a => new Location(a.File.Source, a.Decl.Name.Span),
         _ => null,
     };
@@ -402,6 +413,35 @@ public sealed class Compilation
         }
         if (set.Variants.Count == 0)
             Report(DiagnosticCodes.EmptyErrorSet, file.Source, set.Decl.Name.Span, [set.Name]);
+    }
+
+    private void DeclareEnumMembers(EnumSymbol e)
+    {
+        var source = e.File.Source;
+        foreach (var m in e.Decl.Members)
+        {
+            Naming.CheckValue(this, source, m.Name);
+            if (e.Find(m.Name.Text) is { } existing)
+            {
+                Report(DiagnosticCodes.DuplicateEnumMember, source, m.Name.Span, [e.Name, m.Name.Text],
+                    label: $"already declared on line {existing.Location!.Value.Line}");
+                continue;
+            }
+            e.Members.Add(new EnumMemberSymbol(m.Name.Text, Loc(e.File, m.Name), e, e.Members.Count, m.Doc));
+        }
+        if (e.Members.Count == 0)
+            Report(DiagnosticCodes.EmptyEnum, source, e.Decl.Name.Span, [e.Name], help: "add the members, or remove the enum");
+        var optional = new OptionalType(e);
+        e.FromOrdinal = new FunctionSymbol("fromOrdinal", e.Location, e.Module, FunctionKind.Builtin)
+        {
+            Builtin = BuiltinFunction.EnumFromOrdinal, ReturnType = optional, Access = Accessibility.Public, IsStatic = true,
+        };
+        e.FromOrdinal.Parameters.Add(new ParameterSymbol("ordinal", null, PrimitiveType.I64, ParamModifier.None, 0));
+        e.Parse = new FunctionSymbol("parse", e.Location, e.Module, FunctionKind.Builtin)
+        {
+            Builtin = BuiltinFunction.EnumParse, ReturnType = optional, Access = Accessibility.Public, IsStatic = true,
+        };
+        e.Parse.Parameters.Add(new ParameterSymbol("name", null, PrimitiveType.String, ParamModifier.None, 0));
     }
 
     private void DeclareMembers(StructSymbol s)

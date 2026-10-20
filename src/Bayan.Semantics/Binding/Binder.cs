@@ -174,10 +174,42 @@ internal sealed partial class Binder
         var value = declared is null ? BindExpr(decl.Init) : BindConverted(decl.Init, declared);
         c.Type = declared ?? DefaultType(value, decl.Init);
         if (declared is null) value = Convert(value, c.Type, decl.Init.Span);
+        if (c.Type is Symbols.ArrayType or ListType or SpanType || decl.Init is CollectionExpr)
+        {
+            BindStaticArray(c, value);
+            return;
+        }
         if (value.Constant is null && !value.Type.IsError)
             Report(DiagnosticCodes.NotConstant, decl.Init.Span, ["a `const`"]);
         c.Value = value.Constant;
         c.Bound = value;
+    }
+
+    /// <summary>A module-level <c>const T[N]</c> whose elements are literal numbers, <c>bool</c>s or <c>char</c>s becomes static data (BYN2229 otherwise).</summary>
+    private void BindStaticArray(ConstSymbol c, BoundExpr value)
+    {
+        c.Bound = value;
+        if (value.Type.IsError) return;
+        var decl = c.Decl;
+        var help = $"write `const T[N] {decl.Name.Text} = [ … ];` with `T` a number type, `bool` or `char`, and only literals or constants inside";
+        if (c.Type is not Symbols.ArrayType { Element: PrimitiveType { IsNumeric: true } or PrimitiveType { Kind: PrimitiveKind.Bool or PrimitiveKind.Char } })
+        {
+            Report(DiagnosticCodes.InvalidConstArray, decl.Type?.Span ?? decl.Init!.Span, [decl.Name.Text], help: help);
+            return;
+        }
+        if (value is not BoundCollection collection)
+        {
+            Report(DiagnosticCodes.InvalidConstArray, decl.Init!.Span, [decl.Name.Text], help: help);
+            return;
+        }
+        if (collection.Elements.Any(e => e.Type.IsError)) return;
+        if (collection.Elements.FirstOrDefault(e => e.Constant is null) is { } bad)
+        {
+            Report(DiagnosticCodes.InvalidConstArray, bad.Syntax.Span, [decl.Name.Text], label: "not a constant", help: help);
+            return;
+        }
+        c.IsStaticArray = true;
+        c.Elements = collection.Elements.Select(e => e.Constant!).ToArray();
     }
 
     /// <summary>The <c>N</c> of <c>T[N]</c>: a non-negative integer constant, or -1 after an error.</summary>

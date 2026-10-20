@@ -1,0 +1,4 @@
+error BYN2721: enum `Color` already has a member `red`
+
+  4 │     red,
+    │     ^^^ already declared on line 2

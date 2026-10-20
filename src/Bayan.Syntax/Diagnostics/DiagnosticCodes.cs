@@ -123,6 +123,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NotDisposable = Error("BYN2226", "`using` needs a value that owns memory, not `{0}`");
     public static readonly DiagnosticDescriptor AmbiguousVariant = Error("BYN2227", "`.{0}` is ambiguous; it exists in `{1}`");
     public static readonly DiagnosticDescriptor UnknownVariant = Error("BYN2228", "`{0}` is not a variant of `{1}`");
+    public static readonly DiagnosticDescriptor InvalidConstArray = Error("BYN2229", "module-level `const` array `{0}` must hold literal numbers, `bool`s or `char`s");
     public static readonly DiagnosticDescriptor MissingArgument = Error("BYN2301", "missing argument `{0}` for `{1}`");
     public static readonly DiagnosticDescriptor TooManyArguments = Error("BYN2302", "`{0}` takes {1} argument(s)");
     public static readonly DiagnosticDescriptor DuplicateArgument = Error("BYN2303", "`{0}` is passed twice");
@@ -151,6 +152,9 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NotAnErrorSet = Error("BYN2608", "`{0}` is not an error enum");
     public static readonly DiagnosticDescriptor EmptyErrorSet = Error("BYN2609", "error enum `{0}` has no variants");
     public static readonly DiagnosticDescriptor JumpOutOfDefer = Error("BYN2610", "`{0}` cannot leave a `defer` or `errdefer` body");
+    public static readonly DiagnosticDescriptor UnknownEnumMember = Error("BYN2720", "`{0}` is not a member of `{1}`");
+    public static readonly DiagnosticDescriptor DuplicateEnumMember = Error("BYN2721", "enum `{0}` already has a member `{1}`");
+    public static readonly DiagnosticDescriptor EmptyEnum = Error("BYN2722", "enum `{0}` has no members");
     public static readonly DiagnosticDescriptor UnknownAttribute = Error("BYN2770", "unknown attribute `{0}`");
     public static readonly DiagnosticDescriptor InvalidMainSignature = Error("BYN2771", "`main` must return `void` or `i32` and take nothing or `ReadOnlySpan<string> args`");
     public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`[ExitCode]` needs one integer constant from 1 to 255");

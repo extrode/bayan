@@ -56,6 +56,7 @@ public enum BuiltinMember
     CharValue,
     ResultIsOk, ResultValue, ResultError,
     IoWrite,
+    EnumName, EnumOrdinal,
 }
 
 public sealed record BoundBuiltinCall(Node Syntax, BuiltinMember Member, BoundExpr Receiver, BoundExpr[] Arguments, TypeSymbol Type)
@@ -144,6 +145,15 @@ public sealed record BoundCatch(Node Syntax, BoundExpr Operand, LocalSymbol? Bin
 public sealed record BoundJump(Node Syntax, BoundStmt Jump) : BoundExpr(Syntax, PrimitiveType.Never);
 
 public sealed record BoundErrorVariant(Node Syntax, ErrorVariantSymbol Variant) : BoundExpr(Syntax, Variant.Set);
+
+/// <summary><c>Color.red</c> or a target-typed <c>.red</c>.</summary>
+public sealed record BoundEnumMember(Node Syntax, EnumMemberSymbol Member) : BoundExpr(Syntax, Member.Enum);
+
+/// <summary><c>Color.values</c>: a <c>ReadOnlySpan</c> over the enum's static table of members.</summary>
+public sealed record BoundEnumValues(Node Syntax, EnumSymbol Enum, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+/// <summary>A module-level <c>const T[N]</c> of literal scalars, read in place from static data.</summary>
+public sealed record BoundStaticArray(Node Syntax, ConstSymbol Const) : BoundExpr(Syntax, Const.Type);
 
 /// <summary><c>stackalloc T[n]</c> with a constant <c>n</c>: a span over stack storage.</summary>
 public sealed record BoundStackalloc(Node Syntax, TypeSymbol Element, long Count, TypeSymbol Type) : BoundExpr(Syntax, Type);

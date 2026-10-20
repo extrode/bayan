@@ -48,9 +48,15 @@ internal sealed partial class Binder
         }
     }
 
+    /// <summary>Binding the argument of <c>print</c>, which also takes an enum and prints its name.</summary>
+    private bool _printArgument;
+
     private BoundExpr BindFunctionCall(CallExpr c, FunctionSymbol fn, BoundExpr? receiver)
     {
+        var outer = _printArgument;
+        _printArgument = fn.Builtin == BuiltinFunction.Print;
         var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
+        _printArgument = outer;
         if (receiver is not null && fn.HasThis)
             _c.MutationChecks.Add(new MutationCheck(this, fn, receiver));
         if (fn.Fails && !ReferenceEquals(_handled, c))
@@ -231,7 +237,8 @@ internal sealed partial class Binder
         var ps = m.Parameters.Select((p, i) => new ParameterSymbol(p.Name, null, p.Type, ParamModifier.None, i)).ToList();
         var args = BindArguments(c, ps, null, enforceNames: false, displayName: name);
         if (m.Mutating) CheckWritable(receiver, receiver.Syntax.Span, $"`{name}` modifies it");
-        return new BoundBuiltinCall(c, m.Member, receiver, args, m.Returns);
+        var returns = m.Returns is SpanType span && receiver is BoundStaticArray ? new SpanType(span.Element, readOnly: true) : m.Returns;
+        return new BoundBuiltinCall(c, m.Member, receiver, args, returns);
     }
 
     // ── Failure handling ─────────────────────────────────────────────────────────
@@ -432,7 +439,7 @@ internal sealed partial class Binder
 
     private void RequireConstant(BoundExpr value, TextSpan span)
     {
-        if (value.Constant is null && value is not (BoundErrorExpr or BoundErrorVariant or BoundDefault))
+        if (value.Constant is null && value is not (BoundErrorExpr or BoundErrorVariant or BoundEnumMember or BoundDefault))
             Report(DiagnosticCodes.NotConstant, span, ["a pattern"], help: "bind it with `var x` and compare in a `when` guard");
     }
 
@@ -532,7 +539,7 @@ internal sealed partial class Binder
 
     /// <summary>
     /// Reports a non-exhaustive <c>switch</c>. Expressions must always be exhaustive; statements
-    /// only over finite types (<c>bool</c>, error sets, their optionals). Returns whether every
+    /// only over finite types (<c>bool</c>, error sets, enums, their optionals). Returns whether every
     /// value is covered.
     /// </summary>
     private bool CheckExhaustive(TextSpan span, TypeSymbol type, IReadOnlyList<(BoundPattern? Pattern, BoundExpr? Guard)> arms, bool statement)
@@ -563,6 +570,7 @@ internal sealed partial class Binder
     {
         PrimitiveType { Kind: PrimitiveKind.Bool } => ["true", "false"],
         ErrorSetSymbol s => s.Variants.Select(v => VariantKey(v, type)).ToList(),
+        EnumSymbol e => e.Members.Select(m => "." + m.Name).ToList(),
         ErrorUnionType { Sets.Count: > 0 } u => u.Sets.SelectMany(s => s.Variants).Select(v => VariantKey(v, type)).ToList(),
         OptionalType o => Domain(o.Inner) is { } inner ? [.. inner, "null"] : ["null", Some],
         _ => null,
@@ -589,6 +597,9 @@ internal sealed partial class Binder
                 break;
             case BoundConstantPattern { Value: BoundErrorVariant ev }:
                 covered.Add(VariantKey(ev.Variant, type));
+                break;
+            case BoundConstantPattern { Value: BoundEnumMember em }:
+                covered.Add("." + em.Member.Name);
                 break;
             case BoundConstantPattern { Value.Constant.Value: bool b }:
                 covered.Add(b ? "true" : "false");
@@ -742,6 +753,9 @@ internal sealed partial class Binder
                 return true;
             case BoundIndex i:
                 return CheckWritable(i.Target, span, why);
+            case BoundStaticArray:
+                Report(DiagnosticCodes.MutateTemporary, span, [], label: why is null ? "a `const` never changes" : why + "; a `const` never changes");
+                return false;
             default:
                 Report(DiagnosticCodes.MutateTemporary, span, [], label: why);
                 return false;
