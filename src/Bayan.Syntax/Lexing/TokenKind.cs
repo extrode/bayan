@@ -171,12 +171,15 @@ public enum TokenKind : ushort
     MacroKeyword,
     SelectKeyword,
     BecomeKeyword,
+    LawKeyword,
+    RequiresKeyword,
+    EnsuresKeyword,
 }
 
 public static class TokenKindFacts
 {
     public const TokenKind KeywordFirst = TokenKind.StructKeyword;
-    public const TokenKind KeywordLast = TokenKind.BecomeKeyword;
+    public const TokenKind KeywordLast = TokenKind.EnsuresKeyword;
 
     public static bool IsKeyword(this TokenKind kind) => kind is >= KeywordFirst and <= KeywordLast;
 
