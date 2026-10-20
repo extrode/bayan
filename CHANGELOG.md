@@ -16,3 +16,4 @@
 - `--diagnostics json` and exit codes 0-4
 - bayan new/init, package.byn reader, project builds, scripts
 - out/ and dist/ layouts, --target, test --json, dist and clean (M10)
+- shared build cache with worktree reuse, script reuse and cache stats (M11)
