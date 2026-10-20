@@ -177,7 +177,7 @@ public sealed class Compilation
         foreach (var module in Modules)
         {
             foreach (var s in module.Structs) DeclareMembers(s);
-            foreach (var f in module.AllFunctions.Where(f => f.Owner is null && f.Kind != FunctionKind.Main && f.Kind != FunctionKind.Test))
+            foreach (var f in module.AllFunctions.Where(f => f.Owner is null && !f.IsInstance && f.Kind != FunctionKind.Main && f.Kind != FunctionKind.Test).ToList())
                 DeclareSignature(f, f.Decl!, f.File!);
         }
         foreach (var module in Modules)
@@ -241,6 +241,7 @@ public sealed class Compilation
                     var sym = new StructSymbol(s.Name.Text, Loc(file, s.Name), module, AccessOf(s.Modifiers), s, file);
                     if (AddType(file, s.Name, sym)) module.Structs.Add(sym);
                     Naming.CheckType(this, file.Source, s.Name);
+                    sym.TypeMap = DeclareTypeParameters(file, s.TypeParams, sym.TypeParameters);
                     break;
                 }
                 case ErrorEnumDecl e:
@@ -262,6 +263,7 @@ public sealed class Compilation
                     var sym = new UnionSymbol(u.Name.Text, Loc(file, u.Name), module, AccessOf(u.Modifiers), u, file);
                     if (AddType(file, u.Name, sym)) module.Unions.Add(sym);
                     Naming.CheckType(this, file.Source, u.Name);
+                    sym.TypeMap = DeclareTypeParameters(file, u.TypeParams, sym.TypeParameters);
                     break;
                 }
                 case TypeAliasDecl a:
@@ -278,6 +280,7 @@ public sealed class Compilation
                         Access = AccessOf(f.Modifiers), File = file, Decl = f,
                     };
                     Naming.CheckValue(this, file.Source, f.Name);
+                    sym.TypeMap = DeclareTypeParameters(file, f.TypeParams, sym.TypeParameters);
                     if (f.Name.Text == "main" && file.Module == EntryModule)
                     {
                         if (module.Main is not null)
@@ -346,6 +349,28 @@ public sealed class Compilation
     private readonly List<(ErrorVariantSymbol Variant, AttributeSyntax Attribute, FileContext File)> _exitCodes = new();
     private readonly Dictionary<FunctionSymbol, TestDecl> _testBodies = new();
     private (FunctionSymbol Main, List<GlobalStatement> Statements)? _mainStatements;
+
+    /// <summary>Declares the <c>&lt;A, B&gt;</c> of a generic declaration; the map is null when there are none.</summary>
+    private Dictionary<string, TypeSymbol>? DeclareTypeParameters(FileContext file, Name[] names, List<TypeParameterType> into)
+    {
+        if (names.Length == 0) return null;
+        var map = new Dictionary<string, TypeSymbol>(StringComparer.Ordinal);
+        var seen = new Dictionary<string, Location>(StringComparer.Ordinal);
+        foreach (var name in names)
+        {
+            Naming.CheckType(this, file.Source, name);
+            if (seen.TryGetValue(name.Text, out var previous))
+            {
+                ReportDuplicate(file.Source, name, previous);
+                continue;
+            }
+            seen[name.Text] = Loc(file, name);
+            var parameter = new TypeParameterType(name.Text);
+            into.Add(parameter);
+            map[name.Text] = parameter;
+        }
+        return map;
+    }
 
     private bool AddType(FileContext file, Name name, TypeSymbol type)
     {
@@ -493,7 +518,7 @@ public sealed class Compilation
     private void DeclareUnionVariants(UnionSymbol u)
     {
         var file = u.File;
-        var types = new TypeResolver(this, file, null);
+        var types = new TypeResolver(this, file, null, u.TypeMap);
         foreach (var v in u.Decl.Variants)
         {
             Naming.CheckType(this, file.Source, v.Name);
@@ -557,7 +582,7 @@ public sealed class Compilation
                     var prop = new PropertySymbol(p.Name.Text, Loc(file, p.Name), s, AccessOf(p.Modifiers), p) { Type = types.Resolve(p.Type) };
                     var getter = new FunctionSymbol(p.Name.Text, prop.Location, s.Module, FunctionKind.Getter)
                     {
-                        Owner = s, File = file, ReturnType = prop.Type, Access = prop.Access,
+                        Owner = s, File = file, ReturnType = prop.Type, Access = prop.Access, TypeMap = s.TypeMap,
                     };
                     prop.Getter = getter;
                     s.Module.AllFunctions.Add(getter);
@@ -567,9 +592,13 @@ public sealed class Compilation
                 case FunctionDecl m:
                 {
                     Naming.CheckValue(this, file.Source, m.Name);
+                    if (m.TypeParams.Length > 0)
+                        Report(DiagnosticCodes.Unsupported, file.Source, m.TypeParams[0].Span, ["generic methods"],
+                            help: "declare a generic free function, or make the struct generic");
                     var fn = new FunctionSymbol(m.Name.Text, Loc(file, m.Name), s.Module, FunctionKind.Method)
                     {
                         Owner = s, File = file, Decl = m, Access = AccessOf(m.Modifiers), IsStatic = m.Modifiers.HasFlag(Modifiers.Static),
+                        TypeMap = s.TypeMap,
                     };
                     DeclareSignature(fn, m, file, s);
                     if (Unique(m.Name)) s.Methods.Add(fn);
@@ -580,7 +609,7 @@ public sealed class Compilation
                 {
                     var fn = new FunctionSymbol(s.Name, Loc(file, c.Name), s.Module, FunctionKind.Constructor)
                     {
-                        Owner = s, File = file, Access = AccessOf(c.Modifiers), ReturnType = s,
+                        Owner = s, File = file, Access = AccessOf(c.Modifiers), ReturnType = s, TypeMap = s.TypeMap,
                     };
                     DeclareParameters(fn, c.Params, file, types);
                     if (s.Constructors.Count > 0)
@@ -608,7 +637,7 @@ public sealed class Compilation
 
     private void DeclareSignature(FunctionSymbol fn, FunctionDecl decl, FileContext file, StructSymbol? owner = null)
     {
-        var types = new TypeResolver(this, file, owner);
+        var types = new TypeResolver(this, file, owner, fn.TypeMap);
         fn.ReturnType = types.Resolve(decl.ReturnType, allowVoid: true);
         DeclareParameters(fn, decl.Params, file, types);
         if (decl.Fails is { } fails)
@@ -724,21 +753,152 @@ public sealed class Compilation
         }
         foreach (var module in Modules)
         {
-            foreach (var fn in module.AllFunctions.ToList())
+            foreach (var fn in module.AllFunctions.Where(f => !f.IsInstance).ToList())
                 BindFunction(fn);
         }
+        while (_instantiationWork.TryDequeue(out var work))
+            Instantiating(work.Site, work.Span, work.Bind);
         InferErrorSets();
         InferMutation();
         foreach (var module in Modules)
             foreach (var fn in module.AllFunctions)
-                if (fn.Body is not null)
+                if (fn.Body is not null && !fn.IsGeneric)
                 {
+                    if (fn.IsInstance)
+                    {
+                        AnalyzeInstance(fn);
+                        continue;
+                    }
                     FlowAnalysis.Analyze(this, fn);
                     RegionAnalysis.Analyze(this, fn);
                     SpanParameterLint.Analyze(this, fn);
                 }
+        if (!Diagnostics.HasErrors && _instantiationErrors.FirstOrDefault() is { } internalError)
+            throw new InvalidOperationException(
+                $"internal error: instantiating a generic reported {internalError.Code} at {internalError.Source?.Path}: {internalError.Message}");
         if (EntryModule.Main is null && !Options.IncludeTests && !Options.Library && EntryModule.Files.Count > 0 && !Diagnostics.HasErrors)
             Report(DiagnosticCodes.NoMain, EntryModule.Files[0].Source, new TextSpan(0, 0), []);
+    }
+
+    // ── Generics ─────────────────────────────────────────────────────────────────
+
+    private readonly Dictionary<(object Generic, TypeSymbol[] Args), object> _instances = new(new InstanceKeyComparer());
+    private readonly Queue<(SourceText Site, TextSpan Span, Action Bind)> _instantiationWork = new();
+    private readonly List<Diagnostic> _instantiationErrors = new();
+    private readonly HashSet<(string, SourceText?, TextSpan)> _instanceAnalysisSeen = new();
+    private DiagnosticBag? _scratch;
+
+    private sealed class InstanceKeyComparer : IEqualityComparer<(object Generic, TypeSymbol[] Args)>
+    {
+        public bool Equals((object Generic, TypeSymbol[] Args) x, (object Generic, TypeSymbol[] Args) y) =>
+            ReferenceEquals(x.Generic, y.Generic) && x.Args.SequenceEqual(y.Args);
+
+        public int GetHashCode((object Generic, TypeSymbol[] Args) key)
+        {
+            var hash = new HashCode();
+            hash.Add(key.Generic);
+            foreach (var a in key.Args) hash.Add(a);
+            return hash.ToHashCode();
+        }
+    }
+
+    private static Dictionary<string, TypeSymbol> Substitution(IReadOnlyDictionary<string, TypeSymbol>? outer, List<TypeParameterType> parameters, TypeSymbol[] args)
+    {
+        var map = outer is null ? new Dictionary<string, TypeSymbol>(StringComparer.Ordinal) : new Dictionary<string, TypeSymbol>(outer, StringComparer.Ordinal);
+        for (var i = 0; i < parameters.Count; i++) map[parameters[i].Name] = args[i];
+        return map;
+    }
+
+    /// <summary>
+    /// Runs instantiation work, whose diagnostics are not the user's: the template already reported
+    /// them. The one exception is the <c>Map</c> key rule, which only a type argument can break; it is
+    /// reported at <paramref name="span"/>, the use that chose the type arguments.
+    /// </summary>
+    private void Instantiating(SourceText site, TextSpan span, Action work)
+    {
+        var outer = _scratch;
+        var bag = _scratch = new DiagnosticBag();
+        try { work(); }
+        finally { _scratch = outer; }
+        foreach (var d in bag.Items.Where(d => d.IsError))
+        {
+            if (d.Code == DiagnosticCodes.InvalidMapKey.Code)
+                (_scratch ?? Diagnostics).Add(d with { Source = site, Span = span, Label = "used here", Help = $"{d.Message}; {d.Help}" });
+            else
+                _instantiationErrors.Add(d);
+        }
+    }
+
+    /// <summary>The instantiation of a generic function at <paramref name="args"/>; declared now, bound when the worklist drains.</summary>
+    internal FunctionSymbol InstantiateFunction(FunctionSymbol template, TypeSymbol[] args, SourceText site, TextSpan span)
+    {
+        if (_instances.TryGetValue((template, args), out var existing)) return (FunctionSymbol)existing;
+        var fn = new FunctionSymbol(template.Name, template.Location, template.Module, template.Kind)
+        {
+            Access = template.Access, File = template.File, Decl = template.Decl, Owner = template.Owner, IsStatic = template.IsStatic,
+            Template = template, TypeArguments = args, TypeMap = Substitution(template.Owner?.TypeMap, template.TypeParameters, args),
+        };
+        _instances[(template, args)] = fn;
+        template.Module.AllFunctions.Add(fn);
+        Instantiating(site, span, () => DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner));
+        if (!fn.IsGeneric) _instantiationWork.Enqueue((site, span, () => BindFunction(fn)));
+        return fn;
+    }
+
+    /// <summary>The instantiation of a generic struct or union at <paramref name="args"/>, with its members.</summary>
+    internal TypeSymbol InstantiateType(TypeSymbol template, TypeSymbol[] args, SourceText site, TextSpan span)
+    {
+        if (_instances.TryGetValue((template, args), out var existing)) return (TypeSymbol)existing;
+        switch (template)
+        {
+            case StructSymbol s:
+            {
+                var instance = new StructSymbol(s.Name, s.Location, s.Module, s.Access, s.Decl, s.File)
+                {
+                    Template = s, TypeArguments = args, TypeMap = Substitution(null, s.TypeParameters, args),
+                };
+                _instances[(s, args)] = instance;
+                Instantiating(site, span, () => DeclareMembers(instance));
+                if (instance.IsGeneric) return instance;
+                foreach (var f in instance.Fields.Where(f => f.Decl.Default is not null))
+                    _instantiationWork.Enqueue((site, span, () => f.Default = new Binder(this, instance.File, null, instance).BindFieldDefault(f)));
+                foreach (var fn in instance.Methods.Concat(instance.Properties.Select(p => p.Getter!)).Concat(instance.Constructors))
+                    _instantiationWork.Enqueue((site, span, () => BindFunction(fn)));
+                return instance;
+            }
+            case UnionSymbol u:
+            {
+                var instance = new UnionSymbol(u.Name, u.Location, u.Module, u.Access, u.Decl, u.File)
+                {
+                    Template = u, TypeArguments = args, TypeMap = Substitution(null, u.TypeParameters, args),
+                };
+                _instances[(u, args)] = instance;
+                Instantiating(site, span, () => DeclareUnionVariants(instance));
+                return instance;
+            }
+            default:
+                throw new InvalidOperationException($"`{template.DisplayName}` is not generic");
+        }
+    }
+
+    /// <summary>The template a function was instantiated from: itself for a generic function, its twin for a member of a generic struct.</summary>
+    private static FunctionSymbol? TemplateOf(FunctionSymbol fn) =>
+        fn.Template ?? (fn.Owner?.Template is { } owner ? owner.Methods.FirstOrDefault(m => m.Decl == fn.Decl && fn.Decl is not null) : null);
+
+    /// <summary>Flow and region analysis of an instantiation; what two instantiations both find is reported once.</summary>
+    private void AnalyzeInstance(FunctionSymbol fn)
+    {
+        var outer = _scratch;
+        var bag = _scratch = new DiagnosticBag();
+        try
+        {
+            FlowAnalysis.Analyze(this, fn);
+            RegionAnalysis.Analyze(this, fn);
+            SpanParameterLint.Analyze(this, fn);
+        }
+        finally { _scratch = outer; }
+        foreach (var d in bag.Items)
+            if (_instanceAnalysisSeen.Add((d.Code, d.Source, d.Span))) Diagnostics.Add(d);
     }
 
     internal void BindConstant(ConstSymbol c)
@@ -792,6 +952,15 @@ public sealed class Compilation
             changed = false;
             foreach (var fn in inferred)
             {
+                if (fn.IsInstance && TemplateOf(fn) is { } template)
+                {
+                    foreach (var set in template.ErrorSets.Where(set => !fn.ErrorSets.Contains(set)).ToList())
+                    {
+                        fn.ErrorSets.Add(set);
+                        changed = true;
+                    }
+                    continue;
+                }
                 if (fn.Body is null) continue;
                 foreach (var set in ErrorFlow.Propagated(fn.Body))
                 {
@@ -826,7 +995,7 @@ public sealed class Compilation
                 changed = true;
             }
         } while (changed);
-        foreach (var m in MutationChecks.Where(m => m.Callee.IsMutating))
+        foreach (var m in MutationChecks.Where(m => m.Callee.IsMutating && m.Binder.Function is not { IsInstance: true }))
             m.Binder.CheckWritable(m.Receiver, m.Receiver.Syntax.Span, $"`{m.Callee.Name}` modifies it");
     }
 
@@ -834,7 +1003,7 @@ public sealed class Compilation
     internal BoundExpr? ParameterDefault(FunctionSymbol fn, ParameterSymbol p)
     {
         if (p.Default is null && p.Syntax?.Default is not null)
-            p.Default = new Binder(this, fn.File!, null, fn.Owner).BindParameterDefault(p);
+            p.Default = new Binder(this, fn.File!, null, fn.Owner, fn.TypeMap).BindParameterDefault(p);
         return p.Default;
     }
 
@@ -846,7 +1015,7 @@ public sealed class Compilation
         fn.InfersErrors || fn.Kind is FunctionKind.Main or FunctionKind.Test ? [] : fn.ErrorSets;
 
     internal void Report(DiagnosticDescriptor d, SourceText source, TextSpan span, object?[] args, string? label = null, string? help = null, Fix? fix = null) =>
-        Diagnostics.Report(d, source, span, args, label, help, fix);
+        (_scratch ?? Diagnostics).Report(d, source, span, args, label, help, fix);
 
     internal IEnumerable<AliasPlaceholder> Aliases => _aliases;
 }

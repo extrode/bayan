@@ -102,7 +102,23 @@ public sealed class StructSymbol(string name, Location location, ModuleSymbol mo
 
     public List<FunctionSymbol> Constructors { get; } = new();
 
-    public override string DisplayName => Name;
+    /// <summary>The <c>&lt;A, B&gt;</c> of a generic template; empty otherwise.</summary>
+    public List<TypeParameterType> TypeParameters { get; } = new();
+
+    /// <summary>For an instantiation: the template it was re-declared from.</summary>
+    public StructSymbol? Template { get; init; }
+
+    public IReadOnlyList<TypeSymbol> TypeArguments { get; init; } = [];
+
+    /// <summary>What each type parameter name means here: itself in a template, the argument in an instantiation.</summary>
+    public IReadOnlyDictionary<string, TypeSymbol>? TypeMap { get; set; }
+
+    /// <summary>A template, or an instantiation with a type parameter among its arguments: checked, never emitted.</summary>
+    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs);
+
+    public override string DisplayName =>
+        TypeArguments.Count > 0 ? $"{Name}<{string.Join(", ", TypeArguments.Select(a => a.DisplayName))}>" :
+        TypeParameters.Count > 0 ? $"{Name}<{string.Join(", ", TypeParameters.Select(a => a.Name))}>" : Name;
 
     public FieldSymbol? FindField(string name) => Fields.Find(f => f.Name == name);
 
@@ -192,6 +208,23 @@ public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol
 
     /// <summary>The method writes to <c>this</c>; callers need a mutable receiver.</summary>
     public bool IsMutating { get; set; }
+
+    /// <summary>The <c>&lt;T&gt;</c> of a generic template; empty otherwise.</summary>
+    public List<TypeParameterType> TypeParameters { get; } = new();
+
+    /// <summary>For an instantiated function: the template it was re-bound from.</summary>
+    public FunctionSymbol? Template { get; init; }
+
+    public IReadOnlyList<TypeSymbol> TypeArguments { get; init; } = [];
+
+    /// <summary>What each type parameter name means in the signature and body (the owner's included).</summary>
+    public IReadOnlyDictionary<string, TypeSymbol>? TypeMap { get; set; }
+
+    /// <summary>Has a type parameter left (a template, or a member of one): bound only to check it, never analysed, lowered or emitted.</summary>
+    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs) || Owner is { IsGeneric: true };
+
+    /// <summary>Re-bound from a template with concrete types (directly, or as a member of an instantiated struct).</summary>
+    public bool IsInstance => Template is not null || Owner?.Template is not null;
 
     public bool HasThis => Owner is not null && !IsStatic && Kind is FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor;
 
@@ -400,7 +433,23 @@ public sealed class UnionSymbol(string name, Location location, ModuleSymbol mod
 
     public List<UnionVariantSymbol> Variants { get; } = new();
 
-    public override string DisplayName => Name;
+    /// <summary>The <c>&lt;A, B&gt;</c> of a generic template; empty otherwise.</summary>
+    public List<TypeParameterType> TypeParameters { get; } = new();
+
+    /// <summary>For an instantiation: the template it was re-declared from.</summary>
+    public UnionSymbol? Template { get; init; }
+
+    public IReadOnlyList<TypeSymbol> TypeArguments { get; init; } = [];
+
+    /// <summary>What each type parameter name means here: itself in a template, the argument in an instantiation.</summary>
+    public IReadOnlyDictionary<string, TypeSymbol>? TypeMap { get; set; }
+
+    /// <summary>A template, or an instantiation with a type parameter among its arguments: checked, never emitted.</summary>
+    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs);
+
+    public override string DisplayName =>
+        TypeArguments.Count > 0 ? $"{Name}<{string.Join(", ", TypeArguments.Select(a => a.DisplayName))}>" :
+        TypeParameters.Count > 0 ? $"{Name}<{string.Join(", ", TypeParameters.Select(a => a.Name))}>" : Name;
 
     public UnionVariantSymbol? Find(string name) => Variants.Find(v => v.Name == name);
 }

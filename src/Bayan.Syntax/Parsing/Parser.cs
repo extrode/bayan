@@ -373,7 +373,20 @@ public sealed class Parser
     private bool IsFunctionStart()
     {
         var after = ScanType(_pos);
-        return after > 0 && KindAt(after) == TokenKind.Identifier && KindAt(after + 1) == TokenKind.OpenParen;
+        if (after <= 0 || KindAt(after) != TokenKind.Identifier) return false;
+        if (KindAt(after + 1) == TokenKind.Less && ScanTypeArgs(after + 1) is var close and > 0) return KindAt(close) == TokenKind.OpenParen;
+        return KindAt(after + 1) == TokenKind.OpenParen;
+    }
+
+    /// <summary><c>&lt;T, U&gt;</c> after a declaration name, or nothing.</summary>
+    private Name[] ParseTypeParams()
+    {
+        if (Kind != TokenKind.Less) return [];
+        Advance();
+        var names = new List<Name> { ExpectName("a type parameter name") };
+        while (Accept(TokenKind.Comma)) names.Add(ExpectName("a type parameter name"));
+        Expect(TokenKind.Greater);
+        return names.ToArray();
     }
 
     private ImportDecl ParseImport(int start)
@@ -391,6 +404,7 @@ public sealed class Parser
     {
         Advance();
         var name = ExpectName("a struct name");
+        var typeParams = ParseTypeParams();
         var open = Expect(TokenKind.OpenBrace);
         var members = new List<Decl>();
         while (Kind != TokenKind.CloseBrace && !AtEnd)
@@ -403,7 +417,7 @@ public sealed class Parser
             if (_pos == before) Advance();
         }
         ExpectClose(open, "struct");
-        return new StructDecl(SpanFrom(start), modifiers, name, members.ToArray());
+        return new StructDecl(SpanFrom(start), modifiers, name, members.ToArray()) { TypeParams = typeParams };
     }
 
     private void ExpectClose(Token open, string what)
@@ -448,6 +462,7 @@ public sealed class Parser
     {
         var returnType = ParseType();
         var name = ExpectName();
+        var typeParams = ParseTypeParams();
         var parameters = ParseParams();
         FailsClause? fails = null;
         if (Kind == TokenKind.FailsKeyword)
@@ -476,7 +491,7 @@ public sealed class Parser
         {
             Expect(TokenKind.OpenBrace);
         }
-        return new FunctionDecl(SpanFrom(start), modifiers, returnType, name, parameters, fails, body, expressionBody);
+        return new FunctionDecl(SpanFrom(start), modifiers, returnType, name, parameters, fails, body, expressionBody) { TypeParams = typeParams };
     }
 
     private Param[] ParseParams()
@@ -558,6 +573,7 @@ public sealed class Parser
     {
         Advance();
         var name = ExpectName("a union name");
+        var typeParams = ParseTypeParams();
         var open = Expect(TokenKind.OpenBrace);
         var variants = new List<UnionVariant>();
         while (Kind == TokenKind.Identifier)
@@ -585,7 +601,7 @@ public sealed class Parser
         }
         Accept(TokenKind.Semicolon);
         ExpectClose(open, "union");
-        return new UnionDecl(SpanFrom(start), modifiers, name, variants.ToArray());
+        return new UnionDecl(SpanFrom(start), modifiers, name, variants.ToArray()) { TypeParams = typeParams };
     }
 
     private TypeAliasDecl ParseTypeAlias(int start, Modifiers modifiers)

@@ -163,10 +163,13 @@ public sealed class CEmitter
                 FunctionKind.Getter => "get_" + f.Name,
                 _ => f.Name,
             };
-            return $"byn_{module}__{owner.Name}__{member}";
+            return $"byn_{module}__{owner.Name}{TypeArgs(owner.TypeArguments)}__{member}";
         }
-        return $"byn_{module}__{f.Name}";
+        return $"byn_{module}__{f.Name}{TypeArgs(f.TypeArguments)}";
     }
+
+    /// <summary>The <c>__i64__str</c> that tells instantiations of one generic apart.</summary>
+    private string TypeArgs(IReadOnlyList<TypeSymbol> args) => string.Concat(args.Select(a => "__" + Key(a)));
 
     internal static string FieldName(string name) => CKeywords.Contains(name) ? name + "_" : name;
 
@@ -206,7 +209,7 @@ public sealed class CEmitter
         },
         ErrorSetSymbol or ErrorUnionType => "uint32_t",
         EnumSymbol e => $"byn_{e.Module.CName}_{e.Name}",
-        UnionSymbol u => Named(u, $"byn_{u.Module.CName}_{u.Name}"),
+        UnionSymbol u => Named(u, $"byn_{u.Module.CName}_{u.Name}{TypeArgs(u.TypeArguments)}"),
         BuiltinType { Kind: BuiltinKind.Arena } => "byn_arena*",
         BuiltinType { Kind: BuiltinKind.StrBuf } => "byn_writer",
         BuiltinType { Kind: BuiltinKind.IoStream } => "int32_t",
@@ -220,9 +223,9 @@ public sealed class CEmitter
         PrimitiveType p => p.Kind == PrimitiveKind.String ? "str" : p.Name,
         ErrorSetSymbol or ErrorUnionType => "err",
         BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", _ => "iostream" },
-        StructSymbol s => s.Module.CName + "__" + s.Name,
+        StructSymbol s => s.Module.CName + "__" + s.Name + TypeArgs(s.TypeArguments),
         EnumSymbol e => e.Module.CName + "__" + e.Name,
-        UnionSymbol u => u.Module.CName + "__" + u.Name,
+        UnionSymbol u => u.Module.CName + "__" + u.Name + TypeArgs(u.TypeArguments),
         OptionalType o => "opt_" + Key(o.Inner),
         ResultType r => "res_" + Key(r.Value),
         SpanType s => "span_" + Key(s.Element),

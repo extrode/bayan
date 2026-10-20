@@ -131,6 +131,33 @@ public sealed class NullType : TypeSymbol
     public override string DisplayName => "null";
 }
 
+/// <summary>
+/// A type parameter <c>T</c> of a generic function, struct or union, as its template sees it.
+/// Each declaration has its own, compared by reference.
+/// </summary>
+public sealed class TypeParameterType(string name) : TypeSymbol
+{
+    public string Name { get; } = name;
+
+    public override string DisplayName => Name;
+
+    /// <summary><paramref name="t"/> mentions a type parameter, so it belongs to a template and is never emitted.</summary>
+    public static bool Occurs(TypeSymbol t) => t switch
+    {
+        TypeParameterType => true,
+        OptionalType o => Occurs(o.Inner),
+        SpanType s => Occurs(s.Element),
+        ListType l => Occurs(l.Element),
+        MapType m => Occurs(m.KeyType) || Occurs(m.ValueType),
+        ArrayType a => Occurs(a.Element),
+        TupleType tt => tt.Fields.Any(f => Occurs(f.Type)),
+        ResultType r => Occurs(r.Value),
+        StructSymbol s => s.IsGeneric,
+        UnionSymbol u => u.IsGeneric,
+        _ => false,
+    };
+}
+
 /// <summary>Base for structurally compared constructed types.</summary>
 public abstract class ConstructedType : TypeSymbol
 {

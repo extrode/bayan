@@ -318,6 +318,8 @@ internal sealed partial class Binder
         var name = n.Name.Text;
         if (n.TypeArgs.Length > 0)
         {
+            if (_scope.Lookup(name) is null && Module.Functions.TryGetValue(name, out var generic))
+                return new BoundMethodGroup(n, null, generic[0]) { TypeArgs = n.TypeArgs };
             var t = _types.Resolve(new NamedType(n.Span, [n.Name], n.TypeArgs));
             return t.IsError ? new BoundErrorExpr(n) : new BoundTypeRef(n, t);
         }
@@ -590,6 +592,10 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(syntax);
             case ErrorType:
                 return new BoundErrorExpr(syntax);
+            case TypeParameterType tp:
+                Report(DiagnosticCodes.TypeParameterMember, member.Span, [name, tp.Name],
+                    help: $"type parameters have no constraints, so a `{tp.Name}` has no members");
+                return new BoundErrorExpr(syntax);
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
             return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
@@ -752,6 +758,7 @@ internal sealed partial class Binder
         var operand = BindExpr(u.Operand, u.Op == UnaryOp.Not ? PrimitiveType.Bool : expected);
         var t = operand.Type;
         if (t.IsError) return new BoundErrorExpr(u);
+        if (t is TypeParameterType tp) return TypeParameterOperator(u, UnaryText(u.Op), tp);
         var ok = u.Op switch
         {
             UnaryOp.Not => t.IsBool,
@@ -833,6 +840,8 @@ internal sealed partial class Binder
             right = BindExpr(b.Right, hint);
         }
         if (left.Type.IsError || right.Type.IsError) return new BoundErrorExpr(b);
+        if (b.Op is not (BinaryOp.Eq or BinaryOp.Ne) && (TypeParameterOf(left.Type) ?? TypeParameterOf(right.Type)) is { } tp)
+            return TypeParameterOperator(b, BinaryText(b.Op), tp);
 
         if (b.Op is BinaryOp.Shl or BinaryOp.Shr)
         {
@@ -862,6 +871,17 @@ internal sealed partial class Binder
         var type = IsComparison(b.Op) ? PrimitiveType.Bool : common;
         var bound = new BoundBinary(b, b.Op, left, right, type);
         return Fold(bound, left, right, common);
+    }
+
+    private static TypeParameterType? TypeParameterOf(TypeSymbol t) =>
+        t as TypeParameterType ?? (t as OptionalType)?.Inner as TypeParameterType;
+
+    /// <summary>Without constraints a <c>T</c> is only copied, compared with <c>==</c>/<c>!=</c>, passed, stored, returned and formatted.</summary>
+    private BoundErrorExpr TypeParameterOperator(Node syntax, string op, TypeParameterType tp)
+    {
+        Report(DiagnosticCodes.TypeParameterOperator, syntax.Span, [op, tp.Name],
+            help: $"type parameters have no constraints: a `{tp.Name}` can only be copied, compared with `==` and `!=`, passed, stored, returned and formatted");
+        return new BoundErrorExpr(syntax);
     }
 
     private BoundExpr Fold(BoundBinary bound, BoundExpr left, BoundExpr right, TypeSymbol operandType)
@@ -900,7 +920,7 @@ internal sealed partial class Binder
         PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
         OptionalType o => IsEquatable(o.Inner),
         ResultType r => IsEquatable(r.Value),
-        ErrorSetSymbol or ErrorUnionType or EnumSymbol => true,
+        ErrorSetSymbol or ErrorUnionType or EnumSymbol or TypeParameterType => true,
         StructSymbol s => s.Fields.All(f => IsEquatable(f.Type)),
         UnionSymbol u => u.Variants.All(v => v.Fields.All(f => IsEquatable(f.Type))),
         Symbols.TupleType tt => tt.Fields.All(f => IsEquatable(f.Type)),
@@ -1221,7 +1241,7 @@ internal sealed partial class Binder
         ErrorSetSymbol or ErrorUnionType or EnumSymbol => true,
         OptionalType o => IsFormattable(o.Inner),
         ResultType r => IsFormattable(r.Value),
-        StructSymbol => true,
+        StructSymbol or TypeParameterType => true,
         UnionSymbol u => u.Variants.All(v => v.Fields.All(f => IsFormattable(f.Type))),
         Symbols.TupleType tt => tt.Fields.All(f => IsFormattable(f.Type)),
         MapType m => IsFormattable(m.KeyType) && IsFormattable(m.ValueType),
@@ -1230,7 +1250,11 @@ internal sealed partial class Binder
 }
 
 /// <summary>A function named but not yet called (only valid as a callee).</summary>
-internal sealed record BoundMethodGroup(Node Syntax, BoundExpr? Receiver, FunctionSymbol Function) : BoundExpr(Syntax, ErrorType.Instance);
+internal sealed record BoundMethodGroup(Node Syntax, BoundExpr? Receiver, FunctionSymbol Function) : BoundExpr(Syntax, ErrorType.Instance)
+{
+    /// <summary>The explicit <c>&lt;i64&gt;</c> of <c>pick&lt;i64&gt;(…)</c>.</summary>
+    public TypeSyntax[] TypeArgs { get; init; } = [];
+}
 
 /// <summary>A built-in method named but not yet called.</summary>
 /// <summary>A union variant with a payload, before its call.</summary>

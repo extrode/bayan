@@ -18,7 +18,7 @@ public static class Lowerer
         {
             foreach (var fn in module.AllFunctions)
             {
-                if (fn.Body is null || fn.Kind == FunctionKind.Test) continue;
+                if (fn.Body is null || fn.Kind == FunctionKind.Test || fn.IsGeneric) continue;
                 functions.Add(new FunctionLowerer(fn, c.Builtins).Lower());
             }
             foreach (var t in module.Tests)

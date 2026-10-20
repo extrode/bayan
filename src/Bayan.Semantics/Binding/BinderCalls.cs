@@ -24,7 +24,7 @@ internal sealed partial class Binder
         switch (callee)
         {
             case BoundMethodGroup g:
-                return BindFunctionCall(c, g.Function, g.Receiver);
+                return BindFunctionCall(c, g.Function, g.Receiver, g.TypeArgs);
             case BoundBuiltinGroup b:
                 return BindBuiltinMethodCall(c, b.Receiver, b.Name);
             case BoundTypeRef tr:
@@ -50,7 +50,7 @@ internal sealed partial class Binder
     {
         foreach (var a in c.Args)
         {
-            if (a.Value is InterpolatedExpr) continue;
+            if (a.Value is InterpolatedExpr || _prebound.Remove(a)) continue;
             BindExprOrType(a.Value);
         }
     }
@@ -58,8 +58,17 @@ internal sealed partial class Binder
     /// <summary>Binding the argument of <c>print</c>, which also takes an enum and prints its name.</summary>
     private bool _printArgument;
 
-    private BoundExpr BindFunctionCall(CallExpr c, FunctionSymbol fn, BoundExpr? receiver)
+    private BoundExpr BindFunctionCall(CallExpr c, FunctionSymbol fn, BoundExpr? receiver, TypeSyntax[]? typeArgs = null)
     {
+        if (fn.TypeParameters.Count > 0 || typeArgs is { Length: > 0 })
+        {
+            if (Instantiate(c, fn, typeArgs ?? []) is not { } instance)
+            {
+                BindArgumentsForRecovery(c);
+                return new BoundErrorExpr(c);
+            }
+            fn = instance;
+        }
         var outer = _printArgument;
         _printArgument = fn.Builtin == BuiltinFunction.Print;
         var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
@@ -75,9 +84,118 @@ internal sealed partial class Binder
         return new BoundCall(c, fn, receiver, args, fn.ReturnType);
     }
 
+    /// <summary>Arguments bound early, without an expected type, to infer type arguments from; used in place of binding them again.</summary>
+    private readonly Dictionary<Argument, BoundExpr> _prebound = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// The instantiation a call of a generic function means: its type arguments are explicit
+    /// (<c>pick&lt;i64&gt;(…)</c>) or inferred by unifying parameter types with argument types.
+    /// </summary>
+    private FunctionSymbol? Instantiate(CallExpr c, FunctionSymbol fn, TypeSyntax[] typeArgs)
+    {
+        var parameters = fn.TypeParameters;
+        if (typeArgs.Length > 0)
+        {
+            if (typeArgs.Length != parameters.Count)
+            {
+                Report(DiagnosticCodes.GenericArgumentCount, c.Callee.Span, [fn.Name, parameters.Count, typeArgs.Length],
+                    help: parameters.Count == 0 ? $"`{fn.Name}` is not generic; remove the type arguments" : null);
+                return null;
+            }
+            var explicitArgs = typeArgs.Select(t => _types.Resolve(t)).ToArray();
+            return explicitArgs.Any(a => a.IsError) ? null : _c.InstantiateFunction(fn, explicitArgs, Source, c.Span);
+        }
+        var found = new Dictionary<TypeParameterType, TypeSymbol>();
+        var conflict = false;
+        var positional = 0;
+        var sawNamed = false;
+        foreach (var arg in c.Args)
+        {
+            ParameterSymbol? p;
+            if (arg.Name is { } n)
+            {
+                sawNamed = true;
+                p = fn.Parameters.FirstOrDefault(x => x.Name == n.Text);
+            }
+            else
+                p = sawNamed || positional >= fn.Parameters.Count ? null : fn.Parameters[positional++];
+            if (p is null || !TypeParameterType.Occurs(p.Type) || _prebound.ContainsKey(arg)) continue;
+            var value = BindExpr(arg.Value, null);
+            _prebound[arg] = value;
+            conflict |= !Unify(p.Type, value.Type, found, fn, arg.Value.Span);
+        }
+        if (conflict) return null;
+        var args = new TypeSymbol[parameters.Count];
+        for (var i = 0; i < parameters.Count; i++)
+        {
+            if (!found.TryGetValue(parameters[i], out var t))
+            {
+                Report(DiagnosticCodes.CannotInferTypeArgument, c.Callee.Span, [parameters[i].Name, fn.Name],
+                    help: $"pass an argument it can be read from, or write it out: `{fn.Name}<{string.Join(", ", parameters.Select(x => x.Name))}>(…)`");
+                return null;
+            }
+            args[i] = t;
+        }
+        return _c.InstantiateFunction(fn, args, Source, c.Span);
+    }
+
+    /// <summary>Matches a parameter type against an argument type, binding the type parameters of <paramref name="fn"/>; false on a conflict (reported).</summary>
+    private bool Unify(TypeSymbol p, TypeSymbol a, Dictionary<TypeParameterType, TypeSymbol> found, FunctionSymbol fn, TextSpan span)
+    {
+        if (a.IsError || a.IsNever || a is NullType) return true;
+        switch (p)
+        {
+            case TypeParameterType tp when fn.TypeParameters.Contains(tp):
+                if (!found.TryGetValue(tp, out var previous))
+                {
+                    found[tp] = a;
+                    return true;
+                }
+                if (Conversions.Common(previous, a) is { } common)
+                {
+                    found[tp] = common;
+                    return true;
+                }
+                Report(DiagnosticCodes.ConflictingTypeArgument, span, [tp.Name, fn.Name, previous.DisplayName, a.DisplayName],
+                    help: $"make the arguments agree, or write it out: `{fn.Name}<…>(…)`");
+                return false;
+            case Symbols.OptionalType po:
+                return Unify(po.Inner, a is Symbols.OptionalType ao ? ao.Inner : a, found, fn, span);
+            case SpanType ps:
+                return a switch
+                {
+                    SpanType sa => Unify(ps.Element, sa.Element, found, fn, span),
+                    ListType la => Unify(ps.Element, la.Element, found, fn, span),
+                    Symbols.ArrayType aa => Unify(ps.Element, aa.Element, found, fn, span),
+                    _ => true,
+                };
+            case ListType pl:
+                return a is not ListType al || Unify(pl.Element, al.Element, found, fn, span);
+            case MapType pm:
+                return a is not MapType am || Unify(pm.KeyType, am.KeyType, found, fn, span) && Unify(pm.ValueType, am.ValueType, found, fn, span);
+            case Symbols.ArrayType pa:
+                return a is not Symbols.ArrayType aa2 || Unify(pa.Element, aa2.Element, found, fn, span);
+            case Symbols.TupleType pt:
+                return a is not Symbols.TupleType at || at.Fields.Count != pt.Fields.Count
+                    || pt.Fields.Zip(at.Fields).All(f => Unify(f.First.Type, f.Second.Type, found, fn, span));
+            case ResultType pr:
+                return a is not ResultType ar || Unify(pr.Value, ar.Value, found, fn, span);
+            case StructSymbol { Template: { } ps2 } pi:
+                return a is not StructSymbol ai || ai.Template != ps2
+                    || pi.TypeArguments.Zip(ai.TypeArguments).All(x => Unify(x.First, x.Second, found, fn, span));
+            case UnionSymbol { Template: { } pu } ui:
+                return a is not UnionSymbol au || au.Template != pu
+                    || ui.TypeArguments.Zip(au.TypeArguments).All(x => Unify(x.First, x.Second, found, fn, span));
+            default:
+                return true;
+        }
+    }
+
     private BoundExpr[] BindArguments(CallExpr c, IReadOnlyList<ParameterSymbol> ps, FunctionSymbol? fn, bool enforceNames, string? displayName = null)
     {
         var name = displayName ?? fn?.Name ?? "?";
+        // An instantiation follows its template's naming rule, so `T a, T b` asks for names at every type.
+        var rule = fn?.Template?.Parameters ?? ps;
         var result = new BoundExpr?[ps.Count];
         var sawNamed = false;
         var positional = 0;
@@ -116,13 +234,14 @@ internal sealed partial class Binder
                     continue;
                 }
                 p = ps[positional++];
-                if (enforceNames && MustBeNamed(p, ps, name) is { } reason)
+                if (enforceNames && MustBeNamed(rule[p.Ordinal], rule, name) is { } reason)
                     Report(DiagnosticCodes.ArgumentMustBeNamed, arg.Value.Span, [p.Name], help: reason,
                         fix: new Fix(new TextSpan(arg.Span.Start, 0), p.Name + ": "));
             }
             if (result[p.Ordinal] is not null)
             {
                 Report(DiagnosticCodes.DuplicateArgument, arg.Span, [p.Name]);
+                _prebound.Remove(arg);
                 continue;
             }
             result[p.Ordinal] = BindArgument(arg, p);
@@ -165,7 +284,7 @@ internal sealed partial class Binder
         }
         if (wanted is ArgModifier.Ref or ArgModifier.Out)
         {
-            var place = BindExpr(arg.Value, p.Type);
+            var place = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, p.Type);
             if (place.Type.IsError) return place;
             if (!place.Type.Equals(p.Type))
             {
@@ -181,7 +300,7 @@ internal sealed partial class Binder
 
     private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type)
     {
-        var value = BindExpr(arg.Value, type);
+        var value = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, type);
         return type is null ? value : Convert(value, type, arg.Value.Span, argument: true);
     }
 
@@ -437,7 +556,11 @@ internal sealed partial class Binder
                 return BindUnionPattern(vp, input, null, vp.Variant.Member, vp.Elements);
             case PositionalPattern { Type: NamedType { Path.Length: > 1, Args.Length: 0 } nt } pos:
             {
-                var owner = _types.Resolve(new NamedType(TextSpan.FromBounds(nt.Path[0].Span.Start, nt.Path[^2].Span.End), nt.Path[..^1], []));
+                // `Option2.Some(let v)` on an `Option2<i64>` names the generic union without its type arguments.
+                var owner = nt.Path.Length == 2 && Module.Types.TryGetValue(nt.Path[0].Text, out var named) && named is UnionSymbol { TypeParameters.Count: > 0 }
+                    && Unwrap(input) is UnionSymbol u && (u == named || u.Template == named)
+                    ? u
+                    : _types.Resolve(new NamedType(TextSpan.FromBounds(nt.Path[0].Span.Start, nt.Path[^2].Span.End), nt.Path[..^1], []));
                 if (owner is UnionSymbol or ErrorType)
                     return BindUnionPattern(pos, input, owner, nt.Path[^1], pos.Elements);
                 Report(DiagnosticCodes.Unsupported, p.Span, ["deconstruction patterns"]);

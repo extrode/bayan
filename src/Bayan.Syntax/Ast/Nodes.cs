@@ -56,9 +56,16 @@ public sealed record FailsClause(TextSpan Span, TypeSyntax[] Errors) : Node(Span
 /// <summary>A function or method. Exactly one of <see cref="Body"/> and <see cref="ExpressionBody"/> is set, or neither for a declaration.</summary>
 public sealed record FunctionDecl(
     TextSpan Span, Modifiers Modifiers, TypeSyntax ReturnType, Name Name, Param[] Params,
-    FailsClause? Fails, BlockStmt? Body, Expr? ExpressionBody) : Decl(Span);
+    FailsClause? Fails, BlockStmt? Body, Expr? ExpressionBody) : Decl(Span)
+{
+    /// <summary>The <c>&lt;T, U&gt;</c> after the name; empty for a non-generic function.</summary>
+    public Name[] TypeParams { get; init; } = [];
+}
 
-public sealed record StructDecl(TextSpan Span, Modifiers Modifiers, Name Name, Decl[] Members) : Decl(Span);
+public sealed record StructDecl(TextSpan Span, Modifiers Modifiers, Name Name, Decl[] Members) : Decl(Span)
+{
+    public Name[] TypeParams { get; init; } = [];
+}
 
 public sealed record FieldDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr? Default) : Decl(Span);
 
@@ -88,7 +95,10 @@ public sealed record UnionField(TextSpan Span, TypeSyntax Type, Name Name) : Nod
 public sealed record UnionVariant(TextSpan Span, Name Name, UnionField[] Fields, string? Doc) : Node(Span);
 
 /// <summary><c>union Name { Circle(f32 r), None }</c>: a tagged union stored inline.</summary>
-public sealed record UnionDecl(TextSpan Span, Modifiers Modifiers, Name Name, UnionVariant[] Variants) : Decl(Span);
+public sealed record UnionDecl(TextSpan Span, Modifiers Modifiers, Name Name, UnionVariant[] Variants) : Decl(Span)
+{
+    public Name[] TypeParams { get; init; } = [];
+}
 
 /// <summary><c>type Name = T;</c> — a plain alias.</summary>
 public sealed record TypeAliasDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax Target) : Decl(Span);
