@@ -121,4 +121,78 @@ public sealed class CliTests
         var (exit, _, _) = Run("run", Path.Combine(dir, "main.byn"));
         Assert.Equal(134, exit);
     }
+
+    private static string TestSuite(string name, string tests)
+    {
+        Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", name);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "main.byn"), "void main() {\n    print(\"main\");\n}\n");
+        File.WriteAllText(Path.Combine(dir, "main.test.byn"), tests);
+        return dir;
+    }
+
+    private static string WithoutTimes(string text) =>
+        System.Text.RegularExpressions.Regex.Replace(text, @"\(\d+\.\d ms\)", "(T)");
+
+    [Fact]
+    public void TestReportsPassFailAndPanicPerTest()
+    {
+        var dir = TestSuite("cli-test-mixed", """
+            error enum E {
+                /// It went wrong.
+                wrong,
+            }
+
+            void fail() fails E {
+                return .wrong;
+            }
+
+            test "passes" {
+                assert(1 + 1 == 2);
+            }
+
+            test "asserts" {
+                print("before");
+                assert(1 + 1 == 3);
+            }
+
+            test "fails" {
+                try fail();
+            }
+
+            test "panics" {
+                panic("boom");
+            }
+
+            """);
+        var (exit, stdout, _) = Run("test", dir);
+        Assert.Equal(1, exit);
+        Assert.Equal("""
+            running 4 tests
+              ok     passes  (T)
+              PANIC  asserts  (T)
+                     before
+                     panic: assertion failed: 1 + 1 == 3
+                       at main.test.byn:16
+              FAIL   fails  (T)
+                     error: It went wrong.
+              PANIC  panics  (T)
+                     panic: boom
+                       at main.test.byn:24
+
+            4 tests: 1 passed, 1 failed, 2 panicked  (T)
+
+            """, WithoutTimes(stdout).ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
+    public void TestExitsZeroWhenEveryTestPasses()
+    {
+        var dir = TestSuite("cli-test-pass", "test \"one\" {\n    assert(true);\n}\n");
+        var (exit, stdout, _) = Run("test", dir);
+        Assert.Equal(0, exit);
+        Assert.Contains("1 test: 1 passed", stdout);
+        Assert.DoesNotContain("main", stdout.Replace("running", ""));
+    }
 }
