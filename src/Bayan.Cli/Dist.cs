@@ -240,15 +240,18 @@ internal static class Dist
                 default: path = a; break;
             }
         }
-        path ??= ".";
-        if (!File.Exists(Path.Combine(path, "package.byn")))
+        var project = File.Exists(Path.Combine(path ?? ".", "package.byn"));
+        if (!project && (path is not null || dist || !cache))
         {
-            stderr.WriteLine($"bayan: `{path}` isn't a project (no `package.byn`), so it has no out/ to clean");
+            stderr.WriteLine($"bayan: `{path ?? "."}` isn't a project (no `package.byn`), so it has no out/ to clean");
             return CliApp.ExitUsage;
         }
-        var root = Path.GetFullPath(path);
-        Remove(Path.Combine(root, "out"), "out/", stdout);
-        if (dist) Remove(Path.Combine(root, "dist"), "dist/", stdout);
+        if (project)
+        {
+            var root = Path.GetFullPath(path ?? ".");
+            Remove(Path.Combine(root, "out"), "out/", stdout);
+            if (dist) Remove(Path.Combine(root, "dist"), "dist/", stdout);
+        }
         if (cache) Remove(Toolchain.CacheDirectory, Toolchain.CacheDirectory, stdout);
         return CliApp.ExitOk;
     }

@@ -136,8 +136,9 @@ public sealed class CEmitter
     internal string FileName(FunctionSymbol f)
     {
         var path = f.File?.Source.Path ?? "";
-        var relative = Path.GetRelativePath(_packageRoot, path).Replace('\\', '/');
-        if (relative.StartsWith("..", StringComparison.Ordinal)) relative = path.Replace('\\', '/');
+        // Project files are already relative to the project root; a loose file is named from its directory.
+        var relative = Path.IsPathRooted(path) ? Path.GetRelativePath(_packageRoot, path).Replace('\\', '/') : path.Replace('\\', '/');
+        if (relative.StartsWith("..", StringComparison.Ordinal)) relative = Path.GetFileName(path);
         if (!_files.TryGetValue(relative, out var name))
         {
             name = "byn_file_" + _files.Count;

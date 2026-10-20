@@ -10,22 +10,56 @@ namespace Bayan.Backend.C;
 /// </summary>
 public enum BuildMode { Debug, Safe, Fast }
 
-/// <summary>The executable, or the C compiler's complaint.</summary>
-public sealed record NativeBuild(string? ExecutablePath, string Errors)
+/// <summary>The executable, or the C compiler's complaint; <see cref="CacheHit"/> when nothing was compiled.</summary>
+public sealed record NativeBuild(string? ExecutablePath, string Errors, bool CacheHit = false, string? Key = null)
 {
     public bool Succeeded => ExecutablePath is not null;
 }
 
-/// <summary>Compiles generated C with the runtime into an executable, caching by content.</summary>
+/// <summary>What <c>bayan cache stats</c> reports.</summary>
+public sealed record CacheStats(string Directory, int Programs, long Bytes, int Scripts);
+
+/// <summary>
+/// Compiles generated C with the runtime into an executable, cached by content in a directory
+/// shared by every project, worktree and process on the machine (§21.4). An entry is
+/// <c>v1/programs/&lt;key&gt;/</c> holding the executable and its SHA-256; it is built in a private
+/// temporary directory and renamed into place, so readers never see a partial entry and no lock
+/// is taken. An entry whose executable no longer matches its hash is rebuilt.
+/// </summary>
 public static class Toolchain
 {
+    /// <summary>The Bayan compiler's version; part of every cache key.</summary>
+    public const string CompilerVersion = "0.1.0-dev";
+
     public static string RuntimeHeader { get; } = Resource("runtime/bayan-rt.h");
 
     public static string RuntimeSource { get; } = Resource("runtime/bayan-rt.c");
 
-    /// <summary><c>$BAYAN_CACHE</c>, or <c>bayan-cache</c> in the OS temp directory.</summary>
-    public static string CacheDirectory =>
-        Environment.GetEnvironmentVariable("BAYAN_CACHE") is { Length: > 0 } dir ? dir : Path.Combine(Path.GetTempPath(), "bayan-cache");
+    /// <summary>
+    /// <c>$BAYAN_CACHE</c>; else <c>%LOCALAPPDATA%\bayan\cache</c> on Windows,
+    /// <c>~/Library/Caches/bayan</c> on macOS, <c>$XDG_CACHE_HOME/bayan</c> or
+    /// <c>~/.cache/bayan</c> elsewhere.
+    /// </summary>
+    public static string CacheDirectory
+    {
+        get
+        {
+            if (Environment.GetEnvironmentVariable("BAYAN_CACHE") is { Length: > 0 } dir) return dir;
+            if (OperatingSystem.IsWindows())
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "bayan", "cache");
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (OperatingSystem.IsMacOS()) return Path.Combine(home, "Library", "Caches", "bayan");
+            if (Environment.GetEnvironmentVariable("XDG_CACHE_HOME") is { Length: > 0 } xdg && Path.IsPathRooted(xdg))
+                return Path.Combine(xdg, "bayan");
+            return Path.Combine(home, ".cache", "bayan");
+        }
+    }
+
+    private static string Programs => Path.Combine(CacheDirectory, "v1", "programs");
+
+    private static string Scripts => Path.Combine(CacheDirectory, "v1", "scripts");
+
+    private static string Staging => Path.Combine(CacheDirectory, "v1", "tmp");
 
     public static bool TryParseMode(string text, out BuildMode mode)
     {
@@ -65,9 +99,9 @@ public static class Toolchain
     }
 
     /// <summary>
-    /// Compiles <paramref name="cSource"/> to an executable in the cache (reused when the source,
-    /// runtime, mode, target and compiler are unchanged) and copies it to <paramref name="output"/>
-    /// if given. A <paramref name="target"/> other than the host needs zig.
+    /// Compiles <paramref name="cSource"/> to an executable in the cache (reused when the compiler
+    /// version, source, runtime, mode, target and C compiler are unchanged) and copies it to
+    /// <paramref name="output"/> if given. A <paramref name="target"/> other than the host needs zig.
     /// </summary>
     public static NativeBuild Build(string cSource, BuildMode mode, string? output = null, string? target = null)
     {
@@ -95,57 +129,184 @@ public static class Toolchain
             return new NativeBuild(null, $"unknown target `{target}`; targets are {string.Join(", ", Targets.All)}");
         if (cross && !(compiler.Length > 1 && compiler[1] == "cc" && Path.GetFileNameWithoutExtension(compiler[0]) == "zig"))
             return new NativeBuild(null, $"building for {target} on this machine needs zig (https://ziglang.org); the C compiler is `{string.Join(" ", compiler)}`");
-        var key = Hash(cSource + "\0" + RuntimeHeader + "\0" + RuntimeSource + "\0" + mode + "\0" + target + "\0" + string.Join(" ", compiler));
-        var dir = Path.Combine(CacheDirectory, key[..16]);
         var targetOs = target ?? (OperatingSystem.IsWindows() ? "windows" : "");
-        var exe = Path.Combine(dir, Targets.ExecutableName("program", targetOs));
-        if (!File.Exists(exe))
+        var exeName = Targets.ExecutableName("program", targetOs);
+        var flags = new List<string>();
+        if (cross) flags.AddRange(["-target", Targets.Triple(target!)!]);
+        flags.AddRange(["-std=c11", "-fwrapv", "-ffp-contract=off", "-w"]);
+        flags.AddRange(mode switch
         {
-            Directory.CreateDirectory(dir);
-            File.WriteAllText(Path.Combine(dir, "bayan-rt.h"), RuntimeHeader);
-            File.WriteAllText(Path.Combine(dir, "bayan-rt.c"), RuntimeSource);
-            File.WriteAllText(Path.Combine(dir, "main.c"), cSource);
-            var temp = exe + "." + Environment.ProcessId + ".tmp" + Path.GetExtension(exe);
-            var args = new List<string>(compiler[1..]);
-            if (cross) args.AddRange(["-target", Targets.Triple(target!)!]);
-            args.AddRange(
-            [
-                "-std=c11", "-fwrapv", "-ffp-contract=off", "-w",
-                "-I", dir, Path.Combine(dir, "main.c"), Path.Combine(dir, "bayan-rt.c"), "-o", temp,
-            ]);
-            args.AddRange(mode switch
-            {
-                BuildMode.Debug => ["-O0", "-g"],
-                BuildMode.Safe => ["-O2"],
-                _ => ["-O2", "-DBYN_FAST"],
-            });
-            if (!targetOs.StartsWith("windows", StringComparison.Ordinal)) args.Add("-lm");
-            var (code, stdout, stderr) = Exec(compiler[0], args);
-            if (code != 0 || !File.Exists(temp))
-                return new NativeBuild(null, $"C compiler failed (exit {code}):\n{stdout}{stderr}");
-            try
-            {
-                File.Move(temp, exe, overwrite: true);
-            }
-            catch (IOException) when (File.Exists(exe))
-            {
-                // Another build of the same program won the race.
-            }
-            if (File.Exists(temp)) File.Delete(temp);
-            foreach (var extra in Directory.EnumerateFiles(dir, "program*.pdb")) File.Delete(extra);
+            BuildMode.Debug => ["-O0", "-g"],
+            BuildMode.Safe => ["-O2"],
+            _ => ["-O2", "-DBYN_FAST"],
+        });
+        var key = Hash(string.Join("\0", CompilerVersion, mode, target, string.Join(" ", compiler), string.Join(" ", flags), RuntimeHeader, RuntimeSource, cSource));
+        var hit = Lookup(key, exeName) is not null;
+        if (!hit)
+        {
+            var failure = Compile(compiler, flags, cSource, key, exeName, linkMath: !targetOs.StartsWith("windows", StringComparison.Ordinal));
+            if (failure is not null) return new NativeBuild(null, failure);
         }
-        if (output is null) return new NativeBuild(exe, "");
-        File.Copy(exe, output, overwrite: true);
-        return new NativeBuild(output, "");
+        var exe = Path.Combine(Programs, key, exeName);
+        if (output is null) return new NativeBuild(exe, "", hit, key);
+        ReplaceFile(output, temp => File.Copy(exe, temp));
+        return new NativeBuild(output, "", hit, key);
     }
 
-    private static (int Code, string Stdout, string Stderr) Exec(string file, IEnumerable<string> args)
+    /// <summary>
+    /// Writes <paramref name="path"/> through a temporary file beside it and a rename, so
+    /// concurrent builds into one <c>out/</c> never interleave and readers never see a partial file.
+    /// </summary>
+    public static void ReplaceFile(string path, Action<string> write)
+    {
+        var temp = path + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
+        try
+        {
+            write(temp);
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp)) File.Delete(temp);
+        }
+    }
+
+    /// <summary>The cached executable for <paramref name="key"/> if it is intact; a damaged entry is removed.</summary>
+    public static string? Lookup(string key, string exeName)
+    {
+        var dir = Path.Combine(Programs, key);
+        var exe = Path.Combine(dir, exeName);
+        var sum = Path.Combine(dir, "program.sha256");
+        if (!Directory.Exists(dir)) return null;
+        try
+        {
+            if (File.Exists(exe) && File.Exists(sum) && File.ReadAllText(sum).Trim() == HashFile(exe)) return exe;
+        }
+        catch (IOException)
+        {
+            // Unreadable counts as damaged.
+        }
+        Discard(dir);
+        return null;
+    }
+
+    /// <summary>Builds into a private directory, then renames it to <c>programs/&lt;key&gt;</c>; null on success.</summary>
+    private static string? Compile(string[] compiler, List<string> flags, string cSource, string key, string exeName, bool linkMath)
+    {
+        var work = Path.Combine(Staging, key[..16] + "-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(work);
+        try
+        {
+            File.WriteAllText(Path.Combine(work, "bayan-rt.h"), RuntimeHeader);
+            File.WriteAllText(Path.Combine(work, "bayan-rt.c"), RuntimeSource);
+            File.WriteAllText(Path.Combine(work, "main.c"), cSource);
+            var args = new List<string>(compiler[1..]);
+            args.AddRange(flags);
+            // Debug info names `main.c`, not this temporary directory.
+            args.AddRange(["-ffile-prefix-map=" + work + "=.", "-I", ".", "main.c", "bayan-rt.c", "-o", exeName]);
+            if (linkMath) args.Add("-lm");
+            var (code, stdout, stderr) = Exec(compiler[0], args, work);
+            var exe = Path.Combine(work, exeName);
+            if (code != 0 || !File.Exists(exe))
+                return $"C compiler failed (exit {code}):\n{stdout}{stderr}";
+            foreach (var file in Directory.EnumerateFiles(work))
+                if (Path.GetFileName(file) != exeName) File.Delete(file);
+            File.WriteAllText(Path.Combine(work, "program.sha256"), HashFile(exe) + "\n");
+            Directory.CreateDirectory(Programs);
+            try
+            {
+                Directory.Move(work, Path.Combine(Programs, key));
+            }
+            catch (IOException) when (Lookup(key, exeName) is not null)
+            {
+                // Another build of the same program won the race; its entry is as good as ours.
+            }
+            return null;
+        }
+        finally
+        {
+            if (Directory.Exists(work)) Discard(work);
+        }
+    }
+
+    /// <summary>Renames <paramref name="dir"/> out of the way first, so a half-deleted entry is never visible.</summary>
+    private static void Discard(string dir)
+    {
+        var trash = Path.Combine(Staging, "trash-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Staging);
+            Directory.Move(dir, trash);
+            Directory.Delete(trash, recursive: true);
+        }
+        catch (IOException)
+        {
+            // Someone else moved or removed it.
+        }
+    }
+
+    /// <summary>
+    /// The program a script last built to, for <c>bayan run script.byn</c> to start without
+    /// compiling; <paramref name="scriptKey"/> covers the script's bytes, mode and C compiler.
+    /// </summary>
+    public static string? LookupScript(string scriptKey, string exeName)
+    {
+        var pointer = Path.Combine(Scripts, scriptKey);
+        try
+        {
+            return File.Exists(pointer) ? Lookup(File.ReadAllText(pointer).Trim(), exeName) : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    public static void RememberScript(string scriptKey, string programKey)
+    {
+        try
+        {
+            Directory.CreateDirectory(Scripts);
+            var temp = Path.Combine(Scripts, scriptKey + "." + Guid.NewGuid().ToString("N") + ".tmp");
+            File.WriteAllText(temp, programKey + "\n");
+            File.Move(temp, Path.Combine(Scripts, scriptKey), overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // A script that isn't remembered just compiles again next time.
+        }
+    }
+
+    /// <summary>
+    /// The key under which a script's program is remembered: compiler version, mode, host and the
+    /// script's bytes (its <c>#:</c> directives included). The C compiler isn't part of it, so a
+    /// remembered script starts even when no C compiler is installed.
+    /// </summary>
+    public static string ScriptKey(byte[] script, BuildMode mode) =>
+        Hash(string.Join("\0", "script", CompilerVersion, mode, Targets.Host, Convert.ToHexStringLower(SHA256.HashData(script))));
+
+    public static CacheStats Stats()
+    {
+        int programs = 0, scripts = 0;
+        long bytes = 0;
+        if (Directory.Exists(Programs))
+            foreach (var entry in Directory.EnumerateDirectories(Programs))
+            {
+                programs++;
+                foreach (var file in Directory.EnumerateFiles(entry)) bytes += new FileInfo(file).Length;
+            }
+        if (Directory.Exists(Scripts)) scripts = Directory.EnumerateFiles(Scripts).Count(f => !f.EndsWith(".tmp", StringComparison.Ordinal));
+        return new CacheStats(CacheDirectory, programs, bytes, scripts);
+    }
+
+    private static (int Code, string Stdout, string Stderr) Exec(string file, IEnumerable<string> args, string workingDirectory)
     {
         var psi = new ProcessStartInfo(file)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
+            WorkingDirectory = workingDirectory,
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
@@ -156,6 +317,12 @@ public static class Toolchain
     }
 
     private static string Hash(string text) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+
+    private static string HashFile(string path)
+    {
+        using var f = File.OpenRead(path);
+        return Convert.ToHexStringLower(SHA256.HashData(f));
+    }
 
     private static string Resource(string name)
     {
