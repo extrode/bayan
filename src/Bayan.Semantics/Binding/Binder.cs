@@ -672,6 +672,7 @@ internal sealed partial class Binder
                 _patternOwns = owns;
                 pattern = BindPattern(p, value.Type);
                 _patternOwns = false;
+                if (owns) CheckOwningOverlap(pattern);
             }
             else
             {

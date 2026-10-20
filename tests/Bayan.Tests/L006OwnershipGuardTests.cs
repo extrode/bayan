@@ -331,6 +331,30 @@ public sealed class L006OwnershipGuardTests
             }
             void main() { }
             """, "BYN2789" },
+        { "switch (move) and pattern binds both sides", """
+            void main() {
+                var a = List<i64>();
+                a.add(1);
+                switch (move a) {
+                    case let x and let y:
+                        consume(move x);
+                        consume(move y);
+                    default:
+                        print("other");
+                }
+            }
+            """, "BYN2790" },
+        { "switch (move) designation with a nested binding", """
+            void main() {
+                var l = Ledger { items = List<i64>() };
+                switch (move l) {
+                    case Ledger { items: let it } whole:
+                        consume(move it);
+                    default:
+                        print("other");
+                }
+            }
+            """, "BYN2790" },
         { "take on a let local", """
             void main() {
                 let xs = List<i64>();
@@ -482,6 +506,22 @@ public sealed class L006OwnershipGuardTests
                 print($"{mine.length}");
             }
             void main() { }
+            """ },
+        { "switch (move) binds disjoint parts and moves them on", """
+            struct Two {
+                List<i64> first;
+                List<i64> second;
+            }
+            void main() {
+                var t = Two { first = List<i64>(), second = List<i64>() };
+                switch (move t) {
+                    case Two { first: let a, second: let b }:
+                        consume(move a);
+                        consume(move b);
+                    default:
+                        print("other");
+                }
+            }
             """ },
         { "take from a List field", """
             void main() {
