@@ -11,3 +11,4 @@
 - M5: error-handling run goldens, Result<T, E>, non-exhaustive catch diag
 - M6: memory run goldens, region analysis BYN3002-3005
 - M7: bayan test with per-test child processes
+- M8: tally-lite example; v0.1 exit criterion met
