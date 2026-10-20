@@ -117,7 +117,7 @@ static void byn_own_remove(byn_own_rec* r) {
             i = j;
         }
     }
-    byn_own_table[i].storage = NULL;
+    memset(&byn_own_table[i], 0, sizeof byn_own_table[i]);
     byn_own_count--;
 }
 
@@ -156,9 +156,9 @@ void byn_own_read(const byn_own_slot* slot, const char* type, const char* file, 
 
 void byn_own_rekey(const void* from, const void* to) {
     if (from == to) return;
-    byn_own_rec* r = from ? byn_own_find(from) : NULL;
-    /* Nothing stale may stay at the new address. */
+    /* Nothing stale may stay at the new address; released first, as its backward shift can move `from`. */
     byn_own_release(to);
+    byn_own_rec* r = from ? byn_own_find(from) : NULL;
     if (!r) return;
     byn_own_rec moved = *r;
     byn_own_remove(r);
