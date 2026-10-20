@@ -1,0 +1,14 @@
+let buf = stackalloc i64[4];
+for (let i in 0..4) {
+    buf[i] = (i + 1) * 11;
+}
+i64 sum = 0;
+for (let v in buf) {
+    sum += v;
+}
+print($"{buf.length} {sum} {buf[^1]}");
+let bytes = stackalloc u8[64];
+var sb = StrBuf(bytes);
+sb.append("total=");
+sb.append($"{sum}");
+print(sb.asString());

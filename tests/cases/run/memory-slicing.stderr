@@ -1,0 +1,2 @@
+panic: slice out of range
+  at memory-slicing.byn:28
