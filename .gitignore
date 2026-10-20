@@ -6,3 +6,4 @@ tmp/
 .vs/
 .idea/
 TestResults/
+.claude/worktrees/
