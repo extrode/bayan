@@ -48,10 +48,16 @@ internal sealed partial class Binder
         }
     }
 
+    /// <summary>Binding the argument of <c>print</c>, which also takes an enum and prints its name.</summary>
+    private bool _printArgument;
+
     private BoundExpr BindFunctionCall(CallExpr c, FunctionSymbol fn, BoundExpr? receiver)
     {
         var interpolation = fn.Builtin is BuiltinFunction.Print or BuiltinFunction.Panic;
+        var outer = _printArgument;
+        _printArgument = fn.Builtin == BuiltinFunction.Print;
         var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin, interpolation);
+        _printArgument = outer;
         if (receiver is not null && fn.HasThis)
             _c.MutationChecks.Add(new MutationCheck(this, fn, receiver));
         if (fn.Fails && !ReferenceEquals(_handled, c))
@@ -756,6 +762,9 @@ internal sealed partial class Binder
                 return true;
             case BoundIndex i:
                 return CheckWritable(i.Target, span, why);
+            case BoundStaticArray:
+                Report(DiagnosticCodes.MutateTemporary, span, [], label: why is null ? "a `const` never changes" : why + "; a `const` never changes");
+                return false;
             default:
                 Report(DiagnosticCodes.MutateTemporary, span, [], label: why);
                 return false;

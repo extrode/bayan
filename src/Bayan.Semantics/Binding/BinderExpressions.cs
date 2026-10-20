@@ -63,6 +63,8 @@ internal sealed partial class Binder
         }
         if (value.Constant is { Value: double d } && target is PrimitiveType { Kind: PrimitiveKind.F32 } && value.Syntax is LiteralExpr)
             return Literal(value.Syntax, target, (double)(float)d);
+        if (_printArgument && argument && value.Type is EnumSymbol && target.IsString)
+            return new BoundBuiltinCall(value.Syntax, BuiltinMember.EnumName, value, [], PrimitiveType.String);
         if (value is BoundStaticArray && target is SpanType { ReadOnly: false })
         {
             Report(DiagnosticCodes.TypeMismatch, span, [value.Type.DisplayName, target.DisplayName],
