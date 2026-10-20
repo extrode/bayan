@@ -170,8 +170,9 @@ void byn_map_clear(byn_map_hdr* h);
 /* True if the bytes are well-formed UTF-8 (no overlongs, surrogates or values above U+10FFFF). */
 bool byn_utf8_valid(const uint8_t* p, int64_t n);
 
-/* argv[1..argc-1] as strings. Writes `error: argument N is not valid UTF-8` (N from 1) and exits 1 on bad input. */
-byn_str* byn_args(int argc, char** argv);
+/* argv[1..argc-1] as strings. Writes `error: argument N is not valid UTF-8` (N from 1) and exits 1 on bad input.
+ * On Windows they come from the UTF-16 command line instead of `argv`, and `*argc` is set to their count. */
+byn_str* byn_args(int* argc, char** argv);
 
 /* `IoError` codes: the compiler numbers its variants first. */
 #define BYN_IO_NOT_FOUND 1u
@@ -196,7 +197,8 @@ typedef struct byn_process {
 } byn_process;
 
 /* `Io.run`: spawns `program` (looked up on PATH when it has no path separator) with `args`,
- * never through a shell, and waits for it. Both streams are captured into `alloc`. `out` may be NULL. */
+ * never through a shell, and waits for it. Both streams are captured into `alloc`. `out` may be NULL.
+ * On Windows a batch file (`.bat`, `.cmd`) is refused with `permissionDenied`, since cmd.exe would re-parse the arguments. */
 uint32_t byn_io_run(byn_str program, const byn_str* args, int64_t nargs, byn_process* out, byn_alloc* alloc);
 /* `Io.stdout.write` (fd 1, buffered with print) and `Io.stderr.write` (fd 2). No newline. */
 void byn_io_write(int32_t fd, byn_str s);

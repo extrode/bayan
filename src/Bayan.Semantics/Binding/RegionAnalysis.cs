@@ -11,6 +11,7 @@ namespace Bayan.Semantics.Binding;
 /// (rule 4), and a value may not be structurally modified while a borrow into it is still used
 /// (rules 5 and 6). The analysis is flow-insensitive: a local borrows from everything ever stored
 /// in it, and a borrow stays alive until the holder's last use (to the end of any loop that uses it).
+/// It also rejects storing a copy of an existing <c>Map</c> or <c>StrBuf</c> (BYN2762).
 /// </summary>
 internal sealed class RegionAnalysis
 {
@@ -93,19 +94,27 @@ internal sealed class RegionAnalysis
                 break;
             case BoundLocalDecl d:
                 Declare(d.Local, d.Syntax.Span.Start);
-                if (d.Initializer is not null) Store(d.Local, Expr(d.Initializer), d.Initializer.Syntax.Span);
+                if (d.Initializer is not null)
+                {
+                    CheckCopy(d.Initializer);
+                    Store(d.Local, Expr(d.Initializer), d.Initializer.Syntax.Span);
+                }
                 break;
             case BoundExprStmt e:
                 Expr(e.Expr);
                 break;
             case BoundAssign a:
             {
+                CheckCopy(a.Value);
                 var value = Expr(a.Value);
                 Expr(a.Target);
                 StoreInto(a.Target, value, a.Value.Syntax.Span);
                 break;
             }
             case BoundReturn r when r.Value is not null:
+                // A local or by-value parameter returned is going out of scope: it moves rather than copies.
+                if (StripConversions(r.Value) is not BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var } or ParameterSymbol { Modifier: Syntax.Ast.ParamModifier.None } })
+                    CheckCopy(r.Value);
                 CheckReturn(Expr(r.Value), r.Value.Syntax.Span);
                 break;
             case BoundFail f:
@@ -179,6 +188,7 @@ internal sealed class RegionAnalysis
 
     private Borrow Expr(BoundExpr e)
     {
+        foreach (var stored in StoredOperands(e)) CheckCopy(stored);
         var result = Compute(e);
         return MayBorrow(e.Type, []) ? result : Borrow.None;
     }
@@ -484,6 +494,65 @@ internal sealed class RegionAnalysis
             }
         }
     }
+
+    // ── Copies of a `Map` or `StrBuf` (BYN2762) ──────────────────────────────────
+
+    /// <summary>
+    /// A <c>Map</c> or growable <c>StrBuf</c> is a header over heap storage: a copy would share that
+    /// storage, and a rehash or growth through one copy frees what the other still points to.
+    /// </summary>
+    private void CheckCopy(BoundExpr value)
+    {
+        if (!_reporting || !IsPlace(value) || SharedHandle(value.Type, []) is not { } handle) return;
+        var name = handle is MapType ? "Map" : "StrBuf";
+        Report(DiagnosticCodes.SharedStorageCopy, value.Syntax.Span, [name],
+            label: handle == value.Type ? null : $"`{value.Type.DisplayName}` holds a `{handle.DisplayName}` by value",
+            help: $"pass it by `ref`, or build a new `{name}` and copy the contents into it");
+    }
+
+    /// <summary>Operands that <paramref name="e"/> stores into a new location: elements, fields, payloads, inserted values.</summary>
+    private static IEnumerable<BoundExpr> StoredOperands(BoundExpr e) => e switch
+    {
+        BoundCollection c => c.Elements,
+        BoundStructLiteral s => s.Fields,
+        BoundUnionNew u => u.Payload,
+        BoundTuple t => t.Elements,
+        BoundWith w => w.Updates.Select(u => u.Value),
+        BoundCall { Function.Kind: FunctionKind.Constructor } c => c.Arguments,
+        BoundBuiltinCall { Member: BuiltinMember.ListAdd } b => [b.Arguments[0]],
+        BoundBuiltinCall { Member: BuiltinMember.MapSet } b => [b.Arguments[1]],
+        _ => [],
+    };
+
+    /// <summary>Whether <paramref name="e"/> reads existing storage (a local, parameter, field, element or <c>.value</c>) rather than making a fresh value.</summary>
+    private static bool IsPlace(BoundExpr e) => e switch
+    {
+        BoundLocal or BoundThis or BoundField or BoundTupleElement or BoundIndex => true,
+        BoundBuiltinCall { Member: BuiltinMember.OwnedValue or BuiltinMember.ResultValue or BuiltinMember.MapGet } => true,
+        BoundConversion c => IsPlace(c.Operand),
+        BoundConditional c => IsPlace(c.WhenTrue) || IsPlace(c.WhenFalse),
+        BoundCoalesce c => IsPlace(c.Left) || IsPlace(c.Right),
+        BoundSwitchExpr s => s.Arms.Any(a => IsPlace(a.Value)),
+        BoundWith w => IsPlace(w.Target),
+        BoundTry t => IsPlace(t.Operand),
+        BoundCatch c => IsPlace(c.Operand) || IsPlace(c.Handler),
+        _ => false,
+    };
+
+    private static BoundExpr StripConversions(BoundExpr e) => e is BoundConversion c ? StripConversions(c.Operand) : e;
+
+    /// <summary>The <c>Map</c> or <c>StrBuf</c> a value of type <paramref name="t"/> holds by value, or null.</summary>
+    private static TypeSymbol? SharedHandle(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
+    {
+        MapType or BuiltinType { Kind: BuiltinKind.StrBuf } => t,
+        OptionalType o => SharedHandle(o.Inner, seen),
+        ResultType r => SharedHandle(r.Value, seen),
+        ArrayType a => SharedHandle(a.Element, seen),
+        TupleType tt => tt.Fields.Select(f => SharedHandle(f.Type, seen)).FirstOrDefault(h => h is not null),
+        StructSymbol s => seen.Add(s) ? s.Fields.Select(f => SharedHandle(f.Type, seen)).FirstOrDefault(h => h is not null) : null,
+        UnionSymbol u => seen.Add(u) ? u.Variants.SelectMany(v => v.Fields).Select(f => SharedHandle(f.Type, seen)).FirstOrDefault(h => h is not null) : null,
+        _ => null,
+    };
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
 

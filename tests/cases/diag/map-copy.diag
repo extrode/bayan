@@ -1,0 +1,188 @@
+error BYN2762: a `Map` cannot be copied
+
+  15 │         this.data = data;
+     │                     ^^^^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  19 │         return this.data;
+     │                ^^^^^^^^^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  26 │     return s.data;
+     │            ^^^^^^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  30 │     return maps[0];
+     │            ^^^^^^^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  34 │     return m;
+     │            ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  38 │     return r.value;
+     │            ^^^^^^^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  46 │     var b = a;
+     │             ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  47 │     let c = p;
+     │             ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  49 │     var d = s.data;
+     │             ^^^^^^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  50 │     b = a;
+     │         ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  51 │     s.data = a;
+     │              ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  52 │     var t = Store { name = "t", data = a };
+     │                                        ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  53 │     var h = Holder(a);
+     │                    ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  54 │     var full = Slot.Full(a);
+     │                          ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  56 │     list.add(a);
+     │              ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  58 │     nested.set(1, a);
+     │                   ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  59 │     Map<i64, i64>[2] arr = [a, fresh()];
+     │                             ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  60 │     var e = arr[1];
+     │             ^^^^^^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  61 │     var whole = s;
+     │                 ^ `Store` holds a `Map<i64, i64>` by value
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  62 │     var pair = (a, 1);
+     │                 ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  64 │     var f = o.value;
+     │             ^^^^^^^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  65 │     var g = nested.get(1);
+     │             ^^^^^^^^^^^^^ `Map<i64, i64>?` holds a `Map<i64, i64>` by value
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  66 │     var u = s with { name = "u" };
+     │             ^^^^^^^^^^^^^^^^^^^^^ `Store` holds a `Map<i64, i64>` by value
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  67 │     var v = s with { data = a };
+     │             ^^^^^^^^^^^^^^^^^^^ `Store` holds a `Map<i64, i64>` by value
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  67 │     var v = s with { data = a };
+     │                             ^
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `Map` cannot be copied
+
+  68 │     Map<i64, i64>? w = a;
+     │                        ^ `Map<i64, i64>?` holds a `Map<i64, i64>` by value
+     │
+  help: pass it by `ref`, or build a new `Map` and copy the contents into it
+
+error BYN2762: a `StrBuf` cannot be copied
+
+  74 │     var copy = sb;
+     │                ^^
+     │
+  help: pass it by `ref`, or build a new `StrBuf` and copy the contents into it

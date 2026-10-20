@@ -102,7 +102,10 @@ public sealed class CEmitter
         var sb = new StringBuilder();
         sb.Append("int main(int argc, char** argv) {\n    uint32_t err = 0;\n");
         // Map hashing is seeded per run; tests get a fixed seed so they are reproducible.
-        if (_hashes) sb.Append("    byn_hash_seed_init(argc == 3 && strcmp(argv[1], \"--test\") == 0);\n");
+        if (_hashes)
+            sb.Append(_program.Tests.Count > 0
+                ? "    byn_hash_seed_init(argc == 3 && strcmp(argv[1], \"--test\") == 0);\n"
+                : "    byn_hash_seed_init(false);\n");
         if (_program.Tests.Count > 0)
         {
             sb.Append("    if (argc == 3 && strcmp(argv[1], \"--test\") == 0) {\n        switch (atoi(argv[2])) {\n");
@@ -123,7 +126,7 @@ public sealed class CEmitter
         if (_program.Main is { } main)
         {
             // Arguments are checked for UTF-8 before `main` runs, whether or not it takes them.
-            sb.Append("    byn_str* byn_argv = byn_args(argc, argv);\n");
+            sb.Append("    byn_str* byn_argv = byn_args(&argc, argv);\n");
             var args = new List<string>();
             if (main.Parameters.Count == 1)
                 args.Add($"({CType(main.Parameters[0].Type)}){{byn_argv, argc > 1 ? argc - 1 : 0}}");
