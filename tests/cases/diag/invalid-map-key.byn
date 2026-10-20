@@ -5,14 +5,14 @@ enum Planet(f64 mass) { earth(6e24) }
 Map<f64, i64> byWeight() => Map<f64, i64>();
 
 void keys() {
-    var points = Map<Point, string>();
-    var planets = Map<Planet, i64>();
-    var nested = Map<string?, i64>();
-    var wrong = Map<string>();
+    let points = Map<Point, string>();
+    let planets = Map<Planet, i64>();
+    let nested = Map<string?, i64>();
+    let wrong = Map<string>();
 }
 
 void compare() {
-    var a = Map<string, i64>();
-    var b = Map<string, i64>();
+    let a = Map<string, i64>();
+    let b = Map<string, i64>();
     if (a == b) print("same");
 }

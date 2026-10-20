@@ -131,6 +131,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ArgumentMustBeNamed = Error("BYN2305", "argument for `{0}` must be named");
     public static readonly DiagnosticDescriptor ArgumentModifierMismatch = Error("BYN2306", "argument for `{0}` must be passed as {1}");
     public static readonly DiagnosticDescriptor SpanParameterNeverWritten = Warning("BYN2310", "`{0}` is never written through; use `ReadOnlySpan<{1}>`");
+    public static readonly DiagnosticDescriptor NeverReassignedVar = Warning("BYN2311", "`{0}` is never reassigned; declare it with `let`");
     public static readonly DiagnosticDescriptor MissingReturn = Error("BYN2401", "`{0}` must return `{1}` on every path");
     public static readonly DiagnosticDescriptor MissingReturnValue = Error("BYN2402", "this function returns `{0}`; `return` needs a value");
     public static readonly DiagnosticDescriptor ReturnValueInVoid = Error("BYN2403", "`{0}` returns nothing, but `return` has a value");

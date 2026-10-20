@@ -7,7 +7,7 @@ error BYN2783: `xs` borrows from what it was bound to and cannot be changed or m
 
 error BYN2783: `xs` borrows from what it was bound to and cannot be changed or moved
 
-  12 │         var stolen = move xs;
+  12 │         let stolen = move xs;
      │                           ^^ moving it would take the value out of what it borrows from
      │
   help: move or copy the value it was bound to instead

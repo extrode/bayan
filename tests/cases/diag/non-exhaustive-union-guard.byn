@@ -8,7 +8,7 @@ f32 area(Shape s) => s switch {
 
 void describe(Shape s) {
     switch (s) {
-        case .Circle(var r) when r > 0:
+        case .Circle(let r) when r > 0:
             print("circle");
         case .Rect(_, _) or .None:
             print("other");

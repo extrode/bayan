@@ -282,8 +282,11 @@ public class LocalSymbol(string name, Location? location, TypeSymbol type, Local
     /// <summary>A <c>for</c> variable or pattern binding: of a unique type it borrows from the subject (spec §3.11).</summary>
     public bool BorrowsSubject { get; set; }
 
-    /// <summary>The <c>let</c> keyword, for the fix that turns it into <c>var</c>.</summary>
+    /// <summary>The <c>let</c> or <c>var</c> keyword, for the fix that turns one into the other.</summary>
     public Bayan.Syntax.Text.TextSpan? KeywordSpan { get; set; }
+
+    /// <summary>Assigned or mutated through after its declaration; a <c>var</c> that never is should be a <c>let</c>.</summary>
+    public bool Written { get; set; }
 }
 
 public sealed class ParameterSymbol(string name, Location? location, TypeSymbol type, ParamModifier modifier, int ordinal)

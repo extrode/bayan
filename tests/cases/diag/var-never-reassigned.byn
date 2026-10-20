@@ -1,0 +1,33 @@
+union Shape {
+    Circle(f64 r),
+    Square(f64 side),
+}
+
+struct Point {
+    i64 x;
+}
+
+void bump(ref i32 n) {
+    n += 1;
+}
+
+void describe(Shape s) {
+    if (s is .Circle(var r)) print($"{r}");
+    if (s is .Square(var side)) {
+        side *= 2.0;
+        print($"{side}");
+    }
+}
+
+void main() {
+    var total = 3;
+    var count = 0;
+    count += 1;
+    var p = Point { x = 1 };
+    p.x = 2;
+    var n = 0;
+    bump(ref n);
+    let fixed = 4;
+    for (var i in 0..3) print($"{i + total + count + p.x + n + fixed}");
+    describe(Shape.Circle(1.0));
+}

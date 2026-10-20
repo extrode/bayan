@@ -13,7 +13,7 @@ struct Index<K> {
 
 print($"{countOf(1.5)}");
 print($"{countOf("fine")}");
-var xs = List<i64>();
+let xs = List<i64>();
 print($"{same(a: xs, b: xs)}");
 print(show(Arena()));
 Index<f64> idx;
