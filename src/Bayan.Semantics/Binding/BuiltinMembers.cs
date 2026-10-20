@@ -6,7 +6,7 @@ namespace Bayan.Semantics.Binding;
 internal sealed record BuiltinMethod(
     BuiltinMember Member, (string Name, TypeSymbol Type)[] Parameters, TypeSymbol Returns, bool Mutating = false);
 
-/// <summary>Members of strings, spans, lists, maps, arrays, results, <c>Owned</c>, <c>Arena</c>, <c>StrBuf</c>, <c>Io.stdout</c>/<c>Io.stderr</c>/<c>Io.stdin</c>, <c>ProcessResult</c>, <c>char</c> and enums (spec §3, §16).</summary>
+/// <summary>Members of strings, spans, lists, maps, arrays, results, optionals, <c>Owned</c>, <c>Arena</c>, <c>StrBuf</c>, <c>Io.stdout</c>/<c>Io.stderr</c>/<c>Io.stdin</c>, <c>ProcessResult</c>, <c>char</c> and enums (spec §3, §16).</summary>
 internal static class BuiltinMembers
 {
     /// <summary>A built-in property (read without parentheses), or null.</summary>
@@ -47,12 +47,14 @@ internal static class BuiltinMembers
         (ListType l, "asSpan") => new(BuiltinMember.ListAsSpan, [], new SpanType(l.Element)),
         (ListType, "clear") => new(BuiltinMember.ListClear, [], PrimitiveType.Void, Mutating: true),
         (ListType l, "removeLast") => new(BuiltinMember.ListRemoveLast, [], l.Element, Mutating: true),
+        (ListType l, "take") => new(BuiltinMember.ListTake, [], l, Mutating: true),
         (MapType m, "getOr") => new(BuiltinMember.MapGetOr, [("key", m.KeyType), ("default", m.ValueType)], m.ValueType),
         (MapType m, "slot") => new(BuiltinMember.MapSlot, [("key", m.KeyType)], m.ValueType, Mutating: true),
         (MapType m, "contains") => new(BuiltinMember.MapContains, [("key", m.KeyType)], PrimitiveType.Bool),
         (MapType m, "remove") => new(BuiltinMember.MapRemove, [("key", m.KeyType)], PrimitiveType.Bool, Mutating: true),
         (MapType m, "copy") => new(BuiltinMember.MapCopy, [("to", BuiltinType.Arena)], m),
         (MapType, "clear") => new(BuiltinMember.MapClear, [], PrimitiveType.Void, Mutating: true),
+        (MapType m, "take") => new(BuiltinMember.MapTake, [], m, Mutating: true),
         (Symbols.ArrayType a, "asSpan") => new(BuiltinMember.ArrayAsSpan, [], new SpanType(a.Element)),
         (BuiltinType { Kind: BuiltinKind.Arena }, "reset") => new(BuiltinMember.ArenaReset, [], PrimitiveType.Void, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "append") =>
@@ -60,6 +62,8 @@ internal static class BuiltinMembers
         (BuiltinType { Kind: BuiltinKind.StrBuf } s, "copy") => new(BuiltinMember.StrBufCopy, [("to", BuiltinType.Arena)], s),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "asString") => new(BuiltinMember.StrBufAsString, [], PrimitiveType.String),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "clear") => new(BuiltinMember.StrBufClear, [], PrimitiveType.Void, Mutating: true),
+        (BuiltinType { Kind: BuiltinKind.StrBuf } s, "take") => new(BuiltinMember.StrBufTake, [], s, Mutating: true),
+        (OptionalType o, "take") when TypeFacts.IsUnique(o.Inner) => new(BuiltinMember.OptionalTake, [], o, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.IoStream }, "write") => new(BuiltinMember.IoWrite, [("text", PrimitiveType.String)], PrimitiveType.Void),
         // The binder wraps the result in `Result<string, IoError>`.
         (BuiltinType { Kind: BuiltinKind.IoInput }, "readAll") => new(BuiltinMember.IoReadAll, [], PrimitiveType.String),
@@ -69,7 +73,7 @@ internal static class BuiltinMembers
     public static bool HasMethod(TypeSymbol type, string name) => Method(type, name) is not null;
 
     private static readonly string[] Candidates =
-        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "add", "asSpan", "clear", "removeLast", "getOr", "slot", "remove", "reset", "append", "asString", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr"];
+        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "add", "asSpan", "clear", "removeLast", "getOr", "slot", "remove", "reset", "append", "asString", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>

@@ -399,6 +399,8 @@ internal sealed class OwnershipAnalysis
     private static bool IsPlace(BoundExpr e) => e switch
     {
         BoundLocal or BoundThis or BoundField or BoundTupleElement or BoundIndex => true,
+        // `take()` hands over a fresh value; the place keeps an empty one.
+        BoundBuiltinCall { Member: BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake } => false,
         BoundBuiltinCall { Member: BuiltinMember.OwnedValue or BuiltinMember.ResultValue or BuiltinMember.MapIndex
             or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapGetOr } => true,
         BoundConversion c => IsPlace(c.Operand),

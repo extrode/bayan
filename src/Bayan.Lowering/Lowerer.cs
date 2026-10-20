@@ -961,6 +961,19 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             if (IsNever(target)) return target;
             return WriteParts(b, WriteSink.StrBuf, target, i);
         }
+        // `x.take()`: move the value out, then leave the type's empty value in the place, evaluated once.
+        if (b.Member is BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake)
+        {
+            var place = Lvalue(b.Receiver);
+            if (IsNever(place)) return place;
+            place = Stable(place);
+            // `map[k].take()` reads through the panicking index, so a missing key is not inserted.
+            var taken = Spill(place is BoundBuiltinCall { Member: BuiltinMember.MapIndexSet } read ? read with { Member = BuiltinMember.MapIndex } : place);
+            EmitAssign(place, b.Member == BuiltinMember.StrBufTake
+                ? new BoundCall(b.Syntax, _builtins.StrBufGrow, null, [], b.Type)
+                : new BoundDefault(b.Syntax, b.Type));
+            return taken;
+        }
         var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast
             or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapRemove or BuiltinMember.MapClear
             or BuiltinMember.StrBufAppend or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan;
@@ -982,6 +995,22 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         }
         return lowered;
     }
+
+    /// <summary>
+    /// <paramref name="place"/> with every index, key and non-addressable receiver in it stored in a
+    /// temporary, innermost first, so reading it and then writing it names the same storage.
+    /// </summary>
+    private BoundExpr Stable(BoundExpr place) => place switch
+    {
+        BoundField f => f with { Receiver = Stable(f.Receiver) },
+        BoundTupleElement t => t with { Receiver = Stable(t.Receiver) },
+        LOptionalValue v => v with { Optional = Stable(v.Optional) },
+        // A list's elements live behind its pointer, so a copy of a non-addressable list still names them.
+        BoundIndex i => i with { Target = Stable(i.Target), Index = IsTrivial(i.Index) ? i.Index : Spill(i.Index) },
+        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b =>
+            b with { Receiver = Stable(b.Receiver), Arguments = b.Arguments.Select(a => IsTrivial(a) ? a : Spill(a)).ToArray() },
+        _ => IsTrivial(place) || IsLvalue(place) ? place : Spill(place),
+    };
 
     private BoundExpr Write(BoundCall c, WriteSink sink, BoundExpr? target, BoundInterpolated text) => WriteParts(c, sink, target, text);
 

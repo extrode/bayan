@@ -607,7 +607,8 @@ internal sealed partial class Binder
             // Any other member reads through the pointer: `o.field`, `o.method()`.
             case OwnedType o when name != "value" && !o.Inner.IsError:
                 return BindValueMember(syntax, new BoundBuiltinCall(target.Syntax, BuiltinMember.OwnedValue, target, [], o.Inner), member);
-            case OptionalType o:
+            // `take()` is the one member an optional has itself.
+            case OptionalType o when name != "take":
                 Report(DiagnosticCodes.MemberOfOptional, member.Span, [name, o.DisplayName],
                     help: $"check it first: `if ({Source.GetText(target.Syntax.Span)} is {{ }} value) {{ … value.{name} … }}`");
                 return new BoundErrorExpr(syntax);
@@ -622,6 +623,12 @@ internal sealed partial class Binder
             return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
         if (BuiltinMembers.HasMethod(target.Type, name))
             return new BoundBuiltinGroup(syntax, target, name);
+        if (name == "take")
+        {
+            Report(DiagnosticCodes.TakeUnsupported, member.Span, [target.Type.DisplayName],
+                help: "only an owned collection or optional has an empty value to leave behind; copy it, or move the whole local");
+            return new BoundErrorExpr(syntax);
+        }
         Report(DiagnosticCodes.UnknownMember, member.Span, [name, target.Type.DisplayName],
             help: MemberSuggestion(target.Type, name));
         return new BoundErrorExpr(syntax);

@@ -1,0 +1,85 @@
+// `x.take()` moves a value out of a place and leaves its empty value behind; the place stays usable.
+struct Ledger {
+    string name;
+    List<i64> items;
+    List<i64>? pending;
+}
+
+i64 sum(move List<i64> xs) {
+    i64 total = 0;
+    for (let x in xs) total += x;
+    return total;
+}
+
+List<i64> drain(ref List<i64> xs) => xs.take();
+
+i64 pick() {
+    print("pick");
+    return 0;
+}
+
+void main() {
+    var ledger = Ledger { name = "ledger", items = List<i64>(), pending = null };
+    ledger.items.add(1);
+    ledger.items.add(2);
+    let items = ledger.items.take();
+    print($"field {items.length} left {ledger.items.length}");
+    ledger.items.add(3);
+    print($"reused {ledger.items.length} {ledger.items[0]}");
+    print($"sum {sum(ledger.items.take())} left {ledger.items.length}");
+
+    var counts = Map<string, i64>();
+    counts["a"] = 1;
+    counts["b"] = 2;
+    let taken = counts.take();
+    print($"map {taken.length} left {counts.length}");
+    counts["c"] = 3;
+    print($"reused {counts.length} {counts["c"]}");
+
+    var sb = StrBuf();
+    sb.append("hello");
+    let text = sb.take();
+    print($"strbuf {text.asString()} left {sb.length}");
+    sb.append("again");
+    print($"reused {sb.asString()}");
+
+    var more = List<i64>();
+    more.add(4);
+    ledger.pending = more.take();
+    let pending = ledger.pending.take();
+    if (pending is { } p) print($"optional {p.length}");
+    print($"left null {ledger.pending is null}");
+    let none = ledger.pending.take();
+    print($"none null {none is null}");
+
+    var lists = List<List<i64>>();
+    lists.add(List<i64>());
+    lists[0].add(5);
+    lists[0].add(6);
+    let first = lists[0].take();
+    print($"element {first.length} left {lists[0].length}");
+    lists[0].add(7);
+    print($"reused {lists[0][0]}");
+
+    var nested = List<List<List<i64>>>();
+    nested.add(List<List<i64>>());
+    nested[0].add(List<i64>());
+    nested[0][0].add(12);
+    let inner = nested[pick()][pick()].take();
+    print($"nested {inner.length} left {nested[0][0].length}");
+
+    var groups = Map<string, List<i64>>();
+    var g = List<i64>();
+    g.add(8);
+    groups["x"] = move g;
+    let x = groups["x"].take();
+    print($"map element {x.length} left {groups["x"].length}");
+
+    var shared = List<i64>();
+    shared.add(9);
+    shared.add(10);
+    let drained = drain(ref shared);
+    print($"ref {drained.length} left {shared.length}");
+    shared.add(11);
+    print($"reused {shared[0]}");
+}

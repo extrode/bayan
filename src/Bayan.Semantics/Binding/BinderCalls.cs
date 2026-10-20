@@ -449,6 +449,8 @@ internal sealed partial class Binder
     private BoundExpr BindBuiltinMethodCall(CallExpr c, BoundExpr receiver, string name)
     {
         var m = BuiltinMembers.Method(receiver.Type, name)!;
+        if (m.Member is BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake)
+            receiver = MapWriteTarget(receiver);
         var ps = m.Parameters.Select((p, i) => new ParameterSymbol(p.Name, null, p.Type, ParamModifier.None, i)).ToList();
         var args = BindArguments(c, ps, null, enforceNames: false, displayName: name);
         if (m.Mutating) CheckWritable(receiver, receiver.Syntax.Span, $"`{name}` modifies it");
@@ -500,7 +502,10 @@ internal sealed partial class Binder
             BoundLocal { Local: ParameterSymbol { IsByRef: true } p } => ($"`{p.Modifier.ToString().ToLowerInvariant()}` parameter `{p.Name}`", "the caller still owns it; copy it with `.copy(to: alloc)`"),
             BoundLocal { Local: ParameterSymbol p } => ($"parameter `{p.Name}`", $"a plain parameter is borrowed from the caller; declare it `move {p.Name}` to take ownership"),
             BoundLocal { Local: var l } => ($"`{l.Name}`", "only a local variable or a `move` parameter can be moved"),
+            BoundField f when BuiltinMembers.Method(f.Type, "take") is not null => ($"field `{f.Field.Name}`", "its owner keeps it; take it with `.take()`, or copy it with `.copy(to: alloc)`"),
             BoundField f => ($"field `{f.Field.Name}`", "its owner keeps it; move the whole value, or copy the field with `.copy(to: alloc)`"),
+            BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } when BuiltinMembers.Method(operand.Type, "take") is not null =>
+                ("an element", "its owner keeps it; take it with `.take()`, or copy it with `.copy(to: alloc)`"),
             BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } => ("an element", "the collection keeps it; copy the element with `.copy(to: alloc)`"),
             BoundTupleElement => ("a tuple element", "move the whole tuple instead"),
             BoundThis => ("`this`", "a method borrows `this`"),

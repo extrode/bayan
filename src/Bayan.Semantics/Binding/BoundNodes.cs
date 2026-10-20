@@ -58,6 +58,8 @@ public enum BuiltinMember
     ArrayLength, ArrayAsSpan,
     ArenaReset,
     StrBufAppend, StrBufLength, StrBufAsString, StrBufClear,
+    /// <summary><c>x.take()</c>: moves the value out of a place and leaves the type's empty value behind.</summary>
+    ListTake, MapTake, StrBufTake, OptionalTake,
     CharValue,
     ResultIsOk, ResultValue, ResultError,
     /// <summary><c>o.value</c> of an <c>Owned&lt;T&gt;</c>, also inserted for member access through it.</summary>
