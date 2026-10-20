@@ -21,7 +21,7 @@ public sealed class L005RunBatchTests
     [
         "a", "Z", "q", "0", "9", " ", "\t",
         "&", "|", "<", ">", "(", ")", "^", "!", "\"", "%", ",", ";", "=", "\\", "/",
-        "\r", "\n", "\0", "é", "ß", "中", "😀",
+        "\r", "\n", "\0", "\u001a", "\v", "\f", "\u007f", "\u00a0", "\u00ff", "é", "ß", "中", "😀",
     ];
 
     private static readonly string[] SafeChars = Chars.Where(c => !IsRefused(c)).ToArray();
@@ -137,7 +137,7 @@ public sealed class L005RunBatchTests
         Assert.Equal(expected, error is null ? string.Join("|", tokens!) : "error: " + error);
     }
 
-    /// <summary>Not on Windows, an accepted path and argument list still fails with <c>unsupported</c>.</summary>
+    /// <summary>Not on Windows, a refused and an accepted path and argument list both fail with <c>unsupported</c>.</summary>
     [NotOnWindowsFact]
     public void RunBatchIsUnsupportedOffWindows()
     {
@@ -146,7 +146,18 @@ public sealed class L005RunBatchTests
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, "main.byn");
         File.WriteAllText(path, """
+            i32 refusedIsUnsupported() {
+                string[1] refused = ["%PATH%"];
+                let r = Io.runBatch("echo", refused.asSpan()) catch (e) switch {
+                    .unsupported => return 0,
+                    _ => return 3,
+                };
+                return 4;
+            }
+
             i32 main() {
+                let refused = refusedIsUnsupported();
+                if (refused != 0) { return refused; }
                 string[3] args = ["a b", "^&|<>()!", "é"];
                 let r = Io.runBatch(".\\echo.cmd", args.asSpan()) catch (e) switch {
                     .unsupported => return 0,
