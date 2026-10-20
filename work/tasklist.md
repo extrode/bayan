@@ -41,6 +41,6 @@ tick.
 - [x] **T4 — M3 semantics I** — done when: every names/types/mutability rule has passing and failing diag/ cases
 - [x] **T5 — M4 C backend hello world** — done when: examples/hello runs on all platforms; run/ cases per handoff M4
 - [x] **T6 — M5 errors** — done when: run/ cases for every error form incl. cleanup order; diag/ for non-exhaustive catch and try in defer
-- [ ] **T7 — M6 memory basics** — done when: run/ cases for slicing and arenas; diag/ for borrow escape, mutation while borrowed
+- [x] **T7 — M6 memory basics** — done when: run/ cases for slicing and arenas; diag/ for borrow escape, mutation while borrowed
 - [ ] **T8 — M7 tests** — done when: bayan test reports passing, failing and panicking tests correctly
 - [ ] **T9 — M8 tally-lite** — done when: bayan run prints the sample transfers; bayan test examples/tally-lite passes
