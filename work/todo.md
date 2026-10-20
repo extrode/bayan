@@ -52,3 +52,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `map[k].clear()` and `map[k].add(x)` report BYN2106: a `map[k]` receiver is a write target only for `take()` (spec 003 T1); other mutating builtins on a map element need the same `MapWriteTarget` treatment
 - Unverified (spec 003 review, finding F): `StrBuf.take()` refills the place using the current `byn_context` allocator, and RegionAnalysis does not see the `StrBufGrow` the lowering introduces; check whether a `take()` on a `ref StrBuf` from an outer region allocates the refill in the wrong region
 - `_ = move a;` reports BYN2001, while BYN1012's help (for a bare `move a;`) suggests `_ = f();`; either accept a discarded move or change the help text
+- Spec 003 review (Q70): a mutation of an owning `switch (move x)` binding inside a `when` guard that fails is lost (the next arm binds the subject's old header); decide between a compile error and documented discard semantics
