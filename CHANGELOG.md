@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- Spec 003: `x.take()` on `List`, `Map`, `StrBuf` and optionals of them (BYN2788); `switch (move x)` with owning pattern bindings (BYN2789); a debug-build runtime ownership checker; a seeded ownership program generator; law L008 enacted with its proof, L006 amended with `take()` and `switch (move x)` rows
+- Spec 003: `x.take()` on `List`, `Map`, `StrBuf` and optionals of them (BYN2788); `switch (move x)` with owning pattern bindings (BYN2789, and BYN2790 for overlapping bindings); a debug-build runtime ownership checker; a seeded ownership program generator; law L008 enacted with its proof, L006 amended with `take()` and `switch (move x)` rows
 - Spec 002: `unique` collections with `move` and `.copy(to:)` (BYN2780-2784, BYN2762 retired); Map API per spec §16 (`map[k]`, `getOr`, `slot`, BYN2785); `bayan lex --json` and stdin for both lexers on shared Unicode tables; `Untrusted<T>`, `trust` and `Io.runBatch` (BYN2786, BYN2787); BYN2311 never-reassigned `var` lint; proofs for laws L001-L004
 - Reserved keywords `law`, `requires`, `ensures` (BYN0012 as identifiers; handoff addendum 002)
 - Solution, AOT CLI, diagnostics renderer, golden harness, CI workflow
