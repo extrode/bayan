@@ -1,8 +1,17 @@
 /* Bayan runtime implementation. See bayan-rt.h. */
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L /* clock_gettime under -std=c11 */
+#endif
 #include "bayan-rt.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <time.h>
+#endif
 
 /* ── Panics ──────────────────────────────────────────────────────────────── */
 
@@ -341,4 +350,159 @@ void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size,
     if (grown < need) grown = need;
     *ptr = alloc->resize(alloc, *ptr, *cap * elem_size, grown * elem_size);
     *cap = grown;
+}
+
+/* ── Program entry ───────────────────────────────────────────────────────── */
+
+bool byn_utf8_valid(const uint8_t* p, int64_t n) {
+    int64_t i = 0;
+    while (i < n) {
+        uint8_t c = p[i];
+        if (c < 0x80) {
+            i++;
+            continue;
+        }
+        int len;
+        uint32_t min;
+        uint32_t v;
+        if ((c & 0xE0) == 0xC0) len = 2, min = 0x80, v = c & 0x1F;
+        else if ((c & 0xF0) == 0xE0) len = 3, min = 0x800, v = c & 0x0F;
+        else if ((c & 0xF8) == 0xF0) len = 4, min = 0x10000, v = c & 0x07;
+        else return false;
+        if (n - i < len) return false;
+        for (int k = 1; k < len; k++) {
+            if ((p[i + k] & 0xC0) != 0x80) return false;
+            v = v << 6 | (p[i + k] & 0x3F);
+        }
+        if (v < min || v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF)) return false;
+        i += len;
+    }
+    return true;
+}
+
+byn_str* byn_args(int argc, char** argv) {
+    int n = argc > 1 ? argc - 1 : 0;
+    byn_str* args = (byn_str*)malloc(sizeof(byn_str) * (size_t)(n > 0 ? n : 1));
+    if (!args) byn_panic("out of memory", NULL, 0);
+    for (int i = 0; i < n; i++) {
+        const uint8_t* p = (const uint8_t*)argv[i + 1];
+        int64_t len = (int64_t)strlen(argv[i + 1]);
+        if (!byn_utf8_valid(p, len)) {
+            fprintf(stderr, "error: argument %d is not valid UTF-8\n", i + 1);
+            fflush(stderr);
+            exit(1);
+        }
+        args[i] = (byn_str){p, len};
+    }
+    return args;
+}
+
+/* ── Io ──────────────────────────────────────────────────────────────────── */
+
+static uint32_t byn_io_error(int e) {
+    switch (e) {
+    case ENOENT: return BYN_IO_NOT_FOUND;
+    case EACCES:
+    case EPERM: return BYN_IO_PERMISSION_DENIED;
+    default: return BYN_IO_OTHER;
+    }
+}
+
+/* Opens a UTF-8 path; NULL with errno set on failure. */
+static FILE* byn_io_open(byn_str path, const char* mode) {
+    if (memchr(path.ptr, 0, (size_t)path.len)) {
+        errno = ENOENT;
+        return NULL;
+    }
+#ifdef _WIN32
+    int wn = MultiByteToWideChar(CP_UTF8, 0, (const char*)path.ptr, (int)path.len, NULL, 0);
+    wchar_t* wpath = (wchar_t*)malloc(sizeof(wchar_t) * (size_t)(wn + 1));
+    if (!wpath) byn_panic("out of memory", NULL, 0);
+    MultiByteToWideChar(CP_UTF8, 0, (const char*)path.ptr, (int)path.len, wpath, wn);
+    wpath[wn] = 0;
+    wchar_t wmode[4] = {0};
+    for (int i = 0; mode[i] && i < 3; i++) wmode[i] = (wchar_t)mode[i];
+    FILE* f = _wfopen(wpath, wmode);
+    free(wpath);
+    return f;
+#else
+    char* cpath = (char*)malloc((size_t)path.len + 1);
+    if (!cpath) byn_panic("out of memory", NULL, 0);
+    memcpy(cpath, path.ptr, (size_t)path.len);
+    cpath[path.len] = 0;
+    FILE* f = fopen(cpath, mode);
+    free(cpath);
+    return f;
+#endif
+}
+
+uint32_t byn_io_read(byn_str path, uint8_t** ptr, int64_t* len, byn_alloc* alloc) {
+    FILE* f = byn_io_open(path, "rb");
+    if (!f) return byn_io_error(errno);
+    uint8_t* buf = NULL;
+    int64_t cap = 0;
+    int64_t n = 0;
+    for (;;) {
+        if (n == cap) {
+            int64_t grown = cap < 4096 ? 4096 : cap * 2;
+            buf = (uint8_t*)alloc->resize(alloc, buf, cap, grown);
+            cap = grown;
+        }
+        size_t got = fread(buf + n, 1, (size_t)(cap - n), f);
+        n += (int64_t)got;
+        if (got == 0) break;
+    }
+    int failed = ferror(f);
+    int e = errno;
+    fclose(f);
+    if (failed) return byn_io_error(e);
+    *ptr = buf;
+    *len = n;
+    return 0;
+}
+
+uint32_t byn_io_read_text(byn_str path, byn_str* out, byn_alloc* alloc) {
+    uint8_t* p;
+    int64_t n;
+    uint32_t err = byn_io_read(path, &p, &n, alloc);
+    if (err != 0) return err;
+    if (!byn_utf8_valid(p, n)) return BYN_IO_INVALID_UTF8;
+    if (out) *out = (byn_str){p, n};
+    return 0;
+}
+
+uint32_t byn_io_write_file(byn_str path, const uint8_t* ptr, int64_t len) {
+    FILE* f = byn_io_open(path, "wb");
+    if (!f) return byn_io_error(errno);
+    size_t put = len > 0 ? fwrite(ptr, 1, (size_t)len, f) : 0;
+    int e = errno;
+    int closed = fclose(f);
+    if ((int64_t)put != len || closed != 0) return byn_io_error(e);
+    return 0;
+}
+
+void byn_io_write(int32_t fd, byn_str s) {
+    if (fd == 1) {
+        byn_out(s.ptr, s.len);
+        return;
+    }
+    byn_stdout_flush();
+    fwrite(s.ptr, 1, (size_t)s.len, stderr);
+    fflush(stderr);
+}
+
+int64_t byn_io_monotonic_nanos(void) {
+#ifdef _WIN32
+    LARGE_INTEGER count;
+    LARGE_INTEGER freq;
+    QueryPerformanceCounter(&count);
+    QueryPerformanceFrequency(&freq);
+    int64_t c = count.QuadPart;
+    int64_t f = freq.QuadPart;
+    return c / f * 1000000000 + c % f * 1000000000 / f;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+#endif
 }

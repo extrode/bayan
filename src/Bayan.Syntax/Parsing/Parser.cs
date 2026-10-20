@@ -281,6 +281,7 @@ public sealed class Parser
         var startIndex = _pos;
         var start = first.Start;
         var attributes = ParseAttributes();
+        doc ??= DocOf(Current);
         var modifiers = ParseModifiers();
 
         Decl? decl;
@@ -510,8 +511,9 @@ public sealed class Parser
         {
             var first = Current;
             var attributes = ParseAttributes();
+            var doc = DocOf(first) ?? DocOf(Current);
             var variant = ExpectName("a variant name");
-            variants.Add(new ErrorVariant(variant.Span, variant, DocOf(first)) { Attributes = attributes });
+            variants.Add(new ErrorVariant(variant.Span, variant, doc) { Attributes = attributes });
             if (!Accept(TokenKind.Comma)) break;
         }
         ExpectClose(open, "error enum");

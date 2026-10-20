@@ -208,7 +208,12 @@ internal sealed partial class Binder
         }
         var value = BindExpr(arg.Value);
         if (value.Type.IsError) return 1;
-        if (!value.Type.IsInteger || value.Constant is not { Value: Int128 n } || n < 1 || n > 255)
+        if (!value.Type.IsInteger || value.Constant is not { Value: Int128 n })
+        {
+            Report(DiagnosticCodes.InvalidExitCode, arg.Value.Span, []);
+            return 1;
+        }
+        if (n < 1 || n > 255)
         {
             Report(DiagnosticCodes.InvalidExitCode, arg.Value.Span, [], help: "0 means success, and exit codes above 255 do not survive the operating system");
             return 1;

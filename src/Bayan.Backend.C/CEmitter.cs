@@ -66,6 +66,9 @@ public sealed class CEmitter
         errors.Append("static void byn_w_error(byn_writer* w, uint32_t code) {\n");
         errors.Append($"    if (code == 0 || code > {variants.Count}) byn_w_str(w, BYN_STR(\"no error\", 8));\n");
         errors.Append("    else byn_w_str(w, byn_errors[code - 1]);\n}\n\n");
+        errors.Append("static const uint8_t byn_exit_codes[] = {");
+        errors.Append(variants.Count == 0 ? "1" : string.Join(", ", variants.Select(v => v.ExitCode)));
+        errors.Append("};\n\n");
 
         var types = EmitTypes();
 
@@ -103,11 +106,32 @@ public sealed class CEmitter
         {
             sb.Append("    (void)argv;\n");
         }
-        sb.Append("    (void)argc;\n");
+        var exit = "0";
         if (_program.Main is { } main)
-            sb.Append("    ").Append(main.Fails ? "err = " : "").Append(FunctionName(main)).Append("();\n");
-        sb.Append("    if (err != 0) { byn_report_error(byn_errors[err - 1]); return 1; }\n");
-        sb.Append("    byn_stdout_flush();\n    return 0;\n}\n");
+        {
+            // Arguments are checked for UTF-8 before `main` runs, whether or not it takes them.
+            sb.Append("    byn_str* byn_argv = byn_args(argc, argv);\n");
+            var args = new List<string>();
+            if (main.Parameters.Count == 1)
+                args.Add($"({CType(main.Parameters[0].Type)}){{byn_argv, argc > 1 ? argc - 1 : 0}}");
+            else
+                sb.Append("    (void)byn_argv;\n");
+            var returnsCode = main.ReturnType == PrimitiveType.I32;
+            if (returnsCode)
+            {
+                sb.Append("    int32_t code = 0;\n");
+                exit = "code";
+            }
+            if (main.Fails && returnsCode) args.Add("&code");
+            var call = $"{FunctionName(main)}({string.Join(", ", args)})";
+            sb.Append("    ").Append(main.Fails ? "err = " : returnsCode ? "code = " : "").Append(call).Append(";\n");
+        }
+        else
+        {
+            sb.Append("    (void)argc;\n");
+        }
+        sb.Append("    if (err != 0) { byn_report_error(byn_errors[err - 1]); return byn_exit_codes[err - 1]; }\n");
+        sb.Append($"    byn_stdout_flush();\n    return {exit};\n}}\n");
         return sb.ToString();
     }
 
@@ -170,6 +194,7 @@ public sealed class CEmitter
         ErrorSetSymbol or ErrorUnionType => "uint32_t",
         BuiltinType { Kind: BuiltinKind.Arena } => "byn_arena*",
         BuiltinType { Kind: BuiltinKind.StrBuf } => "byn_writer",
+        BuiltinType { Kind: BuiltinKind.IoStream } => "int32_t",
         _ => Named(t),
     };
 
@@ -178,7 +203,7 @@ public sealed class CEmitter
     {
         PrimitiveType p => p.Kind == PrimitiveKind.String ? "str" : p.Name,
         ErrorSetSymbol or ErrorUnionType => "err",
-        BuiltinType b => b.Kind == BuiltinKind.Arena ? "arena" : "strbuf",
+        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", _ => "iostream" },
         StructSymbol s => s.Module.CName + "__" + s.Name,
         OptionalType o => "opt_" + Key(o.Inner),
         ResultType r => "res_" + Key(r.Value),
@@ -696,6 +721,29 @@ internal sealed class FunctionEmitter
                     "{\n    return (byn_writer){s.ptr, s.len, 0, BYN_WRITE_STRICT, file, line};\n}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Loc(c.Syntax)})";
             }
+            case BuiltinFunction.IoReadFile:
+            {
+                var list = _c.CType(fn.ReturnType);
+                var name = _c.Helper("bynh_io_read_file", $"static uint32_t bynh_io_read_file(byn_str path, {list}* out)", () =>
+                    $"{{\n    uint8_t* p = NULL;\n    int64_t n = 0;\n    uint32_t err = byn_io_read(path, &p, &n, byn_context);\n" +
+                    $"    if (err == 0 && out) *out = ({list}){{p, n, n, byn_context}};\n    return err;\n}}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {result ?? "NULL"})";
+            }
+            case BuiltinFunction.IoReadText:
+                return $"byn_io_read_text({Expr(c.Arguments[0])}, {result ?? "NULL"}, byn_context)";
+            case BuiltinFunction.IoWriteFile:
+            {
+                var span = _c.CType(fn.Parameters[1].Type);
+                var name = _c.Helper("bynh_io_write_file", $"static uint32_t bynh_io_write_file(byn_str path, {span} bytes)", () =>
+                    "{\n    return byn_io_write_file(path, bytes.ptr, bytes.len);\n}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])})";
+            }
+            case BuiltinFunction.IoMonotonicNanos:
+                return "byn_io_monotonic_nanos()";
+            case BuiltinFunction.IoStdout:
+                return "INT32_C(1)";
+            case BuiltinFunction.IoStderr:
+                return "INT32_C(2)";
         }
         if (fn.HasThis && fn.Kind != FunctionKind.Constructor) args.Add("&" + Expr(c.Receiver!));
         for (var i = 0; i < c.Arguments.Length; i++)
@@ -775,6 +823,8 @@ internal sealed class FunctionEmitter
                 return $"byn_arena_reset({Expr(r)})";
             case BuiltinMember.StrBufAppend:
                 return $"byn_w_str(&{Expr(r)}, {arg})";
+            case BuiltinMember.IoWrite:
+                return $"byn_io_write({Expr(r)}, {arg})";
             case BuiltinMember.StrBufAsString:
                 return $"byn_strbuf_str({Expr(r)})";
             case BuiltinMember.CharValue:
