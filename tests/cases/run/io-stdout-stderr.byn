@@ -1,0 +1,12 @@
+// `write` adds no newline; stdout writes stay in order with `print`.
+void main() {
+    Io.stdout.write("one ");
+    Io.stdout.write("two");
+    print(" three");
+    Io.stderr.write("to stderr, ");
+    Io.stderr.write("no newline");
+    Io.stdout.write("last, no newline");
+    i64 start = Io.monotonicNanos();
+    i64 end = Io.monotonicNanos();
+    print("") if end < start;
+}

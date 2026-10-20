@@ -1,0 +1,16 @@
+error enum StepError {
+    [Retry(3)]
+    /// The step timed out.
+    timedOut,
+}
+
+[Inline]
+void step() { }
+
+[ExitCode(2)]
+void other() { }
+
+void main() {
+    step();
+    other();
+}

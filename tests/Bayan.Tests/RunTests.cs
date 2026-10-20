@@ -10,7 +10,9 @@ namespace Bayan.Tests;
 /// <summary>
 /// <c>tests/cases/run/*.byn</c>: compiled with the C backend and run. Expected <c>*.stdout</c>
 /// always; <c>*.stderr</c> and <c>*.exitcode</c> only when non-empty / non-zero. A first line
-/// <c>// mode: fast</c> (or <c>debug</c>) picks the build mode; the default is <c>safe</c>.
+/// <c>// mode: fast</c> (or <c>debug</c>) picks the build mode; the default is <c>safe</c>. An optional
+/// <c>*.args</c> holds one command-line argument per line. Each case runs in its own empty directory
+/// under <c>tmp/run/</c>, so it may write files.
 /// </summary>
 public sealed class RunTests
 {
@@ -73,13 +75,19 @@ public sealed class RunTests
         if (c.Diagnostics.HasErrors) return new Outcome("", "", 0, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
         var build = Toolchain.Build(CliApp.EmitC(c), mode);
         if (!build.Succeeded) return new Outcome("", "", 0, build.Errors);
+        var work = Path.Combine(Golden.RepoRoot, "tmp", "run", Path.ChangeExtension(name, null).Replace('/', '_').Replace('\\', '_'));
+        if (Directory.Exists(work)) Directory.Delete(work, recursive: true);
+        Directory.CreateDirectory(work);
         var psi = new ProcessStartInfo(build.ExecutablePath!)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
-            WorkingDirectory = dir,
+            WorkingDirectory = work,
         };
+        var argsFile = Path.ChangeExtension(input, ".args");
+        if (File.Exists(argsFile))
+            foreach (var arg in File.ReadAllLines(argsFile)) psi.ArgumentList.Add(arg);
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();

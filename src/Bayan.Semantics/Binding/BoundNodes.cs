@@ -55,6 +55,7 @@ public enum BuiltinMember
     StrBufAppend, StrBufLength, StrBufAsString, StrBufClear,
     CharValue,
     ResultIsOk, ResultValue, ResultError,
+    IoWrite,
 }
 
 public sealed record BoundBuiltinCall(Node Syntax, BuiltinMember Member, BoundExpr Receiver, BoundExpr[] Arguments, TypeSymbol Type)

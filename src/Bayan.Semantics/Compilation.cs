@@ -161,6 +161,7 @@ public sealed class Compilation
 
     private void Declare()
     {
+        DeclareBuiltinVariants();
         foreach (var module in Modules)
             foreach (var file in module.Files)
                 DeclareFile(file);
@@ -177,6 +178,46 @@ public sealed class Compilation
         {
             foreach (var s in module.Structs) CheckStructShape(s);
         }
+        if (EntryModule.Main is { Kind: FunctionKind.Function } main) CheckMainSignature(main);
+    }
+
+    /// <summary><c>IoError</c> is numbered first, so the runtime can return its codes 1 to 4 directly.</summary>
+    private void DeclareBuiltinVariants()
+    {
+        var set = Builtins.IoError;
+        foreach (var v in set.Decl.Variants)
+        {
+            var sym = new ErrorVariantSymbol(v.Name.Text, new Location(set.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
+            set.Variants.Add(sym);
+            ErrorVariants.Add(sym);
+        }
+    }
+
+    /// <summary><c>void</c> or <c>i32 main()</c>, optionally with <c>ReadOnlySpan&lt;string&gt; args</c> and <c>fails</c> (BYN2771).</summary>
+    private void CheckMainSignature(FunctionSymbol main)
+    {
+        var returns = main.ReturnType;
+        var returnOk = returns.IsVoid || returns.IsError || returns == PrimitiveType.I32;
+        var paramsOk = main.Parameters.Count == 0
+            || main.Parameters is [{ Modifier: ParamModifier.None } p]
+                && (p.Type.IsError || p.Type is SpanType { ReadOnly: true, Element: PrimitiveType { IsString: true } });
+        if (!returnOk || !paramsOk)
+            Report(DiagnosticCodes.InvalidMainSignature, main.File!.Source, main.Decl!.Name.Span, [],
+                help: "write `void main()`, `i32 main()`, `void main(ReadOnlySpan<string> args)` or `i32 main(ReadOnlySpan<string> args)`, each optionally with `fails`");
+    }
+
+    /// <summary>No declaration takes an attribute yet; <c>[ExitCode]</c> belongs on an error variant.</summary>
+    private void CheckAttributes(FileContext file, Decl decl)
+    {
+        foreach (var a in decl.Attributes)
+        {
+            if (a.Name.Text == "ExitCode")
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "`[ExitCode]` belongs on an error enum variant");
+            else
+                Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "the only attribute is `[ExitCode(n)]`, on an error enum variant");
+        }
+        if (decl is StructDecl s)
+            foreach (var m in s.Members) CheckAttributes(file, m);
     }
 
     private void DeclareFile(FileContext file)
@@ -185,6 +226,7 @@ public sealed class Compilation
         List<GlobalStatement>? mainStatements = null;
         foreach (var decl in file.Tree.Root.Members)
         {
+            CheckAttributes(file, decl);
             switch (decl)
             {
                 case StructDecl s:
@@ -280,6 +322,7 @@ public sealed class Compilation
     }
 
     private readonly List<AliasPlaceholder> _aliases = new();
+    private readonly List<(ErrorVariantSymbol Variant, AttributeSyntax Attribute, FileContext File)> _exitCodes = new();
     private readonly Dictionary<FunctionSymbol, TestDecl> _testBodies = new();
     private (FunctionSymbol Main, List<GlobalStatement> Statements)? _mainStatements;
 
@@ -343,6 +386,19 @@ public sealed class Compilation
             var sym = new ErrorVariantSymbol(v.Name.Text, Loc(file, v.Name), set, _nextErrorCode++, v.Doc);
             set.Variants.Add(sym);
             ErrorVariants.Add(sym);
+            var seen = false;
+            foreach (var a in v.Attributes)
+            {
+                if (a.Name.Text != "ExitCode")
+                    Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "the only attribute is `[ExitCode(n)]`");
+                else if (seen)
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "the attribute is repeated");
+                else
+                {
+                    seen = true;
+                    _exitCodes.Add((sym, a, file));
+                }
+            }
         }
         if (set.Variants.Count == 0)
             Report(DiagnosticCodes.EmptyErrorSet, file.Source, set.Decl.Name.Span, [set.Name]);
@@ -518,6 +574,8 @@ public sealed class Compilation
         foreach (var module in Modules)
             foreach (var c in module.AllConstants)
                 BindConstant(c);
+        foreach (var (variant, attribute, file) in _exitCodes)
+            variant.ExitCode = new Binder(this, file, null, null).BindExitCode(attribute);
         foreach (var module in Modules)
         {
             foreach (var s in module.Structs)

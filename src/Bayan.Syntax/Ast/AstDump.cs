@@ -80,9 +80,13 @@ public static class AstDump
             Line(depth, "doc " + TokenDump.Escape(decl.Doc));
         }
 
+        private static string Attribute(AttributeSyntax a) =>
+            $"[{a.Name.Text}" + string.Concat(a.Args.Select(arg => " " + (arg.Name is null ? "" : arg.Name.Text + ": ") + AstDump.Expr(arg.Value))) + "]";
+
         public void Decl(int depth, Decl decl)
         {
             Doc(depth, decl);
+            foreach (var a in decl.Attributes) Line(depth, "Attribute " + Attribute(a));
             switch (decl)
             {
                 case ImportDecl d:
@@ -118,7 +122,8 @@ public static class AstDump
                 case ErrorEnumDecl d:
                     Line(depth, $"ErrorEnum {Mods(d.Modifiers)}{d.Name.Text}");
                     foreach (var v in d.Variants)
-                        Line(depth + 1, "Variant " + v.Name.Text + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
+                        Line(depth + 1, "Variant " + v.Name.Text + string.Concat(v.Attributes.Select(a => " " + Attribute(a)))
+                            + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
                     break;
                 case TypeAliasDecl d:
                     Line(depth, $"TypeAlias {Mods(d.Modifiers)}{d.Name.Text} = {Type(d.Target)}");

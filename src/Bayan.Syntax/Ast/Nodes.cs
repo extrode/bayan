@@ -30,10 +30,15 @@ public enum Modifiers
 
 public sealed record CompilationUnit(TextSpan Span, Decl[] Members) : Node(Span);
 
+/// <summary>An attribute: <c>[Name]</c> or <c>[Name(args)]</c> before a declaration or an error variant.</summary>
+public sealed record AttributeSyntax(TextSpan Span, Name Name, Argument[] Args) : Node(Span);
+
 public abstract record Decl(TextSpan Span) : Node(Span)
 {
     /// <summary>The <c>///</c> doc comment text (markers stripped), if any.</summary>
     public string? Doc { get; init; }
+
+    public AttributeSyntax[] Attributes { get; init; } = [];
 }
 
 public sealed record ImportDecl(TextSpan Span, Name[] Path, Name? Alias) : Decl(Span);
@@ -62,7 +67,10 @@ public sealed record PropertyDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax
 
 public sealed record ConstructorDecl(TextSpan Span, Modifiers Modifiers, Name Name, Param[] Params, BlockStmt Body) : Decl(Span);
 
-public sealed record ErrorVariant(TextSpan Span, Name Name, string? Doc) : Node(Span);
+public sealed record ErrorVariant(TextSpan Span, Name Name, string? Doc) : Node(Span)
+{
+    public AttributeSyntax[] Attributes { get; init; } = [];
+}
 
 /// <summary><c>error enum Name { a, b }</c>.</summary>
 public sealed record ErrorEnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, ErrorVariant[] Variants) : Decl(Span);

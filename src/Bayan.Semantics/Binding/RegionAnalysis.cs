@@ -307,7 +307,8 @@ internal sealed class RegionAnalysis
         }
         // Rule 4: a returned borrow derives from every argument.
         var result = args.Aggregate(receiver, (acc, a) => acc.Union(a));
-        if (_contexts.Count > 0 && ContainsList(c.Type, [])) result = result.Union(_contexts.Peek());
+        // Allocated from `context.allocator`: a list, or the text `Io.readText` returns (Q29).
+        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin == BuiltinFunction.IoReadText)) result = result.Union(_contexts.Peek());
         return result;
     }
 

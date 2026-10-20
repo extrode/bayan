@@ -251,6 +251,10 @@ public enum BuiltinKind
     Arena,
     /// <summary>A byte buffer for <c>formatInto</c>-style output: a span plus a fill length.</summary>
     StrBuf,
+    /// <summary>The static type <c>Io</c>; it has no values.</summary>
+    Io,
+    /// <summary><c>Io.stdout</c> or <c>Io.stderr</c>; the value is the file descriptor.</summary>
+    IoStream,
 }
 
 public sealed class BuiltinType : TypeSymbol
@@ -271,6 +275,8 @@ public sealed class BuiltinType : TypeSymbol
 
     public static readonly BuiltinType Arena = new(BuiltinKind.Arena, "Arena");
     public static readonly BuiltinType StrBuf = new(BuiltinKind.StrBuf, "StrBuf");
+    public static readonly BuiltinType Io = new(BuiltinKind.Io, "Io");
+    public static readonly BuiltinType IoStream = new(BuiltinKind.IoStream, "IoStream");
 }
 
 /// <summary>The type of a caught error when the call can fail with more than one set.</summary>

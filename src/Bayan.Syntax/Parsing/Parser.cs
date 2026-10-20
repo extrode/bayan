@@ -280,6 +280,8 @@ public sealed class Parser
         var doc = DocOf(first);
         var startIndex = _pos;
         var start = first.Start;
+        var attributes = ParseAttributes();
+        doc ??= DocOf(Current);
         var modifiers = ParseModifiers();
 
         Decl? decl;
@@ -331,7 +333,27 @@ public sealed class Parser
                 }
                 break;
         }
-        return decl is null ? null : decl with { Doc = doc };
+        return decl is null ? null : decl with { Doc = doc, Attributes = attributes };
+    }
+
+    private bool IsAttributeStart() =>
+        Kind == TokenKind.OpenBracket && Peek(1) == TokenKind.Identifier && Peek(2) is TokenKind.OpenParen or TokenKind.CloseBracket;
+
+    /// <summary><c>[Name]</c> or <c>[Name(args)]</c>, repeated; the names are checked by the compiler.</summary>
+    private AttributeSyntax[] ParseAttributes()
+    {
+        if (!IsAttributeStart()) return [];
+        var attributes = new List<AttributeSyntax>();
+        while (IsAttributeStart())
+        {
+            var start = Current.Start;
+            Advance();
+            var name = ExpectName("an attribute name");
+            var args = Kind == TokenKind.OpenParen ? ParseArguments() : [];
+            Expect(TokenKind.CloseBracket);
+            attributes.Add(new AttributeSyntax(SpanFrom(start), name, args));
+        }
+        return attributes.ToArray();
     }
 
     private bool IsTypeThenName(int index)
@@ -485,10 +507,13 @@ public sealed class Parser
         var name = ExpectName("an error set name");
         var open = Expect(TokenKind.OpenBrace);
         var variants = new List<ErrorVariant>();
-        while (Kind == TokenKind.Identifier)
+        while (Kind == TokenKind.Identifier || IsAttributeStart())
         {
-            var token = Advance();
-            variants.Add(new ErrorVariant(token.Span, NameOf(token), DocOf(token)));
+            var first = Current;
+            var attributes = ParseAttributes();
+            var doc = DocOf(first) ?? DocOf(Current);
+            var variant = ExpectName("a variant name");
+            variants.Add(new ErrorVariant(variant.Span, variant, doc) { Attributes = attributes });
             if (!Accept(TokenKind.Comma)) break;
         }
         ExpectClose(open, "error enum");

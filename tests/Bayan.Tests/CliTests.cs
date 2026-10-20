@@ -144,6 +144,29 @@ public sealed class CliTests
     }
 
     [Fact]
+    public void RunPassesArgumentsAfterTheSeparator()
+    {
+        // The child inherits stdout, so it prints and also writes what it printed to a file.
+        var written = Path.Combine(Golden.RepoRoot, "tmp", "cli-run-args.txt");
+        if (File.Exists(written)) File.Delete(written);
+        var path = Program("cli-run-args", $$"""
+            void main(ReadOnlySpan<string> args) fails IoError {
+                let bytes = stackalloc u8[64];
+                var sb = StrBuf(bytes);
+                for (let a in args) {
+                    print(a);
+                    sb.append($"{a}\n");
+                }
+                try Io.writeFile("{{written.Replace('\\', '/')}}", sb.asString().bytes);
+            }
+
+            """);
+        var (exit, _, stderr) = Run("run", path, "--", "a", "b c");
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal("a\nb c\n", File.ReadAllText(written));
+    }
+
+    [Fact]
     public void RunCannotTellAFailingMainFromACompileError()
     {
         var path = Program("cli-run-main-fails", """

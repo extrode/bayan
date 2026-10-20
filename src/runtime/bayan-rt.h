@@ -129,6 +129,29 @@ void* byn_copy_bytes(const void* p, int64_t n, byn_alloc* to);
 /* Makes room for `need` elements: grows *ptr (capacity *cap) through alloc. */
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc);
 
+/* ── Program entry and Io ────────────────────────────────────────────────── */
+
+/* True if the bytes are well-formed UTF-8 (no overlongs, surrogates or values above U+10FFFF). */
+bool byn_utf8_valid(const uint8_t* p, int64_t n);
+
+/* argv[1..argc-1] as strings. Writes `error: argument N is not valid UTF-8` (N from 1) and exits 1 on bad input. */
+byn_str* byn_args(int argc, char** argv);
+
+/* `IoError` codes: the compiler numbers its variants first. */
+#define BYN_IO_NOT_FOUND 1u
+#define BYN_IO_PERMISSION_DENIED 2u
+#define BYN_IO_INVALID_UTF8 3u
+#define BYN_IO_OTHER 4u
+
+/* Reads a whole file into memory from `alloc`. Returns 0 or an `IoError` code. */
+uint32_t byn_io_read(byn_str path, uint8_t** ptr, int64_t* len, byn_alloc* alloc);
+/* As byn_io_read, and the bytes must be UTF-8. `out` may be NULL. */
+uint32_t byn_io_read_text(byn_str path, byn_str* out, byn_alloc* alloc);
+uint32_t byn_io_write_file(byn_str path, const uint8_t* ptr, int64_t len);
+/* `Io.stdout.write` (fd 1, buffered with print) and `Io.stderr.write` (fd 2). No newline. */
+void byn_io_write(int32_t fd, byn_str s);
+int64_t byn_io_monotonic_nanos(void);
+
 /* ── StrBuf ──────────────────────────────────────────────────────────────── */
 
 /* A StrBuf is a strict writer over caller-provided bytes. */

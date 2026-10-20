@@ -198,6 +198,29 @@ internal sealed partial class Binder
         return (long)n;
     }
 
+    /// <summary>The value of <c>[ExitCode(n)]</c>: one integer constant from 1 to 255, else BYN2772 and 1.</summary>
+    public int BindExitCode(AttributeSyntax attribute)
+    {
+        if (attribute.Args is not [{ Name: null, Modifier: ArgModifier.None } arg])
+        {
+            Report(DiagnosticCodes.InvalidExitCode, attribute.Span, []);
+            return 1;
+        }
+        var value = BindExpr(arg.Value);
+        if (value.Type.IsError) return 1;
+        if (!value.Type.IsInteger || value.Constant is not { Value: Int128 n })
+        {
+            Report(DiagnosticCodes.InvalidExitCode, arg.Value.Span, []);
+            return 1;
+        }
+        if (n < 1 || n > 255)
+        {
+            Report(DiagnosticCodes.InvalidExitCode, arg.Value.Span, [], help: "0 means success, and exit codes above 255 do not survive the operating system");
+            return 1;
+        }
+        return (int)n;
+    }
+
     // ── Statements ───────────────────────────────────────────────────────────────
 
     private BoundBlock BindBlock(BlockStmt block)
