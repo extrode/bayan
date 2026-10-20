@@ -490,6 +490,10 @@ Response handle(Request r) fails;                               // inferred: pri
 ### 9.3 Ownership
 `unique` types move with `move` and are disposed exactly once. Using a moved value is a compile error.
 
+- **Only a local or a `move` parameter can be moved from.** Moving out of a field, element or plain parameter is a compile error (it would leave a half-moved value). `x.take()` moves the value out of any place it can write and leaves that type's empty value behind: `let items = ledger.items.take();` leaves `ledger.items` an empty list.
+- **Pattern bindings on a `unique` subject borrow.** `switch (x)` and `x is …` bind borrows of `x`'s parts, so `x` stays usable after the switch. `switch (move x)` moves `x` into the switch, and its bindings then own their parts.
+- **Debug builds check ownership at runtime.** Each `unique` allocation records its current owner and every move updates it; a second owner, or a read through a moved-from local, panics with both source locations. Safe and fast builds compile the checker out. Rules here hold outside `unsafe`, where raw pointers may alias.
+
 ### 9.4 Borrowing and regions (no lifetime annotations in the common case)
 1. Every scope that frees memory is a region (function locals, `using` arenas, requests).
 2. A borrow (`ref`, `Span<T>`, `string` slice, or a struct containing one) carries its source's region; the compiler infers it.
