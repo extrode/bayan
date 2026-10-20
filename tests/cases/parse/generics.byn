@@ -1,0 +1,23 @@
+T pick<T>(bool first, T a, T b) => first ? a : b;
+
+Map<K, V> single<K, V>(K key, V value) {
+    var m = Map<K, V>();
+    m.set(key, value);
+    return m;
+}
+
+struct Pair<A, B> {
+    A a;
+    B b;
+
+    Pair<B, A> swap() => Pair<B, A> { a = b, b = a };
+}
+
+union Option2<T> {
+    Some(T v),
+    Nothing,
+}
+
+let x = pick<i64>(first: true, a: 1, b: 2);
+let p = Pair<i64, string> { a = 1, b = "x" };
+let o = Option2<i64>.Some(5);

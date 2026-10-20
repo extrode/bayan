@@ -550,7 +550,7 @@ public sealed class Compilation
     private void DeclareMembers(StructSymbol s)
     {
         var file = s.File;
-        var types = new TypeResolver(this, file, s);
+        var types = new TypeResolver(this, file, s, s.TypeMap);
         var names = new Dictionary<string, Location>(StringComparer.Ordinal);
         bool Unique(Name n)
         {
@@ -592,13 +592,19 @@ public sealed class Compilation
                 case FunctionDecl m:
                 {
                     Naming.CheckValue(this, file.Source, m.Name);
+                    var typeMap = s.TypeMap;
                     if (m.TypeParams.Length > 0)
+                    {
                         Report(DiagnosticCodes.Unsupported, file.Source, m.TypeParams[0].Span, ["generic methods"],
                             help: "declare a generic free function, or make the struct generic");
+                        // Declared anyway, so the signature reports nothing more.
+                        var own = DeclareTypeParameters(file, m.TypeParams, new List<TypeParameterType>())!;
+                        typeMap = s.TypeMap is null ? own : new Dictionary<string, TypeSymbol>(s.TypeMap.Concat(own.Where(p => !s.TypeMap.ContainsKey(p.Key))));
+                    }
                     var fn = new FunctionSymbol(m.Name.Text, Loc(file, m.Name), s.Module, FunctionKind.Method)
                     {
                         Owner = s, File = file, Decl = m, Access = AccessOf(m.Modifiers), IsStatic = m.Modifiers.HasFlag(Modifiers.Static),
-                        TypeMap = s.TypeMap,
+                        TypeMap = typeMap,
                     };
                     DeclareSignature(fn, m, file, s);
                     if (Unique(m.Name)) s.Methods.Add(fn);
@@ -811,8 +817,9 @@ public sealed class Compilation
 
     /// <summary>
     /// Runs instantiation work, whose diagnostics are not the user's: the template already reported
-    /// them. The one exception is the <c>Map</c> key rule, which only a type argument can break; it is
-    /// reported at <paramref name="span"/>, the use that chose the type arguments.
+    /// them. The exceptions are the rules only a type argument can break (a <c>Map</c> key, <c>==</c>
+    /// and formatting on a <c>T</c>); they are reported at <paramref name="span"/>, the use that chose
+    /// the type arguments.
     /// </summary>
     private void Instantiating(SourceText site, TextSpan span, Action work)
     {
@@ -822,8 +829,8 @@ public sealed class Compilation
         finally { _scratch = outer; }
         foreach (var d in bag.Items.Where(d => d.IsError))
         {
-            if (d.Code == DiagnosticCodes.InvalidMapKey.Code)
-                (_scratch ?? Diagnostics).Add(d with { Source = site, Span = span, Label = "used here", Help = $"{d.Message}; {d.Help}" });
+            if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code)
+                (_scratch ?? Diagnostics).Add(d with { Source = site, Span = span, Label = "the generic code needs this of its type arguments" });
             else
                 _instantiationErrors.Add(d);
         }

@@ -1,0 +1,20 @@
+error BYN2743: `+` cannot be applied to a value of type parameter `T`
+
+  1 │ T add<T>(T a, T b) => a + b;
+    │                       ^^^^^
+    │
+  help: type parameters have no constraints: a `T` can only be copied, compared with `==` and `!=`, passed, stored, returned and formatted
+
+error BYN2743: `-` cannot be applied to a value of type parameter `T`
+
+  2 │ T negate<T>(T a) => -a;
+    │                     ^^
+    │
+  help: type parameters have no constraints: a `T` can only be copied, compared with `==` and `!=`, passed, stored, returned and formatted
+
+error BYN2743: `*` cannot be applied to a value of type parameter `T`
+
+  7 │     T doubled() => value * 2;
+    │                    ^^^^^^^^^
+    │
+  help: type parameters have no constraints: a `T` can only be copied, compared with `==` and `!=`, passed, stored, returned and formatted
