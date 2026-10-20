@@ -11,3 +11,10 @@ error BYN2781: `ys` is used after it was moved
      │             ^^^^^^^ an `errdefer` on line 21 uses it at scope exit
      │
   help: move `ys` before the `errdefer`, or move a `.copy(to: alloc)` of it instead
+
+error BYN2781: `zs` is used after it was moved
+
+  34 │     consume(move zs);
+     │             ^^^^^^^ an `errdefer` on line 33 uses it at scope exit
+     │
+  help: move `zs` before the `errdefer`, or move a `.copy(to: alloc)` of it instead

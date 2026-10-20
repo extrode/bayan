@@ -335,6 +335,7 @@ internal sealed class OwnershipAnalysis
             case BoundCatch c:
             {
                 state = Expr(c.Operand, state);
+                if (c.Variant is not null) RunCleanups(state, 0, failing: true);
                 return state.Join(Expr(c.Handler, state.Clone()));
             }
             case BoundJump j:

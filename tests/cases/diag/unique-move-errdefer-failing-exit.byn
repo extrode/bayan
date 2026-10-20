@@ -22,3 +22,15 @@ void failing(bool fail) fails E {
     consume(move ys);
     return .bad if fail;
 }
+
+error enum F { a, b, }
+
+i64 pick() fails F => 1;
+
+// A `catch` naming one variant propagates the rest: a failing exit.
+i64 partial() fails F {
+    let zs = List<i64>();
+    errdefer print($"{zs.length}");
+    consume(move zs);
+    return pick() catch (F.a) 0;
+}
