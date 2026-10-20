@@ -1,13 +1,14 @@
 ---
 id: L003
 title: Map iterates live keys in first-insertion order
-status: proposed
+status: enacted
 kind: invariant
-scope: src/runtime/bayan-rt.c
+scope: src/Bayan.Semantics/Binding/BuiltinMembers.cs
+enacted: 2026-10-20
 ---
 
 ## Statement
-After any sequence of `set`, `remove` and `clear` on a `Map<K, V>`, iteration visits exactly the live keys, each once, in the order each was first inserted since it was last removed (an update keeps a key's position; a key re-inserted after removal goes to the end), and `get(k)` returns the last value `set` for every live key and null for every other key; `count` equals the number of live keys.
+After any sequence of `map[k] = v`, `remove`, `clear` and `slot(k)` on a `Map<K, V>`, iteration visits exactly the live keys, each once, in the order each was first inserted since it was last removed (an update keeps its position; a key re-inserted after removal goes to the end); `getOr(k, d)` returns the last value set for every live key and `d` otherwise; `map[k]` panics exactly for keys that aren't live; `length` equals the number of live keys.
 
 ## Counterexample looks like
-`set(a,1); set(b,2); remove(a); set(a,3)` iterating as `a, b` instead of `b, a`, or `count` returning 3 after it.
+`m[a] = 1; m[b] = 2; m.remove(a); m[a] = 3` iterating as `a, b` instead of `b, a`, `m.length` being 3 after it, or `m[c]` returning a default instead of panicking.
