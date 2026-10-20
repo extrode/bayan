@@ -17,3 +17,4 @@
 - bayan new/init, package.byn reader, project builds, scripts
 - out/ and dist/ layouts, --target, test --json, dist and clean (M10)
 - shared build cache with worktree reuse, script reuse and cache stats (M11)
+- M12b CLI completeness: color, bayan doctor, test --changed, --version with commit

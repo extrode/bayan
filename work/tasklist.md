@@ -49,4 +49,4 @@ tick.
 - [x] **T12 — M9 bayan new and init** — done when: tests/cases/new goldens; fresh app runs and tests; init adds missing files only
 - [x] **T13 — M10 out/ and dist/** — done when: layout goldens; dist immutability and latest selection
 - [x] **T14 — M11 global cache and worktrees** — done when: second worktree compiles nothing; parallel builds never corrupt the cache; moving a project keeps cache hits
-- [ ] **T15 — M12b CLI completeness** — done when: test --json, color, doctor, test --changed, --version with commit
+- [x] **T15 — M12b CLI completeness** — done when: test --json, color, doctor, test --changed, --version with commit
