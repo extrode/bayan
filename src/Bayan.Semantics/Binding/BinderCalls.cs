@@ -755,7 +755,7 @@ internal sealed partial class Binder
         foreach (var (pattern, guard) in arms)
         {
             if (pattern is null) return true;
-            if (guard is not null && guard.Constant is not { Value: true }) continue;
+            if (guard is not null) continue;
             if (Irrefutable(pattern)) return true;
             Collect(pattern, type, covered);
         }
@@ -763,7 +763,7 @@ internal sealed partial class Binder
         if (statement && (domain is null || domain.Contains(Some))) return false;
         var missing = domain?.Where(k => !covered.Contains(k)).Select(k => k == Some ? "a value" : k).ToList();
         Report(DiagnosticCodes.NonExhaustive, span, [type.DisplayName],
-            label: missing is { Count: > 0 } ? "not covered: " + string.Join(", ", missing.Take(6)) + (missing.Count > 6 ? ", …" : "") : null,
+            label: missing is { Count: > 0 } ? "not covered: " + string.Join(", ", missing) : null,
             help: statement ? "add the missing cases or a `default:` section" : "add the missing arms, or `_ => …` for the rest");
         return false;
     }
