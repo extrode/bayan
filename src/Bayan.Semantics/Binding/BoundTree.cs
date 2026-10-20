@@ -24,6 +24,7 @@ public static class BoundTree
             case BoundConditional n: yield return n.Condition; yield return n.WhenTrue; yield return n.WhenFalse; break;
             case BoundCoalesce n: yield return n.Left; yield return n.Right; break;
             case BoundStructLiteral n: foreach (var f in n.Fields) yield return f; break;
+            case BoundUnionNew n: foreach (var f in n.Payload) yield return f; break;
             case BoundWith n:
                 yield return n.Target;
                 foreach (var u in n.Updates) yield return u.Value;
@@ -88,6 +89,7 @@ public static class BoundTree
             case BoundNotPattern n: yield return n.Operand; break;
             case BoundBinaryPattern n: yield return n.Left; yield return n.Right; break;
             case BoundPropertyPattern n: foreach (var s in n.Subpatterns) yield return s.Pattern; break;
+            case BoundUnionPattern n: foreach (var s in n.Subpatterns) yield return s; break;
         }
     }
 

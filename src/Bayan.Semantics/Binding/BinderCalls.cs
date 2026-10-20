@@ -29,6 +29,13 @@ internal sealed partial class Binder
                 return BindBuiltinMethodCall(c, b.Receiver, b.Name);
             case BoundTypeRef tr:
                 return BindConstruction(c, tr.Referenced);
+            case BoundVariantGroup v:
+                return new BoundUnionNew(c, v.Variant, BindArguments(c, v.Variant.Fields, null, enforceNames: false, v.Variant.Name));
+            case BoundUnionNew { Payload.Length: 0 } unit:
+                Report(DiagnosticCodes.VariantHasNoPayload, c.Span, [unit.Variant.Name],
+                    help: $"write `{unit.Variant.Union.Name}.{unit.Variant.Name}` without parentheses");
+                BindArgumentsForRecovery(c);
+                return new BoundErrorExpr(c);
             case BoundErrorExpr:
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
@@ -426,6 +433,16 @@ internal sealed partial class Binder
                 }
                 return new BoundPropertyPattern(p, input, tt, subs, null);
             }
+            case VariantPattern vp:
+                return BindUnionPattern(vp, input, null, vp.Variant.Member, vp.Elements);
+            case PositionalPattern { Type: NamedType { Path.Length: > 1, Args.Length: 0 } nt } pos:
+            {
+                var owner = _types.Resolve(new NamedType(TextSpan.FromBounds(nt.Path[0].Span.Start, nt.Path[^2].Span.End), nt.Path[..^1], []));
+                if (owner is UnionSymbol or ErrorType)
+                    return BindUnionPattern(pos, input, owner, nt.Path[^1], pos.Elements);
+                Report(DiagnosticCodes.Unsupported, p.Span, ["deconstruction patterns"]);
+                return new BoundBindPattern(p, input, null);
+            }
             case PositionalPattern pos:
                 Report(DiagnosticCodes.Unsupported, p.Span, [pos.Type is null ? $"positional patterns on `{input.DisplayName}`" : "deconstruction patterns"]);
                 return new BoundBindPattern(p, input, null);
@@ -441,8 +458,40 @@ internal sealed partial class Binder
         BoundNotPattern n => HasBindings(n.Operand),
         BoundBinaryPattern b => HasBindings(b.Left) || HasBindings(b.Right),
         BoundPropertyPattern pp => pp.Designation is not null || pp.Subpatterns.Any(s => HasBindings(s.Pattern)),
+        BoundUnionPattern up => up.Subpatterns.Any(HasBindings),
         _ => false,
     };
+
+    /// <summary>
+    /// <c>.Circle(let r)</c> or <c>Shape.Circle(let r)</c>; <paramref name="owner"/> is the written union, if any.
+    /// Elements are null for a unit variant written as a constant (<c>.None</c>).
+    /// </summary>
+    private BoundPattern BindUnionPattern(Pattern p, TypeSymbol input, TypeSymbol? owner, Name name, Pattern[] elements)
+    {
+        var target = Unwrap(input);
+        UnionVariantSymbol? variant = null;
+        if (owner is not null && !owner.IsError && !target.IsError && !owner.Equals(target))
+            Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`{owner.DisplayName}.{name.Text}`", target.DisplayName]);
+        else if ((owner ?? target) is UnionSymbol u)
+        {
+            variant = u.Find(name.Text);
+            if (variant is null)
+                Report(DiagnosticCodes.UnknownUnionVariant, name.Span, [name.Text, u.Name],
+                    help: Suggest(name.Text, u.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
+            else if (variant.Fields.Count == 0)
+                Report(DiagnosticCodes.VariantHasNoPayload, p.Span, [variant.Name], help: $"match it with `.{variant.Name}`");
+            else if (elements.Length != variant.Fields.Count)
+                Report(DiagnosticCodes.VariantPatternArity, p.Span, [variant.Name, variant.Fields.Count, elements.Length],
+                    help: $"list every field: `.{variant.Name}({string.Join(", ", variant.Fields.Select(f => "let " + f.Name))})`, or `_` to skip one");
+        }
+        else if (!target.IsError && (owner ?? target) is not ErrorType)
+            Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`.{name.Text}(…)`", target.DisplayName]);
+        var ok = variant is not null && variant.Fields.Count == elements.Length && elements.Length > 0;
+        var subs = new BoundPattern[elements.Length];
+        for (var i = 0; i < subs.Length; i++)
+            subs[i] = BindPattern(elements[i], ok ? variant!.Fields[i].Type : ErrorType.Instance);
+        return ok ? new BoundUnionPattern(p, input, variant!, subs) : new BoundBindPattern(p, input, null);
+    }
 
     private void RequireConstant(BoundExpr value, TextSpan span)
     {
@@ -470,6 +519,8 @@ internal sealed partial class Binder
             return new BoundConstantPattern(c, input, new BoundDefault(c.Value, input));
         }
         var value = BindExpr(c.Value, target);
+        if (value is BoundUnionNew { Payload.Length: 0 } unit && (target.IsError || unit.Type.Equals(target)))
+            return new BoundUnionPattern(c, input, unit.Variant, []);
         if (value is BoundErrorVariant ev && target is ErrorUnionType u && u.Sets.Count > 0 && !u.Sets.Contains(ev.Variant.Set))
             Report(DiagnosticCodes.PatternMismatch, c.Span, [$"`{ev.Variant.Set.Name}.{ev.Variant.Name}`", target.DisplayName]);
         else if (!(value is BoundErrorVariant && target is ErrorUnionType))
@@ -578,6 +629,7 @@ internal sealed partial class Binder
         PrimitiveType { Kind: PrimitiveKind.Bool } => ["true", "false"],
         ErrorSetSymbol s => s.Variants.Select(v => VariantKey(v, type)).ToList(),
         EnumSymbol e => e.Members.Select(m => "." + m.Name).ToList(),
+        UnionSymbol u => u.Variants.Select(v => "." + v.Name).ToList(),
         ErrorUnionType { Sets.Count: > 0 } u => u.Sets.SelectMany(s => s.Variants).Select(v => VariantKey(v, type)).ToList(),
         OptionalType o => Domain(o.Inner) is { } inner ? [.. inner, "null"] : ["null", Some],
         _ => null,
@@ -607,6 +659,9 @@ internal sealed partial class Binder
                 break;
             case BoundConstantPattern { Value: BoundEnumMember em }:
                 covered.Add("." + em.Member.Name);
+                break;
+            case BoundUnionPattern up when up.Subpatterns.All(Irrefutable):
+                covered.Add("." + up.Variant.Name);
                 break;
             case BoundConstantPattern { Value.Constant.Value: bool b }:
                 covered.Add(b ? "true" : "false");

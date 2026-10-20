@@ -1,0 +1,9 @@
+error BYN2700: `Square` is not a variant of union `Shape`
+
+  4 │     let s = Shape.Square(1);
+    │                   ^^^^^^
+
+error BYN2700: `Triangle` is not a variant of union `Shape`
+
+  6 │     if (t is .Triangle(let x)) {
+    │               ^^^^^^^^

@@ -152,6 +152,15 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NotAnErrorSet = Error("BYN2608", "`{0}` is not an error enum");
     public static readonly DiagnosticDescriptor EmptyErrorSet = Error("BYN2609", "error enum `{0}` has no variants");
     public static readonly DiagnosticDescriptor JumpOutOfDefer = Error("BYN2610", "`{0}` cannot leave a `defer` or `errdefer` body");
+    public static readonly DiagnosticDescriptor UnknownUnionVariant = Error("BYN2700", "`{0}` is not a variant of union `{1}`");
+    public static readonly DiagnosticDescriptor DuplicateUnionVariant = Error("BYN2701", "union `{0}` already has a variant `{1}`");
+    public static readonly DiagnosticDescriptor EmptyUnion = Error("BYN2702", "union `{0}` has no variants");
+    public static readonly DiagnosticDescriptor VariantPatternArity = Error("BYN2703", "variant `{0}` has {1} payload field(s), but the pattern lists {2}");
+    public static readonly DiagnosticDescriptor PayloadNeedsPattern = Error("BYN2704", "the payload of a `{0}` is read with a pattern, not `.{1}`");
+    public static readonly DiagnosticDescriptor VariantNeedsPayload = Error("BYN2705", "variant `{0}` carries a payload");
+    public static readonly DiagnosticDescriptor VariantHasNoPayload = Error("BYN2706", "variant `{0}` has no payload");
+    public static readonly DiagnosticDescriptor RecursiveUnion = Error("BYN2707", "union `{0}` contains itself");
+    public static readonly DiagnosticDescriptor BorrowPayload = Error("BYN2708", "a union payload cannot hold a borrowed `{0}`");
     public static readonly DiagnosticDescriptor UnknownEnumMember = Error("BYN2720", "`{0}` is not a member of `{1}`");
     public static readonly DiagnosticDescriptor DuplicateEnumMember = Error("BYN2721", "enum `{0}` already has a member `{1}`");
     public static readonly DiagnosticDescriptor EmptyEnum = Error("BYN2722", "enum `{0}` has no members");

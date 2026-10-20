@@ -1,0 +1,14 @@
+union Shape {
+    Circle(f32 r),
+    Rect(f32 w, f32 h),
+    /// Nothing at all.
+    None,
+}
+
+public union Token { Number(i64 value), Word(string text), End }
+
+f32 area(Shape s) => s switch {
+    .Circle(let r) => r * r,
+    Shape.Rect(var w, _) => w,
+    .None => 0,
+};

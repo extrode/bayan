@@ -303,6 +303,10 @@ public sealed class Parser
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
                 decl = ParseEnum(start, modifiers);
                 break;
+            case TokenKind.UnionKeyword when topLevel:
+                RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
+                decl = ParseUnion(start, modifiers);
+                break;
             case TokenKind.TypeKeyword when Peek(1) == TokenKind.Identifier && Peek(2) == TokenKind.Equals:
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
                 decl = ParseTypeAlias(start, modifiers);
@@ -547,6 +551,41 @@ public sealed class Parser
         Accept(TokenKind.Semicolon);
         ExpectClose(open, "enum");
         return new EnumDecl(SpanFrom(start), modifiers, name, parameters, members.ToArray());
+    }
+
+    /// <summary><c>union Name { Circle(f32 r), Rect(f32 w, f32 h), None }</c>; a trailing <c>,</c> or <c>;</c> is allowed.</summary>
+    private UnionDecl ParseUnion(int start, Modifiers modifiers)
+    {
+        Advance();
+        var name = ExpectName("a union name");
+        var open = Expect(TokenKind.OpenBrace);
+        var variants = new List<UnionVariant>();
+        while (Kind == TokenKind.Identifier)
+        {
+            var doc = DocOf(Current);
+            var variantStart = Current.Start;
+            var variant = ExpectName("a variant name");
+            var fields = new List<UnionField>();
+            if (Kind == TokenKind.OpenParen)
+            {
+                Advance();
+                while (Kind != TokenKind.CloseParen && !AtEnd)
+                {
+                    var before = _pos;
+                    var fieldStart = Current.Start;
+                    var type = ParseType();
+                    var field = ExpectName("a payload field name");
+                    fields.Add(new UnionField(SpanFrom(fieldStart), type, field));
+                    if (!Accept(TokenKind.Comma) || _pos == before) break;
+                }
+                Expect(TokenKind.CloseParen);
+            }
+            variants.Add(new UnionVariant(SpanFrom(variantStart), variant, fields.ToArray(), doc));
+            if (!Accept(TokenKind.Comma)) break;
+        }
+        Accept(TokenKind.Semicolon);
+        ExpectClose(open, "union");
+        return new UnionDecl(SpanFrom(start), modifiers, name, variants.ToArray());
     }
 
     private TypeAliasDecl ParseTypeAlias(int start, Modifiers modifiers)
@@ -1828,9 +1867,26 @@ public sealed class Parser
                     var value = ParseBinary(Prec.Shift);
                     return new RelationalPattern(SpanFrom(start), op, value);
                 }
-            case TokenKind.VarKeyword:
+            case TokenKind.VarKeyword or TokenKind.LetKeyword:
+            {
+                var isLet = Advance().Kind == TokenKind.LetKeyword;
+                return new VarPattern(SpanFrom(start), ExpectName("a variable name"), isLet);
+            }
+            case TokenKind.Dot when Peek(1) == TokenKind.Identifier && Peek(2) == TokenKind.OpenParen:
+            {
                 Advance();
-                return new VarPattern(SpanFrom(start), ExpectName("a variable name"));
+                var name = NameOf(Advance());
+                var variant = new TargetMemberExpr(SpanFrom(start), name);
+                Advance();
+                var elements = new List<Pattern>();
+                if (Kind != TokenKind.CloseParen)
+                {
+                    elements.Add(ParsePattern());
+                    while (Accept(TokenKind.Comma)) elements.Add(ParsePattern());
+                }
+                Expect(TokenKind.CloseParen);
+                return new VariantPattern(SpanFrom(start), variant, elements.ToArray());
+            }
             case TokenKind.Identifier when Text(Current) == "_" && Peek(1) is not (TokenKind.Dot or TokenKind.OpenParen):
                 Advance();
                 return new DiscardPattern(SpanFrom(start));

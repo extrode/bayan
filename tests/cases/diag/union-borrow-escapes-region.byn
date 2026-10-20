@@ -1,0 +1,10 @@
+union Token { Word(string text), End }
+
+void main() {
+    var kept = Token.End;
+    {
+        using let arena = Arena();
+        kept = Token.Word("copied".copy(to: arena));
+    }
+    print($"{kept}");
+}

@@ -173,6 +173,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             StructSymbol s => s.Access,
             ErrorSetSymbol e => e.Access,
             EnumSymbol e => e.Access,
+            UnionSymbol u => u.Access,
             AliasPlaceholder a => Compilation.AccessOf(a.Decl.Modifiers),
             _ => Accessibility.Public,
         };

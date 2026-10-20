@@ -1,0 +1,6 @@
+union Shape { Circle(f32 r), None }
+
+void main() {
+    let s = Shape.Circle;
+    Shape t = .Circle;
+}

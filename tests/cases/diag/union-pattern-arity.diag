@@ -1,0 +1,6 @@
+error BYN2703: variant `Rect` has 2 payload field(s), but the pattern lists 1
+
+  5 │     .Rect(let w) => w,
+    │     ^^^^^^^^^^^^
+    │
+  help: list every field: `.Rect(let w, let h)`, or `_` to skip one

@@ -139,6 +139,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         BoundField f => IsTrivial(f.Receiver),
         BoundTupleElement t => IsTrivial(t.Receiver),
         LOptionalValue v => IsTrivial(v.Optional),
+        LUnionTag t => IsTrivial(t.Union),
+        LUnionField f => IsTrivial(f.Union),
         _ => false,
     };
 
@@ -699,6 +701,11 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 var fields = Operands(s.Fields);
                 return fields is null ? new LNever(e.Syntax, e.Type) : s with { Fields = fields };
             }
+            case BoundUnionNew u:
+            {
+                var payload = Operands(u.Payload);
+                return payload is null ? new LNever(e.Syntax, e.Type) : u with { Payload = payload };
+            }
             case BoundWith w:
             {
                 var target = Expr(w.Target);
@@ -1120,6 +1127,17 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                     tests.Add(new LSequence(syntax, [new LAssignExpr(syntax, Local(syntax, d), subject)], Bool(syntax, true)));
                 }
                 return tests.Count == 0 ? Bool(syntax, true) : tests.Aggregate(And);
+            }
+            case BoundUnionPattern up:
+            {
+                var subject = optional is not null ? Inner() : value;
+                var tag = new ConstantValue((Int128)up.Variant.Tag);
+                var tests = new List<BoundExpr>();
+                if (optional is not null) tests.Add(new LOptionalHas(syntax, value));
+                tests.Add(Equal(syntax, new LUnionTag(syntax, subject), new BoundLiteral(syntax, PrimitiveType.I32, tag) { Constant = tag }));
+                for (var i = 0; i < up.Subpatterns.Length; i++)
+                    tests.Add(Match(up.Subpatterns[i], new LUnionField(syntax, subject, up.Variant, i)));
+                return tests.Aggregate(And);
             }
             default:
                 throw new InvalidOperationException($"cannot lower pattern {p.GetType().Name}");

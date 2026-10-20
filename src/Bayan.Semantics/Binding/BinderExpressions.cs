@@ -25,6 +25,10 @@ internal sealed partial class Binder
             case BoundModuleRef m:
                 Report(DiagnosticCodes.NotAValue, e.Span, [m.Module.Name, "module"]);
                 return new BoundErrorExpr(e);
+            case BoundVariantGroup g:
+                Report(DiagnosticCodes.VariantNeedsPayload, e.Span, [g.Variant.Name],
+                    help: $"pass it: `{g.Variant.Union.Name}.{g.Variant.Name}({string.Join(", ", g.Variant.Fields.Select(f => f.Name))})`");
+                return new BoundErrorExpr(e);
             default:
                 return bound;
         }
@@ -439,6 +443,8 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(m);
             case BoundTypeRef { Referenced: EnumSymbol e }:
                 return BindEnumStatic(m, e);
+            case BoundTypeRef { Referenced: UnionSymbol u }:
+                return BindVariant(m, m.Member, u);
             case BoundTypeRef { Referenced: StructSymbol s }:
             {
                 var method = s.FindMethods(name).FirstOrDefault();
@@ -469,6 +475,16 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(m);
         }
         return BindValueMember(m, target, m.Member);
+    }
+
+    /// <summary>A unit variant is a value; a variant with a payload is called like a function.</summary>
+    private BoundExpr BindVariant(Node syntax, Name member, UnionSymbol u)
+    {
+        if (u.Find(member.Text) is { } v)
+            return v.Fields.Count == 0 ? new BoundUnionNew(syntax, v, []) : new BoundVariantGroup(syntax, v);
+        Report(DiagnosticCodes.UnknownUnionVariant, member.Span, [member.Text, u.Name],
+            help: Suggest(member.Text, u.Variants.Select(x => x.Name)) is { } close ? $"did you mean `{close}`?" : null);
+        return new BoundErrorExpr(syntax);
     }
 
     /// <summary><c>Color.red</c>, <c>Color.count</c>, <c>Color.values</c>, <c>Color.fromOrdinal</c> and <c>Color.parse</c>.</summary>
@@ -556,6 +572,10 @@ internal sealed partial class Binder
                 }
                 break;
             }
+            case UnionSymbol u when u.Variants.Any(v => v.Fields.Any(f => f.Name == name)):
+                Report(DiagnosticCodes.PayloadNeedsPattern, member.Span, [u.Name, name],
+                    help: "match the variant and bind the field, as in `case .Variant(let x):`");
+                return new BoundErrorExpr(syntax);
             case Symbols.TupleType t:
             {
                 var index = t.IndexOf(name);
@@ -621,6 +641,8 @@ internal sealed partial class Binder
                 Report(DiagnosticCodes.UnknownEnumMember, t.Member.Span, [t.Member.Text, e.Name],
                     help: Suggest(t.Member.Text, e.Members.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
                 return new BoundErrorExpr(t);
+            case UnionSymbol un:
+                return BindVariant(t, t.Member, un);
             case StructSymbol s when s.FindMethods(t.Member.Text).FirstOrDefault() is { IsStatic: true } m:
                 return new BoundMethodGroup(t, null, m);
             case null or ErrorType:
@@ -880,6 +902,7 @@ internal sealed partial class Binder
         ResultType r => IsEquatable(r.Value),
         ErrorSetSymbol or ErrorUnionType or EnumSymbol => true,
         StructSymbol s => s.Fields.All(f => IsEquatable(f.Type)),
+        UnionSymbol u => u.Variants.All(v => v.Fields.All(f => IsEquatable(f.Type))),
         Symbols.TupleType tt => tt.Fields.All(f => IsEquatable(f.Type)),
         Symbols.ArrayType a => IsEquatable(a.Element),
         _ => false,
@@ -1199,6 +1222,7 @@ internal sealed partial class Binder
         OptionalType o => IsFormattable(o.Inner),
         ResultType r => IsFormattable(r.Value),
         StructSymbol => true,
+        UnionSymbol u => u.Variants.All(v => v.Fields.All(f => IsFormattable(f.Type))),
         Symbols.TupleType tt => tt.Fields.All(f => IsFormattable(f.Type)),
         MapType m => IsFormattable(m.KeyType) && IsFormattable(m.ValueType),
         _ => false,
@@ -1209,4 +1233,7 @@ internal sealed partial class Binder
 internal sealed record BoundMethodGroup(Node Syntax, BoundExpr? Receiver, FunctionSymbol Function) : BoundExpr(Syntax, ErrorType.Instance);
 
 /// <summary>A built-in method named but not yet called.</summary>
+/// <summary>A union variant with a payload, before its call.</summary>
+internal sealed record BoundVariantGroup(Node Syntax, UnionVariantSymbol Variant) : BoundExpr(Syntax, ErrorType.Instance);
+
 internal sealed record BoundBuiltinGroup(Node Syntax, BoundExpr Receiver, string Name) : BoundExpr(Syntax, ErrorType.Instance);
