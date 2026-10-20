@@ -12,7 +12,7 @@ namespace Bayan.Cli;
 
 public static class CliApp
 {
-    public const string Version = "0.1.0-dev";
+    public const string Version = Toolchain.CompilerVersion;
 
     public const int ExitOk = 0;
     public const int ExitFailure = 1;
@@ -36,6 +36,7 @@ public static class CliApp
           dist [<dir>]         build release binaries into dist/<version>/ [--target <t>|all] [--mode m]
                                [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]
           clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]
+          cache stats          show the shared build cache's location and size
           explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
           <script>.byn         run a script, so `#!/usr/bin/env bayan` works
           --version            print the compiler version
@@ -98,6 +99,8 @@ public static class CliApp
                 return Scaffold.New(rest, stdout, stderr);
             case "dist":
                 return Dist.Run(rest, stdout, stderr);
+            case "cache":
+                return Cache(rest, stdout, stderr);
             case "clean":
                 return Dist.Clean(rest, stdout, stderr);
             case "init":
@@ -309,7 +312,7 @@ public static class CliApp
 
     private static void WriteIfChanged(string path, string text)
     {
-        if (!File.Exists(path) || File.ReadAllText(path) != text) File.WriteAllText(path, text);
+        if (!File.Exists(path) || File.ReadAllText(path) != text) Toolchain.ReplaceFile(path, temp => File.WriteAllText(temp, text));
     }
 
     internal static string HostTarget => Targets.Host ?? "host";
@@ -350,18 +353,50 @@ public static class CliApp
     private static int RunProgram(string[] args, TextWriter stderr)
     {
         if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
+        string? scriptKey = null;
+        if (IsScript(o.Path))
+        {
+            scriptKey = Toolchain.ScriptKey(File.ReadAllBytes(o.Path), o.Mode);
+            if (Toolchain.LookupScript(scriptKey, Targets.ExecutableName("program", HostTarget)) is { } remembered)
+                return Start(remembered, o.ProgramArgs);
+        }
         if (Compile(o, stderr) is not { } compiled) return ExitFailure;
         if (RefuseLibrary(compiled, "run", stderr)) return ExitUsage;
         var source = EmitC(compiled.Compilation);
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName, HostTarget))
             : null;
-        if (BuildNative(source, o.Mode, stderr, output) is not { } executable) return ExitToolchain;
+        var result = Toolchain.Build(source, o.Mode, output);
+        if (!result.Succeeded)
+        {
+            stderr.WriteLine("bayan: " + result.Errors);
+            return ExitToolchain;
+        }
+        if (scriptKey is not null && result.Key is { } key) Toolchain.RememberScript(scriptKey, key);
+        return Start(result.ExecutablePath!, o.ProgramArgs);
+    }
+
+    private static int Start(string executable, string[] programArgs)
+    {
         var psi = new System.Diagnostics.ProcessStartInfo(executable) { UseShellExecute = false };
-        foreach (var a in o.ProgramArgs) psi.ArgumentList.Add(a);
+        foreach (var a in programArgs) psi.ArgumentList.Add(a);
         using var process = System.Diagnostics.Process.Start(psi)!;
         process.WaitForExit();
         return process.ExitCode;
+    }
+
+    private static int Cache(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        if (args is not ["stats"])
+        {
+            stderr.WriteLine("usage: bayan cache stats   (`bayan clean --cache` empties it)");
+            return ExitUsage;
+        }
+        var s = Toolchain.Stats();
+        stdout.WriteLine($"cache:    {s.Directory}");
+        stdout.WriteLine($"programs: {s.Programs} ({s.Bytes / 1024.0 / 1024.0:0.0} MB)");
+        stdout.WriteLine($"scripts:  {s.Scripts}");
+        return ExitOk;
     }
 
     /// <summary>A test that runs longer than this is stopped and reported as timed out.</summary>
@@ -421,7 +456,7 @@ public static class CliApp
         {
             var testDir = Path.Combine(root, "out", "test");
             Directory.CreateDirectory(testDir);
-            File.WriteAllText(Path.Combine(testDir, "results.json"), json);
+            Toolchain.ReplaceFile(Path.Combine(testDir, "results.json"), temp => File.WriteAllText(temp, json));
         }
         return passed == count ? ExitOk : ExitTestFailure;
     }
