@@ -93,7 +93,7 @@ print("Hello, world!");
 
 **Tests:** `test property fuzz model`
 
-**Reserved (no meaning yet; may not be used as identifiers):** `actor effect macro select become`
+**Reserved (no meaning yet; may not be used as identifiers):** `actor effect macro select become law requires ensures` (`law`, `requires`, `ensures`: v0.2 laws and v1.x contracts, handoff addendum 002)
 
 `foreach` is accepted for C# compatibility and formatted to `for`. `new` is accepted and removed by the formatter. `goto` does not exist.
 
