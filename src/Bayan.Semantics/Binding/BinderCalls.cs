@@ -647,6 +647,7 @@ internal sealed partial class Binder
             _patternOwns = owns;
             var pattern = BindPattern(arm.Pattern, value.Type);
             _patternOwns = false;
+            if (owns) CheckOwningOverlap(pattern);
             var guard = arm.Guard is { } g ? BindCondition(g) : null;
             var result = BindExpr(arm.Value, expected);
             PopScope();
@@ -754,6 +755,32 @@ internal sealed partial class Binder
             default:
                 Report(DiagnosticCodes.Unsupported, p.Span, ["list patterns"]);
                 return new BoundBindPattern(p, input, null);
+        }
+    }
+
+    /// <summary>In an owning switch, a pattern may not bind a value and a part of it, or both sides of an `and`: each would own the same storage (L006).</summary>
+    private void CheckOwningOverlap(BoundPattern p)
+    {
+        switch (p)
+        {
+            case BoundBinaryPattern b when b.IsAnd && HasBindings(b.Left) && HasBindings(b.Right):
+            case BoundPropertyPattern { Designation: not null } pp when pp.Subpatterns.Any(s => HasBindings(s.Pattern)):
+                Report(DiagnosticCodes.OwningPatternOverlap, p.Syntax.Span, [Source.GetText(p.Syntax.Span)],
+                    help: "bind the whole value or its parts, not both");
+                break;
+            case BoundBinaryPattern b:
+                CheckOwningOverlap(b.Left);
+                CheckOwningOverlap(b.Right);
+                break;
+            case BoundNotPattern n:
+                CheckOwningOverlap(n.Operand);
+                break;
+            case BoundPropertyPattern pp:
+                foreach (var s in pp.Subpatterns) CheckOwningOverlap(s.Pattern);
+                break;
+            case BoundUnionPattern up:
+                foreach (var s in up.Subpatterns) CheckOwningOverlap(s);
+                break;
         }
     }
 
