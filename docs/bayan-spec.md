@@ -154,6 +154,7 @@ distinct type UserId = i64;      // a unit without arithmetic
 - `ReadOnlySpan<T>`: a borrowed view whose elements cannot be assigned. `Span<T>` → `ReadOnlySpan<T>` is implicit. `string.bytes` is a `ReadOnlySpan<u8>`, so strings stay immutable and valid UTF-8. A `Span<T>` parameter never written through gets lint BYN2310 ("use `ReadOnlySpan<T>`").
 - `List<T>`, `Map<K, V>`, `HashMap<K, V>`, `Set<T>`, `Pool<T>`, `Ring<T, const int N>`, `NonEmpty<T>`: standard library, allocator-backed.
 - `Map` **preserves insertion order**; `HashMap` is unordered and faster.
+- Every allocator-backed collection (`List`, `Map`, `HashMap`, `Set`, `Pool`) and `StrBuf` is **`unique`** (§3.11): assigning or storing one moves it, and a copy is explicit, `xs.copy(to: alloc)`. Reading without owning goes through `ReadOnlySpan<T>`, a read-only parameter or `ref`.
 - Hashing is **seeded** by default (hash-flooding resistance); tests use a fixed seed.
 
 ### 3.6 Optionals
@@ -200,6 +201,9 @@ public struct Order : IEquatable<Order>, IJsonEncode {
 
 ### 3.11 Move-only types
 `unique struct` cannot be copied; use `move`. Cleanup is derived (disposes fields in reverse declaration order) and runs exactly once, at scope end or by the final owner.
+
+- **A type with a `unique` part is `unique`.** A struct with a `unique` field, a union with a `unique` payload, and a tuple, array or optional of a `unique` type are all `unique`, without being declared so. A struct holding a `List` is therefore move-only.
+- An implicit copy of a `unique` value is a compile error whose fixes are `move x`, `x.copy(to: alloc)` (when the type has one) or passing it by `ref`.
 
 ### 3.12 Unions
 
@@ -373,7 +377,7 @@ No user-defined operator symbols. Operator implementations must not allocate, su
 `order with { status = .shipped }` (C# syntax).
 
 ### 6.5 Patterns
-All C# patterns: constant, relational, `and`/`or`/`not`, property and extended property, positional, list patterns with slices (`[var first, .. var rest]`), `var`, `_`, `when` guards. Additions:
+All C# patterns: constant, relational, `and`/`or`/`not`, property and extended property, positional, list patterns with slices (`[var first, .. var rest]`), `var`, `_`, `when` guards. A binding is `let x` (immutable) or `var x` (mutable), as for locals. Additions:
 
 ```csharp
 x is 500..=599                          // range
@@ -657,6 +661,7 @@ The compiler infers which functions may suspend (calls through `dyn` are assumed
 ### 15.1 Taint tracking
 - **Sources** produce `Untrusted<T>`: HTTP requests (body, query, headers, cookies), stdin, command-line arguments, external files, text from C.
 - **Sinks** reject `Untrusted<T>`: raw SQL, raw HTML, shell commands, file paths, redirect URLs.
+- **Processes.** `Io.run(program, args)` never goes through a shell, and refuses `.bat`/`.cmd` files on Windows (`cmd.exe` re-parses their arguments). `Io.runBatch(path, args)` runs a batch file: it escapes each argument for `cmd.exe` when that can be done exactly and otherwise fails without starting anything. Its arguments are a sink: an `Untrusted<T>` argument is a compile error.
 - **Clearing taint:** `parse`/`validate` (yielding `T.Validated`), escaped forms (interpolated SQL parameters, HTML escaping), or explicit `trust(x, reason: "…")`.
 - Terminal output and logs escape control characters in untrusted values.
 
