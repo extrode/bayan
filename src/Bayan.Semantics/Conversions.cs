@@ -27,6 +27,7 @@ public static class Conversions
         {
             if (from is ListType list && list.Element.Equals(span.Element)) return ConversionKind.ListToSpan;
             if (from is Symbols.ArrayType array && array.Element.Equals(span.Element)) return ConversionKind.ArrayToSpan;
+            if (from.IsString && span is { ReadOnly: true, Element: var e } && e == PrimitiveType.U8) return ConversionKind.StringToBytes;
         }
         if (from is ErrorSetSymbol set && to is ErrorUnionType u && (u.Sets.Count == 0 || u.Sets.Contains(set))) return ConversionKind.Identity;
         return null;

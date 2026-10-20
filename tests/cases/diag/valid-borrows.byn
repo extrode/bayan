@@ -1,10 +1,10 @@
 Span<i64> tail(Span<i64> values) => values[1..];
 
-List<i64> keep(Span<i64> values, Arena arena) => values.copy(to: arena);
+List<i64> keep(ReadOnlySpan<i64> values, Arena arena) => values.copy(to: arena);
 
 string pick(string a, string b) => a.length > b.length ? a : b;
 
-i64 total(Span<i64> values) {
+i64 total(ReadOnlySpan<i64> values) {
     i64 sum = 0;
     for (let v in values) {
         sum += v;

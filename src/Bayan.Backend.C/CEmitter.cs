@@ -890,6 +890,8 @@ internal sealed class FunctionEmitter
                 return $"(({_c.CType(to)}){{{v}}})";
             case ConversionKind.ListToSpan:
                 return $"(({_c.CType(to)}){{{v}.ptr, {v}.len}})";
+            case ConversionKind.StringToBytes:
+                return $"(({_c.CType(to)}){{(uint8_t*){v}.ptr, {v}.len}})";
             case ConversionKind.ArrayToSpan:
                 return $"(({_c.CType(to)}){{{v}.v, {((ArrayType)from).Length}}})";
             default:

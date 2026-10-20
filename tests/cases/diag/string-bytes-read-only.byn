@@ -1,11 +1,16 @@
-u8 first(Span<u8> data) => data[0];
-u8 peek(Span<u8> data) => data[0];
+void clear(Span<u8> data) {
+    data[0] = 0;
+}
+
+u8 first(ReadOnlySpan<u8> data) => data[0];
+
 let s = "abc";
 let b = s.bytes;
 b[0] = 65;
 let tail = s.bytes[1..];
 tail[0] = 66;
 var buffer = StrBuf(s.bytes);
-print($"{first(s.bytes)}");
+clear(s.bytes);
 let bytes = stackalloc u8[4];
-print($"{peek(bytes)} {b[0]} {tail.length}");
+clear(bytes);
+print($"{first(s.bytes)} {first(s)} {first(bytes)} {b[0]} {tail.length}");

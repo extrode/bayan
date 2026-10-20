@@ -516,6 +516,7 @@ public sealed class Compilation
                 {
                     FlowAnalysis.Analyze(this, fn);
                     RegionAnalysis.Analyze(this, fn);
+                    SpanParameterLint.Analyze(this, fn);
                 }
         if (EntryModule.Main is null && !Options.IncludeTests && EntryModule.Files.Count > 0 && !Diagnostics.HasErrors)
             Report(DiagnosticCodes.NoMain, EntryModule.Files[0].Source, new TextSpan(0, 0), []);

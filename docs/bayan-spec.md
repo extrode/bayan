@@ -150,7 +150,8 @@ distinct type UserId = i64;      // a unit without arithmetic
 
 ### 3.5 Arrays, spans, collections
 - `T[N]`: fixed-size inline array (a value). Constant out-of-range indexes are compile errors.
-- `Span<T>`: a borrowed view (pointer, length).
+- `Span<T>`: a borrowed view (pointer, length) whose elements may be assigned.
+- `ReadOnlySpan<T>`: a borrowed view whose elements cannot be assigned. `Span<T>` → `ReadOnlySpan<T>` is implicit. `string.bytes` is a `ReadOnlySpan<u8>`, so strings stay immutable and valid UTF-8. A `Span<T>` parameter never written through gets lint BYN2310 ("use `ReadOnlySpan<T>`").
 - `List<T>`, `Map<K, V>`, `HashMap<K, V>`, `Set<T>`, `Pool<T>`, `Ring<T, const int N>`, `NonEmpty<T>`: standard library, allocator-backed.
 - `Map` **preserves insertion order**; `HashMap` is unordered and faster.
 - Hashing is **seeded** by default (hash-flooding resistance); tests use a fixed seed.
@@ -358,6 +359,7 @@ No user-defined operator symbols. Operator implementations must not allocate, su
 | Bit reinterpretation | `bitcast<T>(x)` (same size; non-plain types require `unsafe`) |
 | Units / distinct types | `(Seconds)raw`, `(i64)t` |
 | Enum ↔ number | `.ordinal` / `.value`; `T.fromOrdinal(i)` returns `T?` |
+| Views | `Span<T>` → `ReadOnlySpan<T>` implicit; as a call argument, `List<T>` and `T[N]` → `Span<T>` / `ReadOnlySpan<T>`, and `string` → `ReadOnlySpan<u8>`. Never `ReadOnlySpan<T>` → `Span<T>`. |
 | User types | `(T)x` calls `IFrom<T, U>.from` (infallible). Fallible conversions use `ITryFrom` and `try T.from(x)` |
 | `List<T>` → `Span<T>` | Implicit **only as a function argument**; otherwise `.asSpan` |
 | User-defined implicit conversions | Not allowed |
@@ -675,6 +677,7 @@ Decoders default to safe limits (JSON nesting depth 128, maximum size). Per-requ
 - **`length`** is the only size name: an O(1) property everywhere. `count(p)` counts matches.
 - Slicing is substring/subarray: `s[a..b]`, `xs[1..^1]`. C#'s `Substring(start, length)` migrates to `s[start..(start + length)]`. Copies are explicit: `.copy(to: alloc)`.
 - Out-of-range slices panic in safe builds; `trySlice(a..b)` returns `Span<T>?`.
+- Read-only queries and views take `ReadOnlySpan<T>` parameters (a `Span<T>`, `List<T>`, array or, for bytes, `string` converts implicitly).
 - **Queries** (never allocate): `isEmpty contains indexOf lastIndexOf startsWith endsWith count any all none tryFirst tryLast`.
 - **Views** (never allocate): `take skip takeLast skipLast reversed() stride chunks windows splitAt split lines trim where select`.
 - **New data** (allocate from context; each has an `xInto` form): `toList sorted() distinct join upper() lower() replace() pad()`, spread `[..a, ..b]`.

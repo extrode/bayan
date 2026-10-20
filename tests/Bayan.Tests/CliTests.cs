@@ -219,6 +219,14 @@ public sealed class CliTests
         BuildAndRun("tally-lite"));
 
     [Fact]
+    public void TallyLiteChecksWithoutWarnings()
+    {
+        var (exit, stdout, stderr) = Run("check", Example("tally-lite"));
+        Assert.Equal(CliApp.ExitOk, exit);
+        Assert.Equal("", stdout + stderr);
+    }
+
+    [Fact]
     public void TallyLiteTestsPass()
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
