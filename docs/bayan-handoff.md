@@ -362,6 +362,14 @@ Formatter, LSP, prose tool and packages land across v0.2–v0.4.
 
 Phase 1 tool: `tools/lex-diff/` (M15). Phase 2: `selfhost/lexer/` checked against the C# lexer by the test suite (M22–M23).
 
+**Friction found porting the lexer (T19).** The port needed no compiler changes, but these cost the most and are candidates for the next spec:
+- Must-name rule (BYN2305): ~100 errors; it fires even when argument names equal the parameter names (`fromBounds(start, end)`).
+- Returning borrows (BYN3003): a method can't return a span borrowed from its own `List` field; `return sb.asString()` from a local growable `StrBuf` is rejected (workaround `$"{sb.asString()}"`); `string f(span) => utf8(span)` is treated as borrowing the argument.
+- No span fields (BYN3001), so source bytes live in a `List<u8>`. Ref aliasing (BYN3005) rejected `renderAll(ref sb, ref result.source, result.diagnostics.asSpan())`.
+- `var x = 0` is `i32` while `.length` is `i64`: every position needs an explicit `i64`.
+- `error` and `flags` are keywords, so they can't be names.
+- No `catch { block }`; no bytes→string conversion (decode appends `$"{(char)cp}"` per scalar); no hex format specifier; no `const string[]`; no delegates; no `List.removeRange`.
+
 ## Testing the compiler itself
 
 - Golden tests for every phase (above).
@@ -424,6 +432,7 @@ Phase 1 tool: `tools/lex-diff/` (M15). Phase 2: `selfhost/lexer/` checked agains
 51. **Static data (M16).** *Current choice:* module-level `const T[N]` with `T` a number type, `bool` or `char` and every element a literal or constant is static data (C `static const`, read in place; indexing is bounds-checked; slices, `asSpan` and arguments are `ReadOnlySpan<T>`; passing it as a mutable `Span<T>` is an error). Any other module-level `const` array or collection is BYN2229. `bayan check` on 25k elements takes 0.15 s.
 53. **Processes and directories (M15).** *Current choice:* `Io.listDir` returns names sorted by byte order, without `.` and `..`; a path that is not a directory is `notADirectory`, a missing one `notFound`, a name that is not UTF-8 `invalidUtf8`. `Io.run` never uses a shell; it looks `program` up on `PATH` when it has no path separator (Windows also tries `PATHEXT`), and a missing program is `notFound`. It captures both streams completely (no streaming) and inherits the environment, working directory and stdin. A child killed by a signal reports exit code 128+signal, output that is not UTF-8 is `invalidUtf8`, and there is no timeout yet. `IoError` codes are 1–5, so user error codes start at 6. A `// os: unix` line in a `run/` case's first two lines skips it on Windows.
 54. **`lex-diff` (M15).** *Current choice:* `tools/lex-diff/main.byn`, built by the bootstrap compiler. A `<cmd>` is split on spaces with no quoting, and the `.byn` path is appended as the last argument. It compares stdout only, line by line, after normalizing CRLF and ignoring one trailing newline, as `Golden.Compare` does; a missing golden reads as empty. Exit 0 if all files agree, 1 if any differ, 2 on usage errors or a command that cannot start; the summary `N files, M differ` goes to stderr.
+52. **Token kind names in the Bayan lexer (M22).** *Current choice:* the Bayan dump derives C# `TokenKind` names by upper-casing the first byte of the enum member name; `SelfhostLexerTests` asserts every C# kind name has that form.
 
 ## Progress log
 
@@ -448,3 +457,5 @@ Phase 1 tool: `tools/lex-diff/` (M15). Phase 2: `selfhost/lexer/` checked agains
 - **2026-10-20 — M14.** Growable `StrBuf()` (`BuiltinFunction.StrBufGrow`, runtime `BYN_WRITE_GROW` over `byn_alloc`), borrowing the context allocator like `List` (Q29). `$"…"` is a `string` expression anywhere, lowered through a temp growable writer; BYN2224 retired (docs page kept, golden dropped). `run/strbuf-grow` (100,000 appends), `run/interpolation-expression`, two BYN3002 region goldens. Questions 16, 43. 388 tests pass. **Next:** M15.
 - **2026-10-20 — M15.** `Io.listDir` and `Io.run` with builtin `ProcessResult { exitCode, stdout, stderr }`; `IoError` gains `notADirectory`. Runtime: `posix_spawnp` + `poll`, `CreateProcessW` with MSVC quoting and a reader thread; `Io` results no longer borrow their arguments. `run/` cases `io-run` (unix only), `io-run-missing`, `io-list-dir`; a CLI test spawns `bayan --version`. Phase-1 tool `tools/lex-diff` + `LexDiffTests`: `bayan lex` vs the `lex/` goldens exits 0, a tampered copy exits 1 naming the file and line. Questions 53, 54.
 - **2026-10-20 — M16.** Plain enums (members, `count`/`values`/`fromOrdinal`/`parse`, `name`/`ordinal`, exhaustive switch, BYN2720–2722) and module-level static `const` arrays (BYN2229), parser to C. Questions 44, 51. 405 tests pass. **Next:** M17 enums with data, M18 unions.
+- **2026-10-20 — M17.** Enums with data (`enum Planet(f64 mass, f64 radius) { … }`): read-only fields backed by per-field `static const` tables; arguments must fold (BYN2723), parameter types limited (BYN2724). `run/data-enums`.
+- **2026-10-20 — M22, T19–T20.** The Bayan lexer `selfhost/lexer/{main,source,tokens,lexer,diagnostics,dump,unicode-tables}.byn` (`bayan-lex <path>`, `--many <dir>`, `--time <path>`), built by the bootstrap compiler with no compiler changes; `lex-diff` against the 21 `lex/` goldens: 0 differ. `SelfhostLexerTests` builds it once and checks every golden. Friction list under *Self-hosting readiness*. Question 52. 434 tests pass. **Next:** M18 unions, M19 generics, M20–M21, M23 corpus and timing.

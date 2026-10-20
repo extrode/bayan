@@ -20,7 +20,7 @@ Each milestone task ends with `dotnet test -v q` green, a docs page + `diag/` ca
 ## M16–M17 Enums
 - [x] T9 Plain enums + members + exhaustive switch — files: `Parser.cs`, `Nodes.cs`, `Symbols.cs`, binder, `CEmitter.cs` — covers: R5 — done when: `run/` goldens for `count/values/name/ordinal/fromOrdinal/parse`; missing-member `diag/`.
 - [x] T10 Module-level `const T[N]` static data — files: binder, `CEmitter.cs` — covers: R9 (tables) — done when: `run/` reads a static array; non-literal const array is a diagnostic (Q51).
-- [ ] T11 Enums with associated data — files: `Parser.cs`, `ConstantFolding.cs`, `CEmitter.cs` — covers: R5 — done when: `run/` Planet case; non-constant argument `diag/`.
+- [x] T11 Enums with associated data — files: `Parser.cs`, `ConstantFolding.cs`, `CEmitter.cs` — covers: R5 — done when: `run/` Planet case; non-constant argument `diag/`.
 
 ## M18 Unions
 - [ ] T12 Union declarations, construction, format, equality — files: `Parser.cs`, `Nodes.cs`, `Symbols.cs`, `Types.cs`, `CEmitter.cs` — covers: R4 — done when: `run/` prints `Circle(r: 1)`, equality by tag+payload.
@@ -36,8 +36,8 @@ Each milestone task ends with `dotnet test -v q` green, a docs page + `diag/` ca
 
 ## M22 Bayan lexer
 - [x] T18 `tools/Bayan.UnicodeGen` + `selfhost/lexer/unicode-tables.byn` — covers: R9 — done when: generator asserts pass and the table file is checked in.
-- [ ] T19 Port lexer to `selfhost/lexer/*.byn` — covers: R9 — done when: builds with the bootstrap compiler; `lex-diff --golden .tokens tests/cases/lex` exits 0.
-- [ ] T20 `SelfhostLexerTests` differential harness — files: `tests/Bayan.Tests/SelfhostLexerTests.cs` — covers: R11 — done when: a theory over every `lex/` golden passes; disagreement names file + first line.
+- [x] T19 Port lexer to `selfhost/lexer/*.byn` — covers: R9 — done when: builds with the bootstrap compiler; `lex-diff --golden .tokens tests/cases/lex` exits 0.
+- [x] T20 `SelfhostLexerTests` differential harness — files: `tests/Bayan.Tests/SelfhostLexerTests.cs` — covers: R11 — done when: a theory over every `lex/` golden passes; disagreement names file + first line.
 
 ## M23 Corpus and timing
 - [ ] T21 10,000-input corpus via `--many` — covers: R11, L1, L2 — done when: corpus test passes; no panic; spans inside input.
