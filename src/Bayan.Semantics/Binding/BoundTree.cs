@@ -53,6 +53,7 @@ public static class BoundTree
                     if (p.Value is not null) yield return p.Value;
                 break;
             case BoundTry n: yield return n.Operand; break;
+            case BoundMove n: yield return n.Operand; break;
             case BoundCatch n: yield return n.Operand; yield return n.Handler; break;
             case BoundJump n: yield return n.Jump; break;
 

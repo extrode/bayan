@@ -1425,6 +1425,9 @@ public sealed class Parser
             case TokenKind.TryKeyword:
                 Advance();
                 return new TryExpr(SpanFrom(start), ParseUnary());
+            case TokenKind.MoveKeyword:
+                Advance();
+                return new MoveExpr(SpanFrom(start), ParseUnary());
             case TokenKind.NewKeyword:
                 // Accepted for C# compatibility; the formatter removes it.
                 Advance();

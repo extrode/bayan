@@ -173,11 +173,16 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor TypeParameterMember = Error("BYN2744", "`{0}` is not a member of type parameter `{1}`");
     public static readonly DiagnosticDescriptor InvalidMapKey = Error("BYN2760", "`{0}` cannot be a `Map` key");
     public static readonly DiagnosticDescriptor RecursiveByValue = Error("BYN2761", "`{0}` contains itself by value: {1}");
+    // BYN2762 (a `Map` or `StrBuf` cannot be copied) is retired: replaced by BYN2780 in spec 002. Never reuse it.
     public static readonly DiagnosticDescriptor SharedStorageCopy = Error("BYN2762", "a `{0}` cannot be copied");
     public static readonly DiagnosticDescriptor UnknownAttribute = Error("BYN2770", "unknown attribute `{0}`");
     public static readonly DiagnosticDescriptor InvalidMainSignature = Error("BYN2771", "`main` must return `void` or `i32` and take nothing or `ReadOnlySpan<string> args`");
     public static readonly DiagnosticDescriptor TrustReason = Error("BYN2787", "`trust` needs a reason: a non-empty string literal");
     public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`[ExitCode]` needs one integer constant from 1 to 255");
+    public static readonly DiagnosticDescriptor ImplicitCopy = Error("BYN2780", "implicit copy of a unique value: {0}");
+    public static readonly DiagnosticDescriptor UseAfterMove = Error("BYN2781", "`{0}` is used after it was moved");
+    public static readonly DiagnosticDescriptor CannotMove = Error("BYN2782", "cannot move out of {0}");
+    public static readonly DiagnosticDescriptor MutateBorrow = Error("BYN2783", "`{0}` borrows from what it was bound to and cannot be changed or moved");
     public static readonly DiagnosticDescriptor CopyUniqueElement = Error("BYN2784", "a `{0}` holding `{1}` cannot be copied: the copy would share its storage");
     public static readonly DiagnosticDescriptor MapSlotNoDefault = Error("BYN2785", "`slot` needs a default value, and `{0}` has none");
     public static readonly DiagnosticDescriptor BorrowField = Error("BYN3001", "a struct field cannot hold a borrowed `{0}`");

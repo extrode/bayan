@@ -21,8 +21,8 @@ struct SourceText {
 
     i64 length => bytes.length;
 
-    static SourceText create(string path, List<u8> bytes) =>
-        SourceText { path = path, bytes = bytes, lineStarts = List<i64>() };
+    static SourceText create(string path, move List<u8> bytes) =>
+        SourceText { path = path, bytes = move bytes, lineStarts = List<i64>() };
 
     i64 lineCount() {
         ensureLineStarts();

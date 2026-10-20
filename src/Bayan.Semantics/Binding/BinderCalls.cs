@@ -281,7 +281,8 @@ internal sealed partial class Binder
     private BoundExpr BindArgument(Argument arg, ParameterSymbol p)
     {
         var wanted = p.Modifier switch { ParamModifier.Ref => ArgModifier.Ref, ParamModifier.Out => ArgModifier.Out, _ => ArgModifier.None };
-        var given = arg.Modifier == ArgModifier.In ? ArgModifier.None : arg.Modifier;
+        // `move x` hands a value to a plain or `move` parameter.
+        var given = arg.Modifier == ArgModifier.In || (arg.Modifier == ArgModifier.Move && wanted == ArgModifier.None) ? ArgModifier.None : arg.Modifier;
         if (given != wanted)
         {
             var keyword = wanted == ArgModifier.None ? null : wanted.ToString().ToLowerInvariant();
@@ -307,6 +308,7 @@ internal sealed partial class Binder
     private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type)
     {
         var value = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, type);
+        if (arg.Modifier == ArgModifier.Move) value = BindMove(arg, value);
         return type is null ? value : Convert(value, type, arg.Value.Span, argument: true);
     }
 
@@ -447,8 +449,8 @@ internal sealed partial class Binder
         if (m.Member is BuiltinMember.ListCopy or BuiltinMember.MapCopy)
         {
             var held = m.Member == BuiltinMember.ListCopy
-                ? HoldsUnique(((ListType)receiver.Type).Element, [])
-                : HoldsUnique(((MapType)receiver.Type).KeyType, []) ?? HoldsUnique(((MapType)receiver.Type).ValueType, []);
+                ? TypeFacts.UniquePart(((ListType)receiver.Type).Element)
+                : TypeFacts.UniquePart(((MapType)receiver.Type).KeyType) ?? TypeFacts.UniquePart(((MapType)receiver.Type).ValueType);
             if (held is not null)
                 Report(DiagnosticCodes.CopyUniqueElement, c.Span, [receiver.Type.DisplayName, held.DisplayName],
                     help: "build the copy with a loop that copies each element, or share the original by `ref`");
@@ -459,18 +461,6 @@ internal sealed partial class Binder
         return new BoundBuiltinCall(c, m.Member, receiver, args, returns);
     }
 
-    /// <summary>The <c>List</c>, <c>Map</c>, <c>StrBuf</c> or <c>Owned</c> that <paramref name="t"/> holds by value, or null.</summary>
-    private static TypeSymbol? HoldsUnique(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
-    {
-        ListType or MapType or OwnedType or BuiltinType { Kind: BuiltinKind.StrBuf } => t,
-        OptionalType o => HoldsUnique(o.Inner, seen),
-        ArrayType a => HoldsUnique(a.Element, seen),
-        TupleType tt => tt.Fields.Select(f => HoldsUnique(f.Type, seen)).FirstOrDefault(h => h is not null),
-        StructSymbol s => seen.Add(s) ? s.Fields.Select(f => HoldsUnique(f.Type, seen)).FirstOrDefault(h => h is not null) : null,
-        UnionSymbol u => seen.Add(u) ? u.Variants.SelectMany(v => v.Fields).Select(f => HoldsUnique(f.Type, seen)).FirstOrDefault(h => h is not null) : null,
-        _ => null,
-    };
-
     /// <summary>Whether <c>map.slot</c> can insert a default <paramref name="t"/>: numbers, <c>bool</c>, <c>char</c>, <c>string</c>, optionals and structs whose fields all have defaults.</summary>
     private static bool IsDefaultable(TypeSymbol t) => t switch
     {
@@ -479,6 +469,38 @@ internal sealed partial class Binder
         StructSymbol s => s.IsDefaultable,
         _ => t.IsNumeric || t.IsBool || t.IsString,
     };
+
+    // ── Ownership ────────────────────────────────────────────────────────────────
+
+    /// <summary><c>move x</c> (or a <c>move</c> argument): only a local or a <c>move</c> parameter can be moved (spec §9.3).</summary>
+    private BoundExpr BindMove(Node syntax, BoundExpr operand)
+    {
+        if (operand.Type.IsError) return operand;
+        switch (operand)
+        {
+            case BoundLocal { Local: { BorrowsSubject: true } l } when TypeFacts.IsUnique(l.Type):
+                Report(DiagnosticCodes.MutateBorrow, operand.Syntax.Span, [l.Name], label: "moving it would take the value out of what it borrows from",
+                    help: "move or copy the value it was bound to instead");
+                return new BoundMove(syntax, operand);
+            case BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var } or ParameterSymbol { Modifier: ParamModifier.Move } }:
+            case BoundLocal { Local.BorrowsSubject: true }:
+                return new BoundMove(syntax, operand);
+        }
+        var (what, help) = operand switch
+        {
+            BoundLocal { Local: ParameterSymbol { IsByRef: true } p } => ($"`{p.Modifier.ToString().ToLowerInvariant()}` parameter `{p.Name}`", "the caller still owns it; copy it with `.copy(to: alloc)`"),
+            BoundLocal { Local: ParameterSymbol p } => ($"parameter `{p.Name}`", $"a plain parameter is borrowed from the caller; declare it `move {p.Name}` to take ownership"),
+            BoundLocal { Local: var l } => ($"`{l.Name}`", "only a local variable or a `move` parameter can be moved"),
+            BoundField f => ($"field `{f.Field.Name}`", "its owner keeps it; move the whole value, or copy the field with `.copy(to: alloc)`"),
+            BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } => ("an element", "the collection keeps it; copy the element with `.copy(to: alloc)`"),
+            BoundTupleElement => ("a tuple element", "move the whole tuple instead"),
+            BoundThis => ("`this`", "a method borrows `this`"),
+            BoundCall or BoundBuiltinCall or BoundStructLiteral or BoundCollection or BoundLiteral => ("a fresh value", "a fresh value needs no `move`; remove it"),
+            _ => ("this expression", "only a local variable or a `move` parameter can be moved"),
+        };
+        Report(DiagnosticCodes.CannotMove, operand.Syntax.Span, [what], help: help);
+        return new BoundMove(syntax, operand);
+    }
 
     // ── Failure handling ─────────────────────────────────────────────────────────
 
@@ -619,7 +641,11 @@ internal sealed partial class Binder
             case DiscardPattern:
                 return new BoundBindPattern(p, input, null);
             case VarPattern v:
-                return new BoundBindPattern(p, input, DeclareLocal(v.Name, input, LocalKind.PatternVariable));
+            {
+                var local = DeclareLocal(v.Name, input, LocalKind.PatternVariable);
+                local.BorrowsSubject = true;
+                return new BoundBindPattern(p, input, local);
+            }
             case ConstantPattern c:
                 return BindConstantPattern(c, input);
             case RelationalPattern r:
@@ -788,6 +814,7 @@ internal sealed partial class Binder
             if (ok) subs.Add(new BoundSubpattern(steps.ToArray(), pattern));
         }
         var designation = pp.Designation is { } d ? DeclareLocal(d, valueType, LocalKind.PatternVariable) : null;
+        if (designation is not null) designation.BorrowsSubject = true;
         return new BoundPropertyPattern(pp, input, valueType, subs.ToArray(), designation);
     }
 
@@ -1016,6 +1043,10 @@ internal sealed partial class Binder
         switch (target)
         {
             case BoundErrorExpr:
+                return false;
+            case BoundLocal { Local: { BorrowsSubject: true } l } when TypeFacts.IsUnique(l.Type):
+                Report(DiagnosticCodes.MutateBorrow, span, [l.Name], label: why,
+                    help: "a loop or pattern variable of a unique type borrows from its subject; change the subject itself, or work on a `.copy(to: alloc)`");
                 return false;
             case BoundLocal { Local: var l }:
                 if (l.IsMutable || l is ParameterSymbol { IsByRef: true }) return true;

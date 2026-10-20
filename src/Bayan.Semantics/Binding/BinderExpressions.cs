@@ -175,6 +175,8 @@ internal sealed partial class Binder
                 return BindSwitchExpr(s, expected);
             case TryExpr t:
                 return BindTry(t, expected);
+            case MoveExpr m:
+                return BindMove(m, BindExpr(m.Operand, expected));
             case CatchExpr c:
                 return BindCatch(c, expected);
             case JumpExpr j:

@@ -494,6 +494,7 @@ internal sealed partial class Binder
             else if (!declared.IsError) element = declared;
         }
         var variable = DeclareLocal(f.Variable, element, f.Kind == BindingKind.Var ? LocalKind.Var : LocalKind.ForVariable);
+        variable.BorrowsSubject = true;
         _targets.Add(target);
         var body = BindBody(f.Body);
         _targets.RemoveAt(_targets.Count - 1);
