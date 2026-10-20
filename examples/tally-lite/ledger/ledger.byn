@@ -17,7 +17,7 @@ public struct Transfer {
 }
 
 /// Splits `amount` into equal shares; the first participants absorb the leftover cents.
-public List<Share> splitEvenly(money.Cents amount, Span<string> participants) {
+public List<Share> splitEvenly(money.Cents amount, ReadOnlySpan<string> participants) {
     var shares = List<Share>();
     let count = participants.length;
     let base = amount / count;
@@ -30,7 +30,7 @@ public List<Share> splitEvenly(money.Cents amount, Span<string> participants) {
 }
 
 /// Net balance per person, in order of first appearance: positive is owed, negative owes.
-public List<Share> balances(Span<Expense> expenses) {
+public List<Share> balances(ReadOnlySpan<Expense> expenses) {
     var totals = List<Share>();
     for (let e in expenses) {
         credit(ref totals, name: e.payer, cents: e.amount);
@@ -52,7 +52,7 @@ void credit(ref List<Share> totals, string name, i64 cents) {
 }
 
 /// Transfers that settle every balance: the largest debtor pays the largest creditor, repeatedly.
-public List<Transfer> settle(Span<Share> balances) {
+public List<Transfer> settle(ReadOnlySpan<Share> balances) {
     var pending = List<Share>();
     for (let b in balances) {
         pending.add(b);
@@ -72,7 +72,7 @@ public List<Transfer> settle(Span<Share> balances) {
 }
 
 /// Index of the smallest (or largest) balance; the earliest wins a tie.
-i64 extreme(Span<Share> shares, bool lowest) {
+i64 extreme(ReadOnlySpan<Share> shares, bool lowest) {
     i64 best = 0;
     for (let i in 1..shares.length) {
         let better = lowest ? shares[i].cents < shares[best].cents : shares[i].cents > shares[best].cents;

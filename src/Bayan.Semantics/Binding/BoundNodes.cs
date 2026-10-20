@@ -79,6 +79,8 @@ public enum ConversionKind
     NullToOptional,
     ListToSpan,
     ArrayToSpan,
+    /// <summary>A <c>string</c> argument viewed as its UTF-8 bytes (<c>ReadOnlySpan&lt;u8&gt;</c>).</summary>
+    StringToBytes,
     /// <summary>A value becomes a successful <c>Result</c>.</summary>
     ToResult,
     /// <summary>An error becomes a failed <c>Result</c>.</summary>

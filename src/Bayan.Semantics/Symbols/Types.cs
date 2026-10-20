@@ -157,12 +157,12 @@ public sealed class SpanType(TypeSymbol element, bool readOnly = false) : Constr
 {
     public TypeSymbol Element { get; } = element;
 
-    /// <summary>A view whose elements cannot be assigned (<c>string.bytes</c>): strings stay immutable and valid UTF-8.</summary>
+    /// <summary><c>ReadOnlySpan&lt;T&gt;</c>: elements cannot be assigned (<c>string.bytes</c> is one, so strings stay immutable and valid UTF-8).</summary>
     public bool ReadOnly { get; } = readOnly;
 
     protected override object Key => (Element, ReadOnly);
 
-    public override string DisplayName => ReadOnly ? $"read-only Span<{Element.DisplayName}>" : $"Span<{Element.DisplayName}>";
+    public override string DisplayName => ReadOnly ? $"ReadOnlySpan<{Element.DisplayName}>" : $"Span<{Element.DisplayName}>";
 
     public override bool IsBorrow => true;
 }

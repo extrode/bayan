@@ -745,7 +745,7 @@ internal sealed partial class Binder
             case BoundIndex { Target.Type: SpanType } i:
                 if (i.Target.Type is SpanType { ReadOnly: true })
                 {
-                    Report(DiagnosticCodes.MutateTemporary, span, [], label: "the bytes of a `string` are read-only");
+                    Report(DiagnosticCodes.MutateTemporary, span, [], label: "a `ReadOnlySpan` cannot be written through");
                     return false;
                 }
                 return true;

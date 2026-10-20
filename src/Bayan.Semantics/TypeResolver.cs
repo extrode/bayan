@@ -64,7 +64,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             }
             switch (text)
             {
-                case "Span" or "List":
+                case "Span" or "ReadOnlySpan" or "List":
                 {
                     if (n.Args.Length != 1)
                     {
@@ -73,7 +73,12 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                     }
                     var element = Resolve(n.Args[0]);
                     if (element.IsError) return element;
-                    return text == "Span" ? new SpanType(element) : new ListType(element);
+                    return text switch
+                    {
+                        "Span" => new SpanType(element),
+                        "ReadOnlySpan" => new SpanType(element, readOnly: true),
+                        _ => new ListType(element),
+                    };
                 }
                 case "Result":
                 {
@@ -174,7 +179,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
     private string? Suggest(string text)
     {
         var lower = text.ToLowerInvariant();
-        foreach (var name in file.Module.Types.Keys.Concat(["Span", "List", "Result", "Arena", "StrBuf"]))
+        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Result", "Arena", "StrBuf"]))
             if (name.Equals(text, StringComparison.OrdinalIgnoreCase)) return name;
         if (PrimitiveType.ByName.ContainsKey(lower)) return lower;
         return lower switch

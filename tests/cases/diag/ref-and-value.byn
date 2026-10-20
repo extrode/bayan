@@ -1,4 +1,4 @@
-void grow(ref List<i64> items, Span<i64> from) {
+void grow(ref List<i64> items, ReadOnlySpan<i64> from) {
     items.add(from.length);
 }
 
