@@ -215,6 +215,22 @@ internal sealed partial class Binder
         var sawNamed = false;
         var positional = 0;
         var mismatched = false;
+        // Leading unnamed arguments whose implied names all match parameters, out of order, are a swap;
+        // they are bound by those names so the swap is the only error.
+        var leading = c.Args.TakeWhile(a => a.Name is null).ToArray();
+        var implied = leading.Select(a => ImpliedName(a.Value)).ToArray();
+        var swapped = false;
+        if (enforceNames && leading.Length > 0 && leading.Length <= ps.Count
+            && implied.All(n => n is not null && ps.Any(x => x.Name == n)) && implied.Distinct().Count() == implied.Length)
+        {
+            var at = Enumerable.Range(0, implied.Length).FirstOrDefault(i => implied[i] != ps[i].Name, -1);
+            if (at >= 0)
+            {
+                swapped = true;
+                Report(DiagnosticCodes.ArgumentsSwapped, TextSpan.FromBounds(leading[0].Span.Start, leading[^1].Span.End),
+                    [ps[at].Name, implied[at]!, name], help: "name them or swap them");
+            }
+        }
         foreach (var arg in c.Args)
         {
             ParameterSymbol? p;
@@ -248,8 +264,9 @@ internal sealed partial class Binder
                     positional++;
                     continue;
                 }
-                p = ps[positional++];
-                if (enforceNames && MustBeNamed(rule[p.Ordinal], rule, name) is { } reason)
+                var at = positional++;
+                p = swapped ? ps.First(x => x.Name == implied[at]) : ps[at];
+                if (enforceNames && ImpliedName(arg.Value) != p.Name && MustBeNamed(rule[p.Ordinal], rule, name) is { } reason)
                     Report(DiagnosticCodes.ArgumentMustBeNamed, arg.Value.Span, [p.Name], help: reason,
                         fix: new Fix(new TextSpan(arg.Span.Start, 0), p.Name + ": "));
             }
@@ -278,6 +295,14 @@ internal sealed partial class Binder
             Report(DiagnosticCodes.MissingArgument, c.Span, [string.Join("`, `", missing), name]);
         return result!;
     }
+
+    // `start` and `tok.start` name the argument for a parameter `start`.
+    private static string? ImpliedName(Expr e) => e switch
+    {
+        NameExpr { TypeArgs.Length: 0 } n => n.Name.Text,
+        MemberExpr { NullConditional: false } m => m.Member.Text,
+        _ => null,
+    };
 
     private static string? MustBeNamed(ParameterSymbol p, IReadOnlyList<ParameterSymbol> ps, string fnName)
     {
