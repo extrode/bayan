@@ -199,7 +199,7 @@ public static class Toolchain
         {
             BuildMode.Debug => ["-O0", "-g", "-DBYN_DEBUG"],
             BuildMode.Safe => ["-O2", "-DBYN_NDEBUG"],
-            _ => ["-O2", "-DBYN_FAST", "-DBYN_NDEBUG"],
+            _ => ["-O2", "-DBYN_NDEBUG"],
         });
         if (asan) flags.AddRange(["-fsanitize=address", "-fno-omit-frame-pointer", "-g"]);
         var key = Hash(string.Join("\0", CompilerVersion, mode, target, string.Join(" ", compiler), string.Join(" ", flags), RuntimeHeader, RuntimeSource, cSource));
