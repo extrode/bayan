@@ -947,8 +947,14 @@ public sealed class Parser
         if (kind is TokenKind.OpenBrace or TokenKind.Semicolon or TokenKind.Identifier) return true;
         if (kind.IsKeyword()) return kind is not (TokenKind.IsKeyword or TokenKind.AsKeyword or TokenKind.CatchKeyword or TokenKind.WithKeyword);
         // An operator: a bare condition reaches its `{` body before any `;`; a statement such as `-x;` does not.
+        return !BodyBraceFirst(next);
+    }
+
+    /// <summary>Whether, from <paramref name="from"/>, a top-level <c>{</c> comes before any <c>;</c>, <c>}</c> or the end.</summary>
+    private bool BodyBraceFirst(int from)
+    {
         var depth = 0;
-        for (var i = next; i < _count; i++)
+        for (var i = from; i < _count; i++)
         {
             switch (KindAt(i))
             {
@@ -959,12 +965,12 @@ public sealed class Parser
                     depth--;
                     break;
                 case TokenKind.OpenBrace when depth == 0:
-                    return false;
-                case TokenKind.Semicolon or TokenKind.CloseBrace or TokenKind.EndOfFile:
                     return true;
+                case TokenKind.Semicolon or TokenKind.CloseBrace or TokenKind.EndOfFile:
+                    return false;
             }
         }
-        return true;
+        return false;
     }
 
     /// <summary>The index of the <c>)</c> closing the <c>(</c> at <paramref name="open"/>, or the end of file.</summary>
@@ -1004,7 +1010,7 @@ public sealed class Parser
     /// <summary>Whether a <c>{</c> here may open a struct literal or property pattern: not at the top level of a bare condition.</summary>
     private bool BraceLiteralAllowed()
     {
-        if (_conditionStart < 1000000) return true;
+        if (_conditionStart < 0) return true;
         var depth = 0;
         for (var i = _conditionStart; i < _pos; i++)
         {
@@ -1396,7 +1402,8 @@ public sealed class Parser
     /// <summary><c>{ … } if x;</c> and <c>if (a) { … } if b;</c> on one line: postfix conditions only attach to simple statements.</summary>
     private Stmt RejectPostfixAfterCompound(Stmt statement)
     {
-        if (Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword && !Current.HasNewlineBefore && Peek(1) != TokenKind.OpenParen)
+        if (Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword && !Current.HasNewlineBefore && Peek(1) != TokenKind.OpenParen
+            && !BodyBraceFirst(_pos + 1))
         {
             Report(DiagnosticCodes.PostfixNotSimple, Current.Span, [Text(Current)],
                 help: "put the condition first: `if (cond) { … }`");

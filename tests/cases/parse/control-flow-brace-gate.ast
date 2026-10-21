@@ -1,0 +1,20 @@
+CompilationUnit
+  Function g(bool Ready, Shape s, List<i64> Items) -> void
+    Block
+      If Ready
+        Block
+      While Ready
+        Block
+      If (is s Circle)
+        Block
+          Expr (call draw s)
+      If (is s Circle)
+        Block
+      If (is s (props Circle (radius: 1)))
+        Block
+          Expr (call draw s)
+      For Let x in Items
+        Block
+      Switch s
+        Default
+          Expr (call other)

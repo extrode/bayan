@@ -65,3 +65,7 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - R4 pending-var groups resolve by statement order (`var a = 0; var b = 0; i64 x = a; u8 y = b; a = b;` is BYN2202, swapped declarations compile); a widest-fitting choice would remove the order dependence (review loop 2, 004).
 - `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray` fails when other test suites run concurrently on the machine (per-thread allocation count); passes alone. Seen 4 times during the 004/005 runs.
 - R4 pending-var groups with mixed uses: `var a = 0; var b = 0; a = b; f64 y = a; u8 x = b;` is BYN2202 (group falls back to i32). Needs a rule that picks a type converting to every member's use (u8 here); neither "first integer constraint" (breaks i64+f64) nor "fall back to i32" (breaks u8) works. Dev rejects it too (review loop 3, 004).
+- r2-flow: an unparenthesized struct literal or property pattern in a bare condition (`if p is { x: 0 } {`) gives the generic BYN1002/BYN1005 cascade; the dedicated BYN1018 is design-round 3.2 (as are BYN1017/1019/1022/1023).
+- r2-flow: spec §7.4's Round 2 note lists BYN2232 (iterating a fallible sequence without `for try`); not added, BYN2221 with a `try` fix-it covers it. Decide whether BYN2232 is still wanted.
+- r2-flow: `if unlikely` parses and binds as a plain `if`; no branch hint reaches the C output yet.
+- r2-flow: BYN1008's help still suggests the paren form `if (cond) { … }`; existing goldens not migrated to the bare forms.

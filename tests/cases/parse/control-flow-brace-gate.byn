@@ -1,0 +1,9 @@
+void g(bool Ready, Shape s, List<i64> Items) {
+    if Ready {}
+    while Ready {}
+    if s is Circle { draw(s); }
+    if s is Circle {}
+    if (s is Circle { radius: 1 }) { draw(s); }
+    for x in Items {}
+    switch s { default: other(); }
+}

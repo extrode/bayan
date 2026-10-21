@@ -596,7 +596,8 @@ do { … } while try socket.hasMore();
 - The loop owns the sequence and drops it on every exit.
 - `while try cond { … }`: the condition may fail on each evaluation.
 - `while let x = expr { … }` loops while `expr` (a `T?`) is non-null, binding `x`. It works with `try`: `while let row = try rows.next() { … }`.
-- Not in v0.1: fallible sequence types, lazy queries and readers, and so `for try` (it parses and reports BYN2022).
+- A fallible sequence is a value with a method `T? next() fails E`; `for try` steps it until `next()` returns `null`. Iterating one without `for try` reports BYN2221 with a fix-it inserting `try`.
+- Not in v0.1: lazy queries and readers.
 
 > Round 2 §4: one `for x in xs` form with no parentheses; fallibility is marked once, at the loop head. Codes: BYN1017, BYN1018, BYN1019, BYN2022, BYN2232, BYN2234.
 

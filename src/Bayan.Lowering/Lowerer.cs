@@ -455,7 +455,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         var then = Capture(() =>
         {
             Statement(i.Then);
-            if (false && i.Never)
+            if (i.Never)
                 EmitEffect(Expr(new BoundCall(i.Syntax, _builtins.Panic, null,
                     [new BoundLiteral(i.Syntax, PrimitiveType.String, new ConstantValue("`if never` condition was true"))], PrimitiveType.Never)));
         });

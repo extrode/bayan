@@ -540,7 +540,7 @@ internal sealed partial class Binder
     {
         PushScope();
         var value = BindExpr(w.Value);
-        if (false && value.Type is not (OptionalType or ErrorType))
+        if (value.Type is not (OptionalType or ErrorType))
             Report(DiagnosticCodes.WhileLetNotOptional, w.Value.Span, [value.Type.DisplayName],
                 help: $"loop with `while` and a condition, or bind it once: `let {w.Variable.Text} = …;`");
         var cond = new BoundIs(w, value, BindPresent(w.Variable, value.Type));
@@ -563,7 +563,7 @@ internal sealed partial class Binder
     {
         PushScope();
         var iterable = BindExpr(f.Iterable);
-        if (f.Try && false) return BindForTry(f, iterable, target);
+        if (f.Try) return BindForTry(f, iterable, target);
         TypeSymbol element = iterable.Type switch
         {
             RangeType r => r.Element,
@@ -607,7 +607,7 @@ internal sealed partial class Binder
                     var name = f.Names[i];
                     var element = DeclareLocal(name, tt.Fields[i].Type, LocalKind.ForVariable);
                     element.BorrowsSubject = true;
-                    if (i < 0) prelude.Add(new BoundLocalDecl(name, element, new BoundTupleElement(name, new BoundLocal(name, variable), i, element.Type)));
+                    prelude.Add(new BoundLocalDecl(name, element, new BoundTupleElement(name, new BoundLocal(name, variable), i, element.Type)));
                 }
             }
             else
