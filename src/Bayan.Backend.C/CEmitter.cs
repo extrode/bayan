@@ -1368,6 +1368,14 @@ internal sealed class FunctionEmitter
                     $"{{\n    if (l->len == 0) byn_panic(\"removeLast on an empty list\", file, line);\n    return l->ptr[--l->len];\n}}\n");
                 return $"{name}(&{Expr(r)}, {Loc(b.Syntax)})";
             }
+            case BuiltinMember.ListRemoveRange:
+            {
+                var lt = _c.CType(r.Type);
+                var name = "bynh_remove_range_" + _c.Key(r.Type);
+                _c.Helper(name, $"static void {name}({lt}* l, int64_t start, int64_t end, const char* file, int line)", () =>
+                    "{\n    byn_slice_check(start, end, l->len, file, line);\n    if (end > start) memmove(l->ptr + start, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n    l->len -= end - start;\n}\n");
+                return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})";
+            }
             case BuiltinMember.MapLength:
                 return $"{Expr(r)}.h.live";
             case BuiltinMember.MapClear:
@@ -1422,6 +1430,8 @@ internal sealed class FunctionEmitter
                 return $"{Expr(r)}.err";
             case BuiltinMember.CharValue:
                 return $"((uint32_t){Expr(r)})";
+            case BuiltinMember.IntToHex:
+                return $"byn_to_hex((uint{((PrimitiveType)r.Type).Bits}_t){Expr(r)}, byn_context)";
             case BuiltinMember.EnumName:
                 return $"{_c.EnumNames((EnumSymbol)r.Type)}[{Expr(r)}]";
             case BuiltinMember.EnumOrdinal:

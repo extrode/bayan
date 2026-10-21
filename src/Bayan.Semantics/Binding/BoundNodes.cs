@@ -49,7 +49,7 @@ public enum BuiltinMember
 {
     StringLength, StringBytes, StringIsEmpty, StringCopy, StringStartsWith, StringEndsWith, StringContains,
     SpanLength, SpanIsEmpty, SpanCopy, ListCopy, MapCopy, StrBufCopy,
-    ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListClear, ListRemoveLast,
+    ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListClear, ListRemoveLast, ListRemoveRange,
     MapLength, MapGetOr, MapContains, MapRemove, MapClear,
     /// <summary><c>map[k]</c> read (panics when missing), <c>map[k]</c> as a write target (inserts when missing), and <c>map.slot(k)</c> (inserts the default).</summary>
     MapIndex, MapIndexSet, MapSlot,
@@ -60,7 +60,7 @@ public enum BuiltinMember
     StrBufAppend, StrBufLength, StrBufAsString, StrBufClear,
     /// <summary><c>x.take()</c>: moves the value out of a place and leaves the type's empty value behind.</summary>
     ListTake, MapTake, StrBufTake, OptionalTake,
-    CharValue,
+    CharValue, IntToHex,
     ResultIsOk, ResultValue, ResultError,
     /// <summary><c>o.value</c> of an <c>Owned&lt;T&gt;</c>, also inserted for member access through it.</summary>
     OwnedValue,

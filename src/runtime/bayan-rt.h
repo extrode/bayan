@@ -155,6 +155,8 @@ byn_alloc* byn_arena_alloc(byn_arena* a);
 
 byn_str byn_str_copy(byn_str s, byn_alloc* to);
 void* byn_copy_bytes(const void* p, int64_t n, byn_alloc* to);
+/* Lowercase hexadecimal digits of v, no prefix or leading zeros. */
+byn_str byn_to_hex(uint64_t v, byn_alloc* to);
 
 /* Makes room for `need` elements: grows *ptr (capacity *cap) through alloc. */
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc);
