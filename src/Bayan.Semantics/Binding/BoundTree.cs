@@ -31,6 +31,7 @@ public static class BoundTree
                 break;
             case BoundTuple n: foreach (var e in n.Elements) yield return e; break;
             case BoundCollection n: foreach (var e in n.Elements) yield return e; break;
+            case BoundSpread n: yield return n.Operand; break;
             case BoundIndex n: yield return n.Target; yield return n.Index; break;
             case BoundSlice n:
                 yield return n.Target;

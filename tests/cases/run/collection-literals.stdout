@@ -1,0 +1,10 @@
+{A-1: 13, B-2: 3, C-3: 7} count=3 A-1=13 has B-2: true
+empty: {} count=0
+{x: 1}
+{Accept: */*, Host: example.com} example.com
+fixed: 1 2 3 (3)
+list: 1 2 5 6 4 (5)
+array: 5 6 0 5 6 (5)
+span: 5 6 9 (3)
+inferred: 5 6 0 5 6 7 (6)
+stack: 10 2 3 (3)

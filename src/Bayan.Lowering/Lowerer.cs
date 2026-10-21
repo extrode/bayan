@@ -892,28 +892,98 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 EmitAssign(Local(c.Syntax, list), c with { Elements = [] });
                 foreach (var element in c.Elements)
                 {
-                    var v = Expr(element);
+                    var v = Expr(element is BoundSpread sp ? sp.Operand : element);
                     if (IsNever(v)) return new LNever(c.Syntax, c.Type);
+                    if (element is BoundSpread spread)
+                    {
+                        AddEach(spread, Spill(v), item => Emit(new BoundExprStmt(c.Syntax,
+                            new BoundBuiltinCall(c.Syntax, BuiltinMember.ListAdd, Local(c.Syntax, list), [item], PrimitiveType.Void))));
+                        continue;
+                    }
                     Emit(new BoundExprStmt(c.Syntax, new BoundBuiltinCall(c.Syntax, BuiltinMember.ListAdd, Local(c.Syntax, list), [v], PrimitiveType.Void)));
                 }
                 return Local(c.Syntax, list);
             }
+            case MapType m:
+            {
+                if (c.Elements.Length == 0) return c;
+                var map = NewTemp(m);
+                EmitAssign(Local(c.Syntax, map), c with { Elements = [] });
+                for (var i = 0; i < c.Elements.Length; i += 2)
+                {
+                    var entry = Operands([c.Elements[i], c.Elements[i + 1]]);
+                    if (entry is null) return new LNever(c.Syntax, c.Type);
+                    Emit(new BoundAssign(c.Syntax,
+                        new BoundBuiltinCall(c.Syntax, BuiltinMember.MapIndexSet, Local(c.Syntax, map), [entry[0]], m.ValueType), entry[1], null));
+                }
+                return Local(c.Syntax, map);
+            }
             case SpanType s:
             {
                 if (c.Elements.Length == 0) return new BoundDefault(c.Syntax, s);
-                var array = new Semantics.Symbols.ArrayType(s.Element, c.Elements.Length);
-                var elements = Operands(c.Elements);
+                var elements = c.Elements.Any(e => e is BoundSpread) ? Expanded(c.Elements) : Operands(c.Elements);
                 if (elements is null) return new LNever(c.Syntax, c.Type);
+                var array = new Semantics.Symbols.ArrayType(s.Element, elements.Length);
                 var storage = NewTemp(array);
                 EmitAssign(Local(c.Syntax, storage), new BoundCollection(c.Syntax, array, elements));
                 return new BoundConversion(c.Syntax, Local(c.Syntax, storage), s, ConversionKind.ArrayToSpan);
             }
             default:
             {
-                var elements = Operands(c.Elements);
+                var elements = c.Elements.Any(e => e is BoundSpread) ? Expanded(c.Elements) : Operands(c.Elements);
                 return elements is null ? new LNever(c.Syntax, c.Type) : c with { Elements = elements };
             }
         }
+    }
+
+    /// <summary>
+    /// The elements of an array or span literal with each spread fixed array replaced by its elements,
+    /// evaluated left to right: every operand that is not trivial is stored first.
+    /// </summary>
+    private BoundExpr[]? Expanded(BoundExpr[] elements)
+    {
+        var values = new List<BoundExpr>();
+        foreach (var element in elements)
+        {
+            var v = Expr(element is BoundSpread sp ? sp.Operand : element);
+            if (IsNever(v)) return null;
+            if (element is BoundSpread spread)
+            {
+                var source = Spill(v);
+                var length = ((Semantics.Symbols.ArrayType)spread.Operand.Type).Length;
+                for (var i = 0L; i < length; i++)
+                    values.Add(new LIndexUnchecked(spread.Syntax, source, I64(spread.Syntax, i), spread.Type));
+                continue;
+            }
+            values.Add(IsTrivial(v) ? v : Spill(v));
+        }
+        return values.ToArray();
+    }
+
+    /// <summary>Runs <paramref name="add"/> on each element of the list, span or array in <paramref name="source"/>, in order.</summary>
+    private void AddEach(BoundSpread spread, BoundExpr source, Action<BoundExpr> add)
+    {
+        var syntax = spread.Syntax;
+        var lengthMember = source.Type switch
+        {
+            SpanType => BuiltinMember.SpanLength,
+            ListType => BuiltinMember.ListLength,
+            _ => BuiltinMember.ArrayLength,
+        };
+        var index = NewTemp(PrimitiveType.I64);
+        EmitAssign(Local(syntax, index), I64(syntax, 0));
+        var done = NewLabel("break");
+        var body = Capture(() =>
+        {
+            var length = new BoundBuiltinCall(syntax, lengthMember, source, [], PrimitiveType.I64);
+            Emit(new BoundIf(syntax, Not(new BoundBinary(syntax, BinaryOp.Lt, Local(syntax, index), length, PrimitiveType.Bool)),
+                Block(syntax, [new LGoto(syntax, done)]), null));
+            add(new LIndexUnchecked(syntax, source, Local(syntax, index), spread.Type));
+            Emit(new BoundAssign(syntax, Local(syntax, index),
+                new BoundBinary(syntax, BinaryOp.AddWrap, Local(syntax, index), I64(syntax, 1), PrimitiveType.I64), null));
+        });
+        Emit(new LLoop(syntax, Block(syntax, body)));
+        Emit(new LLabel(syntax, done));
     }
 
     private BoundExpr Slice(BoundSlice s)

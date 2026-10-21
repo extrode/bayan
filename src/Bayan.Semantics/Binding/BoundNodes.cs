@@ -119,8 +119,11 @@ public sealed record BoundWith(Node Syntax, BoundExpr Target, (FieldSymbol Field
 
 public sealed record BoundTuple(Node Syntax, TupleType TupleType, BoundExpr[] Elements) : BoundExpr(Syntax, TupleType);
 
-/// <summary><c>[a, b]</c> as a <c>List</c>, <c>Span</c> (stack storage) or fixed array.</summary>
+/// <summary><c>[a, b]</c> as a <c>List</c>, <c>Span</c> (stack storage) or fixed array; for a <c>Map</c>, <see cref="Elements"/> alternate key and value.</summary>
 public sealed record BoundCollection(Node Syntax, TypeSymbol Type, BoundExpr[] Elements) : BoundExpr(Syntax, Type);
+
+/// <summary><c>..xs</c> inside a <see cref="BoundCollection"/>: every element of a list, span or fixed array; <see cref="BoundExpr.Type"/> is the element type.</summary>
+public sealed record BoundSpread(Node Syntax, BoundExpr Operand, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
 /// <summary><c>xs[i]</c> or <c>xs[^i]</c> on spans, lists and arrays; always bounds-checked.</summary>
 public sealed record BoundIndex(Node Syntax, BoundExpr Target, BoundExpr Index, bool FromEnd, TypeSymbol Type) : BoundExpr(Syntax, Type);

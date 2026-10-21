@@ -1809,17 +1809,14 @@ public sealed class Parser
             if (Kind == TokenKind.DotDot)
             {
                 Advance();
-                element = new SpreadExpr(SpanFrom(elementStart), ParseExpression());
+                var operand = ParseExpression();
+                element = new SpreadExpr(SpanFrom(elementStart), operand);
             }
             else
             {
-                element = ParseExpression();
-                if (element is ConditionalExpr)
-                {
-                    Report(DiagnosticCodes.TernaryInCollection, element.Span,
-                        help: "wrap it in parentheses",
-                        fix: new Fix(element.Span, "(" + _source.GetText(element.Span) + ")"));
-                }
+                element = ParseCollectionPart();
+                if (Accept(TokenKind.Colon))
+                    element = new MapEntryExpr(SpanFrom(elementStart), element, ParseCollectionPart());
             }
             elements.Add(element);
             if (!Accept(TokenKind.Comma)) break;
@@ -1827,6 +1824,19 @@ public sealed class Parser
         }
         Expect(TokenKind.CloseBracket);
         return new CollectionExpr(SpanFrom(start), elements.ToArray());
+    }
+
+    /// <summary>An element, map key or map value; a bare conditional is BYN1013.</summary>
+    private Expr ParseCollectionPart()
+    {
+        var part = ParseExpression();
+        if (part is ConditionalExpr)
+        {
+            Report(DiagnosticCodes.TernaryInCollection, part.Span,
+                help: "wrap it in parentheses",
+                fix: new Fix(part.Span, "(" + _source.GetText(part.Span) + ")"));
+        }
+        return part;
     }
 
     private Expr ParseInterpolated()

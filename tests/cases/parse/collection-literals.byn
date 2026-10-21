@@ -1,0 +1,5 @@
+let stock = ["A-1": 12, "B-2": 0];
+Map<Sku, Money> prices = [];
+let all = [..xs, ..more, 4];
+let fixed = [1, 2, 3];
+let nested = ["k": [1, 2], "j": (a ? b : c)];
