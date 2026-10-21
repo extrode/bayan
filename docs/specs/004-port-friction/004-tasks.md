@@ -2,8 +2,8 @@
 Plan: ./004-plan.md
 
 - [ ] T1 Implied argument names and BYN2307 swapped arguments — files: `BinderCalls.cs`, `DiagnosticCodes.cs`, `docs/diagnostics/BYN2307.md`, `BYN2305.md`, goldens `diag/argument-implied-name`, `diag/arguments-swapped` — covers: R1, R2, R12 — done when: goldens pass, break-test fails them
-- [ ] T2 Contextual declaration keywords, C# side — files: `TokenKind.cs`, `Parser.cs`, parse golden `contextual-keywords`, lex golden update — covers: R3 — done when: parser/lexer tests pass, existing goldens unchanged except `reserved`
-- [ ] T3 Contextual keywords in `selfhost/lexer/tokens.byn` — files: `selfhost/lexer/tokens.byn` — covers: R3 — after T2 — done when: `dotnet test --filter Law=L001` passes
+- [x] T2 Contextual declaration keywords, C# side — files: `TokenKind.cs`, `Parser.cs`, parse golden `contextual-keywords`, lex golden update — covers: R3 — done when: parser/lexer tests pass, existing goldens unchanged except `reserved`
+- [x] T3 Contextual keywords in `selfhost/lexer/tokens.byn` — files: `selfhost/lexer/tokens.byn` — covers: R3 — after T2 — done when: `dotnet test --filter Law=L001` passes
 - [ ] T4 Integer literal inference for unannotated `var` — files: `Binder.cs`, `BinderExpressions.cs`, `Compilation.cs`, diag golden for out-of-range after inference, spec §2.3 — covers: R4 — after T1 — done when: run goldens pass and `var i = 0; while (i < xs.length)` binds `i64`
 - [ ] T5 Typed dump `bayan types` — files: `TypedDump.cs`, `CliApp.cs`, `docs/typed-dump.md`, `tests/cases/typed/`, `TypedDumpTests.cs` — covers: R5 — after T4 — done when: five typed goldens pass
 - [ ] T6 prove L009 via /prove: `TypedDumpTests` [Trait Law L009], dump twice and from a relocated copy for every `typed/` and `run/` case — files: `TypedDumpTests.cs`, law file proof notes — covers: R5 — after T5 — done when: `laws-check.js --run` holds
