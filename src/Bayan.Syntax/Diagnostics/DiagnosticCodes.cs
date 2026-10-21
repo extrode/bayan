@@ -124,6 +124,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor AmbiguousVariant = Error("BYN2227", "`.{0}` is ambiguous; it exists in `{1}`");
     public static readonly DiagnosticDescriptor UnknownVariant = Error("BYN2228", "`{0}` is not a variant of `{1}`");
     public static readonly DiagnosticDescriptor InvalidConstArray = Error("BYN2229", "module-level `const` array `{0}` must hold literal numbers, `bool`s, `char`s or `string`s");
+    public static readonly DiagnosticDescriptor WhileLetNotOptional = Error("BYN2234", "`while let` needs a `T?` value, got `{0}`");
     public static readonly DiagnosticDescriptor MissingArgument = Error("BYN2301", "missing argument `{0}` for `{1}`");
     public static readonly DiagnosticDescriptor TooManyArguments = Error("BYN2302", "`{0}` takes {1} argument(s)");
     public static readonly DiagnosticDescriptor DuplicateArgument = Error("BYN2303", "`{0}` is passed twice");

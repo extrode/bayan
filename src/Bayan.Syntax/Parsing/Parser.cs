@@ -25,6 +25,8 @@ public sealed class Parser
     private int _pos;
     private int _prevEnd;
     private int _lastErrorAt = -1;
+    /// <summary>Token index where the bare condition being parsed starts, or -1 (see <see cref="BraceLiteralAllowed"/>).</summary>
+    private int _conditionStart = -1;
 
     private Parser(LexResult lexed)
     {
@@ -813,9 +815,16 @@ public sealed class Parser
                 return RejectPostfixAfterCompound(ParseUnless(start));
             case TokenKind.WhileKeyword:
                 Advance();
+                if (Accept(TokenKind.LetKeyword))
                 {
-                    var condition = ParseParenCondition();
-                    var body = ParseEmbedded();
+                    var variable = ExpectName("a variable name");
+                    Expect(TokenKind.Equals);
+                    var value = ParseBareCondition();
+                    return new WhileLetStmt(SpanFrom(start), variable, value, ParseBlock());
+                }
+                {
+                    var condition = ParseCondition(out var parenthesized);
+                    var body = parenthesized ? ParseEmbedded() : ParseBlock();
                     return new WhileStmt(SpanFrom(start), condition, body);
                 }
             case TokenKind.DoKeyword:
@@ -823,7 +832,9 @@ public sealed class Parser
                 {
                     var body = ParseEmbedded();
                     Expect(TokenKind.WhileKeyword);
-                    var condition = ParseParenCondition();
+                    var condition = Kind == TokenKind.OpenParen && KindAt(MatchingClose(_pos) + 1) == TokenKind.Semicolon
+                        ? ParseParenCondition()
+                        : ParseBareCondition();
                     Expect(TokenKind.Semicolon);
                     return new DoWhileStmt(SpanFrom(start), body, condition);
                 }
@@ -914,29 +925,140 @@ public sealed class Parser
         return condition;
     }
 
+    /// <summary>
+    /// The condition of <c>if</c>, <c>unless</c>, <c>while</c> or <c>switch</c>. <c>(c)</c> followed by a statement is the
+    /// parenthesized input form (<paramref name="parenthesized"/>); otherwise the condition is bare and its body a block.
+    /// </summary>
+    private Expr ParseCondition(out bool parenthesized)
+    {
+        parenthesized = IsParenthesizedCondition();
+        return parenthesized ? ParseParenCondition() : ParseBareCondition();
+    }
+
+    /// <summary>
+    /// At <c>(</c>: whether the group is the whole condition, i.e. a statement or <c>{</c> follows its <c>)</c>,
+    /// rather than the start of a longer bare condition such as <c>(a + b) * c &gt; d {</c>.
+    /// </summary>
+    private bool IsParenthesizedCondition()
+    {
+        if (Kind != TokenKind.OpenParen) return false;
+        var next = MatchingClose(_pos) + 1;
+        var kind = KindAt(next);
+        if (kind is TokenKind.OpenBrace or TokenKind.Semicolon or TokenKind.Identifier) return true;
+        if (kind.IsKeyword()) return kind is not (TokenKind.IsKeyword or TokenKind.AsKeyword or TokenKind.CatchKeyword or TokenKind.WithKeyword);
+        // An operator: a bare condition reaches its `{` body before any `;`; a statement such as `-x;` does not.
+        var depth = 0;
+        for (var i = next; i < _count; i++)
+        {
+            switch (KindAt(i))
+            {
+                case TokenKind.OpenParen or TokenKind.OpenBracket:
+                    depth++;
+                    break;
+                case TokenKind.CloseParen or TokenKind.CloseBracket:
+                    depth--;
+                    break;
+                case TokenKind.OpenBrace when depth == 0:
+                    return false;
+                case TokenKind.Semicolon or TokenKind.CloseBrace or TokenKind.EndOfFile:
+                    return true;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>The index of the <c>)</c> closing the <c>(</c> at <paramref name="open"/>, or the end of file.</summary>
+    private int MatchingClose(int open)
+    {
+        var depth = 0;
+        for (var i = open; i < _count; i++)
+        {
+            switch (KindAt(i))
+            {
+                case TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.OpenBrace:
+                    depth++;
+                    break;
+                case TokenKind.CloseParen or TokenKind.CloseBracket or TokenKind.CloseBrace:
+                    if (--depth == 0) return i;
+                    break;
+            }
+        }
+        return _count - 1;
+    }
+
+    /// <summary>A condition without parentheses: a <c>{</c> at its top level opens the body, not a struct literal (spec §7.2).</summary>
+    private Expr ParseBareCondition()
+    {
+        var saved = _conditionStart;
+        _conditionStart = _pos;
+        try
+        {
+            return ParseExpression();
+        }
+        finally
+        {
+            _conditionStart = saved;
+        }
+    }
+
+    /// <summary>Whether a <c>{</c> here may open a struct literal or property pattern: not at the top level of a bare condition.</summary>
+    private bool BraceLiteralAllowed()
+    {
+        if (_conditionStart < 1000000) return true;
+        var depth = 0;
+        for (var i = _conditionStart; i < _pos; i++)
+        {
+            switch (KindAt(i))
+            {
+                case TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.OpenBrace:
+                    depth++;
+                    break;
+                case TokenKind.CloseParen or TokenKind.CloseBracket or TokenKind.CloseBrace:
+                    depth--;
+                    break;
+            }
+        }
+        return depth > 0;
+    }
+
+    /// <summary><c>unlikely</c> after <c>if</c>, as a word rather than a variable: something follows it after a space.</summary>
+    private bool AtUnlikely() =>
+        AtContextual("unlikely") && PeekToken(1).HasTriviaBefore && Peek(1) != TokenKind.OpenBrace && CanStartExpression(Peek(1));
+
     private Stmt ParseIf(int start)
     {
         Advance();
-        var condition = ParseParenCondition();
-        var then = ParseEmbedded();
+        var likelihood = Likelihood.None;
+        if (Kind == TokenKind.NeverKeyword && Peek(1) != TokenKind.OpenBrace && CanStartExpression(Peek(1)))
+        {
+            Advance();
+            likelihood = Likelihood.Never;
+        }
+        else if (AtUnlikely())
+        {
+            Advance();
+            likelihood = Likelihood.Unlikely;
+        }
+        var condition = ParseCondition(out var parenthesized);
+        var then = parenthesized ? ParseEmbedded() : ParseBlock();
         Stmt? otherwise = null;
-        if (Accept(TokenKind.ElseKeyword)) otherwise = ParseEmbedded();
-        return new IfStmt(SpanFrom(start), condition, then, otherwise);
+        if (Accept(TokenKind.ElseKeyword)) otherwise = parenthesized || Kind == TokenKind.IfKeyword ? ParseEmbedded() : ParseBlock();
+        return new IfStmt(SpanFrom(start), condition, then, otherwise) { Likelihood = likelihood };
     }
 
     private Stmt ParseUnless(int start)
     {
         var keyword = Advance();
-        var condition = ParseParenCondition();
+        var condition = ParseCondition(out var parenthesized);
         var closeEnd = _prevEnd;
         if (condition is UnaryExpr { Op: UnaryOp.Not } negated)
         {
             var fixSpan = TextSpan.FromBounds(keyword.Start, closeEnd);
             var operand = _source.GetText(negated.Operand.Span);
             Report(DiagnosticCodes.UnlessNegated, TextSpan.FromBounds(keyword.Start, closeEnd), label: "`unless` already negates",
-                help: "use `if` with the condition as written", fix: new Fix(fixSpan, $"if ({operand})"));
+                help: "use `if` with the condition as written", fix: new Fix(fixSpan, parenthesized ? $"if ({operand})" : $"if {operand}"));
         }
-        var body = ParseEmbedded();
+        var body = parenthesized ? ParseEmbedded() : ParseBlock();
         if (Kind == TokenKind.ElseKeyword)
         {
             Report(DiagnosticCodes.UnlessWithElse, Current.Span, label: "`else` after `unless`",
@@ -949,7 +1071,45 @@ public sealed class Parser
 
     private Stmt ParseFor(int start)
     {
-        Advance();
+        var keyword = Advance();
+        var isTry = Accept(TokenKind.TryKeyword);
+        if (keyword.Kind == TokenKind.ForeachKeyword || Kind == TokenKind.OpenParen && !IsTupleLoopVariables())
+            return ParseParenFor(start) with { Try = isTry };
+
+        TypeSyntax? type = null;
+        Name variable;
+        var names = new List<Name>();
+        if (Kind == TokenKind.OpenParen)
+        {
+            var groupStart = Current.Start;
+            Advance();
+            do names.Add(ExpectName("a loop variable"));
+            while (Accept(TokenKind.Comma));
+            Expect(TokenKind.CloseParen);
+            variable = new Name(SpanFrom(groupStart), "_");
+        }
+        else
+        {
+            if (IsTypeThenName(_pos)) type = ParseType();
+            variable = ExpectName("a loop variable");
+        }
+        Expect(TokenKind.InKeyword);
+        var iterable = ParseBareCondition();
+        var body = ParseBlock();
+        return new ForStmt(SpanFrom(start), BindingKind.Let, type, variable, iterable, body) { Try = isTry, Names = names.ToArray() };
+    }
+
+    /// <summary>At <c>(</c> after <c>for</c>: <c>(a, b) in</c>, as opposed to the input form <c>(let x in xs)</c>.</summary>
+    private bool IsTupleLoopVariables()
+    {
+        var i = _pos + 1;
+        while (IsName(KindAt(i)) && KindAt(i + 1) == TokenKind.Comma) i += 2;
+        return i > _pos + 1 && IsName(KindAt(i)) && KindAt(i + 1) == TokenKind.CloseParen && KindAt(i + 2) == TokenKind.InKeyword;
+    }
+
+    /// <summary>The input form <c>for (let x in xs)</c>, <c>foreach (var x in xs)</c>.</summary>
+    private ForStmt ParseParenFor(int start)
+    {
         Expect(TokenKind.OpenParen);
         var kind = BindingKind.Let;
         TypeSyntax? type = null;
@@ -991,7 +1151,7 @@ public sealed class Parser
     private Stmt ParseSwitchStatement(int start)
     {
         Advance();
-        var value = ParseParenCondition();
+        var value = ParseCondition(out _);
         var open = Expect(TokenKind.OpenBrace);
         var sections = new List<SwitchSection>();
         while (Kind is TokenKind.CaseKeyword or TokenKind.DefaultKeyword)
@@ -1201,6 +1361,8 @@ public sealed class Parser
         if (Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword)
         {
             var unless = Advance().Kind == TokenKind.UnlessKeyword;
+            var unlikely = !unless && AtUnlikely();
+            if (unlikely) Advance();
             var conditionStart = Current.Start;
             var condition = ParseExpression();
             if (unless && condition is UnaryExpr { Op: UnaryOp.Not } negated)
@@ -1211,7 +1373,7 @@ public sealed class Parser
                     help: "use `if` with the condition as written",
                     fix: new Fix(fixSpan, "if " + _source.GetText(negated.Operand.Span)));
             }
-            statement = new GuardedStmt(SpanFrom(start), statement, unless, condition);
+            statement = new GuardedStmt(SpanFrom(start), statement, unless, condition) { Unlikely = unlikely };
             if (Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword)
             {
                 Report(DiagnosticCodes.PostfixChained, Current.Span, label: "a second condition",
@@ -1655,7 +1817,7 @@ public sealed class Parser
                 return ParseParenOrTuple();
             case TokenKind.OpenBracket:
                 return ParseCollection();
-            case TokenKind.OpenBrace:
+            case TokenKind.OpenBrace when BraceLiteralAllowed():
                 {
                     var fields = ParseFieldInits();
                     return new StructLiteralExpr(SpanFrom(start), null, fields);
@@ -1695,7 +1857,7 @@ public sealed class Parser
                 typeArgs = ParseTypeArgs();
         }
 
-        if (Kind == TokenKind.OpenBrace && IsStructLiteralBody() && char.IsUpper(name.Text[0]))
+        if (Kind == TokenKind.OpenBrace && IsStructLiteralBody() && char.IsUpper(name.Text[0]) && BraceLiteralAllowed())
         {
             var type = new NamedType(SpanFrom(start), [name], typeArgs);
             var fields = ParseFieldInits();
@@ -1943,7 +2105,7 @@ public sealed class Parser
             case TokenKind.Identifier when Text(Current) == "_" && Peek(1) is not (TokenKind.Dot or TokenKind.OpenParen):
                 Advance();
                 return new DiscardPattern(SpanFrom(start));
-            case TokenKind.OpenBrace:
+            case TokenKind.OpenBrace when BraceLiteralAllowed():
                 return ParsePropertyPattern(start, null);
             case TokenKind.OpenBracket:
                 return ParseListPattern(start);
@@ -1959,7 +2121,7 @@ public sealed class Parser
             case TokenKind.Identifier when char.IsUpper(Text(Current)[0]):
                 {
                     var after = ScanType(_pos);
-                    if (after > 0 && KindAt(after) == TokenKind.OpenBrace)
+                    if (after > 0 && KindAt(after) == TokenKind.OpenBrace && BraceLiteralAllowed())
                     {
                         var type = ParseType();
                         return ParsePropertyPattern(start, type);

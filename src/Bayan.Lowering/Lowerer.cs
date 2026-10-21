@@ -452,7 +452,13 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     {
         var condition = Expr(i.Condition);
         if (IsNever(condition)) return;
-        var then = Capture(() => Statement(i.Then));
+        var then = Capture(() =>
+        {
+            Statement(i.Then);
+            if (false && i.Never)
+                EmitEffect(Expr(new BoundCall(i.Syntax, _builtins.Panic, null,
+                    [new BoundLiteral(i.Syntax, PrimitiveType.String, new ConstantValue("`if never` condition was true"))], PrimitiveType.Never)));
+        });
         var otherwise = i.Else is null ? null : Capture(() => Statement(i.Else));
         Emit(new BoundIf(i.Syntax, condition, Block(i.Then.Syntax, then), otherwise is null ? null : Block(i.Else!.Syntax, otherwise)));
     }

@@ -1,0 +1,87 @@
+CompilationUnit
+  Function f(i64 n, Point p, List<i64> xs, Map<string, i64> prices) -> void fails ReadError
+    Block
+      If (> n 0)
+        Block
+          Expr (call a)
+      Else
+        If (< n 0)
+          Block
+            Expr (call b)
+        Else
+          Block
+            Expr (call c)
+      If (== p (struct Point (x 0) (y 0)))
+        Block
+          Expr (call origin)
+      If (is p (props (x: 0)))
+        Block
+          Expr (call origin)
+      If (> (* (paren (+ n 1)) 2) 3)
+        Block
+          Expr (call big)
+      If (> n 0)
+        Return
+      Unless (. p isValid)
+        Block
+          Expr (call reject p)
+      While (. queue hasItems)
+        Block
+          Expr (call step)
+      While (try (call (. socket hasMore)))
+        Block
+          Expr (call read)
+      DoWhile (< n 10)
+        Block
+          Inc n
+      DoWhile (< n 20)
+        Block
+          Inc n
+      Switch n
+        Case 1
+          Expr (call one)
+        Default
+          Expr (call other)
+      For Let x in xs
+        Block
+          Expr (call use x)
+      For Let i in (.. 0 n)
+        Block
+          Expr (call use i)
+      For Let x: i64 in xs
+        Block
+          Expr (call use x)
+      For Let (key, value) in prices
+        Block
+          Expr (call use value)
+      For try Let row in rows
+        Block
+          Expr (call use row)
+      For try Let (a, b) in pairs
+        Block
+          Expr (call use a)
+      For Let x in xs
+        Expr (call use x)
+      Label outer
+        For Let row in grid
+          Block
+            For Let cell in row
+              Block
+                Guarded if (. cell isTarget)
+                  Break outer
+      WhileLet row = (try (call (. rows next)))
+        Block
+          Expr (call use row)
+      If unlikely (. buf isFull)
+        Block
+          Expr (call flush)
+      If never (is state .corrupt)
+        Block
+          Expr (call panic "corrupt")
+      If unlikely
+        Block
+          Expr (call variable)
+      Guarded if unlikely (. buf isFull)
+        Expr (call flush)
+      Guarded if (call unlikely buf)
+        Expr (call flush)
