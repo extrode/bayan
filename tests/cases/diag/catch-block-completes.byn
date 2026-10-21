@@ -1,0 +1,20 @@
+error enum ParseError {
+    /// Nothing to parse.
+    empty,
+}
+
+i64 parse(string s) fails ParseError {
+    return .empty if s.isEmpty;
+    return 1;
+}
+
+void save(string s) fails ParseError {
+    return .empty if s.isEmpty;
+}
+
+void log(string s) {
+    print(s);
+}
+
+let n = parse("") catch { log("x"); };
+save("") catch { log("y"); };
