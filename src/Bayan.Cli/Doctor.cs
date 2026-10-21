@@ -17,10 +17,10 @@ internal static class Doctor
     {
         var checks = new List<Check>
         {
-            new(Level.Ok, "bayan", $"{CliApp.Version} (commit {BuildInfo.Commit})"),
+            new(Level.Ok, Messages.DoctorBayan.Text(), Messages.DoctorVersion.Text(CliApp.Version, BuildInfo.Commit)),
             Targets.Host is { } host
-                ? new(Level.Ok, "host", host)
-                : new(Level.Fail, "host", "this machine has no Bayan target", "build on linux, macos or windows, x64 or arm64"),
+                ? new(Level.Ok, Messages.DoctorHost.Text(), host)
+                : new(Level.Fail, Messages.DoctorHost.Text(), Messages.DoctorNoHost.Text(), Messages.DoctorNoHostFix.Text()),
             CCompiler(),
             Zig(),
             Git(),
@@ -29,8 +29,8 @@ internal static class Doctor
         var width = checks.Max(c => c.Name.Length);
         foreach (var c in checks)
         {
-            stdout.WriteLine($"{c.Level switch { Level.Ok => "ok  ", Level.Note => "note", _ => "FAIL" }}  {c.Name.PadRight(width)}  {c.Detail}");
-            if (c.Fix is not null) stdout.WriteLine($"      {new string(' ', width)}  fix: {c.Fix}");
+            stdout.WriteLine(Messages.DoctorLine.Text((c.Level switch { Level.Ok => Messages.DoctorOk, Level.Note => Messages.DoctorNote, _ => Messages.DoctorFail }).Text(), c.Name.PadRight(width), c.Detail));
+            if (c.Fix is not null) stdout.WriteLine(Messages.DoctorFix.Text(new string(' ', width), c.Fix));
         }
         return checks.Any(c => c.Level == Level.Fail) ? CliApp.ExitToolchain : CliApp.ExitOk;
     }
@@ -39,31 +39,31 @@ internal static class Doctor
     {
         var fromEnv = Environment.GetEnvironmentVariable("BAYAN_CC") is { Length: > 0 };
         if (Toolchain.FindCompiler() is not { } compiler)
-            return new(Level.Fail, "C compiler", "none found", "install zig (https://ziglang.org), or set BAYAN_CC to a C compiler");
+            return new(Level.Fail, Messages.DoctorCCompiler.Text(), Messages.DoctorNoCCompiler.Text(), Messages.DoctorNoCCompilerFix.Text());
         var command = string.Join(" ", compiler);
         if (Version(compiler[0], [.. compiler[1..], "--version"]) is not { } version)
             return fromEnv
-                ? new(Level.Fail, "C compiler", $"BAYAN_CC is `{command}`, which can't be run", "point BAYAN_CC at a C compiler, or unset it to use zig")
-                : new(Level.Fail, "C compiler", $"`{command}` can't be run", "reinstall it, or set BAYAN_CC to a working C compiler");
-        return new(Level.Ok, "C compiler", $"{command} ({version})");
+                ? new(Level.Fail, Messages.DoctorCCompiler.Text(), Messages.DoctorCCompilerEnvBroken.Text(command), Messages.DoctorCCompilerEnvBrokenFix.Text())
+                : new(Level.Fail, Messages.DoctorCCompiler.Text(), Messages.DoctorCCompilerBroken.Text(command), Messages.DoctorCCompilerBrokenFix.Text());
+        return new(Level.Ok, Messages.DoctorCCompiler.Text(), Messages.DoctorTool.Text(command, version));
     }
 
     private static Check Zig()
     {
         if (Toolchain.FindOnPath("zig") is not { } zig)
-            return new(Level.Note, "zig", "not found; building for other targets needs it", "install zig (https://ziglang.org)");
+            return new(Level.Note, Messages.DoctorZig.Text(), Messages.DoctorNoZig.Text(), Messages.DoctorInstallZig.Text());
         return Version(zig, ["version"]) is { } version
-            ? new(Level.Ok, "zig", $"{zig} ({version})")
-            : new(Level.Fail, "zig", $"{zig} can't be run", "reinstall zig (https://ziglang.org)");
+            ? new(Level.Ok, Messages.DoctorZig.Text(), Messages.DoctorTool.Text(zig, version))
+            : new(Level.Fail, Messages.DoctorZig.Text(), Messages.DoctorToolBroken.Text(zig), Messages.DoctorReinstallZig.Text());
     }
 
     private static Check Git()
     {
         if (Toolchain.FindOnPath("git") is not { } git)
-            return new(Level.Note, "git", "not found; `bayan new` skips `git init`, `bayan dist` records no commit, `bayan test --changed` is unavailable", "install git");
+            return new(Level.Note, Messages.DoctorGit.Text(), Messages.DoctorNoGit.Text(), Messages.DoctorInstallGit.Text());
         return Version(git, ["--version"]) is { } version
-            ? new(Level.Ok, "git", $"{git} ({version})")
-            : new(Level.Note, "git", $"{git} can't be run", "reinstall git");
+            ? new(Level.Ok, Messages.DoctorGit.Text(), Messages.DoctorTool.Text(git, version))
+            : new(Level.Note, Messages.DoctorGit.Text(), Messages.DoctorToolBroken.Text(git), Messages.DoctorReinstallGit.Text());
     }
 
     private static Check Cache()
@@ -76,11 +76,11 @@ internal static class Doctor
             File.WriteAllText(probe, "");
             File.Delete(probe);
             var stats = Toolchain.Stats();
-            return new(Level.Ok, "cache", $"{dir} (writable, {stats.Programs} programs, {stats.Bytes / 1024.0 / 1024.0:0.0} MB)");
+            return new(Level.Ok, Messages.DoctorCache.Text(), Messages.DoctorCacheOk.Text(dir, stats.Programs, stats.Bytes / 1024.0 / 1024.0));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return new(Level.Fail, "cache", $"{dir} isn't writable: {e.Message}", "set BAYAN_CACHE to a writable directory");
+            return new(Level.Fail, Messages.DoctorCache.Text(), Messages.DoctorCacheBroken.Text(dir, e.Message), Messages.DoctorCacheBrokenFix.Text());
         }
     }
 
