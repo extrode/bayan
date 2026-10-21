@@ -230,6 +230,8 @@ internal sealed partial class Binder
                 return BindCatch(c, expected);
             case JumpExpr j:
                 return new BoundJump(j, BindStatement(j.Jump));
+            case BlockExpr b:
+                return new BoundBlockExpr(b, BindBlock(b.Block), PrimitiveType.Void);
             case StructLiteralExpr s:
                 return BindStructLiteral(s, expected);
             case WithExpr w:

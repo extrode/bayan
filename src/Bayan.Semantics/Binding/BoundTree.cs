@@ -56,6 +56,7 @@ public static class BoundTree
             case BoundMove n: yield return n.Operand; break;
             case BoundCatch n: yield return n.Operand; yield return n.Handler; break;
             case BoundJump n: yield return n.Jump; break;
+            case BoundBlockExpr n: yield return n.Block; break;
 
             case BoundBlock n: foreach (var s in n.Statements) yield return s; break;
             case BoundLocalDecl n: if (n.Initializer is not null) yield return n.Initializer; break;

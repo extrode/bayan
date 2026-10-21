@@ -654,6 +654,10 @@ internal sealed partial class Binder
                 Report(DiagnosticCodes.TypeMismatch, c.Handler.Span, [handler.Type.DisplayName, "void"],
                     help: $"`{bc.Function.Name}` returns nothing, so the handler cannot produce a value");
         }
+        else if (c.Handler is BlockExpr block)
+        {
+            handler = new BoundBlockExpr(block, BindBlock(block.Block), PrimitiveType.Never);
+        }
         else
         {
             handler = BindExpr(c.Handler, resultType);

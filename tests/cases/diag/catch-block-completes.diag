@@ -1,0 +1,6 @@
+error BYN2611: this `catch` block can complete normally; end it with `return`, `break`, `continue` or a panic
+
+  19 │ let n = parse("") catch { log("x"); };
+     │                                     ^
+     │
+  help: `parse` returns a value, so the block must leave instead of falling through
