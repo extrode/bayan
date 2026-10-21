@@ -286,12 +286,13 @@ public static class CliApp
         {
             root = Path.GetFullPath(o.Path);
             manifest = Manifest.Read(Path.Combine(root, "package.byn"));
-            progress.Done();
+            if (manifest.Diagnostics.Count > 0) progress.Done();
             Report(o, manifest.Diagnostics, stderr);
             if (manifest.HasErrors) return null;
             var entry = EntryModule(manifest);
             if (!Directory.Exists(Path.Combine(root, "src", entry)))
             {
+                progress.Done();
                 stderr.WriteLine($"bayan: `{manifest.Name}` is {(manifest.Kind == PackageKind.Lib ? "a library" : "an app")}, so its code goes in `src/{entry}/`, which doesn't exist");
                 return null;
             }
@@ -474,7 +475,9 @@ public static class CliApp
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName, HostTarget))
             : null;
+        using var progress = StartProgress(o.Json, stderr, "building");
         var result = Toolchain.Build(source, o.Mode, output);
+        progress.Done();
         if (!result.Succeeded)
         {
             stderr.WriteLine("bayan: " + result.Errors);
