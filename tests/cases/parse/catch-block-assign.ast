@@ -1,0 +1,20 @@
+CompilationUnit
+  ErrorEnum MkError
+    Variant bad
+  Function mk(bool ok) -> i32 fails MkError
+    Block
+      Guarded if (! ok)
+        Return .bad
+      Return 7
+  Function touch(bool ok) -> void fails MkError
+    Block
+      Guarded if (! ok)
+        Return .bad
+  Function get(bool ok) -> i32
+    Block
+      Var failed = false
+      Let n = (catch (call mk ok) (block {Assign failed = true} {Return (- 1)}))
+      Return n
+  Var hit = false
+  Expr (catch (call touch (ok: false)) (block {Assign hit = true}))
+  Expr (call print (interp (call get (ok: true)) " " (call get (ok: false)) " " hit))

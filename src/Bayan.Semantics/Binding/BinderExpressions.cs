@@ -104,6 +104,7 @@ internal sealed partial class Binder
             Constrain(b.Left, target);
             Constrain(b.Right, target);
         }
+        else if (value is BoundUnary u && IsPending(u)) Constrain(u.Operand, target);
     }
 
     /// <summary>
@@ -125,6 +126,7 @@ internal sealed partial class Binder
     {
         BoundLocal { Local: var l } when _pending.TryGetValue(l, out var decl) => [decl],
         BoundBinary b => PendingDecls(b.Left).Concat(PendingDecls(b.Right)),
+        BoundUnary u => PendingDecls(u.Operand),
         _ => [],
     };
 
@@ -134,11 +136,12 @@ internal sealed partial class Binder
         return d;
     }
 
-    /// <summary>A pending `var`, or arithmetic on pending `var`s and literals: its type is not settled yet.</summary>
+    /// <summary>A pending `var`, or arithmetic or `-`/`+`/`~` on pending `var`s and literals: its type is not settled yet.</summary>
     private bool IsPending(BoundExpr e) => e switch
     {
         BoundLocal { Local: var l } => _pending.ContainsKey(l),
         BoundBinary { Type.IsInteger: true } b => (IsPending(b.Left) || IsPending(b.Right)) && Untyped(b.Left) && Untyped(b.Right),
+        BoundUnary { Op: UnaryOp.Negate or UnaryOp.Plus or UnaryOp.Complement, Type.IsInteger: true } u => IsPending(u.Operand),
         _ => false,
     };
 

@@ -1,0 +1,5 @@
+var a = 0;
+var b = 0;
+i64 x = a;
+b = -a;
+print($"{x} {b}");

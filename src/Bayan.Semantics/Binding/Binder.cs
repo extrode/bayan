@@ -56,12 +56,15 @@ internal sealed partial class Binder
     {
         var held = _held!;
         _held = null;
-        // A group of pending `var`s that met each other takes the first constraint any of them recorded.
+        // A group of pending `var`s that met each other takes the first integer constraint any of them recorded;
+        // a member whose own first use is a float or string stays `i32` (Q74).
         var groups = new Dictionary<LocalDecl, TypeSymbol>();
-        foreach (var (decl, type) in _constraints) groups.TryAdd(FindPeer(decl), type);
+        foreach (var (decl, type) in _constraints)
+            if (type.IsInteger) groups.TryAdd(FindPeer(decl), type);
         var seeds = new Dictionary<LocalDecl, TypeSymbol>();
         foreach (var decl in _pending.Values)
-            if (groups.TryGetValue(FindPeer(decl), out var type)) seeds[decl] = type;
+            if (groups.TryGetValue(FindPeer(decl), out var type) && (!_constraints.TryGetValue(decl, out var own) || own.IsInteger))
+                seeds[decl] = type;
         if (seeds.Values.Any(t => t.IsInteger && t != PrimitiveType.I32))
         {
             _c.ReportHeld(held.Items.Where(d => d.Label == Compilation.InstantiationLabel));

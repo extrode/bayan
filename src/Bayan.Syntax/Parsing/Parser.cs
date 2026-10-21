@@ -1398,9 +1398,9 @@ public sealed class Parser
             Advance();
             handler = ParseSwitchArms(switchStart, subject);
         }
-        else if (Kind == TokenKind.OpenBrace && !(IsStructLiteralBody() && Peek(1) != TokenKind.CloseBrace))
+        else if (Kind == TokenKind.OpenBrace && !(IsStructLiteralBody() && Peek(1) != TokenKind.CloseBrace && !BraceBodyHasSemicolon()))
         {
-            // `catch { x = 1 }` stays a target-typed struct literal; `catch {}` is an empty block.
+            // `catch { x = 1 }` stays a target-typed struct literal; `catch {}` and `catch { x = 1; }` are blocks.
             var block = ParseBlock();
             handler = new BlockExpr(block.Span, block);
         }
@@ -1715,6 +1715,29 @@ public sealed class Parser
     }
 
     /// <summary>At <c>{</c>: is this <c>{ }</c> or <c>{ name = …</c>, i.e. a struct literal rather than a block?</summary>
+    /// <summary>Whether the brace body opening at the current token has a <c>;</c> at its own depth.</summary>
+    private bool BraceBodyHasSemicolon()
+    {
+        var depth = 0;
+        for (var i = _pos + 1; i < _count; i++)
+        {
+            switch (KindAt(i))
+            {
+                case TokenKind.OpenBrace or TokenKind.OpenParen or TokenKind.OpenBracket:
+                    depth++;
+                    break;
+                case TokenKind.CloseBrace or TokenKind.CloseParen or TokenKind.CloseBracket:
+                    if (depth-- == 0) return false;
+                    break;
+                case TokenKind.Semicolon when depth == 0:
+                    return true;
+                case TokenKind.EndOfFile:
+                    return false;
+            }
+        }
+        return false;
+    }
+
     private bool IsStructLiteralBody() =>
         Peek(1) == TokenKind.CloseBrace || (IsName(Peek(1)) && Peek(2) == TokenKind.Equals);
 
