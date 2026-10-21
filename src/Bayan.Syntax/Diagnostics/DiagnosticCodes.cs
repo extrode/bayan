@@ -130,6 +130,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor PositionalAfterNamed = Error("BYN2304", "a positional argument cannot follow a named one");
     public static readonly DiagnosticDescriptor ArgumentMustBeNamed = Error("BYN2305", "argument for `{0}` must be named");
     public static readonly DiagnosticDescriptor ArgumentModifierMismatch = Error("BYN2306", "argument for `{0}` must be passed as {1}");
+    public static readonly DiagnosticDescriptor ArgumentsSwapped = Error("BYN2307", "arguments `{0}` and `{1}` are in the wrong order for `{2}`");
     public static readonly DiagnosticDescriptor SpanParameterNeverWritten = Warning("BYN2310", "`{0}` is never written through; use `ReadOnlySpan<{1}>`");
     public static readonly DiagnosticDescriptor NeverReassignedVar = Warning("BYN2311", "`{0}` is never reassigned; declare it with `let`");
     public static readonly DiagnosticDescriptor MissingReturn = Error("BYN2401", "`{0}` must return `{1}` on every path");
