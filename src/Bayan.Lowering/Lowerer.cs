@@ -1012,7 +1012,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 : new BoundDefault(b.Syntax, b.Type));
             return taken;
         }
-        var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast
+        var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast or BuiltinMember.ListRemoveRange
             or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapRemove or BuiltinMember.MapClear
             or BuiltinMember.StrBufAppend or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan;
         var operands = new List<BoundExpr> { b.Receiver };

@@ -1,0 +1,2 @@
+panic: slice out of range
+  at list-remove-range-panics.byn:5

@@ -282,7 +282,7 @@ internal sealed class RegionAnalysis
                 return Lend(b.Receiver, receiver);
             case BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy:
                 return AllocatedFrom(b.Arguments[0]);
-            case BuiltinMember.IoReadAll:
+            case BuiltinMember.IoReadAll or BuiltinMember.IntToHex:
                 // Fresh text from `context.allocator`, like `Io.readText`.
                 return _contexts.Count > 0 ? _contexts.Peek() : Borrow.None;
             case BuiltinMember.ListAdd:
@@ -302,7 +302,7 @@ internal sealed class RegionAnalysis
                 return (receiver with { Owners = [] }).Union(args[1]);
             case BuiltinMember.MapLength or BuiltinMember.MapContains:
                 return Borrow.None;
-            case BuiltinMember.MapRemove or BuiltinMember.MapClear:
+            case BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
             case BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset:

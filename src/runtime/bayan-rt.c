@@ -497,6 +497,16 @@ byn_str byn_str_copy(byn_str s, byn_alloc* to) {
     return (byn_str){(const uint8_t*)byn_copy_bytes(s.ptr, s.len, to), s.len};
 }
 
+byn_str byn_to_hex(uint64_t v, byn_alloc* to) {
+    uint8_t buf[16];
+    int n = 16;
+    do {
+        buf[--n] = (uint8_t)"0123456789abcdef"[v & 0xf];
+        v >>= 4;
+    } while (v != 0);
+    return byn_str_copy((byn_str){buf + n, 16 - n}, to);
+}
+
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc) {
     if (need <= *cap) return;
     int64_t grown = *cap < 4 ? 4 : *cap * 2;
