@@ -32,7 +32,7 @@ public sealed partial class CliEnvironmentTests
     }
 
     /// <summary>Runs <paramref name="body"/> in a UTF-8, dark, 16-colour environment with <paramref name="vars"/> on top.</summary>
-    private static void WithTerminalEnv(Action body, params (string Name, string? Value)[] vars)
+    internal static void WithTerminalEnv(Action body, params (string Name, string? Value)[] vars)
     {
         (string Name, string? Value)[] all =
         [
@@ -290,8 +290,12 @@ public sealed partial class CliEnvironmentTests
     private static string[] Ran(string stdout) =>
         [.. PassLine().Matches(stdout).Select(m => m.Groups[1].Value).Order(StringComparer.Ordinal)];
 
-    [GeneratedRegex("^  [*◆] [^:]+: (.+?)$", RegexOptions.Multiline)]
+    [GeneratedRegex("^  [*◆] [^:]+: (.+?)(?<! \\(pending\\))$", RegexOptions.Multiline)]
     private static partial Regex PassLine();
+
+    [Fact]
+    public void PendingLinesAreNotCountedAsRun() =>
+        Assert.Equal(["one"], Ran("  ◆ m: one\n  ◆ m: later (pending)\n  * m: soon (pending)\n"));
 
     [Fact]
     public void TestChangedRunsOnlyModulesWithChangedFiles()

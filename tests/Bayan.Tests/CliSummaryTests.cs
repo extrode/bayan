@@ -42,7 +42,9 @@ public sealed partial class CliEnvironmentTests
             Assert.Equal($"◆ built build-ok (safe, {CliApp.HostTarget}) in #s\n", Masked(first.Out));
             var cached = Run(["build", "-o", output, file]);
             Assert.Equal($"◆ built build-ok (safe, {CliApp.HostTarget}) in #s · from cache\n", Masked(cached.Out));
-            Assert.Equal($"* built build-ok (safe, {CliApp.HostTarget}) in #s · from cache\n", Masked(Run(["--ascii", "build", "-o", output, file]).Out));
+            var ascii = Run(["--ascii", "build", "-o", output, file]).Out;
+            Assert.Equal($"* built build-ok (safe, {CliApp.HostTarget}) in #s - from cache\n", Masked(ascii));
+            Assert.DoesNotContain("·", ascii, StringComparison.Ordinal);
             var colored = Run(["build", "--color", "always", "-o", output, file]).Out;
             Assert.StartsWith("\u001b[32m◆ built build-ok", colored, StringComparison.Ordinal);
             Assert.EndsWith("from cache\u001b[0m\n", colored, StringComparison.Ordinal);

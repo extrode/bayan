@@ -146,9 +146,9 @@ public static class Messages
     public static readonly Message TestPendingLine = Register("test.line.pending", "  {0} {1}: {2} (pending)");
     public static readonly Message TestFailureLine = Register("test.line.failure", "  {0} {1}: {2}");
     public static readonly Message TestDetail = Register("test.detail", "      {0}");
-    public static readonly Message TestSummaryPassed = Register("test.summary.passed", "{0} {1} passed · {2}");
-    public static readonly Message TestSummaryPending = Register("test.summary.pending", "{0} {1} passed · {2} pending · {3}");
-    public static readonly Message TestSummaryFailed = Register("test.summary.failed", "{0} {1} passed · {2} {3} failed · {4} pending · {5}");
+    public static readonly Message TestSummaryPassed = Register("test.summary.passed", "{0} {1} passed {2} {3}");
+    public static readonly Message TestSummaryPending = Register("test.summary.pending", "{0} {1} passed {2} {3} pending {2} {4}");
+    public static readonly Message TestSummaryFailed = Register("test.summary.failed", "{0} {1} passed {2} {3} {4} failed {2} {5} pending {2} {6}");
     public static readonly Message TestSeconds = Register("test.seconds", "{0}s");
     public static readonly Message TestRerunOne = Register("test.rerun.one", "  rerun the failure: {0}");
     public static readonly Message TestRerunMany = Register("test.rerun.many", "  rerun the failures: {0}");

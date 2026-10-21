@@ -1,0 +1,16 @@
+# bayan run <dir>/tally/main.byn
+exit: 1
+--- stdout ---
+--- stderr ---
+error BYN2104: `x` is immutable
+  --> <dir>/tally/main.byn:3:5
+
+  3 │     x = 2;
+    │     ^ declared with `let` on line 2
+    │
+  help: declare it with `var` if it should change
+    │ 2 │     var x = 1;
+    │   │     +++
+
+✗ build failed: 1 error, 0 warnings
+  explain: bayan explain BYN2104
