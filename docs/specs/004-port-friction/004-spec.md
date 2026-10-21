@@ -1,5 +1,5 @@
 # 004 — Port friction: argument names, contextual keywords, literal inference, borrows of own fields, decode, `catch { }`, string arrays, `removeRange`, `toHex`
-Status: planned
+Status: done
 Created: 2026-10-21
 
 ## Problem
