@@ -86,6 +86,7 @@ Own-field borrows (R6) add a receiver region to `RegionAnalysis`: a `this`-roote
 - Q75 R6 applies to span return types only; `string` views of own fields and `return sb.asString()` stay as recorded.
 - Q76 Typed dump covers templates, not instances; paths are compilation-root-relative; JSON version field starts at 1 for spec 010.
 - Q77 `catch { }` with a non-void operand is typed `never`; a block that completes normally is BYN2611 from FlowAnalysis, not the binder.
+- Q78 (from T8) A call to a mutating method counts as a mutation of the receiver's root local, so it is BYN3004 while any borrow of that root is alive (closes `lexer.push(t)` while a `tokens()` span is alive, and the same pre-existing gap for `for` loops). Loans stay per root local, not per field path, so `for (t in r.tokens) { r.source.mutate(); }` is a false positive; `selfhost/lexer/dump.byn` avoids it by indexing. Per-field-path loans are the open alternative, likely needed before the parser port (spec 009).
 
 ## Task order
 
@@ -104,6 +105,6 @@ Own-field borrows (R6) add a receiver region to `RegionAnalysis`: a `this`-roote
 13. **R8 catch block** — `Nodes.cs`, `AstDump`, `Parser.cs`, `BoundNodes.cs`, `BinderCalls.cs`, `FlowAnalysis.cs`, `Lowerer.cs`, `DiagnosticCodes.cs`; `docs/diagnostics/BYN2611.md`; parse golden, run golden `errors-catch-block.byn`, diag golden `catch-block-completes.byn`. Done when all pass. Depends on 2.
 14. **R9 const string arrays** — `Binder.cs`, `CEmitter.cs`; `docs/diagnostics/BYN2229.md`; run golden `const-string-array.byn`, `invalid-const-array` update. No deps.
 15. **R10/R11 removeRange, toHex** — `BuiltinMembers.cs`, `BoundNodes.cs`, `Lowerer.cs`, `RegionAnalysis.cs`, `CEmitter.cs`, `bayan-rt.h/.c`; run goldens `list-remove-range.byn`, `list-remove-range-panics.byn` (`.exitcode`, `.stderr`), `to-hex.byn`; `mutated-while-borrowed` gains a `removeRange` line. Depends on 10 (shared runtime edit).
-16. **Docs** — `docs/bayan-spec.md` (§2.3, §2.4, §3, §8, lists), `docs/bayan-handoff.md` (Q71–Q77, road table, progress log), `tests/cases/README.md`. Depends on all.
+16. **Docs** — `docs/bayan-spec.md` (§2.3, §2.4, §3, §8, lists), `docs/bayan-handoff.md` (Q71–Q78, road table, progress log), `tests/cases/README.md`. Depends on all.
 
 Noticed, not fixed: `Parser.IsStatementKeyword` lists `ErrorKeyword`/`TypeKeyword`, so recovery after R3 may skip a statement that starts with `error =`.
