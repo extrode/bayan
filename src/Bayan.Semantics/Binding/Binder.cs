@@ -209,14 +209,14 @@ internal sealed partial class Binder
         c.Bound = value;
     }
 
-    /// <summary>A module-level <c>const T[N]</c> whose elements are literal numbers, <c>bool</c>s or <c>char</c>s becomes static data (BYN2229 otherwise).</summary>
+    /// <summary>A module-level <c>const T[N]</c> whose elements are literal numbers, <c>bool</c>s, <c>char</c>s or <c>string</c>s becomes static data (BYN2229 otherwise).</summary>
     private void BindStaticArray(ConstSymbol c, BoundExpr value)
     {
         c.Bound = value;
         if (value.Type.IsError) return;
         var decl = c.Decl;
-        var help = $"write `const T[N] {decl.Name.Text} = [ … ];` with `T` a number type, `bool` or `char`, and only literals or constants inside";
-        if (c.Type is not Symbols.ArrayType { Element: PrimitiveType { IsNumeric: true } or PrimitiveType { Kind: PrimitiveKind.Bool or PrimitiveKind.Char } })
+        var help = $"write `const T[N] {decl.Name.Text} = [ … ];` with `T` a number type, `bool`, `char` or `string`, and only literals or constants inside";
+        if (c.Type is not Symbols.ArrayType { Element: PrimitiveType { IsNumeric: true } or PrimitiveType { Kind: PrimitiveKind.Bool or PrimitiveKind.Char or PrimitiveKind.String } })
         {
             Report(DiagnosticCodes.InvalidConstArray, decl.Type?.Span ?? decl.Init!.Span, [decl.Name.Text], help: help);
             return;
