@@ -94,10 +94,10 @@ public sealed record EnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, Par
 /// <summary>A positional payload field of a union variant: <c>f32 r</c>.</summary>
 public sealed record UnionField(TextSpan Span, TypeSyntax Type, Name Name) : Node(Span);
 
-/// <summary><c>Circle(f32 r)</c>, or <c>None</c> without a payload.</summary>
-public sealed record UnionVariant(TextSpan Span, Name Name, UnionField[] Fields, string? Doc) : Node(Span);
+/// <summary><c>circle(f32 r)</c>, or <c>none</c> without a payload; <see cref="Value"/> is the <c>= 1</c> of <c>read = 1</c>.</summary>
+public sealed record UnionVariant(TextSpan Span, Name Name, UnionField[] Fields, string? Doc, Expr? Value = null) : Node(Span);
 
-/// <summary><c>union Name { Circle(f32 r), None }</c>: a tagged union stored inline.</summary>
+/// <summary><c>union Name { circle(f32 r), none }</c>: a tagged union stored inline.</summary>
 public sealed record UnionDecl(TextSpan Span, Modifiers Modifiers, Name Name, UnionVariant[] Variants) : Decl(Span)
 {
     public Name[] TypeParams { get; init; } = [];

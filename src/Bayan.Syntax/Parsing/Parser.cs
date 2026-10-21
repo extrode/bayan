@@ -590,7 +590,7 @@ public sealed class Parser
         return new EnumDecl(SpanFrom(start), modifiers, name, parameters, members.ToArray());
     }
 
-    /// <summary><c>union Name { Circle(f32 r), Rect(f32 w, f32 h), None }</c>; a trailing <c>,</c> or <c>;</c> is allowed.</summary>
+    /// <summary><c>union Name { circle(f32 r), rect(f32 w, f32 h), none }</c> or <c>union Mode { read = 1, write = 2 }</c>; a trailing <c>,</c> or <c>;</c> is allowed.</summary>
     private UnionDecl ParseUnion(int start, Modifiers modifiers)
     {
         Advance();
@@ -618,7 +618,8 @@ public sealed class Parser
                 }
                 Expect(TokenKind.CloseParen);
             }
-            variants.Add(new UnionVariant(SpanFrom(variantStart), variant, fields.ToArray(), doc));
+            var value = Accept(TokenKind.Equals) ? ParseExpression() : null;
+            variants.Add(new UnionVariant(SpanFrom(variantStart), variant, fields.ToArray(), doc, value));
             if (!Accept(TokenKind.Comma)) break;
         }
         Accept(TokenKind.Semicolon);

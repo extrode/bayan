@@ -1,0 +1,13 @@
+warning BYN2712: `_` hides future cases of `Shape`, declared in this package
+
+  5 │     _ => 0,
+    │     ^ matches every case added later
+    │
+  help: list the cases instead: .rect, .none
+
+warning BYN2712: `_` hides future cases of `Shape`, declared in this package
+
+  12 │     _ => 0,
+     │     ^ matches every case added later
+     │
+  help: remove the `_` arm

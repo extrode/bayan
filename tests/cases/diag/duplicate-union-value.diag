@@ -1,0 +1,20 @@
+error BYN2711: `read` and `write` share the value 1
+
+  1 │ union Mode { read = 1, write = 1 }
+    │                                ^ already used
+    │
+  help: give each case its own value
+
+error BYN2711: `mid` and `high` share the value 2
+
+  3 │ union Level { low = 1, mid, high = 2 }
+    │                                    ^ already used
+    │
+  help: give each case its own value
+
+error BYN2711: `two` and `next` share the value 2
+
+  5 │ union Step { two = 2, one = 1, next }
+    │                                ^^^^ follows `one`, so it is 2
+    │
+  help: give each case its own value

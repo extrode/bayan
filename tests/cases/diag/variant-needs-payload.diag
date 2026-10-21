@@ -1,13 +1,13 @@
-error BYN2705: variant `Circle` carries a payload
+error BYN2705: variant `circle` carries a payload
 
-  4 │     let s = Shape.Circle;
+  4 │     let s = Shape.circle;
     │             ^^^^^^^^^^^^
     │
-  help: pass it: `Shape.Circle(r)`
+  help: pass it: `Shape.circle(r)`
 
-error BYN2705: variant `Circle` carries a payload
+error BYN2705: variant `circle` carries a payload
 
-  5 │     Shape t = .Circle;
+  5 │     Shape t = .circle;
     │               ^^^^^^^
     │
-  help: pass it: `Shape.Circle(r)`
+  help: pass it: `Shape.circle(r)`

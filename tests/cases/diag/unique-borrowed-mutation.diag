@@ -14,7 +14,7 @@ error BYN2783: `xs` borrows from what it was bound to and cannot be changed or m
 
 error BYN2783: `items` borrows from what it was bound to and cannot be changed or moved
 
-  15 │     if (slot is .Full(var items)) items.add(2);
+  15 │     if (slot is .full(var items)) items.add(2);
      │                                   ^^^^^ `add` modifies it
      │
   help: a loop or pattern variable of a unique type borrows from its subject; change the subject itself, or work on a `.copy(to: alloc)`
