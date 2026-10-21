@@ -10,6 +10,9 @@ internal sealed partial class Binder
     /// <summary>The call that the enclosing <c>try</c>/<c>catch</c> handles; any other failing call is an error.</summary>
     private CallExpr? _handled;
 
+    /// <summary>The error a <c>catch switch</c> is switching on, while its subject is bound.</summary>
+    private LocalSymbol? _caught;
+
     private static Expr StripParens(Expr e)
     {
         while (e is ParenExpr p) e = p.Inner;
@@ -639,6 +642,13 @@ internal sealed partial class Binder
             binding = DeclareLocal(b, errorType, LocalKind.Let);
             binding.IsCatch = true;
         }
+        else if (c.Handler is SwitchExpr { Value: CaughtErrorExpr })
+        {
+            binding = new LocalSymbol("t", null, errorType, LocalKind.Temp) { Id = _nextLocalId++, IsCatch = true };
+            _fn?.Locals.Add(binding);
+        }
+        var savedCaught = _caught;
+        _caught = binding;
         if (c.Variant is { } v)
         {
             var bound = BindExpr(v, errorType);
@@ -668,6 +678,7 @@ internal sealed partial class Binder
             handler = BindExpr(c.Handler, resultType);
             if (!handler.Type.IsNever) handler = Convert(handler, resultType, c.Handler.Span);
         }
+        _caught = savedCaught;
         PopScope();
         return new BoundCatch(c, operand, binding, variant, handler, resultType);
     }
@@ -737,6 +748,16 @@ internal sealed partial class Binder
             }
             case ConstantPattern c:
                 return BindConstantPattern(c, input);
+            case DeclarationPattern d:
+            {
+                var declared = ResolveType(d.Type);
+                if (declared is ErrorSetSymbol set) return BindErrorSetPattern(p, input, set, d.Name);
+                if (!declared.IsError)
+                    Report(DiagnosticCodes.PatternMismatch, d.Type.Span, [$"`{declared.DisplayName}`", Unwrap(input).DisplayName],
+                        help: "only an error set can be matched by type, in a `catch switch`");
+                DeclareLocal(d.Name, ErrorType.Instance, LocalKind.PatternVariable);
+                return new BoundBindPattern(p, input, null);
+            }
             case RelationalPattern r:
             {
                 var target = Unwrap(input);
@@ -957,7 +978,9 @@ internal sealed partial class Binder
                 Report(DiagnosticCodes.PatternMismatch, c.Span, ["`null`", input.DisplayName]);
             return new BoundConstantPattern(c, input, new BoundDefault(c.Value, input));
         }
-        var value = BindExpr(c.Value, target);
+        var value = c.Value is NameExpr && target is ErrorSetSymbol or ErrorUnionType ? BindExprOrType(c.Value) : BindExpr(c.Value, target);
+        if (value is BoundTypeRef { Referenced: ErrorSetSymbol set }) return BindErrorSetPattern(c, input, set, null);
+        if (value is BoundTypeRef) value = BindExpr(c.Value, target);
         if (value is BoundUnionNew { Payload.Length: 0 } unit && (target.IsError || unit.Type.Equals(target)))
             return new BoundUnionPattern(c, input, unit.Variant, []);
         if (value is BoundErrorVariant ev && target is ErrorUnionType u && u.Sets.Count > 0 && !u.Sets.Contains(ev.Variant.Set))
@@ -966,6 +989,24 @@ internal sealed partial class Binder
             value = Convert(value, target, c.Value.Span);
         RequireConstant(value, c.Value.Span);
         return new BoundConstantPattern(c, input, value);
+    }
+
+    /// <summary>
+    /// <c>DbError</c> or <c>DbError e</c> in a <c>catch switch</c>: matches every variant of <paramref name="set"/>
+    /// (an <c>or</c> of its variants), then binds the error as that set.
+    /// </summary>
+    private BoundPattern BindErrorSetPattern(Pattern p, TypeSymbol input, ErrorSetSymbol set, Name? name)
+    {
+        var target = Unwrap(input);
+        if (!target.IsError && !target.Equals(set) && !(target is ErrorUnionType u && (u.Sets.Count == 0 || u.Sets.Contains(set))))
+            Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`{set.Name}`", target.DisplayName]);
+        BoundPattern test = set.Variants.Count == 0
+            ? new BoundNotPattern(p, input, new BoundBindPattern(p, input, null))
+            : set.Variants.Select(v => (BoundPattern)new BoundConstantPattern(p, input, new BoundErrorVariant(p, v)))
+                .Aggregate((a, b) => new BoundBinaryPattern(p, input, false, a, b));
+        if (name is null) return test;
+        var local = DeclareLocal(name, set, LocalKind.PatternVariable);
+        return new BoundBinaryPattern(p, input, true, test, new BoundBindPattern(p, input, local));
     }
 
     private BoundPattern BindPropertyPattern(PropertyPattern pp, TypeSymbol input)
@@ -1055,6 +1096,15 @@ internal sealed partial class Binder
         if (domain is not null && domain.All(covered.Contains)) return true;
         if (statement && (domain is null || domain.Contains(Some))) return false;
         var missing = domain?.Where(k => !covered.Contains(k)).Select(k => k == Some ? "a value" : k).ToList();
+        // A set none of whose variants is handled is named once, as the `catch switch` arm that would cover it.
+        if (Unwrap(type) is ErrorUnionType { Sets.Count: > 1 } union && missing is not null)
+            foreach (var set in union.Sets)
+            {
+                var keys = set.Variants.Select(v => VariantKey(v, type)).ToList();
+                if (keys.Count == 0 || !keys.All(missing.Contains)) continue;
+                missing.Insert(missing.IndexOf(keys[0]), set.Name);
+                missing.RemoveAll(keys.Contains);
+            }
         Report(DiagnosticCodes.NonExhaustive, span, [type.DisplayName],
             label: missing is { Count: > 0 } ? "not covered: " + string.Join(", ", missing) : null,
             help: statement ? "add the missing cases or a `default:` section" : "add the missing arms, or `_ => …` for the rest");
@@ -1109,6 +1159,9 @@ internal sealed partial class Binder
             case BoundBinaryPattern { IsAnd: false } bp:
                 Collect(bp.Left, type, covered);
                 Collect(bp.Right, type, covered);
+                break;
+            case BoundBinaryPattern { IsAnd: true } bp when Irrefutable(bp.Right):
+                Collect(bp.Left, type, covered);
                 break;
             case BoundPropertyPattern { InputType: OptionalType o } pp when pp.Subpatterns.All(s => Irrefutable(s.Pattern)):
                 covered.Add(Some);

@@ -1,0 +1,4 @@
+CompilationUnit
+  ErrorSet SignupError = EmailError, DbError
+  ErrorSet public AnyError = SignupError, IoError
+  Function signUp(Form f) -> i64 fails SignupError => 0

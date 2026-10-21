@@ -253,6 +253,8 @@ internal sealed partial class Binder
                 return BindMove(m, BindExpr(m.Operand, expected));
             case CatchExpr c:
                 return BindCatch(c, expected);
+            case CaughtErrorExpr ce:
+                return _caught is { } caught ? new BoundLocal(ce, caught) : new BoundErrorExpr(ce);
             case JumpExpr j:
                 return new BoundJump(j, BindStatement(j.Jump));
             case BlockExpr b:

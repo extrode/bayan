@@ -269,9 +269,16 @@ public sealed class Compilation
                 }
                 case TypeAliasDecl a:
                 {
-                    var sym = new AliasPlaceholder(a, file);
+                    var sym = new AliasPlaceholder(a, a.Name, a.Modifiers, file);
                     if (AddType(file, a.Name, sym)) _aliases.Add(sym);
                     Naming.CheckType(this, file.Source, a.Name);
+                    break;
+                }
+                case ErrorSetDecl s:
+                {
+                    var sym = new AliasPlaceholder(s, s.Name, s.Modifiers, file);
+                    if (AddType(file, s.Name, sym)) _aliases.Add(sym);
+                    Naming.CheckType(this, file.Source, s.Name);
                     break;
                 }
                 case FunctionDecl f:
@@ -411,7 +418,7 @@ public sealed class Compilation
         ErrorSetSymbol e => e.Location,
         EnumSymbol e => e.Location,
         UnionSymbol u => u.Location,
-        AliasPlaceholder a => new Location(a.File.Source, a.Decl.Name.Span),
+        AliasPlaceholder a => new Location(a.File.Source, a.Name.Span),
         _ => null,
     };
 
@@ -659,9 +666,10 @@ public sealed class Compilation
             foreach (var e in fails.Errors)
             {
                 var t = types.Resolve(e);
-                if (t is ErrorSetSymbol set)
+                if (t is ErrorSetSymbol or ErrorUnionType)
                 {
-                    if (!fn.ErrorSets.Contains(set)) fn.ErrorSets.Add(set);
+                    foreach (var set in t is ErrorUnionType u ? u.Sets : [(ErrorSetSymbol)t])
+                        if (!fn.ErrorSets.Contains(set)) fn.ErrorSets.Add(set);
                 }
                 else if (!t.IsError)
                 {
@@ -1126,12 +1134,16 @@ public sealed class Compilation
     internal IEnumerable<AliasPlaceholder> Aliases => _aliases;
 }
 
-/// <summary>A <c>type X = T;</c> alias; resolved to its target on first use.</summary>
+/// <summary>A <c>type X = T;</c> alias or an <c>error set S = A, B;</c>; resolved to its target on first use.</summary>
 internal sealed record MutationCheck(Binder Binder, FunctionSymbol Callee, BoundExpr Receiver);
 
-internal sealed class AliasPlaceholder(TypeAliasDecl decl, FileContext file) : TypeSymbol
+internal sealed class AliasPlaceholder(Decl decl, Name name, Modifiers modifiers, FileContext file) : TypeSymbol
 {
-    public TypeAliasDecl Decl { get; } = decl;
+    public Decl Decl { get; } = decl;
+
+    public Name Name { get; } = name;
+
+    public Modifiers Modifiers { get; } = modifiers;
 
     public FileContext File { get; } = file;
 
@@ -1139,5 +1151,5 @@ internal sealed class AliasPlaceholder(TypeAliasDecl decl, FileContext file) : T
 
     public bool Resolving { get; set; }
 
-    public override string DisplayName => Decl.Name.Text;
+    public override string DisplayName => Name.Text;
 }

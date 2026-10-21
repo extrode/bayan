@@ -82,6 +82,9 @@ public sealed record ErrorVariant(TextSpan Span, Name Name, string? Doc) : Node(
 /// <summary><c>error enum Name { a, b }</c>.</summary>
 public sealed record ErrorEnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, ErrorVariant[] Variants) : Decl(Span);
 
+/// <summary><c>error set Name = A, B;</c>: a name for several error sets.</summary>
+public sealed record ErrorSetDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax[] Members) : Decl(Span);
+
 /// <summary>A member; <see cref="Args"/> is <c>null</c> without parentheses.</summary>
 public sealed record EnumMember(TextSpan Span, Name Name, string? Doc, Argument[]? Args) : Node(Span);
 
@@ -266,6 +269,9 @@ public sealed record MoveExpr(TextSpan Span, Expr Operand) : Expr(Span);
 /// </summary>
 public sealed record CatchExpr(TextSpan Span, Expr Operand, Name? Binding, Expr? Variant, Expr Handler) : Expr(Span);
 
+/// <summary>The subject of <c>catch switch { … }</c>: the caught error; <see cref="Span"/> is the <c>switch</c> keyword.</summary>
+public sealed record CaughtErrorExpr(TextSpan Span) : Expr(Span);
+
 /// <summary><c>return e</c>, <c>break</c>, <c>continue</c> used as a <c>never</c> expression after <c>??</c> or <c>catch</c>.</summary>
 public sealed record JumpExpr(TextSpan Span, Stmt Jump) : Expr(Span);
 
@@ -309,6 +315,9 @@ public sealed record RelationalPattern(TextSpan Span, BinaryOp Op, Expr Value) :
 public sealed record VarPattern(TextSpan Span, Name Name, bool IsLet = false) : Pattern(Span);
 
 public sealed record DiscardPattern(TextSpan Span) : Pattern(Span);
+
+/// <summary><c>DbError e</c>: matches a value of <see cref="Type"/> and binds it.</summary>
+public sealed record DeclarationPattern(TextSpan Span, TypeSyntax Type, Name Name) : Pattern(Span);
 
 public sealed record NotPattern(TextSpan Span, Pattern Operand) : Pattern(Span);
 

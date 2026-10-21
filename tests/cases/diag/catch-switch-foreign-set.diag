@@ -1,0 +1,4 @@
+error BYN2411: `DbError` cannot match `ParseError`
+
+  18 │     DbError e => 1,
+     │     ^^^^^^^^^

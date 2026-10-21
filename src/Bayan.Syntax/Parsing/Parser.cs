@@ -302,6 +302,10 @@ public sealed class Parser
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
                 decl = ParseErrorEnum(start, modifiers);
                 break;
+            case TokenKind.ErrorKeyword when Peek(1) == TokenKind.SetKeyword:
+                RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
+                decl = ParseErrorSet(start, modifiers);
+                break;
             case TokenKind.EnumKeyword when topLevel:
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
                 decl = ParseEnum(start, modifiers);
@@ -544,6 +548,19 @@ public sealed class Parser
         }
         ExpectClose(open, "error enum");
         return new ErrorEnumDecl(SpanFrom(start), modifiers, name, variants.ToArray());
+    }
+
+    /// <summary><c>error set Name = A, B;</c>; members may also be separated by <c>|</c>.</summary>
+    private ErrorSetDecl ParseErrorSet(int start, Modifiers modifiers)
+    {
+        Advance();
+        Advance();
+        var name = ExpectName("an error set name");
+        Expect(TokenKind.Equals);
+        var members = new List<TypeSyntax> { ParseType() };
+        while (Accept(TokenKind.Comma) || Accept(TokenKind.Bar)) members.Add(ParseType());
+        Expect(TokenKind.Semicolon);
+        return new ErrorSetDecl(SpanFrom(start), modifiers, name, members.ToArray());
     }
 
     /// <summary>
@@ -1391,10 +1408,7 @@ public sealed class Parser
             var switchStart = Current.Start;
             Expr subject = binding is not null
                 ? new NameExpr(binding.Span, binding, [])
-                : new ErrorExpr(new TextSpan(switchStart, 0));
-            if (binding is null)
-                Report(DiagnosticCodes.Expected, Current.Span, ["`(e)` naming the error before `switch`", Describe(Current)],
-                    help: "write `catch (e) switch { … }`");
+                : new CaughtErrorExpr(Current.Span);
             Advance();
             handler = ParseSwitchArms(switchStart, subject);
         }
@@ -1976,6 +1990,13 @@ public sealed class Parser
                         }
                         Expect(TokenKind.CloseParen);
                         return new PositionalPattern(SpanFrom(start), type, elements.ToArray());
+                    }
+                    if (after > 0 && KindAt(after) == TokenKind.Identifier && Text(_tokens[after]) != "when")
+                    {
+                        // `DbError e`: a declaration pattern binding the matched value at the written type.
+                        var type = ParseType();
+                        var name = NameOf(Advance());
+                        return new DeclarationPattern(SpanFrom(start), type, name);
                     }
                     break;
                 }
