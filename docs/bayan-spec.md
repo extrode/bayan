@@ -178,13 +178,13 @@ distinct type UserId = i64;      // a unit without arithmetic
 - `T[N]`: fixed-size inline array (a value). Constant out-of-range indexes are compile errors.
 - `Span<T>`: a borrowed view (pointer, length) whose elements may be assigned.
 - `ReadOnlySpan<T>`: a borrowed view whose elements cannot be assigned. `Span<T>` → `ReadOnlySpan<T>` is implicit. `string.bytes` is a `ReadOnlySpan<u8>`, so strings stay immutable and valid UTF-8. A `Span<T>` parameter never written through gets lint BYN2310 ("use `ReadOnlySpan<T>`").
-- `List<T>`, `Deque<T>`, `Map<K, V>`, `HashMap<K, V>`, `Set<T>`, `Pool<T>`, `Ring<T, const int N>`, `NonEmpty<T>`: standard library, allocator-backed (API: §16).
+- `List<T>`, `Deque<T>`, `Map<K, V>`, `HashMap<K, V>`, `Set<T>`, `Pool<T>`, `Ring<T, const i32 N>`, `NonEmpty<T>`: standard library, allocator-backed (API: §16).
 - `Map` **preserves insertion order**; `HashMap` is unordered and faster.
 - `xs.removeRange(start, end)` removes the elements in `[start, end)` and keeps the order of the rest; `start > end` or `end > xs.count` panics (`slice out of range`). Like `append` and `removeLast`, it is a structural modification (§9.4 rule 5).
 - A module-level `const T[N]` with literal or constant elements is static data in `.rodata` when `T` is a number type, `bool`, `char` or `string` (`const string[2] names = ["a", "b"];`); it can be indexed, iterated and asked its `.count`. Any other module-level `const` array is BYN2229.
 - **`StrBuf`** is the string builder and the target of every `xInto(ref StrBuf)` (§5.2): `StrBuf(capacity: n)` allocates from `context.allocator`; `StrBuf.over(stackalloc u8[n] uninit)` uses the stack first and spills to the allocator only if outgrown; `append(x)`, `append($"…")` (interpolation writes straight into the buffer), `appendRepeated(c, n)`; `buf.view` is a borrowed string view, no allocation; `buf.finish()` consumes the buffer and returns it as a string without copying. `StrBuf.over` is not in v0.1.
 
-> Round 2 §11, §12: `count` and `append` replace `length` and `add` on ordered collections; `finish()` and `view` replace `asString()`. Codes: BYN2230.
+> Round 2 §11, §12, §15: `count` and `append` replace `length` and `add` on ordered collections; `finish()` and `view` replace `asString()`; C# type names are input forms. Codes: BYN1030, BYN2230.
 - Every allocator-backed collection (`List`, `Map`, `HashMap`, `Set`, `Pool`) and `StrBuf` is **`unique`** (§3.11): assigning or storing one moves it, and a copy is explicit, `xs.copy(to: alloc)`. Reading without owning goes through `ReadOnlySpan<T>`, a read-only parameter or `ref`.
 - Hashing is **seeded** by default (hash-flooding resistance); tests use a fixed seed.
 
@@ -194,7 +194,9 @@ distinct type UserId = i64;      // a unit without arithmetic
 > Round 2 §4: one null-check spelling; `x == null` is an input form. Codes: BYN2027.
 
 ### 3.7 Tuples
-C# value tuples with named elements and deconstruction: `(Cents share, int extra)`.
+C# value tuples with named elements and deconstruction: `(Cents share, i32 extra)`.
+
+> Round 2 §15: C# type names are input forms. Codes: BYN1030.
 
 ### 3.8 Results
 `Result<T, E>` is a standard-library union (§3.12): a tag plus the larger of the value and the error payload, inline. `fails` desugars onto `Result`. Every error variant in a program has a unique compile-time number, so merging error sets is free.
@@ -382,6 +384,8 @@ C# syntax `[Name(args)]`. User-defined attributes are `attribute struct Route { 
 - **Everything else** (methods, properties, fields, locals, parameters, enum members, union cases, error variants): `camelCase`.
 - Acronyms: `HttpClient`, `IO` (two letters stay uppercase).
 - Interface names: `I` prefix.
+
+> Round 2 §1: union cases are camelCase.
 - Enforced as errors in new code; ported C# compiles with warnings; `bayan migrate --rename` fixes casing.
 
 ### 5.2 Every type is a root; patterns are a closed set
@@ -486,6 +490,10 @@ msg is .text(let body)                  // union destructuring
 ```
 
 > Round 2 §1: union cases are camelCase.
+
+`+` inside a pattern splits a string into a literal part and a binding; it is not concatenation. The round-2 ban (§3.2) covers `+` on string values only.
+
+> Round 2 §12: string patterns stay; the `+` ban targets hidden allocation, and a pattern allocates nothing (plan J18).
 
 Type patterns apply only to `dyn` values and unions. `switch` must be exhaustive over unions, enums and `bool`.
 
@@ -735,8 +743,12 @@ let resp = signUp(form) catch switch {
 6. `arena.reset()` requires exclusive access.
 7. Literals and `const` data are static and may go anywhere.
 
+> Round 2 §9: mutation is declared with `ref this`, not inferred. Codes: BYN2115.
+
 ### 9.5 Uninitialized memory
-`stackalloc T[n] uninit` yields `Uninit<T>`, which cannot be read. Writing APIs return the initialized prefix as a `Span<T>`. A runtime-sized `stackalloc` requires a bound: `stackalloc byte[n] max 4KiB`.
+`stackalloc T[n] uninit` yields `Uninit<T>`, which cannot be read. Writing APIs return the initialized prefix as a `Span<T>`. A runtime-sized `stackalloc` requires a bound: `stackalloc u8[n] max 4KiB`.
+
+> Round 2 §15: C# type names are input forms. Codes: BYN1030.
 
 ### 9.6 Handles
 `Pool<T>` + `Handle<T>` (index + generation, 8 bytes) for graphs and long-lived data; stale handles are detected.
@@ -788,7 +800,7 @@ public bool isEmpty => lines.isEmpty;          // read-only: the default
 
 ```csharp
 T max<T>(T a, T b) where T : IOrder<T> => a > b ? a : b;
-struct Ring<T, const int N> { T[N] items; int head; }
+struct Ring<T, const i32 N> { T[N] items; i32 head; }
 interface IRepository<T, K = T.Id> where T : IEntity<T> { … }
 ```
 
@@ -797,7 +809,9 @@ interface IRepository<T, K = T.Id> where T : IEntity<T> { … }
 | `T : IA, IB` | Implements interfaces |
 | `T : struct` / `T : unique` | Copyable / move-only |
 | `T : default` | Defaultable |
-| `const int N` | Compile-time value parameter |
+| `const i32 N` | Compile-time value parameter |
+
+> Round 2 §15: C# type names are input forms. Codes: BYN1030.
 | `E.Item : INumber` | Constraint on an associated type |
 
 - Constraints are **checked at definition**.
