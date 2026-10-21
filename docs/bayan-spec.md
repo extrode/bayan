@@ -493,7 +493,7 @@ msg is .text(let body)                  // union destructuring
 
 `+` inside a pattern splits a string into a literal part and a binding; it is not concatenation. The round-2 ban (§3.2) covers `+` on string values only.
 
-> Round 2 §12: string patterns stay; the `+` ban targets hidden allocation, and a pattern allocates nothing (plan J18).
+> Round 2 §12: string patterns stay; the `+` ban targets hidden allocation, and a pattern allocates nothing.
 
 Type patterns apply only to `dyn` values and unions. `switch` must be exhaustive over unions, enums and `bool`.
 
@@ -810,9 +810,9 @@ interface IRepository<T, K = T.Id> where T : IEntity<T> { … }
 | `T : struct` / `T : unique` | Copyable / move-only |
 | `T : default` | Defaultable |
 | `const i32 N` | Compile-time value parameter |
+| `E.Item : INumber` | Constraint on an associated type |
 
 > Round 2 §15: C# type names are input forms. Codes: BYN1030.
-| `E.Item : INumber` | Constraint on an associated type |
 
 - Constraints are **checked at definition**.
 - **No variance.**
