@@ -1,0 +1,6 @@
+var a = 0;
+var b = 0;
+a = b;
+i64 x = a;
+f64 y = b;
+print($"{x} {y}");
