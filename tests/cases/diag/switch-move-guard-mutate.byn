@@ -9,8 +9,8 @@ struct Bag {
 }
 
 union Slot {
-    Full(Bag b),
-    Empty,
+    full(Bag b),
+    empty,
 }
 
 bool bump(ref List<i64> xs) {
@@ -27,27 +27,27 @@ bool keep(move Bag b) => true;
 
 void inspect(move Slot s, move Slot t) {
     switch (move s) {
-        case .Full(var x) when x.grow() > 5:
+        case .full(var x) when x.grow() > 5:
             print("call");
-        case .Full(var x) when x.items.removeLast() > 0:
+        case .full(var x) when x.items.removeLast() > 0:
             print("builtin");
-        case .Full(var x) when x.items.take().length > 0:
+        case .full(var x) when x.items.take().length > 0:
             print("take");
-        case .Full(var x) when bump(ref x.items):
+        case .full(var x) when bump(ref x.items):
             print("ref");
-        case .Full(var x) when fill(out x.items):
+        case .full(var x) when fill(out x.items):
             print("out");
-        case .Full(let x) when keep(move x):
+        case .full(let x) when keep(move x):
             print("move");
-        case .Full(let x) when x.items.length > 0:
+        case .full(let x) when x.items.length > 0:
             print("read");
         default:
     }
     let n = (move t) switch {
-        .Full(var y) when y.grow() > 5 => 1,
-        .Full(var y) when bump(ref y.items) => 2,
-        .Full(let y) when keep(move y) => 3,
-        .Full(let y) when y.items.length > 0 => 4,
+        .full(var y) when y.grow() > 5 => 1,
+        .full(var y) when bump(ref y.items) => 2,
+        .full(let y) when keep(move y) => 3,
+        .full(let y) when y.items.length > 0 => 4,
         _ => 0,
     };
     print($"{n}");

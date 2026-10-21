@@ -1,0 +1,7 @@
+error BYN2009: `Circle` must be camelCase
+
+  1 │ union Shape { Circle(f32 r), none }
+    │               ^^^^^^
+    │
+  help: only types are PascalCase; rename it `circle`
+    │ 1 │ union Shape { circle(f32 r), none }

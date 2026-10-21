@@ -5,8 +5,8 @@ struct Store {
 }
 
 union Slot {
-    Empty,
-    Full(Map<string, i64> data),
+    empty,
+    full(Map<string, i64> data),
 }
 
 Map<string, i64> fresh(string key, i64 value) {
@@ -47,7 +47,7 @@ var b = Map<string, i64>();
 b = fresh("y", 2);
 var s = Store { name = "s", data = fresh("z", 3) };
 s.data = fresh("w", 4);
-let full = Slot.Full(fresh("v", 5));
+let full = Slot.full(fresh("v", 5));
 var list = List<Map<string, i64>>();
 list.add(fresh("u", 6));
 var nested = Map<i64, Map<string, i64>>();
@@ -72,7 +72,7 @@ for (let e in s.data) print($"  {e.key} = {e.value}");
 for (let m in list) print($"list: {m}");
 print($"{a} {b} {c} {s} {pair}");
 print($"{maybe} {r.value} {nested[1]}");
-if (full is .Full(let d)) print($"full: {d.length}");
+if (full is .full(let d)) print($"full: {d.length}");
 
 struct Named {
     string name;

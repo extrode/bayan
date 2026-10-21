@@ -1,4 +1,4 @@
 union Chunk {
-    Bytes(ReadOnlySpan<u8> data),
-    Empty,
+    bytes(ReadOnlySpan<u8> data),
+    empty,
 }

@@ -1,0 +1,20 @@
+error BYN2709: a case value must be an integer constant
+
+  1 │ union Mode { read = 1.5, write = "w", big = 3000000000, fine = -3 }
+    │                     ^^^ not an `i32` integer literal
+    │
+  help: write the value as an integer literal, or remove it
+
+error BYN2709: a case value must be an integer constant
+
+  1 │ union Mode { read = 1.5, write = "w", big = 3000000000, fine = -3 }
+    │                                  ^^^ not an `i32` integer literal
+    │
+  help: write the value as an integer literal, or remove it
+
+error BYN2709: a case value must be an integer constant
+
+  1 │ union Mode { read = 1.5, write = "w", big = 3000000000, fine = -3 }
+    │                                             ^^^^^^^^^^ not an `i32` integer literal
+    │
+  help: write the value as an integer literal, or remove it

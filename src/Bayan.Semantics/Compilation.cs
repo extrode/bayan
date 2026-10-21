@@ -520,16 +520,36 @@ public sealed class Compilation
     {
         var file = u.File;
         var types = new TypeResolver(this, file, null, u.TypeMap);
+        var values = new Dictionary<int, UnionVariantSymbol>();
+        var tag = 0;
         foreach (var v in u.Decl.Variants)
         {
-            Naming.CheckType(this, file.Source, v.Name);
+            Naming.CheckValue(this, file.Source, v.Name);
             if (u.Find(v.Name.Text) is { } existing)
             {
                 Report(DiagnosticCodes.DuplicateUnionVariant, file.Source, v.Name.Span, [u.Name, v.Name.Text],
                     label: $"already declared on line {existing.Location!.Value.Line}");
                 continue;
             }
-            var sym = new UnionVariantSymbol(v.Name.Text, Loc(file, v.Name), u, u.Variants.Count, v.Doc);
+            if (v.Value is { } valueSyntax)
+            {
+                if (v.Fields.Length > 0)
+                    Report(DiagnosticCodes.UnionValueOnPayload, file.Source, valueSyntax.Span, [v.Name.Text],
+                        label: "only a case without data can have a value", help: "remove the value");
+                else if (UnionValue(valueSyntax) is { } value)
+                    tag = value;
+                else
+                    Report(DiagnosticCodes.UnionValueNotInteger, file.Source, valueSyntax.Span, [],
+                        label: "not an `i32` integer literal", help: "write the value as an integer literal, or remove it");
+            }
+            var sym = new UnionVariantSymbol(v.Name.Text, Loc(file, v.Name), u, tag, v.Doc);
+            if (values.TryGetValue(tag, out var same))
+                Report(DiagnosticCodes.DuplicateUnionValue, file.Source, v.Value?.Span ?? v.Name.Span, [same.Name, v.Name.Text, tag],
+                    label: v.Value is null ? $"follows `{u.Variants[^1].Name}`, so it is {tag}" : "already used",
+                    help: "give each case its own value");
+            else
+                values[tag] = sym;
+            tag++;
             var names = new Dictionary<string, Location>(StringComparer.Ordinal);
             foreach (var f in v.Fields)
             {
@@ -546,6 +566,16 @@ public sealed class Compilation
         }
         if (u.Variants.Count == 0)
             Report(DiagnosticCodes.EmptyUnion, file.Source, u.Decl.Name.Span, [u.Name], help: "add the variants, or remove the union");
+    }
+
+    /// <summary>The value of <c>read = 1</c>: an integer literal, optionally negated, that fits the <c>i32</c> tag.</summary>
+    private static int? UnionValue(Expr e)
+    {
+        var negate = e is UnaryExpr { Op: UnaryOp.Negate };
+        if ((negate ? ((UnaryExpr)e).Operand : e) is not LiteralExpr { Kind: LiteralKind.Integer, Suffix: null } lit) return null;
+        var n = Binder.ParseInteger(lit.Text);
+        if (negate) n = -n;
+        return n >= int.MinValue && n <= int.MaxValue ? (int)n : null;
     }
 
     private void DeclareMembers(StructSymbol s)

@@ -1,6 +1,6 @@
-union Shape { Circle(f32 r), None }
+union Shape { circle(f32 r), none }
 
 void main() {
-    let s = Shape.Circle(1);
+    let s = Shape.circle(1);
     print(s.r);
 }

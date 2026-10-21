@@ -4,8 +4,8 @@ struct Store {
 }
 
 union Slot {
-    Empty,
-    Full(Map<i64, i64> data),
+    empty,
+    full(Map<i64, i64> data),
 }
 
 struct Holder {
@@ -51,7 +51,7 @@ void copies(Map<i64, i64> p) {
     s.data = a;
     let t = Store { name = "t", data = a };
     let h = Holder(a);
-    let full = Slot.Full(a);
+    let full = Slot.full(a);
     var list = List<Map<i64, i64>>();
     list.add(a);
     var nested = Map<i64, Map<i64, i64>>();

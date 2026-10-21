@@ -96,11 +96,11 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
 
 error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it owns its storage
 
-  54 │     let full = Slot.Full(a);
+  54 │     let full = Slot.full(a);
      │                          ^
      │
   help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
-     │ 54 │     let full = Slot.Full(move a);
+     │ 54 │     let full = Slot.full(move a);
 
 error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it owns its storage
 

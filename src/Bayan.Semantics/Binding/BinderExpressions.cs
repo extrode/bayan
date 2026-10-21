@@ -365,7 +365,7 @@ internal sealed partial class Binder
         return Literal(l, type, (Int128)value);
     }
 
-    private static BigInteger ParseInteger(string text)
+    internal static BigInteger ParseInteger(string text)
     {
         text = text.Replace("_", "");
         if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
