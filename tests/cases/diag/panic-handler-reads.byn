@@ -5,4 +5,14 @@ void work(i64 limit) {
     count += 1;
 }
 
+void scan(i64? found) {
+    if (found is let v) {
+        defer panicking print($"at {v}");
+    }
+    for (let i in 0..3) {
+        defer panicking print($"step {i}");
+    }
+}
+
 work(limit: 5);
+scan(found: 2);

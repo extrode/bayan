@@ -70,8 +70,7 @@ internal static class PanicHandlerCheck
                     or BuiltinMember.ListAdd or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet }:
                     restricted = "allocation";
                     break;
-                case BoundLocal { Local: var l } when !targets.Contains(node) && !own.Contains(l)
-                    && l is not ParameterSymbol && l.Kind is not (LocalKind.Let or LocalKind.Const or LocalKind.Parameter):
+                case BoundLocal { Local: var l } when !targets.Contains(node) && !own.Contains(l) && l.IsMutable:
                     c.Report(DiagnosticCodes.PanicHandlerReads, fn.File!.Source, node.Syntax.Span, [],
                         label: $"`{l.Name}` is not a `let` or a parameter", help: "copy the value into a `let` before the handler and read that");
                     break;
