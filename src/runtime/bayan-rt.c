@@ -62,7 +62,7 @@ void byn_todo_str(byn_str msg, const char* file, int line) {
     if (file) fprintf(stderr, "\n  at %s:%d\n", file, line);
     else fputc('\n', stderr);
     fflush(stderr);
-    exit(3);
+    exit(4);
 }
 
 void byn_unreachable(const char* file, int line) {

@@ -514,7 +514,7 @@ public static class CliApp
             {
                 0 => TestStatus.Pass,
                 1 => TestStatus.Fail,
-                3 => TestStatus.Pending,
+                4 => TestStatus.Pending,
                 _ => TestStatus.Panic,
             };
             var details = outcome.TimedOut ? $"timed out after {TestTimeout.TotalSeconds:0} s" : (outcome.Stdout + outcome.Stderr).TrimEnd();
