@@ -3,4 +3,4 @@ error BYN1001: expected `}`, found end of file
   3 │ 
     │ ^
     │
-  help: the struct opened on line 1 is not closed
+  help: close the struct opened on line 1

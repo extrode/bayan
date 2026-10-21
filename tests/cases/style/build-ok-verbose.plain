@@ -1,0 +1,10 @@
+# bayan build -v -o <dir>/tally/tally <dir>/tally/main.byn
+exit: 0
+--- stdout ---
+  parse      0.00s
+  check      0.00s
+  emit       0.00s
+  compile    0.00s
+  <dir>/tally/tally
+◆ built tally (safe, <host>) in 0.00s
+--- stderr ---

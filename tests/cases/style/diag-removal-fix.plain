@@ -1,0 +1,15 @@
+# bayan check <dir>/tally/main.byn
+exit: 1
+--- stdout ---
+--- stderr ---
+error BYN2605: `try` needs a call that can fail
+  --> <dir>/tally/main.byn:4:17
+
+  4 │     let n = try twice(2);
+    │                 ^^^^^^^^
+    │
+    │ 4 │     let n = try twice(2);
+    │   │             ----
+
+✗ build failed: 1 error, 0 warnings
+  explain: bayan explain BYN2605

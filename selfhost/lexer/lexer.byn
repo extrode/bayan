@@ -578,7 +578,7 @@ struct LexResult {
         for (let cp in normalized) fix.append($"{(char)cp}");
         reportFix(.identifierNotNfc, TextSpan.fromBounds(start: start, end: pos), replacement: fix.asString(), arg0: utf8(span),
             label: "same letters, different encoding",
-            help: "identifiers that look the same must be byte-identical; use the composed (NFC) form");
+            help: "use the composed (NFC) form; identifiers that look the same must be byte-identical");
     }
 
     void lexNumber() {
@@ -803,7 +803,7 @@ struct LexResult {
                 pos += 1;
                 if (digits > 6 || value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) {
                     report(.invalidUnicodeEscape, TextSpan.fromBounds(start: start, end: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
-                        help: "scalar values are U+0000–U+D7FF and U+E000–U+10FFFF");
+                        help: "use a scalar value in U+0000–U+D7FF or U+E000–U+10FFFF");
                 }
             default:
                 invalidEscape(start);
@@ -814,7 +814,7 @@ struct LexResult {
     void invalidEscape(i64 start) {
         advanceCodePoint(allowBidi: true);
         report(.invalidEscape, TextSpan.fromBounds(start: start, end: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
-            help: "valid escapes are \\n \\r \\t \\0 \\\\ \\\" \\' and \\u{…}");
+            help: "use a valid escape: \\n \\r \\t \\0 \\\\ \\\" \\' and \\u{…}");
     }
 }
 

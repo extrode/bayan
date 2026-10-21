@@ -240,7 +240,7 @@ internal sealed partial class Binder
                 if (arg is BoundEnumMember em) member.Values[i] = new ConstantValue((Int128)em.Member.Ordinal);
                 else if (arg.Constant is { } value) member.Values[i] = value;
                 else Report(DiagnosticCodes.EnumArgumentNotConstant, arg.Syntax.Span, [ps[i].Name, name],
-                    label: "computed at run time", help: "enum data is static; use literals and `const`s only");
+                    label: "computed at run time", help: "use literals and `const`s only; enum data is static");
             }
         }
     }
@@ -331,7 +331,7 @@ internal sealed partial class Binder
         }
         if (n < 1 || n > 255)
         {
-            Report(DiagnosticCodes.InvalidExitCode, arg.Value.Span, [], help: "0 means success, and exit codes above 255 do not survive the operating system");
+            Report(DiagnosticCodes.InvalidExitCode, arg.Value.Span, [], help: "pick a code from 1 to 255; 0 means success, and exit codes above 255 do not survive the operating system");
             return 1;
         }
         return (int)n;
@@ -512,7 +512,7 @@ internal sealed partial class Binder
     {
         if (type == BuiltinType.Arena || type is ListType || type.IsError) return;
         Report(DiagnosticCodes.NotDisposable, d.Name.Span, [type.DisplayName],
-            help: "`using` is for values that own memory: `Arena` and `List<T>`");
+            help: "use `using` only for values that own memory: `Arena` and `List<T>`");
     }
 
     /// <summary>The type a binding gets from its initializer when none is written.</summary>
@@ -567,7 +567,7 @@ internal sealed partial class Binder
     private TypeSymbol NotIterable(Expr syntax, TypeSymbol type)
     {
         Report(DiagnosticCodes.NotIterable, syntax.Span, [type.DisplayName],
-            help: "`for` iterates over ranges (`0..n`), spans, lists, arrays and strings");
+            help: "use `for` over ranges (`0..n`), spans, lists, arrays and strings");
         return ErrorType.Instance;
     }
 
@@ -687,7 +687,7 @@ internal sealed partial class Binder
     {
         if (_fn is not { Fails: true } && _fn?.Kind is not (FunctionKind.Main or FunctionKind.Test))
             Report(DiagnosticCodes.ErrdeferWithoutFails, e.Span, [],
-                help: "an `errdefer` runs only when the function fails; use `defer` here");
+                help: "use `defer` here; an `errdefer` runs only when the function fails");
         PushScope();
         LocalSymbol? err = null;
         if (e.Error is { } name)

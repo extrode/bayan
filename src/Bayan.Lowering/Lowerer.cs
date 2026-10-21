@@ -941,6 +941,9 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case BuiltinFunction.Panic when c.Arguments[0] is BoundInterpolated i:
                 Write(c, WriteSink.Panic, null, i);
                 return new LNever(c.Syntax, c.Type);
+            case BuiltinFunction.Assert when c.Arguments[0] is BoundBinary { Op: BinaryOp.Eq or BinaryOp.Ne or BinaryOp.Lt or BinaryOp.Le or BinaryOp.Gt or BinaryOp.Ge } b
+                && Printable(b.Left.Type) && Printable(b.Right.Type):
+                return AssertValues(c, b);
             case BuiltinFunction.Assert:
             {
                 var condition = Expr(c.Arguments[0]);
@@ -965,6 +968,39 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         }
         return lowered;
     }
+
+    private static bool Printable(TypeSymbol t) => t.IsInteger || t.IsFloat || t.IsBool || t.IsString || t is EnumSymbol;
+
+    /// <summary>
+    /// <c>assert(a op b)</c> over printable operands: each side is evaluated once into a temporary,
+    /// and a failure panics with the expression, then <c>a is value</c> for each side that is not a literal.
+    /// </summary>
+    private BoundExpr AssertValues(BoundCall c, BoundBinary b)
+    {
+        var parts = Operands([b.Left, b.Right]);
+        if (parts is null) return new LNever(c.Syntax, c.Type);
+        var left = parts[0].Constant is null ? Spill(parts[0]) : parts[0];
+        var right = parts[1].Constant is null ? Spill(parts[1]) : parts[1];
+        var source = _fn.File!.Source;
+        var message = new List<BoundInterpolationPart> { new("assertion failed: " + source.GetText(c.Arguments[0].Syntax.Span), null) };
+        foreach (var (side, value) in new[] { (b.Left, left), (b.Right, right) })
+        {
+            if (IsLiteral(side.Syntax)) continue;
+            message.Add(new("\n  " + source.GetText(side.Syntax.Span) + " is ", null));
+            message.Add(new(null, value));
+        }
+        var panic = new LWrite(c.Syntax, WriteSink.Panic, null, message.ToArray());
+        Emit(new BoundIf(c.Syntax, Not(b with { Left = left, Right = right }), Block(c.Syntax, [panic]), null));
+        return new LVoid(c.Syntax);
+    }
+
+    private static bool IsLiteral(Node syntax) => syntax switch
+    {
+        LiteralExpr => true,
+        ParenExpr p => IsLiteral(p.Inner),
+        UnaryExpr { Op: UnaryOp.Negate or UnaryOp.Plus } u => IsLiteral(u.Operand),
+        _ => false,
+    };
 
     /// <summary>Lowers the receiver and arguments of a call; the receiver and <c>ref</c>/<c>out</c> arguments stay addressable.</summary>
     private BoundCall? CallParts(BoundCall c)

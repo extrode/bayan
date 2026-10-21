@@ -238,6 +238,7 @@ public enum BuiltinFunction
     None,
     Print,
     Panic,
+    Todo,
     Assert,
     ListNew,
     ArenaNew,

@@ -3,4 +3,4 @@ error BYN2601: `try` is not allowed in `defer` or `errdefer`
   10 │     defer try flush();
      │           ^^^
      │
-  help: cleanup cannot fail; handle the error here with `catch`
+  help: handle the error here with `catch`; cleanup cannot fail

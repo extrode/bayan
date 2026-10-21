@@ -3,4 +3,5 @@ error BYN3100: `package.byn` is data only: expected `,` or `}`
   2 │     name = "local/" + "tally",
     │                     ^
     │
-  help: values are strings, integers, `.names`, `[lists]` and `Type { field = value }`; no calls or expressions
+  help: write strings, integers, `.names`, `[lists]` or `Type { field = value }`; no calls or
+        expressions

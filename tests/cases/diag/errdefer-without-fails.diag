@@ -3,4 +3,4 @@ error BYN2606: `errdefer` in a function that cannot fail
   2 │     errdefer print("x");
     │     ^^^^^^^^
     │
-  help: an `errdefer` runs only when the function fails; use `defer` here
+  help: use `defer` here; an `errdefer` runs only when the function fails

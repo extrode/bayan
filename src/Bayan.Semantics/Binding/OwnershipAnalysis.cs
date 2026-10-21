@@ -389,17 +389,17 @@ internal sealed class OwnershipAnalysis
         Fix? fix = null;
         if (IsMovable(core))
         {
-            options.Add($"`move {text}` hands the value over");
+            options.Add($"hand the value over with `move {text}`");
             fix = new Fix(new TextSpan(span.Start, 0), "move ");
         }
         if (core.Type is ListType or MapType or BuiltinType { Kind: BuiltinKind.StrBuf })
         {
-            options.Add($"`{text}.copy(to: alloc)` makes an independent copy");
+            options.Add($"make an independent copy with `{text}.copy(to: alloc)`");
             fix ??= new Fix(new TextSpan(span.End, 0), ".copy(to: alloc)");
         }
         if (core is BoundLocal { Local: ParameterSymbol { Modifier: ParamModifier.None } p })
-            options.Add($"declaring the parameter `move {p.Name}` takes ownership");
-        options.Add("passing it by `ref` shares it instead");
+            options.Add($"declare the parameter `move {p.Name}` to take ownership");
+        options.Add("pass it by `ref` to share it instead");
         Report(DiagnosticCodes.ImplicitCopy, span, [why], help: string.Join("; ", options), fix: fix);
     }
 

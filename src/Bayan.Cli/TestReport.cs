@@ -4,15 +4,15 @@ using System.Text.Json;
 
 namespace Bayan.Cli;
 
-public enum TestStatus { Pass, Fail, Panic, Timeout }
+public enum TestStatus { Pass, Fail, Panic, Timeout, Pending }
 
 public sealed record TestResult(string Name, string File, int Line, TestStatus Status, TimeSpan Elapsed, string Output);
 
 /// <summary>
 /// <c>out/test/results.json</c> and <c>bayan test --json</c>: the package, mode and target, one
-/// entry per test (<c>name</c>, <c>file</c>, <c>line</c>, <c>status</c> pass/fail/panic/timeout,
+/// entry per test (<c>name</c>, <c>file</c>, <c>line</c>, <c>status</c> pass/fail/panic/timeout/pending,
 /// <c>durationMs</c>, <c>output</c> of a test that didn't pass), and a summary (<c>skipped</c>
-/// counts tests that <c>--changed</c> left out).
+/// counts tests that <c>--changed</c> left out, <c>pending</c> tests that called <c>todo</c>).
 /// </summary>
 public sealed record TestReport(string? Package, string Mode, string Target, IReadOnlyList<TestResult> Tests, TimeSpan Elapsed, int Skipped = 0)
 {
@@ -47,6 +47,7 @@ public sealed record TestReport(string? Package, string Mode, string Target, IRe
             w.WriteNumber("failed", Count(TestStatus.Fail));
             w.WriteNumber("panicked", Count(TestStatus.Panic));
             w.WriteNumber("timedOut", Count(TestStatus.Timeout));
+            w.WriteNumber("pending", Count(TestStatus.Pending));
             w.WriteNumber("skipped", Skipped);
             w.WriteNumber("durationMs", Math.Round(Elapsed.TotalMilliseconds, 1));
             w.WriteEndObject();

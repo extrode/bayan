@@ -3,11 +3,11 @@ error BYN1001: expected a declaration or statement, found `}`
   1 │ }
     │ ^
     │
-  help: this `}` has no matching `{`
+  help: remove this `}`; it has no matching `{`
 
 error BYN1001: expected a statement, found keyword `else`
 
   3 │ else { }
     │ ^^^^
     │
-  help: this `else` has no matching `if`
+  help: remove this `else`; it has no matching `if`

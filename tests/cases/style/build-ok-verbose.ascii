@@ -1,0 +1,10 @@
+# bayan --ascii build -v -o <dir>/tally/tally <dir>/tally/main.byn
+exit: 0
+--- stdout ---
+  parse      [38;2;180;178;169m0.00s[0m
+  check      [38;2;180;178;169m0.00s[0m
+  emit       [38;2;180;178;169m0.00s[0m
+  compile    [38;2;180;178;169m0.00s[0m
+  [38;2;180;178;169m<dir>/tally/tally[0m
+[38;2;143;214;148m* built tally (safe, <host>) in 0.00s[0m
+--- stderr ---

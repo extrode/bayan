@@ -1161,6 +1161,8 @@ internal sealed class FunctionEmitter
                 return $"byn_print({Expr(c.Arguments[0])})";
             case BuiltinFunction.Panic:
                 return $"byn_panic_str({Expr(c.Arguments[0])}, {Loc(c.Syntax)})";
+            case BuiltinFunction.Todo:
+                return $"byn_todo_str({Expr(c.Arguments[0])}, {Loc(c.Syntax)})";
             case BuiltinFunction.ArenaNew:
                 return "byn_arena_new()";
             case BuiltinFunction.StrBufNew:
