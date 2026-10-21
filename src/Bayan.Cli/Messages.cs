@@ -40,6 +40,7 @@ public static class Messages
           types <path>         print each function's parameter and local types as JSON
           check <path>         report diagnostics for a program (a file or directory)
           build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--target <t>] [--emit-c]
+                               [-v: print each phase's time and the output path]
           run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]
           test <path>          compile and run the tests, each in its own process [--mode debug|safe|fast]
                                [--json: print the results as JSON instead]
@@ -106,6 +107,23 @@ public static class Messages
     public static readonly Message DiagCapped = Register("diag.capped", "{0} and {1} more errors (use --all to show them)");
     public static readonly Message CompileProgress = Register("build.progress.compiling", "compiling");
     public static readonly Message BuildProgress = Register("build.progress.building", "building");
+    public static readonly Message BuildSummary = Register("build.summary", "{0} built {1} ({2}, {3}) in {4}");
+    public static readonly Message BuildFromCache = Register("build.summary.cached", " {0} from cache");
+    public static readonly Message CheckSummary = Register("check.summary", "{0} checked {1} in {2}");
+    public static readonly Message BuildFailed = Register("build.failed", "{0} build failed: {1}, {2}");
+    public static readonly Message ErrorsOne = Register("build.failed.errors.one", "{0} error");
+    public static readonly Message ErrorsMany = Register("build.failed.errors.many", "{0} errors");
+    public static readonly Message WarningsOne = Register("build.failed.warnings.one", "{0} warning");
+    public static readonly Message WarningsMany = Register("build.failed.warnings.many", "{0} warnings");
+    public static readonly Message BuildExplain = Register("build.failed.explain", "  explain: bayan explain {0}");
+    public static readonly Message PhaseParse = Register("build.phase.parse", "parse");
+    public static readonly Message PhaseCheck = Register("build.phase.check", "check");
+    public static readonly Message PhaseEmit = Register("build.phase.emit", "emit");
+    public static readonly Message PhaseCompile = Register("build.phase.compile", "compile");
+    public static readonly Message PhaseLine = Register("build.phase.line", "  {0,-11}{1}");
+    public static readonly Message PhaseFromCache = Register("build.phase.cached", "from cache");
+    public static readonly Message PhaseOutput = Register("build.phase.output", "  {0}");
+    public static readonly Message Seconds = Register("build.seconds", "{0}s");
 
     // ── cache ────────────────────────────────────────────────────────────────────────
     public static readonly Message CacheDirectory = Register("cache.directory", "cache:    {0}");
@@ -138,11 +156,9 @@ public static class Messages
     public static readonly Message ChangedNoCompare = Register("test.changed.no-compare", "bayan: git can't compare the working tree with `{0}`");
 
     // ── doctor ───────────────────────────────────────────────────────────────────────
-    public static readonly Message DoctorOk = Register("doctor.level.ok", "ok  ");
-    public static readonly Message DoctorNote = Register("doctor.level.note", "note");
-    public static readonly Message DoctorFail = Register("doctor.level.fail", "FAIL");
-    public static readonly Message DoctorLine = Register("doctor.line", "{0}  {1}  {2}");
-    public static readonly Message DoctorFix = Register("doctor.fix", "      {0}  fix: {1}");
+    public static readonly Message DoctorLine = Register("doctor.line", "{0} {1}  {2}");
+    public static readonly Message DoctorFailLine = Register("doctor.fail", "{0} {1}: {2}");
+    public static readonly Message DoctorHelp = Register("doctor.help", "  help: {0}");
     public static readonly Message DoctorBayan = Register("doctor.bayan", "bayan");
     public static readonly Message DoctorVersion = Register("doctor.bayan.version", "{0} (commit {1})");
     public static readonly Message DoctorHost = Register("doctor.host", "host");
