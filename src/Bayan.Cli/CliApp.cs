@@ -137,14 +137,15 @@ public static class CliApp
         return ExitOk;
     }
 
-    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null);
+    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, string[]? Only = null);
 
     private static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
-        bool emitC = false, json = false, testJson = false, changed = false;
+        bool emitC = false, json = false, testJson = false, changed = false, verbose = false;
         string? baseRef = null;
+        var only = new List<string>();
         var programArgs = Array.Empty<string>();
         for (var i = 0; i < args.Length; i++)
         {
@@ -196,6 +197,12 @@ public static class CliApp
                 case "--json" when allowTestJson:
                     testJson = true;
                     break;
+                case "--only" when allowTestJson && i + 1 < args.Length:
+                    only.Add(args[++i]);
+                    break;
+                case "-v" or "--verbose":
+                    verbose = true;
+                    break;
                 default:
                     if (path is not null || args[i].StartsWith('-'))
                     {
@@ -217,7 +224,7 @@ public static class CliApp
             stderr.WriteLine(Messages.NotFound.Text(path));
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef);
+        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, only.Count > 0 ? [.. only] : null);
     }
 
     /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
@@ -483,12 +490,28 @@ public static class CliApp
             if (ChangedModules(compiled, o, stderr) is not { } changed) return ExitUsage;
             selected = selected.Where(i => changed.All || changed.Directories.Contains(ModuleOf(compiled, program.Tests[i].Test))).ToList();
         }
+        var unchanged = program.Tests.Count - selected.Count;
+        if (o.Only is { } only)
+        {
+            selected = selected.Where(i => only.Any(s => program.Tests[i].Test.Name.Contains(s, StringComparison.Ordinal))).ToList();
+            if (selected.Count == 0 && !o.Changed)
+            {
+                stderr.WriteLine(Messages.TestOnlyNoMatch.Text(string.Join(", ", only.Select(s => "`" + s + "`"))));
+                return ExitUsage;
+            }
+        }
         if (BuildNative(source, o.Mode, stderr, output, json: o.Json || o.TestJson) is not { } executable) return ExitToolchain;
         var count = selected.Count;
         var skipped = program.Tests.Count - count;
         var human = o.TestJson ? TextWriter.Null : stdout;
-        human.WriteLine((count == 1 ? Messages.TestRunningOne : Messages.TestRunningMany).Text(count, o.Changed ? Messages.TestSkipped.Text(skipped) : ""));
+        var symbols = (s_styleOut ?? Style.Plain).Symbols;
+        var modules = selected.Select(i => ModuleOf(compiled, program.Tests[i].Test)).Distinct().Count();
+        human.WriteLine(Messages.TestRunning.Text(
+            (count == 1 ? Messages.TestCountOne : Messages.TestCountMany).Text(count),
+            (modules == 1 ? Messages.TestModuleCountOne : Messages.TestModuleCountMany).Text(modules),
+            o.Changed ? Messages.TestSkipped.Text(unchanged) : ""));
         var results = new List<TestResult>();
+        var failures = new List<string>();
         var total = System.Diagnostics.Stopwatch.StartNew();
         foreach (var i in selected)
         {
@@ -506,36 +529,38 @@ public static class CliApp
             var details = outcome.TimedOut ? Messages.TestTimedOut.Text(TestTimeout.TotalSeconds) : (outcome.Stdout + outcome.Stderr).TrimEnd();
             var (file, line) = test.Location is { } at ? (at.Source.Path, at.Source.GetLinePosition(at.Span.Start).Line) : ("", 0);
             results.Add(new TestResult(test.Name, file, line, status, outcome.Elapsed, status == TestStatus.Pass ? "" : details));
-            var label = status switch
+            var module = Path.GetFileName(ModuleOf(compiled, test));
+            if (status == TestStatus.Pass)
             {
-                TestStatus.Pass => Messages.TestLabelPass.Text(),
-                TestStatus.Fail => Messages.TestLabelFail.Text(),
-                TestStatus.Panic => Messages.TestLabelPanic.Text(),
-                TestStatus.Pending => Messages.TestLabelPending.Text(),
-                _ => Messages.TestLabelTimeout.Text(),
-            };
-            var role = status switch
+                if (o.Verbose) human.WriteLine(Messages.TestPassLine.Text(Paint(Role.Success, symbols.Dot), module, test.Name));
+                continue;
+            }
+            if (status == TestStatus.Pending)
             {
-                TestStatus.Pass => Role.Success,
-                TestStatus.Timeout or TestStatus.Pending => Role.Warning,
-                _ => Role.Error,
-            };
-            human.WriteLine(Messages.TestResult.Text(Paint(role, label, bold: role == Role.Error), test.Name, FormatMs(outcome.Elapsed)));
-            if (status == TestStatus.Pass) continue;
-            foreach (var l in details.Split('\n'))
-                human.WriteLine(Messages.TestDetail.Text(l.TrimEnd('\r')));
+                if (o.Verbose) human.WriteLine(Messages.TestPendingLine.Text(Paint(Role.Warning, symbols.Dot), module, test.Name));
+                continue;
+            }
+            failures.Add(test.Name);
+            human.WriteLine();
+            human.WriteLine(Messages.TestFailureLine.Text(Paint(Role.Error, symbols.Cross, bold: true), module, test.Name));
+            foreach (var l in FailureDetail(details, o.Verbose))
+                human.WriteLine(Messages.TestDetail.Text(l));
         }
         total.Stop();
         var report = new TestReport(compiled.Manifest?.Name, ModeName(o.Mode), HostTarget, results, total.Elapsed, skipped);
-        int passed = report.Count(TestStatus.Pass), failed = report.Count(TestStatus.Fail);
-        int panicked = report.Count(TestStatus.Panic), timedOut = report.Count(TestStatus.Timeout), pending = report.Count(TestStatus.Pending);
-        var summary = Messages.TestPassed.Text(passed);
-        if (failed > 0) summary += Messages.TestFailed.Text(failed);
-        if (panicked > 0) summary += Messages.TestPanicked.Text(panicked);
-        if (timedOut > 0) summary += Messages.TestTimedOutCount.Text(timedOut);
-        if (pending > 0) summary += Messages.TestPending.Text(pending);
+        int passed = report.Count(TestStatus.Pass), pending = report.Count(TestStatus.Pending);
+        var failed = count - passed - pending;
+        var seconds = Messages.TestSeconds.Text(total.Elapsed.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+        var dot = Paint(Role.Success, symbols.Dot);
         human.WriteLine();
-        human.WriteLine((count == 1 ? Messages.TestSummaryOne : Messages.TestSummaryMany).Text(count, summary, FormatMs(total.Elapsed)));
+        human.WriteLine(failed > 0 ? Messages.TestSummaryFailed.Text(dot, passed, Paint(Role.Error, symbols.Cross), failed, pending, seconds)
+            : pending > 0 ? Messages.TestSummaryPending.Text(dot, passed, pending, seconds)
+            : Messages.TestSummaryPassed.Text(dot, passed, seconds));
+        if (failures.Count is > 0 and <= 3)
+        {
+            var command = "bayan test" + string.Concat(failures.Select(n => Messages.TestRerunOnly.Text(n)));
+            human.WriteLine((failures.Count == 1 ? Messages.TestRerunOne : Messages.TestRerunMany).Text(command));
+        }
         var json = report.ToJson();
         if (o.TestJson) stdout.Write(json);
         if (compiled.ProjectRoot is { } root)
@@ -544,7 +569,30 @@ public static class CliApp
             Directory.CreateDirectory(testDir);
             Toolchain.ReplaceFile(Path.Combine(testDir, "results.json"), temp => File.WriteAllText(temp, json));
         }
-        return passed + pending == count ? ExitOk : ExitTestFailure;
+        return failed == 0 ? ExitOk : ExitTestFailure;
+    }
+
+    /// <summary>
+    /// A failed test's output for display: <c>panic: </c> dropped, <c>assertion failed: e</c> as <c>assert(e)</c>,
+    /// value lines kept under it, and <c>at file:line</c> frames as <c>file:line</c>, the top three unless verbose.
+    /// </summary>
+    private static List<string> FailureDetail(string details, bool verbose)
+    {
+        var lines = new List<string>();
+        var frames = 0;
+        foreach (var raw in details.Split('\n'))
+        {
+            var l = raw.TrimEnd('\r');
+            if (l.StartsWith("  at ", StringComparison.Ordinal))
+            {
+                if (verbose || frames++ < 3) lines.Add(l["  at ".Length..]);
+                continue;
+            }
+            if (l.StartsWith("panic: ", StringComparison.Ordinal)) l = l["panic: ".Length..];
+            if (l.StartsWith("assertion failed: ", StringComparison.Ordinal)) l = "assert(" + l["assertion failed: ".Length..] + ")";
+            lines.Add(l);
+        }
+        return lines;
     }
 
     private sealed record TestOutcome(int ExitCode, bool TimedOut, string Stdout, string Stderr, TimeSpan Elapsed);
@@ -626,9 +674,6 @@ public static class CliApp
         }
         return new TestOutcome(p.ExitCode, false, stdout.Result, stderr.Result, clock.Elapsed);
     }
-
-    private static string FormatMs(TimeSpan t) =>
-        Messages.TestMs.Text(t.TotalMilliseconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
 
     private static int Explain(string[] args, TextWriter stdout, TextWriter stderr)
     {

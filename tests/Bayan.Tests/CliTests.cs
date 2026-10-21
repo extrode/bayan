@@ -280,7 +280,7 @@ public sealed class CliTests
     }
 
     private static string WithoutTimes(string text) =>
-        System.Text.RegularExpressions.Regex.Replace(text, @"\(\d+\.\d ms\)", "(T)");
+        System.Text.RegularExpressions.Regex.Replace(text, @"\d+\.\d\ds$", "Ts", System.Text.RegularExpressions.RegexOptions.Multiline).ReplaceLineEndings("\n");
 
     [Fact]
     public void TestReportsPassFailAndPanicPerTest()
@@ -313,35 +313,37 @@ public sealed class CliTests
             }
 
             """);
-        var (exit, stdout, _) = Run("test", dir);
+        var (exit, stdout, _) = Run("test", "--ascii", dir);
         Assert.Equal(CliApp.ExitTestFailure, exit);
         Assert.Equal("""
-            running 4 tests
-              ok     passes  (T)
-              PANIC  asserts  (T)
-                     before
-                     panic: assertion failed: 1 + 1 == 3
-                       1 + 1 is 2
-                       at main.test.byn:16
-              FAIL   fails  (T)
-                     error: It went wrong.
-              PANIC  panics  (T)
-                     panic: boom
-                       at main.test.byn:24
+            running 4 tests in 1 module
 
-            4 tests: 1 passed, 1 failed, 2 panicked  (T)
+              x cli-test-mixed: asserts
+                  before
+                  assert(1 + 1 == 3)
+                    1 + 1 is 2
+                  main.test.byn:16
 
-            """, WithoutTimes(stdout).ReplaceLineEndings("\n"));
+              x cli-test-mixed: fails
+                  error: It went wrong.
+
+              x cli-test-mixed: panics
+                  boom
+                  main.test.byn:24
+
+            * 1 passed · x 3 failed · 0 pending · Ts
+              rerun the failures: bayan test --only "asserts" --only "fails" --only "panics"
+
+            """, WithoutTimes(stdout));
     }
 
     [Fact]
     public void TestExitsZeroWhenEveryTestPasses()
     {
         var dir = TestSuite("cli-test-pass", "test \"one\" {\n    assert(true);\n}\n");
-        var (exit, stdout, _) = Run("test", dir);
+        var (exit, stdout, _) = Run("test", "--ascii", dir);
         Assert.Equal(0, exit);
-        Assert.Contains("1 test: 1 passed", stdout);
-        Assert.DoesNotContain("main", stdout.Replace("running", ""));
+        Assert.Equal("running 1 test in 1 module\n\n* 1 passed · Ts\n", WithoutTimes(stdout));
     }
 
     [Fact]
@@ -355,9 +357,56 @@ public sealed class CliTests
         Assert.Contains("\"pending\": 1", stdout);
         Assert.Contains("\"passed\": 1", stdout);
         Assert.Contains("\"failed\": 0", stdout);
-        var (_, human, _) = Run("test", dir);
-        Assert.Contains("PEND ", human);
-        Assert.Contains("2 tests: 1 passed, 1 pending", human);
+        var (humanExit, human, _) = Run("test", "--ascii", dir);
+        Assert.Equal(CliApp.ExitOk, humanExit);
+        Assert.Equal("running 2 tests in 1 module\n\n* 1 passed · 1 pending · Ts\n", WithoutTimes(human));
+    }
+
+    [Fact]
+    public void TestVerboseListsPassingAndPendingTests()
+    {
+        var dir = TestSuite("cli-test-verbose", "test \"one\" {\n    assert(true);\n}\n\ntest \"later\" {\n    todo(\"x\");\n}\n");
+        var (exit, stdout, _) = Run("test", "--ascii", "-v", dir);
+        Assert.Equal(CliApp.ExitOk, exit);
+        Assert.Equal("""
+            running 2 tests in 1 module
+              * cli-test-verbose: one
+              * cli-test-verbose: later (pending)
+
+            * 1 passed · 1 pending · Ts
+
+            """, WithoutTimes(stdout));
+        Assert.Equal(WithoutTimes(stdout), WithoutTimes(Run("test", "--ascii", "--verbose", dir).Out));
+    }
+
+    [Fact]
+    public void TestShowsAssertionValuesAndOneRerunLine()
+    {
+        var dir = TestSuite("cli-test-values", "i64 cents(i64 units) {\n    return units * 100;\n}\n\ntest \"leftover cents\" {\n    assert(cents(2) == 201);\n}\n");
+        var (exit, stdout, _) = Run("test", "--ascii", dir);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+        Assert.Equal("""
+            running 1 test in 1 module
+
+              x cli-test-values: leftover cents
+                  assert(cents(2) == 201)
+                    cents(2) is 200
+                  main.test.byn:6
+
+            * 0 passed · x 1 failed · 0 pending · Ts
+              rerun the failure: bayan test --only "leftover cents"
+
+            """, WithoutTimes(stdout));
+    }
+
+    [Fact]
+    public void MoreThanThreeFailuresGetNoRerunLine()
+    {
+        var dir = TestSuite("cli-test-many", string.Concat(Enumerable.Range(1, 4).Select(n => $"test \"t{n}\" {{\n    assert(false);\n}}\n\n")));
+        var (exit, stdout, _) = Run("test", "--ascii", dir);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+        Assert.Contains("* 0 passed · x 4 failed · 0 pending · ", stdout);
+        Assert.DoesNotContain("rerun", stdout);
     }
 
     private static string BuildAndRun(string example)
@@ -396,7 +445,7 @@ public sealed class CliTests
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var (exit, stdout, stderr) = Run("test", Path.Combine(Golden.RepoRoot, "examples", "tally-lite"));
         Assert.True(exit == CliApp.ExitOk, stdout + stderr);
-        Assert.Contains("8 tests: 8 passed", stdout);
+        Assert.Contains("8 passed · ", stdout);
     }
 }
 

@@ -44,6 +44,8 @@ public static class Messages
           test <path>          compile and run the tests, each in its own process [--mode debug|safe|fast]
                                [--json: print the results as JSON instead]
                                [--changed [--base <ref>]: only modules with files changed since HEAD or <ref>]
+                               [--only <text>: only tests whose name contains <text>; repeatable]
+                               [-v: also list the passing and pending tests]
           dist [<dir>]         build release binaries into dist/<version>/ [--target <t>|all] [--mode m]
                                [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]
           clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]
@@ -111,26 +113,26 @@ public static class Messages
     public static readonly Message CacheScripts = Register("cache.scripts", "scripts:  {0}");
 
     // ── test ─────────────────────────────────────────────────────────────────────────
-    public static readonly Message TestRunningOne = Register("test.running.one", "running {0} test{1}");
-    public static readonly Message TestRunningMany = Register("test.running.many", "running {0} tests{1}");
+    public static readonly Message TestRunning = Register("test.running", "running {0} in {1}{2}");
+    public static readonly Message TestCountOne = Register("test.count.one", "{0} test");
+    public static readonly Message TestCountMany = Register("test.count.many", "{0} tests");
+    public static readonly Message TestModuleCountOne = Register("test.module-count.one", "{0} module");
+    public static readonly Message TestModuleCountMany = Register("test.module-count.many", "{0} modules");
     public static readonly Message TestSkipped = Register("test.skipped", " ({0} in unchanged modules skipped)");
+    public static readonly Message TestOnlyNoMatch = Register("test.only.no-match", "bayan: no test name contains {0}");
     public static readonly Message TestProgress = Register("test.progress", "testing {0}");
     public static readonly Message TestTimedOut = Register("test.timed-out", "timed out after {0:0} s");
-    public static readonly Message TestLabelPass = Register("test.label.pass", "ok   ");
-    public static readonly Message TestLabelFail = Register("test.label.fail", "FAIL ");
-    public static readonly Message TestLabelPanic = Register("test.label.panic", "PANIC");
-    public static readonly Message TestLabelPending = Register("test.label.pending", "PEND ");
-    public static readonly Message TestLabelTimeout = Register("test.label.timeout", "TIME ");
-    public static readonly Message TestResult = Register("test.result", "  {0}  {1}  ({2})");
-    public static readonly Message TestDetail = Register("test.detail", "         {0}");
-    public static readonly Message TestPassed = Register("test.passed", "{0} passed");
-    public static readonly Message TestFailed = Register("test.failed", ", {0} failed");
-    public static readonly Message TestPanicked = Register("test.panicked", ", {0} panicked");
-    public static readonly Message TestTimedOutCount = Register("test.timed-out-count", ", {0} timed out");
-    public static readonly Message TestPending = Register("test.pending", ", {0} pending");
-    public static readonly Message TestSummaryOne = Register("test.summary.one", "{0} test: {1}  ({2})");
-    public static readonly Message TestSummaryMany = Register("test.summary.many", "{0} tests: {1}  ({2})");
-    public static readonly Message TestMs = Register("test.ms", "{0} ms");
+    public static readonly Message TestPassLine = Register("test.line.pass", "  {0} {1}: {2}");
+    public static readonly Message TestPendingLine = Register("test.line.pending", "  {0} {1}: {2} (pending)");
+    public static readonly Message TestFailureLine = Register("test.line.failure", "  {0} {1}: {2}");
+    public static readonly Message TestDetail = Register("test.detail", "      {0}");
+    public static readonly Message TestSummaryPassed = Register("test.summary.passed", "{0} {1} passed · {2}");
+    public static readonly Message TestSummaryPending = Register("test.summary.pending", "{0} {1} passed · {2} pending · {3}");
+    public static readonly Message TestSummaryFailed = Register("test.summary.failed", "{0} {1} passed · {2} {3} failed · {4} pending · {5}");
+    public static readonly Message TestSeconds = Register("test.seconds", "{0}s");
+    public static readonly Message TestRerunOne = Register("test.rerun.one", "  rerun the failure: {0}");
+    public static readonly Message TestRerunMany = Register("test.rerun.many", "  rerun the failures: {0}");
+    public static readonly Message TestRerunOnly = Register("test.rerun.only", " --only \"{0}\"");
     public static readonly Message ChangedNoGit = Register("test.changed.no-git", "bayan: `{0}` needs git, which isn't installed");
     public static readonly Message ChangedNoRepository = Register("test.changed.no-repository", "bayan: `{0}` needs a git repository, and `{1}` isn't in one");
     public static readonly Message ChangedNoCompare = Register("test.changed.no-compare", "bayan: git can't compare the working tree with `{0}`");
