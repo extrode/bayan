@@ -22,8 +22,8 @@ public sealed class L006OwnershipGuardTests
             List<i64> items;
         }
         union Slot {
-            Empty,
-            Full(List<i64> items),
+            empty,
+            full(List<i64> items),
         }
 
         """;
@@ -123,7 +123,7 @@ public sealed class L006OwnershipGuardTests
             """, "BYN2780" },
         { "implicit copy, union with a unique payload", """
             void main() {
-                let s = Slot.Full(List<i64>());
+                let s = Slot.full(List<i64>());
                 let t = s;
             }
             """, "BYN2780" },
@@ -202,18 +202,18 @@ public sealed class L006OwnershipGuardTests
             """, "BYN3002" },
         { "borrowed pattern binding stored", """
             void main() {
-                let s = Slot.Full(List<i64>());
+                let s = Slot.full(List<i64>());
                 var kept = List<i64>();
-                if (s is .Full(let items)) kept = items;
+                if (s is .full(let items)) kept = items;
             }
             """, "BYN2780" },
         { "borrowed pattern binding's span stored past its owner", """
             void main() {
                 var outer = List<i64>().asSpan();
                 {
-                    let s = Slot.Full(List<i64>());
+                    let s = Slot.full(List<i64>());
                     switch (s) {
-                        case .Full(let items):
+                        case .full(let items):
                             outer = items.asSpan();
                         default:
                             print("empty");
@@ -254,8 +254,8 @@ public sealed class L006OwnershipGuardTests
             """, "BYN2783" },
         { "move a borrowed pattern binding", """
             void main() {
-                let s = Slot.Full(List<i64>());
-                if (s is .Full(let items)) {
+                let s = Slot.full(List<i64>());
+                if (s is .full(let items)) {
                     let stolen = move items;
                 }
             }
@@ -264,9 +264,9 @@ public sealed class L006OwnershipGuardTests
         // switch (move x) and take() misuse (BYN2783, BYN2781, BYN2789, BYN2104, BYN2788).
         { "switch without move then move the binding", """
             void main() {
-                let s = Slot.Full(List<i64>());
+                let s = Slot.full(List<i64>());
                 switch (s) {
-                    case .Full(let items):
+                    case .full(let items):
                         consume(move items);
                     default:
                         print("empty");
@@ -275,9 +275,9 @@ public sealed class L006OwnershipGuardTests
             """, "BYN2783" },
         { "read after switch (move s)", """
             void main() {
-                let s = Slot.Full(List<i64>());
+                let s = Slot.full(List<i64>());
                 switch (move s) {
-                    case .Full(let items):
+                    case .full(let items):
                         consume(move items);
                     default:
                         print("empty");
@@ -290,9 +290,9 @@ public sealed class L006OwnershipGuardTests
             """, "BYN2781" },
         { "switch (move s) binding moved then reused in the same arm", """
             void main() {
-                let s = Slot.Full(List<i64>());
+                let s = Slot.full(List<i64>());
                 switch (move s) {
-                    case .Full(let items):
+                    case .full(let items):
                         consume(move items);
                         print($"{items.length}");
                     default:
@@ -302,10 +302,10 @@ public sealed class L006OwnershipGuardTests
             """, "BYN2781" },
         { "switch (move s) in a loop, s declared outside", """
             void main() {
-                let s = Slot.Full(List<i64>());
+                let s = Slot.full(List<i64>());
                 for (let i in 0..3) {
                     switch (move s) {
-                        case .Full(let items):
+                        case .full(let items):
                             consume(move items);
                         default:
                             print("empty");
@@ -369,9 +369,9 @@ public sealed class L006OwnershipGuardTests
             """, "BYN2790" },
         { "switch (move) guard mutates its binding", """
             void main() {
-                let s = Slot.Full(List<i64>());
+                let s = Slot.full(List<i64>());
                 switch (move s) {
-                    case .Full(var items) when items.removeLast() > 0:
+                    case .full(var items) when items.removeLast() > 0:
                         consume(move items);
                     default:
                         print("other");
@@ -517,9 +517,9 @@ public sealed class L006OwnershipGuardTests
         { "borrowed pattern binding copied", """
             void main() {
                 using let arena = Arena();
-                let s = Slot.Full(List<i64>());
+                let s = Slot.full(List<i64>());
                 var kept = List<i64>();
-                if (s is .Full(let items)) kept = items.copy(to: arena);
+                if (s is .full(let items)) kept = items.copy(to: arena);
                 print($"{kept.length}");
             }
             """ },
@@ -633,9 +633,9 @@ public sealed class L006OwnershipGuardTests
             """ },
         { "switch (move s) then move the binding on", """
             void main() {
-                let s = Slot.Full(List<i64>());
+                let s = Slot.full(List<i64>());
                 switch (move s) {
-                    case .Full(let items):
+                    case .full(let items):
                         consume(move items);
                     default:
                         print("empty");
@@ -645,10 +645,10 @@ public sealed class L006OwnershipGuardTests
         { "switch (move) expression form moves the binding", """
             i64 keep(move List<i64> xs) => xs.length;
             void main() {
-                let s = Slot.Full(List<i64>());
+                let s = Slot.full(List<i64>());
                 let n = (move s) switch {
-                    .Full(let items) => keep(move items),
-                    .Empty => 0,
+                    .full(let items) => keep(move items),
+                    .empty => 0,
                 };
                 print($"{n}");
             }
@@ -656,7 +656,7 @@ public sealed class L006OwnershipGuardTests
         { "switch (move) of a move parameter", """
             void drain(move Slot slot) {
                 switch (move slot) {
-                    case .Full(let items):
+                    case .full(let items):
                         consume(move items);
                     default:
                         print("empty");

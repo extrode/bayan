@@ -471,7 +471,21 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     {
         var condition = Expr(i.Condition);
         if (IsNever(condition)) return;
-        var then = Capture(() => Statement(i.Then));
+        var then = Capture(() =>
+        {
+            if (!i.Never)
+            {
+                Statement(i.Then);
+                return;
+            }
+            // The panic is a cleanup of the block, so a `return`, `break`, `continue` or failure inside it still panics.
+            _scopes.Add(new Scope());
+            _scopes[^1].Cleanups.Add(new DeferCleanup(new BoundExprStmt(i.Syntax, new BoundCall(i.Syntax, _builtins.Panic, null,
+                [new BoundLiteral(i.Syntax, PrimitiveType.String, new ConstantValue("`if never` condition was true"))], PrimitiveType.Never))));
+            Statement(i.Then);
+            EmitCleanups(_scopes.Count - 1, null);
+            _scopes.RemoveAt(_scopes.Count - 1);
+        });
         var otherwise = i.Else is null ? null : Capture(() => Statement(i.Else));
         Emit(new BoundIf(i.Syntax, condition, Block(i.Then.Syntax, then), otherwise is null ? null : Block(i.Else!.Syntax, otherwise)));
     }
@@ -760,6 +774,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 var operand = lvalue ? Lvalue(c.Operand) : Expr(c.Operand);
                 if (IsNever(operand)) return new LNever(e.Syntax, e.Type);
                 if (c.Kind == ConversionKind.FromNever) return operand;
+                if (c.Kind == ConversionKind.Narrow) return new LOptionalValue(c.Syntax, operand, c.Type);
                 if (c.Kind is ConversionKind.ListToSpan && !IsTrivial(operand)) operand = Spill(operand);
                 return c with { Operand = operand };
             }

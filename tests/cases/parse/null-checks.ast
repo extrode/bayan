@@ -1,0 +1,14 @@
+CompilationUnit
+  Let present = (is x (not null))
+  Let absent = (is x null)
+  Let both = (&& (is a (not null)) (is b (not null)))
+  If (is p (not null))
+    Block
+      Expr (call use p)
+  If (is p null)
+    Block
+      Return
+  Let order = (?? (call (. db find) id) (return .notFound))
+  Let quiet = (?? (call (. db find) id) (return))
+  Let next = (?? (call (. rows next)) (break))
+  Let item = (?? (call (. items get) i) (continue))

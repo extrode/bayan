@@ -1,0 +1,11 @@
+struct Box {
+    i64 v;
+}
+
+Box? box(i64 n) => n > 0 ? Box { v: n } : null;
+
+var b = box(1);
+if (b is not null) {
+    b = box(0);
+    print($"{b.v}");
+}

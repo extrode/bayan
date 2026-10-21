@@ -125,6 +125,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor AmbiguousVariant = Error("BYN2227", "`.{0}` is ambiguous; it exists in `{1}`");
     public static readonly DiagnosticDescriptor UnknownVariant = Error("BYN2228", "`{0}` is not a variant of `{1}`");
     public static readonly DiagnosticDescriptor InvalidConstArray = Error("BYN2229", "module-level `const` array `{0}` must hold literal numbers, `bool`s, `char`s or `string`s");
+    public static readonly DiagnosticDescriptor WhileLetNotOptional = Error("BYN2234", "`while let` needs a `T?` value, got `{0}`");
     public static readonly DiagnosticDescriptor SpreadNotSequence = Error("BYN2235", "`..{0}` spreads a `{1}`, which is not a sequence");
     public static readonly DiagnosticDescriptor MapLiteralMixed = Error("BYN2236", "a map literal needs `key: value` in every element");
     public static readonly DiagnosticDescriptor MissingArgument = Error("BYN2301", "missing argument `{0}` for `{1}`");
@@ -173,6 +174,10 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor VariantHasNoPayload = Error("BYN2706", "variant `{0}` has no payload");
     public static readonly DiagnosticDescriptor RecursiveUnion = Error("BYN2707", "union `{0}` contains itself");
     public static readonly DiagnosticDescriptor BorrowPayload = Error("BYN2708", "a union payload cannot hold a borrowed `{0}`");
+    public static readonly DiagnosticDescriptor UnionValueNotInteger = Error("BYN2709", "a case value must be an integer constant");
+    public static readonly DiagnosticDescriptor UnionValueOnPayload = Error("BYN2710", "`{0}` carries data and cannot have a value");
+    public static readonly DiagnosticDescriptor DuplicateUnionValue = Error("BYN2711", "`{0}` and `{1}` share the value {2}");
+    public static readonly DiagnosticDescriptor WildcardOnLocalUnion = Warning("BYN2712", "`_` hides future cases of `{0}`, declared in this package");
     public static readonly DiagnosticDescriptor UnknownEnumMember = Error("BYN2720", "`{0}` is not a member of `{1}`");
     public static readonly DiagnosticDescriptor DuplicateEnumMember = Error("BYN2721", "enum `{0}` already has a member `{1}`");
     public static readonly DiagnosticDescriptor EmptyEnum = Error("BYN2722", "enum `{0}` has no members");

@@ -1092,7 +1092,18 @@ internal sealed partial class Binder
         {
             if (pattern is null) return true;
             if (guard is not null) continue;
-            if (Irrefutable(pattern)) return true;
+            if (Irrefutable(pattern))
+            {
+                // Every union is declared in the package being compiled: there are no dependencies yet.
+                if (pattern.Syntax is DiscardPattern && type is UnionSymbol u)
+                {
+                    var rest = domain!.Where(k => !covered.Contains(k)).ToList();
+                    Report(DiagnosticCodes.WildcardOnLocalUnion, pattern.Syntax.Span, [u.DisplayName],
+                        label: "matches every case added later",
+                        help: rest.Count > 0 ? "list the cases instead: " + string.Join(", ", rest) : "remove the `_` arm");
+                }
+                return true;
+            }
             Collect(pattern, type, covered);
         }
         if (domain is not null && domain.All(covered.Contains)) return true;
@@ -1109,7 +1120,10 @@ internal sealed partial class Binder
             }
         Report(DiagnosticCodes.NonExhaustive, span, [type.DisplayName],
             label: missing is { Count: > 0 } ? "not covered: " + string.Join(", ", missing) : null,
-            help: statement ? "add the missing cases or a `default:` section" : "add the missing arms, or `_ => …` for the rest");
+            help: statement ? "add the missing cases or a `default:` section"
+                // A `_` arm on a union of this package is BYN2712, so name the arms instead.
+                : type is UnionSymbol && missing is { Count: > 0 } ? "add the missing arms: " + string.Join(", ", missing)
+                : "add the missing arms, or `_ => …` for the rest");
         return false;
     }
 

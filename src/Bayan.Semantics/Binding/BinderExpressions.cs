@@ -369,7 +369,7 @@ internal sealed partial class Binder
         return Literal(l, type, (Int128)value);
     }
 
-    private static BigInteger ParseInteger(string text)
+    internal static BigInteger ParseInteger(string text)
     {
         text = text.Replace("_", "");
         if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
@@ -409,6 +409,8 @@ internal sealed partial class Binder
         {
             if (local.Kind == LocalKind.Const && local.Constant is { } c)
                 return new BoundLiteral(n, local.Type, c) { Constant = c };
+            if (IsNonNull(local))
+                return new BoundConversion(n, new BoundLocal(n, local), ((OptionalType)local.Type).Inner, ConversionKind.Narrow);
             return new BoundLocal(n, local);
         }
         if (_struct is not null && LookupMember(_struct, name) is { } member)
@@ -920,7 +922,7 @@ internal sealed partial class Binder
             case BinaryOp.LogicalAnd or BinaryOp.LogicalOr:
             {
                 var l = BindConverted(b.Left, PrimitiveType.Bool);
-                var r = BindConverted(b.Right, PrimitiveType.Bool);
+                var r = Narrowed(l, b.Op == BinaryOp.LogicalAnd, () => BindConverted(b.Right, PrimitiveType.Bool));
                 var result = new BoundBinary(b, b.Op, l, r, PrimitiveType.Bool);
                 if (l.Constant is { } lc && r.Constant is { } rc)
                     return result with { Constant = ConstantFolding.Binary(b.Op, lc, rc, PrimitiveType.Bool) };

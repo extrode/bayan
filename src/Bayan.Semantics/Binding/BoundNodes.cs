@@ -103,6 +103,8 @@ public enum ConversionKind
     ErrorToResult,
     /// <summary>A <c>never</c> expression in a position of another type.</summary>
     FromNever,
+    /// <summary>A <c>T?</c> let local or parameter read where a null check proved it present (spec §7.2).</summary>
+    Narrow,
 }
 
 public sealed record BoundConversion(Node Syntax, BoundExpr Operand, TypeSymbol Type, ConversionKind Kind) : BoundExpr(Syntax, Type);
@@ -224,7 +226,11 @@ public sealed record BoundBreak(Node Syntax, JumpTarget Target) : BoundStmt(Synt
 
 public sealed record BoundContinue(Node Syntax, JumpTarget Target) : BoundStmt(Syntax);
 
-public sealed record BoundIf(Node Syntax, BoundExpr Condition, BoundStmt Then, BoundStmt? Else) : BoundStmt(Syntax);
+public sealed record BoundIf(Node Syntax, BoundExpr Condition, BoundStmt Then, BoundStmt? Else) : BoundStmt(Syntax)
+{
+    /// <summary><c>if never</c>: after <see cref="Then"/>, panics in every build mode.</summary>
+    public bool Never { get; init; }
+}
 
 public sealed record BoundWhile(Node Syntax, BoundExpr Condition, BoundStmt Body, JumpTarget Target) : BoundStmt(Syntax);
 

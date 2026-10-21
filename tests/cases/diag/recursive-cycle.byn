@@ -4,8 +4,8 @@ struct Tree {
 }
 
 union Forest {
-    Empty,
-    One(Tree tree),
+    empty,
+    one(Tree tree),
 }
 
 struct Fine {

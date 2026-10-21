@@ -140,6 +140,7 @@ public static class AstDump
                     Line(depth, $"Union {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}");
                     foreach (var v in d.Variants)
                         Line(depth + 1, "Variant " + v.Name.Text + (v.Fields.Length == 0 ? "" : "(" + string.Join(", ", v.Fields.Select(f => Type(f.Type) + " " + f.Name.Text)) + ")")
+                            + (v.Value is null ? "" : " = " + AstDump.Expr(v.Value))
                             + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
                     break;
                 case TypeAliasDecl d:
@@ -193,7 +194,7 @@ public static class AstDump
                     Line(depth, "Continue" + (s.Label is null ? "" : " " + s.Label.Text));
                     break;
                 case IfStmt s:
-                    Line(depth, "If " + AstDump.Expr(s.Condition));
+                    Line(depth, "If " + s.Likelihood switch { Likelihood.Unlikely => "unlikely ", Likelihood.Never => "never ", _ => "" } + AstDump.Expr(s.Condition));
                     Stmt(depth + 1, s.Then);
                     if (s.Else is not null)
                     {
@@ -206,11 +207,15 @@ public static class AstDump
                     Stmt(depth + 1, s.Body);
                     break;
                 case GuardedStmt s:
-                    Line(depth, (s.Unless ? "Guarded unless " : "Guarded if ") + AstDump.Expr(s.Condition));
+                    Line(depth, (s.Unless ? "Guarded unless " : s.Unlikely ? "Guarded if unlikely " : "Guarded if ") + AstDump.Expr(s.Condition));
                     Stmt(depth + 1, s.Statement);
                     break;
                 case WhileStmt s:
                     Line(depth, "While " + AstDump.Expr(s.Condition));
+                    Stmt(depth + 1, s.Body);
+                    break;
+                case WhileLetStmt s:
+                    Line(depth, $"WhileLet {s.Variable.Text} = " + AstDump.Expr(s.Value));
                     Stmt(depth + 1, s.Body);
                     break;
                 case DoWhileStmt s:
@@ -218,7 +223,8 @@ public static class AstDump
                     Stmt(depth + 1, s.Body);
                     break;
                 case ForStmt s:
-                    Line(depth, $"For {s.Kind} {s.Variable.Text}" + (s.Type is null ? "" : ": " + Type(s.Type)) + " in " + AstDump.Expr(s.Iterable));
+                    Line(depth, (s.Try ? "For try " : "For ") + $"{s.Kind} "
+                        + (s.Names.Length > 0 ? "(" + string.Join(", ", s.Names.Select(n => n.Text)) + ")" : s.Variable.Text) + (s.Type is null ? "" : ": " + Type(s.Type)) + " in " + AstDump.Expr(s.Iterable));
                     Stmt(depth + 1, s.Body);
                     break;
                 case LabeledStmt s:

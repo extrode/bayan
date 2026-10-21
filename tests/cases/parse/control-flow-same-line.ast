@@ -1,0 +1,15 @@
+CompilationUnit
+  Function f(bool a, bool b) -> void
+    Block
+      If a
+        Block
+          Expr (call x)
+      If b
+        Block
+          Expr (call y)
+      While a
+        Block
+          Expr (call x)
+      Unless b
+        Block
+          Expr (call y)

@@ -1,0 +1,81 @@
+struct Box {
+    i64 v;
+}
+
+error enum LookupError {
+    missing,
+}
+
+i64? find(i64 n) => n > 0 ? n : null;
+
+Box? box(i64 n) => n > 0 ? Box { v: n } : null;
+
+// A parameter narrows inside `if (p is not null)`.
+i64 inc(i64? p) {
+    if (p is not null) {
+        return p + 1;
+    }
+    return 0;
+}
+
+// An early exit narrows the rest of the block.
+i64 tenfold(i64? p) {
+    if (p is null) { return -1; }
+    return p * 10;
+}
+
+// `else` narrows on `is null`, and the right side of `&&` sees the left side's check.
+i64 add(i64? a, i64? b) {
+    if (a is null || b is null) {
+        return a is not null && a > 3 ? 1 : 0;
+    } else {
+        return a + b;
+    }
+}
+
+i64 lookup(i64 n) fails LookupError {
+    let v = find(n) ?? return .missing;
+    return v;
+}
+
+i64 quiet(i64 n) {
+    let v = find(n) ?? return -7;
+    return v * 2;
+}
+
+i64 untilMissing() {
+    i64 total = 0;
+    for (let i in 0..5) {
+        let v = find(3 - i) ?? break;
+        total += v;
+    }
+    return total;
+}
+
+i64 skipMissing() {
+    i64 total = 0;
+    for (let i in 0..5) {
+        let v = find(i - 2) ?? continue;
+        total += v;
+    }
+    return total;
+}
+
+void show(i64 n) {
+    let v = find(n) ?? return;
+    print($"found {v}");
+}
+
+// A `let` local narrows like a parameter.
+let b = box(5);
+if (b is not null) {
+    print($"box {b.v}");
+} else {
+    print("no box");
+}
+print($"{inc(4)} {inc(null)} {tenfold(3)} {tenfold(null)}");
+print($"{add(a: 1, b: 2)} {add(a: 5, b: null)} {add(a: null, b: 2)}");
+print($"{lookup(3) catch -1} {lookup(0) catch -2} {quiet(4)} {quiet(0)}");
+print($"{untilMissing()} {skipMissing()}");
+show(2);
+show(0);

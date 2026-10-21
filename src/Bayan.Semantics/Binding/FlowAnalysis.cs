@@ -144,6 +144,7 @@ internal sealed class FlowAnalysis
                 state = Expr(i.Condition, state);
                 var condition = i.Condition.Constant?.Value as bool?;
                 var then = Statement(i.Then, condition == false ? State.Unreachable() : state.Clone());
+                if (i.Never) then = State.Unreachable();
                 var otherwise = condition == true ? State.Unreachable() : i.Else is null ? state.Clone() : Statement(i.Else, state.Clone());
                 return then.Join(otherwise);
             }

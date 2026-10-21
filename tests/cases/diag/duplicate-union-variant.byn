@@ -1,5 +1,5 @@
 union Shape {
-    Circle(f32 r),
-    None,
-    Circle(f32 radius),
+    circle(f32 r),
+    none,
+    circle(f32 radius),
 }

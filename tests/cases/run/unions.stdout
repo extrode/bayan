@@ -1,5 +1,5 @@
-Circle(r: 1) Rect(w: 2, h: 2) None
-Rect(w: 2, h: 3)
+circle(r: 1) rect(w: 2, h: 2) none
+rect(w: 2, h: 3)
 3 4 0
 circle 1
 big circle
@@ -9,14 +9,14 @@ true false true true true
 is rect 2x2
 c is not a rect
 true true
-list Circle(r: 1)
-list Rect(w: 1, h: 2)
-list None
+list circle(r: 1)
+list rect(w: 1, h: 2)
+list none
 total 5
-Slot { label: first, shape: Circle(r: 3) }
+Slot { label: first, shape: circle(r: 3) }
 true
-Rect(w: 1, h: 2) null
+rect(w: 1, h: 2) null
 rect 1
-number 42 Number(value: 42)
-word hi Word(text: hi)
-end End
+number 42 number(value: 42)
+word hi word(text: hi)
+end end

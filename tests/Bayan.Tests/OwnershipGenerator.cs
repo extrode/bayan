@@ -14,7 +14,7 @@ namespace Bayan.Tests;
 /// fn         := "void g&lt;k&gt;() {" "using let arena = Arena();" "var t = k;" stmt{size} "}"
 /// stmt       := decl | move | copy | take | call | borrow | loop | branch | switchMove | reassign
 ///             | read | return
-/// decl       := ("let"|"var") x "=" (fresh(n) | Ledger { items = fresh(n) } | Slot.Full(fresh(n)))
+/// decl       := ("let"|"var") x "=" (fresh(n) | Ledger { items = fresh(n) } | Slot.full(fresh(n)))
 ///             | "List&lt;i64&gt;? x = fresh(n);" | "var x = List&lt;List&lt;i64&gt;&gt;(); x.add(fresh(n));"
 /// move       := "var y = move x;"                 if x Owned and not a let from outside the loop
 /// copy       := "let y = x.copy(to: arena);"      if x Owned
@@ -22,9 +22,9 @@ namespace Bayan.Tests;
 /// call       := consume(move x) | "var y = pass(move x);" | peek(x) | bump(ref x)   (bump: x var)
 /// borrow     := "{ let v = x.asSpan(); print($"{v.length}"); }" | for (let e in x) over a nested list
 /// loop       := for/while; the body moves an outer x only if x is var, and reassigns it at the end
-/// branch     := if/else on t; join = Moved if moved on either side | "if (s is .Full(let items))" borrow
-/// switchMove := "switch (move s) {" ["case .Full(let b) when b.length &gt; n: consume(move b);"]
-///               "case .Full(let items): consume(move items); default: ... }"
+/// branch     := if/else on t; join = Moved if moved on either side | "if (s is .full(let items))" borrow
+/// switchMove := "switch (move s) {" ["case .full(let b) when b.length &gt; n: consume(move b);"]
+///               "case .full(let items): consume(move items); default: ... }"
 /// reassign   := "x = fresh(n);" (or the type's constructor)   if x var; resets Moved
 /// read       := print of x's length or null test | "x.add(n);" if x var        if x Owned
 /// return     := "if (t &gt; 1000) return;"
@@ -57,8 +57,8 @@ internal static class OwnershipGenerator
             List<i64> items;
         }
         union Slot {
-            Empty,
-            Full(List<i64> items),
+            empty,
+            full(List<i64> items),
         }
 
         """;
@@ -149,7 +149,7 @@ internal static class OwnershipGenerator
         {
             Kind.List or Kind.Opt => Fresh(),
             Kind.Ledger => $"Ledger {{ items = {Fresh()} }}",
-            Kind.Slot => $"Slot.Full({Fresh()})",
+            Kind.Slot => $"Slot.full({Fresh()})",
             _ => "List<List<i64>>()",
         };
 
@@ -332,7 +332,7 @@ internal static class OwnershipGenerator
             {
                 var scope = _vars.Count;
                 var skipped = _vars.Select(v => v.Moved).ToList();
-                Line($"if ({s.Name} is .Full(let {Name()})) {{");
+                Line($"if ({s.Name} is .full(let {Name()})) {{");
                 _indent++;
                 // The subject stays borrowed by the pattern binding for the whole body.
                 _borrowed.Add(s);
@@ -383,10 +383,10 @@ internal static class OwnershipGenerator
             {
                 // A guard that may fail: the next arm binds the same storage.
                 var big = Name();
-                Line($"    case .Full(let {big}) when {big}.length > {Int(3)}:");
+                Line($"    case .full(let {big}) when {big}.length > {Int(3)}:");
                 Line($"        consume(move {big});");
             }
-            Line($"    case .Full(let {items}):");
+            Line($"    case .full(let {items}):");
             Line($"        consume(move {items});");
             Line("    default:");
             Line("        print(\"empty\");");
@@ -423,7 +423,7 @@ internal static class OwnershipGenerator
                     Line($"print($\"{{{x.Name}.items.length}}\");");
                     break;
                 case Kind.Slot:
-                    Line($"print($\"{{{x.Name} is .Empty}}\");");
+                    Line($"print($\"{{{x.Name} is .empty}}\");");
                     break;
                 case Kind.Opt:
                     Line($"print($\"{{{x.Name} is null}}\");");

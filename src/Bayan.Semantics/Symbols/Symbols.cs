@@ -477,7 +477,7 @@ public sealed class UnionSymbol(string name, Location location, ModuleSymbol mod
     public UnionVariantSymbol? Find(string name) => Variants.Find(v => v.Name == name);
 }
 
-/// <summary>A union variant; its tag is its declaration index. Unit variants have no fields.</summary>
+/// <summary>A union variant; its tag is its declared value, else one more than the previous tag (0 first). Unit variants have no fields.</summary>
 public sealed class UnionVariantSymbol(string name, Location location, UnionSymbol union, int tag, string? doc) : Symbol(name, location)
 {
     public UnionSymbol Union { get; } = union;
