@@ -3,21 +3,24 @@ error BYN2229: module-level `const` array `names` must hold literal numbers, `bo
   3 │ const string[2] names = ["a", "b"];
     │       ^^^^^^^^^
     │
-  help: write `const T[N] names = [ … ];` with `T` a number type, `bool` or `char`, and only literals or constants inside
+  help: write `const T[N] names = [ … ];` with `T` a number type, `bool` or `char`, and only
+        literals or constants inside
 
 error BYN2229: module-level `const` array `computed` must hold literal numbers, `bool`s or `char`s
 
   4 │ const i64[3] computed = [1, twice(2), 3];
     │                             ^^^^^^^^ not a constant
     │
-  help: write `const T[N] computed = [ … ];` with `T` a number type, `bool` or `char`, and only literals or constants inside
+  help: write `const T[N] computed = [ … ];` with `T` a number type, `bool` or `char`, and only
+        literals or constants inside
 
 error BYN2229: module-level `const` array `list` must hold literal numbers, `bool`s or `char`s
 
   5 │ const List<i64> list = [1, 2];
     │       ^^^^^^^^^
     │
-  help: write `const T[N] list = [ … ];` with `T` a number type, `bool` or `char`, and only literals or constants inside
+  help: write `const T[N] list = [ … ];` with `T` a number type, `bool` or `char`, and only literals
+        or constants inside
 
 error BYN2106: cannot modify this value
 

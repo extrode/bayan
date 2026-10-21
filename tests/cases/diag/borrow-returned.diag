@@ -1,4 +1,5 @@
-error BYN3003: cannot return a borrow of the `stackalloc` buffer on line 2, which is freed when `scratch` returns
+error BYN3003: cannot return a borrow of the `stackalloc` buffer on line 2, which is freed when
+`scratch` returns
 
   3 │     return buf[1..];
     │            ^^^^^^^^

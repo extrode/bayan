@@ -5,3 +5,4 @@ error BYN1013: a conditional expression inside a collection literal must be pare
     │
   help: wrap it in parentheses
     │ 1 │ let xs = [(a ? 1 : 2), 3];
+    │   │           +++++++++++

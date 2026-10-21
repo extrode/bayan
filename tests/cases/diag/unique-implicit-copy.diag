@@ -3,21 +3,27 @@ error BYN2780: implicit copy of a unique value: `List<i64>` is unique: it owns i
   6 │     let b = a;
     │             ^
     │
-  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
+  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by
+        `ref` shares it instead
     │ 6 │     let b = move a;
+    │   │             +++++
 
 error BYN2780: implicit copy of a unique value: `Map<string, i64>` is unique: it owns its storage
 
   8 │     let n = m;
     │             ^
     │
-  help: `move m` hands the value over; `m.copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
+  help: `move m` hands the value over; `m.copy(to: alloc)` makes an independent copy; passing it by
+        `ref` shares it instead
     │ 8 │     let n = move m;
+    │   │             +++++
 
 error BYN2780: implicit copy of a unique value: `StrBuf` is unique: it owns its storage
 
   11 │     let other = sb;
      │                 ^^
      │
-  help: `move sb` hands the value over; `sb.copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
+  help: `move sb` hands the value over; `sb.copy(to: alloc)` makes an independent copy; passing it
+        by `ref` shares it instead
      │ 11 │     let other = move sb;
+     │    │                 +++++

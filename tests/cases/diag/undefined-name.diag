@@ -5,3 +5,4 @@ error BYN2001: `cout` is not defined
     │
   help: did you mean `count`?
     │ 2 │ print($"{count}");
+    │   │             +
