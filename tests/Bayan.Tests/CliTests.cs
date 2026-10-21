@@ -298,6 +298,7 @@ public sealed class CliTests
               PANIC  asserts  (T)
                      before
                      panic: assertion failed: 1 + 1 == 3
+                       1 + 1 is 2
                        at main.test.byn:16
               FAIL   fails  (T)
                      error: It went wrong.
@@ -318,6 +319,22 @@ public sealed class CliTests
         Assert.Equal(0, exit);
         Assert.Contains("1 test: 1 passed", stdout);
         Assert.DoesNotContain("main", stdout.Replace("running", ""));
+    }
+
+    [Fact]
+    public void TodoReportsPending()
+    {
+        var dir = TestSuite("cli-test-todo", "test \"one\" {\n    assert(true);\n}\n\ntest \"later\" {\n    todo(\"x\");\n}\n");
+        var (exit, stdout, _) = Run("test", "--json", dir);
+        Assert.Equal(CliApp.ExitOk, exit);
+        Assert.Contains("\"status\": \"pending\"", stdout);
+        Assert.Contains("\"output\": \"pending: x\\n  at main.test.byn:6\"", stdout);
+        Assert.Contains("\"pending\": 1", stdout);
+        Assert.Contains("\"passed\": 1", stdout);
+        Assert.Contains("\"failed\": 0", stdout);
+        var (_, human, _) = Run("test", dir);
+        Assert.Contains("PEND ", human);
+        Assert.Contains("2 tests: 1 passed, 1 pending", human);
     }
 
     private static string BuildAndRun(string example)

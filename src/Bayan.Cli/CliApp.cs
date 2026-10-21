@@ -514,6 +514,7 @@ public static class CliApp
             {
                 0 => TestStatus.Pass,
                 1 => TestStatus.Fail,
+                4 => TestStatus.Pending,
                 _ => TestStatus.Panic,
             };
             var details = outcome.TimedOut ? $"timed out after {TestTimeout.TotalSeconds:0} s" : (outcome.Stdout + outcome.Stderr).TrimEnd();
@@ -524,12 +525,13 @@ public static class CliApp
                 TestStatus.Pass => "ok   ",
                 TestStatus.Fail => "FAIL ",
                 TestStatus.Panic => "PANIC",
+                TestStatus.Pending => "PEND ",
                 _ => "TIME ",
             };
             var style = status switch
             {
                 TestStatus.Pass => Palette.Green,
-                TestStatus.Timeout => Palette.Yellow,
+                TestStatus.Timeout or TestStatus.Pending => Palette.Yellow,
                 _ => Palette.Bold + Palette.Red,
             };
             human.WriteLine($"  {Paint(style, label)}  {test.Name}  ({FormatMs(outcome.Elapsed)})");
@@ -540,11 +542,12 @@ public static class CliApp
         total.Stop();
         var report = new TestReport(compiled.Manifest?.Name, ModeName(o.Mode), HostTarget, results, total.Elapsed, skipped);
         int passed = report.Count(TestStatus.Pass), failed = report.Count(TestStatus.Fail);
-        int panicked = report.Count(TestStatus.Panic), timedOut = report.Count(TestStatus.Timeout);
+        int panicked = report.Count(TestStatus.Panic), timedOut = report.Count(TestStatus.Timeout), pending = report.Count(TestStatus.Pending);
         var summary = $"{passed} passed";
         if (failed > 0) summary += $", {failed} failed";
         if (panicked > 0) summary += $", {panicked} panicked";
         if (timedOut > 0) summary += $", {timedOut} timed out";
+        if (pending > 0) summary += $", {pending} pending";
         human.WriteLine();
         human.WriteLine($"{count} test{(count == 1 ? "" : "s")}: {summary}  ({FormatMs(total.Elapsed)})");
         var json = report.ToJson();
@@ -555,7 +558,7 @@ public static class CliApp
             Directory.CreateDirectory(testDir);
             Toolchain.ReplaceFile(Path.Combine(testDir, "results.json"), temp => File.WriteAllText(temp, json));
         }
-        return passed == count ? ExitOk : ExitTestFailure;
+        return passed + pending == count ? ExitOk : ExitTestFailure;
     }
 
     private sealed record TestOutcome(int ExitCode, bool TimedOut, string Stdout, string Stderr, TimeSpan Elapsed);
