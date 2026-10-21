@@ -518,6 +518,9 @@ internal sealed partial class Binder
     private BoundExpr BindMove(Node syntax, BoundExpr operand)
     {
         if (operand.Type.IsError) return operand;
+        // a narrowed local moves the underlying optional binding, still typed as the narrowed value
+        if (operand is BoundConversion { Kind: ConversionKind.Narrow, Operand: BoundLocal } narrowed)
+            return new BoundConversion(narrowed.Syntax, BindMove(syntax, narrowed.Operand), narrowed.Type, ConversionKind.Narrow);
         if (CheckGuardWrite(operand, syntax.Span, "it is moved")) return new BoundMove(syntax, operand);
         switch (operand)
         {
@@ -560,6 +563,7 @@ internal sealed partial class Binder
         if (inner is not MoveExpr m) return BindExpr(value);
         var operand = BindExpr(m.Operand);
         if (operand.Type.IsError) return operand;
+        if (operand is BoundConversion { Kind: ConversionKind.Narrow, Operand: BoundLocal underlying }) operand = underlying;
         if (operand is BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var or LocalKind.PatternVariable } or ParameterSymbol { Modifier: ParamModifier.Move } } local)
         {
             owns = !local.Local.BorrowsSubject;
