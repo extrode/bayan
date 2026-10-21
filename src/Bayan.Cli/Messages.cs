@@ -85,23 +85,22 @@ public static class Messages
     public static readonly Message UnknownDistTarget = Register("usage.unknown-dist-target", "bayan: unknown target `{0}` (expected host, all, {1})");
     public static readonly Message UnknownColor = Register("usage.unknown-color", "bayan: unknown color setting `{0}` (expected auto, always or never)");
     public static readonly Message UnexpectedArgument = Register("usage.unexpected-argument", "bayan: unexpected argument `{0}`");
-    public static readonly Message ExpectedPath = Register("usage.expected-path", "bayan: expected a file or directory (or run inside a project with a `package.byn`)");
+    public static readonly Message ExpectedPath = Register("usage.expected-path", "bayan: expected a file or directory (or run inside a project with a `{0}`)");
     public static readonly Message NotFound = Register("usage.not-found", "bayan: not found: {0}");
     public static readonly Message ExpectedOneFile = Register("usage.expected-one-file", "bayan: expected exactly one file");
     public static readonly Message FileNotFound = Register("usage.file-not-found", "bayan: file not found: {0}");
-    public static readonly Message ExplainExpected = Register("usage.explain-expected", "bayan: expected one diagnostic code, e.g. `bayan explain {0}`");
+    public static readonly Message ExplainExpected = Register("usage.explain-expected", "bayan: expected one diagnostic code, e.g. `{0}`");
     public static readonly Message ExplainUnknown = Register("usage.explain-unknown", "bayan: no explanation for `{0}`");
-    public static readonly Message CacheUsage = Register("usage.cache", "usage: bayan cache stats   (`bayan clean --cache` empties it)");
-    public static readonly Message DistUsage = Register("usage.dist", "usage: bayan dist [<dir>] [--target <t>|all] [--mode debug|safe|fast] [--force] [--allow-dirty]");
-    public static readonly Message CleanUsage = Register("usage.clean", "usage: bayan clean [<dir>] [--dist] [--cache]");
+    public static readonly Message CacheUsage = Register("usage.cache", "usage: {0}   (`{1}` empties it)");
+    public static readonly Message CommandUsage = Register("usage.command", "usage: {0}");
 
     // ── version ──────────────────────────────────────────────────────────────────────
-    public static readonly Message VersionLine = Register("version.line", "bayan {0} (commit {1})");
+    public static readonly Message VersionLine = Register("version.line", "{0} {1} (commit {2})");
 
     // ── build ────────────────────────────────────────────────────────────────────────
     public static readonly Message NoEntryApp = Register("build.no-entry.app", "bayan: `{0}` is an app, so its code goes in `{1}`, which doesn't exist");
     public static readonly Message NoEntryLib = Register("build.no-entry.lib", "bayan: `{0}` is a library, so its code goes in `{1}`, which doesn't exist");
-    public static readonly Message LibraryNoProgram = Register("build.library", "bayan: `{0}` is a library, so there is no program to {1}; `bayan test` runs its tests");
+    public static readonly Message LibraryNoProgram = Register("build.library", "bayan: `{0}` is a library, so there is no program to {1}; `{2}` runs its tests");
     public static readonly Message ToolchainError = Register("build.toolchain", "bayan: {0}");
 
     // ── cache ────────────────────────────────────────────────────────────────────────
@@ -129,8 +128,8 @@ public static class Messages
     public static readonly Message TestSummaryOne = Register("test.summary.one", "{0} test: {1}  ({2})");
     public static readonly Message TestSummaryMany = Register("test.summary.many", "{0} tests: {1}  ({2})");
     public static readonly Message TestMs = Register("test.ms", "{0} ms");
-    public static readonly Message ChangedNoGit = Register("test.changed.no-git", "bayan: `--changed` needs git, which isn't installed");
-    public static readonly Message ChangedNoRepository = Register("test.changed.no-repository", "bayan: `--changed` needs a git repository, and `{0}` isn't in one");
+    public static readonly Message ChangedNoGit = Register("test.changed.no-git", "bayan: `{0}` needs git, which isn't installed");
+    public static readonly Message ChangedNoRepository = Register("test.changed.no-repository", "bayan: `{0}` needs a git repository, and `{1}` isn't in one");
     public static readonly Message ChangedNoCompare = Register("test.changed.no-compare", "bayan: git can't compare the working tree with `{0}`");
 
     // ── doctor ───────────────────────────────────────────────────────────────────────
@@ -146,35 +145,35 @@ public static class Messages
     public static readonly Message DoctorNoHostFix = Register("doctor.host.none.fix", "build on linux, macos or windows, x64 or arm64");
     public static readonly Message DoctorCCompiler = Register("doctor.cc", "C compiler");
     public static readonly Message DoctorNoCCompiler = Register("doctor.cc.none", "none found");
-    public static readonly Message DoctorNoCCompilerFix = Register("doctor.cc.none.fix", "install zig (https://ziglang.org), or set BAYAN_CC to a C compiler");
-    public static readonly Message DoctorCCompilerEnvBroken = Register("doctor.cc.env-broken", "BAYAN_CC is `{0}`, which can't be run");
-    public static readonly Message DoctorCCompilerEnvBrokenFix = Register("doctor.cc.env-broken.fix", "point BAYAN_CC at a C compiler, or unset it to use zig");
+    public static readonly Message DoctorNoCCompilerFix = Register("doctor.cc.none.fix", "install zig ({0}), or set {1} to a C compiler");
+    public static readonly Message DoctorCCompilerEnvBroken = Register("doctor.cc.env-broken", "{0} is `{1}`, which can't be run");
+    public static readonly Message DoctorCCompilerEnvBrokenFix = Register("doctor.cc.env-broken.fix", "point {0} at a C compiler, or unset it to use zig");
     public static readonly Message DoctorCCompilerBroken = Register("doctor.cc.broken", "`{0}` can't be run");
-    public static readonly Message DoctorCCompilerBrokenFix = Register("doctor.cc.broken.fix", "reinstall it, or set BAYAN_CC to a working C compiler");
+    public static readonly Message DoctorCCompilerBrokenFix = Register("doctor.cc.broken.fix", "reinstall it, or set {0} to a working C compiler");
     public static readonly Message DoctorTool = Register("doctor.tool", "{0} ({1})");
     public static readonly Message DoctorToolBroken = Register("doctor.tool.broken", "{0} can't be run");
     public static readonly Message DoctorZig = Register("doctor.zig", "zig");
     public static readonly Message DoctorNoZig = Register("doctor.zig.none", "not found; building for other targets needs it");
-    public static readonly Message DoctorInstallZig = Register("doctor.zig.install", "install zig (https://ziglang.org)");
-    public static readonly Message DoctorReinstallZig = Register("doctor.zig.reinstall", "reinstall zig (https://ziglang.org)");
+    public static readonly Message DoctorInstallZig = Register("doctor.zig.install", "install zig ({0})");
+    public static readonly Message DoctorReinstallZig = Register("doctor.zig.reinstall", "reinstall zig ({0})");
     public static readonly Message DoctorGit = Register("doctor.git", "git");
-    public static readonly Message DoctorNoGit = Register("doctor.git.none", "not found; `bayan new` skips `git init`, `bayan dist` records no commit, `bayan test --changed` is unavailable");
+    public static readonly Message DoctorNoGit = Register("doctor.git.none", "not found; `{0}` skips `{1}`, `{2}` records no commit, `{3}` is unavailable");
     public static readonly Message DoctorInstallGit = Register("doctor.git.install", "install git");
     public static readonly Message DoctorReinstallGit = Register("doctor.git.reinstall", "reinstall git");
     public static readonly Message DoctorCache = Register("doctor.cache", "cache");
     public static readonly Message DoctorCacheOk = Register("doctor.cache.ok", "{0} (writable, {1} programs, {2:0.0} MB)");
     public static readonly Message DoctorCacheBroken = Register("doctor.cache.broken", "{0} isn't writable: {1}");
-    public static readonly Message DoctorCacheBrokenFix = Register("doctor.cache.broken.fix", "set BAYAN_CACHE to a writable directory");
+    public static readonly Message DoctorCacheBrokenFix = Register("doctor.cache.broken.fix", "set {0} to a writable directory");
 
     // ── dist and clean ───────────────────────────────────────────────────────────────
-    public static readonly Message DistNotProject = Register("dist.not-project", "bayan: `{0}` isn't a project (no `package.byn`); scripts and loose files have no dist");
+    public static readonly Message DistNotProject = Register("dist.not-project", "bayan: `{0}` isn't a project (no `{1}`); scripts and loose files have no dist");
     public static readonly Message DistLibrary = Register("dist.library", "bayan: `{0}` is a library; library distribution arrives later, with FFI export");
     public static readonly Message DistDirty = Register("dist.dirty", "bayan: the git tree has uncommitted changes, so this build couldn't be traced to a commit");
-    public static readonly Message DistDirtyHelp = Register("dist.dirty.help", "  help: commit first, or pass `--allow-dirty` (recorded in BUILDINFO.json)");
+    public static readonly Message DistDirtyHelp = Register("dist.dirty.help", "  help: commit first, or pass `{0}` (recorded in {1})");
     public static readonly Message DistExists = Register("dist.exists", "bayan: `{0}` already exists, and a released version never changes");
-    public static readonly Message DistExistsHelp = Register("dist.exists.help", "  help: bump `version` in package.byn, or pass `--force` to rebuild this one");
+    public static readonly Message DistExistsHelp = Register("dist.exists.help", "  help: bump `{0}` in {1}, or pass `{2}` to rebuild this one");
     public static readonly Message DistBuilt = Register("dist.built", "built {0} {1} ({2}) for {3} in {4}");
     public static readonly Message DistLatest = Register("dist.latest", "{0} is {1}");
-    public static readonly Message CleanNotProject = Register("clean.not-project", "bayan: `{0}` isn't a project (no `package.byn`), so it has no out/ to clean");
+    public static readonly Message CleanNotProject = Register("clean.not-project", "bayan: `{0}` isn't a project (no `{1}`), so it has no {2} to clean");
     public static readonly Message CleanRemoved = Register("clean.removed", "removed {0}");
 }

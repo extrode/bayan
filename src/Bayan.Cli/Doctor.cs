@@ -11,6 +11,8 @@ internal static class Doctor
 {
     private enum Level { Ok, Note, Fail }
 
+    private const string ZigUrl = "https://ziglang.org";
+
     private sealed record Check(Level Level, string Name, string Detail, string? Fix = null);
 
     public static int Run(string[] args, TextWriter stdout)
@@ -39,28 +41,28 @@ internal static class Doctor
     {
         var fromEnv = Environment.GetEnvironmentVariable("BAYAN_CC") is { Length: > 0 };
         if (Toolchain.FindCompiler() is not { } compiler)
-            return new(Level.Fail, Messages.DoctorCCompiler.Text(), Messages.DoctorNoCCompiler.Text(), Messages.DoctorNoCCompilerFix.Text());
+            return new(Level.Fail, Messages.DoctorCCompiler.Text(), Messages.DoctorNoCCompiler.Text(), Messages.DoctorNoCCompilerFix.Text(ZigUrl, "BAYAN_CC"));
         var command = string.Join(" ", compiler);
         if (Version(compiler[0], [.. compiler[1..], "--version"]) is not { } version)
             return fromEnv
-                ? new(Level.Fail, Messages.DoctorCCompiler.Text(), Messages.DoctorCCompilerEnvBroken.Text(command), Messages.DoctorCCompilerEnvBrokenFix.Text())
-                : new(Level.Fail, Messages.DoctorCCompiler.Text(), Messages.DoctorCCompilerBroken.Text(command), Messages.DoctorCCompilerBrokenFix.Text());
+                ? new(Level.Fail, Messages.DoctorCCompiler.Text(), Messages.DoctorCCompilerEnvBroken.Text("BAYAN_CC", command), Messages.DoctorCCompilerEnvBrokenFix.Text("BAYAN_CC"))
+                : new(Level.Fail, Messages.DoctorCCompiler.Text(), Messages.DoctorCCompilerBroken.Text(command), Messages.DoctorCCompilerBrokenFix.Text("BAYAN_CC"));
         return new(Level.Ok, Messages.DoctorCCompiler.Text(), Messages.DoctorTool.Text(command, version));
     }
 
     private static Check Zig()
     {
         if (Toolchain.FindOnPath("zig") is not { } zig)
-            return new(Level.Note, Messages.DoctorZig.Text(), Messages.DoctorNoZig.Text(), Messages.DoctorInstallZig.Text());
+            return new(Level.Note, Messages.DoctorZig.Text(), Messages.DoctorNoZig.Text(), Messages.DoctorInstallZig.Text(ZigUrl));
         return Version(zig, ["version"]) is { } version
             ? new(Level.Ok, Messages.DoctorZig.Text(), Messages.DoctorTool.Text(zig, version))
-            : new(Level.Fail, Messages.DoctorZig.Text(), Messages.DoctorToolBroken.Text(zig), Messages.DoctorReinstallZig.Text());
+            : new(Level.Fail, Messages.DoctorZig.Text(), Messages.DoctorToolBroken.Text(zig), Messages.DoctorReinstallZig.Text(ZigUrl));
     }
 
     private static Check Git()
     {
         if (Toolchain.FindOnPath("git") is not { } git)
-            return new(Level.Note, Messages.DoctorGit.Text(), Messages.DoctorNoGit.Text(), Messages.DoctorInstallGit.Text());
+            return new(Level.Note, Messages.DoctorGit.Text(), Messages.DoctorNoGit.Text("bayan new", "git init", "bayan dist", "bayan test --changed"), Messages.DoctorInstallGit.Text());
         return Version(git, ["--version"]) is { } version
             ? new(Level.Ok, Messages.DoctorGit.Text(), Messages.DoctorTool.Text(git, version))
             : new(Level.Note, Messages.DoctorGit.Text(), Messages.DoctorToolBroken.Text(git), Messages.DoctorReinstallGit.Text());
@@ -80,7 +82,7 @@ internal static class Doctor
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return new(Level.Fail, Messages.DoctorCache.Text(), Messages.DoctorCacheBroken.Text(dir, e.Message), Messages.DoctorCacheBrokenFix.Text());
+            return new(Level.Fail, Messages.DoctorCache.Text(), Messages.DoctorCacheBroken.Text(dir, e.Message), Messages.DoctorCacheBrokenFix.Text("BAYAN_CACHE"));
         }
     }
 

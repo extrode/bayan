@@ -12,6 +12,9 @@ public sealed class MessagesTests
         "bayan ", // BUILDINFO.json `compiler` value
     };
 
+    /// <summary>Command lines passed as code-snippet arguments (`bayan test`, `git init`, usage synopses).</summary>
+    private static readonly Regex CommandSnippet = new("^(bayan|git) [a-z]", RegexOptions.CultureInvariant);
+
     private static readonly string[] Sources = ["CliApp.cs", "Doctor.cs", "Dist.cs"];
 
     [Fact]
@@ -45,7 +48,7 @@ public sealed class MessagesTests
         {
             var text = File.ReadAllText(Path.Combine(Golden.RepoRoot, "src", "Bayan.Cli", name));
             foreach (var literal in Literals(text))
-                if (literal.Any(char.IsLetter) && literal.Contains(' ') && !NotProse.Contains(literal))
+                if (literal.Any(char.IsLetter) && literal.Contains(' ') && !NotProse.Contains(literal) && !CommandSnippet.IsMatch(literal))
                     prose.Add($"{name}: \"{literal}\"");
         }
         Assert.True(prose.Count == 0, "move to Messages:\n" + string.Join("\n", prose));

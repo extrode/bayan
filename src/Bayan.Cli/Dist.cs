@@ -32,7 +32,7 @@ internal static class Dist
                     break;
                 case var a when a.StartsWith('-') || path is not null:
                     stderr.WriteLine(Messages.UnexpectedArgument.Text(a));
-                    stderr.WriteLine(Messages.DistUsage.Text());
+                    stderr.WriteLine(Messages.CommandUsage.Text("bayan dist [<dir>] [--target <t>|all] [--mode debug|safe|fast] [--force] [--allow-dirty]"));
                     return CliApp.ExitUsage;
                 default: path = args[i]; break;
             }
@@ -40,7 +40,7 @@ internal static class Dist
         path ??= ".";
         if (!File.Exists(Path.Combine(path, "package.byn")))
         {
-            stderr.WriteLine(Messages.DistNotProject.Text(path));
+            stderr.WriteLine(Messages.DistNotProject.Text(path, "package.byn"));
             return CliApp.ExitUsage;
         }
         var buildMode = BuildMode.Safe;
@@ -66,7 +66,7 @@ internal static class Dist
         if (source is { Dirty: true } && !allowDirty)
         {
             stderr.WriteLine(Messages.DistDirty.Text());
-            stderr.WriteLine(Messages.DistDirtyHelp.Text());
+            stderr.WriteLine(Messages.DistDirtyHelp.Text("--allow-dirty", "BUILDINFO.json"));
             return CliApp.ExitUsage;
         }
 
@@ -76,7 +76,7 @@ internal static class Dist
         if (Directory.Exists(versionDir) && !force)
         {
             stderr.WriteLine(Messages.DistExists.Text($"dist/{version}/"));
-            stderr.WriteLine(Messages.DistExistsHelp.Text());
+            stderr.WriteLine(Messages.DistExistsHelp.Text("version", "package.byn", "--force"));
             return CliApp.ExitUsage;
         }
 
@@ -235,7 +235,7 @@ internal static class Dist
                 case "--cache": cache = true; break;
                 case var x when x.StartsWith('-') || path is not null:
                     stderr.WriteLine(Messages.UnexpectedArgument.Text(x));
-                    stderr.WriteLine(Messages.CleanUsage.Text());
+                    stderr.WriteLine(Messages.CommandUsage.Text("bayan clean [<dir>] [--dist] [--cache]"));
                     return CliApp.ExitUsage;
                 default: path = a; break;
             }
@@ -243,7 +243,7 @@ internal static class Dist
         var project = File.Exists(Path.Combine(path ?? ".", "package.byn"));
         if (!project && (path is not null || dist || !cache))
         {
-            stderr.WriteLine(Messages.CleanNotProject.Text(path ?? "."));
+            stderr.WriteLine(Messages.CleanNotProject.Text(path ?? ".", "package.byn", "out/"));
             return CliApp.ExitUsage;
         }
         if (project)

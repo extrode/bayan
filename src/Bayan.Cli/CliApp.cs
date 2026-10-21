@@ -29,7 +29,7 @@ public static class CliApp
     [ThreadStatic] private static Style? s_styleOut;
     [ThreadStatic] private static Style? s_styleErr;
 
-    public static string VersionLine => Messages.VersionLine.Text(Version, BuildInfo.Commit);
+    public static string VersionLine => Messages.VersionLine.Text("bayan", Version, BuildInfo.Commit);
 
     public static int Run(string[] args, TextWriter stdout, TextWriter stderr) => Run(args, stdout, stderr, default);
 
@@ -207,7 +207,7 @@ public static class CliApp
         if (path is null && File.Exists("package.byn")) path = ".";
         if (path is null)
         {
-            stderr.WriteLine(Messages.ExpectedPath.Text());
+            stderr.WriteLine(Messages.ExpectedPath.Text("package.byn"));
             return null;
         }
         if (!File.Exists(path) && !Directory.Exists(path))
@@ -321,7 +321,7 @@ public static class CliApp
     internal static bool RefuseLibrary(Compiled compiled, string command, TextWriter stderr)
     {
         if (compiled.Manifest is not { Kind: PackageKind.Lib } m) return false;
-        stderr.WriteLine(Messages.LibraryNoProgram.Text(m.Name, command));
+        stderr.WriteLine(Messages.LibraryNoProgram.Text(m.Name, command, "bayan test"));
         return true;
     }
 
@@ -439,7 +439,7 @@ public static class CliApp
     {
         if (args is not ["stats"])
         {
-            stderr.WriteLine(Messages.CacheUsage.Text());
+            stderr.WriteLine(Messages.CacheUsage.Text("bayan cache stats", "bayan clean --cache"));
             return ExitUsage;
         }
         var s = Toolchain.Stats();
@@ -546,12 +546,12 @@ public static class CliApp
         var dir = compiled.ProjectRoot ?? (Directory.Exists(o.Path) ? Path.GetFullPath(o.Path) : Path.GetDirectoryName(Path.GetFullPath(o.Path))!);
         if (Toolchain.FindOnPath("git") is not { } git)
         {
-            stderr.WriteLine(Messages.ChangedNoGit.Text());
+            stderr.WriteLine(Messages.ChangedNoGit.Text("--changed"));
             return null;
         }
         if (Scaffold.Git(git, dir, "rev-parse", "--show-toplevel") is not (0, _))
         {
-            stderr.WriteLine(Messages.ChangedNoRepository.Text(o.Path));
+            stderr.WriteLine(Messages.ChangedNoRepository.Text("--changed", o.Path));
             return null;
         }
         // Paths relative to `dir`, not the toplevel, which git reports with symlinks resolved;
@@ -619,7 +619,7 @@ public static class CliApp
     {
         if (args.Length != 1)
         {
-            stderr.WriteLine(Messages.ExplainExpected.Text("BYN0003"));
+            stderr.WriteLine(Messages.ExplainExpected.Text("bayan explain BYN0003"));
             return ExitUsage;
         }
         var text = ExplainText(args[0]);
