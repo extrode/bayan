@@ -256,6 +256,9 @@ public enum BuiltinFunction
     IoStdout,
     IoStderr,
     IoStdin,
+    StringFrom,
+    StringTryFrom,
+    StringInvalidUtf8At,
     EnumFromOrdinal,
     EnumParse,
 }

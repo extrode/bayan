@@ -56,3 +56,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Spec 004 R4: when a body is bound twice, the discarded first pass leaves an unused `i32` instantiation of any generic it called with the literal
 - Spec 004 R4: a value derived from a pending `var` through a call (`n = id(n);`, generic `T` inferred from `n`) counts as a typed `i32` use and fixes `n` at `i32`
 - Spec 004 R4: an optional integer target (`i64?`) does not count as a constraining use, so a later `u8` use can still retype the local
+- `SelfhostLexerTests` (`StdinRuns`, sequential `bayan-lex` processes) did not finish within 10 minutes while several worktrees ran `dotnet test` at once (spec 004 T9); the rest of the suite took about 75 s, and running `bayan-lex --json` by hand on `tests/cases/lex/*.byn` exits right away

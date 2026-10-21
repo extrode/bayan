@@ -189,16 +189,16 @@ public sealed class Compilation
         if (EntryModule.Main is { Kind: FunctionKind.Function } main) CheckMainSignature(main);
     }
 
-    /// <summary><c>IoError</c> is numbered first, so the runtime can return its codes 1 to 7 directly.</summary>
+    /// <summary><c>IoError</c> is numbered first, so the runtime can return its codes 1 to 7 directly; <c>Utf8Error</c> follows (8).</summary>
     private void DeclareBuiltinVariants()
     {
-        var set = Builtins.IoError;
-        foreach (var v in set.Decl.Variants)
-        {
-            var sym = new ErrorVariantSymbol(v.Name.Text, new Location(set.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
-            set.Variants.Add(sym);
-            ErrorVariants.Add(sym);
-        }
+        foreach (var set in new[] { Builtins.IoError, Builtins.Utf8Error })
+            foreach (var v in set.Decl.Variants)
+            {
+                var sym = new ErrorVariantSymbol(v.Name.Text, new Location(set.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
+                set.Variants.Add(sym);
+                ErrorVariants.Add(sym);
+            }
     }
 
     /// <summary><c>void</c> or <c>i32 main()</c>, optionally with <c>ReadOnlySpan&lt;string&gt; args</c> and <c>fails</c> (BYN2771).</summary>

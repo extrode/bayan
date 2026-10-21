@@ -199,6 +199,8 @@ void byn_map_copy(const byn_map_hdr* src, const void* keys, int64_t ksize, void*
 
 /* True if the bytes are well-formed UTF-8 (no overlongs, surrogates or values above U+10FFFF). */
 bool byn_utf8_valid(const uint8_t* p, int64_t n);
+/* Byte offset of the first invalid sequence (its first byte), or -1 when the bytes are well-formed UTF-8. */
+int64_t byn_utf8_invalid_at(const uint8_t* p, int64_t n);
 
 /* argv[1..argc-1] as strings. Writes `error: argument N is not valid UTF-8` (N from 1) and exits 1 on bad input.
  * On Windows they come from the UTF-16 command line instead of `argv`, and `*argc` is set to their count. */
