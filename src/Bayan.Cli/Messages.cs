@@ -102,6 +102,8 @@ public static class Messages
     public static readonly Message NoEntryLib = Register("build.no-entry.lib", "bayan: `{0}` is a library, so its code goes in `{1}`, which doesn't exist");
     public static readonly Message LibraryNoProgram = Register("build.library", "bayan: `{0}` is a library, so there is no program to {1}; `{2}` runs its tests");
     public static readonly Message ToolchainError = Register("build.toolchain", "bayan: {0}");
+    public static readonly Message CompileProgress = Register("build.progress.compiling", "compiling");
+    public static readonly Message BuildProgress = Register("build.progress.building", "building");
 
     // ── cache ────────────────────────────────────────────────────────────────────────
     public static readonly Message CacheDirectory = Register("cache.directory", "cache:    {0}");

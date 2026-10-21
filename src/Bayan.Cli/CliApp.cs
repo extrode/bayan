@@ -230,7 +230,7 @@ public static class CliApp
     /// </summary>
     internal static Compiled? Compile(BuildOptions o, TextWriter stderr, bool includeTests = false)
     {
-        using var progress = StartProgress(o.Json, stderr, "compiling");
+        using var progress = StartProgress(o.Json, stderr, Messages.CompileProgress.Text());
         Compilation c;
         Manifest? manifest = null;
         string? root = null;
@@ -337,7 +337,7 @@ public static class CliApp
     /// <summary>Builds, or reports why the toolchain could not.</summary>
     internal static string? BuildNative(string source, BuildMode mode, TextWriter stderr, string? output = null, string? target = null, bool json = false)
     {
-        using var progress = StartProgress(json, stderr, "building");
+        using var progress = StartProgress(json, stderr, Messages.BuildProgress.Text());
         var result = Toolchain.Build(source, mode, output, target);
         progress.Done();
         if (result.Succeeded) return result.ExecutablePath;
@@ -427,7 +427,7 @@ public static class CliApp
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName, HostTarget))
             : null;
-        using var progress = StartProgress(o.Json, stderr, "building");
+        using var progress = StartProgress(o.Json, stderr, Messages.BuildProgress.Text());
         var result = Toolchain.Build(source, o.Mode, output);
         progress.Done();
         if (!result.Succeeded)
