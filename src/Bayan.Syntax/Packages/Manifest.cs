@@ -10,16 +10,20 @@ namespace Bayan.Syntax.Packages;
 public enum PackageKind { App, Lib }
 
 /// <summary>
-/// <c>package.byn</c> (spec §19.2): data only. The grammar is <c>Type { field = value, … }</c>
-/// where a value is a string, an integer, <c>.name</c>, <c>[value, …]</c> or another
+/// <c>package.byn</c> (spec §19.2): data only. The grammar is <c>Type { field: value, … }</c>
+/// (<c>field = value</c> is still read) where a value is a string, an integer, <c>true</c>,
+/// <c>false</c>, <c>.name</c>, <c>[value, …]</c> or another
 /// <c>Type { … }</c>. Fields the compiler doesn't use yet are checked for syntax only.
 /// </summary>
 public sealed class Manifest
 {
     /// <summary>Fields of <c>Package</c>; the first four are read, the rest are accepted as written.</summary>
-    private static readonly string[] PackageFields = ["name", "version", "edition", "kind", "codes", "capabilities", "deps", "test", "dist"];
+    private static readonly string[] PackageFields = ["name", "version", "edition", "kind", "codes", "capabilities", "deps", "test", "dist", "style"];
 
     private static readonly string[] DistFields = ["targets", "mode"];
+
+    /// <summary>Fields of <c>Style</c> (HANDOFF §18); checked here, read by nothing yet.</summary>
+    private static readonly string[] StyleFields = ["indent", "braces", "maxLine", "trailingCommas"];
 
     private Manifest(SourceText source) => Source = source;
 
@@ -93,6 +97,25 @@ public sealed class Manifest
                 case EnumValue { Name: "app" }: Kind = PackageKind.App; break;
                 case EnumValue { Name: "lib" }: Kind = PackageKind.Lib; break;
                 default: Invalid(kind, "kind", "`.app` or `.lib`"); break;
+            }
+        }
+        if (fields.TryGetValue("style", out var style))
+        {
+            if (style is not ObjectValue { Type: "Style" } st)
+            {
+                Invalid(style, "style", "a `Style { … }`");
+            }
+            else
+            {
+                var styleFields = Fields(st, StyleFields);
+                if (styleFields.TryGetValue("indent", out var indent) && indent is not IntValue { Value: > 0 })
+                    Invalid(indent, "style.indent", "a positive integer, e.g. `4`");
+                if (styleFields.TryGetValue("braces", out var braces) && braces is not EnumValue { Name: "sameLine" or "nextLine" })
+                    Invalid(braces, "style.braces", "`.sameLine` or `.nextLine`");
+                if (styleFields.TryGetValue("maxLine", out var maxLine) && maxLine is not IntValue { Value: > 0 })
+                    Invalid(maxLine, "style.maxLine", "a positive integer, e.g. `100`");
+                if (styleFields.TryGetValue("trailingCommas", out var trailingCommas) && trailingCommas is not BoolValue)
+                    Invalid(trailingCommas, "style.trailingCommas", "`true` or `false`");
             }
         }
         if (fields.TryGetValue("dist", out var dist))
@@ -236,6 +259,7 @@ public sealed class Manifest
     private abstract record Value(TextSpan Span);
     private sealed record StringValue(TextSpan Span, string Value) : Value(Span);
     private sealed record IntValue(TextSpan Span, long Value) : Value(Span);
+    private sealed record BoolValue(TextSpan Span, bool Value) : Value(Span);
     private sealed record EnumValue(TextSpan Span, string Name) : Value(Span);
     private sealed record ListValue(TextSpan Span, List<Value> Items) : Value(Span);
     private sealed record ObjectValue(TextSpan Span, string Type, List<(string Name, TextSpan NameSpan, Value Value)> Fields) : Value(Span);
@@ -255,7 +279,7 @@ public sealed class Manifest
             if (diagnostics.Any(d => d.IsError)) return;
             var d = DiagnosticCodes.ManifestNotData;
             diagnostics.Add(new Diagnostic(d.Severity, d.Code, source, Current.Span, d.Format([expected]),
-                Help: "values are strings, integers, `.names`, `[lists]` and `Type { field = value }`; no calls or expressions"));
+                Help: "values are strings, integers, `true`/`false`, `.names`, `[lists]` and `Type { field: value }`; no calls or expressions"));
         }
 
         private bool Accept(TokenKind kind)
@@ -286,6 +310,9 @@ public sealed class Manifest
                 case TokenKind.IntegerLiteral when long.TryParse(TextOf(t).Replace("_", ""), NumberStyles.None, CultureInfo.InvariantCulture, out var n):
                     _pos++;
                     return new IntValue(t.Span, n);
+                case TokenKind.TrueKeyword or TokenKind.FalseKeyword:
+                    _pos++;
+                    return new BoolValue(t.Span, t.Kind == TokenKind.TrueKeyword);
                 case TokenKind.Dot when IsName(tokens[_pos + 1].Kind):
                     _pos += 2;
                     return new EnumValue(TextSpan.FromBounds(t.Start, tokens[_pos - 1].End), TextOf(tokens[_pos - 1]));
@@ -312,9 +339,9 @@ public sealed class Manifest
                     while (!Accept(TokenKind.CloseBrace))
                     {
                         var name = Current;
-                        if (!AcceptName() || !Accept(TokenKind.Equals))
+                        if (!AcceptName() || !Accept(TokenKind.Colon) && !Accept(TokenKind.Equals))
                         {
-                            Fail("`field = value` or `}`");
+                            Fail("`field: value` or `}`");
                             return null;
                         }
                         if (ReadValue() is not { } value) return null;
@@ -328,7 +355,7 @@ public sealed class Manifest
                     return new ObjectValue(TextSpan.FromBounds(t.Start, tokens[_pos - 1].End), TextOf(t), fields);
                 }
                 default:
-                    Fail("a string, an integer, `.name`, `[…]` or `Type { … }`");
+                    Fail("a string, an integer, `true`, `false`, `.name`, `[…]` or `Type { … }`");
                     return null;
             }
         }
