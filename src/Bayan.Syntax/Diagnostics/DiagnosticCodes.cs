@@ -153,7 +153,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor PublicInferredFails = Error("BYN2607", "public function `{0}` must list its errors");
     public static readonly DiagnosticDescriptor NotAnErrorSet = Error("BYN2608", "`{0}` is not an error enum");
     public static readonly DiagnosticDescriptor EmptyErrorSet = Error("BYN2609", "error enum `{0}` has no variants");
-    public static readonly DiagnosticDescriptor JumpOutOfDefer = Error("BYN2610", "`{0}` cannot leave a `defer` or `errdefer` body");
+    public static readonly DiagnosticDescriptor JumpOutOfDefer = Error("BYN2610", "`{0}` cannot leave a `defer` or `defer failing` body");
     public static readonly DiagnosticDescriptor CatchBlockCompletes = Error("BYN2611", "this `catch` block can complete normally; end it with `return`, `break`, `continue` or a panic");
     public static readonly DiagnosticDescriptor PanicHandlerRestricted = Error("BYN2612", "{0} is not allowed in a panic handler");
     public static readonly DiagnosticDescriptor PanicHandlerReads = Error("BYN2613", "a panic handler reads only `let` bindings and parameters");

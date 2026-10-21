@@ -258,8 +258,8 @@ internal sealed class OwnershipAnalysis
             foreach (var l in c.Reads)
                 if (moved.TryGetValue(l, out var site) && !(c.MovedBefore.TryGetValue(l, out var before) && before == site))
                     Report(DiagnosticCodes.UseAfterMove, site, [l.Name],
-                        label: $"{(c.OnFailure ? "an `errdefer`" : "a `defer`")} on line {_source.GetLinePosition(c.Site.Start).Line} uses it at scope exit",
-                        help: $"move `{l.Name}` before the `{(c.OnFailure ? "errdefer" : "defer")}`, or move a `.copy(to: alloc)` of it instead");
+                        label: $"{(c.OnFailure ? "a `defer failing`" : "a `defer`")} on line {_source.GetLinePosition(c.Site.Start).Line} uses it at scope exit",
+                        help: $"move `{l.Name}` before the `{(c.OnFailure ? "defer failing" : "defer")}`, or move a `.copy(to: alloc)` of it instead");
             foreach (var (l, site) in c.Moves) moved[l] = site;
         }
     }

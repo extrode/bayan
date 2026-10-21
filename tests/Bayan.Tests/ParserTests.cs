@@ -95,6 +95,30 @@ public sealed class ParserTests
         Assert.Equal(2, tree.Root.Members.Length);
     }
 
+    [Theory]
+    [InlineData("defer failing close();", DeferKind.Failing, null)]
+    [InlineData("defer panicking (p) close();", DeferKind.Panicking, "p")]
+    [InlineData("defer failing (e) { close(); }", DeferKind.Failing, "e")]
+    [InlineData("defer failing();", DeferKind.Always, null)]
+    [InlineData("defer failing.close();", DeferKind.Always, null)]
+    [InlineData("defer panicking = 1;", DeferKind.Always, null)]
+    public void FailingAndPanickingAreWordsOnlyAfterDefer(string text, DeferKind kind, string? binding)
+    {
+        var tree = Parse(text);
+        Assert.Empty(tree.Diagnostics);
+        var defer = Assert.IsType<DeferStmt>(Assert.IsType<GlobalStatement>(Assert.Single(tree.Root.Members)).Statement);
+        Assert.Equal(kind, defer.Kind);
+        Assert.Equal(binding, defer.Binding?.Text);
+    }
+
+    [Fact]
+    public void FailingAndPanickingAreIdentifiersElsewhere()
+    {
+        var tree = Parse("let failing = 1;\nvar panicking = failing + 1;\nvoid f(i64 failing) { panicking = failing; }\n");
+        Assert.Empty(tree.Diagnostics);
+        Assert.Equal(3, tree.Root.Members.Length);
+    }
+
     [Fact]
     public void EveryTokenSequenceTerminates()
     {

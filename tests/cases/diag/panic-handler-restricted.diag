@@ -5,14 +5,14 @@ error BYN2612: `try` is not allowed in a panic handler
      │
   help: panic handlers can't recover; remove it
 
-error BYN2612: `assignment` is not allowed in a panic handler
+error BYN2612: assignment is not allowed in a panic handler
 
   13 │         count = n;
      │         ^^^^^^^^^
      │
   help: panic handlers can't recover; remove it
 
-error BYN2612: `allocation` is not allowed in a panic handler
+error BYN2612: allocation is not allowed in a panic handler
 
   14 │         let xs = List<i64>();
      │                  ^^^^^^^^^^^
@@ -40,7 +40,7 @@ error BYN2612: `continue` is not allowed in a panic handler
      │
   help: panic handlers can't recover; remove it
 
-error BYN2612: `allocation` is not allowed in a panic handler
+error BYN2612: allocation is not allowed in a panic handler
 
   30 │     let s = $"{p.message}";
      │             ^^^^^^^^^^^^^^

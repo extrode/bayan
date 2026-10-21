@@ -5,5 +5,6 @@ void f() {
     defer panicking flush();
     defer panicking (p) { log(p.message); }
     errdefer (e) log(e);
-    defer failing;
+    defer failing();
+    defer panicking.flush();
 }
