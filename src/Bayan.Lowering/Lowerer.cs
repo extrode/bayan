@@ -138,10 +138,23 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         BoundLiteral or BoundDefault or BoundLocal or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray or LVoid => true,
         BoundField f => IsTrivial(f.Receiver),
         BoundTupleElement t => IsTrivial(t.Receiver),
+        BoundMove m => IsTrivial(m.Operand),
         LOptionalValue v => IsTrivial(v.Optional),
         LUnionTag t => IsTrivial(t.Union),
         LUnionField f => IsTrivial(f.Union),
         _ => false,
+    };
+
+    /// <summary>Trivial and free of <c>move</c>: a move records its slot, so it must be evaluated exactly once.</summary>
+    private static bool IsRepeatable(BoundExpr e) => e switch
+    {
+        BoundMove => false,
+        BoundField f => IsRepeatable(f.Receiver),
+        BoundTupleElement t => IsRepeatable(t.Receiver),
+        LOptionalValue v => IsRepeatable(v.Optional),
+        LUnionTag t => IsRepeatable(t.Union),
+        LUnionField f => IsRepeatable(f.Union),
+        _ => IsTrivial(e),
     };
 
     private static bool IsLvalue(BoundExpr e) => e switch
@@ -203,15 +216,36 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             if (pres[i].Count > 0) barrier = i;
         var effects = Enumerable.Range(0, n).Where(i => HasEffects(values[i])).ToList();
         if (effects.Count >= 2) barrier = Math.Max(barrier, effects[^1]);
+        // An operand moving a local a later operand reads happens first, as its own statement, so the read sees the local moved.
+        var movedFirst = Enumerable.Range(0, n).Select(i => Enumerable.Range(i + 1, n - i - 1).Any(j =>
+            Any(values[j], x => x is BoundLocal r && Moves(values[i], r.Local))
+            || pres[j].Any(s => Any(s, x => x is BoundLocal r && Moves(values[i], r.Local))))).ToArray();
         for (var i = 0; i < n; i++)
         {
             _out.AddRange(pres[i]);
             if (IsNever(values[i])) return null;
-            if (i < barrier && !IsTrivial(values[i]) && !(lvalues?.Invoke(i) ?? false) && values[i] is not LVoid)
+            if ((i < barrier && !IsTrivial(values[i]) || movedFirst[i]) && !(lvalues?.Invoke(i) ?? false) && values[i] is not LVoid)
                 values[i] = Spill(values[i]);
         }
         return values;
     }
+
+    /// <summary>Whether <paramref name="node"/> or a node inside it passes <paramref name="test"/>.</summary>
+    private static bool Any(BoundNode node, Func<BoundNode, bool> test) => test(node) || node switch
+    {
+        BoundLocal => false,
+        LOptionalHas h => Any(h.Optional, test),
+        LOptionalValue v => Any(v.Optional, test),
+        LUnionTag t => Any(t.Union, test),
+        LUnionField f => Any(f.Union, test),
+        LAssignExpr a => Any(a.Target, test) || Any(a.Value, test),
+        LSequence s => s.Effects.Any(e => Any(e, test)) || Any(s.Value, test),
+        LFailingCall f => Any(f.Call, test),
+        _ => BoundTree.Children(node).Any(c => Any(c, test)),
+    };
+
+    /// <summary>Whether <paramref name="node"/> moves local <paramref name="l"/>.</summary>
+    private static bool Moves(BoundNode node, LocalSymbol l) => Any(node, x => x is BoundMove { Operand: BoundLocal r } && r.Local == l);
 
     // ── Cleanup ──────────────────────────────────────────────────────────────────
 
@@ -579,7 +613,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     {
         var value = Expr(sw.Value);
         if (IsNever(value)) return;
-        if (!IsTrivial(value)) value = Spill(value);
+        if (!IsRepeatable(value)) value = Spill(value);
         var end = NewLabel("switch_end");
         _targets[sw.Target] = (end, null, _scopes.Count);
         BoundSwitchSection? fallback = null;
@@ -592,6 +626,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             }
             var body = Capture(() =>
             {
+                Claim(section.Pattern);
                 _scopes.Add(new Scope());
                 foreach (var s in section.Body) Statement(s);
                 EmitCleanups(_scopes.Count - 1, null);
@@ -758,7 +793,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             {
                 var value = Expr(i.Value);
                 if (IsNever(value)) return new LNever(e.Syntax, e.Type);
-                if (!IsTrivial(value)) value = Spill(value);
+                if (!IsRepeatable(value)) value = Spill(value);
                 return Match(i.Pattern, value);
             }
             case BoundSwitchExpr s:
@@ -766,7 +801,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case BoundTry t:
                 return Try(t);
             case BoundMove m:
-                return Expr(m.Operand);
+                return new BoundMove(m.Syntax, Expr(m.Operand));
             case BoundCatch c:
                 return Catch(c);
             case BoundJump j:
@@ -829,7 +864,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     {
         var left = Expr(c.Left);
         if (IsNever(left)) return left;
-        if (!IsTrivial(left)) left = Spill(left);
+        if (!IsRepeatable(left)) left = Spill(left);
         var keepsOptional = c.Type is OptionalType;
         BoundExpr present = keepsOptional ? left : new LOptionalValue(c.Syntax, left, ((OptionalType)c.Left.Type).Inner);
         var (right, pre) = CaptureExpr(c.Right);
@@ -961,6 +996,19 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             if (IsNever(target)) return target;
             return WriteParts(b, WriteSink.StrBuf, target, i);
         }
+        // `x.take()`: move the value out, then leave the type's empty value in the place, evaluated once.
+        if (b.Member is BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake)
+        {
+            var place = Lvalue(b.Receiver);
+            if (IsNever(place)) return place;
+            place = Stable(place);
+            // `map[k].take()` reads through the panicking index, so a missing key is not inserted.
+            var taken = Spill(place is BoundBuiltinCall { Member: BuiltinMember.MapIndexSet } read ? read with { Member = BuiltinMember.MapIndex } : place);
+            EmitAssign(place, b.Member == BuiltinMember.StrBufTake
+                ? new BoundCall(b.Syntax, _builtins.StrBufGrow, null, [], b.Type)
+                : new BoundDefault(b.Syntax, b.Type));
+            return taken;
+        }
         var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast
             or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapRemove or BuiltinMember.MapClear
             or BuiltinMember.StrBufAppend or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan;
@@ -983,6 +1031,22 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         return lowered;
     }
 
+    /// <summary>
+    /// <paramref name="place"/> with every index, key and non-addressable receiver in it stored in a
+    /// temporary, innermost first, so reading it and then writing it names the same storage.
+    /// </summary>
+    private BoundExpr Stable(BoundExpr place) => place switch
+    {
+        BoundField f => f with { Receiver = Stable(f.Receiver) },
+        BoundTupleElement t => t with { Receiver = Stable(t.Receiver) },
+        LOptionalValue v => v with { Optional = Stable(v.Optional) },
+        // A list's elements live behind its pointer, so a copy of a non-addressable list still names them.
+        BoundIndex i => i with { Target = Stable(i.Target), Index = IsTrivial(i.Index) ? i.Index : Spill(i.Index) },
+        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b =>
+            b with { Receiver = Stable(b.Receiver), Arguments = b.Arguments.Select(a => IsTrivial(a) ? a : Spill(a)).ToArray() },
+        _ => IsTrivial(place) || IsLvalue(place) ? place : Spill(place),
+    };
+
     private BoundExpr Write(BoundCall c, WriteSink sink, BoundExpr? target, BoundInterpolated text) => WriteParts(c, sink, target, text);
 
     private BoundExpr WriteParts(BoundExpr call, WriteSink sink, BoundExpr? target, BoundInterpolated text)
@@ -1000,7 +1064,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     {
         var value = Expr(s.Value);
         if (IsNever(value)) return value;
-        if (!IsTrivial(value)) value = Spill(value);
+        if (!IsRepeatable(value)) value = Spill(value);
         var result = s.Type.IsNever ? null : NewTemp(s.Type);
         var end = NewLabel("switch_end");
         foreach (var arm in s.Arms)
@@ -1008,6 +1072,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             var match = Match(arm.Pattern, value);
             var body = Capture(() =>
             {
+                Claim(arm.Pattern);
                 var v = Expr(arm.Value);
                 if (result is not null) EmitAssign(Local(arm.Syntax, result), v);
                 else EmitEffect(v);
@@ -1163,6 +1228,31 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             }
             default:
                 throw new InvalidOperationException($"cannot lower pattern {p.GetType().Name}");
+        }
+    }
+
+    /// <summary>The selected arm's owning bindings take their storage; binding them in <see cref="Match"/> does not, as a later test may fail.</summary>
+    private void Claim(BoundPattern p)
+    {
+        switch (p)
+        {
+            case BoundBindPattern { Local: { BorrowsSubject: false } local }:
+                Emit(new LClaim(p.Syntax, local));
+                break;
+            case BoundNotPattern n:
+                Claim(n.Operand);
+                break;
+            case BoundBinaryPattern b:
+                Claim(b.Left);
+                Claim(b.Right);
+                break;
+            case BoundPropertyPattern pp:
+                foreach (var sub in pp.Subpatterns) Claim(sub.Pattern);
+                if (pp.Designation is { BorrowsSubject: false } d) Emit(new LClaim(p.Syntax, d));
+                break;
+            case BoundUnionPattern up:
+                foreach (var sub in up.Subpatterns) Claim(sub);
+                break;
         }
     }
 

@@ -89,6 +89,64 @@ public static class Toolchain
         return null;
     }
 
+    /// <summary>
+    /// The C compiler for <c>sanitize</c> builds, probed once: <c>$BAYAN_CC</c> if it can build and run an
+    /// AddressSanitizer program, else <c>/usr/bin/clang</c>, else <c>clang</c> from <c>PATH</c>; zig cc
+    /// ships no AddressSanitizer runtime. Null when none works.
+    /// </summary>
+    public static string[]? SanitizerCompiler => sanitizer.Value;
+
+    private static readonly Lazy<string[]?> sanitizer = new(() => ProbeSanitizer(SanitizerCandidates()));
+
+    /// <summary>Test seam: replaces the probed sanitizer compiler; null restores the probe.</summary>
+    internal static string[]? SanitizerOverride { get; set; }
+
+    /// <summary>Whether <c>sanitize</c> builds get AddressSanitizer on this machine.</summary>
+    public static bool AsanAvailable => (SanitizerOverride ?? SanitizerCompiler) is not null;
+
+    private static IEnumerable<string[]> SanitizerCandidates()
+    {
+        if (Environment.GetEnvironmentVariable("BAYAN_CC") is { Length: > 0 } cc)
+            yield return cc.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (File.Exists("/usr/bin/clang")) yield return ["/usr/bin/clang"];
+        if (FindOnPath("clang") is { } clang) yield return [clang];
+    }
+
+    /// <summary>Test seams: how long the probe waits for a candidate to compile, and for its program to run.</summary>
+    internal static TimeSpan ProbeCompileTimeout { get; set; } = TimeSpan.FromSeconds(120);
+
+    internal static TimeSpan ProbeRunTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>The first of <paramref name="candidates"/> that compiles, links and runs an AddressSanitizer program;
+    /// one that takes too long is killed and rejected.</summary>
+    internal static string[]? ProbeSanitizer(IEnumerable<string[]> candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (candidate.Length == 0) continue;
+            var work = Path.Combine(Path.GetTempPath(), "bayan-asan-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(work);
+                File.WriteAllText(Path.Combine(work, "probe.c"), "int main(void) { return 0; }\n");
+                var exe = Path.Combine(work, OperatingSystem.IsWindows() ? "probe.exe" : "probe");
+                var args = new List<string>(candidate[1..]) { "-fsanitize=address", "probe.c", "-o", exe };
+                if (Exec(candidate[0], args, work, ProbeCompileTimeout).Code == 0 && File.Exists(exe) && Exec(exe, [], work, ProbeRunTimeout).Code == 0)
+                    return candidate;
+            }
+            catch (Exception e) when (e is System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException)
+            {
+                // This candidate cannot do it; try the next.
+            }
+            finally
+            {
+                try { Directory.Delete(work, recursive: true); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            }
+        }
+        return null;
+    }
+
     public static string? FindOnPath(string name)
     {
         var exts = OperatingSystem.IsWindows() ? new[] { ".exe", ".cmd", ".bat" } : new[] { "" };
@@ -105,29 +163,29 @@ public static class Toolchain
     /// Compiles <paramref name="cSource"/> to an executable in the cache (reused when the compiler
     /// version, source, runtime, mode, target and C compiler are unchanged) and copies it to
     /// <paramref name="output"/> if given. A <paramref name="target"/> other than the host needs zig.
+    /// <paramref name="sanitize"/> builds for the host with AddressSanitizer when <see cref="AsanAvailable"/>,
+    /// and is ignored otherwise.
     /// </summary>
-    public static NativeBuild Build(string cSource, BuildMode mode, string? output = null, string? target = null)
+    public static NativeBuild Build(string cSource, BuildMode mode, string? output = null, string? target = null, bool sanitize = false)
     {
         try
         {
-            return BuildCached(cSource, mode, output, target ?? Targets.Host);
+            return BuildCached(cSource, mode, output, target ?? Targets.Host, sanitize);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return new NativeBuild(null, $"cannot write the build output or cache ({CacheDirectory}): {e.Message}");
         }
-        catch (System.ComponentModel.Win32Exception e)
-        {
-            return new NativeBuild(null, $"cannot run the C compiler `{string.Join(" ", FindCompiler() ?? [])}`: {e.Message}");
-        }
     }
 
-    private static NativeBuild BuildCached(string cSource, BuildMode mode, string? output, string? target)
+    private static NativeBuild BuildCached(string cSource, BuildMode mode, string? output, string? target, bool sanitize)
     {
-        var compiler = FindCompiler();
+        var cross = target != Targets.Host;
+        var sanitizerCompiler = sanitize && !cross ? SanitizerOverride ?? SanitizerCompiler : null;
+        var asan = sanitizerCompiler is not null;
+        var compiler = sanitizerCompiler ?? FindCompiler();
         if (compiler is null)
             return new NativeBuild(null, "no C compiler found: install zig (https://ziglang.org) or set BAYAN_CC");
-        var cross = target != Targets.Host;
         if (cross && (target is null || Targets.Triple(target) is null))
             return new NativeBuild(null, $"unknown target `{target}`; targets are {string.Join(", ", Targets.All)}");
         if (cross && !(compiler.Length > 1 && compiler[1] == "cc" && Path.GetFileNameWithoutExtension(compiler[0]) == "zig"))
@@ -139,16 +197,24 @@ public static class Toolchain
         flags.AddRange(["-std=c11", "-fwrapv", "-ffp-contract=off", "-w"]);
         flags.AddRange(mode switch
         {
-            BuildMode.Debug => ["-O0", "-g"],
-            BuildMode.Safe => ["-O2"],
-            _ => ["-O2", "-DBYN_FAST"],
+            BuildMode.Debug => ["-O0", "-g", "-DBYN_DEBUG"],
+            BuildMode.Safe => ["-O2", "-DBYN_NDEBUG"],
+            _ => ["-O2", "-DBYN_FAST", "-DBYN_NDEBUG"],
         });
+        if (asan) flags.AddRange(["-fsanitize=address", "-fno-omit-frame-pointer", "-g"]);
         var key = Hash(string.Join("\0", CompilerVersion, mode, target, string.Join(" ", compiler), string.Join(" ", flags), RuntimeHeader, RuntimeSource, cSource));
         var hit = Lookup(key, exeName) is not null;
         if (!hit)
         {
-            var failure = Compile(compiler, flags, cSource, key, exeName, windows: targetOs.StartsWith("windows", StringComparison.Ordinal));
-            if (failure is not null) return new NativeBuild(null, failure);
+            try
+            {
+                var failure = Compile(compiler, flags, cSource, key, exeName, windows: targetOs.StartsWith("windows", StringComparison.Ordinal));
+                if (failure is not null) return new NativeBuild(null, failure);
+            }
+            catch (System.ComponentModel.Win32Exception e)
+            {
+                return new NativeBuild(null, $"cannot run the C compiler `{string.Join(" ", compiler)}`: {e.Message}");
+            }
         }
         var exe = Path.Combine(Programs, key, exeName);
         if (output is null) return new NativeBuild(exe, "", hit, key);
@@ -320,7 +386,8 @@ public static class Toolchain
         return new CacheStats(CacheDirectory, programs, bytes, scripts);
     }
 
-    private static (int Code, string Stdout, string Stderr) Exec(string file, IEnumerable<string> args, string workingDirectory)
+    /// <summary>Runs <paramref name="file"/>; past <paramref name="timeout"/> it is killed and the code is -1.</summary>
+    private static (int Code, string Stdout, string Stderr) Exec(string file, IEnumerable<string> args, string workingDirectory, TimeSpan? timeout = null)
     {
         var psi = new ProcessStartInfo(file)
         {
@@ -332,9 +399,15 @@ public static class Toolchain
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEnd();
-        p.WaitForExit();
-        return (p.ExitCode, stdout.Result, stderr);
+        var stderr = p.StandardError.ReadToEndAsync();
+        if (!p.WaitForExit(timeout ?? Timeout.InfiniteTimeSpan))
+        {
+            try { p.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { }
+            p.WaitForExit();
+            return (-1, "", "");
+        }
+        return (p.ExitCode, stdout.Result, stderr.Result);
     }
 
     private static string Hash(string text) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));

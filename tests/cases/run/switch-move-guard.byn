@@ -1,0 +1,47 @@
+// mode: debug
+// A `switch (move x)` arm whose guard or later subpattern fails gives up its bindings: a later arm binding the same
+// storage owns it, with no second-owner panic from the debug-build checker.
+union Slot {
+    Full(List<i64> items),
+    Empty,
+}
+
+struct Pair {
+    List<i64> items;
+    i64 n;
+}
+
+void main() {
+    var a = List<i64>();
+    a.add(1);
+    let s = Slot.Full(move a);
+    switch (move s) {
+        case .Full(let x) when x.length > 5:
+            print($"big {x.length}");
+        case .Full(let y):
+            print($"small {y.length}");
+        case .Empty:
+            print("empty");
+    }
+
+    var b = List<i64>();
+    b.add(1);
+    let t = Slot.Full(move b);
+    let n = (move t) switch {
+        .Full(let x) when x.length > 5 => x.length * 10,
+        .Full(let y) => y.length,
+        .Empty => 0,
+    };
+    print($"expression {n}");
+
+    var c = List<i64>();
+    c.add(1);
+    c.add(2);
+    let p = Pair { items = move c, n = 3 };
+    switch (move p) {
+        case { items: let x, n: 5 }:
+            print($"five {x.length}");
+        case { items: let y, n: _ }:
+            print($"other {y.length}");
+    }
+}

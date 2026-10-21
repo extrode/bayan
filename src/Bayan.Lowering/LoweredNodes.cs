@@ -61,6 +61,9 @@ public sealed record LSetContext(Node Syntax, BoundExpr? Arena, int Slot) : Boun
 /// <summary>Frees an arena declared with <c>using</c>.</summary>
 public sealed record LFreeArena(Node Syntax, BoundExpr Arena) : BoundStmt(Syntax);
 
+/// <summary>Debug builds: a <c>switch (move x)</c> binding owns its storage once its arm is selected; nothing otherwise.</summary>
+public sealed record LClaim(Node Syntax, LocalSymbol Local) : BoundStmt(Syntax);
+
 // ── Expressions ──────────────────────────────────────────────────────────────────
 
 /// <summary>Whether an optional holds a value.</summary>

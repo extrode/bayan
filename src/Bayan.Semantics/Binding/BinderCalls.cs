@@ -449,6 +449,8 @@ internal sealed partial class Binder
     private BoundExpr BindBuiltinMethodCall(CallExpr c, BoundExpr receiver, string name)
     {
         var m = BuiltinMembers.Method(receiver.Type, name)!;
+        if (m.Member is BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake)
+            receiver = MapWriteTarget(receiver);
         var ps = m.Parameters.Select((p, i) => new ParameterSymbol(p.Name, null, p.Type, ParamModifier.None, i)).ToList();
         var args = BindArguments(c, ps, null, enforceNames: false, displayName: name);
         if (m.Mutating) CheckWritable(receiver, receiver.Syntax.Span, $"`{name}` modifies it");
@@ -485,13 +487,14 @@ internal sealed partial class Binder
     private BoundExpr BindMove(Node syntax, BoundExpr operand)
     {
         if (operand.Type.IsError) return operand;
+        if (CheckGuardWrite(operand, syntax.Span, "it is moved")) return new BoundMove(syntax, operand);
         switch (operand)
         {
             case BoundLocal { Local: { BorrowsSubject: true } l } when TypeFacts.IsUnique(l.Type):
                 Report(DiagnosticCodes.MutateBorrow, operand.Syntax.Span, [l.Name], label: "moving it would take the value out of what it borrows from",
                     help: "move or copy the value it was bound to instead");
                 return new BoundMove(syntax, operand);
-            case BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var } or ParameterSymbol { Modifier: ParamModifier.Move } }:
+            case BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var or LocalKind.PatternVariable } or ParameterSymbol { Modifier: ParamModifier.Move } }:
             case BoundLocal { Local.BorrowsSubject: true }:
                 return new BoundMove(syntax, operand);
         }
@@ -500,7 +503,10 @@ internal sealed partial class Binder
             BoundLocal { Local: ParameterSymbol { IsByRef: true } p } => ($"`{p.Modifier.ToString().ToLowerInvariant()}` parameter `{p.Name}`", "the caller still owns it; copy it with `.copy(to: alloc)`"),
             BoundLocal { Local: ParameterSymbol p } => ($"parameter `{p.Name}`", $"a plain parameter is borrowed from the caller; declare it `move {p.Name}` to take ownership"),
             BoundLocal { Local: var l } => ($"`{l.Name}`", "only a local variable or a `move` parameter can be moved"),
+            BoundField f when BuiltinMembers.Method(f.Type, "take") is not null => ($"field `{f.Field.Name}`", "its owner keeps it; take it with `.take()`, or copy it with `.copy(to: alloc)`"),
             BoundField f => ($"field `{f.Field.Name}`", "its owner keeps it; move the whole value, or copy the field with `.copy(to: alloc)`"),
+            BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } when BuiltinMembers.Method(operand.Type, "take") is not null =>
+                ("an element", "its owner keeps it; take it with `.take()`, or copy it with `.copy(to: alloc)`"),
             BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } => ("an element", "the collection keeps it; copy the element with `.copy(to: alloc)`"),
             BoundTupleElement => ("a tuple element", "move the whole tuple instead"),
             BoundThis => ("`this`", "a method borrows `this`"),
@@ -509,6 +515,39 @@ internal sealed partial class Binder
         };
         Report(DiagnosticCodes.CannotMove, operand.Syntax.Span, [what], help: help);
         return new BoundMove(syntax, operand);
+    }
+
+    /// <summary>Whether the patterns being bound are on a <c>switch (move x)</c> subject, so their bindings own their parts (spec §9.3).</summary>
+    private bool _patternOwns;
+
+    /// <summary>A switch subject; <c>move x</c> moves a local or <c>move</c> parameter into the switch, and <paramref name="owns"/> says its bindings own their parts.</summary>
+    private BoundExpr BindSwitchSubject(Expr value, out bool owns)
+    {
+        owns = false;
+        var inner = value;
+        while (inner is ParenExpr p) inner = p.Inner;
+        if (inner is not MoveExpr m) return BindExpr(value);
+        var operand = BindExpr(m.Operand);
+        if (operand.Type.IsError) return operand;
+        if (operand is BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var or LocalKind.PatternVariable } or ParameterSymbol { Modifier: ParamModifier.Move } } local)
+        {
+            owns = !local.Local.BorrowsSubject;
+            return BindMove(m, operand);
+        }
+        var what = operand switch
+        {
+            BoundLocal { Local: ParameterSymbol p } => $"parameter `{p.Name}`",
+            BoundLocal { Local: var l } => $"`{l.Name}`",
+            BoundField f => $"field `{f.Field.Name}`",
+            BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } => "an element",
+            BoundTupleElement => "a tuple element",
+            BoundThis => "`this`",
+            BoundCall or BoundBuiltinCall or BoundStructLiteral or BoundCollection or BoundLiteral => "a fresh value",
+            _ => "this expression",
+        };
+        Report(DiagnosticCodes.SwitchMoveSubject, m.Operand.Span, [what],
+            help: "drop `move` so the bindings borrow, declare the parameter `move`, or `.take()` a collection field into a local first");
+        return operand;
     }
 
     // ── Failure handling ─────────────────────────────────────────────────────────
@@ -601,12 +640,16 @@ internal sealed partial class Binder
 
     private BoundExpr BindSwitchExpr(SwitchExpr s, TypeSymbol? expected)
     {
-        var value = BindExpr(s.Value);
+        var value = BindSwitchSubject(s.Value, out var owns);
         var arms = new List<BoundSwitchArm>();
         foreach (var arm in s.Arms)
         {
             PushScope();
+            _patternOwns = owns;
             var pattern = BindPattern(arm.Pattern, value.Type);
+            _patternOwns = false;
+            if (owns) CheckOwningOverlap(pattern);
+            if (owns && arm.Guard is { } ag) GuardBindings(pattern, ag.Span);
             var guard = arm.Guard is { } g ? BindCondition(g) : null;
             var result = BindExpr(arm.Value, expected);
             PopScope();
@@ -652,7 +695,7 @@ internal sealed partial class Binder
             case VarPattern v:
             {
                 var local = DeclareLocal(v.Name, input, v.IsLet ? LocalKind.PatternVariable : LocalKind.Var);
-                local.BorrowsSubject = true;
+                local.BorrowsSubject = !_patternOwns;
                 if (!v.IsLet) local.KeywordSpan = new TextSpan(v.Span.Start, 3);
                 return new BoundBindPattern(p, input, local);
             }
@@ -715,6 +758,101 @@ internal sealed partial class Binder
                 Report(DiagnosticCodes.Unsupported, p.Span, ["list patterns"]);
                 return new BoundBindPattern(p, input, null);
         }
+    }
+
+    /// <summary>In an owning switch, a pattern may not bind a value and a part of it, both sides of an `and`, or the same field
+    /// twice: each would own the same storage (L006). Only bindings of a unique type own storage.</summary>
+    private void CheckOwningOverlap(BoundPattern p)
+    {
+        switch (p)
+        {
+            case BoundBinaryPattern b when b.IsAnd && Overlap(OwningPaths(b.Left), OwningPaths(b.Right)):
+            case BoundPropertyPattern { Designation: { } d } pp when TypeFacts.IsUnique(d.Type) && pp.Subpatterns.Any(s => OwningPaths(s.Pattern).Any()):
+                Report(DiagnosticCodes.OwningPatternOverlap, p.Syntax.Span, [Source.GetText(p.Syntax.Span)],
+                    help: "bind the whole value or its parts, not both");
+                break;
+            case BoundPropertyPattern pp when RepeatsField(pp):
+                Report(DiagnosticCodes.OwningPatternOverlap, p.Syntax.Span, [Source.GetText(p.Syntax.Span)],
+                    help: "bind each field once");
+                break;
+            case BoundBinaryPattern b:
+                CheckOwningOverlap(b.Left);
+                CheckOwningOverlap(b.Right);
+                break;
+            case BoundNotPattern n:
+                CheckOwningOverlap(n.Operand);
+                break;
+            case BoundPropertyPattern pp:
+                foreach (var s in pp.Subpatterns) CheckOwningOverlap(s.Pattern);
+                break;
+            case BoundUnionPattern up:
+                foreach (var s in up.Subpatterns) CheckOwningOverlap(s);
+                break;
+        }
+    }
+
+    /// <summary>Whether bindings of two subpatterns reach the same storage (one binding's path is a prefix of the other's).</summary>
+    private static bool RepeatsField(BoundPropertyPattern pp)
+    {
+        var paths = pp.Subpatterns.Select(s => OwningPaths(s.Pattern).Select(q => s.Path.Concat(q).ToArray()).ToList()).ToList();
+        for (var i = 0; i < paths.Count; i++)
+            for (var j = i + 1; j < paths.Count; j++)
+                if (Overlap(paths[i], paths[j])) return true;
+        return false;
+    }
+
+    /// <summary>Whether a path of <paramref name="a"/> is a prefix of (or equal to) a path of <paramref name="b"/>, or the other way round.</summary>
+    private static bool Overlap(IEnumerable<object[]> a, IEnumerable<object[]> b) =>
+        a.Any(x => b.Any(y =>
+        {
+            var n = Math.Min(x.Length, y.Length);
+            return x.Take(n).SequenceEqual(y.Take(n));
+        }));
+
+    /// <summary>The paths from <paramref name="p"/>'s input to each binding of a unique type: member steps, and (variant, index) for union elements.</summary>
+    private static IEnumerable<object[]> OwningPaths(BoundPattern p) => p switch
+    {
+        BoundBindPattern { Local: { } l } when TypeFacts.IsUnique(l.Type) => [[]],
+        BoundNotPattern n => OwningPaths(n.Operand),
+        BoundBinaryPattern b => OwningPaths(b.Left).Concat(OwningPaths(b.Right)),
+        BoundPropertyPattern pp => (pp.Designation is { } d && TypeFacts.IsUnique(d.Type) ? [[]] : Enumerable.Empty<object[]>())
+            .Concat(pp.Subpatterns.SelectMany(s => OwningPaths(s.Pattern).Select(q => s.Path.Concat(q).ToArray()))),
+        BoundUnionPattern up => up.Subpatterns.SelectMany((s, i) => OwningPaths(s).Select(q => q.Prepend((up.Variant, i)).ToArray())),
+        _ => [],
+    };
+
+    /// <summary>Marks the bindings of an owning switch arm read-only inside its <c>when</c> guard (BYN2791).</summary>
+    private static void GuardBindings(BoundPattern p, TextSpan guard)
+    {
+        switch (p)
+        {
+            case BoundBindPattern { Local: { } l }:
+                l.GuardSpan = guard;
+                break;
+            case BoundNotPattern n:
+                GuardBindings(n.Operand, guard);
+                break;
+            case BoundBinaryPattern b:
+                GuardBindings(b.Left, guard);
+                GuardBindings(b.Right, guard);
+                break;
+            case BoundPropertyPattern pp:
+                if (pp.Designation is { } d) d.GuardSpan = guard;
+                foreach (var s in pp.Subpatterns) GuardBindings(s.Pattern, guard);
+                break;
+            case BoundUnionPattern up:
+                foreach (var s in up.Subpatterns) GuardBindings(s, guard);
+                break;
+        }
+    }
+
+    /// <summary>Reports a write at <paramref name="span"/> to an owning switch binding, or a part of it, inside its arm's guard.</summary>
+    internal bool CheckGuardWrite(BoundExpr target, TextSpan span, string? why)
+    {
+        if (WrittenLocal(target) is not { GuardSpan: { } g } l || span.Start < g.Start || span.End > g.End) return false;
+        Report(DiagnosticCodes.OwningBindingMutatedInGuard, span, [l.Name], label: why,
+            help: "read it in the guard and change it in the arm's body");
+        return true;
     }
 
     private static bool HasBindings(BoundPattern p) => p switch
@@ -824,7 +962,7 @@ internal sealed partial class Binder
             if (ok) subs.Add(new BoundSubpattern(steps.ToArray(), pattern));
         }
         var designation = pp.Designation is { } d ? DeclareLocal(d, valueType, LocalKind.PatternVariable) : null;
-        if (designation is not null) designation.BorrowsSubject = true;
+        if (designation is not null) designation.BorrowsSubject = !_patternOwns;
         return new BoundPropertyPattern(pp, input, valueType, subs.ToArray(), designation);
     }
 
@@ -1051,6 +1189,7 @@ internal sealed partial class Binder
     internal bool CheckWritable(BoundExpr target, TextSpan span, string? why)
     {
         if (WrittenLocal(target) is { } written) written.Written = true;
+        if (CheckGuardWrite(target, span, why)) return false;
         switch (target)
         {
             case BoundErrorExpr:

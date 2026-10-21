@@ -260,6 +260,148 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """, "BYN2783" },
+
+        // switch (move x) and take() misuse (BYN2783, BYN2781, BYN2789, BYN2104, BYN2788).
+        { "switch without move then move the binding", """
+            void main() {
+                let s = Slot.Full(List<i64>());
+                switch (s) {
+                    case .Full(let items):
+                        consume(move items);
+                    default:
+                        print("empty");
+                }
+            }
+            """, "BYN2783" },
+        { "read after switch (move s)", """
+            void main() {
+                let s = Slot.Full(List<i64>());
+                switch (move s) {
+                    case .Full(let items):
+                        consume(move items);
+                    default:
+                        print("empty");
+                }
+                switch (s) {
+                    default:
+                        print("again");
+                }
+            }
+            """, "BYN2781" },
+        { "switch (move s) binding moved then reused in the same arm", """
+            void main() {
+                let s = Slot.Full(List<i64>());
+                switch (move s) {
+                    case .Full(let items):
+                        consume(move items);
+                        print($"{items.length}");
+                    default:
+                        print("empty");
+                }
+            }
+            """, "BYN2781" },
+        { "switch (move s) in a loop, s declared outside", """
+            void main() {
+                let s = Slot.Full(List<i64>());
+                for (let i in 0..3) {
+                    switch (move s) {
+                        case .Full(let items):
+                            consume(move items);
+                        default:
+                            print("empty");
+                    }
+                }
+            }
+            """, "BYN2781" },
+        { "switch (move) of a struct field", """
+            void main() {
+                let ledger = Ledger { items = List<i64>() };
+                switch (move ledger.items) {
+                    default:
+                        print("field");
+                }
+            }
+            """, "BYN2789" },
+        { "switch (move) of a plain parameter", """
+            void inspect(Slot plain) {
+                switch (move plain) {
+                    default:
+                        print("plain");
+                }
+            }
+            void main() { }
+            """, "BYN2789" },
+        { "switch (move) and pattern binds both sides", """
+            void main() {
+                var a = List<i64>();
+                a.add(1);
+                switch (move a) {
+                    case let x and let y:
+                        consume(move x);
+                        consume(move y);
+                    default:
+                        print("other");
+                }
+            }
+            """, "BYN2790" },
+        { "switch (move) designation with a nested binding", """
+            void main() {
+                var l = Ledger { items = List<i64>() };
+                switch (move l) {
+                    case Ledger { items: let it } whole:
+                        consume(move it);
+                    default:
+                        print("other");
+                }
+            }
+            """, "BYN2790" },
+        { "switch (move) property pattern binds a field twice", """
+            void main() {
+                var l = Ledger { items = List<i64>() };
+                switch (move l) {
+                    case { items: let x, items: let y }:
+                        consume(move x);
+                        consume(move y);
+                    default:
+                        print("other");
+                }
+            }
+            """, "BYN2790" },
+        { "switch (move) guard mutates its binding", """
+            void main() {
+                let s = Slot.Full(List<i64>());
+                switch (move s) {
+                    case .Full(var items) when items.removeLast() > 0:
+                        consume(move items);
+                    default:
+                        print("other");
+                }
+            }
+            """, "BYN2791" },
+        { "take on a let local", """
+            void main() {
+                let xs = List<i64>();
+                let ys = xs.take();
+            }
+            """, "BYN2104" },
+        { "take on a plain parameter", """
+            void drain(List<i64> plain) {
+                let ys = plain.take();
+            }
+            void main() { }
+            """, "BYN2104" },
+        { "take on i64", """
+            void drain(ref i64 n) {
+                let a = n.take();
+            }
+            void main() { }
+            """, "BYN2788" },
+        { "take on string", """
+            void drain(ref string s) {
+                let a = s.take();
+            }
+            void main() { }
+            """, "BYN2788" },
     };
 
     public static TheoryData<string, string> Accepted => new()
@@ -385,6 +527,140 @@ public sealed class L006OwnershipGuardTests
             void take(move List<i64> owned) {
                 let mine = move owned;
                 print($"{mine.length}");
+            }
+            void main() { }
+            """ },
+        { "switch (move) binds disjoint parts and moves them on", """
+            struct Two {
+                List<i64> first;
+                List<i64> second;
+            }
+            void main() {
+                var t = Two { first = List<i64>(), second = List<i64>() };
+                switch (move t) {
+                    case Two { first: let a, second: let b }:
+                        consume(move a);
+                        consume(move b);
+                    default:
+                        print("other");
+                }
+            }
+            """ },
+        { "switch (move) binds disjoint parts through one field twice", """
+            struct Inner {
+                List<i64> b;
+                List<i64> c;
+            }
+            struct Outer {
+                Inner a;
+            }
+            void main() {
+                let o = Outer { a = Inner { b = List<i64>(), c = List<i64>() } };
+                switch (move o) {
+                    case { a: { b: let x }, a: { c: let y } }:
+                        consume(move x);
+                        consume(move y);
+                    default:
+                        print("other");
+                }
+            }
+            """ },
+        { "switch (move) binds a field and a copy of its length", """
+            void main() {
+                let l = Ledger { items = List<i64>() };
+                switch (move l) {
+                    case { items: let x, items.length: let n }:
+                        consume(move x);
+                        print($"{n}");
+                    default:
+                        print("other");
+                }
+            }
+            """ },
+        { "take from a List field", """
+            void main() {
+                var ledger = Ledger { items = List<i64>() };
+                ledger.items.add(1);
+                let items = ledger.items.take();
+                ledger.items.add(2);
+                print($"{items.length} {ledger.items.length}");
+            }
+            """ },
+        { "take from a list element", """
+            void main() {
+                var lists = List<List<i64>>();
+                lists.add(List<i64>());
+                let first = lists[0].take();
+                lists[0].add(1);
+                print($"{first.length} {lists[0].length}");
+            }
+            """ },
+        { "take from a Map element", """
+            void main() {
+                var groups = Map<string, List<i64>>();
+                groups["x"] = List<i64>();
+                let x = groups["x"].take();
+                print($"{x.length} {groups["x"].length}");
+            }
+            """ },
+        { "take from an optional field", """
+            struct Pending {
+                List<i64>? pending;
+            }
+            void main() {
+                var p = Pending { pending = List<i64>() };
+                let taken = p.pending.take();
+                print($"{taken is null} {p.pending is null}");
+            }
+            """ },
+        { "take through a ref parameter", """
+            List<i64> drain(ref List<i64> xs) => xs.take();
+            void main() {
+                var shared = List<i64>();
+                let drained = drain(ref shared);
+                shared.add(1);
+                print($"{drained.length} {shared.length}");
+            }
+            """ },
+        { "take from a StrBuf local", """
+            void main() {
+                var sb = StrBuf();
+                sb.append("hi");
+                let text = sb.take();
+                sb.append("again");
+                print($"{text.asString()} {sb.asString()}");
+            }
+            """ },
+        { "switch (move s) then move the binding on", """
+            void main() {
+                let s = Slot.Full(List<i64>());
+                switch (move s) {
+                    case .Full(let items):
+                        consume(move items);
+                    default:
+                        print("empty");
+                }
+            }
+            """ },
+        { "switch (move) expression form moves the binding", """
+            i64 keep(move List<i64> xs) => xs.length;
+            void main() {
+                let s = Slot.Full(List<i64>());
+                let n = (move s) switch {
+                    .Full(let items) => keep(move items),
+                    .Empty => 0,
+                };
+                print($"{n}");
+            }
+            """ },
+        { "switch (move) of a move parameter", """
+            void drain(move Slot slot) {
+                switch (move slot) {
+                    case .Full(let items):
+                        consume(move items);
+                    default:
+                        print("empty");
+                }
             }
             void main() { }
             """ },

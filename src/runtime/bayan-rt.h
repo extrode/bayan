@@ -35,6 +35,33 @@ BYN_NORETURN void byn_panic(const char* msg, const char* file, int line);
 BYN_NORETURN void byn_panic_str(byn_str msg, const char* file, int line);
 BYN_NORETURN void byn_unreachable(const char* file, int line);
 
+/* ── Ownership checker (debug builds) ────────────────────────────────────── */
+
+/* Debug programs define BYN_DEBUG before including this header; safe and fast ones never see these. bayan-rt.c
+ * compiles the checker unless built with -DBYN_NDEBUG (the toolchain passes it for safe and fast builds). */
+
+#ifdef BYN_DEBUG
+/* Where a local was moved out; line 0 while it holds a value. */
+typedef struct byn_own_slot {
+    const char* file;
+    int line;
+} byn_own_slot;
+
+/* Records `place` as the owner of `storage` (a List's elements, a Map's keys, a growable StrBuf's bytes, an
+ * Owned box); panics when another place already owns it. NULL storage is never recorded. */
+void byn_own_claim(const void* storage, const void* place, const char* type, const char* file, int line);
+/* `storage` leaves its owner (a move or a return); the next claim takes it. */
+void byn_own_release(const void* storage);
+/* As byn_own_release, but only if `place` owns it (the place is overwritten). */
+void byn_own_drop(const void* storage, const void* place);
+/* Panics when the local behind `slot` was moved out. */
+void byn_own_read(const byn_own_slot* slot, const char* type, const char* file, int line);
+/* Storage grew from `from` into `to`. */
+void byn_own_rekey(const void* from, const void* to);
+/* Storage in [lo, hi) was freed. */
+void byn_own_forget(const void* lo, const void* hi);
+#endif
+
 /* ── Output and formatting ───────────────────────────────────────────────── */
 
 typedef enum byn_writer_mode {

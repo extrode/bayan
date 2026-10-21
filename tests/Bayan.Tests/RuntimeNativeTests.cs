@@ -60,7 +60,7 @@ public sealed class RuntimeNativeTests
         var c = Compilation.Create([SourceText.FromString("run-batch.byn", program)], work);
         Assert.False(c.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
         if (!OperatingSystem.IsWindows()) return;
-        Assert.Equal("exit 0\n\"a b\"\n\"\"\n\"^&|<>()!\"\n\"a\\\"\n", Run(Build(CliApp.EmitC(c)), []).Replace("\r\n", "\n"));
+        Assert.Equal("exit 0\n\"a b\"\n\"\"\n\"^&|<>()!\"\n\"a\\\"\n", Run(Build(CliApp.EmitC(c, BuildMode.Debug)), []).Replace("\r\n", "\n"));
     }
 
     private static string Build(string cSource)

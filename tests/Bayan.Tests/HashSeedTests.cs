@@ -1,3 +1,4 @@
+using Bayan.Backend.C;
 using Bayan.Cli;
 using Bayan.Semantics;
 using Bayan.Syntax.Text;
@@ -14,7 +15,7 @@ public sealed class HashSeedTests
         if (tests is not null) sources.Add(SourceText.FromString(Path.Combine(dir, "main.test.byn"), tests));
         var c = Compilation.Create(sources, dir, new CompilationOptions(IncludeTests: tests is not null));
         Assert.False(c.Diagnostics.HasErrors);
-        return CliApp.EmitC(c);
+        return CliApp.EmitC(c, BuildMode.Safe);
     }
 
     [Fact]

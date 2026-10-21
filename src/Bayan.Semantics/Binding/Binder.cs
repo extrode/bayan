@@ -659,7 +659,7 @@ internal sealed partial class Binder
 
     private BoundStmt BindSwitchStatement(SwitchStmt s, JumpTarget target)
     {
-        var value = BindExpr(s.Value);
+        var value = BindSwitchSubject(s.Value, out var owns);
         var sections = new List<BoundSwitchSection>();
         _targets.Add(target);
         var sawDefault = false;
@@ -667,7 +667,14 @@ internal sealed partial class Binder
         {
             PushScope();
             BoundPattern? pattern = null;
-            if (section.Label.Pattern is { } p) pattern = BindPattern(p, value.Type);
+            if (section.Label.Pattern is { } p)
+            {
+                _patternOwns = owns;
+                pattern = BindPattern(p, value.Type);
+                _patternOwns = false;
+                if (owns) CheckOwningOverlap(pattern);
+                if (owns && section.Label.Guard is { } lg) GuardBindings(pattern, lg.Span);
+            }
             else
             {
                 if (sawDefault) Report(DiagnosticCodes.DuplicateDefault, section.Label.Span, []);

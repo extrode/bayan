@@ -190,7 +190,7 @@ public sealed class MapModelTests
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.Create([new SourceText(name, Encoding.UTF8.GetBytes(source))], ".");
         if (c.Diagnostics.HasErrors) throw new Xunit.Sdk.XunitException(DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true) + "\n" + source);
-        var build = Toolchain.Build(CliApp.EmitC(c), BuildMode.Safe);
+        var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Safe), BuildMode.Safe);
         if (!build.Succeeded) throw new Xunit.Sdk.XunitException(build.Errors + "\n" + source);
         var work = Path.Combine(Golden.RepoRoot, "tmp", "run", "l003_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
