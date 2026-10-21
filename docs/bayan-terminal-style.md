@@ -124,9 +124,10 @@ running 142 tests in 9 modules
 - Panics show the panic message and the top three stack frames; `-v` shows all.
 - Pending (`todo`) tests are counted, and listed with `-v`.
 - With everything passing: `◆ 142 passed · 2.10s`, plus ` · 3 pending` when some are pending.
-- Up to three failures get one rerun line using the full test names: `rerun the failures: bayan test --only "a" --only "b"` (`rerun the failure:` for one). With more than three, no rerun line.
+- Up to three failures get one rerun line using the full test names: `rerun the failures: bayan test --only "a" --only "b"` (`rerun the failure:` for one). With more than three, no rerun line. Names are quoted for a POSIX shell: in double quotes when nothing in them expands there (`$`, `` ` ``, `\`, `"`, `!`), else in single quotes with `'` written `'\''`; other shells (cmd, PowerShell) may need the name requoted.
 - The header counts modules (`1 module`, `9 modules`) and tests (`1 test`); with `--changed`, tests in unchanged modules are noted as skipped.
-- `--only` with no matching name and no `--changed` is a usage error (exit 2); `--only` combined with an empty `--changed` selection prints `running 0 tests in 0 modules` and exits 0.
+- `--only` that matches no test in the package is a usage error (exit 2), with or without `--changed`; when `--changed` leaves none of its matches, it prints `running 0 tests in 0 modules` and exits 0.
+- Test names and test output are shown with control characters (U+0000–U+001F, U+007F, U+0080–U+009F) written as `\u{1b}`, so a name or a panic message cannot move the cursor or clear the screen. JSON output keeps them as they are.
 - `--only <substring>` is repeatable and selects the union; with `--changed`, the intersection.
 - A test child process exits 4 when the test is pending (`todo`). This is the child's code, not the CLI's; it isn't 3 because `abort()` exits 3 on Windows.
 
@@ -158,7 +159,7 @@ A check that cannot pass starts with `✗` and gets a `help:` line; an optional 
 ## 6. Progress
 
 - Shown only when stderr is a terminal and an operation takes longer than 300 ms.
-- One line, rewritten in place: `◆◇◇ compiling tally.ledger (14 of 31)`.
+- One line, rewritten in place: `◆◇◇ compiling tally.ledger (14 of 31)`. It is cut to one column less than the terminal width, ending in `…`, so it never wraps.
 - Removed when the operation finishes, so only the summary remains in scrollback.
 - Never shown when `CI` is set to a non-empty value, in `--json` / `--diagnostics json` mode, or when stderr is piped.
 - The ASCII form prints `... <phase>` once and doesn't rewrite.

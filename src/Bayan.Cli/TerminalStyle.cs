@@ -29,6 +29,22 @@ public static class TerminalStyle
         return new Style(palette, symbols, isTty && width > 0 ? width : 100);
     }
 
+    /// <summary>
+    /// User-controlled text (test names, test output) made safe for a terminal: C0 controls, DEL and C1
+    /// controls are written as <c>\u{1b}</c>, so a name cannot move the cursor, retitle or clear the screen.
+    /// </summary>
+    public static string Visible(string text)
+    {
+        if (!text.Any(c => c < 0x20 || c is >= '\u007F' and <= '\u009F')) return text;
+        var sb = new System.Text.StringBuilder(text.Length + 8);
+        foreach (var c in text)
+        {
+            if (c < 0x20 || c is >= '\u007F' and <= '\u009F') sb.Append("\\u{").Append(((int)c).ToString("x", System.Globalization.CultureInfo.InvariantCulture)).Append('}');
+            else sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
     /// <summary><c>BAYAN_THEME</c>, else the background field of <c>COLORFGBG</c>, else dark.</summary>
     private static bool Light(Func<string, string?> env)
     {

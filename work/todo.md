@@ -69,8 +69,9 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - R15 (005 T15): `HelpLanguageTests` scans help literals right after `help:`/`help =`; ternary branches and help variables built from lists (e.g. `OwnershipAnalysis` options) are only covered through the goldens, and CLI `stderr.WriteLine("  help: …")` lines in `Dist.cs`/`Scaffold.cs` are not scanned.
 - `bayan test` (005 T12): the "top three stack frames" trim is untested end to end because the runtime prints one `at file:line` frame per panic.
 - The error cap line (`… and N more errors`) follows the last diagnostic with no blank line between them (`tests/cases/style/diag-cap.*`); the guide does not say which (005 T14).
-- The rerun hint (005 T14) escapes `\` and `"` in test names but not `$` or `` ` ``, which a POSIX shell still expands inside double quotes.
 - `bayan test -v` pass lines have no per-test timing (spec 005 R8 asked for one)
 - `bayan test -v` pending line is `  ◆ <module>: <name> (pending)`, not the planned `  pending <module>: <name>: <message>` (spec 005)
 - Diagnostics for loose files show absolute paths in `-->` (spec 005 R4: relative to the package root)
 - `laws-check`'s 600 s per-law limit is shorter than L001/L002 under load; both were verified by uncapped filter runs (spec 005)
+- On a tty, .NET console setup writes the keypad escape `\e[?1h\e=` (also after each child process), so `NO_COLOR` output is not escape-free; pre-existing on dev (005 review A1)
+- The ASCII / `TERM=dumb` progress line leaves `... <phase>` in scrollback; the guide's §6 "removed when the operation finishes" and "prints `... <phase>` once" disagree (005 review A5)

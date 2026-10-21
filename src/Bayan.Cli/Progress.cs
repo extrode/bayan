@@ -4,7 +4,7 @@ namespace Bayan.Cli;
 
 /// <summary>
 /// The single progress line on stderr (spec 005 R13): drawn only once the operation outlives the threshold,
-/// rewritten in place, and removed by <see cref="Done"/>. Never drawn when stderr is not a terminal, in JSON
+/// rewritten in place, cut to the terminal width, and removed by <see cref="Done"/>. Never drawn when stderr is not a terminal, in JSON
 /// mode, or when <c>CI</c> is set. The ASCII form prints <c>... phase</c> once without rewriting.
 /// </summary>
 internal sealed class Progress : IDisposable
@@ -23,7 +23,7 @@ internal sealed class Progress : IDisposable
 
     private Progress(TextWriter writer, Style style, string phase, TimeSpan threshold)
     {
-        (_writer, _frames, _phase) = (writer, style.Symbols.Progress, phase);
+        (_writer, _frames, _phase) = (writer, style.Symbols.Progress, Fit(TerminalStyle.Visible(phase), style.Width - 1 - style.Symbols.Progress[0].Length - 1, style.Symbols.Ellipsis));
         if (threshold <= TimeSpan.Zero) Tick();
         else _timer = new Timer(_ => Tick(), null, threshold, _frames.Length > 1 ? s_interval : Timeout.InfiniteTimeSpan);
     }
@@ -33,6 +33,18 @@ internal sealed class Progress : IDisposable
     {
         var off = !isTty || json || env("CI") is { Length: > 0 };
         return new Progress(off ? TextWriter.Null : writer, style, phase, threshold ?? DefaultThreshold);
+    }
+
+    /// <summary>
+    /// <paramref name="phase"/> cut to <paramref name="room"/> columns (one per scalar) ending in the ellipsis, so the
+    /// line never wraps and <c>\r\e[2K</c> clears all of it.
+    /// </summary>
+    private static string Fit(string phase, int room, string ellipsis)
+    {
+        var runes = phase.EnumerateRunes().ToArray();
+        if (runes.Length <= room) return phase;
+        var keep = Math.Max(0, room - ellipsis.Length);
+        return string.Concat(runes.Take(keep).Select(r => r.ToString())) + ellipsis;
     }
 
     private void Tick()

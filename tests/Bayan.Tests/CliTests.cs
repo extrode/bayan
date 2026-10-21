@@ -306,6 +306,35 @@ public sealed class CliTests
         Assert.Contains("cannot tell a build failure from a program that exits 1", stdout);
     }
 
+    [Theory]
+    [InlineData("run")]
+    [InlineData("types")]
+    [InlineData("check")]
+    public void VerboseIsOnlyForBuildAndTest(string command)
+    {
+        var dir = TestSuite("cli-verbose-" + command, "");
+        var main = Path.Combine(dir, "main.byn");
+        var (exit, _, stderr) = Run(command, main, "-v");
+        Assert.Equal(CliApp.ExitUsage, exit);
+        Assert.Contains("unexpected argument `-v`", stderr);
+        Assert.Equal(CliApp.ExitUsage, Run(command, main, "--verbose").Exit);
+        Assert.Equal(CliApp.ExitOk, Run(command, main, "--all").Exit);
+    }
+
+    [Fact]
+    public void ParseRendersItsDiagnosticsInTheChosenSymbols()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "cli-parse-ascii");
+        Directory.CreateDirectory(dir);
+        var bad = Path.Combine(dir, "bad.byn");
+        File.WriteAllText(bad, "void main() {\n    let x = \n}\n");
+        var (exit, _, stderr) = Run("--ascii", "parse", bad);
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Contains("  3 | }", stderr);
+        Assert.DoesNotContain("│", stderr);
+        Assert.Contains("  3 | }", Run("--ascii", "parse", "--ast", bad).Out);
+    }
+
     private static string TestSuite(string name, string tests)
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
@@ -438,12 +467,60 @@ public sealed class CliTests
     }
 
     [Fact]
-    public void TheRerunHintEscapesQuotesInTheName()
+    public void TheRerunHintQuotesTheNameForAShell()
     {
-        var dir = TestSuite("cli-test-quoted", "test \"say \\\"hi\\\" \\\\ bye\" {\n    assert(false);\n}\n");
+        const string name = "x $(touch owned) `id` it's \"hi\" \\ bye";
+        var dir = TestSuite("cli-test-quoted", "test \"x $(touch owned) `id` it's \\\"hi\\\" \\\\ bye\" {\n    assert(false);\n}\n");
         var (exit, stdout, _) = Run("test", "--ascii", dir);
         Assert.Equal(CliApp.ExitTestFailure, exit);
-        Assert.Contains("  rerun the failure: bayan test --only \"say \\\"hi\\\" \\\\ bye\"\n", stdout.ReplaceLineEndings("\n"));
+        const string quoted = "'x $(touch owned) `id` it'\\''s \"hi\" \\ bye'";
+        Assert.Contains("  rerun the failure: bayan test --only " + quoted + "\n", stdout.ReplaceLineEndings("\n"));
+        if (OperatingSystem.IsWindows()) return;
+        var psi = new System.Diagnostics.ProcessStartInfo("/bin/sh") { RedirectStandardOutput = true, UseShellExecute = false, WorkingDirectory = dir };
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add("printf '%s' " + quoted);
+        using var sh = System.Diagnostics.Process.Start(psi)!;
+        var echoed = sh.StandardOutput.ReadToEnd();
+        sh.WaitForExit();
+        Assert.Equal(name, echoed);
+        Assert.False(File.Exists(Path.Combine(dir, "owned")));
+    }
+
+    [Fact]
+    public void ControlCharactersInTestNamesAndOutputAreShownEscaped()
+    {
+        var dir = TestSuite("cli-test-control", """
+            test "ok\u{1b}]0;PWNED\u{7}" {
+                assert(true);
+            }
+
+            test "later\u{1b}[2J" {
+                todo("soon");
+            }
+
+            test "y\u{1b}]0;PWNED\u{7}\u{1b}[2J" {
+                panic("boom\u{1b}[2J\u{9b}31m");
+            }
+
+            """);
+        var (exit, stdout, _) = Run("test", "--ascii", "-v", dir);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+        Assert.DoesNotContain('\u001b', stdout);
+        Assert.DoesNotContain('\u0007', stdout);
+        Assert.DoesNotContain('\u009b', stdout);
+        Assert.Equal("""
+            running 3 tests in 1 module
+              * cli-test-control: ok\u{1b}]0;PWNED\u{7}
+              * cli-test-control: later\u{1b}[2J (pending)
+
+              x cli-test-control: y\u{1b}]0;PWNED\u{7}\u{1b}[2J
+                  boom\u{1b}[2J\u{9b}31m
+                  main.test.byn:10
+
+            * 1 passed - x 1 failed - 1 pending - Ts
+              rerun the failure: bayan test --only 'y\u{1b}]0;PWNED\u{7}\u{1b}[2J'
+
+            """, WithoutTimes(stdout));
     }
 
     [Fact]

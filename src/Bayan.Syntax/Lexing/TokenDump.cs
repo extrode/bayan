@@ -6,7 +6,10 @@ namespace Bayan.Syntax.Lexing;
 /// <summary>Text form of a token stream, used by <c>bayan lex</c> and the <c>lex/</c> golden tests.</summary>
 public static class TokenDump
 {
-    public static string Dump(LexResult result)
+    public static string Dump(LexResult result) => Dump(result, Style.Plain);
+
+    /// <param name="style">How the diagnostics after the tokens render; the <c>lex/</c> goldens and the self-hosted lexer use <see cref="Style.Plain"/>.</param>
+    public static string Dump(LexResult result, Style style)
     {
         var sb = new StringBuilder();
         var source = result.Source;
@@ -19,7 +22,7 @@ public static class TokenDump
             sb.Append('\n');
         }
         if (result.Diagnostics.Count > 0)
-            sb.Append('\n').Append(DiagnosticRenderer.RenderAll(result.Diagnostics));
+            sb.Append('\n').Append(DiagnosticRenderer.RenderAll(result.Diagnostics, includePath: false, style));
         return sb.ToString();
     }
 

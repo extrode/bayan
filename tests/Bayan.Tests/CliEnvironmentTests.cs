@@ -189,6 +189,8 @@ public sealed partial class CliEnvironmentTests
         var script = Path.Combine(dir, "tool.byn");
         File.WriteAllText(script, "#!/usr/bin/env bayan\n#:io threaded\n\nprint(\"hi\");\n");
         Assert.Equal(CliApp.ExitOk, Run([script, "--color", "sometimes"]).Exit);
+        Assert.Equal(CliApp.ExitOk, Run(["--color", "never", script, "--color", "sometimes"]).Exit);
+        Assert.Equal(CliApp.ExitOk, Run(["--ascii", script, "--color", "sometimes"]).Exit);
     }
 
     // ── Doctor ───────────────────────────────────────────────────────────────────
@@ -412,6 +414,11 @@ public sealed partial class CliEnvironmentTests
         Assert.Equal(CliApp.ExitUsage, exit);
         Assert.Equal("", stdout);
         Assert.Equal("bayan: no test name contains `nothing`, `else`\n", err);
+
+        var changed = Run(["test", app, "--only", "nothing", "--changed"]);
+        Assert.Equal(CliApp.ExitUsage, changed.Exit);
+        Assert.Equal("", changed.Out);
+        Assert.Equal("bayan: no test name contains `nothing`\n", changed.Err);
     }
 
     // ── test timeouts ────────────────────────────────────────────────────────────
