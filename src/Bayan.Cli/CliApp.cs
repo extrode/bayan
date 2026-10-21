@@ -49,7 +49,9 @@ public static class CliApp
 
         options for every command:
           --color auto|always|never
-                               color for terminals (auto: on unless piped or NO_COLOR is set)
+                               color for terminals (auto: on unless piped or NO_COLOR is set;
+                               FORCE_COLOR turns it on, TERM=dumb off)
+          --ascii              use ASCII symbols instead of ◆ ✗ │ (also with TERM=dumb or a non-UTF-8 locale)
 
         options for check, build, run and test:
           --diagnostics json   print each diagnostic to stderr as one JSON object per line
@@ -67,11 +69,11 @@ public static class CliApp
         matters, run `bayan build` first or read `--diagnostics json`.
         """;
 
-    /// <summary>Whether stdout and stderr are terminals, which turns color on unless <c>NO_COLOR</c> is set.</summary>
-    public readonly record struct Terminal(bool Stdout, bool Stderr);
+    /// <summary>Whether stdout and stderr are terminals, and the terminal's width (0 when unknown).</summary>
+    public readonly record struct Terminal(bool Stdout, bool Stderr, int Width = 0);
 
-    [ThreadStatic] private static bool s_colorOut;
-    [ThreadStatic] private static bool s_colorErr;
+    [ThreadStatic] private static Style? s_styleOut;
+    [ThreadStatic] private static Style? s_styleErr;
 
     public static string VersionLine => $"bayan {Version} (commit {BuildInfo.Commit})";
 
@@ -79,10 +81,9 @@ public static class CliApp
 
     public static int Run(string[] args, TextWriter stdout, TextWriter stderr, Terminal terminal)
     {
-        if (TakeColor(ref args, stderr) is not { } color) return ExitUsage;
-        var noColor = Environment.GetEnvironmentVariable("NO_COLOR") is { Length: > 0 };
-        s_colorOut = color == "always" || (color == "auto" && terminal.Stdout && !noColor);
-        s_colorErr = color == "always" || (color == "auto" && terminal.Stderr && !noColor);
+        if (TakeGlobalOptions(ref args, stderr) is not var (color, ascii)) return ExitUsage;
+        s_styleOut = TerminalStyle.Decide(color, ascii, terminal.Stdout, Environment.GetEnvironmentVariable, terminal.Width);
+        s_styleErr = TerminalStyle.Decide(color, ascii, terminal.Stderr, Environment.GetEnvironmentVariable, terminal.Width);
         if (args.Length == 0)
         {
             stderr.WriteLine(Usage);
@@ -291,18 +292,19 @@ public static class CliApp
     private static void Report(BuildOptions o, IReadOnlyList<Diagnostic> diagnostics, TextWriter stderr)
     {
         if (diagnostics.Count == 0) return;
-        stderr.Write(o.Json ? DiagnosticJson.RenderAll(diagnostics) : DiagnosticRenderer.RenderAll(diagnostics, includePath: true, color: s_colorErr));
+        stderr.Write(o.Json ? DiagnosticJson.RenderAll(diagnostics) : DiagnosticRenderer.RenderAll(diagnostics, includePath: true, s_styleErr ?? Style.Plain));
     }
 
     /// <summary>
-    /// Removes <c>--color auto|always|never</c> (or <c>--color=…</c>) from before any <c>--</c>;
+    /// Removes <c>--color auto|always|never</c> (or <c>--color=…</c>) and <c>--ascii</c> from before any <c>--</c>;
     /// null after reporting a bad value.
     /// </summary>
-    private static string? TakeColor(ref string[] args, TextWriter stderr)
+    private static (string Color, bool Ascii)? TakeGlobalOptions(ref string[] args, TextWriter stderr)
     {
         var color = "auto";
+        var ascii = false;
         // A script's arguments are its own (`bayan tool.byn --color never`).
-        if (args is [var first, ..] && first.EndsWith(".byn", StringComparison.Ordinal) && File.Exists(first)) return color;
+        if (args is [var first, ..] && first.EndsWith(".byn", StringComparison.Ordinal) && File.Exists(first)) return (color, ascii);
         var kept = new List<string>(args.Length);
         for (var i = 0; i < args.Length; i++)
         {
@@ -311,6 +313,11 @@ public static class CliApp
             {
                 kept.AddRange(args[i..]);
                 break;
+            }
+            if (args[i] == "--ascii")
+            {
+                ascii = true;
+                continue;
             }
             if (args[i] == "--color" && i + 1 < args.Length) value = args[++i];
             else if (args[i].StartsWith("--color=", StringComparison.Ordinal)) value = args[i]["--color=".Length..];
@@ -328,11 +335,11 @@ public static class CliApp
             color = value;
         }
         args = [.. kept];
-        return color;
+        return (color, ascii);
     }
 
-    private static string Paint(string style, string text) =>
-        s_colorOut ? style + text + Palette.Reset : text;
+    private static string Paint(Role role, string text, bool bold = false) =>
+        s_styleOut?.Colors is { } colors ? (bold ? Palette.Bold : "") + colors.Prefix(role) + text + Palette.Reset : text;
 
     /// <summary>An app's code is <c>src/app/</c>; a library's is <c>src/&lt;name&gt;/</c> with the name in camelCase.</summary>
     public static string EntryModule(Manifest manifest) =>
@@ -528,13 +535,13 @@ public static class CliApp
                 TestStatus.Pending => "PEND ",
                 _ => "TIME ",
             };
-            var style = status switch
+            var role = status switch
             {
-                TestStatus.Pass => Palette.Green,
-                TestStatus.Timeout or TestStatus.Pending => Palette.Yellow,
-                _ => Palette.Bold + Palette.Red,
+                TestStatus.Pass => Role.Success,
+                TestStatus.Timeout or TestStatus.Pending => Role.Warning,
+                _ => Role.Error,
             };
-            human.WriteLine($"  {Paint(style, label)}  {test.Name}  ({FormatMs(outcome.Elapsed)})");
+            human.WriteLine($"  {Paint(role, label, bold: role == Role.Error)}  {test.Name}  ({FormatMs(outcome.Elapsed)})");
             if (status == TestStatus.Pass) continue;
             foreach (var l in details.Split('\n'))
                 human.WriteLine("         " + l.TrimEnd('\r'));
