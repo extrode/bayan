@@ -47,15 +47,15 @@ bayan test
 === tally/docs/.gitkeep
 === tally/package.byn
 Package {
-    name    = "local/tally",      // `local/` until published under a verified namespace
-    version = "0.1.0",
-    edition = 2027,
-    kind    = .app,
-    capabilities = [],
-    deps    = [],
-    dist = Dist {
-        targets = [.host],        // the machine that builds it
-        mode    = .safe,
+    name: "local/tally",      // `local/` until published under a verified namespace
+    version: "0.1.0",
+    edition: 2027,
+    kind: .app,
+    capabilities: [],
+    deps: [],
+    dist: Dist {
+        targets: [.host],        // the machine that builds it
+        mode: .safe,
     },
 }
 === tally/src/app/main.byn

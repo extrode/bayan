@@ -615,8 +615,11 @@ public static class AstDump
                 case SpreadExpr e:
                     Sexp(sb, "spread", e.Operand);
                     break;
+                case MapEntryExpr e:
+                    Sexp(sb, "entry", e.Key, e.Value);
+                    break;
                 case CollectionExpr e:
-                    Sexp(sb, "list", e.Elements);
+                    Sexp(sb, e.Elements.Length > 0 && e.Elements.All(x => x is MapEntryExpr) ? "map" : "list", e.Elements);
                     break;
                 case TupleExpr e:
                     sb.Append("(tuple");

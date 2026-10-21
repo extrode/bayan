@@ -1401,7 +1401,7 @@ public sealed class Parser
         }
         else if (Kind == TokenKind.OpenBrace && !(IsStructLiteralBody() && Peek(1) != TokenKind.CloseBrace && !BraceBodyHasSemicolon()))
         {
-            // `catch { x = 1 }` stays a target-typed struct literal; `catch {}` and `catch { x = 1; }` are blocks.
+            // `catch { x: 1 }` stays a target-typed struct literal; `catch {}` and `catch { x: 1; }` are blocks.
             var block = ParseBlock();
             handler = new BlockExpr(block.Span, block);
         }
@@ -1738,9 +1738,9 @@ public sealed class Parser
         return false;
     }
 
-    /// <summary>At <c>{</c>: is this <c>{ }</c> or <c>{ name = …</c>, i.e. a struct literal rather than a block?</summary>
+    /// <summary>At <c>{</c>: is this <c>{ }</c> or <c>{ name: …</c> (or the older <c>{ name = …</c>), i.e. a struct literal rather than a block?</summary>
     private bool IsStructLiteralBody() =>
-        Peek(1) == TokenKind.CloseBrace || (IsName(Peek(1)) && Peek(2) == TokenKind.Equals);
+        Peek(1) == TokenKind.CloseBrace || (IsName(Peek(1)) && Peek(2) is TokenKind.Colon or TokenKind.Equals);
 
     private FieldInit[] ParseFieldInits()
     {
@@ -1751,7 +1751,7 @@ public sealed class Parser
             var start = Current.Start;
             var before = _pos;
             var name = ExpectName("a field name");
-            Expect(TokenKind.Equals);
+            if (!Accept(TokenKind.Equals)) Expect(TokenKind.Colon);
             var value = ParseExpression();
             fields.Add(new FieldInit(SpanFrom(start), name, value));
             if (!Accept(TokenKind.Comma)) break;
@@ -1810,17 +1810,14 @@ public sealed class Parser
             if (Kind == TokenKind.DotDot)
             {
                 Advance();
-                element = new SpreadExpr(SpanFrom(elementStart), ParseExpression());
+                var operand = ParseExpression();
+                element = new SpreadExpr(SpanFrom(elementStart), operand);
             }
             else
             {
-                element = ParseExpression();
-                if (element is ConditionalExpr)
-                {
-                    Report(DiagnosticCodes.TernaryInCollection, element.Span,
-                        help: "wrap it in parentheses",
-                        fix: new Fix(element.Span, "(" + _source.GetText(element.Span) + ")"));
-                }
+                element = ParseCollectionPart();
+                if (Accept(TokenKind.Colon))
+                    element = new MapEntryExpr(SpanFrom(elementStart), element, ParseCollectionPart());
             }
             elements.Add(element);
             if (!Accept(TokenKind.Comma)) break;
@@ -1828,6 +1825,19 @@ public sealed class Parser
         }
         Expect(TokenKind.CloseBracket);
         return new CollectionExpr(SpanFrom(start), elements.ToArray());
+    }
+
+    /// <summary>An element, map key or map value; a bare conditional is BYN1013.</summary>
+    private Expr ParseCollectionPart()
+    {
+        var part = ParseExpression();
+        if (part is ConditionalExpr)
+        {
+            Report(DiagnosticCodes.TernaryInCollection, part.Span,
+                help: "wrap it in parentheses",
+                fix: new Fix(part.Span, "(" + _source.GetText(part.Span) + ")"));
+        }
+        return part;
     }
 
     private Expr ParseInterpolated()

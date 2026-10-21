@@ -282,6 +282,9 @@ public sealed record WithExpr(TextSpan Span, Expr Target, FieldInit[] Fields) : 
 
 public sealed record SpreadExpr(TextSpan Span, Expr Operand) : Expr(Span);
 
+/// <summary><c>key: value</c> inside a collection literal; a literal whose elements are all entries is a map literal.</summary>
+public sealed record MapEntryExpr(TextSpan Span, Expr Key, Expr Value) : Expr(Span);
+
 public sealed record CollectionExpr(TextSpan Span, Expr[] Elements) : Expr(Span);
 
 public sealed record TupleElement(TextSpan Span, Name? Name, Expr Value) : Node(Span);

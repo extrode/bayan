@@ -215,6 +215,9 @@ internal sealed class RegionAnalysis
                 Expr(i.Index);
                 return target with { Owners = [] };
             }
+            case BoundSpread s:
+                // Like an index: the elements are copies of what the sequence holds.
+                return Expr(s.Operand) with { Owners = [] };
             case BoundStackalloc s:
                 return new Borrow([new Region(_depth, $"the `stackalloc` buffer on line {Line(s.Syntax.Span)}")], []);
             case BoundCollection c:
