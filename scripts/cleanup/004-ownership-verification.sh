@@ -38,7 +38,7 @@ if [ $execute -eq 1 ]; then git worktree prune; else printf 'would: git worktree
 for b in feat/003-ownership-verification fix/review-2026-10-21-1 \
          chore/worker-003-t1 chore/worker-003-t2 chore/worker-003-t3 chore/worker-003-t4 chore/worker-003-t4b \
          chore/worker-003-t5 chore/worker-003-t7 chore/worker-003-t9 \
-         chore/worker-003-rv-a chore/worker-003-rv-b chore/worker-003-rv-c chore/worker-003-rv-d; do
+         chore/worker-003-rv-a chore/worker-003-rv-b chore/worker-003-rv-c chore/worker-003-rv-d chore/worker-003-rv-e; do
   if ! git rev-parse --verify --quiet "refs/heads/$b" >/dev/null; then
     printf 'skip:  branch %s no longer exists\n' "$b"
   elif [ $execute -eq 1 ]; then
@@ -50,7 +50,7 @@ done
 
 # 3. Scratch (untracked, needs --delete-scratch as well).
 shopt -s nullglob
-for rel in tmp/003-* tmp/rv tmp/r8 tmp/r8.sh tmp/ndbg tmp/rv-review-correctness tmp/rv-review-consequence \
+for rel in tmp/003-* tmp/rv tmp/r8 tmp/r8.sh tmp/ndbg tmp/rv-review-correctness tmp/rv-review-consequence tmp/rv-review3-* \
            tmp/sm tmp/l008 tmp/own-table tmp/cleanup-candidates.md; do
   if [ ! -e "$rel" ]; then printf 'skip:  %s already gone\n' "$rel"; continue; fi
   if git ls-files --error-unmatch -- "$rel" >/dev/null 2>&1; then

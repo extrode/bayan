@@ -1,5 +1,5 @@
 # 003 — Ownership verification: `take()`, `switch (move x)`, a runtime ownership checker, and a proof for L008
-Status: planned
+Status: done
 Created: 2026-10-21
 
 ## Problem
