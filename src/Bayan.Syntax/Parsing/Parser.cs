@@ -1398,6 +1398,11 @@ public sealed class Parser
             Advance();
             handler = ParseSwitchArms(switchStart, subject);
         }
+        else if (Kind == TokenKind.OpenBrace)
+        {
+            var block = ParseBlock();
+            handler = new BlockExpr(block.Span, block);
+        }
         else
         {
             handler = ParseBinary(Prec.LogicalOr);

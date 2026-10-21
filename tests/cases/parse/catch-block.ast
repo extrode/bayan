@@ -1,0 +1,4 @@
+CompilationUnit
+  Let n = (catch (call parse s) (block {Return (- 1)}))
+  Let m = (catch (call parse s) (e) (block {Expr (call log e)} {Break}))
+  Expr (catch (call save x) (block {Expr (call log "x")}))

@@ -238,6 +238,9 @@ internal sealed class RegionAnalysis
             case BoundJump j:
                 Stmt(j.Jump);
                 return Borrow.None;
+            case BoundBlockExpr b:
+                Stmt(b.Block);
+                return Borrow.None;
             case BoundIs i:
                 BindPattern(i.Pattern, Expr(i.Value));
                 return Borrow.None;

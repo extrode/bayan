@@ -153,6 +153,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NotAnErrorSet = Error("BYN2608", "`{0}` is not an error enum");
     public static readonly DiagnosticDescriptor EmptyErrorSet = Error("BYN2609", "error enum `{0}` has no variants");
     public static readonly DiagnosticDescriptor JumpOutOfDefer = Error("BYN2610", "`{0}` cannot leave a `defer` or `errdefer` body");
+    public static readonly DiagnosticDescriptor CatchBlockCompletes = Error("BYN2611", "this `catch` block can complete normally; end it with `return`, `break`, `continue` or a panic");
     public static readonly DiagnosticDescriptor UnknownUnionVariant = Error("BYN2700", "`{0}` is not a variant of union `{1}`");
     public static readonly DiagnosticDescriptor DuplicateUnionVariant = Error("BYN2701", "union `{0}` already has a variant `{1}`");
     public static readonly DiagnosticDescriptor EmptyUnion = Error("BYN2702", "union `{0}` has no variants");
