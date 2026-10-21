@@ -810,6 +810,9 @@ public sealed class Compilation
     private readonly HashSet<(string, SourceText?, TextSpan)> _instanceAnalysisSeen = new();
     private DiagnosticBag? _scratch;
 
+    /// <summary>Marks an instantiation error reported at the use that chose the type arguments.</summary>
+    internal const string InstantiationLabel = "the generic code needs this of its type arguments";
+
     private sealed class InstanceKeyComparer : IEqualityComparer<(object Generic, TypeSymbol[] Args)>
     {
         public bool Equals((object Generic, TypeSymbol[] Args) x, (object Generic, TypeSymbol[] Args) y) =>
@@ -846,7 +849,7 @@ public sealed class Compilation
         foreach (var d in bag.Items.Where(d => d.IsError))
         {
             if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code)
-                (_scratch ?? Diagnostics).Add(d with { Source = site, Span = span, Label = "the generic code needs this of its type arguments" });
+                (_scratch ?? Diagnostics).Add(d with { Source = site, Span = span, Label = InstantiationLabel });
             else
                 _instantiationErrors.Add(d);
         }
@@ -1076,7 +1079,7 @@ public sealed class Compilation
         (_scratch ?? Diagnostics).Report(d, source, span, args, label, help, fix);
 
     /// <summary>Reports what a first-pass binder held back.</summary>
-    internal void ReportHeld(DiagnosticBag held) => (_scratch ?? Diagnostics).AddRange(held.Items);
+    internal void ReportHeld(IEnumerable<Diagnostic> held) => (_scratch ?? Diagnostics).AddRange(held);
 
     /// <summary>Sends reports to <paramref name="bag"/> until called again; returns the previous target.</summary>
     internal DiagnosticBag? ReportInto(DiagnosticBag? bag)

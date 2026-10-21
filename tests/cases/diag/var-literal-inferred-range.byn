@@ -13,3 +13,21 @@ if (m < w) print("never");
 var fits = 255;
 fits -= 1;
 u8 c = fits;
+
+var f = 0;
+f += 1;
+f64 g = f;
+i64 h = f;
+
+struct Index<K> {
+    Map<K, string> names;
+}
+
+i64 count(ReadOnlySpan<i64> xs) {
+    var i = 0;
+    while (i < xs.length) {
+        i += 1;
+    }
+    Index<f64> idx;
+    return i;
+}

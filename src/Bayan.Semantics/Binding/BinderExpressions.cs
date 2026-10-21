@@ -90,10 +90,13 @@ internal sealed partial class Binder
         return new BoundErrorExpr(value.Syntax);
     }
 
-    /// <summary>Records <paramref name="target"/> as the type of each pending `var` literal <paramref name="value"/> is made of, if it is the first integer one.</summary>
+    /// <summary>
+    /// Records <paramref name="target"/> for each pending `var` literal <paramref name="value"/> is made of, if it is the
+    /// first use; a float or string first use is kept too, so the literal stays `i32` (Q74).
+    /// </summary>
     private void Constrain(BoundExpr value, TypeSymbol target)
     {
-        if (!target.IsInteger) return;
+        if (!target.IsInteger && !target.IsFloat && !target.IsString) return;
         if (value is BoundLocal { Local: var l } && _pending.TryGetValue(l, out var decl))
             _constraints.TryAdd(decl, target);
         else if (value is BoundBinary b && IsPending(b))

@@ -48,14 +48,19 @@ internal sealed partial class Binder
 
     /// <summary>
     /// Ends a first pass. Returns the local types to bind the body again with, dropping what the
-    /// pass reported; or null, when the pass stands and its diagnostics are reported.
+    /// pass reported except instantiation errors (the cached instance does not report them again);
+    /// or null, when the pass stands and its diagnostics are reported.
     /// </summary>
     public IReadOnlyDictionary<LocalDecl, TypeSymbol>? Release()
     {
         var held = _held!;
         _held = null;
-        if (_constraints.Values.Any(t => t != PrimitiveType.I32)) return _constraints;
-        _c.ReportHeld(held);
+        if (_constraints.Values.Any(t => t.IsInteger && t != PrimitiveType.I32))
+        {
+            _c.ReportHeld(held.Items.Where(d => d.Label == Compilation.InstantiationLabel));
+            return _constraints;
+        }
+        _c.ReportHeld(held.Items);
         return null;
     }
 
@@ -453,7 +458,7 @@ internal sealed partial class Binder
 
     private BoundStmt BindLocalDecl(LocalDecl d)
     {
-        var declared = d.Type is { } t ? ResolveType(t) : _seeds?.GetValueOrDefault(d);
+        var declared = d.Type is { } t ? ResolveType(t) : _seeds?.GetValueOrDefault(d) is { IsInteger: true } seed ? seed : null;
         BoundExpr? init = null;
         if (d.Init is { } e)
         {
