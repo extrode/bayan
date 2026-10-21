@@ -36,7 +36,7 @@ if [ $execute -eq 1 ]; then git worktree prune; else printf 'would: git worktree
 # 2. Feature and worker branches (git branch -d refuses anything unmerged).
 for b in feat/005-terminal-style \
          chore/worker-005-t1 chore/worker-005-t257 chore/worker-005-t1011 chore/worker-005-t3 \
-         chore/worker-005-t4 chore/worker-005-t13 chore/worker-005-t15; do
+         chore/worker-005-t4 chore/worker-005-t13 chore/worker-005-t15 chore/worker-005-t6 chore/worker-005-t8 chore/worker-005-t9 chore/worker-005-t12 chore/cleanup-004-rv2; do
   if ! git rev-parse --verify --quiet "refs/heads/$b" >/dev/null; then
     printf 'skip:  branch %s no longer exists\n' "$b"
   elif [ $execute -eq 1 ]; then
