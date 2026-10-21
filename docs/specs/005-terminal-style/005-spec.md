@@ -1,5 +1,5 @@
 # 005 — Terminal style: `bayan` output per `docs/bayan-terminal-style.md`
-Status: draft
+Status: planned
 Created: 2026-10-21
 
 ## Problem
