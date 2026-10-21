@@ -123,13 +123,14 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NotDisposable = Error("BYN2226", "`using` needs a value that owns memory, not `{0}`");
     public static readonly DiagnosticDescriptor AmbiguousVariant = Error("BYN2227", "`.{0}` is ambiguous; it exists in `{1}`");
     public static readonly DiagnosticDescriptor UnknownVariant = Error("BYN2228", "`{0}` is not a variant of `{1}`");
-    public static readonly DiagnosticDescriptor InvalidConstArray = Error("BYN2229", "module-level `const` array `{0}` must hold literal numbers, `bool`s or `char`s");
+    public static readonly DiagnosticDescriptor InvalidConstArray = Error("BYN2229", "module-level `const` array `{0}` must hold literal numbers, `bool`s, `char`s or `string`s");
     public static readonly DiagnosticDescriptor MissingArgument = Error("BYN2301", "missing argument `{0}` for `{1}`");
     public static readonly DiagnosticDescriptor TooManyArguments = Error("BYN2302", "`{0}` takes {1} argument(s)");
     public static readonly DiagnosticDescriptor DuplicateArgument = Error("BYN2303", "`{0}` is passed twice");
     public static readonly DiagnosticDescriptor PositionalAfterNamed = Error("BYN2304", "a positional argument cannot follow a named one");
     public static readonly DiagnosticDescriptor ArgumentMustBeNamed = Error("BYN2305", "argument for `{0}` must be named");
     public static readonly DiagnosticDescriptor ArgumentModifierMismatch = Error("BYN2306", "argument for `{0}` must be passed as {1}");
+    public static readonly DiagnosticDescriptor ArgumentsSwapped = Error("BYN2307", "arguments `{0}` and `{1}` are in the wrong order for `{2}`");
     public static readonly DiagnosticDescriptor SpanParameterNeverWritten = Warning("BYN2310", "`{0}` is never written through; use `ReadOnlySpan<{1}>`");
     public static readonly DiagnosticDescriptor NeverReassignedVar = Warning("BYN2311", "`{0}` is never reassigned; declare it with `let`");
     public static readonly DiagnosticDescriptor MissingReturn = Error("BYN2401", "`{0}` must return `{1}` on every path");
@@ -153,6 +154,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NotAnErrorSet = Error("BYN2608", "`{0}` is not an error enum");
     public static readonly DiagnosticDescriptor EmptyErrorSet = Error("BYN2609", "error enum `{0}` has no variants");
     public static readonly DiagnosticDescriptor JumpOutOfDefer = Error("BYN2610", "`{0}` cannot leave a `defer` or `errdefer` body");
+    public static readonly DiagnosticDescriptor CatchBlockCompletes = Error("BYN2611", "this `catch` block can complete normally; end it with `return`, `break`, `continue` or a panic");
     public static readonly DiagnosticDescriptor UnknownUnionVariant = Error("BYN2700", "`{0}` is not a variant of union `{1}`");
     public static readonly DiagnosticDescriptor DuplicateUnionVariant = Error("BYN2701", "union `{0}` already has a variant `{1}`");
     public static readonly DiagnosticDescriptor EmptyUnion = Error("BYN2702", "union `{0}` has no variants");

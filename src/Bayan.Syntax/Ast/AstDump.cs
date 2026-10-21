@@ -575,6 +575,17 @@ public static class AstDump
                     Expr(sb, e.Handler);
                     sb.Append(')');
                     break;
+                case BlockExpr e:
+                    sb.Append("(block");
+                    foreach (var s in e.Block.Statements)
+                    {
+                        // Statements dump one per line; inside an expression each becomes `{…}`, nested lines joined by `; `.
+                        var w = new Writer();
+                        w.Stmt(0, s);
+                        sb.Append(" {").Append(string.Join("; ", w.ToString().TrimEnd('\n').Split('\n').Select(l => l.Trim()))).Append('}');
+                    }
+                    sb.Append(')');
+                    break;
                 case JumpExpr e:
                     switch (e.Jump)
                     {

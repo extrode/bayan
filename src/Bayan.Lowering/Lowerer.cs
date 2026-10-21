@@ -807,6 +807,9 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case BoundJump j:
                 Statement(j.Jump);
                 return new LNever(e.Syntax, e.Type);
+            case BoundBlockExpr b:
+                Statement(b.Block);
+                return b.Type.IsNever ? new LNever(e.Syntax, e.Type) : new LVoid(e.Syntax);
             case BoundStackalloc s:
             {
                 var storage = NewTemp(new Semantics.Symbols.ArrayType(s.Element, s.Count));

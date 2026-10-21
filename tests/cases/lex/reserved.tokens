@@ -12,7 +12,7 @@
 2:23 Identifier `select`
 2:30 Identifier `become`
 3:1 LetKeyword `let`
-3:5 Identifier `law`
+3:5 LawKeyword `law`
 3:9 Equals `=`
 3:11 IntegerLiteral `3`
 3:12 Semicolon `;`
@@ -52,13 +52,6 @@ error BYN0012: `become` is reserved and cannot be used as an identifier
 
   2 │ let effect = 2; macro select become
     │                              ^^^^^^ reserved for a future version of Bayan
-    │
-  help: choose another name
-
-error BYN0012: `law` is reserved and cannot be used as an identifier
-
-  3 │ let law = 3; requires ensures
-    │     ^^^ reserved for a future version of Bayan
     │
   help: choose another name
 

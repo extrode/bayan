@@ -350,6 +350,8 @@ internal sealed class OwnershipAnalysis
             }
             case BoundJump j:
                 return Statement(j.Jump, state);
+            case BoundBlockExpr b:
+                return Statement(b.Block, state);
             case BoundIs i:
                 return Expr(i.Value, state);
             default:
