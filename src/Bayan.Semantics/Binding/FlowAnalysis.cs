@@ -273,10 +273,19 @@ internal sealed class FlowAnalysis
                         Report(DiagnosticCodes.UnknownVariant, ((CatchExpr)c.Syntax).Variant!.Span, [v.Name, ErrorUnionType.Of(call.Function.ErrorSets).DisplayName]);
                     else CheckPropagation(c.Syntax.Span, call, v);
                 }
-                return state.Join(Expr(c.Handler, state.Clone()));
+                var handler = Expr(c.Handler, state.Clone());
+                if (c.Handler is BoundBlockExpr { Type.IsNever: true } b && handler.Reachable)
+                {
+                    Report(DiagnosticCodes.CatchBlockCompletes, new TextSpan(Math.Max(b.Syntax.Span.End - 1, 0), 1), [],
+                        help: $"`{(c.Operand as BoundCall)?.Function.Name}` returns a value, so the block must leave instead of falling through");
+                    handler = State.Unreachable();
+                }
+                return state.Join(handler);
             }
             case BoundJump j:
                 return Statement(j.Jump, state);
+            case BoundBlockExpr b:
+                return Block(b.Block.Statements, state);
             case BoundIs i:
                 return Expr(i.Value, state);
             default:

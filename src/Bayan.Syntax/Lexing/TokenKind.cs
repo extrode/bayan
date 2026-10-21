@@ -160,6 +160,8 @@ public enum TokenKind : ushort
     PropertyKeyword,
     FuzzKeyword,
     ModelKeyword,
+    // Declaration-only, no meaning yet; contextual like the other declaration keywords.
+    LawKeyword,
     // Accepted for C# compatibility.
     ForeachKeyword,
     NewKeyword,
@@ -171,7 +173,6 @@ public enum TokenKind : ushort
     MacroKeyword,
     SelectKeyword,
     BecomeKeyword,
-    LawKeyword,
     RequiresKeyword,
     EnsuresKeyword,
 }
@@ -184,6 +185,12 @@ public static class TokenKindFacts
     public static bool IsKeyword(this TokenKind kind) => kind is >= KeywordFirst and <= KeywordLast;
 
     public static bool IsReservedKeyword(this TokenKind kind) => kind is >= TokenKind.ActorKeyword and <= KeywordLast;
+
+    /// <summary>Declaration-only keywords that are names wherever the grammar does not need them as keywords.</summary>
+    public static bool IsContextualKeyword(this TokenKind kind) => kind is
+        TokenKind.ErrorKeyword or TokenKind.FlagsKeyword or TokenKind.UnitKeyword or TokenKind.DistinctKeyword or
+        TokenKind.OpenKeyword or TokenKind.ExtensibleKeyword or TokenKind.SetKeyword or TokenKind.TypeKeyword or
+        TokenKind.LawKeyword or TokenKind.DerivationKeyword or TokenKind.AttributeKeyword or TokenKind.EmbedKeyword;
 
     public static bool IsStringLiteral(this TokenKind kind) =>
         kind is TokenKind.StringLiteral or TokenKind.RawStringLiteral or TokenKind.CStringLiteral or TokenKind.U16StringLiteral;

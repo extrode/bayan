@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "path": "constrained-by-argument.byn",
+      "name": "low",
+      "span": {
+        "start": 3,
+        "end": 6
+      },
+      "bindings": [
+        {
+          "name": "b",
+          "kind": "param",
+          "span": {
+            "start": 10,
+            "end": 11
+          },
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "path": "constrained-by-argument.byn",
+      "name": "main",
+      "span": {
+        "start": 20,
+        "end": 34
+      },
+      "bindings": [
+        {
+          "name": "small",
+          "kind": "var",
+          "span": {
+            "start": 24,
+            "end": 29
+          },
+          "type": "u8"
+        }
+      ]
+    }
+  ]
+}

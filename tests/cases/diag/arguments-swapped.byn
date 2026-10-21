@@ -1,0 +1,6 @@
+i64 width(i64 start, i64 end) => end - start;
+
+i64 start = 2;
+i64 end = 5;
+print($"{width(end, start)}");
+print($"{width(end, 3)}");

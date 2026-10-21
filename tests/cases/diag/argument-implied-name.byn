@@ -1,0 +1,11 @@
+struct Tok {
+    i64 start;
+    i64 end;
+}
+
+i64 width(i64 start, i64 end) => end - start;
+i64 tokWidth(Tok tok) => width(tok.start, tok.end);
+
+i64 start = 2;
+i64 end = 5;
+print($"{width(start, end)}");

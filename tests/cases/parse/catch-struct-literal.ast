@@ -1,0 +1,14 @@
+CompilationUnit
+  ErrorEnum MkError
+    Variant bad
+  Struct P
+    Field i64 x = 0
+  Function mk(bool ok) -> P fails MkError
+    Block
+      Guarded if (! ok)
+        Return .bad
+      Return (struct _ (x 7))
+  Var a: P = (catch (call mk (ok: false)) (struct _ (x 1)))
+  Var b: P = (catch (call mk (ok: true)) (struct _ (x 1)))
+  Var c: P = (catch (call mk (ok: false)) (struct P))
+  Expr (call print (interp (. a x) " " (. b x) " " (. c x)))

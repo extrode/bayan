@@ -238,6 +238,9 @@ internal sealed class RegionAnalysis
             case BoundJump j:
                 Stmt(j.Jump);
                 return Borrow.None;
+            case BoundBlockExpr b:
+                Stmt(b.Block);
+                return Borrow.None;
             case BoundIs i:
                 BindPattern(i.Pattern, Expr(i.Value));
                 return Borrow.None;
@@ -279,7 +282,7 @@ internal sealed class RegionAnalysis
                 return Lend(b.Receiver, receiver);
             case BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy:
                 return AllocatedFrom(b.Arguments[0]);
-            case BuiltinMember.IoReadAll:
+            case BuiltinMember.IoReadAll or BuiltinMember.IntToHex:
                 // Fresh text from `context.allocator`, like `Io.readText`.
                 return _contexts.Count > 0 ? _contexts.Peek() : Borrow.None;
             case BuiltinMember.ListAdd:
@@ -299,7 +302,7 @@ internal sealed class RegionAnalysis
                 return (receiver with { Owners = [] }).Union(args[1]);
             case BuiltinMember.MapLength or BuiltinMember.MapContains:
                 return Borrow.None;
-            case BuiltinMember.MapRemove or BuiltinMember.MapClear:
+            case BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
             case BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset:
@@ -315,6 +318,8 @@ internal sealed class RegionAnalysis
         var fn = c.Function;
         var receiver = c.Receiver is null ? Borrow.None : Expr(c.Receiver);
         var args = c.Arguments.Select(Expr).ToArray();
+        // A method that writes `this` modifies its receiver, like a write to one of its fields (Q78).
+        if (c.Receiver is not null && fn.IsMutating) Mutate(c.Receiver, c.Syntax.Span);
         for (var i = 0; i < c.Arguments.Length && i < fn.Parameters.Count; i++)
         {
             if (fn.Parameters[i].Modifier is not (Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out)) continue;
@@ -329,12 +334,16 @@ internal sealed class RegionAnalysis
                 break;
             }
         }
-        // Rule 4: a returned borrow derives from every argument. `Io` results are fresh copies and borrow none.
+        // Rule 4: a returned borrow derives from every argument. `Io` and decoded `string` results are fresh copies and borrow none.
         var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch
+            or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.StringInvalidUtf8At
             ? Borrow.None
             : args.Aggregate(receiver, (acc, a) => acc.Union(a));
-        // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText` and `Io.run` return (Q29).
-        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow))
+        // A method returning a span may lend its own fields' storage: the result borrows the receiver.
+        if (c.Receiver is not null && c.Type is SpanType) result = result.Union(Lend(c.Receiver, receiver));
+        // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `string.from` return (Q29).
+        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow
+                or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom))
             result = result.Union(_contexts.Peek());
         return result;
     }
@@ -343,6 +352,8 @@ internal sealed class RegionAnalysis
     private Borrow Lend(BoundExpr source, Borrow sourceBorrow)
     {
         if (source is BoundStaticArray) return sourceBorrow;
+        // Inside a method returning a span, its own fields are the caller's data; the call site lends the receiver (Q75).
+        if (_fn.ReturnType is SpanType && IsThisRooted(source)) return sourceBorrow.Union(new Borrow([new Region(0, "the caller's data")], []));
         if (RootLocal(source) is { } root)
         {
             var depth = _depthOf.GetValueOrDefault(root, 0);
@@ -501,6 +512,16 @@ internal sealed class RegionAnalysis
         BoundTupleElement t => RootLocal(t.Receiver),
         BoundIndex i when i.Target.Type is ArrayType => RootLocal(i.Target),
         _ => null,
+    };
+
+    /// <summary>Whether <paramref name="e"/> names storage of <c>this</c> (<c>this</c>, <c>f</c>, <c>f[i]</c> of an array field).</summary>
+    private static bool IsThisRooted(BoundExpr e) => e switch
+    {
+        BoundThis => true,
+        BoundField f => IsThisRooted(f.Receiver),
+        BoundTupleElement t => IsThisRooted(t.Receiver),
+        BoundIndex i when i.Target.Type is ArrayType => IsThisRooted(i.Target),
+        _ => false,
     };
 
     /// <summary>The local a store into <paramref name="e"/> lands in, including through a span or list element.</summary>

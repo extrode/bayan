@@ -269,6 +269,9 @@ public sealed record CatchExpr(TextSpan Span, Expr Operand, Name? Binding, Expr?
 /// <summary><c>return e</c>, <c>break</c>, <c>continue</c> used as a <c>never</c> expression after <c>??</c> or <c>catch</c>.</summary>
 public sealed record JumpExpr(TextSpan Span, Stmt Jump) : Expr(Span);
 
+/// <summary><c>{ … }</c> as a <c>catch</c> handler: runs the statements; it must not complete unless the operand is <c>void</c>.</summary>
+public sealed record BlockExpr(TextSpan Span, BlockStmt Block) : Expr(Span);
+
 public sealed record FieldInit(TextSpan Span, Name Name, Expr Value) : Node(Span);
 
 /// <summary><c>T { f = v }</c> or target-typed <c>{ f = v }</c> (<see cref="Type"/> null).</summary>

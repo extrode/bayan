@@ -1222,6 +1222,32 @@ internal sealed class FunctionEmitter
                     "{\n    return byn_io_run_batch(path, args.ptr, args.len, out, byn_context);\n}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, {result ?? "NULL"})";
             }
+            case BuiltinFunction.StringFrom:
+            {
+                var span = _c.CType(fn.Parameters[0].Type);
+                var code = fn.ErrorSets[0].Variants[0].Code;
+                var name = _c.Helper("bynh_string_from", $"static uint32_t bynh_string_from({span} bytes, byn_str* out)", () =>
+                    $"{{\n    if (byn_utf8_invalid_at(bytes.ptr, bytes.len) >= 0) return UINT32_C({code});\n" +
+                    "    if (out) *out = byn_str_copy((byn_str){bytes.ptr, bytes.len}, byn_context);\n    return 0;\n}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {result ?? "NULL"})";
+            }
+            case BuiltinFunction.StringTryFrom:
+            {
+                var span = _c.CType(fn.Parameters[0].Type);
+                var opt = _c.CType(fn.ReturnType);
+                var name = _c.Helper("bynh_string_try_from", $"static {opt} bynh_string_try_from({span} bytes)", () =>
+                    $"{{\n    if (byn_utf8_invalid_at(bytes.ptr, bytes.len) >= 0) return ({opt}){{0}};\n" +
+                    $"    return ({opt}){{true, byn_str_copy((byn_str){{bytes.ptr, bytes.len}}, byn_context)}};\n}}\n");
+                return $"{name}({Expr(c.Arguments[0])})";
+            }
+            case BuiltinFunction.StringInvalidUtf8At:
+            {
+                var span = _c.CType(fn.Parameters[0].Type);
+                var opt = _c.CType(fn.ReturnType);
+                var name = _c.Helper("bynh_string_invalid_utf8_at", $"static {opt} bynh_string_invalid_utf8_at({span} bytes)", () =>
+                    $"{{\n    int64_t i = byn_utf8_invalid_at(bytes.ptr, bytes.len);\n    return i < 0 ? ({opt}){{0}} : ({opt}){{true, i}};\n}}\n");
+                return $"{name}({Expr(c.Arguments[0])})";
+            }
             case BuiltinFunction.IoMonotonicNanos:
                 return "byn_io_monotonic_nanos()";
             case BuiltinFunction.IoStdout:
@@ -1342,6 +1368,14 @@ internal sealed class FunctionEmitter
                     $"{{\n    if (l->len == 0) byn_panic(\"removeLast on an empty list\", file, line);\n    return l->ptr[--l->len];\n}}\n");
                 return $"{name}(&{Expr(r)}, {Loc(b.Syntax)})";
             }
+            case BuiltinMember.ListRemoveRange:
+            {
+                var lt = _c.CType(r.Type);
+                var name = "bynh_remove_range_" + _c.Key(r.Type);
+                _c.Helper(name, $"static void {name}({lt}* l, int64_t start, int64_t end, const char* file, int line)", () =>
+                    "{\n    byn_slice_check(start, end, l->len, file, line);\n    if (end > start) memmove(l->ptr + start, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n    l->len -= end - start;\n}\n");
+                return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})";
+            }
             case BuiltinMember.MapLength:
                 return $"{Expr(r)}.h.live";
             case BuiltinMember.MapClear:
@@ -1396,6 +1430,8 @@ internal sealed class FunctionEmitter
                 return $"{Expr(r)}.err";
             case BuiltinMember.CharValue:
                 return $"((uint32_t){Expr(r)})";
+            case BuiltinMember.IntToHex:
+                return $"byn_to_hex((uint{((PrimitiveType)r.Type).Bits}_t){Expr(r)}, byn_context)";
             case BuiltinMember.EnumName:
                 return $"{_c.EnumNames((EnumSymbol)r.Type)}[{Expr(r)}]";
             case BuiltinMember.EnumOrdinal:
