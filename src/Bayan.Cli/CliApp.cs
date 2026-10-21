@@ -137,13 +137,13 @@ public static class CliApp
         return ExitOk;
     }
 
-    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null);
+    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false);
 
     private static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
-        bool emitC = false, json = false, testJson = false, changed = false;
+        bool emitC = false, json = false, testJson = false, changed = false, verbose = false;
         string? baseRef = null;
         var programArgs = Array.Empty<string>();
         for (var i = 0; i < args.Length; i++)
@@ -196,6 +196,9 @@ public static class CliApp
                 case "--json" when allowTestJson:
                     testJson = true;
                     break;
+                case "-v" or "--verbose":
+                    verbose = true;
+                    break;
                 default:
                     if (path is not null || args[i].StartsWith('-'))
                     {
@@ -217,7 +220,7 @@ public static class CliApp
             stderr.WriteLine(Messages.NotFound.Text(path));
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef);
+        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose);
     }
 
     /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
@@ -228,7 +231,7 @@ public static class CliApp
     /// <c>#!</c>, compiled alone) or a file or directory (the whole directory is the entry module).
     /// Prints diagnostics; null on errors.
     /// </summary>
-    internal static Compiled? Compile(BuildOptions o, TextWriter stderr, bool includeTests = false)
+    internal static Compiled? Compile(BuildOptions o, TextWriter stderr, bool includeTests = false, List<Diagnostic>? reported = null)
     {
         using var progress = StartProgress(o.Json, stderr, Messages.CompileProgress.Text());
         Compilation c;
@@ -240,6 +243,7 @@ public static class CliApp
             manifest = Manifest.Read(Path.Combine(root, "package.byn"));
             if (manifest.Diagnostics.Count > 0) progress.Done();
             Report(o, manifest.Diagnostics, stderr);
+            reported?.AddRange(manifest.Diagnostics);
             if (manifest.HasErrors) return null;
             var entry = EntryModule(manifest);
             if (!Directory.Exists(Path.Combine(root, "src", entry)))
@@ -256,6 +260,7 @@ public static class CliApp
         }
         progress.Done();
         Report(o, c.Diagnostics.Items, stderr);
+        reported?.AddRange(c.Diagnostics.Items);
         return c.Diagnostics.HasErrors ? null : new Compiled(c, manifest, root);
     }
 
@@ -380,16 +385,24 @@ public static class CliApp
 
     private static int Check(string[] args, TextWriter stdout, TextWriter stderr)
     {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
-        return Compile(o, stderr) is null ? ExitFailure : ExitOk;
+        var reported = new List<Diagnostic>();
+        if (Compile(o, stderr, reported: reported) is not { } compiled) return Failed(o, reported, stderr);
+        if (!o.Json) stdout.WriteLine(Success(Messages.CheckSummary.Text(Dot, ProgramName(compiled, o.Path), Seconds(clock.Elapsed))));
+        return ExitOk;
     }
 
     private static int Build(string[] args, TextWriter stdout, TextWriter stderr)
     {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         if (ParseBuildOptions(args, stderr, allowOutput: true) is not { } o) return ExitUsage;
-        if (Compile(o, stderr) is not { } compiled) return ExitFailure;
+        var reported = new List<Diagnostic>();
+        if (Compile(o, stderr, reported: reported) is not { } compiled) return Failed(o, reported, stderr);
         if (RefuseLibrary(compiled, "build", stderr)) return ExitUsage;
+        var emit = System.Diagnostics.Stopwatch.StartNew();
         var source = EmitC(compiled.Compilation, o.Mode);
+        emit.Stop();
         if (o.EmitC)
         {
             stdout.Write(source);
@@ -399,16 +412,71 @@ public static class CliApp
         string output;
         if (o.Output is not null) output = o.Output;
         else if (PrepareOut(compiled, o.Mode, target, source) is { } dir) output = Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName, target));
-        else output = DefaultOutput(o.Path, target);
-        return BuildNative(source, o.Mode, stderr, output, o.Target, o.Json) is null ? ExitToolchain : ExitOk;
+        else output = Targets.ExecutableName(ProgramName(compiled, o.Path), target);
+        var native = System.Diagnostics.Stopwatch.StartNew();
+        using var progress = StartProgress(o.Json, stderr, Messages.BuildProgress.Text());
+        var result = Toolchain.Build(source, o.Mode, output, o.Target);
+        progress.Done();
+        native.Stop();
+        if (!result.Succeeded)
+        {
+            stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
+            return ExitToolchain;
+        }
+        if (o.Json) return ExitOk;
+        if (o.Verbose)
+        {
+            var c = compiled.Compilation;
+            stdout.WriteLine(Phase(Messages.PhaseParse, Seconds(c.ParseTime)));
+            stdout.WriteLine(Phase(Messages.PhaseCheck, Seconds(c.CheckTime)));
+            stdout.WriteLine(Phase(Messages.PhaseEmit, Seconds(emit.Elapsed)));
+            stdout.WriteLine(Phase(Messages.PhaseCompile, result.CacheHit ? Messages.PhaseFromCache.Text() : Seconds(native.Elapsed)));
+            var shown = compiled.ProjectRoot is { } root && o.Output is null ? Path.GetRelativePath(root, output).Replace('\\', '/') : output;
+            stdout.WriteLine(Messages.PhaseOutput.Text(Note(shown)));
+        }
+        var summary = Messages.BuildSummary.Text(Dot, ProgramName(compiled, o.Path), ModeName(o.Mode), target, Seconds(clock.Elapsed));
+        if (result.CacheHit) summary += Messages.BuildFromCache.Text("·");
+        stdout.WriteLine(Success(summary));
+        return ExitOk;
     }
 
-    private static string DefaultOutput(string path, string target)
+    private static string Dot => (s_styleOut ?? Style.Plain).Symbols.Dot;
+
+    private static string Success(string line) => (s_styleOut ?? Style.Plain).Paint(Role.Success, line);
+
+    private static string Note(string text) => (s_styleOut ?? Style.Plain).Paint(Role.Note, text);
+
+    private static string Phase(Message name, string value) => Messages.PhaseLine.Text(name.Text(), Note(value));
+
+    private static string Seconds(TimeSpan t) =>
+        Messages.Seconds.Text(t.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// The footer after a failed compile: error and warning counts, and how to explain the first
+    /// error. Nothing in JSON mode, or when no diagnostic caused the failure.
+    /// </summary>
+    private static int Failed(BuildOptions o, List<Diagnostic> reported, TextWriter stderr)
     {
+        if (o.Json || DiagnosticRenderer.Sort(reported).FirstOrDefault(d => d.IsError) is not { } first) return ExitFailure;
+        var style = s_styleErr ?? Style.Plain;
+        int errors = reported.Count(d => d.IsError), warnings = reported.Count(d => d.Severity == Severity.Warning);
+        stderr.WriteLine();
+        stderr.WriteLine(style.Paint(Role.Error, Messages.BuildFailed.Text(
+            style.Symbols.Cross,
+            (errors == 1 ? Messages.ErrorsOne : Messages.ErrorsMany).Text(errors),
+            (warnings == 1 ? Messages.WarningsOne : Messages.WarningsMany).Text(warnings))));
+        stderr.WriteLine(Messages.BuildExplain.Text(first.Code));
+        return ExitFailure;
+    }
+
+    /// <summary>A project's short name, else the file's (a <c>main.byn</c> is named after its directory) or the directory's.</summary>
+    private static string ProgramName(Compiled compiled, string path)
+    {
+        if (compiled.Manifest is { } m) return m.ShortName;
         var full = Path.GetFullPath(path);
         var name = Directory.Exists(full) ? Path.GetFileName(full.TrimEnd(Path.DirectorySeparatorChar)) : Path.GetFileNameWithoutExtension(full);
         if (name == "main" && !Directory.Exists(full)) name = Path.GetFileName(Path.GetDirectoryName(full)!);
-        return Targets.ExecutableName(name, target);
+        return name;
     }
 
     private static int RunProgram(string[] args, TextWriter stderr)
@@ -421,7 +489,8 @@ public static class CliApp
             if (Toolchain.LookupScript(scriptKey, Targets.ExecutableName("program", HostTarget)) is { } remembered)
                 return Start(remembered, o.ProgramArgs);
         }
-        if (Compile(o, stderr) is not { } compiled) return ExitFailure;
+        var reported = new List<Diagnostic>();
+        if (Compile(o, stderr, reported: reported) is not { } compiled) return Failed(o, reported, stderr);
         if (RefuseLibrary(compiled, "run", stderr)) return ExitUsage;
         var source = EmitC(compiled.Compilation, o.Mode);
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
