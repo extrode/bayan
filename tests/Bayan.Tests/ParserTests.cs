@@ -63,6 +63,8 @@ public sealed class ParserTests
     [InlineData("x = { x = 1 }", "(struct _ (x 1))")]
     [InlineData("x = p with { x = 1 }", "(with p (x 1))")]
     [InlineData("x = [1, ..rest]", "(list 1 (spread rest))")]
+    [InlineData("x = [\"a\": 1, k: v + 1]", "(map (entry \"a\" 1) (entry k (+ v 1)))")]
+    [InlineData("x = [\"a\": 1, 2]", "(list (entry \"a\" 1) 2)")]
     [InlineData("x = (1, name: \"a\")", "(tuple 1 (name: \"a\"))")]
     [InlineData("x = new Point()", "(call Point)")]
     public void Precedence(string source, string expected) => Assert.Equal(expected, Expr(source));

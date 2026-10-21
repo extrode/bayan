@@ -270,7 +270,7 @@ internal sealed partial class Binder
             case StackallocExpr s:
                 return BindStackalloc(s);
             case SpreadExpr s:
-                Report(DiagnosticCodes.Unsupported, s.Span, ["spreads (`..xs`)"]);
+                Report(DiagnosticCodes.Unsupported, s.Span, ["spreads (`..xs`) outside a collection literal"]);
                 return new BoundErrorExpr(s);
             case ErrorExpr:
                 return new BoundErrorExpr(e);
@@ -1244,6 +1244,8 @@ internal sealed partial class Binder
     private BoundExpr BindCollection(CollectionExpr c, TypeSymbol? expected)
     {
         var target = expected is OptionalType o ? o.Inner : expected;
+        if (c.Elements.Any(e => e is MapEntryExpr)) return BindMapLiteral(c, target);
+        if (target is MapType && c.Elements.Length == 0) return new BoundCollection(c, target, []);
         TypeSymbol? element = target switch
         {
             ListType l => l.Element,
@@ -1251,6 +1253,8 @@ internal sealed partial class Binder
             Symbols.ArrayType a => a.Element,
             _ => null,
         };
+        if (element is null && target is null && c.Elements.Length > 0)
+            return BindUntypedCollection(c);
         if (element is null)
         {
             if (target is null || target.IsError)
@@ -1265,10 +1269,169 @@ internal sealed partial class Binder
             foreach (var e in c.Elements) BindExpr(e);
             return new BoundErrorExpr(c);
         }
-        var elements = c.Elements.Select(e => BindConverted(e, element)).ToArray();
-        if (target is Symbols.ArrayType at && at.Length != elements.Length)
-            Report(DiagnosticCodes.ArrayLengthMismatch, c.Span, [at.DisplayName, elements.Length]);
-        return new BoundCollection(c, target!, elements);
+        var elements = c.Elements.Select(e => e is SpreadExpr s ? BindSpread(s, element) : BindConverted(e, element)).ToArray();
+        return FinishCollection(c, target!, elements);
+    }
+
+    /// <summary><c>[1, 2, 3]</c> with no target type: a fixed array of the first element's type.</summary>
+    private BoundExpr BindUntypedCollection(CollectionExpr c)
+    {
+        var first = c.Elements[0] is SpreadExpr s ? BindSpread(s, null) : BindExpr(c.Elements[0]);
+        var element = first.Type;
+        if (element.IsError)
+        {
+            foreach (var e in c.Elements.Skip(1)) BindExpr(e);
+            return new BoundErrorExpr(c);
+        }
+        if (element is NullType or PrimitiveType { Kind: PrimitiveKind.Void or PrimitiveKind.Never })
+        {
+            Report(DiagnosticCodes.CannotInferType, c.Elements[0].Span, [Source.GetText(c.Elements[0].Span)], help: "declare the type: `List<i64> xs = [1, 2];`");
+            foreach (var e in c.Elements.Skip(1)) BindExpr(e);
+            return new BoundErrorExpr(c);
+        }
+        if (first is not BoundSpread) first = Convert(first, element, c.Elements[0].Span);
+        var elements = c.Elements.Skip(1).Select(e => e is SpreadExpr s ? BindSpread(s, element) : BindConverted(e, element)).Prepend(first).ToArray();
+        return FinishCollection(c, new Symbols.ArrayType(element, KnownLength(elements) ?? elements.Length), elements);
+    }
+
+    /// <summary>Checks the length of an array or span literal: spreads into stack storage must have a compile-time length.</summary>
+    private BoundExpr FinishCollection(CollectionExpr c, TypeSymbol target, BoundExpr[] elements)
+    {
+        if (elements.Any(e => e is BoundErrorExpr { Syntax: SpreadExpr })) return new BoundErrorExpr(c);
+        if (target is not ListType && elements.OfType<BoundSpread>().FirstOrDefault(s => s.Operand.Type is not Symbols.ArrayType) is { } open)
+        {
+            var text = Source.GetText(open.Syntax.Span);
+            Report(DiagnosticCodes.NotConstant, open.Syntax.Span, [$"the length of `{text}` in a `{(target is SpanType ? "Span" : "T[N]")}` literal"],
+                label: $"a `{open.Operand.Type.DisplayName}` has a run-time length",
+                help: $"spread a fixed array `T[N]` here, or build a list: `List<{open.Type.DisplayName}> all = {Source.GetText(c.Span)};`");
+            return new BoundErrorExpr(c);
+        }
+        if (target is Symbols.ArrayType at && at.Length != KnownLength(elements))
+            Report(DiagnosticCodes.ArrayLengthMismatch, c.Span, [at.DisplayName, KnownLength(elements)!]);
+        return new BoundCollection(c, target, elements);
+    }
+
+    /// <summary>The number of elements, counting each spread fixed array by its length; null if a spread's length is only known at run time.</summary>
+    private static long? KnownLength(BoundExpr[] elements)
+    {
+        long n = 0;
+        foreach (var e in elements)
+        {
+            if (e is not BoundSpread s) n++;
+            else if (s.Operand.Type is Symbols.ArrayType a) n += a.Length;
+            else return null;
+        }
+        return n;
+    }
+
+    /// <summary><c>..xs</c> in a list, span or array literal: <c>xs</c> is a <c>List</c>, <c>Span</c> or fixed array of <paramref name="element"/> (any element type when null).</summary>
+    private BoundExpr BindSpread(SpreadExpr s, TypeSymbol? element)
+    {
+        var operand = BindExpr(s.Operand);
+        if (operand.Type.IsError) return new BoundErrorExpr(s);
+        TypeSymbol? item = operand.Type switch
+        {
+            ListType l => l.Element,
+            SpanType sp => sp.Element,
+            Symbols.ArrayType a => a.Element,
+            _ => null,
+        };
+        var text = Source.GetText(s.Operand.Span);
+        if (item is null)
+        {
+            Report(DiagnosticCodes.SpreadNotSequence, s.Span, [text, operand.Type.DisplayName],
+                label: "not a `List`, `Span` or fixed array",
+                help: element is not null && Conversions.Implicit(operand.Type, element) is not null
+                    ? $"to add `{text}` as one element, drop the `..`"
+                    : "spread a `List`, `Span` or fixed array; a single value goes in without `..`");
+            return new BoundErrorExpr(s);
+        }
+        if (element is not null && !item.Equals(element))
+        {
+            Report(DiagnosticCodes.TypeMismatch, s.Span, [item.DisplayName, element.DisplayName],
+                label: $"`{text}` holds `{item.DisplayName}`",
+                help: $"spread a sequence of `{element.DisplayName}`, or change the literal's element type to `{item.DisplayName}`");
+            return new BoundErrorExpr(s);
+        }
+        if (TypeFacts.IsUnique(item))
+        {
+            Report(DiagnosticCodes.Unsupported, s.Span, [$"spreading elements that own memory (`{item.DisplayName}`)"],
+                help: "add the elements one at a time with `move`");
+            return new BoundErrorExpr(s);
+        }
+        return new BoundSpread(s, operand, item);
+    }
+
+    /// <summary><c>["k": v, …]</c>: a <c>Map</c>, typed by the target or, without one, by the first entry.</summary>
+    private BoundExpr BindMapLiteral(CollectionExpr c, TypeSymbol? target)
+    {
+        if (c.Elements.FirstOrDefault(e => e is not MapEntryExpr) is { } bare)
+        {
+            Report(DiagnosticCodes.MapLiteralMixed, bare.Span, [], label: "no `key:` here",
+                help: "write every element as `key: value`, or remove the keys to make a list");
+            foreach (var e in c.Elements) BindMapPart(e);
+            return new BoundErrorExpr(c);
+        }
+        var entries = c.Elements.Cast<MapEntryExpr>().ToArray();
+        var parts = new List<BoundExpr>();
+        MapType map;
+        if (target is MapType m)
+        {
+            map = m;
+        }
+        else if (target is null)
+        {
+            var key = BindExpr(entries[0].Key);
+            var value = BindExpr(entries[0].Value);
+            if (key.Type.IsError || value.Type.IsError)
+            {
+                foreach (var e in entries.Skip(1)) BindMapPart(e);
+                return new BoundErrorExpr(c);
+            }
+            if (!MapType.IsValidKey(key.Type))
+            {
+                Report(DiagnosticCodes.InvalidMapKey, entries[0].Key.Span, [key.Type.DisplayName],
+                    help: "use an integer type, `char`, `bool`, `string` or a plain enum as the key");
+                foreach (var e in entries.Skip(1)) BindMapPart(e);
+                return new BoundErrorExpr(c);
+            }
+            if (value.Type is NullType or PrimitiveType { Kind: PrimitiveKind.Void or PrimitiveKind.Never })
+            {
+                Report(DiagnosticCodes.CannotInferType, entries[0].Value.Span, [Source.GetText(entries[0].Value.Span)],
+                    help: $"declare the type: `Map<{key.Type.DisplayName}, i64?> m = [ … ];`");
+                foreach (var e in entries.Skip(1)) BindMapPart(e);
+                return new BoundErrorExpr(c);
+            }
+            map = new MapType(key.Type, value.Type);
+            parts.Add(Convert(key, map.KeyType, entries[0].Key.Span));
+            parts.Add(Convert(value, map.ValueType, entries[0].Value.Span));
+            entries = entries[1..];
+        }
+        else
+        {
+            if (!target.IsError) Report(DiagnosticCodes.TypeMismatch, c.Span, ["a map literal", target.DisplayName]);
+            foreach (var e in entries) BindMapPart(e);
+            return new BoundErrorExpr(c);
+        }
+        foreach (var e in entries)
+        {
+            parts.Add(BindConverted(e.Key, map.KeyType));
+            parts.Add(BindConverted(e.Value, map.ValueType));
+        }
+        if (parts.Any(p => p.Type.IsError)) return new BoundErrorExpr(c);
+        return new BoundCollection(c, map, parts.ToArray());
+    }
+
+    /// <summary>Binds the parts of a map literal element for recovery.</summary>
+    private void BindMapPart(Expr e)
+    {
+        if (e is MapEntryExpr entry)
+        {
+            BindExpr(entry.Key);
+            BindExpr(entry.Value);
+        }
+        else if (e is SpreadExpr s) BindExpr(s.Operand);
+        else BindExpr(e);
     }
 
     private BoundExpr BindTuple(TupleExpr t, TypeSymbol? expected)
