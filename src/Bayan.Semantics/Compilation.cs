@@ -947,30 +947,54 @@ public sealed class Compilation
         c.State = 2;
     }
 
+    /// <summary>
+    /// Binds a body; when an untyped <c>var</c> literal in it meets another integer type first
+    /// (spec R4), binds it again with that type, discarding the first pass.
+    /// </summary>
     private void BindFunction(FunctionSymbol fn)
     {
+        var checks = MutationChecks.Count;
+        var locals = fn.Locals.Count;
+        if (BindBody(fn, null) is not { } seeds) return;
+        MutationChecks.RemoveRange(checks, MutationChecks.Count - checks);
+        fn.Locals.RemoveRange(locals, fn.Locals.Count - locals);
+        BindBody(fn, seeds);
+    }
+
+    /// <summary>A first pass (no <paramref name="seeds"/>) returns the seeds a second pass needs, if any.</summary>
+    private IReadOnlyDictionary<LocalDecl, TypeSymbol>? BindBody(FunctionSymbol fn, IReadOnlyDictionary<LocalDecl, TypeSymbol>? seeds)
+    {
         var file = fn.File!;
+        Binder New(StructSymbol? owner)
+        {
+            var binder = new Binder(this, file, fn, owner, seeds: seeds);
+            return seeds is null ? binder.Hold() : binder;
+        }
+        Binder binder;
         switch (fn.Kind)
         {
             case FunctionKind.Function or FunctionKind.Method when fn.Decl is { } decl:
-                new Binder(this, file, fn, fn.Owner).BindFunctionBody(decl);
+                (binder = New(fn.Owner)).BindFunctionBody(decl);
                 break;
             case FunctionKind.Getter:
             {
                 var prop = fn.Owner!.Properties.First(p => p.Getter == fn);
-                new Binder(this, file, fn, fn.Owner).BindGetter(prop.Decl);
+                (binder = New(fn.Owner)).BindGetter(prop.Decl);
                 break;
             }
             case FunctionKind.Constructor:
-                new Binder(this, file, fn, fn.Owner).BindConstructor(_constructorBodies[fn]);
+                (binder = New(fn.Owner)).BindConstructor(_constructorBodies[fn]);
                 break;
             case FunctionKind.Main when _mainStatements is { } m && m.Main == fn:
-                new Binder(this, file, fn, null).BindMain(m.Statements);
+                (binder = New(null)).BindMain(m.Statements);
                 break;
             case FunctionKind.Test:
-                new Binder(this, file, fn, null).BindTest(_testBodies[fn]);
+                (binder = New(null)).BindTest(_testBodies[fn]);
                 break;
+            default:
+                return null;
         }
+        return seeds is null ? binder.Release() : null;
     }
 
     /// <summary>Inferred <c>fails</c> sets: the union of what each body propagates, to a fixed point.</summary>
@@ -1050,6 +1074,17 @@ public sealed class Compilation
 
     internal void Report(DiagnosticDescriptor d, SourceText source, TextSpan span, object?[] args, string? label = null, string? help = null, Fix? fix = null) =>
         (_scratch ?? Diagnostics).Report(d, source, span, args, label, help, fix);
+
+    /// <summary>Reports what a first-pass binder held back.</summary>
+    internal void ReportHeld(DiagnosticBag held) => (_scratch ?? Diagnostics).AddRange(held.Items);
+
+    /// <summary>Sends reports to <paramref name="bag"/> until called again; returns the previous target.</summary>
+    internal DiagnosticBag? ReportInto(DiagnosticBag? bag)
+    {
+        var outer = _scratch;
+        _scratch = bag;
+        return outer;
+    }
 
     internal IEnumerable<AliasPlaceholder> Aliases => _aliases;
 }

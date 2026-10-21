@@ -1,0 +1,15 @@
+T id<T>(move T x) => move x;
+
+var n = 300;
+n += 1;
+print($"{id(n)}");
+u8 b = n;
+
+var m = -1;
+m -= 1;
+u64 w = 0;
+if (m < w) print("never");
+
+var fits = 255;
+fits -= 1;
+u8 c = fits;

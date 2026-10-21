@@ -47,8 +47,9 @@ internal sealed partial class Binder
         return bound;
     }
 
-    private BoundExpr Convert(BoundExpr value, TypeSymbol target, TextSpan span, bool argument = false)
+    private BoundExpr Convert(BoundExpr value, TypeSymbol target, TextSpan span, bool argument = false, bool constrains = true)
     {
+        if (constrains) Constrain(value, target);
         if (value.Type.Equals(target) || target.IsError || value.Type.IsError) return value;
         if (value.Constant is { Value: Int128 n } && (target.IsInteger || target.IsFloat || target is OptionalType { Inner.IsNumeric: true }) && value.Type.IsInteger)
         {
@@ -88,6 +89,35 @@ internal sealed partial class Binder
         ReportMismatch(value, target, span);
         return new BoundErrorExpr(value.Syntax);
     }
+
+    /// <summary>Records <paramref name="target"/> as the type of each pending `var` literal <paramref name="value"/> is made of, if it is the first integer one.</summary>
+    private void Constrain(BoundExpr value, TypeSymbol target)
+    {
+        if (!target.IsInteger) return;
+        if (value is BoundLocal { Local: var l } && _pending.TryGetValue(l, out var decl))
+            _constraints.TryAdd(decl, target);
+        else if (value is BoundBinary b && IsPending(b))
+        {
+            Constrain(b.Left, target);
+            Constrain(b.Right, target);
+        }
+    }
+
+    /// <summary>A pending `var` met by <paramref name="other"/>: only a typed value constrains it, not a literal or another pending `var`.</summary>
+    private void Constrain(BoundExpr value, BoundExpr other, Expr otherSyntax)
+    {
+        if (!IsUntypedLiteral(otherSyntax) && !IsPending(other)) Constrain(value, other.Type);
+    }
+
+    /// <summary>A pending `var`, or arithmetic on pending `var`s and literals: its type is not settled yet.</summary>
+    private bool IsPending(BoundExpr e) => e switch
+    {
+        BoundLocal { Local: var l } => _pending.ContainsKey(l),
+        BoundBinary { Type.IsInteger: true } b => (IsPending(b.Left) || IsPending(b.Right)) && Untyped(b.Left) && Untyped(b.Right),
+        _ => false,
+    };
+
+    private bool Untyped(BoundExpr e) => IsPending(e) || e.Syntax is Expr x && IsUntypedLiteral(x);
 
     private static bool ContainsUntrusted(TypeSymbol t) => t switch
     {
@@ -338,7 +368,7 @@ internal sealed partial class Binder
         {
             if (_scope.Lookup(name) is null && Module.Functions.TryGetValue(name, out var generic))
                 return new BoundMethodGroup(n, null, generic[0]) { TypeArgs = n.TypeArgs };
-            var t = _types.Resolve(new NamedType(n.Span, [n.Name], n.TypeArgs));
+            var t = ResolveType(new NamedType(n.Span, [n.Name], n.TypeArgs));
             return t.IsError ? new BoundErrorExpr(n) : new BoundTypeRef(n, t);
         }
         if (_scope.Lookup(name) is { } local)
@@ -352,12 +382,12 @@ internal sealed partial class Binder
         if (Module.Constants.TryGetValue(name, out var constant)) return ConstantRef(n, constant);
         if (Module.Functions.TryGetValue(name, out var fns)) return new BoundMethodGroup(n, null, fns[0]);
         if (Module.Types.TryGetValue(name, out var type))
-            return new BoundTypeRef(n, _types.Resolve(new NamedType(n.Span, [n.Name], [])));
+            return new BoundTypeRef(n, ResolveType(new NamedType(n.Span, [n.Name], [])));
         if (_file.Imports.TryGetValue(name, out var module)) return new BoundModuleRef(n, module);
         if (_c.Builtins.Find(name) is { } builtin) return new BoundMethodGroup(n, null, builtin);
         if (PrimitiveType.ByName.TryGetValue(name, out var primitive)) return new BoundTypeRef(n, primitive);
         if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "ProcessResult")
-            return new BoundTypeRef(n, _types.Resolve(new NamedType(n.Span, [n.Name], [])));
+            return new BoundTypeRef(n, ResolveType(new NamedType(n.Span, [n.Name], [])));
         if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
         ReportUndefined(n.Name);
         return new BoundErrorExpr(n);
@@ -543,7 +573,7 @@ internal sealed partial class Binder
             return new BoundMethodGroup(m, null, fns[0]);
         }
         if (module.Types.ContainsKey(name))
-            return new BoundTypeRef(m, _types.Resolve(new NamedType(m.Span, [((NameExpr)m.Target).Name, m.Member], [])));
+            return new BoundTypeRef(m, ResolveType(new NamedType(m.Span, [((NameExpr)m.Target).Name, m.Member], [])));
         Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, "module " + module.Name]);
         return new BoundErrorExpr(m);
     }
@@ -884,6 +914,8 @@ internal sealed partial class Binder
             return Fold(shift, left, right, left.Type);
         }
 
+        Constrain(left, right, b.Right);
+        Constrain(right, left, b.Left);
         var common = Conversions.Common(left.Type, right.Type);
         if (common is null && left.Constant is { Value: Int128 } && right.Type.IsInteger) common = right.Type;
         if (common is null && right.Constant is { Value: Int128 } && left.Type.IsInteger) common = left.Type;
@@ -899,8 +931,8 @@ internal sealed partial class Binder
         }
 
         if (!OperatorApplies(b.Op, common)) return BadOperands(b, left, right);
-        left = Convert(left, common, b.Left.Span);
-        right = Convert(right, common, b.Right.Span);
+        left = Convert(left, common, b.Left.Span, constrains: false);
+        right = Convert(right, common, b.Right.Span, constrains: false);
         var type = IsComparison(b.Op) ? PrimitiveType.Bool : common;
         var bound = new BoundBinary(b, b.Op, left, right, type);
         return Fold(bound, left, right, common);
@@ -1052,7 +1084,7 @@ internal sealed partial class Binder
 
     private BoundExpr BindCast(CastExpr c)
     {
-        var target = _types.Resolve(c.Type);
+        var target = ResolveType(c.Type);
         var operand = BindExpr(c.Operand, target.IsNumeric ? null : target);
         if (target.IsError || operand.Type.IsError) return new BoundErrorExpr(c);
         if (operand.Constant is { Value: Int128 } && target.IsInteger && operand.Syntax is LiteralExpr or UnaryExpr)
@@ -1078,7 +1110,7 @@ internal sealed partial class Binder
     private BoundExpr BindStructLiteral(StructLiteralExpr s, TypeSymbol? expected)
     {
         TypeSymbol type;
-        if (s.Type is { } t) type = _types.Resolve(t);
+        if (s.Type is { } t) type = ResolveType(t);
         else if (expected is OptionalType { Inner: StructSymbol inner }) type = inner;
         else if (expected is not null) type = expected;
         else
@@ -1236,7 +1268,7 @@ internal sealed partial class Binder
 
     private BoundExpr BindStackalloc(StackallocExpr s)
     {
-        var element = _types.Resolve(s.Element);
+        var element = ResolveType(s.Element);
         var count = BindConverted(s.Count, PrimitiveType.I64);
         if (element.IsError || count.Type.IsError) return new BoundErrorExpr(s);
         if (count.Constant is not { Value: Int128 n })
