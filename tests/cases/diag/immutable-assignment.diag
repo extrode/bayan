@@ -5,6 +5,7 @@ error BYN2104: `total` is immutable
     │
   help: declare it with `var` if it should change
     │ 1 │ var total = 0;
+    │   │ +++
 
 error BYN2104: `n` is immutable
 

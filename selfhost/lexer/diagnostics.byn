@@ -86,6 +86,9 @@ struct Diagnostic {
 
 const string bar = "│";
 
+/// Prose (message, label, help) wraps at this width; the lexer renders plain text for a pipe.
+const i64 wrapWidth = 100;
+
 /// Renders a diagnostic as plain text (the format `DiagnosticRendererTests` fixes):
 ///
 ///     error BYN2104: `total` is immutable
@@ -95,19 +98,24 @@ const string bar = "│";
 ///          │
 ///       help: declare it with `var` if it should change
 ///          │  9 │     var total = 0;
+///          │    │     +++
 void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
-    sb.append($"error {diagnostic.code}: {diagnostic.message}\n");
-    sb.append("\n");
+    let head = $"error {diagnostic.code}";
+    var message = List<string>();
+    wrap(ref message, diagnostic.message, first: wrapWidth - head.length - 2, rest: wrapWidth);
+    sb.append($"{head}: ");
+    appendLines(ref sb, ref message, "\n");
+    sb.append("\n\n");
 
     let line = source.getLineIndex(diagnostic.span.start);
     let lineSpan = source.getLineSpan(line);
 
     var fixLines = List<string>();
-    i64 fixFirstLine = 0;
-    if (diagnostic.hasFix) fixFirstLine = applyFix(ref source, diagnostic.fixSpan, diagnostic.fixReplacement, ref fixLines);
+    var fix = FixView { firstLine = 0, markStart = 0, markEnd = 0, marker = "+" };
+    if (diagnostic.hasFix) fix = applyFix(ref source, diagnostic.fixSpan, diagnostic.fixReplacement, ref fixLines);
 
     var widestLine = line + 1;
-    if (diagnostic.hasFix && fixFirstLine + fixLines.length > widestLine) widestLine = fixFirstLine + fixLines.length;
+    if (diagnostic.hasFix && fix.firstLine + fixLines.length > widestLine) widestLine = fix.firstLine + fixLines.length;
     let width = $"{widestLine}".length;
     var blankBuf = StrBuf();
     blankBuf.append("  ");
@@ -124,35 +132,93 @@ void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
     if (underlineEnd < underlineStart) underlineEnd = underlineStart;
     var carets = runeCount(source.bytes.asSpan()[underlineStart..underlineEnd]);
     if (carets < 1) carets = 1;
+    let prefix = source.bytes.asSpan()[lineSpan.start..underlineStart];
     sb.append($"{blank} ");
-    indent(ref sb, source.bytes.asSpan()[lineSpan.start..underlineStart]);
+    indent(ref sb, prefix);
     for (let i in 0..carets) sb.append("^");
-    if (!diagnostic.label.isEmpty) sb.append($" {diagnostic.label}");
+    if (!diagnostic.label.isEmpty) {
+        let room = wrapWidth - (2 + width + 3 + runeCount(prefix) + carets + 1);
+        var label = List<string>();
+        wrap(ref label, diagnostic.label, first: room, rest: room);
+        sb.append($" {label[0]}");
+        for (let i in 1..label.length) {
+            sb.append($"\n{blank} ");
+            indent(ref sb, prefix);
+            for (let k in 0..carets + 1) sb.append(" ");
+            sb.append(label[i]);
+        }
+    }
     sb.append("\n");
 
     if (diagnostic.help.isEmpty && !diagnostic.hasFix) return;
 
     sb.append($"{blank}\n");
     if (!diagnostic.help.isEmpty) {
+        var help = List<string>();
+        wrap(ref help, diagnostic.help, first: wrapWidth - 8, rest: wrapWidth - 8);
         sb.append("  help: ");
-        let h = diagnostic.help;
-        i64 from = 0;
-        for (let i in 0..h.length) {
-            if (h.bytes[i] == 0x0A) {
-                sb.append(h[from..i]);
-                sb.append("\n        ");
-                from = i + 1;
-            }
-        }
-        sb.append(h[from..]);
+        appendLines(ref sb, ref help, "\n        ");
         sb.append("\n");
     }
     if (diagnostic.hasFix) {
+        i64 offset = 0;
         for (let i in 0..fixLines.length) {
-            sb.append($"{blank} {lineNumber(number: fixFirstLine + i + 1, width: width)} {bar} ");
-            display(ref sb, fixLines[i].bytes);
+            let text = fixLines[i].bytes;
+            sb.append($"{blank} {lineNumber(number: fix.firstLine + i + 1, width: width)} {bar} ");
+            display(ref sb, text);
             sb.append("\n");
+            let from = fix.markStart - offset > 0 ? fix.markStart - offset : 0;
+            let to = fix.markEnd - offset < text.length ? fix.markEnd - offset : text.length;
+            if (to > from) {
+                sb.append($"{blank} ");
+                for (let k in 0..width) sb.append(" ");
+                sb.append($" {bar} ");
+                indent(ref sb, text[0..from]);
+                let marks = runeCount(text[from..to]);
+                for (let k in 0..marks) sb.append(fix.marker);
+                sb.append("\n");
+            }
+            offset += text.length + 1;
         }
+    }
+}
+
+/// Appends `lines` joined by `separator`.
+void appendLines(ref StrBuf sb, ref List<string> lines, string separator) {
+    for (let i in 0..lines.length) {
+        if (i > 0) sb.append(separator);
+        sb.append(lines[i]);
+    }
+}
+
+/// Fills `lines` with `text` split into lines that fit: the first gets `first` columns, the rest
+/// `rest`. Words are never broken, so a long word overflows its line.
+void wrap(ref List<string> lines, string text, i64 first, i64 rest) {
+    let t = text.bytes;
+    i64 lineFrom = 0;
+    i64 lineEnd = -1;
+    i64 lineRunes = 0;
+    i64 from = 0;
+    for (let i in 0..t.length + 1) {
+        let end = i == t.length || t[i] == 0x0A;
+        if (!end && t[i] != 0x20) continue;
+        let words = runeCount(t[from..i]);
+        let room = lines.length == 0 ? first : rest;
+        if (lineEnd >= 0 && lineRunes + 1 + words > room) {
+            lines.add(text[lineFrom..lineEnd]);
+            lineFrom = from;
+            lineRunes = words;
+        } else {
+            lineRunes += lineEnd >= 0 ? 1 + words : words;
+        }
+        lineEnd = i;
+        if (end) {
+            lines.add(text[lineFrom..lineEnd]);
+            lineFrom = i + 1;
+            lineEnd = -1;
+            lineRunes = 0;
+        }
+        from = i + 1;
     }
 }
 
@@ -188,13 +254,36 @@ string lineNumber(i64 number, i64 width) {
     return $"{sb.asString()}";
 }
 
-/// Fills `lines` with the lines touched by the fix, replacement applied; returns the first line's index.
-i64 applyFix(ref SourceText source, TextSpan fix, string replacement, ref List<string> lines) {
+/// The fix as shown: its first line, and the byte range in the shown lines to mark with `marker`.
+struct FixView {
+    i64 firstLine;
+    i64 markStart;
+    i64 markEnd;
+    string marker;
+}
+
+/// Fills `lines` with the lines touched by the fix, replacement applied, and marks the inserted
+/// text with `+`. A pure removal shows the original lines and marks the removed text with `-`.
+FixView applyFix(ref SourceText source, TextSpan fix, string replacement, ref List<string> lines) {
     let firstLine = source.getLineIndex(fix.start);
     let lastLine = source.getLineIndex(fix.end);
-    let start = source.getLineSpan(firstLine).start;
-    let end = source.getLineSpan(lastLine).end;
-    let text = $"{source.getText(TextSpan.fromBounds(start: start, end: fix.start))}{replacement}{source.getText(TextSpan.fromBounds(start: fix.end, end: end))}";
+    let before = source.getText(TextSpan.fromBounds(start: source.getLineSpan(firstLine).start, end: fix.start));
+    let after = source.getText(TextSpan.fromBounds(start: fix.end, end: source.getLineSpan(lastLine).end));
+    let original = source.getText(fix);
+    let o = original.bytes;
+    let r = replacement.bytes;
+
+    let common = o.length < r.length ? o.length : r.length;
+    i64 head = 0;
+    while (head < common && o[head] == r[head]) head += 1;
+    while (head > 0 && ((head < o.length && (o[head] & 0xC0) == 0x80) || (head < r.length && (r[head] & 0xC0) == 0x80))) head -= 1;
+    i64 tail = 0;
+    while (tail < common - head && o[o.length - 1 - tail] == r[r.length - 1 - tail]) tail += 1;
+    while (tail > 0 && (o[o.length - tail] & 0xC0) == 0x80) tail -= 1;
+
+    let inserted = r.length - head - tail > 0;
+    let shown = inserted ? replacement : original;
+    let text = $"{before}{shown}{after}";
     i64 from = 0;
     for (let i in 0..text.length) {
         if (text.bytes[i] == 0x0A) {
@@ -203,7 +292,12 @@ i64 applyFix(ref SourceText source, TextSpan fix, string replacement, ref List<s
         }
     }
     lines.add(text[from..]);
-    return firstLine;
+    return FixView {
+        firstLine = firstLine,
+        markStart = before.length + head,
+        markEnd = before.length + shown.length - tail,
+        marker = inserted ? "+" : "-",
+    };
 }
 
 /// Source text as shown in a diagnostic: control and bidi characters become U+FFFD, one scalar for

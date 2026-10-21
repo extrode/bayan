@@ -20,14 +20,6 @@ namespace Bayan.Syntax.Diagnostics;
 /// </summary>
 public static class DiagnosticRenderer
 {
-    public const string Reset = "\u001b[0m";
-    public const string Bold = "\u001b[1m";
-    public const string Red = "\u001b[31m";
-    public const string Green = "\u001b[32m";
-    public const string Yellow = "\u001b[33m";
-    public const string Blue = "\u001b[34m";
-    public const string Cyan = "\u001b[36m";
-
     private static readonly Style Ansi = new(Palette.Ansi16, Symbols.Unicode, 100);
 
     /// <param name="includePath">Adds a <c>--> file:line:col</c> line; used when a compilation spans several files.</param>
@@ -47,7 +39,7 @@ public static class DiagnosticRenderer
         };
         var wrap = style.Width > 0 ? style.Width : 100;
         string Paint(Role role, string text, bool bold = false) =>
-            style.Colors is null ? text : (bold ? Bold : "") + style.Colors.Prefix(role) + text + Reset;
+            style.Colors is null ? text : (bold ? Palette.Bold : "") + style.Colors.Prefix(role) + text + Palette.Reset;
         var bar = Paint(Role.Note, style.Symbols.Bar);
         var head = SeverityName(diagnostic.Severity) + " " + diagnostic.Code;
         sb.Append(Paint(accent, head, bold: true)).Append(": ")

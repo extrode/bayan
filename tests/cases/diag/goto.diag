@@ -5,3 +5,4 @@ error BYN1010: `goto` does not exist in Bayan
     │
   help: to leave a loop early, label it (`outer: for (…)`) and use `break outer;`
     │ 3 │         break done;
+    │   │         +++++
