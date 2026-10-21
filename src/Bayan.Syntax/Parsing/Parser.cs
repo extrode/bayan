@@ -1398,8 +1398,9 @@ public sealed class Parser
             Advance();
             handler = ParseSwitchArms(switchStart, subject);
         }
-        else if (Kind == TokenKind.OpenBrace)
+        else if (Kind == TokenKind.OpenBrace && !(IsStructLiteralBody() && Peek(1) != TokenKind.CloseBrace))
         {
+            // `catch { x = 1 }` stays a target-typed struct literal; `catch {}` is an empty block.
             var block = ParseBlock();
             handler = new BlockExpr(block.Span, block);
         }

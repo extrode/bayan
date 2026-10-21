@@ -1,0 +1,9 @@
+let xs = List<i32>();
+var i = 0;
+var total = 0;
+while (i < xs.length) {
+    total += i;
+    i += 1;
+}
+total = total + i;
+print($"{total}");

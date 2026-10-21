@@ -19,4 +19,15 @@ public sealed class GenericsTests
         Assert.Equal(["byn_main__pick__i64", "byn_main__pick__main__Point", "byn_main__pick__str"], instances);
         Assert.DoesNotMatch(@"\bbyn_main__pick\(", code);
     }
+
+    [Fact]
+    public void ARolledBackFirstPassLeavesNoInstance()
+    {
+        var path = Path.Combine(Golden.CasesRoot, "run", "generics-var-literal-rollback.byn");
+        var c = Compilation.Create([Golden.Load(path)], Path.GetDirectoryName(path)!);
+        Assert.False(c.Diagnostics.HasErrors);
+        var code = CliApp.EmitC(c, BuildMode.Safe);
+        Assert.Contains("byn_main__id__i64", code);
+        Assert.DoesNotContain("id__i32", code);
+    }
 }
