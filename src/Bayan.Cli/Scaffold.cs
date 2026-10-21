@@ -205,15 +205,15 @@ public static class Scaffold
         var lib = o.Layout == Layout.Lib;
         files["package.byn"] = $$"""
             Package {
-                name    = "local/{{n.Kebab}}",      // `local/` until published under a verified namespace
-                version = "0.1.0",
-                edition = 2027,
-                kind    = .{{(lib ? "lib" : "app")}},
-                capabilities = [],
-                deps    = [],
-                dist = Dist {
-                    targets = [.host],        // the machine that builds it
-                    mode    = .safe,
+                name: "local/{{n.Kebab}}",      // `local/` until published under a verified namespace
+                version: "0.1.0",
+                edition: 2027,
+                kind: .{{(lib ? "lib" : "app")}},
+                capabilities: [],
+                deps: [],
+                dist: Dist {
+                    targets: [.host],        // the machine that builds it
+                    mode: .safe,
                 },
             }
 

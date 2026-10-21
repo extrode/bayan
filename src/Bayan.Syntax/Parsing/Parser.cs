@@ -1400,7 +1400,7 @@ public sealed class Parser
         }
         else if (Kind == TokenKind.OpenBrace && !(IsStructLiteralBody() && Peek(1) != TokenKind.CloseBrace && !BraceBodyHasSemicolon()))
         {
-            // `catch { x = 1 }` stays a target-typed struct literal; `catch {}` and `catch { x = 1; }` are blocks.
+            // `catch { x: 1 }` stays a target-typed struct literal; `catch {}` and `catch { x: 1; }` are blocks.
             var block = ParseBlock();
             handler = new BlockExpr(block.Span, block);
         }
@@ -1737,9 +1737,9 @@ public sealed class Parser
         return false;
     }
 
-    /// <summary>At <c>{</c>: is this <c>{ }</c> or <c>{ name = …</c>, i.e. a struct literal rather than a block?</summary>
+    /// <summary>At <c>{</c>: is this <c>{ }</c> or <c>{ name: …</c> (or the older <c>{ name = …</c>), i.e. a struct literal rather than a block?</summary>
     private bool IsStructLiteralBody() =>
-        Peek(1) == TokenKind.CloseBrace || (IsName(Peek(1)) && Peek(2) == TokenKind.Equals);
+        Peek(1) == TokenKind.CloseBrace || (IsName(Peek(1)) && Peek(2) is TokenKind.Colon or TokenKind.Equals);
 
     private FieldInit[] ParseFieldInits()
     {
@@ -1750,7 +1750,7 @@ public sealed class Parser
             var start = Current.Start;
             var before = _pos;
             var name = ExpectName("a field name");
-            Expect(TokenKind.Equals);
+            if (!Accept(TokenKind.Equals)) Expect(TokenKind.Colon);
             var value = ParseExpression();
             fields.Add(new FieldInit(SpanFrom(start), name, value));
             if (!Accept(TokenKind.Comma)) break;

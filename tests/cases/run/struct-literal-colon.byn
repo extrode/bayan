@@ -1,0 +1,17 @@
+struct Money {
+    i64 cents = 0;
+}
+
+struct LineItem {
+    string name;
+    Money unitPrice;
+    i64 qty = 1;
+}
+
+let item = LineItem { name: "tea", unitPrice: { cents: 250 }, qty: 2 };
+print($"{item.name} {item.unitPrice.cents} {item.qty}");
+let more = item with { name: "coffee", unitPrice: Money { cents: 300 } };
+print($"{more.name} {more.unitPrice.cents} {more.qty}");
+let zero = Money {};
+print($"{zero.cents} {item.unitPrice == Money { cents: 250 }}");
+print($"{more}");
