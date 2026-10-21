@@ -551,4 +551,4 @@ Spec order (numbers are provisional; a spec may split):
   - `catch { … }` and `catch (e) { … }` blocks, BYN2611 when one on a value-returning call can complete normally (Q77).
   - `const` string arrays (BYN2229 reworded), `List.removeRange`, integer `toHex()`.
 
-  L009 (typed dump deterministic) and L010 (decode accepts exactly valid UTF-8) enacted with their proofs. Spec §2.3, §2.4, §3.2, §3.5, §8, §9.4 and §10 updated. 944 tests pass. Open: three R4 gaps and an untyped array literal as a `for` source, in `work/todo.md`. Worker spend: about $56 across plan, writers and gates (plan think $7.18; writers about $11; gates about $38, T4 and T8 the most at $11.89 and $9.43). **Next:** spec 005 (terminal style).
+  L009 (typed dump deterministic) and L010 (decode accepts exactly valid UTF-8) enacted with their proofs. Spec §2.3, §2.4, §3.2, §3.5, §8, §9.4 and §10 updated. 945 tests pass. Open: three R4 gaps and an untyped array literal as a `for` source, in `work/todo.md`. Worker spend: about $56 across plan, writers and gates (plan think $7.18; writers about $11; gates about $38, T4 and T8 the most at $11.89 and $9.43). **Next:** spec 005 (terminal style).
