@@ -37,7 +37,7 @@ if [ $execute -eq 1 ]; then git worktree prune; else printf 'would: git worktree
 for b in feat/004-port-friction \
          chore/worker-004-t1 chore/worker-004-t2 chore/worker-004-t4 chore/worker-004-t5 chore/worker-004-t6 \
          chore/worker-004-t8 chore/worker-004-t9 chore/worker-004-t11 chore/worker-004-t13 chore/worker-004-t14 \
-         chore/worker-004-t15 chore/worker-004-t16; do
+         chore/worker-004-t15 chore/worker-004-t16 chore/worker-004-rv; do
   if ! git rev-parse --verify --quiet "refs/heads/$b" >/dev/null; then
     printf 'skip:  branch %s no longer exists\n' "$b"
   elif [ $execute -eq 1 ]; then
