@@ -1,0 +1,2 @@
+i64 net = -33;
+assert(net == -34);

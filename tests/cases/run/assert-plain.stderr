@@ -1,0 +1,2 @@
+panic: assertion failed: a > 1 && b < 3
+  at assert-plain.byn:3

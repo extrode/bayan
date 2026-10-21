@@ -24,6 +24,7 @@
     "failed": 0,
     "panicked": 0,
     "timedOut": 0,
+    "pending": 0,
     "skipped": 0,
     "durationMs": 0
   }

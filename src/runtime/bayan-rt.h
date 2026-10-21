@@ -33,6 +33,8 @@ typedef struct byn_str {
 
 BYN_NORETURN void byn_panic(const char* msg, const char* file, int line);
 BYN_NORETURN void byn_panic_str(byn_str msg, const char* file, int line);
+/* `todo(msg)`: prints `pending: msg` and exits with 4, which the test runner reports as pending. */
+BYN_NORETURN void byn_todo_str(byn_str msg, const char* file, int line);
 BYN_NORETURN void byn_unreachable(const char* file, int line);
 
 /* ── Ownership checker (debug builds) ────────────────────────────────────── */
