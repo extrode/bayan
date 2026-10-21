@@ -213,7 +213,7 @@ struct LexResult {
     i64 docEnd;
     List<Token> tokens;
 
-    void run(Keywords keywords) {
+    void run(ref this, Keywords keywords) {
         if (source.bytes.length >= 3 && source.bytes[0] == 0xEF && source.bytes[1] == 0xBB && source.bytes[2] == 0xBF) pos = 3;
         while (true) {
             if (modes[depth].inText) {
@@ -237,7 +237,7 @@ struct LexResult {
 
     u8 peek(i64 offset = 0) => pos + offset < source.bytes.length ? source.bytes[pos + offset] : 0;
 
-    void add(TokenKind kind, i64 start, i64 length) {
+    void add(ref this, TokenKind kind, i64 start, i64 length) {
         let docLength = docStart >= 0 ? docEnd - docStart : 0;
         tokens.add(Token {
             kind = kind,
@@ -251,7 +251,7 @@ struct LexResult {
         docStart = -1;
     }
 
-    void report(DiagnosticCode code, TextSpan span, string arg0 = "", string arg1 = "", string label = "", string help = "") {
+    void report(ref this, DiagnosticCode code, TextSpan span, string arg0 = "", string arg1 = "", string label = "", string help = "") {
         diagnostics.add(Diagnostic {
             code = codeText(code),
             span = span,
@@ -264,7 +264,7 @@ struct LexResult {
         });
     }
 
-    void reportFix(DiagnosticCode code, TextSpan span, string replacement, string arg0 = "", string label = "", string help = "") {
+    void reportFix(ref this, DiagnosticCode code, TextSpan span, string replacement, string arg0 = "", string label = "", string help = "") {
         diagnostics.add(Diagnostic {
             code = codeText(code),
             span = span,
@@ -286,7 +286,7 @@ struct LexResult {
     }
 
     /// Advances over one code point, reporting bidi controls and invalid UTF-8 unless allowed.
-    void advanceCodePoint(bool allowBidi) {
+    void advanceCodePoint(ref this, bool allowBidi) {
         let b = source.bytes[pos];
         if (b < 0x80) {
             pos += 1;
@@ -307,7 +307,7 @@ struct LexResult {
         pos += d.length;
     }
 
-    void reportBidi(i64 at, u32 codePoint) {
+    void reportBidi(ref this, i64 at, u32 codePoint) {
         reportFix(.bidiControl, TextSpan { start = at, length = 3 }, replacement: "", arg0: hex(codePoint, 4),
             label: "invisible character that reorders how the text displays",
             help: "remove it; bidi controls may only appear inside string literals (Trojan Source, CVE-2021-42574)");
@@ -315,7 +315,7 @@ struct LexResult {
 
     // ── Trivia ────────────────────────────────────────────────────────────────────
 
-    void skipTrivia() {
+    void skipTrivia(ref this) {
         while (pos < source.bytes.length) {
             let b = source.bytes[pos];
             if (b == ' ' || b == '\t' || b == '\r') {
@@ -361,7 +361,7 @@ struct LexResult {
 
     // ── Tokens ────────────────────────────────────────────────────────────────────
 
-    void lexToken(Keywords keywords) {
+    void lexToken(ref this, Keywords keywords) {
         let start = pos;
         let c = source.bytes[pos];
 
@@ -498,23 +498,23 @@ struct LexResult {
         }
     }
 
-    void reportUnexpected(u32 cp, i64 length) {
+    void reportUnexpected(ref this, u32 cp, i64 length) {
         let shown = cp < 0x20 || cp == 0x7F ? $"\\u{{{hex(cp, 1)}}}" : $"{(char)cp}";
         report(.unexpectedCharacter, TextSpan { start = pos, length = length }, arg0: shown);
         pos += length;
         tokenFlags |= triviaBefore;
     }
 
-    void single(TokenKind kind) => fixed(kind, 1);
+    void single(ref this, TokenKind kind) => fixed(kind, 1);
 
     /// Adds a fixed token; with no explicit length, two-character kinds are inferred.
-    void fixed(TokenKind kind, i64 length = 0) {
+    void fixed(ref this, TokenKind kind, i64 length = 0) {
         let n = length == 0 ? kindText(kind).length : length;
         add(kind, start: pos, length: n);
         pos += n;
     }
 
-    void lexIdentifier(Keywords keywords) {
+    void lexIdentifier(ref this, Keywords keywords) {
         let start = pos;
         var ascii = true;
         while (pos < source.bytes.length) {
@@ -558,7 +558,7 @@ struct LexResult {
     }
 
     /// Reports BYN0005 when the identifier `span` (valid UTF-8) is not in NFC.
-    void checkNfc(i64 start, ReadOnlySpan<u8> span) {
+    void checkNfc(ref this, i64 start, ReadOnlySpan<u8> span) {
         var input = List<u32>();
         i64 at = 0;
         while (at < span.length) {
@@ -581,7 +581,7 @@ struct LexResult {
             help: "use the composed (NFC) form; identifiers that look the same must be byte-identical");
     }
 
-    void lexNumber() {
+    void lexNumber(ref this) {
         let start = pos;
         var radix = "";
         var isFloat = false;
@@ -638,7 +638,7 @@ struct LexResult {
         }
     }
 
-    void scanDigits(i64 literalStart, DigitKind digits, string prefix) {
+    void scanDigits(ref this, i64 literalStart, DigitKind digits, string prefix) {
         let first = pos;
         var lastWasUnderscore = false;
         while (pos < source.bytes.length && (isDigitOf(digits, source.bytes[pos]) || source.bytes[pos] == '_')) {
@@ -653,7 +653,7 @@ struct LexResult {
     }
 
     /// Lexes a string whose opening quote is at `quote`.
-    void lexString(i64 start, i64 quote, TokenKind kind) {
+    void lexString(ref this, i64 start, i64 quote, TokenKind kind) {
         pos = quote;
         if (kind == .stringLiteral && peek(1) == '"' && peek(2) == '"') {
             pos += 3;
@@ -692,7 +692,7 @@ struct LexResult {
         }
     }
 
-    void lexInterpolatedText() {
+    void lexInterpolatedText(ref this) {
         let modeStart = modes[depth].start;
         let start = pos;
         while (true) {
@@ -737,11 +737,11 @@ struct LexResult {
         }
     }
 
-    void addText(i64 start) {
+    void addText(ref this, i64 start) {
         if (pos > start) add(.interpolatedStringText, start: start, length: pos - start);
     }
 
-    void lexChar() {
+    void lexChar(ref this) {
         let start = pos;
         pos += 1;
         if (peek() == '\'') {
@@ -771,7 +771,7 @@ struct LexResult {
         add(.charLiteral, start: start, length: pos - start);
     }
 
-    void scanEscape() {
+    void scanEscape(ref this) {
         let start = pos;
         pos += 1;
         if (pos >= source.bytes.length || source.bytes[pos] == '\n') {
@@ -811,7 +811,7 @@ struct LexResult {
     }
 
     /// The `default` arm of `scanEscape`.
-    void invalidEscape(i64 start) {
+    void invalidEscape(ref this, i64 start) {
         advanceCodePoint(allowBidi: true);
         report(.invalidEscape, TextSpan.fromBounds(start: start, end: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
             help: "use a valid escape: \\n \\r \\t \\0 \\\\ \\\" \\' and \\u{…}");

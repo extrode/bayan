@@ -1,7 +1,7 @@
 struct Counter {
     i64 calls = 0;
 
-    i64 touch() {
+    i64 touch(ref this) {
         calls += 1;
         return calls;
     }

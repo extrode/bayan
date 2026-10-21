@@ -61,12 +61,12 @@ public static class AstDump
         private static string TypeParams(Name[] names) =>
             names.Length == 0 ? "" : "<" + string.Join(", ", names.Select(n => n.Text)) + ">";
 
-        private static string Params(Param[] parameters)
+        private static string Params(Param[] parameters, bool refThis = false)
         {
-            var sb = new StringBuilder("(");
+            var sb = new StringBuilder(refThis ? "(ref this" : "(");
             for (var i = 0; i < parameters.Length; i++)
             {
-                if (i > 0) sb.Append(", ");
+                if (i > 0 || refThis) sb.Append(", ");
                 var p = parameters[i];
                 if (p.Modifier != ParamModifier.None) sb.Append(p.Modifier.ToString().ToLowerInvariant()).Append(' ');
                 Type(sb, p.Type);
@@ -103,7 +103,7 @@ public static class AstDump
                     break;
                 case FunctionDecl d:
                     {
-                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params)} -> {Type(d.ReturnType)}";
+                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params, d.RefThis is not null)} -> {Type(d.ReturnType)}";
                         if (d.Fails is not null)
                             head += d.Fails.Errors.Length == 0 ? " fails" : " fails " + string.Join(", ", d.Fails.Errors.Select(Type));
                         if (d.ExpressionBody is not null) head += " => " + AstDump.Expr(d.ExpressionBody);

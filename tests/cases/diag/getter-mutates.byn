@@ -4,7 +4,7 @@ struct Counter {
 
     i64 latest => record();
 
-    i64 record() {
+    i64 record(ref this) {
         n += 1;
         return n;
     }

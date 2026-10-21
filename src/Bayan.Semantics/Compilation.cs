@@ -696,6 +696,10 @@ public sealed class Compilation
     {
         var types = new TypeResolver(this, file, owner, fn.TypeMap);
         fn.ReturnType = types.Resolve(decl.ReturnType, allowVoid: true);
+        fn.IsMutating = decl.RefThis is not null;
+        if (decl.RefThis is { } refThis && fn is not { Kind: FunctionKind.Method, IsStatic: false })
+            Report(DiagnosticCodes.Unsupported, file.Source, refThis, [fn.IsStatic ? "`ref this` on a static method" : "`ref this` outside a struct"],
+                help: "remove `ref this`; only an instance method has a `this` to change");
         DeclareParameters(fn, decl.Params, file, types);
         if (decl.Fails is { } fails)
         {
@@ -826,7 +830,7 @@ public sealed class Compilation
         while (_instantiationWork.TryDequeue(out var work))
             Instantiating(work.Site, work.Span, work.Bind);
         InferErrorSets();
-        InferMutation();
+        CheckMutation();
         foreach (var module in Modules)
             foreach (var fn in module.AllFunctions)
             {
@@ -1118,32 +1122,25 @@ public sealed class Compilation
             fn.Fails = true;
     }
 
-    /// <summary>Calls of methods through a receiver, checked once every body is bound and mutation is known.</summary>
+    /// <summary>Calls of methods through a receiver, checked once every body is bound.</summary>
     internal List<MutationCheck> MutationChecks { get; } = new();
 
+    /// <summary>The first write to <c>this</c> in each method not declared <c>ref this</c>, with the binder that saw it.</summary>
+    internal Dictionary<FunctionSymbol, (Binder Binder, TextSpan Span)> ThisWrites { get; } = new();
+
     /// <summary>
-    /// A method is mutating when it writes to <c>this</c> or calls a mutating method on it; the
-    /// second part is a fixed point. Then every call of a mutating method needs a writable receiver.
+    /// A method is mutating when it is declared <c>ref this</c>. Every call of one needs a writable
+    /// receiver, and a method that writes <c>this</c> without <c>ref this</c> is BYN2115.
     /// </summary>
-    private void InferMutation()
+    private void CheckMutation()
     {
-        bool changed;
-        do
-        {
-            changed = false;
-            foreach (var m in MutationChecks)
-            {
-                if (!m.Callee.IsMutating || m.Binder.Function is not { IsMutating: false } caller) continue;
-                if (!m.Binder.WritesThis(m.Receiver)) continue;
-                caller.IsMutating = true;
-                changed = true;
-            }
-        } while (changed);
         foreach (var m in MutationChecks.Where(m => m.Callee.IsMutating))
         {
             if (m.Binder.Function is not { IsInstance: true }) m.Binder.CheckWritable(m.Receiver, m.Receiver.Syntax.Span, $"`{m.Callee.Name}` modifies it");
             else m.Binder.CheckGuardWrite(m.Receiver, m.Receiver.Syntax.Span, $"`{m.Callee.Name}` modifies it");
         }
+        foreach (var (fn, (binder, span)) in ThisWrites)
+            binder.ReportMutatesWithoutRefThis(fn, span);
     }
 
     /// <summary>A parameter's default value, bound on first use.</summary>

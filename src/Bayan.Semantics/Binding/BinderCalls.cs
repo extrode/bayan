@@ -91,6 +91,8 @@ internal sealed partial class Binder
         };
         var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
         (_printArgument, _sinkArgument) = (outer, outerSink);
+        // A `ref this` call on `map[key]` changes the stored value in place.
+        if (receiver is not null && fn.IsMutating) receiver = MapWriteTarget(receiver);
         if (receiver is not null && fn.HasThis)
             _c.MutationChecks.Add(new MutationCheck(this, fn, receiver));
         if (fn.Fails && !ReferenceEquals(_handled, c))
@@ -1281,23 +1283,21 @@ internal sealed partial class Binder
     private static BoundExpr MapWriteTarget(BoundExpr target) =>
         target is BoundBuiltinCall { Member: BuiltinMember.MapIndex } b ? b with { Member = BuiltinMember.MapIndexSet } : target;
 
-    /// <summary>
-    /// Reports when <paramref name="target"/> may not be written. Writes through <c>this</c> make
-    /// a method mutating (inferred later); getters may not write.
-    /// </summary>
-    /// <summary>Whether writing to <paramref name="target"/> writes to <c>this</c> of a method.</summary>
-    internal bool WritesThis(BoundExpr target) => _fn is { Kind: FunctionKind.Method, IsStatic: false } && target switch
+    /// <summary>BYN2115 for a method that writes <c>this</c> at <paramref name="span"/> first, with a fix inserting <c>ref this</c>.</summary>
+    internal void ReportMutatesWithoutRefThis(FunctionSymbol fn, TextSpan span)
     {
-        BoundThis => true,
-        BoundField f => WritesThis(f.Receiver),
-        BoundTupleElement t => WritesThis(t.Receiver),
-        BoundIndex { Target.Type: not SpanType } i => WritesThis(i.Target),
-        BoundBuiltinCall { Member: BuiltinMember.MapIndexSet or BuiltinMember.MapSlot } b => WritesThis(b.Receiver),
-        _ => false,
-    };
+        var decl = fn.Decl!;
+        Report(DiagnosticCodes.MutatesWithoutRefThis, span, [fn.Name], label: "`this` is modified here",
+            help: "declare it `ref this` as the first parameter",
+            fix: new Fix(new TextSpan(decl.ParamsStart, 0), decl.Params.Length > 0 ? "ref this, " : "ref this"));
+    }
 
     internal FunctionSymbol? Function => _fn;
 
+    /// <summary>
+    /// Reports when <paramref name="target"/> may not be written. A write through <c>this</c> in a
+    /// method not declared <c>ref this</c> is noted for BYN2115; getters may not write.
+    /// </summary>
     internal bool CheckWritable(BoundExpr target, TextSpan span, string? why)
     {
         if (WrittenLocal(target) is { } written) written.Written = true;
@@ -1318,7 +1318,8 @@ internal sealed partial class Binder
                 if (_fn is { Kind: FunctionKind.Constructor }) return true;
                 if (_fn is { Kind: FunctionKind.Method, IsStatic: false })
                 {
-                    _fn.IsMutating = true;
+                    if (!_fn.IsMutating && !_fn.IsInstance && (!_c.ThisWrites.TryGetValue(_fn, out var first) || span.Start < first.Span.Start))
+                        _c.ThisWrites[_fn] = (this, span);
                     return true;
                 }
                 if (_fn is { Kind: FunctionKind.Getter })

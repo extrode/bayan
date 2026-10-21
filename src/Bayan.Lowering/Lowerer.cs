@@ -1127,6 +1127,13 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         {
             receiver = parts[0];
             if (!IsLvalue(receiver)) receiver = Spill(receiver);
+            // `map[k].f()` with `ref this` changes the stored value; reading through the panicking index first keeps a missing key out.
+            if (receiver is BoundBuiltinCall { Member: BuiltinMember.MapIndexSet })
+            {
+                var place = (BoundBuiltinCall)Stable(receiver);
+                Emit(new BoundExprStmt(c.Syntax, place with { Member = BuiltinMember.MapIndex }));
+                receiver = place;
+            }
         }
         return c with { Receiver = receiver, Arguments = parts[offset..] };
     }

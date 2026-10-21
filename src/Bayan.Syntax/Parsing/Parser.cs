@@ -472,7 +472,8 @@ public sealed class Parser
         var returnType = ParseType();
         var name = ExpectName();
         var typeParams = ParseTypeParams();
-        var parameters = ParseParams();
+        var paramsStart = Current.End;
+        var parameters = ParseParams(out var refThis);
         FailsClause? fails = null;
         if (Kind == TokenKind.FailsKeyword)
         {
@@ -500,11 +501,18 @@ public sealed class Parser
         {
             Expect(TokenKind.OpenBrace);
         }
-        return new FunctionDecl(SpanFrom(start), modifiers, returnType, name, parameters, fails, body, expressionBody) { TypeParams = typeParams };
+        return new FunctionDecl(SpanFrom(start), modifiers, returnType, name, parameters, fails, body, expressionBody)
+        {
+            TypeParams = typeParams, RefThis = refThis, ParamsStart = paramsStart,
+        };
     }
 
-    private Param[] ParseParams()
+    private Param[] ParseParams() => ParseParams(out _, allowRefThis: false);
+
+    /// <summary>A member's parameters; <c>ref this</c> is accepted only first (BYN2117) and returned in <paramref name="refThis"/>.</summary>
+    private Param[] ParseParams(out TextSpan? refThis, bool allowRefThis = true)
     {
+        refThis = null;
         Expect(TokenKind.OpenParen);
         var list = new List<Param>();
         if (Kind != TokenKind.CloseParen)
@@ -512,6 +520,17 @@ public sealed class Parser
             do
             {
                 var start = Current.Start;
+                if (allowRefThis && Kind == TokenKind.RefKeyword && KindAt(_pos + 1) == TokenKind.ThisKeyword)
+                {
+                    Advance();
+                    Advance();
+                    var span = SpanFrom(start);
+                    if (list.Count > 0 || refThis is not null)
+                        Report(DiagnosticCodes.RefThisNotFirst, span, [], label: "after other parameters",
+                            help: "move `ref this` to the start of the parameter list");
+                    refThis ??= span;
+                    continue;
+                }
                 var modifier = Kind switch
                 {
                     TokenKind.RefKeyword => ParamModifier.Ref,

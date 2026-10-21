@@ -7,7 +7,7 @@ struct Lexer {
 
     Span<Token> tokens() => toks.asSpan();
 
-    void push(Token t) {
+    void push(ref this, Token t) {
         toks.add(t);
     }
 

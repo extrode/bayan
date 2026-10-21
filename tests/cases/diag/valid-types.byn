@@ -6,7 +6,7 @@ struct Point {
 
     i64 sum => x + y;
 
-    void shift(i64 by) {
+    void shift(ref this, i64 by) {
         x += by;
     }
 }

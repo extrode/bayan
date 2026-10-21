@@ -3,7 +3,7 @@ error enum ReadError { broken }
 struct Rows {
     i64 at;
 
-    i64? next() fails ReadError {
+    i64? next(ref this) fails ReadError {
         at += 1;
         return at < 3 ? at : null;
     }

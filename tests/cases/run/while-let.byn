@@ -6,7 +6,7 @@ struct Lines {
     i64 at;
     i64 count;
 
-    i64? next() fails ReadError {
+    i64? next(ref this) fails ReadError {
         if at >= count { return null; }
         at += 1;
         return at * 10;

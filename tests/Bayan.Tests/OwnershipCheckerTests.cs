@@ -245,7 +245,7 @@ public sealed class OwnershipCheckerTests
     private const string GrowThenMoveReceiver = """
         struct Bag {
             List<i64> items;
-            public i64 grow() {
+            public i64 grow(ref this) {
                 this.items.add(1);
                 return this.items.length;
             }
@@ -262,7 +262,7 @@ public sealed class OwnershipCheckerTests
     private const string GrowInGuard = """
         struct Bag {
             List<i64> items;
-            public i64 grow() {
+            public i64 grow(ref this) {
                 this.items.add(1);
                 return this.items.length;
             }

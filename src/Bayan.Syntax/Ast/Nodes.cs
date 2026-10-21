@@ -60,6 +60,12 @@ public sealed record FunctionDecl(
 {
     /// <summary>The <c>&lt;T, U&gt;</c> after the name; empty for a non-generic function.</summary>
     public Name[] TypeParams { get; init; } = [];
+
+    /// <summary>The <c>ref this</c> written as parameter 0 of a mutating member; not in <see cref="Params"/>.</summary>
+    public TextSpan? RefThis { get; init; }
+
+    /// <summary>Where a <c>ref this</c> would go: just after the <c>(</c>.</summary>
+    public int ParamsStart { get; init; }
 }
 
 public sealed record StructDecl(TextSpan Span, Modifiers Modifiers, Name Name, Decl[] Members) : Decl(Span)
