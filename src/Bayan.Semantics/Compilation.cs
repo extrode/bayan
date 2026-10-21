@@ -102,6 +102,8 @@ public sealed class Compilation
         clock.Restart();
         c.Declare();
         c.BindAll();
+        // Each case binds and checks the same body; report what it finds there once.
+        if (c._testCases.Count > 0) c.Diagnostics.RemoveRepeats();
         c.CheckTime = clock.Elapsed;
         return c;
     }
@@ -227,19 +229,94 @@ public sealed class Compilation
                 help: "write `void main()`, `i32 main()`, `void main(ReadOnlySpan<string> args)` or `i32 main(ReadOnlySpan<string> args)`, each optionally with `fails`");
     }
 
-    /// <summary>No declaration takes an attribute yet; <c>[ExitCode]</c> belongs on an error variant.</summary>
+    /// <summary><c>[Cases]</c> belongs on a test with parameters and <c>[ExitCode]</c> on an error variant; no other declaration takes an attribute.</summary>
     private void CheckAttributes(FileContext file, Decl decl)
     {
+        var hasCases = false;
         foreach (var a in decl.Attributes)
         {
-            if (a.Name.Text == "ExitCode")
+            if (a.Name.Text == "Cases" && decl is TestDecl test)
+            {
+                if (hasCases)
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[Cases]"], help: "combine the cases into one `[Cases(...)]`");
+                else
+                    _testCases[test] = CheckCases(file, test, a);
+                hasCases = true;
+            }
+            else if (a.Name.Text == "Cases")
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[Cases]"], help: "put `[Cases(...)]` on a test that takes parameters");
+            else if (a.Name.Text == "ExitCode")
                 Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "put `[ExitCode]` on an error enum variant");
             else
-                Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "use `[ExitCode(n)]` on an error enum variant; it is the only attribute");
+                Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text],
+                    help: "use `[ExitCode(n)]` on an error variant or `[Cases(...)]` on a test");
+        }
+        if (decl is TestDecl { Params.Length: > 0 } t && !hasCases)
+        {
+            var span = TextSpan.FromBounds(t.Params[0].Span.Start, t.Params[^1].Span.End);
+            Report(DiagnosticCodes.ModifierNotAllowed, file.Source, span, [file.Source.GetText(span)],
+                label: "a test without `[Cases]` takes no parameters",
+                help: "add `[Cases(...)]` with one value per parameter for each case, or remove the parameters");
         }
         if (decl is StructDecl s)
             foreach (var m in s.Members) CheckAttributes(file, m);
     }
+
+    /// <summary>
+    /// The cases of <c>[Cases(...)]</c> that fit <paramref name="test"/>: a tuple per case, or a bare value when it
+    /// takes one parameter, with one literal per parameter (BYN2773, BYN2774).
+    /// </summary>
+    private List<Expr[]> CheckCases(FileContext file, TestDecl test, AttributeSyntax a)
+    {
+        var cases = new List<Expr[]>();
+        var names = string.Join(", ", test.Params.Select(p => p.Name.Text));
+        foreach (var arg in a.Args)
+        {
+            if (arg.Value is NameExpr or MemberExpr)
+            {
+                Report(DiagnosticCodes.CasesNotConstant, file.Source, arg.Value.Span, [], label: "cases from a const list are not supported yet",
+                    help: "write each case as a tuple literal, such as `[Cases((0, false), (1, true))]`");
+                continue;
+            }
+            Expr[] values = arg.Value is TupleExpr tuple ? tuple.Elements.Select(e => e.Value).ToArray() : [arg.Value];
+            if (values.Length != test.Params.Length)
+            {
+                Report(DiagnosticCodes.CasesArity, file.Source, arg.Value.Span, [values.Length, test.Params.Length],
+                    help: test.Params.Length == 1 ? "give one value per case: `[Cases(1, 2, 3)]`"
+                        : $"give each case one value per parameter, in order: `({names})`");
+                continue;
+            }
+            var constant = true;
+            foreach (var v in values.Where(v => !IsCaseLiteral(v)))
+            {
+                Report(DiagnosticCodes.CasesNotConstant, file.Source, v.Span, [],
+                    help: "write the value as a literal: a number, string, char, `true`, `false`, `null` or a `.case`");
+                constant = false;
+            }
+            if (constant) cases.Add(values);
+        }
+        return cases;
+    }
+
+    private static bool IsCaseLiteral(Expr e) => e switch
+    {
+        LiteralExpr or TargetMemberExpr => true,
+        UnaryExpr { Op: UnaryOp.Negate or UnaryOp.Plus, Operand: LiteralExpr { Kind: LiteralKind.Integer or LiteralKind.Float } } => true,
+        ParenExpr p => IsCaseLiteral(p.Inner),
+        _ => false,
+    };
+
+    private void DeclareTest(FileContext file, TestDecl t, string title, Expr[]? values)
+    {
+        var fn = new FunctionSymbol("test", Loc(file, t), file.Module, FunctionKind.Test) { File = file };
+        file.Module.Tests.Add(new TestSymbol(title, Loc(file, t), fn));
+        file.Module.AllFunctions.Add(fn);
+        _testBodies[fn] = (t, values);
+    }
+
+    /// <summary><c>quantity bounds (input: 101, valid: false)</c>: the title, then each parameter with its value as written.</summary>
+    private static string CaseTitle(FileContext file, TestDecl t, Expr[] values) =>
+        $"{t.Title} ({string.Join(", ", t.Params.Zip(values, (p, v) => p.Name.Text + ": " + file.Source.GetText(v.Span)))})";
 
     private void DeclareFile(FileContext file)
     {
@@ -332,13 +409,11 @@ public sealed class Compilation
                         (mainStatements ??= new()).Add(g);
                     break;
                 case TestDecl t:
-                    if (Options.IncludeTests)
-                    {
-                        var fn = new FunctionSymbol("test", Loc(file, t), module, FunctionKind.Test) { File = file };
-                        module.Tests.Add(new TestSymbol(t.Title, Loc(file, t), fn));
-                        module.AllFunctions.Add(fn);
-                        _testBodies[fn] = t;
-                    }
+                    if (!Options.IncludeTests) break;
+                    if (t.Params.Length == 0)
+                        DeclareTest(file, t, t.Title, null);
+                    else if (_testCases.TryGetValue(t, out var cases))
+                        foreach (var values in cases) DeclareTest(file, t, CaseTitle(file, t, values), values);
                     break;
                 case ImportDecl:
                     break;
@@ -368,7 +443,8 @@ public sealed class Compilation
 
     private readonly List<AliasPlaceholder> _aliases = new();
     private readonly List<(ErrorVariantSymbol Variant, AttributeSyntax Attribute, FileContext File)> _exitCodes = new();
-    private readonly Dictionary<FunctionSymbol, TestDecl> _testBodies = new();
+    private readonly Dictionary<FunctionSymbol, (TestDecl Decl, Expr[]? Values)> _testBodies = new();
+    private readonly Dictionary<TestDecl, List<Expr[]>> _testCases = new();
     private (FunctionSymbol Main, List<GlobalStatement> Statements)? _mainStatements;
 
     /// <summary>Declares the <c>&lt;A, B&gt;</c> of a generic declaration; the map is null when there are none.</summary>
@@ -458,8 +534,10 @@ public sealed class Compilation
             var seen = false;
             foreach (var a in v.Attributes)
             {
-                if (a.Name.Text != "ExitCode")
-                    Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "use `[ExitCode(n)]`; it is the only attribute");
+                if (a.Name.Text == "Cases")
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[Cases]"], help: "put `[Cases(...)]` on a test that takes parameters");
+                else if (a.Name.Text != "ExitCode")
+                    Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "use `[ExitCode(n)]`; it is the only attribute an error variant takes");
                 else if (seen)
                     Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "remove the repeated attribute");
                 else
@@ -1082,7 +1160,7 @@ public sealed class Compilation
                 (binder = New(null)).BindMain(m.Statements);
                 break;
             case FunctionKind.Test:
-                (binder = New(null)).BindTest(_testBodies[fn]);
+                (binder = New(null)).BindTest(_testBodies[fn].Decl, _testBodies[fn].Values);
                 break;
             default:
                 return null;

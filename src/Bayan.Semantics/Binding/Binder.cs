@@ -218,10 +218,25 @@ internal sealed partial class Binder
         _fn.Body = new BoundBlock(statements[0], bound.ToArray());
     }
 
-    public void BindTest(TestDecl decl)
+    /// <summary>A test body; a <c>[Cases]</c> case first binds each parameter as a <c>let</c> of its value.</summary>
+    public void BindTest(TestDecl decl, Expr[]? values)
     {
         _fn!.InfersErrors = true;
-        _fn.Body = BindBlock(decl.Body);
+        if (values is null)
+        {
+            _fn.Body = BindBlock(decl.Body);
+            return;
+        }
+        var statements = new List<BoundStmt>();
+        for (var i = 0; i < decl.Params.Length; i++)
+        {
+            var p = decl.Params[i];
+            var type = ResolveType(p.Type);
+            var value = BindConverted(values[i], type);
+            statements.Add(new BoundLocalDecl(p, DeclareLocal(p.Name, type, LocalKind.Let), value));
+        }
+        statements.Add(BindBlock(decl.Body));
+        _fn.Body = new BoundBlock(decl.Body, statements.ToArray());
     }
 
     public BoundExpr BindFieldDefault(FieldSymbol field)

@@ -664,8 +664,9 @@ public sealed class Parser
             title = LiteralDecoder.DecodeString(Text(Advance()));
         else
             Report(DiagnosticCodes.Expected, Current.Span, ["the test's name as a string literal", Describe(Current)]);
+        var parameters = Kind == TokenKind.OpenParen ? ParseParams() : [];
         var body = ParseBlock();
-        return new TestDecl(SpanFrom(start), title, body);
+        return new TestDecl(SpanFrom(start), title, parameters, body);
     }
 
     // ── Types ────────────────────────────────────────────────────────────────────────

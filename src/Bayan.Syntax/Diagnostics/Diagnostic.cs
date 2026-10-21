@@ -66,6 +66,13 @@ public sealed class DiagnosticBag
         foreach (var d in diagnostics) Add(d);
     }
 
+    /// <summary>Drops each diagnostic that repeats an earlier one's code, file, span and message.</summary>
+    public void RemoveRepeats()
+    {
+        var seen = new HashSet<(string, SourceText?, TextSpan, string)>();
+        _items?.RemoveAll(d => !seen.Add((d.Code, d.Source, d.Span, d.Message)));
+    }
+
     public Diagnostic Report(
         DiagnosticDescriptor descriptor,
         SourceText? source,

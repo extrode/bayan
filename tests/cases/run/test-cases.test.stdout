@@ -1,0 +1,23 @@
+running 10 tests in 1 module
+  ◆ run_test-cases.test: quantity bounds (input: 0, valid: false)
+  ◆ run_test-cases.test: quantity bounds (input: 1, valid: true)
+  ◆ run_test-cases.test: quantity bounds (input: 100, valid: true)
+
+  ✗ run_test-cases.test: quantity bounds (input: 101, valid: true)
+      assert(inRange(input) == valid)
+        inRange(input) is false
+        valid is true
+      test-cases.test.byn:7
+  ◆ run_test-cases.test: short words (word: "a")
+  ◆ run_test-cases.test: short words (word: "bc")
+
+  ✗ run_test-cases.test: short words (word: "def")
+      assert(word.length < 3)
+        word.length is 3
+      test-cases.test.byn:12
+  ◆ run_test-cases.test: literal kinds (amount: -1, letter: 'x', note: null)
+  ◆ run_test-cases.test: literal kinds (amount: 2.5, letter: 'y', note: "z")
+  ◆ run_test-cases.test: plain
+
+◆ 8 passed · ✗ 2 failed · 0 pending · Ts
+  rerun the failures: bayan test --only "quantity bounds (input: 101, valid: true)" --only 'short words (word: "def")'
