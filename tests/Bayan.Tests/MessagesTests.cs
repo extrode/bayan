@@ -10,6 +10,7 @@ public sealed class MessagesTests
     private static readonly HashSet<string> NotProse = new(StringComparer.Ordinal)
     {
         "bayan ", // BUILDINFO.json `compiler` value
+        "panic: ", "assertion failed: ", "  at ", // the runtime's panic output, parsed by `bayan test`
     };
 
     /// <summary>Command lines passed as code-snippet arguments (`bayan test`, `git init`, usage synopses).</summary>

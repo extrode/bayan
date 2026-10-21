@@ -176,8 +176,8 @@ public sealed partial class CliEnvironmentTests
         {
             var (exit, stdout, _) = Run(["test", dir], new CliApp.Terminal(true, true));
             Assert.Equal(CliApp.ExitTestFailure, exit);
-            Assert.Contains("  \u001b[32mok   \u001b[0m  passes", stdout);
-            Assert.Contains("  \u001b[1m\u001b[31mPANIC\u001b[0m  breaks", stdout);
+            Assert.Contains("  \u001b[1m\u001b[31m✗\u001b[0m color-tests: breaks\n", stdout);
+            Assert.Contains("\u001b[32m◆\u001b[0m 1 passed · \u001b[31m✗\u001b[0m 1 failed · 0 pending · ", stdout);
             Assert.DoesNotContain("\u001b[", Run(["test", dir]).Out);
         });
     }
@@ -286,11 +286,11 @@ public sealed partial class CliEnvironmentTests
         return app;
     }
 
-    /// <summary>The names of the tests that passed, sorted.</summary>
+    /// <summary>The names of the tests that passed, from <c>-v</c> output, sorted.</summary>
     private static string[] Ran(string stdout) =>
         [.. PassLine().Matches(stdout).Select(m => m.Groups[1].Value).Order(StringComparer.Ordinal)];
 
-    [GeneratedRegex("^  ok +(.+?)  \\(", RegexOptions.Multiline)]
+    [GeneratedRegex("^  [*◆] [^:]+: (.+?)$", RegexOptions.Multiline)]
     private static partial Regex PassLine();
 
     [Fact]
@@ -298,27 +298,27 @@ public sealed partial class CliEnvironmentTests
     {
         if (Toolchain.FindOnPath("git") is null) return;
         var app = ChangedProject("changed");
-        var all = Run(["test", app]);
+        var all = Run(["test", "-v", app]);
         Assert.Equal(CliApp.ExitOk, all.Exit);
         Assert.Equal(["cents", "greets the world", "in main"], Ran(all.Out));
 
         var none = Run(["test", app, "--changed"]);
         Assert.Equal(CliApp.ExitOk, none.Exit);
-        Assert.StartsWith("running 0 tests (3 in unchanged modules skipped)\n", none.Out);
+        Assert.StartsWith("running 0 tests in 0 modules (3 in unchanged modules skipped)\n", none.Out);
 
         File.AppendAllText(Path.Combine(app, "src", "money", "money.byn"), "\n");
-        Assert.Equal(["cents"], Ran(Run(["test", app, "--changed"]).Out));
+        Assert.Equal(["cents"], Ran(Run(["test", "-v", app, "--changed"]).Out));
 
         File.WriteAllText(Path.Combine(app, "tests", "extra.test.byn"), "test \"extra\" {\n    assert(true);\n}\n");
-        Assert.Equal(["cents", "extra", "greets the world", "in main"], Ran(Run(["test", app, "--changed"]).Out));
+        Assert.Equal(["cents", "extra", "greets the world", "in main"], Ran(Run(["test", "-v", app, "--changed"]).Out));
 
         Assert.Equal(0, Git(app, "add", "-A").Code);
         Assert.Equal(0, Git(app, "commit", "--quiet", "-m", "more").Code);
         Assert.StartsWith("running 0 tests", Run(["test", app, "--changed"]).Out);
-        Assert.Equal(["cents", "extra", "greets the world", "in main"], Ran(Run(["test", app, "--base", "HEAD~1"]).Out));
+        Assert.Equal(["cents", "extra", "greets the world", "in main"], Ran(Run(["test", "-v", app, "--base", "HEAD~1"]).Out));
 
         File.AppendAllText(Path.Combine(app, "package.byn"), "\n");
-        Assert.Equal(4, Ran(Run(["test", app, "--changed"]).Out).Length);
+        Assert.Equal(4, Ran(Run(["test", "-v", app, "--changed"]).Out).Length);
 
         var json = Run(["test", app, "--changed", "--json"]).Out;
         Assert.Contains("\"skipped\": 0", json);
@@ -351,7 +351,7 @@ public sealed partial class CliEnvironmentTests
         var link = Path.Combine(Path.GetDirectoryName(app)!, "link");
         Directory.CreateSymbolicLink(link, app);
         File.AppendAllText(Path.Combine(link, "src", "money", "money.byn"), "\n");
-        Assert.Equal(["cents"], Ran(Run(["test", link, "--changed"]).Out));
+        Assert.Equal(["cents"], Ran(Run(["test", "-v", link, "--changed"]).Out));
     }
 
     [Fact]
@@ -361,12 +361,53 @@ public sealed partial class CliEnvironmentTests
         var app = ChangedProject("changed-non-ascii");
         var cafe = Path.Combine(app, "src", "money", "café.byn");
         File.WriteAllText(cafe, "public i64 euros(i64 units) {\n    return units;\n}\n");
-        Assert.Equal(["cents"], Ran(Run(["test", app, "--changed"]).Out));
+        Assert.Equal(["cents"], Ran(Run(["test", "-v", app, "--changed"]).Out));
 
         Assert.Equal(0, Git(app, "add", "-A").Code);
         Assert.Equal(0, Git(app, "commit", "--quiet", "-m", "café").Code);
         File.AppendAllText(cafe, "\n");
-        Assert.Equal(["cents"], Ran(Run(["test", app, "--changed"]).Out));
+        Assert.Equal(["cents"], Ran(Run(["test", "-v", app, "--changed"]).Out));
+    }
+
+    // ── test --only ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void TestOnlySelectsBySubstringAndUnion()
+    {
+        if (Toolchain.FindOnPath("git") is null) return;
+        var app = ChangedProject("only");
+        WithTerminalEnv(() =>
+        {
+            var cents = Run(["test", "-v", app, "--only", "cent"]);
+            Assert.Equal(CliApp.ExitOk, cents.Exit);
+            Assert.StartsWith("running 1 test in 1 module\n", cents.Out);
+            Assert.Equal(["cents"], Ran(cents.Out));
+            Assert.Equal(["cents", "in main"], Ran(Run(["test", "-v", app, "--only", "cents", "--only", "main"]).Out));
+            Assert.Equal(["greets the world", "in main"], Ran(Run(["test", "-v", app, "--only", " "]).Out));
+        });
+    }
+
+    [Fact]
+    public void TestOnlyWithChangedSelectsTheIntersection()
+    {
+        if (Toolchain.FindOnPath("git") is null) return;
+        var app = ChangedProject("only-changed");
+        File.AppendAllText(Path.Combine(app, "src", "money", "money.byn"), "\n");
+        Assert.Equal(["cents"], Ran(Run(["test", "-v", app, "--changed", "--only", "cents", "--only", "main"]).Out));
+        var none = Run(["test", app, "--changed", "--only", "main"]);
+        Assert.Equal(CliApp.ExitOk, none.Exit);
+        Assert.StartsWith("running 0 tests in 0 modules", none.Out);
+    }
+
+    [Fact]
+    public void TestOnlyWithNoMatchIsAUsageError()
+    {
+        if (Toolchain.FindOnPath("git") is null) return;
+        var app = ChangedProject("only-none");
+        var (exit, stdout, err) = Run(["test", app, "--only", "nothing", "--only", "else"]);
+        Assert.Equal(CliApp.ExitUsage, exit);
+        Assert.Equal("", stdout);
+        Assert.Equal("bayan: no test name contains `nothing`, `else`\n", err);
     }
 
     // ── test timeouts ────────────────────────────────────────────────────────────
@@ -380,9 +421,9 @@ public sealed partial class CliEnvironmentTests
         {
             var (exit, stdout, _) = Run(["test", file]);
             Assert.Equal(CliApp.ExitTestFailure, exit);
-            Assert.Matches("^  TIME   loops  \\(", stdout.Split('\n')[1]);
-            Assert.Contains("1 test: 0 passed, 1 timed out  (", stdout);
-            Assert.DoesNotContain("panicked", stdout);
+            Assert.Contains(" timeout: loops\n      timed out after 0 s\n", stdout);
+            Assert.Contains(" 0 passed · ", stdout);
+            Assert.Contains(" 1 failed · ", stdout);
         });
     }
 }
