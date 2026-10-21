@@ -805,7 +805,7 @@ public sealed class Compilation
     // ── Generics ─────────────────────────────────────────────────────────────────
 
     private readonly Dictionary<(object Generic, TypeSymbol[] Args), object> _instances = new(new InstanceKeyComparer());
-    private readonly Queue<(SourceText Site, TextSpan Span, Action Bind)> _instantiationWork = new();
+    private readonly Queue<(SourceText Site, TextSpan Span, Action Bind, FunctionSymbol? Instance)> _instantiationWork = new();
     private readonly List<Diagnostic> _instantiationErrors = new();
     private readonly HashSet<(string, SourceText?, TextSpan)> _instanceAnalysisSeen = new();
     private DiagnosticBag? _scratch;
@@ -866,8 +866,18 @@ public sealed class Compilation
         };
         _instances[(template, args)] = fn;
         template.Module.AllFunctions.Add(fn);
-        Instantiating(site, span, () => DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner));
-        if (!fn.IsGeneric) _instantiationWork.Enqueue((site, span, () => BindFunction(fn)));
+        if (_firstPass is { } pass)
+        {
+            pass.Instances.Add(fn);
+            var outer = ReportInto(pass.Diagnostics);
+            var errors = _instantiationErrors.Count;
+            try { Instantiating(site, span, () => DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner)); }
+            finally { ReportInto(outer); }
+            pass.Errors.AddRange(_instantiationErrors.Skip(errors));
+            _instantiationErrors.RemoveRange(errors, _instantiationErrors.Count - errors);
+        }
+        else Instantiating(site, span, () => DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner));
+        if (!fn.IsGeneric) _instantiationWork.Enqueue((site, span, () => BindFunction(fn), fn));
         return fn;
     }
 
@@ -887,9 +897,9 @@ public sealed class Compilation
                 Instantiating(site, span, () => DeclareMembers(instance));
                 if (instance.IsGeneric) return instance;
                 foreach (var f in instance.Fields.Where(f => f.Decl.Default is not null))
-                    _instantiationWork.Enqueue((site, span, () => FieldDefault(instance, f, site, span)));
+                    _instantiationWork.Enqueue((site, span, () => FieldDefault(instance, f, site, span), null));
                 foreach (var fn in instance.Methods.Concat(instance.Properties.Select(p => p.Getter!)).Concat(instance.Constructors))
-                    _instantiationWork.Enqueue((site, span, () => BindFunction(fn)));
+                    _instantiationWork.Enqueue((site, span, () => BindFunction(fn), null));
                 return instance;
             }
             case UnionSymbol u:
@@ -958,11 +968,35 @@ public sealed class Compilation
     {
         var checks = MutationChecks.Count;
         var locals = fn.Locals.Count;
-        if (BindBody(fn, null) is not { } seeds) return;
+        var outer = _firstPass;
+        (List<FunctionSymbol> Instances, DiagnosticBag Diagnostics, List<Diagnostic> Errors) pass = ([], new DiagnosticBag(), []);
+        _firstPass = pass;
+        IReadOnlyDictionary<LocalDecl, TypeSymbol>? seeds;
+        try { seeds = BindBody(fn, null); }
+        finally { _firstPass = outer; }
+        if (seeds is null)
+        {
+            outer?.Instances.AddRange(pass.Instances);
+            ReportHeld(pass.Diagnostics.Items);
+            _instantiationErrors.AddRange(pass.Errors);
+            return;
+        }
+        // The functions the first pass instantiated go with it, and so do their diagnostics.
+        foreach (var instance in pass.Instances)
+        {
+            _instances.Remove((instance.Template!, [.. instance.TypeArguments]));
+            instance.Module.AllFunctions.Remove(instance);
+        }
+        var work = _instantiationWork.Where(w => w.Instance is null || !pass.Instances.Contains(w.Instance)).ToList();
+        _instantiationWork.Clear();
+        foreach (var w in work) _instantiationWork.Enqueue(w);
         MutationChecks.RemoveRange(checks, MutationChecks.Count - checks);
         fn.Locals.RemoveRange(locals, fn.Locals.Count - locals);
         BindBody(fn, seeds);
     }
+
+    /// <summary>The function instances a first pass created, and what creating them reported.</summary>
+    private (List<FunctionSymbol> Instances, DiagnosticBag Diagnostics, List<Diagnostic> Errors)? _firstPass;
 
     /// <summary>A first pass (no <paramref name="seeds"/>) returns the seeds a second pass needs, if any.</summary>
     private IReadOnlyDictionary<LocalDecl, TypeSymbol>? BindBody(FunctionSymbol fn, IReadOnlyDictionary<LocalDecl, TypeSymbol>? seeds)

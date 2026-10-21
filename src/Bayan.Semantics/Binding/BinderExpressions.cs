@@ -106,10 +106,32 @@ internal sealed partial class Binder
         }
     }
 
-    /// <summary>A pending `var` met by <paramref name="other"/>: only a typed value constrains it, not a literal or another pending `var`.</summary>
+    /// <summary>
+    /// A pending `var` met by <paramref name="other"/>: a typed value constrains it, a literal does not, and another
+    /// pending `var` joins its group, so both take one inferred type.
+    /// </summary>
     private void Constrain(BoundExpr value, BoundExpr other, Expr otherSyntax)
     {
-        if (!IsUntypedLiteral(otherSyntax) && !IsPending(other)) Constrain(value, other.Type);
+        if (IsPending(other))
+        {
+            if (!IsPending(value)) return;
+            var root = PendingDecls(value).Concat(PendingDecls(other)).Select(FindPeer).ToList();
+            foreach (var r in root.Skip(1).Where(r => r != root[0])) _peers[r] = root[0];
+        }
+        else if (!IsUntypedLiteral(otherSyntax)) Constrain(value, other.Type);
+    }
+
+    private IEnumerable<LocalDecl> PendingDecls(BoundExpr e) => e switch
+    {
+        BoundLocal { Local: var l } when _pending.TryGetValue(l, out var decl) => [decl],
+        BoundBinary b => PendingDecls(b.Left).Concat(PendingDecls(b.Right)),
+        _ => [],
+    };
+
+    private LocalDecl FindPeer(LocalDecl d)
+    {
+        while (_peers.TryGetValue(d, out var parent)) d = parent;
+        return d;
     }
 
     /// <summary>A pending `var`, or arithmetic on pending `var`s and literals: its type is not settled yet.</summary>

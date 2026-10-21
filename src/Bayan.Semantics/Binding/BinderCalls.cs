@@ -215,13 +215,14 @@ internal sealed partial class Binder
         var sawNamed = false;
         var positional = 0;
         var mismatched = false;
-        // Leading unnamed arguments whose implied names all match parameters, out of order, are a swap;
-        // they are bound by those names so the swap is the only error.
+        // Two or more leading unnamed arguments whose implied names are the first parameters' names, out of
+        // order, are a swap; they are bound by those names so the swap is the only error.
         var leading = c.Args.TakeWhile(a => a.Name is null).ToArray();
         var implied = leading.Select(a => ImpliedName(a.Value)).ToArray();
         var swapped = false;
-        if (enforceNames && leading.Length > 0 && leading.Length <= ps.Count
-            && implied.All(n => n is not null && ps.Any(x => x.Name == n)) && implied.Distinct().Count() == implied.Length)
+        if (enforceNames && leading.Length >= 2 && leading.Length <= ps.Count
+            && implied.All(n => n is not null) && implied.Distinct().Count() == implied.Length
+            && ps.Take(implied.Length).All(x => implied.Contains(x.Name)))
         {
             var at = Enumerable.Range(0, implied.Length).FirstOrDefault(i => implied[i] != ps[i].Name, -1);
             if (at >= 0)

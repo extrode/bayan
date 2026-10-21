@@ -27,6 +27,7 @@ internal sealed partial class Binder
     private readonly IReadOnlyDictionary<LocalDecl, TypeSymbol>? _seeds;
     private readonly Dictionary<LocalSymbol, LocalDecl> _pending = new();
     private readonly Dictionary<LocalDecl, TypeSymbol> _constraints = new();
+    private readonly Dictionary<LocalDecl, LocalDecl> _peers = new();
 
     public Binder(Compilation c, FileContext file, FunctionSymbol? fn, StructSymbol? container,
         IReadOnlyDictionary<string, TypeSymbol>? typeArgs = null, IReadOnlyDictionary<LocalDecl, TypeSymbol>? seeds = null)
@@ -55,10 +56,16 @@ internal sealed partial class Binder
     {
         var held = _held!;
         _held = null;
-        if (_constraints.Values.Any(t => t.IsInteger && t != PrimitiveType.I32))
+        // A group of pending `var`s that met each other takes the first constraint any of them recorded.
+        var groups = new Dictionary<LocalDecl, TypeSymbol>();
+        foreach (var (decl, type) in _constraints) groups.TryAdd(FindPeer(decl), type);
+        var seeds = new Dictionary<LocalDecl, TypeSymbol>();
+        foreach (var decl in _pending.Values)
+            if (groups.TryGetValue(FindPeer(decl), out var type)) seeds[decl] = type;
+        if (seeds.Values.Any(t => t.IsInteger && t != PrimitiveType.I32))
         {
             _c.ReportHeld(held.Items.Where(d => d.Label == Compilation.InstantiationLabel));
-            return _constraints;
+            return seeds;
         }
         _c.ReportHeld(held.Items);
         return null;
