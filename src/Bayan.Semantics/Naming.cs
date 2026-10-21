@@ -28,7 +28,7 @@ public static class Naming
         if (fixedName != name.Text)
             c.Report(DiagnosticCodes.ValueCasing, source, name.Span, [name.Text],
                 help: char.IsUpper(name.Text[0]) && fixedName.Length > 0
-                    ? $"only types are PascalCase; rename it `{fixedName}`"
+                    ? $"rename it `{fixedName}`; only types are PascalCase"
                     : $"rename it `{fixedName}`",
                 fix: new Fix(name.Span, fixedName));
     }

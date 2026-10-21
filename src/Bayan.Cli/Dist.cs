@@ -89,7 +89,7 @@ internal static class Dist
             var exe = $"{target}/{Targets.ExecutableName(manifest.ShortName, target)}";
             var output = Path.Combine(staging, exe);
             Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-            if (CliApp.BuildNative(cSource, buildMode, stderr, output, target) is null)
+            if (CliApp.BuildNative(cSource, buildMode, stderr, output, target, json) is null)
             {
                 Directory.Delete(staging, recursive: true);
                 return CliApp.ExitToolchain;

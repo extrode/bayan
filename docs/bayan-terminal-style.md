@@ -25,17 +25,20 @@ Colours are chosen to pass WCAG AA (4.5:1) on typical light and dark terminal ba
 
 Light versus dark is detected from `COLORFGBG` where available; otherwise Bayan assumes dark and the user can set `BAYAN_THEME=light|dark`.
 
-**When colour is used:**
+**When colour is used.** Decided separately for stdout and stderr; the first rule that applies wins:
 
-| Condition | Colour |
-|---|---|
-| `--color always` | On |
-| `--color never`, or `NO_COLOR` set to a non-empty value (per no-color.org) | Off |
-| stdout is not a terminal (piped, redirected, CI log without TTY) | Off |
-| `TERM=dumb` | Off |
-| Otherwise | On |
+| # | Condition | Colour |
+|---|---|---|
+| 1 | `--color always` / `--color never` | On / Off |
+| 2 | `NO_COLOR` set to a non-empty value (per no-color.org) | Off |
+| 3 | `FORCE_COLOR` set to a non-empty value other than `0` | On |
+| 4 | `TERM=dumb` | Off |
+| 5 | The stream is not a terminal (piped, redirected, CI log without TTY) | Off |
+| 6 | Otherwise | On |
 
-`FORCE_COLOR` is honoured for CI systems that render ANSI colour in logs. An empty `NO_COLOR` is treated as unset. `--color` always overrides both variables.
+`FORCE_COLOR` is for CI systems that render ANSI colour in logs. An empty `NO_COLOR` or `FORCE_COLOR` is treated as unset.
+
+**Which colours.** Truecolour (the hex values above) when `COLORTERM` is `truecolor` or `24bit`, otherwise the 16-colour fallback. The light or dark column comes from `BAYAN_THEME=light|dark`, else from the background field of `COLORFGBG` (0–6 or 8 is dark, 7 or 9–15 is light), else dark.
 
 ## 3. Symbols
 
@@ -47,7 +50,7 @@ Light versus dark is detected from `COLORFGBG` where available; otherwise Bayan 
 | `^` | Span marker | `^` |
 | `◆◇◇` → `◇◆◇` → `◇◇◆` | Progress (animated, terminals only) | `...` printed once |
 
-The fallback is used when the locale isn't UTF-8 or `TERM=dumb`, or with `--ascii`.
+The fallback is used with `--ascii` (a global option, like `--color`), with `TERM=dumb`, or when the locale isn't UTF-8: the first non-empty of `LC_ALL`, `LC_CTYPE`, `LANG` doesn't contain `UTF-8` or `utf8` (any case). With all three empty, symbols stay Unicode. On Windows, the fallback is used when the console output code page isn't 65001.
 
 ## 4. Output by command
 
@@ -58,14 +61,17 @@ Success, default verbosity:
 ◆ built tally (debug, linux-x64) in 0.84s
 ```
 
-With `-v`:
+With `-v`, one line per phase, then the output path:
 ```
-  compiling tally.money      0.21s
-  compiling tally.ledger     0.33s
-  compiling tally.app        0.08s
-  linking   out/debug/linux-x64/tally
-◆ built tally (debug, linux-x64) in 0.84s · 12 of 31 modules from cache
+  parse      0.04s
+  check      0.11s
+  emit       0.02s
+  compile    0.67s
+  out/debug/linux-x64/tally
+◆ built tally (debug, linux-x64) in 0.84s
 ```
+
+A v0.1 program is one C translation unit, so `-v` reports phases, not modules; the C compiler compiles and links in one call, so `compile` includes the link. A cache hit prints `compile  from cache` and adds ` · from cache` to the summary.
 
 Failure:
 ```
@@ -94,8 +100,8 @@ Rules for diagnostics:
 - Paths are relative to the package root, shown as `--> path:line:column`.
 - Related spans (`-----`, secondary) use the note colour; the primary span (`^^^^`) uses the severity colour.
 - Fixes show the changed line with `+++` or `---` markers under inserted or removed text.
-- After 20 errors, stop and print `… and 34 more errors (use --all to show them)`.
-- Lines wrap at the terminal width, or 100 columns when it's unknown.
+- After 20 errors, stop and print `… and 34 more errors (use --all to show them)` (ASCII: `...`). Warnings are never capped, and JSON output has no cap.
+- Prose lines (message, labels, help) wrap at the terminal width, or 100 columns when it's unknown, continuing under their own indent. Source lines and code are never wrapped.
 
 ### `bayan test`
 
@@ -115,7 +121,10 @@ running 142 tests in 9 modules
 - A failed assertion shows the expression, then the actual values of its parts.
 - Panics show the panic message and the top three stack frames; `-v` shows all.
 - Pending (`todo`) tests are counted, and listed with `-v`.
-- With everything passing: `◆ 142 passed · 2.10s`.
+- With everything passing: `◆ 142 passed · 2.10s`, plus ` · 3 pending` when some are pending.
+- Up to three failures get one rerun line: `rerun the failures: bayan test --only "a" --only "b"`. With more than three, no rerun line.
+- `--only <substring>` is repeatable and selects the union; with `--changed`, the intersection.
+- A test child process exits 4 when the test is pending (`todo`). This is the child's code, not the CLI's; it isn't 3 because `abort()` exits 3 on Windows.
 
 ### `bayan run`
 
@@ -144,7 +153,8 @@ Prints nothing of its own on success: the program's output is the output. Build 
 - Shown only when stderr is a terminal and an operation takes longer than 300 ms.
 - One line, rewritten in place: `◆◇◇ compiling tally.ledger (14 of 31)`.
 - Removed when the operation finishes, so only the summary remains in scrollback.
-- Never shown in CI, in `--json` mode, or when output is piped.
+- Never shown when `CI` is set to a non-empty value, in `--json` / `--diagnostics json` mode, or when stderr is piped.
+- The ASCII form prints `... <phase>` once and doesn't rewrite.
 
 ## 7. Language
 

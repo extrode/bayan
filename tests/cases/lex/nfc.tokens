@@ -15,6 +15,6 @@ error BYN0005: identifier `café` is not in Unicode normalization form C
   1 │ let café = 1;
     │     ^^^^^ same letters, different encoding
     │
-  help: identifiers that look the same must be byte-identical; use the composed (NFC) form
+  help: use the composed (NFC) form; identifiers that look the same must be byte-identical
     │ 1 │ let café = 1;
     │   │        +

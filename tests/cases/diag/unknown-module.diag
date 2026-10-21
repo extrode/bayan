@@ -3,4 +3,4 @@ error BYN2004: no module `mony`
   1 │ import mony;
     │        ^^^^
     │
-  help: a module is a directory of `.byn` files; expected `mony/` next to the entry file
+  help: put the module's `.byn` files in `mony/` next to the entry file; a module is a directory

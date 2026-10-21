@@ -28,6 +28,7 @@ public static class CliApp
 
     [ThreadStatic] private static Style? s_styleOut;
     [ThreadStatic] private static Style? s_styleErr;
+    [ThreadStatic] private static bool s_stderrTty;
 
     public static string VersionLine => Messages.VersionLine.Text("bayan", Version, BuildInfo.Commit);
 
@@ -38,6 +39,7 @@ public static class CliApp
         if (TakeGlobalOptions(ref args, stderr) is not var (color, ascii)) return ExitUsage;
         s_styleOut = TerminalStyle.Decide(color, ascii, terminal.Stdout, Environment.GetEnvironmentVariable, terminal.Width);
         s_styleErr = TerminalStyle.Decide(color, ascii, terminal.Stderr, Environment.GetEnvironmentVariable, terminal.Width);
+        s_stderrTty = terminal.Stderr;
         if (args.Length == 0)
         {
             stderr.WriteLine(Usage);
@@ -228,6 +230,7 @@ public static class CliApp
     /// </summary>
     internal static Compiled? Compile(BuildOptions o, TextWriter stderr, bool includeTests = false)
     {
+        using var progress = StartProgress(o.Json, stderr, "compiling");
         Compilation c;
         Manifest? manifest = null;
         string? root = null;
@@ -235,11 +238,13 @@ public static class CliApp
         {
             root = Path.GetFullPath(o.Path);
             manifest = Manifest.Read(Path.Combine(root, "package.byn"));
+            if (manifest.Diagnostics.Count > 0) progress.Done();
             Report(o, manifest.Diagnostics, stderr);
             if (manifest.HasErrors) return null;
             var entry = EntryModule(manifest);
             if (!Directory.Exists(Path.Combine(root, "src", entry)))
             {
+                progress.Done();
                 stderr.WriteLine((manifest.Kind == PackageKind.Lib ? Messages.NoEntryLib : Messages.NoEntryApp).Text(manifest.Name, $"src/{entry}/"));
                 return null;
             }
@@ -249,9 +254,13 @@ public static class CliApp
         {
             c = Compilation.FromPath(o.Path, new CompilationOptions(includeTests), wholeDirectory: !IsScript(o.Path));
         }
+        progress.Done();
         Report(o, c.Diagnostics.Items, stderr);
         return c.Diagnostics.HasErrors ? null : new Compiled(c, manifest, root);
     }
+
+    private static Progress StartProgress(bool json, TextWriter stderr, string phase) =>
+        Progress.Start(stderr, s_styleErr ?? Style.Plain, s_stderrTty, json, Environment.GetEnvironmentVariable, phase);
 
     private static void Report(BuildOptions o, IReadOnlyList<Diagnostic> diagnostics, TextWriter stderr)
     {
@@ -326,9 +335,11 @@ public static class CliApp
     }
 
     /// <summary>Builds, or reports why the toolchain could not.</summary>
-    internal static string? BuildNative(string source, BuildMode mode, TextWriter stderr, string? output = null, string? target = null)
+    internal static string? BuildNative(string source, BuildMode mode, TextWriter stderr, string? output = null, string? target = null, bool json = false)
     {
+        using var progress = StartProgress(json, stderr, "building");
         var result = Toolchain.Build(source, mode, output, target);
+        progress.Done();
         if (result.Succeeded) return result.ExecutablePath;
         stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
         return null;
@@ -389,7 +400,7 @@ public static class CliApp
         if (o.Output is not null) output = o.Output;
         else if (PrepareOut(compiled, o.Mode, target, source) is { } dir) output = Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName, target));
         else output = DefaultOutput(o.Path, target);
-        return BuildNative(source, o.Mode, stderr, output, o.Target) is null ? ExitToolchain : ExitOk;
+        return BuildNative(source, o.Mode, stderr, output, o.Target, o.Json) is null ? ExitToolchain : ExitOk;
     }
 
     private static string DefaultOutput(string path, string target)
@@ -416,7 +427,9 @@ public static class CliApp
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName, HostTarget))
             : null;
+        using var progress = StartProgress(o.Json, stderr, "building");
         var result = Toolchain.Build(source, o.Mode, output);
+        progress.Done();
         if (!result.Succeeded)
         {
             stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
@@ -470,7 +483,7 @@ public static class CliApp
             if (ChangedModules(compiled, o, stderr) is not { } changed) return ExitUsage;
             selected = selected.Where(i => changed.All || changed.Directories.Contains(ModuleOf(compiled, program.Tests[i].Test))).ToList();
         }
-        if (BuildNative(source, o.Mode, stderr, output) is not { } executable) return ExitToolchain;
+        if (BuildNative(source, o.Mode, stderr, output, json: o.Json || o.TestJson) is not { } executable) return ExitToolchain;
         var count = selected.Count;
         var skipped = program.Tests.Count - count;
         var human = o.TestJson ? TextWriter.Null : stdout;
@@ -480,7 +493,9 @@ public static class CliApp
         foreach (var i in selected)
         {
             var test = program.Tests[i].Test;
+            var progress = StartProgress(o.Json || o.TestJson, stderr, Messages.TestProgress.Text(test.Name));
             var outcome = RunTest(executable, i);
+            progress.Done();
             var status = outcome.TimedOut ? TestStatus.Timeout : outcome.ExitCode switch
             {
                 0 => TestStatus.Pass,

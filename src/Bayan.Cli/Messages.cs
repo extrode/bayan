@@ -112,6 +112,7 @@ public static class Messages
     public static readonly Message TestRunningOne = Register("test.running.one", "running {0} test{1}");
     public static readonly Message TestRunningMany = Register("test.running.many", "running {0} tests{1}");
     public static readonly Message TestSkipped = Register("test.skipped", " ({0} in unchanged modules skipped)");
+    public static readonly Message TestProgress = Register("test.progress", "testing {0}");
     public static readonly Message TestTimedOut = Register("test.timed-out", "timed out after {0:0} s");
     public static readonly Message TestLabelPass = Register("test.label.pass", "ok   ");
     public static readonly Message TestLabelFail = Register("test.label.fail", "FAIL ");

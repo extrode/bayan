@@ -23,7 +23,7 @@ internal static class NeverReassignedVarLint
             };
             if (local is not { Kind: LocalKind.Var, Written: false, KeywordSpan: { } keyword, Location: { } location }) continue;
             c.Report(DiagnosticCodes.NeverReassignedVar, fn.File.Source, location.Span, [local.Name],
-                help: "a `let` tells the reader the value never changes", fix: new Fix(keyword, "let"));
+                help: "declare it with `let` to tell the reader the value never changes", fix: new Fix(keyword, "let"));
         }
     }
 }
