@@ -29,6 +29,7 @@ CompilationUnit
   Function derivation(i64 derivation) -> i64 => derivation
   Function attribute(i64 attribute) -> i64 => attribute
   Function embed(i64 embed) -> i64 => embed
+  Function swap((i64 flags, i64 unit) pair) -> (i64 type, i64 law) => (tuple (. pair unit) (. pair flags))
   Let error = 3
   Let flags = 1
   Var unit = 2
@@ -41,6 +42,7 @@ CompilationUnit
   Let derivation = 7
   Let attribute = 8
   Let embed = 9
+  Var pair: (i64 error, i64 set) = (tuple 1 2)
   Assign type = 1
   Expr (call (. set add) 1)
   Let n = (struct Names (error 1) (set 2) (type 3))
