@@ -39,7 +39,45 @@ public sealed class Builtins
         IoStdout = Make("stdout", BuiltinFunction.IoStdout, BuiltinType.IoStream);
         IoStderr = Make("stderr", BuiltinFunction.IoStderr, BuiltinType.IoStream);
         IoStdin = Make("stdin", BuiltinFunction.IoStdin, BuiltinType.IoInput);
+
+        var utf8Source = SourceText.FromString("<builtin>", Utf8ErrorSource);
+        var utf8Decl = (ErrorEnumDecl)SyntaxTree.Parse(utf8Source).Root.Members[0];
+        Utf8Error = new ErrorSetSymbol("Utf8Error", new Location(utf8Source, utf8Decl.Name.Span), Module, Accessibility.Public, utf8Decl);
+        var bytes = ("bytes", (TypeSymbol)new SpanType(PrimitiveType.U8, readOnly: true));
+        StringFrom = Make("from", BuiltinFunction.StringFrom, PrimitiveType.String, bytes);
+        StringFrom.Fails = true;
+        StringFrom.ErrorSets.Add(Utf8Error);
+        StringTryFrom = Make("tryFrom", BuiltinFunction.StringTryFrom, new OptionalType(PrimitiveType.String), bytes);
+        StringInvalidUtf8At = Make("invalidUtf8At", BuiltinFunction.StringInvalidUtf8At, new OptionalType(PrimitiveType.I64), bytes);
     }
+
+    private const string Utf8ErrorSource = """
+        public error enum Utf8Error {
+            /// The bytes are not well-formed UTF-8.
+            invalidSequence,
+        }
+        """;
+
+    /// <summary><c>error enum Utf8Error</c>: numbered right after <c>IoError</c>, so <c>invalidSequence</c> is code 8.</summary>
+    public ErrorSetSymbol Utf8Error { get; }
+
+    /// <summary><c>string string.from(ReadOnlySpan&lt;u8&gt; bytes) fails Utf8Error</c>: a copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol StringFrom { get; }
+
+    /// <summary><c>string? string.tryFrom(ReadOnlySpan&lt;u8&gt; bytes)</c>: as <c>string.from</c>, null on invalid bytes.</summary>
+    public FunctionSymbol StringTryFrom { get; }
+
+    /// <summary><c>i64? string.invalidUtf8At(ReadOnlySpan&lt;u8&gt; bytes)</c>: the byte offset of the first invalid sequence, null when valid.</summary>
+    public FunctionSymbol StringInvalidUtf8At { get; }
+
+    /// <summary>A static member of <c>string</c>, or null.</summary>
+    public FunctionSymbol? FindString(string name) => name switch
+    {
+        "from" => StringFrom,
+        "tryFrom" => StringTryFrom,
+        "invalidUtf8At" => StringInvalidUtf8At,
+        _ => null,
+    };
 
     private const string IoErrorSource = """
         public error enum IoError {

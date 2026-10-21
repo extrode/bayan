@@ -358,7 +358,7 @@ internal sealed partial class Binder
         if (_file.Imports.TryGetValue(name, out var module)) return new BoundModuleRef(n, module);
         if (_c.Builtins.Find(name) is { } builtin) return new BoundMethodGroup(n, null, builtin);
         if (PrimitiveType.ByName.TryGetValue(name, out var primitive)) return new BoundTypeRef(n, primitive);
-        if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "ProcessResult")
+        if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "Utf8Error" or "ProcessResult")
             return new BoundTypeRef(n, _types.Resolve(new NamedType(n.Span, [n.Name], [])));
         if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
         ReportUndefined(n.Name);
@@ -491,6 +491,13 @@ internal sealed partial class Binder
                 // `stdout`, `stderr` and `stdin` read like properties; the rest are called.
                 if (member.Builtin is BuiltinFunction.IoStdout or BuiltinFunction.IoStderr or BuiltinFunction.IoStdin) return new BoundCall(m, member, null, [], member.ReturnType);
                 return new BoundMethodGroup(m, null, member);
+            }
+            case BoundTypeRef { Referenced: PrimitiveType { IsString: true } str }:
+            {
+                if (_c.Builtins.FindString(name) is { } member) return new BoundMethodGroup(m, null, member);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, str.Name],
+                    help: Suggest(name, ["from", "tryFrom", "invalidUtf8At"]) is { } near ? $"did you mean `{near}`?" : null);
+                return new BoundErrorExpr(m);
             }
             case BoundTypeRef t:
                 Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, t.Referenced.DisplayName]);
