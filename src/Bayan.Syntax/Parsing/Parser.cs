@@ -1714,7 +1714,6 @@ public sealed class Parser
         return new NamedType(SpanFrom(start), path.ToArray(), args);
     }
 
-    /// <summary>At <c>{</c>: is this <c>{ }</c> or <c>{ name = …</c>, i.e. a struct literal rather than a block?</summary>
     /// <summary>Whether the brace body opening at the current token has a <c>;</c> at its own depth.</summary>
     private bool BraceBodyHasSemicolon()
     {
@@ -1738,6 +1737,7 @@ public sealed class Parser
         return false;
     }
 
+    /// <summary>At <c>{</c>: is this <c>{ }</c> or <c>{ name = …</c>, i.e. a struct literal rather than a block?</summary>
     private bool IsStructLiteralBody() =>
         Peek(1) == TokenKind.CloseBrace || (IsName(Peek(1)) && Peek(2) == TokenKind.Equals);
 
