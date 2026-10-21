@@ -1,0 +1,11 @@
+// `take()` needs a `List`, `Map`, `StrBuf` or an optional of a unique type (BYN2788).
+struct Point {
+    i64 x;
+}
+
+void drain(ref i64 n, ref string s, ref Point p, ref i64? o) {
+    let a = n.take();
+    let b = s.take();
+    let c = p.take();
+    let d = o.take();
+}
