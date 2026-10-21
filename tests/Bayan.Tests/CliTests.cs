@@ -152,6 +152,43 @@ public sealed class CliTests
         Assert.Contains("error BYN", stderr);
     }
 
+    private static string ManyErrors(string name) =>
+        Program(name, string.Concat(Enumerable.Range(0, 25).Select(i => $"i32 x{i} = \"no\";\n")));
+
+    private static int Count(string text, string needle) => text.Split(needle).Length - 1;
+
+    [Fact]
+    public void ErrorsPastTwentyAreCappedWithAHint()
+    {
+        var (_, _, stderr) = Run("check", ManyErrors("cli-cap"));
+        Assert.Equal(20, Count(stderr, "error BYN"));
+        Assert.Contains("\u2026 and 5 more errors (use --all to show them)", stderr);
+    }
+
+    [Fact]
+    public void AllShowsEveryError()
+    {
+        var (_, _, stderr) = Run("check", "--all", ManyErrors("cli-cap-all"));
+        Assert.Equal(25, Count(stderr, "error BYN"));
+        Assert.DoesNotContain("more errors", stderr);
+    }
+
+    [Fact]
+    public void JsonIsNeverCapped()
+    {
+        var (_, _, stderr) = Run("check", "--diagnostics", "json", ManyErrors("cli-cap-json"));
+        Assert.Equal(25, Count(stderr, "\"severity\":\"error\""));
+        Assert.DoesNotContain("more errors", stderr);
+    }
+
+    [Fact]
+    public void AsciiCapLineUsesThreeDots()
+    {
+        var (_, _, stderr) = Run("--ascii", "check", ManyErrors("cli-cap-ascii"));
+        Assert.Contains("... and 5 more errors (use --all to show them)", stderr);
+        Assert.DoesNotContain("\u2026", stderr);
+    }
+
     [Fact]
     public void RunPassesExitZeroThrough()
     {

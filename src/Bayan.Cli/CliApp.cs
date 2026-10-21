@@ -137,13 +137,13 @@ public static class CliApp
         return ExitOk;
     }
 
-    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null);
+    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool All = false);
 
     private static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
-        bool emitC = false, json = false, testJson = false, changed = false;
+        bool emitC = false, json = false, testJson = false, changed = false, all = false;
         string? baseRef = null;
         var programArgs = Array.Empty<string>();
         for (var i = 0; i < args.Length; i++)
@@ -186,6 +186,9 @@ public static class CliApp
                         return null;
                     }
                     break;
+                case "--all":
+                    all = true;
+                    break;
                 case "--changed" when allowTestJson:
                     changed = true;
                     break;
@@ -217,7 +220,7 @@ public static class CliApp
             stderr.WriteLine(Messages.NotFound.Text(path));
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef);
+        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, all);
     }
 
     /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
@@ -262,10 +265,19 @@ public static class CliApp
     private static Progress StartProgress(bool json, TextWriter stderr, string phase) =>
         Progress.Start(stderr, s_styleErr ?? Style.Plain, s_stderrTty, json, Environment.GetEnvironmentVariable, phase);
 
+    private const int ErrorLimit = 20;
+
     private static void Report(BuildOptions o, IReadOnlyList<Diagnostic> diagnostics, TextWriter stderr)
     {
         if (diagnostics.Count == 0) return;
-        stderr.Write(o.Json ? DiagnosticJson.RenderAll(diagnostics) : DiagnosticRenderer.RenderAll(diagnostics, includePath: true, s_styleErr ?? Style.Plain));
+        if (o.Json)
+        {
+            stderr.Write(DiagnosticJson.RenderAll(diagnostics));
+            return;
+        }
+        var style = s_styleErr ?? Style.Plain;
+        stderr.Write(DiagnosticRenderer.RenderAll(diagnostics, includePath: true, style, o.All ? int.MaxValue : ErrorLimit, out var omitted));
+        if (omitted > 0) stderr.WriteLine(Messages.DiagCapped.Text(style.Symbols.Ellipsis, omitted));
     }
 
     /// <summary>

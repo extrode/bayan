@@ -64,6 +64,7 @@ public static class Messages
           --ascii              use ASCII symbols instead of ◆ ✗ │ (also with TERM=dumb or a non-UTF-8 locale)
 
         options for check, types, build, run and test:
+          --all                show every error instead of the first 20 (JSON is never capped)
           --diagnostics json   print each diagnostic to stderr as one JSON object per line
                                (code, severity, file, span, message, label, help, fixes)
 
@@ -102,6 +103,7 @@ public static class Messages
     public static readonly Message NoEntryLib = Register("build.no-entry.lib", "bayan: `{0}` is a library, so its code goes in `{1}`, which doesn't exist");
     public static readonly Message LibraryNoProgram = Register("build.library", "bayan: `{0}` is a library, so there is no program to {1}; `{2}` runs its tests");
     public static readonly Message ToolchainError = Register("build.toolchain", "bayan: {0}");
+    public static readonly Message DiagCapped = Register("diag.capped", "{0} and {1} more errors (use --all to show them)");
     public static readonly Message CompileProgress = Register("build.progress.compiling", "compiling");
     public static readonly Message BuildProgress = Register("build.progress.building", "building");
 

@@ -32,6 +32,20 @@ public sealed class DiagnosticRendererTests
     }
 
     [Fact]
+    public void ErrorLimitSkipsErrorsButNeverWarnings()
+    {
+        var diagnostics = Enumerable.Range(0, 25).Select(i => new Diagnostic(Severity.Error, "BYN0001", Ledger, new TextSpan(i, 1), "bad"))
+            .Concat(Enumerable.Range(0, 3).Select(i => new Diagnostic(Severity.Warning, "BYN0002", Ledger, new TextSpan(30 + i, 1), "odd")))
+            .ToList();
+
+        var text = DiagnosticRenderer.RenderAll(diagnostics, false, Style.Plain, 20, out var omitted);
+
+        Assert.Equal(5, omitted);
+        Assert.Equal(20, text.Split("error BYN0001").Length - 1);
+        Assert.Equal(3, text.Split("warning BYN0002").Length - 1);
+    }
+
+    [Fact]
     public void RendersHandoffExample()
     {
         var diagnostic = new Diagnostic(
