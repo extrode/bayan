@@ -1,0 +1,6 @@
+error BYN2117: `ref this` must be the first parameter
+
+  4 │     void add(i64 by, ref this) {
+    │                      ^^^^^^^^ after other parameters
+    │
+  help: move `ref this` to the start of the parameter list

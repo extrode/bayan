@@ -1,0 +1,10 @@
+CompilationUnit
+  Struct Counter
+    Field i64 n
+    Function bump(ref this) -> void
+      Block
+        Assign n += 1
+    Function add(ref this, i64 by) -> void
+      Block
+        Assign n += by
+    Function peek() -> i64 => n

@@ -23,7 +23,7 @@ struct Box<T> {
     T value;
     List<T> history;
 
-    void put(move T old, move T next) {
+    void put(ref this, move T old, move T next) {
         history.add(move old);
         value = move next;
     }

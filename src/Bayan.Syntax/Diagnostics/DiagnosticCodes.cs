@@ -95,6 +95,9 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NoConstructor = Error("BYN2112", "`{0}` has no constructor");
     public static readonly DiagnosticDescriptor RecursiveStruct = Error("BYN2113", "struct `{0}` contains itself");
     public static readonly DiagnosticDescriptor NotAStruct = Error("BYN2114", "`{0}` is not a struct");
+    public static readonly DiagnosticDescriptor MutatesWithoutRefThis = Error("BYN2115", "`{0}` modifies `this` but is not declared `ref this`");
+    public static readonly DiagnosticDescriptor RefThisOnOperator = Error("BYN2116", "operators cannot take `ref this`");
+    public static readonly DiagnosticDescriptor RefThisNotFirst = Error("BYN2117", "`ref this` must be the first parameter");
     public static readonly DiagnosticDescriptor StringIndexer = Error("BYN2201", "a `string` cannot be indexed");
     public static readonly DiagnosticDescriptor TypeMismatch = Error("BYN2202", "expected `{1}`, found `{0}`");
     public static readonly DiagnosticDescriptor LiteralOutOfRange = Error("BYN2203", "{0} does not fit in {1}");
