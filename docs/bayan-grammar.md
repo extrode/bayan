@@ -120,9 +120,9 @@ For error doc comments: the first line of a `///` comment on an error case is it
 | Doer and instrument nouns (tree 7) | Arabic fāʿil (doer: `Builder`, `Parser`) and mifʿāl (instrument: `Hasher`, `Comparer`) |
 | Statement modifiers (§2) | Arabic ḥāl (circumstantial participle after the head verb) |
 | Casing and `I` prefix | C# convention; no Arabic or Esperanto source |
-| One form, one meaning (§3) | source: to be confirmed |
+| One form, one meaning (§3) | Arabic iʿjām: the dots added to Arabic script to remove ambiguity (brand brief §2) |
 | Conditionals (§4) | source: to be confirmed |
-| Error-message voice (§5) | source: to be confirmed |
+| Error-message voice (§5) | The hudhud in Sūrat an-Naml (27:20–22), whose news is certain and clear: exact about what went wrong, where, why and how to fix it (brand brief §4) |
 
 ## 7. Diagnostics
 
