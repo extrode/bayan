@@ -79,9 +79,13 @@ print("Hello, world!");
 | Struct | `{ x = 1, y = 2 }` | Target-typed; only where a type is expected |
 | Tuple | `(1, "a")`, `(x: 1, y: 2)` | |
 
+An integer literal (or a negated one) that initializes an unannotated `var` takes the type of the variable's first constraining use in the same function, in bind order: an assignment to or from a typed value, a comparison or arithmetic with one, or an argument for a typed parameter. `var i = 0; while (i < xs.length) { i += 1; }` makes `i` an `i64`. Literals and other such `var`s do not constrain, so `var n = 0; n += 1;` leaves `n` an `i32`. Only an integer type retypes the variable: when the first use is a float or a string, or there is none, it keeps the literal's default type (`i32` when it fits). A literal that does not fit the inferred type is the usual out-of-range error at the literal (`var n = 300; u8 b = n;` is BYN2203 on `300`). `bayan types` shows the resolved types (`docs/typed-dump.md`).
+
 ### 2.4 Keywords
 
-**Declarations:** `struct unique union enum flags open extensible interface delegate extension derivation attribute error set unit distinct type import as public private static readonly required const let var embed extern unsafe`
+**Declarations:** `struct unique union enum flags open extensible interface delegate extension derivation attribute error set unit distinct type law import as public private static readonly required const let var embed extern unsafe`
+
+The declaration-only keywords `error flags unit distinct open extensible set type law derivation attribute embed` are **contextual**: they act as keywords only where a declaration form needs them (`error enum E { … }`, `type X = …;`) and are names everywhere else (locals, parameters, fields, functions, members, error variants, argument names): `let error = 3;` and `struct S { i64 flags; }` are valid. Every other keyword, including all control-flow and expression keywords, is reserved and cannot be an identifier.
 
 **Control:** `if else unless switch case default for in while do break continue return yield defer errdefer using context`
 
@@ -93,7 +97,7 @@ print("Hello, world!");
 
 **Tests:** `test property fuzz model`
 
-**Reserved (no meaning yet; may not be used as identifiers):** `actor effect macro select become law requires ensures` (`law`, `requires`, `ensures`: v0.2 laws and v1.x contracts, handoff addendum 002)
+**Reserved (no meaning yet; may not be used as identifiers):** `actor effect macro select become requires ensures` (`requires`, `ensures`: v1.x contracts, handoff addendum 002; `law`, for v0.2 laws, left this list for the contextual declaration keywords)
 
 `foreach` is accepted for C# compatibility and formatted to `for`. `new` is accepted and removed by the formatter. `goto` does not exist.
 
@@ -119,6 +123,9 @@ Lowercase type names are reserved for the language. C interop types: `c_int`, `c
 
 ### 3.2 Strings
 - Always **valid UTF-8**, validated on construction (`string.tryFrom(bytes)` returns `string?`; `string.from(bytes) fails Utf8Error`).
+  - Both take a `ReadOnlySpan<u8>` and return a fresh copy from `context.allocator` that does not borrow the bytes. An empty span decodes to `""`. Overlong forms, surrogates, code points above U+10FFFF and truncated sequences are invalid (law L010).
+  - `Utf8Error` is a built-in `error enum` with one variant, `invalidSequence`. Until error variants carry payloads, `string.invalidUtf8At(bytes)` returns the byte offset of the first invalid sequence as `i64?`, `null` when the bytes are valid (`[0x68, 0xC0, 0x80]` gives 1).
+- `n.toHex()` on every integer type returns lowercase hexadecimal with no prefix and no leading zeros (`255` gives `"ff"`, `0` gives `"0"`), allocated from `context.allocator`. A negative value prints its two's-complement bits at the type's width (an `i8` holding `-1` gives `"ff"`). Format specifiers (`{x:x8}`) stay deferred.
 - **No indexer.** `s[i]` is a compile error with fix-its: `s.bytes[i]`, `s.runeAt(i)`, `for (let c in s)`, `s.graphemes`.
 - All offsets are **byte offsets** (`IndexOf`/`Substring`-style code stays correct). Slicing mid-code-point panics.
 - `length` is the byte count. `runeCount` is O(n).
@@ -154,6 +161,8 @@ distinct type UserId = i64;      // a unit without arithmetic
 - `ReadOnlySpan<T>`: a borrowed view whose elements cannot be assigned. `Span<T>` → `ReadOnlySpan<T>` is implicit. `string.bytes` is a `ReadOnlySpan<u8>`, so strings stay immutable and valid UTF-8. A `Span<T>` parameter never written through gets lint BYN2310 ("use `ReadOnlySpan<T>`").
 - `List<T>`, `Map<K, V>`, `HashMap<K, V>`, `Set<T>`, `Pool<T>`, `Ring<T, const int N>`, `NonEmpty<T>`: standard library, allocator-backed.
 - `Map` **preserves insertion order**; `HashMap` is unordered and faster.
+- `xs.removeRange(start, end)` removes the elements in `[start, end)` and keeps the order of the rest; `start > end` or `end > xs.length` panics (`slice out of range`). Like `add` and `removeLast`, it is a structural modification (§9.4 rule 5).
+- A module-level `const T[N]` with literal or constant elements is static data in `.rodata` when `T` is a number type, `bool`, `char` or `string` (`const string[2] names = ["a", "b"];`); it can be indexed, iterated and asked its `.length`. Any other module-level `const` array is BYN2229.
 - Every allocator-backed collection (`List`, `Map`, `HashMap`, `Set`, `Pool`) and `StrBuf` is **`unique`** (§3.11): assigning or storing one moves it, and a copy is explicit, `xs.copy(to: alloc)`. Reading without owning goes through `ReadOnlySpan<T>`, a read-only parameter or `ref`.
 - Hashing is **seeded** by default (hash-flooding resistance); tests use a fixed seed.
 
@@ -459,6 +468,8 @@ Response handle(Request r) fails;                               // inferred: pri
 - **Public functions must list their errors.** `bayan fmt --explicit` writes out inferred sets.
 - Variants are namespaced by their set (`EmailError.invalid` ≠ `UrlError.invalid`); an ambiguous `.invalid` is an error.
 - Call sites: `try f()` propagates; `f() catch value`; `f() catch return …`; `f() catch (e) switch { … }` (exhaustive); `f() catch (Set.variant) …` handles some and propagates the rest (which must appear in the caller's `fails`).
+- `f() catch { … }` and `f() catch (e) { … }` run a block when `f` fails. On a `void` call the block may complete normally. When `f` returns a value, the block has no value to give, so it must not complete normally: it ends in `return`, `break`, `continue`, a panic or another `never` expression (`let n = parse(s) catch { return -1; };`), and a block that can fall through is BYN2611.
+- Built-in error sets: `IoError` (codes 1–7) and `Utf8Error` (`invalidSequence`, code 8, from `string.from`, §3.2); user error variants are numbered from 9.
 - Payloads: `error union ParseError { badDigit(Bytes at), overflow }`.
 - Debug builds record **error return traces**.
 - `[Status(400)]` maps a variant to HTTP; the client sees a generic message unless the variant is `[Public]`. `[ExitCode(n)]` maps to a process exit code when `main` fails (default 1).
@@ -499,7 +510,8 @@ Response handle(Request r) fails;                               // inferred: pri
 2. A borrow (`ref`, `Span<T>`, `string` slice, or a struct containing one) carries its source's region; the compiler infers it.
 3. **A borrow cannot be stored anywhere that outlives its region.** Fix: `.copy(to: alloc)` or `move` into an `Owned`.
 4. A returned borrow derives from **all** borrowed arguments unless narrowed: `string first(string a, string b) borrows a`.
-5. **While any borrow into a value is alive, the value cannot be structurally modified.** Passing `x` and `ref x` in one call is an error.
+5. **While any borrow into a value is alive, the value cannot be structurally modified.** Passing `x` and `ref x` in one call is an error. A call to a mutating method modifies its receiver's root local, so `lexer.push(t)` is an error while a borrow of `lexer` is alive. Loans are tracked per root local, not per field.
+   A method whose return type is a span may return a borrow of its own receiver's fields: `struct Lexer { List<Token> toks; Span<Token> tokens() => toks.asSpan(); }`. At the call site the result borrows the receiver, and rules 3 and 5 apply to it as to any borrow of the receiver. A `string` view of an own field, a span inside a returned tuple, and a borrow of a local's storage are still rejected (BYN3003).
 6. `arena.reset()` requires exclusive access.
 7. Literals and `const` data are static and may go anywhere.
 
@@ -526,6 +538,8 @@ Bounds checks apply in **every** build mode; the compiler removes only those it 
 
 - When two parameters share a type, call sites must name them (`copy(from: a, to: b)`).
 - `bool` parameters must be passed by name.
+- An unnamed argument counts as named when it is a variable with the parameter's name, or a member access whose last name is the parameter's: given `Span fromBounds(i64 start, i64 end)`, `fromBounds(start, end)` and `fromBounds(tok.start, tok.end)` need no names (BYN2305 does not fire).
+- When the unnamed arguments before any named one all carry such names, each for a different parameter, in an order other than the parameters', the call is an error naming the swapped pair: `fromBounds(end, start)` is BYN2307. A call mixing such names with other arguments gets BYN2305 for each argument that must be named and isn't.
 - Overloads may not differ only by `ref`/`out`. Default and named parameters as in C#.
 
 ---
