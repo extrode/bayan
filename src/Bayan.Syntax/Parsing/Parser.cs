@@ -206,7 +206,7 @@ public sealed class Parser
             var errors = ErrorCount;
             if (Kind == TokenKind.CloseBrace)
             {
-                Report(DiagnosticCodes.Expected, Current.Span, ["a declaration or statement", Describe(Current)], help: "this `}` has no matching `{`");
+                Report(DiagnosticCodes.Expected, Current.Span, ["a declaration or statement", Describe(Current)], help: "remove this `}`; it has no matching `{`");
                 Advance();
                 continue;
             }
@@ -243,7 +243,7 @@ public sealed class Parser
             };
             if (flag == Modifiers.None) return modifiers;
             if ((modifiers & flag) != 0)
-                Report(DiagnosticCodes.ModifierNotAllowed, Current.Span, [Text(Current)], help: "the modifier is repeated");
+                Report(DiagnosticCodes.ModifierNotAllowed, Current.Span, [Text(Current)], help: "remove the repeated modifier");
             modifiers |= flag;
             Advance();
         }
@@ -428,7 +428,7 @@ public sealed class Parser
         if (Accept(TokenKind.CloseBrace)) return;
         var (line, _) = _source.GetLinePosition(open.Start);
         Report(DiagnosticCodes.Expected, Current.Span, ["`}`", Describe(Current)],
-            help: open.Length > 0 ? $"the {what} opened on line {line} is not closed" : null);
+            help: open.Length > 0 ? $"close the {what} opened on line {line}" : null);
     }
 
     private Decl ParseFieldOrProperty(int start, Modifiers modifiers)
@@ -858,7 +858,7 @@ public sealed class Parser
                     return new LabeledStmt(SpanFrom(start), label, ParseStatement());
                 }
             case TokenKind.ElseKeyword:
-                Report(DiagnosticCodes.Expected, Current.Span, ["a statement", Describe(Current)], help: "this `else` has no matching `if`");
+                Report(DiagnosticCodes.Expected, Current.Span, ["a statement", Describe(Current)], help: "remove this `else`; it has no matching `if`");
                 Advance();
                 return new ErrorStmt(SpanFrom(start));
         }
@@ -898,7 +898,7 @@ public sealed class Parser
         if (Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword && !Current.HasNewlineBefore)
         {
             Report(DiagnosticCodes.PostfixNotSimple, Current.Span, [Text(Current)],
-                help: "a declaration cannot be conditional; declare the variable, then assign it conditionally");
+                help: "declare the variable, then assign it conditionally; a declaration cannot be conditional");
             Advance();
             ParseExpression();
         }
@@ -1074,12 +1074,12 @@ public sealed class Parser
         if (Kind == TokenKind.CaseKeyword || Kind == TokenKind.DefaultKeyword)
         {
             Report(DiagnosticCodes.Goto, keyword.Span, label: "`goto case` does not exist",
-                help: "switch sections never fall through; combine patterns with `or`, or move shared code into a function");
+                help: "combine patterns with `or`, or move shared code into a function; switch sections never fall through");
             Synchronize();
             return new ErrorStmt(SpanFrom(start));
         }
         Report(DiagnosticCodes.Goto, keyword.Span, label: "not a keyword in Bayan",
-            help: "to leave a loop early, label it (`outer: for (…)`) and use `break outer;`",
+            help: "label the loop (`outer: for (…)`) and use `break outer;` to leave it early",
             fix: new Fix(keyword.Span, "break"));
         Name? label = Kind == TokenKind.Identifier ? NameOf(Advance()) : null;
         Expect(TokenKind.Semicolon);
@@ -1131,7 +1131,7 @@ public sealed class Parser
         if (ErrorCount == errors && !IsStatementExpression(expr))
         {
             Report(DiagnosticCodes.InvalidExpressionStatement, expr.Span, label: "the value is computed and discarded",
-                help: "only calls, assignments and `++`/`--` can stand alone; to discard a call's result write `_ = f();`");
+                help: "write `_ = f();` to discard a call's result; only calls, assignments and `++`/`--` can stand alone");
         }
         return new ExprStmt(SpanFrom(start), expr);
     }
@@ -1191,7 +1191,7 @@ public sealed class Parser
                 return;
             default:
                 Report(DiagnosticCodes.InvalidAssignmentTarget, target.Span,
-                    help: "only variables, fields and indexed elements can be assigned");
+                    help: "assign to a variable, a field or an indexed element");
                 return;
         }
     }
@@ -1766,7 +1766,7 @@ public sealed class Parser
         Advance();
         if (Kind == TokenKind.CloseParen)
         {
-            Report(DiagnosticCodes.ExpectedExpression, Current.Span, [Describe(Current)], help: "`()` is not a value; a tuple has at least two elements");
+            Report(DiagnosticCodes.ExpectedExpression, Current.Span, [Describe(Current)], help: "write a value; `()` is not one, and a tuple has at least two elements");
             Advance();
             return new ErrorExpr(SpanFrom(start));
         }

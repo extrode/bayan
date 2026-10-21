@@ -3,7 +3,7 @@ warning BYN2310: `values` is never written through; use `ReadOnlySpan<i64>`
   1 │ i64 total(Span<i64> values) {
     │           ^^^^^^^^^
     │
-  help: a `ReadOnlySpan` also accepts strings and read-only views
+  help: take a `ReadOnlySpan`; it also accepts strings and read-only views
     │ 1 │ i64 total(ReadOnlySpan<i64> values) {
     │   │           ++++++++
 
@@ -12,6 +12,6 @@ warning BYN2310: `values` is never written through; use `ReadOnlySpan<i64>`
   30 │ i64 viaReadOnly(Span<i64> values) => sum(values);
      │                 ^^^^^^^^^
      │
-  help: a `ReadOnlySpan` also accepts strings and read-only views
+  help: take a `ReadOnlySpan`; it also accepts strings and read-only views
      │ 30 │ i64 viaReadOnly(ReadOnlySpan<i64> values) => sum(values);
      │    │                 ++++++++
