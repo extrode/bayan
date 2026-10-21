@@ -1,0 +1,2 @@
+panic: contract violated: percent in 0..=100
+  at requires.byn:2

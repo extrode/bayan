@@ -455,6 +455,13 @@ public sealed class Parser
         }
         Expr? init = null;
         if (Accept(TokenKind.Equals)) init = ParseExpression();
+        if (Kind == TokenKind.RequiresKeyword)
+        {
+            var requiresStart = Advance().Start;
+            ParseExpression();
+            Report(DiagnosticCodes.RequiresNotHere, SpanFrom(requiresStart), ["fields"],
+                help: "check the value where it is set, or move the rule to a function's `requires`");
+        }
         Expect(TokenKind.Semicolon);
         return new FieldDecl(SpanFrom(start), modifiers, type, name, init);
     }
@@ -486,6 +493,8 @@ public sealed class Parser
             }
             fails = new FailsClause(SpanFrom(failsStart), errors.ToArray());
         }
+        var requires = new List<Expr>();
+        while (Accept(TokenKind.RequiresKeyword)) requires.Add(ParseExpression());
         BlockStmt? body = null;
         Expr? expressionBody = null;
         if (Kind == TokenKind.OpenBrace)
@@ -504,6 +513,7 @@ public sealed class Parser
         return new FunctionDecl(SpanFrom(start), modifiers, returnType, name, parameters, fails, body, expressionBody)
         {
             TypeParams = typeParams, RefThis = refThis, ParamsStart = paramsStart,
+            Requires = requires.ToArray(),
         };
     }
 
@@ -1556,6 +1566,13 @@ public sealed class Parser
                 Advance();
                 var pattern = ParsePattern();
                 left = new IsExpr(SpanFrom(start), left, pattern);
+                continue;
+            }
+            if (Kind == TokenKind.InKeyword && minPrec <= Prec.Relational)
+            {
+                Advance();
+                var range = ParseBinary(Prec.Range);
+                left = new InExpr(SpanFrom(start), left, range);
                 continue;
             }
             if (Kind is TokenKind.DotDot or TokenKind.DotDotEquals && minPrec <= Prec.Range)

@@ -1,0 +1,13 @@
+error BYN2321: `150` violates `requires percent in 0..=100` of `discount`
+
+  8 │ let bad = discount(total: 200, percent: 150);
+    │                                         ^^^ fails the contract
+    │
+  help: pass a value that meets `requires percent in 0..=100`
+
+error BYN2321: `0` violates `requires n > 0 && n < 1000` of `positive`
+
+  10 │ print($"{ok} {bad} {runtime} {positive(0)} {positive(5)}");
+     │                                        ^ fails the contract
+     │
+  help: pass a value that meets `requires n > 0 && n < 1000`

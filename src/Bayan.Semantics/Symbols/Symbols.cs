@@ -203,6 +203,9 @@ public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol
 
     public BoundBlock? Body { get; set; }
 
+    /// <summary>The bound <c>requires</c> clauses, set with <see cref="Body"/>; call sites check constant arguments against them.</summary>
+    public BoundExpr[] Requires { get; set; } = [];
+
     /// <summary>Every local and parameter, for the C emitter's declarations.</summary>
     public List<LocalSymbol> Locals { get; } = new();
 

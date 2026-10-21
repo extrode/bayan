@@ -831,6 +831,7 @@ public sealed class Compilation
             Instantiating(work.Site, work.Span, work.Bind);
         InferErrorSets();
         CheckMutation();
+        CheckRequires();
         foreach (var module in Modules)
             foreach (var fn in module.AllFunctions)
             {
@@ -1023,6 +1024,7 @@ public sealed class Compilation
     private void BindFunction(FunctionSymbol fn)
     {
         var checks = MutationChecks.Count;
+        var requires = RequiresChecks.Count;
         var locals = fn.Locals.Count;
         var outer = _firstPass;
         (List<FunctionSymbol> Instances, DiagnosticBag Diagnostics, List<Diagnostic> Errors) pass = ([], new DiagnosticBag(), []);
@@ -1047,6 +1049,7 @@ public sealed class Compilation
         _instantiationWork.Clear();
         foreach (var w in work) _instantiationWork.Enqueue(w);
         MutationChecks.RemoveRange(checks, MutationChecks.Count - checks);
+        RequiresChecks.RemoveRange(requires, RequiresChecks.Count - requires);
         fn.Locals.RemoveRange(locals, fn.Locals.Count - locals);
         BindBody(fn, seeds);
     }
@@ -1143,6 +1146,32 @@ public sealed class Compilation
             binder.ReportMutatesWithoutRefThis(fn, span);
     }
 
+    /// <summary>Calls with a constant argument to a function with <c>requires</c>, checked once every body is bound.</summary>
+    internal List<RequiresCheck> RequiresChecks { get; } = new();
+
+    /// <summary>A <c>requires</c> clause that the call's constant arguments make false is BYN2321 at the argument.</summary>
+    private void CheckRequires()
+    {
+        foreach (var check in RequiresChecks)
+        {
+            var callee = check.Callee;
+            var values = new Dictionary<LocalSymbol, ConstantValue>();
+            for (var i = 0; i < check.Arguments.Length; i++)
+                if (check.Arguments[i].Constant is { } c) values[callee.Parameters[i]] = c;
+            foreach (var clause in callee.Requires)
+            {
+                if (ConstantFolding.Evaluate(clause, values) is not { Value: false }) continue;
+                var read = BoundTree.Descendants(clause).OfType<BoundLocal>().Select(l => l.Local).ToHashSet();
+                var at = callee.Parameters.FirstOrDefault(p => read.Contains(p) && values.ContainsKey(p)
+                    && check.Call.Args.Any(a => ReferenceEquals(a.Value, check.Arguments[p.Ordinal].Syntax)));
+                var span = at is null ? check.Call.Span : check.Arguments[at.Ordinal].Syntax.Span;
+                var text = callee.File!.Source.GetText(clause.Syntax.Span);
+                Report(DiagnosticCodes.RequiresViolated, check.Source, span, [check.Source.GetText(span), text, callee.Name],
+                    label: "fails the contract", help: $"pass a value that meets `requires {text}`");
+            }
+        }
+    }
+
     /// <summary>A parameter's default value, bound on first use.</summary>
     internal BoundExpr? ParameterDefault(FunctionSymbol fn, ParameterSymbol p)
     {
@@ -1177,6 +1206,8 @@ public sealed class Compilation
 
 /// <summary>A <c>type X = T;</c> alias or an <c>error set S = A, B;</c>; resolved to its target on first use.</summary>
 internal sealed record MutationCheck(Binder Binder, FunctionSymbol Callee, BoundExpr Receiver);
+
+internal sealed record RequiresCheck(SourceText Source, CallExpr Call, FunctionSymbol Callee, BoundExpr[] Arguments);
 
 internal sealed class AliasPlaceholder(Decl decl, Name name, Modifiers modifiers, FileContext file) : TypeSymbol
 {

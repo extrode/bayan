@@ -1,0 +1,6 @@
+error BYN2322: `requires` is not supported on fields yet
+
+  2 │     i32 quantity requires quantity > 0;
+    │                  ^^^^^^^^^^^^^^^^^^^^^
+    │
+  help: check the value where it is set, or move the rule to a function's `requires`
