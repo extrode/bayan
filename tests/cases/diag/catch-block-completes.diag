@@ -4,4 +4,4 @@ or a panic
   19 │ let n = parse("") catch { log("x"); };
      │                                     ^
      │
-  help: `parse` returns a value, so the block must leave instead of falling through
+  help: leave the block instead of falling through; `parse` returns a value

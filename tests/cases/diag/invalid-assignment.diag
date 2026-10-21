@@ -3,11 +3,11 @@ error BYN1011: cannot assign to this expression
   2 │     f() = 1;
     │     ^^^
     │
-  help: only variables, fields and indexed elements can be assigned
+  help: assign to a variable, a field or an indexed element
 
 error BYN1011: cannot assign to this expression
 
   3 │     a + b = 2;
     │     ^^^^^
     │
-  help: only variables, fields and indexed elements can be assigned
+  help: assign to a variable, a field or an indexed element

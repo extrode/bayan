@@ -3,8 +3,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   15 │         this.data = data;
      │                     ^^^^
      │
-  help: `data.copy(to: alloc)` makes an independent copy; declaring the parameter `move data` takes
-        ownership; passing it by `ref` shares it instead
+  help: make an independent copy with `data.copy(to: alloc)`; declare the parameter `move data` to
+        take ownership; pass it by `ref` to share it instead
      │ 15 │         this.data = data.copy(to: alloc);
      │    │                         ++++++++++++++++
 
@@ -13,7 +13,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   19 │         return this.data;
      │                ^^^^^^^^^
      │
-  help: `this.data.copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
+  help: make an independent copy with `this.data.copy(to: alloc)`; pass it by `ref` to share it
+        instead
      │ 19 │         return this.data.copy(to: alloc);
      │    │                         ++++++++++++++++
 
@@ -22,7 +23,7 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   26 │     return s.data;
      │            ^^^^^^
      │
-  help: `s.data.copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
+  help: make an independent copy with `s.data.copy(to: alloc)`; pass it by `ref` to share it instead
      │ 26 │     return s.data.copy(to: alloc);
      │    │                  ++++++++++++++++
 
@@ -31,7 +32,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   30 │     return maps[0];
      │            ^^^^^^^
      │
-  help: `maps[0].copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
+  help: make an independent copy with `maps[0].copy(to: alloc)`; pass it by `ref` to share it
+        instead
      │ 30 │     return maps[0].copy(to: alloc);
      │    │                   ++++++++++++++++
 
@@ -40,7 +42,7 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   34 │     return m;
      │            ^
      │
-  help: `m.copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
+  help: make an independent copy with `m.copy(to: alloc)`; pass it by `ref` to share it instead
      │ 34 │     return m.copy(to: alloc);
      │    │             ++++++++++++++++
 
@@ -49,7 +51,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   38 │     return r.value;
      │            ^^^^^^^
      │
-  help: `r.value.copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
+  help: make an independent copy with `r.value.copy(to: alloc)`; pass it by `ref` to share it
+        instead
      │ 38 │     return r.value.copy(to: alloc);
      │    │                   ++++++++++++++++
 
@@ -58,8 +61,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   46 │     var b = a;
      │             ^
      │
-  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by
-        `ref` shares it instead
+  help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
+        it by `ref` to share it instead
      │ 46 │     var b = move a;
      │    │             +++++
 
@@ -68,8 +71,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   47 │     let c = p;
      │             ^
      │
-  help: `p.copy(to: alloc)` makes an independent copy; declaring the parameter `move p` takes
-        ownership; passing it by `ref` shares it instead
+  help: make an independent copy with `p.copy(to: alloc)`; declare the parameter `move p` to take
+        ownership; pass it by `ref` to share it instead
      │ 47 │     let c = p.copy(to: alloc);
      │    │              ++++++++++++++++
 
@@ -78,7 +81,7 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   49 │     let d = s.data;
      │             ^^^^^^
      │
-  help: `s.data.copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
+  help: make an independent copy with `s.data.copy(to: alloc)`; pass it by `ref` to share it instead
      │ 49 │     let d = s.data.copy(to: alloc);
      │    │                   ++++++++++++++++
 
@@ -87,8 +90,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   50 │     b = a;
      │         ^
      │
-  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by
-        `ref` shares it instead
+  help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
+        it by `ref` to share it instead
      │ 50 │     b = move a;
      │    │         +++++
 
@@ -97,8 +100,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   51 │     s.data = a;
      │              ^
      │
-  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by
-        `ref` shares it instead
+  help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
+        it by `ref` to share it instead
      │ 51 │     s.data = move a;
      │    │              +++++
 
@@ -107,8 +110,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   52 │     let t = Store { name = "t", data = a };
      │                                        ^
      │
-  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by
-        `ref` shares it instead
+  help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
+        it by `ref` to share it instead
      │ 52 │     let t = Store { name = "t", data = move a };
      │    │                                        +++++
 
@@ -117,8 +120,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   54 │     let full = Slot.Full(a);
      │                          ^
      │
-  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by
-        `ref` shares it instead
+  help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
+        it by `ref` to share it instead
      │ 54 │     let full = Slot.Full(move a);
      │    │                          +++++
 
@@ -127,8 +130,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   56 │     list.add(a);
      │              ^
      │
-  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by
-        `ref` shares it instead
+  help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
+        it by `ref` to share it instead
      │ 56 │     list.add(move a);
      │    │              +++++
 
@@ -137,8 +140,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   58 │     nested[1] = a;
      │                 ^
      │
-  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by
-        `ref` shares it instead
+  help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
+        it by `ref` to share it instead
      │ 58 │     nested[1] = move a;
      │    │                 +++++
 
@@ -147,8 +150,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   59 │     Map<i64, i64>[2] arr = [a, fresh()];
      │                             ^
      │
-  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by
-        `ref` shares it instead
+  help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
+        it by `ref` to share it instead
      │ 59 │     Map<i64, i64>[2] arr = [move a, fresh()];
      │    │                             +++++
 
@@ -157,7 +160,7 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   60 │     let e = arr[1];
      │             ^^^^^^
      │
-  help: `arr[1].copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
+  help: make an independent copy with `arr[1].copy(to: alloc)`; pass it by `ref` to share it instead
      │ 60 │     let e = arr[1].copy(to: alloc);
      │    │                   ++++++++++++++++
 
@@ -167,7 +170,7 @@ error BYN2780: implicit copy of a unique value: `Store` is unique because field 
   61 │     let whole = s;
      │                 ^
      │
-  help: `move s` hands the value over; passing it by `ref` shares it instead
+  help: hand the value over with `move s`; pass it by `ref` to share it instead
      │ 61 │     let whole = move s;
      │    │                 +++++
 
@@ -176,8 +179,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   62 │     let pair = (a, 1);
      │                 ^
      │
-  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by
-        `ref` shares it instead
+  help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
+        it by `ref` to share it instead
      │ 62 │     let pair = (move a, 1);
      │    │                 +++++
 
@@ -186,7 +189,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   64 │     let f = o.value;
      │             ^^^^^^^
      │
-  help: `o.value.copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
+  help: make an independent copy with `o.value.copy(to: alloc)`; pass it by `ref` to share it
+        instead
      │ 64 │     let f = o.value.copy(to: alloc);
      │    │                    ++++++++++++++++
 
@@ -195,7 +199,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
   65 │     let g = nested[1];
      │             ^^^^^^^^^
      │
-  help: `nested[1].copy(to: alloc)` makes an independent copy; passing it by `ref` shares it instead
+  help: make an independent copy with `nested[1].copy(to: alloc)`; pass it by `ref` to share it
+        instead
      │ 65 │     let g = nested[1].copy(to: alloc);
      │    │                      ++++++++++++++++
 
@@ -205,15 +210,15 @@ error BYN2780: implicit copy of a unique value: `Store` is unique because field 
   66 │     let u = s with { name = "u" };
      │             ^^^^^^^^^^^^^^^^^^^^^
      │
-  help: passing it by `ref` shares it instead
+  help: pass it by `ref` to share it instead
 
 error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it owns its storage
 
   67 │     let v = s with { data = a };
      │                             ^
      │
-  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by
-        `ref` shares it instead
+  help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
+        it by `ref` to share it instead
      │ 67 │     let v = s with { data = move a };
      │    │                             +++++
 
@@ -223,8 +228,8 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>?` is unique becau
   68 │     Map<i64, i64>? w = a;
      │                        ^
      │
-  help: `move a` hands the value over; `a.copy(to: alloc)` makes an independent copy; passing it by
-        `ref` shares it instead
+  help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
+        it by `ref` to share it instead
      │ 68 │     Map<i64, i64>? w = move a;
      │    │                        +++++
 
@@ -233,8 +238,8 @@ error BYN2780: implicit copy of a unique value: `StrBuf` is unique: it owns its 
   74 │     let copy = sb;
      │                ^^
      │
-  help: `move sb` hands the value over; `sb.copy(to: alloc)` makes an independent copy; passing it
-        by `ref` shares it instead
+  help: hand the value over with `move sb`; make an independent copy with `sb.copy(to: alloc)`; pass
+        it by `ref` to share it instead
      │ 74 │     let copy = move sb;
      │    │                +++++
 
@@ -243,16 +248,16 @@ error BYN2783: `m` borrows from what it was bound to and cannot be changed or mo
   80 │     for (var m in maps) m[1] = 1;
      │                         ^^^^
      │
-  help: a loop or pattern variable of a unique type borrows from its subject; change the subject
-        itself, or work on a `.copy(to: alloc)`
+  help: change the subject itself, or work on a `.copy(to: alloc)`; a loop or pattern variable of a
+        unique type borrows from its subject
 
 error BYN2783: `b` borrows from what it was bound to and cannot be changed or moved
 
   82 │     for (var b in bufs) b.append("y");
      │                         ^ `append` modifies it
      │
-  help: a loop or pattern variable of a unique type borrows from its subject; change the subject
-        itself, or work on a `.copy(to: alloc)`
+  help: change the subject itself, or work on a `.copy(to: alloc)`; a loop or pattern variable of a
+        unique type borrows from its subject
 
 error BYN2780: implicit copy of a unique value: `Named` is unique because field `m` is a `Map<i64,
 i64>`
@@ -260,4 +265,4 @@ i64>`
   93 │     let kept = n with { name = "x" };
      │                ^^^^^^^^^^^^^^^^^^^^^
      │
-  help: passing it by `ref` shares it instead
+  help: pass it by `ref` to share it instead

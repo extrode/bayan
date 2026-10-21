@@ -277,7 +277,7 @@ internal sealed class FlowAnalysis
                 if (c.Handler is BoundBlockExpr { Type.IsNever: true } b && handler.Reachable)
                 {
                     Report(DiagnosticCodes.CatchBlockCompletes, new TextSpan(Math.Max(b.Syntax.Span.End - 1, 0), 1), [],
-                        help: $"`{(c.Operand as BoundCall)?.Function.Name}` returns a value, so the block must leave instead of falling through");
+                        help: $"leave the block instead of falling through; `{(c.Operand as BoundCall)?.Function.Name}` returns a value");
                     handler = State.Unreachable();
                 }
                 return state.Join(handler);

@@ -145,7 +145,7 @@ public sealed class Compilation
             if (files.Length == 0)
             {
                 Diagnostics.Report(DiagnosticCodes.UnknownModule, file.Source, span, [name],
-                    help: $"a module is a directory of `.byn` files; expected `{Path.GetRelativePath(PackageRoot, dir)}/` next to the entry file");
+                    help: $"put the module's `.byn` files in `{Path.GetRelativePath(PackageRoot, dir)}/` next to the entry file; a module is a directory");
                 return;
             }
             var sources = files.Select(f => new SourceText(Path.GetRelativePath(DisplayRoot, f).Replace('\\', '/'), File.ReadAllBytes(f)));
@@ -220,9 +220,9 @@ public sealed class Compilation
         foreach (var a in decl.Attributes)
         {
             if (a.Name.Text == "ExitCode")
-                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "`[ExitCode]` belongs on an error enum variant");
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "put `[ExitCode]` on an error enum variant");
             else
-                Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "the only attribute is `[ExitCode(n)]`, on an error enum variant");
+                Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "use `[ExitCode(n)]` on an error enum variant; it is the only attribute");
         }
         if (decl is StructDecl s)
             foreach (var m in s.Members) CheckAttributes(file, m);
@@ -341,7 +341,7 @@ public sealed class Compilation
             else
             {
                 Report(DiagnosticCodes.StatementOutsideEntry, file.Source, mainStatements[0].Span, [],
-                    help: "top-level statements may appear in only one file of the entry module");
+                    help: "keep top-level statements in one file of the entry module");
             }
         }
     }
@@ -439,9 +439,9 @@ public sealed class Compilation
             foreach (var a in v.Attributes)
             {
                 if (a.Name.Text != "ExitCode")
-                    Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "the only attribute is `[ExitCode(n)]`");
+                    Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "use `[ExitCode(n)]`; it is the only attribute");
                 else if (seen)
-                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "the attribute is repeated");
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "remove the repeated attribute");
                 else
                 {
                     seen = true;
@@ -493,7 +493,7 @@ public sealed class Compilation
         {
             Naming.CheckValue(this, source, p.Name);
             var type = types.Resolve(p.Type);
-            const string help = "enum data is stored in static tables; use a number type, `bool`, `char`, `string` or a plain enum";
+            const string help = "use a number type, `bool`, `char`, `string` or a plain enum; enum data is stored in static tables";
             if (p.Modifier != ParamModifier.None)
                 Report(DiagnosticCodes.InvalidEnumParameter, source, p.Span, [p.Name.Text], label: $"`{p.Modifier.ToString().ToLowerInvariant()}` is not allowed here", help: help);
             else if (p.Default is not null)
@@ -722,7 +722,7 @@ public sealed class Compilation
         if (_inReportedCycle.Contains(t) || Cycle(t, t, new HashSet<TypeSymbol>()) is not { } path) return;
         _inReportedCycle.UnionWith(path);
         Report(DiagnosticCodes.RecursiveByValue, source, span, [name, string.Join(" → ", path.Prepend(t).Select(p => p.DisplayName))],
-            help: $"a value cannot contain itself; store the inner one as `Owned<{name}>` (or in a `List<{name}>`)");
+            help: $"store the inner one as `Owned<{name}>` (or in a `List<{name}>`); a value cannot contain itself");
     }
 
     /// <summary>The structs and unions on a by-value path from <paramref name="t"/> back to <paramref name="target"/>, ending with it; null if there is none.</summary>
