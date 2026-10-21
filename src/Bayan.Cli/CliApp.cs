@@ -1,6 +1,7 @@
 using Bayan.Backend.C;
 using Bayan.Lowering;
 using Bayan.Semantics;
+using Bayan.Semantics.Binding;
 using Bayan.Syntax.Ast;
 using Bayan.Syntax.Diagnostics;
 using Bayan.Syntax.Lexing;
@@ -28,6 +29,7 @@ public static class CliApp
           init [<dir>]         add a project's missing files to a directory (same options as new)
           lex [--json] <file>  print the token stream [--json: as one JSON object] (`-` reads stdin)
           parse [--ast] <file> check syntax; with --ast print the syntax tree
+          types <path>         print each function's parameter and local types as JSON
           check <path>         report diagnostics for a program (a file or directory)
           build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--target <t>] [--emit-c]
           run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]
@@ -44,14 +46,14 @@ public static class CliApp
           --version            print the compiler version and the commit it was built from
           --help               print this message
 
-        check, build, run and test take a project directory (one with `package.byn`; the default
+        check, types, build, run and test take a project directory (one with `package.byn`; the default
         inside a project), a script (a file starting with `#!`), or a file or directory of `.byn` files.
 
         options for every command:
           --color auto|always|never
                                color for terminals (auto: on unless piped or NO_COLOR is set)
 
-        options for check, build, run and test:
+        options for check, types, build, run and test:
           --diagnostics json   print each diagnostic to stderr as one JSON object per line
                                (code, severity, file, span, message, label, help, fixes)
 
@@ -107,6 +109,8 @@ public static class CliApp
                 return Lex(rest, stdout, stderr);
             case "parse":
                 return Parse(rest, stdout, stderr);
+            case "types":
+                return Types(rest, stdout, stderr);
             case "explain":
                 return Explain(rest, stdout, stderr);
             case "check":
@@ -168,6 +172,14 @@ public static class CliApp
             stderr.Write(DiagnosticRenderer.RenderAll(tree.Diagnostics, includePath: true));
         }
         return tree.Diagnostics.Any(d => d.IsError) ? ExitFailure : ExitOk;
+    }
+
+    private static int Types(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        if (ParseBuildOptions(args, stderr, allowOutput: false) is not { } o) return ExitUsage;
+        if (Compile(o, stderr) is not { } compiled) return ExitFailure;
+        stdout.Write(TypedDump.ToJson(compiled.Compilation));
+        return ExitOk;
     }
 
     internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null);

@@ -680,7 +680,10 @@ internal sealed partial class Binder
         PushScope();
         LocalSymbol? err = null;
         if (e.Error is { } name)
+        {
             err = DeclareLocal(name, _fn is null ? ErrorType.Instance : ErrorUnionType.Of(_fn.ErrorSets), LocalKind.Let);
+            err.IsCatch = true;
+        }
         _deferDepth++;
         var body = BindBody(e.Body);
         _deferDepth--;
