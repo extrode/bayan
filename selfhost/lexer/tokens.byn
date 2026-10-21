@@ -158,6 +158,7 @@ enum TokenKind {
     comptimeKeyword,
     checkedKeyword,
     testKeyword,
+    assertKeyword,
     propertyKeyword,
     fuzzKeyword,
     modelKeyword,

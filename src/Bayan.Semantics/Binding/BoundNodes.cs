@@ -250,6 +250,9 @@ public sealed record BoundSwitch(Node Syntax, BoundExpr Value, BoundSwitchSectio
 
 public sealed record BoundDefer(Node Syntax, BoundStmt Body) : BoundStmt(Syntax);
 
+/// <summary><c>assert condition;</c>; <see cref="BoundNode.Syntax"/> is the <c>AssertStmt</c>.</summary>
+public sealed record BoundAssert(Node Syntax, BoundExpr Condition) : BoundStmt(Syntax);
+
 public sealed record BoundErrdefer(Node Syntax, LocalSymbol? Error, BoundStmt Body) : BoundStmt(Syntax);
 
 /// <summary><c>defer panicking [(p)] body</c>: runs only while a panic is in progress; <see cref="Panic"/> receives it.</summary>

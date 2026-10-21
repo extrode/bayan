@@ -2,6 +2,7 @@ using Bayan.Semantics;
 using Bayan.Semantics.Binding;
 using Bayan.Semantics.Symbols;
 using Bayan.Syntax.Ast;
+using Bayan.Syntax.Text;
 using OptionalType = Bayan.Semantics.Symbols.OptionalType;
 
 namespace Bayan.Lowering;
@@ -40,6 +41,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     private int _labels;
     private int _contextSlots;
     private int _panicSlots;
+    /// <summary>While an <c>assert</c> condition is lowered: the sub-expressions it shows, each with its stored value once lowered.</summary>
+    private Dictionary<BoundExpr, BoundExpr?>? _shown;
 
     private sealed class Scope
     {
@@ -325,6 +328,9 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 break;
             case BoundExprStmt e:
                 EmitEffect(Expr(e.Expr));
+                break;
+            case BoundAssert a:
+                Assert(a);
                 break;
             case BoundSetOnPanic o:
                 Emit(o);
@@ -735,6 +741,13 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private BoundExpr Expr(BoundExpr e)
     {
+        if (_shown is null || !_shown.ContainsKey(e)) return LowerExpr(e);
+        var value = LowerExpr(e);
+        return _shown[e] = value.Constant is null ? Spill(value) : value;
+    }
+
+    private BoundExpr LowerExpr(BoundExpr e)
+    {
         switch (e)
         {
             case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
@@ -1045,17 +1058,6 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case BuiltinFunction.Panic when c.Arguments[0] is BoundInterpolated i:
                 Write(c, WriteSink.Panic, null, i);
                 return new LNever(c.Syntax, c.Type);
-            case BuiltinFunction.Assert when c.Arguments[0] is BoundBinary { Op: BinaryOp.Eq or BinaryOp.Ne or BinaryOp.Lt or BinaryOp.Le or BinaryOp.Gt or BinaryOp.Ge } b
-                && Printable(b.Left.Type) && Printable(b.Right.Type):
-                return AssertValues(c, b);
-            case BuiltinFunction.Assert:
-            {
-                var condition = Expr(c.Arguments[0]);
-                if (IsNever(condition)) return condition;
-                var text = _fn.File!.Source.GetText(c.Arguments[0].Syntax.Span);
-                Emit(new BoundIf(c.Syntax, Not(condition), Block(c.Syntax, [new LPanic(c.Syntax, "assertion failed: " + text)]), null));
-                return new LVoid(c.Syntax);
-            }
         }
         if (c.Function.Fails) throw new InvalidOperationException($"call of failing `{c.Function.Name}` outside try/catch");
         var lowered = CallParts(c);
@@ -1076,26 +1078,78 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     private static bool Printable(TypeSymbol t) => t.IsInteger || t.IsFloat || t.IsBool || t.IsString || t is EnumSymbol;
 
     /// <summary>
-    /// <c>assert(a op b)</c> over printable operands: each side is evaluated once into a temporary,
-    /// and a failure panics with the expression, then <c>a is value</c> for each side that is not a literal.
+    /// <c>assert e;</c>: each printable sub-expression of <c>e</c> that is not a literal and is always evaluated (not
+    /// the right of <c>&amp;&amp;</c>, <c>||</c>, <c>??</c> or a branch of <c>?:</c>) is stored once in a temporary as it
+    /// is lowered, and a failure panics with the statement and the <see cref="PowerAssert"/> diagram of those values.
     /// </summary>
-    private BoundExpr AssertValues(BoundCall c, BoundBinary b)
+    private void Assert(BoundAssert a)
     {
-        var parts = Operands([b.Left, b.Right]);
-        if (parts is null) return new LNever(c.Syntax, c.Type);
-        var left = parts[0].Constant is null ? Spill(parts[0]) : parts[0];
-        var right = parts[1].Constant is null ? Spill(parts[1]) : parts[1];
+        var syntax = (AssertStmt)a.Syntax;
+        var shown = Shown(a.Condition).ToList();
+        _shown = new Dictionary<BoundExpr, BoundExpr?>(ReferenceEqualityComparer.Instance);
+        foreach (var e in shown) _shown[e] = null;
+        var condition = Expr(a.Condition);
+        var values = _shown;
+        _shown = null;
+        if (IsNever(condition)) return;
         var source = _fn.File!.Source;
-        var message = new List<BoundInterpolationPart> { new("assertion failed: " + source.GetText(c.Arguments[0].Syntax.Span), null) };
-        foreach (var (side, value) in new[] { (b.Left, left), (b.Right, right) })
+        string Before(int offset) => source.GetText(TextSpan.FromBounds(syntax.Span.Start, offset));
+        int After(Node left)
         {
-            if (IsLiteral(side.Syntax)) continue;
-            message.Add(new("\n  " + source.GetText(side.Syntax.Span) + " is ", null));
-            message.Add(new(null, value));
+            var rest = source.GetText(TextSpan.FromBounds(left.Span.End, syntax.Condition.Span.End));
+            return left.Span.End + rest.Length - rest.TrimStart().Length;
         }
-        var panic = new LWrite(c.Syntax, WriteSink.Panic, null, message.ToArray());
-        Emit(new BoundIf(c.Syntax, Not(b with { Left = left, Right = right }), Block(c.Syntax, [panic]), null));
-        return new LVoid(c.Syntax);
+        int Anchor(Node node) => node switch
+        {
+            ParenExpr p => Anchor(p.Inner),
+            MemberExpr m => m.Member.Span.Start,
+            CallExpr c => Anchor(c.Callee),
+            BinaryExpr b => After(b.Left),
+            IsExpr i => After(i.Value),
+            IndexExpr i => After(i.Target),
+            ConditionalExpr c => After(c.Condition),
+            _ => node.Span.Start,
+        };
+        // The first (outermost) node at a column wins: an implicit conversion shares its operand's syntax.
+        var columns = new SortedDictionary<int, BoundExpr>();
+        foreach (var e in shown)
+        {
+            if (values[e] is not { } value || IsNever(value)) continue;
+            columns.TryAdd(PowerAssert.Column(Before(Anchor(e.Syntax))), value);
+        }
+        var statement = PowerAssert.Flatten(Before(syntax.Condition.Span.End));
+        BoundStmt panic;
+        if (columns.Count == 0) panic = new LPanic(a.Syntax, statement);
+        else
+        {
+            var (bars, prefixes) = PowerAssert.Layout(columns.Keys.ToList());
+            var message = new List<BoundInterpolationPart> { new(statement + "\n" + PowerAssert.Indent + bars, null) };
+            foreach (var (prefix, value) in prefixes.Zip(columns.Values.Reverse()))
+            {
+                message.Add(new("\n" + PowerAssert.Indent + prefix, null));
+                message.Add(new(null, value));
+            }
+            panic = new LWrite(a.Syntax, WriteSink.Panic, null, message.ToArray());
+        }
+        Emit(new BoundIf(a.Syntax, Not(condition), Block(a.Syntax, [panic]), null));
+    }
+
+    /// <summary>The sub-expressions of an <c>assert</c> condition shown on failure, outermost first.</summary>
+    private static IEnumerable<BoundExpr> Shown(BoundExpr e)
+    {
+        if (Printable(e.Type) && !IsLiteral(e.Syntax)) yield return e;
+        IEnumerable<BoundNode> children = e switch
+        {
+            BoundBinary { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } b => [b.Left],
+            BoundConditional c => [c.Condition],
+            BoundCoalesce c => [c.Left],
+            BoundIs i => [i.Value],
+            BoundBinary or BoundUnary or BoundField or BoundTupleElement or BoundCall or BoundBuiltinCall or BoundConversion or BoundIndex
+                => BoundTree.Children(e),
+            _ => [],
+        };
+        foreach (var child in children.OfType<BoundExpr>())
+            foreach (var x in Shown(child)) yield return x;
     }
 
     private static bool IsLiteral(Node syntax) => syntax switch

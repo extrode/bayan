@@ -1,2 +1,6 @@
-panic: assertion failed: a > 1 && b < 3
+panic: assert(a > 1 && b < 3)
+              │ │   │
+              │ │   false
+              │ true
+              2
   at assert-plain.byn:3

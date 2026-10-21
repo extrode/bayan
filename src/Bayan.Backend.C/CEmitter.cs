@@ -1069,8 +1069,10 @@ internal sealed class FunctionEmitter
         else
         {
             var mode = w.Sink == WriteSink.Print ? "BYN_WRITE_STDOUT" : "BYN_WRITE_TRUNCATE";
-            Line("uint8_t wb[256];");
-            Line($"byn_writer wv = {{wb, 256, 0, {mode}, {Loc(w.Syntax)}}};");
+            // A panic message keeps as much as the runtime does (`byn_panic_text`), room for an `assert` diagram.
+            var size = w.Sink == WriteSink.Panic ? 1024 : 256;
+            Line($"uint8_t wb[{size}];");
+            Line($"byn_writer wv = {{wb, {size}, 0, {mode}, {Loc(w.Syntax)}}};");
             Line("byn_writer* w = &wv;");
         }
         foreach (var part in w.Parts)
