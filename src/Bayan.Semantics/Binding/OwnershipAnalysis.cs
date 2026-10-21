@@ -206,6 +206,10 @@ internal sealed class OwnershipAnalysis
                 Statement(e.Body, state.Clone());
                 Register(e.Body, e.Syntax.Span, onFailure: true, state);
                 return state;
+            // A panic handler runs in place of the scope's cleanups, not at its exit: nothing to register.
+            case BoundPanicDefer p:
+                Statement(p.Body, state.Clone());
+                return state;
             case BoundContext c:
                 return Statement(c.Body, Expr(c.Allocator, state));
             default:

@@ -1,0 +1,6 @@
+error BYN2613: a panic handler reads only `let` bindings and parameters
+
+  4 │     defer panicking (p) print($"{p.message}: {total} of {limit}, {count} done");
+    │                                                                   ^^^^^ `count` is not a `let` or a parameter
+    │
+  help: copy the value into a `let` before the handler and read that

@@ -162,6 +162,10 @@ internal sealed class RegionAnalysis
                 if (e.Error is not null) Declare(e.Error, e.Syntax.Span.Start);
                 Stmt(e.Body);
                 break;
+            case BoundPanicDefer p:
+                if (p.Panic is not null) Declare(p.Panic, p.Syntax.Span.Start);
+                Stmt(p.Body);
+                break;
             case BoundContext c:
                 _contexts.Push(AllocatedFrom(c.Allocator));
                 Stmt(c.Body);

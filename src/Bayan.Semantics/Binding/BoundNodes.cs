@@ -70,6 +70,7 @@ public enum BuiltinMember
     /// <summary>A data-enum field; the argument is the field index.</summary>
     EnumField,
     ProcessExitCode, ProcessStdout, ProcessStderr,
+    PanicMessage,
 }
 
 public sealed record BoundBuiltinCall(Node Syntax, BuiltinMember Member, BoundExpr Receiver, BoundExpr[] Arguments, TypeSymbol Type)
@@ -241,6 +242,12 @@ public sealed record BoundSwitch(Node Syntax, BoundExpr Value, BoundSwitchSectio
 public sealed record BoundDefer(Node Syntax, BoundStmt Body) : BoundStmt(Syntax);
 
 public sealed record BoundErrdefer(Node Syntax, LocalSymbol? Error, BoundStmt Body) : BoundStmt(Syntax);
+
+/// <summary><c>defer panicking [(p)] body</c>: runs only while a panic is in progress; <see cref="Panic"/> receives it.</summary>
+public sealed record BoundPanicDefer(Node Syntax, LocalSymbol? Panic, BoundStmt Body) : BoundStmt(Syntax);
+
+/// <summary><c>Panic.onPanic = f;</c>, the first statement of <c>main</c>.</summary>
+public sealed record BoundSetOnPanic(Node Syntax, FunctionSymbol Handler) : BoundStmt(Syntax);
 
 /// <summary><c>context (allocator: a) { … }</c>.</summary>
 public sealed record BoundContext(Node Syntax, BoundExpr Allocator, BoundBlock Body) : BoundStmt(Syntax);

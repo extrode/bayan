@@ -83,6 +83,7 @@ public static class BoundTree
                 break;
             case BoundDefer n: yield return n.Body; break;
             case BoundErrdefer n: yield return n.Body; break;
+            case BoundPanicDefer n: yield return n.Body; break;
             case BoundContext n: yield return n.Allocator; yield return n.Body; break;
 
             case BoundConstantPattern n: yield return n.Value; break;

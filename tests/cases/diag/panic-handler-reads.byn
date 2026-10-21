@@ -1,0 +1,8 @@
+void work(i64 limit) {
+    var count = 0;
+    let total = 3;
+    defer panicking (p) print($"{p.message}: {total} of {limit}, {count} done");
+    count += 1;
+}
+
+work(limit: 5);

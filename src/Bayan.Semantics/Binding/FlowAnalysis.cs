@@ -186,6 +186,9 @@ internal sealed class FlowAnalysis
             case BoundErrdefer e:
                 Statement(e.Body, state.Clone());
                 return state;
+            case BoundPanicDefer p:
+                Statement(p.Body, state.Clone());
+                return state;
             case BoundContext c:
                 return Statement(c.Body, Expr(c.Allocator, state));
             default:

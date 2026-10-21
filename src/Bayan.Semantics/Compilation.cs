@@ -42,6 +42,9 @@ public sealed class Compilation
 
     public ModuleSymbol EntryModule { get; private set; } = null!;
 
+    /// <summary>The function <c>Panic.onPanic</c> is set to in <c>main</c>, if any.</summary>
+    public FunctionSymbol? OnPanic { get; internal set; }
+
     public Builtins Builtins { get; } = new();
 
     /// <summary>Error variants in code order (index = code - 1).</summary>
@@ -783,6 +786,7 @@ public sealed class Compilation
                 if (fn.Body is not null && !fn.IsInstance && !Options.SkipOwnershipCheck) OwnershipAnalysis.Analyze(this, fn);
                 // Like ownership, the lint judges the source once, on the template.
                 if (fn.Body is not null && !fn.IsInstance) NeverReassignedVarLint.Analyze(this, fn);
+                if (fn.Body is not null && !fn.IsInstance) PanicHandlerCheck.Analyze(this, fn);
                 if (fn.Body is not null && !fn.IsGeneric)
                 {
                     if (fn.IsInstance)
