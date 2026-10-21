@@ -1,0 +1,14 @@
+let resp = signUp(form) catch switch {
+    EmailError => .badRequest("Invalid email"),
+    DbError.timeout => .unavailable,
+    DbError e => .serverError(e),
+};
+save(x) catch switch {
+    IoError e => log(e),
+    _ => log("other"),
+};
+let old = parse(s) catch (e) switch {
+    .empty => 0,
+    _ => 1,
+};
+let n = parse(s) catch (e) fallback(e);

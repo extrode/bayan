@@ -70,3 +70,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - wasm32-wasi build of `src/runtime/bayan-rt.c` fails on `sys/wait.h`, `signal.h` and `pipe` (pre-existing, seen during the round-2 defer work); `defer panicking` handlers never run there (`BYN_PANIC_CATCH` is 0 without setjmp).
 - Panic handlers (BYN2612) are not checked for allocation inside user functions they call; only direct allocations in the handler body or the `Panic.onPanic` function are reported.
 - BYN2613 accepts a `let` moved after the handler registers (`let xs = …; defer panicking print($"{xs.length}"); take(move xs);`); the handler would read a moved value.
+- HANDOFF §5 (r2-catch): `T!S` type syntax does not parse today, so `error set` is usable only in `fails`; `/// A type X = T alias` doc in Compilation.cs sits on `MutationCheck` instead of `AliasPlaceholder`.

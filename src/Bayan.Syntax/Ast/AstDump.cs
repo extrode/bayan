@@ -144,6 +144,9 @@ public static class AstDump
                 case TypeAliasDecl d:
                     Line(depth, $"TypeAlias {Mods(d.Modifiers)}{d.Name.Text} = {Type(d.Target)}");
                     break;
+                case ErrorSetDecl d:
+                    Line(depth, $"ErrorSet {Mods(d.Modifiers)}{d.Name.Text} = {string.Join(", ", d.Members.Select(Type))}");
+                    break;
                 case TestDecl d:
                     Line(depth, "Test " + TokenDump.Escape(d.Title));
                     Stmt(depth + 1, d.Body);
@@ -365,6 +368,9 @@ public static class AstDump
                     break;
                 case DiscardPattern:
                     sb.Append('_');
+                    break;
+                case DeclarationPattern p:
+                    sb.Append("(decl ").Append(Type(p.Type)).Append(' ').Append(p.Name.Text).Append(')');
                     break;
                 case NotPattern p:
                     sb.Append("(not ");
@@ -642,6 +648,9 @@ public static class AstDump
                     sb.Append("(stackalloc ").Append(Type(e.Element)).Append(' ');
                     Expr(sb, e.Count);
                     sb.Append(')');
+                    break;
+                case CaughtErrorExpr:
+                    sb.Append("(caught)");
                     break;
                 case ErrorExpr:
                     sb.Append("<error>");

@@ -1,6 +1,0 @@
-error BYN1001: expected `(e)` naming the error before `switch`, found keyword `switch`
-
-  1 │ let r = parse(s) catch switch { _ => 0 };
-    │                        ^^^^^^
-    │
-  help: write `catch (e) switch { … }`
