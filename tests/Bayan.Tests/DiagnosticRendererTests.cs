@@ -52,6 +52,7 @@ public sealed class DiagnosticRendererTests
                  │
               help: declare it with `var` if it should change
                  │  9 │     var total = 0;
+                 │    │     +++
 
             """, DiagnosticRenderer.Render(diagnostic));
     }
@@ -70,9 +71,11 @@ public sealed class DiagnosticRendererTests
             Fix: new Fix(Find(Ledger, "let total"), "var total"));
         var colored = DiagnosticRenderer.Render(diagnostic, includePath: true, color: true);
         Assert.Equal(DiagnosticRenderer.Render(diagnostic, includePath: true), System.Text.RegularExpressions.Regex.Replace(colored, "\u001b\\[[0-9;]*m", ""));
-        Assert.StartsWith("\u001b[1m\u001b[31merror BYN2104\u001b[0m\u001b[1m: `total` is immutable\u001b[0m\n", colored);
+        Assert.StartsWith("\u001b[1m\u001b[31merror BYN2104\u001b[0m: `total` is immutable\n", colored);
         Assert.Contains("\u001b[1m\u001b[31m^^^^^ declared with `let` on line 9\u001b[0m", colored);
-        Assert.Contains("\u001b[1m\u001b[36mhelp:\u001b[0m declare", colored);
+        Assert.Contains("\u001b[1m\u001b[34mhelp:\u001b[0m declare", colored);
+        Assert.Contains("\u001b[2m  -->\u001b[0m", colored);
+        Assert.Contains("\u001b[34m+++\u001b[0m", colored);
     }
 
     [Fact]
@@ -155,5 +158,124 @@ public sealed class DiagnosticRendererTests
         var diagnostic = new Diagnostic(Severity.Error, "BYN4001", null, default, "zig not found");
 
         Assert.Equal("error BYN4001: zig not found\n", DiagnosticRenderer.Render(diagnostic));
+    }
+
+    private static readonly Style Dark = new(Palette.TruecolorDark, Symbols.Unicode, 100);
+
+    private static string Strip(string text) => System.Text.RegularExpressions.Regex.Replace(text, "\u001b\\[[0-9;]*m", "");
+
+    [Fact]
+    public void RemovalFixMarksRemovedText()
+    {
+        var source = SourceText.FromString("a.byn", "let x = 1;;\n");
+        var semi = Find(source, ";;");
+        var diagnostic = new Diagnostic(Severity.Warning, "BYN1005", source, new TextSpan(semi.Start + 1, 1), "extra `;`",
+            Help: "remove the extra `;`", Fix: new Fix(new TextSpan(semi.Start + 1, 1), ""));
+
+        var rendered = DiagnosticRenderer.Render(diagnostic).Split('\n');
+        Assert.Equal("    │ 1 │ let x = 1;;", rendered[6]);
+        Assert.Equal("    │   │           -", rendered[7]);
+    }
+
+    [Fact]
+    public void ReplacementMarksOnlyChangedText()
+    {
+        var source = SourceText.FromString("a.byn", "let bayan = 1;\n");
+        var diagnostic = new Diagnostic(Severity.Error, "BYN1006", source, Find(source, "bayan"), "m",
+            Fix: new Fix(Find(source, "bayan"), "bayaan"));
+
+        var rendered = DiagnosticRenderer.Render(diagnostic).Split('\n');
+        Assert.Equal("    │ 1 │ let bayaan = 1;", rendered[5]);
+        Assert.Equal("    │   │         +", rendered[6]);
+    }
+
+    [Fact]
+    public void RelatedSpansRenderInLineOrderInTheNoteColour()
+    {
+        var diagnostic = new Diagnostic(
+            Severity.Error,
+            "BYN2104",
+            Ledger,
+            new TextSpan(Find(Ledger, "total +=").Start, "total".Length),
+            "`total` is immutable",
+            Label: "cannot be changed",
+            Related: [new RelatedSpan(new TextSpan(Find(Ledger, "let total").Start + 4, "total".Length), "declared with `let` here")]);
+
+        Assert.Equal("""
+            error BYN2104: `total` is immutable
+
+               9 │     let total = 0;
+                 │         ----- declared with `let` here
+                 │
+              12 │     total += line.price;
+                 │     ^^^^^ cannot be changed
+
+            """, DiagnosticRenderer.Render(diagnostic));
+        var colored = DiagnosticRenderer.Render(diagnostic, includePath: false, Dark);
+        Assert.Contains("\u001b[38;2;180;178;169m----- declared with `let` here\u001b[0m", colored);
+        Assert.Contains("\u001b[1m\u001b[38;2;255;138;128m^^^^^ cannot be changed\u001b[0m", colored);
+        Assert.Equal(DiagnosticRenderer.Render(diagnostic), Strip(colored));
+    }
+
+    [Fact]
+    public void AsciiSymbolsReplaceTheGutter()
+    {
+        var source = SourceText.FromString("a.byn", "let x = 1;\n");
+        var diagnostic = new Diagnostic(Severity.Warning, "BYN2000", source, Find(source, "x"), "unused");
+
+        Assert.Equal("""
+            warning BYN2000: unused
+
+              1 | let x = 1;
+                |     ^
+
+            """, DiagnosticRenderer.Render(diagnostic, includePath: false, Style.Plain with { Symbols = Symbols.Ascii }));
+    }
+
+    [Fact]
+    public void LongHelpWrapsUnderItsIndent()
+    {
+        var help = string.Join(" ", Enumerable.Repeat("declare it with `var` if it should change", 4)) + ".";
+        Assert.Equal(168, help.Length);
+        var diagnostic = new Diagnostic(Severity.Error, "BYN2104", Ledger,
+            new TextSpan(Find(Ledger, "total +=").Start, "total".Length), "`total` is immutable", Help: help);
+
+        var rendered = DiagnosticRenderer.Render(diagnostic).Split('\n');
+        var helpLines = rendered.SkipWhile(l => !l.StartsWith("  help:", StringComparison.Ordinal)).TakeWhile(l => l.Length > 0).ToArray();
+        Assert.Equal(2, helpLines.Length);
+        Assert.All(helpLines, l => Assert.True(l.Length <= 100, l));
+        Assert.StartsWith("        ", helpLines[1]);
+        Assert.Equal(help, string.Join(" ", helpLines.Select(l => l[8..])));
+    }
+
+    [Fact]
+    public void LongMessageAndLabelWrapAtTheStyleWidth()
+    {
+        var source = SourceText.FromString("a.byn", "let x = 1;\n");
+        var diagnostic = new Diagnostic(Severity.Error, "BYN2000", source, Find(source, "x"),
+            "one two three four five six", Label: "alpha beta gamma delta");
+
+        Assert.Equal("""
+            error BYN2000: one two
+            three four five six
+
+              1 │ let x = 1;
+                │     ^ alpha beta
+                │       gamma delta
+
+            """, DiagnosticRenderer.Render(diagnostic, includePath: false, Style.Plain with { Width = 26 }));
+    }
+
+    [Fact]
+    public void SourceAndFixLinesNeverWrap()
+    {
+        var code = "let x = " + string.Join(" + ", Enumerable.Range(1, 60)) + ";";
+        var source = SourceText.FromString("a.byn", code + "\n");
+        var diagnostic = new Diagnostic(Severity.Error, "BYN2000", source, Find(source, "x"), "m",
+            Fix: new Fix(Find(source, "let"), "var"));
+
+        var rendered = DiagnosticRenderer.Render(diagnostic, includePath: false, Style.Plain with { Width = 40 }).Split('\n');
+        Assert.Equal("  1 │ " + code, rendered[2]);
+        Assert.Equal("    │ 1 │ var" + code[3..], rendered[5]);
     }
 }
