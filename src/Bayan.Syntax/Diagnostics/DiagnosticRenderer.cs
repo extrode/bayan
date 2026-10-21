@@ -132,11 +132,22 @@ public static class DiagnosticRenderer
     public static string RenderAll(IEnumerable<Diagnostic> diagnostics, bool includePath = false, bool color = false) =>
         RenderAll(diagnostics, includePath, color ? Ansi : Style.Plain);
 
-    public static string RenderAll(IEnumerable<Diagnostic> diagnostics, bool includePath, Style style)
+    public static string RenderAll(IEnumerable<Diagnostic> diagnostics, bool includePath, Style style) =>
+        RenderAll(diagnostics, includePath, style, int.MaxValue, out _);
+
+    /// <summary>Like <see cref="RenderAll(IEnumerable{Diagnostic}, bool, Style)"/>, skipping errors past <paramref name="errorLimit"/> (warnings are never skipped) and counting them.</summary>
+    public static string RenderAll(IEnumerable<Diagnostic> diagnostics, bool includePath, Style style, int errorLimit, out int omittedErrors)
     {
         var sb = new StringBuilder();
+        var errors = 0;
+        omittedErrors = 0;
         foreach (var d in Sort(diagnostics))
         {
+            if (d.Severity == Severity.Error && ++errors > errorLimit)
+            {
+                omittedErrors++;
+                continue;
+            }
             if (sb.Length > 0) sb.Append('\n');
             sb.Append(Render(d, includePath, style));
         }
