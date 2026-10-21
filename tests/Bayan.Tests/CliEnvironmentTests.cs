@@ -30,6 +30,26 @@ public sealed partial class CliEnvironmentTests
         }
     }
 
+    /// <summary>Runs <paramref name="body"/> in a UTF-8, dark, 16-colour environment with <paramref name="vars"/> on top.</summary>
+    private static void WithTerminalEnv(Action body, params (string Name, string? Value)[] vars)
+    {
+        (string Name, string? Value)[] all =
+        [
+            ("NO_COLOR", null), ("FORCE_COLOR", null), ("TERM", null), ("COLORTERM", null), ("BAYAN_THEME", null),
+            ("COLORFGBG", null), ("LC_ALL", null), ("LC_CTYPE", null), ("LANG", "en_US.UTF-8"), .. vars,
+        ];
+        var saved = all.Select(v => (v.Name, Value: Environment.GetEnvironmentVariable(v.Name))).Distinct().ToArray();
+        foreach (var (name, value) in all) Environment.SetEnvironmentVariable(name, value);
+        try
+        {
+            body();
+        }
+        finally
+        {
+            foreach (var (name, value) in saved.Reverse()) Environment.SetEnvironmentVariable(name, value);
+        }
+    }
+
     private static string Fresh(string name)
     {
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "cli-env", name);
@@ -55,7 +75,7 @@ public sealed partial class CliEnvironmentTests
     public void ColorFollowsTheTerminalNoColorAndTheFlag()
     {
         var file = Broken();
-        With("NO_COLOR", null, () =>
+        WithTerminalEnv(() =>
         {
             var plain = Run(["check", file]);
             Assert.Equal(CliApp.ExitFailure, plain.Exit);
@@ -68,11 +88,73 @@ public sealed partial class CliEnvironmentTests
             Assert.Equal(plain.Err, Run(["check", file, "--color", "never"], new CliApp.Terminal(true, true)).Err);
             Assert.Equal(plain.Err, Run(["check", file], new CliApp.Terminal(true, false)).Err);
         });
-        With("NO_COLOR", "1", () =>
+        WithTerminalEnv(() =>
         {
             Assert.DoesNotContain("\u001b[", Run(["check", file], new CliApp.Terminal(true, true)).Err);
             Assert.Contains("\u001b[", Run(["check", file, "--color", "always"], new CliApp.Terminal(true, true)).Err);
+        }, ("NO_COLOR", "1"));
+    }
+
+    [Fact]
+    public void ForceColorTurnsColorOnWhenPiped()
+    {
+        var file = Broken();
+        WithTerminalEnv(() =>
+        {
+            Assert.Contains("\u001b[1m\u001b[31merror BYN", Run(["check", file]).Err, StringComparison.Ordinal);
+            Assert.DoesNotContain("\u001b[", Run(["check", file, "--color", "never"]).Err, StringComparison.Ordinal);
+            var json = Run(["check", file, "--diagnostics", "json"]).Err;
+            Assert.DoesNotContain("\u001b[", json, StringComparison.Ordinal);
+            WithTerminalEnv(() => Assert.Equal(json, Run(["check", file, "--diagnostics", "json"]).Err));
+        }, ("FORCE_COLOR", "1"));
+        WithTerminalEnv(() => Assert.DoesNotContain("\u001b[", Run(["check", file]).Err, StringComparison.Ordinal), ("FORCE_COLOR", "0"));
+        WithTerminalEnv(() => Assert.DoesNotContain("\u001b[", Run(["check", file], new CliApp.Terminal(true, true)).Err, StringComparison.Ordinal), ("FORCE_COLOR", "1"), ("NO_COLOR", "1"));
+    }
+
+    [Fact]
+    public void ADumbTerminalGetsNoColorAndAsciiSymbols()
+    {
+        var file = Broken();
+        WithTerminalEnv(() =>
+        {
+            var err = Run(["check", file], new CliApp.Terminal(true, true)).Err;
+            Assert.DoesNotContain("\u001b[", err, StringComparison.Ordinal);
+            Assert.Contains("  3 |     x = 2;", err, StringComparison.Ordinal);
+            Assert.DoesNotContain("│", err, StringComparison.Ordinal);
+        }, ("TERM", "dumb"));
+    }
+
+    [Fact]
+    public void TruecolorFollowsTheTheme()
+    {
+        var file = Broken();
+        const string dark = "\u001b[38;2;255;138;128merror BYN", light = "\u001b[38;2;180;35;24merror BYN";
+        string Err() => Run(["check", file], new CliApp.Terminal(true, true)).Err;
+        WithTerminalEnv(() => Assert.Contains(dark, Err(), StringComparison.Ordinal), ("COLORTERM", "truecolor"));
+        WithTerminalEnv(() => Assert.Contains(dark, Err(), StringComparison.Ordinal), ("COLORTERM", "24bit"), ("BAYAN_THEME", "dark"));
+        WithTerminalEnv(() => Assert.Contains(light, Err(), StringComparison.Ordinal), ("COLORTERM", "truecolor"), ("BAYAN_THEME", "light"));
+        WithTerminalEnv(() => Assert.Contains(dark, Err(), StringComparison.Ordinal), ("COLORTERM", "truecolor"), ("COLORFGBG", "15;0"));
+        WithTerminalEnv(() => Assert.Contains(light, Err(), StringComparison.Ordinal), ("COLORTERM", "truecolor"), ("COLORFGBG", "0;15"));
+        WithTerminalEnv(() => Assert.Contains(dark, Err(), StringComparison.Ordinal), ("COLORTERM", "truecolor"), ("COLORFGBG", "0;15"), ("BAYAN_THEME", "dark"));
+        WithTerminalEnv(() => Assert.Contains("\u001b[1m\u001b[31merror BYN", Err(), StringComparison.Ordinal), ("COLORFGBG", "0;15"));
+    }
+
+    [Fact]
+    public void ANonUtf8LocaleOrAsciiFlagUsesAsciiSymbols()
+    {
+        var file = Broken();
+        WithTerminalEnv(() =>
+        {
+            Assert.Contains("  3 │     x = 2;", Run(["check", file]).Err, StringComparison.Ordinal);
+            var ascii = Run(["--ascii", "check", file], new CliApp.Terminal(true, true)).Err;
+            Assert.Contains("\u001b[", ascii, StringComparison.Ordinal);
+            Assert.DoesNotContain("│", Escape().Replace(ascii, ""), StringComparison.Ordinal);
+            Assert.Contains("  3 |     x = 2;", Run(["check", file, "--ascii"]).Err, StringComparison.Ordinal);
         });
+        WithTerminalEnv(() => Assert.Contains("  3 |     x = 2;", Run(["check", file]).Err, StringComparison.Ordinal), ("LANG", "C"));
+        WithTerminalEnv(() => Assert.Contains("  3 │     x = 2;", Run(["check", file]).Err, StringComparison.Ordinal), ("LANG", "C"), ("LC_ALL", "en_US.utf8"));
+        WithTerminalEnv(() => Assert.Contains("  3 |     x = 2;", Run(["check", file]).Err, StringComparison.Ordinal), ("LC_CTYPE", "POSIX"));
+        WithTerminalEnv(() => Assert.Contains("  3 │     x = 2;", Run(["check", file]).Err, StringComparison.Ordinal), ("LANG", null));
     }
 
     [Fact]
@@ -89,7 +171,7 @@ public sealed partial class CliEnvironmentTests
         var dir = Fresh("color-tests");
         File.WriteAllText(Path.Combine(dir, "main.byn"), "void main() {\n}\n");
         File.WriteAllText(Path.Combine(dir, "main.test.byn"), "test \"passes\" {\n    assert(true);\n}\n\ntest \"breaks\" {\n    assert(false);\n}\n");
-        With("NO_COLOR", null, () =>
+        WithTerminalEnv(() =>
         {
             var (exit, stdout, _) = Run(["test", dir], new CliApp.Terminal(true, true));
             Assert.Equal(CliApp.ExitTestFailure, exit);
