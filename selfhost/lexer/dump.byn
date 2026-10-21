@@ -2,7 +2,9 @@
 // `lex/` goldens). Ports `src/Bayan.Syntax/Lexing/TokenDump.cs`.
 
 void dump(ref StrBuf sb, ref LexResult result) {
-    for (let token in result.tokens) {
+    // By index: `getLinePosition` modifies `result.source`, so the loop may not borrow `result`.
+    for (let i in 0..result.tokens.length) {
+        let token = result.tokens[i];
         let position = result.source.getLinePosition(token.start);
         if (token.hasDoc) {
             sb.append("    doc ");

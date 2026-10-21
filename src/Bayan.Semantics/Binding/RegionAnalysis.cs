@@ -315,6 +315,8 @@ internal sealed class RegionAnalysis
         var fn = c.Function;
         var receiver = c.Receiver is null ? Borrow.None : Expr(c.Receiver);
         var args = c.Arguments.Select(Expr).ToArray();
+        // A method that writes `this` modifies its receiver, like a write to one of its fields (Q78).
+        if (c.Receiver is not null && fn.IsMutating) Mutate(c.Receiver, c.Syntax.Span);
         for (var i = 0; i < c.Arguments.Length && i < fn.Parameters.Count; i++)
         {
             if (fn.Parameters[i].Modifier is not (Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out)) continue;

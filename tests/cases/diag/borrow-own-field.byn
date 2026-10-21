@@ -8,6 +8,8 @@ struct Lexer {
 
     Span<Token> tokens() => toks.asSpan();
 
+    i64 count() => toks.length;
+
     ReadOnlySpan<Token> rest(i64 from) => toks.asSpan()[from..];
 
     Span<i64> firstMarks() {
@@ -21,7 +23,8 @@ void main() {
     lexer.toks.add(Token { kind = 1 });
     lexer.toks.add(Token { kind = 2 });
     let all = lexer.tokens();
-    print($"{all.length} {all[0].kind}");
+    let n = lexer.count();
+    print($"{all.length} {all[0].kind} {n}");
     let tail = lexer.rest(from: 1);
     print($"{tail[0].kind}");
     lexer.toks.add(Token { kind = 3 });
