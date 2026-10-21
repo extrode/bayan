@@ -623,7 +623,7 @@ internal sealed partial class Binder
         {
             if (!operand.Type.IsError) Report(DiagnosticCodes.NothingToHandle, c.Operand.Span, ["catch"]);
             PushScope();
-            if (c.Binding is { } b0) DeclareLocal(b0, ErrorType.Instance, LocalKind.Let);
+            if (c.Binding is { } b0) DeclareLocal(b0, ErrorType.Instance, LocalKind.Let).IsCatch = true;
             BindExpr(c.Handler);
             PopScope();
             return new BoundErrorExpr(c);
@@ -633,7 +633,11 @@ internal sealed partial class Binder
         PushScope();
         LocalSymbol? binding = null;
         ErrorVariantSymbol? variant = null;
-        if (c.Binding is { } b) binding = DeclareLocal(b, errorType, LocalKind.Let);
+        if (c.Binding is { } b)
+        {
+            binding = DeclareLocal(b, errorType, LocalKind.Let);
+            binding.IsCatch = true;
+        }
         if (c.Variant is { } v)
         {
             var bound = BindExpr(v, errorType);

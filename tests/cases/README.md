@@ -8,6 +8,7 @@ One input per case, expected output beside it. `dotnet test` compares; `BAYAN_UP
 | `parse/` | `*.byn` | `*.ast` |
 | `diag/` | `*.byn` | `*.diag` (exact rendered text) |
 | `diag-json/` | `*.byn` | `*.jsonl` (`--diagnostics json` lines) |
+| `typed/` | `*.byn` | `*.types` ([`bayan types`](../../docs/typed-dump.md) JSON) |
 | `run/` | `*.byn` | `*.stdout`, optional `*.exitcode` |
 | `manifest/` | `*.byn` (a `package.byn`) | `*.diag` |
 | `new/` | `bayan new` options in `ScaffoldTests` | `*.tree` (every file and its contents) |
