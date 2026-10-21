@@ -1,7 +1,7 @@
 # 005 — Tasks
 Plan: ./005-plan.md
 
-- [ ] T1 Style types and contrast test — files: `src/Bayan.Syntax/Diagnostics/Style.cs`, `tests/Bayan.Tests/ContrastTests.cs` — covers: R1, R3, R17 — done when: the contrast test passes against the guide's §2 table and `Palette.Hex` matches it
+- [x] T1 Style types and contrast test — files: `src/Bayan.Syntax/Diagnostics/Style.cs`, `tests/Bayan.Tests/ContrastTests.cs` — covers: R1, R3, R17 — done when: the contrast test passes against the guide's §2 table and `Palette.Hex` matches it
 - [ ] T2 Renderer on `Style` — files: `DiagnosticRenderer.cs`, `DiagnosticRendererTests.cs` — covers: R4 (header rule) — after T1 — done when: plain output is byte-identical to today, the message is not bold in colour mode, and `ColorOnlyAddsEscapes` passes with the new palette
 - [ ] T3 Colour and ASCII decision in the CLI — files: `src/Bayan.Cli/TerminalStyle.cs`, `CliApp.cs` (`Run`, `TakeGlobalOptions`, `Terminal.Width`), `Program.cs` — covers: R1, R2, R3 — after T2 — done when: `CliEnvironmentTests` covers `FORCE_COLOR`, `TERM=dumb`, `COLORTERM`, `BAYAN_THEME`, `COLORFGBG`, `LANG`, `--ascii`
 - [ ] T4 Messages table — files: `src/Bayan.Cli/Messages.cs`, `CliApp.cs`, `Doctor.cs`, `Dist.cs` — covers: R14 — done when: no literal human string remains in `CliApp`/`Doctor`/`Dist` and the existing CLI tests pass unchanged
