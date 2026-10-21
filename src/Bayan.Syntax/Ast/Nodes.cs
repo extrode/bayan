@@ -170,10 +170,14 @@ public sealed record SwitchSection(TextSpan Span, SwitchLabel Label, Stmt[] Stat
 
 public sealed record SwitchStmt(TextSpan Span, Expr Value, SwitchSection[] Sections) : Stmt(Span);
 
-public sealed record DeferStmt(TextSpan Span, Stmt Body) : Stmt(Span);
+/// <summary>When a <c>defer</c> body runs: on every exit, on exit by failure, or while a panic is in progress.</summary>
+public enum DeferKind { Always, Failing, Panicking }
 
-/// <summary><c>errdefer stmt;</c> or <c>errdefer (e) { … }</c>.</summary>
-public sealed record ErrdeferStmt(TextSpan Span, Name? Error, Stmt Body) : Stmt(Span);
+/// <summary>
+/// <c>defer stmt;</c>, <c>defer failing [(e)] stmt</c> or <c>defer panicking [(p)] stmt</c>. <see cref="Binding"/> names the error
+/// or the panic. <c>errdefer [(e)] stmt</c> parses as <c>defer failing</c>.
+/// </summary>
+public sealed record DeferStmt(TextSpan Span, DeferKind Kind, Name? Binding, Stmt Body) : Stmt(Span);
 
 public sealed record NamedArg(TextSpan Span, Name Name, Expr Value) : Node(Span);
 

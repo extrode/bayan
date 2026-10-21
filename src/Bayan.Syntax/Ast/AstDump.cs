@@ -233,11 +233,8 @@ public static class AstDump
                     }
                     break;
                 case DeferStmt s:
-                    Line(depth, "Defer");
-                    Stmt(depth + 1, s.Body);
-                    break;
-                case ErrdeferStmt s:
-                    Line(depth, "Errdefer" + (s.Error is null ? "" : $" ({s.Error.Text})"));
+                    Line(depth, "Defer" + s.Kind switch { DeferKind.Failing => " failing", DeferKind.Panicking => " panicking", _ => "" }
+                        + (s.Binding is null ? "" : $" ({s.Binding.Text})"));
                     Stmt(depth + 1, s.Body);
                     break;
                 case ContextStmt s:

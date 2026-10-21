@@ -35,6 +35,47 @@ BYN_NORETURN void byn_panic(const char* msg, const char* file, int line);
 BYN_NORETURN void byn_panic_str(byn_str msg, const char* file, int line);
 BYN_NORETURN void byn_unreachable(const char* file, int line);
 
+/* ── Panic handlers ──────────────────────────────────────────────────────── */
+
+/* What a `defer panicking` handler and `Panic.onPanic` receive. The message stays valid until the process aborts. */
+typedef struct byn_panic_info {
+    byn_str message;
+} byn_panic_info;
+
+/* A `defer panicking` handler: a record on the thread's list, pushed where its scope declares it and popped as the scope
+ * ends. On a panic the runtime unlinks the innermost record and longjmps into its frame, where the handler runs and calls
+ * byn_panic_resume for the next one. Plain `defer` and `defer failing` never run on a panic. wasm32-wasi has no
+ * setjmp, so there handlers are registered but never run. */
+#ifdef __wasi__
+typedef struct byn_panic_handler {
+    struct byn_panic_handler* prev;
+} byn_panic_handler;
+#define BYN_PANIC_CATCH(h) 0
+#else
+#include <setjmp.h>
+typedef struct byn_panic_handler {
+    struct byn_panic_handler* prev;
+    jmp_buf jump;
+} byn_panic_handler;
+#define BYN_PANIC_CATCH(h) setjmp((h)->jump)
+#endif
+
+extern _Thread_local byn_panic_handler* byn_panic_handlers;
+/* Set by `Panic.onPanic = f;`, the first statement of `main`; runs after the handlers and before the trace. */
+extern void (*byn_on_panic)(byn_panic_info);
+
+static inline void byn_panic_push(byn_panic_handler* h) {
+    h->prev = byn_panic_handlers;
+    byn_panic_handlers = h;
+}
+
+static inline void byn_panic_pop(byn_panic_handler* h) { byn_panic_handlers = h->prev; }
+
+/* The panic in progress, for a handler's `(p)`. */
+byn_panic_info byn_panic_current(void);
+/* Ends a handler: runs the next one, then `Panic.onPanic`, then prints the trace and aborts. */
+BYN_NORETURN void byn_panic_resume(void);
+
 /* ── Ownership checker (debug builds) ────────────────────────────────────── */
 
 /* Debug programs define BYN_DEBUG before including this header; safe and fast ones never see these. bayan-rt.c

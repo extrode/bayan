@@ -39,6 +39,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     private List<BoundStmt> _out = new();
     private int _labels;
     private int _contextSlots;
+    private int _panicSlots;
 
     private sealed class Scope
     {
@@ -55,6 +56,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private sealed record FreeArena(Node Syntax, LocalSymbol Arena) : Cleanup;
 
+    private sealed record PopPanicHandler(Node Syntax, int Slot) : Cleanup;
+
     public LoweredFunction Lower()
     {
         var body = _fn.Body!;
@@ -69,7 +72,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         EmitCleanups(0, null);
         _scopes.RemoveAt(0);
         if (_fn.Kind == FunctionKind.Constructor) Emit(new LReturn(body.Syntax, null));
-        return new LoweredFunction(_fn, _locals, _contextSlots, new BoundBlock(body.Syntax, _out.ToArray()));
+        return new LoweredFunction(_fn, _locals, _contextSlots, _panicSlots, new BoundBlock(body.Syntax, _out.ToArray()));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -281,6 +284,9 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case FreeArena f:
                 Emit(new LFreeArena(f.Syntax, Local(f.Syntax, f.Arena)));
                 break;
+            case PopPanicHandler p:
+                Emit(new LPopPanicHandler(p.Syntax, p.Slot));
+                break;
         }
     }
 
@@ -319,6 +325,9 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 break;
             case BoundExprStmt e:
                 EmitEffect(Expr(e.Expr));
+                break;
+            case BoundSetOnPanic o:
+                Emit(o);
                 break;
             case BoundAssign a:
                 Assign(a);
@@ -371,6 +380,16 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case BoundErrdefer e:
                 _scopes[^1].Cleanups.Add(new ErrdeferCleanup(e.Error, e.Body));
                 break;
+            case BoundPanicDefer p:
+            {
+                // The handler runs while a panic is in progress, in place of every cleanup: none of the scopes' cleanups apply in it.
+                if (p.Panic is not null) Note(p.Panic);
+                var slot = _panicSlots++;
+                var body = Capture(() => LowerOutside(0, p.Body));
+                Emit(new LPushPanicHandler(p.Syntax, slot, p.Panic, Block(p.Body.Syntax, body)));
+                _scopes[^1].Cleanups.Add(new PopPanicHandler(p.Syntax, slot));
+                break;
+            }
             case BoundContext c:
             {
                 var arena = Expr(c.Allocator);

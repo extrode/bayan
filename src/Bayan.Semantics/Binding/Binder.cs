@@ -19,6 +19,10 @@ internal sealed partial class Binder
     private Scope _scope = new(null);
     private readonly List<JumpTarget> _targets = new();
     private int _deferDepth;
+    private bool _inPanicHandler;
+    /// <summary>The body's first statement: the one place <c>Panic.onPanic</c> may be set.</summary>
+    private Stmt? _firstStatement;
+    private bool _onPanicSet;
     private int _nextLocalId;
 
     // Spec R4: a first pass holds its diagnostics and records the first integer type each untyped
@@ -155,6 +159,7 @@ internal sealed partial class Binder
         BindParameterDefaults();
         if (decl.Body is { } body)
         {
+            _firstStatement = body.Statements.FirstOrDefault();
             _fn!.Body = BindBlock(body);
         }
         else if (decl.ExpressionBody is { } e)
@@ -205,6 +210,7 @@ internal sealed partial class Binder
     public void BindMain(List<GlobalStatement> statements)
     {
         var bound = new List<BoundStmt>();
+        _firstStatement = statements[0].Statement;
         foreach (var g in statements) bound.Add(BindStatement(g.Statement));
         _fn!.InfersErrors = true;
         _fn.Body = new BoundBlock(statements[0], bound.ToArray());
@@ -370,6 +376,9 @@ internal sealed partial class Binder
                 return BindLocalDecl(d);
             case ExprStmt e:
                 return new BoundExprStmt(e, BindStatementExpression(e.Expr));
+            case AssignStmt { Op: AssignOp.Assign, Target: MemberExpr { Target: NameExpr { Name.Text: "Panic" }, Member.Text: "onPanic" } } a
+                when _scope.Lookup("Panic") is null:
+                return BindOnPanic(a);
             case AssignStmt a:
                 return BindAssign(a);
             case IncDecStmt i:
@@ -425,15 +434,17 @@ internal sealed partial class Binder
                 return BindLabeled(l);
             case SwitchStmt s:
                 return BindSwitchStatement(s, labelTarget ?? new JumpTarget(null, false));
-            case DeferStmt d:
+            case DeferStmt { Kind: DeferKind.Always } d:
             {
                 _deferDepth++;
                 var body = BindBody(d.Body);
                 _deferDepth--;
                 return new BoundDefer(d, body);
             }
-            case ErrdeferStmt e:
-                return BindErrdefer(e);
+            case DeferStmt { Kind: DeferKind.Failing } d:
+                return BindErrdefer(d);
+            case DeferStmt d:
+                return BindPanicDefer(d);
             case ContextStmt c:
                 return BindContext(c);
             case EmptyStmt:
@@ -573,6 +584,7 @@ internal sealed partial class Binder
 
     private BoundStmt BindReturn(ReturnStmt r)
     {
+        if (InPanicHandler(r.Span, "return")) return new BoundErrorStmt(r);
         if (_deferDepth > 0)
         {
             Report(DiagnosticCodes.JumpOutOfDefer, r.Span, ["return"]);
@@ -650,6 +662,7 @@ internal sealed partial class Binder
 
     private JumpTarget? FindTarget(Name? label, bool loopOnly, TextSpan span, string keyword)
     {
+        if (InPanicHandler(span, keyword)) return null;
         if (_deferDepth > 0)
         {
             Report(DiagnosticCodes.JumpOutOfDefer, span, [keyword]);
@@ -683,14 +696,14 @@ internal sealed partial class Binder
     private BoundStmt BindContinue(ContinueStmt c) =>
         FindTarget(c.Label, true, c.Span, "continue") is { } t ? new BoundContinue(c, t) : new BoundErrorStmt(c);
 
-    private BoundStmt BindErrdefer(ErrdeferStmt e)
+    private BoundStmt BindErrdefer(DeferStmt e)
     {
         if (_fn is not { Fails: true } && _fn?.Kind is not (FunctionKind.Main or FunctionKind.Test))
             Report(DiagnosticCodes.ErrdeferWithoutFails, e.Span, [],
-                help: "an `errdefer` runs only when the function fails; use `defer` here");
+                help: "remove `failing` to run it on every exit, or add a `fails` clause to the function");
         PushScope();
         LocalSymbol? err = null;
-        if (e.Error is { } name)
+        if (e.Binding is { } name)
         {
             err = DeclareLocal(name, _fn is null ? ErrorType.Instance : ErrorUnionType.Of(_fn.ErrorSets), LocalKind.Let);
             err.IsCatch = true;
@@ -700,6 +713,60 @@ internal sealed partial class Binder
         _deferDepth--;
         PopScope();
         return new BoundErrdefer(e, err, body);
+    }
+
+    /// <summary><c>defer panicking [(p)] body</c>: <c>return</c>, <c>break</c>, <c>continue</c> and <c>try</c> in the body are BYN2612; <see cref="PanicHandlerCheck"/> checks the rest.</summary>
+    private BoundStmt BindPanicDefer(DeferStmt d)
+    {
+        PushScope();
+        LocalSymbol? panic = d.Binding is { } name ? DeclareLocal(name, BuiltinType.Panic, LocalKind.Let) : null;
+        var (deferDepth, inHandler) = (_deferDepth, _inPanicHandler);
+        (_deferDepth, _inPanicHandler) = (0, true);
+        var body = BindBody(d.Body);
+        (_deferDepth, _inPanicHandler) = (deferDepth, inHandler);
+        PopScope();
+        return new BoundPanicDefer(d, panic, body);
+    }
+
+    /// <summary>
+    /// <c>Panic.onPanic = f;</c> with <c>f</c> a named <c>void f(Panic p)</c>: only as the first statement of the program's
+    /// entry function, once (BYN2614). <see cref="PanicHandlerCheck"/> checks <c>f</c>'s body.
+    /// </summary>
+    private BoundStmt BindOnPanic(AssignStmt a)
+    {
+        var value = BindExpr(a.Value);
+        FunctionSymbol? handler = null;
+        if (value is BoundMethodGroup { Receiver: null, Function: { } f } && f.Kind == FunctionKind.Function && !f.IsGeneric && !f.Fails
+            && f.ReturnType.IsVoid && f.Parameters is [{ Modifier: ParamModifier.None, Type: BuiltinType { Kind: BuiltinKind.Panic } }])
+            handler = f;
+        else if (!value.Type.IsError || value is BoundMethodGroup)
+            Report(DiagnosticCodes.TypeMismatch, a.Value.Span,
+                [value is BoundMethodGroup g ? $"{g.Function.ReturnType.DisplayName} {g.Function.Name}({string.Join(", ", g.Function.Parameters.Select(p => p.Type.DisplayName))})" : value.Type.DisplayName,
+                    "void f(Panic p)"],
+                help: "name a function declared `void f(Panic p)`");
+        var entry = !_c.Options.Library && _fn is not null && _fn == _c.EntryModule.Main;
+        string? misplaced = null;
+        if (!entry) misplaced = _c.Options.Library ? "libraries cannot set it" : $"`{_fn?.Name}` is not the program's entry function";
+        else if (_onPanicSet) misplaced = "set again here";
+        else if (a != _firstStatement) misplaced = "not the first statement of `main`";
+        if (misplaced is not null)
+        {
+            Report(DiagnosticCodes.OnPanicPlacement, a.Span, [], label: misplaced,
+                help: _c.Options.Library ? "set `Panic.onPanic` in the program that uses this library" : "set it once, as the first statement of `main`");
+            return new BoundErrorStmt(a);
+        }
+        _onPanicSet = true;
+        if (handler is null) return new BoundErrorStmt(a);
+        _c.OnPanic = handler;
+        return new BoundSetOnPanic(a, handler);
+    }
+
+    /// <summary>BYN2612 for <paramref name="keyword"/> inside a <c>defer panicking</c> body; true when reported.</summary>
+    private bool InPanicHandler(TextSpan span, string keyword)
+    {
+        if (!_inPanicHandler) return false;
+        Report(DiagnosticCodes.PanicHandlerRestricted, span, [$"`{keyword}`"], help: "panic handlers can't recover; remove it");
+        return true;
     }
 
     private BoundStmt BindContext(ContextStmt c)

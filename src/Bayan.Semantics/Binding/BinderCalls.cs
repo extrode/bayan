@@ -582,7 +582,7 @@ internal sealed partial class Binder
 
     private BoundExpr BindTry(TryExpr t, TypeSymbol? expected)
     {
-        if (_deferDepth > 0)
+        if (!InPanicHandler(t.Span, "try") && _deferDepth > 0)
             Report(DiagnosticCodes.TryInDefer, t.Span, [],
                 help: "cleanup cannot fail; handle the error here with `catch`");
         var inner = StripParens(t.Operand);

@@ -62,9 +62,9 @@ CompilationUnit
                 Continue outer
       Defer
         Expr (call close f)
-      Errdefer
+      Defer failing
         Expr (call rollback)
-      Errdefer (e)
+      Defer failing (e)
         Block
           Expr (call log e)
       Context allocator: arena

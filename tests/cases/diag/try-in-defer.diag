@@ -1,4 +1,4 @@
-error BYN2601: `try` is not allowed in `defer` or `errdefer`
+error BYN2601: `try` is not allowed in `defer`
 
   10 │     defer try flush();
      │           ^^^

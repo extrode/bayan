@@ -1,0 +1,21 @@
+CompilationUnit
+  Function f() -> void
+    Block
+      Defer
+        Expr (call close)
+      Defer failing
+        Expr (call rollback)
+      Defer failing (e)
+        Block
+          Expr (call log e)
+      Defer panicking
+        Expr (call flush)
+      Defer panicking (p)
+        Block
+          Expr (call log (. p message))
+      Defer failing (e)
+        Expr (call log e)
+      Defer
+        Expr (call failing)
+      Defer
+        Expr (call (. panicking flush))

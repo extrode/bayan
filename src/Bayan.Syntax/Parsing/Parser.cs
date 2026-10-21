@@ -833,20 +833,8 @@ public sealed class Parser
             case TokenKind.SwitchKeyword:
                 return ParseSwitchStatement(start);
             case TokenKind.DeferKeyword:
-                Advance();
-                return new DeferStmt(SpanFrom(start), ParseEmbedded());
             case TokenKind.ErrdeferKeyword:
-                Advance();
-                {
-                    Name? error = null;
-                    if (Kind == TokenKind.OpenParen && IsName(Peek(1)) && Peek(2) == TokenKind.CloseParen)
-                    {
-                        Advance();
-                        error = NameOf(Advance());
-                        Advance();
-                    }
-                    return new ErrdeferStmt(SpanFrom(start), error, ParseEmbedded());
-                }
+                return ParseDefer(start);
             case TokenKind.ContextKeyword:
                 return ParseContext(start);
             case TokenKind.GotoKeyword:
@@ -1044,6 +1032,27 @@ public sealed class Parser
         Expect(TokenKind.Colon);
         return new SwitchLabel(SpanFrom(start), pattern, guard);
     }
+
+    /// <summary><c>defer</c>, <c>defer failing</c>, <c>defer panicking</c> (contextual words right after <c>defer</c>) or <c>errdefer</c>, each kind but the first with an optional <c>(name)</c>.</summary>
+    private DeferStmt ParseDefer(int start)
+    {
+        var kind = Advance().Kind == TokenKind.ErrdeferKeyword ? DeferKind.Failing : DeferKind.Always;
+        // `failing` and `panicking` are words only here, and only when a statement or a `(name)` binding follows:
+        // `defer failing();` still calls a function named `failing`.
+        if (kind == DeferKind.Always && (AtContextual("failing") || AtContextual("panicking"))
+            && (Peek(1) is TokenKind.Identifier or TokenKind.OpenBrace || Peek(1).IsKeyword() || IsBinding(1)))
+            kind = Text(Advance()) == "failing" ? DeferKind.Failing : DeferKind.Panicking;
+        Name? binding = null;
+        if (kind != DeferKind.Always && IsBinding(0))
+        {
+            Advance();
+            binding = NameOf(Advance());
+            Advance();
+        }
+        return new DeferStmt(SpanFrom(start), kind, binding, ParseEmbedded());
+    }
+
+    private bool IsBinding(int n) => Peek(n) == TokenKind.OpenParen && IsName(Peek(n + 1)) && Peek(n + 2) == TokenKind.CloseParen;
 
     private bool AtContextual(string word) => Kind == TokenKind.Identifier && Text(Current) == word;
 

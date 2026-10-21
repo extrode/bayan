@@ -326,6 +326,8 @@ public enum BuiltinKind
     IoInput,
     /// <summary>What <c>Io.run</c> returns: <c>exitCode</c>, <c>stdout</c>, <c>stderr</c>.</summary>
     ProcessResult,
+    /// <summary>The panic a <c>defer panicking</c> handler or <c>Panic.onPanic</c> receives: <c>message</c>.</summary>
+    Panic,
 }
 
 public sealed class BuiltinType : TypeSymbol
@@ -350,6 +352,7 @@ public sealed class BuiltinType : TypeSymbol
     public static readonly BuiltinType IoStream = new(BuiltinKind.IoStream, "IoStream");
     public static readonly BuiltinType IoInput = new(BuiltinKind.IoInput, "IoInput");
     public static readonly BuiltinType ProcessResult = new(BuiltinKind.ProcessResult, "ProcessResult");
+    public static readonly BuiltinType Panic = new(BuiltinKind.Panic, "Panic");
 }
 
 /// <summary>The type of a caught error when the call can fail with more than one set.</summary>
