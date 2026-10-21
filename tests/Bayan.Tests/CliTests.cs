@@ -368,7 +368,7 @@ public sealed class CliTests
                   boom
                   main.test.byn:24
 
-            * 1 passed · x 3 failed · 0 pending · Ts
+            * 1 passed - x 3 failed - 0 pending - Ts
               rerun the failures: bayan test --only "asserts" --only "fails" --only "panics"
 
             """, WithoutTimes(stdout));
@@ -380,7 +380,8 @@ public sealed class CliTests
         var dir = TestSuite("cli-test-pass", "test \"one\" {\n    assert(true);\n}\n");
         var (exit, stdout, _) = Run("test", "--ascii", dir);
         Assert.Equal(0, exit);
-        Assert.Equal("running 1 test in 1 module\n\n* 1 passed · Ts\n", WithoutTimes(stdout));
+        Assert.Equal("running 1 test in 1 module\n\n* 1 passed - Ts\n", WithoutTimes(stdout));
+        Assert.DoesNotContain("·", stdout, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -396,7 +397,7 @@ public sealed class CliTests
         Assert.Contains("\"failed\": 0", stdout);
         var (humanExit, human, _) = Run("test", "--ascii", dir);
         Assert.Equal(CliApp.ExitOk, humanExit);
-        Assert.Equal("running 2 tests in 1 module\n\n* 1 passed · 1 pending · Ts\n", WithoutTimes(human));
+        Assert.Equal("running 2 tests in 1 module\n\n* 1 passed - 1 pending - Ts\n", WithoutTimes(human));
     }
 
     [Fact]
@@ -410,7 +411,7 @@ public sealed class CliTests
               * cli-test-verbose: one
               * cli-test-verbose: later (pending)
 
-            * 1 passed · 1 pending · Ts
+            * 1 passed - 1 pending - Ts
 
             """, WithoutTimes(stdout));
         Assert.Equal(WithoutTimes(stdout), WithoutTimes(Run("test", "--ascii", "--verbose", dir).Out));
@@ -430,10 +431,29 @@ public sealed class CliTests
                     cents(2) is 200
                   main.test.byn:6
 
-            * 0 passed · x 1 failed · 0 pending · Ts
+            * 0 passed - x 1 failed - 0 pending - Ts
               rerun the failure: bayan test --only "leftover cents"
 
             """, WithoutTimes(stdout));
+    }
+
+    [Fact]
+    public void TheRerunHintEscapesQuotesInTheName()
+    {
+        var dir = TestSuite("cli-test-quoted", "test \"say \\\"hi\\\" \\\\ bye\" {\n    assert(false);\n}\n");
+        var (exit, stdout, _) = Run("test", "--ascii", dir);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+        Assert.Contains("  rerun the failure: bayan test --only \"say \\\"hi\\\" \\\\ bye\"\n", stdout.ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
+    public void TestsLeftOutByOnlyAreNotSkipped()
+    {
+        var dir = TestSuite("cli-test-only-json", "test \"one\" {\n    assert(true);\n}\n\ntest \"two\" {\n    assert(true);\n}\n");
+        var (exit, stdout, _) = Run("test", "--json", "--only", "one", dir);
+        Assert.Equal(CliApp.ExitOk, exit);
+        Assert.Contains("\"passed\": 1", stdout);
+        Assert.Contains("\"skipped\": 0", stdout);
     }
 
     [Fact]
@@ -442,7 +462,7 @@ public sealed class CliTests
         var dir = TestSuite("cli-test-many", string.Concat(Enumerable.Range(1, 4).Select(n => $"test \"t{n}\" {{\n    assert(false);\n}}\n\n")));
         var (exit, stdout, _) = Run("test", "--ascii", dir);
         Assert.Equal(CliApp.ExitTestFailure, exit);
-        Assert.Contains("* 0 passed · x 4 failed · 0 pending · ", stdout);
+        Assert.Contains("* 0 passed - x 4 failed - 0 pending - ", stdout);
         Assert.DoesNotContain("rerun", stdout);
     }
 

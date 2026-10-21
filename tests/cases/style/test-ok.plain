@@ -1,0 +1,7 @@
+# bayan test <dir>/tally
+exit: 0
+--- stdout ---
+running 2 tests in 1 module
+
+◆ 2 passed · 0.00s
+--- stderr ---

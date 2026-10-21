@@ -451,7 +451,7 @@ public static class CliApp
             stdout.WriteLine(Messages.PhaseOutput.Text(Note(shown)));
         }
         var summary = Messages.BuildSummary.Text(Dot, ProgramName(compiled, o.Path), ModeName(o.Mode), target, Seconds(clock.Elapsed));
-        if (result.CacheHit) summary += Messages.BuildFromCache.Text("·");
+        if (result.CacheHit) summary += Messages.BuildFromCache.Text((s_styleOut ?? Style.Plain).Symbols.Separator);
         stdout.WriteLine(Success(summary));
         return ExitOk;
     }
@@ -580,7 +580,6 @@ public static class CliApp
         }
         if (BuildNative(source, o.Mode, stderr, output, json: o.Json || o.TestJson) is not { } executable) return ExitToolchain;
         var count = selected.Count;
-        var skipped = program.Tests.Count - count;
         var human = o.TestJson ? TextWriter.Null : stdout;
         var symbols = (s_styleOut ?? Style.Plain).Symbols;
         var modules = selected.Select(i => ModuleOf(compiled, program.Tests[i].Test)).Distinct().Count();
@@ -625,18 +624,18 @@ public static class CliApp
                 human.WriteLine(Messages.TestDetail.Text(l));
         }
         total.Stop();
-        var report = new TestReport(compiled.Manifest?.Name, ModeName(o.Mode), HostTarget, results, total.Elapsed, skipped);
+        var report = new TestReport(compiled.Manifest?.Name, ModeName(o.Mode), HostTarget, results, total.Elapsed, unchanged);
         int passed = report.Count(TestStatus.Pass), pending = report.Count(TestStatus.Pending);
         var failed = count - passed - pending;
         var seconds = Messages.TestSeconds.Text(total.Elapsed.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
         var dot = Paint(Role.Success, symbols.Dot);
         human.WriteLine();
-        human.WriteLine(failed > 0 ? Messages.TestSummaryFailed.Text(dot, passed, Paint(Role.Error, symbols.Cross), failed, pending, seconds)
-            : pending > 0 ? Messages.TestSummaryPending.Text(dot, passed, pending, seconds)
-            : Messages.TestSummaryPassed.Text(dot, passed, seconds));
+        human.WriteLine(failed > 0 ? Messages.TestSummaryFailed.Text(dot, passed, symbols.Separator, Paint(Role.Error, symbols.Cross), failed, pending, seconds)
+            : pending > 0 ? Messages.TestSummaryPending.Text(dot, passed, symbols.Separator, pending, seconds)
+            : Messages.TestSummaryPassed.Text(dot, passed, symbols.Separator, seconds));
         if (failures.Count is > 0 and <= 3)
         {
-            var command = "bayan test" + string.Concat(failures.Select(n => Messages.TestRerunOnly.Text(n)));
+            var command = "bayan test" + string.Concat(failures.Select(n => Messages.TestRerunOnly.Text(n.Replace("\\", "\\\\").Replace("\"", "\\\""))));
             human.WriteLine((failures.Count == 1 ? Messages.TestRerunOne : Messages.TestRerunMany).Text(command));
         }
         var json = report.ToJson();

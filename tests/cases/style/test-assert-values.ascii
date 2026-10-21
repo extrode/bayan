@@ -1,0 +1,14 @@
+# bayan --ascii test <dir>/tally
+exit: 3
+--- stdout ---
+running 1 test in 1 module
+
+  [1m[38;2;255;138;128mx[0m tally: leftover cents
+      assert(net == cents(2))
+        net is 199
+        cents(2) is 200
+      main.test.byn:7
+
+[38;2;143;214;148m*[0m 0 passed - [38;2;255;138;128mx[0m 1 failed - 0 pending - 0.00s
+  rerun the failure: bayan test --only "leftover cents"
+--- stderr ---

@@ -54,10 +54,10 @@ public sealed record Palette(string Error, string Warning, string Help, string S
     }
 }
 
-public sealed record Symbols(string Dot, string Cross, string Bar, string Caret, string Ellipsis, string[] Progress)
+public sealed record Symbols(string Dot, string Cross, string Bar, string Caret, string Ellipsis, string Separator, string[] Progress)
 {
-    public static readonly Symbols Unicode = new("◆", "✗", "│", "^", "…", ["◆◇◇", "◇◆◇", "◇◇◆"]);
-    public static readonly Symbols Ascii = new("*", "x", "|", "^", "...", ["..."]);
+    public static readonly Symbols Unicode = new("◆", "✗", "│", "^", "…", "·", ["◆◇◇", "◇◆◇", "◇◇◆"]);
+    public static readonly Symbols Ascii = new("*", "x", "|", "^", "...", "-", ["..."]);
 }
 
 /// <summary>How output is painted: optional colours, symbol set and wrap width.</summary>
