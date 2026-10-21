@@ -1,5 +1,5 @@
 # 005 — Terminal style: `bayan` output per `docs/bayan-terminal-style.md`
-Status: planned
+Status: done
 Created: 2026-10-21
 
 ## Problem
@@ -98,3 +98,13 @@ The road to self-hosting puts this before any renderer is ported again (specs 00
 ## Open questions
 
 - None blocking. Conservative choices taken above: phases instead of modules for `-v` (R6), frames only when available (R8), assertion values only for top-level comparisons over printable types (R11), and `CI` suppressing progress (R13).
+
+## Not met
+
+All ten acceptance criteria were re-read against the code and the `tests/cases/style/` goldens and hold, with these exceptions and gaps in the requirements behind them:
+- "Given the existing JSON goldens, then they pass unchanged" holds for the writers and renderer but not for the files: the help rewording (R15) moved `diag-json` goldens and `pending` added `summary.pending` to `results-fail.json` (handoff Q79).
+- R4: paths are relative to the package root for projects but absolute for loose files (`--> <dir>/tally/main.byn`); `work/todo.md` has the item.
+- R4: related (`---`) spans render, but no binder diagnostic carries one, so none appears in a real run (handoff Q81).
+- R6: `-v` reports `parse`, `check`, `emit` and `compile`; link is folded into `compile` because the C compiler links in the same call (handoff Q80).
+- R8: the `-v` pass line has no timing, and the `-v` pending line is `  ◆ <module>: <name> (pending)` rather than the plan's `  pending <module>: <name>: <message>`; `work/todo.md` has both.
+- R8: panics show the runtime's single `at file:line` line, so the top-three-frames rule has nothing to cut yet (handoff Q85).

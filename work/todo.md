@@ -46,7 +46,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `List<T>` copied by value (`var b = a; b.add(…)` ×N) shares and reallocs storage: heap use-after-free under the default allocator (ASan, review of spec 001); pre-existing since v0.1, needs `unique`/`move` (spec §9) or a BYN2762-style copy ban
 - `Io.readText` abandons the whole file buffer from `context.allocator` when the bytes are not UTF-8 (`bayan-rt.c` read path)
 - `Io.run` (POSIX): only the pipe fds are `FD_CLOEXEC`; `byn_io_open` uses `fopen` without `"e"`, so open files are inherited by children
-- Terminal style (`docs/bayan-terminal-style.md`) is not implemented: `-->` location line, column-0 `help:` with `+++` fix preview, `◆`/`✗` summaries with `--ascii`, 20-error cap, `FORCE_COLOR`/`TERM=dumb`/`BAYAN_THEME`, progress line, power-assert values in `bayan test`; renderer changes must move `selfhost/lexer/diagnostics.byn` in the same commit (L001)
 - Flow analysis: `x ??= return 3;` followed by code gives a false BYN2405 "unreachable code" warning (`x = x ?? return 3;` does not); found in the spec 002 loop-3 review
 - L005 proof never runs a real `cmd.exe`: the read-back model in `tests/Bayan.Tests/L005RunBatchTests.cs` encodes cmd rules by hand, so a quoted character cmd.exe or code page 65001 reads differently would pass; needs a Windows run of the generated cases through `cmd.exe` and a `%~1`/`shift` batch file (review of feat/laws-005-007)
 - `map[k].clear()` and `map[k].add(x)` report BYN2106: a `map[k]` receiver is a write target only for `take()` (spec 003 T1); other mutating builtins on a map element need the same `MapWriteTarget` treatment
@@ -71,3 +70,7 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `bayan test` (005 T12): the "top three stack frames" trim is untested end to end because the runtime prints one `at file:line` frame per panic.
 - The error cap line (`… and N more errors`) follows the last diagnostic with no blank line between them (`tests/cases/style/diag-cap.*`); the guide does not say which (005 T14).
 - The rerun hint (005 T14) escapes `\` and `"` in test names but not `$` or `` ` ``, which a POSIX shell still expands inside double quotes.
+- `bayan test -v` pass lines have no per-test timing (spec 005 R8 asked for one)
+- `bayan test -v` pending line is `  ◆ <module>: <name> (pending)`, not the planned `  pending <module>: <name>: <message>` (spec 005)
+- Diagnostics for loose files show absolute paths in `-->` (spec 005 R4: relative to the package root)
+- `laws-check`'s 600 s per-law limit is shorter than L001/L002 under load; both were verified by uncapped filter runs (spec 005)

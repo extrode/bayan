@@ -47,6 +47,8 @@ Light versus dark is detected from `COLORFGBG` where available; otherwise Bayan 
 | `◆` | Bayan's dot: success summaries, section markers | `*` |
 | `✗` | A failed test | `x` |
 | `│` | Diagnostic gutter | `\|` |
+| `·` | Separator between summary counts and timings | `-` |
+| `…` | Elision, as in the error cap line | `...` |
 | `^` | Span marker | `^` |
 | `◆◇◇` → `◇◆◇` → `◇◇◆` | Progress (animated, terminals only) | `...` printed once |
 
@@ -71,35 +73,34 @@ With `-v`, one line per phase, then the output path:
 ◆ built tally (debug, linux-x64) in 0.84s
 ```
 
-A v0.1 program is one C translation unit, so `-v` reports phases, not modules; the C compiler compiles and links in one call, so `compile` includes the link. A cache hit prints `compile  from cache` and adds ` · from cache` to the summary.
+A v0.1 program is one C translation unit, so `-v` reports phases, not modules; the C compiler compiles and links in one call, so `compile` includes the link. A cache hit prints `compile    from cache` and adds ` · from cache` to the summary.
 
 Failure:
 ```
-error BYN2104: `total` is immutable
+error BYN2104: `x` is immutable
+  --> src/main.byn:3:5
 
-  --> src/ledger/ledger.byn:12:9
-   │
- 9 │     let total = 0;
-   │         ----- declared with `let` here
-   │
-12 │     total += line.price;
-   │     ^^^^^ cannot be changed
-   │
-help: declare it with `var` if it should change
-   │
- 9 │     var total = 0;
-   │     +++
+  3 │     x = 2;
+    │     ^ declared with `let` on line 2
+    │
+  help: declare it with `var` if it should change
+    │ 2 │     var x = 1;
+    │   │     +++
 
 ✗ build failed: 1 error, 0 warnings
   explain: bayan explain BYN2104
 ```
+
+`check` prints the same footer on failure and `◆ checked <name> in <s>s` on success. `run` prints only build diagnostics and the footer; the footer's `explain:` line names the first error's code.
 
 Rules for diagnostics:
 - One blank line between diagnostics; never more.
 - The header line is `severity CODE: message`, with only `severity CODE` coloured.
 - Paths are relative to the package root, shown as `--> path:line:column`.
 - Related spans (`-----`, secondary) use the note colour; the primary span (`^^^^`) uses the severity colour.
-- Fixes show the changed line with `+++` or `---` markers under inserted or removed text.
+- Fixes show the changed line with `+++` or `---` markers under inserted text. A fix that only removes text shows the original line with `---` under the removed part.
+- Related spans (`Diagnostic.Related`) render, but no binder diagnostic carries one yet; labels such as "declared with `let` on line 2" stay in the primary label.
+- Bold is weight, not a colour role: `severity CODE`, `help:` and `^^^` are bold as well as coloured; the message is not.
 - After 20 errors, stop and print `… and 34 more errors (use --all to show them)` (ASCII: `...`). Warnings are never capped, and JSON output has no cap.
 - Prose lines (message, labels, help) wrap at the terminal width, or 100 columns when it's unknown, continuing under their own indent. Source lines and code are never wrapped.
 
@@ -111,18 +112,21 @@ running 142 tests in 9 modules
   ✗ ledger: leftover cents go to the first participants alphabetically
       assert(net["alice"] == -34)
         net["alice"] is -33
-      src/ledger/ledger.test.byn:27
+      ledger.test.byn:27
 
 ◆ 141 passed · ✗ 1 failed · 0 pending · 2.31s
   rerun the failure: bayan test --only "leftover cents"
 ```
 
 - Passing tests print nothing individually unless `-v`.
-- A failed assertion shows the expression, then the actual values of its parts.
+- With `-v`, the header is followed by one line per passing test, `  ◆ <module>: <name>`, and per pending test, `  ◆ <module>: <name> (pending)` (the dot in the warning colour). Neither line carries a timing yet.
+- A failed assertion shows the expression, then the value of each side that is not a literal, for a top-level comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) over integers, floats, bools, strings and enums. Other assertions show the expression alone.
 - Panics show the panic message and the top three stack frames; `-v` shows all.
 - Pending (`todo`) tests are counted, and listed with `-v`.
 - With everything passing: `◆ 142 passed · 2.10s`, plus ` · 3 pending` when some are pending.
-- Up to three failures get one rerun line: `rerun the failures: bayan test --only "a" --only "b"`. With more than three, no rerun line.
+- Up to three failures get one rerun line using the full test names: `rerun the failures: bayan test --only "a" --only "b"` (`rerun the failure:` for one). With more than three, no rerun line.
+- The header counts modules (`1 module`, `9 modules`) and tests (`1 test`); with `--changed`, tests in unchanged modules are noted as skipped.
+- `--only` with no matching name and no `--changed` is a usage error (exit 2); `--only` combined with an empty `--changed` selection prints `running 0 tests in 0 modules` and exits 0.
 - `--only <substring>` is repeatable and selects the union; with `--changed`, the intersection.
 - A test child process exits 4 when the test is pending (`todo`). This is the child's code, not the CLI's; it isn't 3 because `abort()` exits 3 on Windows.
 
@@ -133,14 +137,17 @@ Prints nothing of its own on success: the program's output is the output. Build 
 ### `bayan doctor`
 
 ```
-◆ bayan 0.1.0 (a1b2c3d)
-◆ zig 0.14.1        /usr/local/bin/zig
-◆ git 2.47.0
-◆ cache             ~/.cache/bayan (1.2 GiB, writable)
-◆ host target       linux-x64
-✗ macos-arm64 cross-compilation: zig not found for this target
-  help: install zig 0.14 or set BAYAN_CC
+◆ bayan       0.1.0 (commit a1b2c3d4e5f6)
+◆ host        linux-x64
+✗ C compiler: none found
+  help: install zig (https://ziglang.org), or set BAYAN_CC to a C compiler
+◆ zig         not found; building for other targets needs it
+  help: install zig (https://ziglang.org)
+◆ git         /usr/bin/git (git version 2.47.0)
+◆ cache       ~/.cache/bayan (writable, 12 programs, 3.4 MB)
 ```
+
+A check that cannot pass starts with `✗` and gets a `help:` line; an optional tool that is missing keeps `◆` and its `help:` line.
 
 ## 5. Streams and exit codes
 
@@ -155,6 +162,7 @@ Prints nothing of its own on success: the program's output is the output. Build 
 - Removed when the operation finishes, so only the summary remains in scrollback.
 - Never shown when `CI` is set to a non-empty value, in `--json` / `--diagnostics json` mode, or when stderr is piped.
 - The ASCII form prints `... <phase>` once and doesn't rewrite.
+- The phase is `compiling`, `building` or `testing <name>`.
 
 ## 7. Language
 
@@ -165,5 +173,20 @@ Prints nothing of its own on success: the program's output is the output. Build 
 
 ## 8. Testing
 
-- Every output shape above has a golden test, rendered three ways: colour, `NO_COLOR`, and `--ascii`.
+- Every output shape above has a golden test, rendered three ways: colour (`.color`), `NO_COLOR` (`.plain`), and `--ascii` (`.ascii`, colour on). Goldens live in `tests/cases/style/`; see its README row.
+- Law L011: removing ANSI escapes from the coloured rendering gives exactly the `NO_COLOR` rendering, for every shape, with and without `--ascii`.
 - A contrast test checks every colour in section 2 against white and `#14202E` and fails below 4.5:1.
+
+## 9. Environment and flags
+
+| Name | Effect |
+|---|---|
+| `--color auto\|always\|never` | Colour for this run; wins over every variable (§2). |
+| `--ascii` | ASCII symbols (§3). Global, like `--color`. |
+| `--all` | Show every error instead of the first 20 (`check`, `types`, `build`, `run`, `test`). |
+| `-v` | `build`: phase times and output path. `test`: also list passing and pending tests. |
+| `--diagnostics json`, `--json` | Machine output: no colour, symbols, cap or progress. |
+| `NO_COLOR`, `FORCE_COLOR`, `TERM=dumb` | Colour decision (§2); `TERM=dumb` also selects ASCII symbols. |
+| `COLORTERM`, `BAYAN_THEME`, `COLORFGBG` | Truecolour or 16 colours, and the light or dark column (§2). |
+| `LC_ALL`, `LC_CTYPE`, `LANG` | Locale check for the ASCII fallback (§3). |
+| `CI` | Non-empty: no progress line (§6). |
