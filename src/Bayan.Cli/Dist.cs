@@ -31,8 +31,8 @@ internal static class Dist
                     json = args[++i] == "json";
                     break;
                 case var a when a.StartsWith('-') || path is not null:
-                    stderr.WriteLine($"bayan: unexpected argument `{a}`");
-                    stderr.WriteLine("usage: bayan dist [<dir>] [--target <t>|all] [--mode debug|safe|fast] [--force] [--allow-dirty]");
+                    stderr.WriteLine(Messages.UnexpectedArgument.Text(a));
+                    stderr.WriteLine(Messages.CommandUsage.Text("bayan dist [<dir>] [--target <t>|all] [--mode debug|safe|fast] [--force] [--allow-dirty]"));
                     return CliApp.ExitUsage;
                 default: path = args[i]; break;
             }
@@ -40,13 +40,13 @@ internal static class Dist
         path ??= ".";
         if (!File.Exists(Path.Combine(path, "package.byn")))
         {
-            stderr.WriteLine($"bayan: `{path}` isn't a project (no `package.byn`); scripts and loose files have no dist");
+            stderr.WriteLine(Messages.DistNotProject.Text(path, "package.byn"));
             return CliApp.ExitUsage;
         }
         var buildMode = BuildMode.Safe;
         if (modeArg is not null && !Toolchain.TryParseMode(modeArg, out buildMode))
         {
-            stderr.WriteLine($"bayan: unknown mode `{modeArg}` (expected debug, safe or fast)");
+            stderr.WriteLine(Messages.UnknownMode.Text(modeArg));
             return CliApp.ExitUsage;
         }
 
@@ -56,7 +56,7 @@ internal static class Dist
         var root = compiled.ProjectRoot!;
         if (manifest.Kind == PackageKind.Lib)
         {
-            stderr.WriteLine($"bayan: `{manifest.Name}` is a library; library distribution arrives later, with FFI export");
+            stderr.WriteLine(Messages.DistLibrary.Text(manifest.Name));
             return CliApp.ExitUsage;
         }
         if (modeArg is null) Toolchain.TryParseMode(manifest.DistMode, out buildMode);
@@ -65,8 +65,8 @@ internal static class Dist
         var source = ReadSource(root);
         if (source is { Dirty: true } && !allowDirty)
         {
-            stderr.WriteLine("bayan: the git tree has uncommitted changes, so this build couldn't be traced to a commit");
-            stderr.WriteLine("  help: commit first, or pass `--allow-dirty` (recorded in BUILDINFO.json)");
+            stderr.WriteLine(Messages.DistDirty.Text());
+            stderr.WriteLine(Messages.DistDirtyHelp.Text("--allow-dirty", "BUILDINFO.json"));
             return CliApp.ExitUsage;
         }
 
@@ -75,8 +75,8 @@ internal static class Dist
         var versionDir = Path.Combine(distDir, version);
         if (Directory.Exists(versionDir) && !force)
         {
-            stderr.WriteLine($"bayan: `dist/{version}/` already exists, and a released version never changes");
-            stderr.WriteLine("  help: bump `version` in package.byn, or pass `--force` to rebuild this one");
+            stderr.WriteLine(Messages.DistExists.Text($"dist/{version}/"));
+            stderr.WriteLine(Messages.DistExistsHelp.Text("version", "package.byn", "--force"));
             return CliApp.ExitUsage;
         }
 
@@ -101,8 +101,8 @@ internal static class Dist
         if (Directory.Exists(versionDir)) Directory.Delete(versionDir, recursive: true);
         Directory.Move(staging, versionDir);
         var latest = RefreshLatest(distDir);
-        stdout.WriteLine($"built {manifest.Name} {version} ({CliApp.ModeName(buildMode)}) for {string.Join(", ", targets)} in dist/{version}/");
-        if (latest is not null) stdout.WriteLine($"dist/latest/ is {latest}");
+        stdout.WriteLine(Messages.DistBuilt.Text(manifest.Name, version, CliApp.ModeName(buildMode), string.Join(", ", targets), $"dist/{version}/"));
+        if (latest is not null) stdout.WriteLine(Messages.DistLatest.Text("dist/latest/", latest));
         return CliApp.ExitOk;
     }
 
@@ -121,7 +121,7 @@ internal static class Dist
             var target = name == "host" ? CliApp.HostTarget : name;
             if (!Targets.IsKnown(target))
             {
-                stderr.WriteLine($"bayan: unknown target `{name}` (expected host, all, {string.Join(", ", Targets.All)})");
+                stderr.WriteLine(Messages.UnknownDistTarget.Text(name, string.Join(", ", Targets.All)));
                 return null;
             }
             if (!targets.Contains(target)) targets.Add(target);
@@ -234,8 +234,8 @@ internal static class Dist
                 case "--dist": dist = true; break;
                 case "--cache": cache = true; break;
                 case var x when x.StartsWith('-') || path is not null:
-                    stderr.WriteLine($"bayan: unexpected argument `{x}`");
-                    stderr.WriteLine("usage: bayan clean [<dir>] [--dist] [--cache]");
+                    stderr.WriteLine(Messages.UnexpectedArgument.Text(x));
+                    stderr.WriteLine(Messages.CommandUsage.Text("bayan clean [<dir>] [--dist] [--cache]"));
                     return CliApp.ExitUsage;
                 default: path = a; break;
             }
@@ -243,7 +243,7 @@ internal static class Dist
         var project = File.Exists(Path.Combine(path ?? ".", "package.byn"));
         if (!project && (path is not null || dist || !cache))
         {
-            stderr.WriteLine($"bayan: `{path ?? "."}` isn't a project (no `package.byn`), so it has no out/ to clean");
+            stderr.WriteLine(Messages.CleanNotProject.Text(path ?? ".", "package.byn", "out/"));
             return CliApp.ExitUsage;
         }
         if (project)
@@ -260,6 +260,6 @@ internal static class Dist
     {
         if (!Directory.Exists(dir)) return;
         Directory.Delete(dir, recursive: true);
-        stdout.WriteLine($"removed {name}");
+        stdout.WriteLine(Messages.CleanRemoved.Text(name));
     }
 }

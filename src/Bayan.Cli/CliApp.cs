@@ -21,55 +21,7 @@ public static class CliApp
     public const int ExitTestFailure = 3;
     public const int ExitToolchain = 4;
 
-    private const string Usage = """
-        usage: bayan <command> [args]
-
-        commands:
-          new <name>           create an app in a new directory [--lib|--script] [--vcs git|none] [--ci github|none]
-          init [<dir>]         add a project's missing files to a directory (same options as new)
-          lex [--json] <file>  print the token stream [--json: as one JSON object] (`-` reads stdin)
-          parse [--ast] <file> check syntax; with --ast print the syntax tree
-          types <path>         print each function's parameter and local types as JSON
-          check <path>         report diagnostics for a program (a file or directory)
-          build <path>         compile to an executable [-o <file>] [--mode debug|safe|fast] [--target <t>] [--emit-c]
-          run <path>           compile and run [--mode debug|safe|fast] [-- <program args>]
-          test <path>          compile and run the tests, each in its own process [--mode debug|safe|fast]
-                               [--json: print the results as JSON instead]
-                               [--changed [--base <ref>]: only modules with files changed since HEAD or <ref>]
-          dist [<dir>]         build release binaries into dist/<version>/ [--target <t>|all] [--mode m]
-                               [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]
-          clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]
-          cache stats          show the shared build cache's location and size
-          explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
-          <script>.byn         run a script, so `#!/usr/bin/env bayan` works
-          doctor               check the C compiler, zig, git and the build cache, with fixes
-          --version            print the compiler version and the commit it was built from
-          --help               print this message
-
-        check, types, build, run and test take a project directory (one with `package.byn`; the default
-        inside a project), a script (a file starting with `#!`), or a file or directory of `.byn` files.
-
-        options for every command:
-          --color auto|always|never
-                               color for terminals (auto: on unless piped or NO_COLOR is set;
-                               FORCE_COLOR turns it on, TERM=dumb off)
-          --ascii              use ASCII symbols instead of ◆ ✗ │ (also with TERM=dumb or a non-UTF-8 locale)
-
-        options for check, types, build, run and test:
-          --diagnostics json   print each diagnostic to stderr as one JSON object per line
-                               (code, severity, file, span, message, label, help, fixes)
-
-        exit codes:
-          0  success
-          1  compile errors
-          2  usage errors (unknown command or option, missing path)
-          3  test failures
-          4  toolchain problems (no C compiler, unwritable cache, C compiler failure)
-
-        `bayan run` exits 1 when compilation fails and otherwise passes the program's own exit code
-        through unchanged, so it cannot tell a build failure from a program that exits 1. When that
-        matters, run `bayan build` first or read `--diagnostics json`.
-        """;
+    private static string Usage => Messages.Usage.Text();
 
     /// <summary>Whether stdout and stderr are terminals, and the terminal's width (0 when unknown).</summary>
     public readonly record struct Terminal(bool Stdout, bool Stderr, int Width = 0);
@@ -78,7 +30,7 @@ public static class CliApp
     [ThreadStatic] private static Style? s_styleErr;
     [ThreadStatic] private static bool s_stderrTty;
 
-    public static string VersionLine => $"bayan {Version} (commit {BuildInfo.Commit})";
+    public static string VersionLine => Messages.VersionLine.Text("bayan", Version, BuildInfo.Commit);
 
     public static int Run(string[] args, TextWriter stdout, TextWriter stderr) => Run(args, stdout, stderr, default);
 
@@ -138,7 +90,7 @@ public static class CliApp
                 // `#!/usr/bin/env bayan` runs `bayan script.byn [args]`.
                 return RunProgram([file, "--", .. rest], stderr);
             default:
-                stderr.WriteLine($"bayan: unknown command `{args[0]}`");
+                stderr.WriteLine(Messages.UnknownCommand.Text(args[0]));
                 stderr.WriteLine(Usage);
                 return ExitUsage;
         }
@@ -205,7 +157,7 @@ public static class CliApp
                 case "--mode" when i + 1 < args.Length:
                     if (!Toolchain.TryParseMode(args[++i], out mode))
                     {
-                        stderr.WriteLine($"bayan: unknown mode `{args[i]}` (expected debug, safe or fast)");
+                        stderr.WriteLine(Messages.UnknownMode.Text(args[i]));
                         return null;
                     }
                     break;
@@ -215,7 +167,7 @@ public static class CliApp
                         case "json": json = true; break;
                         case "text": json = false; break;
                         default:
-                            stderr.WriteLine($"bayan: unknown diagnostics format `{args[i]}` (expected json or text)");
+                            stderr.WriteLine(Messages.UnknownDiagnosticsFormat.Text(args[i]));
                             return null;
                     }
                     break;
@@ -230,7 +182,7 @@ public static class CliApp
                     if (target == "host") target = null;
                     else if (!Targets.IsKnown(target))
                     {
-                        stderr.WriteLine($"bayan: unknown target `{target}` (expected host, {string.Join(", ", Targets.All)})");
+                        stderr.WriteLine(Messages.UnknownTarget.Text(target, string.Join(", ", Targets.All)));
                         return null;
                     }
                     break;
@@ -247,7 +199,7 @@ public static class CliApp
                 default:
                     if (path is not null || args[i].StartsWith('-'))
                     {
-                        stderr.WriteLine($"bayan: unexpected argument `{args[i]}`");
+                        stderr.WriteLine(Messages.UnexpectedArgument.Text(args[i]));
                         return null;
                     }
                     path = args[i];
@@ -257,12 +209,12 @@ public static class CliApp
         if (path is null && File.Exists("package.byn")) path = ".";
         if (path is null)
         {
-            stderr.WriteLine("bayan: expected a file or directory (or run inside a project with a `package.byn`)");
+            stderr.WriteLine(Messages.ExpectedPath.Text("package.byn"));
             return null;
         }
         if (!File.Exists(path) && !Directory.Exists(path))
         {
-            stderr.WriteLine($"bayan: not found: {path}");
+            stderr.WriteLine(Messages.NotFound.Text(path));
             return null;
         }
         return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef);
@@ -278,7 +230,7 @@ public static class CliApp
     /// </summary>
     internal static Compiled? Compile(BuildOptions o, TextWriter stderr, bool includeTests = false)
     {
-        using var progress = StartProgress(o.Json, stderr, "compiling");
+        using var progress = StartProgress(o.Json, stderr, Messages.CompileProgress.Text());
         Compilation c;
         Manifest? manifest = null;
         string? root = null;
@@ -293,7 +245,7 @@ public static class CliApp
             if (!Directory.Exists(Path.Combine(root, "src", entry)))
             {
                 progress.Done();
-                stderr.WriteLine($"bayan: `{manifest.Name}` is {(manifest.Kind == PackageKind.Lib ? "a library" : "an app")}, so its code goes in `src/{entry}/`, which doesn't exist");
+                stderr.WriteLine((manifest.Kind == PackageKind.Lib ? Messages.NoEntryLib : Messages.NoEntryApp).Text(manifest.Name, $"src/{entry}/"));
                 return null;
             }
             c = Compilation.FromProject(root, entry, new CompilationOptions(includeTests, Library: manifest.Kind == PackageKind.Lib));
@@ -350,7 +302,7 @@ public static class CliApp
             }
             if (value is not ("auto" or "always" or "never"))
             {
-                stderr.WriteLine($"bayan: unknown color setting `{value}` (expected auto, always or never)");
+                stderr.WriteLine(Messages.UnknownColor.Text(value));
                 return null;
             }
             color = value;
@@ -378,18 +330,18 @@ public static class CliApp
     internal static bool RefuseLibrary(Compiled compiled, string command, TextWriter stderr)
     {
         if (compiled.Manifest is not { Kind: PackageKind.Lib } m) return false;
-        stderr.WriteLine($"bayan: `{m.Name}` is a library, so there is no program to {command}; `bayan test` runs its tests");
+        stderr.WriteLine(Messages.LibraryNoProgram.Text(m.Name, command, "bayan test"));
         return true;
     }
 
     /// <summary>Builds, or reports why the toolchain could not.</summary>
     internal static string? BuildNative(string source, BuildMode mode, TextWriter stderr, string? output = null, string? target = null, bool json = false)
     {
-        using var progress = StartProgress(json, stderr, "building");
+        using var progress = StartProgress(json, stderr, Messages.BuildProgress.Text());
         var result = Toolchain.Build(source, mode, output, target);
         progress.Done();
         if (result.Succeeded) return result.ExecutablePath;
-        stderr.WriteLine("bayan: " + result.Errors);
+        stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
         return null;
     }
 
@@ -475,12 +427,12 @@ public static class CliApp
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName, HostTarget))
             : null;
-        using var progress = StartProgress(o.Json, stderr, "building");
+        using var progress = StartProgress(o.Json, stderr, Messages.BuildProgress.Text());
         var result = Toolchain.Build(source, o.Mode, output);
         progress.Done();
         if (!result.Succeeded)
         {
-            stderr.WriteLine("bayan: " + result.Errors);
+            stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
             return ExitToolchain;
         }
         if (scriptKey is not null && result.Key is { } key) Toolchain.RememberScript(scriptKey, key);
@@ -500,13 +452,13 @@ public static class CliApp
     {
         if (args is not ["stats"])
         {
-            stderr.WriteLine("usage: bayan cache stats   (`bayan clean --cache` empties it)");
+            stderr.WriteLine(Messages.CacheUsage.Text("bayan cache stats", "bayan clean --cache"));
             return ExitUsage;
         }
         var s = Toolchain.Stats();
-        stdout.WriteLine($"cache:    {s.Directory}");
-        stdout.WriteLine($"programs: {s.Programs} ({s.Bytes / 1024.0 / 1024.0:0.0} MB)");
-        stdout.WriteLine($"scripts:  {s.Scripts}");
+        stdout.WriteLine(Messages.CacheDirectory.Text(s.Directory));
+        stdout.WriteLine(Messages.CachePrograms.Text(s.Programs, s.Bytes / 1024.0 / 1024.0));
+        stdout.WriteLine(Messages.CacheScripts.Text(s.Scripts));
         return ExitOk;
     }
 
@@ -535,13 +487,13 @@ public static class CliApp
         var count = selected.Count;
         var skipped = program.Tests.Count - count;
         var human = o.TestJson ? TextWriter.Null : stdout;
-        human.WriteLine($"running {count} test{(count == 1 ? "" : "s")}{(o.Changed ? $" ({skipped} in unchanged modules skipped)" : "")}");
+        human.WriteLine((count == 1 ? Messages.TestRunningOne : Messages.TestRunningMany).Text(count, o.Changed ? Messages.TestSkipped.Text(skipped) : ""));
         var results = new List<TestResult>();
         var total = System.Diagnostics.Stopwatch.StartNew();
         foreach (var i in selected)
         {
             var test = program.Tests[i].Test;
-            var progress = StartProgress(o.Json || o.TestJson, stderr, $"testing {test.Name}");
+            var progress = StartProgress(o.Json || o.TestJson, stderr, Messages.TestProgress.Text(test.Name));
             var outcome = RunTest(executable, i);
             progress.Done();
             var status = outcome.TimedOut ? TestStatus.Timeout : outcome.ExitCode switch
@@ -551,16 +503,16 @@ public static class CliApp
                 4 => TestStatus.Pending,
                 _ => TestStatus.Panic,
             };
-            var details = outcome.TimedOut ? $"timed out after {TestTimeout.TotalSeconds:0} s" : (outcome.Stdout + outcome.Stderr).TrimEnd();
+            var details = outcome.TimedOut ? Messages.TestTimedOut.Text(TestTimeout.TotalSeconds) : (outcome.Stdout + outcome.Stderr).TrimEnd();
             var (file, line) = test.Location is { } at ? (at.Source.Path, at.Source.GetLinePosition(at.Span.Start).Line) : ("", 0);
             results.Add(new TestResult(test.Name, file, line, status, outcome.Elapsed, status == TestStatus.Pass ? "" : details));
             var label = status switch
             {
-                TestStatus.Pass => "ok   ",
-                TestStatus.Fail => "FAIL ",
-                TestStatus.Panic => "PANIC",
-                TestStatus.Pending => "PEND ",
-                _ => "TIME ",
+                TestStatus.Pass => Messages.TestLabelPass.Text(),
+                TestStatus.Fail => Messages.TestLabelFail.Text(),
+                TestStatus.Panic => Messages.TestLabelPanic.Text(),
+                TestStatus.Pending => Messages.TestLabelPending.Text(),
+                _ => Messages.TestLabelTimeout.Text(),
             };
             var role = status switch
             {
@@ -568,22 +520,22 @@ public static class CliApp
                 TestStatus.Timeout or TestStatus.Pending => Role.Warning,
                 _ => Role.Error,
             };
-            human.WriteLine($"  {Paint(role, label, bold: role == Role.Error)}  {test.Name}  ({FormatMs(outcome.Elapsed)})");
+            human.WriteLine(Messages.TestResult.Text(Paint(role, label, bold: role == Role.Error), test.Name, FormatMs(outcome.Elapsed)));
             if (status == TestStatus.Pass) continue;
             foreach (var l in details.Split('\n'))
-                human.WriteLine("         " + l.TrimEnd('\r'));
+                human.WriteLine(Messages.TestDetail.Text(l.TrimEnd('\r')));
         }
         total.Stop();
         var report = new TestReport(compiled.Manifest?.Name, ModeName(o.Mode), HostTarget, results, total.Elapsed, skipped);
         int passed = report.Count(TestStatus.Pass), failed = report.Count(TestStatus.Fail);
         int panicked = report.Count(TestStatus.Panic), timedOut = report.Count(TestStatus.Timeout), pending = report.Count(TestStatus.Pending);
-        var summary = $"{passed} passed";
-        if (failed > 0) summary += $", {failed} failed";
-        if (panicked > 0) summary += $", {panicked} panicked";
-        if (timedOut > 0) summary += $", {timedOut} timed out";
-        if (pending > 0) summary += $", {pending} pending";
+        var summary = Messages.TestPassed.Text(passed);
+        if (failed > 0) summary += Messages.TestFailed.Text(failed);
+        if (panicked > 0) summary += Messages.TestPanicked.Text(panicked);
+        if (timedOut > 0) summary += Messages.TestTimedOutCount.Text(timedOut);
+        if (pending > 0) summary += Messages.TestPending.Text(pending);
         human.WriteLine();
-        human.WriteLine($"{count} test{(count == 1 ? "" : "s")}: {summary}  ({FormatMs(total.Elapsed)})");
+        human.WriteLine((count == 1 ? Messages.TestSummaryOne : Messages.TestSummaryMany).Text(count, summary, FormatMs(total.Elapsed)));
         var json = report.ToJson();
         if (o.TestJson) stdout.Write(json);
         if (compiled.ProjectRoot is { } root)
@@ -609,12 +561,12 @@ public static class CliApp
         var dir = compiled.ProjectRoot ?? (Directory.Exists(o.Path) ? Path.GetFullPath(o.Path) : Path.GetDirectoryName(Path.GetFullPath(o.Path))!);
         if (Toolchain.FindOnPath("git") is not { } git)
         {
-            stderr.WriteLine("bayan: `--changed` needs git, which isn't installed");
+            stderr.WriteLine(Messages.ChangedNoGit.Text("--changed"));
             return null;
         }
         if (Scaffold.Git(git, dir, "rev-parse", "--show-toplevel") is not (0, _))
         {
-            stderr.WriteLine($"bayan: `--changed` needs a git repository, and `{o.Path}` isn't in one");
+            stderr.WriteLine(Messages.ChangedNoRepository.Text("--changed", o.Path));
             return null;
         }
         // Paths relative to `dir`, not the toplevel, which git reports with symlinks resolved;
@@ -622,7 +574,7 @@ public static class CliApp
         var baseRef = o.Base ?? "HEAD";
         if (Scaffold.Git(git, dir, "diff", "--name-only", "-z", "--relative", baseRef, "--", ".") is not (0, var diff))
         {
-            stderr.WriteLine($"bayan: git can't compare the working tree with `{baseRef}`");
+            stderr.WriteLine(Messages.ChangedNoCompare.Text(baseRef));
             return null;
         }
         var untracked = Scaffold.Git(git, dir, "ls-files", "-z", "--others", "--exclude-standard", "--", ".") is (0, var u) ? u : "";
@@ -676,19 +628,19 @@ public static class CliApp
     }
 
     private static string FormatMs(TimeSpan t) =>
-        t.TotalMilliseconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " ms";
+        Messages.TestMs.Text(t.TotalMilliseconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture));
 
     private static int Explain(string[] args, TextWriter stdout, TextWriter stderr)
     {
         if (args.Length != 1)
         {
-            stderr.WriteLine("bayan: expected one diagnostic code, e.g. `bayan explain BYN0003`");
+            stderr.WriteLine(Messages.ExplainExpected.Text("bayan explain BYN0003"));
             return ExitUsage;
         }
         var text = ExplainText(args[0]);
         if (text is null)
         {
-            stderr.WriteLine($"bayan: no explanation for `{args[0]}`");
+            stderr.WriteLine(Messages.ExplainUnknown.Text(args[0]));
             return ExitUsage;
         }
         stdout.Write(text);
@@ -712,12 +664,12 @@ public static class CliApp
         source = null!;
         if (args.Length != 1)
         {
-            stderr.WriteLine("bayan: expected exactly one file");
+            stderr.WriteLine(Messages.ExpectedOneFile.Text());
             return false;
         }
         if (!File.Exists(args[0]))
         {
-            stderr.WriteLine($"bayan: file not found: {args[0]}");
+            stderr.WriteLine(Messages.FileNotFound.Text(args[0]));
             return false;
         }
         source = SourceText.FromFile(args[0]);
