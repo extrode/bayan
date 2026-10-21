@@ -387,7 +387,8 @@ public sealed class CliTests
     {
         var (exit, stdout, stderr) = Run("check", Example("tally-lite"));
         Assert.Equal(CliApp.ExitOk, exit);
-        Assert.Equal("", stdout + stderr);
+        Assert.Equal("", stderr);
+        Assert.StartsWith("checked tally-lite in ", stdout[(stdout.IndexOf(' ') + 1)..]);
     }
 
     [Fact]
