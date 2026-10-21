@@ -741,6 +741,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 var operand = lvalue ? Lvalue(c.Operand) : Expr(c.Operand);
                 if (IsNever(operand)) return new LNever(e.Syntax, e.Type);
                 if (c.Kind == ConversionKind.FromNever) return operand;
+                if (c.Kind == ConversionKind.Narrow) return new LOptionalValue(c.Syntax, operand, c.Type);
                 if (c.Kind is ConversionKind.ListToSpan && !IsTrivial(operand)) operand = Spill(operand);
                 return c with { Operand = operand };
             }

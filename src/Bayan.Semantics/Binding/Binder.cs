@@ -28,6 +28,8 @@ internal sealed partial class Binder
     private readonly Dictionary<LocalSymbol, LocalDecl> _pending = new();
     private readonly Dictionary<LocalDecl, TypeSymbol> _constraints = new();
     private readonly Dictionary<LocalDecl, LocalDecl> _peers = new();
+    /// <summary>Let locals and parameters a null check proved present, each valid while its scope is open (spec §7.2).</summary>
+    private readonly List<(Scope Scope, LocalSymbol Local)> _nonNull = new();
 
     public Binder(Compilation c, FileContext file, FunctionSymbol? fn, StructSymbol? container,
         IReadOnlyDictionary<string, TypeSymbol>? typeArgs = null, IReadOnlyDictionary<LocalDecl, TypeSymbol>? seeds = null)
@@ -383,21 +385,22 @@ internal sealed partial class Binder
             case IfStmt i:
             {
                 var cond = BindCondition(i.Condition);
-                var then = BindBody(i.Then);
-                var els = i.Else is { } e ? BindBody(e) : null;
-                return new BoundIf(i, cond, then, els);
+                var then = Narrowed(cond, true, () => BindBody(i.Then));
+                var els = i.Else is { } e ? Narrowed(cond, false, () => BindBody(e)) : null;
+                return NarrowAfter(new BoundIf(i, cond, then, els));
             }
             case UnlessStmt u:
             {
-                var cond = BindCondition(u.Condition);
-                return new BoundIf(u, Negate(u.Condition, cond), BindBody(u.Body), null);
+                var cond = Negate(u.Condition, BindCondition(u.Condition));
+                return NarrowAfter(new BoundIf(u, cond, Narrowed(cond, true, () => BindBody(u.Body)), null));
             }
             case GuardedStmt g:
             {
                 // The condition is evaluated first (spec §7.3); pattern variables it binds stay in scope.
                 var cond = BindCondition(g.Condition);
-                var body = BindStatement(g.Statement);
-                return new BoundIf(g, g.Unless ? Negate(g.Condition, cond) : cond, body, null);
+                if (g.Unless) cond = Negate(g.Condition, cond);
+                var body = Narrowed(cond, true, () => BindStatement(g.Statement));
+                return NarrowAfter(new BoundIf(g, cond, body, null));
             }
             case WhileStmt w:
             {
@@ -452,6 +455,76 @@ internal sealed partial class Binder
             : new BoundUnary(syntax, UnaryOp.Not, cond, PrimitiveType.Bool);
 
     private BoundExpr BindCondition(Expr e) => BindConverted(e, PrimitiveType.Bool);
+
+    // ── Null narrowing (spec §7.2) ───────────────────────────────────────────────
+
+    private bool IsNonNull(LocalSymbol local)
+    {
+        foreach (var (scope, l) in _nonNull)
+        {
+            if (l != local) continue;
+            for (var s = _scope; s is not null; s = s.Parent)
+                if (s == scope) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Binds code that runs only when <paramref name="cond"/> is <paramref name="whenTrue"/>.</summary>
+    private T Narrowed<T>(BoundExpr cond, bool whenTrue, Func<T> bind)
+    {
+        var mark = _nonNull.Count;
+        foreach (var l in NonNullWhen(cond, whenTrue)) _nonNull.Add((_scope, l));
+        var result = bind();
+        _nonNull.RemoveRange(mark, _nonNull.Count - mark);
+        return result;
+    }
+
+    /// <summary>When one branch always exits, the rest of the block runs only under the other.</summary>
+    private BoundIf NarrowAfter(BoundIf i)
+    {
+        var thenExits = Exits(i.Then);
+        var elseExits = i.Else is { } e && Exits(e);
+        if (thenExits != elseExits)
+            foreach (var l in NonNullWhen(i.Condition, elseExits)) _nonNull.Add((_scope, l));
+        return i;
+    }
+
+    private static bool Exits(BoundStmt s) => s switch
+    {
+        BoundReturn or BoundBreak or BoundContinue => true,
+        BoundBlock b => b.Statements.Length > 0 && Exits(b.Statements[^1]),
+        BoundExprStmt e => e.Expr.Type.IsNever,
+        BoundIf { Else: { } e } i => Exits(i.Then) && Exits(e),
+        _ => false,
+    };
+
+    /// <summary>The let locals and parameters that <paramref name="cond"/> being <paramref name="whenTrue"/> proves present; <c>var</c>s can change, so they never narrow.</summary>
+    private static List<LocalSymbol> NonNullWhen(BoundExpr cond, bool whenTrue)
+    {
+        var found = new List<LocalSymbol>();
+        Collect(cond, whenTrue);
+        return found;
+
+        void Collect(BoundExpr c, bool when)
+        {
+            switch (c)
+            {
+                case BoundIs { Value: BoundLocal { Local: { Type: OptionalType } l } } i
+                    when l.Kind == LocalKind.Let || l is ParameterSymbol { Modifier: ParamModifier.None or ParamModifier.In }:
+                    if (i.Pattern is BoundNotPattern { Operand: BoundConstantPattern { Value: BoundDefault } } ? when
+                        : i.Pattern is BoundConstantPattern { Value: BoundDefault } && !when)
+                        found.Add(l);
+                    break;
+                case BoundUnary { Op: UnaryOp.Not } u:
+                    Collect(u.Operand, !when);
+                    break;
+                case BoundBinary { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } b when when == (b.Op == BinaryOp.LogicalAnd):
+                    Collect(b.Left, when);
+                    Collect(b.Right, when);
+                    break;
+            }
+        }
+    }
 
     private BoundStmt BindLabeled(LabeledStmt l)
     {

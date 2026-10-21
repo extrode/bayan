@@ -102,6 +102,8 @@ public enum ConversionKind
     ErrorToResult,
     /// <summary>A <c>never</c> expression in a position of another type.</summary>
     FromNever,
+    /// <summary>A <c>T?</c> let local or parameter read where a null check proved it present (spec §7.2).</summary>
+    Narrow,
 }
 
 public sealed record BoundConversion(Node Syntax, BoundExpr Operand, TypeSymbol Type, ConversionKind Kind) : BoundExpr(Syntax, Type);
