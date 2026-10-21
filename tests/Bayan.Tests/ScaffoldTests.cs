@@ -159,7 +159,7 @@ public sealed class ScaffoldTests
     {
         var dir = Path.Combine(Fresh("camel"), "myApp");
         Assert.Equal(CliApp.ExitOk, Run("new", dir, "--vcs", "none").Exit);
-        Assert.Contains("name    = \"local/my-app\"", File.ReadAllText(Path.Combine(dir, "package.byn")));
+        Assert.Contains("name: \"local/my-app\"", File.ReadAllText(Path.Combine(dir, "package.byn")));
     }
 
     [Fact]

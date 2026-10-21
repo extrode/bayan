@@ -30,7 +30,7 @@ public sealed partial class OutputTests
     private static void SetVersion(string project, string version)
     {
         var path = Path.Combine(project, "package.byn");
-        File.WriteAllText(path, VersionField().Replace(File.ReadAllText(path), $"version = \"{version}\""));
+        File.WriteAllText(path, VersionField().Replace(File.ReadAllText(path), $"version: \"{version}\""));
     }
 
     private static void Ok((int Exit, string Out, string Err) r) => Assert.True(r.Exit == CliApp.ExitOk, r.Out + r.Err);
@@ -223,7 +223,7 @@ public sealed partial class OutputTests
         Assert.Equal(CliApp.ExitUsage, Run("clean", Path.Combine(p, "src")).Exit);
     }
 
-    [GeneratedRegex("version = \"[^\"]*\"")]
+    [GeneratedRegex("version: \"[^\"]*\"")]
     private static partial Regex VersionField();
 
     [GeneratedRegex("\"durationMs\": [0-9.]+")]
