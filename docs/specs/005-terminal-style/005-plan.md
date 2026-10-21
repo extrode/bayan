@@ -12,7 +12,7 @@ Output shapes are pinned by a golden triple harness that drives `CliApp.Run` wit
 - C#/.NET 10 NativeAOT, xunit; no new packages. `Console.WindowWidth`, `Console.OutputEncoding.CodePage`, `System.Threading.Timer` are all AOT-safe.
 - Env vars read in Cli only: `NO_COLOR`, `FORCE_COLOR`, `TERM`, `COLORTERM`, `BAYAN_THEME`, `COLORFGBG`, `LC_ALL`, `LC_CTYPE`, `LANG`, `CI`.
 - SGR: truecolour `\e[38;2;R;G;Bm`; 16-colour `31/33/34/32`, dim `\e[2m`; reset `\e[0m` (`DiagnosticRenderer.cs:24-30` constants move into `Palette`).
-- Runtime: one new C entry point `byn_todo_str` in `src/runtime/bayan-rt.c` (beside `byn_panic_str`, line 52) and its prototype in `bayan-rt.h`; exits the test child with code 3 (0 pass, 1 fail via `byn_report_error`, 2 bad index at `CEmitter.cs:122`, abort = panic).
+- Runtime: one new C entry point `byn_todo_str` in `src/runtime/bayan-rt.c` (beside `byn_panic_str`, line 52) and its prototype in `bayan-rt.h`; exits the test child with code 4 (0 pass, 1 fail via `byn_report_error`, 2 bad index at `CEmitter.cs:122`, abort = panic).
 - No new BYN codes, no new `docs/diagnostics` pages. `todo` is a builtin, not a diagnostic.
 
 ## Changes by area
@@ -30,7 +30,7 @@ Output shapes are pinned by a golden triple harness that drives `CliApp.Run` wit
 - `src/Bayan.Semantics/Symbols/Symbols.cs:236` and `src/Bayan.Semantics/Builtins.cs:14-16, 142-144` — `BuiltinFunction.Todo`, `todo(message: string): never`. R10.
 - `src/Bayan.Lowering/Lowerer.cs:941-948` — assert: when the condition is `BoundBinary { Op: Eq|Ne|Lt|Le|Gt|Ge }` over int/float/bool/string/enum, spill each non-literal side (`Spill`), test the temps, and panic through `LWrite(WriteSink.Panic, …)` with parts `"assertion failed: <text>\n  <left-text> is "`, `{tmpL}`, `"\n  <right-text> is "`, `{tmpR}`. Other conditions keep today's `LPanic`. `todo` lowers like non-interpolated `panic`. R10, R11.
 - `src/Bayan.Backend.C/CEmitter.cs` — emit `byn_todo_str(msg, file, line)` for `BuiltinFunction.Todo` next to the `Panic` case. R10.
-- `src/runtime/bayan-rt.c:32-56`, `bayan-rt.h` — `byn_todo_str`: flush stdout, `pending: <msg>\n  at file:line`, `exit(3)`. R10.
+- `src/runtime/bayan-rt.c:32-56`, `bayan-rt.h` — `byn_todo_str`: flush stdout, `pending: <msg>\n  at file:line`, `exit(4)`. R10.
 - `tests/Bayan.Tests/StyleTests.cs` (new) + `tests/cases/style/` — golden triples for every shape; also the L011 proof's input. R17.
 - `tests/Bayan.Tests/ContrastTests.cs` (new) — parses §2 of `docs/bayan-terminal-style.md`, asserts 4.5:1 and agreement with `Palette`. R17.
 - `tests/Bayan.Tests/HelpLanguageTests.cs` (new) — every `help:` line in `tests/cases/diag/**/*.diag` starts with a verb (allowlist of verbs plus named exceptions). R15.
@@ -76,7 +76,7 @@ Output shapes are pinned by a golden triple harness that drives `CliApp.Run` wit
 7. **Wrapping** — `DiagnosticRenderer.cs` prose helper, `Style.Width`. Done when a 180-column help wraps under its indent at width 100 and source lines never wrap. Depends on 2. R16.
 8. **build/check/run footers and summaries, `-v` phases** — `CliApp.cs`, `src/Bayan.Semantics/Compilation.cs` (parse/check stopwatches). Done when `build-ok`, `build-ok-cache`, `build-ok-verbose`, `build-fail`, `check-ok`, `run-fail` shapes render as specified. Depends on 4. R6, R7.
 9. **Doctor layout** — `Doctor.cs`, `CliEnvironmentTests.cs:114-138`. Done when the three doctor tests assert `◆`/`✗`/`help:` and `Doctor.Render` is callable from tests. Depends on 3, 4. R12.
-10. **`todo` builtin and pending status** — `Builtins.cs`+`Symbols.cs`, `Lowerer.cs`+`CEmitter.cs`, `bayan-rt.c`+`bayan-rt.h`, `TestReport.cs`. Done when a `todo("x")` test exits 3, reports `pending` in JSON, and `results-fail.json` gains `pending: 0`. R10.
+10. **`todo` builtin and pending status** — `Builtins.cs`+`Symbols.cs`, `Lowerer.cs`+`CEmitter.cs`, `bayan-rt.c`+`bayan-rt.h`, `TestReport.cs`. Done when a `todo("x")` test exits 4, reports `pending` in JSON, and `results-fail.json` gains `pending: 0`. R10.
 11. **Assertion values** — `Lowerer.cs:941`. Done when `assert(net == -34)` with `net` = -33 panics with `net is -33` on its own line and a `run/` golden pins it. Depends on 10 only for the test runner display. R11.
 12. **Test runner output and `--only`** — `CliApp.Test`, `ParseBuildOptions`. Done when `test-ok`, `test-fail`, `test-pending`, `test-verbose`, `test-assert-values` shapes render, `--only cents` selects by substring, `CliTests.cs:357` asserts the new summary. Depends on 10, 11. R8, R9.
 13. **Progress line** — `src/Bayan.Cli/Progress.cs`, hooks in `CliApp`. Done when a unit test with a 0 ms threshold sees the rewrite and clear sequence, the ASCII form prints `...` once, and `CI=1` prints nothing. Depends on 3. R13.
@@ -84,7 +84,7 @@ Output shapes are pinned by a golden triple harness that drives `CliApp.Run` wit
 15. **Help language test and rewording** — `tests/Bayan.Tests/HelpLanguageTests.cs`, binder files + `diag`/`diag-json` goldens. Done when the test passes with an allowlist of at most the justified snippet-first helps. R15.
 16. **Prove L011** — `tests/Bayan.Tests/L011ColourAddsOnlyEscapesTests.cs` (`[Trait("Law","L011")]`, strips `\e[…m` from every `.color` golden and from an in-memory `--ascii`+`NO_COLOR` render, asserts equality with `.plain`/`.ascii`), `docs/laws/011-colour-adds-only-escapes.md` as `status: proposed` with `proof`/`check`. Done when a mutation (a colour-only symbol) makes the test fail and `laws-check.js --run` passes. Depends on 14.
 17. **Enact L011** — `docs/laws/011-*.md` status → `enacted` (with `enacted:` date), `docs/laws-and-decisions.md` entry. Done in the same change as T16's passing proof (standing authorization, 2026-10-21). Depends on 16.
-18. **Docs** — `docs/bayan-terminal-style.md` (R2 order, R3 locale rule, R6 phases replacing the per-module `-v` example, R8 rerun forms and `-v` lines, R13 `CI`, R10 child exit 3, note that `link` is folded into `compile`), `005-spec.md` status, `docs/bayan-handoff.md` (progress entry + Q79–Q86), `CHANGELOG.md`, `tests/cases/README.md` (`style/` row). Depends on all. R19.
+18. **Docs** — `docs/bayan-terminal-style.md` (R2 order, R3 locale rule, R6 phases replacing the per-module `-v` example, R8 rerun forms and `-v` lines, R13 `CI`, R10 child exit 4, note that `link` is folded into `compile`), `005-spec.md` status, `docs/bayan-handoff.md` (progress entry + Q79–Q86), `CHANGELOG.md`, `tests/cases/README.md` (`style/` row). Depends on all. R19.
 
 ## Decisions for handoff Questions
 
@@ -92,7 +92,7 @@ Output shapes are pinned by a golden triple harness that drives `CliApp.Run` wit
 - Q80. `-v` phases are `parse`, `check`, `emit`, `compile` (the C compiler compiles and links in one call, `Toolchain.cs:206`; a cache hit prints `compile  from cache`). The guide's per-module example is replaced.
 - Q81. `Diagnostic.Related` exists and renders, but no binder site is converted in 005: converting `BYN2104` from label "declared with `let` on line 9" to a secondary span changes its label text and so its JSON. Conversion of the 8 "on line {n}" sites is a follow-up with its own JSON decision.
 - Q82. `severity CODE`, `help:`, and `^^^` keep bold plus colour; the message loses bold. Bold is weight, not a second colour role, and L011 holds either way.
-- Q83. Test child exit code 3 means pending; `todo(message)` is typed `never`, accepted anywhere, and in a normal program prints `pending: <message>` and exits 3.
+- Q83. Test child exit code 4 means pending (not 3: `abort()` exits 3 on Windows, so a panic would read as pending); `todo(message)` is typed `never`, accepted anywhere, and in a normal program prints `pending: <message>` and exits 4.
 - Q84. Rerun hint uses the full test name; with more than three failures no hint is printed. `--only` with no match and no `--changed` is a usage error; `--only` ∩ `--changed` empty prints `running 0 tests in 0 modules` and exits 0.
 - Q85. Panic "frames" are the runtime's `at file:line` lines (`bayan-rt.c:40`); there is one today, so the top-three rule is implemented over `at` lines and takes effect when the runtime grows a backtrace.
 - Q86. `.ascii` goldens are rendered with colour on; the fourth combination (ASCII, no colour) is checked only by the L011 proof, in memory.
