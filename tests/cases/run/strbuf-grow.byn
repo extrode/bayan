@@ -18,14 +18,14 @@ void main() {
         context (allocator: arena) {
             var sb = StrBuf();
             let sum = fill(ref sb, 100000);
-            print($"{sb.length} {sum} {sb.length == sum}");
-            print(sb.asString()[0..12]);
+            print($"{sb.count} {sum} {sb.count == sum}");
+            print(sb.finish()[0..12]);
             sb.clear();
             sb.append("again");
-            print($"{sb.asString()} {sb.length}");
+            print($"{sb.finish()} {sb.count}");
         }
     }
     var general = StrBuf();
     let sum = fill(ref general, 1000);
-    print($"{general.length} {sum}");
+    print($"{general.count} {sum}");
 }

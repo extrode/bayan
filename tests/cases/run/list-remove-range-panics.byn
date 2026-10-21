@@ -1,6 +1,6 @@
 var xs = List<i64>();
-for (let i in 0..4) xs.add(i);
+for (let i in 0..4) xs.append(i);
 xs.removeRange(1, 4);
-print($"{xs.length}");
+print($"{xs.count}");
 xs.removeRange(1, 0);
 print("unreachable");

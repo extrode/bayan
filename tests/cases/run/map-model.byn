@@ -17,5 +17,5 @@ for (let step in 0..5000) {
     if ((r >> 8) % 3 == 2) m.remove(key);
     else m[key] = step;
 }
-print($"count {m.length}");
+print($"count {m.count}");
 for (let e in m) print($"{e.key} {e.value}");

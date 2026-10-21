@@ -6,7 +6,7 @@ const f64[2] halves = [0.5, 1.5];
 
 i64 search(ReadOnlySpan<u32> table, u32 key) {
     i64 lo = 0;
-    var hi = table.length;
+    var hi = table.count;
     while (lo < hi) {
         let mid = lo + (hi - lo) / 2;
         if (table[mid] < key) {
@@ -15,7 +15,7 @@ i64 search(ReadOnlySpan<u32> table, u32 key) {
             hi = mid;
         }
     }
-    return lo < table.length && table[lo] == key ? lo : -1;
+    return lo < table.count && table[lo] == key ? lo : -1;
 }
 
 ReadOnlySpan<u32> head() => primes[0..3];
@@ -24,9 +24,9 @@ u32[6] keys = [2, 7, 8, 29, 41, 100];
 for (let key in keys) {
     print($"{key} at {search(primes, key)}");
 }
-print($"length {primes.length} last {primes[^1]} first {primes[0]}");
+print($"length {primes.count} last {primes[^1]} first {primes[0]}");
 let middle = primes[4..8];
-print($"slice {middle.length} {middle[0]} {search(middle, 17)}");
+print($"slice {middle.count} {middle[0]} {search(middle, 17)}");
 print($"head {head()[2]} span {search(primes.asSpan(), 13)}");
 print($"{bits[1]} {letters[2]} {halves[1]}");
 u64 sum = 0;

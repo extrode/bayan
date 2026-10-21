@@ -6,12 +6,12 @@ union Slot {
 
 void main() {
     var lists = List<List<i64>>();
-    lists.add(List<i64>());
-    for (var xs in lists) xs.add(1);
+    lists.append(List<i64>());
+    for (var xs in lists) xs.append(1);
     for (let xs in lists) {
         let stolen = move xs;
     }
     let slot = Slot.full(List<i64>());
-    if (slot is .full(var items)) items.add(2);
-    for (let xs in lists) print($"{xs.length}");
+    if (slot is .full(var items)) items.append(2);
+    for (let xs in lists) print($"{xs.count}");
 }

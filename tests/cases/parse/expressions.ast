@@ -4,7 +4,7 @@ CompilationUnit
   Let chars = (list 'a' '\n' '\u{1F600}')
   Let strings = (list "text" c"cstr" u16"wide" "esc\t\"q\"")
   Let raw = "first\n  second"
-  Let msg = (interp "total " sum " for " (. lines length) " lines, {braces}")
+  Let msg = (interp "total " sum " for " (. lines count) " lines, {braces}")
   Let nested = (interp "outer " (interp "inner " x))
   Let p = (struct Point (x 1) (y (- 2)))
   Let q = (with p (x 3))

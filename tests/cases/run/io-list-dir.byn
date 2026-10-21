@@ -1,7 +1,7 @@
 // `Io.listDir` returns entry names sorted by byte order; a file is `notADirectory`, a missing path `notFound`.
 string count(string path) fails IoError {
     let names = try Io.listDir(path);
-    return $"{names.length} entries";
+    return $"{names.count} entries";
 }
 
 string describe(string path) => count(path) catch (e) switch {
@@ -16,7 +16,7 @@ void main() fails IoError {
     try Io.writeFile("a.txt", text.bytes);
     try Io.writeFile("C.txt", text.bytes);
     List<string> names = try Io.listDir(".");
-    print($"{names.length} entries");
+    print($"{names.count} entries");
     for (let name in names) print(name);
     print(describe("a.txt"));
     print(describe("missing"));

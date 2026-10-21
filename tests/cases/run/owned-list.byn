@@ -44,9 +44,9 @@ void main() {
 
         var root = Tree { name = "root", children = List<Tree>() };
         var leaf = Tree { name = "leaf", children = List<Tree>() };
-        leaf.children.add(Tree { name = "deep", children = List<Tree>() });
-        root.children.add(move leaf);
-        root.children.add(Tree { name = "other", children = List<Tree>() });
+        leaf.children.append(Tree { name = "deep", children = List<Tree>() });
+        root.children.append(move leaf);
+        root.children.append(Tree { name = "other", children = List<Tree>() });
         print($"{count(root)}");
     }
 }

@@ -15,18 +15,18 @@ namespace Bayan.Tests;
 /// stmt       := decl | move | copy | take | call | borrow | loop | branch | switchMove | reassign
 ///             | read | return
 /// decl       := ("let"|"var") x "=" (fresh(n) | Ledger { items = fresh(n) } | Slot.full(fresh(n)))
-///             | "List&lt;i64&gt;? x = fresh(n);" | "var x = List&lt;List&lt;i64&gt;&gt;(); x.add(fresh(n));"
+///             | "List&lt;i64&gt;? x = fresh(n);" | "var x = List&lt;List&lt;i64&gt;&gt;(); x.append(fresh(n));"
 /// move       := "var y = move x;"                 if x Owned and not a let from outside the loop
 /// copy       := "let y = x.copy(to: arena);"      if x Owned
 /// take       := "let y = p.take();"               p in {x, x.items, x[0], o} with x var and Owned
 /// call       := consume(move x) | "var y = pass(move x);" | peek(x) | bump(ref x)   (bump: x var)
-/// borrow     := "{ let v = x.asSpan(); print($"{v.length}"); }" | for (let e in x) over a nested list
+/// borrow     := "{ let v = x.asSpan(); print($"{v.count}"); }" | for (let e in x) over a nested list
 /// loop       := for/while; the body moves an outer x only if x is var, and reassigns it at the end
 /// branch     := if/else on t; join = Moved if moved on either side | "if (s is .full(let items))" borrow
-/// switchMove := "switch (move s) {" ["case .full(let b) when b.length &gt; n: consume(move b);"]
+/// switchMove := "switch (move s) {" ["case .full(let b) when b.count &gt; n: consume(move b);"]
 ///               "case .full(let items): consume(move items); default: ... }"
 /// reassign   := "x = fresh(n);" (or the type's constructor)   if x var; resets Moved
-/// read       := print of x's length or null test | "x.add(n);" if x var        if x Owned
+/// read       := print of x's length or null test | "x.append(n);" if x var        if x Owned
 /// return     := "if (t &gt; 1000) return;"
 /// probe      := a deliberately illegal step: use after move or implicit copy
 /// </code>
@@ -37,17 +37,17 @@ internal static class OwnershipGenerator
         error enum E { bad, }
         void step() fails E { }
         void consume(move List<i64> xs) {
-            print($"{xs.length}");
+            print($"{xs.count}");
         }
         void peek(List<i64> xs) {
-            print($"{xs.length}");
+            print($"{xs.count}");
         }
         void bump(ref List<i64> xs) {
-            xs.add(1);
+            xs.append(1);
         }
         List<i64> fresh(i64 n) {
             var xs = List<i64>();
-            xs.add(n);
+            xs.append(n);
             return move xs;
         }
         List<i64> pass(move List<i64> xs) {
@@ -210,7 +210,7 @@ internal static class OwnershipGenerator
                 case Kind.Nest:
                     var n = Declare(kind, true);
                     Line($"var {n.Name} = List<List<i64>>();");
-                    Line($"{n.Name}.add({Fresh()});");
+                    Line($"{n.Name}.append({Fresh()});");
                     break;
                 default:
                     var v = Declare(kind, mutable);
@@ -277,13 +277,13 @@ internal static class OwnershipGenerator
             var b = Name();
             if (x.Kind == Kind.Nest)
             {
-                Line($"for (let {b} in {x.Name}) print($\"{{{b}.length}}\");");
+                Line($"for (let {b} in {x.Name}) print($\"{{{b}.count}}\");");
                 return true;
             }
             Line("{");
             _indent++;
             Line($"let {b} = {x.Name}.asSpan();");
-            Line($"print($\"{{{b}.length}}\");");
+            Line($"print($\"{{{b}.count}}\");");
             _indent--;
             Line("}");
             return true;
@@ -383,7 +383,7 @@ internal static class OwnershipGenerator
             {
                 // A guard that may fail: the next arm binds the same storage.
                 var big = Name();
-                Line($"    case .full(let {big}) when {big}.length > {Int(3)}:");
+                Line($"    case .full(let {big}) when {big}.count > {Int(3)}:");
                 Line($"        consume(move {big});");
             }
             Line($"    case .full(let {items}):");
@@ -404,7 +404,7 @@ internal static class OwnershipGenerator
         private void Assign(Var v)
         {
             Line($"{v.Name} = {Constructor(v.Kind)};");
-            if (v.Kind == Kind.Nest) Line($"{v.Name}.add({Fresh()});");
+            if (v.Kind == Kind.Nest) Line($"{v.Name}.append({Fresh()});");
             v.Moved = false;
         }
 
@@ -414,13 +414,13 @@ internal static class OwnershipGenerator
             switch (x.Kind)
             {
                 case Kind.List when x.Mutable && Chance(40):
-                    Line($"{x.Name}.add({Int(10)});");
+                    Line($"{x.Name}.append({Int(10)});");
                     break;
                 case Kind.List:
-                    Line($"print($\"{{{x.Name}.length}}\");");
+                    Line($"print($\"{{{x.Name}.count}}\");");
                     break;
                 case Kind.Ledger:
-                    Line($"print($\"{{{x.Name}.items.length}}\");");
+                    Line($"print($\"{{{x.Name}.items.count}}\");");
                     break;
                 case Kind.Slot:
                     Line($"print($\"{{{x.Name} is .empty}}\");");
@@ -429,7 +429,7 @@ internal static class OwnershipGenerator
                     Line($"print($\"{{{x.Name} is null}}\");");
                     break;
                 default:
-                    Line($"print($\"{{{x.Name}.length}} {{{x.Name}[0].length}}\");");
+                    Line($"print($\"{{{x.Name}.count}} {{{x.Name}[0].count}}\");");
                     break;
             }
             return true;

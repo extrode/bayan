@@ -16,7 +16,7 @@ public sealed class L006OwnershipGuardTests
         error enum E { bad, }
         void step() fails E { }
         void consume(move List<i64> xs) {
-            print($"{xs.length}");
+            print($"{xs.count}");
         }
         struct Ledger {
             List<i64> items;
@@ -35,8 +35,8 @@ public sealed class L006OwnershipGuardTests
             void main() {
                 var a = List<i64>();
                 var b = move a;
-                a.add(1);
-                print($"{b.length}");
+                a.append(1);
+                print($"{b.count}");
             }
             """, "BYN2781" },
         { "use after move, later for iteration", """
@@ -60,35 +60,35 @@ public sealed class L006OwnershipGuardTests
         { "use after move, after if", """
             void main(ReadOnlySpan<string> args) {
                 let a = List<i64>();
-                if (args.length > 0) {
+                if (args.count > 0) {
                     consume(move a);
                 }
-                print($"{a.length}");
+                print($"{a.count}");
             }
             """, "BYN2781" },
         { "use after move, after switch", """
             void main(ReadOnlySpan<string> args) {
                 let a = List<i64>();
-                switch (args.length) {
+                switch (args.count) {
                     case 0:
                         consume(move a);
                     default:
                         print("kept");
                 }
-                print($"{a.length}");
+                print($"{a.count}");
             }
             """, "BYN2781" },
         { "use after move, defer at scope exit", """
             void main() {
                 let xs = List<i64>();
-                defer print($"{xs.length}");
+                defer print($"{xs.count}");
                 consume(move xs);
             }
             """, "BYN2781" },
         { "use after move, errdefer on failing exit", """
             List<i64> build() fails E {
                 let xs = List<i64>();
-                errdefer print($"{xs.length}");
+                errdefer print($"{xs.count}");
                 consume(move xs);
                 try step();
                 return List<i64>();
@@ -166,7 +166,7 @@ public sealed class L006OwnershipGuardTests
                     let xs = List<i64>();
                     outer = xs.asSpan();
                 }
-                print($"{outer.length}");
+                print($"{outer.count}");
             }
             """, "BYN3002" },
         { "span returned past its owner", """
@@ -197,7 +197,7 @@ public sealed class L006OwnershipGuardTests
                     let lists = List<List<i64>>();
                     for (let xs in lists) outer = xs.asSpan();
                 }
-                print($"{outer.length}");
+                print($"{outer.count}");
             }
             """, "BYN3002" },
         { "borrowed pattern binding stored", """
@@ -219,7 +219,7 @@ public sealed class L006OwnershipGuardTests
                             print("empty");
                     }
                 }
-                print($"{outer.length}");
+                print($"{outer.count}");
             }
             """, "BYN3002" },
 
@@ -294,7 +294,7 @@ public sealed class L006OwnershipGuardTests
                 switch (move s) {
                     case .full(let items):
                         consume(move items);
-                        print($"{items.length}");
+                        print($"{items.count}");
                     default:
                         print("empty");
                 }
@@ -334,7 +334,7 @@ public sealed class L006OwnershipGuardTests
         { "switch (move) and pattern binds both sides", """
             void main() {
                 var a = List<i64>();
-                a.add(1);
+                a.append(1);
                 switch (move a) {
                     case let x and let y:
                         consume(move x);
@@ -411,7 +411,7 @@ public sealed class L006OwnershipGuardTests
                 using let arena = Arena();
                 let a = List<i64>();
                 let b = a.copy(to: arena);
-                print($"{a.length} {b.length}");
+                print($"{a.count} {b.count}");
             }
             """ },
         { "explicit copy, Map", """
@@ -419,7 +419,7 @@ public sealed class L006OwnershipGuardTests
                 using let arena = Arena();
                 let m = Map<string, i64>();
                 let n = m.copy(to: arena);
-                print($"{m.length} {n.length}");
+                print($"{m.count} {n.count}");
             }
             """ },
         { "explicit copy, StrBuf", """
@@ -427,7 +427,7 @@ public sealed class L006OwnershipGuardTests
                 using let arena = Arena();
                 let sb = StrBuf();
                 let other = sb.copy(to: arena);
-                print($"{sb.asString()} {other.asString()}");
+                print($"{sb.finish()} {other.finish()}");
             }
             """ },
         { "explicit copy into a struct field", """
@@ -435,7 +435,7 @@ public sealed class L006OwnershipGuardTests
                 using let arena = Arena();
                 let xs = List<i64>();
                 let ledger = Ledger { items = xs.copy(to: arena) };
-                print($"{xs.length} {ledger.items.length}");
+                print($"{xs.count} {ledger.items.count}");
             }
             """ },
         { "reassigned before use, straight-line", """
@@ -443,8 +443,8 @@ public sealed class L006OwnershipGuardTests
                 var a = List<i64>();
                 var b = move a;
                 a = List<i64>();
-                a.add(1);
-                print($"{a.length} {b.length}");
+                a.append(1);
+                print($"{a.count} {b.count}");
             }
             """ },
         { "reassigned before the next for iteration", """
@@ -470,17 +470,17 @@ public sealed class L006OwnershipGuardTests
         { "reassigned in the moving branch", """
             void main(ReadOnlySpan<string> args) {
                 var a = List<i64>();
-                if (args.length > 0) {
+                if (args.count > 0) {
                     consume(move a);
                     a = List<i64>();
                 }
-                print($"{a.length}");
+                print($"{a.count}");
             }
             """ },
         { "defer reads a local moved then reassigned", """
             void main() {
                 var xs = List<i64>();
-                defer print($"{xs.length}");
+                defer print($"{xs.count}");
                 consume(move xs);
                 xs = List<i64>();
             }
@@ -488,7 +488,7 @@ public sealed class L006OwnershipGuardTests
         { "errdefer with a return move success path", """
             List<i64> build() fails E {
                 let xs = List<i64>();
-                errdefer print($"{xs.length}");
+                errdefer print($"{xs.count}");
                 try step();
                 return move xs;
             }
@@ -497,12 +497,12 @@ public sealed class L006OwnershipGuardTests
         { "borrow ends before its owner", """
             void main() {
                 var xs = List<i64>();
-                xs.add(1);
+                xs.append(1);
                 {
                     let view = xs.asSpan();
                     print($"{view[0]}");
                 }
-                xs.add(2);
+                xs.append(2);
             }
             """ },
         { "borrowed loop binding read in place", """
@@ -510,7 +510,7 @@ public sealed class L006OwnershipGuardTests
                 let lists = List<List<i64>>();
                 for (let xs in lists) {
                     let view = xs.asSpan();
-                    print($"{view.length}");
+                    print($"{view.count}");
                 }
             }
             """ },
@@ -520,13 +520,13 @@ public sealed class L006OwnershipGuardTests
                 let s = Slot.full(List<i64>());
                 var kept = List<i64>();
                 if (s is .full(let items)) kept = items.copy(to: arena);
-                print($"{kept.length}");
+                print($"{kept.count}");
             }
             """ },
         { "move out of a move parameter", """
             void take(move List<i64> owned) {
                 let mine = move owned;
-                print($"{mine.length}");
+                print($"{mine.count}");
             }
             void main() { }
             """ },
@@ -569,7 +569,7 @@ public sealed class L006OwnershipGuardTests
             void main() {
                 let l = Ledger { items = List<i64>() };
                 switch (move l) {
-                    case { items: let x, items.length: let n }:
+                    case { items: let x, items.count: let n }:
                         consume(move x);
                         print($"{n}");
                     default:
@@ -580,19 +580,19 @@ public sealed class L006OwnershipGuardTests
         { "take from a List field", """
             void main() {
                 var ledger = Ledger { items = List<i64>() };
-                ledger.items.add(1);
+                ledger.items.append(1);
                 let items = ledger.items.take();
-                ledger.items.add(2);
-                print($"{items.length} {ledger.items.length}");
+                ledger.items.append(2);
+                print($"{items.count} {ledger.items.count}");
             }
             """ },
         { "take from a list element", """
             void main() {
                 var lists = List<List<i64>>();
-                lists.add(List<i64>());
+                lists.append(List<i64>());
                 let first = lists[0].take();
-                lists[0].add(1);
-                print($"{first.length} {lists[0].length}");
+                lists[0].append(1);
+                print($"{first.count} {lists[0].count}");
             }
             """ },
         { "take from a Map element", """
@@ -600,7 +600,7 @@ public sealed class L006OwnershipGuardTests
                 var groups = Map<string, List<i64>>();
                 groups["x"] = List<i64>();
                 let x = groups["x"].take();
-                print($"{x.length} {groups["x"].length}");
+                print($"{x.count} {groups["x"].count}");
             }
             """ },
         { "take from an optional field", """
@@ -618,8 +618,8 @@ public sealed class L006OwnershipGuardTests
             void main() {
                 var shared = List<i64>();
                 let drained = drain(ref shared);
-                shared.add(1);
-                print($"{drained.length} {shared.length}");
+                shared.append(1);
+                print($"{drained.count} {shared.count}");
             }
             """ },
         { "take from a StrBuf local", """
@@ -628,7 +628,7 @@ public sealed class L006OwnershipGuardTests
                 sb.append("hi");
                 let text = sb.take();
                 sb.append("again");
-                print($"{text.asString()} {sb.asString()}");
+                print($"{text.finish()} {sb.finish()}");
             }
             """ },
         { "switch (move s) then move the binding on", """
@@ -643,7 +643,7 @@ public sealed class L006OwnershipGuardTests
             }
             """ },
         { "switch (move) expression form moves the binding", """
-            i64 keep(move List<i64> xs) => xs.length;
+            i64 keep(move List<i64> xs) => xs.count;
             void main() {
                 let s = Slot.full(List<i64>());
                 let n = (move s) switch {

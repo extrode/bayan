@@ -2,15 +2,15 @@
 void main() {
     using let arena = Arena();
     var a = List<i64>();
-    a.add(1);
+    a.append(1);
     let b = a;
     let m = Map<string, i64>();
     let n = m;
     var sb = StrBuf();
     sb.append("x");
     let other = sb;
-    print($"{a.length} {b.length} {m.length} {n.length} {sb.asString()} {other.asString()}");
+    print($"{a.count} {b.count} {m.count} {n.count} {sb.finish()} {other.finish()}");
     let fine = a.copy(to: arena);
     let moved = move m;
-    print($"{fine.length} {moved.length}");
+    print($"{fine.count} {moved.count}");
 }

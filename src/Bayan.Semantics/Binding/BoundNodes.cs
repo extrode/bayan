@@ -44,7 +44,7 @@ public sealed record BoundTupleElement(Node Syntax, BoundExpr Receiver, int Inde
 public sealed record BoundCall(Node Syntax, FunctionSymbol Function, BoundExpr? Receiver, BoundExpr[] Arguments, TypeSymbol Type)
     : BoundExpr(Syntax, Type);
 
-/// <summary>Members of built-in types (<c>string.length</c>, <c>List.add</c>, …).</summary>
+/// <summary>Members of built-in types (<c>List.count</c>, <c>List.append</c>, …).</summary>
 public enum BuiltinMember
 {
     StringLength, StringBytes, StringIsEmpty, StringCopy, StringStartsWith, StringEndsWith, StringContains,

@@ -14,7 +14,7 @@ error BYN2785: `slot` needs a default value, and `Point` has none
 
 error BYN2785: `slot` needs a default value, and `List<i64>` has none
 
-  19 │     lists.slot(1).add(2);
+  19 │     lists.slot(1).append(2);
      │     ^^^^^^^^^^^^^
      │
   help: read with `map[key]` or `map.getOr(key, fallback)`, and write with `map[key] = value`

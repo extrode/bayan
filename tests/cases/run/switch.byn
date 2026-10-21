@@ -14,7 +14,7 @@ void category(string s) {
     switch (s) {
         case "a" or "b":
             print("early");
-        case let other when other.length > 3:
+        case let other when other.bytes.count > 3:
             print($"long {other}");
         default:
             print("other");

@@ -217,7 +217,7 @@ public sealed class CliTests
                     print(a);
                     sb.append($"{a}\n");
                 }
-                try Io.writeFile("{{written.Replace('\\', '/')}}", sb.asString().bytes);
+                try Io.writeFile("{{written.Replace('\\', '/')}}", sb.finish().bytes);
             }
 
             """);

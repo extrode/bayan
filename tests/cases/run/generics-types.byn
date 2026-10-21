@@ -24,7 +24,7 @@ struct Box<T> {
     List<T> history;
 
     void put(ref this, move T old, move T next) {
-        history.add(move old);
+        history.append(move old);
         value = move next;
     }
 }
@@ -77,7 +77,7 @@ print(text);
 var box = Box<string> { value = "a", history = List<string>() };
 box.put(old: box.value, next: "b");
 box.put(old: box.value, next: "c");
-print($"{box.value} {box.history.length}");
+print($"{box.value} {box.history.count}");
 
 var bySuit = Map<Suit, i64>();
 bySuit[.clubs] = 2;

@@ -81,6 +81,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NestedOptional = Error("BYN2024", "`{0}?` is already optional");
     public static readonly DiagnosticDescriptor VoidValue = Error("BYN2025", "`void` is not a value type");
     public static readonly DiagnosticDescriptor DeclarationAsBody = Error("BYN2026", "a declaration cannot be the whole body of a statement");
+    public static readonly DiagnosticDescriptor ToStringCall = Error("BYN2031", "Bayan has no `toString()`; display is `format()` (derived from `formatInto(ref StrBuf)`)");
     public static readonly DiagnosticDescriptor MissingInitializer = Error("BYN2101", "`{0} {1}` needs a value");
     public static readonly DiagnosticDescriptor UseBeforeAssign = Error("BYN2102", "`{0}` is used before it is assigned");
     public static readonly DiagnosticDescriptor OutNotAssigned = Error("BYN2103", "`out` parameter `{0}` is not assigned on every path");
@@ -106,7 +107,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor InvalidCast = Error("BYN2206", "cannot convert `{0}` to `{1}`");
     public static readonly DiagnosticDescriptor BadUnaryOperand = Error("BYN2207", "`{0}` cannot be applied to `{1}`");
     public static readonly DiagnosticDescriptor BadBinaryOperands = Error("BYN2208", "`{0}` cannot be applied to `{1}` and `{2}`");
-    public static readonly DiagnosticDescriptor StringConcatenation = Error("BYN2209", "strings cannot be joined with `+`");
+    public static readonly DiagnosticDescriptor StringConcatenation = Error("BYN2209", "strings cannot be joined with `+`; use interpolation");
     public static readonly DiagnosticDescriptor CoalesceNotOptional = Error("BYN2210", "`??` needs an optional value on the left, found `{0}`");
     public static readonly DiagnosticDescriptor MemberOfOptional = Error("BYN2211", "`{0}` is not a member of `{1}`; the value may be null");
     public static readonly DiagnosticDescriptor NotIndexable = Error("BYN2212", "`{0}` cannot be indexed");
@@ -127,6 +128,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor AmbiguousVariant = Error("BYN2227", "`.{0}` is ambiguous; it exists in `{1}`");
     public static readonly DiagnosticDescriptor UnknownVariant = Error("BYN2228", "`{0}` is not a variant of `{1}`");
     public static readonly DiagnosticDescriptor InvalidConstArray = Error("BYN2229", "module-level `const` array `{0}` must hold literal numbers, `bool`s, `char`s or `string`s");
+    public static readonly DiagnosticDescriptor RenamedMember = Error("BYN2230", "`{0}` is now `{1}`");
     public static readonly DiagnosticDescriptor WhileLetNotOptional = Error("BYN2234", "`while let` needs a `T?` value, got `{0}`");
     public static readonly DiagnosticDescriptor SpreadNotSequence = Error("BYN2235", "`..{0}` spreads a `{1}`, which is not a sequence");
     public static readonly DiagnosticDescriptor MapLiteralMixed = Error("BYN2236", "a map literal needs `key: value` in every element");

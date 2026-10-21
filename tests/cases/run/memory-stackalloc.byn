@@ -6,9 +6,9 @@ i64 sum = 0;
 for (let v in buf) {
     sum += v;
 }
-print($"{buf.length} {sum} {buf[^1]}");
+print($"{buf.count} {sum} {buf[^1]}");
 let bytes = stackalloc u8[64];
 var sb = StrBuf(bytes);
 sb.append("total=");
 sb.append($"{sum}");
-print(sb.asString());
+print(sb.finish());
