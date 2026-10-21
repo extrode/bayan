@@ -150,19 +150,39 @@ public sealed record BreakStmt(TextSpan Span, Name? Label) : Stmt(Span);
 
 public sealed record ContinueStmt(TextSpan Span, Name? Label) : Stmt(Span);
 
-public sealed record IfStmt(TextSpan Span, Expr Condition, Stmt Then, Stmt? Else) : Stmt(Span);
+/// <summary>The word after <c>if</c>: <c>if unlikely</c> (a layout hint) or <c>if never</c> (panics when taken).</summary>
+public enum Likelihood { None, Unlikely, Never }
+
+public sealed record IfStmt(TextSpan Span, Expr Condition, Stmt Then, Stmt? Else) : Stmt(Span)
+{
+    public Likelihood Likelihood { get; init; }
+}
 
 public sealed record UnlessStmt(TextSpan Span, Expr Condition, Stmt Body) : Stmt(Span);
 
 /// <summary>A simple statement with a postfix <c>if</c>/<c>unless</c> (spec §7.3); the condition is evaluated first.</summary>
-public sealed record GuardedStmt(TextSpan Span, Stmt Statement, bool Unless, Expr Condition) : Stmt(Span);
+public sealed record GuardedStmt(TextSpan Span, Stmt Statement, bool Unless, Expr Condition) : Stmt(Span)
+{
+    /// <summary><c>stmt if unlikely cond;</c></summary>
+    public bool Unlikely { get; init; }
+}
 
 public sealed record WhileStmt(TextSpan Span, Expr Condition, Stmt Body) : Stmt(Span);
 
 public sealed record DoWhileStmt(TextSpan Span, Stmt Body, Expr Condition) : Stmt(Span);
 
-/// <summary><c>for (let x in e)</c>.</summary>
-public sealed record ForStmt(TextSpan Span, BindingKind Kind, TypeSyntax? Type, Name Variable, Expr Iterable, Stmt Body) : Stmt(Span);
+/// <summary><c>while let x = e { … }</c>: loops while <c>e</c> is non-null, binding <c>x</c> to its value.</summary>
+public sealed record WhileLetStmt(TextSpan Span, Name Variable, Expr Value, Stmt Body) : Stmt(Span);
+
+/// <summary><c>for x in e</c>, <c>for (k, v) in e</c>, <c>for try x in e</c>, or the input form <c>for (let x in e)</c>.</summary>
+public sealed record ForStmt(TextSpan Span, BindingKind Kind, TypeSyntax? Type, Name Variable, Expr Iterable, Stmt Body) : Stmt(Span)
+{
+    /// <summary><c>for try</c>: every step may fail.</summary>
+    public bool Try { get; init; }
+
+    /// <summary>The names of <c>for (k, v) in e</c>, whose <see cref="Variable"/> is the unnamed element; empty otherwise.</summary>
+    public Name[] Names { get; init; } = [];
+}
 
 public sealed record LabeledStmt(TextSpan Span, Name Label, Stmt Statement) : Stmt(Span);
 

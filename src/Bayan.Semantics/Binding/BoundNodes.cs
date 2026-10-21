@@ -224,7 +224,11 @@ public sealed record BoundBreak(Node Syntax, JumpTarget Target) : BoundStmt(Synt
 
 public sealed record BoundContinue(Node Syntax, JumpTarget Target) : BoundStmt(Syntax);
 
-public sealed record BoundIf(Node Syntax, BoundExpr Condition, BoundStmt Then, BoundStmt? Else) : BoundStmt(Syntax);
+public sealed record BoundIf(Node Syntax, BoundExpr Condition, BoundStmt Then, BoundStmt? Else) : BoundStmt(Syntax)
+{
+    /// <summary><c>if never</c>: after <see cref="Then"/>, panics in every build mode.</summary>
+    public bool Never { get; init; }
+}
 
 public sealed record BoundWhile(Node Syntax, BoundExpr Condition, BoundStmt Body, JumpTarget Target) : BoundStmt(Syntax);
 

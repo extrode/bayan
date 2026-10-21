@@ -1,0 +1,12 @@
+enum State { ok, corrupt }
+
+void check(State s) {
+    if never s is .corrupt {
+        print("state is corrupt");
+    }
+    print("checked");
+}
+
+check(.ok);
+check(.corrupt);
+print("unreachable");
