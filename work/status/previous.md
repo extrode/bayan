@@ -1,3 +1,3 @@
 # Previous
 
-Spec 003, ownership verification (`docs/specs/003-ownership-verification/`): `take()` (BYN2788), `switch (move x)` (BYN2789), the debug-build runtime ownership checker, the seeded ownership program generator, L008 enacted with its proof, the L006 `take()`/`switch (move x)` amendment. Fixed on the way: a moved `switch (move x)` binding stayed moved on the next loop iteration.
+Spec 005, terminal style (`docs/specs/005-terminal-style/`): one `Style` for every human-facing line, colour per stream, `--ascii`, fix markers and wrapping in diagnostics, `bayan test` failure blocks and rerun hint, `todo()` pending tests, the progress line, law L011. Review fixes: shell-safe rerun hint, escaped control and bidi characters, width-bounded progress line.

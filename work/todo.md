@@ -46,13 +46,13 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `List<T>` copied by value (`var b = a; b.add(…)` ×N) shares and reallocs storage: heap use-after-free under the default allocator (ASan, review of spec 001); pre-existing since v0.1, needs `unique`/`move` (spec §9) or a BYN2762-style copy ban
 - `Io.readText` abandons the whole file buffer from `context.allocator` when the bytes are not UTF-8 (`bayan-rt.c` read path)
 - `Io.run` (POSIX): only the pipe fds are `FD_CLOEXEC`; `byn_io_open` uses `fopen` without `"e"`, so open files are inherited by children
-- Terminal style (`docs/bayan-terminal-style.md`) is not implemented: `-->` location line, column-0 `help:` with `+++` fix preview, `◆`/`✗` summaries with `--ascii`, 20-error cap, `FORCE_COLOR`/`TERM=dumb`/`BAYAN_THEME`, progress line, power-assert values in `bayan test`; renderer changes must move `selfhost/lexer/diagnostics.byn` in the same commit (L001)
 - Flow analysis: `x ??= return 3;` followed by code gives a false BYN2405 "unreachable code" warning (`x = x ?? return 3;` does not); found in the spec 002 loop-3 review
 - L005 proof never runs a real `cmd.exe`: the read-back model in `tests/Bayan.Tests/L005RunBatchTests.cs` encodes cmd rules by hand, so a quoted character cmd.exe or code page 65001 reads differently would pass; needs a Windows run of the generated cases through `cmd.exe` and a `%~1`/`shift` batch file (review of feat/laws-005-007)
 - `map[k].clear()` and `map[k].add(x)` report BYN2106: a `map[k]` receiver is a write target only for `take()` (spec 003 T1); other mutating builtins on a map element need the same `MapWriteTarget` treatment
 - Unverified (spec 003 review, finding F): `StrBuf.take()` refills the place using the current `byn_context` allocator, and RegionAnalysis does not see the `StrBufGrow` the lowering introduces; check whether a `take()` on a `ref StrBuf` from an outer region allocates the refill in the wrong region
 - `_ = move a;` reports BYN2001, while BYN1012's help (for a bare `move a;`) suggests `_ = f();`; either accept a discarded move or change the help text
 - Spec 003 review loop 3: `CEmitter` skips the after-call claim of a root moved anywhere in the statement, even on a branch that does not run (`let n = flag ? consume(move b) : b.grow();`): storage grown on the other branch stays unclaimed; no failing program found
+- xunit `Assert.Contains`/`DoesNotContain` on strings is culture-sensitive, so ICU ignores `\u001b` and `"\u001b["` matches any `[`: the older escape checks in `CliEnvironmentTests` (e.g. `ColorFollowsTheTerminalNoColorAndTheFlag`) can pass or fail for the wrong reason; pass `StringComparison.Ordinal` (found in spec 005 T3)
 - Spec 004 R4: a discarded first pass now drops the generic function instances it created, but not generic struct/union instances (`InstantiateType`), which can stay as unused `i32` instantiations
 - Spec 004 R4: a value derived from a pending `var` through a call (`n = id(n);`, generic `T` inferred from `n`) counts as a typed `i32` use and fixes `n` at `i32`
 - Spec 004 R4: an optional integer target (`i64?`) does not count as a constraining use, so a later `u8` use can still retype the local
@@ -72,3 +72,16 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Panic handlers (BYN2612) are not checked for allocation inside user functions they call; only direct allocations in the handler body or the `Panic.onPanic` function are reported.
 - BYN2613 accepts a `let` moved after the handler registers (`let xs = …; defer panicking print($"{xs.length}"); take(move xs);`); the handler would read a moved value.
 - HANDOFF §5 (r2-catch): `T!S` type syntax does not parse today, so `error set` is usable only in `fails`; `/// A type X = T alias` doc in Compilation.cs sits on `MutationCheck` instead of `AliasPlaceholder`.
+- `Messages` (005 T4) formats with the current culture to stay byte-identical; `DiagnosticDescriptor.Format` uses the invariant culture, so `{1:0.0} MB` differs by locale (decide when translations land).
+- R15 (005 T15): `HelpLanguageTests` scans help literals right after `help:`/`help =`; ternary branches and help variables built from lists (e.g. `OwnershipAnalysis` options) are only covered through the goldens, and CLI `stderr.WriteLine("  help: …")` lines in `Dist.cs`/`Scaffold.cs` are not scanned.
+- `bayan test` (005 T12): the "top three stack frames" trim is untested end to end because the runtime prints one `at file:line` frame per panic.
+- The error cap line (`… and N more errors`) follows the last diagnostic with no blank line between them (`tests/cases/style/diag-cap.*`); the guide does not say which (005 T14).
+- `bayan test -v` pass lines have no per-test timing (spec 005 R8 asked for one)
+- `bayan test -v` pending line is `  ◆ <module>: <name> (pending)`, not the planned `  pending <module>: <name>: <message>` (spec 005)
+- Diagnostics for loose files show absolute paths in `-->` (spec 005 R4: relative to the package root)
+- `laws-check`'s 600 s per-law limit is shorter than L001/L002 under load; both were verified by uncapped filter runs (spec 005)
+- On a tty, .NET console setup writes the keypad escape `\e[?1h\e=` (also after each child process), so `NO_COLOR` output is not escape-free; pre-existing on dev (005 review A1)
+- The ASCII / `TERM=dumb` progress line leaves `... <phase>` in scrollback; the guide's §6 "removed when the operation finishes" and "prints `... <phase>` once" disagree (005 review A5)
+- `src/Bayan.Cli/Progress.cs:60-67` `Columns` counts emoji outside U+1F300–1F64F/U+1F900–1F9FF (🚀 U+1F680–1F6FF, U+1FA70–1FAFF, BMP emoji such as ✅ U+2705) as 1 column, so a long progress line can still wrap (005 review loop 3).
+- `src/Bayan.Cli/Messages.cs:156`: the unselectable-rerun notice says "control characters" for bidi-only names and is always singular (005 review loop 3).
+- Mixed selectable/unselectable failures in one `bayan test` run have no test (005 review loop 2).

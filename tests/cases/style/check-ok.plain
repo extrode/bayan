@@ -1,0 +1,5 @@
+# bayan check <dir>/tally/main.byn
+exit: 0
+--- stdout ---
+◆ checked tally in 0.00s
+--- stderr ---

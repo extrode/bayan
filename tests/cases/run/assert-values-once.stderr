@@ -1,0 +1,4 @@
+panic: assertion failed: bump(ref calls) > calls + 5
+  bump(ref calls) is 2
+  calls + 5 is 7
+  at assert-values-once.byn:9

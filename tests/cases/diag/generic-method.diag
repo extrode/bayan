@@ -17,3 +17,4 @@ error BYN2008: type name `item` must be PascalCase
     │
   help: rename it `Item`
     │ 8 │ struct Bag<Item> {
+    │   │            +

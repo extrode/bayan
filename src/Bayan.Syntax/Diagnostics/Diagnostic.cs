@@ -13,12 +13,16 @@ public enum Severity
 /// <summary>A machine-applicable edit: replace <see cref="Span"/> with <see cref="Replacement"/>.</summary>
 public sealed record Fix(TextSpan Span, string Replacement);
 
+/// <summary>A secondary location in the diagnostic's source, underlined with <c>---</c>.</summary>
+public sealed record RelatedSpan(TextSpan Span, string Label);
+
 /// <summary>
 /// A compiler diagnostic. Codes are <c>BYN####</c>, allocated by range:
 /// 0001–0999 lexer, 1000–1999 parser, 2000–3999 semantics, 4000–4999 backend/toolchain.
 /// </summary>
 /// <param name="Source">The file the span points into; null for diagnostics without a location.</param>
 /// <param name="Label">Text printed after the carets under <paramref name="Span"/>.</param>
+/// <param name="Related">Secondary spans in <paramref name="Source"/>; rendered only, not written to JSON.</param>
 public sealed record Diagnostic(
     Severity Severity,
     string Code,
@@ -27,7 +31,8 @@ public sealed record Diagnostic(
     string Message,
     string? Label = null,
     string? Help = null,
-    Fix? Fix = null)
+    Fix? Fix = null,
+    IReadOnlyList<RelatedSpan>? Related = null)
 {
     public bool IsError => Severity == Severity.Error;
 }

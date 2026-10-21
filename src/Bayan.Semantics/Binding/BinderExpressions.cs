@@ -169,17 +169,17 @@ internal sealed partial class Binder
             var text = Source.GetText(span);
             var wrapped = value.Syntax is NameExpr or LiteralExpr or MemberExpr or CallExpr or ParenExpr or IndexExpr ? text : "(" + text + ")";
             help = value.Type.IsNumeric && target.IsNumeric
-                ? $"`{value.Type.DisplayName}` does not convert to `{target.DisplayName}` without loss; cast it if the value always fits"
+                ? $"cast it if the value always fits; `{value.Type.DisplayName}` does not convert to `{target.DisplayName}` without loss"
                 : "cast it explicitly";
             fix = new Fix(span, $"({target.DisplayName}){wrapped}");
         }
         else if (value.Type is OptionalType o && o.Inner.Equals(target))
         {
-            help = "the value may be absent; unwrap it with `??`, `is { } v`, or `?? return`";
+            help = "unwrap it with `??`, `is { } v`, or `?? return`; the value may be absent";
         }
         else if (value.Type is ListType && target is SpanType)
         {
-            help = "a `List` becomes a `Span` implicitly only as a call argument; use `.asSpan` here";
+            help = "use `.asSpan` here; a `List` becomes a `Span` implicitly only as a call argument";
         }
         Report(DiagnosticCodes.TypeMismatch, span, [value.Type.DisplayName, target.DisplayName], help: help, fix: fix);
     }
@@ -187,7 +187,7 @@ internal sealed partial class Binder
     private static string RangeHelp(PrimitiveType t)
     {
         var (min, max) = t.Range;
-        return $"`{t.Name}` holds {min} to {max}";
+        return $"use a value from {min} to {max}, the range of `{t.Name}`";
     }
 
     private static bool Fits(Int128 n, PrimitiveType t)
@@ -441,7 +441,7 @@ internal sealed partial class Binder
         candidates.AddRange(Module.Constants.Keys);
         candidates.AddRange(Module.Types.Keys);
         candidates.AddRange(_file.Imports.Keys);
-        candidates.AddRange(["print", "panic", "assert", "Io"]);
+        candidates.AddRange(["print", "panic", "todo", "assert", "Io"]);
         var suggestion = Suggest(name.Text, candidates);
         Report(DiagnosticCodes.UndefinedName, name.Span, [name.Text],
             help: suggestion is null ? null : $"did you mean `{suggestion}`?",
@@ -490,7 +490,7 @@ internal sealed partial class Binder
         if (!inInstance)
         {
             Report(DiagnosticCodes.InstanceMemberWithoutThis, n.Span, [n.Name.Text],
-                help: _fn is { IsStatic: true } ? "a `static` method has no `this`" : "field defaults cannot read other fields");
+                help: _fn is { IsStatic: true } ? "call it on an instance; a `static` method has no `this`" : "set it in a constructor; field defaults cannot read other fields");
             return new BoundErrorExpr(n);
         }
         var self = new BoundThis(n, _struct!);
@@ -539,7 +539,7 @@ internal sealed partial class Binder
                 }
                 Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, s.Name],
                     help: method is not null || s.FindField(name) is not null || s.FindProperty(name) is not null
-                        ? $"`{name}` belongs to a `{s.Name}` value, not the type" : null);
+                        ? $"call it on a `{s.Name}` value; `{name}` belongs to a value, not the type" : null);
                 return new BoundErrorExpr(m);
             }
             case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Io } io }:
@@ -687,7 +687,7 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(syntax);
             case TypeParameterType tp:
                 Report(DiagnosticCodes.TypeParameterMember, member.Span, [name, tp.Name],
-                    help: $"type parameters have no constraints, so a `{tp.Name}` has no members");
+                    help: $"use a concrete type here; type parameters have no constraints, so a `{tp.Name}` has no members");
                 return new BoundErrorExpr(syntax);
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
@@ -697,7 +697,7 @@ internal sealed partial class Binder
         if (name == "take")
         {
             Report(DiagnosticCodes.TakeUnsupported, member.Span, [target.Type.DisplayName],
-                help: "only an owned collection or optional has an empty value to leave behind; copy it, or move the whole local");
+                help: "copy it, or move the whole local; only an owned collection or optional has an empty value to leave behind");
             return new BoundErrorExpr(syntax);
         }
         Report(DiagnosticCodes.UnknownMember, member.Span, [name, target.Type.DisplayName],
@@ -707,7 +707,7 @@ internal sealed partial class Binder
 
     private static string? MemberSuggestion(TypeSymbol type, string name)
     {
-        if (name is "Length" or "Count" or "count" or "size" or "len") return "the size of anything is `length`";
+        if (name is "Length" or "Count" or "count" or "size" or "len") return "use `length` for the size of anything";
         IEnumerable<string> names = type switch
         {
             StructSymbol s => s.Fields.Select(f => f.Name).Concat(s.Properties.Select(p => p.Name)).Concat(s.Methods.Select(m => m.Name)),
@@ -839,7 +839,7 @@ internal sealed partial class Binder
         Report(DiagnosticCodes.StringIndexer, TextSpan.FromBounds(i.Target.Span.End, i.Span.End), [],
             label: "strings have no indexer",
             help: $"""
-                `string` is UTF-8, so position {index} is not a character. Choose what you mean:
+                choose what you mean; `string` is UTF-8, so position {index} is not a character:
                   `{s}.bytes[{index}]`   the byte at offset {index} (applied below)
                   `{s}.runeAt({index})`  the character starting at byte offset {index}
                   `for (let c in {s})`   each character in turn
@@ -874,7 +874,7 @@ internal sealed partial class Binder
         if (!ok)
         {
             Report(DiagnosticCodes.BadUnaryOperand, u.Span, [UnaryText(u.Op), t.DisplayName],
-                help: u.Op == UnaryOp.Negate && t.IsUnsignedInteger ? "unsigned values cannot be negative; cast to a signed type first" : null);
+                help: u.Op == UnaryOp.Negate && t.IsUnsignedInteger ? "cast to a signed type first; unsigned values cannot be negative" : null);
             return new BoundErrorExpr(u);
         }
         var result = new BoundUnary(u, u.Op, operand, t);
@@ -986,7 +986,7 @@ internal sealed partial class Binder
     private BoundErrorExpr TypeParameterOperator(Node syntax, string op, TypeParameterType tp)
     {
         Report(DiagnosticCodes.TypeParameterOperator, syntax.Span, [op, tp.Name],
-            help: $"type parameters have no constraints: a `{tp.Name}` can only be copied, compared with `==` and `!=`, passed, stored, returned and formatted");
+            help: $"use a `{tp.Name}` only to copy, compare with `==` and `!=`, pass, store, return and format; type parameters have no constraints");
         return new BoundErrorExpr(syntax);
     }
 
@@ -1045,7 +1045,7 @@ internal sealed partial class Binder
         if (left.Type.IsNumeric && right.Type.IsNumeric)
             help = $"convert one side explicitly, e.g. `({(Conversions.IsWidening((PrimitiveType)right.Type, PrimitiveType.I64) && left.Type.IsSignedInteger ? left.Type : right.Type).DisplayName})…`; mixed signedness never converts implicitly";
         else if (left.Type == PrimitiveType.Char && right.Type.IsInteger)
-            help = "a `char` is a Unicode scalar, not a number; use `(u32)c` for its value";
+            help = "use `(u32)c` for its value; a `char` is a Unicode scalar, not a number";
         Report(DiagnosticCodes.BadBinaryOperands, b.Span, [BinaryText(b.Op), left.Type.DisplayName, right.Type.DisplayName], help: help);
         return new BoundErrorExpr(b);
     }
@@ -1072,7 +1072,7 @@ internal sealed partial class Binder
     {
         if (r.Start is null || r.End is null)
         {
-            Report(DiagnosticCodes.OpenRange, r.Span, [], help: "open ranges (`a..`, `..b`) are only valid inside `[ ]`");
+            Report(DiagnosticCodes.OpenRange, r.Span, [], help: "use open ranges (`a..`, `..b`) only inside `[ ]`");
             return new BoundErrorExpr(r);
         }
         var hint = expected is RangeType rt ? rt.Element : null;
@@ -1092,7 +1092,7 @@ internal sealed partial class Binder
         if (common is null || !(common.IsInteger || common == PrimitiveType.Char))
         {
             Report(DiagnosticCodes.BadBinaryOperands, r.Span, [r.Inclusive ? "..=" : "..", start.Type.DisplayName, end.Type.DisplayName],
-                help: "range ends must be integers or chars of the same type");
+                help: "make both range ends integers or chars of the same type");
             return new BoundErrorExpr(r);
         }
         return new BoundRange(r, Convert(start, common, r.Start.Span), Convert(end, common, r.End.Span), r.Inclusive, new RangeType(common));
@@ -1346,7 +1346,7 @@ internal sealed partial class Binder
             Report(DiagnosticCodes.SpreadNotSequence, s.Span, [text, operand.Type.DisplayName],
                 label: "not a `List`, `Span` or fixed array",
                 help: element is not null && Conversions.Implicit(operand.Type, element) is not null
-                    ? $"to add `{text}` as one element, drop the `..`"
+                    ? $"drop the `..` to add `{text}` as one element"
                     : "spread a `List`, `Span` or fixed array; a single value goes in without `..`");
             return new BoundErrorExpr(s);
         }
@@ -1478,7 +1478,7 @@ internal sealed partial class Binder
         if (count.Constant is not { Value: Int128 n })
         {
             Report(DiagnosticCodes.NotConstant, s.Count.Span, ["a `stackalloc` length"],
-                help: "v0.1 supports only constant lengths: `stackalloc u8[64]`");
+                help: "use a constant length: `stackalloc u8[64]`; v0.1 supports no other");
             return new BoundErrorExpr(s);
         }
         if (n <= 0 || n > 1 << 20)

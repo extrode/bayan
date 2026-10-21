@@ -171,7 +171,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             return ErrorType.Instance;
         }
         compilation.Report(DiagnosticCodes.UnknownType, file.Source, n.Span, [string.Join(".", n.Path.Select(x => x.Text))],
-            help: n.Path.Length == 2 ? $"`{n.Path[0].Text}` is not an imported module; add `import {n.Path[0].Text};`" : null);
+            help: n.Path.Length == 2 ? $"add `import {n.Path[0].Text};`; `{n.Path[0].Text}` is not an imported module" : null);
         return ErrorType.Instance;
     }
 

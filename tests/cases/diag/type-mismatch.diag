@@ -3,8 +3,9 @@ error BYN2202: expected `i32`, found `i64`
   2 │ i32 small = big;
     │             ^^^
     │
-  help: `i64` does not convert to `i32` without loss; cast it if the value always fits
+  help: cast it if the value always fits; `i64` does not convert to `i32` without loss
     │ 2 │ i32 small = (i32)big;
+    │   │             +++++
 
 error BYN2202: expected `bool`, found `i32`
 

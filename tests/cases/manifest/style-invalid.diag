@@ -23,4 +23,4 @@ error BYN3101: `tabs` is not a field of `Style`
   9 │         tabs: true,
     │         ^^^^
     │
-  help: the fields are `indent`, `braces`, `maxLine`, `trailingCommas`
+  help: use one of the fields `indent`, `braces`, `maxLine`, `trailingCommas`

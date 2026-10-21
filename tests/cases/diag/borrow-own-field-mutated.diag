@@ -1,4 +1,5 @@
-error BYN3003: cannot return a borrow of the temporary on line 14, which is freed when `counted` returns
+error BYN3003: cannot return a borrow of the temporary on line 14, which is freed when `counted`
+returns
 
   14 │     (Span<Token>, i64) counted() => (toks.asSpan(), toks.length);
      │                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -45,9 +46,11 @@ error BYN3001: a struct field cannot hold a borrowed `StrBuf`
   41 │     StrBuf text;
      │     ^^^^^^
      │
-  help: store a `List` copied with `.copy(to: alloc)` instead; storing borrows in structs arrives in a later version
+  help: store a `List` copied with `.copy(to: alloc)` instead; storing borrows in structs arrives in
+        a later version
 
-error BYN3003: cannot return a borrow of the temporary on line 43, which is freed when `view` returns
+error BYN3003: cannot return a borrow of the temporary on line 43, which is freed when `view`
+returns
 
   43 │     string view() => text.asString();
      │                      ^^^^^^^^^^^^^^^

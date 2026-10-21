@@ -3,53 +3,53 @@ error BYN2612: `try` is not allowed in a panic handler
   12 │         let n = try step();
      │                 ^^^
      │
-  help: panic handlers can't recover; remove it
+  help: remove it; panic handlers can't recover
 
 error BYN2612: assignment is not allowed in a panic handler
 
   13 │         count = n;
      │         ^^^^^^^^^
      │
-  help: panic handlers can't recover; remove it
+  help: remove it; panic handlers can't recover
 
 error BYN2612: allocation is not allowed in a panic handler
 
   14 │         let xs = List<i64>();
      │                  ^^^^^^^^^^^
      │
-  help: panic handlers can't recover; remove it
+  help: remove it; panic handlers can't recover
 
 error BYN2612: `return` is not allowed in a panic handler
 
   15 │         return 0;
      │         ^^^^^^^^
      │
-  help: panic handlers can't recover; remove it
+  help: remove it; panic handlers can't recover
 
 error BYN2612: `break` is not allowed in a panic handler
 
   19 │             break;
      │             ^^^^^
      │
-  help: panic handlers can't recover; remove it
+  help: remove it; panic handlers can't recover
 
 error BYN2612: `continue` is not allowed in a panic handler
 
   22 │             continue;
      │             ^^^^^^^^
      │
-  help: panic handlers can't recover; remove it
+  help: remove it; panic handlers can't recover
 
 error BYN2612: allocation is not allowed in a panic handler
 
   30 │     let s = $"{p.message}";
      │             ^^^^^^^^^^^^^^
      │
-  help: panic handlers can't recover; remove it
+  help: remove it; panic handlers can't recover
 
 error BYN2612: `return` is not allowed in a panic handler
 
   31 │     return;
      │     ^^^^^^
      │
-  help: panic handlers can't recover; remove it
+  help: remove it; panic handlers can't recover

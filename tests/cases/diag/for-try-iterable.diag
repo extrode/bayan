@@ -5,13 +5,15 @@ error BYN2221: `Rows` cannot be iterated
      │
   help: write `for try`
      │ 14 │     for try row in rows {
+     │    │        ++++
 
 error BYN2221: `List<i64>` cannot be iterated
 
   17 │     for try x in xs {
      │                  ^^
      │
-  help: `for try` needs a value with a failing `next()` that returns `T?`; a sequence that cannot fail is written `for x in …`
+  help: give `for try` a value with a failing `next()` that returns `T?`; write `for x in …` for a
+        sequence that cannot fail
 
 error BYN2411: 2 names cannot match `i64`
 

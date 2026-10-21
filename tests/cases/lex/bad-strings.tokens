@@ -25,7 +25,7 @@ error BYN0006: invalid escape sequence `\q`
   2 │ let b = "bad \q escape";
     │              ^^
     │
-  help: valid escapes are \n \r \t \0 \\ \" \' and \u{…}
+  help: use a valid escape: \n \r \t \0 \\ \" \' and \u{…}
 
 error BYN0003: unterminated string literal
 

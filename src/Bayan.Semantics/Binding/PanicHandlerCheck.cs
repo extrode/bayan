@@ -77,7 +77,7 @@ internal static class PanicHandlerCheck
             }
             if (restricted is not null)
                 c.Report(DiagnosticCodes.PanicHandlerRestricted, fn.File!.Source, node.Syntax.Span, [restricted],
-                    help: "panic handlers can't recover; remove it");
+                    help: "remove it; panic handlers can't recover");
         }
     }
 }

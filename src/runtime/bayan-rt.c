@@ -92,6 +92,16 @@ void byn_panic_str(byn_str msg, const char* file, int line) {
     byn_panic_raise(msg.ptr, (size_t)msg.len, file, line);
 }
 
+void byn_todo_str(byn_str msg, const char* file, int line) {
+    byn_stdout_flush();
+    fputs("pending: ", stderr);
+    fwrite(msg.ptr, 1, (size_t)msg.len, stderr);
+    if (file) fprintf(stderr, "\n  at %s:%d\n", file, line);
+    else fputc('\n', stderr);
+    fflush(stderr);
+    exit(4);
+}
+
 void byn_unreachable(const char* file, int line) {
     byn_panic("reached code the compiler proved unreachable", file, line);
 }

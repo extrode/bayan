@@ -1,0 +1,14 @@
+# bayan test -v <dir>/tally
+exit: 3
+--- stdout ---
+running 3 tests in 1 module
+  [38;2;143;214;148m◆[0m tally: adds
+  [38;2;242;193;78m◆[0m tally: later (pending)
+
+  [1m[38;2;255;138;128m✗[0m tally: is false
+      assert(false)
+      main.test.byn:10
+
+[38;2;143;214;148m◆[0m 1 passed · [38;2;255;138;128m✗[0m 1 failed · 1 pending · 0.00s
+  rerun the failure: bayan test --only "is false"
+--- stderr ---

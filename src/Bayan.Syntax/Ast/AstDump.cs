@@ -12,13 +12,16 @@ namespace Bayan.Syntax.Ast;
 /// </summary>
 public static class AstDump
 {
-    public static string Dump(SyntaxTree tree)
+    public static string Dump(SyntaxTree tree) => Dump(tree, Style.Plain);
+
+    /// <param name="style">How the diagnostics after the tree render; the <c>parse/</c> goldens use <see cref="Style.Plain"/>.</param>
+    public static string Dump(SyntaxTree tree, Style style)
     {
         var w = new Writer();
         w.Line(0, "CompilationUnit");
         foreach (var member in tree.Root.Members) w.Decl(1, member);
         if (tree.Diagnostics.Count > 0)
-            w.Raw("\n" + DiagnosticRenderer.RenderAll(tree.Diagnostics));
+            w.Raw("\n" + DiagnosticRenderer.RenderAll(tree.Diagnostics, includePath: false, style));
         return w.ToString();
     }
 

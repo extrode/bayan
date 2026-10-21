@@ -1,0 +1,12 @@
+# Doctor.Render
+--- stdout ---
+[38;2;143;214;148m*[0m bayan       <version> (commit a1b2c3d4e5f6)
+[38;2;143;214;148m*[0m host        <host>
+[38;2;255;138;128mx C compiler: none found[0m
+[38;2;141;184;242m  help: install zig (https://ziglang.org), or set BAYAN_CC to a C compiler[0m
+[38;2;180;178;169m*[0m zig         not found; building for other targets needs it
+[38;2;141;184;242m  help: install zig (https://ziglang.org)[0m
+[38;2;143;214;148m*[0m git         /usr/bin/git (git version 2.47.0)
+[38;2;255;138;128mx cache: ~/.cache/bayan isn't writable: Permission denied[0m
+[38;2;141;184;242m  help: set BAYAN_CACHE to a writable directory[0m
+--- stderr ---

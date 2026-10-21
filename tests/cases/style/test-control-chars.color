@@ -1,0 +1,14 @@
+# bayan test -v <dir>/tally
+exit: 3
+--- stdout ---
+running 3 tests in 1 module
+  [38;2;143;214;148m◆[0m tally: ok\u{1b}]0;PWNED\u{7}
+  [38;2;242;193;78m◆[0m tally: later\u{1b}[2J (pending)
+
+  [1m[38;2;255;138;128m✗[0m tally: y\u{1b}]0;PWNED\u{7}\u{1b}[2J
+      boom\u{1b}[2J\u{9b}31m
+      main.test.byn:10
+
+[38;2;143;214;148m◆[0m 1 passed · [38;2;255;138;128m✗[0m 1 failed · 1 pending · 0.00s
+  a failing test's name contains control characters and cannot be selected from a shell
+--- stderr ---

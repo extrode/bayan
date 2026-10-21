@@ -117,7 +117,7 @@ internal sealed partial class Binder
             if (typeArgs.Length != parameters.Count)
             {
                 Report(DiagnosticCodes.GenericArgumentCount, c.Callee.Span, [fn.Name, parameters.Count, typeArgs.Length],
-                    help: parameters.Count == 0 ? $"`{fn.Name}` is not generic; remove the type arguments" : null);
+                    help: parameters.Count == 0 ? $"remove the type arguments; `{fn.Name}` is not generic" : null);
                 return null;
             }
             var explicitArgs = typeArgs.Select(t => ResolveType(t)).ToArray();
@@ -310,9 +310,9 @@ internal sealed partial class Binder
 
     private static string? MustBeNamed(ParameterSymbol p, IReadOnlyList<ParameterSymbol> ps, string fnName)
     {
-        if (p.Type.IsBool) return $"a `bool` argument says nothing at the call site; write `{p.Name}: …`";
+        if (p.Type.IsBool) return $"write `{p.Name}: …`; a `bool` argument says nothing at the call site";
         if (!p.Type.IsError && ps.Count(q => q.Type.Equals(p.Type)) > 1)
-            return $"`{fnName}` has several `{p.Type.DisplayName}` parameters; name them so they cannot be swapped";
+            return $"name them so they cannot be swapped; `{fnName}` has several `{p.Type.DisplayName}` parameters";
         return null;
     }
 
@@ -335,7 +335,7 @@ internal sealed partial class Binder
             if (!place.Type.Equals(p.Type))
             {
                 Report(DiagnosticCodes.TypeMismatch, arg.Value.Span, [place.Type.DisplayName, p.Type.DisplayName],
-                    help: "a `ref` or `out` argument must have exactly the parameter's type");
+                    help: "give a `ref` or `out` argument exactly the parameter's type");
                 return new BoundErrorExpr(arg.Value);
             }
             CheckWritable(place, arg.Value.Span, $"it is passed as `{(wanted == ArgModifier.Ref ? "ref" : "out")}`");
@@ -534,18 +534,18 @@ internal sealed partial class Binder
         }
         var (what, help) = operand switch
         {
-            BoundLocal { Local: ParameterSymbol { IsByRef: true } p } => ($"`{p.Modifier.ToString().ToLowerInvariant()}` parameter `{p.Name}`", "the caller still owns it; copy it with `.copy(to: alloc)`"),
-            BoundLocal { Local: ParameterSymbol p } => ($"parameter `{p.Name}`", $"a plain parameter is borrowed from the caller; declare it `move {p.Name}` to take ownership"),
-            BoundLocal { Local: var l } => ($"`{l.Name}`", "only a local variable or a `move` parameter can be moved"),
-            BoundField f when BuiltinMembers.Method(f.Type, "take") is not null => ($"field `{f.Field.Name}`", "its owner keeps it; take it with `.take()`, or copy it with `.copy(to: alloc)`"),
-            BoundField f => ($"field `{f.Field.Name}`", "its owner keeps it; move the whole value, or copy the field with `.copy(to: alloc)`"),
+            BoundLocal { Local: ParameterSymbol { IsByRef: true } p } => ($"`{p.Modifier.ToString().ToLowerInvariant()}` parameter `{p.Name}`", "copy it with `.copy(to: alloc)`; the caller still owns it"),
+            BoundLocal { Local: ParameterSymbol p } => ($"parameter `{p.Name}`", $"declare it `move {p.Name}` to take ownership; a plain parameter is borrowed from the caller"),
+            BoundLocal { Local: var l } => ($"`{l.Name}`", "move a local variable or a `move` parameter instead"),
+            BoundField f when BuiltinMembers.Method(f.Type, "take") is not null => ($"field `{f.Field.Name}`", "take it with `.take()`, or copy it with `.copy(to: alloc)`; its owner keeps it"),
+            BoundField f => ($"field `{f.Field.Name}`", "move the whole value, or copy the field with `.copy(to: alloc)`; its owner keeps it"),
             BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } when BuiltinMembers.Method(operand.Type, "take") is not null =>
-                ("an element", "its owner keeps it; take it with `.take()`, or copy it with `.copy(to: alloc)`"),
-            BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } => ("an element", "the collection keeps it; copy the element with `.copy(to: alloc)`"),
+                ("an element", "take it with `.take()`, or copy it with `.copy(to: alloc)`; its owner keeps it"),
+            BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } => ("an element", "copy the element with `.copy(to: alloc)`; the collection keeps it"),
             BoundTupleElement => ("a tuple element", "move the whole tuple instead"),
-            BoundThis => ("`this`", "a method borrows `this`"),
-            BoundCall or BoundBuiltinCall or BoundStructLiteral or BoundCollection or BoundLiteral => ("a fresh value", "a fresh value needs no `move`; remove it"),
-            _ => ("this expression", "only a local variable or a `move` parameter can be moved"),
+            BoundThis => ("`this`", "move a `.copy(to: alloc)` of it instead; a method borrows `this`"),
+            BoundCall or BoundBuiltinCall or BoundStructLiteral or BoundCollection or BoundLiteral => ("a fresh value", "remove the `move`; a fresh value needs none"),
+            _ => ("this expression", "move a local variable or a `move` parameter instead"),
         };
         Report(DiagnosticCodes.CannotMove, operand.Syntax.Span, [what], help: help);
         return new BoundMove(syntax, operand);
@@ -591,7 +591,7 @@ internal sealed partial class Binder
     {
         if (!InPanicHandler(t.Span, "try") && _deferDepth > 0)
             Report(DiagnosticCodes.TryInDefer, t.Span, [],
-                help: "cleanup cannot fail; handle the error here with `catch`");
+                help: "handle the error here with `catch`; cleanup cannot fail");
         var inner = StripParens(t.Operand);
         if (inner is not CallExpr call)
         {
@@ -660,7 +660,7 @@ internal sealed partial class Binder
             {
                 if (sets.Count > 0 && !sets.Contains(ev.Variant.Set))
                     Report(DiagnosticCodes.UnknownVariant, v.Span, [ev.Variant.Name, errorType.DisplayName],
-                        help: $"`{bc.Function.Name}` fails with {string.Join(", ", sets.Select(s => "`" + s.Name + "`"))}");
+                        help: $"use a variant of {string.Join(", ", sets.Select(s => "`" + s.Name + "`"))}, the sets `{bc.Function.Name}` fails with");
                 else variant = ev.Variant;
             }
         }
@@ -671,7 +671,7 @@ internal sealed partial class Binder
             handler = BindExpr(c.Handler);
             if (!handler.Type.IsVoid && !handler.Type.IsNever && !handler.Type.IsError)
                 Report(DiagnosticCodes.TypeMismatch, c.Handler.Span, [handler.Type.DisplayName, "void"],
-                    help: $"`{bc.Function.Name}` returns nothing, so the handler cannot produce a value");
+                    help: $"drop the handler's value; `{bc.Function.Name}` returns nothing, so the handler cannot produce one");
         }
         else if (c.Handler is BlockExpr block)
         {
@@ -758,7 +758,7 @@ internal sealed partial class Binder
                 if (declared is ErrorSetSymbol set) return BindErrorSetPattern(p, input, set, d.Name);
                 if (!declared.IsError)
                     Report(DiagnosticCodes.PatternMismatch, d.Type.Span, [$"`{declared.DisplayName}`", Unwrap(input).DisplayName],
-                        help: "only an error set can be matched by type, in a `catch switch`");
+                        help: "match by type only on an error set, in a `catch switch`");
                 DeclareLocal(d.Name, ErrorType.Instance, LocalKind.PatternVariable);
                 return new BoundBindPattern(p, input, null);
             }
@@ -1021,7 +1021,7 @@ internal sealed partial class Binder
             var declared = ResolveType(t);
             if (!declared.IsError && !valueType.IsError && !declared.Equals(valueType))
                 Report(DiagnosticCodes.PatternMismatch, t.Span, [$"`{declared.DisplayName}`", valueType.DisplayName],
-                    help: "type patterns apply only to unions and `dyn` values, which arrive in a later version");
+                    help: "remove the type; type patterns apply only to unions and `dyn` values, which arrive in a later version");
         }
         var subs = new List<BoundSubpattern>();
         foreach (var sub in pp.Properties)
@@ -1308,7 +1308,7 @@ internal sealed partial class Binder
                 return false;
             case BoundLocal { Local: { BorrowsSubject: true } l } when TypeFacts.IsUnique(l.Type):
                 Report(DiagnosticCodes.MutateBorrow, span, [l.Name], label: why,
-                    help: "a loop or pattern variable of a unique type borrows from its subject; change the subject itself, or work on a `.copy(to: alloc)`");
+                    help: "change the subject itself, or work on a `.copy(to: alloc)`; a loop or pattern variable of a unique type borrows from its subject");
                 return false;
             case BoundLocal { Local: var l }:
                 if (l.IsMutable || l is ParameterSymbol { IsByRef: true }) return true;
@@ -1329,7 +1329,7 @@ internal sealed partial class Binder
             case BoundField f:
                 if (f.Field.IsReadonly && !(_fn is { Kind: FunctionKind.Constructor } && _fn.Owner == f.Field.Owner && f.Receiver is BoundThis))
                 {
-                    Report(DiagnosticCodes.ReadonlyField, span, [f.Field.Name], help: "`readonly` fields are set only in a constructor or a struct literal");
+                    Report(DiagnosticCodes.ReadonlyField, span, [f.Field.Name], help: "set `readonly` fields only in a constructor or a struct literal");
                     return false;
                 }
                 return CheckWritable(f.Receiver, span, why);

@@ -147,7 +147,7 @@ public sealed class Manifest
         foreach (var (name, span, value) in obj.Fields)
         {
             if (!known.Contains(name))
-                Report(DiagnosticCodes.ManifestUnknownField, span, [name, obj.Type], help: "the fields are " + string.Join(", ", known.Select(k => $"`{k}`")));
+                Report(DiagnosticCodes.ManifestUnknownField, span, [name, obj.Type], help: "use one of the fields " + string.Join(", ", known.Select(k => $"`{k}`")));
             else if (!fields.TryAdd(name, value))
                 Report(DiagnosticCodes.ManifestNotData, span, [$"`{name}` only once"]);
         }
@@ -279,7 +279,7 @@ public sealed class Manifest
             if (diagnostics.Any(d => d.IsError)) return;
             var d = DiagnosticCodes.ManifestNotData;
             diagnostics.Add(new Diagnostic(d.Severity, d.Code, source, Current.Span, d.Format([expected]),
-                Help: "values are strings, integers, `true`/`false`, `.names`, `[lists]` and `Type { field: value }`; no calls or expressions"));
+                Help: "write strings, integers, `true`/`false`, `.names`, `[lists]` or `Type { field: value }`; no calls or expressions"));
         }
 
         private bool Accept(TokenKind kind)

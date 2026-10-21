@@ -1,0 +1,3 @@
+panic: assertion failed: net == -34
+  net is -33
+  at assert-values.byn:2
