@@ -518,9 +518,24 @@ public sealed class CliTests
                   main.test.byn:10
 
             * 1 passed - x 1 failed - 1 pending - Ts
-              rerun the failure: bayan test --only 'y\u{1b}]0;PWNED\u{7}\u{1b}[2J'
+              a failing test's name contains control characters and cannot be selected from a shell
 
             """, WithoutTimes(stdout));
+    }
+
+    [Fact]
+    public void BidiControlsInTestNamesAndOutputAreShownEscaped()
+    {
+        var dir = TestSuite("cli-test-bidi", "test \"a\\u{202e}b\" {\n    panic(\"x\\u{2067}y\");\n}\n\ntest \"plain\" {\n    assert(false);\n}\n");
+        var (exit, stdout, _) = Run("test", "--ascii", dir);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+        Assert.DoesNotContain('\u202e', stdout);
+        Assert.DoesNotContain('\u2067', stdout);
+        Assert.Contains("a\\u{202e}b", stdout);
+        Assert.Contains("x\\u{2067}y", stdout);
+        Assert.Contains("bayan test --only \"plain\"", stdout);
+        Assert.DoesNotContain("--only a", stdout);
+        Assert.Contains("cannot be selected from a shell", stdout);
     }
 
     [Fact]

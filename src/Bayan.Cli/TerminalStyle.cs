@@ -31,19 +31,23 @@ public static class TerminalStyle
 
     /// <summary>
     /// User-controlled text (test names, test output) made safe for a terminal: C0 controls, DEL and C1
-    /// controls are written as <c>\u{1b}</c>, so a name cannot move the cursor, retitle or clear the screen.
+    /// controls, and bidi controls (U+061C, U+200E/F, U+202A–202E, U+2066–2069) are written as <c>\u{1b}</c>, so a name cannot
+    /// move the cursor, retitle or clear the screen, or visually reorder the text after it.
     /// </summary>
     public static string Visible(string text)
     {
-        if (!text.Any(c => c < 0x20 || c is >= '\u007F' and <= '\u009F')) return text;
+        if (!text.Any(Hidden)) return text;
         var sb = new System.Text.StringBuilder(text.Length + 8);
         foreach (var c in text)
         {
-            if (c < 0x20 || c is >= '\u007F' and <= '\u009F') sb.Append("\\u{").Append(((int)c).ToString("x", System.Globalization.CultureInfo.InvariantCulture)).Append('}');
+            if (Hidden(c)) sb.Append("\\u{").Append(((int)c).ToString("x", System.Globalization.CultureInfo.InvariantCulture)).Append('}');
             else sb.Append(c);
         }
         return sb.ToString();
     }
+
+    private static bool Hidden(char c) =>
+        c < 0x20 || c is >= '\u007F' and <= '\u009F' or '\u061C' or '\u200E' or '\u200F' or (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069');
 
     /// <summary><c>BAYAN_THEME</c>, else the background field of <c>COLORFGBG</c>, else dark.</summary>
     private static bool Light(Func<string, string?> env)
