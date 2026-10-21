@@ -13,6 +13,7 @@ public sealed class Builtins
         Module = new ModuleSymbol("builtin", "") { CName = "builtin" };
         Print = Make("print", BuiltinFunction.Print, PrimitiveType.Void, ("text", PrimitiveType.String));
         Panic = Make("panic", BuiltinFunction.Panic, PrimitiveType.Never, ("message", PrimitiveType.String));
+        Todo = Make("todo", BuiltinFunction.Todo, PrimitiveType.Never, ("message", PrimitiveType.String));
         Assert = Make("assert", BuiltinFunction.Assert, PrimitiveType.Void, ("condition", PrimitiveType.Bool));
         ArenaNew = Make("Arena", BuiltinFunction.ArenaNew, BuiltinType.Arena);
         StrBufNew = Make("StrBuf", BuiltinFunction.StrBufNew, BuiltinType.StrBuf, ("buffer", new SpanType(PrimitiveType.U8)));
@@ -134,6 +135,9 @@ public sealed class Builtins
     /// <summary><c>panic(string)</c>: aborts with a message and location.</summary>
     public FunctionSymbol Panic { get; }
 
+    /// <summary><c>todo(string)</c>: stops with <c>pending: message</c> and exit code 3; a test that calls it is pending.</summary>
+    public FunctionSymbol Todo { get; }
+
     /// <summary><c>assert(bool)</c>: panics with the condition's source text when false.</summary>
     public FunctionSymbol Assert { get; }
 
@@ -141,6 +145,7 @@ public sealed class Builtins
     {
         "print" => Print,
         "panic" => Panic,
+        "todo" => Todo,
         "assert" => Assert,
         "Owned" => OwnedNew,
         "Untrusted" => UntrustedNew,
