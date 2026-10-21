@@ -5,7 +5,7 @@ error BYN2007: `total` is already a local here
     │
   help: pick a different name; Bayan does not let a local hide another one
 
-warning BYN2028: `size` shadows an earlier `size` of the same type `i32`
+warning BYN2028: `size` shadows a `i32` of the same type
 
   9 │ let size = 2;
     │     ^^^^ `size` is declared on line 8
