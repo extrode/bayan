@@ -44,6 +44,12 @@ public sealed class Compilation
 
     public Builtins Builtins { get; } = new();
 
+    /// <summary>Time spent parsing the entry module and its imports.</summary>
+    public TimeSpan ParseTime { get; private set; }
+
+    /// <summary>Time spent declaring and binding (zero after syntax errors).</summary>
+    public TimeSpan CheckTime { get; private set; }
+
     /// <summary>Error variants in code order (index = code - 1).</summary>
     public List<ErrorVariantSymbol> ErrorVariants { get; } = new();
 
@@ -85,11 +91,15 @@ public sealed class Compilation
     public static Compilation Create(IReadOnlyList<SourceText> entryFiles, string packageRoot, CompilationOptions? options = null, string? displayRoot = null)
     {
         var c = new Compilation(packageRoot, options ?? new CompilationOptions(), displayRoot);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         c.EntryModule = c.LoadModule("main", packageRoot, entryFiles, null);
+        c.ParseTime = clock.Elapsed;
         // Syntax errors stop here: binding a broken tree mostly reports their echoes.
         if (c.Diagnostics.HasErrors) return c;
+        clock.Restart();
         c.Declare();
         c.BindAll();
+        c.CheckTime = clock.Elapsed;
         return c;
     }
 

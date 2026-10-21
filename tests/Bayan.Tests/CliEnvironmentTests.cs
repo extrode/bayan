@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Bayan.Backend.C;
 using Bayan.Cli;
+using Bayan.Syntax.Diagnostics;
 
 namespace Bayan.Tests;
 
@@ -197,11 +198,12 @@ public sealed partial class CliEnvironmentTests
     {
         var (exit, stdout, _) = Run(["doctor"]);
         Assert.True(exit == CliApp.ExitOk, stdout);
-        Assert.StartsWith($"ok    bayan       {CliApp.Version} (commit ", stdout);
-        Assert.Contains($"ok    host        {Targets.Host}\n", stdout);
-        Assert.Matches("ok    C compiler  .+ \\(.+\\)\n", stdout);
-        Assert.Contains($"ok    cache       {Toolchain.CacheDirectory} (writable, ", stdout);
-        Assert.DoesNotContain("FAIL", stdout);
+        Assert.StartsWith($"◆ bayan       {CliApp.Version} (commit ", stdout);
+        Assert.Contains($"◆ host        {Targets.Host}\n", stdout);
+        Assert.Matches("◆ C compiler  .+ \\(.+\\)\n", stdout);
+        Assert.Contains($"◆ cache       {Toolchain.CacheDirectory} (writable, ", stdout);
+        Assert.DoesNotContain("✗", stdout);
+        Assert.DoesNotContain("help:", stdout);
     }
 
     [Fact]
@@ -211,8 +213,8 @@ public sealed partial class CliEnvironmentTests
         {
             var (exit, stdout, _) = Run(["doctor"]);
             Assert.Equal(CliApp.ExitToolchain, exit);
-            Assert.Contains("FAIL  C compiler  BAYAN_CC is `", stdout);
-            Assert.Contains("fix: point BAYAN_CC at a C compiler, or unset it to use zig\n", stdout);
+            Assert.Contains("✗ C compiler: BAYAN_CC is `", stdout);
+            Assert.Contains("  help: point BAYAN_CC at a C compiler, or unset it to use zig\n", stdout);
         });
     }
 
@@ -225,9 +227,44 @@ public sealed partial class CliEnvironmentTests
         {
             var (exit, stdout, _) = Run(["doctor"]);
             Assert.Equal(CliApp.ExitToolchain, exit);
-            Assert.Contains($"FAIL  cache       {blocker} isn't writable", stdout);
-            Assert.Contains("fix: set BAYAN_CACHE to a writable directory\n", stdout);
+            Assert.Contains($"✗ cache: {blocker} isn't writable", stdout);
+            Assert.Contains("  help: set BAYAN_CACHE to a writable directory\n", stdout);
         });
+    }
+
+    private static readonly Doctor.Check[] s_checks =
+    [
+        new(Doctor.Level.Ok, "bayan", "0.1.0"),
+        new(Doctor.Level.Note, "zig", "not found", "install zig"),
+        new(Doctor.Level.Fail, "cache", "isn't writable", "set BAYAN_CACHE"),
+    ];
+
+    private static string Render(Style style)
+    {
+        var writer = new StringWriter();
+        Doctor.Render(s_checks, style, writer);
+        return writer.ToString().ReplaceLineEndings("\n");
+    }
+
+    [Fact]
+    public void DoctorRendersPlain()
+    {
+        Assert.Equal("◆ bayan  0.1.0\n◆ zig    not found\n  help: install zig\n✗ cache: isn't writable\n  help: set BAYAN_CACHE\n", Render(Style.Plain));
+    }
+
+    [Fact]
+    public void DoctorRendersAscii()
+    {
+        Assert.Equal("* bayan  0.1.0\n* zig    not found\n  help: install zig\nx cache: isn't writable\n  help: set BAYAN_CACHE\n", Render(Style.Plain with { Symbols = Symbols.Ascii }));
+    }
+
+    [Fact]
+    public void DoctorRendersColour()
+    {
+        var p = Palette.Ansi16;
+        var expected = $"{p.Success}◆{Palette.Reset} bayan  0.1.0\n{p.Note}◆{Palette.Reset} zig    not found\n{p.Help}  help: install zig{Palette.Reset}\n"
+            + $"{p.Error}✗ cache: isn't writable{Palette.Reset}\n{p.Help}  help: set BAYAN_CACHE{Palette.Reset}\n";
+        Assert.Equal(expected, Render(Style.Plain with { Colors = p }));
     }
 
     // ── test --changed ───────────────────────────────────────────────────────────

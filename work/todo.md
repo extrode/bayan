@@ -69,3 +69,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `Messages` (005 T4) formats with the current culture to stay byte-identical; `DiagnosticDescriptor.Format` uses the invariant culture, so `{1:0.0} MB` differs by locale (decide when translations land).
 - R15 (005 T15): `HelpLanguageTests` scans help literals right after `help:`/`help =`; ternary branches and help variables built from lists (e.g. `OwnershipAnalysis` options) are only covered through the goldens, and CLI `stderr.WriteLine("  help: …")` lines in `Dist.cs`/`Scaffold.cs` are not scanned.
 - `bayan test` (005 T12): the summary separator `·` has no ASCII form in `Symbols` (the guide lists none), and the "top three stack frames" trim is untested end to end because the runtime prints one `at file:line` frame per panic.
+- `·` separator in summaries (` · from cache`, test summary) has no ASCII form in the guide's §3 table or in `Symbols`, so `--ascii` still prints it (005 T8).
