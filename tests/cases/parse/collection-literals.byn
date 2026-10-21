@@ -3,3 +3,5 @@ Map<Sku, Money> prices = [];
 let all = [..xs, ..more, 4];
 let fixed = [1, 2, 3];
 let nested = ["k": [1, 2], "j": (a ? b : c)];
+Map<string, Money> prices = ["tea": Money { cents: 250 }, "jam": { cents: 99 }];
+let typed = ["cake": Money { cents: 300 }];
