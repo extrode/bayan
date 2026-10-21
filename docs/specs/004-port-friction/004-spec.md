@@ -66,7 +66,7 @@ The decisions for each are recorded in the handoff's *Road to self-hosting*; thi
 ## Acceptance criteria
 
 - Given `Span fromBounds(i64 start, i64 end)` and locals `start`, `end`, `fromBounds(start, end)` compiles; `fromBounds(end, start)` fails with the R2 diagnostic naming `start` and `end`; `fromBounds(tok.start, tok.end)` compiles.
-- Given `let error = 3; struct S { i64 flags; }`, the program compiles. `error set E { … }` still declares an error set. `bayan lex` output for the new forms is identical between the C# and Bayan lexers.
+- Given `let error = 3; struct S { i64 flags; }`, the program compiles. `error enum E { … }` and `type X = …;` keep their meaning (the other ten keywords have no declaration grammar yet). `bayan lex` output for the new forms is identical between the C# and Bayan lexers.
 - Given `var i = 0; while (i < xs.length) { i += 1; }`, the typed dump shows `i: i64`; given `var n = 0; n += 1;`, it shows `n: i32`. Two runs of the dump on the same input are byte-identical.
 - Given `struct Lexer { List<Token> toks; Span<Token> tokens() => toks.asSpan(); }`, it compiles. A caller that keeps `tokens()` alive across a `lexer.toks.add(…)` gets BYN3004.
 - Given bytes `[0x68, 0x69]`, decode returns `"hi"`; given `[0x68, 0xC0, 0x80]`, it fails, and the offset reported for those bytes is 1.
