@@ -103,6 +103,7 @@ public static class AstDump
                         var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params)} -> {Type(d.ReturnType)}";
                         if (d.Fails is not null)
                             head += d.Fails.Errors.Length == 0 ? " fails" : " fails " + string.Join(", ", d.Fails.Errors.Select(Type));
+                        foreach (var r in d.Requires) head += " requires " + AstDump.Expr(r);
                         if (d.ExpressionBody is not null) head += " => " + AstDump.Expr(d.ExpressionBody);
                         Line(depth, head);
                         if (d.Body is not null) Stmt(depth + 1, d.Body);
@@ -524,6 +525,9 @@ public static class AstDump
                     break;
                 case RangeExpr e:
                     Sexp(sb, e.Inclusive ? "..=" : "..", e.Start, e.End);
+                    break;
+                case InExpr e:
+                    Sexp(sb, "in", e.Value, e.Range);
                     break;
                 case ConditionalExpr e:
                     Sexp(sb, "?", e.Condition, e.WhenTrue, e.WhenFalse);

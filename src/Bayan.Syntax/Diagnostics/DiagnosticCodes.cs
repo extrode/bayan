@@ -81,6 +81,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NestedOptional = Error("BYN2024", "`{0}?` is already optional");
     public static readonly DiagnosticDescriptor VoidValue = Error("BYN2025", "`void` is not a value type");
     public static readonly DiagnosticDescriptor DeclarationAsBody = Error("BYN2026", "a declaration cannot be the whole body of a statement");
+    public static readonly DiagnosticDescriptor SameTypeShadowing = Warning("BYN2028", "`{0}` shadows a `{1}` of the same type");
     public static readonly DiagnosticDescriptor MissingInitializer = Error("BYN2101", "`{0} {1}` needs a value");
     public static readonly DiagnosticDescriptor UseBeforeAssign = Error("BYN2102", "`{0}` is used before it is assigned");
     public static readonly DiagnosticDescriptor OutNotAssigned = Error("BYN2103", "`out` parameter `{0}` is not assigned on every path");
@@ -135,6 +136,9 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ArgumentsSwapped = Error("BYN2307", "arguments `{0}` and `{1}` are in the wrong order for `{2}`");
     public static readonly DiagnosticDescriptor SpanParameterNeverWritten = Warning("BYN2310", "`{0}` is never written through; use `ReadOnlySpan<{1}>`");
     public static readonly DiagnosticDescriptor NeverReassignedVar = Warning("BYN2311", "`{0}` is never reassigned; declare it with `let`");
+    public static readonly DiagnosticDescriptor RequiresNotBool = Error("BYN2320", "a `requires` clause must be `bool`, got `{0}`");
+    public static readonly DiagnosticDescriptor RequiresViolated = Error("BYN2321", "`{0}` violates `requires {1}` of `{2}`");
+    public static readonly DiagnosticDescriptor RequiresNotHere = Error("BYN2322", "`requires` is not supported on {0} yet");
     public static readonly DiagnosticDescriptor MissingReturn = Error("BYN2401", "`{0}` must return `{1}` on every path");
     public static readonly DiagnosticDescriptor MissingReturnValue = Error("BYN2402", "this function returns `{0}`; `return` needs a value");
     public static readonly DiagnosticDescriptor ReturnValueInVoid = Error("BYN2403", "`{0}` returns nothing, but `return` has a value");

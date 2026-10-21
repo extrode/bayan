@@ -93,6 +93,8 @@ internal sealed partial class Binder
         (_printArgument, _sinkArgument) = (outer, outerSink);
         if (receiver is not null && fn.HasThis)
             _c.MutationChecks.Add(new MutationCheck(this, fn, receiver));
+        if (fn.Decl is { Requires.Length: > 0 } && args.Any(a => a.Constant is not null))
+            _c.RequiresChecks.Add(new RequiresCheck(Source, c, fn, args));
         if (fn.Fails && !ReferenceEquals(_handled, c))
         {
             Report(DiagnosticCodes.UnhandledFailure, c.Span, [fn.Name],

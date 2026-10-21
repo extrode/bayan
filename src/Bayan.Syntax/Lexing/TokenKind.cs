@@ -160,6 +160,7 @@ public enum TokenKind : ushort
     PropertyKeyword,
     FuzzKeyword,
     ModelKeyword,
+    RequiresKeyword,
     // Declaration-only, no meaning yet; contextual like the other declaration keywords.
     LawKeyword,
     // Accepted for C# compatibility.
@@ -173,7 +174,6 @@ public enum TokenKind : ushort
     MacroKeyword,
     SelectKeyword,
     BecomeKeyword,
-    RequiresKeyword,
     EnsuresKeyword,
 }
 

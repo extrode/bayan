@@ -4,3 +4,17 @@ error BYN2007: `total` is already a local here
     │         ^^^^^ already declared on line 1
     │
   help: pick a different name; Bayan does not let a local hide another one
+
+warning BYN2028: `size` shadows a `i32` of the same type
+
+  9 │ let size = 2;
+    │     ^^^^ `size` is declared on line 8
+    │
+  help: reuse the first one, or give this one a name that says how it differs
+
+error BYN2007: `step` is already a local here
+
+  12 │ var step = 2;
+     │     ^^^^ already declared on line 10
+     │
+  help: pick a different name; Bayan does not let a local hide another one
