@@ -153,6 +153,7 @@ public static class Messages
     public static readonly Message TestRerunOne = Register("test.rerun.one", "  rerun the failure: {0}");
     public static readonly Message TestRerunMany = Register("test.rerun.many", "  rerun the failures: {0}");
     public static readonly Message TestRerunOnly = Register("test.rerun.only", " --only {0}");
+    public static readonly Message TestRerunUnselectable = Register("test.rerun.unselectable", "  a failing test's name contains control characters and cannot be selected from a shell");
     public static readonly Message ChangedNoGit = Register("test.changed.no-git", "bayan: `{0}` needs git, which isn't installed");
     public static readonly Message ChangedNoRepository = Register("test.changed.no-repository", "bayan: `{0}` needs a git repository, and `{1}` isn't in one");
     public static readonly Message ChangedNoCompare = Register("test.changed.no-compare", "bayan: git can't compare the working tree with `{0}`");

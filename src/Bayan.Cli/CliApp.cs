@@ -587,7 +587,7 @@ public static class CliApp
             (modules == 1 ? Messages.TestModuleCountOne : Messages.TestModuleCountMany).Text(modules),
             o.Changed ? Messages.TestSkipped.Text(unchanged) : ""));
         var results = new List<TestResult>();
-        var failures = new List<string>();
+        var failures = new List<(string Name, bool Selectable)>();
         var total = System.Diagnostics.Stopwatch.StartNew();
         foreach (var i in selected)
         {
@@ -617,7 +617,7 @@ public static class CliApp
                 if (o.Verbose) human.WriteLine(Messages.TestPendingLine.Text(Paint(Role.Warning, symbols.Dot), module, name));
                 continue;
             }
-            failures.Add(name);
+            failures.Add((name, name == test.Name));
             human.WriteLine();
             human.WriteLine(Messages.TestFailureLine.Text(Paint(Role.Error, symbols.Cross, bold: true), module, name));
             foreach (var l in FailureDetail(details, o.Verbose))
@@ -635,8 +635,13 @@ public static class CliApp
             : Messages.TestSummaryPassed.Text(dot, passed, symbols.Separator, seconds));
         if (failures.Count is > 0 and <= 3)
         {
-            var command = "bayan test" + string.Concat(failures.Select(n => Messages.TestRerunOnly.Text(ShellQuote(n))));
-            human.WriteLine((failures.Count == 1 ? Messages.TestRerunOne : Messages.TestRerunMany).Text(command));
+            var selectable = failures.Where(f => f.Selectable).ToList();
+            if (selectable.Count > 0)
+            {
+                var command = "bayan test" + string.Concat(selectable.Select(f => Messages.TestRerunOnly.Text(ShellQuote(f.Name))));
+                human.WriteLine((selectable.Count == 1 ? Messages.TestRerunOne : Messages.TestRerunMany).Text(command));
+            }
+            if (selectable.Count < failures.Count) human.WriteLine(Messages.TestRerunUnselectable.Text());
         }
         var json = report.ToJson();
         if (o.TestJson) stdout.Write(json);

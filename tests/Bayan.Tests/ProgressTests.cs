@@ -22,6 +22,15 @@ public sealed class ProgressTests
     }
 
     [Fact]
+    public void WideScalarsCountTwoColumnsAndMarksNone()
+    {
+        // width 40: room 40 - 1 - 3 - 1 = 35, keep 34 before the ellipsis
+        Assert.Equal("\r◆◇◇ " + new string('漢', 17) + "…\r\e[2K", Run(Style.Plain with { Width = 40 }, phase: new string('漢', 30)));
+        Assert.Equal("\r◆◇◇ " + new string('漢', 17) + "…\r\e[2K", Run(Style.Plain with { Width = 40 }, phase: new string('漢', 17) + "xy"));
+        Assert.Equal("\r◆◇◇ " + new string('e', 35) + "\u0301" + "\r\e[2K", Run(Style.Plain with { Width = 40 }, phase: new string('e', 35) + "\u0301"));
+    }
+
+    [Fact]
     public void ControlCharactersInThePhaseAreShownEscaped() =>
         Assert.Equal("\r◆◇◇ testing y\\u{1b}]0;PWNED\\u{7}\\u{1b}[2J\r\e[2K", Run(Style.Plain, phase: "testing y\u001b]0;PWNED\u0007\u001b[2J"));
 

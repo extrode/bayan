@@ -36,16 +36,34 @@ internal sealed class Progress : IDisposable
     }
 
     /// <summary>
-    /// <paramref name="phase"/> cut to <paramref name="room"/> columns (one per scalar) ending in the ellipsis, so the
-    /// line never wraps and <c>\r\e[2K</c> clears all of it.
+    /// <paramref name="phase"/> cut to <paramref name="room"/> columns (two per wide scalar, none per combining mark,
+    /// one otherwise) ending in the ellipsis, so the line never wraps and <c>\r\e[2K</c> clears all of it.
     /// </summary>
     private static string Fit(string phase, int room, string ellipsis)
     {
-        var runes = phase.EnumerateRunes().ToArray();
-        if (runes.Length <= room) return phase;
+        var width = 0;
+        foreach (var r in phase.EnumerateRunes()) width += Columns(r.Value);
+        if (width <= room) return phase;
         var keep = Math.Max(0, room - ellipsis.Length);
-        return string.Concat(runes.Take(keep).Select(r => r.ToString())) + ellipsis;
+        var sb = new System.Text.StringBuilder();
+        var used = 0;
+        foreach (var r in phase.EnumerateRunes())
+        {
+            used += Columns(r.Value);
+            if (used > keep) break;
+            sb.Append(r.ToString());
+        }
+        return sb.Append(ellipsis).ToString();
     }
+
+    private static int Columns(int scalar) => scalar switch
+    {
+        >= 0x0300 and <= 0x036F => 0,
+        (>= 0x1100 and <= 0x115F) or (>= 0x2E80 and <= 0xA4CF) or (>= 0xAC00 and <= 0xD7A3) or (>= 0xF900 and <= 0xFAFF)
+            or (>= 0xFE30 and <= 0xFE4F) or (>= 0xFF00 and <= 0xFF60) or (>= 0xFFE0 and <= 0xFFE6)
+            or (>= 0x1F300 and <= 0x1F64F) or (>= 0x1F900 and <= 0x1F9FF) or (>= 0x20000 and <= 0x3FFFD) => 2,
+        _ => 1,
+    };
 
     private void Tick()
     {
