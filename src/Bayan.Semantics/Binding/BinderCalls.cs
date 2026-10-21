@@ -117,7 +117,7 @@ internal sealed partial class Binder
                     help: parameters.Count == 0 ? $"`{fn.Name}` is not generic; remove the type arguments" : null);
                 return null;
             }
-            var explicitArgs = typeArgs.Select(t => _types.Resolve(t)).ToArray();
+            var explicitArgs = typeArgs.Select(t => ResolveType(t)).ToArray();
             return explicitArgs.Any(a => a.IsError) ? null : _c.InstantiateFunction(fn, explicitArgs, Source, c.Span);
         }
         var found = new Dictionary<TypeParameterType, TypeSymbol>();
@@ -215,6 +215,23 @@ internal sealed partial class Binder
         var sawNamed = false;
         var positional = 0;
         var mismatched = false;
+        // Two or more leading unnamed arguments whose implied names are the first parameters' names, out of
+        // order, are a swap; they are bound by those names so the swap is the only error.
+        var leading = c.Args.TakeWhile(a => a.Name is null).ToArray();
+        var implied = leading.Select(a => ImpliedName(a.Value)).ToArray();
+        var swapped = false;
+        if (enforceNames && leading.Length >= 2 && leading.Length <= ps.Count
+            && implied.All(n => n is not null) && implied.Distinct().Count() == implied.Length
+            && ps.Take(implied.Length).All(x => implied.Contains(x.Name)))
+        {
+            var at = Enumerable.Range(0, implied.Length).FirstOrDefault(i => implied[i] != ps[i].Name, -1);
+            if (at >= 0)
+            {
+                swapped = true;
+                Report(DiagnosticCodes.ArgumentsSwapped, TextSpan.FromBounds(leading[0].Span.Start, leading[^1].Span.End),
+                    [ps[at].Name, implied[at]!, name], help: "name them or swap them");
+            }
+        }
         foreach (var arg in c.Args)
         {
             ParameterSymbol? p;
@@ -248,8 +265,9 @@ internal sealed partial class Binder
                     positional++;
                     continue;
                 }
-                p = ps[positional++];
-                if (enforceNames && MustBeNamed(rule[p.Ordinal], rule, name) is { } reason)
+                var at = positional++;
+                p = swapped ? ps.First(x => x.Name == implied[at]) : ps[at];
+                if (enforceNames && ImpliedName(arg.Value) != p.Name && MustBeNamed(rule[p.Ordinal], rule, name) is { } reason)
                     Report(DiagnosticCodes.ArgumentMustBeNamed, arg.Value.Span, [p.Name], help: reason,
                         fix: new Fix(new TextSpan(arg.Span.Start, 0), p.Name + ": "));
             }
@@ -279,6 +297,14 @@ internal sealed partial class Binder
         return result!;
     }
 
+    // `start` and `tok.start` name the argument for a parameter `start`.
+    private static string? ImpliedName(Expr e) => e switch
+    {
+        NameExpr { TypeArgs.Length: 0 } n => n.Name.Text,
+        MemberExpr { NullConditional: false } m => m.Member.Text,
+        _ => null,
+    };
+
     private static string? MustBeNamed(ParameterSymbol p, IReadOnlyList<ParameterSymbol> ps, string fnName)
     {
         if (p.Type.IsBool) return $"a `bool` argument says nothing at the call site; write `{p.Name}: …`";
@@ -302,6 +328,7 @@ internal sealed partial class Binder
         {
             var place = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, p.Type);
             if (place.Type.IsError) return place;
+            if (early is null) Constrain(place, p.Type);
             if (!place.Type.Equals(p.Type))
             {
                 Report(DiagnosticCodes.TypeMismatch, arg.Value.Span, [place.Type.DisplayName, p.Type.DisplayName],
@@ -318,7 +345,8 @@ internal sealed partial class Binder
     {
         var value = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, type);
         if (arg.Modifier == ArgModifier.Move) value = BindMove(arg, value);
-        return type is null ? value : Convert(value, type, arg.Value.Span, argument: true);
+        // A type argument inferred from the value is not a typed use of it.
+        return type is null ? value : Convert(value, type, arg.Value.Span, argument: true, constrains: early is null);
     }
 
     private BoundExpr BindConstruction(CallExpr c, TypeSymbol type)
@@ -596,7 +624,7 @@ internal sealed partial class Binder
         {
             if (!operand.Type.IsError) Report(DiagnosticCodes.NothingToHandle, c.Operand.Span, ["catch"]);
             PushScope();
-            if (c.Binding is { } b0) DeclareLocal(b0, ErrorType.Instance, LocalKind.Let);
+            if (c.Binding is { } b0) DeclareLocal(b0, ErrorType.Instance, LocalKind.Let).IsCatch = true;
             BindExpr(c.Handler);
             PopScope();
             return new BoundErrorExpr(c);
@@ -606,7 +634,11 @@ internal sealed partial class Binder
         PushScope();
         LocalSymbol? binding = null;
         ErrorVariantSymbol? variant = null;
-        if (c.Binding is { } b) binding = DeclareLocal(b, errorType, LocalKind.Let);
+        if (c.Binding is { } b)
+        {
+            binding = DeclareLocal(b, errorType, LocalKind.Let);
+            binding.IsCatch = true;
+        }
         if (c.Variant is { } v)
         {
             var bound = BindExpr(v, errorType);
@@ -626,6 +658,10 @@ internal sealed partial class Binder
             if (!handler.Type.IsVoid && !handler.Type.IsNever && !handler.Type.IsError)
                 Report(DiagnosticCodes.TypeMismatch, c.Handler.Span, [handler.Type.DisplayName, "void"],
                     help: $"`{bc.Function.Name}` returns nothing, so the handler cannot produce a value");
+        }
+        else if (c.Handler is BlockExpr block)
+        {
+            handler = new BoundBlockExpr(block, BindBlock(block.Block), PrimitiveType.Never);
         }
         else
         {
@@ -745,7 +781,7 @@ internal sealed partial class Binder
                 var owner = nt.Path.Length == 2 && Module.Types.TryGetValue(nt.Path[0].Text, out var named) && named is UnionSymbol { TypeParameters.Count: > 0 }
                     && Unwrap(input) is UnionSymbol u && (u == named || u.Template == named)
                     ? u
-                    : _types.Resolve(new NamedType(TextSpan.FromBounds(nt.Path[0].Span.Start, nt.Path[^2].Span.End), nt.Path[..^1], []));
+                    : ResolveType(new NamedType(TextSpan.FromBounds(nt.Path[0].Span.Start, nt.Path[^2].Span.End), nt.Path[..^1], []));
                 if (owner is UnionSymbol or ErrorType)
                     return BindUnionPattern(pos, input, owner, nt.Path[^1], pos.Elements);
                 Report(DiagnosticCodes.Unsupported, p.Span, ["deconstruction patterns"]);
@@ -937,7 +973,7 @@ internal sealed partial class Binder
         var valueType = Unwrap(input);
         if (pp.Type is { } t)
         {
-            var declared = _types.Resolve(t);
+            var declared = ResolveType(t);
             if (!declared.IsError && !valueType.IsError && !declared.Equals(valueType))
                 Report(DiagnosticCodes.PatternMismatch, t.Span, [$"`{declared.DisplayName}`", valueType.DisplayName],
                     help: "type patterns apply only to unions and `dyn` values, which arrive in a later version");
@@ -1115,7 +1151,11 @@ internal sealed partial class Binder
         target = MapWriteTarget(target);
         CheckWritable(target, a.Target.Span, null);
         if (op is null)
-            return new BoundAssign(a, target, BindConverted(a.Value, target.Type), null);
+        {
+            var assigned = BindExpr(a.Value, target.Type);
+            Constrain(target, assigned, a.Value);
+            return new BoundAssign(a, target, Convert(assigned, target.Type, a.Value.Span, constrains: !IsPending(target)), null);
+        }
         if (op == BinaryOp.Coalesce)
         {
             if (target.Type is not OptionalType o)
@@ -1136,6 +1176,7 @@ internal sealed partial class Binder
             }
             return new BoundAssign(a, target, value, op);
         }
+        Constrain(target, value, a.Value);
         if (target.Type.IsString && op == BinaryOp.Add)
         {
             Report(DiagnosticCodes.StringConcatenation, a.Span, [],
@@ -1147,7 +1188,7 @@ internal sealed partial class Binder
             Report(DiagnosticCodes.BadBinaryOperands, a.Span, [BinaryText(op.Value), target.Type.DisplayName, value.Type.DisplayName]);
             return new BoundErrorStmt(a);
         }
-        return new BoundAssign(a, target, Convert(value, target.Type, a.Value.Span), op);
+        return new BoundAssign(a, target, Convert(value, target.Type, a.Value.Span, constrains: !IsPending(target)), op);
     }
 
     private BoundStmt BindIncDec(IncDecStmt i)

@@ -58,3 +58,20 @@ void fillLocal() {
     view[0] = sb.asString();
     print(names[0]);
 }
+
+struct Stack {
+    List<i64> items;
+    i64[2] pair;
+
+    Span<i64> view() => items.asSpan();
+
+    ReadOnlySpan<i64> top() => pair.asSpan()[1..];
+
+    i64 sum() {
+        i64 s = 0;
+        for (let v in view()) {
+            s += v;
+        }
+        return s;
+    }
+}

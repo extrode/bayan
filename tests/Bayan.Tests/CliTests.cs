@@ -84,6 +84,29 @@ public sealed class CliTests
     }
 
     [Fact]
+    public void TypesPrintsEachBindingsType()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "cli-types");
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "main.byn");
+        File.WriteAllText(file, "var n = 0;\nn += 1;\nprint($\"{n}\");\n");
+        var (exit, stdout, stderr) = Run("types", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Contains("\"path\": \"main.byn\"", stdout);
+        Assert.Contains("\"name\": \"n\"", stdout);
+        Assert.Contains("\"type\": \"i32\"", stdout);
+    }
+
+    [Fact]
+    public void TypesReportsErrors()
+    {
+        var (exit, stdout, stderr) = Run("types", Path.Combine(Golden.CasesRoot, "diag", "valid-calls.byn"));
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Empty(stdout);
+        Assert.Contains("error BYN", stderr);
+    }
+
+    [Fact]
     public void BuildEmitsC()
     {
         var (exit, stdout, _) = Run("build", "--emit-c", Example("hello"));

@@ -1,0 +1,6 @@
+overlong NUL: invalidSequence at 1, tryFrom none
+overlong 3-byte: invalidSequence at 2, tryFrom none
+surrogate: invalidSequence at 1, tryFrom none
+above U+10FFFF: invalidSequence at 0, tryFrom none
+truncated: invalidSequence at 2, tryFrom none
+lone continuation: invalidSequence at 0, tryFrom none

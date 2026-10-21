@@ -4,6 +4,9 @@ void main() {
     let view = xs.asSpan();
     xs.add(2);
     print($"{view[0]}");
+    let again = xs.asSpan();
+    xs.removeRange(0, 1);
+    print($"{again[0]}");
     for (let x in xs) {
         xs.add(x);
     }

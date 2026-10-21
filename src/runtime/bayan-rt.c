@@ -507,6 +507,16 @@ byn_str byn_str_copy(byn_str s, byn_alloc* to) {
     return (byn_str){(const uint8_t*)byn_copy_bytes(s.ptr, s.len, to), s.len};
 }
 
+byn_str byn_to_hex(uint64_t v, byn_alloc* to) {
+    uint8_t buf[16];
+    int n = 16;
+    do {
+        buf[--n] = (uint8_t)"0123456789abcdef"[v & 0xf];
+        v >>= 4;
+    } while (v != 0);
+    return byn_str_copy((byn_str){buf + n, 16 - n}, to);
+}
+
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc) {
     if (need <= *cap) return;
     int64_t grown = *cap < 4 ? 4 : *cap * 2;
@@ -668,7 +678,7 @@ byn_writer byn_strbuf_copy(byn_writer w, byn_alloc* to) {
 
 /* ── Program entry ───────────────────────────────────────────────────────── */
 
-bool byn_utf8_valid(const uint8_t* p, int64_t n) {
+int64_t byn_utf8_invalid_at(const uint8_t* p, int64_t n) {
     int64_t i = 0;
     while (i < n) {
         uint8_t c = p[i];
@@ -682,16 +692,20 @@ bool byn_utf8_valid(const uint8_t* p, int64_t n) {
         if ((c & 0xE0) == 0xC0) len = 2, min = 0x80, v = c & 0x1F;
         else if ((c & 0xF0) == 0xE0) len = 3, min = 0x800, v = c & 0x0F;
         else if ((c & 0xF8) == 0xF0) len = 4, min = 0x10000, v = c & 0x07;
-        else return false;
-        if (n - i < len) return false;
+        else return i;
+        if (n - i < len) return i;
         for (int k = 1; k < len; k++) {
-            if ((p[i + k] & 0xC0) != 0x80) return false;
+            if ((p[i + k] & 0xC0) != 0x80) return i;
             v = v << 6 | (p[i + k] & 0x3F);
         }
-        if (v < min || v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF)) return false;
+        if (v < min || v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF)) return i;
         i += len;
     }
-    return true;
+    return -1;
+}
+
+bool byn_utf8_valid(const uint8_t* p, int64_t n) {
+    return byn_utf8_invalid_at(p, n) < 0;
 }
 
 static BYN_NORETURN void byn_bad_arg(int i) {

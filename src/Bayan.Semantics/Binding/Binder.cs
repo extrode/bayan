@@ -21,14 +21,58 @@ internal sealed partial class Binder
     private int _deferDepth;
     private int _nextLocalId;
 
+    // Spec R4: a first pass holds its diagnostics and records the first integer type each untyped
+    // `var` literal meets; when one is not `i32`, the body is bound again with those types seeded.
+    private DiagnosticBag? _held;
+    private readonly IReadOnlyDictionary<LocalDecl, TypeSymbol>? _seeds;
+    private readonly Dictionary<LocalSymbol, LocalDecl> _pending = new();
+    private readonly Dictionary<LocalDecl, TypeSymbol> _constraints = new();
+    private readonly Dictionary<LocalDecl, LocalDecl> _peers = new();
+
     public Binder(Compilation c, FileContext file, FunctionSymbol? fn, StructSymbol? container,
-        IReadOnlyDictionary<string, TypeSymbol>? typeArgs = null)
+        IReadOnlyDictionary<string, TypeSymbol>? typeArgs = null, IReadOnlyDictionary<LocalDecl, TypeSymbol>? seeds = null)
     {
         _c = c;
         _file = file;
         _fn = fn;
         _struct = container;
         _types = new TypeResolver(c, file, container, typeArgs ?? fn?.TypeMap ?? container?.TypeMap);
+        _seeds = seeds;
+    }
+
+    /// <summary>Makes this binding a first pass: diagnostics are held until <see cref="Release"/>.</summary>
+    public Binder Hold()
+    {
+        _held = new DiagnosticBag();
+        return this;
+    }
+
+    /// <summary>
+    /// Ends a first pass. Returns the local types to bind the body again with, dropping what the
+    /// pass reported except instantiation errors (the cached instance does not report them again);
+    /// or null, when the pass stands and its diagnostics are reported.
+    /// </summary>
+    public IReadOnlyDictionary<LocalDecl, TypeSymbol>? Release()
+    {
+        var held = _held!;
+        _held = null;
+        // A group of pending `var`s that met each other takes the first integer constraint any of them recorded;
+        // a group with a member whose own first use is a float or string stays `i32` (Q74).
+        var groups = new Dictionary<LocalDecl, TypeSymbol>();
+        foreach (var (decl, type) in _constraints)
+            if (type.IsInteger) groups.TryAdd(FindPeer(decl), type);
+        foreach (var (decl, type) in _constraints)
+            if (!type.IsInteger) groups.Remove(FindPeer(decl));
+        var seeds = new Dictionary<LocalDecl, TypeSymbol>();
+        foreach (var decl in _pending.Values)
+            if (groups.TryGetValue(FindPeer(decl), out var type)) seeds[decl] = type;
+        if (seeds.Values.Any(t => t.IsInteger && t != PrimitiveType.I32))
+        {
+            _c.ReportHeld(held.Items.Where(d => d.Label == Compilation.InstantiationLabel));
+            return seeds;
+        }
+        _c.ReportHeld(held.Items);
+        return null;
     }
 
     private SourceText Source => _file.Source;
@@ -49,8 +93,24 @@ internal sealed partial class Binder
         }
     }
 
-    private void Report(DiagnosticDescriptor d, TextSpan span, object?[] args, string? label = null, string? help = null, Fix? fix = null) =>
-        _c.Report(d, Source, span, args, label, help, fix);
+    private void Report(DiagnosticDescriptor d, TextSpan span, object?[] args, string? label = null, string? help = null, Fix? fix = null)
+    {
+        if (_held is not null) _held.Report(d, Source, span, args, label, help, fix);
+        else _c.Report(d, Source, span, args, label, help, fix);
+    }
+
+    private void CheckValueName(Name name) => Holding(() => { Naming.CheckValue(_c, Source, name); return 0; });
+
+    private TypeSymbol ResolveType(TypeSyntax t) => Holding(() => _types.Resolve(t));
+
+    /// <summary>Runs a helper that reports through the compilation; a first pass holds those reports too.</summary>
+    private T Holding<T>(Func<T> work)
+    {
+        if (_held is null) return work();
+        var outer = _c.ReportInto(_held);
+        try { return work(); }
+        finally { _c.ReportInto(outer); }
+    }
 
     private void PushScope() => _scope = new Scope(_scope);
 
@@ -58,7 +118,7 @@ internal sealed partial class Binder
 
     private LocalSymbol DeclareLocal(Name name, TypeSymbol type, LocalKind kind)
     {
-        if (kind != LocalKind.Temp) Naming.CheckValue(_c, Source, name);
+        if (kind != LocalKind.Temp) CheckValueName(name);
         var local = new LocalSymbol(name.Text, new Location(Source, name.Span), type, kind) { Id = _nextLocalId++ };
         AddLocal(name, local);
         return local;
@@ -188,7 +248,7 @@ internal sealed partial class Binder
     public void BindModuleConstant(ConstSymbol c)
     {
         var decl = c.Decl;
-        var declared = decl.Type is { } t ? _types.Resolve(t) : null;
+        var declared = decl.Type is { } t ? ResolveType(t) : null;
         if (decl.Init is null)
         {
             Report(DiagnosticCodes.MissingInitializer, decl.Name.Span, ["const", decl.Name.Text]);
@@ -209,14 +269,14 @@ internal sealed partial class Binder
         c.Bound = value;
     }
 
-    /// <summary>A module-level <c>const T[N]</c> whose elements are literal numbers, <c>bool</c>s or <c>char</c>s becomes static data (BYN2229 otherwise).</summary>
+    /// <summary>A module-level <c>const T[N]</c> whose elements are literal numbers, <c>bool</c>s, <c>char</c>s or <c>string</c>s becomes static data (BYN2229 otherwise).</summary>
     private void BindStaticArray(ConstSymbol c, BoundExpr value)
     {
         c.Bound = value;
         if (value.Type.IsError) return;
         var decl = c.Decl;
-        var help = $"write `const T[N] {decl.Name.Text} = [ … ];` with `T` a number type, `bool` or `char`, and only literals or constants inside";
-        if (c.Type is not Symbols.ArrayType { Element: PrimitiveType { IsNumeric: true } or PrimitiveType { Kind: PrimitiveKind.Bool or PrimitiveKind.Char } })
+        var help = $"write `const T[N] {decl.Name.Text} = [ … ];` with `T` a number type, `bool`, `char` or `string`, and only literals or constants inside";
+        if (c.Type is not Symbols.ArrayType { Element: PrimitiveType { IsNumeric: true } or PrimitiveType { Kind: PrimitiveKind.Bool or PrimitiveKind.Char or PrimitiveKind.String } })
         {
             Report(DiagnosticCodes.InvalidConstArray, decl.Type?.Span ?? decl.Init!.Span, [decl.Name.Text], help: help);
             return;
@@ -395,7 +455,7 @@ internal sealed partial class Binder
 
     private BoundStmt BindLabeled(LabeledStmt l)
     {
-        Naming.CheckValue(_c, Source, l.Label);
+        CheckValueName(l.Label);
         if (_targets.Any(t => t.Label == l.Label.Text))
             Report(DiagnosticCodes.DuplicateDeclaration, l.Label.Span, [l.Label.Text], label: "an enclosing statement has this label");
         var target = new JumpTarget(l.Label.Text, l.Statement is not SwitchStmt);
@@ -409,7 +469,7 @@ internal sealed partial class Binder
 
     private BoundStmt BindLocalDecl(LocalDecl d)
     {
-        var declared = d.Type is { } t ? _types.Resolve(t) : null;
+        var declared = d.Type is { } t ? ResolveType(t) : _seeds?.GetValueOrDefault(d) is { IsInteger: true } seed ? seed : null;
         BoundExpr? init = null;
         if (d.Init is { } e)
         {
@@ -439,6 +499,8 @@ internal sealed partial class Binder
             Report(DiagnosticCodes.NotConstant, d.Init!.Span, ["a `const`"]);
         if (d.Using) CheckDisposable(d, type);
         var local = DeclareLocal(d.Name, type, kind);
+        if (_held is not null && kind == LocalKind.Var && declared is null && type == PrimitiveType.I32 && IsUntypedLiteral(d.Init!))
+            _pending[local] = d;
         local.IsUsing = d.Using;
         if (kind is LocalKind.Let or LocalKind.Var && !d.Using && Source.GetText(new TextSpan(d.Span.Start, 3)) == (kind == LocalKind.Let ? "let" : "var"))
             local.KeywordSpan = new TextSpan(d.Span.Start, 3);
@@ -488,7 +550,7 @@ internal sealed partial class Binder
         };
         if (f.Type is { } t)
         {
-            var declared = _types.Resolve(t);
+            var declared = ResolveType(t);
             if (!declared.IsError && !element.IsError && !declared.Equals(element) && Conversions.Implicit(element, declared) is null)
                 Report(DiagnosticCodes.TypeMismatch, t.Span, [element.DisplayName, declared.DisplayName]);
             else if (!declared.IsError) element = declared;
@@ -629,7 +691,10 @@ internal sealed partial class Binder
         PushScope();
         LocalSymbol? err = null;
         if (e.Error is { } name)
+        {
             err = DeclareLocal(name, _fn is null ? ErrorType.Instance : ErrorUnionType.Of(_fn.ErrorSets), LocalKind.Let);
+            err.IsCatch = true;
+        }
         _deferDepth++;
         var body = BindBody(e.Body);
         _deferDepth--;

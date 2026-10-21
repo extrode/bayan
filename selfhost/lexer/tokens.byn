@@ -161,6 +161,8 @@ enum TokenKind {
     propertyKeyword,
     fuzzKeyword,
     modelKeyword,
+    // Declaration-only, no meaning yet; contextual like the other declaration keywords.
+    lawKeyword,
     // Accepted for C# compatibility.
     foreachKeyword,
     newKeyword,
@@ -172,7 +174,6 @@ enum TokenKind {
     macroKeyword,
     selectKeyword,
     becomeKeyword,
-    lawKeyword,
     requiresKeyword,
     ensuresKeyword,
 }

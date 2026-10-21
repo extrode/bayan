@@ -148,6 +148,11 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 NoTypeArgs(n);
                 return compilation.Builtins.IoError;
             }
+            if (text == "Utf8Error")
+            {
+                NoTypeArgs(n);
+                return compilation.Builtins.Utf8Error;
+            }
             compilation.Report(DiagnosticCodes.UnknownType, file.Source, name.Span, [text],
                 help: Suggest(text) is { } s ? $"did you mean `{s}`?" : null);
             return ErrorType.Instance;
@@ -231,7 +236,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
     private string? Suggest(string text)
     {
         var lower = text.ToLowerInvariant();
-        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "ProcessResult"]))
+        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ProcessResult"]))
             if (name.Equals(text, StringComparison.OrdinalIgnoreCase)) return name;
         if (PrimitiveType.ByName.ContainsKey(lower)) return lower;
         return lower switch

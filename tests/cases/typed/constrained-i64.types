@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "path": "constrained-i64.byn",
+      "name": "count",
+      "span": {
+        "start": 4,
+        "end": 9
+      },
+      "bindings": [
+        {
+          "name": "xs",
+          "kind": "param",
+          "span": {
+            "start": 28,
+            "end": 30
+          },
+          "type": "ReadOnlySpan<i64>"
+        },
+        {
+          "name": "i",
+          "kind": "var",
+          "span": {
+            "start": 42,
+            "end": 43
+          },
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "constrained-i64.byn",
+      "name": "main",
+      "span": {
+        "start": 116,
+        "end": 137
+      },
+      "bindings": [
+        {
+          "name": "xs",
+          "kind": "var",
+          "span": {
+            "start": 120,
+            "end": 122
+          },
+          "type": "List<i64>"
+        }
+      ]
+    }
+  ]
+}

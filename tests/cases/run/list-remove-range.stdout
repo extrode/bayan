@@ -1,0 +1,7 @@
+middle 4: 0 10 40 50
+prefix 4: 20 30 40 50
+suffix 4: 0 10 20 30
+empty 6: 0 10 20 30 40 50
+whole 0: true
+reused 1: 7
+order ade

@@ -189,16 +189,16 @@ public sealed class Compilation
         if (EntryModule.Main is { Kind: FunctionKind.Function } main) CheckMainSignature(main);
     }
 
-    /// <summary><c>IoError</c> is numbered first, so the runtime can return its codes 1 to 7 directly.</summary>
+    /// <summary><c>IoError</c> is numbered first, so the runtime can return its codes 1 to 7 directly; <c>Utf8Error</c> follows (8).</summary>
     private void DeclareBuiltinVariants()
     {
-        var set = Builtins.IoError;
-        foreach (var v in set.Decl.Variants)
-        {
-            var sym = new ErrorVariantSymbol(v.Name.Text, new Location(set.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
-            set.Variants.Add(sym);
-            ErrorVariants.Add(sym);
-        }
+        foreach (var set in new[] { Builtins.IoError, Builtins.Utf8Error })
+            foreach (var v in set.Decl.Variants)
+            {
+                var sym = new ErrorVariantSymbol(v.Name.Text, new Location(set.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
+                set.Variants.Add(sym);
+                ErrorVariants.Add(sym);
+            }
     }
 
     /// <summary><c>void</c> or <c>i32 main()</c>, optionally with <c>ReadOnlySpan&lt;string&gt; args</c> and <c>fails</c> (BYN2771).</summary>
@@ -805,10 +805,13 @@ public sealed class Compilation
     // ── Generics ─────────────────────────────────────────────────────────────────
 
     private readonly Dictionary<(object Generic, TypeSymbol[] Args), object> _instances = new(new InstanceKeyComparer());
-    private readonly Queue<(SourceText Site, TextSpan Span, Action Bind)> _instantiationWork = new();
+    private readonly Queue<(SourceText Site, TextSpan Span, Action Bind, FunctionSymbol? Instance)> _instantiationWork = new();
     private readonly List<Diagnostic> _instantiationErrors = new();
     private readonly HashSet<(string, SourceText?, TextSpan)> _instanceAnalysisSeen = new();
     private DiagnosticBag? _scratch;
+
+    /// <summary>Marks an instantiation error reported at the use that chose the type arguments.</summary>
+    internal const string InstantiationLabel = "the generic code needs this of its type arguments";
 
     private sealed class InstanceKeyComparer : IEqualityComparer<(object Generic, TypeSymbol[] Args)>
     {
@@ -846,7 +849,7 @@ public sealed class Compilation
         foreach (var d in bag.Items.Where(d => d.IsError))
         {
             if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code)
-                (_scratch ?? Diagnostics).Add(d with { Source = site, Span = span, Label = "the generic code needs this of its type arguments" });
+                (_scratch ?? Diagnostics).Add(d with { Source = site, Span = span, Label = InstantiationLabel });
             else
                 _instantiationErrors.Add(d);
         }
@@ -863,8 +866,18 @@ public sealed class Compilation
         };
         _instances[(template, args)] = fn;
         template.Module.AllFunctions.Add(fn);
-        Instantiating(site, span, () => DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner));
-        if (!fn.IsGeneric) _instantiationWork.Enqueue((site, span, () => BindFunction(fn)));
+        if (_firstPass is { } pass)
+        {
+            pass.Instances.Add(fn);
+            var outer = ReportInto(pass.Diagnostics);
+            var errors = _instantiationErrors.Count;
+            try { Instantiating(site, span, () => DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner)); }
+            finally { ReportInto(outer); }
+            pass.Errors.AddRange(_instantiationErrors.Skip(errors));
+            _instantiationErrors.RemoveRange(errors, _instantiationErrors.Count - errors);
+        }
+        else Instantiating(site, span, () => DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner));
+        if (!fn.IsGeneric) _instantiationWork.Enqueue((site, span, () => BindFunction(fn), fn));
         return fn;
     }
 
@@ -884,9 +897,9 @@ public sealed class Compilation
                 Instantiating(site, span, () => DeclareMembers(instance));
                 if (instance.IsGeneric) return instance;
                 foreach (var f in instance.Fields.Where(f => f.Decl.Default is not null))
-                    _instantiationWork.Enqueue((site, span, () => FieldDefault(instance, f, site, span)));
+                    _instantiationWork.Enqueue((site, span, () => FieldDefault(instance, f, site, span), null));
                 foreach (var fn in instance.Methods.Concat(instance.Properties.Select(p => p.Getter!)).Concat(instance.Constructors))
-                    _instantiationWork.Enqueue((site, span, () => BindFunction(fn)));
+                    _instantiationWork.Enqueue((site, span, () => BindFunction(fn), null));
                 return instance;
             }
             case UnionSymbol u:
@@ -947,30 +960,78 @@ public sealed class Compilation
         c.State = 2;
     }
 
+    /// <summary>
+    /// Binds a body; when an untyped <c>var</c> literal in it meets another integer type first
+    /// (spec R4), binds it again with that type, discarding the first pass.
+    /// </summary>
     private void BindFunction(FunctionSymbol fn)
     {
+        var checks = MutationChecks.Count;
+        var locals = fn.Locals.Count;
+        var outer = _firstPass;
+        (List<FunctionSymbol> Instances, DiagnosticBag Diagnostics, List<Diagnostic> Errors) pass = ([], new DiagnosticBag(), []);
+        _firstPass = pass;
+        IReadOnlyDictionary<LocalDecl, TypeSymbol>? seeds;
+        try { seeds = BindBody(fn, null); }
+        finally { _firstPass = outer; }
+        if (seeds is null)
+        {
+            outer?.Instances.AddRange(pass.Instances);
+            ReportHeld(pass.Diagnostics.Items);
+            _instantiationErrors.AddRange(pass.Errors);
+            return;
+        }
+        // The functions the first pass instantiated go with it, and so do their diagnostics.
+        foreach (var instance in pass.Instances)
+        {
+            _instances.Remove((instance.Template!, [.. instance.TypeArguments]));
+            instance.Module.AllFunctions.Remove(instance);
+        }
+        var work = _instantiationWork.Where(w => w.Instance is null || !pass.Instances.Contains(w.Instance)).ToList();
+        _instantiationWork.Clear();
+        foreach (var w in work) _instantiationWork.Enqueue(w);
+        MutationChecks.RemoveRange(checks, MutationChecks.Count - checks);
+        fn.Locals.RemoveRange(locals, fn.Locals.Count - locals);
+        BindBody(fn, seeds);
+    }
+
+    /// <summary>The function instances a first pass created, and what creating them reported.</summary>
+    private (List<FunctionSymbol> Instances, DiagnosticBag Diagnostics, List<Diagnostic> Errors)? _firstPass;
+
+    /// <summary>A first pass (no <paramref name="seeds"/>) returns the seeds a second pass needs, if any.</summary>
+    private IReadOnlyDictionary<LocalDecl, TypeSymbol>? BindBody(FunctionSymbol fn, IReadOnlyDictionary<LocalDecl, TypeSymbol>? seeds)
+    {
         var file = fn.File!;
+        Binder New(StructSymbol? owner)
+        {
+            var binder = new Binder(this, file, fn, owner, seeds: seeds);
+            return seeds is null ? binder.Hold() : binder;
+        }
+        Binder binder;
         switch (fn.Kind)
         {
             case FunctionKind.Function or FunctionKind.Method when fn.Decl is { } decl:
-                new Binder(this, file, fn, fn.Owner).BindFunctionBody(decl);
+                (binder = New(fn.Owner)).BindFunctionBody(decl);
                 break;
             case FunctionKind.Getter:
             {
                 var prop = fn.Owner!.Properties.First(p => p.Getter == fn);
-                new Binder(this, file, fn, fn.Owner).BindGetter(prop.Decl);
+                (binder = New(fn.Owner)).BindGetter(prop.Decl);
                 break;
             }
             case FunctionKind.Constructor:
-                new Binder(this, file, fn, fn.Owner).BindConstructor(_constructorBodies[fn]);
+                (binder = New(fn.Owner)).BindConstructor(_constructorBodies[fn]);
                 break;
             case FunctionKind.Main when _mainStatements is { } m && m.Main == fn:
-                new Binder(this, file, fn, null).BindMain(m.Statements);
+                (binder = New(null)).BindMain(m.Statements);
                 break;
             case FunctionKind.Test:
-                new Binder(this, file, fn, null).BindTest(_testBodies[fn]);
+                (binder = New(null)).BindTest(_testBodies[fn]);
                 break;
+            default:
+                return null;
         }
+        return seeds is null ? binder.Release() : null;
     }
 
     /// <summary>Inferred <c>fails</c> sets: the union of what each body propagates, to a fixed point.</summary>
@@ -1050,6 +1111,17 @@ public sealed class Compilation
 
     internal void Report(DiagnosticDescriptor d, SourceText source, TextSpan span, object?[] args, string? label = null, string? help = null, Fix? fix = null) =>
         (_scratch ?? Diagnostics).Report(d, source, span, args, label, help, fix);
+
+    /// <summary>Reports what a first-pass binder held back.</summary>
+    internal void ReportHeld(IEnumerable<Diagnostic> held) => (_scratch ?? Diagnostics).AddRange(held);
+
+    /// <summary>Sends reports to <paramref name="bag"/> until called again; returns the previous target.</summary>
+    internal DiagnosticBag? ReportInto(DiagnosticBag? bag)
+    {
+        var outer = _scratch;
+        _scratch = bag;
+        return outer;
+    }
 
     internal IEnumerable<AliasPlaceholder> Aliases => _aliases;
 }

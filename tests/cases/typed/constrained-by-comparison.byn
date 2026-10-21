@@ -1,0 +1,4 @@
+u64 limit = 5;
+var m = 0;
+m += 1;
+if (m < limit) print("less");
