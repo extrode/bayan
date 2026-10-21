@@ -136,11 +136,9 @@ public static class Messages
     public static readonly Message ChangedNoCompare = Register("test.changed.no-compare", "bayan: git can't compare the working tree with `{0}`");
 
     // ── doctor ───────────────────────────────────────────────────────────────────────
-    public static readonly Message DoctorOk = Register("doctor.level.ok", "ok  ");
-    public static readonly Message DoctorNote = Register("doctor.level.note", "note");
-    public static readonly Message DoctorFail = Register("doctor.level.fail", "FAIL");
-    public static readonly Message DoctorLine = Register("doctor.line", "{0}  {1}  {2}");
-    public static readonly Message DoctorFix = Register("doctor.fix", "      {0}  fix: {1}");
+    public static readonly Message DoctorLine = Register("doctor.line", "{0} {1}  {2}");
+    public static readonly Message DoctorFailLine = Register("doctor.fail", "{0} {1}: {2}");
+    public static readonly Message DoctorHelp = Register("doctor.help", "  help: {0}");
     public static readonly Message DoctorBayan = Register("doctor.bayan", "bayan");
     public static readonly Message DoctorVersion = Register("doctor.bayan.version", "{0} (commit {1})");
     public static readonly Message DoctorHost = Register("doctor.host", "host");
