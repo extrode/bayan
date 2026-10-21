@@ -1,21 +1,22 @@
 using Bayan.Backend.C;
+using Bayan.Syntax.Diagnostics;
 
 namespace Bayan.Cli;
 
 /// <summary>
 /// <c>bayan doctor</c>: the compiler version, host target, C compiler, zig, git and the build
-/// cache, each <c>ok</c>, <c>note</c> (works, with a limit) or <c>FAIL</c> with a fix. Exits 4 when
+/// cache, each a <c>◆</c> line, or a <c>✗</c> line with a <c>help:</c> fix under it. Exits 4 when
 /// something fails, since every check is about the toolchain.
 /// </summary>
 internal static class Doctor
 {
-    private enum Level { Ok, Note, Fail }
+    internal enum Level { Ok, Note, Fail }
 
     private const string ZigUrl = "https://ziglang.org";
 
-    private sealed record Check(Level Level, string Name, string Detail, string? Fix = null);
+    internal sealed record Check(Level Level, string Name, string Detail, string? Fix = null);
 
-    public static int Run(string[] args, TextWriter stdout)
+    public static int Run(string[] args, TextWriter stdout, Style style)
     {
         var checks = new List<Check>
         {
@@ -28,13 +29,22 @@ internal static class Doctor
             Git(),
             Cache(),
         };
+        Render(checks, style, stdout);
+        return checks.Any(c => c.Level == Level.Fail) ? CliApp.ExitToolchain : CliApp.ExitOk;
+    }
+
+    /// <summary>Writes one line per check, a failure's fix under it; a note is a <c>◆</c> line that may carry a fix.</summary>
+    internal static void Render(IReadOnlyList<Check> checks, Style style, TextWriter writer)
+    {
         var width = checks.Max(c => c.Name.Length);
         foreach (var c in checks)
         {
-            stdout.WriteLine(Messages.DoctorLine.Text((c.Level switch { Level.Ok => Messages.DoctorOk, Level.Note => Messages.DoctorNote, _ => Messages.DoctorFail }).Text(), c.Name.PadRight(width), c.Detail));
-            if (c.Fix is not null) stdout.WriteLine(Messages.DoctorFix.Text(new string(' ', width), c.Fix));
+            if (c.Level == Level.Fail)
+                writer.WriteLine(style.Paint(Role.Error, Messages.DoctorFailLine.Text(style.Symbols.Cross, c.Name, c.Detail)));
+            else
+                writer.WriteLine(Messages.DoctorLine.Text(style.Paint(c.Level == Level.Ok ? Role.Success : Role.Note, style.Symbols.Dot), c.Name.PadRight(width), c.Detail));
+            if (c.Fix is not null) writer.WriteLine(style.Paint(Role.Help, Messages.DoctorHelp.Text(c.Fix)));
         }
-        return checks.Any(c => c.Level == Level.Fail) ? CliApp.ExitToolchain : CliApp.ExitOk;
     }
 
     private static Check CCompiler()

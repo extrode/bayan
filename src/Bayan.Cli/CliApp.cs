@@ -54,7 +54,7 @@ public static class CliApp
                 stdout.WriteLine(VersionLine);
                 return ExitOk;
             case "doctor":
-                return Doctor.Run(rest, stdout);
+                return Doctor.Run(rest, stdout, s_styleOut ?? Style.Plain);
             case "--help":
             case "-h":
             case "help":
