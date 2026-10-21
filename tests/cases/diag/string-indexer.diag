@@ -9,3 +9,4 @@ error BYN2201: a `string` cannot be indexed
           `for (let c in name)`   each character in turn
           `name.graphemes`        user-perceived characters
     │ 2 │ let first = name.bytes[0];
+    │   │                 ++++++

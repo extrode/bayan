@@ -1,4 +1,5 @@
-error BYN3102: `name` must be a string `namespace/name` of lowercase words joined by `-`, e.g. `"local/tally"`
+error BYN3102: `name` must be a string `namespace/name` of lowercase words joined by `-`, e.g.
+`"local/tally"`
 
   2 │     name = "Tally",
     │            ^^^^^^^

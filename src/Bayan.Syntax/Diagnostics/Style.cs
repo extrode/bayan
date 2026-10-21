@@ -12,6 +12,12 @@ public enum Role
 /// <summary>SGR prefixes per role; colours come from <c>docs/bayan-terminal-style.md</c> §2.</summary>
 public sealed record Palette(string Error, string Warning, string Help, string Success, string Note)
 {
+    public const string Reset = "\e[0m";
+    public const string Bold = "\e[1m";
+    public const string Red = "\e[31m";
+    public const string Green = "\e[32m";
+    public const string Yellow = "\e[33m";
+
     /// <summary>(role, light, dark) hex values; the contrast test checks these against the guide.</summary>
     public static readonly (string Role, string Light, string Dark)[] Hex =
     [
@@ -24,7 +30,7 @@ public sealed record Palette(string Error, string Warning, string Help, string S
 
     public static readonly Palette TruecolorLight = Truecolor(1);
     public static readonly Palette TruecolorDark = Truecolor(2);
-    public static readonly Palette Ansi16 = new("\e[31m", "\e[33m", "\e[34m", "\e[32m", "\e[2m");
+    public static readonly Palette Ansi16 = new(Red, Yellow, "\e[34m", Green, "\e[2m");
 
     public string Prefix(Role role) => role switch
     {
@@ -60,5 +66,5 @@ public sealed record Style(Palette? Colors, Symbols Symbols, int Width)
     public static readonly Style Plain = new(null, Symbols.Unicode, 100);
 
     public string Paint(Role role, string text) =>
-        Colors is null ? text : Colors.Prefix(role) + text + "\e[0m";
+        Colors is null ? text : Colors.Prefix(role) + text + Palette.Reset;
 }

@@ -22,7 +22,8 @@ error BYN0010: invalid numeric literal: `_` must sit between digits
   2 │ 1_;
     │  ^
     │
-    │ 2 │ 1;
+    │ 2 │ 1_;
+    │   │  -
 
 error BYN0010: invalid numeric literal: binary literals use only `0` and `1`
 

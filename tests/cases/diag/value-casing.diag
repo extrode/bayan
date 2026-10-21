@@ -5,3 +5,4 @@ error BYN2009: `Total` must be camelCase
     │
   help: only types are PascalCase; rename it `total`
     │ 1 │ let total = 0;
+    │   │     +

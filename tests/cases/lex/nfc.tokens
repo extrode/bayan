@@ -17,3 +17,4 @@ error BYN0005: identifier `café` is not in Unicode normalization form C
     │
   help: identifiers that look the same must be byte-identical; use the composed (NFC) form
     │ 1 │ let café = 1;
+    │   │        +

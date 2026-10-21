@@ -5,6 +5,7 @@ error BYN2202: expected `i32`, found `i64`
     │
   help: `i64` does not convert to `i32` without loss; cast it if the value always fits
     │ 2 │ i32 small = (i32)big;
+    │   │             +++++
 
 error BYN2202: expected `bool`, found `i32`
 

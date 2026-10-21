@@ -3,7 +3,8 @@ error BYN3101: `verison` is not a field of `Package`
   4 │     verison = "0.2.0",
     │     ^^^^^^^
     │
-  help: the fields are `name`, `version`, `edition`, `kind`, `codes`, `capabilities`, `deps`, `test`, `dist`
+  help: the fields are `name`, `version`, `edition`, `kind`, `codes`, `capabilities`, `deps`,
+        `test`, `dist`
 
 error BYN3101: `target` is not a field of `Dist`
 

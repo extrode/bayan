@@ -332,7 +332,7 @@ public static class CliApp
     }
 
     private static string Paint(string style, string text) =>
-        s_colorOut ? style + text + DiagnosticRenderer.Reset : text;
+        s_colorOut ? style + text + Palette.Reset : text;
 
     /// <summary>An app's code is <c>src/app/</c>; a library's is <c>src/&lt;name&gt;/</c> with the name in camelCase.</summary>
     public static string EntryModule(Manifest manifest) =>
@@ -530,9 +530,9 @@ public static class CliApp
             };
             var style = status switch
             {
-                TestStatus.Pass => DiagnosticRenderer.Green,
-                TestStatus.Timeout or TestStatus.Pending => DiagnosticRenderer.Yellow,
-                _ => DiagnosticRenderer.Bold + DiagnosticRenderer.Red,
+                TestStatus.Pass => Palette.Green,
+                TestStatus.Timeout or TestStatus.Pending => Palette.Yellow,
+                _ => Palette.Bold + Palette.Red,
             };
             human.WriteLine($"  {Paint(style, label)}  {test.Name}  ({FormatMs(outcome.Elapsed)})");
             if (status == TestStatus.Pass) continue;

@@ -5,6 +5,7 @@ error BYN2305: argument for `width` must be named
     │
   help: `area` has several `i64` parameters; name them so they cannot be swapped
     │ 5 │ print($"{area(width: 3, height: 4)}");
+    │   │               +++++++
 
 error BYN2305: argument for `verbose` must be named
 
@@ -13,3 +14,4 @@ error BYN2305: argument for `verbose` must be named
     │
   help: a `bool` argument says nothing at the call site; write `verbose: …`
     │ 6 │ show(verbose: true);
+    │   │      +++++++++

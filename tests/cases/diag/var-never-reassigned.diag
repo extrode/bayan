@@ -5,6 +5,7 @@ warning BYN2311: `r` is never reassigned; declare it with `let`
      │
   help: a `let` tells the reader the value never changes
      │ 15 │     if (s is .Circle(let r)) print($"{r}");
+     │    │                      +++
 
 warning BYN2311: `total` is never reassigned; declare it with `let`
 
@@ -13,3 +14,4 @@ warning BYN2311: `total` is never reassigned; declare it with `let`
      │
   help: a `let` tells the reader the value never changes
      │ 23 │     let total = 3;
+     │    │     +++
