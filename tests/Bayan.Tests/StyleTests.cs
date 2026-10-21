@@ -22,7 +22,7 @@ public sealed partial class StyleTests
     [
         "diag-error-fix", "diag-removal-fix", "diag-secondary", "diag-cap", "diag-cap-all",
         "build-ok", "build-ok-cache", "build-ok-verbose", "build-fail", "check-ok", "run-fail",
-        "test-ok", "test-fail", "test-pending", "test-verbose", "test-assert-values",
+        "test-ok", "test-fail", "test-pending", "test-verbose", "test-assert-values", "test-control-chars",
         "doctor-ok", "doctor-fail",
     ];
 
@@ -119,6 +119,9 @@ public sealed partial class StyleTests
                 return Tests("test \"adds\" {\n    assert(1 + 1 == 2);\n}\n\ntest \"later\" {\n    todo(\"split by weight\");\n}\n\ntest \"is false\" {\n    assert(false);\n}\n", "-v");
             case "test-assert-values":
                 return Tests("i64 cents(i64 units) {\n    return units * 100;\n}\n\ntest \"leftover cents\" {\n    let net = cents(2) - 1;\n    assert(net == cents(2));\n}\n");
+            case "test-control-chars":
+                return Tests("test \"ok\\u{1b}]0;PWNED\\u{7}\" {\n    assert(true);\n}\n\ntest \"later\\u{1b}[2J\" {\n    todo(\"soon\");\n}\n\n"
+                    + "test \"y\\u{1b}]0;PWNED\\u{7}\\u{1b}[2J\" {\n    panic(\"boom\\u{1b}[2J\\u{9b}31m\");\n}\n", "-v");
             case "doctor-ok":
                 return DoctorShape(ascii, [
                     new(Doctor.Level.Ok, "bayan", $"{CliApp.Version} (commit a1b2c3d4e5f6)"),

@@ -200,7 +200,8 @@ public static class DiagnosticRenderer
 
     /// <summary>
     /// Splits prose into lines that fit: the first gets <paramref name="first"/> columns, the rest
-    /// <paramref name="rest"/>. Words are never broken, so a long word overflows its line.
+    /// <paramref name="rest"/>. Words are never broken, and backticked code is one word (R16: code is
+    /// never wrapped), so a long word overflows its line.
     /// </summary>
     private static List<string> Wrap(string text, int first, int rest)
     {
@@ -209,7 +210,7 @@ public static class DiagnosticRenderer
         {
             var line = new StringBuilder();
             var started = false;
-            foreach (var word in paragraph.Split(' '))
+            foreach (var word in Words(paragraph))
             {
                 var room = lines.Count == 0 ? first : rest;
                 if (started && RuneCount(line.ToString()) + 1 + RuneCount(word) > room)
@@ -225,6 +226,26 @@ public static class DiagnosticRenderer
             lines.Add(line.ToString());
         }
         return lines;
+    }
+
+    /// <summary>The space-separated words of <paramref name="paragraph"/>, where spaces inside backticks don't separate.</summary>
+    private static List<string> Words(string paragraph)
+    {
+        var words = new List<string>();
+        var start = 0;
+        var code = false;
+        for (var i = 0; i < paragraph.Length; i++)
+        {
+            if (paragraph[i] == '`') code = !code;
+            else if (paragraph[i] == ' ' && !code)
+            {
+                words.Add(paragraph[start..i]);
+                start = i + 1;
+            }
+        }
+        words.Add(paragraph[start..]);
+        // An unpaired backtick is not code.
+        return code ? [.. paragraph.Split(' ')] : words;
     }
 
     /// <summary>

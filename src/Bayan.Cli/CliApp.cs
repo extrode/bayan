@@ -109,7 +109,7 @@ public static class CliApp
         }
         else if (!TryReadSingleFile(args, stderr, out source)) return ExitUsage;
         var result = Lexer.Lex(source);
-        stdout.Write(json ? TokenDump.ToJson(result) : TokenDump.Dump(result));
+        stdout.Write(json ? TokenDump.ToJson(result) : TokenDump.Dump(result, s_styleOut ?? Style.Plain));
         return result.Diagnostics.Any(d => d.IsError) ? ExitFailure : ExitOk;
     }
 
@@ -120,11 +120,11 @@ public static class CliApp
         var tree = SyntaxTree.Parse(source);
         if (printAst)
         {
-            stdout.Write(AstDump.Dump(tree));
+            stdout.Write(AstDump.Dump(tree, s_styleOut ?? Style.Plain));
         }
         else if (tree.Diagnostics.Count > 0)
         {
-            stderr.Write(DiagnosticRenderer.RenderAll(tree.Diagnostics, includePath: true));
+            stderr.Write(DiagnosticRenderer.RenderAll(tree.Diagnostics, includePath: true, s_styleErr ?? Style.Plain));
         }
         return tree.Diagnostics.Any(d => d.IsError) ? ExitFailure : ExitOk;
     }
@@ -139,7 +139,7 @@ public static class CliApp
 
     internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null);
 
-    private static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false)
+    private static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false, bool allowVerbose = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
@@ -203,7 +203,7 @@ public static class CliApp
                 case "--only" when allowTestJson && i + 1 < args.Length:
                     only.Add(args[++i]);
                     break;
-                case "-v" or "--verbose":
+                case "-v" or "--verbose" when allowVerbose:
                     verbose = true;
                     break;
                 default:
@@ -290,24 +290,25 @@ public static class CliApp
     }
 
     /// <summary>
-    /// Removes <c>--color auto|always|never</c> (or <c>--color=…</c>) and <c>--ascii</c> from before any <c>--</c>;
-    /// null after reporting a bad value.
+    /// Removes <c>--color auto|always|never</c> (or <c>--color=…</c>) and <c>--ascii</c> from before any <c>--</c>,
+    /// and before a script run without a command; null after reporting a bad value.
     /// </summary>
     private static (string Color, bool Ascii)? TakeGlobalOptions(ref string[] args, TextWriter stderr)
     {
         var color = "auto";
         var ascii = false;
-        // A script's arguments are its own (`bayan tool.byn --color never`).
-        if (args is [var first, ..] && first.EndsWith(".byn", StringComparison.Ordinal) && File.Exists(first)) return (color, ascii);
+        var command = false;
         var kept = new List<string>(args.Length);
         for (var i = 0; i < args.Length; i++)
         {
             string? value = null;
-            if (args[i] == "--")
+            // A script's arguments are its own (`bayan --ascii tool.byn --color never`).
+            if (args[i] == "--" || !command && !args[i].StartsWith('-') && args[i].EndsWith(".byn", StringComparison.Ordinal) && File.Exists(args[i]))
             {
                 kept.AddRange(args[i..]);
                 break;
             }
+            if (!args[i].StartsWith('-')) command = true;
             if (args[i] == "--ascii")
             {
                 ascii = true;
@@ -412,7 +413,7 @@ public static class CliApp
     private static int Build(string[] args, TextWriter stdout, TextWriter stderr)
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        if (ParseBuildOptions(args, stderr, allowOutput: true) is not { } o) return ExitUsage;
+        if (ParseBuildOptions(args, stderr, allowOutput: true, allowVerbose: true) is not { } o) return ExitUsage;
         var reported = new List<Diagnostic>();
         if (Compile(o, stderr, reported: reported) is not { } compiled) return Failed(o, reported, stderr);
         if (RefuseLibrary(compiled, "build", stderr)) return ExitUsage;
@@ -555,7 +556,7 @@ public static class CliApp
 
     private static int Test(string[] args, TextWriter stdout, TextWriter stderr)
     {
-        if (ParseBuildOptions(args, stderr, allowOutput: false, allowTestJson: true) is not { } o) return ExitUsage;
+        if (ParseBuildOptions(args, stderr, allowOutput: false, allowTestJson: true, allowVerbose: true) is not { } o) return ExitUsage;
         if (Compile(o, stderr, includeTests: true) is not { } compiled) return ExitFailure;
         var program = Lowerer.Lower(compiled.Compilation);
         var source = CEmitter.Emit(program, o.Mode == BuildMode.Debug);
@@ -563,6 +564,11 @@ public static class CliApp
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName + "-test", HostTarget))
             : null;
         var selected = Enumerable.Range(0, program.Tests.Count).ToList();
+        if (o.Only is { } wanted && !program.Tests.Any(t => wanted.Any(s => t.Test.Name.Contains(s, StringComparison.Ordinal))))
+        {
+            stderr.WriteLine(Messages.TestOnlyNoMatch.Text(string.Join(", ", wanted.Select(s => "`" + s + "`"))));
+            return ExitUsage;
+        }
         if (o.Changed)
         {
             if (ChangedModules(compiled, o, stderr) is not { } changed) return ExitUsage;
@@ -570,14 +576,7 @@ public static class CliApp
         }
         var unchanged = program.Tests.Count - selected.Count;
         if (o.Only is { } only)
-        {
             selected = selected.Where(i => only.Any(s => program.Tests[i].Test.Name.Contains(s, StringComparison.Ordinal))).ToList();
-            if (selected.Count == 0 && !o.Changed)
-            {
-                stderr.WriteLine(Messages.TestOnlyNoMatch.Text(string.Join(", ", only.Select(s => "`" + s + "`"))));
-                return ExitUsage;
-            }
-        }
         if (BuildNative(source, o.Mode, stderr, output, json: o.Json || o.TestJson) is not { } executable) return ExitToolchain;
         var count = selected.Count;
         var human = o.TestJson ? TextWriter.Null : stdout;
@@ -607,21 +606,22 @@ public static class CliApp
             var (file, line) = test.Location is { } at ? (at.Source.Path, at.Source.GetLinePosition(at.Span.Start).Line) : ("", 0);
             results.Add(new TestResult(test.Name, file, line, status, outcome.Elapsed, status == TestStatus.Pass ? "" : details));
             var module = Path.GetFileName(ModuleOf(compiled, test));
+            var name = TerminalStyle.Visible(test.Name);
             if (status == TestStatus.Pass)
             {
-                if (o.Verbose) human.WriteLine(Messages.TestPassLine.Text(Paint(Role.Success, symbols.Dot), module, test.Name));
+                if (o.Verbose) human.WriteLine(Messages.TestPassLine.Text(Paint(Role.Success, symbols.Dot), module, name));
                 continue;
             }
             if (status == TestStatus.Pending)
             {
-                if (o.Verbose) human.WriteLine(Messages.TestPendingLine.Text(Paint(Role.Warning, symbols.Dot), module, test.Name));
+                if (o.Verbose) human.WriteLine(Messages.TestPendingLine.Text(Paint(Role.Warning, symbols.Dot), module, name));
                 continue;
             }
-            failures.Add(test.Name);
+            failures.Add(name);
             human.WriteLine();
-            human.WriteLine(Messages.TestFailureLine.Text(Paint(Role.Error, symbols.Cross, bold: true), module, test.Name));
+            human.WriteLine(Messages.TestFailureLine.Text(Paint(Role.Error, symbols.Cross, bold: true), module, name));
             foreach (var l in FailureDetail(details, o.Verbose))
-                human.WriteLine(Messages.TestDetail.Text(l));
+                human.WriteLine(Messages.TestDetail.Text(TerminalStyle.Visible(l)));
         }
         total.Stop();
         var report = new TestReport(compiled.Manifest?.Name, ModeName(o.Mode), HostTarget, results, total.Elapsed, unchanged);
@@ -635,7 +635,7 @@ public static class CliApp
             : Messages.TestSummaryPassed.Text(dot, passed, symbols.Separator, seconds));
         if (failures.Count is > 0 and <= 3)
         {
-            var command = "bayan test" + string.Concat(failures.Select(n => Messages.TestRerunOnly.Text(n.Replace("\\", "\\\\").Replace("\"", "\\\""))));
+            var command = "bayan test" + string.Concat(failures.Select(n => Messages.TestRerunOnly.Text(ShellQuote(n))));
             human.WriteLine((failures.Count == 1 ? Messages.TestRerunOne : Messages.TestRerunMany).Text(command));
         }
         var json = report.ToJson();
@@ -648,6 +648,13 @@ public static class CliApp
         }
         return failed == 0 ? ExitOk : ExitTestFailure;
     }
+
+    /// <summary>
+    /// <paramref name="text"/> as one literal word for a POSIX shell: in double quotes when nothing in it
+    /// expands there, else in single quotes with each <c>'</c> written <c>'\''</c>.
+    /// </summary>
+    private static string ShellQuote(string text) =>
+        text.AsSpan().IndexOfAny("$`\\\"!") < 0 ? "\"" + text + "\"" : "'" + text.Replace("'", "'\\''") + "'";
 
     /// <summary>
     /// A failed test's output for display: <c>panic: </c> dropped, <c>assertion failed: e</c> as <c>assert(e)</c>,

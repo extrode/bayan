@@ -281,6 +281,17 @@ public sealed class DiagnosticRendererTests
     }
 
     [Fact]
+    public void BacktickedCodeInAMessageIsNeverSplit()
+    {
+        var source = SourceText.FromString("a.byn", "let x = 1;\n");
+        const string type = "`(string alpha, string bravo, string charlie, i64 delta)`";
+        var diagnostic = new Diagnostic(Severity.Error, "BYN2000", source, Find(source, "x"), "expected `i64`, found " + type + " here");
+
+        var rendered = DiagnosticRenderer.Render(diagnostic, includePath: false, Style.Plain with { Width = 40 }).Split('\n');
+        Assert.Equal(["error BYN2000: expected `i64`, found", type, "here"], rendered[..3]);
+    }
+
+    [Fact]
     public void SourceAndFixLinesNeverWrap()
     {
         var code = "let x = " + string.Join(" + ", Enumerable.Range(1, 60)) + ";";
