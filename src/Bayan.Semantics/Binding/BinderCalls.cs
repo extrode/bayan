@@ -1068,7 +1068,10 @@ internal sealed partial class Binder
         var missing = domain?.Where(k => !covered.Contains(k)).Select(k => k == Some ? "a value" : k).ToList();
         Report(DiagnosticCodes.NonExhaustive, span, [type.DisplayName],
             label: missing is { Count: > 0 } ? "not covered: " + string.Join(", ", missing) : null,
-            help: statement ? "add the missing cases or a `default:` section" : "add the missing arms, or `_ => …` for the rest");
+            help: statement ? "add the missing cases or a `default:` section"
+                // A `_` arm on a union of this package is BYN2712, so name the arms instead.
+                : type is UnionSymbol && missing is { Count: > 0 } ? "add the missing arms: " + string.Join(", ", missing)
+                : "add the missing arms, or `_ => …` for the rest");
         return false;
     }
 
