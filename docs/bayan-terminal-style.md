@@ -73,7 +73,7 @@ With `-v`, one line per phase, then the output path:
 ◆ built tally (debug, linux-x64) in 0.84s
 ```
 
-A v0.1 program is one C translation unit, so `-v` reports phases, not modules; the C compiler compiles and links in one call, so `compile` includes the link. A cache hit prints `compile  from cache` and adds ` · from cache` to the summary.
+A v0.1 program is one C translation unit, so `-v` reports phases, not modules; the C compiler compiles and links in one call, so `compile` includes the link. A cache hit prints `compile    from cache` and adds ` · from cache` to the summary.
 
 Failure:
 ```
