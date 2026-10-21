@@ -821,7 +821,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                     if (!IsRepeatable(start)) start = Spill(start);
                     var end = Expr(r.End);
                     if (IsNever(start) || IsNever(end)) return new LNever(e.Syntax, e.Type);
-                    return Match(r, value);
+                    return Match(r with { Start = start, End = end }, value);
                 }
                 if (!IsRepeatable(value)) value = Spill(value);
                 return Match(i.Pattern, value);
