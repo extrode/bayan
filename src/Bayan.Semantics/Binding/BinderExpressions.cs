@@ -962,6 +962,12 @@ internal sealed partial class Binder
 
     private BoundExpr BindBinary(BinaryExpr b, TypeSymbol? expected)
     {
+        if (b.Op is BinaryOp.Eq or BinaryOp.Ne && (b.Right is LiteralExpr { Kind: LiteralKind.Null } ? b.Left
+                : b.Left is LiteralExpr { Kind: LiteralKind.Null } ? b.Right : null) is { } tested)
+        {
+            var test = Source.GetText(tested.Span) + (b.Op == BinaryOp.Eq ? " is null" : " is not null");
+            Report(DiagnosticCodes.NullEquality, b.Span, [], help: $"write `{test}`", fix: new Fix(b.Span, test));
+        }
         switch (b.Op)
         {
             case BinaryOp.LogicalAnd or BinaryOp.LogicalOr:
