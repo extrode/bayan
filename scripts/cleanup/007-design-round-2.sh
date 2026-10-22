@@ -25,7 +25,7 @@ fi
 workers="$(git branch --list 'chore/worker-r2-*' --format='%(refname:short)')"
 
 # 1. Worktrees (git worktree remove refuses a dirty tree; ignored tmp/ scratch goes with it).
-wts=".worktrees/feat-design-round-2 .worktrees/docs-design-round-2 .worktrees/chore-laws-timeout"
+wts=".worktrees/feat-design-round-2 .worktrees/docs-design-round-2 .worktrees/chore-laws-timeout .worktrees/feat-r2-inputform-base .worktrees/feat-suq-0-goldens"
 for b in $workers; do wts="$wts .worktrees/worker-${b#chore/worker-}"; done
 for wt in $wts; do
   if ! git worktree list --porcelain | grep -qx "worktree $repo/$wt"; then
@@ -39,7 +39,7 @@ done
 if [ $execute -eq 1 ]; then git worktree prune; else printf 'would: git worktree prune\n'; fi
 
 # 2. Feature, docs and worker branches (git branch -d refuses anything unmerged).
-for b in feat/design-round-2 docs/design-round-2 chore/laws-timeout $workers; do
+for b in feat/design-round-2 docs/design-round-2 chore/laws-timeout feat/r2-inputform-base feat/suq-0-goldens chore/worker-suq-d $workers; do
   if ! git rev-parse --verify --quiet "refs/heads/$b" >/dev/null; then
     printf 'skip:  branch %s no longer exists\n' "$b"
   elif [ $execute -eq 1 ]; then
