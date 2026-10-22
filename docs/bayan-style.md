@@ -14,6 +14,18 @@ Style is guidance: never compiler-enforced, configurable per project, applied by
 | Statements | One per line (postfix guards count as one) |
 | Booleans | One spelling per project, set by `booleans`: `.symbols` (`!` `&&` `\|\|`) or `.words` (`not` `and` `or`) |
 
+## Declarations and bindings
+
+Not configurable: declarations are type-first and local bindings name-first ([GRAMMAR §5](bayan-grammar.md)). `bayan fmt` rewrites the other order (BYN1043):
+
+| Before | After |
+|---|---|
+| `public shippingWeight(order: Order) -> Grams { … }` | `public Grams shippingWeight(Order order) { … }` |
+| `public ship(ref this, line: Line) { … }` | `public void ship(ref this, Line line) { … }` |
+| `sku: Sku` (field) | `Sku sku` |
+| `timeout(after: Millis)` (payload) | `timeout(Millis after)` |
+| `Grams w = 0g` (in a function body) | `let w: Grams = 0g` |
+
 ## Configuration
 
 Configuration lives in `package.byn` as a Bayan struct literal:
