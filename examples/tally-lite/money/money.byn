@@ -19,7 +19,7 @@ public struct Money {
     /// Writes `91.82 MYR`, or `-1.28 MYR` for a negative amount.
     public void formatInto(ref StrBuf sb) {
         var magnitude = cents;
-        if (cents < 0) {
+        if cents < 0 {
             sb.append("-");
             magnitude = -cents;
         }
@@ -39,15 +39,15 @@ public Cents parseAmount(string text) fails MoneyError {
     i64 wholeDigits = 0;
     i64 fractionDigits = 0;
     var seenPoint = false;
-    for (let b in text.bytes) {
-        if (b == '.') {
+    for b in text.bytes {
+        if b == '.' {
             return .notANumber if seenPoint;
             seenPoint = true;
             continue;
         }
         return .notANumber if b < '0' || b > '9';
         let digit = (i64)(b - '0');
-        if (seenPoint) {
+        if seenPoint {
             fractionDigits += 1;
             return .tooPrecise if fractionDigits > 2;
             fraction = fraction * 10 + digit;
@@ -58,7 +58,7 @@ public Cents parseAmount(string text) fails MoneyError {
         }
     }
     return .notANumber if wholeDigits == 0 && fractionDigits == 0;
-    if (fractionDigits == 1) {
+    if fractionDigits == 1 {
         fraction *= 10;
     }
     return whole * 100 + fraction;

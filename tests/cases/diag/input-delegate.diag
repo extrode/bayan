@@ -1,0 +1,6 @@
+error BYN1028: `delegate` is not Bayan; write a function type `type OrderFilter = Order => bool;`
+
+  3 │ delegate bool OrderFilter(Order order);
+    │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a C# delegate
+    │
+  help: write a function type alias: `type Name = (Param) => Result;`

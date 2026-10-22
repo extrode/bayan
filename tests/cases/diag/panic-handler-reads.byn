@@ -6,10 +6,10 @@ void work(i64 limit) {
 }
 
 void scan(i64? found) {
-    if (found is let v) {
+    if found is let v {
         defer panicking print($"at {v}");
     }
-    for (let i in 0..3) {
+    for i in 0..3 {
         defer panicking print($"step {i}");
     }
 }

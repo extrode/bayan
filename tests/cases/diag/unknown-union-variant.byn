@@ -3,7 +3,7 @@ union Shape { circle(f32 r), none }
 void main() {
     let s = Shape.square(1);
     Shape t = .circle(2);
-    if (t is .Triangle(let x)) {
+    if t is .Triangle(let x) {
         print("never");
     }
 }

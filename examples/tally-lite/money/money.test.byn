@@ -1,4 +1,4 @@
-i64 parsed(string text) => parseAmount(text) catch (e) switch {
+i64 parsed(string text) => parseAmount(text) catch switch {
     .empty => -1,
     .notANumber => -2,
     .tooPrecise => -3,
@@ -8,7 +8,7 @@ i64 parsed(string text) => parseAmount(text) catch (e) switch {
 bool formatsAs(Cents cents, string expected) {
     let bytes = stackalloc u8[32];
     var sb = StrBuf(bytes);
-    let m = Money { cents = cents, currency = "MYR" };
+    let m = Money { cents: cents, currency: "MYR" };
     m.formatInto(ref sb);
     return sb.finish() == expected;
 }

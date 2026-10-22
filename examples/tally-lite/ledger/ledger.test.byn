@@ -10,8 +10,8 @@ test "split gives leftover cents to the first participants" {
 
 test "balances sum to zero and follow first appearance" {
     var trip = List<Expense>();
-    trip.append({ payer = "alice", amount = 3000, participants = ["alice", "bob", "chen"] });
-    trip.append({ payer = "bob", amount = 1000, participants = ["alice", "bob"] });
+    trip.append({ payer: "alice", amount: 3000, participants: ["alice", "bob", "chen"] });
+    trip.append({ payer: "bob", amount: 1000, participants: ["alice", "bob"] });
     let owed = balances(trip);
     assert(owed.length == 3);
     assert(owed[0].name == "alice" && owed[0].cents == 1500);

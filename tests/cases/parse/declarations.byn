@@ -16,9 +16,9 @@ public i64 add(i64 a, i64 b) => a + b;
 
 void bump(ref i64 total, i64 by = 1) { total += by; }
 
-Money parse(string text) fails MoneyError { return Money { cents = 0 }; }
+Money parse(string text) fails MoneyError { return Money { cents: 0 }; }
 
-Money parseAny(string text) fails MoneyError, ParseError => Money { cents = 1 };
+Money parseAny(string text) fails MoneyError, ParseError => Money { cents: 1 };
 
 i64 helper() fails { return 0; }
 

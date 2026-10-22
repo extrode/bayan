@@ -1,4 +1,4 @@
-// In `switch (move …)` a `when` guard only reads the arm's bindings (BYN2791): a guard that fails gives the value back.
+// In `switch move …` a `when` guard only reads the arm's bindings (BYN2791): a guard that fails gives the value back.
 struct Bag {
     List<i64> items;
 
@@ -26,7 +26,7 @@ bool fill(out List<i64> xs) {
 bool keep(move Bag b) => true;
 
 void inspect(move Slot s, move Slot t) {
-    switch (move s) {
+    switch move s {
         case .full(var x) when x.grow() > 5:
             print("call");
         case .full(var x) when x.items.removeLast() > 0:

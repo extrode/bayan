@@ -1,26 +1,26 @@
 // 10,000 inserts over 1,000 keys: lookups see the last value; removals keep count and iteration in agreement.
 var m = Map<i64, i64>();
-for (let i in 0..10000) m[i * 7 % 1000] = i;
+for i in 0..10000 { m[i * 7 % 1000] = i; }
 print($"count after inserts: {m.length}");
 var ok = true;
-for (let k in 0..1000) {
+for k in 0..1000 {
     // The last i with i * 7 % 1000 == k.
     i64 last = -1;
-    for (let i in 9000..10000) {
-        if (i * 7 % 1000 == k) last = i;
+    for i in 9000..10000 {
+        if i * 7 % 1000 == k { last = i; }
     }
-    if (m[k] != last) ok = false;
+    if m[k] != last { ok = false; }
 }
 print($"lookups return the last value: {ok}");
 
 var removed = 0;
-for (let k in 0..1000) {
-    if (k % 3 == 0 && m.remove(k)) removed++;
+for k in 0..1000 {
+    if k % 3 == 0 && m.remove(k) { removed++; }
 }
 print($"removed {removed}, count {m.length}");
 var seen = 0;
 i64 sum = 0;
-for (let e in m) {
+for e in m {
     seen++;
     sum += e.key;
 }
@@ -30,12 +30,12 @@ print($"0 present: {m.contains(0)}, 1 present: {m.contains(1)}");
 // Removed keys come back at the end, after surviving keys.
 m[0] = 42;
 i64 lastKey = -1;
-for (let e in m) lastKey = e.key;
+for e in m { lastKey = e.key; }
 print($"last key {lastKey}, count {m.length}");
 
 // String keys built at runtime.
 var words = Map<string, i64>();
-for (let i in 0..2000) {
+for i in 0..2000 {
     let key = $"w{i % 500}";
     words[key] = words.getOr(key, 0) + 1;
 }

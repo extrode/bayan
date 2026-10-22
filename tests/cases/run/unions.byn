@@ -22,7 +22,7 @@ f32 area(Shape s) => s switch {
 };
 
 void describe(Shape s) {
-    switch (s) {
+    switch s {
         case Shape.circle(let r) when r > 10:
             print("big circle");
         case .circle(let r):
@@ -49,10 +49,10 @@ describe(n);
 
 print($"{c == Shape.circle(1)} {c == Shape.circle(2)} {c != r} {n == Shape.none} {r == .rect(2, 2)}");
 
-if (r is .rect(let rw, let rh)) {
+if r is .rect(let rw, let rh) {
     print($"is rect {rw}x{rh}");
 }
-if (c is .rect(_, _)) {
+if c is .rect(_, _) {
     print("unreachable");
 } else {
     print("c is not a rect");
@@ -64,15 +64,15 @@ shapes.append(c);
 shapes.append(.rect(1, 2));
 shapes.append(Shape.none);
 f32 total = 0;
-for (let s in shapes) {
+for s in shapes {
     total += area(s);
     print($"list {s}");
 }
 print($"total {total}");
 
-let slot = Slot { label = "first", shape = .circle(3) };
+let slot = Slot { label: "first", shape: .circle(3) };
 print($"{slot}");
-print($"{slot == Slot { label = "first", shape = Shape.circle(3) }}");
+print($"{slot == Slot { label: "first", shape: Shape.circle(3) }}");
 
 Shape? maybe = shapes[1];
 Shape? missing = null;
@@ -83,7 +83,7 @@ var tokens = List<Token>();
 tokens.append(Token.number(42));
 tokens.append(.word("hi"));
 tokens.append(.end);
-for (let t in tokens) {
+for t in tokens {
     let text = t switch {
         .number(let v) => $"number {v}",
         .word(let w) => $"word {w}",

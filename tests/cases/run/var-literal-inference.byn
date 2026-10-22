@@ -5,7 +5,7 @@ T pick<T>(bool first, move T a, move T b) => first ? move a : move b;
 i64 sum(ReadOnlySpan<i64> xs) {
     var total = 0;
     var i = 0;
-    while (i < xs.length) {
+    while i < xs.length {
         total += xs[i];
         i = i + 1;
     }

@@ -105,7 +105,7 @@ public sealed class OwnershipCheckerTests
         var path = Path.Combine(Golden.CasesRoot, "run/switch-move.byn");
         var c = Compilation.Create([Golden.Load(path)], Path.GetDirectoryName(path)!);
         var text = File.ReadAllLines(path);
-        var lines = Enumerable.Range(0, text.Length).Where(i => text[i].TrimStart().StartsWith("switch (move ") || text[i].Contains(") switch {")).Select(i => i + 1).ToList();
+        var lines = Enumerable.Range(0, text.Length).Where(i => text[i].TrimStart().StartsWith("switch move ") || text[i].Contains(") switch {")).Select(i => i + 1).ToList();
         Assert.Equal(4, lines.Count);
         var emitted = CliApp.EmitC(c, BuildMode.Debug);
         foreach (var line in lines)
@@ -121,7 +121,7 @@ public sealed class OwnershipCheckerTests
             var a = List<i64>();
             a.append(1);
             let s = Slot.full(move a);
-            switch (move s) {
+            switch move s {
                 case .full(let x) when x.length > 5:
                     print($"big {x.length}");
                 case .full(let y):
@@ -160,8 +160,8 @@ public sealed class OwnershipCheckerTests
         void main() {
             var a = List<i64>();
             a.append(1);
-            let p = P { items = move a, n = 3 };
-            switch (move p) {
+            let p = P { items: move a, n: 3 };
+            switch move p {
                 case { items: let x, n: 5 }:
                     print($"five {x.length}");
                 case { items: let y, n: _ }:
@@ -204,7 +204,7 @@ public sealed class OwnershipCheckerTests
         void main() {
             var a = List<i64>();
             a.append(1);
-            let p = P { xs = move a, n = a.length };
+            let p = P { xs: move a, n: a.length };
             print($"{p.n}");
         }
 
@@ -229,7 +229,7 @@ public sealed class OwnershipCheckerTests
         void main() {
             var a = List<i64>();
             a.append(1);
-            print($"{f(P { xs = move a }, a.length)}");
+            print($"{f(P { xs: move a }, a.length)}");
         }
 
         """;
@@ -253,7 +253,7 @@ public sealed class OwnershipCheckerTests
         }
         Bag keep(i64 n, move Bag b) => b;
         void main() {
-            var b = Bag { items = List<i64>() };
+            var b = Bag { items: List<i64>() };
             let d = keep(b.grow(), move b);
             print($"{d.items.length}");
         }
@@ -277,8 +277,8 @@ public sealed class OwnershipCheckerTests
             a.append(1);
             a.append(2);
             a.append(3);
-            let s = Slot.full(Bag { items = move a });
-            switch (move s) {
+            let s = Slot.full(Bag { items: move a });
+            switch move s {
                 case .full(var x) when x.grow() > 5:
                     print("big");
                 case .full(let y):

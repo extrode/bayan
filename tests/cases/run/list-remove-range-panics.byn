@@ -1,5 +1,5 @@
 var xs = List<i64>();
-for (let i in 0..4) xs.append(i);
+for i in 0..4 { xs.append(i); }
 xs.removeRange(1, 4);
 print($"{xs.length}");
 xs.removeRange(1, 0);

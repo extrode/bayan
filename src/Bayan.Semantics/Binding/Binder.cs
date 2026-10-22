@@ -412,8 +412,6 @@ internal sealed partial class Binder
         PushScope();
         var s = BindStatement(body);
         PopScope();
-        if (body is LocalDecl)
-            Report(DiagnosticCodes.DeclarationAsBody, body.Span, [], help: "wrap it in `{ … }` if the variable is used inside");
         return s;
     }
 

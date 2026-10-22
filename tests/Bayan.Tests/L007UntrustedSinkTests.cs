@@ -20,7 +20,7 @@ public sealed class L007UntrustedSinkTests
             Untrusted<string> name = Untrusted("x");
             List<Untrusted<string>> many = List<Untrusted<string>>();
             Span<Untrusted<string>> span = many.asSpan();
-            Holder h = Holder { value = Untrusted("x") };
+            Holder h = Holder { value: Untrusted("x") };
             List<Holder> holders = List<Holder>();
             List<string> none = List<string>();
 

@@ -1,5 +1,5 @@
 let x = 1;
-switch (x) {
+switch x {
     default:
         break;
     default:

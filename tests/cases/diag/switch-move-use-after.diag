@@ -1,7 +1,7 @@
 error BYN2781: `r` is used after it was moved
 
-  17 │     switch (r) {
-     │             ^ moved on line 11
+  17 │     switch r {
+     │            ^ moved on line 11
      │
   help: assign `r` a new value before using it again, or move a `.copy(to: alloc)` of it instead
 

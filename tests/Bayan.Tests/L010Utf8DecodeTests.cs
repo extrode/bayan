@@ -24,14 +24,14 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
     private const string Driver = """
         // L010 driver: each stdin line is lowercase hex bytes.
         u8 nibble(u8 c) {
-            if (c <= 0x39) return c - 0x30;
+            if c <= 0x39 { return c - 0x30; }
             return c - 0x57;
         }
 
         bool same(ReadOnlySpan<u8> a, ReadOnlySpan<u8> b) {
-            if (a.length != b.length) return false;
-            for (let i in 0..a.length) {
-                if (a[i] != b[i]) return false;
+            if a.length != b.length { return false; }
+            for i in 0..a.length {
+                if a[i] != b[i] { return false; }
             }
             return true;
         }
@@ -42,31 +42,31 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
         }
 
         string check(ReadOnlySpan<u8> bytes) {
-            let fromOk = decodes(bytes) catch (e) switch {
+            let fromOk = decodes(bytes) catch switch {
                 .invalidSequence => false,
             };
-            let from = string.from(bytes) catch (e) switch {
+            let from = string.from(bytes) catch switch {
                 .invalidSequence => "",
             };
             let at = string.invalidUtf8At(bytes) ?? -1;
             let t = string.tryFrom(bytes);
-            let tryOk = t != null;
+            let tryOk = t is not null;
             let tryText = t ?? "";
             return $"{at} {fromOk} {tryOk} {same(a: from.bytes, b: bytes)} {same(a: tryText.bytes, b: bytes)}";
         }
 
         void main() {
             let input = Io.stdin.readAll();
-            if (!input.isOk) {
+            unless input.isOk {
                 print("read failed");
                 return;
             }
             let text = input.value.bytes;
             var line = List<u8>();
             i64 i = 0;
-            while (i < text.length) {
+            while i < text.length {
                 let c = text[i];
-                if (c == 0x0A) {
+                if c == 0x0A {
                     print(check(line.asSpan()));
                     line.clear();
                     i += 1;

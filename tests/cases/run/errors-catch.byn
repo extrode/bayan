@@ -34,7 +34,7 @@ i64 earlyReturn(string s) {
     return d + 1;
 }
 
-i64 classify(string s) => digit(s) catch (e) switch {
+i64 classify(string s) => digit(s) catch switch {
     .empty => 10,
     .notDigit => 20,
     .tooLarge => 30,
@@ -46,7 +46,7 @@ i64? find(i64 n) => n > 0 ? n : null;
 
 i64 sumUntilMissing() {
     i64 total = 0;
-    for (let i in 0..5) {
+    for i in 0..5 {
         let v = find(3 - i) ?? break;
         total += v;
     }
@@ -55,7 +55,7 @@ i64 sumUntilMissing() {
 
 i64 skipMissing() {
     i64 total = 0;
-    for (let i in 0..5) {
+    for i in 0..5 {
         let v = find(i - 2) ?? continue;
         total += v;
     }
@@ -73,7 +73,7 @@ print($"{classify("")} {classify("q")} {classify("3")}");
 print($"{relay("5") catch -1} {relay("0") catch -2} {relay("") catch -3}");
 print($"{onlyEmpty("") catch -1} {onlyEmpty("x") catch -9} {onlyEmpty("8") catch -1}");
 print($"{sumUntilMissing()} {skipMissing()} {returnMissing(4)} {returnMissing(-1)}");
-let e = positive("0") catch (err) switch {
+let e = positive("0") catch switch {
     .tooSmall => 1,
     _ => 2,
 };

@@ -1,4 +1,4 @@
-// `switch (move …)` needs a local or a `move` parameter as its subject (BYN2789).
+// `switch move …` needs a local or a `move` parameter as its subject (BYN2789).
 union Slot {
     empty,
     full(List<i64> items),
@@ -9,15 +9,15 @@ struct Box {
 }
 
 void inspect(Slot plain) {
-    let box = Box { slot = Slot.empty };
+    let box = Box { slot: Slot.empty };
     let slots = List<Slot>();
-    switch (move box.slot) {
+    switch move box.slot {
         default:
     }
-    switch (move slots[0]) {
+    switch move slots[0] {
         default:
     }
-    switch (move plain) {
+    switch move plain {
         default:
     }
 }

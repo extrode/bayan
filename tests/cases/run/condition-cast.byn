@@ -7,4 +7,4 @@ while (i32)big > 9 {
     big -= 1;
 }
 bool flag = true;
-if (flag) print("parenthesized if");
+if flag { print("parenthesized if"); }

@@ -7,7 +7,7 @@ struct Ledger {
 
 i64 sum(move List<i64> xs) {
     i64 total = 0;
-    for (let x in xs) total += x;
+    for x in xs { total += x; }
     return total;
 }
 
@@ -19,7 +19,7 @@ i64 pick() {
 }
 
 void main() {
-    var ledger = Ledger { name = "ledger", items = List<i64>(), pending = null };
+    var ledger = Ledger { name: "ledger", items: List<i64>(), pending: null };
     ledger.items.append(1);
     ledger.items.append(2);
     let items = ledger.items.take();
@@ -47,7 +47,7 @@ void main() {
     more.append(4);
     ledger.pending = more.take();
     let pending = ledger.pending.take();
-    if (pending is { } p) print($"optional {p.length}");
+    if (pending is { } p) { print($"optional {p.length}"); }
     print($"left null {ledger.pending is null}");
     let none = ledger.pending.take();
     print($"none null {none is null}");

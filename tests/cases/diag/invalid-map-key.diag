@@ -40,5 +40,5 @@ error BYN2023: `Map` takes 2 type argument(s), not 1
 
 error BYN2208: `==` cannot be applied to `Map<string, i64>` and `Map<string, i64>`
 
-  17 │     if (a == b) print("same");
-     │         ^^^^^^
+  17 │     if a == b { print("same"); }
+     │        ^^^^^^

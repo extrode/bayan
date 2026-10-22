@@ -33,16 +33,16 @@
       "path": "constrained-i64.byn",
       "name": "main",
       "span": {
-        "start": 116,
-        "end": 137
+        "start": 114,
+        "end": 135
       },
       "bindings": [
         {
           "name": "xs",
           "kind": "var",
           "span": {
-            "start": 120,
-            "end": 122
+            "start": 118,
+            "end": 120
           },
           "type": "List<i64>"
         }

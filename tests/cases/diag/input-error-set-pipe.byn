@@ -1,0 +1,11 @@
+error enum EmailError {
+    /// Not an address.
+    invalid,
+}
+
+error enum DbError {
+    /// Too slow.
+    timeout,
+}
+
+error set SignupError = EmailError | DbError;
