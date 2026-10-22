@@ -172,7 +172,7 @@ distinct type UserId = i64;      // a unit without arithmetic
 - Units are erased at runtime.
 - `s.length` is `Bytes`; `s.chars.count` is `Runes`.
 
-> Round 2 §12: `length` is gone from strings.
+> Round 2 §12 removed `length` from strings; round 3 restores it (`s.length` is the byte length).
 
 ### 3.5 Arrays, spans, collections
 - `T[N]`: fixed-size inline array (a value). Constant out-of-range indexes are compile errors.
