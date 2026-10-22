@@ -22,6 +22,8 @@ error BYN1017: parentheses around a condition are an input form
   help: remove the parentheses
     │ 4 │     if x > 2 { print("big"); }
     │   │        +++++++++++++++++++++++
+    │ 5 │     else { print("small"); }
+    │   │ ++++++++++++++++++++++++++++
 
 error BYN1018: the body of `if` must be a block
 
@@ -36,8 +38,6 @@ error BYN1018: the body of `else` must be a block
     │          ^^^^^^^^^^^^^^ a single statement
     │
   help: wrap the statement in `{ }`
-    │ 5 │     else { print("small"); }
-    │   │          +++++++++++++++++++
 
 error BYN1007: `unless` with a negated condition is a double negative
 
@@ -86,3 +86,83 @@ error BYN1018: the body of `if` must be a block
     │                   ^^^^^^^^^^^^^^ a single statement
     │
   help: wrap the statement in `{ }`
+
+error BYN1017: parentheses around a condition are an input form
+
+  12 │     if (x) {
+     │        ^^^ not needed
+     │
+  help: remove the parentheses
+     │ 12 │     if x {
+     │    │        +++
+     │ 13 │         print("a");
+     │    │ +++++++++++++++++++
+     │ 14 │     } else { print("b"); }
+     │    │ ++++++++++++++++++++++++++
+
+error BYN1018: the body of `else` must be a block
+
+  14 │     } else print("b");
+     │            ^^^^^^^^^^ a single statement
+     │
+  help: wrap the statement in `{ }`
+
+error BYN1017: parentheses around a condition are an input form
+
+  15 │     if (x) print("c"); else if (x) print("d"); else print("e");
+     │        ^^^ not needed
+     │
+  help: remove the parentheses
+     │ 15 │     if x { print("c"); } else if (x) print("d"); else print("e");
+     │    │        +++++++++++++++++
+
+error BYN1018: the body of `if` must be a block
+
+  15 │     if (x) print("c"); else if (x) print("d"); else print("e");
+     │            ^^^^^^^^^^ a single statement
+     │
+  help: wrap the statement in `{ }`
+
+error BYN1017: parentheses around a condition are an input form
+
+  15 │     if (x) print("c"); else if (x) print("d"); else print("e");
+     │                                ^^^ not needed
+     │
+  help: remove the parentheses
+     │ 15 │     if (x) print("c"); else if x { print("d"); } else { print("e"); }
+     │    │                                ++++++++++++++++++++++++++++++++++++++
+
+error BYN1018: the body of `if` must be a block
+
+  15 │     if (x) print("c"); else if (x) print("d"); else print("e");
+     │                                    ^^^^^^^^^^ a single statement
+     │
+  help: wrap the statement in `{ }`
+
+error BYN1018: the body of `else` must be a block
+
+  15 │     if (x) print("c"); else if (x) print("d"); else print("e");
+     │                                                     ^^^^^^^^^^ a single statement
+     │
+  help: wrap the statement in `{ }`
+
+error BYN1007: `unless` with a negated condition is a double negative
+
+  16 │     unless (!x) print("f");
+     │     ^^^^^^^^^^^ `unless` already negates
+     │
+  help: use `if` with the condition as written
+
+error BYN1018: the body of `unless` must be a block
+
+  16 │     unless (!x) print("f");
+     │                 ^^^^^^^^^^ a single statement
+     │
+  help: wrap the statement in `{ }`
+
+error BYN1006: `unless` cannot have an `else` branch
+
+  17 │     else print("g");
+     │     ^^^^ `else` after `unless`
+     │
+  help: use `if` with the opposite condition, so both branches read positively

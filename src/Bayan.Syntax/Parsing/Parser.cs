@@ -960,7 +960,7 @@ public sealed class Parser
                 }
                 {
                     var condition = ParseCondition(out var parenthesized, out var parens);
-                    var body = parenthesized ? ParseBody(whileKeyword, parens) : ParseBlock();
+                    var body = parenthesized ? ParseBody(whileKeyword, ref parens) : ParseBlock();
                     return new WhileStmt(SpanFrom(start), condition, body);
                 }
             case TokenKind.DoKeyword:
@@ -1095,23 +1095,30 @@ public sealed class Parser
     /// The body of <paramref name="keyword"/> after a parenthesized condition: a block, or the input form of a single
     /// statement, reported (BYN1018) with a fix that wraps it in <c>{ }</c>.
     /// </summary>
-    /// <param name="header">The report on the header (BYN1017, BYN1007, BYN1019, …), whose fix also needs the braces to parse.</param>
-    private Stmt ParseBody(Token keyword, Diagnostic? header = null)
+    private Stmt ParseBody(Token keyword)
+    {
+        Diagnostic? header = null;
+        return ParseBody(keyword, ref header);
+    }
+
+    /// <param name="header">The report on the header (BYN1017, BYN1007, BYN1019, …), whose fix also needs the braces to parse;
+    /// updated to the report that replaces it.</param>
+    private Stmt ParseBody(Token keyword, ref Diagnostic? header)
     {
         if (Kind == TokenKind.OpenBrace) return ParseBlock();
         var gapStart = _prevEnd;
         var errors = ErrorCount;
         var body = ParseStatement();
         if (ErrorCount != errors && body is ErrorStmt) return body;
-        ReportBraceless(keyword, gapStart, body, ErrorCount == errors, header);
+        header = ReportBraceless(keyword, gapStart, body, ErrorCount == errors, header);
         return body;
     }
 
     /// <summary>
     /// BYN1018 on <paramref name="body"/>, a single statement after <paramref name="keyword"/>. A <paramref name="header"/> fix
-    /// takes the braces too, so that fix parses applied alone and BYN1018 has none of its own.
+    /// takes the braces too, so that fix parses applied alone and BYN1018 has none of its own. Returns the header's report.
     /// </summary>
-    private void ReportBraceless(Token keyword, int gapStart, Stmt body, bool clean, Diagnostic? header)
+    private Diagnostic? ReportBraceless(Token keyword, int gapStart, Stmt body, bool clean, Diagnostic? header)
     {
         var text = _source.GetText(TextSpan.FromBounds(body.Span.Start, _prevEnd));
         var gap = _source.GetText(TextSpan.FromBounds(gapStart, body.Span.Start));
@@ -1131,15 +1138,20 @@ public sealed class Parser
         var fix = clean ? new Fix(TextSpan.FromBounds(gapStart, _prevEnd), replacement) : null;
         if (header?.Fix is { } h)
         {
-            _diagnostics.Replace(header, header with
-            {
-                Fix = fix is null ? null : new Fix(TextSpan.FromBounds(h.Span.Start, fix.Span.End),
-                    h.Replacement + _source.GetText(TextSpan.FromBounds(h.Span.End, fix.Span.Start)) + fix.Replacement),
-            });
-            fix = null;
+            var merged = fix is null ? null : new Fix(TextSpan.FromBounds(h.Span.Start, fix.Span.End),
+                h.Replacement + _source.GetText(TextSpan.FromBounds(h.Span.End, fix.Span.Start)) + fix.Replacement);
+            // The merged fix copies the source up to this body (an `if`'s `then` block before a braceless `else`); a fix in
+            // there would overlap it, so the header loses its fix and BYN1018 keeps its own.
+            var overlaps = merged is not null && _diagnostics.Items.Any(d => !ReferenceEquals(d, header) && d.Fix is { } f
+                && f.Span.Start < merged.Span.End && f.Span.End > merged.Span.Start);
+            var replaced = header with { Fix = overlaps ? null : merged };
+            _diagnostics.Replace(header, replaced);
+            header = replaced;
+            if (!overlaps) fix = null;
         }
         Report(DiagnosticCodes.BodyNeedsBraces, body.Span, [Text(keyword)], label: "a single statement",
             help: "wrap the statement in `{ }`", fix: fix);
+        return header;
     }
 
     /// <summary>
@@ -1277,13 +1289,14 @@ public sealed class Parser
         }
         var condition = ParseCondition(out var parenthesized, out var parens);
         var closeEnd = _prevEnd;
-        var then = parenthesized ? ParseBody(keyword, parens) : ParseBlock();
+        // The BYN1017 fix leaves a bare condition, after which `then` and `else` must both be blocks: it braces both.
+        var then = parenthesized ? ParseBody(keyword, ref parens) : ParseBlock();
         Stmt? otherwise = null;
         if (Kind == TokenKind.ElseKeyword)
         {
             var elseKeyword = Advance();
             otherwise = Kind == TokenKind.IfKeyword ? RejectPostfixAfterCompound(ParseIf(Current.Start, elseIf: true))
-                : parenthesized ? ParseBody(elseKeyword) : ParseBlock();
+                : parenthesized ? ParseBody(elseKeyword, ref parens) : ParseBlock();
         }
         // With a braceless `then`, BYN1017's fix already braces it; `unless` waits for the next check.
         else if (!elseIf && likelihood == Likelihood.None && then is BlockStmt && condition is UnaryExpr { Op: UnaryOp.Not } negated
@@ -1354,13 +1367,16 @@ public sealed class Parser
         // The `if` fix spans the parentheses and drops them, so it replaces the BYN1017 report.
         var check = CheckUnlessCondition(condition, TextSpan.FromBounds(keyword.Start, _prevEnd));
         if (check is not null) Unreport(parens);
-        var body = parenthesized ? ParseBody(keyword, check ?? parens) : ParseBlock();
+        var header = check ?? parens;
+        var body = parenthesized ? ParseBody(keyword, ref header) : ParseBlock();
         if (Kind == TokenKind.ElseKeyword)
         {
             Report(DiagnosticCodes.UnlessWithElse, Current.Span, label: "`else` after `unless`",
                 help: "use `if` with the opposite condition, so both branches read positively");
             Advance();
-            ParseEmbedded();
+            // The `if` fix of BYN1007/1022/1023 leaves a bare condition, which needs a block after `else`.
+            if (ParseEmbedded() is not BlockStmt && check is not null && header?.Fix is not null)
+                _diagnostics.Replace(header, header with { Fix = null });
         }
         return new UnlessStmt(SpanFrom(start), condition, body);
     }
@@ -1440,7 +1456,7 @@ public sealed class Parser
                 help: "write the loop variable and iterable without parentheses",
                 fix: new Fix(span, keyword.Kind == TokenKind.ForeachKeyword ? "for " + header : open.HasTriviaBefore ? header : " " + header));
         }
-        var body = ParseBody(keyword, input);
+        var body = ParseBody(keyword, ref input);
         return new ForStmt(SpanFrom(start), kind, type, name, iterable, body);
     }
 

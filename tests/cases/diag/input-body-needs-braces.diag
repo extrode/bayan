@@ -6,6 +6,8 @@ error BYN1017: parentheses around a condition are an input form
   help: remove the parentheses
     │ 3 │     if x > 2 { print("big"); }
     │   │        +++++++++++++++++++++++
+    │ 4 │     else { print("small"); }
+    │   │ ++++++++++++++++++++++++++++
 
 error BYN1018: the body of `if` must be a block
 
@@ -20,8 +22,6 @@ error BYN1018: the body of `else` must be a block
     │          ^^^^^^^^^^^^^^ a single statement
     │
   help: wrap the statement in `{ }`
-    │ 4 │     else { print("small"); }
-    │   │          +++++++++++++++++++
 
 error BYN1017: parentheses around a condition are an input form
 

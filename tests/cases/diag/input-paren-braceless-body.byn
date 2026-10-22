@@ -7,3 +7,12 @@ void main(ReadOnlySpan<string> args) {
     for (let a in args) print(a);
     if (!(x > 5)) print("small");
 }
+
+void f(bool x) {
+    if (x) {
+        print("a");
+    } else print("b");
+    if (x) print("c"); else if (x) print("d"); else print("e");
+    unless (!x) print("f");
+    else print("g");
+}
