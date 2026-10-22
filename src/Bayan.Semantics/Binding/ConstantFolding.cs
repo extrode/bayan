@@ -115,6 +115,43 @@ internal static class ConstantFolding
         return n < min ? min : n > max ? max : n;
     }
 
+    /// <summary>
+    /// The value of <paramref name="e"/> with the given locals replaced by constants, or null when
+    /// some part of it is only known at run time.
+    /// </summary>
+    public static ConstantValue? Evaluate(BoundExpr e, IReadOnlyDictionary<LocalSymbol, ConstantValue> locals)
+    {
+        if (e.Constant is { } c) return c;
+        switch (e)
+        {
+            case BoundLocal l:
+                return locals.GetValueOrDefault(l.Local);
+            case BoundConversion { Kind: ConversionKind.Identity or ConversionKind.Widen or ConversionKind.NumericCast } v:
+                return Evaluate(v.Operand, locals) is { } operand ? Cast(operand, v.Operand.Type, v.Type) : null;
+            case BoundUnary u:
+                return Evaluate(u.Operand, locals) is { } o ? Unary(u.Op, o, u.Type) : null;
+            case BoundBinary { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } b:
+            {
+                // Short-circuits like the run-time test, so a decided left side is enough.
+                var left = Evaluate(b.Left, locals);
+                if (left?.Value is bool l && l == (b.Op == BinaryOp.LogicalOr)) return left;
+                return left is null ? null : Evaluate(b.Right, locals);
+            }
+            case BoundBinary b:
+                return Evaluate(b.Left, locals) is { } x && Evaluate(b.Right, locals) is { } y ? Binary(b.Op, x, y, b.Left.Type) : null;
+            case BoundIs { Pattern: BoundRangePattern r } i:
+            {
+                if (Evaluate(i.Value, locals) is not { } v || Evaluate(r.Start, locals) is not { } start || Evaluate(r.End, locals) is not { } end)
+                    return null;
+                var low = Binary(BinaryOp.Ge, v, start, i.Value.Type);
+                var high = Binary(r.Inclusive ? BinaryOp.Le : BinaryOp.Lt, v, end, i.Value.Type);
+                return low?.Value is bool a && high?.Value is bool h ? new(a && h) : null;
+            }
+            default:
+                return null;
+        }
+    }
+
     /// <summary>A cast of a constant, or null when the value does not fit (left to the run-time check).</summary>
     public static ConstantValue? Cast(ConstantValue c, TypeSymbol from, TypeSymbol to)
     {

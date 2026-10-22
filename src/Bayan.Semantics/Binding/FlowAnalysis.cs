@@ -292,6 +292,8 @@ internal sealed class FlowAnalysis
                 return Statement(j.Jump, state);
             case BoundBlockExpr b:
                 return Block(b.Block.Statements, state);
+            case BoundIs { Pattern: BoundRangePattern r } i:
+                return Expr(r.End, Expr(r.Start, Expr(i.Value, state)));
             case BoundIs i:
                 return Expr(i.Value, state);
             default:

@@ -11,7 +11,7 @@ struct Lexer {
         toks.add(t);
     }
 
-    (Span<Token>, i64) counted() => (toks.asSpan(), toks.length);
+    (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.length);
 
     Span<Token> scratch() {
         var local = List<Token>();

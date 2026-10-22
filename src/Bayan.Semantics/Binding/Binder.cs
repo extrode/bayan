@@ -134,7 +134,15 @@ internal sealed partial class Binder
     {
         _fn?.Locals.Add(local);
         if (name.Text == "_") return;
-        if (_scope.Lookup(name.Text) is { } existing)
+        // A `let` may take the name of another local in the same scope to give it a new type (HANDOFF §4).
+        if (local.Kind == LocalKind.Let && _scope.Locals.TryGetValue(name.Text, out var same))
+        {
+            if (same.Type.Equals(local.Type) && !local.Type.IsError)
+                Report(DiagnosticCodes.SameTypeShadowing, name.Span, [name.Text, local.Type.DisplayName],
+                    label: same.Location is { } at ? $"`{name.Text}` is declared on line {at.Line}" : null,
+                    help: "use the first one, or rename this one to say how it differs");
+        }
+        else if (_scope.Lookup(name.Text) is { } existing)
         {
             var where = existing.Location is { } l ? $"line {l.Line}" : "here";
             Report(DiagnosticCodes.Shadowing, name.Span, [name.Text], label: $"already declared on {where}",
@@ -159,20 +167,46 @@ internal sealed partial class Binder
     {
         DeclareParameters();
         BindParameterDefaults();
+        var checks = BindRequires(decl);
         if (decl.Body is { } body)
         {
             _firstStatement = body.Statements.FirstOrDefault();
-            _fn!.Body = BindBlock(body);
+            var block = BindBlock(body);
+            _fn!.Body = checks.Length == 0 ? block : new BoundBlock(body, [.. checks, block]);
         }
         else if (decl.ExpressionBody is { } e)
         {
-            _fn!.Body = new BoundBlock(e, [BindExpressionBody(e)]);
+            _fn!.Body = new BoundBlock(e, [.. checks, BindExpressionBody(e)]);
         }
         else
         {
             // The parser already reported the missing body.
             _fn!.Body = new BoundBlock(decl, []);
         }
+    }
+
+    /// <summary>Binds the <c>requires</c> clauses into entry checks that panic in every build mode.</summary>
+    private BoundStmt[] BindRequires(FunctionDecl decl)
+    {
+        var conditions = new List<BoundExpr>();
+        var checks = new List<BoundStmt>();
+        foreach (var r in decl.Requires)
+        {
+            var condition = BindExpr(r, PrimitiveType.Bool);
+            if (!condition.Type.IsBool)
+            {
+                if (!condition.Type.IsError)
+                    Report(DiagnosticCodes.RequiresNotBool, r.Span, [condition.Type.DisplayName],
+                        help: "write a condition the arguments must meet, such as `count > 0`");
+                continue;
+            }
+            conditions.Add(condition);
+            var message = Literal(r, PrimitiveType.String, "contract violated: " + Source.GetText(r.Span));
+            var panic = new BoundCall(r, _c.Builtins.Panic, null, [message], PrimitiveType.Never);
+            checks.Add(new BoundIf(r, new BoundUnary(r, UnaryOp.Not, condition, PrimitiveType.Bool), new BoundExprStmt(r, panic), null));
+        }
+        _fn!.Requires = conditions.ToArray();
+        return checks.ToArray();
     }
 
     private void BindParameterDefaults()
@@ -218,10 +252,25 @@ internal sealed partial class Binder
         _fn.Body = new BoundBlock(statements[0], bound.ToArray());
     }
 
-    public void BindTest(TestDecl decl)
+    /// <summary>A test body; a <c>[Cases]</c> case first binds each parameter as a <c>let</c> of its value.</summary>
+    public void BindTest(TestDecl decl, Expr[]? values)
     {
         _fn!.InfersErrors = true;
-        _fn.Body = BindBlock(decl.Body);
+        if (values is null)
+        {
+            _fn.Body = BindBlock(decl.Body);
+            return;
+        }
+        var statements = new List<BoundStmt>();
+        for (var i = 0; i < decl.Params.Length; i++)
+        {
+            var p = decl.Params[i];
+            var type = ResolveType(p.Type);
+            var value = BindConverted(values[i], type);
+            statements.Add(new BoundLocalDecl(p, DeclareLocal(p.Name, type, LocalKind.Let), value));
+        }
+        statements.Add(BindBlock(decl.Body));
+        _fn.Body = new BoundBlock(decl.Body, statements.ToArray());
     }
 
     public BoundExpr BindFieldDefault(FieldSymbol field)

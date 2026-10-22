@@ -844,6 +844,17 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             {
                 var value = Expr(i.Value);
                 if (IsNever(value)) return new LNever(e.Syntax, e.Type);
+                // `x in a..=b` may compute its ends at run time (a pattern's ends are constants): the value is read first.
+                if (i.Pattern is BoundRangePattern { Start.Constant: null } or BoundRangePattern { End.Constant: null })
+                {
+                    var r = (BoundRangePattern)i.Pattern;
+                    if (value.Constant is null) value = Spill(value);
+                    var start = Expr(r.Start);
+                    if (!IsRepeatable(start)) start = Spill(start);
+                    var end = Expr(r.End);
+                    if (IsNever(start) || IsNever(end)) return new LNever(e.Syntax, e.Type);
+                    return Match(r with { Start = start, End = end }, value);
+                }
                 if (!IsRepeatable(value)) value = Spill(value);
                 return Match(i.Pattern, value);
             }

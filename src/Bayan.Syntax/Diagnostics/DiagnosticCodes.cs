@@ -81,6 +81,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NestedOptional = Error("BYN2024", "`{0}?` is already optional");
     public static readonly DiagnosticDescriptor VoidValue = Error("BYN2025", "`void` is not a value type");
     public static readonly DiagnosticDescriptor DeclarationAsBody = Error("BYN2026", "a declaration cannot be the whole body of a statement");
+    public static readonly DiagnosticDescriptor SameTypeShadowing = Warning("BYN2028", "`{0}` shadows an earlier `{0}` of the same type `{1}`");
     public static readonly DiagnosticDescriptor MissingInitializer = Error("BYN2101", "`{0} {1}` needs a value");
     public static readonly DiagnosticDescriptor UseBeforeAssign = Error("BYN2102", "`{0}` is used before it is assigned");
     public static readonly DiagnosticDescriptor OutNotAssigned = Error("BYN2103", "`out` parameter `{0}` is not assigned on every path");
@@ -139,6 +140,9 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ArgumentsSwapped = Error("BYN2307", "arguments `{0}` and `{1}` are in the wrong order for `{2}`");
     public static readonly DiagnosticDescriptor SpanParameterNeverWritten = Warning("BYN2310", "`{0}` is never written through; use `ReadOnlySpan<{1}>`");
     public static readonly DiagnosticDescriptor NeverReassignedVar = Warning("BYN2311", "`{0}` is never reassigned; declare it with `let`");
+    public static readonly DiagnosticDescriptor RequiresNotBool = Error("BYN2320", "a `requires` clause must be `bool`, got `{0}`");
+    public static readonly DiagnosticDescriptor RequiresViolated = Error("BYN2321", "`{0}` violates `requires {1}` of `{2}`");
+    public static readonly DiagnosticDescriptor RequiresNotHere = Error("BYN2322", "`requires` is not supported on {0} yet");
     public static readonly DiagnosticDescriptor MissingReturn = Error("BYN2401", "`{0}` must return `{1}` on every path");
     public static readonly DiagnosticDescriptor MissingReturnValue = Error("BYN2402", "this function returns `{0}`; `return` needs a value");
     public static readonly DiagnosticDescriptor ReturnValueInVoid = Error("BYN2403", "`{0}` returns nothing, but `return` has a value");
@@ -201,6 +205,8 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor OwningBindingMutatedInGuard = Error("BYN2791", "`{0}` is mutated in the guard of `switch (move …)`; a guard that fails gives the value back");
     public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`[ExitCode]` needs one integer constant from 1 to 255");
     public static readonly DiagnosticDescriptor AssertNotBool = Error("BYN2775", "`assert` needs a `bool`, got `{0}`");
+    public static readonly DiagnosticDescriptor CasesArity = Error("BYN2773", "`[Cases]` gives {0} values but the test takes {1} parameters");
+    public static readonly DiagnosticDescriptor CasesNotConstant = Error("BYN2774", "each `[Cases]` value must be a constant");
     public static readonly DiagnosticDescriptor ImplicitCopy = Error("BYN2780", "implicit copy of a unique value: {0}");
     public static readonly DiagnosticDescriptor UseAfterMove = Error("BYN2781", "`{0}` is used after it was moved");
     public static readonly DiagnosticDescriptor CannotMove = Error("BYN2782", "cannot move out of {0}");
@@ -218,4 +224,10 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ManifestUnknownField = Error("BYN3101", "`{0}` is not a field of `{1}`");
     public static readonly DiagnosticDescriptor ManifestInvalidValue = Error("BYN3102", "`{0}` must be {1}");
     public static readonly DiagnosticDescriptor ManifestMissingField = Error("BYN3103", "`package.byn` has no `{0}`");
+    // ── Grammar (naming patterns, spec §5.2) 5000–5999: errors 50xx, lints 51xx ────
+    public static readonly DiagnosticDescriptor ParticipleWithoutVerb = Error("BYN5001", "`{0}` is the `-ed` form of `{1}`, which does not exist as a `ref this` member");
+    public static readonly DiagnosticDescriptor StateMemberMutates = Error("BYN5002", "`{0}` reads as state but modifies `this`");
+    public static readonly DiagnosticDescriptor TryWrongReturn = Error("BYN5003", "`try{0}` must return `{1}?` or `bool`; it is derived from `{2}() fails`");
+    public static readonly DiagnosticDescriptor NounOnMutator = Warning("BYN5101", "`{0}` is a noun on a `ref this` member; name the action");
+    public static readonly DiagnosticDescriptor BoolWithoutPrefix = Warning("BYN5102", "`{0}` is a `bool` state; prefix with `is`, `has` or `can`");
 }

@@ -347,7 +347,7 @@ struct LexResult {
                     pos += 2;
                 }
                 tokenFlags |= triviaBefore;
-            } else if (b == '#' && tokens.length == 0 && (peek(1) == '!' || peek(1) == ':') && atLineStart()) {
+            } else if (b == '#' && tokens.length == 0 && (peek(1) == '!' || peek(1) == ':') && isAtLineStart()) {
                 // Script shebang and `#:` directives at the top of a file.
                 while (pos < source.bytes.length && source.bytes[pos] != '\n') advanceCodePoint(allowBidi: false);
                 tokenFlags |= triviaBefore;
@@ -357,7 +357,7 @@ struct LexResult {
         }
     }
 
-    bool atLineStart() => pos == 0 || source.bytes[pos - 1] == '\n';
+    bool isAtLineStart() => pos == 0 || source.bytes[pos - 1] == '\n';
 
     // ── Tokens ────────────────────────────────────────────────────────────────────
 

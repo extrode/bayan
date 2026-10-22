@@ -1,0 +1,27 @@
+error BYN1016: `[Cases]` is not allowed here
+
+  1 │ [Cases(1, 2)]
+    │ ^^^^^^^^^^^^^
+    │
+  help: put `[Cases(...)]` on a test that takes parameters
+
+error BYN1016: `[Cases]` is not allowed here
+
+  5 │     [Cases(1)]
+    │     ^^^^^^^^^^
+    │
+  help: put `[Cases(...)]` on a test that takes parameters
+
+error BYN1016: `i32 n, bool ok` is not allowed here
+
+  9 │ test "takes values" (i32 n, bool ok) {
+    │                      ^^^^^^^^^^^^^^ a test without `[Cases]` takes no parameters
+    │
+  help: add `[Cases(...)]` with one value per parameter for each case, or remove the parameters
+
+error BYN1016: `[Cases]` is not allowed here
+
+  14 │ [Cases(2)]
+     │ ^^^^^^^^^^
+     │
+  help: combine the cases into one `[Cases(...)]`

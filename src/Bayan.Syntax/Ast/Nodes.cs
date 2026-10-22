@@ -66,6 +66,9 @@ public sealed record FunctionDecl(
 
     /// <summary>Where a <c>ref this</c> would go: just after the <c>(</c>.</summary>
     public int ParamsStart { get; init; }
+
+    /// <summary>The <c>requires</c> clauses after the signature, checked on entry.</summary>
+    public Expr[] Requires { get; init; } = [];
 }
 
 public sealed record StructDecl(TextSpan Span, Modifiers Modifiers, Name Name, Decl[] Members) : Decl(Span)
@@ -112,8 +115,8 @@ public sealed record UnionDecl(TextSpan Span, Modifiers Modifiers, Name Name, Un
 /// <summary><c>type Name = T;</c> — a plain alias.</summary>
 public sealed record TypeAliasDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax Target) : Decl(Span);
 
-/// <summary><c>test "name" { … }</c>.</summary>
-public sealed record TestDecl(TextSpan Span, string Title, BlockStmt Body) : Decl(Span);
+/// <summary><c>test "name" { … }</c>, or <c>test "name" (T a, U b) { … }</c> run once per <c>[Cases]</c> value.</summary>
+public sealed record TestDecl(TextSpan Span, string Title, Param[] Params, BlockStmt Body) : Decl(Span);
 
 // ── Types ────────────────────────────────────────────────────────────────────────
 
@@ -286,6 +289,9 @@ public sealed record ConditionalExpr(TextSpan Span, Expr Condition, Expr WhenTru
 public sealed record CastExpr(TextSpan Span, TypeSyntax Type, Expr Operand) : Expr(Span);
 
 public sealed record IsExpr(TextSpan Span, Expr Value, Pattern Pattern) : Expr(Span);
+
+/// <summary><c>x in a..=b</c>: whether a value lies in a range.</summary>
+public sealed record InExpr(TextSpan Span, Expr Value, Expr Range) : Expr(Span);
 
 public sealed record SwitchArm(TextSpan Span, Pattern Pattern, Expr? Guard, Expr Value) : Node(Span);
 

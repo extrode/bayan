@@ -79,9 +79,40 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `bayan test -v` pass lines have no per-test timing (spec 005 R8 asked for one)
 - `bayan test -v` pending line is `  ◆ <module>: <name> (pending)`, not the planned `  pending <module>: <name>: <message>` (spec 005)
 - Diagnostics for loose files show absolute paths in `-->` (spec 005 R4: relative to the package root)
-- `laws-check`'s 600 s per-law limit is shorter than L001/L002 under load; both were verified by uncapped filter runs (spec 005)
 - On a tty, .NET console setup writes the keypad escape `\e[?1h\e=` (also after each child process), so `NO_COLOR` output is not escape-free; pre-existing on dev (005 review A1)
 - The ASCII / `TERM=dumb` progress line leaves `... <phase>` in scrollback; the guide's §6 "removed when the operation finishes" and "prints `... <phase>` once" disagree (005 review A5)
 - `src/Bayan.Cli/Progress.cs:60-67` `Columns` counts emoji outside U+1F300–1F64F/U+1F900–1F9FF (🚀 U+1F680–1F6FF, U+1FA70–1FAFF, BMP emoji such as ✅ U+2705) as 1 column, so a long progress line can still wrap (005 review loop 3).
 - `src/Bayan.Cli/Messages.cs:156`: the unselectable-rerun notice says "control characters" for bidi-only names and is always singular (005 review loop 3).
 - Mixed selectable/unselectable failures in one `bayan test` run have no test (005 review loop 2).
+- BYN2211 help text still suggests the replaced `if (p is { } value)` idiom (round 2 §null narrowing).
+- Null narrowing not applied in `switch` `when` guards, `?:`, or `do`/`while` conditions (round 2 §null).
+- `error set` alias of several sets is rejected as a `catch switch` arm pattern (`BinderCalls.cs:754,982` accept only `ErrorSetSymbol`) (round 2 §5).
+- Spec §7.4 lists BYN2232 for a fallible sequence without `for try`; r2-flow reuses BYN2221 with a `try` fix-it. Decide whether BYN2232 is still wanted (round 2 §4).
+- `if unlikely` emits no branch hint to C yet (round 2 §4).
+- BYN1008's help still suggests the paren form (round 2 §4).
+- CHANGELOG still says `requires` is reserved (round 2 §7).
+- A `requires Upper` clause right before an empty `{}` body could parse as a struct literal (round 2 §7).
+- `distinct type` is not parsed, so BYN2322 has only its descriptor and page for that case (round 2 §7).
+- Redundant checks on an already-narrowed value (`p ?? 0`, `p is null`) now raise BYN2210 or a pattern-type error instead of passing; consider a dedicated "already non-null" lint (round 2 §4 null).
+- With a narrowed local, `b is null` reports BYN2411 "`null` cannot match `T`" instead of an always-false note (round 2 §4 null).
+- BYN2117 labels a duplicate `ref this` "after other parameters" even when nothing is in between (round 2 §9).
+- In-place element access is top level only: `map[k].inner.f()` with `ref this` still gives BYN2106 (round 2 §9).
+- `getOrAdd` does not exist; `Map.slot` is the closest builtin (round 2 §9/§11 naming).
+- Interfaces declaring `ref this`, with implementations required to match, wait for spec 006 (round 2 §9).
+- `switch (move d)` on a narrowed optional types the subject as `T?` (so `case null:` is accepted as dead) while `switch (d)` types it `T` (BYN2411); re-wrap the narrowing in BindSwitchSubject as BindMove does (round 2 §4 null).
+- `move` parameters are never narrowed by `if (b is not null)` (`BinderExpressions.cs` IsNonNull); `b.length` still reports BYN2211 (round 2 §4 null).
+- `[Cases(1)]` on a test with no parameters gives BYN2773 with the awkward help "in order: `()`" (`Compilation.cs:289-291`) (round 2 §16).
+- Named tuple elements in a case `(a: 1, b: 2)` are accepted and the names ignored (`Compilation.cs:284`) (round 2 §16).
+- Test parameter modifiers (`ref`/`move`) and defaults parse but are ignored; reject them (round 2 §16).
+- `[Cases]` with no arguments on a test with parameters yields zero tests silently (round 2 §16).
+- A test whose single parameter is a tuple cannot take `[Cases]` (round 2 §16).
+- BYN2773 says "1 values"/"1 parameters" for counts of one (plan wording) (round 2 §16).
+- BYN5xxx: free functions and generic struct instances are not checked; BYN5102's fix-it renames only the declaration (round 2 §17).
+- BYN5003 formats `{1}` from the failing member's return type, so `void x() fails` yields "must return `void?` or `bool`" (round 2 §17).
+- `StrBuf.finish()` is a borrowed view like `view`; it does not consume the buffer (round 2 §12).
+- The `format()` fix-it, the `{x:debug}` help and `chars.take`/`graphemes` in BYN2201's help name APIs not implemented yet (round 2 §12–§13).
+- No `chars` iterator exists, so `chars.count` was not added (round 2 §12).
+- String patterns (`"/api/" + var rest`) are not implemented, so "stay legal" under BYN2209 is untested (round 2 §12).
+- BYN2209 on `a + b + c` rewrites one pair per fix pass (round 2 §12).
+- docs/laws 003/005/006 still say `length`/`add` (round 2 §11).
+- diag/renamed-member also shows a BYN2311 warning (round 2 §11).
