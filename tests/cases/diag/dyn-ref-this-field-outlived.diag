@@ -1,0 +1,6 @@
+error BYN3002: `b` does not live as long as `late`, which borrows it
+
+  22 │         late = b.pick();
+     │                ^^^^^^^^ `b` is freed at the end of its block
+     │
+  help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough

@@ -201,6 +201,13 @@ internal sealed class RegionAnalysis
                 return Borrow.None;
             case BoundConversion c:
             {
+                // A `dyn ref` to a span element points where the span points: it borrows what the span borrows.
+                if (c.Kind is ConversionKind.ToDynRef && c.Operand is BoundIndex { Target.Type: SpanType } element)
+                {
+                    var span = Expr(element.Target);
+                    Expr(element.Index);
+                    return span;
+                }
                 var operand = Expr(c.Operand);
                 return c.Kind is ConversionKind.ArrayToSpan or ConversionKind.ListToSpan or ConversionKind.ToDynRef ? Lend(c.Operand, operand) : operand;
             }
@@ -349,8 +356,8 @@ internal sealed class RegionAnalysis
             or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.StringInvalidUtf8At
             ? Borrow.None
             : args.Aggregate(receiver, (acc, a) => acc.Union(a));
-        // A method returning a span may lend its own fields' storage: the result borrows the receiver.
-        if (c.Receiver is not null && c.Type is SpanType) result = result.Union(Lend(c.Receiver, receiver));
+        // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
+        if (c.Receiver is not null && c.Type is SpanType or DynRefType) result = result.Union(Lend(c.Receiver, receiver));
         // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `string.from` return (Q29).
         if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow
                 or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom))
@@ -362,8 +369,8 @@ internal sealed class RegionAnalysis
     private Borrow Lend(BoundExpr source, Borrow sourceBorrow)
     {
         if (source is BoundStaticArray) return sourceBorrow;
-        // Inside a method returning a span, its own fields are the caller's data; the call site lends the receiver (Q75).
-        if (_fn.ReturnType is SpanType && IsThisRooted(source)) return sourceBorrow.Union(new Borrow([new Region(0, "the caller's data")], []));
+        // Inside a method returning a span or `dyn ref`, its own fields are the caller's data; the call site lends the receiver (Q75).
+        if (_fn.ReturnType is SpanType or DynRefType && IsThisRooted(source)) return sourceBorrow.Union(new Borrow([new Region(0, "the caller's data")], []));
         if (RootLocal(source) is { } root)
         {
             var depth = _depthOf.GetValueOrDefault(root, 0);
@@ -406,8 +413,9 @@ internal sealed class RegionAnalysis
         if (value.IsEmpty) return;
         _locals[local] = _locals.GetValueOrDefault(local, Borrow.None).Union(value);
         if (!_reporting) return;
+        // The loan starts once the value is stored: a mutating call that produces it (`b.pick()` on `ref this`) is not a conflict.
         foreach (var owner in value.Owners)
-            if (owner != local) _loans.Add(new Loan(owner, local, span.Start, 0));
+            if (owner != local) _loans.Add(new Loan(owner, local, span.End, 0));
         CheckOutlives(value, _depthOf.GetValueOrDefault(local, 0), local.Name, span);
     }
 
@@ -514,13 +522,13 @@ internal sealed class RegionAnalysis
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
 
-    /// <summary>The local whose storage <paramref name="e"/> names (<c>x</c>, <c>x.f</c>, <c>x[i]</c>, <c>x.item1</c>), or null.</summary>
+    /// <summary>The local whose storage <paramref name="e"/> names (<c>x</c>, <c>x.f</c>, <c>x[i]</c> of an array or list, <c>x.item1</c>), or null.</summary>
     private static LocalSymbol? RootLocal(BoundExpr e) => e switch
     {
         BoundLocal l => l.Local,
         BoundField f => RootLocal(f.Receiver),
         BoundTupleElement t => RootLocal(t.Receiver),
-        BoundIndex i when i.Target.Type is ArrayType => RootLocal(i.Target),
+        BoundIndex i when i.Target.Type is ArrayType or ListType => RootLocal(i.Target),
         _ => null,
     };
 
