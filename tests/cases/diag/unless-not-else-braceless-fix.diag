@@ -1,0 +1,22 @@
+error BYN1007: `unless` with a negated condition is a double negative
+
+  3 │     unless (!a) print("s"); else print("t");
+    │     ^^^^^^^^^^^ `unless` already negates
+    │
+  help: use `if` with the condition as written
+
+error BYN1018: the body of `unless` must be a block
+
+  3 │     unless (!a) print("s"); else print("t");
+    │                 ^^^^^^^^^^ a single statement
+    │
+  help: wrap the statement in `{ }`
+    │ 3 │     unless (!a) { print("s"); } else print("t");
+    │   │                 +++++++++++++++
+
+error BYN1006: `unless` cannot have an `else` branch
+
+  3 │     unless (!a) print("s"); else print("t");
+    │                             ^^^^ `else` after `unless`
+    │
+  help: use `if` with the opposite condition, so both branches read positively

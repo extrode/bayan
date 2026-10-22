@@ -1,0 +1,4 @@
+void main() {
+    bool a = true;
+    unless (!a) print("s"); else print("t");
+}

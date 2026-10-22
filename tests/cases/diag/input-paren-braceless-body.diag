@@ -159,6 +159,8 @@ error BYN1018: the body of `unless` must be a block
      │                 ^^^^^^^^^^ a single statement
      │
   help: wrap the statement in `{ }`
+     │ 16 │     unless (!x) { print("f"); }
+     │    │                 +++++++++++++++
 
 error BYN1006: `unless` cannot have an `else` branch
 
