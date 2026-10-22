@@ -1,0 +1,11 @@
+// Checked on the interface, with no conformer.
+interface IShape {
+    i64 area();
+    i64 big() {
+        if (area() > 3) {
+            return 1;
+        }
+    }
+}
+
+print("x");

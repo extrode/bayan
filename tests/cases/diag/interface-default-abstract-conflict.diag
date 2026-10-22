@@ -1,0 +1,6 @@
+error BYN2802: `S.area` is `IA.area` but `IB` requires `i64 area()`
+
+  9 │ struct S : IA, IB {
+    │                ^^ `area` has a default in `IA`
+    │
+  help: add `i64 area()` to `S` to choose one

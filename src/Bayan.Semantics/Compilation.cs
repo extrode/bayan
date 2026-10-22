@@ -799,7 +799,10 @@ public sealed partial class Compilation
                 Report(DiagnosticCodes.DuplicateConformance, file.Source, b.Span, [s.Name, i.DisplayName], label: "already listed",
                     help: $"remove the second `{i.DisplayName}`");
             else
+            {
                 s.Bases.Add(i);
+                _baseSpans[(s, i)] = b.Span;
+            }
         }
         foreach (var member in s.Decl.Members)
         {
@@ -854,6 +857,7 @@ public sealed partial class Compilation
                 }
                 case TypeAliasDecl a when s.Bases.Any(i => i.AssociatedTypes.Any(t => t.Name == a.Name.Text)):
                     Naming.CheckType(this, file.Source, a.Name);
+                    // Resolved again if an earlier use did so quietly (AssociatedBinding), now reporting.
                     if (Unique(a.Name)) _associatedBindings[(s, a.Name.Text)] = types.Resolve(a.Target);
                     break;
                 case ConstructorDecl c:
@@ -1126,6 +1130,8 @@ public sealed partial class Compilation
                     RegionAnalysis.Analyze(this, fn);
                     SpanParameterLint.Analyze(this, fn);
                 }
+                // A default is analysed on its template, so it is checked with no conformer; its clones repeat nothing it reports.
+                else if (fn is { Body: not null, Interface: not null, IsAbstract: false }) AnalyzeInstance(fn);
             }
         if (!Diagnostics.HasErrors && _instantiationErrors.FirstOrDefault() is { } internalError)
             throw new InvalidOperationException(

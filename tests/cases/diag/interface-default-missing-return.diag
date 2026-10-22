@@ -1,0 +1,6 @@
+error BYN2401: `big` must return `i64` on every path
+
+  8 │     }
+    │     ^
+    │
+  help: add a `return` (or `panic(…)`) on the paths that reach the end
