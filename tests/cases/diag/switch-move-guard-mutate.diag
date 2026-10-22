@@ -1,71 +1,78 @@
-error BYN2791: `x` is mutated in the guard of `switch (move …)`; a guard that fails gives the value
+error BYN2791: `x` is mutated in the guard of `switch move …`; a guard that fails gives the value
 back
 
-  30 │         case .Full(var x) when x.grow() > 5:
+  30 │         case .full(var x) when x.grow() > 5:
      │                                ^ `grow` modifies it
      │
   help: read it in the guard and change it in the arm's body
 
-error BYN2791: `x` is mutated in the guard of `switch (move …)`; a guard that fails gives the value
+error BYN2791: `x` is mutated in the guard of `switch move …`; a guard that fails gives the value
 back
 
-  32 │         case .Full(var x) when x.items.removeLast() > 0:
+  32 │         case .full(var x) when x.items.removeLast() > 0:
      │                                ^^^^^^^ `removeLast` modifies it
      │
   help: read it in the guard and change it in the arm's body
 
-error BYN2791: `x` is mutated in the guard of `switch (move …)`; a guard that fails gives the value
+error BYN2791: `x` is mutated in the guard of `switch move …`; a guard that fails gives the value
 back
 
-  34 │         case .Full(var x) when x.items.take().length > 0:
+  34 │         case .full(var x) when x.items.take().length > 0:
      │                                ^^^^^^^ `take` modifies it
      │
   help: read it in the guard and change it in the arm's body
 
-error BYN2791: `x` is mutated in the guard of `switch (move …)`; a guard that fails gives the value
+error BYN2791: `x` is mutated in the guard of `switch move …`; a guard that fails gives the value
 back
 
-  36 │         case .Full(var x) when bump(ref x.items):
+  36 │         case .full(var x) when bump(ref x.items):
      │                                         ^^^^^^^ it is passed as `ref`
      │
   help: read it in the guard and change it in the arm's body
 
-error BYN2791: `x` is mutated in the guard of `switch (move …)`; a guard that fails gives the value
+error BYN2791: `x` is mutated in the guard of `switch move …`; a guard that fails gives the value
 back
 
-  38 │         case .Full(var x) when fill(out x.items):
+  38 │         case .full(var x) when fill(out x.items):
      │                                         ^^^^^^^ it is passed as `out`
      │
   help: read it in the guard and change it in the arm's body
 
-error BYN2791: `x` is mutated in the guard of `switch (move …)`; a guard that fails gives the value
+error BYN2791: `x` is mutated in the guard of `switch move …`; a guard that fails gives the value
 back
 
-  40 │         case .Full(let x) when keep(move x):
+  40 │         case .full(let x) when keep(move x):
      │                                     ^^^^^^ it is moved
      │
   help: read it in the guard and change it in the arm's body
 
-error BYN2791: `y` is mutated in the guard of `switch (move …)`; a guard that fails gives the value
+error BYN2791: `y` is mutated in the guard of `switch move …`; a guard that fails gives the value
 back
 
-  47 │         .Full(var y) when y.grow() > 5 => 1,
+  47 │         .full(var y) when y.grow() > 5 => 1,
      │                           ^ `grow` modifies it
      │
   help: read it in the guard and change it in the arm's body
 
-error BYN2791: `y` is mutated in the guard of `switch (move …)`; a guard that fails gives the value
+error BYN2791: `y` is mutated in the guard of `switch move …`; a guard that fails gives the value
 back
 
-  48 │         .Full(var y) when bump(ref y.items) => 2,
+  48 │         .full(var y) when bump(ref y.items) => 2,
      │                                    ^^^^^^^ it is passed as `ref`
      │
   help: read it in the guard and change it in the arm's body
 
-error BYN2791: `y` is mutated in the guard of `switch (move …)`; a guard that fails gives the value
+error BYN2791: `y` is mutated in the guard of `switch move …`; a guard that fails gives the value
 back
 
-  49 │         .Full(let y) when keep(move y) => 3,
+  49 │         .full(let y) when keep(move y) => 3,
      │                                ^^^^^^ it is moved
      │
   help: read it in the guard and change it in the arm's body
+
+warning BYN2712: `_` hides future cases of `Slot`, declared in this package
+
+  51 │         _ => 0,
+     │         ^ matches every case added later
+     │
+  help: list the cases instead: .full, .empty

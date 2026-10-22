@@ -1,9 +1,9 @@
-union Shape { Circle(f32 r), None }
+union Shape { circle(f32 r), none }
 
 void main() {
-    let s = Shape.None();
-    Shape t = .None;
-    if (t is .None()) {
+    let s = Shape.none();
+    Shape t = .none;
+    if t is .none() {
         print("none");
     }
 }

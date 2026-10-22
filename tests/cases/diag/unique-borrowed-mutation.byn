@@ -1,17 +1,17 @@
 // A loop or pattern binding of a unique type borrows from its subject, even with `var` (BYN2783).
 union Slot {
-    Empty,
-    Full(List<i64> items),
+    empty,
+    full(List<i64> items),
 }
 
 void main() {
     var lists = List<List<i64>>();
-    lists.add(List<i64>());
-    for (var xs in lists) xs.add(1);
-    for (let xs in lists) {
+    lists.append(List<i64>());
+    for xs in lists { xs.append(1); }
+    for xs in lists {
         let stolen = move xs;
     }
-    let slot = Slot.Full(List<i64>());
-    if (slot is .Full(var items)) items.add(2);
-    for (let xs in lists) print($"{xs.length}");
+    let slot = Slot.full(List<i64>());
+    if slot is .full(var items) { items.append(2); }
+    for xs in lists { print($"{xs.length}"); }
 }

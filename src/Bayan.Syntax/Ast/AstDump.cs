@@ -61,12 +61,12 @@ public static class AstDump
         private static string TypeParams(Name[] names) =>
             names.Length == 0 ? "" : "<" + string.Join(", ", names.Select(n => n.Text)) + ">";
 
-        private static string Params(Param[] parameters)
+        private static string Params(Param[] parameters, bool refThis = false)
         {
-            var sb = new StringBuilder("(");
+            var sb = new StringBuilder(refThis ? "(ref this" : "(");
             for (var i = 0; i < parameters.Length; i++)
             {
-                if (i > 0) sb.Append(", ");
+                if (i > 0 || refThis) sb.Append(", ");
                 var p = parameters[i];
                 if (p.Modifier != ParamModifier.None) sb.Append(p.Modifier.ToString().ToLowerInvariant()).Append(' ');
                 Type(sb, p.Type);
@@ -103,9 +103,10 @@ public static class AstDump
                     break;
                 case FunctionDecl d:
                     {
-                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params)} -> {Type(d.ReturnType)}";
+                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params, d.RefThis is not null)} -> {Type(d.ReturnType)}";
                         if (d.Fails is not null)
                             head += d.Fails.Errors.Length == 0 ? " fails" : " fails " + string.Join(", ", d.Fails.Errors.Select(Type));
+                        foreach (var r in d.Requires) head += " requires " + AstDump.Expr(r);
                         if (d.ExpressionBody is not null) head += " => " + AstDump.Expr(d.ExpressionBody);
                         Line(depth, head);
                         if (d.Body is not null) Stmt(depth + 1, d.Body);
@@ -142,13 +143,17 @@ public static class AstDump
                     Line(depth, $"Union {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}");
                     foreach (var v in d.Variants)
                         Line(depth + 1, "Variant " + v.Name.Text + (v.Fields.Length == 0 ? "" : "(" + string.Join(", ", v.Fields.Select(f => Type(f.Type) + " " + f.Name.Text)) + ")")
+                            + (v.Value is null ? "" : " = " + AstDump.Expr(v.Value))
                             + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
                     break;
                 case TypeAliasDecl d:
                     Line(depth, $"TypeAlias {Mods(d.Modifiers)}{d.Name.Text} = {Type(d.Target)}");
                     break;
+                case ErrorSetDecl d:
+                    Line(depth, $"ErrorSet {Mods(d.Modifiers)}{d.Name.Text} = {string.Join(", ", d.Members.Select(Type))}");
+                    break;
                 case TestDecl d:
-                    Line(depth, "Test " + TokenDump.Escape(d.Title));
+                    Line(depth, "Test " + TokenDump.Escape(d.Title) + (d.Params.Length == 0 ? "" : " " + Params(d.Params)));
                     Stmt(depth + 1, d.Body);
                     break;
                 default:
@@ -192,7 +197,7 @@ public static class AstDump
                     Line(depth, "Continue" + (s.Label is null ? "" : " " + s.Label.Text));
                     break;
                 case IfStmt s:
-                    Line(depth, "If " + AstDump.Expr(s.Condition));
+                    Line(depth, "If " + s.Likelihood switch { Likelihood.Unlikely => "unlikely ", Likelihood.Never => "never ", _ => "" } + AstDump.Expr(s.Condition));
                     Stmt(depth + 1, s.Then);
                     if (s.Else is not null)
                     {
@@ -205,11 +210,15 @@ public static class AstDump
                     Stmt(depth + 1, s.Body);
                     break;
                 case GuardedStmt s:
-                    Line(depth, (s.Unless ? "Guarded unless " : "Guarded if ") + AstDump.Expr(s.Condition));
+                    Line(depth, (s.Unless ? "Guarded unless " : s.Unlikely ? "Guarded if unlikely " : "Guarded if ") + AstDump.Expr(s.Condition));
                     Stmt(depth + 1, s.Statement);
                     break;
                 case WhileStmt s:
                     Line(depth, "While " + AstDump.Expr(s.Condition));
+                    Stmt(depth + 1, s.Body);
+                    break;
+                case WhileLetStmt s:
+                    Line(depth, $"WhileLet {s.Variable.Text} = " + AstDump.Expr(s.Value));
                     Stmt(depth + 1, s.Body);
                     break;
                 case DoWhileStmt s:
@@ -217,7 +226,8 @@ public static class AstDump
                     Stmt(depth + 1, s.Body);
                     break;
                 case ForStmt s:
-                    Line(depth, $"For {s.Kind} {s.Variable.Text}" + (s.Type is null ? "" : ": " + Type(s.Type)) + " in " + AstDump.Expr(s.Iterable));
+                    Line(depth, (s.Try ? "For try " : "For ") + $"{s.Kind} "
+                        + (s.Names.Length > 0 ? "(" + string.Join(", ", s.Names.Select(n => n.Text)) + ")" : s.Variable.Text) + (s.Type is null ? "" : ": " + Type(s.Type)) + " in " + AstDump.Expr(s.Iterable));
                     Stmt(depth + 1, s.Body);
                     break;
                 case LabeledStmt s:
@@ -236,12 +246,12 @@ public static class AstDump
                     }
                     break;
                 case DeferStmt s:
-                    Line(depth, "Defer");
+                    Line(depth, "Defer" + s.Kind switch { DeferKind.Failing => " failing", DeferKind.Panicking => " panicking", _ => "" }
+                        + (s.Binding is null ? "" : $" ({s.Binding.Text})"));
                     Stmt(depth + 1, s.Body);
                     break;
-                case ErrdeferStmt s:
-                    Line(depth, "Errdefer" + (s.Error is null ? "" : $" ({s.Error.Text})"));
-                    Stmt(depth + 1, s.Body);
+                case AssertStmt s:
+                    Line(depth, "Assert " + AstDump.Expr(s.Condition));
                     break;
                 case ContextStmt s:
                     Line(depth, "Context " + string.Join(", ", s.Values.Select(v => v.Name.Text + ": " + AstDump.Expr(v.Value))));
@@ -371,6 +381,9 @@ public static class AstDump
                     break;
                 case DiscardPattern:
                     sb.Append('_');
+                    break;
+                case DeclarationPattern p:
+                    sb.Append("(decl ").Append(Type(p.Type)).Append(' ').Append(p.Name.Text).Append(')');
                     break;
                 case NotPattern p:
                     sb.Append("(not ");
@@ -525,6 +538,9 @@ public static class AstDump
                 case RangeExpr e:
                     Sexp(sb, e.Inclusive ? "..=" : "..", e.Start, e.End);
                     break;
+                case InExpr e:
+                    Sexp(sb, "in", e.Value, e.Range);
+                    break;
                 case ConditionalExpr e:
                     Sexp(sb, "?", e.Condition, e.WhenTrue, e.WhenFalse);
                     break;
@@ -617,8 +633,11 @@ public static class AstDump
                 case SpreadExpr e:
                     Sexp(sb, "spread", e.Operand);
                     break;
+                case MapEntryExpr e:
+                    Sexp(sb, "entry", e.Key, e.Value);
+                    break;
                 case CollectionExpr e:
-                    Sexp(sb, "list", e.Elements);
+                    Sexp(sb, e.Elements.Length > 0 && e.Elements.All(x => x is MapEntryExpr) ? "map" : "list", e.Elements);
                     break;
                 case TupleExpr e:
                     sb.Append("(tuple");
@@ -645,6 +664,9 @@ public static class AstDump
                     sb.Append("(stackalloc ").Append(Type(e.Element)).Append(' ');
                     Expr(sb, e.Count);
                     sb.Append(')');
+                    break;
+                case CaughtErrorExpr:
+                    sb.Append("(caught)");
                     break;
                 case ErrorExpr:
                     sb.Append("<error>");

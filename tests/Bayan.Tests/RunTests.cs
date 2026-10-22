@@ -12,7 +12,9 @@ namespace Bayan.Tests;
 /// always; <c>*.stderr</c> and <c>*.exitcode</c> only when non-empty / non-zero. A first line
 /// <c>// mode: fast</c> (or <c>debug</c>) picks the build mode; the default is <c>safe</c>. An optional
 /// <c>*.args</c> holds one command-line argument per line, and an optional <c>*.stdin</c> the bytes fed to standard input (otherwise it is empty). A line <c>// os: unix</c> among the first two skips the case on Windows. Each case runs in its own empty directory
-/// under <c>tmp/run/</c>, so it may write files.
+/// under <c>tmp/run/</c>, so it may write files. A <c>*.test.byn</c> case is run by <c>bayan test -v</c> instead, with seconds masked as <c>Ts</c>.
+/// A <c>*.pending</c> file marks a case expected to fail until a feature lands (it names the step): the output must still
+/// differ, so the case fails loudly once it matches, and <c>BAYAN_UPDATE=1</c> leaves its expected files alone.
 /// </summary>
 public sealed class RunTests
 {
@@ -50,16 +52,22 @@ public sealed class RunTests
         var outcome = Get(name);
         if (outcome.BuildError is { } error) Assert.Fail($"{name} did not build:\n{error}");
         var input = Path.Combine(Golden.CasesRoot, name);
+        var pending = File.Exists(Path.ChangeExtension(input, ".pending"));
         var failures = new List<string>();
         void Check(string extension, string actual, bool optional)
         {
             var expected = Path.ChangeExtension(input, extension);
             if (optional && actual.Length == 0 && !File.Exists(expected)) return;
-            if (Golden.Compare(expected, actual, Golden.UpdateMode).Failure is { } f) failures.Add(f);
+            if (Golden.Compare(expected, actual, Golden.UpdateMode && !pending).Failure is { } f) failures.Add(f);
         }
         Check(".stdout", outcome.Stdout, optional: false);
         Check(".stderr", outcome.Stderr, optional: true);
         Check(".exitcode", outcome.ExitCode == 0 ? "" : outcome.ExitCode + "\n", optional: true);
+        if (pending)
+        {
+            if (failures.Count == 0) Assert.Fail($"{name} now matches its expected output; delete its .pending file");
+            return;
+        }
         if (failures.Count > 0) Assert.Fail(string.Join("\n", failures));
     }
 
@@ -72,6 +80,7 @@ public sealed class RunTests
         var mode = BuildMode.Safe;
         if (firstLine.StartsWith("// mode: ", StringComparison.Ordinal))
             Toolchain.TryParseMode(firstLine["// mode: ".Length..].Trim(), out mode);
+        if (name.EndsWith(".test.byn", StringComparison.Ordinal)) return ExecuteTests(name, input);
         var c = Compilation.Create([source], dir);
         if (c.Diagnostics.HasErrors) return new Outcome("", "", 0, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
         var build = Toolchain.Build(CliApp.EmitC(c, mode), mode);
@@ -109,5 +118,19 @@ public sealed class RunTests
         var code = p.ExitCode;
         if (OperatingSystem.IsWindows() && code == 3) code = 134;
         return new Outcome(stdout.Result, stderr.Result, code, null);
+    }
+
+    /// <summary>The test file alone in its work directory, so <c>bayan test</c> sees no other case.</summary>
+    private static Outcome ExecuteTests(string name, string input)
+    {
+        var work = Path.Combine(Golden.RepoRoot, "tmp", "run", Path.ChangeExtension(name, null).Replace('/', '_').Replace('\\', '_'));
+        if (Directory.Exists(work)) Directory.Delete(work, recursive: true);
+        Directory.CreateDirectory(work);
+        File.Copy(input, Path.Combine(work, Path.GetFileName(input)));
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+        var code = CliApp.Run(["test", "-v", work], stdout, stderr);
+        var masked = System.Text.RegularExpressions.Regex.Replace(stdout.ToString(), @"\d+\.\d\ds$", "Ts", System.Text.RegularExpressions.RegexOptions.Multiline);
+        return new Outcome(masked.ReplaceLineEndings("\n"), stderr.ToString(), code, null);
     }
 }

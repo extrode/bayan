@@ -31,7 +31,8 @@ CompilationUnit
           Expr (call print "pos")
       Else
         If (< a 0)
-          Expr (call print "neg")
+          Block
+            Expr (call print "neg")
         Else
           Block
             Expr (call print "zero")
@@ -39,7 +40,8 @@ CompilationUnit
         Block
           Expr (call retry)
       While (> b 0)
-        Dec b
+        Block
+          Dec b
       DoWhile (< b 10)
         Block
           Inc b
@@ -47,10 +49,11 @@ CompilationUnit
         Block
           Assign total += i
       For Let x in xs
-        Expr (call print x)
-      For Var i: i64 in (..= 0 n)
         Block
-      For Var y in ys
+          Expr (call print x)
+      For Let i: i64 in (..= 0 n)
+        Block
+      For Let y in ys
         Block
       Label outer
         For Let row in grid
@@ -62,9 +65,9 @@ CompilationUnit
                 Continue outer
       Defer
         Expr (call close f)
-      Errdefer
+      Defer failing
         Expr (call rollback)
-      Errdefer (e)
+      Defer failing (e)
         Block
           Expr (call log e)
       Context allocator: arena

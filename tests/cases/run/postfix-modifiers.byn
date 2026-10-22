@@ -1,7 +1,7 @@
 struct Counter {
     i64 calls = 0;
 
-    i64 touch() {
+    i64 touch(ref this) {
         calls += 1;
         return calls;
     }
@@ -19,7 +19,7 @@ print($"run {counter.touch()}") if true;
 print($"calls {counter.calls}");
 check(-1);
 check(2);
-for (let i in 0..10) {
+for i in 0..10 {
     break if i == 3;
     print($"i {i}");
 }

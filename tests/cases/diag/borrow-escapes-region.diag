@@ -1,7 +1,7 @@
 error BYN3002: `sb` does not live as long as `view`, which borrows it
 
-  7 │         view = sb.asString();
-    │                ^^^^^^^^^^^^^ `sb` is freed at the end of its block
+  7 │         view = sb.finish();
+    │                ^^^^^^^^^^^ `sb` is freed at the end of its block
     │
   help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough
 

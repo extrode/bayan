@@ -1,4 +1,4 @@
 union Expr {
-    Number(i64 value),
-    Negate(Expr operand),
+    number(i64 value),
+    negate(Expr operand),
 }

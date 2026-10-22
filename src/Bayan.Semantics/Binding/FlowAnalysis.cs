@@ -118,6 +118,8 @@ internal sealed class FlowAnalysis
                 return state;
             case BoundExprStmt e:
                 return Expr(e.Expr, state);
+            case BoundAssert a:
+                return Expr(a.Condition, state);
             case BoundAssign a:
                 if (a.Op is null && a.Target is BoundLocal { Local: var l })
                 {
@@ -144,6 +146,7 @@ internal sealed class FlowAnalysis
                 state = Expr(i.Condition, state);
                 var condition = i.Condition.Constant?.Value as bool?;
                 var then = Statement(i.Then, condition == false ? State.Unreachable() : state.Clone());
+                if (i.Never) then = State.Unreachable();
                 var otherwise = condition == true ? State.Unreachable() : i.Else is null ? state.Clone() : Statement(i.Else, state.Clone());
                 return then.Join(otherwise);
             }
@@ -185,6 +188,9 @@ internal sealed class FlowAnalysis
                 return state;
             case BoundErrdefer e:
                 Statement(e.Body, state.Clone());
+                return state;
+            case BoundPanicDefer p:
+                Statement(p.Body, state.Clone());
                 return state;
             case BoundContext c:
                 return Statement(c.Body, Expr(c.Allocator, state));
@@ -286,6 +292,8 @@ internal sealed class FlowAnalysis
                 return Statement(j.Jump, state);
             case BoundBlockExpr b:
                 return Block(b.Block.Statements, state);
+            case BoundIs { Pattern: BoundRangePattern r } i:
+                return Expr(r.End, Expr(r.Start, Expr(i.Value, state)));
             case BoundIs i:
                 return Expr(i.Value, state);
             default:

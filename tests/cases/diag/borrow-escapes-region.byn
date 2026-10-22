@@ -4,7 +4,7 @@ void main() {
         let bytes = stackalloc u8[16];
         var sb = StrBuf(bytes);
         sb.append("scratch");
-        view = sb.asString();
+        view = sb.finish();
     }
     print(view);
     var kept = "";

@@ -1,7 +1,7 @@
 error BYN2783: `xs` borrows from what it was bound to and cannot be changed or moved
 
-  10 │     for (var xs in lists) xs.add(1);
-     │                           ^^ `add` modifies it
+  10 │     for xs in lists { xs.append(1); }
+     │                       ^^ `append` modifies it
      │
   help: change the subject itself, or work on a `.copy(to: alloc)`; a loop or pattern variable of a
         unique type borrows from its subject
@@ -15,8 +15,8 @@ error BYN2783: `xs` borrows from what it was bound to and cannot be changed or m
 
 error BYN2783: `items` borrows from what it was bound to and cannot be changed or moved
 
-  15 │     if (slot is .Full(var items)) items.add(2);
-     │                                   ^^^^^ `add` modifies it
+  15 │     if slot is .full(var items) { items.append(2); }
+     │                                   ^^^^^ `append` modifies it
      │
   help: change the subject itself, or work on a `.copy(to: alloc)`; a loop or pattern variable of a
         unique type borrows from its subject

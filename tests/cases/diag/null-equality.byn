@@ -1,0 +1,12 @@
+void main() {
+    string? name = null;
+    if name == null {
+        print("none");
+    }
+    if name != null {
+        print("some");
+    }
+    if null == name {
+        print("none");
+    }
+}

@@ -1,8 +1,8 @@
 // mode: debug
-// A `switch (move x)` binding is a fresh owner on every iteration: moving it again in the next one is legal.
+// A `switch move x` binding is a fresh owner on every iteration: moving it again in the next one is legal.
 union Slot {
-    Empty,
-    Full(List<i64> items),
+    empty,
+    full(List<i64> items),
 }
 
 void consume(move List<i64> xs) {
@@ -10,23 +10,23 @@ void consume(move List<i64> xs) {
 }
 
 void main() {
-    for (let i in 0..3) {
+    for i in 0..3 {
         var xs = List<i64>();
-        for (let k in 0..i) xs.add(k);
-        let s = Slot.Full(move xs);
-        switch (move s) {
-            case .Full(let items):
+        for k in 0..i { xs.append(k); }
+        let s = Slot.full(move xs);
+        switch move s {
+            case .full(let items):
                 consume(move items);
             default:
                 print("empty");
         }
     }
     var j = 0;
-    while (j < 2) {
-        let s = Slot.Full(List<i64>());
+    while j < 2 {
+        let s = Slot.full(List<i64>());
         let n = (move s) switch {
-            .Full(let items) => items.length,
-            .Empty => -1,
+            .full(let items) => items.length,
+            .empty => -1,
         };
         print($"{n}");
         j += 1;

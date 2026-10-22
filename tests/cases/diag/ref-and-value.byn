@@ -1,5 +1,5 @@
 void grow(ref List<i64> items, ReadOnlySpan<i64> from) {
-    items.add(from.length);
+    items.append(from.length);
 }
 
 void main() {

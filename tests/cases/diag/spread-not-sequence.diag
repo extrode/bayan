@@ -1,0 +1,13 @@
+error BYN2235: `..n` spreads a `i32`, which is not a sequence
+
+  2 │ List<i32> xs = [..n, 1];
+    │                 ^^^ not a `List`, `Span` or fixed array
+    │
+  help: drop the `..` to add `n` as one element
+
+error BYN2235: `..stock` spreads a `Map<string, i32>`, which is not a sequence
+
+  4 │ List<i32> ys = [1, ..stock];
+    │                    ^^^^^^^ not a `List`, `Span` or fixed array
+    │
+  help: spread a `List`, `Span` or fixed array; a single value goes in without `..`

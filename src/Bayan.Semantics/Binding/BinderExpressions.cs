@@ -14,9 +14,10 @@ internal sealed partial class Binder
     // ── Entry points ─────────────────────────────────────────────────────────────
 
     /// <summary>Binds a value. <paramref name="expected"/> only guides literals and target-typed forms; no conversion is applied.</summary>
-    private BoundExpr BindExpr(Expr e, TypeSymbol? expected = null)
+    private BoundExpr BindExpr(Expr e, TypeSymbol? expected = null) => AsValue(BindExprOrType(e, expected), e);
+
+    private BoundExpr AsValue(BoundExpr bound, Expr e)
     {
-        var bound = BindExprOrType(e, expected);
         switch (bound)
         {
             case BoundTypeRef t:
@@ -28,6 +29,13 @@ internal sealed partial class Binder
             case BoundVariantGroup g:
                 Report(DiagnosticCodes.VariantNeedsPayload, e.Span, [g.Variant.Name],
                     help: $"pass it: `{g.Variant.Union.Name}.{g.Variant.Name}({string.Join(", ", g.Variant.Fields.Select(f => f.Name))})`");
+                return new BoundErrorExpr(e);
+            case BoundMethodGroup g:
+                Report(DiagnosticCodes.NotAValue, e.Span, [g.Function.Name, g.Function.Kind == FunctionKind.Function ? "function" : "method"],
+                    help: $"call it: `{g.Function.Name}({(g.Function.Parameters.Count == 0 ? "" : "…")})`");
+                return new BoundErrorExpr(e);
+            case BoundBuiltinGroup g:
+                Report(DiagnosticCodes.NotAValue, e.Span, [g.Name, "method"], help: $"call it: `{g.Name}()`");
                 return new BoundErrorExpr(e);
             default:
                 return bound;
@@ -245,6 +253,8 @@ internal sealed partial class Binder
                 var pattern = BindPattern(i.Pattern, value.Type);
                 return new BoundIs(i, value, pattern);
             }
+            case InExpr i:
+                return BindIn(i);
             case SwitchExpr s:
                 return BindSwitchExpr(s, expected);
             case TryExpr t:
@@ -253,6 +263,8 @@ internal sealed partial class Binder
                 return BindMove(m, BindExpr(m.Operand, expected));
             case CatchExpr c:
                 return BindCatch(c, expected);
+            case CaughtErrorExpr ce:
+                return _caught is { } caught ? new BoundLocal(ce, caught) : new BoundErrorExpr(ce);
             case JumpExpr j:
                 return new BoundJump(j, BindStatement(j.Jump));
             case BlockExpr b:
@@ -270,7 +282,7 @@ internal sealed partial class Binder
             case StackallocExpr s:
                 return BindStackalloc(s);
             case SpreadExpr s:
-                Report(DiagnosticCodes.Unsupported, s.Span, ["spreads (`..xs`)"]);
+                Report(DiagnosticCodes.Unsupported, s.Span, ["spreads (`..xs`) outside a collection literal"]);
                 return new BoundErrorExpr(s);
             case ErrorExpr:
                 return new BoundErrorExpr(e);
@@ -365,7 +377,7 @@ internal sealed partial class Binder
         return Literal(l, type, (Int128)value);
     }
 
-    private static BigInteger ParseInteger(string text)
+    internal static BigInteger ParseInteger(string text)
     {
         text = text.Replace("_", "");
         if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
@@ -405,6 +417,8 @@ internal sealed partial class Binder
         {
             if (local.Kind == LocalKind.Const && local.Constant is { } c)
                 return new BoundLiteral(n, local.Type, c) { Constant = c };
+            if (IsNonNull(local))
+                return new BoundConversion(n, new BoundLocal(n, local), ((OptionalType)local.Type).Inner, ConversionKind.Narrow);
             return new BoundLocal(n, local);
         }
         if (_struct is not null && LookupMember(_struct, name) is { } member)
@@ -416,7 +430,7 @@ internal sealed partial class Binder
         if (_file.Imports.TryGetValue(name, out var module)) return new BoundModuleRef(n, module);
         if (_c.Builtins.Find(name) is { } builtin) return new BoundMethodGroup(n, null, builtin);
         if (PrimitiveType.ByName.TryGetValue(name, out var primitive)) return new BoundTypeRef(n, primitive);
-        if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "Utf8Error" or "ProcessResult")
+        if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "Utf8Error" or "ProcessResult" or "Panic")
             return new BoundTypeRef(n, ResolveType(new NamedType(n.Span, [n.Name], [])));
         if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
         ReportUndefined(n.Name);
@@ -437,7 +451,7 @@ internal sealed partial class Binder
         candidates.AddRange(Module.Constants.Keys);
         candidates.AddRange(Module.Types.Keys);
         candidates.AddRange(_file.Imports.Keys);
-        candidates.AddRange(["print", "panic", "todo", "assert", "Io"]);
+        candidates.AddRange(["print", "panic", "todo", "Io"]);
         var suggestion = Suggest(name.Text, candidates);
         Report(DiagnosticCodes.UndefinedName, name.Span, [name.Text],
             help: suggestion is null ? null : $"did you mean `{suggestion}`?",
@@ -690,6 +704,7 @@ internal sealed partial class Binder
             return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
         if (BuiltinMembers.HasMethod(target.Type, name))
             return new BoundBuiltinGroup(syntax, target, name);
+        if (ReportRenamed(target.Type, member)) return new BoundErrorExpr(syntax);
         if (name == "take")
         {
             Report(DiagnosticCodes.TakeUnsupported, member.Span, [target.Type.DisplayName],
@@ -699,6 +714,30 @@ internal sealed partial class Binder
         Report(DiagnosticCodes.UnknownMember, member.Span, [name, target.Type.DisplayName],
             help: MemberSuggestion(target.Type, name));
         return new BoundErrorExpr(syntax);
+    }
+
+    /// <summary>BYN2230 and BYN2031: a member under its round-1 or C# name; the fix writes the new one.</summary>
+    private bool ReportRenamed(TypeSymbol type, Name member)
+    {
+        var name = member.Text;
+        if (name is "toString" or "ToString")
+        {
+            Report(DiagnosticCodes.ToStringCall, member.Span, [], label: "not a Bayan method",
+                help: "call `format()`, or interpolate the value: `$\"{x}\"`", fix: new Fix(member.Span, "format"));
+            return true;
+        }
+        var renamed = (type, name) switch
+        {
+            (ListType, "add") => "append",
+            (BuiltinType { Kind: BuiltinKind.StrBuf }, "asString") => "finish",
+            _ => null,
+        };
+        if (renamed is null) return false;
+        var call = name == "asString" ? "()" : "";
+        Report(DiagnosticCodes.RenamedMember, member.Span, [name + call, renamed + call], label: "the old name",
+            help: $"rename it `{renamed}`",
+            fix: new Fix(member.Span, renamed));
+        return true;
     }
 
     private static string? MemberSuggestion(TypeSymbol type, string name)
@@ -827,6 +866,21 @@ internal sealed partial class Binder
         return new BoundSlice(i, target, start, startFromEnd, end, endFromEnd, r.Inclusive, type);
     }
 
+    /// <summary>
+    /// The text <paramref name="e"/> contributes to the interpolation that replaces a string <c>+</c>:
+    /// a plain literal or an interpolation inlines its contents, anything else becomes a hole.
+    /// </summary>
+    private string InterpolationSource(Expr e)
+    {
+        var text = Source.GetText(e.Span);
+        return e switch
+        {
+            LiteralExpr { Kind: LiteralKind.String } when text.IndexOfAny(['{', '}']) < 0 => text[1..^1],
+            InterpolatedExpr when text.StartsWith("$\"", StringComparison.Ordinal) && !text.StartsWith("$\"\"\"", StringComparison.Ordinal) => text[2..^1],
+            _ => "{" + text + "}",
+        };
+    }
+
     /// <summary>BYN2201: strings have no indexer (spec §3.2); offer the four alternatives.</summary>
     private void ReportStringIndexer(IndexExpr i)
     {
@@ -835,11 +889,11 @@ internal sealed partial class Binder
         Report(DiagnosticCodes.StringIndexer, TextSpan.FromBounds(i.Target.Span.End, i.Span.End), [],
             label: "strings have no indexer",
             help: $"""
-                choose what you mean; `string` is UTF-8, so position {index} is not a character:
-                  `{s}.bytes[{index}]`   the byte at offset {index} (applied below)
-                  `{s}.runeAt({index})`  the character starting at byte offset {index}
-                  `for (let c in {s})`   each character in turn
-                  `{s}.graphemes`        user-perceived characters
+                read a byte, slice, or take characters; `string` is UTF-8, so position {index} is not a character:
+                  `{s}.bytes[{index}]`       the byte at offset {index} (applied below)
+                  `{s}[a..b]`          the text between byte offsets a and b
+                  `{s}.chars.take(n)`  the first n characters
+                  `{s}.graphemes`      user-perceived characters
                 """,
             fix: new Fix(i.Span, $"{s}.bytes[{index}]"));
     }
@@ -911,12 +965,15 @@ internal sealed partial class Binder
 
     private BoundExpr BindBinary(BinaryExpr b, TypeSymbol? expected)
     {
+        var nullTested = b.Op is BinaryOp.Eq or BinaryOp.Ne
+            ? b.Right is LiteralExpr { Kind: LiteralKind.Null } ? b.Left : b.Left is LiteralExpr { Kind: LiteralKind.Null } ? b.Right : null
+            : null;
         switch (b.Op)
         {
             case BinaryOp.LogicalAnd or BinaryOp.LogicalOr:
             {
                 var l = BindConverted(b.Left, PrimitiveType.Bool);
-                var r = BindConverted(b.Right, PrimitiveType.Bool);
+                var r = Narrowed(l, b.Op == BinaryOp.LogicalAnd, () => BindConverted(b.Right, PrimitiveType.Bool));
                 var result = new BoundBinary(b, b.Op, l, r, PrimitiveType.Bool);
                 if (l.Constant is { } lc && r.Constant is { } rc)
                     return result with { Constant = ConstantFolding.Binary(b.Op, lc, rc, PrimitiveType.Bool) };
@@ -939,6 +996,19 @@ internal sealed partial class Binder
             var hint = b.Op is BinaryOp.Shl or BinaryOp.Shr ? PrimitiveType.I32 : left.Type is OptionalType o ? o.Inner : left.Type;
             right = BindExpr(b.Right, hint);
         }
+        if (nullTested is not null)
+        {
+            // `x is null` is valid only on an optional `x`: no fix for `null == null` or a non-optional operand.
+            if (nullTested is not LiteralExpr { Kind: LiteralKind.Null } && (nullTested == b.Left ? left : right).Type is OptionalType)
+            {
+                var test = Source.GetText(nullTested.Span) + (b.Op == BinaryOp.Eq ? " is null" : " is not null");
+                Report(DiagnosticCodes.NullEquality, b.Span, [], help: $"write `{test}`", fix: new Fix(b.Span, test));
+            }
+            else
+            {
+                Report(DiagnosticCodes.NullEquality, b.Span, []);
+            }
+        }
         if (left.Type.IsError || right.Type.IsError) return new BoundErrorExpr(b);
         if (b.Op is not (BinaryOp.Eq or BinaryOp.Ne) && (TypeParameterOf(left.Type) ?? TypeParameterOf(right.Type)) is { } tp)
             return TypeParameterOperator(b, BinaryText(b.Op), tp);
@@ -960,10 +1030,16 @@ internal sealed partial class Binder
 
         if (common.IsString && b.Op == BinaryOp.Add)
         {
-            if (left.Constant is { Value: string ls } && right.Constant is { Value: string rs })
-                return Literal(b, PrimitiveType.String, ls + rs) with { Syntax = b };
+            // Two plain literals merge into one literal, which (unlike an interpolation) stays a constant.
+            if (IsPlainStringLiteral(b.Left) && IsPlainStringLiteral(b.Right))
+            {
+                var merged = Source.GetText(b.Left.Span)[..^1] + Source.GetText(b.Right.Span)[1..];
+                Report(DiagnosticCodes.StringConcatenation, b.Span, [], help: $"write one literal: `{merged}`", fix: new Fix(b.Span, merged));
+                return new BoundErrorExpr(b);
+            }
             Report(DiagnosticCodes.StringConcatenation, b.Span, [],
-                help: "use interpolation into an output: `print($\"{a}{b}\")` or `buf.append($\"{a}{b}\")`");
+                help: "write the parts as one interpolation: `$\"{a}{b}\"`, or `buf.append($\"{a}{b}\")` in a loop",
+                fix: new Fix(b.Span, $"$\"{InterpolationSource(b.Left)}{InterpolationSource(b.Right)}\""));
             return new BoundErrorExpr(b);
         }
 
@@ -974,6 +1050,10 @@ internal sealed partial class Binder
         var bound = new BoundBinary(b, b.Op, left, right, type);
         return Fold(bound, left, right, common);
     }
+
+    private bool IsPlainStringLiteral(Expr e) =>
+        e is LiteralExpr { Kind: LiteralKind.String } && Source.GetText(e.Span) is var text
+        && text.StartsWith('"') && !text.StartsWith("\"\"\"", StringComparison.Ordinal);
 
     private static TypeParameterType? TypeParameterOf(TypeSymbol t) =>
         t as TypeParameterType ?? (t as OptionalType)?.Inner as TypeParameterType;
@@ -1094,6 +1174,32 @@ internal sealed partial class Binder
         return new BoundRange(r, Convert(start, common, r.Start.Span), Convert(end, common, r.End.Span), r.Inclusive, new RangeType(common));
     }
 
+    /// <summary><c>x in a..=b</c>: a range pattern test whose ends may be computed at run time.</summary>
+    private BoundExpr BindIn(InExpr i)
+    {
+        var value = BindExpr(i.Value);
+        if (i.Range is not RangeExpr r)
+        {
+            var other = BindExpr(i.Range);
+            if (!value.Type.IsError && !other.Type.IsError)
+                Report(DiagnosticCodes.BadBinaryOperands, i.Span, ["in", value.Type.DisplayName, other.Type.DisplayName],
+                    help: "write a range after `in`: `x in a..=b`");
+            return new BoundErrorExpr(i);
+        }
+        if (BindRange(r, value.Type.IsInteger || value.Type == PrimitiveType.Char ? new RangeType(value.Type) : null) is not BoundRange range
+            || value.Type.IsError)
+            return new BoundErrorExpr(i);
+        var common = Conversions.Common(value.Type, range.Start.Type);
+        if (common is null || !(common.IsInteger || common == PrimitiveType.Char))
+        {
+            Report(DiagnosticCodes.BadBinaryOperands, i.Span, ["in", value.Type.DisplayName, range.Type.DisplayName],
+                help: "make the value and the range ends integers or chars of the same type");
+            return new BoundErrorExpr(i);
+        }
+        var pattern = new BoundRangePattern(r, common, Convert(range.Start, common, r.Start!.Span), Convert(range.End, common, r.End!.Span), r.Inclusive);
+        return new BoundIs(i, Convert(value, common, i.Value.Span), pattern);
+    }
+
     private BoundExpr BindConditional(ConditionalExpr c, TypeSymbol? expected)
     {
         var cond = BindCondition(c.Condition);
@@ -1152,7 +1258,7 @@ internal sealed partial class Binder
         else if (expected is not null) type = expected;
         else
         {
-            Report(DiagnosticCodes.NoTargetType, s.Span, ["{ … }"], help: "name the type: `Point { x = 1 }`");
+            Report(DiagnosticCodes.NoTargetType, s.Span, ["{ … }"], help: "name the type: `Point { x: 1 }`");
             return new BoundErrorExpr(s);
         }
         if (type.IsError) return new BoundErrorExpr(s);
@@ -1206,7 +1312,7 @@ internal sealed partial class Binder
             var first = st.FindField(missing[0])!;
             Report(DiagnosticCodes.MissingFields, s.Span, [st.Name, string.Join("`, `", missing)],
                 label: missing.Count == 1 && first.IsRequired ? "`" + first.Name + "` is `required`" : null,
-                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + " = …"))} }}`");
+                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
             return new BoundErrorExpr(s);
         }
         return new BoundStructLiteral(s, st, values!);
@@ -1244,6 +1350,8 @@ internal sealed partial class Binder
     private BoundExpr BindCollection(CollectionExpr c, TypeSymbol? expected)
     {
         var target = expected is OptionalType o ? o.Inner : expected;
+        if (c.Elements.Any(e => e is MapEntryExpr)) return BindMapLiteral(c, target);
+        if (target is MapType && c.Elements.Length == 0) return new BoundCollection(c, target, []);
         TypeSymbol? element = target switch
         {
             ListType l => l.Element,
@@ -1251,6 +1359,8 @@ internal sealed partial class Binder
             Symbols.ArrayType a => a.Element,
             _ => null,
         };
+        if (element is null && target is null && c.Elements.Length > 0)
+            return BindUntypedCollection(c);
         if (element is null)
         {
             if (target is null || target.IsError)
@@ -1265,10 +1375,169 @@ internal sealed partial class Binder
             foreach (var e in c.Elements) BindExpr(e);
             return new BoundErrorExpr(c);
         }
-        var elements = c.Elements.Select(e => BindConverted(e, element)).ToArray();
-        if (target is Symbols.ArrayType at && at.Length != elements.Length)
-            Report(DiagnosticCodes.ArrayLengthMismatch, c.Span, [at.DisplayName, elements.Length]);
-        return new BoundCollection(c, target!, elements);
+        var elements = c.Elements.Select(e => e is SpreadExpr s ? BindSpread(s, element) : BindConverted(e, element)).ToArray();
+        return FinishCollection(c, target!, elements);
+    }
+
+    /// <summary><c>[1, 2, 3]</c> with no target type: a fixed array of the first element's type.</summary>
+    private BoundExpr BindUntypedCollection(CollectionExpr c)
+    {
+        var first = c.Elements[0] is SpreadExpr s ? BindSpread(s, null) : BindExpr(c.Elements[0]);
+        var element = first.Type;
+        if (element.IsError)
+        {
+            foreach (var e in c.Elements.Skip(1)) BindExpr(e);
+            return new BoundErrorExpr(c);
+        }
+        if (element is NullType or PrimitiveType { Kind: PrimitiveKind.Void or PrimitiveKind.Never })
+        {
+            Report(DiagnosticCodes.CannotInferType, c.Elements[0].Span, [Source.GetText(c.Elements[0].Span)], help: "declare the type: `List<i64> xs = [1, 2];`");
+            foreach (var e in c.Elements.Skip(1)) BindExpr(e);
+            return new BoundErrorExpr(c);
+        }
+        if (first is not BoundSpread) first = Convert(first, element, c.Elements[0].Span);
+        var elements = c.Elements.Skip(1).Select(e => e is SpreadExpr s ? BindSpread(s, element) : BindConverted(e, element)).Prepend(first).ToArray();
+        return FinishCollection(c, new Symbols.ArrayType(element, KnownLength(elements) ?? elements.Length), elements);
+    }
+
+    /// <summary>Checks the length of an array or span literal: spreads into stack storage must have a compile-time length.</summary>
+    private BoundExpr FinishCollection(CollectionExpr c, TypeSymbol target, BoundExpr[] elements)
+    {
+        if (elements.Any(e => e is BoundErrorExpr { Syntax: SpreadExpr })) return new BoundErrorExpr(c);
+        if (target is not ListType && elements.OfType<BoundSpread>().FirstOrDefault(s => s.Operand.Type is not Symbols.ArrayType) is { } open)
+        {
+            var text = Source.GetText(open.Syntax.Span);
+            Report(DiagnosticCodes.NotConstant, open.Syntax.Span, [$"the length of `{text}` in a `{(target is SpanType ? "Span" : "T[N]")}` literal"],
+                label: $"a `{open.Operand.Type.DisplayName}` has a run-time length",
+                help: $"spread a fixed array `T[N]` here, or build a list: `List<{open.Type.DisplayName}> all = {Source.GetText(c.Span)};`");
+            return new BoundErrorExpr(c);
+        }
+        if (target is Symbols.ArrayType at && at.Length != KnownLength(elements))
+            Report(DiagnosticCodes.ArrayLengthMismatch, c.Span, [at.DisplayName, KnownLength(elements)!]);
+        return new BoundCollection(c, target, elements);
+    }
+
+    /// <summary>The number of elements, counting each spread fixed array by its length; null if a spread's length is only known at run time.</summary>
+    private static long? KnownLength(BoundExpr[] elements)
+    {
+        long n = 0;
+        foreach (var e in elements)
+        {
+            if (e is not BoundSpread s) n++;
+            else if (s.Operand.Type is Symbols.ArrayType a) n += a.Length;
+            else return null;
+        }
+        return n;
+    }
+
+    /// <summary><c>..xs</c> in a list, span or array literal: <c>xs</c> is a <c>List</c>, <c>Span</c> or fixed array of <paramref name="element"/> (any element type when null).</summary>
+    private BoundExpr BindSpread(SpreadExpr s, TypeSymbol? element)
+    {
+        var operand = BindExpr(s.Operand);
+        if (operand.Type.IsError) return new BoundErrorExpr(s);
+        TypeSymbol? item = operand.Type switch
+        {
+            ListType l => l.Element,
+            SpanType sp => sp.Element,
+            Symbols.ArrayType a => a.Element,
+            _ => null,
+        };
+        var text = Source.GetText(s.Operand.Span);
+        if (item is null)
+        {
+            Report(DiagnosticCodes.SpreadNotSequence, s.Span, [text, operand.Type.DisplayName],
+                label: "not a `List`, `Span` or fixed array",
+                help: element is not null && Conversions.Implicit(operand.Type, element) is not null
+                    ? $"drop the `..` to add `{text}` as one element"
+                    : "spread a `List`, `Span` or fixed array; a single value goes in without `..`");
+            return new BoundErrorExpr(s);
+        }
+        if (element is not null && !item.Equals(element))
+        {
+            Report(DiagnosticCodes.TypeMismatch, s.Span, [item.DisplayName, element.DisplayName],
+                label: $"`{text}` holds `{item.DisplayName}`",
+                help: $"spread a sequence of `{element.DisplayName}`, or change the literal's element type to `{item.DisplayName}`");
+            return new BoundErrorExpr(s);
+        }
+        if (TypeFacts.IsUnique(item))
+        {
+            Report(DiagnosticCodes.Unsupported, s.Span, [$"spreading elements that own memory (`{item.DisplayName}`)"],
+                help: "add the elements one at a time with `move`");
+            return new BoundErrorExpr(s);
+        }
+        return new BoundSpread(s, operand, item);
+    }
+
+    /// <summary><c>["k": v, …]</c>: a <c>Map</c>, typed by the target or, without one, by the first entry.</summary>
+    private BoundExpr BindMapLiteral(CollectionExpr c, TypeSymbol? target)
+    {
+        if (c.Elements.FirstOrDefault(e => e is not MapEntryExpr) is { } bare)
+        {
+            Report(DiagnosticCodes.MapLiteralMixed, bare.Span, [], label: "no `key:` here",
+                help: "write every element as `key: value`, or remove the keys to make a list");
+            foreach (var e in c.Elements) BindMapPart(e);
+            return new BoundErrorExpr(c);
+        }
+        var entries = c.Elements.Cast<MapEntryExpr>().ToArray();
+        var parts = new List<BoundExpr>();
+        MapType map;
+        if (target is MapType m)
+        {
+            map = m;
+        }
+        else if (target is null)
+        {
+            var key = BindExpr(entries[0].Key);
+            var value = BindExpr(entries[0].Value);
+            if (key.Type.IsError || value.Type.IsError)
+            {
+                foreach (var e in entries.Skip(1)) BindMapPart(e);
+                return new BoundErrorExpr(c);
+            }
+            if (!MapType.IsValidKey(key.Type))
+            {
+                Report(DiagnosticCodes.InvalidMapKey, entries[0].Key.Span, [key.Type.DisplayName],
+                    help: "use an integer type, `char`, `bool`, `string` or a plain enum as the key");
+                foreach (var e in entries.Skip(1)) BindMapPart(e);
+                return new BoundErrorExpr(c);
+            }
+            if (value.Type is NullType or PrimitiveType { Kind: PrimitiveKind.Void or PrimitiveKind.Never })
+            {
+                Report(DiagnosticCodes.CannotInferType, entries[0].Value.Span, [Source.GetText(entries[0].Value.Span)],
+                    help: $"declare the type: `Map<{key.Type.DisplayName}, i64?> m = [ … ];`");
+                foreach (var e in entries.Skip(1)) BindMapPart(e);
+                return new BoundErrorExpr(c);
+            }
+            map = new MapType(key.Type, value.Type);
+            parts.Add(Convert(key, map.KeyType, entries[0].Key.Span));
+            parts.Add(Convert(value, map.ValueType, entries[0].Value.Span));
+            entries = entries[1..];
+        }
+        else
+        {
+            if (!target.IsError) Report(DiagnosticCodes.TypeMismatch, c.Span, ["a map literal", target.DisplayName]);
+            foreach (var e in entries) BindMapPart(e);
+            return new BoundErrorExpr(c);
+        }
+        foreach (var e in entries)
+        {
+            parts.Add(BindConverted(e.Key, map.KeyType));
+            parts.Add(BindConverted(e.Value, map.ValueType));
+        }
+        if (parts.Any(p => p.Type.IsError)) return new BoundErrorExpr(c);
+        return new BoundCollection(c, map, parts.ToArray());
+    }
+
+    /// <summary>Binds the parts of a map literal element for recovery.</summary>
+    private void BindMapPart(Expr e)
+    {
+        if (e is MapEntryExpr entry)
+        {
+            BindExpr(entry.Key);
+            BindExpr(entry.Value);
+        }
+        else if (e is SpreadExpr s) BindExpr(s.Operand);
+        else BindExpr(e);
     }
 
     private BoundExpr BindTuple(TupleExpr t, TypeSymbol? expected)
@@ -1336,7 +1605,7 @@ internal sealed partial class Binder
             var value = BindExpr(hole.Expr);
             if (!value.Type.IsError && WhyNotFormattable(value.Type, []) is { } why)
                 Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName], label: why == "" ? null : why,
-                    help: value.Type is StructSymbol s ? $"give `{s.Name}` a `void formatInto(ref StrBuf out)` method" : null);
+                    help: value.Type is StructSymbol s ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
             parts.Add(new BoundInterpolationPart(null, value));
         }
         return new BoundInterpolated(i, parts.ToArray());
@@ -1355,8 +1624,8 @@ internal sealed partial class Binder
         OptionalType o => Part("the value", o.Inner, seen),
         ResultType r => Part("the value", r.Value, seen),
         OwnedType o => WhyNotFormattable(o.Inner, seen),
-        StructSymbol s => HasFormatInto(s) || !seen.Add(s) ? null
-            : s.Fields.Select(f => Part($"field `{f.Name}`", f.Type, seen)).FirstOrDefault(w => w is not null),
+        // Structs have no default display (HANDOFF §13): only `formatInto` formats one.
+        StructSymbol s => HasFormatInto(s) ? null : "",
         UnionSymbol u => !seen.Add(u) ? null
             : u.Variants.SelectMany(v => v.Fields.Select(f => Part($"`{v.Name}` field `{f.Name}`", f.Type, seen))).FirstOrDefault(w => w is not null),
         Symbols.TupleType tt => tt.Fields.Select((f, i) => Part($"element {i + 1}", f.Type, seen)).FirstOrDefault(w => w is not null),

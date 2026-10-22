@@ -2,6 +2,7 @@ using Bayan.Semantics;
 using Bayan.Semantics.Binding;
 using Bayan.Semantics.Symbols;
 using Bayan.Syntax.Ast;
+using Bayan.Syntax.Text;
 using OptionalType = Bayan.Semantics.Symbols.OptionalType;
 
 namespace Bayan.Lowering;
@@ -39,6 +40,11 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     private List<BoundStmt> _out = new();
     private int _labels;
     private int _contextSlots;
+    private int _panicSlots;
+    /// <summary>While an <c>assert</c> condition is lowered: the sub-expressions it shows, each with its stored value once lowered.</summary>
+    private Dictionary<BoundExpr, BoundExpr?>? _shown;
+    /// <summary>The shown sub-expressions that may not run (a lazy side), each with the flag set when it does.</summary>
+    private Dictionary<BoundExpr, LocalSymbol>? _ran;
 
     private sealed class Scope
     {
@@ -55,6 +61,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private sealed record FreeArena(Node Syntax, LocalSymbol Arena) : Cleanup;
 
+    private sealed record PopPanicHandler(Node Syntax, int Slot) : Cleanup;
+
     public LoweredFunction Lower()
     {
         var body = _fn.Body!;
@@ -69,7 +77,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         EmitCleanups(0, null);
         _scopes.RemoveAt(0);
         if (_fn.Kind == FunctionKind.Constructor) Emit(new LReturn(body.Syntax, null));
-        return new LoweredFunction(_fn, _locals, _contextSlots, new BoundBlock(body.Syntax, _out.ToArray()));
+        return new LoweredFunction(_fn, _locals, _contextSlots, _panicSlots, new BoundBlock(body.Syntax, _out.ToArray()));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -281,6 +289,9 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case FreeArena f:
                 Emit(new LFreeArena(f.Syntax, Local(f.Syntax, f.Arena)));
                 break;
+            case PopPanicHandler p:
+                Emit(new LPopPanicHandler(p.Syntax, p.Slot));
+                break;
         }
     }
 
@@ -319,6 +330,12 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 break;
             case BoundExprStmt e:
                 EmitEffect(Expr(e.Expr));
+                break;
+            case BoundAssert a:
+                Assert(a);
+                break;
+            case BoundSetOnPanic o:
+                Emit(o);
                 break;
             case BoundAssign a:
                 Assign(a);
@@ -371,6 +388,16 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case BoundErrdefer e:
                 _scopes[^1].Cleanups.Add(new ErrdeferCleanup(e.Error, e.Body));
                 break;
+            case BoundPanicDefer p:
+            {
+                // The handler runs while a panic is in progress, in place of every cleanup: none of the scopes' cleanups apply in it.
+                if (p.Panic is not null) Note(p.Panic);
+                var slot = _panicSlots++;
+                var body = Capture(() => LowerOutside(0, p.Body));
+                Emit(new LPushPanicHandler(p.Syntax, slot, p.Panic, Block(p.Body.Syntax, body)));
+                _scopes[^1].Cleanups.Add(new PopPanicHandler(p.Syntax, slot));
+                break;
+            }
             case BoundContext c:
             {
                 var arena = Expr(c.Allocator);
@@ -452,7 +479,21 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     {
         var condition = Expr(i.Condition);
         if (IsNever(condition)) return;
-        var then = Capture(() => Statement(i.Then));
+        var then = Capture(() =>
+        {
+            if (!i.Never)
+            {
+                Statement(i.Then);
+                return;
+            }
+            // The panic is a cleanup of the block, so a `return`, `break`, `continue` or failure inside it still panics.
+            _scopes.Add(new Scope());
+            _scopes[^1].Cleanups.Add(new DeferCleanup(new BoundExprStmt(i.Syntax, new BoundCall(i.Syntax, _builtins.Panic, null,
+                [new BoundLiteral(i.Syntax, PrimitiveType.String, new ConstantValue("`if never` condition was true"))], PrimitiveType.Never))));
+            Statement(i.Then);
+            EmitCleanups(_scopes.Count - 1, null);
+            _scopes.RemoveAt(_scopes.Count - 1);
+        });
         var otherwise = i.Else is null ? null : Capture(() => Statement(i.Else));
         Emit(new BoundIf(i.Syntax, condition, Block(i.Then.Syntax, then), otherwise is null ? null : Block(i.Else!.Syntax, otherwise)));
     }
@@ -702,6 +743,15 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private BoundExpr Expr(BoundExpr e)
     {
+        if (_shown is null || !_shown.ContainsKey(e)) return LowerExpr(e);
+        var value = LowerExpr(e);
+        if (value.Constant is null) value = Spill(value);
+        if (_ran!.TryGetValue(e, out var ran) && !IsNever(value)) EmitAssign(Local(e.Syntax, ran), Bool(e.Syntax, true));
+        return _shown[e] = value;
+    }
+
+    private BoundExpr LowerExpr(BoundExpr e)
+    {
         switch (e)
         {
             case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
@@ -741,6 +791,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 var operand = lvalue ? Lvalue(c.Operand) : Expr(c.Operand);
                 if (IsNever(operand)) return new LNever(e.Syntax, e.Type);
                 if (c.Kind == ConversionKind.FromNever) return operand;
+                if (c.Kind == ConversionKind.Narrow) return new LOptionalValue(c.Syntax, operand, c.Type);
                 if (c.Kind is ConversionKind.ListToSpan && !IsTrivial(operand)) operand = Spill(operand);
                 return c with { Operand = operand };
             }
@@ -793,6 +844,17 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             {
                 var value = Expr(i.Value);
                 if (IsNever(value)) return new LNever(e.Syntax, e.Type);
+                // `x in a..=b` may compute its ends at run time (a pattern's ends are constants): the value is read first.
+                if (i.Pattern is BoundRangePattern { Start.Constant: null } or BoundRangePattern { End.Constant: null })
+                {
+                    var r = (BoundRangePattern)i.Pattern;
+                    if (value.Constant is null) value = Spill(value);
+                    var start = Expr(r.Start);
+                    if (!IsRepeatable(start)) start = Spill(start);
+                    var end = Expr(r.End);
+                    if (IsNever(start) || IsNever(end)) return new LNever(e.Syntax, e.Type);
+                    return Match(r with { Start = start, End = end }, value);
+                }
                 if (!IsRepeatable(value)) value = Spill(value);
                 return Match(i.Pattern, value);
             }
@@ -892,28 +954,98 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 EmitAssign(Local(c.Syntax, list), c with { Elements = [] });
                 foreach (var element in c.Elements)
                 {
-                    var v = Expr(element);
+                    var v = Expr(element is BoundSpread sp ? sp.Operand : element);
                     if (IsNever(v)) return new LNever(c.Syntax, c.Type);
+                    if (element is BoundSpread spread)
+                    {
+                        AddEach(spread, Spill(v), item => Emit(new BoundExprStmt(c.Syntax,
+                            new BoundBuiltinCall(c.Syntax, BuiltinMember.ListAdd, Local(c.Syntax, list), [item], PrimitiveType.Void))));
+                        continue;
+                    }
                     Emit(new BoundExprStmt(c.Syntax, new BoundBuiltinCall(c.Syntax, BuiltinMember.ListAdd, Local(c.Syntax, list), [v], PrimitiveType.Void)));
                 }
                 return Local(c.Syntax, list);
             }
+            case MapType m:
+            {
+                if (c.Elements.Length == 0) return c;
+                var map = NewTemp(m);
+                EmitAssign(Local(c.Syntax, map), c with { Elements = [] });
+                for (var i = 0; i < c.Elements.Length; i += 2)
+                {
+                    var entry = Operands([c.Elements[i], c.Elements[i + 1]]);
+                    if (entry is null) return new LNever(c.Syntax, c.Type);
+                    Emit(new BoundAssign(c.Syntax,
+                        new BoundBuiltinCall(c.Syntax, BuiltinMember.MapIndexSet, Local(c.Syntax, map), [entry[0]], m.ValueType), entry[1], null));
+                }
+                return Local(c.Syntax, map);
+            }
             case SpanType s:
             {
                 if (c.Elements.Length == 0) return new BoundDefault(c.Syntax, s);
-                var array = new Semantics.Symbols.ArrayType(s.Element, c.Elements.Length);
-                var elements = Operands(c.Elements);
+                var elements = c.Elements.Any(e => e is BoundSpread) ? Expanded(c.Elements) : Operands(c.Elements);
                 if (elements is null) return new LNever(c.Syntax, c.Type);
+                var array = new Semantics.Symbols.ArrayType(s.Element, elements.Length);
                 var storage = NewTemp(array);
                 EmitAssign(Local(c.Syntax, storage), new BoundCollection(c.Syntax, array, elements));
                 return new BoundConversion(c.Syntax, Local(c.Syntax, storage), s, ConversionKind.ArrayToSpan);
             }
             default:
             {
-                var elements = Operands(c.Elements);
+                var elements = c.Elements.Any(e => e is BoundSpread) ? Expanded(c.Elements) : Operands(c.Elements);
                 return elements is null ? new LNever(c.Syntax, c.Type) : c with { Elements = elements };
             }
         }
+    }
+
+    /// <summary>
+    /// The elements of an array or span literal with each spread fixed array replaced by its elements,
+    /// evaluated left to right: every operand that is not trivial is stored first.
+    /// </summary>
+    private BoundExpr[]? Expanded(BoundExpr[] elements)
+    {
+        var values = new List<BoundExpr>();
+        foreach (var element in elements)
+        {
+            var v = Expr(element is BoundSpread sp ? sp.Operand : element);
+            if (IsNever(v)) return null;
+            if (element is BoundSpread spread)
+            {
+                var source = Spill(v);
+                var length = ((Semantics.Symbols.ArrayType)spread.Operand.Type).Length;
+                for (var i = 0L; i < length; i++)
+                    values.Add(new LIndexUnchecked(spread.Syntax, source, I64(spread.Syntax, i), spread.Type));
+                continue;
+            }
+            values.Add(IsTrivial(v) ? v : Spill(v));
+        }
+        return values.ToArray();
+    }
+
+    /// <summary>Runs <paramref name="add"/> on each element of the list, span or array in <paramref name="source"/>, in order.</summary>
+    private void AddEach(BoundSpread spread, BoundExpr source, Action<BoundExpr> add)
+    {
+        var syntax = spread.Syntax;
+        var lengthMember = source.Type switch
+        {
+            SpanType => BuiltinMember.SpanLength,
+            ListType => BuiltinMember.ListLength,
+            _ => BuiltinMember.ArrayLength,
+        };
+        var index = NewTemp(PrimitiveType.I64);
+        EmitAssign(Local(syntax, index), I64(syntax, 0));
+        var done = NewLabel("break");
+        var body = Capture(() =>
+        {
+            var length = new BoundBuiltinCall(syntax, lengthMember, source, [], PrimitiveType.I64);
+            Emit(new BoundIf(syntax, Not(new BoundBinary(syntax, BinaryOp.Lt, Local(syntax, index), length, PrimitiveType.Bool)),
+                Block(syntax, [new LGoto(syntax, done)]), null));
+            add(new LIndexUnchecked(syntax, source, Local(syntax, index), spread.Type));
+            Emit(new BoundAssign(syntax, Local(syntax, index),
+                new BoundBinary(syntax, BinaryOp.AddWrap, Local(syntax, index), I64(syntax, 1), PrimitiveType.I64), null));
+        });
+        Emit(new LLoop(syntax, Block(syntax, body)));
+        Emit(new LLabel(syntax, done));
     }
 
     private BoundExpr Slice(BoundSlice s)
@@ -941,17 +1073,6 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case BuiltinFunction.Panic when c.Arguments[0] is BoundInterpolated i:
                 Write(c, WriteSink.Panic, null, i);
                 return new LNever(c.Syntax, c.Type);
-            case BuiltinFunction.Assert when c.Arguments[0] is BoundBinary { Op: BinaryOp.Eq or BinaryOp.Ne or BinaryOp.Lt or BinaryOp.Le or BinaryOp.Gt or BinaryOp.Ge } b
-                && Printable(b.Left.Type) && Printable(b.Right.Type):
-                return AssertValues(c, b);
-            case BuiltinFunction.Assert:
-            {
-                var condition = Expr(c.Arguments[0]);
-                if (IsNever(condition)) return condition;
-                var text = _fn.File!.Source.GetText(c.Arguments[0].Syntax.Span);
-                Emit(new BoundIf(c.Syntax, Not(condition), Block(c.Syntax, [new LPanic(c.Syntax, "assertion failed: " + text)]), null));
-                return new LVoid(c.Syntax);
-            }
         }
         if (c.Function.Fails) throw new InvalidOperationException($"call of failing `{c.Function.Name}` outside try/catch");
         var lowered = CallParts(c);
@@ -972,26 +1093,100 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     private static bool Printable(TypeSymbol t) => t.IsInteger || t.IsFloat || t.IsBool || t.IsString || t is EnumSymbol;
 
     /// <summary>
-    /// <c>assert(a op b)</c> over printable operands: each side is evaluated once into a temporary,
-    /// and a failure panics with the expression, then <c>a is value</c> for each side that is not a literal.
+    /// <c>assert e;</c>: each printable sub-expression of <c>e</c> that is not a literal is stored once in a temporary as it
+    /// is lowered, and a failure panics with the statement and the <see cref="PowerAssert"/> diagram of those values. A
+    /// side that may not run (the right of <c>&amp;&amp;</c>, <c>||</c>, <c>??</c>, a branch of <c>?:</c>) also sets a flag
+    /// when it does, and its values are shown only then.
     /// </summary>
-    private BoundExpr AssertValues(BoundCall c, BoundBinary b)
+    private void Assert(BoundAssert a)
     {
-        var parts = Operands([b.Left, b.Right]);
-        if (parts is null) return new LNever(c.Syntax, c.Type);
-        var left = parts[0].Constant is null ? Spill(parts[0]) : parts[0];
-        var right = parts[1].Constant is null ? Spill(parts[1]) : parts[1];
+        var syntax = (AssertStmt)a.Syntax;
         var source = _fn.File!.Source;
-        var message = new List<BoundInterpolationPart> { new("assertion failed: " + source.GetText(c.Arguments[0].Syntax.Span), null) };
-        foreach (var (side, value) in new[] { (b.Left, left), (b.Right, right) })
+        string Before(int offset) => source.GetText(TextSpan.FromBounds(syntax.Span.Start, offset));
+        int After(Node left)
         {
-            if (IsLiteral(side.Syntax)) continue;
-            message.Add(new("\n  " + source.GetText(side.Syntax.Span) + " is ", null));
-            message.Add(new(null, value));
+            var rest = source.GetText(TextSpan.FromBounds(left.Span.End, syntax.Condition.Span.End));
+            return left.Span.End + rest.Length - rest.TrimStart().Length;
         }
-        var panic = new LWrite(c.Syntax, WriteSink.Panic, null, message.ToArray());
-        Emit(new BoundIf(c.Syntax, Not(b with { Left = left, Right = right }), Block(c.Syntax, [panic]), null));
-        return new LVoid(c.Syntax);
+        int Anchor(Node node) => node switch
+        {
+            ParenExpr p => Anchor(p.Inner),
+            MemberExpr m => m.Member.Span.Start,
+            CallExpr c => Anchor(c.Callee),
+            BinaryExpr b => After(b.Left),
+            IsExpr i => After(i.Value),
+            IndexExpr i => After(i.Target),
+            ConditionalExpr c => After(c.Condition),
+            _ => node.Span.Start,
+        };
+        // The first (outermost) node at a column wins: an implicit conversion shares its operand's syntax.
+        var columns = new SortedDictionary<int, BoundExpr>();
+        var lazy = new HashSet<BoundExpr>(ReferenceEqualityComparer.Instance);
+        foreach (var (e, mayNotRun) in Shown(a.Condition, false))
+            if (columns.TryAdd(PowerAssert.Column(Before(Anchor(e.Syntax))), e) && mayNotRun) lazy.Add(e);
+        _shown = new Dictionary<BoundExpr, BoundExpr?>(ReferenceEqualityComparer.Instance);
+        _ran = new Dictionary<BoundExpr, LocalSymbol>(ReferenceEqualityComparer.Instance);
+        foreach (var e in columns.Values)
+        {
+            _shown[e] = null;
+            if (!lazy.Contains(e)) continue;
+            var flag = NewTemp(PrimitiveType.Bool);
+            EmitAssign(Local(e.Syntax, flag), Bool(e.Syntax, false));
+            _ran[e] = flag;
+        }
+        var condition = Expr(a.Condition);
+        var (values, ran) = (_shown, _ran);
+        (_shown, _ran) = (null, null);
+        if (IsNever(condition)) return;
+        var statement = PowerAssert.Flatten(Before(syntax.Condition.Span.End));
+        var kept = columns.Where(c => values[c.Value] is { } v && !IsNever(v)).ToList();
+        BoundStmt panic;
+        if (kept.Count == 0) panic = new LPanic(a.Syntax, statement);
+        else
+        {
+            var flags = kept.Select(c => ran.GetValueOrDefault(c.Value)).ToList();
+            BoundExpr Flag(int k) => Local(a.Syntax, flags[k]!);
+            BoundExpr? Guard(PowerAssert.Piece p)
+            {
+                var terms = p.When.Select(Flag).Concat(p.Unless.Select(k => Not(Flag(k))));
+                if (p.AnyFrom is { } from) terms = terms.Append(Enumerable.Range(from, kept.Count - from).Select(Flag).Aggregate(Or));
+                return terms.Aggregate((BoundExpr?)null, (g, t) => g is null ? t : And(g, t));
+            }
+            var parts = new List<BoundInterpolationPart> { new(statement, null) };
+            var guards = new List<BoundExpr?> { null };
+            foreach (var piece in PowerAssert.Diagram(kept.Select(c => c.Key).ToList(), flags.Select(f => f is null).ToList()))
+            {
+                var guard = Guard(piece);
+                if (guard is null && piece.Value < 0 && guards[^1] is null && parts[^1].Value is null)
+                    parts[^1] = new(parts[^1].Text + piece.Text, null);
+                else
+                {
+                    parts.Add(piece.Value < 0 ? new(piece.Text, null) : new(null, values[kept[piece.Value].Value]));
+                    guards.Add(guard);
+                }
+            }
+            panic = new LWrite(a.Syntax, WriteSink.Panic, null, parts.ToArray(), guards.All(g => g is null) ? null : guards.ToArray());
+        }
+        Emit(new BoundIf(a.Syntax, Not(condition), Block(a.Syntax, [panic]), null));
+    }
+
+    /// <summary>The sub-expressions of an <c>assert</c> condition shown on failure, outermost first, each with whether it may not run.</summary>
+    private static IEnumerable<(BoundExpr Expr, bool MayNotRun)> Shown(BoundExpr e, bool mayNotRun)
+    {
+        if (Printable(e.Type) && !IsLiteral(e.Syntax)) yield return (e, mayNotRun);
+        IEnumerable<(BoundNode, bool)> children = e switch
+        {
+            BoundBinary { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } b => [(b.Left, mayNotRun), (b.Right, true)],
+            BoundConditional c => [(c.Condition, mayNotRun), (c.WhenTrue, true), (c.WhenFalse, true)],
+            BoundCoalesce c => [(c.Left, mayNotRun), (c.Right, true)],
+            BoundIs i => [(i.Value, mayNotRun)],
+            BoundBinary or BoundUnary or BoundField or BoundTupleElement or BoundCall or BoundBuiltinCall or BoundConversion or BoundIndex
+                => BoundTree.Children(e).Select(c => (c, mayNotRun)),
+            _ => [],
+        };
+        foreach (var (child, lazy) in children)
+            if (child is BoundExpr x)
+                foreach (var shown in Shown(x, lazy)) yield return shown;
     }
 
     private static bool IsLiteral(Node syntax) => syntax switch
@@ -1023,6 +1218,13 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         {
             receiver = parts[0];
             if (!IsLvalue(receiver)) receiver = Spill(receiver);
+            // `map[k].f()` with `ref this` changes the stored value; reading through the panicking index first keeps a missing key out.
+            if (receiver is BoundBuiltinCall { Member: BuiltinMember.MapIndexSet })
+            {
+                var place = (BoundBuiltinCall)Stable(receiver);
+                Emit(new BoundExprStmt(c.Syntax, place with { Member = BuiltinMember.MapIndex }));
+                receiver = place;
+            }
         }
         return c with { Receiver = receiver, Arguments = parts[offset..] };
     }

@@ -1,15 +1,15 @@
 i64 grow(ref List<i64> xs) {
     xs[0] = 1000;
-    for (let i in 0..100) {
-        xs.add(i);
+    for i in 0..100 {
+        xs.append(i);
     }
     return 7;
 }
 
 var xs = List<i64>();
-xs.add(0);
+xs.append(0);
 xs[0] = grow(ref xs);
 var ys = List<i64>();
-ys.add(10);
+ys.append(10);
 ys[0] += grow(ref ys);
 print($"{xs[0]} {xs.length} {ys[0]} {ys.length}");

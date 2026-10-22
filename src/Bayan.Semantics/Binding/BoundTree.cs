@@ -31,6 +31,7 @@ public static class BoundTree
                 break;
             case BoundTuple n: foreach (var e in n.Elements) yield return e; break;
             case BoundCollection n: foreach (var e in n.Elements) yield return e; break;
+            case BoundSpread n: yield return n.Operand; break;
             case BoundIndex n: yield return n.Target; yield return n.Index; break;
             case BoundSlice n:
                 yield return n.Target;
@@ -61,6 +62,7 @@ public static class BoundTree
             case BoundBlock n: foreach (var s in n.Statements) yield return s; break;
             case BoundLocalDecl n: if (n.Initializer is not null) yield return n.Initializer; break;
             case BoundExprStmt n: yield return n.Expr; break;
+            case BoundAssert n: yield return n.Condition; break;
             case BoundAssign n: yield return n.Target; yield return n.Value; break;
             case BoundReturn n: if (n.Value is not null) yield return n.Value; break;
             case BoundFail n: yield return n.Error; break;
@@ -83,6 +85,7 @@ public static class BoundTree
                 break;
             case BoundDefer n: yield return n.Body; break;
             case BoundErrdefer n: yield return n.Body; break;
+            case BoundPanicDefer n: yield return n.Body; break;
             case BoundContext n: yield return n.Allocator; yield return n.Body; break;
 
             case BoundConstantPattern n: yield return n.Value; break;

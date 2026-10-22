@@ -66,6 +66,22 @@ public sealed class DiagnosticBag
         foreach (var d in diagnostics) Add(d);
     }
 
+    public void Remove(Diagnostic diagnostic) => _items?.Remove(diagnostic);
+
+    /// <summary>Puts <paramref name="replacement"/> in the place of <paramref name="diagnostic"/>, if it is still reported.</summary>
+    public void Replace(Diagnostic diagnostic, Diagnostic replacement)
+    {
+        var i = _items?.FindIndex(d => ReferenceEquals(d, diagnostic)) ?? -1;
+        if (i >= 0) _items![i] = replacement;
+    }
+
+    /// <summary>Drops each diagnostic that repeats an earlier one's code, file, span and message.</summary>
+    public void RemoveRepeats()
+    {
+        var seen = new HashSet<(string, SourceText?, TextSpan, string)>();
+        _items?.RemoveAll(d => !seen.Add((d.Code, d.Source, d.Span, d.Message)));
+    }
+
     public Diagnostic Report(
         DiagnosticDescriptor descriptor,
         SourceText? source,

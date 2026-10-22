@@ -223,6 +223,7 @@ public sealed class CEmitter
         BuiltinType { Kind: BuiltinKind.StrBuf } => "byn_writer",
         BuiltinType { Kind: BuiltinKind.IoStream or BuiltinKind.IoInput } => "int32_t",
         BuiltinType { Kind: BuiltinKind.ProcessResult } => "byn_process",
+        BuiltinType { Kind: BuiltinKind.Panic } => "byn_panic_info",
         // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
         OwnedType o => CType(o.Inner) + "*",
         UntrustedType u => CType(u.Inner),
@@ -234,7 +235,7 @@ public sealed class CEmitter
     {
         PrimitiveType p => p.Kind == PrimitiveKind.String ? "str" : p.Name,
         ErrorSetSymbol or ErrorUnionType => "err",
-        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", _ => "iostream" },
+        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", BuiltinKind.Panic => "panic", _ => "iostream" },
         StructSymbol s => s.Module.CName + "__" + s.Name + TypeArgs(s.TypeArguments),
         EnumSymbol e => e.Module.CName + "__" + e.Name,
         UnionSymbol u => u.Module.CName + "__" + u.Name + TypeArgs(u.TypeArguments),
@@ -588,15 +589,6 @@ public sealed class CEmitter
                 case StructSymbol s when FormatInto(s) is { } method:
                     sb.Append($"    {FunctionName(method)}(&v, w);\n");
                     break;
-                case StructSymbol s:
-                    Text(s.Fields.Count == 0 ? s.Name + " { }" : s.Name + " { ");
-                    for (var i = 0; i < s.Fields.Count; i++)
-                    {
-                        Text((i > 0 ? ", " : "") + s.Fields[i].Name + ": ");
-                        sb.Append("    ").Append(Format(s.Fields[i].Type, "v." + FieldName(s.Fields[i].Name), "w")).Append('\n');
-                    }
-                    if (s.Fields.Count > 0) Text(" }");
-                    break;
                 case UnionSymbol u:
                     sb.Append("    switch (v.tag) {\n");
                     foreach (var variant in u.Variants)
@@ -810,6 +802,7 @@ internal sealed class FunctionEmitter
         foreach (var l in _fn.Parameters.Concat<LocalSymbol>(_f.Locals))
             if (HasSlot(l)) Line($"byn_own_slot {Slot(l)} = {{0}};");
         for (var i = 0; i < _f.ContextSlots; i++) Line($"byn_alloc* ctx{i} = byn_context;");
+        for (var i = 0; i < _f.PanicSlots; i++) Line($"byn_panic_handler ph{i};");
         foreach (var s in _f.Body.Statements) Statement(s);
         if (_fn.Kind == FunctionKind.Constructor) Line("return self_v;");
         else if (_fn.Fails && !ReturnsValue) Line("return 0;");
@@ -826,7 +819,7 @@ internal sealed class FunctionEmitter
 
     // ── Ownership checks ─────────────────────────────────────────────────────────
 
-    /// <summary>A local, owning pattern binding (of <c>switch (move x)</c>) or <c>move</c> parameter this function owns.</summary>
+    /// <summary>A local, owning pattern binding (of <c>switch move x</c>) or <c>move</c> parameter this function owns.</summary>
     private static bool IsOwner(LocalSymbol l) =>
         l is { Kind: LocalKind.Let or LocalKind.Var or LocalKind.PatternVariable, BorrowsSubject: false } or ParameterSymbol { Modifier: ParamModifier.Move };
 
@@ -921,7 +914,7 @@ internal sealed class FunctionEmitter
 
     private void Statement(BoundStmt s)
     {
-        if (_c.OwnershipChecks && _reads is null && s is not (BoundBlock or LLoop or LLabel or LGoto)) FindUnsequenced(s);
+        if (_c.OwnershipChecks && _reads is null && s is not (BoundBlock or LLoop or LLabel or LGoto or LPushPanicHandler)) FindUnsequenced(s);
         _afterCalls = [];
         switch (s)
         {
@@ -997,6 +990,25 @@ internal sealed class FunctionEmitter
             case LFreeArena f:
                 Line($"byn_arena_free({Expr(f.Arena)});");
                 break;
+            case LPushPanicHandler p:
+                // The runtime longjmps here on a panic; the handler reads only `let`s and parameters, unchanged since the setjmp.
+                Line($"if (BYN_PANIC_CATCH(&ph{p.Slot})) {{");
+                _indent++;
+                if (p.Panic is not null) Line($"{_names[p.Panic]} = byn_panic_current();");
+                _indent--;
+                Block(p.Body);
+                _indent++;
+                Line("byn_panic_resume();");
+                _indent--;
+                Line("}");
+                Line($"byn_panic_push(&ph{p.Slot});");
+                break;
+            case LPopPanicHandler p:
+                Line($"byn_panic_pop(&ph{p.Slot});");
+                break;
+            case BoundSetOnPanic o:
+                Line($"byn_on_panic = {_c.FunctionName(o.Handler)};");
+                break;
             case LClaim c:
                 if (_c.OwnershipChecks && IsOwner(c.Local) && CEmitter.OwnsStorage(c.Local.Type))
                     Line($"{_c.OwnClaim(c.Local.Type)}(&{_names[c.Local]}, {Loc(c.Syntax)});");
@@ -1048,14 +1060,19 @@ internal sealed class FunctionEmitter
         else
         {
             var mode = w.Sink == WriteSink.Print ? "BYN_WRITE_STDOUT" : "BYN_WRITE_TRUNCATE";
-            Line("uint8_t wb[256];");
-            Line($"byn_writer wv = {{wb, 256, 0, {mode}, {Loc(w.Syntax)}}};");
+            // A panic message keeps as much as the runtime does (`byn_panic_text`), room for an `assert` diagram.
+            var size = w.Sink == WriteSink.Panic ? 1024 : 256;
+            Line($"uint8_t wb[{size}];");
+            Line($"byn_writer wv = {{wb, {size}, 0, {mode}, {Loc(w.Syntax)}}};");
             Line("byn_writer* w = &wv;");
         }
-        foreach (var part in w.Parts)
+        for (var i = 0; i < w.Parts.Length; i++)
         {
-            if (part.Text is { Length: > 0 } text) Line($"byn_w_str(w, {CEmitter.StringLiteral(text)});");
-            else if (part.Value is { } value) Line(_c.Format(value.Type, Expr(value), "w"));
+            var part = w.Parts[i];
+            var write = part.Text is { Length: > 0 } text ? $"byn_w_str(w, {CEmitter.StringLiteral(text)});"
+                : part.Value is { } value ? _c.Format(value.Type, Expr(value), "w") : null;
+            if (write is null) continue;
+            Line(w.Guards?[i] is { } guard ? $"if ({Expr(guard)}) {{ {write} }}" : write);
         }
         if (_c.OwnershipChecks && w.Sink == WriteSink.StrBuf && OwnerRoot(w.Target!) is not null) Line($"{_c.OwnClaim(w.Target!.Type)}(w, {Loc(w.Syntax)});");
         if (w.Sink == WriteSink.Print) Line("byn_w_println(w);");
@@ -1424,6 +1441,8 @@ internal sealed class FunctionEmitter
             }
             case BuiltinMember.StrBufAsString:
                 return $"byn_strbuf_str({Expr(r)})";
+            case BuiltinMember.PanicMessage:
+                return $"{Expr(r)}.message";
             case BuiltinMember.ProcessExitCode:
                 return $"{Expr(r)}.exit_code";
             case BuiltinMember.ProcessStdout:

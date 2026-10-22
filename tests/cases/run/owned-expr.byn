@@ -1,35 +1,35 @@
 union Expr {
-    Lit(i64 v),
-    Add(Owned<Expr> l, Owned<Expr> r),
-    Mul(Owned<Expr> l, Owned<Expr> r),
+    lit(i64 v),
+    add(Owned<Expr> l, Owned<Expr> r),
+    mul(Owned<Expr> l, Owned<Expr> r),
 }
 
 i64 eval(Expr e) => e switch {
-    .Lit(let v) => v,
-    .Add(let l, let r) => eval(l.value) + eval(r.value),
-    .Mul(let l, let r) => eval(l.value) * eval(r.value),
+    .lit(let v) => v,
+    .add(let l, let r) => eval(l.value) + eval(r.value),
+    .mul(let l, let r) => eval(l.value) * eval(r.value),
 };
 
 // n + (n - 1) + ... + 1, built recursively.
 Expr sum(i64 n) {
-    if (n == 1) {
-        return .Lit(1);
+    if n == 1 {
+        return .lit(1);
     }
-    return .Add(Owned(Expr.Lit(n)), Owned(sum(n - 1)));
+    return .add(Owned(Expr.lit(n)), Owned(sum(n - 1)));
 }
 
 // (1 + 2) * sum(4), built fresh each call.
-Expr sample() => Expr.Mul(Owned(Expr.Add(Owned(Expr.Lit(1)), Owned(Expr.Lit(2)))), Owned(sum(4)));
+Expr sample() => Expr.mul(Owned(Expr.add(Owned(Expr.lit(1)), Owned(Expr.lit(2)))), Owned(sum(4)));
 
 i64 depth(Expr e) {
-    switch (e) {
-        case .Lit(_):
+    switch e {
+        case .lit(_):
             return 1;
-        case .Add(let l, let r):
+        case .add(let l, let r):
             let a = depth(l.value);
             let b = depth(r.value);
             return 1 + (a > b ? a : b);
-        case .Mul(let l, let r):
+        case .mul(let l, let r):
             let a = depth(l.value);
             let b = depth(r.value);
             return 1 + (a > b ? a : b);
@@ -39,7 +39,7 @@ i64 depth(Expr e) {
 void main() {
     using let arena = Arena();
     context (allocator: arena) {
-        let left = Expr.Add(Owned(Expr.Lit(1)), Owned(Expr.Lit(2)));
+        let left = Expr.add(Owned(Expr.lit(1)), Owned(Expr.lit(2)));
         let e = sample();
         print($"{e}");
         print($"{eval(e)} {depth(e)}");

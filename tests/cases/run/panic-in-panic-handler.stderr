@@ -1,0 +1,4 @@
+panic: first
+  at panic-in-panic-handler.byn:4
+panic in a panic handler: handler broke
+  at panic-in-panic-handler.byn:3

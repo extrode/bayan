@@ -62,9 +62,12 @@ internal sealed class OwnershipAnalysis
             Reachable == other.Reachable && Moved.Count == other.Moved.Count && Moved.Keys.All(other.Moved.ContainsKey);
     }
 
-    /// <summary>A <c>defer</c>/<c>errdefer</c>: the locals its body reads and moves, and what was already moved when it was registered.</summary>
+    /// <summary>
+    /// A <c>defer</c>/<c>errdefer</c>: the locals its body reads and moves, and what was already moved when it was registered.
+    /// A <c>defer panicking</c> (<paramref name="Panic"/>) runs at a panic anywhere in its scope, not at the scope's exit.
+    /// </summary>
     private sealed record Cleanup(TextSpan Site, bool OnFailure, HashSet<LocalSymbol> Reads,
-        List<(LocalSymbol Local, TextSpan Site)> Moves, Dictionary<LocalSymbol, TextSpan> MovedBefore);
+        List<(LocalSymbol Local, TextSpan Site)> Moves, Dictionary<LocalSymbol, TextSpan> MovedBefore, bool Panic = false);
 
     private void Report(DiagnosticDescriptor d, TextSpan span, object?[] args, string? label = null, string? help = null, Fix? fix = null)
     {
@@ -98,6 +101,8 @@ internal sealed class OwnershipAnalysis
                 return state;
             case BoundExprStmt e:
                 return Expr(e.Expr, state);
+            case BoundAssert a:
+                return Expr(a.Condition, state);
             case BoundAssign a:
                 if (a.Op is null && a.Target is BoundLocal { Local: var l })
                 {
@@ -206,6 +211,11 @@ internal sealed class OwnershipAnalysis
                 Statement(e.Body, state.Clone());
                 Register(e.Body, e.Syntax.Span, onFailure: true, state);
                 return state;
+            // A panic handler runs in place of the scope's cleanups, not at its exit: registered only so a later move of what it reads is BYN2615.
+            case BoundPanicDefer p:
+                Statement(p.Body, state.Clone());
+                Register(p.Body, p.Syntax.Span, onFailure: false, state, panic: true);
+                return state;
             case BoundContext c:
                 return Statement(c.Body, Expr(c.Allocator, state));
             default:
@@ -224,7 +234,7 @@ internal sealed class OwnershipAnalysis
     }
 
     /// <summary>Registers a cleanup: the locals <paramref name="body"/> reads (not those it only assigns) and moves.</summary>
-    private void Register(BoundStmt body, TextSpan site, bool onFailure, State state)
+    private void Register(BoundStmt body, TextSpan site, bool onFailure, State state, bool panic = false)
     {
         var assigned = new HashSet<BoundNode>(ReferenceEqualityComparer.Instance);
         var reads = new HashSet<LocalSymbol>();
@@ -236,7 +246,7 @@ internal sealed class OwnershipAnalysis
             else if (n is BoundMove { Operand: BoundLocal { Local: var m } operand } move && IsMovable(operand) && TypeFacts.IsUnique(m.Type))
                 moves.Add((m, move.Syntax.Span));
         }
-        _cleanups.Add(new Cleanup(site, onFailure, reads, moves, new(state.Moved)));
+        _cleanups.Add(new Cleanup(site, onFailure, reads, moves, new(state.Moved), panic));
     }
 
     /// <summary>
@@ -250,12 +260,12 @@ internal sealed class OwnershipAnalysis
         for (var i = _cleanups.Count - 1; i >= depth; i--)
         {
             var c = _cleanups[i];
-            if (c.OnFailure && !failing) continue;
+            if (c.Panic || c.OnFailure && !failing) continue;
             foreach (var l in c.Reads)
                 if (moved.TryGetValue(l, out var site) && !(c.MovedBefore.TryGetValue(l, out var before) && before == site))
                     Report(DiagnosticCodes.UseAfterMove, site, [l.Name],
-                        label: $"{(c.OnFailure ? "an `errdefer`" : "a `defer`")} on line {_source.GetLinePosition(c.Site.Start).Line} uses it at scope exit",
-                        help: $"move `{l.Name}` before the `{(c.OnFailure ? "errdefer" : "defer")}`, or move a `.copy(to: alloc)` of it instead");
+                        label: $"{(c.OnFailure ? "a `defer failing`" : "a `defer`")} on line {_source.GetLinePosition(c.Site.Start).Line} uses it at scope exit",
+                        help: $"move `{l.Name}` before the `{(c.OnFailure ? "defer failing" : "defer")}`, or move a `.copy(to: alloc)` of it instead");
             foreach (var (l, site) in c.Moves) moved[l] = site;
         }
     }
@@ -287,7 +297,14 @@ internal sealed class OwnershipAnalysis
             case BoundMove m:
                 state = Expr(m.Operand, state);
                 if (IsMovable(m.Operand) && m.Operand is BoundLocal { Local: var moved } && TypeFacts.IsUnique(moved.Type))
+                {
                     state.Moved[moved] = m.Syntax.Span;
+                    foreach (var c in _cleanups)
+                        if (c.Panic && state.Reachable && c.Reads.Contains(moved))
+                            Report(DiagnosticCodes.PanicHandlerReadsMoved, m.Syntax.Span, [moved.Name],
+                                label: $"the `defer panicking` on line {_source.GetLinePosition(c.Site.Start).Line} reads it after a later panic",
+                                help: $"move `{moved.Name}` before the `defer panicking`, or read a `let` copied from it there");
+                }
                 return state;
             case BoundTry t:
                 state = Expr(t.Operand, state);

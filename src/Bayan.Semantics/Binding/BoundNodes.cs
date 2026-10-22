@@ -44,7 +44,7 @@ public sealed record BoundTupleElement(Node Syntax, BoundExpr Receiver, int Inde
 public sealed record BoundCall(Node Syntax, FunctionSymbol Function, BoundExpr? Receiver, BoundExpr[] Arguments, TypeSymbol Type)
     : BoundExpr(Syntax, Type);
 
-/// <summary>Members of built-in types (<c>string.length</c>, <c>List.add</c>, …).</summary>
+/// <summary>Members of built-in types (<c>List.length</c>, <c>List.append</c>, …).</summary>
 public enum BuiltinMember
 {
     StringLength, StringBytes, StringIsEmpty, StringCopy, StringStartsWith, StringEndsWith, StringContains,
@@ -70,6 +70,7 @@ public enum BuiltinMember
     /// <summary>A data-enum field; the argument is the field index.</summary>
     EnumField,
     ProcessExitCode, ProcessStdout, ProcessStderr,
+    PanicMessage,
 }
 
 public sealed record BoundBuiltinCall(Node Syntax, BuiltinMember Member, BoundExpr Receiver, BoundExpr[] Arguments, TypeSymbol Type)
@@ -102,6 +103,8 @@ public enum ConversionKind
     ErrorToResult,
     /// <summary>A <c>never</c> expression in a position of another type.</summary>
     FromNever,
+    /// <summary>A <c>T?</c> let local or parameter read where a null check proved it present (spec §7.2).</summary>
+    Narrow,
 }
 
 public sealed record BoundConversion(Node Syntax, BoundExpr Operand, TypeSymbol Type, ConversionKind Kind) : BoundExpr(Syntax, Type);
@@ -119,8 +122,11 @@ public sealed record BoundWith(Node Syntax, BoundExpr Target, (FieldSymbol Field
 
 public sealed record BoundTuple(Node Syntax, TupleType TupleType, BoundExpr[] Elements) : BoundExpr(Syntax, TupleType);
 
-/// <summary><c>[a, b]</c> as a <c>List</c>, <c>Span</c> (stack storage) or fixed array.</summary>
+/// <summary><c>[a, b]</c> as a <c>List</c>, <c>Span</c> (stack storage) or fixed array; for a <c>Map</c>, <see cref="Elements"/> alternate key and value.</summary>
 public sealed record BoundCollection(Node Syntax, TypeSymbol Type, BoundExpr[] Elements) : BoundExpr(Syntax, Type);
+
+/// <summary><c>..xs</c> inside a <see cref="BoundCollection"/>: every element of a list, span or fixed array; <see cref="BoundExpr.Type"/> is the element type.</summary>
+public sealed record BoundSpread(Node Syntax, BoundExpr Operand, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
 /// <summary><c>xs[i]</c> or <c>xs[^i]</c> on spans, lists and arrays; always bounds-checked.</summary>
 public sealed record BoundIndex(Node Syntax, BoundExpr Target, BoundExpr Index, bool FromEnd, TypeSymbol Type) : BoundExpr(Syntax, Type);
@@ -220,7 +226,11 @@ public sealed record BoundBreak(Node Syntax, JumpTarget Target) : BoundStmt(Synt
 
 public sealed record BoundContinue(Node Syntax, JumpTarget Target) : BoundStmt(Syntax);
 
-public sealed record BoundIf(Node Syntax, BoundExpr Condition, BoundStmt Then, BoundStmt? Else) : BoundStmt(Syntax);
+public sealed record BoundIf(Node Syntax, BoundExpr Condition, BoundStmt Then, BoundStmt? Else) : BoundStmt(Syntax)
+{
+    /// <summary><c>if never</c>: after <see cref="Then"/>, panics in every build mode.</summary>
+    public bool Never { get; init; }
+}
 
 public sealed record BoundWhile(Node Syntax, BoundExpr Condition, BoundStmt Body, JumpTarget Target) : BoundStmt(Syntax);
 
@@ -240,7 +250,16 @@ public sealed record BoundSwitch(Node Syntax, BoundExpr Value, BoundSwitchSectio
 
 public sealed record BoundDefer(Node Syntax, BoundStmt Body) : BoundStmt(Syntax);
 
+/// <summary><c>assert condition;</c>; <see cref="BoundNode.Syntax"/> is the <c>AssertStmt</c>.</summary>
+public sealed record BoundAssert(Node Syntax, BoundExpr Condition) : BoundStmt(Syntax);
+
 public sealed record BoundErrdefer(Node Syntax, LocalSymbol? Error, BoundStmt Body) : BoundStmt(Syntax);
+
+/// <summary><c>defer panicking [(p)] body</c>: runs only while a panic is in progress; <see cref="Panic"/> receives it.</summary>
+public sealed record BoundPanicDefer(Node Syntax, LocalSymbol? Panic, BoundStmt Body) : BoundStmt(Syntax);
+
+/// <summary><c>Panic.onPanic = f;</c>, the first statement of <c>main</c>.</summary>
+public sealed record BoundSetOnPanic(Node Syntax, FunctionSymbol Handler) : BoundStmt(Syntax);
 
 /// <summary><c>context (allocator: a) { … }</c>.</summary>
 public sealed record BoundContext(Node Syntax, BoundExpr Allocator, BoundBlock Body) : BoundStmt(Syntax);

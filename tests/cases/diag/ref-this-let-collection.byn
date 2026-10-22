@@ -1,0 +1,13 @@
+struct Stat {
+    i64 hits;
+
+    void record(ref this) {
+        hits += 1;
+    }
+}
+
+let list = [Stat { hits: 0 }];
+list[0].record();
+
+let stats = Map<string, Stat>();
+stats["api"].record();

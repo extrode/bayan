@@ -1,0 +1,7 @@
+void report(string message) {
+    print(message);
+}
+
+void main() {
+    Panic.onPanic = report;
+}

@@ -1,0 +1,7 @@
+error BYN3100: `package.byn` is data only: expected `field: value` or `}`
+
+  2 │     name "local/shop",
+    │          ^^^^^^^^^^^^
+    │
+  help: write strings, integers, `true`/`false`, `.names`, `[lists]` or `Type { field: value }`; no
+        calls or expressions

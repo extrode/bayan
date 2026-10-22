@@ -1,0 +1,17 @@
+error BYN1031: `T!E` is an input form; write `T f() fails E`
+
+  11 │ i64!ParseError parse(string s) {
+     │    ^^^^^^^^^^^ the input form
+     │
+  help: write `fails ParseError` after the parameters
+     │ 11 │ i64 parse(string s) fails ParseError {
+     │    │    +++++++++++++++++++++++++++++++++
+
+error BYN1031: `T!E` is an input form; write `T f() fails E`
+
+  16 │ i64!(ParseError, RangeError) parseSmall(string s) {
+     │    ^^^^^^^^^^^^^^^^^^^^^^^^^ the input form
+     │
+  help: write `fails ParseError, RangeError` after the parameters
+     │ 16 │ i64 parseSmall(string s) fails ParseError, RangeError {
+     │    │    ++++++++++++++++++++++++++++++++++++++++++++++++++

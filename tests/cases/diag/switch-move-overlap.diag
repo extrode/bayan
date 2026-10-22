@@ -1,4 +1,4 @@
-error BYN2790: pattern `let x and let y` binds the same storage more than once in `switch (move …)`
+error BYN2790: pattern `let x and let y` binds the same storage more than once in `switch move …`
 
   16 │         case let x and let y:
      │              ^^^^^^^^^^^^^^^
@@ -6,7 +6,7 @@ error BYN2790: pattern `let x and let y` binds the same storage more than once i
   help: bind the whole value or its parts, not both
 
 error BYN2790: pattern `Ledger { items: let it } whole` binds the same storage more than once in
-`switch (move …)`
+`switch move …`
 
   22 │         case Ledger { items: let it } whole:
      │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -14,7 +14,7 @@ error BYN2790: pattern `Ledger { items: let it } whole` binds the same storage m
   help: bind the whole value or its parts, not both
 
 error BYN2790: pattern `{ items: let p, items: let q }` binds the same storage more than once in
-`switch (move …)`
+`switch move …`
 
   28 │         case { items: let p, items: let q }:
      │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -22,9 +22,9 @@ error BYN2790: pattern `{ items: let p, items: let q }` binds the same storage m
   help: bind each field once
 
 error BYN2790: pattern `{ items: let p, items: let q }` binds the same storage more than once in
-`switch (move …)`
+`switch move …`
 
-  35 │         case .Full({ items: let p, items: let q }):
+  35 │         case .full({ items: let p, items: let q }):
      │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
      │
   help: bind each field once

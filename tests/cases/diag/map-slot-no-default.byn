@@ -16,7 +16,7 @@ void use() {
     var points = Map<i64, Point>();
     points.slot(1).y += 1;
     var lists = Map<i64, List<i64>>();
-    lists.slot(1).add(2);
+    lists.slot(1).append(2);
     var origins = Map<i64, Origin>();
     origins.slot(1).x += 1;
     var names = Map<i64, string?>();

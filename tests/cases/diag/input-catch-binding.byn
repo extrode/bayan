@@ -1,0 +1,20 @@
+error enum ParseError {
+    /// No digits.
+    empty,
+    /// Not a digit.
+    bad,
+}
+
+i64 parse(string s) fails ParseError {
+    return .empty if s.length == 0;
+    return 1;
+}
+
+void main() {
+    let a = parse("1") catch (e) switch {
+        ParseError.empty => 0,
+        _ => 1,
+    };
+    let b = parse("") catch (e) 0;
+    print($"{a + b}");
+}

@@ -99,6 +99,9 @@ internal sealed class RegionAnalysis
             case BoundExprStmt e:
                 Expr(e.Expr);
                 break;
+            case BoundAssert a:
+                Expr(a.Condition);
+                break;
             case BoundAssign a:
             {
                 var value = Expr(a.Value);
@@ -162,6 +165,10 @@ internal sealed class RegionAnalysis
                 if (e.Error is not null) Declare(e.Error, e.Syntax.Span.Start);
                 Stmt(e.Body);
                 break;
+            case BoundPanicDefer p:
+                if (p.Panic is not null) Declare(p.Panic, p.Syntax.Span.Start);
+                Stmt(p.Body);
+                break;
             case BoundContext c:
                 _contexts.Push(AllocatedFrom(c.Allocator));
                 Stmt(c.Body);
@@ -215,6 +222,9 @@ internal sealed class RegionAnalysis
                 Expr(i.Index);
                 return target with { Owners = [] };
             }
+            case BoundSpread s:
+                // Like an index: the elements are copies of what the sequence holds.
+                return Expr(s.Operand) with { Owners = [] };
             case BoundStackalloc s:
                 return new Borrow([new Region(_depth, $"the `stackalloc` buffer on line {Line(s.Syntax.Span)}")], []);
             case BoundCollection c:

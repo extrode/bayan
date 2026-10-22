@@ -1,0 +1,30 @@
+union Mode { read = 1, write = 2, append, none = -1 }
+
+union Reply { ok = 200, notFound = 404, moved(string to) }
+
+string describe(Mode m) => m switch {
+    .read => "read",
+    .write => "write",
+    .append => "append",
+    .none => "none",
+};
+
+void show(Reply r) {
+    switch r {
+        case .ok:
+            print("ok");
+        case .notFound:
+            print("not found");
+        case .moved(let to):
+            print($"moved to {to}");
+    }
+}
+
+List<Mode> modes = [.read, .write, .append, .none];
+for m in modes {
+    print($"{describe(m)} {m}");
+}
+print($"{Mode.append == .append} {Mode.read == .write}");
+show(.ok);
+show(Reply.notFound);
+show(.moved("/home"));

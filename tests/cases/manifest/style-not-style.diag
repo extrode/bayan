@@ -1,0 +1,4 @@
+error BYN3102: `style` must be a `Style { … }`
+
+  4 │     style: [.sameLine],
+    │            ^^^^^^^^^^^

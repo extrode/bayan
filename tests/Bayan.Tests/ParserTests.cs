@@ -59,10 +59,12 @@ public sealed class ParserTests
     [InlineData("x = n is > 0 and < 10", "(is n (and (> 0) (< 10)))")]
     [InlineData("x = n is 500..=599", "(is n (..= 500 599))")]
     [InlineData("x = a is .shipped && b", "(&& (is a .shipped) b)")]
-    [InlineData("x = Point { x = 1, y = 2 }", "(struct Point (x 1) (y 2))")]
-    [InlineData("x = { x = 1 }", "(struct _ (x 1))")]
-    [InlineData("x = p with { x = 1 }", "(with p (x 1))")]
+    [InlineData("x = Point { x: 1, y: 2 }", "(struct Point (x 1) (y 2))")]
+    [InlineData("x = { x: 1 }", "(struct _ (x 1))")]
+    [InlineData("x = p with { x: 1 }", "(with p (x 1))")]
     [InlineData("x = [1, ..rest]", "(list 1 (spread rest))")]
+    [InlineData("x = [\"a\": 1, k: v + 1]", "(map (entry \"a\" 1) (entry k (+ v 1)))")]
+    [InlineData("x = [\"a\": 1, 2]", "(list (entry \"a\" 1) 2)")]
     [InlineData("x = (1, name: \"a\")", "(tuple 1 (name: \"a\"))")]
     [InlineData("x = new Point()", "(call Point)")]
     public void Precedence(string source, string expected) => Assert.Equal(expected, Expr(source));
@@ -93,6 +95,30 @@ public sealed class ParserTests
         var s = Assert.IsType<StructDecl>(tree.Root.Members[0]);
         Assert.Equal(2, s.Members.Length);
         Assert.Equal(2, tree.Root.Members.Length);
+    }
+
+    [Theory]
+    [InlineData("defer failing close();", DeferKind.Failing, null)]
+    [InlineData("defer panicking (p) close();", DeferKind.Panicking, "p")]
+    [InlineData("defer failing (e) { close(); }", DeferKind.Failing, "e")]
+    [InlineData("defer failing();", DeferKind.Always, null)]
+    [InlineData("defer failing.close();", DeferKind.Always, null)]
+    [InlineData("defer panicking = 1;", DeferKind.Always, null)]
+    public void FailingAndPanickingAreWordsOnlyAfterDefer(string text, DeferKind kind, string? binding)
+    {
+        var tree = Parse(text);
+        Assert.Empty(tree.Diagnostics);
+        var defer = Assert.IsType<DeferStmt>(Assert.IsType<GlobalStatement>(Assert.Single(tree.Root.Members)).Statement);
+        Assert.Equal(kind, defer.Kind);
+        Assert.Equal(binding, defer.Binding?.Text);
+    }
+
+    [Fact]
+    public void FailingAndPanickingAreIdentifiersElsewhere()
+    {
+        var tree = Parse("let failing = 1;\nvar panicking = failing + 1;\nvoid f(i64 failing) { panicking = failing; }\n");
+        Assert.Empty(tree.Diagnostics);
+        Assert.Equal(3, tree.Root.Members.Length);
     }
 
     [Fact]

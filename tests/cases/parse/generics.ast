@@ -10,8 +10,8 @@ CompilationUnit
     Field B b
     Function swap() -> Pair<B, A> => (struct Pair<B, A> (a b) (b a))
   Union Option2<T>
-    Variant Some(T v)
-    Variant Nothing
+    Variant some(T v)
+    Variant nothing
   Let x = (call pick<i64> (first: true) (a: 1) (b: 2))
   Let p = (struct Pair<i64, string> (a 1) (b "x"))
-  Let o = (call (. Option2<i64> Some) 5)
+  Let o = (call (. Option2<i64> some) 5)

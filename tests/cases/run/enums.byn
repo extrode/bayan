@@ -10,6 +10,10 @@ public enum Suit {
 struct Card {
     Suit suit;
     i64 rank;
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Card {{ suit: {suit}, rank: {rank} }}");
+    }
 }
 
 string describe(Color c) => c switch {
@@ -18,7 +22,7 @@ string describe(Color c) => c switch {
 };
 
 void kind(Suit s) {
-    switch (s) {
+    switch s {
         case .hearts or .diamonds:
             print($"{s} is red");
         case Suit.clubs:
@@ -29,11 +33,11 @@ void kind(Suit s) {
 }
 
 print($"count {Color.count} {Suit.count}");
-for (let c in Color.values) {
+for c in Color.values {
     print($"{c.ordinal} {c.name} {c} {describe(c)}");
 }
 print(Color.green);
-for (let s in Suit.values) {
+for s in Suit.values {
     kind(s);
 }
 
@@ -53,15 +57,15 @@ print($"{Suit.parse("hearts")} {Suit.parse("Hearts")} {Suit.parse("")}");
 let parsed = Suit.parse("spades") ?? .clubs;
 print($"parsed {parsed.name} {parsed.ordinal}");
 
-let card = Card { suit = .hearts, rank = 12 };
+let card = Card { suit: .hearts, rank: 12 };
 print($"{card}");
-print($"{card == Card { suit = Suit.hearts, rank = 12 }} {card == Card { suit = .spades, rank = 12 }}");
+print($"{card == Card { suit: Suit.hearts, rank: 12 }} {card == Card { suit: .spades, rank: 12 }}");
 
 var hand = List<Suit>();
-hand.add(.spades);
-hand.add(Suit.diamonds);
-hand.add(card.suit);
-for (let s in hand) {
+hand.append(.spades);
+hand.append(Suit.diamonds);
+hand.append(card.suit);
+for s in hand {
     print($"hand {s}");
 }
 Suit? maybe = hand[1];

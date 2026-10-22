@@ -1,0 +1,35 @@
+error BYN1017: parentheses around a condition are an input form
+
+  3 │     if (x > 2) {
+    │        ^^^^^^^ not needed
+    │
+  help: remove the parentheses
+    │ 3 │     if x > 2 {
+    │   │        +++++
+
+error BYN1017: parentheses around a condition are an input form
+
+  6 │     while (x > 5) {
+    │           ^^^^^^^ not needed
+    │
+  help: remove the parentheses
+    │ 6 │     while x > 5 {
+    │   │           +++++
+
+error BYN1017: parentheses around a condition are an input form
+
+  9 │     switch (x) {
+    │            ^^^ not needed
+    │
+  help: remove the parentheses
+    │ 9 │     switch x {
+    │   │            +
+
+error BYN1017: parentheses around a condition are an input form
+
+  15 │     } while (x < 4);
+     │             ^^^^^^^ not needed
+     │
+  help: remove the parentheses
+     │ 15 │     } while x < 4;
+     │    │             +++++

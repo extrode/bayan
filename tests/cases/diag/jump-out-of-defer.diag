@@ -1,4 +1,4 @@
-error BYN2610: `return` cannot leave a `defer` or `errdefer` body
+error BYN2610: `return` cannot leave a `defer` or `defer failing` body
 
   3 │         return;
     │         ^^^^^^

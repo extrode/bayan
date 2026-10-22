@@ -1,7 +1,7 @@
 // Write bytes, read them back, copy them to a second file, and compare byte by byte.
 bool same(ReadOnlySpan<u8> a, ReadOnlySpan<u8> b) {
     return false if a.length != b.length;
-    for (let i in 0..a.length) {
+    for i in 0..a.length {
         return false if a[i] != b[i];
     }
     return true;

@@ -10,14 +10,14 @@ struct Pair<A, B> {
     A a;
     B b;
 
-    Pair<B, A> swap() => Pair<B, A> { a = b, b = a };
+    Pair<B, A> swap() => Pair<B, A> { a: b, b: a };
 }
 
 union Option2<T> {
-    Some(T v),
-    Nothing,
+    some(T v),
+    nothing,
 }
 
 let x = pick<i64>(first: true, a: 1, b: 2);
-let p = Pair<i64, string> { a = 1, b = "x" };
-let o = Option2<i64>.Some(5);
+let p = Pair<i64, string> { a: 1, b: "x" };
+let o = Option2<i64>.some(5);

@@ -1,0 +1,6 @@
+error BYN2410: `switch` does not handle every `EmailError | DbError`
+
+  20 │ let r = signUp(1) catch switch {
+     │                         ^^^^^^ not covered: EmailError, DbError.lost
+     │
+  help: add the missing arms, or `_ => …` for the rest

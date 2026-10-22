@@ -1,0 +1,17 @@
+error BYN2104: `list` is immutable
+
+  10 │ list[0].record();
+     │ ^^^^^^^ `record` modifies it; declared with `let` on line 9
+     │
+  help: declare it with `var` if it should change
+     │  9 │ var list = [Stat { hits: 0 }];
+     │    │ +++
+
+error BYN2104: `stats` is immutable
+
+  13 │ stats["api"].record();
+     │ ^^^^^^^^^^^^ `record` modifies it; declared with `let` on line 12
+     │
+  help: declare it with `var` if it should change
+     │ 12 │ var stats = Map<string, Stat>();
+     │    │ +++

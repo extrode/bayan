@@ -1,0 +1,26 @@
+error BYN1018: the body of `defer` must be a block
+
+  2 │     defer let x = 1;
+    │           ^^^^^^^^^^ a single statement
+    │
+  help: wrap the statement in `{ }`
+    │ 2 │     defer { let x = 1; }
+    │   │           ++++++++++++++
+
+error BYN1018: the body of `defer` must be a block
+
+  3 │     defer i32 y = 1;
+    │           ^^^^^^^^^^ a single statement
+    │
+  help: wrap the statement in `{ }`
+    │ 3 │     defer { i32 y = 1; }
+    │   │           ++++++++++++++
+
+error BYN1018: the body of `defer` must be a block
+
+  8 │     defer failing let z = 1;
+    │                   ^^^^^^^^^^ a single statement
+    │
+  help: wrap the statement in `{ }`
+    │ 8 │     defer failing { let z = 1; }
+    │   │                   ++++++++++++++

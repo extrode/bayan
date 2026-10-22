@@ -5,8 +5,10 @@ running 1 test in 1 module
 
   ✗ tally: leftover cents
       assert(net == cents(2))
-        net is 199
-        cents(2) is 200
+             │   │  │
+             │   │  200
+             │   false
+             199
       main.test.byn:7
 
 ◆ 0 passed · ✗ 1 failed · 0 pending · 0.00s

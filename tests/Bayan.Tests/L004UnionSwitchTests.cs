@@ -10,30 +10,30 @@ namespace Bayan.Tests;
 [Trait("Law", "L004")]
 public sealed class L004UnionSwitchTests
 {
-    private const string Union = "union U { A, B(i64 x), C }\n";
+    private const string Union = "union U { a, b(i64 x), c }\n";
 
     // Arms are written once; "default" and "_" stand for the default arm in either form.
     public static TheoryData<string, string[], string> Cases => new()
     {
-        { "all plain", [".A", ".B(let x)", ".C"], "" },
-        { "var binding", [".A", ".B(var x)", ".C"], "" },
-        { "wildcard subpattern", [".A", ".B(_)", ".C"], "" },
-        { "guarded only", [".A", ".B(var x) when x > 0", ".C"], ".B" },
-        { "guard true is still a guard", [".A", ".B(let x) when true", ".C"], ".B" },
-        { "guarded plus plain", [".A", ".B(var x) when x > 0", ".B(_)", ".C"], "" },
-        { "or covers two", [".A or .C", ".B(var x)"], "" },
-        { "or leaves one", [".A or .C", ".B(1)"], ".B" },
-        { "refutable nested only", [".A", ".B(1)", ".C"], ".B" },
-        { "refutable nested then plain", [".A", ".B(1)", ".B(let x)", ".C"], "" },
-        { "default arm", [".A", "default"], "" },
+        { "all plain", [".a", ".b(let x)", ".c"], "" },
+        { "var binding", [".a", ".b(var x)", ".c"], "" },
+        { "wildcard subpattern", [".a", ".b(_)", ".c"], "" },
+        { "guarded only", [".a", ".b(var x) when x > 0", ".c"], ".b" },
+        { "guard true is still a guard", [".a", ".b(let x) when true", ".c"], ".b" },
+        { "guarded plus plain", [".a", ".b(var x) when x > 0", ".b(_)", ".c"], "" },
+        { "or covers two", [".a or .c", ".b(var x)"], "" },
+        { "or leaves one", [".a or .c", ".b(1)"], ".b" },
+        { "refutable nested only", [".a", ".b(1)", ".c"], ".b" },
+        { "refutable nested then plain", [".a", ".b(1)", ".b(let x)", ".c"], "" },
+        { "default arm", [".a", "default"], "" },
         { "default only", ["default"], "" },
-        { "two missing", [".B(let x)"], ".A, .C" },
-        { "none covered but one", [".C"], ".A, .B" },
-        { "let binding covers rest", [".A", "let s"], "" },
-        { "var binding covers rest", [".A", "var s"], "" },
+        { "two missing", [".b(let x)"], ".a, .c" },
+        { "none covered but one", [".c"], ".a, .b" },
+        { "let binding covers rest", [".a", "let s"], "" },
+        { "var binding covers rest", [".a", "var s"], "" },
         { "let binding only", ["let s"], "" },
-        { "guarded binding", [".A", "let s when true"], ".B, .C" },
-        { "guarded wildcard", ["_ when true"], ".A, .B, .C" },
+        { "guarded binding", [".a", "let s when true"], ".b, .c" },
+        { "guarded wildcard", ["_ when true"], ".a, .b, .c" },
     };
 
     [Theory]
@@ -43,7 +43,7 @@ public sealed class L004UnionSwitchTests
         var cases = string.Concat(arms.Select(a => a == "default"
             ? "        default:\n            print(\"d\");\n"
             : $"        case {a}:\n            print(\"a\");\n"));
-        Check(name, $"{Union}void f(U u) {{\n    switch (u) {{\n{cases}    }}\n}}\nf(U.A);\n", missing);
+        Check(name, $"{Union}void f(U u) {{\n    switch u {{\n{cases}    }}\n}}\nf(U.a);\n", missing);
     }
 
     [Theory]
@@ -51,7 +51,7 @@ public sealed class L004UnionSwitchTests
     public void SwitchExpression(string name, string[] arms, string missing)
     {
         var cases = string.Concat(arms.Select(a => $"    {(a == "default" ? "_" : a)} => 1,\n"));
-        Check(name, $"{Union}i64 f(U u) => u switch {{\n{cases}}};\nprint($\"{{f(U.A)}}\");\n", missing);
+        Check(name, $"{Union}i64 f(U u) => u switch {{\n{cases}}};\nprint($\"{{f(U.a)}}\");\n", missing);
     }
 
     private static void Check(string name, string source, string missing)

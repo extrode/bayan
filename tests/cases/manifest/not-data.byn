@@ -1,4 +1,4 @@
 Package {
-    name = "local/" + "tally",
-    version = "0.1.0",
+    name: "local/" + "tally",
+    version: "0.1.0",
 }

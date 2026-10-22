@@ -1,0 +1,11 @@
+i64 pick(i64 n) {
+    if never n < 0 {
+        print("negative");
+        return 0;
+    }
+    return n;
+}
+
+print($"{pick(3)}");
+print($"{pick(-1)}");
+print("unreachable");

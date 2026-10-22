@@ -1,0 +1,3 @@
+error set SignupError = EmailError, DbError;
+public error set AnyError = SignupError, IoError;
+i64 signUp(Form f) fails SignupError => 0;

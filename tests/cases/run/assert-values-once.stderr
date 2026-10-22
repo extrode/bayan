@@ -1,4 +1,7 @@
-panic: assertion failed: bump(ref calls) > calls + 5
-  bump(ref calls) is 2
-  calls + 5 is 7
+panic: assert(bump(ref calls) > calls + 5)
+              │               │ │     │
+              │               │ │     7
+              │               │ 2
+              │               false
+              2
   at assert-values-once.byn:9

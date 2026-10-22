@@ -1,0 +1,6 @@
+error BYN2410: `switch` does not handle every `Color`
+
+  3 │ i64 code(Color c) => c switch {
+    │                      ^ not covered: .green, .blue
+    │
+  help: add the missing arms, or `_ => …` for the rest

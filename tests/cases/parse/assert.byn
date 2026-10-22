@@ -1,0 +1,6 @@
+void check(i64 a, Cart cart) {
+    assert a == 1;
+    assert(a == 1);
+    assert cart.subtotal.cents > 0 && a < 10;
+    assert !cart.isEmpty;
+}
