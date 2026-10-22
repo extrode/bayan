@@ -1,0 +1,51 @@
+error enum ParseError {
+    /// The input was empty.
+    empty,
+    /// The input had a non-digit.
+    notDigit,
+}
+
+interface IParser {
+    i64 parse(string s) fails ParseError;
+    void check(string s) fails ParseError;
+}
+
+struct Digits : IParser {
+    i64 base;
+
+    i64 parse(string s) fails ParseError {
+        return .empty if s.isEmpty;
+        let c = s.bytes[0];
+        return .notDigit if c < '0' || c > '9';
+        return base + (i64)(c - '0');
+    }
+
+    void check(string s) fails ParseError {
+        let d = try parse(s);
+        print($"checked {d}");
+    }
+}
+
+void attempt(dyn ref readonly IParser p, string s) {
+    let n = p.parse(s) catch (e) {
+        print($"failed with {e == ParseError.empty ? "empty" : "notDigit"}");
+        return;
+    };
+    print($"parsed {n}");
+}
+
+void run(dyn ref readonly IParser p) fails ParseError {
+    try p.check("7");
+    try p.check("x");
+    print("not reached");
+}
+
+void main() {
+    let d = Digits { base = 10 };
+    attempt(d, "4");
+    attempt(d, "");
+    attempt(d, "q");
+    run(d) catch (e) {
+        print($"run failed with {e == ParseError.empty ? "empty" : "notDigit"}");
+    };
+}

@@ -770,7 +770,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             }
             case BoundConversion c:
             {
-                var lvalue = c.Kind == ConversionKind.ArrayToSpan;
+                var lvalue = c.Kind is ConversionKind.ArrayToSpan or ConversionKind.ToDynRef;
                 var operand = lvalue ? Lvalue(c.Operand) : Expr(c.Operand);
                 if (IsNever(operand)) return new LNever(e.Syntax, e.Type);
                 if (c.Kind == ConversionKind.FromNever) return operand;
