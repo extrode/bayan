@@ -89,6 +89,10 @@ public sealed partial class Compilation
                     if (field is not null)
                         Report(DiagnosticCodes.MissingInterfaceMember, source, at, [s.Name, member.Name, i.DisplayName, SignatureText(expected)],
                             label: $"needs `{member.Name}`", help: $"rename the field `{field.Name}` and add `{SignatureText(expected)}` to `{s.Name}`; a field cannot provide a method");
+                    // A later base's default would stand for it: as with an earlier one, the struct must choose.
+                    else if (member.IsAbstract && s.Bases.FirstOrDefault(b => b != i && b.Methods.Concat(b.Properties).Any(m => m.Name == member.Name && !m.IsAbstract)) is { } later)
+                        Report(DiagnosticCodes.InterfaceMemberMismatch, source, at, [s.Name, member.Name, $"{later.DisplayName}.{member.Name}", i.DisplayName, SignatureText(expected)],
+                            label: $"`{member.Name}` has a default in `{later.DisplayName}`", help: $"add `{SignatureText(expected)}` to `{s.Name}` to choose one");
                     else if (member.IsAbstract)
                         Report(DiagnosticCodes.MissingInterfaceMember, source, at, [s.Name, member.Name, i.DisplayName, SignatureText(expected)],
                             label: $"needs `{member.Name}`", help: $"add `{SignatureText(expected)}` to `{s.Name}`", fix: InsertMember(s, expected));

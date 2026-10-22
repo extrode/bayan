@@ -698,7 +698,9 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(syntax);
             case TypeParameterType tp:
                 Report(DiagnosticCodes.TypeParameterMember, member.Span, [name, tp.Name],
-                    help: $"use a concrete type here; type parameters have no constraints, so a `{tp.Name}` has no members");
+                    help: tp.Constraints.Count > 0
+                        ? $"use a member `{string.Join("`, `", tp.Constraints.Select(i => i.DisplayName))}` declares; a `{tp.Name}` has only those"
+                        : $"use a concrete type here; type parameters have no constraints, so a `{tp.Name}` has no members");
                 return new BoundErrorExpr(syntax);
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)

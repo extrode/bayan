@@ -1,0 +1,6 @@
+error BYN2744: `nope` is not a member of type parameter `Self`
+
+  3 │     i64 big() => this.nope;
+    │                       ^^^^
+    │
+  help: use a member `IShape` declares; a `Self` has only those
