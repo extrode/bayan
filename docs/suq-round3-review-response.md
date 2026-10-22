@@ -130,7 +130,7 @@ Plan entry: §23. Each step's text is in plan J35–J53 (`:215-233`); F-07 exten
 | 2 Head-first declarations | SPEC `:314`, `:405-406`, `:411`, `:1672`, `:1679`; GRAMMAR `:75`, `:97`, `:156-157` | Matches for the kind keywords. Declaration order changed after this review: see "Revert: type-first declarations" below |
 | 3 `@attr`, `because` list | SPEC §4.4 `:544-551`; GRAMMAR §7 `:203-212` | Differs: no `Secret.expose()`. SPEC `:547-551`: "`@allow(X) because "…"`", "`@json(expose) because "…"` on a `Secret` field (§15.2)", "`xUnchecked() because "…"`, including `trustUnchecked()` (§15.1)", "`unsafe because "…" { … }`". A secret is exposed per field with `@json(expose) because`, not per call |
 | 4 `requires it`, `at .field` | SPEC §7.9 `:906-920`; GRAMMAR `:83` | Matches (HANDOFF §11 body still shows `on`, superseded by its "Resolved 2026-10-22" paragraph) |
-| 5 `->` in function types | SPEC §3.16 `:457`, §14 `:1287`; GRAMMAR §9 `:259`, `:266` | Matches. 007 Q115 makes a stored function type a field (`onPaid: Order -> void uses net`) BYN2822 in 007's scope |
+| 5 `->` in function types | SPEC §3.16 `:457`, §14 `:1287`; GRAMMAR §9 `:259`, `:266` | Matches. 007 Q115 makes a stored function type a field (`(Order -> void uses net) onPaid`) BYN2822 in 007's scope |
 | 6 `case not .x` | SPEC §6.8 `:756`, `:1684`; GRAMMAR `:84` | Matches |
 | 7 Unit conversions | SPEC §3.4 `:213`, `:215` | Matches |
 | 8 `log(msg, as: .level)` | SPEC §5.2 `:607`; GRAMMAR §10 `:299` | Matches |
@@ -201,13 +201,13 @@ Those branches are not merged, so the list is copied here. The conservative choi
 | Q112 | How is an associated type bound? | `type Item = T` in a struct body is the existing `TypeAliasDecl`, matched by name to the base's associated type | 006 |
 | Q113 | Interface name as a plain type, and corner cases? | BYN2816; default templates never lowered; vtables emitted on first `ToDynRef`; `IIndexable` wins over `IEnumerator`; keyword bounds stay parse errors | 006 |
 | Q114 | How is a function value represented? | (code pointer, environment pointer); null environment when nothing is captured; captures live in the creating frame; `FunctionType.IsBorrow` keeps it there. Kept | 007 |
-| Q115 | Where may function types appear? | Parameters, `type` alias targets, locals; anywhere stored (field, return, type argument, collection element) is BYN2822, including `onPaid: Order -> void uses net`. Kept | 007 |
+| Q115 | Where may function types appear? | Parameters, `type` alias targets, locals; anywhere stored (field, return, type argument, collection element) is BYN2822, including `(Order -> void uses net) onPaid`. Kept | 007 |
 | Q116 | What may a lambda capture? | Immutable locals and unmodified parameters, by copy; anything mutable, `ref`/`out`/`in` parameters and `this` are BYN2821. Kept | 007 |
 | Q117 | When is `it` a lambda? | An argument mentioning `it` where a one-parameter function type is expected; nested `it` is BYN2029; elsewhere BYN2001. Kept | 007 |
 | Q118 | What may lambda parameters carry? | Names only; types, modifiers, particles and defaults are parse errors; arity is BYN2820; no expected type is BYN2218. Amended | 007 |
 | Q119 | How do lambdas interact with inference? | Bound after type arguments are inferred and never contribute; a type parameter only they could fix is BYN2740. Kept | 007 |
 | Q120 | `fails` on function types? | Parsed, typed and callable with `try`/`catch`; conversion needs equal error sets. Kept | 007 |
-| Q121 | Grammar corners of `->`? | Right-associative; `?` and `[N]` bind tighter; `=>` in a type is BYN1050 with a fix to `->` (collides with round-3 BYN1050 `RequiresValue`; round 3 uses BYN1055, C26). Amended | 007 |
+| Q121 | Grammar corners of `->`? | Right-associative; `?` and `[N]` bind tighter; `=>` in a function type is BYN1055 `FatArrowFunctionType` with a fix to `->` (round-3 plan C26; 007 docs updated in feat/007-lambdas 1efbd8f; BYN1050 is round-3 `RequiresValue`). Amended | 007 |
 | Q122 | Generic aliases? | None; `type Predicate<T> = T -> bool` waits for them. Kept | 007 |
 | Q123 | Which named functions are values? | Module-level non-generic functions only; others are BYN2824 with a wrap-in-a-lambda help. Kept | 007 |
 | Q124 | Who registers BYN1028 and BYN1050? | 007's parser unless round 2 or round-3 5.2a registers them first (same collision as Q121, C26). Amended | 007 |

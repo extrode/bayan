@@ -465,7 +465,7 @@ type OrderFilter = Order -> bool
 
 > Round 2 §8: one function-type syntax and one shorthand (`it`); `.member` keeps a single meaning; storage cost is explicit. Codes: BYN1028, BYN2029.
 
-> Round 3 §13, O5: two arrows for "returns" were synonyms; `->` takes that job and `=>` keeps "evaluates to". `A => B` as a type is an input form. Codes: BYN1055.
+> Round 3 §13, O5: round-2 function types used `=>`, which collided with the lambda arrow; `->` becomes the function-type arrow and `=>` keeps "evaluates to". Declarations return type-first. `A => B` as a type is an input form. Codes: BYN1055.
 
 ### 3.17 Typestate (kāna / ṣāra)
 
@@ -1803,7 +1803,7 @@ Roadmap: v0.3 WASM + `.d.ts`; v0.4 `bayan gen ts`; post-v1 portable JS backend (
   - Secrets need `expose … because` in derivations; `Row` is flat (§5.3). Two trust layers (§15.1).
   - `try` covers the whole expression to its right (§8). `defer` modifiers are captured at registration (§7.6).
   - Size is `length`; `count(p)` is only a predicate count (§16).
-- **Round 3 open questions, resolved 2026-10-22:** O1 unions are newline-only. O2 counts (`length`, `runeCount`) are plain `i64`; units apply only to slice offsets. O3 a `requires` that refers only to `it` belongs to the field above; one that refers to other fields is struct-level. O4 `at`, not `on`. O5 `->` for "returns" everywhere, including function types; `=>` only for "evaluates to". O6 the particle `for` is allowed (label position only). O7 mixed-currency `+` traps; `tryAdd` and `add(…) fails` exist. O8 `state` is contextual at the start of a member declaration. O9 bare literals for distinct types are rejected. O10 decoding gives a trusted `T` only when every field is a `requires` type or a non-text scalar.
+- **Round 3 open questions, resolved 2026-10-22:** O1 unions are newline-only. O2 counts (`length`, `runeCount`) are plain `i64`; units apply only to slice offsets. O3 a `requires` that refers only to `it` belongs to the field above; one that refers to other fields is struct-level. O4 `at`, not `on`. O5 `->` is the function-type arrow (declarations return type-first); `=>` only for "evaluates to". O6 the particle `for` is allowed (label position only). O7 mixed-currency `+` traps; `tryAdd` and `add(…) fails` exist. O8 `state` is contextual at the start of a member declaration. O9 bare literals for distinct types are rejected. O10 decoding gives a trusted `T` only when every field is a `requires` type or a non-text scalar.
 - **Rejected in round 3:**
   - `@` as lambda shorthand (keep `it`).
   - `mut` (keep `ref this`).
