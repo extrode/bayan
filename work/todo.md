@@ -116,3 +116,9 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - BYN2209 on `a + b + c` rewrites one pair per fix pass (round 2 §12).
 - docs/laws 003/005/006 still say `length`/`add` (round 2 §11).
 - diag/renamed-member also shows a BYN2311 warning (round 2 §11).
+- 007 Q121/Q124 give BYN1050 to `=>` in a function type; round 3 uses BYN1050 for `RequiresValue` and BYN1055 for that form (C26). Fix on feat/007-lambdas before merge (round 3, Sūq brief).
+- 007 Q115 makes a stored function type such as `onPaid: Order -> void uses net` BYN2822; Sūq and SPEC `:1287` use one (round 3, Sūq brief).
+- HANDOFF round 3 §11 (~`:204-210`) still says `on .field` and §13 (~`:259`) has `Order => void`; superseded by their resolved paragraphs, not rewritten.
+- No `docs/diagnostics/BYN1056.md`, `BYN1057.md`, `BYN7005.md` pages yet; GRAMMAR §3 links the first two (round 3, Sūq brief).
+- SPEC has no `T.zero` (friction F-31); the F-30 user-cleanup member name is open, conservative `dispose(ref this)` (round 3, Sūq brief).
+- SPEC `:389` `return .forbidden unless …` snippet has no signature; borderline under A2 (`fail` vs response value).
