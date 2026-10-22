@@ -106,3 +106,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 006 reviewfix: BYN2807 is cached per instantiation, so a second call site with the same failing type argument is not reported again.
 - 006 T6: a generic interface method called through a constraint or a `dyn ref` reports Unsupported.
 - 006 T9: `CEmitter` `SlotName` can collide a getter `x` (`get_x`) with a method named `get_x`; vtable pointer member uses `PrimitiveType.I64` as a placeholder dependency type (`members.Add((PrimitiveType.I64, "void* data"))`).
+- 006 T8: a struct literal cannot be the bare iterable (`for x in S { … } {` is BYN1005); goldens wrap it in parentheses.
+- 006 T7: `Binder.cs:749` treats any `BoundField` enumerator as a place regardless of receiver, so `for n in make().stream` takes the MutationCheck path instead of spilling.
