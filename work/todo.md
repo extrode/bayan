@@ -105,3 +105,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 006 T9: `dyn-ref-dispatch` default `describe` prints instead of returning a string, since a returned interpolated string allocates through `byn_context`.
 - 006 reviewfix: BYN2807 is cached per instantiation, so a second call site with the same failing type argument is not reported again.
 - 006 T6: a generic interface method called through a constraint or a `dyn ref` reports Unsupported.
+- 006 T9: `CEmitter` `SlotName` can collide a getter `x` (`get_x`) with a method named `get_x`; vtable pointer member uses `PrimitiveType.I64` as a placeholder dependency type (`members.Add((PrimitiveType.I64, "void* data"))`).
