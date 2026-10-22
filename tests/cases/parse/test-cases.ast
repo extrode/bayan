@@ -1,0 +1,11 @@
+CompilationUnit
+  Attribute [Cases (tuple 0 false) (tuple 1 true)]
+  Test `quantity bounds` (i32 input, bool valid)
+    Block
+      Assert (paren (>= input 0))
+  Attribute [Cases 1 2 3]
+  Test `positive` (i32 n)
+    Block
+      Assert (paren (> n 0))
+  Test `plain`
+    Block

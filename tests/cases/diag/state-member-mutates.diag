@@ -1,0 +1,6 @@
+error BYN5002: `isEmpty` reads as state but modifies `this`
+
+  4 │     bool isEmpty(ref this) {
+    │          ^^^^^^^ declared `ref this`
+    │
+  help: remove `ref this` so it only reads, or name the action with a verb

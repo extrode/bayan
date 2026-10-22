@@ -106,6 +106,7 @@ public static class AstDump
                         var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params, d.RefThis is not null)} -> {Type(d.ReturnType)}";
                         if (d.Fails is not null)
                             head += d.Fails.Errors.Length == 0 ? " fails" : " fails " + string.Join(", ", d.Fails.Errors.Select(Type));
+                        foreach (var r in d.Requires) head += " requires " + AstDump.Expr(r);
                         if (d.ExpressionBody is not null) head += " => " + AstDump.Expr(d.ExpressionBody);
                         Line(depth, head);
                         if (d.Body is not null) Stmt(depth + 1, d.Body);
@@ -152,7 +153,7 @@ public static class AstDump
                     Line(depth, $"ErrorSet {Mods(d.Modifiers)}{d.Name.Text} = {string.Join(", ", d.Members.Select(Type))}");
                     break;
                 case TestDecl d:
-                    Line(depth, "Test " + TokenDump.Escape(d.Title));
+                    Line(depth, "Test " + TokenDump.Escape(d.Title) + (d.Params.Length == 0 ? "" : " " + Params(d.Params)));
                     Stmt(depth + 1, d.Body);
                     break;
                 default:
@@ -248,6 +249,9 @@ public static class AstDump
                     Line(depth, "Defer" + s.Kind switch { DeferKind.Failing => " failing", DeferKind.Panicking => " panicking", _ => "" }
                         + (s.Binding is null ? "" : $" ({s.Binding.Text})"));
                     Stmt(depth + 1, s.Body);
+                    break;
+                case AssertStmt s:
+                    Line(depth, "Assert " + AstDump.Expr(s.Condition));
                     break;
                 case ContextStmt s:
                     Line(depth, "Context " + string.Join(", ", s.Values.Select(v => v.Name.Text + ": " + AstDump.Expr(v.Value))));
@@ -533,6 +537,9 @@ public static class AstDump
                     break;
                 case RangeExpr e:
                     Sexp(sb, e.Inclusive ? "..=" : "..", e.Start, e.End);
+                    break;
+                case InExpr e:
+                    Sexp(sb, "in", e.Value, e.Range);
                     break;
                 case ConditionalExpr e:
                     Sexp(sb, "?", e.Condition, e.WhenTrue, e.WhenFalse);

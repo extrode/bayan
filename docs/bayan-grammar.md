@@ -108,22 +108,32 @@ For error doc comments: the first line of a `///` comment on an error case is it
 
 ## 6. Sources
 
-| Rule | Source |
-|---|---|
-| Plain verb returns a new value (tree 2) | Arabic Form I (base verb) |
-| Verb on `ref this` mutates (tree 1) | Arabic Form V (tafaʿʿala, reflexive) |
-| `-ed` copy of a mutating verb (tree 1, 2) | Arabic mafʿūl (passive participle) |
-| `is` / `has` / `can` state (tree 3) | Arabic ṣifa (attribute) |
-| `tryX` (tree 4) | Arabic Form X (istafʿala, attempt) |
-| `xInto(ref dst)` (tree 5) | Arabic particle إلى (ilā, "into") |
-| `xOp` (tree 6) | Arabic maṣdar (verbal noun) |
-| Doer and instrument nouns (tree 7) | Arabic fāʿil (doer: `Builder`, `Parser`) and mifʿāl (instrument: `Hasher`, `Comparer`) |
-| Statement modifiers (§2) | Arabic ḥāl (circumstantial participle after the head verb) |
-| Casing and `I` prefix | C# convention; no Arabic or Esperanto source |
-| One form, one meaning (§3) | Arabic iʿjām: the dots added to Arabic script to remove ambiguity (brand brief §2) |
-| Conditionals (§4) | source: to be confirmed |
-| Error-message voice (§5) | The hudhud in Sūrat an-Naml (27:20–22), whose news is certain and clear: exact about what went wrong, where, why and how to fix it (brand brief §4) |
+| Rule | Source | Code |
+|---|---|---|
+| Plain verb returns a new value (tree 2) | Arabic Form I (base verb) | [BYN5001](diagnostics/BYN5001.md) |
+| Verb on `ref this` mutates (tree 1) | Arabic Form V (tafaʿʿala, reflexive) | [BYN2115](diagnostics/BYN2115.md), [BYN5101](diagnostics/BYN5101.md) (lint) |
+| `-ed` copy of a mutating verb (tree 1, 2) | Arabic mafʿūl (passive participle) | [BYN5001](diagnostics/BYN5001.md) |
+| `is` / `has` / `can` state (tree 3) | Arabic ṣifa (attribute) | [BYN5002](diagnostics/BYN5002.md), [BYN5102](diagnostics/BYN5102.md) (lint) |
+| `tryX` (tree 4) | Arabic Form X (istafʿala, attempt) | [BYN5003](diagnostics/BYN5003.md) |
+| `xInto(ref dst)` (tree 5) | Arabic particle إلى (ilā, "into") | none yet |
+| `xOp` (tree 6) | Arabic maṣdar (verbal noun) | none yet |
+| Doer and instrument nouns (tree 7) | Arabic fāʿil (doer: `Builder`, `Parser`) and mifʿāl (instrument: `Hasher`, `Comparer`) | none yet |
+| Statement modifiers (§2) | Arabic ḥāl (circumstantial participle after the head verb) | none (shape); see §2 |
+| Casing and `I` prefix | C# convention; no Arabic or Esperanto source | [BYN2008](diagnostics/BYN2008.md), [BYN2009](diagnostics/BYN2009.md) |
+| One form, one meaning (§3) | Arabic iʿjām: the dots added to Arabic script to remove ambiguity (brand brief §2) | see §3 |
+| Conditionals (§4) | source: to be confirmed | see §4 |
+| Error-message voice (§5) | The hudhud in Sūrat an-Naml (27:20–22), whose news is certain and clear: exact about what went wrong, where, why and how to fix it (brand brief §4) | none |
 
 ## 7. Diagnostics
 
 Every rule above links to the code that enforces it, at `docs/diagnostics/BYN####.md`; `bayan explain BYN####` prints the same text. Some pages are written with the compiler work and may not exist yet. Rules marked "no dedicated code yet" are guidance until a checker lands.
+
+The built-in checker (`BYN5xxx`) runs on the members of every struct. Errors (`BYN50xx`) are pattern contracts; lints (`BYN51xx`) are word-class heuristics, reported as warnings that never block a build.
+
+| Code | Rule | What the checker looks at |
+|---|---|---|
+| [BYN5001](diagnostics/BYN5001.md) | An `-ed` member needs a `ref this` verb of the same stem (tree 1, 2) | One lowercase word of five letters or more ending in `-ed`, on a member that is not `ref this` and does not return `bool`. The verb is the name minus `-ed` (`sorted` → `sort`), minus `d` (`reversed` → `reverse`), with a doubled consonant undone (`trimmed` → `trim`) or `-ied` → `-y` (`copied` → `copy`). Not participles: `-eed` words (`need`, `speed`, `seed`), shorter words (`red`, `bed`, `used`), and `hundred`, `embed`, `shred`, `naked`, `wicked`, `sacred`, `kindred`. |
+| [BYN5002](diagnostics/BYN5002.md) | A state member does not modify `this` (tree 3) | A `ref this` member with no arguments named `is`, `has` or `can` followed by a capital. |
+| [BYN5003](diagnostics/BYN5003.md) | A hand-written `tryX` returns `T?` or `bool` (tree 4) | `tryX` on a type with an `x()` that `fails`. |
+| [BYN5101](diagnostics/BYN5101.md) (lint) | A `ref this` member is named with a verb (tree 1) | The first word of the name against a built-in noun list: `size`, `length`, `total`, `sum`, `value`, `values`, `data`, `item`, `items`, `element`, `elements`, `result`, `results`, `name`, `id`, `state`, `status`, `info`, `content`, `contents`, `capacity`, `amount`, `number`, `key`, `keys`, `entry`, `entries`, `node`, `nodes`. |
+| [BYN5102](diagnostics/BYN5102.md) (lint, fix-it) | A `bool` state takes `is`, `has` or `can` (tree 3) | `bool` properties and `bool` methods with no arguments that are not `ref this`; fields are not checked. Names starting with `contains`, `equals`, `matches`, `startsWith`, `endsWith` or `try` are verbs, not states. |

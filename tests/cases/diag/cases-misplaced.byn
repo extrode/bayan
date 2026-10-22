@@ -1,0 +1,21 @@
+[Cases(1, 2)]
+void step() { }
+
+error enum StepError {
+    [Cases(1)]
+    timedOut,
+}
+
+test "takes values" (i32 n, bool ok) {
+    assert(ok);
+}
+
+[Cases(1)]
+[Cases(2)]
+test "twice" (i32 n) {
+    assert(n > 0);
+}
+
+void main() {
+    step();
+}

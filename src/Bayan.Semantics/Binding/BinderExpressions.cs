@@ -245,6 +245,8 @@ internal sealed partial class Binder
                 var pattern = BindPattern(i.Pattern, value.Type);
                 return new BoundIs(i, value, pattern);
             }
+            case InExpr i:
+                return BindIn(i);
             case SwitchExpr s:
                 return BindSwitchExpr(s, expected);
             case TryExpr t:
@@ -441,7 +443,7 @@ internal sealed partial class Binder
         candidates.AddRange(Module.Constants.Keys);
         candidates.AddRange(Module.Types.Keys);
         candidates.AddRange(_file.Imports.Keys);
-        candidates.AddRange(["print", "panic", "todo", "assert", "Io"]);
+        candidates.AddRange(["print", "panic", "todo", "Io"]);
         var suggestion = Suggest(name.Text, candidates);
         Report(DiagnosticCodes.UndefinedName, name.Span, [name.Text],
             help: suggestion is null ? null : $"did you mean `{suggestion}`?",
@@ -1135,6 +1137,32 @@ internal sealed partial class Binder
             return new BoundErrorExpr(r);
         }
         return new BoundRange(r, Convert(start, common, r.Start.Span), Convert(end, common, r.End.Span), r.Inclusive, new RangeType(common));
+    }
+
+    /// <summary><c>x in a..=b</c>: a range pattern test whose ends may be computed at run time.</summary>
+    private BoundExpr BindIn(InExpr i)
+    {
+        var value = BindExpr(i.Value);
+        if (i.Range is not RangeExpr r)
+        {
+            var other = BindExpr(i.Range);
+            if (!value.Type.IsError && !other.Type.IsError)
+                Report(DiagnosticCodes.BadBinaryOperands, i.Span, ["in", value.Type.DisplayName, other.Type.DisplayName],
+                    help: "write a range after `in`: `x in a..=b`");
+            return new BoundErrorExpr(i);
+        }
+        if (BindRange(r, value.Type.IsInteger || value.Type == PrimitiveType.Char ? new RangeType(value.Type) : null) is not BoundRange range
+            || value.Type.IsError)
+            return new BoundErrorExpr(i);
+        var common = Conversions.Common(value.Type, range.Start.Type);
+        if (common is null || !(common.IsInteger || common == PrimitiveType.Char))
+        {
+            Report(DiagnosticCodes.BadBinaryOperands, i.Span, ["in", value.Type.DisplayName, range.Type.DisplayName],
+                help: "make the value and the range ends integers or chars of the same type");
+            return new BoundErrorExpr(i);
+        }
+        var pattern = new BoundRangePattern(r, common, Convert(range.Start, common, r.Start!.Span), Convert(range.End, common, r.End!.Span), r.Inclusive);
+        return new BoundIs(i, Convert(value, common, i.Value.Span), pattern);
     }
 
     private BoundExpr BindConditional(ConditionalExpr c, TypeSymbol? expected)

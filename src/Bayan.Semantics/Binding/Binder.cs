@@ -134,7 +134,15 @@ internal sealed partial class Binder
     {
         _fn?.Locals.Add(local);
         if (name.Text == "_") return;
-        if (_scope.Lookup(name.Text) is { } existing)
+        // A `let` may take the name of another local in the same scope to give it a new type (HANDOFF §4).
+        if (local.Kind == LocalKind.Let && _scope.Locals.TryGetValue(name.Text, out var same))
+        {
+            if (same.Type.Equals(local.Type) && !local.Type.IsError)
+                Report(DiagnosticCodes.SameTypeShadowing, name.Span, [name.Text, local.Type.DisplayName],
+                    label: same.Location is { } at ? $"`{name.Text}` is declared on line {at.Line}" : null,
+                    help: "use the first one, or rename this one to say how it differs");
+        }
+        else if (_scope.Lookup(name.Text) is { } existing)
         {
             var where = existing.Location is { } l ? $"line {l.Line}" : "here";
             Report(DiagnosticCodes.Shadowing, name.Span, [name.Text], label: $"already declared on {where}",
@@ -159,20 +167,46 @@ internal sealed partial class Binder
     {
         DeclareParameters();
         BindParameterDefaults();
+        var checks = BindRequires(decl);
         if (decl.Body is { } body)
         {
             _firstStatement = body.Statements.FirstOrDefault();
-            _fn!.Body = BindBlock(body);
+            var block = BindBlock(body);
+            _fn!.Body = checks.Length == 0 ? block : new BoundBlock(body, [.. checks, block]);
         }
         else if (decl.ExpressionBody is { } e)
         {
-            _fn!.Body = new BoundBlock(e, [BindExpressionBody(e)]);
+            _fn!.Body = new BoundBlock(e, [.. checks, BindExpressionBody(e)]);
         }
         else
         {
             // The parser already reported the missing body.
             _fn!.Body = new BoundBlock(decl, []);
         }
+    }
+
+    /// <summary>Binds the <c>requires</c> clauses into entry checks that panic in every build mode.</summary>
+    private BoundStmt[] BindRequires(FunctionDecl decl)
+    {
+        var conditions = new List<BoundExpr>();
+        var checks = new List<BoundStmt>();
+        foreach (var r in decl.Requires)
+        {
+            var condition = BindExpr(r, PrimitiveType.Bool);
+            if (!condition.Type.IsBool)
+            {
+                if (!condition.Type.IsError)
+                    Report(DiagnosticCodes.RequiresNotBool, r.Span, [condition.Type.DisplayName],
+                        help: "write a condition the arguments must meet, such as `count > 0`");
+                continue;
+            }
+            conditions.Add(condition);
+            var message = Literal(r, PrimitiveType.String, "contract violated: " + Source.GetText(r.Span));
+            var panic = new BoundCall(r, _c.Builtins.Panic, null, [message], PrimitiveType.Never);
+            checks.Add(new BoundIf(r, new BoundUnary(r, UnaryOp.Not, condition, PrimitiveType.Bool), new BoundExprStmt(r, panic), null));
+        }
+        _fn!.Requires = conditions.ToArray();
+        return checks.ToArray();
     }
 
     private void BindParameterDefaults()
@@ -218,10 +252,25 @@ internal sealed partial class Binder
         _fn.Body = new BoundBlock(statements[0], bound.ToArray());
     }
 
-    public void BindTest(TestDecl decl)
+    /// <summary>A test body; a <c>[Cases]</c> case first binds each parameter as a <c>let</c> of its value.</summary>
+    public void BindTest(TestDecl decl, Expr[]? values)
     {
         _fn!.InfersErrors = true;
-        _fn.Body = BindBlock(decl.Body);
+        if (values is null)
+        {
+            _fn.Body = BindBlock(decl.Body);
+            return;
+        }
+        var statements = new List<BoundStmt>();
+        for (var i = 0; i < decl.Params.Length; i++)
+        {
+            var p = decl.Params[i];
+            var type = ResolveType(p.Type);
+            var value = BindConverted(values[i], type);
+            statements.Add(new BoundLocalDecl(p, DeclareLocal(p.Name, type, LocalKind.Let), value));
+        }
+        statements.Add(BindBlock(decl.Body));
+        _fn.Body = new BoundBlock(decl.Body, statements.ToArray());
     }
 
     public BoundExpr BindFieldDefault(FieldSymbol field)
@@ -452,6 +501,8 @@ internal sealed partial class Binder
                 return BindPanicDefer(d);
             case ContextStmt c:
                 return BindContext(c);
+            case AssertStmt a:
+                return BindAssert(a);
             case EmptyStmt:
                 return new BoundBlock(stmt, []);
             case ErrorStmt:
@@ -468,6 +519,16 @@ internal sealed partial class Binder
             : new BoundUnary(syntax, UnaryOp.Not, cond, PrimitiveType.Bool);
 
     private BoundExpr BindCondition(Expr e) => BindConverted(e, PrimitiveType.Bool);
+
+    private BoundStmt BindAssert(AssertStmt a)
+    {
+        var condition = BindExpr(a.Condition, PrimitiveType.Bool);
+        if (condition.Type.IsError || Conversions.Implicit(condition.Type, PrimitiveType.Bool) is not null)
+            return new BoundAssert(a, Convert(condition, PrimitiveType.Bool, a.Condition.Span));
+        Report(DiagnosticCodes.AssertNotBool, a.Condition.Span, [condition.Type.DisplayName], label: "this is not a `bool`",
+            help: "check the value against what you expect, e.g. `assert count == 3;`");
+        return new BoundErrorStmt(a);
+    }
 
     // ── Null narrowing (spec §7.2) ───────────────────────────────────────────────
 
@@ -710,7 +771,7 @@ internal sealed partial class Binder
 
     /// <summary>
     /// <c>for try x in e { … }</c> over a value whose <c>next()</c> returns <c>T?</c> and fails: the loop owns the value
-    /// and runs <c>while (try seq.next() is { } x) { … }</c>, so a failing step propagates like any <c>try</c>.
+    /// (or borrows a <c>var</c> in place) and runs <c>while (try seq.next() is { } x) { … }</c>, so a failing step propagates like any <c>try</c>.
     /// </summary>
     private BoundStmt BindForTry(ForStmt f, BoundExpr iterable, JumpTarget target)
     {
@@ -725,15 +786,19 @@ internal sealed partial class Binder
             return new BoundErrorStmt(f);
         }
         var span = f.Iterable.Span;
-        var sequence = DeclareLocal(new Name(span, $"<sequence {_nextLocalId}>"), iterable.Type, LocalKind.Temp);
-        var next = new TryExpr(span, new CallExpr(span, new MemberExpr(span, new NameExpr(span, new Name(span, sequence.Name), []), new Name(span, "next"), false), []));
+        // A `var` (or `ref` parameter) is stepped in place, so its state advances; any other value is stepped in a hidden copy.
+        var inPlace = iterable is BoundLocal { Local: var l } && (l.IsMutable || l is ParameterSymbol { IsByRef: true });
+        var sequence = inPlace ? null : DeclareLocal(new Name(span, $"<sequence {_nextLocalId}>"), iterable.Type, LocalKind.Temp);
+        var receiver = sequence is null ? f.Iterable : new NameExpr(span, new Name(span, sequence.Name), []);
+        var next = new TryExpr(span, new CallExpr(span, new MemberExpr(span, receiver, new Name(span, "next"), false), []));
         var step = BindExpr(next);
         if (f.Type is { } t && ResolveType(t) is { IsError: false } declared && !Unwrap(step.Type).IsError && !declared.Equals(Unwrap(step.Type)))
             Report(DiagnosticCodes.TypeMismatch, t.Span, [Unwrap(step.Type).DisplayName, declared.DisplayName]);
         var pattern = BindPresent(f.Variable, step.Type);
         var body = BindForBody(f, pattern.Designation!, target);
         PopScope();
-        return new BoundBlock(f, [new BoundLocalDecl(f, sequence, iterable), new BoundWhile(f, new BoundIs(f, step, pattern), body, target)]);
+        var loop = new BoundWhile(f, new BoundIs(f, step, pattern), body, target);
+        return sequence is null ? loop : new BoundBlock(f, [new BoundLocalDecl(f, sequence, iterable), loop]);
     }
 
     /// <summary>The <c>T? next() fails …</c> method that <c>for try</c> steps with, if <paramref name="type"/> has one.</summary>

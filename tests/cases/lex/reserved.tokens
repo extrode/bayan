@@ -16,8 +16,7 @@
 3:9 Equals `=`
 3:11 IntegerLiteral `3`
 3:12 Semicolon `;`
-3:14 Identifier `requires`
-3:23 Identifier `ensures`
+3:14 Identifier `ensures`
 4:1 EndOfFile
 
 error BYN0012: `actor` is reserved and cannot be used as an identifier
@@ -55,16 +54,9 @@ error BYN0012: `become` is reserved and cannot be used as an identifier
     │
   help: choose another name
 
-error BYN0012: `requires` is reserved and cannot be used as an identifier
-
-  3 │ let law = 3; requires ensures
-    │              ^^^^^^^^ reserved for a future version of Bayan
-    │
-  help: choose another name
-
 error BYN0012: `ensures` is reserved and cannot be used as an identifier
 
-  3 │ let law = 3; requires ensures
-    │                       ^^^^^^^ reserved for a future version of Bayan
+  3 │ let law = 3; ensures
+    │              ^^^^^^^ reserved for a future version of Bayan
     │
   help: choose another name

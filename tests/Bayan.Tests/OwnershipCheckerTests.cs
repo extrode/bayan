@@ -20,7 +20,8 @@ public sealed class OwnershipCheckerTests
     public void SafeAndFastCHaveNoChecker(string name)
     {
         var path = Path.Combine(Golden.CasesRoot, name);
-        var c = Compilation.Create([Golden.Load(path)], Path.GetDirectoryName(path)!);
+        var options = new CompilationOptions(IncludeTests: name.EndsWith(".test.byn", StringComparison.Ordinal));
+        var c = Compilation.Create([Golden.Load(path)], Path.GetDirectoryName(path)!, options);
         Assert.False(c.Diagnostics.HasErrors);
         Assert.DoesNotContain("byn_own", CliApp.EmitC(c, BuildMode.Safe));
         Assert.DoesNotContain("byn_own", CliApp.EmitC(c, BuildMode.Fast));
