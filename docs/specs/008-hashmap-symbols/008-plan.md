@@ -116,7 +116,7 @@ main() uses alloc {
 - **The interned table is unbounded.** A program that interns untrusted text keeps it forever. Mitigation: documented in the spec text and Q134. The compiler's own input is bounded by its sources.
 - **Ordering cost.** `<` on symbols compares text. Mitigation: documented; `==` and hashing, which symbol tables need, stay O(1).
 - **Collision with round-3 5.4 in `BuiltinMembers.cs`.** Mitigation: T4 comes after 5.4 and adds only `text` on `Symbol`. Examples avoid `getOr` (Q142).
-- **006 lands an equality or hash interface.** Mitigation: R5 is a closed set, and an interface-based key extends `IsValidKey` later without changing any accepted program (Q137).
+- **006 lands an equality or hash interface.** Resolved: 006 as built has only `IEnumerator` and `IIndexable`, and primitives never conform. R5 stays a closed set, and an interface-based key extends `IsValidKey` later without changing any accepted program (Q137).
 
 ## Coverage check
 
