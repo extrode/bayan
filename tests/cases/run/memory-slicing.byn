@@ -20,7 +20,7 @@ print(text[^3..]);
 print($"{text.length}");
 
 i64 total = 0;
-for (let x in s[2..]) {
+for x in s[2..] {
     total += x;
 }
 print($"{total}");

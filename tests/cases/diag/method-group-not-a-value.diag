@@ -1,0 +1,13 @@
+error BYN2019: `weight` is a method, not a value
+
+  15 │ show(box.weight);
+     │      ^^^^^^^^^^
+     │
+  help: call it: `weight()`
+
+error BYN2019: `asSpan` is a method, not a value
+
+  17 │ showAll(items.asSpan);
+     │         ^^^^^^^^^^^^
+     │
+  help: call it: `asSpan()`

@@ -84,6 +84,8 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `src/Bayan.Cli/Progress.cs:60-67` `Columns` counts emoji outside U+1F300–1F64F/U+1F900–1F9FF (🚀 U+1F680–1F6FF, U+1FA70–1FAFF, BMP emoji such as ✅ U+2705) as 1 column, so a long progress line can still wrap (005 review loop 3).
 - `src/Bayan.Cli/Messages.cs:156`: the unselectable-rerun notice says "control characters" for bidi-only names and is always singular (005 review loop 3).
 - Mixed selectable/unselectable failures in one `bayan test` run have no test (005 review loop 2).
+
+- (worktree audit 2026-10-22) clean worktrees whose work is already in a branch: chore-laws-timeout and feat-005-terminal-style (merged into `dev`); worker-r2-{cases,catch,defer,flow,naming,null,nullmove,refthis,requires,unions}, docs-design-round-2, worker-r3-plan, worker-007-docs (contained in their feature branches). The worker keys for r2-* and 007-docs are still live in `~/.claude`; worker-r3-plan has no key left.
 - BYN2211 help text still suggests the replaced `if (p is { } value)` idiom (round 2 §null narrowing).
 - Null narrowing not applied in `switch` `when` guards, `?:`, or `do`/`while` conditions (round 2 §null).
 - `error set` alias of several sets is rejected as a `catch switch` arm pattern (`BinderCalls.cs:754,982` accept only `ErrorSetSymbol`) (round 2 §5).
@@ -108,3 +110,32 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 006 T9: `CEmitter` `SlotName` can collide a getter `x` (`get_x`) with a method named `get_x`; vtable pointer member uses `PrimitiveType.I64` as a placeholder dependency type (`members.Add((PrimitiveType.I64, "void* data"))`).
 - 006 T8: a struct literal cannot be the bare iterable (`for x in S { … } {` is BYN1005); goldens wrap it in parentheses.
 - 006 T7: `Binder.cs:749` treats any `BoundField` enumerator as a place regardless of receiver, so `for n in make().stream` takes the MutationCheck path instead of spilling.
+- `[Cases(1)]` on a test with no parameters gives BYN2773 with the awkward help "in order: `()`" (`Compilation.cs:289-291`) (round 2 §16).
+- Named tuple elements in a case `(a: 1, b: 2)` are accepted and the names ignored (`Compilation.cs:284`) (round 2 §16).
+- Test parameter modifiers (`ref`/`move`) and defaults parse but are ignored; reject them (round 2 §16).
+- `[Cases]` with no arguments on a test with parameters yields zero tests silently (round 2 §16).
+- A test whose single parameter is a tuple cannot take `[Cases]` (round 2 §16).
+- BYN2773 says "1 values"/"1 parameters" for counts of one (plan wording) (round 2 §16).
+- BYN5xxx: free functions and generic struct instances are not checked; BYN5102's fix-it renames only the declaration (round 2 §17).
+- BYN5003 formats `{1}` from the failing member's return type, so `void x() fails` yields "must return `void?` or `bool`" (round 2 §17).
+- `StrBuf.finish()` is a borrowed view like `view`; it does not consume the buffer (round 2 §12).
+- The `format()` fix-it, the `{x:debug}` help and `chars.take`/`graphemes` in BYN2201's help name APIs not implemented yet (round 2 §12–§13).
+- No `chars` iterator exists, so `chars.count` was not added (round 2 §12).
+- String patterns (`"/api/" + var rest`) are not implemented, so "stay legal" under BYN2209 is untested (round 2 §12).
+- BYN2209 on `a + b + c` rewrites one pair per fix pass (round 2 §12).
+- diag/renamed-member also shows a BYN2311 warning (round 2 §11).
+- `if p == P { x: 1 } { … }` (unwrapped struct literal in a bare condition) gives BYN1012/BYN1005 with no hint to add parentheses (round 2 §4).
+- `ref this` on a constructor falls through to the `ref` modifier with type `this` instead of a targeted error (round 2 §9).
+- Postfix `break if (x);` parentheses are not reported as an input form; BYN1030 omits `sbyte`, `ushort`, `nint`, `nuint`; `RecoverIfNeeded` can resync into follow-on errors after an input-form error; the dangling-`else` case of BYN1017 is unchecked (round 2 §15).
+- The binder keeps `c.Binding` / `IsCatch` paths for `catch (e)` that only erroneous input reaches now (round 2 §15).
+- No golden covers the BYN1237 `NoTargetType` help (round 2 §15).
+- `tests/cases/run/condition-cast.byn` line 10 prints "parenthesized if" but is now `if flag { … }`; only the cast lines cover paren-vs-cast (round 2 §15).
+- Scaffold templates and `tests/cases/new/*.tree` still use `assert(...)`; move to `assert x;` (round 2 §16).
+- Power-assert: string values print unquoted; column math ignores tabs and wide characters; guarded pieces emit one `if` each, so C size grows with the square of the lazy-column count (round 2 §16).
+- Spec §20 examples and "assertion failed" wording in older docs and plans are not migrated to power-assert (round 2 §16).
+- `tryFirst` has a BYN2230 row in the grammar table but no `ReportRenamed` mapping; the BYN2230 help for `asString()` says "rename it `finish`" without `()` (round 2 §11).
+- `InterpolationSource` (`BinderExpressions.cs:865`) may cut `"""` raw strings wrong, giving a broken BYN2209 fix; BYN2201 help rows were misaligned (r2 stdlib gate; recheck).
+- r2-finalfix: `unless (!x) print("f"); else print("g");` leaves neither BYN1007 nor BYN1018 with a fix (BYN1006 already forces a rewrite).
+- r2-finalfix: `if ((!x)) { … }` gets no BYN1032; `ParseIf` (`Parser.cs:1302`) tests the condition without `Unwrap`.
+- `Parser.cs` `ParseDefer` (~:1585) still passes `clean = ErrorCount == errors` to ReportBraceless while ParseBody uses "no inner diagnostic has a fix": `defer let x = <expr with a fixless error>;` loses its braces fix (review of fix/review-2026-10-22-1)
+- `unless (a == null) s;` on a `bool` `a` reports BYN1017/1018/1006 but no BYN1023 (review of fix/review-2026-10-22-1, probe p12)

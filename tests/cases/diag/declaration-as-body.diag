@@ -1,6 +1,0 @@
-error BYN2026: a declaration cannot be the whole body of a statement
-
-  2 │ if (ready) let x = 1;
-    │            ^^^^^^^^^^
-    │
-  help: wrap it in `{ … }` if the variable is used inside

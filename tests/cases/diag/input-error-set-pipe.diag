@@ -1,0 +1,8 @@
+error BYN1029: separate error-set members with `,`
+
+  11 │ error set SignupError = EmailError | DbError;
+     │                                    ^ the input form
+     │
+  help: write `,` between the members
+     │ 11 │ error set SignupError = EmailError, DbError;
+     │    │                                   +

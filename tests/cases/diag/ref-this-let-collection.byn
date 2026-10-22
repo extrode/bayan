@@ -6,7 +6,7 @@ struct Stat {
     }
 }
 
-let list = [Stat { hits = 0 }];
+let list = [Stat { hits: 0 }];
 list[0].record();
 
 let stats = Map<string, Stat>();

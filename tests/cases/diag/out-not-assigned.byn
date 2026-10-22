@@ -1,5 +1,5 @@
 bool tryParse(string text, out i64 value) {
-    if (text.isEmpty) {
+    if text.isEmpty {
         return false;
     }
     value = 1;

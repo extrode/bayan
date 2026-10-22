@@ -7,7 +7,7 @@ f32 area(Shape s) => s switch {
 };
 
 void describe(Shape s) {
-    switch (s) {
+    switch s {
         case .circle(let r) when r > 0:
             print("circle");
         case .rect(_, _) or .none:

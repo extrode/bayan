@@ -1,6 +1,6 @@
 // Invalid UTF-8 fails, and `string.invalidUtf8At` gives the offset of the first bad sequence.
 string describe(ReadOnlySpan<u8> bytes) {
-    let s = string.from(bytes) catch (e) switch {
+    let s = string.from(bytes) catch switch {
         .invalidSequence => "invalidSequence",
     };
     let at = string.invalidUtf8At(bytes) ?? -1;

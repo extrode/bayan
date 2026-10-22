@@ -157,6 +157,7 @@ public enum TokenKind : ushort
     ComptimeKeyword,
     CheckedKeyword,
     TestKeyword,
+    AssertKeyword,
     PropertyKeyword,
     FuzzKeyword,
     ModelKeyword,

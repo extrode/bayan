@@ -1,0 +1,17 @@
+error BYN1019: `for (let x in xs)` is an input form; write `for x in xs`
+
+  3 │     for (let x in xs) {
+    │         ^^^^^^^^^^^^^ the input form
+    │
+  help: write the loop variable and iterable without parentheses
+    │ 3 │     for x in xs {
+    │   │         +++++++
+
+error BYN1019: `for (let x in xs)` is an input form; write `for x in xs`
+
+  6 │     foreach (var y in xs) {
+    │     ^^^^^^^^^^^^^^^^^^^^^ the input form
+    │
+  help: write the loop variable and iterable without parentheses
+    │ 6 │     for y in xs {
+    │   │        ++++++++

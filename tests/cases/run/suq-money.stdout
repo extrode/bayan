@@ -1,0 +1,8 @@
+MYR 12.50
+MYR 0.05
+MYR -3.00
+add: MYR 2.00
+add: currencyMismatch
+add: overflow
+8% of MYR 10.63: MYR 0.85
+3 x MYR 12.50: MYR 37.50

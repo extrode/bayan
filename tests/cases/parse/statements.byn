@@ -24,23 +24,23 @@ void main() {
     b--;
     ++b;
     _ = f();
-    if (a > 0) { print("pos"); } else if (a < 0) print("neg"); else { print("zero"); }
-    unless (ok) { retry(); }
-    while (b > 0) b--;
-    do { b++; } while (b < 10);
-    for (let i in 0..10) { total += i; }
-    for (let x in xs) print(x);
-    for (var i64 i in 0..=n) {}
-    foreach (var y in ys) {}
-    outer: for (let row in grid) {
-        for (let cell in row) {
+    if a > 0 { print("pos"); } else if a < 0 { print("neg"); } else { print("zero"); }
+    unless ok { retry(); }
+    while b > 0 { b--; }
+    do { b++; } while b < 10;
+    for i in 0..10 { total += i; }
+    for x in xs { print(x); }
+    for i64 i in 0..=n {}
+    for y in ys {}
+    outer: for row in grid {
+        for cell in row {
             break outer if cell == 0;
             continue outer;
         }
     }
     defer close(f);
-    errdefer rollback();
-    errdefer (e) { log(e); }
+    defer failing rollback();
+    defer failing (e) { log(e); }
     context (allocator: arena) {
         work();
     }

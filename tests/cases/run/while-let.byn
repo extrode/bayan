@@ -21,7 +21,7 @@ while let h = half(n) {
 print($"stopped at {n}");
 
 void readAll() fails ReadError {
-    var lines = Lines { at = 0, count = 3 };
+    var lines = Lines { at: 0, count: 3 };
     while let line = try lines.next() {
         print($"line {line}");
     }

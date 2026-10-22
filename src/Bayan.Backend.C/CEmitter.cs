@@ -659,15 +659,6 @@ public sealed class CEmitter
                 case StructSymbol s when FormatInto(s) is { } method:
                     sb.Append($"    {FunctionName(method)}(&v, w);\n");
                     break;
-                case StructSymbol s:
-                    Text(s.Fields.Count == 0 ? s.Name + " { }" : s.Name + " { ");
-                    for (var i = 0; i < s.Fields.Count; i++)
-                    {
-                        Text((i > 0 ? ", " : "") + s.Fields[i].Name + ": ");
-                        sb.Append("    ").Append(Format(s.Fields[i].Type, "v." + FieldName(s.Fields[i].Name), "w")).Append('\n');
-                    }
-                    if (s.Fields.Count > 0) Text(" }");
-                    break;
                 case UnionSymbol u:
                     sb.Append("    switch (v.tag) {\n");
                     foreach (var variant in u.Variants)
@@ -898,7 +889,7 @@ internal sealed class FunctionEmitter
 
     // ── Ownership checks ─────────────────────────────────────────────────────────
 
-    /// <summary>A local, owning pattern binding (of <c>switch (move x)</c>) or <c>move</c> parameter this function owns.</summary>
+    /// <summary>A local, owning pattern binding (of <c>switch move x</c>) or <c>move</c> parameter this function owns.</summary>
     private static bool IsOwner(LocalSymbol l) =>
         l is { Kind: LocalKind.Let or LocalKind.Var or LocalKind.PatternVariable, BorrowsSubject: false } or ParameterSymbol { Modifier: ParamModifier.Move };
 
@@ -1139,14 +1130,19 @@ internal sealed class FunctionEmitter
         else
         {
             var mode = w.Sink == WriteSink.Print ? "BYN_WRITE_STDOUT" : "BYN_WRITE_TRUNCATE";
-            Line("uint8_t wb[256];");
-            Line($"byn_writer wv = {{wb, 256, 0, {mode}, {Loc(w.Syntax)}}};");
+            // A panic message keeps as much as the runtime does (`byn_panic_text`), room for an `assert` diagram.
+            var size = w.Sink == WriteSink.Panic ? 1024 : 256;
+            Line($"uint8_t wb[{size}];");
+            Line($"byn_writer wv = {{wb, {size}, 0, {mode}, {Loc(w.Syntax)}}};");
             Line("byn_writer* w = &wv;");
         }
-        foreach (var part in w.Parts)
+        for (var i = 0; i < w.Parts.Length; i++)
         {
-            if (part.Text is { Length: > 0 } text) Line($"byn_w_str(w, {CEmitter.StringLiteral(text)});");
-            else if (part.Value is { } value) Line(_c.Format(value.Type, Expr(value), "w"));
+            var part = w.Parts[i];
+            var write = part.Text is { Length: > 0 } text ? $"byn_w_str(w, {CEmitter.StringLiteral(text)});"
+                : part.Value is { } value ? _c.Format(value.Type, Expr(value), "w") : null;
+            if (write is null) continue;
+            Line(w.Guards?[i] is { } guard ? $"if ({Expr(guard)}) {{ {write} }}" : write);
         }
         if (_c.OwnershipChecks && w.Sink == WriteSink.StrBuf && OwnerRoot(w.Target!) is not null) Line($"{_c.OwnClaim(w.Target!.Type)}(w, {Loc(w.Syntax)});");
         if (w.Sink == WriteSink.Print) Line("byn_w_println(w);");

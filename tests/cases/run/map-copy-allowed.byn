@@ -2,6 +2,10 @@
 struct Store {
     string name;
     Map<string, i64> data;
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Store {{ name: {name}, data: {data} }}");
+    }
 }
 
 union Slot {
@@ -21,7 +25,7 @@ Map<string, i64> passThrough(move Map<string, i64> m) {
 
 i64 total(Map<string, i64> m) {
     i64 sum = 0;
-    for (let e in m) sum += e.value;
+    for e in m { sum += e.value; }
     return sum;
 }
 
@@ -45,11 +49,11 @@ error enum LookupError { missing }
 var a = fresh("x", 1);
 var b = Map<string, i64>();
 b = fresh("y", 2);
-var s = Store { name = "s", data = fresh("z", 3) };
+var s = Store { name: "s", data: fresh("z", 3) };
 s.data = fresh("w", 4);
 let full = Slot.full(fresh("v", 5));
 var list = List<Map<string, i64>>();
-list.add(fresh("u", 6));
+list.append(fresh("u", 6));
 var nested = Map<i64, Map<string, i64>>();
 nested[1] = fresh("t", 7);
 Map<string, i64>[2] arr = [fresh("q", 8), Map<string, i64>()];
@@ -68,17 +72,17 @@ bump(ref s.data, "z");
 let counted = Counted(ref a);
 print($"{counted.n} {a.length} {s.data.length} {arr[1].length} {o.value.length} {list[0].length}");
 print($"{total(a)} {total(s.data)} {total(arr[0])} {total(o.value)} {total(pair.item1)}");
-for (let e in s.data) print($"  {e.key} = {e.value}");
-for (let m in list) print($"list: {m}");
+for e in s.data { print($"  {e.key} = {e.value}"); }
+for m in list { print($"list: {m}"); }
 print($"{a} {b} {c} {s} {pair}");
 print($"{maybe} {r.value} {nested[1]}");
-if (full is .full(let d)) print($"full: {d.length}");
+if full is .full(let d) { print($"full: {d.length}"); }
 
 struct Named {
     string name;
     Map<i64, i64> m;
 }
 
-let named = Named { name = "n", m = Map<i64, i64>() };
-let renamed = named with { m = Map<i64, i64>() };
+let named = Named { name: "n", m: Map<i64, i64>() };
+let renamed = named with { m: Map<i64, i64>() };
 print($"{renamed.name} {renamed.m.length}");

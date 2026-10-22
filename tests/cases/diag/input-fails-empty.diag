@@ -1,0 +1,15 @@
+error BYN1012: this expression does nothing as a statement
+
+  1 │ i32!() f() { return 1; }
+    │ ^^^ the value is computed and discarded
+    │
+  help: write `_ = f();` to discard a call's result; only calls, assignments and `++`/`--` can stand
+        alone
+
+error BYN1005: expected `;` after the statement
+
+  1 │ i32!() f() { return 1; }
+    │    ^ found `!`
+    │
+    │ 1 │ i32;!() f() { return 1; }
+    │   │    +

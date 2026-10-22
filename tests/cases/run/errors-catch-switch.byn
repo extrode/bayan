@@ -46,7 +46,7 @@ void report(i64 n) {
 }
 
 void main() {
-    for (let i in 0..7) {
+    for i in 0..7 {
         print($"{i}: {handle(i)}");
     }
     report(1);

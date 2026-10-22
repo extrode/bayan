@@ -1,0 +1,13 @@
+running 10 tests in 1 module
+  ◆ run_suq-money.test: format (cents: 1250, text: "MYR 12.50")
+  ◆ run_suq-money.test: format (cents: 5, text: "MYR 0.05")
+  ◆ run_suq-money.test: format (cents: -300, text: "MYR -3.00")
+  ◆ run_suq-money.test: format (cents: 0, text: "MYR 0.00")
+  ◆ run_suq-money.test: 8% rounds half up (cents: 1063, expected: 85)
+  ◆ run_suq-money.test: 8% rounds half up (cents: 1000, expected: 80)
+  ◆ run_suq-money.test: 8% rounds half up (cents: 1, expected: 0)
+  ◆ run_suq-money.test: 8% rounds half up (cents: 7, expected: 1)
+  ◆ run_suq-money.test: mixed currencies fail
+  ◆ run_suq-money.test: add commutes for same-currency amounts
+
+◆ 10 passed · Ts

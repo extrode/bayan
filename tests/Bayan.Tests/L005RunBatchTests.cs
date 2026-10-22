@@ -148,7 +148,7 @@ public sealed class L005RunBatchTests
         File.WriteAllText(path, """
             i32 refusedIsUnsupported() {
                 string[1] refused = ["%PATH%"];
-                let r = Io.runBatch("echo", refused.asSpan()) catch (e) switch {
+                let r = Io.runBatch("echo", refused.asSpan()) catch switch {
                     .unsupported => return 0,
                     _ => return 3,
                 };
@@ -157,9 +157,9 @@ public sealed class L005RunBatchTests
 
             i32 main() {
                 let refused = refusedIsUnsupported();
-                if (refused != 0) { return refused; }
+                if refused != 0 { return refused; }
                 string[3] args = ["a b", "^&|<>()!", "é"];
-                let r = Io.runBatch(".\\echo.cmd", args.asSpan()) catch (e) switch {
+                let r = Io.runBatch(".\\echo.cmd", args.asSpan()) catch switch {
                     .unsupported => return 0,
                     _ => return 2,
                 };

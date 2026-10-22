@@ -9,7 +9,7 @@ public struct Money {
 
     public Money(i64 cents) { this.cents = cents; }
 
-    public Money plus(Money other) => Money { cents = cents + other.cents };
+    public Money plus(Money other) => Money { cents: cents + other.cents };
 
     void reset() {
         cents = 0;

@@ -6,7 +6,7 @@ string pick(string a, string b) => a.length > b.length ? a : b;
 
 i64 total(ReadOnlySpan<i64> values) {
     i64 sum = 0;
-    for (let v in values) {
+    for v in values {
         sum += v;
     }
     return sum;
@@ -15,23 +15,23 @@ i64 total(ReadOnlySpan<i64> values) {
 void main() {
     using var arena = Arena();
     var names = List<string>();
-    names.add("ann");
-    names.add("bob");
+    names.append("ann");
+    names.append("bob");
     let first = names[0];
-    names.add("cy");
+    names.append("cy");
     print(first);
     var xs = List<i64>();
-    xs.add(1);
-    xs.add(2);
+    xs.append(1);
+    xs.append(2);
     print($"{total(xs)}");
     let view = xs.asSpan();
     print($"{view[0]}");
-    xs.add(3);
+    xs.append(3);
     let longer = pick(a: names[0], b: names[1]);
     print(longer);
     context (allocator: arena) {
         var local = List<i64>();
-        local.add(5);
+        local.append(5);
         let copy = tail(local.asSpan()).copy(to: arena);
         print($"{copy.length}");
     }
@@ -55,7 +55,7 @@ void fillLocal() {
     sb.append("hi");
     string[1] names = ["x"];
     let view = names.asSpan();
-    view[0] = sb.asString();
+    view[0] = sb.finish();
     print(names[0]);
 }
 
@@ -69,7 +69,7 @@ struct Stack {
 
     i64 sum() {
         i64 s = 0;
-        for (let v in view()) {
+        for v in view() {
             s += v;
         }
         return s;

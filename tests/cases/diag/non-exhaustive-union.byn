@@ -5,7 +5,7 @@ f32 area(Shape s) => s switch {
 };
 
 void describe(Shape s) {
-    switch (s) {
+    switch s {
         case .rect(let w, let h):
             print($"{w} {h}");
         case .circle(1):
@@ -14,7 +14,7 @@ void describe(Shape s) {
 }
 
 void covered(Shape s) {
-    switch (s) {
+    switch s {
         case .circle(_):
             print("circle");
         default:

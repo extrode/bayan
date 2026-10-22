@@ -1,3 +1,5 @@
-panic: assertion failed: net == -34
-  net is -33
+panic: assert(net == -34)
+              │   │
+              │   false
+              -33
   at assert-values.byn:2

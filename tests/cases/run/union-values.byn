@@ -10,7 +10,7 @@ string describe(Mode m) => m switch {
 };
 
 void show(Reply r) {
-    switch (r) {
+    switch r {
         case .ok:
             print("ok");
         case .notFound:
@@ -21,7 +21,7 @@ void show(Reply r) {
 }
 
 List<Mode> modes = [.read, .write, .append, .none];
-for (let m in modes) {
+for m in modes {
     print($"{describe(m)} {m}");
 }
 print($"{Mode.append == .append} {Mode.read == .write}");
