@@ -477,7 +477,7 @@ internal sealed partial class Binder
         if (condition.Type.IsError || Conversions.Implicit(condition.Type, PrimitiveType.Bool) is not null)
             return new BoundAssert(a, Convert(condition, PrimitiveType.Bool, a.Condition.Span));
         Report(DiagnosticCodes.AssertNotBool, a.Condition.Span, [condition.Type.DisplayName], label: "this is not a `bool`",
-            help: "compare the value with what you expect, e.g. `assert count == 3;`");
+            help: "check the value against what you expect, e.g. `assert count == 3;`");
         return new BoundErrorStmt(a);
     }
 

@@ -3,11 +3,11 @@ error BYN2775: `assert` needs a `bool`, got `i32`
   2 │ assert count;
     │        ^^^^^ this is not a `bool`
     │
-  help: compare the value with what you expect, e.g. `assert count == 3;`
+  help: check the value against what you expect, e.g. `assert count == 3;`
 
 error BYN2775: `assert` needs a `bool`, got `string`
 
   3 │ assert "ready";
     │        ^^^^^^^ this is not a `bool`
     │
-  help: compare the value with what you expect, e.g. `assert count == 3;`
+  help: check the value against what you expect, e.g. `assert count == 3;`
