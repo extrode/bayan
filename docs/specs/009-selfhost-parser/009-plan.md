@@ -90,7 +90,7 @@ struct IdRange {
 }
 
 interface ISpanned {
-    span: TextSpan
+    span: TextSpan { get }
 }
 
 struct ExprNode : ISpanned {
@@ -114,7 +114,7 @@ struct Pool<T> : IIndexable {
 
     add(ref this, item: T) -> i32 {
         items.add(item)
-        return (items.length - 1) as i32
+        return (i32)(items.length - 1)
     }
 }
 ```
