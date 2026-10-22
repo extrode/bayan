@@ -87,8 +87,11 @@ public sealed partial class Compilation
                     {
                         c.FieldWitnesses[member] = field;
                         // A getter's result is owned by the caller, so a field read in its place would be an implicit copy.
-                        // A generic struct is checked per instance, where its type parameters are known.
-                        if (!s.IsGeneric && TypeFacts.WhyUnique(field.Type) is { } why)
+                        // Judged once, on the template; a field unique only through a type parameter, per instance.
+                        var part = TypeFacts.UniquePart(field.Type);
+                        var templatePart = s.Template?.FindField(field.Name) is { } t ? TypeFacts.UniquePart(t.Type) : part;
+                        if (part is not null and not TypeParameterType && (s.Template is null || templatePart is TypeParameterType)
+                            && TypeFacts.WhyUnique(field.Type) is { } why)
                             Report(DiagnosticCodes.ImplicitCopy, source, field.Location!.Value.Span, [why],
                                 label: $"cannot stand for `{i.DisplayName}.{member.Name}`",
                                 help: $"rename the field and write the getter `{expected.ReturnType.DisplayName} {member.Name} => …;` in `{s.Name}`, returning a copy or a fresh value");
