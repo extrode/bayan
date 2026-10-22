@@ -83,7 +83,7 @@ print("Hello, world!");
 
 > Round 2 §10, §11: field initialization uses `:`; an empty map is `[]` like every empty collection; untyped literals get a default type. Codes: BYN1021, BYN2235, BYN2236.
 
-An integer literal (or a negated one) that initializes an unannotated `var` takes the type of the variable's first constraining use in the same function, in bind order: an assignment to or from a typed value, a comparison or arithmetic with one, or an argument for a typed parameter. `var i = 0; while i < xs.count { i += 1; }` makes `i` an `i64`. Literals and other such `var`s do not constrain, so `var n = 0; n += 1;` leaves `n` an `i32`. Only an integer type retypes the variable: when the first use is a float or a string, or there is none, it keeps the literal's default type (`i32` when it fits). A literal that does not fit the inferred type is the usual out-of-range error at the literal (`var n = 300; u8 b = n;` is BYN2203 on `300`). `bayan types` shows the resolved types (`docs/typed-dump.md`).
+An integer literal (or a negated one) that initializes an unannotated `var` takes the type of the variable's first constraining use in the same function, in bind order: an assignment to or from a typed value, a comparison or arithmetic with one, or an argument for a typed parameter. `var i = 0; while i < xs.length { i += 1; }` makes `i` an `i64`. Literals and other such `var`s do not constrain, so `var n = 0; n += 1;` leaves `n` an `i32`. Only an integer type retypes the variable: when the first use is a float or a string, or there is none, it keeps the literal's default type (`i32` when it fits). A literal that does not fit the inferred type is the usual out-of-range error at the literal (`var n = 300; u8 b = n;` is BYN2203 on `300`). `bayan types` shows the resolved types (`docs/typed-dump.md`).
 
 ### 2.4 Keywords
 
@@ -136,7 +136,7 @@ Lowercase type names are reserved for the language. C interop types: `c_int`, `c
   - Both take a `ReadOnlySpan<u8>` and return a fresh copy from `context.allocator` that does not borrow the bytes. An empty span decodes to `""`. Overlong forms, surrogates, code points above U+10FFFF and truncated sequences are invalid (law L010).
   - `Utf8Error` is a built-in `error enum` with one variant, `invalidSequence`. Until error variants carry payloads, `string.invalidUtf8At(bytes)` returns the byte offset of the first invalid sequence as `i64?`, `null` when the bytes are valid (`[0x68, 0xC0, 0x80]` gives 1).
 - `n.toHex()` on every integer type returns lowercase hexadecimal with no prefix and no leading zeros (`255` gives `"ff"`, `0` gives `"0"`), allocated from `context.allocator`. A negative value prints its two's-complement bits at the type's width (an `i8` holding `-1` gives `"ff"`). Format specifiers are in §6.6.
-- **No `length`.** Sizes name their unit: `s.bytes.count` (O(1)), `s.chars.count`, `s.graphemes.count` (O(n)). `s.length` is an error with a fix to `s.bytes.count`.
+- **`s.length` is the O(1) byte length** (round 3 keeps length). Other units are named: `s.chars.count`, `s.graphemes.count` (O(n)).
 - **No single-index indexer.** `s[i]` is a compile error with fix-its: `s.bytes[i]`, `s.chars.take(n)`, `s.graphemes.take(n)`, range slicing.
 - All offsets are **byte offsets**, as ranges are everywhere (§6.1). `s[a..b]` slices by byte offset and panics off a character boundary. `s.chars.take(n)`, `s.graphemes.take(n)`, `skip`, `takeLast` count characters or graphemes.
 - **Searching** returns offsets or views: `contains`, `startsWith`, `endsWith`, `indexOf` (`i32?`), `lastIndexOf`.
@@ -170,9 +170,9 @@ distinct type UserId = i64;      // a unit without arithmetic
 - Mismatched units are compile errors. Scaled units convert automatically (`2s + 500ms` is `Millis 2500`).
 - Wrap and unwrap with casts: `(Seconds)raw`, `(i64)t`. A bare literal takes the unit of the other operand.
 - Units are erased at runtime.
-- `s.bytes.count` is `Bytes`; `s.chars.count` is `Runes`.
+- `s.length` is `Bytes`; `s.chars.count` is `Runes`.
 
-> Round 2 §12: `length` is gone from strings.
+> Round 2 §12 removed `length` from strings; round 3 restores it (`s.length` is the byte length).
 
 ### 3.5 Arrays, spans, collections
 - `T[N]`: fixed-size inline array (a value). Constant out-of-range indexes are compile errors.
@@ -180,11 +180,11 @@ distinct type UserId = i64;      // a unit without arithmetic
 - `ReadOnlySpan<T>`: a borrowed view whose elements cannot be assigned. `Span<T>` → `ReadOnlySpan<T>` is implicit. `string.bytes` is a `ReadOnlySpan<u8>`, so strings stay immutable and valid UTF-8. A `Span<T>` parameter never written through gets lint BYN2310 ("use `ReadOnlySpan<T>`").
 - `List<T>`, `Deque<T>`, `Map<K, V>`, `HashMap<K, V>`, `Set<T>`, `Pool<T>`, `Ring<T, const i32 N>`, `NonEmpty<T>`: standard library, allocator-backed (API: §16).
 - `Map` **preserves insertion order**; `HashMap` is unordered and faster.
-- `xs.removeRange(start, end)` removes the elements in `[start, end)` and keeps the order of the rest; `start > end` or `end > xs.count` panics (`slice out of range`). Like `append` and `removeLast`, it is a structural modification (§9.4 rule 5).
-- A module-level `const T[N]` with literal or constant elements is static data in `.rodata` when `T` is a number type, `bool`, `char` or `string` (`const string[2] names = ["a", "b"];`); it can be indexed, iterated and asked its `.count`. Any other module-level `const` array is BYN2229.
+- `xs.removeRange(start, end)` removes the elements in `[start, end)` and keeps the order of the rest; `start > end` or `end > xs.length` panics (`slice out of range`). Like `append` and `removeLast`, it is a structural modification (§9.4 rule 5).
+- A module-level `const T[N]` with literal or constant elements is static data in `.rodata` when `T` is a number type, `bool`, `char` or `string` (`const string[2] names = ["a", "b"];`); it can be indexed, iterated and asked its `.length`. Any other module-level `const` array is BYN2229.
 - **`StrBuf`** is the string builder and the target of every `xInto(ref StrBuf)` (§5.2): `StrBuf(capacity: n)` allocates from `context.allocator`; `StrBuf.over(stackalloc u8[n] uninit)` uses the stack first and spills to the allocator only if outgrown; `append(x)`, `append($"…")` (interpolation writes straight into the buffer), `appendRepeated(c, n)`; `buf.view` is a borrowed string view, no allocation; `buf.finish()` consumes the buffer and returns it as a string without copying. `StrBuf.over` is not in v0.1.
 
-> Round 2 §11, §12, §15: `count` and `append` replace `length` and `add` on ordered collections; `finish()` and `view` replace `asString()`; C# type names are input forms. Codes: BYN1030, BYN2230.
+> Round 2 §11, §12, §15: `append` replaces `add` on ordered collections (round 3 keeps `length` for size); `finish()` and `view` replace `asString()`; C# type names are input forms. Codes: BYN1030, BYN2230.
 - Every allocator-backed collection (`List`, `Map`, `HashMap`, `Set`, `Pool`) and `StrBuf` is **`unique`** (§3.11): assigning or storing one moves it, and a copy is explicit, `xs.copy(to: alloc)`. Reading without owning goes through `ReadOnlySpan<T>`, a read-only parameter or `ref`.
 - Hashing is **seeded** by default (hash-flooding resistance); tests use a fixed seed.
 
@@ -729,9 +729,9 @@ let resp = signUp(form) catch switch {
 `unique` types move with `move` and are disposed exactly once. Using a moved value is a compile error.
 
 - **Only a local or a `move` parameter can be moved from.** Moving out of a field, element or plain parameter is a compile error (it would leave a half-moved value). `x.take()` moves the value out of any place it can write and leaves that type's empty value behind: `let items = ledger.items.take();` leaves `ledger.items` an empty list. `take()` exists on `List`, `Map`, `StrBuf` (empty value: an empty one) and on optionals of those (`null`); on any other type it is BYN2788, and on a place that can't be written (a `let` local, a plain parameter) it reports the usual mutation error. `map[k].take()` panics on a missing key, like `map[k]`.
-- **Pattern bindings on a `unique` subject borrow.** `switch x` and `x is …` bind borrows of `x`'s parts, so `x` stays usable after the switch. `switch move x` moves `x` into the switch, and its bindings then own their parts; `x` is moved afterwards on every path. The subject must be a local or a `move` parameter (BYN2789 otherwise). An owning pattern may not bind a value and a part of it, through both sides of an `and` or through a designation with bindings inside it (BYN2790): two bindings would own one storage. Two bindings overlap only when one's path is a prefix of the other's, and only bindings of a `unique` type count (`{ a: { b: let x }, a: { c: let y } }` and `{ items: let x, items.count: let n }` are accepted). In a `when` guard of an owning switch the arm's bindings and their parts are read-only (BYN2791): a guard that fails gives the value back to the switch. As an expression the subject needs parentheses, `(move x) switch { … }`: `move x switch { … }` parses as `move (x switch { … })`.
+- **Pattern bindings on a `unique` subject borrow.** `switch x` and `x is …` bind borrows of `x`'s parts, so `x` stays usable after the switch. `switch move x` moves `x` into the switch, and its bindings then own their parts; `x` is moved afterwards on every path. The subject must be a local or a `move` parameter (BYN2789 otherwise). An owning pattern may not bind a value and a part of it, through both sides of an `and` or through a designation with bindings inside it (BYN2790): two bindings would own one storage. Two bindings overlap only when one's path is a prefix of the other's, and only bindings of a `unique` type count (`{ a: { b: let x }, a: { c: let y } }` and `{ items: let x, items.length: let n }` are accepted). In a `when` guard of an owning switch the arm's bindings and their parts are read-only (BYN2791): a guard that fails gives the value back to the switch. As an expression the subject needs parentheses, `(move x) switch { … }`: `move x switch { … }` parses as `move (x switch { … })`.
 
-> Round 2 §4, §11: no parentheses around a `switch` subject; `count` replaces `length`.
+> Round 2 §4, §11: no parentheses around a `switch` subject (round 3 keeps `length` for size).
 - **Debug builds check ownership at runtime.** Each `unique` allocation records its current owner and every move updates it; a second owner, or a read through a moved-from local, panics with both source locations, in the usual panic format: `second owner of List<i64>: owned since a.byn:3` or `use of moved List<i64>: moved at a.byn:4`, followed by `  at a.byn:5`. Safe and fast builds compile the checker out. Rules here hold outside `unsafe`, where raw pointers may alias.
 
 ### 9.4 Borrowing and regions (no lifetime annotations in the common case)
@@ -991,15 +991,15 @@ Decoders default to safe limits (JSON nesting depth 128, maximum size). Per-requ
 
 - Ordered collections (`List`, `Deque`) use `append` / `prepend`; unordered ones (`Set`, `Map`) use `add`.
 - Costs are stated per method: `prepend`, `insert` and `removeFirst` are O(n) on `List` and O(1) on `Deque`.
-- **Size:** `count` (O(1)) on every collection; `length` does not exist (strings: §3.2).
-- **Queries** (never allocate): `count`, `isEmpty`, `hasItems`, `first` / `last` (`T?`), `xs[i]` (panics out of range), `at(i)` (`T?`), `contains`, `indexOf` (`i32?`), `indexWhere`, `any`, `all`.
+- **Size:** `length` (O(1)) on every collection (round 3 keeps length); `count(p)` only counts elements matching a predicate (strings: §3.2).
+- **Queries** (never allocate): `length`, `isEmpty`, `hasItems`, `first` / `last` (`T?`), `xs[i]` (panics out of range), `at(i)` (`T?`), `contains`, `indexOf` (`i32?`), `indexWhere`, `any`, `all`.
 - **Views** (never allocate): slices `xs[1..4]`, `xs[1..^1]`, `take`, `skip`, `takeLast`, `skipLast`, `stride`, `chunks`, `windows`, `splitAt`. C#'s `Substring(start, length)` migrates to `s[start..(start + length)]`.
 - **Lazy iterators** are structs with inlined lambdas: `where`, `select`, `sumBy`, `minBy`, `maxBy`, `any`, `all`, `groupBy`; nothing allocates until `toList()`.
 - **New data** (allocate from `context.allocator`): `toList()`, `distinct()`, `join(sep)`, `join(sep, f)`, `flatten()` (Form I, not participles), spread `[..a, ..b]`.
 - Out-of-range slices panic in safe builds; `trySlice(a..b)` returns `Span<T>?`.
 - Read-only queries and views take `ReadOnlySpan<T>` parameters (a `Span<T>`, `List<T>`, array or, for bytes, `string` converts implicitly).
 - Collections copy explicitly: `xs.copy(to: alloc)` for `List`, `Map` and `StrBuf` returns an independent value of the same type (not allowed when an element, key or value holds a `List`, `Map`, `StrBuf` or `Owned`).
-- Compile-time work: bounds checks removed when provably in range; constant slices of fixed arrays have type `T[N]`; `xs[^1]` lowers to `xs[xs.count - 1]`; slice chains fuse.
+- Compile-time work: bounds checks removed when provably in range; constant slices of fixed arrays have type `T[N]`; `xs[^1]` lowers to `xs[xs.length - 1]`; slice chains fuse.
 
 **Literals:**
 
@@ -1236,7 +1236,7 @@ Input forms are alternate spellings that the editor and `bayan fmt` accept and r
 | `catch (e) switch { … }` | `catch switch { E e => … }` (fix only before `switch`; otherwise help text) | BYN1025 |
 | `error set S = A \| B;` | `error set S = A, B;` | BYN1029 |
 | `name = "…"` in `package.byn` | `name: "…"` | BYN3104 |
-| `.length` | `.count` (strings: `.bytes.count`) | BYN2230 |
+| `List.add`, `StrBuf.asString()` | `append`, `finish()` (round 3 keeps `.length`) | BYN2230 |
 | `toString()`, `ToString()` | `format()` | BYN2031 |
 
 The last six rows are beyond the HANDOFF round 2 table; the plan adds them because each retired form gets the same treatment.
@@ -1311,7 +1311,7 @@ Roadmap: v0.3 WASM + `.d.ts`; v0.4 `bayan gen ts`; post-v1 portable JS backend (
 | `event`, multicast delegates | Removed |
 | `Func<…>`, `Action<…>`, `delegate` | Function types `A => B`, `type Name = A => B;` (§3.16) |
 | `[Flags] enum` | `Set<T>` of a payload-free union (§3.13) |
-| `Count` / `Count()` / `Length` | `count` |
+| `Count` / `Count()` / `Length` | `length` (round 3 keeps length) |
 | `ToString()` | `format()` / `formatInto(ref StrBuf)` (§6.6) |
 | `foreach`, `if (…)`, `int`, `x == null` | Input forms, rewritten (§21.5) |
 | `m` / `d` literal suffixes | `dec`; doubles unsuffixed |

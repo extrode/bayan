@@ -2,6 +2,10 @@
 struct Store {
     string name;
     Map<string, i64> data;
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Store {{ name: {name}, data: {data} }}");
+    }
 }
 
 union Slot {
@@ -49,7 +53,7 @@ var s = Store { name = "s", data = fresh("z", 3) };
 s.data = fresh("w", 4);
 let full = Slot.full(fresh("v", 5));
 var list = List<Map<string, i64>>();
-list.add(fresh("u", 6));
+list.append(fresh("u", 6));
 var nested = Map<i64, Map<string, i64>>();
 nested[1] = fresh("t", 7);
 Map<string, i64>[2] arr = [fresh("q", 8), Map<string, i64>()];

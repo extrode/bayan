@@ -1,8 +1,8 @@
 // Valid UTF-8 bytes decode into a fresh string that outlives the bytes.
 string decode() fails Utf8Error {
     var bytes = List<u8>();
-    bytes.add(0x68);
-    bytes.add(0x69);
+    bytes.append(0x68);
+    bytes.append(0x69);
     let s = try string.from(bytes.asSpan());
     bytes.clear();
     return s;

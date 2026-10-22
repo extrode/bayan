@@ -68,8 +68,8 @@ public sealed class L008OwnershipRuntimeTests(ITestOutputHelper output) : IDispo
             void main() {
                 var own = fresh(1);
                 var alias = own;
-                alias.add(2);
-                own.add(3);
+                alias.append(2);
+                own.append(3);
 
             """);
         var c = Compilation.Create([SourceText.FromString("alias.byn", source)], ".", new CompilationOptions(SkipOwnershipCheck: true));

@@ -7,5 +7,5 @@ i64 count(ReadOnlySpan<i64> xs) {
 }
 
 var xs = List<i64>();
-xs.add(1);
+xs.append(1);
 print($"{count(xs)}");

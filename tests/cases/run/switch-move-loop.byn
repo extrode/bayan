@@ -12,7 +12,7 @@ void consume(move List<i64> xs) {
 void main() {
     for (let i in 0..3) {
         var xs = List<i64>();
-        for (let k in 0..i) xs.add(k);
+        for (let k in 0..i) xs.append(k);
         let s = Slot.full(move xs);
         switch (move s) {
             case .full(let items):

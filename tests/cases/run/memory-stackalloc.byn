@@ -11,4 +11,4 @@ let bytes = stackalloc u8[64];
 var sb = StrBuf(bytes);
 sb.append("total=");
 sb.append($"{sum}");
-print(sb.asString());
+print(sb.finish());

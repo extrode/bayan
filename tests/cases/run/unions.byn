@@ -9,6 +9,10 @@ public union Token { number(i64 value), word(string text), end }
 struct Slot {
     string label;
     Shape shape;
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Slot {{ label: {label}, shape: {shape} }}");
+    }
 }
 
 f32 area(Shape s) => s switch {
@@ -56,9 +60,9 @@ if (c is .rect(_, _)) {
 print($"{n is .none} {c is Shape.circle(1)}");
 
 var shapes = List<Shape>();
-shapes.add(c);
-shapes.add(.rect(1, 2));
-shapes.add(Shape.none);
+shapes.append(c);
+shapes.append(.rect(1, 2));
+shapes.append(Shape.none);
 f32 total = 0;
 for (let s in shapes) {
     total += area(s);
@@ -76,9 +80,9 @@ print($"{maybe} {missing}");
 print(maybe switch { null => "none", .rect(let w, _) => $"rect {w}", _ => "other" });
 
 var tokens = List<Token>();
-tokens.add(Token.number(42));
-tokens.add(.word("hi"));
-tokens.add(.end);
+tokens.append(Token.number(42));
+tokens.append(.word("hi"));
+tokens.append(.end);
 for (let t in tokens) {
     let text = t switch {
         .number(let v) => $"number {v}",

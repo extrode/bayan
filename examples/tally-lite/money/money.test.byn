@@ -10,7 +10,7 @@ bool formatsAs(Cents cents, string expected) {
     var sb = StrBuf(bytes);
     let m = Money { cents = cents, currency = "MYR" };
     m.formatInto(ref sb);
-    return sb.asString() == expected;
+    return sb.finish() == expected;
 }
 
 test "parses whole and fractional amounts" {

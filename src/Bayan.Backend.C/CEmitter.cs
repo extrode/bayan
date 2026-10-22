@@ -589,15 +589,6 @@ public sealed class CEmitter
                 case StructSymbol s when FormatInto(s) is { } method:
                     sb.Append($"    {FunctionName(method)}(&v, w);\n");
                     break;
-                case StructSymbol s:
-                    Text(s.Fields.Count == 0 ? s.Name + " { }" : s.Name + " { ");
-                    for (var i = 0; i < s.Fields.Count; i++)
-                    {
-                        Text((i > 0 ? ", " : "") + s.Fields[i].Name + ": ");
-                        sb.Append("    ").Append(Format(s.Fields[i].Type, "v." + FieldName(s.Fields[i].Name), "w")).Append('\n');
-                    }
-                    if (s.Fields.Count > 0) Text(" }");
-                    break;
                 case UnionSymbol u:
                     sb.Append("    switch (v.tag) {\n");
                     foreach (var variant in u.Variants)

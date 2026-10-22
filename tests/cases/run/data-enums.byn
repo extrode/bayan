@@ -45,8 +45,8 @@ for (let t in Token.values) {
     print($"{t} '{t.text}' {t.precedence} {t.first} {t.keyword} {t.kind}");
 }
 var ops = List<Token>();
-ops.add(.plus);
-ops.add(Token.star);
+ops.append(.plus);
+ops.append(Token.star);
 var total = 0;
 for (let t in ops) {
     total += t.precedence;

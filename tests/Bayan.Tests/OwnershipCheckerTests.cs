@@ -31,7 +31,7 @@ public sealed class OwnershipCheckerTests
         void main() {
             var a = List<i64>();
             var b = move a;
-            a.add(1);
+            a.append(1);
             print($"{b.length}");
         }
 
@@ -40,10 +40,10 @@ public sealed class OwnershipCheckerTests
     private const string SecondOwner = """
         void main() {
             var a = List<i64>();
-            a.add(1);
+            a.append(1);
             var b = a;
-            b.add(2);
-            a.add(3);
+            b.append(2);
+            a.append(3);
         }
 
         """;
@@ -51,7 +51,7 @@ public sealed class OwnershipCheckerTests
     private const string ReadAfterMove = """
         void main() {
             var a = List<i64>();
-            a.add(1);
+            a.append(1);
             var b = move a;
             print($"{a.length} {b.length}");
         }
@@ -69,7 +69,7 @@ public sealed class OwnershipCheckerTests
     private const string DoubleMove = """
         void main() {
             var a = List<i64>();
-            a.add(1);
+            a.append(1);
             let b = move a;
             let c = move a;
             print($"{b.length} {c.length}");
@@ -119,7 +119,7 @@ public sealed class OwnershipCheckerTests
         }
         void main() {
             var a = List<i64>();
-            a.add(1);
+            a.append(1);
             let s = Slot.full(move a);
             switch (move s) {
                 case .full(let x) when x.length > 5:
@@ -140,7 +140,7 @@ public sealed class OwnershipCheckerTests
         }
         void main() {
             var a = List<i64>();
-            a.add(1);
+            a.append(1);
             let s = Slot.full(move a);
             let n = (move s) switch {
                 .full(let x) when x.length > 5 => x.length * 10,
@@ -159,7 +159,7 @@ public sealed class OwnershipCheckerTests
         }
         void main() {
             var a = List<i64>();
-            a.add(1);
+            a.append(1);
             let p = P { items = move a, n = 3 };
             switch (move p) {
                 case { items: let x, n: 5 }:
@@ -190,7 +190,7 @@ public sealed class OwnershipCheckerTests
         i64 f(move List<i64> x, i64 n) => n + x.length;
         void main() {
             var a = List<i64>();
-            a.add(1);
+            a.append(1);
             print($"{f(move a, a.length)}");
         }
 
@@ -203,7 +203,7 @@ public sealed class OwnershipCheckerTests
         }
         void main() {
             var a = List<i64>();
-            a.add(1);
+            a.append(1);
             let p = P { xs = move a, n = a.length };
             print($"{p.n}");
         }
@@ -215,7 +215,7 @@ public sealed class OwnershipCheckerTests
         i64 g(List<i64> x) => x.length;
         void main() {
             var a = List<i64>();
-            a.add(1);
+            a.append(1);
             print($"{f(move a, g(a))}");
         }
 
@@ -228,7 +228,7 @@ public sealed class OwnershipCheckerTests
         i64 f(P p, i64 n) => n + p.xs.length;
         void main() {
             var a = List<i64>();
-            a.add(1);
+            a.append(1);
             print($"{f(P { xs = move a }, a.length)}");
         }
 
@@ -247,7 +247,7 @@ public sealed class OwnershipCheckerTests
         struct Bag {
             List<i64> items;
             public i64 grow(ref this) {
-                this.items.add(1);
+                this.items.append(1);
                 return this.items.length;
             }
         }
@@ -264,7 +264,7 @@ public sealed class OwnershipCheckerTests
         struct Bag {
             List<i64> items;
             public i64 grow(ref this) {
-                this.items.add(1);
+                this.items.append(1);
                 return this.items.length;
             }
         }
@@ -274,9 +274,9 @@ public sealed class OwnershipCheckerTests
         }
         void main() {
             var a = List<i64>();
-            a.add(1);
-            a.add(2);
-            a.add(3);
+            a.append(1);
+            a.append(2);
+            a.append(3);
             let s = Slot.full(Bag { items = move a });
             switch (move s) {
                 case .full(var x) when x.grow() > 5:
@@ -312,13 +312,13 @@ public sealed class OwnershipCheckerTests
 
     private const string GrowThroughRef = """
         void bump(ref List<i64> x) {
-            x.add(1);
+            x.append(1);
         }
         void main() {
             var x = List<i64>();
             bump(ref x);
             var y = x;
-            y.add(2);
+            y.append(2);
         }
 
         """;
@@ -330,13 +330,13 @@ public sealed class OwnershipCheckerTests
     private const string FillThroughOut = """
         void fill(out List<i64> xs) {
             xs = List<i64>();
-            xs.add(7);
+            xs.append(7);
         }
         void main() {
             var x = List<i64>();
             fill(out x);
             var y = x;
-            y.add(1);
+            y.append(1);
             print($"{y.length}");
         }
 

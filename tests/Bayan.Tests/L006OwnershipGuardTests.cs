@@ -35,7 +35,7 @@ public sealed class L006OwnershipGuardTests
             void main() {
                 var a = List<i64>();
                 var b = move a;
-                a.add(1);
+                a.append(1);
                 print($"{b.length}");
             }
             """, "BYN2781" },
@@ -334,7 +334,7 @@ public sealed class L006OwnershipGuardTests
         { "switch (move) and pattern binds both sides", """
             void main() {
                 var a = List<i64>();
-                a.add(1);
+                a.append(1);
                 switch (move a) {
                     case let x and let y:
                         consume(move x);
@@ -427,7 +427,7 @@ public sealed class L006OwnershipGuardTests
                 using let arena = Arena();
                 let sb = StrBuf();
                 let other = sb.copy(to: arena);
-                print($"{sb.asString()} {other.asString()}");
+                print($"{sb.finish()} {other.finish()}");
             }
             """ },
         { "explicit copy into a struct field", """
@@ -443,7 +443,7 @@ public sealed class L006OwnershipGuardTests
                 var a = List<i64>();
                 var b = move a;
                 a = List<i64>();
-                a.add(1);
+                a.append(1);
                 print($"{a.length} {b.length}");
             }
             """ },
@@ -497,12 +497,12 @@ public sealed class L006OwnershipGuardTests
         { "borrow ends before its owner", """
             void main() {
                 var xs = List<i64>();
-                xs.add(1);
+                xs.append(1);
                 {
                     let view = xs.asSpan();
                     print($"{view[0]}");
                 }
-                xs.add(2);
+                xs.append(2);
             }
             """ },
         { "borrowed loop binding read in place", """
@@ -580,18 +580,18 @@ public sealed class L006OwnershipGuardTests
         { "take from a List field", """
             void main() {
                 var ledger = Ledger { items = List<i64>() };
-                ledger.items.add(1);
+                ledger.items.append(1);
                 let items = ledger.items.take();
-                ledger.items.add(2);
+                ledger.items.append(2);
                 print($"{items.length} {ledger.items.length}");
             }
             """ },
         { "take from a list element", """
             void main() {
                 var lists = List<List<i64>>();
-                lists.add(List<i64>());
+                lists.append(List<i64>());
                 let first = lists[0].take();
-                lists[0].add(1);
+                lists[0].append(1);
                 print($"{first.length} {lists[0].length}");
             }
             """ },
@@ -618,7 +618,7 @@ public sealed class L006OwnershipGuardTests
             void main() {
                 var shared = List<i64>();
                 let drained = drain(ref shared);
-                shared.add(1);
+                shared.append(1);
                 print($"{drained.length} {shared.length}");
             }
             """ },
@@ -628,7 +628,7 @@ public sealed class L006OwnershipGuardTests
                 sb.append("hi");
                 let text = sb.take();
                 sb.append("again");
-                print($"{text.asString()} {sb.asString()}");
+                print($"{text.finish()} {sb.finish()}");
             }
             """ },
         { "switch (move s) then move the binding on", """

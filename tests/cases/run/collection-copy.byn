@@ -1,17 +1,17 @@
 void showList(string name, ReadOnlySpan<i64> xs) {
     var line = StrBuf();
     for (let x in xs) line.append($" {x}");
-    print($"{name}: {xs.length}{line.asString()}");
+    print($"{name}: {xs.length}{line.finish()}");
 }
 
 using var arena = Arena();
 
 var list = List<i64>();
-for (let i in 0..5) list.add(i);
+for (let i in 0..5) list.append(i);
 var listCopy = list.copy(to: arena);
 for (let i in 0..100) {
-    list.add(i);
-    listCopy.add(-i);
+    list.append(i);
+    listCopy.append(-i);
     if (i % 3 == 0) {
         list.removeLast();
         listCopy[0] = i;
@@ -46,5 +46,5 @@ for (let i in 0..100) {
         bufCopy.append("c");
     }
 }
-print($"buf: {buf.asString()}");
-print($"bufCopy: {bufCopy.asString()}");
+print($"buf: {buf.finish()}");
+print($"bufCopy: {bufCopy.finish()}");

@@ -696,6 +696,7 @@ internal sealed partial class Binder
             return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
         if (BuiltinMembers.HasMethod(target.Type, name))
             return new BoundBuiltinGroup(syntax, target, name);
+        if (ReportRenamed(target.Type, member)) return new BoundErrorExpr(syntax);
         if (name == "take")
         {
             Report(DiagnosticCodes.TakeUnsupported, member.Span, [target.Type.DisplayName],
@@ -705,6 +706,30 @@ internal sealed partial class Binder
         Report(DiagnosticCodes.UnknownMember, member.Span, [name, target.Type.DisplayName],
             help: MemberSuggestion(target.Type, name));
         return new BoundErrorExpr(syntax);
+    }
+
+    /// <summary>BYN2230 and BYN2031: a member under its round-1 or C# name; the fix writes the new one.</summary>
+    private bool ReportRenamed(TypeSymbol type, Name member)
+    {
+        var name = member.Text;
+        if (name is "toString" or "ToString")
+        {
+            Report(DiagnosticCodes.ToStringCall, member.Span, [], label: "not a Bayan method",
+                help: "call `format()`, or interpolate the value: `$\"{x}\"`", fix: new Fix(member.Span, "format"));
+            return true;
+        }
+        var renamed = (type, name) switch
+        {
+            (ListType, "add") => "append",
+            (BuiltinType { Kind: BuiltinKind.StrBuf }, "asString") => "finish",
+            _ => null,
+        };
+        if (renamed is null) return false;
+        var call = name == "asString" ? "()" : "";
+        Report(DiagnosticCodes.RenamedMember, member.Span, [name + call, renamed + call], label: "the old name",
+            help: $"rename it `{renamed}`",
+            fix: new Fix(member.Span, renamed));
+        return true;
     }
 
     private static string? MemberSuggestion(TypeSymbol type, string name)
@@ -833,6 +858,21 @@ internal sealed partial class Binder
         return new BoundSlice(i, target, start, startFromEnd, end, endFromEnd, r.Inclusive, type);
     }
 
+    /// <summary>
+    /// The text <paramref name="e"/> contributes to the interpolation that replaces a string <c>+</c>:
+    /// a plain literal or an interpolation inlines its contents, anything else becomes a hole.
+    /// </summary>
+    private string InterpolationSource(Expr e)
+    {
+        var text = Source.GetText(e.Span);
+        return e switch
+        {
+            LiteralExpr { Kind: LiteralKind.String } when text.IndexOfAny(['{', '}']) < 0 => text[1..^1],
+            InterpolatedExpr when text.StartsWith("$\"", StringComparison.Ordinal) && !text.StartsWith("$\"\"\"", StringComparison.Ordinal) => text[2..^1],
+            _ => "{" + text + "}",
+        };
+    }
+
     /// <summary>BYN2201: strings have no indexer (spec §3.2); offer the four alternatives.</summary>
     private void ReportStringIndexer(IndexExpr i)
     {
@@ -841,11 +881,11 @@ internal sealed partial class Binder
         Report(DiagnosticCodes.StringIndexer, TextSpan.FromBounds(i.Target.Span.End, i.Span.End), [],
             label: "strings have no indexer",
             help: $"""
-                choose what you mean; `string` is UTF-8, so position {index} is not a character:
-                  `{s}.bytes[{index}]`   the byte at offset {index} (applied below)
-                  `{s}.runeAt({index})`  the character starting at byte offset {index}
-                  `for (let c in {s})`   each character in turn
-                  `{s}.graphemes`        user-perceived characters
+                read a byte, slice, or take characters; `string` is UTF-8, so position {index} is not a character:
+                  `{s}.bytes[{index}]`       the byte at offset {index} (applied below)
+                  `{s}[a..b]`          the text between byte offsets a and b
+                  `{s}.chars.take(n)`  the first n characters
+                  `{s}.graphemes`      user-perceived characters
                 """,
             fix: new Fix(i.Span, $"{s}.bytes[{index}]"));
     }
@@ -966,10 +1006,9 @@ internal sealed partial class Binder
 
         if (common.IsString && b.Op == BinaryOp.Add)
         {
-            if (left.Constant is { Value: string ls } && right.Constant is { Value: string rs })
-                return Literal(b, PrimitiveType.String, ls + rs) with { Syntax = b };
             Report(DiagnosticCodes.StringConcatenation, b.Span, [],
-                help: "use interpolation into an output: `print($\"{a}{b}\")` or `buf.append($\"{a}{b}\")`");
+                help: "write the parts as one interpolation: `$\"{a}{b}\"`, or `buf.append($\"{a}{b}\")` in a loop",
+                fix: new Fix(b.Span, $"$\"{InterpolationSource(b.Left)}{InterpolationSource(b.Right)}\""));
             return new BoundErrorExpr(b);
         }
 
@@ -1531,7 +1570,7 @@ internal sealed partial class Binder
             var value = BindExpr(hole.Expr);
             if (!value.Type.IsError && WhyNotFormattable(value.Type, []) is { } why)
                 Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName], label: why == "" ? null : why,
-                    help: value.Type is StructSymbol s ? $"give `{s.Name}` a `void formatInto(ref StrBuf out)` method" : null);
+                    help: value.Type is StructSymbol s ? $"add `format()`/`formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
             parts.Add(new BoundInterpolationPart(null, value));
         }
         return new BoundInterpolated(i, parts.ToArray());
@@ -1550,8 +1589,8 @@ internal sealed partial class Binder
         OptionalType o => Part("the value", o.Inner, seen),
         ResultType r => Part("the value", r.Value, seen),
         OwnedType o => WhyNotFormattable(o.Inner, seen),
-        StructSymbol s => HasFormatInto(s) || !seen.Add(s) ? null
-            : s.Fields.Select(f => Part($"field `{f.Name}`", f.Type, seen)).FirstOrDefault(w => w is not null),
+        // Structs have no default display (HANDOFF §13): only `formatInto` formats one.
+        StructSymbol s => HasFormatInto(s) ? null : "",
         UnionSymbol u => !seen.Add(u) ? null
             : u.Variants.SelectMany(v => v.Fields.Select(f => Part($"`{v.Name}` field `{f.Name}`", f.Type, seen))).FirstOrDefault(w => w is not null),
         Symbols.TupleType tt => tt.Fields.Select((f, i) => Part($"element {i + 1}", f.Type, seen)).FirstOrDefault(w => w is not null),

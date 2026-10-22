@@ -1,6 +1,6 @@
 var xs = List<i64>();
-xs.add(5);
-xs.add(6);
+xs.append(5);
+xs.append(6);
 var i = 0;
 var total = 0;
 while (i < xs.length) {

@@ -31,9 +31,9 @@ struct SourceText {
 
     void ensureLineStarts(ref this) {
         if (!lineStarts.isEmpty) return;
-        lineStarts.add(0);
+        lineStarts.append(0);
         for (let i in 0..bytes.length) {
-            if (bytes[i] == 0x0A) lineStarts.add(i + 1);
+            if (bytes[i] == 0x0A) lineStarts.append(i + 1);
         }
     }
 
@@ -140,7 +140,7 @@ void appendUtf8(ref StrBuf sb, ReadOnlySpan<u8> bytes) {
 string utf8(ReadOnlySpan<u8> bytes) {
     var sb = StrBuf();
     appendUtf8(ref sb, bytes);
-    return $"{sb.asString()}";
+    return $"{sb.finish()}";
 }
 
 /// Number of scalars `bytes` decodes to, counting each replacement as one.
@@ -158,7 +158,7 @@ i64 runeCount(ReadOnlySpan<u8> bytes) {
 string hex(u32 value, i64 digits) {
     var sb = StrBuf();
     appendHex(ref sb, value, digits);
-    return $"{sb.asString()}";
+    return $"{sb.finish()}";
 }
 
 void appendHex(ref StrBuf sb, u32 value, i64 digits) {

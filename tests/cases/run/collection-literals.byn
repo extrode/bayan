@@ -1,7 +1,7 @@
 void show(string name, ReadOnlySpan<i32> xs) {
     var sb = StrBuf();
     for (let x in xs) sb.append($" {x}");
-    print($"{name}:{sb.asString()} ({xs.length})");
+    print($"{name}:{sb.finish()} ({xs.length})");
 }
 
 // Map literals: insert, look up, count.

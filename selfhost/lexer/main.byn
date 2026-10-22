@@ -64,13 +64,13 @@ i32 lexOne(string path, Keywords keywords, bool json) {
             Io.stderr.write("bayan-lex: cannot read standard input\n");
             return exitInput;
         }
-        for (let b in input.value.bytes) bytes.add(b);
+        for (let b in input.value.bytes) bytes.append(b);
     } else {
         bytes = Io.readFile(path) catch return unreadable(path);
     }
     var sb = StrBuf();
     let failed = dumpFile(ref sb, path == "-" ? "<stdin>" : path, move bytes, keywords, json: json);
-    Io.stdout.write(sb.asString());
+    Io.stdout.write(sb.finish());
     return failed ? exitFailure : exitOk;
 }
 
@@ -87,7 +87,7 @@ i32 lexMany(string dir, Keywords keywords) {
             var result = lex(SourceText.create(path, move bytes), keywords);
             checkSpans(ref sb, ref result);
             dump(ref sb, ref result);
-            Io.stdout.write(sb.asString());
+            Io.stdout.write(sb.finish());
         }
     }
     return exitOk;

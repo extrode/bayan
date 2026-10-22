@@ -2,7 +2,7 @@
 List<i64>? make(i64 n) {
     if (n < 1) return null;
     var a = List<i64>();
-    a.add(n);
+    a.append(n);
     return move a;
 }
 

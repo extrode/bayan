@@ -71,7 +71,7 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
                     line.clear();
                     i += 1;
                 } else {
-                    line.add(nibble(c) * 16 + nibble(text[i + 1]));
+                    line.append(nibble(c) * 16 + nibble(text[i + 1]));
                     i += 2;
                 }
             }

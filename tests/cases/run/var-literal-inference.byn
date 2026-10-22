@@ -15,8 +15,8 @@ i64 sum(ReadOnlySpan<i64> xs) {
 u8 low(u8 b) => b;
 
 var xs = List<i64>();
-xs.add(3000000000);
-xs.add(4000000000);
+xs.append(3000000000);
+xs.append(4000000000);
 print($"{sum(xs)}");
 
 var small = 7;

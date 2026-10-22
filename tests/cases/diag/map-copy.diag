@@ -127,13 +127,13 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
 
 error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it owns its storage
 
-  56 │     list.add(a);
-     │              ^
+  56 │     list.append(a);
+     │                 ^
      │
   help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
         it by `ref` to share it instead
-     │ 56 │     list.add(move a);
-     │    │              +++++
+     │ 56 │     list.append(move a);
+     │    │                 +++++
 
 error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it owns its storage
 

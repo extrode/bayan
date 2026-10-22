@@ -24,7 +24,7 @@ public List<Share> splitEvenly(money.Cents amount, ReadOnlySpan<string> particip
     let leftover = amount % count;
     for (let i in 0..count) {
         let extra = i < leftover ? 1 : 0;
-        shares.add((name: participants[i], cents: base + extra));
+        shares.append((name: participants[i], cents: base + extra));
     }
     return shares;
 }
@@ -48,14 +48,14 @@ void credit(ref List<Share> totals, string name, i64 cents) {
             return;
         }
     }
-    totals.add((name: name, cents: cents));
+    totals.append((name: name, cents: cents));
 }
 
 /// Transfers that settle every balance: the largest debtor pays the largest creditor, repeatedly.
 public List<Transfer> settle(ReadOnlySpan<Share> balances) {
     var pending = List<Share>();
     for (let b in balances) {
-        pending.add(b);
+        pending.append(b);
     }
     var transfers = List<Transfer>();
     while (true) {
@@ -64,7 +64,7 @@ public List<Transfer> settle(ReadOnlySpan<Share> balances) {
         break if pending[debtor].cents >= 0 || pending[creditor].cents <= 0;
         let owed = -pending[debtor].cents;
         let amount = owed < pending[creditor].cents ? owed : pending[creditor].cents;
-        transfers.add({ from = pending[debtor].name, to = pending[creditor].name, cents = amount });
+        transfers.append({ from = pending[debtor].name, to = pending[creditor].name, cents = amount });
         pending[debtor] = (name: pending[debtor].name, cents: pending[debtor].cents + amount);
         pending[creditor] = (name: pending[creditor].name, cents: pending[creditor].cents - amount);
     }

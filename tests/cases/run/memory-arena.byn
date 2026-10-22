@@ -6,7 +6,7 @@ struct Item {
 List<i64> squares(i64 n) {
     var xs = List<i64>();
     for (let i in 0..n) {
-        xs.add(i * i);
+        xs.append(i * i);
     }
     return xs;
 }
@@ -16,12 +16,12 @@ void main() {
     context (allocator: arena) {
         var xs = squares(5);
         print($"{xs.length} {xs[4]} {xs.isEmpty}");
-        xs.add(100);
+        xs.append(100);
         let last = xs.removeLast();
         print($"{last} {xs.length}");
         var items = List<Item>();
-        items.add(Item { name = "pen", qty = 2 });
-        items.add(Item { name = "ink", qty = 5 });
+        items.append(Item { name = "pen", qty = 2 });
+        items.append(Item { name = "ink", qty = 5 });
         i64 q = 0;
         for (let it in items) {
             q += it.qty;
@@ -36,7 +36,7 @@ void main() {
     }
     var many = List<i64>();
     for (let i in 0..1000) {
-        many.add(i);
+        many.append(i);
     }
     print($"{many.length} {many[999]}");
     arena.reset();

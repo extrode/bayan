@@ -3,7 +3,7 @@ struct Bag {
     List<i64> items;
 
     public i64 grow(ref this) {
-        this.items.add(1);
+        this.items.append(1);
         return this.items.length;
     }
 }
@@ -14,7 +14,7 @@ union Slot {
 }
 
 bool bump(ref List<i64> xs) {
-    xs.add(7);
+    xs.append(7);
     return true;
 }
 

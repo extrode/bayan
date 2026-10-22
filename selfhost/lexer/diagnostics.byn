@@ -65,7 +65,7 @@ string format(string template, string arg0, string arg1) {
             i += 1;
         }
     }
-    return $"{sb.asString()}";
+    return $"{sb.finish()}";
 }
 
 /// A compiler diagnostic; every lexer diagnostic is an error (`error` is a keyword, so there is no
@@ -121,7 +121,7 @@ void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
     blankBuf.append("  ");
     for (let i in 0..width) blankBuf.append(" ");
     blankBuf.append($" {bar}");
-    let blank = blankBuf.asString();
+    let blank = blankBuf.finish();
 
     sb.append($"  {lineNumber(number: line + 1, width: width)} {bar} ");
     display(ref sb, source.bytes.asSpan()[lineSpan.start..lineSpan.end]);
@@ -205,7 +205,7 @@ void wrap(ref List<string> lines, string text, i64 first, i64 rest) {
         let words = runeCount(t[from..i]);
         let room = lines.length == 0 ? first : rest;
         if (lineEnd >= 0 && lineRunes + 1 + words > room) {
-            lines.add(text[lineFrom..lineEnd]);
+            lines.append(text[lineFrom..lineEnd]);
             lineFrom = from;
             lineRunes = words;
         } else {
@@ -213,7 +213,7 @@ void wrap(ref List<string> lines, string text, i64 first, i64 rest) {
         }
         lineEnd = i;
         if (end) {
-            lines.add(text[lineFrom..lineEnd]);
+            lines.append(text[lineFrom..lineEnd]);
             lineFrom = i + 1;
             lineEnd = -1;
             lineRunes = 0;
@@ -235,7 +235,7 @@ void renderAll(ref StrBuf sb, ref SourceText source, ReadOnlySpan<Diagnostic> di
 List<i64> sourceOrder(ReadOnlySpan<Diagnostic> diagnostics) {
     var order = List<i64>();
     for (let i in 0..diagnostics.length) {
-        order.add(i);
+        order.append(i);
         var j = order.length - 1;
         while (j > 0 && diagnostics[order[j - 1]].span.start > diagnostics[i].span.start) {
             order[j] = order[j - 1];
@@ -251,7 +251,7 @@ string lineNumber(i64 number, i64 width) {
     var sb = StrBuf();
     for (let i in digits.length..width) sb.append(" ");
     sb.append(digits);
-    return $"{sb.asString()}";
+    return $"{sb.finish()}";
 }
 
 /// The fix as shown: its first line, and the byte range in the shown lines to mark with `marker`.
@@ -287,11 +287,11 @@ FixView applyFix(ref SourceText source, TextSpan fix, string replacement, ref Li
     i64 from = 0;
     for (let i in 0..text.length) {
         if (text.bytes[i] == 0x0A) {
-            lines.add(text[from..i]);
+            lines.append(text[from..i]);
             from = i + 1;
         }
     }
-    lines.add(text[from..]);
+    lines.append(text[from..]);
     return FixView {
         firstLine = firstLine,
         markStart = before.length + head,

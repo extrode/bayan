@@ -12,6 +12,10 @@ struct Point {
     static Point origin() => Point { x = 0 };
 
     i64 dot(Point other) => x * other.x + y * other.y;
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Point {{ x: {x}, y: {y} }}");
+    }
 }
 
 struct Line {

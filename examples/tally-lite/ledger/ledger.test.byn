@@ -10,8 +10,8 @@ test "split gives leftover cents to the first participants" {
 
 test "balances sum to zero and follow first appearance" {
     var trip = List<Expense>();
-    trip.add({ payer = "alice", amount = 3000, participants = ["alice", "bob", "chen"] });
-    trip.add({ payer = "bob", amount = 1000, participants = ["alice", "bob"] });
+    trip.append({ payer = "alice", amount = 3000, participants = ["alice", "bob", "chen"] });
+    trip.append({ payer = "bob", amount = 1000, participants = ["alice", "bob"] });
     let owed = balances(trip);
     assert(owed.length == 3);
     assert(owed[0].name == "alice" && owed[0].cents == 1500);
@@ -21,10 +21,10 @@ test "balances sum to zero and follow first appearance" {
 
 test "settle pays the largest creditor from the largest debtor" {
     var owed = List<Share>();
-    owed.add((name: "alice", cents: 15222));
-    owed.add((name: "bob", cents: -128));
-    owed.add((name: "chen", cents: -5912));
-    owed.add((name: "dina", cents: -9182));
+    owed.append((name: "alice", cents: 15222));
+    owed.append((name: "bob", cents: -128));
+    owed.append((name: "chen", cents: -5912));
+    owed.append((name: "dina", cents: -9182));
     let transfers = settle(owed);
     assert(transfers.length == 3);
     assert(transfers[0].from == "dina" && transfers[0].to == "alice" && transfers[0].cents == 9182);
@@ -34,7 +34,7 @@ test "settle pays the largest creditor from the largest debtor" {
 
 test "settled balances need no transfers" {
     var owed = List<Share>();
-    owed.add((name: "alice", cents: 0));
-    owed.add((name: "bob", cents: 0));
+    owed.append((name: "alice", cents: 0));
+    owed.append((name: "bob", cents: 0));
     assert(settle(owed).isEmpty);
 }
