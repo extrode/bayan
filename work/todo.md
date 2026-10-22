@@ -101,3 +101,18 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Interfaces declaring `ref this`, with implementations required to match, wait for spec 006 (round 2 §9).
 - `switch (move d)` on a narrowed optional types the subject as `T?` (so `case null:` is accepted as dead) while `switch (d)` types it `T` (BYN2411); re-wrap the narrowing in BindSwitchSubject as BindMove does (round 2 §4 null).
 - `move` parameters are never narrowed by `if (b is not null)` (`BinderExpressions.cs` IsNonNull); `b.length` still reports BYN2211 (round 2 §4 null).
+- `[Cases(1)]` on a test with no parameters gives BYN2773 with the awkward help "in order: `()`" (`Compilation.cs:289-291`) (round 2 §16).
+- Named tuple elements in a case `(a: 1, b: 2)` are accepted and the names ignored (`Compilation.cs:284`) (round 2 §16).
+- Test parameter modifiers (`ref`/`move`) and defaults parse but are ignored; reject them (round 2 §16).
+- `[Cases]` with no arguments on a test with parameters yields zero tests silently (round 2 §16).
+- A test whose single parameter is a tuple cannot take `[Cases]` (round 2 §16).
+- BYN2773 says "1 values"/"1 parameters" for counts of one (plan wording) (round 2 §16).
+- BYN5xxx: free functions and generic struct instances are not checked; BYN5102's fix-it renames only the declaration (round 2 §17).
+- BYN5003 formats `{1}` from the failing member's return type, so `void x() fails` yields "must return `void?` or `bool`" (round 2 §17).
+- `StrBuf.finish()` is a borrowed view like `view`; it does not consume the buffer (round 2 §12).
+- The `format()` fix-it, the `{x:debug}` help and `chars.take`/`graphemes` in BYN2201's help name APIs not implemented yet (round 2 §12–§13).
+- No `chars` iterator exists, so `chars.count` was not added (round 2 §12).
+- String patterns (`"/api/" + var rest`) are not implemented, so "stay legal" under BYN2209 is untested (round 2 §12).
+- BYN2209 on `a + b + c` rewrites one pair per fix pass (round 2 §12).
+- docs/laws 003/005/006 still say `length`/`add` (round 2 §11).
+- diag/renamed-member also shows a BYN2311 warning (round 2 §11).
