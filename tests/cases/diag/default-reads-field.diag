@@ -1,0 +1,4 @@
+error BYN2001: `side` is not defined
+
+  3 │     i64 twice() => side * 2;
+    │                    ^^^^

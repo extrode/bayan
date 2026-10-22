@@ -15,7 +15,7 @@ public sealed record CompilationOptions(bool IncludeTests = false, bool Library 
 /// A whole program: the entry module plus every module it imports, transitively. Construction
 /// parses, declares and binds everything; read <see cref="Diagnostics"/> afterwards.
 /// </summary>
-public sealed class Compilation
+public sealed partial class Compilation
 {
     private readonly Dictionary<string, ModuleSymbol> _modulesByDir = new(StringComparer.Ordinal);
     private readonly List<ModuleSymbol> _loading = new();
@@ -852,6 +852,10 @@ public sealed class Compilation
                     s.Module.AllFunctions.Add(fn);
                     break;
                 }
+                case TypeAliasDecl a when s.Bases.Any(i => i.AssociatedTypes.Any(t => t.Name == a.Name.Text)):
+                    Naming.CheckType(this, file.Source, a.Name);
+                    if (Unique(a.Name)) _associatedBindings[(s, a.Name.Text)] = types.Resolve(a.Target);
+                    break;
                 case ConstructorDecl c:
                 {
                     var fn = new FunctionSymbol(s.Name, Loc(file, c.Name), s.Module, FunctionKind.Constructor)
@@ -902,7 +906,7 @@ public sealed class Compilation
         }
         var map = typeMap.Count == 0 ? null : typeMap;
         var types = new TypeResolver(this, file, null, map);
-        void DeclareGetter(Modifiers modifiers, TypeSyntax type, Name name, bool isAbstract)
+        void DeclareGetter(Decl decl, Modifiers modifiers, TypeSyntax type, Name name, bool isAbstract)
         {
             Naming.CheckValue(this, file.Source, name);
             RejectStatic(file, modifiers, name);
@@ -910,6 +914,7 @@ public sealed class Compilation
             {
                 Interface = i, IsAbstract = isAbstract, File = file, ReturnType = types.Resolve(type), Access = i.Access, TypeMap = map,
             };
+            _interfaceGetters[getter] = decl;
             if (Unique(name)) i.Properties.Add(getter);
         }
         foreach (var member in i.Decl.Members)
@@ -936,10 +941,10 @@ public sealed class Compilation
                     break;
                 }
                 case GetterDecl g:
-                    DeclareGetter(g.Modifiers, g.Type, g.Name, isAbstract: true);
+                    DeclareGetter(g, g.Modifiers, g.Type, g.Name, isAbstract: true);
                     break;
                 case PropertyDecl p:
-                    DeclareGetter(p.Modifiers, p.Type, p.Name, isAbstract: false);
+                    DeclareGetter(p, p.Modifiers, p.Type, p.Name, isAbstract: false);
                     break;
                 default:
                     Report(DiagnosticCodes.Unsupported, file.Source, member.Span, ["this kind of interface member"]);
@@ -1075,6 +1080,7 @@ public sealed class Compilation
 
     private void BindAll()
     {
+        CheckConformances();
         foreach (var module in Modules)
             foreach (var c in module.AllConstants)
                 BindConstant(c);
@@ -1221,10 +1227,12 @@ public sealed class Compilation
                 };
                 _instances[(s, args)] = instance;
                 Instantiating(site, span, () => DeclareMembers(instance));
+                if (_conformancesChecked) Instantiating(site, span, () => Conform(instance));
                 if (instance.IsGeneric) return instance;
                 foreach (var f in instance.Fields.Where(f => f.Decl.Default is not null))
                     _instantiationWork.Enqueue((site, span, () => FieldDefault(instance, f, site, span), null));
-                foreach (var fn in instance.Methods.Concat(instance.Properties.Select(p => p.Getter!)).Concat(instance.Constructors))
+                // Cloned defaults (with a Template) are queued by Conform.
+                foreach (var fn in instance.Methods.Concat(instance.Properties.Select(p => p.Getter!)).Concat(instance.Constructors).Where(f => f.Template is null))
                     _instantiationWork.Enqueue((site, span, () => BindFunction(fn), null));
                 return instance;
             }
@@ -1352,6 +1360,9 @@ public sealed class Compilation
         {
             case FunctionKind.Function or FunctionKind.Method when fn.Decl is { } decl:
                 (binder = New(fn.Owner)).BindFunctionBody(decl);
+                break;
+            case FunctionKind.Getter when fn.Interface is not null:
+                (binder = New(null)).BindGetter((PropertyDecl)_interfaceGetters[fn]);
                 break;
             case FunctionKind.Getter:
             {

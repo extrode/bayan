@@ -1,0 +1,16 @@
+error enum ParseError {
+    empty,
+}
+
+interface IShape {
+    i64 area();
+    i64 parse(string text) fails ParseError;
+}
+
+struct Square : IShape {
+    i64 side;
+
+    string area() => "big";
+
+    i64 parse(string text) => 0;
+}
