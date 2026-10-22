@@ -8,14 +8,14 @@ struct Lexer {
     Span<Token> tokens() => toks.asSpan();
 
     void push(ref this, Token t) {
-        toks.add(t);
+        toks.append(t);
     }
 
-    (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.length);
+    (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.count);
 
     Span<Token> scratch() {
         var local = List<Token>();
-        local.add(Token { kind = 0 });
+        local.append(Token { kind = 0 });
         return local.asSpan();
     }
 }
@@ -23,9 +23,9 @@ struct Lexer {
 void main() {
     var lexer = Lexer { toks = List<Token>() };
     let all = lexer.tokens();
-    lexer.toks.add(Token { kind = 1 });
+    lexer.toks.append(Token { kind = 1 });
     lexer.push(Token { kind = 2 });
-    print($"{all.length}");
+    print($"{all.count}");
     for (let t in lexer.toks) {
         lexer.push(t);
     }
@@ -34,11 +34,11 @@ void main() {
         let inner = Lexer { toks = List<Token>() };
         kept = inner.tokens();
     }
-    print($"{kept.length}");
+    print($"{kept.count}");
 }
 
 struct Writer {
     StrBuf text;
 
-    string view() => text.asString();
+    string view() => text.finish();
 }

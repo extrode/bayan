@@ -1,12 +1,12 @@
 string show(List<i64> xs) {
     var line = StrBuf();
     for (let x in xs) line.append($" {x}");
-    return $"{xs.length}:{line.asString()}";
+    return $"{xs.count}:{line.finish()}";
 }
 
 List<i64> make() {
     var xs = List<i64>();
-    for (let i in 0..6) xs.add(i * 10);
+    for (let i in 0..6) xs.append(i * 10);
     return xs;
 }
 
@@ -28,15 +28,15 @@ empty.removeRange(6, 6);
 print($"empty {show(empty)}");
 
 var whole = make();
-whole.removeRange(0, whole.length);
+whole.removeRange(0, whole.count);
 print($"whole {show(whole)} {whole.isEmpty}");
-whole.add(7);
+whole.append(7);
 print($"reused {show(whole)}");
 
 var words = List<string>();
 string[5] letters = ["a", "b", "c", "d", "e"];
-for (let w in letters) words.add(w);
+for (let w in letters) words.append(w);
 words.removeRange(1, 3);
 var joined = StrBuf();
 for (let w in words) joined.append(w);
-print($"order {joined.asString()}");
+print($"order {joined.finish()}");

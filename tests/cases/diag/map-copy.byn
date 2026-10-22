@@ -53,7 +53,7 @@ void copies(Map<i64, i64> p) {
     let h = Holder(a);
     let full = Slot.full(a);
     var list = List<Map<i64, i64>>();
-    list.add(a);
+    list.append(a);
     var nested = Map<i64, Map<i64, i64>>();
     nested[1] = a;
     Map<i64, i64>[2] arr = [a, fresh()];
@@ -76,7 +76,7 @@ void buffers() {
 
 void loops() {
     var maps = List<Map<i64, i64>>();
-    maps.add(Map<i64, i64>());
+    maps.append(Map<i64, i64>());
     for (var m in maps) m[1] = 1;
     StrBuf[1] bufs = [StrBuf()];
     for (var b in bufs) b.append("y");

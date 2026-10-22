@@ -6,12 +6,12 @@ void main() {
         context (allocator: arena) {
             var sb = StrBuf();
             sb.append("abc");
-            print(sb.asString());
-            text = sb.asString();
+            print(sb.finish());
+            text = sb.finish();
             outer = StrBuf();
         }
     }
     outer.append("ok");
-    text = outer.asString();
+    text = outer.finish();
     print(text);
 }

@@ -2,7 +2,7 @@ void fill(Span<string> dst) {
     let buf = stackalloc u8[16];
     var sb = StrBuf(buf);
     sb.append("hello");
-    dst[0] = sb.asString();
+    dst[0] = sb.finish();
 }
 string[1] arr = ["x"];
 fill(arr.asSpan());
@@ -17,5 +17,5 @@ void either(Span<string> dst, bool useCaller) {
     if (useCaller) {
         view = dst;
     }
-    view[0] = sb.asString();
+    view[0] = sb.finish();
 }

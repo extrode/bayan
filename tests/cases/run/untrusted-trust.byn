@@ -1,6 +1,6 @@
 List<Untrusted<string>> names = [];
-names.add(Untrusted("ada"));
-names.add(Untrusted("grace"));
+names.append(Untrusted("ada"));
+names.append(Untrusted("grace"));
 for (let n in names) {
     string s = trust(n, reason: "demo input");
     print(s);

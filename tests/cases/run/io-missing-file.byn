@@ -12,5 +12,5 @@ string describe(string path) => Io.readText(path) catch (e) switch {
 void main() {
     print(describe("no-such-file.txt"));
     let bytes = Io.readFile("no-such-dir/file.bin") catch return;
-    print($"unexpected: {bytes.length} bytes");
+    print($"unexpected: {bytes.count} bytes");
 }

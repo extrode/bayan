@@ -10,6 +10,10 @@ public enum Suit {
 struct Card {
     Suit suit;
     i64 rank;
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Card {{ suit: {suit}, rank: {rank} }}");
+    }
 }
 
 string describe(Color c) => c switch {
@@ -58,9 +62,9 @@ print($"{card}");
 print($"{card == Card { suit = Suit.hearts, rank = 12 }} {card == Card { suit = .spades, rank = 12 }}");
 
 var hand = List<Suit>();
-hand.add(.spades);
-hand.add(Suit.diamonds);
-hand.add(card.suit);
+hand.append(.spades);
+hand.append(Suit.diamonds);
+hand.append(card.suit);
 for (let s in hand) {
     print($"hand {s}");
 }

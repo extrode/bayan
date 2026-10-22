@@ -3,7 +3,7 @@
 
 void dump(ref StrBuf sb, ref LexResult result) {
     // By index: `getLinePosition` modifies `result.source`, so the loop may not borrow `result`.
-    for (let i in 0..result.tokens.length) {
+    for (let i in 0..result.tokens.count) {
         let token = result.tokens[i];
         let position = result.source.getLinePosition(token.start);
         if (token.hasDoc) {
@@ -18,7 +18,7 @@ void dump(ref StrBuf sb, ref LexResult result) {
         }
         sb.append("\n");
     }
-    if (result.diagnostics.length > 0) {
+    if (result.diagnostics.count > 0) {
         sb.append("\n");
         using var arena = Arena();
         let diagnostics = result.diagnostics.copy(to: arena);
@@ -30,7 +30,7 @@ void dump(ref StrBuf sb, ref LexResult result) {
 void escape(ref StrBuf sb, ReadOnlySpan<u8> text) {
     sb.append("`");
     i64 pos = 0;
-    while (pos < text.length) {
+    while (pos < text.count) {
         let d = decodeAt(text, pos);
         let v = d.value;
         if (v == 0x0A) {
@@ -57,7 +57,7 @@ void escape(ref StrBuf sb, ReadOnlySpan<u8> text) {
 void dumpJson(ref StrBuf sb, ref LexResult result) {
     let bytes = result.source.bytes.asSpan();
     sb.append("{\"tokens\":[");
-    for (let i in 0..result.tokens.length) {
+    for (let i in 0..result.tokens.count) {
         let token = result.tokens[i];
         if (i > 0) sb.append(",");
         sb.append($"{{\"kind\":\"{kindName(token.kind)}\",\"start\":{token.start},\"end\":{token.end},\"text\":");
@@ -72,7 +72,7 @@ void dumpJson(ref StrBuf sb, ref LexResult result) {
     }
     sb.append("],\"diagnostics\":[");
     let order = sourceOrder(result.diagnostics.asSpan());
-    for (let k in 0..order.length) {
+    for (let k in 0..order.count) {
         let d = result.diagnostics[order[k]];
         if (k > 0) sb.append(",");
         sb.append($"{{\"code\":\"{d.code}\",\"severity\":\"error\",\"start\":{d.span.start},\"end\":{d.span.end},\"message\":");
@@ -105,7 +105,7 @@ void jsonOptional(ref StrBuf sb, string text) {
 void jsonString(ref StrBuf sb, ReadOnlySpan<u8> text) {
     sb.append("\"");
     i64 pos = 0;
-    while (pos < text.length) {
+    while (pos < text.count) {
         let d = decodeAt(text, pos);
         let v = d.value;
         if (v == 0x22) {

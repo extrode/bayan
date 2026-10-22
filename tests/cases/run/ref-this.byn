@@ -24,7 +24,7 @@ print($"{s.hits} {s.total} {s.average()}");
 
 // Indexing a `var` collection yields the stored element in place.
 var list = List<Stat>();
-list.add(Stat {});
+list.append(Stat {});
 list[0].record(12);
 list[0].record(30);
 print($"{list[0].hits} {list[0].total}");

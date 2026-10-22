@@ -4,6 +4,10 @@ struct Pair<A, B> {
     A a;
     B b;
 
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Pair {{ a: {a}, b: {b} }}");
+    }
+
     Pair<B, A> swap(move B first, move A second) => Pair<B, A> { a = move first, b = move second };
 
     bool sameFirst(Pair<A, B> other) => a == other.a;
@@ -24,7 +28,7 @@ struct Box<T> {
     List<T> history;
 
     void put(ref this, move T old, move T next) {
-        history.add(move old);
+        history.append(move old);
         value = move next;
     }
 }
@@ -77,7 +81,7 @@ print(text);
 var box = Box<string> { value = "a", history = List<string>() };
 box.put(old: box.value, next: "b");
 box.put(old: box.value, next: "c");
-print($"{box.value} {box.history.length}");
+print($"{box.value} {box.history.count}");
 
 var bySuit = Map<Suit, i64>();
 bySuit[.clubs] = 2;

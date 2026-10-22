@@ -4,14 +4,14 @@ import ledger;
 /// The sample trip: four friends, eight shared expenses, in MYR.
 List<ledger.Expense> sampleTrip() fails money.MoneyError {
     var trip = List<ledger.Expense>();
-    trip.add(try expense(payer: "alice", amount: "360.00", among: ["alice", "bob", "chen", "dina"]));
-    trip.add(try expense(payer: "bob", amount: "85.50", among: ["alice", "bob", "chen", "dina"]));
-    trip.add(try expense(payer: "chen", amount: "42.75", among: ["alice", "chen", "dina"]));
-    trip.add(try expense(payer: "dina", amount: "36.10", among: ["alice", "bob", "chen", "dina"]));
-    trip.add(try expense(payer: "alice", amount: "48.00", among: ["alice", "bob", "dina"]));
-    trip.add(try expense(payer: "bob", amount: "99.26", among: ["alice", "bob"]));
-    trip.add(try expense(payer: "chen", amount: "65.54", among: ["alice", "chen"]));
-    trip.add(try expense(payer: "dina", amount: "45.44", among: ["alice", "dina"]));
+    trip.append(try expense(payer: "alice", amount: "360.00", among: ["alice", "bob", "chen", "dina"]));
+    trip.append(try expense(payer: "bob", amount: "85.50", among: ["alice", "bob", "chen", "dina"]));
+    trip.append(try expense(payer: "chen", amount: "42.75", among: ["alice", "chen", "dina"]));
+    trip.append(try expense(payer: "dina", amount: "36.10", among: ["alice", "bob", "chen", "dina"]));
+    trip.append(try expense(payer: "alice", amount: "48.00", among: ["alice", "bob", "dina"]));
+    trip.append(try expense(payer: "bob", amount: "99.26", among: ["alice", "bob"]));
+    trip.append(try expense(payer: "chen", amount: "65.54", among: ["alice", "chen"]));
+    trip.append(try expense(payer: "dina", amount: "45.44", among: ["alice", "dina"]));
     return trip;
 }
 

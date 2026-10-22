@@ -25,7 +25,7 @@ struct Index<K> {
 
 i64 count(ReadOnlySpan<i64> xs) {
     var i = 0;
-    while (i < xs.length) {
+    while (i < xs.count) {
         i += 1;
     }
     Index<f64> idx;

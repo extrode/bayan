@@ -1078,6 +1078,7 @@ internal sealed partial class Binder
         }
         if (BuiltinMembers.Property(type, name.Text) is { } b)
             return new BoundMemberStep(null, null, -1, b.Member, b.Type);
+        if (ReportRenamed(type, name)) return null;
         Report(DiagnosticCodes.UnknownMember, name.Span, [name.Text, type.DisplayName], help: MemberSuggestion(type, name.Text));
         return null;
     }
@@ -1254,8 +1255,10 @@ internal sealed partial class Binder
         Constrain(target, value, a.Value);
         if (target.Type.IsString && op == BinaryOp.Add)
         {
+            var text = Source.GetText(a.Target.Span);
             Report(DiagnosticCodes.StringConcatenation, a.Span, [],
-                help: "build text in a `StrBuf`: `buf.append($\"{a}{b}\")`");
+                help: "write the parts as one interpolation: `s = $\"{s}{x}\"`, or build text in a `StrBuf`: `buf.append($\"{a}{b}\")`",
+                fix: new Fix(a.Span, $"{text} = $\"{{{text}}}{InterpolationSource(a.Value)}\""));
             return new BoundErrorStmt(a);
         }
         if (!OperatorApplies(op.Value, target.Type))

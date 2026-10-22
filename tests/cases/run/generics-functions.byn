@@ -1,12 +1,16 @@
 struct Point {
     i64 x;
     i64 y;
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Point {{ x: {x}, y: {y} }}");
+    }
 }
 
 T pick<T>(bool first, move T a, move T b) => first ? move a : move b;
 
 string first<T>(ReadOnlySpan<T> xs) {
-    if (xs.length == 0) return "null";
+    if (xs.count == 0) return "null";
     return $"{xs[0]}";
 }
 
@@ -27,8 +31,8 @@ print($"{p}");
 print($"{pick<i64>(first: false, a: 5, b: 6)}");
 
 var xs = List<i64>();
-xs.add(7);
-xs.add(8);
+xs.append(7);
+xs.append(8);
 print($"{first(xs)}");
 let none = List<string>();
 print($"{first(none)}");

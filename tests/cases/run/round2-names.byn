@@ -1,0 +1,12 @@
+var xs = List<i64>();
+xs.append(1);
+xs.append(2);
+i64[3] a = [1, 2, 3];
+let m = Map<string, i64>();
+var sb = StrBuf();
+sb.append("héllo");
+let view = sb.view;
+print($"list {xs.count} array {a.count} span {a.asSpan().count} map {m.count}");
+print($"strbuf {sb.count} view {view.bytes.count}");
+print($"bytes {"héllo".bytes.count}");
+print(sb.finish());

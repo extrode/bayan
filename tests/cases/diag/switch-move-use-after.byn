@@ -4,7 +4,7 @@ union Slot {
     full(List<i64> items),
 }
 
-i64 keep(move List<i64> xs) => xs.length;
+i64 keep(move List<i64> xs) => xs.count;
 
 void main() {
     let r = Slot.full(List<i64>());

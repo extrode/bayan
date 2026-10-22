@@ -12,8 +12,8 @@ running 10 tests in 1 module
   ◆ run_test-cases.test: short words (word: "bc")
 
   ✗ run_test-cases.test: short words (word: "def")
-      assert(word.length < 3)
-        word.length is 3
+      assert(word.bytes.count < 3)
+        word.bytes.count is 3
       test-cases.test.byn:12
   ◆ run_test-cases.test: literal kinds (amount: -1, letter: 'x', note: null)
   ◆ run_test-cases.test: literal kinds (amount: 2.5, letter: 'y', note: "z")

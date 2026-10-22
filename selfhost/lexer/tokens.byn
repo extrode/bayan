@@ -297,7 +297,7 @@ struct Token {
 /// The keyword text of a keyword kind: its member name without `Keyword`.
 string keywordText(TokenKind kind) {
     let name = kind.name;
-    return name[0..name.length - 7];
+    return name[0..name.bytes.count - 7];
 }
 
 /// Keyword kinds bucketed by first letter, so lookup compares a handful of byte strings.
@@ -310,31 +310,31 @@ struct Keywords {
     static Keywords build() {
         var keywords = Keywords { byFirstByte = List<i32>(), bucketStart = List<i64>() };
         for (let letter in 0..26) {
-            keywords.bucketStart.add(keywords.byFirstByte.length);
+            keywords.bucketStart.append(keywords.byFirstByte.count);
             for (let ordinal in TokenKind.structKeyword.ordinal..=TokenKind.ensuresKeyword.ordinal) {
                 let kind = TokenKind.fromOrdinal(ordinal) ?? .identifier;
-                if (kind.name.bytes[0] - 0x61 == letter) keywords.byFirstByte.add(ordinal);
+                if (kind.name.bytes[0] - 0x61 == letter) keywords.byFirstByte.append(ordinal);
             }
         }
-        keywords.bucketStart.add(keywords.byFirstByte.length);
+        keywords.bucketStart.append(keywords.byFirstByte.count);
         return keywords;
     }
 
     /// The keyword kind for an ASCII identifier, or `identifier`.
     TokenKind lookup(ReadOnlySpan<u8> text) {
-        if (text.length < 2 || text[0] < 0x61 || text[0] > 0x7A) return .identifier;
+        if (text.count < 2 || text[0] < 0x61 || text[0] > 0x7A) return .identifier;
         let letter = text[0] - 0x61;
         for (let i in bucketStart[letter]..bucketStart[letter + 1]) {
             let kind = TokenKind.fromOrdinal(byFirstByte[i]) ?? .identifier;
-            if (sameBytes(a: text, b: kind.name.bytes[0..kind.name.length - 7])) return kind;
+            if (sameBytes(a: text, b: kind.name.bytes[0..kind.name.bytes.count - 7])) return kind;
         }
         return .identifier;
     }
 }
 
 bool sameBytes(ReadOnlySpan<u8> a, ReadOnlySpan<u8> b) {
-    if (a.length != b.length) return false;
-    for (let i in 0..a.length) {
+    if (a.count != b.count) return false;
+    for (let i in 0..a.count) {
         if (a[i] != b[i]) return false;
     }
     return true;

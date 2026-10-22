@@ -12,6 +12,6 @@ i32 next(ref i32 count) {
 }
 print($"{next(ref calls) in 1..=1} {calls}");
 let items = [4, 5, 6];
-print($"{n in 0..items.length} {calls in 0..=next(ref calls)} {calls}");
+print($"{n in 0..items.count} {calls in 0..=next(ref calls)} {calls}");
 i32? limit = null;
 print($"{n in 0..=(limit ?? 10)} {n in 0..(limit ?? 7)}");

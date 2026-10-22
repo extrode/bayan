@@ -1,0 +1,91 @@
+warning BYN2311: `xs` is never reassigned; declare it with `let`
+
+  4 │     var xs = List<i64>();
+    │         ^^
+    │
+  help: declare it with `let` to tell the reader the value never changes
+    │ 4 │     let xs = List<i64>();
+    │   │     +++
+
+error BYN2230: `add` is now `append`
+
+  5 │     xs.add(1);
+    │        ^^^ the old name
+    │
+  help: rename it `append`
+    │ 5 │     xs.append(1);
+    │   │         ++++
+
+error BYN2230: `length` is now `count`
+
+  11 │     print($"{xs.length} {m.length} {a.length} {a.asSpan().length} {sb.length}");
+     │                 ^^^^^^ the old name
+     │
+  help: rename it `count`
+     │ 11 │     print($"{xs.count} {m.length} {a.length} {a.asSpan().length} {sb.length}");
+     │    │                 +++++
+
+error BYN2230: `length` is now `count`
+
+  11 │     print($"{xs.length} {m.length} {a.length} {a.asSpan().length} {sb.length}");
+     │                            ^^^^^^ the old name
+     │
+  help: rename it `count`
+     │ 11 │     print($"{xs.length} {m.count} {a.length} {a.asSpan().length} {sb.length}");
+     │    │                            +++++
+
+error BYN2230: `length` is now `count`
+
+  11 │     print($"{xs.length} {m.length} {a.length} {a.asSpan().length} {sb.length}");
+     │                                       ^^^^^^ the old name
+     │
+  help: rename it `count`
+     │ 11 │     print($"{xs.length} {m.length} {a.count} {a.asSpan().length} {sb.length}");
+     │    │                                       +++++
+
+error BYN2230: `length` is now `count`
+
+  11 │     print($"{xs.length} {m.length} {a.length} {a.asSpan().length} {sb.length}");
+     │                                                           ^^^^^^ the old name
+     │
+  help: rename it `count`
+     │ 11 │     print($"{xs.length} {m.length} {a.length} {a.asSpan().count} {sb.length}");
+     │    │                                                           +++++
+
+error BYN2230: `length` is now `count`
+
+  11 │     print($"{xs.length} {m.length} {a.length} {a.asSpan().length} {sb.length}");
+     │                                                                       ^^^^^^ the old name
+     │
+  help: rename it `count`
+     │ 11 │     print($"{xs.length} {m.length} {a.length} {a.asSpan().length} {sb.count}");
+     │    │                                                                       +++++
+
+error BYN2230: `length` is now `bytes.count`
+
+  12 │     print($"{name.length}");
+     │                   ^^^^^^ the old name
+     │
+  help: use `bytes.count` to count the bytes; a string has no single length (bytes, characters and
+        graphemes differ)
+     │ 12 │     print($"{name.bytes.count}");
+     │    │                   +++++++++++
+
+error BYN2230: `asString()` is now `finish()`
+
+  13 │     print(sb.asString());
+     │              ^^^^^^^^ the old name
+     │
+  help: rename it `finish`
+     │ 13 │     print(sb.finish());
+     │    │              ++++++
+
+error BYN2230: `length` is now `bytes.count`
+
+  15 │     if (line is { text.length: 1 }) print("one");
+     │                        ^^^^^^ the old name
+     │
+  help: use `bytes.count` to count the bytes; a string has no single length (bytes, characters and
+        graphemes differ)
+     │ 15 │     if (line is { text.bytes.count: 1 }) print("one");
+     │    │                        +++++++++++

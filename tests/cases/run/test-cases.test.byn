@@ -9,7 +9,7 @@ test "quantity bounds" (i32 input, bool valid) {
 
 [Cases("a", "bc", "def")]
 test "short words" (string word) {
-    assert(word.length < 3);
+    assert(word.bytes.count < 3);
 }
 
 [Cases((-1, 'x', null), (2.5, 'y', "z"))]
