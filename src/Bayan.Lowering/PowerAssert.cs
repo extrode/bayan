@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace Bayan.Lowering;
 
 /// <summary>
@@ -31,21 +29,50 @@ public static class PowerAssert
     public static int Column(string before) => Flatten(before).EnumerateRunes().Count();
 
     /// <summary>
-    /// For ascending, distinct <paramref name="columns"/>: the row of bars, and one prefix per column, rightmost first,
-    /// holding the bars to its left and padded to the column, after which the value is written.
+    /// One piece of the diagram: <see cref="Text"/>, or the value of column <see cref="Value"/> when that is not -1. It is
+    /// written when every column in <see cref="When"/> is shown, none in <see cref="Unless"/> is, and, when
+    /// <see cref="AnyFrom"/> is set, some column from that index on is.
     /// </summary>
-    public static (string Bars, string[] Prefixes) Layout(IReadOnlyList<int> columns)
-    {
-        var prefixes = new string[columns.Count];
-        for (var k = columns.Count - 1; k >= 0; k--)
-            prefixes[columns.Count - 1 - k] = Bars(columns, k).PadRight(columns[k]);
-        return (Bars(columns, columns.Count), prefixes);
-    }
+    public sealed record Piece(string Text, int Value, int[] When, int[] Unless, int? AnyFrom);
 
-    private static string Bars(IReadOnlyList<int> columns, int count)
+    /// <summary>
+    /// The diagram after the statement, for ascending, distinct <paramref name="columns"/>: a row of bars, then each value
+    /// hung from its bar, rightmost first, under the bars to its left. A column that is not <paramref name="always"/>
+    /// shown (a side that may not run) is shown only when its value was computed; the guards of the pieces say so, and
+    /// name only such columns.
+    /// </summary>
+    public static List<Piece> Diagram(IReadOnlyList<int> columns, IReadOnlyList<bool> always)
     {
-        var sb = new StringBuilder();
-        for (var i = 0; i < count; i++) sb.Append(' ', columns[i] - sb.Length).Append(Bar);
-        return sb.ToString();
+        var pieces = new List<Piece>();
+        void Add(string text, int value, int[] when, int[] unless, int? anyFrom)
+        {
+            if (anyFrom is { } from)
+            {
+                if (from >= columns.Count) return;
+                if (Enumerable.Range(from, columns.Count - from).Any(j => always[j])) anyFrom = null;
+            }
+            pieces.Add(new(text, value, when.Where(k => !always[k]).ToArray(), unless, anyFrom));
+        }
+        string Gap(int k) => new(' ', columns[k] - (k == 0 ? 0 : columns[k - 1] + 1));
+
+        // A missing column leaves a blank where its bar would be, but never at the end of the row.
+        Add("\n" + Indent, -1, [], [], 0);
+        for (var k = 0; k < columns.Count; k++)
+        {
+            Add(Gap(k) + Bar, -1, [k], [], null);
+            if (!always[k]) Add(Gap(k) + " ", -1, [], [k], k + 1);
+        }
+        for (var k = columns.Count - 1; k >= 0; k--)
+        {
+            Add("\n" + Indent, -1, [k], [], null);
+            for (var j = 0; j < k; j++)
+            {
+                Add(Gap(j) + Bar, -1, [k, j], [], null);
+                if (!always[j]) Add(Gap(j) + " ", -1, [k], [j], null);
+            }
+            Add(Gap(k), -1, [k], [], null);
+            Add("", k, [k], [], null);
+        }
+        return pieces;
     }
 }

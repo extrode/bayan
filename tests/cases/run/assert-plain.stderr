@@ -1,5 +1,7 @@
 panic: assert(a > 1 && b < 3)
-              │ │   │
+              │ │   │  │ │
+              │ │   │  │ false
+              │ │   │  3
               │ │   false
               │ true
               2

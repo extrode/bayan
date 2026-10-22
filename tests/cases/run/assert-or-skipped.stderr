@@ -1,0 +1,9 @@
+panic: assert (a > 0 || bump(ref calls) > 0) && calls == 1
+               │ │   │                       │  │     │
+               │ │   │                       │  │     false
+               │ │   │                       │  0
+               │ │   │                       false
+               │ │   true
+               │ true
+               1
+  at assert-or-skipped.byn:8

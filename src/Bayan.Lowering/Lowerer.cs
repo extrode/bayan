@@ -43,6 +43,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     private int _panicSlots;
     /// <summary>While an <c>assert</c> condition is lowered: the sub-expressions it shows, each with its stored value once lowered.</summary>
     private Dictionary<BoundExpr, BoundExpr?>? _shown;
+    /// <summary>The shown sub-expressions that may not run (a lazy side), each with the flag set when it does.</summary>
+    private Dictionary<BoundExpr, LocalSymbol>? _ran;
 
     private sealed class Scope
     {
@@ -743,7 +745,9 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     {
         if (_shown is null || !_shown.ContainsKey(e)) return LowerExpr(e);
         var value = LowerExpr(e);
-        return _shown[e] = value.Constant is null ? Spill(value) : value;
+        if (value.Constant is null) value = Spill(value);
+        if (_ran!.TryGetValue(e, out var ran) && !IsNever(value)) EmitAssign(Local(e.Syntax, ran), Bool(e.Syntax, true));
+        return _shown[e] = value;
     }
 
     private BoundExpr LowerExpr(BoundExpr e)
@@ -1078,20 +1082,14 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     private static bool Printable(TypeSymbol t) => t.IsInteger || t.IsFloat || t.IsBool || t.IsString || t is EnumSymbol;
 
     /// <summary>
-    /// <c>assert e;</c>: each printable sub-expression of <c>e</c> that is not a literal and is always evaluated (not
-    /// the right of <c>&amp;&amp;</c>, <c>||</c>, <c>??</c> or a branch of <c>?:</c>) is stored once in a temporary as it
-    /// is lowered, and a failure panics with the statement and the <see cref="PowerAssert"/> diagram of those values.
+    /// <c>assert e;</c>: each printable sub-expression of <c>e</c> that is not a literal is stored once in a temporary as it
+    /// is lowered, and a failure panics with the statement and the <see cref="PowerAssert"/> diagram of those values. A
+    /// side that may not run (the right of <c>&amp;&amp;</c>, <c>||</c>, <c>??</c>, a branch of <c>?:</c>) also sets a flag
+    /// when it does, and its values are shown only then.
     /// </summary>
     private void Assert(BoundAssert a)
     {
         var syntax = (AssertStmt)a.Syntax;
-        var shown = Shown(a.Condition).ToList();
-        _shown = new Dictionary<BoundExpr, BoundExpr?>(ReferenceEqualityComparer.Instance);
-        foreach (var e in shown) _shown[e] = null;
-        var condition = Expr(a.Condition);
-        var values = _shown;
-        _shown = null;
-        if (IsNever(condition)) return;
         var source = _fn.File!.Source;
         string Before(int offset) => source.GetText(TextSpan.FromBounds(syntax.Span.Start, offset));
         int After(Node left)
@@ -1112,44 +1110,72 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         };
         // The first (outermost) node at a column wins: an implicit conversion shares its operand's syntax.
         var columns = new SortedDictionary<int, BoundExpr>();
-        foreach (var e in shown)
+        var lazy = new HashSet<BoundExpr>(ReferenceEqualityComparer.Instance);
+        foreach (var (e, mayNotRun) in Shown(a.Condition, false))
+            if (columns.TryAdd(PowerAssert.Column(Before(Anchor(e.Syntax))), e) && mayNotRun) lazy.Add(e);
+        _shown = new Dictionary<BoundExpr, BoundExpr?>(ReferenceEqualityComparer.Instance);
+        _ran = new Dictionary<BoundExpr, LocalSymbol>(ReferenceEqualityComparer.Instance);
+        foreach (var e in columns.Values)
         {
-            if (values[e] is not { } value || IsNever(value)) continue;
-            columns.TryAdd(PowerAssert.Column(Before(Anchor(e.Syntax))), value);
+            _shown[e] = null;
+            if (!lazy.Contains(e)) continue;
+            var flag = NewTemp(PrimitiveType.Bool);
+            EmitAssign(Local(e.Syntax, flag), Bool(e.Syntax, false));
+            _ran[e] = flag;
         }
+        var condition = Expr(a.Condition);
+        var (values, ran) = (_shown, _ran);
+        (_shown, _ran) = (null, null);
+        if (IsNever(condition)) return;
         var statement = PowerAssert.Flatten(Before(syntax.Condition.Span.End));
+        var kept = columns.Where(c => values[c.Value] is { } v && !IsNever(v)).ToList();
         BoundStmt panic;
-        if (columns.Count == 0) panic = new LPanic(a.Syntax, statement);
+        if (kept.Count == 0) panic = new LPanic(a.Syntax, statement);
         else
         {
-            var (bars, prefixes) = PowerAssert.Layout(columns.Keys.ToList());
-            var message = new List<BoundInterpolationPart> { new(statement + "\n" + PowerAssert.Indent + bars, null) };
-            foreach (var (prefix, value) in prefixes.Zip(columns.Values.Reverse()))
+            var flags = kept.Select(c => ran.GetValueOrDefault(c.Value)).ToList();
+            BoundExpr Flag(int k) => Local(a.Syntax, flags[k]!);
+            BoundExpr? Guard(PowerAssert.Piece p)
             {
-                message.Add(new("\n" + PowerAssert.Indent + prefix, null));
-                message.Add(new(null, value));
+                var terms = p.When.Select(Flag).Concat(p.Unless.Select(k => Not(Flag(k))));
+                if (p.AnyFrom is { } from) terms = terms.Append(Enumerable.Range(from, kept.Count - from).Select(Flag).Aggregate(Or));
+                return terms.Aggregate((BoundExpr?)null, (g, t) => g is null ? t : And(g, t));
             }
-            panic = new LWrite(a.Syntax, WriteSink.Panic, null, message.ToArray());
+            var parts = new List<BoundInterpolationPart> { new(statement, null) };
+            var guards = new List<BoundExpr?> { null };
+            foreach (var piece in PowerAssert.Diagram(kept.Select(c => c.Key).ToList(), flags.Select(f => f is null).ToList()))
+            {
+                var guard = Guard(piece);
+                if (guard is null && piece.Value < 0 && guards[^1] is null && parts[^1].Value is null)
+                    parts[^1] = new(parts[^1].Text + piece.Text, null);
+                else
+                {
+                    parts.Add(piece.Value < 0 ? new(piece.Text, null) : new(null, values[kept[piece.Value].Value]));
+                    guards.Add(guard);
+                }
+            }
+            panic = new LWrite(a.Syntax, WriteSink.Panic, null, parts.ToArray(), guards.All(g => g is null) ? null : guards.ToArray());
         }
         Emit(new BoundIf(a.Syntax, Not(condition), Block(a.Syntax, [panic]), null));
     }
 
-    /// <summary>The sub-expressions of an <c>assert</c> condition shown on failure, outermost first.</summary>
-    private static IEnumerable<BoundExpr> Shown(BoundExpr e)
+    /// <summary>The sub-expressions of an <c>assert</c> condition shown on failure, outermost first, each with whether it may not run.</summary>
+    private static IEnumerable<(BoundExpr Expr, bool MayNotRun)> Shown(BoundExpr e, bool mayNotRun)
     {
-        if (Printable(e.Type) && !IsLiteral(e.Syntax)) yield return e;
-        IEnumerable<BoundNode> children = e switch
+        if (Printable(e.Type) && !IsLiteral(e.Syntax)) yield return (e, mayNotRun);
+        IEnumerable<(BoundNode, bool)> children = e switch
         {
-            BoundBinary { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } b => [b.Left],
-            BoundConditional c => [c.Condition],
-            BoundCoalesce c => [c.Left],
-            BoundIs i => [i.Value],
+            BoundBinary { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } b => [(b.Left, mayNotRun), (b.Right, true)],
+            BoundConditional c => [(c.Condition, mayNotRun), (c.WhenTrue, true), (c.WhenFalse, true)],
+            BoundCoalesce c => [(c.Left, mayNotRun), (c.Right, true)],
+            BoundIs i => [(i.Value, mayNotRun)],
             BoundBinary or BoundUnary or BoundField or BoundTupleElement or BoundCall or BoundBuiltinCall or BoundConversion or BoundIndex
-                => BoundTree.Children(e),
+                => BoundTree.Children(e).Select(c => (c, mayNotRun)),
             _ => [],
         };
-        foreach (var child in children.OfType<BoundExpr>())
-            foreach (var x in Shown(child)) yield return x;
+        foreach (var (child, lazy) in children)
+            if (child is BoundExpr x)
+                foreach (var shown in Shown(x, lazy)) yield return shown;
     }
 
     private static bool IsLiteral(Node syntax) => syntax switch

@@ -7,19 +7,47 @@ namespace Bayan.Tests;
 /// <summary>The failed-<c>assert</c> diagram (HANDOFF §16, plan J5): its layout, and how <c>bayan test</c> redraws it.</summary>
 public sealed class PowerAssertTests
 {
+    /// <summary>The text <paramref name="pieces"/> write when the columns in <paramref name="shown"/> are shown, a value as <c>&lt;column&gt;</c>.</summary>
+    private static string Render(List<PowerAssert.Piece> pieces, int[] columns, bool[] shown) =>
+        string.Concat(pieces
+            .Where(p => p.When.All(k => shown[k]) && p.Unless.All(k => !shown[k])
+                && (p.AnyFrom is not { } from || Enumerable.Range(from, shown.Length - from).Any(k => shown[k])))
+            .Select(p => p.Value < 0 ? p.Text : $"<{columns[p.Value]}>"));
+
+    private static string Always(params int[] columns) =>
+        Render(PowerAssert.Diagram(columns, columns.Select(_ => true).ToList()), columns, columns.Select(_ => true).ToArray());
+
     [Fact]
-    public void BarsSitUnderEachColumn()
+    public void BarsSitUnderEachColumnAndValuesHangRightToLeft()
     {
-        var (bars, _) = PowerAssert.Layout([2, 6, 9]);
-        Assert.Equal("  │   │  │", bars);
-        Assert.Equal("", PowerAssert.Layout([]).Bars);
+        const string i = PowerAssert.Indent;
+        Assert.Equal("\n" + i + "  │   │  │" + "\n" + i + "  │   │  <9>" + "\n" + i + "  │   <6>" + "\n" + i + "  <2>", Always(2, 6, 9));
+        Assert.All(PowerAssert.Diagram([2, 6, 9], [true, true, true]), p => Assert.True(p.When.Length == 0 && p.Unless.Length == 0 && p.AnyFrom is null));
     }
 
     [Fact]
-    public void ValuesHangRightToLeftWithTheBarsToTheirLeft()
+    public void AColumnThatDidNotRunIsLeftOut()
     {
-        var (_, prefixes) = PowerAssert.Layout([2, 6, 9]);
-        Assert.Equal(["  │   │  ", "  │   ", "  "], prefixes);
+        int[] columns = [2, 6, 9, 12];
+        bool[] always = [true, false, true, false];
+        var pieces = PowerAssert.Diagram(columns, always);
+        foreach (var six in new[] { false, true })
+            foreach (var twelve in new[] { false, true })
+            {
+                var shown = columns.Where((c, k) => always[k] || (c == 6 ? six : twelve)).ToArray();
+                Assert.Equal(Always(shown), Render(pieces, columns, [true, six, true, twelve]));
+            }
+        Assert.All(pieces, p => Assert.DoesNotContain(p.When.Concat(p.Unless), k => always[k]));
+    }
+
+    [Fact]
+    public void NoTrailingBlankWhenTheLastColumnsDidNotRun()
+    {
+        int[] columns = [2, 6];
+        var pieces = PowerAssert.Diagram(columns, [false, false]);
+        Assert.Equal("", Render(pieces, columns, [false, false]));
+        Assert.Equal(Always(2), Render(pieces, columns, [true, false]));
+        Assert.Equal(Always(6), Render(pieces, columns, [false, true]));
     }
 
     [Fact]

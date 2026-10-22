@@ -1,0 +1,7 @@
+panic: assert (found ?? bump(ref calls)) + calls == 3
+                     │                   │ │     │
+                     │                   │ │     false
+                     │                   │ 0
+                     │                   2
+                     2
+  at assert-coalesce-skipped.byn:8
