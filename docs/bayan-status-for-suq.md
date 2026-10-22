@@ -61,7 +61,7 @@ let p = Point { x = 1, y: 2 };
 | Round 1 (`bayan-handoff.md`, addendum 001) | Applied |
 | Addendum 002 (laws, contracts, parallel iterators) | Partial: §1 keyword reservation only; `law` declarations, `bayan laws`, `ensures`, `.par()` not started |
 | Round 2 (`bayan-design-round-2.md`) | Partial *(round 2, unmerged)*, per section below |
-| Round 3 (`feat/design-round-3`) | Not applied in code. Docs in progress on `feat/design-round-3`: the HANDOFF with O1–O10 resolved (`735996c`), the plan (status "awaiting approval"), and GRAMMAR/STYLE updated. SPEC.md is not yet updated there |
+| Round 3 (`feat/design-round-3`) | Not applied in code. Docs in progress on `feat/design-round-3`: the HANDOFF with O1–O10 resolved (`735996c`), the plan (status "awaiting approval"), and GRAMMAR/STYLE updated. SPEC.md updated there too (`bf345fb`, landed after this report was started); code-alignment pass on the docs in progress |
 
 Round 2 per section *(round 2, unmerged)*:
 
@@ -89,7 +89,7 @@ Round 2 per section *(round 2, unmerged)*:
 
 Review fixes for round 2 are in progress on `chore/worker-r2-reviewfix`.
 
-Round-3 sections not applied in code: all of them, §1–§21. Docs status on `feat/design-round-3`: HANDOFF and plan written; GRAMMAR and STYLE updated for §1, §5, §12, §13, §15; SPEC sweep pending. The request's "audit fixes" did not match a named section in the round-3 docs; "audit" there means the `bayan audit` command (§4) and the Sūq naming audit in the friction log.
+Round-3 sections not applied in code: all of them, §1–§21. Docs status on `feat/design-round-3`: HANDOFF and plan written; GRAMMAR and STYLE updated for §1, §5, §12, §13, §15; SPEC updated (`bf345fb`). The request's "audit fixes" did not match a named section in the round-3 docs; "audit" there means the `bayan audit` command (§4) and the Sūq naming audit in the friction log.
 
 ## 2. Toolchain
 
