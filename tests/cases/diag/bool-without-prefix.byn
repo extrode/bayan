@@ -1,0 +1,13 @@
+struct Door {
+    bool open;
+
+    bool ajar => !open;
+
+    bool locked() => false;
+
+    bool hasKey => true;
+
+    bool containsAny() => false;
+}
+
+print("ok");

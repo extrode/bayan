@@ -1,0 +1,13 @@
+struct Counter {
+    i64 n;
+
+    void total(ref this, i64 by) {
+        n += by;
+    }
+
+    void sizeUp(ref this) {
+        n *= 2;
+    }
+}
+
+print("ok");
