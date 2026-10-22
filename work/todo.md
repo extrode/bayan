@@ -139,3 +139,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r2-finalfix: `if ((!x)) { … }` gets no BYN1032; `ParseIf` (`Parser.cs:1302`) tests the condition without `Unwrap`.
 - `Parser.cs` `ParseDefer` (~:1585) still passes `clean = ErrorCount == errors` to ReportBraceless while ParseBody uses "no inner diagnostic has a fix": `defer let x = <expr with a fixless error>;` loses its braces fix (review of fix/review-2026-10-22-1)
 - `unless (a == null) s;` on a `bool` `a` reports BYN1017/1018/1006 but no BYN1023 (review of fix/review-2026-10-22-1, probe p12)
+- `move` of a value while a span or `dyn ref` still borrows it is accepted, so the borrow reads freed memory. `Mutate` (`RegionAnalysis.cs:460-463`) never sees moves. Repro: `tmp/refute006/b5c` and `b5d` on feat/006. Pre-existing for spans; 006 extends the hole to `dyn ref`. Found in the 006 review on 2026-10-22.
