@@ -23,7 +23,7 @@ Code fences in docs use `csharp` highlighting until Bayan has its own grammar. E
   1. No synonyms in the lexicon (except the boolean spellings, §5, which are a documented exception).
   2. New syntax must have its own job; it may not only re-spell an existing construct.
   3. Paraphrases must be truly equivalent: same narrowing, cost and effects. Where two forms are not equivalent, a lint flags the difference (e.g. `0..=n - 1` vs `0..n`, `p == Point { … }` vs `p is Point { … }`).
-- **Head-first word order (Arabic).** Statements: the verb comes first and ḥāl modifiers follow (`defer failing`). Declarations: the kind comes first and modifiers follow (`struct unique`, `type distinct`, `union error`). Bindings: the name comes first and the type follows (§2).
+- **Head-first word order (Arabic).** Statements: the verb comes first and ḥāl modifiers follow (`defer failing`). Declarations: the kind comes first and modifiers follow (`struct unique`, `type distinct`, `union error`). Local bindings: the name comes first and the type follows (§2); declarations keep the type first.
 
 ## 2. Declarations
 
@@ -40,11 +40,11 @@ Code fences in docs use `csharp` highlighting until Bayan has its own grammar. E
 
 ```csharp
 union error CarrierError {
-    timeout(after: Millis)
-    rejected(reason: string)
+    timeout(Millis after)
+    rejected(string reason)
 }
 union error StockError {
-    outOfStock(sku: Sku)
+    outOfStock(Sku sku)
 }
 union error ShipError = CarrierError, StockError          // composed
 union error Retryable = CarrierError except .rejected     // narrowed
@@ -54,23 +54,34 @@ union error Retryable = CarrierError except .rejected     // narrowed
 - Two components sharing a case name is a compile error.
 - `set error` is removed.
 
-### Names first, explicit mutability
+### Declarations type first, local bindings name first
 
 ```csharp
-let w = 0g              // immutable, inferred
-let w: Grams = 0g       // immutable, explicit type
-var w: Grams = 0g       // mutable, explicit type
-Grams w = 0g            // input form → `let w: Grams = 0g`
-
 struct Item {
-    sku: Sku
-    weight: Grams
+    Sku sku
+    Grams weight
 }
 
-public shippingWeight(order: Order) -> Grams { … }
+union error CarrierError {
+    timeout(Millis after)
+}
+
+public Grams shippingWeight(Order order) {
+    let w = 0g              // immutable, inferred
+    let w: Grams = 0g       // immutable, explicit type
+    var w: Grams = 0g       // mutable, explicit type
+    Grams w = 0g            // input form → `let w: Grams = 0g`
+    …
+}
+
+public void ship(ref this, Line line) { … }
 ```
 
-Fields, parameters and return types all put the name first. Visibility (`public`, `static`) leads the whole declaration. A function without `->` returns nothing. Computed properties take a type like a field: `public isEmpty: bool => lines.isEmpty`. Test and benchmark parameters follow the same order: `test "bounds" (input: i32, valid: bool) { … }`.
+- **Declarations put the type first** (round-2 order): return types (`public Grams shippingWeight(Order order)`, `void` when nothing is returned), parameters (`(Order order)`, `(ref this, Line line)`, a particle leads like `ref`: `by Carrier carrier`), fields (`Sku sku`), and union and state payloads (`timeout(Millis after)`). Visibility (`public`, `static`) leads the whole declaration. Computed properties take a type like a field: `public bool isEmpty => lines.isEmpty`. Test and benchmark parameters follow the same order: `test "bounds" (i32 input, bool valid) { … }`.
+- **Local bindings put the name first** with explicit mutability: `let` (immutable) or `var` (mutable), with an optional `: Type`.
+- **Input forms** (`bayan fmt` rewrites them, BYN1043): `f() -> T` → `T f()`; `f(x: T)` → `f(T x)`; field `x: T` → `T x`; payload `case(x: T)` → `case(T x)`; in a function body, `Grams w = 0g` → `let w: Grams = 0g`.
+
+**Revised 2026-10-22 (user request):** this reverts audit flaw #8 ("names first") for declarations. Names first was meant only for local bindings, where `let`/`var` already lead and the name is what the reader scans for; declarations return to round 2's type-first order. Every other rule in this section and in round 3 stands as written.
 
 ### The receiver
 
@@ -159,7 +170,7 @@ Unit syntax is unchanged (`unit Seconds(s): i64`, `30s`, `4MiB`). Additions:
 - **Implicit conversion only toward finer units** (`2s + 500ms` → `Millis`). Converting to a coarser unit is explicit and names the rounding: `t.round(to: Seconds)`, `t.roundDown(to: Seconds)`, `t.roundUp(to: Seconds)`.
 - **Bare literals are always rejected for unit types, including `0`:** `let w: Grams = 0` is an error with a fix-it to `0g`.
 - **Display:** a unit formats as its value plus its symbol (`524288 B`). `size.convert(to: KiB)` converts for display (`512 KiB`). (Not `.in(KiB)`: `in` is a keyword and not a verb.)
-- **Quantities are dimensionless:** `qty: i32`, and `i32 × Grams → Grams`.
+- **Quantities are dimensionless:** `i32 qty`, and `i32 × Grams → Grams`.
 - **`Money` is a struct with a currency field, not a unit.** Adding mixed currencies is a runtime error (exact behavior: Open question O7). The unit docs cite `Money` as something units don't model.
 
 ## 9. Typed indices (opt-in)
@@ -192,13 +203,13 @@ type distinct Email = string requires it.isEmailShaped
 
 @derive(Json)
 struct SignupForm {
-    email: Email
-    username: string
+    Email email
+    string username
         requires it.runeCount in 3..=32
         requires it.isAsciiAlphanumeric
-    password: string
+    string password
         requires it.runeCount in 8..=128
-    age: i32
+    i32 age
         requires it in 13..=120
 
     requires password != email.value  on .password
@@ -208,7 +219,7 @@ struct SignupForm {
 
 - `it` replaces `value` in `requires`.
 - Each `requires` line is a separate rule and reports its own violation. Struct-level rules attach to a field with `on .field` (target-typed to `T.Field`).
-- **Decoders collect every violation**: `SignupForm.fromJson(body) catch e => … e.violations`. Decoders and `complete()` fail with `ValidationError<T> { violations: List<Violation<T>> }`.
+- **Decoders collect every violation**: `SignupForm.fromJson(body) catch e => … e.violations`. Decoders and `complete()` fail with `ValidationError<T> { List<Violation<T>> violations }`.
 - Struct literals of a type with `requires` are fallible: `try SignupForm { … }`.
 - Fields of a struct with `requires` cannot be assigned one at a time. Updates go through `with`, which re-checks: `try f with { password: p }`.
 - **Drafts** use the existing `T.Patch` (all fields optional, no `requires`), with `patch.complete()` returning `T fails ValidationError<T>`.
@@ -238,10 +249,10 @@ struct SignupForm {
 Unify `noalloc`, `nosuspend` and package capabilities into one effect system.
 
 ```csharp
-public book(parcel: Parcel, by carrier: Carrier) -> ParcelId
+public ParcelId book(Parcel parcel, by Carrier carrier)
     fails CarrierError uses net, alloc, suspend { … }
 
-public crc(data: Span<u8>) -> u32 { … }   // no `uses`: no alloc, no suspend, no I/O
+public u32 crc(Span<u8> data) { … }   // no `uses`: no alloc, no suspend, no I/O
 ```
 
 - **Closed effect list:** `alloc`, `suspend`, `net`, `fs`, `clock`, `random`, `env`. It grows only through spec revisions.
@@ -253,10 +264,10 @@ public crc(data: Span<u8>) -> u32 { … }   // no `uses`: no alloc, no suspend, 
 - **Stored function types and interface methods declare an upper bound** (option A). Implementations may use fewer effects:
   ```csharp
   interface IPricer {
-      price(o: Order) -> Money uses net, alloc
+      Money price(Order o) uses net, alloc
   }
   struct Checkout {
-      onPaid: Order => void uses net
+      (Order => void uses net) onPaid
   }
   ```
   Effect variables (option B) are deferred.
@@ -287,23 +298,23 @@ States are declared inside the struct:
 ```csharp
 @derive(Json)                  // not Row: `lines` is not flat (§16)
 struct Order {
-    id: OrderId
-    lines: List<Line>
+    OrderId id
+    List<Line> lines
 
     state draft
     state placed
-    state paid(payment: PaymentId)
-    state shipped(payment: PaymentId, tracking: TrackingId)
-    state cancelled(reason: string)
+    state paid(PaymentId payment)
+    state shipped(PaymentId payment, TrackingId tracking)
+    state cancelled(string reason)
 }
 
-public pay(ref this is .placed, p: Payment) becomes .paid fails PaymentError uses net {
+public void pay(ref this is .placed, Payment p) becomes .paid fails PaymentError uses net {
     let id = try p.charge(total)
     become .paid(payment: id)
 }
 
-public trackingUrl(this is .shipped) -> Url { … }   // `tracking` itself is a payload field
-public label(order: Order is .shipped) -> Label { … }
+public Url trackingUrl(this is .shipped) { … }   // `tracking` itself is a payload field
+public Label label(Order is .shipped order) { … }
 ```
 
 - `T is .state` is a type: the values of `T` that match the pattern. It is usable in any parameter, return type or local.
@@ -328,9 +339,9 @@ A closed set of role particles (Arabic مِن/إلى/بِ):
 | `as` | Role |
 
 ```csharp
-public copy(from src: Path, to dst: Path) fails FsError uses fs
-public transfer(amount: Money, from payer: Account, to payee: Account) fails LedgerError
-public insert(ref this, item: T, at i: Index)
+public void copy(from Path src, to Path dst) fails FsError uses fs
+public void transfer(Money amount, from Account payer, to Account payee) fails LedgerError
+public void insert(ref this, T item, at Index i)
 
 copy(from: a, to: b)
 try ledger.transfer(amount, from: alice, to: bob)
@@ -352,9 +363,9 @@ lines.insert(x, at: 3)
 **Layer 1: sinks take dedicated types, never `string`.**
 
 ```csharp
-public execute(q: Sql) …
-public render(h: Html) …
-public run(program: Path, args: List<Arg> = []) …   // optional setting, not a second object
+public void execute(Sql q) …
+public void render(Html h) …
+public void run(Path program, List<Arg> args = []) …   // optional setting, not a second object
 
 db.query(sql"SELECT * FROM users WHERE name = $1", term)   // literal plus parameters
 let page = Html.escape(name)                               // escaping constructor
@@ -397,7 +408,8 @@ In `defer failing tx.rollback() unless dryRun`, the modifier is evaluated once, 
 | Input form | Canonical |
 |---|---|
 | Trailing `;`, `a; b` on one line | Newlines |
-| `Grams w = 0g` | `let w: Grams = 0g` |
+| `Grams w = 0g` (local binding) | `let w: Grams = 0g` |
+| `f() -> T`, `f(x: T)`, field `x: T`, payload `case(x: T)` | `T f()`, `f(T x)`, `T x`, `case(T x)` (§2, revised 2026-10-22) |
 | `[Derive(Json)]` | `@derive(Json)` |
 | `/* … */` | `//` lines |
 | `unique struct`, `distinct type`, `error union`, `error set` | `struct unique`, `type distinct`, `union error` |
@@ -492,10 +504,10 @@ Start with the paper version of the storefront, order lifecycle and packing part
 
 1. `SPEC.md` updated for §1–20, each change with a one-line rationale and its diagnostic codes.
 2. `GRAMMAR.md` and `STYLE.md` updated (§1, §5, §12, §13, §15). In STYLE.md's member order, rename "state members" to "properties" and place typestate `state` declarations directly after fields.
-3. Sweep every code example in SPEC.md, GRAMMAR.md, STYLE.md and `docs/` to round-3 syntax: name-first bindings, parameters and returns; no semicolons; `@` attributes; particles; `rune`; head-first declaration keywords.
+3. Sweep every code example in SPEC.md, GRAMMAR.md, STYLE.md and `docs/` to round-3 syntax: name-first local bindings, type-first declarations; no semicolons; `@` attributes; particles; `rune`; head-first declaration keywords.
 4. Verify collections use `length` for size and `count(p)` only for predicate counts (round 2 §11 lists `count` among the queries).
 5. Compiler changes, in this order:
-   1. Lexer and parser: semicolon-free termination (§3), `@` attributes and `because` (§4), head-first declaration keywords and name-first bindings (§2), `//`-only comments, `except` (§7), `state`/`becomes`/`become` (§14), particles (§15), `provide` (§13).
+   1. Lexer and parser: semicolon-free termination (§3), `@` attributes and `because` (§4), head-first declaration keywords, name-first local bindings and type-first declarations with their name-first input forms (§2), `//`-only comments, `except` (§7), `state`/`becomes`/`become` (§14), particles (§15), `provide` (§13).
    2. Input-form rejection with fix-its (§20), and `bayan fmt` rewrites including `style.booleans`.
    3. Semantics: unused-value error, `requires` at construction and `with` re-checking (§11), typestate (§14), effects and capabilities (§13), unit conversion and literal rules (§8), typed indices (§9), trust layers (§17), `try` scope (§18), `defer` modifier capture (§19).
    4. Standard library: `rune`, `log`, particle names, sink types, `T.rules`.

@@ -110,7 +110,7 @@ Plan entry: §23. Each step's text is in plan J35–J53 (`:215-233`); F-07 exten
 | F-16 | new J43 (5.3b) | No | SPEC §7.9 `:927` "Construction fails with `ValidationError<T> { violations: List<Violation<T>> }`"; no rule on dependent struct-level rules | Agree with Sūq: skip a struct-level rule that reads a failed field |
 | F-17 | new J44 (spec-only) | No | SPEC §15.2 `:1364` `Secret<T>`: "no `==`, only `equalsConstantTime(other)`"; nothing on `requires` | Allow a field rule to read a `Secret` (`it.runeCount`); violations carry no values, so nothing leaks |
 | F-18 | new J45 (spec sentence) | Yes, in general | SPEC §9.4 `:1035` "A borrow cannot be stored anywhere that outlives its region." | An `xOp` value follows the struct rule: borrowed arguments bind it to their region; a long-lived container needs owned arguments |
-| F-21 | new J46 (5.1b) | No | SPEC §3.10 `:299` "A computed property takes a type like a field: `public isEmpty: bool => lines.isEmpty`" (expression body only) | Allow `public total: Money { … }` with the same no-`uses` rule |
+| F-21 | new J46 (5.1b) | No | SPEC §3.10 `:299` "A computed property takes a type like a field: `public isEmpty: bool => lines.isEmpty`" (expression body only) | Allow `public total: Money { … }` with the same no-`uses` rule; after the 2026-10-22 type-first revert this is `public Money total { … }` |
 | F-22 | new J47 (5.4) | No | SPEC §16 `:1390` "`sort()`, `sort(by)`, `reverse()`" with no stability stated | Agree: `sort` is stable; no unstable sort in v0.1 |
 | F-23 | none | Yes | SPEC §13.2 `:1233-1236` "**Deadlines: `provide timeout: d { … }`.** … Expiry fails the suspended operation with `TimeoutError`." | Disagree with adding `Io.group(timeout:)`: wrap the group in `provide timeout:` and map `TimeoutError` once with `catch` |
 | F-24, F-25 | none (O2, J26) | Yes | SPEC §3.4 `:204` `unit Bytes(B): i64`; `:218` "Counts are plain `i64`: `s.length`, `s.runeCount` and collection `length`. The `Bytes` and `Runes` units apply only to slice offsets."; `:226` "`string.bytes` is a `ReadOnlySpan<u8>`" | Agree; `Bytes` is the unit, data is `Span<u8>` |
@@ -127,7 +127,7 @@ Plan entry: §23. Each step's text is in plan J35–J53 (`:215-233`); F-07 exten
 | Item | GRAMMAR/SPEC reference | Matches or differs |
 |---|---|---|
 | 1 Waqf termination | SPEC §2 `:135-136`, `:142`; GRAMMAR §6 `:178-179`, `:193` | Matches |
-| 2 Head-first declarations | SPEC `:314`, `:405-406`, `:411`, `:1672`, `:1679`; GRAMMAR `:75`, `:97`, `:156-157` | Matches |
+| 2 Head-first declarations | SPEC `:314`, `:405-406`, `:411`, `:1672`, `:1679`; GRAMMAR `:75`, `:97`, `:156-157` | Matches for the kind keywords. Declaration order changed after this review: see "Revert: type-first declarations" below |
 | 3 `@attr`, `because` list | SPEC §4.4 `:544-551`; GRAMMAR §7 `:203-212` | Differs: no `Secret.expose()`. SPEC `:547-551`: "`@allow(X) because "…"`", "`@json(expose) because "…"` on a `Secret` field (§15.2)", "`xUnchecked() because "…"`, including `trustUnchecked()` (§15.1)", "`unsafe because "…" { … }`". A secret is exposed per field with `@json(expose) because`, not per call |
 | 4 `requires it`, `at .field` | SPEC §7.9 `:906-920`; GRAMMAR `:83` | Matches (HANDOFF §11 body still shows `on`, superseded by its "Resolved 2026-10-22" paragraph) |
 | 5 `->` in function types | SPEC §3.16 `:457`, §14 `:1287`; GRAMMAR §9 `:259`, `:266` | Matches. 007 Q115 makes a stored function type a field (`onPaid: Order -> void uses net`) BYN2822 in 007's scope |
@@ -147,6 +147,15 @@ Plan entry: §23. Each step's text is in plan J35–J53 (`:215-233`); F-07 exten
 | O8 `state` contextual | SPEC §3.17 `:501` | Matches |
 | O9 no bare literals for distinct types | SPEC §3.4 `:214` (`ParcelId(0)`, BYN3204) | Matches |
 | O10 trusted decode | SPEC §15.1 `:1353` | Matches |
+
+## Revert: type-first declarations (2026-10-22)
+
+At the user's request, round-3 "names first" (HANDOFF §2, audit flaw #8) is reverted for declarations: it was meant only for local bindings. This supersedes every names-first item above that concerns fields, parameters, returns or payloads, including the F-21 recommendation and Part C item 2.
+- Declarations are type-first again (round-2 order): `public Grams shippingWeight(Order order)`, `void` when nothing is returned, `(Order order)`, `(ref this, Line line)`, field `Sku sku`, payload `timeout(Millis after)`.
+- Local bindings stay name-first: `let w = 0g`, `let w: Grams = 0g`, `var w: Grams = 0g`; `Grams w = 0g` in a function body stays an input form.
+- `f() -> T`, `f(x: T)`, field `x: T` and payload `case(x: T)` are input forms that `bayan fmt` rewrites to type-first (BYN1043, now two message forms).
+- Changed: HANDOFF §2; SPEC every declaration example, and the rules in §0, §1, §3.10, §3.16, §7.1, §18, §21.5, §25, Appendix A; GRAMMAR §1, §3, §5, §8–§10; STYLE; plan §2, §20, J54, step 5.1b. The plan entry is J54, with its conflicts list.
+- The Sūq app (`docs/suq-reference-app.zip`) is updated separately.
 
 ## Part D
 

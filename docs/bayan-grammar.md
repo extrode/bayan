@@ -10,7 +10,7 @@ Casing (SPEC §5.1): `PascalCase` types, `camelCase` everything else, `I` prefix
 
 For any new member, take the first question that answers yes.
 
-1. **Changes `this`?** Verb on `ref this`: `sort(ref this)`. The `-ed` copy (`sorted`) is derived; do not write it.
+1. **Changes `this`?** Verb on `ref this`: `void sort(ref this)`. The `-ed` copy (`sorted`) is derived; do not write it.
    - A body that modifies `this` without `ref this`: [BYN2115](diagnostics/BYN2115.md).
    - Calling a `ref this` member on a `let`: [BYN2104](diagnostics/BYN2104.md) (fix: `var`).
    - `-ed` member with no `ref this` verb of the same stem (`joined`): [BYN5001](diagnostics/BYN5001.md).
@@ -70,8 +70,9 @@ Familiar alternatives are **input forms**: the editor and `bayan fmt` accept the
 |---|---|---|
 | `int long short byte uint ulong float double` | `i32 i64 i16 u8 u32 u64 f32 f64` | [BYN1030](diagnostics/BYN1030.md) |
 | `char` | `rune` | [BYN1048](diagnostics/BYN1048.md) |
-| `User!EmailError f()`, `User!(A, B) f()` | `f() -> User fails EmailError`, `fails A, B` | [BYN1031](diagnostics/BYN1031.md) |
-| `Grams w = 0g` | `let w: Grams = 0g` | [BYN1043](diagnostics/BYN1043.md) |
+| `User!EmailError f()`, `User!(A, B) f()` | `User f() fails EmailError`, `fails A, B` | [BYN1031](diagnostics/BYN1031.md) |
+| `Grams w = 0g` (local binding in a function body) | `let w: Grams = 0g` | [BYN1043](diagnostics/BYN1043.md) |
+| `f() -> T`, `f(x: T)`, field `x: T`, payload `case(x: T)` | `T f()`, `f(T x)`, `T x`, `case(T x)` (§5) | [BYN1043](diagnostics/BYN1043.md) |
 | `unique struct`, `distinct type`, `error union`, `error enum` | `struct unique`, `type distinct`, `union error` | [BYN1044](diagnostics/BYN1044.md) |
 | Trailing `;`, `a; b` on one line | Newlines (§6) | [BYN1040](diagnostics/BYN1040.md) |
 | `[Derive(Json)]` | `@derive(Json)` (§7) | [BYN1045](diagnostics/BYN1045.md) |
@@ -133,24 +134,30 @@ Arabic puts the head first and its modifiers after. Bayan follows the same order
 |---|---|---|
 | Statement | The verb, then ḥāl modifiers (§2) | `defer failing` |
 | Declaration | The kind, then modifiers | `struct unique File`, `type distinct Sku = string`, `union error ShipError` |
-| Binding | The name, then the type | `let w: Grams = 0g`, `weight: Grams`, `order: Order` |
+| Local binding | `let` or `var`, then the name, then the type | `let w: Grams = 0g` |
+
+The declarations themselves (fields, parameters, return types, payloads) keep the type first, as in C#:
 
 ```csharp
-let w = 0g              // immutable, inferred
-let w: Grams = 0g       // immutable, explicit type
-var w: Grams = 0g       // mutable, explicit type
-
 struct Item {
-    sku: Sku
-    weight: Grams
+    Sku sku
+    Grams weight
 }
 
-public shippingWeight(order: Order) -> Grams { … }
-public isEmpty: bool => lines.isEmpty
-test "bounds" (input: i32, valid: bool) { … }
+public Grams shippingWeight(Order order) {
+    let w = 0g              // immutable, inferred
+    let w: Grams = 0g       // immutable, explicit type
+    var w: Grams = 0g       // mutable, explicit type
+    …
+}
+public bool isEmpty => lines.isEmpty
+test "bounds" (i32 input, bool valid) { … }
 ```
 
-- Fields, parameters and return types put the name first. Visibility (`public`, `static`) leads the whole declaration. A function without `->` returns nothing.
+- Fields, parameters, return types and union and state payloads put the type first (`timeout(Millis after)`); `void` marks a function that returns nothing. Visibility (`public`, `static`) leads the whole declaration. A particle leads its parameter like `ref` does: `by Carrier carrier`.
+- Local bindings put the name first: `let`/`var` already lead, and the name is what the reader scans for.
+- The name-first declaration forms are input forms that `bayan fmt` rewrites ([BYN1043](diagnostics/BYN1043.md)): `f() -> T` → `T f()`, `f(x: T)` → `f(T x)`, field `x: T` → `T x`, payload `case(x: T)` → `case(T x)`. In a function body, `Grams w = 0g` → `let w: Grams = 0g`; in a struct body the same text is a field with a default.
+- Revised 2026-10-22: round 3 first put names first in every declaration; that was meant only for local bindings, so declarations returned to type-first.
 - `union error` also composes and narrows error sets; composed sets are flattened, and two components sharing a case name is an error:
   ```csharp
   union error ShipError = CarrierError, StockError
@@ -226,16 +233,16 @@ A role in a call is marked by a particle from a closed set (Arabic مِن/إلى
 | `as` | Role |
 
 ```csharp
-public copy(from src: Path, to dst: Path) fails FsError uses fs
-public transfer(amount: Money, from payer: Account, to payee: Account) fails LedgerError
-public insert(ref this, item: T, at i: Index)
+public void copy(from Path src, to Path dst) fails FsError uses fs
+public void transfer(Money amount, from Account payer, to Account payee) fails LedgerError
+public void insert(ref this, T item, at Index i)
 
 copy(from: a, to: b)
 try ledger.transfer(amount, from: alice, to: bob)
 lines.insert(x, at: 3)
 ```
 
-- A function has at most one unlabeled parameter: the object. Every other required parameter takes a particle, and call sites write it. Optional settings stay ordinary named parameters with defaults (`run(program: Path, args: List<Arg> = [])`).
+- A function has at most one unlabeled parameter: the object. Every other required parameter takes a particle, and call sites write it. Optional settings stay ordinary named parameters with defaults (`void run(Path program, List<Arg> args = [])`).
 - The particles are part of the function's name: `copy(from:to:)`.
 - `for` is allowed as a particle; it only appears in label position (`for:`), where it cannot be the loop.
 - The set is closed for user code and grows only through spec revisions. Pick the particle by role: `replaceRange(r, by: text)` (replacement), `log(msg, as: .debug)` (role). `xInto(ref dst)` keeps its own form (tree 5).
@@ -247,23 +254,23 @@ Enforced by [BYN5004](diagnostics/BYN5004.md) (more than one unlabeled parameter
 A function's effects are a `uses` clause from a closed list: `alloc`, `suspend`, `net`, `fs`, `clock`, `random`, `env`. No `uses` clause means pure: no allocation, no suspension, no I/O.
 
 ```csharp
-public book(parcel: Parcel, by carrier: Carrier) -> ParcelId
+public ParcelId book(Parcel parcel, by Carrier carrier)
     fails CarrierError uses net, alloc, suspend { … }
 
-public crc(data: Span<u8>) -> u32 { … }   // pure
+public u32 crc(Span<u8> data) { … }   // pure
 
 interface IPricer {
-    price(o: Order) -> Money uses net, alloc
+    Money price(Order o) uses net, alloc
 }
 struct Checkout {
-    onPaid: Order -> void uses net
+    (Order -> void uses net) onPaid
 }
 ```
 
 - Public functions declare their effects; private functions infer them, as with error sets.
 - `fails` stays a separate clause because it carries a type; effects are names from a closed list.
 - `panic` is not an effect.
-- `->` means "returns" everywhere, including function types; `=>` means "evaluates to" (lambdas, expression bodies, switch arms).
+- `->` marks the return in a function type; a declaration puts its return type first (§5). `=>` means "evaluates to" (lambdas, expression bodies, switch arms).
 - Stored function types and interface methods declare an upper bound; implementations may use fewer.
 - A function taking a closure inherits the closure's effects, so there is no `tryMap` or `mapAsync`: `map` covers both.
 - Derived forms compute their effects: the `-ed` copy adds `alloc`, the allocating form of `xInto` adds `alloc`, and `tryX` keeps `x`'s effects. `bayan expand` shows them.
@@ -284,14 +291,14 @@ Enforced by [BYN6001](diagnostics/BYN6001.md) (`noalloc`, `nosuspend`), [BYN6002
 - **States** are named as participles or adjectives (`paid`, `shipped`, `draft`). They are exempt from the `-ed` copy rule ([BYN5001](diagnostics/BYN5001.md)), which applies only to members. A transition is a verb that `becomes` a state; `become` performs it. `state` is a contextual keyword only at the start of a member declaration, so a field may be named `state`.
   ```csharp
   struct Order {
-      id: OrderId
-      lines: List<Line>
+      OrderId id
+      List<Line> lines
 
       state placed
-      state paid(payment: PaymentId)
+      state paid(PaymentId payment)
   }
 
-  public pay(ref this is .placed, p: Payment) becomes .paid fails PaymentError uses net {
+  public void pay(ref this is .placed, Payment p) becomes .paid fails PaymentError uses net {
       let id = try p.charge(total)
       become .paid(payment: id)
   }
