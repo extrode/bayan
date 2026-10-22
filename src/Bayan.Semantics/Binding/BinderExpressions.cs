@@ -996,18 +996,11 @@ internal sealed partial class Binder
             var hint = b.Op is BinaryOp.Shl or BinaryOp.Shr ? PrimitiveType.I32 : left.Type is OptionalType o ? o.Inner : left.Type;
             right = BindExpr(b.Right, hint);
         }
-        if (nullTested is not null)
+        // `x is null` is valid only on an optional `x`: for `null == null` or a non-optional operand BYN2208 reports alone.
+        if (nullTested is not null && nullTested is not LiteralExpr { Kind: LiteralKind.Null } && (nullTested == b.Left ? left : right).Type is OptionalType)
         {
-            // `x is null` is valid only on an optional `x`: no fix for `null == null` or a non-optional operand.
-            if (nullTested is not LiteralExpr { Kind: LiteralKind.Null } && (nullTested == b.Left ? left : right).Type is OptionalType)
-            {
-                var test = Source.GetText(nullTested.Span) + (b.Op == BinaryOp.Eq ? " is null" : " is not null");
-                Report(DiagnosticCodes.NullEquality, b.Span, [], help: $"write `{test}`", fix: new Fix(b.Span, test));
-            }
-            else
-            {
-                Report(DiagnosticCodes.NullEquality, b.Span, []);
-            }
+            var test = Source.GetText(nullTested.Span) + (b.Op == BinaryOp.Eq ? " is null" : " is not null");
+            Report(DiagnosticCodes.NullEquality, b.Span, [], help: $"write `{test}`", fix: new Fix(b.Span, test));
         }
         if (left.Type.IsError || right.Type.IsError) return new BoundErrorExpr(b);
         if (b.Op is not (BinaryOp.Eq or BinaryOp.Ne) && (TypeParameterOf(left.Type) ?? TypeParameterOf(right.Type)) is { } tp)

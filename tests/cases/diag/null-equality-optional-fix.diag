@@ -1,0 +1,17 @@
+error BYN2027: compare with `is null` / `is not null`, not `==`
+
+  3 │     let c = n == null;
+    │             ^^^^^^^^^
+    │
+  help: write `n is null`
+    │ 3 │     let c = n is null;
+    │   │               ++
+
+error BYN2027: compare with `is null` / `is not null`, not `==`
+
+  4 │     let d = n != null;
+    │             ^^^^^^^^^
+    │
+  help: write `n is not null`
+    │ 4 │     let d = n is not null;
+    │   │               ++++++

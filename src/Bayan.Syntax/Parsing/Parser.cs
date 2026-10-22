@@ -414,10 +414,19 @@ public sealed class Parser
     {
         if (index <= 0 || KindAt(index) != TokenKind.Bang) return index;
         var i = index + 1;
-        if (KindAt(i) != TokenKind.OpenParen) return SkipQualifiedName(i);
-        do i = SkipQualifiedName(i + 1);
+        if (KindAt(i) != TokenKind.OpenParen) return SkipErrorType(i);
+        do i = SkipErrorType(i + 1);
         while (i > 0 && KindAt(i) == TokenKind.Comma);
         return i > 0 && KindAt(i) == TokenKind.CloseParen ? i + 1 : -1;
+    }
+
+    /// <summary>Past an error type at <paramref name="index"/>: a name with optional type arguments and <c>?</c> (not valid after <c>fails</c>, but still the input form).</summary>
+    private int SkipErrorType(int index)
+    {
+        var i = SkipQualifiedName(index);
+        if (i > 0 && KindAt(i) == TokenKind.Less) i = ScanTypeArgs(i);
+        if (i > 0 && KindAt(i) == TokenKind.Question) i++;
+        return i;
     }
 
     /// <summary>Past <c>a.b.c</c> at <paramref name="index"/>, or -1 if no name starts there.</summary>
@@ -557,9 +566,11 @@ public sealed class Parser
             // `T!E f() fails F` keeps both sets; the fix rewrites the header through the explicit clause.
             var all = shorthand.Concat(fails?.Errors ?? []).DistinctBy(t => _source.GetText(t.Span)).ToArray();
             var errors = string.Join(", ", all.Select(t => _source.GetText(t.Span)));
+            // `fails` takes error type names (spec §8): `E?` and `Result<E>` get no fix rather than a wrong one.
+            var plain = all.All(t => t is NamedType { Args.Length: 0 });
             Report(DiagnosticCodes.FailsShorthand, TextSpan.FromBounds(bang.Start, shorthandEnd), label: "the input form",
-                help: $"write `fails {errors}` after the parameters",
-                fix: new Fix(TextSpan.FromBounds(typeEnd, _prevEnd), " " + _source.GetText(TextSpan.FromBounds(name.Span.Start, paramsEnd)) + " fails " + errors));
+                help: plain ? $"write `fails {errors}` after the parameters" : "write the error types in a `fails` clause after the parameters",
+                fix: !plain ? null : new Fix(TextSpan.FromBounds(typeEnd, _prevEnd), " " + _source.GetText(TextSpan.FromBounds(name.Span.Start, paramsEnd)) + " fails " + errors));
             fails = new FailsClause(fails?.Span ?? TextSpan.FromBounds(bang.Start, shorthandEnd), all);
         }
         var requires = new List<Expr>();
@@ -1108,11 +1119,17 @@ public sealed class Parser
         if (Kind == TokenKind.OpenBrace) return ParseBlock();
         var gapStart = _prevEnd;
         var errors = ErrorCount;
+        var seen = _diagnostics.Items.Count;
         var body = ParseStatement();
         if (ErrorCount != errors && body is ErrorStmt) return body;
-        header = ReportBraceless(keyword, gapStart, body, ErrorCount == errors, header);
+        // Only an inner fix overlaps the braces fix; a diagnostic without one (e.g. BYN1006) leaves it applicable.
+        header = ReportBraceless(keyword, gapStart, body, _diagnostics.Items.Skip(seen).All(d => d.Fix is null), header);
         return body;
     }
+
+    // The last BYN1018 report and its own braces fix, so ParseUnless can hand the fix back when the header fix is dropped.
+    private Diagnostic? _bracesReport;
+    private Fix? _bracesFix;
 
     /// <summary>
     /// BYN1018 on <paramref name="body"/>, a single statement after <paramref name="keyword"/>. A <paramref name="header"/> fix
@@ -1136,6 +1153,7 @@ public sealed class Parser
         // A fix inside the body (e.g. a nested `if (x) s;`) would overlap this one, which copies the body's text: only the inner one
         // gets a fix, and the header's fix is dropped because without the braces it does not parse.
         var fix = clean ? new Fix(TextSpan.FromBounds(gapStart, _prevEnd), replacement) : null;
+        var own = fix;
         if (header?.Fix is { } h)
         {
             var merged = fix is null ? null : new Fix(TextSpan.FromBounds(h.Span.Start, fix.Span.End),
@@ -1149,8 +1167,9 @@ public sealed class Parser
             header = replaced;
             if (!overlaps) fix = null;
         }
-        Report(DiagnosticCodes.BodyNeedsBraces, body.Span, [Text(keyword)], label: "a single statement",
+        _bracesReport = Report(DiagnosticCodes.BodyNeedsBraces, body.Span, [Text(keyword)], label: "a single statement",
             help: "wrap the statement in `{ }`", fix: fix);
+        _bracesFix = own;
         return header;
     }
 
@@ -1369,6 +1388,7 @@ public sealed class Parser
         if (check is not null) Unreport(parens);
         var header = check ?? parens;
         var body = parenthesized ? ParseBody(keyword, ref header) : ParseBlock();
+        var (bracesReport, bracesFix) = parenthesized && _bracesReport?.Span == body.Span ? (_bracesReport, _bracesFix) : (null, null);
         if (Kind == TokenKind.ElseKeyword)
         {
             Report(DiagnosticCodes.UnlessWithElse, Current.Span, label: "`else` after `unless`",
@@ -1376,7 +1396,11 @@ public sealed class Parser
             Advance();
             // The `if` fix of BYN1007/1022/1023 leaves a bare condition, which needs a block after `else`.
             if (ParseEmbedded() is not BlockStmt && check is not null && header?.Fix is not null)
+            {
                 _diagnostics.Replace(header, header with { Fix = null });
+                // The braces the header fix carried go back to BYN1018, so one fix still applies alone.
+                if (bracesReport is { Fix: null } && bracesFix is not null) _diagnostics.Replace(bracesReport, bracesReport with { Fix = bracesFix });
+            }
         }
         return new UnlessStmt(SpanFrom(start), condition, body);
     }
