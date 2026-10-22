@@ -1127,13 +1127,14 @@ public sealed class Parser
         return body;
     }
 
+    // The last BYN1018 report and its own braces fix, so ParseUnless can hand the fix back when the header fix is dropped.
+    private Diagnostic? _bracesReport;
+    private Fix? _bracesFix;
+
     /// <summary>
     /// BYN1018 on <paramref name="body"/>, a single statement after <paramref name="keyword"/>. A <paramref name="header"/> fix
     /// takes the braces too, so that fix parses applied alone and BYN1018 has none of its own. Returns the header's report.
     /// </summary>
-    private Diagnostic? _bracesReport;
-    private Fix? _bracesFix;
-
     private Diagnostic? ReportBraceless(Token keyword, int gapStart, Stmt body, bool clean, Diagnostic? header)
     {
         var text = _source.GetText(TextSpan.FromBounds(body.Span.Start, _prevEnd));
