@@ -73,7 +73,7 @@ The binder and emitter ports (specs 010–011) are built on symbol tables: scope
 
 ## Open questions
 
-Each records the conservative choice 008 takes; the handoff gets them in T13.
+Each records the conservative choice 008 takes; the handoff gets them in T12.
 
 - Q132 `HashMap` or `Map`: 008 extends `Map` (new key types, `Symbol`) and does not add `HashMap`; `HashMap<K, V>` is BYN2830 with a fix to `Map<K, V>`. Conservative: one map with deterministic iteration serves self-hosting (stage 2 and 3 byte-identical, L009); an unordered `HashMap` can be added later without breaking any program, while removing one could not.
 - Q133 Symbol identity: one table per program run; IDs are not observable (no `id` member, no casts), so their values can change between versions; literal IDs are the sorted literal table's indexes. Conservative: nothing can depend on an ID.

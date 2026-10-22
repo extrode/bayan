@@ -91,7 +91,7 @@ main() uses alloc {
     var members: Map<MemberKey, i32> = []
     let name = intern("let x", 0, 3)
     if keywords.contains(name) {
-        members[MemberKey(owner: 1, name: name)] = keywords[name]
+        members[MemberKey { owner: 1, name: name }] = keywords[name]
     }
     for (key, value) in members {
         print($"{key.name} {value}")
