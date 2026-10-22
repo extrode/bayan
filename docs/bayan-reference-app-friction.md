@@ -84,3 +84,4 @@ A full re-read found these. Each one was fixed in both versions where it applied
 | Language rules | About 20 functions named with nouns (`bestDiscount`, `smallestBox`, `times`, …) broke the verb rule the audit enforced | Bayan only | Renamed |
 | Language rules | Types and fields used across modules weren't `public`, so struct literals in `main` and field reads in checkout wouldn't compile | Bayan only | Checked by hand |
 | Language rules | `List` passed where a `Span` was expected without `.asSpan` | Bayan only | Checked by hand |
+| Warehouse | `measureRoom` used `-|` to clamp at 0 g, but on a signed type `-|` saturates at the minimum (`100 -| 250` is -150). Found while writing Sūq-0 | Bayan only (the C# used `Math.Max`) | Sūq-0 golden prints both cases |
