@@ -1,6 +1,6 @@
 # Bayan status for porting Sūq
 
-Commit: `f797e578735ddaf85fa9c126546bb5313913c6bc` (`feat/design-round-2`)
+Commit: `f797e578735ddaf85fa9c126546bb5313913c6bc` (`feat/design-round-2`) — snapshot 2026-10-22 ~14:00; branches move after that
 
 Test run (`dotnet test -v q`): `Failed!  - Failed: 1, Passed: 1315, Skipped: 0, Total: 1316, Duration: 22 m 35 s`. The failure is `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray`, an allocation-count test, on a machine loaded by other test runs; re-run alone it passes (1/1).
 
@@ -48,8 +48,8 @@ let p = Point { x = 1, y: 2 };
 | 005 | terminal style for CLI output | Implemented (`tests/cases/style/`) |
 | 006 | interfaces and iterators | In progress on `feat/006-interfaces-iterators`: T1–T4 of 13 landed (parse, symbols, declarations, `dyn ref` type rules); T5 (conformance) in progress on `chore/worker-006-t5`, not merged; dispatch, `for … in` user types, codegen not landed |
 | 007 | delegates and lambdas | In progress on `feat/007-lambdas` (spec, plan and tasks only, revised for round 3 at `2b14e26`; no compiler code) |
-| 008 | `HashMap` and `Symbol` interning | Not started |
-| 009 | parser in Bayan | Not started |
+| 008 | `HashMap` and `Symbol` interning | Not started in code; spec, plan and tasks on `feat/008-hashmap-symbols` (`ce85b5a`) |
+| 009 | parser in Bayan | Not started in code; spec docs being written on `feat/009-selfhost-parser` |
 | 010 | semantics in Bayan, binder-equivalence law | Not started |
 | 011 | lowering and C emitter in Bayan | Not started |
 | 012 | driver and bootstrap | Not started |
@@ -61,7 +61,7 @@ let p = Point { x = 1, y: 2 };
 | Round 1 (`bayan-handoff.md`, addendum 001) | Applied |
 | Addendum 002 (laws, contracts, parallel iterators) | Partial: §1 keyword reservation only; `law` declarations, `bayan laws`, `ensures`, `.par()` not started |
 | Round 2 (`bayan-design-round-2.md`) | Partial *(round 2, unmerged)*, per section below |
-| Round 3 (`feat/design-round-3`) | Not applied in code. Docs in progress on `feat/design-round-3`: the HANDOFF with O1–O10 resolved (`735996c`), the plan (status "awaiting approval"), and GRAMMAR/STYLE updated. SPEC.md updated there too (`bf345fb`). A code-alignment pass on those docs is in progress on `chore/worker-r3-align` (not merged into `feat/design-round-3`) |
+| Round 3 (`feat/design-round-3`) | Not applied in code. Docs in progress on `feat/design-round-3`: the HANDOFF with O1–O10 resolved (`735996c`), the plan (status "awaiting approval"), and GRAMMAR/STYLE updated. SPEC.md updated there too (`bf345fb`). Code alignment of plan and GRAMMAR to the spec merged (`7cff9b9`) |
 
 Round 2 per section *(round 2, unmerged)*:
 
