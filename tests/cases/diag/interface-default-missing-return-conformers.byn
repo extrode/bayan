@@ -2,7 +2,7 @@
 interface IShape {
     i64 area();
     i64 big() {
-        if (area() > 3) {
+        if area() > 3 {
             return 1;
         }
     }

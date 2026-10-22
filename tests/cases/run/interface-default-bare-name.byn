@@ -20,5 +20,5 @@ struct Label : IShape {
     i64 area() => 1;
 }
 
-print($"{Sq { side = 1 }.twice()}");
-print($"{Label { size = "x" }.twice()}");
+print($"{Sq { side: 1 }.twice()}");
+print($"{Label { size: "x" }.twice()}");

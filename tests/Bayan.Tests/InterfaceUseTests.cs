@@ -46,7 +46,7 @@ public sealed class InterfaceUseTests
             }
 
             void run() {
-                var c = Circle { r = 2 };
+                var c = Circle { r: 2 };
                 show(c);
                 dyn ref IShape d = c;
                 peek(d);
@@ -76,7 +76,7 @@ public sealed class InterfaceUseTests
             i64 twice<T>(ref T shape) where T : IShape => measure(ref shape) * 2;
 
             void run() {
-                var s = Square { side = 2 };
+                var s = Square { side: 2 };
                 print($"{twice(ref s)}");
             }
             """);

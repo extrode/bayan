@@ -30,7 +30,7 @@ error BYN2807: `i32` does not conform to `IShape`: missing `area`
 
 error BYN2807: `Square` does not conform to `IShape`: missing `area`
 
-  34 │     Box<Square> b = Box<Square> { item = s };
+  34 │     Box<Square> b = Box<Square> { item: s };
      │     ^^^^^^^^^^^ the generic code needs this of its type arguments
      │
   help: add `: IShape` to `Square` and provide `area`

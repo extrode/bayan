@@ -26,11 +26,18 @@ struct Digits : IParser {
     }
 }
 
+i64 report(ParseError e) {
+    print($"failed with {e == ParseError.empty ? "empty" : "notDigit"}");
+    return -1;
+}
+
 void attempt(dyn ref readonly IParser p, string s) {
-    let n = p.parse(s) catch (e) {
-        print($"failed with {e == ParseError.empty ? "empty" : "notDigit"}");
-        return;
+    let n = p.parse(s) catch switch {
+        ParseError e => report(e),
     };
+    if n < 0 {
+        return;
+    }
     print($"parsed {n}");
 }
 
@@ -41,11 +48,11 @@ void run(dyn ref readonly IParser p) fails ParseError {
 }
 
 void main() {
-    let d = Digits { base = 10 };
+    let d = Digits { base: 10 };
     attempt(d, "4");
     attempt(d, "");
     attempt(d, "q");
-    run(d) catch (e) {
-        print($"run failed with {e == ParseError.empty ? "empty" : "notDigit"}");
+    run(d) catch switch {
+        ParseError e => print($"run failed with {e == ParseError.empty ? "empty" : "notDigit"}"),
     };
 }

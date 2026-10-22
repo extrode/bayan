@@ -18,8 +18,8 @@ struct Circle : IShape {
     string describe() => $"circle {area()}";
 }
 
-let s = Square { side = 3 };
-let c = Circle { r = 2 };
+let s = Square { side: 3 };
+let c = Circle { r: 2 };
 print(s.describe());
 print(c.describe());
 print(s.kind);

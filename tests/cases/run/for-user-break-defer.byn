@@ -23,7 +23,7 @@ struct Countdown : IEnumerator {
 
 void indexed() {
     defer print("indexed deferred");
-    let digits = Digits { size = 5 };
+    let digits = Digits { size: 5 };
     var seen = 0;
     for d in digits {
         defer print($"after {d}");
@@ -36,7 +36,7 @@ void indexed() {
 
 void enumerated() {
     defer print("enumerated deferred");
-    var steps = Countdown { left = 5 };
+    var steps = Countdown { left: 5 };
     var seen = 0;
     for n in steps {
         defer print($"after {n}");

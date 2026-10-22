@@ -8,7 +8,7 @@ struct Digits : IIndexable {
 
 void show<T>(T items) where T : IIndexable {
     T.Item? none = null;
-    print($"{none == null}");
+    print($"{none is null}");
 }
 
 show(Digits {});

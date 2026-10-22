@@ -46,8 +46,8 @@ public sealed class DynRefEmitTests
             void show(dyn ref readonly IShape s) => print($"{s.area()}");
 
             void main() {
-                let c = Circle { r = 1 };
-                let s = Square { side = 2 };
+                let c = Circle { r: 1 };
+                let s = Square { side: 2 };
                 show(c);
                 print($"{s.area()}");
             }

@@ -13,14 +13,14 @@ struct Countdown : IEnumerator {
 
 Countdown from(i64 n) {
     print($"from {n}");
-    return Countdown { left = n };
+    return Countdown { left: n };
 }
 
 void main() {
     for n in from(3) {
         print($"step {n}");
     }
-    for i64 n in (Countdown { left = 2 }) {
+    for i64 n in (Countdown { left: 2 }) {
         print($"literal {n}");
     }
 }

@@ -45,7 +45,7 @@ public sealed class UserIterationTests
             i64 get(i64 index) => index;
         }
 
-        Countdown from(i64 n) => Countdown { left = n };
+        Countdown from(i64 n) => Countdown { left: n };
 
         """;
 
@@ -63,7 +63,7 @@ public sealed class UserIterationTests
                 let digits = Digits {};
                 for d in digits { print($"{d}"); }
                 for i64 d in digits { print($"{d}"); }
-                var steps = Countdown { left = 3 };
+                var steps = Countdown { left: 3 };
                 for n in steps { print($"{n}"); }
                 for i64 n in from(2) { print($"{n}"); }
                 var both = Both {};

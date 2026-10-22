@@ -25,11 +25,11 @@ i64 twice<T>(ref T shape) where T : IShape => measure(ref shape) * 2;
 i64 loose<T>(ref T shape) => measure(ref shape);
 
 void main() {
-    var c = Circle { r = 1 };
-    var s = Square { side = 2 };
+    var c = Circle { r: 1 };
+    var s = Square { side: 2 };
     print($"{measure(ref c)} {measure(ref s)}");
     print($"{twice(ref s)}");
     var n = 4;
     print($"{measure(ref n)}");
-    Box<Square> b = Box<Square> { item = s };
+    Box<Square> b = Box<Square> { item: s };
 }

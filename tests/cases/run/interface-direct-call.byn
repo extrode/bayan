@@ -15,5 +15,5 @@ struct Rect : IShape {
     i64 times(i64 by) => area() * by;
 }
 
-let r = Rect { w = 3, h = 4 };
+let r = Rect { w: 3, h: 4 };
 print($"{r.name} {r.area()} {r.times(2)}");

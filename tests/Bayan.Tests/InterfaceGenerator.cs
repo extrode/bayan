@@ -22,7 +22,7 @@ namespace Bayan.Tests;
 ///               "void rwS(ref S v)" "void rwVia&lt;T&gt;(ref T v) where T : I" "void rwDyn(dyn ref I v)"
 ///               ro bodies: the sequence without ref this calls; rw bodies: the whole sequence
 /// sequence   := step{4..8}; step := print of a call to any non-mutating member | "v.m&lt;j&gt;(c);"
-/// main       := per section, per conformer: "{ var v = S { f0 = a, f1 = b }; ro(v); rw(ref v) or rwDyn(v); print fields }"
+/// main       := per section, per conformer: "{ var v = S { f0: a, f1: b }; ro(v); rw(ref v) or rwDyn(v); print fields }"
 /// </code>
 /// </summary>
 internal static class InterfaceGenerator
@@ -81,7 +81,7 @@ internal static class InterfaceGenerator
                 for (var k = 0; k < interfaces; k++)
                     foreach (var (name, a, b) in conformers[k])
                     {
-                        _sb.Append($"    {{\n        var v = {name} {{ f0 = {a}, f1 = {b} }};\n");
+                        _sb.Append($"    {{\n        var v = {name} {{ f0: {a}, f1: {b} }};\n");
                         _sb.Append($"        {string.Format(ro, name, k)}(v);\n");
                         _sb.Append($"        {string.Format(rw, name, k)};\n");
                         _sb.Append($"        print($\"{name} {{v.f0}} {{v.f1}}\");\n    }}\n");

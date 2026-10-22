@@ -17,7 +17,7 @@ struct Empty : ISized {
     i64 x;
 }
 
-let b = Box { count = 3, size = 4 };
+let b = Box { count: 3, size: 4 };
 print($"{b.count}");
 print(b.show());
-print(Empty { x = 1 }.show());
+print(Empty { x: 1 }.show());
