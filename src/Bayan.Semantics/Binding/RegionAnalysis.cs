@@ -132,7 +132,7 @@ internal sealed class RegionAnalysis
                 if (_reporting)
                 {
                     var owners = iterable.Owners;
-                    if (RootLocal(f.Iterable) is { } root && f.Iterable.Type is ListType or MapType or ArrayType) owners = owners.Add(root);
+                    if (RootLocal(f.Iterable) is { } root && (f.Iterable.Type is ListType or MapType or ArrayType || f.UserIteration is not null)) owners = owners.Add(root);
                     foreach (var owner in owners) _loans.Add(new Loan(owner, null, f.Syntax.Span.Start, f.Syntax.Span.End));
                 }
                 _depth++;

@@ -700,7 +700,8 @@ internal sealed partial class Binder
         PushScope();
         var iterable = BindExpr(f.Iterable);
         if (f.Try) return BindForTry(f, iterable, target);
-        TypeSymbol element = iterable.Type switch
+        UserIteration? user = null;
+        TypeSymbol element = UserElement(f, iterable, ref user) ?? iterable.Type switch
         {
             RangeType r => r.Element,
             SpanType s => s.Element,
@@ -716,7 +717,45 @@ internal sealed partial class Binder
         variable.BorrowsSubject = true;
         var body = BindForBody(f, variable, target);
         PopScope();
-        return new BoundFor(f, variable, iterable, body, target);
+        return new BoundFor(f, variable, iterable, body, target) { UserIteration = user };
+    }
+
+    /// <summary>
+    /// The <c>Item</c> of a struct conforming to <c>IIndexable</c> (preferred) or <c>IEnumerator</c>, with how the loop
+    /// walks it in <paramref name="user"/>; null when it conforms to neither. A named enumerator must be writable,
+    /// since the loop calls <c>moveNext(ref this)</c> on it; a temporary one is spilled to a hidden <c>var</c>.
+    /// </summary>
+    private TypeSymbol? UserElement(ForStmt f, BoundExpr iterable, ref UserIteration? user)
+    {
+        if (iterable.Type is not StructSymbol s) return null;
+        var c = s.Conformances.Find(c => c.Interface == _c.Builtins.IIndexable) ?? s.Conformances.Find(c => c.Interface == _c.Builtins.IEnumerator);
+        if (c is null) return null;
+        var indexable = c.Interface == _c.Builtins.IIndexable;
+        var advance = indexable ? c.Interface.FindProperty("count")! : c.Interface.FindMethods("moveNext").First();
+        var item = indexable ? c.Interface.FindMethods("get").First() : c.Interface.FindProperty("current")!;
+        // A missing member or `Item` is reported by the conformance check.
+        if (c.AssociatedTypes.GetValueOrDefault("Item") is not { IsError: false } element
+            || !c.Witnesses.TryGetValue(advance, out var advanceWitness) || !c.Witnesses.TryGetValue(item, out var itemWitness))
+            return ErrorType.Instance;
+        if (TypeFacts.IsUnique(element))
+        {
+            Report(DiagnosticCodes.Unsupported, f.Iterable.Span, [$"a `for` over the unique `Item` `{element.DisplayName}` of `{s.Name}`"],
+                help: $"make `{s.Name}.Item` a value that is not unique, such as an index, and look the item up in the loop");
+            return ErrorType.Instance;
+        }
+        LocalSymbol? spill = null;
+        if (!indexable)
+        {
+            if (iterable is BoundLocal or BoundThis or BoundField or BoundTupleElement or BoundIndex)
+                _c.MutationChecks.Add(new MutationCheck(this, advance, iterable));
+            else
+            {
+                spill = new LocalSymbol($"<enumerator {_nextLocalId}>", new Location(Source, f.Iterable.Span), s, LocalKind.Var) { Id = _nextLocalId++ };
+                _fn?.Locals.Add(spill);
+            }
+        }
+        user = new UserIteration(indexable ? IterationKind.Indexable : IterationKind.Enumerator, advanceWitness, itemWitness, spill);
+        return element;
     }
 
     /// <summary>The element type, or the type written in <c>for T x in e</c> when the element converts to it.</summary>
@@ -798,7 +837,7 @@ internal sealed partial class Binder
     {
         if (FallibleNext(type) is null)
             Report(DiagnosticCodes.NotIterable, f.Iterable.Span, [type.DisplayName],
-                help: "use `for` over ranges (`0..n`), spans, lists, arrays and strings");
+                help: "use `for` over ranges (`0..n`), spans, lists, arrays, strings, or a type conforming to `IIndexable` or `IEnumerator`");
         else
             Report(DiagnosticCodes.NotIterable, f.Iterable.Span, [type.DisplayName], label: "each step can fail",
                 help: "write `for try`", fix: new Fix(new TextSpan(f.Span.Start + "for".Length, 0), " try"));
