@@ -1,0 +1,6 @@
+error BYN2805: `Square` lists `IShape` twice
+
+  5 │ struct Square : IShape, IShape {
+    │                         ^^^^^^ already listed
+    │
+  help: remove the second `IShape`

@@ -22,6 +22,19 @@ public static class Naming
                 help: $"rename it `{fixedName}`", fix: new Fix(name.Span, fixedName));
     }
 
+    /// <summary>An interface name is <c>I</c>, then an uppercase letter, then PascalCase (<c>IShape</c>).</summary>
+    internal static void CheckInterface(Compilation c, SourceText source, Name name)
+    {
+        if (name.Text.Length > 1 && name.Text[0] == 'I' && char.IsUpper(name.Text[1]))
+        {
+            CheckType(c, source, name);
+            return;
+        }
+        var fixedName = "I" + ToPascal(name.Text);
+        c.Report(DiagnosticCodes.InterfaceName, source, name.Span, [name.Text], label: "an interface name",
+            help: $"rename it to `{fixedName}`", fix: new Fix(name.Span, fixedName));
+    }
+
     internal static void CheckValue(Compilation c, SourceText source, Name name)
     {
         if (name.Text == "_") return;

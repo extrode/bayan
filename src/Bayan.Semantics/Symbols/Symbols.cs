@@ -53,6 +53,8 @@ public sealed class ModuleSymbol(string name, string directory) : Symbol(name, n
 
     public List<UnionSymbol> Unions { get; } = new();
 
+    public List<InterfaceSymbol> Interfaces { get; } = new();
+
     public List<FunctionSymbol> AllFunctions { get; } = new();
 
     public List<TestSymbol> Tests { get; } = new();
@@ -125,6 +127,9 @@ public sealed class StructSymbol(string name, Location location, ModuleSymbol mo
     public PropertySymbol? FindProperty(string name) => Properties.Find(p => p.Name == name);
 
     public IEnumerable<FunctionSymbol> FindMethods(string name) => Methods.Where(m => m.Name == name);
+
+    /// <summary>The interfaces it lists after <c>:</c>, resolved and without duplicates; not yet checked.</summary>
+    public List<InterfaceSymbol> Bases { get; } = new();
 
     /// <summary>The checked interfaces it lists after <c>:</c>, one per interface instance.</summary>
     public List<Conformance> Conformances { get; } = new();
@@ -260,6 +265,8 @@ public sealed class InterfaceSymbol(string name, Location location, ModuleSymbol
     public Accessibility Access { get; } = access;
 
     public FileContext File { get; } = file;
+
+    public required InterfaceDecl Decl { get; init; }
 
     /// <summary>Abstract and default methods, each with <see cref="FunctionSymbol.Interface"/> set.</summary>
     public List<FunctionSymbol> Methods { get; } = new();

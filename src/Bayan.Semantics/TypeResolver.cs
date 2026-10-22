@@ -156,6 +156,11 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 NoTypeArgs(n);
                 return compilation.Builtins.Utf8Error;
             }
+            if (compilation.Builtins.FindInterface(text) is { } builtin)
+            {
+                NoTypeArgs(n);
+                return builtin;
+            }
             compilation.Report(DiagnosticCodes.UnknownType, file.Source, name.Span, [text],
                 help: Suggest(text) is { } s ? $"did you mean `{s}`?" : null);
             return ErrorType.Instance;
