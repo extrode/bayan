@@ -1,0 +1,4 @@
+let n = 5;
+List<i32> xs = [..n, 1];
+Map<string, i32> stock = ["a": 1];
+List<i32> ys = [1, ..stock];

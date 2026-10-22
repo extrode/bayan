@@ -1,0 +1,5 @@
+struct OrderForm {
+    i32 quantity requires quantity > 0;
+}
+
+print("x");

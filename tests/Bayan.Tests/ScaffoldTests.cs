@@ -65,7 +65,7 @@ public sealed class ScaffoldTests
         }
         var (exit, output, stderr) = Run("test", app);
         Assert.True(exit == CliApp.ExitOk, output + stderr);
-        Assert.Contains("1 test: 1 passed", output);
+        Assert.Contains("1 passed · ", output);
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public sealed class ScaffoldTests
         Assert.True(File.Exists(Path.Combine(lib, "src", "myLib", "myLib.byn")));
         var (exit, output, stderr) = Run("test", lib);
         Assert.True(exit == CliApp.ExitOk, output + stderr);
-        Assert.Contains("1 test: 1 passed", output);
+        Assert.Contains("1 passed · ", output);
         Assert.Equal(CliApp.ExitOk, Run("check", lib).Exit);
         var (runExit, _, runErr) = Run("run", lib);
         Assert.Equal(CliApp.ExitUsage, runExit);
@@ -159,7 +159,7 @@ public sealed class ScaffoldTests
     {
         var dir = Path.Combine(Fresh("camel"), "myApp");
         Assert.Equal(CliApp.ExitOk, Run("new", dir, "--vcs", "none").Exit);
-        Assert.Contains("name    = \"local/my-app\"", File.ReadAllText(Path.Combine(dir, "package.byn")));
+        Assert.Contains("name: \"local/my-app\"", File.ReadAllText(Path.Combine(dir, "package.byn")));
     }
 
     [Fact]

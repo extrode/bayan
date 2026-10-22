@@ -19,6 +19,10 @@ internal sealed partial class Binder
     private Scope _scope = new(null);
     private readonly List<JumpTarget> _targets = new();
     private int _deferDepth;
+    private bool _inPanicHandler;
+    /// <summary>The body's first statement: the one place <c>Panic.onPanic</c> may be set.</summary>
+    private Stmt? _firstStatement;
+    private bool _onPanicSet;
     private int _nextLocalId;
 
     // Spec R4: a first pass holds its diagnostics and records the first integer type each untyped
@@ -28,6 +32,8 @@ internal sealed partial class Binder
     private readonly Dictionary<LocalSymbol, LocalDecl> _pending = new();
     private readonly Dictionary<LocalDecl, TypeSymbol> _constraints = new();
     private readonly Dictionary<LocalDecl, LocalDecl> _peers = new();
+    /// <summary>Let locals and parameters a null check proved present, each valid while its scope is open (spec §7.2).</summary>
+    private readonly List<(Scope Scope, LocalSymbol Local)> _nonNull = new();
 
     public Binder(Compilation c, FileContext file, FunctionSymbol? fn, StructSymbol? container,
         IReadOnlyDictionary<string, TypeSymbol>? typeArgs = null, IReadOnlyDictionary<LocalDecl, TypeSymbol>? seeds = null)
@@ -128,7 +134,15 @@ internal sealed partial class Binder
     {
         _fn?.Locals.Add(local);
         if (name.Text == "_") return;
-        if (_scope.Lookup(name.Text) is { } existing)
+        // A `let` may take the name of another local in the same scope to give it a new type (HANDOFF §4).
+        if (local.Kind == LocalKind.Let && _scope.Locals.TryGetValue(name.Text, out var same))
+        {
+            if (same.Type.Equals(local.Type) && !local.Type.IsError)
+                Report(DiagnosticCodes.SameTypeShadowing, name.Span, [name.Text, local.Type.DisplayName],
+                    label: same.Location is { } at ? $"`{name.Text}` is declared on line {at.Line}" : null,
+                    help: "use the first one, or rename this one to say how it differs");
+        }
+        else if (_scope.Lookup(name.Text) is { } existing)
         {
             var where = existing.Location is { } l ? $"line {l.Line}" : "here";
             Report(DiagnosticCodes.Shadowing, name.Span, [name.Text], label: $"already declared on {where}",
@@ -153,19 +167,46 @@ internal sealed partial class Binder
     {
         DeclareParameters();
         BindParameterDefaults();
+        var checks = BindRequires(decl);
         if (decl.Body is { } body)
         {
-            _fn!.Body = BindBlock(body);
+            _firstStatement = body.Statements.FirstOrDefault();
+            var block = BindBlock(body);
+            _fn!.Body = checks.Length == 0 ? block : new BoundBlock(body, [.. checks, block]);
         }
         else if (decl.ExpressionBody is { } e)
         {
-            _fn!.Body = new BoundBlock(e, [BindExpressionBody(e)]);
+            _fn!.Body = new BoundBlock(e, [.. checks, BindExpressionBody(e)]);
         }
         else
         {
             // The parser already reported the missing body.
             _fn!.Body = new BoundBlock(decl, []);
         }
+    }
+
+    /// <summary>Binds the <c>requires</c> clauses into entry checks that panic in every build mode.</summary>
+    private BoundStmt[] BindRequires(FunctionDecl decl)
+    {
+        var conditions = new List<BoundExpr>();
+        var checks = new List<BoundStmt>();
+        foreach (var r in decl.Requires)
+        {
+            var condition = BindExpr(r, PrimitiveType.Bool);
+            if (!condition.Type.IsBool)
+            {
+                if (!condition.Type.IsError)
+                    Report(DiagnosticCodes.RequiresNotBool, r.Span, [condition.Type.DisplayName],
+                        help: "write a condition the arguments must meet, such as `count > 0`");
+                continue;
+            }
+            conditions.Add(condition);
+            var message = Literal(r, PrimitiveType.String, "contract violated: " + Source.GetText(r.Span));
+            var panic = new BoundCall(r, _c.Builtins.Panic, null, [message], PrimitiveType.Never);
+            checks.Add(new BoundIf(r, new BoundUnary(r, UnaryOp.Not, condition, PrimitiveType.Bool), new BoundExprStmt(r, panic), null));
+        }
+        _fn!.Requires = conditions.ToArray();
+        return checks.ToArray();
     }
 
     private void BindParameterDefaults()
@@ -205,15 +246,31 @@ internal sealed partial class Binder
     public void BindMain(List<GlobalStatement> statements)
     {
         var bound = new List<BoundStmt>();
+        _firstStatement = statements[0].Statement;
         foreach (var g in statements) bound.Add(BindStatement(g.Statement));
         _fn!.InfersErrors = true;
         _fn.Body = new BoundBlock(statements[0], bound.ToArray());
     }
 
-    public void BindTest(TestDecl decl)
+    /// <summary>A test body; a <c>[Cases]</c> case first binds each parameter as a <c>let</c> of its value.</summary>
+    public void BindTest(TestDecl decl, Expr[]? values)
     {
         _fn!.InfersErrors = true;
-        _fn.Body = BindBlock(decl.Body);
+        if (values is null)
+        {
+            _fn.Body = BindBlock(decl.Body);
+            return;
+        }
+        var statements = new List<BoundStmt>();
+        for (var i = 0; i < decl.Params.Length; i++)
+        {
+            var p = decl.Params[i];
+            var type = ResolveType(p.Type);
+            var value = BindConverted(values[i], type);
+            statements.Add(new BoundLocalDecl(p, DeclareLocal(p.Name, type, LocalKind.Let), value));
+        }
+        statements.Add(BindBlock(decl.Body));
+        _fn.Body = new BoundBlock(decl.Body, statements.ToArray());
     }
 
     public BoundExpr BindFieldDefault(FieldSymbol field)
@@ -240,7 +297,7 @@ internal sealed partial class Binder
                 if (arg is BoundEnumMember em) member.Values[i] = new ConstantValue((Int128)em.Member.Ordinal);
                 else if (arg.Constant is { } value) member.Values[i] = value;
                 else Report(DiagnosticCodes.EnumArgumentNotConstant, arg.Syntax.Span, [ps[i].Name, name],
-                    label: "computed at run time", help: "enum data is static; use literals and `const`s only");
+                    label: "computed at run time", help: "use literals and `const`s only; enum data is static");
             }
         }
     }
@@ -331,7 +388,7 @@ internal sealed partial class Binder
         }
         if (n < 1 || n > 255)
         {
-            Report(DiagnosticCodes.InvalidExitCode, arg.Value.Span, [], help: "0 means success, and exit codes above 255 do not survive the operating system");
+            Report(DiagnosticCodes.InvalidExitCode, arg.Value.Span, [], help: "pick a code from 1 to 255; 0 means success, and exit codes above 255 do not survive the operating system");
             return 1;
         }
         return (int)n;
@@ -370,6 +427,9 @@ internal sealed partial class Binder
                 return BindLocalDecl(d);
             case ExprStmt e:
                 return new BoundExprStmt(e, BindStatementExpression(e.Expr));
+            case AssignStmt { Op: AssignOp.Assign, Target: MemberExpr { Target: NameExpr { Name.Text: "Panic" }, Member.Text: "onPanic" } } a
+                when _scope.Lookup("Panic") is null:
+                return BindOnPanic(a);
             case AssignStmt a:
                 return BindAssign(a);
             case IncDecStmt i:
@@ -383,21 +443,22 @@ internal sealed partial class Binder
             case IfStmt i:
             {
                 var cond = BindCondition(i.Condition);
-                var then = BindBody(i.Then);
-                var els = i.Else is { } e ? BindBody(e) : null;
-                return new BoundIf(i, cond, then, els);
+                var then = Narrowed(cond, true, () => BindBody(i.Then));
+                var els = i.Else is { } e ? Narrowed(cond, false, () => BindBody(e)) : null;
+                return NarrowAfter(new BoundIf(i, cond, then, els) { Never = i.Likelihood == Likelihood.Never });
             }
             case UnlessStmt u:
             {
-                var cond = BindCondition(u.Condition);
-                return new BoundIf(u, Negate(u.Condition, cond), BindBody(u.Body), null);
+                var cond = Negate(u.Condition, BindCondition(u.Condition));
+                return NarrowAfter(new BoundIf(u, cond, Narrowed(cond, true, () => BindBody(u.Body)), null));
             }
             case GuardedStmt g:
             {
                 // The condition is evaluated first (spec §7.3); pattern variables it binds stay in scope.
                 var cond = BindCondition(g.Condition);
-                var body = BindStatement(g.Statement);
-                return new BoundIf(g, g.Unless ? Negate(g.Condition, cond) : cond, body, null);
+                if (g.Unless) cond = Negate(g.Condition, cond);
+                var body = Narrowed(cond, true, () => BindStatement(g.Statement));
+                return NarrowAfter(new BoundIf(g, cond, body, null));
             }
             case WhileStmt w:
             {
@@ -410,6 +471,8 @@ internal sealed partial class Binder
                 PopScope();
                 return new BoundWhile(w, cond, body, target);
             }
+            case WhileLetStmt w:
+                return BindWhileLet(w, labelTarget ?? new JumpTarget(null, true));
             case DoWhileStmt d:
             {
                 var target = labelTarget ?? new JumpTarget(null, true);
@@ -425,15 +488,17 @@ internal sealed partial class Binder
                 return BindLabeled(l);
             case SwitchStmt s:
                 return BindSwitchStatement(s, labelTarget ?? new JumpTarget(null, false));
-            case DeferStmt d:
+            case DeferStmt { Kind: DeferKind.Always } d:
             {
                 _deferDepth++;
                 var body = BindBody(d.Body);
                 _deferDepth--;
                 return new BoundDefer(d, body);
             }
-            case ErrdeferStmt e:
-                return BindErrdefer(e);
+            case DeferStmt { Kind: DeferKind.Failing } d:
+                return BindErrdefer(d);
+            case DeferStmt d:
+                return BindPanicDefer(d);
             case ContextStmt c:
                 return BindContext(c);
             case EmptyStmt:
@@ -453,13 +518,83 @@ internal sealed partial class Binder
 
     private BoundExpr BindCondition(Expr e) => BindConverted(e, PrimitiveType.Bool);
 
+    // ── Null narrowing (spec §7.2) ───────────────────────────────────────────────
+
+    private bool IsNonNull(LocalSymbol local)
+    {
+        foreach (var (scope, l) in _nonNull)
+        {
+            if (l != local) continue;
+            for (var s = _scope; s is not null; s = s.Parent)
+                if (s == scope) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Binds code that runs only when <paramref name="cond"/> is <paramref name="whenTrue"/>.</summary>
+    private T Narrowed<T>(BoundExpr cond, bool whenTrue, Func<T> bind)
+    {
+        var mark = _nonNull.Count;
+        foreach (var l in NonNullWhen(cond, whenTrue)) _nonNull.Add((_scope, l));
+        var result = bind();
+        _nonNull.RemoveRange(mark, _nonNull.Count - mark);
+        return result;
+    }
+
+    /// <summary>When one branch always exits, the rest of the block runs only under the other.</summary>
+    private BoundIf NarrowAfter(BoundIf i)
+    {
+        var thenExits = Exits(i.Then);
+        var elseExits = i.Else is { } e && Exits(e);
+        if (thenExits != elseExits)
+            foreach (var l in NonNullWhen(i.Condition, elseExits)) _nonNull.Add((_scope, l));
+        return i;
+    }
+
+    private static bool Exits(BoundStmt s) => s switch
+    {
+        BoundReturn or BoundBreak or BoundContinue => true,
+        BoundBlock b => b.Statements.Length > 0 && Exits(b.Statements[^1]),
+        BoundExprStmt e => e.Expr.Type.IsNever,
+        BoundIf { Else: { } e } i => Exits(i.Then) && Exits(e),
+        _ => false,
+    };
+
+    /// <summary>The let locals and parameters that <paramref name="cond"/> being <paramref name="whenTrue"/> proves present; <c>var</c>s can change, so they never narrow.</summary>
+    private static List<LocalSymbol> NonNullWhen(BoundExpr cond, bool whenTrue)
+    {
+        var found = new List<LocalSymbol>();
+        Collect(cond, whenTrue);
+        return found;
+
+        void Collect(BoundExpr c, bool when)
+        {
+            switch (c)
+            {
+                case BoundIs { Value: BoundLocal { Local: { Type: OptionalType } l } } i
+                    when l.Kind == LocalKind.Let || l is ParameterSymbol { Modifier: ParamModifier.None or ParamModifier.In }:
+                    if (i.Pattern is BoundNotPattern { Operand: BoundConstantPattern { Value: BoundDefault } } ? when
+                        : i.Pattern is BoundConstantPattern { Value: BoundDefault } && !when)
+                        found.Add(l);
+                    break;
+                case BoundUnary { Op: UnaryOp.Not } u:
+                    Collect(u.Operand, !when);
+                    break;
+                case BoundBinary { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } b when when == (b.Op == BinaryOp.LogicalAnd):
+                    Collect(b.Left, when);
+                    Collect(b.Right, when);
+                    break;
+            }
+        }
+    }
+
     private BoundStmt BindLabeled(LabeledStmt l)
     {
         CheckValueName(l.Label);
         if (_targets.Any(t => t.Label == l.Label.Text))
             Report(DiagnosticCodes.DuplicateDeclaration, l.Label.Span, [l.Label.Text], label: "an enclosing statement has this label");
         var target = new JumpTarget(l.Label.Text, l.Statement is not SwitchStmt);
-        if (l.Statement is not (WhileStmt or DoWhileStmt or ForStmt or SwitchStmt))
+        if (l.Statement is not (WhileStmt or WhileLetStmt or DoWhileStmt or ForStmt or SwitchStmt))
         {
             Report(DiagnosticCodes.LabelNotOnLoop, l.Label.Span, [l.Label.Text]);
             return BindStatement(l.Statement);
@@ -512,7 +647,7 @@ internal sealed partial class Binder
     {
         if (type == BuiltinType.Arena || type is ListType || type.IsError) return;
         Report(DiagnosticCodes.NotDisposable, d.Name.Span, [type.DisplayName],
-            help: "`using` is for values that own memory: `Arena` and `List<T>`");
+            help: "use `using` only for values that own memory: `Arena` and `List<T>`");
     }
 
     /// <summary>The type a binding gets from its initializer when none is written.</summary>
@@ -533,10 +668,35 @@ internal sealed partial class Binder
         }
     }
 
+    /// <summary><c>while let x = e { … }</c> is <c>while (e is { } x) { … }</c>.</summary>
+    private BoundStmt BindWhileLet(WhileLetStmt w, JumpTarget target)
+    {
+        PushScope();
+        var value = BindExpr(w.Value);
+        if (value.Type is not (OptionalType or ErrorType))
+            Report(DiagnosticCodes.WhileLetNotOptional, w.Value.Span, [value.Type.DisplayName],
+                help: $"loop with `while` and a condition, or bind it once: `let {w.Variable.Text} = …;`");
+        var cond = new BoundIs(w, value, BindPresent(w.Variable, value.Type));
+        _targets.Add(target);
+        var body = BindBody(w.Body);
+        _targets.RemoveAt(_targets.Count - 1);
+        PopScope();
+        return new BoundWhile(w, cond, body, target);
+    }
+
+    /// <summary>The pattern <c>{ } x</c>: on an optional, matches a present value and binds it unwrapped.</summary>
+    private BoundPropertyPattern BindPresent(Name name, TypeSymbol input)
+    {
+        var local = DeclareLocal(name, Unwrap(input), LocalKind.PatternVariable);
+        local.BorrowsSubject = true;
+        return new BoundPropertyPattern(name, input, Unwrap(input), [], local);
+    }
+
     private BoundStmt BindFor(ForStmt f, JumpTarget target)
     {
         PushScope();
         var iterable = BindExpr(f.Iterable);
+        if (f.Try) return BindForTry(f, iterable, target);
         TypeSymbol element = iterable.Type switch
         {
             RangeType r => r.Element,
@@ -546,33 +706,105 @@ internal sealed partial class Binder
             Symbols.ArrayType a => a.Element,
             PrimitiveType { Kind: PrimitiveKind.String } => PrimitiveType.Char,
             ErrorType => ErrorType.Instance,
-            _ => NotIterable(f.Iterable, iterable.Type),
+            _ => NotIterable(f, iterable.Type),
         };
-        if (f.Type is { } t)
-        {
-            var declared = ResolveType(t);
-            if (!declared.IsError && !element.IsError && !declared.Equals(element) && Conversions.Implicit(element, declared) is null)
-                Report(DiagnosticCodes.TypeMismatch, t.Span, [element.DisplayName, declared.DisplayName]);
-            else if (!declared.IsError) element = declared;
-        }
+        element = DeclaredElement(f, element);
         var variable = DeclareLocal(f.Variable, element, f.Kind == BindingKind.Var ? LocalKind.Var : LocalKind.ForVariable);
         variable.BorrowsSubject = true;
-        _targets.Add(target);
-        var body = BindBody(f.Body);
-        _targets.RemoveAt(_targets.Count - 1);
+        var body = BindForBody(f, variable, target);
         PopScope();
         return new BoundFor(f, variable, iterable, body, target);
     }
 
-    private TypeSymbol NotIterable(Expr syntax, TypeSymbol type)
+    /// <summary>The element type, or the type written in <c>for T x in e</c> when the element converts to it.</summary>
+    private TypeSymbol DeclaredElement(ForStmt f, TypeSymbol element)
     {
-        Report(DiagnosticCodes.NotIterable, syntax.Span, [type.DisplayName],
-            help: "`for` iterates over ranges (`0..n`), spans, lists, arrays and strings");
+        if (f.Type is not { } t) return element;
+        var declared = ResolveType(t);
+        if (!declared.IsError && !element.IsError && !declared.Equals(element) && Conversions.Implicit(element, declared) is null)
+            Report(DiagnosticCodes.TypeMismatch, t.Span, [element.DisplayName, declared.DisplayName]);
+        else if (!declared.IsError) element = declared;
+        return element;
+    }
+
+    /// <summary>The loop body; for <c>for (k, v) in e</c>, preceded by one binding per element of the tuple <paramref name="variable"/>.</summary>
+    private BoundStmt BindForBody(ForStmt f, LocalSymbol variable, JumpTarget target)
+    {
+        var prelude = new List<BoundStmt>();
+        if (f.Names.Length > 0)
+        {
+            if (variable.Type is TupleType tt && tt.Fields.Count == f.Names.Length)
+            {
+                for (var i = 0; i < f.Names.Length; i++)
+                {
+                    var name = f.Names[i];
+                    var element = DeclareLocal(name, tt.Fields[i].Type, LocalKind.ForVariable);
+                    element.BorrowsSubject = true;
+                    prelude.Add(new BoundLocalDecl(name, element, new BoundTupleElement(name, new BoundLocal(name, variable), i, element.Type)));
+                }
+            }
+            else
+            {
+                if (!variable.Type.IsError)
+                    Report(DiagnosticCodes.PatternMismatch, f.Variable.Span, [$"{f.Names.Length} names", variable.Type.DisplayName],
+                        help: "name one loop variable, or iterate over pairs such as a map's entries");
+                foreach (var name in f.Names) DeclareLocal(name, ErrorType.Instance, LocalKind.ForVariable);
+            }
+        }
+        _targets.Add(target);
+        var body = BindBody(f.Body);
+        _targets.RemoveAt(_targets.Count - 1);
+        return prelude.Count == 0 ? body : new BoundBlock(f.Body, [.. prelude, body]);
+    }
+
+    /// <summary>
+    /// <c>for try x in e { … }</c> over a value whose <c>next()</c> returns <c>T?</c> and fails: the loop owns the value
+    /// and runs <c>while (try seq.next() is { } x) { … }</c>, so a failing step propagates like any <c>try</c>.
+    /// </summary>
+    private BoundStmt BindForTry(ForStmt f, BoundExpr iterable, JumpTarget target)
+    {
+        if (FallibleNext(iterable.Type) is null)
+        {
+            if (!iterable.Type.IsError)
+                Report(DiagnosticCodes.NotIterable, f.Iterable.Span, [iterable.Type.DisplayName],
+                    help: "give `for try` a value with a failing `next()` that returns `T?`; write `for x in …` for a sequence that cannot fail");
+            foreach (var name in f.Names.Length > 0 ? f.Names : [f.Variable]) DeclareLocal(name, ErrorType.Instance, LocalKind.ForVariable);
+            BindBody(f.Body);
+            PopScope();
+            return new BoundErrorStmt(f);
+        }
+        var span = f.Iterable.Span;
+        var sequence = DeclareLocal(new Name(span, $"<sequence {_nextLocalId}>"), iterable.Type, LocalKind.Temp);
+        var next = new TryExpr(span, new CallExpr(span, new MemberExpr(span, new NameExpr(span, new Name(span, sequence.Name), []), new Name(span, "next"), false), []));
+        var step = BindExpr(next);
+        if (f.Type is { } t && ResolveType(t) is { IsError: false } declared && !Unwrap(step.Type).IsError && !declared.Equals(Unwrap(step.Type)))
+            Report(DiagnosticCodes.TypeMismatch, t.Span, [Unwrap(step.Type).DisplayName, declared.DisplayName]);
+        var pattern = BindPresent(f.Variable, step.Type);
+        var body = BindForBody(f, pattern.Designation!, target);
+        PopScope();
+        return new BoundBlock(f, [new BoundLocalDecl(f, sequence, iterable), new BoundWhile(f, new BoundIs(f, step, pattern), body, target)]);
+    }
+
+    /// <summary>The <c>T? next() fails …</c> method that <c>for try</c> steps with, if <paramref name="type"/> has one.</summary>
+    private static FunctionSymbol? FallibleNext(TypeSymbol type) =>
+        type is StructSymbol s
+            ? s.Methods.FirstOrDefault(m => m is { Name: "next", IsStatic: false, Fails: true, Parameters.Count: 0, ReturnType: OptionalType })
+            : null;
+
+    private TypeSymbol NotIterable(ForStmt f, TypeSymbol type)
+    {
+        if (FallibleNext(type) is null)
+            Report(DiagnosticCodes.NotIterable, f.Iterable.Span, [type.DisplayName],
+                help: "use `for` over ranges (`0..n`), spans, lists, arrays and strings");
+        else
+            Report(DiagnosticCodes.NotIterable, f.Iterable.Span, [type.DisplayName], label: "each step can fail",
+                help: "write `for try`", fix: new Fix(new TextSpan(f.Span.Start + "for".Length, 0), " try"));
         return ErrorType.Instance;
     }
 
     private BoundStmt BindReturn(ReturnStmt r)
     {
+        if (InPanicHandler(r.Span, "return")) return new BoundErrorStmt(r);
         if (_deferDepth > 0)
         {
             Report(DiagnosticCodes.JumpOutOfDefer, r.Span, ["return"]);
@@ -650,6 +882,7 @@ internal sealed partial class Binder
 
     private JumpTarget? FindTarget(Name? label, bool loopOnly, TextSpan span, string keyword)
     {
+        if (InPanicHandler(span, keyword)) return null;
         if (_deferDepth > 0)
         {
             Report(DiagnosticCodes.JumpOutOfDefer, span, [keyword]);
@@ -683,14 +916,14 @@ internal sealed partial class Binder
     private BoundStmt BindContinue(ContinueStmt c) =>
         FindTarget(c.Label, true, c.Span, "continue") is { } t ? new BoundContinue(c, t) : new BoundErrorStmt(c);
 
-    private BoundStmt BindErrdefer(ErrdeferStmt e)
+    private BoundStmt BindErrdefer(DeferStmt e)
     {
         if (_fn is not { Fails: true } && _fn?.Kind is not (FunctionKind.Main or FunctionKind.Test))
             Report(DiagnosticCodes.ErrdeferWithoutFails, e.Span, [],
-                help: "an `errdefer` runs only when the function fails; use `defer` here");
+                help: "remove `failing` to run it on every exit, or add a `fails` clause to the function");
         PushScope();
         LocalSymbol? err = null;
-        if (e.Error is { } name)
+        if (e.Binding is { } name)
         {
             err = DeclareLocal(name, _fn is null ? ErrorType.Instance : ErrorUnionType.Of(_fn.ErrorSets), LocalKind.Let);
             err.IsCatch = true;
@@ -700,6 +933,60 @@ internal sealed partial class Binder
         _deferDepth--;
         PopScope();
         return new BoundErrdefer(e, err, body);
+    }
+
+    /// <summary><c>defer panicking [(p)] body</c>: <c>return</c>, <c>break</c>, <c>continue</c> and <c>try</c> in the body are BYN2612; <see cref="PanicHandlerCheck"/> checks the rest.</summary>
+    private BoundStmt BindPanicDefer(DeferStmt d)
+    {
+        PushScope();
+        LocalSymbol? panic = d.Binding is { } name ? DeclareLocal(name, BuiltinType.Panic, LocalKind.Let) : null;
+        var (deferDepth, inHandler) = (_deferDepth, _inPanicHandler);
+        (_deferDepth, _inPanicHandler) = (0, true);
+        var body = BindBody(d.Body);
+        (_deferDepth, _inPanicHandler) = (deferDepth, inHandler);
+        PopScope();
+        return new BoundPanicDefer(d, panic, body);
+    }
+
+    /// <summary>
+    /// <c>Panic.onPanic = f;</c> with <c>f</c> a named <c>void f(Panic p)</c>: only as the first statement of the program's
+    /// entry function, once (BYN2614). <see cref="PanicHandlerCheck"/> checks <c>f</c>'s body.
+    /// </summary>
+    private BoundStmt BindOnPanic(AssignStmt a)
+    {
+        var value = BindExpr(a.Value);
+        FunctionSymbol? handler = null;
+        if (value is BoundMethodGroup { Receiver: null, Function: { } f } && f.Kind == FunctionKind.Function && !f.IsGeneric && !f.Fails
+            && f.ReturnType.IsVoid && f.Parameters is [{ Modifier: ParamModifier.None, Type: BuiltinType { Kind: BuiltinKind.Panic } }])
+            handler = f;
+        else if (!value.Type.IsError || value is BoundMethodGroup)
+            Report(DiagnosticCodes.TypeMismatch, a.Value.Span,
+                [value is BoundMethodGroup g ? $"{g.Function.ReturnType.DisplayName} {g.Function.Name}({string.Join(", ", g.Function.Parameters.Select(p => p.Type.DisplayName))})" : value.Type.DisplayName,
+                    "void f(Panic p)"],
+                help: "name a function declared `void f(Panic p)`");
+        var entry = !_c.Options.Library && _fn is not null && _fn == _c.EntryModule.Main;
+        string? misplaced = null;
+        if (!entry) misplaced = _c.Options.Library ? "libraries cannot set it" : $"`{_fn?.Name}` is not the program's entry function";
+        else if (_onPanicSet) misplaced = "set again here";
+        else if (a != _firstStatement) misplaced = "not the first statement of `main`";
+        if (misplaced is not null)
+        {
+            Report(DiagnosticCodes.OnPanicPlacement, a.Span, [], label: misplaced,
+                help: _c.Options.Library ? "set `Panic.onPanic` in the program that uses this library" : "set it once, as the first statement of `main`");
+            return new BoundErrorStmt(a);
+        }
+        _onPanicSet = true;
+        if (handler is null) return new BoundErrorStmt(a);
+        _c.OnPanic = handler;
+        return new BoundSetOnPanic(a, handler);
+    }
+
+    /// <summary>BYN2612 for <paramref name="keyword"/> inside a <c>defer panicking</c> body; true when reported.</summary>
+    private bool InPanicHandler(TextSpan span, string keyword)
+    {
+        if (!_inPanicHandler) return false;
+        Report(DiagnosticCodes.PanicHandlerRestricted, span, [$"`{keyword}`"], help: "remove it; panic handlers can't recover");
+        return true;
     }
 
     private BoundStmt BindContext(ContextStmt c)

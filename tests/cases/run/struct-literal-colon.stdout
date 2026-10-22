@@ -1,0 +1,4 @@
+tea 250 2
+coffee 300 2
+0 true
+LineItem { name: coffee, unitPrice: Money { cents: 300 }, qty: 2 }

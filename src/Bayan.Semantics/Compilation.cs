@@ -42,7 +42,16 @@ public sealed class Compilation
 
     public ModuleSymbol EntryModule { get; private set; } = null!;
 
+    /// <summary>The function <c>Panic.onPanic</c> is set to in <c>main</c>, if any.</summary>
+    public FunctionSymbol? OnPanic { get; internal set; }
+
     public Builtins Builtins { get; } = new();
+
+    /// <summary>Time spent parsing the entry module and its imports.</summary>
+    public TimeSpan ParseTime { get; private set; }
+
+    /// <summary>Time spent declaring and binding (zero after syntax errors).</summary>
+    public TimeSpan CheckTime { get; private set; }
 
     /// <summary>Error variants in code order (index = code - 1).</summary>
     public List<ErrorVariantSymbol> ErrorVariants { get; } = new();
@@ -85,11 +94,17 @@ public sealed class Compilation
     public static Compilation Create(IReadOnlyList<SourceText> entryFiles, string packageRoot, CompilationOptions? options = null, string? displayRoot = null)
     {
         var c = new Compilation(packageRoot, options ?? new CompilationOptions(), displayRoot);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         c.EntryModule = c.LoadModule("main", packageRoot, entryFiles, null);
+        c.ParseTime = clock.Elapsed;
         // Syntax errors stop here: binding a broken tree mostly reports their echoes.
         if (c.Diagnostics.HasErrors) return c;
+        clock.Restart();
         c.Declare();
         c.BindAll();
+        // Each case binds and checks the same body; report what it finds there once.
+        if (c._testCases.Count > 0) c.Diagnostics.RemoveRepeats();
+        c.CheckTime = clock.Elapsed;
         return c;
     }
 
@@ -145,7 +160,7 @@ public sealed class Compilation
             if (files.Length == 0)
             {
                 Diagnostics.Report(DiagnosticCodes.UnknownModule, file.Source, span, [name],
-                    help: $"a module is a directory of `.byn` files; expected `{Path.GetRelativePath(PackageRoot, dir)}/` next to the entry file");
+                    help: $"put the module's `.byn` files in `{Path.GetRelativePath(PackageRoot, dir)}/` next to the entry file; a module is a directory");
                 return;
             }
             var sources = files.Select(f => new SourceText(Path.GetRelativePath(DisplayRoot, f).Replace('\\', '/'), File.ReadAllBytes(f)));
@@ -178,6 +193,7 @@ public sealed class Compilation
         foreach (var module in Modules)
         {
             foreach (var s in module.Structs) DeclareMembers(s);
+            foreach (var s in module.Structs) Naming.CheckMembers(this, s);
             foreach (var f in module.AllFunctions.Where(f => f.Owner is null && !f.IsInstance && f.Kind != FunctionKind.Main && f.Kind != FunctionKind.Test).ToList())
                 DeclareSignature(f, f.Decl!, f.File!);
         }
@@ -214,19 +230,94 @@ public sealed class Compilation
                 help: "write `void main()`, `i32 main()`, `void main(ReadOnlySpan<string> args)` or `i32 main(ReadOnlySpan<string> args)`, each optionally with `fails`");
     }
 
-    /// <summary>No declaration takes an attribute yet; <c>[ExitCode]</c> belongs on an error variant.</summary>
+    /// <summary><c>[Cases]</c> belongs on a test with parameters and <c>[ExitCode]</c> on an error variant; no other declaration takes an attribute.</summary>
     private void CheckAttributes(FileContext file, Decl decl)
     {
+        var hasCases = false;
         foreach (var a in decl.Attributes)
         {
-            if (a.Name.Text == "ExitCode")
-                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "`[ExitCode]` belongs on an error enum variant");
+            if (a.Name.Text == "Cases" && decl is TestDecl test)
+            {
+                if (hasCases)
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[Cases]"], help: "combine the cases into one `[Cases(...)]`");
+                else
+                    _testCases[test] = CheckCases(file, test, a);
+                hasCases = true;
+            }
+            else if (a.Name.Text == "Cases")
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[Cases]"], help: "put `[Cases(...)]` on a test that takes parameters");
+            else if (a.Name.Text == "ExitCode")
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "put `[ExitCode]` on an error enum variant");
             else
-                Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "the only attribute is `[ExitCode(n)]`, on an error enum variant");
+                Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text],
+                    help: "use `[ExitCode(n)]` on an error variant or `[Cases(...)]` on a test");
+        }
+        if (decl is TestDecl { Params.Length: > 0 } t && !hasCases)
+        {
+            var span = TextSpan.FromBounds(t.Params[0].Span.Start, t.Params[^1].Span.End);
+            Report(DiagnosticCodes.ModifierNotAllowed, file.Source, span, [file.Source.GetText(span)],
+                label: "a test without `[Cases]` takes no parameters",
+                help: "add `[Cases(...)]` with one value per parameter for each case, or remove the parameters");
         }
         if (decl is StructDecl s)
             foreach (var m in s.Members) CheckAttributes(file, m);
     }
+
+    /// <summary>
+    /// The cases of <c>[Cases(...)]</c> that fit <paramref name="test"/>: a tuple per case, or a bare value when it
+    /// takes one parameter, with one literal per parameter (BYN2773, BYN2774).
+    /// </summary>
+    private List<Expr[]> CheckCases(FileContext file, TestDecl test, AttributeSyntax a)
+    {
+        var cases = new List<Expr[]>();
+        var names = string.Join(", ", test.Params.Select(p => p.Name.Text));
+        foreach (var arg in a.Args)
+        {
+            if (arg.Value is NameExpr or MemberExpr)
+            {
+                Report(DiagnosticCodes.CasesNotConstant, file.Source, arg.Value.Span, [], label: "cases from a const list are not supported yet",
+                    help: "write each case as a tuple literal, such as `[Cases((0, false), (1, true))]`");
+                continue;
+            }
+            Expr[] values = arg.Value is TupleExpr tuple ? tuple.Elements.Select(e => e.Value).ToArray() : [arg.Value];
+            if (values.Length != test.Params.Length)
+            {
+                Report(DiagnosticCodes.CasesArity, file.Source, arg.Value.Span, [values.Length, test.Params.Length],
+                    help: test.Params.Length == 1 ? "give one value per case: `[Cases(1, 2, 3)]`"
+                        : $"give each case one value per parameter, in order: `({names})`");
+                continue;
+            }
+            var constant = true;
+            foreach (var v in values.Where(v => !IsCaseLiteral(v)))
+            {
+                Report(DiagnosticCodes.CasesNotConstant, file.Source, v.Span, [],
+                    help: "write the value as a literal: a number, string, char, `true`, `false`, `null` or a `.case`");
+                constant = false;
+            }
+            if (constant) cases.Add(values);
+        }
+        return cases;
+    }
+
+    private static bool IsCaseLiteral(Expr e) => e switch
+    {
+        LiteralExpr or TargetMemberExpr => true,
+        UnaryExpr { Op: UnaryOp.Negate or UnaryOp.Plus, Operand: LiteralExpr { Kind: LiteralKind.Integer or LiteralKind.Float } } => true,
+        ParenExpr p => IsCaseLiteral(p.Inner),
+        _ => false,
+    };
+
+    private void DeclareTest(FileContext file, TestDecl t, string title, Expr[]? values)
+    {
+        var fn = new FunctionSymbol("test", Loc(file, t), file.Module, FunctionKind.Test) { File = file };
+        file.Module.Tests.Add(new TestSymbol(title, Loc(file, t), fn));
+        file.Module.AllFunctions.Add(fn);
+        _testBodies[fn] = (t, values);
+    }
+
+    /// <summary><c>quantity bounds (input: 101, valid: false)</c>: the title, then each parameter with its value as written.</summary>
+    private static string CaseTitle(FileContext file, TestDecl t, Expr[] values) =>
+        $"{t.Title} ({string.Join(", ", t.Params.Zip(values, (p, v) => p.Name.Text + ": " + file.Source.GetText(v.Span)))})";
 
     private void DeclareFile(FileContext file)
     {
@@ -269,9 +360,16 @@ public sealed class Compilation
                 }
                 case TypeAliasDecl a:
                 {
-                    var sym = new AliasPlaceholder(a, file);
+                    var sym = new AliasPlaceholder(a, a.Name, a.Modifiers, file);
                     if (AddType(file, a.Name, sym)) _aliases.Add(sym);
                     Naming.CheckType(this, file.Source, a.Name);
+                    break;
+                }
+                case ErrorSetDecl s:
+                {
+                    var sym = new AliasPlaceholder(s, s.Name, s.Modifiers, file);
+                    if (AddType(file, s.Name, sym)) _aliases.Add(sym);
+                    Naming.CheckType(this, file.Source, s.Name);
                     break;
                 }
                 case FunctionDecl f:
@@ -312,13 +410,11 @@ public sealed class Compilation
                         (mainStatements ??= new()).Add(g);
                     break;
                 case TestDecl t:
-                    if (Options.IncludeTests)
-                    {
-                        var fn = new FunctionSymbol("test", Loc(file, t), module, FunctionKind.Test) { File = file };
-                        module.Tests.Add(new TestSymbol(t.Title, Loc(file, t), fn));
-                        module.AllFunctions.Add(fn);
-                        _testBodies[fn] = t;
-                    }
+                    if (!Options.IncludeTests) break;
+                    if (t.Params.Length == 0)
+                        DeclareTest(file, t, t.Title, null);
+                    else if (_testCases.TryGetValue(t, out var cases))
+                        foreach (var values in cases) DeclareTest(file, t, CaseTitle(file, t, values), values);
                     break;
                 case ImportDecl:
                     break;
@@ -341,14 +437,15 @@ public sealed class Compilation
             else
             {
                 Report(DiagnosticCodes.StatementOutsideEntry, file.Source, mainStatements[0].Span, [],
-                    help: "top-level statements may appear in only one file of the entry module");
+                    help: "keep top-level statements in one file of the entry module");
             }
         }
     }
 
     private readonly List<AliasPlaceholder> _aliases = new();
     private readonly List<(ErrorVariantSymbol Variant, AttributeSyntax Attribute, FileContext File)> _exitCodes = new();
-    private readonly Dictionary<FunctionSymbol, TestDecl> _testBodies = new();
+    private readonly Dictionary<FunctionSymbol, (TestDecl Decl, Expr[]? Values)> _testBodies = new();
+    private readonly Dictionary<TestDecl, List<Expr[]>> _testCases = new();
     private (FunctionSymbol Main, List<GlobalStatement> Statements)? _mainStatements;
 
     /// <summary>Declares the <c>&lt;A, B&gt;</c> of a generic declaration; the map is null when there are none.</summary>
@@ -411,7 +508,7 @@ public sealed class Compilation
         ErrorSetSymbol e => e.Location,
         EnumSymbol e => e.Location,
         UnionSymbol u => u.Location,
-        AliasPlaceholder a => new Location(a.File.Source, a.Decl.Name.Span),
+        AliasPlaceholder a => new Location(a.File.Source, a.Name.Span),
         _ => null,
     };
 
@@ -438,10 +535,12 @@ public sealed class Compilation
             var seen = false;
             foreach (var a in v.Attributes)
             {
-                if (a.Name.Text != "ExitCode")
-                    Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "the only attribute is `[ExitCode(n)]`");
+                if (a.Name.Text == "Cases")
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[Cases]"], help: "put `[Cases(...)]` on a test that takes parameters");
+                else if (a.Name.Text != "ExitCode")
+                    Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "use `[ExitCode(n)]`; it is the only attribute an error variant takes");
                 else if (seen)
-                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "the attribute is repeated");
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "remove the repeated attribute");
                 else
                 {
                     seen = true;
@@ -493,7 +592,7 @@ public sealed class Compilation
         {
             Naming.CheckValue(this, source, p.Name);
             var type = types.Resolve(p.Type);
-            const string help = "enum data is stored in static tables; use a number type, `bool`, `char`, `string` or a plain enum";
+            const string help = "use a number type, `bool`, `char`, `string` or a plain enum; enum data is stored in static tables";
             if (p.Modifier != ParamModifier.None)
                 Report(DiagnosticCodes.InvalidEnumParameter, source, p.Span, [p.Name.Text], label: $"`{p.Modifier.ToString().ToLowerInvariant()}` is not allowed here", help: help);
             else if (p.Default is not null)
@@ -520,16 +619,36 @@ public sealed class Compilation
     {
         var file = u.File;
         var types = new TypeResolver(this, file, null, u.TypeMap);
+        var values = new Dictionary<int, UnionVariantSymbol>();
+        var tag = 0;
         foreach (var v in u.Decl.Variants)
         {
-            Naming.CheckType(this, file.Source, v.Name);
+            Naming.CheckValue(this, file.Source, v.Name);
             if (u.Find(v.Name.Text) is { } existing)
             {
                 Report(DiagnosticCodes.DuplicateUnionVariant, file.Source, v.Name.Span, [u.Name, v.Name.Text],
                     label: $"already declared on line {existing.Location!.Value.Line}");
                 continue;
             }
-            var sym = new UnionVariantSymbol(v.Name.Text, Loc(file, v.Name), u, u.Variants.Count, v.Doc);
+            if (v.Value is { } valueSyntax)
+            {
+                if (v.Fields.Length > 0)
+                    Report(DiagnosticCodes.UnionValueOnPayload, file.Source, valueSyntax.Span, [v.Name.Text],
+                        label: "only a case without data can have a value", help: "remove the value");
+                else if (UnionValue(valueSyntax) is { } value)
+                    tag = value;
+                else
+                    Report(DiagnosticCodes.UnionValueNotInteger, file.Source, valueSyntax.Span, [],
+                        label: "not an `i32` integer literal", help: "write the value as an integer literal, or remove it");
+            }
+            var sym = new UnionVariantSymbol(v.Name.Text, Loc(file, v.Name), u, tag, v.Doc);
+            if (values.TryGetValue(tag, out var same))
+                Report(DiagnosticCodes.DuplicateUnionValue, file.Source, v.Value?.Span ?? v.Name.Span, [same.Name, v.Name.Text, tag],
+                    label: v.Value is null ? $"follows `{u.Variants[^1].Name}`, so it is {tag}" : "already used",
+                    help: "give each case its own value");
+            else
+                values[tag] = sym;
+            tag++;
             var names = new Dictionary<string, Location>(StringComparer.Ordinal);
             foreach (var f in v.Fields)
             {
@@ -546,6 +665,16 @@ public sealed class Compilation
         }
         if (u.Variants.Count == 0)
             Report(DiagnosticCodes.EmptyUnion, file.Source, u.Decl.Name.Span, [u.Name], help: "add the variants, or remove the union");
+    }
+
+    /// <summary>The value of <c>read = 1</c>: an integer literal, optionally negated, that fits the <c>i32</c> tag.</summary>
+    private static int? UnionValue(Expr e)
+    {
+        var negate = e is UnaryExpr { Op: UnaryOp.Negate };
+        if ((negate ? ((UnaryExpr)e).Operand : e) is not LiteralExpr { Kind: LiteralKind.Integer, Suffix: null } lit) return null;
+        var n = Binder.ParseInteger(lit.Text);
+        if (negate) n = -n;
+        return n >= int.MinValue && n <= int.MaxValue ? (int)n : null;
     }
 
     private void DeclareMembers(StructSymbol s)
@@ -646,6 +775,10 @@ public sealed class Compilation
     {
         var types = new TypeResolver(this, file, owner, fn.TypeMap);
         fn.ReturnType = types.Resolve(decl.ReturnType, allowVoid: true);
+        fn.IsMutating = decl.RefThis is not null;
+        if (decl.RefThis is { } refThis && fn is not { Kind: FunctionKind.Method, IsStatic: false })
+            Report(DiagnosticCodes.Unsupported, file.Source, refThis, [fn.IsStatic ? "`ref this` on a static method" : "`ref this` outside a struct"],
+                help: "remove `ref this`; only an instance method has a `this` to change");
         DeclareParameters(fn, decl.Params, file, types);
         if (decl.Fails is { } fails)
         {
@@ -659,9 +792,10 @@ public sealed class Compilation
             foreach (var e in fails.Errors)
             {
                 var t = types.Resolve(e);
-                if (t is ErrorSetSymbol set)
+                if (t is ErrorSetSymbol or ErrorUnionType)
                 {
-                    if (!fn.ErrorSets.Contains(set)) fn.ErrorSets.Add(set);
+                    foreach (var set in t is ErrorUnionType u ? u.Sets : [(ErrorSetSymbol)t])
+                        if (!fn.ErrorSets.Contains(set)) fn.ErrorSets.Add(set);
                 }
                 else if (!t.IsError)
                 {
@@ -722,7 +856,7 @@ public sealed class Compilation
         if (_inReportedCycle.Contains(t) || Cycle(t, t, new HashSet<TypeSymbol>()) is not { } path) return;
         _inReportedCycle.UnionWith(path);
         Report(DiagnosticCodes.RecursiveByValue, source, span, [name, string.Join(" → ", path.Prepend(t).Select(p => p.DisplayName))],
-            help: $"a value cannot contain itself; store the inner one as `Owned<{name}>` (or in a `List<{name}>`)");
+            help: $"store the inner one as `Owned<{name}>` (or in a `List<{name}>`); a value cannot contain itself");
     }
 
     /// <summary>The structs and unions on a by-value path from <paramref name="t"/> back to <paramref name="target"/>, ending with it; null if there is none.</summary>
@@ -775,7 +909,8 @@ public sealed class Compilation
         while (_instantiationWork.TryDequeue(out var work))
             Instantiating(work.Site, work.Span, work.Bind);
         InferErrorSets();
-        InferMutation();
+        CheckMutation();
+        CheckRequires();
         foreach (var module in Modules)
             foreach (var fn in module.AllFunctions)
             {
@@ -783,6 +918,7 @@ public sealed class Compilation
                 if (fn.Body is not null && !fn.IsInstance && !Options.SkipOwnershipCheck) OwnershipAnalysis.Analyze(this, fn);
                 // Like ownership, the lint judges the source once, on the template.
                 if (fn.Body is not null && !fn.IsInstance) NeverReassignedVarLint.Analyze(this, fn);
+                if (fn.Body is not null && !fn.IsInstance) PanicHandlerCheck.Analyze(this, fn);
                 if (fn.Body is not null && !fn.IsGeneric)
                 {
                     if (fn.IsInstance)
@@ -967,6 +1103,7 @@ public sealed class Compilation
     private void BindFunction(FunctionSymbol fn)
     {
         var checks = MutationChecks.Count;
+        var requires = RequiresChecks.Count;
         var locals = fn.Locals.Count;
         var outer = _firstPass;
         (List<FunctionSymbol> Instances, DiagnosticBag Diagnostics, List<Diagnostic> Errors) pass = ([], new DiagnosticBag(), []);
@@ -991,6 +1128,7 @@ public sealed class Compilation
         _instantiationWork.Clear();
         foreach (var w in work) _instantiationWork.Enqueue(w);
         MutationChecks.RemoveRange(checks, MutationChecks.Count - checks);
+        RequiresChecks.RemoveRange(requires, RequiresChecks.Count - requires);
         fn.Locals.RemoveRange(locals, fn.Locals.Count - locals);
         BindBody(fn, seeds);
     }
@@ -1026,7 +1164,7 @@ public sealed class Compilation
                 (binder = New(null)).BindMain(m.Statements);
                 break;
             case FunctionKind.Test:
-                (binder = New(null)).BindTest(_testBodies[fn]);
+                (binder = New(null)).BindTest(_testBodies[fn].Decl, _testBodies[fn].Values);
                 break;
             default:
                 return null;
@@ -1066,31 +1204,50 @@ public sealed class Compilation
             fn.Fails = true;
     }
 
-    /// <summary>Calls of methods through a receiver, checked once every body is bound and mutation is known.</summary>
+    /// <summary>Calls of methods through a receiver, checked once every body is bound.</summary>
     internal List<MutationCheck> MutationChecks { get; } = new();
 
+    /// <summary>The first write to <c>this</c> in each method not declared <c>ref this</c>, with the binder that saw it.</summary>
+    internal Dictionary<FunctionSymbol, (Binder Binder, TextSpan Span)> ThisWrites { get; } = new();
+
     /// <summary>
-    /// A method is mutating when it writes to <c>this</c> or calls a mutating method on it; the
-    /// second part is a fixed point. Then every call of a mutating method needs a writable receiver.
+    /// A method is mutating when it is declared <c>ref this</c>. Every call of one needs a writable
+    /// receiver, and a method that writes <c>this</c> without <c>ref this</c> is BYN2115.
     /// </summary>
-    private void InferMutation()
+    private void CheckMutation()
     {
-        bool changed;
-        do
-        {
-            changed = false;
-            foreach (var m in MutationChecks)
-            {
-                if (!m.Callee.IsMutating || m.Binder.Function is not { IsMutating: false } caller) continue;
-                if (!m.Binder.WritesThis(m.Receiver)) continue;
-                caller.IsMutating = true;
-                changed = true;
-            }
-        } while (changed);
         foreach (var m in MutationChecks.Where(m => m.Callee.IsMutating))
         {
             if (m.Binder.Function is not { IsInstance: true }) m.Binder.CheckWritable(m.Receiver, m.Receiver.Syntax.Span, $"`{m.Callee.Name}` modifies it");
             else m.Binder.CheckGuardWrite(m.Receiver, m.Receiver.Syntax.Span, $"`{m.Callee.Name}` modifies it");
+        }
+        foreach (var (fn, (binder, span)) in ThisWrites)
+            binder.ReportMutatesWithoutRefThis(fn, span);
+    }
+
+    /// <summary>Calls with a constant argument to a function with <c>requires</c>, checked once every body is bound.</summary>
+    internal List<RequiresCheck> RequiresChecks { get; } = new();
+
+    /// <summary>A <c>requires</c> clause that the call's constant arguments make false is BYN2321 at the argument.</summary>
+    private void CheckRequires()
+    {
+        foreach (var check in RequiresChecks)
+        {
+            var callee = check.Callee;
+            var values = new Dictionary<LocalSymbol, ConstantValue>();
+            for (var i = 0; i < check.Arguments.Length; i++)
+                if (check.Arguments[i].Constant is { } c) values[callee.Parameters[i]] = c;
+            foreach (var clause in callee.Requires)
+            {
+                if (ConstantFolding.Evaluate(clause, values) is not { Value: false }) continue;
+                var read = BoundTree.Descendants(clause).OfType<BoundLocal>().Select(l => l.Local).ToHashSet();
+                var at = callee.Parameters.FirstOrDefault(p => read.Contains(p) && values.ContainsKey(p)
+                    && check.Call.Args.Any(a => ReferenceEquals(a.Value, check.Arguments[p.Ordinal].Syntax)));
+                var span = at is null ? check.Call.Span : check.Arguments[at.Ordinal].Syntax.Span;
+                var text = callee.File!.Source.GetText(clause.Syntax.Span);
+                Report(DiagnosticCodes.RequiresViolated, check.Source, span, [check.Source.GetText(span), text, callee.Name],
+                    label: "fails the contract", help: $"pass a value that meets `requires {text}`");
+            }
         }
     }
 
@@ -1126,12 +1283,18 @@ public sealed class Compilation
     internal IEnumerable<AliasPlaceholder> Aliases => _aliases;
 }
 
-/// <summary>A <c>type X = T;</c> alias; resolved to its target on first use.</summary>
+/// <summary>A <c>type X = T;</c> alias or an <c>error set S = A, B;</c>; resolved to its target on first use.</summary>
 internal sealed record MutationCheck(Binder Binder, FunctionSymbol Callee, BoundExpr Receiver);
 
-internal sealed class AliasPlaceholder(TypeAliasDecl decl, FileContext file) : TypeSymbol
+internal sealed record RequiresCheck(SourceText Source, CallExpr Call, FunctionSymbol Callee, BoundExpr[] Arguments);
+
+internal sealed class AliasPlaceholder(Decl decl, Name name, Modifiers modifiers, FileContext file) : TypeSymbol
 {
-    public TypeAliasDecl Decl { get; } = decl;
+    public Decl Decl { get; } = decl;
+
+    public Name Name { get; } = name;
+
+    public Modifiers Modifiers { get; } = modifiers;
 
     public FileContext File { get; } = file;
 
@@ -1139,5 +1302,5 @@ internal sealed class AliasPlaceholder(TypeAliasDecl decl, FileContext file) : T
 
     public bool Resolving { get; set; }
 
-    public override string DisplayName => Decl.Name.Text;
+    public override string DisplayName => Name.Text;
 }

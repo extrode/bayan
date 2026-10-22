@@ -3,14 +3,16 @@ error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
   2 │     [ExitCode(0)]
     │               ^
     │
-  help: 0 means success, and exit codes above 255 do not survive the operating system
+  help: pick a code from 1 to 255; 0 means success, and exit codes above 255 do not survive the
+        operating system
 
 error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
 
   5 │     [ExitCode(300)]
     │               ^^^
     │
-  help: 0 means success, and exit codes above 255 do not survive the operating system
+  help: pick a code from 1 to 255; 0 means success, and exit codes above 255 do not survive the
+        operating system
 
 error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
 
@@ -32,4 +34,4 @@ error BYN1016: `[ExitCode]` is not allowed here
   18 │     [ExitCode(5)]
      │     ^^^^^^^^^^^^^
      │
-  help: the attribute is repeated
+  help: remove the repeated attribute

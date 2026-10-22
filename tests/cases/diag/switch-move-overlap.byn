@@ -4,8 +4,8 @@ struct Ledger {
 }
 
 union Box {
-    Full(Ledger ledger),
-    Empty,
+    full(Ledger ledger),
+    empty,
 }
 
 void keep(move List<i64> xs) { }
@@ -30,9 +30,9 @@ void inspect() {
             keep(move q);
         default:
     }
-    let b = Box.Full(Ledger { items = List<i64>() });
+    let b = Box.full(Ledger { items = List<i64>() });
     switch (move b) {
-        case .Full({ items: let p, items: let q }):
+        case .full({ items: let p, items: let q }):
             keep(move p);
             keep(move q);
         default:

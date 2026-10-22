@@ -19,7 +19,7 @@ public sealed record LoweredProgram(
     IReadOnlyList<(TestSymbol Test, LoweredFunction Function)> Tests);
 
 /// <summary>A function body with every local (not parameter) it uses, in first-use order.</summary>
-public sealed record LoweredFunction(FunctionSymbol Symbol, IReadOnlyList<LocalSymbol> Locals, int ContextSlots, BoundBlock Body);
+public sealed record LoweredFunction(FunctionSymbol Symbol, IReadOnlyList<LocalSymbol> Locals, int ContextSlots, int PanicSlots, BoundBlock Body);
 
 /// <summary>A jump target; emitted as <c>name:;</c>.</summary>
 public sealed record LLabel(Node Syntax, string Name) : BoundStmt(Syntax);
@@ -60,6 +60,15 @@ public sealed record LSetContext(Node Syntax, BoundExpr? Arena, int Slot) : Boun
 
 /// <summary>Frees an arena declared with <c>using</c>.</summary>
 public sealed record LFreeArena(Node Syntax, BoundExpr Arena) : BoundStmt(Syntax);
+
+/// <summary>
+/// Registers the <c>defer panicking</c> handler in slot <see cref="Slot"/>: on a panic the runtime jumps back here, sets
+/// <see cref="Panic"/> and runs <see cref="Body"/>, which ends by handing the panic to the next handler.
+/// </summary>
+public sealed record LPushPanicHandler(Node Syntax, int Slot, LocalSymbol? Panic, BoundBlock Body) : BoundStmt(Syntax);
+
+/// <summary>Unregisters the handler in slot <see cref="Slot"/> as its scope ends.</summary>
+public sealed record LPopPanicHandler(Node Syntax, int Slot) : BoundStmt(Syntax);
 
 /// <summary>Debug builds: a <c>switch (move x)</c> binding owns its storage once its arm is selected; nothing otherwise.</summary>
 public sealed record LClaim(Node Syntax, LocalSymbol Local) : BoundStmt(Syntax);

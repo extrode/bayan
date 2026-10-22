@@ -20,7 +20,8 @@ public sealed class OwnershipCheckerTests
     public void SafeAndFastCHaveNoChecker(string name)
     {
         var path = Path.Combine(Golden.CasesRoot, name);
-        var c = Compilation.Create([Golden.Load(path)], Path.GetDirectoryName(path)!);
+        var options = new CompilationOptions(IncludeTests: name.EndsWith(".test.byn", StringComparison.Ordinal));
+        var c = Compilation.Create([Golden.Load(path)], Path.GetDirectoryName(path)!, options);
         Assert.False(c.Diagnostics.HasErrors);
         Assert.DoesNotContain("byn_own", CliApp.EmitC(c, BuildMode.Safe));
         Assert.DoesNotContain("byn_own", CliApp.EmitC(c, BuildMode.Fast));
@@ -113,19 +114,19 @@ public sealed class OwnershipCheckerTests
 
     private const string GuardedArm = """
         union Slot {
-            Full(List<i64> items),
-            Empty,
+            full(List<i64> items),
+            empty,
         }
         void main() {
             var a = List<i64>();
             a.add(1);
-            let s = Slot.Full(move a);
+            let s = Slot.full(move a);
             switch (move s) {
-                case .Full(let x) when x.length > 5:
+                case .full(let x) when x.length > 5:
                     print($"big {x.length}");
-                case .Full(let y):
+                case .full(let y):
                     print($"small {y.length}");
-                case .Empty:
+                case .empty:
                     print("empty");
             }
         }
@@ -134,17 +135,17 @@ public sealed class OwnershipCheckerTests
 
     private const string GuardedArmExpression = """
         union Slot {
-            Full(List<i64> items),
-            Empty,
+            full(List<i64> items),
+            empty,
         }
         void main() {
             var a = List<i64>();
             a.add(1);
-            let s = Slot.Full(move a);
+            let s = Slot.full(move a);
             let n = (move s) switch {
-                .Full(let x) when x.length > 5 => x.length * 10,
-                .Full(let y) => y.length,
-                .Empty => 0,
+                .full(let x) when x.length > 5 => x.length * 10,
+                .full(let y) => y.length,
+                .empty => 0,
             };
             print($"{n}");
         }
@@ -245,7 +246,7 @@ public sealed class OwnershipCheckerTests
     private const string GrowThenMoveReceiver = """
         struct Bag {
             List<i64> items;
-            public i64 grow() {
+            public i64 grow(ref this) {
                 this.items.add(1);
                 return this.items.length;
             }
@@ -262,25 +263,25 @@ public sealed class OwnershipCheckerTests
     private const string GrowInGuard = """
         struct Bag {
             List<i64> items;
-            public i64 grow() {
+            public i64 grow(ref this) {
                 this.items.add(1);
                 return this.items.length;
             }
         }
         union Slot {
-            Full(Bag b),
-            Empty,
+            full(Bag b),
+            empty,
         }
         void main() {
             var a = List<i64>();
             a.add(1);
             a.add(2);
             a.add(3);
-            let s = Slot.Full(Bag { items = move a });
+            let s = Slot.full(Bag { items = move a });
             switch (move s) {
-                case .Full(var x) when x.grow() > 5:
+                case .full(var x) when x.grow() > 5:
                     print("big");
-                case .Full(let y):
+                case .full(let y):
                     print($"small {y.items.length}");
                 default:
                     print("empty");

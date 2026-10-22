@@ -203,6 +203,9 @@ public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol
 
     public BoundBlock? Body { get; set; }
 
+    /// <summary>The bound <c>requires</c> clauses, set with <see cref="Body"/>; call sites check constant arguments against them.</summary>
+    public BoundExpr[] Requires { get; set; } = [];
+
     /// <summary>Every local and parameter, for the C emitter's declarations.</summary>
     public List<LocalSymbol> Locals { get; } = new();
 
@@ -238,6 +241,7 @@ public enum BuiltinFunction
     None,
     Print,
     Panic,
+    Todo,
     Assert,
     ListNew,
     ArenaNew,
@@ -474,7 +478,7 @@ public sealed class UnionSymbol(string name, Location location, ModuleSymbol mod
     public UnionVariantSymbol? Find(string name) => Variants.Find(v => v.Name == name);
 }
 
-/// <summary>A union variant; its tag is its declaration index. Unit variants have no fields.</summary>
+/// <summary>A union variant; its tag is its declared value, else one more than the previous tag (0 first). Unit variants have no fields.</summary>
 public sealed class UnionVariantSymbol(string name, Location location, UnionSymbol union, int tag, string? doc) : Symbol(name, location)
 {
     public UnionSymbol Union { get; } = union;

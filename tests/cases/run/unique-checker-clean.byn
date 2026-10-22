@@ -7,8 +7,8 @@ struct Bag {
 }
 
 union Payload {
-    Items(List<i64> items),
-    Empty,
+    items(List<i64> items),
+    empty,
 }
 
 i64 sum(move List<i64> xs) {
@@ -32,8 +32,8 @@ Bag pack(string name, i64 count) {
 }
 
 i64 count(Payload p) => p switch {
-    .Items(let items) => items.length,
-    .Empty => 0,
+    .items(let items) => items.length,
+    .empty => 0,
 };
 
 void main() {
@@ -76,11 +76,11 @@ void main() {
     let text = move sb;
     print($"strbuf {text.length}");
 
-    var p = Payload.Items(List<i64>());
+    var p = Payload.items(List<i64>());
     var inner = List<i64>();
     inner.add(1);
     inner.add(2);
-    p = Payload.Items(move inner);
+    p = Payload.items(move inner);
     print($"payload {count(p)}");
 
     i64 kept = 0;

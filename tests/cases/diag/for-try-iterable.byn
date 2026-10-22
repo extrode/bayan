@@ -1,0 +1,23 @@
+error enum ReadError { broken }
+
+struct Rows {
+    i64 at;
+
+    i64? next(ref this) fails ReadError {
+        at += 1;
+        return at < 3 ? at : null;
+    }
+}
+
+void main2(List<i64> xs) fails ReadError {
+    let rows = Rows { at = 0 };
+    for row in rows {
+        print($"{row}");
+    }
+    for try x in xs {
+        print($"{x}");
+    }
+    for (a, b) in xs {
+        print($"{a}");
+    }
+}

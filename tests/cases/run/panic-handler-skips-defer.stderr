@@ -1,0 +1,2 @@
+panic: stop
+  at panic-handler-skips-defer.byn:11

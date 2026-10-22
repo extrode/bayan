@@ -3,4 +3,4 @@ error BYN2761: `Node` contains itself by value: Node → Node
   1 │ struct Node {
     │        ^^^^
     │
-  help: a value cannot contain itself; store the inner one as `Owned<Node>` (or in a `List<Node>`)
+  help: store the inner one as `Owned<Node>` (or in a `List<Node>`); a value cannot contain itself

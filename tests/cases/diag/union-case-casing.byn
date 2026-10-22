@@ -1,0 +1,1 @@
+union Shape { Circle(f32 r), none }

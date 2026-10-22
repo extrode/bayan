@@ -10,13 +10,15 @@ error BYN2305: argument for `start` must be named
   6 │ print($"{width(end, 3)}");
     │                ^^^
     │
-  help: `width` has several `i64` parameters; name them so they cannot be swapped
+  help: name them so they cannot be swapped; `width` has several `i64` parameters
     │ 6 │ print($"{width(start: end, 3)}");
+    │   │                +++++++
 
 error BYN2305: argument for `end` must be named
 
   6 │ print($"{width(end, 3)}");
     │                     ^
     │
-  help: `width` has several `i64` parameters; name them so they cannot be swapped
+  help: name them so they cannot be swapped; `width` has several `i64` parameters
     │ 6 │ print($"{width(end, end: 3)}");
+    │   │                     +++++

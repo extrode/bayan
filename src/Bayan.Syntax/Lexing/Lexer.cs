@@ -430,7 +430,7 @@ internal ref struct LexerState
                 var normalized = Nfc.ToNfc(text);
                 Report(DiagnosticCodes.IdentifierNotNfc, new TextSpan(start, _pos - start), [text],
                     label: "same letters, different encoding",
-                    help: "identifiers that look the same must be byte-identical; use the composed (NFC) form",
+                    help: "use the composed (NFC) form; identifiers that look the same must be byte-identical",
                     fix: new Fix(new TextSpan(start, _pos - start), normalized));
             }
             Add(TokenKind.Identifier, start, _pos - start);
@@ -725,7 +725,7 @@ internal ref struct LexerState
                 if (digits > 6 || value > 0x10FFFF || value is >= 0xD800 and <= 0xDFFF)
                     Report(DiagnosticCodes.InvalidUnicodeEscape, TextSpan.FromBounds(start, _pos),
                         [Encoding.UTF8.GetString(_text[start.._pos])],
-                        help: "scalar values are U+0000–U+D7FF and U+E000–U+10FFFF");
+                        help: "use a scalar value in U+0000–U+D7FF or U+E000–U+10FFFF");
                 return;
             }
             default:
@@ -733,7 +733,7 @@ internal ref struct LexerState
                 AdvanceCodePoint(allowBidi: true);
                 Report(DiagnosticCodes.InvalidEscape, TextSpan.FromBounds(start, _pos),
                     [Encoding.UTF8.GetString(_text[start.._pos])],
-                    help: "valid escapes are \\n \\r \\t \\0 \\\\ \\\" \\' and \\u{…}");
+                    help: "use a valid escape: \\n \\r \\t \\0 \\\\ \\\" \\' and \\u{…}");
                 return;
             }
         }

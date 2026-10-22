@@ -137,6 +137,9 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 case "ProcessResult":
                     NoTypeArgs(n);
                     return BuiltinType.ProcessResult;
+                case "Panic":
+                    NoTypeArgs(n);
+                    return BuiltinType.Panic;
                 case "dec" or "decimal":
                     compilation.Report(DiagnosticCodes.Unsupported, file.Source, n.Span, ["the `dec` type"]);
                     return ErrorType.Instance;
@@ -168,7 +171,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             return ErrorType.Instance;
         }
         compilation.Report(DiagnosticCodes.UnknownType, file.Source, n.Span, [string.Join(".", n.Path.Select(x => x.Text))],
-            help: n.Path.Length == 2 ? $"`{n.Path[0].Text}` is not an imported module; add `import {n.Path[0].Text};`" : null);
+            help: n.Path.Length == 2 ? $"add `import {n.Path[0].Text};`; `{n.Path[0].Text}` is not an imported module" : null);
         return ErrorType.Instance;
     }
 
@@ -183,7 +186,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             ErrorSetSymbol e => e.Access,
             EnumSymbol e => e.Access,
             UnionSymbol u => u.Access,
-            AliasPlaceholder a => Compilation.AccessOf(a.Decl.Modifiers),
+            AliasPlaceholder a => Compilation.AccessOf(a.Modifiers),
             _ => Accessibility.Public,
         };
         if (access != Accessibility.Public)
@@ -198,13 +201,34 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
         if (alias.Target is { } done) return done;
         if (alias.Resolving)
         {
-            compilation.Report(DiagnosticCodes.CircularAlias, alias.File.Source, alias.Decl.Name.Span, [alias.Decl.Name.Text]);
+            compilation.Report(DiagnosticCodes.CircularAlias, alias.File.Source, alias.Name.Span, [alias.Name.Text]);
             return alias.Target = ErrorType.Instance;
         }
         alias.Resolving = true;
-        var target = new TypeResolver(compilation, alias.File, null).Resolve(alias.Decl.Target);
+        var resolver = new TypeResolver(compilation, alias.File, null);
+        var target = alias.Decl is ErrorSetDecl s ? resolver.ErrorSet(s) : resolver.Resolve(((TypeAliasDecl)alias.Decl).Target);
         alias.Resolving = false;
         return alias.Target ??= target;
+    }
+
+    /// <summary>The sets named by <c>error set S = A, B;</c>, one set or an <see cref="ErrorUnionType"/>.</summary>
+    private TypeSymbol ErrorSet(ErrorSetDecl decl)
+    {
+        var sets = new List<ErrorSetSymbol>();
+        foreach (var member in decl.Members)
+        {
+            var t = Resolve(member);
+            if (t is ErrorSetSymbol or ErrorUnionType)
+            {
+                foreach (var set in t is ErrorUnionType u ? u.Sets : [(ErrorSetSymbol)t])
+                    if (!sets.Contains(set)) sets.Add(set);
+            }
+            else if (!t.IsError)
+            {
+                compilation.Report(DiagnosticCodes.NotAnErrorSet, file.Source, member.Span, [t.DisplayName]);
+            }
+        }
+        return sets.Count == 0 ? ErrorType.Instance : ErrorUnionType.Of(sets);
     }
 
     /// <summary>Applies the type arguments of <paramref name="n"/> to a generic struct or union (instantiating it), or checks there are none.</summary>
@@ -236,7 +260,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
     private string? Suggest(string text)
     {
         var lower = text.ToLowerInvariant();
-        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ProcessResult"]))
+        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ProcessResult", "Panic"]))
             if (name.Equals(text, StringComparison.OrdinalIgnoreCase)) return name;
         if (PrimitiveType.ByName.ContainsKey(lower)) return lower;
         return lower switch

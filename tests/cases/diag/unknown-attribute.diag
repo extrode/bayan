@@ -3,18 +3,18 @@ error BYN2770: unknown attribute `Retry`
   2 │     [Retry(3)]
     │      ^^^^^
     │
-  help: the only attribute is `[ExitCode(n)]`
+  help: use `[ExitCode(n)]`; it is the only attribute an error variant takes
 
 error BYN2770: unknown attribute `Inline`
 
   7 │ [Inline]
     │  ^^^^^^
     │
-  help: the only attribute is `[ExitCode(n)]`, on an error enum variant
+  help: use `[ExitCode(n)]` on an error variant or `[Cases(...)]` on a test
 
 error BYN1016: `[ExitCode]` is not allowed here
 
   10 │ [ExitCode(2)]
      │ ^^^^^^^^^^^^^
      │
-  help: `[ExitCode]` belongs on an error enum variant
+  help: put `[ExitCode]` on an error enum variant

@@ -152,6 +152,43 @@ public sealed class CliTests
         Assert.Contains("error BYN", stderr);
     }
 
+    private static string ManyErrors(string name) =>
+        Program(name, string.Concat(Enumerable.Range(0, 25).Select(i => $"i32 x{i} = \"no\";\n")));
+
+    private static int Count(string text, string needle) => text.Split(needle).Length - 1;
+
+    [Fact]
+    public void ErrorsPastTwentyAreCappedWithAHint()
+    {
+        var (_, _, stderr) = Run("check", ManyErrors("cli-cap"));
+        Assert.Equal(20, Count(stderr, "error BYN"));
+        Assert.Contains("\u2026 and 5 more errors (use --all to show them)", stderr);
+    }
+
+    [Fact]
+    public void AllShowsEveryError()
+    {
+        var (_, _, stderr) = Run("check", "--all", ManyErrors("cli-cap-all"));
+        Assert.Equal(25, Count(stderr, "error BYN"));
+        Assert.DoesNotContain("more errors", stderr);
+    }
+
+    [Fact]
+    public void JsonIsNeverCapped()
+    {
+        var (_, _, stderr) = Run("check", "--diagnostics", "json", ManyErrors("cli-cap-json"));
+        Assert.Equal(25, Count(stderr, "\"severity\":\"error\""));
+        Assert.DoesNotContain("more errors", stderr);
+    }
+
+    [Fact]
+    public void AsciiCapLineUsesThreeDots()
+    {
+        var (_, _, stderr) = Run("--ascii", "check", ManyErrors("cli-cap-ascii"));
+        Assert.Contains("... and 5 more errors (use --all to show them)", stderr);
+        Assert.DoesNotContain("\u2026", stderr);
+    }
+
     [Fact]
     public void RunPassesExitZeroThrough()
     {
@@ -269,6 +306,35 @@ public sealed class CliTests
         Assert.Contains("cannot tell a build failure from a program that exits 1", stdout);
     }
 
+    [Theory]
+    [InlineData("run")]
+    [InlineData("types")]
+    [InlineData("check")]
+    public void VerboseIsOnlyForBuildAndTest(string command)
+    {
+        var dir = TestSuite("cli-verbose-" + command, "");
+        var main = Path.Combine(dir, "main.byn");
+        var (exit, _, stderr) = Run(command, main, "-v");
+        Assert.Equal(CliApp.ExitUsage, exit);
+        Assert.Contains("unexpected argument `-v`", stderr);
+        Assert.Equal(CliApp.ExitUsage, Run(command, main, "--verbose").Exit);
+        Assert.Equal(CliApp.ExitOk, Run(command, main, "--all").Exit);
+    }
+
+    [Fact]
+    public void ParseRendersItsDiagnosticsInTheChosenSymbols()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "cli-parse-ascii");
+        Directory.CreateDirectory(dir);
+        var bad = Path.Combine(dir, "bad.byn");
+        File.WriteAllText(bad, "void main() {\n    let x = \n}\n");
+        var (exit, _, stderr) = Run("--ascii", "parse", bad);
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Contains("  3 | }", stderr);
+        Assert.DoesNotContain("│", stderr);
+        Assert.Contains("  3 | }", Run("--ascii", "parse", "--ast", bad).Out);
+    }
+
     private static string TestSuite(string name, string tests)
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
@@ -280,7 +346,7 @@ public sealed class CliTests
     }
 
     private static string WithoutTimes(string text) =>
-        System.Text.RegularExpressions.Regex.Replace(text, @"\(\d+\.\d ms\)", "(T)");
+        System.Text.RegularExpressions.Regex.Replace(text, @"\d+\.\d\ds$", "Ts", System.Text.RegularExpressions.RegexOptions.Multiline).ReplaceLineEndings("\n");
 
     [Fact]
     public void TestReportsPassFailAndPanicPerTest()
@@ -313,34 +379,183 @@ public sealed class CliTests
             }
 
             """);
-        var (exit, stdout, _) = Run("test", dir);
+        var (exit, stdout, _) = Run("test", "--ascii", dir);
         Assert.Equal(CliApp.ExitTestFailure, exit);
         Assert.Equal("""
-            running 4 tests
-              ok     passes  (T)
-              PANIC  asserts  (T)
-                     before
-                     panic: assertion failed: 1 + 1 == 3
-                       at main.test.byn:16
-              FAIL   fails  (T)
-                     error: It went wrong.
-              PANIC  panics  (T)
-                     panic: boom
-                       at main.test.byn:24
+            running 4 tests in 1 module
 
-            4 tests: 1 passed, 1 failed, 2 panicked  (T)
+              x cli-test-mixed: asserts
+                  before
+                  assert(1 + 1 == 3)
+                    1 + 1 is 2
+                  main.test.byn:16
 
-            """, WithoutTimes(stdout).ReplaceLineEndings("\n"));
+              x cli-test-mixed: fails
+                  error: It went wrong.
+
+              x cli-test-mixed: panics
+                  boom
+                  main.test.byn:24
+
+            * 1 passed - x 3 failed - 0 pending - Ts
+              rerun the failures: bayan test --only "asserts" --only "fails" --only "panics"
+
+            """, WithoutTimes(stdout));
     }
 
     [Fact]
     public void TestExitsZeroWhenEveryTestPasses()
     {
         var dir = TestSuite("cli-test-pass", "test \"one\" {\n    assert(true);\n}\n");
-        var (exit, stdout, _) = Run("test", dir);
+        var (exit, stdout, _) = Run("test", "--ascii", dir);
         Assert.Equal(0, exit);
-        Assert.Contains("1 test: 1 passed", stdout);
-        Assert.DoesNotContain("main", stdout.Replace("running", ""));
+        Assert.Equal("running 1 test in 1 module\n\n* 1 passed - Ts\n", WithoutTimes(stdout));
+        Assert.DoesNotContain("·", stdout, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TodoReportsPending()
+    {
+        var dir = TestSuite("cli-test-todo", "test \"one\" {\n    assert(true);\n}\n\ntest \"later\" {\n    todo(\"x\");\n}\n");
+        var (exit, stdout, _) = Run("test", "--json", dir);
+        Assert.Equal(CliApp.ExitOk, exit);
+        Assert.Contains("\"status\": \"pending\"", stdout);
+        Assert.Contains("\"output\": \"pending: x\\n  at main.test.byn:6\"", stdout);
+        Assert.Contains("\"pending\": 1", stdout);
+        Assert.Contains("\"passed\": 1", stdout);
+        Assert.Contains("\"failed\": 0", stdout);
+        var (humanExit, human, _) = Run("test", "--ascii", dir);
+        Assert.Equal(CliApp.ExitOk, humanExit);
+        Assert.Equal("running 2 tests in 1 module\n\n* 1 passed - 1 pending - Ts\n", WithoutTimes(human));
+    }
+
+    [Fact]
+    public void TestVerboseListsPassingAndPendingTests()
+    {
+        var dir = TestSuite("cli-test-verbose", "test \"one\" {\n    assert(true);\n}\n\ntest \"later\" {\n    todo(\"x\");\n}\n");
+        var (exit, stdout, _) = Run("test", "--ascii", "-v", dir);
+        Assert.Equal(CliApp.ExitOk, exit);
+        Assert.Equal("""
+            running 2 tests in 1 module
+              * cli-test-verbose: one
+              * cli-test-verbose: later (pending)
+
+            * 1 passed - 1 pending - Ts
+
+            """, WithoutTimes(stdout));
+        Assert.Equal(WithoutTimes(stdout), WithoutTimes(Run("test", "--ascii", "--verbose", dir).Out));
+    }
+
+    [Fact]
+    public void TestShowsAssertionValuesAndOneRerunLine()
+    {
+        var dir = TestSuite("cli-test-values", "i64 cents(i64 units) {\n    return units * 100;\n}\n\ntest \"leftover cents\" {\n    assert(cents(2) == 201);\n}\n");
+        var (exit, stdout, _) = Run("test", "--ascii", dir);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+        Assert.Equal("""
+            running 1 test in 1 module
+
+              x cli-test-values: leftover cents
+                  assert(cents(2) == 201)
+                    cents(2) is 200
+                  main.test.byn:6
+
+            * 0 passed - x 1 failed - 0 pending - Ts
+              rerun the failure: bayan test --only "leftover cents"
+
+            """, WithoutTimes(stdout));
+    }
+
+    [Fact]
+    public void TheRerunHintQuotesTheNameForAShell()
+    {
+        const string name = "x $(touch owned) `id` it's \"hi\" \\ bye";
+        var dir = TestSuite("cli-test-quoted", "test \"x $(touch owned) `id` it's \\\"hi\\\" \\\\ bye\" {\n    assert(false);\n}\n");
+        var (exit, stdout, _) = Run("test", "--ascii", dir);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+        const string quoted = "'x $(touch owned) `id` it'\\''s \"hi\" \\ bye'";
+        Assert.Contains("  rerun the failure: bayan test --only " + quoted + "\n", stdout.ReplaceLineEndings("\n"));
+        if (OperatingSystem.IsWindows()) return;
+        var psi = new System.Diagnostics.ProcessStartInfo("/bin/sh") { RedirectStandardOutput = true, UseShellExecute = false, WorkingDirectory = dir };
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add("printf '%s' " + quoted);
+        using var sh = System.Diagnostics.Process.Start(psi)!;
+        var echoed = sh.StandardOutput.ReadToEnd();
+        sh.WaitForExit();
+        Assert.Equal(name, echoed);
+        Assert.False(File.Exists(Path.Combine(dir, "owned")));
+    }
+
+    [Fact]
+    public void ControlCharactersInTestNamesAndOutputAreShownEscaped()
+    {
+        var dir = TestSuite("cli-test-control", """
+            test "ok\u{1b}]0;PWNED\u{7}" {
+                assert(true);
+            }
+
+            test "later\u{1b}[2J" {
+                todo("soon");
+            }
+
+            test "y\u{1b}]0;PWNED\u{7}\u{1b}[2J" {
+                panic("boom\u{1b}[2J\u{9b}31m");
+            }
+
+            """);
+        var (exit, stdout, _) = Run("test", "--ascii", "-v", dir);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+        Assert.DoesNotContain('\u001b', stdout);
+        Assert.DoesNotContain('\u0007', stdout);
+        Assert.DoesNotContain('\u009b', stdout);
+        Assert.Equal("""
+            running 3 tests in 1 module
+              * cli-test-control: ok\u{1b}]0;PWNED\u{7}
+              * cli-test-control: later\u{1b}[2J (pending)
+
+              x cli-test-control: y\u{1b}]0;PWNED\u{7}\u{1b}[2J
+                  boom\u{1b}[2J\u{9b}31m
+                  main.test.byn:10
+
+            * 1 passed - x 1 failed - 1 pending - Ts
+              a failing test's name contains control characters and cannot be selected from a shell
+
+            """, WithoutTimes(stdout));
+    }
+
+    [Fact]
+    public void BidiControlsInTestNamesAndOutputAreShownEscaped()
+    {
+        var dir = TestSuite("cli-test-bidi", "test \"a\\u{202e}b\" {\n    panic(\"x\\u{2067}y\");\n}\n\ntest \"plain\" {\n    assert(false);\n}\n");
+        var (exit, stdout, _) = Run("test", "--ascii", dir);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+        Assert.DoesNotContain('\u202e', stdout);
+        Assert.DoesNotContain('\u2067', stdout);
+        Assert.Contains("a\\u{202e}b", stdout);
+        Assert.Contains("x\\u{2067}y", stdout);
+        Assert.Contains("bayan test --only \"plain\"", stdout);
+        Assert.DoesNotContain("--only a", stdout);
+        Assert.Contains("cannot be selected from a shell", stdout);
+    }
+
+    [Fact]
+    public void TestsLeftOutByOnlyAreNotSkipped()
+    {
+        var dir = TestSuite("cli-test-only-json", "test \"one\" {\n    assert(true);\n}\n\ntest \"two\" {\n    assert(true);\n}\n");
+        var (exit, stdout, _) = Run("test", "--json", "--only", "one", dir);
+        Assert.Equal(CliApp.ExitOk, exit);
+        Assert.Contains("\"passed\": 1", stdout);
+        Assert.Contains("\"skipped\": 0", stdout);
+    }
+
+    [Fact]
+    public void MoreThanThreeFailuresGetNoRerunLine()
+    {
+        var dir = TestSuite("cli-test-many", string.Concat(Enumerable.Range(1, 4).Select(n => $"test \"t{n}\" {{\n    assert(false);\n}}\n\n")));
+        var (exit, stdout, _) = Run("test", "--ascii", dir);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
+        Assert.Contains("* 0 passed - x 4 failed - 0 pending - ", stdout);
+        Assert.DoesNotContain("rerun", stdout);
     }
 
     private static string BuildAndRun(string example)
@@ -370,7 +585,8 @@ public sealed class CliTests
     {
         var (exit, stdout, stderr) = Run("check", Example("tally-lite"));
         Assert.Equal(CliApp.ExitOk, exit);
-        Assert.Equal("", stdout + stderr);
+        Assert.Equal("", stderr);
+        Assert.StartsWith("checked tally-lite in ", stdout[(stdout.IndexOf(' ') + 1)..]);
     }
 
     [Fact]
@@ -379,7 +595,7 @@ public sealed class CliTests
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var (exit, stdout, stderr) = Run("test", Path.Combine(Golden.RepoRoot, "examples", "tally-lite"));
         Assert.True(exit == CliApp.ExitOk, stdout + stderr);
-        Assert.Contains("8 tests: 8 passed", stdout);
+        Assert.Contains("8 passed · ", stdout);
     }
 }
 

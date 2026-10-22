@@ -25,6 +25,7 @@ internal static class BuiltinMembers
         (BuiltinType { Kind: BuiltinKind.ProcessResult }, "exitCode") => (BuiltinMember.ProcessExitCode, PrimitiveType.I32),
         (BuiltinType { Kind: BuiltinKind.ProcessResult }, "stdout") => (BuiltinMember.ProcessStdout, PrimitiveType.String),
         (BuiltinType { Kind: BuiltinKind.ProcessResult }, "stderr") => (BuiltinMember.ProcessStderr, PrimitiveType.String),
+        (BuiltinType { Kind: BuiltinKind.Panic }, "message") => (BuiltinMember.PanicMessage, PrimitiveType.String),
         (PrimitiveType { Kind: PrimitiveKind.Char }, "value") => (BuiltinMember.CharValue, PrimitiveType.U32),
         (ResultType, "isOk") => (BuiltinMember.ResultIsOk, PrimitiveType.Bool),
         (ResultType r, "value") => (BuiltinMember.ResultValue, r.Value),
@@ -76,7 +77,7 @@ internal static class BuiltinMembers
     public static bool HasMethod(TypeSymbol type, string name) => Method(type, name) is not null;
 
     private static readonly string[] Candidates =
-        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "add", "asSpan", "clear", "removeLast", "removeRange", "getOr", "slot", "remove", "reset", "append", "asString", "take", "write", "readAll", "toHex", "name", "ordinal", "exitCode", "stdout", "stderr"];
+        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "add", "asSpan", "clear", "removeLast", "removeRange", "getOr", "slot", "remove", "reset", "append", "asString", "take", "write", "readAll", "toHex", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>

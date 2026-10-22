@@ -3,4 +3,4 @@ error BYN2215: a range needs both ends here
   1 │ for (let i in 0..) {
     │               ^^^
     │
-  help: open ranges (`a..`, `..b`) are only valid inside `[ ]`
+  help: use open ranges (`a..`, `..b`) only inside `[ ]`

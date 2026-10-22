@@ -43,7 +43,7 @@ internal static class SpanParameterLint
             var type = (NamedType)p.Syntax!.Type;
             var element = ((SpanType)p.Type).Element.DisplayName;
             c.Report(DiagnosticCodes.SpanParameterNeverWritten, fn.File.Source, type.Span, [p.Name, element],
-                help: "a `ReadOnlySpan` also accepts strings and read-only views",
+                help: "take a `ReadOnlySpan`; it also accepts strings and read-only views",
                 fix: new Fix(type.Path[^1].Span, "ReadOnlySpan"));
         }
 

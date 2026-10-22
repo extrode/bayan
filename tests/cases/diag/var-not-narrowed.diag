@@ -1,0 +1,6 @@
+error BYN2211: `v` is not a member of `Box?`; the value may be null
+
+  10 │     print($"{b.v}");
+     │                ^
+     │
+  help: check it first: `if (b is { } value) { … value.v … }`

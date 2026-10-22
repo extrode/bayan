@@ -1,12 +1,12 @@
 // A guard that fails has still run its moves: later sections see the local as maybe moved (BYN2781).
-union U { A, B }
+union U { a, b }
 
 bool take(move List<i64> xs) => xs.length > 0;
 
 void statement(U u) {
     let x = List<i64>();
     switch (u) {
-        case .A when take(move x):
+        case .a when take(move x):
             print("taken");
         default:
             print($"{x.length}");
@@ -16,7 +16,7 @@ void statement(U u) {
 i64 expression(U u) {
     let x = List<i64>();
     return u switch {
-        .A when take(move x) => 0,
+        .a when take(move x) => 0,
         _ => x.length,
     };
 }

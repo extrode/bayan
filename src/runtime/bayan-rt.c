@@ -31,28 +31,75 @@ extern char** environ;
 
 /* ── Panics ──────────────────────────────────────────────────────────────── */
 
-static void byn_panic_begin(void) {
-    byn_stdout_flush();
-    fputs("panic: ", stderr);
-}
+/* The panic in progress: its message (copied, since it may live in the panicking frame the handlers jump over) and
+ * location. A second panic while it is set comes from a handler or `Panic.onPanic`, and aborts at once with both. */
+static _Thread_local bool byn_panicking;
+static _Thread_local char byn_panic_text[1024];
+static _Thread_local byn_panic_info byn_panic_now;
+static _Thread_local const char* byn_panic_file;
+static _Thread_local int byn_panic_line;
+_Thread_local byn_panic_handler* byn_panic_handlers;
+void (*byn_on_panic)(byn_panic_info);
 
-static BYN_NORETURN void byn_panic_end(const char* file, int line) {
+static void byn_panic_print(const char* prefix, const uint8_t* msg, size_t len, const char* file, int line) {
+    fputs(prefix, stderr);
+    fwrite(msg, 1, len, stderr);
     if (file) fprintf(stderr, "\n  at %s:%d\n", file, line);
     else fputc('\n', stderr);
+}
+
+static BYN_NORETURN void byn_panic_raise(const uint8_t* msg, size_t len, const char* file, int line) {
+    byn_stdout_flush();
+    if (byn_panicking) {
+        byn_panic_print("panic: ", byn_panic_now.message.ptr, (size_t)byn_panic_now.message.len, byn_panic_file, byn_panic_line);
+        byn_panic_print("panic in a panic handler: ", msg, len, file, line);
+        fflush(stderr);
+        abort();
+    }
+    byn_panicking = true;
+    if (len > sizeof byn_panic_text) len = sizeof byn_panic_text;
+    memcpy(byn_panic_text, msg, len);
+    byn_panic_now.message = (byn_str){(const uint8_t*)byn_panic_text, (int64_t)len};
+    byn_panic_file = file;
+    byn_panic_line = line;
+    byn_panic_resume();
+}
+
+byn_panic_info byn_panic_current(void) { return byn_panic_now; }
+
+void byn_panic_resume(void) {
+#ifndef __wasi__
+    byn_panic_handler* h = byn_panic_handlers;
+    if (h) {
+        byn_panic_handlers = h->prev;
+        longjmp(h->jump, 1);
+    }
+#endif
+    void (*hook)(byn_panic_info) = byn_on_panic;
+    byn_on_panic = NULL;
+    if (hook) hook(byn_panic_now);
+    byn_stdout_flush();
+    byn_panic_print("panic: ", byn_panic_now.message.ptr, (size_t)byn_panic_now.message.len, byn_panic_file, byn_panic_line);
     fflush(stderr);
     abort();
 }
 
 void byn_panic(const char* msg, const char* file, int line) {
-    byn_panic_begin();
-    fputs(msg, stderr);
-    byn_panic_end(file, line);
+    byn_panic_raise((const uint8_t*)msg, strlen(msg), file, line);
 }
 
 void byn_panic_str(byn_str msg, const char* file, int line) {
-    byn_panic_begin();
+    byn_panic_raise(msg.ptr, (size_t)msg.len, file, line);
+}
+
+void byn_todo_str(byn_str msg, const char* file, int line) {
+    byn_stdout_flush();
+    fputs("pending: ", stderr);
     fwrite(msg.ptr, 1, (size_t)msg.len, stderr);
-    byn_panic_end(file, line);
+    if (file) fprintf(stderr, "\n  at %s:%d\n", file, line);
+    else fputc('\n', stderr);
+    fflush(stderr);
+    exit(4);
 }
 
 void byn_unreachable(const char* file, int line) {
@@ -132,9 +179,9 @@ void byn_own_claim(const void* storage, const void* place, const char* type, con
     byn_own_rec* r = byn_own_insert(storage);
     if (r->place == place) return;
     if (r->place) {
-        byn_panic_begin();
-        fprintf(stderr, "second owner of %s: owned since %s:%d", type, r->file, r->line);
-        byn_panic_end(file, line);
+        char msg[512];
+        int n = snprintf(msg, sizeof msg, "second owner of %s: owned since %s:%d", type, r->file, r->line);
+        byn_panic_raise((const uint8_t*)msg, n < 0 ? 0 : (size_t)n < sizeof msg ? (size_t)n : sizeof msg - 1, file, line);
     }
     r->place = place;
     r->type = type;
@@ -154,9 +201,9 @@ void byn_own_drop(const void* storage, const void* place) {
 
 void byn_own_read(const byn_own_slot* slot, const char* type, const char* file, int line) {
     if (BYN_UNLIKELY(slot->line != 0)) {
-        byn_panic_begin();
-        fprintf(stderr, "use of moved %s: moved at %s:%d", type, slot->file, slot->line);
-        byn_panic_end(file, line);
+        char msg[512];
+        int n = snprintf(msg, sizeof msg, "use of moved %s: moved at %s:%d", type, slot->file, slot->line);
+        byn_panic_raise((const uint8_t*)msg, n < 0 ? 0 : (size_t)n < sizeof msg ? (size_t)n : sizeof msg - 1, file, line);
     }
 }
 

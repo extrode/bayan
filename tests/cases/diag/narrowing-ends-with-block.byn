@@ -1,0 +1,6 @@
+i64 next(i64? p) {
+    {
+        if (p is null) { return 0; }
+    }
+    return p + 1;
+}

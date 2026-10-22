@@ -3,3 +3,12 @@ if (total == 0) {
     let total = 1;
     print($"{total}");
 }
+let count = "3";
+let count = count.length;
+let size = 1;
+let size = 2;
+var step = 1;
+step += 1;
+var step = 2;
+step += 1;
+print($"{count} {size} {step}");

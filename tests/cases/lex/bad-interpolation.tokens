@@ -15,6 +15,7 @@ error BYN0014: `}` in an interpolated string must be doubled
     │         ^
     │
     │ 1 │ $"stray }} here";
+    │   │          +
 
 error BYN0003: unterminated string literal
 

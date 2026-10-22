@@ -1,6 +1,6 @@
-union Shape { Circle(f32 r), Rect(f32 w, f32 h) }
+union Shape { circle(f32 r), rect(f32 w, f32 h) }
 
 f32 width(Shape s) => s switch {
-    .Circle(let r) => r,
-    .Rect(let w) => w,
+    .circle(let r) => r,
+    .rect(let w) => w,
 };

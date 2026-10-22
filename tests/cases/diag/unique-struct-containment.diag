@@ -1,7 +1,9 @@
-error BYN2780: implicit copy of a unique value: `Ledger` is unique because field `xs` is a `List<i64>`
+error BYN2780: implicit copy of a unique value: `Ledger` is unique because field `xs` is a
+`List<i64>`
 
   13 │     let copy = ledger;
      │                ^^^^^^
      │
-  help: `move ledger` hands the value over; passing it by `ref` shares it instead
+  help: hand the value over with `move ledger`; pass it by `ref` to share it instead
      │ 13 │     let copy = move ledger;
+     │    │                +++++

@@ -39,9 +39,10 @@ public sealed class DiagnosticCodesTests
             .Where(f => !f.EndsWith(".byn", StringComparison.Ordinal) && !f.EndsWith(".md", StringComparison.Ordinal))
             .Select(File.ReadAllText)
             .ToList();
-        // A retired code keeps its descriptor and docs page but can no longer appear in output.
+        // A retired code keeps its descriptor and docs page but can no longer appear in output; a reserved one cannot yet.
         var missing = DiagnosticCodes.All
             .Where(d => !CliApp.ExplainText(d.Code)!.Contains("No longer reported", StringComparison.Ordinal))
+            .Where(d => !CliApp.ExplainText(d.Code)!.Contains("Not reported yet", StringComparison.Ordinal))
             .Where(d => !expected.Any(text => text.Contains($" {d.Code}:", StringComparison.Ordinal)))
             .Select(d => d.Code)
             .ToList();

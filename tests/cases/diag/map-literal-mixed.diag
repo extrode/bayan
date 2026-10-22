@@ -1,0 +1,13 @@
+error BYN2236: a map literal needs `key: value` in every element
+
+  1 │ Map<string, i32> stock = ["A-1": 12, 3];
+    │                                      ^ no `key:` here
+    │
+  help: write every element as `key: value`, or remove the keys to make a list
+
+error BYN2236: a map literal needs `key: value` in every element
+
+  2 │ let headers = ["Accept", "Host": "x"];
+    │                ^^^^^^^^ no `key:` here
+    │
+  help: write every element as `key: value`, or remove the keys to make a list

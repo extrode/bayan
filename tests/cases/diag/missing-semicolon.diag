@@ -4,3 +4,4 @@ error BYN1005: expected `;` after the statement
     │          ^ add `;` here
     │
     │ 1 │ let a = 1;
+    │   │          +
