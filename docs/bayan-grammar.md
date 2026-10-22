@@ -157,6 +157,7 @@ test "bounds" (i32 input, bool valid) { … }
 - Fields, parameters, return types and union and state payloads put the type first (`timeout(Millis after)`); `void` marks a function that returns nothing. Visibility (`public`, `static`) leads the whole declaration. A particle leads its parameter like `ref` does: `by Carrier carrier`.
 - Local bindings put the name first: `let`/`var` already lead, and the name is what the reader scans for.
 - The name-first declaration forms are input forms that `bayan fmt` rewrites ([BYN1043](diagnostics/BYN1043.md)): `f() -> T` → `T f()`, `f(x: T)` → `f(T x)`, field `x: T` → `T x`, payload `case(x: T)` → `case(T x)`. In a function body, `Grams w = 0g` → `let w: Grams = 0g`; in a struct body the same text is a field with a default.
+- A function type used as a field or parameter type is parenthesized so the name follows the closing paren: `(Order -> void uses net) onPaid`, `((Order) -> bool) pred` is not needed for a plain `(Order -> bool) pred`. Without the parentheses the name would read as part of the return type or `uses` list.
 - Revised 2026-10-22: round 3 first put names first in every declaration; that was meant only for local bindings, so declarations returned to type-first.
 - `union error` also composes and narrows error sets; composed sets are flattened, and two components sharing a case name is an error:
   ```csharp

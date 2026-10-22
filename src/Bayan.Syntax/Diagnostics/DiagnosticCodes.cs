@@ -54,7 +54,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor StackedCaseLabels = Error("BYN1014", "stacked `case` labels");
     public static readonly DiagnosticDescriptor CStyleFor = Error("BYN1015", "C-style `for` loops do not exist in Bayan");
     public static readonly DiagnosticDescriptor ModifierNotAllowed = Error("BYN1016", "`{0}` is not allowed here");
-    // BYN1049 is retired before it was raised: a round-3 draft gave `unless not` this code, which BYN1007 covers (and an earlier draft used it for ReturnTypeFirst, now BYN1043). Never reuse it.
+    // BYN1049 is retired before it was raised: a round-3 draft gave `unless not` this code, which BYN1007 covers (and an earlier draft used it for a return-type order check, now covered by BYN1043 `TypeNameOrder`). Never reuse it.
     public static readonly DiagnosticDescriptor RetiredUnlessNot = Error("BYN1049", "retired: merged into BYN1007");
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────

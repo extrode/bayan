@@ -120,7 +120,7 @@ Evidence: `CliTests.cs`, `ScaffoldTests.cs`, `OutputTests.cs`, `tests/cases/styl
 | Item | Status | Actual syntax |
 |---|---|---|
 | Waqf termination (no `;`) | Not started | `;` required (BYN1005) |
-| Name-first bindings, fields, params, `-> T` | Not started | `i64 x = 1;`, `let x = 1;`, `struct P { i64 x; }`, `i64 f(i64 a) { … }`; `->` does not lex |
+| Name-first `let`/`var` locals; type-first declarations (J54) | Declarations: already what the compiler does. Locals: not started. `->` declaration input form: not started | `i64 x = 1;`, `let x = 1;`, `struct P { i64 x; }`, `i64 f(i64 a) { … }`; `->` does not lex |
 | `struct unique` | Changed from spec | modifier-first `unique struct S { … }`; also inferred: a struct holding `List`/`Map`/`StrBuf` is unique (`diag/unique-struct-containment`) |
 | `type distinct` | Not started | `distinct` is a contextual keyword; `distinct type` does not parse |
 | `union error` | Changed from spec | `error enum E { a, b }` and `error set S = A, B;` (`run/errors-catch-switch`, `parse/error-set`) |
