@@ -1,5 +1,5 @@
 // mode: debug
-// A `switch (move x)` binding is a fresh owner on every iteration: moving it again in the next one is legal.
+// A `switch move x` binding is a fresh owner on every iteration: moving it again in the next one is legal.
 union Slot {
     empty,
     full(List<i64> items),

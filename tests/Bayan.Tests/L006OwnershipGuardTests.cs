@@ -42,7 +42,7 @@ public sealed class L006OwnershipGuardTests
         { "use after move, later for iteration", """
             void main() {
                 let a = List<i64>();
-                for (let i in 0..3) {
+                for i in 0..3 {
                     consume(move a);
                 }
             }
@@ -51,7 +51,7 @@ public sealed class L006OwnershipGuardTests
             void main() {
                 let a = List<i64>();
                 var i = 0;
-                while (i < 3) {
+                while i < 3 {
                     consume(move a);
                     i += 1;
                 }
@@ -60,7 +60,7 @@ public sealed class L006OwnershipGuardTests
         { "use after move, after if", """
             void main(ReadOnlySpan<string> args) {
                 let a = List<i64>();
-                if (args.count > 0) {
+                if args.count > 0 {
                     consume(move a);
                 }
                 print($"{a.count}");
@@ -69,7 +69,7 @@ public sealed class L006OwnershipGuardTests
         { "use after move, after switch", """
             void main(ReadOnlySpan<string> args) {
                 let a = List<i64>();
-                switch (args.count) {
+                switch args.count {
                     case 0:
                         consume(move a);
                     default:
@@ -88,7 +88,7 @@ public sealed class L006OwnershipGuardTests
         { "use after move, errdefer on failing exit", """
             List<i64> build() fails E {
                 let xs = List<i64>();
-                errdefer print($"{xs.count}");
+                defer failing print($"{xs.count}");
                 consume(move xs);
                 try step();
                 return List<i64>();
@@ -117,7 +117,7 @@ public sealed class L006OwnershipGuardTests
             """, "BYN2780" },
         { "implicit copy, struct with a List field", """
             void main() {
-                let ledger = Ledger { items = List<i64>() };
+                let ledger = Ledger { items: List<i64>() };
                 let c = ledger;
             }
             """, "BYN2780" },
@@ -187,7 +187,7 @@ public sealed class L006OwnershipGuardTests
             void main() {
                 let lists = List<List<i64>>();
                 var kept = List<i64>();
-                for (let xs in lists) kept = xs;
+                for xs in lists { kept = xs; }
             }
             """, "BYN2780" },
         { "borrowed loop binding's span stored past its owner", """
@@ -195,7 +195,7 @@ public sealed class L006OwnershipGuardTests
                 var outer = List<i64>().asSpan();
                 {
                     let lists = List<List<i64>>();
-                    for (let xs in lists) outer = xs.asSpan();
+                    for xs in lists { outer = xs.asSpan(); }
                 }
                 print($"{outer.count}");
             }
@@ -204,7 +204,7 @@ public sealed class L006OwnershipGuardTests
             void main() {
                 let s = Slot.full(List<i64>());
                 var kept = List<i64>();
-                if (s is .full(let items)) kept = items;
+                if s is .full(let items) { kept = items; }
             }
             """, "BYN2780" },
         { "borrowed pattern binding's span stored past its owner", """
@@ -212,7 +212,7 @@ public sealed class L006OwnershipGuardTests
                 var outer = List<i64>().asSpan();
                 {
                     let s = Slot.full(List<i64>());
-                    switch (s) {
+                    switch s {
                         case .full(let items):
                             outer = items.asSpan();
                         default:
@@ -226,7 +226,7 @@ public sealed class L006OwnershipGuardTests
         // A move out of a field, element or plain parameter (BYN2782).
         { "move out of a struct field", """
             void main() {
-                let ledger = Ledger { items = List<i64>() };
+                let ledger = Ledger { items: List<i64>() };
                 let items = move ledger.items;
             }
             """, "BYN2782" },
@@ -247,7 +247,7 @@ public sealed class L006OwnershipGuardTests
         { "move a borrowed for variable", """
             void main() {
                 let lists = List<List<i64>>();
-                for (let xs in lists) {
+                for xs in lists {
                     let stolen = move xs;
                 }
             }
@@ -255,17 +255,17 @@ public sealed class L006OwnershipGuardTests
         { "move a borrowed pattern binding", """
             void main() {
                 let s = Slot.full(List<i64>());
-                if (s is .full(let items)) {
+                if s is .full(let items) {
                     let stolen = move items;
                 }
             }
             """, "BYN2783" },
 
-        // switch (move x) and take() misuse (BYN2783, BYN2781, BYN2789, BYN2104, BYN2788).
+        // switch move x and take() misuse (BYN2783, BYN2781, BYN2789, BYN2104, BYN2788).
         { "switch without move then move the binding", """
             void main() {
                 let s = Slot.full(List<i64>());
-                switch (s) {
+                switch s {
                     case .full(let items):
                         consume(move items);
                     default:
@@ -273,25 +273,25 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """, "BYN2783" },
-        { "read after switch (move s)", """
+        { "read after switch move s", """
             void main() {
                 let s = Slot.full(List<i64>());
-                switch (move s) {
+                switch move s {
                     case .full(let items):
                         consume(move items);
                     default:
                         print("empty");
                 }
-                switch (s) {
+                switch s {
                     default:
                         print("again");
                 }
             }
             """, "BYN2781" },
-        { "switch (move s) binding moved then reused in the same arm", """
+        { "switch move s binding moved then reused in the same arm", """
             void main() {
                 let s = Slot.full(List<i64>());
-                switch (move s) {
+                switch move s {
                     case .full(let items):
                         consume(move items);
                         print($"{items.count}");
@@ -300,11 +300,11 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """, "BYN2781" },
-        { "switch (move s) in a loop, s declared outside", """
+        { "switch move s in a loop, s declared outside", """
             void main() {
                 let s = Slot.full(List<i64>());
-                for (let i in 0..3) {
-                    switch (move s) {
+                for i in 0..3 {
+                    switch move s {
                         case .full(let items):
                             consume(move items);
                         default:
@@ -313,29 +313,29 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """, "BYN2781" },
-        { "switch (move) of a struct field", """
+        { "switch move of a struct field", """
             void main() {
-                let ledger = Ledger { items = List<i64>() };
-                switch (move ledger.items) {
+                let ledger = Ledger { items: List<i64>() };
+                switch move ledger.items {
                     default:
                         print("field");
                 }
             }
             """, "BYN2789" },
-        { "switch (move) of a plain parameter", """
+        { "switch move of a plain parameter", """
             void inspect(Slot plain) {
-                switch (move plain) {
+                switch move plain {
                     default:
                         print("plain");
                 }
             }
             void main() { }
             """, "BYN2789" },
-        { "switch (move) and pattern binds both sides", """
+        { "switch move and pattern binds both sides", """
             void main() {
                 var a = List<i64>();
                 a.append(1);
-                switch (move a) {
+                switch move a {
                     case let x and let y:
                         consume(move x);
                         consume(move y);
@@ -344,10 +344,10 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """, "BYN2790" },
-        { "switch (move) designation with a nested binding", """
+        { "switch move designation with a nested binding", """
             void main() {
-                var l = Ledger { items = List<i64>() };
-                switch (move l) {
+                var l = Ledger { items: List<i64>() };
+                switch move l {
                     case Ledger { items: let it } whole:
                         consume(move it);
                     default:
@@ -355,10 +355,10 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """, "BYN2790" },
-        { "switch (move) property pattern binds a field twice", """
+        { "switch move property pattern binds a field twice", """
             void main() {
-                var l = Ledger { items = List<i64>() };
-                switch (move l) {
+                var l = Ledger { items: List<i64>() };
+                switch move l {
                     case { items: let x, items: let y }:
                         consume(move x);
                         consume(move y);
@@ -367,10 +367,10 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """, "BYN2790" },
-        { "switch (move) guard mutates its binding", """
+        { "switch move guard mutates its binding", """
             void main() {
                 let s = Slot.full(List<i64>());
-                switch (move s) {
+                switch move s {
                     case .full(var items) when items.removeLast() > 0:
                         consume(move items);
                     default:
@@ -434,7 +434,7 @@ public sealed class L006OwnershipGuardTests
             void main() {
                 using let arena = Arena();
                 let xs = List<i64>();
-                let ledger = Ledger { items = xs.copy(to: arena) };
+                let ledger = Ledger { items: xs.copy(to: arena) };
                 print($"{xs.count} {ledger.items.count}");
             }
             """ },
@@ -450,7 +450,7 @@ public sealed class L006OwnershipGuardTests
         { "reassigned before the next for iteration", """
             void main() {
                 var b = List<i64>();
-                for (let i in 0..3) {
+                for i in 0..3 {
                     consume(move b);
                     b = List<i64>();
                 }
@@ -460,7 +460,7 @@ public sealed class L006OwnershipGuardTests
             void main() {
                 var b = List<i64>();
                 var i = 0;
-                while (i < 3) {
+                while i < 3 {
                     consume(move b);
                     b = List<i64>();
                     i += 1;
@@ -470,7 +470,7 @@ public sealed class L006OwnershipGuardTests
         { "reassigned in the moving branch", """
             void main(ReadOnlySpan<string> args) {
                 var a = List<i64>();
-                if (args.count > 0) {
+                if args.count > 0 {
                     consume(move a);
                     a = List<i64>();
                 }
@@ -485,10 +485,10 @@ public sealed class L006OwnershipGuardTests
                 xs = List<i64>();
             }
             """ },
-        { "errdefer with a return move success path", """
+        { "defer failing with a return move success path", """
             List<i64> build() fails E {
                 let xs = List<i64>();
-                errdefer print($"{xs.count}");
+                defer failing print($"{xs.count}");
                 try step();
                 return move xs;
             }
@@ -508,7 +508,7 @@ public sealed class L006OwnershipGuardTests
         { "borrowed loop binding read in place", """
             void main() {
                 let lists = List<List<i64>>();
-                for (let xs in lists) {
+                for xs in lists {
                     let view = xs.asSpan();
                     print($"{view.count}");
                 }
@@ -519,7 +519,7 @@ public sealed class L006OwnershipGuardTests
                 using let arena = Arena();
                 let s = Slot.full(List<i64>());
                 var kept = List<i64>();
-                if (s is .full(let items)) kept = items.copy(to: arena);
+                if s is .full(let items) { kept = items.copy(to: arena); }
                 print($"{kept.count}");
             }
             """ },
@@ -530,14 +530,14 @@ public sealed class L006OwnershipGuardTests
             }
             void main() { }
             """ },
-        { "switch (move) binds disjoint parts and moves them on", """
+        { "switch move binds disjoint parts and moves them on", """
             struct Two {
                 List<i64> first;
                 List<i64> second;
             }
             void main() {
-                var t = Two { first = List<i64>(), second = List<i64>() };
-                switch (move t) {
+                var t = Two { first: List<i64>(), second: List<i64>() };
+                switch move t {
                     case Two { first: let a, second: let b }:
                         consume(move a);
                         consume(move b);
@@ -546,7 +546,7 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """ },
-        { "switch (move) binds disjoint parts through one field twice", """
+        { "switch move binds disjoint parts through one field twice", """
             struct Inner {
                 List<i64> b;
                 List<i64> c;
@@ -555,8 +555,8 @@ public sealed class L006OwnershipGuardTests
                 Inner a;
             }
             void main() {
-                let o = Outer { a = Inner { b = List<i64>(), c = List<i64>() } };
-                switch (move o) {
+                let o = Outer { a: Inner { b: List<i64>(), c: List<i64>() } };
+                switch move o {
                     case { a: { b: let x }, a: { c: let y } }:
                         consume(move x);
                         consume(move y);
@@ -565,10 +565,10 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """ },
-        { "switch (move) binds a field and a copy of its length", """
+        { "switch move binds a field and a copy of its length", """
             void main() {
-                let l = Ledger { items = List<i64>() };
-                switch (move l) {
+                let l = Ledger { items: List<i64>() };
+                switch move l {
                     case { items: let x, items.count: let n }:
                         consume(move x);
                         print($"{n}");
@@ -579,7 +579,7 @@ public sealed class L006OwnershipGuardTests
             """ },
         { "take from a List field", """
             void main() {
-                var ledger = Ledger { items = List<i64>() };
+                var ledger = Ledger { items: List<i64>() };
                 ledger.items.append(1);
                 let items = ledger.items.take();
                 ledger.items.append(2);
@@ -608,7 +608,7 @@ public sealed class L006OwnershipGuardTests
                 List<i64>? pending;
             }
             void main() {
-                var p = Pending { pending = List<i64>() };
+                var p = Pending { pending: List<i64>() };
                 let taken = p.pending.take();
                 print($"{taken is null} {p.pending is null}");
             }
@@ -631,10 +631,10 @@ public sealed class L006OwnershipGuardTests
                 print($"{text.finish()} {sb.finish()}");
             }
             """ },
-        { "switch (move s) then move the binding on", """
+        { "switch move s then move the binding on", """
             void main() {
                 let s = Slot.full(List<i64>());
-                switch (move s) {
+                switch move s {
                     case .full(let items):
                         consume(move items);
                     default:
@@ -642,7 +642,7 @@ public sealed class L006OwnershipGuardTests
                 }
             }
             """ },
-        { "switch (move) expression form moves the binding", """
+        { "switch move expression form moves the binding", """
             i64 keep(move List<i64> xs) => xs.count;
             void main() {
                 let s = Slot.full(List<i64>());
@@ -653,9 +653,9 @@ public sealed class L006OwnershipGuardTests
                 print($"{n}");
             }
             """ },
-        { "switch (move) of a move parameter", """
+        { "switch move of a move parameter", """
             void drain(move Slot slot) {
-                switch (move slot) {
+                switch move slot {
                     case .full(let items):
                         consume(move items);
                     default:

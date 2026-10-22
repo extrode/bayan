@@ -1,4 +1,4 @@
-// A pattern in `switch (move …)` may not bind the same storage twice (BYN2790).
+// A pattern in `switch move …` may not bind the same storage twice (BYN2790).
 struct Ledger {
     List<i64> items;
 }

@@ -427,7 +427,7 @@ public sealed partial class CliEnvironmentTests
     public void ATestThatRunsTooLongIsReportedAsTimedOut()
     {
         var file = Path.Combine(Fresh("timeout"), "main.byn");
-        File.WriteAllText(file, "void main() {\n}\n\ntest \"loops\" {\n    while (true) {\n    }\n}\n");
+        File.WriteAllText(file, "void main() {\n}\n\ntest \"loops\" {\n    while true {\n    }\n}\n");
         With("BAYAN_TEST_TIMEOUT_MS", "300", () =>
         {
             var (exit, stdout, _) = Run(["test", file]);

@@ -1,4 +1,4 @@
-// In `switch (move …)` a `when` guard only reads the arm's bindings (BYN2791): a guard that fails gives the value back.
+// In `switch move …` a `when` guard only reads the arm's bindings (BYN2791): a guard that fails gives the value back.
 struct Bag {
     List<i64> items;
 

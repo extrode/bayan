@@ -819,7 +819,7 @@ internal sealed class FunctionEmitter
 
     // ── Ownership checks ─────────────────────────────────────────────────────────
 
-    /// <summary>A local, owning pattern binding (of <c>switch (move x)</c>) or <c>move</c> parameter this function owns.</summary>
+    /// <summary>A local, owning pattern binding (of <c>switch move x</c>) or <c>move</c> parameter this function owns.</summary>
     private static bool IsOwner(LocalSymbol l) =>
         l is { Kind: LocalKind.Let or LocalKind.Var or LocalKind.PatternVariable, BorrowsSubject: false } or ParameterSymbol { Modifier: ParamModifier.Move };
 

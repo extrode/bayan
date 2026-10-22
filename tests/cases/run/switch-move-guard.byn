@@ -1,5 +1,5 @@
 // mode: debug
-// A `switch (move x)` arm whose guard or later subpattern fails gives up its bindings: a later arm binding the same
+// A `switch move x` arm whose guard or later subpattern fails gives up its bindings: a later arm binding the same
 // storage owns it, with no second-owner panic from the debug-build checker.
 union Slot {
     full(List<i64> items),

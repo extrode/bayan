@@ -81,7 +81,10 @@ void loops() {
     StrBuf[1] bufs = [StrBuf()];
     for b in bufs { b.append("y"); }
     let plain = List<i64>();
-    for n in plain { n += 1; }
+    for n in plain {
+        var m = n;
+        m += 1;
+    }
 }
 
 struct Named {

@@ -1,4 +1,4 @@
-// `switch (move …)` needs a local or a `move` parameter as its subject (BYN2789).
+// `switch move …` needs a local or a `move` parameter as its subject (BYN2789).
 union Slot {
     empty,
     full(List<i64> items),

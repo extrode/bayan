@@ -1,4 +1,4 @@
-// After `switch (move r)`, `r` is moved on every path (BYN2781); without `move`, bindings still borrow (BYN2783).
+// After `switch move r`, `r` is moved on every path (BYN2781); without `move`, bindings still borrow (BYN2783).
 union Slot {
     empty,
     full(List<i64> items),

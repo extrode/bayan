@@ -1,4 +1,4 @@
-// `switch (move x)` moves `x` into the switch: the pattern bindings own their parts and may be moved or stored.
+// `switch move x` moves `x` into the switch: the pattern bindings own their parts and may be moved or stored.
 union Slot {
     empty,
     full(List<i64> items),

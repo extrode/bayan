@@ -19,4 +19,4 @@ error BYN2104: `i` is immutable
   9 │     i = 0;
     │     ^ loop variables are immutable
     │
-  help: declare it with `for (var …)` to change the copy
+  help: copy it into a local `var` to change it

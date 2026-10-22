@@ -555,7 +555,7 @@ internal sealed partial class Binder
         return new BoundMove(syntax, operand);
     }
 
-    /// <summary>Whether the patterns being bound are on a <c>switch (move x)</c> subject, so their bindings own their parts (spec §9.3).</summary>
+    /// <summary>Whether the patterns being bound are on a <c>switch move x</c> subject, so their bindings own their parts (spec §9.3).</summary>
     private bool _patternOwns;
 
     /// <summary>A switch subject; <c>move x</c> moves a local or <c>move</c> parameter into the switch, and <paramref name="owns"/> says its bindings own their parts.</summary>
@@ -1396,7 +1396,7 @@ internal sealed partial class Binder
                 break;
             case LocalKind.ForVariable:
                 label = "loop variables are immutable";
-                help = "declare it with `for (var …)` to change the copy";
+                help = "copy it into a local `var` to change it";
                 break;
             case LocalKind.PatternVariable:
                 label = "pattern variables are immutable";

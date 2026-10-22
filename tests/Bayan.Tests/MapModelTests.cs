@@ -145,7 +145,7 @@ public sealed class MapModelTests
             }
             if ((step + 1) % OpsPerPhase != 0) continue;
             source.Append($"print(\"phase {step + 1}\");\nprint($\"length {{m.count}}\");\n");
-            source.Append("for (let e in m) print($\"{e.key} {e.value}\");\n");
+            source.Append("for e in m { print($\"{e.key} {e.value}\"); }\n");
             expected.Append($"phase {step + 1}\nlength {model.Order.Count}\n");
             foreach (var key in model.Order) expected.Append($"{KeyText(key)} {model.Values[key]}\n");
             for (long key = 0; key < KeySpace; key++)

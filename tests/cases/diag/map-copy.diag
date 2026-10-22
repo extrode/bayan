@@ -259,17 +259,10 @@ error BYN2783: `b` borrows from what it was bound to and cannot be changed or mo
   help: change the subject itself, or work on a `.copy(to: alloc)`; a loop or pattern variable of a
         unique type borrows from its subject
 
-error BYN2104: `n` is immutable
-
-  84 │     for n in plain { n += 1; }
-     │                      ^ loop variables are immutable
-     │
-  help: declare it with `for (var …)` to change the copy
-
 error BYN2780: implicit copy of a unique value: `Named` is unique because field `m` is a
 `Map<i64, i64>`
 
-  93 │     let kept = n with { name: "x" };
+  96 │     let kept = n with { name: "x" };
      │                ^^^^^^^^^^^^^^^^^^^^
      │
   help: pass it by `ref` to share it instead
