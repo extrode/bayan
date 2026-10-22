@@ -1,17 +1,7 @@
-error BYN2027: compare with `is null` / `is not null`, not `==`
-
-  3 │     let c = n == null;
-    │             ^^^^^^^^^
-
 error BYN2208: `==` cannot be applied to `i32` and `null`
 
   3 │     let c = n == null;
     │             ^^^^^^^^^
-
-error BYN2027: compare with `is null` / `is not null`, not `==`
-
-  4 │     let d = null == null;
-    │             ^^^^^^^^^^^^
 
 error BYN2208: `==` cannot be applied to `null` and `null`
 
