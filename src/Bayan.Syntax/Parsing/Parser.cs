@@ -494,7 +494,7 @@ public sealed class Parser
             fails = new FailsClause(SpanFrom(failsStart), errors.ToArray());
         }
         var requires = new List<Expr>();
-        while (Accept(TokenKind.RequiresKeyword)) requires.Add(ParseExpression());
+        while (Accept(TokenKind.RequiresKeyword)) requires.Add(ParseBareCondition());
         BlockStmt? body = null;
         Expr? expressionBody = null;
         if (Kind == TokenKind.OpenBrace)
@@ -988,13 +988,20 @@ public sealed class Parser
         if (Kind != TokenKind.OpenParen) return false;
         var next = MatchingClose(_pos) + 1;
         var kind = KindAt(next);
-        if (kind is TokenKind.OpenBrace or TokenKind.Semicolon or TokenKind.Identifier) return true;
-        if (kind.IsKeyword()) return kind is not (TokenKind.IsKeyword or TokenKind.AsKeyword or TokenKind.CatchKeyword or TokenKind.WithKeyword);
+        if (kind is TokenKind.OpenBrace or TokenKind.Semicolon) return true;
+        // `(i32)big > 3 {`: a cast starts a bare condition, which reaches its `{` body before any `;`; `(flag) x++;` does not.
+        if (IsCast()) return !BodyBraceFirst(next);
+        if (kind is TokenKind.Identifier) return true;
+        if (kind.IsKeyword())
+            return kind is not (TokenKind.IsKeyword or TokenKind.AsKeyword or TokenKind.CatchKeyword or TokenKind.WithKeyword or TokenKind.InKeyword);
         // An operator: a bare condition reaches its `{` body before any `;`; a statement such as `-x;` does not.
         return !BodyBraceFirst(next);
     }
 
-    /// <summary>Whether, from <paramref name="from"/>, a top-level <c>{</c> comes before any <c>;</c>, <c>}</c> or the end.</summary>
+    /// <summary>
+    /// Whether, from <paramref name="from"/>, a top-level <c>{</c> comes before any <c>;</c>, <c>}</c>, assignment or the end.
+    /// A condition has no assignment, so <c>(ok) p = P { x: 1 };</c> is a statement.
+    /// </summary>
     private bool BodyBraceFirst(int from)
     {
         var depth = 0;
@@ -1011,6 +1018,9 @@ public sealed class Parser
                 case TokenKind.OpenBrace when depth == 0:
                     return true;
                 case TokenKind.Semicolon or TokenKind.CloseBrace or TokenKind.EndOfFile:
+                case TokenKind.Equals or TokenKind.PlusEquals or TokenKind.MinusEquals or TokenKind.StarEquals or TokenKind.SlashEquals
+                    or TokenKind.PercentEquals or TokenKind.AmpEquals or TokenKind.BarEquals or TokenKind.CaretEquals
+                    or TokenKind.LessLessEquals or TokenKind.QuestionQuestionEquals when depth == 0:
                     return false;
             }
         }
@@ -1137,6 +1147,12 @@ public sealed class Parser
             while (Accept(TokenKind.Comma));
             Expect(TokenKind.CloseParen);
             variable = new Name(SpanFrom(groupStart), "_");
+            // `for (x) in xs`: parentheses around one loop variable, accepted like the other input forms (§15).
+            if (names.Count == 1)
+            {
+                variable = names[0];
+                names.Clear();
+            }
         }
         else
         {
@@ -1149,12 +1165,12 @@ public sealed class Parser
         return new ForStmt(SpanFrom(start), BindingKind.Let, type, variable, iterable, body) { Try = isTry, Names = names.ToArray() };
     }
 
-    /// <summary>At <c>(</c> after <c>for</c>: <c>(a, b) in</c>, as opposed to the input form <c>(let x in xs)</c>.</summary>
+    /// <summary>At <c>(</c> after <c>for</c>: <c>(a, b) in</c> or <c>(x) in</c>, as opposed to the input form <c>(let x in xs)</c>.</summary>
     private bool IsTupleLoopVariables()
     {
         var i = _pos + 1;
         while (IsName(KindAt(i)) && KindAt(i + 1) == TokenKind.Comma) i += 2;
-        return i > _pos + 1 && IsName(KindAt(i)) && KindAt(i + 1) == TokenKind.CloseParen && KindAt(i + 2) == TokenKind.InKeyword;
+        return IsName(KindAt(i)) && KindAt(i + 1) == TokenKind.CloseParen && KindAt(i + 2) == TokenKind.InKeyword;
     }
 
     /// <summary>The input form <c>for (let x in xs)</c>, <c>foreach (var x in xs)</c>.</summary>
@@ -1260,9 +1276,10 @@ public sealed class Parser
     {
         var kind = Advance().Kind == TokenKind.ErrdeferKeyword ? DeferKind.Failing : DeferKind.Always;
         // `failing` and `panicking` are words only here, and only when a statement or a `(name)` binding follows:
-        // `defer failing();` still calls a function named `failing`.
+        // `defer failing();` still calls a function named `failing`. `failing(x)` is a binding only when a statement starts
+        // after its `)`; `defer failing(x);` or `defer failing(x).close();` is a call.
         if (kind == DeferKind.Always && (AtContextual("failing") || AtContextual("panicking"))
-            && (Peek(1) is TokenKind.Identifier or TokenKind.OpenBrace || Peek(1).IsKeyword() || IsBinding(1)))
+            && (StartsDeferBody(1) || IsBinding(1) && StartsDeferBody(4)))
             kind = Text(Advance()) == "failing" ? DeferKind.Failing : DeferKind.Panicking;
         Name? binding = null;
         if (kind != DeferKind.Always && IsBinding(0))
@@ -1273,6 +1290,8 @@ public sealed class Parser
         }
         return new DeferStmt(SpanFrom(start), kind, binding, ParseEmbedded());
     }
+
+    private bool StartsDeferBody(int n) => Peek(n) is TokenKind.Identifier or TokenKind.OpenBrace || Peek(n).IsKeyword();
 
     private bool IsBinding(int n) => Peek(n) == TokenKind.OpenParen && IsName(Peek(n + 1)) && Peek(n + 2) == TokenKind.CloseParen;
 

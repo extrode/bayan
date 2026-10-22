@@ -168,6 +168,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor PanicHandlerRestricted = Error("BYN2612", "{0} is not allowed in a panic handler");
     public static readonly DiagnosticDescriptor PanicHandlerReads = Error("BYN2613", "a panic handler reads only `let` bindings and parameters");
     public static readonly DiagnosticDescriptor OnPanicPlacement = Error("BYN2614", "`Panic.onPanic` may be set only as the first statement of `main`");
+    public static readonly DiagnosticDescriptor PanicHandlerReadsMoved = Error("BYN2615", "a panic handler reads `{0}`, which is moved after the handler is registered");
     public static readonly DiagnosticDescriptor UnknownUnionVariant = Error("BYN2700", "`{0}` is not a variant of union `{1}`");
     public static readonly DiagnosticDescriptor DuplicateUnionVariant = Error("BYN2701", "union `{0}` already has a variant `{1}`");
     public static readonly DiagnosticDescriptor EmptyUnion = Error("BYN2702", "union `{0}` has no variants");
