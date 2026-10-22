@@ -72,7 +72,7 @@ public sealed class CEmitter
         if (variants.Count == 0) errors.Append("    BYN_STR(\"\", 0),\n");
         foreach (var v in variants) errors.Append("    ").Append(StringLiteral(v.Summary)).Append(",\n");
         errors.Append("};\n\n");
-        errors.Append("static void byn_w_error(byn_writer* w, uint32_t code) {\n");
+        errors.Append("static __attribute__((unused)) void byn_w_error(byn_writer* w, uint32_t code) {\n");
         errors.Append($"    if (code == 0 || code > {variants.Count}) byn_w_str(w, BYN_STR(\"no error\", 8));\n");
         errors.Append("    else byn_w_str(w, byn_errors[code - 1]);\n}\n\n");
         errors.Append("static const uint8_t byn_exit_codes[] = {");
