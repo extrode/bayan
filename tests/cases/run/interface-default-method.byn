@@ -1,0 +1,25 @@
+interface IShape {
+    i64 area();
+    string describe() => $"area {area()}";
+    string kind => "shape";
+}
+
+struct Square : IShape {
+    i64 side;
+
+    i64 area() => side * side;
+}
+
+struct Circle : IShape {
+    i64 r;
+
+    i64 area() => 3 * r * r;
+
+    string describe() => $"circle {area()}";
+}
+
+let s = Square { side = 3 };
+let c = Circle { r = 2 };
+print(s.describe());
+print(c.describe());
+print(s.kind);

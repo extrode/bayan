@@ -215,12 +215,12 @@ internal sealed partial class Binder
             case NameExpr n:
                 return BindName(n);
             case ThisExpr t:
-                if (_struct is null || _fn is null || _fn.IsStatic || _fn.Kind is not (FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor))
+                if (_thisType is null || _fn is null || _fn.IsStatic || _fn.Kind is not (FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor))
                 {
                     Report(DiagnosticCodes.ThisOutsideMethod, t.Span, []);
                     return new BoundErrorExpr(t);
                 }
-                return new BoundThis(t, _struct);
+                return new BoundThis(t, _thisType);
             case MemberExpr m:
                 return BindMember(m);
             case TargetMemberExpr t:
@@ -413,7 +413,7 @@ internal sealed partial class Binder
                 return new BoundConversion(n, new BoundLocal(n, local), ((OptionalType)local.Type).Inner, ConversionKind.Narrow);
             return new BoundLocal(n, local);
         }
-        if (_struct is not null && LookupMember(_struct, name) is { } member)
+        if (_thisType is not null && LookupMember(_thisType, name) is { } member)
             return BindImplicitThisMember(n, member);
         if (Module.Constants.TryGetValue(name, out var constant)) return ConstantRef(n, constant);
         if (Module.Functions.TryGetValue(name, out var fns)) return new BoundMethodGroup(n, null, fns[0]);
@@ -482,8 +482,13 @@ internal sealed partial class Binder
         return new BoundLiteral(syntax, c.Type, c.Value) { Constant = c.Value };
     }
 
-    private static Symbol? LookupMember(StructSymbol s, string name) =>
-        (Symbol?)s.FindField(name) ?? (Symbol?)s.FindProperty(name) ?? s.FindMethods(name).FirstOrDefault();
+    /// <summary>A member reachable through an implicit <c>this</c>; in a default method, the interface's members.</summary>
+    private static Symbol? LookupMember(TypeSymbol t, string name) => t switch
+    {
+        StructSymbol s => (Symbol?)s.FindField(name) ?? (Symbol?)s.FindProperty(name) ?? s.FindMethods(name).FirstOrDefault(),
+        TypeParameterType p => p.Constraints.Select(i => i.FindProperty(name) ?? i.FindMethods(name).FirstOrDefault()).FirstOrDefault(m => m is not null),
+        _ => null,
+    };
 
     private BoundExpr BindImplicitThisMember(NameExpr n, Symbol member)
     {
@@ -495,11 +500,12 @@ internal sealed partial class Binder
                 help: _fn is { IsStatic: true } ? "call it on an instance; a `static` method has no `this`" : "set it in a constructor; field defaults cannot read other fields");
             return new BoundErrorExpr(n);
         }
-        var self = new BoundThis(n, _struct!);
+        var self = new BoundThis(n, _thisType!);
         return member switch
         {
             FieldSymbol f => new BoundField(n, self, f),
             PropertySymbol p => new BoundCall(n, p.Getter, self, [], p.Type),
+            FunctionSymbol { Kind: FunctionKind.Getter } g => new BoundCall(n, g, self, [], g.ReturnType),
             FunctionSymbol m => new BoundMethodGroup(n, self, m),
             _ => new BoundErrorExpr(n),
         };

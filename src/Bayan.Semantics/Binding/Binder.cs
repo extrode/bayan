@@ -15,6 +15,8 @@ internal sealed partial class Binder
     private readonly FileContext _file;
     private readonly FunctionSymbol? _fn;
     private readonly StructSymbol? _struct;
+    /// <summary>The type of <c>this</c>: the struct, or <c>Self</c> in an interface's default method.</summary>
+    private readonly TypeSymbol? _thisType;
     private readonly TypeResolver _types;
     private Scope _scope = new(null);
     private readonly List<JumpTarget> _targets = new();
@@ -42,6 +44,7 @@ internal sealed partial class Binder
         _file = file;
         _fn = fn;
         _struct = container;
+        _thisType = (TypeSymbol?)container ?? fn?.Interface?.Self;
         _types = new TypeResolver(c, file, container, typeArgs ?? fn?.TypeMap ?? container?.TypeMap);
         _seeds = seeds;
     }
