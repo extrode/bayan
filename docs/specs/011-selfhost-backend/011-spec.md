@@ -1,0 +1,92 @@
+# 011 — Lowering and the C emitter in Bayan
+Status: draft
+Created: 2026-10-22
+Depends on: spec 010 (`selfhost/semantics/`, its pools, its diagnostics and L018) on dev before 011 T2, and through it specs 009, 008, 007 and 006. Design round 3 plan (`docs/plans/2026-10-22-001-design-round-3.md` §4): every step that changes what `src/Bayan.Lowering` or `src/Bayan.Backend.C` emits lands before 011 T1, and round 3 wins on any conflict. Those are 5.3a (`defer` guard capture: the guard is stored in the cleanup record, `Lowerer.cs`), 5.3b (`type distinct` wrapper, a construction function per checked struct, `ValidationError<T>`; `Lowerer.cs`, `CEmitter.cs`, `bayan-rt.h`), 5.3c (typestate: a `u8` tag field and a payload union laid out by `CEmitter.cs`, J12), 5.3d (`provide` lowering in its own method, `log`; `Lowerer.cs`) and 5.4 (stdlib members: `rune` members, `runeCount`, `log`, emitted as builtins), plus the §7 `except` loop prologue wherever round 3 lands it. 010 already waits for 5.3a–5.4, so 011 T1 can start when 010 T1 has.
+
+## Problem
+
+The handoff's "Road to self-hosting" row 011 ports lowering and the C emitter: a Bayan program under `selfhost/`, checked against `--emit-c` on every `run/` golden. Spec 010 gives a Bayan checker whose symbols, types and bound tree are pools addressed by ids. Nothing in Bayan turns them into C today.
+
+The C# back end is about 3,300 lines at `d462122`, before round 3 adds tag layouts, construction functions and `provide`: `Lowerer.cs` (1,509: temps, spills and operand ordering, cleanups for `defer`, `context`, arenas and panic handlers, statements, loops, `for` over every sequence kind, switch, expressions, collections, calls, the power-assert diagram, `try`/`catch`, patterns and claims), `LoweredNodes.cs` (108: `LoweredProgram`, `LoweredFunction` and 23 lowered statement and expression records that extend the bound tree), `PowerAssert.cs` (78) and `CEmitter.cs` (1,637: names, C types and type keys, the type table, generated helpers, the debug ownership checker, equality, map methods, formatting, static tables, string and float literals, and per-function emission with the dry run that finds unsequenced moves). It writes one C11 translation unit that includes `bayan-rt.h`; the runtime (`src/runtime/bayan-rt.{h,c}`, 1,768 lines) is C and is not part of the port.
+
+Three things stand between the port and a law "byte-identical C on every input". The emitted file lists source paths from a `Dictionary` that is iterated (`CEmitter.cs:95`), so its order rests on .NET keeping insertion order rather than on the code. Float literals are written with .NET's `"R"` format (`CEmitter.cs:742`: `1E+20`, `-0` then `.0`), which no Bayan formatter produces. And the lowerer and emitter recurse once per nested expression, so an input that 010's binder accepts might still overflow the .NET stack here, and no law can hold on an input that crashes one side.
+
+## Goals
+
+- `bayan-emit`, written in Bayan in round-3 syntax and built by the C# compiler, prints exactly the C that `bayan build --emit-c` prints (`CliApp.EmitC`), in every build mode, on every `run/` golden and on every other error-free input.
+- `bayan-emit` emits its own module's C byte-identical to the C# compiler, as the step before spec 012's stage 1.
+- Neither back end crashes on any input the checkers accept.
+- A change to either back end that makes them disagree fails the normal test run and names the input and the first differing line.
+
+## Non-goals
+
+- Replacing the C# back end inside the compiler, or `bayan build` and `bayan run` from Bayan (spec 012). The Bayan back end is a second implementation, checked against the first.
+- Invoking a C compiler, the build cache, targets and `Toolchain.cs` (spec 012).
+- Porting or changing the runtime (`src/runtime/`) beyond what the round-3 steps in the Depends-on line do (Q168).
+- Better or different C: new optimizations, fewer temps, `#line` directives. The port is 1:1 by method; a change lands in C# first and is ported after (Q173).
+- Checking the behaviour of the emitted programs: the `run/` goldens already do that for the C# output, and identical C runs identically (Q165).
+- Extending 010's bound pools with lowered cases, or any change to `selfhost/semantics/` except T1's conditional depth bound (Q166).
+- `Owned<T>`, `type distinct` ids and round-3 §9 typed indices for the port's own data (as 009 Q144).
+
+## User stories
+
+- As the author of spec 012, I want `bayan-emit` to give the C# compiler's C for every input, so that stage 1 differs from stage 0 only in which compiler built it.
+- As the port author, I want each region of `Lowerer.cs` and `CEmitter.cs` ported as one Bayan file beside its C# region, so that a reviewer reads them side by side.
+- As a compiler developer, I want a failing test that names the input, the build mode and the first differing C line whenever the back ends disagree, so that the two cannot drift.
+- As the port author, I want the back end to emit its own sources early, so that the subset the compiler needs is proven before the long tail of `run/` goldens.
+- As anyone fuzzing `bayan build`, I want a deep expression that checks cleanly to emit C or to be a diagnostic, never a stack overflow.
+
+## Requirements
+
+- R1 Program. `selfhost/backend/main.byn` is `bayan-emit`: `bayan-emit [--mode debug|safe|fast] <path>` checks a `.byn` file or a package directory (entry `main.byn`) as `bayan-check` does (010 R1), with the path's directory as the package root as `RunTests` does (`tests/Bayan.Tests/RunTests.cs:76`), and prints the C that `CliApp.EmitC(c, mode)` returns; a name ending in `.test.byn` is compiled with tests and emitted as `bayan test` does (`CliApp.cs:561-562`). With an error it prints the rendered diagnostics as `bayan-check` does and exits 1; otherwise it exits 0. `bayan-emit -` reads one file from stdin as `<stdin>`. `bayan-emit --many <dir>` prints `== <name> <mode>` and that output for every input in `<dir>` in name order, once with ownership checks and once without. `bayan-emit --time <path>` prints only the nanoseconds spent lowering and emitting. Exit 2 on a usage error, 4 when an input cannot be read, as `bayan-check`. `--mode` defaults to `safe`, as `bayan build`.
+- R2 Source. Round-3 syntax (spec and GRAMMAR on this branch): no semicolons, name-first bindings and fields, `->` returns, `@` attributes, particles, `length` for sizes; `bayan fmt --check selfhost/backend` changes nothing. One module made of the lexer's, parser's and semantics' library files (every `selfhost/{lexer,parser,semantics}/*.byn` except `main.byn`) and `selfhost/backend/*.byn`, assembled by the test harness (Q167).
+- R3 Coverage. The port lowers and emits exactly what `src/Bayan.Lowering` and `src/Bayan.Backend.C/CEmitter.cs` do after the round-3 steps in the Depends-on line: every lowered record, every cleanup kind, every statement and expression the lowerer accepts, the power-assert diagram, every C type, type key, helper, static table and builtin the emitter writes, the debug ownership checker, map methods, formatting, equality, the error table and `main`. The target is every `run/` golden (Q177).
+- R4 Data. The lowered program is pools of `{ span, type, kind }` structs addressed by id structs (`LExprId { index: i32 }`, `LStmtId`), one `LExprKind` / `LStmtKind` case per bound record the lowerer passes through and per record in `LoweredNodes.cs`; it reads 010's symbol, type and bound pools by id and never copies or changes them, except that lowering temps are appended to 010's local pool. The emitter's tables (`_types`, `_helpers`, `_statics`, `_files`, `_testIndex`, `_names`) are `Map`s keyed by `string`, `FunctionId` or `LocalId` with insertion order (L003) as their only order; the C text is built in one `StrBuf` per section. No struct holds a pointer, an `Owned<T>` or a borrow (Q166).
+- R5 Language use. Interface constraints (006 R4) and `for x in pool` (006 R9) as in 010; `T -> bool` parameters with `it` lambdas (007) for the lowerer's `Any`/`Moves` searches (`Lowerer.cs:242-257`) and the emitter's variant filters; no lambda captures `this` or a `var` and no function value is stored in a field (007 R8, R10). The C# `Capture(Action)` (`Lowerer.cs:103`) becomes a push of an output list and a pop that returns it.
+- R6 Output. For every error-free input, every build mode and, for `.test.byn` inputs, the test path, `bayan-emit`'s output is byte-identical to the C# reference: `CliApp.EmitC(c, mode)` (`CliApp.cs:371`), or `CEmitter.Emit(Lowerer.Lower(c), debug)` on the test path. Safe and fast emit the same text, since `EmitC` passes only `mode == Debug`; the harness checks debug and one non-debug mode (Q165).
+- R7 Order and literals. Before the port (T1), the C# emitter's source-path table is listed through an explicit order list like `_typeOrder` and `_helperOrder` (`CEmitter.cs:21-31`), and a test runs `EmitC` twice on every error-free input and compares. Float literals in the Bayan port reproduce `FloatLiteral` (`CEmitter.cs:738-745`) byte for byte, `"R"` exponent form and `.0` suffix included (Q169).
+- R8 Depth. If T1 shows that `Lowerer.Lower` or `CEmitter.Emit` overflows the stack on an input that checks without error (a chain of 100,000 `1 +` terms, 100,000 nested `if` expressions), then both checkers bound it: where 010 allocated BYN2841, T1 lowers its threshold to a depth both back ends survive; where it did not, both checkers report BYN2850 at the operand that opens the first level T1 finds unsafe, and L018 is re-run. If T1 shows no overflow, nothing is added and BYN2850 stays reserved (Q172).
+- R9 Checks in the suite. The normal test run builds `bayan-emit` once per test process (cached as `bayan-check` is) and compares its output with the C# reference, computed in process, for every `tests/cases/run/` case in its `// mode:` (default `safe`) and in the other ownership setting. A disagreement fails the run and names the input, the mode and the first differing line. Until R3's target is reached, the cases not yet passing are listed in one pending file; a listed case that passes fails the run, so the list only shrinks.
+- R10 Repository files. The same comparison holds, in debug and safe, for every `.byn` under `tests/cases/typed`, `examples`, `selfhost` and `tools` whose C# check has no error, and for every `tests/cases/new` scaffold that does.
+- R11 Corpus. On a generated corpus of at least 10,000 error-free inputs (Q174), `bayan-emit --many` prints exactly the C# reference for each, never panics, and finishes each input within the test's timeout.
+- R12 Speed. Lowering and emitting R2's module with `bayan-emit` built in `fast` mode takes no more than 10 times as long as `Lowerer.Lower` plus `CEmitter.Emit` on the same machine, checking excluded (median of 5; `BAYAN_SKIP_TIMING=1` skips) (Q175).
+- R13 Self-hosting reach. `bayan-emit` on R2's module (the lexer, parser, semantics and back end sources together) prints the C# reference in debug and safe; this has its own test and is reached before the full `run/` set (T9) (Q176).
+- R14 Internal errors. An error-free input on which `Lowerer` or `CEmitter` throws (`Lowerer.cs:415`, `:890`, `:1077`, `:1471`; `CEmitter.cs:251`, `:474`, `:637`, `:734`, `:1026`, `:1176`, `:1489`, `:1503`, `:1552`, `:1593`) fails the run as a C# bug; it is fixed in C# with its own `run/` golden, not ported. The port's counterpart of each throw is a `panic` with the same message, which the harness reports as a port bug (Q173).
+- R15 Diagnostic docs. BYN2850, if allocated, has a `docs/diagnostics/BYN2850.md` page, a `diag/` golden and a verb-first help (spec 005 R15).
+
+## Acceptance criteria
+
+- Given `tests/cases/run/arithmetic.byn`, when `bayan-emit` runs on it, then it prints the same bytes as `bayan build --emit-c tests/cases/run/arithmetic.byn` and exits 0.
+- Given every `tests/cases/run/*.byn`, in its `// mode:` and in the other ownership setting, then `bayan-emit`'s output equals the C# reference byte for byte, and the pending list is empty.
+- Given a `run/` case in `// mode: debug`, then the output has `#ifndef BYN_DEBUG` after the header comment, and the same case in `safe` does not, on both sides.
+- Given a `.test.byn` run case, then `bayan-emit` prints the test dispatch in `main` as the C# test path does.
+- Given a program whose source holds `1e20`, `0.1`, `-0.0` and `3.0` as `f64` and `f32` constants, then both sides print `(1E+20)`, `(0.1)`, `(-0.0)`, `(3.0)` and the `(float)` forms identically.
+- Given a package with two files whose functions are emitted in alternating order, then the `byn_file_<n>` table lists the files in first-use order on both sides.
+- Given an input with an error, then `bayan-emit` prints the same diagnostics as `bayan-check` and exits 1, and no C.
+- Given `let x = 1` in `main` on stdin, when `bayan-emit -` runs, then the output equals the C# reference for a file with that text.
+- Given R2's module, then `bayan-emit` prints the C# reference in debug and safe.
+- Given a chain of 100,000 `1 +` terms in a function body, then neither process crashes, and either both emit identical C or both report the same depth diagnostic.
+- Given the 10,000-input corpus, then every output agrees in both settings and stderr has no `panic:`.
+- Given an error-free input on which `CEmitter.Emit` throws, then the harness fails naming the input and the C# exception, not a mismatch.
+
+## Law candidates
+
+- L019 (property, proven like L001, L017 and L018): for every error-free input in the emitter corpus (every `run/` case, every error-free `.byn` in the repository, and the generated corpus of R11), in debug and in safe, `bayan-emit` and `CliApp.EmitC` produce byte-identical C, and `bayan-emit` exits 0 within the timeout. A mutation in the Bayan port that runs `defer` cleanups in declaration order instead of reverse order, or that drops the `.0` suffix from integral float literals, makes the proof fail.
+
+## Open questions
+
+Numbered after 010's Q164. Each records the conservative choice 011 takes; the handoff gets them in T16.
+
+- Q165 What equivalence compares: the C text `EmitC` returns, byte for byte, for debug and one non-debug mode, from an in-process C# `Compilation`. The C compiler, the runtime and the programs' behaviour are not compared; `bayan build --emit-c` gains no flag. Conservative: identical C is the strongest check that needs no C toolchain, and the `run/` goldens already cover behaviour.
+- Q166 Lowered representation: separate lowered pools in `selfhost/backend/lowered.byn` that mirror the bound kinds the lowerer passes through plus the `LoweredNodes.cs` records; 010's `BoundExprKind` and `BoundStmtKind` gain no cases, and lowering appends only temps to 010's local pool. Conservative: `selfhost/semantics/` and L018 are untouched, at the cost of a second copy of the pass-through cases.
+- Q167 Build layout: one module of the lexer, parser and semantics library files plus `selfhost/backend/*.byn`, assembled by the harness with `Compilation.Create`, as 009 Q143 and 010 Q154. Conservative: no `import` between `selfhost/` directories; spec 012 decides the package layout.
+- Q168 Runtime: `bayan-emit` writes only the translation unit; `bayan-rt.h` and `bayan-rt.c` are neither ported nor embedded, and 011 makes no runtime change. Conservative: the runtime stays C, shared by both compilers; spec 012 decides how the Bayan driver ships it.
+- Q169 Float literals: the Bayan port formats a float as .NET's `"R"` does (shortest round-trip digits, `E+NN`/`E-NN` exponent, `.0` added when there is no `.` or `E`), built from the shortest-digit search in `selfhost/backend/literals.byn`; the C# emitter is not changed to the runtime's `byn_w_f64` format. Conservative: no change to any emitted C or golden; if T3 finds a value where the two shortest-digit searches disagree, the C# side is changed first, with a `run/` golden, and the decision is recorded in T3.
+- Q170 Paths: `FileName` (`CEmitter.cs:185-197`) is ported for the paths the harness passes, `/`-separated after the same `\` replacement, with `GetRelativePath` reduced to "strip the package root prefix, else the file name" and `..` handled as C#. Conservative: the harness gives both sides the same absolute path and root; a path case the reduction misses is a mismatch L019 reports, not a silent difference.
+- Q171 Order: the C# emitter's iterated `Dictionary` (`_files`) gets an order list in T1; every other `Dictionary` and `HashSet` in `Lowerer.cs` and `CEmitter.cs` is lookup-only (T1 records the 18 sites and verdicts). Conservative: one order, stated in C#, as 010 Q156.
+- Q172 Depth: bounded only if T1 shows a C# overflow, by lowering 010's BYN2841 threshold when it exists, else by BYN2850 in both checkers. The parser's BYN1070 and the back ends themselves gain no limit. Conservative: a back end cannot report a diagnostic on a checked program, so the bound belongs to the checker, and no code is added for a problem that does not exist.
+- Q173 Parity: ported 1:1 by method, including temp and label numbering, the operand-ordering spills, the dry run for unsequenced moves and helper registration order; any change is a C# change first, ported after, and C# throws are C# bugs (R14). Conservative: L019 never blocks a fix, and temp names stay the C# ones.
+- Q174 Corpus: 10,000 error-free inputs from a fixed xorshift seed, generated in the test: 010's corpus mutations of `run/` and `typed/` inputs kept only when the C# check reports no error (up to 20 tries per seed slot, then the unmutated input), programs from `tests/Bayan.Tests/OwnershipGenerator.cs`, and expression depths that straddle R8's bound. Conservative: deterministic, and every failing input is kept in `tmp/emitter-corpus/`.
+- Q175 Speed: at most 10 times the C# lowering and emission on R2's module, checking excluded, median of 5, skippable. Conservative: the bound specs 001, 009 and 010 set; checking is 010's R11.
+- Q176 Self-reach scope: identical C for R2's module, in debug and safe. Building that C with `Toolchain` and running the result (stage 1) is spec 012. Conservative: 011 compares text only, as Q165.
+- Q177 Coverage target: the self-hosted module needs a subset (no `Owned<T>`, typestate, panic handlers, power assert or arenas), and emitting it is a milestone (R13, T9). The target is still every `run/` golden, and L019 is enacted only when the pending list is empty. Conservative: the handoff row asks for every `run/` golden, as 010 Q152 for `diag/`.
