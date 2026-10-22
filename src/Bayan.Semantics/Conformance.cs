@@ -38,6 +38,7 @@ public sealed partial class Compilation
     private void Conform(StructSymbol s)
     {
         var source = s.File.Source;
+        var cloned = new Dictionary<FunctionSymbol, InterfaceSymbol>();
         foreach (var i in s.Bases)
         {
             var c = new Conformance(s, i);
@@ -64,10 +65,17 @@ public sealed partial class Compilation
                         Report(DiagnosticCodes.MissingInterfaceMember, source, at, [s.Name, member.Name, i.DisplayName, SignatureText(expected)],
                             label: $"needs `{member.Name}`", help: $"add `{SignatureText(expected)}` to `{s.Name}`", fix: InsertMember(s, expected));
                     else
-                        c.Witnesses[member] = CloneDefault(s, i, member, map, source, at);
+                        cloned[c.Witnesses[member] = CloneDefault(s, i, member, map, source, at)] = i;
                     continue;
                 }
                 c.Witnesses[member] = own;
+                // Two bases defaulting one name: the first clone would silently win.
+                if (!member.IsAbstract && cloned.TryGetValue(own, out var first))
+                {
+                    Report(DiagnosticCodes.InterfaceMemberMismatch, source, at, [s.Name, member.Name, $"{first.DisplayName}.{member.Name}", i.DisplayName, SignatureText(expected)],
+                        label: $"`{member.Name}` also has a default in `{first.DisplayName}`", help: $"add `{SignatureText(expected)}` to `{s.Name}` to choose one");
+                    continue;
+                }
                 var span = own.Location!.Value.Span;
                 if (!SameShape(own, expected))
                     Report(DiagnosticCodes.InterfaceMemberMismatch, source, span, [s.Name, member.Name, SignatureText(own), i.DisplayName, SignatureText(expected)],
