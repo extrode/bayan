@@ -1,8 +1,8 @@
 # Bayan status for porting Sūq
 
-Commit: `987676836d8eb310ba3f774602651d5191b33eb1` (`feat/design-round-2`)
+Commit: `f797e578735ddaf85fa9c126546bb5313913c6bc` (`feat/design-round-2`)
 
-Test run (`dotnet test -v q`): `Passed!  - Failed: 0, Passed: 1296, Skipped: 0, Total: 1296, Duration: 41 m`
+Test run (`dotnet test -v q`): `Failed!  - Failed: 1, Passed: 1315, Skipped: 0, Total: 1316, Duration: 22 m 35 s`. The failure is `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray`, an allocation-count test, on a machine loaded by other test runs; re-run alone it passes (1/1).
 
 Answers come from code and passing tests on `feat/design-round-2` (dev plus design round 2, gated, not merged into dev). Items marked *(round 2, unmerged)* exist here but not on dev. Work on other branches is reported as "in progress on <branch>" and is never counted as Implemented. Statuses were checked by running the CLI (`bayan new`, `check`, `run`) on small programs under `tmp/`.
 
@@ -46,8 +46,8 @@ let p = Point { x = 1, y: 2 };
 | 003 | `take()`, `switch (move x)`, runtime ownership checker, L008 | Implemented (`run/take`, `run/switch-move`, `L008OwnershipRuntimeTests.cs`) |
 | 004 | port friction: implied/swapped argument names, contextual keywords, literal inference, `string.from`, `catch { }`, `removeRange`, `toHex` | Implemented (`diag/argument-implied-name`, `run/string-from`, `run/to-hex`) |
 | 005 | terminal style for CLI output | Implemented (`tests/cases/style/`) |
-| 006 | interfaces and iterators | In progress on `feat/006-interfaces-iterators`: T1–T4 of 13 landed (parse, symbols, declarations, `dyn ref` type rules); conformance, dispatch, `for … in` user types, codegen not landed |
-| 007 | delegates and lambdas | In progress on `feat/007-lambdas` (spec, plan and tasks only; status draft) |
+| 006 | interfaces and iterators | In progress on `feat/006-interfaces-iterators`: T1–T4 of 13 landed (parse, symbols, declarations, `dyn ref` type rules); T5 (conformance) in progress on `chore/worker-006-t5`, not merged; dispatch, `for … in` user types, codegen not landed |
+| 007 | delegates and lambdas | In progress on `feat/007-lambdas` (spec, plan and tasks only, revised for round 3 at `2b14e26`; no compiler code) |
 | 008 | `HashMap` and `Symbol` interning | Not started |
 | 009 | parser in Bayan | Not started |
 | 010 | semantics in Bayan, binder-equivalence law | Not started |
@@ -61,7 +61,7 @@ let p = Point { x = 1, y: 2 };
 | Round 1 (`bayan-handoff.md`, addendum 001) | Applied |
 | Addendum 002 (laws, contracts, parallel iterators) | Partial: §1 keyword reservation only; `law` declarations, `bayan laws`, `ensures`, `.par()` not started |
 | Round 2 (`bayan-design-round-2.md`) | Partial *(round 2, unmerged)*, per section below |
-| Round 3 (`feat/design-round-3`) | Not applied in code. Docs in progress on `feat/design-round-3`: the HANDOFF with O1–O10 resolved (`735996c`), the plan (status "awaiting approval"), and GRAMMAR/STYLE updated. SPEC.md updated there too (`bf345fb`, landed after this report was started); code-alignment pass on the docs in progress |
+| Round 3 (`feat/design-round-3`) | Not applied in code. Docs in progress on `feat/design-round-3`: the HANDOFF with O1–O10 resolved (`735996c`), the plan (status "awaiting approval"), and GRAMMAR/STYLE updated. SPEC.md updated there too (`bf345fb`). A code-alignment pass on those docs is in progress on `chore/worker-r3-align` (not merged into `feat/design-round-3`) |
 
 Round 2 per section *(round 2, unmerged)*:
 
@@ -87,7 +87,7 @@ Round 2 per section *(round 2, unmerged)*:
 | 18 STYLE / `style` in `package.byn` | Partial: manifest field validated, read by nothing; no formatter | `tests/cases/manifest/style-invalid.byn` |
 | 19 Derivations | Spec only | — |
 
-Review fixes for round 2 are in progress on `chore/worker-r2-reviewfix`.
+Review fixes for round 2 (findings 1–6, 8, 10) are merged here at `f797e57` *(round 2, unmerged)*: `for try` over a `var` sequence advances that variable, `defer failing(x);` calls a function named `failing` instead of opening a `defer failing` block, `requires n > Limit {}` parses the block as the body, conditions may start with a parenthesis (`if (i32)big > 3`, `if (a) in 0..=3`, `for (x) in xs`), and the new BYN2615 (a `defer panicking` body reads a local moved after it). Evidence: `run/for-try-var`, `run/defer-call-named-failing`, `parse/requires-bare-condition`, `run/condition-cast`, `run/condition-paren-in`, `run/for-paren-single-variable`, `diag/panic-handler-reads-moved`.
 
 Round-3 sections not applied in code: all of them, §1–§21. Docs status on `feat/design-round-3`: HANDOFF and plan written; GRAMMAR and STYLE updated for §1, §5, §12, §13, §15; SPEC updated (`bf345fb`). The request's "audit fixes" did not match a named section in the round-3 docs; "audit" there means the `bayan audit` command (§4) and the Sūq naming audit in the friction log.
 
@@ -150,7 +150,7 @@ Evidence: `CliTests.cs`, `ScaffoldTests.cs`, `OutputTests.cs`, `tests/cases/styl
 | Units, suffixed literals | Parsed only | `5kg` lexes; binder gives BYN2022 "the unit suffix `kg` is not supported in v0.1" |
 | `T(x)` constructors | Not started | `u8(x)` is BYN2220; conversion is a C# cast `(u8)x`, which traps when out of range (`run/overflow-cast`) |
 | Try forms | Partial | only `string.tryFrom(bytes)` (`run/string-from`); no general `tryX` |
-| `requires` on functions | Implemented *(round 2, unmerged)* | `i32 f(i32 p) requires p in 0..=100 => …;` (`run/requires`, `diag/requires-violated`) |
+| `requires` on functions | Implemented *(round 2, unmerged)* | `i32 f(i32 p) requires p in 0..=100 => …;` (`run/requires`, `diag/requires-violated`, `parse/requires-bare-condition`) |
 | `requires` on fields | Parsed only | `i32 quantity requires quantity > 0;` parses (`diag/requires-field`) |
 | `requires` on distinct types, struct-level `at`, `ValidationError<T>`, `T.Patch`, `T.rules` | Not started | — |
 | `with` | Implemented, no re-checking | `p with { y = 4 }` (`diag/valid-types`, `diag/map-copy`) |
@@ -159,7 +159,7 @@ Evidence: `CliTests.cs`, `ScaffoldTests.cs`, `OutputTests.cs`, `tests/cases/styl
 | Constraints, `where` | Not started here; in progress on `feat/006-interfaces-iterators` (T1 parses `where`, T4 resolves `where T : I`) | — |
 | Interfaces, default methods, `dyn`, `extension`, `embed` (milestone 006) | Not started here. On `feat/006-interfaces-iterators`: interface declarations, conformance lists, `dyn ref I` type rules, built-in `IEnumerator`/`IIndexable` (T1–T4). Not done: conformance check, default-method instances, static/dyn dispatch, codegen, `for` over user types (T5–T13). `dyn I` (owning) is BYN2809 there; `extension` parses there; `embed` is a contextual keyword only | — |
 | `for x in` over ranges, spans, lists, maps | Implemented | `for x in xs { … }`, `for (let x in xs)` (`run/for-in`) |
-| `for try` | Implemented *(round 2, unmerged)* | over a value with `T? next(ref this) fails E` (`run/for-try`) |
+| `for try` | Implemented *(round 2, unmerged)* | over a value with `T? next(ref this) fails E` (`run/for-try`, `run/for-try-var`) |
 | `while let` | Implemented *(round 2, unmerged)* | `while let h = half(n) { … }` (`run/while-let`) |
 | `while try` | Changed from spec | `while let line = try lines.next() { … }` (`run/while-let`) |
 | Lazy queries (where/map/any/first/count/sum/collected) | Not started | needs lambdas (007) |
@@ -199,7 +199,7 @@ Evidence: `CliTests.cs`, `ScaffoldTests.cs`, `OutputTests.cs`, `tests/cases/styl
 | `Result<T, E>` | Implemented (one error enum) | `run/errors-result` |
 | `never` | Implemented | `never stop() { panic("x"); }`, `if never` (`run/if-never`, `diag/never-returns`) |
 | `defer`, `errdefer` | Implemented | `run/errors-cleanup` |
-| `defer failing (e)`, `defer panicking (p)` | Implemented *(round 2, unmerged)* | `run/errors-defer-failing`, `run/panic-handler-order`, `parse/defer-family` |
+| `defer failing (e)`, `defer panicking (p)` | Implemented *(round 2, unmerged)* | `run/errors-defer-failing`, `run/panic-handler-order`, `parse/defer-family`, `run/defer-call-named-failing`; a handler reading a local moved after it is BYN2615 (`diag/panic-handler-reads-moved`) |
 | When `defer` modifiers are evaluated | Changed from spec | `defer stmt if c;` parses and runs, but `c` is evaluated at scope exit, not at registration (probe; no golden). Round 3 J20 wants registration time |
 | `panic`, `Panic.onPanic` | Implemented *(round 2, unmerged)* | `Panic.onPanic = onCrash;` with `p.message` (`run/on-panic-order`, `run/panic-handler-binding`, `diag/on-panic-signature`); not on wasi |
 | `todo(message)` | Implemented | `run/todo` |
