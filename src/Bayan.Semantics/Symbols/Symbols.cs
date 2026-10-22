@@ -168,7 +168,8 @@ public sealed class PropertySymbol(string name, Location location, StructSymbol 
     public FunctionSymbol Getter { get; set; } = null!;
 }
 
-public enum FunctionKind { Function, Method, Constructor, Getter, Main, Test, Builtin }
+/// <summary><c>Lambda</c>: a lambda lifted to a function. <c>Invoke</c>: the call through a value of a <see cref="FunctionType"/>.</summary>
+public enum FunctionKind { Function, Method, Constructor, Getter, Main, Test, Builtin, Lambda, Invoke }
 
 public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol module, FunctionKind kind) : Symbol(name, location)
 {
@@ -219,6 +220,12 @@ public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol
     public FunctionSymbol? Template { get; init; }
 
     public IReadOnlyList<TypeSymbol> TypeArguments { get; init; } = [];
+
+    /// <summary>For a lambda: the outer locals and parameters it reads, in first-use order.</summary>
+    public List<LocalSymbol> Captures { get; } = new();
+
+    /// <summary>For a lambda: the function it was written in.</summary>
+    public FunctionSymbol? Enclosing { get; set; }
 
     /// <summary>What each type parameter name means in the signature and body (the owner's included).</summary>
     public IReadOnlyDictionary<string, TypeSymbol>? TypeMap { get; set; }
