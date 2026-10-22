@@ -308,7 +308,7 @@ interface IShape {
     string describe() => $"shape with area {area()}";   // default method
 }
 interface IParse<TSelf> where TSelf : IParse<TSelf> { static abstract TSelf parse(string s) fails ParseError; }
-interface IEnumerator { type Item; bool moveNext(ref this); ref readonly Item current { get; } }  // associated type
+interface IEnumerator { type Item; bool moveNext(ref this); Item current { get; } }  // associated type, returned by value
 ```
 
 - Interfaces declare mutating members with `ref this`, like structs (§3.10); implementations must match.
