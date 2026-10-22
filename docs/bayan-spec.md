@@ -17,7 +17,7 @@ Bayan (بيان, "clarity, eloquent exposition") is a value-oriented, natively c
    - **Paraphrases**, different compositions of the general grammar with the same meaning (`users except null` / `users.where(it is not null)`), are allowed.
    - **Ellipsis** (ḥadhf), omitting a part recoverable from local context (`it`, inferred types, target-typed `.member`), is allowed.
 
-   Guards against drift: no synonyms in the lexicon; new syntax must have its own job, not re-spell an existing construct; paraphrases must be truly equivalent (same narrowing, cost and effects), and where two forms are not, a lint flags the difference (`0..=n - 1` vs `0..n`, `p == Point { … }` vs `p is Point { … }`).
+   Guards against drift: no synonyms in the lexicon; new syntax must have its own job, not re-spell an existing construct; paraphrases must be truly equivalent (same narrowing, cost and effects), and where two forms are not, the difference is a style note with no diagnostic code (`0..=n - 1` vs `0..n`, `p == Point { … }` vs `p is Point { … }`).
 4. **Predictable.** Roots plus a closed set of patterns (ishtiqāq, §5).
 5. **Elegant by default.** One formatter, one canonical form. Style defaults (`docs/bayan-style.md`) are configurable per project in `package.byn` (§19.2); grammar rules (§5) are not style and cannot be configured away.
 
@@ -188,7 +188,7 @@ Lowercase type names are reserved for the language. C interop types: `c_int`, `c
 
 > Round 2 §12: `+` on strings hid allocation. Codes: BYN2201, BYN2209.
 
-> Round 3 §10, deliverable 4, O2: `length` is the one size name everywhere (bytes for strings, the O(1) answer); `runeCount` names the O(n) count, and `chars` follows `char` to `rune`. Codes: BYN1048, BYN2230.
+> Round 3 §10, deliverable 4, O2: `length` is the one size name everywhere (bytes for strings, the O(1) answer); `runeCount` names the O(n) count, and `chars` follows `char` to `rune`. Codes: BYN1048.
 
 ### 3.3 Symbols
 `Symbol` is an interned identifier (4-byte ID). Equality and hashing use the ID; **ordering uses the text** (UTF-8 bytes = code-point order). String literals convert to `Symbol` at compile time (interned table in `.rodata`).
@@ -403,7 +403,7 @@ union error Retryable = CarrierError except .rejected     // narrowed
 
 - Composed sets are **flattened**: `ShipError` has cases `timeout`, `rejected` and `outOfStock`. A component error converts implicitly to the composed set.
 - Two components sharing a case name is a compile error (BYN3202).
-- `error enum`, `error union` and `error set` are input forms for `union error` (BYN1044).
+- `error enum` and `error union` are input forms for `union error` (BYN1044); `error set S = A | B` is the round-2 input form (BYN1029).
 
 > Round 2 §5: commas everywhere a list of errors appears. Codes: BYN1029.
 
@@ -536,7 +536,7 @@ extension static Duration {
 Resolved statically. Instance members win over extensions. Extensions cannot add fields.
 
 ### 4.4 Attributes and purpose clauses
-Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5012)`, `@cases(…)`. Attribute names are camelCase (`@derive`, `@allow`); derivation names stay PascalCase (`Json`, `Row`). `[Name(args)]` is an input form (BYN1045): a line starting with `[` is a collection literal (§2.5). User-defined attributes are `struct attribute Route { path: string }`. Arguments must be compile-time constants. Attributes are readable only at compile time.
+Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5102)`, `@cases(…)`. Attribute names are camelCase (`@derive`, `@allow`); derivation names stay PascalCase (`Json`, `Row`). `[Name(args)]` is an input form (BYN1045): a line starting with `[` is a collection literal (§2.5). User-defined attributes are `struct attribute Route { path: string }`. Arguments must be compile-time constants. Attributes are readable only at compile time.
 
 **Purpose clauses** (mafʿūl li-ajlihi): `because "…"` is required wherever code bypasses a safety rule. A missing `because` is a compile error (BYN8001); ordinary attributes (`@derive`) take none.
 
@@ -739,7 +739,7 @@ union error Retryable = CarrierError except .rejected
 ```
 
 - Subtracts a pattern from a **sequence, set or error set**.
-- Takes **patterns only**, never boolean expressions: `orders except o.total > 100` is an error with a fix-it to `where` (BYN1052).
+- Takes **patterns only**, never boolean expressions: `orders except o.total > 100` is an error whose help points to `where` (BYN1052).
 - Never inside a `case` pattern: `case _ except .draft` is an error with a fix-it to `case not .draft` (BYN1051).
 - The loop variable narrows (`except null` gives a non-null type). Taint is preserved (§15.1).
 - A line starting with `except` continues the previous statement (§2.5).
@@ -803,9 +803,9 @@ flush() if unlikely buf.isFull
 d++ if debtor.amount == 0
 ```
 
-**The condition is evaluated first;** the statement runs only if it applies. The modifier is on the statement's line (BYN1042). `stmt unless not cond` is rejected with a fix-it to `stmt if cond` (BYN1049).
+**The condition is evaluated first;** the statement runs only if it applies. The modifier is on the statement's line (BYN1042). `stmt unless not cond` is rejected with a fix-it to `stmt if cond` (BYN1007).
 
-> Round 3 §3, §5: a modifier on the next line would read as a new statement; `unless not` is a double negative. Codes: BYN1042, BYN1049.
+> Round 3 §3, §5: a modifier on the next line would read as a new statement; `unless not` is a double negative. Codes: BYN1007, BYN1042.
 
 > Round 2 §4: a call's non-null result is bound with `?? return`, not the C# `is { } order` idiom.
 
@@ -1401,7 +1401,7 @@ let headers = ["Accept": "*/*"]                      // no target type: Map<stri
 
 > Round 2 §11: one size name and verb/participle pairs that follow §5.2; `first`/`last` return `T?` instead of a parallel `tryFirst`/`tryLast`. Codes: BYN2104, BYN2230, BYN2235, BYN2236.
 
-> Round 3 deliverable 4: the size name is `length`, not round 2's `count`, so `count(p)` reads as a predicate count only; BYN2230 now rewrites `.count`, `Count` and `Length` to `length`. `replaceRange` uses the particle `by`.
+> Round 3 deliverable 4: the size name stays `length`, as in round 2, so `count(p)` reads as a predicate count only. BYN2230 keeps its round-2 job, the renamed members `add` → `append` and `asString` → `finish`. `replaceRange` uses the particle `by`.
 - Maps: reading `map[k]` panics if missing; `map.getOr(k, by: fallback)` reads without inserting; `ref map.slot(k)` gets or inserts a default (requires `V : default`).
 - `Grid<T>`-style types accept multi-dimensional ranges: `grid[1..^1, 1..^1]`.
 
@@ -1564,7 +1564,7 @@ model test "cart behaves like a list" {
 - `snapshot(x)` with `bayan test --update`. `Io.Recording` / `Io.Replay` capture and replay traffic (untrusted fields redacted).
 - CI gates live in `package.byn` (§19.2); diff coverage is preferred over global coverage.
 
-> Round 2 §16, carried over (laws): `assert` is a statement with power output instead of an assertion API; `[Cases]` scales to tables; `requires` drives boundary and property tests. Codes: BYN2773, BYN2774, BYN2775.
+> Round 2 §16, carried over (laws): `assert` is a statement with power output instead of an assertion API; `[Cases]` (now `@cases`, round 3 §4) scales to tables; `requires` drives boundary and property tests. Codes: BYN2773, BYN2774, BYN2775.
 
 > Round 3 §6, §14: test attributes use `@` (`@cases`, `@pairwise`, `@nightly`); allocation freedom comes from the absence of `uses alloc`. Codes: BYN1045, BYN6001.
 
@@ -1650,12 +1650,12 @@ Input forms are alternate spellings that the editor and `bayan fmt` accept and r
 | `catch (e) switch { … }` | `catch switch { E e => … }` (fix only before `switch`; otherwise help text) | BYN1025 |
 | `error set S = A \| B` | `union error S = A, B` | BYN1029 |
 | `name = "…"` in `package.byn` | `name: "…"` | BYN3104 |
-| `.count`, `.Count`, `.Length` (size) | `.length` | BYN2230 |
+| `add`, `asString` | `append`, `finish` | BYN2230 |
 | `toString()`, `ToString()` | `format()` | BYN2031 |
 | Trailing `;`, `a; b` on one line | Newlines | BYN1040 |
 | `else` at the start of a line | `} else` on one line | BYN1041 |
 | `Grams w = 0g`, `string name` (field), `(i32 x)` (param), `i32 f()` (return) | `let w: Grams = 0g`, `name: string`, `(x: i32)`, `f() -> i32` | BYN1043 |
-| `unique struct`, `distinct type`, `error union`, `error set`, `error enum`, `attribute struct`, `open enum` | `struct unique`, `type distinct`, `union error`, `struct attribute`, `enum open` | BYN1044 |
+| `unique struct`, `distinct type`, `error union`, `error enum`, `attribute struct`, `open enum` | `struct unique`, `type distinct`, `union error`, `struct attribute`, `enum open` | BYN1044 |
 | `[Derive(Json)]` | `@derive(Json)` | BYN1045 |
 | `/* … */` | `//` lines | BYN1047 |
 | `char` | `rune` | BYN1048 |
@@ -1666,7 +1666,7 @@ Input forms are alternate spellings that the editor and `bayan fmt` accept and r
 | `noalloc`, `nosuspend`, `suspends` | Removed: no `uses` clause already means pure; `uses suspend` marks suspension | BYN6001 |
 | Booleans in the non-project spelling | The project's `style.booleans` spelling (§19.2) | none (`bayan fmt` only; style is never compiler-enforced) |
 
-The `.length` through `toString()` rows are beyond the HANDOFF round 2 table; the plan added them because each retired form gets the same treatment. The rows from trailing `;` on are round 3 §20, with the codes this spec allocates. Round 3 removes `if !x { … }` → `unless x { … }`: both are paraphrases, and BYN1032 retires.
+The `add` through `toString()` rows are beyond the HANDOFF round 2 table; the plan added them because each retired form gets the same treatment. The rows from trailing `;` on are round 3 §20, with the codes this spec allocates. Round 3 removes `if !x { … }` → `unless x { … }`: both are paraphrases, and BYN1032 retires.
 
 - `bayan fmt` is idempotent, and rewriting an input form then formatting again produces identical bytes (acceptance tests arrive with `bayan fmt`, not in v0.1).
 - Prose mode (§22) is unchanged.
