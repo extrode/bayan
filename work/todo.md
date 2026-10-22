@@ -77,3 +77,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `src/Bayan.Cli/Progress.cs:60-67` `Columns` counts emoji outside U+1F300–1F64F/U+1F900–1F9FF (🚀 U+1F680–1F6FF, U+1FA70–1FAFF, BMP emoji such as ✅ U+2705) as 1 column, so a long progress line can still wrap (005 review loop 3).
 - `src/Bayan.Cli/Messages.cs:156`: the unselectable-rerun notice says "control characters" for bidi-only names and is always singular (005 review loop 3).
 - Mixed selectable/unselectable failures in one `bayan test` run have no test (005 review loop 2).
+
+- (worktree audit 2026-10-22) clean worktrees whose work is already in a branch: chore-laws-timeout and feat-005-terminal-style (merged into `dev`); worker-r2-{cases,catch,defer,flow,naming,null,nullmove,refthis,requires,unions}, docs-design-round-2, worker-r3-plan, worker-007-docs (contained in their feature branches). The worker keys for r2-* and 007-docs are still live in `~/.claude`; worker-r3-plan has no key left.
