@@ -1,0 +1,24 @@
+struct Countdown : IEnumerator {
+    type Item = i64;
+
+    i64 left;
+
+    bool moveNext(ref this) {
+        left -= 1;
+        return left >= 0;
+    }
+
+    i64 current => left;
+}
+
+void main() {
+    var steps = Countdown { left = 3 };
+    for n in steps {
+        print($"step {n}");
+    }
+    print($"left {steps.left}");
+    for n in steps {
+        print($"again {n}");
+    }
+    print("done");
+}

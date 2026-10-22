@@ -750,7 +750,7 @@ internal sealed partial class Binder
                 _c.MutationChecks.Add(new MutationCheck(this, advance, iterable));
             else
             {
-                spill = new LocalSymbol($"<enumerator {_nextLocalId}>", new Location(Source, f.Iterable.Span), s, LocalKind.Var) { Id = _nextLocalId++ };
+                spill = new LocalSymbol($"enumerator_{_nextLocalId}", new Location(Source, f.Iterable.Span), s, LocalKind.Var) { Id = _nextLocalId++ };
                 _fn?.Locals.Add(spill);
             }
         }
