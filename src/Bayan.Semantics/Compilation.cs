@@ -193,6 +193,7 @@ public sealed class Compilation
         foreach (var module in Modules)
         {
             foreach (var s in module.Structs) DeclareMembers(s);
+            foreach (var s in module.Structs) Naming.CheckMembers(this, s);
             foreach (var f in module.AllFunctions.Where(f => f.Owner is null && !f.IsInstance && f.Kind != FunctionKind.Main && f.Kind != FunctionKind.Test).ToList())
                 DeclareSignature(f, f.Decl!, f.File!);
         }

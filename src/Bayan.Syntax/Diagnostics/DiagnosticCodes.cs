@@ -223,4 +223,10 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ManifestUnknownField = Error("BYN3101", "`{0}` is not a field of `{1}`");
     public static readonly DiagnosticDescriptor ManifestInvalidValue = Error("BYN3102", "`{0}` must be {1}");
     public static readonly DiagnosticDescriptor ManifestMissingField = Error("BYN3103", "`package.byn` has no `{0}`");
+    // ── Grammar (naming patterns, spec §5.2) 5000–5999: errors 50xx, lints 51xx ────
+    public static readonly DiagnosticDescriptor ParticipleWithoutVerb = Error("BYN5001", "`{0}` is the `-ed` form of `{1}`, which does not exist as a `ref this` member");
+    public static readonly DiagnosticDescriptor StateMemberMutates = Error("BYN5002", "`{0}` reads as state but modifies `this`");
+    public static readonly DiagnosticDescriptor TryWrongReturn = Error("BYN5003", "`try{0}` must return `{1}?` or `bool`; it is derived from `{2}() fails`");
+    public static readonly DiagnosticDescriptor NounOnMutator = Warning("BYN5101", "`{0}` is a noun on a `ref this` member; name the action");
+    public static readonly DiagnosticDescriptor BoolWithoutPrefix = Warning("BYN5102", "`{0}` is a `bool` state; prefix with `is`, `has` or `can`");
 }

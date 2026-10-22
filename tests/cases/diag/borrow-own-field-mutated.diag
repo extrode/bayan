@@ -1,8 +1,8 @@
-error BYN3003: cannot return a borrow of the temporary on line 14, which is freed when `counted`
-returns
+error BYN3003: cannot return a borrow of the temporary on line 14, which is freed when
+`spanAndCount` returns
 
-  14 │     (Span<Token>, i64) counted() => (toks.asSpan(), toks.length);
-     │                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  14 │     (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.length);
+     │                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
      │
   help: let the caller pass the buffer or allocator in, and borrow or allocate from that
 
