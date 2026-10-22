@@ -181,6 +181,13 @@ public sealed class Compilation
         foreach (var module in Modules)
             foreach (var file in module.Files)
                 DeclareFile(file);
+        // Bounds are resolved once every type is declared, so `where T : IOrder<T>` can name `T` and later types.
+        foreach (var where in _wheres) where();
+        DeclareInterfaceMembers(Builtins.IEnumerator);
+        DeclareInterfaceMembers(Builtins.IIndexable);
+        foreach (var module in Modules)
+            foreach (var i in module.Interfaces)
+                DeclareInterfaceMembers(i);
         foreach (var module in Modules)
             foreach (var set in module.ErrorSets)
                 DeclareVariants(set);
@@ -334,6 +341,7 @@ public sealed class Compilation
                     if (AddType(file, s.Name, sym)) module.Structs.Add(sym);
                     Naming.CheckType(this, file.Source, s.Name);
                     sym.TypeMap = DeclareTypeParameters(file, s.TypeParams, sym.TypeParameters);
+                    _wheres.Add(() => DeclareWhere(file, s.Where, sym.TypeParameters, sym.TypeMap, s.Name.Text));
                     break;
                 }
                 case ErrorEnumDecl e:
@@ -348,6 +356,8 @@ public sealed class Compilation
                     var sym = new EnumSymbol(e.Name.Text, Loc(file, e.Name), module, AccessOf(e.Modifiers), e, file);
                     if (AddType(file, e.Name, sym)) module.Enums.Add(sym);
                     Naming.CheckType(this, file.Source, e.Name);
+                    RejectBases(file, e.Bases, e.Name.Text, "an enum");
+                    _wheres.Add(() => DeclareWhere(file, e.Where, [], null, e.Name.Text));
                     break;
                 }
                 case UnionDecl u:
@@ -356,6 +366,32 @@ public sealed class Compilation
                     if (AddType(file, u.Name, sym)) module.Unions.Add(sym);
                     Naming.CheckType(this, file.Source, u.Name);
                     sym.TypeMap = DeclareTypeParameters(file, u.TypeParams, sym.TypeParameters);
+                    RejectBases(file, u.Bases, u.Name.Text, "a union");
+                    _wheres.Add(() => DeclareWhere(file, u.Where, sym.TypeParameters, sym.TypeMap, u.Name.Text));
+                    break;
+                }
+                case InterfaceDecl i:
+                {
+                    var sym = new InterfaceSymbol(i.Name.Text, Loc(file, i.Name), module, AccessOf(i.Modifiers), file) { Decl = i };
+                    if (Builtins.FindInterface(i.Name.Text) is not null)
+                        Report(DiagnosticCodes.DuplicateDeclaration, file.Source, i.Name.Span, [i.Name.Text], label: "already declared as a built-in interface");
+                    else if (AddType(file, i.Name, sym))
+                        module.Interfaces.Add(sym);
+                    Naming.CheckInterface(this, file.Source, i.Name);
+                    sym.TypeMap = DeclareTypeParameters(file, i.TypeParams, sym.TypeParameters);
+                    _wheres.Add(() => DeclareWhere(file, i.Where, sym.TypeParameters, sym.TypeMap, i.Name.Text));
+                    break;
+                }
+                case ExtensionDecl x:
+                {
+                    if (x.Bases.Length == 0)
+                    {
+                        Report(DiagnosticCodes.Unsupported, file.Source, x.Name.Span, ["`extension` declarations"]);
+                        break;
+                    }
+                    var bases = string.Join(", ", x.Bases.Select(b => file.Source.GetText(b.Span)));
+                    Report(DiagnosticCodes.ExtensionConformance, file.Source, TextSpan.FromBounds(x.Span.Start, x.Bases[^1].Span.End), [x.Name.Text, bases],
+                        label: "retroactive conformance", help: $"list `{bases}` on `{x.Name.Text}`'s declaration");
                     break;
                 }
                 case TypeAliasDecl a:
@@ -380,6 +416,7 @@ public sealed class Compilation
                     };
                     Naming.CheckValue(this, file.Source, f.Name);
                     sym.TypeMap = DeclareTypeParameters(file, f.TypeParams, sym.TypeParameters);
+                    _wheres.Add(() => DeclareWhere(file, f.Where, sym.TypeParameters, sym.TypeMap, f.Name.Text));
                     if (f.Name.Text == "main" && file.Module == EntryModule)
                     {
                         if (module.Main is not null)
@@ -447,6 +484,7 @@ public sealed class Compilation
     private readonly Dictionary<FunctionSymbol, (TestDecl Decl, Expr[]? Values)> _testBodies = new();
     private readonly Dictionary<TestDecl, List<Expr[]>> _testCases = new();
     private (FunctionSymbol Main, List<GlobalStatement> Statements)? _mainStatements;
+    private readonly List<Action> _wheres = new();
 
     /// <summary>Declares the <c>&lt;A, B&gt;</c> of a generic declaration; the map is null when there are none.</summary>
     private Dictionary<string, TypeSymbol>? DeclareTypeParameters(FileContext file, Name[] names, List<TypeParameterType> into)
@@ -468,6 +506,53 @@ public sealed class Compilation
             map[name.Text] = parameter;
         }
         return map;
+    }
+
+    /// <summary>Resolves the bounds of <c>where T : IA, IB</c> into the constraints of <paramref name="parameters"/>.</summary>
+    private void DeclareWhere(FileContext file, WhereClause[] clauses, List<TypeParameterType> parameters, IReadOnlyDictionary<string, TypeSymbol>? typeMap, string owner)
+    {
+        if (clauses.Length == 0) return;
+        var types = new TypeResolver(this, file, null, typeMap);
+        foreach (var w in clauses)
+        {
+            if (parameters.Find(p => p.Name == w.Param.Text) is not { } parameter)
+            {
+                Report(DiagnosticCodes.WhereUnknownParameter, file.Source, w.Param.Span, [w.Param.Text], label: $"not a type parameter of `{owner}`",
+                    help: parameters.Count == 0
+                        ? $"remove the `where` clause; `{owner}` has no type parameters"
+                        : $"name one of {string.Join(", ", parameters.Select(p => $"`{p.Name}`"))}");
+                continue;
+            }
+            var constraints = parameter.Constraints.ToList();
+            foreach (var bound in w.Bounds)
+                if (ResolveInterface(types, file, bound) is { } i) constraints.Add(i);
+            parameter.Constraints = constraints;
+        }
+    }
+
+    /// <summary>A base or a <c>where</c> bound: an interface, or BYN2804.</summary>
+    private InterfaceSymbol? ResolveInterface(TypeResolver types, FileContext file, NamedType syntax)
+    {
+        var t = types.Resolve(syntax);
+        if (t is InterfaceSymbol i) return i;
+        if (!t.IsError)
+        {
+            var kind = t switch
+            {
+                StructSymbol => "a struct", UnionSymbol => "a union", EnumSymbol => "an enum", ErrorSetSymbol => "an error enum",
+                TypeParameterType => "a type parameter", _ => "a type",
+            };
+            Report(DiagnosticCodes.NotAnInterface, file.Source, syntax.Span, [t.DisplayName], label: kind, help: "list an `interface` here");
+        }
+        return null;
+    }
+
+    /// <summary>Interfaces listed on a union or enum (BYN2815): only structs conform yet.</summary>
+    private void RejectBases(FileContext file, NamedType[] bases, string name, string kind)
+    {
+        if (bases.Length > 0)
+            Report(DiagnosticCodes.NonStructConformance, file.Source, TextSpan.FromBounds(bases[0].Span.Start, bases[^1].Span.End), [name, kind],
+                label: "listed here", help: "wrap it in a struct that conforms");
     }
 
     private bool AddType(FileContext file, Name name, TypeSymbol type)
@@ -508,6 +593,7 @@ public sealed class Compilation
         ErrorSetSymbol e => e.Location,
         EnumSymbol e => e.Location,
         UnionSymbol u => u.Location,
+        InterfaceSymbol i => i.Location,
         AliasPlaceholder a => new Location(a.File.Source, a.Name.Span),
         _ => null,
     };
@@ -692,6 +778,15 @@ public sealed class Compilation
             names[n.Text] = Loc(file, n);
             return true;
         }
+        foreach (var b in s.Decl.Bases)
+        {
+            if (ResolveInterface(types, file, b) is not { } i) continue;
+            if (s.Bases.Contains(i))
+                Report(DiagnosticCodes.DuplicateConformance, file.Source, b.Span, [s.Name, i.DisplayName], label: "already listed",
+                    help: $"remove the second `{i.DisplayName}`");
+            else
+                s.Bases.Add(i);
+        }
         foreach (var member in s.Decl.Members)
         {
             switch (member)
@@ -723,12 +818,13 @@ public sealed class Compilation
                 {
                     Naming.CheckValue(this, file.Source, m.Name);
                     var typeMap = s.TypeMap;
+                    var ownParameters = new List<TypeParameterType>();
                     if (m.TypeParams.Length > 0)
                     {
                         Report(DiagnosticCodes.Unsupported, file.Source, m.TypeParams[0].Span, ["generic methods"],
                             help: "declare a generic free function, or make the struct generic");
                         // Declared anyway, so the signature reports nothing more.
-                        var own = DeclareTypeParameters(file, m.TypeParams, new List<TypeParameterType>())!;
+                        var own = DeclareTypeParameters(file, m.TypeParams, ownParameters)!;
                         typeMap = s.TypeMap is null ? own : new Dictionary<string, TypeSymbol>(s.TypeMap.Concat(own.Where(p => !s.TypeMap.ContainsKey(p.Key))));
                     }
                     var fn = new FunctionSymbol(m.Name.Text, Loc(file, m.Name), s.Module, FunctionKind.Method)
@@ -736,6 +832,7 @@ public sealed class Compilation
                         Owner = s, File = file, Decl = m, Access = AccessOf(m.Modifiers), IsStatic = m.Modifiers.HasFlag(Modifiers.Static),
                         TypeMap = typeMap,
                     };
+                    if (s.Template is null) DeclareWhere(file, m.Where, ownParameters, typeMap, m.Name.Text);
                     DeclareSignature(fn, m, file, s);
                     if (Unique(m.Name)) s.Methods.Add(fn);
                     s.Module.AllFunctions.Add(fn);
@@ -764,6 +861,85 @@ public sealed class Compilation
     }
 
     private readonly Dictionary<FunctionSymbol, ConstructorDecl> _constructorBodies = new();
+
+    /// <summary>Associated types first, so member signatures can name them; then methods and getters, abstract or default.</summary>
+    private void DeclareInterfaceMembers(InterfaceSymbol i)
+    {
+        var file = i.File;
+        var names = new Dictionary<string, Location>(StringComparer.Ordinal);
+        bool Unique(Name n)
+        {
+            if (names.TryGetValue(n.Text, out var prev))
+            {
+                ReportDuplicate(file.Source, n, prev);
+                return false;
+            }
+            names[n.Text] = Loc(file, n);
+            return true;
+        }
+        var typeMap = i.TypeMap is null ? new Dictionary<string, TypeSymbol>(StringComparer.Ordinal) : new Dictionary<string, TypeSymbol>(i.TypeMap, StringComparer.Ordinal);
+        foreach (var a in i.Decl.Members.OfType<AssociatedTypeDecl>())
+        {
+            Naming.CheckType(this, file.Source, a.Name);
+            if (!Unique(a.Name)) continue;
+            var t = new TypeParameterType(a.Name.Text);
+            i.AssociatedTypes.Add(t);
+            typeMap[a.Name.Text] = t;
+        }
+        var map = typeMap.Count == 0 ? null : typeMap;
+        var types = new TypeResolver(this, file, null, map);
+        void DeclareGetter(Modifiers modifiers, TypeSyntax type, Name name, bool isAbstract)
+        {
+            Naming.CheckValue(this, file.Source, name);
+            RejectStatic(file, modifiers, name);
+            var getter = new FunctionSymbol(name.Text, Loc(file, name), i.Module, FunctionKind.Getter)
+            {
+                Interface = i, IsAbstract = isAbstract, File = file, ReturnType = types.Resolve(type), Access = i.Access, TypeMap = map,
+            };
+            if (Unique(name)) i.Properties.Add(getter);
+        }
+        foreach (var member in i.Decl.Members)
+        {
+            switch (member)
+            {
+                case AssociatedTypeDecl:
+                    break;
+                case FunctionDecl m:
+                {
+                    Naming.CheckValue(this, file.Source, m.Name);
+                    RejectStatic(file, m.Modifiers, m.Name);
+                    var fn = new FunctionSymbol(m.Name.Text, Loc(file, m.Name), i.Module, FunctionKind.Method)
+                    {
+                        Interface = i, IsAbstract = m.Body is null && m.ExpressionBody is null, File = file, Decl = m, Access = i.Access,
+                        IsStatic = m.Modifiers.HasFlag(Modifiers.Static), TypeMap = map,
+                    };
+                    // Generic methods are declarable here so `dyn` can name them (BYN2808); calling one is not supported.
+                    if (DeclareTypeParameters(file, m.TypeParams, fn.TypeParameters) is { } own)
+                        fn.TypeMap = map is null ? own : new Dictionary<string, TypeSymbol>(map.Concat(own.Where(p => !map.ContainsKey(p.Key))));
+                    DeclareWhere(file, m.Where, fn.TypeParameters, fn.TypeMap, m.Name.Text);
+                    DeclareSignature(fn, m, file);
+                    if (Unique(m.Name)) i.Methods.Add(fn);
+                    break;
+                }
+                case GetterDecl g:
+                    DeclareGetter(g.Modifiers, g.Type, g.Name, isAbstract: true);
+                    break;
+                case PropertyDecl p:
+                    DeclareGetter(p.Modifiers, p.Type, p.Name, isAbstract: false);
+                    break;
+                default:
+                    Report(DiagnosticCodes.Unsupported, file.Source, member.Span, ["this kind of interface member"]);
+                    break;
+            }
+        }
+    }
+
+    private void RejectStatic(FileContext file, Modifiers modifiers, Name name)
+    {
+        if (modifiers.HasFlag(Modifiers.Static))
+            Report(DiagnosticCodes.StaticAbstract, file.Source, name.Span, [], label: "declared `static`",
+                help: "remove `static` or make it a free function");
+    }
 
     private void RejectModifiers(FileContext file, TextSpan span, Modifiers actual, Modifiers rejected, string what)
     {
