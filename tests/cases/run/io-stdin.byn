@@ -4,10 +4,10 @@ if (!input.isOk) {
     print("read failed");
 } else {
     let text = input.value;
-    print($"{text.bytes.count} bytes");
+    print($"{text.length} bytes");
     i64 lines = 0;
     for (let b in text.bytes) {
         if (b == 0x0A) lines += 1;
     }
-    print($"{lines} lines, last byte {text.bytes[text.bytes.count - 1]}, third from last {text.bytes[text.bytes.count - 3]}");
+    print($"{lines} lines, last byte {text.bytes[text.length - 1]}, third from last {text.bytes[text.length - 3]}");
 }

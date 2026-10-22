@@ -19,7 +19,7 @@ public struct Transfer {
 /// Splits `amount` into equal shares; the first participants absorb the leftover cents.
 public List<Share> splitEvenly(money.Cents amount, ReadOnlySpan<string> participants) {
     var shares = List<Share>();
-    let count = participants.count;
+    let count = participants.length;
     let base = amount / count;
     let leftover = amount % count;
     for (let i in 0..count) {
@@ -42,7 +42,7 @@ public List<Share> balances(ReadOnlySpan<Expense> expenses) {
 }
 
 void credit(ref List<Share> totals, string name, i64 cents) {
-    for (let i in 0..totals.count) {
+    for (let i in 0..totals.length) {
         if (totals[i].name == name) {
             totals[i] = (name: name, cents: totals[i].cents + cents);
             return;
@@ -74,7 +74,7 @@ public List<Transfer> settle(ReadOnlySpan<Share> balances) {
 /// Index of the smallest (or largest) balance; the earliest wins a tie.
 i64 extreme(ReadOnlySpan<Share> shares, bool lowest) {
     i64 best = 0;
-    for (let i in 1..shares.count) {
+    for (let i in 1..shares.length) {
         let better = lowest ? shares[i].cents < shares[best].cents : shares[i].cents > shares[best].cents;
         best = i if better;
     }

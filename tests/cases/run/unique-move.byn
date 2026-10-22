@@ -15,17 +15,17 @@ void main() {
     a.append(1);
     a.append(2);
     let b = move a;
-    print($"b {b.count}");
+    print($"b {b.length}");
 
     var bag = Bag { name = "bag", items = move b };
     bag.items.append(3);
-    print($"{bag.name} {bag.items.count}");
+    print($"{bag.name} {bag.items.length}");
 
     var lists = List<List<i64>>();
     var c = List<i64>();
     c.append(4);
     lists.append(move c);
-    print($"lists {lists.count} {lists[0].count}");
+    print($"lists {lists.length} {lists[0].length}");
 
     var d = List<i64>();
     d.append(5);
@@ -34,7 +34,7 @@ void main() {
 
     d = List<i64>();
     d.append(7);
-    print($"d {d.count} {d[0]}");
+    print($"d {d.length} {d[0]}");
 
     i64 n = 8;
     let m = move n;

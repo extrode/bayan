@@ -32,7 +32,7 @@ void main() {
         case .full(var items):
             items.append(3);
             let h = Holder { items = move items };
-            print($"stored {h.items.count}");
+            print($"stored {h.items.length}");
         case .empty:
             print("empty");
     }
@@ -54,7 +54,7 @@ void main() {
     let u = Slot.full(List<i64>());
     switch (u) {
         case .full(let items):
-            print($"borrowed {items.count}");
+            print($"borrowed {items.length}");
         default:
     }
     switch (move u) {

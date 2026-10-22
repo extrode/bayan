@@ -9,8 +9,8 @@ void main() {
     var sb = StrBuf();
     sb.append("x");
     let other = sb;
-    print($"{a.count} {b.count} {m.count} {n.count} {sb.finish()} {other.finish()}");
+    print($"{a.length} {b.length} {m.length} {n.length} {sb.finish()} {other.finish()}");
     let fine = a.copy(to: arena);
     let moved = move m;
-    print($"{fine.count} {moved.count}");
+    print($"{fine.length} {moved.length}");
 }

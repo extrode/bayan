@@ -15,10 +15,10 @@ void main() {
     using var arena = Arena();
     context (allocator: arena) {
         var xs = squares(5);
-        print($"{xs.count} {xs[4]} {xs.isEmpty}");
+        print($"{xs.length} {xs[4]} {xs.isEmpty}");
         xs.append(100);
         let last = xs.removeLast();
-        print($"{last} {xs.count}");
+        print($"{last} {xs.length}");
         var items = List<Item>();
         items.append(Item { name = "pen", qty = 2 });
         items.append(Item { name = "ink", qty = 5 });
@@ -26,11 +26,11 @@ void main() {
         for (let it in items) {
             q += it.qty;
         }
-        print($"{items.count} {q} {items[1].name}");
+        print($"{items.length} {q} {items[1].name}");
         let copy = xs.asSpan()[1..3].copy(to: arena);
-        print($"{copy.count} {copy[0]} {copy[1]}");
+        print($"{copy.length} {copy[0]} {copy[1]}");
         xs.clear();
-        print($"{xs.count} {copy.count}");
+        print($"{xs.length} {copy.length}");
         let name = "temporary".copy(to: arena);
         print(name);
     }
@@ -38,6 +38,6 @@ void main() {
     for (let i in 0..1000) {
         many.append(i);
     }
-    print($"{many.count} {many[999]}");
+    print($"{many.length} {many[999]}");
     arena.reset();
 }

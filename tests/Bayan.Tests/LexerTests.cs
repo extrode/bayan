@@ -89,7 +89,7 @@ public sealed class LexerTests
             i64 total(Span<Line> lines) {
                 var sum = 0;
                 for (let line in lines) { sum += line.price * 2 + 0x_FF; }
-                print($"total {sum} for {lines.count} lines");
+                print($"total {sum} for {lines.length} lines");
                 return sum;
             }
 

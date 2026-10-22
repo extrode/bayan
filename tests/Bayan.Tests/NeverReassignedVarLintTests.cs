@@ -42,7 +42,7 @@ public sealed class NeverReassignedVarLintTests
     [InlineData("local incremented", "var v = 1;\n    v++;\n    print($\"{v}\");")]
     [InlineData("local passed by ref", "var i64 v = 1;\n    bump(ref v);\n    print($\"{v}\");")]
     [InlineData("local field assigned", "var q = P { x = 1 };\n    q.x = 2;\n    print($\"{q.x}\");")]
-    [InlineData("local mutating call", "var xs = List<i64>();\n    xs.append(1);\n    print($\"{xs.count}\");")]
+    [InlineData("local mutating call", "var xs = List<i64>();\n    xs.append(1);\n    print($\"{xs.length}\");")]
     [InlineData("pattern assigned", "if (u is .b(var v)) {\n        v = 2;\n        print($\"{v}\");\n    }")]
     [InlineData("pattern passed by ref", "if (u is .b(var v)) {\n        bump(ref v);\n        print($\"{v}\");\n    }")]
     [InlineData("pattern field assigned", "let w = W.wrap(P { x = 1 });\n    if (w is .wrap(var p)) {\n        p.x = 2;\n        print($\"{p.x}\");\n    }")]

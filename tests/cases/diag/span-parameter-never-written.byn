@@ -3,7 +3,7 @@ i64 total(Span<i64> values) {
     for (let v in values) {
         sum += v;
     }
-    return sum + values[0] + values.count;
+    return sum + values[0] + values.length;
 }
 
 void zero(Span<i64> values) {
@@ -29,7 +29,7 @@ void write(Span<u8> buffer) {
 
 i64 viaReadOnly(Span<i64> values) => sum(values);
 
-i64 sum(ReadOnlySpan<i64> values) => values.count;
+i64 sum(ReadOnlySpan<i64> values) => values.length;
 
 void main() {
 }

@@ -2,7 +2,7 @@ void check(i64 n) {
     let name = "check";
     defer panicking (p) {
         print($"{name}({n}) saw: {p.message}");
-        print($"length {p.message.bytes.count}");
+        print($"length {p.message.length}");
     }
     print($"{10 / (n - n)}");
 }

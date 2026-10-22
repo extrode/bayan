@@ -20,10 +20,10 @@ namespace Bayan.Tests;
 /// copy       := "let y = x.copy(to: arena);"      if x Owned
 /// take       := "let y = p.take();"               p in {x, x.items, x[0], o} with x var and Owned
 /// call       := consume(move x) | "var y = pass(move x);" | peek(x) | bump(ref x)   (bump: x var)
-/// borrow     := "{ let v = x.asSpan(); print($"{v.count}"); }" | for (let e in x) over a nested list
+/// borrow     := "{ let v = x.asSpan(); print($"{v.length}"); }" | for (let e in x) over a nested list
 /// loop       := for/while; the body moves an outer x only if x is var, and reassigns it at the end
 /// branch     := if/else on t; join = Moved if moved on either side | "if (s is .full(let items))" borrow
-/// switchMove := "switch (move s) {" ["case .full(let b) when b.count &gt; n: consume(move b);"]
+/// switchMove := "switch (move s) {" ["case .full(let b) when b.length &gt; n: consume(move b);"]
 ///               "case .full(let items): consume(move items); default: ... }"
 /// reassign   := "x = fresh(n);" (or the type's constructor)   if x var; resets Moved
 /// read       := print of x's length or null test | "x.append(n);" if x var        if x Owned
@@ -37,10 +37,10 @@ internal static class OwnershipGenerator
         error enum E { bad, }
         void step() fails E { }
         void consume(move List<i64> xs) {
-            print($"{xs.count}");
+            print($"{xs.length}");
         }
         void peek(List<i64> xs) {
-            print($"{xs.count}");
+            print($"{xs.length}");
         }
         void bump(ref List<i64> xs) {
             xs.append(1);
@@ -277,13 +277,13 @@ internal static class OwnershipGenerator
             var b = Name();
             if (x.Kind == Kind.Nest)
             {
-                Line($"for (let {b} in {x.Name}) print($\"{{{b}.count}}\");");
+                Line($"for (let {b} in {x.Name}) print($\"{{{b}.length}}\");");
                 return true;
             }
             Line("{");
             _indent++;
             Line($"let {b} = {x.Name}.asSpan();");
-            Line($"print($\"{{{b}.count}}\");");
+            Line($"print($\"{{{b}.length}}\");");
             _indent--;
             Line("}");
             return true;
@@ -383,7 +383,7 @@ internal static class OwnershipGenerator
             {
                 // A guard that may fail: the next arm binds the same storage.
                 var big = Name();
-                Line($"    case .full(let {big}) when {big}.count > {Int(3)}:");
+                Line($"    case .full(let {big}) when {big}.length > {Int(3)}:");
                 Line($"        consume(move {big});");
             }
             Line($"    case .full(let {items}):");
@@ -417,10 +417,10 @@ internal static class OwnershipGenerator
                     Line($"{x.Name}.append({Int(10)});");
                     break;
                 case Kind.List:
-                    Line($"print($\"{{{x.Name}.count}}\");");
+                    Line($"print($\"{{{x.Name}.length}}\");");
                     break;
                 case Kind.Ledger:
-                    Line($"print($\"{{{x.Name}.items.count}}\");");
+                    Line($"print($\"{{{x.Name}.items.length}}\");");
                     break;
                 case Kind.Slot:
                     Line($"print($\"{{{x.Name} is .empty}}\");");
@@ -429,7 +429,7 @@ internal static class OwnershipGenerator
                     Line($"print($\"{{{x.Name} is null}}\");");
                     break;
                 default:
-                    Line($"print($\"{{{x.Name}.count}} {{{x.Name}[0].count}}\");");
+                    Line($"print($\"{{{x.Name}.length}} {{{x.Name}[0].length}}\");");
                     break;
             }
             return true;

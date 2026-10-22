@@ -10,7 +10,7 @@ void main() {
     let b = make(n: 1);
     if (b is not null) {
         let c = move b;
-        print($"{c.count}");
-        print($"{b.count}");
+        print($"{c.length}");
+        print($"{b.length}");
     }
 }

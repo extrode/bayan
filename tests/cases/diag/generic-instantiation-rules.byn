@@ -1,7 +1,7 @@
 i64 countOf<K>(K key) {
     var m = Map<K, i64>();
     m[key] = 1;
-    return m.count;
+    return m.length;
 }
 
 bool same<T>(T a, T b) => a == b;

@@ -718,8 +718,6 @@ internal sealed partial class Binder
         }
         var renamed = (type, name) switch
         {
-            ({ IsString: true }, "length") => "bytes.count",
-            (SpanType or ListType or MapType or Symbols.ArrayType or BuiltinType { Kind: BuiltinKind.StrBuf }, "length") => "count",
             (ListType, "add") => "append",
             (BuiltinType { Kind: BuiltinKind.StrBuf }, "asString") => "finish",
             _ => null,
@@ -727,17 +725,14 @@ internal sealed partial class Binder
         if (renamed is null) return false;
         var call = name == "asString" ? "()" : "";
         Report(DiagnosticCodes.RenamedMember, member.Span, [name + call, renamed + call], label: "the old name",
-            help: type.IsString
-                ? "use `bytes.count` to count the bytes; a string has no single length (bytes, characters and graphemes differ)"
-                : $"rename it `{renamed}`",
+            help: $"rename it `{renamed}`",
             fix: new Fix(member.Span, renamed));
         return true;
     }
 
     private static string? MemberSuggestion(TypeSymbol type, string name)
     {
-        if (name is "Length" or "Count" or "size" or "len")
-            return type.IsString ? "use `bytes.count` for the size of a string in bytes" : "use `count`: the size of anything is `count`";
+        if (name is "Length" or "Count" or "count" or "size" or "len") return "use `length` for the size of anything";
         IEnumerable<string> names = type switch
         {
             StructSymbol s => s.Fields.Select(f => f.Name).Concat(s.Properties.Select(p => p.Name)).Concat(s.Methods.Select(m => m.Name)),

@@ -22,5 +22,5 @@ numbers.append(4);
 numbers.append(5);
 i64[3] fixed = [1, 2, 3];
 Span<i64> view = fixed.asSpan();
-print($"{count(text, target: 'a')} {count(bytes, target: 'n')} {count(middle, target: 'a')} {middle.count}");
+print($"{count(text, target: 'a')} {count(bytes, target: 'n')} {count(middle, target: 'a')} {middle.length}");
 print($"{sum(numbers)} {sum(fixed)} {sum(view)} {sum(view[1..])}");

@@ -6,7 +6,7 @@ union Slot {
 }
 
 void consume(move List<i64> xs) {
-    print($"{xs.count}");
+    print($"{xs.length}");
 }
 
 void main() {
@@ -25,7 +25,7 @@ void main() {
     while (j < 2) {
         let s = Slot.full(List<i64>());
         let n = (move s) switch {
-            .full(let items) => items.count,
+            .full(let items) => items.length,
             .empty => -1,
         };
         print($"{n}");

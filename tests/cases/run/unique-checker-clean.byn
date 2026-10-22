@@ -32,7 +32,7 @@ Bag pack(string name, i64 count) {
 }
 
 i64 count(Payload p) => p switch {
-    .items(let items) => items.count,
+    .items(let items) => items.length,
     .empty => 0,
 };
 
@@ -44,37 +44,37 @@ void main() {
         batches.append(move batch);
         batch = List<i64>();
     }
-    print($"batches {batches.count} {batches[3].count} {batch.count}");
+    print($"batches {batches.length} {batches[3].length} {batch.length}");
 
     i64 total = 0;
     var xs = List<i64>();
     for (let round in 0..3) {
         xs.append(round);
         xs = grow(move xs, 10);
-        total += xs.count;
+        total += xs.length;
     }
-    print($"grown {xs.count} {total} {sum(move xs)}");
+    print($"grown {xs.length} {total} {sum(move xs)}");
 
     let bag = pack("bag", 30);
-    print($"{bag.name} {bag.items.count} {bag.items[30]}");
+    print($"{bag.name} {bag.items.length} {bag.items[30]}");
 
     var owner = Bag { name = "owner", items = List<i64>() };
     for (let i in 0..50) owner.items.append(i);
     let taken = owner.items.take();
     owner.items.append(7);
-    print($"taken {taken.count} left {owner.items.count}");
+    print($"taken {taken.length} left {owner.items.length}");
 
     var counts = Map<string, i64>();
     for (let i in 0..200) counts[$"k{i % 70}"] = i;
     counts["k0"] += 1;
     let moved = move counts;
-    print($"map {moved.count} {moved["k0"]}");
+    print($"map {moved.length} {moved["k0"]}");
 
     var sb = StrBuf();
     for (let i in 0..100) sb.append("abc");
-    sb.append($"{sb.count}");
+    sb.append($"{sb.length}");
     let text = move sb;
-    print($"strbuf {text.count}");
+    print($"strbuf {text.length}");
 
     var p = Payload.items(List<i64>());
     var inner = List<i64>();
@@ -91,7 +91,7 @@ void main() {
             for (let i in 0..300) local.append(i);
             var other = move local;
             other.append(round);
-            kept += other.count;
+            kept += other.length;
         }
     }
     print($"arenas {kept}");

@@ -11,13 +11,13 @@ void main() {
     let b = make(n: 1);
     if (b is not null) {
         let c = move b;
-        print($"{c.count}");
+        print($"{c.length}");
     }
     let d = make(n: 5);
     if (d is not null) {
         switch (move d) {
             case { } l:
-                print($"{l.count} {l[0]}");
+                print($"{l.length} {l[0]}");
         }
     }
 }

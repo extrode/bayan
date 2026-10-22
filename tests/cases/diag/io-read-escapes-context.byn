@@ -11,5 +11,5 @@ void main() fails IoError {
         }
     }
     print(text);
-    print($"{bytes.count}");
+    print($"{bytes.length}");
 }

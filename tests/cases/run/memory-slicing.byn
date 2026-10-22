@@ -1,23 +1,23 @@
 i64[5] xs = [10, 20, 30, 40, 50];
 let s = xs.asSpan();
 let mid = s[1..^1];
-print($"{mid.count} {mid[0]} {mid[^1]} {s[^1]} {s[^5]}");
+print($"{mid.length} {mid[0]} {mid[^1]} {s[^1]} {s[^5]}");
 let head = s[..2];
 let tail = s[3..];
-print($"{head.count} {head[1]} {tail.count} {tail[0]}");
+print($"{head.length} {head[1]} {tail.length} {tail[0]}");
 let incl = s[1..=3];
-print($"{incl.count} {incl[2]}");
+print($"{incl.length} {incl[2]}");
 let all = s[..];
-print($"{all.count}");
+print($"{all.length}");
 let empty = s[2..2];
-print($"{empty.count} {empty.isEmpty}");
+print($"{empty.length} {empty.isEmpty}");
 
 let text = "héllo wörld";
 print(text[0..1]);
 print(text[0..3]);
 print(text[7..]);
 print(text[^3..]);
-print($"{text.bytes.count}");
+print($"{text.length}");
 
 i64 total = 0;
 for (let x in s[2..]) {
@@ -25,4 +25,4 @@ for (let x in s[2..]) {
 }
 print($"{total}");
 let bad = 4;
-print($"{s[bad..2].count}");
+print($"{s[bad..2].length}");

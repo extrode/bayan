@@ -1,16 +1,16 @@
 void show(string name, ReadOnlySpan<i32> xs) {
     var sb = StrBuf();
     for (let x in xs) sb.append($" {x}");
-    print($"{name}:{sb.finish()} ({xs.count})");
+    print($"{name}:{sb.finish()} ({xs.length})");
 }
 
 // Map literals: insert, look up, count.
 Map<string, i32> stock = ["A-1": 12, "B-2": 3];
 stock["C-3"] = 7;
 stock["A-1"] += 1;
-print($"{stock} count={stock.count} A-1={stock["A-1"]} has B-2: {stock.contains("B-2")}");
+print($"{stock} count={stock.length} A-1={stock["A-1"]} has B-2: {stock.contains("B-2")}");
 Map<string, i64> empty = [];
-print($"empty: {empty} count={empty.count}");
+print($"empty: {empty} count={empty.length}");
 empty["x"] = 1;
 print($"{empty}");
 
