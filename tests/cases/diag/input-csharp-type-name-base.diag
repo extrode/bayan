@@ -1,0 +1,8 @@
+error BYN1030: `int` is an input form; the Bayan type is `i32`
+
+  1 │ struct S : int {
+    │            ^^^ a C# type name
+    │
+  help: write `i32`
+    │ 1 │ struct S : i32 {
+    │   │             ++

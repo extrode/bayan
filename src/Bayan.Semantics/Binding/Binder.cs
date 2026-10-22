@@ -737,6 +737,15 @@ internal sealed partial class Binder
     /// </summary>
     private TypeSymbol? UserElement(ForStmt f, BoundExpr iterable, ref UserIteration? user)
     {
+        // Inside a generic body the loop is checked against the constraint; each instance rebinds it to the conformer's members.
+        if (iterable.Type is TypeParameterType tp)
+        {
+            if ((tp.Constraints.FirstOrDefault(i => i == _c.Builtins.IIndexable) ?? tp.Constraints.FirstOrDefault(i => i == _c.Builtins.IEnumerator)) is not { } constraint)
+                return null;
+            if (constraint == _c.Builtins.IEnumerator && iterable is BoundLocal or BoundThis or BoundField or BoundTupleElement or BoundIndex)
+                _c.MutationChecks.Add(new MutationCheck(this, constraint.FindMethods("moveNext").First(), iterable));
+            return _c.AssociatedType(tp, "Item");
+        }
         if (iterable.Type is not StructSymbol s) return null;
         var c = s.Conformances.Find(c => c.Interface == _c.Builtins.IIndexable) ?? s.Conformances.Find(c => c.Interface == _c.Builtins.IEnumerator);
         if (c is null) return null;
@@ -745,7 +754,7 @@ internal sealed partial class Binder
         var item = indexable ? c.Interface.FindMethods("get").First() : c.Interface.FindProperty("current")!;
         // A missing member or `Item` is reported by the conformance check.
         if (c.AssociatedTypes.GetValueOrDefault("Item") is not { IsError: false } element
-            || !c.Witnesses.TryGetValue(advance, out var advanceWitness) || !c.Witnesses.TryGetValue(item, out var itemWitness))
+            || Witness(c, advance) is not { } advanceWitness || Witness(c, item) is not { } itemWitness)
             return ErrorType.Instance;
         if (TypeFacts.IsUnique(element))
         {
@@ -767,6 +776,10 @@ internal sealed partial class Binder
         user = new UserIteration(indexable ? IterationKind.Indexable : IterationKind.Enumerator, advanceWitness, itemWitness, spill);
         return element;
     }
+
+    /// <summary>The struct's member standing for <paramref name="member"/>: a function, or a field for a getter.</summary>
+    private static Symbol? Witness(Conformance c, FunctionSymbol member) =>
+        c.Witnesses.TryGetValue(member, out var fn) ? fn : c.FieldWitnesses.GetValueOrDefault(member);
 
     /// <summary>The element type, or the type written in <c>for T x in e</c> when the element converts to it.</summary>
     private TypeSymbol DeclaredElement(ForStmt f, TypeSymbol element)

@@ -254,9 +254,9 @@ public enum IterationKind { Indexable, Enumerator }
 
 /// <summary>
 /// How a <c>for</c> loop walks a user type: <see cref="Advance"/> is the <c>count</c> getter or <c>moveNext</c>,
-/// <see cref="Item"/> is <c>get</c> or the <c>current</c> getter, and <see cref="Spill"/> holds an rvalue enumerator.
+/// <see cref="Item"/> is <c>get</c> or the <c>current</c> getter (either getter may be a field), and <see cref="Spill"/> holds an rvalue enumerator.
 /// </summary>
-public sealed record UserIteration(IterationKind Kind, FunctionSymbol Advance, FunctionSymbol Item, LocalSymbol? Spill);
+public sealed record UserIteration(IterationKind Kind, Symbol Advance, Symbol Item, LocalSymbol? Spill);
 
 /// <summary>A <c>case</c>; a null <see cref="Pattern"/> is <c>default</c>.</summary>
 public sealed record BoundSwitchSection(Node Syntax, BoundPattern? Pattern, BoundExpr? Guard, BoundStmt[] Body);

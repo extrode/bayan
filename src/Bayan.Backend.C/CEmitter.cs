@@ -400,10 +400,11 @@ public sealed class CEmitter
         var thunks = new List<string>();
         foreach (var m in Slots(i))
         {
-            var witness = conformance.Witnesses[m];
             var thunk = $"bynh_vt_{Key(s)}_{Key(i)}_{SlotName(m)}";
             var proto = "static " + SlotSignature(m, thunk, out var args);
-            var call = $"{FunctionName(witness)}({string.Join(", ", args.Prepend($"({CType(s)}*)self"))})";
+            var call = conformance.FieldWitnesses.TryGetValue(m, out var field)
+                ? $"(({CType(s)}*)self)->{FieldName(field.Name)}"
+                : $"{FunctionName(conformance.Witnesses[m])}({string.Join(", ", args.Prepend($"({CType(s)}*)self"))})";
             var returns = m.Fails || (!m.ReturnType.IsVoid && !m.ReturnType.IsNever);
             thunks.Add(Helper(thunk, proto, () => $"{{\n    {(returns ? "return " : "")}{call};\n}}\n"));
         }

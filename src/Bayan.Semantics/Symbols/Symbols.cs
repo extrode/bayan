@@ -307,7 +307,8 @@ public sealed class InterfaceSymbol(string name, Location location, ModuleSymbol
 
 /// <summary>
 /// <see cref="Type"/> conforms to <see cref="Interface"/> (an instance for a generic interface): each abstract member
-/// maps to its witness (the struct's own member or a cloned default), and each associated type to its binding.
+/// maps to its witness (the struct's own member or a cloned default), or a getter to a stored field in
+/// <see cref="FieldWitnesses"/>, and each associated type to its binding.
 /// </summary>
 public sealed class Conformance(StructSymbol type, InterfaceSymbol @interface)
 {
@@ -316,6 +317,8 @@ public sealed class Conformance(StructSymbol type, InterfaceSymbol @interface)
     public InterfaceSymbol Interface { get; } = @interface;
 
     public Dictionary<FunctionSymbol, FunctionSymbol> Witnesses { get; } = new();
+
+    public Dictionary<FunctionSymbol, FieldSymbol> FieldWitnesses { get; } = new();
 
     public Dictionary<string, TypeSymbol> AssociatedTypes { get; } = new(StringComparer.Ordinal);
 }
