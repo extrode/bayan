@@ -716,10 +716,15 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         Emit(new LLabel(syntax, b));
     }
 
-    /// <summary><c>for T x in e</c> with <c>T</c> other than the element, e.g. <c>dyn ref I</c>: the item is held in a temporary and converted.</summary>
+    /// <summary>
+    /// <c>for T x in e</c> with <c>T</c> other than the element, e.g. <c>dyn ref I</c>: the item is held in a temporary and converted.
+    /// A mutable <c>dyn ref</c> to an array or List element points at the element itself, so mutations through it persist.
+    /// </summary>
     private BoundExpr ForItem(BoundFor f, BoundExpr item)
     {
         if (item.Type.Equals(f.Variable.Type) || Conversions.Implicit(item.Type, f.Variable.Type) is not { } kind) return item;
+        if (item is LIndexUnchecked && f.Variable.Type is DynRefType { ReadOnly: false })
+            return new BoundConversion(f.Syntax, item, f.Variable.Type, kind);
         return Expr(new BoundConversion(f.Syntax, Spill(item), f.Variable.Type, kind));
     }
 

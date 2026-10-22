@@ -1175,8 +1175,9 @@ public sealed partial class Compilation
     /// <summary>
     /// Runs instantiation work, whose diagnostics are not the user's: the template already reported
     /// them. The exceptions are the rules only a type argument can break (a <c>Map</c> key, <c>==</c>
-    /// and formatting on a <c>T</c>); they are reported at <paramref name="span"/>, the use that chose
-    /// the type arguments.
+    /// and formatting on a <c>T</c>, a <c>for</c> over a <c>T</c> whose <c>Item</c> is unique, a unique <c>T</c>
+    /// field standing for a getter); they are reported at <paramref name="span"/>, the use that chose the type arguments.
+    /// BYN2022 and BYN2780 are also template rules, so they are forwarded only when the template did not report them.
     /// </summary>
     private void Instantiating(SourceText site, TextSpan span, Action work)
     {
@@ -1189,11 +1190,14 @@ public sealed partial class Compilation
             _scratch = outer;
             _instantiating--;
         }
+        var target = _scratch ?? Diagnostics;
+        bool Reported(Diagnostic d) => target.Items.Concat(Diagnostics.Items).Any(t => t.Code == d.Code && t.Source == d.Source && t.Span == d.Span);
         foreach (var d in bag.Items.Where(d => d.IsError))
         {
             if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code
-                || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code)
-                (_scratch ?? Diagnostics).Add(d with { Source = site, Span = span, Label = InstantiationLabel });
+                || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code
+                || (d.Code == DiagnosticCodes.Unsupported.Code || d.Code == DiagnosticCodes.ImplicitCopy.Code) && !Reported(d))
+                target.Add(d with { Source = site, Span = span, Label = InstantiationLabel });
             else
                 _instantiationErrors.Add(d);
         }
