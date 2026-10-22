@@ -1,0 +1,26 @@
+struct Countdown : IEnumerator {
+    type Item = i64;
+
+    i64 left;
+
+    bool moveNext(ref this) {
+        left -= 1;
+        return left >= 0;
+    }
+
+    i64 current => left;
+}
+
+Countdown from(i64 n) {
+    print($"from {n}");
+    return Countdown { left = n };
+}
+
+void main() {
+    for n in from(3) {
+        print($"step {n}");
+    }
+    for i64 n in (Countdown { left = 2 }) {
+        print($"literal {n}");
+    }
+}

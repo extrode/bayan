@@ -1,0 +1,18 @@
+struct Letters : IIndexable {
+    type Item = string;
+
+    i64 size;
+
+    i64 count => size;
+
+    string get(i64 index) => index == 0 ? "a" : index == 1 ? "b" : "c";
+}
+
+void main() {
+    let letters = Letters { size = 3 };
+    for x in letters {
+        for y in letters {
+            print($"{x}{y}");
+        }
+    }
+}

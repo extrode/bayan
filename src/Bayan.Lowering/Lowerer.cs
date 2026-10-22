@@ -566,6 +566,12 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             return;
         }
 
+        if (f.UserIteration is { } user)
+        {
+            UserFor(f, variable, user);
+            return;
+        }
+
         var iterable = Expr(f.Iterable);
         if (IsNever(iterable)) return;
         if (iterable.Type.IsString)
@@ -634,6 +640,70 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             Emit(new LLabel(syntax, c));
             Emit(new BoundAssign(syntax, Local(syntax, index),
                 new BoundBinary(syntax, BinaryOp.AddWrap, Local(syntax, index), I64(syntax, 1), PrimitiveType.I64), null));
+        });
+        Emit(new LLoop(syntax, Block(syntax, loopBody)));
+        Emit(new LLabel(syntax, b));
+    }
+
+    /// <summary>
+    /// <c>for</c> over an <c>IIndexable</c>: <c>count</c> is read once, then <c>get(i)</c> for each index below it.
+    /// Over an <c>IEnumerator</c>: <c>moveNext()</c> until it returns false, reading <c>current</c> after each true.
+    /// A place is walked in place; an rvalue enumerator goes to the binder's spill local, any other rvalue to a temporary.
+    /// </summary>
+    private void UserFor(BoundFor f, BoundExpr variable, UserIteration user)
+    {
+        var syntax = f.Syntax;
+        BoundExpr subject;
+        if (user.Spill is { } spill)
+        {
+            Note(spill);
+            var value = Expr(f.Iterable);
+            if (IsNever(value)) return;
+            subject = Local(syntax, spill);
+            EmitAssign(subject, value);
+        }
+        else
+        {
+            subject = IsLvalueShape(f.Iterable) ? Lvalue(f.Iterable) : Expr(f.Iterable);
+            if (IsNever(subject)) return;
+            subject = Stable(subject);
+            if (!IsLvalue(subject)) subject = Spill(subject);
+        }
+        // `for T x in e` with `T` other than `Item`, e.g. `dyn ref I`: the item is held in a temporary and converted.
+        BoundExpr Item(BoundExpr item)
+        {
+            if (item.Type.Equals(f.Variable.Type) || Conversions.Implicit(item.Type, f.Variable.Type) is not { } kind) return item;
+            return Expr(new BoundConversion(syntax, Spill(item), f.Variable.Type, kind));
+        }
+        if (user.Kind == IterationKind.Indexable)
+        {
+            var count = NewTemp(PrimitiveType.I64);
+            EmitAssign(Local(syntax, count), new BoundCall(syntax, user.Advance, subject, [], PrimitiveType.I64));
+            var index = NewTemp(PrimitiveType.I64);
+            EmitAssign(Local(syntax, index), I64(syntax, 0));
+            var (brk, cont) = EnterLoop(f.Target);
+            var body = Capture(() =>
+            {
+                Emit(new BoundIf(syntax, Not(new BoundBinary(syntax, BinaryOp.Lt, Local(syntax, index), Local(syntax, count), PrimitiveType.Bool)),
+                    Block(syntax, [new LGoto(syntax, brk)]), null));
+                EmitAssign(variable, Item(new BoundCall(syntax, user.Item, subject, [Local(syntax, index)], user.Item.ReturnType)));
+                Statement(f.Body);
+                Emit(new LLabel(syntax, cont));
+                Emit(new BoundAssign(syntax, Local(syntax, index),
+                    new BoundBinary(syntax, BinaryOp.AddWrap, Local(syntax, index), I64(syntax, 1), PrimitiveType.I64), null));
+            });
+            Emit(new LLoop(syntax, Block(syntax, body)));
+            Emit(new LLabel(syntax, brk));
+            return;
+        }
+        var (b, c) = EnterLoop(f.Target);
+        var loopBody = Capture(() =>
+        {
+            Emit(new BoundIf(syntax, Not(new BoundCall(syntax, user.Advance, subject, [], PrimitiveType.Bool)),
+                Block(syntax, [new LGoto(syntax, b)]), null));
+            EmitAssign(variable, Item(new BoundCall(syntax, user.Item, subject, [], user.Item.ReturnType)));
+            Statement(f.Body);
+            Emit(new LLabel(syntax, c));
         });
         Emit(new LLoop(syntax, Block(syntax, loopBody)));
         Emit(new LLabel(syntax, b));
