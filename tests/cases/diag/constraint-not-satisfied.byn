@@ -1,0 +1,35 @@
+interface IShape {
+    i64 area();
+}
+
+struct Circle : IShape {
+    i64 r;
+
+    i64 area() => 3 * r * r;
+}
+
+struct Square {
+    i64 side;
+
+    i64 area() => side * side;
+}
+
+struct Box<T> where T : IShape {
+    T item;
+}
+
+i64 measure<T>(ref T shape) where T : IShape => shape.area();
+
+i64 twice<T>(ref T shape) where T : IShape => measure(ref shape) * 2;
+
+i64 loose<T>(ref T shape) => measure(ref shape);
+
+void main() {
+    var c = Circle { r = 1 };
+    var s = Square { side = 2 };
+    print($"{measure(ref c)} {measure(ref s)}");
+    print($"{twice(ref s)}");
+    var n = 4;
+    print($"{measure(ref n)}");
+    Box<Square> b = Box<Square> { item = s };
+}

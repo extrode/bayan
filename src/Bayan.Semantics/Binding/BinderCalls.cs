@@ -93,7 +93,8 @@ internal sealed partial class Binder
         (_printArgument, _sinkArgument) = (outer, outerSink);
         // A `ref this` call on `map[key]` changes the stored value in place.
         if (receiver is not null && fn.IsMutating) receiver = MapWriteTarget(receiver);
-        if (receiver is not null && fn.HasThis)
+        // A `dyn ref` writes through the borrow, not into the local holding it; `dyn ref readonly` is BYN2813.
+        if (receiver is not null && fn.HasThis && receiver.Type is not DynRefType)
             _c.MutationChecks.Add(new MutationCheck(this, fn, receiver));
         if (fn.Decl is { Requires.Length: > 0 } && args.Any(a => a.Constant is not null))
             _c.RequiresChecks.Add(new RequiresCheck(Source, c, fn, args));
@@ -103,7 +104,7 @@ internal sealed partial class Binder
                 help: "propagate the error with `try`, or handle it with `catch`",
                 fix: new Fix(new TextSpan(c.Span.Start, 0), "try "));
         }
-        return new BoundCall(c, fn, receiver, args, fn.ReturnType);
+        return new BoundCall(c, fn, receiver, args, receiver is null ? fn.ReturnType : ReturnTypeThrough(receiver.Type, fn));
     }
 
     /// <summary>Arguments bound early, without an expected type, to infer type arguments from; used in place of binding them again.</summary>

@@ -48,6 +48,8 @@ public sealed partial class Compilation
             foreach (var s in module.Structs) Conform(s);
         foreach (var s in instances)
             Instantiating(s.File.Source, s.Decl.Name.Span, () => Conform(s));
+        foreach (var check in _pendingConstraints) check();
+        _pendingConstraints.Clear();
     }
 
     /// <summary>Witnesses, associated types and the <c>ref this</c> match for each base of <paramref name="s"/> (BYN2801–2803, 2814).</summary>

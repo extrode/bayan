@@ -77,6 +77,9 @@ internal sealed partial class Binder
         {
             if (kind == ConversionKind.Identity) return value;
             if (kind == ConversionKind.NullToOptional) return new BoundDefault(value.Syntax, target);
+            // A writable `dyn ref` borrows its source as `ref` does; never a copy or a move.
+            if (kind == ConversionKind.ToDynRef && target is DynRefType { ReadOnly: false })
+                CheckWritable(value, span, $"it is borrowed as `{target.DisplayName}`");
             var converted = new BoundConversion(value.Syntax, value, target, kind);
             return value.Constant is { } c && kind == ConversionKind.Widen ? converted with { Constant = WidenConstant(c, target) } : converted;
         }
@@ -696,12 +699,34 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(syntax);
             case ErrorType:
                 return new BoundErrorExpr(syntax);
+            // Inside a generic body, `t.area()` is the interface member; each instance rebinds it to the conformer's.
+            case TypeParameterType tp when tp.Constraints.Count > 0:
+            {
+                if (tp.Constraints.Select(i => i.FindProperty(name) ?? i.FindMethods(name).FirstOrDefault()).FirstOrDefault(m => m is not null) is { } m)
+                    return BindInterfaceMember(syntax, target, m, member);
+                var self = tp.Constraints[0].Self == tp;
+                Report(DiagnosticCodes.ConstraintMember, member.Span, [tp.Name, name, string.Join(", ", tp.Constraints.Select(i => $"`{i.DisplayName}`"))],
+                    help: self
+                        ? $"declare `{name}` in `{tp.Constraints[0].DisplayName}`; a default method sees only its interface's members"
+                        : $"add an interface declaring `{name}` to the `where` clause");
+                return new BoundErrorExpr(syntax);
+            }
             case TypeParameterType tp:
                 Report(DiagnosticCodes.TypeParameterMember, member.Span, [name, tp.Name],
                     help: tp.Constraints.Count > 0
                         ? $"use a member `{string.Join("`, `", tp.Constraints.Select(i => i.DisplayName))}` declares; a `{tp.Name}` has only those"
-                        : $"use a concrete type here; type parameters have no constraints, so a `{tp.Name}` has no members");
+                        : $"add `where {tp.Name} : …` naming an interface that declares `{name}`, or use a concrete type");
                 return new BoundErrorExpr(syntax);
+            case DynRefType d when (d.Interface.FindProperty(name) ?? d.Interface.FindMethods(name).FirstOrDefault()) is { } m:
+            {
+                if (d.ReadOnly && m.IsMutating)
+                {
+                    Report(DiagnosticCodes.DynReadonlyMutation, member.Span, [name, d.Interface.DisplayName], label: "declared `ref this`",
+                        help: $"take `dyn ref {d.Interface.DisplayName}`");
+                    return new BoundErrorExpr(syntax);
+                }
+                return BindInterfaceMember(syntax, target, m, member);
+            }
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
             return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
@@ -717,6 +742,24 @@ internal sealed partial class Binder
             help: MemberSuggestion(target.Type, name));
         return new BoundErrorExpr(syntax);
     }
+
+    /// <summary>A member of an interface, reached through a constrained type parameter or a <c>dyn ref</c>.</summary>
+    private BoundExpr BindInterfaceMember(Node syntax, BoundExpr target, FunctionSymbol m, Name member)
+    {
+        if (m.TypeParameters.Count > 0)
+        {
+            Report(DiagnosticCodes.Unsupported, member.Span, ["calling a generic interface method"]);
+            return new BoundErrorExpr(syntax);
+        }
+        if (m.Kind == FunctionKind.Getter) return new BoundCall(syntax, m, target, [], ReturnTypeThrough(target.Type, m));
+        return new BoundMethodGroup(syntax, target, m);
+    }
+
+    /// <summary>The return type of interface member <paramref name="m"/> called on <paramref name="receiver"/>: an associated type <c>Item</c> is <c>T.Item</c>.</summary>
+    private TypeSymbol ReturnTypeThrough(TypeSymbol receiver, FunctionSymbol m) =>
+        receiver is TypeParameterType tp && m.Interface is { } i && i.Self != tp && m.ReturnType is TypeParameterType r && i.AssociatedTypes.Contains(r)
+            ? _c.AssociatedType(tp, r.Name)
+            : m.ReturnType;
 
     private static string? MemberSuggestion(TypeSymbol type, string name)
     {
