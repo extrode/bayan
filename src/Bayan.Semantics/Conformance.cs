@@ -80,7 +80,8 @@ public sealed partial class Compilation
                 // A field reads like a getter, so it can stand for one (bare-name and constraint lookups find it); not for a method.
                 if (field is not null && expected.Kind == FunctionKind.Getter)
                 {
-                    if (!Same(field.Type, expected.ReturnType))
+                    if (Same(field.Type, expected.ReturnType)) c.FieldWitnesses[member] = field;
+                    else
                         Report(DiagnosticCodes.InterfaceMemberMismatch, source, field.Location!.Value.Span, [s.Name, member.Name, $"{field.Type.DisplayName} {field.Name}", i.DisplayName, SignatureText(expected)],
                             label: $"does not match `{i.DisplayName}`", help: $"change the field's type to `{expected.ReturnType.DisplayName}`");
                     continue;

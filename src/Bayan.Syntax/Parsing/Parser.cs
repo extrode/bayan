@@ -1005,10 +1005,6 @@ public sealed class Parser
         else if (IsTypeNameToken(Kind))
         {
             type = ParseNamedType();
-            if (type is NamedType { Path.Length: 1, Args.Length: 0 } nt && CSharpTypeNames.TryGetValue(nt.Path[0].Text, out var bayan))
-                // Only types reach here, so `int` as a value or variable name is untouched.
-                Report(DiagnosticCodes.CSharpTypeName, nt.Path[0].Span, [nt.Path[0].Text, bayan], label: "a C# type name",
-                    help: $"write `{bayan}`", fix: new Fix(nt.Path[0].Span, bayan));
         }
         else
         {
@@ -1049,6 +1045,10 @@ public sealed class Parser
         }
         var args = Array.Empty<TypeSyntax>();
         if (Kind == TokenKind.Less && ScanTypeArgs(_pos) > 0) args = ParseTypeArgs();
+        if (path.Count == 1 && args.Length == 0 && CSharpTypeNames.TryGetValue(path[0].Text, out var bayan))
+            // Only types reach here, so `int` as a value or variable name is untouched.
+            Report(DiagnosticCodes.CSharpTypeName, path[0].Span, [path[0].Text, bayan], label: "a C# type name",
+                help: $"write `{bayan}`", fix: new Fix(path[0].Span, bayan));
         return new NamedType(SpanFrom(start), path.ToArray(), args);
     }
 
@@ -2407,6 +2407,10 @@ public sealed class Parser
         var path = new List<Name> { NameOf(Advance()) };
         var args = Array.Empty<TypeSyntax>();
         if (Kind == TokenKind.Less && ScanTypeArgs(_pos) > 0) args = ParseTypeArgs();
+        if (path.Count == 1 && args.Length == 0 && CSharpTypeNames.TryGetValue(path[0].Text, out var bayan))
+            // Only types reach here, so `int` as a value or variable name is untouched.
+            Report(DiagnosticCodes.CSharpTypeName, path[0].Span, [path[0].Text, bayan], label: "a C# type name",
+                help: $"write `{bayan}`", fix: new Fix(path[0].Span, bayan));
         return new NamedType(SpanFrom(start), path.ToArray(), args);
     }
 

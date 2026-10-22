@@ -767,6 +767,7 @@ internal sealed partial class Binder
         receiver is TypeParameterType tp && m.Interface is { } i && i.Self != tp && m.ReturnType is TypeParameterType r && i.AssociatedTypes.Contains(r)
             ? _c.AssociatedType(tp, r.Name)
             : m.ReturnType;
+
     /// <summary>BYN2230 and BYN2031: a member under its round-1 or C# name; the fix writes the new one.</summary>
     private bool ReportRenamed(TypeSymbol type, Name member)
     {

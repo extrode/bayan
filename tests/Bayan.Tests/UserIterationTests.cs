@@ -79,7 +79,7 @@ public sealed class UserIterationTests
             loops.Select(l => l.UserIteration!.Kind));
         var digits = loops[0].UserIteration!;
         Assert.Equal(("count", "get"), (digits.Advance.Name, digits.Item.Name));
-        Assert.Equal("Digits", digits.Advance.Owner?.Name);
+        Assert.Equal("Digits", ((FunctionSymbol)digits.Advance).Owner?.Name);
         Assert.Null(digits.Spill);
         var steps = loops[2].UserIteration!;
         Assert.Equal(("moveNext", "current"), (steps.Advance.Name, steps.Item.Name));

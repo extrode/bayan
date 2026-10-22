@@ -629,11 +629,11 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
         // Spans and lists are small headers: iterate over a copy. Arrays are iterated in place.
         var sequence = iterable.Type is Semantics.Symbols.ArrayType && IsLvalue(iterable) ? iterable : Spill(iterable);
-        var lengthMember = iterable.Type switch
+        var (lengthMember, element) = iterable.Type switch
         {
-            SpanType => BuiltinMember.SpanLength,
-            ListType => BuiltinMember.ListLength,
-            _ => BuiltinMember.ArrayLength,
+            SpanType sp => (BuiltinMember.SpanLength, sp.Element),
+            ListType l => (BuiltinMember.ListLength, l.Element),
+            _ => (BuiltinMember.ArrayLength, ((Semantics.Symbols.ArrayType)iterable.Type).Element),
         };
         var index = NewTemp(PrimitiveType.I64);
         EmitAssign(Local(syntax, index), I64(syntax, 0));
@@ -643,7 +643,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             var length = new BoundBuiltinCall(syntax, lengthMember, sequence, [], PrimitiveType.I64);
             Emit(new BoundIf(syntax, Not(new BoundBinary(syntax, BinaryOp.Lt, Local(syntax, index), length, PrimitiveType.Bool)),
                 Block(syntax, [new LGoto(syntax, b)]), null));
-            EmitAssign(variable, new LIndexUnchecked(syntax, sequence, Local(syntax, index), f.Variable.Type));
+            EmitAssign(variable, ForItem(f, new LIndexUnchecked(syntax, sequence, Local(syntax, index), element)));
             Statement(f.Body);
             Emit(new LLabel(syntax, c));
             Emit(new BoundAssign(syntax, Local(syntax, index),
@@ -677,16 +677,15 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             subject = Stable(subject);
             if (!IsLvalue(subject)) subject = Spill(subject);
         }
-        // `for T x in e` with `T` other than `Item`, e.g. `dyn ref I`: the item is held in a temporary and converted.
-        BoundExpr Item(BoundExpr item)
-        {
-            if (item.Type.Equals(f.Variable.Type) || Conversions.Implicit(item.Type, f.Variable.Type) is not { } kind) return item;
-            return Expr(new BoundConversion(syntax, Spill(item), f.Variable.Type, kind));
-        }
+        BoundExpr Item(BoundExpr item) => ForItem(f, item);
+        // A getter's witness may be a field: read it.
+        BoundExpr Call(Symbol witness, BoundExpr[] arguments) => witness is FieldSymbol field
+            ? new BoundField(syntax, subject, field)
+            : new BoundCall(syntax, (FunctionSymbol)witness, subject, arguments, ((FunctionSymbol)witness).ReturnType);
         if (user.Kind == IterationKind.Indexable)
         {
             var count = NewTemp(PrimitiveType.I64);
-            EmitAssign(Local(syntax, count), new BoundCall(syntax, user.Advance, subject, [], PrimitiveType.I64));
+            EmitAssign(Local(syntax, count), Call(user.Advance, []));
             var index = NewTemp(PrimitiveType.I64);
             EmitAssign(Local(syntax, index), I64(syntax, 0));
             var (brk, cont) = EnterLoop(f.Target);
@@ -694,7 +693,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             {
                 Emit(new BoundIf(syntax, Not(new BoundBinary(syntax, BinaryOp.Lt, Local(syntax, index), Local(syntax, count), PrimitiveType.Bool)),
                     Block(syntax, [new LGoto(syntax, brk)]), null));
-                EmitAssign(variable, Item(new BoundCall(syntax, user.Item, subject, [Local(syntax, index)], user.Item.ReturnType)));
+                EmitAssign(variable, Item(Call(user.Item, [Local(syntax, index)])));
                 Statement(f.Body);
                 Emit(new LLabel(syntax, cont));
                 Emit(new BoundAssign(syntax, Local(syntax, index),
@@ -707,14 +706,21 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         var (b, c) = EnterLoop(f.Target);
         var loopBody = Capture(() =>
         {
-            Emit(new BoundIf(syntax, Not(new BoundCall(syntax, user.Advance, subject, [], PrimitiveType.Bool)),
+            Emit(new BoundIf(syntax, Not(Call(user.Advance, [])),
                 Block(syntax, [new LGoto(syntax, b)]), null));
-            EmitAssign(variable, Item(new BoundCall(syntax, user.Item, subject, [], user.Item.ReturnType)));
+            EmitAssign(variable, Item(Call(user.Item, [])));
             Statement(f.Body);
             Emit(new LLabel(syntax, c));
         });
         Emit(new LLoop(syntax, Block(syntax, loopBody)));
         Emit(new LLabel(syntax, b));
+    }
+
+    /// <summary><c>for T x in e</c> with <c>T</c> other than the element, e.g. <c>dyn ref I</c>: the item is held in a temporary and converted.</summary>
+    private BoundExpr ForItem(BoundFor f, BoundExpr item)
+    {
+        if (item.Type.Equals(f.Variable.Type) || Conversions.Implicit(item.Type, f.Variable.Type) is not { } kind) return item;
+        return Expr(new BoundConversion(f.Syntax, Spill(item), f.Variable.Type, kind));
     }
 
     private static BoundLiteral One(Node syntax, TypeSymbol type) =>
