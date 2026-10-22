@@ -1,0 +1,13 @@
+error BYN3004: `items` is modified while `d` still borrows it
+
+  21 │         grow(ref items);
+     │                  ^^^^^ `d` is used again on line 23
+     │
+  help: finish using `d` first, or copy what it needs before changing `items`
+
+error BYN3004: `items` is modified while `d` still borrows it
+
+  22 │         grow(ref this.items);
+     │                  ^^^^^^^^^^ `d` is used again on line 23
+     │
+  help: finish using `d` first, or copy what it needs before changing `items`

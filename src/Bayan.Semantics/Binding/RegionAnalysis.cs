@@ -137,13 +137,16 @@ internal sealed class RegionAnalysis
                 if (_reporting)
                 {
                     var owners = iterable.Owners;
-                    if (RootLocal(f.Iterable) is { } root && (f.Iterable.Type is ListType or MapType or ArrayType || f.UserIteration is not null)) owners = owners.Add(root);
+                    if ((RootLocal(f.Iterable) ?? ThisField(f.Iterable)) is { } root && (f.Iterable.Type is ListType or MapType or ArrayType || f.UserIteration is not null)) owners = owners.Add(root);
                     foreach (var owner in owners) _loans.Add(new Loan(owner, null, f.Syntax.Span.Start, f.Syntax.Span.End));
                 }
                 _depth++;
                 Declare(f.Variable, f.Syntax.Span.Start);
-                // A `dyn ref` variable points into an array or list, like `dyn ref I d = xs[i]`; any other is a copy.
-                var item = f.Variable.Type is DynRefType && f.Iterable.Type is ListType or ArrayType ? Lend(f.Iterable, iterable) : iterable with { Owners = [] };
+                // A `dyn ref` variable points into an array or list, like `dyn ref I d = xs[i]`, or where a span points; any other is a copy.
+                var item = f.Variable.Type is not DynRefType ? iterable with { Owners = [] }
+                    : f.Iterable.Type is ListType or ArrayType ? Lend(f.Iterable, iterable)
+                    : f.Iterable.Type is SpanType ? iterable
+                    : iterable with { Owners = [] };
                 Store(f.Variable, item, f.Iterable.Syntax.Span);
                 Stmt(f.Body);
                 _depth--;
@@ -341,12 +344,16 @@ internal sealed class RegionAnalysis
         var args = c.Arguments.Select(Expr).ToArray();
         // A method that writes `this` modifies its receiver, like a write to one of its fields (Q78).
         if (c.Receiver is not null && fn.IsMutating) Mutate(c.Receiver, c.Syntax.Span);
+        // A `ref this` call on `this` changes the fields its body changes structurally.
+        if (c.Receiver is BoundThis && fn.IsMutating && _reporting)
+            foreach (var field in ChangedFields(fn, []))
+                _mutations.Add(new Mutation(FieldLocal(field), c.Syntax.Span));
         for (var i = 0; i < c.Arguments.Length && i < fn.Parameters.Count; i++)
         {
             if (fn.Parameters[i].Modifier is not (Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out)) continue;
-            if (RootLocal(c.Arguments[i]) is not { } root) continue;
             // Writing an element through `ref xs[i]` does not reallocate `xs`; only what the callee can reach may change.
             if (MayBorrow(c.Arguments[i].Type, [])) Mutate(c.Arguments[i], c.Arguments[i].Syntax.Span);
+            if (RootLocal(c.Arguments[i]) is not { } root) continue;
             for (var j = 0; j < c.Arguments.Length; j++)
             {
                 // A by-value copy of an element (`xs[0]` as an `i64`) cannot alias what the callee changes.
@@ -365,6 +372,11 @@ internal sealed class RegionAnalysis
             : args.Aggregate(receiver, (acc, a) => acc.Union(a));
         // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
         if (c.Receiver is not null && c.Type is SpanType or DynRefType) result = result.Union(Lend(c.Receiver, receiver));
+        // So may a function returning one: the result borrows every argument passed by `ref`.
+        if (c.Type is SpanType or DynRefType)
+            for (var i = 0; i < c.Arguments.Length && i < fn.Parameters.Count; i++)
+                if (fn.Parameters[i].Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out or Syntax.Ast.ParamModifier.In)
+                    result = result.Union(Lend(c.Arguments[i], args[i]));
         // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `string.from` return (Q29).
         if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow
                 or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom))
@@ -554,16 +566,55 @@ internal sealed class RegionAnalysis
     };
 
     /// <summary>The stand-in for the field of <c>this</c> whose storage <paramref name="e"/> names (<c>f</c>, <c>f.g</c>, <c>f[i]</c>), or null.</summary>
-    private LocalSymbol? ThisField(BoundExpr e) => e switch
+    private LocalSymbol? ThisField(BoundExpr e) => ThisFieldSymbol(e) is { } field ? FieldLocal(field) : null;
+
+    private LocalSymbol FieldLocal(FieldSymbol field) =>
+        _thisFields.TryGetValue(field, out var local) ? local : _thisFields[field] = new LocalSymbol(field.Name, null, field.Type, LocalKind.Parameter);
+
+    private static FieldSymbol? ThisFieldSymbol(BoundExpr e) => e switch
     {
-        BoundField { Receiver: BoundThis } f => _thisFields.TryGetValue(f.Field, out var local)
-            ? local
-            : _thisFields[f.Field] = new LocalSymbol(f.Field.Name, null, f.Field.Type, LocalKind.Parameter),
-        BoundField f => ThisField(f.Receiver),
-        BoundTupleElement t => ThisField(t.Receiver),
-        BoundIndex i when i.Target.Type is ArrayType or ListType => ThisField(i.Target),
+        BoundField { Receiver: BoundThis } f => f.Field,
+        BoundField f => ThisFieldSymbol(f.Receiver),
+        BoundTupleElement t => ThisFieldSymbol(t.Receiver),
+        BoundIndex i when i.Target.Type is ArrayType or ListType => ThisFieldSymbol(i.Target),
         _ => null,
     };
+
+    /// <summary>
+    /// The fields of <c>this</c> that the <c>ref this</c> method <paramref name="fn"/> changes structurally, as <see cref="Mutate"/>
+    /// sees it: a growing or shrinking builtin, a <c>ref this</c> call or a <c>ref</c> argument on one, or a <c>ref this</c> call on <c>this</c>.
+    /// </summary>
+    private static HashSet<FieldSymbol> ChangedFields(FunctionSymbol fn, HashSet<FunctionSymbol> seen)
+    {
+        var fields = new HashSet<FieldSymbol>();
+        if (!seen.Add(fn)) return fields;
+        if (fn.Body is null)
+        {
+            // Unknown: it may change any of them.
+            if (fn.Owner is not null) fields.UnionWith(fn.Owner.Fields);
+            return fields;
+        }
+        foreach (var node in BoundTree.Descendants(fn.Body))
+        {
+            switch (node)
+            {
+                case BoundBuiltinCall b when b.Member is BuiltinMember.ListAdd or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.ListRemoveLast
+                        or BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset
+                    && ThisFieldSymbol(b.Receiver) is { } field:
+                    fields.Add(field);
+                    break;
+                case BoundCall c:
+                    if (c.Function.IsMutating && c.Receiver is BoundThis) fields.UnionWith(ChangedFields(c.Function, seen));
+                    else if (c.Function.IsMutating && c.Receiver is not null && ThisFieldSymbol(c.Receiver) is { } receiver) fields.Add(receiver);
+                    for (var i = 0; i < c.Arguments.Length && i < c.Function.Parameters.Count; i++)
+                        if (c.Function.Parameters[i].Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out
+                            && MayBorrow(c.Arguments[i].Type, []) && ThisFieldSymbol(c.Arguments[i]) is { } argument)
+                            fields.Add(argument);
+                    break;
+            }
+        }
+        return fields;
+    }
 
     /// <summary>The local a store into <paramref name="e"/> lands in, including through a span or list element.</summary>
     private static LocalSymbol? StoreRoot(BoundExpr e) => e switch

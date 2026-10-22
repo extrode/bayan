@@ -1,0 +1,31 @@
+interface IThing {
+    i64 get();
+}
+
+struct S : IThing {
+    i64 n;
+
+    i64 get() => n;
+}
+
+void grow(ref List<S> l) {
+    l.append(S { n: 2 });
+}
+
+struct B {
+    List<S> items;
+
+    // Passing a field by `ref` lets the callee grow it, like passing a local list.
+    void run(ref this) {
+        dyn ref IThing d = items[0];
+        grow(ref items);
+        grow(ref this.items);
+        print($"{d.get()}");
+    }
+}
+
+void main() {
+    var b = B { items: List<S>() };
+    b.items.append(S { n: 1 });
+    b.run();
+}
