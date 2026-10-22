@@ -1,6 +1,10 @@
 struct Tally {
     i64 hits = 0;
     string note = "new";
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Tally {{ hits: {hits}, note: {note} }}");
+    }
 }
 
 // `slot` inserts the default for a missing key, so counting needs no lookup first.

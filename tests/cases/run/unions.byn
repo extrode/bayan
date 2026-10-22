@@ -9,6 +9,10 @@ public union Token { number(i64 value), word(string text), end }
 struct Slot {
     string label;
     Shape shape;
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Slot {{ label: {label}, shape: {shape} }}");
+    }
 }
 
 f32 area(Shape s) => s switch {

@@ -1255,7 +1255,7 @@ internal sealed partial class Binder
         {
             var text = Source.GetText(a.Target.Span);
             Report(DiagnosticCodes.StringConcatenation, a.Span, [],
-                help: "interpolate the parts: `s = $\"{s}{x}\"`, or build text in a `StrBuf`: `buf.append($\"{a}{b}\")`",
+                help: "write the parts as one interpolation: `s = $\"{s}{x}\"`, or build text in a `StrBuf`: `buf.append($\"{a}{b}\")`",
                 fix: new Fix(a.Span, $"{text} = $\"{{{text}}}{InterpolationSource(a.Value)}\""));
             return new BoundErrorStmt(a);
         }

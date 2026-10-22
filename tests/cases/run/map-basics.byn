@@ -3,6 +3,10 @@ enum Suit { clubs, diamonds, hearts, spades }
 struct Inventory {
     string owner;
     Map<string, i64> stock;
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Inventory {{ owner: {owner}, stock: {stock} }}");
+    }
 }
 
 void restock(ref Inventory inv, string item, i64 n) {

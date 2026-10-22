@@ -4,6 +4,10 @@ struct Pair<A, B> {
     A a;
     B b;
 
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Pair {{ a: {a}, b: {b} }}");
+    }
+
     Pair<B, A> swap(move B first, move A second) => Pair<B, A> { a = move first, b = move second };
 
     bool sameFirst(Pair<A, B> other) => a == other.a;

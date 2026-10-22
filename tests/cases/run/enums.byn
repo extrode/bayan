@@ -10,6 +10,10 @@ public enum Suit {
 struct Card {
     Suit suit;
     i64 rank;
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Card {{ suit: {suit}, rank: {rank} }}");
+    }
 }
 
 string describe(Color c) => c switch {

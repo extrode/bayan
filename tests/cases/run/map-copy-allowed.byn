@@ -2,6 +2,10 @@
 struct Store {
     string name;
     Map<string, i64> data;
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Store {{ name: {name}, data: {data} }}");
+    }
 }
 
 union Slot {

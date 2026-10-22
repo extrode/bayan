@@ -2,6 +2,10 @@ struct Node {
     i64 item;
     Owned<Node>? next;
 
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Node {{ item: {item}, next: {next} }}");
+    }
+
     i64 total() {
         if (next is { } n) return item + n.total();
         return item;

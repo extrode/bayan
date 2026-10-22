@@ -4,3 +4,10 @@ error BYN2003: `size` is not a member of `string`
     │              ^^^^
     │
   help: use `bytes.count` for the size of a string in bytes
+
+error BYN2003: `len` is not a member of `List<i64>`
+
+  4 │ let k = xs.len;
+    │            ^^^
+    │
+  help: use `count`: the size of anything is `count`

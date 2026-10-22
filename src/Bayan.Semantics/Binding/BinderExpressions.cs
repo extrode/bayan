@@ -728,7 +728,7 @@ internal sealed partial class Binder
         var call = name == "asString" ? "()" : "";
         Report(DiagnosticCodes.RenamedMember, member.Span, [name + call, renamed + call], label: "the old name",
             help: type.IsString
-                ? "count the bytes with `bytes.count`; a string has no single length (bytes, characters and graphemes differ)"
+                ? "use `bytes.count` to count the bytes; a string has no single length (bytes, characters and graphemes differ)"
                 : $"rename it `{renamed}`",
             fix: new Fix(member.Span, renamed));
         return true;
@@ -1010,7 +1010,7 @@ internal sealed partial class Binder
         if (common.IsString && b.Op == BinaryOp.Add)
         {
             Report(DiagnosticCodes.StringConcatenation, b.Span, [],
-                help: "interpolate the parts: `$\"{a}{b}\"`, or `buf.append($\"{a}{b}\")` in a loop",
+                help: "write the parts as one interpolation: `$\"{a}{b}\"`, or `buf.append($\"{a}{b}\")` in a loop",
                 fix: new Fix(b.Span, $"$\"{InterpolationSource(b.Left)}{InterpolationSource(b.Right)}\""));
             return new BoundErrorExpr(b);
         }

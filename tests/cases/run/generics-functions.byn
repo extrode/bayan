@@ -1,6 +1,10 @@
 struct Point {
     i64 x;
     i64 y;
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Point {{ x: {x}, y: {y} }}");
+    }
 }
 
 T pick<T>(bool first, move T a, move T b) => first ? move a : move b;

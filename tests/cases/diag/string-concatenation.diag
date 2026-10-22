@@ -3,7 +3,7 @@ error BYN2209: strings cannot be joined with `+`; use interpolation
   2 │ let greeting = "Hello, " + name;
     │                ^^^^^^^^^^^^^^^^
     │
-  help: interpolate the parts: `$"{a}{b}"`, or `buf.append($"{a}{b}")` in a loop
+  help: write the parts as one interpolation: `$"{a}{b}"`, or `buf.append($"{a}{b}")` in a loop
     │ 2 │ let greeting = $"Hello, {name}";
     │   │                ++++++++++++++++
 
@@ -12,7 +12,7 @@ error BYN2209: strings cannot be joined with `+`; use interpolation
   3 │ let path = "/usr" + "/lib";
     │            ^^^^^^^^^^^^^^^
     │
-  help: interpolate the parts: `$"{a}{b}"`, or `buf.append($"{a}{b}")` in a loop
+  help: write the parts as one interpolation: `$"{a}{b}"`, or `buf.append($"{a}{b}")` in a loop
     │ 3 │ let path = $"/usr/lib";
     │   │            ++++++
 
@@ -21,7 +21,7 @@ error BYN2209: strings cannot be joined with `+`; use interpolation
   4 │ let shout = $"{name}!" + name;
     │             ^^^^^^^^^^^^^^^^^
     │
-  help: interpolate the parts: `$"{a}{b}"`, or `buf.append($"{a}{b}")` in a loop
+  help: write the parts as one interpolation: `$"{a}{b}"`, or `buf.append($"{a}{b}")` in a loop
     │ 4 │ let shout = $"{name}!{name}";
     │   │                      +++++++
 
@@ -30,6 +30,7 @@ error BYN2209: strings cannot be joined with `+`; use interpolation
   6 │ log += name;
     │ ^^^^^^^^^^^
     │
-  help: interpolate the parts: `s = $"{s}{x}"`, or build text in a `StrBuf`: `buf.append($"{a}{b}")`
+  help: write the parts as one interpolation: `s = $"{s}{x}"`, or build text in a `StrBuf`:
+        `buf.append($"{a}{b}")`
     │ 6 │ log = $"{log}{name}";
     │   │     ++++++++++++++++
