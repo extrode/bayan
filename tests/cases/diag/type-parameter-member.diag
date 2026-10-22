@@ -1,7 +1,7 @@
-error BYN2744: `count` is not a member of type parameter `T`
+error BYN2744: `length` is not a member of type parameter `T`
 
-  1 │ i64 size<T>(T x) => x.count;
-    │                       ^^^^^
+  1 │ i64 size<T>(T x) => x.length;
+    │                       ^^^^^^
     │
   help: use a concrete type here; type parameters have no constraints, so a `T` has no members
 

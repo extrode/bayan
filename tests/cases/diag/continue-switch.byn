@@ -1,5 +1,5 @@
 let x = 1;
-pick: switch (x) {
+pick: switch x {
     case 1:
         continue pick;
     default:

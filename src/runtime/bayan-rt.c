@@ -57,7 +57,11 @@ static BYN_NORETURN void byn_panic_raise(const uint8_t* msg, size_t len, const c
         abort();
     }
     byn_panicking = true;
-    if (len > sizeof byn_panic_text) len = sizeof byn_panic_text;
+    if (len > sizeof byn_panic_text) {
+        // Cut at a code-point boundary: while the first byte dropped is a continuation byte, drop one more.
+        len = sizeof byn_panic_text;
+        while (len > 0 && (msg[len] & 0xC0) == 0x80) len--;
+    }
     memcpy(byn_panic_text, msg, len);
     byn_panic_now.message = (byn_str){(const uint8_t*)byn_panic_text, (int64_t)len};
     byn_panic_file = file;

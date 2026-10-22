@@ -3,7 +3,7 @@ union Shape { circle(f32 r), none }
 void main() {
     let s = Shape.none();
     Shape t = .none;
-    if (t is .none()) {
+    if t is .none() {
         print("none");
     }
 }

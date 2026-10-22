@@ -1,0 +1,10 @@
+panic: assert (a > 3 ? bump(ref calls) + a : a - calls) == 9
+               │ │   │ │               │ │              │
+               │ │   │ │               │ │              false
+               │ │   │ │               │ 4
+               │ │   │ │               5
+               │ │   │ 1
+               │ │   5
+               │ true
+               4
+  at assert-conditional-branch.byn:8

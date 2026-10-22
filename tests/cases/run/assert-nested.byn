@@ -1,0 +1,11 @@
+struct Money {
+    i64 cents;
+}
+
+struct Cart {
+    Money subtotal;
+    i64 lines;
+}
+
+let cart = Cart { subtotal: Money { cents: 500 }, lines: 2 };
+assert cart.subtotal.cents == 750;

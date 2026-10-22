@@ -99,6 +99,9 @@ internal sealed class RegionAnalysis
             case BoundExprStmt e:
                 Expr(e.Expr);
                 break;
+            case BoundAssert a:
+                Expr(a.Condition);
+                break;
             case BoundAssign a:
             {
                 var value = Expr(a.Value);

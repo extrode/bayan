@@ -1,10 +1,10 @@
-// In `switch (move …)` a `when` guard only reads the arm's bindings (BYN2791): a guard that fails gives the value back.
+// In `switch move …` a `when` guard only reads the arm's bindings (BYN2791): a guard that fails gives the value back.
 struct Bag {
     List<i64> items;
 
     public i64 grow(ref this) {
         this.items.append(1);
-        return this.items.count;
+        return this.items.length;
     }
 }
 
@@ -26,12 +26,12 @@ bool fill(out List<i64> xs) {
 bool keep(move Bag b) => true;
 
 void inspect(move Slot s, move Slot t) {
-    switch (move s) {
+    switch move s {
         case .full(var x) when x.grow() > 5:
             print("call");
         case .full(var x) when x.items.removeLast() > 0:
             print("builtin");
-        case .full(var x) when x.items.take().count > 0:
+        case .full(var x) when x.items.take().length > 0:
             print("take");
         case .full(var x) when bump(ref x.items):
             print("ref");
@@ -39,7 +39,7 @@ void inspect(move Slot s, move Slot t) {
             print("out");
         case .full(let x) when keep(move x):
             print("move");
-        case .full(let x) when x.items.count > 0:
+        case .full(let x) when x.items.length > 0:
             print("read");
         default:
     }
@@ -47,7 +47,7 @@ void inspect(move Slot s, move Slot t) {
         .full(var y) when y.grow() > 5 => 1,
         .full(var y) when bump(ref y.items) => 2,
         .full(let y) when keep(move y) => 3,
-        .full(let y) when y.items.count > 0 => 4,
+        .full(let y) when y.items.length > 0 => 4,
         _ => 0,
     };
     print($"{n}");

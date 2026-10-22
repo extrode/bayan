@@ -8,7 +8,7 @@ struct TextSpan {
 
     i64 end => start + length;
 
-    static TextSpan fromBounds(i64 start, i64 end) => TextSpan { start = start, length = end - start };
+    static TextSpan fromBounds(i64 start, i64 end) => TextSpan { start: start, length: end - start };
 }
 
 /// One source file as UTF-8 bytes. Positions everywhere are byte offsets into `bytes`; line and
@@ -19,34 +19,34 @@ struct SourceText {
     /// Empty until a line or column is first needed.
     List<i64> lineStarts;
 
-    i64 length => bytes.count;
+    i64 length => bytes.length;
 
     static SourceText create(string path, move List<u8> bytes) =>
-        SourceText { path = path, bytes = move bytes, lineStarts = List<i64>() };
+        SourceText { path: path, bytes: move bytes, lineStarts: List<i64>() };
 
     i64 lineCount(ref this) {
         ensureLineStarts();
-        return lineStarts.count;
+        return lineStarts.length;
     }
 
     void ensureLineStarts(ref this) {
-        if (!lineStarts.isEmpty) return;
+        unless lineStarts.isEmpty { return; }
         lineStarts.append(0);
-        for (let i in 0..bytes.count) {
-            if (bytes[i] == 0x0A) lineStarts.append(i + 1);
+        for i in 0..bytes.length {
+            if bytes[i] == 0x0A { lineStarts.append(i + 1); }
         }
     }
 
     /// Zero-based line index containing `offset`.
     i64 getLineIndex(ref this, i64 offset) {
-        if (offset < 0 || offset > length) panic("offset out of range");
+        if offset < 0 || offset > length { panic("offset out of range"); }
         ensureLineStarts();
         // The last line start <= offset.
         i64 lo = 0;
-        var hi = lineStarts.count;
-        while (lo < hi) {
+        var hi = lineStarts.length;
+        while lo < hi {
             let mid = lo + (hi - lo) / 2;
-            if (lineStarts[mid] <= offset) {
+            if lineStarts[mid] <= offset {
                 lo = mid + 1;
             } else {
                 hi = mid;
@@ -59,9 +59,9 @@ struct SourceText {
     TextSpan getLineSpan(ref this, i64 lineIndex) {
         ensureLineStarts();
         let start = lineStarts[lineIndex];
-        var end = lineIndex + 1 < lineStarts.count ? lineStarts[lineIndex + 1] : length;
-        if (end > start && bytes[end - 1] == 0x0A) end -= 1;
-        if (end > start && bytes[end - 1] == 0x0D) end -= 1;
+        var end = lineIndex + 1 < lineStarts.length ? lineStarts[lineIndex + 1] : length;
+        if end > start && bytes[end - 1] == 0x0A { end -= 1; }
+        if end > start && bytes[end - 1] == 0x0D { end -= 1; }
         return TextSpan.fromBounds(start: start, end: end);
     }
 
@@ -70,8 +70,8 @@ struct SourceText {
         let line = getLineIndex(offset);
         let start = lineStarts[line];
         i64 column = 1;
-        for (let i in start..offset) {
-            if ((bytes[i] & 0xC0) != 0x80) column += 1;
+        for i in start..offset {
+            if (bytes[i] & 0xC0) != 0x80 { column += 1; }
         }
         return (line: line + 1, column: column);
     }
@@ -92,44 +92,44 @@ struct Decoded {
 }
 
 bool isContinuation(ReadOnlySpan<u8> bytes, i64 pos, u8 lo, u8 hi) =>
-    pos < bytes.count && bytes[pos] >= lo && bytes[pos] <= hi;
+    pos < bytes.length && bytes[pos] >= lo && bytes[pos] <= hi;
 
 /// Decodes the scalar at `pos` like `Rune.DecodeFromUtf8`; an invalid or truncated sequence is
 /// reported with the length of its maximal subpart (at least 1), as `Encoding.UTF8` replaces it.
 Decoded decodeAt(ReadOnlySpan<u8> bytes, i64 pos) {
     let b0 = bytes[pos];
-    if (b0 < 0x80) return Decoded { value = b0, length = 1, valid = true };
-    if (b0 >= 0xC2 && b0 <= 0xDF) {
-        if (!isContinuation(bytes, pos + 1, lo: 0x80, hi: 0xBF)) return invalid(1);
-        return Decoded { value = ((u32)(b0 & 0x1F) << 6) | (u32)(bytes[pos + 1] & 0x3F), length = 2, valid = true };
+    if b0 < 0x80 { return Decoded { value: b0, length: 1, valid: true }; }
+    if b0 >= 0xC2 && b0 <= 0xDF {
+        unless isContinuation(bytes, pos + 1, lo: 0x80, hi: 0xBF) { return invalid(1); }
+        return Decoded { value: ((u32)(b0 & 0x1F) << 6) | (u32)(bytes[pos + 1] & 0x3F), length: 2, valid: true };
     }
-    if (b0 >= 0xE0 && b0 <= 0xEF) {
+    if b0 >= 0xE0 && b0 <= 0xEF {
         u8 lo = b0 == 0xE0 ? 0xA0 : 0x80;
         u8 hi = b0 == 0xED ? 0x9F : 0xBF;
-        if (!isContinuation(bytes, pos + 1, lo: lo, hi: hi)) return invalid(1);
-        if (!isContinuation(bytes, pos + 2, lo: 0x80, hi: 0xBF)) return invalid(2);
+        unless isContinuation(bytes, pos + 1, lo: lo, hi: hi) { return invalid(1); }
+        unless isContinuation(bytes, pos + 2, lo: 0x80, hi: 0xBF) { return invalid(2); }
         let value = ((u32)(b0 & 0x0F) << 12) | ((u32)(bytes[pos + 1] & 0x3F) << 6) | (u32)(bytes[pos + 2] & 0x3F);
-        return Decoded { value = value, length = 3, valid = true };
+        return Decoded { value: value, length: 3, valid: true };
     }
-    if (b0 >= 0xF0 && b0 <= 0xF4) {
+    if b0 >= 0xF0 && b0 <= 0xF4 {
         u8 lo = b0 == 0xF0 ? 0x90 : 0x80;
         u8 hi = b0 == 0xF4 ? 0x8F : 0xBF;
-        if (!isContinuation(bytes, pos + 1, lo: lo, hi: hi)) return invalid(1);
-        if (!isContinuation(bytes, pos + 2, lo: 0x80, hi: 0xBF)) return invalid(2);
-        if (!isContinuation(bytes, pos + 3, lo: 0x80, hi: 0xBF)) return invalid(3);
+        unless isContinuation(bytes, pos + 1, lo: lo, hi: hi) { return invalid(1); }
+        unless isContinuation(bytes, pos + 2, lo: 0x80, hi: 0xBF) { return invalid(2); }
+        unless isContinuation(bytes, pos + 3, lo: 0x80, hi: 0xBF) { return invalid(3); }
         let value = ((u32)(b0 & 0x07) << 18) | ((u32)(bytes[pos + 1] & 0x3F) << 12)
             | ((u32)(bytes[pos + 2] & 0x3F) << 6) | (u32)(bytes[pos + 3] & 0x3F);
-        return Decoded { value = value, length = 4, valid = true };
+        return Decoded { value: value, length: 4, valid: true };
     }
     return invalid(1);
 }
 
-Decoded invalid(i64 length) => Decoded { value = replacementCharacter, length = length, valid = false };
+Decoded invalid(i64 length) => Decoded { value: replacementCharacter, length: length, valid: false };
 
 /// Appends `bytes` decoded as `Encoding.UTF8.GetString` does: each invalid maximal subpart becomes U+FFFD.
 void appendUtf8(ref StrBuf sb, ReadOnlySpan<u8> bytes) {
     i64 pos = 0;
-    while (pos < bytes.count) {
+    while pos < bytes.length {
         let d = decodeAt(bytes, pos);
         sb.append($"{(char)d.value}");
         pos += d.length;
@@ -147,7 +147,7 @@ string utf8(ReadOnlySpan<u8> bytes) {
 i64 runeCount(ReadOnlySpan<u8> bytes) {
     i64 count = 0;
     i64 pos = 0;
-    while (pos < bytes.count) {
+    while pos < bytes.length {
         pos += decodeAt(bytes, pos).length;
         count += 1;
     }
@@ -163,10 +163,10 @@ string hex(u32 value, i64 digits) {
 
 void appendHex(ref StrBuf sb, u32 value, i64 digits) {
     i64 n = 1;
-    while (n < 8 && (value >> (u32)(4 * n)) != 0) n += 1;
-    if (n < digits) n = digits;
+    while n < 8 && (value >> (u32)(4 * n)) != 0 { n += 1; }
+    if n < digits { n = digits; }
     var i = n - 1;
-    while (i >= 0) {
+    while i >= 0 {
         let d = (value >> (u32)(4 * i)) & 0xF;
         sb.append($"{(char)(d < 10 ? 0x30 + d : 0x37 + d)}");
         i -= 1;

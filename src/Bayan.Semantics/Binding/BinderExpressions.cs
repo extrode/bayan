@@ -443,7 +443,7 @@ internal sealed partial class Binder
         candidates.AddRange(Module.Constants.Keys);
         candidates.AddRange(Module.Types.Keys);
         candidates.AddRange(_file.Imports.Keys);
-        candidates.AddRange(["print", "panic", "todo", "assert", "Io"]);
+        candidates.AddRange(["print", "panic", "todo", "Io"]);
         var suggestion = Suggest(name.Text, candidates);
         Report(DiagnosticCodes.UndefinedName, name.Span, [name.Text],
             help: suggestion is null ? null : $"did you mean `{suggestion}`?",
@@ -720,8 +720,6 @@ internal sealed partial class Binder
         }
         var renamed = (type, name) switch
         {
-            ({ IsString: true }, "length") => "bytes.count",
-            (SpanType or ListType or MapType or Symbols.ArrayType or BuiltinType { Kind: BuiltinKind.StrBuf }, "length") => "count",
             (ListType, "add") => "append",
             (BuiltinType { Kind: BuiltinKind.StrBuf }, "asString") => "finish",
             _ => null,
@@ -729,17 +727,14 @@ internal sealed partial class Binder
         if (renamed is null) return false;
         var call = name == "asString" ? "()" : "";
         Report(DiagnosticCodes.RenamedMember, member.Span, [name + call, renamed + call], label: "the old name",
-            help: type.IsString
-                ? "use `bytes.count` to count the bytes; a string has no single length (bytes, characters and graphemes differ)"
-                : $"rename it `{renamed}`",
+            help: $"rename it `{renamed}`",
             fix: new Fix(member.Span, renamed));
         return true;
     }
 
     private static string? MemberSuggestion(TypeSymbol type, string name)
     {
-        if (name is "Length" or "Count" or "size" or "len")
-            return type.IsString ? "use `bytes.count` for the size of a string in bytes" : "use `count`: the size of anything is `count`";
+        if (name is "Length" or "Count" or "count" or "size" or "len") return "use `length` for the size of anything";
         IEnumerable<string> names = type switch
         {
             StructSymbol s => s.Fields.Select(f => f.Name).Concat(s.Properties.Select(p => p.Name)).Concat(s.Methods.Select(m => m.Name)),
@@ -962,6 +957,12 @@ internal sealed partial class Binder
 
     private BoundExpr BindBinary(BinaryExpr b, TypeSymbol? expected)
     {
+        if (b.Op is BinaryOp.Eq or BinaryOp.Ne && (b.Right is LiteralExpr { Kind: LiteralKind.Null } ? b.Left
+                : b.Left is LiteralExpr { Kind: LiteralKind.Null } ? b.Right : null) is { } tested)
+        {
+            var test = Source.GetText(tested.Span) + (b.Op == BinaryOp.Eq ? " is null" : " is not null");
+            Report(DiagnosticCodes.NullEquality, b.Span, [], help: $"write `{test}`", fix: new Fix(b.Span, test));
+        }
         switch (b.Op)
         {
             case BinaryOp.LogicalAnd or BinaryOp.LogicalOr:
@@ -1228,7 +1229,7 @@ internal sealed partial class Binder
         else if (expected is not null) type = expected;
         else
         {
-            Report(DiagnosticCodes.NoTargetType, s.Span, ["{ … }"], help: "name the type: `Point { x = 1 }`");
+            Report(DiagnosticCodes.NoTargetType, s.Span, ["{ … }"], help: "name the type: `Point { x: 1 }`");
             return new BoundErrorExpr(s);
         }
         if (type.IsError) return new BoundErrorExpr(s);
@@ -1282,7 +1283,7 @@ internal sealed partial class Binder
             var first = st.FindField(missing[0])!;
             Report(DiagnosticCodes.MissingFields, s.Span, [st.Name, string.Join("`, `", missing)],
                 label: missing.Count == 1 && first.IsRequired ? "`" + first.Name + "` is `required`" : null,
-                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + " = …"))} }}`");
+                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
             return new BoundErrorExpr(s);
         }
         return new BoundStructLiteral(s, st, values!);

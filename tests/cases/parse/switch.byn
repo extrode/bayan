@@ -1,5 +1,5 @@
 string name(Day d) {
-    switch (d) {
+    switch d {
         case .sat or .sun:
             return "weekend";
         case .mon:

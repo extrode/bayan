@@ -1,8 +1,8 @@
 error BYN3003: cannot return a borrow of the temporary on line 14, which is freed when
 `spanAndCount` returns
 
-  14 │     (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.count);
-     │                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  14 │     (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.length);
+     │                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
      │
   help: let the caller pass the buffer or allocator in, and borrow or allocate from that
 
@@ -15,15 +15,15 @@ error BYN3003: cannot return a borrow of `local`, which is freed when `scratch` 
 
 error BYN3004: `lexer` is modified while `all` still borrows it
 
-  26 │     lexer.toks.append(Token { kind = 1 });
-     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `all` is used again on line 28
+  26 │     lexer.toks.append(Token { kind: 1 });
+     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `all` is used again on line 28
      │
   help: finish using `all` first, or copy what it needs before changing `lexer`
 
 error BYN3004: `lexer` is modified while `all` still borrows it
 
-  27 │     lexer.push(Token { kind = 2 });
-     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `all` is used again on line 28
+  27 │     lexer.push(Token { kind: 2 });
+     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `all` is used again on line 28
      │
   help: finish using `all` first, or copy what it needs before changing `lexer`
 

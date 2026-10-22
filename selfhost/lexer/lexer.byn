@@ -6,18 +6,18 @@ const i64 maxInterpolationDepth = 32;
 
 LexResult lex(move SourceText source, Keywords keywords) {
     var modes = List<ModeEntry>();
-    for (let i in 0..maxInterpolationDepth + 1) modes.append(ModeEntry { inText = false, braceDepth = 0, start = 0 });
+    for i in 0..maxInterpolationDepth + 1 { modes.append(ModeEntry { inText: false, braceDepth: 0, start: 0 }); }
     var result = LexResult {
-        source = move source,
-        diagnostics = List<Diagnostic>(),
-        modes = move modes,
-        depth = 0,
-        reportedTooDeep = false,
-        pos = 0,
-        tokenFlags = 0,
-        docStart = -1,
-        docEnd = -1,
-        tokens = List<Token>(),
+        source: move source,
+        diagnostics: List<Diagnostic>(),
+        modes: move modes,
+        depth: 0,
+        reportedTooDeep: false,
+        pos: 0,
+        tokenFlags: 0,
+        docStart: -1,
+        docEnd: -1,
+        tokens: List<Token>(),
     };
     result.run(keywords);
     return result;
@@ -28,16 +28,16 @@ LexResult lex(move SourceText source, Keywords keywords) {
 /// Whether `cp` lies in one of the inclusive `lo, hi` pairs of `ranges`.
 bool inRanges(ReadOnlySpan<u32> ranges, u32 cp) {
     i64 lo = 0;
-    var hi = ranges.count / 2;
-    while (lo < hi) {
+    var hi = ranges.length / 2;
+    while lo < hi {
         let mid = lo + (hi - lo) / 2;
-        if (ranges[mid * 2 + 1] < cp) {
+        if ranges[mid * 2 + 1] < cp {
             lo = mid + 1;
         } else {
             hi = mid;
         }
     }
-    return lo < ranges.count / 2 && ranges[lo * 2] <= cp;
+    return lo < ranges.length / 2 && ranges[lo * 2] <= cp;
 }
 
 /// `_` and the letter categories Lu Ll Lt Lm Lo Nl.
@@ -48,10 +48,10 @@ bool isIdentifierContinue(u32 cp) => isIdentifierStart(cp) || inRanges(identCont
 
 /// Length of the bidi control character at `pos` and its code point, or 0.
 (i64 length, u32 codePoint) bidiControlAt(ReadOnlySpan<u8> text, i64 pos) {
-    if (pos + 2 >= text.count || text[pos] != 0xE2) return (length: 0, codePoint: 0);
+    if pos + 2 >= text.length || text[pos] != 0xE2 { return (length: 0, codePoint: 0); }
     let b1 = text[pos + 1];
     let b2 = text[pos + 2];
-    if ((b1 == 0x80 && b2 >= 0xAA && b2 <= 0xAE) || (b1 == 0x81 && b2 >= 0xA6 && b2 <= 0xA9)) {
+    if (b1 == 0x80 && b2 >= 0xAA && b2 <= 0xAE) || (b1 == 0x81 && b2 >= 0xA6 && b2 <= 0xA9) {
         return (length: 3, codePoint: 0x2000 | ((u32)(b1 & 0x0F) << 6) | (u32)(b2 & 0x3F));
     }
     return (length: 0, codePoint: 0);
@@ -73,60 +73,60 @@ const i64 sCount = 11172;
 /// Index of the triple whose first entry is `cp` in `table`, or -1.
 i64 findTriple(ReadOnlySpan<u32> table, u32 cp) {
     i64 lo = 0;
-    var hi = table.count / 3;
-    while (lo < hi) {
+    var hi = table.length / 3;
+    while lo < hi {
         let mid = lo + (hi - lo) / 2;
-        if (table[mid * 3] < cp) {
+        if table[mid * 3] < cp {
             lo = mid + 1;
         } else {
             hi = mid;
         }
     }
-    return lo < table.count / 3 && table[lo * 3] == cp ? lo : -1;
+    return lo < table.length / 3 && table[lo * 3] == cp ? lo : -1;
 }
 
 /// The canonical combining class of `cp`.
 i64 ccc(u32 cp) {
     i64 lo = 0;
-    var hi = cccRanges.count / 3;
-    while (lo < hi) {
+    var hi = cccRanges.length / 3;
+    while lo < hi {
         let mid = lo + (hi - lo) / 2;
-        if (cccRanges[mid * 3 + 1] < cp) {
+        if cccRanges[mid * 3 + 1] < cp {
             lo = mid + 1;
         } else {
             hi = mid;
         }
     }
-    return lo < cccRanges.count / 3 && cccRanges[lo * 3] <= cp ? cccRanges[lo * 3 + 2] : 0;
+    return lo < cccRanges.length / 3 && cccRanges[lo * 3] <= cp ? cccRanges[lo * 3 + 2] : 0;
 }
 
 /// Appends the full canonical decomposition of `cp`.
 void decompose(u32 cp, ref List<u32> output) {
     let s = (i64)cp - sBase;
-    if (s >= 0 && s < sCount) {
+    if s >= 0 && s < sCount {
         output.append((u32)(lBase + s / nCount));
         output.append((u32)(vBase + s % nCount / tCount));
-        if (s % tCount != 0) output.append((u32)(tBase + s % tCount));
+        if s % tCount != 0 { output.append((u32)(tBase + s % tCount)); }
         return;
     }
     let i = findTriple(decompIndex, cp);
-    if (i < 0) {
+    if i < 0 {
         output.append(cp);
         return;
     }
     let offset = (i64)decompIndex[i * 3 + 1];
     let length = (i64)decompIndex[i * 3 + 2];
-    for (let k in offset..offset + length) output.append(decompData[k]);
+    for k in offset..offset + length { output.append(decompData[k]); }
 }
 
 /// Stable sort of each run of non-starters by CCC.
 void reorder(ref List<u32> cps) {
-    for (let i in 1..cps.count) {
+    for i in 1..cps.length {
         let c = ccc(cps[i]);
-        if (c == 0) continue;
+        if c == 0 { continue; }
         let cp = cps[i];
         var j = i;
-        while (j > 0 && ccc(cps[j - 1]) > c) {
+        while j > 0 && ccc(cps[j - 1]) > c {
             cps[j] = cps[j - 1];
             j -= 1;
         }
@@ -138,51 +138,51 @@ void reorder(ref List<u32> cps) {
 i64 composePair(u32 first, u32 second) {
     let l = (i64)first - lBase;
     let v = (i64)second - vBase;
-    if (l >= 0 && l < lCount && v >= 0 && v < vCount) return sBase + (l * vCount + v) * tCount;
+    if l >= 0 && l < lCount && v >= 0 && v < vCount { return sBase + (l * vCount + v) * tCount; }
     let s = (i64)first - sBase;
     let t = (i64)second - tBase;
-    if (s >= 0 && s < sCount && s % tCount == 0 && t > 0 && t < tCount) return (i64)first + t;
+    if s >= 0 && s < sCount && s % tCount == 0 && t > 0 && t < tCount { return (i64)first + t; }
     i64 lo = 0;
-    var hi = compPairs.count / 3;
-    while (lo < hi) {
+    var hi = compPairs.length / 3;
+    while lo < hi {
         let mid = lo + (hi - lo) / 2;
         let f = compPairs[mid * 3];
-        if (f < first || (f == first && compPairs[mid * 3 + 1] < second)) {
+        if f < first || (f == first && compPairs[mid * 3 + 1] < second) {
             lo = mid + 1;
         } else {
             hi = mid;
         }
     }
-    if (lo < compPairs.count / 3 && compPairs[lo * 3] == first && compPairs[lo * 3 + 1] == second) return compPairs[lo * 3 + 2];
+    if lo < compPairs.length / 3 && compPairs[lo * 3] == first && compPairs[lo * 3 + 1] == second { return compPairs[lo * 3 + 2]; }
     return -1;
 }
 
 /// Canonical composition in place; a character is blocked by an intervening one of equal or higher CCC.
 void compose(ref List<u32> cps) {
-    if (cps.count == 0) return;
+    if cps.length == 0 { return; }
     i64 starterIndex = 0;
     i64 lastCcc = ccc(cps[0]) == 0 ? 0 : 256;
     i64 count = 1;
-    for (let i in 1..cps.count) {
+    for i in 1..cps.length {
         let cp = cps[i];
         let c = ccc(cp);
         let composite = composePair(first: cps[starterIndex], second: cp);
-        if (composite >= 0 && (lastCcc < c || lastCcc == 0)) {
+        if composite >= 0 && (lastCcc < c || lastCcc == 0) {
             cps[starterIndex] = (u32)composite;
             continue;
         }
-        if (c == 0) starterIndex = count;
+        if c == 0 { starterIndex = count; }
         lastCcc = c;
         cps[count] = cp;
         count += 1;
     }
-    while (cps.count > count) cps.removeLast();
+    while cps.length > count { cps.removeLast(); }
 }
 
 /// The NFC form of the scalars `input`.
 List<u32> normalize(ReadOnlySpan<u32> input) {
     var cps = List<u32>();
-    for (let cp in input) decompose(cp, ref cps);
+    for cp in input { decompose(cp, ref cps); }
     reorder(ref cps);
     compose(ref cps);
     return cps;
@@ -214,16 +214,16 @@ struct LexResult {
     List<Token> tokens;
 
     void run(ref this, Keywords keywords) {
-        if (source.bytes.count >= 3 && source.bytes[0] == 0xEF && source.bytes[1] == 0xBB && source.bytes[2] == 0xBF) pos = 3;
-        while (true) {
-            if (modes[depth].inText) {
+        if source.bytes.length >= 3 && source.bytes[0] == 0xEF && source.bytes[1] == 0xBB && source.bytes[2] == 0xBF { pos = 3; }
+        while true {
+            if modes[depth].inText {
                 lexInterpolatedText();
                 continue;
             }
             skipTrivia();
-            if (pos >= source.bytes.count) {
-                if (depth > 0) {
-                    report(.unterminatedString, TextSpan { start = modes[depth].start, length = 2 },
+            if pos >= source.bytes.length {
+                if depth > 0 {
+                    report(.unterminatedString, TextSpan { start: modes[depth].start, length: 2 },
                         label: "this string never ends", help: "close the `{` and the string");
                 }
                 add(.endOfFile, start: pos, length: 0);
@@ -235,17 +235,17 @@ struct LexResult {
 
     // ── Plumbing ──────────────────────────────────────────────────────────────────
 
-    u8 peek(i64 offset = 0) => pos + offset < source.bytes.count ? source.bytes[pos + offset] : 0;
+    u8 peek(i64 offset = 0) => pos + offset < source.bytes.length ? source.bytes[pos + offset] : 0;
 
     void add(ref this, TokenKind kind, i64 start, i64 length) {
         let docLength = docStart >= 0 ? docEnd - docStart : 0;
         tokens.append(Token {
-            kind = kind,
-            tokenFlags = tokenFlags,
-            start = start,
-            length = length,
-            docStart = docStart >= 0 ? docStart : 0,
-            docLength = docLength,
+            kind: kind,
+            tokenFlags: tokenFlags,
+            start: start,
+            length: length,
+            docStart: docStart >= 0 ? docStart : 0,
+            docLength: docLength,
         });
         tokenFlags = 0;
         docStart = -1;
@@ -253,34 +253,34 @@ struct LexResult {
 
     void report(ref this, DiagnosticCode code, TextSpan span, string arg0 = "", string arg1 = "", string label = "", string help = "") {
         diagnostics.append(Diagnostic {
-            code = codeText(code),
-            span = span,
-            message = format(template: messageFormat(code), arg0: arg0, arg1: arg1),
-            label = label,
-            help = help,
-            hasFix = false,
-            fixSpan = span,
-            fixReplacement = "",
+            code: codeText(code),
+            span: span,
+            message: format(template: messageFormat(code), arg0: arg0, arg1: arg1),
+            label: label,
+            help: help,
+            hasFix: false,
+            fixSpan: span,
+            fixReplacement: "",
         });
     }
 
     void reportFix(ref this, DiagnosticCode code, TextSpan span, string replacement, string arg0 = "", string label = "", string help = "") {
         diagnostics.append(Diagnostic {
-            code = codeText(code),
-            span = span,
-            message = format(template: messageFormat(code), arg0: arg0, arg1: ""),
-            label = label,
-            help = help,
-            hasFix = true,
-            fixSpan = span,
-            fixReplacement = replacement,
+            code: codeText(code),
+            span: span,
+            message: format(template: messageFormat(code), arg0: arg0, arg1: ""),
+            label: label,
+            help: help,
+            hasFix: true,
+            fixSpan: span,
+            fixReplacement: replacement,
         });
     }
 
     bool isIdentifierStartAt(i64 at) {
-        if (at >= source.bytes.count) return false;
+        if at >= source.bytes.length { return false; }
         let b = source.bytes[at];
-        if (b < 0x80) return isAsciiIdentStart(b);
+        if b < 0x80 { return isAsciiIdentStart(b); }
         let d = decodeAt(source.bytes.asSpan(), at);
         return d.valid && isIdentifierStart(d.value);
     }
@@ -288,19 +288,19 @@ struct LexResult {
     /// Advances over one code point, reporting bidi controls and invalid UTF-8 unless allowed.
     void advanceCodePoint(ref this, bool allowBidi) {
         let b = source.bytes[pos];
-        if (b < 0x80) {
+        if b < 0x80 {
             pos += 1;
             return;
         }
         let bidi = bidiControlAt(source.bytes.asSpan(), pos);
-        if (bidi.length > 0) {
-            if (!allowBidi) reportBidi(pos, bidi.codePoint);
+        if bidi.length > 0 {
+            unless allowBidi { reportBidi(pos, bidi.codePoint); }
             pos += bidi.length;
             return;
         }
         let d = decodeAt(source.bytes.asSpan(), pos);
-        if (!d.valid) {
-            report(.invalidUtf8, TextSpan { start = pos, length = 1 }, arg0: hex(b, 2));
+        unless d.valid {
+            report(.invalidUtf8, TextSpan { start: pos, length: 1 }, arg0: hex(b, 2));
             pos += 1;
             return;
         }
@@ -308,7 +308,7 @@ struct LexResult {
     }
 
     void reportBidi(ref this, i64 at, u32 codePoint) {
-        reportFix(.bidiControl, TextSpan { start = at, length = 3 }, replacement: "", arg0: hex(codePoint, 4),
+        reportFix(.bidiControl, TextSpan { start: at, length: 3 }, replacement: "", arg0: hex(codePoint, 4),
             label: "invisible character that reorders how the text displays",
             help: "remove it; bidi controls may only appear inside string literals (Trojan Source, CVE-2021-42574)");
     }
@@ -316,40 +316,40 @@ struct LexResult {
     // ── Trivia ────────────────────────────────────────────────────────────────────
 
     void skipTrivia(ref this) {
-        while (pos < source.bytes.count) {
+        while pos < source.bytes.length {
             let b = source.bytes[pos];
-            if (b == ' ' || b == '\t' || b == '\r') {
+            if b == ' ' || b == '\t' || b == '\r' {
                 pos += 1;
                 tokenFlags |= triviaBefore;
-            } else if (b == '\n') {
+            } else if b == '\n' {
                 pos += 1;
                 tokenFlags |= triviaBefore | newlineBefore;
-            } else if (b == '/' && peek(1) == '/') {
+            } else if b == '/' && peek(1) == '/' {
                 let start = pos;
                 let isDoc = peek(2) == '/' && peek(3) != '/';
-                while (pos < source.bytes.count && source.bytes[pos] != '\n') advanceCodePoint(allowBidi: false);
-                if (isDoc) {
-                    if (docStart < 0) docStart = start;
+                while pos < source.bytes.length && source.bytes[pos] != '\n' { advanceCodePoint(allowBidi: false); }
+                if isDoc {
+                    if docStart < 0 { docStart = start; }
                     docEnd = pos;
                 }
                 tokenFlags |= triviaBefore;
-            } else if (b == '/' && peek(1) == '*') {
+            } else if b == '/' && peek(1) == '*' {
                 let start = pos;
                 pos += 2;
-                while (pos < source.bytes.count && !(source.bytes[pos] == '*' && peek(1) == '/')) {
-                    if (source.bytes[pos] == '\n') tokenFlags |= newlineBefore;
+                while pos < source.bytes.length && !(source.bytes[pos] == '*' && peek(1) == '/') {
+                    if source.bytes[pos] == '\n' { tokenFlags |= newlineBefore; }
                     advanceCodePoint(allowBidi: false);
                 }
-                if (pos >= source.bytes.count) {
-                    report(.unterminatedComment, TextSpan { start = start, length = 2 }, label: "comment starts here",
+                if pos >= source.bytes.length {
+                    report(.unterminatedComment, TextSpan { start: start, length: 2 }, label: "comment starts here",
                         help: "close it with `*/`");
                 } else {
                     pos += 2;
                 }
                 tokenFlags |= triviaBefore;
-            } else if (b == '#' && tokens.count == 0 && (peek(1) == '!' || peek(1) == ':') && isAtLineStart()) {
+            } else if b == '#' && tokens.length == 0 && (peek(1) == '!' || peek(1) == ':') && isAtLineStart() {
                 // Script shebang and `#:` directives at the top of a file.
-                while (pos < source.bytes.count && source.bytes[pos] != '\n') advanceCodePoint(allowBidi: false);
+                while pos < source.bytes.length && source.bytes[pos] != '\n' { advanceCodePoint(allowBidi: false); }
                 tokenFlags |= triviaBefore;
             } else {
                 return;
@@ -365,29 +365,29 @@ struct LexResult {
         let start = pos;
         let c = source.bytes[pos];
 
-        if (isAsciiIdentStart(c)) {
+        if isAsciiIdentStart(c) {
             lexIdentifier(keywords);
             return;
         }
-        if (isDigit(c)) {
+        if isDigit(c) {
             lexNumber();
             return;
         }
-        if (c >= 0x80) {
+        if c >= 0x80 {
             let bidi = bidiControlAt(source.bytes.asSpan(), pos);
-            if (bidi.length > 0) {
+            if bidi.length > 0 {
                 reportBidi(pos, bidi.codePoint);
                 pos += bidi.length;
                 tokenFlags |= triviaBefore;
                 return;
             }
             let d = decodeAt(source.bytes.asSpan(), pos);
-            if (!d.valid) {
-                report(.invalidUtf8, TextSpan { start = pos, length = 1 }, arg0: hex(c, 2));
+            unless d.valid {
+                report(.invalidUtf8, TextSpan { start: pos, length: 1 }, arg0: hex(c, 2));
                 pos += 1;
                 return;
             }
-            if (isIdentifierStart(d.value)) {
+            if isIdentifierStart(d.value) {
                 lexIdentifier(keywords);
                 return;
             }
@@ -395,18 +395,18 @@ struct LexResult {
             return;
         }
 
-        switch (c) {
+        switch c {
             case '"':
                 lexString(start: start, quote: start, kind: .stringLiteral);
             case '\'':
                 lexChar();
             case '$':
-                if (peek(1) != '"') {
+                if peek(1) != '"' {
                     reportUnexpected(c, 1);
                     return;
                 }
-                if (depth + 1 >= modes.count) {
-                    if (!reportedTooDeep) report(.interpolationTooDeep, TextSpan { start = start, length = 2 });
+                if depth + 1 >= modes.length {
+                    unless reportedTooDeep { report(.interpolationTooDeep, TextSpan { start: start, length: 2 }); }
                     reportedTooDeep = true;
                     pos += 1;
                     lexString(start: start, quote: pos, kind: .stringLiteral);
@@ -415,18 +415,18 @@ struct LexResult {
                 add(.interpolatedStringStart, start: start, length: 2);
                 pos += 2;
                 depth += 1;
-                modes[depth] = ModeEntry { inText = true, braceDepth = 0, start = start };
+                modes[depth] = ModeEntry { inText: true, braceDepth: 0, start: start };
             case '{':
-                if (depth > 0) modes[depth].braceDepth += 1;
+                if depth > 0 { modes[depth].braceDepth += 1; }
                 single(.openBrace);
             case '}':
-                if (depth > 0 && modes[depth].braceDepth == 0) {
+                if depth > 0 && modes[depth].braceDepth == 0 {
                     add(.interpolationEnd, start: start, length: 1);
                     pos += 1;
                     depth -= 1;
                     return;
                 }
-                if (depth > 0) modes[depth].braceDepth -= 1;
+                if depth > 0 { modes[depth].braceDepth -= 1; }
                 single(.closeBrace);
             case '(': single(.openParen);
             case ')': single(.closeParen);
@@ -439,15 +439,15 @@ struct LexResult {
             case '~': single(.tilde);
             case ':': single(.colon);
             case '.':
-                if (peek(1) == '.') {
+                if peek(1) == '.' {
                     fixed(peek(2) == '=' ? TokenKind.dotDotEquals : TokenKind.dotDot, peek(2) == '=' ? 3 : 2);
                 } else {
                     single(.dot);
                 }
             case '?':
-                if (peek(1) == '?') {
+                if peek(1) == '?' {
                     fixed(peek(2) == '=' ? TokenKind.questionQuestionEquals : TokenKind.questionQuestion, peek(2) == '=' ? 3 : 2);
-                } else if (peek(1) == '.' && !isDigit(peek(2))) {
+                } else if peek(1) == '.' && !isDigit(peek(2)) {
                     fixed(.questionDot, 2);
                 } else {
                     single(.question);
@@ -486,7 +486,7 @@ struct LexResult {
             case '=':
                 fixed(peek(1) switch { '=' => TokenKind.equalsEquals, '>' => TokenKind.fatArrow, _ => TokenKind.equals });
             case '<':
-                if (peek(1) == '<') {
+                if peek(1) == '<' {
                     fixed(peek(2) == '=' ? TokenKind.lessLessEquals : TokenKind.lessLess, peek(2) == '=' ? 3 : 2);
                 } else {
                     fixed(peek(1) == '=' ? TokenKind.lessEquals : TokenKind.less);
@@ -500,7 +500,7 @@ struct LexResult {
 
     void reportUnexpected(ref this, u32 cp, i64 length) {
         let shown = cp < 0x20 || cp == 0x7F ? $"\\u{{{hex(cp, 1)}}}" : $"{(char)cp}";
-        report(.unexpectedCharacter, TextSpan { start = pos, length = length }, arg0: shown);
+        report(.unexpectedCharacter, TextSpan { start: pos, length: length }, arg0: shown);
         pos += length;
         tokenFlags |= triviaBefore;
     }
@@ -509,7 +509,7 @@ struct LexResult {
 
     /// Adds a fixed token; with no explicit length, two-character kinds are inferred.
     void fixed(ref this, TokenKind kind, i64 length = 0) {
-        let n = length == 0 ? kindText(kind).bytes.count : length;
+        let n = length == 0 ? kindText(kind).length : length;
         add(kind, start: pos, length: n);
         pos += n;
     }
@@ -517,39 +517,39 @@ struct LexResult {
     void lexIdentifier(ref this, Keywords keywords) {
         let start = pos;
         var ascii = true;
-        while (pos < source.bytes.count) {
+        while pos < source.bytes.length {
             let b = source.bytes[pos];
-            if (b < 0x80) {
-                if (!isAsciiIdentContinue(b)) break;
+            if b < 0x80 {
+                unless isAsciiIdentContinue(b) { break; }
                 pos += 1;
                 continue;
             }
-            if (bidiControlAt(source.bytes.asSpan(), pos).length > 0) break;
+            if bidiControlAt(source.bytes.asSpan(), pos).length > 0 { break; }
             let d = decodeAt(source.bytes.asSpan(), pos);
-            if (!d.valid || !isIdentifierContinue(d.value)) break;
+            if !d.valid || !isIdentifierContinue(d.value) { break; }
             ascii = false;
             pos += d.length;
         }
 
         let span = source.bytes.asSpan()[start..pos];
-        if (!ascii) {
+        unless ascii {
             checkNfc(start, span);
             add(.identifier, start: start, length: pos - start);
             return;
         }
 
         var kind = keywords.lookup(span);
-        if (kind == .identifier && peek() == '"') {
-            if (span.count == 1 && span[0] == 'c') {
+        if kind == .identifier && peek() == '"' {
+            if span.length == 1 && span[0] == 'c' {
                 lexString(start: start, quote: pos, kind: .cStringLiteral);
                 return;
             }
-            if (sameBytes(a: span, b: "u16".bytes)) {
+            if sameBytes(a: span, b: "u16".bytes) {
                 lexString(start: start, quote: pos, kind: .u16StringLiteral);
                 return;
             }
         }
-        if (isReservedKeyword(kind)) {
+        if isReservedKeyword(kind) {
             report(.reservedKeyword, TextSpan.fromBounds(start: start, end: pos), arg0: utf8(span),
                 label: "reserved for a future version of Bayan", help: "choose another name");
             kind = .identifier;
@@ -561,21 +561,21 @@ struct LexResult {
     void checkNfc(ref this, i64 start, ReadOnlySpan<u8> span) {
         var input = List<u32>();
         i64 at = 0;
-        while (at < span.count) {
+        while at < span.length {
             let d = decodeAt(span, at);
             input.append(d.value);
             at += d.length;
         }
         let normalized = normalize(input.asSpan());
-        var same = normalized.count == input.count;
-        if (same) {
-            for (let i in 0..input.count) {
-                if (normalized[i] != input[i]) same = false;
+        var same = normalized.length == input.length;
+        if same {
+            for i in 0..input.length {
+                if normalized[i] != input[i] { same = false; }
             }
         }
-        if (same) return;
+        if same { return; }
         var fix = StrBuf();
-        for (let cp in normalized) fix.append($"{(char)cp}");
+        for cp in normalized { fix.append($"{(char)cp}"); }
         reportFix(.identifierNotNfc, TextSpan.fromBounds(start: start, end: pos), replacement: fix.finish(), arg0: utf8(span),
             label: "same letters, different encoding",
             help: "use the composed (NFC) form; identifiers that look the same must be byte-identical");
@@ -586,27 +586,27 @@ struct LexResult {
         var radix = "";
         var isFloat = false;
 
-        if (source.bytes[pos] == '0' && (peek(1) | 0x20) == 'x') {
+        if source.bytes[pos] == '0' && (peek(1) | 0x20) == 'x' {
             radix = "hexadecimal";
             pos += 2;
             scanDigits(start, .hex, "0x");
-        } else if (source.bytes[pos] == '0' && (peek(1) | 0x20) == 'b' && (peek(2) == '0' || peek(2) == '1' || peek(2) == '_')) {
+        } else if source.bytes[pos] == '0' && (peek(1) | 0x20) == 'b' && (peek(2) == '0' || peek(2) == '1' || peek(2) == '_') {
             radix = "binary";
             pos += 2;
             scanDigits(start, .binary, "0b");
-            if (isDigit(peek())) {
+            if isDigit(peek()) {
                 let bad = pos;
-                while (isDigit(peek())) pos += 1;
+                while isDigit(peek()) { pos += 1; }
                 report(.invalidNumber, TextSpan.fromBounds(start: bad, end: pos), arg0: "binary literals use only `0` and `1`");
             }
         } else {
             scanDigits(start, .decimal, "");
-            if (peek() == '.' && isDigit(peek(1))) {
+            if peek() == '.' && isDigit(peek(1)) {
                 isFloat = true;
                 pos += 1;
                 scanDigits(start, .decimal, "");
             }
-            if ((peek() | 0x20) == 'e' && (isDigit(peek(1)) || ((peek(1) == '+' || peek(1) == '-') && isDigit(peek(2))))) {
+            if (peek() | 0x20) == 'e' && (isDigit(peek(1)) || ((peek(1) == '+' || peek(1) == '-') && isDigit(peek(2)))) {
                 isFloat = true;
                 pos += peek(1) == '+' || peek(1) == '-' ? 2 : 1;
                 scanDigits(start, .decimal, "");
@@ -615,23 +615,23 @@ struct LexResult {
 
         add(isFloat ? TokenKind.floatLiteral : TokenKind.integerLiteral, start: start, length: pos - start);
 
-        if (isIdentifierStartAt(pos)) {
+        if isIdentifierStartAt(pos) {
             let suffixStart = pos;
-            while (pos < source.bytes.count) {
+            while pos < source.bytes.length {
                 let b = source.bytes[pos];
-                if (b < 0x80) {
-                    if (!isAsciiIdentContinue(b)) break;
+                if b < 0x80 {
+                    unless isAsciiIdentContinue(b) { break; }
                     pos += 1;
                     continue;
                 }
                 let d = decodeAt(source.bytes.asSpan(), pos);
-                if (!d.valid || !isIdentifierContinue(d.value)) break;
+                if !d.valid || !isIdentifierContinue(d.value) { break; }
                 pos += d.length;
             }
             add(.numericSuffix, start: suffixStart, length: pos - suffixStart);
             let suffix = source.bytes.asSpan()[suffixStart..pos];
             let builtIn = sameBytes(a: suffix, b: "u".bytes) || sameBytes(a: suffix, b: "l".bytes) || sameBytes(a: suffix, b: "ul".bytes);
-            if (!radix.isEmpty && !builtIn) {
+            if !radix.isEmpty && !builtIn {
                 report(.suffixOnHexOrBinary, TextSpan.fromBounds(start: suffixStart, end: pos), arg0: utf8(suffix), arg1: radix,
                     help: "write the value in decimal, or wrap it with a cast to the unit type");
             }
@@ -641,25 +641,25 @@ struct LexResult {
     void scanDigits(ref this, i64 literalStart, DigitKind digits, string prefix) {
         let first = pos;
         var lastWasUnderscore = false;
-        while (pos < source.bytes.count && (isDigitOf(digits, source.bytes[pos]) || source.bytes[pos] == '_')) {
+        while pos < source.bytes.length && (isDigitOf(digits, source.bytes[pos]) || source.bytes[pos] == '_') {
             lastWasUnderscore = source.bytes[pos] == '_';
             pos += 1;
         }
-        if (pos == first && !prefix.isEmpty) {
+        if pos == first && !prefix.isEmpty {
             report(.invalidNumber, TextSpan.fromBounds(start: literalStart, end: pos), arg0: $"expected digits after `{prefix}`");
-        } else if (lastWasUnderscore) {
-            reportFix(.invalidNumber, TextSpan { start = pos - 1, length = 1 }, replacement: "", arg0: "`_` must sit between digits");
+        } else if lastWasUnderscore {
+            reportFix(.invalidNumber, TextSpan { start: pos - 1, length: 1 }, replacement: "", arg0: "`_` must sit between digits");
         }
     }
 
     /// Lexes a string whose opening quote is at `quote`.
     void lexString(ref this, i64 start, i64 quote, TokenKind kind) {
         pos = quote;
-        if (kind == .stringLiteral && peek(1) == '"' && peek(2) == '"') {
+        if kind == .stringLiteral && peek(1) == '"' && peek(2) == '"' {
             pos += 3;
-            while (pos < source.bytes.count && !(source.bytes[pos] == '"' && peek(1) == '"' && peek(2) == '"')) advanceCodePoint(allowBidi: true);
-            if (pos >= source.bytes.count) {
-                report(.unterminatedString, TextSpan { start = start, length = 3 }, label: "raw string starts here",
+            while pos < source.bytes.length && !(source.bytes[pos] == '"' && peek(1) == '"' && peek(2) == '"') { advanceCodePoint(allowBidi: true); }
+            if pos >= source.bytes.length {
+                report(.unterminatedString, TextSpan { start: start, length: 3 }, label: "raw string starts here",
                     help: "close it with `\"\"\"`");
             } else {
                 pos += 3;
@@ -669,9 +669,9 @@ struct LexResult {
         }
 
         pos += 1;
-        while (true) {
-            if (pos >= source.bytes.count || source.bytes[pos] == '\n') {
-                let end = pos > start && pos <= source.bytes.count && pos > 0 && source.bytes[pos - 1] == '\r' ? pos - 1 : pos;
+        while true {
+            if pos >= source.bytes.length || source.bytes[pos] == '\n' {
+                let end = pos > start && pos <= source.bytes.length && pos > 0 && source.bytes[pos - 1] == '\r' ? pos - 1 : pos;
                 report(.unterminatedString, TextSpan.fromBounds(start: start, end: end),
                     label: "string ends at the end of the line",
                     help: "close it with `\"`; for text spanning lines use a raw `\"\"\"` string");
@@ -679,12 +679,12 @@ struct LexResult {
                 return;
             }
             let b = source.bytes[pos];
-            if (b == '"') {
+            if b == '"' {
                 pos += 1;
                 add(kind, start: start, length: pos - start);
                 return;
             }
-            if (b == '\\') {
+            if b == '\\' {
                 scanEscape();
             } else {
                 advanceCodePoint(allowBidi: true);
@@ -695,29 +695,29 @@ struct LexResult {
     void lexInterpolatedText(ref this) {
         let modeStart = modes[depth].start;
         let start = pos;
-        while (true) {
-            if (pos >= source.bytes.count || source.bytes[pos] == '\n') {
+        while true {
+            if pos >= source.bytes.length || source.bytes[pos] == '\n' {
                 addText(start);
-                report(.unterminatedString, TextSpan { start = modeStart, length = 2 }, label: "this string never ends",
+                report(.unterminatedString, TextSpan { start: modeStart, length: 2 }, label: "this string never ends",
                     help: "close it with `\"`");
                 add(.interpolatedStringEnd, start: pos, length: 0);
                 depth -= 1;
                 return;
             }
             let b = source.bytes[pos];
-            if (b == '"') {
+            if b == '"' {
                 addText(start);
                 add(.interpolatedStringEnd, start: pos, length: 1);
                 pos += 1;
                 depth -= 1;
                 return;
-            } else if (b == '\\') {
+            } else if b == '\\' {
                 scanEscape();
-            } else if ((b == '{' && peek(1) == '{') || (b == '}' && peek(1) == '}')) {
+            } else if (b == '{' && peek(1) == '{') || (b == '}' && peek(1) == '}') {
                 pos += 2;
-            } else if (b == '{') {
-                if (depth + 1 >= modes.count) {
-                    if (!reportedTooDeep) report(.interpolationTooDeep, TextSpan { start = pos, length = 1 });
+            } else if b == '{' {
+                if depth + 1 >= modes.length {
+                    unless reportedTooDeep { report(.interpolationTooDeep, TextSpan { start: pos, length: 1 }); }
                     reportedTooDeep = true;
                     pos += 1;
                     continue;
@@ -726,10 +726,10 @@ struct LexResult {
                 add(.interpolationStart, start: pos, length: 1);
                 pos += 1;
                 depth += 1;
-                modes[depth] = ModeEntry { inText = false, braceDepth = 0, start = modeStart };
+                modes[depth] = ModeEntry { inText: false, braceDepth: 0, start: modeStart };
                 return;
-            } else if (b == '}') {
-                reportFix(.unescapedCloseBrace, TextSpan { start = pos, length = 1 }, replacement: "}}");
+            } else if b == '}' {
+                reportFix(.unescapedCloseBrace, TextSpan { start: pos, length: 1 }, replacement: "}}");
                 pos += 1;
             } else {
                 advanceCodePoint(allowBidi: true);
@@ -738,34 +738,34 @@ struct LexResult {
     }
 
     void addText(ref this, i64 start) {
-        if (pos > start) add(.interpolatedStringText, start: start, length: pos - start);
+        if pos > start { add(.interpolatedStringText, start: start, length: pos - start); }
     }
 
     void lexChar(ref this) {
         let start = pos;
         pos += 1;
-        if (peek() == '\'') {
+        if peek() == '\'' {
             pos += 1;
-            report(.emptyCharLiteral, TextSpan { start = start, length = 2 }, help: "write the character between the quotes, e.g. `' '`");
+            report(.emptyCharLiteral, TextSpan { start: start, length: 2 }, help: "write the character between the quotes, e.g. `' '`");
             add(.charLiteral, start: start, length: 2);
             return;
         }
         var scalars = 0;
-        while (pos < source.bytes.count && source.bytes[pos] != '\'' && source.bytes[pos] != '\n') {
-            if (source.bytes[pos] == '\\') {
+        while pos < source.bytes.length && source.bytes[pos] != '\'' && source.bytes[pos] != '\n' {
+            if source.bytes[pos] == '\\' {
                 scanEscape();
             } else {
                 advanceCodePoint(allowBidi: false);
             }
             scalars += 1;
         }
-        if (pos >= source.bytes.count || source.bytes[pos] != '\'') {
+        if pos >= source.bytes.length || source.bytes[pos] != '\'' {
             report(.unterminatedCharLiteral, TextSpan.fromBounds(start: start, end: pos), help: "close it with `'`");
             add(.charLiteral, start: start, length: pos - start);
             return;
         }
         pos += 1;
-        if (scalars > 1) {
+        if scalars > 1 {
             report(.charLiteralTooLong, TextSpan.fromBounds(start: start, end: pos), help: "use a string literal (\"…\") for text");
         }
         add(.charLiteral, start: start, length: pos - start);
@@ -774,34 +774,34 @@ struct LexResult {
     void scanEscape(ref this) {
         let start = pos;
         pos += 1;
-        if (pos >= source.bytes.count || source.bytes[pos] == '\n') {
-            report(.invalidEscape, TextSpan { start = start, length = 1 }, arg0: "\\");
+        if pos >= source.bytes.length || source.bytes[pos] == '\n' {
+            report(.invalidEscape, TextSpan { start: start, length: 1 }, arg0: "\\");
             return;
         }
         let e = source.bytes[pos];
-        switch (e) {
+        switch e {
             case 'n' or 'r' or 't' or '0' or '\\' or '"' or '\'':
                 pos += 1;
             case 'u':
-                if (peek(1) != '{') {
+                if peek(1) != '{' {
                     invalidEscape(start);
                     return;
                 }
                 pos += 2;
                 let digitsStart = pos;
                 i64 value = 0;
-                while (pos < source.bytes.count && hexValue(source.bytes[pos]) >= 0 && pos - digitsStart < 8) {
+                while pos < source.bytes.length && hexValue(source.bytes[pos]) >= 0 && pos - digitsStart < 8 {
                     value = value * 16 + hexValue(source.bytes[pos]);
                     pos += 1;
                 }
                 let digits = pos - digitsStart;
-                if (digits == 0 || peek() != '}') {
+                if digits == 0 || peek() != '}' {
                     report(.invalidEscape, TextSpan.fromBounds(start: start, end: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
                         help: "write `\\u{` followed by 1–6 hex digits and `}`");
                     return;
                 }
                 pos += 1;
-                if (digits > 6 || value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) {
+                if digits > 6 || value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF) {
                     report(.invalidUnicodeEscape, TextSpan.fromBounds(start: start, end: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
                         help: "use a scalar value in U+0000–U+D7FF or U+E000–U+10FFFF");
                 }
@@ -833,8 +833,8 @@ bool isAsciiIdentStart(u8 b) => (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 bool isAsciiIdentContinue(u8 b) => isAsciiIdentStart(b) || isDigit(b);
 
 i64 hexValue(u8 b) {
-    if (b >= '0' && b <= '9') return b - 0x30;
-    if (b >= 'a' && b <= 'f') return b - 0x61 + 10;
-    if (b >= 'A' && b <= 'F') return b - 0x41 + 10;
+    if b >= '0' && b <= '9' { return b - 0x30; }
+    if b >= 'a' && b <= 'f' { return b - 0x61 + 10; }
+    if b >= 'A' && b <= 'F' { return b - 0x41 + 10; }
     return -1;
 }

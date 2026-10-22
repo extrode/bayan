@@ -1,0 +1,27 @@
+// A panic handler can run at any later panic in its scope, so what it reads may not be moved after it (BYN2615).
+void sink(move List<i64> ys) {
+    print($"{ys.length}");
+}
+
+void main() {
+    let ys = List<i64>();
+    defer panicking print($"handler sees {ys.length}");
+    sink(move ys);
+    panic("stop");
+}
+
+void maybe(bool ok) {
+    let zs = List<i64>();
+    defer panicking print($"{zs.length}");
+    if ok {
+        sink(move zs);
+    }
+}
+
+// Moved before the handler is registered: the handler cannot see it, and moving the copy is fine.
+void movedFirst() {
+    let xs = List<i64>();
+    let n = xs.length;
+    sink(move xs);
+    defer panicking print($"{n}");
+}

@@ -22,19 +22,23 @@ i64 orMinusOne(string s) {
     return n * 10;
 }
 
+i64 failed(ParseError e) {
+    print($"failed with {e == ParseError.empty ? "empty" : "notDigit"}");
+    return 0;
+}
+
 i64 describe(string s) {
-    let n = digit(s) catch (e) {
-        print($"failed with {e == ParseError.empty ? "empty" : "notDigit"}");
-        return 0;
+    let n = digit(s) catch switch {
+        ParseError e => failed(e),
     };
     return n;
 }
 
 i64 sumDigits(ReadOnlySpan<string> items) {
     i64 total = 0;
-    for (let s in items) {
+    for s in items {
         let d = digit(s) catch {
-            if (s.isEmpty) break;
+            if s.isEmpty { break; }
             continue;
         };
         total += d;
@@ -51,6 +55,8 @@ print($"{orMinusOne("4")} {orMinusOne("")}");
 print($"{describe("7")} {describe("")} {describe("q")}");
 print($"{sumDigits(["1", "x", "2", "", "9"])}");
 check("") catch { print("check failed"); };
-check("x") catch (e) { print($"check failed: {e == ParseError.notDigit}"); };
+check("x") catch switch {
+    ParseError e => print($"check failed: {e == ParseError.notDigit}"),
+};
 check("5") catch { print("unreachable"); };
 print($"{mustDigit("3")}");

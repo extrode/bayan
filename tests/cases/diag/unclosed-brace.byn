@@ -1,5 +1,5 @@
 void f() {
-    if (x) {
+    if x {
         work();
 
 void g() {}

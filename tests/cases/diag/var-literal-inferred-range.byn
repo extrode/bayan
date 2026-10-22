@@ -8,7 +8,7 @@ u8 b = n;
 var m = -1;
 m -= 1;
 u64 w = 0;
-if (m < w) print("never");
+if m < w { print("never"); }
 
 var fits = 255;
 fits -= 1;
@@ -25,7 +25,7 @@ struct Index<K> {
 
 i64 count(ReadOnlySpan<i64> xs) {
     var i = 0;
-    while (i < xs.count) {
+    while i < xs.length {
         i += 1;
     }
     Index<f64> idx;

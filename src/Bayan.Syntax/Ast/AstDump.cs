@@ -250,6 +250,9 @@ public static class AstDump
                         + (s.Binding is null ? "" : $" ({s.Binding.Text})"));
                     Stmt(depth + 1, s.Body);
                     break;
+                case AssertStmt s:
+                    Line(depth, "Assert " + AstDump.Expr(s.Condition));
+                    break;
                 case ContextStmt s:
                     Line(depth, "Context " + string.Join(", ", s.Values.Select(v => v.Name.Text + ": " + AstDump.Expr(v.Value))));
                     Stmt(depth + 1, s.Body);

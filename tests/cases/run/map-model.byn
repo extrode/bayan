@@ -11,11 +11,11 @@ u64 next(ref u64 state) {
 
 u64 state = 0x9E3779B97F4A7C15;
 var m = Map<i64, i64>();
-for (let step in 0..5000) {
+for step in 0..5000 {
     let r = next(ref state);
     let key = (i64)(r % 64);
-    if ((r >> 8) % 3 == 2) m.remove(key);
-    else m[key] = step;
+    if (r >> 8) % 3 == 2 { m.remove(key); }
+    else { m[key] = step; }
 }
-print($"count {m.count}");
-for (let e in m) print($"{e.key} {e.value}");
+print($"count {m.length}");
+for e in m { print($"{e.key} {e.value}"); }

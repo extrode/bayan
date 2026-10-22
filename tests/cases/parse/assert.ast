@@ -1,0 +1,7 @@
+CompilationUnit
+  Function check(i64 a, Cart cart) -> void
+    Block
+      Assert (== a 1)
+      Assert (paren (== a 1))
+      Assert (&& (> (. (. cart subtotal) cents) 0) (< a 10))
+      Assert (! (. cart isEmpty))

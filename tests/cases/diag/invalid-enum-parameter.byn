@@ -1,7 +1,7 @@
 struct Point { i64 x; }
 
 enum Shape(Point corner, ref i64 sides, i64 depth = 1) {
-    square(Point { x = 0 }, 4, 1),
+    square(Point { x: 0 }, 4, 1),
 }
 
 enum Unit(f64 scale) { metre(1.0) }

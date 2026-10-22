@@ -5,7 +5,7 @@ struct Box {
 }
 
 void main() {
-    let b = Box { s = Untrusted("x") };
+    let b = Box { s: Untrusted("x") };
     print($"{b}");
     Untrusted<string>? o = null;
     print($"{o}");

@@ -8,7 +8,7 @@ string describe(string name, i64 count) {
 }
 
 i64 width(string s) {
-    return s.bytes.count;
+    return s.length;
 }
 
 void main() {
@@ -17,10 +17,10 @@ void main() {
     print(msg);
     print(describe("pen", n));
     print($"{width($"ab{n}")} {width(msg)}");
-    let label = Label { text = $"#{n}", n = n };
+    let label = Label { text: $"#{n}", n: n };
     print($"{label.text} {label.n}");
     var s = "";
-    for (let i in 0..3) {
+    for i in 0..3 {
         s = $"{s}{i},";
     }
     print(s);

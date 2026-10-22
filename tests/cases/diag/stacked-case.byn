@@ -1,5 +1,5 @@
 void f(Day d) {
-    switch (d) {
+    switch d {
         case .sat:
         case .sun:
             rest();

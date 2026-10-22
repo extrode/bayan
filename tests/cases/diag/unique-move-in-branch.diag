@@ -1,6 +1,6 @@
 error BYN2781: `a` is used after it was moved
 
-  13 │     print($"{a.count}");
+  13 │     print($"{a.length}");
      │              ^ moved on line 9
      │
   help: assign `a` a new value before using it again, or move a `.copy(to: alloc)` of it instead

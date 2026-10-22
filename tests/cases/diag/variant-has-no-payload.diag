@@ -7,7 +7,7 @@ error BYN2706: variant `none` has no payload
 
 error BYN2706: variant `none` has no payload
 
-  6 │     if (t is .none()) {
-    │              ^^^^^^^
+  6 │     if t is .none() {
+    │             ^^^^^^^
     │
   help: match it with `.none`

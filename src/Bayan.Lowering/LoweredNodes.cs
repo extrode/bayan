@@ -45,9 +45,10 @@ public enum WriteSink { Print, Panic, StrBuf }
 
 /// <summary>
 /// Formats <see cref="Parts"/> into a stack buffer and sends it to the sink: printed with a
-/// newline, raised as a panic message, or appended to the <c>StrBuf</c> <see cref="Target"/>.
+/// newline, raised as a panic message, or appended to the <c>StrBuf</c> <see cref="Target"/>. A part with a
+/// <see cref="Guards"/> entry is written only when that condition holds.
 /// </summary>
-public sealed record LWrite(Node Syntax, WriteSink Sink, BoundExpr? Target, BoundInterpolationPart[] Parts) : BoundStmt(Syntax);
+public sealed record LWrite(Node Syntax, WriteSink Sink, BoundExpr? Target, BoundInterpolationPart[] Parts, BoundExpr?[]? Guards = null) : BoundStmt(Syntax);
 
 /// <summary>Panics with a fixed message (failed <c>assert</c>, unmatched <c>switch</c>).</summary>
 public sealed record LPanic(Node Syntax, string Message) : BoundStmt(Syntax);
@@ -70,7 +71,7 @@ public sealed record LPushPanicHandler(Node Syntax, int Slot, LocalSymbol? Panic
 /// <summary>Unregisters the handler in slot <see cref="Slot"/> as its scope ends.</summary>
 public sealed record LPopPanicHandler(Node Syntax, int Slot) : BoundStmt(Syntax);
 
-/// <summary>Debug builds: a <c>switch (move x)</c> binding owns its storage once its arm is selected; nothing otherwise.</summary>
+/// <summary>Debug builds: a <c>switch move x</c> binding owns its storage once its arm is selected; nothing otherwise.</summary>
 public sealed record LClaim(Node Syntax, LocalSymbol Local) : BoundStmt(Syntax);
 
 // ── Expressions ──────────────────────────────────────────────────────────────────

@@ -14,5 +14,5 @@ void main() fails IoError {
     // Both pipes are drained together: 300 KB on each stream does not deadlock.
     string[2] big = ["-c", "yes 2>/dev/null | head -c 300000; yes e 2>/dev/null | head -c 300000 >&2"];
     let r = try Io.run("sh", big.asSpan());
-    print($"big: exit {r.exitCode}, {r.stdout.bytes.count} + {r.stderr.bytes.count} bytes");
+    print($"big: exit {r.exitCode}, {r.stdout.length} + {r.stderr.length} bytes");
 }

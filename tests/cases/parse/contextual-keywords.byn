@@ -51,7 +51,7 @@ let embed = 9;
 (i64 error, i64 set) pair = (1, 2);
 type = 1;
 set.add(1);
-let n = Names { error = 1, set = 2, type = 3 };
+let n = Names { error: 1, set: 2, type: 3 };
 let total = n.error + n.flags + n.unit + n.distinct + n.open + n.extensible + n.set + n.type + n.law + n.derivation + n.attribute + n.embed;
 let f = Failure.set;
 print(error(type: 1));

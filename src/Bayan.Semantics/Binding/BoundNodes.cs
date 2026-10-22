@@ -44,7 +44,7 @@ public sealed record BoundTupleElement(Node Syntax, BoundExpr Receiver, int Inde
 public sealed record BoundCall(Node Syntax, FunctionSymbol Function, BoundExpr? Receiver, BoundExpr[] Arguments, TypeSymbol Type)
     : BoundExpr(Syntax, Type);
 
-/// <summary>Members of built-in types (<c>List.count</c>, <c>List.append</c>, …).</summary>
+/// <summary>Members of built-in types (<c>List.length</c>, <c>List.append</c>, …).</summary>
 public enum BuiltinMember
 {
     StringLength, StringBytes, StringIsEmpty, StringCopy, StringStartsWith, StringEndsWith, StringContains,
@@ -249,6 +249,9 @@ public sealed record BoundSwitch(Node Syntax, BoundExpr Value, BoundSwitchSectio
 }
 
 public sealed record BoundDefer(Node Syntax, BoundStmt Body) : BoundStmt(Syntax);
+
+/// <summary><c>assert condition;</c>; <see cref="BoundNode.Syntax"/> is the <c>AssertStmt</c>.</summary>
+public sealed record BoundAssert(Node Syntax, BoundExpr Condition) : BoundStmt(Syntax);
 
 public sealed record BoundErrdefer(Node Syntax, LocalSymbol? Error, BoundStmt Body) : BoundStmt(Syntax);
 

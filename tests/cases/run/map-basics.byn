@@ -20,26 +20,26 @@ prices["tea"] = 3;
 prices["cake"] = 5;
 prices["jam"] = 2;
 prices["tea"] = 4;
-print($"{prices} count={prices.count}");
-if (prices.contains("cake")) print($"cake costs {prices["cake"]}");
+print($"{prices} count={prices.length}");
+if prices.contains("cake") { print($"cake costs {prices["cake"]}"); }
 print($"scone: {prices.getOr("scone", 0)}");
 print($"has jam: {prices.contains("jam")}, has milk: {prices.contains("milk")}");
 print($"remove cake: {prices.remove("cake")}, again: {prices.remove("cake")}");
 prices["cake"] = 6;
-for (let e in prices) print($"  {e.key} = {e.value}");
+for e in prices { print($"  {e.key} = {e.value}"); }
 
 // Enum keys.
 var counts = Map<Suit, i32>();
 Suit[6] hand = [.spades, .hearts, .spades, .clubs, .spades, .hearts];
-for (let s in hand) counts[s] = counts.getOr(s, 0) + 1;
+for s in hand { counts[s] = counts.getOr(s, 0) + 1; }
 print($"{counts}");
 
 // Integer, char and bool keys.
 var squares = Map<i64, i64>();
-for (let i in 0..5) squares[i * i] = i;
+for i in 0..5 { squares[i * i] = i; }
 print($"{squares}");
 var letters = Map<char, bool>();
-for (let c in "banana") letters[c] = true;
+for c in "banana" { letters[c] = true; }
 print($"{letters}");
 var answers = Map<bool, string>();
 answers[true] = "yes";
@@ -47,7 +47,7 @@ answers[false] = "no";
 print($"{answers[true]} {answers[false]}");
 
 // A map in a struct field.
-var inv = Inventory { owner = "ada", stock = Map<string, i64>() };
+var inv = Inventory { owner: "ada", stock: Map<string, i64>() };
 restock(ref inv, "bolts", 10);
 restock(ref inv, "nuts", 4);
 restock(ref inv, "bolts", 5);
@@ -58,14 +58,14 @@ print($"{inv}");
     using var arena = Arena();
     context (allocator: arena) {
         var seen = Map<i64, i64>();
-        for (let i in 0..1000) seen[i % 7] = i;
+        for i in 0..1000 { seen[i % 7] = i; }
         i64 total = 0;
-        for (let e in seen) total += e.value;
-        print($"arena map: {seen.count} keys, total {total}");
+        for e in seen { total += e.value; }
+        print($"arena map: {seen.length} keys, total {total}");
     }
 }
 
 prices.clear();
-print($"cleared: {prices} count={prices.count}");
+print($"cleared: {prices} count={prices.length}");
 prices["bread"] = 1;
 print($"{prices}");

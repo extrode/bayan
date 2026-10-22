@@ -14,7 +14,7 @@ void either(Span<string> dst, bool useCaller) {
     sb.append("hi");
     string[1] mine = ["y"];
     var view = mine.asSpan();
-    if (useCaller) {
+    if useCaller {
         view = dst;
     }
     view[0] = sb.finish();

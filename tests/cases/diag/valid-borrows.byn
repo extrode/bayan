@@ -2,11 +2,11 @@ Span<i64> tail(Span<i64> values) => values[1..];
 
 List<i64> keep(ReadOnlySpan<i64> values, Arena arena) => values.copy(to: arena);
 
-string pick(string a, string b) => a.bytes.count > b.bytes.count ? a : b;
+string pick(string a, string b) => a.length > b.length ? a : b;
 
 i64 total(ReadOnlySpan<i64> values) {
     i64 sum = 0;
-    for (let v in values) {
+    for v in values {
         sum += v;
     }
     return sum;
@@ -33,7 +33,7 @@ void main() {
         var local = List<i64>();
         local.append(5);
         let copy = tail(local.asSpan()).copy(to: arena);
-        print($"{copy.count}");
+        print($"{copy.length}");
     }
     var kept = "";
     {
@@ -45,7 +45,7 @@ void main() {
     print($"{part[0]}");
     fixed[0] = 9;
     let kept2 = keep(fixed.asSpan(), arena: arena);
-    print($"{kept2.count}");
+    print($"{kept2.length}");
     arena.reset();
 }
 
@@ -69,7 +69,7 @@ struct Stack {
 
     i64 sum() {
         i64 s = 0;
-        for (let v in view()) {
+        for v in view() {
             s += v;
         }
         return s;

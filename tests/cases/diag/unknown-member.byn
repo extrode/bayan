@@ -1,4 +1,2 @@
 let name = "bayan";
 let n = name.size;
-let xs = List<i64>();
-let k = xs.len;

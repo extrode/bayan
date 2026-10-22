@@ -1,0 +1,8 @@
+i64 bump(ref i64 n) {
+    n += 1;
+    return n;
+}
+
+i64 a = 4;
+i64 calls = 0;
+assert (a > 3 ? bump(ref calls) + a : a - calls) == 9;

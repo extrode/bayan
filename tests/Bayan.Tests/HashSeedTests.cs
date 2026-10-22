@@ -21,7 +21,7 @@ public sealed class HashSeedTests
     [Fact]
     public void ProgramWithoutTestsAlwaysGetsThePerRunSeed()
     {
-        var code = Emit("var m = Map<i64, i64>();\nm[1] = 10;\nprint($\"{m.count}\");\n");
+        var code = Emit("var m = Map<i64, i64>();\nm[1] = 10;\nprint($\"{m.length}\");\n");
         Assert.Contains("byn_hash_seed_init(false);", code);
         Assert.DoesNotContain("--test", code);
     }

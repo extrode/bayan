@@ -12,13 +12,13 @@ void main() fails Utf8Error {
     u8[2] hi = [0x68, 0x69];
     print(try string.from(hi.asSpan()));
     let empty = try string.from(hi.asSpan()[0..0]);
-    print($"empty: {empty.bytes.count} bytes, {empty == ""}");
+    print($"empty: {empty.length} bytes, {empty == ""}");
     u8[9] multi = [0xC3, 0xA9, 0xE2, 0x82, 0xAC, 0xF0, 0x9F, 0x98, 0x80];
     let m = try string.from(multi.asSpan());
-    print($"{m} {m.bytes.count} bytes");
+    print($"{m} {m.length} bytes");
     print(try decode());
     let t = string.tryFrom(hi.asSpan()) ?? "none";
     print($"tryFrom: {t}");
     let at = string.invalidUtf8At(multi.asSpan());
-    print($"invalidUtf8At: {at == null}");
+    print($"invalidUtf8At: {at is null}");
 }

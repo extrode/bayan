@@ -14,7 +14,7 @@ error BYN2781: `ys` is used after it was moved
 
 error BYN2781: `zs` is used after it was moved
 
-  19 │     defer print($"{zs.count}");
+  19 │     defer print($"{zs.length}");
      │                    ^^ moved on line 18
      │
   help: assign `zs` a new value before using it again, or move a `.copy(to: alloc)` of it instead

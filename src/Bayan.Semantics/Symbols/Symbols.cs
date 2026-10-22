@@ -242,7 +242,6 @@ public enum BuiltinFunction
     Print,
     Panic,
     Todo,
-    Assert,
     ListNew,
     ArenaNew,
     StrBufNew,
@@ -295,7 +294,7 @@ public class LocalSymbol(string name, Location? location, TypeSymbol type, Local
     /// <summary>The <c>let</c> or <c>var</c> keyword, for the fix that turns one into the other.</summary>
     public Bayan.Syntax.Text.TextSpan? KeywordSpan { get; set; }
 
-    /// <summary>The <c>when</c> guard of the <c>switch (move …)</c> arm that binds it; inside it the binding is read-only.</summary>
+    /// <summary>The <c>when</c> guard of the <c>switch move …</c> arm that binds it; inside it the binding is read-only.</summary>
     public Bayan.Syntax.Text.TextSpan? GuardSpan { get; set; }
 
     /// <summary>Assigned or mutated through after its declaration; a <c>var</c> that never is should be a <c>let</c>.</summary>

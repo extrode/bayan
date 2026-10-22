@@ -20,10 +20,10 @@ namespace Bayan.Tests;
 /// copy       := "let y = x.copy(to: arena);"      if x Owned
 /// take       := "let y = p.take();"               p in {x, x.items, x[0], o} with x var and Owned
 /// call       := consume(move x) | "var y = pass(move x);" | peek(x) | bump(ref x)   (bump: x var)
-/// borrow     := "{ let v = x.asSpan(); print($"{v.count}"); }" | for (let e in x) over a nested list
+/// borrow     := "{ let v = x.asSpan(); print($"{v.length}"); }" | for (let e in x) over a nested list
 /// loop       := for/while; the body moves an outer x only if x is var, and reassigns it at the end
 /// branch     := if/else on t; join = Moved if moved on either side | "if (s is .full(let items))" borrow
-/// switchMove := "switch (move s) {" ["case .full(let b) when b.count &gt; n: consume(move b);"]
+/// switchMove := "switch move s {" ["case .full(let b) when b.length &gt; n: consume(move b);"]
 ///               "case .full(let items): consume(move items); default: ... }"
 /// reassign   := "x = fresh(n);" (or the type's constructor)   if x var; resets Moved
 /// read       := print of x's length or null test | "x.append(n);" if x var        if x Owned
@@ -37,10 +37,10 @@ internal static class OwnershipGenerator
         error enum E { bad, }
         void step() fails E { }
         void consume(move List<i64> xs) {
-            print($"{xs.count}");
+            print($"{xs.length}");
         }
         void peek(List<i64> xs) {
-            print($"{xs.count}");
+            print($"{xs.length}");
         }
         void bump(ref List<i64> xs) {
             xs.append(1);
@@ -148,7 +148,7 @@ internal static class OwnershipGenerator
         private string Constructor(Kind kind) => kind switch
         {
             Kind.List or Kind.Opt => Fresh(),
-            Kind.Ledger => $"Ledger {{ items = {Fresh()} }}",
+            Kind.Ledger => $"Ledger {{ items: {Fresh()} }}",
             Kind.Slot => $"Slot.full({Fresh()})",
             _ => "List<List<i64>>()",
         };
@@ -193,7 +193,7 @@ internal static class OwnershipGenerator
                 case 11: return Read();
                 default:
                     if (!Chance(25)) return false;
-                    Line("if (t > 1000) return;");
+                    Line("if t > 1000 { return; }");
                     return true;
             }
         }
@@ -277,13 +277,13 @@ internal static class OwnershipGenerator
             var b = Name();
             if (x.Kind == Kind.Nest)
             {
-                Line($"for (let {b} in {x.Name}) print($\"{{{b}.count}}\");");
+                Line($"for {b} in {x.Name} {{ print($\"{{{b}.length}}\"); }}");
                 return true;
             }
             Line("{");
             _indent++;
             Line($"let {b} = {x.Name}.asSpan();");
-            Line($"print($\"{{{b}.count}}\");");
+            Line($"print($\"{{{b}.length}}\");");
             _indent--;
             Line("}");
             return true;
@@ -297,12 +297,12 @@ internal static class OwnershipGenerator
             var i = isFor ? null : Name();
             if (isFor)
             {
-                Line($"for (let {Name()} in 0..{Int(3) + 1}) {{");
+                Line($"for {Name()} in 0..{Int(3) + 1} {{");
             }
             else
             {
                 Line($"var {i} = 0;");
-                Line($"while ({i} < {Int(3) + 1}) {{");
+                Line($"while {i} < {Int(3) + 1} {{");
             }
             _indent++;
             _loopDepth++;
@@ -332,7 +332,7 @@ internal static class OwnershipGenerator
             {
                 var scope = _vars.Count;
                 var skipped = _vars.Select(v => v.Moved).ToList();
-                Line($"if ({s.Name} is .full(let {Name()})) {{");
+                Line($"if {s.Name} is .full(let {Name()}) {{");
                 _indent++;
                 // The subject stays borrowed by the pattern binding for the whole body.
                 _borrowed.Add(s);
@@ -343,7 +343,7 @@ internal static class OwnershipGenerator
             }
             var outer = _vars.Count;
             var before = _vars.Select(v => v.Moved).ToList();
-            Line($"if (t % {Int(3) + 2} == 0) {{");
+            Line($"if t % {Int(3) + 2} == 0 {{");
             _indent++;
             Body(depth + 1);
             var then = _vars.Take(outer).Select(v => v.Moved).ToList();
@@ -378,12 +378,12 @@ internal static class OwnershipGenerator
             if (Pick(v => Movable(v) && v.Kind == Kind.Slot) is not { } s) return false;
             s.Moved = true;
             var items = Name();
-            Line($"switch (move {s.Name}) {{");
+            Line($"switch move {s.Name} {{");
             if (Chance(50))
             {
                 // A guard that may fail: the next arm binds the same storage.
                 var big = Name();
-                Line($"    case .full(let {big}) when {big}.count > {Int(3)}:");
+                Line($"    case .full(let {big}) when {big}.length > {Int(3)}:");
                 Line($"        consume(move {big});");
             }
             Line($"    case .full(let {items}):");
@@ -417,10 +417,10 @@ internal static class OwnershipGenerator
                     Line($"{x.Name}.append({Int(10)});");
                     break;
                 case Kind.List:
-                    Line($"print($\"{{{x.Name}.count}}\");");
+                    Line($"print($\"{{{x.Name}.length}}\");");
                     break;
                 case Kind.Ledger:
-                    Line($"print($\"{{{x.Name}.items.count}}\");");
+                    Line($"print($\"{{{x.Name}.items.length}}\");");
                     break;
                 case Kind.Slot:
                     Line($"print($\"{{{x.Name} is .empty}}\");");
@@ -429,7 +429,7 @@ internal static class OwnershipGenerator
                     Line($"print($\"{{{x.Name} is null}}\");");
                     break;
                 default:
-                    Line($"print($\"{{{x.Name}.count}} {{{x.Name}[0].count}}\");");
+                    Line($"print($\"{{{x.Name}.length}} {{{x.Name}[0].length}}\");");
                     break;
             }
             return true;

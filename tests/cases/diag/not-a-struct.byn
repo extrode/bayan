@@ -1,2 +1,2 @@
 let n = 5;
-let m = n with { value = 1 };
+let m = n with { value: 1 };

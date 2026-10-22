@@ -1,4 +1,4 @@
-i64 size<T>(T x) => x.count;
+i64 size<T>(T x) => x.length;
 string label<T>(T x) => x.toString();
 
 struct Box<T> {

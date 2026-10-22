@@ -339,10 +339,18 @@ public sealed class Manifest
                     while (!Accept(TokenKind.CloseBrace))
                     {
                         var name = Current;
-                        if (!AcceptName() || !Accept(TokenKind.Colon) && !Accept(TokenKind.Equals))
+                        if (!AcceptName() || !Accept(TokenKind.Colon) && Current.Kind != TokenKind.Equals)
                         {
                             Fail("`field: value` or `}`");
                             return null;
+                        }
+                        if (Current.Kind == TokenKind.Equals)
+                        {
+                            var d = DiagnosticCodes.ManifestEquals;
+                            var span = TextSpan.FromBounds(name.End, Current.End);
+                            diagnostics.Add(new Diagnostic(d.Severity, d.Code, source, Current.Span, d.Format([]),
+                                Label: "the input form", Help: "write `:` after the field name", Fix: new Fix(span, ":")));
+                            _pos++;
                         }
                         if (ReadValue() is not { } value) return null;
                         fields.Add((TextOf(name), name.Span, value));
