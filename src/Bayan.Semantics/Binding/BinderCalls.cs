@@ -372,7 +372,7 @@ internal sealed partial class Binder
                 if (c.Args.Length > 0)
                 {
                     Report(DiagnosticCodes.NoConstructor, c.Callee.Span, [s.Name],
-                        help: $"set the fields with a struct literal: `{s.Name} {{ {string.Join(", ", s.Fields.Take(2).Select(f => f.Name + " = …"))} }}`");
+                        help: $"set the fields with a struct literal: `{s.Name} {{ {string.Join(", ", s.Fields.Take(2).Select(f => f.Name + ": …"))} }}`");
                     BindArgumentsForRecovery(c);
                     return new BoundErrorExpr(c);
                 }
@@ -380,7 +380,7 @@ internal sealed partial class Binder
                 if (missing.Count > 0)
                 {
                     Report(DiagnosticCodes.MissingFields, c.Span, [s.Name, string.Join("`, `", missing)],
-                        help: $"set {(missing.Count == 1 ? "it" : "them")}: `{s.Name} {{ {string.Join(", ", missing.Select(m => m + " = …"))} }}`");
+                        help: $"set {(missing.Count == 1 ? "it" : "them")}: `{s.Name} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
                     return new BoundErrorExpr(c);
                 }
                 return new BoundStructLiteral(c, s, s.Fields.Select(f => _c.FieldDefault(s, f, Source, c.Span) ?? new BoundErrorExpr(c)).ToArray());

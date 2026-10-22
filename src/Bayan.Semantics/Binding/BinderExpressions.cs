@@ -1234,7 +1234,7 @@ internal sealed partial class Binder
         else if (expected is not null) type = expected;
         else
         {
-            Report(DiagnosticCodes.NoTargetType, s.Span, ["{ … }"], help: "name the type: `Point { x = 1 }`");
+            Report(DiagnosticCodes.NoTargetType, s.Span, ["{ … }"], help: "name the type: `Point { x: 1 }`");
             return new BoundErrorExpr(s);
         }
         if (type.IsError) return new BoundErrorExpr(s);
@@ -1288,7 +1288,7 @@ internal sealed partial class Binder
             var first = st.FindField(missing[0])!;
             Report(DiagnosticCodes.MissingFields, s.Span, [st.Name, string.Join("`, `", missing)],
                 label: missing.Count == 1 && first.IsRequired ? "`" + first.Name + "` is `required`" : null,
-                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + " = …"))} }}`");
+                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
             return new BoundErrorExpr(s);
         }
         return new BoundStructLiteral(s, st, values!);

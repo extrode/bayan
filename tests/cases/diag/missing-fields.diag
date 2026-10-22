@@ -3,4 +3,4 @@ error BYN2109: `Point` needs a value for `y`
   6 │ let p = Point { x: 1 };
     │         ^^^^^^^^^^^^^^
     │
-  help: set it: `Point { y = … }`
+  help: set it: `Point { y: … }`

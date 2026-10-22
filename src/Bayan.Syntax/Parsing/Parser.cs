@@ -1491,7 +1491,7 @@ public sealed class Parser
             return new ErrorStmt(SpanFrom(start));
         }
         Report(DiagnosticCodes.Goto, keyword.Span, label: "not a keyword in Bayan",
-            help: "label the loop (`outer: for (…)`) and use `break outer;` to leave it early",
+            help: "label the loop (`outer: for x in xs { … }`) and use `break outer;` to leave it early",
             fix: new Fix(keyword.Span, "break"));
         Name? label = Kind == TokenKind.Identifier ? NameOf(Advance()) : null;
         Expect(TokenKind.Semicolon);
@@ -1639,7 +1639,7 @@ public sealed class Parser
             && !BodyBraceFirst(_pos + 1))
         {
             Report(DiagnosticCodes.PostfixNotSimple, Current.Span, [Text(Current)],
-                help: "put the condition first: `if (cond) { … }`");
+                help: "put the condition first: `if cond { … }`");
             Advance();
             ParseExpression();
             Accept(TokenKind.Semicolon);
