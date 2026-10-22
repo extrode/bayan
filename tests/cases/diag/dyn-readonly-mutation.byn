@@ -1,0 +1,11 @@
+interface ICounter {
+    i64 next(ref this);
+    i64 peek();
+    i64 skip(ref this) => next() + next();
+}
+
+void show(dyn ref readonly ICounter c) {
+    print($"{c.peek()}");
+    print($"{c.next()}");
+    print($"{c.skip()}");
+}

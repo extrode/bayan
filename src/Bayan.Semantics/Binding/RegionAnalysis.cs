@@ -199,7 +199,7 @@ internal sealed class RegionAnalysis
             case BoundConversion c:
             {
                 var operand = Expr(c.Operand);
-                return c.Kind is ConversionKind.ArrayToSpan or ConversionKind.ListToSpan ? Lend(c.Operand, operand) : operand;
+                return c.Kind is ConversionKind.ArrayToSpan or ConversionKind.ListToSpan or ConversionKind.ToDynRef ? Lend(c.Operand, operand) : operand;
             }
             case BoundBuiltinCall b:
                 return Builtin(b);
@@ -548,7 +548,7 @@ internal sealed class RegionAnalysis
     private static bool MayBorrow(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.IsString,
-        SpanType or ListType or MapType or OwnedType => true,
+        SpanType or ListType or MapType or OwnedType or DynRefType => true,
         BuiltinType b => b.Kind is BuiltinKind.StrBuf or BuiltinKind.ProcessResult,
         UntrustedType u => MayBorrow(u.Inner, seen),
         OptionalType o => MayBorrow(o.Inner, seen),
