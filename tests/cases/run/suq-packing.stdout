@@ -1,0 +1,22 @@
+mixed: 2 boxes
+  box 0: M 4800 g
+  box 1: S 450 g
+bed: tooHeavy
+sample: 11 boxes
+  box 0: S 1978 g
+  box 1: S 1978 g
+  box 2: S 1992 g
+  box 3: S 1992 g
+  box 4: S 1992 g
+  box 5: S 1992 g
+  box 6: S 1969 g
+  box 7: S 1981 g
+  box 8: S 1995 g
+  box 9: S 1997 g
+  box 10: S 1144 g
+first picks: ITM-1000 ITM-1024 ITM-1006 ITM-1030 ITM-1012 ITM-1036
+check digit EX123456789MY: 9
+check digit SUQ-42: 5
+label seq wraps to 0
+saturating u32 100 -| 250 = 0
+saturating i64 100 -| 250 = -150

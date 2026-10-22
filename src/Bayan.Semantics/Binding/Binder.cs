@@ -968,7 +968,8 @@ internal sealed partial class Binder
     /// </summary>
     private BoundStmt BindOnPanic(AssignStmt a)
     {
-        var value = BindExpr(a.Value);
+        var bound = BindExprOrType(a.Value);
+        var value = bound is BoundMethodGroup ? bound : AsValue(bound, a.Value);
         FunctionSymbol? handler = null;
         if (value is BoundMethodGroup { Receiver: null, Function: { } f } && f.Kind == FunctionKind.Function && !f.IsGeneric && !f.Fails
             && f.ReturnType.IsVoid && f.Parameters is [{ Modifier: ParamModifier.None, Type: BuiltinType { Kind: BuiltinKind.Panic } }])
