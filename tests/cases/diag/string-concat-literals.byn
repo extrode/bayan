@@ -1,0 +1,6 @@
+const string a = "a" + "b";
+const string b = "x{" + "}\n";
+
+void main() {
+    print($"{a}{b}");
+}

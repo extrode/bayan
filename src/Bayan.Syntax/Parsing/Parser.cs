@@ -25,6 +25,8 @@ public sealed class Parser
     private int _pos;
     private int _prevEnd;
     private int _lastErrorAt = -1;
+    /// <summary>Reports other than <see cref="InputForms"/>; only these make <see cref="RecoverIfNeeded"/> resynchronize.</summary>
+    private int _syntaxErrors;
     /// <summary>Token index where the bare condition being parsed starts, or -1 (see <see cref="BraceLiteralAllowed"/>).</summary>
     private int _conditionStart = -1;
 
@@ -82,12 +84,22 @@ public sealed class Parser
 
     // ── Diagnostics ──────────────────────────────────────────────────────────────────
 
-    private void Report(DiagnosticDescriptor descriptor, TextSpan span, object?[]? args = null,
+    /// <summary>Input forms reported on a construct that still parsed in full, so the parser is at a clean restart point.</summary>
+    private static readonly HashSet<DiagnosticDescriptor> InputForms =
+    [
+        DiagnosticCodes.UnlessNegated, DiagnosticCodes.ParenthesizedCondition, DiagnosticCodes.BodyNeedsBraces,
+        DiagnosticCodes.ForInputForm, DiagnosticCodes.ErrdeferInput, DiagnosticCodes.FieldInitEquals, DiagnosticCodes.UnlessCompound,
+        DiagnosticCodes.UnlessNull, DiagnosticCodes.CatchBinding, DiagnosticCodes.DelegateDecl, DiagnosticCodes.ErrorSetPipe,
+        DiagnosticCodes.CSharpTypeName, DiagnosticCodes.FailsShorthand, DiagnosticCodes.NegatedIfToUnless, DiagnosticCodes.UnlessLikelihood,
+    ];
+
+    private Diagnostic? Report(DiagnosticDescriptor descriptor, TextSpan span, object?[]? args = null,
         string? label = null, string? help = null, Fix? fix = null)
     {
-        if (span.Start == _lastErrorAt) return;
+        if (span.Start == _lastErrorAt) return null;
         _lastErrorAt = span.Start;
-        _diagnostics.Report(descriptor, _source, span, args, label, help, fix);
+        if (!InputForms.Contains(descriptor)) _syntaxErrors++;
+        return _diagnostics.Report(descriptor, _source, span, args, label, help, fix);
     }
 
     private int ErrorCount => _diagnostics.Items.Count;
@@ -188,10 +200,10 @@ public sealed class Parser
         }
     }
 
-    /// <summary>After an error inside a statement, skip only if the parser is not already at a clean restart point.</summary>
-    private void RecoverIfNeeded(int errorsBefore)
+    /// <summary>After a syntax error inside a statement, skip only if the parser is not already at a clean restart point.</summary>
+    private void RecoverIfNeeded(int syntaxErrorsBefore)
     {
-        if (ErrorCount == errorsBefore) return;
+        if (_syntaxErrors == syntaxErrorsBefore) return;
         if (AtEnd || Kind == TokenKind.CloseBrace) return;
         if (Current.HasNewlineBefore && (IsStatementKeyword(Kind) || Kind == TokenKind.Identifier)) return;
         Synchronize();
@@ -205,7 +217,7 @@ public sealed class Parser
         while (!AtEnd)
         {
             var start = _pos;
-            var errors = ErrorCount;
+            var errors = _syntaxErrors;
             if (Kind == TokenKind.CloseBrace)
             {
                 Report(DiagnosticCodes.Expected, Current.Span, ["a declaration or statement", Describe(Current)], help: "remove this `}`; it has no matching `{`");
@@ -402,11 +414,18 @@ public sealed class Parser
     {
         if (index <= 0 || KindAt(index) != TokenKind.Bang) return index;
         var i = index + 1;
-        if (IsName(KindAt(i))) return i + 1;
-        if (KindAt(i) != TokenKind.OpenParen) return -1;
-        do i++;
-        while (IsName(KindAt(i)) && KindAt(++i) == TokenKind.Comma);
-        return KindAt(i) == TokenKind.CloseParen ? i + 1 : -1;
+        if (KindAt(i) != TokenKind.OpenParen) return SkipQualifiedName(i);
+        do i = SkipQualifiedName(i + 1);
+        while (i > 0 && KindAt(i) == TokenKind.Comma);
+        return i > 0 && KindAt(i) == TokenKind.CloseParen ? i + 1 : -1;
+    }
+
+    /// <summary>Past <c>a.b.c</c> at <paramref name="index"/>, or -1 if no name starts there.</summary>
+    private int SkipQualifiedName(int index)
+    {
+        if (!IsName(KindAt(index))) return -1;
+        while (KindAt(index + 1) == TokenKind.Dot && IsName(KindAt(index + 2))) index += 2;
+        return index + 1;
     }
 
     /// <summary><c>&lt;T, U&gt;</c> after a declaration name, or nothing.</summary>
@@ -441,7 +460,7 @@ public sealed class Parser
         while (Kind != TokenKind.CloseBrace && !AtEnd)
         {
             var before = _pos;
-            var errors = ErrorCount;
+            var errors = _syntaxErrors;
             var member = ParseDeclaration(topLevel: false, structName: name.Text);
             if (member is not null) members.Add(member);
             RecoverIfNeeded(errors);
@@ -520,15 +539,8 @@ public sealed class Parser
         var typeParams = ParseTypeParams();
         var paramsStart = Current.End;
         var parameters = ParseParams(out var refThis);
+        var paramsEnd = _prevEnd;
         FailsClause? fails = null;
-        if (shorthand.Count > 0)
-        {
-            var errors = string.Join(", ", shorthand.Select(t => _source.GetText(t.Span)));
-            Report(DiagnosticCodes.FailsShorthand, TextSpan.FromBounds(bang.Start, shorthandEnd), label: "the input form",
-                help: $"write `fails {errors}` after the parameters",
-                fix: new Fix(TextSpan.FromBounds(typeEnd, _prevEnd), " " + _source.GetText(TextSpan.FromBounds(name.Span.Start, _prevEnd)) + " fails " + errors));
-            fails = new FailsClause(TextSpan.FromBounds(bang.Start, shorthandEnd), shorthand.ToArray());
-        }
         if (Kind == TokenKind.FailsKeyword)
         {
             var failsStart = Advance().Start;
@@ -539,6 +551,16 @@ public sealed class Parser
                 while (Accept(TokenKind.Comma)) errors.Add(ParseType());
             }
             fails = new FailsClause(SpanFrom(failsStart), errors.ToArray());
+        }
+        if (shorthand.Count > 0)
+        {
+            // `T!E f() fails F` keeps both sets; the fix rewrites the header through the explicit clause.
+            var all = shorthand.Concat(fails?.Errors ?? []).DistinctBy(t => _source.GetText(t.Span)).ToArray();
+            var errors = string.Join(", ", all.Select(t => _source.GetText(t.Span)));
+            Report(DiagnosticCodes.FailsShorthand, TextSpan.FromBounds(bang.Start, shorthandEnd), label: "the input form",
+                help: $"write `fails {errors}` after the parameters",
+                fix: new Fix(TextSpan.FromBounds(typeEnd, _prevEnd), " " + _source.GetText(TextSpan.FromBounds(name.Span.Start, paramsEnd)) + " fails " + errors));
+            fails = new FailsClause(fails?.Span ?? TextSpan.FromBounds(bang.Start, shorthandEnd), all);
         }
         var requires = new List<Expr>();
         while (Accept(TokenKind.RequiresKeyword)) requires.Add(ParseBareCondition());
@@ -899,7 +921,7 @@ public sealed class Parser
             // Functions do not nest: a function header on a new line means this block was never closed.
             if (Current.HasNewlineBefore && IsFunctionStart()) break;
             var before = _pos;
-            var errors = ErrorCount;
+            var errors = _syntaxErrors;
             statements.Add(ParseStatement());
             RecoverIfNeeded(errors);
             if (_pos == before) Advance();
@@ -937,8 +959,8 @@ public sealed class Parser
                     return new WhileLetStmt(SpanFrom(start), variable, value, ParseBlock());
                 }
                 {
-                    var condition = ParseCondition(out var parenthesized);
-                    var body = parenthesized ? ParseBody(whileKeyword) : ParseBlock();
+                    var condition = ParseCondition(out var parenthesized, out var parens);
+                    var body = parenthesized ? ParseBody(whileKeyword, ref parens) : ParseBlock();
                     return new WhileStmt(SpanFrom(start), condition, body);
                 }
             case TokenKind.DoKeyword:
@@ -946,7 +968,7 @@ public sealed class Parser
                     var body = ParseBody(Advance());
                     Expect(TokenKind.WhileKeyword);
                     var condition = Kind == TokenKind.OpenParen && KindAt(MatchingClose(_pos) + 1) == TokenKind.Semicolon
-                        ? ParseParenCondition()
+                        ? ParseParenCondition(out _)
                         : ParseBareCondition();
                     Expect(TokenKind.Semicolon);
                     return new DoWhileStmt(SpanFrom(start), body, condition);
@@ -1027,8 +1049,9 @@ public sealed class Parser
     }
 
     /// <summary>The input form <c>(c)</c>; the parentheses are reported (BYN1017) unless a top-level <c>{</c> needs them.</summary>
-    private Expr ParseParenCondition()
+    private Expr ParseParenCondition(out Diagnostic? parens)
     {
+        parens = null;
         var open = Current;
         var keep = InGroup(_pos, TokenKind.OpenBrace);
         var errors = ErrorCount;
@@ -1039,7 +1062,7 @@ public sealed class Parser
         {
             var span = TextSpan.FromBounds(open.Start, close.End);
             var inner = _source.GetText(TextSpan.FromBounds(open.End, close.Start)).Trim();
-            Report(DiagnosticCodes.ParenthesizedCondition, span, label: "not needed", help: "remove the parentheses",
+            parens = Report(DiagnosticCodes.ParenthesizedCondition, span, label: "not needed", help: "remove the parentheses",
                 fix: new Fix(span, (open.HasTriviaBefore ? "" : " ") + inner));
         }
         return condition;
@@ -1074,11 +1097,29 @@ public sealed class Parser
     /// </summary>
     private Stmt ParseBody(Token keyword)
     {
+        Diagnostic? header = null;
+        return ParseBody(keyword, ref header);
+    }
+
+    /// <param name="header">The report on the header (BYN1017, BYN1007, BYN1019, …), whose fix also needs the braces to parse;
+    /// updated to the report that replaces it.</param>
+    private Stmt ParseBody(Token keyword, ref Diagnostic? header)
+    {
         if (Kind == TokenKind.OpenBrace) return ParseBlock();
         var gapStart = _prevEnd;
         var errors = ErrorCount;
         var body = ParseStatement();
         if (ErrorCount != errors && body is ErrorStmt) return body;
+        header = ReportBraceless(keyword, gapStart, body, ErrorCount == errors, header);
+        return body;
+    }
+
+    /// <summary>
+    /// BYN1018 on <paramref name="body"/>, a single statement after <paramref name="keyword"/>. A <paramref name="header"/> fix
+    /// takes the braces too, so that fix parses applied alone and BYN1018 has none of its own. Returns the header's report.
+    /// </summary>
+    private Diagnostic? ReportBraceless(Token keyword, int gapStart, Stmt body, bool clean, Diagnostic? header)
+    {
         var text = _source.GetText(TextSpan.FromBounds(body.Span.Start, _prevEnd));
         var gap = _source.GetText(TextSpan.FromBounds(gapStart, body.Span.Start));
         string replacement;
@@ -1092,19 +1133,37 @@ public sealed class Parser
         {
             replacement = " { " + text + " }";
         }
+        // A fix inside the body (e.g. a nested `if (x) s;`) would overlap this one, which copies the body's text: only the inner one
+        // gets a fix, and the header's fix is dropped because without the braces it does not parse.
+        var fix = clean ? new Fix(TextSpan.FromBounds(gapStart, _prevEnd), replacement) : null;
+        if (header?.Fix is { } h)
+        {
+            var merged = fix is null ? null : new Fix(TextSpan.FromBounds(h.Span.Start, fix.Span.End),
+                h.Replacement + _source.GetText(TextSpan.FromBounds(h.Span.End, fix.Span.Start)) + fix.Replacement);
+            // The merged fix copies the source up to this body (an `if`'s `then` block before a braceless `else`); a fix in
+            // there would overlap it, so the header loses its fix and BYN1018 keeps its own.
+            var overlaps = merged is not null && _diagnostics.Items.Any(d => !ReferenceEquals(d, header) && d.Fix is { } f
+                && f.Span.Start < merged.Span.End && f.Span.End > merged.Span.Start);
+            var replaced = header with { Fix = overlaps ? null : merged };
+            _diagnostics.Replace(header, replaced);
+            header = replaced;
+            if (!overlaps) fix = null;
+        }
         Report(DiagnosticCodes.BodyNeedsBraces, body.Span, [Text(keyword)], label: "a single statement",
-            help: "wrap the statement in `{ }`", fix: new Fix(TextSpan.FromBounds(gapStart, _prevEnd), replacement));
-        return body;
+            help: "wrap the statement in `{ }`", fix: fix);
+        return header;
     }
 
     /// <summary>
     /// The condition of <c>if</c>, <c>unless</c>, <c>while</c> or <c>switch</c>. <c>(c)</c> followed by a statement is the
     /// parenthesized input form (<paramref name="parenthesized"/>); otherwise the condition is bare and its body a block.
     /// </summary>
-    private Expr ParseCondition(out bool parenthesized)
+    /// <param name="parens">The BYN1017 report on the parentheses, if any, for a caller whose own fix removes them.</param>
+    private Expr ParseCondition(out bool parenthesized, out Diagnostic? parens)
     {
+        parens = null;
         parenthesized = IsParenthesizedCondition();
-        return parenthesized ? ParseParenCondition() : ParseBareCondition();
+        return parenthesized ? ParseParenCondition(out parens) : ParseBareCondition();
     }
 
     /// <summary>
@@ -1228,23 +1287,26 @@ public sealed class Parser
             Advance();
             likelihood = Likelihood.Unlikely;
         }
-        var condition = ParseCondition(out var parenthesized);
+        var condition = ParseCondition(out var parenthesized, out var parens);
         var closeEnd = _prevEnd;
-        var then = parenthesized ? ParseBody(keyword) : ParseBlock();
+        // The BYN1017 fix leaves a bare condition, after which `then` and `else` must both be blocks: it braces both.
+        var then = parenthesized ? ParseBody(keyword, ref parens) : ParseBlock();
         Stmt? otherwise = null;
         if (Kind == TokenKind.ElseKeyword)
         {
             var elseKeyword = Advance();
             otherwise = Kind == TokenKind.IfKeyword ? RejectPostfixAfterCompound(ParseIf(Current.Start, elseIf: true))
-                : parenthesized ? ParseBody(elseKeyword) : ParseBlock();
+                : parenthesized ? ParseBody(elseKeyword, ref parens) : ParseBlock();
         }
-        else if (!elseIf && likelihood == Likelihood.None && condition is UnaryExpr { Op: UnaryOp.Not } negated
+        // With a braceless `then`, BYN1017's fix already braces it; `unless` waits for the next check.
+        else if (!elseIf && likelihood == Likelihood.None && then is BlockStmt && condition is UnaryExpr { Op: UnaryOp.Not } negated
                  && Unwrap(negated.Operand) is not (BinaryExpr { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } or UnaryExpr { Op: UnaryOp.Not })
                  && !IsNullTest(Unwrap(negated.Operand)))
         {
             var fixSpan = TextSpan.FromBounds(keyword.Start, closeEnd);
-            Report(DiagnosticCodes.NegatedIfToUnless, fixSpan, label: "a negated condition with no `else`",
-                help: "write `unless` with the condition as written", fix: new Fix(fixSpan, "unless " + _source.GetText(Unwrap(negated.Operand).Span)));
+            if (Report(DiagnosticCodes.NegatedIfToUnless, fixSpan, label: "a negated condition with no `else`",
+                    help: "write `unless` with the condition as written", fix: new Fix(fixSpan, "unless " + _source.GetText(Unwrap(negated.Operand).Span))) is not null)
+                Unreport(parens);
         }
         return new IfStmt(SpanFrom(start), condition, then, otherwise) { Likelihood = likelihood };
     }
@@ -1258,24 +1320,33 @@ public sealed class Parser
     /// <summary>
     /// After <c>unless</c> (statement or postfix): the input forms <c>unless !x</c> (BYN1007), <c>unless a &amp;&amp; b</c>
     /// (BYN1022) and <c>unless x is null</c> (BYN1023), each fixed to an <c>if</c> over <paramref name="fixSpan"/>.
+    /// Returns the report, if any.
     /// </summary>
-    private void CheckUnlessCondition(Expr condition, TextSpan fixSpan)
+    private Diagnostic? CheckUnlessCondition(Expr condition, TextSpan fixSpan)
     {
+        condition = Unwrap(condition);
         if (condition is UnaryExpr { Op: UnaryOp.Not } negated)
         {
-            Report(DiagnosticCodes.UnlessNegated, fixSpan, label: "`unless` already negates",
+            return Report(DiagnosticCodes.UnlessNegated, fixSpan, label: "`unless` already negates",
                 help: "use `if` with the condition as written", fix: new Fix(fixSpan, "if " + _source.GetText(negated.Operand.Span)));
         }
-        else if (condition is BinaryExpr { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr })
+        if (condition is BinaryExpr { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr })
         {
-            Report(DiagnosticCodes.UnlessCompound, fixSpan, label: "a compound condition",
+            return Report(DiagnosticCodes.UnlessCompound, fixSpan, label: "a compound condition",
                 help: "use `if` with the negated condition", fix: new Fix(fixSpan, "if !(" + _source.GetText(condition.Span) + ")"));
         }
-        else if (IsNullTest(condition))
+        if (IsNullTest(condition))
         {
-            Report(DiagnosticCodes.UnlessNull, fixSpan, label: "a negated null test",
+            return Report(DiagnosticCodes.UnlessNull, fixSpan, label: "a negated null test",
                 help: "use `if` with `is not null`", fix: new Fix(fixSpan, "if " + _source.GetText(((IsExpr)condition).Value.Span) + " is not null"));
         }
+        return null;
+    }
+
+    /// <summary>Withdraws <paramref name="d"/> when a later fix over the same span replaces it.</summary>
+    private void Unreport(Diagnostic? d)
+    {
+        if (d is not null) _diagnostics.Remove(d);
     }
 
     /// <summary>A likelihood word after <c>unless</c> (BYN1033), removed by the fix.</summary>
@@ -1292,15 +1363,20 @@ public sealed class Parser
     {
         var keyword = Advance();
         SkipUnlessLikelihood();
-        var condition = ParseCondition(out var parenthesized);
-        CheckUnlessCondition(condition, TextSpan.FromBounds(keyword.Start, _prevEnd));
-        var body = parenthesized ? ParseBody(keyword) : ParseBlock();
+        var condition = ParseCondition(out var parenthesized, out var parens);
+        // The `if` fix spans the parentheses and drops them, so it replaces the BYN1017 report.
+        var check = CheckUnlessCondition(condition, TextSpan.FromBounds(keyword.Start, _prevEnd));
+        if (check is not null) Unreport(parens);
+        var header = check ?? parens;
+        var body = parenthesized ? ParseBody(keyword, ref header) : ParseBlock();
         if (Kind == TokenKind.ElseKeyword)
         {
             Report(DiagnosticCodes.UnlessWithElse, Current.Span, label: "`else` after `unless`",
                 help: "use `if` with the opposite condition, so both branches read positively");
             Advance();
-            ParseEmbedded();
+            // The `if` fix of BYN1007/1022/1023 leaves a bare condition, which needs a block after `else`.
+            if (ParseEmbedded() is not BlockStmt && check is not null && header?.Fix is not null)
+                _diagnostics.Replace(header, header with { Fix = null });
         }
         return new UnlessStmt(SpanFrom(start), condition, body);
     }
@@ -1371,15 +1447,16 @@ public sealed class Parser
         var errors = ErrorCount;
         var iterable = ParseExpression();
         var close = Expect(TokenKind.CloseParen);
+        Diagnostic? input = null;
         if (close.Length > 0 && ErrorCount == errors)
         {
             var span = TextSpan.FromBounds(keyword.Kind == TokenKind.ForeachKeyword ? keyword.Start : open.Start, close.End);
             var header = (type is null ? "" : _source.GetText(type.Span) + " ") + name.Text + " in " + _source.GetText(iterable.Span);
-            Report(DiagnosticCodes.ForInputForm, span, label: "the input form",
+            input = Report(DiagnosticCodes.ForInputForm, span, label: "the input form",
                 help: "write the loop variable and iterable without parentheses",
                 fix: new Fix(span, keyword.Kind == TokenKind.ForeachKeyword ? "for " + header : open.HasTriviaBefore ? header : " " + header));
         }
-        var body = ParseBody(keyword);
+        var body = ParseBody(keyword, ref input);
         return new ForStmt(SpanFrom(start), kind, type, name, iterable, body);
     }
 
@@ -1402,7 +1479,7 @@ public sealed class Parser
     private Stmt ParseSwitchStatement(int start)
     {
         Advance();
-        var value = ParseCondition(out _);
+        var value = ParseCondition(out _, out _);
         var open = Expect(TokenKind.OpenBrace);
         var sections = new List<SwitchSection>();
         while (Kind is TokenKind.CaseKeyword or TokenKind.DefaultKeyword)
@@ -1422,7 +1499,7 @@ public sealed class Parser
             while (Kind is not (TokenKind.CaseKeyword or TokenKind.DefaultKeyword or TokenKind.CloseBrace or TokenKind.EndOfFile))
             {
                 var before = _pos;
-                var errors = ErrorCount;
+                var errors = _syntaxErrors;
                 statements.Add(ParseStatement());
                 RecoverIfNeeded(errors);
                 if (_pos == before) Advance();
@@ -1477,7 +1554,13 @@ public sealed class Parser
             binding = NameOf(Advance());
             Advance();
         }
-        return new DeferStmt(SpanFrom(start), kind, binding, ParseEmbedded());
+        var span = SpanFrom(start);
+        var gapStart = _prevEnd;
+        var errors = ErrorCount;
+        var body = ParseEmbedded();
+        // `defer stmt;` is legal (spec §7.6), but a declaration there declares a local nothing can see.
+        if (body is LocalDecl) ReportBraceless(keyword, gapStart, body, ErrorCount == errors, null);
+        return new DeferStmt(span, kind, binding, body);
     }
 
     private bool StartsDeferBody(int n) => Peek(n) is TokenKind.Identifier or TokenKind.OpenBrace || Peek(n).IsKeyword();

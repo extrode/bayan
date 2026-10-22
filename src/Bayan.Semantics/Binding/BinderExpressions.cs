@@ -965,12 +965,9 @@ internal sealed partial class Binder
 
     private BoundExpr BindBinary(BinaryExpr b, TypeSymbol? expected)
     {
-        if (b.Op is BinaryOp.Eq or BinaryOp.Ne && (b.Right is LiteralExpr { Kind: LiteralKind.Null } ? b.Left
-                : b.Left is LiteralExpr { Kind: LiteralKind.Null } ? b.Right : null) is { } tested)
-        {
-            var test = Source.GetText(tested.Span) + (b.Op == BinaryOp.Eq ? " is null" : " is not null");
-            Report(DiagnosticCodes.NullEquality, b.Span, [], help: $"write `{test}`", fix: new Fix(b.Span, test));
-        }
+        var nullTested = b.Op is BinaryOp.Eq or BinaryOp.Ne
+            ? b.Right is LiteralExpr { Kind: LiteralKind.Null } ? b.Left : b.Left is LiteralExpr { Kind: LiteralKind.Null } ? b.Right : null
+            : null;
         switch (b.Op)
         {
             case BinaryOp.LogicalAnd or BinaryOp.LogicalOr:
@@ -999,6 +996,19 @@ internal sealed partial class Binder
             var hint = b.Op is BinaryOp.Shl or BinaryOp.Shr ? PrimitiveType.I32 : left.Type is OptionalType o ? o.Inner : left.Type;
             right = BindExpr(b.Right, hint);
         }
+        if (nullTested is not null)
+        {
+            // `x is null` is valid only on an optional `x`: no fix for `null == null` or a non-optional operand.
+            if (nullTested is not LiteralExpr { Kind: LiteralKind.Null } && (nullTested == b.Left ? left : right).Type is OptionalType)
+            {
+                var test = Source.GetText(nullTested.Span) + (b.Op == BinaryOp.Eq ? " is null" : " is not null");
+                Report(DiagnosticCodes.NullEquality, b.Span, [], help: $"write `{test}`", fix: new Fix(b.Span, test));
+            }
+            else
+            {
+                Report(DiagnosticCodes.NullEquality, b.Span, []);
+            }
+        }
         if (left.Type.IsError || right.Type.IsError) return new BoundErrorExpr(b);
         if (b.Op is not (BinaryOp.Eq or BinaryOp.Ne) && (TypeParameterOf(left.Type) ?? TypeParameterOf(right.Type)) is { } tp)
             return TypeParameterOperator(b, BinaryText(b.Op), tp);
@@ -1020,6 +1030,13 @@ internal sealed partial class Binder
 
         if (common.IsString && b.Op == BinaryOp.Add)
         {
+            // Two plain literals merge into one literal, which (unlike an interpolation) stays a constant.
+            if (IsPlainStringLiteral(b.Left) && IsPlainStringLiteral(b.Right))
+            {
+                var merged = Source.GetText(b.Left.Span)[..^1] + Source.GetText(b.Right.Span)[1..];
+                Report(DiagnosticCodes.StringConcatenation, b.Span, [], help: $"write one literal: `{merged}`", fix: new Fix(b.Span, merged));
+                return new BoundErrorExpr(b);
+            }
             Report(DiagnosticCodes.StringConcatenation, b.Span, [],
                 help: "write the parts as one interpolation: `$\"{a}{b}\"`, or `buf.append($\"{a}{b}\")` in a loop",
                 fix: new Fix(b.Span, $"$\"{InterpolationSource(b.Left)}{InterpolationSource(b.Right)}\""));
@@ -1033,6 +1050,10 @@ internal sealed partial class Binder
         var bound = new BoundBinary(b, b.Op, left, right, type);
         return Fold(bound, left, right, common);
     }
+
+    private bool IsPlainStringLiteral(Expr e) =>
+        e is LiteralExpr { Kind: LiteralKind.String } && Source.GetText(e.Span) is var text
+        && text.StartsWith('"') && !text.StartsWith("\"\"\"", StringComparison.Ordinal);
 
     private static TypeParameterType? TypeParameterOf(TypeSymbol t) =>
         t as TypeParameterType ?? (t as OptionalType)?.Inner as TypeParameterType;
@@ -1584,7 +1605,7 @@ internal sealed partial class Binder
             var value = BindExpr(hole.Expr);
             if (!value.Type.IsError && WhyNotFormattable(value.Type, []) is { } why)
                 Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName], label: why == "" ? null : why,
-                    help: value.Type is StructSymbol s ? $"add `format()`/`formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
+                    help: value.Type is StructSymbol s ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
             parts.Add(new BoundInterpolationPart(null, value));
         }
         return new BoundInterpolated(i, parts.ToArray());
