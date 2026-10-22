@@ -10,8 +10,9 @@ Style is guidance: never compiler-enforced, configurable per project, applied by
 | Indent | 4 spaces |
 | Line length | 100 |
 | Trailing commas | Always in multi-line literals and argument lists |
-| Member order | Fields, state members, constructors, methods |
+| Member order | Fields, typestate `state` declarations, properties, constructors, methods |
 | Statements | One per line (postfix guards count as one) |
+| Booleans | One spelling per project, set by `booleans`: `.symbols` (`!` `&&` `\|\|`) or `.words` (`not` `and` `or`) |
 
 ## Configuration
 
@@ -30,6 +31,7 @@ Package {
         braces: .sameLine,        // or .nextLine
         maxLine: 100,
         trailingCommas: true,
+        booleans: .symbols,       // or .words
     },
 }
 ```
