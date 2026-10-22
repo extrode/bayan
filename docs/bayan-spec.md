@@ -179,9 +179,9 @@ Lowercase type names are reserved for the language. C interop types: `c_int`, `c
 - All offsets are **byte offsets**, as ranges are everywhere (§6.1). `s[a..b]` slices by byte offset and panics off a rune boundary. `s.runes.take(n)`, `s.graphemes.take(n)`, `skip`, `takeLast` count runes or graphemes.
 - **Searching** returns offsets or views: `contains`, `startsWith`, `endsWith`, `indexOf` (`i32?`), `lastIndexOf`.
 - **Splitting** is lazy and returns views: `split(',')`, `split(", ")`, `split(predicate)`, `split(",", max: 2)`, `splitOnce('=')` → `(string, string)?`, `lines()`.
-- **New strings** (Form I, allocated from `context.allocator`, so they `uses alloc`): `trim()`, `trimStart()`, `trimEnd(c)`, `lowercase()`, `uppercase()`, `replace(a, b)`, `padStart(n, c)`, `repeat(n)`.
+- **New strings** (Form I, allocated from `context.allocator`, so they `uses alloc`): `trim()`, `trimStart()`, `trimEnd(c)`, `lowercase()`, `uppercase()`, `replace(a, by: b)`, `padStart(to: n, by: c)`, `repeat(n)`.
 - **No `+` on strings**, constants included. Concatenate with interpolation (`$"{a}{b}"`), `[a, b, c].join("")`, `Path.join`, or `StrBuf` in loops. `a + b` on strings is an input form rewritten to interpolation (§21.5).
-- `==` is **ordinal**; `a.equals(b, .ignoreCase)`; culture-aware comparison only through `Collator`.
+- `==` is **ordinal**; `a.equals(b, by: .ignoreCase)`; culture-aware comparison only through `Collator`.
 - `string.fromUtf8(bytes)` fails on invalid UTF-8; `toUtf16()` for interop. `string16` exists for UTF-16 interop.
 - Raw strings: `"""…"""`.
 - Not in v0.1: `graphemes`, `Collator`, `split` views, `trim*`, `padStart`, `repeat`, `fromUtf8`, `toUtf16`.
@@ -223,7 +223,7 @@ type distinct UserId = i64       // a unit without arithmetic
 - `ReadOnlySpan<T>`: a borrowed view whose elements cannot be assigned. `Span<T>` → `ReadOnlySpan<T>` is implicit. `string.bytes` is a `ReadOnlySpan<u8>`, so strings stay immutable and valid UTF-8. A `Span<T>` parameter never written through gets lint BYN2310 ("use `ReadOnlySpan<T>`").
 - `List<T>`, `Deque<T>`, `Map<K, V>`, `HashMap<K, V>`, `Set<T>`, `Pool<T>`, `Ring<T, const N: i32>`, `NonEmpty<T>`: standard library, allocator-backed (API: §16).
 - `Map` **preserves insertion order**; `HashMap` is unordered and faster.
-- `xs.removeRange(start, end)` removes the elements in `[start, end)` and keeps the order of the rest; `start > end` or `end > xs.length` panics (`slice out of range`). Like `append` and `removeLast`, it is a structural modification (§9.4 rule 5).
+- `xs.removeRange(from: start, to: end)` removes the elements in `[start, end)` and keeps the order of the rest; `start > end` or `end > xs.length` panics (`slice out of range`). Like `append` and `removeLast`, it is a structural modification (§9.4 rule 5).
 - A module-level `const T[N]` with literal or constant elements is static data in `.rodata` when `T` is a number type, `bool`, `rune` or `string` (`const names: string[2] = ["a", "b"]`); it can be indexed, iterated and asked its `.length`. Any other module-level `const` array is BYN2229.
 - **Typed indices (opt-in).** There are no automatic `T.Count` or `T.Index` types. A collection may take an index type as a second parameter, keyed by the collection rather than the element type, so parallel arrays share one:
 
@@ -240,7 +240,7 @@ type distinct UserId = i64       // a unit without arithmetic
   Plain `List<T>` keeps plain `Index`, and `0..xs.length` works as before. Typed collections expose `.indices`; `xs[^1]` resolves against the collection's own index type. Indexing with another index type is an error (BYN3210).
 
 > Round 3 §9: typed indices catch mixed-up indices in parallel arrays without imposing a type per element type. Codes: BYN3210.
-- **`StrBuf`** is the string builder and the target of every `xInto(ref StrBuf)` (§5.2): `StrBuf(capacity: n)` allocates from `context.allocator`; `StrBuf.over(stackalloc u8[n] uninit)` uses the stack first and spills to the allocator only if outgrown; `append(x)`, `append($"…")` (interpolation writes straight into the buffer), `appendRepeated(c, n)`; `buf.view` is a borrowed string view, no allocation; `buf.finish()` consumes the buffer and returns it as a string without copying. `StrBuf.over` is not in v0.1.
+- **`StrBuf`** is the string builder and the target of every `xInto(ref StrBuf)` (§5.2): `StrBuf(capacity: n)` allocates from `context.allocator`; `StrBuf.over(stackalloc u8[n] uninit)` uses the stack first and spills to the allocator only if outgrown; `append(x)`, `append($"…")` (interpolation writes straight into the buffer), `appendRepeated(c, by: n)`; `buf.view` is a borrowed string view, no allocation; `buf.finish()` consumes the buffer and returns it as a string without copying. `StrBuf.over` is not in v0.1.
 
 > Round 2 §11, §12, §15: `append` replaces `add` on ordered collections; `finish()` and `view` replace `asString()`; C# type names are input forms. Codes: BYN1030. Round 3 deliverable 4 restores `length` as the size name.
 - Every allocator-backed collection (`List`, `Map`, `HashMap`, `Set`, `Pool`) and `StrBuf` is **`unique`** (§3.11): assigning or storing one moves it, and a copy is explicit, `xs.copy(to: alloc)`. Reading without owning goes through `ReadOnlySpan<T>`, a read-only parameter or `ref`.
@@ -718,7 +718,7 @@ for line in order.lines except inactive { … }
 | Rule | Operators |
 |---|---|
 | Overloadable | `+ - * / %`, unary `-`, `[]`, and `compare` |
-| Derived | `+=` from `+`; `==` `!=` field by field; `<` `<=` `>` `>=` from one `static compare(a: T, b: T) -> Ordering` |
+| Derived | `+=` from `+`; `==` `!=` field by field; `<` `<=` `>` `>=` from one `static compare(a: T, to b: T) -> Ordering` |
 | Not overloadable | `&& \|\| ?? is = ?.`, and `+% +\|` (built-in integers only in v1) |
 
 - Operators are `static`, cannot `fails`, and cannot take `ref this`.
@@ -1335,7 +1335,7 @@ Only parameterized `sql"…"` literals with `$n` placeholders are in scope now; 
 - `T.fromJson(untrusted)` returns a trusted `T` only if every field's type is either a type with `requires` or a non-text scalar (numbers, bools, units, plain unions); any free `string` or byte field makes the result `Untrusted<T>`.
 - Explicit escape: `x.trustUnchecked() because "…"` (§4.4).
 - This model is provisional and must be exercised in the reference application.
-- **Processes.** `Io.run(program, args)` never goes through a shell, and refuses `.bat`/`.cmd` files on Windows (`cmd.exe` re-parses their arguments). `Io.runBatch(path, args)` runs a batch file: it runs the system directory's `cmd.exe /d /e:ON /v:OFF /s /c` with the path and each argument in double quotes, and fails with `invalidInput` without starting anything when the path does not end in `.bat`/`.cmd`, has no `/` or `\` (a bare name would make `cmd.exe` search the current directory and `PATH`; write `.\build.cmd`), or the path or an argument holds NUL, CR, LF, `"` or `%`. Off Windows it fails with `unsupported`. The arguments of both are a sink: an `Untrusted<T>` program, path or argument (or a list, span or array of them) is a compile error (BYN2786). `Io.run` involves no shell, but an untrusted program path runs whatever the attacker names, and option injection (`--upload-pack=…` to `git`, `-oProxyCommand=…` to `ssh`) makes the program itself run attacker-chosen commands. `IoError` gains `invalidInput` and `unsupported`, so its codes are 1–7.
+- **Processes.** `Io.run(program, args: args)` never goes through a shell, and refuses `.bat`/`.cmd` files on Windows (`cmd.exe` re-parses their arguments). `Io.runBatch(path, args: args)` runs a batch file: it runs the system directory's `cmd.exe /d /e:ON /v:OFF /s /c` with the path and each argument in double quotes, and fails with `invalidInput` without starting anything when the path does not end in `.bat`/`.cmd`, has no `/` or `\` (a bare name would make `cmd.exe` search the current directory and `PATH`; write `.\build.cmd`), or the path or an argument holds NUL, CR, LF, `"` or `%`. Off Windows it fails with `unsupported`. The arguments of both are a sink: an `Untrusted<T>` program, path or argument (or a list, span or array of them) is a compile error (BYN2786). `Io.run` involves no shell, but an untrusted program path runs whatever the attacker names, and option injection (`--upload-pack=…` to `git`, `-oProxyCommand=…` to `ssh`) makes the program itself run attacker-chosen commands. `IoError` gains `invalidInput` and `unsupported`, so its codes are 1–7.
 - **Standard streams.** `Io.stdout.write(text)` and `Io.stderr.write(text)` write without a newline (stdout is buffered with `print`). `Io.stdin.readAll()` returns `Result<string, IoError>`: the rest of standard input, bytes as-is (binary mode on Windows, not checked for UTF-8), allocated from `context.allocator`. For now it is a plain `string`, not `Untrusted<string>`.
 - Terminal output and logs escape control characters in untrusted values.
 - **Implemented so far:** `Untrusted<T>` has the C representation of `T`; `Untrusted(x)` wraps and `trust(x, reason: "…")` unwraps, with a non-empty string literal as the reason; round 3 renames it to `x.trustUnchecked() because "…"`. There is no implicit conversion either way. Sources are not yet wrapped.
@@ -1378,7 +1378,7 @@ Function `requires` contracts (§7.9) detect bugs and panic in every build mode.
 - **Queries** (never allocate): `length`, `count(p)`, `isEmpty`, `hasItems`, `first` / `last` (`T?`), `xs[i]` (panics out of range), `at(i)` (`T?`), `contains`, `indexOf` (`i32?`), `indexWhere`, `any`, `all`.
 - **Views** (never allocate): slices `xs[1..4]`, `xs[1..^1]`, `take`, `skip`, `takeLast`, `skipLast`, `stride`, `chunks`, `windows`, `splitAt`. C#'s `Substring(start, length)` migrates to `s[start..(start + length)]`.
 - **Lazy iterators** are structs with inlined lambdas: `where`, `select`, `sumBy`, `minBy`, `maxBy`, `any`, `all`, `groupBy`; nothing allocates until `toList()`.
-- **New data** (allocate from `context.allocator`): `toList()`, `distinct()`, `join(sep)`, `join(sep, f)`, `flatten()` (Form I, not participles), spread `[..a, ..b]`.
+- **New data** (allocate from `context.allocator`): `toList()`, `distinct()`, `join(sep)`, `join(sep, by: f)`, `flatten()` (Form I, not participles), spread `[..a, ..b]`.
 - Out-of-range slices panic in safe builds; `trySlice(a..b)` returns `Span<T>?`.
 - Read-only queries and views take `ReadOnlySpan<T>` parameters (a `Span<T>`, `List<T>`, array or, for bytes, `string` converts implicitly).
 - Collections copy explicitly: `xs.copy(to: alloc)` for `List`, `Map` and `StrBuf` returns an independent value of the same type (not allowed when an element, key or value holds a `List`, `Map`, `StrBuf` or `Owned`).
@@ -1397,12 +1397,12 @@ let fixed = [1, 2, 3]                                // no target type: i32[3] o
 let headers = ["Accept": "*/*"]                      // no target type: Map<string, string>
 ```
 
-- Not in v0.1: everything that takes a lambda (`where`, `select`, `sumBy`, `removeWhere`, `sort(by)`, `join(sep, f)`), `Deque`, `Set` (and its literals), slices on lists, `prepend`, `insert`, `sorted`.
+- Not in v0.1: everything that takes a lambda (`where`, `select`, `sumBy`, `removeWhere`, `sort(by)`, `join(sep, by: f)`), `Deque`, `Set` (and its literals), slices on lists, `prepend`, `insert`, `sorted`.
 
 > Round 2 §11: one size name and verb/participle pairs that follow §5.2; `first`/`last` return `T?` instead of a parallel `tryFirst`/`tryLast`. Codes: BYN2104, BYN2230, BYN2235, BYN2236.
 
 > Round 3 deliverable 4: the size name is `length`, not round 2's `count`, so `count(p)` reads as a predicate count only; BYN2230 now rewrites `.count`, `Count` and `Length` to `length`. `replaceRange` uses the particle `by`.
-- Maps: reading `map[k]` panics if missing; `map.getOr(k, fallback)` reads without inserting; `ref map.slot(k)` gets or inserts a default (requires `V : default`).
+- Maps: reading `map[k]` panics if missing; `map.getOr(k, by: fallback)` reads without inserting; `ref map.slot(k)` gets or inserts a default (requires `V : default`).
 - `Grid<T>`-style types accept multi-dimensional ranges: `grid[1..^1, 1..^1]`.
 
 ---
