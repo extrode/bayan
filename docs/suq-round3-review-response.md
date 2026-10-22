@@ -85,7 +85,7 @@ Where the docs had decided an item differently, the brief's decision was applied
 - Recorded in:
   - plan legend `:7`, §5 (c) `:36`, C25, J27 `:207`, J34 `:214`, §7 total `:293` ("2 retired (1032, 1049)");
   - SPEC §21.5 `:1692`.
-- BYN1049 never appeared in `src/` or `DiagnosticCodes.cs` on this branch, so it gets no page and no golden.
+- BYN1049 was never raised, so it has no golden. It keeps a `RetiredUnlessNot` descriptor and a "No longer reported" page (`docs/diagnostics/BYN1049.md`, fc0b460).
 
 **Other new codes.** These come from Part B and are listed in plan §23 (`:141-145`).
 - BYN7005 `StateLiteralNeedsState`: J37, step 5.3c.
