@@ -140,7 +140,7 @@ struct Types {
             return ids[key]
         }
         let id = TypeId { index: (i32)keys.length }
-        keys.add(key)
+        keys.append(key)
         ids[key] = id
         return id
     }

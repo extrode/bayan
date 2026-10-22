@@ -50,7 +50,7 @@ The handoff's "Road to self-hosting" row 010 ports semantics: the binder, flow, 
 - R11 Speed. Checking the self-hosted sources (R2's module) with `bayan-check` built in `fast` mode takes no more than 10 times as long as the C# front end on the same machine (median of 5; `BAYAN_SKIP_TIMING=1` skips) (Q163).
 - R12 Diagnostic docs. BYN2840 and BYN2841, if allocated, each have a `docs/diagnostics/` page, a `diag/` golden and a verb-first help (spec 005 R15).
 - R13 Self-hosting reach. `bayan-check` on R2's module (the lexer, parser and semantics sources together) prints the C# reference, which has no error, so the binder binds itself; this has its own test and is reached before the full `diag/` set (T16).
-- R14 Internal errors. An input on which the C# front end throws (for example the instantiation `internal error` at `Compilation.cs:937-939`) fails the run as a C# bug; it is fixed in C# with its own golden, not ported (Q164).
+- R14 Internal errors. An input on which the C# front end throws (for example the instantiation `internal error` at `Compilation.cs:934-936`) fails the run as a C# bug; it is fixed in C# with its own golden, not ported (Q164).
 
 ## Acceptance criteria
 
