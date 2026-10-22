@@ -66,6 +66,8 @@ public sealed class DiagnosticBag
         foreach (var d in diagnostics) Add(d);
     }
 
+    public void Remove(Diagnostic diagnostic) => _items?.Remove(diagnostic);
+
     /// <summary>Drops each diagnostic that repeats an earlier one's code, file, span and message.</summary>
     public void RemoveRepeats()
     {

@@ -957,12 +957,9 @@ internal sealed partial class Binder
 
     private BoundExpr BindBinary(BinaryExpr b, TypeSymbol? expected)
     {
-        if (b.Op is BinaryOp.Eq or BinaryOp.Ne && (b.Right is LiteralExpr { Kind: LiteralKind.Null } ? b.Left
-                : b.Left is LiteralExpr { Kind: LiteralKind.Null } ? b.Right : null) is { } tested)
-        {
-            var test = Source.GetText(tested.Span) + (b.Op == BinaryOp.Eq ? " is null" : " is not null");
-            Report(DiagnosticCodes.NullEquality, b.Span, [], help: $"write `{test}`", fix: new Fix(b.Span, test));
-        }
+        var nullTested = b.Op is BinaryOp.Eq or BinaryOp.Ne
+            ? b.Right is LiteralExpr { Kind: LiteralKind.Null } ? b.Left : b.Left is LiteralExpr { Kind: LiteralKind.Null } ? b.Right : null
+            : null;
         switch (b.Op)
         {
             case BinaryOp.LogicalAnd or BinaryOp.LogicalOr:
@@ -990,6 +987,19 @@ internal sealed partial class Binder
             left = BindExpr(b.Left, arithmetic ? expected : null);
             var hint = b.Op is BinaryOp.Shl or BinaryOp.Shr ? PrimitiveType.I32 : left.Type is OptionalType o ? o.Inner : left.Type;
             right = BindExpr(b.Right, hint);
+        }
+        if (nullTested is not null)
+        {
+            // `x is null` is valid only on an optional `x`: no fix for `null == null` or a non-optional operand.
+            if (nullTested is not LiteralExpr { Kind: LiteralKind.Null } && (nullTested == b.Left ? left : right).Type is OptionalType)
+            {
+                var test = Source.GetText(nullTested.Span) + (b.Op == BinaryOp.Eq ? " is null" : " is not null");
+                Report(DiagnosticCodes.NullEquality, b.Span, [], help: $"write `{test}`", fix: new Fix(b.Span, test));
+            }
+            else
+            {
+                Report(DiagnosticCodes.NullEquality, b.Span, []);
+            }
         }
         if (left.Type.IsError || right.Type.IsError) return new BoundErrorExpr(b);
         if (b.Op is not (BinaryOp.Eq or BinaryOp.Ne) && (TypeParameterOf(left.Type) ?? TypeParameterOf(right.Type)) is { } tp)
@@ -1576,7 +1586,7 @@ internal sealed partial class Binder
             var value = BindExpr(hole.Expr);
             if (!value.Type.IsError && WhyNotFormattable(value.Type, []) is { } why)
                 Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName], label: why == "" ? null : why,
-                    help: value.Type is StructSymbol s ? $"add `format()`/`formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
+                    help: value.Type is StructSymbol s ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
             parts.Add(new BoundInterpolationPart(null, value));
         }
         return new BoundInterpolated(i, parts.ToArray());

@@ -1,0 +1,4 @@
+void main(ReadOnlySpan<string> args) {
+    let x = args.length > 0;
+    if (x) if (x) print("a");
+}

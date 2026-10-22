@@ -349,7 +349,8 @@ public sealed class Manifest
                             var d = DiagnosticCodes.ManifestEquals;
                             var span = TextSpan.FromBounds(name.End, Current.End);
                             diagnostics.Add(new Diagnostic(d.Severity, d.Code, source, Current.Span, d.Format([]),
-                                Label: "the input form", Help: "write `:` after the field name", Fix: new Fix(span, ":")));
+                                Label: "the input form", Help: tokens[_pos - 1].Kind == TokenKind.Colon ? "remove the `=`" : "write `:` after the field name",
+                                Fix: new Fix(span, ":")));
                             _pos++;
                         }
                         if (ReadValue() is not { } value) return null;

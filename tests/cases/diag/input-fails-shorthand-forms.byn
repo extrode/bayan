@@ -1,0 +1,5 @@
+error enum E { a }
+error enum F { b }
+
+i32!E g() fails F { return 1; }
+i32!E h() fails E { return 1; }
