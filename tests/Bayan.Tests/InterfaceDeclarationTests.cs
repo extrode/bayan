@@ -55,4 +55,48 @@ public sealed class InterfaceDeclarationTests
         var t = Assert.Single(module.AllFunctions.Single(f => f.Name == "show").TypeParameters);
         Assert.Equal([shape, c.Builtins.IEnumerator], t.Constraints);
     }
+
+    [Fact]
+    public void DynRefResolvesToABorrowOfTheInterface()
+    {
+        var c = Compile("""
+            interface IShape {
+                i64 area();
+            }
+
+            void show(dyn ref IShape s, dyn ref readonly IShape r) {
+                dyn ref readonly IShape t = r;
+            }
+            """);
+        Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items.Select(d => d.Message)));
+        var shape = Assert.Single(c.Modules[0].Interfaces);
+        var show = c.Modules[0].AllFunctions.Single(f => f.Name == "show");
+        Assert.Equal([new DynRefType(shape), new DynRefType(shape, readOnly: true)], show.Parameters.Select(p => p.Type));
+        Assert.True(show.Parameters[0].Type.IsBorrow);
+    }
+
+    [Fact]
+    public void BoundsResolveThroughInterfaceInstancesAndAssociatedTypes()
+    {
+        var c = Compile("""
+            interface IOrder<T> {
+                bool less(T other);
+            }
+
+            T max<T>(move T a, T b) where T : IOrder<T> => a;
+
+            T.Item first<T>(ref T e, move T.Item fallback) where T : IEnumerator => fallback;
+            """);
+        Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items.Select(d => d.Message)));
+        var order = Assert.Single(c.Modules[0].Interfaces);
+        var t = Assert.Single(c.Modules[0].AllFunctions.Single(f => f.Name == "max").TypeParameters);
+        var bound = Assert.Single(t.Constraints);
+        Assert.Same(order, bound.Template);
+        Assert.Equal([t], bound.TypeArguments);
+        Assert.Same(t, Assert.Single(bound.Methods.Single().Parameters).Type);
+
+        var first = c.Modules[0].AllFunctions.Single(f => f.Name == "first");
+        Assert.Equal("T.Item", first.ReturnType.DisplayName);
+        Assert.Same(first.ReturnType, first.Parameters[1].Type);
+    }
 }

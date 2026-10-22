@@ -188,6 +188,9 @@ public sealed class Compilation
         foreach (var module in Modules)
             foreach (var i in module.Interfaces)
                 DeclareInterfaceMembers(i);
+        _interfaceMembersDeclared = true;
+        foreach (var (instance, site, span) in _pendingInterfaces)
+            Instantiating(site, span, () => DeclareInterfaceMembers(instance));
         foreach (var module in Modules)
             foreach (var set in module.ErrorSets)
                 DeclareVariants(set);
@@ -485,6 +488,17 @@ public sealed class Compilation
     private readonly Dictionary<TestDecl, List<Expr[]>> _testCases = new();
     private (FunctionSymbol Main, List<GlobalStatement> Statements)? _mainStatements;
     private readonly List<Action> _wheres = new();
+    private readonly List<(InterfaceSymbol Instance, SourceText Site, TextSpan Span)> _pendingInterfaces = new();
+    private bool _interfaceMembersDeclared;
+    private readonly Dictionary<(TypeParameterType Owner, string Name), TypeParameterType> _associatedTypes = new();
+
+    /// <summary><c>T.Item</c> in a template: one type parameter per (T, name), so every mention is the same type.</summary>
+    internal TypeParameterType AssociatedType(TypeParameterType owner, string name)
+    {
+        if (!_associatedTypes.TryGetValue((owner, name), out var t))
+            _associatedTypes[(owner, name)] = t = new TypeParameterType($"{owner.Name}.{name}");
+        return t;
+    }
 
     /// <summary>Declares the <c>&lt;A, B&gt;</c> of a generic declaration; the map is null when there are none.</summary>
     private Dictionary<string, TypeSymbol>? DeclareTypeParameters(FileContext file, Name[] names, List<TypeParameterType> into)
@@ -533,7 +547,7 @@ public sealed class Compilation
     /// <summary>A base or a <c>where</c> bound: an interface, or BYN2804.</summary>
     private InterfaceSymbol? ResolveInterface(TypeResolver types, FileContext file, NamedType syntax)
     {
-        var t = types.Resolve(syntax);
+        var t = types.ResolveBound(syntax);
         if (t is InterfaceSymbol i) return i;
         if (!t.IsError)
         {
@@ -1222,6 +1236,18 @@ public sealed class Compilation
                 };
                 _instances[(u, args)] = instance;
                 Instantiating(site, span, () => DeclareUnionVariants(instance));
+                return instance;
+            }
+            case InterfaceSymbol i:
+            {
+                var instance = new InterfaceSymbol(i.Name, i.Location, i.Module, i.Access, i.File)
+                {
+                    Decl = i.Decl, Template = i, TypeArguments = args, TypeMap = Substitution(null, i.TypeParameters, args),
+                };
+                _instances[(i, args)] = instance;
+                // A `where` bound can name an instance before the template's members are declared.
+                if (_interfaceMembersDeclared) Instantiating(site, span, () => DeclareInterfaceMembers(instance));
+                else _pendingInterfaces.Add((instance, site, span));
                 return instance;
             }
             default:
