@@ -898,6 +898,14 @@ public sealed class Parser
                 return ParseContext(start);
             case TokenKind.GotoKeyword:
                 return ParseGoto(start);
+            case TokenKind.AssertKeyword:
+                Advance();
+                {
+                    // `assert(x);` is `assert (x);`: the parentheses are part of the expression.
+                    var condition = ParseExpression();
+                    Expect(TokenKind.Semicolon);
+                    return new AssertStmt(SpanFrom(start), condition);
+                }
             case TokenKind.Identifier when Peek(1) == TokenKind.Colon:
                 {
                     var label = NameOf(Advance());

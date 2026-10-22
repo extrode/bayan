@@ -98,6 +98,8 @@ internal sealed class OwnershipAnalysis
                 return state;
             case BoundExprStmt e:
                 return Expr(e.Expr, state);
+            case BoundAssert a:
+                return Expr(a.Condition, state);
             case BoundAssign a:
                 if (a.Op is null && a.Target is BoundLocal { Local: var l })
                 {

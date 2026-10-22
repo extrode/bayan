@@ -211,6 +211,9 @@ public enum DeferKind { Always, Failing, Panicking }
 /// </summary>
 public sealed record DeferStmt(TextSpan Span, DeferKind Kind, Name? Binding, Stmt Body) : Stmt(Span);
 
+/// <summary><c>assert expr;</c>: panics with the value of each sub-expression when <see cref="Condition"/> is false.</summary>
+public sealed record AssertStmt(TextSpan Span, Expr Condition) : Stmt(Span);
+
 public sealed record NamedArg(TextSpan Span, Name Name, Expr Value) : Node(Span);
 
 /// <summary><c>context (allocator: a) { … }</c>.</summary>

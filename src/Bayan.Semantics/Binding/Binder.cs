@@ -501,6 +501,8 @@ internal sealed partial class Binder
                 return BindPanicDefer(d);
             case ContextStmt c:
                 return BindContext(c);
+            case AssertStmt a:
+                return BindAssert(a);
             case EmptyStmt:
                 return new BoundBlock(stmt, []);
             case ErrorStmt:
@@ -517,6 +519,16 @@ internal sealed partial class Binder
             : new BoundUnary(syntax, UnaryOp.Not, cond, PrimitiveType.Bool);
 
     private BoundExpr BindCondition(Expr e) => BindConverted(e, PrimitiveType.Bool);
+
+    private BoundStmt BindAssert(AssertStmt a)
+    {
+        var condition = BindExpr(a.Condition, PrimitiveType.Bool);
+        if (condition.Type.IsError || Conversions.Implicit(condition.Type, PrimitiveType.Bool) is not null)
+            return new BoundAssert(a, Convert(condition, PrimitiveType.Bool, a.Condition.Span));
+        Report(DiagnosticCodes.AssertNotBool, a.Condition.Span, [condition.Type.DisplayName], label: "this is not a `bool`",
+            help: "check the value against what you expect, e.g. `assert count == 3;`");
+        return new BoundErrorStmt(a);
+    }
 
     // ── Null narrowing (spec §7.2) ───────────────────────────────────────────────
 
