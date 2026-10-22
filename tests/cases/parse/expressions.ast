@@ -24,7 +24,7 @@ CompilationUnit
   Let tried = (try (call parse s))
   Let caught = (catch (call parse s) 0)
   Let early = (catch (call parse s) (return 1))
-  Let handled = (catch (call parse s) (e) (switch e (.invalid => 1) (.tooPrecise => 2)))
+  Let handled = (catch (call parse s) (switch (caught) (.invalid => 1) (.tooPrecise => 2)))
   Let some = (catch (call parse s) (variant (. MoneyError invalid)) 0)
   Let found = (?? (call (. map get) k) (return))
   Let wrapped = (-% (+% a b) (*% c d))

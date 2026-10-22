@@ -1,18 +1,18 @@
 void showList(string name, ReadOnlySpan<i64> xs) {
     var line = StrBuf();
-    for (let x in xs) line.append($" {x}");
+    for x in xs { line.append($" {x}"); }
     print($"{name}: {xs.count}{line.finish()}");
 }
 
 using var arena = Arena();
 
 var list = List<i64>();
-for (let i in 0..5) list.append(i);
+for i in 0..5 { list.append(i); }
 var listCopy = list.copy(to: arena);
-for (let i in 0..100) {
+for i in 0..100 {
     list.append(i);
     listCopy.append(-i);
-    if (i % 3 == 0) {
+    if i % 3 == 0 {
         list.removeLast();
         listCopy[0] = i;
     }
@@ -22,14 +22,14 @@ showList("list", list);
 showList("listCopy", listCopy);
 
 var map = Map<i64, i64>();
-for (let i in 0..6) map[i] = i * 10;
+for i in 0..6 { map[i] = i * 10; }
 map.remove(2);
 var mapCopy = map.copy(to: arena);
-for (let i in 0..100) {
+for i in 0..100 {
     map[i % 9] = i;
     mapCopy[i % 13 + 20] = -i;
-    if (i % 4 == 0) map.remove(i % 7);
-    if (i % 5 == 0) mapCopy.remove(i % 11 + 20);
+    if i % 4 == 0 { map.remove(i % 7); }
+    if i % 5 == 0 { mapCopy.remove(i % 11 + 20); }
 }
 print($"map: {map.count} {map}");
 print($"mapCopy: {mapCopy.count} {mapCopy}");
@@ -37,10 +37,10 @@ print($"mapCopy: {mapCopy.count} {mapCopy}");
 var buf = StrBuf();
 buf.append("seed");
 var bufCopy = buf.copy(to: arena);
-for (let i in 0..100) {
+for i in 0..100 {
     buf.append("a");
     bufCopy.append("b");
-    if (i % 25 == 24) {
+    if i % 25 == 24 {
         buf.clear();
         bufCopy.clear();
         bufCopy.append("c");

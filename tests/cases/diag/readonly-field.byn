@@ -2,5 +2,5 @@ struct Id {
     readonly i64 value;
 }
 
-var id = Id { value = 1 };
+var id = Id { value: 1 };
 id.value = 2;

@@ -8,6 +8,6 @@ struct Counter {
     i64 peek() => n;
 }
 
-let c = Counter { n = 0 };
+let c = Counter { n: 0 };
 print($"{c.peek()}");
 c.bump();

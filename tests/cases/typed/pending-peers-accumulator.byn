@@ -1,7 +1,7 @@
 let xs = List<i32>();
 var i = 0;
 var total = 0;
-while (i < xs.count) {
+while i < xs.count {
     total += i;
     i += 1;
 }

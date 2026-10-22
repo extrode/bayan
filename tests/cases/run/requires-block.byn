@@ -3,6 +3,6 @@ i32 firstDigit(i32 value) requires value in 0..10 {
 }
 
 let digits = [3, 12];
-for (let d in digits) {
+for d in digits {
     print($"{firstDigit(d)}");
 }

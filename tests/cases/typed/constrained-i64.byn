@@ -1,6 +1,6 @@
 i64 count(ReadOnlySpan<i64> xs) {
     var i = 0;
-    while (i < xs.count) {
+    while i < xs.count {
         i += 1;
     }
     return i;

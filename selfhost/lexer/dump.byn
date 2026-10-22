@@ -3,22 +3,22 @@
 
 void dump(ref StrBuf sb, ref LexResult result) {
     // By index: `getLinePosition` modifies `result.source`, so the loop may not borrow `result`.
-    for (let i in 0..result.tokens.count) {
+    for i in 0..result.tokens.count {
         let token = result.tokens[i];
         let position = result.source.getLinePosition(token.start);
-        if (token.hasDoc) {
+        if token.hasDoc {
             sb.append("    doc ");
             escape(ref sb, result.source.bytes.asSpan()[token.docStart..token.docStart + token.docLength]);
             sb.append("\n");
         }
         sb.append($"{position.line}:{position.column} {kindName(token.kind)}");
-        if (token.length > 0) {
+        if token.length > 0 {
             sb.append(" ");
             escape(ref sb, result.source.bytes.asSpan()[token.start..token.end]);
         }
         sb.append("\n");
     }
-    if (result.diagnostics.count > 0) {
+    if result.diagnostics.count > 0 {
         sb.append("\n");
         using var arena = Arena();
         let diagnostics = result.diagnostics.copy(to: arena);
@@ -30,16 +30,16 @@ void dump(ref StrBuf sb, ref LexResult result) {
 void escape(ref StrBuf sb, ReadOnlySpan<u8> text) {
     sb.append("`");
     i64 pos = 0;
-    while (pos < text.count) {
+    while pos < text.count {
         let d = decodeAt(text, pos);
         let v = d.value;
-        if (v == 0x0A) {
+        if v == 0x0A {
             sb.append("\\n");
-        } else if (v == 0x0D) {
+        } else if v == 0x0D {
             sb.append("\\r");
-        } else if (v == 0x09) {
+        } else if v == 0x09 {
             sb.append("\\t");
-        } else if (v < 0x20 || v == 0x7F || (v >= 0x202A && v <= 0x202E) || (v >= 0x2066 && v <= 0x2069) || v == 0xFEFF) {
+        } else if v < 0x20 || v == 0x7F || (v >= 0x202A && v <= 0x202E) || (v >= 0x2066 && v <= 0x2069) || v == 0xFEFF {
             sb.append("\\u{");
             appendHex(ref sb, v, 1);
             sb.append("}");
@@ -57,13 +57,13 @@ void escape(ref StrBuf sb, ReadOnlySpan<u8> text) {
 void dumpJson(ref StrBuf sb, ref LexResult result) {
     let bytes = result.source.bytes.asSpan();
     sb.append("{\"tokens\":[");
-    for (let i in 0..result.tokens.count) {
+    for i in 0..result.tokens.count {
         let token = result.tokens[i];
-        if (i > 0) sb.append(",");
+        if i > 0 { sb.append(","); }
         sb.append($"{{\"kind\":\"{kindName(token.kind)}\",\"start\":{token.start},\"end\":{token.end},\"text\":");
         jsonString(ref sb, bytes[token.start..token.end]);
         sb.append(",\"doc\":");
-        if (token.hasDoc) {
+        if token.hasDoc {
             sb.append($"{{\"start\":{token.docStart},\"end\":{token.docStart + token.docLength}}}");
         } else {
             sb.append("null");
@@ -72,9 +72,9 @@ void dumpJson(ref StrBuf sb, ref LexResult result) {
     }
     sb.append("],\"diagnostics\":[");
     let order = sourceOrder(result.diagnostics.asSpan());
-    for (let k in 0..order.count) {
+    for k in 0..order.count {
         let d = result.diagnostics[order[k]];
-        if (k > 0) sb.append(",");
+        if k > 0 { sb.append(","); }
         sb.append($"{{\"code\":\"{d.code}\",\"severity\":\"error\",\"start\":{d.span.start},\"end\":{d.span.end},\"message\":");
         jsonString(ref sb, d.message.bytes);
         sb.append(",\"label\":");
@@ -82,7 +82,7 @@ void dumpJson(ref StrBuf sb, ref LexResult result) {
         sb.append(",\"help\":");
         jsonOptional(ref sb, d.help);
         sb.append(",\"fixes\":[");
-        if (d.hasFix) {
+        if d.hasFix {
             sb.append($"{{\"start\":{d.fixSpan.start},\"end\":{d.fixSpan.end},\"replacement\":");
             jsonString(ref sb, d.fixReplacement.bytes);
             sb.append("}");
@@ -94,7 +94,7 @@ void dumpJson(ref StrBuf sb, ref LexResult result) {
 
 /// `null` for an empty `text` (none), else its JSON string.
 void jsonOptional(ref StrBuf sb, string text) {
-    if (text.isEmpty) {
+    if text.isEmpty {
         sb.append("null");
     } else {
         jsonString(ref sb, text.bytes);
@@ -105,20 +105,20 @@ void jsonOptional(ref StrBuf sb, string text) {
 void jsonString(ref StrBuf sb, ReadOnlySpan<u8> text) {
     sb.append("\"");
     i64 pos = 0;
-    while (pos < text.count) {
+    while pos < text.count {
         let d = decodeAt(text, pos);
         let v = d.value;
-        if (v == 0x22) {
+        if v == 0x22 {
             sb.append("\\\"");
-        } else if (v == 0x5C) {
+        } else if v == 0x5C {
             sb.append("\\\\");
-        } else if (v == 0x0A) {
+        } else if v == 0x0A {
             sb.append("\\n");
-        } else if (v == 0x0D) {
+        } else if v == 0x0D {
             sb.append("\\r");
-        } else if (v == 0x09) {
+        } else if v == 0x09 {
             sb.append("\\t");
-        } else if (v < 0x20 || v == 0x7F) {
+        } else if v < 0x20 || v == 0x7F {
             sb.append("\\u");
             appendHex(ref sb, v, 4);
         } else {

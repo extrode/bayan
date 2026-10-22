@@ -15,7 +15,7 @@ void main() {
     var a = List<i64>();
     a.append(1);
     let s = Slot.full(move a);
-    switch (move s) {
+    switch move s {
         case .full(let x) when x.count > 5:
             print($"big {x.count}");
         case .full(let y):
@@ -37,8 +37,8 @@ void main() {
     var c = List<i64>();
     c.append(1);
     c.append(2);
-    let p = Pair { items = move c, n = 3 };
-    switch (move p) {
+    let p = Pair { items: move c, n: 3 };
+    switch move p {
         case { items: let x, n: 5 }:
             print($"five {x.count}");
         case { items: let y, n: _ }:

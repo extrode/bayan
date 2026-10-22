@@ -26,7 +26,7 @@ bool fill(out List<i64> xs) {
 bool keep(move Bag b) => true;
 
 void inspect(move Slot s, move Slot t) {
-    switch (move s) {
+    switch move s {
         case .full(var x) when x.grow() > 5:
             print("call");
         case .full(var x) when x.items.removeLast() > 0:

@@ -1071,7 +1071,7 @@ public sealed class Parser
         var errors = ErrorCount;
         var body = ParseStatement();
         if (ErrorCount != errors && body is ErrorStmt) return body;
-        var text = _source.GetText(body.Span);
+        var text = _source.GetText(TextSpan.FromBounds(body.Span.Start, _prevEnd));
         var gap = _source.GetText(TextSpan.FromBounds(gapStart, body.Span.Start));
         string replacement;
         if (gap.Contains('\n'))
@@ -1085,7 +1085,7 @@ public sealed class Parser
             replacement = " { " + text + " }";
         }
         Report(DiagnosticCodes.BodyNeedsBraces, body.Span, [Text(keyword)], label: "a single statement",
-            help: "wrap the statement in `{ }`", fix: new Fix(TextSpan.FromBounds(gapStart, body.Span.End), replacement));
+            help: "wrap the statement in `{ }`", fix: new Fix(TextSpan.FromBounds(gapStart, _prevEnd), replacement));
         return body;
     }
 

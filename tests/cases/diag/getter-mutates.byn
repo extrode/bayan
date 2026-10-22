@@ -10,5 +10,5 @@ struct Counter {
     }
 }
 
-let c = Counter { n = 0, seen = List<i64>() };
+let c = Counter { n: 0, seen: List<i64>() };
 print($"{c.latest}");

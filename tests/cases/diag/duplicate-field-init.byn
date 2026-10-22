@@ -2,4 +2,4 @@ struct Point {
     i64 x;
 }
 
-let p = Point { x = 1, x = 2 };
+let p = Point { x: 1, x: 2 };

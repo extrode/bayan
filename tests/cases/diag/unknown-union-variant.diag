@@ -5,5 +5,5 @@ error BYN2700: `square` is not a variant of union `Shape`
 
 error BYN2700: `Triangle` is not a variant of union `Shape`
 
-  6 │     if (t is .Triangle(let x)) {
-    │               ^^^^^^^^
+  6 │     if t is .Triangle(let x) {
+    │              ^^^^^^^^

@@ -22,7 +22,7 @@ string climate(Planet p) => p switch {
 };
 
 print($"count {Planet.count}");
-for (let p in Planet.values) {
+for p in Planet.values {
     print($"{p.ordinal} {p.name} {p} {p.label} {p.mass} {p.radius} {climate(p)}");
     print($"  gravity {surfaceGravity(p)}");
 }
@@ -41,14 +41,14 @@ print($"{Planet.parse("earth")} {Planet.parse("Earth")} {Planet.parse("pluto")}"
 let parsed = Planet.parse("mercury") ?? .earth;
 print($"parsed {parsed.name} {parsed.ordinal} {parsed.radius}");
 
-for (let t in Token.values) {
+for t in Token.values {
     print($"{t} '{t.text}' {t.precedence} {t.first} {t.keyword} {t.kind}");
 }
 var ops = List<Token>();
 ops.append(.plus);
 ops.append(Token.star);
 var total = 0;
-for (let t in ops) {
+for t in ops {
     total += t.precedence;
 }
 print($"total {total}");

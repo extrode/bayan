@@ -2,7 +2,7 @@ let count = "12345";
 let count = count.bytes.count;
 print($"{count + 1}");
 let items = [3, 1, 2];
-if (items.count > 0) {
+if items.count > 0 {
     let first = items[0];
     let first = $"first is {first}";
     print(first);

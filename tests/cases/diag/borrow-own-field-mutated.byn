@@ -15,23 +15,23 @@ struct Lexer {
 
     Span<Token> scratch() {
         var local = List<Token>();
-        local.append(Token { kind = 0 });
+        local.append(Token { kind: 0 });
         return local.asSpan();
     }
 }
 
 void main() {
-    var lexer = Lexer { toks = List<Token>() };
+    var lexer = Lexer { toks: List<Token>() };
     let all = lexer.tokens();
-    lexer.toks.append(Token { kind = 1 });
-    lexer.push(Token { kind = 2 });
+    lexer.toks.append(Token { kind: 1 });
+    lexer.push(Token { kind: 2 });
     print($"{all.count}");
-    for (let t in lexer.toks) {
+    for t in lexer.toks {
         lexer.push(t);
     }
     Span<Token> kept = lexer.tokens();
     {
-        let inner = Lexer { toks = List<Token>() };
+        let inner = Lexer { toks: List<Token>() };
         kept = inner.tokens();
     }
     print($"{kept.count}");

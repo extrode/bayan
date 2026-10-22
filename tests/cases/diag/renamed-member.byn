@@ -11,6 +11,6 @@ void main() {
     print($"{xs.length} {m.length} {a.length} {a.asSpan().length} {sb.length}");
     print($"{name.length}");
     print(sb.asString());
-    let line = Line { text = "x" };
-    if (line is { text.length: 1 }) print("one");
+    let line = Line { text: "x" };
+    if (line is { text.length: 1 }) { print("one"); }
 }

@@ -16,7 +16,7 @@ struct Rows {
 
 i64 total(i64 limit, i64 failAt) fails ReadError {
     var sum = 0;
-    for try row in (Rows { at = 0, limit = limit, failAt = failAt }) {
+    for try row in (Rows { at: 0, limit: limit, failAt: failAt }) {
         print($"row {row}");
         continue if row == 2;
         sum += row;
@@ -25,5 +25,5 @@ i64 total(i64 limit, i64 failAt) fails ReadError {
 }
 
 print($"total {try total(limit: 4, failAt: 0)}");
-let failed = total(limit: 4, failAt: 3) catch (e) -1;
+let failed = total(limit: 4, failAt: 3) catch -1;
 print($"failed {failed}");

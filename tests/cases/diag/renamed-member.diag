@@ -82,10 +82,10 @@ error BYN2230: `asString()` is now `finish()`
 
 error BYN2230: `length` is now `bytes.count`
 
-  15 │     if (line is { text.length: 1 }) print("one");
+  15 │     if (line is { text.length: 1 }) { print("one"); }
      │                        ^^^^^^ the old name
      │
   help: use `bytes.count` to count the bytes; a string has no single length (bytes, characters and
         graphemes differ)
-     │ 15 │     if (line is { text.bytes.count: 1 }) print("one");
+     │ 15 │     if (line is { text.bytes.count: 1 }) { print("one"); }
      │    │                        +++++++++++

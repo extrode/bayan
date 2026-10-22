@@ -1,6 +1,6 @@
 i64 grow(ref List<i64> xs) {
     xs[0] = 1000;
-    for (let i in 0..100) {
+    for i in 0..100 {
         xs.append(i);
     }
     return 7;

@@ -19,14 +19,14 @@ struct Lexer {
 }
 
 void main() {
-    var lexer = Lexer { toks = List<Token>(), marks = [0, 0, 0, 0] };
-    lexer.toks.append(Token { kind = 1 });
-    lexer.toks.append(Token { kind = 2 });
+    var lexer = Lexer { toks: List<Token>(), marks: [0, 0, 0, 0] };
+    lexer.toks.append(Token { kind: 1 });
+    lexer.toks.append(Token { kind: 2 });
     let all = lexer.tokens();
     let n = lexer.count();
     print($"{all.count} {all[0].kind} {n}");
     let tail = lexer.rest(from: 1);
     print($"{tail[0].kind}");
-    lexer.toks.append(Token { kind = 3 });
+    lexer.toks.append(Token { kind: 3 });
     print($"{lexer.firstMarks().count}");
 }

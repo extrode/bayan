@@ -94,6 +94,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor WrongTypeArgumentCount = Error("BYN2023", "`{0}` takes {1} type argument(s), not {2}");
     public static readonly DiagnosticDescriptor NestedOptional = Error("BYN2024", "`{0}?` is already optional");
     public static readonly DiagnosticDescriptor VoidValue = Error("BYN2025", "`void` is not a value type");
+    // BYN2026 is retired: a body is always a block (BYN1018) in design round 2. Never reuse it.
     public static readonly DiagnosticDescriptor DeclarationAsBody = Error("BYN2026", "a declaration cannot be the whole body of a statement");
     public static readonly DiagnosticDescriptor NullEquality = Error("BYN2027", "compare with `is null` / `is not null`, not `==`");
     public static readonly DiagnosticDescriptor SameTypeShadowing = Warning("BYN2028", "`{0}` shadows an earlier `{0}` of the same type `{1}`");

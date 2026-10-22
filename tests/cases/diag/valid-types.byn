@@ -21,9 +21,9 @@ let pair = (name: "ann", cents: 5);
 i64? maybe = null;
 let fallback = maybe ?? 0;
 i64[3] fixed = [1, 2, 3];
-var p = Point { x = 1 };
+var p = Point { x: 1 };
 p.shift(by: 2);
-let q = p with { y = 4 };
+let q = p with { y: 4 };
 if (maybe is { } value) {
     print($"{value}");
 }

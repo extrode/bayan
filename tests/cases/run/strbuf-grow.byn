@@ -1,7 +1,7 @@
 i64 fill(ref StrBuf sb, i64 n) {
     i64 sum = 0;
-    for (let i in 0..n) {
-        if (i % 4 == 0) {
+    for i in 0..n {
+        if i % 4 == 0 {
             sb.append("abc");
             sum += 3;
         } else {

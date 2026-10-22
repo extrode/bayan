@@ -6,11 +6,11 @@ void consume(move List<i64> xs) {
 
 void main() {
     let a = List<i64>();
-    for (let i in 0..3) {
+    for i in 0..3 {
         consume(move a);
     }
     var b = List<i64>();
-    for (let i in 0..3) {
+    for i in 0..3 {
         consume(move b);
         b = List<i64>();
     }

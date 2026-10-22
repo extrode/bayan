@@ -1,7 +1,7 @@
 error BYN3002: arena `arena` does not live as long as `head`, which borrows it
 
-  11 │             head = Owned(Node { item = 1, next = move head });
-     │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ arena `arena` is freed at the
-     │                                                               end of its block
+  11 │             head = Owned(Node { item: 1, next: move head });
+     │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ arena `arena` is freed at the end
+     │                                                             of its block
      │
   help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough

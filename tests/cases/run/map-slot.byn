@@ -10,7 +10,7 @@ struct Tally {
 // `slot` inserts the default for a missing key, so counting needs no lookup first.
 var words = Map<string, i64>();
 string[7] text = ["the", "cat", "saw", "the", "dog", "the", "cat"];
-for (let w in text) words.slot(w) += 1;
+for w in text { words.slot(w) += 1; }
 print($"{words} length={words.count}");
 
 // `getOr` reads without inserting.
@@ -26,7 +26,7 @@ print($"{words}");
 // A removed key goes to the end when inserted again.
 print($"remove cat: {words.remove("cat")}, again: {words.remove("cat")}");
 words.slot("cat") += 1;
-for (let e in words) print($"  {e.key} = {e.value}");
+for e in words { print($"  {e.key} = {e.value}"); }
 
 // `ref map.slot(k)` and struct defaults from field initializers.
 void bump(ref i64 n) {
@@ -36,7 +36,7 @@ bump(ref words.slot("dog"));
 bump(ref words.slot("eel"));
 print($"dog {words["dog"]}, eel {words["eel"]}, length={words.count}");
 var tallies = Map<char, Tally>();
-for (let c in "abca") tallies.slot(c).hits += 1;
+for c in "abca" { tallies.slot(c).hits += 1; }
 tallies.slot('z').note = "set";
 print($"{tallies}");
 

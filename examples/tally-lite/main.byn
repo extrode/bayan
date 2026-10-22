@@ -17,9 +17,9 @@ List<ledger.Expense> sampleTrip() fails money.MoneyError {
 
 ledger.Expense expense(string payer, string amount, move List<string> among) fails money.MoneyError {
     return {
-        payer = payer,
-        amount = try money.parseAmount(amount),
-        participants = move among,
+        payer: payer,
+        amount: try money.parseAmount(amount),
+        participants: move among,
     };
 }
 
@@ -28,8 +28,8 @@ void main() fails money.MoneyError {
     context (allocator: arena) {
         let trip = try sampleTrip();
         let owed = ledger.balances(trip);
-        for (let t in ledger.settle(owed)) {
-            money.Money paid = { cents = t.cents, currency = "MYR" };
+        for t in ledger.settle(owed) {
+            money.Money paid = { cents: t.cents, currency: "MYR" };
             print($"{t.from} pays {t.to} {paid}");
         }
     }

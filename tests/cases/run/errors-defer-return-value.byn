@@ -3,7 +3,7 @@ struct P {
 }
 
 i64 field() {
-    P p = { v = 1 };
+    P p = { v: 1 };
     defer p.v = 5;
     return p.v;
 }

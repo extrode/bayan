@@ -1,0 +1,26 @@
+error BYN2027: compare with `is null` / `is not null`, not `==`
+
+  3 │     if name == null {
+    │        ^^^^^^^^^^^^
+    │
+  help: write `name is null`
+    │ 3 │     if name is null {
+    │   │             ++
+
+error BYN2027: compare with `is null` / `is not null`, not `==`
+
+  6 │     if name != null {
+    │        ^^^^^^^^^^^^
+    │
+  help: write `name is not null`
+    │ 6 │     if name is not null {
+    │   │             ++++++
+
+error BYN2027: compare with `is null` / `is not null`, not `==`
+
+  9 │     if null == name {
+    │        ^^^^^^^^^^^^
+    │
+  help: write `name is null`
+    │ 9 │     if name is null {
+    │   │         +++++++++++

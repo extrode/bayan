@@ -10,7 +10,7 @@ void consume(move List<i64> xs) {
 // An `errdefer` runs only when the function fails; the success `return` moves `xs` after the last `try`.
 List<i64> build() fails E {
     let xs = List<i64>();
-    errdefer print($"{xs.count}");
+    defer failing print($"{xs.count}");
     try step();
     return move xs;
 }

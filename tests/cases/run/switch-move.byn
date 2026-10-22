@@ -10,12 +10,12 @@ struct Holder {
 
 i64 keep(move List<i64> xs) {
     i64 total = 0;
-    for (let x in xs) total += x;
+    for x in xs { total += x; }
     return total;
 }
 
 i64 drain(move Slot slot) {
-    switch (move slot) {
+    switch move slot {
         case .full(let items):
             return keep(move items);
         default:
@@ -28,10 +28,10 @@ void main() {
     a.append(1);
     a.append(2);
     let s = Slot.full(move a);
-    switch (move s) {
+    switch move s {
         case .full(var items):
             items.append(3);
-            let h = Holder { items = move items };
+            let h = Holder { items: move items };
             print($"stored {h.items.count}");
         case .empty:
             print("empty");
@@ -52,12 +52,12 @@ void main() {
     print($"expression {total}");
 
     let u = Slot.full(List<i64>());
-    switch (u) {
+    switch u {
         case .full(let items):
             print($"borrowed {items.count}");
         default:
     }
-    switch (move u) {
+    switch move u {
         case .full(let items):
             print($"owned {keep(move items)}");
         default:

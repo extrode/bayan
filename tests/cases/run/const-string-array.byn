@@ -1,6 +1,6 @@
 const string[5] names = ["alpha", "beta", "gamma", "tab\there \"q\"", "héllo wörld ✓"];
 
 print($"length {names.count} second {names[1]}");
-for (let n in names) {
+for n in names {
     print(n);
 }

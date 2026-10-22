@@ -1228,23 +1228,28 @@ Input forms are alternate spellings that the editor and `bayan fmt` accept and r
 | `User!EmailError f()`, `User!(A, B) f()` | `User f() fails EmailError`, `fails A, B` | BYN1031 |
 | `for (let x in xs)`, `foreach (var x in xs)` | `for x in xs` | BYN1019 |
 | `if (x) {`, `while (x) {`, `switch (x) {` | no parentheses (whole-condition parentheses kept when a brace is present) | BYN1017 |
+| `if x return;`, `while x step();` | `if x { return; }` (a body is always a block) | BYN1018 |
 | `x == null`, `x != null` | `x is null`, `x is not null` | BYN2027 |
 | `if !x { … }` (no `else`, simple condition) | `unless x { … }` | BYN1032 |
+| `unless a && b { … }` | `if !(a && b) { … }` | BYN1022 |
+| `unless x is null { … }` | `if x is not null { … }` | BYN1023 |
+| `unless unlikely x { … }` | `if unlikely !x { … }`, or drop the word | BYN1033 |
 | `{ cents = 250 }` | `{ cents: 250 }` | BYN1021 |
 | `"Hello " + name` (strings) | `$"Hello {name}"` | BYN2209 |
 | `errdefer stmt;` | `defer failing stmt;` | BYN1020 |
 | `catch (e) switch { … }` | `catch switch { E e => … }` (fix only before `switch`; otherwise help text) | BYN1025 |
 | `error set S = A \| B;` | `error set S = A, B;` | BYN1029 |
+| `delegate bool OrderFilter(Order o);` | `type OrderFilter = Order => bool;` (help text) | BYN1028 |
 | `name = "…"` in `package.byn` | `name: "…"` | BYN3104 |
 | `.length` | `.count` (strings: `.bytes.count`) | BYN2230 |
 | `toString()`, `ToString()` | `format()` | BYN2031 |
 
-The last six rows are beyond the HANDOFF round 2 table; the plan adds them because each retired form gets the same treatment.
+Rows not in the HANDOFF round 2 table (`errdefer` onward, and the braceless body and `unless` rows, which come from its rules) are added by the plan because each retired form gets the same treatment.
 
 - `bayan fmt` is idempotent, and rewriting an input form then formatting again produces identical bytes (acceptance tests arrive with `bayan fmt`, not in v0.1).
 - Prose mode (§22) is unchanged.
 
-> Round 2 §15: input forms replace the terse/explicit formatter modes, so stored source has one spelling and C# habits still work at the keyboard. Codes: BYN1017, BYN1019, BYN1020, BYN1021, BYN1025, BYN1029, BYN1030, BYN1031, BYN1032, BYN2027, BYN2031, BYN2209, BYN2230, BYN3104.
+> Round 2 §15: input forms replace the terse/explicit formatter modes, so stored source has one spelling and C# habits still work at the keyboard. Codes: BYN1017, BYN1018, BYN1019, BYN1020, BYN1021, BYN1022, BYN1023, BYN1025, BYN1028, BYN1029, BYN1030, BYN1031, BYN1032, BYN1033, BYN2027, BYN2031, BYN2209, BYN2230, BYN3104.
 
 ---
 

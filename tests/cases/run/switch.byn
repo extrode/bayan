@@ -6,12 +6,12 @@ string describe(i64 n) => n switch {
     _ => "large",
 };
 
-for (let n in -1..12) {
+for n in -1..12 {
     print($"{n} {describe(n)}");
 }
 
 void category(string s) {
-    switch (s) {
+    switch s {
         case "a" or "b":
             print("early");
         case let other when other.bytes.count > 3:

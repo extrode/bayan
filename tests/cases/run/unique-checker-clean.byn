@@ -13,20 +13,20 @@ union Payload {
 
 i64 sum(move List<i64> xs) {
     i64 total = 0;
-    for (let x in xs) total += x;
+    for x in xs { total += x; }
     return total;
 }
 
 List<i64> grow(move List<i64> xs, i64 count) {
     var ys = move xs;
-    for (let i in 0..count) ys.append(i);
+    for i in 0..count { ys.append(i); }
     return move ys;
 }
 
 Bag pack(string name, i64 count) {
     var items = List<i64>();
-    for (let i in 0..count) items.append(i);
-    var bag = Bag { name = name, items = move items };
+    for i in 0..count { items.append(i); }
+    var bag = Bag { name: name, items: move items };
     bag.items.append(100);
     return move bag;
 }
@@ -39,8 +39,8 @@ i64 count(Payload p) => p switch {
 void main() {
     var batches = List<List<i64>>();
     var batch = List<i64>();
-    for (let round in 0..4) {
-        for (let i in 0..20) batch.append(round * 100 + i);
+    for round in 0..4 {
+        for i in 0..20 { batch.append(round * 100 + i); }
         batches.append(move batch);
         batch = List<i64>();
     }
@@ -48,7 +48,7 @@ void main() {
 
     i64 total = 0;
     var xs = List<i64>();
-    for (let round in 0..3) {
+    for round in 0..3 {
         xs.append(round);
         xs = grow(move xs, 10);
         total += xs.count;
@@ -58,20 +58,20 @@ void main() {
     let bag = pack("bag", 30);
     print($"{bag.name} {bag.items.count} {bag.items[30]}");
 
-    var owner = Bag { name = "owner", items = List<i64>() };
-    for (let i in 0..50) owner.items.append(i);
+    var owner = Bag { name: "owner", items: List<i64>() };
+    for i in 0..50 { owner.items.append(i); }
     let taken = owner.items.take();
     owner.items.append(7);
     print($"taken {taken.count} left {owner.items.count}");
 
     var counts = Map<string, i64>();
-    for (let i in 0..200) counts[$"k{i % 70}"] = i;
+    for i in 0..200 { counts[$"k{i % 70}"] = i; }
     counts["k0"] += 1;
     let moved = move counts;
     print($"map {moved.count} {moved["k0"]}");
 
     var sb = StrBuf();
-    for (let i in 0..100) sb.append("abc");
+    for i in 0..100 { sb.append("abc"); }
     sb.append($"{sb.count}");
     let text = move sb;
     print($"strbuf {text.count}");
@@ -84,11 +84,11 @@ void main() {
     print($"payload {count(p)}");
 
     i64 kept = 0;
-    for (let round in 0..5) {
+    for round in 0..5 {
         using let arena = Arena();
         context (allocator: arena) {
             var local = List<i64>();
-            for (let i in 0..300) local.append(i);
+            for i in 0..300 { local.append(i); }
             var other = move local;
             other.append(round);
             kept += other.count;

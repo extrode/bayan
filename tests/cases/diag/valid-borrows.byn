@@ -6,7 +6,7 @@ string pick(string a, string b) => a.bytes.count > b.bytes.count ? a : b;
 
 i64 total(ReadOnlySpan<i64> values) {
     i64 sum = 0;
-    for (let v in values) {
+    for v in values {
         sum += v;
     }
     return sum;
@@ -69,7 +69,7 @@ struct Stack {
 
     i64 sum() {
         i64 s = 0;
-        for (let v in view()) {
+        for v in view() {
             s += v;
         }
         return s;

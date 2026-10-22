@@ -5,7 +5,7 @@ void consume(move List<i64> xs) {
 
 void main(ReadOnlySpan<string> args) {
     let a = List<i64>();
-    if (args.count > 0) {
+    if args.count > 0 {
         consume(move a);
     } else {
         print("kept");

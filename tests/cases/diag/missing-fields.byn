@@ -3,4 +3,4 @@ struct Point {
     i64 y;
 }
 
-let p = Point { x = 1 };
+let p = Point { x: 1 };

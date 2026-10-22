@@ -14,5 +14,5 @@ void keys() {
 void compare() {
     let a = Map<string, i64>();
     let b = Map<string, i64>();
-    if (a == b) print("same");
+    if a == b { print("same"); }
 }

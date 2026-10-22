@@ -1,6 +1,6 @@
 error BYN2111: `Ratio` has a constructor; call it instead of using a struct literal
 
-  11 │ let r = Ratio { num = 1, den = 0 };
-     │         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  11 │ let r = Ratio { num: 1, den: 0 };
+     │         ^^^^^^^^^^^^^^^^^^^^^^^^
      │
   help: call the constructor: `Ratio(num: …, den: …)`

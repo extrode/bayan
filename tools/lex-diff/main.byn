@@ -24,9 +24,9 @@ i32 failure(string message) {
 List<string> words(string cmd) {
     List<string> result = List<string>();
     i64 start = 0;
-    for (let i in 0..=cmd.bytes.count) {
-        if (i == cmd.bytes.count || cmd.bytes[i] == 0x20) {
-            if (i > start) result.append(cmd[start..i]);
+    for i in 0..=cmd.bytes.count {
+        if i == cmd.bytes.count || cmd.bytes[i] == 0x20 {
+            if i > start { result.append(cmd[start..i]); }
             start = i + 1;
         }
     }
@@ -37,21 +37,21 @@ List<string> words(string cmd) {
 List<string> lines(string text) {
     List<string> result = List<string>();
     i64 start = 0;
-    for (let i in 0..text.bytes.count) {
-        if (text.bytes[i] == 0x0A) {
+    for i in 0..text.bytes.count {
+        if text.bytes[i] == 0x0A {
             let end = i > start && text.bytes[i - 1] == 0x0D ? i - 1 : i;
             result.append(text[start..end]);
             start = i + 1;
         }
     }
-    if (start < text.bytes.count) result.append(text[start..]);
+    if start < text.bytes.count { result.append(text[start..]); }
     return result;
 }
 
 /// Runs `cmd` on `path` and returns its standard output.
 string run(List<string> cmd, string path) fails IoError {
     List<string> args = List<string>();
-    for (let i in 1..cmd.count) args.append(cmd[i]);
+    for i in 1..cmd.count { args.append(cmd[i]); }
     args.append(path);
     let r = try Io.run(cmd[0], args.asSpan());
     return r.stdout;
@@ -62,8 +62,8 @@ bool differs(string file, string left, string right) {
     let a = lines(left);
     let b = lines(right);
     var line = 0;
-    while (line < a.count && line < b.count && a[line] == b[line]) line += 1;
-    if (line == a.count && line == b.count) return false;
+    while line < a.count && line < b.count && a[line] == b[line] { line += 1; }
+    if line == a.count && line == b.count { return false; }
     let l = line < a.count ? a[line] : "<end of file>";
     let r = line < b.count ? b[line] : "<end of file>";
     print($"{file}:{line + 1}: {l} | {r}");
@@ -76,32 +76,32 @@ i32 main(ReadOnlySpan<string> args) {
     var golden = "";
     var dir = "";
     var i = 0;
-    while (i < args.count) {
+    while i < args.count {
         let arg = args[i];
-        if (arg == "--left" || arg == "--right" || arg == "--golden") {
-            if (i + 1 == args.count) return usage($"`{arg}` needs a value");
-            if (arg == "--left") left = args[i + 1];
-            if (arg == "--right") right = args[i + 1];
-            if (arg == "--golden") golden = args[i + 1];
+        if arg == "--left" || arg == "--right" || arg == "--golden" {
+            if i + 1 == args.count { return usage($"`{arg}` needs a value"); }
+            if arg == "--left" { left = args[i + 1]; }
+            if arg == "--right" { right = args[i + 1]; }
+            if arg == "--golden" { golden = args[i + 1]; }
             i += 2;
         } else {
-            if (arg.startsWith("--")) return usage($"unknown option `{arg}`");
-            if (!dir.isEmpty) return usage("give one directory");
+            if arg.startsWith("--") { return usage($"unknown option `{arg}`"); }
+            unless dir.isEmpty { return usage("give one directory"); }
             dir = arg;
             i += 1;
         }
     }
-    if (left.isEmpty) return usage("`--left` is required");
-    if (right.isEmpty == golden.isEmpty) return usage("give exactly one of `--right` and `--golden`");
-    if (dir.isEmpty) return usage("give a directory");
+    if left.isEmpty { return usage("`--left` is required"); }
+    if right.isEmpty == golden.isEmpty { return usage("give exactly one of `--right` and `--golden`"); }
+    if dir.isEmpty { return usage("give a directory"); }
     let leftCmd = words(left);
     let rightCmd = words(right);
-    if (leftCmd.isEmpty) return usage("`--left` names no program");
+    if leftCmd.isEmpty { return usage("`--left` names no program"); }
     let names = Io.listDir(dir) catch return failure($"cannot list `{dir}`");
     var files = 0;
     var differ = 0;
-    for (let name in names) {
-        if (!name.endsWith(".byn")) continue;
+    for name in names {
+        unless name.endsWith(".byn") { continue; }
         let path = $"{dir}/{name}";
         files += 1;
         let a = run(leftCmd, path) catch return failure($"cannot run `{left}`");
@@ -109,7 +109,7 @@ i32 main(ReadOnlySpan<string> args) {
         let b = golden.isEmpty
             ? run(rightCmd, path) catch return failure($"cannot run `{right}`")
             : Io.readText($"{path[0..path.bytes.count - 4]}{golden}") catch "";
-        if (differs(file: path, left: a, right: b)) differ += 1;
+        if differs(file: path, left: a, right: b) { differ += 1; }
     }
     Io.stderr.write($"{files} files, {differ} differ\n");
     return differ == 0 ? 0 : 1;

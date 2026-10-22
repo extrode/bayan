@@ -11,7 +11,7 @@ i64 parse(string s) fails ParseError {
 }
 
 i64 sign(i64 n) {
-    if (n < 0) {
+    if n < 0 {
         return -1;
     }
     return n == 0 ? 0 : 1;
@@ -31,22 +31,22 @@ i64 safe(string s) => parse(s) catch 0;
 
 i64 relay(string s) fails ParseError => try parse(s);
 
-i64 handled(string s) => parse(s) catch (e) switch {
+i64 handled(string s) => parse(s) catch switch {
     .empty => 0,
     .notDigit => -1,
 };
 
-outer: for (let i in 0..3) {
-    for (let j in 0..3) {
+outer: for i in 0..3 {
+    for j in 0..3 {
         continue outer if j == i;
         break outer if i == 2;
     }
 }
 var n = 0;
-while (n < 3) {
+while n < 3 {
     n += 1;
 }
-switch (n) {
+switch n {
     case 1:
         print("one");
     case 3:
