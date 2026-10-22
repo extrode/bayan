@@ -390,7 +390,7 @@ Only parameterized `sql"…"` literals with `$n` placeholders are in scope now. 
 
 ## 19. `defer` with postfix modifiers
 
-In `defer failing tx.rollback() unless dryRun`, the modifier is evaluated when the `defer` is **registered**, and the value is captured.
+In `defer failing tx.rollback() unless dryRun`, the modifier is evaluated once, when the `defer` is **registered**, and the value is captured, the same rule as `unless` on any statement. The exit-time form is `defer { if c { … } }` (Sūq review A1).
 
 ## 20. Input forms added (SPEC §15 table)
 
@@ -406,6 +406,8 @@ In `defer failing tx.rollback() unless dryRun`, the modifier is evaluated when t
 | `case _ except .x` | `case not .x` |
 | Booleans in the non-project spelling | The project's `style.booleans` spelling |
 | `noalloc`, `nosuspend` | Removed: no `uses` clause already means pure |
+| `return .x` in a function that fails, when the return type has no case `.x` | `fail .x` (Sūq review A2) |
+| `(u8)x`, `(T)x` | `u8(x)`, `T(x)` (Sūq review A4) |
 
 Remove from the round-2 table: `if !x { … }` → `unless x { … }`.
 
@@ -456,6 +458,15 @@ Start with the paper version of the storefront, order lifecycle and packing part
 - **O10. When decoding produces a trusted `T`.** Recommendation: trusted only if every field's type is either a type with `requires` or a non-text scalar (numbers, bools, units, plain unions); any free `string` or byte field makes the result `Untrusted<T>`.
 
 **Resolved 2026-10-22 (user accepted every recommendation):** O1 newline-only unions, `bayan fmt` rewrites the one-line form. O2 (no recommendation given; smallest choice taken): counts (`length`, `runeCount`) are plain `i64`; units apply only to slice offsets. O3 by content. O4 `at`, not `on`. O5 `->` for "returns" everywhere, including function types; `=>` only for "evaluates to". O6 particle `for` allowed (label position only). O7 mixed-currency `+` traps; `tryAdd` and `add(…) fails` exist. O8 `state` is contextual at the start of a member declaration. O9 bare literals for distinct types rejected. O10 the trusted-field rule as recommended.
+
+**Sūq review decisions, 2026-10-22** (`docs/suq-agent-brief.md` Part A; record in `docs/suq-round3-review-response.md`):
+- **A1.** A `defer` modifier is evaluated once at registration and its value captured (§19); `defer { if c { … } }` is the exit-time form.
+- **A2.** `fail .x` leaves with an error; `return` always returns a value. `fail .x if cond` and `?? fail .x` follow. `return .x` in a function that fails is an input form for `fail .x`, only when the return type has no case `.x`.
+- **A3.** Union payloads bind by position (`.circle(let r)`) or as the whole value: `.percentOff p => p.rate`, with `p` narrowed to that case.
+- **A4.** Numeric conversions are `T(x)`, checked (trap when out of range); `T.tryFrom(x)` returns `T?`. `(T)x` is an input form.
+- **A5.** `s.copy()` and `s.copy(to: arena)` copy a borrowed string.
+- **A6.** `assert f() fails E.case` and `assert f() fails E`, with power-assert output. This is a statement form, not the deferred fluent assert API.
+- **A7.** Adopted as implemented: a struct with any `unique` field is `unique` (explicit `struct unique` stays for raw resources); owning values never copy implicitly; fallible constructors are `T(x)`, `T.tryFrom(x)`, `T.tryParse(text)`; the empty map literal is `[]`.
 
 ## Deferred (do not implement)
 

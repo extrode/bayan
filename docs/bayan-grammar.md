@@ -39,7 +39,7 @@ defer failing tx.rollback() unless dryRun     // `dryRun` is read when the defer
 defer panicking (p) log($"{p}", as: .error)   // panic in progress
 ```
 
-`failing` and `panicking` are contextual keywords, valid only after `defer`. Future modifiers must follow the same shape: head verb, then participle. A postfix `if` or `unless` on a `defer` is evaluated when the `defer` is registered, and its value is captured.
+`failing` and `panicking` are contextual keywords, valid only after `defer`. Future modifiers must follow the same shape: head verb, then participle. A postfix `if` or `unless` on a `defer` is evaluated once, when the `defer` is registered, and its value is captured, as for any postfix modifier (§4). To decide at exit, test inside the body: `defer { if c { … } }`.
 
 Enforced by:
 - `errdefer` is an input form for `defer failing`: [BYN1020](diagnostics/BYN1020.md).
@@ -85,6 +85,8 @@ Familiar alternatives are **input forms**: the editor and `bayan fmt` accept the
 | `noalloc`, `nosuspend` | Removed: no `uses` clause already means pure (§9) | [BYN6001](diagnostics/BYN6001.md) |
 | `{ cents = 250 }` | `{ cents: 250 }` | [BYN1021](diagnostics/BYN1021.md); in `package.byn` [BYN3104](diagnostics/BYN3104.md) |
 | `"Hello " + name` (strings) | `$"Hello {name}"` | [BYN2209](diagnostics/BYN2209.md) |
+| `return .x` in a function that fails, when the return type has no case `.x` | `fail .x` | [BYN1056](diagnostics/BYN1056.md) |
+| `(u8)x`, `(T)x` | `u8(x)`, `T(x)` | [BYN1057](diagnostics/BYN1057.md) |
 
 Also rejected with a fix-it (design round 2 plan §15):
 
@@ -106,19 +108,22 @@ A body that is not a block: [BYN1018](diagnostics/BYN1018.md). Display-only view
 | `unless c { … }` | A guard on a simple positive condition with no `else`. Not with `else`, not with `!` or `not`, not with a top-level `&&`/`\|\|` (`and`/`or`), not with `is null`, no likelihood word. | [BYN1006](diagnostics/BYN1006.md), [BYN1007](diagnostics/BYN1007.md), [BYN1022](diagnostics/BYN1022.md), [BYN1023](diagnostics/BYN1023.md), [BYN1033](diagnostics/BYN1033.md) |
 | `if unlikely c { … }` | A cold path that is not already an error return. Layout hint only; semantics unchanged. | [BYN2233](diagnostics/BYN2233.md) (lint: redundant on error returns) |
 | `if never c { … }` | A state that would be a bug. Panics if true in every build mode. For a caller's obligation on entry, use `requires` instead. | No dedicated code (runtime panic) |
-| `stmt if c`, `stmt unless c` | A one-line guard: `return`, `break`, `continue` or one call, on the same line as the guard. `stmt unless not c` is rejected with a fix-it to `stmt if c`. | [BYN1008](diagnostics/BYN1008.md) (simple statements only), [BYN1009](diagnostics/BYN1009.md) (no chaining), [BYN1007](diagnostics/BYN1007.md) (negated `unless`) |
+| `stmt if c`, `stmt unless c` | A one-line guard: `return`, `fail`, `break`, `continue` or one call, on the same line as the guard. `stmt unless not c` is rejected with a fix-it to `stmt if c`. | [BYN1008](diagnostics/BYN1008.md) (simple statements only), [BYN1009](diagnostics/BYN1009.md) (no chaining), [BYN1007](diagnostics/BYN1007.md) (negated `unless`) |
 
 ```csharp
 flush() if unlikely buf.isFull
 return .badRequest("Cart is empty") unless cart.hasItems
 let order = db.find(id) ?? return .notFound
+fail .outOfStock if line.qty > stock
 ```
 
-Null checks are `is null` / `is not null` ([BYN2027](diagnostics/BYN2027.md)); write `if x is not null`, not `unless x is null`. Bind a call's non-null result with `?? return …`, `?? break` or `?? continue`.
+`return` gives the function's value; `fail .x` leaves with an error from its `fails` clause. `return .x` in a function that fails, when the return type has no case `.x`, is an input form for `fail .x` (§3).
+
+Null checks are `is null` / `is not null` ([BYN2027](diagnostics/BYN2027.md)); write `if x is not null`, not `unless x is null`. Bind a call's non-null result with `?? return …`, `?? fail .x`, `?? break` or `?? continue`.
 
 **Booleans** have two allowed spellings, the one documented synonym exception (§3): `!` `&&` `||` and `not` `and` `or`. `bayan fmt` normalizes each project to the spelling set in `style.booleans` ([STYLE](bayan-style.md)). **Patterns are words-only**: `is not null`, `.removed or .backordered`, `not .draft`.
 
-Pick the tool by what a failed check means: non-null types (no check), `requires` (a bug, or user input once checked at construction), distinct types (a rule true everywhere), `Untrusted<T>` (input from outside; constructing a type with `requires` removes the taint), `return .x unless …` (a business outcome).
+Pick the tool by what a failed check means: non-null types (no check), `requires` (a bug, or user input once checked at construction), distinct types (a rule true everywhere), `Untrusted<T>` (input from outside; constructing a type with `requires` removes the taint), `fail .x unless …` (a business outcome).
 
 ## 5. Declarations: head-first word order
 
