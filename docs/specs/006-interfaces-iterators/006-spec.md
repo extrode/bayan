@@ -1,5 +1,5 @@
 # 006 — Interfaces and iterators
-Status: draft
+Status: done
 Created: 2026-10-21
 Revised: 2026-10-22 for design round 2 (HANDOFF §1, §4, §9, §11)
 Depends on: design-round-2 steps 3.1–3.3 on dev (`for x in` parsing from 3.1, `ref this` parsing and declared mutability from 3.3); 006 implementation starts after they land.
