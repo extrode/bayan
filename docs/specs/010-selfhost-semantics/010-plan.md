@@ -17,7 +17,7 @@ The port is large (about 9,400 C# lines before round 3; T1 records the count aft
 ## Tech
 
 - Language: Bayan in round-3 syntax for `selfhost/semantics/`; C# for T1 and the harness.
-- Uses from 006: `IIndexable` on `Pool<T>` (reused from `selfhost/parser/ast.byn`), a generic `lookup<T>(name: Symbol, from table: Map<Symbol, T>) where T : …` only where two symbol kinds share code; no `dyn ref` stored in a field.
+- Uses from 006: `for x in pool.items` over `Pool<T>` (reused from `selfhost/parser/ast.byn`; built-in `List<T>` iteration), a generic `lookup<T>(name: Symbol, from table: Map<Symbol, T>) where T : …` only where two symbol kinds share code, returning an id or a member result, not `T` by value (BYN2780; the `Symbol`-keyed form is unverified until 008 lands); no `dyn ref` stored in a field.
 - Uses from 007: `T -> bool` parameters with `it` lambdas for scope and member searches; no capture of `this` or a `var`; no function value in a field (007 R10), so passes are plain functions over a `Checker` struct, not tables of callbacks.
 - Uses from 008: `Symbol` for every name; `Map` keys that are `Symbol`, id structs, `TypeKey` structs and tuples (008 R5); insertion-order iteration (L003) as the port's only order.
 - Uses from 009: `Tree`, its pools and id structs, `Name { span, text: Symbol }`, and `parse(source) -> Tree`.
@@ -186,7 +186,7 @@ Bound expressions are a `Pool<BoundExprNode>` with `struct BoundExprNode { span:
 - Order. A hash-order dependence T1 misses shows as a flaky or platform-dependent mismatch. Mitigation: the corpus runs under the fixed test hash seed, and T1's audit list is the place to add a missed site.
 - JSON. `Utf8JsonWriter` escapes and indents in ways a hand-written writer can miss (non-ASCII, control characters, `UnsafeRelaxedJsonEscaping`). Mitigation: the corpus includes identifiers with non-ASCII letters and string-typed names; T2's done-when includes them.
 - Two-pass inference. `BindFunction` (`Compilation.cs:1103-1135`) binds a body twice and rolls back instances, mutation checks and locals between passes. Mitigation: ported in T11 as one unit, and the typed goldens (`pending-peers-*`, `constrained-*`) are its first checks.
-- 006/007/008 slip. Mitigation: as 009, each fallback is local (index loops instead of `for … in`, one search function per table instead of lambdas, `(i32, i32)` tuple keys instead of struct keys) and recorded in T2; the equivalence target does not change.
+- 007/008 slip. Mitigation: as 009, each fallback is local (one search function per table instead of lambdas, `(i32, i32)` tuple keys instead of struct keys) and recorded in T2; the equivalence target does not change.
 - Deep recursion in Bayan. The Bayan binder recurses where C# does; R8's bounds apply to both. Mitigation: T1's depth tests run against `bayan-check` in T8.
 - Speed. Map lookups by struct key may cost more than C# reference dictionaries. Mitigation: R11's 10× bound; profile with `--time` before changing the data shape.
 

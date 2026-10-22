@@ -15,7 +15,7 @@ The module is the lexer's library files plus the parser files, assembled by the 
 ## Tech
 
 - Language: Bayan in round-3 syntax for `selfhost/parser/`; C# for T1 and the harness.
-- Uses from 006: `IIndexable` (`length: i64`, `get(at i: i64) -> Item` after round-3 C20) on `Pool<T>` so `for node in pool` works; a generic `checkSpans<T>(pool: Pool<T>) where T : ISpanned`; `ISpanned` is a 009 interface with one property `span: TextSpan`.
+- Uses from 006: a generic `checkSpans<T>(ref Pool<T> pool) where T : ISpanned`, with loops over `pool.items` (built-in `List<T>` iteration); `Pool<T>` does not conform to `IIndexable`, because under 006 a generic conformer cannot yield `T` by value (BYN2780, a type parameter may stand for a unique type); `ISpanned` is a 009 interface with one property `span: TextSpan`, witnessed by the `span` field of each node struct (006 field-witness rule: a stored field witnesses a getter of the same type; not for a `unique` field type, BYN2780; never for a method, BYN2801).
 - Uses from 007: function-type parameters `TokenKind -> bool` and lambdas over `it` for recovery skips. No lambda captures `this` or a `var`; no function value is stored in a field.
 - Uses from 008: `Symbol`, `Symbol.from(text)`, `sym.text`, symbol literals for contextual keywords; `Map<Symbol, TokenKind>` if the lexer's `Keywords` table needs a counterpart in the parser (contextual keywords only).
 - Build: `Compilation.Create(entryFiles, packageRoot: selfhost/parser, …)` (`src/Bayan.Semantics/Compilation.cs:94`), then `CliApp.EmitC(c, BuildMode.Fast)` and `Toolchain.Build`, as `tests/Bayan.Tests/SelfhostLexerTests.cs` does; `BAYAN_CACHE=tmp/cache`.
@@ -106,11 +106,9 @@ union ExprKind {
     error
 }
 
-struct Pool<T> : IIndexable {
+struct Pool<T> {
     items: List<T>
     length: i64 => items.length
-
-    get(at i: i64) -> T => items[i]
 
     add(ref this, item: T) -> i32 {
         items.add(item)
@@ -142,7 +140,7 @@ The token kind names are the lexer's (`selfhost/lexer/tokens.byn`); the ones abo
 ## Risks
 
 - Round-3 drift. 5.1a–5.3a rewrite large parts of `Parser.cs` and `AstDump.cs` and regenerate the parse goldens. Mitigation: 009 starts after them (T1 depends on 5.3a), and any later parser change is a C# change first and fails L017 until ported (Q148).
-- 006/007/008 slip. Mitigation: `Pool<T> : IIndexable` can be a plain struct with an index loop, recovery predicates can be one `skip` per stop set, and `Name.text` can be `string`; each fallback is local to `ast.byn` or `parser.byn` and is recorded in T2 if taken. The equivalence target does not change.
+- 007/008 slip. Mitigation: recovery predicates can be one `skip` per stop set, and `Name.text` can be `string`; each fallback is local to `ast.byn` or `parser.byn` and is recorded in T2 if taken. The equivalence target does not change.
 - Size. The port is about 3,000 lines of Bayan, the largest Bayan program yet; compiler bugs will show up. Mitigation: each one is fixed in the C# compiler with its own golden before the port continues, and the task that found it names it.
 - Speed. Generic pools and union matches may cost more than the lexer's flat loops. Mitigation: R11's 10× bound is the same as the lexer's; if it fails, profile with `--time` before changing the tree shape.
 - Deep recursion in Bayan. Bayan's stack at 256 levels of the deepest call chain (about 12 frames per level in the expression parser) must fit in the default C stack. Mitigation: T1's 300-level test runs against the Bayan parser in T5, and if it overflows the limit drops for both parsers.

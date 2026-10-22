@@ -19,7 +19,7 @@ Lowering and emission are interleaved in C# only at the program level (`Lowerer.
 ## Tech
 
 - Language: Bayan in round-3 syntax for `selfhost/backend/`; C# for T1 and the harness.
-- Uses from 006: `for x in pool` through `IIndexable` on 009's `Pool<T>`; the 010 helpers constrained by interfaces, unchanged.
+- Uses from 006: `for x in pool.items` on 009's `Pool<T>`; the 010 helpers constrained by interfaces, unchanged.
 - Uses from 007: `BoundNode -> bool` predicates with `it` for `Any` / `Moves` (`Lowerer.cs:242-257`) and variant filters (`CEmitter.cs:311`, `:459`); no capture of `this` or a `var`; no function value in a field, so `Capture(Action)` (`Lowerer.cs:103-116`) is a push and pop of the output list.
 - Uses from 008: `Symbol` for names; `Map<string, …>` for the emitter's tables, `Map<LocalId, string>` for C names, `Map<FunctionId, i32>` for test indices (008 R5); insertion order (L003) as the only order.
 - Uses from 010: `Checker` (modules, functions, tests, enums, error variants, builtins, package root), `TypeId` and its display names, the bound pools, `LocalId` and the local pool.
@@ -188,7 +188,7 @@ struct Helper {
 - Paths. `GetRelativePath` handles cases Q170's reduction does not (symlinks, case-insensitive volumes, Windows roots). Mitigation: the harness passes the same absolute path and root to both sides and runs on macOS and Linux; a miss shows as an L019 mismatch in the `byn_file_` table.
 - Shared mutable state. `NewTemp` appends to 010's local pool; a stale `LocalId` or a pool read during append would misname a temp. Mitigation: temps are appended only through one `Lowered.newTemp`, and the dry-run emitter reads names only through `FunctionEmitter.names`.
 - Size. About 3,300 C# lines before round 3, with dense string building. Mitigation: each task ports one region; compiler bugs found on the way are fixed in C# with their own golden first and named by the task.
-- 006/007/008/010 slip. Mitigation: as 009 and 010, each fallback is local (index loops, one search function per predicate, tuple keys) and recorded in T2; the equivalence target does not change.
+- 007/008/010 slip. Mitigation: as 009 and 010, each fallback is local (one search function per predicate, tuple keys) and recorded in T2; the equivalence target does not change.
 - Deep recursion in Bayan. The Bayan lowerer and emitter recurse where C# does; R8's bound applies to both. Mitigation: T1's depth tests run against `bayan-emit` in T6.
 - Speed. String building through `StrBuf` and `Map<string, …>` lookups for helpers may cost more than C#. Mitigation: R12's 10× bound; profile with `--time` before changing the data shape.
 

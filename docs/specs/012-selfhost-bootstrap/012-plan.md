@@ -15,7 +15,7 @@ The bootstrap (T8–T10) only adds processes: stage 1 builds stage 2, stage 2 bu
 ## Tech
 
 - Language: Bayan in round-3 syntax for `selfhost/bayan/main.byn` and `driver-*.byn`; C# for T1, the generator and the harness; C for T1's runtime functions.
-- Uses from 006: `for x in list` through `IIndexable`; no interface of its own.
+- Uses from 006: nothing; `for x in list` is built-in `List` iteration; no interface of its own.
 - Uses from 007: `string -> bool` predicates with `it` for the option scan and the refused-command check; no capture of `this` or a `var`; no function value in a field.
 - Uses from 008: `Map<string, Command>` for dispatch, insertion order (L003) for `--help`'s command list.
 - Uses from 009–011: the lexer's `lex` and `TokenDump` port, the parser's `parse` and `AstDump` port, 010's `Checker`, typed dump and `renderAll`, 011's `lower` and `emit`, each called from the driver exactly as the tool entries call them.
