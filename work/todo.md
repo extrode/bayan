@@ -123,3 +123,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - SPEC has no `T.zero` (friction F-31); the F-30 user-cleanup member name is open, conservative `dispose(ref this)` (round 3, Sūq brief).
 - SPEC `:389` `return .forbidden unless …` snippet has no signature; borderline under A2 (`fail` vs response value).
 - (worktree audit 2026-10-22) clean worktrees whose work is already in a branch: chore-laws-timeout and feat-005-terminal-style (merged into `dev`); worker-r2-{cases,catch,defer,flow,naming,null,nullmove,refthis,requires,unions}, docs-design-round-2, worker-r3-plan, worker-007-docs (contained in their feature branches). The worker keys for r2-* and 007-docs are still live in `~/.claude`; worker-r3-plan has no key left.
+- J54 type-first revert: 007 spec on feat/007-lambdas is name-first throughout (R1/R4/R15, examples :4-5, :36, :44-78); update to type-first decls and parenthesized function-type params before 007 T1. 006 C4/C20 shrink (006 already type-first).
+- J54: Sūq checker `type-first binding` rule only catches capitalised types (`i32 n = 3` unflagged); parameter lists spanning lines are only partly handled.
