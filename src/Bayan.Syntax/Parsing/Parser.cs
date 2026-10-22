@@ -316,6 +316,14 @@ public sealed class Parser
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
                 decl = ParseUnion(start, modifiers);
                 break;
+            case TokenKind.InterfaceKeyword when topLevel:
+                RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
+                decl = ParseInterface(start, modifiers);
+                break;
+            case TokenKind.ExtensionKeyword when topLevel:
+                RejectModifiers(modifiers, Modifiers.None, startIndex);
+                decl = ParseExtension(start);
+                break;
             case TokenKind.TypeKeyword when Peek(1) == TokenKind.Identifier && Peek(2) == TokenKind.Equals:
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
                 decl = ParseTypeAlias(start, modifiers);
@@ -414,19 +422,122 @@ public sealed class Parser
         Advance();
         var name = ExpectName("a struct name");
         var typeParams = ParseTypeParams();
+        var bases = ParseBases();
+        var where = ParseWhere();
+        var members = ParseBody("struct", () => ParseDeclaration(topLevel: false, structName: name.Text));
+        return new StructDecl(SpanFrom(start), modifiers, name, members) { TypeParams = typeParams, Bases = bases, Where = where };
+    }
+
+    /// <summary><c>{ members }</c> of a struct, interface or extension.</summary>
+    private Decl[] ParseBody(string what, Func<Decl?> parseMember)
+    {
         var open = Expect(TokenKind.OpenBrace);
         var members = new List<Decl>();
         while (Kind != TokenKind.CloseBrace && !AtEnd)
         {
             var before = _pos;
             var errors = ErrorCount;
-            var member = ParseDeclaration(topLevel: false, structName: name.Text);
+            var member = parseMember();
             if (member is not null) members.Add(member);
             RecoverIfNeeded(errors);
             if (_pos == before) Advance();
         }
-        ExpectClose(open, "struct");
-        return new StructDecl(SpanFrom(start), modifiers, name, members.ToArray()) { TypeParams = typeParams };
+        ExpectClose(open, what);
+        return members.ToArray();
+    }
+
+    /// <summary><c>: I, J</c> after a type's name, or nothing.</summary>
+    private NamedType[] ParseBases()
+    {
+        if (!Accept(TokenKind.Colon)) return [];
+        var bases = new List<NamedType> { ParseNamedType() };
+        while (Accept(TokenKind.Comma)) bases.Add(ParseNamedType());
+        return bases.ToArray();
+    }
+
+    /// <summary><c>where T : IA, IB</c>, repeated, or nothing.</summary>
+    private WhereClause[] ParseWhere()
+    {
+        var clauses = new List<WhereClause>();
+        while (AtContextual("where"))
+        {
+            var start = Advance().Start;
+            var param = ExpectName("a type parameter name");
+            Expect(TokenKind.Colon);
+            var bounds = new List<NamedType> { ParseNamedType() };
+            while (Accept(TokenKind.Comma)) bounds.Add(ParseNamedType());
+            clauses.Add(new WhereClause(SpanFrom(start), param, bounds.ToArray()));
+        }
+        return clauses.ToArray();
+    }
+
+    private InterfaceDecl ParseInterface(int start, Modifiers modifiers)
+    {
+        Advance();
+        var name = ExpectName("an interface name");
+        var typeParams = ParseTypeParams();
+        var where = ParseWhere();
+        var members = ParseBody("interface", ParseInterfaceMember);
+        return new InterfaceDecl(SpanFrom(start), modifiers, name, members) { TypeParams = typeParams, Where = where };
+    }
+
+    /// <summary>A method (abstract when it ends in <c>;</c>), <c>T name { get; }</c>, <c>T name =&gt; e;</c> or <c>type Name;</c>.</summary>
+    private Decl? ParseInterfaceMember()
+    {
+        var first = Current;
+        var doc = DocOf(first);
+        var startIndex = _pos;
+        var start = first.Start;
+        var attributes = ParseAttributes();
+        doc ??= DocOf(Current);
+        var modifiers = ParseModifiers();
+        RejectModifiers(modifiers, Modifiers.Static, startIndex);
+
+        Decl decl;
+        var after = ScanType(_pos);
+        if (Kind == TokenKind.TypeKeyword && IsName(Peek(1)) && Peek(2) == TokenKind.Semicolon)
+        {
+            Advance();
+            var name = ExpectName();
+            Advance();
+            decl = new AssociatedTypeDecl(SpanFrom(start), name);
+        }
+        else if (IsFunctionStart())
+        {
+            decl = ParseFunction(start, modifiers, allowNoBody: true);
+        }
+        else if (after > 0 && IsName(KindAt(after)) && KindAt(after + 1) == TokenKind.OpenBrace)
+        {
+            var type = ParseType();
+            var name = ExpectName();
+            Expect(TokenKind.OpenBrace);
+            if (AtContextual("get")) Advance();
+            else Report(DiagnosticCodes.Expected, Current.Span, ["`get`", Describe(Current)]);
+            Expect(TokenKind.Semicolon);
+            Expect(TokenKind.CloseBrace);
+            decl = new GetterDecl(SpanFrom(start), modifiers, type, name);
+        }
+        else if (after > 0 && IsName(KindAt(after)) && KindAt(after + 1) == TokenKind.FatArrow)
+        {
+            decl = ParseFieldOrProperty(start, modifiers);
+        }
+        else
+        {
+            Report(DiagnosticCodes.Expected, Current.Span, ["a method, getter or `type Name;`", Describe(Current)]);
+            Synchronize();
+            return null;
+        }
+        return decl with { Doc = doc, Attributes = attributes };
+    }
+
+    /// <summary><c>extension T : I { … }</c> or <c>extension T : I;</c>.</summary>
+    private ExtensionDecl ParseExtension(int start)
+    {
+        Advance();
+        var name = ExpectName("a type name");
+        var bases = ParseBases();
+        Decl[] members = Accept(TokenKind.Semicolon) ? [] : ParseBody("extension", () => ParseDeclaration(topLevel: false, structName: name.Text));
+        return new ExtensionDecl(SpanFrom(start), name, bases, members);
     }
 
     private void ExpectClose(Token open, string what)
@@ -474,7 +585,8 @@ public sealed class Parser
         return new ConstructorDecl(SpanFrom(start), modifiers, name, parameters, body);
     }
 
-    private FunctionDecl ParseFunction(int start, Modifiers modifiers)
+    /// <param name="allowNoBody">An interface member: <c>;</c> instead of a body declares it abstract.</param>
+    private FunctionDecl ParseFunction(int start, Modifiers modifiers, bool allowNoBody = false)
     {
         var returnType = ParseType();
         var name = ExpectName();
@@ -486,13 +598,14 @@ public sealed class Parser
         {
             var failsStart = Advance().Start;
             var errors = new List<TypeSyntax>();
-            if (Kind == TokenKind.Identifier)
+            if (Kind == TokenKind.Identifier && !AtContextual("where"))
             {
                 errors.Add(ParseType());
                 while (Accept(TokenKind.Comma)) errors.Add(ParseType());
             }
             fails = new FailsClause(SpanFrom(failsStart), errors.ToArray());
         }
+        var where = ParseWhere();
         var requires = new List<Expr>();
         while (Accept(TokenKind.RequiresKeyword)) requires.Add(ParseExpression());
         BlockStmt? body = null;
@@ -506,14 +619,14 @@ public sealed class Parser
             expressionBody = ParseExpression();
             Expect(TokenKind.Semicolon);
         }
-        else
+        else if (!(allowNoBody && Accept(TokenKind.Semicolon)))
         {
             Expect(TokenKind.OpenBrace);
         }
         return new FunctionDecl(SpanFrom(start), modifiers, returnType, name, parameters, fails, body, expressionBody)
         {
             TypeParams = typeParams, RefThis = refThis, ParamsStart = paramsStart,
-            Requires = requires.ToArray(),
+            Requires = requires.ToArray(), Where = where,
         };
     }
 
@@ -603,6 +716,8 @@ public sealed class Parser
         Advance();
         var name = ExpectName("an enum name");
         var parameters = Kind == TokenKind.OpenParen ? ParseParams() : null;
+        var bases = ParseBases();
+        var where = ParseWhere();
         var open = Expect(TokenKind.OpenBrace);
         var members = new List<EnumMember>();
         while (IsName(Kind))
@@ -616,7 +731,7 @@ public sealed class Parser
         }
         Accept(TokenKind.Semicolon);
         ExpectClose(open, "enum");
-        return new EnumDecl(SpanFrom(start), modifiers, name, parameters, members.ToArray());
+        return new EnumDecl(SpanFrom(start), modifiers, name, parameters, members.ToArray()) { Bases = bases, Where = where };
     }
 
     /// <summary><c>union Name { circle(f32 r), rect(f32 w, f32 h), none }</c> or <c>union Mode { read = 1, write = 2 }</c>; a trailing <c>,</c> or <c>;</c> is allowed.</summary>
@@ -625,6 +740,8 @@ public sealed class Parser
         Advance();
         var name = ExpectName("a union name");
         var typeParams = ParseTypeParams();
+        var bases = ParseBases();
+        var where = ParseWhere();
         var open = Expect(TokenKind.OpenBrace);
         var variants = new List<UnionVariant>();
         while (IsName(Kind))
@@ -653,7 +770,7 @@ public sealed class Parser
         }
         Accept(TokenKind.Semicolon);
         ExpectClose(open, "union");
-        return new UnionDecl(SpanFrom(start), modifiers, name, variants.ToArray()) { TypeParams = typeParams };
+        return new UnionDecl(SpanFrom(start), modifiers, name, variants.ToArray()) { TypeParams = typeParams, Bases = bases, Where = where };
     }
 
     private TypeAliasDecl ParseTypeAlias(int start, Modifiers modifiers)
@@ -683,6 +800,11 @@ public sealed class Parser
 
     private static bool IsTypeNameToken(TokenKind kind) => kind is TokenKind.Identifier or TokenKind.NeverKeyword;
 
+    /// <summary>Whether <c>dyn</c> at <paramref name="index"/> starts a type: <c>dyn ref I</c> or <c>dyn I</c>.</summary>
+    private bool IsDynAt(int index) =>
+        KindAt(index) == TokenKind.Identifier && Text(_tokens[index]) == "dyn"
+        && (KindAt(index + 1) == TokenKind.RefKeyword || IsTypeNameToken(KindAt(index + 1)));
+
     /// <summary>Speculatively scans a type starting at <paramref name="index"/>; returns the index after it, or -1.</summary>
     private int ScanType(int index)
     {
@@ -709,6 +831,11 @@ public sealed class Parser
         }
         else
         {
+            if (IsDynAt(index))
+            {
+                index++;
+                if (KindAt(index) == TokenKind.RefKeyword && KindAt(++index) == TokenKind.ReadonlyKeyword) index++;
+            }
             if (!IsTypeNameToken(KindAt(index))) return -1;
             i = index + 1;
             while (KindAt(i) == TokenKind.Dot && KindAt(i + 1) == TokenKind.Identifier) i += 2;
@@ -772,22 +899,21 @@ public sealed class Parser
             Expect(TokenKind.CloseParen);
             type = new TupleType(SpanFrom(start), elements.ToArray());
         }
+        else if (IsDynAt(_pos))
+        {
+            Advance();
+            var isRef = Accept(TokenKind.RefKeyword);
+            var isReadOnly = isRef && Accept(TokenKind.ReadonlyKeyword);
+            var inner = ParseNamedType();
+            type = new DynType(SpanFrom(start), isRef, isReadOnly, inner);
+        }
         else if (IsTypeNameToken(Kind))
         {
-            var path = new List<Name> { NameOf(Advance()) };
-            while (Kind == TokenKind.Dot && Peek(1) == TokenKind.Identifier)
-            {
-                Advance();
-                path.Add(NameOf(Advance()));
-            }
-            var args = Array.Empty<TypeSyntax>();
-            if (Kind == TokenKind.Less && ScanTypeArgs(_pos) > 0) args = ParseTypeArgs();
-            type = new NamedType(SpanFrom(start), path.ToArray(), args);
+            type = ParseNamedType();
         }
         else
         {
-            Report(DiagnosticCodes.ExpectedType, Current.Span, [Describe(Current)]);
-            return new NamedType(new TextSpan(start, 0), [new Name(new TextSpan(start, 0), "<missing>")], []);
+            return MissingType();
         }
 
         while (true)
@@ -809,6 +935,29 @@ public sealed class Parser
                 return type;
             }
         }
+    }
+
+    /// <summary><c>Name</c>, <c>m.Name</c> or <c>Name&lt;A&gt;</c> without suffixes: a type, a base, a <c>where</c> bound or after <c>dyn</c>.</summary>
+    private NamedType ParseNamedType()
+    {
+        if (!IsTypeNameToken(Kind)) return MissingType();
+        var start = Current.Start;
+        var path = new List<Name> { NameOf(Advance()) };
+        while (Kind == TokenKind.Dot && Peek(1) == TokenKind.Identifier)
+        {
+            Advance();
+            path.Add(NameOf(Advance()));
+        }
+        var args = Array.Empty<TypeSyntax>();
+        if (Kind == TokenKind.Less && ScanTypeArgs(_pos) > 0) args = ParseTypeArgs();
+        return new NamedType(SpanFrom(start), path.ToArray(), args);
+    }
+
+    private NamedType MissingType()
+    {
+        var start = Current.Start;
+        Report(DiagnosticCodes.ExpectedType, Current.Span, [Describe(Current)]);
+        return new NamedType(new TextSpan(start, 0), [new Name(new TextSpan(start, 0), "<missing>")], []);
     }
 
     private TypeSyntax[] ParseTypeArgs()

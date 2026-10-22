@@ -86,6 +86,13 @@ public static class AstDump
             Line(depth, "doc " + TokenDump.Escape(decl.Doc));
         }
 
+        /// <summary><c> : I, J where T : K</c>, or nothing.</summary>
+        private static string Bases(NamedType[] bases, WhereClause[] where) =>
+            (bases.Length == 0 ? "" : " : " + string.Join(", ", bases.Select(Type))) + Where(where);
+
+        private static string Where(WhereClause[] where) =>
+            string.Concat(where.Select(w => $" where {w.Param.Text} : " + string.Join(", ", w.Bounds.Select(Type))));
+
         private static string Attribute(AttributeSyntax a) =>
             $"[{a.Name.Text}" + string.Concat(a.Args.Select(arg => " " + (arg.Name is null ? "" : arg.Name.Text + ": ") + AstDump.Expr(arg.Value))) + "]";
 
@@ -106,6 +113,7 @@ public static class AstDump
                         var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params, d.RefThis is not null)} -> {Type(d.ReturnType)}";
                         if (d.Fails is not null)
                             head += d.Fails.Errors.Length == 0 ? " fails" : " fails " + string.Join(", ", d.Fails.Errors.Select(Type));
+                        head += Where(d.Where);
                         foreach (var r in d.Requires) head += " requires " + AstDump.Expr(r);
                         if (d.ExpressionBody is not null) head += " => " + AstDump.Expr(d.ExpressionBody);
                         Line(depth, head);
@@ -113,7 +121,21 @@ public static class AstDump
                         break;
                     }
                 case StructDecl d:
-                    Line(depth, $"Struct {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}");
+                    Line(depth, $"Struct {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Bases(d.Bases, d.Where)}");
+                    foreach (var member in d.Members) Decl(depth + 1, member);
+                    break;
+                case InterfaceDecl d:
+                    Line(depth, $"Interface {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Where(d.Where)}");
+                    foreach (var member in d.Members) Decl(depth + 1, member);
+                    break;
+                case GetterDecl d:
+                    Line(depth, $"Getter {Mods(d.Modifiers)}{Type(d.Type)} {d.Name.Text}");
+                    break;
+                case AssociatedTypeDecl d:
+                    Line(depth, $"AssociatedType {d.Name.Text}");
+                    break;
+                case ExtensionDecl d:
+                    Line(depth, $"Extension {d.Name.Text}{Bases(d.Bases, [])}");
                     foreach (var member in d.Members) Decl(depth + 1, member);
                     break;
                 case FieldDecl d:
@@ -133,14 +155,14 @@ public static class AstDump
                             + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
                     break;
                 case EnumDecl d:
-                    Line(depth, $"Enum {Mods(d.Modifiers)}{d.Name.Text}{(d.Params is null ? "" : Params(d.Params))}");
+                    Line(depth, $"Enum {Mods(d.Modifiers)}{d.Name.Text}{(d.Params is null ? "" : Params(d.Params))}{Bases(d.Bases, d.Where)}");
                     foreach (var m in d.Members)
                         Line(depth + 1, "Member " + m.Name.Text
                             + (m.Args is null ? "" : "(" + string.Join(", ", m.Args.Select(a => (a.Name is null ? "" : a.Name.Text + ": ") + AstDump.Expr(a.Value))) + ")")
                             + (m.Doc is null ? "" : " doc " + TokenDump.Escape(m.Doc)));
                     break;
                 case UnionDecl d:
-                    Line(depth, $"Union {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}");
+                    Line(depth, $"Union {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Bases(d.Bases, d.Where)}");
                     foreach (var v in d.Variants)
                         Line(depth + 1, "Variant " + v.Name.Text + (v.Fields.Length == 0 ? "" : "(" + string.Join(", ", v.Fields.Select(f => Type(f.Type) + " " + f.Name.Text)) + ")")
                             + (v.Value is null ? "" : " = " + AstDump.Expr(v.Value))
@@ -350,6 +372,10 @@ public static class AstDump
                     break;
                 case TupleType t:
                     sb.Append('(').Append(string.Join(", ", t.Elements.Select(e => Type(e.Type) + (e.Name is null ? "" : " " + e.Name.Text)))).Append(')');
+                    break;
+                case DynType t:
+                    sb.Append(t.IsRef ? t.IsReadOnly ? "dyn ref readonly " : "dyn ref " : "dyn ");
+                    Type(sb, t.Inner);
                     break;
             }
         }

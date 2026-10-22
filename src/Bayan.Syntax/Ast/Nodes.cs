@@ -69,12 +69,40 @@ public sealed record FunctionDecl(
 
     /// <summary>The <c>requires</c> clauses after the signature, checked on entry.</summary>
     public Expr[] Requires { get; init; } = [];
+
+    /// <summary>The <c>where T : I</c> clauses after <c>fails</c>.</summary>
+    public WhereClause[] Where { get; init; } = [];
 }
+
+/// <summary><c>where T : IA, IB</c>: the interfaces a type parameter must conform to.</summary>
+public sealed record WhereClause(TextSpan Span, Name Param, NamedType[] Bounds) : Node(Span);
 
 public sealed record StructDecl(TextSpan Span, Modifiers Modifiers, Name Name, Decl[] Members) : Decl(Span)
 {
     public Name[] TypeParams { get; init; } = [];
+
+    /// <summary>The interfaces after <c>:</c>.</summary>
+    public NamedType[] Bases { get; init; } = [];
+
+    public WhereClause[] Where { get; init; } = [];
 }
+
+/// <summary><c>interface IName&lt;T&gt; { … }</c>: methods (abstract without a body), getters, associated types.</summary>
+public sealed record InterfaceDecl(TextSpan Span, Modifiers Modifiers, Name Name, Decl[] Members) : Decl(Span)
+{
+    public Name[] TypeParams { get; init; } = [];
+
+    public WhereClause[] Where { get; init; } = [];
+}
+
+/// <summary><c>T name { get; }</c>: an abstract read-only property of an interface.</summary>
+public sealed record GetterDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name) : Decl(Span);
+
+/// <summary><c>type Item;</c>: an interface's associated type, bound by each conformer.</summary>
+public sealed record AssociatedTypeDecl(TextSpan Span, Name Name) : Decl(Span);
+
+/// <summary><c>extension T : I { … }</c>: retroactive conformance (not supported yet).</summary>
+public sealed record ExtensionDecl(TextSpan Span, Name Name, NamedType[] Bases, Decl[] Members) : Decl(Span);
 
 public sealed record FieldDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr? Default) : Decl(Span);
 
@@ -98,7 +126,12 @@ public sealed record ErrorSetDecl(TextSpan Span, Modifiers Modifiers, Name Name,
 public sealed record EnumMember(TextSpan Span, Name Name, string? Doc, Argument[]? Args) : Node(Span);
 
 /// <summary><c>enum Name { a, b }</c>, or <c>enum Name(T x) { a(1), b(2); }</c> with associated data (<see cref="Params"/> non-null).</summary>
-public sealed record EnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, Param[]? Params, EnumMember[] Members) : Decl(Span);
+public sealed record EnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, Param[]? Params, EnumMember[] Members) : Decl(Span)
+{
+    public NamedType[] Bases { get; init; } = [];
+
+    public WhereClause[] Where { get; init; } = [];
+}
 
 /// <summary>A positional payload field of a union variant: <c>f32 r</c>.</summary>
 public sealed record UnionField(TextSpan Span, TypeSyntax Type, Name Name) : Node(Span);
@@ -110,6 +143,10 @@ public sealed record UnionVariant(TextSpan Span, Name Name, UnionField[] Fields,
 public sealed record UnionDecl(TextSpan Span, Modifiers Modifiers, Name Name, UnionVariant[] Variants) : Decl(Span)
 {
     public Name[] TypeParams { get; init; } = [];
+
+    public NamedType[] Bases { get; init; } = [];
+
+    public WhereClause[] Where { get; init; } = [];
 }
 
 /// <summary><c>type Name = T;</c> — a plain alias.</summary>
@@ -133,6 +170,9 @@ public sealed record ArrayType(TextSpan Span, TypeSyntax Element, Expr Size) : T
 public sealed record TupleTypeElement(TextSpan Span, TypeSyntax Type, Name? Name) : Node(Span);
 
 public sealed record TupleType(TextSpan Span, TupleTypeElement[] Elements) : TypeSyntax(Span);
+
+/// <summary><c>dyn ref I</c>, <c>dyn ref readonly I</c>, or <c>dyn I</c> (not supported yet).</summary>
+public sealed record DynType(TextSpan Span, bool IsRef, bool IsReadOnly, NamedType Inner) : TypeSyntax(Span);
 
 // ── Statements ───────────────────────────────────────────────────────────────────
 

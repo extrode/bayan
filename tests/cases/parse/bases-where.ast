@@ -1,0 +1,28 @@
+CompilationUnit
+  Struct Circle : IShape
+    Field f32 r
+    Function area() -> f32 => (* r r)
+  Struct Wrapper<T> : IShape, m.IDescribe where T : IShape, IOrder<T>
+    Field T inner
+  Struct Stream : IEnumerator
+    TypeAlias Item = Token
+    Field i64 i
+  Union Shape : IShape
+    Variant circle(f32 r)
+    Variant none
+  Union Box<T> : IShape where T : IShape
+    Variant full(T v)
+    Variant empty
+  Enum Color : IShape
+    Member red
+    Member green
+  Enum Planet(f64 mass) : IShape where T : IShape
+    Member earth(1.0)
+    Member mars(0.1)
+  Function max<T>(T a, T b) -> T where T : IOrder<T> => (? (call (. a less) b) b a)
+  Function parse<T>(string s) -> T fails where T : IParse<T>
+    Block
+      Return (call (. T parse) s)
+  Function read<T>(string s) -> T fails IoError where T : IParse<T>, IShape where U : IShape requires (> (. s length) 0)
+    Block
+      Return (call (. T parse) s)
