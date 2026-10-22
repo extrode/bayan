@@ -101,3 +101,7 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Interfaces declaring `ref this`, with implementations required to match, wait for spec 006 (round 2 §9).
 - `switch (move d)` on a narrowed optional types the subject as `T?` (so `case null:` is accepted as dead) while `switch (d)` types it `T` (BYN2411); re-wrap the narrowing in BindSwitchSubject as BindMove does (round 2 §4 null).
 - `move` parameters are never narrowed by `if (b is not null)` (`BinderExpressions.cs` IsNonNull); `b.length` still reports BYN2211 (round 2 §4 null).
+- 006 T7: an enumerator held in a Map slot (`m[k]`, a `BoundBuiltinCall`) is spilled and copied instead of checked for writability (Binder.cs `UserElement`).
+- 006 T9: `dyn-ref-dispatch` default `describe` prints instead of returning a string, since a returned interpolated string allocates through `byn_context`.
+- 006 reviewfix: BYN2807 is cached per instantiation, so a second call site with the same failing type argument is not reported again.
+- 006 T6: a generic interface method called through a constraint or a `dyn ref` reports Unsupported.
