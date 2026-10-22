@@ -22,4 +22,4 @@ No flag narrowing: `-Wall -Werror` holds in full on `out.c`. The first run faile
 
 Mutation: in `CEmitter.Vtable`, every slot of a conformer's vtable was pointed at the next conformer's witness (with a matching cast, so the C still builds). The test failed on all 48 seeds, e.g. seed 1: `dyn section differs from direct (Debug)` with `--- direct` starting `m2 9`, `m0 8`, `m0 8`, `m3 17` and `--- dyn` starting `m2 14`, `m0 -5`, `m0 -8`, `m3 8`. Reverted, the test passes.
 
-Measured 2026-10-22 on macOS arm64 with `zig cc`: 48 seeds, all accepted and agreeing, 46 s.
+Measured 2026-10-22 on macOS arm64 with `zig cc`: 48 seeds, all accepted and agreeing, 46 s; soak at 200 seeds, all accepted and agreeing, 3 min 13 s.
