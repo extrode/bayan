@@ -14,9 +14,10 @@ internal sealed partial class Binder
     // ── Entry points ─────────────────────────────────────────────────────────────
 
     /// <summary>Binds a value. <paramref name="expected"/> only guides literals and target-typed forms; no conversion is applied.</summary>
-    private BoundExpr BindExpr(Expr e, TypeSymbol? expected = null)
+    private BoundExpr BindExpr(Expr e, TypeSymbol? expected = null) => AsValue(BindExprOrType(e, expected), e);
+
+    private BoundExpr AsValue(BoundExpr bound, Expr e)
     {
-        var bound = BindExprOrType(e, expected);
         switch (bound)
         {
             case BoundTypeRef t:
@@ -28,6 +29,13 @@ internal sealed partial class Binder
             case BoundVariantGroup g:
                 Report(DiagnosticCodes.VariantNeedsPayload, e.Span, [g.Variant.Name],
                     help: $"pass it: `{g.Variant.Union.Name}.{g.Variant.Name}({string.Join(", ", g.Variant.Fields.Select(f => f.Name))})`");
+                return new BoundErrorExpr(e);
+            case BoundMethodGroup g:
+                Report(DiagnosticCodes.NotAValue, e.Span, [g.Function.Name, g.Function.Kind == FunctionKind.Function ? "function" : "method"],
+                    help: $"call it: `{g.Function.Name}({(g.Function.Parameters.Count == 0 ? "" : "…")})`");
+                return new BoundErrorExpr(e);
+            case BoundBuiltinGroup g:
+                Report(DiagnosticCodes.NotAValue, e.Span, [g.Name, "method"], help: $"call it: `{g.Name}()`");
                 return new BoundErrorExpr(e);
             default:
                 return bound;
