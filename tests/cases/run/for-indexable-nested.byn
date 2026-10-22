@@ -9,7 +9,7 @@ struct Letters : IIndexable {
 }
 
 void main() {
-    let letters = Letters { size = 3 };
+    let letters = Letters { size: 3 };
     for x in letters {
         for y in letters {
             print($"{x}{y}");

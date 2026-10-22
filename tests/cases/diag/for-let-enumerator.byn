@@ -11,10 +11,10 @@ struct Countdown : IEnumerator {
     i64 current => left;
 }
 
-Countdown from(i64 n) => Countdown { left = n };
+Countdown from(i64 n) => Countdown { left: n };
 
 void main() {
-    let steps = Countdown { left = 3 };
+    let steps = Countdown { left: 3 };
     for n in steps {
         print($"{n}");
     }

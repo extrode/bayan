@@ -22,6 +22,6 @@ void show(Holder<Ints> h) {
     print($"{h.value}");
 }
 
-show(Holder<Ints> { value = 5 });
-let o = Outer { h = Holder<Ints> { value = 6 } };
+show(Holder<Ints> { value: 5 });
+let o = Outer { h: Holder<Ints> { value: 6 } };
 print($"{o.h.value}");

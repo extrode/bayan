@@ -35,10 +35,10 @@ void throughRef(ref Counter c) {
 
 dyn ref ICounter pick(ref Pair p) => p.right;
 
-Counter make(i64 n) => Counter { n = n };
+Counter make(i64 n) => Counter { n: n };
 
 void main() {
-    var p = Pair { left = Counter { n = 1 }, right = Counter { n = 100 } };
+    var p = Pair { left: Counter { n: 1 }, right: Counter { n: 100 } };
     advance(p.left, 1);
     advance(p.right, 5);
     throughRef(ref p.left);

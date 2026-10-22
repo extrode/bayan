@@ -20,7 +20,7 @@ void enlarge<T>(ref T shape) where T : IShape {
 }
 
 void main() {
-    var t = Tile { side = 2 };
+    var t = Tile { side: 2 };
     enlarge(ref t);
     enlarge(ref t);
     print(t.describe());

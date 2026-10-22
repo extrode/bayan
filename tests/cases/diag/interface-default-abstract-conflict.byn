@@ -10,4 +10,4 @@ struct S : IA, IB {
     i64 x;
 }
 
-print($"{S { x = 1 }.area()}");
+print($"{S { x: 1 }.area()}");

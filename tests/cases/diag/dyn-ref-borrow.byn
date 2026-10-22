@@ -13,13 +13,13 @@ void show(dyn ref IShape s) => print($"{s.area()}");
 void peek(dyn ref readonly IShape s) => print($"{s.area()}");
 
 void main() {
-    let fixed = Circle { r = 1 };
+    let fixed = Circle { r: 1 };
     peek(fixed);
     show(fixed);
-    var kept = Circle { r = 2 };
+    var kept = Circle { r: 2 };
     dyn ref IShape late = kept;
     {
-        var inner = Circle { r = 3 };
+        var inner = Circle { r: 3 };
         late = inner;
     }
     show(late);

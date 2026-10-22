@@ -4,7 +4,7 @@ error BYN2104: `fixed` is immutable
      │          ^^^^^ it is borrowed as `dyn ref IShape`; declared with `let` on line 16
      │
   help: declare it with `var` if it should change
-     │ 16 │     var fixed = Circle { r = 1 };
+     │ 16 │     var fixed = Circle { r: 1 };
      │    │     +++
 
 error BYN3002: `inner` does not live as long as `late`, which borrows it

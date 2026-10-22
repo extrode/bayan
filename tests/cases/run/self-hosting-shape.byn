@@ -73,16 +73,16 @@ void visitDyn(dyn ref readonly INode node) {
 
 List<Token> lex() {
     var tokens = List<Token>();
-    tokens.add(Token { kind = .number, value = 2 });
-    tokens.add(Token { kind = .plus, value = 0 });
-    tokens.add(Token { kind = .number, value = 3 });
-    tokens.add(Token { kind = .star, value = 0 });
-    tokens.add(Token { kind = .number, value = 4 });
+    tokens.append(Token { kind: .number, value: 2 });
+    tokens.append(Token { kind: .plus, value: 0 });
+    tokens.append(Token { kind: .number, value: 3 });
+    tokens.append(Token { kind: .star, value: 0 });
+    tokens.append(Token { kind: .number, value: 4 });
     return tokens;
 }
 
 void main() {
-    let list = TokenList { tokens = lex() };
+    let list = TokenList { tokens: lex() };
     var numbers = 0;
     for t in list {
         print($"token {t.kind} {t.value}");
@@ -90,16 +90,16 @@ void main() {
     }
     print($"{numbers} numbers");
 
-    var stream = TokenStream { tokens = lex(), at = -1 };
+    var stream = TokenStream { tokens: lex(), at: -1 };
     var sum = 0;
     for t in stream {
         sum += t.value;
     }
     print($"sum {sum}, stream at {stream.at}");
 
-    let n = Num { value = 2 };
-    let a = Add { left = 2, right = 3 };
-    let m = Mul { left = 5, right = 4 };
+    let n = Num { value: 2 };
+    let a = Add { left: 2, right: 3 };
+    let m = Mul { left: 5, right: 4 };
     visitStatic(n);
     visitStatic(a);
     visitStatic(m);

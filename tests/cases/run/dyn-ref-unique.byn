@@ -10,7 +10,7 @@ unique struct Stack : IStack {
     i64 count => items.length;
 
     void push(ref this, i64 v) {
-        items.add(v);
+        items.append(v);
     }
 
     i64 top() => items[items.length - 1];
@@ -25,7 +25,7 @@ void fill(dyn ref IStack s) {
 void report(dyn ref readonly IStack s) => print($"{s.count} items, top {s.top()}");
 
 void main() {
-    var s = Stack { items = List<i64>() };
+    var s = Stack { items: List<i64>() };
     fill(s);
     report(s);
     fill(s);

@@ -14,7 +14,7 @@ i64 counted(i64 n) {
 }
 
 void main() {
-    let digits = Digits { size = 3 };
+    let digits = Digits { size: 3 };
     for d in digits {
         print($"digit {d}");
     }
