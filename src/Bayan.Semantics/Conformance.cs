@@ -52,7 +52,7 @@ public sealed partial class Compilation
         _pendingConstraints.Clear();
     }
 
-    /// <summary>Witnesses, associated types and the <c>ref this</c> match for each base of <paramref name="s"/> (BYN2801–2803, 2814).</summary>
+    /// <summary>Witnesses, associated types and the <c>ref this</c> match for each base of <paramref name="s"/> (BYN2780, 2801–2803, 2814).</summary>
     private void Conform(StructSymbol s)
     {
         var source = s.File.Source;
@@ -80,10 +80,19 @@ public sealed partial class Compilation
                 // A field reads like a getter, so it can stand for one (bare-name and constraint lookups find it); not for a method.
                 if (field is not null && expected.Kind == FunctionKind.Getter)
                 {
-                    if (Same(field.Type, expected.ReturnType)) c.FieldWitnesses[member] = field;
-                    else
+                    if (!Same(field.Type, expected.ReturnType))
                         Report(DiagnosticCodes.InterfaceMemberMismatch, source, field.Location!.Value.Span, [s.Name, member.Name, $"{field.Type.DisplayName} {field.Name}", i.DisplayName, SignatureText(expected)],
                             label: $"does not match `{i.DisplayName}`", help: $"change the field's type to `{expected.ReturnType.DisplayName}`");
+                    else
+                    {
+                        c.FieldWitnesses[member] = field;
+                        // A getter's result is owned by the caller, so a field read in its place would be an implicit copy.
+                        // A generic struct is checked per instance, where its type parameters are known.
+                        if (!s.IsGeneric && TypeFacts.WhyUnique(field.Type) is { } why)
+                            Report(DiagnosticCodes.ImplicitCopy, source, field.Location!.Value.Span, [why],
+                                label: $"cannot stand for `{i.DisplayName}.{member.Name}`",
+                                help: $"rename the field and write the getter `{expected.ReturnType.DisplayName} {member.Name} => …;` in `{s.Name}`, returning a copy or a fresh value");
+                    }
                     continue;
                 }
                 var own = s.FindProperty(member.Name)?.Getter ?? s.FindMethods(member.Name).FirstOrDefault();

@@ -1175,8 +1175,8 @@ public sealed partial class Compilation
     /// <summary>
     /// Runs instantiation work, whose diagnostics are not the user's: the template already reported
     /// them. The exceptions are the rules only a type argument can break (a <c>Map</c> key, <c>==</c>
-    /// and formatting on a <c>T</c>); they are reported at <paramref name="span"/>, the use that chose
-    /// the type arguments.
+    /// and formatting on a <c>T</c>, a <c>for</c> over a <c>T</c> whose <c>Item</c> is unique); they are
+    /// reported at <paramref name="span"/>, the use that chose the type arguments.
     /// </summary>
     private void Instantiating(SourceText site, TextSpan span, Action work)
     {
@@ -1192,7 +1192,7 @@ public sealed partial class Compilation
         foreach (var d in bag.Items.Where(d => d.IsError))
         {
             if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code
-                || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code)
+                || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code || d.Code == DiagnosticCodes.Unsupported.Code)
                 (_scratch ?? Diagnostics).Add(d with { Source = site, Span = span, Label = InstantiationLabel });
             else
                 _instantiationErrors.Add(d);

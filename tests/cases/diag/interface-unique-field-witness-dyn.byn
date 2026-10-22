@@ -1,0 +1,22 @@
+interface IHas {
+    List<i64> items { get; }
+}
+
+struct H : IHas {
+    List<i64> items;
+}
+
+void grow(dyn ref IHas h) {
+    var mine = h.items;
+    for i in 0..100 {
+        mine.append(i);
+    }
+}
+
+void main() {
+    var l = List<i64>();
+    l.append(5);
+    var h = H { items: move l };
+    grow(h);
+    print($"{h.items[0]} {h.items.length}");
+}
