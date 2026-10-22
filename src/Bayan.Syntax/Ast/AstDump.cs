@@ -153,7 +153,7 @@ public static class AstDump
                     Line(depth, $"ErrorSet {Mods(d.Modifiers)}{d.Name.Text} = {string.Join(", ", d.Members.Select(Type))}");
                     break;
                 case TestDecl d:
-                    Line(depth, "Test " + TokenDump.Escape(d.Title));
+                    Line(depth, "Test " + TokenDump.Escape(d.Title) + (d.Params.Length == 0 ? "" : " " + Params(d.Params)));
                     Stmt(depth + 1, d.Body);
                     break;
                 default:

@@ -1,0 +1,18 @@
+const i32 limit = 3;
+
+i32 next() {
+    return 4;
+}
+
+[Cases(limit, next(), 1 + 1, 2)]
+test "positive" (i32 n) {
+    assert(n > 0);
+}
+
+[Cases(discountCases)]
+test "discount" (i32 total, i32 percent) {
+    assert(total > percent);
+}
+
+void main() {
+}

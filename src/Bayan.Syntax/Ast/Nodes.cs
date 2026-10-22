@@ -115,8 +115,8 @@ public sealed record UnionDecl(TextSpan Span, Modifiers Modifiers, Name Name, Un
 /// <summary><c>type Name = T;</c> — a plain alias.</summary>
 public sealed record TypeAliasDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax Target) : Decl(Span);
 
-/// <summary><c>test "name" { … }</c>.</summary>
-public sealed record TestDecl(TextSpan Span, string Title, BlockStmt Body) : Decl(Span);
+/// <summary><c>test "name" { … }</c>, or <c>test "name" (T a, U b) { … }</c> run once per <c>[Cases]</c> value.</summary>
+public sealed record TestDecl(TextSpan Span, string Title, Param[] Params, BlockStmt Body) : Decl(Span);
 
 // ── Types ────────────────────────────────────────────────────────────────────────
 
