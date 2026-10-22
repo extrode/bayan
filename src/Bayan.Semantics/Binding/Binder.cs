@@ -499,6 +499,8 @@ internal sealed partial class Binder
                 return BindPanicDefer(d);
             case ContextStmt c:
                 return BindContext(c);
+            case AssertStmt a:
+                return BindAssert(a);
             case EmptyStmt:
                 return new BoundBlock(stmt, []);
             case ErrorStmt:
@@ -515,6 +517,16 @@ internal sealed partial class Binder
             : new BoundUnary(syntax, UnaryOp.Not, cond, PrimitiveType.Bool);
 
     private BoundExpr BindCondition(Expr e) => BindConverted(e, PrimitiveType.Bool);
+
+    private BoundStmt BindAssert(AssertStmt a)
+    {
+        var condition = BindExpr(a.Condition, PrimitiveType.Bool);
+        if (condition.Type.IsError || Conversions.Implicit(condition.Type, PrimitiveType.Bool) is not null)
+            return new BoundAssert(a, Convert(condition, PrimitiveType.Bool, a.Condition.Span));
+        Report(DiagnosticCodes.AssertNotBool, a.Condition.Span, [condition.Type.DisplayName], label: "this is not a `bool`",
+            help: "check the value against what you expect, e.g. `assert count == 3;`");
+        return new BoundErrorStmt(a);
+    }
 
     // ── Null narrowing (spec §7.2) ───────────────────────────────────────────────
 
@@ -757,7 +769,7 @@ internal sealed partial class Binder
 
     /// <summary>
     /// <c>for try x in e { … }</c> over a value whose <c>next()</c> returns <c>T?</c> and fails: the loop owns the value
-    /// and runs <c>while (try seq.next() is { } x) { … }</c>, so a failing step propagates like any <c>try</c>.
+    /// (or borrows a <c>var</c> in place) and runs <c>while (try seq.next() is { } x) { … }</c>, so a failing step propagates like any <c>try</c>.
     /// </summary>
     private BoundStmt BindForTry(ForStmt f, BoundExpr iterable, JumpTarget target)
     {
@@ -772,15 +784,19 @@ internal sealed partial class Binder
             return new BoundErrorStmt(f);
         }
         var span = f.Iterable.Span;
-        var sequence = DeclareLocal(new Name(span, $"<sequence {_nextLocalId}>"), iterable.Type, LocalKind.Temp);
-        var next = new TryExpr(span, new CallExpr(span, new MemberExpr(span, new NameExpr(span, new Name(span, sequence.Name), []), new Name(span, "next"), false), []));
+        // A `var` (or `ref` parameter) is stepped in place, so its state advances; any other value is stepped in a hidden copy.
+        var inPlace = iterable is BoundLocal { Local: var l } && (l.IsMutable || l is ParameterSymbol { IsByRef: true });
+        var sequence = inPlace ? null : DeclareLocal(new Name(span, $"<sequence {_nextLocalId}>"), iterable.Type, LocalKind.Temp);
+        var receiver = sequence is null ? f.Iterable : new NameExpr(span, new Name(span, sequence.Name), []);
+        var next = new TryExpr(span, new CallExpr(span, new MemberExpr(span, receiver, new Name(span, "next"), false), []));
         var step = BindExpr(next);
         if (f.Type is { } t && ResolveType(t) is { IsError: false } declared && !Unwrap(step.Type).IsError && !declared.Equals(Unwrap(step.Type)))
             Report(DiagnosticCodes.TypeMismatch, t.Span, [Unwrap(step.Type).DisplayName, declared.DisplayName]);
         var pattern = BindPresent(f.Variable, step.Type);
         var body = BindForBody(f, pattern.Designation!, target);
         PopScope();
-        return new BoundBlock(f, [new BoundLocalDecl(f, sequence, iterable), new BoundWhile(f, new BoundIs(f, step, pattern), body, target)]);
+        var loop = new BoundWhile(f, new BoundIs(f, step, pattern), body, target);
+        return sequence is null ? loop : new BoundBlock(f, [new BoundLocalDecl(f, sequence, iterable), loop]);
     }
 
     /// <summary>The <c>T? next() fails …</c> method that <c>for try</c> steps with, if <paramref name="type"/> has one.</summary>

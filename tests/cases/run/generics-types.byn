@@ -81,7 +81,7 @@ print(text);
 var box = Box<string> { value: "a", history: List<string>() };
 box.put(old: box.value, next: "b");
 box.put(old: box.value, next: "c");
-print($"{box.value} {box.history.count}");
+print($"{box.value} {box.history.length}");
 
 var bySuit = Map<Suit, i64>();
 bySuit[.clubs] = 2;

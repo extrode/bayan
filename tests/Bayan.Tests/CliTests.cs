@@ -387,7 +387,9 @@ public sealed class CliTests
               x cli-test-mixed: asserts
                   before
                   assert(1 + 1 == 3)
-                    1 + 1 is 2
+                           |   |
+                           |   false
+                           2
                   main.test.byn:16
 
               x cli-test-mixed: fails
@@ -457,7 +459,9 @@ public sealed class CliTests
 
               x cli-test-values: leftover cents
                   assert(cents(2) == 201)
-                    cents(2) is 200
+                         |        |
+                         |        false
+                         200
                   main.test.byn:6
 
             * 0 passed - x 1 failed - 0 pending - Ts

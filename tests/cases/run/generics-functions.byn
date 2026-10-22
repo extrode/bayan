@@ -10,7 +10,7 @@ struct Point {
 T pick<T>(bool first, move T a, move T b) => first ? move a : move b;
 
 string first<T>(ReadOnlySpan<T> xs) {
-    if xs.count == 0 { return "null"; }
+    if xs.length == 0 { return "null"; }
     return $"{xs[0]}";
 }
 

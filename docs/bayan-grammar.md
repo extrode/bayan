@@ -70,7 +70,7 @@ Also rejected with a fix-it (design round 2 plan §15):
 | `errdefer` | `defer failing` | [BYN1020](diagnostics/BYN1020.md) |
 | `catch (e) switch { … }` | `catch switch { E e => … }` | [BYN1025](diagnostics/BYN1025.md) |
 | `error set S = A \| B` | `error set S = A, B` | [BYN1029](diagnostics/BYN1029.md) |
-| `.length`, `List.add`, `tryFirst` | `.count`, `append`, `first` | [BYN2230](diagnostics/BYN2230.md) |
+| `List.add`, `tryFirst` | `append`, `first` (round 3 keeps `.length`) | [BYN2230](diagnostics/BYN2230.md) |
 | `toString()` | `format()` | [BYN2031](diagnostics/BYN2031.md) |
 
 A body that is not a block: [BYN1018](diagnostics/BYN1018.md). Display-only views (inferred types, expanded derived members) are language-server inlay hints, never a stored form.

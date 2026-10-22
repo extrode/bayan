@@ -1,4 +1,7 @@
-panic: assertion failed: name == c.name
-  name is bolts
-  c.name is green
+panic: assert(name == c.name)
+              │    │  │ │
+              │    │  │ green
+              │    │  green
+              │    false
+              bolts
   at assert-values-types.byn:12

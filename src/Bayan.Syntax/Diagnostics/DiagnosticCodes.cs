@@ -186,6 +186,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor PanicHandlerRestricted = Error("BYN2612", "{0} is not allowed in a panic handler");
     public static readonly DiagnosticDescriptor PanicHandlerReads = Error("BYN2613", "a panic handler reads only `let` bindings and parameters");
     public static readonly DiagnosticDescriptor OnPanicPlacement = Error("BYN2614", "`Panic.onPanic` may be set only as the first statement of `main`");
+    public static readonly DiagnosticDescriptor PanicHandlerReadsMoved = Error("BYN2615", "a panic handler reads `{0}`, which is moved after the handler is registered");
     public static readonly DiagnosticDescriptor UnknownUnionVariant = Error("BYN2700", "`{0}` is not a variant of union `{1}`");
     public static readonly DiagnosticDescriptor DuplicateUnionVariant = Error("BYN2701", "union `{0}` already has a variant `{1}`");
     public static readonly DiagnosticDescriptor EmptyUnion = Error("BYN2702", "union `{0}` has no variants");
@@ -222,6 +223,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor OwningPatternOverlap = Error("BYN2790", "pattern `{0}` binds the same storage more than once in `switch move …`");
     public static readonly DiagnosticDescriptor OwningBindingMutatedInGuard = Error("BYN2791", "`{0}` is mutated in the guard of `switch move …`; a guard that fails gives the value back");
     public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`[ExitCode]` needs one integer constant from 1 to 255");
+    public static readonly DiagnosticDescriptor AssertNotBool = Error("BYN2775", "`assert` needs a `bool`, got `{0}`");
     public static readonly DiagnosticDescriptor CasesArity = Error("BYN2773", "`[Cases]` gives {0} values but the test takes {1} parameters");
     public static readonly DiagnosticDescriptor CasesNotConstant = Error("BYN2774", "each `[Cases]` value must be a constant");
     public static readonly DiagnosticDescriptor ImplicitCopy = Error("BYN2780", "implicit copy of a unique value: {0}");

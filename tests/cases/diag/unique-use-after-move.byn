@@ -3,9 +3,9 @@ void main() {
     var a = List<i64>();
     a.append(1);
     let b = move a;
-    print($"{a.count}");
+    print($"{a.length}");
     a.append(2);
     a = List<i64>();
     a.append(3);
-    print($"{a.count} {b.count}");
+    print($"{a.length} {b.length}");
 }

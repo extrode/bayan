@@ -1,16 +1,7 @@
-struct Line { string text; }
-
 void main() {
     var xs = List<i64>();
     xs.add(1);
-    let m = Map<string, i64>();
-    i64[3] a = [1, 2, 3];
     var sb = StrBuf();
     sb.append("hi");
-    let name = "bayan";
-    print($"{xs.length} {m.length} {a.length} {a.asSpan().length} {sb.length}");
-    print($"{name.length}");
     print(sb.asString());
-    let line = Line { text: "x" };
-    if (line is { text.length: 1 }) { print("one"); }
 }

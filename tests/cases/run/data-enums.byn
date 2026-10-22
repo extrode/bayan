@@ -30,7 +30,7 @@ print(Planet.earth);
 
 let home = Planet.earth;
 Planet near = .venus;
-print($"{home == Planet.earth} {home != near} {home.label.bytes.count}");
+print($"{home == Planet.earth} {home != near} {home.label.length}");
 
 print($"{Planet.fromOrdinal(1)} {Planet.fromOrdinal(3)} {Planet.fromOrdinal(-1)}");
 if (Planet.fromOrdinal(0) is { } first) {

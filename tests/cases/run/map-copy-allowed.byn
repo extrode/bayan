@@ -38,7 +38,7 @@ struct Counted {
 
     public Counted(ref Map<string, i64> m) {
         m["counted"] = 1;
-        this.n = m.count;
+        this.n = m.length;
     }
 }
 
@@ -70,13 +70,13 @@ arr[1]["k"] = 1;
 bump(ref a, "x");
 bump(ref s.data, "z");
 let counted = Counted(ref a);
-print($"{counted.n} {a.count} {s.data.count} {arr[1].count} {o.value.count} {list[0].count}");
+print($"{counted.n} {a.length} {s.data.length} {arr[1].length} {o.value.length} {list[0].length}");
 print($"{total(a)} {total(s.data)} {total(arr[0])} {total(o.value)} {total(pair.item1)}");
 for e in s.data { print($"  {e.key} = {e.value}"); }
 for m in list { print($"list: {m}"); }
 print($"{a} {b} {c} {s} {pair}");
 print($"{maybe} {r.value} {nested[1]}");
-if full is .full(let d) { print($"full: {d.count}"); }
+if full is .full(let d) { print($"full: {d.length}"); }
 
 struct Named {
     string name;
@@ -85,4 +85,4 @@ struct Named {
 
 let named = Named { name: "n", m: Map<i64, i64>() };
 let renamed = named with { m: Map<i64, i64>() };
-print($"{renamed.name} {renamed.m.count}");
+print($"{renamed.name} {renamed.m.length}");

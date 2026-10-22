@@ -1,0 +1,8 @@
+panic: assert next(ref calls) * 10 == calls + 100
+              │               │    │  │     │
+              │               │    │  │     101
+              │               │    │  1
+              │               │    false
+              │               10
+              1
+  at assert-side-effect.byn:7

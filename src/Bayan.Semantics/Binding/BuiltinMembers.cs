@@ -12,15 +12,16 @@ internal static class BuiltinMembers
     /// <summary>A built-in property (read without parentheses), or null.</summary>
     public static (BuiltinMember Member, TypeSymbol Type)? Property(TypeSymbol type, string name) => (type, name) switch
     {
+        ({ IsString: true }, "length") => (BuiltinMember.StringLength, PrimitiveType.I64),
         ({ IsString: true }, "bytes") => (BuiltinMember.StringBytes, new SpanType(PrimitiveType.U8, readOnly: true)),
         ({ IsString: true }, "isEmpty") => (BuiltinMember.StringIsEmpty, PrimitiveType.Bool),
-        (SpanType, "count") => (BuiltinMember.SpanLength, PrimitiveType.I64),
+        (SpanType, "length") => (BuiltinMember.SpanLength, PrimitiveType.I64),
         (SpanType, "isEmpty") => (BuiltinMember.SpanIsEmpty, PrimitiveType.Bool),
-        (ListType, "count") => (BuiltinMember.ListLength, PrimitiveType.I64),
+        (ListType, "length") => (BuiltinMember.ListLength, PrimitiveType.I64),
         (ListType, "isEmpty") => (BuiltinMember.ListIsEmpty, PrimitiveType.Bool),
-        (MapType, "count") => (BuiltinMember.MapLength, PrimitiveType.I64),
-        (Symbols.ArrayType, "count") => (BuiltinMember.ArrayLength, PrimitiveType.I64),
-        (BuiltinType { Kind: BuiltinKind.StrBuf }, "count") => (BuiltinMember.StrBufLength, PrimitiveType.I64),
+        (MapType, "length") => (BuiltinMember.MapLength, PrimitiveType.I64),
+        (Symbols.ArrayType, "length") => (BuiltinMember.ArrayLength, PrimitiveType.I64),
+        (BuiltinType { Kind: BuiltinKind.StrBuf }, "length") => (BuiltinMember.StrBufLength, PrimitiveType.I64),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "view") => (BuiltinMember.StrBufAsString, PrimitiveType.String),
         (BuiltinType { Kind: BuiltinKind.ProcessResult }, "exitCode") => (BuiltinMember.ProcessExitCode, PrimitiveType.I32),
         (BuiltinType { Kind: BuiltinKind.ProcessResult }, "stdout") => (BuiltinMember.ProcessStdout, PrimitiveType.String),
@@ -78,7 +79,7 @@ internal static class BuiltinMembers
     public static bool HasMethod(TypeSymbol type, string name) => Method(type, name) is not null;
 
     private static readonly string[] Candidates =
-        ["count", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "asSpan", "clear", "removeLast", "removeRange", "getOr", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "toHex", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
+        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "asSpan", "clear", "removeLast", "removeRange", "getOr", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "toHex", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>

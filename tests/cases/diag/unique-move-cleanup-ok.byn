@@ -4,13 +4,13 @@ error enum E { bad, }
 void step() fails E { }
 
 void consume(move List<i64> xs) {
-    print($"{xs.count}");
+    print($"{xs.length}");
 }
 
 // An `errdefer` runs only when the function fails; the success `return` moves `xs` after the last `try`.
 List<i64> build() fails E {
     let xs = List<i64>();
-    defer failing print($"{xs.count}");
+    defer failing print($"{xs.length}");
     try step();
     return move xs;
 }
@@ -18,7 +18,7 @@ List<i64> build() fails E {
 // `xs` is assigned again before the scope exits.
 void reassign() {
     var xs = List<i64>();
-    defer print($"{xs.count}");
+    defer print($"{xs.length}");
     consume(move xs);
     xs = List<i64>();
 }

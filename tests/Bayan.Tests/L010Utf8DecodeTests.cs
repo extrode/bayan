@@ -29,8 +29,8 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
         }
 
         bool same(ReadOnlySpan<u8> a, ReadOnlySpan<u8> b) {
-            if a.count != b.count { return false; }
-            for i in 0..a.count {
+            if a.length != b.length { return false; }
+            for i in 0..a.length {
                 if a[i] != b[i] { return false; }
             }
             return true;
@@ -64,7 +64,7 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
             let text = input.value.bytes;
             var line = List<u8>();
             i64 i = 0;
-            while i < text.count {
+            while i < text.length {
                 let c = text[i];
                 if c == 0x0A {
                     print(check(line.asSpan()));

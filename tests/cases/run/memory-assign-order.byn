@@ -12,4 +12,4 @@ xs[0] = grow(ref xs);
 var ys = List<i64>();
 ys.append(10);
 ys[0] += grow(ref ys);
-print($"{xs[0]} {xs.count} {ys[0]} {ys.count}");
+print($"{xs[0]} {xs.length} {ys[0]} {ys.length}");

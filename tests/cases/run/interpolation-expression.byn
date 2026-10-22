@@ -8,7 +8,7 @@ string describe(string name, i64 count) {
 }
 
 i64 width(string s) {
-    return s.bytes.count;
+    return s.length;
 }
 
 void main() {

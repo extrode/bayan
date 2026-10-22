@@ -42,7 +42,7 @@ bool dumpFile(ref StrBuf sb, string path, move List<u8> bytes, Keywords keywords
 
 /// Appends a `span out of range` line for every token, doc or diagnostic span outside the input.
 void checkSpans(ref StrBuf sb, ref LexResult result) {
-    let size = result.source.bytes.count;
+    let size = result.source.bytes.length;
     for token in result.tokens {
         unless inside(TextSpan { start: token.start, length: token.length }, size) { sb.append($"span out of range: token {token.start}+{token.length}\n"); }
         unless inside(TextSpan { start: token.docStart, length: token.docLength }, size) { sb.append($"span out of range: doc {token.docStart}+{token.docLength}\n"); }
@@ -104,12 +104,12 @@ i32 lexTimed(string path, Keywords keywords) {
 
 i32 main(ReadOnlySpan<string> args) {
     let keywords = Keywords.build();
-    if args.count == 0 { return lexOne("-", keywords, json: false); }
-    if args.count == 1 && args[0] == "--json" { return lexOne("-", keywords, json: true); }
-    if args.count == 1 && !args[0].startsWith("--") { return lexOne(args[0], keywords, json: false); }
-    if args.count == 2 && args[0] == "--json" && !args[1].startsWith("--") { return lexOne(args[1], keywords, json: true); }
-    if args.count == 2 && args[1] == "--json" && !args[0].startsWith("--") { return lexOne(args[0], keywords, json: true); }
-    if args.count == 2 && args[0] == "--many" { return lexMany(args[1], keywords); }
-    if args.count == 2 && args[0] == "--time" { return lexTimed(args[1], keywords); }
+    if args.length == 0 { return lexOne("-", keywords, json: false); }
+    if args.length == 1 && args[0] == "--json" { return lexOne("-", keywords, json: true); }
+    if args.length == 1 && !args[0].startsWith("--") { return lexOne(args[0], keywords, json: false); }
+    if args.length == 2 && args[0] == "--json" && !args[1].startsWith("--") { return lexOne(args[1], keywords, json: true); }
+    if args.length == 2 && args[1] == "--json" && !args[0].startsWith("--") { return lexOne(args[0], keywords, json: true); }
+    if args.length == 2 && args[0] == "--many" { return lexMany(args[1], keywords); }
+    if args.length == 2 && args[0] == "--time" { return lexTimed(args[1], keywords); }
     return usage("expected `[--json] [<path>|-]`, `--many <dir>` or `--time <path>`");
 }

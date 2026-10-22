@@ -1,7 +1,7 @@
 string show(List<i64> xs) {
     var line = StrBuf();
     for x in xs { line.append($" {x}"); }
-    return $"{xs.count}:{line.finish()}";
+    return $"{xs.length}:{line.finish()}";
 }
 
 List<i64> make() {
@@ -28,7 +28,7 @@ empty.removeRange(6, 6);
 print($"empty {show(empty)}");
 
 var whole = make();
-whole.removeRange(0, whole.count);
+whole.removeRange(0, whole.length);
 print($"whole {show(whole)} {whole.isEmpty}");
 whole.append(7);
 print($"reused {show(whole)}");

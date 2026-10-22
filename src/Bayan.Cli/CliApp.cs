@@ -620,7 +620,7 @@ public static class CliApp
             failures.Add((name, name == test.Name));
             human.WriteLine();
             human.WriteLine(Messages.TestFailureLine.Text(Paint(Role.Error, symbols.Cross, bold: true), module, name));
-            foreach (var l in FailureDetail(details, o.Verbose))
+            foreach (var l in FailureDetail(details, o.Verbose, symbols, (s_styleOut ?? Style.Plain).Width - Messages.TestDetail.Text("").Length))
                 human.WriteLine(Messages.TestDetail.Text(TerminalStyle.Visible(l)));
         }
         total.Stop();
@@ -662,23 +662,31 @@ public static class CliApp
         text.AsSpan().IndexOfAny("$`\\\"!") < 0 ? "\"" + text + "\"" : "'" + text.Replace("'", "'\\''") + "'";
 
     /// <summary>
-    /// A failed test's output for display: <c>panic: </c> dropped, <c>assertion failed: e</c> as <c>assert(e)</c>,
-    /// value lines kept under it, and <c>at file:line</c> frames as <c>file:line</c>, the top three unless verbose.
+    /// A failed test's output for display: <c>panic: </c> dropped, the diagram under a failed <c>assert</c> moved
+    /// left with it, drawn with <paramref name="symbols"/> and cut to <paramref name="width"/> columns, and
+    /// <c>at file:line</c> frames as <c>file:line</c>, the top three unless verbose.
     /// </summary>
-    private static List<string> FailureDetail(string details, bool verbose)
+    internal static List<string> FailureDetail(string details, bool verbose, Symbols symbols, int width)
     {
         var lines = new List<string>();
         var frames = 0;
+        var diagram = false;
         foreach (var raw in details.Split('\n'))
         {
             var l = raw.TrimEnd('\r');
             if (l.StartsWith("  at ", StringComparison.Ordinal))
             {
                 if (verbose || frames++ < 3) lines.Add(l["  at ".Length..]);
+                diagram = false;
                 continue;
             }
-            if (l.StartsWith("panic: ", StringComparison.Ordinal)) l = l["panic: ".Length..];
-            if (l.StartsWith("assertion failed: ", StringComparison.Ordinal)) l = "assert(" + l["assertion failed: ".Length..] + ")";
+            if (l.StartsWith("panic: ", StringComparison.Ordinal))
+            {
+                l = l["panic: ".Length..];
+                diagram = l.StartsWith("assert ", StringComparison.Ordinal) || l.StartsWith("assert(", StringComparison.Ordinal);
+            }
+            else if (diagram && l.StartsWith(PowerAssert.Indent, StringComparison.Ordinal))
+                l = Progress.Fit(l[PowerAssert.Indent.Length..].Replace(PowerAssert.Bar.ToString(), symbols.Bar), width, symbols.Ellipsis);
             lines.Add(l);
         }
         return lines;

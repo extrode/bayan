@@ -23,23 +23,23 @@ void main() {
     ledger.items.append(1);
     ledger.items.append(2);
     let items = ledger.items.take();
-    print($"field {items.count} left {ledger.items.count}");
+    print($"field {items.length} left {ledger.items.length}");
     ledger.items.append(3);
-    print($"reused {ledger.items.count} {ledger.items[0]}");
-    print($"sum {sum(ledger.items.take())} left {ledger.items.count}");
+    print($"reused {ledger.items.length} {ledger.items[0]}");
+    print($"sum {sum(ledger.items.take())} left {ledger.items.length}");
 
     var counts = Map<string, i64>();
     counts["a"] = 1;
     counts["b"] = 2;
     let taken = counts.take();
-    print($"map {taken.count} left {counts.count}");
+    print($"map {taken.length} left {counts.length}");
     counts["c"] = 3;
-    print($"reused {counts.count} {counts["c"]}");
+    print($"reused {counts.length} {counts["c"]}");
 
     var sb = StrBuf();
     sb.append("hello");
     let text = sb.take();
-    print($"strbuf {text.finish()} left {sb.count}");
+    print($"strbuf {text.finish()} left {sb.length}");
     sb.append("again");
     print($"reused {sb.finish()}");
 
@@ -47,7 +47,7 @@ void main() {
     more.append(4);
     ledger.pending = more.take();
     let pending = ledger.pending.take();
-    if (pending is { } p) { print($"optional {p.count}"); }
+    if (pending is { } p) { print($"optional {p.length}"); }
     print($"left null {ledger.pending is null}");
     let none = ledger.pending.take();
     print($"none null {none is null}");
@@ -57,7 +57,7 @@ void main() {
     lists[0].append(5);
     lists[0].append(6);
     let first = lists[0].take();
-    print($"element {first.count} left {lists[0].count}");
+    print($"element {first.length} left {lists[0].length}");
     lists[0].append(7);
     print($"reused {lists[0][0]}");
 
@@ -66,20 +66,20 @@ void main() {
     nested[0].append(List<i64>());
     nested[0][0].append(12);
     let inner = nested[pick()][pick()].take();
-    print($"nested {inner.count} left {nested[0][0].count}");
+    print($"nested {inner.length} left {nested[0][0].length}");
 
     var groups = Map<string, List<i64>>();
     var g = List<i64>();
     g.append(8);
     groups["x"] = move g;
     let x = groups["x"].take();
-    print($"map element {x.count} left {groups["x"].count}");
+    print($"map element {x.length} left {groups["x"].length}");
 
     var shared = List<i64>();
     shared.append(9);
     shared.append(10);
     let drained = drain(ref shared);
-    print($"ref {drained.count} left {shared.count}");
+    print($"ref {drained.length} left {shared.length}");
     shared.append(11);
     print($"reused {shared[0]}");
 }

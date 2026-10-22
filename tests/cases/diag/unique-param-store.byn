@@ -11,4 +11,4 @@ List<i64> pass(List<i64> items) {
 
 Holder owned(move List<i64> items) => Holder { items: move items };
 
-i64 count(List<i64> items) => items.count;
+i64 count(List<i64> items) => items.length;

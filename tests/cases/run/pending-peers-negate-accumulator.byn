@@ -3,7 +3,7 @@ xs.append(5);
 xs.append(6);
 var i = 0;
 var total = 0;
-while i < xs.count {
+while i < xs.length {
     i64 step = i;
     total = total - -i;
     i += 1;

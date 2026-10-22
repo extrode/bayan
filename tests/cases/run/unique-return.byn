@@ -20,9 +20,9 @@ List<i64> handOver(move List<i64> xs) => xs;
 
 void main() {
     let xs = numbers(4);
-    print($"{xs.count} {xs[3]}");
+    print($"{xs.length} {xs[3]}");
     let l = ledger("main");
-    print($"{l.name} {l.entries.count} {l.entries[3]}");
+    print($"{l.name} {l.entries.length} {l.entries[3]}");
     let ys = handOver(numbers(2));
-    print($"{ys.count}");
+    print($"{ys.length}");
 }

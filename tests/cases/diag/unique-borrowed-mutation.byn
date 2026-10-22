@@ -13,5 +13,5 @@ void main() {
     }
     let slot = Slot.full(List<i64>());
     if slot is .full(var items) { items.append(2); }
-    for xs in lists { print($"{xs.count}"); }
+    for xs in lists { print($"{xs.length}"); }
 }

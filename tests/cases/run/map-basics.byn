@@ -20,7 +20,7 @@ prices["tea"] = 3;
 prices["cake"] = 5;
 prices["jam"] = 2;
 prices["tea"] = 4;
-print($"{prices} count={prices.count}");
+print($"{prices} count={prices.length}");
 if prices.contains("cake") { print($"cake costs {prices["cake"]}"); }
 print($"scone: {prices.getOr("scone", 0)}");
 print($"has jam: {prices.contains("jam")}, has milk: {prices.contains("milk")}");
@@ -61,11 +61,11 @@ print($"{inv}");
         for i in 0..1000 { seen[i % 7] = i; }
         i64 total = 0;
         for e in seen { total += e.value; }
-        print($"arena map: {seen.count} keys, total {total}");
+        print($"arena map: {seen.length} keys, total {total}");
     }
 }
 
 prices.clear();
-print($"cleared: {prices} count={prices.count}");
+print($"cleared: {prices} count={prices.length}");
 prices["bread"] = 1;
 print($"{prices}");

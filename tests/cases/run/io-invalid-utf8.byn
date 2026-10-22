@@ -8,6 +8,6 @@ void main() fails IoError {
     };
     print($"as text: {text}");
     List<u8> bytes = try Io.readFile("bad.txt");
-    print($"as bytes: {bytes.count} bytes, middle {bytes[1]}");
+    print($"as bytes: {bytes.length} bytes, middle {bytes[1]}");
     try Io.readText("bad.txt");
 }
