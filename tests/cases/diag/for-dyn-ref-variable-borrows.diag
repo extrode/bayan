@@ -1,0 +1,13 @@
+error BYN3004: `xs` is modified while `d` still borrows it
+
+  22 │         xs.append(S { n: i });
+     │         ^^^^^^^^^^^^^^^^^^^^^ `d` is used again on line 24
+     │
+  help: finish using `d` first, or copy what it needs before changing `xs`
+
+error BYN3004: `xs` is modified while `e` still borrows it
+
+  29 │     xs.clear();
+     │     ^^^^^^^^^^ `e` is used again on line 30
+     │
+  help: finish using `e` first, or copy what it needs before changing `xs`

@@ -38,6 +38,8 @@ internal sealed class RegionAnalysis
     private readonly Compilation _c;
     private readonly FunctionSymbol _fn;
     private readonly SourceText _source;
+    /// <summary>Stand for the storage of <c>this</c>'s fields: a borrow into one is a loan on it.</summary>
+    private readonly Dictionary<FieldSymbol, LocalSymbol> _thisFields = new();
     private readonly Dictionary<LocalSymbol, Borrow> _locals = new();
     private readonly Dictionary<LocalSymbol, int> _depthOf = new();
     private readonly Dictionary<LocalSymbol, int> _declaredAt = new();
@@ -140,7 +142,9 @@ internal sealed class RegionAnalysis
                 }
                 _depth++;
                 Declare(f.Variable, f.Syntax.Span.Start);
-                Store(f.Variable, iterable with { Owners = [] }, f.Iterable.Syntax.Span);
+                // A `dyn ref` variable points into an array or list, like `dyn ref I d = xs[i]`; any other is a copy.
+                var item = f.Variable.Type is DynRefType && f.Iterable.Type is ListType or ArrayType ? Lend(f.Iterable, iterable) : iterable with { Owners = [] };
+                Store(f.Variable, item, f.Iterable.Syntax.Span);
                 Stmt(f.Body);
                 _depth--;
                 break;
@@ -341,10 +345,13 @@ internal sealed class RegionAnalysis
         {
             if (fn.Parameters[i].Modifier is not (Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out)) continue;
             if (RootLocal(c.Arguments[i]) is not { } root) continue;
-            if (MayBorrow(root.Type, [])) Mutate(c.Arguments[i], c.Arguments[i].Syntax.Span);
+            // Writing an element through `ref xs[i]` does not reallocate `xs`; only what the callee can reach may change.
+            if (MayBorrow(c.Arguments[i].Type, [])) Mutate(c.Arguments[i], c.Arguments[i].Syntax.Span);
             for (var j = 0; j < c.Arguments.Length; j++)
             {
-                if (j == i || !(RootLocal(c.Arguments[j]) == root || args[j].Owners.Contains(root))) continue;
+                // A by-value copy of an element (`xs[0]` as an `i64`) cannot alias what the callee changes.
+                var byRef = j < fn.Parameters.Count && fn.Parameters[j].Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out;
+                if (j == i || !(RootLocal(c.Arguments[j]) == root && (byRef || MayBorrow(c.Arguments[j].Type, [])) || args[j].Owners.Contains(root))) continue;
                 Report(DiagnosticCodes.RefAndValue, c.Arguments[j].Syntax.Span, [root.Name],
                     label: $"`{root.Name}` is also passed by `ref`",
                     help: "copy the value into a local first, or make two calls");
@@ -370,6 +377,8 @@ internal sealed class RegionAnalysis
     {
         if (source is BoundStaticArray) return sourceBorrow;
         // Inside a method returning a span or `dyn ref`, its own fields are the caller's data; the call site lends the receiver (Q75).
+        // Either way it is a loan on that field: changing it structurally invalidates the borrow.
+        if (ThisField(source) is { } field) sourceBorrow = sourceBorrow.Union(new Borrow([], [field]));
         if (_fn.ReturnType is SpanType or DynRefType && IsThisRooted(source)) return sourceBorrow.Union(new Borrow([new Region(0, "the caller's data")], []));
         if (RootLocal(source) is { } root)
         {
@@ -467,7 +476,9 @@ internal sealed class RegionAnalysis
 
     private void Mutate(BoundExpr target, TextSpan span)
     {
-        if (_reporting && RootLocal(target) is { } root) _mutations.Add(new Mutation(root, span));
+        if (!_reporting) return;
+        if (RootLocal(target) is { } root) _mutations.Add(new Mutation(root, span));
+        else if (ThisField(target) is { } field) _mutations.Add(new Mutation(field, span));
     }
 
     private void CheckMutations()
@@ -540,6 +551,18 @@ internal sealed class RegionAnalysis
         BoundTupleElement t => IsThisRooted(t.Receiver),
         BoundIndex i when i.Target.Type is ArrayType or ListType => IsThisRooted(i.Target),
         _ => false,
+    };
+
+    /// <summary>The stand-in for the field of <c>this</c> whose storage <paramref name="e"/> names (<c>f</c>, <c>f.g</c>, <c>f[i]</c>), or null.</summary>
+    private LocalSymbol? ThisField(BoundExpr e) => e switch
+    {
+        BoundField { Receiver: BoundThis } f => _thisFields.TryGetValue(f.Field, out var local)
+            ? local
+            : _thisFields[f.Field] = new LocalSymbol(f.Field.Name, null, f.Field.Type, LocalKind.Parameter),
+        BoundField f => ThisField(f.Receiver),
+        BoundTupleElement t => ThisField(t.Receiver),
+        BoundIndex i when i.Target.Type is ArrayType or ListType => ThisField(i.Target),
+        _ => null,
     };
 
     /// <summary>The local a store into <paramref name="e"/> lands in, including through a span or list element.</summary>
