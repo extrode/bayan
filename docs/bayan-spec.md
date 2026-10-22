@@ -534,7 +534,7 @@ extension<T> Span<T> where T : INumber<T> {
     public sum() -> T { … }
 }
 extension static Duration {
-    public static fromHours(h: f64) -> Duration => (Duration)(h * 3600s)
+    public static fromHours(h: f64) -> Duration => Duration(h * 3600s)
 }
 ```
 
