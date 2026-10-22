@@ -713,9 +713,7 @@ internal sealed partial class Binder
             }
             case TypeParameterType tp:
                 Report(DiagnosticCodes.TypeParameterMember, member.Span, [name, tp.Name],
-                    help: tp.Constraints.Count > 0
-                        ? $"use a member `{string.Join("`, `", tp.Constraints.Select(i => i.DisplayName))}` declares; a `{tp.Name}` has only those"
-                        : $"add `where {tp.Name} : …` naming an interface that declares `{name}`, or use a concrete type");
+                    help: $"add `where {tp.Name} : …` naming an interface that declares `{name}`, or use a concrete type");
                 return new BoundErrorExpr(syntax);
             case DynRefType d when (d.Interface.FindProperty(name) ?? d.Interface.FindMethods(name).FirstOrDefault()) is { } m:
             {
