@@ -3,7 +3,7 @@ error BYN1008: a postfix `if` applies only to a simple statement
   2 │     { work(); } if ok;
     │                 ^^
     │
-  help: put the condition first: `if (cond) { … }`
+  help: put the condition first: `if cond { … }`
 
 error BYN1008: a postfix `if` applies only to a simple statement
 

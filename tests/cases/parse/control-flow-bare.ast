@@ -21,7 +21,8 @@ CompilationUnit
         Block
           Expr (call big)
       If (> n 0)
-        Return
+        Block
+          Return
       Unless (. p isValid)
         Block
           Expr (call reject p)
@@ -61,7 +62,8 @@ CompilationUnit
         Block
           Expr (call use a)
       For Let x in xs
-        Expr (call use x)
+        Block
+          Expr (call use x)
       Label outer
         For Let row in grid
           Block

@@ -3,6 +3,6 @@ struct Node {
 }
 
 void main() {
-    let n = Owned(Node { item = 1 });
+    let n = Owned(Node { item: 1 });
     n.item = 2;
 }

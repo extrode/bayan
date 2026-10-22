@@ -7,7 +7,7 @@ error BYN2410: `switch` does not handle every `Suit`
 
 error BYN2410: `switch` does not handle every `Suit`
 
-  9 │     switch (s) {
-    │             ^ not covered: .clubs, .diamonds, .spades
+  9 │     switch s {
+    │            ^ not covered: .clubs, .diamonds, .spades
     │
   help: add the missing cases or a `default:` section

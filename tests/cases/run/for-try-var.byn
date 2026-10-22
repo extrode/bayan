@@ -12,7 +12,7 @@ struct Rows {
 }
 
 void run() fails ReadError {
-    var rows = Rows { at = 0, limit = 5 };
+    var rows = Rows { at: 0, limit: 5 };
     for try row in rows {
         print($"row {row}");
         break if row == 2;

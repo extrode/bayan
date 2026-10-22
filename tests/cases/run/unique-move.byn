@@ -6,7 +6,7 @@ struct Bag {
 
 i64 sum(move List<i64> xs) {
     i64 total = 0;
-    for (let x in xs) total += x;
+    for x in xs { total += x; }
     return total;
 }
 
@@ -17,7 +17,7 @@ void main() {
     let b = move a;
     print($"b {b.length}");
 
-    var bag = Bag { name = "bag", items = move b };
+    var bag = Bag { name: "bag", items: move b };
     bag.items.append(3);
     print($"{bag.name} {bag.items.length}");
 

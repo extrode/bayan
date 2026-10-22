@@ -71,7 +71,7 @@ public sealed record LPushPanicHandler(Node Syntax, int Slot, LocalSymbol? Panic
 /// <summary>Unregisters the handler in slot <see cref="Slot"/> as its scope ends.</summary>
 public sealed record LPopPanicHandler(Node Syntax, int Slot) : BoundStmt(Syntax);
 
-/// <summary>Debug builds: a <c>switch (move x)</c> binding owns its storage once its arm is selected; nothing otherwise.</summary>
+/// <summary>Debug builds: a <c>switch move x</c> binding owns its storage once its arm is selected; nothing otherwise.</summary>
 public sealed record LClaim(Node Syntax, LocalSymbol Local) : BoundStmt(Syntax);
 
 // ── Expressions ──────────────────────────────────────────────────────────────────

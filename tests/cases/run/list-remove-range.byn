@@ -1,12 +1,12 @@
 string show(List<i64> xs) {
     var line = StrBuf();
-    for (let x in xs) line.append($" {x}");
+    for x in xs { line.append($" {x}"); }
     return $"{xs.length}:{line.finish()}";
 }
 
 List<i64> make() {
     var xs = List<i64>();
-    for (let i in 0..6) xs.append(i * 10);
+    for i in 0..6 { xs.append(i * 10); }
     return xs;
 }
 
@@ -35,8 +35,8 @@ print($"reused {show(whole)}");
 
 var words = List<string>();
 string[5] letters = ["a", "b", "c", "d", "e"];
-for (let w in letters) words.append(w);
+for w in letters { words.append(w); }
 words.removeRange(1, 3);
 var joined = StrBuf();
-for (let w in words) joined.append(w);
+for w in words { joined.append(w); }
 print($"order {joined.finish()}");

@@ -1,0 +1,17 @@
+error BYN3104: `package.byn` uses `field: value`
+
+  2 │     name = "local/shop",
+    │          ^ the input form
+    │
+  help: write `:` after the field name
+    │ 2 │     name: "local/shop",
+    │   │         +
+
+error BYN3104: `package.byn` uses `field: value`
+
+  4 │     edition = 2027,
+    │             ^ the input form
+    │
+  help: write `:` after the field name
+    │ 4 │     edition: 2027,
+    │   │            +

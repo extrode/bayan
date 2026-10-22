@@ -5,7 +5,7 @@ struct Item {
 
 List<i64> squares(i64 n) {
     var xs = List<i64>();
-    for (let i in 0..n) {
+    for i in 0..n {
         xs.append(i * i);
     }
     return xs;
@@ -20,10 +20,10 @@ void main() {
         let last = xs.removeLast();
         print($"{last} {xs.length}");
         var items = List<Item>();
-        items.append(Item { name = "pen", qty = 2 });
-        items.append(Item { name = "ink", qty = 5 });
+        items.append(Item { name: "pen", qty: 2 });
+        items.append(Item { name: "ink", qty: 5 });
         i64 q = 0;
-        for (let it in items) {
+        for it in items {
             q += it.qty;
         }
         print($"{items.length} {q} {items[1].name}");
@@ -35,7 +35,7 @@ void main() {
         print(name);
     }
     var many = List<i64>();
-    for (let i in 0..1000) {
+    for i in 0..1000 {
         many.append(i);
     }
     print($"{many.length} {many[999]}");

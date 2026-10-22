@@ -8,4 +8,4 @@ struct Ratio {
     }
 }
 
-let r = Ratio { num = 1, den = 0 };
+let r = Ratio { num: 1, den: 0 };

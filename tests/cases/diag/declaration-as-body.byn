@@ -1,2 +1,0 @@
-let ready = true;
-if (ready) let x = 1;

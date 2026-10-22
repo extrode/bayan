@@ -1,6 +1,6 @@
 error BYN2410: `switch` does not handle every `ParseError`
 
-  13 │ let n = parse("x") catch (e) switch {
-     │                           ^ not covered: .notDigit
+  13 │ let n = parse("x") catch switch {
+     │                          ^^^^^^ not covered: .notDigit
      │
   help: add the missing arms, or `_ => …` for the rest

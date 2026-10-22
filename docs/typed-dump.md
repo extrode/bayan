@@ -32,7 +32,7 @@ The output is indented JSON written by `TypedDump.ToJson` (`src/Bayan.Semantics/
 | `functions[].name` | The function's name; a member is `Owner.name`. Top-level statements are `main`, test blocks `test`. |
 | `functions[].span` | Byte offsets (`start` inclusive, `end` exclusive) of the function's declaring name, or of the first statement or test for `main` and `test`. |
 | `bindings[].name` | The name as written (`_` included). |
-| `bindings[].kind` | `param`; `var`, `let` or `const` for a declaration (a typed declaration without a keyword is `var`, as is a `for var` or `var` pattern binding); `for` for a `for` variable; `pattern` for a `let` pattern or type-pattern binding; `catch` for the error bound by `catch \|e\|` or `errdefer \|e\|`. |
+| `bindings[].kind` | `param`; `var`, `let` or `const` for a declaration (a typed declaration without a keyword is `var`, as is a `var` pattern binding); `for` for a `for` variable; `pattern` for a `let` pattern or type-pattern binding; `catch` for the error bound by `defer failing (e)`. |
 | `bindings[].span` | Byte offsets of the binding's name. |
 | `bindings[].type` | The resolved type as diagnostics display it (`i64`, `List<string>`, `T`). An unconstrained integer literal is `i32`; one constrained to another integer type by a comparison, an argument or an assignment has that type. |
 

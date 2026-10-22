@@ -2,7 +2,7 @@
 void main() fails IoError {
     u8[3] bad = [0x61, 0xFF, 0x62];
     try Io.writeFile("bad.txt", bad.asSpan());
-    let text = Io.readText("bad.txt") catch (e) switch {
+    let text = Io.readText("bad.txt") catch switch {
         .invalidUtf8 => "invalidUtf8",
         _ => "some other error",
     };

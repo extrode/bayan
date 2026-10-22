@@ -4,5 +4,5 @@ error BYN2104: `c` is immutable
      │ ^ `bump` modifies it; declared with `let` on line 11
      │
   help: declare it with `var` if it should change
-     │ 11 │ var c = Counter { n = 0 };
+     │ 11 │ var c = Counter { n: 0 };
      │    │ +++

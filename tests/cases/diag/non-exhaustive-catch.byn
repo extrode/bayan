@@ -10,6 +10,6 @@ i64 parse(string s) fails ParseError {
     return .notDigit;
 }
 
-let n = parse("x") catch (e) switch {
+let n = parse("x") catch switch {
     .empty => 0,
 };

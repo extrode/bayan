@@ -7,7 +7,7 @@ error BYN2410: `switch` does not handle every `Shape`
 
 error BYN2410: `switch` does not handle every `Shape`
 
-  8 │     switch (s) {
-    │             ^ not covered: .circle, .none
+  8 │     switch s {
+    │            ^ not covered: .circle, .none
     │
   help: add the missing cases or a `default:` section

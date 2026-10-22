@@ -7,7 +7,7 @@ void main() {
     let again = xs.asSpan();
     xs.removeRange(0, 1);
     print($"{again[0]}");
-    for (let x in xs) {
+    for x in xs {
         xs.append(x);
     }
     using var arena = Arena();

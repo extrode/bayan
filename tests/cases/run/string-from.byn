@@ -20,5 +20,5 @@ void main() fails Utf8Error {
     let t = string.tryFrom(hi.asSpan()) ?? "none";
     print($"tryFrom: {t}");
     let at = string.invalidUtf8At(multi.asSpan());
-    print($"invalidUtf8At: {at == null}");
+    print($"invalidUtf8At: {at is null}");
 }

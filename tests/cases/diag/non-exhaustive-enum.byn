@@ -6,7 +6,7 @@ string color(Suit s) => s switch {
 };
 
 void show(Suit s) {
-    switch (s) {
+    switch s {
         case Suit.hearts:
             print("hearts");
     }

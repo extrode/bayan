@@ -1,0 +1,17 @@
+error BYN1021: `x = …` in a literal is an input form; write `x: …`
+
+  4 │     let p = Point { x = 1, y: 2 };
+    │                       ^ the input form
+    │
+  help: write `:` after the field name
+    │ 4 │     let p = Point { x: 1, y: 2 };
+    │   │                      +
+
+error BYN1021: `y = …` in a literal is an input form; write `y: …`
+
+  5 │     let q = p with { y = 3 };
+    │                        ^ the input form
+    │
+  help: write `:` after the field name
+    │ 5 │     let q = p with { y: 3 };
+    │   │                       +

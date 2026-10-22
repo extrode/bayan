@@ -957,6 +957,12 @@ internal sealed partial class Binder
 
     private BoundExpr BindBinary(BinaryExpr b, TypeSymbol? expected)
     {
+        if (b.Op is BinaryOp.Eq or BinaryOp.Ne && (b.Right is LiteralExpr { Kind: LiteralKind.Null } ? b.Left
+                : b.Left is LiteralExpr { Kind: LiteralKind.Null } ? b.Right : null) is { } tested)
+        {
+            var test = Source.GetText(tested.Span) + (b.Op == BinaryOp.Eq ? " is null" : " is not null");
+            Report(DiagnosticCodes.NullEquality, b.Span, [], help: $"write `{test}`", fix: new Fix(b.Span, test));
+        }
         switch (b.Op)
         {
             case BinaryOp.LogicalAnd or BinaryOp.LogicalOr:
@@ -1223,7 +1229,7 @@ internal sealed partial class Binder
         else if (expected is not null) type = expected;
         else
         {
-            Report(DiagnosticCodes.NoTargetType, s.Span, ["{ … }"], help: "name the type: `Point { x = 1 }`");
+            Report(DiagnosticCodes.NoTargetType, s.Span, ["{ … }"], help: "name the type: `Point { x: 1 }`");
             return new BoundErrorExpr(s);
         }
         if (type.IsError) return new BoundErrorExpr(s);
@@ -1277,7 +1283,7 @@ internal sealed partial class Binder
             var first = st.FindField(missing[0])!;
             Report(DiagnosticCodes.MissingFields, s.Span, [st.Name, string.Join("`, `", missing)],
                 label: missing.Count == 1 && first.IsRequired ? "`" + first.Name + "` is `required`" : null,
-                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + " = …"))} }}`");
+                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
             return new BoundErrorExpr(s);
         }
         return new BoundStructLiteral(s, st, values!);
