@@ -4,8 +4,6 @@ error BYN1017: parentheses around a condition are an input form
     │        ^^^ not needed
     │
   help: remove the parentheses
-    │ 3 │     if x if (x) print("a");
-    │   │        +
 
 error BYN1018: the body of `if` must be a block
 
@@ -20,8 +18,8 @@ error BYN1017: parentheses around a condition are an input form
     │               ^^^ not needed
     │
   help: remove the parentheses
-    │ 3 │     if (x) if x print("a");
-    │   │               +
+    │ 3 │     if (x) if x { print("a"); }
+    │   │               +++++++++++++++++
 
 error BYN1018: the body of `if` must be a block
 
@@ -29,5 +27,3 @@ error BYN1018: the body of `if` must be a block
     │                   ^^^^^^^^^^ a single statement
     │
   help: wrap the statement in `{ }`
-    │ 3 │     if (x) if (x) { print("a"); }
-    │   │                   +++++++++++++++

@@ -13,8 +13,8 @@ error BYN1007: `unless` with a negated condition is a double negative
     │     ^^^^^^^^^^^ `unless` already negates
     │
   help: use `if` with the condition as written
-    │ 6 │     if x print("b");
-    │   │     ++++
+    │ 6 │     if x { print("b"); }
+    │   │     ++++++++++++++++++++
 
 error BYN1018: the body of `unless` must be a block
 
@@ -22,8 +22,6 @@ error BYN1018: the body of `unless` must be a block
     │                 ^^^^^^^^^^ a single statement
     │
   help: wrap the statement in `{ }`
-    │ 6 │     unless (!x) { print("b"); }
-    │   │                 +++++++++++++++
 
 error BYN1022: `unless` with `&&`/`||` reads as a double negative
 
@@ -31,8 +29,8 @@ error BYN1022: `unless` with `&&`/`||` reads as a double negative
     │     ^^^^^^^^^^^^^^^ a compound condition
     │
   help: use `if` with the negated condition
-    │ 7 │     if !(x && x) print("c");
-    │   │     ++++
+    │ 7 │     if !(x && x) { print("c"); }
+    │   │     ++++++++++++++++++++++++++++
 
 error BYN1018: the body of `unless` must be a block
 
@@ -40,8 +38,6 @@ error BYN1018: the body of `unless` must be a block
     │                     ^^^^^^^^^^ a single statement
     │
   help: wrap the statement in `{ }`
-    │ 7 │     unless (x && x) { print("c"); }
-    │   │                     +++++++++++++++
 
 error BYN1017: parentheses around a condition are an input form
 

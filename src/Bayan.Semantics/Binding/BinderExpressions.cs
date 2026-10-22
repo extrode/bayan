@@ -1022,6 +1022,13 @@ internal sealed partial class Binder
 
         if (common.IsString && b.Op == BinaryOp.Add)
         {
+            // Two plain literals merge into one literal, which (unlike an interpolation) stays a constant.
+            if (IsPlainStringLiteral(b.Left) && IsPlainStringLiteral(b.Right))
+            {
+                var merged = Source.GetText(b.Left.Span)[..^1] + Source.GetText(b.Right.Span)[1..];
+                Report(DiagnosticCodes.StringConcatenation, b.Span, [], help: $"write one literal: `{merged}`", fix: new Fix(b.Span, merged));
+                return new BoundErrorExpr(b);
+            }
             Report(DiagnosticCodes.StringConcatenation, b.Span, [],
                 help: "write the parts as one interpolation: `$\"{a}{b}\"`, or `buf.append($\"{a}{b}\")` in a loop",
                 fix: new Fix(b.Span, $"$\"{InterpolationSource(b.Left)}{InterpolationSource(b.Right)}\""));
@@ -1035,6 +1042,10 @@ internal sealed partial class Binder
         var bound = new BoundBinary(b, b.Op, left, right, type);
         return Fold(bound, left, right, common);
     }
+
+    private bool IsPlainStringLiteral(Expr e) =>
+        e is LiteralExpr { Kind: LiteralKind.String } && Source.GetText(e.Span) is var text
+        && text.StartsWith('"') && !text.StartsWith("\"\"\"", StringComparison.Ordinal);
 
     private static TypeParameterType? TypeParameterOf(TypeSymbol t) =>
         t as TypeParameterType ?? (t as OptionalType)?.Inner as TypeParameterType;

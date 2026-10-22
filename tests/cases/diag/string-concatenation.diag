@@ -12,9 +12,9 @@ error BYN2209: strings cannot be joined with `+`; use interpolation
   3 │ let path = "/usr" + "/lib";
     │            ^^^^^^^^^^^^^^^
     │
-  help: write the parts as one interpolation: `$"{a}{b}"`, or `buf.append($"{a}{b}")` in a loop
-    │ 3 │ let path = $"/usr/lib";
-    │   │            ++++++
+  help: write one literal: `"/usr/lib"`
+    │ 3 │ let path = "/usr" + "/lib";
+    │   │                 -----
 
 error BYN2209: strings cannot be joined with `+`; use interpolation
 
