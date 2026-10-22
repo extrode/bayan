@@ -20,6 +20,22 @@ public sealed partial class Compilation
 
     private bool _conformancesChecked;
 
+    /// <summary>
+    /// <paramref name="s"/>'s <c>type name = …;</c>. A struct declared later than the instance naming <c>T.Item</c>
+    /// (a field or parameter of type <c>Holder&lt;Ints&gt;</c>) has not resolved it yet: it is resolved here, quietly,
+    /// and again when <paramref name="s"/>'s members are declared.
+    /// </summary>
+    internal TypeSymbol? AssociatedBinding(StructSymbol s, string name)
+    {
+        if (_associatedBindings.TryGetValue((s, name), out var bound)) return bound;
+        if (s.Decl.Bases.Length == 0 || s.Decl.Members.OfType<TypeAliasDecl>().FirstOrDefault(a => a.Name.Text == name) is not { } decl) return null;
+        Quietly(() => bound = new TypeResolver(this, s.File, s, s.TypeMap).Resolve(decl.Target));
+        return _associatedBindings[(s, name)] = bound!;
+    }
+
+    /// <summary>Where each base is listed, so two instances of one generic interface each have their own span.</summary>
+    private readonly Dictionary<(StructSymbol, InterfaceSymbol), TextSpan> _baseSpans = new();
+
     private void CheckConformances()
     {
         foreach (var module in Modules)
@@ -42,7 +58,7 @@ public sealed partial class Compilation
         foreach (var i in s.Bases)
         {
             var c = new Conformance(s, i);
-            var at = s.Decl.Bases.FirstOrDefault(b => b.Path[^1].Text == i.Name)?.Span ?? s.Decl.Name.Span;
+            var at = _baseSpans.TryGetValue((s, i), out var listed) ? listed : s.Decl.Name.Span;
             var map = i.TypeMap is null ? new Dictionary<string, TypeSymbol>(StringComparer.Ordinal) : new Dictionary<string, TypeSymbol>(i.TypeMap, StringComparer.Ordinal);
             foreach (var a in i.AssociatedTypes)
             {
@@ -58,10 +74,22 @@ public sealed partial class Compilation
             foreach (var member in i.Methods.Concat(i.Properties).OrderBy(m => m.Location!.Value.Span.Start))
             {
                 var expected = Expected(i, member, map);
+                var field = s.FindField(member.Name);
+                // A field reads like a getter, so it can stand for one (bare-name and constraint lookups find it); not for a method.
+                if (field is not null && expected.Kind == FunctionKind.Getter)
+                {
+                    if (!Same(field.Type, expected.ReturnType))
+                        Report(DiagnosticCodes.InterfaceMemberMismatch, source, field.Location!.Value.Span, [s.Name, member.Name, $"{field.Type.DisplayName} {field.Name}", i.DisplayName, SignatureText(expected)],
+                            label: $"does not match `{i.DisplayName}`", help: $"change the field's type to `{expected.ReturnType.DisplayName}`");
+                    continue;
+                }
                 var own = s.FindProperty(member.Name)?.Getter ?? s.FindMethods(member.Name).FirstOrDefault();
                 if (own is null)
                 {
-                    if (member.IsAbstract)
+                    if (field is not null)
+                        Report(DiagnosticCodes.MissingInterfaceMember, source, at, [s.Name, member.Name, i.DisplayName, SignatureText(expected)],
+                            label: $"needs `{member.Name}`", help: $"rename the field `{field.Name}` and add `{SignatureText(expected)}` to `{s.Name}`; a field cannot provide a method");
+                    else if (member.IsAbstract)
                         Report(DiagnosticCodes.MissingInterfaceMember, source, at, [s.Name, member.Name, i.DisplayName, SignatureText(expected)],
                             label: $"needs `{member.Name}`", help: $"add `{SignatureText(expected)}` to `{s.Name}`", fix: InsertMember(s, expected));
                     else
@@ -69,11 +97,12 @@ public sealed partial class Compilation
                     continue;
                 }
                 c.Witnesses[member] = own;
-                // Two bases defaulting one name: the first clone would silently win.
-                if (!member.IsAbstract && cloned.TryGetValue(own, out var first))
+                // A default from an earlier base would silently stand for this base's member too (abstract or default):
+                // the spec does not say which wins, so the struct must choose.
+                if (cloned.TryGetValue(own, out var first))
                 {
                     Report(DiagnosticCodes.InterfaceMemberMismatch, source, at, [s.Name, member.Name, $"{first.DisplayName}.{member.Name}", i.DisplayName, SignatureText(expected)],
-                        label: $"`{member.Name}` also has a default in `{first.DisplayName}`", help: $"add `{SignatureText(expected)}` to `{s.Name}` to choose one");
+                        label: $"`{member.Name}` {(member.IsAbstract ? "has" : "also has")} a default in `{first.DisplayName}`", help: $"add `{SignatureText(expected)}` to `{s.Name}` to choose one");
                     continue;
                 }
                 var span = own.Location!.Value.Span;
@@ -161,7 +190,7 @@ public sealed partial class Compilation
         var parameters = f.Parameters.Select(p => (p.Modifier == ParamModifier.None ? "" : p.Modifier.ToString().ToLowerInvariant() + " ") + p.Type.DisplayName + " " + p.Name);
         if (f.IsMutating) parameters = parameters.Prepend("ref this");
         var fails = !f.Fails ? "" : f.ErrorSets.Count == 0 ? " fails" : " fails " + string.Join(", ", f.ErrorSets.Select(e => e.DisplayName));
-        return $"{f.ReturnType.DisplayName} {f.Name}({string.Join(", ", parameters)}){fails}";
+        return $"{(f.IsStatic ? "static " : "")}{f.ReturnType.DisplayName} {f.Name}({string.Join(", ", parameters)}){fails}";
     }
 
     /// <summary>Inserts the missing member before the struct's closing brace, with a <c>todo</c> body.</summary>

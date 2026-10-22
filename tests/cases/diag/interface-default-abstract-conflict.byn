@@ -1,0 +1,13 @@
+interface IA {
+    i64 area() => 1;
+}
+
+interface IB {
+    i64 area();
+}
+
+struct S : IA, IB {
+    i64 x;
+}
+
+print($"{S { x = 1 }.area()}");

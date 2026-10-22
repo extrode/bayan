@@ -1,0 +1,6 @@
+error BYN2802: `A.area` is `static i64 area()` but `IShape` requires `i64 area()`
+
+  6 │     static i64 area() => 1;
+    │                ^^^^ does not match `IShape`
+    │
+  help: change the signature to `i64 area()`

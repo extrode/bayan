@@ -413,7 +413,10 @@ internal sealed partial class Binder
                 return new BoundConversion(n, new BoundLocal(n, local), ((OptionalType)local.Type).Inner, ConversionKind.Narrow);
             return new BoundLocal(n, local);
         }
-        if (_thisType is not null && LookupMember(_thisType, name) is { } member)
+        // A default cloned onto a struct sees only the interface's members through `this`, as its template did,
+        // so a bare name means the same for every conformer.
+        if (_thisType is not null && (_fn?.Template?.Interface is not { } cloneOf || LookupMember(cloneOf.Self, name) is not null)
+            && LookupMember(_thisType, name) is { } member)
             return BindImplicitThisMember(n, member);
         if (Module.Constants.TryGetValue(name, out var constant)) return ConstantRef(n, constant);
         if (Module.Functions.TryGetValue(name, out var fns)) return new BoundMethodGroup(n, null, fns[0]);

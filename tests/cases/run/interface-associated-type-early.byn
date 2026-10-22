@@ -1,0 +1,27 @@
+// `Holder<Ints>` is instantiated while declaring (a field and a parameter), before `Ints`'s members are.
+interface IIt {
+    type Item;
+    Item first();
+}
+
+struct Holder<T> where T : IIt {
+    T.Item value;
+}
+
+struct Outer {
+    Holder<Ints> h;
+}
+
+struct Ints : IIt {
+    type Item = i64;
+
+    i64 first() => 1;
+}
+
+void show(Holder<Ints> h) {
+    print($"{h.value}");
+}
+
+show(Holder<Ints> { value = 5 });
+let o = Outer { h = Holder<Ints> { value = 6 } };
+print($"{o.h.value}");

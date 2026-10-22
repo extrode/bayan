@@ -238,7 +238,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
         {
             case TypeParameterType p when p.Constraints.Any(c => c.Decl.Members.Any(m => m is AssociatedTypeDecl a && a.Name.Text == name)):
                 return compilation.AssociatedType(p, name);
-            case StructSymbol s when s.Conformances.SelectMany(c => c.AssociatedTypes).FirstOrDefault(a => a.Key == name).Value is { } bound:
+            case StructSymbol s when compilation.AssociatedBinding(s, name) is { } bound:
                 return bound;
         }
         compilation.Report(DiagnosticCodes.UnknownType, file.Source, n.Span, [$"{owner.DisplayName}.{name}"],

@@ -1,0 +1,19 @@
+error BYN2801: `S` does not provide `rank` required by `IOrder<i64>`
+
+  5 │ struct S : IOrder<i64>, IOrder<string> {
+    │            ^^^^^^^^^^^ needs `rank`
+    │
+  help: add `i64 rank(i64 x)` to `S`
+    │ 7 │     i64 rank(i64 x) => todo("rank");
+    │   │ ++++++++++++++++++++++++++++++++++++
+    │ 8 │ }
+
+error BYN2801: `S` does not provide `rank` required by `IOrder<string>`
+
+  5 │ struct S : IOrder<i64>, IOrder<string> {
+    │                         ^^^^^^^^^^^^^^ needs `rank`
+    │
+  help: add `i64 rank(string x)` to `S`
+    │ 7 │     i64 rank(string x) => todo("rank");
+    │   │ +++++++++++++++++++++++++++++++++++++++
+    │ 8 │ }

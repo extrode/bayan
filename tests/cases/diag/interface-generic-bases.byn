@@ -1,0 +1,7 @@
+interface IOrder<T> {
+    i64 rank(T x);
+}
+
+struct S : IOrder<i64>, IOrder<string> {
+    i64 x;
+}
