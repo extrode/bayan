@@ -16,10 +16,10 @@ Places where writing Sūq against the round-3 spec read badly, needed a workarou
 | F-06 | order tests | Which state a plain `Order { … }` literal starts in | Wrote `Order.draft { … }` everywhere to avoid the question |
 | F-19 | ids, main | Names of the fallible constructors of distinct types | `T(x)` (fails); `T.tryFrom(value)`; `T.tryParse(text)` |
 | F-20 | sodium, packing | Numeric conversions | `u8(x)`, `usize(x)`, checked (trap when out of range) |
-| F-21 | order `total`/`weight` | Computed properties are only shown with `=>` in the spec | Assumed block bodies: `public total: Money { … }` |
+| F-21 | order `total`/`weight` | Computed properties are only shown with `=>` in the spec | Assumed block bodies: `public Money total { … }` |
 | F-26 | checkout, stats, main | Map literal syntax | `[key: value]`, `[:]` for empty |
 | F-29 | accounts, checkout | A `catch switch` arm with several statements | `Arm => { …; return … }` blocks whose type is `never` |
-| F-30 | sodium | `extern` block syntax, and how a `unique` type runs cleanup | `extern "lib" { … }` with C-style params; `public drop(ref this)` |
+| F-30 | sodium | `extern` block syntax, and how a `unique` type runs cleanup | `extern "lib" { … }` with C-style params; `public void drop(ref this)` |
 
 ## Rules that read badly (friction)
 
@@ -54,9 +54,21 @@ Places where writing Sūq against the round-3 spec read badly, needed a workarou
 | # | Where | Issue | Proposal |
 |---|---|---|---|
 | F-31 | money, carrier | Static factories that name the value they return (`Money.zero(c)`, `Outbox.empty()`) are nouns or adjectives, which the verb rule would reject | Exempt static factories, following the spec's own `T.zero` |
-| F-32 | checkout | The `shipped` state holds one `TrackingId`, so a multi-parcel order loses the others | `shipped(payment:, tracking: List<TrackingId>)`, or a parcels table |
+| F-32 | checkout | The `shipped` state holds one `TrackingId`, so a multi-parcel order loses the others | `shipped(PaymentId payment, List<TrackingId> tracking)`, or a parcels table |
 | F-33 | sodium, main | A `Secret<Span<u8>>` loaded by `@derive(Config)` stays in ordinary memory for the life of the process; only the `SecretKey` copy is guarded | Let `Secret` own its storage and wipe it on drop (make it `unique` for byte secrets) |
 | F-34 | checkout, stats | `for (a, b) in xs` (tuple destructuring) looks like the rejected `for (x in xs)` input form. The checker confused the two | Spec rule: parentheses in a `for` head are a tuple pattern only when `in` is outside them |
+
+## Type-first declarations revert (2026-10-22)
+
+Round 3's "names first" now applies only to local bindings (`let w: Grams = 0g`). Declarations are type-first again, as in round 2: `public Grams shippingWeight(Order order)`, `void` when nothing is returned, `Sku sku` fields, `timeout(Millis after)` payloads. `-> T` and `name: Type` declarations are input forms that `bayan fmt` rewrites; the checker reports them with the rewritten line (`fail/arrow-return`, `name-first-param`, `name-first-field`, `name-first-payload`). Sūq was converted mechanically from those fix-its.
+
+| # | Where | Issue | What Sūq assumes or proposes |
+|---|---|---|---|
+| F-35 | quote, packing, checkout, db | Where a state refinement goes on a type-first parameter | `Order order is .paid`, the same order as the receiver's `this is .paid` |
+| F-36 | particles (§15) | Particles were specified for name-first parameters (`by policy: Policy`) | The particle leads: `by Policy policy`, `from Span<PriceLine> lines` |
+| F-37 | sodium (`extern`, `SecretKey.ptr`) | A pointer type (`*mut u8 ptr`) puts `*` at the start of the line, which waqf reads as a continuation (§3) | The leading-operator rule doesn't apply inside a struct or `extern` body; the checker exempts it there. The parser needs the same rule |
+| F-38 | `fail/fn-type-arrow` | A type-first field or parameter of function type puts its name after the effect clause (`Order -> void uses net onPaid`) | Use a `type` alias for stored function types (as `Handler` in main does); the snippet now uses one |
+| F-39 | checker | `Grams w = 0g` is a field in a struct body and an input form in a function body; only the enclosing block tells them apart | The checker tracks block kinds: struct, union, interface, extension and `extern` bodies hold declarations; function bodies and the module level (scripts) hold statements |
 
 ## Findings from building both versions
 
