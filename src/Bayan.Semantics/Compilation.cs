@@ -1176,11 +1176,17 @@ public sealed partial class Compilation
     {
         var outer = _scratch;
         var bag = _scratch = new DiagnosticBag();
+        _instantiating++;
         try { work(); }
-        finally { _scratch = outer; }
+        finally
+        {
+            _scratch = outer;
+            _instantiating--;
+        }
         foreach (var d in bag.Items.Where(d => d.IsError))
         {
-            if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code)
+            if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code
+                || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code)
                 (_scratch ?? Diagnostics).Add(d with { Source = site, Span = span, Label = InstantiationLabel });
             else
                 _instantiationErrors.Add(d);
@@ -1198,25 +1204,101 @@ public sealed partial class Compilation
         };
         _instances[(template, args)] = fn;
         template.Module.AllFunctions.Add(fn);
+        // The template checked the calls in its own body, so a call in an instance is not checked again.
+        var check = _instantiating == 0;
+        var satisfied = true;
+        void Declare()
+        {
+            DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner);
+            if (check) satisfied = CheckConstraints(template.TypeParameters, fn.Decl!.Where, fn.File!, fn.Owner, fn.TypeMap, args);
+        }
         if (_firstPass is { } pass)
         {
             pass.Instances.Add(fn);
             var outer = ReportInto(pass.Diagnostics);
             var errors = _instantiationErrors.Count;
-            try { Instantiating(site, span, () => DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner)); }
+            try { Instantiating(site, span, Declare); }
             finally { ReportInto(outer); }
             pass.Errors.AddRange(_instantiationErrors.Skip(errors));
             _instantiationErrors.RemoveRange(errors, _instantiationErrors.Count - errors);
         }
-        else Instantiating(site, span, () => DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner));
-        if (!fn.IsGeneric) _instantiationWork.Enqueue((site, span, () => BindFunction(fn), fn));
+        else Instantiating(site, span, Declare);
+        // A body bound with a non-conforming argument would only repeat BYN2807 as unknown members.
+        if (!fn.IsGeneric && satisfied) _instantiationWork.Enqueue((site, span, () => BindFunction(fn), fn));
         return fn;
+    }
+
+    /// <summary>Depth of <see cref="Instantiating"/> calls: nonzero while declaring or binding an instance.</summary>
+    private int _instantiating;
+
+    /// <summary>Constraint checks of types instantiated before conformances exist; run once they do.</summary>
+    private readonly List<Action> _pendingConstraints = new();
+
+    /// <summary>BYN2807 for each argument that does not conform to its parameter's <c>where</c> bounds; false when one does not.</summary>
+    private bool CheckConstraints(List<TypeParameterType> parameters, WhereClause[] where, FileContext file, StructSymbol? owner,
+        IReadOnlyDictionary<string, TypeSymbol>? typeMap, TypeSymbol[] args)
+    {
+        var satisfied = true;
+        var types = new TypeResolver(this, file, owner, typeMap);
+        for (var k = 0; k < parameters.Count; k++)
+        {
+            if (parameters[k].Constraints.Count == 0) continue;
+            // The bound is resolved again with the arguments, so `IOrder<T>` is `IOrder<Point>` here.
+            foreach (var bound in where.Where(w => w.Param.Text == parameters[k].Name).SelectMany(w => w.Bounds))
+            {
+                InterfaceSymbol? i = null;
+                Quietly(() => i = types.ResolveBound(bound) as InterfaceSymbol);
+                if (i is null || Conforms(args[k], i)) continue;
+                var missing = MissingMember(args[k], i);
+                var help = args[k] switch
+                {
+                    StructSymbol s => $"add `: {i.DisplayName}` to `{s.DisplayName}` and provide `{missing}`",
+                    TypeParameterType p => $"add `where {p.Name} : {i.DisplayName}` to the declaration of `{p.Name}`",
+                    PrimitiveType => $"pass a struct that conforms to `{i.DisplayName}`; primitives do not conform to interfaces",
+                    _ => $"pass a struct that conforms to `{i.DisplayName}`; only structs conform to interfaces",
+                };
+                Report(DiagnosticCodes.ConstraintNotSatisfied, file.Source, bound.Span, [args[k].DisplayName, i.DisplayName, missing], help: help);
+                satisfied = false;
+                break;
+            }
+        }
+        return satisfied;
+    }
+
+    /// <summary>The constraint check of a type instance, now or once conformances are checked.</summary>
+    private void CheckConstraintsAt(SourceText site, TextSpan span, List<TypeParameterType> parameters, WhereClause[] where, FileContext file,
+        IReadOnlyDictionary<string, TypeSymbol>? typeMap, TypeSymbol[] args)
+    {
+        if (parameters.All(p => p.Constraints.Count == 0)) return;
+        void Check() => Instantiating(site, span, () => CheckConstraints(parameters, where, file, null, typeMap, args));
+        if (_conformancesChecked) Check();
+        else _pendingConstraints.Add(Check);
+    }
+
+    /// <summary>A struct conforms when it lists the interface; a type parameter when its own bounds include it (D5: primitives never do).</summary>
+    private static bool Conforms(TypeSymbol t, InterfaceSymbol i) => t switch
+    {
+        _ when t.IsError => true,
+        StructSymbol s => s.Conformances.Any(c => c.Interface == i),
+        TypeParameterType p => p.Constraints.Contains(i),
+        _ => false,
+    };
+
+    /// <summary>The first abstract member of <paramref name="i"/> that <paramref name="t"/> does not have, for BYN2807.</summary>
+    private static string MissingMember(TypeSymbol t, InterfaceSymbol i)
+    {
+        var members = i.Methods.Concat(i.Properties).OrderBy(m => m.Location!.Value.Span.Start).ToList();
+        var abstracts = members.Where(m => m.IsAbstract).ToList();
+        var missing = abstracts.FirstOrDefault(m => t is not StructSymbol s || (s.FindProperty(m.Name) is null && !s.FindMethods(m.Name).Any()));
+        return (missing ?? abstracts.FirstOrDefault() ?? members.FirstOrDefault())?.Name ?? $": {i.DisplayName}";
     }
 
     /// <summary>The instantiation of a generic struct or union at <paramref name="args"/>, with its members.</summary>
     internal TypeSymbol InstantiateType(TypeSymbol template, TypeSymbol[] args, SourceText site, TextSpan span)
     {
         if (_instances.TryGetValue((template, args), out var existing)) return (TypeSymbol)existing;
+        // As for functions: a type named inside an instance was checked in its template.
+        var check = _instantiating == 0;
         switch (template)
         {
             case StructSymbol s:
@@ -1226,6 +1308,7 @@ public sealed partial class Compilation
                     Template = s, TypeArguments = args, TypeMap = Substitution(null, s.TypeParameters, args),
                 };
                 _instances[(s, args)] = instance;
+                if (check) CheckConstraintsAt(site, span, s.TypeParameters, s.Decl.Where, s.File, instance.TypeMap, args);
                 Instantiating(site, span, () => DeclareMembers(instance));
                 if (_conformancesChecked) Instantiating(site, span, () => Conform(instance));
                 if (instance.IsGeneric) return instance;
@@ -1243,6 +1326,7 @@ public sealed partial class Compilation
                     Template = u, TypeArguments = args, TypeMap = Substitution(null, u.TypeParameters, args),
                 };
                 _instances[(u, args)] = instance;
+                if (check) CheckConstraintsAt(site, span, u.TypeParameters, u.Decl.Where, u.File, instance.TypeMap, args);
                 Instantiating(site, span, () => DeclareUnionVariants(instance));
                 return instance;
             }
@@ -1253,6 +1337,7 @@ public sealed partial class Compilation
                     Decl = i.Decl, Template = i, TypeArguments = args, TypeMap = Substitution(null, i.TypeParameters, args),
                 };
                 _instances[(i, args)] = instance;
+                if (check) CheckConstraintsAt(site, span, i.TypeParameters, i.Decl.Where, i.File, instance.TypeMap, args);
                 // A `where` bound can name an instance before the template's members are declared.
                 if (_interfaceMembersDeclared) Instantiating(site, span, () => DeclareInterfaceMembers(instance));
                 else _pendingInterfaces.Add((instance, site, span));

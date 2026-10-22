@@ -29,6 +29,13 @@ public static class Conversions
             if (from is Symbols.ArrayType array && array.Element.Equals(span.Element)) return ConversionKind.ArrayToSpan;
             if (from.IsString && span is { ReadOnly: true, Element: var e } && e == PrimitiveType.U8) return ConversionKind.StringToBytes;
         }
+        // A conforming value is borrowed as `dyn ref I`; a writable `dyn ref` may be read through a read-only one.
+        if (to is DynRefType dyn)
+        {
+            if (from is DynRefType d && d.Interface == dyn.Interface && dyn.ReadOnly) return ConversionKind.Identity;
+            if (from is StructSymbol s && s.Conformances.Any(c => c.Interface == dyn.Interface)) return ConversionKind.ToDynRef;
+            if (from is TypeParameterType p && p.Constraints.Contains(dyn.Interface)) return ConversionKind.ToDynRef;
+        }
         if (from is ErrorSetSymbol set && to is ErrorUnionType u && (u.Sets.Count == 0 || u.Sets.Contains(set))) return ConversionKind.Identity;
         return null;
     }
