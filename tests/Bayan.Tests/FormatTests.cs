@@ -97,6 +97,122 @@ public sealed class FormatTests
         Assert.Equal(once, File.ReadAllText(file));
     }
 
+    private const string WordsAndCSharp =
+        "bool f(bool a, bool b, int n) => a and not b or n is not 0\n" +
+        "void main() {\n    let x: nint = 3\n    switch x {\n        case 1 or 2: print(\"a\")\n        default: print(\"b\")\n    }\n" +
+        "    print(\"s\") if not f(true, false, 1) and x > 0\n}\n";
+
+    private const string SymbolsAndSized =
+        "bool f(bool a, bool b, i32 n) => a && !b || n is not 0\n" +
+        "void main() {\n    let x: isize = 3\n    switch x {\n        case 1 or 2: print(\"a\")\n        default: print(\"b\")\n    }\n" +
+        "    print(\"s\") if !f(true, false, 1) && x > 0\n}\n";
+
+    private static void Package(string dir, string style) =>
+        File.WriteAllText(Path.Combine(dir, "package.byn"),
+            $"Package {{\n    name: \"local/shop\",\n    version: \"0.1.0\",\n    style: Style {{ {style} }},\n}}\n");
+
+    [Fact]
+    public void WithoutAPackageBooleansBecomeSymbolsAndPrimitivesSized()
+    {
+        var file = Path.Combine(Fresh("defaults"), "main.byn");
+        File.WriteAllText(file, WordsAndCSharp);
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(SymbolsAndSized, File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void ThePackageStyleIsApplied()
+    {
+        var dir = Fresh("words");
+        Package(dir, "booleans: .words, primitives: .csharp");
+        Directory.CreateDirectory(Path.Combine(dir, "src"));
+        var file = Path.Combine(dir, "src", "main.byn");
+        File.WriteAllText(file, SymbolsAndSized);
+        var (exit, _, stderr) = Run("format", dir);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(WordsAndCSharp, File.ReadAllText(file));
+        Assert.Contains("is not 0", File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void SymbolsWithoutSpacesGetThem()
+    {
+        var dir = Fresh("spacing");
+        Package(dir, "booleans: .words");
+        var file = Path.Combine(dir, "main.byn");
+        File.WriteAllText(file, "bool f(bool a, bool b) => a&&!b||!(a)\n");
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal("bool f(bool a, bool b) => a and not b or not (a)\n", File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void AMemberNamedLikeAPrimitiveIsKept()
+    {
+        var file = Path.Combine(Fresh("member"), "main.byn");
+        File.WriteAllText(file, "i64 f(Box b) => b.long\n");
+        Run("format", file);
+        Assert.Equal("i64 f(Box b) => b.long\n", File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void AnInvalidPackageIsReportedAndItsFilesAreLeftAlone()
+    {
+        var dir = Fresh("badstyle");
+        Package(dir, "booleans: .both");
+        var file = Path.Combine(dir, "main.byn");
+        File.WriteAllText(file, WordsAndCSharp);
+        var (exit, _, stderr) = Run("format", file);
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Contains("style.booleans", stderr);
+        Assert.Equal(WordsAndCSharp, File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void CheckListsWhatWouldChangeAndWritesNothing()
+    {
+        var dir = Fresh("check");
+        var changed = Path.Combine(dir, "a.byn");
+        var clean = Path.Combine(dir, "b.byn");
+        File.WriteAllText(changed, WordsAndCSharp);
+        File.WriteAllText(clean, SymbolsAndSized);
+        var (exit, stdout, _) = Run("format", "--check", dir);
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Equal($"would format {changed}\n", stdout.Replace("\r\n", "\n"));
+        Assert.Equal(WordsAndCSharp, File.ReadAllText(changed));
+    }
+
+    [Fact]
+    public void CheckPassesOnAFormattedTree()
+    {
+        var dir = Fresh("check-clean");
+        File.WriteAllText(Path.Combine(dir, "main.byn"), SymbolsAndSized);
+        var (exit, stdout, stderr) = Run("format", "--check", dir);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Empty(stdout);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("booleans: .words, primitives: .csharp")]
+    public void FormattingIsIdempotent(string style)
+    {
+        var dir = Fresh("idempotent-" + style.Length);
+        if (style != "") Package(dir, style);
+        var file = Path.Combine(dir, "main.byn");
+        File.WriteAllText(file,
+            "struct Box { weight: long }\nadd(a: int, b: i32) -> long { return a + b; }\n" +
+            "void main() {\n    let a = true\n    if (a && !false) { print(\"x\") }\n    unless !a { print(\"y\") }\n" +
+            "    int t = add(1, 2)\n    print($\"{t}\") if not a or t is not 0\n}\n");
+        Run("format", file);
+        var once = File.ReadAllText(file);
+        var (exit, stdout, stderr) = Run("format", "--check", file);
+        Assert.True(exit == CliApp.ExitOk, stderr + stdout + once);
+        Run("format", file);
+        Assert.Equal(once, File.ReadAllText(file));
+    }
+
     [Fact]
     public void AFileWithARealErrorIsLeftAloneAndOthersAreFormatted()
     {

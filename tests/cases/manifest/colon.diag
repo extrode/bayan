@@ -4,3 +4,5 @@ edition 2027
 kind App
 targets host
 mode safe
+booleans Symbols
+primitives Sized
