@@ -176,7 +176,7 @@ Evidence: `CliTests.cs`, `ScaffoldTests.cs`, `OutputTests.cs`, `tests/cases/styl
 | `xInto` with derived allocating form | Partial | `void formatInto(ref StrBuf sb)` drives `$"{p}"`; no derived allocating form |
 | `owned()` | Not started | `owned` is not a member of `string`. Copy a borrowed string with `$"{s}"`, or a collection with `.copy(to: arena)` (`run/collection-copy`) |
 | Copy/move of structs owning collections | Implemented | collections are unique: implicit copy is BYN2780 (`diag/unique-implicit-copy`); `move x`, `move` params (`run/unique-move`); `take()` (`run/take`) |
-| `unique` and drop | Partial | `unique struct` and ownership checks are implemented; no user `drop`; `using let a = Arena();` frees owners (`run/memory-arena`, `diag/not-disposable`) |
+| `unique` and drop | Partial | `unique struct` and ownership checks are implemented; no user `drop`; `let a = Arena();` frees owners (`run/memory-arena`, `diag/not-disposable`) |
 | Overflow traps | Implemented, every mode *(round 2, unmerged)* | `run/overflow-add`, `run/overflow-cast` |
 | `checked` | Not started | reserved keyword |
 | `+%`, `-%`, `*%`, `+|`, `-|` | Implemented | `run/wrapping-fast` |

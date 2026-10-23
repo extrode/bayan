@@ -958,7 +958,7 @@ defer failing tx.rollback()                   // exit by failure
 defer panicking (p) log($"{p}", as: .error)   // panic in progress
 ```
 
-- `using let x = …` disposes at scope end.
+- A `unique` value is cleaned up exactly once when its single owner goes away; there is no `using` for disposal.
 - `defer stmt` runs at scope exit, always.
 - `defer failing stmt` / `defer failing (e) { … }` runs only when the function exits by failing; it is allowed only in functions that `fails`. It also runs on fiber cancellation (not in v0.1: no fibers).
 - `defer panicking stmt` / `defer panicking (p) { … }` runs only while a panic is in progress, and is allowed anywhere.
@@ -1172,7 +1172,7 @@ let resp = signUp(form) catch switch {
 - **Debug builds check ownership at runtime.** Each `unique` allocation records its current owner and every move updates it; a second owner, or a read through a moved-from local, panics with both source locations, in the usual panic format: `second owner of List<i64>: owned since a.byn:3` or `use of moved List<i64>: moved at a.byn:4`, followed by `  at a.byn:5`. Safe and fast builds compile the checker out. Rules here hold outside `unsafe`, where raw pointers may alias.
 
 ### 9.4 Borrowing and regions (no lifetime annotations in the common case)
-1. Every scope that frees memory is a region (function locals, `using` arenas, requests).
+1. Every scope that frees memory is a region (function locals, arenas, requests).
 2. A borrow (`ref`, `Span<T>`, `string` slice, or a struct containing one) carries its source's region; the compiler infers it.
 3. **A borrow cannot be stored anywhere that outlives its region.** Fix: `.copy()` or `.copy(to: alloc)` (strings, §3.2; collections, §16) or `move` into an `Owned`.
 4. A returned borrow derives from **all** borrowed arguments unless narrowed: `string head(string s, at string sep) borrows s`.
@@ -1439,7 +1439,7 @@ Libraries never choose an implementation. Blocking work is offloaded automatical
 > Round 2 §14: functions stay colorless; scoped futures and block deadlines give cancellation without plumbing. Codes: BYN1016.
 
 ### 13.3 Structured concurrency
-`using let group = Io.group()`, then `group.spawn(…)` and `try await group.all()`. Futures cannot outlive the scope that started them; leaving the scope cancels children; tasks may borrow the caller's stack.
+`let group = Io.group()`, then `group.spawn(…)` and `try await group.all()`. Futures cannot outlive the scope that started them; leaving the scope cancels children; tasks may borrow the caller's stack.
 
 ### 13.4 Suspension inference
 The compiler infers which functions may suspend (calls through `dyn` are bounded by the function type's `uses` clause). The language server marks such calls with inlay hints (`uses suspend`). Public functions declare `suspend` in their `uses` clause (§14). Errors:
@@ -1819,7 +1819,7 @@ public c_int settleC(…) { … }
 ## 19. Packages, editions and builds
 
 ### 19.1 Modules
-A directory is a module (`src/orders/` → `app.orders`). `import app.orders` / `import app.users as u`. No circular imports. `using` is only for disposal.
+A directory is a module (`src/orders/` → `app.orders`). `import app.orders` / `import app.users as u`. No circular imports.
 
 ### 19.2 Manifest
 `package.byn` is **data only** (no calls, no `comptime`), type-checked against `Package`:
@@ -2128,7 +2128,7 @@ Roadmap: v0.3 WASM + `.d.ts`; v0.4 `bayan gen ts`; post-v1 portable JS backend (
 | Exceptions | `fails` / `Result` / panics |
 | `new T()` | `T()` (`new` accepted, removed by formatter) |
 | `in` parameters | Redundant |
-| `using` (import / dispose / alias) | `import`, `using let`, `import … as` |
+| `using` (import / dispose / alias) | `import`, `import … as` |
 | `goto`, `goto case` | Removed |
 | `IConvertible`, `Convert.ChangeType` | `IFrom` / `ITryFrom`, `convert<T>` |
 | `Substring(i, n)` | `s[i..(i + n)]` (migrated) |
