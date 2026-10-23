@@ -51,6 +51,7 @@ public static class Messages
                                [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]
           clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]
           cache stats          show the shared build cache's location and size
+          format <path>        rewrite input forms (those with a fix-it) in a `.byn` file or a directory of them
           explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
           <script>.byn         run a script, so `#!/usr/bin/env bayan` works
           doctor               check the C compiler, zig, git and the build cache, with fixes
@@ -96,6 +97,7 @@ public static class Messages
     public static readonly Message ExplainExpected = Register("usage.explain-expected", "bayan: expected one diagnostic code, e.g. `{0}`");
     public static readonly Message ExplainUnknown = Register("usage.explain-unknown", "bayan: no explanation for `{0}`");
     public static readonly Message CacheUsage = Register("usage.cache", "usage: {0}   (`{1}` empties it)");
+    public static readonly Message FormatFormatted = Register("format.formatted", "formatted {0}");
     public static readonly Message CommandUsage = Register("usage.command", "usage: {0}");
 
     // ── version ──────────────────────────────────────────────────────────────────────
