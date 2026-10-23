@@ -1,0 +1,13 @@
+error BYN3004: `w` is modified while `sp` still borrows it
+
+  37 │     Span<i64> sp = first(w.items.asSpan(), w.grow());
+     │                                            ^^^^^^^^ `sp` is used again on line 38
+     │
+  help: finish using `sp` first, or copy what it needs before changing `w`
+
+error BYN3004: `b` is modified while `d` still borrows it
+
+  41 │     dyn ref IThing d = pick(b.items[0], b.grow());
+     │                                         ^^^^^^^^ `d` is used again on line 42
+     │
+  help: finish using `d` first, or copy what it needs before changing `b`
