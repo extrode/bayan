@@ -1,0 +1,2 @@
+// expect: log level with `at:`
+log("retry", at: .debug)

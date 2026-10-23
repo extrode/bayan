@@ -1,0 +1,2 @@
+// expect: `toString()`
+let s = total.toString()

@@ -1,0 +1,5 @@
+// expect: name-first declaration
+// fix-it: `timeout(Millis after)` (`bayan format` puts the type first)
+union error CarrierError {
+    timeout(after: Millis)
+}

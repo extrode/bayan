@@ -1,0 +1,9 @@
+// expect: `drop(ref this)` cleanup
+// fix-it: `public void dispose(move this) {`
+public struct unique SecretKey {
+    *mut u8 ptr
+
+    public void drop(ref this) {
+        unsafe because "freed exactly once" { sodium_free(ptr) }
+    }
+}

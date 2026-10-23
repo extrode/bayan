@@ -1,0 +1,160 @@
+// order.byn — orders, their lines and their lifecycle (typestate)
+module suq.model
+
+import suq.pricing.{ Money, Currency, Grams, PriceLine, PricingError }
+
+/// What happened to a line after the customer placed it.
+@derive(Json)
+public union LineStatus {
+    active
+    removed
+    backordered
+}
+
+@derive(Json)
+public struct Line {
+    public Sku sku
+    public i32 qty
+        requires it in 1..=999
+    public Money unitPrice
+    public Grams unitWeight
+        requires it > 0g
+    public LineStatus status = .active
+
+    public Money amount => unitPrice * qty
+    public Grams weight => unitWeight * qty
+
+    /// Pricing's view of this line. Borrows `sku`; nothing is copied.
+    public PriceLine priceLine => PriceLine { key: sku.value, qty, unitPrice, unitWeight }
+}
+
+/// Lines that no longer count toward totals, weight or packing.
+public const inactive = pattern Line { status: .removed or .backordered }
+
+public union error BasketError {
+    empty
+    tooManyLines(i64 limit)
+}
+
+public union error OrderError = BasketError, PricingError
+
+/// An order moves draft → placed → paid → shipped, or to cancelled before payment.
+/// Data that exists only in one state lives in that state's payload.
+@derive(Json)                       // not Row: `lines` is not flat (SPEC §16)
+public struct Order {
+    public OrderId id
+    public CustomerId customer
+    public Currency currency
+    public List<Line> lines
+
+    states {
+        draft
+        placed
+        paid(PaymentId payment)
+        shipped(PaymentId payment, TrackingId tracking)
+        cancelled(string reason)
+    }
+
+    public const maxLines = 200
+
+    /// Sum of the active lines. Every line shares the order's currency (checked by `addLine`).
+    public Money total {
+        var sum = Money.zero(currency)
+        for line: Line in lines except inactive {
+            sum = sum + line.amount
+        }
+        return sum
+    }
+
+    public Grams weight {
+        var sum: Grams = 0g
+        for line in lines except inactive {
+            sum += line.weight
+        }
+        return sum
+    }
+
+    public string statusLabel => this switch {
+        .draft => "Draft",
+        .placed => "Awaiting payment",
+        .paid => "Paid",
+        .shipped => "On its way",
+        .cancelled => "Cancelled",
+    }
+
+    public void addLine(ref this is .draft, Line line) fails OrderError uses alloc {
+        fail .tooManyLines(limit: maxLines) if lines.length >= maxLines
+        fail .currencyMismatch(expected: currency, got: line.unitPrice.currency) if line.unitPrice.currency != currency
+        lines.append(line)
+    }
+
+    /// `with` re-checks every rule of `Line`, so this can fail on paper even though
+    /// `status` has no rule (friction log F-07).
+    public void removeLine(ref this is .draft or .placed, Sku sku) fails ValidationError<Line> {
+        for i in lines.indices {
+            lines[i] = try lines[i] with { status: .removed } if lines[i].sku == sku
+        }
+    }
+
+    public void place(ref this is .draft) becomes .placed fails OrderError {
+        fail .empty unless (lines except inactive).any()
+        become .placed
+    }
+
+    /// Recording only. Charging the card is the gateway's job (suq.payments).
+    public void markPaid(ref this is .placed, PaymentId payment) becomes .paid {
+        become .paid(payment)
+    }
+
+    public void markShipped(ref this is .paid, TrackingId tracking) becomes .shipped {
+        become .shipped(payment: payment, tracking: tracking)
+    }
+
+    public void cancel(ref this is .draft or .placed, string reason) becomes .cancelled {
+        become .cancelled(reason)
+    }
+}
+
+/// Orders that have been paid for. Widening is free: `Order.paid` → `Fulfilled` → `Order`.
+public type Fulfilled = Order is .paid or .shipped
+
+/// `payment` exists in both states with the same type, so it is readable on `Fulfilled`
+/// (`tracking` is not).
+public PaymentId lookUpPayment(Order order is .paid or .shipped) => order.payment
+
+// ── Tests ──────────────────────────────────────────────────────────
+
+/// Literal arguments and constants are checked at compile time, so no `try` (F-08).
+const tea = Line {
+    sku: Sku("TEA-0001"),
+    qty: 2,
+    unitPrice: Money { cents: 1200, currency: .myr },
+    unitWeight: 100g,
+}
+
+test "an order moves through its states" {
+    var order = Order.draft { id: OrderId(7), customer: CustomerId(1), currency: .myr, lines: [] }
+    try order.addLine(tea)
+    try order.place()                       // order: Order.placed
+    order.markPaid(PaymentId("pay_123"))    // order: Order.paid
+    let done: Fulfilled = order
+    assert lookUpPayment(done) == PaymentId("pay_123")
+    order.markShipped(TrackingId("EX123456789MY"))
+    assert order is .shipped
+    assert order.tracking.value == "EX123456789MY"   // payload field, readable in this state
+    assert order.total is Money { cents: 2400 }
+}
+
+test "a failed transition leaves the state unchanged" {
+    var order = Order.draft { id: OrderId(8), customer: CustomerId(1), currency: .myr, lines: [] }
+    assert order.place() fails OrderError.empty
+    assert order is .draft
+}
+
+test "removed lines don't count" {
+    var order = Order.draft { id: OrderId(9), customer: CustomerId(1), currency: .myr, lines: [] }
+    try order.addLine(tea)
+    try order.removeLine(tea.sku)
+    assert order.total is Money { cents: 0 }
+    assert order.place() fails OrderError.empty
+}

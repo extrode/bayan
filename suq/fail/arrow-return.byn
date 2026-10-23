@@ -1,0 +1,4 @@
+// expect: name-first return
+// fix-it: `public Grams shippingWeight(Order order) {` (`bayan format` moves the return type first)
+public shippingWeight(Order order) -> Grams {
+}

@@ -1,0 +1,5 @@
+// expect: `=>` in a function type
+// fix-it: `(Order -> void uses net) handler`
+struct Checkout {
+    (Order => void uses net) handler
+}

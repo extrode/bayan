@@ -1,0 +1,3 @@
+// expect: removed unit conversion form
+// fix-it: `size.rounded<KiB>()`
+log($"{size.in(KiB)}")
