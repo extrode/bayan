@@ -42,7 +42,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ExpectedExpression = Error("BYN1002", "expected an expression, found {0}");
     public static readonly DiagnosticDescriptor ExpectedType = Error("BYN1003", "expected a type, found {0}");
     public static readonly DiagnosticDescriptor ExpectedMember = Error("BYN1004", "expected a field, property, constructor or method, found {0}");
-    public static readonly DiagnosticDescriptor MissingSemicolon = Error("BYN1005", "expected `;` after the statement");
+    public static readonly DiagnosticDescriptor MissingLineBreak = Error("BYN1005", "expected a line break after the statement");
     public static readonly DiagnosticDescriptor UnlessWithElse = Error("BYN1006", "`unless` cannot have an `else` branch");
     public static readonly DiagnosticDescriptor UnlessNegated = Error("BYN1007", "`unless` with a negated condition is a double negative");
     public static readonly DiagnosticDescriptor PostfixNotSimple = Error("BYN1008", "a postfix `{0}` applies only to a simple statement");
@@ -64,13 +64,19 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor UnlessCompound = Error("BYN1022", "`unless` with `&&`/`||` reads as a double negative");
     public static readonly DiagnosticDescriptor UnlessNull = Error("BYN1023", "`unless x is null` is not allowed; write `if x is not null`");
     public static readonly DiagnosticDescriptor CatchBinding = Error("BYN1025", "`catch (e)` is an input form; bind the error in a `catch switch` arm");
-    public static readonly DiagnosticDescriptor DelegateDecl = Error("BYN1028", "`delegate` is not Bayan; write a function type `type OrderFilter = Order => bool;`");
+    public static readonly DiagnosticDescriptor DelegateDecl = Error("BYN1028", "`delegate` is not Bayan; write a function type `type OrderFilter = Order => bool`");
     public static readonly DiagnosticDescriptor ErrorSetPipe = Error("BYN1029", "separate error-set members with `,`");
     public static readonly DiagnosticDescriptor CSharpTypeName = Error("BYN1030", "`{0}` is an input form; the Bayan type is `{1}`");
     public static readonly DiagnosticDescriptor FailsShorthand = Error("BYN1031", "`T!E` is an input form; write `T f() fails E`");
     public static readonly DiagnosticDescriptor NegatedIfToUnless = Error("BYN1032", "`if !x {{…}}` with no `else` is an input form; write `unless x {{…}}`");
     public static readonly DiagnosticDescriptor UnlessLikelihood = Error("BYN1033", "`unless` takes no likelihood word; write `if unlikely !…` or drop `{0}`");
     public static readonly DiagnosticDescriptor TypeNameOrder = Error("BYN1043", "`{0}` is an input form; write `{1}`");
+    public static readonly DiagnosticDescriptor SemicolonInput = Error("BYN1040", "`;` is an input form; a statement ends at the newline");
+    public static readonly DiagnosticDescriptor ElseOnNewLine = Error("BYN1041", "`else` must follow `}}` on the same line");
+    public static readonly DiagnosticDescriptor OnNewLine = Error("BYN1042", "`{0}` takes its value on the same line");
+    /// <summary>BYN1042's second message form, for a stranded postfix modifier; registered once, as <see cref="OnNewLine"/>.</summary>
+    public static readonly DiagnosticDescriptor PostfixOnNewLine = new("BYN1042", Severity.Error, "a postfix `{0}` must be on the line of its statement");
+    public static readonly DiagnosticDescriptor OneLineDeclarations = Error("BYN1053", "`{0}` declares its cases on one line; write one per line");
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor UndefinedName = Error("BYN2001", "`{0}` is not defined");

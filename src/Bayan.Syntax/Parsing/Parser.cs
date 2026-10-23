@@ -1,3 +1,4 @@
+using System.Text;
 using Bayan.Syntax.Ast;
 using Bayan.Syntax.Diagnostics;
 using Bayan.Syntax.Lexing;
@@ -12,9 +13,9 @@ public sealed record SyntaxTree(SourceText Source, CompilationUnit Root, IReadOn
 }
 
 /// <summary>
-/// Recursive-descent parser with precedence climbing for binary operators. Recovers at statement
-/// and declaration boundaries; a missing <c>;</c> before a new line is reported once and parsing
-/// carries on as if it were there.
+/// Recursive-descent parser with precedence climbing for binary operators. A statement ends at a
+/// line break, <c>}</c> or the end of the file (the waqf rules, spec §2.5); a <c>;</c> is an input
+/// form. Recovers at statement and declaration boundaries.
 /// </summary>
 public sealed class Parser
 {
@@ -29,6 +30,8 @@ public sealed class Parser
     private int _syntaxErrors;
     /// <summary>Token index where the bare condition being parsed starts, or -1 (see <see cref="BraceLiteralAllowed"/>).</summary>
     private int _conditionStart = -1;
+    /// <summary>Per token: whether its innermost bracket is <c>(</c>, <c>[</c> or an interpolation hole, where a line break never ends a statement.</summary>
+    private readonly bool[] _inGroup;
 
     private Parser(LexResult lexed)
     {
@@ -36,6 +39,24 @@ public sealed class Parser
         _tokens = lexed.Buffer;
         _count = lexed.Count;
         _diagnostics.AddRange(lexed.Diagnostics);
+        _inGroup = new bool[_count];
+        var groups = new Stack<bool>();
+        for (var i = 0; i < _count; i++)
+        {
+            _inGroup[i] = groups.Count > 0 && groups.Peek();
+            switch (_tokens[i].Kind)
+            {
+                case TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.InterpolationStart:
+                    groups.Push(true);
+                    break;
+                case TokenKind.OpenBrace:
+                    groups.Push(false);
+                    break;
+                case TokenKind.CloseParen or TokenKind.CloseBracket or TokenKind.InterpolationEnd or TokenKind.CloseBrace:
+                    groups.TryPop(out _);
+                    break;
+            }
+        }
     }
 
     public static SyntaxTree Parse(SourceText source)
@@ -91,6 +112,8 @@ public sealed class Parser
         DiagnosticCodes.ForInputForm, DiagnosticCodes.ErrdeferInput, DiagnosticCodes.FieldInitEquals, DiagnosticCodes.UnlessCompound,
         DiagnosticCodes.UnlessNull, DiagnosticCodes.CatchBinding, DiagnosticCodes.DelegateDecl, DiagnosticCodes.ErrorSetPipe,
         DiagnosticCodes.CSharpTypeName, DiagnosticCodes.FailsShorthand, DiagnosticCodes.NegatedIfToUnless, DiagnosticCodes.UnlessLikelihood,
+        DiagnosticCodes.SemicolonInput, DiagnosticCodes.ElseOnNewLine, DiagnosticCodes.OnNewLine, DiagnosticCodes.PostfixOnNewLine,
+        DiagnosticCodes.OneLineDeclarations,
     ];
 
     private Diagnostic? Report(DiagnosticDescriptor descriptor, TextSpan span, object?[]? args = null,
@@ -119,25 +142,106 @@ public sealed class Parser
     private Token Expect(TokenKind kind, string? label = null)
     {
         if (Kind == kind) return Advance();
-        if (kind == TokenKind.Semicolon)
-        {
-            ReportMissingSemicolon();
-        }
-        else
-        {
-            Report(DiagnosticCodes.Expected, Current.Span, [$"`{kind.Text()}`", Describe(Current)], label);
-        }
+        Report(DiagnosticCodes.Expected, Current.Span, [$"`{kind.Text()}`", Describe(Current)], label);
         return new Token(kind, Current.Start, 0, 0, 0, 0);
     }
 
-    private void ReportMissingSemicolon()
+    /// <summary>
+    /// The end of a statement or declaration: a line break, <c>}</c> or the end of the file. Each <c>;</c> here is
+    /// the input form (BYN1040); another statement on the same line is BYN1005.
+    /// </summary>
+    private void ExpectEnd()
     {
+        if (Kind == TokenKind.Semicolon)
+        {
+            while (Kind == TokenKind.Semicolon) ReportSemicolon(Advance());
+            return;
+        }
+        if (AtEnd || Kind == TokenKind.CloseBrace || Current.HasNewlineBefore) return;
         // The token after the statement was already reported (e.g. as a bad expression); one error is enough.
         if (_lastErrorAt == Current.Start) return;
-        var at = new TextSpan(_prevEnd, 0);
-        Report(DiagnosticCodes.MissingSemicolon, at, label: Current.HasNewlineBefore ? "add `;` here" : $"found {Describe(Current)}",
-            fix: new Fix(at, ";"));
+        Report(DiagnosticCodes.MissingLineBreak, new TextSpan(_prevEnd, 0), label: $"found {Describe(Current)}",
+            help: "put the next statement on its own line",
+            fix: new Fix(TextSpan.FromBounds(_prevEnd, Current.Start), "\n" + IndentAt(_prevEnd)));
     }
+
+    /// <summary>BYN1040 for a <c>;</c> just consumed: deleted, or a line break when a statement follows on its line.</summary>
+    private void ReportSemicolon(Token semicolon)
+    {
+        var bytes = _source.Bytes.Span;
+        var from = semicolon.Start;
+        while (from > 0 && bytes[from - 1] is (byte)' ' or (byte)'\t') from--;
+        if (Current.HasNewlineBefore || Kind is TokenKind.Semicolon or TokenKind.CloseBrace or TokenKind.EndOfFile)
+        {
+            Report(DiagnosticCodes.SemicolonInput, semicolon.Span, label: "remove `;`", help: "remove the `;`",
+                fix: new Fix(TextSpan.FromBounds(from, semicolon.End), ""));
+            return;
+        }
+        var to = semicolon.End;
+        while (to < bytes.Length && bytes[to] is (byte)' ' or (byte)'\t') to++;
+        Report(DiagnosticCodes.SemicolonInput, semicolon.Span, label: "remove `;`", help: "put the next statement on its own line",
+            fix: new Fix(TextSpan.FromBounds(from, to), "\n" + IndentAt(semicolon.Start)));
+    }
+
+    /// <summary>The spaces and tabs that start the line holding <paramref name="offset"/>.</summary>
+    private string IndentAt(int offset)
+    {
+        var line = _source.GetLineSpan(_source.GetLineIndex(offset));
+        var bytes = _source.Bytes.Span;
+        var end = line.Start;
+        while (end < line.End && bytes[end] is (byte)' ' or (byte)'\t') end++;
+        return _source.GetText(TextSpan.FromBounds(line.Start, end));
+    }
+
+    // ── Line breaks (waqf) ───────────────────────────────────────────────────────────
+
+    /// <summary>Whether a line break before token <paramref name="index"/> can end a statement: one outside <c>()</c>, <c>[]</c> and interpolation holes.</summary>
+    private bool BreaksLine(int index) => index < _count && _tokens[index].HasNewlineBefore && !_inGroup[index];
+
+    /// <summary>Whether a line of only whitespace lies between token <paramref name="index"/> and the one before it; a comment line is not blank.</summary>
+    private bool HasBlankLineBefore(int index)
+    {
+        if (index <= 0 || index >= _count) return false;
+        var lineIsBlank = false;
+        foreach (var b in _source.Bytes.Span[_tokens[index - 1].End.._tokens[index].Start])
+        {
+            if (b == (byte)'\n')
+            {
+                if (lineIsBlank) return true;
+                lineIsBlank = true;
+            }
+            else if (b is not ((byte)' ' or (byte)'\t' or (byte)'\r'))
+            {
+                lineIsBlank = false;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>A token that joins the line it starts to the line before (waṣl).</summary>
+    private bool IsWasl(int index) => KindAt(index) is TokenKind.Dot or TokenKind.QuestionDot or TokenKind.QuestionQuestion
+        or TokenKind.AmpAmp or TokenKind.BarBar or TokenKind.AndKeyword or TokenKind.OrKeyword or TokenKind.CatchKeyword
+        or TokenKind.FailsKeyword or TokenKind.RequiresKeyword
+        || KindAt(index) == TokenKind.Identifier && Text(_tokens[index]) == "where";
+
+    /// <summary>Whether the line before token <paramref name="index"/> ends in an operator, <c>,</c>, <c>=</c>, <c>=&gt;</c> or an opening bracket (lā), or the token is waṣl.</summary>
+    private bool LineContinues(int index) => IsWasl(index) || index > 0 && KindAt(index - 1) is
+        TokenKind.Comma or TokenKind.FatArrow or TokenKind.OpenBrace or TokenKind.OpenParen or TokenKind.OpenBracket or
+        TokenKind.Dot or TokenKind.DotDot or TokenKind.DotDotEquals or TokenKind.Question or TokenKind.QuestionQuestion or
+        TokenKind.QuestionDot or TokenKind.Plus or TokenKind.Minus or TokenKind.Star or TokenKind.Slash or TokenKind.Percent or
+        TokenKind.PlusPercent or TokenKind.MinusPercent or TokenKind.StarPercent or TokenKind.PlusBar or TokenKind.MinusBar or
+        TokenKind.StarBar or TokenKind.Amp or TokenKind.AmpAmp or TokenKind.Bar or TokenKind.BarBar or TokenKind.Caret or
+        TokenKind.EqualsEquals or TokenKind.BangEquals or TokenKind.Less or TokenKind.LessEquals or TokenKind.GreaterEquals or
+        TokenKind.LessLess or TokenKind.AndKeyword or TokenKind.OrKeyword or TokenKind.IsKeyword or TokenKind.InKeyword or
+        TokenKind.Equals or TokenKind.PlusEquals or TokenKind.MinusEquals or TokenKind.StarEquals or TokenKind.SlashEquals or
+        TokenKind.PercentEquals or TokenKind.AmpEquals or TokenKind.BarEquals or TokenKind.CaretEquals or
+        TokenKind.LessLessEquals or TokenKind.QuestionQuestionEquals;
+
+    /// <summary>Whether the expression being parsed ends before the current token: it starts a new line, and is not waṣl or follows a blank line.</summary>
+    private bool StopsHere => BreaksLine(_pos) && (HasBlankLineBefore(_pos) || !IsWasl(_pos));
+
+    /// <summary>Whether a statement ends before token <paramref name="index"/>, for lookahead: a <c>;</c>, <c>}</c>, the end, or a line break.</summary>
+    private bool EndsBefore(int index) => KindAt(index) is TokenKind.Semicolon or TokenKind.CloseBrace or TokenKind.EndOfFile || BreaksLine(index);
 
     private Name ExpectName(string what = "a name")
     {
@@ -251,7 +355,7 @@ public sealed class Parser
                 TokenKind.ExternKeyword => Modifiers.Extern,
                 TokenKind.UnsafeKeyword => Modifiers.Unsafe,
                 // `const` starts a statement at module level unless it modifies a declaration.
-                TokenKind.ConstKeyword when IsTypeThenName(_pos + 1) && KindAt(ScanType(_pos + 1) + 1) is not TokenKind.Equals and not TokenKind.Semicolon
+                TokenKind.ConstKeyword when IsTypeThenName(_pos + 1) && KindAt(ScanType(_pos + 1) + 1) != TokenKind.Equals && !EndsBefore(ScanType(_pos + 1) + 1)
                     => Modifiers.Const,
                 _ => Modifiers.None,
             };
@@ -346,10 +450,10 @@ public sealed class Parser
             case TokenKind.DelegateKeyword:
                 {
                     var keyword = Advance();
-                    while (Kind is not (TokenKind.Semicolon or TokenKind.OpenBrace or TokenKind.CloseBrace or TokenKind.EndOfFile)) Advance();
+                    while (Kind is not (TokenKind.Semicolon or TokenKind.OpenBrace or TokenKind.CloseBrace or TokenKind.EndOfFile) && !BreaksLine(_pos)) Advance();
                     Accept(TokenKind.Semicolon);
                     Report(DiagnosticCodes.DelegateDecl, TextSpan.FromBounds(keyword.Start, _prevEnd), label: "a C# delegate",
-                        help: "write a function type alias: `type Name = (Param) => Result;`");
+                        help: "write a function type alias: `type Name = (Param) => Result`");
                     decl = null;
                     break;
                 }
@@ -463,7 +567,7 @@ public sealed class Parser
         while (Accept(TokenKind.Dot)) path.Add(ExpectName("a module name"));
         Name? alias = null;
         if (Accept(TokenKind.AsKeyword)) alias = ExpectName("an alias");
-        Expect(TokenKind.Semicolon);
+        ExpectEnd();
         return new ImportDecl(SpanFrom(start), path.ToArray(), alias);
     }
 
@@ -531,7 +635,7 @@ public sealed class Parser
         return new InterfaceDecl(SpanFrom(start), modifiers, name, members) { TypeParams = typeParams, Where = where };
     }
 
-    /// <summary>A method (abstract when it ends in <c>;</c>), <c>T name { get; }</c>, <c>T name =&gt; e;</c> or <c>type Name;</c>.</summary>
+    /// <summary>A method (abstract when the line ends after its header), <c>T name { get }</c>, <c>T name =&gt; e</c> or <c>type Name</c>.</summary>
     private Decl? ParseInterfaceMember()
     {
         var first = Current;
@@ -545,11 +649,11 @@ public sealed class Parser
 
         Decl decl;
         var after = ScanType(_pos);
-        if (Kind == TokenKind.TypeKeyword && IsName(Peek(1)) && Peek(2) == TokenKind.Semicolon)
+        if (Kind == TokenKind.TypeKeyword && IsName(Peek(1)) && EndsBefore(_pos + 2))
         {
             Advance();
             var name = ExpectName();
-            Advance();
+            ExpectEnd();
             decl = new AssociatedTypeDecl(SpanFrom(start), name);
         }
         else if (IsFunctionStart())
@@ -563,7 +667,7 @@ public sealed class Parser
             Expect(TokenKind.OpenBrace);
             if (AtContextual("get")) Advance();
             else Report(DiagnosticCodes.Expected, Current.Span, ["`get`", Describe(Current)]);
-            Expect(TokenKind.Semicolon);
+            ExpectEnd();
             Expect(TokenKind.CloseBrace);
             decl = new GetterDecl(SpanFrom(start), modifiers, type, name);
         }
@@ -573,20 +677,22 @@ public sealed class Parser
         }
         else
         {
-            Report(DiagnosticCodes.Expected, Current.Span, ["a method, getter or `type Name;`", Describe(Current)]);
+            Report(DiagnosticCodes.Expected, Current.Span, ["a method, getter or `type Name`", Describe(Current)]);
             Synchronize();
             return null;
         }
         return decl with { Doc = doc, Attributes = attributes };
     }
 
-    /// <summary><c>extension T : I { … }</c> or <c>extension T : I;</c>.</summary>
+    /// <summary><c>extension T : I { … }</c> or <c>extension T : I</c> alone on its line.</summary>
     private ExtensionDecl ParseExtension(int start)
     {
         Advance();
         var name = ExpectName("a type name");
         var bases = ParseBases();
-        Decl[] members = Accept(TokenKind.Semicolon) ? [] : ParseBody("extension", () => ParseDeclaration(topLevel: false, structName: name.Text));
+        Decl[] members = [];
+        if (Kind != TokenKind.OpenBrace && EndsBefore(_pos)) ExpectEnd();
+        else members = ParseBody("extension", () => ParseDeclaration(topLevel: false, structName: name.Text));
         return new ExtensionDecl(SpanFrom(start), name, bases, members);
     }
 
@@ -611,7 +717,7 @@ public sealed class Parser
         if (Accept(TokenKind.FatArrow))
         {
             var body = ParseExpression();
-            Expect(TokenKind.Semicolon);
+            ExpectEnd();
             return new PropertyDecl(SpanFrom(start), modifiers, type, name, body);
         }
         Expr? init = null;
@@ -623,7 +729,7 @@ public sealed class Parser
             Report(DiagnosticCodes.RequiresNotHere, SpanFrom(requiresStart), ["fields"],
                 help: "check the value where it is set, or move the rule to a function's `requires`");
         }
-        Expect(TokenKind.Semicolon);
+        ExpectEnd();
         return new FieldDecl(SpanFrom(start), modifiers, type, name, init);
     }
 
@@ -635,7 +741,7 @@ public sealed class Parser
         return new ConstructorDecl(SpanFrom(start), modifiers, name, parameters, body);
     }
 
-    /// <param name="allowNoBody">An interface member: <c>;</c> instead of a body declares it abstract.</param>
+    /// <param name="allowNoBody">An interface member: no body (the line ends after the header) declares it abstract.</param>
     private FunctionDecl ParseFunction(int start, Modifiers modifiers, bool allowNoBody = false)
     {
         var returnType = ParseType();
@@ -697,9 +803,13 @@ public sealed class Parser
         else if (Accept(TokenKind.FatArrow))
         {
             expressionBody = ParseExpression();
-            Expect(TokenKind.Semicolon);
+            ExpectEnd();
         }
-        else if (!(allowNoBody && Accept(TokenKind.Semicolon)))
+        else if (allowNoBody && EndsBefore(_pos))
+        {
+            ExpectEnd();
+        }
+        else
         {
             Expect(TokenKind.OpenBrace);
         }
@@ -761,6 +871,8 @@ public sealed class Parser
         var name = ExpectName("an error set name");
         var open = Expect(TokenKind.OpenBrace);
         var variants = new List<ErrorVariant>();
+        var cases = new List<TextSpan>();
+        var commas = new List<Token>();
         while (IsName(Kind) || IsAttributeStart())
         {
             var first = Current;
@@ -768,13 +880,15 @@ public sealed class Parser
             var doc = DocOf(first) ?? DocOf(Current);
             var variant = ExpectName("a variant name");
             variants.Add(new ErrorVariant(variant.Span, variant, doc) { Attributes = attributes });
-            if (!Accept(TokenKind.Comma)) break;
+            cases.Add(TextSpan.FromBounds(first.Start, _prevEnd));
+            if (!NextCase(commas)) break;
         }
+        ReportCaseCommas(name.Text, open, cases, commas);
         ExpectClose(open, "error enum");
         return new ErrorEnumDecl(SpanFrom(start), modifiers, name, variants.ToArray());
     }
 
-    /// <summary><c>error set Name = A, B;</c>; members separated by <c>|</c> are the input form (BYN1029).</summary>
+    /// <summary><c>error set Name = A, B</c>; members separated by <c>|</c> are the input form (BYN1029).</summary>
     private ErrorSetDecl ParseErrorSet(int start, Modifiers modifiers)
     {
         Advance();
@@ -791,13 +905,13 @@ public sealed class Parser
                     fix: new Fix(TextSpan.FromBounds(memberEnd, separator.End), ","));
             members.Add(ParseType());
         }
-        Expect(TokenKind.Semicolon);
+        ExpectEnd();
         return new ErrorSetDecl(SpanFrom(start), modifiers, name, members.ToArray());
     }
 
     /// <summary>
-    /// <c>enum Name { a, b, c }</c> or <c>enum Name(T x) { a(1), b(2); }</c>; a trailing <c>,</c> or <c>;</c>
-    /// after the last member is allowed.
+    /// <c>enum Name { a b c }</c>, one member per line, or <c>enum Name(T x) { a(1) b(2) }</c>; members separated by
+    /// <c>,</c> are the input form (BYN1053), and a <c>;</c> after the last is BYN1040.
     /// </summary>
     private EnumDecl ParseEnum(int start, Modifiers modifiers)
     {
@@ -808,6 +922,7 @@ public sealed class Parser
         var where = ParseWhere();
         var open = Expect(TokenKind.OpenBrace);
         var members = new List<EnumMember>();
+        var commas = new List<Token>();
         while (IsName(Kind))
         {
             var doc = DocOf(Current);
@@ -815,14 +930,18 @@ public sealed class Parser
             var member = ExpectName("a member name");
             var args = Kind == TokenKind.OpenParen ? ParseArguments() : null;
             members.Add(new EnumMember(SpanFrom(memberStart), member, doc, args));
-            if (!Accept(TokenKind.Comma)) break;
+            if (!NextCase(commas)) break;
         }
-        Accept(TokenKind.Semicolon);
+        while (Kind == TokenKind.Semicolon) ReportSemicolon(Advance());
+        ReportCaseCommas(name.Text, open, members.Select(m => m.Span).ToList(), commas);
         ExpectClose(open, "enum");
         return new EnumDecl(SpanFrom(start), modifiers, name, parameters, members.ToArray()) { Bases = bases, Where = where };
     }
 
-    /// <summary><c>union Name { circle(f32 r), rect(f32 w, f32 h), none }</c> or <c>union Mode { read = 1, write = 2 }</c>; a trailing <c>,</c> or <c>;</c> is allowed.</summary>
+    /// <summary>
+    /// <c>union Name { circle(f32 r) rect(f32 w, f32 h) none }</c> or <c>union Mode { read = 1 write = 2 }</c>, one
+    /// variant per line; variants separated by <c>,</c> are the input form (BYN1053), and a <c>;</c> after the last is BYN1040.
+    /// </summary>
     private UnionDecl ParseUnion(int start, Modifiers modifiers)
     {
         Advance();
@@ -832,6 +951,7 @@ public sealed class Parser
         var where = ParseWhere();
         var open = Expect(TokenKind.OpenBrace);
         var variants = new List<UnionVariant>();
+        var commas = new List<Token>();
         while (IsName(Kind))
         {
             var doc = DocOf(Current);
@@ -854,11 +974,73 @@ public sealed class Parser
             }
             var value = Accept(TokenKind.Equals) ? ParseExpression() : null;
             variants.Add(new UnionVariant(SpanFrom(variantStart), variant, fields.ToArray(), doc, value));
-            if (!Accept(TokenKind.Comma)) break;
+            if (!NextCase(commas)) break;
         }
-        Accept(TokenKind.Semicolon);
+        while (Kind == TokenKind.Semicolon) ReportSemicolon(Advance());
+        ReportCaseCommas(name.Text, open, variants.Select(v => v.Span).ToList(), commas);
         ExpectClose(open, "union");
         return new UnionDecl(SpanFrom(start), modifiers, name, variants.ToArray()) { TypeParams = typeParams, Bases = bases, Where = where };
+    }
+
+    /// <summary>After a case of an enum, union or error enum: whether another follows, on its own line or after a <c>,</c> (kept in <paramref name="commas"/>).</summary>
+    private bool NextCase(List<Token> commas)
+    {
+        if (Kind == TokenKind.Comma)
+        {
+            commas.Add(Advance());
+            return true;
+        }
+        return Current.HasNewlineBefore;
+    }
+
+    /// <summary>BYN1053 at the first <c>,</c> between cases; the fix puts each case on its own line and drops the commas.</summary>
+    private void ReportCaseCommas(string typeName, Token open, List<TextSpan> cases, List<Token> commas)
+    {
+        if (commas.Count == 0) return;
+        Fix? fix = null;
+        if (Kind == TokenKind.CloseBrace && cases.Count > 0)
+        {
+            var outer = IndentAt(open.Start);
+            var sameLine = (int from, int to) => !_source.GetText(TextSpan.FromBounds(from, to)).Contains('
+');
+            var caseIndent = sameLine(open.End, cases[0].Start) ? outer + "    " : IndentAt(cases[0].Start);
+            var text = new StringBuilder();
+            text.Append(sameLine(open.End, cases[0].Start) ? "
+" + caseIndent : _source.GetText(TextSpan.FromBounds(open.End, cases[0].Start)));
+            for (var i = 0; i < cases.Count; i++)
+            {
+                text.Append(_source.GetText(cases[i]));
+                var gapEnd = i + 1 < cases.Count ? cases[i + 1].Start : Current.Start;
+                var gap = WithoutCommas(cases[i].End, gapEnd, commas);
+                if (!gap.Contains('
+')) gap = "
+" + (i + 1 < cases.Count ? caseIndent : outer);
+                text.Append(gap);
+            }
+            fix = new Fix(TextSpan.FromBounds(open.End, Current.Start), text.ToString());
+        }
+        Report(DiagnosticCodes.OneLineDeclarations, commas[0].Span, [typeName], label: "the first `,`",
+            help: "write each case on its own line", fix: fix);
+    }
+
+    /// <summary>The source from <paramref name="from"/> to <paramref name="to"/> without its <c>,</c> tokens and the spaces before them.</summary>
+    private string WithoutCommas(int from, int to, List<Token> commas)
+    {
+        var bytes = _source.Bytes.Span;
+        var text = new StringBuilder();
+        var at = from;
+        foreach (var comma in commas)
+        {
+            if (comma.Start < from || comma.Start >= to) continue;
+            var cut = comma.Start;
+            while (cut > at && bytes[cut - 1] is (byte)' ' or (byte)'\t') cut--;
+            text.Append(_source.GetText(TextSpan.FromBounds(at, cut)));
+            at = comma.End;
+        }
+        var rest = _source.GetText(TextSpan.FromBounds(at, to));
+        // A comma ends its line: the spaces it left before a line break go too.
+        if (at > from && rest.TrimStart(' ', '\t').StartsWith('\n')) rest = rest.TrimStart(' ', '\t');
+        return text.Append(rest).ToString();
     }
 
     private TypeAliasDecl ParseTypeAlias(int start, Modifiers modifiers)
@@ -867,7 +1049,7 @@ public sealed class Parser
         var name = ExpectName();
         Expect(TokenKind.Equals);
         var target = ParseType();
-        Expect(TokenKind.Semicolon);
+        ExpectEnd();
         return new TypeAliasDecl(SpanFrom(start), modifiers, name, target);
     }
 
@@ -1098,7 +1280,7 @@ public sealed class Parser
             case TokenKind.OpenBrace:
                 return RejectPostfixAfterCompound(ParseBlock());
             case TokenKind.Semicolon:
-                Advance();
+                ReportSemicolon(Advance());
                 return new EmptyStmt(SpanFrom(start));
             case TokenKind.LetKeyword:
             case TokenKind.VarKeyword:
@@ -1127,10 +1309,10 @@ public sealed class Parser
                 {
                     var body = ParseBody(Advance());
                     Expect(TokenKind.WhileKeyword);
-                    var condition = Kind == TokenKind.OpenParen && KindAt(MatchingClose(_pos) + 1) == TokenKind.Semicolon
+                    var condition = Kind == TokenKind.OpenParen && EndsBefore(MatchingClose(_pos) + 1)
                         ? ParseParenCondition(out _)
                         : ParseBareCondition();
-                    Expect(TokenKind.Semicolon);
+                    ExpectEnd();
                     return new DoWhileStmt(SpanFrom(start), body, condition);
                 }
             case TokenKind.ForKeyword:
@@ -1148,9 +1330,9 @@ public sealed class Parser
             case TokenKind.AssertKeyword:
                 Advance();
                 {
-                    // `assert(x);` is `assert (x);`: the parentheses are part of the expression.
+                    // `assert(x)` is `assert (x)`: the parentheses are part of the expression.
                     var condition = ParseExpression();
-                    Expect(TokenKind.Semicolon);
+                    ExpectEnd();
                     return new AssertStmt(SpanFrom(start), condition);
                 }
             case TokenKind.Identifier when Peek(1) == TokenKind.Colon:
@@ -1175,12 +1357,13 @@ public sealed class Parser
     /// <summary>A statement used as the body of <c>if</c>, loops and cleanup: a block or a single statement.</summary>
     private Stmt ParseEmbedded() => ParseStatement();
 
-    /// <summary>C#-style <c>T name = …;</c> or <c>T name;</c>.</summary>
+    /// <summary>C#-style <c>T name = …</c> or <c>T name</c> at the end of its line.</summary>
     private bool IsLocalDeclarationStart()
     {
         if (!IsTypeNameToken(Kind) && Kind != TokenKind.OpenParen) return false;
         var after = ScanType(_pos);
-        return after > 0 && IsName(KindAt(after)) && KindAt(after + 1) is TokenKind.Equals or TokenKind.Semicolon;
+        return after > 0 && IsName(KindAt(after)) && !_tokens[after].HasNewlineBefore
+            && (KindAt(after + 1) == TokenKind.Equals || EndsBefore(after + 1));
     }
 
     private Stmt ParseLocal(int start)
@@ -1204,7 +1387,7 @@ public sealed class Parser
             Advance();
             ParseExpression();
         }
-        Expect(TokenKind.Semicolon);
+        ExpectEnd();
         return new LocalDecl(SpanFrom(start), kind, isUsing, type, name, init);
     }
 
@@ -1344,25 +1527,26 @@ public sealed class Parser
         if (Kind != TokenKind.OpenParen || InGroup(_pos, TokenKind.Comma)) return false;
         var next = MatchingClose(_pos) + 1;
         var kind = KindAt(next);
-        if (kind is TokenKind.OpenBrace or TokenKind.Semicolon) return true;
-        // `(i32)big > 3 {`: a cast starts a bare condition, which reaches its `{` body before any `;`; `(flag) x++;` does not.
+        if (kind is TokenKind.OpenBrace or TokenKind.Semicolon || _tokens[next].HasNewlineBefore) return true;
+        // `(i32)big > 3 {`: a cast starts a bare condition, which reaches its `{` body before the statement ends; `(flag) x++` does not.
         if (IsCast()) return !BodyBraceFirst(next);
         if (kind is TokenKind.Identifier) return true;
         if (kind.IsKeyword())
             return kind is not (TokenKind.IsKeyword or TokenKind.AsKeyword or TokenKind.CatchKeyword or TokenKind.WithKeyword or TokenKind.InKeyword);
-        // An operator: a bare condition reaches its `{` body before any `;`; a statement such as `-x;` does not.
+        // An operator: a bare condition reaches its `{` body before the statement ends; a statement such as `-x` does not.
         return !BodyBraceFirst(next);
     }
 
     /// <summary>
-    /// Whether, from <paramref name="from"/>, a top-level <c>{</c> comes before any <c>;</c>, <c>}</c>, assignment or the end.
-    /// A condition has no assignment, so <c>(ok) p = P { x: 1 };</c> is a statement.
+    /// Whether, from <paramref name="from"/>, a top-level <c>{</c> comes before any <c>;</c>, <c>}</c>, assignment, line
+    /// break that ends the statement, or the end. A condition has no assignment, so <c>(ok) p = P { x: 1 }</c> is a statement.
     /// </summary>
     private bool BodyBraceFirst(int from)
     {
         var depth = 0;
         for (var i = from; i < _count; i++)
         {
+            if (depth == 0 && i > from && BreaksLine(i) && !LineContinues(i)) return false;
             switch (KindAt(i))
             {
                 case TokenKind.OpenParen or TokenKind.OpenBracket:
@@ -1462,6 +1646,9 @@ public sealed class Parser
         Stmt? otherwise = null;
         if (Kind == TokenKind.ElseKeyword)
         {
+            if (Current.HasNewlineBefore && then is BlockStmt && KindAt(_pos - 1) == TokenKind.CloseBrace)
+                Report(DiagnosticCodes.ElseOnNewLine, Current.Span, label: "on a new line", help: "move `else` up to the line of `}`",
+                    fix: new Fix(TextSpan.FromBounds(_prevEnd, Current.Start), " "));
             var elseKeyword = Advance();
             otherwise = Kind == TokenKind.IfKeyword ? RejectPostfixAfterCompound(ParseIf(Current.Start, elseIf: true))
                 : parenthesized ? ParseBody(elseKeyword, ref parens) : ParseBlock();
@@ -1774,30 +1961,38 @@ public sealed class Parser
             return new ErrorStmt(SpanFrom(start));
         }
         Report(DiagnosticCodes.Goto, keyword.Span, label: "not a keyword in Bayan",
-            help: "label the loop (`outer: for x in xs { … }`) and use `break outer;` to leave it early",
+            help: "label the loop (`outer: for x in xs { … }`) and use `break outer` to leave it early",
             fix: new Fix(keyword.Span, "break"));
-        Name? label = Kind == TokenKind.Identifier ? NameOf(Advance()) : null;
-        Expect(TokenKind.Semicolon);
+        Name? label = Kind == TokenKind.Identifier && !Current.HasNewlineBefore ? NameOf(Advance()) : null;
+        ExpectEnd();
         return new BreakStmt(SpanFrom(start), label);
     }
 
-    /// <summary>A statement that may take a postfix <c>if</c>/<c>unless</c>; the trailing <c>;</c> is not consumed.</summary>
+    /// <summary>A statement that may take a postfix <c>if</c>/<c>unless</c>; its end is not consumed.</summary>
     private Stmt ParseSimpleStatement(int start)
     {
         switch (Kind)
         {
             case TokenKind.ReturnKeyword:
-                Advance();
                 {
-                    Expr? value = CanStartExpression(Kind) ? ParseExpression() : null;
+                    var keyword = Advance();
+                    var hasValue = CanStartExpression(Kind) && !BreaksLine(_pos);
+                    // A value alone on the next line reads as the operand that wandered off (BYN1042); a statement there does not.
+                    if (BreaksLine(_pos) && !HasBlankLineBefore(_pos) && CanStartExpression(Kind) && !IsStatementKeyword(Kind)
+                        && Kind is not (TokenKind.OpenBrace or TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.Minus
+                            or TokenKind.ReturnKeyword or TokenKind.BreakKeyword or TokenKind.ContinueKeyword)
+                        && !(Kind == TokenKind.Identifier && Peek(1) == TokenKind.Colon) && !IsLocalDeclarationStart())
+                    {
+                        ReportOnNewLine(keyword);
+                        hasValue = true;
+                    }
+                    Expr? value = hasValue ? ParseExpression() : null;
                     return new ReturnStmt(SpanFrom(start), value);
                 }
             case TokenKind.BreakKeyword:
-                Advance();
-                return new BreakStmt(SpanFrom(start), Kind == TokenKind.Identifier ? NameOf(Advance()) : null);
+                return new BreakStmt(SpanFrom(start), ParseJumpLabel(Advance()));
             case TokenKind.ContinueKeyword:
-                Advance();
-                return new ContinueStmt(SpanFrom(start), Kind == TokenKind.Identifier ? NameOf(Advance()) : null);
+                return new ContinueStmt(SpanFrom(start), ParseJumpLabel(Advance()));
             case TokenKind.PlusPlus:
             case TokenKind.MinusMinus:
                 {
@@ -1810,14 +2005,14 @@ public sealed class Parser
 
         var errors = ErrorCount;
         var expr = ParseExpression();
-        if (TryAssignOp(out var op, out var width))
+        if (!BreaksLine(_pos) && TryAssignOp(out var op, out var width))
         {
             for (var i = 0; i < width; i++) Advance();
             CheckAssignable(expr);
             var value = ParseExpression();
             return new AssignStmt(SpanFrom(start), expr, op, value);
         }
-        if (Kind is TokenKind.PlusPlus or TokenKind.MinusMinus)
+        if (Kind is TokenKind.PlusPlus or TokenKind.MinusMinus && !BreaksLine(_pos))
         {
             var increment = Advance().Kind == TokenKind.PlusPlus;
             CheckAssignable(expr);
@@ -1826,10 +2021,26 @@ public sealed class Parser
         if (ErrorCount == errors && !IsStatementExpression(expr))
         {
             Report(DiagnosticCodes.InvalidExpressionStatement, expr.Span, label: "the value is computed and discarded",
-                help: "write `_ = f();` to discard a call's result; only calls, assignments and `++`/`--` can stand alone");
+                help: "write `_ = f()` to discard a call's result; only calls, assignments and `++`/`--` can stand alone");
         }
         return new ExprStmt(SpanFrom(start), expr);
     }
+
+    /// <summary>The label of <c>break</c>/<c>continue</c>: on its line, or alone on the next (BYN1042).</summary>
+    private Name? ParseJumpLabel(Token keyword)
+    {
+        if (Kind != TokenKind.Identifier) return null;
+        if (!Current.HasNewlineBefore) return NameOf(Advance());
+        if (!BreaksLine(_pos) || HasBlankLineBefore(_pos) || !EndsBefore(_pos + 1)) return null;
+        ReportOnNewLine(keyword);
+        return NameOf(Advance());
+    }
+
+    /// <summary>BYN1042: the operand of <paramref name="keyword"/> starts the next line; the fix joins it to the keyword's line.</summary>
+    private void ReportOnNewLine(Token keyword) =>
+        Report(DiagnosticCodes.OnNewLine, Current.Span, [Text(keyword)], label: "on the next line",
+            help: $"move the {(keyword.Kind == TokenKind.ReturnKeyword ? "value" : "label")} to the line of `{Text(keyword)}`",
+            fix: new Fix(TextSpan.FromBounds(_prevEnd, Current.Start), " "));
 
     private static bool IsStatementExpression(Expr expr) => expr switch
     {
@@ -1891,9 +2102,19 @@ public sealed class Parser
         }
     }
 
+    /// <summary>
+    /// A postfix <c>if</c>/<c>unless</c> on the statement's line, then the end of the statement. On the next line, a
+    /// condition with no body is a postfix that wandered off (BYN1042); with a body it is the next statement.
+    /// </summary>
     private Stmt FinishSimpleStatement(int start, Stmt statement)
     {
-        if (Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword)
+        var stranded = Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword && BreaksLine(_pos) && !HasBlankLineBefore(_pos)
+            && Peek(1) != TokenKind.OpenParen && !BodyBraceFirst(_pos + 1);
+        if (stranded)
+            Report(DiagnosticCodes.PostfixOnNewLine, Current.Span, [Text(Current)], label: "on the next line",
+                help: $"move the `{Text(Current)}` clause up to the statement's line",
+                fix: new Fix(TextSpan.FromBounds(_prevEnd, Current.Start), " "));
+        if (Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword && (stranded || !Current.HasNewlineBefore))
         {
             var keyword = Advance();
             var unless = keyword.Kind == TokenKind.UnlessKeyword;
@@ -1911,11 +2132,11 @@ public sealed class Parser
                 ParseExpression();
             }
         }
-        Expect(TokenKind.Semicolon);
+        ExpectEnd();
         return statement;
     }
 
-    /// <summary><c>{ … } if x;</c> and <c>if (a) { … } if b;</c> on one line: postfix conditions only attach to simple statements.</summary>
+    /// <summary><c>{ … } if x</c> and <c>if (a) { … } if b</c> on one line: postfix conditions only attach to simple statements.</summary>
     private Stmt RejectPostfixAfterCompound(Stmt statement)
     {
         if (Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword && !Current.HasNewlineBefore && Peek(1) != TokenKind.OpenParen
@@ -1925,7 +2146,7 @@ public sealed class Parser
                 help: "put the condition first: `if cond { … }`");
             Advance();
             ParseExpression();
-            Accept(TokenKind.Semicolon);
+            ExpectEnd();
         }
         return statement;
     }
@@ -1962,7 +2183,7 @@ public sealed class Parser
     {
         var start = Current.Start;
         var condition = ParseBinary(Prec.Coalesce);
-        if (Kind != TokenKind.Question) return condition;
+        if (Kind != TokenKind.Question || StopsHere) return condition;
         Advance();
         var whenTrue = ParseExpression();
         Expect(TokenKind.Colon);
