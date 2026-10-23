@@ -1172,7 +1172,7 @@ let resp = signUp(form) catch switch {
 - **Debug builds check ownership at runtime.** Each `unique` allocation records its current owner and every move updates it; a second owner, or a read through a moved-from local, panics with both source locations, in the usual panic format: `second owner of List<i64>: owned since a.byn:3` or `use of moved List<i64>: moved at a.byn:4`, followed by `  at a.byn:5`. Safe and fast builds compile the checker out. Rules here hold outside `unsafe`, where raw pointers may alias.
 
 ### 9.4 Borrowing and regions (no lifetime annotations in the common case)
-1. Every scope that frees memory is a region (function locals, `using` arenas, requests).
+1. Every scope that frees memory is a region (function locals, arenas, requests).
 2. A borrow (`ref`, `Span<T>`, `string` slice, or a struct containing one) carries its source's region; the compiler infers it.
 3. **A borrow cannot be stored anywhere that outlives its region.** Fix: `.copy()` or `.copy(to: alloc)` (strings, §3.2; collections, §16) or `move` into an `Owned`.
 4. A returned borrow derives from **all** borrowed arguments unless narrowed: `string head(string s, at string sep) borrows s`.
@@ -1819,7 +1819,7 @@ public c_int settleC(…) { … }
 ## 19. Packages, editions and builds
 
 ### 19.1 Modules
-A directory is a module (`src/orders/` → `app.orders`). `import app.orders` / `import app.users as u`. No circular imports. `using` is only for disposal.
+A directory is a module (`src/orders/` → `app.orders`). `import app.orders` / `import app.users as u`. No circular imports.
 
 ### 19.2 Manifest
 `package.byn` is **data only** (no calls, no `comptime`), type-checked against `Package`:
