@@ -998,7 +998,7 @@ public sealed class Parser
     {
         if (Kind is not (TokenKind.ForKeyword or TokenKind.AsKeyword))
         {
-            if (Kind != TokenKind.Identifier) return null;
+            if (Kind != TokenKind.Identifier || Text(_tokens[_pos]) == "dyn") return null;
             if (Peek(1) is not (TokenKind.RefKeyword or TokenKind.MoveKeyword or TokenKind.OutKeyword or TokenKind.InKeyword)
                 && !IsTypeThenName(_pos + 1)) return null;
         }

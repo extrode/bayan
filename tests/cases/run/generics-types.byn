@@ -38,7 +38,7 @@ struct Box<T> {
 
 struct Slot<T> {
     T? value = null
-    i64 uses = 0
+    i64 useCount = 0
 }
 
 string show<T>(Option2<T> o) => o switch {
@@ -95,4 +95,4 @@ print($"{total(bySuit)} {total(byName)}")
 
 let empty = Slot<i64> { }
 let full = Slot<string> { value: "s" }
-print($"{empty.value} {full.value} {empty.uses + full.uses}")
+print($"{empty.value} {full.value} {empty.useCount + full.useCount}")

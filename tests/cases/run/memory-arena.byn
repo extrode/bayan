@@ -13,7 +13,7 @@ List<i64> squares(i64 n) {
 
 void main() {
     using var arena = Arena()
-    context (allocator: arena) {
+    provide allocator: arena {
         var xs = squares(5)
         print($"{xs.length} {xs[4]} {xs.isEmpty}")
         xs.append(100)

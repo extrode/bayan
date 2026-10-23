@@ -3,7 +3,7 @@ void main() fails IoError {
     var bytes = List<u8>()
     {
         using let arena = Arena()
-        context (allocator: arena) {
+        provide allocator: arena {
             let inside = try Io.readText("notes.txt")
             print(inside)
             text = try Io.readText("notes.txt")

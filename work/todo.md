@@ -188,3 +188,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51c: C17 lists `rune` as a keyword; 5.1c keeps it a type name like `bool`.
 - r3-51c: `suq/fail/{bracket-attr,block-comment,char,requires-value}.byn` keep their input forms on purpose (compile-fail corpus).
 - `tests/cases/diag/input-negated-if.byn` and `input-paren-negation.byn` keep `input-` names though BYN1032 is retired (5.1c); rename or move to a non-diag case.
+- r3-51d: the `effect` keyword is still reserved.
+- r3-51d: `ref from Buf` (particle after the passing mode, `suq/fail/mode-particle.byn`) misparses with no diagnostic code.
+- r3-51d: the parser has no function types, so `uses` inside them is not handled.

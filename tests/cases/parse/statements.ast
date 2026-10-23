@@ -70,7 +70,7 @@ CompilationUnit
       Defer failing (e)
         Block
           Expr (call log e)
-      Context allocator: arena
+      Provide allocator: arena
         Block
           Expr (call work)
       Block

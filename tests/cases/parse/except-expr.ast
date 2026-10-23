@@ -1,0 +1,3 @@
+CompilationUnit
+  Let rest = (except code .a)
+  Let kind = (except (is tok .word) "if")

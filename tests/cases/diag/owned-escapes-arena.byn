@@ -7,7 +7,7 @@ void main() {
     var head: Owned<Node>? = null
     {
         using let arena = Arena()
-        context (allocator: arena) {
+        provide allocator: arena {
             head = Owned(Node { item: 1, next: move head })
         }
     }

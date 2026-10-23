@@ -61,7 +61,7 @@ print($"{inv}")
 // Inside a `using` arena.
 {
     using var arena = Arena()
-    context (allocator: arena) {
+    provide allocator: arena {
         var seen = Map<i64, i64>()
         for i in 0..1000 { seen[i % 7] = i }
         var total: i64 = 0

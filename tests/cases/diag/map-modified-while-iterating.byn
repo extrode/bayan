@@ -12,7 +12,7 @@ void escape() {
     var outer = Map<i64, string>()
     {
         using var a = Arena()
-        context (allocator: a) {
+        provide allocator: a {
             var inner = Map<i64, i64>()
             inner[1] = 2
             outer = Map<i64, string>()

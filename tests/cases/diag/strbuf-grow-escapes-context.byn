@@ -3,7 +3,7 @@ void main() {
     var outer = StrBuf()
     {
         using let arena = Arena()
-        context (allocator: arena) {
+        provide allocator: arena {
             var sb = StrBuf()
             sb.append("abc")
             print(sb.finish())

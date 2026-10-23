@@ -8,7 +8,7 @@
 2:14 IntegerLiteral `2`
 3:1 Identifier `macro`
 3:7 Identifier `select`
-3:14 Identifier `become`
+3:14 BecomeKeyword `become`
 4:1 LetKeyword `let`
 4:5 LawKeyword `law`
 4:9 Equals `=`
@@ -41,13 +41,6 @@ error BYN0012: `select` is reserved and cannot be used as an identifier
 
   3 │ macro select become
     │       ^^^^^^ reserved for a future version of Bayan
-    │
-  help: choose another name
-
-error BYN0012: `become` is reserved and cannot be used as an identifier
-
-  3 │ macro select become
-    │              ^^^^^^ reserved for a future version of Bayan
     │
   help: choose another name
 

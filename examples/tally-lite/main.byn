@@ -25,7 +25,7 @@ ledger.Expense expense(string payer, string amount, move List<string> among) fai
 
 void main() fails money.MoneyError {
     using var arena = Arena()
-    context (allocator: arena) {
+    provide allocator: arena {
         let trip = try sampleTrip()
         let owed = ledger.balances(trip)
         for t in ledger.settle(owed) {
