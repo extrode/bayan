@@ -166,3 +166,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51a: tests/cases/diag and parse `input-forms-one-line` no longer fit on one line after expand-blocks; rename or reshape.
 - Waṣl clause lines `uses`, `expects`, `except`, `becomes` (J61): no parser support yet; add a continuation test with each clause's parser step (5.1b–5.3). From r3-51a gate.
 - r3-suq-paper: 16 `suq/fail/` snippets have no allocated code (listed "none allocated" in `suq/fail/README.md`: attr-case, byte-count, dangling-blank, drop-ref-this, extern-string, in-convert, keyword-name, leading-operator, log-at, mode-particle, on-field, owned-copied, try-catch, try-literal, unit-round, using-let); allocate or map them.
+- BYN2226 (`using` not disposable) and its doc stay until the step that drops `using` per C46; then retire the code and rewrite `docs/diagnostics/BYN2226.md`.
