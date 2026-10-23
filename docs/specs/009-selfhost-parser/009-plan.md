@@ -93,6 +93,7 @@ interface ISpanned {
     span: TextSpan { get }
 }
 
+// 006 field-witness rule: a stored field witnesses a getter of the same type; not for a `unique` field type (BYN2780), never for a method (BYN2801)
 struct ExprNode : ISpanned {
     span: TextSpan
     kind: ExprKind
