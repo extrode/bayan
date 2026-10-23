@@ -24,16 +24,16 @@
       "path": "constrained-by-argument.byn",
       "name": "main",
       "span": {
-        "start": 20,
-        "end": 34
+        "start": 19,
+        "end": 32
       },
       "bindings": [
         {
           "name": "small",
           "kind": "var",
           "span": {
-            "start": 24,
-            "end": 29
+            "start": 23,
+            "end": 28
           },
           "type": "u8"
         }

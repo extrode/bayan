@@ -1,11 +1,11 @@
 struct Words {
-    string text;
+    string text
 
     // `join` returns a new value, so its name is the plain verb, never `joined`.
-    string joined() => text;
+    string joined() => text
 
     // `reversed` drops only the `d`: the verb would be `reverse`.
-    Words reversed => Words { text: text };
+    Words reversed => Words { text: text }
 
-    i64 trimmed() => 0;
+    i64 trimmed() => 0
 }

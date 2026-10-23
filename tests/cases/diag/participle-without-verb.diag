@@ -1,6 +1,6 @@
 error BYN5001: `joined` is the `-ed` form of `join`, which does not exist as a `ref this` member
 
-  5 │     string joined() => text;
+  5 │     string joined() => text
     │            ^^^^^^
     │
   help: declare `join(ref this)` and `joined` is derived; a member that returns a new value is a
@@ -9,7 +9,7 @@ error BYN5001: `joined` is the `-ed` form of `join`, which does not exist as a `
 error BYN5001: `reversed` is the `-ed` form of `reverse`, which does not exist as a `ref this`
 member
 
-  8 │     Words reversed => Words { text: text };
+  8 │     Words reversed => Words { text: text }
     │           ^^^^^^^^
     │
   help: declare `reverse(ref this)` and `reversed` is derived; a member that returns a new value is
@@ -17,7 +17,7 @@ member
 
 error BYN5001: `trimmed` is the `-ed` form of `trim`, which does not exist as a `ref this` member
 
-  10 │     i64 trimmed() => 0;
+  10 │     i64 trimmed() => 0
      │         ^^^^^^^
      │
   help: declare `trim(ref this)` and `trimmed` is derived; a member that returns a new value is a

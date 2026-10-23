@@ -1,8 +1,8 @@
 i64 bump(ref i64 n) {
-    n += 1;
-    return n;
+    n += 1
+    return n
 }
 
-i64 a = 1;
-i64 calls = 0;
-assert (a > 0 || bump(ref calls) > 0) && calls == 1;
+i64 a = 1
+i64 calls = 0
+assert (a > 0 || bump(ref calls) > 0) && calls == 1

@@ -1,43 +1,43 @@
 struct Item {
-    string name;
-    i64 qty;
+    string name
+    i64 qty
 }
 
 List<i64> squares(i64 n) {
-    var xs = List<i64>();
+    var xs = List<i64>()
     for i in 0..n {
-        xs.append(i * i);
+        xs.append(i * i)
     }
-    return xs;
+    return xs
 }
 
 void main() {
-    using var arena = Arena();
+    using var arena = Arena()
     context (allocator: arena) {
-        var xs = squares(5);
-        print($"{xs.length} {xs[4]} {xs.isEmpty}");
-        xs.append(100);
-        let last = xs.removeLast();
-        print($"{last} {xs.length}");
-        var items = List<Item>();
-        items.append(Item { name: "pen", qty: 2 });
-        items.append(Item { name: "ink", qty: 5 });
-        i64 q = 0;
+        var xs = squares(5)
+        print($"{xs.length} {xs[4]} {xs.isEmpty}")
+        xs.append(100)
+        let last = xs.removeLast()
+        print($"{last} {xs.length}")
+        var items = List<Item>()
+        items.append(Item { name: "pen", qty: 2 })
+        items.append(Item { name: "ink", qty: 5 })
+        i64 q = 0
         for it in items {
-            q += it.qty;
+            q += it.qty
         }
-        print($"{items.length} {q} {items[1].name}");
-        let copy = xs.asSpan()[1..3].copy(to: arena);
-        print($"{copy.length} {copy[0]} {copy[1]}");
-        xs.clear();
-        print($"{xs.length} {copy.length}");
-        let name = "temporary".copy(to: arena);
-        print(name);
+        print($"{items.length} {q} {items[1].name}")
+        let copy = xs.asSpan()[1..3].copy(to: arena)
+        print($"{copy.length} {copy[0]} {copy[1]}")
+        xs.clear()
+        print($"{xs.length} {copy.length}")
+        let name = "temporary".copy(to: arena)
+        print(name)
     }
-    var many = List<i64>();
+    var many = List<i64>()
     for i in 0..1000 {
-        many.append(i);
+        many.append(i)
     }
-    print($"{many.length} {many[999]}");
-    arena.reset();
+    print($"{many.length} {many[999]}")
+    arena.reset()
 }

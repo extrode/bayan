@@ -1,5 +1,5 @@
 error enum MoneyError {
-    invalid,
+    invalid
 }
 
-let e = MoneyError.overflow;
+let e = MoneyError.overflow

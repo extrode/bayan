@@ -1,46 +1,46 @@
 // In `switch move …` a `when` guard only reads the arm's bindings (BYN2791): a guard that fails gives the value back.
 struct Bag {
-    List<i64> items;
+    List<i64> items
 
     public i64 grow(ref this) {
-        this.items.append(1);
-        return this.items.length;
+        this.items.append(1)
+        return this.items.length
     }
 }
 
 union Slot {
-    full(Bag b),
-    empty,
+    full(Bag b)
+    empty
 }
 
 bool bump(ref List<i64> xs) {
-    xs.append(7);
-    return true;
+    xs.append(7)
+    return true
 }
 
 bool fill(out List<i64> xs) {
-    xs = List<i64>();
-    return true;
+    xs = List<i64>()
+    return true
 }
 
-bool keep(move Bag b) => true;
+bool keep(move Bag b) => true
 
 void inspect(move Slot s, move Slot t) {
     switch move s {
         case .full(var x) when x.grow() > 5:
-            print("call");
+            print("call")
         case .full(var x) when x.items.removeLast() > 0:
-            print("builtin");
+            print("builtin")
         case .full(var x) when x.items.take().length > 0:
-            print("take");
+            print("take")
         case .full(var x) when bump(ref x.items):
-            print("ref");
+            print("ref")
         case .full(var x) when fill(out x.items):
-            print("out");
+            print("out")
         case .full(let x) when keep(move x):
-            print("move");
+            print("move")
         case .full(let x) when x.items.length > 0:
-            print("read");
+            print("read")
         default:
     }
     let n = (move t) switch {
@@ -49,6 +49,6 @@ void inspect(move Slot s, move Slot t) {
         .full(let y) when keep(move y) => 3,
         .full(let y) when y.items.length > 0 => 4,
         _ => 0,
-    };
-    print($"{n}");
+    }
+    print($"{n}")
 }

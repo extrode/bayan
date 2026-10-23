@@ -1,16 +1,16 @@
 error enum E {
-    bad,
+    bad
 }
 
 i64 work() fails E {
-    defer print("plain defer");
-    defer failing print("defer failing");
-    defer panicking print("panic handler");
+    defer print("plain defer")
+    defer failing print("defer failing")
+    defer panicking print("panic handler")
     {
-        defer print("inner plain defer");
-        panic("stop");
+        defer print("inner plain defer")
+        panic("stop")
     }
-    return 1;
+    return 1
 }
 
-print($"{work() catch -1}");
+print($"{work() catch -1}")

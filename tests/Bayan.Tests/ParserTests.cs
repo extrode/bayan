@@ -18,7 +18,7 @@ public sealed class ParserTests
 
     private static string Expr(string text)
     {
-        var tree = Parse(text + ";");
+        var tree = Parse(text);
         Assert.Empty(tree.Diagnostics);
         var statement = (GlobalStatement)Assert.Single(tree.Root.Members);
         return statement.Statement switch
@@ -70,19 +70,19 @@ public sealed class ParserTests
     public void Precedence(string source, string expected) => Assert.Equal(expected, Expr(source));
 
     [Fact]
-    public void MissingSemicolonIsReportedOnceWithoutCascade()
+    public void MissingLineBreakIsReportedOnceWithoutCascade()
     {
-        var tree = Parse("let a = 1\nlet b = 2;\nprint(a + b);\n");
+        var tree = Parse("let a = 1 let b = 2\nprint(a + b)\n");
         var diagnostic = Assert.Single(tree.Diagnostics);
         Assert.Equal("BYN1005", diagnostic.Code);
-        Assert.Equal(new Fix(new TextSpan(9, 0), ";"), diagnostic.Fix);
+        Assert.Equal(new Fix(new TextSpan(9, 1), "\n"), diagnostic.Fix);
         Assert.Equal(3, tree.Root.Members.Length);
     }
 
     [Fact]
     public void RecoversAtTheNextStatementAfterGarbage()
     {
-        var tree = Parse("let a = ) ) );\nlet b = 2;\n");
+        var tree = Parse("let a = ) ) )\nlet b = 2\n");
         Assert.Single(tree.Diagnostics);
         Assert.Equal(2, tree.Root.Members.Length);
     }
@@ -90,7 +90,7 @@ public sealed class ParserTests
     [Fact]
     public void RecoversAtTheNextMemberInsideAStruct()
     {
-        var tree = Parse("struct S {\n  i64 a = ;\n  i64 b;\n}\nlet x = 1;\n");
+        var tree = Parse("struct S {\n  i64 a = )\n  i64 b\n}\nlet x = 1\n");
         Assert.Single(tree.Diagnostics);
         var s = Assert.IsType<StructDecl>(tree.Root.Members[0]);
         Assert.Equal(2, s.Members.Length);
@@ -98,12 +98,12 @@ public sealed class ParserTests
     }
 
     [Theory]
-    [InlineData("defer failing close();", DeferKind.Failing, null)]
-    [InlineData("defer panicking (p) close();", DeferKind.Panicking, "p")]
-    [InlineData("defer failing (e) { close(); }", DeferKind.Failing, "e")]
-    [InlineData("defer failing();", DeferKind.Always, null)]
-    [InlineData("defer failing.close();", DeferKind.Always, null)]
-    [InlineData("defer panicking = 1;", DeferKind.Always, null)]
+    [InlineData("defer failing close()", DeferKind.Failing, null)]
+    [InlineData("defer panicking (p) close()", DeferKind.Panicking, "p")]
+    [InlineData("defer failing (e) { close() }", DeferKind.Failing, "e")]
+    [InlineData("defer failing()", DeferKind.Always, null)]
+    [InlineData("defer failing.close()", DeferKind.Always, null)]
+    [InlineData("defer panicking = 1", DeferKind.Always, null)]
     public void FailingAndPanickingAreWordsOnlyAfterDefer(string text, DeferKind kind, string? binding)
     {
         var tree = Parse(text);
@@ -116,9 +116,172 @@ public sealed class ParserTests
     [Fact]
     public void FailingAndPanickingAreIdentifiersElsewhere()
     {
-        var tree = Parse("let failing = 1;\nvar panicking = failing + 1;\nvoid f(i64 failing) { panicking = failing; }\n");
+        var tree = Parse("let failing = 1\nvar panicking = failing + 1\nvoid f(i64 failing) { panicking = failing }\n");
         Assert.Empty(tree.Diagnostics);
         Assert.Equal(3, tree.Root.Members.Length);
+    }
+
+    private static Stmt[] Body(SyntaxTree tree) =>
+        Assert.IsType<FunctionDecl>(Assert.Single(tree.Root.Members)).Body!.Statements;
+
+    [Theory]
+    [InlineData("let a = 1;\n", 9, 10, "")]
+    [InlineData("let a = 1 ;\n", 9, 11, "")]
+    [InlineData("let a = 1; let b = 2\n", 9, 11, "\n")]
+    public void SemicolonIsAnInputFormWithAFix(string text, int start, int end, string replacement)
+    {
+        var tree = Parse(text);
+        var diagnostic = Assert.Single(tree.Diagnostics);
+        Assert.Equal("BYN1040", diagnostic.Code);
+        Assert.Equal(new Fix(TextSpan.FromBounds(start, end), replacement), diagnostic.Fix);
+    }
+
+    [Theory]
+    [InlineData("let a = 1 +\n    2\n")]
+    [InlineData("let a = f(1,\n    2)\n")]
+    [InlineData("let a = [\n    1,\n    2,\n]\n")]
+    [InlineData("let a = b\n    .c()\n")]
+    [InlineData("let a = b\n    ?.c\n")]
+    [InlineData("let a = b\n    ?? c\n")]
+    [InlineData("let a = b\n    && c\n")]
+    [InlineData("let a = b\n    || c\n")]
+    [InlineData("let a = n is > 0\n    and < 10\n")]
+    [InlineData("let a = f()\n    catch 0\n")]
+    [InlineData("let a = f(1,\n\n    2)\n")]
+    [InlineData("T id<T>(T a)\n    where T : IA => a\n")]
+    [InlineData("void f(i32 n)\n    fails E\n    requires n > 0\n    requires n < 9 {\n}\n")]
+    [InlineData("T id<T>(T a)\n    fails E\n    where T : IA\n    requires a == a => a\n")]
+    public void ALineBreakContinuesAfterAnOperatorOrBeforeAJoiner(string text)
+    {
+        var tree = Parse(text);
+        Assert.Empty(tree.Diagnostics);
+        Assert.Single(tree.Root.Members);
+    }
+
+    [Theory]
+    [InlineData("let a = b\n(c)\n")]
+    [InlineData("let a = b\n[c]\n")]
+    [InlineData("let a = b\n-c\n")]
+    [InlineData("let a = b\n++c\n")]
+    [InlineData("let a = b\n\n    .c()\n")]
+    [InlineData("let a = b\n\n    && c\n")]
+    [InlineData("f()\nif ok {\n}\n")]
+    public void ALineBreakEndsTheStatementOtherwise(string text)
+    {
+        var tree = Parse(text);
+        Assert.Equal(2, tree.Root.Members.Length);
+    }
+
+    [Fact]
+    public void ABlankLineAfterAnOperatorIsAnError()
+    {
+        var tree = Parse("let a = 1 +\n\nlet b = 2\n");
+        Assert.Equal("BYN1002", tree.Diagnostics[0].Code);
+        Assert.Equal("a blank line", tree.Diagnostics[0].Message[^"a blank line".Length..]);
+    }
+
+    [Fact]
+    public void ElseOnANewLineIsAnInputForm()
+    {
+        var tree = Parse("if a {\n}\nelse {\n}\n");
+        var diagnostic = Assert.Single(tree.Diagnostics);
+        Assert.Equal("BYN1041", diagnostic.Code);
+        Assert.Equal(new Fix(TextSpan.FromBounds(8, 9), " "), diagnostic.Fix);
+        var statement = Assert.IsType<GlobalStatement>(Assert.Single(tree.Root.Members)).Statement;
+        Assert.NotNull(Assert.IsType<IfStmt>(statement).Else);
+    }
+
+    [Fact]
+    public void AReturnValueAloneOnTheNextLineIsAnInputForm()
+    {
+        var tree = Parse("i64 f() {\n    return\n        1\n}\n");
+        var diagnostic = Assert.Single(tree.Diagnostics);
+        Assert.Equal("BYN1042", diagnostic.Code);
+        Assert.Equal(new Fix(TextSpan.FromBounds(20, 29), " "), diagnostic.Fix);
+        Assert.NotNull(Assert.IsType<ReturnStmt>(Assert.Single(Body(tree))).Value);
+    }
+
+    [Theory]
+    [InlineData("void f() {\n    return\n}\n", 1)]
+    [InlineData("void f() {\n    return\n    g()\n}\n", 2)]
+    [InlineData("void f() {\n    return\n\n    g()\n}\n", 2)]
+    [InlineData("void f() {\n    return\n    (a + b).f()\n}\n", 2)]
+    public void AReturnAtALineBreakHasNoValue(string text, int statements)
+    {
+        var tree = Parse(text);
+        Assert.Empty(tree.Diagnostics);
+        var body = Body(tree);
+        Assert.Equal(statements, body.Length);
+        Assert.Null(Assert.IsType<ReturnStmt>(body[0]).Value);
+    }
+
+    [Fact]
+    public void ABreakLabelOnTheNextLineIsAnInputForm()
+    {
+        var tree = Parse("outer: while x {\n    break\n        outer\n}\n");
+        Assert.Equal("BYN1042", Assert.Single(tree.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void APostfixConditionOnTheNextLineIsAnInputForm()
+    {
+        var tree = Parse("stop()\n    if done\n");
+        var diagnostic = Assert.Single(tree.Diagnostics);
+        Assert.Equal("BYN1042", diagnostic.Code);
+        Assert.Equal(new Fix(TextSpan.FromBounds(6, 11), " "), diagnostic.Fix);
+        Assert.Single(tree.Root.Members);
+    }
+
+    [Fact]
+    public void AnIfAfterAPostfixConditionStartsTheNextStatement()
+    {
+        var tree = Parse("void f() {\n    return if a\n    if b {\n        g()\n    }\n}\n");
+        Assert.Empty(tree.Diagnostics);
+        Assert.Equal(2, Body(tree).Length);
+    }
+
+    [Theory]
+    [InlineData("enum E { a, b }\n", "enum E {\n    a\n    b\n}\n")]
+    [InlineData("enum E {\n    a,\n    b,\n}\n", "enum E {\n    a\n    b\n}\n")]
+    [InlineData("union U { A(i64 x), B }\n", "union U {\n    A(i64 x)\n    B\n}\n")]
+    public void CommaSeparatedCasesAreAnInputForm(string text, string fixedText)
+    {
+        var tree = Parse(text);
+        var diagnostic = Assert.Single(tree.Diagnostics);
+        Assert.Equal("BYN1053", diagnostic.Code);
+        var fix = diagnostic.Fix!;
+        Assert.Equal(fixedText, text[..fix.Span.Start] + fix.Replacement + text[fix.Span.End..]);
+    }
+
+    [Fact]
+    public void CasesOnTheirOwnLinesNeedNoCommas()
+    {
+        var tree = Parse("enum E {\n    a\n    b\n}\nunion U {\n    A(i64 x)\n    B\n}\n");
+        Assert.Empty(tree.Diagnostics);
+    }
+
+    [Theory]
+    [InlineData("x = f() catch { y: 1 }", "(catch (call f) (struct _ (y 1)))")]
+    [InlineData("x = f() catch { y: 1, z: 2 }", "(catch (call f) (struct _ (y 1) (z 2)))")]
+    public void ACatchBraceWithFieldsIsAStructLiteral(string source, string expected) => Assert.Equal(expected, Expr(source));
+
+    [Fact]
+    public void ACatchBraceWithStatementsIsABlock()
+    {
+        var tree = Parse("x = f() catch {\n    y = 1\n    z = 2\n}\n");
+        Assert.Empty(tree.Diagnostics);
+        var statement = Assert.IsType<GlobalStatement>(Assert.Single(tree.Root.Members)).Statement;
+        var handler = Assert.IsType<CatchExpr>(Assert.IsType<AssignStmt>(statement).Value).Handler;
+        Assert.IsType<BlockExpr>(handler);
+    }
+
+    [Fact]
+    public void ADeferWordAtALineBreakIsTheBody()
+    {
+        var tree = Parse("defer failing\nclose()\n");
+        Assert.Equal(2, tree.Root.Members.Length);
+        var defer = Assert.IsType<DeferStmt>(Assert.IsType<GlobalStatement>(tree.Root.Members[0]).Statement);
+        Assert.Equal(DeferKind.Always, defer.Kind);
     }
 
     [Fact]

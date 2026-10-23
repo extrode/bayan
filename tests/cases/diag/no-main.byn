@@ -1,1 +1,1 @@
-i64 twice(i64 x) => x * 2;
+i64 twice(i64 x) => x * 2

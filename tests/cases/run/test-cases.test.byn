@@ -1,22 +1,22 @@
 bool inRange(i32 n) {
-    return n >= 1 && n <= 100;
+    return n >= 1 && n <= 100
 }
 
 [Cases((0, false), (1, true), (100, true), (101, true))]
 test "quantity bounds" (i32 input, bool valid) {
-    assert(inRange(input) == valid);
+    assert(inRange(input) == valid)
 }
 
 [Cases("a", "bc", "def")]
 test "short words" (string word) {
-    assert(word.length < 3);
+    assert(word.length < 3)
 }
 
 [Cases((-1, 'x', null), (2.5, 'y', "z"))]
 test "literal kinds" (f64 amount, char letter, string? note) {
-    assert(amount != 0.0);
+    assert(amount != 0.0)
 }
 
 test "plain" {
-    assert(true);
+    assert(true)
 }

@@ -1,33 +1,33 @@
 // Passing `ref this` hands the callee the whole receiver: it may change every field, so a live span into a field conflicts (BYN3004).
 struct B {
-    List<i64> items;
+    List<i64> items
 
     void run(ref this) {
-        let s = items.asSpan();
-        wipe(ref this);
-        print($"{s[0]}");
+        let s = items.asSpan()
+        wipe(ref this)
+        print($"{s[0]}")
     }
 
     void reset(ref this) {
-        wipe(ref this);
+        wipe(ref this)
     }
 
     // A `ref this` method whose body passes `ref this` on changes every field too.
     void outer(ref this) {
-        let s = items.asSpan();
-        reset();
-        print($"{s[0]}");
+        let s = items.asSpan()
+        reset()
+        print($"{s[0]}")
     }
 }
 
 void wipe(ref B b) {
-    b.items.clear();
-    b.items.append(7);
+    b.items.clear()
+    b.items.append(7)
 }
 
 void main() {
-    var b = B { items: List<i64>() };
-    b.items.append(1);
-    b.run();
-    b.outer();
+    var b = B { items: List<i64>() }
+    b.items.append(1)
+    b.run()
+    b.outer()
 }

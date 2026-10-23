@@ -1,7 +1,7 @@
 error enum StepError {
     [Retry(3)]
     /// The step timed out.
-    timedOut,
+    timedOut
 }
 
 [Inline]
@@ -11,6 +11,6 @@ void step() { }
 void other() { }
 
 void main() {
-    step();
-    other();
+    step()
+    other()
 }

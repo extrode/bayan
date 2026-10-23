@@ -1,0 +1,8 @@
+void show(i64 a) {
+    if a > 0 {
+        print("pos")
+    }
+    else {
+        print("other")
+    }
+}

@@ -1,6 +1,6 @@
-error BYN2802: `Box.count` is `i32 count` but `ICount` requires `i64 count { get; }`
+error BYN2802: `Box.count` is `i32 count` but `ICount` requires `i64 count { get }`
 
-  6 │     i32 count;
+  6 │     i32 count
     │         ^^^^^ does not match `ICount`
     │
   help: change the field's type to `i64`

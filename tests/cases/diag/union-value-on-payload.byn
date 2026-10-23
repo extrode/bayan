@@ -1,1 +1,4 @@
-union Shape { circle(f32 r) = 1, none = 2 }
+union Shape {
+    circle(f32 r) = 1
+    none = 2
+}

@@ -1,44 +1,44 @@
 struct Token {
-    i64 kind;
+    i64 kind
 }
 
 struct Lexer {
-    List<Token> toks;
+    List<Token> toks
 
-    Span<Token> tokens() => toks.asSpan();
+    Span<Token> tokens() => toks.asSpan()
 
     void push(ref this, Token t) {
-        toks.append(t);
+        toks.append(t)
     }
 
-    (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.length);
+    (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.length)
 
     Span<Token> scratch() {
-        var local = List<Token>();
-        local.append(Token { kind: 0 });
-        return local.asSpan();
+        var local = List<Token>()
+        local.append(Token { kind: 0 })
+        return local.asSpan()
     }
 }
 
 void main() {
-    var lexer = Lexer { toks: List<Token>() };
-    let all = lexer.tokens();
-    lexer.toks.append(Token { kind: 1 });
-    lexer.push(Token { kind: 2 });
-    print($"{all.length}");
+    var lexer = Lexer { toks: List<Token>() }
+    let all = lexer.tokens()
+    lexer.toks.append(Token { kind: 1 })
+    lexer.push(Token { kind: 2 })
+    print($"{all.length}")
     for t in lexer.toks {
-        lexer.push(t);
+        lexer.push(t)
     }
-    Span<Token> kept = lexer.tokens();
+    Span<Token> kept = lexer.tokens()
     {
-        let inner = Lexer { toks: List<Token>() };
-        kept = inner.tokens();
+        let inner = Lexer { toks: List<Token>() }
+        kept = inner.tokens()
     }
-    print($"{kept.length}");
+    print($"{kept.length}")
 }
 
 struct Writer {
-    StrBuf text;
+    StrBuf text
 
-    string view() => text.finish();
+    string view() => text.finish()
 }

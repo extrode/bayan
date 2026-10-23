@@ -1,11 +1,11 @@
-T pick<T>(bool first, move T a, move T b) => first ? move a : move b;
-i64 plain(i64 n) => n;
+T pick<T>(bool first, move T a, move T b) => first ? move a : move b
+i64 plain(i64 n) => n
 
 struct Pair<A, B> {
-    A a;
-    B b;
+    A a
+    B b
 }
 
-let x = pick<i64, string>(first: true, a: 1, b: 2);
-let y = plain<i64>(1);
-Pair<i64> p;
+let x = pick<i64, string>(first: true, a: 1, b: 2)
+let y = plain<i64>(1)
+Pair<i64> p

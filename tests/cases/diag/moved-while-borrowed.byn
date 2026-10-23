@@ -1,80 +1,80 @@
 // Moving a value hands its storage to a new owner, which may grow or free it: a borrow into it ends there (BYN3006).
 interface IThing {
-    i64 get();
+    i64 get()
 }
 
 unique struct S : IThing {
-    List<i64> xs;
+    List<i64> xs
 
-    i64 get() => xs[0];
+    i64 get() => xs[0]
 }
 
 union Slot {
-    full(S s),
-    empty,
+    full(S s)
+    empty
 }
 
 S make() {
-    var xs = List<i64>();
-    xs.append(42);
-    return S { xs: move xs };
+    var xs = List<i64>()
+    xs.append(42)
+    return S { xs: move xs }
 }
 
 void keep(move S s) {
-    print($"{s.xs.length}");
+    print($"{s.xs.length}")
 }
 
 void dynRef() {
-    var s = make();
-    dyn ref IThing d = s;
-    var t = move s;
-    t.xs.append(1);
-    print($"{d.get()}");
+    var s = make()
+    dyn ref IThing d = s
+    var t = move s
+    t.xs.append(1)
+    print($"{d.get()}")
 }
 
 void readonlyDynRef() {
-    let s = make();
-    dyn ref readonly IThing d = s;
-    keep(move s);
-    print($"{d.get()}");
+    let s = make()
+    dyn ref readonly IThing d = s
+    keep(move s)
+    print($"{d.get()}")
 }
 
 void spanOfField() {
-    let s = make();
-    Span<i64> sp = s.xs.asSpan();
-    var t = move s;
-    t.xs.append(1);
-    print($"{sp[0]}");
+    let s = make()
+    Span<i64> sp = s.xs.asSpan()
+    var t = move s
+    t.xs.append(1)
+    print($"{sp[0]}")
 }
 
 // The result may point into what `slot` holds: it borrows `slot`.
-Span<i64> items(ref Slot slot, Span<i64> none) => none;
+Span<i64> items(ref Slot slot, Span<i64> none) => none
 
 void switchMove() {
-    var slot = Slot.full(make());
-    i64[1] none = [0];
-    Span<i64> sp = items(ref slot, none);
+    var slot = Slot.full(make())
+    i64[1] none = [0]
+    Span<i64> sp = items(ref slot, none)
     switch move slot {
         case .full(var x):
-            x.xs.append(1);
+            x.xs.append(1)
         default:
     }
-    print($"{sp[0]}");
+    print($"{sp[0]}")
 }
 
 void take() {
-    var xs = List<i64>();
-    xs.append(1);
-    Span<i64> sp = xs.asSpan();
-    var ys = xs.take();
-    ys.append(2);
-    print($"{sp[0]}");
+    var xs = List<i64>()
+    xs.append(1)
+    Span<i64> sp = xs.asSpan()
+    var ys = xs.take()
+    ys.append(2)
+    print($"{sp[0]}")
 }
 
 void main() {
-    dynRef();
-    readonlyDynRef();
-    spanOfField();
-    switchMove();
-    take();
+    dynRef()
+    readonlyDynRef()
+    spanOfField()
+    switchMove()
+    take()
 }

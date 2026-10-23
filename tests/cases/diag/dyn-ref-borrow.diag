@@ -1,15 +1,15 @@
 error BYN2104: `fixed` is immutable
 
-  18 │     show(fixed);
+  18 │     show(fixed)
      │          ^^^^^ it is borrowed as `dyn ref IShape`; declared with `let` on line 16
      │
   help: declare it with `var` if it should change
-     │ 16 │     var fixed = Circle { r: 1 };
+     │ 16 │     var fixed = Circle { r: 1 }
      │    │     +++
 
 error BYN3002: `inner` does not live as long as `late`, which borrows it
 
-  23 │         late = inner;
+  23 │         late = inner
      │                ^^^^^ `inner` is freed at the end of its block
      │
   help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough

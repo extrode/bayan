@@ -1,98 +1,98 @@
 struct Store {
-    string name;
-    Map<i64, i64> data;
+    string name
+    Map<i64, i64> data
 }
 
 union Slot {
-    empty,
-    full(Map<i64, i64> data),
+    empty
+    full(Map<i64, i64> data)
 }
 
 struct Holder {
-    Map<i64, i64> data;
+    Map<i64, i64> data
 
     public Holder(Map<i64, i64> data) {
-        this.data = data;
+        this.data = data
     }
 
     Map<i64, i64> take() {
-        return this.data;
+        return this.data
     }
 }
 
-Map<i64, i64> fresh() => Map<i64, i64>();
+Map<i64, i64> fresh() => Map<i64, i64>()
 
 Map<i64, i64> fromField(Store s) {
-    return s.data;
+    return s.data
 }
 
 Map<i64, i64> fromElement(Map<i64, i64>[2] maps) {
-    return maps[0];
+    return maps[0]
 }
 
 Map<i64, i64> fromRef(ref Map<i64, i64> m) {
-    return m;
+    return m
 }
 
 Map<i64, i64> fromResult(Result<Map<i64, i64>, LookupError> r) {
-    return r.value;
+    return r.value
 }
 
 error enum LookupError { missing }
 
 void copies(Map<i64, i64> p) {
-    var a = Map<i64, i64>();
-    a[1] = 10;
-    var b = a;
-    let c = p;
-    var s = Store { name: "s", data: fresh() };
-    let d = s.data;
-    b = a;
-    s.data = a;
-    let t = Store { name: "t", data: a };
-    let h = Holder(a);
-    let full = Slot.full(a);
-    var list = List<Map<i64, i64>>();
-    list.append(a);
-    var nested = Map<i64, Map<i64, i64>>();
-    nested[1] = a;
-    Map<i64, i64>[2] arr = [a, fresh()];
-    let e = arr[1];
-    let whole = s;
-    let pair = (a, 1);
-    let o = Owned(fresh());
-    let f = o.value;
-    let g = nested[1];
-    let u = s with { name: "u" };
-    let v = s with { data: a };
-    Map<i64, i64>? w = a;
+    var a = Map<i64, i64>()
+    a[1] = 10
+    var b = a
+    let c = p
+    var s = Store { name: "s", data: fresh() }
+    let d = s.data
+    b = a
+    s.data = a
+    let t = Store { name: "t", data: a }
+    let h = Holder(a)
+    let full = Slot.full(a)
+    var list = List<Map<i64, i64>>()
+    list.append(a)
+    var nested = Map<i64, Map<i64, i64>>()
+    nested[1] = a
+    Map<i64, i64>[2] arr = [a, fresh()]
+    let e = arr[1]
+    let whole = s
+    let pair = (a, 1)
+    let o = Owned(fresh())
+    let f = o.value
+    let g = nested[1]
+    let u = s with { name: "u" }
+    let v = s with { data: a }
+    Map<i64, i64>? w = a
 }
 
 void buffers() {
-    var sb = StrBuf();
-    sb.append("x");
-    let copy = sb;
+    var sb = StrBuf()
+    sb.append("x")
+    let copy = sb
 }
 
 void loops() {
-    var maps = List<Map<i64, i64>>();
-    maps.append(Map<i64, i64>());
-    for m in maps { m[1] = 1; }
-    StrBuf[1] bufs = [StrBuf()];
-    for b in bufs { b.append("y"); }
-    let plain = List<i64>();
+    var maps = List<Map<i64, i64>>()
+    maps.append(Map<i64, i64>())
+    for m in maps { m[1] = 1 }
+    StrBuf[1] bufs = [StrBuf()]
+    for b in bufs { b.append("y") }
+    let plain = List<i64>()
     for n in plain {
-        var m = n;
-        m += 1;
+        var m = n
+        m += 1
     }
 }
 
 struct Named {
-    string name;
-    Map<i64, i64> m;
+    string name
+    Map<i64, i64> m
 }
 
 void withs(Named n) {
-    let kept = n with { name: "x" };
-    let replaced = n with { m: fresh() };
+    let kept = n with { name: "x" }
+    let replaced = n with { m: fresh() }
 }

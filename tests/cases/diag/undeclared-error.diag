@@ -1,6 +1,6 @@
 error BYN2603: `ParseError` is not in the `fails` clause of `total`
 
-  15 │     return try parse(s);
+  15 │     return try parse(s)
      │            ^^^
      │
   help: add it to the signature: `fails MoneyError, ParseError`

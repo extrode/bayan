@@ -1,9 +1,9 @@
 error enum ConfigError {
     [ExitCode(3)]
     /// The configuration is malformed.
-    malformed,
+    malformed
     /// Something else.
-    other,
+    other
 }
 
 /// Runs the tool.

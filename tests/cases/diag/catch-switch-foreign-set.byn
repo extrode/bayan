@@ -1,19 +1,19 @@
 error enum ParseError {
     /// Nothing to parse.
-    empty,
+    empty
 }
 
 error enum DbError {
     /// The database took too long.
-    timeout,
+    timeout
 }
 
 i64 parse(string s) fails ParseError {
-    return .empty if s.isEmpty;
-    return 1;
+    return .empty if s.isEmpty
+    return 1
 }
 
 let r = parse("") catch switch {
     ParseError => 0,
     DbError e => 1,
-};
+}

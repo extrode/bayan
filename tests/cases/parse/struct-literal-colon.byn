@@ -1,26 +1,26 @@
 struct Money {
-    i64 cents = 0;
+    i64 cents = 0
 }
 
 struct LineItem {
-    string name;
-    Money unitPrice;
-    i64 qty = 1;
+    string name
+    Money unitPrice
+    i64 qty = 1
 }
 
-let price = Money { cents: 250 };
-let item = LineItem { name: "tea", unitPrice: { cents: 250 }, qty: 2 };
-let more = item with { name: "coffee", qty: 3 };
-let none = Money {};
-Money pick() => { cents: 1 };
+let price = Money { cents: 250 }
+let item = LineItem { name: "tea", unitPrice: { cents: 250 }, qty: 2 }
+let more = item with { name: "coffee", qty: 3 }
+let none = Money {}
+Money pick() => { cents: 1 }
 {
     outer: for i in 0..2 {
-        break outer;
+        break outer
     }
 }
 error enum MkError { bad }
 Money mk(bool ok) fails MkError {
-    return .bad if !ok;
-    return { cents: 7 };
+    return .bad if !ok
+    return { cents: 7 }
 }
-Money caught = mk(ok: false) catch { cents: 1 };
+Money caught = mk(ok: false) catch { cents: 1 }

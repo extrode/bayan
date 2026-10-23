@@ -1,75 +1,79 @@
 // suq-money.byn — Sūq-0 slice 1: currency-safe money, formatting, error enums
 // Written in round-2 syntax (what the compiler implements at f797e57).
 
-public enum Currency { myr, sgd, usd }
+public enum Currency {
+    myr
+    sgd
+    usd
+}
 
-string code(Currency c) => c switch { .myr => "MYR", .sgd => "SGD", .usd => "USD" };
+string code(Currency c) => c switch { .myr => "MYR", .sgd => "SGD", .usd => "USD" }
 
 public error enum PricingError {
     /// the currencies differ
-    currencyMismatch,
+    currencyMismatch
     /// the amount does not fit in i64
     overflow
 }
 
-const i64 maxCents = 9223372036854775807;
+const i64 maxCents = 9223372036854775807
 
 /// An amount in minor units (sen, cents) of one currency.
 public struct Money {
-    public i64 cents;
-    public Currency currency;
+    public i64 cents
+    public Currency currency
 
     public Money plus(Money other) fails PricingError {
-        return .currencyMismatch if other.currency != currency;
-        return .overflow if other.cents > 0 && cents > maxCents - other.cents;
-        return Money { cents: cents + other.cents, currency: currency };
+        return .currencyMismatch if other.currency != currency
+        return .overflow if other.cents > 0 && cents > maxCents - other.cents
+        return Money { cents: cents + other.cents, currency: currency }
     }
 
     public Money minus(Money other) fails PricingError {
-        return .currencyMismatch if other.currency != currency;
-        return Money { cents: cents - other.cents, currency: currency };
+        return .currencyMismatch if other.currency != currency
+        return Money { cents: cents - other.cents, currency: currency }
     }
 
-    public Money times(i32 qty) => Money { cents: cents * qty, currency: currency };
+    public Money times(i32 qty) => Money { cents: cents * qty, currency: currency }
 
     /// This amount at a rate in basis points (800 = 8%), rounded half up. Non-negative amounts.
     public Money atRate(i64 basisPoints) fails PricingError {
-        return .overflow if basisPoints > 0 && cents > (maxCents - 5000) / basisPoints;
-        return Money { cents: (cents * basisPoints + 5000) / 10000, currency: currency };
+        return .overflow if basisPoints > 0 && cents > (maxCents - 5000) / basisPoints
+        return Money { cents: (cents * basisPoints + 5000) / 10000, currency: currency }
     }
 
     /// Writes "MYR 12.50". Drives `$"{m}"`.
     public void formatInto(ref StrBuf sb) {
-        sb.append(code(currency));
-        sb.append(" ");
-        var whole = cents;
+        sb.append(code(currency))
+        sb.append(" ")
+        var whole = cents
         if cents < 0 {
-            sb.append("-");
-            whole = -cents;
+            sb.append("-")
+            whole = -cents
         }
-        sb.append($"{whole / 100}.");
-        sb.append("0") if whole % 100 < 10;
-        sb.append($"{whole % 100}");
+        sb.append($"{whole / 100}.")
+        sb.append("0") if whole % 100 < 10
+        sb.append($"{whole % 100}")
     }
 }
 
 string addText(Money a, Money b) {
     let sum = a.plus(b) catch switch {
         PricingError e => return e switch { .currencyMismatch => "currencyMismatch", .overflow => "overflow" },
-    };
-    return $"{sum}";
+    }
+    return $"{sum}"
 }
 
 void tryAdd(Money a, Money b) {
-    print($"add: {addText(a, b)}");
+    print($"add: {addText(a, b)}")
 }
 
-print($"{Money { cents: 1250, currency: .myr }}");
-print($"{Money { cents: 5, currency: .myr }}");
-print($"{Money { cents: -300, currency: .myr }}");
-tryAdd(a: Money { cents: 100, currency: .myr }, b: Money { cents: 100, currency: .myr });
-tryAdd(a: Money { cents: 100, currency: .myr }, b: Money { cents: 100, currency: .sgd });
-tryAdd(a: Money { cents: maxCents, currency: .myr }, b: Money { cents: 1, currency: .myr });
-let tax = try Money { cents: 1063, currency: .myr }.atRate(800);
-print($"8% of MYR 10.63: {tax}");
-print($"3 x MYR 12.50: {Money { cents: 1250, currency: .myr }.times(3)}");
+print($"{Money { cents: 1250, currency: .myr }}")
+print($"{Money { cents: 5, currency: .myr }}")
+print($"{Money { cents: -300, currency: .myr }}")
+tryAdd(a: Money { cents: 100, currency: .myr }, b: Money { cents: 100, currency: .myr })
+tryAdd(a: Money { cents: 100, currency: .myr }, b: Money { cents: 100, currency: .sgd })
+tryAdd(a: Money { cents: maxCents, currency: .myr }, b: Money { cents: 1, currency: .myr })
+let tax = try Money { cents: 1063, currency: .myr }.atRate(800)
+print($"8% of MYR 10.63: {tax}")
+print($"3 x MYR 12.50: {Money { cents: 1250, currency: .myr }.times(3)}")

@@ -6,15 +6,12 @@
 1:14 Greater `>`
 1:15 Greater `>`
 1:17 Identifier `xs`
-1:19 Semicolon `;`
-1:21 Identifier `a`
-1:23 Greater `>`
-1:24 Greater `>`
-1:26 Identifier `b`
-1:27 Semicolon `;`
-1:29 Identifier `c`
-1:31 Greater `>`
-1:32 GreaterEquals `>=`
-1:35 IntegerLiteral `1`
-1:36 Semicolon `;`
-2:1 EndOfFile
+2:1 Identifier `a`
+2:3 Greater `>`
+2:4 Greater `>`
+2:6 Identifier `b`
+3:1 Identifier `c`
+3:3 Greater `>`
+3:4 GreaterEquals `>=`
+3:7 IntegerLiteral `1`
+4:1 EndOfFile

@@ -1,19 +1,19 @@
 error BYN2780: implicit copy of a unique value: `List<i64>` is unique: it owns its storage
 
-  6 │ Holder keep(List<i64> items) => Holder { items: items };
+  6 │ Holder keep(List<i64> items) => Holder { items: items }
     │                                                 ^^^^^
     │
   help: make an independent copy with `items.copy(to: alloc)`; declare the parameter `move items` to
         take ownership; pass it by `ref` to share it instead
-    │ 6 │ Holder keep(List<i64> items) => Holder { items: items.copy(to: alloc) };
+    │ 6 │ Holder keep(List<i64> items) => Holder { items: items.copy(to: alloc) }
     │   │                                                      ++++++++++++++++
 
 error BYN2780: implicit copy of a unique value: `List<i64>` is unique: it owns its storage
 
-  9 │     return items;
+  9 │     return items
     │            ^^^^^
     │
   help: make an independent copy with `items.copy(to: alloc)`; declare the parameter `move items` to
         take ownership; pass it by `ref` to share it instead
-    │ 9 │     return items.copy(to: alloc);
+    │ 9 │     return items.copy(to: alloc)
     │   │                 ++++++++++++++++

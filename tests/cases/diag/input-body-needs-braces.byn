@@ -1,7 +1,7 @@
 void main() {
-    let x = 3;
-    if (x > 2) print("big");
-    else print("small");
+    let x = 3
+    if (x > 2) print("big")
+    else print("small")
     while (x > 5)
-        print("never");
+        print("never")
 }

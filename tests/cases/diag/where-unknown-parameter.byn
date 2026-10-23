@@ -1,9 +1,9 @@
 interface IShape {
-    i64 area();
+    i64 area()
 }
 
 void touch<T>(ref T a) where U : IShape { }
 
 struct Canvas where T : IShape {
-    i64 width;
+    i64 width
 }

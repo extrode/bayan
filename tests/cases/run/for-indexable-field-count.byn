@@ -1,11 +1,11 @@
 // A field stands for `IIndexable.count` in a `for`.
 struct Digits : IIndexable {
-    type Item = i64;
-    i64 count;
-    i64 get(i64 index) => index * 10;
+    type Item = i64
+    i64 count
+    i64 get(i64 index) => index * 10
 }
 
-let d = Digits { count: 3 };
+let d = Digits { count: 3 }
 for x in d {
-    print($"{x}");
+    print($"{x}")
 }

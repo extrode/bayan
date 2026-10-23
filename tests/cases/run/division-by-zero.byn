@@ -1,2 +1,2 @@
-i64 zero = 0;
-print($"{10 / zero}");
+i64 zero = 0
+print($"{10 / zero}")

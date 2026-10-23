@@ -1,2 +1,2 @@
-import money;
-print("hi");
+import money
+print("hi")

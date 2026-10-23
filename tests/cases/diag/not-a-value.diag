@@ -1,4 +1,4 @@
 error BYN2019: `Money` is a type, not a value
 
-  5 │ let m = Money;
+  5 │ let m = Money
     │         ^^^^^

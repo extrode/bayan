@@ -1,20 +1,20 @@
 error BYN2203: 300 does not fit in `u8`
 
-  3 │ var n = 300;
+  3 │ var n = 300
     │         ^^^
     │
   help: use a value from 0 to 255, the range of `u8`
 
 error BYN2203: -1 does not fit in `u64`
 
-  8 │ var m = -1;
+  8 │ var m = -1
     │         ^^
     │
   help: use a value from 0 to 18446744073709551615, the range of `u64`
 
 error BYN2760: `f64` cannot be a `Map` key
 
-  31 │     Index<f64> idx;
+  31 │     Index<f64> idx
      │     ^^^^^^^^^^ the generic code needs this of its type arguments
      │
   help: use an integer type, `char`, `bool`, `string` or a plain enum as the key

@@ -1,6 +1,6 @@
 struct Box {
-    i64 value;
+    i64 value
 }
 
-Box? b = null;
-let v = b?.value;
+Box? b = null
+let v = b?.value

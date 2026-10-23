@@ -1,9 +1,9 @@
 void main() {
-    let xs = [1, 2, 3];
+    let xs = [1, 2, 3]
     for (let x in xs) {
-        print($"{x}");
+        print($"{x}")
     }
     foreach (var y in xs) {
-        print($"{y}");
+        print($"{y}")
     }
 }

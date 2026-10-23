@@ -1,6 +1,6 @@
-interface IHas<T> { T items { get; } }
-struct H<T> : IHas<T> { T items; }
+interface IHas<T> { T items { get } }
+struct H<T> : IHas<T> { T items }
 void main() {
-    let h = H<List<i64>> { items: List<i64>() };
-    let k = H<i64> { items: 1 };
+    let h = H<List<i64>> { items: List<i64>() }
+    let k = H<i64> { items: 1 }
 }

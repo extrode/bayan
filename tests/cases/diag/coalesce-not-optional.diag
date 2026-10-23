@@ -1,4 +1,4 @@
 error BYN2210: `??` needs an optional value on the left, found `i64`
 
-  2 │ let m = n ?? 0;
+  2 │ let m = n ?? 0
     │         ^

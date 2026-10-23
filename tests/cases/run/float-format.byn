@@ -1,15 +1,15 @@
-f64 below = 999999999999999.9;
-f64 boundary = 1e15;
-f64 smallest = 0.00001;
-f64 under = 0.0000099;
-f64 a = 0.1;
-f64 b = 0.2;
-f64 zero = 0.0;
-f64 negativeZero = -0.0;
-print($"{below} {boundary} {smallest} {under} {a + b} {negativeZero}");
-print($"{zero / zero} {1.0 / zero} {-1.0 / zero}");
-print($"{1.5e-7} {-2.25e20} {42.0} {1e300} {5e-324}");
-f32 single = 0.00001;
-f32 singleUnder = 0.0000099;
-f32 singleLarge = 1e15;
-print($"{single} {singleUnder} {singleLarge} {(f32)0.1}");
+f64 below = 999999999999999.9
+f64 boundary = 1e15
+f64 smallest = 0.00001
+f64 under = 0.0000099
+f64 a = 0.1
+f64 b = 0.2
+f64 zero = 0.0
+f64 negativeZero = -0.0
+print($"{below} {boundary} {smallest} {under} {a + b} {negativeZero}")
+print($"{zero / zero} {1.0 / zero} {-1.0 / zero}")
+print($"{1.5e-7} {-2.25e20} {42.0} {1e300} {5e-324}")
+f32 single = 0.00001
+f32 singleUnder = 0.0000099
+f32 singleLarge = 1e15
+print($"{single} {singleUnder} {singleLarge} {(f32)0.1}")

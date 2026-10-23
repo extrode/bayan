@@ -2,6 +2,5 @@
     doc `/// Doc line one.\n/// Doc line two.`
 6:1 StructKeyword `struct`
 6:8 Identifier `S`
-6:9 Semicolon `;`
 8:1 Identifier `b`
 9:1 EndOfFile

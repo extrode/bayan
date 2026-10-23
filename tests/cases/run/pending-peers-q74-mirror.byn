@@ -1,6 +1,6 @@
-var a = 0;
-var b = 0;
-a = b;
-f64 y = a;
-i64 x = b;
-print($"{x} {y}");
+var a = 0
+var b = 0
+a = b
+f64 y = a
+i64 x = b
+print($"{x} {y}")

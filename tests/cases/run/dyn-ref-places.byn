@@ -1,51 +1,51 @@
 interface ICounter {
-    i64 value { get; }
-    void bump(ref this, i64 by);
-    void report() => print($"at {value}");
+    i64 value { get }
+    void bump(ref this, i64 by)
+    void report() => print($"at {value}")
 }
 
 struct Counter : ICounter {
-    i64 n;
+    i64 n
 
-    i64 value => n;
+    i64 value => n
 
     void bump(ref this, i64 by) {
-        n += by;
+        n += by
     }
 
-    void show() => observe(this);
+    void show() => observe(this)
 }
 
 struct Pair {
-    Counter left;
-    Counter right;
+    Counter left
+    Counter right
 }
 
 void advance(dyn ref ICounter c, i64 by) {
-    c.bump(by);
-    c.report();
+    c.bump(by)
+    c.report()
 }
 
-void observe(dyn ref readonly ICounter c) => c.report();
+void observe(dyn ref readonly ICounter c) => c.report()
 
 void throughRef(ref Counter c) {
-    advance(c, 10);
-    observe(c);
+    advance(c, 10)
+    observe(c)
 }
 
-dyn ref ICounter pick(ref Pair p) => p.right;
+dyn ref ICounter pick(ref Pair p) => p.right
 
-Counter make(i64 n) => Counter { n: n };
+Counter make(i64 n) => Counter { n: n }
 
 void main() {
-    var p = Pair { left: Counter { n: 1 }, right: Counter { n: 100 } };
-    advance(p.left, 1);
-    advance(p.right, 5);
-    throughRef(ref p.left);
-    dyn ref ICounter r = pick(ref p);
-    r.bump(1);
-    observe(r);
-    p.left.show();
-    observe(make(7));
-    print($"left {p.left.n}, right {p.right.n}");
+    var p = Pair { left: Counter { n: 1 }, right: Counter { n: 100 } }
+    advance(p.left, 1)
+    advance(p.right, 5)
+    throughRef(ref p.left)
+    dyn ref ICounter r = pick(ref p)
+    r.bump(1)
+    observe(r)
+    p.left.show()
+    observe(make(7))
+    print($"left {p.left.n}, right {p.right.n}")
 }

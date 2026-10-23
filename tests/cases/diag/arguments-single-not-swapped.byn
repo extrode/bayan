@@ -1,4 +1,4 @@
-i64 g(i64 x, i32 y = 0) => x + y;
+i64 g(i64 x, i32 y = 0) => x + y
 
-i64 y = 5;
-print($"{g(y)}");
+i64 y = 5
+print($"{g(y)}")

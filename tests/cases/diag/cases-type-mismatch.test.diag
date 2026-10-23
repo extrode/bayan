@@ -5,5 +5,5 @@ error BYN2202: expected `bool`, found `string`
 
 error BYN2202: expected `i32`, found `string`
 
-  3 │     i32 unused = "no";
+  3 │     i32 unused = "no"
     │                  ^^^^

@@ -1,13 +1,19 @@
 // An index into a `ReadOnlySpan` points into existing storage, from whatever expression: a writable `for dyn ref` over it is rejected (BYN2106).
-interface IC { void bump(ref this); i64 n { get; } }
-struct C : IC { i64 n; void bump(ref this) { n += 1; } }
-ReadOnlySpan<List<C>> view(ReadOnlySpan<List<C>> s) => s;
+interface IC {
+    void bump(ref this)
+    i64 n { get }
+}
+struct C : IC {
+    i64 n
+    void bump(ref this) { n += 1 }
+}
+ReadOnlySpan<List<C>> view(ReadOnlySpan<List<C>> s) => s
 void main() {
-    var l = List<C>();
-    l.append(C { n: 1 });
-    var ll = List<List<C>>();
-    ll.append(move l);
-    let k = move ll;
-    for dyn ref IC x in view(k.asSpan())[0] { x.bump(); }
-    print($"{k[0][0].n}");
+    var l = List<C>()
+    l.append(C { n: 1 })
+    var ll = List<List<C>>()
+    ll.append(move l)
+    let k = move ll
+    for dyn ref IC x in view(k.asSpan())[0] { x.bump() }
+    print($"{k[0][0].n}")
 }

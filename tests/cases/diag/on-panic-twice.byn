@@ -1,8 +1,8 @@
 void onCrash(Panic p) {
-    print(p.message);
+    print(p.message)
 }
 
 void main() {
-    Panic.onPanic = onCrash;
-    Panic.onPanic = onCrash;
+    Panic.onPanic = onCrash
+    Panic.onPanic = onCrash
 }

@@ -10,7 +10,7 @@ namespace Bayan.Tests;
 [Trait("Law", "L004")]
 public sealed class L004UnionSwitchTests
 {
-    private const string Union = "union U { a, b(i64 x), c }\n";
+    private const string Union = "union U {\n    a\n    b(i64 x)\n    c\n}\n";
 
     // Arms are written once; "default" and "_" stand for the default arm in either form.
     public static TheoryData<string, string[], string> Cases => new()
@@ -41,9 +41,9 @@ public sealed class L004UnionSwitchTests
     public void SwitchStatement(string name, string[] arms, string missing)
     {
         var cases = string.Concat(arms.Select(a => a == "default"
-            ? "        default:\n            print(\"d\");\n"
-            : $"        case {a}:\n            print(\"a\");\n"));
-        Check(name, $"{Union}void f(U u) {{\n    switch u {{\n{cases}    }}\n}}\nf(U.a);\n", missing);
+            ? "        default:\n            print(\"d\")\n"
+            : $"        case {a}:\n            print(\"a\")\n"));
+        Check(name, $"{Union}void f(U u) {{\n    switch u {{\n{cases}    }}\n}}\nf(U.a)\n", missing);
     }
 
     [Theory]
@@ -51,7 +51,7 @@ public sealed class L004UnionSwitchTests
     public void SwitchExpression(string name, string[] arms, string missing)
     {
         var cases = string.Concat(arms.Select(a => $"    {(a == "default" ? "_" : a)} => 1,\n"));
-        Check(name, $"{Union}i64 f(U u) => u switch {{\n{cases}}};\nprint($\"{{f(U.a)}}\");\n", missing);
+        Check(name, $"{Union}i64 f(U u) => u switch {{\n{cases}}}\nprint($\"{{f(U.a)}}\")\n", missing);
     }
 
     private static void Check(string name, string source, string missing)

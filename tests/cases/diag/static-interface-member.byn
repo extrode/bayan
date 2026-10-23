@@ -1,4 +1,4 @@
 interface IParse {
-    static i64 parse(string text);
-    i64 width { get; }
+    static i64 parse(string text)
+    i64 width { get }
 }

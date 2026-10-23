@@ -1,6 +1,6 @@
-let ok = true;
-i64 total;
+let ok = true
+i64 total
 if ok {
-    total = 1;
+    total = 1
 }
-print($"{total}");
+print($"{total}")

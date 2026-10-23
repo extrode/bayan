@@ -101,8 +101,8 @@ public sealed class MapModelTests
         string KeyText(long k) => stringKeys ? $"k{k}" : k.ToString();
 
         var model = new Model();
-        var source = new StringBuilder("void bump(ref i64 n) {\n    n += 100;\n}\n");
-        source.Append(stringKeys ? "var m = Map<string, i64>();\n" : "var m = Map<i64, i64>();\n");
+        var source = new StringBuilder("void bump(ref i64 n) {\n    n += 100\n}\n");
+        source.Append(stringKeys ? "var m = Map<string, i64>()\n" : "var m = Map<i64, i64>()\n");
         var expected = new StringBuilder();
         for (var step = 0; step < OpsPerSequence; step++)
         {
@@ -111,46 +111,46 @@ public sealed class MapModelTests
             switch (Next(10))
             {
                 case < 4:
-                    source.Append($"m[{Key(k)}] = {v};\n");
+                    source.Append($"m[{Key(k)}] = {v}\n");
                     model.Set(k, v);
                     break;
                 case < 6:
-                    source.Append($"m.remove({Key(k)});\n");
+                    source.Append($"m.remove({Key(k)})\n");
                     model.Remove(k);
                     break;
                 case 6:
-                    source.Append($"m.slot({Key(k)}) += {v};\n");
+                    source.Append($"m.slot({Key(k)}) += {v}\n");
                     model.Set(k, model.Values.GetValueOrDefault(k) + v);
                     break;
                 case 7:
-                    source.Append($"bump(ref m.slot({Key(k)}));\n");
+                    source.Append($"bump(ref m.slot({Key(k)}))\n");
                     model.Set(k, model.Values.GetValueOrDefault(k) + 100);
                     break;
                 case 8:
-                    source.Append($"m.slot({Key(k)}) = {v};\n");
+                    source.Append($"m.slot({Key(k)}) = {v}\n");
                     model.Set(k, v);
                     break;
                 default:
                     if (Next(4) == 0)
                     {
-                        source.Append("m.clear();\n");
+                        source.Append("m.clear()\n");
                         model.Clear();
                     }
                     else
                     {
-                        source.Append($"m[{Key(k)}] = {v};\n");
+                        source.Append($"m[{Key(k)}] = {v}\n");
                         model.Set(k, v);
                     }
                     break;
             }
             if ((step + 1) % OpsPerPhase != 0) continue;
-            source.Append($"print(\"phase {step + 1}\");\nprint($\"length {{m.length}}\");\n");
-            source.Append("for e in m { print($\"{e.key} {e.value}\"); }\n");
+            source.Append($"print(\"phase {step + 1}\")\nprint($\"length {{m.length}}\")\n");
+            source.Append("for e in m { print($\"{e.key} {e.value}\") }\n");
             expected.Append($"phase {step + 1}\nlength {model.Order.Count}\n");
             foreach (var key in model.Order) expected.Append($"{KeyText(key)} {model.Values[key]}\n");
             for (long key = 0; key < KeySpace; key++)
             {
-                source.Append($"print($\"get {KeyText(key)} {{m.getOr({Key(key)}, -1)}}\");\n");
+                source.Append($"print($\"get {KeyText(key)} {{m.getOr({Key(key)}, -1)}}\")\n");
                 expected.Append($"get {KeyText(key)} {model.Values.GetValueOrDefault(key, -1)}\n");
             }
         }
@@ -161,17 +161,17 @@ public sealed class MapModelTests
 
     [Trait("Law", "L003")]
     [Theory]
-    [InlineData("m[3] = 30;", "m[3]", true)]
-    [InlineData("m[3] = 30; m[3] = 31;", "m[3]", true)]
-    [InlineData("m[3] = 30; m.slot(4) += 1;", "m[4]", true)]
-    [InlineData("m[3] = 30;", "m[4]", false)]
-    [InlineData("m[3] = 30; m.remove(3);", "m[3]", false)]
-    [InlineData("m[3] = 30; m.clear();", "m[3]", false)]
-    [InlineData("m[3] = 30; m.remove(3); m[3] = 5;", "m[3]", true)]
-    [InlineData("m.getOr(3, 0); m.contains(3);", "m[3]", false)]
+    [InlineData("m[3] = 30", "m[3]", true)]
+    [InlineData("m[3] = 30\nm[3] = 31", "m[3]", true)]
+    [InlineData("m[3] = 30\nm.slot(4) += 1", "m[4]", true)]
+    [InlineData("m[3] = 30", "m[4]", false)]
+    [InlineData("m[3] = 30\nm.remove(3)", "m[3]", false)]
+    [InlineData("m[3] = 30\nm.clear()", "m[3]", false)]
+    [InlineData("m[3] = 30\nm.remove(3)\nm[3] = 5", "m[3]", true)]
+    [InlineData("m.getOr(3, 0)\nm.contains(3)", "m[3]", false)]
     public void L003IndexPanicsExactlyForNonLiveKeys(string setup, string read, bool live)
     {
-        var outcome = Run("l003-index.byn", $"var m = Map<i64, i64>();\n{setup}\nprint($\"got {{{read}}}\");\n");
+        var outcome = Run("l003-index.byn", $"var m = Map<i64, i64>()\n{setup}\nprint($\"got {{{read}}}\")\n");
         if (live)
         {
             Assert.Equal(0, outcome.ExitCode);

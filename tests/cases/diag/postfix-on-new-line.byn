@@ -1,0 +1,6 @@
+void stop() {}
+
+void run(bool done) {
+    stop()
+        if done
+}

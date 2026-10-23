@@ -1,6 +1,6 @@
 error BYN2802: `Square.area` is `string area()` but `IShape` requires `i64 area()`
 
-  13 │     string area() => "big";
+  13 │     string area() => "big"
      │            ^^^^ does not match `IShape`
      │
   help: change the signature to `i64 area()`
@@ -8,7 +8,7 @@ error BYN2802: `Square.area` is `string area()` but `IShape` requires `i64 area(
 error BYN2802: `Square.parse` is `i64 parse(string text)` but `IShape` requires
 `i64 parse(string text) fails ParseError`
 
-  15 │     i64 parse(string text) => 0;
+  15 │     i64 parse(string text) => 0
      │         ^^^^^ does not match `IShape`
      │
   help: change the signature to `i64 parse(string text) fails ParseError`

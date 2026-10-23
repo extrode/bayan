@@ -192,7 +192,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             return ErrorType.Instance;
         }
         compilation.Report(DiagnosticCodes.UnknownType, file.Source, n.Span, [string.Join(".", n.Path.Select(x => x.Text))],
-            help: n.Path.Length == 2 ? $"add `import {n.Path[0].Text};`; `{n.Path[0].Text}` is not an imported module" : null);
+            help: n.Path.Length == 2 ? $"add `import {n.Path[0].Text}`; `{n.Path[0].Text}` is not an imported module" : null);
         return ErrorType.Instance;
     }
 
@@ -242,7 +242,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 return bound;
         }
         compilation.Report(DiagnosticCodes.UnknownType, file.Source, n.Span, [$"{owner.DisplayName}.{name}"],
-            help: owner is TypeParameterType ? $"add a `where {owner.DisplayName} : …` bound on an interface declaring `type {name};`" : null);
+            help: owner is TypeParameterType ? $"add a `where {owner.DisplayName} : …` bound on an interface declaring `type {name}`" : null);
         return ErrorType.Instance;
     }
 

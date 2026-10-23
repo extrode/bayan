@@ -1,5 +1,5 @@
 interface IShape {
-    f32 area();
+    f32 area()
 }
 
 void show(dyn IShape s) { }

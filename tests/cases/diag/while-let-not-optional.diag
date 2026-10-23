@@ -3,4 +3,4 @@ error BYN2234: `while let` needs a `T?` value, got `i64`
   3 │ while let n = next() {
     │               ^^^^^^
     │
-  help: loop with `while` and a condition, or bind it once: `let n = …;`
+  help: loop with `while` and a condition, or bind it once: `let n = …`

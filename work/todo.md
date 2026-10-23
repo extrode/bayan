@@ -156,3 +156,12 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `docs/bayan-handoff.md` Questions: numbers repeat (two 51–56 runs, lines ~463 and ~533); renumber or switch to ids.
 - `bayan format <dir>` recurses into everything (`tmp/`, `out/`, hidden dirs, and `tests/cases` fixtures that use input forms on purpose); decide on exclusions (review of 6c25f34).
 - SPEC §7.6 still shows `using let` and §18 writes pointers after the type (`Sqlite3* db`), against the round-3 HANDOFF (Sūq regen note).
+- r3-51a: the BYN1053 message says "one line" even when the comma-separated cases span several lines.
+- r3-51a: a line starting with `?`, `:` or `|` is not waṣl, so a ternary or pattern split before its operator ends the statement.
+- r3-51a: a labeled statement as the first line of a `catch { ... }` brace body is ambiguous with a struct-literal field.
+- r3-51a: the C-style `for (init; cond; step)` header keeps its `;`; decide whether it is an input form too.
+- r3-51a: `if cond` with `{` on the next line reads the brace as a stranded postfix instead of reporting the brace placement.
+- r3-51a: two declarations on one line after `}` (`int f() { return 0 } void g() {`) give no BYN1005.
+- r3-51a: `return` then a call at the same indent on the next line is a bare return plus an unreachable statement (BYN2405), not BYN1042; by design, check the docs agree.
+- r3-51a: tests/cases/diag and parse `input-forms-one-line` no longer fit on one line after expand-blocks; rename or reshape.
+- Waṣl clause lines `uses`, `expects`, `except`, `becomes` (J61): no parser support yet; add a continuation test with each clause's parser step (5.1b–5.3). From r3-51a gate.

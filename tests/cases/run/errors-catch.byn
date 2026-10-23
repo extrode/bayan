@@ -1,80 +1,80 @@
 error enum ParseError {
     /// The input was empty.
-    empty,
+    empty
     /// The input had a non-digit.
-    notDigit,
+    notDigit
     /// The number was too large.
-    tooLarge,
+    tooLarge
 }
 
 error enum RangeError {
     /// Below the minimum.
-    tooSmall,
+    tooSmall
 }
 
 i64 digit(string s) fails ParseError {
-    return .empty if s.isEmpty;
-    let c = s.bytes[0];
-    return .notDigit if c < '0' || c > '9';
-    return (i64)(c - '0');
+    return .empty if s.isEmpty
+    let c = s.bytes[0]
+    return .notDigit if c < '0' || c > '9'
+    return (i64)(c - '0')
 }
 
 i64 positive(string s) fails ParseError, RangeError {
-    let d = try digit(s);
-    return .tooSmall if d == 0;
-    return d;
+    let d = try digit(s)
+    return .tooSmall if d == 0
+    return d
 }
 
-i64 relay(string s) fails => try positive(s);
+i64 relay(string s) fails => try positive(s)
 
-i64 orDefault(string s) => digit(s) catch -1;
+i64 orDefault(string s) => digit(s) catch -1
 
 i64 earlyReturn(string s) {
-    let d = digit(s) catch return 100;
-    return d + 1;
+    let d = digit(s) catch return 100
+    return d + 1
 }
 
 i64 classify(string s) => digit(s) catch switch {
     .empty => 10,
     .notDigit => 20,
     .tooLarge => 30,
-};
+}
 
-i64 onlyEmpty(string s) fails ParseError => digit(s) catch (ParseError.empty) 0;
+i64 onlyEmpty(string s) fails ParseError => digit(s) catch (ParseError.empty) 0
 
-i64? find(i64 n) => n > 0 ? n : null;
+i64? find(i64 n) => n > 0 ? n : null
 
 i64 sumUntilMissing() {
-    i64 total = 0;
+    i64 total = 0
     for i in 0..5 {
-        let v = find(3 - i) ?? break;
-        total += v;
+        let v = find(3 - i) ?? break
+        total += v
     }
-    return total;
+    return total
 }
 
 i64 skipMissing() {
-    i64 total = 0;
+    i64 total = 0
     for i in 0..5 {
-        let v = find(i - 2) ?? continue;
-        total += v;
+        let v = find(i - 2) ?? continue
+        total += v
     }
-    return total;
+    return total
 }
 
 i64 returnMissing(i64 n) {
-    let v = find(n) ?? return -7;
-    return v * 2;
+    let v = find(n) ?? return -7
+    return v * 2
 }
 
-print($"{orDefault("7")} {orDefault("")} {orDefault("x")}");
-print($"{earlyReturn("4")} {earlyReturn("")}");
-print($"{classify("")} {classify("q")} {classify("3")}");
-print($"{relay("5") catch -1} {relay("0") catch -2} {relay("") catch -3}");
-print($"{onlyEmpty("") catch -1} {onlyEmpty("x") catch -9} {onlyEmpty("8") catch -1}");
-print($"{sumUntilMissing()} {skipMissing()} {returnMissing(4)} {returnMissing(-1)}");
+print($"{orDefault("7")} {orDefault("")} {orDefault("x")}")
+print($"{earlyReturn("4")} {earlyReturn("")}")
+print($"{classify("")} {classify("q")} {classify("3")}")
+print($"{relay("5") catch -1} {relay("0") catch -2} {relay("") catch -3}")
+print($"{onlyEmpty("") catch -1} {onlyEmpty("x") catch -9} {onlyEmpty("8") catch -1}")
+print($"{sumUntilMissing()} {skipMissing()} {returnMissing(4)} {returnMissing(-1)}")
 let e = positive("0") catch switch {
     .tooSmall => 1,
     _ => 2,
-};
-print($"{e}");
+}
+print($"{e}")

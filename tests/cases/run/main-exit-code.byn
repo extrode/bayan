@@ -1,5 +1,5 @@
 // An `i32 main` sets the process exit code.
 i32 main() {
-    print("exiting with 7");
-    return 7;
+    print("exiting with 7")
+    return 7
 }

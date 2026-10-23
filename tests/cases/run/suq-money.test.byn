@@ -1,82 +1,86 @@
 // suq-money.test.byn — the same rules as tests: [Cases], power asserts
 // Money, Currency and PricingError copied from suq-money.byn: run goldens are single-file.
 
-public enum Currency { myr, sgd, usd }
+public enum Currency {
+    myr
+    sgd
+    usd
+}
 
-string code(Currency c) => c switch { .myr => "MYR", .sgd => "SGD", .usd => "USD" };
+string code(Currency c) => c switch { .myr => "MYR", .sgd => "SGD", .usd => "USD" }
 
 public error enum PricingError {
     /// the currencies differ
-    currencyMismatch,
+    currencyMismatch
     /// the amount does not fit in i64
     overflow
 }
 
-const i64 maxCents = 9223372036854775807;
+const i64 maxCents = 9223372036854775807
 
 /// An amount in minor units (sen, cents) of one currency.
 public struct Money {
-    public i64 cents;
-    public Currency currency;
+    public i64 cents
+    public Currency currency
 
     public Money plus(Money other) fails PricingError {
-        return .currencyMismatch if other.currency != currency;
-        return .overflow if other.cents > 0 && cents > maxCents - other.cents;
-        return Money { cents: cents + other.cents, currency: currency };
+        return .currencyMismatch if other.currency != currency
+        return .overflow if other.cents > 0 && cents > maxCents - other.cents
+        return Money { cents: cents + other.cents, currency: currency }
     }
 
     public Money minus(Money other) fails PricingError {
-        return .currencyMismatch if other.currency != currency;
-        return Money { cents: cents - other.cents, currency: currency };
+        return .currencyMismatch if other.currency != currency
+        return Money { cents: cents - other.cents, currency: currency }
     }
 
-    public Money times(i32 qty) => Money { cents: cents * qty, currency: currency };
+    public Money times(i32 qty) => Money { cents: cents * qty, currency: currency }
 
     /// This amount at a rate in basis points (800 = 8%), rounded half up. Non-negative amounts.
     public Money atRate(i64 basisPoints) fails PricingError {
-        return .overflow if basisPoints > 0 && cents > (maxCents - 5000) / basisPoints;
-        return Money { cents: (cents * basisPoints + 5000) / 10000, currency: currency };
+        return .overflow if basisPoints > 0 && cents > (maxCents - 5000) / basisPoints
+        return Money { cents: (cents * basisPoints + 5000) / 10000, currency: currency }
     }
 
     /// Writes "MYR 12.50". Drives `$"{m}"`.
     public void formatInto(ref StrBuf sb) {
-        sb.append(code(currency));
-        sb.append(" ");
-        var whole = cents;
+        sb.append(code(currency))
+        sb.append(" ")
+        var whole = cents
         if cents < 0 {
-            sb.append("-");
-            whole = -cents;
+            sb.append("-")
+            whole = -cents
         }
-        sb.append($"{whole / 100}.");
-        sb.append("0") if whole % 100 < 10;
-        sb.append($"{whole % 100}");
+        sb.append($"{whole / 100}.")
+        sb.append("0") if whole % 100 < 10
+        sb.append($"{whole % 100}")
     }
 }
 
 [Cases((1250, "MYR 12.50"), (5, "MYR 0.05"), (-300, "MYR -3.00"), (0, "MYR 0.00"))]
 test "format" (i64 cents, string text) {
-    assert($"{Money { cents: cents, currency: .myr }}" == text);
+    assert($"{Money { cents: cents, currency: .myr }}" == text)
 }
 
 [Cases((1063, 85), (1000, 80), (1, 0), (7, 1))]
 test "8% rounds half up" (i64 cents, i64 expected) {
-    let tax = try Money { cents: cents, currency: .myr }.atRate(800);
-    assert(tax.cents == expected);
+    let tax = try Money { cents: cents, currency: .myr }.atRate(800)
+    assert(tax.cents == expected)
 }
 
 test "mixed currencies fail" {
-    let myr = Money { cents: 100, currency: .myr };
-    let sgd = Money { cents: 100, currency: .sgd };
-    let _ = myr.plus(sgd) catch { return; };
-    panic("expected currencyMismatch");
+    let myr = Money { cents: 100, currency: .myr }
+    let sgd = Money { cents: 100, currency: .sgd }
+    let _ = myr.plus(sgd) catch { return }
+    panic("expected currencyMismatch")
 }
 
 test "add commutes for same-currency amounts" {
     for i in 0..200 {
-        let a = Money { cents: i * 37 - 3000, currency: .myr };
-        let b = Money { cents: i * 91 - 9000, currency: .myr };
-        let ab = try a.plus(b);
-        let ba = try b.plus(a);
-        assert(ab.cents == ba.cents);
+        let a = Money { cents: i * 37 - 3000, currency: .myr }
+        let b = Money { cents: i * 91 - 9000, currency: .myr }
+        let ab = try a.plus(b)
+        let ba = try b.plus(a)
+        assert(ab.cents == ba.cents)
     }
 }

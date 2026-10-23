@@ -2,30 +2,27 @@
 1:5 Identifier `a`
 1:7 Equals `=`
 1:11 IntegerLiteral `1`
-1:12 Semicolon `;`
 2:1 LetKeyword `let`
 2:5 Identifier `b`
 2:7 Equals `=`
 2:11 IntegerLiteral `2`
-2:12 Semicolon `;`
 3:1 LetKeyword `let`
 3:5 Identifier `c`
 3:7 Equals `=`
 3:11 IntegerLiteral `3`
-3:12 Semicolon `;`
 4:1 EndOfFile
 
 error BYN0002: unexpected character `$`
 
-  1 │ let a = $ 1;
+  1 │ let a = $ 1
     │         ^
 
 error BYN0002: unexpected character ```
 
-  2 │ let b = ` 2;
+  2 │ let b = ` 2
     │         ^
 
 error BYN0002: unexpected character `\u{7}`
 
-  3 │ let c = � 3;
+  3 │ let c = � 3
     │         ^

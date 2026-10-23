@@ -1,9 +1,9 @@
 void main(ReadOnlySpan<string> args) {
-    let done = args.length > 0;
+    let done = args.length > 0
     if !done {
-        print("working");
+        print("working")
     }
     if !(args.length == 2) {
-        print("not two");
+        print("not two")
     }
 }

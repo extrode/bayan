@@ -1,49 +1,49 @@
 error BYN3003: cannot return a borrow of the temporary on line 14, which is freed when
 `spanAndCount` returns
 
-  14 │     (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.length);
+  14 │     (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.length)
      │                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
      │
   help: let the caller pass the buffer or allocator in, and borrow or allocate from that
 
 error BYN3003: cannot return a borrow of `local`, which is freed when `scratch` returns
 
-  19 │         return local.asSpan();
+  19 │         return local.asSpan()
      │                ^^^^^^^^^^^^^^
      │
   help: let the caller pass the buffer or allocator in, and borrow or allocate from that
 
 error BYN3004: `lexer` is modified while `all` still borrows it
 
-  26 │     lexer.toks.append(Token { kind: 1 });
+  26 │     lexer.toks.append(Token { kind: 1 })
      │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `all` is used again on line 28
      │
   help: finish using `all` first, or copy what it needs before changing `lexer`
 
 error BYN3004: `lexer` is modified while `all` still borrows it
 
-  27 │     lexer.push(Token { kind: 2 });
+  27 │     lexer.push(Token { kind: 2 })
      │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `all` is used again on line 28
      │
   help: finish using `all` first, or copy what it needs before changing `lexer`
 
 error BYN3004: `lexer` is modified while the `for` loop still borrows it
 
-  30 │         lexer.push(t);
+  30 │         lexer.push(t)
      │         ^^^^^^^^^^^^^ the loop over `lexer` is still running
      │
   help: collect the changes in another list and apply them to `lexer` after the loop
 
 error BYN3002: `inner` does not live as long as `kept`, which borrows it
 
-  35 │         kept = inner.tokens();
+  35 │         kept = inner.tokens()
      │                ^^^^^^^^^^^^^^ `inner` is freed at the end of its block
      │
   help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough
 
 error BYN3001: a struct field cannot hold a borrowed `StrBuf`
 
-  41 │     StrBuf text;
+  41 │     StrBuf text
      │     ^^^^^^
      │
   help: store a `List` copied with `.copy(to: alloc)` instead; storing borrows in structs arrives in
@@ -52,7 +52,7 @@ error BYN3001: a struct field cannot hold a borrowed `StrBuf`
 error BYN3003: cannot return a borrow of the temporary on line 43, which is freed when `view`
 returns
 
-  43 │     string view() => text.finish();
+  43 │     string view() => text.finish()
      │                      ^^^^^^^^^^^^^
      │
   help: let the caller pass the buffer or allocator in, and borrow or allocate from that

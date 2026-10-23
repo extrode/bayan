@@ -1,17 +1,17 @@
 void main() {
-    var text = "";
-    var outer = StrBuf();
+    var text = ""
+    var outer = StrBuf()
     {
-        using let arena = Arena();
+        using let arena = Arena()
         context (allocator: arena) {
-            var sb = StrBuf();
-            sb.append("abc");
-            print(sb.finish());
-            text = sb.finish();
-            outer = StrBuf();
+            var sb = StrBuf()
+            sb.append("abc")
+            print(sb.finish())
+            text = sb.finish()
+            outer = StrBuf()
         }
     }
-    outer.append("ok");
-    text = outer.finish();
-    print(text);
+    outer.append("ok")
+    text = outer.finish()
+    print(text)
 }

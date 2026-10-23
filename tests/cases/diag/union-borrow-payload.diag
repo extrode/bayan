@@ -1,6 +1,6 @@
 error BYN2708: a union payload cannot hold a borrowed `ReadOnlySpan<u8>`
 
-  2 │     bytes(ReadOnlySpan<u8> data),
+  2 │     bytes(ReadOnlySpan<u8> data)
     │                            ^^^^
     │
   help: store a `List` copied with `.copy(to: alloc)` instead

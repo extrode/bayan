@@ -1,18 +1,18 @@
-import money;
-import ledger;
+import money
+import ledger
 
 /// The sample trip: four friends, eight shared expenses, in MYR.
 List<ledger.Expense> sampleTrip() fails money.MoneyError {
-    var trip = List<ledger.Expense>();
-    trip.append(try expense(payer: "alice", amount: "360.00", among: ["alice", "bob", "chen", "dina"]));
-    trip.append(try expense(payer: "bob", amount: "85.50", among: ["alice", "bob", "chen", "dina"]));
-    trip.append(try expense(payer: "chen", amount: "42.75", among: ["alice", "chen", "dina"]));
-    trip.append(try expense(payer: "dina", amount: "36.10", among: ["alice", "bob", "chen", "dina"]));
-    trip.append(try expense(payer: "alice", amount: "48.00", among: ["alice", "bob", "dina"]));
-    trip.append(try expense(payer: "bob", amount: "99.26", among: ["alice", "bob"]));
-    trip.append(try expense(payer: "chen", amount: "65.54", among: ["alice", "chen"]));
-    trip.append(try expense(payer: "dina", amount: "45.44", among: ["alice", "dina"]));
-    return trip;
+    var trip = List<ledger.Expense>()
+    trip.append(try expense(payer: "alice", amount: "360.00", among: ["alice", "bob", "chen", "dina"]))
+    trip.append(try expense(payer: "bob", amount: "85.50", among: ["alice", "bob", "chen", "dina"]))
+    trip.append(try expense(payer: "chen", amount: "42.75", among: ["alice", "chen", "dina"]))
+    trip.append(try expense(payer: "dina", amount: "36.10", among: ["alice", "bob", "chen", "dina"]))
+    trip.append(try expense(payer: "alice", amount: "48.00", among: ["alice", "bob", "dina"]))
+    trip.append(try expense(payer: "bob", amount: "99.26", among: ["alice", "bob"]))
+    trip.append(try expense(payer: "chen", amount: "65.54", among: ["alice", "chen"]))
+    trip.append(try expense(payer: "dina", amount: "45.44", among: ["alice", "dina"]))
+    return trip
 }
 
 ledger.Expense expense(string payer, string amount, move List<string> among) fails money.MoneyError {
@@ -20,17 +20,17 @@ ledger.Expense expense(string payer, string amount, move List<string> among) fai
         payer: payer,
         amount: try money.parseAmount(amount),
         participants: move among,
-    };
+    }
 }
 
 void main() fails money.MoneyError {
-    using var arena = Arena();
+    using var arena = Arena()
     context (allocator: arena) {
-        let trip = try sampleTrip();
-        let owed = ledger.balances(trip);
+        let trip = try sampleTrip()
+        let owed = ledger.balances(trip)
         for t in ledger.settle(owed) {
-            money.Money paid = { cents: t.cents, currency: "MYR" };
-            print($"{t.from} pays {t.to} {paid}");
+            money.Money paid = { cents: t.cents, currency: "MYR" }
+            print($"{t.from} pays {t.to} {paid}")
         }
     }
 }

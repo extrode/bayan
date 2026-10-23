@@ -1,10 +1,10 @@
 interface IMap {
-    T get<T>();
+    T get<T>()
 }
 
 interface ICursor {
-    type Item;
-    Item peek();
+    type Item
+    Item peek()
 }
 
 void lookup(dyn ref IMap m) { }

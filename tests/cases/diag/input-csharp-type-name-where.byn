@@ -1,5 +1,5 @@
-i64 f<T>(T x) where T : int => 1;
+i64 f<T>(T x) where T : int => 1
 
 void main() {
-    print($"{f(1)}");
+    print($"{f(1)}")
 }

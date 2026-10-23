@@ -1,71 +1,76 @@
-enum Suit { clubs, diamonds, hearts, spades }
+enum Suit {
+    clubs
+    diamonds
+    hearts
+    spades
+}
 
 struct Inventory {
-    string owner;
-    Map<string, i64> stock;
+    string owner
+    Map<string, i64> stock
 
     void formatInto(ref StrBuf sb) {
-        sb.append($"Inventory {{ owner: {owner}, stock: {stock} }}");
+        sb.append($"Inventory {{ owner: {owner}, stock: {stock} }}")
     }
 }
 
 void restock(ref Inventory inv, string item, i64 n) {
-    let have = inv.stock.getOr(item, 0);
-    inv.stock[item] = have + n;
+    let have = inv.stock.getOr(item, 0)
+    inv.stock[item] = have + n
 }
 
 // String keys: updates keep the first position, a removed key goes to the end when re-inserted.
-var prices = Map<string, i64>();
-prices["tea"] = 3;
-prices["cake"] = 5;
-prices["jam"] = 2;
-prices["tea"] = 4;
-print($"{prices} count={prices.length}");
-if prices.contains("cake") { print($"cake costs {prices["cake"]}"); }
-print($"scone: {prices.getOr("scone", 0)}");
-print($"has jam: {prices.contains("jam")}, has milk: {prices.contains("milk")}");
-print($"remove cake: {prices.remove("cake")}, again: {prices.remove("cake")}");
-prices["cake"] = 6;
-for e in prices { print($"  {e.key} = {e.value}"); }
+var prices = Map<string, i64>()
+prices["tea"] = 3
+prices["cake"] = 5
+prices["jam"] = 2
+prices["tea"] = 4
+print($"{prices} count={prices.length}")
+if prices.contains("cake") { print($"cake costs {prices["cake"]}") }
+print($"scone: {prices.getOr("scone", 0)}")
+print($"has jam: {prices.contains("jam")}, has milk: {prices.contains("milk")}")
+print($"remove cake: {prices.remove("cake")}, again: {prices.remove("cake")}")
+prices["cake"] = 6
+for e in prices { print($"  {e.key} = {e.value}") }
 
 // Enum keys.
-var counts = Map<Suit, i32>();
-Suit[6] hand = [.spades, .hearts, .spades, .clubs, .spades, .hearts];
-for s in hand { counts[s] = counts.getOr(s, 0) + 1; }
-print($"{counts}");
+var counts = Map<Suit, i32>()
+Suit[6] hand = [.spades, .hearts, .spades, .clubs, .spades, .hearts]
+for s in hand { counts[s] = counts.getOr(s, 0) + 1 }
+print($"{counts}")
 
 // Integer, char and bool keys.
-var squares = Map<i64, i64>();
-for i in 0..5 { squares[i * i] = i; }
-print($"{squares}");
-var letters = Map<char, bool>();
-for c in "banana" { letters[c] = true; }
-print($"{letters}");
-var answers = Map<bool, string>();
-answers[true] = "yes";
-answers[false] = "no";
-print($"{answers[true]} {answers[false]}");
+var squares = Map<i64, i64>()
+for i in 0..5 { squares[i * i] = i }
+print($"{squares}")
+var letters = Map<char, bool>()
+for c in "banana" { letters[c] = true }
+print($"{letters}")
+var answers = Map<bool, string>()
+answers[true] = "yes"
+answers[false] = "no"
+print($"{answers[true]} {answers[false]}")
 
 // A map in a struct field.
-var inv = Inventory { owner: "ada", stock: Map<string, i64>() };
-restock(ref inv, "bolts", 10);
-restock(ref inv, "nuts", 4);
-restock(ref inv, "bolts", 5);
-print($"{inv}");
+var inv = Inventory { owner: "ada", stock: Map<string, i64>() }
+restock(ref inv, "bolts", 10)
+restock(ref inv, "nuts", 4)
+restock(ref inv, "bolts", 5)
+print($"{inv}")
 
 // Inside a `using` arena.
 {
-    using var arena = Arena();
+    using var arena = Arena()
     context (allocator: arena) {
-        var seen = Map<i64, i64>();
-        for i in 0..1000 { seen[i % 7] = i; }
-        i64 total = 0;
-        for e in seen { total += e.value; }
-        print($"arena map: {seen.length} keys, total {total}");
+        var seen = Map<i64, i64>()
+        for i in 0..1000 { seen[i % 7] = i }
+        i64 total = 0
+        for e in seen { total += e.value }
+        print($"arena map: {seen.length} keys, total {total}")
     }
 }
 
-prices.clear();
-print($"cleared: {prices} count={prices.length}");
-prices["bread"] = 1;
-print($"{prices}");
+prices.clear()
+print($"cleared: {prices} count={prices.length}")
+prices["bread"] = 1
+print($"{prices}")

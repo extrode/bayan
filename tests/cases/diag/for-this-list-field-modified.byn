@@ -1,20 +1,20 @@
 struct S {
-    i64 n;
+    i64 n
 }
 
 struct B {
-    List<S> items;
+    List<S> items
 
     // A loop over a field's list holds a loan on it, like a loop over a local list.
     void run(ref this) {
         for x in items {
-            items.append(S { n: x.n });
+            items.append(S { n: x.n })
         }
     }
 }
 
 void main() {
-    var b = B { items: List<S>() };
-    b.items.append(S { n: 1 });
-    b.run();
+    var b = B { items: List<S>() }
+    b.items.append(S { n: 1 })
+    b.run()
 }

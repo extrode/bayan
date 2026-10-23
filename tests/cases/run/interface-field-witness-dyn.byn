@@ -1,17 +1,17 @@
 // A field standing for a getter is read through `dyn ref` and through a constraint.
 interface INamed {
-    string name { get; }
-    string greet() => $"hi {name}";
+    string name { get }
+    string greet() => $"hi {name}"
 }
 
 struct Person : INamed {
-    string name;
+    string name
 }
 
-string viaDyn(dyn ref readonly INamed n) => $"{n.name} / {n.greet()}";
+string viaDyn(dyn ref readonly INamed n) => $"{n.name} / {n.greet()}"
 
-string viaConstraint<T>(T n) where T : INamed => $"{n.name} / {n.greet()}";
+string viaConstraint<T>(T n) where T : INamed => $"{n.name} / {n.greet()}"
 
-let p = Person { name: "ann" };
-print(viaDyn(p));
-print(viaConstraint(p));
+let p = Person { name: "ann" }
+print(viaDyn(p))
+print(viaConstraint(p))

@@ -1,15 +1,15 @@
 // `take()` writes its receiver, so the place must be writable (as for `clear()`).
 struct Bag {
-    List<i64> items;
+    List<i64> items
 }
 
 void read(List<i64> plain, Bag bag, ReadOnlySpan<List<i64>> view) {
-    let a = plain.take();
-    let b = bag.items.take();
-    let c = view[0].take();
+    let a = plain.take()
+    let b = bag.items.take()
+    let c = view[0].take()
 }
 
 void main() {
-    let items = List<i64>();
-    let d = items.take();
+    let items = List<i64>()
+    let d = items.take()
 }

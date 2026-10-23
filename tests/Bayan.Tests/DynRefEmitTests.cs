@@ -28,28 +28,28 @@ public sealed class DynRefEmitTests
     {
         var code = Emit(SourceText.FromString(Path.Combine(Golden.CasesRoot, "run", "main.byn"), """
             interface IShape {
-                i64 area();
+                i64 area()
             }
 
             struct Circle : IShape {
-                i64 r;
+                i64 r
 
-                i64 area() => 3 * r * r;
+                i64 area() => 3 * r * r
             }
 
             struct Square : IShape {
-                i64 side;
+                i64 side
 
-                i64 area() => side * side;
+                i64 area() => side * side
             }
 
-            void show(dyn ref readonly IShape s) => print($"{s.area()}");
+            void show(dyn ref readonly IShape s) => print($"{s.area()}")
 
             void main() {
-                let c = Circle { r: 1 };
-                let s = Square { side: 2 };
-                show(c);
-                print($"{s.area()}");
+                let c = Circle { r: 1 }
+                let s = Square { side: 2 }
+                show(c)
+                print($"{s.area()}")
             }
             """));
         Assert.Contains("bynh_vtab_main__Circle_main__IShape", code);

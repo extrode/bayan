@@ -37,28 +37,28 @@ internal static class OwnershipGenerator
         error enum E { bad, }
         void step() fails E { }
         void consume(move List<i64> xs) {
-            print($"{xs.length}");
+            print($"{xs.length}")
         }
         void peek(List<i64> xs) {
-            print($"{xs.length}");
+            print($"{xs.length}")
         }
         void bump(ref List<i64> xs) {
-            xs.append(1);
+            xs.append(1)
         }
         List<i64> fresh(i64 n) {
-            var xs = List<i64>();
-            xs.append(n);
-            return move xs;
+            var xs = List<i64>()
+            xs.append(n)
+            return move xs
         }
         List<i64> pass(move List<i64> xs) {
-            return move xs;
+            return move xs
         }
         struct Ledger {
-            List<i64> items;
+            List<i64> items
         }
         union Slot {
-            empty,
-            full(List<i64> items),
+            empty
+            full(List<i64> items)
         }
 
         """;
@@ -109,8 +109,8 @@ internal static class OwnershipGenerator
                 _next = 0;
                 _sb.Append($"void g{k}() {{\n");
                 _indent = 1;
-                Line("using let arena = Arena();");
-                Line($"var t = {k};");
+                Line("using let arena = Arena()");
+                Line($"var t = {k}");
                 for (var i = 0; i < size; i++)
                 {
                     if (k * size + i == probe) Probe();
@@ -119,7 +119,7 @@ internal static class OwnershipGenerator
                 _sb.Append("}\n\n");
             }
             _sb.Append("void main() {\n");
-            for (var k = 0; k < size; k++) _sb.Append($"    g{k}();\n");
+            for (var k = 0; k < size; k++) _sb.Append($"    g{k}()\n");
             _sb.Append("}\n");
             return _sb.ToString();
         }
@@ -156,15 +156,15 @@ internal static class OwnershipGenerator
         private void Probe()
         {
             var a = Name();
-            Line($"let {a} = {Fresh()};");
+            Line($"let {a} = {Fresh()}");
             if (Chance(50))
             {
-                Line($"consume(move {a});");
-                Line($"peek({a});");
+                Line($"consume(move {a})");
+                Line($"peek({a})");
             }
             else
             {
-                Line($"let {Name()} = {a};");
+                Line($"let {Name()} = {a}");
             }
         }
 
@@ -193,7 +193,7 @@ internal static class OwnershipGenerator
                 case 11: return Read();
                 default:
                     if (!Chance(25)) return false;
-                    Line("if t > 1000 { return; }");
+                    Line("if t > 1000 { return }");
                     return true;
             }
         }
@@ -205,16 +205,16 @@ internal static class OwnershipGenerator
             switch (kind)
             {
                 case Kind.Opt:
-                    Line($"List<i64>? {Declare(kind, true).Name} = {Fresh()};");
+                    Line($"List<i64>? {Declare(kind, true).Name} = {Fresh()}");
                     break;
                 case Kind.Nest:
                     var n = Declare(kind, true);
-                    Line($"var {n.Name} = List<List<i64>>();");
-                    Line($"{n.Name}.append({Fresh()});");
+                    Line($"var {n.Name} = List<List<i64>>()");
+                    Line($"{n.Name}.append({Fresh()})");
                     break;
                 default:
                     var v = Declare(kind, mutable);
-                    Line($"{(mutable ? "var" : "let")} {v.Name} = {Constructor(kind)};");
+                    Line($"{(mutable ? "var" : "let")} {v.Name} = {Constructor(kind)}");
                     break;
             }
         }
@@ -224,14 +224,14 @@ internal static class OwnershipGenerator
             if (Pick(Movable) is not { } x) return false;
             x.Moved = true;
             var y = Declare(x.Kind, true);
-            Line(x.Kind == Kind.Opt ? $"List<i64>? {y.Name} = move {x.Name};" : $"var {y.Name} = move {x.Name};");
+            Line(x.Kind == Kind.Opt ? $"List<i64>? {y.Name} = move {x.Name}" : $"var {y.Name} = move {x.Name}");
             return true;
         }
 
         private bool Copy()
         {
             if (Pick(v => !v.Moved && v.Kind == Kind.List) is not { } x) return false;
-            Line($"let {Declare(Kind.List, false).Name} = {x.Name}.copy(to: arena);");
+            Line($"let {Declare(Kind.List, false).Name} = {x.Name}.copy(to: arena)");
             return true;
         }
 
@@ -244,7 +244,7 @@ internal static class OwnershipGenerator
                 Kind.Nest => x.Name + "[0]",
                 _ => x.Name,
             };
-            Line($"let {Declare(x.Kind == Kind.Opt ? Kind.Opt : Kind.List, false).Name} = {place}.take();");
+            Line($"let {Declare(x.Kind == Kind.Opt ? Kind.Opt : Kind.List, false).Name} = {place}.take()");
             return true;
         }
 
@@ -255,17 +255,17 @@ internal static class OwnershipGenerator
             {
                 case 0 when Movable(x):
                     x.Moved = true;
-                    Line($"consume(move {x.Name});");
+                    Line($"consume(move {x.Name})");
                     break;
                 case 1 when Movable(x):
                     x.Moved = true;
-                    Line($"var {Declare(Kind.List, true).Name} = pass(move {x.Name});");
+                    Line($"var {Declare(Kind.List, true).Name} = pass(move {x.Name})");
                     break;
                 case 2 when x.Mutable:
-                    Line($"bump(ref {x.Name});");
+                    Line($"bump(ref {x.Name})");
                     break;
                 default:
-                    Line($"peek({x.Name});");
+                    Line($"peek({x.Name})");
                     break;
             }
             return true;
@@ -277,13 +277,13 @@ internal static class OwnershipGenerator
             var b = Name();
             if (x.Kind == Kind.Nest)
             {
-                Line($"for {b} in {x.Name} {{ print($\"{{{b}.length}}\"); }}");
+                Line($"for {b} in {x.Name} {{ print($\"{{{b}.length}}\") }}");
                 return true;
             }
             Line("{");
             _indent++;
-            Line($"let {b} = {x.Name}.asSpan();");
-            Line($"print($\"{{{b}.length}}\");");
+            Line($"let {b} = {x.Name}.asSpan()");
+            Line($"print($\"{{{b}.length}}\")");
             _indent--;
             Line("}");
             return true;
@@ -301,12 +301,12 @@ internal static class OwnershipGenerator
             }
             else
             {
-                Line($"var {i} = 0;");
+                Line($"var {i} = 0");
                 Line($"while {i} < {Int(3) + 1} {{");
             }
             _indent++;
             _loopDepth++;
-            Line("t += 1;");
+            Line("t += 1");
             Body(depth + 1);
             // Whatever the body moved from outside is reassigned before the next iteration.
             for (var k = 0; k < outer; k++)
@@ -318,7 +318,7 @@ internal static class OwnershipGenerator
                 }
                 v.Moved |= before[k];
             }
-            if (!isFor) Line($"{i} += 1;");
+            if (!isFor) Line($"{i} += 1");
             _vars.RemoveRange(outer, _vars.Count - outer);
             _loopDepth--;
             _indent--;
@@ -384,12 +384,12 @@ internal static class OwnershipGenerator
                 // A guard that may fail: the next arm binds the same storage.
                 var big = Name();
                 Line($"    case .full(let {big}) when {big}.length > {Int(3)}:");
-                Line($"        consume(move {big});");
+                Line($"        consume(move {big})");
             }
             Line($"    case .full(let {items}):");
-            Line($"        consume(move {items});");
+            Line($"        consume(move {items})");
             Line("    default:");
-            Line("        print(\"empty\");");
+            Line("        print(\"empty\")");
             Line("}");
             return true;
         }
@@ -403,8 +403,8 @@ internal static class OwnershipGenerator
 
         private void Assign(Var v)
         {
-            Line($"{v.Name} = {Constructor(v.Kind)};");
-            if (v.Kind == Kind.Nest) Line($"{v.Name}.append({Fresh()});");
+            Line($"{v.Name} = {Constructor(v.Kind)}");
+            if (v.Kind == Kind.Nest) Line($"{v.Name}.append({Fresh()})");
             v.Moved = false;
         }
 
@@ -414,22 +414,22 @@ internal static class OwnershipGenerator
             switch (x.Kind)
             {
                 case Kind.List when x.Mutable && Chance(40):
-                    Line($"{x.Name}.append({Int(10)});");
+                    Line($"{x.Name}.append({Int(10)})");
                     break;
                 case Kind.List:
-                    Line($"print($\"{{{x.Name}.length}}\");");
+                    Line($"print($\"{{{x.Name}.length}}\")");
                     break;
                 case Kind.Ledger:
-                    Line($"print($\"{{{x.Name}.items.length}}\");");
+                    Line($"print($\"{{{x.Name}.items.length}}\")");
                     break;
                 case Kind.Slot:
-                    Line($"print($\"{{{x.Name} is .empty}}\");");
+                    Line($"print($\"{{{x.Name} is .empty}}\")");
                     break;
                 case Kind.Opt:
-                    Line($"print($\"{{{x.Name} is null}}\");");
+                    Line($"print($\"{{{x.Name} is null}}\")");
                     break;
                 default:
-                    Line($"print($\"{{{x.Name}.length}} {{{x.Name}[0].length}}\");");
+                    Line($"print($\"{{{x.Name}.length}} {{{x.Name}[0].length}}\")");
                     break;
             }
             return true;

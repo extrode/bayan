@@ -1,9 +1,9 @@
 warning BYN2405: unreachable code
 
-  3 │     print("done");
+  3 │     print("done")
     │     ^^^^^^^^^^^^^
 
 warning BYN2405: unreachable code
 
-  8 │ print("after");
+  8 │ print("after")
     │ ^^^^^^^^^^^^^^

@@ -27,9 +27,9 @@ error BYN1017: parentheses around a condition are an input form
 
 error BYN1017: parentheses around a condition are an input form
 
-  15 │     } while (x < 4);
+  15 │     } while (x < 4)
      │             ^^^^^^^ not needed
      │
   help: remove the parentheses
-     │ 15 │     } while x < 4;
+     │ 15 │     } while x < 4
      │    │             +++++
