@@ -397,10 +397,10 @@ public sealed record ParenExpr(TextSpan Span, Expr Inner) : Expr(Span);
 /// <summary><c>stackalloc T[n]</c>.</summary>
 public sealed record StackallocExpr(TextSpan Span, TypeSyntax Element, Expr Count) : Expr(Span);
 
-/// <summary>Placeholder after a parse error.</summary>
 /// <summary><c>pattern T { … }</c>, a named pattern's value; valid only after <c>=</c> in a <c>const</c> (BYN1046).</summary>
 public sealed record PatternExpr(TextSpan Span, Pattern Pattern) : Expr(Span);
 
+/// <summary>Placeholder after a parse error.</summary>
 public sealed record ErrorExpr(TextSpan Span) : Expr(Span);
 
 // ── Patterns ─────────────────────────────────────────────────────────────────────

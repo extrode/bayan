@@ -179,3 +179,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51b2b: test parameters already parsed type-first with `[Cases]` binding (round 2); 5.1b added no code for them beyond the BYN1043 input form from part 1.
 - r3-51b2b: J46 "no `uses`" rule for computed properties (expression or block body) waits for `uses` (5.1d).
 - r3-51b2b: `const x: T = pattern …` (a typed pattern const) parses; no pattern type exists to check `T` against.
+- r3-51b2b gate: `suq/orders/order.byn:32` and `suq/storefront/catalog.byn:29` write `public const x = pattern …`, which is BYN1001 (`public` then `const`); fix the paper app or the grammar.
+- r3-51b2b gate: `ref this is .s` after other parameters (already BYN2117) leaves `is .s` unconsumed and adds a second parse error.
