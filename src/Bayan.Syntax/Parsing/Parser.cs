@@ -118,7 +118,7 @@ public sealed class Parser
         DiagnosticCodes.SemicolonInput, DiagnosticCodes.ElseOnNewLine, DiagnosticCodes.OnNewLine, DiagnosticCodes.PostfixOnNewLine,
         DiagnosticCodes.OneLineDeclarations, DiagnosticCodes.MissingLineBreak, DiagnosticCodes.TypeNameOrder,
         DiagnosticCodes.BracketAttribute, DiagnosticCodes.CharInput, DiagnosticCodes.RequiresValue,
-        DiagnosticCodes.MissingBecause,
+        DiagnosticCodes.MissingBecause, DiagnosticCodes.ExceptInCase, DiagnosticCodes.NoallocRemoved, DiagnosticCodes.ContextBlockInput,
     ];
 
     private Diagnostic? Report(DiagnosticDescriptor descriptor, TextSpan span, object?[]? args = null,
@@ -225,7 +225,8 @@ public sealed class Parser
 
     /// <summary>A token that joins the line it starts to the line before (waṣl).</summary>
     private bool IsWasl(int index) => KindAt(index) is TokenKind.Dot or TokenKind.QuestionDot or TokenKind.QuestionQuestion
-        or TokenKind.AmpAmp or TokenKind.BarBar or TokenKind.AndKeyword or TokenKind.OrKeyword or TokenKind.CatchKeyword;
+        or TokenKind.AmpAmp or TokenKind.BarBar or TokenKind.AndKeyword or TokenKind.OrKeyword or TokenKind.CatchKeyword
+        or TokenKind.ExceptKeyword;
 
     /// <summary>Whether the line before token <paramref name="index"/> ends in an operator, <c>,</c>, <c>=</c>, <c>=&gt;</c> or an opening bracket (lā), or the token is waṣl.</summary>
     private bool LineContinues(int index) => IsWasl(index) || index > 0 && KindAt(index - 1) is
@@ -269,7 +270,7 @@ public sealed class Parser
         TokenKind.UnlessKeyword or TokenKind.WhileKeyword or TokenKind.DoKeyword or TokenKind.ForKeyword or
         TokenKind.ForeachKeyword or TokenKind.SwitchKeyword or TokenKind.ReturnKeyword or TokenKind.BreakKeyword or
         TokenKind.ContinueKeyword or TokenKind.DeferKeyword or TokenKind.ErrdeferKeyword or TokenKind.UsingKeyword or
-        TokenKind.ContextKeyword or TokenKind.StructKeyword or TokenKind.PublicKeyword or TokenKind.PrivateKeyword or
+        TokenKind.ContextKeyword or TokenKind.ProvideKeyword or TokenKind.BecomeKeyword or TokenKind.StructKeyword or TokenKind.PublicKeyword or TokenKind.PrivateKeyword or
         TokenKind.ImportKeyword or TokenKind.ErrorKeyword or TokenKind.TestKeyword or TokenKind.TypeKeyword or
         TokenKind.StaticKeyword or TokenKind.ReadonlyKeyword or TokenKind.RequiredKeyword or TokenKind.UniqueKeyword or
         TokenKind.ExternKeyword or TokenKind.UnsafeKeyword or TokenKind.UnionKeyword or TokenKind.DistinctKeyword;
@@ -917,6 +918,14 @@ public sealed class Parser
         var parameters = ParseParams(out var refThis, out var receiverState);
         var paramsEnd = _prevEnd;
         returnType ??= ParseNameFirstReturn(name, paramsEnd);
+        ReportRemovedEffects();
+        Name? becomes = null;
+        if (AtContextual("becomes") && Peek(1) == TokenKind.Dot)
+        {
+            Advance();
+            Advance();
+            becomes = ExpectName("a state name");
+        }
         FailsClause? fails = null;
         if (Kind == TokenKind.FailsKeyword)
         {
@@ -941,6 +950,15 @@ public sealed class Parser
                 fix: !plain ? null : new Fix(TextSpan.FromBounds(typeEnd, _prevEnd), " " + _source.GetText(TextSpan.FromBounds(name.Span.Start, paramsEnd)) + " fails " + errors));
             fails = new FailsClause(fails?.Span ?? TextSpan.FromBounds(bang.Start, shorthandEnd), all);
         }
+        UsesClause? uses = null;
+        if (Kind == TokenKind.UsesKeyword)
+        {
+            var usesStart = Advance().Start;
+            var effects = new List<Name> { ExpectName("an effect name") };
+            while (Accept(TokenKind.Comma)) effects.Add(ExpectName("an effect name"));
+            uses = new UsesClause(SpanFrom(usesStart), effects.ToArray());
+        }
+        ReportRemovedEffects();
         var where = ParseWhere();
         var requires = new List<Expr>();
         while (Accept(TokenKind.RequiresKeyword)) requires.Add(ParseBareCondition());
@@ -966,8 +984,41 @@ public sealed class Parser
         return new FunctionDecl(SpanFrom(start), modifiers, returnType, name, parameters, fails, body, expressionBody)
         {
             TypeParams = typeParams, RefThis = refThis, ReceiverState = receiverState, ParamsStart = paramsStart,
-            Requires = requires.ToArray(), Where = where,
+            Requires = requires.ToArray(), Where = where, Becomes = becomes, Uses = uses,
         };
+    }
+
+    private static readonly HashSet<string> Particles = ["from", "to", "until", "through", "at", "by", "for", "as"];
+
+    /// <summary>
+    /// The particle that leads a parameter (<c>to ref Span&lt;u8&gt; dst</c>): <c>for</c>, <c>as</c>, or a word followed by a
+    /// passing mode or by a type and a name. A word that is not a particle is BYN5008.
+    /// </summary>
+    private Name? ParseParticle()
+    {
+        if (Kind is not (TokenKind.ForKeyword or TokenKind.AsKeyword))
+        {
+            if (Kind != TokenKind.Identifier) return null;
+            if (Peek(1) is not (TokenKind.RefKeyword or TokenKind.MoveKeyword or TokenKind.OutKeyword or TokenKind.InKeyword)
+                && !IsTypeThenName(_pos + 1)) return null;
+        }
+        var word = NameOf(Advance());
+        if (Particles.Contains(word.Text)) return word;
+        Report(DiagnosticCodes.UnknownParticle, word.Span, [word.Text], label: "not a particle",
+            help: "choose one of `from`, `to`, `until`, `through`, `at`, `by`, `for`, `as`");
+        return null;
+    }
+
+    /// <summary>The removed effect words <c>noalloc</c>, <c>nosuspend</c> and <c>suspends</c> after a signature (BYN6001); the fix deletes each.</summary>
+    private void ReportRemovedEffects()
+    {
+        while (Kind is TokenKind.NoallocKeyword or TokenKind.NosuspendKeyword or TokenKind.SuspendsKeyword)
+        {
+            var word = Advance();
+            var text = Text(word);
+            Report(DiagnosticCodes.NoallocRemoved, word.Span, [text], label: "removed", help: $"remove `{text}`",
+                fix: new Fix(TextSpan.FromBounds(_tokens[_pos - 2].End, word.End), ""));
+        }
     }
 
     /// <summary>
@@ -1029,6 +1080,7 @@ public sealed class Parser
                     receiverState = ParseReceiverState();
                     continue;
                 }
+                var particle = ParseParticle();
                 var modifier = Kind switch
                 {
                     TokenKind.RefKeyword => ParamModifier.Ref,
@@ -1048,7 +1100,7 @@ public sealed class Parser
                 }
                 Expr? defaultValue = null;
                 if (Accept(TokenKind.Equals)) defaultValue = ParseExpression();
-                list.Add(new Param(SpanFrom(start), modifier, type, name, defaultValue));
+                list.Add(new Param(SpanFrom(start), modifier, type, name, defaultValue) { Particle = particle });
             } while (Accept(TokenKind.Comma));
         }
         Expect(TokenKind.CloseParen);
@@ -1109,7 +1161,7 @@ public sealed class Parser
             members.Add(ParseType());
         }
         var except = new List<Name>();
-        if (AtContextual("except"))
+        if (Kind == TokenKind.ExceptKeyword)
         {
             Advance();
             Expect(TokenKind.Dot);
@@ -1583,7 +1635,17 @@ public sealed class Parser
             case TokenKind.ErrdeferKeyword:
                 return ParseDefer(start);
             case TokenKind.ContextKeyword:
+            case TokenKind.ProvideKeyword:
                 return ParseContext(start);
+            case TokenKind.BecomeKeyword:
+                {
+                    Advance();
+                    Expect(TokenKind.Dot);
+                    var state = ExpectName("a state name");
+                    var args = Kind == TokenKind.OpenParen && !Current.HasNewlineBefore ? ParseArguments() : [];
+                    ExpectEnd();
+                    return new BecomeStmt(SpanFrom(start), state, args);
+                }
             case TokenKind.GotoKeyword:
                 return ParseGoto(start);
             case TokenKind.AssertKeyword:
@@ -2188,7 +2250,7 @@ public sealed class Parser
             return new SwitchLabel(SpanFrom(start), null, null);
         }
         Advance();
-        var pattern = ParsePattern();
+        var pattern = ParseArmPattern("case ");
         Expr? guard = null;
         if (AtContextual("when"))
         {
@@ -2197,6 +2259,30 @@ public sealed class Parser
         }
         Expect(TokenKind.Colon);
         return new SwitchLabel(SpanFrom(start), pattern, guard);
+    }
+
+    /// <summary>
+    /// The pattern of a <c>case</c> or a switch arm. <c>except</c> is not allowed there (BYN1051); <c>_ except p</c> is
+    /// fixed to <c>not p</c>, and any other left side parses as <c>left and not p</c>.
+    /// </summary>
+    private Pattern ParseArmPattern(string head)
+    {
+        var start = Current.Start;
+        var pattern = ParsePattern();
+        if (Kind != TokenKind.ExceptKeyword) return pattern;
+        var keyword = Advance();
+        var excluded = ParsePattern();
+        var excludedText = _source.GetText(excluded.Span);
+        var not = new NotPattern(excluded.Span, excluded);
+        var help = $"write the arm as `{head}not {excludedText}`";
+        if (pattern is DiscardPattern)
+        {
+            Report(DiagnosticCodes.ExceptInCase, keyword.Span, label: "not allowed here", help: help,
+                fix: new Fix(SpanFrom(start), $"not {excludedText}"));
+            return not;
+        }
+        Report(DiagnosticCodes.ExceptInCase, keyword.Span, label: "not allowed here", help: help);
+        return new BinaryPattern(SpanFrom(start), true, pattern, not);
     }
 
     /// <summary><c>defer</c>, <c>defer failing</c>, <c>defer panicking</c> (contextual words right after <c>defer</c>) or <c>errdefer</c>, each kind but the first with an optional <c>(name)</c>.</summary>
@@ -2237,23 +2323,33 @@ public sealed class Parser
 
     private bool AtContextual(string word) => Kind == TokenKind.Identifier && Text(Current) == word;
 
+    /// <summary><c>provide allocator: a { … }</c>, or the input form <c>context (allocator: a) { … }</c> (BYN6006).</summary>
     private Stmt ParseContext(int start)
     {
-        Advance();
-        Expect(TokenKind.OpenParen);
+        var keyword = Advance();
+        var parenthesized = keyword.Kind == TokenKind.ContextKeyword;
+        if (parenthesized) Expect(TokenKind.OpenParen);
         var values = new List<NamedArg>();
-        if (Kind != TokenKind.CloseParen)
+        if (!parenthesized || Kind != TokenKind.CloseParen)
         {
             do
             {
                 var argStart = Current.Start;
                 var name = ExpectName("a context name such as `allocator`");
                 Expect(TokenKind.Colon);
-                var value = ParseExpression();
+                // Without parentheses the block follows the value, so `a { … }` is not a struct literal.
+                var value = parenthesized ? ParseExpression() : ParseBareCondition();
                 values.Add(new NamedArg(SpanFrom(argStart), name, value));
             } while (Accept(TokenKind.Comma));
         }
-        Expect(TokenKind.CloseParen);
+        if (parenthesized)
+        {
+            Expect(TokenKind.CloseParen);
+            var text = values.Count == 0 ? "…" : _source.GetText(TextSpan.FromBounds(values[0].Span.Start, values[^1].Span.End));
+            Report(DiagnosticCodes.ContextBlockInput, keyword.Span, label: "the input form",
+                help: $"write `provide {text} {{ }}` without the parentheses",
+                fix: values.Count == 0 ? null : new Fix(TextSpan.FromBounds(keyword.Start, _prevEnd), $"provide {text}"));
+        }
         var body = ParseBlock();
         return new ContextStmt(SpanFrom(start), values.ToArray(), body);
     }
@@ -2551,7 +2647,12 @@ public sealed class Parser
         {
             left = ParseUnary();
         }
+        return ParseBinaryRest(start, left, minPrec);
+    }
 
+    /// <summary>The operators after <paramref name="left"/>, which started at <paramref name="start"/>.</summary>
+    private Expr ParseBinaryRest(int start, Expr left, Prec minPrec)
+    {
         while (true)
         {
             if (StopsHere) return left;
@@ -2560,6 +2661,12 @@ public sealed class Parser
                 Advance();
                 var pattern = ParsePattern();
                 left = new IsExpr(SpanFrom(start), left, pattern);
+                continue;
+            }
+            if (Kind == TokenKind.ExceptKeyword && minPrec <= Prec.Relational)
+            {
+                Advance();
+                left = new ExceptExpr(SpanFrom(start), left, ParseExceptPattern());
                 continue;
             }
             if (Kind == TokenKind.InKeyword && minPrec <= Prec.Relational)
@@ -2592,6 +2699,20 @@ public sealed class Parser
             var right = op == BinaryOp.Coalesce ? ParseBinary(prec) : ParseBinary(prec + 1);
             left = new BinaryExpr(SpanFrom(start), op, left, right);
         }
+    }
+
+    /// <summary>
+    /// The pattern after <c>except</c>. A constant followed by a comparison or logical operator is a condition (BYN1052);
+    /// the whole condition is parsed so the statement still ends where it should.
+    /// </summary>
+    private Pattern ParseExceptPattern()
+    {
+        var pattern = ParsePattern();
+        if (pattern is not ConstantPattern constant || StopsHere) return pattern;
+        if (BinaryOperator().Prec is Prec.None or Prec.Coalesce && Kind is not (TokenKind.IsKeyword or TokenKind.InKeyword)) return pattern;
+        var condition = ParseBinaryRest(constant.Span.Start, constant.Value, Prec.LogicalOr);
+        Report(DiagnosticCodes.ExceptNotPattern, condition.Span, label: "a condition", help: "use `where` for a condition");
+        return new ConstantPattern(condition.Span, condition);
     }
 
     private bool CanStartRangeEnd() =>
@@ -2745,7 +2866,7 @@ public sealed class Parser
         {
             var armStart = Current.Start;
             var before = _pos;
-            var pattern = ParsePattern();
+            var pattern = ParseArmPattern("");
             Expr? guard = null;
             if (AtContextual("when"))
             {
@@ -2821,7 +2942,8 @@ public sealed class Parser
                 if (Kind == TokenKind.CloseParen) break;
                 var start = Current.Start;
                 Name? name = null;
-                if (IsName(Kind) && Peek(1) == TokenKind.Colon)
+                // `for` and `as` are keywords, but labels in argument position (`for: user`).
+                if ((IsName(Kind) || Kind is TokenKind.ForKeyword or TokenKind.AsKeyword) && Peek(1) == TokenKind.Colon)
                 {
                     name = NameOf(Advance());
                     Advance();

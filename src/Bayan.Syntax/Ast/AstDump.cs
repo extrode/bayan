@@ -69,6 +69,7 @@ public static class AstDump
             {
                 if (i > 0 || receiver.Length > 0) sb.Append(", ");
                 var p = parameters[i];
+                if (p.Particle is not null) sb.Append(p.Particle.Text).Append(' ');
                 if (p.Modifier != ParamModifier.None) sb.Append(p.Modifier.ToString().ToLowerInvariant()).Append(' ');
                 Type(sb, p.Type);
                 sb.Append(' ').Append(p.Name.Text);
@@ -116,8 +117,10 @@ public static class AstDump
                 case FunctionDecl d:
                     {
                         var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params, d.RefThis is not null, d.ReceiverState)} -> {Type(d.ReturnType)}";
+                        if (d.Becomes is not null) head += " becomes ." + d.Becomes.Text;
                         if (d.Fails is not null)
                             head += d.Fails.Errors.Length == 0 ? " fails" : " fails " + string.Join(", ", d.Fails.Errors.Select(Type));
+                        if (d.Uses is not null) head += " uses " + string.Join(", ", d.Uses.Effects.Select(e => e.Text));
                         head += Where(d.Where);
                         foreach (var r in d.Requires) head += " requires " + AstDump.Expr(r);
                         if (d.ExpressionBody is not null) head += " => " + AstDump.Expr(d.ExpressionBody);
@@ -283,8 +286,12 @@ public static class AstDump
                     Line(depth, "Assert " + AstDump.Expr(s.Condition));
                     break;
                 case ContextStmt s:
-                    Line(depth, "Context " + string.Join(", ", s.Values.Select(v => v.Name.Text + ": " + AstDump.Expr(v.Value))));
+                    Line(depth, "Provide " + string.Join(", ", s.Values.Select(v => v.Name.Text + ": " + AstDump.Expr(v.Value))));
                     Stmt(depth + 1, s.Body);
+                    break;
+                case BecomeStmt s:
+                    Line(depth, "Become ." + s.State.Text
+                        + string.Concat(s.Args.Select(a => " " + (a.Name is null ? "" : a.Name.Text + ": ") + AstDump.Expr(a.Value))));
                     break;
                 case EmptyStmt:
                     Line(depth, "Empty");
@@ -585,6 +592,13 @@ public static class AstDump
                     break;
                 case IsExpr e:
                     sb.Append("(is ");
+                    Expr(sb, e.Value);
+                    sb.Append(' ');
+                    Pattern(sb, e.Pattern);
+                    sb.Append(')');
+                    break;
+                case ExceptExpr e:
+                    sb.Append("(except ");
                     Expr(sb, e.Value);
                     sb.Append(' ');
                     Pattern(sb, e.Pattern);

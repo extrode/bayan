@@ -83,6 +83,8 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor BlockComment = Error("BYN1047", "`/* */` is an input form; write `//` lines");
     public static readonly DiagnosticDescriptor CharInput = Error("BYN1048", "`char` is now `rune`");
     public static readonly DiagnosticDescriptor RequiresValue = Error("BYN1050", "`value` in `requires` is now `it`");
+    public static readonly DiagnosticDescriptor ExceptInCase = Error("BYN1051", "`except` is not allowed in a `case` pattern");
+    public static readonly DiagnosticDescriptor ExceptNotPattern = Error("BYN1052", "`except` takes a pattern, not a condition");
     public static readonly DiagnosticDescriptor OneLineDeclarations = Error("BYN1053", "`{0}` declares its cases on one line; write one per line");
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────
@@ -284,8 +286,13 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ParticipleWithoutVerb = Error("BYN5001", "`{0}` is the `-ed` form of `{1}`, which does not exist as a `ref this` member");
     public static readonly DiagnosticDescriptor StateMemberMutates = Error("BYN5002", "`{0}` reads as state but modifies `this`");
     public static readonly DiagnosticDescriptor TryWrongReturn = Error("BYN5003", "`try{0}` must return `{1}?` or `bool`; it is derived from `{2}() fails`");
+    public static readonly DiagnosticDescriptor UnknownParticle = Error("BYN5008", "`{0}` is not a particle");
     public static readonly DiagnosticDescriptor NounOnMutator = Warning("BYN5101", "`{0}` is a noun on a `ref this` member; name the action");
     public static readonly DiagnosticDescriptor BoolWithoutPrefix = Warning("BYN5102", "`{0}` is a `bool` state; prefix with `is`, `has` or `can`");
+
+    // ── Effects 6000–6999 ────────────────────────────────────────────────────────────
+    public static readonly DiagnosticDescriptor NoallocRemoved = Error("BYN6001", "`{0}` is removed; a function without `uses` is already pure");
+    public static readonly DiagnosticDescriptor ContextBlockInput = Error("BYN6006", "`context (…) {{ }}` is now `provide … {{ }}`");
 
     // ── Security 8000–8999 ───────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor MissingBecause = Error("BYN8001", "`{0}` bypasses a safety rule and needs `because \"…\"`");

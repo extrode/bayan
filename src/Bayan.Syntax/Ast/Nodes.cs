@@ -57,10 +57,17 @@ public sealed record GlobalStatement(TextSpan Span, Stmt Statement) : Decl(Span)
 
 public enum ParamModifier { None, Ref, Move, Out, In }
 
-public sealed record Param(TextSpan Span, ParamModifier Modifier, TypeSyntax Type, Name Name, Expr? Default) : Node(Span);
+public sealed record Param(TextSpan Span, ParamModifier Modifier, TypeSyntax Type, Name Name, Expr? Default) : Node(Span)
+{
+    /// <summary>The particle before the parameter (<c>by Carrier carrier</c>), part of the function's name; parsed only, not yet checked.</summary>
+    public Name? Particle { get; init; }
+}
 
 /// <summary><c>fails</c> clause: <see cref="Errors"/> empty means the set is inferred.</summary>
 public sealed record FailsClause(TextSpan Span, TypeSyntax[] Errors) : Node(Span);
+
+/// <summary><c>uses alloc, net</c>: the effects a function declares; parsed only, not yet checked.</summary>
+public sealed record UsesClause(TextSpan Span, Name[] Effects) : Node(Span);
 
 /// <summary>A function or method. Exactly one of <see cref="Body"/> and <see cref="ExpressionBody"/> is set, or neither for a declaration.</summary>
 public sealed record FunctionDecl(
@@ -84,6 +91,11 @@ public sealed record FunctionDecl(
 
     /// <summary>The <c>where T : I</c> clauses after <c>fails</c>.</summary>
     public WhereClause[] Where { get; init; } = [];
+
+    /// <summary>The state of <c>becomes .s</c>, the transition the function performs; parsed only, not yet checked.</summary>
+    public Name? Becomes { get; init; }
+
+    public UsesClause? Uses { get; init; }
 }
 
 /// <summary><c>where T : IA, IB</c>: the interfaces a type parameter must conform to.</summary>
@@ -234,6 +246,9 @@ public sealed record BreakStmt(TextSpan Span, Name? Label) : Stmt(Span);
 
 public sealed record ContinueStmt(TextSpan Span, Name? Label) : Stmt(Span);
 
+/// <summary><c>become .s(…)</c>: the typestate transition a <c>becomes .s</c> function performs; parsed only, not yet bound.</summary>
+public sealed record BecomeStmt(TextSpan Span, Name State, Argument[] Args) : Stmt(Span);
+
 /// <summary>The word after <c>if</c>: <c>if unlikely</c> (a layout hint) or <c>if never</c> (panics when taken).</summary>
 public enum Likelihood { None, Unlikely, Never }
 
@@ -291,7 +306,7 @@ public sealed record AssertStmt(TextSpan Span, Expr Condition) : Stmt(Span);
 
 public sealed record NamedArg(TextSpan Span, Name Name, Expr Value) : Node(Span);
 
-/// <summary><c>context (allocator: a) { … }</c>.</summary>
+/// <summary><c>provide allocator: a { … }</c>; <c>context (allocator: a) { … }</c> is the input form (BYN6006).</summary>
 public sealed record ContextStmt(TextSpan Span, NamedArg[] Values, BlockStmt Body) : Stmt(Span);
 
 public sealed record EmptyStmt(TextSpan Span) : Stmt(Span);
@@ -367,6 +382,9 @@ public sealed record ConditionalExpr(TextSpan Span, Expr Condition, Expr WhenTru
 public sealed record CastExpr(TextSpan Span, TypeSyntax Type, Expr Operand) : Expr(Span);
 
 public sealed record IsExpr(TextSpan Span, Expr Value, Pattern Pattern) : Expr(Span);
+
+/// <summary><c>xs except p</c>: the elements of a sequence that do not match the pattern; parsed only, not yet bound.</summary>
+public sealed record ExceptExpr(TextSpan Span, Expr Value, Pattern Pattern) : Expr(Span);
 
 /// <summary><c>x in a..=b</c>: whether a value lies in a range.</summary>
 public sealed record InExpr(TextSpan Span, Expr Value, Expr Range) : Expr(Span);
