@@ -463,6 +463,7 @@ struct LexResult {
             case '-':
                 fixed(peek(1) switch {
                     '-' => TokenKind.minusMinus,
+                    '>' => TokenKind.arrow,
                     '=' => TokenKind.minusEquals,
                     '%' => TokenKind.minusPercent,
                     '|' => TokenKind.minusBar,

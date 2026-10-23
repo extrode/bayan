@@ -1,4 +1,4 @@
-let names: List<Untrusted<string>> = []
+var names: List<Untrusted<string>> = []
 names.append(Untrusted("ada"))
 names.append(Untrusted("grace"))
 for n in names {

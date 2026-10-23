@@ -231,7 +231,7 @@ public sealed class CliTests
     {
         var path = Program("cli-io-run-version", """
             i32 main(ReadOnlySpan<string> args) fails IoError {
-                string[1] version = ["--version"]
+                let version: string[1] = ["--version"]
                 let r = try Io.run(args[0], version.asSpan())
                 return r.exitCode == 0 && r.stdout.startsWith("bayan ") && r.stderr.isEmpty ? 0 : 1
             }

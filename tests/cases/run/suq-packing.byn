@@ -124,7 +124,7 @@ let mixed: List<PackItem> = [
 ]
 let bed: List<PackItem> = [PackItem { sku: "BED-0001", grams: 15000, aisle: 9, bay: 1 }]
 
-let sample: List<PackItem> = []
+var sample: List<PackItem> = []
 for i in 0..40 {
     sample.append(PackItem { sku: $"ITM-{1000 + i}", grams: 100 + (i * 37) % 900, aisle: (u8)(1 + i % 6), bay: (u16)(i % 20) })
 }

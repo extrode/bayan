@@ -14,8 +14,9 @@
 2:19 QuestionQuestionEquals `??=`
 2:23 QuestionDot `?.`
 2:26 FatArrow `=>`
-2:29 At `@`
-2:31 Hash `#`
+2:29 Arrow `->`
+2:32 At `@`
+2:34 Hash `#`
 3:1 Plus `+`
 3:3 Minus `-`
 3:5 Star `*`

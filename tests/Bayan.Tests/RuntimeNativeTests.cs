@@ -51,7 +51,7 @@ public sealed class RuntimeNativeTests
         File.WriteAllText(script, "@echo off\r\necho \"%~1\"\r\necho \"%~2\"\r\necho \"%~3\"\r\necho \"%~4\"\r\n");
         var program = $$"""
             void main() fails IoError {
-                string[4] args = ["a b", "", "^&|<>()!", "a\\"]
+                let args: string[4] = ["a b", "", "^&|<>()!", "a\\"]
                 let r = try Io.runBatch("{{script.Replace("\\", "\\\\")}}", args.asSpan())
                 print($"exit {r.exitCode}")
                 Io.stdout.write(r.stdout)

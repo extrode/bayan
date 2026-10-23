@@ -42,6 +42,7 @@ enum TokenKind {
     questionQuestionEquals
     questionDot
     fatArrow
+    arrow
     at
     hash
 
@@ -229,6 +230,7 @@ string kindText(TokenKind kind) {
         .questionQuestionEquals => "??=",
         .questionDot => "?.",
         .fatArrow => "=>",
+        .arrow => "->",
         .at => "@",
         .hash => "#",
         .plus => "+",

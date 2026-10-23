@@ -25,10 +25,10 @@ public sealed class FormatTests
     public void AFixIsApplied()
     {
         var file = Path.Combine(Fresh("fix"), "main.byn");
-        File.WriteAllText(file, "let a = true;\nunless !a { print(\"y\"); }\n");
+        File.WriteAllText(file, "let a = true\nunless !a { print(\"y\") }\n");
         var (exit, stdout, stderr) = Run("format", file);
         Assert.True(exit == CliApp.ExitOk, stderr);
-        Assert.Equal("let a = true;\nif a { print(\"y\"); }\n", File.ReadAllText(file));
+        Assert.Equal("let a = true\nif a { print(\"y\") }\n", File.ReadAllText(file));
         Assert.Contains("formatted", stdout);
     }
 
@@ -36,20 +36,37 @@ public sealed class FormatTests
     public void TwoFixesOnOneLineBothApply()
     {
         var file = Path.Combine(Fresh("two"), "main.byn");
-        File.WriteAllText(file, "let a = true;\nlet b = true;\nif (a) { if (b) { print(\"x\"); } }\n");
+        File.WriteAllText(file, "let a = true\nlet b = true\nif (a) { if (b) { print(\"x\") } }\n");
         var (exit, _, stderr) = Run("format", file);
         Assert.True(exit == CliApp.ExitOk, stderr);
-        Assert.Equal("let a = true;\nlet b = true;\nif a { if b { print(\"x\"); } }\n", File.ReadAllText(file));
+        Assert.Equal("let a = true\nlet b = true\nif a { if b { print(\"x\") } }\n", File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void DeclarationsBecomeTypeFirstAndLocalsNameFirst()
+    {
+        var file = Path.Combine(Fresh("order"), "main.byn");
+        File.WriteAllText(file,
+            "struct Box { weight: i64 }\nunion Event { timeout(after: i64) }\n" +
+            "add(a: i64, i64 b) -> i64 { return a + b }\n" +
+            "main() {\n    i64 t = add(1, 2)\n    i64 u = 0\n    u = t\n    const i64 k = 3\n    print($\"{u}{k}\")\n}\n");
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(
+            "struct Box { i64 weight }\nunion Event { timeout(i64 after) }\n" +
+            "i64 add(i64 a, i64 b) { return a + b }\n" +
+            "void main() {\n    let t: i64 = add(1, 2)\n    var u: i64 = 0\n    u = t\n    const k: i64 = 3\n    print($\"{u}{k}\")\n}\n",
+            File.ReadAllText(file));
     }
 
     [Fact]
     public void ASecondRunChangesNothing()
     {
         var file = Path.Combine(Fresh("idempotent"), "main.byn");
-        File.WriteAllText(file, "let a = true;\nif (a) { print(\"x\"); }\n");
+        File.WriteAllText(file, "let a = true\nif (a) { print(\"x\") }\n");
         Run("format", file);
         var once = File.ReadAllText(file);
-        Assert.Equal("let a = true;\nif a { print(\"x\"); }\n", once);
+        Assert.Equal("let a = true\nif a { print(\"x\") }\n", once);
         var (exit, stdout, _) = Run("format", file);
         Assert.Equal(CliApp.ExitOk, exit);
         Assert.Empty(stdout);
@@ -62,14 +79,14 @@ public sealed class FormatTests
         var dir = Fresh("error");
         var broken = Path.Combine(dir, "a.byn");
         var fixable = Path.Combine(dir, "b.byn");
-        var brokenText = "let a = true;\nif (a) { print(\"x\"; }\n";
+        var brokenText = "let a = true\nif (a) { print(\"x\"; }\n";
         File.WriteAllText(broken, brokenText);
-        File.WriteAllText(fixable, "let a = true;\nif (a) { print(\"x\"); }\n");
+        File.WriteAllText(fixable, "let a = true\nif (a) { print(\"x\") }\n");
         var (exit, _, stderr) = Run("format", dir);
         Assert.Equal(CliApp.ExitFailure, exit);
         Assert.Contains("a.byn", stderr);
         Assert.Equal(brokenText, File.ReadAllText(broken));
-        Assert.Equal("let a = true;\nif a { print(\"x\"); }\n", File.ReadAllText(fixable));
+        Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(fixable));
     }
 
     [Fact]
@@ -78,17 +95,17 @@ public sealed class FormatTests
         var dir = Fresh("recursive");
         Directory.CreateDirectory(Path.Combine(dir, "sub", "deep"));
         var file = Path.Combine(dir, "sub", "deep", "main.byn");
-        File.WriteAllText(file, "let a = true;\nif (a) { print(\"x\"); }\n");
+        File.WriteAllText(file, "let a = true\nif (a) { print(\"x\") }\n");
         var (exit, _, stderr) = Run("format", dir);
         Assert.True(exit == CliApp.ExitOk, stderr);
-        Assert.Equal("let a = true;\nif a { print(\"x\"); }\n", File.ReadAllText(file));
+        Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(file));
     }
 
     [Fact]
     public void AnInputFormWithoutAFixIsReported()
     {
         var file = Path.Combine(Fresh("nofix"), "main.byn");
-        var text = "i32!Foo? f() { return 1; }\n";
+        var text = "i32!Foo? f() { return 1 }\n";
         File.WriteAllText(file, text);
         var (exit, _, stderr) = Run("format", file);
         Assert.Equal(CliApp.ExitFailure, exit);
@@ -101,7 +118,7 @@ public sealed class FormatTests
     public void NonConvergenceIsReported()
     {
         var file = Path.Combine(Fresh("passes"), "main.byn");
-        File.WriteAllText(file, "let a = true;\nif (a) { print(\"x\"); }\n");
+        File.WriteAllText(file, "let a = true\nif (a) { print(\"x\") }\n");
         var passes = Format.MaxPasses;
         Format.MaxPasses = 1;
         try
@@ -121,14 +138,14 @@ public sealed class FormatTests
         var locked = Path.Combine(dir, "a.byn");
         var fixable = Path.Combine(dir, "b.byn");
         File.WriteAllText(locked, "let a = true;\n");
-        File.WriteAllText(fixable, "let a = true;\nif (a) { print(\"x\"); }\n");
+        File.WriteAllText(fixable, "let a = true\nif (a) { print(\"x\") }\n");
         File.SetUnixFileMode(locked, UnixFileMode.None);
         try
         {
             var (exit, _, stderr) = Run("format", dir);
             Assert.Equal(CliApp.ExitFailure, exit);
             Assert.Contains("a.byn", stderr);
-            Assert.Equal("let a = true;\nif a { print(\"x\"); }\n", File.ReadAllText(fixable));
+            Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(fixable));
         }
         finally { File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
     }
@@ -137,7 +154,7 @@ public sealed class FormatTests
     public void NoTempFileIsLeftBehind()
     {
         var dir = Fresh("temp");
-        File.WriteAllText(Path.Combine(dir, "main.byn"), "let a = true;\nif (a) { print(\"x\"); }\n");
+        File.WriteAllText(Path.Combine(dir, "main.byn"), "let a = true\nif (a) { print(\"x\") }\n");
         Run("format", dir);
         Assert.Equal(["main.byn"], Directory.GetFiles(dir).Select(Path.GetFileName));
     }

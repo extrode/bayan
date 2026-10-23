@@ -63,7 +63,7 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
             }
             let text = input.value.bytes
             var line = List<u8>()
-            i64 i = 0
+            var i: i64 = 0
             while i < text.length {
                 let c = text[i]
                 if c == 0x0A {

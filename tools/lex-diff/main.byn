@@ -22,7 +22,7 @@ i32 failure(string message) {
 
 /// The words of `cmd`, split on spaces.
 List<string> words(string cmd) {
-    let result: List<string> = List<string>()
+    var result: List<string> = List<string>()
     var start: i64 = 0
     for i in 0..=cmd.length {
         if i == cmd.length || cmd.bytes[i] == 0x20 {
@@ -35,7 +35,7 @@ List<string> words(string cmd) {
 
 /// The lines of `text`, without a final empty line and without the `\r` of a CRLF.
 List<string> lines(string text) {
-    let result: List<string> = List<string>()
+    var result: List<string> = List<string>()
     var start: i64 = 0
     for i in 0..text.length {
         if text.bytes[i] == 0x0A {
@@ -50,7 +50,7 @@ List<string> lines(string text) {
 
 /// Runs `cmd` on `path` and returns its standard output.
 string run(List<string> cmd, string path) fails IoError {
-    let args: List<string> = List<string>()
+    var args: List<string> = List<string>()
     for i in 1..cmd.length { args.append(cmd[i]) }
     args.append(path)
     let r = try Io.run(cmd[0], args.asSpan())

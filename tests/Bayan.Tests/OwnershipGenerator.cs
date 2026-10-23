@@ -205,7 +205,7 @@ internal static class OwnershipGenerator
             switch (kind)
             {
                 case Kind.Opt:
-                    Line($"List<i64>? {Declare(kind, true).Name} = {Fresh()}");
+                    Line($"var {Declare(kind, true).Name}: List<i64>? = {Fresh()}");
                     break;
                 case Kind.Nest:
                     var n = Declare(kind, true);
@@ -224,7 +224,7 @@ internal static class OwnershipGenerator
             if (Pick(Movable) is not { } x) return false;
             x.Moved = true;
             var y = Declare(x.Kind, true);
-            Line(x.Kind == Kind.Opt ? $"List<i64>? {y.Name} = move {x.Name}" : $"var {y.Name} = move {x.Name}");
+            Line(x.Kind == Kind.Opt ? $"var {y.Name}: List<i64>? = move {x.Name}" : $"var {y.Name} = move {x.Name}");
             return true;
         }
 

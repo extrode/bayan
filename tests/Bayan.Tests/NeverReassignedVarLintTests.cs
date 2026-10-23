@@ -59,7 +59,7 @@ public sealed class NeverReassignedVarLintTests
     [InlineData("local assigned", "var v = 1\n    v = 2\n    print($\"{v}\")")]
     [InlineData("local compound-assigned", "var v = 1\n    v += 2\n    print($\"{v}\")")]
     [InlineData("local incremented", "var v = 1\n    v++\n    print($\"{v}\")")]
-    [InlineData("local passed by ref", "var i64 v = 1\n    bump(ref v)\n    print($\"{v}\")")]
+    [InlineData("local passed by ref", "var v: i64 = 1\n    bump(ref v)\n    print($\"{v}\")")]
     [InlineData("local field assigned", "var q = P { x: 1 }\n    q.x = 2\n    print($\"{q.x}\")")]
     [InlineData("local mutating call", "var xs = List<i64>()\n    xs.append(1)\n    print($\"{xs.length}\")")]
     [InlineData("pattern assigned", "if u is .b(var v) {\n        v = 2\n        print($\"{v}\")\n    }")]

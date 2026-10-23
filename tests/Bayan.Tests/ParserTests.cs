@@ -137,6 +137,38 @@ public sealed class ParserTests
     }
 
     [Theory]
+    [InlineData("struct S { w: i64 }\n", "struct S { i64 w }\n")]
+    [InlineData("union E { t(after: i64) }\n", "union E { t(i64 after) }\n")]
+    [InlineData("void f(a: i64) { }\n", "void f(i64 a) { }\n")]
+    [InlineData("f(i64 a) -> i64 => a\n", "i64 f(i64 a) => a\n")]
+    [InlineData("f() { }\n", "void f() { }\n")]
+    [InlineData("interface I { f() -> i64 }\n", "interface I { i64 f() }\n")]
+    [InlineData("i64 x = 1\n", "let x: i64 = 1\n")]
+    [InlineData("i64 x\n", "var x: i64\n")]
+    [InlineData("i64 x = 1\nx += 1\n", "var x: i64 = 1\nx += 1\n")]
+    [InlineData("i64 x = 1\nx++\n", "var x: i64 = 1\nx++\n")]
+    [InlineData("i64 x = 1\nf(ref x)\n", "var x: i64 = 1\nf(ref x)\n")]
+    [InlineData("i64 x = 1\nx.y = 2\n", "var x: i64 = 1\nx.y = 2\n")]
+    [InlineData("i64 x = 1\ny.x = 2\n", "let x: i64 = 1\ny.x = 2\n")]
+    [InlineData("let i64 x = 1\n", "let x: i64 = 1\n")]
+    [InlineData("const i64 x = 1\n", "const x: i64 = 1\n")]
+    public void TypeNameOrderIsAnInputFormWithAFix(string text, string fixedText)
+    {
+        var tree = Parse(text);
+        var diagnostic = Assert.Single(tree.Diagnostics);
+        Assert.Equal("BYN1043", diagnostic.Code);
+        var fix = diagnostic.Fix!;
+        Assert.Equal(fixedText, text[..fix.Span.Start] + fix.Replacement + text[fix.Span.End..]);
+    }
+
+    [Theory]
+    [InlineData("let x: i64 = 1\n")]
+    [InlineData("var x: i64\n")]
+    [InlineData("const x: i64 = 1\n")]
+    [InlineData("i64 f(i64 a) => a\n")]
+    public void NameFirstLocalsAndTypeFirstDeclarationsAreClean(string text) => Assert.Empty(Parse(text).Diagnostics);
+
+    [Theory]
     [InlineData("let a = 1 +\n    2\n")]
     [InlineData("let a = f(1,\n    2)\n")]
     [InlineData("let a = [\n    1,\n    2,\n]\n")]
