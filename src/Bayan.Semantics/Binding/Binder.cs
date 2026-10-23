@@ -723,6 +723,9 @@ internal sealed partial class Binder
             _ => NotIterable(f, iterable.Type),
         };
         element = DeclaredElement(f, element);
+        // A writable `dyn ref` element borrows the array or list slot, so the loop mutates the iterable.
+        if (element is DynRefType { ReadOnly: false } && iterable.Type is ListType or Symbols.ArrayType)
+            CheckWritable(iterable, f.Iterable.Span, $"it is borrowed element by element as `{element.DisplayName}`");
         var variable = DeclareLocal(f.Variable, element, f.Kind == BindingKind.Var ? LocalKind.Var : LocalKind.ForVariable);
         variable.BorrowsSubject = true;
         var body = BindForBody(f, variable, target);
