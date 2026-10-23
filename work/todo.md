@@ -155,7 +155,7 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - A `dyn ref` assigned from anything but a ToDynRef conversion, a tracked local or a `for` variable is assumed to hold borrowable storage, so passing it to a writable `dyn ref` parameter can give a false BYN3004 (006-fixj note).
 - `docs/bayan-handoff.md` Questions: numbers repeat (two 51–56 runs, lines ~463 and ~533); renumber or switch to ids.
 - `bayan format <dir>` recurses into everything (`tmp/`, `out/`, hidden dirs, and `tests/cases` fixtures that use input forms on purpose); decide on exclusions (review of 6c25f34).
-- SPEC §7.6 still shows `using let` and §18 writes pointers after the type (`Sqlite3* db`), against the round-3 HANDOFF (Sūq regen note).
+- SPEC §18 writes pointers after the type (`Sqlite3* db`); whether they go first is open (docs/bayan-handoff.md Question 120).
 - r3-51a: the BYN1053 message says "one line" even when the comma-separated cases span several lines.
 - r3-51a: a line starting with `?`, `:` or `|` is not waṣl, so a ternary or pattern split before its operator ends the statement.
 - r3-51a: a labeled statement as the first line of a `catch { ... }` brace body is ambiguous with a struct-literal field.

@@ -541,6 +541,7 @@ Spec order (numbers are provisional; a spec may split):
 117. **Round 3 step 0b: the FFI wide-string type.** HANDOFF §27 says nul-terminated UTF-16 follows the same form as `cstr` but gives no type name. *Current choice:* SPEC §18 describes the rule without naming a type; `string16` (§3.2) is unchanged.
 118. **Round 3 step 0b: `Handle<T>`.** SPEC §9.6 lists `Pool<T>` + `Handle<T>` as present, while J88 keeps generational handles out of round 3. *Current choice:* §9.6 is kept and gains the typed-index-first rule from HANDOFF §31; handles are added only when the selfhost AST or Sūq shows the need.
 119. **Round 3 step 0b: docs ahead of the compiler.** The `onPanic` and `asSpan()` mentions in `docs/diagnostics/BYN2019`, `BYN2612`, `BYN2613`, `BYN2614`, `BYN2786`, `BYN3004` and `BYN3006` now use `Panic.handler`, `span`, `mutableSpan()` and `copy()`, although the compiler's BYN2614 message still names `Panic.onPanic` and the builtins are renamed only in step 5.4; the rest of those pages keep round-2 syntax. The call forms in historical records are renamed too (`docs/bayan-status-for-suq.md`, `docs/suq-0-goldens-report.md`, `CHANGELOG.md`, `work/todo.md`, `work/status/previous.md`); their code fences stay round 2, as in Q54. *Current choice:* step 5.4 updates the BYN2614 message to match its page.
+120. **Pointer type spelling in type-first declarations.** §18 writes `Sqlite3* db`; the friction log F-37/F-63 suggests prefix `*Sqlite3 db` / `out *Sqlite3 db`. *Current choice:* conservative meanwhile, §18 unchanged.
 
 ## Progress log
 

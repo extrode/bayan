@@ -958,7 +958,7 @@ defer failing tx.rollback()                   // exit by failure
 defer panicking (p) log($"{p}", as: .error)   // panic in progress
 ```
 
-- `using let x = …` disposes at scope end.
+- A `unique` value is cleaned up exactly once when its single owner goes away; there is no `using` for disposal.
 - `defer stmt` runs at scope exit, always.
 - `defer failing stmt` / `defer failing (e) { … }` runs only when the function exits by failing; it is allowed only in functions that `fails`. It also runs on fiber cancellation (not in v0.1: no fibers).
 - `defer panicking stmt` / `defer panicking (p) { … }` runs only while a panic is in progress, and is allowed anywhere.
@@ -1439,7 +1439,7 @@ Libraries never choose an implementation. Blocking work is offloaded automatical
 > Round 2 §14: functions stay colorless; scoped futures and block deadlines give cancellation without plumbing. Codes: BYN1016.
 
 ### 13.3 Structured concurrency
-`using let group = Io.group()`, then `group.spawn(…)` and `try await group.all()`. Futures cannot outlive the scope that started them; leaving the scope cancels children; tasks may borrow the caller's stack.
+`let group = Io.group()`, then `group.spawn(…)` and `try await group.all()`. Futures cannot outlive the scope that started them; leaving the scope cancels children; tasks may borrow the caller's stack.
 
 ### 13.4 Suspension inference
 The compiler infers which functions may suspend (calls through `dyn` are bounded by the function type's `uses` clause). The language server marks such calls with inlay hints (`uses suspend`). Public functions declare `suspend` in their `uses` clause (§14). Errors:
@@ -2128,7 +2128,7 @@ Roadmap: v0.3 WASM + `.d.ts`; v0.4 `bayan gen ts`; post-v1 portable JS backend (
 | Exceptions | `fails` / `Result` / panics |
 | `new T()` | `T()` (`new` accepted, removed by formatter) |
 | `in` parameters | Redundant |
-| `using` (import / dispose / alias) | `import`, `using let`, `import … as` |
+| `using` (import / dispose / alias) | `import`, `import … as` |
 | `goto`, `goto case` | Removed |
 | `IConvertible`, `Convert.ChangeType` | `IFrom` / `ITryFrom`, `convert<T>` |
 | `Substring(i, n)` | `s[i..(i + n)]` (migrated) |
