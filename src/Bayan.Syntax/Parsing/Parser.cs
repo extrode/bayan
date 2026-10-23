@@ -116,7 +116,7 @@ public sealed class Parser
         DiagnosticCodes.UnlessNull, DiagnosticCodes.CatchBinding, DiagnosticCodes.DelegateDecl, DiagnosticCodes.ErrorSetPipe,
         DiagnosticCodes.CSharpTypeName, DiagnosticCodes.FailsShorthand, DiagnosticCodes.NegatedIfToUnless, DiagnosticCodes.UnlessLikelihood,
         DiagnosticCodes.SemicolonInput, DiagnosticCodes.ElseOnNewLine, DiagnosticCodes.OnNewLine, DiagnosticCodes.PostfixOnNewLine,
-        DiagnosticCodes.OneLineDeclarations, DiagnosticCodes.MissingLineBreak,
+        DiagnosticCodes.OneLineDeclarations, DiagnosticCodes.MissingLineBreak, DiagnosticCodes.TypeNameOrder,
     ];
 
     private Diagnostic? Report(DiagnosticDescriptor descriptor, TextSpan span, object?[]? args = null,
@@ -464,7 +464,7 @@ public sealed class Parser
                     RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
                     decl = ParseConstructor(start, modifiers);
                 }
-                else if (IsFunctionStart())
+                else if (IsFunctionStart() || IsNameFirstFunctionStart(allowNoBody: false))
                 {
                     RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private | Modifiers.Static | Modifiers.Unsafe, startIndex);
                     decl = ParseFunction(start, modifiers);
@@ -520,6 +520,39 @@ public sealed class Parser
         if (after <= 0 || !IsName(KindAt(after))) return false;
         if (KindAt(after + 1) == TokenKind.Less && ScanTypeArgs(after + 1) is var close and > 0) return KindAt(close) == TokenKind.OpenParen;
         return KindAt(after + 1) == TokenKind.OpenParen;
+    }
+
+    /// <summary>
+    /// The input form <c>f(…) -&gt; T</c>, or <c>f(…)</c> with no return type before <c>{</c> or <c>fails</c> on its line
+    /// (BYN1043); with <paramref name="allowNoBody"/> (an interface member) only the <c>-&gt;</c> form.
+    /// </summary>
+    private bool IsNameFirstFunctionStart(bool allowNoBody)
+    {
+        if (!IsName(Kind)) return false;
+        var open = _pos + 1;
+        if (KindAt(open) == TokenKind.Less) open = ScanTypeArgs(open);
+        if (open <= 0 || KindAt(open) != TokenKind.OpenParen) return false;
+        var close = MatchingClose(open);
+        if (close < 0) return false;
+        var next = close + 1;
+        if (KindAt(next) == TokenKind.Arrow) return true;
+        return !allowNoBody && !_tokens[Math.Min(next, _count - 1)].HasNewlineBefore && KindAt(next) is TokenKind.OpenBrace or TokenKind.FailsKeyword;
+    }
+
+    /// <summary>Whether <c>name:</c> starts at <paramref name="index"/>: the input form <c>name: Type</c> of a declaration (BYN1043).</summary>
+    private bool IsNameThenType(int index) => IsName(KindAt(index)) && KindAt(index + 1) == TokenKind.Colon;
+
+    /// <summary>The input form <c>name: Type</c> of a parameter, field or payload (BYN1043); the fix writes <c>Type name</c>.</summary>
+    private (TypeSyntax Type, Name Name) ParseNameThenType()
+    {
+        var name = NameOf(Advance());
+        Advance();
+        var type = ParseType();
+        var span = TextSpan.FromBounds(name.Span.Start, _prevEnd);
+        var typeText = _source.GetText(type.Span);
+        Report(DiagnosticCodes.TypeNameOrder, span, [$"{name.Text}: {typeText}", $"{typeText} {name.Text}"], label: "name before type",
+            help: "put the type before the name; declarations are type-first", fix: new Fix(span, $"{typeText} {name.Text}"));
+        return (type, name);
     }
 
     /// <summary>Past the input form <c>!E</c> or <c>!(A, B)</c> after a return type at <paramref name="index"/>, if any.</summary>
@@ -657,7 +690,7 @@ public sealed class Parser
             ExpectEnd();
             decl = new AssociatedTypeDecl(SpanFrom(start), name);
         }
-        else if (IsFunctionStart())
+        else if (IsFunctionStart() || IsNameFirstFunctionStart(allowNoBody: true))
         {
             decl = ParseFunction(start, modifiers, allowNoBody: true);
         }
@@ -707,14 +740,23 @@ public sealed class Parser
 
     private Decl ParseFieldOrProperty(int start, Modifiers modifiers)
     {
-        if (!IsTypeThenName(_pos))
+        TypeSyntax type;
+        Name name;
+        if (IsNameThenType(_pos))
+        {
+            (type, name) = ParseNameThenType();
+        }
+        else if (IsTypeThenName(_pos))
+        {
+            type = ParseType();
+            name = ExpectName();
+        }
+        else
         {
             Report(DiagnosticCodes.ExpectedMember, Current.Span, [Describe(Current)]);
             Synchronize();
             return new GlobalStatement(SpanFrom(start), new ErrorStmt(SpanFrom(start)));
         }
-        var type = ParseType();
-        var name = ExpectName();
         if (Accept(TokenKind.FatArrow))
         {
             var body = ParseExpression();
@@ -745,11 +787,12 @@ public sealed class Parser
     /// <param name="allowNoBody">An interface member: no body (the line ends after the header) declares it abstract.</param>
     private FunctionDecl ParseFunction(int start, Modifiers modifiers, bool allowNoBody = false)
     {
-        var returnType = ParseType();
+        var nameFirst = !IsFunctionStart();
+        var returnType = nameFirst ? null : ParseType();
         var typeEnd = _prevEnd;
         var shorthand = new List<TypeSyntax>();
         var bang = Current;
-        if (Accept(TokenKind.Bang))
+        if (!nameFirst && Accept(TokenKind.Bang))
         {
             if (Accept(TokenKind.OpenParen))
             {
@@ -768,6 +811,7 @@ public sealed class Parser
         var paramsStart = Current.End;
         var parameters = ParseParams(out var refThis);
         var paramsEnd = _prevEnd;
+        returnType ??= ParseNameFirstReturn(name, paramsEnd);
         FailsClause? fails = null;
         if (Kind == TokenKind.FailsKeyword)
         {
@@ -821,6 +865,29 @@ public sealed class Parser
         };
     }
 
+    /// <summary>
+    /// The return type of the input form <c>f(…) -&gt; T</c>, or <c>void</c> when none is written (BYN1043); the fix
+    /// moves it before the name.
+    /// </summary>
+    private TypeSyntax ParseNameFirstReturn(Name name, int paramsEnd)
+    {
+        var header = _source.GetText(TextSpan.FromBounds(name.Span.Start, paramsEnd));
+        if (Kind == TokenKind.Arrow)
+        {
+            var arrow = Advance();
+            var type = ParseType();
+            var typeText = _source.GetText(type.Span);
+            Report(DiagnosticCodes.TypeNameOrder, arrow.Span, [$"{name.Text}(…) -> {typeText}", $"{typeText} {name.Text}(…)"],
+                label: "return type after the parameters", help: "put the return type before the name",
+                fix: new Fix(TextSpan.FromBounds(name.Span.Start, _prevEnd), $"{typeText} {header}"));
+            return type;
+        }
+        Report(DiagnosticCodes.TypeNameOrder, name.Span, [$"{name.Text}(…)", $"void {name.Text}(…)"], label: "no return type",
+            help: "put `void` before the name when the function returns nothing", fix: new Fix(new TextSpan(name.Span.Start, 0), "void "));
+        var at = new TextSpan(name.Span.Start, 0);
+        return new NamedType(at, [new Name(at, "void")], []);
+    }
+
     private Param[] ParseParams() => ParseParams(out _, allowRefThis: false);
 
     /// <summary>A member's parameters; <c>ref this</c> is accepted only first (BYN2117) and returned in <paramref name="refThis"/>.</summary>
@@ -854,8 +921,14 @@ public sealed class Parser
                     _ => ParamModifier.None,
                 };
                 if (modifier != ParamModifier.None) Advance();
-                var type = ParseType();
-                var name = ExpectName("a parameter name");
+                TypeSyntax type;
+                Name name;
+                if (IsNameThenType(_pos)) (type, name) = ParseNameThenType();
+                else
+                {
+                    type = ParseType();
+                    name = ExpectName("a parameter name");
+                }
                 Expr? defaultValue = null;
                 if (Accept(TokenKind.Equals)) defaultValue = ParseExpression();
                 list.Add(new Param(SpanFrom(start), modifier, type, name, defaultValue));
@@ -966,8 +1039,14 @@ public sealed class Parser
                 {
                     var before = _pos;
                     var fieldStart = Current.Start;
-                    var type = ParseType();
-                    var field = ExpectName("a payload field name");
+                    TypeSyntax type;
+                    Name field;
+                    if (IsNameThenType(_pos)) (type, field) = ParseNameThenType();
+                    else
+                    {
+                        type = ParseType();
+                        field = ExpectName("a payload field name");
+                    }
                     fields.Add(new UnionField(SpanFrom(fieldStart), type, field));
                     if (!Accept(TokenKind.Comma) || _pos == before) break;
                 }
@@ -1368,14 +1447,29 @@ public sealed class Parser
     {
         var isUsing = Accept(TokenKind.UsingKeyword);
         var kind = BindingKind.Var;
+        var keyword = Kind is TokenKind.LetKeyword or TokenKind.VarKeyword or TokenKind.ConstKeyword;
         if (Accept(TokenKind.LetKeyword)) kind = BindingKind.Let;
         else if (Accept(TokenKind.VarKeyword)) kind = BindingKind.Var;
         else if (Accept(TokenKind.ConstKeyword)) kind = BindingKind.Const;
         else if (isUsing) kind = BindingKind.Let;
 
         TypeSyntax? type = null;
-        if (IsTypeThenName(_pos)) type = ParseType();
-        var name = ExpectName("a variable name");
+        Name name;
+        if (IsNameThenType(_pos))
+        {
+            name = NameOf(Advance());
+            Advance();
+            type = ParseType();
+        }
+        else if (IsTypeThenName(_pos))
+        {
+            type = ParseType();
+            name = ExpectName("a variable name");
+            // A `let` needs a value, so a local declared without one is a `var`.
+            if (!keyword && !isUsing) kind = Kind != TokenKind.Equals || IsWrittenLater(name.Text) ? BindingKind.Var : BindingKind.Let;
+            ReportTypeFirstLocal(kind, keyword, type, name);
+        }
+        else name = ExpectName("a variable name");
         Expr? init = null;
         if (Accept(TokenKind.Equals)) init = ParseExpression();
         if (Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword && !Current.HasNewlineBefore)
@@ -1387,6 +1481,49 @@ public sealed class Parser
         }
         ExpectEnd();
         return new LocalDecl(SpanFrom(start), kind, isUsing, type, name, init);
+    }
+
+    /// <summary>The input form <c>T x</c> of a local binding (BYN1043); the fix writes <c>let x: T</c>, keeping a <c>let</c>, <c>var</c> or <c>const</c> already written.</summary>
+    private void ReportTypeFirstLocal(BindingKind kind, bool keyword, TypeSyntax type, Name name)
+    {
+        var span = TextSpan.FromBounds(type.Span.Start, name.Span.End);
+        var typeText = _source.GetText(type.Span);
+        var word = kind switch { BindingKind.Let => "let", BindingKind.Const => "const", _ => "var" };
+        Report(DiagnosticCodes.TypeNameOrder, span, [$"{typeText} {name.Text}", $"{word} {name.Text}: {typeText}"], label: "type before name",
+            help: $"write `{word} {name.Text}: {typeText}`; local bindings put the name first",
+            fix: new Fix(span, (keyword ? "" : word + " ") + $"{name.Text}: {typeText}"));
+    }
+
+    /// <summary>
+    /// Whether the rest of the enclosing block assigns <paramref name="name"/>, increments it or passes it as <c>ref</c> or
+    /// <c>out</c>, so the BYN1043 fix declares it <c>var</c> (J55). A write through a mutating method is not seen here; the
+    /// binder reports it (BYN2104) with a fix to <c>var</c>.
+    /// </summary>
+    private bool IsWrittenLater(string name)
+    {
+        var depth = 0;
+        for (var i = _pos; i < _count; i++)
+        {
+            var kind = KindAt(i);
+            if (kind is TokenKind.OpenBrace) depth++;
+            else if (kind is TokenKind.CloseBrace && --depth < 0) return false;
+            else if (kind is TokenKind.EndOfFile) return false;
+            if (kind != TokenKind.Identifier || Text(_tokens[i]) != name || i > 0 && KindAt(i - 1) is TokenKind.Dot or TokenKind.QuestionDot) continue;
+            if (i > 0 && KindAt(i - 1) is TokenKind.RefKeyword or TokenKind.OutKeyword or TokenKind.PlusPlus or TokenKind.MinusMinus) return true;
+            var j = i + 1;
+            while (true)
+            {
+                if (KindAt(j) == TokenKind.Dot && IsName(KindAt(j + 1))) j += 2;
+                else if (KindAt(j) == TokenKind.OpenBracket && MatchingClose(j) is var close and > 0) j = close + 1;
+                else break;
+            }
+            if (KindAt(j) is TokenKind.Equals or TokenKind.PlusEquals or TokenKind.MinusEquals or TokenKind.StarEquals or
+                TokenKind.SlashEquals or TokenKind.PercentEquals or TokenKind.AmpEquals or TokenKind.BarEquals or
+                TokenKind.CaretEquals or TokenKind.LessLessEquals or TokenKind.QuestionQuestionEquals or
+                TokenKind.PlusPlus or TokenKind.MinusMinus || KindAt(j) == TokenKind.Greater && KindAt(j + 1) == TokenKind.GreaterEquals)
+                return true;
+        }
+        return false;
     }
 
     /// <summary>The input form <c>(c)</c>; the parentheses are reported (BYN1017) unless a top-level <c>{</c> needs them.</summary>

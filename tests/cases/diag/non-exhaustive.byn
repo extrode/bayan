@@ -3,7 +3,7 @@ error enum MoneyError {
     tooPrecise
 }
 
-MoneyError e = MoneyError.invalid
+let e: MoneyError = MoneyError.invalid
 let n = e switch {
     .invalid => 1,
 }

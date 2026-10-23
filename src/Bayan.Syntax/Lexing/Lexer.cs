@@ -343,6 +343,7 @@ internal ref struct LexerState
                     (byte)'=' => TokenKind.MinusEquals,
                     (byte)'%' => TokenKind.MinusPercent,
                     (byte)'|' => TokenKind.MinusBar,
+                    (byte)'>' => TokenKind.Arrow,
                     _ => TokenKind.Minus,
                 });
                 return;

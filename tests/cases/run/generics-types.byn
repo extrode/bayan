@@ -49,7 +49,7 @@ string show<T>(Option2<T> o) => o switch {
 Option2<T> wrap<T>(move T x) => .some(move x)
 
 i64 total<K>(Map<K, i64> m) {
-    i64 sum = 0
+    var sum: i64 = 0
     for e in m { sum += e.value }
     return sum
 }
@@ -58,11 +58,11 @@ let p = Pair<i64, string> { a: 1, b: "x" }
 let q = p.swap(first: p.b, second: p.a)
 print($"{p} {q} {q.a} {q.b}")
 print($"{p == Pair<i64, string> { a: 1, b: "x" }} {p.sameFirst(Pair<i64, string> { a: 2, b: "x" })}")
-Pair<Suit, bool> flag = { a: .hearts, b: true }
+let flag: Pair<Suit, bool> = { a: .hearts, b: true }
 print($"{flag}")
 
 let some = Option2<i64>.some(5)
-Option2<i64> nothing = .nothing
+let nothing: Option2<i64> = .nothing
 let word = wrap("hi")
 print($"{show(some)} {show(nothing)} {show(word)} {some}")
 print($"{some == Option2<i64>.some(5)} {some != nothing}")

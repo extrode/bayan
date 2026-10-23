@@ -9,17 +9,17 @@ string describe(ReadOnlySpan<u8> bytes) {
 }
 
 void main() fails Utf8Error {
-    u8[3] overlongNul = [0x68, 0xC0, 0x80]
+    let overlongNul: u8[3] = [0x68, 0xC0, 0x80]
     print($"overlong NUL: {describe(overlongNul.asSpan())}")
-    u8[5] overlong = [0x61, 0x62, 0xE0, 0x80, 0x80]
+    let overlong: u8[5] = [0x61, 0x62, 0xE0, 0x80, 0x80]
     print($"overlong 3-byte: {describe(overlong.asSpan())}")
-    u8[4] surrogate = [0x61, 0xED, 0xA0, 0x80]
+    let surrogate: u8[4] = [0x61, 0xED, 0xA0, 0x80]
     print($"surrogate: {describe(surrogate.asSpan())}")
-    u8[4] tooLarge = [0xF4, 0x90, 0x80, 0x80]
+    let tooLarge: u8[4] = [0xF4, 0x90, 0x80, 0x80]
     print($"above U+10FFFF: {describe(tooLarge.asSpan())}")
-    u8[3] truncated = [0x61, 0x62, 0xE2]
+    let truncated: u8[3] = [0x61, 0x62, 0xE2]
     print($"truncated: {describe(truncated.asSpan())}")
-    u8[2] lone = [0x80, 0x61]
+    let lone: u8[2] = [0x80, 0x61]
     print($"lone continuation: {describe(lone.asSpan())}")
     try string.from(overlongNul.asSpan())
 }

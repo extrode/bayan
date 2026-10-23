@@ -273,9 +273,9 @@ string kindText(TokenKind kind) {
 }
 
 /// Whitespace or a comment separates this token from the previous one.
-const u8 triviaBefore = 1
+const triviaBefore: u8 = 1
 /// A line break separates this token from the previous one.
-const u8 newlineBefore = 2
+const newlineBefore: u8 = 2
 
 /// A token is a kind plus byte offsets: no text is copied. A run of `///` lines directly before the
 /// token is attached as its doc span.

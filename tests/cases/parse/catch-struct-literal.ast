@@ -8,7 +8,7 @@ CompilationUnit
       Guarded if (! ok)
         Return .bad
       Return (struct _ (x 7))
-  Var a: P = (catch (call mk (ok: false)) (struct _ (x 1)))
-  Var b: P = (catch (call mk (ok: true)) (struct _ (x 1)))
-  Var c: P = (catch (call mk (ok: false)) (struct P))
+  Let a: P = (catch (call mk (ok: false)) (struct _ (x 1)))
+  Let b: P = (catch (call mk (ok: true)) (struct _ (x 1)))
+  Let c: P = (catch (call mk (ok: false)) (struct P))
   Expr (call print (interp (. a x) " " (. b x) " " (. c x)))

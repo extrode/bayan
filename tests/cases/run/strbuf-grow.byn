@@ -1,5 +1,5 @@
 i64 fill(ref StrBuf sb, i64 n) {
-    i64 sum = 0
+    var sum: i64 = 0
     for i in 0..n {
         if i % 4 == 0 {
             sb.append("abc")

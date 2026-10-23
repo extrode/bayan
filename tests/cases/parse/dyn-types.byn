@@ -1,6 +1,6 @@
 void show(dyn ref IShape s, dyn ref readonly ICounter c) {
-    dyn ref IShape t = s
-    let dyn ref readonly IShape u = s
+    let t: dyn ref IShape = s
+    let u: dyn ref readonly IShape = s
     for dyn ref IShape x in shapes {
         print(x.area())
     }

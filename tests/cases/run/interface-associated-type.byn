@@ -7,7 +7,7 @@ struct Digits : IIndexable {
 }
 
 void show<T>(T items) where T : IIndexable {
-    T.Item? none = null
+    let none: T.Item? = null
     print($"{none is null}")
 }
 

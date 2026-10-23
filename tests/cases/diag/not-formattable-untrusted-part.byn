@@ -7,7 +7,7 @@ struct Box {
 void main() {
     let b = Box { s: Untrusted("x") }
     print($"{b}")
-    Untrusted<string>? o = null
+    let o: Untrusted<string>? = null
     print($"{o}")
     let m = Map<string, Untrusted<string>>()
     print($"{m}")

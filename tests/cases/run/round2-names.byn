@@ -1,7 +1,7 @@
 var xs = List<i64>()
 xs.append(1)
 xs.append(2)
-i64[3] a = [1, 2, 3]
+let a: i64[3] = [1, 2, 3]
 let m = Map<string, i64>()
 var sb = StrBuf()
 sb.append("héllo")

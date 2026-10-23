@@ -42,7 +42,7 @@ struct SourceText {
         if offset < 0 || offset > length { panic("offset out of range") }
         ensureLineStarts()
         // The last line start <= offset.
-        i64 lo = 0
+        var lo: i64 = 0
         var hi = lineStarts.length
         while lo < hi {
             let mid = lo + (hi - lo) / 2
@@ -69,7 +69,7 @@ struct SourceText {
     (i64 line, i64 column) getLinePosition(ref this, i64 offset) {
         let line = getLineIndex(offset)
         let start = lineStarts[line]
-        i64 column = 1
+        var column: i64 = 1
         for i in start..offset {
             if (bytes[i] & 0xC0) != 0x80 { column += 1 }
         }
@@ -82,7 +82,7 @@ struct SourceText {
 
 // ── UTF-8 ─────────────────────────────────────────────────────────────────────────
 
-const u32 replacementCharacter = 0xFFFD
+const replacementCharacter: u32 = 0xFFFD
 
 /// One decoding step: a scalar and its length, or an invalid maximal subpart of `length` bytes.
 struct Decoded {
@@ -104,16 +104,16 @@ Decoded decodeAt(ReadOnlySpan<u8> bytes, i64 pos) {
         return Decoded { value: ((u32)(b0 & 0x1F) << 6) | (u32)(bytes[pos + 1] & 0x3F), length: 2, valid: true }
     }
     if b0 >= 0xE0 && b0 <= 0xEF {
-        u8 lo = b0 == 0xE0 ? 0xA0 : 0x80
-        u8 hi = b0 == 0xED ? 0x9F : 0xBF
+        let lo: u8 = b0 == 0xE0 ? 0xA0 : 0x80
+        let hi: u8 = b0 == 0xED ? 0x9F : 0xBF
         unless isContinuation(bytes, pos + 1, lo: lo, hi: hi) { return invalid(1) }
         unless isContinuation(bytes, pos + 2, lo: 0x80, hi: 0xBF) { return invalid(2) }
         let value = ((u32)(b0 & 0x0F) << 12) | ((u32)(bytes[pos + 1] & 0x3F) << 6) | (u32)(bytes[pos + 2] & 0x3F)
         return Decoded { value: value, length: 3, valid: true }
     }
     if b0 >= 0xF0 && b0 <= 0xF4 {
-        u8 lo = b0 == 0xF0 ? 0x90 : 0x80
-        u8 hi = b0 == 0xF4 ? 0x8F : 0xBF
+        let lo: u8 = b0 == 0xF0 ? 0x90 : 0x80
+        let hi: u8 = b0 == 0xF4 ? 0x8F : 0xBF
         unless isContinuation(bytes, pos + 1, lo: lo, hi: hi) { return invalid(1) }
         unless isContinuation(bytes, pos + 2, lo: 0x80, hi: 0xBF) { return invalid(2) }
         unless isContinuation(bytes, pos + 3, lo: 0x80, hi: 0xBF) { return invalid(3) }
@@ -128,7 +128,7 @@ Decoded invalid(i64 length) => Decoded { value: replacementCharacter, length: le
 
 /// Appends `bytes` decoded as `Encoding.UTF8.GetString` does: each invalid maximal subpart becomes U+FFFD.
 void appendUtf8(ref StrBuf sb, ReadOnlySpan<u8> bytes) {
-    i64 pos = 0
+    var pos: i64 = 0
     while pos < bytes.length {
         let d = decodeAt(bytes, pos)
         sb.append($"{(char)d.value}")
@@ -145,8 +145,8 @@ string utf8(ReadOnlySpan<u8> bytes) {
 
 /// Number of scalars `bytes` decodes to, counting each replacement as one.
 i64 runeCount(ReadOnlySpan<u8> bytes) {
-    i64 count = 0
-    i64 pos = 0
+    var count: i64 = 0
+    var pos: i64 = 0
     while pos < bytes.length {
         pos += decodeAt(bytes, pos).length
         count += 1
@@ -162,7 +162,7 @@ string hex(u32 value, i64 digits) {
 }
 
 void appendHex(ref StrBuf sb, u32 value, i64 digits) {
-    i64 n = 1
+    var n: i64 = 1
     while n < 8 && (value >> (u32)(4 * n)) != 0 { n += 1 }
     if n < digits { n = digits }
     var i = n - 1

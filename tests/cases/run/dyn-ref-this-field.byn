@@ -16,6 +16,6 @@ struct Box {
 
 void main() {
     var b = Box { inner: S { n: 3 } }
-    dyn ref IThing d = b.pick()
+    let d: dyn ref IThing = b.pick()
     print($"{d.get()}")
 }

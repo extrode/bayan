@@ -1,3 +1,3 @@
-List<List<i64>> xs
+var xs: List<List<i64>>
 a >> b
 c >>= 1

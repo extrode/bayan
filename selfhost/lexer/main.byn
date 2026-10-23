@@ -9,10 +9,10 @@
 // Exit 2 on a usage error or an unreadable file under `--many`/`--time`; exit 4 when the input of
 // the token dump cannot be read.
 
-const i32 exitOk = 0
-const i32 exitFailure = 1
-const i32 exitUsage = 2
-const i32 exitInput = 4
+const exitOk: i32 = 0
+const exitFailure: i32 = 1
+const exitUsage: i32 = 2
+const exitInput: i32 = 4
 
 i32 usage(string message) {
     Io.stderr.write($"bayan-lex: {message}\nusage: bayan-lex [--json] [<path>|-] | --many <dir> | --time <path>\n")

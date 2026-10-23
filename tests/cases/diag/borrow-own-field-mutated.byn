@@ -29,7 +29,7 @@ void main() {
     for t in lexer.toks {
         lexer.push(t)
     }
-    Span<Token> kept = lexer.tokens()
+    var kept: Span<Token> = lexer.tokens()
     {
         let inner = Lexer { toks: List<Token>() }
         kept = inner.tokens()

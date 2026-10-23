@@ -1,4 +1,4 @@
 error BYN2002: unknown type `Mony`
 
-  1 │ Mony price
-    │ ^^^^
+  1 │ var price: Mony
+    │            ^^^^

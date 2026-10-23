@@ -5,7 +5,7 @@ List<i64> keep(ReadOnlySpan<i64> values, Arena arena) => values.copy(to: arena)
 string pick(string a, string b) => a.length > b.length ? a : b
 
 i64 total(ReadOnlySpan<i64> values) {
-    i64 sum = 0
+    var sum: i64 = 0
     for v in values {
         sum += v
     }
@@ -40,7 +40,7 @@ void main() {
         kept = "static"
     }
     print(kept)
-    i64[3] fixed = [1, 2, 3]
+    var fixed: i64[3] = [1, 2, 3]
     let part = fixed.asSpan()[1..]
     print($"{part[0]}")
     fixed[0] = 9
@@ -53,7 +53,7 @@ void fillLocal() {
     let buf = stackalloc u8[16]
     var sb = StrBuf(buf)
     sb.append("hi")
-    string[1] names = ["x"]
+    let names: string[1] = ["x"]
     let view = names.asSpan()
     view[0] = sb.finish()
     print(names[0])
@@ -68,7 +68,7 @@ struct Stack {
     ReadOnlySpan<i64> top() => pair.asSpan()[1..]
 
     i64 sum() {
-        i64 s = 0
+        var s: i64 = 0
         for v in view() {
             s += v
         }

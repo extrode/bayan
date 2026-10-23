@@ -26,7 +26,7 @@ struct B {
 
     // A `ref this` call on `this` changes the fields its body changes: only those conflict with a live borrow.
     void run(ref this) {
-        dyn ref IThing d = items[0]
+        let d: dyn ref IThing = items[0]
         clearOther()
         clearAll()
         reset()

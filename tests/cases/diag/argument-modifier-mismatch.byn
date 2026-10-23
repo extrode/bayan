@@ -2,5 +2,5 @@ void bump(ref i64 total) {
     total += 1
 }
 
-var i64 t = 0
+var t: i64 = 0
 bump(t)

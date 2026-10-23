@@ -22,7 +22,7 @@ void main() {
         var items = List<Item>()
         items.append(Item { name: "pen", qty: 2 })
         items.append(Item { name: "ink", qty: 5 })
-        i64 q = 0
+        var q: i64 = 0
         for it in items {
             q += it.qty
         }

@@ -9,7 +9,7 @@ P mk(bool ok) fails MkError {
     return { x: 7 }
 }
 
-P a = mk(ok: false) catch { x: 1 }
-P b = mk(ok: true) catch { x: 1 }
-P c = mk(ok: false) catch P{}
+let a: P = mk(ok: false) catch { x: 1 }
+let b: P = mk(ok: true) catch { x: 1 }
+let c: P = mk(ok: false) catch P{}
 print($"{a.x} {b.x} {c.x}")

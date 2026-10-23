@@ -22,4 +22,4 @@ CompilationUnit
       Guarded if (! ok)
         Return .bad
       Return (struct _ (cents 7))
-  Var caught: Money = (catch (call mk (ok: false)) (struct _ (cents 1)))
+  Let caught: Money = (catch (call mk (ok: false)) (struct _ (cents 1)))

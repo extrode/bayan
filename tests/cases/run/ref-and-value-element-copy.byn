@@ -10,7 +10,7 @@ void main() {
     print($"{sum(xs[0], ref xs)}")
     two(a: xs[0], b: ref xs[1])
     print($"{xs[1]}")
-    i64[2] ys = [10, 20]
+    var ys: i64[2] = [10, 20]
     print($"{sumArr(ys[0], ref ys)}")
     two(a: ys[0], b: ref ys[1])
     print($"{ys[1]}")

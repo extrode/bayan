@@ -18,7 +18,7 @@ public error enum PricingError {
     overflow
 }
 
-const i64 maxCents = 9223372036854775807
+const maxCents: i64 = 9223372036854775807
 
 /// An amount in minor units (sen, cents) of one currency.
 public struct Money {
@@ -108,7 +108,7 @@ public error set QuoteFailure = PricingError, QuoteError
 /// Prices a basket. Overweight fails even when shipping would be free.
 public Quote quote(ReadOnlySpan<PriceLine> lines, in Policy policy) fails QuoteFailure {
     var subtotal = Money { cents: 0, currency: policy.currency }
-    i64 grams = 0
+    var grams: i64 = 0
     for line in lines {
         subtotal = try subtotal.plus(line.unitPrice.times(line.qty))
         grams = grams + line.unitGrams * line.qty
@@ -136,7 +136,7 @@ public Quote quote(ReadOnlySpan<PriceLine> lines, in Policy policy) fails QuoteF
 /// The single best promotion wins; promotions don't stack.
 /// Bindings are named like the parameters so the implied-name rule covers same-typed arguments.
 Money bestDiscount(Money subtotal, ReadOnlySpan<PriceLine> lines, in Policy policy) {
-    i64 best = 0
+    var best: i64 = 0
     for promo in policy.promotions {
         let amount = promo switch {
             .percentOff(let rateBp, let minimumCents) => percentDiscount(subtotal, rateBp, minimumCents),
@@ -194,11 +194,11 @@ let standard = Policy {
     ],
 }
 
-List<PriceLine> tea = [PriceLine { key: "TEA-0001", qty: 3, unitPrice: myr(1200), unitGrams: 100 }]
-List<PriceLine> rug = [PriceLine { key: "RUG-0001", qty: 1, unitPrice: myr(16000), unitGrams: 4000 }]
-List<PriceLine> bed = [PriceLine { key: "BED-0001", qty: 1, unitPrice: myr(90000), unitGrams: 25000 }]
-List<PriceLine> lamps = [PriceLine { key: "LMP-0001", qty: 2, unitPrice: myr(12000), unitGrams: 500 }]
-List<PriceLine> mixed = [
+let tea: List<PriceLine> = [PriceLine { key: "TEA-0001", qty: 3, unitPrice: myr(1200), unitGrams: 100 }]
+let rug: List<PriceLine> = [PriceLine { key: "RUG-0001", qty: 1, unitPrice: myr(16000), unitGrams: 4000 }]
+let bed: List<PriceLine> = [PriceLine { key: "BED-0001", qty: 1, unitPrice: myr(90000), unitGrams: 25000 }]
+let lamps: List<PriceLine> = [PriceLine { key: "LMP-0001", qty: 2, unitPrice: myr(12000), unitGrams: 500 }]
+let mixed: List<PriceLine> = [
     PriceLine { key: "TEA-0001", qty: 7, unitPrice: myr(1200), unitGrams: 100 },
     PriceLine { key: "MUG-0001", qty: 2, unitPrice: myr(2500), unitGrams: 400 },
 ]

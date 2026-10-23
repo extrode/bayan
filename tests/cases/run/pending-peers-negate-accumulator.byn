@@ -4,7 +4,7 @@ xs.append(6)
 var i = 0
 var total = 0
 while i < xs.length {
-    i64 step = i
+    let step: i64 = i
     total = total - -i
     i += 1
 }

@@ -3,21 +3,21 @@ T id<T>(move T x) => move x
 var n = 300
 n += 1
 print($"{id(n)}")
-u8 b = n
+let b: u8 = n
 
 var m = -1
 m -= 1
-u64 w = 0
+let w: u64 = 0
 if m < w { print("never") }
 
 var fits = 255
 fits -= 1
-u8 c = fits
+let c: u8 = fits
 
 var f = 0
 f += 1
-f64 g = f
-i64 h = f
+let g: f64 = f
+let h: i64 = f
 
 struct Index<K> {
     Map<K, string> names
@@ -28,6 +28,6 @@ i64 count(ReadOnlySpan<i64> xs) {
     while i < xs.length {
         i += 1
     }
-    Index<f64> idx
+    var idx: Index<f64>
     return i
 }

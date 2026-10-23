@@ -1,1 +1,1 @@
-List<i64, i64> xs
+var xs: List<i64, i64>

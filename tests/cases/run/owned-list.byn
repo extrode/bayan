@@ -25,7 +25,7 @@ string show(Owned<Node>? head) {
 }
 
 i64 count(Tree t) {
-    i64 n = 1
+    var n: i64 = 1
     for c in t.children {
         n += count(c)
     }
@@ -35,7 +35,7 @@ i64 count(Tree t) {
 void main() {
     using let arena = Arena()
     context (allocator: arena) {
-        Owned<Node>? head = null
+        var head: Owned<Node>? = null
         for i in 1..6 {
             head = push(move head, i)
         }

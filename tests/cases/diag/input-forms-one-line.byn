@@ -9,6 +9,6 @@ void main() {
     print($"{p.x} {q.x}")
 }
 int f(long x) { return 0 } void g() {
-    List<double> xs = List<double>()
+    let xs: List<double> = List<double>()
     print($"{xs.length}")
 }

@@ -1,5 +1,5 @@
 i64 count(ReadOnlySpan<u8> data, u8 target) {
-    i64 n = 0
+    var n: i64 = 0
     for b in data {
         n += b == target ? 1 : 0
     }
@@ -7,7 +7,7 @@ i64 count(ReadOnlySpan<u8> data, u8 target) {
 }
 
 i64 sum(ReadOnlySpan<i64> values) {
-    i64 total = 0
+    var total: i64 = 0
     for v in values {
         total += v
     }
@@ -16,11 +16,11 @@ i64 sum(ReadOnlySpan<i64> values) {
 
 let text = "banana"
 let bytes = text.bytes
-ReadOnlySpan<u8> middle = bytes[1..^1]
+let middle: ReadOnlySpan<u8> = bytes[1..^1]
 var numbers = List<i64>()
 numbers.append(4)
 numbers.append(5)
-i64[3] fixed = [1, 2, 3]
-Span<i64> view = fixed.asSpan()
+let fixed: i64[3] = [1, 2, 3]
+let view: Span<i64> = fixed.asSpan()
 print($"{count(text, target: 'a')} {count(bytes, target: 'n')} {count(middle, target: 'a')} {middle.length}")
 print($"{sum(numbers)} {sum(fixed)} {sum(view)} {sum(view[1..])}")

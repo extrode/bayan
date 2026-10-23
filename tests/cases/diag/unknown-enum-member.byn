@@ -5,4 +5,4 @@ enum Color {
 }
 
 let c = Color.gren
-Color d = .purple
+let d: Color = .purple

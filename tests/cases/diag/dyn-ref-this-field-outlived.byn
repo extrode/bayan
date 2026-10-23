@@ -16,7 +16,7 @@ struct Box {
 
 void main() {
     var kept = S { n: 1 }
-    dyn ref IThing late = kept
+    var late: dyn ref IThing = kept
     {
         var b = Box { inner: S { n: 2 } }
         late = b.pick()

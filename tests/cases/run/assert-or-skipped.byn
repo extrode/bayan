@@ -3,6 +3,6 @@ i64 bump(ref i64 n) {
     return n
 }
 
-i64 a = 1
-i64 calls = 0
+let a: i64 = 1
+var calls: i64 = 0
 assert (a > 0 || bump(ref calls) > 0) && calls == 1

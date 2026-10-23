@@ -12,7 +12,7 @@ CompilationUnit
       Return 0
   Function g() -> void
     Block
-      Var xs: List<double> = (call List<double>)
+      Let xs: List<double> = (call List<double>)
       Expr (call print (interp (. xs length)))
 
 error BYN1021: `x = …` in a literal is an input form; write `x: …`
@@ -53,18 +53,18 @@ error BYN1030: `long` is an input form; the Bayan type is `i64`
 
 error BYN1030: `double` is an input form; the Bayan type is `f64`
 
-  12 │     List<double> xs = List<double>()
-     │          ^^^^^^ a C# type name
+  12 │     let xs: List<double> = List<double>()
+     │                  ^^^^^^ a C# type name
      │
   help: write `f64`
-     │ 12 │     List<f64> xs = List<double>()
-     │    │          +++
+     │ 12 │     let xs: List<f64> = List<double>()
+     │    │                  +++
 
 error BYN1030: `double` is an input form; the Bayan type is `f64`
 
-  12 │     List<double> xs = List<double>()
-     │                            ^^^^^^ a C# type name
+  12 │     let xs: List<double> = List<double>()
+     │                                 ^^^^^^ a C# type name
      │
   help: write `f64`
-     │ 12 │     List<double> xs = List<f64>()
-     │    │                            +++
+     │ 12 │     let xs: List<double> = List<f64>()
+     │    │                                 +++

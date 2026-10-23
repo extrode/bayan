@@ -9,7 +9,7 @@ u64 next(ref u64 state) {
     return x
 }
 
-u64 state = 0x9E3779B97F4A7C15
+var state: u64 = 0x9E3779B97F4A7C15
 var m = Map<i64, i64>()
 for step in 0..5000 {
     let r = next(ref state)

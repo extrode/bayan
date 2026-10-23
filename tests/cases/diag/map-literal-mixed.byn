@@ -1,2 +1,2 @@
-Map<string, i32> stock = ["A-1": 12, 3]
+let stock: Map<string, i32> = ["A-1": 12, 3]
 let headers = ["Accept", "Host": "x"]

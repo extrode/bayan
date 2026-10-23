@@ -8,7 +8,7 @@ void main() {
     for x in xs {
         bump(ref xs[0])
     }
-    i64[2] ys = [1, 2]
+    var ys: i64[2] = [1, 2]
     for y in ys {
         bump(ref ys[0])
     }

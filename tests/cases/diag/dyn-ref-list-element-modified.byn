@@ -11,13 +11,13 @@ struct S : IThing {
 void main() {
     var xs = List<S>()
     xs.append(S { n: 1 })
-    dyn ref IThing d = xs[0]
+    let d: dyn ref IThing = xs[0]
     for i in 0..100 {
         xs.append(S { n: i })
     }
     print($"{d.get()}")
-    Span<S> sp = xs.asSpan()
-    dyn ref IThing e = sp[0]
+    let sp: Span<S> = xs.asSpan()
+    let e: dyn ref IThing = sp[0]
     xs.append(S { n: 2 })
     print($"{e.get()}")
 }

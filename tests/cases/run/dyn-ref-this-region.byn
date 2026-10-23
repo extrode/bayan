@@ -9,7 +9,7 @@ struct Box {
     dyn ref IThing pick(ref this) => inner
     void run(ref this) {
         var other = S { n: 1 }
-        dyn ref IThing late = other
+        var late: dyn ref IThing = other
         {
             late = take(ref this)
         }

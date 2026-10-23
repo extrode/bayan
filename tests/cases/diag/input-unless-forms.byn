@@ -1,6 +1,6 @@
 void main(ReadOnlySpan<string> args) {
     let n = args.length
-    string? name = null
+    let name: string? = null
     unless n > 1 && n < 5 {
         print("outside")
     }

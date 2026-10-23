@@ -56,7 +56,7 @@ void copies(Map<i64, i64> p) {
     list.append(a)
     var nested = Map<i64, Map<i64, i64>>()
     nested[1] = a
-    Map<i64, i64>[2] arr = [a, fresh()]
+    let arr: Map<i64, i64>[2] = [a, fresh()]
     let e = arr[1]
     let whole = s
     let pair = (a, 1)
@@ -65,7 +65,7 @@ void copies(Map<i64, i64> p) {
     let g = nested[1]
     let u = s with { name: "u" }
     let v = s with { data: a }
-    Map<i64, i64>? w = a
+    let w: Map<i64, i64>? = a
 }
 
 void buffers() {
@@ -78,7 +78,7 @@ void loops() {
     var maps = List<Map<i64, i64>>()
     maps.append(Map<i64, i64>())
     for m in maps { m[1] = 1 }
-    StrBuf[1] bufs = [StrBuf()]
+    let bufs: StrBuf[1] = [StrBuf()]
     for b in bufs { b.append("y") }
     let plain = List<i64>()
     for n in plain {

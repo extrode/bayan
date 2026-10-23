@@ -5,11 +5,11 @@ void show(string name, ReadOnlySpan<i32> xs) {
 }
 
 // Map literals: insert, look up, count.
-Map<string, i32> stock = ["A-1": 12, "B-2": 3]
+var stock: Map<string, i32> = ["A-1": 12, "B-2": 3]
 stock["C-3"] = 7
 stock["A-1"] += 1
 print($"{stock} count={stock.length} A-1={stock["A-1"]} has B-2: {stock.contains("B-2")}")
-Map<string, i64> empty = []
+var empty: Map<string, i64> = []
 print($"empty: {empty} count={empty.length}")
 empty["x"] = 1
 print($"{empty}")
@@ -21,18 +21,18 @@ let fixed = [1, 2, 3]
 show("fixed", fixed.asSpan())
 
 // Spreads into a list, a fixed array and a span.
-List<i32> xs = [1, 2]
-i32[2] more = [5, 6]
-List<i32> all = [..xs, ..more, 4]
+let xs: List<i32> = [1, 2]
+let more: i32[2] = [5, 6]
+let all: List<i32> = [..xs, ..more, 4]
 show("list", all)
-i32[5] arr = [..more, 0, ..more]
+let arr: i32[5] = [..more, 0, ..more]
 show("array", arr.asSpan())
-Span<i32> view = [..more, 9]
+let view: Span<i32> = [..more, 9]
 show("span", view)
 let grown = [..arr, 7]
 show("inferred", grown.asSpan())
 
 // A span literal lives on the stack.
-Span<i32> s = [1, 2, 3]
+var s: Span<i32> = [1, 2, 3]
 s[0] = 10
 show("stack", s)

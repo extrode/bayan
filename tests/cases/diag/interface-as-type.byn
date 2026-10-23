@@ -3,9 +3,9 @@ interface IShape {
 }
 
 void show(IShape s) {
-    IShape t = s
+    let t: IShape = s
 }
 
 void main() {
-    List<IShape> shapes = []
+    let shapes: List<IShape> = []
 }

@@ -14,6 +14,6 @@ void take(List<i64> plain, ref List<i64> shared, move List<i64> owned) {
     let d = move shared
     let e = move make()
     let f = move owned
-    i64 n = 1
+    let n: i64 = 1
     let g = move n
 }

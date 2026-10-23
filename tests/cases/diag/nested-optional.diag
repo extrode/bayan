@@ -1,4 +1,4 @@
 error BYN2024: `i64??` is already optional
 
-  2 │ MaybeCount? x = null
-    │ ^^^^^^^^^^^
+  2 │ let x: MaybeCount? = null
+    │        ^^^^^^^^^^^

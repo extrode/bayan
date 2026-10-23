@@ -18,7 +18,7 @@ public error enum PricingError {
     overflow
 }
 
-const i64 maxCents = 9223372036854775807
+const maxCents: i64 = 9223372036854775807
 
 /// An amount in minor units (sen, cents) of one currency.
 public struct Money {
@@ -94,7 +94,7 @@ public error enum OrderError {
     invalidLine
 }
 
-const i32 maxLines = 200
+const maxLines: i32 = 200
 
 /// Holds a list, so it is unique.
 public struct Order {
@@ -104,7 +104,7 @@ public struct Order {
     public OrderState state
 
     public Money total() {
-        i64 sum = 0
+        var sum: i64 = 0
         for line in lines {
             sum = sum + line.unitPrice.cents * line.qty if line.status == .active
         }

@@ -1,5 +1,5 @@
 void main() {
-    i32 n = 1
+    let n: i32 = 1
     let c = n == null
     let d = null == null
 }

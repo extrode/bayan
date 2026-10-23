@@ -1,11 +1,11 @@
-const i32 scale = 10
-const u32[12] primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, scale * 4 + 1]
-const bool[3] bits = [true, false, true]
-const char[3] letters = ['a', 'b', 'c']
-const f64[2] halves = [0.5, 1.5]
+const scale: i32 = 10
+const primes: u32[12] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, scale * 4 + 1]
+const bits: bool[3] = [true, false, true]
+const letters: char[3] = ['a', 'b', 'c']
+const halves: f64[2] = [0.5, 1.5]
 
 i64 search(ReadOnlySpan<u32> table, u32 key) {
-    i64 lo = 0
+    var lo: i64 = 0
     var hi = table.length
     while lo < hi {
         let mid = lo + (hi - lo) / 2
@@ -20,7 +20,7 @@ i64 search(ReadOnlySpan<u32> table, u32 key) {
 
 ReadOnlySpan<u32> head() => primes[0..3]
 
-u32[6] keys = [2, 7, 8, 29, 41, 100]
+let keys: u32[6] = [2, 7, 8, 29, 41, 100]
 for key in keys {
     print($"{key} at {search(primes, key)}")
 }
@@ -29,7 +29,7 @@ let middle = primes[4..8]
 print($"slice {middle.length} {middle[0]} {search(middle, 17)}")
 print($"head {head()[2]} span {search(primes.asSpan(), 13)}")
 print($"{bits[1]} {letters[2]} {halves[1]}")
-u64 sum = 0
+var sum: u64 = 0
 for p in primes {
     sum += p
 }

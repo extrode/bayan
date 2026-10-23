@@ -7,7 +7,7 @@ error BYN2705: variant `circle` carries a payload
 
 error BYN2705: variant `circle` carries a payload
 
-  8 │     Shape t = .circle
-    │               ^^^^^^^
+  8 │     let t: Shape = .circle
+    │                    ^^^^^^^
     │
   help: pass it: `Shape.circle(r)`

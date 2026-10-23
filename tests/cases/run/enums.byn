@@ -46,7 +46,7 @@ for s in Suit.values {
 }
 
 let c = Color.blue
-Color target = .green
+let target: Color = .green
 print($"{c == Color.blue} {c != .blue} {target == Color.green} {c == target}")
 
 let third = Color.fromOrdinal(2)
@@ -72,7 +72,7 @@ hand.append(card.suit)
 for s in hand {
     print($"hand {s}")
 }
-Suit? maybe = hand[1]
-Suit? missing = null
+let maybe: Suit? = hand[1]
+let missing: Suit? = null
 print($"{maybe} {missing} {maybe == Suit.diamonds}")
 print(maybe switch { null => "none", .diamonds => "diamonds", _ => "other" })

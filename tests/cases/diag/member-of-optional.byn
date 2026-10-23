@@ -2,5 +2,5 @@ struct Point {
     i64 x
 }
 
-Point? p = null
+let p: Point? = null
 let x = p.x

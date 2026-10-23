@@ -35,7 +35,7 @@ for e in prices { print($"  {e.key} = {e.value}") }
 
 // Enum keys.
 var counts = Map<Suit, i32>()
-Suit[6] hand = [.spades, .hearts, .spades, .clubs, .spades, .hearts]
+let hand: Suit[6] = [.spades, .hearts, .spades, .clubs, .spades, .hearts]
 for s in hand { counts[s] = counts.getOr(s, 0) + 1 }
 print($"{counts}")
 
@@ -64,7 +64,7 @@ print($"{inv}")
     context (allocator: arena) {
         var seen = Map<i64, i64>()
         for i in 0..1000 { seen[i % 7] = i }
-        i64 total = 0
+        var total: i64 = 0
         for e in seen { total += e.value }
         print($"arena map: {seen.length} keys, total {total}")
     }

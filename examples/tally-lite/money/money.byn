@@ -34,10 +34,10 @@ public struct Money {
 /// Parses `12`, `0.5` or `91.82` into cents.
 public Cents parseAmount(string text) fails MoneyError {
     return .empty if text.isEmpty
-    Cents whole = 0
-    Cents fraction = 0
-    i64 wholeDigits = 0
-    i64 fractionDigits = 0
+    var whole: Cents = 0
+    var fraction: Cents = 0
+    var wholeDigits: i64 = 0
+    var fractionDigits: i64 = 0
     var seenPoint = false
     for b in text.bytes {
         if b == '.' {

@@ -2,5 +2,5 @@ struct Box {
     i64 value
 }
 
-Box? b = null
+let b: Box? = null
 let v = b?.value
