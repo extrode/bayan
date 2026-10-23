@@ -1,6 +1,6 @@
 # Sūq round-3 review: response
 
-Input: `docs/suq-agent-brief.md` (on `dev`) Parts A, B, C, E; `docs/bayan-reference-app-friction.md` (on `dev`). Docs changed on `feat/design-round-3`: `docs/bayan-design-round-3.md` (HANDOFF), `docs/plans/2026-10-22-001-design-round-3.md` (plan), `docs/bayan-spec.md` (SPEC), `docs/bayan-grammar.md` (GRAMMAR). Line numbers are after the change unless marked "old"; old lines are the SPEC and GRAMMAR before the review commit.
+Input: `docs/suq-agent-brief.md` (on `dev`) Parts A, B, C, E; `docs/bayan-reference-app-friction.md` (on `dev`). Docs changed on `feat/design-round-3`: `docs/bayan-design-round-3.md` (HANDOFF), `docs/plans/2026-10-22-002-design-round-3.md` (plan), `docs/bayan-spec.md` (SPEC), `docs/bayan-grammar.md` (GRAMMAR). Line numbers are after the change unless marked "old"; old lines are the SPEC and GRAMMAR before the review commit.
 
 ## Part A
 
@@ -164,7 +164,7 @@ filled in by the Sūq-0 golden work on feat/design-round-2
 ## Attachments
 
 - Round-3 HANDOFF: `docs/bayan-design-round-3.md`
-- Round-3 plan (J1–J53): `docs/plans/2026-10-22-001-design-round-3.md`
+- Round-3 plan (J1–J53): `docs/plans/2026-10-22-002-design-round-3.md`
 - Q89–Q113: `.worktrees/feat-006-interfaces-iterators/docs/specs/006-interfaces-iterators/006-plan.md:102-126`
 - Q114–Q131: `.worktrees/feat-007-lambdas/docs/specs/007-lambdas/007-plan.md:105-122`
 - The spec files' "Open questions" sections say "(none; gaps are recorded as handoff Questions with the conservative choice, per AGENTS.md)" (`006-spec.md:78`, `007-spec.md:86`).

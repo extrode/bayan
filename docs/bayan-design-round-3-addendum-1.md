@@ -1,6 +1,6 @@
 # HANDOFF — Bayan, design round 3, addendum 1 (2026-10-23)
 
-Supplements `docs/bayan-design-round-3.md` and `docs/plans/2026-10-22-001-design-round-3.md`. This addendum wins on any conflict with them. Plan items for each section follow under "Plan".
+Supplements `docs/bayan-design-round-3.md` and `docs/plans/2026-10-22-002-design-round-3.md`. This addendum wins on any conflict with them. Plan items for each section follow under "Plan".
 
 Fixed in place in the two documents (inconsistencies, not new decisions): HANDOFF §24 and plan BYN3214 named `items.toList()`, which fails the grammar check; both now say `items.copy()` (§3 below).
 

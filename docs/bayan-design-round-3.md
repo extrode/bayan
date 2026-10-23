@@ -4,7 +4,7 @@
 
 Bayan is a C#-derived, natively compiled language (no .NET runtime). `SPEC.md` exists, the round-2 HANDOFF has been applied or is in progress, and the v0.1 bootstrap compiler is being built.
 
-This handoff records every decision from design round 3, including the signature review of 2026-10-23. It **supplements** round 2: everything in round 2 still stands unless this document changes it, and this document wins on any conflict. Section numbers §22–§23 are used by the plan for the Sūq review and friction items; the sections added by the signature review are §24–§29. The changelog at the end lists what changed and when.
+This handoff records every decision from design round 3, including the signature review of 2026-10-23 and its follow-ups (panic handler, views and copies, formatting, grammar-checker scope, the performance contract, references in structs). It **supplements** round 2: everything in round 2 still stands unless this document changes it, and this document wins on any conflict. Section numbers §22–§23 are used by the plan for the Sūq review and friction items; the sections added by the signature review are §24–§31. The changelog at the end lists what changed and when.
 
 For each area: update `SPEC.md` (with a one-line rationale per change), update `GRAMMAR.md` and `STYLE.md` where named, implement in the compiler where the area is in v0.1 scope, add tests, and add diagnostics with `BYN####` codes and `bayan explain` entries. Use these code ranges: 1xxx syntax, 3xxx types, 5xxx grammar, 6xxx effects, 7xxx typestate, 8xxx security.
 
@@ -305,6 +305,20 @@ public Span<T> slice(Index start, until Index end)
 - **Math vocabulary is a documented naming exemption** (a naming rule, not a synonym): `abs`, `sign`, `sqrt`, `cbrt`, `pow`, `exp`, `ln`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan2`, `radians`, `degrees`. There is no `log` member: `log` is the logging verb.
 - **Logging:** `log` is the verb; the level is a particle argument (§13). `Log.debug` fails the grammar check (`debug` is a level, not the act).
 - **No abbreviations** applies to tools as well: the formatter is `bayan format` (§29).
+- **Stored function fields are named with a noun for their role** (`handler`, `pricer`, `formatter`), never `onX`.
+- **No instance `toX` or `asX` members.** `as` and `to` are particles, and each such member spells a conversion that already has a form: a view is a noun (`xs.span`), an owned copy is `copy()`, a conversion is `T(x)` (`List(seq)`, `string(x)`). Static factories keep `from`: `T.fromJson(…)`, `T.tryFrom(x)`, `fromBounds(start, until:)` name the source a `T` is built from. Static codec functions are actions and may be verbs: `Html.escape(name)`.
+- **Checker scope:** the pattern rules that make derived forms work (`tryX`, `-ed`, `xInto`, particles; BYN50xx) apply to all code. The naming-style rules (BYN51xx) apply to the public API only. A name forced by an outside system (a JSON field, a C symbol, a database column) uses the derivation's rename attribute or `@allow(…) because "…"`.
+- **Project dictionary:** the checker classifies each word of a member name as a verb, noun or adjective to apply the rules above. Words it does not know (domain terms like `upsert`, `sku`, `kyc`) are declared in `package.byn`, with irregular forms where needed:
+  ```csharp
+  grammar: Grammar {
+      verbs: ["upsert", "reindex"],
+      nouns: ["sku", "kyc"],
+      forms: ["upsert": "upserted"],
+  }
+  ```
+  An unknown word is a warning (BYN5014) whose fix adds it to the dictionary.
+- **Diagnostic wording:** every grammar diagnostic is phrased in plain English ("nouns name values, verbs name actions; `get` adds nothing here"). The Arabic origin of a rule appears only in `bayan explain` and GRAMMAR.md.
+- **The property rule has one exception:** a noun member that needs `ref this` is a call (`xs.mutableSpan()`), because mutable access must be visible at the call site.
 
 ## 13. Effects
 
@@ -373,6 +387,15 @@ public u32 crc(ReadOnlySpan<u8> data) { … }   // no `uses`: no alloc, no suspe
   ```
   Inner `provide` blocks override individual handlers and inherit the rest. Handlers are one-shot, so they compile to context passing at zero cost.
 - **The test runner provides `console` per test as a capture buffer.** Output is shown when a test fails, or always with `bayan test --verbose`.
+- **Panic handler:** `Panic.handler` replaces round 2's `Panic.onPanic` (the `on` prefix is rejected, §12). The round-2 placement rules stay: assigned once, as the first statement of the entry function. Its type is a bound of `console` only, so it may write to stderr and may not allocate, suspend or do other I/O. `defer panicking (p) { … }` stays the scoped form.
+  ```csharp
+  type PanicHandler = Panic -> void uses console
+
+  public void main() {
+      Panic.handler = p => Stderr.write(p)
+      …
+  }
+  ```
 
 ## 14. Typestate (kāna / ṣāra)
 
@@ -457,6 +480,7 @@ xs.remove(from: 2, until: 5)
 - The particles are part of the function's name (`copy(from:to:)`). Particle words are not member names (§12).
 - The set is closed for user code and grows only through spec revisions (`until` and `through` were added by this round).
 - `bool` parameters are still passed by name.
+- **A particle appears at most once per signature** (O12). Group the values in a struct or choose another particle.
 
 ## 16. Secrets and derivations
 
@@ -605,7 +629,7 @@ print(..names)                                          // spread an existing co
 ```
 
 - `rest` applies to the last positional parameter only. Its type is written out (`ReadOnlySpan<T>`), so the type inside the body is the type in the signature.
-- `items` is **borrowed for the call** and cannot be stored; keeping the values needs an explicit copy (`items.copy()`, which returns a `List<T>` and `uses alloc`; Addendum 1 §3).
+- `items` is **borrowed for the call** and cannot be stored; keeping the values needs an explicit copy (`items.copy()`, which returns a `List<T>` and `uses alloc`; §27).
 - **Zero allocation:** the caller reserves the argument slots in its own stack frame (the count is known at the call site). Each slot is the value itself, or for an interface element type a 16-byte interface value (data pointer plus vtable pointer) that points at the original, so nothing is boxed or copied. String literals point into read-only data. The callee receives a pointer and a length. Nothing is freed on return; the slots are reused by the next statement. C# `params object[]` allocates an array and boxes every struct; C# 13 `params ReadOnlySpan<object>` still boxes.
 - **Spread:** `..x` in an argument position passes an existing collection's span without copying when `x` is a collection, and is a range when `x` is an index. The type decides, as in C#'s collection expressions.
 - `params` (C# habit) and `T... items` (shorthand) are input forms for `rest`.
@@ -664,6 +688,9 @@ interface IRow {
 | Delegate, `Func<>`, `Action<>` | Function type, usually through an alias (`type Pricer = Line -> Money uses net`) |
 | `event` | `Event<T>` field |
 | Interface property `{ get; }` | Bare `Type name` |
+
+- **Public fields** are readable anywhere and writable only from the struct's own `ref this` methods or through `with` (O11), like C#'s `{ get; private set; }`. This keeps `requires` and typestate invariants in one place.
+- **Stored function fields** are named for their role (`pricer`, `handler`), never `onX` (§12).
 
 STYLE member order: fields, the `states` block, events, properties, static factories, methods.
 
@@ -735,6 +762,59 @@ xs.replace(at: 2..5, by: items)
 ```
 
 `removeRange` and `replaceRange` are removed (renamed members, BYN2230). `fromBounds(start, end)` becomes `fromBounds(start, until: end)`. The particle forms are a deliberate stdlib exception to guard 1 (decided 2026-10-23): two API entries for one operation, kept because `until`/`through` read well at call sites. They are not a precedent for other APIs.
+
+### Views, copies and conversions
+
+| C# | Bayan | Why |
+|---|---|---|
+| `list.AsSpan()` for reading | `xs.span` | A view is a noun; read-only receiver, so a property, allowed on a `let` |
+| `CollectionsMarshal.AsSpan(list)` | `xs.mutableSpan()` | Needs `ref this`, so only on a `var` |
+| `span.ToList()`, `list.ToList()` | `xs.copy()` | Same verb as `s.copy()` (A5); an owned `List<T>`, `uses alloc` |
+| `seq.ToList()` | `List(seq)` | A conversion is `T(x)` (A4) |
+| `x.ToString()` | `string(x)` or `$"{x}"` | A conversion is `T(x)` |
+| `reader.ToList()` | `rows.all()` | The cursor's own member; it consumes the cursor |
+
+```csharp
+public ReadOnlySpan<T> span                         // read-only receiver: allowed on a `let`
+public Span<T> mutableSpan(ref this)                // mutating access: `var` only
+
+let prices = try db.query<Money>(sql"SELECT price FROM items").all()
+let total = subtotal(prices.span)                   // fine on a `let`
+prices.mutableSpan().sort()                         // error: `prices` is a `let`
+```
+
+A mutable view of a `let` would let code change a value its binding promised was immutable, which is the hole C#'s `CollectionsMarshal.AsSpan` opens. Both views borrow `xs`; while a `mutableSpan()` view is live, no other access to `xs` is allowed.
+
+### Text views and number formatting
+
+```csharp
+union Radix {
+    binary
+    octal
+    decimal
+    hex
+}
+
+string(255, as: .hex)                       // "ff"
+string(255, as: .binary)                    // "11111111"
+let n = u64.tryParse(text, as: .hex)        // u64?, the A7 parse form
+
+for unit in s.utf16 { … }                   // view of u16 code units, beside s.runes and s.bytes
+let units = s.utf16.copy()                  // owned List<u16>, uses alloc
+let back = string(units)                    // ReadOnlySpan<u16> decodes as UTF-16
+```
+
+- `string(x, as:)` applies to every integer type; `as:` defaults to `.decimal`. Output is lowercase with no prefix. Casing, prefixes, padding and grouping belong to round 2's pending `format()` item, together with the interpolation spec, which is a paraphrase of `string(x, as:)`.
+- `toHex()`, `toBinary()`, `toOctal()` and `toUtf16()` are removed (renamed members, BYN2230).
+- Nul-terminated UTF-16 for Windows FFI follows the same form as `cstr` for C strings.
+- **Decoding bytes** uses the A7 constructor forms; there is no `fromUtf8`:
+  ```csharp
+  let s = try string(bytes)                    // fails Utf8Error with the position of the bad byte
+  let s = string.tryFrom(bytes)                // string?
+  let s = string(bytes, invalid: .replace)     // lossy: U+FFFD for invalid bytes, never fails
+  let s = try string(bytes, as: .latin1)       // other text encodings (kit); the default is UTF-8
+  ```
+- **Bytes to hex or base64 text** are codecs, like `Html.escape`: `Hex.encode(digest)`, `try Hex.decode(text)`, `Base64.encode(bytes)`, `try Base64.decode(text)`. `string(x, as: Radix)` is for integers only, so `string(bytes, as: …)` always means reading bytes as text.
 
 ### Math
 
@@ -838,16 +918,52 @@ style: Style {
 
 The formatter command is `bayan format` (and `bayan format --check`), not `fmt`: every other command is a full word (`build`, `run`, `test`, `explain`, `audit`, `features`, `expand`), and GRAMMAR's no-abbreviation rule covers the tools. `bayan fmt` is an unknown command whose message names `bayan format`.
 
+## 30. Performance contract
+
+Bayan targets Rust and Zig speed. These rules keep the safe default on the fast path; v0.0.1 implements only what is marked v0.0.1, so the contract does not slow the first release.
+
+- **Checks stay in every build mode** (bounds, overflow, `expects`) and are emitted in a form the C compiler can optimize (v0.0.1): a compare and a branch to a shared `noreturn`, cold trap function per check kind; overflow through `__builtin_add_overflow` and its family. Clang at `-O2` then removes or hoists many checks on its own.
+- **After v0.0.1:** range analysis that proves an index in bounds and hoists the check out of the loop; zipped iteration (`for (p, w) in zip(pixels, weights)`) as the idiom that needs no index checks; benchmark budgets in Sūq compared against Rust and Zig, not only the C# baseline.
+- **Generics are monomorphized:** each instantiation is compiled for its concrete types, so a call through a type parameter is a direct, inlinable call. Interface values (`Display` as a type, `rest ReadOnlySpan<Display>`) are the explicit way to ask for dynamic dispatch through a vtable.
+  ```csharp
+  public T max<T>(ReadOnlySpan<T> xs) where T : IOrder<T> { … }   // static: one copy per T
+  public void print(rest ReadOnlySpan<Display> items) uses console  // dynamic: one copy, vtable calls
+  ```
+- **Zero runtime cost by design:** typestate (erased), effects and capabilities (compile-time), `rest` spans (caller's stack), `Event.raise` (no allocation), units (plain integers), `T.Patch` and derivations (generated code, no reflection).
+
+## 31. References in structs, trees and graphs
+
+- **Rule:** a struct that holds a reference (a `Span<T>`, a `ReadOnlySpan<T>`, a borrowed field) is bound to the referent's region. It cannot outlive the referent, cannot be returned past its owner, and the owner cannot be mutated while it is alive (the region rules, SPEC §9.4). This is what `Rows<T>`, `Subscription` and the span views rely on.
+- **Safety measures:**
+  1. A struct holding a mutable reference (`Span<T>`, `ref` field) is implicitly `unique`: it cannot be copied, so two mutable aliases cannot exist.
+  2. A struct holding a reference cannot be passed to a fiber that may outlive the referent (BYN3217); within a structured scope that ends first, it can.
+  3. Read-only references copy freely.
+  4. The compile-fail corpus (`suq/fail/`) has one snippet per region rule.
+- **Trees and graphs use typed indices,** with zero overhead:
+  ```csharp
+  type distinct NodeId = Index
+
+  struct Node {
+      string name
+      NodeId? parent
+      List<NodeId> children
+  }
+
+  struct Tree {
+      List<Node, NodeId> nodes
+  }
+  ```
+  Generational handles (`Handle<T>`, which catch a stale index after deletion at the cost of one compare per access) are added only when the selfhost AST or Sūq shows the need.
+
 ---
 
 ## Open questions (resolve before implementing these parts)
 
 **Resolved 2026-10-22 (user accepted every recommendation):** O1 newline-only unions, `bayan format` rewrites the one-line form. O2 counts (`length`, `runeCount`) are plain `i64`; units apply only to slice offsets. O3 field vs struct rule by content. O4 `at`, not `on`. O5 `->` is the function-type arrow (declarations return type-first); `=>` only for "evaluates to". O6 particle `for` allowed (label position only). O7 mixed-currency `+` traps; `tryAdd` and `add(…) fails` exist. O8 superseded by the `states` block (§14 rule 13). O9 bare literals for distinct types rejected (`ParcelId(0)`). O10 the trusted-field rule (§17).
 
-**Open (recommendations given; confirm before implementing):**
+**Resolved 2026-10-23:** O11 public fields are writable only from the struct's own `ref this` methods or through `with` (§26). O12 a particle appears at most once per signature (§15).
 
-- **O11. Writing public fields from outside the struct.** Recommendation: a public field is readable anywhere and writable only from the struct's own `ref this` methods or through `with`. This matches `{ get; private set; }`, the common C# shape, and keeps `requires` and typestate invariants in one place.
-- **O12. Repeated particles in one signature** (`wire(by Mailer m, by Inventory i)`). Recommendation: a particle appears at most once per signature; group the values in a struct or pick another particle. A repeated label makes `f(by:by:)` order-dependent, which particles exist to avoid.
+**Resolved 2026-10-23:** O13 bytes decode through the A7 constructor forms, with no `fromUtf8` (§27). O14 binary-to-text encodings are codecs (`Hex.encode`) (§27). O15 the checker scope (§12).
 
 **Sūq review decisions, 2026-10-22** (`docs/suq-agent-brief.md` Part A; record in `docs/suq-round3-review-response.md`):
 - **A1.** A `defer` modifier is evaluated once at registration and its value captured (§19); `defer { if c { … } }` is the exit-time form.
@@ -892,6 +1008,8 @@ The formatter command is `bayan format` (and `bayan format --check`), not `fmt`:
 - `=to` / `to` for inclusive and exclusive ends (use `through` / `until`).
 - `:n` SQL placeholders (`$n` is Postgres's native form; `:` clashes with `::` casts).
 - A method named after a particle (`at(k)`).
+- Instance `toX` and `asX` members (`toList()`, `asSpan()`, `toHex()`, `toUtf16()`).
+- `Panic.onPanic` and other `on`-prefixed names.
 
 ## Deliverables
 
@@ -907,7 +1025,8 @@ The formatter command is `bayan format` (and `bayan format --check`), not `fmt`:
    5. `bayan format` (renamed), `bayan audit` and `bayan features --used`.
 6. Tests for each item: positive, negative, and diagnostic snapshots.
 7. Sūq: coverage doc, friction log, compile-fail corpus skeleton, and the paper versions of the first three parts (§21).
-8. An end-of-run summary: what changed, what was not done and why, spec conflicts that needed a judgment call, and the top friction-log items.
+8. Verification: confirm SPEC §9 states the §31 rule in so many words (a borrow stored in a struct field binds the struct to the referent's region and never outlives it); add any missing sentence, the two safety measures (§31 items 1–2), and the typed-index tree idiom to STYLE, since the selfhost parser's AST is the first large tree.
+9. An end-of-run summary: what changed, what was not done and why, spec conflicts that needed a judgment call, and the top friction-log items.
 
 ---
 
@@ -923,4 +1042,5 @@ The formatter command is `bayan format` (and `bayan format --check`), not `fmt`:
   - `expects` for preconditions beside `requires` types; validation errors as a composable `union error`; `Rule` payloads named; `at .password` in the example (§11).
   - Units: coarser conversions are `floor`/`ceiling`/`rounded` with a type argument; `round(to:)`, `roundUp`, `roundDown` and `convert(to:)` removed (§8).
   - New sections: overloading, defaults and `rest` (§24); lambdas, loops, identifiers (§25); interfaces, properties, events (§26); standard library shapes, including `std.db` (§27); primitive spellings (§28); `bayan format` (§29).
+  - Follow-ups: `Panic.handler` (§13); O11 and O12 resolved (§15, §26); views, copies and conversions without `toX`/`asX` (§12, §27); `string(x, as: Radix)` and the `utf16` view (§27); O13–O15 resolved (no `fromUtf8`; codecs for hex and base64; checker scope); project dictionary and plain-English diagnostics (§12); performance contract (§30); references in structs and typed-index trees (§31).
   - Example fixes: `transfer` gains its receiver, `insert` gains `uses alloc`, `crc` takes `ReadOnlySpan<u8>`, `Date(year:month:day:)`, `FakeNet(label)`, the `Checkout` callback example replaced by a `Pricer` alias.
