@@ -33,7 +33,7 @@ internal sealed class RegionAnalysis
 
     private sealed record Loan(LocalSymbol Owner, LocalSymbol? Holder, int Created, int LoopEnd);
 
-    private sealed record Mutation(LocalSymbol Target, TextSpan Span);
+    private sealed record Mutation(LocalSymbol Target, TextSpan Span, bool Moved = false);
 
     private readonly Compilation _c;
     private readonly FunctionSymbol _fn;
@@ -45,6 +45,8 @@ internal sealed class RegionAnalysis
     private readonly Dictionary<LocalSymbol, int> _declaredAt = new();
     private readonly List<Loan> _loans = new();
     private readonly List<Mutation> _mutations = new();
+    /// <summary>Where each borrow of an owner's own storage is taken, for loans that start inside the expression storing them.</summary>
+    private readonly List<(LocalSymbol Owner, int At)> _lends = new();
     private readonly Stack<Borrow> _contexts = new();
     private readonly HashSet<(int, int)> _reported = new();
     private int _depth;
@@ -144,7 +146,7 @@ internal sealed class RegionAnalysis
                 Declare(f.Variable, f.Syntax.Span.Start);
                 // A `dyn ref` variable points into an array or list, like `dyn ref I d = xs[i]`, or where a span points; any other is a copy.
                 var item = f.Variable.Type is not DynRefType ? iterable with { Owners = [] }
-                    : f.Iterable.Type is ListType or ArrayType ? Lend(f.Iterable, iterable)
+                    : f.Iterable.Type is ListType or ArrayType ? Lend(f.Iterable, iterable, f.Iterable.Syntax.Span.End)
                     : f.Iterable.Type is SpanType ? iterable
                     : iterable with { Owners = [] };
                 Store(f.Variable, item, f.Iterable.Syntax.Span);
@@ -216,7 +218,14 @@ internal sealed class RegionAnalysis
                     return span;
                 }
                 var operand = Expr(c.Operand);
-                return c.Kind is ConversionKind.ArrayToSpan or ConversionKind.ListToSpan or ConversionKind.ToDynRef ? Lend(c.Operand, operand) : operand;
+                return c.Kind is ConversionKind.ArrayToSpan or ConversionKind.ListToSpan or ConversionKind.ToDynRef ? Lend(c.Operand, operand, c.Syntax.Span.End) : operand;
+            }
+            case BoundMove m:
+            {
+                // The new owner may grow or free the storage: a move ends every borrow into it.
+                var operand = Expr(m.Operand);
+                Mutate(m.Operand, TextSpan.FromBounds(m.Syntax.Span.Start, Math.Max(m.Syntax.Span.End, m.Operand.Syntax.Span.End)), moved: true);
+                return operand;
             }
             case BoundBuiltinCall b:
                 return Builtin(b);
@@ -227,7 +236,7 @@ internal sealed class RegionAnalysis
                 var target = Expr(s.Target);
                 if (s.Start is not null) Expr(s.Start);
                 if (s.End is not null) Expr(s.End);
-                return s.Target.Type is ListType or ArrayType ? Lend(s.Target, target) : target;
+                return s.Target.Type is ListType or ArrayType ? Lend(s.Target, target, s.Syntax.Span.End) : target;
             }
             case BoundIndex i:
             {
@@ -303,7 +312,7 @@ internal sealed class RegionAnalysis
         switch (b.Member)
         {
             case BuiltinMember.ListAsSpan or BuiltinMember.ArrayAsSpan or BuiltinMember.StrBufAsString:
-                return Lend(b.Receiver, receiver);
+                return Lend(b.Receiver, receiver, b.Syntax.Span.End);
             case BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy:
                 return AllocatedFrom(b.Arguments[0]);
             case BuiltinMember.IoReadAll or BuiltinMember.IntToHex:
@@ -317,6 +326,9 @@ internal sealed class RegionAnalysis
                 StoreInto(b.Receiver, args[0], b.Arguments[0].Syntax.Span);
                 Mutate(b.Receiver, b.Syntax.Span);
                 return receiver with { Owners = [] };
+            case BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake:
+                Mutate(b.Receiver, b.Syntax.Span, moved: true);
+                return receiver;
             case BuiltinMember.ListRemoveLast:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return receiver with { Owners = [] };
@@ -371,12 +383,12 @@ internal sealed class RegionAnalysis
             ? Borrow.None
             : args.Aggregate(receiver, (acc, a) => acc.Union(a));
         // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
-        if (c.Receiver is not null && c.Type is SpanType or DynRefType) result = result.Union(Lend(c.Receiver, receiver));
+        if (c.Receiver is not null && c.Type is SpanType or DynRefType) result = result.Union(Lend(c.Receiver, receiver, c.Syntax.Span.End));
         // So may a function returning one: the result borrows every argument passed by `ref`.
         if (c.Type is SpanType or DynRefType)
             for (var i = 0; i < c.Arguments.Length && i < fn.Parameters.Count; i++)
                 if (fn.Parameters[i].Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out or Syntax.Ast.ParamModifier.In)
-                    result = result.Union(Lend(c.Arguments[i], args[i]));
+                    result = result.Union(Lend(c.Arguments[i], args[i], c.Syntax.Span.End));
         // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `string.from` return (Q29).
         if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow
                 or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom))
@@ -384,16 +396,21 @@ internal sealed class RegionAnalysis
         return result;
     }
 
-    /// <summary>A borrow of <paramref name="source"/>'s own storage (a span of an array or list, a <c>StrBuf</c>'s text).</summary>
-    private Borrow Lend(BoundExpr source, Borrow sourceBorrow)
+    /// <summary>A borrow of <paramref name="source"/>'s own storage (a span of an array or list, a <c>StrBuf</c>'s text), taken at <paramref name="at"/>.</summary>
+    private Borrow Lend(BoundExpr source, Borrow sourceBorrow, int at)
     {
         if (source is BoundStaticArray) return sourceBorrow;
         // Inside a method returning a span or `dyn ref`, its own fields are the caller's data; the call site lends the receiver (Q75).
         // Either way it is a loan on that field: changing it structurally invalidates the borrow.
-        if (ThisField(source) is { } field) sourceBorrow = sourceBorrow.Union(new Borrow([], [field]));
+        if (ThisField(source) is { } field)
+        {
+            sourceBorrow = sourceBorrow.Union(new Borrow([], [field]));
+            if (_reporting) _lends.Add((field, at));
+        }
         if (_fn.ReturnType is SpanType or DynRefType && IsThisRooted(source)) return sourceBorrow.Union(new Borrow([new Region(0, "the caller's data")], []));
         if (RootLocal(source) is { } root)
         {
+            if (_reporting) _lends.Add((root, at));
             var depth = _depthOf.GetValueOrDefault(root, 0);
             var regions = depth > 0 ? sourceBorrow.Regions.Add(new Region(depth, $"`{root.Name}`")) : sourceBorrow.Regions;
             return new Borrow(regions, sourceBorrow.Owners.Add(root));
@@ -434,9 +451,16 @@ internal sealed class RegionAnalysis
         if (value.IsEmpty) return;
         _locals[local] = _locals.GetValueOrDefault(local, Borrow.None).Union(value);
         if (!_reporting) return;
-        // The loan starts once the value is stored: a mutating call that produces it (`b.pick()` on `ref this`) is not a conflict.
+        // The loan starts where the stored expression first borrows the owner (`first(w.items.asSpan(), w.grow())`
+        // conflicts), or once the value is stored: a mutating call that produces it (`b.pick()` on `ref this`) is not a conflict.
         foreach (var owner in value.Owners)
-            if (owner != local) _loans.Add(new Loan(owner, local, span.End, 0));
+        {
+            if (owner == local) continue;
+            var created = span.End;
+            foreach (var (lent, at) in _lends)
+                if (lent == owner && span.Start <= at && at < created) created = at;
+            _loans.Add(new Loan(owner, local, created, 0));
+        }
         CheckOutlives(value, _depthOf.GetValueOrDefault(local, 0), local.Name, span);
     }
 
@@ -486,11 +510,11 @@ internal sealed class RegionAnalysis
 
     // ── Structural modification while borrowed ───────────────────────────────────
 
-    private void Mutate(BoundExpr target, TextSpan span)
+    private void Mutate(BoundExpr target, TextSpan span, bool moved = false)
     {
         if (!_reporting) return;
-        if (RootLocal(target) is { } root) _mutations.Add(new Mutation(root, span));
-        else if (ThisField(target) is { } field) _mutations.Add(new Mutation(field, span));
+        if (RootLocal(target) is { } root) _mutations.Add(new Mutation(root, span, moved));
+        else if (ThisField(target) is { } field) _mutations.Add(new Mutation(field, span, moved));
     }
 
     private void CheckMutations()
@@ -534,10 +558,11 @@ internal sealed class RegionAnalysis
                 var label = loan.Holder is null
                     ? $"the loop over `{m.Target.Name}` is still running"
                     : $"`{loan.Holder.Name}` is used again on line {Line(new TextSpan(end, 0))}";
-                var help = loan.Holder is null
+                var help = m.Moved ? $"finish using {who} first, or copy what it needs before moving `{m.Target.Name}`"
+                    : loan.Holder is null
                     ? $"collect the changes in another list and apply them to `{m.Target.Name}` after the loop"
                     : $"finish using {who} first, or copy what it needs before changing `{m.Target.Name}`";
-                Report(DiagnosticCodes.ModifiedWhileBorrowed, m.Span, [m.Target.Name, who], label: label, help: help);
+                Report(m.Moved ? DiagnosticCodes.MovedWhileBorrowed : DiagnosticCodes.ModifiedWhileBorrowed, m.Span, [m.Target.Name, who], label: label, help: help);
                 break;
             }
         }
@@ -600,6 +625,7 @@ internal sealed class RegionAnalysis
             {
                 case BoundBuiltinCall b when b.Member is BuiltinMember.ListAdd or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.ListRemoveLast
                         or BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset
+                        or BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake
                     && ThisFieldSymbol(b.Receiver) is { } field:
                     fields.Add(field);
                     break;
