@@ -33,6 +33,7 @@ Further rules that sit beside the tree:
 - **A static factory that names its result is a noun or adjective** (`Money.zero(c)`, `Outbox.empty()`), not a verb: it names the value built, not an act on `this`. No checker rejects a verb here yet; [BYN5101](diagnostics/BYN5101.md) looks only at `ref this` members.
 - **`Untrusted<T>` is a status,** the same value with a different standing (`X<T>`, §10), not a different shape.
 - **Math vocabulary is exempt** from the `-ed` rule (`abs`, `sqrt`, `floor`, `ceiling`, `pow`, `rounded`): scalars have nouns and `-ed` copies only. Tool names are full words too (`bayan format`, not `fmt`).
+- **Checker scope.** The pattern rules that make derived forms work (`tryX`, `-ed`, `xInto`, particles; `BYN50xx`) apply to all code. The naming-style rules (`BYN51xx`) apply to the public API only. A name forced by an outside system (a JSON field, a C symbol, a database column) uses the derivation's rename attribute (`@json(name: …)`, `@column(…)`), which exempts it from `BYN51xx`, or `@allow(…) because "…"` (§7).
 
 Collections follow the tree: `append`, `sort`, `reverse` on `ref this`; `appended`, `sorted`, `reversed` derived (a view if possible, otherwise a copy). Ordered collections `append`/`prepend`; unordered ones `add`. Size is `length`; `count(p)` only counts the elements matching `p`.
 
@@ -240,6 +241,18 @@ unsafe because "libsodium writes into the buffer" { … }
 
 Every `xUnchecked()` takes one. Ordinary attributes (`@derive`) take none. A bare string as the reason is not allowed: the word `because` is part of the form. `bayan audit` lists every bypass in a project with its reason. Enforced by [BYN1045](diagnostics/BYN1045.md) (`[Attr]`) and [BYN8001](diagnostics/BYN8001.md) (missing `because`).
 
+**Project dictionary.** The checker classifies each word of a member name as a verb, noun or adjective to apply the rules in §1. A word it does not know (a domain term like `upsert`, `sku`, `kyc`) is declared once in `package.byn`, not suppressed member by member; `forms` gives irregular derived spellings:
+
+```csharp
+grammar: Grammar {
+    verbs: ["upsert", "reindex"],
+    nouns: ["sku", "kyc"],
+    forms: ["upsert": "upserted"],
+}
+```
+
+The dictionary is merged with the built-in word list. It adds words; it cannot switch a rule off. An unknown word is a warning ([BYN5014](diagnostics/BYN5014.md)) whose fix adds it to `verbs` when the member takes `ref this`, otherwise to `nouns`.
+
 ## 8. Argument particles
 
 A role in a call is marked by a particle from a closed set (Arabic مِن/إلى/بِ):
@@ -347,6 +360,7 @@ For diagnostics:
 - Quote code in backticks; name the construct the reader wrote.
 - For an input form or a foreign idiom, name the Bayan form: "`errdefer` is now `defer failing`", "Bayan has no `toString()`; display is `format()`".
 - Put the fix in the help line or the fix-it, not in the headline.
+- Use plain English, also for grammar rules: "nouns name values, verbs name actions; `get` adds nothing here". The Arabic source of a rule appears only in this guide (§12) and in the "Where this comes from" section of its `bayan explain` page.
 
 For error doc comments: the first line of a `///` comment on an error case is its summary, used by `$"{e}"` (SPEC §2.2). Write it as a sentence a user of the program can read.
 
@@ -378,7 +392,7 @@ For error doc comments: the first line of a `///` comment on an error case is it
 
 Every rule above links to the code that enforces it, at `docs/diagnostics/BYN####.md`; `bayan explain BYN####` prints the same text. Some pages are written with the compiler work and may not exist yet. Rules marked "no dedicated code yet" are guidance until a checker lands.
 
-The built-in checker (`BYN5xxx`) runs on the members of every struct. Errors (`BYN50xx`) are pattern contracts; lints (`BYN51xx`) are word-class heuristics, reported as warnings that never block a build.
+The built-in checker (`BYN5xxx`) runs on the members of every struct. Errors (`BYN50xx`) are pattern contracts and apply to all code; lints (`BYN51xx`) are word-class heuristics on the public API only (§1), reported as warnings that never block a build. Words outside the built-in list come from the project dictionary (§7).
 
 | Code | Rule | What the checker looks at |
 |---|---|---|
@@ -390,5 +404,6 @@ The built-in checker (`BYN5xxx`) runs on the members of every struct. Errors (`B
 | [BYN5009](diagnostics/BYN5009.md) | A particle word is not a member name, and no instance member spells a conversion with `to` or `as` (§1) | Member names equal to a particle (`at`, `by`, `from`), and instance members named `toX` or `asX` (`toList`, `asSpan`); static `fromX` factories are not checked. |
 | [BYN5010](diagnostics/BYN5010.md) | An event or stored function field has no `on` prefix (§1) | Fields of type `Event<T>` or a function type whose name starts with `on` and a capital. |
 | [BYN5013](diagnostics/BYN5013.md) | A particle appears at most once per signature (§8) | The particle labels of one parameter list. |
+| [BYN5014](diagnostics/BYN5014.md) (warning, fix-it) | Every word of a member name is a known verb or noun (§7) | Each word against the built-in word list and `grammar` in `package.byn`. |
 | [BYN5101](diagnostics/BYN5101.md) (lint) | A `ref this` member is named with a verb (tree 1) | The first word of the name against a built-in noun list: `size`, `length`, `total`, `sum`, `value`, `values`, `data`, `item`, `items`, `element`, `elements`, `result`, `results`, `name`, `id`, `state`, `status`, `info`, `content`, `contents`, `capacity`, `amount`, `number`, `key`, `keys`, `entry`, `entries`, `node`, `nodes`. |
 | [BYN5102](diagnostics/BYN5102.md) (lint, fix-it) | A `bool` property takes `is`, `has` or `can` (tree 3) | `bool` properties and `bool` methods with no arguments that are not `ref this`; fields are not checked. Names starting with `contains`, `equals`, `matches`, `startsWith`, `endsWith` or `try` are verbs, not states. |
