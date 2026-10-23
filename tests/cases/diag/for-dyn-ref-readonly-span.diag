@@ -1,0 +1,4 @@
+error BYN2106: cannot modify this value
+
+  18 │     for dyn ref IThing x in r {
+     │                             ^ a `ReadOnlySpan` cannot be written through

@@ -1,0 +1,33 @@
+// `for` over a type parameter constrained to `IIndexable` or `IEnumerator` walks each instance's conformer.
+struct Digits : IIndexable {
+    type Item = i64;
+    i64 count => 3;
+    i64 get(i64 index) => index * 10;
+}
+
+struct Ints : IEnumerator {
+    type Item = i64;
+    i64 at;
+    i64 current => at;
+    bool moveNext(ref this) { at += 1; return at < 2; }
+}
+
+i64 steps<T>(T items) where T : IIndexable {
+    var s = 0;
+    for x in items {
+        s += 1;
+    }
+    return s;
+}
+
+i64 moves<T>(ref T items) where T : IEnumerator {
+    var s = 0;
+    for x in items {
+        s += 1;
+    }
+    return s;
+}
+
+print($"{steps(Digits {})}");
+var e = Ints { at: -1 };
+print($"{moves(ref e)} {e.at}");

@@ -103,6 +103,13 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Interfaces declaring `ref this`, with implementations required to match, wait for spec 006 (round 2 §9).
 - `switch (move d)` on a narrowed optional types the subject as `T?` (so `case null:` is accepted as dead) while `switch (d)` types it `T` (BYN2411); re-wrap the narrowing in BindSwitchSubject as BindMove does (round 2 §4 null).
 - `move` parameters are never narrowed by `if (b is not null)` (`BinderExpressions.cs` IsNonNull); `b.length` still reports BYN2211 (round 2 §4 null).
+- 006 T7: an enumerator held in a Map slot (`m[k]`, a `BoundBuiltinCall`) is spilled and copied instead of checked for writability (Binder.cs `UserElement`).
+- 006 T9: `dyn-ref-dispatch` default `describe` prints instead of returning a string, since a returned interpolated string allocates through `byn_context`.
+- 006 reviewfix: BYN2807 is cached per instantiation, so a second call site with the same failing type argument is not reported again.
+- 006 T6: a generic interface method called through a constraint or a `dyn ref` reports Unsupported.
+- 006 T9: `CEmitter` `SlotName` can collide a getter `x` (`get_x`) with a method named `get_x`; vtable pointer member uses `PrimitiveType.I64` as a placeholder dependency type (`members.Add((PrimitiveType.I64, "void* data"))`).
+- 006 T8: a struct literal cannot be the bare iterable (`for x in S { … } {` is BYN1005); goldens wrap it in parentheses.
+- 006 T7: `Binder.cs:749` treats any `BoundField` enumerator as a place regardless of receiver, so `for n in make().stream` takes the MutationCheck path instead of spilling.
 - `[Cases(1)]` on a test with no parameters gives BYN2773 with the awkward help "in order: `()`" (`Compilation.cs:289-291`) (round 2 §16).
 - Named tuple elements in a case `(a: 1, b: 2)` are accepted and the names ignored (`Compilation.cs:284`) (round 2 §16).
 - Test parameter modifiers (`ref`/`move`) and defaults parse but are ignored; reject them (round 2 §16).
@@ -132,3 +139,10 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r2-finalfix: `if ((!x)) { … }` gets no BYN1032; `ParseIf` (`Parser.cs:1302`) tests the condition without `Unwrap`.
 - `Parser.cs` `ParseDefer` (~:1585) still passes `clean = ErrorCount == errors` to ReportBraceless while ParseBody uses "no inner diagnostic has a fix": `defer let x = <expr with a fixless error>;` loses its braces fix (review of fix/review-2026-10-22-1)
 - `unless (a == null) s;` on a `bool` `a` reports BYN1017/1018/1006 but no BYN1023 (review of fix/review-2026-10-22-1, probe p12)
+- A field witnessing a getter declared with `fails` may get a vtable thunk that ignores the `fails` return convention (`CEmitter.cs` Vtable). Unprobed; flagged by the 006-fixa writer.
+- Region analysis runs on generic instances only, so a never-instantiated generic struct's methods get no BYN3004 (audit 2026-10-23 probe p7); instantiated ones match the non-generic case.
+- BYN2202 on a generic method's type parameter reads "expected `U`, found `U`" (two distinct `U`s print alike).
+- Reassigning an owner (`xs = List<i64>()`, `this.items = …` inside `for x in items`) while a span or loop borrows it records no mutation; memory-safe only because lists live in arenas and reassignment frees nothing (probes p4b/p8/p9 of the 006 final review, 2026-10-23). Becomes a hole if reassignment ever frees.
+- `asSpan()` on a `let` List returns a writable `Span<T>` (BuiltinMembers.cs:49), so `let k = List<i64>(); k.asSpan()[0] = 5;` compiles and `for dyn ref IC x in k.asSpan()[0] { x.bump(); }` mutates a `let` (006 review loop 3 probe spanidx2). Language decision: should `asSpan()` on a non-writable place return `ReadOnlySpan<T>`?
+- `RegionAnalysis.DirectChanges` (used by `ChangedFields`) does not count a `dyn ref` local that borrows a `this` field and is passed on to a writable `dyn ref` parameter (006-fixj note).
+- A `dyn ref` assigned from anything but a ToDynRef conversion, a tracked local or a `for` variable is assumed to hold borrowable storage, so passing it to a writable `dyn ref` parameter can give a false BYN3004 (006-fixj note).

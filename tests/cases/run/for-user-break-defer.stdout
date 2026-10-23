@@ -1,0 +1,12 @@
+saw 0
+after 0
+saw 10
+after 10
+indexed saw 2
+indexed deferred
+saw 4
+after 4
+saw 3
+after 3
+enumerated saw 2, left 3
+enumerated deferred

@@ -1,0 +1,23 @@
+interface IThing {
+    i64 get();
+}
+
+struct S : IThing {
+    i64 n;
+
+    i64 get() => n;
+}
+
+void show(dyn ref IThing d) => print($"{d.get()}");
+
+void main() {
+    var xs = List<S>();
+    xs.append(S { n: 1 });
+    xs.append(S { n: 2 });
+    dyn ref IThing d = xs[1];
+    print($"{d.get()}");
+    show(xs[0]);
+    xs.append(S { n: 3 });
+    dyn ref IThing e = xs[2];
+    print($"{e.get()}");
+}

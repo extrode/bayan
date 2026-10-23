@@ -1,0 +1,6 @@
+error BYN3004: `items` is modified while the `for` loop still borrows it
+
+  11 │             items.append(S { n: x.n });
+     │             ^^^^^^^^^^^^^^^^^^^^^^^^^^ the loop over `items` is still running
+     │
+  help: collect the changes in another list and apply them to `items` after the loop

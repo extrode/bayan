@@ -72,7 +72,7 @@ public sealed class CEmitter
         if (variants.Count == 0) errors.Append("    BYN_STR(\"\", 0),\n");
         foreach (var v in variants) errors.Append("    ").Append(StringLiteral(v.Summary)).Append(",\n");
         errors.Append("};\n\n");
-        errors.Append("static void byn_w_error(byn_writer* w, uint32_t code) {\n");
+        errors.Append("static __attribute__((unused)) void byn_w_error(byn_writer* w, uint32_t code) {\n");
         errors.Append($"    if (code == 0 || code > {variants.Count}) byn_w_str(w, BYN_STR(\"no error\", 8));\n");
         errors.Append("    else byn_w_str(w, byn_errors[code - 1]);\n}\n\n");
         errors.Append("static const uint8_t byn_exit_codes[] = {");
@@ -98,6 +98,8 @@ public sealed class CEmitter
         sb.Append(protos).Append('\n');
         foreach (var h in _helperOrder) sb.Append(_helpers[h].Proto).Append(";\n");
         sb.Append('\n');
+        foreach (var v in _vtableOrder) sb.Append(_vtables[v]);
+        if (_vtableOrder.Count > 0) sb.Append('\n');
         foreach (var h in _helperOrder) sb.Append(_helpers[h].Body).Append('\n');
         sb.Append(bodies).Append(main);
         return sb.ToString();
@@ -227,6 +229,8 @@ public sealed class CEmitter
         // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
         OwnedType o => CType(o.Inner) + "*",
         UntrustedType u => CType(u.Inner),
+        // `dyn ref readonly I` shares the C type of `dyn ref I`.
+        DynRefType d => Named(t, "byn_dyn_" + Key(d.Interface)),
         _ => Named(t),
     };
 
@@ -239,6 +243,8 @@ public sealed class CEmitter
         StructSymbol s => s.Module.CName + "__" + s.Name + TypeArgs(s.TypeArguments),
         EnumSymbol e => e.Module.CName + "__" + e.Name,
         UnionSymbol u => u.Module.CName + "__" + u.Name + TypeArgs(u.TypeArguments),
+        InterfaceSymbol i => i.Module.CName + "__" + i.Name + TypeArgs(i.TypeArguments),
+        DynRefType d => "dyn_" + Key(d.Interface),
         OptionalType o => "opt_" + Key(o.Inner),
         ResultType r => "res_" + Key(r.Value),
         SpanType s => "span_" + Key(s.Element),
@@ -304,6 +310,18 @@ public sealed class CEmitter
                 case TupleType tt:
                     for (var i = 0; i < tt.Fields.Count; i++) members.Add((tt.Fields[i].Type, $"{CType(tt.Fields[i].Type)} item{i + 1}"));
                     break;
+                case DynRefType d:
+                {
+                    // Slot parameters may be incomplete types, so the table needs no other definition first.
+                    var vt = "byn_vt_" + Key(d.Interface);
+                    defs.Append($"struct {vt} {{\n");
+                    foreach (var m in Slots(d.Interface))
+                        defs.Append($"    {SlotSignature(m, $"(*{SlotName(m)})", out _)};\n");
+                    defs.Append("};\n\n");
+                    members.Add((PrimitiveType.I64, "void* data"));
+                    members.Add((PrimitiveType.I64, $"const struct {vt}* vt"));
+                    break;
+                }
                 case UnionSymbol u:
                 {
                     // Unit variants have no struct; a union of only unit variants has no `u`.
@@ -339,6 +357,59 @@ public sealed class CEmitter
         _helpers[name] = (proto, "");
         _helperOrder.Add(name);
         _helpers[name] = (proto, proto + " " + body());
+        return name;
+    }
+
+    // ── dyn ref ──────────────────────────────────────────────────────────────────
+
+    /// <summary>The vtable slots of <paramref name="i"/>: one per method and getter, defaults included.</summary>
+    private static IEnumerable<FunctionSymbol> Slots(InterfaceSymbol i) => i.Methods.Concat(i.Properties);
+
+    internal static string SlotName(FunctionSymbol m) => m.Kind == FunctionKind.Getter ? "get_" + m.Name : FieldName(m.Name);
+
+    /// <summary>A slot's C signature around <paramref name="declarator"/>, in <c>Signature</c>'s <c>fails</c> convention with
+    /// <c>void* self</c> first; <paramref name="args"/> are the names of the parameters after <c>self</c>.</summary>
+    private string SlotSignature(FunctionSymbol m, string declarator, out List<string> args)
+    {
+        var returnsValue = !m.ReturnType.IsVoid && !m.ReturnType.IsNever;
+        var ps = new List<string> { "void* self" };
+        args = new List<string>();
+        for (var k = 0; k < m.Parameters.Count; k++)
+        {
+            args.Add("a" + k);
+            ps.Add($"{CType(m.Parameters[k].Type)}{(m.Parameters[k].IsByRef ? "*" : "")} a{k}");
+        }
+        if (m.Fails && returnsValue)
+        {
+            args.Add("byn_out");
+            ps.Add($"{CType(m.ReturnType)}* byn_out");
+        }
+        return $"{(m.Fails ? "uint32_t" : CType(m.ReturnType))} {declarator}({string.Join(", ", ps)})";
+    }
+
+    // Vtables, one per (conformer, interface) converted to `dyn ref`, emitted after the helper prototypes they point at.
+    private readonly Dictionary<string, string> _vtables = new(StringComparer.Ordinal);
+    private readonly List<string> _vtableOrder = new();
+
+    /// <summary>The vtable of <paramref name="s"/> as <paramref name="i"/>, with a thunk per slot casting <c>self</c> to the conformer.</summary>
+    internal string Vtable(StructSymbol s, InterfaceSymbol i)
+    {
+        var name = $"bynh_vtab_{Key(s)}_{Key(i)}";
+        if (_vtables.ContainsKey(name)) return name;
+        var conformance = s.Conformances.First(c => c.Interface == i);
+        var thunks = new List<string>();
+        foreach (var m in Slots(i))
+        {
+            var thunk = $"bynh_vt_{Key(s)}_{Key(i)}_{SlotName(m)}";
+            var proto = "static " + SlotSignature(m, thunk, out var args);
+            var call = conformance.FieldWitnesses.TryGetValue(m, out var field)
+                ? $"(({CType(s)}*)self)->{FieldName(field.Name)}"
+                : $"{FunctionName(conformance.Witnesses[m])}({string.Join(", ", args.Prepend($"({CType(s)}*)self"))})";
+            var returns = m.Fails || (!m.ReturnType.IsVoid && !m.ReturnType.IsNever);
+            thunks.Add(Helper(thunk, proto, () => $"{{\n    {(returns ? "return " : "")}{call};\n}}\n"));
+        }
+        _vtables[name] = $"static const struct byn_vt_{Key(i)} {name} = {{ {string.Join(", ", thunks)} }};\n";
+        _vtableOrder.Add(name);
         return name;
     }
 
@@ -1295,7 +1366,13 @@ internal sealed class FunctionEmitter
                 return $"{name}({Expr(c.Arguments[0])})";
             }
         }
-        if (fn.HasThis && fn.Kind != FunctionKind.Constructor)
+        // Through `dyn ref` the conformer's method is the vtable slot; the receiver is a local, so naming it twice is safe.
+        var dyn = c.Receiver is { Type: DynRefType } ? Expr(c.Receiver) : null;
+        if (dyn is not null)
+        {
+            args.Add(dyn + ".data");
+        }
+        else if (fn.HasThis && fn.Kind != FunctionKind.Constructor)
         {
             args.Add("&" + Expr(c.Receiver!));
             ClaimAfterCall(c.Receiver!, c.Syntax);
@@ -1310,7 +1387,7 @@ internal sealed class FunctionEmitter
                 args.Add(fn.Parameters[i].IsByRef ? "&" + Expr(c.Arguments[i]) : Expr(c.Arguments[i]));
         }
         if (result is not null) args.Add(result);
-        return $"{_c.FunctionName(fn)}({string.Join(", ", args)})";
+        return $"{(dyn is not null ? $"{dyn}.vt->{CEmitter.SlotName(fn)}" : _c.FunctionName(fn))}({string.Join(", ", args)})";
     }
 
     private string Builtin(BoundBuiltinCall b)
@@ -1580,6 +1657,8 @@ internal sealed class FunctionEmitter
                 return $"(({_c.CType(to)}){{(uint8_t*){v}.ptr, {v}.len}})";
             case ConversionKind.ArrayToSpan:
                 return $"(({_c.CType(to)}){{{v}.v, {((ArrayType)from).Length}}})";
+            case ConversionKind.ToDynRef:
+                return $"(({_c.CType(to)}){{&{v}, &{_c.Vtable((StructSymbol)from, ((DynRefType)to).Interface)}}})";
             default:
                 throw new InvalidOperationException($"cannot emit conversion {c.Kind}");
         }

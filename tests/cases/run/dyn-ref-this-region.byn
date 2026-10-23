@@ -1,0 +1,24 @@
+// In a method, `this` is the caller's data: a `dyn ref` lent from it by a `ref this` argument or call outlives the method's blocks.
+interface IThing { i64 get(); }
+struct S : IThing { i64 n; i64 get() => n; }
+struct Box {
+    S inner;
+    dyn ref IThing pick(ref this) => inner;
+    void run(ref this) {
+        var other = S { n: 1 };
+        dyn ref IThing late = other;
+        {
+            late = take(ref this);
+        }
+        print($"{late.get()}");
+        {
+            late = pick();
+        }
+        print($"{late.get()}");
+    }
+}
+dyn ref IThing take(ref Box b) => b.inner;
+void main() {
+    var b = Box { inner: S { n: 2 } };
+    b.run();
+}

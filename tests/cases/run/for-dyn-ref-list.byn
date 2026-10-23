@@ -1,0 +1,30 @@
+// `for dyn ref readonly I x in xs` over a List converts each element; a constraint walks the same List.
+interface IShape {
+    i64 area();
+}
+
+struct Sq : IShape {
+    i64 s;
+    i64 area() => s * s;
+}
+
+i64 total<T>(List<T> xs) where T : IShape {
+    var sum = 0;
+    for x in xs {
+        sum += x.area();
+    }
+    return sum;
+}
+
+i64 totalDyn(List<Sq> xs) {
+    var sum = 0;
+    for dyn ref readonly IShape x in xs {
+        sum += x.area();
+    }
+    return sum;
+}
+
+var xs = List<Sq>();
+xs.append(Sq { s: 2 });
+xs.append(Sq { s: 3 });
+print($"{total(xs)} {totalDyn(xs)}");

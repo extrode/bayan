@@ -85,6 +85,9 @@ internal sealed partial class Binder
         {
             if (kind == ConversionKind.Identity) return value;
             if (kind == ConversionKind.NullToOptional) return new BoundDefault(value.Syntax, target);
+            // A writable `dyn ref` borrows its source as `ref` does; never a copy or a move.
+            if (kind == ConversionKind.ToDynRef && target is DynRefType { ReadOnly: false })
+                CheckWritable(value, span, $"it is borrowed as `{target.DisplayName}`");
             var converted = new BoundConversion(value.Syntax, value, target, kind);
             return value.Constant is { } c && kind == ConversionKind.Widen ? converted with { Constant = WidenConstant(c, target) } : converted;
         }
@@ -223,12 +226,12 @@ internal sealed partial class Binder
             case NameExpr n:
                 return BindName(n);
             case ThisExpr t:
-                if (_struct is null || _fn is null || _fn.IsStatic || _fn.Kind is not (FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor))
+                if (_thisType is null || _fn is null || _fn.IsStatic || _fn.Kind is not (FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor))
                 {
                     Report(DiagnosticCodes.ThisOutsideMethod, t.Span, []);
                     return new BoundErrorExpr(t);
                 }
-                return new BoundThis(t, _struct);
+                return new BoundThis(t, _thisType);
             case MemberExpr m:
                 return BindMember(m);
             case TargetMemberExpr t:
@@ -421,7 +424,10 @@ internal sealed partial class Binder
                 return new BoundConversion(n, new BoundLocal(n, local), ((OptionalType)local.Type).Inner, ConversionKind.Narrow);
             return new BoundLocal(n, local);
         }
-        if (_struct is not null && LookupMember(_struct, name) is { } member)
+        // A default cloned onto a struct sees only the interface's members through `this`, as its template did,
+        // so a bare name means the same for every conformer.
+        if (_thisType is not null && (_fn?.Template?.Interface is not { } cloneOf || LookupMember(cloneOf.Self, name) is not null)
+            && LookupMember(_thisType, name) is { } member)
             return BindImplicitThisMember(n, member);
         if (Module.Constants.TryGetValue(name, out var constant)) return ConstantRef(n, constant);
         if (Module.Functions.TryGetValue(name, out var fns)) return new BoundMethodGroup(n, null, fns[0]);
@@ -490,8 +496,13 @@ internal sealed partial class Binder
         return new BoundLiteral(syntax, c.Type, c.Value) { Constant = c.Value };
     }
 
-    private static Symbol? LookupMember(StructSymbol s, string name) =>
-        (Symbol?)s.FindField(name) ?? (Symbol?)s.FindProperty(name) ?? s.FindMethods(name).FirstOrDefault();
+    /// <summary>A member reachable through an implicit <c>this</c>; in a default method, the interface's members.</summary>
+    private static Symbol? LookupMember(TypeSymbol t, string name) => t switch
+    {
+        StructSymbol s => (Symbol?)s.FindField(name) ?? (Symbol?)s.FindProperty(name) ?? s.FindMethods(name).FirstOrDefault(),
+        TypeParameterType p => p.Constraints.Select(i => i.FindProperty(name) ?? i.FindMethods(name).FirstOrDefault()).FirstOrDefault(m => m is not null),
+        _ => null,
+    };
 
     private BoundExpr BindImplicitThisMember(NameExpr n, Symbol member)
     {
@@ -503,11 +514,12 @@ internal sealed partial class Binder
                 help: _fn is { IsStatic: true } ? "call it on an instance; a `static` method has no `this`" : "set it in a constructor; field defaults cannot read other fields");
             return new BoundErrorExpr(n);
         }
-        var self = new BoundThis(n, _struct!);
+        var self = new BoundThis(n, _thisType!);
         return member switch
         {
             FieldSymbol f => new BoundField(n, self, f),
             PropertySymbol p => new BoundCall(n, p.Getter, self, [], p.Type),
+            FunctionSymbol { Kind: FunctionKind.Getter } g => new BoundCall(n, g, self, [], g.ReturnType),
             FunctionSymbol m => new BoundMethodGroup(n, self, m),
             _ => new BoundErrorExpr(n),
         };
@@ -695,10 +707,32 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(syntax);
             case ErrorType:
                 return new BoundErrorExpr(syntax);
+            // Inside a generic body, `t.area()` is the interface member; each instance rebinds it to the conformer's.
+            case TypeParameterType tp when tp.Constraints.Count > 0:
+            {
+                if (tp.Constraints.Select(i => i.FindProperty(name) ?? i.FindMethods(name).FirstOrDefault()).FirstOrDefault(m => m is not null) is { } m)
+                    return BindInterfaceMember(syntax, target, m, member);
+                var self = tp.Constraints[0].Self == tp;
+                Report(DiagnosticCodes.ConstraintMember, member.Span, [tp.Name, name, string.Join(", ", tp.Constraints.Select(i => $"`{i.DisplayName}`"))],
+                    help: self
+                        ? $"declare `{name}` in `{tp.Constraints[0].DisplayName}`; a default method sees only its interface's members"
+                        : $"add an interface declaring `{name}` to the `where` clause");
+                return new BoundErrorExpr(syntax);
+            }
             case TypeParameterType tp:
                 Report(DiagnosticCodes.TypeParameterMember, member.Span, [name, tp.Name],
-                    help: $"use a concrete type here; type parameters have no constraints, so a `{tp.Name}` has no members");
+                    help: $"add `where {tp.Name} : …` naming an interface that declares `{name}`, or use a concrete type");
                 return new BoundErrorExpr(syntax);
+            case DynRefType d when (d.Interface.FindProperty(name) ?? d.Interface.FindMethods(name).FirstOrDefault()) is { } m:
+            {
+                if (d.ReadOnly && m.IsMutating)
+                {
+                    Report(DiagnosticCodes.DynReadonlyMutation, member.Span, [name, d.Interface.DisplayName], label: "declared `ref this`",
+                        help: $"take `dyn ref {d.Interface.DisplayName}`");
+                    return new BoundErrorExpr(syntax);
+                }
+                return BindInterfaceMember(syntax, target, m, member);
+            }
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
             return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
@@ -715,6 +749,24 @@ internal sealed partial class Binder
             help: MemberSuggestion(target.Type, name));
         return new BoundErrorExpr(syntax);
     }
+
+    /// <summary>A member of an interface, reached through a constrained type parameter or a <c>dyn ref</c>.</summary>
+    private BoundExpr BindInterfaceMember(Node syntax, BoundExpr target, FunctionSymbol m, Name member)
+    {
+        if (m.TypeParameters.Count > 0)
+        {
+            Report(DiagnosticCodes.Unsupported, member.Span, ["calling a generic interface method"]);
+            return new BoundErrorExpr(syntax);
+        }
+        if (m.Kind == FunctionKind.Getter) return new BoundCall(syntax, m, target, [], ReturnTypeThrough(target.Type, m));
+        return new BoundMethodGroup(syntax, target, m);
+    }
+
+    /// <summary>The return type of interface member <paramref name="m"/> called on <paramref name="receiver"/>: an associated type <c>Item</c> is <c>T.Item</c>.</summary>
+    private TypeSymbol ReturnTypeThrough(TypeSymbol receiver, FunctionSymbol m) =>
+        receiver is TypeParameterType tp && m.Interface is { } i && i.Self != tp && m.ReturnType is TypeParameterType r && i.AssociatedTypes.Contains(r)
+            ? _c.AssociatedType(tp, r.Name)
+            : m.ReturnType;
 
     /// <summary>BYN2230 and BYN2031: a member under its round-1 or C# name; the fix writes the new one.</summary>
     private bool ReportRenamed(TypeSymbol type, Name member)

@@ -1,0 +1,13 @@
+error BYN3004: `items` is modified while `d` still borrows it
+
+  31 │         clearAll();
+     │         ^^^^^^^^^^ `d` is used again on line 33
+     │
+  help: finish using `d` first, or copy what it needs before changing `items`
+
+error BYN3004: `items` is modified while `d` still borrows it
+
+  32 │         reset();
+     │         ^^^^^^^ `d` is used again on line 33
+     │
+  help: finish using `d` first, or copy what it needs before changing `items`

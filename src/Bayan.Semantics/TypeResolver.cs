@@ -17,8 +17,17 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             compilation.Report(DiagnosticCodes.VoidValue, file.Source, syntax.Span, []);
             return ErrorType.Instance;
         }
+        if (t is InterfaceSymbol i)
+        {
+            compilation.Report(DiagnosticCodes.InterfaceAsType, file.Source, syntax.Span, [i.DisplayName], label: "an interface",
+                help: $"write `dyn ref {i.DisplayName}` or add a `where` constraint");
+            return ErrorType.Instance;
+        }
         return t;
     }
+
+    /// <summary>A base or a <c>where</c> bound, where an interface is allowed.</summary>
+    public TypeSymbol ResolveBound(NamedType syntax) => ResolveNamed(syntax);
 
     private TypeSymbol ResolveCore(TypeSyntax syntax)
     {
@@ -47,6 +56,8 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             }
             case NamedType n:
                 return ResolveNamed(n);
+            case DynType d:
+                return ResolveDyn(d);
             default:
                 return ErrorType.Instance;
         }
@@ -156,9 +167,19 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 NoTypeArgs(n);
                 return compilation.Builtins.Utf8Error;
             }
+            if (compilation.Builtins.FindInterface(text) is { } builtin)
+            {
+                NoTypeArgs(n);
+                return builtin;
+            }
             compilation.Report(DiagnosticCodes.UnknownType, file.Source, name.Span, [text],
                 help: Suggest(text) is { } s ? $"did you mean `{s}`?" : null);
             return ErrorType.Instance;
+        }
+        if (n.Path.Length == 2 && typeArgs is not null && typeArgs.TryGetValue(n.Path[0].Text, out var owner))
+        {
+            NoTypeArgs(n);
+            return AssociatedType(n, owner);
         }
         if (n.Path.Length == 2 && file.Imports.TryGetValue(n.Path[0].Text, out var module))
         {
@@ -175,6 +196,56 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
         return ErrorType.Instance;
     }
 
+    /// <summary><c>dyn ref I</c> and <c>dyn ref readonly I</c>; <c>dyn I</c> and interfaces that are not dyn-safe are diagnostics.</summary>
+    private TypeSymbol ResolveDyn(DynType d)
+    {
+        var inner = ResolveNamed(d.Inner);
+        if (inner.IsError) return inner;
+        if (inner is not InterfaceSymbol i)
+        {
+            compilation.Report(DiagnosticCodes.NotAnInterface, file.Source, d.Inner.Span, [inner.DisplayName], label: "after `dyn`",
+                help: "name an `interface` after `dyn ref`");
+            return ErrorType.Instance;
+        }
+        if (!d.IsRef)
+        {
+            compilation.Report(DiagnosticCodes.DynByValue, file.Source, d.Span, [i.DisplayName], label: "an owned dynamic value",
+                help: $"write `dyn ref {i.DisplayName}`");
+            return ErrorType.Instance;
+        }
+        // Checked on the declaration, so it holds before the interface's members are declared.
+        foreach (var member in i.Decl.Members)
+        {
+            var (name, reason) = member switch
+            {
+                FunctionDecl { TypeParams.Length: > 0 } f => (f.Name.Text, "is generic"),
+                AssociatedTypeDecl a => (a.Name.Text, "is an associated type"),
+                _ => (null, null),
+            };
+            if (name is null) continue;
+            compilation.Report(DiagnosticCodes.NotDynSafe, file.Source, d.Span, [i.DisplayName, name, reason], label: "used with `dyn` here",
+                help: "use a `where` constraint instead");
+            return ErrorType.Instance;
+        }
+        return new DynRefType(i, d.IsReadOnly);
+    }
+
+    /// <summary><c>T.Item</c>: an associated type of <c>T</c>'s constraints in a template, the conformer's binding in an instance.</summary>
+    private TypeSymbol AssociatedType(NamedType n, TypeSymbol owner)
+    {
+        var name = n.Path[1].Text;
+        switch (owner)
+        {
+            case TypeParameterType p when p.Constraints.Any(c => c.Decl.Members.Any(m => m is AssociatedTypeDecl a && a.Name.Text == name)):
+                return compilation.AssociatedType(p, name);
+            case StructSymbol s when compilation.AssociatedBinding(s, name) is { } bound:
+                return bound;
+        }
+        compilation.Report(DiagnosticCodes.UnknownType, file.Source, n.Span, [$"{owner.DisplayName}.{name}"],
+            help: owner is TypeParameterType ? $"add a `where {owner.DisplayName} : …` bound on an interface declaring `type {name};`" : null);
+        return ErrorType.Instance;
+    }
+
     private static TypeSymbol? Lookup(ModuleSymbol module, string name) =>
         module.Types.TryGetValue(name, out var t) ? t : null;
 
@@ -186,6 +257,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             ErrorSetSymbol e => e.Access,
             EnumSymbol e => e.Access,
             UnionSymbol u => u.Access,
+            InterfaceSymbol i => i.Access,
             AliasPlaceholder a => Compilation.AccessOf(a.Modifiers),
             _ => Accessibility.Public,
         };
@@ -231,10 +303,13 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
         return sets.Count == 0 ? ErrorType.Instance : ErrorUnionType.Of(sets);
     }
 
-    /// <summary>Applies the type arguments of <paramref name="n"/> to a generic struct or union (instantiating it), or checks there are none.</summary>
+    /// <summary>Applies the type arguments of <paramref name="n"/> to a generic struct, union or interface (instantiating it), or checks there are none.</summary>
     private TypeSymbol Construct(NamedType n, TypeSymbol t)
     {
-        var parameters = t switch { StructSymbol s => s.TypeParameters, UnionSymbol u => u.TypeParameters, _ => [] };
+        var parameters = t switch
+        {
+            StructSymbol s => s.TypeParameters, UnionSymbol u => u.TypeParameters, InterfaceSymbol i => i.TypeParameters, _ => [],
+        };
         if (parameters.Count == 0)
         {
             NoTypeArgs(n);

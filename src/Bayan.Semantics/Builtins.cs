@@ -49,7 +49,45 @@ public sealed class Builtins
         StringFrom.ErrorSets.Add(Utf8Error);
         StringTryFrom = Make("tryFrom", BuiltinFunction.StringTryFrom, new OptionalType(PrimitiveType.String), bytes);
         StringInvalidUtf8At = Make("invalidUtf8At", BuiltinFunction.StringInvalidUtf8At, new OptionalType(PrimitiveType.I64), bytes);
+
+        // The iteration interfaces are declared from source too; `Compilation` declares their members like a user interface's.
+        var iterationFile = new FileContext(Module, SyntaxTree.Parse(SourceText.FromString("<builtin>", IterationSource)));
+        InterfaceSymbol MakeInterface(int index)
+        {
+            var d = (InterfaceDecl)iterationFile.Tree.Root.Members[index];
+            return new InterfaceSymbol(d.Name.Text, new Location(iterationFile.Source, d.Name.Span), Module, Accessibility.Public, iterationFile) { Decl = d };
+        }
+        IEnumerator = MakeInterface(0);
+        IIndexable = MakeInterface(1);
     }
+
+    private const string IterationSource = """
+        public interface IEnumerator {
+            type Item;
+            bool moveNext(ref this);
+            Item current { get; }
+        }
+
+        public interface IIndexable {
+            type Item;
+            i64 count { get; }
+            Item get(i64 index);
+        }
+        """;
+
+    /// <summary><c>interface IEnumerator</c>: <c>for x in e</c> calls <c>moveNext()</c> until false and reads <c>current</c> after each true.</summary>
+    public InterfaceSymbol IEnumerator { get; }
+
+    /// <summary><c>interface IIndexable</c>: <c>for x in e</c> visits <c>get(0)</c> … <c>get(count - 1)</c>, reading <c>count</c> once.</summary>
+    public InterfaceSymbol IIndexable { get; }
+
+    /// <summary>A built-in interface, or null.</summary>
+    public InterfaceSymbol? FindInterface(string name) => name switch
+    {
+        "IEnumerator" => IEnumerator,
+        "IIndexable" => IIndexable,
+        _ => null,
+    };
 
     private const string Utf8ErrorSource = """
         public error enum Utf8Error {

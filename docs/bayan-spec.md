@@ -308,7 +308,7 @@ interface IShape {
     string describe() => $"shape with area {area()}";   // default method
 }
 interface IParse<TSelf> where TSelf : IParse<TSelf> { static abstract TSelf parse(string s) fails ParseError; }
-interface IEnumerator { type Item; bool moveNext(ref this); ref readonly Item current { get; } }  // associated type
+interface IEnumerator { type Item; bool moveNext(ref this); Item current { get; } }  // associated type, returned by value
 ```
 
 - Interfaces declare mutating members with `ref this`, like structs (§3.10); implementations must match.
@@ -319,6 +319,26 @@ interface IEnumerator { type Item; bool moveNext(ref this); ref readonly Item cu
 - Used as constraints (static dispatch) by default; `dyn ref IShape` / `dyn IShape` for dynamic dispatch through a fat pointer (no allocation).
 - Interfaces with generic methods or `static abstract` members cannot be used with `dyn` (checked, with explanation).
 - Retroactive conformance (`extension Money : IJsonEncode`) only when the module owns the type or the interface.
+
+**Supported subset (spec 006).**
+- `current` and `get` return `Item` by value; a `for … in` loop variable is a `let` copy. `unique` items are BYN2022 until ref-returning getters exist.
+- Static dispatch through `where` constraints (`where T : I, J`), monomorphized.
+- `dyn ref I` and `dyn ref readonly I`; the latter permits only members without `ref this` (BYN2813).
+- Default methods, cloned per conformer.
+- Associated types, `type Item;` without bounds; a conformer binds it with `type Item = T;`.
+- Conformance by structs only; unions and enums are BYN2815.
+- Dyn-safe interfaces have no generic methods and no associated types; using an interface name as a plain type is BYN2816.
+- `for … in` over user `IIndexable` and `IEnumerator` conformers. Codes: BYN2800–BYN2816.
+- Deferred: retroactive conformance, `static abstract` members, generic interface methods called through constraints.
+
+**Self-hosting gaps** (what spec 009's port must work around):
+- No heterogeneous child lists: no `dyn I` by value and no borrowed fields means no `List<dyn ref I>`; the tree is unions plus `Owned`, visited by `switch`.
+- By-value `current`/`get`: user iterables cannot yield `unique` items, so node lists are index loops, not `for … in`.
+- No generic interface methods: no `T accept<T>(…)` visitor; visitors are `dyn ref IVisitor` with one non-generic `visit` per node kind, or `switch`.
+- No interface inheritance: shared members are repeated per interface or reached through a default.
+- No union/enum conformance until union members land: a union that must conform is wrapped in a struct.
+- No borrowed enumerators: an `IEnumerator` either owns its data or a collection conforms to `IIndexable`.
+- No associated-type bounds: `type Item;` only.
 
 ### 3.16 Lambdas and function types
 

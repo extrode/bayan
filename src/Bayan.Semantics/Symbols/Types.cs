@@ -141,6 +141,9 @@ public sealed class TypeParameterType(string name) : TypeSymbol
 
     public override string DisplayName => Name;
 
+    /// <summary>The interfaces of its <c>where</c> clauses (for <c>Self</c>, its interface); its members are theirs.</summary>
+    public IReadOnlyList<InterfaceSymbol> Constraints { get; set; } = [];
+
     /// <summary><paramref name="t"/> mentions a type parameter, so it belongs to a template and is never emitted.</summary>
     public static bool Occurs(TypeSymbol t) => t switch
     {
@@ -154,6 +157,8 @@ public sealed class TypeParameterType(string name) : TypeSymbol
         ResultType r => Occurs(r.Value),
         StructSymbol s => s.IsGeneric,
         UnionSymbol u => u.IsGeneric,
+        InterfaceSymbol i => i.IsGeneric,
+        DynRefType d => Occurs(d.Interface),
         _ => false,
     };
 }
@@ -190,6 +195,21 @@ public sealed class SpanType(TypeSymbol element, bool readOnly = false) : Constr
     protected override object Key => (Element, ReadOnly);
 
     public override string DisplayName => ReadOnly ? $"ReadOnlySpan<{Element.DisplayName}>" : $"Span<{Element.DisplayName}>";
+
+    public override bool IsBorrow => true;
+}
+
+/// <summary><c>dyn ref I</c>: a borrow of any value conforming to <see cref="Interface"/>, passed as (data, vtable).</summary>
+public sealed class DynRefType(InterfaceSymbol @interface, bool readOnly = false) : ConstructedType
+{
+    public InterfaceSymbol Interface { get; } = @interface;
+
+    /// <summary><c>dyn ref readonly I</c>: only members without <c>ref this</c> can be called.</summary>
+    public bool ReadOnly { get; } = readOnly;
+
+    protected override object Key => (Interface, ReadOnly);
+
+    public override string DisplayName => ReadOnly ? $"dyn ref readonly {Interface.DisplayName}" : $"dyn ref {Interface.DisplayName}";
 
     public override bool IsBorrow => true;
 }
