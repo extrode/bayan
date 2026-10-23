@@ -143,3 +143,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - A field witnessing a getter declared with `fails` may get a vtable thunk that ignores the `fails` return convention (`CEmitter.cs` Vtable). Unprobed; flagged by the 006-fixa writer.
 - 006 re-review (rr006-a #5, unverified): RegionAnalysis.cs:418 Store loan now starts at span.End, so an owner mutation later in the same initializer may go unflagged; build a probe.
 - 006 re-review: BYN2311 suggests `let a` for an array mutated only through `for dyn ref IC x in a { x.bump(); }` (fixd probe h1); check whether `let` would then reject the loop.
+- Region analysis runs on generic instances only, so a never-instantiated generic struct's methods get no BYN3004 (audit 2026-10-23 probe p7); instantiated ones match the non-generic case.
+- BYN2202 on a generic method's type parameter reads "expected `U`, found `U`" (two distinct `U`s print alike).
