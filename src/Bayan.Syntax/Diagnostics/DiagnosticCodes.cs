@@ -78,6 +78,10 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor PostfixOnNewLine = new("BYN1042", Severity.Error, "a postfix `{0}` must be on the line of its statement");
     public static readonly DiagnosticDescriptor DeclarationKeywordOrder = Error("BYN1044", "`{0}` is an input form; write `{1}`");
     public static readonly DiagnosticDescriptor PatternOutsideConst = Error("BYN1046", "`pattern` is allowed only after `=` in a `const`");
+    public static readonly DiagnosticDescriptor BracketAttribute = Error("BYN1045", "`[{0}]` is an input form; write `@{1}`");
+    public static readonly DiagnosticDescriptor BlockComment = Error("BYN1047", "`/* */` is an input form; write `//` lines");
+    public static readonly DiagnosticDescriptor CharInput = Error("BYN1048", "`char` is now `rune`");
+    public static readonly DiagnosticDescriptor RequiresValue = Error("BYN1050", "`value` in `requires` is now `it`");
     public static readonly DiagnosticDescriptor OneLineDeclarations = Error("BYN1053", "`{0}` declares its cases on one line; write one per line");
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────
@@ -281,4 +285,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor TryWrongReturn = Error("BYN5003", "`try{0}` must return `{1}?` or `bool`; it is derived from `{2}() fails`");
     public static readonly DiagnosticDescriptor NounOnMutator = Warning("BYN5101", "`{0}` is a noun on a `ref this` member; name the action");
     public static readonly DiagnosticDescriptor BoolWithoutPrefix = Warning("BYN5102", "`{0}` is a `bool` state; prefix with `is`, `has` or `can`");
+
+    // ── Security 8000–8999 ───────────────────────────────────────────────────────────
+    public static readonly DiagnosticDescriptor MissingBecause = Error("BYN8001", "`{0}` bypasses a safety rule and needs `because \"…\"`");
 }

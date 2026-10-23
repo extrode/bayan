@@ -117,6 +117,8 @@ public sealed class Parser
         DiagnosticCodes.CSharpTypeName, DiagnosticCodes.FailsShorthand, DiagnosticCodes.NegatedIfToUnless, DiagnosticCodes.UnlessLikelihood,
         DiagnosticCodes.SemicolonInput, DiagnosticCodes.ElseOnNewLine, DiagnosticCodes.OnNewLine, DiagnosticCodes.PostfixOnNewLine,
         DiagnosticCodes.OneLineDeclarations, DiagnosticCodes.MissingLineBreak, DiagnosticCodes.TypeNameOrder,
+        DiagnosticCodes.BracketAttribute, DiagnosticCodes.CharInput, DiagnosticCodes.RequiresValue,
+        DiagnosticCodes.MissingBecause,
     ];
 
     private Diagnostic? Report(DiagnosticDescriptor descriptor, TextSpan span, object?[]? args = null,
@@ -136,7 +138,7 @@ public sealed class Parser
         TokenKind.Identifier => $"`{Text(token)}`",
         TokenKind.IntegerLiteral or TokenKind.FloatLiteral => $"`{Text(token)}`",
         _ when token.Kind.IsKeyword() => $"keyword `{Text(token)}`",
-        TokenKind.CharLiteral => "a char literal",
+        TokenKind.CharLiteral => "a rune literal",
         TokenKind.InterpolatedStringStart => "a string literal",
         _ when token.Kind.IsStringLiteral() => "a string literal",
         _ => $"`{token.Kind.Text()}`",
@@ -490,9 +492,13 @@ public sealed class Parser
     }
 
     private bool IsAttributeStart() =>
-        Kind == TokenKind.OpenBracket && Peek(1) == TokenKind.Identifier && Peek(2) is TokenKind.OpenParen or TokenKind.CloseBracket;
+        Kind == TokenKind.At && IsName(Peek(1))
+        || Kind == TokenKind.OpenBracket && Peek(1) == TokenKind.Identifier && Peek(2) is TokenKind.OpenParen or TokenKind.CloseBracket;
 
-    /// <summary><c>[Name]</c> or <c>[Name(args)]</c>, repeated; the names are checked by the compiler.</summary>
+    /// <summary>
+    /// <c>@name</c> or <c>@name(args)</c>, each with an optional <c>because "…"</c>, repeated; the names are checked by
+    /// the compiler. <c>[Name(args)]</c> is the BYN1045 input form, kept under its camelCase name.
+    /// </summary>
     private AttributeSyntax[] ParseAttributes()
     {
         if (!IsAttributeStart()) return [];
@@ -500,14 +506,46 @@ public sealed class Parser
         while (IsAttributeStart())
         {
             var start = Current.Start;
-            Advance();
+            var bracket = Advance().Kind == TokenKind.OpenBracket;
             var name = ExpectName("an attribute name");
-            var args = Kind == TokenKind.OpenParen ? ParseArguments() : [];
-            Expect(TokenKind.CloseBracket);
-            attributes.Add(new AttributeSyntax(SpanFrom(start), name, args));
+            var argsStart = Current.Start;
+            var args = Kind == TokenKind.OpenParen && (bracket || !BreaksLine(_pos)) ? ParseArguments() : [];
+            var argsText = _prevEnd > argsStart ? _source.GetText(TextSpan.FromBounds(argsStart, _prevEnd)) : "";
+            if (bracket)
+            {
+                Expect(TokenKind.CloseBracket);
+                var camel = char.ToLowerInvariant(name.Text[0]) + name.Text[1..];
+                var span = SpanFrom(start);
+                Report(DiagnosticCodes.BracketAttribute, new TextSpan(start, 1), [name.Text + argsText, camel + argsText],
+                    help: "write the attribute with `@` and a camelCase name", fix: new Fix(span, "@" + camel + argsText));
+                name = name with { Text = camel };
+            }
+            var attribute = new AttributeSyntax(SpanFrom(start), name, args);
+            var because = bracket ? null : ParseBecause("@" + name.Text, attribute.Span);
+            if (because is null && !bracket && name.Text == "allow") ReportMissingBecause("@" + name.Text, attribute.Span);
+            attributes.Add(attribute with { Because = because });
         }
         return attributes.ToArray();
     }
+
+    /// <summary>An optional <c>because "reason"</c> on the line of an attribute or a call (J6); an empty reason is BYN8001.</summary>
+    private BecauseClause? ParseBecause(string construct, TextSpan constructSpan)
+    {
+        if (Kind != TokenKind.BecauseKeyword || BreaksLine(_pos)) return null;
+        var start = Advance().Start;
+        if (Kind != TokenKind.StringLiteral)
+        {
+            Report(DiagnosticCodes.Expected, Current.Span, ["the reason as a string literal", Describe(Current)]);
+            return null;
+        }
+        var reason = LiteralDecoder.DecodeString(Text(Advance()));
+        if (string.IsNullOrWhiteSpace(reason)) ReportMissingBecause(construct, constructSpan);
+        return new BecauseClause(SpanFrom(start), reason);
+    }
+
+    private void ReportMissingBecause(string construct, TextSpan span) =>
+        Report(DiagnosticCodes.MissingBecause, span, [construct], label: "bypasses a safety rule",
+            help: "explain the bypass in a `because` clause");
 
     private bool IsTypeThenName(int index)
     {
@@ -2390,7 +2428,7 @@ public sealed class Parser
         TokenKind.StringLiteral or TokenKind.RawStringLiteral or TokenKind.CStringLiteral or TokenKind.U16StringLiteral or
         TokenKind.InterpolatedStringStart or TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.OpenBrace or
         TokenKind.Dot or TokenKind.DotDot or TokenKind.DotDotEquals or TokenKind.Plus or TokenKind.Minus or TokenKind.Bang or
-        TokenKind.Tilde or TokenKind.Caret or TokenKind.TrueKeyword or TokenKind.FalseKeyword or TokenKind.NullKeyword or
+        TokenKind.NotKeyword or TokenKind.Tilde or TokenKind.Caret or TokenKind.TrueKeyword or TokenKind.FalseKeyword or TokenKind.NullKeyword or
         TokenKind.ThisKeyword or TokenKind.TryKeyword or TokenKind.NewKeyword or TokenKind.MoveKeyword or TokenKind.ReturnKeyword or
         TokenKind.BreakKeyword or TokenKind.ContinueKeyword;
 
@@ -2411,8 +2449,8 @@ public sealed class Parser
         return Kind switch
         {
             TokenKind.QuestionQuestion => (BinaryOp.Coalesce, Prec.Coalesce, 1),
-            TokenKind.BarBar => (BinaryOp.LogicalOr, Prec.LogicalOr, 1),
-            TokenKind.AmpAmp => (BinaryOp.LogicalAnd, Prec.LogicalAnd, 1),
+            TokenKind.BarBar or TokenKind.OrKeyword => (BinaryOp.LogicalOr, Prec.LogicalOr, 1),
+            TokenKind.AmpAmp or TokenKind.AndKeyword => (BinaryOp.LogicalAnd, Prec.LogicalAnd, 1),
             TokenKind.Bar => (BinaryOp.BitOr, Prec.BitOr, 1),
             TokenKind.Caret => (BinaryOp.BitXor, Prec.BitXor, 1),
             TokenKind.Amp => (BinaryOp.BitAnd, Prec.BitAnd, 1),
@@ -2556,7 +2594,7 @@ public sealed class Parser
         {
             TokenKind.Plus => UnaryOp.Plus,
             TokenKind.Minus => UnaryOp.Negate,
-            TokenKind.Bang => UnaryOp.Not,
+            TokenKind.Bang or TokenKind.NotKeyword => UnaryOp.Not,
             TokenKind.Tilde => UnaryOp.Complement,
             TokenKind.Caret => UnaryOp.FromEnd,
             _ => null,
@@ -2689,7 +2727,8 @@ public sealed class Parser
                 case TokenKind.OpenParen:
                     {
                         var args = ParseArguments();
-                        expr = new CallExpr(SpanFrom(start), expr, args);
+                        var call = new CallExpr(SpanFrom(start), expr, args);
+                        expr = call with { Because = ParseBecause(_source.GetText(expr.Span) + "()", call.Span) };
                     }
                     break;
                 case TokenKind.OpenBracket:

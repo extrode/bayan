@@ -30,8 +30,17 @@ public enum Modifiers
 
 public sealed record CompilationUnit(TextSpan Span, Decl[] Members) : Node(Span);
 
-/// <summary>An attribute: <c>[Name]</c> or <c>[Name(args)]</c> before a declaration or an error variant.</summary>
-public sealed record AttributeSyntax(TextSpan Span, Name Name, Argument[] Args) : Node(Span);
+/// <summary>An attribute: <c>@name</c> or <c>@name(args)</c> before a declaration or an error variant.</summary>
+public sealed record AttributeSyntax(TextSpan Span, Name Name, Argument[] Args) : Node(Span)
+{
+    public BecauseClause? Because { get; init; }
+}
+
+/// <summary><c>because "reason"</c>: why an attribute or a call bypasses a safety rule (J6).</summary>
+public sealed record BecauseClause(TextSpan Span, string Reason) : Node(Span);
+
+/// <summary><c>requires condition</c>, or a struct-level <c>requires condition at .field</c>; <c>it</c> is the field's value.</summary>
+public sealed record RequiresRule(TextSpan Span, Expr Condition, Name? At) : Node(Span);
 
 public abstract record Decl(TextSpan Span) : Node(Span)
 {
@@ -88,6 +97,9 @@ public sealed record StructDecl(TextSpan Span, Modifiers Modifiers, Name Name, D
     public NamedType[] Bases { get; init; } = [];
 
     public WhereClause[] Where { get; init; } = [];
+
+    /// <summary>The struct-level <c>requires</c> rules: those that read more than <c>it</c> (O3).</summary>
+    public RequiresRule[] Rules { get; init; } = [];
 }
 
 /// <summary><c>interface IName&lt;T&gt; { … }</c>: methods (abstract without a body), getters, associated types.</summary>
@@ -107,7 +119,11 @@ public sealed record AssociatedTypeDecl(TextSpan Span, Name Name) : Decl(Span);
 /// <summary><c>extension T : I { … }</c>: retroactive conformance (not supported yet).</summary>
 public sealed record ExtensionDecl(TextSpan Span, Name Name, NamedType[] Bases, Decl[] Members) : Decl(Span);
 
-public sealed record FieldDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr? Default) : Decl(Span);
+public sealed record FieldDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr? Default) : Decl(Span)
+{
+    /// <summary>The <c>requires</c> rules that read only <c>it</c>, the field's value.</summary>
+    public RequiresRule[] Requires { get; init; } = [];
+}
 
 /// <summary>A getter-only property: <c>T name => expr</c>, or <c>T name { … }</c> with a <see cref="Block"/> body (J46).</summary>
 public sealed record PropertyDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr? Body) : Decl(Span)
@@ -166,6 +182,9 @@ public sealed record UnionDecl(TextSpan Span, Modifiers Modifiers, Name Name, Un
 public sealed record TypeAliasDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax Target) : Decl(Span)
 {
     public bool Distinct { get; init; }
+
+    /// <summary>A <c>type distinct</c>'s <c>requires</c> rules, on <c>it</c>.</summary>
+    public RequiresRule[] Requires { get; init; } = [];
 }
 
 /// <summary><c>test "name" { … }</c>, or <c>test "name" (T a, U b) { … }</c> run once per <c>[Cases]</c> value.</summary>
@@ -315,7 +334,10 @@ public enum ArgModifier { None, Ref, Move, Out, In }
 
 public sealed record Argument(TextSpan Span, Name? Name, ArgModifier Modifier, Expr Value) : Node(Span);
 
-public sealed record CallExpr(TextSpan Span, Expr Callee, Argument[] Args) : Expr(Span);
+public sealed record CallExpr(TextSpan Span, Expr Callee, Argument[] Args) : Expr(Span)
+{
+    public BecauseClause? Because { get; init; }
+}
 
 public sealed record IndexExpr(TextSpan Span, Expr Target, Expr Index) : Expr(Span);
 
