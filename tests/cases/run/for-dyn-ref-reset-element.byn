@@ -1,0 +1,12 @@
+// A `ref this` call through the loop's own `dyn ref` variable changes the element in place, not the list the loop walks.
+interface IReset { void reset(ref this); }
+struct B : IReset {
+    List<i64> items;
+    void reset(ref this) { items.clear(); items.append(7); }
+}
+void main() {
+    var bs = List<B>();
+    bs.append(B { items: List<i64>() });
+    for dyn ref IReset x in bs { x.reset(); }
+    print($"{bs[0].items[0]}");
+}
