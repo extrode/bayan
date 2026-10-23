@@ -189,7 +189,7 @@ Lowercase type names are reserved for the language. C interop types: `c_int`, `c
 - `==` is **ordinal**; `a.equals(b, by: .ignoreCase)`; culture-aware comparison only through `Collator`.
 - `s.utf16` is a view of UTF-16 code units (`u16`), beside `s.runes` and `s.bytes`; `s.utf16.copy()` returns an owned `List<u16>` (`uses alloc`), and `string(units)` decodes a `ReadOnlySpan<u16>` as UTF-16. `string16` exists for UTF-16 interop; nul-terminated UTF-16 for FFI is in §18.
 - Raw strings: `"""…"""`.
-- Not in v0.1: `graphemes`, `Collator`, `split` views, `trim*`, `padStart`, `repeat`, `Base64`, `invalid: .replace`, encodings other than UTF-8.
+- Not in v0.1: `graphemes`, `Collator`, `split` views, `trim*`, `padStart`, `repeat`, `Base64`, encodings other than UTF-8.
 
 > Round 2 §12: `+` on strings hid allocation. Codes: BYN2201, BYN2209.
 
