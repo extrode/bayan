@@ -154,3 +154,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `RegionAnalysis.DirectChanges` (used by `ChangedFields`) does not count a `dyn ref` local that borrows a `this` field and is passed on to a writable `dyn ref` parameter (006-fixj note).
 - A `dyn ref` assigned from anything but a ToDynRef conversion, a tracked local or a `for` variable is assumed to hold borrowable storage, so passing it to a writable `dyn ref` parameter can give a false BYN3004 (006-fixj note).
 - `bayan format`: an input-form diagnostic with a null `Fix` (BYN1031 non-plain, `Parser.cs:685`; BYN1018 after a dropped header fix) leaves the file unchanged with exit 0 and no message (r3-fmt gate note).
+- `docs/bayan-handoff.md` Questions: numbers repeat (two 51–56 runs, lines ~463 and ~533); renumber or switch to ids.
