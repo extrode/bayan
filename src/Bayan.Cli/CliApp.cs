@@ -66,6 +66,8 @@ public static class CliApp
                 return Parse(rest, stdout, stderr);
             case "types":
                 return Types(rest, stdout, stderr);
+            case "format":
+                return Format.Run(rest, stdout, stderr);
             case "explain":
                 return Explain(rest, stdout, stderr);
             case "check":
