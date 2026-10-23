@@ -47,7 +47,8 @@ internal sealed class RegionAnalysis
 
     private sealed record Loan(LocalSymbol Owner, LocalSymbol? Holder, int Created, int LoopEnd);
 
-    private sealed record Mutation(LocalSymbol Target, TextSpan Span, bool Moved = false);
+    /// <summary><paramref name="Through"/>: the writable <c>dyn ref</c> local the change goes through, if any.</summary>
+    private sealed record Mutation(LocalSymbol Target, TextSpan Span, bool Moved = false, LocalSymbol? Through = null);
 
     private readonly Compilation _c;
     private readonly FunctionSymbol _fn;
@@ -59,6 +60,8 @@ internal sealed class RegionAnalysis
     private readonly Dictionary<LocalSymbol, int> _declaredAt = new();
     private readonly List<Loan> _loans = new();
     private readonly List<Mutation> _mutations = new();
+    /// <summary>For a writable <c>dyn ref</c> local, whether any value it was set to may hold storage a write through it can change.</summary>
+    private readonly Dictionary<LocalSymbol, bool> _referentMayBorrow = new();
     private readonly Stack<Borrow> _contexts = new();
     private readonly HashSet<(int, int)> _reported = new();
     private int _depth;
@@ -110,7 +113,10 @@ internal sealed class RegionAnalysis
             case BoundLocalDecl d:
                 Declare(d.Local, d.Syntax.Span.Start);
                 if (d.Initializer is not null)
+                {
                     Store(d.Local, Expr(d.Initializer), d.Initializer.Syntax.Span);
+                    Refer(d.Local, d.Initializer);
+                }
                 break;
             case BoundExprStmt e:
                 Expr(e.Expr);
@@ -123,6 +129,7 @@ internal sealed class RegionAnalysis
                 var value = Expr(a.Value);
                 Expr(a.Target);
                 StoreInto(a.Target, value, a.Value.Syntax.Span);
+                if (a.Target is BoundLocal target) Refer(target.Local, a.Value);
                 break;
             }
             case BoundReturn r when r.Value is not null:
@@ -162,6 +169,14 @@ internal sealed class RegionAnalysis
                     : f.Iterable.Type is SpanType ? iterable
                     : iterable with { Owners = [] };
                 Store(f.Variable, item, f.Iterable.Syntax.Span);
+                if (f.Variable.Type is DynRefType)
+                    _referentMayBorrow[f.Variable] = f.Iterable.Type switch
+                    {
+                        ListType l => MayBorrow(l.Element, []),
+                        ArrayType a => MayBorrow(a.Element, []),
+                        SpanType sp => MayBorrow(sp.Element, []),
+                        _ => true,
+                    };
                 Stmt(f.Body);
                 _depth--;
                 break;
@@ -368,12 +383,17 @@ internal sealed class RegionAnalysis
         var args = c.Arguments.Select(Expr).ToArray();
         // A method that writes `this` modifies its receiver, like a write to one of its fields (Q78).
         if (c.Receiver is not null && fn.IsMutating) Mutate(c.Receiver, c.Syntax.Span);
+        // Through a writable `dyn ref` it modifies every owner the `dyn ref` borrows.
+        if (c.Receiver is { Type: DynRefType { ReadOnly: false } } && fn.IsMutating) MutateOwners(c.Receiver, receiver, c.Syntax.Span);
         // A `ref this` call on `this` changes the fields its body changes structurally.
         if (c.Receiver is BoundThis && fn.IsMutating && _reporting)
             foreach (var field in ChangedFields(fn))
                 _mutations.Add(new Mutation(FieldLocal(field), c.Syntax.Span));
         for (var i = 0; i < c.Arguments.Length && i < fn.Parameters.Count; i++)
         {
+            // An existing writable `dyn ref` passed on lets the callee modify every owner it borrows.
+            if (fn.Parameters[i].Type is DynRefType { ReadOnly: false } && c.Arguments[i].Type is DynRefType { ReadOnly: false })
+                MutateOwners(c.Arguments[i], args[i], c.Arguments[i].Syntax.Span);
             if (WrittenArgument(fn.Parameters[i], c.Arguments[i]) is not { } written) continue;
             // Writing an element through `ref xs[i]` does not reallocate `xs`; only what the callee can reach may change.
             if (MayBorrow(written.Type, [])) Mutate(written, c.Arguments[i].Syntax.Span);
@@ -425,6 +445,8 @@ internal sealed class RegionAnalysis
         // Either way it is a loan on that field: changing it structurally invalidates the borrow.
         if (ThisField(source) is { } field) sourceBorrow = sourceBorrow.Lent(field, at);
         if (_fn.ReturnType is SpanType or DynRefType && IsThisRooted(source)) return sourceBorrow.Union(new Borrow([new Region(0, "the caller's data")], []));
+        // In any other method they outlive the whole body, but cannot be returned.
+        if (IsThisRooted(source)) return sourceBorrow.Union(new Borrow([new Region(1, $"the temporary on line {Line(source.Syntax.Span)}")], []));
         if (RootLocal(source) is { } root)
         {
             var depth = _depthOf.GetValueOrDefault(root, 0);
@@ -532,6 +554,25 @@ internal sealed class RegionAnalysis
         else if (ThisField(target) is { } field) _mutations.Add(new Mutation(field, span, moved));
     }
 
+    private void MutateOwners(BoundExpr through, Borrow borrow, TextSpan span)
+    {
+        // As for a `ref` argument: a write through it reallocates nothing unless the value it points to may hold such storage.
+        if (!_reporting || through is BoundLocal l && !_referentMayBorrow.GetValueOrDefault(l.Local, true)) return;
+        foreach (var owner in borrow.Owners) _mutations.Add(new Mutation(owner, span, Through: (through as BoundLocal)?.Local));
+    }
+
+    private void Refer(LocalSymbol local, BoundExpr value)
+    {
+        if (local.Type is not DynRefType) return;
+        var mayBorrow = value switch
+        {
+            BoundConversion { Kind: ConversionKind.ToDynRef } c => MayBorrow(c.Operand.Type, []),
+            BoundLocal l => _referentMayBorrow.GetValueOrDefault(l.Local, true),
+            _ => true,
+        };
+        _referentMayBorrow[local] = _referentMayBorrow.GetValueOrDefault(local) || mayBorrow;
+    }
+
     private void CheckMutations()
     {
         if (_mutations.Count == 0 || _loans.Count == 0) return;
@@ -567,6 +608,8 @@ internal sealed class RegionAnalysis
             foreach (var loan in _loans)
             {
                 if (loan.Owner != m.Target || loan.Created >= m.Span.End) continue;
+                // Writing an element in place through the loop's own `dyn ref` variable leaves the loop's collection as it is.
+                if (loan.Holder is null && m.Through is { } through && _declaredAt.GetValueOrDefault(through, -1) == loan.Created) continue;
                 var end = loan.Holder is null ? loan.LoopEnd : LastUse(loan.Holder);
                 if (end <= m.Span.End) continue;
                 var who = loan.Holder is null ? "the `for` loop" : $"`{loan.Holder.Name}`";

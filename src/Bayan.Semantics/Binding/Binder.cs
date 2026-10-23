@@ -705,11 +705,18 @@ internal sealed partial class Binder
         BoundBuiltinCall { Member: BuiltinMember.MapGetOr } b => IsBorrowedPlace(b.Receiver) || b.Arguments.Any(IsBorrowedPlace),
         BoundField f => IsBorrowedPlace(f.Receiver),
         BoundTupleElement t => IsBorrowedPlace(t.Receiver),
+        // A span points into existing storage, wherever the span itself came from.
+        BoundIndex { Target.Type: SpanType } => true,
         BoundIndex i => IsBorrowedPlace(i.Target),
         BoundConversion c => IsBorrowedPlace(c.Operand),
         BoundConditional c => IsBorrowedPlace(c.WhenTrue) || IsBorrowedPlace(c.WhenFalse),
         BoundCoalesce c => IsBorrowedPlace(c.Left) || IsBorrowedPlace(c.Right),
         BoundSwitchExpr s => s.Arms.Any(a => IsBorrowedPlace(a.Value)),
+        // A `with` copies only the fields it does not replace.
+        BoundWith { Target.Type: StructSymbol s } w => IsBorrowedPlace(w.Target)
+            && s.Fields.Any(f => !w.Updates.Any(u => u.Field == f) && TypeFacts.IsUnique(f.Type)),
+        BoundTry t => IsBorrowedPlace(t.Operand),
+        BoundCatch c => IsBorrowedPlace(c.Operand) || IsBorrowedPlace(c.Handler),
         _ => false,
     };
 
