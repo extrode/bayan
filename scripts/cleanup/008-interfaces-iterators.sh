@@ -2,6 +2,8 @@
 # Cleanup for spec 006 interfaces and iterators (2026-10-23): the feature worktree and branch, every
 # chore/worker-006-* worker worktree and branch, and (second flag) the writers' ignored files moved
 # into the feature worktree's tmp/ before each land, plus any test-host hang dump.
+# tmp/009-xcheck-ignored (the 009 spec-doc writer, landed on feat/009) also sits there; its
+# worktree and branch chore/worker-009-xcheck belong to the 009 cleanup, after 009 merges.
 # Dry run by default. --execute / -e acts on worktrees and branches; --delete-scratch also removes untracked scratch.
 set -euo pipefail
 
@@ -28,8 +30,8 @@ workers="$(git branch --list 'chore/worker-006-*' --format='%(refname:short)')"
 
 # 1. Writers' ignored files, moved into the feature worktree's tmp/ before each land (needs --delete-scratch).
 #    Runs before step 2 so the feature worktree is still there to hold them.
-for abs in "$repo/$feat"/tmp/006-*-ignored*; do
-  [ -e "$abs" ] || { printf 'skip:  no %s/tmp/006-*-ignored* left\n' "$feat"; break; }
+for abs in "$repo/$feat"/tmp/*-ignored*; do
+  [ -e "$abs" ] || { printf 'skip:  no %s/tmp/*-ignored* left\n' "$feat"; break; }
   rel="${abs#"$repo/$feat"/}"
   if git -C "$feat" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1; then
     printf 'refuse: %s is tracked by git. Propose it as a commit instead. Left alone.\n' "$rel"; failed=1; continue

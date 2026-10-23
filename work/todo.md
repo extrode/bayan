@@ -139,9 +139,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r2-finalfix: `if ((!x)) { … }` gets no BYN1032; `ParseIf` (`Parser.cs:1302`) tests the condition without `Unwrap`.
 - `Parser.cs` `ParseDefer` (~:1585) still passes `clean = ErrorCount == errors` to ReportBraceless while ParseBody uses "no inner diagnostic has a fix": `defer let x = <expr with a fixless error>;` loses its braces fix (review of fix/review-2026-10-22-1)
 - `unless (a == null) s;` on a `bool` `a` reports BYN1017/1018/1006 but no BYN1023 (review of fix/review-2026-10-22-1, probe p12)
-- `move` of a value while a span or `dyn ref` still borrows it is accepted, so the borrow reads freed memory. `Mutate` (`RegionAnalysis.cs:460-463`) never sees moves. Repro: `tmp/refute006/b5c` and `b5d` on feat/006. Pre-existing for spans; 006 extends the hole to `dyn ref`. Found in the 006 review on 2026-10-22.
 - A field witnessing a getter declared with `fails` may get a vtable thunk that ignores the `fails` return convention (`CEmitter.cs` Vtable). Unprobed; flagged by the 006-fixa writer.
-- 006 re-review (rr006-a #5, unverified): RegionAnalysis.cs:418 Store loan now starts at span.End, so an owner mutation later in the same initializer may go unflagged; build a probe.
-- 006 re-review: BYN2311 suggests `let a` for an array mutated only through `for dyn ref IC x in a { x.bump(); }` (fixd probe h1); check whether `let` would then reject the loop.
 - Region analysis runs on generic instances only, so a never-instantiated generic struct's methods get no BYN3004 (audit 2026-10-23 probe p7); instantiated ones match the non-generic case.
 - BYN2202 on a generic method's type parameter reads "expected `U`, found `U`" (two distinct `U`s print alike).
