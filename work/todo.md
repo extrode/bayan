@@ -161,3 +161,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51a: two declarations on one line after `}` (`int f() { return 0 } void g() {`) give no BYN1005.
 - r3-51a: `return` then a call at the same indent on the next line is a bare return plus an unreachable statement (BYN2405), not BYN1042; by design, check the docs agree.
 - r3-51a: tests/cases/diag and parse `input-forms-one-line` no longer fit on one line after expand-blocks; rename or reshape.
+- Waṣl clause lines `uses`, `expects`, `except`, `becomes` (J61): no parser support yet; add a continuation test with each clause's parser step (5.1b–5.3). From r3-51a gate.

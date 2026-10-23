@@ -223,9 +223,7 @@ public sealed class Parser
 
     /// <summary>A token that joins the line it starts to the line before (waṣl).</summary>
     private bool IsWasl(int index) => KindAt(index) is TokenKind.Dot or TokenKind.QuestionDot or TokenKind.QuestionQuestion
-        or TokenKind.AmpAmp or TokenKind.BarBar or TokenKind.AndKeyword or TokenKind.OrKeyword or TokenKind.CatchKeyword
-        or TokenKind.FailsKeyword or TokenKind.RequiresKeyword
-        || KindAt(index) == TokenKind.Identifier && Text(_tokens[index]) is "where" or "except" or "expects" or "becomes" or "uses";
+        or TokenKind.AmpAmp or TokenKind.BarBar or TokenKind.AndKeyword or TokenKind.OrKeyword or TokenKind.CatchKeyword;
 
     /// <summary>Whether the line before token <paramref name="index"/> ends in an operator, <c>,</c>, <c>=</c>, <c>=&gt;</c> or an opening bracket (lā), or the token is waṣl.</summary>
     private bool LineContinues(int index) => IsWasl(index) || index > 0 && KindAt(index - 1) is
