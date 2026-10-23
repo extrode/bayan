@@ -1,4 +1,8 @@
-enum Color { red, green, blue }
+enum Color {
+    red
+    green
+    blue
+}
 
-let c = Color.gren;
-Color d = .purple;
+let c = Color.gren
+Color d = .purple

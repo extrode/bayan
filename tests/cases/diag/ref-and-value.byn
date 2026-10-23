@@ -1,8 +1,8 @@
 void grow(ref List<i64> items, ReadOnlySpan<i64> from) {
-    items.append(from.length);
+    items.append(from.length)
 }
 
 void main() {
-    var xs = List<i64>();
-    grow(items: ref xs, from: xs);
+    var xs = List<i64>()
+    grow(items: ref xs, from: xs)
 }

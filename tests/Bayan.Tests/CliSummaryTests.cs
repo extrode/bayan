@@ -19,14 +19,14 @@ public sealed partial class CliEnvironmentTests
     {
         var dir = Fresh(name);
         var file = Path.Combine(dir, "main.byn");
-        File.WriteAllText(file, $"void main() {{\n    print(\"{Guid.NewGuid():N}\");\n}}\n");
+        File.WriteAllText(file, $"void main() {{\n    print(\"{Guid.NewGuid():N}\")\n}}\n");
         return (file, Path.Combine(dir, Targets.ExecutableName("out", CliApp.HostTarget)));
     }
 
     private static string Failing(string name)
     {
         var file = Path.Combine(Fresh(name), "main.byn");
-        File.WriteAllText(file, "void main() {\n    let x = 1;\n    x = 2;\n    x = 3;\n    var a = 1;\n    var b = 2;\n    print($\"{a} {b}\");\n}\n");
+        File.WriteAllText(file, "void main() {\n    let x = 1\n    x = 2\n    x = 3\n    var a = 1\n    var b = 2\n    print($\"{a} {b}\")\n}\n");
         return file;
     }
 

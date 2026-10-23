@@ -1,6 +1,6 @@
 error BYN2202: expected `void f(Panic p)`, found `void report(string)`
 
-  6 │     Panic.onPanic = report;
+  6 │     Panic.onPanic = report
     │                     ^^^^^^
     │
   help: name a function declared `void f(Panic p)`

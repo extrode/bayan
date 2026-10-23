@@ -1,5 +1,5 @@
-var a = 0;
-var b = 0;
-a = b;
-b += a;
-print($"{a < b}");
+var a = 0
+var b = 0
+a = b
+b += a
+print($"{a < b}")

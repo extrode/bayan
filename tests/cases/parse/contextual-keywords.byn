@@ -1,57 +1,57 @@
 // Declaration-only keywords are names wherever the grammar does not need them (spec 004 R3).
-type Code = i64;
+type Code = i64
 
 error enum Failure {
-    error,
-    set,
-    law,
+    error
+    set
+    law
 }
 
 struct Names {
-    i64 error;
-    i64 flags;
-    i64 unit;
-    i64 distinct;
-    i64 open;
-    i64 extensible;
-    i64 set;
-    i64 type;
-    i64 law;
-    i64 derivation;
-    i64 attribute;
-    i64 embed;
+    i64 error
+    i64 flags
+    i64 unit
+    i64 distinct
+    i64 open
+    i64 extensible
+    i64 set
+    i64 type
+    i64 law
+    i64 derivation
+    i64 attribute
+    i64 embed
 }
 
-i64 error(i64 error) => error;
-i64 flags(i64 flags) => flags;
-i64 unit(i64 unit) => unit;
-i64 distinct(i64 distinct) => distinct;
-i64 open(i64 open) => open;
-i64 extensible(i64 extensible) => extensible;
-i64 set(i64 set) => set;
-i64 type(i64 type) => type;
-i64 law(i64 law) => law;
-i64 derivation(i64 derivation) => derivation;
-i64 attribute(i64 attribute) => attribute;
-i64 embed(i64 embed) => embed;
-(i64 type, i64 law) swap((i64 flags, i64 unit) pair) => (pair.unit, pair.flags);
+i64 error(i64 error) => error
+i64 flags(i64 flags) => flags
+i64 unit(i64 unit) => unit
+i64 distinct(i64 distinct) => distinct
+i64 open(i64 open) => open
+i64 extensible(i64 extensible) => extensible
+i64 set(i64 set) => set
+i64 type(i64 type) => type
+i64 law(i64 law) => law
+i64 derivation(i64 derivation) => derivation
+i64 attribute(i64 attribute) => attribute
+i64 embed(i64 embed) => embed
+(i64 type, i64 law) swap((i64 flags, i64 unit) pair) => (pair.unit, pair.flags)
 
-let error = 3;
-let flags = 1;
-var unit = 2;
-i64 distinct = 4;
-let open = true;
-let extensible = false;
-let set = [1, 2];
-let type = 5;
-let law = 6;
-let derivation = 7;
-let attribute = 8;
-let embed = 9;
-(i64 error, i64 set) pair = (1, 2);
-type = 1;
-set.add(1);
-let n = Names { error: 1, set: 2, type: 3 };
-let total = n.error + n.flags + n.unit + n.distinct + n.open + n.extensible + n.set + n.type + n.law + n.derivation + n.attribute + n.embed;
-let f = Failure.set;
-print(error(type: 1));
+let error = 3
+let flags = 1
+var unit = 2
+i64 distinct = 4
+let open = true
+let extensible = false
+let set = [1, 2]
+let type = 5
+let law = 6
+let derivation = 7
+let attribute = 8
+let embed = 9
+(i64 error, i64 set) pair = (1, 2)
+type = 1
+set.add(1)
+let n = Names { error: 1, set: 2, type: 3 }
+let total = n.error + n.flags + n.unit + n.distinct + n.open + n.extensible + n.set + n.type + n.law + n.derivation + n.attribute + n.embed
+let f = Failure.set
+print(error(type: 1))

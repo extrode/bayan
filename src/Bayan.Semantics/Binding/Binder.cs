@@ -335,7 +335,7 @@ internal sealed partial class Binder
         c.Bound = value;
         if (value.Type.IsError) return;
         var decl = c.Decl;
-        var help = $"write `const T[N] {decl.Name.Text} = [ … ];` with `T` a number type, `bool`, `char` or `string`, and only literals or constants inside";
+        var help = $"write `const T[N] {decl.Name.Text} = [ … ]` with `T` a number type, `bool`, `char` or `string`, and only literals or constants inside";
         if (c.Type is not Symbols.ArrayType { Element: PrimitiveType { IsNumeric: true } or PrimitiveType { Kind: PrimitiveKind.Bool or PrimitiveKind.Char or PrimitiveKind.String } })
         {
             Report(DiagnosticCodes.InvalidConstArray, decl.Type?.Span ?? decl.Init!.Span, [decl.Name.Text], help: help);
@@ -527,7 +527,7 @@ internal sealed partial class Binder
         if (condition.Type.IsError || Conversions.Implicit(condition.Type, PrimitiveType.Bool) is not null)
             return new BoundAssert(a, Convert(condition, PrimitiveType.Bool, a.Condition.Span));
         Report(DiagnosticCodes.AssertNotBool, a.Condition.Span, [condition.Type.DisplayName], label: "this is not a `bool`",
-            help: "check the value against what you expect, e.g. `assert count == 3;`");
+            help: "check the value against what you expect, e.g. `assert count == 3`");
         return new BoundErrorStmt(a);
     }
 
@@ -630,7 +630,7 @@ internal sealed partial class Binder
         }
         else if (declared is null)
         {
-            Report(DiagnosticCodes.CannotInferType, d.Name.Span, [d.Name.Text], help: $"write the type: `var i64 {d.Name.Text};`");
+            Report(DiagnosticCodes.CannotInferType, d.Name.Span, [d.Name.Text], help: $"write the type: `var i64 {d.Name.Text}`");
         }
 
         TypeSymbol type;
@@ -669,7 +669,7 @@ internal sealed partial class Binder
         switch (init.Type)
         {
             case NullType:
-                Report(DiagnosticCodes.CannotInferType, syntax.Span, ["null"], help: "write the type: `i64? x = null;`");
+                Report(DiagnosticCodes.CannotInferType, syntax.Span, ["null"], help: "write the type: `i64? x = null`");
                 return ErrorType.Instance;
             case PrimitiveType { Kind: PrimitiveKind.Void }:
                 Report(DiagnosticCodes.VoidValue, syntax.Span, []);
@@ -688,7 +688,7 @@ internal sealed partial class Binder
         var value = BindExpr(w.Value);
         if (value.Type is not (OptionalType or ErrorType))
             Report(DiagnosticCodes.WhileLetNotOptional, w.Value.Span, [value.Type.DisplayName],
-                help: $"loop with `while` and a condition, or bind it once: `let {w.Variable.Text} = …;`");
+                help: $"loop with `while` and a condition, or bind it once: `let {w.Variable.Text} = …`");
         var cond = new BoundIs(w, value, BindPresent(w.Variable, value.Type));
         _targets.Add(target);
         var body = BindBody(w.Body);
@@ -950,7 +950,7 @@ internal sealed partial class Binder
                 if (fn.InfersErrors && fn.ErrorSets.Count == 0 && fn.ReturnType is PrimitiveType { Kind: PrimitiveKind.Void })
                 {
                     Report(DiagnosticCodes.UnknownVariant, t.Span, [t.Member.Text, "the inferred error set"],
-                        help: "name the set: `return MyError.x;`");
+                        help: "name the set: `return MyError.x`");
                     return new BoundErrorExpr(t);
                 }
                 return null;

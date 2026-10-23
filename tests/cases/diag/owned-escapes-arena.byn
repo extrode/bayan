@@ -1,14 +1,14 @@
 struct Node {
-    i64 item;
-    Owned<Node>? next;
+    i64 item
+    Owned<Node>? next
 }
 
 void main() {
-    Owned<Node>? head = null;
+    Owned<Node>? head = null
     {
-        using let arena = Arena();
+        using let arena = Arena()
         context (allocator: arena) {
-            head = Owned(Node { item: 1, next: move head });
+            head = Owned(Node { item: 1, next: move head })
         }
     }
 }

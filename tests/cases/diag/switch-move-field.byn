@@ -1,16 +1,16 @@
 // `switch move …` needs a local or a `move` parameter as its subject (BYN2789).
 union Slot {
-    empty,
-    full(List<i64> items),
+    empty
+    full(List<i64> items)
 }
 
 struct Box {
-    Slot slot;
+    Slot slot
 }
 
 void inspect(Slot plain) {
-    let box = Box { slot: Slot.empty };
-    let slots = List<Slot>();
+    let box = Box { slot: Slot.empty }
+    let slots = List<Slot>()
     switch move box.slot {
         default:
     }

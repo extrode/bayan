@@ -1,53 +1,53 @@
 error BYN1021: `x = …` in a literal is an input form; write `x: …`
 
-  3 │ void main() { let p = P { x = 1, y: 2 }; let q = P { x = 3, y: 4 }; print($"{p.x} {q.x}"); }
+  4 │ void main() { let p = P { x = 1, y: 2 }
     │                             ^ the input form
     │
   help: write `:` after the field name
-    │ 3 │ void main() { let p = P { x: 1, y: 2 }; let q = P { x = 3, y: 4 }; print($"{p.x} {q.x}"); }
+    │ 4 │ void main() { let p = P { x: 1, y: 2 }
     │   │                            +
 
 error BYN1021: `x = …` in a literal is an input form; write `x: …`
 
-  3 │ void main() { let p = P { x = 1, y: 2 }; let q = P { x = 3, y: 4 }; print($"{p.x} {q.x}"); }
-    │                                                        ^ the input form
+  5 │ let q = P { x = 3, y: 4 }
+    │               ^ the input form
     │
   help: write `:` after the field name
-    │ 3 │ void main() { let p = P { x = 1, y: 2 }; let q = P { x: 3, y: 4 }; print($"{p.x} {q.x}"); }
-    │   │                                                       +
+    │ 5 │ let q = P { x: 3, y: 4 }
+    │   │              +
 
 error BYN1030: `int` is an input form; the Bayan type is `i32`
 
-  4 │ int f(long x) { return 0; } void g() { List<double> xs = List<double>(); print($"{xs.length}"); }
+  7 │ int f(long x) { return 0 } void g() { List<double> xs = List<double>()
     │ ^^^ a C# type name
     │
   help: write `i32`
-    │ 4 │ i32 f(long x) { return 0; } void g() { List<double> xs = List<double>(); print($"{xs.length}"); }
+    │ 7 │ i32 f(long x) { return 0 } void g() { List<double> xs = List<double>()
     │   │  ++
 
 error BYN1030: `long` is an input form; the Bayan type is `i64`
 
-  4 │ int f(long x) { return 0; } void g() { List<double> xs = List<double>(); print($"{xs.length}"); }
+  7 │ int f(long x) { return 0 } void g() { List<double> xs = List<double>()
     │       ^^^^ a C# type name
     │
   help: write `i64`
-    │ 4 │ int f(i64 x) { return 0; } void g() { List<double> xs = List<double>(); print($"{xs.length}"); }
+    │ 7 │ int f(i64 x) { return 0 } void g() { List<double> xs = List<double>()
     │   │       +++
 
 error BYN1030: `double` is an input form; the Bayan type is `f64`
 
-  4 │ int f(long x) { return 0; } void g() { List<double> xs = List<double>(); print($"{xs.length}"); }
-    │                                             ^^^^^^ a C# type name
+  7 │ int f(long x) { return 0 } void g() { List<double> xs = List<double>()
+    │                                            ^^^^^^ a C# type name
     │
   help: write `f64`
-    │ 4 │ int f(long x) { return 0; } void g() { List<f64> xs = List<double>(); print($"{xs.length}"); }
-    │   │                                             +++
+    │ 7 │ int f(long x) { return 0 } void g() { List<f64> xs = List<double>()
+    │   │                                            +++
 
 error BYN1030: `double` is an input form; the Bayan type is `f64`
 
-  4 │ int f(long x) { return 0; } void g() { List<double> xs = List<double>(); print($"{xs.length}"); }
-    │                                                               ^^^^^^ a C# type name
+  7 │ int f(long x) { return 0 } void g() { List<double> xs = List<double>()
+    │                                                              ^^^^^^ a C# type name
     │
   help: write `f64`
-    │ 4 │ int f(long x) { return 0; } void g() { List<double> xs = List<f64>(); print($"{xs.length}"); }
-    │   │                                                               +++
+    │ 7 │ int f(long x) { return 0 } void g() { List<double> xs = List<f64>()
+    │   │                                                              +++

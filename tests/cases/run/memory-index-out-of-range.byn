@@ -1,7 +1,7 @@
-i64[3] xs = [1, 2, 3];
-let s = xs.asSpan();
-var i = 0;
+i64[3] xs = [1, 2, 3]
+let s = xs.asSpan()
+var i = 0
 while i <= 3 {
-    print($"{s[i]}");
-    i += 1;
+    print($"{s[i]}")
+    i += 1
 }

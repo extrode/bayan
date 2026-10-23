@@ -10,7 +10,7 @@
     "windows-x64"
   ],
   "source": null,
-  "inputs": "sha256:7d00fdbf7bff39dcde91e4a7cb22ed815ceac38c337f532d7baa74385b2e2d56"
+  "inputs": "sha256:37e52da8103dc97c800e9214897277b1a7e4108c068f2b0cebdba68a75baa2cc"
 }
 === 0.1.0/SHA256SUMS
 <sha256>  linux-x64/tally
@@ -31,7 +31,7 @@
     "windows-x64"
   ],
   "source": null,
-  "inputs": "sha256:7d00fdbf7bff39dcde91e4a7cb22ed815ceac38c337f532d7baa74385b2e2d56"
+  "inputs": "sha256:37e52da8103dc97c800e9214897277b1a7e4108c068f2b0cebdba68a75baa2cc"
 }
 === latest/SHA256SUMS
 <sha256>  linux-x64/tally

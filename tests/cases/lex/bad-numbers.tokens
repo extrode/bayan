@@ -1,45 +1,40 @@
 1:1 IntegerLiteral `0x`
-1:3 Semicolon `;`
 2:1 IntegerLiteral `1_`
-2:3 Semicolon `;`
 3:1 IntegerLiteral `0b102`
-3:6 Semicolon `;`
 4:1 IntegerLiteral `0xFF`
 4:5 NumericSuffix `s`
-4:6 Semicolon `;`
 5:1 IntegerLiteral `0b1`
 5:4 NumericSuffix `ms`
-5:6 Semicolon `;`
 6:1 EndOfFile
 
 error BYN0010: invalid numeric literal: expected digits after `0x`
 
-  1 │ 0x;
+  1 │ 0x
     │ ^^
 
 error BYN0010: invalid numeric literal: `_` must sit between digits
 
-  2 │ 1_;
+  2 │ 1_
     │  ^
     │
-    │ 2 │ 1_;
+    │ 2 │ 1_
     │   │  -
 
 error BYN0010: invalid numeric literal: binary literals use only `0` and `1`
 
-  3 │ 0b102;
+  3 │ 0b102
     │     ^
 
 error BYN0011: unit suffix `s` is not allowed on a hexadecimal literal
 
-  4 │ 0xFFs;
+  4 │ 0xFFs
     │     ^
     │
   help: write the value in decimal, or wrap it with a cast to the unit type
 
 error BYN0011: unit suffix `ms` is not allowed on a binary literal
 
-  5 │ 0b1ms;
+  5 │ 0b1ms
     │    ^^
     │
   help: write the value in decimal, or wrap it with a cast to the unit type

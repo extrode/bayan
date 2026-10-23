@@ -35,14 +35,14 @@ public sealed class InterfaceDeclarationTests
     {
         var c = Compile("""
             interface IShape {
-                i64 area();
-                string describe() => "shape";
+                i64 area()
+                string describe() => "shape"
             }
 
             struct Tokens : IShape {
-                i64 n;
+                i64 n
 
-                i64 area() => n;
+                i64 area() => n
             }
 
             void show<T>(ref T shape) where T : IShape, IEnumerator { }
@@ -61,11 +61,11 @@ public sealed class InterfaceDeclarationTests
     {
         var c = Compile("""
             interface IShape {
-                i64 area();
+                i64 area()
             }
 
             void show(dyn ref IShape s, dyn ref readonly IShape r) {
-                dyn ref readonly IShape t = r;
+                dyn ref readonly IShape t = r
             }
             """);
         Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items.Select(d => d.Message)));
@@ -80,12 +80,12 @@ public sealed class InterfaceDeclarationTests
     {
         var c = Compile("""
             interface IOrder<T> {
-                bool less(T other);
+                bool less(T other)
             }
 
-            T max<T>(move T a, T b) where T : IOrder<T> => a;
+            T max<T>(move T a, T b) where T : IOrder<T> => a
 
-            T.Item first<T>(ref T e, move T.Item fallback) where T : IEnumerator => fallback;
+            T.Item first<T>(ref T e, move T.Item fallback) where T : IEnumerator => fallback
             """);
         Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items.Select(d => d.Message)));
         var order = Assert.Single(c.Modules[0].Interfaces);

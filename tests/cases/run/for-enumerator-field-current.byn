@@ -1,12 +1,16 @@
 // A field stands for `IEnumerator.current` in a `for`.
 struct Ints : IEnumerator {
-    type Item = i64;
-    i64 at;
-    i64 current;
-    bool moveNext(ref this) { at += 1; current = at; return at < 3; }
+    type Item = i64
+    i64 at
+    i64 current
+    bool moveNext(ref this) {
+        at += 1
+        current = at
+        return at < 3
+    }
 }
 
-var e = Ints { at: -1, current: 0 };
+var e = Ints { at: -1, current: 0 }
 for x in e {
-    print($"{x}");
+    print($"{x}")
 }

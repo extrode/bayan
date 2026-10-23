@@ -1,29 +1,29 @@
 struct Id {
-    readonly i64 value;
-    required string label;
+    readonly i64 value
+    required string label
 }
 
 void bump(ref i64 total, i64 by = 1) {
-    total += by;
+    total += by
 }
 
 void fill(out i64 result) {
-    result = 7;
+    result = 7
 }
 
-i64 count = 0;
-count += 1;
-count++;
-bump(total: ref count);
-bump(total: ref count, by: 3);
-i64 later;
-let ok = count > 2;
+i64 count = 0
+count += 1
+count++
+bump(total: ref count)
+bump(total: ref count, by: 3)
+i64 later
+let ok = count > 2
 if ok {
-    later = 1;
+    later = 1
 } else {
-    later = 2;
+    later = 2
 }
-i64 filled;
-fill(out filled);
-let id = Id { value: 1, label: "a" };
-print($"{count} {later} {filled} {id.value} {id.label}");
+i64 filled
+fill(out filled)
+let id = Id { value: 1, label: "a" }
+print($"{count} {later} {filled} {id.value} {id.label}")

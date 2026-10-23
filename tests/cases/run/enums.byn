@@ -1,74 +1,78 @@
-enum Color { red, green, blue }
+enum Color {
+    red
+    green
+    blue
+}
 
 public enum Suit {
-    clubs,
-    diamonds,
-    hearts,
-    spades,
+    clubs
+    diamonds
+    hearts
+    spades
 }
 
 struct Card {
-    Suit suit;
-    i64 rank;
+    Suit suit
+    i64 rank
 
     void formatInto(ref StrBuf sb) {
-        sb.append($"Card {{ suit: {suit}, rank: {rank} }}");
+        sb.append($"Card {{ suit: {suit}, rank: {rank} }}")
     }
 }
 
 string describe(Color c) => c switch {
     .red => "warm",
     Color.green or .blue => "cool",
-};
+}
 
 void kind(Suit s) {
     switch s {
         case .hearts or .diamonds:
-            print($"{s} is red");
+            print($"{s} is red")
         case Suit.clubs:
-            print("clubs is black");
+            print("clubs is black")
         case .spades:
-            print("spades is black");
+            print("spades is black")
     }
 }
 
-print($"count {Color.count} {Suit.count}");
+print($"count {Color.count} {Suit.count}")
 for c in Color.values {
-    print($"{c.ordinal} {c.name} {c} {describe(c)}");
+    print($"{c.ordinal} {c.name} {c} {describe(c)}")
 }
-print(Color.green);
+print(Color.green)
 for s in Suit.values {
-    kind(s);
+    kind(s)
 }
 
-let c = Color.blue;
-Color target = .green;
-print($"{c == Color.blue} {c != .blue} {target == Color.green} {c == target}");
+let c = Color.blue
+Color target = .green
+print($"{c == Color.blue} {c != .blue} {target == Color.green} {c == target}")
 
-let third = Color.fromOrdinal(2);
-let none = Color.fromOrdinal(3);
-let negative = Color.fromOrdinal(-1);
-print($"{third} {none} {negative}");
+let third = Color.fromOrdinal(2)
+let none = Color.fromOrdinal(3)
+let negative = Color.fromOrdinal(-1)
+print($"{third} {none} {negative}")
 if (Color.fromOrdinal(0) is { } first) {
-    print($"first {first}");
+    print($"first {first}")
 }
 
-print($"{Suit.parse("hearts")} {Suit.parse("Hearts")} {Suit.parse("")}");
-let parsed = Suit.parse("spades") ?? .clubs;
-print($"parsed {parsed.name} {parsed.ordinal}");
+print($"{Suit.parse("hearts")} {Suit.parse("Hearts")} {Suit.parse("")}")
+let parsed = Suit.parse("spades") ?? .clubs
+print($"parsed {parsed.name} {parsed.ordinal}")
 
-let card = Card { suit: .hearts, rank: 12 };
-print($"{card}");
-print($"{card == Card { suit: Suit.hearts, rank: 12 }} {card == Card { suit: .spades, rank: 12 }}");
+let card = Card { suit: .hearts, rank: 12 }
+print($"{card}")
+print($"{card == Card { suit: Suit.hearts, rank: 12 }} {card == Card { suit: .spades, rank: 12 }}")
 
-var hand = List<Suit>();
-hand.append(.spades);
-hand.append(Suit.diamonds);
-hand.append(card.suit);
+var hand = List<Suit>()
+hand.append(.spades)
+hand.append(Suit.diamonds)
+hand.append(card.suit)
 for s in hand {
-    print($"hand {s}");
+    print($"hand {s}")
 }
-Suit? maybe = hand[1];
-Suit? missing = null;
-print($"{maybe} {missing} {maybe == Suit.diamonds}");
-print(maybe switch { null => "none", .diamonds => "diamonds", _ => "other" });
+Suit? maybe = hand[1]
+Suit? missing = null
+print($"{maybe} {missing} {maybe == Suit.diamonds}")
+print(maybe switch { null => "none", .diamonds => "diamonds", _ => "other" })

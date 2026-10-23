@@ -3,6 +3,6 @@
    comment */ a
 /// Doc line one.
 /// Doc line two.
-struct S;
+struct S
 //// not a doc comment
 b

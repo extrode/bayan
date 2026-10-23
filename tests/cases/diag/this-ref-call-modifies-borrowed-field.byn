@@ -1,41 +1,41 @@
 interface IThing {
-    i64 get();
+    i64 get()
 }
 
 struct S : IThing {
-    i64 n;
+    i64 n
 
-    i64 get() => n;
+    i64 get() => n
 }
 
 struct B {
-    List<S> items;
-    List<S> other;
+    List<S> items
+    List<S> other
 
     void clearAll(ref this) {
-        items.clear();
+        items.clear()
     }
 
     void clearOther(ref this) {
-        other.clear();
+        other.clear()
     }
 
     void reset(ref this) {
-        clearAll();
+        clearAll()
     }
 
     // A `ref this` call on `this` changes the fields its body changes: only those conflict with a live borrow.
     void run(ref this) {
-        dyn ref IThing d = items[0];
-        clearOther();
-        clearAll();
-        reset();
-        print($"{d.get()}");
+        dyn ref IThing d = items[0]
+        clearOther()
+        clearAll()
+        reset()
+        print($"{d.get()}")
     }
 }
 
 void main() {
-    var b = B { items: List<S>(), other: List<S>() };
-    b.items.append(S { n: 1 });
-    b.run();
+    var b = B { items: List<S>(), other: List<S>() }
+    b.items.append(S { n: 1 })
+    b.run()
 }

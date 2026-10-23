@@ -1,6 +1,6 @@
 error BYN2788: `take()` needs a `List`, `Map`, `StrBuf` or an optional of a unique type, not `i64`
 
-  7 │     let a = n.take();
+  7 │     let a = n.take()
     │               ^^^^
     │
   help: copy it, or move the whole local; only an owned collection or optional has an empty value to
@@ -9,7 +9,7 @@ error BYN2788: `take()` needs a `List`, `Map`, `StrBuf` or an optional of a uniq
 error BYN2788: `take()` needs a `List`, `Map`, `StrBuf` or an optional of a unique type, not
 `string`
 
-  8 │     let b = s.take();
+  8 │     let b = s.take()
     │               ^^^^
     │
   help: copy it, or move the whole local; only an owned collection or optional has an empty value to
@@ -17,7 +17,7 @@ error BYN2788: `take()` needs a `List`, `Map`, `StrBuf` or an optional of a uniq
 
 error BYN2788: `take()` needs a `List`, `Map`, `StrBuf` or an optional of a unique type, not `Point`
 
-  9 │     let c = p.take();
+  9 │     let c = p.take()
     │               ^^^^
     │
   help: copy it, or move the whole local; only an owned collection or optional has an empty value to
@@ -25,7 +25,7 @@ error BYN2788: `take()` needs a `List`, `Map`, `StrBuf` or an optional of a uniq
 
 error BYN2788: `take()` needs a `List`, `Map`, `StrBuf` or an optional of a unique type, not `i64?`
 
-  10 │     let d = o.take();
+  10 │     let d = o.take()
      │               ^^^^
      │
   help: copy it, or move the whole local; only an owned collection or optional has an empty value to

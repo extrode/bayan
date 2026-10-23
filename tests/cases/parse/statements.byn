@@ -1,52 +1,52 @@
 void main() {
-    let a = 1;
-    var b = 2;
-    const c = 3;
-    let i64 d = 4;
-    var u8 e = 5;
-    i64 f = 6;
-    Money m;
-    using let arena = Arena();
-    b = 7;
-    b += 1;
-    b -= 1;
-    b *= 2;
-    b /= 2;
-    b %= 3;
-    b <<= 1;
-    b >>= 1;
-    b &= 1;
-    b |= 2;
-    b ^= 3;
-    m.cents = 9;
-    xs[0] = 1;
-    b++;
-    b--;
-    ++b;
-    _ = f();
-    if a > 0 { print("pos"); } else if a < 0 { print("neg"); } else { print("zero"); }
-    unless ok { retry(); }
-    while b > 0 { b--; }
-    do { b++; } while b < 10;
-    for i in 0..10 { total += i; }
-    for x in xs { print(x); }
+    let a = 1
+    var b = 2
+    const c = 3
+    let i64 d = 4
+    var u8 e = 5
+    i64 f = 6
+    Money m
+    using let arena = Arena()
+    b = 7
+    b += 1
+    b -= 1
+    b *= 2
+    b /= 2
+    b %= 3
+    b <<= 1
+    b >>= 1
+    b &= 1
+    b |= 2
+    b ^= 3
+    m.cents = 9
+    xs[0] = 1
+    b++
+    b--
+    ++b
+    _ = f()
+    if a > 0 { print("pos") } else if a < 0 { print("neg") } else { print("zero") }
+    unless ok { retry() }
+    while b > 0 { b-- }
+    do { b++ } while b < 10
+    for i in 0..10 { total += i }
+    for x in xs { print(x) }
     for i64 i in 0..=n {}
     for y in ys {}
     outer: for row in grid {
         for cell in row {
-            break outer if cell == 0;
-            continue outer;
+            break outer if cell == 0
+            continue outer
         }
     }
-    defer close(f);
-    defer failing rollback();
-    defer failing (e) { log(e); }
+    defer close(f)
+    defer failing rollback()
+    defer failing (e) { log(e) }
     context (allocator: arena) {
-        work();
+        work()
     }
     {
-        nested();
+        nested()
     }
-    ;
-    return;
+
+    return
 }

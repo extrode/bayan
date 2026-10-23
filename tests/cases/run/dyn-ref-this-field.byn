@@ -1,21 +1,21 @@
 interface IThing {
-    i64 get();
+    i64 get()
 }
 
 struct S : IThing {
-    i64 n;
+    i64 n
 
-    i64 get() => n;
+    i64 get() => n
 }
 
 struct Box {
-    S inner;
+    S inner
 
-    dyn ref IThing pick(ref this) => inner;
+    dyn ref IThing pick(ref this) => inner
 }
 
 void main() {
-    var b = Box { inner: S { n: 3 } };
-    dyn ref IThing d = b.pick();
-    print($"{d.get()}");
+    var b = Box { inner: S { n: 3 } }
+    dyn ref IThing d = b.pick()
+    print($"{d.get()}")
 }

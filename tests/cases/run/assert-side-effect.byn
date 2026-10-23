@@ -1,7 +1,7 @@
 i64 next(ref i64 n) {
-    n += 1;
-    return n;
+    n += 1
+    return n
 }
 
-i64 calls = 0;
-assert next(ref calls) * 10 == calls + 100;
+i64 calls = 0
+assert next(ref calls) * 10 == calls + 100

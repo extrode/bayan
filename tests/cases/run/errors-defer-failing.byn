@@ -1,16 +1,16 @@
 error enum StepError {
     /// The step was told to fail.
-    told,
+    told
 }
 
 i64 work(bool fail) fails StepError {
-    defer print("defer");
-    defer failing print("defer failing");
-    defer failing (e) print($"defer failing saw {e}");
-    return .told if fail;
-    return 1;
+    defer print("defer")
+    defer failing print("defer failing")
+    defer failing (e) print($"defer failing saw {e}")
+    return .told if fail
+    return 1
 }
 
-print($"result {work(fail: false) catch -1}");
-print("---");
-print($"result {work(fail: true) catch -1}");
+print($"result {work(fail: false) catch -1}")
+print("---")
+print($"result {work(fail: true) catch -1}")

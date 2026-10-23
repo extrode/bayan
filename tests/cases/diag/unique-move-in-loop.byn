@@ -1,17 +1,17 @@
 // A move inside a loop of a local declared outside it fails on the second iteration (BYN2781),
 // unless the local is reassigned before the next one.
 void consume(move List<i64> xs) {
-    print($"{xs.length}");
+    print($"{xs.length}")
 }
 
 void main() {
-    let a = List<i64>();
+    let a = List<i64>()
     for i in 0..3 {
-        consume(move a);
+        consume(move a)
     }
-    var b = List<i64>();
+    var b = List<i64>()
     for i in 0..3 {
-        consume(move b);
-        b = List<i64>();
+        consume(move b)
+        b = List<i64>()
     }
 }

@@ -1,40 +1,40 @@
-i64 zero = 0;
-i64 small = 255;
-i64 big = 3735928559;
-print($"{zero.toHex()} {small.toHex()} {big.toHex()}");
+i64 zero = 0
+i64 small = 255
+i64 big = 3735928559
+print($"{zero.toHex()} {small.toHex()} {big.toHex()}")
 
-i8 i8Max = 127;
-i8 i8Neg = -1;
-i8 i8Min = -128;
-print($"i8 {i8Max.toHex()} {i8Neg.toHex()} {i8Min.toHex()}");
-i16 i16Max = 32767;
-i16 i16Neg = -2;
-print($"i16 {i16Max.toHex()} {i16Neg.toHex()}");
-i32 i32Max = 2147483647;
-i32 i32Neg = -1;
-i32 i32Min = -2147483648;
-print($"i32 {i32Max.toHex()} {i32Neg.toHex()} {i32Min.toHex()}");
-i64 i64Max = 9223372036854775807;
-i64 i64Neg = -1;
-i64 i64Min = -9223372036854775808;
-print($"i64 {i64Max.toHex()} {i64Neg.toHex()} {i64Min.toHex()}");
-isize isizeNeg = -16;
-print($"isize {isizeNeg.toHex()}");
+i8 i8Max = 127
+i8 i8Neg = -1
+i8 i8Min = -128
+print($"i8 {i8Max.toHex()} {i8Neg.toHex()} {i8Min.toHex()}")
+i16 i16Max = 32767
+i16 i16Neg = -2
+print($"i16 {i16Max.toHex()} {i16Neg.toHex()}")
+i32 i32Max = 2147483647
+i32 i32Neg = -1
+i32 i32Min = -2147483648
+print($"i32 {i32Max.toHex()} {i32Neg.toHex()} {i32Min.toHex()}")
+i64 i64Max = 9223372036854775807
+i64 i64Neg = -1
+i64 i64Min = -9223372036854775808
+print($"i64 {i64Max.toHex()} {i64Neg.toHex()} {i64Min.toHex()}")
+isize isizeNeg = -16
+print($"isize {isizeNeg.toHex()}")
 
-u8 u8Small = 10;
-u8 u8Max = 255;
-print($"u8 {u8Small.toHex()} {u8Max.toHex()}");
-u16 u16Max = 65535;
-print($"u16 {u16Max.toHex()}");
-u32 u32Max = 4294967295;
-print($"u32 {u32Max.toHex()}");
-u64 u64Max = 18446744073709551615;
-print($"u64 {u64Max.toHex()}");
-usize usizeVal = 4096;
-print($"usize {usizeVal.toHex()}");
+u8 u8Small = 10
+u8 u8Max = 255
+print($"u8 {u8Small.toHex()} {u8Max.toHex()}")
+u16 u16Max = 65535
+print($"u16 {u16Max.toHex()}")
+u32 u32Max = 4294967295
+print($"u32 {u32Max.toHex()}")
+u64 u64Max = 18446744073709551615
+print($"u64 {u64Max.toHex()}")
+usize usizeVal = 4096
+print($"usize {usizeVal.toHex()}")
 
-using let arena = Arena();
+using let arena = Arena()
 context (allocator: arena) {
-    let hex = small.toHex();
-    print($"arena {hex}");
+    let hex = small.toHex()
+    print($"arena {hex}")
 }

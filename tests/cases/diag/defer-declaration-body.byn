@@ -1,10 +1,10 @@
 void main() {
-    defer let x = 1;
-    defer i32 y = 1;
-    defer print("a");
+    defer let x = 1
+    defer i32 y = 1
+    defer print("a")
 }
 
 void f() fails IoError {
-    defer failing let z = 1;
-    defer failing print("b");
+    defer failing let z = 1
+    defer failing print("b")
 }

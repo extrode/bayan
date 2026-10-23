@@ -1,6 +1,6 @@
 error BYN3004: `items` is modified while `s` still borrows it
 
-  15 │         pass();
+  15 │         pass()
      │         ^^^^^^ `s` is used again on line 16
      │
   help: finish using `s` first, or copy what it needs before changing `items`

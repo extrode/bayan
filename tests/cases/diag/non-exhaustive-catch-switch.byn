@@ -1,22 +1,22 @@
 error enum EmailError {
     /// Not an address.
-    invalid,
+    invalid
 }
 
 error enum DbError {
     /// The database took too long.
-    timeout,
+    timeout
     /// The connection dropped.
-    lost,
+    lost
 }
 
-error set SignupError = EmailError, DbError;
+error set SignupError = EmailError, DbError
 
 i64 signUp(i64 n) fails SignupError {
-    return .invalid if n == 1;
-    return n;
+    return .invalid if n == 1
+    return n
 }
 
 let r = signUp(1) catch switch {
     DbError.timeout => 1,
-};
+}

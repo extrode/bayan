@@ -1,26 +1,26 @@
 i64 count(ReadOnlySpan<u8> data, u8 target) {
-    i64 n = 0;
+    i64 n = 0
     for b in data {
-        n += b == target ? 1 : 0;
+        n += b == target ? 1 : 0
     }
-    return n;
+    return n
 }
 
 i64 sum(ReadOnlySpan<i64> values) {
-    i64 total = 0;
+    i64 total = 0
     for v in values {
-        total += v;
+        total += v
     }
-    return total;
+    return total
 }
 
-let text = "banana";
-let bytes = text.bytes;
-ReadOnlySpan<u8> middle = bytes[1..^1];
-var numbers = List<i64>();
-numbers.append(4);
-numbers.append(5);
-i64[3] fixed = [1, 2, 3];
-Span<i64> view = fixed.asSpan();
-print($"{count(text, target: 'a')} {count(bytes, target: 'n')} {count(middle, target: 'a')} {middle.length}");
-print($"{sum(numbers)} {sum(fixed)} {sum(view)} {sum(view[1..])}");
+let text = "banana"
+let bytes = text.bytes
+ReadOnlySpan<u8> middle = bytes[1..^1]
+var numbers = List<i64>()
+numbers.append(4)
+numbers.append(5)
+i64[3] fixed = [1, 2, 3]
+Span<i64> view = fixed.asSpan()
+print($"{count(text, target: 'a')} {count(bytes, target: 'n')} {count(middle, target: 'a')} {middle.length}")
+print($"{sum(numbers)} {sum(fixed)} {sum(view)} {sum(view[1..])}")

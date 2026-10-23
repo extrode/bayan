@@ -1,5 +1,16 @@
-union Mode { read = 1, write = 1 }
+union Mode {
+    read = 1
+    write = 1
+}
 
-union Level { low = 1, mid, high = 2 }
+union Level {
+    low = 1
+    mid
+    high = 2
+}
 
-union Step { two = 2, one = 1, next }
+union Step {
+    two = 2
+    one = 1
+    next
+}

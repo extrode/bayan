@@ -2,97 +2,97 @@
 // Valid ownership transfers run clean under the debug-build checker: moves in loops with reassignment,
 // `return move`, `take()`, struct literals with `move`, and List, Map and StrBuf storage that grows.
 struct Bag {
-    string name;
-    List<i64> items;
+    string name
+    List<i64> items
 }
 
 union Payload {
-    items(List<i64> items),
-    empty,
+    items(List<i64> items)
+    empty
 }
 
 i64 sum(move List<i64> xs) {
-    i64 total = 0;
-    for x in xs { total += x; }
-    return total;
+    i64 total = 0
+    for x in xs { total += x }
+    return total
 }
 
 List<i64> grow(move List<i64> xs, i64 count) {
-    var ys = move xs;
-    for i in 0..count { ys.append(i); }
-    return move ys;
+    var ys = move xs
+    for i in 0..count { ys.append(i) }
+    return move ys
 }
 
 Bag pack(string name, i64 count) {
-    var items = List<i64>();
-    for i in 0..count { items.append(i); }
-    var bag = Bag { name: name, items: move items };
-    bag.items.append(100);
-    return move bag;
+    var items = List<i64>()
+    for i in 0..count { items.append(i) }
+    var bag = Bag { name: name, items: move items }
+    bag.items.append(100)
+    return move bag
 }
 
 i64 count(Payload p) => p switch {
     .items(let items) => items.length,
     .empty => 0,
-};
+}
 
 void main() {
-    var batches = List<List<i64>>();
-    var batch = List<i64>();
+    var batches = List<List<i64>>()
+    var batch = List<i64>()
     for round in 0..4 {
-        for i in 0..20 { batch.append(round * 100 + i); }
-        batches.append(move batch);
-        batch = List<i64>();
+        for i in 0..20 { batch.append(round * 100 + i) }
+        batches.append(move batch)
+        batch = List<i64>()
     }
-    print($"batches {batches.length} {batches[3].length} {batch.length}");
+    print($"batches {batches.length} {batches[3].length} {batch.length}")
 
-    i64 total = 0;
-    var xs = List<i64>();
+    i64 total = 0
+    var xs = List<i64>()
     for round in 0..3 {
-        xs.append(round);
-        xs = grow(move xs, 10);
-        total += xs.length;
+        xs.append(round)
+        xs = grow(move xs, 10)
+        total += xs.length
     }
-    print($"grown {xs.length} {total} {sum(move xs)}");
+    print($"grown {xs.length} {total} {sum(move xs)}")
 
-    let bag = pack("bag", 30);
-    print($"{bag.name} {bag.items.length} {bag.items[30]}");
+    let bag = pack("bag", 30)
+    print($"{bag.name} {bag.items.length} {bag.items[30]}")
 
-    var owner = Bag { name: "owner", items: List<i64>() };
-    for i in 0..50 { owner.items.append(i); }
-    let taken = owner.items.take();
-    owner.items.append(7);
-    print($"taken {taken.length} left {owner.items.length}");
+    var owner = Bag { name: "owner", items: List<i64>() }
+    for i in 0..50 { owner.items.append(i) }
+    let taken = owner.items.take()
+    owner.items.append(7)
+    print($"taken {taken.length} left {owner.items.length}")
 
-    var counts = Map<string, i64>();
-    for i in 0..200 { counts[$"k{i % 70}"] = i; }
-    counts["k0"] += 1;
-    let moved = move counts;
-    print($"map {moved.length} {moved["k0"]}");
+    var counts = Map<string, i64>()
+    for i in 0..200 { counts[$"k{i % 70}"] = i }
+    counts["k0"] += 1
+    let moved = move counts
+    print($"map {moved.length} {moved["k0"]}")
 
-    var sb = StrBuf();
-    for i in 0..100 { sb.append("abc"); }
-    sb.append($"{sb.length}");
-    let text = move sb;
-    print($"strbuf {text.length}");
+    var sb = StrBuf()
+    for i in 0..100 { sb.append("abc") }
+    sb.append($"{sb.length}")
+    let text = move sb
+    print($"strbuf {text.length}")
 
-    var p = Payload.items(List<i64>());
-    var inner = List<i64>();
-    inner.append(1);
-    inner.append(2);
-    p = Payload.items(move inner);
-    print($"payload {count(p)}");
+    var p = Payload.items(List<i64>())
+    var inner = List<i64>()
+    inner.append(1)
+    inner.append(2)
+    p = Payload.items(move inner)
+    print($"payload {count(p)}")
 
-    i64 kept = 0;
+    i64 kept = 0
     for round in 0..5 {
-        using let arena = Arena();
+        using let arena = Arena()
         context (allocator: arena) {
-            var local = List<i64>();
-            for i in 0..300 { local.append(i); }
-            var other = move local;
-            other.append(round);
-            kept += other.length;
+            var local = List<i64>()
+            for i in 0..300 { local.append(i) }
+            var other = move local
+            other.append(round)
+            kept += other.length
         }
     }
-    print($"arenas {kept}");
+    print($"arenas {kept}")
 }

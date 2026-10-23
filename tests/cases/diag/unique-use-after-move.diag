@@ -1,13 +1,13 @@
 error BYN2781: `a` is used after it was moved
 
-  6 │     print($"{a.length}");
+  6 │     print($"{a.length}")
     │              ^ moved on line 5
     │
   help: assign `a` a new value before using it again, or move a `.copy(to: alloc)` of it instead
 
 error BYN2781: `a` is used after it was moved
 
-  7 │     a.append(2);
+  7 │     a.append(2)
     │     ^ moved on line 5
     │
   help: assign `a` a new value before using it again, or move a `.copy(to: alloc)` of it instead

@@ -74,10 +74,9 @@
 1:107 InterpolatedStringEnd `"`
 1:108 InterpolationEnd `}`
 1:109 InterpolatedStringEnd `"`
-1:110 Semicolon `;`
 2:1 EndOfFile
 
 error BYN0016: interpolated strings are nested too deeply
 
-  1 │ let s = $"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{x}"}"}"}"}"}"}"}"}"}"}"}"}"}"}"}"}"}"}"}";
+  1 │ let s = $"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{$"{x}"}"}"}"}"}"}"}"}"}"}"}"}"}"}"}"}"}"}"}"
     │                                                         ^^

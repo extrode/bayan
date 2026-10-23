@@ -13,16 +13,16 @@ public sealed class L007UntrustedSinkTests
 {
     private const string Prelude = """
         struct Holder {
-            Untrusted<string> value;
+            Untrusted<string> value
         }
 
         void main() fails IoError {
-            Untrusted<string> name = Untrusted("x");
-            List<Untrusted<string>> many = List<Untrusted<string>>();
-            Span<Untrusted<string>> span = many.asSpan();
-            Holder h = Holder { value: Untrusted("x") };
-            List<Holder> holders = List<Holder>();
-            List<string> none = List<string>();
+            Untrusted<string> name = Untrusted("x")
+            List<Untrusted<string>> many = List<Untrusted<string>>()
+            Span<Untrusted<string>> span = many.asSpan()
+            Holder h = Holder { value: Untrusted("x") }
+            List<Holder> holders = List<Holder>()
+            List<string> none = List<string>()
 
         """;
 
@@ -56,7 +56,7 @@ public sealed class L007UntrustedSinkTests
 
     private static void Check(string name, string api, string program, string args, string expected)
     {
-        var source = $"{Prelude}    try {api}({program}, {args});\n}}\n";
+        var source = $"{Prelude}    try {api}({program}, {args})\n}}\n";
         var c = Compilation.Create([new SourceText("l007.byn", System.Text.Encoding.UTF8.GetBytes(source))], ".");
         var errors = c.Diagnostics.Items.Where(d => d.IsError).ToList();
         if (expected.Length == 0)

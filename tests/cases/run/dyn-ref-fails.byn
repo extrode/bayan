@@ -1,58 +1,58 @@
 error enum ParseError {
     /// The input was empty.
-    empty,
+    empty
     /// The input had a non-digit.
-    notDigit,
+    notDigit
 }
 
 interface IParser {
-    i64 parse(string s) fails ParseError;
-    void check(string s) fails ParseError;
+    i64 parse(string s) fails ParseError
+    void check(string s) fails ParseError
 }
 
 struct Digits : IParser {
-    i64 base;
+    i64 base
 
     i64 parse(string s) fails ParseError {
-        return .empty if s.isEmpty;
-        let c = s.bytes[0];
-        return .notDigit if c < '0' || c > '9';
-        return base + (i64)(c - '0');
+        return .empty if s.isEmpty
+        let c = s.bytes[0]
+        return .notDigit if c < '0' || c > '9'
+        return base + (i64)(c - '0')
     }
 
     void check(string s) fails ParseError {
-        let d = try parse(s);
-        print($"checked {d}");
+        let d = try parse(s)
+        print($"checked {d}")
     }
 }
 
 i64 report(ParseError e) {
-    print($"failed with {e == ParseError.empty ? "empty" : "notDigit"}");
-    return -1;
+    print($"failed with {e == ParseError.empty ? "empty" : "notDigit"}")
+    return -1
 }
 
 void attempt(dyn ref readonly IParser p, string s) {
     let n = p.parse(s) catch switch {
         ParseError e => report(e),
-    };
-    if n < 0 {
-        return;
     }
-    print($"parsed {n}");
+    if n < 0 {
+        return
+    }
+    print($"parsed {n}")
 }
 
 void run(dyn ref readonly IParser p) fails ParseError {
-    try p.check("7");
-    try p.check("x");
-    print("not reached");
+    try p.check("7")
+    try p.check("x")
+    print("not reached")
 }
 
 void main() {
-    let d = Digits { base: 10 };
-    attempt(d, "4");
-    attempt(d, "");
-    attempt(d, "q");
+    let d = Digits { base: 10 }
+    attempt(d, "4")
+    attempt(d, "")
+    attempt(d, "q")
     run(d) catch switch {
         ParseError e => print($"run failed with {e == ParseError.empty ? "empty" : "notDigit"}"),
-    };
+    }
 }

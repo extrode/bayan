@@ -1,16 +1,43 @@
 # bayan --ascii test <dir>/tally
-exit: 3
+exit: 1
 --- stdout ---
-running 3 tests in 1 module
-
-  [1m[38;2;255;138;128mx[0m tally: is false
-      assert(false)
-      main.test.byn:6
-
-  [1m[38;2;255;138;128mx[0m tally: panics
-      boom
-      main.test.byn:10
-
-[38;2;143;214;148m*[0m 1 passed - [38;2;255;138;128mx[0m 2 failed - 0 pending - 0.00s
-  rerun the failures: bayan test --only "is false" --only "panics"
 --- stderr ---
+[1m[38;2;255;138;128merror BYN1040[0m: `;` is an input form; a statement ends at the newline
+[38;2;180;178;169m  -->[0m <dir>/tally/main.byn:2:16
+
+  [38;2;180;178;169m2[0m [38;2;180;178;169m|[0m     print("hi");
+    [38;2;180;178;169m|[0m                [1m[38;2;255;138;128m^ remove `;`[0m
+    [38;2;180;178;169m|[0m
+  [1m[38;2;141;184;242mhelp:[0m remove the `;`
+    [38;2;180;178;169m|[0m [38;2;180;178;169m2[0m [38;2;180;178;169m|[0m     print("hi");
+    [38;2;180;178;169m|[0m   [38;2;180;178;169m|[0m                [38;2;141;184;242m-[0m
+
+[1m[38;2;255;138;128merror BYN1040[0m: `;` is an input form; a statement ends at the newline
+[38;2;180;178;169m  -->[0m <dir>/tally/main.test.byn:2:23
+
+  [38;2;180;178;169m2[0m [38;2;180;178;169m|[0m     assert(1 + 1 == 2);
+    [38;2;180;178;169m|[0m                       [1m[38;2;255;138;128m^ remove `;`[0m
+    [38;2;180;178;169m|[0m
+  [1m[38;2;141;184;242mhelp:[0m remove the `;`
+    [38;2;180;178;169m|[0m [38;2;180;178;169m2[0m [38;2;180;178;169m|[0m     assert(1 + 1 == 2);
+    [38;2;180;178;169m|[0m   [38;2;180;178;169m|[0m                       [38;2;141;184;242m-[0m
+
+[1m[38;2;255;138;128merror BYN1040[0m: `;` is an input form; a statement ends at the newline
+[38;2;180;178;169m  -->[0m <dir>/tally/main.test.byn:6:18
+
+  [38;2;180;178;169m6[0m [38;2;180;178;169m|[0m     assert(false);
+    [38;2;180;178;169m|[0m                  [1m[38;2;255;138;128m^ remove `;`[0m
+    [38;2;180;178;169m|[0m
+  [1m[38;2;141;184;242mhelp:[0m remove the `;`
+    [38;2;180;178;169m|[0m [38;2;180;178;169m6[0m [38;2;180;178;169m|[0m     assert(false);
+    [38;2;180;178;169m|[0m   [38;2;180;178;169m|[0m                  [38;2;141;184;242m-[0m
+
+[1m[38;2;255;138;128merror BYN1040[0m: `;` is an input form; a statement ends at the newline
+[38;2;180;178;169m  -->[0m <dir>/tally/main.test.byn:10:18
+
+  [38;2;180;178;169m10[0m [38;2;180;178;169m|[0m     panic("boom");
+     [38;2;180;178;169m|[0m                  [1m[38;2;255;138;128m^ remove `;`[0m
+     [38;2;180;178;169m|[0m
+  [1m[38;2;141;184;242mhelp:[0m remove the `;`
+     [38;2;180;178;169m|[0m [38;2;180;178;169m10[0m [38;2;180;178;169m|[0m     panic("boom");
+     [38;2;180;178;169m|[0m    [38;2;180;178;169m|[0m                  [38;2;141;184;242m-[0m

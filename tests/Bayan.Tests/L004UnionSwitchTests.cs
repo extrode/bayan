@@ -41,9 +41,9 @@ public sealed class L004UnionSwitchTests
     public void SwitchStatement(string name, string[] arms, string missing)
     {
         var cases = string.Concat(arms.Select(a => a == "default"
-            ? "        default:\n            print(\"d\");\n"
-            : $"        case {a}:\n            print(\"a\");\n"));
-        Check(name, $"{Union}void f(U u) {{\n    switch u {{\n{cases}    }}\n}}\nf(U.a);\n", missing);
+            ? "        default:\n            print(\"d\")\n"
+            : $"        case {a}:\n            print(\"a\")\n"));
+        Check(name, $"{Union}void f(U u) {{\n    switch u {{\n{cases}    }}\n}}\nf(U.a)\n", missing);
     }
 
     [Theory]
@@ -51,7 +51,7 @@ public sealed class L004UnionSwitchTests
     public void SwitchExpression(string name, string[] arms, string missing)
     {
         var cases = string.Concat(arms.Select(a => $"    {(a == "default" ? "_" : a)} => 1,\n"));
-        Check(name, $"{Union}i64 f(U u) => u switch {{\n{cases}}};\nprint($\"{{f(U.a)}}\");\n", missing);
+        Check(name, $"{Union}i64 f(U u) => u switch {{\n{cases}}}\nprint($\"{{f(U.a)}}\")\n", missing);
     }
 
     private static void Check(string name, string source, string missing)

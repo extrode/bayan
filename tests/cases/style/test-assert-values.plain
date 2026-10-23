@@ -1,16 +1,43 @@
 # bayan test <dir>/tally
-exit: 3
+exit: 1
 --- stdout ---
-running 1 test in 1 module
-
-  ✗ tally: leftover cents
-      assert(net == cents(2))
-             │   │  │
-             │   │  200
-             │   false
-             199
-      main.test.byn:7
-
-◆ 0 passed · ✗ 1 failed · 0 pending · 0.00s
-  rerun the failure: bayan test --only "leftover cents"
 --- stderr ---
+error BYN1040: `;` is an input form; a statement ends at the newline
+  --> <dir>/tally/main.byn:2:16
+
+  2 │     print("hi");
+    │                ^ remove `;`
+    │
+  help: remove the `;`
+    │ 2 │     print("hi");
+    │   │                -
+
+error BYN1040: `;` is an input form; a statement ends at the newline
+  --> <dir>/tally/main.test.byn:2:23
+
+  2 │     return units * 100;
+    │                       ^ remove `;`
+    │
+  help: remove the `;`
+    │ 2 │     return units * 100;
+    │   │                       -
+
+error BYN1040: `;` is an input form; a statement ends at the newline
+  --> <dir>/tally/main.test.byn:6:27
+
+  6 │     let net = cents(2) - 1;
+    │                           ^ remove `;`
+    │
+  help: remove the `;`
+    │ 6 │     let net = cents(2) - 1;
+    │   │                           -
+
+error BYN1040: `;` is an input form; a statement ends at the newline
+  --> <dir>/tally/main.test.byn:7:28
+
+  7 │     assert(net == cents(2));
+    │                            ^ remove `;`
+    │
+  help: remove the `;`
+    │ 7 │     assert(net == cents(2));
+    │   │                            -

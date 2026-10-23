@@ -12,15 +12,15 @@ public sealed class RegionAnalysisPerfTests
     public void TwoHundredMethodsCallingEachOtherCheckQuickly()
     {
         const int count = 200;
-        var src = new StringBuilder("struct P {\n    List<i64> xs;\n    i64 n;\n\n");
+        var src = new StringBuilder("struct P {\n    List<i64> xs\n    i64 n\n\n");
         for (var i = 0; i < count; i++)
         {
-            src.Append($"    void m{i}(ref this) {{\n        n += 1;\n");
+            src.Append($"    void m{i}(ref this) {{\n        n += 1\n");
             for (var j = 1; j <= 10 && i + j < count; j++)
-                src.Append($"        if n > {j} {{ m{i + j}(); }}\n");
+                src.Append($"        if n > {j} {{ m{i + j}() }}\n");
             src.Append("    }\n");
         }
-        src.Append("}\n\nvoid main() {\n    var p = P { xs: List<i64>(), n: 0 };\n    p.m0();\n}\n");
+        src.Append("}\n\nvoid main() {\n    var p = P { xs: List<i64>(), n: 0 }\n    p.m0()\n}\n");
         var watch = Stopwatch.StartNew();
         var c = Compilation.Create([new SourceText("perf.byn", Encoding.UTF8.GetBytes(src.ToString()))], ".");
         watch.Stop();

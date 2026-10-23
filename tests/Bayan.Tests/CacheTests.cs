@@ -196,7 +196,7 @@ public sealed class CacheTests
     {
         var root = Root("script");
         var script = Path.Combine(root, "hello.byn");
-        File.WriteAllText(script, "#!/usr/bin/env bayan\n#:io threaded\n\nprint(\"hi\");\n");
+        File.WriteAllText(script, "#!/usr/bin/env bayan\n#:io threaded\n\nprint(\"hi\")\n");
         WithCache(root, () =>
         {
             Ok(Run(script));
@@ -204,7 +204,7 @@ public sealed class CacheTests
         });
         var noCompiler = ("BAYAN_CC", Path.Combine(root, "no-such-cc"));
         WithCache(root, () => Ok(Run(script)), noCompiler);
-        File.AppendAllText(script, "print(\"changed\");\n");
+        File.AppendAllText(script, "print(\"changed\")\n");
         WithCache(root, () => Assert.Equal(CliApp.ExitToolchain, Run(script).Exit), noCompiler);
     }
 
@@ -257,7 +257,7 @@ public sealed class CacheTests
     [Fact]
     public void ScriptKeysDependOnTheCompilerBuild()
     {
-        byte[] script = "print(\"hi\");\n"u8.ToArray();
+        byte[] script = "print(\"hi\")\n"u8.ToArray();
         Assert.NotEqual(Toolchain.ScriptKey(script, BuildMode.Safe, "a"), Toolchain.ScriptKey(script, BuildMode.Safe, "b"));
         Assert.Equal(Toolchain.ScriptKey(script, BuildMode.Safe, "a"), Toolchain.ScriptKey(script, BuildMode.Safe, "a"));
         Assert.NotEmpty(Toolchain.CompilerBuild);

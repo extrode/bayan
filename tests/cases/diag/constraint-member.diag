@@ -1,20 +1,20 @@
 error BYN2806: `Self` has no member `name` in its constraints (`IShape`)
 
-  3 │     string describe() => $"{this.name()}: {area()}";
+  3 │     string describe() => $"{this.name()}: {area()}"
     │                                  ^^^^
     │
   help: declare `name` in `IShape`; a default method sees only its interface's members
 
 error BYN2806: `T` has no member `perimeter` in its constraints (`IShape`)
 
-  7 │     print($"{shape.perimeter()}");
+  7 │     print($"{shape.perimeter()}")
     │                    ^^^^^^^^^
     │
   help: add an interface declaring `perimeter` to the `where` clause
 
 error BYN2744: `area` is not a member of type parameter `T`
 
-  11 │     print($"{value.area()}");
+  11 │     print($"{value.area()}")
      │                    ^^^^
      │
   help: add `where T : …` naming an interface that declares `area`, or use a concrete type

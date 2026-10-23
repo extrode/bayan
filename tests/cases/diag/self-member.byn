@@ -1,4 +1,4 @@
 interface IShape {
-    i64 area();
-    i64 big() => this.nope;
+    i64 area()
+    i64 big() => this.nope
 }

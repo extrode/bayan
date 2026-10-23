@@ -1,27 +1,27 @@
 error BYN2104: `plain` is immutable
 
-  7 │     let a = plain.take();
+  7 │     let a = plain.take()
     │             ^^^^^ `take` modifies it; parameters are immutable
     │
   help: copy it into a local `var`, or take it by `ref` if the caller's value should change
 
 error BYN2104: `bag` is immutable
 
-  8 │     let b = bag.items.take();
+  8 │     let b = bag.items.take()
     │             ^^^^^^^^^ `take` modifies it; parameters are immutable
     │
   help: copy it into a local `var`, or take it by `ref` if the caller's value should change
 
 error BYN2106: cannot modify this value
 
-  9 │     let c = view[0].take();
+  9 │     let c = view[0].take()
     │             ^^^^^^^ a `ReadOnlySpan` cannot be written through
 
 error BYN2104: `items` is immutable
 
-  14 │     let d = items.take();
+  14 │     let d = items.take()
      │             ^^^^^ `take` modifies it; declared with `let` on line 13
      │
   help: declare it with `var` if it should change
-     │ 13 │     var items = List<i64>();
+     │ 13 │     var items = List<i64>()
      │    │     +++

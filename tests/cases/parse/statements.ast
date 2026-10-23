@@ -75,5 +75,4 @@ CompilationUnit
           Expr (call work)
       Block
         Expr (call nested)
-      Empty
       Return

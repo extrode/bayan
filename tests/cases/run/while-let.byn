@@ -1,29 +1,29 @@
 error enum ReadError { broken }
 
-i64? half(i64 n) => n % 2 == 0 ? n / 2 : null;
+i64? half(i64 n) => n % 2 == 0 ? n / 2 : null
 
 struct Lines {
-    i64 at;
-    i64 count;
+    i64 at
+    i64 count
 
     i64? next(ref this) fails ReadError {
-        if at >= count { return null; }
-        at += 1;
-        return at * 10;
+        if at >= count { return null }
+        at += 1
+        return at * 10
     }
 }
 
-var n = 40;
+var n = 40
 while let h = half(n) {
-    print($"half {h}");
-    n = h;
+    print($"half {h}")
+    n = h
 }
-print($"stopped at {n}");
+print($"stopped at {n}")
 
 void readAll() fails ReadError {
-    var lines = Lines { at: 0, count: 3 };
+    var lines = Lines { at: 0, count: 3 }
     while let line = try lines.next() {
-        print($"line {line}");
+        print($"line {line}")
     }
 }
-try readAll();
+try readAll()

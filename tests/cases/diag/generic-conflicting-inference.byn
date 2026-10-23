@@ -1,6 +1,6 @@
-T pick<T>(bool first, move T a, move T b) => first ? move a : move b;
-T head<T>(List<T> xs, move T fallback) => move fallback;
+T pick<T>(bool first, move T a, move T b) => first ? move a : move b
+T head<T>(List<T> xs, move T fallback) => move fallback
 
-let x = pick(first: true, a: 1, b: "one");
-let words = List<string>();
-let y = head(words, 0);
+let x = pick(first: true, a: 1, b: "one")
+let words = List<string>()
+let y = head(words, 0)

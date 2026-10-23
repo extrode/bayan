@@ -1,30 +1,30 @@
 interface IShape {
-    f32 area();
-    string name { get; }
-    string describe() => $"area {area()}";
+    f32 area()
+    string name { get }
+    string describe() => $"area {area()}"
     string shout() {
-        return name;
+        return name
     }
 }
 
 interface IEnumerator {
-    type Item;
-    bool moveNext(ref this);
-    Item current { get; }
+    type Item
+    bool moveNext(ref this)
+    Item current { get }
 }
 
 interface IOrder<T> {
-    bool less(T other);
-    bool more(T other) => other.less(this);
+    bool less(T other)
+    bool more(T other) => other.less(this)
 }
 
 interface IParse<T> where T : IOrder<T> {
-    static T parse(string text);
-    T get<U>();
+    static T parse(string text)
+    T get<U>()
 }
 
 extension Money : IShape, IOrder<Money> {
-    f32 area() => 0;
+    f32 area() => 0
 }
 
-extension Cents : IShape;
+extension Cents : IShape

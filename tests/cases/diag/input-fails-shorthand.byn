@@ -1,18 +1,18 @@
 error enum ParseError {
     /// No digits.
-    empty,
+    empty
 }
 
 error enum RangeError {
     /// Too big.
-    tooBig,
+    tooBig
 }
 
 i64!ParseError parse(string s) {
-    return .empty if s.length == 0;
-    return 1;
+    return .empty if s.length == 0
+    return 1
 }
 
 i64!(ParseError, RangeError) parseSmall(string s) {
-    return try parse(s);
+    return try parse(s)
 }

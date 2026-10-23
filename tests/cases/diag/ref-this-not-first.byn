@@ -1,7 +1,7 @@
 struct Counter {
-    i64 n;
+    i64 n
 
     void add(i64 by, ref this) {
-        n += by;
+        n += by
     }
 }

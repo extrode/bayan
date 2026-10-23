@@ -1,20 +1,20 @@
 error BYN2781: `xs` is used after it was moved
 
-  9 │     consume(move xs);
+  9 │     consume(move xs)
     │             ^^^^^^^ a `defer` on line 8 uses it at scope exit
     │
   help: move `xs` before the `defer`, or move a `.copy(to: alloc)` of it instead
 
 error BYN2781: `ys` is used after it was moved
 
-  13 │     defer consume(move ys);
+  13 │     defer consume(move ys)
      │                   ^^^^^^^ a `defer` on line 12 uses it at scope exit
      │
   help: move `ys` before the `defer`, or move a `.copy(to: alloc)` of it instead
 
 error BYN2781: `zs` is used after it was moved
 
-  19 │     defer print($"{zs.length}");
+  19 │     defer print($"{zs.length}")
      │                    ^^ moved on line 18
      │
   help: assign `zs` a new value before using it again, or move a `.copy(to: alloc)` of it instead

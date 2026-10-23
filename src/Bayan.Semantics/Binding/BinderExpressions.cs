@@ -1411,7 +1411,7 @@ internal sealed partial class Binder
             if (target is null || target.IsError)
             {
                 if (target is null)
-                    Report(DiagnosticCodes.NoTargetType, c.Span, ["[ … ]"], help: "declare the type: `List<i64> xs = [1, 2];`");
+                    Report(DiagnosticCodes.NoTargetType, c.Span, ["[ … ]"], help: "declare the type: `List<i64> xs = [1, 2]`");
             }
             else
             {
@@ -1436,7 +1436,7 @@ internal sealed partial class Binder
         }
         if (element is NullType or PrimitiveType { Kind: PrimitiveKind.Void or PrimitiveKind.Never })
         {
-            Report(DiagnosticCodes.CannotInferType, c.Elements[0].Span, [Source.GetText(c.Elements[0].Span)], help: "declare the type: `List<i64> xs = [1, 2];`");
+            Report(DiagnosticCodes.CannotInferType, c.Elements[0].Span, [Source.GetText(c.Elements[0].Span)], help: "declare the type: `List<i64> xs = [1, 2]`");
             foreach (var e in c.Elements.Skip(1)) BindExpr(e);
             return new BoundErrorExpr(c);
         }
@@ -1454,7 +1454,7 @@ internal sealed partial class Binder
             var text = Source.GetText(open.Syntax.Span);
             Report(DiagnosticCodes.NotConstant, open.Syntax.Span, [$"the length of `{text}` in a `{(target is SpanType ? "Span" : "T[N]")}` literal"],
                 label: $"a `{open.Operand.Type.DisplayName}` has a run-time length",
-                help: $"spread a fixed array `T[N]` here, or build a list: `List<{open.Type.DisplayName}> all = {Source.GetText(c.Span)};`");
+                help: $"spread a fixed array `T[N]` here, or build a list: `List<{open.Type.DisplayName}> all = {Source.GetText(c.Span)}`");
             return new BoundErrorExpr(c);
         }
         if (target is Symbols.ArrayType at && at.Length != KnownLength(elements))
@@ -1549,7 +1549,7 @@ internal sealed partial class Binder
             if (value.Type is NullType or PrimitiveType { Kind: PrimitiveKind.Void or PrimitiveKind.Never })
             {
                 Report(DiagnosticCodes.CannotInferType, entries[0].Value.Span, [Source.GetText(entries[0].Value.Span)],
-                    help: $"declare the type: `Map<{key.Type.DisplayName}, i64?> m = [ … ];`");
+                    help: $"declare the type: `Map<{key.Type.DisplayName}, i64?> m = [ … ]`");
                 foreach (var e in entries.Skip(1)) BindMapPart(e);
                 return new BoundErrorExpr(c);
             }

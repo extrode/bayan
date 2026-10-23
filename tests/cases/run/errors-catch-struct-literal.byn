@@ -1,15 +1,15 @@
 error enum MkError { bad }
 
 struct P {
-    i64 x = 0;
+    i64 x = 0
 }
 
 P mk(bool ok) fails MkError {
-    return .bad if !ok;
-    return { x: 7 };
+    return .bad if !ok
+    return { x: 7 }
 }
 
-P a = mk(ok: false) catch { x: 1 };
-P b = mk(ok: true) catch { x: 1 };
-P c = mk(ok: false) catch P{};
-print($"{a.x} {b.x} {c.x}");
+P a = mk(ok: false) catch { x: 1 }
+P b = mk(ok: true) catch { x: 1 }
+P c = mk(ok: false) catch P{}
+print($"{a.x} {b.x} {c.x}")

@@ -1,6 +1,6 @@
 struct Id {
-    readonly i64 value;
+    readonly i64 value
 }
 
-var id = Id { value: 1 };
-id.value = 2;
+var id = Id { value: 1 }
+id.value = 2

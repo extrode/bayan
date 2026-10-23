@@ -1,2 +1,2 @@
-let ok = true;
-let x = ok ? 1 : "no";
+let ok = true
+let x = ok ? 1 : "no"

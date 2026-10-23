@@ -1,31 +1,31 @@
 interface IThing {
-    i64 get();
+    i64 get()
 }
 
 struct S : IThing {
-    i64 n;
+    i64 n
 
-    i64 get() => n;
+    i64 get() => n
 }
 
 // The variable of `for dyn ref I x in xs` points into `xs`: kept past the loop, it still borrows `xs`.
 void main() {
-    var keep = List<S>();
-    keep.append(S { n: 7 });
-    var xs = List<S>();
-    xs.append(S { n: 1 });
-    dyn ref IThing d = keep[0];
+    var keep = List<S>()
+    keep.append(S { n: 7 })
+    var xs = List<S>()
+    xs.append(S { n: 1 })
+    dyn ref IThing d = keep[0]
     for dyn ref IThing x in xs {
-        d = x;
+        d = x
     }
     for i in 0..100 {
-        xs.append(S { n: i });
+        xs.append(S { n: i })
     }
-    print($"{d.get()}");
-    dyn ref readonly IThing e = keep[0];
+    print($"{d.get()}")
+    dyn ref readonly IThing e = keep[0]
     for dyn ref readonly IThing x in xs {
-        e = x;
+        e = x
     }
-    xs.clear();
-    print($"{e.get()}");
+    xs.clear()
+    print($"{e.get()}")
 }

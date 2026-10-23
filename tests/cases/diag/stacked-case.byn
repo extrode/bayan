@@ -2,8 +2,8 @@ void f(Day d) {
     switch d {
         case .sat:
         case .sun:
-            rest();
+            rest()
         default:
-            work();
+            work()
     }
 }

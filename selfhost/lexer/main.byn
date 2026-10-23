@@ -9,107 +9,107 @@
 // Exit 2 on a usage error or an unreadable file under `--many`/`--time`; exit 4 when the input of
 // the token dump cannot be read.
 
-const i32 exitOk = 0;
-const i32 exitFailure = 1;
-const i32 exitUsage = 2;
-const i32 exitInput = 4;
+const i32 exitOk = 0
+const i32 exitFailure = 1
+const i32 exitUsage = 2
+const i32 exitInput = 4
 
 i32 usage(string message) {
-    Io.stderr.write($"bayan-lex: {message}\nusage: bayan-lex [--json] [<path>|-] | --many <dir> | --time <path>\n");
-    return exitUsage;
+    Io.stderr.write($"bayan-lex: {message}\nusage: bayan-lex [--json] [<path>|-] | --many <dir> | --time <path>\n")
+    return exitUsage
 }
 
 i32 fileNotFound(string path) {
-    Io.stderr.write($"bayan: file not found: {path}\n");
-    return exitUsage;
+    Io.stderr.write($"bayan: file not found: {path}\n")
+    return exitUsage
 }
 
 i32 unreadable(string path) {
-    Io.stderr.write($"bayan-lex: cannot read `{path}`\n");
-    return exitInput;
+    Io.stderr.write($"bayan-lex: cannot read `{path}`\n")
+    return exitInput
 }
 
 /// Lexes `path` and appends its dump (`json`: the JSON form) to `sb`; returns whether any diagnostic is an error.
 bool dumpFile(ref StrBuf sb, string path, move List<u8> bytes, Keywords keywords, bool json) {
-    var result = lex(SourceText.create(path, move bytes), keywords);
+    var result = lex(SourceText.create(path, move bytes), keywords)
     if json {
-        dumpJson(ref sb, ref result);
+        dumpJson(ref sb, ref result)
     } else {
-        dump(ref sb, ref result);
+        dump(ref sb, ref result)
     }
-    return !result.diagnostics.isEmpty;
+    return !result.diagnostics.isEmpty
 }
 
 /// Appends a `span out of range` line for every token, doc or diagnostic span outside the input.
 void checkSpans(ref StrBuf sb, ref LexResult result) {
-    let size = result.source.bytes.length;
+    let size = result.source.bytes.length
     for token in result.tokens {
-        unless inside(TextSpan { start: token.start, length: token.length }, size) { sb.append($"span out of range: token {token.start}+{token.length}\n"); }
-        unless inside(TextSpan { start: token.docStart, length: token.docLength }, size) { sb.append($"span out of range: doc {token.docStart}+{token.docLength}\n"); }
+        unless inside(TextSpan { start: token.start, length: token.length }, size) { sb.append($"span out of range: token {token.start}+{token.length}\n") }
+        unless inside(TextSpan { start: token.docStart, length: token.docLength }, size) { sb.append($"span out of range: doc {token.docStart}+{token.docLength}\n") }
     }
     for d in result.diagnostics {
-        unless inside(d.span, size) { sb.append($"span out of range: {d.code} {d.span.start}+{d.span.length}\n"); }
-        if d.hasFix && !inside(d.fixSpan, size) { sb.append($"span out of range: {d.code} fix {d.fixSpan.start}+{d.fixSpan.length}\n"); }
+        unless inside(d.span, size) { sb.append($"span out of range: {d.code} {d.span.start}+{d.span.length}\n") }
+        if d.hasFix && !inside(d.fixSpan, size) { sb.append($"span out of range: {d.code} fix {d.fixSpan.start}+{d.fixSpan.length}\n") }
     }
 }
 
-bool inside(TextSpan span, i64 size) => span.start >= 0 && span.length >= 0 && span.end <= size;
+bool inside(TextSpan span, i64 size) => span.start >= 0 && span.length >= 0 && span.end <= size
 
 /// Dumps `path`, or stdin when `path` is `-`.
 i32 lexOne(string path, Keywords keywords, bool json) {
-    var bytes = List<u8>();
+    var bytes = List<u8>()
     if path == "-" {
-        let input = Io.stdin.readAll();
+        let input = Io.stdin.readAll()
         unless input.isOk {
-            Io.stderr.write("bayan-lex: cannot read standard input\n");
-            return exitInput;
+            Io.stderr.write("bayan-lex: cannot read standard input\n")
+            return exitInput
         }
-        for b in input.value.bytes { bytes.append(b); }
+        for b in input.value.bytes { bytes.append(b) }
     } else {
-        bytes = Io.readFile(path) catch return unreadable(path);
+        bytes = Io.readFile(path) catch return unreadable(path)
     }
-    var sb = StrBuf();
-    let failed = dumpFile(ref sb, path == "-" ? "<stdin>" : path, move bytes, keywords, json: json);
-    Io.stdout.write(sb.finish());
-    return failed ? exitFailure : exitOk;
+    var sb = StrBuf()
+    let failed = dumpFile(ref sb, path == "-" ? "<stdin>" : path, move bytes, keywords, json: json)
+    Io.stdout.write(sb.finish())
+    return failed ? exitFailure : exitOk
 }
 
 i32 lexMany(string dir, Keywords keywords) {
-    let names = Io.listDir(dir) catch return usage($"cannot list `{dir}`");
+    let names = Io.listDir(dir) catch return usage($"cannot list `{dir}`")
     for name in names {
-        unless name.endsWith(".byn") { continue; }
-        using let arena = Arena();
+        unless name.endsWith(".byn") { continue }
+        using let arena = Arena()
         context (allocator: arena) {
-            let path = $"{dir}/{name}";
-            let bytes = Io.readFile(path) catch return fileNotFound(path);
-            var sb = StrBuf();
-            sb.append($"== {name}\n");
-            var result = lex(SourceText.create(path, move bytes), keywords);
-            checkSpans(ref sb, ref result);
-            dump(ref sb, ref result);
-            Io.stdout.write(sb.finish());
+            let path = $"{dir}/{name}"
+            let bytes = Io.readFile(path) catch return fileNotFound(path)
+            var sb = StrBuf()
+            sb.append($"== {name}\n")
+            var result = lex(SourceText.create(path, move bytes), keywords)
+            checkSpans(ref sb, ref result)
+            dump(ref sb, ref result)
+            Io.stdout.write(sb.finish())
         }
     }
-    return exitOk;
+    return exitOk
 }
 
 i32 lexTimed(string path, Keywords keywords) {
-    let bytes = Io.readFile(path) catch return fileNotFound(path);
-    let start = Io.monotonicNanos();
-    let result = lex(SourceText.create(path, move bytes), keywords);
-    let elapsed = Io.monotonicNanos() - start;
-    print($"{elapsed}");
-    return result.tokens.isEmpty ? exitFailure : exitOk;
+    let bytes = Io.readFile(path) catch return fileNotFound(path)
+    let start = Io.monotonicNanos()
+    let result = lex(SourceText.create(path, move bytes), keywords)
+    let elapsed = Io.monotonicNanos() - start
+    print($"{elapsed}")
+    return result.tokens.isEmpty ? exitFailure : exitOk
 }
 
 i32 main(ReadOnlySpan<string> args) {
-    let keywords = Keywords.build();
-    if args.length == 0 { return lexOne("-", keywords, json: false); }
-    if args.length == 1 && args[0] == "--json" { return lexOne("-", keywords, json: true); }
-    if args.length == 1 && !args[0].startsWith("--") { return lexOne(args[0], keywords, json: false); }
-    if args.length == 2 && args[0] == "--json" && !args[1].startsWith("--") { return lexOne(args[1], keywords, json: true); }
-    if args.length == 2 && args[1] == "--json" && !args[0].startsWith("--") { return lexOne(args[0], keywords, json: true); }
-    if args.length == 2 && args[0] == "--many" { return lexMany(args[1], keywords); }
-    if args.length == 2 && args[0] == "--time" { return lexTimed(args[1], keywords); }
-    return usage("expected `[--json] [<path>|-]`, `--many <dir>` or `--time <path>`");
+    let keywords = Keywords.build()
+    if args.length == 0 { return lexOne("-", keywords, json: false) }
+    if args.length == 1 && args[0] == "--json" { return lexOne("-", keywords, json: true) }
+    if args.length == 1 && !args[0].startsWith("--") { return lexOne(args[0], keywords, json: false) }
+    if args.length == 2 && args[0] == "--json" && !args[1].startsWith("--") { return lexOne(args[1], keywords, json: true) }
+    if args.length == 2 && args[1] == "--json" && !args[0].startsWith("--") { return lexOne(args[0], keywords, json: true) }
+    if args.length == 2 && args[0] == "--many" { return lexMany(args[1], keywords) }
+    if args.length == 2 && args[0] == "--time" { return lexTimed(args[1], keywords) }
+    return usage("expected `[--json] [<path>|-]`, `--many <dir>` or `--time <path>`")
 }

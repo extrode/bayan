@@ -1,10 +1,10 @@
 i32 discount(i32 total, i32 percent)
     requires percent in 0..=100
-    => total - total * percent / 100;
+    => total - total * percent / 100
 
-i32 positive(i32 n) requires n > 0 && n < 1000 => n;
+i32 positive(i32 n) requires n > 0 && n < 1000 => n
 
-let ok = discount(total: 200, percent: 25);
-let bad = discount(total: 200, percent: 150);
-let runtime = discount(total: 200, percent: ok);
-print($"{ok} {bad} {runtime} {positive(0)} {positive(5)}");
+let ok = discount(total: 200, percent: 25)
+let bad = discount(total: 200, percent: 150)
+let runtime = discount(total: 200, percent: ok)
+print($"{ok} {bad} {runtime} {positive(0)} {positive(5)}")

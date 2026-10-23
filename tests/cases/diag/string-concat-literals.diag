@@ -1,17 +1,17 @@
 error BYN2209: strings cannot be joined with `+`; use interpolation
 
-  1 │ const string a = "a" + "b";
+  1 │ const string a = "a" + "b"
     │                  ^^^^^^^^^
     │
   help: write one literal: `"ab"`
-    │ 1 │ const string a = "a" + "b";
+    │ 1 │ const string a = "a" + "b"
     │   │                    -----
 
 error BYN2209: strings cannot be joined with `+`; use interpolation
 
-  2 │ const string b = "x{" + "}\n";
+  2 │ const string b = "x{" + "}\n"
     │                  ^^^^^^^^^^^^
     │
   help: write one literal: `"x{}\n"`
-    │ 2 │ const string b = "x{" + "}\n";
+    │ 2 │ const string b = "x{" + "}\n"
     │   │                     -----

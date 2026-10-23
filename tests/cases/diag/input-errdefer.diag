@@ -1,17 +1,17 @@
 error BYN1020: `errdefer` is now `defer failing`
 
-  7 │     errdefer print("failed");
+  7 │     errdefer print("failed")
     │     ^^^^^^^^ the input form
     │
   help: write `defer failing`
-    │ 7 │     defer failing print("failed");
+    │ 7 │     defer failing print("failed")
     │   │     +++++++++++++
 
 error BYN1020: `errdefer` is now `defer failing`
 
-  8 │     errdefer (e) print($"failed: {e}");
+  8 │     errdefer (e) print($"failed: {e}")
     │     ^^^^^^^^ the input form
     │
   help: write `defer failing`
-    │ 8 │     defer failing (e) print($"failed: {e}");
+    │ 8 │     defer failing (e) print($"failed: {e}")
     │   │     +++++++++++++

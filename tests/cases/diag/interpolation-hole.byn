@@ -1,1 +1,1 @@
-let s = $"value {x y}";
+let s = $"value {x y}"

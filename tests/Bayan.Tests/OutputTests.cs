@@ -106,7 +106,7 @@ public sealed partial class OutputTests
     public void FailingTestsAreReportedInTheResultsFile()
     {
         var p = NewProject("out-test-fail");
-        File.WriteAllText(Path.Combine(p, "tests", "broken.test.byn"), "test \"wrong\" {\n    assert(1 == 2);\n}\n\ntest \"boom\" {\n    panic(\"boom\");\n}\n");
+        File.WriteAllText(Path.Combine(p, "tests", "broken.test.byn"), "test \"wrong\" {\n    assert(1 == 2)\n}\n\ntest \"boom\" {\n    panic(\"boom\")\n}\n");
         Assert.Equal(CliApp.ExitTestFailure, Run("test", p).Exit);
         Compare("results-fail.json", Mask(File.ReadAllText(Path.Combine(p, "out", "test", "results.json"))));
     }

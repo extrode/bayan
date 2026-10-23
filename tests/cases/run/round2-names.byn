@@ -1,12 +1,12 @@
-var xs = List<i64>();
-xs.append(1);
-xs.append(2);
-i64[3] a = [1, 2, 3];
-let m = Map<string, i64>();
-var sb = StrBuf();
-sb.append("héllo");
-let view = sb.view;
-print($"list {xs.length} array {a.length} span {a.asSpan().length} map {m.length}");
-print($"strbuf {sb.length} view {view.length}");
-print($"length {"héllo".length}");
-print(sb.finish());
+var xs = List<i64>()
+xs.append(1)
+xs.append(2)
+i64[3] a = [1, 2, 3]
+let m = Map<string, i64>()
+var sb = StrBuf()
+sb.append("héllo")
+let view = sb.view
+print($"list {xs.length} array {a.length} span {a.asSpan().length} map {m.length}")
+print($"strbuf {sb.length} view {view.length}")
+print($"length {"héllo".length}")
+print(sb.finish())

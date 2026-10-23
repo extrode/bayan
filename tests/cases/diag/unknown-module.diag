@@ -1,6 +1,6 @@
 error BYN2004: no module `mony`
 
-  1 │ import mony;
+  1 │ import mony
     │        ^^^^
     │
   help: put the module's `.byn` files in `mony/` next to the entry file; a module is a directory

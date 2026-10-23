@@ -41,7 +41,7 @@ public sealed class L012InterfaceDispatchTests(ITestOutputHelper output)
         output.WriteLine($"seeds {seeds}, failed {failures.Count}");
         Assert.True(failures.IsEmpty, string.Join("\n\n", failures.OrderBy(f => f.Seed).Select(f => f.Message)));
         // Every grammar choice is drawn by some seed.
-        foreach (var marker in new[] { "interface IGen1", "struct S02", "{ get; }", "(ref this, i64 by);", "();\n", "() => $\"m", " + m", "// override", "f0 += by", "f1 = f0 - by" })
+        foreach (var marker in new[] { "interface IGen1", "struct S02", "{ get }", "(ref this, i64 by)", "()\n", "() => $\"m", " + m", "// override", "f0 += by", "f1 = f0 - by" })
             Assert.True(sources.Any(s => s.Contains(marker, StringComparison.Ordinal)), $"no program contains `{marker}`");
     }
 
@@ -51,7 +51,7 @@ public sealed class L012InterfaceDispatchTests(ITestOutputHelper output)
     {
         var compiler = Toolchain.FindCompiler();
         if (compiler is null) return;
-        var source = InterfaceGenerator.Generate(1).Replace("print(\"== dyn\");", "print(\"== dyn\");\n    print(\"extra\");");
+        var source = InterfaceGenerator.Generate(1).Replace("print(\"== dyn\")", "print(\"== dyn\")\n    print(\"extra\")");
         Assert.StartsWith("dyn section differs from direct", Failure(compiler, source, "gen-1.byn"));
     }
 

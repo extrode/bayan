@@ -1,4 +1,4 @@
 void f(bool a, bool b) {
-    if a { x(); } if b { y(); }
-    while a { x(); } unless b { y(); }
+    if a { x() } if b { y() }
+    while a { x() } unless b { y() }
 }

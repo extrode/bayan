@@ -1,62 +1,62 @@
 error enum ParseError {
     /// The input was empty.
-    empty,
+    empty
     /// The input had a non-digit.
-    notDigit,
+    notDigit
 }
 
 i64 digit(string s) fails ParseError {
-    return .empty if s.isEmpty;
-    let c = s.bytes[0];
-    return .notDigit if c < '0' || c > '9';
-    return (i64)(c - '0');
+    return .empty if s.isEmpty
+    let c = s.bytes[0]
+    return .notDigit if c < '0' || c > '9'
+    return (i64)(c - '0')
 }
 
 void check(string s) fails ParseError {
-    let d = try digit(s);
-    print($"checked {d}");
+    let d = try digit(s)
+    print($"checked {d}")
 }
 
 i64 orMinusOne(string s) {
-    let n = digit(s) catch { return -1; };
-    return n * 10;
+    let n = digit(s) catch { return -1 }
+    return n * 10
 }
 
 i64 failed(ParseError e) {
-    print($"failed with {e == ParseError.empty ? "empty" : "notDigit"}");
-    return 0;
+    print($"failed with {e == ParseError.empty ? "empty" : "notDigit"}")
+    return 0
 }
 
 i64 describe(string s) {
     let n = digit(s) catch switch {
         ParseError e => failed(e),
-    };
-    return n;
+    }
+    return n
 }
 
 i64 sumDigits(ReadOnlySpan<string> items) {
-    i64 total = 0;
+    i64 total = 0
     for s in items {
         let d = digit(s) catch {
-            if s.isEmpty { break; }
-            continue;
-        };
-        total += d;
+            if s.isEmpty { break }
+            continue
+        }
+        total += d
     }
-    return total;
+    return total
 }
 
 i64 mustDigit(string s) {
-    let d = digit(s) catch { panic("not a digit"); };
-    return d;
+    let d = digit(s) catch { panic("not a digit") }
+    return d
 }
 
-print($"{orMinusOne("4")} {orMinusOne("")}");
-print($"{describe("7")} {describe("")} {describe("q")}");
-print($"{sumDigits(["1", "x", "2", "", "9"])}");
-check("") catch { print("check failed"); };
+print($"{orMinusOne("4")} {orMinusOne("")}")
+print($"{describe("7")} {describe("")} {describe("q")}")
+print($"{sumDigits(["1", "x", "2", "", "9"])}")
+check("") catch { print("check failed") }
 check("x") catch switch {
     ParseError e => print($"check failed: {e == ParseError.notDigit}"),
-};
-check("5") catch { print("unreachable"); };
-print($"{mustDigit("3")}");
+}
+check("5") catch { print("unreachable") }
+print($"{mustDigit("3")}")

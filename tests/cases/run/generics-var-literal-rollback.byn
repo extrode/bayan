@@ -1,7 +1,7 @@
-T id<T>(move T v) => v;
+T id<T>(move T v) => v
 
-var n = 0;
-i64 x = n;
-let y = id(n);
-n = 1;
-print($"{x} {y} {n}");
+var n = 0
+i64 x = n
+let y = id(n)
+n = 1
+print($"{x} {y} {n}")

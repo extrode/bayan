@@ -1,4 +1,7 @@
-struct Point { i64 x; i64 y; }
+struct Point {
+    i64 x
+    i64 y
+}
 
-let p = Point { x: 1, y: 2 };
-print($"{p}");
+let p = Point { x: 1, y: 2 }
+print($"{p}")

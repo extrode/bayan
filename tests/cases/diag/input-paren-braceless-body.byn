@@ -1,18 +1,20 @@
 void main(ReadOnlySpan<string> args) {
-    var x = args.length;
-    while (x == 0) x = 1;
-    if (x > 2) print("big");
-    else print("small");
-    unless (!(x > 0)) print("none");
-    for (let a in args) print(a);
-    if (!(x > 5)) print("small");
+    var x = args.length
+    while (x == 0) x = 1
+    if (x > 2) print("big")
+    else print("small")
+    unless (!(x > 0)) print("none")
+    for (let a in args) print(a)
+    if (!(x > 5)) print("small")
 }
 
 void f(bool x) {
     if (x) {
-        print("a");
-    } else print("b");
-    if (x) print("c"); else if (x) print("d"); else print("e");
-    unless (!x) print("f");
-    else print("g");
+        print("a")
+    } else print("b")
+    if (x) print("c")
+    else if (x) print("d")
+    else print("e")
+    unless (!x) print("f")
+    else print("g")
 }

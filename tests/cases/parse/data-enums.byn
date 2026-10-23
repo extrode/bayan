@@ -1,12 +1,15 @@
 enum Planet(f64 mass, f64 radius) {
-    mercury(3.3e23, 2.4e6),
-    earth(6e24, 6.4e6);
+    mercury(3.3e23, 2.4e6)
+    earth(6e24, 6.4e6)
 }
 
 public enum Token(string text, bool keyword, char first, Kind kind) {
     /// The `if` keyword.
-    ifKeyword("if", true, 'i', .word),
-    plus(text: "+", keyword: false, first: '+', kind: Kind.symbol),
+    ifKeyword("if", true, 'i', .word)
+    plus(text: "+", keyword: false, first: '+', kind: Kind.symbol)
 }
 
-enum Kind { word, symbol }
+enum Kind {
+    word
+    symbol
+}

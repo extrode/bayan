@@ -1,6 +1,6 @@
 error BYN2225: `Point` cannot be formatted
 
-  4 │ print($"{p}");
+  5 │ print($"{p}")
     │          ^
     │
   help: add `formatInto(ref StrBuf)` to `Point`, or use `{x:debug}`

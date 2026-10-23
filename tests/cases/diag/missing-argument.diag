@@ -1,4 +1,4 @@
 error BYN2301: missing argument `height` for `area`
 
-  2 │ print($"{area(width: 3)}");
+  2 │ print($"{area(width: 3)}")
     │          ^^^^^^^^^^^^^^

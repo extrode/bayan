@@ -1,11 +1,11 @@
 interface IShape {
-    f32 area();
+    f32 area()
 }
 
 void show(IShape s) {
-    IShape t = s;
+    IShape t = s
 }
 
 void main() {
-    List<IShape> shapes = [];
+    List<IShape> shapes = []
 }

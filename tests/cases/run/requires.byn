@@ -1,14 +1,14 @@
 i32 discount(i32 total, i32 percent)
     requires percent in 0..=100
     requires total >= 0
-    => total - total * percent / 100;
+    => total - total * percent / 100
 
 i32 firstDigit(i32 value) requires value in 0..10 {
-    return value;
+    return value
 }
 
-let quarter = 25;
-print($"{discount(total: 200, percent: quarter)}");
-print($"{firstDigit(9)}");
-let scale = 7;
-print($"{discount(total: 200, percent: scale * 20)}");
+let quarter = 25
+print($"{discount(total: 200, percent: quarter)}")
+print($"{firstDigit(9)}")
+let scale = 7
+print($"{discount(total: 200, percent: scale * 20)}")

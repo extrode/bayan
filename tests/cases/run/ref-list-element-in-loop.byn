@@ -1,16 +1,16 @@
 // Writing a list element through `ref xs[i]` is not a structural change: allowed while the loop reads `xs`, as for an array.
-void bump(ref i64 x) { x += 1; }
+void bump(ref i64 x) { x += 1 }
 
 void main() {
-    var xs = List<i64>();
-    xs.append(1);
-    xs.append(2);
+    var xs = List<i64>()
+    xs.append(1)
+    xs.append(2)
     for x in xs {
-        bump(ref xs[0]);
+        bump(ref xs[0])
     }
-    i64[2] ys = [1, 2];
+    i64[2] ys = [1, 2]
     for y in ys {
-        bump(ref ys[0]);
+        bump(ref ys[0])
     }
-    print($"{xs[0]} {ys[0]}");
+    print($"{xs[0]} {ys[0]}")
 }

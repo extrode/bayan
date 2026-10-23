@@ -71,7 +71,7 @@ public sealed partial class Compilation
                 }
                 map[a.Name] = ErrorType.Instance;
                 Report(DiagnosticCodes.MissingAssociatedType, source, at, [s.Name, a.Name, i.DisplayName], label: $"needs `type {a.Name}`",
-                    help: $"add `type {a.Name} = …;` to `{s.Name}`");
+                    help: $"add `type {a.Name} = …` to `{s.Name}`");
             }
             foreach (var member in i.Methods.Concat(i.Properties).OrderBy(m => m.Location!.Value.Span.Start))
             {
@@ -94,7 +94,7 @@ public sealed partial class Compilation
                             && TypeFacts.WhyUnique(field.Type) is { } why)
                             Report(DiagnosticCodes.ImplicitCopy, source, field.Location!.Value.Span, [why],
                                 label: $"cannot stand for `{i.DisplayName}.{member.Name}`",
-                                help: $"rename the field and write the getter `{expected.ReturnType.DisplayName} {member.Name} => …;` in `{s.Name}`, returning a copy or a fresh value");
+                                help: $"rename the field and write the getter `{expected.ReturnType.DisplayName} {member.Name} => …` in `{s.Name}`, returning a copy or a fresh value");
                     }
                     continue;
                 }
@@ -202,10 +202,10 @@ public sealed partial class Compilation
 
     private static bool Same(TypeSymbol a, TypeSymbol b) => a.IsError || b.IsError || a.Equals(b);
 
-    /// <summary><c>f32 area()</c>, <c>i64 next(ref this)</c>, <c>i64 count { get; }</c>.</summary>
+    /// <summary><c>f32 area()</c>, <c>i64 next(ref this)</c>, <c>i64 count { get }</c>.</summary>
     private static string SignatureText(FunctionSymbol f)
     {
-        if (f.Kind == FunctionKind.Getter) return $"{f.ReturnType.DisplayName} {f.Name} {{ get; }}";
+        if (f.Kind == FunctionKind.Getter) return $"{f.ReturnType.DisplayName} {f.Name} {{ get }}";
         var parameters = f.Parameters.Select(p => (p.Modifier == ParamModifier.None ? "" : p.Modifier.ToString().ToLowerInvariant() + " ") + p.Type.DisplayName + " " + p.Name);
         if (f.IsMutating) parameters = parameters.Prepend("ref this");
         var fails = !f.Fails ? "" : f.ErrorSets.Count == 0 ? " fails" : " fails " + string.Join(", ", f.ErrorSets.Select(e => e.DisplayName));
@@ -216,8 +216,8 @@ public sealed partial class Compilation
     private static Fix InsertMember(StructSymbol s, FunctionSymbol expected)
     {
         var text = expected.Kind == FunctionKind.Getter
-            ? $"{expected.ReturnType.DisplayName} {expected.Name} => todo(\"{expected.Name}\");"
-            : $"{SignatureText(expected)} => todo(\"{expected.Name}\");";
+            ? $"{expected.ReturnType.DisplayName} {expected.Name} => todo(\"{expected.Name}\")"
+            : $"{SignatureText(expected)} => todo(\"{expected.Name}\")";
         var source = s.File.Source;
         var brace = s.Decl.Span.End - 1;
         var lineStart = source.GetLineSpan(source.GetLineIndex(brace)).Start;

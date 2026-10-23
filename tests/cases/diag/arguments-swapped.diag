@@ -1,24 +1,24 @@
 error BYN2307: arguments `start` and `end` are in the wrong order for `width`
 
-  5 │ print($"{width(end, start)}");
+  5 │ print($"{width(end, start)}")
     │                ^^^^^^^^^^
     │
   help: name them or swap them
 
 error BYN2305: argument for `start` must be named
 
-  6 │ print($"{width(end, 3)}");
+  6 │ print($"{width(end, 3)}")
     │                ^^^
     │
   help: name them so they cannot be swapped; `width` has several `i64` parameters
-    │ 6 │ print($"{width(start: end, 3)}");
+    │ 6 │ print($"{width(start: end, 3)}")
     │   │                +++++++
 
 error BYN2305: argument for `end` must be named
 
-  6 │ print($"{width(end, 3)}");
+  6 │ print($"{width(end, 3)}")
     │                     ^
     │
   help: name them so they cannot be swapped; `width` has several `i64` parameters
-    │ 6 │ print($"{width(end, end: 3)}");
+    │ 6 │ print($"{width(end, end: 3)}")
     │   │                     +++++

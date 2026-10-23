@@ -27,9 +27,9 @@ error BYN1033: `unless` takes no likelihood word; write `if unlikely !…` or dr
 
 error BYN1022: `unless` with `&&`/`||` reads as a double negative
 
-  13 │     print("one") unless n > 1 || n < 0;
+  13 │     print("one") unless n > 1 || n < 0
      │                  ^^^^^^^^^^^^^^^^^^^^^ a compound condition
      │
   help: use `if` with the negated condition
-     │ 13 │     print("one") if !(n > 1 || n < 0);
+     │ 13 │     print("one") if !(n > 1 || n < 0)
      │    │                  ++++++++++++++++++++

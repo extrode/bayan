@@ -48,9 +48,9 @@ public sealed class OwnershipGeneratorTests(ITestOutputHelper output)
         var build = Toolchain.Build("""
             #include <stdlib.h>
             int main(void) {
-                int *p = malloc(4 * sizeof(int));
-                free(p);
-                return p[1];
+                int *p = malloc(4 * sizeof(int))
+                free(p)
+                return p[1]
             }
             """, BuildMode.Debug, sanitize: true);
         Assert.True(build.Succeeded, build.Errors);

@@ -1,14 +1,43 @@
 # bayan test -v <dir>/tally
-exit: 3
+exit: 1
 --- stdout ---
-running 3 tests in 1 module
-  ◆ tally: ok\u{1b}]0;PWNED\u{7}
-  ◆ tally: later\u{1b}[2J (pending)
-
-  ✗ tally: y\u{1b}]0;PWNED\u{7}\u{1b}[2J
-      boom\u{1b}[2J\u{9b}31m
-      main.test.byn:10
-
-◆ 1 passed · ✗ 1 failed · 1 pending · 0.00s
-  a failing test's name contains control characters and cannot be selected from a shell
 --- stderr ---
+error BYN1040: `;` is an input form; a statement ends at the newline
+  --> <dir>/tally/main.byn:2:16
+
+  2 │     print("hi");
+    │                ^ remove `;`
+    │
+  help: remove the `;`
+    │ 2 │     print("hi");
+    │   │                -
+
+error BYN1040: `;` is an input form; a statement ends at the newline
+  --> <dir>/tally/main.test.byn:2:17
+
+  2 │     assert(true);
+    │                 ^ remove `;`
+    │
+  help: remove the `;`
+    │ 2 │     assert(true);
+    │   │                 -
+
+error BYN1040: `;` is an input form; a statement ends at the newline
+  --> <dir>/tally/main.test.byn:6:17
+
+  6 │     todo("soon");
+    │                 ^ remove `;`
+    │
+  help: remove the `;`
+    │ 6 │     todo("soon");
+    │   │                 -
+
+error BYN1040: `;` is an input form; a statement ends at the newline
+  --> <dir>/tally/main.test.byn:10:36
+
+  10 │     panic("boom\u{1b}[2J\u{9b}31m");
+     │                                    ^ remove `;`
+     │
+  help: remove the `;`
+     │ 10 │     panic("boom\u{1b}[2J\u{9b}31m");
+     │    │                                    -

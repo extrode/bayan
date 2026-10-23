@@ -1,88 +1,88 @@
 // Uses of a `Map` that read it in place or move a fresh one: none is a copy (BYN2780).
 struct Store {
-    string name;
-    Map<string, i64> data;
+    string name
+    Map<string, i64> data
 
     void formatInto(ref StrBuf sb) {
-        sb.append($"Store {{ name: {name}, data: {data} }}");
+        sb.append($"Store {{ name: {name}, data: {data} }}")
     }
 }
 
 union Slot {
-    empty,
-    full(Map<string, i64> data),
+    empty
+    full(Map<string, i64> data)
 }
 
 Map<string, i64> fresh(string key, i64 value) {
-    var m = Map<string, i64>();
-    m[key] = value;
-    return m;
+    var m = Map<string, i64>()
+    m[key] = value
+    return m
 }
 
 Map<string, i64> passThrough(move Map<string, i64> m) {
-    return move m;
+    return move m
 }
 
 i64 total(Map<string, i64> m) {
-    i64 sum = 0;
-    for e in m { sum += e.value; }
-    return sum;
+    i64 sum = 0
+    for e in m { sum += e.value }
+    return sum
 }
 
 void bump(ref Map<string, i64> m, string key) {
-    m[key] = m.getOr(key, 0) + 1;
+    m[key] = m.getOr(key, 0) + 1
 }
 
 struct Counted {
-    i64 n;
+    i64 n
 
     public Counted(ref Map<string, i64> m) {
-        m["counted"] = 1;
-        this.n = m.length;
+        m["counted"] = 1
+        this.n = m.length
     }
 }
 
-Result<Map<string, i64>, LookupError> found() => fresh("r", 5);
+Result<Map<string, i64>, LookupError> found() => fresh("r", 5)
 
 error enum LookupError { missing }
 
-var a = fresh("x", 1);
-var b = Map<string, i64>();
-b = fresh("y", 2);
-var s = Store { name: "s", data: fresh("z", 3) };
-s.data = fresh("w", 4);
-let full = Slot.full(fresh("v", 5));
-var list = List<Map<string, i64>>();
-list.append(fresh("u", 6));
-var nested = Map<i64, Map<string, i64>>();
-nested[1] = fresh("t", 7);
-Map<string, i64>[2] arr = [fresh("q", 8), Map<string, i64>()];
-let pair = (fresh("p", 9), 1);
-let o = Owned(fresh("o", 10));
-let r = found();
-Map<string, i64>? maybe = fresh("n", 11);
-let c = passThrough(fresh("m", 12));
+var a = fresh("x", 1)
+var b = Map<string, i64>()
+b = fresh("y", 2)
+var s = Store { name: "s", data: fresh("z", 3) }
+s.data = fresh("w", 4)
+let full = Slot.full(fresh("v", 5))
+var list = List<Map<string, i64>>()
+list.append(fresh("u", 6))
+var nested = Map<i64, Map<string, i64>>()
+nested[1] = fresh("t", 7)
+Map<string, i64>[2] arr = [fresh("q", 8), Map<string, i64>()]
+let pair = (fresh("p", 9), 1)
+let o = Owned(fresh("o", 10))
+let r = found()
+Map<string, i64>? maybe = fresh("n", 11)
+let c = passThrough(fresh("m", 12))
 
 // Receivers, `for` sources, read-only and `ref` arguments, formatting.
-a["x2"] = 2;
-s.data["z2"] = 30;
-arr[1]["k"] = 1;
-bump(ref a, "x");
-bump(ref s.data, "z");
-let counted = Counted(ref a);
-print($"{counted.n} {a.length} {s.data.length} {arr[1].length} {o.value.length} {list[0].length}");
-print($"{total(a)} {total(s.data)} {total(arr[0])} {total(o.value)} {total(pair.item1)}");
-for e in s.data { print($"  {e.key} = {e.value}"); }
-for m in list { print($"list: {m}"); }
-print($"{a} {b} {c} {s} {pair}");
-print($"{maybe} {r.value} {nested[1]}");
-if full is .full(let d) { print($"full: {d.length}"); }
+a["x2"] = 2
+s.data["z2"] = 30
+arr[1]["k"] = 1
+bump(ref a, "x")
+bump(ref s.data, "z")
+let counted = Counted(ref a)
+print($"{counted.n} {a.length} {s.data.length} {arr[1].length} {o.value.length} {list[0].length}")
+print($"{total(a)} {total(s.data)} {total(arr[0])} {total(o.value)} {total(pair.item1)}")
+for e in s.data { print($"  {e.key} = {e.value}") }
+for m in list { print($"list: {m}") }
+print($"{a} {b} {c} {s} {pair}")
+print($"{maybe} {r.value} {nested[1]}")
+if full is .full(let d) { print($"full: {d.length}") }
 
 struct Named {
-    string name;
-    Map<i64, i64> m;
+    string name
+    Map<i64, i64> m
 }
 
-let named = Named { name: "n", m: Map<i64, i64>() };
-let renamed = named with { m: Map<i64, i64>() };
-print($"{renamed.name} {renamed.m.length}");
+let named = Named { name: "n", m: Map<i64, i64>() }
+let renamed = named with { m: Map<i64, i64>() }
+print($"{renamed.name} {renamed.m.length}")

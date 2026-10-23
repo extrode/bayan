@@ -77,14 +77,14 @@ internal static class InterfaceGenerator
             _sb.Append("void main() {\n");
             foreach (var (section, ro, rw) in new[] { ("direct", "ro{0}", "rw{0}(ref v)"), ("constraint", "roVia{1}", "rwVia{1}(ref v)"), ("dyn", "roDyn{1}", "rwDyn{1}(v)") })
             {
-                _sb.Append($"    print(\"== {section}\");\n");
+                _sb.Append($"    print(\"== {section}\")\n");
                 for (var k = 0; k < interfaces; k++)
                     foreach (var (name, a, b) in conformers[k])
                     {
-                        _sb.Append($"    {{\n        var v = {name} {{ f0: {a}, f1: {b} }};\n");
-                        _sb.Append($"        {string.Format(ro, name, k)}(v);\n");
-                        _sb.Append($"        {string.Format(rw, name, k)};\n");
-                        _sb.Append($"        print($\"{name} {{v.f0}} {{v.f1}}\");\n    }}\n");
+                        _sb.Append($"    {{\n        var v = {name} {{ f0: {a}, f1: {b} }}\n");
+                        _sb.Append($"        {string.Format(ro, name, k)}(v)\n");
+                        _sb.Append($"        {string.Format(rw, name, k)}\n");
+                        _sb.Append($"        print($\"{name} {{v.f0}} {{v.f1}}\")\n    }}\n");
                     }
             }
             _sb.Append("}\n");
@@ -106,12 +106,12 @@ internal static class InterfaceGenerator
                 _sb.Append("    ");
                 _sb.Append(m.Kind switch
                 {
-                    Kind.Method => $"i64 {m.Name}(i64 x);",
-                    Kind.Property => $"i64 {m.Name} {{ get; }}",
-                    Kind.Text => $"string {m.Name}();",
-                    Kind.Mutator => $"void {m.Name}(ref this, i64 by);",
-                    Kind.DefaultText => $"string {m.Name}() => $\"{m.Name} {{{Call(members)}}} {{{Call(members)}}}\";",
-                    _ => $"i64 {m.Name}(i64 x) => {Call(members, "x")} + {Call(members)};",
+                    Kind.Method => $"i64 {m.Name}(i64 x)",
+                    Kind.Property => $"i64 {m.Name} {{ get }}",
+                    Kind.Text => $"string {m.Name}()",
+                    Kind.Mutator => $"void {m.Name}(ref this, i64 by)",
+                    Kind.DefaultText => $"string {m.Name}() => $\"{m.Name} {{{Call(members)}}} {{{Call(members)}}}\"",
+                    _ => $"i64 {m.Name}(i64 x) => {Call(members, "x")} + {Call(members)}",
                 });
                 _sb.Append('\n');
             }
@@ -138,7 +138,7 @@ internal static class InterfaceGenerator
 
         private void Conformer(string name, string iface, List<Member> members)
         {
-            _sb.Append($"struct {name} : {iface} {{\n    i64 f0;\n    i64 f1;\n\n");
+            _sb.Append($"struct {name} : {iface} {{\n    i64 f0\n    i64 f1\n\n");
             foreach (var m in members)
             {
                 if (m.IsDefault && !Chance(40)) continue;
@@ -146,14 +146,14 @@ internal static class InterfaceGenerator
                 _sb.Append("    ");
                 _sb.Append(m.Kind switch
                 {
-                    Kind.Method => $"i64 {m.Name}(i64 x) => {Expr(true)};",
-                    Kind.Property => $"i64 {m.Name} => {Expr(false)};",
-                    Kind.Text => $"string {m.Name}() => $\"{name} {{{Expr(false)}}}\";",
+                    Kind.Method => $"i64 {m.Name}(i64 x) => {Expr(true)}",
+                    Kind.Property => $"i64 {m.Name} => {Expr(false)}",
+                    Kind.Text => $"string {m.Name}() => $\"{name} {{{Expr(false)}}}\"",
                     Kind.Mutator => Chance(50)
-                        ? $"void {m.Name}(ref this, i64 by) {{\n        f0 += by * {Between(1, 3)};\n    }}"
-                        : $"void {m.Name}(ref this, i64 by) {{\n        f1 = f0 - by;\n    }}",
-                    Kind.DefaultText => $"string {m.Name}() => $\"{name} {m.Name} {{{Expr(false)}}}\";",
-                    _ => $"i64 {m.Name}(i64 x) => {Expr(true)};",
+                        ? $"void {m.Name}(ref this, i64 by) {{\n        f0 += by * {Between(1, 3)}\n    }}"
+                        : $"void {m.Name}(ref this, i64 by) {{\n        f1 = f0 - by\n    }}",
+                    Kind.DefaultText => $"string {m.Name}() => $\"{name} {m.Name} {{{Expr(false)}}}\"",
+                    _ => $"i64 {m.Name}(i64 x) => {Expr(true)}",
                 });
                 _sb.Append('\n');
             }
@@ -169,10 +169,10 @@ internal static class InterfaceGenerator
                 var m = Pick(members);
                 steps.Add(m.Kind switch
                 {
-                    Kind.Method or Kind.DefaultMethod => $"print($\"{m.Name} {{v.{m.Name}({Between(-3, 9)})}}\");",
-                    Kind.Property => $"print($\"{m.Name} {{v.{m.Name}}}\");",
-                    Kind.Text or Kind.DefaultText => $"print(v.{m.Name}());",
-                    _ => $"v.{m.Name}({Between(-3, 9)});",
+                    Kind.Method or Kind.DefaultMethod => $"print($\"{m.Name} {{v.{m.Name}({Between(-3, 9)})}}\")",
+                    Kind.Property => $"print($\"{m.Name} {{v.{m.Name}}}\")",
+                    Kind.Text or Kind.DefaultText => $"print(v.{m.Name}())",
+                    _ => $"v.{m.Name}({Between(-3, 9)})",
                 });
             }
             var readOnly = steps.Where(s => s.StartsWith("print", StringComparison.Ordinal)).ToList();

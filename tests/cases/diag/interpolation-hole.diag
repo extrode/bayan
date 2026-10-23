@@ -1,4 +1,4 @@
 error BYN1001: expected `}` to end the interpolated expression, found `y`
 
-  1 │ let s = $"value {x y}";
+  1 │ let s = $"value {x y}"
     │                    ^

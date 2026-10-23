@@ -1,4 +1,4 @@
 error BYN2106: cannot modify this value
 
-  9 │     for dyn ref IC x in (flag ? a : a) { x.bump(); }
-    │                         ^^^^^^^^^^^^^^ it is borrowed element by element as `dyn ref IC`
+  11 │     for dyn ref IC x in (flag ? a : a) { x.bump() }
+     │                         ^^^^^^^^^^^^^^ it is borrowed element by element as `dyn ref IC`

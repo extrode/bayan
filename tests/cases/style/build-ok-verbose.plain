@@ -1,10 +1,16 @@
 # bayan build -v -o <dir>/tally/tally <dir>/tally/main.byn
-exit: 0
+exit: 1
 --- stdout ---
-  parse      0.00s
-  check      0.00s
-  emit       0.00s
-  compile    0.00s
-  <dir>/tally/tally
-◆ built tally (safe, <host>) in 0.00s
 --- stderr ---
+error BYN1040: `;` is an input form; a statement ends at the newline
+  --> <dir>/tally/main.byn:2:16
+
+  2 │     print("hi");
+    │                ^ remove `;`
+    │
+  help: remove the `;`
+    │ 2 │     print("hi");
+    │   │                -
+
+✗ build failed: 1 error, 0 warnings
+  explain: bayan explain BYN1040

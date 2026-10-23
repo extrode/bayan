@@ -1,9 +1,9 @@
-warning BYN2405: unreachable code
+error BYN1042: `return` takes its value on the same line
 
-  3 │     print("done");
-    │     ^^^^^^^^^^^^^
-
-warning BYN2405: unreachable code
-
-  8 │ print("after");
-    │ ^^^^^^^^^^^^^^
+  3 │     print("done")
+    │     ^^^^^ on the next line
+    │
+  help: move the value to the line of `return`
+    │ 2 │     return
+    │ 3 │     print("done")
+    │   │ ---

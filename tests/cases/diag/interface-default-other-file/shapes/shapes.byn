@@ -1,7 +1,7 @@
 public interface IA {
-    i64 area() => 1;
+    i64 area() => 1
 }
 
 public interface IB {
-    i32 area();
+    i32 area()
 }

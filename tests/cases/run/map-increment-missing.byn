@@ -1,7 +1,7 @@
 // `map[k]++` reads `map[k]` first: a missing key panics.
-var m = Map<string, i64>();
-m["x"] = 1;
-m["x"]++;
-print($"{m}");
-m["y"]++;
-print("unreachable");
+var m = Map<string, i64>()
+m["x"] = 1
+m["x"]++
+print($"{m}")
+m["y"]++
+print("unreachable")

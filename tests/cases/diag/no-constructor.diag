@@ -1,6 +1,6 @@
 error BYN2112: `Point` has no constructor
 
-  6 │ let p = Point(1, 2);
+  6 │ let p = Point(1, 2)
     │         ^^^^^
     │
   help: set the fields with a struct literal: `Point { x: …, y: … }`

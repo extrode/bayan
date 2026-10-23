@@ -222,7 +222,7 @@ public sealed class Parser
     private bool IsWasl(int index) => KindAt(index) is TokenKind.Dot or TokenKind.QuestionDot or TokenKind.QuestionQuestion
         or TokenKind.AmpAmp or TokenKind.BarBar or TokenKind.AndKeyword or TokenKind.OrKeyword or TokenKind.CatchKeyword
         or TokenKind.FailsKeyword or TokenKind.RequiresKeyword
-        || KindAt(index) == TokenKind.Identifier && Text(_tokens[index]) == "where";
+        || KindAt(index) == TokenKind.Identifier && Text(_tokens[index]) is "where" or "except" or "expects" or "becomes" or "uses";
 
     /// <summary>Whether the line before token <paramref name="index"/> ends in an operator, <c>,</c>, <c>=</c>, <c>=&gt;</c> or an opening bracket (lā), or the token is waṣl.</summary>
     private bool LineContinues(int index) => IsWasl(index) || index > 0 && KindAt(index - 1) is
@@ -1001,20 +1001,16 @@ public sealed class Parser
         if (Kind == TokenKind.CloseBrace && cases.Count > 0)
         {
             var outer = IndentAt(open.Start);
-            var sameLine = (int from, int to) => !_source.GetText(TextSpan.FromBounds(from, to)).Contains('
-');
+            var sameLine = (int from, int to) => !_source.GetText(TextSpan.FromBounds(from, to)).Contains('\n');
             var caseIndent = sameLine(open.End, cases[0].Start) ? outer + "    " : IndentAt(cases[0].Start);
             var text = new StringBuilder();
-            text.Append(sameLine(open.End, cases[0].Start) ? "
-" + caseIndent : _source.GetText(TextSpan.FromBounds(open.End, cases[0].Start)));
+            text.Append(sameLine(open.End, cases[0].Start) ? "\n" + caseIndent : _source.GetText(TextSpan.FromBounds(open.End, cases[0].Start)));
             for (var i = 0; i < cases.Count; i++)
             {
                 text.Append(_source.GetText(cases[i]));
                 var gapEnd = i + 1 < cases.Count ? cases[i + 1].Start : Current.Start;
                 var gap = WithoutCommas(cases[i].End, gapEnd, commas);
-                if (!gap.Contains('
-')) gap = "
-" + (i + 1 < cases.Count ? caseIndent : outer);
+                if (!gap.Contains('\n')) gap = "\n" + (i + 1 < cases.Count ? caseIndent : outer);
                 text.Append(gap);
             }
             fix = new Fix(TextSpan.FromBounds(open.End, Current.Start), text.ToString());
@@ -1902,8 +1898,8 @@ public sealed class Parser
             Report(DiagnosticCodes.ErrdeferInput, keyword.Span, label: "the input form", help: "write `defer failing`",
                 fix: new Fix(keyword.Span, "defer failing"));
         // `failing` and `panicking` are words only here, and only when a statement or a `(name)` binding follows:
-        // `defer failing();` still calls a function named `failing`. `failing(x)` is a binding only when a statement starts
-        // after its `)`; `defer failing(x);` or `defer failing(x).close();` is a call.
+        // `defer failing()` still calls a function named `failing`. `failing(x)` is a binding only when a statement starts
+        // after its `)` on the same line; `defer failing(x)` or `defer failing(x).close()` is a call.
         if (kind == DeferKind.Always && (AtContextual("failing") || AtContextual("panicking"))
             && (StartsDeferBody(1) || IsBinding(1) && StartsDeferBody(4)))
             kind = Text(Advance()) == "failing" ? DeferKind.Failing : DeferKind.Panicking;
@@ -1918,12 +1914,14 @@ public sealed class Parser
         var gapStart = _prevEnd;
         var errors = ErrorCount;
         var body = ParseEmbedded();
-        // `defer stmt;` is legal (spec §7.6), but a declaration there declares a local nothing can see.
+        // `defer stmt` is legal (spec §7.6), but a declaration there declares a local nothing can see.
         if (body is LocalDecl) ReportBraceless(keyword, gapStart, body, ErrorCount == errors, null);
         return new DeferStmt(span, kind, binding, body);
     }
 
-    private bool StartsDeferBody(int n) => Peek(n) is TokenKind.Identifier or TokenKind.OpenBrace || Peek(n).IsKeyword();
+    /// <summary>Whether a defer body starts at <paramref name="n"/>: a statement on the same line.</summary>
+    private bool StartsDeferBody(int n) =>
+        !PeekToken(n).HasNewlineBefore && (Peek(n) is TokenKind.Identifier or TokenKind.OpenBrace || Peek(n).IsKeyword());
 
     private bool IsBinding(int n) => Peek(n) == TokenKind.OpenParen && IsName(Peek(n + 1)) && Peek(n + 2) == TokenKind.CloseParen;
 
@@ -2039,7 +2037,7 @@ public sealed class Parser
     /// <summary>BYN1042: the operand of <paramref name="keyword"/> starts the next line; the fix joins it to the keyword's line.</summary>
     private void ReportOnNewLine(Token keyword) =>
         Report(DiagnosticCodes.OnNewLine, Current.Span, [Text(keyword)], label: "on the next line",
-            help: $"move the {(keyword.Kind == TokenKind.ReturnKeyword ? "value" : "label")} to the line of `{Text(keyword)}`",
+            help: $"move the value to the line of `{Text(keyword)}`",
             fix: new Fix(TextSpan.FromBounds(_prevEnd, Current.Start), " "));
 
     private static bool IsStatementExpression(Expr expr) => expr switch
@@ -2242,6 +2240,7 @@ public sealed class Parser
 
         while (true)
         {
+            if (StopsHere) return left;
             if (Kind == TokenKind.IsKeyword && minPrec <= Prec.Relational)
             {
                 Advance();
@@ -2271,6 +2270,10 @@ public sealed class Parser
             var (op, prec, width) = BinaryOperator();
             if (prec == Prec.None || prec < minPrec) return left;
             for (var i = 0; i < width; i++) Advance();
+            // A line ending in an operator continues (lā), but not across a blank line outside brackets.
+            if (BreaksLine(_pos) && HasBlankLineBefore(_pos))
+                Report(DiagnosticCodes.ExpectedExpression, new TextSpan(_prevEnd, 0), ["a blank line"], label: "the statement ends here",
+                    help: "remove the blank line, or finish the expression on this line");
             // `??` is right-associative; everything else is left-associative.
             var right = op == BinaryOp.Coalesce ? ParseBinary(prec) : ParseBinary(prec + 1);
             left = new BinaryExpr(SpanFrom(start), op, left, right);
@@ -2315,9 +2318,10 @@ public sealed class Parser
             Advance();
             handler = ParseSwitchArms(switchStart, subject);
         }
-        else if (Kind == TokenKind.OpenBrace && !(IsStructLiteralBody() && Peek(1) != TokenKind.CloseBrace && !BraceBodyHasSemicolon()))
+        else if (Kind == TokenKind.OpenBrace && !(IsName(Peek(1)) && Peek(2) == TokenKind.Colon && !BraceBodyHasStatementBreak()))
         {
-            // `catch { x: 1 }` stays a target-typed struct literal; `catch {}` and `catch { x: 1; }` are blocks.
+            // `catch { x: 1 }` stays a target-typed struct literal; `catch {}`, `catch { x = 1 }` and a body of
+            // several statements, one per line, are blocks.
             var block = ParseBlock();
             handler = new BlockExpr(block.Span, block);
         }
@@ -2361,17 +2365,18 @@ public sealed class Parser
             case TokenKind.ReturnKeyword:
                 {
                     Advance();
-                    Expr? value = CanStartExpression(Kind) && Kind is not (TokenKind.ReturnKeyword or TokenKind.BreakKeyword or TokenKind.ContinueKeyword)
+                    Expr? value = CanStartExpression(Kind) && !BreaksLine(_pos)
+                        && Kind is not (TokenKind.ReturnKeyword or TokenKind.BreakKeyword or TokenKind.ContinueKeyword)
                         ? ParseBinary(Prec.LogicalOr)
                         : null;
                     return new JumpExpr(SpanFrom(start), new ReturnStmt(SpanFrom(start), value));
                 }
             case TokenKind.BreakKeyword:
                 Advance();
-                return new JumpExpr(SpanFrom(start), new BreakStmt(SpanFrom(start), Kind == TokenKind.Identifier ? NameOf(Advance()) : null));
+                return new JumpExpr(SpanFrom(start), new BreakStmt(SpanFrom(start), Kind == TokenKind.Identifier && !Current.HasNewlineBefore ? NameOf(Advance()) : null));
             case TokenKind.ContinueKeyword:
                 Advance();
-                return new JumpExpr(SpanFrom(start), new ContinueStmt(SpanFrom(start), Kind == TokenKind.Identifier ? NameOf(Advance()) : null));
+                return new JumpExpr(SpanFrom(start), new ContinueStmt(SpanFrom(start), Kind == TokenKind.Identifier && !Current.HasNewlineBefore ? NameOf(Advance()) : null));
             case TokenKind.OpenParen when IsCast():
                 {
                     Advance();
@@ -2385,6 +2390,10 @@ public sealed class Parser
         var expr = ParsePostfix(ParsePrimary());
         while (true)
         {
+            if (BreaksLine(_pos))
+            {
+                return expr;
+            }
             if (Kind == TokenKind.SwitchKeyword && Peek(1) == TokenKind.OpenBrace)
             {
                 Advance();
@@ -2444,6 +2453,7 @@ public sealed class Parser
         var start = expr.Span.Start;
         while (true)
         {
+            if (StopsHere) return expr;
             switch (Kind)
             {
                 case TokenKind.Dot when IsName(Peek(1)):
@@ -2612,7 +2622,7 @@ public sealed class Parser
                 typeArgs = ParseTypeArgs();
         }
 
-        if (Kind == TokenKind.OpenBrace && IsStructLiteralBody() && char.IsUpper(name.Text[0]) && BraceLiteralAllowed())
+        if (Kind == TokenKind.OpenBrace && !BreaksLine(_pos) && IsStructLiteralBody() && char.IsUpper(name.Text[0]) && BraceLiteralAllowed())
         {
             var type = new NamedType(SpanFrom(start), [name], typeArgs);
             var fields = ParseFieldInits();
@@ -2635,12 +2645,18 @@ public sealed class Parser
         return new NamedType(SpanFrom(start), path.ToArray(), args);
     }
 
-    /// <summary>Whether the brace body opening at the current token has a <c>;</c> at its own depth.</summary>
-    private bool BraceBodyHasSemicolon()
+    /// <summary>
+    /// Whether the brace body opening at the current token separates statements at its own depth: a line break
+    /// not after <c>,</c> or <c>{</c> (fields of a struct literal end their lines with <c>,</c>), or a <c>;</c>.
+    /// </summary>
+    private bool BraceBodyHasStatementBreak()
     {
         var depth = 0;
         for (var i = _pos + 1; i < _count; i++)
         {
+            if (depth == 0 && _tokens[i].HasNewlineBefore && KindAt(i) != TokenKind.CloseBrace
+                && KindAt(i - 1) is not (TokenKind.Comma or TokenKind.OpenBrace))
+                return true;
             switch (KindAt(i))
             {
                 case TokenKind.OpenBrace or TokenKind.OpenParen or TokenKind.OpenBracket:

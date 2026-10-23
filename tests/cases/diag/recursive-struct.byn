@@ -1,4 +1,4 @@
 struct Node {
-    i64 value;
-    Node? next;
+    i64 value
+    Node? next
 }

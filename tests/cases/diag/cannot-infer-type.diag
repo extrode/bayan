@@ -1,13 +1,13 @@
 error BYN2217: cannot infer the type of `null`
 
-  1 │ let x = null;
+  1 │ let x = null
     │         ^^^^
     │
-  help: write the type: `i64? x = null;`
+  help: write the type: `i64? x = null`
 
 error BYN2217: cannot infer the type of `y`
 
-  2 │ var y;
+  2 │ var y
     │     ^
     │
-  help: write the type: `var i64 y;`
+  help: write the type: `var i64 y`

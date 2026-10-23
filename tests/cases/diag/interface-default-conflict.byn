@@ -1,13 +1,13 @@
 interface IA {
-    string name() => "a";
+    string name() => "a"
 }
 
 interface IB {
-    string name() => "b";
+    string name() => "b"
 }
 
 struct S : IA, IB {
-    i64 x;
+    i64 x
 }
 
-print(S { x: 1 }.name());
+print(S { x: 1 }.name())

@@ -1,2 +1,2 @@
-i64 size() => this.length;
-print($"{size()}");
+i64 size() => this.length
+print($"{size()}")

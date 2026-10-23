@@ -1,6 +1,6 @@
 error BYN3001: a struct field cannot hold a borrowed `Span<u8>`
 
-  2 │     Span<u8> bytes;
+  2 │     Span<u8> bytes
     │     ^^^^^^^^
     │
   help: store a `List` copied with `.copy(to: alloc)` instead; storing borrows in structs arrives in

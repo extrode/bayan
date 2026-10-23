@@ -1,8 +1,8 @@
 Span<i64> scratch() {
-    let buf = stackalloc i64[4];
-    return buf[1..];
+    let buf = stackalloc i64[4]
+    return buf[1..]
 }
 
-Span<i64> firstTwo(i64[4] values) => values.asSpan()[..2];
+Span<i64> firstTwo(i64[4] values) => values.asSpan()[..2]
 
-Span<i64> fine(Span<i64> values) => values[1..];
+Span<i64> fine(Span<i64> values) => values[1..]

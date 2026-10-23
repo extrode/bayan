@@ -1,19 +1,19 @@
 interface IShape {
-    i64 area();
-    string name { get; }
-    i64 times(i64 by);
+    i64 area()
+    string name { get }
+    i64 times(i64 by)
 }
 
 struct Rect : IShape {
-    i64 w;
-    i64 h;
+    i64 w
+    i64 h
 
-    i64 area() => w * h;
+    i64 area() => w * h
 
-    string name => "rect";
+    string name => "rect"
 
-    i64 times(i64 by) => area() * by;
+    i64 times(i64 by) => area() * by
 }
 
-let r = Rect { w: 3, h: 4 };
-print($"{r.name} {r.area()} {r.times(2)}");
+let r = Rect { w: 3, h: 4 }
+print($"{r.name} {r.area()} {r.times(2)}")

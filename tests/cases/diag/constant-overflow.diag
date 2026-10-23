@@ -1,4 +1,4 @@
 error BYN2204: constant arithmetic overflows `i32`
 
-  1 │ const i32 big = 2_000_000_000 * 2;
+  1 │ const i32 big = 2_000_000_000 * 2
     │                 ^^^^^^^^^^^^^^^^^

@@ -1,7 +1,7 @@
 interface ICount {
-    i64 count();
+    i64 count()
 }
 
 struct Box : ICount {
-    i64 count;
+    i64 count
 }

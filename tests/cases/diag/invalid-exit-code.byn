@@ -1,25 +1,25 @@
 error enum ConfigError {
     [ExitCode(0)]
     /// Zero means success.
-    zero,
+    zero
     [ExitCode(300)]
     /// Too large.
-    large,
+    large
     [ExitCode]
     /// No argument.
-    missing,
+    missing
     [ExitCode("x")]
     /// Not an integer.
-    text,
+    text
     [ExitCode(1, 2)]
     /// Two arguments.
-    two,
+    two
     [ExitCode(4)]
     [ExitCode(5)]
     /// Repeated.
-    repeated,
+    repeated
 }
 
 void main() fails ConfigError {
-    return .zero;
+    return .zero
 }

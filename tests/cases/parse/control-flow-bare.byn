@@ -1,31 +1,34 @@
 void f(i64 n, Point p, List<i64> xs, Map<string, i64> prices) fails ReadError {
-    if n > 0 { a(); } else if n < 0 { b(); } else { c(); }
-    if (p == Point { x: 0, y: 0 }) { origin(); }
-    if (p is { x: 0 }) { origin(); }
-    if (n + 1) * 2 > 3 { big(); }
-    if n > 0 { return; }
-    unless p.isValid { reject(p); }
-    while queue.hasItems { step(); }
-    while try socket.hasMore() { read(); }
-    do { n++; } while n < 10;
-    do { n++; } while n < 20;
-    switch n { case 1: one(); default: other(); }
-    for x in xs { use(x); }
-    for i in 0..n { use(i); }
-    for i64 x in xs { use(x); }
-    for (key, value) in prices { use(value); }
-    for try row in rows { use(row); }
-    for try (a, b) in pairs { use(a); }
-    for x in xs { use(x); }
+    if n > 0 { a() } else if n < 0 { b() } else { c() }
+    if (p == Point { x: 0, y: 0 }) { origin() }
+    if (p is { x: 0 }) { origin() }
+    if (n + 1) * 2 > 3 { big() }
+    if n > 0 { return }
+    unless p.isValid { reject(p) }
+    while queue.hasItems { step() }
+    while try socket.hasMore() { read() }
+    do { n++ } while n < 10
+    do { n++ } while n < 20
+    switch n {
+        case 1: one()
+        default: other()
+    }
+    for x in xs { use(x) }
+    for i in 0..n { use(i) }
+    for i64 x in xs { use(x) }
+    for (key, value) in prices { use(value) }
+    for try row in rows { use(row) }
+    for try (a, b) in pairs { use(a) }
+    for x in xs { use(x) }
     outer: for row in grid {
         for cell in row {
-            break outer if cell.isTarget;
+            break outer if cell.isTarget
         }
     }
-    while let row = try rows.next() { use(row); }
-    if unlikely buf.isFull { flush(); }
-    if never state is .corrupt { panic("corrupt"); }
-    if unlikely { variable(); }
-    flush() if unlikely buf.isFull;
-    flush() if unlikely(buf);
+    while let row = try rows.next() { use(row) }
+    if unlikely buf.isFull { flush() }
+    if never state is .corrupt { panic("corrupt") }
+    if unlikely { variable() }
+    flush() if unlikely buf.isFull
+    flush() if unlikely(buf)
 }
