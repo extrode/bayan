@@ -142,3 +142,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - A field witnessing a getter declared with `fails` may get a vtable thunk that ignores the `fails` return convention (`CEmitter.cs` Vtable). Unprobed; flagged by the 006-fixa writer.
 - Region analysis runs on generic instances only, so a never-instantiated generic struct's methods get no BYN3004 (audit 2026-10-23 probe p7); instantiated ones match the non-generic case.
 - BYN2202 on a generic method's type parameter reads "expected `U`, found `U`" (two distinct `U`s print alike).
+- Reassigning an owner (`xs = List<i64>()`, `this.items = …` inside `for x in items`) while a span or loop borrows it records no mutation; memory-safe only because lists live in arenas and reassignment frees nothing (probes p4b/p8/p9 of the 006 final review, 2026-10-23). Becomes a hole if reassignment ever frees.
