@@ -210,6 +210,37 @@ public sealed class ParserTests
     public void NameFirstLocalsAndTypeFirstDeclarationsAreClean(string text) => Assert.Empty(Parse(text).Diagnostics);
 
     [Theory]
+    [InlineData("struct S {\n    void f(this is .open) {\n    }\n}\n", "Function f(this is .open) -> void")]
+    [InlineData("struct S {\n    void f(ref this is .open, i64 a) {\n    }\n}\n", "Function f(ref this is .open, i64 a) -> void")]
+    [InlineData("struct S {\n    i64 a\n    i64 b {\n        return a\n    }\n}\n", "Property i64 b\n      Block\n        Return a")]
+    [InlineData("const p = pattern S { a: 0 or 1 }\nf()\n", "Const p = (pattern (props S (a: (or 0 1))))\n  Expr (call f)")]
+    [InlineData("let pattern = 1\nlet x = pattern\n", "Let x = pattern")]
+    [InlineData("test \"t\" (i32 input, bool valid) {\n}\n", "Test `t` (i32 input, bool valid)")]
+    public void ReceiverStatesPatternsAndBlockPropertiesParse(string text, string dump)
+    {
+        var tree = Parse(text);
+        Assert.Empty(tree.Diagnostics);
+        Assert.Contains(dump, AstDump.Dump(tree));
+    }
+
+    [Theory]
+    [InlineData("let p = pattern S { a: 0 }\n")]
+    [InlineData("void f() {\n    g(pattern S { a: 0 })\n}\n")]
+    public void PatternOutsideConstIsReported(string text)
+    {
+        var diagnostic = Assert.Single(Parse(text).Diagnostics);
+        Assert.Equal("BYN1046", diagnostic.Code);
+        Assert.Null(diagnostic.Fix);
+    }
+
+    [Fact]
+    public void NameFirstTestParamsAreAnInputForm()
+    {
+        var diagnostic = Assert.Single(Parse("test \"t\" (input: i32) {\n}\n").Diagnostics);
+        Assert.Equal("BYN1043", diagnostic.Code);
+    }
+
+    [Theory]
     [InlineData("let a = 1 +\n    2\n")]
     [InlineData("let a = f(1,\n    2)\n")]
     [InlineData("let a = [\n    1,\n    2,\n]\n")]

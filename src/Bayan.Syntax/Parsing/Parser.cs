@@ -765,6 +765,8 @@ public sealed class Parser
             ExpectEnd();
             return new PropertyDecl(SpanFrom(start), modifiers, type, name, body);
         }
+        if (Kind == TokenKind.OpenBrace)
+            return new PropertyDecl(SpanFrom(start), modifiers, type, name, null) { Block = ParseBlock() };
         Expr? init = null;
         if (Accept(TokenKind.Equals)) init = ParseExpression();
         if (Kind == TokenKind.RequiresKeyword)
@@ -811,7 +813,7 @@ public sealed class Parser
         var name = ExpectName();
         var typeParams = ParseTypeParams();
         var paramsStart = Current.End;
-        var parameters = ParseParams(out var refThis);
+        var parameters = ParseParams(out var refThis, out var receiverState);
         var paramsEnd = _prevEnd;
         returnType ??= ParseNameFirstReturn(name, paramsEnd);
         FailsClause? fails = null;
@@ -862,7 +864,7 @@ public sealed class Parser
         }
         return new FunctionDecl(SpanFrom(start), modifiers, returnType, name, parameters, fails, body, expressionBody)
         {
-            TypeParams = typeParams, RefThis = refThis, ParamsStart = paramsStart,
+            TypeParams = typeParams, RefThis = refThis, ReceiverState = receiverState, ParamsStart = paramsStart,
             Requires = requires.ToArray(), Where = where,
         };
     }
@@ -890,12 +892,16 @@ public sealed class Parser
         return new NamedType(at, [new Name(at, "void")], []);
     }
 
-    private Param[] ParseParams() => ParseParams(out _, allowRefThis: false);
+    private Param[] ParseParams() => ParseParams(out _, out _, allowRefThis: false);
 
-    /// <summary>A member's parameters; <c>ref this</c> is accepted only first (BYN2117) and returned in <paramref name="refThis"/>.</summary>
-    private Param[] ParseParams(out TextSpan? refThis, bool allowRefThis = true)
+    /// <summary>
+    /// A member's parameters; <c>ref this</c> is accepted only first (BYN2117) and returned in <paramref name="refThis"/>. A
+    /// first receiver <c>this is .s</c> or <c>ref this is .s</c> returns its state in <paramref name="receiverState"/>.
+    /// </summary>
+    private Param[] ParseParams(out TextSpan? refThis, out Name? receiverState, bool allowRefThis = true)
     {
         refThis = null;
+        receiverState = null;
         Expect(TokenKind.OpenParen);
         var list = new List<Param>();
         if (Kind != TokenKind.CloseParen)
@@ -912,6 +918,14 @@ public sealed class Parser
                         Report(DiagnosticCodes.RefThisNotFirst, span, [], label: "after other parameters",
                             help: "move `ref this` to the start of the parameter list");
                     refThis ??= span;
+                    if (list.Count == 0 && receiverState is null) receiverState = ParseReceiverState();
+                    continue;
+                }
+                if (allowRefThis && Kind == TokenKind.ThisKeyword && list.Count == 0 && refThis is null && receiverState is null
+                    && KindAt(_pos + 1) == TokenKind.IsKeyword)
+                {
+                    Advance();
+                    receiverState = ParseReceiverState();
                     continue;
                 }
                 var modifier = Kind switch
@@ -938,6 +952,14 @@ public sealed class Parser
         }
         Expect(TokenKind.CloseParen);
         return list.ToArray();
+    }
+
+    /// <summary>The <c>is .s</c> after a receiver's <c>this</c>, if written.</summary>
+    private Name? ParseReceiverState()
+    {
+        if (!Accept(TokenKind.IsKeyword)) return null;
+        Expect(TokenKind.Dot);
+        return ExpectName("a state name");
     }
 
     /// <summary>
@@ -1523,7 +1545,7 @@ public sealed class Parser
         }
         else name = ExpectName("a variable name");
         Expr? init = null;
-        if (Accept(TokenKind.Equals)) init = ParseExpression();
+        if (Accept(TokenKind.Equals)) init = kind == BindingKind.Const && IsPatternExprStart() ? ParsePatternExpr() : ParseExpression();
         if (Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword && !Current.HasNewlineBefore)
         {
             Report(DiagnosticCodes.PostfixNotSimple, Current.Span, [Text(Current)],
@@ -2782,6 +2804,10 @@ public sealed class Parser
                     var fields = ParseFieldInits();
                     return new StructLiteralExpr(SpanFrom(start), null, fields);
                 }
+            case TokenKind.Identifier when IsPatternExprStart():
+                Report(DiagnosticCodes.PatternOutsideConst, token.Span, [], label: "`pattern` outside a `const`",
+                    help: "declare the pattern as `const name = pattern T { … }`");
+                return ParsePatternExpr();
             case TokenKind.Identifier:
             case var kind when kind.IsContextualKeyword():
                 return ParseNameOrStructLiteral();
@@ -2791,6 +2817,20 @@ public sealed class Parser
         }
         Report(DiagnosticCodes.ExpectedExpression, Current.Span, [Describe(Current)]);
         return new ErrorExpr(new TextSpan(start, 0));
+    }
+
+    /// <summary>
+    /// The contextual <c>pattern</c> followed on its line by a type name; <c>pattern</c> is a name everywhere else, and a
+    /// name followed by a name is never an expression.
+    /// </summary>
+    private bool IsPatternExprStart() =>
+        AtContextual("pattern") && Peek(1) == TokenKind.Identifier && !PeekToken(1).HasNewlineBefore;
+
+    private PatternExpr ParsePatternExpr()
+    {
+        var start = Advance().Start;
+        var pattern = ParsePattern();
+        return new PatternExpr(SpanFrom(start), pattern);
     }
 
     private Expr ParseNameOrStructLiteral()
@@ -3161,7 +3201,7 @@ public sealed class Parser
         }
         ExpectClose(open, "property pattern");
         Name? designation = null;
-        if (IsName(Kind) && !AtContextual("when")) designation = NameOf(Advance());
+        if (IsName(Kind) && !AtContextual("when") && !Current.HasNewlineBefore) designation = NameOf(Advance());
         return new PropertyPattern(SpanFrom(start), type, properties.ToArray(), designation);
     }
 

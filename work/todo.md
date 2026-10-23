@@ -176,3 +176,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51b2a: `except` narrowing of a `union error` is rejected with BYN2022 until function error sets carry excluded cases (handoff Q124).
 - r3-51b2a gate: BYN3202 in a nested composition is reported once per composed alias that flattens it (CheckComposition runs per alias); report once at the innermost head.
 - r3-51b2a gate: `union error Name<T>` type parameters do not parse; needed for HANDOFF §11 `ValidationError<T>`.
+- r3-51b2b: test parameters already parsed type-first with `[Cases]` binding (round 2); 5.1b added no code for them beyond the BYN1043 input form from part 1.
+- r3-51b2b: J46 "no `uses`" rule for computed properties (expression or block body) waits for `uses` (5.1d).
+- r3-51b2b: `const x: T = pattern …` (a typed pattern const) parses; no pattern type exists to check `T` against.

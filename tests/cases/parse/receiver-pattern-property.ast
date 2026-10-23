@@ -1,0 +1,16 @@
+CompilationUnit
+  Struct Order
+    Field i64 total
+    Property public i64 doubled
+      Block
+        Let t = (* total 2)
+        Return t
+    Function public pay(ref this is .placed, i64 amount) -> void
+      Block
+        Assign total = amount
+    Function public tracking(this is .shipped) -> i64 => total
+  Const inactive = (pattern (props Order (total: (or 0 1))))
+  Let pattern = 1
+  Test `bounds` (i32 input, bool valid)
+    Block
+      Assert (paren (>= input 0))

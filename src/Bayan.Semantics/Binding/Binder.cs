@@ -236,7 +236,12 @@ internal sealed partial class Binder
 
     public void BindGetter(PropertyDecl decl)
     {
-        _fn!.Body = new BoundBlock(decl.Body, [new BoundReturn(decl.Body, BindConverted(decl.Body, _fn.ReturnType))]);
+        if (decl.Block is { } block)
+        {
+            _fn!.Body = BindBlock(block);
+            return;
+        }
+        _fn!.Body = new BoundBlock(decl.Body!, [new BoundReturn(decl.Body!, BindConverted(decl.Body!, _fn.ReturnType))]);
     }
 
     public void BindConstructor(ConstructorDecl decl)

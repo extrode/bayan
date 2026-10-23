@@ -61,12 +61,13 @@ public static class AstDump
         private static string TypeParams(Name[] names) =>
             names.Length == 0 ? "" : "<" + string.Join(", ", names.Select(n => n.Text)) + ">";
 
-        private static string Params(Param[] parameters, bool refThis = false)
+        private static string Params(Param[] parameters, bool refThis = false, Name? state = null)
         {
-            var sb = new StringBuilder(refThis ? "(ref this" : "(");
+            var receiver = (refThis ? "ref this" : state is null ? "" : "this") + (state is null ? "" : " is ." + state.Text);
+            var sb = new StringBuilder("(" + receiver);
             for (var i = 0; i < parameters.Length; i++)
             {
-                if (i > 0 || refThis) sb.Append(", ");
+                if (i > 0 || receiver.Length > 0) sb.Append(", ");
                 var p = parameters[i];
                 if (p.Modifier != ParamModifier.None) sb.Append(p.Modifier.ToString().ToLowerInvariant()).Append(' ');
                 Type(sb, p.Type);
@@ -110,7 +111,7 @@ public static class AstDump
                     break;
                 case FunctionDecl d:
                     {
-                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params, d.RefThis is not null)} -> {Type(d.ReturnType)}";
+                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params, d.RefThis is not null, d.ReceiverState)} -> {Type(d.ReturnType)}";
                         if (d.Fails is not null)
                             head += d.Fails.Errors.Length == 0 ? " fails" : " fails " + string.Join(", ", d.Fails.Errors.Select(Type));
                         head += Where(d.Where);
@@ -142,7 +143,8 @@ public static class AstDump
                     Line(depth, $"Field {Mods(d.Modifiers)}{Type(d.Type)} {d.Name.Text}" + (d.Default is null ? "" : " = " + AstDump.Expr(d.Default)));
                     break;
                 case PropertyDecl d:
-                    Line(depth, $"Property {Mods(d.Modifiers)}{Type(d.Type)} {d.Name.Text} => {AstDump.Expr(d.Body)}");
+                    Line(depth, $"Property {Mods(d.Modifiers)}{Type(d.Type)} {d.Name.Text}" + (d.Body is null ? "" : $" => {AstDump.Expr(d.Body)}"));
+                    if (d.Block is not null) Stmt(depth + 1, d.Block);
                     break;
                 case ConstructorDecl d:
                     Line(depth, $"Constructor {Mods(d.Modifiers)}{d.Name.Text}{Params(d.Params)}");
@@ -694,6 +696,11 @@ public static class AstDump
                     break;
                 case CaughtErrorExpr:
                     sb.Append("(caught)");
+                    break;
+                case PatternExpr e:
+                    sb.Append("(pattern ");
+                    Pattern(sb, e.Pattern);
+                    sb.Append(')');
                     break;
                 case ErrorExpr:
                     sb.Append("<error>");
