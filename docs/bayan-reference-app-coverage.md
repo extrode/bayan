@@ -40,7 +40,7 @@ Which `suq/` files exercise each feature that HANDOFF §21 (`docs/bayan-design-r
 | Postfix and block `unless` (§5) | `suq/orders/order.byn`, `suq/storefront/checkout.byn` |
 | `///` docs (§6) | all five files |
 | `rune` literals (§10) | `suq/storefront/catalog.byn` |
-| `try` scope (§18), `?? return`, `for try`, `while let` | all five files (`try`); `suq/packing/packing.byn`, `suq/storefront/catalog.byn`, `suq/storefront/checkout.byn` |
+| `try` scope (§18), `?? return`, `?? fail`, `for try` | all five files (`try`); `suq/storefront/catalog.byn`, `suq/storefront/checkout.byn` (`?? return`); `suq/packing/packing.byn` (`?? fail`); `suq/storefront/catalog.byn` (`for try`) |
 | Derived forms `tryX`, `xInto`, `XOp` | `suq/packing/packing.byn`, `suq/storefront/catalog.byn`, `suq/storefront/checkout.byn` (`BookWithRetryOp`) |
 | Extensions, interfaces | `suq/storefront/checkout.byn` |
 | Fibers `async`/`await`, `Io.offload` | `suq/storefront/checkout.byn`, `suq/storefront/accounts.byn` |
@@ -57,7 +57,7 @@ Which `suq/` files exercise each feature that HANDOFF §21 (`docs/bayan-design-r
 Not used by any file in `suq/`. Items marked "zip" are exercised in `docs/suq-reference-app.zip`; the rest are in the zip's own "Not yet exercised" list.
 
 - zip: `rest` parameters and overloads (§24); unit rounding `floor`/`ceiling`/`rounded<Unit>()` (§8); word booleans `not`/`and`/`or` in code (§5, `style.booleans` lives in `package.byn`); doctests; `@cases`; laws; generics, `embed`, interface default methods, `Set` of a union; effect capabilities and the pure `pricing` package; `provide` (§13); `Secret<T>` and `because` bypasses (§4, §16); FFI, `unique` resources freed with `move this`; `std.db` shape, `Row`, binary COPY, transactions, regions; deadlines and fiber groups; scripting mode, `@derive(Args)`, `@derive(Config)`; `Panic.handler`; `primitives: .sized`; the C# baseline `suq-csharp/`.
-- nowhere: `defer panicking`, `if likely`/`if never`, `while try`, `do … while`, `T.Id`, `T.Hasher`, `T.Comparer`, `T.<Verb>ed` events, comptime source generators that return declarations, library-defined diagnostics, channels and `Io.first`, atomics, `Io.Simulated`, slicing, `+|`, `-|`, `rune` as a declared type, `mutableSpan()`, `rows.all()`, `Panic` in a test.
+- nowhere: `while let` (the zip's matrix lists it, but no zip source uses it), `defer panicking`, `if likely`/`if never`, `while try`, `do … while`, `T.Id`, `T.Hasher`, `T.Comparer`, `T.<Verb>ed` events, comptime source generators that return declarations, library-defined diagnostics, channels and `Io.first`, atomics, `Io.Simulated`, slicing, `+|`, `-|`, `rune` as a declared type, `mutableSpan()`, `rows.all()`, `Panic` in a test.
 
 ## Per-milestone status
 

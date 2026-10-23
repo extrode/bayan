@@ -26,7 +26,7 @@ Codes are the ones SPEC §21.5, the round-3 plan (`docs/plans/2026-10-22-002-des
 | `foreach.byn` | `foreach` | BYN1019 |
 | `get-property.byn` | interface property `{ get }` | BYN1060 |
 | `in-convert.byn` | removed unit conversion `.in(Unit)` | none allocated |
-| `keyword-name.byn` | keyword used as a name | none allocated |
+| `keyword-name.byn` | keyword used as a name | BYN0012 |
 | `leading-operator.byn` | line starts with a binary operator | none allocated |
 | `log-at.byn` | log level passed with `at:` | none allocated |
 | `log-level-member.byn` | `Log.debug(…)` | BYN5007 |
