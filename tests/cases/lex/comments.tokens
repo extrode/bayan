@@ -4,3 +4,15 @@
 6:8 Identifier `S`
 8:1 Identifier `b`
 9:1 EndOfFile
+
+error BYN1047: `/* */` is an input form; write `//` lines
+
+  2 │ /* block
+    │ ^^^^^^^^ block comment
+    │
+  help: write each line with `//`
+    │ 2 │ // block
+    │   │  +++++++
+    │ 3 │ // comment
+    │   │ ++++++++++
+    │ 4 │  a

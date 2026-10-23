@@ -1,20 +1,20 @@
-error BYN2770: unknown attribute `Retry`
+error BYN2770: unknown attribute `retry`
 
-  2 │     [Retry(3)]
+  2 │     @retry(3)
     │      ^^^^^
     │
-  help: use `[ExitCode(n)]`; it is the only attribute an error variant takes
+  help: use `@exitCode(n)`; it is the only attribute an error variant takes
 
-error BYN2770: unknown attribute `Inline`
+error BYN2770: unknown attribute `inline`
 
-  7 │ [Inline]
+  7 │ @inline
     │  ^^^^^^
     │
-  help: use `[ExitCode(n)]` on an error variant or `[Cases(...)]` on a test
+  help: use `@exitCode(n)` on an error variant or `@cases(...)` on a test
 
-error BYN1016: `[ExitCode]` is not allowed here
+error BYN1016: `@exitCode` is not allowed here
 
-  10 │ [ExitCode(2)]
-     │ ^^^^^^^^^^^^^
+  10 │ @exitCode(2)
+     │ ^^^^^^^^^^^^
      │
-  help: put `[ExitCode]` on an error enum variant
+  help: put `@exitCode` on an error enum variant

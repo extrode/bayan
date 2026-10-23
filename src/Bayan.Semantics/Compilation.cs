@@ -242,41 +242,41 @@ public sealed partial class Compilation
                 help: "write `void main()`, `i32 main()`, `void main(ReadOnlySpan<string> args)` or `i32 main(ReadOnlySpan<string> args)`, each optionally with `fails`");
     }
 
-    /// <summary><c>[Cases]</c> belongs on a test with parameters and <c>[ExitCode]</c> on an error variant; no other declaration takes an attribute.</summary>
+    /// <summary><c>@cases</c> belongs on a test with parameters and <c>@exitCode</c> on an error variant; no other declaration takes an attribute.</summary>
     private void CheckAttributes(FileContext file, Decl decl)
     {
         var hasCases = false;
         foreach (var a in decl.Attributes)
         {
-            if (a.Name.Text == "Cases" && decl is TestDecl test)
+            if (a.Name.Text == "cases" && decl is TestDecl test)
             {
                 if (hasCases)
-                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[Cases]"], help: "combine the cases into one `[Cases(...)]`");
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@cases"], help: "combine the cases into one `@cases(...)`");
                 else
                     _testCases[test] = CheckCases(file, test, a);
                 hasCases = true;
             }
-            else if (a.Name.Text == "Cases")
-                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[Cases]"], help: "put `[Cases(...)]` on a test that takes parameters");
-            else if (a.Name.Text == "ExitCode")
-                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "put `[ExitCode]` on an error enum variant");
+            else if (a.Name.Text == "cases")
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@cases"], help: "put `@cases(...)` on a test that takes parameters");
+            else if (a.Name.Text == "exitCode")
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@exitCode"], help: "put `@exitCode` on an error enum variant");
             else
                 Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text],
-                    help: "use `[ExitCode(n)]` on an error variant or `[Cases(...)]` on a test");
+                    help: "use `@exitCode(n)` on an error variant or `@cases(...)` on a test");
         }
         if (decl is TestDecl { Params.Length: > 0 } t && !hasCases)
         {
             var span = TextSpan.FromBounds(t.Params[0].Span.Start, t.Params[^1].Span.End);
             Report(DiagnosticCodes.ModifierNotAllowed, file.Source, span, [file.Source.GetText(span)],
-                label: "a test without `[Cases]` takes no parameters",
-                help: "add `[Cases(...)]` with one value per parameter for each case, or remove the parameters");
+                label: "a test without `@cases` takes no parameters",
+                help: "add `@cases(...)` with one value per parameter for each case, or remove the parameters");
         }
         if (decl is StructDecl s)
             foreach (var m in s.Members) CheckAttributes(file, m);
     }
 
     /// <summary>
-    /// The cases of <c>[Cases(...)]</c> that fit <paramref name="test"/>: a tuple per case, or a bare value when it
+    /// The cases of <c>@cases(...)</c> that fit <paramref name="test"/>: a tuple per case, or a bare value when it
     /// takes one parameter, with one literal per parameter (BYN2773, BYN2774).
     /// </summary>
     private List<Expr[]> CheckCases(FileContext file, TestDecl test, AttributeSyntax a)
@@ -288,14 +288,14 @@ public sealed partial class Compilation
             if (arg.Value is NameExpr or MemberExpr)
             {
                 Report(DiagnosticCodes.CasesNotConstant, file.Source, arg.Value.Span, [], label: "cases from a const list are not supported yet",
-                    help: "write each case as a tuple literal, such as `[Cases((0, false), (1, true))]`");
+                    help: "write each case as a tuple literal, such as `@cases((0, false), (1, true))`");
                 continue;
             }
             Expr[] values = arg.Value is TupleExpr tuple ? tuple.Elements.Select(e => e.Value).ToArray() : [arg.Value];
             if (values.Length != test.Params.Length)
             {
                 Report(DiagnosticCodes.CasesArity, file.Source, arg.Value.Span, [values.Length, test.Params.Length],
-                    help: test.Params.Length == 1 ? "give one value per case: `[Cases(1, 2, 3)]`"
+                    help: test.Params.Length == 1 ? "give one value per case: `@cases(1, 2, 3)`"
                         : $"give each case one value per parameter, in order: `({names})`");
                 continue;
             }
@@ -327,6 +327,24 @@ public sealed partial class Compilation
         _testBodies[fn] = (t, values);
     }
 
+    /// <summary>
+    /// <c>requires</c> rules on fields, structs and types parse, but are checked at construction only from round 3
+    /// step 5.3b; until then each rule is BYN2322 rather than silently unchecked.
+    /// </summary>
+    private void CheckRequires(FileContext file, Decl decl)
+    {
+        RequiresRule[] rules = decl switch
+        {
+            StructDecl s => [.. s.Members.OfType<FieldDecl>().SelectMany(f => f.Requires), .. s.Rules],
+            FieldDecl f => f.Requires,
+            TypeAliasDecl t => t.Requires,
+            _ => [],
+        };
+        foreach (var rule in rules.OrderBy(r => r.Span.Start))
+            Report(DiagnosticCodes.RequiresNotHere, file.Source, rule.Span, [decl is TypeAliasDecl ? "types" : "fields"],
+                help: "check the value where it is set, or move the rule to a function's `requires`");
+    }
+
     /// <summary><c>quantity bounds (input: 101, valid: false)</c>: the title, then each parameter with its value as written.</summary>
     private static string CaseTitle(FileContext file, TestDecl t, Expr[] values) =>
         $"{t.Title} ({string.Join(", ", t.Params.Zip(values, (p, v) => p.Name.Text + ": " + file.Source.GetText(v.Span)))})";
@@ -338,6 +356,7 @@ public sealed partial class Compilation
         foreach (var decl in file.Tree.Root.Members)
         {
             CheckAttributes(file, decl);
+            CheckRequires(file, decl);
             switch (decl)
             {
                 case StructDecl s:
@@ -638,12 +657,12 @@ public sealed partial class Compilation
             var seen = false;
             foreach (var a in v.Attributes)
             {
-                if (a.Name.Text == "Cases")
-                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[Cases]"], help: "put `[Cases(...)]` on a test that takes parameters");
-                else if (a.Name.Text != "ExitCode")
-                    Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "use `[ExitCode(n)]`; it is the only attribute an error variant takes");
+                if (a.Name.Text == "cases")
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@cases"], help: "put `@cases(...)` on a test that takes parameters");
+                else if (a.Name.Text != "exitCode")
+                    Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "use `@exitCode(n)`; it is the only attribute an error variant takes");
                 else if (seen)
-                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "remove the repeated attribute");
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@exitCode"], help: "remove the repeated attribute");
                 else
                 {
                     seen = true;

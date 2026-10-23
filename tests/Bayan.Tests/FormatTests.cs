@@ -43,6 +43,30 @@ public sealed class FormatTests
     }
 
     [Fact]
+    public void AttributesCommentsAndRunesAreRewritten()
+    {
+        var file = Path.Combine(Fresh("round3"), "main.byn");
+        File.WriteAllText(file,
+            "/* one\n   two */\nbool isA(char c) => c == 'a'\n" +
+            "[Cases(1, 2)]\ntest \"positive\" (i32 n) {\n    assert(n > 0)\n}\n");
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(
+            "// one\n// two\nbool isA(rune c) => c == 'a'\n" +
+            "@cases(1, 2)\ntest \"positive\" (i32 n) {\n    assert(n > 0)\n}\n",
+            File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void RequiresValueBecomesIt()
+    {
+        var file = Path.Combine(Fresh("requires"), "main.byn");
+        File.WriteAllText(file, "type distinct Percent = i32 requires value in 0..=100\n");
+        Run("format", file);
+        Assert.Equal("type distinct Percent = i32 requires it in 0..=100\n", File.ReadAllText(file));
+    }
+
+    [Fact]
     public void DeclarationsBecomeTypeFirstAndLocalsNameFirst()
     {
         var file = Path.Combine(Fresh("order"), "main.byn");

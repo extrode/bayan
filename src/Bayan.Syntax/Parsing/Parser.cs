@@ -652,8 +652,69 @@ public sealed class Parser
         var typeParams = ParseTypeParams();
         var bases = ParseBases();
         var where = ParseWhere();
-        var members = ParseBody("struct", () => ParseDeclaration(topLevel: false, structName: name.Text));
-        return new StructDecl(SpanFrom(start), modifiers, name, members) { TypeParams = typeParams, Bases = bases, Where = where };
+        var rules = new List<RequiresRule>();
+        var members = ParseBody("struct", () =>
+        {
+            if (Kind != TokenKind.RequiresKeyword) return ParseDeclaration(topLevel: false, structName: name.Text);
+            rules.Add(ParseRequiresRule());
+            ExpectEnd();
+            return null;
+        });
+        // O3: a field's rule that names another field, or has `at .f`, belongs to the struct.
+        var fields = members.OfType<FieldDecl>().Select(f => f.Name.Text).ToHashSet();
+        for (var i = 0; i < members.Length; i++)
+        {
+            if (members[i] is not FieldDecl { Requires.Length: > 0 } field) continue;
+            var own = field.Requires.Where(r => r.At is null && !NamesAny(r, fields)).ToArray();
+            rules.AddRange(field.Requires.Where(r => !own.Contains(r)));
+            members[i] = field with { Requires = own };
+        }
+        return new StructDecl(SpanFrom(start), modifiers, name, members)
+            { TypeParams = typeParams, Bases = bases, Where = where, Rules = rules.OrderBy(r => r.Span.Start).ToArray() };
+    }
+
+    /// <summary>Whether <paramref name="rule"/>'s condition names one of <paramref name="fields"/> (not after a <c>.</c>).</summary>
+    private bool NamesAny(RequiresRule rule, HashSet<string> fields)
+    {
+        for (var i = TokenAt(rule.Condition.Span.Start); i < _count && _tokens[i].Start < rule.Condition.Span.End; i++)
+            if (_tokens[i].Kind == TokenKind.Identifier && KindAt(i - 1) != TokenKind.Dot && fields.Contains(Text(_tokens[i]))) return true;
+        return false;
+    }
+
+    /// <summary>The index of the first token starting at or after <paramref name="offset"/>.</summary>
+    private int TokenAt(int offset)
+    {
+        int lo = 0, hi = _count;
+        while (lo < hi)
+        {
+            var mid = (lo + hi) / 2;
+            if (_tokens[mid].Start < offset) lo = mid + 1;
+            else hi = mid;
+        }
+        return lo;
+    }
+
+    /// <summary>
+    /// <c>requires condition</c>, or <c>requires condition at .field</c>; <c>it</c> is the value checked, and a bare
+    /// <c>value</c> is the BYN1050 input form.
+    /// </summary>
+    private RequiresRule ParseRequiresRule()
+    {
+        var start = Advance().Start;
+        var first = _pos;
+        var condition = ParseExpression();
+        for (var i = first; i < _pos; i++)
+            if (_tokens[i].Kind == TokenKind.Identifier && Text(_tokens[i]) == "value" && KindAt(i - 1) != TokenKind.Dot)
+                Report(DiagnosticCodes.RequiresValue, _tokens[i].Span, label: "the input form", help: "rename `value` to `it`",
+                    fix: new Fix(_tokens[i].Span, "it"));
+        Name? at = null;
+        if (AtContextual("at") && !BreaksLine(_pos) && Peek(1) == TokenKind.Dot)
+        {
+            Advance();
+            Advance();
+            at = ExpectName("a field name");
+        }
+        return new RequiresRule(SpanFrom(start), condition, at);
     }
 
     /// <summary><c>{ members }</c> of a struct, interface or extension.</summary>
@@ -807,15 +868,17 @@ public sealed class Parser
             return new PropertyDecl(SpanFrom(start), modifiers, type, name, null) { Block = ParseBlock() };
         Expr? init = null;
         if (Accept(TokenKind.Equals)) init = ParseExpression();
-        if (Kind == TokenKind.RequiresKeyword)
-        {
-            var requiresStart = Advance().Start;
-            ParseExpression();
-            Report(DiagnosticCodes.RequiresNotHere, SpanFrom(requiresStart), ["fields"],
-                help: "check the value where it is set, or move the rule to a function's `requires`");
-        }
+        var requires = ParseRequiresLines();
         ExpectEnd();
-        return new FieldDecl(SpanFrom(start), modifiers, type, name, init);
+        return new FieldDecl(SpanFrom(start), modifiers, type, name, init) { Requires = requires };
+    }
+
+    /// <summary>The <c>requires</c> rules of a field or type: on its line, then one per line with no blank line between.</summary>
+    private RequiresRule[] ParseRequiresLines()
+    {
+        var rules = new List<RequiresRule>();
+        while (Kind == TokenKind.RequiresKeyword && !HasBlankLineBefore(_pos)) rules.Add(ParseRequiresRule());
+        return rules.ToArray();
     }
 
     private ConstructorDecl ParseConstructor(int start, Modifiers modifiers)
@@ -1238,8 +1301,9 @@ public sealed class Parser
         var name = ExpectName();
         Expect(TokenKind.Equals);
         var target = ParseType();
+        var requires = ParseRequiresLines();
         ExpectEnd();
-        return new TypeAliasDecl(SpanFrom(start), modifiers, name, target) { Distinct = distinct };
+        return new TypeAliasDecl(SpanFrom(start), modifiers, name, target) { Distinct = distinct, Requires = requires };
     }
 
     private TestDecl ParseTest(int start)
@@ -1420,6 +1484,12 @@ public sealed class Parser
             // Only types reach here, so `int` as a value or variable name is untouched.
             Report(DiagnosticCodes.CSharpTypeName, path[0].Span, [path[0].Text, bayan], label: "a C# type name",
                 help: $"write `{bayan}`", fix: new Fix(path[0].Span, bayan));
+        else if (path.Count == 1 && args.Length == 0 && path[0].Text == "char")
+        {
+            Report(DiagnosticCodes.CharInput, path[0].Span, label: "the input form", help: "rename the type to `rune`",
+                fix: new Fix(path[0].Span, "rune"));
+            path[0] = path[0] with { Text = "rune" };
+        }
         return new NamedType(SpanFrom(start), path.ToArray(), args);
     }
 
@@ -2916,6 +2986,12 @@ public sealed class Parser
             // Only types reach here, so `int` as a value or variable name is untouched.
             Report(DiagnosticCodes.CSharpTypeName, path[0].Span, [path[0].Text, bayan], label: "a C# type name",
                 help: $"write `{bayan}`", fix: new Fix(path[0].Span, bayan));
+        else if (path.Count == 1 && args.Length == 0 && path[0].Text == "char")
+        {
+            Report(DiagnosticCodes.CharInput, path[0].Span, label: "the input form", help: "rename the type to `rune`",
+                fix: new Fix(path[0].Span, "rune"));
+            path[0] = path[0] with { Text = "rune" };
+        }
         return new NamedType(SpanFrom(start), path.ToArray(), args);
     }
 

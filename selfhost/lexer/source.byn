@@ -131,7 +131,7 @@ void appendUtf8(ref StrBuf sb, ReadOnlySpan<u8> bytes) {
     var pos: i64 = 0
     while pos < bytes.length {
         let d = decodeAt(bytes, pos)
-        sb.append($"{(char)d.value}")
+        sb.append($"{(rune)d.value}")
         pos += d.length
     }
 }
@@ -168,7 +168,7 @@ void appendHex(ref StrBuf sb, u32 value, i64 digits) {
     var i = n - 1
     while i >= 0 {
         let d = (value >> (u32)(4 * i)) & 0xF
-        sb.append($"{(char)(d < 10 ? 0x30 + d : 0x37 + d)}")
+        sb.append($"{(rune)(d < 10 ? 0x30 + d : 0x37 + d)}")
         i -= 1
     }
 }

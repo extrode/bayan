@@ -159,7 +159,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NotDisposable = Error("BYN2226", "`using` needs a value that owns memory, not `{0}`");
     public static readonly DiagnosticDescriptor AmbiguousVariant = Error("BYN2227", "`.{0}` is ambiguous; it exists in `{1}`");
     public static readonly DiagnosticDescriptor UnknownVariant = Error("BYN2228", "`{0}` is not a variant of `{1}`");
-    public static readonly DiagnosticDescriptor InvalidConstArray = Error("BYN2229", "module-level `const` array `{0}` must hold literal numbers, `bool`s, `char`s or `string`s");
+    public static readonly DiagnosticDescriptor InvalidConstArray = Error("BYN2229", "module-level `const` array `{0}` must hold literal numbers, `bool`s, `rune`s or `string`s");
     public static readonly DiagnosticDescriptor RenamedMember = Error("BYN2230", "`{0}` is now `{1}`");
     public static readonly DiagnosticDescriptor WhileLetNotOptional = Error("BYN2234", "`while let` needs a `T?` value, got `{0}`");
     public static readonly DiagnosticDescriptor SpreadNotSequence = Error("BYN2235", "`..{0}` spreads a `{1}`, which is not a sequence");
@@ -219,7 +219,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor DuplicateEnumMember = Error("BYN2721", "enum `{0}` already has a member `{1}`");
     public static readonly DiagnosticDescriptor EmptyEnum = Error("BYN2722", "enum `{0}` has no members");
     public static readonly DiagnosticDescriptor EnumArgumentNotConstant = Error("BYN2723", "argument `{0}` of `{1}` must be a compile-time constant");
-    public static readonly DiagnosticDescriptor InvalidEnumParameter = Error("BYN2724", "enum parameter `{0}` must be a number, `bool`, `char`, `string` or a plain enum");
+    public static readonly DiagnosticDescriptor InvalidEnumParameter = Error("BYN2724", "enum parameter `{0}` must be a number, `bool`, `rune`, `string` or a plain enum");
     public static readonly DiagnosticDescriptor CannotInferTypeArgument = Error("BYN2740", "cannot infer type argument `{0}` of `{1}`");
     public static readonly DiagnosticDescriptor ConflictingTypeArgument = Error("BYN2741", "type argument `{0}` of `{1}` is inferred as both `{2}` and `{3}`");
     public static readonly DiagnosticDescriptor GenericArgumentCount = Error("BYN2742", "`{0}` takes {1} type argument(s), not {2}");
@@ -237,10 +237,10 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor SwitchMoveSubject = Error("BYN2789", "`switch move …` needs a local or a `move` parameter, not {0}");
     public static readonly DiagnosticDescriptor OwningPatternOverlap = Error("BYN2790", "pattern `{0}` binds the same storage more than once in `switch move …`");
     public static readonly DiagnosticDescriptor OwningBindingMutatedInGuard = Error("BYN2791", "`{0}` is mutated in the guard of `switch move …`; a guard that fails gives the value back");
-    public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`[ExitCode]` needs one integer constant from 1 to 255");
+    public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`@exitCode` needs one integer constant from 1 to 255");
     public static readonly DiagnosticDescriptor AssertNotBool = Error("BYN2775", "`assert` needs a `bool`, got `{0}`");
-    public static readonly DiagnosticDescriptor CasesArity = Error("BYN2773", "`[Cases]` gives {0} values but the test takes {1} parameters");
-    public static readonly DiagnosticDescriptor CasesNotConstant = Error("BYN2774", "each `[Cases]` value must be a constant");
+    public static readonly DiagnosticDescriptor CasesArity = Error("BYN2773", "`@cases` gives {0} values but the test takes {1} parameters");
+    public static readonly DiagnosticDescriptor CasesNotConstant = Error("BYN2774", "each `@cases` value must be a constant");
     public static readonly DiagnosticDescriptor ImplicitCopy = Error("BYN2780", "implicit copy of a unique value: {0}");
     public static readonly DiagnosticDescriptor UseAfterMove = Error("BYN2781", "`{0}` is used after it was moved");
     public static readonly DiagnosticDescriptor CannotMove = Error("BYN2782", "cannot move out of {0}");

@@ -39,11 +39,11 @@ let hand: Suit[6] = [.spades, .hearts, .spades, .clubs, .spades, .hearts]
 for s in hand { counts[s] = counts.getOr(s, 0) + 1 }
 print($"{counts}")
 
-// Integer, char and bool keys.
+// Integer, rune and bool keys.
 var squares = Map<i64, i64>()
 for i in 0..5 { squares[i * i] = i }
 print($"{squares}")
-var letters = Map<char, bool>()
+var letters = Map<rune, bool>()
 for c in "banana" { letters[c] = true }
 print($"{letters}")
 var answers = Map<bool, string>()

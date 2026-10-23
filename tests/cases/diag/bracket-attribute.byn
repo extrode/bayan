@@ -1,0 +1,9 @@
+[Cases(1, 2)]
+test "positive" (i32 n) {
+    assert(n > 0)
+}
+
+union error ConfigError {
+    [ExitCode(3)]
+    malformed
+}

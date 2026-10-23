@@ -459,7 +459,7 @@ public sealed class ErrorVariantSymbol(string name, Location location, ErrorSetS
 
     public string? Doc { get; } = doc;
 
-    /// <summary>The process exit code when <c>main</c> fails with this variant: <c>[ExitCode(n)]</c>, else 1.</summary>
+    /// <summary>The process exit code when <c>main</c> fails with this variant: <c>@exitCode(n)</c>, else 1.</summary>
     public int ExitCode { get; set; } = 1;
 
     /// <summary>First line of the doc comment, or the variant name (spec §6.6).</summary>

@@ -1,7 +1,7 @@
 const scale: i32 = 10
 const primes: u32[12] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, scale * 4 + 1]
 const bits: bool[3] = [true, false, true]
-const letters: char[3] = ['a', 'b', 'c']
+const letters: rune[3] = ['a', 'b', 'c']
 const halves: f64[2] = [0.5, 1.5]
 
 i64 search(ReadOnlySpan<u32> table, u32 key) {

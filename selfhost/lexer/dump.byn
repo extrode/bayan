@@ -44,7 +44,7 @@ void escape(ref StrBuf sb, ReadOnlySpan<u8> text) {
             appendHex(ref sb, v, 1)
             sb.append("}")
         } else {
-            sb.append($"{(char)v}")
+            sb.append($"{(rune)v}")
         }
         pos += d.length
     }
@@ -122,7 +122,7 @@ void jsonString(ref StrBuf sb, ReadOnlySpan<u8> text) {
             sb.append("\\u")
             appendHex(ref sb, v, 4)
         } else {
-            sb.append($"{(char)v}")
+            sb.append($"{(rune)v}")
         }
         pos += d.length
     }

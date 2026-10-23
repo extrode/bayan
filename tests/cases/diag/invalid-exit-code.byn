@@ -1,21 +1,21 @@
 union error ConfigError {
-    [ExitCode(0)]
+    @exitCode(0)
     /// Zero means success.
     zero
-    [ExitCode(300)]
+    @exitCode(300)
     /// Too large.
     large
-    [ExitCode]
+    @exitCode
     /// No argument.
     missing
-    [ExitCode("x")]
+    @exitCode("x")
     /// Not an integer.
     text
-    [ExitCode(1, 2)]
+    @exitCode(1, 2)
     /// Two arguments.
     two
-    [ExitCode(4)]
-    [ExitCode(5)]
+    @exitCode(4)
+    @exitCode(5)
     /// Repeated.
     repeated
 }

@@ -181,3 +181,9 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51b2b: `const x: T = pattern …` (a typed pattern const) parses; no pattern type exists to check `T` against.
 - r3-51b2b gate: `suq/orders/order.byn:32` and `suq/storefront/catalog.byn:29` write `public const x = pattern …`, which is BYN1001 (`public` then `const`); fix the paper app or the grammar.
 - r3-51b2b gate: `ref this is .s` after other parameters (already BYN2117) leaves `is .s` unconsumed and adds a second parse error.
+- r3-51c: BYN0007/0008/0009 messages, `TokenKind.CharLiteral` and `PrimitiveKind.Char` still say char; rename in the C# and selfhost lexers together (handoff Q133).
+- r3-51c: `unsafe because` (J6) waits for an `unsafe` block statement; none parses today.
+- r3-51c: SPEC §7.9 "Not in v0.1: `requires` on fields and distinct types (BYN2322)" disagrees with the plan's v0.1 yes; reconcile in 5.3b, which also deletes `Compilation.CheckRequires`.
+- r3-51c: BYN2322's help still suggests a function's `requires`, which becomes `expects` (BYN1063, 5.1e).
+- r3-51c: C17 lists `rune` as a keyword; 5.1c keeps it a type name like `bool`.
+- r3-51c: `suq/fail/{bracket-attr,block-comment,char,requires-value}.byn` keep their input forms on purpose (compile-fail corpus).

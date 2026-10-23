@@ -1,8 +1,8 @@
-[Cases(1, 2)]
+@cases(1, 2)
 void step() { }
 
 union error StepError {
-    [Cases(1)]
+    @cases(1)
     timedOut
 }
 
@@ -10,8 +10,8 @@ test "takes values" (i32 n, bool ok) {
     assert(ok)
 }
 
-[Cases(1)]
-[Cases(2)]
+@cases(1)
+@cases(2)
 test "twice" (i32 n) {
     assert(n > 0)
 }

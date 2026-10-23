@@ -345,7 +345,7 @@ struct LexResult {
                         help: "close it with `*/`")
                 } else {
                     pos += 2
-                    reportFix(.blockComment, TextSpan.fromBounds(start: start, end: pos), replacement: lineComments(start, pos),
+                    reportFix(.blockComment, TextSpan.fromBounds(start: start, end: pos), replacement: lineComments(start, end: pos),
                         label: "block comment", help: "write each line with `//`")
                 }
                 tokenFlags |= triviaBefore
@@ -401,7 +401,7 @@ struct LexResult {
             sb.append("\n")
             appendUtf8(ref sb, text[lineStart..indentEnd])
         }
-        return sb.finish()
+        return $"{sb.finish()}"
     }
 
     bool isAtLineStart() => pos == 0 || source.bytes[pos - 1] == '\n'
@@ -547,7 +547,7 @@ struct LexResult {
     }
 
     void reportUnexpected(ref this, u32 cp, i64 length) {
-        let shown = cp < 0x20 || cp == 0x7F ? $"\\u{{{hex(cp, 1)}}}" : $"{(char)cp}"
+        let shown = cp < 0x20 || cp == 0x7F ? $"\\u{{{hex(cp, 1)}}}" : $"{(rune)cp}"
         report(.unexpectedCharacter, TextSpan { start: pos, length: length }, arg0: shown)
         pos += length
         tokenFlags |= triviaBefore
@@ -623,7 +623,7 @@ struct LexResult {
         }
         if same { return }
         var fix = StrBuf()
-        for cp in normalized { fix.append($"{(char)cp}") }
+        for cp in normalized { fix.append($"{(rune)cp}") }
         reportFix(.identifierNotNfc, TextSpan.fromBounds(start: start, end: pos), replacement: fix.finish(), arg0: utf8(span),
             label: "same letters, different encoding",
             help: "use the composed (NFC) form; identifiers that look the same must be byte-identical")

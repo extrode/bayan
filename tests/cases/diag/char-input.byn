@@ -1,0 +1,6 @@
+bool isVowel(char c) => c == 'a' or c == 'e'
+
+void main() {
+    let letters = Map<char, bool>()
+    print($"{(char)0x41}")
+}
