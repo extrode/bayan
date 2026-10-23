@@ -392,7 +392,8 @@ internal sealed class RegionAnalysis
         for (var i = 0; i < c.Arguments.Length && i < fn.Parameters.Count; i++)
         {
             // An existing writable `dyn ref` passed on lets the callee modify every owner it borrows.
-            if (fn.Parameters[i].Type is DynRefType { ReadOnly: false } && c.Arguments[i].Type is DynRefType { ReadOnly: false })
+            if (fn.Parameters[i].Type is DynRefType { ReadOnly: false } && c.Arguments[i].Type is DynRefType { ReadOnly: false }
+                && c.Arguments[i] is not BoundConversion { Kind: ConversionKind.ToDynRef })
                 MutateOwners(c.Arguments[i], args[i], c.Arguments[i].Syntax.Span);
             if (WrittenArgument(fn.Parameters[i], c.Arguments[i]) is not { } written) continue;
             // Writing an element through `ref xs[i]` does not reallocate `xs`; only what the callee can reach may change.
