@@ -174,3 +174,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51b2a: messages and docs still say `error enum`/`unique struct`: BYN2608, BYN2609, the BYN2804 "an error enum" kind, the `[ExitCode]` help in `Compilation.cs`, and `TypeFacts.WhyUnique` ("declared `unique struct`"); the pages under `docs/diagnostics/` that show `error enum` examples.
 - r3-51b2a: `ErrorEnumDecl`/`ErrorSetDecl` were kept (AST dump `ErrorEnum`/`ErrorSet`) instead of the plan's single `ErrorUnionDecl`; merge them if the binder needs one node.
 - r3-51b2a: `except` narrowing of a `union error` is rejected with BYN2022 until function error sets carry excluded cases (handoff Q124).
+- r3-51b2a gate: BYN3202 in a nested composition is reported once per composed alias that flattens it (CheckComposition runs per alias); report once at the innermost head.
+- r3-51b2a gate: `union error Name<T>` type parameters do not parse; needed for HANDOFF §11 `ValidationError<T>`.
