@@ -725,7 +725,7 @@ internal sealed partial class Binder
         element = DeclaredElement(f, element);
         // A writable `dyn ref` element borrows the array or list slot, so the loop mutates the iterable; a temporary is the loop's own.
         if (element is DynRefType { ReadOnly: false } && iterable.Type is ListType or Symbols.ArrayType
-            && iterable is BoundLocal or BoundThis or BoundField or BoundTupleElement or BoundIndex or BoundStaticArray or BoundBuiltinCall { Member: BuiltinMember.OwnedValue })
+            && iterable is BoundLocal or BoundThis or BoundField or BoundTupleElement or BoundIndex or BoundStaticArray or BoundBuiltinCall { Member: BuiltinMember.OwnedValue or BuiltinMember.MapIndex })
             CheckWritable(iterable, f.Iterable.Span, $"it is borrowed element by element as `{element.DisplayName}`");
         // Through a `ReadOnlySpan` it would write elements the span may not change.
         if (element is DynRefType { ReadOnly: false } && iterable.Type is SpanType { ReadOnly: true })
