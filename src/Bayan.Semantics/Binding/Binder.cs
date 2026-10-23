@@ -697,6 +697,22 @@ internal sealed partial class Binder
         return new BoundWhile(w, cond, body, target);
     }
 
+    /// <summary>Whether <paramref name="e"/> reads existing storage, through any arm, conversion, field or index, rather than a temporary the loop owns.</summary>
+    private static bool IsBorrowedPlace(BoundExpr e) => e switch
+    {
+        BoundLocal or BoundThis or BoundStaticArray or BoundBuiltinCall { Member: BuiltinMember.OwnedValue } => true,
+        BoundBuiltinCall { Member: BuiltinMember.MapIndex or BuiltinMember.ResultValue } b => IsBorrowedPlace(b.Receiver),
+        BoundBuiltinCall { Member: BuiltinMember.MapGetOr } b => IsBorrowedPlace(b.Receiver) || b.Arguments.Any(IsBorrowedPlace),
+        BoundField f => IsBorrowedPlace(f.Receiver),
+        BoundTupleElement t => IsBorrowedPlace(t.Receiver),
+        BoundIndex i => IsBorrowedPlace(i.Target),
+        BoundConversion c => IsBorrowedPlace(c.Operand),
+        BoundConditional c => IsBorrowedPlace(c.WhenTrue) || IsBorrowedPlace(c.WhenFalse),
+        BoundCoalesce c => IsBorrowedPlace(c.Left) || IsBorrowedPlace(c.Right),
+        BoundSwitchExpr s => s.Arms.Any(a => IsBorrowedPlace(a.Value)),
+        _ => false,
+    };
+
     /// <summary>The pattern <c>{ } x</c>: on an optional, matches a present value and binds it unwrapped.</summary>
     private BoundPropertyPattern BindPresent(Name name, TypeSymbol input)
     {
@@ -725,7 +741,7 @@ internal sealed partial class Binder
         element = DeclaredElement(f, element);
         // A writable `dyn ref` element borrows the array or list slot, so the loop mutates the iterable; a temporary is the loop's own.
         if (element is DynRefType { ReadOnly: false } && iterable.Type is ListType or Symbols.ArrayType
-            && iterable is BoundLocal or BoundThis or BoundField or BoundTupleElement or BoundIndex or BoundStaticArray or BoundBuiltinCall { Member: BuiltinMember.OwnedValue or BuiltinMember.MapIndex })
+            && IsBorrowedPlace(iterable))
             CheckWritable(iterable, f.Iterable.Span, $"it is borrowed element by element as `{element.DisplayName}`");
         // Through a `ReadOnlySpan` it would write elements the span may not change.
         if (element is DynRefType { ReadOnly: false } && iterable.Type is SpanType { ReadOnly: true })

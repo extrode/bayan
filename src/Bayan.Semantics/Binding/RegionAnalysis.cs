@@ -374,14 +374,15 @@ internal sealed class RegionAnalysis
                 _mutations.Add(new Mutation(FieldLocal(field), c.Syntax.Span));
         for (var i = 0; i < c.Arguments.Length && i < fn.Parameters.Count; i++)
         {
-            if (fn.Parameters[i].Modifier is not (Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out)) continue;
+            if (WrittenArgument(fn.Parameters[i], c.Arguments[i]) is not { } written) continue;
             // Writing an element through `ref xs[i]` does not reallocate `xs`; only what the callee can reach may change.
-            if (MayBorrow(c.Arguments[i].Type, [])) Mutate(c.Arguments[i], c.Arguments[i].Syntax.Span);
+            if (MayBorrow(written.Type, [])) Mutate(written, c.Arguments[i].Syntax.Span);
             // `ref this` hands over the whole receiver: the callee may change any of its fields.
-            if (c.Arguments[i] is BoundThis && MayBorrow(c.Arguments[i].Type, []) && _reporting && _fn.Owner is not null)
+            if (written is BoundThis && MayBorrow(written.Type, []) && _reporting && _fn.Owner is not null)
                 foreach (var field in _fn.Owner.Fields)
                     _mutations.Add(new Mutation(FieldLocal(field), c.Arguments[i].Syntax.Span));
-            if (RootLocal(c.Arguments[i]) is not { } root) continue;
+            // Only a `ref` or `out` argument is passed by `ref` (BYN3005).
+            if (written != c.Arguments[i] || RootLocal(written) is not { } root) continue;
             for (var j = 0; j < c.Arguments.Length; j++)
             {
                 // A by-value copy of an element (`xs[0]` as an `i64`) cannot alias what the callee changes.
@@ -400,11 +401,15 @@ internal sealed class RegionAnalysis
             : args.Aggregate(receiver, (acc, a) => acc.Union(a));
         // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
         if (c.Receiver is not null && c.Type is SpanType or DynRefType) result = result.Union(Lend(c.Receiver, receiver, c.Syntax.Span.End));
-        // So may a function returning one: the result borrows every argument passed by `ref` that has storage to lend (`in` is by value).
+        // So may a function returning one: the result lives no longer than any argument passed by `ref` (`in` is by value),
+        // and borrows the storage of those with storage to lend.
         if (c.Type is SpanType or DynRefType)
             for (var i = 0; i < c.Arguments.Length && i < fn.Parameters.Count; i++)
-                if (fn.Parameters[i].Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out && MayLend(c.Arguments[i].Type, []))
-                    result = result.Union(Lend(c.Arguments[i], args[i], c.Syntax.Span.End));
+                if (fn.Parameters[i].Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out)
+                {
+                    var lent = Lend(c.Arguments[i], args[i], c.Syntax.Span.End);
+                    result = result.Union(MayLend(c.Arguments[i].Type, []) ? lent : new Borrow(lent.Regions, []));
+                }
         // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `string.from` return (Q29).
         if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow
                 or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom))
@@ -694,15 +699,23 @@ internal sealed class RegionAnalysis
                     else if (c.Function.IsMutating && c.Receiver is not null && ThisFieldSymbol(c.Receiver) is { } receiver) fields.Add(receiver);
                     for (var i = 0; i < c.Arguments.Length && i < c.Function.Parameters.Count; i++)
                     {
-                        if (c.Function.Parameters[i].Modifier is not (Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out) || !MayBorrow(c.Arguments[i].Type, [])) continue;
-                        if (ThisFieldSymbol(c.Arguments[i]) is { } argument) fields.Add(argument);
-                        else if (c.Arguments[i] is BoundThis && fn.Owner is not null) fields.UnionWith(fn.Owner.Fields);
+                        if (WrittenArgument(c.Function.Parameters[i], c.Arguments[i]) is not { } written || !MayBorrow(written.Type, [])) continue;
+                        if (ThisFieldSymbol(written) is { } argument) fields.Add(argument);
+                        else if (written is BoundThis && fn.Owner is not null) fields.UnionWith(fn.Owner.Fields);
                     }
                     break;
             }
         }
         return (fields, callees);
     }
+
+    /// <summary>The place the callee may write through <paramref name="parameter"/>: a <c>ref</c> or <c>out</c> argument, or the value a writable <c>dyn ref</c> parameter borrows.</summary>
+    private static BoundExpr? WrittenArgument(ParameterSymbol parameter, BoundExpr argument) => parameter switch
+    {
+        { Modifier: Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out } => argument,
+        { Type: DynRefType { ReadOnly: false } } when argument is BoundConversion { Kind: ConversionKind.ToDynRef } c => c.Operand,
+        _ => null,
+    };
 
     /// <summary>The local a store into <paramref name="e"/> lands in, including through a span or list element.</summary>
     private static LocalSymbol? StoreRoot(BoundExpr e) => e switch
