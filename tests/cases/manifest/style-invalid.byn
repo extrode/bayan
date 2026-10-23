@@ -6,6 +6,8 @@ Package {
         braces: .allman,
         maxLine: 0,
         trailingCommas: .always,
+        booleans: .both,
+        primitives: .int,
         tabs: true,
     },
 }

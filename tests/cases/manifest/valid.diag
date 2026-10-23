@@ -4,3 +4,5 @@ edition 2027
 kind App
 targets host linux-x64
 mode fast
+booleans Symbols
+primitives Sized

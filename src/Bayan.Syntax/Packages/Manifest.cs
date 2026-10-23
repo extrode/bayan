@@ -9,6 +9,12 @@ namespace Bayan.Syntax.Packages;
 
 public enum PackageKind { App, Lib }
 
+/// <summary><c>style.booleans</c>: <c>! &amp;&amp; ||</c> or <c>not and or</c> (spec §7.2).</summary>
+public enum BooleanStyle { Symbols, Words }
+
+/// <summary><c>style.primitives</c>: <c>i32</c> or <c>int</c> (spec §3.1).</summary>
+public enum PrimitiveStyle { Sized, Csharp }
+
 /// <summary>
 /// <c>package.byn</c> (spec §19.2): data only. The grammar is <c>Type { field: value, … }</c>
 /// (<c>field = value</c> is still read) where a value is a string, an integer, <c>true</c>,
@@ -22,8 +28,8 @@ public sealed class Manifest
 
     private static readonly string[] DistFields = ["targets", "mode"];
 
-    /// <summary>Fields of <c>Style</c> (HANDOFF §18); checked here, read by nothing yet.</summary>
-    private static readonly string[] StyleFields = ["indent", "braces", "maxLine", "trailingCommas"];
+    /// <summary>Fields of <c>Style</c> (HANDOFF §18); <c>bayan format</c> reads <c>booleans</c> and <c>primitives</c>, the rest are checked only.</summary>
+    private static readonly string[] StyleFields = ["indent", "braces", "maxLine", "trailingCommas", "booleans", "primitives"];
 
     private Manifest(SourceText source) => Source = source;
 
@@ -46,6 +52,12 @@ public sealed class Manifest
 
     /// <summary><c>dist.mode</c>; <c>safe</c> when absent.</summary>
     public string DistMode { get; private set; } = "safe";
+
+    /// <summary><c>style.booleans</c>; <c>.symbols</c> when absent.</summary>
+    public BooleanStyle Booleans { get; private set; } = BooleanStyle.Symbols;
+
+    /// <summary><c>style.primitives</c>; <c>.sized</c> when absent.</summary>
+    public PrimitiveStyle Primitives { get; private set; } = PrimitiveStyle.Sized;
 
     public List<Diagnostic> Diagnostics { get; } = new();
 
@@ -116,6 +128,24 @@ public sealed class Manifest
                     Invalid(maxLine, "style.maxLine", "a positive integer, e.g. `100`");
                 if (styleFields.TryGetValue("trailingCommas", out var trailingCommas) && trailingCommas is not BoolValue)
                     Invalid(trailingCommas, "style.trailingCommas", "`true` or `false`");
+                if (styleFields.TryGetValue("booleans", out var booleans))
+                {
+                    switch (booleans)
+                    {
+                        case EnumValue { Name: "symbols" }: Booleans = BooleanStyle.Symbols; break;
+                        case EnumValue { Name: "words" }: Booleans = BooleanStyle.Words; break;
+                        default: Invalid(booleans, "style.booleans", "`.symbols` or `.words`"); break;
+                    }
+                }
+                if (styleFields.TryGetValue("primitives", out var primitives))
+                {
+                    switch (primitives)
+                    {
+                        case EnumValue { Name: "sized" }: Primitives = PrimitiveStyle.Sized; break;
+                        case EnumValue { Name: "csharp" }: Primitives = PrimitiveStyle.Csharp; break;
+                        default: Invalid(primitives, "style.primitives", "`.sized` or `.csharp`"); break;
+                    }
+                }
             }
         }
         if (fields.TryGetValue("dist", out var dist))
