@@ -2,206 +2,126 @@
 exit: 1
 --- stdout ---
 --- stderr ---
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:2:14
+error BYN2001: `x1` is not defined
+  --> <dir>/tally/main.byn:3:9
 
-  2 │     var y = 0;
-    │              ^ remove `;`
-    │
-  help: remove the `;`
-    │ 2 │     var y = 0;
-    │   │              -
+  3 │     y = x1
+    │         ^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:3:11
+error BYN2001: `x2` is not defined
+  --> <dir>/tally/main.byn:4:9
 
-  3 │     y = x1;
-    │           ^ remove `;`
-    │
-  help: remove the `;`
-    │ 3 │     y = x1;
-    │   │           -
+  4 │     y = x2
+    │         ^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:4:11
+error BYN2001: `x3` is not defined
+  --> <dir>/tally/main.byn:5:9
 
-  4 │     y = x2;
-    │           ^ remove `;`
-    │
-  help: remove the `;`
-    │ 4 │     y = x2;
-    │   │           -
+  5 │     y = x3
+    │         ^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:5:11
+error BYN2001: `x4` is not defined
+  --> <dir>/tally/main.byn:6:9
 
-  5 │     y = x3;
-    │           ^ remove `;`
-    │
-  help: remove the `;`
-    │ 5 │     y = x3;
-    │   │           -
+  6 │     y = x4
+    │         ^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:6:11
+error BYN2001: `x5` is not defined
+  --> <dir>/tally/main.byn:7:9
 
-  6 │     y = x4;
-    │           ^ remove `;`
-    │
-  help: remove the `;`
-    │ 6 │     y = x4;
-    │   │           -
+  7 │     y = x5
+    │         ^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:7:11
+error BYN2001: `x6` is not defined
+  --> <dir>/tally/main.byn:8:9
 
-  7 │     y = x5;
-    │           ^ remove `;`
-    │
-  help: remove the `;`
-    │ 7 │     y = x5;
-    │   │           -
+  8 │     y = x6
+    │         ^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:8:11
+error BYN2001: `x7` is not defined
+  --> <dir>/tally/main.byn:9:9
 
-  8 │     y = x6;
-    │           ^ remove `;`
-    │
-  help: remove the `;`
-    │ 8 │     y = x6;
-    │   │           -
+  9 │     y = x7
+    │         ^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:9:11
+error BYN2001: `x8` is not defined
+  --> <dir>/tally/main.byn:10:9
 
-  9 │     y = x7;
-    │           ^ remove `;`
-    │
-  help: remove the `;`
-    │ 9 │     y = x7;
-    │   │           -
+  10 │     y = x8
+     │         ^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:10:11
+error BYN2001: `x9` is not defined
+  --> <dir>/tally/main.byn:11:9
 
-  10 │     y = x8;
-     │           ^ remove `;`
-     │
-  help: remove the `;`
-     │ 10 │     y = x8;
-     │    │           -
+  11 │     y = x9
+     │         ^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:11:11
+error BYN2001: `x10` is not defined
+  --> <dir>/tally/main.byn:12:9
 
-  11 │     y = x9;
-     │           ^ remove `;`
-     │
-  help: remove the `;`
-     │ 11 │     y = x9;
-     │    │           -
+  12 │     y = x10
+     │         ^^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:12:12
+error BYN2001: `x11` is not defined
+  --> <dir>/tally/main.byn:13:9
 
-  12 │     y = x10;
-     │            ^ remove `;`
-     │
-  help: remove the `;`
-     │ 12 │     y = x10;
-     │    │            -
+  13 │     y = x11
+     │         ^^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:13:12
+error BYN2001: `x12` is not defined
+  --> <dir>/tally/main.byn:14:9
 
-  13 │     y = x11;
-     │            ^ remove `;`
-     │
-  help: remove the `;`
-     │ 13 │     y = x11;
-     │    │            -
+  14 │     y = x12
+     │         ^^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:14:12
+error BYN2001: `x13` is not defined
+  --> <dir>/tally/main.byn:15:9
 
-  14 │     y = x12;
-     │            ^ remove `;`
-     │
-  help: remove the `;`
-     │ 14 │     y = x12;
-     │    │            -
+  15 │     y = x13
+     │         ^^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:15:12
+error BYN2001: `x14` is not defined
+  --> <dir>/tally/main.byn:16:9
 
-  15 │     y = x13;
-     │            ^ remove `;`
-     │
-  help: remove the `;`
-     │ 15 │     y = x13;
-     │    │            -
+  16 │     y = x14
+     │         ^^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:16:12
+error BYN2001: `x15` is not defined
+  --> <dir>/tally/main.byn:17:9
 
-  16 │     y = x14;
-     │            ^ remove `;`
-     │
-  help: remove the `;`
-     │ 16 │     y = x14;
-     │    │            -
+  17 │     y = x15
+     │         ^^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:17:12
+error BYN2001: `x16` is not defined
+  --> <dir>/tally/main.byn:18:9
 
-  17 │     y = x15;
-     │            ^ remove `;`
-     │
-  help: remove the `;`
-     │ 17 │     y = x15;
-     │    │            -
+  18 │     y = x16
+     │         ^^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:18:12
+error BYN2001: `x17` is not defined
+  --> <dir>/tally/main.byn:19:9
 
-  18 │     y = x16;
-     │            ^ remove `;`
-     │
-  help: remove the `;`
-     │ 18 │     y = x16;
-     │    │            -
+  19 │     y = x17
+     │         ^^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:19:12
+error BYN2001: `x18` is not defined
+  --> <dir>/tally/main.byn:20:9
 
-  19 │     y = x17;
-     │            ^ remove `;`
-     │
-  help: remove the `;`
-     │ 19 │     y = x17;
-     │    │            -
+  20 │     y = x18
+     │         ^^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:20:12
+error BYN2001: `x19` is not defined
+  --> <dir>/tally/main.byn:21:9
 
-  20 │     y = x18;
-     │            ^ remove `;`
-     │
-  help: remove the `;`
-     │ 20 │     y = x18;
-     │    │            -
+  21 │     y = x19
+     │         ^^^
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:21:12
+error BYN2001: `x20` is not defined
+  --> <dir>/tally/main.byn:22:9
 
-  21 │     y = x19;
-     │            ^ remove `;`
-     │
-  help: remove the `;`
-     │ 21 │     y = x19;
-     │    │            -
-… and 6 more errors (use --all to show them)
+  22 │     y = x20
+     │         ^^^
+… and 5 more errors (use --all to show them)
 
-✗ build failed: 26 errors, 0 warnings
-  explain: bayan explain BYN1040
+✗ build failed: 25 errors, 0 warnings
+  explain: bayan explain BYN2001

@@ -114,8 +114,8 @@ public sealed class OwnershipCheckerTests
 
     private const string GuardedArm = """
         union Slot {
-            full(List<i64> items),
-            empty,
+            full(List<i64> items)
+            empty
         }
         void main() {
             var a = List<i64>()
@@ -135,8 +135,8 @@ public sealed class OwnershipCheckerTests
 
     private const string GuardedArmExpression = """
         union Slot {
-            full(List<i64> items),
-            empty,
+            full(List<i64> items)
+            empty
         }
         void main() {
             var a = List<i64>()
@@ -269,8 +269,8 @@ public sealed class OwnershipCheckerTests
             }
         }
         union Slot {
-            full(Bag b),
-            empty,
+            full(Bag b)
+            empty
         }
         void main() {
             var a = List<i64>()

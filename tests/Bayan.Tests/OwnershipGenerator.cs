@@ -57,8 +57,8 @@ internal static class OwnershipGenerator
             List<i64> items
         }
         union Slot {
-            empty,
-            full(List<i64> items),
+            empty
+            full(List<i64> items)
         }
 
         """;

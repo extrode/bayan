@@ -10,7 +10,7 @@ namespace Bayan.Tests;
 [Trait("Law", "L004")]
 public sealed class L004UnionSwitchTests
 {
-    private const string Union = "union U { a, b(i64 x), c }\n";
+    private const string Union = "union U {\n    a\n    b(i64 x)\n    c\n}\n";
 
     // Arms are written once; "default" and "_" stand for the default arm in either form.
     public static TheoryData<string, string[], string> Cases => new()

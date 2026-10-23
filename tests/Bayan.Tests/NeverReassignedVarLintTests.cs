@@ -7,14 +7,30 @@ namespace Bayan.Tests;
 public sealed class NeverReassignedVarLintTests
 {
     private const string Prelude = """
-        union U { a, b(i64 x), c }
+        union U {
+            a
+            b(i64 x)
+            c
+        }
         struct P { i64 x }
-        union W { wrap(P p), other }
-        union L { items(List<i64> items), none }
+        union W {
+            wrap(P p)
+            other
+        }
+        union L {
+            items(List<i64> items)
+            none
+        }
         void bump(ref i64 n) { n += 1 }
         void reset(ref P p) { p.x = 0 }
-        interface IC { void bump(ref this); i64 n { get } }
-        struct C : IC { i64 n; void bump(ref this) { n += 1 } }
+        interface IC {
+            void bump(ref this)
+            i64 n { get }
+        }
+        struct C : IC {
+            i64 n
+            void bump(ref this) { n += 1 }
+        }
 
         """;
 

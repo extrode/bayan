@@ -2,35 +2,15 @@
 exit: 1
 --- stdout ---
 --- stderr ---
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:2:18
+error BYN2104: `total` is immutable
+  --> <dir>/tally/main.byn:3:5
 
-  2 │     let total = 0;
-    │                  ^ remove `;`
+  3 │     total += 1
+    │     ^^^^^ declared with `let` on line 2
     │
-  help: remove the `;`
-    │ 2 │     let total = 0;
-    │   │                  -
+  help: declare it with `var` if it should change
+    │ 2 │     var total = 0
+    │   │     +++
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:3:15
-
-  3 │     total += 1;
-    │               ^ remove `;`
-    │
-  help: remove the `;`
-    │ 3 │     total += 1;
-    │   │               -
-
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:4:22
-
-  4 │     print($"{total}");
-    │                      ^ remove `;`
-    │
-  help: remove the `;`
-    │ 4 │     print($"{total}");
-    │   │                      -
-
-✗ build failed: 3 errors, 0 warnings
-  explain: bayan explain BYN1040
+✗ build failed: 1 error, 0 warnings
+  explain: bayan explain BYN2104

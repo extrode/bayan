@@ -1,6 +1,6 @@
 error BYN3004: `b` is modified while `s` still borrows it
 
-  14 │     poke(r)
-     │          ^ `s` is used again on line 15
+  16 │     poke(r)
+     │          ^ `s` is used again on line 17
      │
   help: finish using `s` first, or copy what it needs before changing `b`

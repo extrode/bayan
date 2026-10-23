@@ -22,8 +22,8 @@ public sealed class L006OwnershipGuardTests
             List<i64> items
         }
         union Slot {
-            empty,
-            full(List<i64> items),
+            empty
+            full(List<i64> items)
         }
 
         """;

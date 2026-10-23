@@ -2,35 +2,14 @@
 exit: 1
 --- stdout ---
 --- stderr ---
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:1:26
+error BYN2605: `try` needs a call that can fail
+  --> <dir>/tally/main.byn:4:17
 
-  1 │ i64 twice(i64 x) => x * 2;
-    │                          ^ remove `;`
+  4 │     let n = try twice(2)
+    │                 ^^^^^^^^
     │
-  help: remove the `;`
-    │ 1 │ i64 twice(i64 x) => x * 2;
-    │   │                          -
+    │ 4 │     let n = try twice(2)
+    │   │             ----
 
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:4:25
-
-  4 │     let n = try twice(2);
-    │                         ^ remove `;`
-    │
-  help: remove the `;`
-    │ 4 │     let n = try twice(2);
-    │   │                         -
-
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:5:18
-
-  5 │     print($"{n}");
-    │                  ^ remove `;`
-    │
-  help: remove the `;`
-    │ 5 │     print($"{n}");
-    │   │                  -
-
-✗ build failed: 3 errors, 0 warnings
-  explain: bayan explain BYN1040
+✗ build failed: 1 error, 0 warnings
+  explain: bayan explain BYN2605

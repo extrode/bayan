@@ -20,7 +20,7 @@ public sealed class OwnershipGeneratorTests(ITestOutputHelper output)
         var text = OwnershipGenerator.Generate(1, 8);
         Assert.Equal(text, OwnershipGenerator.Generate(1, 8));
         Assert.NotEqual(text, OwnershipGenerator.Generate(2, 8));
-        Assert.Equal("5deb17d32ad172230c6bdfdfbf5dc5209821ae6dca24f21152bfaddda03605cf", Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text))));
+        Assert.Equal("aa1fb0d524f1e953dda147d3d726038184357422192f0ea9f794e375ebfc808c", Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text))));
     }
 
     [Fact]
@@ -48,9 +48,9 @@ public sealed class OwnershipGeneratorTests(ITestOutputHelper output)
         var build = Toolchain.Build("""
             #include <stdlib.h>
             int main(void) {
-                int *p = malloc(4 * sizeof(int))
-                free(p)
-                return p[1]
+                int *p = malloc(4 * sizeof(int));
+                free(p);
+                return p[1];
             }
             """, BuildMode.Debug, sanitize: true);
         Assert.True(build.Succeeded, build.Errors);

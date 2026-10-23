@@ -3,16 +3,6 @@ exit: 1
 --- stdout ---
 --- stderr ---
 [1m[38;2;255;138;128merror BYN1040[0m: `;` is an input form; a statement ends at the newline
-[38;2;180;178;169m  -->[0m <dir>/tally/main.byn:2:16
-
-  [38;2;180;178;169m2[0m [38;2;180;178;169m│[0m     print("hi");
-    [38;2;180;178;169m│[0m                [1m[38;2;255;138;128m^ remove `;`[0m
-    [38;2;180;178;169m│[0m
-  [1m[38;2;141;184;242mhelp:[0m remove the `;`
-    [38;2;180;178;169m│[0m [38;2;180;178;169m2[0m [38;2;180;178;169m│[0m     print("hi");
-    [38;2;180;178;169m│[0m   [38;2;180;178;169m│[0m                [38;2;141;184;242m-[0m
-
-[1m[38;2;255;138;128merror BYN1040[0m: `;` is an input form; a statement ends at the newline
 [38;2;180;178;169m  -->[0m <dir>/tally/main.test.byn:2:17
 
   [38;2;180;178;169m2[0m [38;2;180;178;169m│[0m     assert(true);

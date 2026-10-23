@@ -105,7 +105,10 @@ public sealed class Parser
 
     // ── Diagnostics ──────────────────────────────────────────────────────────────────
 
-    /// <summary>Input forms reported on a construct that still parsed in full, so the parser is at a clean restart point.</summary>
+    /// <summary>
+    /// Input forms reported on a construct that still parsed in full, so the parser is at a clean restart point; a
+    /// missing line break (BYN1005) also leaves the parser at the start of the next statement.
+    /// </summary>
     private static readonly HashSet<DiagnosticDescriptor> InputForms =
     [
         DiagnosticCodes.UnlessNegated, DiagnosticCodes.ParenthesizedCondition, DiagnosticCodes.BodyNeedsBraces,
@@ -113,7 +116,7 @@ public sealed class Parser
         DiagnosticCodes.UnlessNull, DiagnosticCodes.CatchBinding, DiagnosticCodes.DelegateDecl, DiagnosticCodes.ErrorSetPipe,
         DiagnosticCodes.CSharpTypeName, DiagnosticCodes.FailsShorthand, DiagnosticCodes.NegatedIfToUnless, DiagnosticCodes.UnlessLikelihood,
         DiagnosticCodes.SemicolonInput, DiagnosticCodes.ElseOnNewLine, DiagnosticCodes.OnNewLine, DiagnosticCodes.PostfixOnNewLine,
-        DiagnosticCodes.OneLineDeclarations,
+        DiagnosticCodes.OneLineDeclarations, DiagnosticCodes.MissingLineBreak,
     ];
 
     private Diagnostic? Report(DiagnosticDescriptor descriptor, TextSpan span, object?[]? args = null,
@@ -996,7 +999,8 @@ public sealed class Parser
     /// <summary>BYN1053 at the first <c>,</c> between cases; the fix puts each case on its own line and drops the commas.</summary>
     private void ReportCaseCommas(string typeName, Token open, List<TextSpan> cases, List<Token> commas)
     {
-        if (commas.Count == 0) return;
+        // A lone case with a trailing comma (`error enum E { bad, }`) is still one case on one line.
+        if (commas.Count == 0 || cases.Count < 2) return;
         Fix? fix = null;
         if (Kind == TokenKind.CloseBrace && cases.Count > 0)
         {
@@ -1975,11 +1979,15 @@ public sealed class Parser
                 {
                     var keyword = Advance();
                     var hasValue = CanStartExpression(Kind) && !BreaksLine(_pos);
-                    // A value alone on the next line reads as the operand that wandered off (BYN1042); a statement there does not.
-                    if (BreaksLine(_pos) && !HasBlankLineBefore(_pos) && CanStartExpression(Kind) && !IsStatementKeyword(Kind)
+                    // A value alone on the next line (one token, a literal or `.case`) or indented past `return` reads as the
+                    // operand that wandered off (BYN1042); a line at the same indent that can be a statement of its own, such
+                    // as a call, does not.
+                    var valueOnly = EndsBefore(_pos + 1) || Kind.IsStringLiteral() || Kind is TokenKind.IntegerLiteral
+                        or TokenKind.FloatLiteral or TokenKind.CharLiteral or TokenKind.InterpolatedStringStart or TokenKind.Dot
+                        || IndentAt(Current.Start).Length > IndentAt(keyword.Start).Length;
+                    if (BreaksLine(_pos) && !HasBlankLineBefore(_pos) && valueOnly && CanStartExpression(Kind) && !IsStatementKeyword(Kind)
                         && Kind is not (TokenKind.OpenBrace or TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.Minus
-                            or TokenKind.ReturnKeyword or TokenKind.BreakKeyword or TokenKind.ContinueKeyword)
-                        && !(Kind == TokenKind.Identifier && Peek(1) == TokenKind.Colon) && !IsLocalDeclarationStart())
+                            or TokenKind.ReturnKeyword or TokenKind.BreakKeyword or TokenKind.ContinueKeyword))
                     {
                         ReportOnNewLine(keyword);
                         hasValue = true;
@@ -2122,7 +2130,7 @@ public sealed class Parser
             var condition = ParseExpression();
             if (unless) CheckUnlessCondition(condition, TextSpan.FromBounds(keyword.Start, condition.Span.End));
             statement = new GuardedStmt(SpanFrom(start), statement, unless, condition) { Unlikely = unlikely };
-            if (Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword)
+            if (Kind is TokenKind.IfKeyword or TokenKind.UnlessKeyword && !BreaksLine(_pos))
             {
                 Report(DiagnosticCodes.PostfixChained, Current.Span, label: "a second condition",
                     help: "combine the conditions with `&&` in one postfix `if`");

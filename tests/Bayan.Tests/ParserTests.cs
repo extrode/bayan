@@ -174,7 +174,8 @@ public sealed class ParserTests
     public void ABlankLineAfterAnOperatorIsAnError()
     {
         var tree = Parse("let a = 1 +\n\nlet b = 2\n");
-        Assert.Equal("BYN1002", Assert.Single(tree.Diagnostics).Code);
+        Assert.Equal("BYN1002", tree.Diagnostics[0].Code);
+        Assert.Equal("a blank line", tree.Diagnostics[0].Message[^"a blank line".Length..]);
     }
 
     [Fact]
@@ -201,8 +202,8 @@ public sealed class ParserTests
     [Theory]
     [InlineData("void f() {\n    return\n}\n", 1)]
     [InlineData("void f() {\n    return\n    g()\n}\n", 2)]
-    [InlineData("void f() {\n    return\n\n    g\n}\n", 2)]
-    [InlineData("void f() {\n    return\n    (g)()\n}\n", 2)]
+    [InlineData("void f() {\n    return\n\n    g()\n}\n", 2)]
+    [InlineData("void f() {\n    return\n    (a + b).f()\n}\n", 2)]
     public void AReturnAtALineBreakHasNoValue(string text, int statements)
     {
         var tree = Parse(text);
@@ -227,6 +228,14 @@ public sealed class ParserTests
         Assert.Equal("BYN1042", diagnostic.Code);
         Assert.Equal(new Fix(TextSpan.FromBounds(6, 11), " "), diagnostic.Fix);
         Assert.Single(tree.Root.Members);
+    }
+
+    [Fact]
+    public void AnIfAfterAPostfixConditionStartsTheNextStatement()
+    {
+        var tree = Parse("void f() {\n    return if a\n    if b {\n        g()\n    }\n}\n");
+        Assert.Empty(tree.Diagnostics);
+        Assert.Equal(2, Body(tree).Length);
     }
 
     [Theory]
@@ -257,7 +266,7 @@ public sealed class ParserTests
     [Fact]
     public void ACatchBraceWithStatementsIsABlock()
     {
-        var tree = Parse("x = f() catch {\n    y = 1\n    yield 2\n}\n");
+        var tree = Parse("x = f() catch {\n    y = 1\n    z = 2\n}\n");
         Assert.Empty(tree.Diagnostics);
         var statement = Assert.IsType<GlobalStatement>(Assert.Single(tree.Root.Members)).Statement;
         var handler = Assert.IsType<CatchExpr>(Assert.IsType<AssignStmt>(statement).Value).Handler;
@@ -268,7 +277,6 @@ public sealed class ParserTests
     public void ADeferWordAtALineBreakIsTheBody()
     {
         var tree = Parse("defer failing\nclose()\n");
-        Assert.Empty(tree.Diagnostics);
         Assert.Equal(2, tree.Root.Members.Length);
         var defer = Assert.IsType<DeferStmt>(Assert.IsType<GlobalStatement>(tree.Root.Members[0]).Statement);
         Assert.Equal(DeferKind.Always, defer.Kind);

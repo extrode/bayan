@@ -1,43 +1,14 @@
 # bayan test -v <dir>/tally
-exit: 1
+exit: 3
 --- stdout ---
+running 3 tests in 1 module
+  ◆ tally: adds
+  ◆ tally: later (pending)
+
+  ✗ tally: is false
+      assert(false)
+      main.test.byn:10
+
+◆ 1 passed · ✗ 1 failed · 1 pending · 0.00s
+  rerun the failure: bayan test --only "is false"
 --- stderr ---
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.byn:2:16
-
-  2 │     print("hi");
-    │                ^ remove `;`
-    │
-  help: remove the `;`
-    │ 2 │     print("hi");
-    │   │                -
-
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.test.byn:2:23
-
-  2 │     assert(1 + 1 == 2);
-    │                       ^ remove `;`
-    │
-  help: remove the `;`
-    │ 2 │     assert(1 + 1 == 2);
-    │   │                       -
-
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.test.byn:6:28
-
-  6 │     todo("split by weight");
-    │                            ^ remove `;`
-    │
-  help: remove the `;`
-    │ 6 │     todo("split by weight");
-    │   │                            -
-
-error BYN1040: `;` is an input form; a statement ends at the newline
-  --> <dir>/tally/main.test.byn:10:18
-
-  10 │     assert(false);
-     │                  ^ remove `;`
-     │
-  help: remove the `;`
-     │ 10 │     assert(false);
-     │    │                  -
