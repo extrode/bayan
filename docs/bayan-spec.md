@@ -13,7 +13,7 @@ Bayan (بيان, "clarity, eloquent exposition") is a value-oriented, natively c
 1. **Performance is a feature.** No hidden costs: allocation, suspension and failure are always visible in the source or the tooling.
 2. **Every keystroke carries meaning.** If the compiler can infer it reliably, don't type it; if it carries meaning, type it.
 3. **Brief but complete.** One spelling per construct; free composition (the "keyword budget"). Three categories:
-   - **Synonyms**, two spellings of one construct, are rejected: one is canonical, the other is an input form with a fix-it (§21.5). The boolean spellings (§7.2) are the one documented exception.
+   - **Synonyms**, two spellings of one construct, are rejected: one is canonical, the other is an input form with a fix-it (§21.5). Exactly two documented exceptions exist, each from a closed token set, one-to-one in meaning, cost and effects, and normalized per project by `bayan format` from a `style` setting: the boolean spellings (§7.2) and the primitive spellings (§3.1).
    - **Paraphrases**, different compositions of the general grammar with the same meaning (`users except null` / `users.where(it is not null)`), are allowed.
    - **Ellipsis** (ḥadhf), omitting a part recoverable from local context (`it`, inferred types, target-typed `.member`), is allowed.
 
@@ -21,7 +21,7 @@ Bayan (بيان, "clarity, eloquent exposition") is a value-oriented, natively c
 4. **Predictable.** Roots plus a closed set of patterns (ishtiqāq, §5).
 5. **Elegant by default.** One formatter, one canonical form. Style defaults (`docs/bayan-style.md`) are configurable per project in `package.byn` (§19.2); grammar rules (§5) are not style and cannot be configured away.
 
-> Round 2 §18: style is guidance applied by `bayan fmt`, configurable per project; "no options" contradicted it.
+> Round 2 §18: style is guidance applied by `bayan format`, configurable per project; "no options" contradicted it.
 6. **Kind to the programmer.** Errors explain what, where, why and how to fix (§21).
 7. **Instant feedback.** REPL, scripts and incremental builds under 100 ms.
 8. **Joy is a requirement.**
@@ -30,7 +30,7 @@ Bayan (بيان, "clarity, eloquent exposition") is a value-oriented, natively c
 11. **Bayan follows its own principles.** C# familiarity is a benefit, never a deciding reason.
 12. **Head-first word order** (Arabic). Statements: the verb comes first and ḥāl modifiers follow (`defer failing`). Declarations: the kind comes first and modifiers follow (`struct unique`, `type distinct`, `union error`). Local bindings: the name comes first and the type follows (`let w: Grams`); declarations keep the type first (`Grams weight(Order order)`, §3.10).
 
-> Round 3 §1: "one form, one meaning" banned paraphrase and ellipsis along with synonyms; the new wording bans only synonyms, and head-first order gives every declaration and statement one shape.
+> Round 3 §1, §28: "one form, one meaning" banned paraphrase and ellipsis along with synonyms; the new wording bans only synonyms, and head-first order gives every declaration and statement one shape. A third spelling pair would need the same three criteria, so none other qualifies.
 
 ---
 
@@ -42,10 +42,10 @@ Bayan (بيان, "clarity, eloquent exposition") is a value-oriented, natively c
 | Syntax | Newlines end statements (no `;`). Attributes use `@`. Declaration keywords are head-first; declarations are type-first, local bindings name-first. |
 | Strings | `string` is an immutable, validated UTF-8 slice. `rune` is a 32-bit Unicode scalar. |
 | Errors | `T f() fails E` in signatures; `Result<T, E>` as a type; `try` / `catch`; panics abort. |
-| Effects | `uses alloc, suspend, net, …` on public functions; no `uses` clause means pure. |
+| Effects | `uses alloc, suspend, net, …` on public functions; no `uses` clause means pure. Handlers are supplied with `provide`. |
 | Bindings | `let w: Grams = 0g` (immutable, default), `var` (mutable), `const` (compile-time). Parameters are immutable. |
 | Parameters | Read-only by default (compiler chooses copy or reference); `ref` mutable borrow; `move` ownership transfer. Required parameters after the object take a particle (`from:`, `to:`, `at:`, …). |
-| Typestate | `state` declarations in a struct; `T is .state` is a type; `becomes` / `become` transition. |
+| Typestate | One `states { … }` block in a struct; `Order.paid` is a type; `becomes` / `become` transition. |
 | Memory | Stack, arenas, `Owned<T>`, `.rodata`. Allocators flow through `context`. Borrows are region-checked. |
 | Naming | Types `PascalCase`; everything else `camelCase`. Casing encodes part of speech (§5). |
 | Derivation | A closed set of patterns derives forms (`tryX`, `xInto`, `xOp`, `T.Builder`, …). |
@@ -101,9 +101,9 @@ An integer literal (or a negated one) that initializes an unannotated `var` take
 
 ### 2.4 Keywords
 
-**Declarations:** `struct unique union enum open extensible interface extension derivation attribute error unit distinct type law import as public private static readonly required const let var embed extern unsafe`
+**Declarations:** `struct unique union enum open extensible interface extension derivation attribute error unit distinct type effect law import as public private static readonly required const let var embed extern unsafe rest`
 
-The declaration-only keywords `error unit distinct open extensible type law derivation attribute embed` are **contextual**: they act as keywords only where a declaration form needs them (`union error E { … }`, `type X = …`) and are names everywhere else (locals, parameters, fields, functions, members, error variants, argument names): `let error = 3` and `struct S { i64 set }` are valid. Every other keyword, including all control-flow and expression keywords, is reserved and cannot be an identifier.
+The declaration-only keywords `error unit distinct open extensible type effect law derivation attribute embed` are **contextual**: they act as keywords only where a declaration form needs them (`union error E { … }`, `type X = …`) and are names everywhere else (locals, parameters, fields, functions, members, error variants, argument names): `let error = 3` and `struct S { i64 set }` are valid. Every other keyword, including all control-flow and expression keywords, is reserved and cannot be an identifier.
 
 **Control:** `if else unless switch case default for in while do break continue return yield defer using context provide become`
 
@@ -115,25 +115,25 @@ The declaration-only keywords `error unit distinct open extensible type law deri
 
 **Tests:** `test property fuzz model assert`
 
-**Contextual words** (keywords only in one position, names everywhere else): `failing`, `panicking` after `defer` (§7.6); `unlikely`, `never` after `if` (§7.2); `it` inside a lambda argument (§3.16) and a `requires` clause (§7.9); `bench`, `measure` in benchmarks (§20); `state` at the start of a member declaration and `becomes` after a parameter list (§3.17); `pattern` after `=` in a `const` declaration (§6.5); the effect names `alloc suspend net fs clock random env` inside a `uses` clause (§14). The particles `from to at by for as` (§10) are labels, not keywords; `for` and `as` stay reserved and are allowed only in label position (`for:`).
+**Contextual words** (keywords only in one position, names everywhere else): `failing`, `panicking` after `defer` (§7.6); `unlikely`, `never` after `if` (§7.2); `it` inside a lambda argument (§3.16) and a `requires` clause (§7.9); `bench`, `measure` in benchmarks (§20); `states` at the start of a member declaration when followed by `{`, and `becomes` after a parameter list (§3.17); `pattern` after `=` in a `const` declaration (§6.5); the effect names `alloc suspend net fs clock random env process console` inside a `uses` clause (§14). The particles `from to until through at by for as` (§10) are labels, not keywords; `for` and `as` stay reserved and are allowed only in label position (`for:`). The C# primitive names `sbyte byte short ushort int uint long ulong nint nuint float double` are reserved in every project, whatever its `style.primitives` (§3.1).
 
-**Reserved (no meaning yet; may not be used as identifiers):** `actor effect macro select ensures Gc gc` (`ensures`: v1.x contracts, handoff addendum 002; `Gc`, `gc`: the future GC tier, §9.8; `law`, for v0.2 laws, left this list for the contextual declaration keywords; `become` left it for typestate, §3.17)
+**Reserved (no meaning yet; may not be used as identifiers):** `actor macro select ensures Gc gc` (`ensures`: v1.x contracts, handoff addendum 002; `Gc`, `gc`: the future GC tier, §9.8; `law`, for v0.2 laws, and `effect`, for effect aliases (§14), left this list for the contextual declaration keywords; `become` left it for typestate, §3.17)
 
 `flags`, `errdefer` and `delegate` are not keywords. `foreach`, `errdefer` and `delegate` in source get a teaching error with a fix (§21.5). `new` is accepted and removed by the formatter. `goto` does not exist.
 
 > Round 2 §1, §6, §7, §8, §16, carried over (GC): `flags`, `errdefer` and `delegate` are gone; `requires` and `assert` are keywords; the new statement words are contextual; `Gc`/`gc` reserved now. Codes: BYN0012, BYN1019, BYN1020, BYN1028.
 
-> Round 3 §2, §4, §7, §13, §14, O6, O8: `set`, `noalloc`, `nosuspend` and `suspends` leave (`union error` absorbs `set`; `uses` replaces the effect words); `uses`, `because`, `except`, `provide`, `become` and `fail` (Sūq review A2, §8) join; `state`, `becomes`, `pattern` and the effect names are contextual so existing names keep working. Codes: BYN6001.
+> Round 3 §2, §4, §7, §13, §14, §24, §28, O6: `set`, `noalloc`, `nosuspend` and `suspends` leave (`union error` absorbs `set`; `uses` replaces the effect words); `uses`, `because`, `except`, `provide`, `become`, `rest` and `fail` (Sūq review A2, §8) join; `states`, `becomes`, `pattern`, `effect` and the effect names are contextual so existing names keep working; the C# primitive names are reserved so no project can use one as an identifier. Codes: BYN6001.
 
 ### 2.5 Statement termination (waqf)
 
-There is no `;`. `bayan fmt` strips trailing semicolons and splits same-line statements; the compiler rejects `;` with that fix-it (BYN1040).
+There is no `;`. `bayan format` strips trailing semicolons and splits same-line statements; the compiler rejects `;` with that fix-it (BYN1040).
 
 | Waqf mark | Rule |
 |---|---|
 | مـ lāzim (mandatory stop) | A newline after a complete statement ends it |
 | لا lā (forbidden stop) | The statement continues if the line ends with a binary operator, `,`, `=`, `=>` or `{`, or the break is inside `( )` or `[ ]` |
-| وصل waṣl (joining) | The next line continues the statement if it starts with `.`, `?.`, `??`, `except` or `requires` |
+| وصل waṣl (joining) | The next line continues the statement if it starts with `.`, `?.`, `??`, `except`, `requires`, `expects`, `where`, `becomes`, `fails`, `uses`, `catch`, `&&`, `\|\|`, `and` or `or` |
 | Never-join | A line starting with `(`, `[` or `-` always begins a new statement |
 
 - **An unused non-void value is a compile error** (BYN3201), so every mis-split line is a diagnostic (`let x = a` newline `-b`). Discard on purpose with `_ = f()`.
@@ -141,7 +141,7 @@ There is no `;`. `bayan fmt` strips trailing semicolons and splits same-line sta
 - `else` follows `}` on the same line; `else` on a new line is rejected with a fix-it (BYN1041).
 - Comment lines are transparent to continuation. Outside `( )` and `[ ]`, a blank line always ends a statement; inside them, blank lines are ignored like other newlines.
 - A struct literal in a control-flow head takes whole-condition parentheses (§7.2).
-- **Separators:** declarations (fields, union cases, enum entries, states) are separated by newlines; a one-line `union U { a, b }` is rejected and `bayan fmt` rewrites it (BYN1053). Entries in literals and argument lists are separated by commas, with trailing commas per `docs/bayan-style.md`.
+- **Separators:** declarations (fields, union cases, enum entries, states) are separated by newlines; a signature may continue on the next line with a `where`, `becomes`, `fails` or `uses` clause. A one-line `union U { a, b }` is rejected and `bayan format` rewrites it (BYN1053). Entries in literals and argument lists are separated by commas, with trailing commas per `docs/bayan-style.md`.
 
 > Round 3 §3, O1: newline termination removes punctuation that carried no meaning; the unused-value error makes the newline rules safe. Codes: BYN1040, BYN1041, BYN1042, BYN1053, BYN3201.
 
@@ -151,19 +151,21 @@ There is no `;`. `bayan fmt` strips trailing semicolons and splits same-line sta
 
 ### 3.1 Primitives
 
-| Canonical | C# name (input form, §21.5) | Notes |
+| Canonical (`.sized`) | C# name (`.csharp`) | Notes |
 |---|---|---|
 | `i8 i16 i32 i64` | `sbyte short int long` | |
 | `u8 u16 u32 u64` | `byte ushort uint ulong` | |
 | `isize usize` | `nint nuint` | |
 | `f32 f64` | `float double` | |
 | `bool` | | |
-| `rune` | `char` | **32-bit Unicode scalar** (differs from C#) |
+| `rune` | | **32-bit Unicode scalar** (differs from C#); `char` is an input form |
 | `string` | | UTF-8 slice, 16 bytes (pointer, length) |
 | `never` | | Bottom type; see §3.9 |
-| `dec` | `decimal` | Decimal arithmetic type |
+| `dec` | | Decimal arithmetic type; `decimal` is not accepted |
 
-> Round 2 §15: C# type names are input forms, rewritten by the editor and `bayan fmt` and rejected in source. Codes: BYN1030.
+C# primitive names are accepted per project (`style.primitives: .sized | .csharp`, default `.sized`, §19.2), the second documented synonym exception (§0). The pairs map one to one; `bool` and `string` are shared. `char` (16-bit in C#; it stays the input form for `rune`), `decimal` and `object` have no equivalent and are not accepted. The compiler accepts both spellings and raises no diagnostic; `bayan format` normalizes each project to its spelling, and tooling (diagnostics, hover, `bayan expand`, generated docs, `bayan explain`) renders types in the reader's project style. The standard library, this spec's examples and the self-hosted compiler are written in `.sized`. Conversions read the same in both styles: `int(x)`, `int.tryFrom(x)`.
+
+> Round 2 §15, round 3 §28: C# type names were input forms (BYN1030); round 3 makes them a per-project spelling because the mapping is closed, one-to-one and free of cost, and style is never compiler-enforced. Codes: none.
 
 > Round 3 §10: `char` suggests C#'s 16-bit unit; `rune` names the scalar, and the `Runes` unit and `runeCount` follow it. Codes: BYN1048.
 
@@ -189,7 +191,7 @@ Lowercase type names are reserved for the language. C interop types: `c_int`, `c
 
 > Round 2 §12: `+` on strings hid allocation. Codes: BYN2201, BYN2209.
 
-> Round 3 §10, deliverable 4, O2: `length` is the one size name everywhere (bytes for strings, the O(1) answer); `runeCount` names the O(n) count, and `chars` follows `char` to `rune`. Codes: BYN1048.
+> Round 3 §10, deliverable 4, O2: `length` is the one size name everywhere (bytes for strings, the O(1) answer); `runeCount` names the O(n) count. Codes: BYN1048.
 
 > Sūq review A5: one copy verb for strings and collections; `$"{s}"` copied only as a side effect of formatting.
 
@@ -210,15 +212,16 @@ type distinct UserId = i64       // a unit without arithmetic
 ```
 
 - The unit name is the type; the symbol is the literal suffix.
-- Mismatched units are compile errors. Conversion is implicit **only toward finer units** (`2s + 500ms` is `Millis 2500`). Converting to a coarser unit is explicit and names the rounding: `t.round(to: Seconds)`, `t.roundDown(to: Seconds)`, `t.roundUp(to: Seconds)` (BYN3205).
+- Mismatched units are compile errors. Conversion is implicit **only toward finer units** (`2s + 500ms` is `Millis 2500`). Converting to a coarser unit is explicit and names the rounding with a type argument: `t.floor<Seconds>()`, `t.ceiling<Seconds>()`, `t.rounded<Seconds>()` (nearest, ties away from zero). A typed target fills the argument in: `let billed: Minutes = duration.ceiling()`. An implicit coarser conversion is BYN3205.
 - Wrap and unwrap with conversions: `Seconds(raw)`, `i64(t)` (§6.2). **A bare literal never takes a unit, `0` included:** `let w: Grams = 0` is an error with a fix-it to `0g` (BYN3203). Likewise for distinct types: `let id: ParcelId = 0` is an error; write `ParcelId(0)` (BYN3204).
-- A unit formats as its value plus its symbol (`524288 B`); `size.convert(to: KiB)` converts for display (`512 KiB`).
-- Quantities are dimensionless: `qty: i32`, and `i32 × Grams → Grams`.
+- A unit formats as its value plus its symbol (`524288 B`); `size.rounded<KiB>()` converts for display (`512 KiB`). There is no separate `convert` member.
+- Quantities are dimensionless: `i32 qty`, and `i32 × Grams → Grams`.
 - Units are erased at runtime.
 - Counts are plain `i64`: `s.length`, `s.runeCount` and collection `length`. The `Bytes` and `Runes` units apply only to slice offsets.
-- Units do not model money: `Money` is a struct with a currency field. Adding mixed currencies traps like integer overflow; `tryAdd` and `add(…) fails` exist for code that expects it.
+- Units do not model money: `Money` is a struct with a currency field. Adding mixed currencies traps like integer overflow (`currency mismatch`); `tryAdd` and `add(…) fails` exist for code that expects it. `price.rounded()` rounds to the currency's minor unit.
+- Real uses of the roundings: billing per started minute (`ceiling`), carrier weight brackets per started kilogram (`weight.ceiling<Kilograms>()`), a `Retry-After` header in whole seconds (`wait.ceiling<Seconds>()`, never early), and countdown display (`elapsed.floor<Seconds>()`).
 
-> Round 3 §2, §8, O2, O7, O9: head-first `type distinct`; a bare `0` hid which unit was meant; implicit coarsening lost precision silently; counts stay plain so `requires it.runeCount in 8..=128` needs no unit literal. Codes: BYN1044, BYN3203, BYN3204, BYN3205.
+> Round 3 §2, §8, O2, O7, O9: head-first `type distinct`; a bare `0` hid which unit was meant; implicit coarsening lost precision silently, and a type argument names the rounding where `round(to:)` took a value; counts stay plain so `requires it.runeCount in 8..=128` needs no unit literal. Codes: BYN1044, BYN3203, BYN3204, BYN3205.
 
 ### 3.5 Arrays, spans, collections
 - `T[N]`: fixed-size inline array (a value). Constant out-of-range indexes are compile errors.
@@ -226,7 +229,7 @@ type distinct UserId = i64       // a unit without arithmetic
 - `ReadOnlySpan<T>`: a borrowed view whose elements cannot be assigned. `Span<T>` → `ReadOnlySpan<T>` is implicit. `string.bytes` is a `ReadOnlySpan<u8>`, so strings stay immutable and valid UTF-8. A `Span<T>` parameter never written through gets lint BYN2310 ("use `ReadOnlySpan<T>`").
 - `List<T>`, `Deque<T>`, `Map<K, V>`, `HashMap<K, V>`, `Set<T>`, `Pool<T>`, `Ring<T, const i32 N>`, `NonEmpty<T>`: standard library, allocator-backed (API: §16).
 - `Map` **preserves insertion order**; `HashMap` is unordered and faster.
-- `xs.removeRange(from: start, to: end)` removes the elements in `[start, end)` and keeps the order of the rest; `start > end` or `end > xs.length` panics (`slice out of range`). Like `append` and `removeLast`, it is a structural modification (§9.4 rule 5).
+- `xs.remove(from: start, until: end)` removes the elements in `[start, end)` and keeps the order of the rest; `xs.remove(from: start, through: end)` includes `end`; `xs.remove(at: range)` takes a range. `start > end` or `end > xs.length` panics (`slice out of range`). Like `append` and `removeLast`, they are structural modifications (§9.4 rule 5).
 - A module-level `const T[N]` with literal or constant elements is static data in `.rodata` when `T` is a number type, `bool`, `rune` or `string` (`const names: string[2] = ["a", "b"]`); it can be indexed, iterated and asked its `.length`. Any other module-level `const` array is BYN2229.
 - **Typed indices (opt-in).** There are no automatic `T.Count` or `T.Index` types. A collection may take an index type as a second parameter, keyed by the collection rather than the element type, so parallel arrays share one:
 
@@ -295,7 +298,19 @@ public struct Order : IEquatable<Order>, IJsonEncode {
 }
 ```
 
-- Fields, properties, constructors, methods, operators, indexers, static members.
+- Fields, the `states` block (§3.17), events, properties, constructors, methods, operators, indexers, static members. The order is the style order (`docs/bayan-style.md`).
+- **C# mapping:**
+
+  | C# | Bayan |
+  |---|---|
+  | Auto-property `{ get; }` | Field |
+  | Computed property | `Type name => expr` or `Type name { … }` |
+  | Delegate, `Func<>`, `Action<>` | Function type, usually through an alias (`type Pricer = Line -> Money uses net`) |
+  | `event` | `Event<T>` field (§16) |
+  | Interface property `{ get; }` | Bare `Type name` (§3.15) |
+
+- **Field visibility (O11).** A public field is readable anywhere and writable only from the struct's own `ref this` methods or through `with` (§6.4). This matches `{ get; private set; }` and keeps `requires` and typestate invariants in one place. Writing it elsewhere is BYN3216.
+- **A stored function field is named with a noun for its role** (`handler`, `pricer`, `formatter`), never `onX`. Events are past participles or adjectives (`placed`, `low`, §16). BYN5010.
 - **Type first.** Fields, parameters and return types put the type first (`Sku sku`, `Grams weight(Order order)`); `void` marks a function that returns nothing; visibility (`public`, `static`) leads the whole declaration. A computed property takes a type like a field: `public bool isEmpty => lines.isEmpty`. Union and state payloads follow the same order (`timeout(Millis after)`). The name-first forms `f() -> T`, `f(x: T)`, field `x: T` and payload `case(x: T)` are input forms (BYN1043). Local bindings are the exception: they put the name first (§7.1).
 - **The receiver.** `this` is the receiver parameter's name; its type is the enclosing struct and is elided. Not written: read-only, any state. `this is .shipped`: read-only, only in that state (§3.17). `ref this`: mutating, any state. `ref this is .placed`: mutating, only in that state.
 - **Members are read-only by default.** A member that modifies `this` declares `ref this` as its first parameter (Form V, §5.2); see §10 for the call-site rules.
@@ -307,6 +322,8 @@ public struct Order : IEquatable<Order>, IJsonEncode {
 > Round 2 §9, §2, §13: mutation is declared with `ref this`, not inferred; `@noEquality` is the opt-out; display is never implicit. Codes: BYN2115, BYN2117.
 
 > Round 3 §2, revised 2026-10-22: names first was meant only for local bindings (§7.1), where `let`/`var` lead; declarations keep round 2's type-first order. Codes: BYN1043.
+
+> Round 3 §26, O11, addendum 1 §1: a field-shaped member needs no `{ get }`, events are `Event<T>` fields named for what happened, and a public field writable from anywhere would bypass `requires` and state checks. Codes: BYN3216, BYN5010.
 - `embed T` promotes the embedded struct's fields and methods; the embedded value sits at offset 0.
 - No implementation inheritance (revisit only if a GC tier is added).
 
@@ -349,6 +366,7 @@ union Mode {
 - `union` and `union error` share one grammar; `error` only allows use in `fails` clauses and `catch switch` (§8).
 - Case names are **camelCase**. A payload-free union is the enum form; cases may carry data.
 - Cases are separated by newlines; the one-line form is rejected (BYN1053, §2.5).
+- **Payloads are named in the declaration** (`percentOff(Percent rate)`), so whole-value binding (§6.5) can read them (`p.rate`). Construction may omit the label when the case has exactly one payload (`.percentOff(10%)`); with several, labels are required (`.buyXGetY(buy: 2, free: 1)`). A payload without a name is BYN1064.
 - Members may follow the cases (not in v0.1).
 - **Closed:** no integer casts. Outside data enters only through `T.tryParse(text)`, which fails on unknown input (not in v0.1). `.name` gives the case name.
 - Payload-free cases may declare explicit integer values for C interop (`read = 1`). A value must be an integer constant, only on a payload-free case, and unique in the union.
@@ -408,6 +426,7 @@ union error Retryable = CarrierError except .rejected     // narrowed
 
 - Composed sets are **flattened**: `ShipError` has cases `timeout`, `rejected` and `outOfStock`. A component error converts implicitly to the composed set.
 - Two components sharing a case name is a compile error (BYN3202).
+- Generic error sets compose the same way: `union error DecodeError<T> = JsonError, ValidationError<T>` (§7.9).
 - `error enum` and `error union` are input forms for `union error` (BYN1044); `error set S = A | B` is the round-2 input form (BYN1029).
 
 > Round 2 §5: commas everywhere a list of errors appears. Codes: BYN1029.
@@ -427,14 +446,19 @@ interface IParse<TSelf> where TSelf : IParse<TSelf> {
 interface IEnumerator {
     type Item                                  // associated type
     bool moveNext(ref this)
-    Item current { get }                       // returned by value
+    Item current                               // read-only property, returned by value
 }
 ```
 
 - Interfaces declare mutating members with `ref this`, like structs (§3.10); implementations must match.
 - An interface method's `uses` clause is an upper bound; implementations may use fewer effects (§14).
+- **Property requirements are bare `Type name`.** Interfaces have no fields, so a field-shaped member is a read-only property requirement, satisfied by a field or a computed property. `Type name { get }` is an input form (BYN1060). Settable property requirements are not part of round 3; mutation goes through a `ref this` method.
+- **Static members and `Self`.** Interfaces may declare static members and use `Self` for the implementing type; generic code calls them as `T.fromRow(…)`.
+- **Default methods** (bodies) are how C# extension-method families are written (§16).
 
 > Round 2 §9: `ref this` is part of an interface member's signature. Codes: BYN2117.
+
+> Round 3 §26: a bare `Type name` says "read-only property" without C#'s `{ get }` ceremony. Codes: BYN1060.
 
 - Nominal, explicit conformance (`struct Circle : IShape`). Interface names take an `I` prefix.
 - Used as constraints (static dispatch) by default; `dyn ref IShape` / `dyn IShape` for dynamic dispatch through a fat pointer (no allocation).
@@ -472,15 +496,15 @@ type Predicate<T> = T -> bool
 type OrderFilter = Order -> bool
 ```
 
-- **Lambda forms:** `x => x * 2`, `(a, b) => a + b`, block bodies, and `it` for a one-parameter lambda (`select(toDto(it))`). `it` inside a lambda that already uses `it` is an error; name one lambda.
+- **Lambda forms:** `x => x * 2`, `(a, b) => a + b`, block bodies, and `it` for a one-parameter lambda (`select(toDto(it))`). One parameter takes no parentheses, typed or not (`t => …`, `Token t => …`); two or more take them, and typed parameters are type-first (`(Token a, Token b) => …`). A typed single parameter with a generic type (`List<i32> xs => …`) is told from `<` by lookahead. `it`, `t =>` and `Token t =>` are ellipsis levels of one construct. `it` inside a lambda that already uses `it` is an error; name one lambda.
 - `.member` has one meaning: a member of the **expected type** (`return .notFound`, `color: .red`). It is never lambda shorthand.
-- **One function-type syntax** replaces `Func`/`Action`/`delegate`: `i32 -> i32`, `(i32, i32) -> i32`, `User -> void`, `() -> void`, `() -> T fails DbError`, `Order -> void uses net`. Aliases use `type`. `delegate` is a teaching error pointing to a function type.
+- **One function-type syntax** replaces `Func`/`Action`/`delegate`: `i32 -> i32`, `(i32, i32) -> i32`, `User -> void`, `() -> void`, `() -> T fails DbError`, `Order -> void uses net`. Aliases use `type`. A function type followed by a name is parenthesized, in fields and parameters: `(Line -> Money uses net) pricer`, `by (Token -> bool) p`; an alias avoids the parentheses (`type Pricer = Line -> Money uses net`, then `Pricer pricer`). `delegate` is a teaching error pointing to a function type.
 - `->` marks the return in a function type; a declaration puts its return type first (§3.10), so `->` after a declaration's parameters is an input form (BYN1043). `=>` means "evaluates to" (lambdas, expression bodies, switch arms).
 - A stored function type's `uses` clause is an upper bound (§14). A closure parameter's effects flow to the caller: `map` inherits its closure's effects, so there is no `tryMap` or `mapAsync`.
 - Lambdas passed as parameters are monomorphized and inlined; captures borrow; zero allocation.
 - A stored lambda is non-capturing (a function pointer) or an explicit `dyn (A -> B)` allocated from `context.allocator`.
 - `move () => …` moves captures in. Capturing a `var` follows the borrow rules (§9.4).
-- No multicast delegates and no `event`.
+- No multicast delegates; `Event<T>` replaces `event` (§16).
 - Not in v0.1 (spec 007).
 
 > Round 2 §8: one function-type syntax and one shorthand (`it`); `.member` keeps a single meaning; storage cost is explicit. Codes: BYN1028, BYN2029.
@@ -489,7 +513,7 @@ type OrderFilter = Order -> bool
 
 ### 3.17 Typestate (kāna / ṣāra)
 
-States are declared inside the struct, directly after the fields:
+States are declared in one `states` block inside the struct, after the fields:
 
 ```csharp
 @derive(Json)                  // not Row: `lines` is not flat (§5.3)
@@ -497,32 +521,45 @@ struct Order {
     OrderId id
     List<Line> lines
 
-    state draft
-    state placed
-    state paid(PaymentId payment)
-    state shipped(PaymentId payment, TrackingId tracking)
-    state cancelled(string reason)
+    states {
+        draft
+        placed
+        paid(PaymentId payment)
+        shipped(PaymentId payment, TrackingId tracking)
+        cancelled(string reason)
+    }
 }
+
+type Fulfilled = Order is .paid or .shipped
 
 public void pay(ref this is .placed, Payment p) becomes .paid fails PaymentError uses net {
     let id = try p.charge(total)
     become .paid(payment: id)
 }
 
-public Url trackingUrl(this is .shipped) { … }   // `tracking` itself is a payload field
-public Label label(Order is .shipped order) { … }
+public Url trackingUrl(this is .shipped) => carrierUrl(tracking)      // `tracking` is a payload field
+public Label label(Order.shipped order) { … }
+public Url receiptUrl(Order order is .paid or .shipped) { … }
+public Order.shipped ship(move Order.paid order, by Carrier carrier)
+    fails CarrierError uses net { … }
 ```
 
-- `T is .state` is a type: the values of `T` that match the pattern. It is usable in any parameter, return type or local. Passing a value not known to be in that state is an error (BYN7001).
-- `becomes .state` declares a transition; `become .state(…)` performs it. A `become` to a state the signature does not declare is an error (BYN7003). **A failed transition leaves the state unchanged.**
-- State is tracked through control flow on a `var` with no live borrows (the borrow rules already guarantee this): after `try order.pay(card)`, `order` is `Order is .paid`.
-- State payload fields are accessible only in that state (BYN7002).
-- A value of unknown state narrows with `is` or `switch`. A state switch is exhaustive, so adding a state is a compile error at every non-exhaustive switch (BYN7004).
-- `state` is a contextual keyword only at the start of a member declaration, so a field named `state` still works; `becomes` is contextual after a parameter list.
-- States are named as participles or adjectives (`paid`, `shipped`) and are exempt from the `-ed` copy-pattern rule (§5.2), which applies only to members.
-- Zero cost: at runtime the state is a tag, like a union's; the checks are compile-time only.
+1. `T.s` is the type of `T` values in state `s`. It is valid anywhere a type is: parameters, returns, fields, locals and generics (`List<Order.paid>`). Passing a value not known to be in that state is an error (BYN7001).
+2. Several states: `Type name is .a or .b` inline in a parameter or field, `let x: T is .a or .b` in a local, or an alias (`type Fulfilled = Order is .paid or .shipped`). Return types use `T.s` or an alias.
+3. The receiver keeps its own form: `this is .s`, `ref this is .s`, `move this is .s`, and the same with `or` (§3.10, §10).
+4. Widening is implicit and free: `Order.paid` → `Fulfilled` → `Order`. Narrowing happens only through `is`, `switch`, or a `becomes` call on a `var`.
+5. Narrowing results: `if o is .paid { … }` gives `Order.paid`; `.paid p => …` binds `p: Order.paid`.
+6. A payload field is readable only when the type guarantees its state (BYN7002). With several states, a field is readable if every listed state has it with the same type (`payment` is readable on `Fulfilled`, `tracking` is not). Payloads name their fields in the declaration (BYN1064, §3.12).
+7. Literals name a state: `Order.paid { id: i, lines: l, payment: p }`. A plain `Order { … }` on a struct with states is an error (BYN7005). An unknown state is BYN7007.
+8. Runtime: `T.s` has the same layout as `T` (a `u8` tag plus a payload union) and is erased in C. Widening is a no-op; the checks are compile-time only.
+9. Canonical spelling: one state is always written `T.s`. `bayan format` rewrites `Order order is .paid` → `Order.paid order` and `type X = Order is .paid` → `type X = Order.paid` (BYN7006). The receiver is exempt.
+10. State names are camelCase and may not equal a static member name of `T`, otherwise `Order.empty` would name both a type and a factory (BYN7008).
+11. `becomes .state` declares a transition; `become .state(…)` performs it. A `become` to a state the signature does not declare is an error (BYN7003). **A failed transition leaves the state unchanged.** After a `becomes` call on a `var` (with no live borrows), the variable's static type changes: after `try order.pay(card)`, `order` is `Order.paid`. A `let` cannot call `ref this` methods, so it needs no tracking.
+12. A state switch is exhaustive, so adding a state is a compile error at every non-exhaustive switch (BYN7004).
+13. `states` is a contextual keyword at the start of a member declaration when followed by `{`, so fields named `state` or `states` still work. At most one `states` block per struct. The per-line `state x` form is an input form (BYN1059). `becomes` is contextual after a parameter list.
+14. States are named as participles or adjectives (`paid`, `shipped`) and are exempt from the `-ed` copy-pattern rule (§5.2), which applies only to members.
 
-> Round 3 §14, §12, O8: a lifecycle stated in the type moves "order not paid yet" bugs to compile time at no runtime cost. Codes: BYN7001, BYN7002, BYN7003, BYN7004.
+> Round 3 §14, §12, O8, payload names: a lifecycle stated in the type moves "order not paid yet" bugs to compile time at no runtime cost; one `states` block and `Order.paid` replace per-line `state` and the `Order is .shipped order` form, which collided with whole-value binding. Codes: BYN1059, BYN1064, BYN7001, BYN7002, BYN7003, BYN7004, BYN7005, BYN7006, BYN7007, BYN7008.
 
 ---
 
@@ -609,7 +646,7 @@ Users may create roots, never patterns. Derived members are generated only when 
 
 **Composition order:** `[try] verb [Into] [Op]` — e.g. `tryFormatInto`, `parseOp`, `tryFormatIntoOp`.
 
-**Derived effects:** `-ed` adds `alloc`, the allocating form derived from `xInto` adds `alloc`, and `tryX` keeps the original's effects (§14). `bayan expand` shows them.
+**Derived effects:** `-ed` adds `alloc` only for types that own heap memory (`xs.sorted()` on a list allocates; `v.normalized()` on a `Vec3` and `x.clamped(…)` on a scalar copy without allocating), the allocating form derived from `xInto` adds `alloc`, and `tryX` keeps the original's effects (§14). `bayan expand` shows them.
 
 **Noun patterns (types, `PascalCase`):**
 
@@ -622,11 +659,17 @@ Users may create roots, never patterns. Derived members are generated only when 
 | `T.Id` | — | Identity (distinct type) |
 | `T.Patch` | — | Partial changes |
 
-- **`T.X` vs `X<T>`:** `T.X` is a different shape derived from `T` (`Builder`, `Patch`, `Field`, `Id`). `X<T>` is the same value with a different status (`Untrusted`, `Secret`).
+- **`T.X` vs `X<T>`:** `T.X` with a PascalCase `X` is a different shape derived from `T` (`Builder`, `Patch`, `Field`, `Id`). `T.x` with a camelCase `x` is `T` in state `x` (`Order.paid`, §3.17). `X<T>` is the same value with a different status (`Untrusted`, `Secret`).
 - **States** (§3.17) are participles or adjectives and are exempt from the `-ed` copy-pattern rule, which applies only to members.
+- **Events** (§16) are named for what happened: a past participle (`placed`, `changed`) or an adjective (`low`). The `on` prefix (`onChange`, `onPaid`) is rejected, and so is any stored function field named with it: a member is named with a verb or a noun, a stored function field with a noun for its role (`handler`, `pricer`, `formatter`), and subscribing is spelled `subscribe(by:)` (BYN5010).
+- **Particle words are not member names.** `at(k)`, `to(x)`, `by(f)` fail the grammar check; members are verbs or nouns (BYN5009).
+- **No `toX` or `asX` instance members.** `as` and `to` are particles, and a member named `asSpan` or `toList` spells a conversion that already has a form: a view is a noun (`xs.span`), an owned copy is `copy()`, a conversion is `T(x)` (§16, §6.2) (BYN5009).
+- **Nouns with no arguments are properties** (`x.abs`, `v.magnitude`, `rows.isEmpty`); with arguments or type arguments they are calls (`x.pow(2)`, `t.floor<Seconds>()`). A generic member stays a call when its type argument is inferred (`let s: Seconds = t.floor()`). A noun member that needs `ref this` is a call (`xs.mutableSpan()`), because mutable access must be visible at the call site. Static factories keep `from` (`T.fromJson(…)`, `T.tryFrom(x)`, `fromBounds(start, until:)`): a factory names the source a `T` is built from.
+- **Math vocabulary is a documented naming exemption** (a naming rule, not a synonym): `abs`, `sign`, `sqrt`, `cbrt`, `pow`, `exp`, `ln`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan2`, `radians`, `degrees`. There is no `log` member: `log` is the logging verb.
+- **No abbreviations** applies to tools as well: the formatter is `bayan format` (§21.2).
 - **Logging:** `log` is the verb and the level is a particle argument (`log(msg, as: .debug)`, §14). `Log.debug` fails the grammar check, because `debug` is a level, not the act (BYN5007).
 
-> Round 3 §11, §12: `T.Validated` is gone because `requires` makes every value valid at construction; the new rules name what `T.X`, states and logging mean. Codes: BYN5007.
+> Round 3 §11, §12, §27, addendum 1 §1, §3: `T.Validated` is gone because `requires` makes every value valid at construction; the new rules name what `T.X`, states, events, particles, conversions and logging mean, so a name never hides which of them it is. Codes: BYN5001, BYN5007, BYN5009, BYN5010.
 
 ### 5.3 Derivations
 Open set, written in Bayan with `derivation Name for T { … }` (§12.5). Standard derivations: automatic equality/hash/debug, `Order`, `Id`, `Builder`, `Patch`, `Events`, `Observable`, `Json`, `Csv`, `Row` (generates `readRow(ref Reader)`), `CopyIn` (generates binary COPY writers), `Binary` (CBOR), `Proto`, `Query`, `Config`, `Args`, `Gen`, `Diff`, `Ts`. Derivations only add members; they never change existing ones. The `derivation` mechanism is not in v0.1.
@@ -675,10 +718,12 @@ No user-defined operator symbols. Operator implementations must not allocate, su
 | Enum ↔ number | `.ordinal` / `.value`; `T.fromOrdinal(i)` returns `T?` |
 | Views | `Span<T>` → `ReadOnlySpan<T>` implicit; as a call argument, `List<T>` and `T[N]` → `Span<T>` / `ReadOnlySpan<T>`, and `string` → `ReadOnlySpan<u8>`. Never `ReadOnlySpan<T>` → `Span<T>`. |
 | User types | `T(x)` calls `IFrom<T, U>.from` (infallible). A fallible conversion (`ITryFrom`, or a type with `requires`) is `try T(x)`; `T.tryFrom(x)` returns `T?` (like `string.tryFrom`, §3.2); `T.tryParse(text)` reads text |
-| `List<T>` → `Span<T>` | Implicit **only as a function argument**; otherwise `.asSpan` |
+| `List<T>` → `Span<T>` | Implicit **only as a function argument**; otherwise the view `xs.span` (read-only, allowed on a `let`) or `xs.mutableSpan()` (needs `ref this`, so only on a `var`) |
+| Owned copy | `xs.copy()` returns an owned `List<T>` from a span or list (`uses alloc`); a conversion from a sequence is `List(seq)` |
+| Text | `string(x)` or `$"{x}"`; there is no `x.toString()` (§6.6) |
 | User-defined implicit conversions | Not allowed |
 
-There are no implicit user conversions; use `from` / `into`. `checked(expr)` evaluates a whole expression with overflow detection and returns `T?` (`null` on overflow). Unlike C#, where `checked` throws, it never traps. Float-to-integer conversion saturates (NaN becomes 0). Integer division by zero traps. `checked(expr)` is not in v0.1.
+There are no implicit user conversions; a conversion is `T(x)`, never an instance `toX` or `asX` member (§5.2). `checked(expr)` evaluates a whole expression with overflow detection and returns `T?` (`null` on overflow). Unlike C#, where `checked` throws, it never traps. Float-to-integer conversion saturates (NaN becomes 0). Integer division by zero traps. `checked(expr)` is not in v0.1.
 
 The C# cast `(T)x` is an input form for `T(x)` (BYN1057).
 
@@ -737,7 +782,7 @@ for line in order.lines except inactive { … }
 
 **Floats** (`f64`, `f32`) format as the shortest digits that round-trip to the same value. Fixed notation when `1e-5 ≤ |x| < 1e15`, exponential outside it, spelled lowercase with no `+` and no leading zeros (`1e15`, `1.5e-7`, `-2.25e20`), so the text is a valid Bayan literal and valid JSON. Integral values print without a decimal point (`42`); `-0.0` prints `-0`; special values print `nan`, `inf`, `-inf` (`Json.encode` rejects them with `JsonError.nonFinite`).
 
-**`format()` replaces `toString()`.** There is no `toString()`. A type displays through `formatInto(ref StrBuf)`; the allocating `format()` is derived from it (§5.2). Interpolation calls `formatInto` directly. Calling `toString()` / `ToString()` is a teaching error pointing to `format()`.
+**`format()` replaces `toString()`.** There is no `toString()`. A type displays through `formatInto(ref StrBuf)`; the allocating `format()` is derived from it (§5.2). Interpolation calls `formatInto` directly. Calling `toString()` / `ToString()` is a teaching error pointing to `format()`. The conversion spelling is `string(x)` (or `$"{x}"`): a conversion is `T(x)`, never an instance `toX` member (§5.2).
 
 - **Specifiers** (C#-compatible; not in v0.1): `D8`, `N0`, `N2`, `F2`, `X`, `X8`, `B`, `E3`, `P1`, alignment `{x,8}` / `{x,-12}`; a `locale:` parameter for culture-aware output.
 - Distinct types format as their underlying value; payload-free union cases as their name; error unions as their doc comment; `Secret<T>` as `***`.
@@ -755,7 +800,7 @@ for line in order.lines except inactive { … }
 | Not overloadable | `&& \|\| ?? is = ?.`, and `+% +\|` (built-in integers only in v1) |
 
 - Operators are `static`, cannot `fails`, and cannot take `ref this`.
-- No implicit conversions; use `from` / `into`.
+- No implicit conversions; a conversion is written `T(x)` (§6.2).
 - `==` is derived for every struct whose fields all support `==`. Opt out with `@noEquality`. Distinct types compare only with the same distinct type. `Secret<T>` has no `==`; it has `equalsConstantTime(other)`.
 - Lint: `==` against a partial struct literal ("missing fields default to …; did you mean `is`?").
 - Strings have no `+` (§3.2).
@@ -809,14 +854,14 @@ unless user.isVerified { sendVerification(user) }
 if unlikely buf.isFull { flush() }
 if never state is .corrupt { panic("corrupt") }
 switch day {
-    case .sat or .sun: rest()
+    case .sat or .sun: relax()
     default: work()
 }
 ```
 
 - **`unless`** has no `else`. `unless !x` and `unless not x` are errors. A top-level `&&` or `||` (or `and`, `or`) in its condition is an error with a fix to `if`. `unless x is null` is not allowed; write `if x is not null`. `unless` takes no likelihood word.
 - **`if !x { … }` and `unless x { … }` are both allowed** paraphrases; neither is rewritten.
-- **Boolean spellings:** `!` `&&` `||` and `not` `and` `or` are both allowed in boolean expressions, the one documented synonym exception (§0). `bayan fmt` normalizes each project to the spelling in `style.booleans` (`.symbols` or `.words`, §19.2). Patterns use words only (§6.5).
+- **Boolean spellings:** `!` `&&` `||` and `not` `and` `or` are both allowed in boolean expressions, the one documented synonym exception (§0). `bayan format` normalizes each project to the spelling in `style.booleans` (`.symbols` or `.words`, §19.2). Patterns use words only (§6.5).
 - **`if unlikely`** is a layout hint only (the block is cold); semantics are unchanged. A lint fires when it guards an error return (already cold). Emitting the hint to C is not in v0.1.
 - **`if never`** panics if the condition is true, **in every build mode**, and lays the block out cold.
 - **Null checks** are `is null` / `is not null`. After `is not null` on a `let` binding or a parameter, the value is narrowed to the non-null type. `x ?? return …`, `?? break` and `?? continue` exit early.
@@ -849,6 +894,8 @@ d++ if debtor.amount == 0
 ```csharp
 for i in 0..n { … }
 for x in xs { … }
+for x: Token in tokens { … }                  // loop bindings follow the local rule (§7.1)
+for line in order.lines except inactive { … }
 for (i, x) in xs.indexed() { … }
 for (key, value) in prices { … }
 outer: for row in grid {
@@ -860,6 +907,9 @@ while queue.hasItems { … }
 do { … } while try socket.hasMore()
 ```
 
+- A typed loop binding puts the name first, like a local: `for x: T in e`. `for T x in e` is an input form (BYN1043). A tuple pattern destructures: `for (a, b) in pairs`.
+- `for x in xs except p` subtracts a pattern from the sequence and narrows the loop variable (§6.8).
+
 **Fallible iteration:**
 - `for try x in seq`: every step may fail and failures propagate. Iterating a fallible sequence without `for try` is a compile error with a fix-it.
 - Queries and readers are **lazy**: opening happens on the first step, so one `try` covers both. If creating the sequence can fail eagerly, both are written: `for try line in try File.open(p).lines() { … }`.
@@ -870,6 +920,8 @@ do { … } while try socket.hasMore()
 - Not in v0.1: lazy queries and readers.
 
 > Round 2 §4: one `for x in xs` form with no parentheses; fallibility is marked once, at the loop head. Codes: BYN1017, BYN1018, BYN1019, BYN2022, BYN2232, BYN2234.
+
+> Round 3 §25, §7: a loop binding is a local, so the name leads; `except` removes a filter loop for the common case. Codes: BYN1043, BYN1051, BYN1052.
 
 ### 7.5 `switch` statements
 No fall-through. `break` is optional at the end of a section and, if used, leaves the `switch` (C# semantics). Combined patterns replace stacked labels (`case .sat or .sun:`). `goto case` does not exist; leave an enclosing loop with a labeled `break`.
@@ -889,30 +941,51 @@ defer panicking (p) log($"{p}", as: .error)   // panic in progress
 - A postfix modifier on a deferred statement is evaluated once, when the `defer` is **registered**, and its value is captured, the same rule as for any `if`/`unless` modifier (§7.3): in `defer failing tx.rollback() unless dryRun`, a later change to `dryRun` has no effect. To decide at exit, test inside the body: `defer { if dryRun { … } }`.
 - `failing` and `panicking` are contextual words, valid only after `defer`. Future statement modifiers follow the same ḥāl rule: head verb, then a participle.
 - All run in reverse registration order. Bodies **cannot fail** (no `try`).
-- **On a panic, only `defer panicking` handlers run** (innermost first); plain `defer` and `defer failing` do not, because a panic aborts without unwinding. Order: the panicking fiber's `defer panicking` handlers, then `Panic.onPanic`, then the default trace, then abort. The test runner is its own entry point with its own handler (it fails the test).
-- **Panic handler bodies are restricted:** pure (no `alloc`, no `suspend`, §14; logging is ambient); no `try`; they read only `let` bindings and parameters; they write only to panic-safe sinks (stderr, panic-safe log sinks). `return`, `break` and assignment are errors ("panic handlers can't recover").
+- **On a panic, only `defer panicking` handlers run** (innermost first); plain `defer` and `defer failing` do not, because a panic aborts without unwinding. Order: the panicking fiber's `defer panicking` handlers, then `Panic.handler`, then the default trace, then abort. The test runner is its own entry point with its own handler (it fails the test).
+- **Panic handler bodies are restricted:** no `alloc` or `suspend` effect (§14; logging is ambient); no `try`; they read only `let` bindings and parameters; they write only to panic-safe sinks (stderr, panic-safe log sinks). `return`, `break` and assignment are errors ("panic handlers can't recover").
 - A panic inside a handler aborts at once and prints both messages.
 - Handlers are a per-fiber linked list of records, pushed and popped only in scopes that declare one.
 
 **Process-wide hook:**
 
 ```csharp
-void main() {
-    Panic.onPanic = p => crashReport.write(p)
+type PanicHandler = Panic -> void uses console     // stored function type: an upper bound
+
+public void main() {
+    Panic.handler = p => Stderr.write(p)
     run()
 }
 ```
 
+- `Panic.handler` is a noun naming the role, not `onPanic` (a stored function field is named for its role, §3.10). `defer panicking (p) { … }` stays the scoped form; `Panic.handler` is the process-wide hook.
 - Allowed only as the **first statement of the entry method**, at most once; libraries cannot set it. Anywhere else is a compile error. Same body restrictions as `defer panicking`.
-- In v0.1 the hook takes a named function `void f(Panic p)` (`Panic.onPanic = onCrash`); the lambda form needs §3.16.
+- The handler's bound is `uses console`: it may write to stderr, and it may not allocate, suspend or do other I/O. This is round 2's "implicitly `noalloc` and `nosuspend`" expressed as effects.
+- In v0.1 the hook takes a named function `void f(Panic p)` (`Panic.handler = onCrash`); the lambda form needs §3.16.
 - Fiber isolation on panic is deferred.
 
 > Round 2 §6: `errdefer` becomes `defer failing`, one head verb with participles; panic handlers run in a known order with restrictions that keep a dying process safe. Codes: BYN1020, BYN2601, BYN2606, BYN2612, BYN2613, BYN2614.
+
+> Round 3 addendum 1 §1: `onPanic` broke the rule against the `on` prefix and repeated the type's name; `handler` names the role, and `uses console` states the old restriction as an effect bound. Codes: BYN2230, BYN2614, BYN5010.
 
 > Round 3 §19: capturing the modifier at registration means the cleanup decision matches the state the scope was entered with.
 
 ### 7.7 `provide` and `context`
 `provide allocator: arena, io: Io.evented() { … }` sets implicit context values and effect handlers for the block (§14). `context` is only the value (`context.Io`, `context.allocator`). The `context (…) { … }` block form is rejected with a fix-it to `provide` (BYN6006).
+
+```csharp
+let net = FakeNet(label)
+provide net: net, clock: FakeClock(at: Date(year: 2026, month: 12, day: 1)) {
+    try shipAll(order, by: carrier)
+}
+assert net.calls == 1
+
+let logs = LogRecorder()
+provide log: logs { … }
+```
+
+- Handler names are the effects `alloc`, `net`, `fs`, `clock`, `random`, `env`, `process`, `console`, plus `log`; any other name is BYN6007.
+- Inner `provide` blocks override individual handlers and inherit the rest. Handlers are one-shot, so they compile to context passing at zero cost.
+- The test runner provides `console` per test as a capture buffer; output is shown when a test fails, or always with `bayan test --verbose`.
 
 > Round 3 §13: `context` named both a value and a block; `provide` is the verb for the block. Codes: BYN6006.
 
@@ -944,41 +1017,66 @@ struct SignupForm {
 - `it` is the value being checked; `requires value…` is an input form (BYN1050).
 - Each `requires` line is a separate rule and reports its own violation.
 - **Field or struct level is decided by content:** a `requires` that refers only to `it` belongs to the field above it; one that refers to other fields is struct-level wherever it appears. A struct-level rule attaches to a field with `at .field` (target-typed to `T.Field`).
-- **Struct literals of a type with `requires` are fallible:** `try SignupForm { … }` (BYN3207). A distinct type with `requires` is built with `try Email(raw)`; a constant argument is checked at compile time. Construction fails with `ValidationError<T> { violations: List<Violation<T>> }`.
-- **Decoders collect every violation:** `SignupForm.fromJson(body) catch e => … e.violations`.
+- **Struct literals of a type with `requires` are fallible:** `try SignupForm { … }` (BYN3207). A distinct type with `requires` is built with `try Email(raw)`; a constant argument is checked at compile time. Construction fails with `ValidationError<T>`, a generic `union error` with one case; decoders report malformed input in the same set:
+
+  ```csharp
+  union error ValidationError<T> {
+      invalid(List<Violation<T>> violations)
+  }
+  struct Violation<T> {
+      T.Field field
+      Rule rule
+  }
+  union error DecodeError<T> = JsonError, ValidationError<T>
+  ```
+
+- **Decoders collect every violation:** `static T fromJson(Untrusted<string> body) fails DecodeError<T> uses alloc`. A caller matches both: `catch switch { .invalid e => … e.violations, .syntax s => … }`.
 - Fields of a struct with `requires` cannot be assigned one at a time (BYN3208). Updates go through `with`, which re-checks: `try f with { password: p }`.
-- **Drafts** use `T.Patch` (all fields optional, no `requires`); `patch.complete()` returns `T fails ValidationError<T>`.
-- **Rules as data:** the derivation exposes `T.rules: List<(T.Field, Rule)>` at compile time, for web frameworks (HTML5 attributes). A recognized expression shape maps to a `Rule` case; anything else is `custom` and is checked only on the server:
+- **Drafts** use `T.Patch` (all fields optional, no `requires`); `patch.complete()` returns `T fails ValidationError<T>`. The two-step flow (`T.Patch.fromJson`, then `complete()`) is a paraphrase of `fromJson`: both report the same errors.
+- **Rules as data:** the derivation exposes `T.rules: List<(T.Field field, Rule rule)>` at compile time, for web frameworks (HTML5 attributes). A recognized expression shape maps to a `Rule` case; anything else is `custom` and is checked only on the server:
 
   ```csharp
   union Rule {
-      length(Range<i64>)    // it.runeCount in a..=b
-      range(Range<i64>)     // it in a..=b
-      pattern(Regex)        // it.matches(re)
-      required              // non-nullable field
-      kind(TypeId)          // Email, Url, Date (`type` is a keyword)
-      custom(RuleId)
+      length(Range<i64> bounds)     // it.runeCount in a..=b
+      range(Range<i64> bounds)      // it in a..=b
+      pattern(Regex re)             // it.matches(re)
+      required                      // non-nullable field
+      kind(TypeId id)               // Email, Url, Date (`type` is a keyword)
+      custom(RuleId id)
   }
   ```
 
 - Violations are structured (field, rule, parameters) with **no message strings**; frameworks localize them.
 - A type with `requires` has **no default value** unless the default satisfies the rules.
-- **On functions** `requires` stays an entry contract: the clause must be `bool`, a violation is a bug that **panics in every build mode** (`contract violated: <text>`), and a constant argument that violates it is a compile error. When the caller has proven it (for example, the argument's type carries the rule), the check is removed:
+- **Preconditions on functions are `expects`,** not `requires`. A type with `requires` is the reusable rule (it fails at construction); `expects` is a relation between parameters:
 
   ```csharp
-  public Money discount(Money total, by i32 percent)
-      requires percent in 0..=100
-      => …
+  type distinct Count = i64 requires it > 0
+  public List<T> take(Count n) uses alloc                  // reusable rule: fails at construction
+
+  public Span<T> slice(Index start, until Index end)
+      expects start <= end { … }                           // relation between parameters: traps
   ```
+
+  | | Type with `requires` | `expects` |
+  |---|---|---|
+  | Purpose | Validating data | Contract between programmers |
+  | On violation | Fails, recoverable (`ValidationError`) | Traps, like a bounds check |
+  | Checked | Once, at construction; the proof travels with the value | Every call, in every build mode |
+
+  - The clause must be `bool`, a violation is a bug that **panics in every build mode** (`contract violated: <text>`), and a constant argument that violates it is a compile error. When the caller has proven it (for example, the argument's type carries the rule), the check is removed.
+  - `requires` on a function is an input form for `expects` (BYN1063).
+  - An `expects` that reads an `Untrusted<T>` value is a compile error (BYN8006): trapping on outside data would let a request crash the program.
+  - A lint flags an `expects` that reads only one parameter and suggests a type with `requires` (BYN5011).
 
 - `x in a..=b` is a boolean range test.
 - `requires` drives boundary-test generation (§20).
-- Which tool: non-null types (no check), types and fields with `requires` (valid by construction, all violations reported), function `requires` (bugs), `fail .x unless …` (business outcomes).
+- Which tool: non-null types (no check), types and fields with `requires` (valid by construction, all violations reported), function `expects` (bugs), `fail .x unless …` (business outcomes).
 - Not in v0.1: `requires` on fields and distinct types (BYN2322), proof-based check removal, property-test generation from `requires`.
 
 > Round 2 §7: one contract form, and a bug panics in every build instead of being skipped in `fast`. Codes: BYN2320, BYN2321, BYN2322.
 
-> Round 3 §11, O3, O4: checking at construction makes validity a property of the type, so `T.Validated`, `validated()` and `Validate` are gone; `it` matches lambdas; `at` reuses a particle instead of adding `on`. Codes: BYN1050, BYN3207, BYN3208.
+> Round 3 §11, O3, O4: checking at construction makes validity a property of the type, so `T.Validated`, `validated()` and `Validate` are gone; `it` matches lambdas; `at` reuses a particle instead of adding `on`; a function precondition is a different job from validating data, so it gets its own word, `expects`. Codes: BYN1050, BYN1063, BYN3206, BYN3207, BYN3208, BYN5011, BYN8006.
 
 ---
 
@@ -1009,7 +1107,7 @@ let resp = signUp(form) catch switch {
 - **`try` covers the entire expression to its right**, down to the lowest-precedence operator. Applying it to a sub-expression requires parentheses (`(try f()) + g()`); the diagnostic suggests where (BYN1054).
 - Debug builds record **error return traces**.
 - `@status(400)` maps a variant to HTTP; the client sees a generic message unless the variant is `@public`. `@exitCode(n)` maps to a process exit code when `main` fails (default 1).
-- **Panics abort** with message, error return trace and stack trace. No unwinding in v1; only `defer panicking` handlers and `Panic.onPanic` run (§7.6). Tests catch panics per test.
+- **Panics abort** with message, error return trace and stack trace. No unwinding in v1; only `defer panicking` handlers and `Panic.handler` run (§7.6). Tests catch panics per test.
 
 > Round 2 §5, §6, §15: errors bind per arm of `catch switch`; `--explicit` is gone, so inferred sets are inlay hints. Codes: BYN1025, BYN1029.
 
@@ -1055,7 +1153,7 @@ let resp = signUp(form) catch switch {
 3. **A borrow cannot be stored anywhere that outlives its region.** Fix: `.copy()` or `.copy(to: alloc)` (strings, §3.2; collections, §16) or `move` into an `Owned`.
 4. A returned borrow derives from **all** borrowed arguments unless narrowed: `string head(string s, at string sep) borrows s`.
 5. **While any borrow into a value is alive, the value cannot be structurally modified.** Passing `x` and `ref x` in one call is an error. A call to a `ref this` method modifies its receiver's root local, so `lexer.push(t)` is an error while a borrow of `lexer` is alive. Loans are tracked per root local, not per field.
-   A method whose return type is a span may return a borrow of its own receiver's fields: in `struct Lexer` with a field `List<Token> toks`, a method `Span<Token> tokens() => toks.asSpan()`. At the call site the result borrows the receiver, and rules 3 and 5 apply to it as to any borrow of the receiver. A `string` view of an own field, a span inside a returned tuple, and a borrow of a local's storage are still rejected (BYN3003).
+   A method whose return type is a span may return a borrow of its own receiver's fields: in `struct Lexer` with a field `List<Token> toks`, a method `ReadOnlySpan<Token> tokens() => toks.span`. At the call site the result borrows the receiver, and rules 3 and 5 apply to it as to any borrow of the receiver. A `string` view of an own field, a span inside a returned tuple, and a borrow of a local's storage are still rejected (BYN3003).
 6. `arena.reset()` requires exclusive access.
 7. Literals and `const` data are static and may go anywhere.
 
@@ -1096,8 +1194,10 @@ Modifiers precede the parameter name: `ref buf: StrBuf`, `move file: File`.
 | Particle | Role |
 |---|---|
 | (none) | The object being acted on |
-| `from` | Source |
+| `from` | Source or start |
 | `to` | Destination or recipient |
+| `until` | Exclusive end |
+| `through` | Inclusive end |
 | `at` | Position or time |
 | `by` | Means or replacement |
 | `for` | Beneficiary or purpose |
@@ -1106,19 +1206,60 @@ Modifiers precede the parameter name: `ref buf: StrBuf`, `move file: File`.
 ```csharp
 public void copy(from Path src, to Path dst) fails FsError uses fs
 public void transfer(Money amount, from Account payer, to Account payee) fails LedgerError
-public void insert(ref this, T item, at Index i)
+public void insert(ref this, T item, at Index i) uses alloc
+public void remove(ref this, from Index start, until Index end)
 
 copy(from: a, to: b)
 try ledger.transfer(amount, from: alice, to: bob)
 lines.insert(x, at: 3)
+xs.remove(from: 2, until: 5)
 ```
 
-- A function has at most one unlabeled parameter, the object (BYN5004). Every other required parameter takes a particle (BYN5006), and call sites must write it (BYN5005). Optional settings remain ordinary named parameters with defaults.
+- A function has at most one unlabeled parameter, the object (BYN5004). **The receiver does not count** as the object. Every other required parameter takes a particle (BYN5006), and call sites must write it (BYN5005). An unknown particle is BYN5008.
+- **Optional parameters** are named parameters with defaults. They may take a particle when one fits their role (`log(m, as: .debug)`, `FakeClock(at: …)`); otherwise they use their name (`timeout: 5s`).
+- **Exempt:** a `rest` tail (below); constructors of a struct marked `@positional`, whose components are the same kind and universally ordered (`Point(3, 4)`, `Vec3(1.0, 0.0, 0.0)`; not `Date`, which keeps `Date(year:month:day:)`); `extern` declarations; operator declarations; union and state payloads (fields, not parameters); laws.
+- **A particle appears at most once per signature (O12, BYN5013).** Group the values in a struct or choose another particle.
+- Particle words are not member names (§5.2).
 - The particles are part of the function's name (`copy(from:to:)`).
-- The set is closed for user code and grows only through spec revisions. `for` and `as` are keywords elsewhere; as particles they appear only in label position (`for:`), which is unambiguous.
+- The set is closed for user code and grows only through spec revisions (`until` and `through` were added in round 3). `for` and `as` are keywords elsewhere; as particles they appear only in label position (`for:`), which is unambiguous.
 - `bool` parameters must be passed by name.
 - Particles supersede the same-type naming rule and its exemptions for required parameters; BYN2305 and BYN2307 retire when particles are implemented.
-- Overloads may not differ only by `ref`/`out`. Default and named parameters as in C#.
+- Overloads may not differ only by `ref`/`out`. Default parameters as in C#.
+
+> Round 3 §15, O6, O12: a particle names the argument's role, so call sites read as sentences and swapped arguments become label mismatches; `until` and `through` name the two ends of a range, and a repeated particle would make a label ambiguous. Codes: BYN5004, BYN5005, BYN5006, BYN5008, BYN5013.
+
+**Overloading.** Overloads may differ by particle set (`move(from:to:)` vs `move(_, by:)`) or by parameter type. The checks run at the **declaration**, so a call never needs C#-style ambiguity resolution:
+
+1. Overloads that differ only by type must not overlap through any implicit conversion (finer units, integer widening, state widening). `void f(Grams g)` beside `void f(Kilograms k)` is an error, because `Kilograms` converts to `Grams` (BYN3213).
+2. Overloads may not differ only by function-type parameters, since `it` lambdas need one target type.
+3. Defaults may not make two overloads accept the same argument list.
+4. A reference to an overloaded name needs a target type: `let f: i32 -> i32 = abs` (BYN3215).
+5. Type variation over number families uses generics, not overloads: `public T abs<T>(T x) where T : ISignedNumber<T>`.
+
+```csharp
+public void remove(ref this, at Index i)
+public void remove(ref this, at Range<Index> r)        // ok: no conversion between Index and Range<Index>
+```
+
+**Variadic parameters: `rest`.**
+
+```csharp
+public void print(rest ReadOnlySpan<Display> items) uses console
+
+print("total", total, "for", order.id)
+let p = Path.join(root, "orders", $"{id}.json")        // rest ReadOnlySpan<PathSegment>
+let top = max(a, b, c)                                  // rest ReadOnlySpan<T> where T : IOrder<T>
+print(..names)                                          // spread an existing collection
+```
+
+- `rest` applies to the last positional parameter only. Its type is written out (`ReadOnlySpan<T>`), so the type inside the body is the type in the signature.
+- `items` is **borrowed for the call** and cannot be stored; keeping the values needs an explicit copy (`items.copy()`, which returns a `List<T>` and `uses alloc`; BYN3214).
+- **Zero allocation:** the caller reserves the argument slots in its own stack frame (the count is known at the call site). Each slot is the value itself, or for an interface element type a 16-byte interface value (data pointer plus vtable pointer) that points at the original, so nothing is boxed or copied. The callee receives a pointer and a length. C# `params object[]` allocates an array and boxes every struct.
+- **Spread:** `..x` in an argument position passes an existing collection's span without copying.
+- **Named optional parameters may follow the `rest` parameter** and can only be passed by name.
+- `params` (C# habit) and `T... items` are input forms for `rest` (BYN1058).
+
+> Round 3 §24: variadic calls without a heap array or boxing, and overloads checked where they are declared. Codes: BYN1058, BYN3213, BYN3214, BYN3215.
 
 > Round 3 §15, O6: a particle names the argument's role, so call sites read as sentences and swapped arguments become label mismatches. Codes: BYN5004, BYN5005, BYN5006.
 
@@ -1165,6 +1306,7 @@ interface IRepository<T, K = T.Id> where T : IEntity<T> { … }
 - **Specialization: the specific overrides the general** (Pāṇini). Hand-written beats derived; instance beats extension; concrete beats generic; more specific constraint beats less specific.
 - Debug builds share generic code via witness tables; release builds monomorphize. `@specialize` / `@shared` override per function.
 - Inference from arguments; explicit type arguments only when nothing can be inferred.
+- `List<T, I>` takes an optional second type argument, the index type (`List<Money, RowId>`); plain `List<T>` indexes with `Index` (§3.5).
 - No higher-kinded types. Variadic generics: v2 candidate.
 
 ---
@@ -1268,7 +1410,7 @@ The compiler infers which functions may suspend (calls through `dyn` are bounded
 - a **`Mutex` guard alive across a suspension point**;
 - a **`@threadLocal` borrow alive across a suspension point**.
 
-> Round 2 §15: `bayan fmt --explicit` is gone; inferred effects are inlay hints, never a stored form.
+> Round 2 §15: `bayan format --explicit` is gone; inferred effects are inlay hints, never a stored form.
 
 ### 13.5 Data sharing
 - `ref` borrows: one task at a time; passing `ref x` to a spawned task locks `x` until the group ends.
@@ -1288,27 +1430,51 @@ One effect system covers allocation, suspension and package capabilities.
 public ParcelId book(Parcel parcel, by Carrier carrier)
     fails CarrierError uses net, alloc, suspend { … }
 
-public u32 crc(Span<u8> data) { … }   // no `uses`: no alloc, no suspend, no I/O
+public u32 crc(ReadOnlySpan<u8> data) { … }   // no `uses`: no alloc, no suspend, no I/O
 ```
 
-- **Closed effect list:** `alloc`, `suspend`, `net`, `fs`, `clock`, `random`, `env`. It grows only through spec revisions. An unknown name is BYN6003.
+- **Closed effect list:**
+
+  | Effect | Covers |
+  |---|---|
+  | `alloc` | Heap allocation |
+  | `suspend` | Parking the current fiber (waiting on I/O or a timer) |
+  | `net` | Any socket: TCP, UDP, Unix domain sockets, named pipes |
+  | `fs` | Files and directories |
+  | `clock` | Reading the time |
+  | `random` | Randomness |
+  | `env` | Environment variables and process-wide settings |
+  | `process` | Spawning and controlling other processes |
+  | `console` | Program input and output: stdin, stdout, and stderr written by `print` |
+
+  The list grows only through spec revisions. An unknown name is BYN6003.
+- **Effect aliases** name a set without adding a capability: `effect db = net, fs`. An alias expands to its primitives everywhere (capabilities, bounds, `bayan expand`). `std.db` declares `db`.
 - **No `uses` clause means pure.** `noalloc`, `nosuspend` and `suspends` are removed (BYN6001).
-- Public functions declare their effects; private functions infer them, as for error sets. A function that uses an effect its signature does not declare is BYN6002.
+- **Public functions declare their effects; private functions infer them,** as for error sets. Tests are private, so they infer. `main` and scripts infer too, bounded by the package capabilities. There is no file-level or struct-level `uses`: a public signature is a contract, and an inherited effect would be invisible at the declaration. A function that uses an effect its signature does not declare is BYN6002.
 - `panic` is **not** an effect.
 - `fails` stays a separate clause because it carries a type.
-- **Closure parameters:** a higher-order function inherits its closure's effects (`map` over an allocating closure allocates); there is no `tryMap` or `mapAsync`.
-- **Stored function types and interface methods declare an upper bound;** implementations may use fewer effects. Exceeding the bound is BYN6005. Effect variables are deferred.
+- **Function-typed parameters with no `uses` are effect-polymorphic:** the call inherits the effects of the function passed. `map` inherits its closure's effects; there is no `tryMap` or `mapAsync`.
+
+  ```csharp
+  public List<U> map<U>((T -> U) f) uses alloc
+  let names = users.map(it.fetchName())      // this call also uses net
+  ```
+
+  A function-typed parameter that the callee stores (it escapes the call) is not polymorphic: it takes the bound of the place it is stored in (`Event<T>.subscribe`, §16).
+- **Stored function types, interface methods and event types declare an upper bound.** No `uses` there means pure. Implementations may use fewer effects. Exceeding the bound is BYN6005. An effect bound in a type (`Event<T> uses …`) is the only form of effect parameter; general effect variables are deferred.
 
   ```csharp
   interface IPricer {
       Money price(Order o) uses net, alloc
   }
   struct Checkout {
-      (Order -> void uses net) onPaid
+      Event<Order.paid> paid uses net
   }
+  type Pricer = Line -> Money uses net
+  type OrderPlaced = Event<Order.placed> uses net, alloc, suspend
   ```
 
-- **Derived forms compute their effects** (§5.2): `-ed` adds `alloc`, the allocating form derived from `xInto` adds `alloc`, `tryX` keeps the original's. `bayan expand` shows them; inferred effects are inlay hints.
+- **Derived forms compute their effects** (§5.2): `-ed` adds `alloc` for heap-owning types, the allocating form derived from `xInto` adds `alloc`, `tryX` keeps the original's. `bayan expand` shows them; inferred effects are inlay hints.
 - **Logging is ambient:** allowed in pure functions, never allocates (the interpolated message is formatted through a handler into a fixed buffer, only when the level is enabled), escapes control characters, and is interceptable:
 
   ```csharp
@@ -1316,11 +1482,12 @@ public u32 crc(Span<u8> data) { … }   // no `uses`: no alloc, no suspend, no I
   log($"retry {n} of {max}", as: .debug)
   ```
 
-- **Handlers use `provide`;** `context` remains only the value (`context.Io`). Inner `provide` blocks override individual handlers and inherit the rest. Handlers are one-shot, so they compile to context passing at zero cost.
+  `print` is program output, not diagnostics: it `uses console`.
+- **Handlers use `provide`;** `context` remains only the value (`context.Io`). Handler names are the effects plus `log` (BYN6007 otherwise). Inner `provide` blocks override individual handlers and inherit the rest. Handlers are one-shot, so they compile to context passing at zero cost.
 
   ```csharp
-  let net = FakeNet(reply: label)
-  provide net: net, clock: FakeClock(at: Date(2026, 12, 1)) {
+  let net = FakeNet(label)
+  provide net: net, clock: FakeClock(at: Date(year: 2026, month: 12, day: 1)) {
       try shipAll(order, by: carrier)
   }
   assert net.calls == 1
@@ -1328,6 +1495,7 @@ public u32 crc(Span<u8> data) { … }   // no `uses`: no alloc, no suspend, no I
   let logs = LogRecorder()
   provide log: logs { … }
   ```
+- **The test runner provides `console` per test as a capture buffer.** Output is shown when a test fails, or always with `bayan test --verbose`.
 
 **Package capabilities are an upper bound:** `package.byn` declares `capabilities: [.fs, .net, .process, .env, .ffi]` (and, in a future GC tier, `.gc`, §9.8). A package without `.net` cannot contain any function that `uses net`, transitively (BYN6004). An update that adds a capability is flagged in the lockfile diff.
 
@@ -1344,12 +1512,12 @@ public u32 crc(Span<u8> data) { … }   // no `uses`: no alloc, no suspend, no I
 **Layer 1: sinks take dedicated types, never `string`.** Passing a `string` where a sink type is expected is BYN8003, with a fix-it to the literal or escaping constructor. This applies whatever the origin of the data, so it also blocks stored XSS from the program's own database.
 
 ```csharp
-public void execute(Sql q) …
+public i64 execute(ref this, Sql sql, rest ReadOnlySpan<ISqlValue> args) fails DbError uses db, suspend
 public void render(Html h) …
-public void run(Path program, List<Arg> args = []) …   // optional setting, not a second object
+public void run(Path program, List<Arg> args = []) fails ProcessError uses process   // optional setting
 
-db.query(sql"SELECT * FROM users WHERE name = $1", term)   // literal plus parameters
-let page = Html.escape(name)                               // escaping constructor
+let users = try db.query<User>(sql"SELECT * FROM users WHERE name = $1", term).all()   // literal plus parameters
+let page = Html.escape(name)                                                            // escaping constructor
 ```
 
 Only parameterized `sql"…"` literals with `$n` placeholders are in scope now; interpolating prefixed literals (`sql"…{x}…"`, `html"…"`) stay deferred.
@@ -1366,19 +1534,20 @@ Only parameterized `sql"…"` literals with `$n` placeholders are in scope now; 
 | HTTP header values | `HeaderValue` (no control characters) |
 | Process arguments | `Arg` (a leading `-` needs a trusted value) |
 | Decoding | Depth and size limits in `fromJson` and `fromForm` |
+| `expects` | Never reads an `Untrusted` value (BYN8006, §7.9) |
 
 - **Sources** return `Untrusted<T>` in their signatures: request query, body, headers, cookies, route parameters, uploaded files, third-party API responses, files from user-chosen paths, stdin, command-line arguments, text from C. Startup environment and config, literals, constants and the program's own database rows are trusted.
 - Operations on an `Untrusted` value return `Untrusted` (strings and structs derived from it). Facts like `isEmpty`, `length` and comparisons are clean, so branching on untrusted data is allowed.
 - Filtering (`except`, `where`, patterns) preserves taint. **Only construction of a type with `requires` removes it.**
 - `T.fromJson(untrusted)` returns a trusted `T` only if every field's type is either a type with `requires` or a non-text scalar (numbers, bools, units, plain unions); any free `string` or byte field makes the result `Untrusted<T>`.
-- Explicit escape: `x.trustUnchecked() because "…"` (§4.4).
+- Explicit escape: `x.trustUnchecked() because "…"` (§4.4). `trust(x, reason: …)` is an input form (BYN1062).
 - This model is provisional and must be exercised in the reference application.
 - **Processes.** `Io.run(program, args: args)` never goes through a shell, and refuses `.bat`/`.cmd` files on Windows (`cmd.exe` re-parses their arguments). `Io.runBatch(path, args: args)` runs a batch file: it runs the system directory's `cmd.exe /d /e:ON /v:OFF /s /c` with the path and each argument in double quotes, and fails with `invalidInput` without starting anything when the path does not end in `.bat`/`.cmd`, has no `/` or `\` (a bare name would make `cmd.exe` search the current directory and `PATH`; write `.\build.cmd`), or the path or an argument holds NUL, CR, LF, `"` or `%`. Off Windows it fails with `unsupported`. The arguments of both are a sink: an `Untrusted<T>` program, path or argument (or a list, span or array of them) is a compile error (BYN2786). `Io.run` involves no shell, but an untrusted program path runs whatever the attacker names, and option injection (`--upload-pack=…` to `git`, `-oProxyCommand=…` to `ssh`) makes the program itself run attacker-chosen commands. `IoError` gains `invalidInput` and `unsupported`, so its codes are 1–7.
 - **Standard streams.** `Io.stdout.write(text)` and `Io.stderr.write(text)` write without a newline (stdout is buffered with `print`). `Io.stdin.readAll()` returns `Result<string, IoError>`: the rest of standard input, bytes as-is (binary mode on Windows, not checked for UTF-8), allocated from `context.allocator`. For now it is a plain `string`, not `Untrusted<string>`.
 - Terminal output and logs escape control characters in untrusted values.
-- **Implemented so far:** `Untrusted<T>` has the C representation of `T`; `Untrusted(x)` wraps and `trust(x, reason: "…")` unwraps, with a non-empty string literal as the reason; round 3 renames it to `x.trustUnchecked() because "…"`. There is no implicit conversion either way. Sources are not yet wrapped.
+- **Implemented so far:** `Untrusted<T>` has the C representation of `T`; `Untrusted(x)` wraps and `trust(x, reason: "…")` unwraps, with a non-empty string literal as the reason; round 3 renames the unwrap to `x.trustUnchecked() because "…"`. There is no implicit conversion either way. Sources are not yet wrapped.
 
-> Round 3 §17, O10: a dedicated sink type stops injection regardless of where the text came from; `Untrusted<T>` covers the sinks escaping cannot protect. Codes: BYN8003, BYN8004.
+> Round 3 §17, O10: a dedicated sink type stops injection regardless of where the text came from; `Untrusted<T>` covers the sinks escaping cannot protect; an `expects` that trapped on outside data would let a request crash the program. Codes: BYN1062, BYN8003, BYN8004, BYN8005, BYN8006.
 
 ### 15.2 Secrets
 `Secret<T>` and `@secret` fields: excluded from debug output, logs, `dbg`, `Json`, `Diff` and every derivation (formatted as `***`); no `==`, only `equalsConstantTime(other)`; zeroed on dispose. A derivation that would read one is a compile error unless the field opts in with `@json(expose) because "…"` (BYN8002); `debug` still prints `***`.
@@ -1394,9 +1563,9 @@ Only parameterized `sql"…"` literals with `$n` placeholders are in scope now; 
 Decoders default to safe limits (JSON nesting depth 128, maximum size). Per-request arenas have a memory cap. Regexes are compile-time finite automata (no ReDoS).
 
 ### 15.5 Invariants versus validation
-Function `requires` contracts (§7.9) detect bugs and panic in every build mode. **Construction of a type with `requires` is the security boundary:** it is checked in every build, reports every violation, and is the only way to remove taint (§15.1).
+Function `expects` contracts (§7.9) detect bugs and panic in every build mode. **Construction of a type with `requires` is the security boundary:** it is checked in every build, reports every violation, and is the only way to remove taint (§15.1).
 
-> Round 2 §7: `requires` is no longer skipped in `fast`. Round 3 §11 makes construction the validation boundary.
+> Round 2 §7: contracts are no longer skipped in `fast`. Round 3 §11 makes construction the validation boundary and `expects` the contract word.
 
 ---
 
@@ -1408,17 +1577,21 @@ Function `requires` contracts (§7.9) detect bugs and panic in every build mode.
 |---|---|
 | `append(x)`, `prepend(x)`, `insert(x, at:)`, `appendAll(xs)` | `appended`, `prepended` |
 | `sort()`, `sort(by)`, `reverse()` | `sorted`, `reversed` |
-| `removeAt(i)`, `removeWhere(f)`, `removeFirst()` → `T?`, `removeLast()` → `T?`, `replaceRange(r, by:)`, `fill(x)`, `clear()` | |
+| `remove(at: i)`, `remove(at: range)`, `remove(from: a, until: b)`, `remove(from: a, through: b)`, `removeWhere(f)`, `removeFirst()` → `T?`, `removeLast()` → `T?`, `replace(at: r, by: items)`, `fill(x)`, `clear()` | |
 
 - Ordered collections (`List`, `Deque`) use `append` / `prepend`; unordered ones (`Set`, `Map`) use `add`.
 - Costs are stated per method: `prepend`, `insert` and `removeFirst` are O(n) on `List` and O(1) on `Deque`.
 - **Size:** `length` (O(1), `i64`) on every collection; `count(p)` only counts the elements matching a predicate (strings: §3.2).
-- **Queries** (never allocate): `length`, `count(p)`, `isEmpty`, `hasItems`, `first` / `last` (`T?`), `xs[i]` (panics out of range), `at(i)` (`T?`), `contains`, `indexOf` (`i32?`), `indexWhere`, `any`, `all`.
+- **Queries** (never allocate): `length`, `count(p)`, `isEmpty`, `hasItems`, `first` / `last` (`T?`), `xs[i]` (panics out of range), `tryGet(at: i)` (`T?`), `contains`, `indexOf` (`i32?`), `indexWhere`, `any`, `all`.
 - **Views** (never allocate): slices `xs[1..4]`, `xs[1..^1]`, `take`, `skip`, `takeLast`, `skipLast`, `stride`, `chunks`, `windows`, `splitAt`. C#'s `Substring(start, length)` migrates to `s[start..(start + length)]`.
-- **Lazy iterators** are structs with inlined lambdas: `where`, `select`, `sumBy`, `minBy`, `maxBy`, `any`, `all`, `groupBy`; nothing allocates until `toList()`.
-- **New data** (allocate from `context.allocator`): `toList()`, `distinct()`, `join(sep)`, `join(sep, by: f)`, `flatten()` (Form I, not participles), spread `[..a, ..b]`.
+- **Lazy iterators** are structs with inlined lambdas: `where`, `select`, `sumBy`, `minBy`, `maxBy`, `any`, `all`, `groupBy`; nothing allocates until `copy()` or `List(seq)`.
+- **New data** (allocate from `context.allocator`): `distinct()`, `join(sep)`, `join(sep, by: f)`, `flatten()` (Form I, not participles), spread `[..a, ..b]`.
 - Out-of-range slices panic in safe builds; `trySlice(a..b)` returns `Span<T>?`.
 - Read-only queries and views take `ReadOnlySpan<T>` parameters (a `Span<T>`, `List<T>`, array or, for bytes, `string` converts implicitly).
+- **Queries beside `where`:** `except` subtracts a pattern from a sequence and narrows its element type (`events.where(it.isValid) except .heartbeat`, §6.8).
+- `fromBounds(start, until: end)` names the exclusive end.
+- **Views and copies (no `toX` or `asX` members):** `xs.span` is a read-only view (a property, allowed on a `let`); `xs.mutableSpan()` is mutating access (`ref this`, `var` only; calling it on a `let` is the usual `ref this` error); `xs.copy()` returns an owned `List<T>` and `uses alloc`, on spans and lists alike; a sequence becomes a list with `List(seq)`; a cursor's own member `rows.all()` consumes it. While a `mutableSpan()` view is live, no other access to `xs` is allowed (§9.4).
+- **Lookups:** `get(at:)` is declared once as the operator method behind `[]`, so call sites write `xs[i]`; `tryGet(at:)` is derived and returns `T?`. Lists and maps share the shape: `prices.tryGet(at: sku) ?? 0g` replaces `getOr`.
 - Collections copy explicitly: `xs.copy(to: alloc)` for `List`, `Map` and `StrBuf` returns an independent value of the same type (not allowed when an element, key or value holds a `List`, `Map`, `StrBuf` or `Owned`).
 - Compile-time work: bounds checks removed when provably in range; constant slices of fixed arrays have type `T[N]`; `xs[^1]` lowers to `xs[xs.length - 1]`; slice chains fuse.
 
@@ -1439,9 +1612,121 @@ let headers = ["Accept": "*/*"]                      // no target type: Map<stri
 
 > Round 2 §11: one size name and verb/participle pairs that follow §5.2; `first`/`last` return `T?` instead of a parallel `tryFirst`/`tryLast`. Codes: BYN2104, BYN2230, BYN2235, BYN2236.
 
-> Round 3 deliverable 4: the size name stays `length`, as in round 2, so `count(p)` reads as a predicate count only. BYN2230 keeps its round-2 job, the renamed members `add` → `append` and `asString` → `finish`. `replaceRange` uses the particle `by`.
-- Maps: reading `map[k]` panics if missing; `map.getOr(k, by: fallback)` reads without inserting; `ref map.slot(k)` gets or inserts a default (requires `V : default`).
+> Round 3 deliverable 4, §15, §27, addendum 1 §3: the size name stays `length`, as in round 2, so `count(p)` reads as a predicate count only. `removeRange` and `replaceRange` give way to particle forms (the stdlib exception to guard 1: two entries for one operation, kept because `until` and `through` read well at call sites, and not a precedent); `getOr` becomes `tryGet(at:) ?? x`; `toList()` and `asSpan()` would spell conversions that already have a form. Codes: BYN2230, BYN5009.
+- Maps: reading `map[k]` panics if missing; `map.tryGet(at: k) ?? fallback` reads without inserting; `ref map.slot(k)` gets or inserts a default (requires `V : default`).
 - `Grid<T>`-style types accept multi-dimensional ranges: `grid[1..^1, 1..^1]`.
+
+### 16.1 Events
+
+`Event<T>` is in-process notification: the raising code doesn't know who listens.
+
+```csharp
+public struct Event<T> {
+    public i64 subscriberCount
+    public Subscription subscribe(ref this, by (T -> void) handler) uses alloc
+    public void raise(T value)
+}
+
+public struct unique Subscription {
+    public void cancel(move this)          // or drop it
+}
+
+type OrderPlaced = Event<Order.placed> uses net, alloc, suspend
+
+struct OrderService {
+    public OrderPlaced placed
+    public Order.placed place(ref this, move Order.draft order, by IOrders orders)
+        fails OrderError uses net, alloc, suspend {
+        let o = try orders.insert(move order)
+        placed.raise(o)
+        return o
+    }
+}
+
+let mail = service.placed.subscribe(by: o => mailer.sendConfirmation(for: o))
+```
+
+1. Handlers run in subscription order, synchronously, on the raising fiber.
+2. Handlers cannot fail; they handle or log their own errors.
+3. Subscribing during a `raise` takes effect from the next `raise`.
+4. `raise` never allocates; `subscribe` allocates one slot.
+5. A `Subscription` borrows its event and cannot outlive it. Dropping it unsubscribes, which closes C#'s `+=`-without-`-=` leak at compile time.
+6. The handler effect bound is part of the event's type (§14). `subscribe` stores the handler, so its parameter takes this bound rather than the polymorphic parameter rule, and `raise` has the bound's effects. No bound means pure handlers.
+7. Events are named for what happened (`placed`, `changed`, `low`); there is no `on` prefix (BYN5010).
+
+Cross-process pub/sub is not an `Event`: it is a stream iterated on its own fiber, `for try msg in bus.messages(from: "orders.placed") { … }`.
+
+> Round 3 §26: an event is a field of a library type, not a language feature, and its handler bound is checked like any stored function type. Codes: BYN5010, BYN6005.
+
+### 16.2 `std.math` and numeric members
+
+- Scalars are values: they have nouns and `-ed` copies only (`x.abs`, `x.sqrt`, `x.floor`, `x.ceiling`, `x.rounded()`, `x.truncated()`, `x.clamped(from: lo, through: hi)`, `x.pow(n)`). To change a scalar, reassign it.
+- `rounded()` means nearest, ties away from zero; `rounded(ties: .even)` and `rounded(digits: 2)` are the options. `floor`, `ceiling` and `truncated` name a direction.
+- Aggregates have verb and copy pairs: `v.normalize()` / `v.normalized()`, `v.scale(by: 2.0)` / `v.scaled(by: 2.0)`, `xs.sort()` / `xs.sorted()`.
+- Collection queries: `sum`, `product`, `average`, `min`, `max` trap on an empty collection; `tryAverage`, `tryMin`, `tryMax` return `T?`; `min(by: key)`, `max(by: key)`; `percentile(at: 95%)`.
+- Free functions: `min(rest …)`, `max(rest …)`; `min(..xs)` is a paraphrase of `xs.min`. Also `print(rest ReadOnlySpan<Display> items) uses console` and `Path.join(rest ReadOnlySpan<PathSegment> parts)`.
+- **Imports:** members of the numeric and collection types live in `core` and need no import; `min` and `max` are in the `core` prelude. Vectors, matrices, statistics and geo live in `std.math` and need an import.
+
+> Round 3 §27: scalars read as nouns and aggregates as verb pairs, so the same rules (§5.2) cover math. Codes: BYN5001.
+
+### 16.3 `std.db` (spec-only)
+
+The database layer collapses the C# extension-method explosion (684 `IDbConnection` extensions from sync/async × parameters × options × eight result shapes × mapping × arity × stored procedures):
+
+| C# axis | Bayan mechanism |
+|---|---|
+| Sync and async | One function; `suspend` is an effect, fibers park on I/O |
+| Parameters or none | `rest ReadOnlySpan<ISqlValue> args`; an empty span means none |
+| Options or none | Named defaults after `rest`; the transaction is the receiver |
+| Result shapes | One `unique Rows<T>` cursor with `first`, `single`, `all` members |
+| Strict or partial mapping | `mapping: .partial` |
+| Multi-entity arity | Tuple row types: `query<(Order, Customer)>` |
+| Stored procedures | `call<T>(proc)` returning the same `Rows<T>` |
+| `CancellationToken` | The enclosing fiber's deadline or scope |
+
+```csharp
+effect db = net, fs
+
+public interface IQuerySource {                    // implemented by Connection and Transaction
+    Command prepare(ref this, Sql sql, Millis timeout) fails DbError uses db, suspend
+    i64 bulkCopy<T>(ref this, ReadOnlySpan<T> rows, bool ignoreConstraints)
+        where T : IEntity fails DbError uses db, suspend
+
+    Rows<T> query<T>(ref this, Sql sql, rest ReadOnlySpan<ISqlValue> args,
+                     Millis timeout = 30s, Mapping mapping = .strict)
+        where T : IRow fails DbError uses db, suspend { … }
+    i64 execute(ref this, Sql sql, rest ReadOnlySpan<ISqlValue> args, Millis timeout = 30s)
+        fails DbError uses db, suspend { … }
+    T get<T>(ref this, T.Id id) where T : IEntity fails DbError uses db, suspend { … }
+    T? tryGet<T>(ref this, T.Id id) where T : IEntity fails DbError uses db, suspend { … }
+    T.Id insert<T>(ref this, T row) where T : IEntity fails DbError uses db, suspend { … }
+    i64 update<T>(ref this, T row) where T : IEntity fails DbError uses db, suspend { … }
+    i64 delete<T>(ref this, T.Id id) where T : IEntity fails DbError uses db, suspend { … }
+}
+
+public struct unique Rows<T> where T : IRow {
+    public bool moveNext(ref this) fails DbError uses db, suspend
+    public T current
+    public T first(move this) fails DbError uses db, suspend            // .noRows when empty
+    public T? tryFirst(move this) fails DbError uses db, suspend
+    public T single(move this) fails DbError uses db, suspend           // .noRows, .moreThanOne
+    public T? trySingle(move this) fails DbError uses db, suspend
+    public List<T> all(move this, i64 capacity = 0) fails DbError uses db, suspend, alloc
+    public void readInto(move this, ref List<T> dst) fails DbError uses db, suspend, alloc
+}
+
+let users = try db.query<User>(sql"SELECT * FROM users WHERE age > $1", 18).all()
+let user = try tx.query<User>(sql"SELECT * FROM users WHERE id = $1", id).tryFirst()
+for try u in db.query<User>(sql"SELECT * FROM users") { … }          // streams
+```
+
+- A driver implements two members (`prepare`, `bulkCopy`); everything else is a default method.
+- `@derive(Row)` generates `T.checkShape` (one-time shape guard on the first row), `T.fromRow` (reads by ordinal), and for entities `T.Id`, `T.selectById`, `T.insertReturningId`, `T.updateById`, `T.deleteById` and `row.values`.
+- The split point of a tuple row type is known at compile time because `sql"…"` literals are validated against the schema snapshot; there is no `splitOn`.
+- `mapping: .partial` gives up build-time column checking; `.strict` keeps it.
+- A blocking C call made by a driver must be `@blocking`.
+
+> Round 3 §27: one function, one cursor and one effect alias replace the extension-method matrix; `rest` and `Sql` literals carry the parameters. Codes: BYN8003, BYN8005.
 
 ---
 
@@ -1515,15 +1800,16 @@ Package {
         maxLine: 100,
         trailingCommas: true,
         booleans: .symbols,       // or .words: `and or not`
+        primitives: .sized,       // or .csharp: `int`, `long`, `byte`, …
     },
 }
 ```
 
-`style` holds the project's formatting choices (defaults in `docs/bayan-style.md`); `bayan fmt` reads it. Style is never compiler-enforced, and grammar rules (§5) cannot be configured here. The `bayan new` templates use the same `:` syntax. Formatter behaviour is not in v0.1.
+`capabilities` is an upper bound on the effects of every function in the package (§14). `style` holds the project's formatting choices (defaults in `docs/bayan-style.md`); `bayan format` reads it. Style is never compiler-enforced, and grammar rules (§5) cannot be configured here. The `bayan new` templates use the same `:` syntax. Formatter behaviour is not in v0.1.
 
 > Round 2 §10, §18: `package.byn` is a Bayan struct literal, so it uses `:` like every literal; style is per-project data. Codes: BYN3104.
 
-> Round 3 §8: both boolean spellings are canonical; `style.booleans` picks one per project and `bayan fmt` rewrites the other.
+> Round 3 §8, §13, §28: both boolean spellings and both primitive spellings are canonical; `style.booleans` and `style.primitives` pick one per project and `bayan format` rewrites the other; capabilities bound effects instead of standing beside them. Codes: BYN6004.
 
 The registry publishes JSON metadata, and `bayan pkg export --json` exists, so outside tools never parse Bayan.
 
@@ -1592,7 +1878,7 @@ model test "cart behaves like a list" {
 - **`property`** tests generate inputs from the parameter types' `requires` rules (§7.9) and shrink failures into `testdata/`. Not in v0.1.
 - **Laws** are opt-in, never imposed, and never feed the optimizer: the release binary is byte-identical with laws on or off. When on, laws generate property tests, and a violated law fails `bayan test` with a minimal counterexample.
 - Tests live in the same file or in a sibling `x.test.byn` (same module, private access). Integration tests in `tests/` see only the public API. Release builds strip tests.
-- Tests run with a **simulated context** by default (fixed clock, seeded randomness, `Io.Simulated`).
+- Tests run with a **simulated context** by default (fixed clock, seeded randomness, `Io.Simulated`). The test runner provides `console` per test as a capture buffer: output is shown when the test fails, or always with `bayan test --verbose` (§14).
 - **Derived law tests** run automatically (round trips, `tryX` consistency, equality/hash, ordering, idempotent `ensureX`, `Xed()` non-mutation, codec round trips, `Builder`, `Op`) plus **boundary tests from `requires`** and **differential tests of specializations against the general version**.
 - A function without `uses alloc` is proven allocation-free at compile time (§14); `assertNoAlloc` checks at runtime.
 - `bayan new test X` scaffolds one case per success and error variant; `todo(…)` reports **pending**, never passing.
@@ -1629,12 +1915,13 @@ Every diagnostic states **what**, **where**, **why** and a **fix** (machine-appl
 | `bayan cache stats` | Location, entries and size of the shared build cache (§21.4) |
 | `bayan doctor` | Check the compiler, host target, C compiler, `zig`, git and cache; every failure prints a fix; exits 4 on any failure |
 | `bayan --version` | Compiler version and the commit it was built from |
-| `bayan fmt` | Format to canonical form and rewrite input forms (§21.5) (`--check`, `--prose`, `--from-prose`, `--check-prose`); reads `style` from `package.byn` (§19.2); not in v0.1 |
+| `bayan format` | Format to canonical form and rewrite input forms (§21.5) (`--check`, `--prose`, `--from-prose`, `--check-prose`); reads `style` from `package.byn` (§19.2); not in v0.1 |
 | `bayan lint`, `bayan doc`, `bayan repl`, `bayan lsp` | |
 
 Every command takes `--color auto|always|never` (before any `--`). `auto` colors output that goes to a terminal, unless `NO_COLOR` is set. `bayan test --changed` runs only the tests of modules with a file that differs from `HEAD` (or `--base <ref>`, which implies `--changed`), untracked files included; a changed `package.byn` runs everything. It uses git read-only.
 | `bayan pkg` | Packages (`add`, `audit`, `export --json`) |
 | `bayan expand X` | Show every derived member and the derived effects of each function |
+| `bayan features --used` | Report the language features a build used (feeds the reference-app coverage matrix) |
 | `bayan audit` | List every `because` bypass, `unsafe` block, `extern` declaration and C source, with reasons (§19.3) |
 | `bayan explain CODE` | Long explanation of a diagnostic |
 | `bayan migrate` | Rename casing, upgrade editions, apply `@replaced` |
@@ -1676,7 +1963,7 @@ The language server runs inside the compiler process. Display-only views (inferr
 Incremental rebuild under 100 ms on a reference project; cold-build budget tracked in CI.
 
 ### 21.5 Input forms
-Input forms are alternate spellings that the editor and `bayan fmt` accept and rewrite, one way, into canonical syntax. The compiler rejects them in source with a machine-applicable fix. This is the only list.
+Input forms are alternate spellings that the editor and `bayan format` accept and rewrite, one way, into canonical syntax. The compiler rejects them in source with a machine-applicable fix. This is the only list.
 
 | Input form | Canonical | Code |
 |---|---|---|
@@ -1697,7 +1984,7 @@ Input forms are alternate spellings that the editor and `bayan fmt` accept and r
 | `delegate bool OrderFilter(Order o)` | `type OrderFilter = Order -> bool` (help text) | BYN1028 |
 | `name = "…"` in `package.byn` | `name: "…"` | BYN3104 |
 | `add`, `asString` | `append`, `finish` | BYN2230 |
-| `toString()`, `ToString()` | `format()` | BYN2031 |
+| `toString()`, `ToString()` | `format()`, or `string(x)` / `$"{x}"` for a conversion | BYN2031 |
 | Trailing `;`, `a; b` on one line | Newlines | BYN1040 |
 | `else` at the start of a line | `} else` on one line | BYN1041 |
 | `Grams w = 0g` (local binding in a function body) | `let w: Grams = 0g` | BYN1043 |
@@ -1713,22 +2000,33 @@ Input forms are alternate spellings that the editor and `bayan fmt` accept and r
 | `noalloc`, `nosuspend`, `suspends` | Removed: no `uses` clause already means pure; `uses suspend` marks suspension | BYN6001 |
 | `return .x` in a function that fails, when the return type has no case `.x` | `fail .x` | BYN1056 |
 | `(u8)x`, `(T)x` | `u8(x)`, `T(x)` | BYN1057 |
-| Booleans in the non-project spelling | The project's `style.booleans` spelling (§19.2) | none (`bayan fmt` only; style is never compiler-enforced) |
+| Booleans in the non-project spelling | The project's `style.booleans` spelling (§19.2) | none (`bayan format` only; style is never compiler-enforced) |
+| Primitives in the non-project spelling (`int` under `.sized`, `i32` under `.csharp`) | The project's `style.primitives` spelling (§3.1, §19.2) | none (`bayan format` only) |
+| `requires …` on a function | `expects …` | BYN1063 |
+| `context (allocator: a) { … }` | `provide allocator: a { … }` | BYN6006 |
+| `trust(x, reason: "…")` | `x.trustUnchecked() because "…"` | BYN1062 |
+| `Order order is .paid`, `type X = Order is .paid` | `Order.paid order`, `type X = Order.paid` | BYN7006 |
+| `state x` member lines | One `states { … }` block | BYN1059 |
+| `this` receiver written without a state | Receiver omitted | BYN1061 |
+| `params T[] items`, `params ReadOnlySpan<T> items`, `T... items` | `rest ReadOnlySpan<T> items` | BYN1058 |
+| Interface property `Type name { get }` | `Type name` | BYN1060 |
+| `uses` before `fails`, or any clause out of order | `where`, `becomes`, `fails`, `uses` | BYN1065 |
+| `for T x in e` | `for x: T in e` | BYN1043 |
 
 The `add` through `toString()` rows are beyond the HANDOFF round 2 table; the plan added them because each retired form gets the same treatment. The rows from trailing `;` on are round 3 §20, with the codes this spec allocates. Round 3 removes `if !x { … }` → `unless x { … }`: both are paraphrases, and BYN1032 retires. The `return .x` and `(T)x` rows are Sūq review A2 and A4. BYN1049, once drafted for `unless not`, duplicated BYN1007 `UnlessNegated`; the earlier code survives and BYN1049 is retired, never reused.
 
-- `bayan fmt` is idempotent, and rewriting an input form then formatting again produces identical bytes (acceptance tests arrive with `bayan fmt`, not in v0.1).
+- `bayan format` is idempotent, and rewriting an input form then formatting again produces identical bytes (acceptance tests arrive with `bayan format`, not in v0.1).
 - Prose mode (§22) is unchanged.
 
 > Round 2 §15: input forms replace the terse/explicit formatter modes, so stored source has one spelling and C# habits still work at the keyboard. Codes: BYN1017, BYN1018, BYN1019, BYN1020, BYN1021, BYN1022, BYN1023, BYN1025, BYN1028, BYN1029, BYN1030, BYN1031, BYN1033, BYN2027, BYN2031, BYN2209, BYN2230, BYN3104.
 
-> Round 3 §20: every syntax change leaves its old spelling as an input form, so C# habits still type through. Codes: BYN1040, BYN1041, BYN1043, BYN1044, BYN1045, BYN1047, BYN1048, BYN1050, BYN1051, BYN1053, BYN1055, BYN1056, BYN1057, BYN6001.
+> Round 3 §20: every syntax change leaves its old spelling as an input form, so C# habits still type through. Codes: BYN1040, BYN1041, BYN1043, BYN1044, BYN1045, BYN1047, BYN1048, BYN1050, BYN1051, BYN1053, BYN1055, BYN1056, BYN1057, BYN1058, BYN1059, BYN1060, BYN1061, BYN1062, BYN1063, BYN1065, BYN6001, BYN6006, BYN7006.
 
 ---
 
 ## 22. Prose translation
 
-- `bayan fmt --prose` renders code as controlled-natural-language Markdown; `--from-prose` reads it back. Templates are data files per language (`templates/en.*`; Arabic later).
+- `bayan format --prose` renders code as controlled-natural-language Markdown; `--from-prose` reads it back. Templates are data files per language (`templates/en.*`; Arabic later).
 - **Liberal in what it accepts, strict in what it prints:** many phrasings map to one AST; the AST prints one canonical form.
 - A sentence matching two templates with different meanings is an error, never a guess.
 - Statements become prose; expressions stay as inline code. Types render as tables.
@@ -1784,19 +2082,23 @@ Roadmap: v0.3 WASM + `.d.ts`; v0.4 `bayan gen ts`; post-v1 portable JS backend (
 | `IConvertible`, `Convert.ChangeType` | `IFrom` / `ITryFrom`, `convert<T>` |
 | `Substring(i, n)` | `s[i..(i + n)]` (migrated) |
 | Culture-sensitive default comparison | Ordinal |
-| Silent unchecked casts | Checked conversions `u8(x)`; `u8.tryFrom(x)` returns `u8?` |
+| Silent unchecked casts, `(T)x` | Checked conversions `u8(x)`; `u8.tryFrom(x)` returns `u8?` |
+| `int`, `long`, `byte`, `uint` | Accepted per project: `style.primitives: .csharp` keeps them, `.sized` rewrites them to `i32`, `i64`, `u8`, `u32` (§3.1) |
+| `list.AsSpan()`, `.ToList()` | `xs.span`, `xs.mutableSpan()`, `xs.copy()`, `List(seq)` (§16) |
+| `params T[]` | `rest ReadOnlySpan<T>` (§10) |
+| `event EventHandler<T>` | `Event<T>` field (§16.1) |
 | Static constructors | `lazy` |
 | `event`, multicast delegates | Removed |
 | `Func<…>`, `Action<…>`, `delegate` | Function types `A -> B`, `type Name = A -> B` (§3.16) |
 | `[Flags] enum` | `Set<T>` of a payload-free union (§3.13) |
 | `Count` / `Count()` / `Length` | `length`; `count(p)` for a predicate count |
-| `ToString()` | `format()` / `formatInto(ref StrBuf)` (§6.6) |
-| `foreach`, `if (…)`, `int`, `x == null`, `;`, `T x` (local), `[Attr]`, `/* */`, `char` | Input forms, rewritten (§21.5) |
+| `ToString()` | `format()` / `formatInto(ref StrBuf)` (§6.6); a conversion is `string(x)` |
+| `foreach`, `if (…)`, `x == null`, `;`, `T x` (local), `[Attr]`, `/* */`, `char` | Input forms, rewritten (§21.5) |
 | `m` / `d` literal suffixes | `dec`; doubles unsuffixed |
 
 > Round 2 §1, §8, §11, §13, §15: compatibility rows follow the new forms.
 
-> Round 3 §3, §5, §6, §10, §20, O5: rows follow round-3 syntax. Codes: BYN1040, BYN1043, BYN1045, BYN1047, BYN1048, BYN1055.
+> Round 3 §3, §5, §6, §10, §20, §24, §26, §28, O5: rows follow round-3 syntax. Codes: BYN1040, BYN1043, BYN1045, BYN1047, BYN1048, BYN1055, BYN1058.
 
 ---
 
@@ -1823,8 +2125,9 @@ Roadmap: v0.3 WASM + `.d.ts`; v0.4 `bayan gen ts`; post-v1 portable JS backend (
   - Units convert implicitly only to finer units; bare literals are rejected (§3.4). Opt-in typed indices (§3.5).
   - Validation is `requires` on types, checked at construction (§7.9).
   - Effects: `uses` with a closed list; `provide` installs handlers (§14).
-  - Typestate: `state`, `becomes`, `become` (§3.17).
-  - Argument particles `from to at by for as` (§10).
+  - Typestate: the `states` block, `becomes`, `become` (§3.17).
+  - Argument particles `from to until through at by for as`; a particle appears at most once per signature (§10).
+  - `Panic.handler` with `uses console` (§7.6). A public field is writable only from its own `ref this` methods or through `with` (§3.10). Views and copies are `span`, `mutableSpan()`, `copy()` and `T(x)`, never `toX` or `asX` members (§16).
   - Secrets need `expose … because` in derivations; `Row` is flat (§5.3). Two trust layers (§15.1).
   - `try` covers the whole expression to its right (§8). `defer` modifiers are captured at registration (§7.6).
   - Size is `length`; `count(p)` is only a predicate count (§16).

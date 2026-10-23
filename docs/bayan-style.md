@@ -1,6 +1,6 @@
 # Bayan style guide
 
-Style is guidance: never compiler-enforced, configurable per project, applied by `bayan fmt`. Grammar rules ([GRAMMAR](bayan-grammar.md)) are not style and cannot be configured away.
+Style is guidance: never compiler-enforced, configurable per project, applied by `bayan format`. Grammar rules ([GRAMMAR](bayan-grammar.md)) are not style and cannot be configured away.
 
 ## Defaults
 
@@ -10,13 +10,15 @@ Style is guidance: never compiler-enforced, configurable per project, applied by
 | Indent | 4 spaces |
 | Line length | 100 |
 | Trailing commas | Always in multi-line literals and argument lists |
-| Member order | Fields, typestate `state` declarations, properties, constructors, methods |
+| Member order | Fields, the `states` block, events, properties, static factories, methods |
+| Signature clauses | `where`, `becomes`, `fails`, `uses` (`bayan format` reorders; BYN1065) |
 | Statements | One per line (postfix guards count as one) |
 | Booleans | One spelling per project, set by `booleans`: `.symbols` (`!` `&&` `\|\|`) or `.words` (`not` `and` `or`) |
+| Primitives | One spelling per project, set by `primitives`: `.sized` (`i32 i64 u8 f64 …`, the default) or `.csharp` (`int long byte double …`); `char`, `decimal` and `object` are not primitives under either |
 
 ## Declarations and bindings
 
-Not configurable: declarations are type-first and local bindings name-first ([GRAMMAR §5](bayan-grammar.md)). `bayan fmt` rewrites the other order (BYN1043):
+Not configurable: declarations are type-first and local bindings name-first ([GRAMMAR §5](bayan-grammar.md)). `bayan format` rewrites the other order (BYN1043):
 
 | Before | After |
 |---|---|
@@ -44,6 +46,7 @@ Package {
         maxLine: 100,
         trailingCommas: true,
         booleans: .symbols,       // or .words
+        primitives: .sized,       // or .csharp
     },
 }
 ```

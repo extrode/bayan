@@ -60,7 +60,7 @@ Places where writing Sūq against the round-3 spec read badly, needed a workarou
 
 ## Type-first declarations revert (2026-10-22)
 
-Round 3's "names first" now applies only to local bindings (`let w: Grams = 0g`). Declarations are type-first again, as in round 2: `public Grams shippingWeight(Order order)`, `void` when nothing is returned, `Sku sku` fields, `timeout(Millis after)` payloads. `-> T` and `name: Type` declarations are input forms that `bayan fmt` rewrites; the checker reports them with the rewritten line (`fail/arrow-return`, `name-first-param`, `name-first-field`, `name-first-payload`). Sūq was converted mechanically from those fix-its.
+Round 3's "names first" now applies only to local bindings (`let w: Grams = 0g`). Declarations are type-first again, as in round 2: `public Grams shippingWeight(Order order)`, `void` when nothing is returned, `Sku sku` fields, `timeout(Millis after)` payloads. `-> T` and `name: Type` declarations are input forms that `bayan format` rewrites; the checker reports them with the rewritten line (`fail/arrow-return`, `name-first-param`, `name-first-field`, `name-first-payload`). Sūq was converted mechanically from those fix-its.
 
 | # | Where | Issue | What Sūq assumes or proposes |
 |---|---|---|---|

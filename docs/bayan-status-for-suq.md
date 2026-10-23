@@ -104,7 +104,7 @@ Tried on a fresh `bayan new demo` project in `tmp/`.
 | `explain` | Implemented | `bayan explain BYN2104` prints the embedded page |
 | `new` / `init` | Implemented | app, `--lib`, `--script`; `init` adds missing files |
 | also present | Implemented | `lex`, `parse --ast`, `types` (typed dump JSON), `dist`, `clean`, `cache stats`, `doctor` |
-| `fmt` | Not started | `unknown command` (round 3 plan step 5.1a/5.2b) |
+| `format` | Not started | `unknown command` (round 3 plan step 5.1a/5.2b; renamed from `fmt` by round 3 §29) |
 | `expand` | Not started | `unknown command` |
 | `audit` | Not started | `unknown command` (round 3 §4) |
 | `features --used` | Not started | `unknown command` (round 3 J22) |
