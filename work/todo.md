@@ -171,3 +171,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51b1: C# test strings still holding type-first locals are found only when a test fails; a sweep of `tests/Bayan.Tests/*.cs` program strings for `T x = e` would catch any that expect errors.
 - r3-51b1: `IsWrittenLater` scans to the enclosing `}`, so a top-level script local is scanned to end of file and a same-named local in a later function counts as a write.
 - r3-51b1 gate: plan §1 (c) BYN1043 helps ("declarations put the type first", "local bindings put the name first") do not start with a verb, so the code prefixes one to pass HelpLanguageTests; reconcile plan wording or the verb rule.
+- r3-51b2a: messages and docs still say `error enum`/`unique struct`: BYN2608, BYN2609, the BYN2804 "an error enum" kind, the `[ExitCode]` help in `Compilation.cs`, and `TypeFacts.WhyUnique` ("declared `unique struct`"); the pages under `docs/diagnostics/` that show `error enum` examples.
+- r3-51b2a: `ErrorEnumDecl`/`ErrorSetDecl` were kept (AST dump `ErrorEnum`/`ErrorSet`) instead of the plan's single `ErrorUnionDecl`; merge them if the binder needs one node.
+- r3-51b2a: `except` narrowing of a `union error` is rejected with BYN2022 until function error sets carry excluded cases (handoff Q124).

@@ -1,7 +1,7 @@
 // Declaration-only keywords are names wherever the grammar does not need them (spec 004 R3).
 type Code = i64
 
-error enum Failure {
+union error Failure {
     error
     set
     law

@@ -116,11 +116,17 @@ public sealed record ErrorVariant(TextSpan Span, Name Name, string? Doc) : Node(
     public AttributeSyntax[] Attributes { get; init; } = [];
 }
 
-/// <summary><c>error enum Name { a, b }</c>.</summary>
+/// <summary><c>union error Name { a b }</c>, one case per line.</summary>
 public sealed record ErrorEnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, ErrorVariant[] Variants) : Decl(Span);
 
-/// <summary><c>error set Name = A, B;</c>: a name for several error sets.</summary>
-public sealed record ErrorSetDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax[] Members) : Decl(Span);
+/// <summary><c>union error Name = A, B except .c</c>: a name for several error sets, flattened, less the <see cref="Except"/> cases.</summary>
+public sealed record ErrorSetDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax[] Members) : Decl(Span)
+{
+    /// <summary>The two declaration keywords, as written.</summary>
+    public TextSpan Head { get; init; }
+
+    public Name[] Except { get; init; } = [];
+}
 
 /// <summary>A member; <see cref="Args"/> is <c>null</c> without parentheses.</summary>
 public sealed record EnumMember(TextSpan Span, Name Name, string? Doc, Argument[]? Args) : Node(Span);
@@ -149,8 +155,11 @@ public sealed record UnionDecl(TextSpan Span, Modifiers Modifiers, Name Name, Un
     public WhereClause[] Where { get; init; } = [];
 }
 
-/// <summary><c>type Name = T;</c> — a plain alias.</summary>
-public sealed record TypeAliasDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax Target) : Decl(Span);
+/// <summary><c>type Name = T</c> — a plain alias, or with <see cref="Distinct"/> a <c>type distinct</c>.</summary>
+public sealed record TypeAliasDecl(TextSpan Span, Modifiers Modifiers, Name Name, TypeSyntax Target) : Decl(Span)
+{
+    public bool Distinct { get; init; }
+}
 
 /// <summary><c>test "name" { … }</c>, or <c>test "name" (T a, U b) { … }</c> run once per <c>[Cases]</c> value.</summary>
 public sealed record TestDecl(TextSpan Span, string Title, Param[] Params, BlockStmt Body) : Decl(Span);

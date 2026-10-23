@@ -12,7 +12,7 @@ internal static class Format
     {
         "BYN1007", "BYN1017", "BYN1018", "BYN1019", "BYN1020", "BYN1021", "BYN1022", "BYN1023", "BYN1025",
         "BYN1029", "BYN1030", "BYN1031", "BYN1033",
-        "BYN1040", "BYN1041", "BYN1042", "BYN1043", "BYN1053",
+        "BYN1040", "BYN1041", "BYN1042", "BYN1043", "BYN1044", "BYN1053",
     };
 
     internal static int MaxPasses = 10;

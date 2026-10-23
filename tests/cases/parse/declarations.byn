@@ -4,7 +4,7 @@ import app.users as u
 type Cents = i64
 
 /// Things that go wrong with money.
-public error enum MoneyError {
+public union error MoneyError {
     /// The text is not a number.
     invalid
     /// Too many digits after the point.

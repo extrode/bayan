@@ -429,7 +429,7 @@ public sealed class ConstSymbol(string name, Location location, ModuleSymbol mod
     public ConstantValue[] Elements { get; set; } = [];
 }
 
-/// <summary>An <c>error enum</c>: a closed set of failure variants.</summary>
+/// <summary>A <c>union error</c>: a closed set of failure variants.</summary>
 public sealed class ErrorSetSymbol(string name, Location location, ModuleSymbol module, Accessibility access, ErrorEnumDecl decl)
     : TypeSymbol
 {

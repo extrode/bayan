@@ -194,6 +194,8 @@ public sealed partial class Compilation
         foreach (var module in Modules)
             foreach (var set in module.ErrorSets)
                 DeclareVariants(set);
+        foreach (var alias in _aliases)
+            if (alias.Decl is ErrorSetDecl composed) CheckComposition(alias, composed);
         foreach (var module in Modules)
             foreach (var e in module.Enums)
                 DeclareEnumMembers(e);
@@ -399,6 +401,7 @@ public sealed partial class Compilation
                 }
                 case TypeAliasDecl a:
                 {
+                    if (a.Distinct) Report(DiagnosticCodes.Unsupported, file.Source, a.Name.Span, ["`type distinct`"]);
                     var sym = new AliasPlaceholder(a, a.Name, a.Modifiers, file);
                     if (AddType(file, a.Name, sym)) _aliases.Add(sym);
                     Naming.CheckType(this, file.Source, a.Name);
@@ -650,6 +653,24 @@ public sealed partial class Compilation
         }
         if (set.Variants.Count == 0)
             Report(DiagnosticCodes.EmptyErrorSet, file.Source, set.Decl.Name.Span, [set.Name]);
+    }
+
+    /// <summary>BYN3202 for two composed sets with a case of the same name; narrowing with <c>except</c> is not bound yet.</summary>
+    private void CheckComposition(AliasPlaceholder alias, ErrorSetDecl decl)
+    {
+        var sets = new TypeResolver(this, alias.File, null).ExpandAlias(alias) switch
+        {
+            ErrorUnionType u => u.Sets, ErrorSetSymbol set => [set], _ => [],
+        };
+        var owners = new Dictionary<string, ErrorSetSymbol>();
+        foreach (var set in sets)
+            foreach (var v in set.Variants)
+                if (!owners.TryAdd(v.Name, set))
+                    Report(DiagnosticCodes.DuplicateErrorCase, alias.File.Source, decl.Head, [owners[v.Name].Name, set.Name, v.Name],
+                        label: $"two cases `{v.Name}`", help: "rename one case, or compose fewer sets");
+        if (decl.Except.Length > 0)
+            Report(DiagnosticCodes.Unsupported, alias.File.Source, TextSpan.FromBounds(decl.Except[0].Span.Start, decl.Except[^1].Span.End),
+                ["narrowing a `union error` with `except`"]);
     }
 
     private void DeclareEnumMembers(EnumSymbol e)
@@ -1594,7 +1615,7 @@ public sealed partial class Compilation
     internal IEnumerable<AliasPlaceholder> Aliases => _aliases;
 }
 
-/// <summary>A <c>type X = T;</c> alias or an <c>error set S = A, B;</c>; resolved to its target on first use.</summary>
+/// <summary>A <c>type X = T</c> alias or a <c>union error S = A, B</c>; resolved to its target on first use.</summary>
 internal sealed record MutationCheck(Binder Binder, FunctionSymbol Callee, BoundExpr Receiver);
 
 internal sealed record RequiresCheck(SourceText Source, CallExpr Call, FunctionSymbol Callee, BoundExpr[] Arguments);

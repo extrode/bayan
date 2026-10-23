@@ -1,4 +1,4 @@
-error enum LookupError {
+union error LookupError {
     /// No entry has that key.
     missing
     /// The key was blank.

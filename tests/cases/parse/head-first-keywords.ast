@@ -1,0 +1,4 @@
+CompilationUnit
+  Struct unique File
+    Field i64 fd
+  TypeAlias distinct Sku = string

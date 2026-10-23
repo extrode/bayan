@@ -1,4 +1,4 @@
-error enum ParseError {
+union error ParseError {
     /// No digits.
     empty
     /// Not a digit.

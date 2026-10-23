@@ -4,7 +4,7 @@ interface IShape {
     string describe() => $"area {area()}"
 }
 
-unique struct Tile : IShape {
+struct unique Tile : IShape {
     i64 side
 
     i64 area() => side * side

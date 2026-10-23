@@ -1,4 +1,4 @@
-error enum ReadError { broken }
+union error ReadError { broken }
 
 struct Rows {
     i64 at

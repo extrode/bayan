@@ -1,4 +1,4 @@
-error enum ParseError {
+union error ParseError {
     /// The input was empty.
     empty
     /// The input had a non-digit.
@@ -7,7 +7,7 @@ error enum ParseError {
     tooLarge
 }
 
-error enum RangeError {
+union error RangeError {
     /// Below the minimum.
     tooSmall
 }

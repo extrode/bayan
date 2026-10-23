@@ -1,4 +1,4 @@
-error enum ReadError { broken }
+union error ReadError { broken }
 
 /// Yields 1..limit; fails on the step after `failAt` when `failAt` is set.
 struct Rows {

@@ -1,4 +1,4 @@
-error enum ConfigError {
+union error ConfigError {
     /// The configuration file is missing.
     missing
 }

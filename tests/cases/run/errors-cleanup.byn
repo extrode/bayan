@@ -1,4 +1,4 @@
-error enum StepError {
+union error StepError {
     /// The step was told to fail.
     told
 }

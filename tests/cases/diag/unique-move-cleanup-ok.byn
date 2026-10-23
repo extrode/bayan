@@ -1,5 +1,5 @@
 // A cleanup is checked against the state at the exits where it runs: no use after move here.
-error enum E {
+union error E {
     bad
 }
 

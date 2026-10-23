@@ -1,11 +1,11 @@
-error enum EmailError {
+union error EmailError {
     /// Not an address.
     invalid
     /// Already registered.
     taken
 }
 
-error enum DbError {
+union error DbError {
     /// The database took too long.
     timeout
     /// The connection dropped.
@@ -14,7 +14,7 @@ error enum DbError {
     missing
 }
 
-error set SignupError = EmailError, DbError
+union error SignupError = EmailError, DbError
 
 i64 signUp(i64 n) fails SignupError {
     return .invalid if n == 1

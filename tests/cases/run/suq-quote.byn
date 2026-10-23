@@ -11,7 +11,7 @@ public enum Currency {
 
 string code(Currency c) => c switch { .myr => "MYR", .sgd => "SGD", .usd => "USD" }
 
-public error enum PricingError {
+public union error PricingError {
     /// the currencies differ
     currencyMismatch
     /// the amount does not fit in i64
@@ -98,12 +98,12 @@ public struct Quote {
     }
 }
 
-public error enum QuoteError {
+public union error QuoteError {
     /// heavier than the largest shipping band
     overweight
 }
 
-public error set QuoteFailure = PricingError, QuoteError
+public union error QuoteFailure = PricingError, QuoteError
 
 /// Prices a basket. Overweight fails even when shipping would be free.
 public Quote quote(ReadOnlySpan<PriceLine> lines, in Policy policy) fails QuoteFailure {

@@ -169,10 +169,11 @@ public static class AstDump
                             + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
                     break;
                 case TypeAliasDecl d:
-                    Line(depth, $"TypeAlias {Mods(d.Modifiers)}{d.Name.Text} = {Type(d.Target)}");
+                    Line(depth, $"TypeAlias {Mods(d.Modifiers)}{(d.Distinct ? "distinct " : "")}{d.Name.Text} = {Type(d.Target)}");
                     break;
                 case ErrorSetDecl d:
-                    Line(depth, $"ErrorSet {Mods(d.Modifiers)}{d.Name.Text} = {string.Join(", ", d.Members.Select(Type))}");
+                    Line(depth, $"ErrorSet {Mods(d.Modifiers)}{d.Name.Text} = {string.Join(", ", d.Members.Select(Type))}" +
+                        (d.Except.Length == 0 ? "" : " except " + string.Join(", ", d.Except.Select(n => "." + n.Text))));
                     break;
                 case TestDecl d:
                     Line(depth, "Test " + TokenDump.Escape(d.Title) + (d.Params.Length == 0 ? "" : " " + Params(d.Params)));

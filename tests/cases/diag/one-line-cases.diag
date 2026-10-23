@@ -27,11 +27,11 @@ error BYN1053: `Color` declares its cases on one line; write one per line
 
 error BYN1053: `ParseError` declares its cases on one line; write one per line
 
-   9 │ error enum ParseError { empty, tooLong }
-     │                              ^ the first `,`
+   9 │ union error ParseError { empty, tooLong }
+     │                               ^ the first `,`
      │
   help: write each case on its own line
-     │  9 │ error enum ParseError {
+     │  9 │ union error ParseError {
      │ 10 │     empty
      │    │ +++++++++
      │ 11 │     tooLong

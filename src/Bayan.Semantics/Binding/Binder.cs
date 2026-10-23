@@ -323,7 +323,7 @@ internal sealed partial class Binder
             BindStaticArray(c, value);
             return;
         }
-        if (value.Constant is null && !value.Type.IsError)
+        if (!CheckUniqueConst(decl, c.Type) && value.Constant is null && !value.Type.IsError)
             Report(DiagnosticCodes.NotConstant, decl.Init.Span, ["a `const`"]);
         c.Value = value.Constant;
         c.Bound = value;
@@ -643,7 +643,8 @@ internal sealed partial class Binder
         else type = ErrorType.Instance;
 
         var kind = d.Kind switch { BindingKind.Let => LocalKind.Let, BindingKind.Const => LocalKind.Const, _ => LocalKind.Var };
-        if (d.Kind == BindingKind.Const && init is not null && init.Constant is null && !init.Type.IsError)
+        var uniqueConst = d.Kind == BindingKind.Const && CheckUniqueConst(d, type);
+        if (d.Kind == BindingKind.Const && !uniqueConst && init is not null && init.Constant is null && !init.Type.IsError)
             Report(DiagnosticCodes.NotConstant, d.Init!.Span, ["a `const`"]);
         if (d.Using) CheckDisposable(d, type);
         var local = DeclareLocal(d.Name, type, kind);
@@ -654,6 +655,16 @@ internal sealed partial class Binder
             local.KeywordSpan = new TextSpan(d.Span.Start, 3);
         if (kind == LocalKind.Const) local.Constant = init?.Constant;
         return new BoundLocalDecl(d, local, init);
+    }
+
+    /// <summary>BYN3209: a <c>const</c> holding a <c>struct unique</c> value; the fix declares it with <c>let</c>.</summary>
+    private bool CheckUniqueConst(LocalDecl d, TypeSymbol type)
+    {
+        var keyword = new TextSpan(d.Span.Start, 5);
+        if (TypeFacts.UniquePart(type) is not StructSymbol part || Source.GetText(keyword) != "const") return false;
+        Report(DiagnosticCodes.UniqueConst, keyword, [], label: $"`{part.DisplayName}` is `unique`", help: "declare it with `let`",
+            fix: new Fix(keyword, "let"));
+        return true;
     }
 
     private void CheckDisposable(LocalDecl d, TypeSymbol type)

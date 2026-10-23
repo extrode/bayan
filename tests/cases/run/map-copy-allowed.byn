@@ -44,7 +44,7 @@ struct Counted {
 
 Result<Map<string, i64>, LookupError> found() => fresh("r", 5)
 
-error enum LookupError { missing }
+union error LookupError { missing }
 
 var a = fresh("x", 1)
 var b = Map<string, i64>()

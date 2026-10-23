@@ -245,7 +245,7 @@ public sealed class CliTests
     public void RunCannotTellAFailingMainFromACompileError()
     {
         var path = Program("cli-run-main-fails", """
-            error enum E {
+            union error E {
                 /// It went wrong.
                 wrong,
             }
@@ -352,7 +352,7 @@ public sealed class CliTests
     public void TestReportsPassFailAndPanicPerTest()
     {
         var dir = TestSuite("cli-test-mixed", """
-            error enum E {
+            union error E {
                 /// It went wrong.
                 wrong,
             }

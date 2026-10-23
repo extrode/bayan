@@ -1,9 +1,9 @@
-error enum ParseError {
+union error ParseError {
     /// Nothing to parse.
     empty
 }
 
-error enum DbError {
+union error DbError {
     /// The database took too long.
     timeout
 }
