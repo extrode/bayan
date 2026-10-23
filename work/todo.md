@@ -60,7 +60,7 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - An untyped array literal used directly as a `for` source (`for (let w in ["a", "b"])`) gives BYN2218 "needs a known type here"; infer the element type (found in 004 T15).
 - Spec §21.2 CLI table lists neither `bayan check`, `lex` and `parse` nor the new `types` (spec 004 T16)
 - R4 literal inference (spec 004 review): retyping a `var` at its first constraining use can break a later use that only compiled by widening (`var n = 0; i64 big = n; takeI32(n);` → BYN2202) and silently changes overflow behaviour (`var n = 2147483647; i64 big = n; n += 1;` no longer panics). Consider a lint or requiring all constraining uses to agree.
-- R6 receiver borrows (spec 004 review): reassigning the whole receiver (`b = Buf{…}`) while a span from `b.view()` is alive is not BYN3004 (memory-safe, same as the direct `b.data.asSpan()` form).
+- R6 receiver borrows (spec 004 review): reassigning the whole receiver (`b = Buf{…}`) while a span from `b.view()` is alive is not BYN3004 (memory-safe, same as the direct `b.data.span` form).
 - `List.removeRange` on a list of unique elements does not free the removed elements (same as `clear`; spec 004 review).
 - R4 pending-var groups resolve by statement order (`var a = 0; var b = 0; i64 x = a; u8 y = b; a = b;` is BYN2202, swapped declarations compile); a widest-fitting choice would remove the order dependence (review loop 2, 004).
 - `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray` fails when other test suites run concurrently on the machine (per-thread allocation count); passes alone. Seen 4 times during the 004/005 runs.
@@ -69,7 +69,7 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Map literals do not diagnose duplicate constant keys (`["a": 1, "a": 2]` keeps the last); spread element types must match the literal's exactly (no `i32` → `i64` widening per element) (round 2 §11 literals).
 - HANDOFF §10/§18: SPEC §19.2 manifest example and `docs/diagnostics/BYN310x.md` examples still use `field = value`; `examples/*/` have no `package.byn` to migrate (r2-colon step was code only).
 - wasm32-wasi build of `src/runtime/bayan-rt.c` fails on `sys/wait.h`, `signal.h` and `pipe` (pre-existing, seen during the round-2 defer work); `defer panicking` handlers never run there (`BYN_PANIC_CATCH` is 0 without setjmp).
-- Panic handlers (BYN2612) are not checked for allocation inside user functions they call; only direct allocations in the handler body or the `Panic.onPanic` function are reported.
+- Panic handlers (BYN2612) are not checked for allocation inside user functions they call; only direct allocations in the handler body or the `Panic.handler` function are reported.
 - BYN2613 accepts a `let` moved after the handler registers (`let xs = …; defer panicking print($"{xs.length}"); take(move xs);`); the handler would read a moved value.
 - HANDOFF §5 (r2-catch): `T!S` type syntax does not parse today, so `error set` is usable only in `fails`; `/// A type X = T alias` doc in Compilation.cs sits on `MutationCheck` instead of `AliasPlaceholder`.
 - `Messages` (005 T4) formats with the current culture to stay byte-identical; `DiagnosticDescriptor.Format` uses the invariant culture, so `{1:0.0} MB` differs by locale (decide when translations land).

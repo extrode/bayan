@@ -49,7 +49,7 @@ Bayan (بيان, "clarity, eloquent exposition") is a value-oriented, natively c
 | Memory | Stack, arenas, `Owned<T>`, `.rodata`. Allocators flow through `context`. Borrows are region-checked. |
 | Naming | Types `PascalCase`; everything else `camelCase`. Casing encodes part of speech (§5). |
 | Derivation | A closed set of patterns derives forms (`tryX`, `xInto`, `xOp`, `T.Builder`, …). |
-| Generics | C# syntax, constraints checked at definition, monomorphized in release. |
+| Generics | C# syntax, constraints checked at definition, monomorphized. |
 | Async | Colorless: no `async` on declarations. `async`/`await` at call sites; I/O through `context.Io`. |
 | Comptime | Ordinary Bayan run at compile time by the interpreter; deterministic and sandboxed. |
 | Modules | A directory is a module. `import`. No cycles. Default visibility: module. |
@@ -172,10 +172,12 @@ C# primitive names are accepted per project (`style.primitives: .sized | .csharp
 Lowercase type names are reserved for the language. C interop types: `c_int`, `c_long`, `c_char`, … (`c_long` follows the platform).
 
 ### 3.2 Strings
-- Always **valid UTF-8**, validated on construction (`string.tryFrom(bytes)` returns `string?`; `string.from(bytes) fails Utf8Error`).
+- Always **valid UTF-8**, validated on construction (`string.tryFrom(bytes)` returns `string?`; `try string(bytes)` fails `Utf8Error`). There is no `fromUtf8`.
   - Both take a `ReadOnlySpan<u8>` and return a fresh copy from `context.allocator` that does not borrow the bytes. An empty span decodes to `""`. Overlong forms, surrogates, code points above U+10FFFF and truncated sequences are invalid (law L010).
   - `Utf8Error` is a built-in `union error` with one variant, `invalidSequence`. Until error variants carry payloads, `string.invalidUtf8At(bytes)` returns the byte offset of the first invalid sequence as `i64?`, `null` when the bytes are valid (`[0x68, 0xC0, 0x80]` gives 1).
-- `n.toHex()` on every integer type returns lowercase hexadecimal with no prefix and no leading zeros (`255` gives `"ff"`, `0` gives `"0"`), allocated from `context.allocator`. A negative value prints its two's-complement bits at the type's width (an `i8` holding `-1` gives `"ff"`). Format specifiers are in §6.6.
+  - `string(bytes, invalid: .replace)` is the lossy form: each invalid sequence becomes U+FFFD, and it never fails. Other text encodings are named options in `kit` (`try string(bytes, as: .latin1)`, spec-only); the default is UTF-8.
+- `string(n, as: .hex)` on every integer type returns lowercase hexadecimal with no prefix and no leading zeros (`255` gives `"ff"`, `0` gives `"0"`), allocated from `context.allocator`; `.binary`, `.octal` and `.decimal` (the default) are the other `Radix` cases (§6.2). With `.hex`, a negative value prints its two's-complement bits at the type's width (an `i8` holding `-1` gives `"ff"`). Format specifiers are in §6.6.
+- **Bytes to hex or base64 text** are codecs with static `encode` and `decode`, like `Html.escape`: `Hex.encode(digest)`, `try Hex.decode(text)`, `Base64.encode(bytes)`, `try Base64.decode(text)`; `decode` fails with a codec error. `string(x, as: Radix)` is for integers only, so `string(bytes, as: …)` always reads bytes as text.
 - **Sizes:** `s.length` is the byte length (O(1)); `s.runeCount` counts scalars (O(n)); `s.runes` and `s.graphemes` iterate scalars and grapheme clusters. Both counts are plain `i64` (§3.4).
 - **Copying:** `s.copy()` returns an independent copy from `context.allocator` (`uses alloc`); `s.copy(to: arena)` copies into the given allocator, as collections do (§16). It is the fix when a borrowed string must outlive its region (§9.4).
 - **No single-index indexer.** `s[i]` is a compile error with fix-its: `s.bytes[i]`, `s.runes.take(n)`, `s.graphemes.take(n)`, range slicing.
@@ -185,15 +187,17 @@ Lowercase type names are reserved for the language. C interop types: `c_int`, `c
 - **New strings** (Form I, allocated from `context.allocator`, so they `uses alloc`): `trim()`, `trimStart()`, `trimEnd(c)`, `lowercase()`, `uppercase()`, `replace(a, by: b)`, `padStart(to: n, by: c)`, `repeat(n)`.
 - **No `+` on strings**, constants included. Concatenate with interpolation (`$"{a}{b}"`), `[a, b, c].join("")`, `Path.join`, or `StrBuf` in loops. `a + b` on strings is an input form rewritten to interpolation (§21.5).
 - `==` is **ordinal**; `a.equals(b, by: .ignoreCase)`; culture-aware comparison only through `Collator`.
-- `string.fromUtf8(bytes)` fails on invalid UTF-8; `toUtf16()` for interop. `string16` exists for UTF-16 interop.
+- `s.utf16` is a view of UTF-16 code units (`u16`), beside `s.runes` and `s.bytes`; `s.utf16.copy()` returns an owned `List<u16>` (`uses alloc`), and `string(units)` decodes a `ReadOnlySpan<u16>` as UTF-16. `string16` exists for UTF-16 interop; nul-terminated UTF-16 for FFI is in §18.
 - Raw strings: `"""…"""`.
-- Not in v0.1: `graphemes`, `Collator`, `split` views, `trim*`, `padStart`, `repeat`, `fromUtf8`, `toUtf16`.
+- Not in v0.1: `graphemes`, `Collator`, `split` views, `trim*`, `padStart`, `repeat`, `Base64`, encodings other than UTF-8.
 
 > Round 2 §12: `+` on strings hid allocation. Codes: BYN2201, BYN2209.
 
 > Round 3 §10, deliverable 4, O2: `length` is the one size name everywhere (bytes for strings, the O(1) answer); `runeCount` names the O(n) count. Codes: BYN1048.
 
 > Sūq review A5: one copy verb for strings and collections; `$"{s}"` copied only as a side effect of formatting.
+
+> Round 3 §12, §27, O13, O14: `toHex()` and `toUtf16()` spelled conversions with the `to` particle; a radix is an option of the `string(x)` conversion, UTF-16 is a view like `runes` and `bytes`, decoding uses the A7 constructor forms, and byte-to-text encodings are codecs like `Html.escape`. Codes: BYN2230, BYN5009.
 
 ### 3.3 Symbols
 `Symbol` is an interned identifier (4-byte ID). Equality and hashing use the ID; **ordering uses the text** (UTF-8 bytes = code-point order). String literals convert to `Symbol` at compile time (interned table in `.rodata`).
@@ -323,7 +327,7 @@ public struct Order : IEquatable<Order>, IJsonEncode {
 
 > Round 3 §2, revised 2026-10-22: names first was meant only for local bindings (§7.1), where `let`/`var` lead; declarations keep round 2's type-first order. Codes: BYN1043.
 
-> Round 3 §26, O11, addendum 1 §1: a field-shaped member needs no `{ get }`, events are `Event<T>` fields named for what happened, and a public field writable from anywhere would bypass `requires` and state checks. Codes: BYN3216, BYN5010.
+> Round 3 §26, §12, O11: a field-shaped member needs no `{ get }`, events are `Event<T>` fields named for what happened, and a public field writable from anywhere would bypass `requires` and state checks. Codes: BYN3216, BYN5010.
 - `embed T` promotes the embedded struct's fields and methods; the embedded value sits at offset 0.
 - No implementation inheritance (revisit only if a GC tier is added).
 
@@ -332,7 +336,7 @@ public struct Order : IEquatable<Order>, IJsonEncode {
 
 - `unique` is for resources (`File`, `Socket`, `Transaction`, `Lock`). Plain data types (orders, lines) are never declared `unique`. `unique` is unrelated to `const`, and a `unique` type cannot be `const` (BYN3209).
 
-- **A type with a `unique` part is `unique`.** A struct with a `unique` field, a union with a `unique` payload, and a tuple, array or optional of a `unique` type are all `unique`, without being declared so. A struct holding a `List` or a `SecretKey` is therefore move-only. The explicit `struct unique` stays for raw resources, whose fields are not `unique` themselves (a C handle, a file descriptor).
+- **A type with a `unique` part is `unique`.** A struct with a `unique` field, a union with a `unique` payload, and a tuple, array or optional of a `unique` type are all `unique`, without being declared so. A struct holding a `List` or a `SecretKey` is therefore move-only. The explicit `struct unique` stays for raw resources, whose fields are not `unique` themselves (a C handle, a file descriptor). A struct holding a mutable reference (`Span<T>`, a `ref` field) is `unique` the same way (§9.4); one holding only read-only references (`ReadOnlySpan<T>`) copies freely.
 - Owning values never copy implicitly. An implicit copy of a `unique` value is a compile error (BYN2780) whose fixes are `move x`, `x.copy(to: alloc)` (when the type has one) or passing it by `ref`.
 
 > Round 3 §2: head-first `struct unique`; `unique` is the move-only marker, kept apart from `const`. Codes: BYN1044, BYN3209.
@@ -669,7 +673,13 @@ Users may create roots, never patterns. Derived members are generated only when 
 - **No abbreviations** applies to tools as well: the formatter is `bayan format` (§21.2).
 - **Logging:** `log` is the verb and the level is a particle argument (`log(msg, as: .debug)`, §14). `Log.debug` fails the grammar check, because `debug` is a level, not the act (BYN5007).
 
-> Round 3 §11, §12, §27, addendum 1 §1, §3: `T.Validated` is gone because `requires` makes every value valid at construction; the new rules name what `T.X`, states, events, particles, conversions and logging mean, so a name never hides which of them it is. Codes: BYN5001, BYN5007, BYN5009, BYN5010.
+> Round 3 §11, §12, §27: `T.Validated` is gone because `requires` makes every value valid at construction; the new rules name what `T.X`, states, events, particles, conversions and logging mean, so a name never hides which of them it is. Codes: BYN5001, BYN5007, BYN5009, BYN5010.
+
+- **Checker scope (O15).** The pattern rules that make derived forms work (`tryX`, `-ed`, `xInto`, particles; `BYN50xx`) apply to all code. The naming-style rules (`BYN51xx`) apply to `public` declarations only. A name forced by an outside system (a JSON field, a C symbol, a database column) uses the derivation's rename attribute (`@json(name: …)`, `@column(…)`), which exempts it from `BYN51xx`, or `@allow(…) because "…"` (§4.4).
+- **Project dictionary.** The checker classifies each word of a member name as a verb, noun or adjective. Words it does not know (domain terms such as `upsert`, `sku`, `kyc`) are declared in `grammar` in `package.byn` (§19.2), merged with the built-in word list; an unknown word is a warning (BYN5014) whose fix adds it there.
+- **Wording.** Grammar diagnostics are phrased in plain English ("nouns name values, verbs name actions; `get` adds nothing here"). The Arabic source of a rule appears only in `bayan explain` (a "Where this comes from" section) and `docs/bayan-grammar.md`.
+
+> Round 3 §12, O15: pattern rules are what derived forms depend on, so they hold everywhere, while naming style matters where others read the names; domain words are declared once instead of suppressed per member, and a reader needs no Arabic to act on a diagnostic. Codes: BYN5014.
 
 ### 5.3 Derivations
 Open set, written in Bayan with `derivation Name for T { … }` (§12.5). Standard derivations: automatic equality/hash/debug, `Order`, `Id`, `Builder`, `Patch`, `Events`, `Observable`, `Json`, `Csv`, `Row` (generates `readRow(ref Reader)`), `CopyIn` (generates binary COPY writers), `Binary` (CBOR), `Proto`, `Query`, `Config`, `Args`, `Gen`, `Diff`, `Ts`. Derivations only add members; they never change existing ones. The `derivation` mechanism is not in v0.1.
@@ -721,15 +731,29 @@ No user-defined operator symbols. Operator implementations must not allocate, su
 | `List<T>` → `Span<T>` | Implicit **only as a function argument**; otherwise the view `xs.span` (read-only, allowed on a `let`) or `xs.mutableSpan()` (needs `ref this`, so only on a `var`) |
 | Owned copy | `xs.copy()` returns an owned `List<T>` from a span or list (`uses alloc`); a conversion from a sequence is `List(seq)` |
 | Text | `string(x)` or `$"{x}"`; there is no `x.toString()` (§6.6) |
+| Integer → text in a radix | `string(n, as: .hex)`; `as:` takes a `Radix` and defaults to `.decimal`; output is lowercase with no prefix (§3.2). Integers only |
+| Text → integer | `u64.tryParse(text)` returns `u64?`; `tryParse(text, as: .hex)` accepts the same `Radix` |
+| Bytes → text | `try string(bytes)` (fails `Utf8Error`), `string.tryFrom(bytes)` (`string?`), `string(bytes, invalid: .replace)` (lossy, never fails) (§3.2). Hex and base64 are codecs: `Hex.encode(bytes)`, `try Hex.decode(text)` |
 | User-defined implicit conversions | Not allowed |
 
 There are no implicit user conversions; a conversion is `T(x)`, never an instance `toX` or `asX` member (§5.2). `checked(expr)` evaluates a whole expression with overflow detection and returns `T?` (`null` on overflow). Unlike C#, where `checked` throws, it never traps. Float-to-integer conversion saturates (NaN becomes 0). Integer division by zero traps. `checked(expr)` is not in v0.1.
 
 The C# cast `(T)x` is an input form for `T(x)` (BYN1057).
 
+```csharp
+union Radix {
+    binary
+    octal
+    decimal
+    hex
+}
+```
+
 > Round 2 §2, §3: overflow traps in every mode (§17), so narrowing does too; `checked` returns `T?` and the C# difference is stated.
 
 > Sūq review A4, A7 (F-19): a conversion reads as a call, so it needs no parentheses rule of its own (`if i32(big) > 3`), and every type is built the same way. Codes: BYN1057.
+
+> Round 3 §27, O13: `tryParse` takes the same `Radix` as `string(n, as:)`, so formatting and parsing a number name the base the same way, and bytes become text through the constructor forms every type uses. Codes: BYN2230.
 
 ### 6.3 Target-typed literals
 `[…]`, `["k": v]`, `{ f: v }` and `.member` take their type from context (variable type, parameter type, return type). If more than one overload accepts a target-typed literal, it is an error, never a silent pick. A ternary inside a collection literal must be parenthesized. `{` at the start of a statement is a block.
@@ -965,7 +989,7 @@ public void main() {
 
 > Round 2 §6: `errdefer` becomes `defer failing`, one head verb with participles; panic handlers run in a known order with restrictions that keep a dying process safe. Codes: BYN1020, BYN2601, BYN2606, BYN2612, BYN2613, BYN2614.
 
-> Round 3 addendum 1 §1: `onPanic` broke the rule against the `on` prefix and repeated the type's name; `handler` names the role, and `uses console` states the old restriction as an effect bound. Codes: BYN2230, BYN2614, BYN5010.
+> Round 3 §12, §13: `onPanic` broke the rule against the `on` prefix and repeated the type's name; `handler` names the role, and `uses console` states the old restriction as an effect bound. Codes: BYN2230, BYN2614, BYN5010.
 
 > Round 3 §19: capturing the modifier at registration means the cleanup decision matches the state the scope was entered with.
 
@@ -1102,7 +1126,7 @@ let resp = signUp(form) catch switch {
 - Variants are namespaced by their set (`EmailError.invalid` ≠ `UrlError.invalid`); an ambiguous `.invalid` is an error.
 - Call sites: `try f()` propagates; `f() catch value`; `f() catch return …`; `f() catch switch { … }` (exhaustive; each arm is a pattern over the error union and binds its own name, `DbError e => …`); `f() catch (Set.variant) …` handles some and propagates the rest (which must appear in the caller's `fails`). There is no `catch (e)`.
 - `f() catch { … }` runs a block when `f` fails. On a `void` call the block may complete normally. When `f` returns a value, the block has no value to give, so it must not complete normally: it ends in `return`, `break`, `continue`, a panic or another `never` expression (`let n = parse(s) catch { return -1 }`), and a block that can fall through is BYN2611. A brace body of comma-separated `name: value` fields is a target-typed struct literal, not a block: `f() catch { x: 1 }` gives that struct value. `catch {}` is an empty block, so an empty struct handler names its type: `f() catch P{}`.
-- Built-in error sets: `IoError` (codes 1–7) and `Utf8Error` (`invalidSequence`, code 8, from `string.from`, §3.2); user error variants are numbered from 9.
+- Built-in error sets: `IoError` (codes 1–7) and `Utf8Error` (`invalidSequence`, code 8, from `string(bytes)`, §3.2); user error variants are numbered from 9.
 - Payloads: `union error ParseError` with cases `badDigit(Bytes at)` and `overflow`, one per line (§3.14).
 - **`try` covers the entire expression to its right**, down to the lowest-precedence operator. Applying it to a sub-expression requires parentheses (`(try f()) + g()`); the diagnostic suggests where (BYN1054).
 - Debug builds record **error return traces**.
@@ -1156,8 +1180,13 @@ let resp = signUp(form) catch switch {
    A method whose return type is a span may return a borrow of its own receiver's fields: in `struct Lexer` with a field `List<Token> toks`, a method `ReadOnlySpan<Token> tokens() => toks.span`. At the call site the result borrows the receiver, and rules 3 and 5 apply to it as to any borrow of the receiver. A `string` view of an own field, a span inside a returned tuple, and a borrow of a local's storage are still rejected (BYN3003).
 6. `arena.reset()` requires exclusive access.
 7. Literals and `const` data are static and may go anywhere.
+8. **A borrow stored in a struct field binds the struct to the referent's region.** A struct that holds a reference (a `Span<T>`, a `ReadOnlySpan<T>`, a borrowed field) never outlives the referent, cannot be returned past its owner, and its owner cannot be modified while it is alive (rules 3 and 5). `Rows<T>`, `Subscription` and the span views rely on this.
+   - A struct holding a mutable reference (`Span<T>`, a `ref` field) is implicitly `unique` (§3.11): it cannot be copied, so two mutable aliases cannot exist. Copying one is the use-after-move error of any `unique` value. Read-only references (`ReadOnlySpan<T>`) copy freely.
+   - A struct holding a reference cannot be passed to a fiber that may outlive the referent (BYN3217); within a structured scope that ends first (§13.3), it can.
 
 > Round 2 §9: mutation is declared with `ref this`, not inferred. Codes: BYN2115.
+
+> Round 3 §31: a stored reference follows the region rules of any borrow; implicit `unique` rules out two mutable aliases, and the fiber rule keeps a reference from outliving its referent on another fiber. Codes: BYN3217.
 
 ### 9.5 Uninitialized memory
 `stackalloc T[n] uninit` yields `Uninit<T>`, which cannot be read. Writing APIs return the initialized prefix as a `Span<T>`. A runtime-sized `stackalloc` requires a bound: `stackalloc u8[n] max 4KiB`.
@@ -1166,6 +1195,10 @@ let resp = signUp(form) catch switch {
 
 ### 9.6 Handles
 `Pool<T>` + `Handle<T>` (index + generation, 8 bytes) for graphs and long-lived data; stale handles are detected.
+
+Trees and graphs use typed indices first (§3.5; the idiom is in `docs/bayan-style.md`), with no per-access cost. Generational handles, which catch a stale index after deletion at the cost of one compare per access, are added only when the selfhost AST or Sūq shows the need.
+
+> Round 3 §31: typed indices cover trees with zero overhead, so handles wait for a demonstrated need.
 
 ### 9.7 Bounds and `unsafe`
 Bounds checks apply in **every** build mode; the compiler removes only those it proves redundant. Raw pointers, pointer arithmetic, `bitcast` on non-plain types and `extern` calls require `unsafe`, where region checks do not apply.
@@ -1302,10 +1335,16 @@ interface IRepository<T, K = T.Id> where T : IEntity<T> { … }
 - Constraints are **checked at definition**.
 - **No variance.**
 - **Specialization: the specific overrides the general** (Pāṇini). Hand-written beats derived; instance beats extension; concrete beats generic; more specific constraint beats less specific.
-- Debug builds share generic code via witness tables; release builds monomorphize. `@specialize` / `@shared` override per function.
+- **Generics are monomorphized** in every build mode: each instantiation is compiled for its concrete types (one C function per instantiation, named by its mangled type arguments), so a call through a type parameter is a direct, inlinable call. Interface values (`Display` as a type, `rest ReadOnlySpan<Display>`) are the explicit way to ask for dynamic dispatch, as `{data, vtable}` pairs.
+  ```csharp
+  public T max<T>(ReadOnlySpan<T> xs) where T : IOrder<T> { … }   // static: one copy per T
+  public void print(rest ReadOnlySpan<Display> items) uses console  // dynamic: one copy, vtable calls
+  ```
 - Inference from arguments; explicit type arguments only when nothing can be inferred.
 - `List<T, I>` takes an optional second type argument, the index type (`List<Money, RowId>`); plain `List<T>` indexes with `Index` (§3.5).
 - No higher-kinded types. Variadic generics: v2 candidate.
+
+> Round 3 §30: one compilation strategy in every mode keeps a debug build's dispatch the same as a release build's; dynamic dispatch is chosen by writing an interface value, never by the build mode.
 
 ---
 
@@ -1588,7 +1627,7 @@ Function `expects` contracts (§7.9) detect bugs and panic in every build mode. 
 - Read-only queries and views take `ReadOnlySpan<T>` parameters (a `Span<T>`, `List<T>`, array or, for bytes, `string` converts implicitly).
 - **Queries beside `where`:** `except` subtracts a pattern from a sequence and narrows its element type (`events.where(it.isValid) except .heartbeat`, §6.8).
 - `fromBounds(start, until: end)` names the exclusive end.
-- **Views and copies (no `toX` or `asX` members):** `xs.span` is a read-only view (a property, allowed on a `let`); `xs.mutableSpan()` is mutating access (`ref this`, `var` only; calling it on a `let` is the usual `ref this` error); `xs.copy()` returns an owned `List<T>` and `uses alloc`, on spans and lists alike; a sequence becomes a list with `List(seq)`; a cursor's own member `rows.all()` consumes it. While a `mutableSpan()` view is live, no other access to `xs` is allowed (§9.4).
+- **Views and copies (no `toX` or `asX` members):** `xs.span` is a read-only view (a property, allowed on a `let`); `xs.mutableSpan()` is mutating access (`ref this`, `var` only; calling it on a `let` is the usual `ref this` error); `xs.copy()` returns an owned `List<T>` and `uses alloc`, on spans and lists alike; a sequence becomes a list with `List(seq)`; a cursor's own member `rows.all()` consumes it. While a `mutableSpan()` view is live, no other access to `xs` is allowed (§9.4). Strings have the views `s.bytes`, `s.runes` and `s.utf16` (§3.2).
 - **Lookups:** `get(at:)` is declared once as the operator method behind `[]`, so call sites write `xs[i]`; `tryGet(at:)` is derived and returns `T?`. Lists and maps share the shape: `prices.tryGet(at: sku) ?? 0g` replaces `getOr`.
 - Collections copy explicitly: `xs.copy(to: alloc)` for `List`, `Map` and `StrBuf` returns an independent value of the same type (not allowed when an element, key or value holds a `List`, `Map`, `StrBuf` or `Owned`).
 - Compile-time work: bounds checks removed when provably in range; constant slices of fixed arrays have type `T[N]`; `xs[^1]` lowers to `xs[xs.length - 1]`; slice chains fuse.
@@ -1610,7 +1649,7 @@ let headers = ["Accept": "*/*"]                      // no target type: Map<stri
 
 > Round 2 §11: one size name and verb/participle pairs that follow §5.2; `first`/`last` return `T?` instead of a parallel `tryFirst`/`tryLast`. Codes: BYN2104, BYN2230, BYN2235, BYN2236.
 
-> Round 3 deliverable 4, §15, §27, addendum 1 §3: the size name stays `length`, as in round 2, so `count(p)` reads as a predicate count only. `removeRange` and `replaceRange` give way to particle forms (the stdlib exception to guard 1: two entries for one operation, kept because `until` and `through` read well at call sites, and not a precedent); `getOr` becomes `tryGet(at:) ?? x`; `toList()` and `asSpan()` would spell conversions that already have a form. Codes: BYN2230, BYN5009.
+> Round 3 deliverable 4, §12, §15, §27: the size name stays `length`, as in round 2, so `count(p)` reads as a predicate count only. `removeRange` and `replaceRange` give way to particle forms (the stdlib exception to guard 1: two entries for one operation, kept because `until` and `through` read well at call sites, and not a precedent); `getOr` becomes `tryGet(at:) ?? x`; `toList()` and `asSpan()` would spell conversions that already have a form. Codes: BYN2230, BYN5009.
 - Maps: reading `map[k]` panics if missing; `map.tryGet(at: k) ?? fallback` reads without inserting; `ref map.slot(k)` gets or inserts a default (requires `V : default`).
 - `Grid<T>`-style types accept multi-dimensional ranges: `grid[1..^1, 1..^1]`.
 
@@ -1767,10 +1806,13 @@ public c_int settleC(…) { … }
 - `kind: .sharedLib` / `.staticLib` generates a C header automatically.
 - Callbacks from C onto fibers switch to the thread stack. A panic in a callback aborts.
 - `cstr` → `string` validates UTF-8; non-validating conversion only in `unsafe`. Exported signatures use C-compatible types; handing pointers to C requires `unsafe`.
+- Nul-terminated UTF-16 strings (Windows APIs) follow the same form as `cstr`: the conversion to `string` validates, and the non-validating one needs `unsafe`. `s.utf16` (§3.2) is the view for UTF-16 code units.
 
 > Round 2 §10: manifest fields use `:`.
 
 > Round 3 §2, §5, §6: extern declarations are type-first like C signatures and every other declaration (revised 2026-10-22), and attributes use `@` like everywhere else. Codes: BYN1043, BYN1045.
+
+> Round 3 §27: wide strings replace `toUtf16()` with one FFI form beside `cstr`, so UTF-16 interop needs no conversion member. Codes: BYN2230.
 
 ---
 
@@ -1800,14 +1842,21 @@ Package {
         booleans: .symbols,       // or .words: `and or not`
         primitives: .sized,       // or .csharp: `int`, `long`, `byte`, …
     },
+    grammar: Grammar {
+        verbs: ["upsert", "reindex"],
+        nouns: ["sku", "kyc"],
+        forms: ["upsert": "upserted"],
+    },
 }
 ```
 
-`capabilities` is an upper bound on the effects of every function in the package (§14). `style` holds the project's formatting choices (defaults in `docs/bayan-style.md`); `bayan format` reads it. Style is never compiler-enforced, and grammar rules (§5) cannot be configured here. The `bayan new` templates use the same `:` syntax. Formatter behaviour is not in v0.1.
+`capabilities` is an upper bound on the effects of every function in the package (§14). `style` holds the project's formatting choices (defaults in `docs/bayan-style.md`); `bayan format` reads it. Style is never compiler-enforced, and grammar rules (§5) cannot be configured here. `grammar` is the project dictionary (§5.2): domain words the checker does not know, as `verbs` and `nouns`, with irregular derived spellings in `forms`; it is merged with the built-in word list and adds words, never exemptions. The `bayan new` templates use the same `:` syntax. Formatter behaviour is not in v0.1.
 
 > Round 2 §10, §18: `package.byn` is a Bayan struct literal, so it uses `:` like every literal; style is per-project data. Codes: BYN3104.
 
 > Round 3 §8, §13, §28: both boolean spellings and both primitive spellings are canonical; `style.booleans` and `style.primitives` pick one per project and `bayan format` rewrites the other; capabilities bound effects instead of standing beside them. Codes: BYN6004.
+
+> Round 3 §12, O15: domain words are declared once per project rather than suppressed member by member. Codes: BYN5014.
 
 The registry publishes JSON metadata, and `bayan pkg export --json` exists, so outside tools never parse Bayan.
 
@@ -1959,6 +2008,10 @@ The language server runs inside the compiler process. Display-only views (inferr
 
 ### 21.3 Performance targets
 Incremental rebuild under 100 ms on a reference project; cold-build budget tracked in CI.
+
+**Runtime.** Bayan targets Rust and Zig speed, and the safe default stays on the fast path. Checks (bounds, overflow, `expects`) stay in every build mode and are emitted in a form the C compiler optimizes: a compare and a branch to a shared `noreturn`, cold trap function per check kind, and overflow through `__builtin_add_overflow` and its family (v0.0.1). Generics are monomorphized (§11). Typestate, effects, capabilities, units, `rest` spans, `Event.raise` and derivations cost nothing at run time. After v0.0.1: range analysis that proves an index in bounds and hoists the check out of a loop, zipped iteration (`for (p, w) in zip(pixels, weights)`) as the idiom that needs no index checks, and Sūq benchmark budgets against Rust and Zig as well as the C# baseline.
+
+> Round 3 §30: keeping checks in release builds is affordable only if they are cheap to emit and easy for the C compiler to remove; v0.0.1 implements only the emission form.
 
 ### 21.5 Input forms
 Input forms are alternate spellings that the editor and `bayan format` accept and rewrite, one way, into canonical syntax. The compiler rejects them in source with a machine-applicable fix. This is the only list.
@@ -2126,6 +2179,7 @@ Roadmap: v0.3 WASM + `.d.ts`; v0.4 `bayan gen ts`; post-v1 portable JS backend (
   - Typestate: the `states` block, `becomes`, `become` (§3.17).
   - Argument particles `from to until through at by for as`; a particle appears at most once per signature (§10).
   - `Panic.handler` with `uses console` (§7.6). A public field is writable only from its own `ref this` methods or through `with` (§3.10). Views and copies are `span`, `mutableSpan()`, `copy()` and `T(x)`, never `toX` or `asX` members (§16).
+  - Bytes decode with `try string(bytes)` and `string.tryFrom(bytes)`, never `fromUtf8`; integers format with `string(n, as: Radix)`; hex and base64 are codecs (§3.2, §6.2). BYN50xx rules cover all code, BYN51xx the public API; domain words go in `grammar` (§5.2, §19.2). Generics are monomorphized (§11). A struct holding a mutable reference is `unique` and no reference crosses into a fiber that may outlive it (§9.4).
   - Secrets need `expose … because` in derivations; `Row` is flat (§5.3). Two trust layers (§15.1).
   - `try` covers the whole expression to its right (§8). `defer` modifiers are captured at registration (§7.6).
   - Size is `length`; `count(p)` is only a predicate count (§16).

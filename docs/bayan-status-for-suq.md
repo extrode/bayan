@@ -201,7 +201,7 @@ Evidence: `CliTests.cs`, `ScaffoldTests.cs`, `OutputTests.cs`, `tests/cases/styl
 | `defer`, `errdefer` | Implemented | `run/errors-cleanup` |
 | `defer failing (e)`, `defer panicking (p)` | Implemented *(round 2, unmerged)* | `run/errors-defer-failing`, `run/panic-handler-order`, `parse/defer-family`, `run/defer-call-named-failing`; a handler reading a local moved after it is BYN2615 (`diag/panic-handler-reads-moved`) |
 | When `defer` modifiers are evaluated | Changed from spec | `defer stmt if c;` parses and runs, but `c` is evaluated at scope exit, not at registration (probe; no golden). Round 3 J20 wants registration time |
-| `panic`, `Panic.onPanic` | Implemented *(round 2, unmerged)* | `Panic.onPanic = onCrash;` with `p.message` (`run/on-panic-order`, `run/panic-handler-binding`, `diag/on-panic-signature`); not on wasi |
+| `panic`, `Panic.handler` | Implemented *(round 2, unmerged; renamed to `handler` in round 3)* | `Panic.handler = onCrash` with `p.message` (`run/on-panic-order`, `run/panic-handler-binding`, `diag/on-panic-signature`); not on wasi |
 | `todo(message)` | Implemented | `run/todo` |
 
 ## 6. Effects and concurrency
@@ -245,7 +245,7 @@ Evidence: `CliTests.cs`, `ScaffoldTests.cs`, `OutputTests.cs`, `tests/cases/styl
 | db/pg (COPY, readers, transactions) | Not started |
 | `sql` literals | Not started |
 | regex, html, url, crypto | Not started |
-| hex | Partial: `toHex()` on integers (`run/to-hex`) |
+| hex | Partial: integer hex formatting (`run/to-hex`); round 3 spells it `string(n, as: .hex)` |
 | time/clock | Partial: `Io.monotonicNanos` only |
 | log | Not started |
 

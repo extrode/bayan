@@ -28,6 +28,26 @@ Not configurable: declarations are type-first and local bindings name-first ([GR
 | `timeout(after: Millis)` (payload) | `timeout(Millis after)` |
 | `Grams w = 0g` (in a function body) | `let w: Grams = 0g` |
 
+## Trees and graphs
+
+Use typed indices (SPEC §3.5): nodes live in one list and refer to each other by a distinct index type, so there are no stored references, no region constraints and no per-access cost.
+
+```csharp
+type distinct NodeId = Index
+
+struct Node {
+    string name
+    NodeId? parent
+    List<NodeId> children
+}
+
+struct Tree {
+    List<Node, NodeId> nodes
+}
+```
+
+A `NodeId` cannot index a list with another index type (BYN3210). Generational handles (`Handle<T>`, SPEC §9.6) wait until the selfhost AST or Sūq shows the need.
+
 ## Configuration
 
 Configuration lives in `package.byn` as a Bayan struct literal:
