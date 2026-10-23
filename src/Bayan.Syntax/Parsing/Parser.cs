@@ -270,7 +270,7 @@ public sealed class Parser
         TokenKind.ContextKeyword or TokenKind.StructKeyword or TokenKind.PublicKeyword or TokenKind.PrivateKeyword or
         TokenKind.ImportKeyword or TokenKind.ErrorKeyword or TokenKind.TestKeyword or TokenKind.TypeKeyword or
         TokenKind.StaticKeyword or TokenKind.ReadonlyKeyword or TokenKind.RequiredKeyword or TokenKind.UniqueKeyword or
-        TokenKind.ExternKeyword or TokenKind.UnsafeKeyword;
+        TokenKind.ExternKeyword or TokenKind.UnsafeKeyword or TokenKind.UnionKeyword or TokenKind.DistinctKeyword;
 
     /// <summary>Skips to a plausible statement start: past a <c>;</c>, before a <c>}</c>, or at a line starting a statement.</summary>
     private void Synchronize()
@@ -415,15 +415,14 @@ public sealed class Parser
                 break;
             case TokenKind.StructKeyword:
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private | Modifiers.Readonly | Modifiers.Unique, startIndex);
+                for (var i = startIndex; i < _pos; i++)
+                    if (_tokens[i].Kind == TokenKind.UniqueKeyword) ReportKeywordOrder(_tokens[i], Current, "struct unique");
                 decl = ParseStruct(start, modifiers);
                 break;
-            case TokenKind.ErrorKeyword when Peek(1) == TokenKind.EnumKeyword:
+            case TokenKind.UnionKeyword when Peek(1) == TokenKind.ErrorKeyword && IsName(Peek(2)):
+            case TokenKind.ErrorKeyword when Peek(1) is TokenKind.EnumKeyword or TokenKind.UnionKeyword or TokenKind.SetKeyword:
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
-                decl = ParseErrorEnum(start, modifiers);
-                break;
-            case TokenKind.ErrorKeyword when Peek(1) == TokenKind.SetKeyword:
-                RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
-                decl = ParseErrorSet(start, modifiers);
+                decl = ParseErrorUnion(start, modifiers);
                 break;
             case TokenKind.EnumKeyword when topLevel:
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
@@ -442,6 +441,8 @@ public sealed class Parser
                 decl = ParseExtension(start);
                 break;
             case TokenKind.TypeKeyword when Peek(1) == TokenKind.Identifier && Peek(2) == TokenKind.Equals:
+            case TokenKind.TypeKeyword or TokenKind.DistinctKeyword when Peek(1) is TokenKind.DistinctKeyword or TokenKind.TypeKeyword
+                && Peek(1) != Kind && IsName(Peek(2)) && Peek(3) == TokenKind.Equals:
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
                 decl = ParseTypeAlias(start, modifiers);
                 break;
@@ -608,6 +609,7 @@ public sealed class Parser
     private StructDecl ParseStruct(int start, Modifiers modifiers)
     {
         Advance();
+        if (Accept(TokenKind.UniqueKeyword)) modifiers |= Modifiers.Unique;
         var name = ExpectName("a struct name");
         var typeParams = ParseTypeParams();
         var bases = ParseBases();
@@ -938,49 +940,95 @@ public sealed class Parser
         return list.ToArray();
     }
 
-    private ErrorEnumDecl ParseErrorEnum(int start, Modifiers modifiers)
+    /// <summary>
+    /// <c>union error Name { a b }</c>, one case per line, or <c>union error Name = A, B except .c</c>, a composition.
+    /// <c>error enum</c> and <c>error union</c> are input forms (BYN1044); <c>error set</c> is BYN1029.
+    /// </summary>
+    private Decl ParseErrorUnion(int start, Modifiers modifiers)
     {
-        Advance();
-        Advance();
+        var first = Advance();
+        var second = Advance();
+        if (first.Kind == TokenKind.ErrorKeyword && second.Kind != TokenKind.SetKeyword) ReportKeywordOrder(first, second, "union error");
         var name = ExpectName("an error set name");
+        if (Kind == TokenKind.Equals || second.Kind == TokenKind.SetKeyword) return ParseErrorComposition(start, modifiers, first, second, name);
         var open = Expect(TokenKind.OpenBrace);
         var variants = new List<ErrorVariant>();
         var cases = new List<TextSpan>();
         var commas = new List<Token>();
         while (IsName(Kind) || IsAttributeStart())
         {
-            var first = Current;
+            var caseStart = Current;
             var attributes = ParseAttributes();
-            var doc = DocOf(first) ?? DocOf(Current);
+            var doc = DocOf(caseStart) ?? DocOf(Current);
             var variant = ExpectName("a variant name");
             variants.Add(new ErrorVariant(variant.Span, variant, doc) { Attributes = attributes });
-            cases.Add(TextSpan.FromBounds(first.Start, _prevEnd));
+            cases.Add(TextSpan.FromBounds(caseStart.Start, _prevEnd));
             if (!NextCase(commas)) break;
         }
         ReportCaseCommas(name.Text, open, cases, commas);
-        ExpectClose(open, "error enum");
+        ExpectClose(open, "union error");
         return new ErrorEnumDecl(SpanFrom(start), modifiers, name, variants.ToArray());
     }
 
-    /// <summary><c>error set Name = A, B</c>; members separated by <c>|</c> are the input form (BYN1029).</summary>
-    private ErrorSetDecl ParseErrorSet(int start, Modifiers modifiers)
+    /// <summary>
+    /// <c>union error Name = A, B</c>, optionally narrowed by <c>except .a, .b</c>. The round-2 <c>error set Name = A | B</c>
+    /// is the input form (BYN1029); its fix writes <c>union error</c> and <c>,</c> between the members.
+    /// </summary>
+    private ErrorSetDecl ParseErrorComposition(int start, Modifiers modifiers, Token first, Token second, Name name)
     {
-        Advance();
-        Advance();
-        var name = ExpectName("an error set name");
         Expect(TokenKind.Equals);
         var members = new List<TypeSyntax> { ParseType() };
+        var pipes = new List<TextSpan>();
         while (Kind is TokenKind.Comma or TokenKind.Bar)
         {
             var memberEnd = _prevEnd;
-            var separator = Advance();
-            if (separator.Kind == TokenKind.Bar)
-                Report(DiagnosticCodes.ErrorSetPipe, separator.Span, label: "the input form", help: "write `,` between the members",
-                    fix: new Fix(TextSpan.FromBounds(memberEnd, separator.End), ","));
+            if (Advance().Kind == TokenKind.Bar) pipes.Add(TextSpan.FromBounds(memberEnd, _prevEnd));
             members.Add(ParseType());
         }
+        var except = new List<Name>();
+        if (AtContextual("except"))
+        {
+            Advance();
+            Expect(TokenKind.Dot);
+            except.Add(ExpectName("a case name"));
+            while (Kind == TokenKind.Comma && Peek(1) == TokenKind.Dot)
+            {
+                Advance();
+                Advance();
+                except.Add(ExpectName("a case name"));
+            }
+        }
+        if (second.Kind == TokenKind.SetKeyword || pipes.Count > 0)
+        {
+            var text = new StringBuilder(second.Kind == TokenKind.SetKeyword ? "union error" : _source.GetText(TextSpan.FromBounds(first.Start, second.End)));
+            var at = second.End;
+            foreach (var pipe in pipes)
+            {
+                text.Append(_source.GetText(TextSpan.FromBounds(at, pipe.Start))).Append(',');
+                at = pipe.End;
+            }
+            text.Append(_source.GetText(TextSpan.FromBounds(at, _prevEnd)));
+            var where = second.Kind == TokenKind.SetKeyword ? TextSpan.FromBounds(first.Start, second.End) : pipes[0];
+            Report(DiagnosticCodes.ErrorSetPipe, where, [name.Text], label: "the input form", help: "write `union error`, with `,` between the members",
+                fix: new Fix(TextSpan.FromBounds(first.Start, _prevEnd), text.ToString()));
+        }
         ExpectEnd();
-        return new ErrorSetDecl(SpanFrom(start), modifiers, name, members.ToArray());
+        return new ErrorSetDecl(SpanFrom(start), modifiers, name, members.ToArray())
+        {
+            Head = TextSpan.FromBounds(first.Start, second.End), Except = except.ToArray(),
+        };
+    }
+
+    /// <summary>
+    /// BYN1044 for a modifier word before the declaration kind (<c>unique struct</c>, <c>distinct type</c>, <c>error enum</c>,
+    /// <c>error union</c>); the fix puts the kind first, keeping any words written between them.
+    /// </summary>
+    private void ReportKeywordOrder(Token modifier, Token kind, string canonical)
+    {
+        var span = TextSpan.FromBounds(modifier.Start, kind.End);
+        var between = _source.GetText(TextSpan.FromBounds(modifier.End, kind.Start)).TrimStart();
+        Report(DiagnosticCodes.DeclarationKeywordOrder, span, [$"{Text(modifier)} {Text(kind)}", canonical], label: "the input form",
+            help: $"put the kind first: `{canonical}`", fix: new Fix(span, between + canonical));
     }
 
     /// <summary>
@@ -1062,7 +1110,7 @@ public sealed class Parser
         return new UnionDecl(SpanFrom(start), modifiers, name, variants.ToArray()) { TypeParams = typeParams, Bases = bases, Where = where };
     }
 
-    /// <summary>After a case of an enum, union or error enum: whether another follows, on its own line or after a <c>,</c> (kept in <paramref name="commas"/>).</summary>
+    /// <summary>After a case of an enum, union or union error: whether another follows, on its own line or after a <c>,</c> (kept in <paramref name="commas"/>).</summary>
     private bool NextCase(List<Token> commas)
     {
         if (Kind == TokenKind.Comma)
@@ -1076,7 +1124,7 @@ public sealed class Parser
     /// <summary>BYN1053 at the first <c>,</c> between cases; the fix puts each case on its own line and drops the commas.</summary>
     private void ReportCaseCommas(string typeName, Token open, List<TextSpan> cases, List<Token> commas)
     {
-        // A lone case with a trailing comma (`error enum E { bad, }`) is still one case on one line.
+        // A lone case with a trailing comma (`union error E { bad, }`) is still one case on one line.
         if (commas.Count == 0 || cases.Count < 2) return;
         Fix? fix = null;
         if (Kind == TokenKind.CloseBrace && cases.Count > 0)
@@ -1120,14 +1168,18 @@ public sealed class Parser
         return text.Append(rest).ToString();
     }
 
+    /// <summary><c>type Name = T</c>, or <c>type distinct Name = T</c>; <c>distinct type</c> is the input form (BYN1044).</summary>
     private TypeAliasDecl ParseTypeAlias(int start, Modifiers modifiers)
     {
-        Advance();
+        var first = Advance();
+        var distinct = first.Kind == TokenKind.DistinctKeyword || Kind == TokenKind.DistinctKeyword;
+        if (first.Kind == TokenKind.DistinctKeyword) ReportKeywordOrder(first, Advance(), "type distinct");
+        else if (distinct) Advance();
         var name = ExpectName();
         Expect(TokenKind.Equals);
         var target = ParseType();
         ExpectEnd();
-        return new TypeAliasDecl(SpanFrom(start), modifiers, name, target);
+        return new TypeAliasDecl(SpanFrom(start), modifiers, name, target) { Distinct = distinct };
     }
 
     private TestDecl ParseTest(int start)

@@ -1,5 +1,5 @@
 // An `errdefer` runs at a failing exit: a `try` reached with `xs` moved is a use after move (BYN2781).
-error enum E {
+union error E {
     bad
 }
 
@@ -25,7 +25,7 @@ void failing(bool fail) fails E {
     return .bad if fail
 }
 
-error enum F {
+union error F {
     a
     b
 }

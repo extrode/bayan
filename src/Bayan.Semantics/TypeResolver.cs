@@ -267,6 +267,9 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
     }
 
     /// <summary>Follows aliases to their targets.</summary>
+    /// <summary>The type an alias or <c>union error</c> composition names, resolved once.</summary>
+    internal TypeSymbol ExpandAlias(AliasPlaceholder alias) => Expand(alias);
+
     private TypeSymbol Expand(TypeSymbol t)
     {
         if (t is not AliasPlaceholder alias) return t;
@@ -283,7 +286,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
         return alias.Target ??= target;
     }
 
-    /// <summary>The sets named by <c>error set S = A, B;</c>, one set or an <see cref="ErrorUnionType"/>.</summary>
+    /// <summary>The sets named by <c>union error S = A, B</c>, one set or an <see cref="ErrorUnionType"/>.</summary>
     private TypeSymbol ErrorSet(ErrorSetDecl decl)
     {
         var sets = new List<ErrorSetSymbol>();

@@ -162,6 +162,47 @@ public sealed class ParserTests
     }
 
     [Theory]
+    [InlineData("unique struct S {\n}\n", "struct unique S {\n}\n")]
+    [InlineData("unique public struct S {\n}\n", "public struct unique S {\n}\n")]
+    [InlineData("error enum E {\n    a\n}\n", "union error E {\n    a\n}\n")]
+    [InlineData("public error union E {\n    a\n}\n", "public union error E {\n    a\n}\n")]
+    [InlineData("error union S = A, B\n", "union error S = A, B\n")]
+    [InlineData("distinct type Id = i64\n", "type distinct Id = i64\n")]
+    public void DeclarationKeywordOrderIsAnInputFormWithAFix(string text, string fixedText)
+    {
+        var tree = Parse(text);
+        var diagnostic = Assert.Single(tree.Diagnostics);
+        Assert.Equal("BYN1044", diagnostic.Code);
+        var fix = diagnostic.Fix!;
+        Assert.Equal(fixedText, text[..fix.Span.Start] + fix.Replacement + text[fix.Span.End..]);
+    }
+
+    [Theory]
+    [InlineData("error set S = A, B\n", "union error S = A, B\n")]
+    [InlineData("public error set S = A | B | C\n", "public union error S = A, B, C\n")]
+    [InlineData("union error S = A | B except .x\n", "union error S = A, B except .x\n")]
+    public void ErrorSetIsAnInputFormWithAFix(string text, string fixedText)
+    {
+        var tree = Parse(text);
+        var diagnostic = Assert.Single(tree.Diagnostics);
+        Assert.Equal("BYN1029", diagnostic.Code);
+        var fix = diagnostic.Fix!;
+        Assert.Equal(fixedText, text[..fix.Span.Start] + fix.Replacement + text[fix.Span.End..]);
+    }
+
+    [Theory]
+    [InlineData("struct unique S {\n}\n", "Struct unique S")]
+    [InlineData("union error E {\n    a\n}\n", "ErrorEnum E")]
+    [InlineData("union error S = A, B except .x, .y\n", "ErrorSet S = A, B except .x, .y")]
+    [InlineData("type distinct Id = i64\n", "TypeAlias distinct Id = i64")]
+    public void HeadFirstDeclarationsAreClean(string text, string dump)
+    {
+        var tree = Parse(text);
+        Assert.Empty(tree.Diagnostics);
+        Assert.Contains(dump, AstDump.Dump(tree));
+    }
+
+    [Theory]
     [InlineData("let x: i64 = 1\n")]
     [InlineData("var x: i64\n")]
     [InlineData("const x: i64 = 1\n")]
@@ -276,6 +317,7 @@ public sealed class ParserTests
     [InlineData("enum E { a, b }\n", "enum E {\n    a\n    b\n}\n")]
     [InlineData("enum E {\n    a,\n    b,\n}\n", "enum E {\n    a\n    b\n}\n")]
     [InlineData("union U { A(i64 x), B }\n", "union U {\n    A(i64 x)\n    B\n}\n")]
+    [InlineData("union error E { a, b }\n", "union error E {\n    a\n    b\n}\n")]
     public void CommaSeparatedCasesAreAnInputForm(string text, string fixedText)
     {
         var tree = Parse(text);

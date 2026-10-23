@@ -1,4 +1,4 @@
-error enum ReadError { broken }
+union error ReadError { broken }
 
 i64? half(i64 n) => n % 2 == 0 ? n / 2 : null
 

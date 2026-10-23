@@ -4,7 +4,7 @@ interface IStack {
     i64 top()
 }
 
-unique struct Stack : IStack {
+struct unique Stack : IStack {
     List<i64> items
 
     i64 count => items.length

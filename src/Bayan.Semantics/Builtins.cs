@@ -90,13 +90,13 @@ public sealed class Builtins
     };
 
     private const string Utf8ErrorSource = """
-        public error enum Utf8Error {
+        public union error Utf8Error {
             /// The bytes are not well-formed UTF-8.
             invalidSequence,
         }
         """;
 
-    /// <summary><c>error enum Utf8Error</c>: numbered right after <c>IoError</c>, so <c>invalidSequence</c> is code 8.</summary>
+    /// <summary><c>union error Utf8Error</c>: numbered right after <c>IoError</c>, so <c>invalidSequence</c> is code 8.</summary>
     public ErrorSetSymbol Utf8Error { get; }
 
     /// <summary><c>string string.from(ReadOnlySpan&lt;u8&gt; bytes) fails Utf8Error</c>: a copy from <c>context.allocator</c>.</summary>
@@ -118,7 +118,7 @@ public sealed class Builtins
     };
 
     private const string IoErrorSource = """
-        public error enum IoError {
+        public union error IoError {
             /// The file does not exist.
             notFound,
             /// Permission denied.
@@ -136,7 +136,7 @@ public sealed class Builtins
         }
         """;
 
-    /// <summary><c>error enum IoError</c>: its variants are numbered first, so their codes are 1 to 7 (the runtime returns them).</summary>
+    /// <summary><c>union error IoError</c>: its variants are numbered first, so their codes are 1 to 7 (the runtime returns them).</summary>
     public ErrorSetSymbol IoError { get; }
 
     /// <summary><c>List&lt;u8&gt; Io.readFile(string path) fails IoError</c>.</summary>

@@ -65,7 +65,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor UnlessNull = Error("BYN1023", "`unless x is null` is not allowed; write `if x is not null`");
     public static readonly DiagnosticDescriptor CatchBinding = Error("BYN1025", "`catch (e)` is an input form; bind the error in a `catch switch` arm");
     public static readonly DiagnosticDescriptor DelegateDecl = Error("BYN1028", "`delegate` is not Bayan; write a function type `type OrderFilter = Order => bool`");
-    public static readonly DiagnosticDescriptor ErrorSetPipe = Error("BYN1029", "separate error-set members with `,`");
+    public static readonly DiagnosticDescriptor ErrorSetPipe = Error("BYN1029", "an error set is declared `union error {0} = A, B`");
     public static readonly DiagnosticDescriptor CSharpTypeName = Error("BYN1030", "`{0}` is an input form; the Bayan type is `{1}`");
     public static readonly DiagnosticDescriptor FailsShorthand = Error("BYN1031", "`T!E` is an input form; write `T f() fails E`");
     public static readonly DiagnosticDescriptor NegatedIfToUnless = Error("BYN1032", "`if !x {{…}}` with no `else` is an input form; write `unless x {{…}}`");
@@ -76,6 +76,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor OnNewLine = Error("BYN1042", "`{0}` takes its value on the same line");
     /// <summary>BYN1042's second message form, for a stranded postfix modifier; registered once, as <see cref="OnNewLine"/>.</summary>
     public static readonly DiagnosticDescriptor PostfixOnNewLine = new("BYN1042", Severity.Error, "a postfix `{0}` must be on the line of its statement");
+    public static readonly DiagnosticDescriptor DeclarationKeywordOrder = Error("BYN1044", "`{0}` is an input form; write `{1}`");
     public static readonly DiagnosticDescriptor OneLineDeclarations = Error("BYN1053", "`{0}` declares its cases on one line; write one per line");
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────
@@ -264,6 +265,8 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ModifiedWhileBorrowed = Error("BYN3004", "`{0}` is modified while {1} still borrows it");
     public static readonly DiagnosticDescriptor RefAndValue = Error("BYN3005", "`{0}` is passed by `ref` and again in the same call");
     public static readonly DiagnosticDescriptor MovedWhileBorrowed = Error("BYN3006", "`{0}` is moved while {1} still borrows it");
+    public static readonly DiagnosticDescriptor DuplicateErrorCase = Error("BYN3202", "`{0}` and `{1}` both have a case `{2}`");
+    public static readonly DiagnosticDescriptor UniqueConst = Error("BYN3209", "a `unique` type cannot be `const`");
 
     // ── Manifest (`package.byn`) 3100–3199 ───────────────────────────────────────────
     public static readonly DiagnosticDescriptor ManifestNotData = Error("BYN3100", "`package.byn` is data only: expected {0}");

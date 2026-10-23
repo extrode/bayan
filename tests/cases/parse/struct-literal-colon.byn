@@ -18,7 +18,7 @@ Money pick() => { cents: 1 }
         break outer
     }
 }
-error enum MkError { bad }
+union error MkError { bad }
 Money mk(bool ok) fails MkError {
     return .bad if !ok
     return { cents: 7 }

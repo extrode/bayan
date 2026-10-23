@@ -1,8 +1,8 @@
-error enum MoneyError {
+union error MoneyError {
     invalid
 }
 
-error enum ParseError {
+union error ParseError {
     invalid
 }
 

@@ -1,7 +1,7 @@
 [Cases(1, 2)]
 void step() { }
 
-error enum StepError {
+union error StepError {
     [Cases(1)]
     timedOut
 }

@@ -9,7 +9,7 @@ public enum Currency {
 
 string code(Currency c) => c switch { .myr => "MYR", .sgd => "SGD", .usd => "USD" }
 
-public error enum PricingError {
+public union error PricingError {
     /// the currencies differ
     currencyMismatch
     /// the amount does not fit in i64

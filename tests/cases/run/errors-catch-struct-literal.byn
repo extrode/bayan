@@ -1,4 +1,4 @@
-error enum MkError { bad }
+union error MkError { bad }
 
 struct P {
     i64 x = 0

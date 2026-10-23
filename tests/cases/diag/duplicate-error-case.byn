@@ -1,0 +1,11 @@
+union error CarrierError {
+    timeout
+    rejected
+}
+
+union error StockError {
+    outOfStock
+    rejected
+}
+
+union error ShipError = CarrierError, StockError

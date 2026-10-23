@@ -38,7 +38,7 @@ Map<i64, i64> fromResult(Result<Map<i64, i64>, LookupError> r) {
     return r.value
 }
 
-error enum LookupError { missing }
+union error LookupError { missing }
 
 void copies(Map<i64, i64> p) {
     var a = Map<i64, i64>()

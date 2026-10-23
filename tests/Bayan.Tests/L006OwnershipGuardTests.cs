@@ -13,7 +13,7 @@ namespace Bayan.Tests;
 public sealed class L006OwnershipGuardTests
 {
     private const string Prelude = """
-        error enum E { bad, }
+        union error E { bad, }
         void step() fails E { }
         void consume(move List<i64> xs) {
             print($"{xs.length}")

@@ -11,7 +11,7 @@ public enum Currency {
 
 string code(Currency c) => c switch { .myr => "MYR", .sgd => "SGD", .usd => "USD" }
 
-public error enum PricingError {
+public union error PricingError {
     /// the currencies differ
     currencyMismatch
     /// the amount does not fit in i64
@@ -81,7 +81,7 @@ public union OrderState {
     cancelled(string reason)
 }
 
-public error enum OrderError {
+public union error OrderError {
     /// the order is not in a state that allows this
     wrongState
     /// no active lines

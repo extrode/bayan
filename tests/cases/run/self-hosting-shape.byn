@@ -9,7 +9,7 @@ struct Token {
     i64 value
 }
 
-unique struct TokenList : IIndexable {
+struct unique TokenList : IIndexable {
     type Item = Token
 
     List<Token> tokens
@@ -19,7 +19,7 @@ unique struct TokenList : IIndexable {
     Token get(i64 index) => tokens[index]
 }
 
-unique struct TokenStream : IEnumerator {
+struct unique TokenStream : IEnumerator {
     type Item = Token
 
     List<Token> tokens

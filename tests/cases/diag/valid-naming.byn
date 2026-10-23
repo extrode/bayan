@@ -1,4 +1,4 @@
-error enum ParseError { empty }
+union error ParseError { empty }
 
 // Names the grammar checker (BYN5xxx) must accept.
 struct Track {

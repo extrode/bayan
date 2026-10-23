@@ -2,7 +2,7 @@ struct Box {
     i64 v
 }
 
-error enum LookupError {
+union error LookupError {
     missing
 }
 

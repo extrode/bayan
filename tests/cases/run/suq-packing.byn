@@ -20,7 +20,7 @@ BoxSize boxSizes(i64 i) => i switch {
     _ => BoxSize { name: "L", capacity: 12000, tare: 600 },
 }
 
-public error enum PackError {
+public union error PackError {
     /// an item is heavier than the largest box can hold
     tooHeavy
 }

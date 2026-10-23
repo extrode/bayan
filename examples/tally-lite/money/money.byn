@@ -1,7 +1,7 @@
 /// An amount in the smallest unit of its currency (sen for MYR).
 public type Cents = i64
 
-public error enum MoneyError {
+public union error MoneyError {
     /// The amount is empty.
     empty
     /// The amount must be digits with at most one decimal point.

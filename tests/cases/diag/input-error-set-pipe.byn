@@ -1,9 +1,9 @@
-error enum EmailError {
+union error EmailError {
     /// Not an address.
     invalid
 }
 
-error enum DbError {
+union error DbError {
     /// Too slow.
     timeout
 }

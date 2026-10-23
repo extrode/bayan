@@ -6,4 +6,4 @@ enum Color {
     blue,
 }
 
-error enum ParseError { empty, tooLong }
+union error ParseError { empty, tooLong }

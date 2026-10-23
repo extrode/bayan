@@ -1,4 +1,4 @@
-error enum ParseError { empty }
+union error ParseError { empty }
 
 struct Reader {
     string text

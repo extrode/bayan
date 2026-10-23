@@ -1,4 +1,4 @@
-error enum MoneyError {
+union error MoneyError {
     invalid
     tooPrecise
 }

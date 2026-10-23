@@ -3,7 +3,7 @@ interface IThing {
     i64 get()
 }
 
-unique struct S : IThing {
+struct unique S : IThing {
     List<i64> xs
 
     i64 get() => xs[0]
