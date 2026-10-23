@@ -1169,7 +1169,7 @@ internal sealed partial class Binder
         if (left.Type.IsNumeric && right.Type.IsNumeric)
             help = $"convert one side explicitly, e.g. `({(Conversions.IsWidening((PrimitiveType)right.Type, PrimitiveType.I64) && left.Type.IsSignedInteger ? left.Type : right.Type).DisplayName})…`; mixed signedness never converts implicitly";
         else if (left.Type == PrimitiveType.Char && right.Type.IsInteger)
-            help = "use `(u32)c` for its value; a `char` is a Unicode scalar, not a number";
+            help = "use `(u32)c` for its value; a `rune` is a Unicode scalar, not a number";
         Report(DiagnosticCodes.BadBinaryOperands, b.Span, [BinaryText(b.Op), left.Type.DisplayName, right.Type.DisplayName], help: help);
         return new BoundErrorExpr(b);
     }
@@ -1545,7 +1545,7 @@ internal sealed partial class Binder
             if (!MapType.IsValidKey(key.Type))
             {
                 Report(DiagnosticCodes.InvalidMapKey, entries[0].Key.Span, [key.Type.DisplayName],
-                    help: "use an integer type, `char`, `bool`, `string` or a plain enum as the key");
+                    help: "use an integer type, `rune`, `bool`, `string` or a plain enum as the key");
                 foreach (var e in entries.Skip(1)) BindMapPart(e);
                 return new BoundErrorExpr(c);
             }

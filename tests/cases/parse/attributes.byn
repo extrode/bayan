@@ -1,5 +1,5 @@
 union error ConfigError {
-    [ExitCode(3)]
+    @exitCode(3)
     /// The configuration is malformed.
     malformed
     /// Something else.
@@ -7,10 +7,10 @@ union error ConfigError {
 }
 
 /// Runs the tool.
-[Experimental]
-[Tag(level: 2)]
+@experimental
+@tag(level: 2)
 public void run() { }
 
-[Experimental]
+@experimental
 /// Stops the tool.
 void stop() { }

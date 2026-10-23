@@ -57,12 +57,12 @@ public struct Money {
     }
 }
 
-[Cases((1250, "MYR 12.50"), (5, "MYR 0.05"), (-300, "MYR -3.00"), (0, "MYR 0.00"))]
+@cases((1250, "MYR 12.50"), (5, "MYR 0.05"), (-300, "MYR -3.00"), (0, "MYR 0.00"))
 test "format" (i64 cents, string text) {
     assert($"{Money { cents: cents, currency: .myr }}" == text)
 }
 
-[Cases((1063, 85), (1000, 80), (1, 0), (7, 1))]
+@cases((1063, 85), (1000, 80), (1, 0), (7, 1))
 test "8% rounds half up" (i64 cents, i64 expected) {
     let tax = try Money { cents: cents, currency: .myr }.atRate(800)
     assert(tax.cents == expected)

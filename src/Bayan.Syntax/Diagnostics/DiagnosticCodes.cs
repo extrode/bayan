@@ -68,7 +68,8 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ErrorSetPipe = Error("BYN1029", "an error set is declared `union error {0} = A, B`");
     public static readonly DiagnosticDescriptor CSharpTypeName = Error("BYN1030", "`{0}` is an input form; the Bayan type is `{1}`");
     public static readonly DiagnosticDescriptor FailsShorthand = Error("BYN1031", "`T!E` is an input form; write `T f() fails E`");
-    public static readonly DiagnosticDescriptor NegatedIfToUnless = Error("BYN1032", "`if !x {{…}}` with no `else` is an input form; write `unless x {{…}}`");
+    // BYN1032 is retired (design round 3 §5): `if !x {}` and `if not x {}` are both accepted and nothing rewrites them. Never reuse it.
+    public static readonly DiagnosticDescriptor RetiredNegatedIfToUnless = Error("BYN1032", "retired: `if !x` is no longer rewritten");
     public static readonly DiagnosticDescriptor UnlessLikelihood = Error("BYN1033", "`unless` takes no likelihood word; write `if unlikely !…` or drop `{0}`");
     public static readonly DiagnosticDescriptor TypeNameOrder = Error("BYN1043", "`{0}` is an input form; write `{1}`");
     public static readonly DiagnosticDescriptor SemicolonInput = Error("BYN1040", "`;` is an input form; a statement ends at the newline");
@@ -78,6 +79,10 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor PostfixOnNewLine = new("BYN1042", Severity.Error, "a postfix `{0}` must be on the line of its statement");
     public static readonly DiagnosticDescriptor DeclarationKeywordOrder = Error("BYN1044", "`{0}` is an input form; write `{1}`");
     public static readonly DiagnosticDescriptor PatternOutsideConst = Error("BYN1046", "`pattern` is allowed only after `=` in a `const`");
+    public static readonly DiagnosticDescriptor BracketAttribute = Error("BYN1045", "`[{0}]` is an input form; write `@{1}`");
+    public static readonly DiagnosticDescriptor BlockComment = Error("BYN1047", "`/* */` is an input form; write `//` lines");
+    public static readonly DiagnosticDescriptor CharInput = Error("BYN1048", "`char` is now `rune`");
+    public static readonly DiagnosticDescriptor RequiresValue = Error("BYN1050", "`value` in `requires` is now `it`");
     public static readonly DiagnosticDescriptor OneLineDeclarations = Error("BYN1053", "`{0}` declares its cases on one line; write one per line");
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────
@@ -155,7 +160,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor NotDisposable = Error("BYN2226", "`using` needs a value that owns memory, not `{0}`");
     public static readonly DiagnosticDescriptor AmbiguousVariant = Error("BYN2227", "`.{0}` is ambiguous; it exists in `{1}`");
     public static readonly DiagnosticDescriptor UnknownVariant = Error("BYN2228", "`{0}` is not a variant of `{1}`");
-    public static readonly DiagnosticDescriptor InvalidConstArray = Error("BYN2229", "module-level `const` array `{0}` must hold literal numbers, `bool`s, `char`s or `string`s");
+    public static readonly DiagnosticDescriptor InvalidConstArray = Error("BYN2229", "module-level `const` array `{0}` must hold literal numbers, `bool`s, `rune`s or `string`s");
     public static readonly DiagnosticDescriptor RenamedMember = Error("BYN2230", "`{0}` is now `{1}`");
     public static readonly DiagnosticDescriptor WhileLetNotOptional = Error("BYN2234", "`while let` needs a `T?` value, got `{0}`");
     public static readonly DiagnosticDescriptor SpreadNotSequence = Error("BYN2235", "`..{0}` spreads a `{1}`, which is not a sequence");
@@ -215,7 +220,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor DuplicateEnumMember = Error("BYN2721", "enum `{0}` already has a member `{1}`");
     public static readonly DiagnosticDescriptor EmptyEnum = Error("BYN2722", "enum `{0}` has no members");
     public static readonly DiagnosticDescriptor EnumArgumentNotConstant = Error("BYN2723", "argument `{0}` of `{1}` must be a compile-time constant");
-    public static readonly DiagnosticDescriptor InvalidEnumParameter = Error("BYN2724", "enum parameter `{0}` must be a number, `bool`, `char`, `string` or a plain enum");
+    public static readonly DiagnosticDescriptor InvalidEnumParameter = Error("BYN2724", "enum parameter `{0}` must be a number, `bool`, `rune`, `string` or a plain enum");
     public static readonly DiagnosticDescriptor CannotInferTypeArgument = Error("BYN2740", "cannot infer type argument `{0}` of `{1}`");
     public static readonly DiagnosticDescriptor ConflictingTypeArgument = Error("BYN2741", "type argument `{0}` of `{1}` is inferred as both `{2}` and `{3}`");
     public static readonly DiagnosticDescriptor GenericArgumentCount = Error("BYN2742", "`{0}` takes {1} type argument(s), not {2}");
@@ -233,10 +238,10 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor SwitchMoveSubject = Error("BYN2789", "`switch move …` needs a local or a `move` parameter, not {0}");
     public static readonly DiagnosticDescriptor OwningPatternOverlap = Error("BYN2790", "pattern `{0}` binds the same storage more than once in `switch move …`");
     public static readonly DiagnosticDescriptor OwningBindingMutatedInGuard = Error("BYN2791", "`{0}` is mutated in the guard of `switch move …`; a guard that fails gives the value back");
-    public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`[ExitCode]` needs one integer constant from 1 to 255");
+    public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`@exitCode` needs one integer constant from 1 to 255");
     public static readonly DiagnosticDescriptor AssertNotBool = Error("BYN2775", "`assert` needs a `bool`, got `{0}`");
-    public static readonly DiagnosticDescriptor CasesArity = Error("BYN2773", "`[Cases]` gives {0} values but the test takes {1} parameters");
-    public static readonly DiagnosticDescriptor CasesNotConstant = Error("BYN2774", "each `[Cases]` value must be a constant");
+    public static readonly DiagnosticDescriptor CasesArity = Error("BYN2773", "`@cases` gives {0} values but the test takes {1} parameters");
+    public static readonly DiagnosticDescriptor CasesNotConstant = Error("BYN2774", "each `@cases` value must be a constant");
     public static readonly DiagnosticDescriptor ImplicitCopy = Error("BYN2780", "implicit copy of a unique value: {0}");
     public static readonly DiagnosticDescriptor UseAfterMove = Error("BYN2781", "`{0}` is used after it was moved");
     public static readonly DiagnosticDescriptor CannotMove = Error("BYN2782", "cannot move out of {0}");
@@ -281,4 +286,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor TryWrongReturn = Error("BYN5003", "`try{0}` must return `{1}?` or `bool`; it is derived from `{2}() fails`");
     public static readonly DiagnosticDescriptor NounOnMutator = Warning("BYN5101", "`{0}` is a noun on a `ref this` member; name the action");
     public static readonly DiagnosticDescriptor BoolWithoutPrefix = Warning("BYN5102", "`{0}` is a `bool` state; prefix with `is`, `has` or `can`");
+
+    // ── Security 8000–8999 ───────────────────────────────────────────────────────────
+    public static readonly DiagnosticDescriptor MissingBecause = Error("BYN8001", "`{0}` bypasses a safety rule and needs `because \"…\"`");
 }

@@ -260,7 +260,7 @@ internal sealed partial class Binder
         _fn.Body = new BoundBlock(statements[0], bound.ToArray());
     }
 
-    /// <summary>A test body; a <c>[Cases]</c> case first binds each parameter as a <c>let</c> of its value.</summary>
+    /// <summary>A test body; a <c>@cases</c> case first binds each parameter as a <c>let</c> of its value.</summary>
     public void BindTest(TestDecl decl, Expr[]? values)
     {
         _fn!.InfersErrors = true;
@@ -340,7 +340,7 @@ internal sealed partial class Binder
         c.Bound = value;
         if (value.Type.IsError) return;
         var decl = c.Decl;
-        var help = $"write `const T[N] {decl.Name.Text} = [ … ]` with `T` a number type, `bool`, `char` or `string`, and only literals or constants inside";
+        var help = $"write `const T[N] {decl.Name.Text} = [ … ]` with `T` a number type, `bool`, `rune` or `string`, and only literals or constants inside";
         if (c.Type is not Symbols.ArrayType { Element: PrimitiveType { IsNumeric: true } or PrimitiveType { Kind: PrimitiveKind.Bool or PrimitiveKind.Char or PrimitiveKind.String } })
         {
             Report(DiagnosticCodes.InvalidConstArray, decl.Type?.Span ?? decl.Init!.Span, [decl.Name.Text], help: help);
@@ -379,7 +379,7 @@ internal sealed partial class Binder
         return (long)n;
     }
 
-    /// <summary>The value of <c>[ExitCode(n)]</c>: one integer constant from 1 to 255, else BYN2772 and 1.</summary>
+    /// <summary>The value of <c>@exitCode(n)</c>: one integer constant from 1 to 255, else BYN2772 and 1.</summary>
     public int BindExitCode(AttributeSyntax attribute)
     {
         if (attribute.Args is not [{ Name: null, Modifier: ArgModifier.None } arg])

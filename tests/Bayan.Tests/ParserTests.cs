@@ -121,6 +121,11 @@ public sealed class ParserTests
         Assert.Equal(3, tree.Root.Members.Length);
     }
 
+    [Theory]
+    [InlineData("if not a { }")]
+    [InlineData("if !a { }")]
+    public void NegatedIfWithoutElseIsAccepted(string text) => Assert.Empty(Parse("let a = true\n" + text + "\n").Diagnostics);
+
     private static Stmt[] Body(SyntaxTree tree) =>
         Assert.IsType<FunctionDecl>(Assert.Single(tree.Root.Members)).Body!.Statements;
 

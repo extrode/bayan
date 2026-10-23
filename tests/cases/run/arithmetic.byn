@@ -15,7 +15,7 @@ print($"{(i64)3.99} {(i64)(-3.99)} {(u8)300.0} {(i32)(1.0 / 0.0)}")
 let wide: i64 = 1000
 print($"{(i16)wide} {(u16)wide}")
 let c = 'A'
-print($"{c} {c.value} {(char)0x1F600} {'é'}")
+print($"{c} {c.value} {(rune)0x1F600} {'é'}")
 let abc = "abc"
 print($"{true} {false} {1 < 2} {2 <= 1} {abc < "abd"} {abc == "abc"}")
 let low: i64 = -9223372036854775808

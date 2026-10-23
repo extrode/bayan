@@ -1,7 +1,7 @@
 // Diagnostics: the lexer's message table, the diagnostic record and the plain-text renderer. Ports
 // the lexer parts of `src/Bayan.Syntax/Diagnostics/{Diagnostic,DiagnosticCodes,DiagnosticRenderer}.cs`.
 
-/// The lexer's entries of the message table (BYN0001–BYN0016), in code order.
+/// The lexer's entries of the message table (BYN0001–BYN0016, then BYN1047), in code order.
 enum DiagnosticCode {
     bidiControl
     unexpectedCharacter
@@ -19,10 +19,12 @@ enum DiagnosticCode {
     unescapedCloseBrace
     invalidUtf8
     interpolationTooDeep
+    blockComment
 }
 
-/// `BYN0001` for the first code, and so on.
+/// `BYN0001` for the first code, and so on; `blockComment` is the parser-range BYN1047.
 string codeText(DiagnosticCode code) {
+    if code == .blockComment { return "BYN1047" }
     let n = code.ordinal + 1
     return n < 10 ? $"BYN000{n}" : $"BYN00{n}"
 }
@@ -45,6 +47,7 @@ string messageFormat(DiagnosticCode code) => code switch {
     .unescapedCloseBrace => "`}}` in an interpolated string must be doubled",
     .invalidUtf8 => "source is not valid UTF-8 (byte 0x{0})",
     .interpolationTooDeep => "interpolated strings are nested too deeply",
+    .blockComment => "`/* */` is an input form; write `//` lines",
 }
 
 /// `string.Format` for the templates above: `{0}`/`{1}` are replaced, `{{`/`}}` are unescaped.
@@ -308,7 +311,7 @@ void display(ref StrBuf sb, ReadOnlySpan<u8> text) {
         let d = decodeAt(text, pos)
         let v = d.value
         let hidden = (v < 0x20 && v != 0x09) || v == 0x7F || (v >= 0x202A && v <= 0x202E) || (v >= 0x2066 && v <= 0x2069)
-        sb.append($"{(char)(hidden ? replacementCharacter : v)}")
+        sb.append($"{(rune)(hidden ? replacementCharacter : v)}")
         pos += d.length
     }
 }

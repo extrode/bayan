@@ -95,7 +95,11 @@ public static class AstDump
             string.Concat(where.Select(w => $" where {w.Param.Text} : " + string.Join(", ", w.Bounds.Select(Type))));
 
         private static string Attribute(AttributeSyntax a) =>
-            $"[{a.Name.Text}" + string.Concat(a.Args.Select(arg => " " + (arg.Name is null ? "" : arg.Name.Text + ": ") + AstDump.Expr(arg.Value))) + "]";
+            $"@{a.Name.Text}" + string.Concat(a.Args.Select(arg => " " + (arg.Name is null ? "" : arg.Name.Text + ": ") + AstDump.Expr(arg.Value)))
+            + (a.Because is null ? "" : " because " + TokenDump.Escape(a.Because.Reason));
+
+        private static string Rules(RequiresRule[] rules) =>
+            string.Concat(rules.Select(r => " requires " + AstDump.Expr(r.Condition) + (r.At is null ? "" : " at ." + r.At.Text)));
 
         public void Decl(int depth, Decl decl)
         {
@@ -122,7 +126,7 @@ public static class AstDump
                         break;
                     }
                 case StructDecl d:
-                    Line(depth, $"Struct {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Bases(d.Bases, d.Where)}");
+                    Line(depth, $"Struct {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Bases(d.Bases, d.Where)}{Rules(d.Rules)}");
                     foreach (var member in d.Members) Decl(depth + 1, member);
                     break;
                 case InterfaceDecl d:
@@ -140,7 +144,7 @@ public static class AstDump
                     foreach (var member in d.Members) Decl(depth + 1, member);
                     break;
                 case FieldDecl d:
-                    Line(depth, $"Field {Mods(d.Modifiers)}{Type(d.Type)} {d.Name.Text}" + (d.Default is null ? "" : " = " + AstDump.Expr(d.Default)));
+                    Line(depth, $"Field {Mods(d.Modifiers)}{Type(d.Type)} {d.Name.Text}" + (d.Default is null ? "" : " = " + AstDump.Expr(d.Default)) + Rules(d.Requires));
                     break;
                 case PropertyDecl d:
                     Line(depth, $"Property {Mods(d.Modifiers)}{Type(d.Type)} {d.Name.Text}" + (d.Body is null ? "" : $" => {AstDump.Expr(d.Body)}"));
@@ -171,7 +175,7 @@ public static class AstDump
                             + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
                     break;
                 case TypeAliasDecl d:
-                    Line(depth, $"TypeAlias {Mods(d.Modifiers)}{(d.Distinct ? "distinct " : "")}{d.Name.Text} = {Type(d.Target)}");
+                    Line(depth, $"TypeAlias {Mods(d.Modifiers)}{(d.Distinct ? "distinct " : "")}{d.Name.Text} = {Type(d.Target)}{Rules(d.Requires)}");
                     break;
                 case ErrorSetDecl d:
                     Line(depth, $"ErrorSet {Mods(d.Modifiers)}{d.Name.Text} = {string.Join(", ", d.Members.Select(Type))}" +
@@ -553,6 +557,7 @@ public static class AstDump
                         Expr(sb, arg.Value);
                         if (wrapped) sb.Append(')');
                     }
+                    if (e.Because is not null) sb.Append(" because ").Append(TokenDump.Escape(e.Because.Reason));
                     sb.Append(')');
                     break;
                 case IndexExpr e:

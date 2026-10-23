@@ -3,7 +3,7 @@ union error ConfigError {
     /// The configuration file is missing.
     missing
     /// The configuration is malformed.
-    [ExitCode(3)]
+    @exitCode(3)
     malformed
 }
 

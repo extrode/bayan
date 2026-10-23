@@ -163,6 +163,7 @@ public enum TokenKind : ushort
     FuzzKeyword,
     ModelKeyword,
     RequiresKeyword,
+    BecauseKeyword,
     // Declaration-only, no meaning yet; contextual like the other declaration keywords.
     LawKeyword,
     // Accepted for C# compatibility.

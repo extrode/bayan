@@ -345,6 +345,8 @@ struct LexResult {
                         help: "close it with `*/`")
                 } else {
                     pos += 2
+                    reportFix(.blockComment, TextSpan.fromBounds(start: start, end: pos), replacement: lineComments(start, end: pos),
+                        label: "block comment", help: "write each line with `//`")
                 }
                 tokenFlags |= triviaBefore
             } else if b == '#' && tokens.length == 0 && (peek(1) == '!' || peek(1) == ':') && isAtLineStart() {
@@ -355,6 +357,51 @@ struct LexResult {
                 return
             }
         }
+    }
+
+    /// BYN1047's fix for the comment `[start, end)`: one `//` line per trimmed content line, the outer
+    /// blank lines dropped, at the indent of the `/*` line; code after `*/` moves to its own line.
+    string lineComments(ref this, i64 start, i64 end) {
+        let text = source.bytes.asSpan()
+        var lineStart = start
+        while lineStart > 0 && text[lineStart - 1] != '\n' { lineStart -= 1 }
+        var indentEnd = lineStart
+        while indentEnd < start && (text[indentEnd] == ' ' || text[indentEnd] == '\t') { indentEnd += 1 }
+        var starts = List<i64>()
+        var ends = List<i64>()
+        var at = start + 2
+        while true {
+            var lineEnd = at
+            while lineEnd < end - 2 && text[lineEnd] != '\n' { lineEnd += 1 }
+            var a = at
+            var b = lineEnd
+            while a < b && (text[a] == ' ' || text[a] == '\t' || text[a] == '\r') { a += 1 }
+            while b > a && (text[b - 1] == ' ' || text[b - 1] == '\t' || text[b - 1] == '\r') { b -= 1 }
+            starts.append(a)
+            ends.append(b)
+            if lineEnd >= end - 2 { break }
+            at = lineEnd + 1
+        }
+        var first: i64 = 0
+        var last = starts.length - 1
+        if last > first && starts[last] == ends[last] { last -= 1 }
+        if last > first && starts[first] == ends[first] { first += 1 }
+        var sb = StrBuf()
+        for i in first..last + 1 {
+            if i > first {
+                sb.append("\n")
+                appendUtf8(ref sb, text[lineStart..indentEnd])
+            }
+            sb.append(starts[i] == ends[i] ? "//" : "// ")
+            appendUtf8(ref sb, text[starts[i]..ends[i]])
+        }
+        var after = end
+        while after < text.length && (text[after] == ' ' || text[after] == '\t' || text[after] == '\r') { after += 1 }
+        if after < text.length && text[after] != '\n' {
+            sb.append("\n")
+            appendUtf8(ref sb, text[lineStart..indentEnd])
+        }
+        return $"{sb.finish()}"
     }
 
     bool isAtLineStart() => pos == 0 || source.bytes[pos - 1] == '\n'
@@ -500,7 +547,7 @@ struct LexResult {
     }
 
     void reportUnexpected(ref this, u32 cp, i64 length) {
-        let shown = cp < 0x20 || cp == 0x7F ? $"\\u{{{hex(cp, 1)}}}" : $"{(char)cp}"
+        let shown = cp < 0x20 || cp == 0x7F ? $"\\u{{{hex(cp, 1)}}}" : $"{(rune)cp}"
         report(.unexpectedCharacter, TextSpan { start: pos, length: length }, arg0: shown)
         pos += length
         tokenFlags |= triviaBefore
@@ -576,7 +623,7 @@ struct LexResult {
         }
         if same { return }
         var fix = StrBuf()
-        for cp in normalized { fix.append($"{(char)cp}") }
+        for cp in normalized { fix.append($"{(rune)cp}") }
         reportFix(.identifierNotNfc, TextSpan.fromBounds(start: start, end: pos), replacement: fix.finish(), arg0: utf8(span),
             label: "same letters, different encoding",
             help: "use the composed (NFC) form; identifiers that look the same must be byte-identical")

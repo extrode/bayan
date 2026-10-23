@@ -1,13 +1,13 @@
 union error StepError {
-    [Retry(3)]
+    @retry(3)
     /// The step timed out.
     timedOut
 }
 
-[Inline]
+@inline
 void step() { }
 
-[ExitCode(2)]
+@exitCode(2)
 void other() { }
 
 void main() {

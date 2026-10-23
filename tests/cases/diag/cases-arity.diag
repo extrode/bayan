@@ -1,20 +1,20 @@
-error BYN2773: `[Cases]` gives 3 values but the test takes 2 parameters
+error BYN2773: `@cases` gives 3 values but the test takes 2 parameters
 
-  1 │ [Cases((0, false), (1, true, 2), 3)]
+  1 │ @cases((0, false), (1, true, 2), 3)
     │                    ^^^^^^^^^^^^
     │
   help: give each case one value per parameter, in order: `(input, valid)`
 
-error BYN2773: `[Cases]` gives 1 values but the test takes 2 parameters
+error BYN2773: `@cases` gives 1 values but the test takes 2 parameters
 
-  1 │ [Cases((0, false), (1, true, 2), 3)]
+  1 │ @cases((0, false), (1, true, 2), 3)
     │                                  ^
     │
   help: give each case one value per parameter, in order: `(input, valid)`
 
-error BYN2773: `[Cases]` gives 2 values but the test takes 1 parameters
+error BYN2773: `@cases` gives 2 values but the test takes 1 parameters
 
-  6 │ [Cases((1, 2))]
+  6 │ @cases((1, 2))
     │        ^^^^^^
     │
-  help: give one value per case: `[Cases(1, 2, 3)]`
+  help: give one value per case: `@cases(1, 2, 3)`

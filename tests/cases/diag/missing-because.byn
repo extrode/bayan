@@ -1,0 +1,11 @@
+@allow(unusedValue)
+void warm() {
+    load() because ""
+    load() because "warming fills the cache"
+}
+
+@allow(unusedValue) because " "
+void cool() {
+}
+
+i32 load() => 1

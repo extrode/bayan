@@ -1,37 +1,37 @@
-error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
+error BYN2772: `@exitCode` needs one integer constant from 1 to 255
 
-  2 │     [ExitCode(0)]
+  2 │     @exitCode(0)
     │               ^
     │
   help: pick a code from 1 to 255; 0 means success, and exit codes above 255 do not survive the
         operating system
 
-error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
+error BYN2772: `@exitCode` needs one integer constant from 1 to 255
 
-  5 │     [ExitCode(300)]
+  5 │     @exitCode(300)
     │               ^^^
     │
   help: pick a code from 1 to 255; 0 means success, and exit codes above 255 do not survive the
         operating system
 
-error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
+error BYN2772: `@exitCode` needs one integer constant from 1 to 255
 
-  8 │     [ExitCode]
-    │     ^^^^^^^^^^
+  8 │     @exitCode
+    │     ^^^^^^^^^
 
-error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
+error BYN2772: `@exitCode` needs one integer constant from 1 to 255
 
-  11 │     [ExitCode("x")]
+  11 │     @exitCode("x")
      │               ^^^
 
-error BYN2772: `[ExitCode]` needs one integer constant from 1 to 255
+error BYN2772: `@exitCode` needs one integer constant from 1 to 255
 
-  14 │     [ExitCode(1, 2)]
-     │     ^^^^^^^^^^^^^^^^
+  14 │     @exitCode(1, 2)
+     │     ^^^^^^^^^^^^^^^
 
-error BYN1016: `[ExitCode]` is not allowed here
+error BYN1016: `@exitCode` is not allowed here
 
-  18 │     [ExitCode(5)]
-     │     ^^^^^^^^^^^^^
+  18 │     @exitCode(5)
+     │     ^^^^^^^^^^^^
      │
   help: remove the repeated attribute

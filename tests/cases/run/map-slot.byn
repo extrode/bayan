@@ -35,7 +35,7 @@ void bump(ref i64 n) {
 bump(ref words.slot("dog"))
 bump(ref words.slot("eel"))
 print($"dog {words["dog"]}, eel {words["eel"]}, length={words.length}")
-var tallies = Map<char, Tally>()
+var tallies = Map<rune, Tally>()
 for c in "abca" { tallies.slot(c).hits += 1 }
 tallies.slot('z').note = "set"
 print($"{tallies}")

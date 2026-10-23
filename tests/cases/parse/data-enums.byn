@@ -3,7 +3,7 @@ enum Planet(f64 mass, f64 radius) {
     earth(6e24, 6.4e6)
 }
 
-public enum Token(string text, bool keyword, char first, Kind kind) {
+public enum Token(string text, bool keyword, rune first, Kind kind) {
     /// The `if` keyword.
     ifKeyword("if", true, 'i', .word)
     plus(text: "+", keyword: false, first: '+', kind: Kind.symbol)

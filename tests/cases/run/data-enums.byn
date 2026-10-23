@@ -11,7 +11,7 @@ enum Kind {
     symbol
 }
 
-enum Token(string text, i32 precedence, char first, bool keyword, Kind kind) {
+enum Token(string text, i32 precedence, rune first, bool keyword, Kind kind) {
     ifKeyword("if", 0, 'i', true, .word)
     plus("+", 2 * 3, '+', false, Kind.symbol)
     star("*", -(1 - 8), '*', false, .symbol)
