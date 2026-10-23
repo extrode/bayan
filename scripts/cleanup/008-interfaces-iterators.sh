@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cleanup for spec 006 interfaces and iterators (2026-10-23): the feature worktree and branch, every
 # chore/worker-006-* worker worktree and branch, and (second flag) the writers' ignored files moved
-# into the feature worktree's tmp/ before each land, plus any test-host hang dump.
+# into the feature worktree's tmp/ before each land, /tmp/fixh-bak (a writer's backups), plus any test-host hang dump.
 # tmp/009-xcheck-ignored (the 009 spec-doc writer, landed on feat/009) also sits there; its
 # worktree and branch chore/worker-009-xcheck belong to the 009 cleanup, after 009 merges.
 # Dry run by default. --execute / -e acts on worktrees and branches; --delete-scratch also removes untracked scratch.
@@ -48,6 +48,13 @@ for rel in tests/Bayan.Tests/TestResults; do
   fi
   if [ $execute -eq 1 ] && [ $scratch -eq 1 ]; then rm -rf -- "$rel"; printf 'removed: %s\n' "$rel"
   else printf 'would: rm -rf %s (needs --execute --delete-scratch)\n' "$rel"; fi
+done
+
+# 2b. Scratch a writer left outside the repo (006-fixh break-test backups; needs --delete-scratch).
+for abs in /tmp/fixh-bak; do
+  if [ ! -e "$abs" ]; then printf 'skip:  %s already gone\n' "$abs"; continue; fi
+  if [ $execute -eq 1 ] && [ $scratch -eq 1 ]; then rm -rf -- "$abs"; printf 'removed: %s\n' "$abs"
+  else printf 'would: rm -rf %s (needs --execute --delete-scratch)\n' "$abs"; fi
 done
 
 # 3. Worktrees (git worktree remove refuses a dirty tree; ignored tmp/ scratch goes with it).
