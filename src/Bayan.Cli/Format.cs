@@ -15,7 +15,7 @@ internal static class Format
         "BYN1040", "BYN1041", "BYN1042", "BYN1053",
     };
 
-    private const int MaxPasses = 10;
+    internal static int MaxPasses = 10;
 
     public static int Run(string[] args, TextWriter stdout, TextWriter stderr)
     {
@@ -37,26 +37,67 @@ internal static class Format
         var exit = CliApp.ExitOk;
         foreach (var file in files)
         {
-            var original = File.ReadAllBytes(file);
-            var formatted = FormatFile(file, original, stderr, out var unfixable);
-            if (formatted is null) exit = CliApp.ExitFailure;
-            else
+            try
             {
-                if (unfixable) exit = CliApp.ExitFailure;
-                if (!formatted.AsSpan().SequenceEqual(original))
+                var original = File.ReadAllBytes(file);
+                var formatted = FormatFile(file, original, stderr, out var unfixable);
+                if (formatted is null) exit = CliApp.ExitFailure;
+                else
                 {
-                    File.WriteAllBytes(file, formatted);
-                    stdout.WriteLine(Messages.FormatFormatted.Text(file));
+                    if (unfixable) exit = CliApp.ExitFailure;
+                    if (!formatted.AsSpan().SequenceEqual(original))
+                    {
+                        WriteReplacing(file, formatted);
+                        stdout.WriteLine(Messages.FormatFormatted.Text(file));
+                    }
                 }
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                stderr.WriteLine(Messages.FormatIoError.Text(file, e.Message));
+                exit = CliApp.ExitFailure;
             }
         }
         return exit;
+    }
+
+    /// <summary>Writes <paramref name="bytes"/> to a temp file beside <paramref name="file"/>, then renames it over the original.</summary>
+    private static void WriteReplacing(string file, byte[] bytes)
+    {
+        var temp = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(file))!, Path.GetRandomFileName() + ".tmp");
+        try
+        {
+            File.WriteAllBytes(temp, bytes);
+            File.Move(temp, file, overwrite: true);
+        }
+        catch
+        {
+            File.Delete(temp);
+            throw;
+        }
+    }
+
+    /// <summary>The bytes with each distinct fix applied in order; a fix overlapping an earlier one is skipped.</summary>
+    internal static byte[] ApplyFixes(byte[] bytes, IEnumerable<Fix> fixes)
+    {
+        var result = new List<byte>(bytes.Length);
+        var at = 0;
+        foreach (var fix in fixes.Distinct().OrderBy(f => f.Span.Start))
+        {
+            if (fix.Span.Start < at) continue;
+            result.AddRange(bytes.AsSpan(at, fix.Span.Start - at));
+            result.AddRange(System.Text.Encoding.UTF8.GetBytes(fix.Replacement));
+            at = fix.Span.End;
+        }
+        result.AddRange(bytes.AsSpan(at));
+        return [.. result];
     }
 
     /// <summary>The file's bytes with every input-form fix applied; null after reporting a blocking error. An input-form diagnostic left with no fix is reported and sets <paramref name="unfixable"/>.</summary>
     private static byte[]? FormatFile(string file, byte[] bytes, TextWriter stderr, out bool unfixable)
     {
         unfixable = false;
+        var converged = false;
         for (var pass = 0; pass < MaxPasses; pass++)
         {
             var tree = SyntaxTree.Parse(new SourceText(file, bytes));
@@ -67,7 +108,7 @@ internal static class Format
                 return null;
             }
             var fixes = tree.Diagnostics.Where(d => InputForms.Contains(d.Code) && d.Fix is not null)
-                .Select(d => d.Fix!).OrderBy(f => f.Span.Start).ToList();
+                .Select(d => d.Fix!).ToList();
             if (fixes.Count == 0)
             {
                 var fixless = tree.Diagnostics.Where(d => InputForms.Contains(d.Code)).ToList();
@@ -76,19 +117,15 @@ internal static class Format
                     stderr.Write(DiagnosticRenderer.RenderAll(fixless, includePath: true));
                     unfixable = true;
                 }
+                converged = true;
                 break;
             }
-            var result = new List<byte>(bytes.Length);
-            var at = 0;
-            foreach (var fix in fixes)
-            {
-                if (fix.Span.Start < at) continue;
-                result.AddRange(bytes.AsSpan(at, fix.Span.Start - at));
-                result.AddRange(System.Text.Encoding.UTF8.GetBytes(fix.Replacement));
-                at = fix.Span.End;
-            }
-            result.AddRange(bytes.AsSpan(at));
-            bytes = [.. result];
+            bytes = ApplyFixes(bytes, fixes);
+        }
+        if (!converged)
+        {
+            stderr.WriteLine(Messages.FormatNotConverged.Text(file, MaxPasses));
+            unfixable = true;
         }
         return bytes;
     }

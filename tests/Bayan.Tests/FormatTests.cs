@@ -49,6 +49,7 @@ public sealed class FormatTests
         File.WriteAllText(file, "let a = true;\nif (a) { print(\"x\"); }\n");
         Run("format", file);
         var once = File.ReadAllText(file);
+        Assert.Equal("let a = true;\nif a { print(\"x\"); }\n", once);
         var (exit, stdout, _) = Run("format", file);
         Assert.Equal(CliApp.ExitOk, exit);
         Assert.Empty(stdout);
@@ -94,5 +95,59 @@ public sealed class FormatTests
         Assert.Contains("BYN1031", stderr);
         Assert.Contains("main.byn", stderr);
         Assert.Equal(text, File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void NonConvergenceIsReported()
+    {
+        var file = Path.Combine(Fresh("passes"), "main.byn");
+        File.WriteAllText(file, "let a = true;\nif (a) { print(\"x\"); }\n");
+        var passes = Format.MaxPasses;
+        Format.MaxPasses = 1;
+        try
+        {
+            var (exit, _, stderr) = Run("format", file);
+            Assert.Equal(CliApp.ExitFailure, exit);
+            Assert.Contains("still changing after 1 passes", stderr);
+        }
+        finally { Format.MaxPasses = passes; }
+    }
+
+    [Fact]
+    public void AnUnreadableFileIsReportedAndTheRestAreFormatted()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("io");
+        var locked = Path.Combine(dir, "a.byn");
+        var fixable = Path.Combine(dir, "b.byn");
+        File.WriteAllText(locked, "let a = true;\n");
+        File.WriteAllText(fixable, "let a = true;\nif (a) { print(\"x\"); }\n");
+        File.SetUnixFileMode(locked, UnixFileMode.None);
+        try
+        {
+            var (exit, _, stderr) = Run("format", dir);
+            Assert.Equal(CliApp.ExitFailure, exit);
+            Assert.Contains("a.byn", stderr);
+            Assert.Equal("let a = true;\nif a { print(\"x\"); }\n", File.ReadAllText(fixable));
+        }
+        finally { File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+    }
+
+    [Fact]
+    public void NoTempFileIsLeftBehind()
+    {
+        var dir = Fresh("temp");
+        File.WriteAllText(Path.Combine(dir, "main.byn"), "let a = true;\nif (a) { print(\"x\"); }\n");
+        Run("format", dir);
+        Assert.Equal(["main.byn"], Directory.GetFiles(dir).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public void IdenticalFixesApplyOnce()
+    {
+        var at = new Bayan.Syntax.Text.TextSpan(1, 0);
+        var fix = new Bayan.Syntax.Diagnostics.Fix(at, "X");
+        var result = Format.ApplyFixes("ab"u8.ToArray(), [fix, new Bayan.Syntax.Diagnostics.Fix(at, "X")]);
+        Assert.Equal("aXb", System.Text.Encoding.UTF8.GetString(result));
     }
 }
