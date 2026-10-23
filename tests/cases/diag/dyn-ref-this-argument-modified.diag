@@ -1,0 +1,6 @@
+error BYN3004: `items` is modified while `s` still borrows it
+
+  13 │         poke(this);
+     │              ^^^^ `s` is used again on line 14
+     │
+  help: finish using `s` first, or copy what it needs before changing `items`
