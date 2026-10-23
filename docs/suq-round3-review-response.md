@@ -153,7 +153,7 @@ Plan entry: §23. Each step's text is in plan J35–J53 (`:215-233`); F-07 exten
 At the user's request, round-3 "names first" (HANDOFF §2, audit flaw #8) is reverted for declarations: it was meant only for local bindings. This supersedes every names-first item above that concerns fields, parameters, returns or payloads, including the F-21 recommendation and Part C item 2.
 - Declarations are type-first again (round-2 order): `public Grams shippingWeight(Order order)`, `void` when nothing is returned, `(Order order)`, `(ref this, Line line)`, field `Sku sku`, payload `timeout(Millis after)`.
 - Local bindings stay name-first: `let w = 0g`, `let w: Grams = 0g`, `var w: Grams = 0g`; `Grams w = 0g` in a function body stays an input form.
-- `f() -> T`, `f(x: T)`, field `x: T` and payload `case(x: T)` are input forms that `bayan fmt` rewrites to type-first (BYN1043, now two message forms).
+- `f() -> T`, `f(x: T)`, field `x: T` and payload `case(x: T)` are input forms that `bayan format` rewrites to type-first (BYN1043, now two message forms).
 - Changed: HANDOFF §2; SPEC every declaration example, and the rules in §0, §1, §3.10, §3.16, §7.1, §18, §21.5, §25, Appendix A; GRAMMAR §1, §3, §5, §8–§10; STYLE; plan §2, §20, J54, step 5.1b. The plan entry is J54, with its conflicts list.
 - The Sūq app (`docs/suq-reference-app.zip`) is updated separately.
 
