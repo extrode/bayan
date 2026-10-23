@@ -60,7 +60,7 @@ Places where writing Sūq against the round-3 spec read badly, needed a workarou
 
 ## Type-first declarations revert (2026-10-22)
 
-Round 3's "names first" now applies only to local bindings (`let w: Grams = 0g`). Declarations are type-first again, as in round 2: `public Grams shippingWeight(Order order)`, `void` when nothing is returned, `Sku sku` fields, `timeout(Millis after)` payloads. `-> T` and `name: Type` declarations are input forms that `bayan fmt` rewrites; the checker reports them with the rewritten line (`fail/arrow-return`, `name-first-param`, `name-first-field`, `name-first-payload`). Sūq was converted mechanically from those fix-its.
+Round 3's "names first" now applies only to local bindings (`let w: Grams = 0g`). Declarations are type-first again, as in round 2: `public Grams shippingWeight(Order order)`, `void` when nothing is returned, `Sku sku` fields, `timeout(Millis after)` payloads. `-> T` and `name: Type` declarations are input forms that `bayan format` rewrites; the checker reports them with the rewritten line (`fail/arrow-return`, `name-first-param`, `name-first-field`, `name-first-payload`). Sūq was converted mechanically from those fix-its.
 
 | # | Where | Issue | What Sūq assumes or proposes |
 |---|---|---|---|
@@ -69,6 +69,27 @@ Round 3's "names first" now applies only to local bindings (`let w: Grams = 0g`)
 | F-37 | sodium (`extern`, `SecretKey.ptr`) | A pointer type (`*mut u8 ptr`) puts `*` at the start of the line, which waqf reads as a continuation (§3) | The leading-operator rule doesn't apply inside a struct or `extern` body; the checker exempts it there. The parser needs the same rule |
 | F-38 | `fail/fn-type-arrow` | A type-first field or parameter of function type puts its name after the effect clause (`Order -> void uses net onPaid`) | Parenthesize the function type so the name follows the closing paren (`(Order -> void uses net) onPaid`, GRAMMAR §5, §9); the snippet is a struct field in that form, with `=>` as the error. `check_round3.py` needed no change: it reads the parenthesized field as neither name-first nor type-first |
 | F-39 | checker | `Grams w = 0g` is a field in a struct body and an input form in a function body; only the enclosing block tells them apart | The checker tracks block kinds: struct, union, interface, extension and `extern` bodies hold declarations; function bodies and the module level (scripts) hold statements |
+
+## 2026-10-23 signature review and addendum 1
+
+Sūq was moved to the signature review (HANDOFF §2, §3, §8, §11-§15, §17, §20, §24-§29) and addendum 1: clause order `where`, `becomes`, `fails`, `uses`; `states { … }` and `T.s` types; `until`/`through`; `rest`; `Panic.handler`; `span`/`copy()`/`List(seq)` instead of `asSpan()`/`toList()`; no `onX` stored function fields. F-35 and F-36 above are superseded where they show `Order order is .paid` (now `Order.paid order`) and `Span<PriceLine>` parameters (now `ReadOnlySpan`). `check_round3.py` gained 11 rules and `fail/` 11 snippets (`clause-order`, `on-prefix`, `to-as-call`, `to-member`, `bare-this`, `get-property`, `owned-copied`, `state-line`, `mode-particle`, `repeated-particle`, `unit-round`).
+
+| # | Where | Issue | What Sūq assumes or proposes |
+|---|---|---|---|
+| F-40 | orders_store (`bulkCopy`) | §27 shows `bulkCopy<T>(rows, ignoreConstraints)`, but it is unclear whether `T` needs an id or `IEntity`; `LineRow` has none | `bulkCopy` takes any `@derive(Row)` struct; the old hand-written COPY loop is gone |
+| F-41 | checkout (`OrderPaid`) | §26 declares an event type (`Event<Order.paid> uses …`) but not how a field of it is created | `OrderPaid()` builds an empty event in the `Storefront` literal; `raise(order)` fires it, `subscribe(by:)` returns a handle for `using let` |
+| F-42 | packing (`sumLoad`) | `first..end` over a typed index (`BoxId`) is not specified for §15 `until` | A range over a typed index yields that index type; `sumLoad(from BoxId first, until BoxId end) expects first <= end` |
+| F-43 | restock (`run`) | `run(Path, args:)` and `Arg(Path)` are assumed; §13 names `process` but §27 gives no signature | `run(Path("gzip"), args: [Arg(options.file)])`; the script infers `uses process` and `.process` is in the package capabilities |
+| F-44 | checkout (`toJson`) | `patch.toJson()` is an instance `toX` call (addendum §3) | `Json.encode(patch)` |
+| F-45 | order store, checkout | `toOrder`, `toLine`, `toDto` are instance `toX` members | `restoreOrder`, `restoreLine` (private helpers), and static factories `OrderDto.fromOrder`, `LineDto.fromLine` (addendum §3 keeps `fromX`) |
+| F-46 | storefront, db, main | `uses net` on code that only talks to Postgres | `db` (an alias for `net, fs`) on the storefront and db functions; `main` drops its `uses` (inferred, bounded by the package capabilities); `Handler` keeps an explicit upper bound |
+| F-47 | main (`shop.paid.subscribe`) | A subscription on a `var shop` borrows it for the handle's life | The handle is `using let audit`; `shop` is not mutated while it lives |
+| F-48 | orders_store, accounts | `conn.scalar<i64>(…)` is gone; `query<T>(…).single()` replaces it, and a single-column tuple is unclear | `query<i64>` for one column and `query<(i64, i32)>` for two, with `for try (cents, qty) in …`; `tryFirst()` for optional rows |
+| F-49 | order (`Fulfilled`) | Several states are written inline for parameters (`Order is .paid or .shipped`); a one-state parameter is `Order.paid order` | `type Fulfilled = Order is .paid or .shipped`, and `lookUpPayment(Order is .paid or .shipped)` is used as a parameter |
+| F-50 | warehouse, pricing, carrier | `Span<T>` parameters accept a `List` only through `.span` | Read-only parameters are `ReadOnlySpan<T>`; callers pass `xs.span` or a list literal |
+| F-51 | carrier (`billedWeight`) | `ceiling<Kilograms>()` on `Grams` returns a `Kilograms` value; whether it interpolates directly into a log string is unspecified | `log` interpolates it with its unit suffix |
+| F-52 | stats, money (overloads, `rest`) | Overloads by parameter type (§24) and a `rest` tail after a labeled parameter | `Tally.record(ref this, Line)` beside `record(ref this, i32, for Sku)`; `Money.sum(Currency, rest ReadOnlySpan<Money>)`, called with values or `..all` |
+| F-53 | checker | `rest` is not a particle but is exempt from the one-unlabeled-parameter rule (§15) | The checker skips a `rest` parameter in that count |
 
 ## Findings from building both versions
 
