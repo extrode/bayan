@@ -114,7 +114,7 @@ public sealed class Parser
         DiagnosticCodes.UnlessNegated, DiagnosticCodes.ParenthesizedCondition, DiagnosticCodes.BodyNeedsBraces,
         DiagnosticCodes.ForInputForm, DiagnosticCodes.ErrdeferInput, DiagnosticCodes.FieldInitEquals, DiagnosticCodes.UnlessCompound,
         DiagnosticCodes.UnlessNull, DiagnosticCodes.CatchBinding, DiagnosticCodes.DelegateDecl, DiagnosticCodes.ErrorSetPipe,
-        DiagnosticCodes.CSharpTypeName, DiagnosticCodes.FailsShorthand, DiagnosticCodes.NegatedIfToUnless, DiagnosticCodes.UnlessLikelihood,
+        DiagnosticCodes.CSharpTypeName, DiagnosticCodes.FailsShorthand, DiagnosticCodes.UnlessLikelihood,
         DiagnosticCodes.SemicolonInput, DiagnosticCodes.ElseOnNewLine, DiagnosticCodes.OnNewLine, DiagnosticCodes.PostfixOnNewLine,
         DiagnosticCodes.OneLineDeclarations, DiagnosticCodes.MissingLineBreak, DiagnosticCodes.TypeNameOrder,
         DiagnosticCodes.BracketAttribute, DiagnosticCodes.CharInput, DiagnosticCodes.RequiresValue,
@@ -1957,7 +1957,6 @@ public sealed class Parser
             likelihood = Likelihood.Unlikely;
         }
         var condition = ParseCondition(out var parenthesized, out var parens);
-        var closeEnd = _prevEnd;
         // The BYN1017 fix leaves a bare condition, after which `then` and `else` must both be blocks: it braces both.
         var then = parenthesized ? ParseBody(keyword, ref parens) : ParseBlock();
         Stmt? otherwise = null;
@@ -1969,16 +1968,6 @@ public sealed class Parser
             var elseKeyword = Advance();
             otherwise = Kind == TokenKind.IfKeyword ? RejectPostfixAfterCompound(ParseIf(Current.Start, elseIf: true))
                 : parenthesized ? ParseBody(elseKeyword, ref parens) : ParseBlock();
-        }
-        // With a braceless `then`, BYN1017's fix already braces it; `unless` waits for the next check.
-        else if (!elseIf && likelihood == Likelihood.None && then is BlockStmt && condition is UnaryExpr { Op: UnaryOp.Not } negated
-                 && Unwrap(negated.Operand) is not (BinaryExpr { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } or UnaryExpr { Op: UnaryOp.Not })
-                 && !IsNullTest(Unwrap(negated.Operand)))
-        {
-            var fixSpan = TextSpan.FromBounds(keyword.Start, closeEnd);
-            if (Report(DiagnosticCodes.NegatedIfToUnless, fixSpan, label: "a negated condition with no `else`",
-                    help: "write `unless` with the condition as written", fix: new Fix(fixSpan, "unless " + _source.GetText(Unwrap(negated.Operand).Span))) is not null)
-                Unreport(parens);
         }
         return new IfStmt(SpanFrom(start), condition, then, otherwise) { Likelihood = likelihood };
     }
