@@ -1,0 +1,2 @@
+// expect: `char` (use `rune`)
+let c: char = 'a'

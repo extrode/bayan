@@ -1,0 +1,2 @@
+// expect: `try` and `catch` on the same call
+let o = try orders.find(id) catch _ => return .unavailable

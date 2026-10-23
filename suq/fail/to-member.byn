@@ -1,0 +1,5 @@
+// expect: instance `toX`/`asX` member
+// fix-it: `static OrderDto fromOrder(Order order)`
+extension Order {
+    public OrderDto toDto() => OrderDto { id: id }
+}

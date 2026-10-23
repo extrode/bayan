@@ -1,0 +1,2 @@
+// expect: keyword used as a name
+let checked = 1

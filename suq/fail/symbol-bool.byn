@@ -1,0 +1,3 @@
+// expect: symbol boolean in a `.words` project
+// fix-it: `ready and not late` (package.byn: style.booleans = .words)
+return 1 if ready && !late

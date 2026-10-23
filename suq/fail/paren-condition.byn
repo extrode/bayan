@@ -1,0 +1,4 @@
+// expect: parenthesized condition
+// fix-it: `if ok {` (parentheses only when the condition holds a brace)
+if (ok) {
+}

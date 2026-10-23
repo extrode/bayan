@@ -4,6 +4,8 @@ Places where writing Sūq against the round-3 spec read badly, needed a workarou
 
 **Status:** *Gap* means the spec is silent and I picked something. *Friction* means the spec covers it but the result reads badly. *Security* means the rules let something risky through.
 
+Which files use which feature: [feature coverage](bayan-reference-app-coverage.md).
+
 ## Missing syntax (gaps)
 
 | # | Where | Issue | What Sūq assumes or proposes |

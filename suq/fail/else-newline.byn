@@ -1,0 +1,5 @@
+// expect: `else` must follow `}` on the same line
+if ok {
+}
+else {
+}

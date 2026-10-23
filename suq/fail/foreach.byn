@@ -1,0 +1,3 @@
+// expect: `foreach`
+foreach line in lines {
+}

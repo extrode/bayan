@@ -1,0 +1,5 @@
+// expect: `onX` name
+// fix-it: `(Order -> void uses net) handler`
+struct Checkout {
+    (Order -> void uses net) onPaid
+}

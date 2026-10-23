@@ -1,0 +1,4 @@
+// expect: parenthesized condition
+// fix-it: `for x in xs {`
+for (let x in xs) {
+}
