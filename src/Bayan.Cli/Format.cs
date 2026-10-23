@@ -10,7 +10,8 @@ internal static class Format
     /// <summary>The input-form codes whose fix the formatter applies.</summary>
     private static readonly HashSet<string> InputForms = new(StringComparer.Ordinal)
     {
-        "BYN1007", "BYN1017", "BYN1018", "BYN1022", "BYN1023", "BYN1029", "BYN1030", "BYN1031",
+        "BYN1007", "BYN1017", "BYN1018", "BYN1019", "BYN1020", "BYN1021", "BYN1022", "BYN1023", "BYN1025",
+        "BYN1029", "BYN1030", "BYN1031", "BYN1033",
         "BYN1040", "BYN1041", "BYN1042", "BYN1053",
     };
 
