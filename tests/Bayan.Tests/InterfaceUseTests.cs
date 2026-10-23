@@ -41,14 +41,14 @@ public sealed class InterfaceUseTests
 
             void forward<T>(ref T shape) where T : IShape {
                 show(shape)
-                dyn ref readonly IShape r = shape
+                let r: dyn ref readonly IShape = shape
                 peek(r)
             }
 
             void run() {
                 var c = Circle { r: 2 }
                 show(c)
-                dyn ref IShape d = c
+                let d: dyn ref IShape = c
                 peek(d)
                 peek(pick(ref c))
                 forward(ref c)

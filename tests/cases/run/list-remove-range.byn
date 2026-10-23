@@ -34,7 +34,7 @@ whole.append(7)
 print($"reused {show(whole)}")
 
 var words = List<string>()
-string[5] letters = ["a", "b", "c", "d", "e"]
+let letters: string[5] = ["a", "b", "c", "d", "e"]
 for w in letters { words.append(w) }
 words.removeRange(1, 3)
 var joined = StrBuf()

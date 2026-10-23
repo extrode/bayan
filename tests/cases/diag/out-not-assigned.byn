@@ -10,5 +10,5 @@ bool tryFirst(string text, out i64 value) {
     return false
 }
 
-i64 v
+var v: i64
 print($"{tryParse("1", out v)} {tryFirst("", out v)}")

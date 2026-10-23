@@ -1,4 +1,4 @@
-List<i64> xs = [3, 1, 4]
+let xs: List<i64> = [3, 1, 4]
 for x in xs {
     print($"x {x}")
 }
@@ -13,7 +13,7 @@ prices.remove("cake")
 for (item, price) in prices {
     print($"{item} costs {price}")
 }
-List<List<i64>> grid = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+let grid: List<List<i64>> = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
 outer: for row in grid {
     for cell in row {
         continue outer if cell == 2

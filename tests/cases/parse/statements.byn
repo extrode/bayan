@@ -2,10 +2,10 @@ void main() {
     let a = 1
     var b = 2
     const c = 3
-    let i64 d = 4
-    var u8 e = 5
-    i64 f = 6
-    Money m
+    let d: i64 = 4
+    var e: u8 = 5
+    let f: i64 = 6
+    var m: Money
     using let arena = Arena()
     b = 7
     b += 1

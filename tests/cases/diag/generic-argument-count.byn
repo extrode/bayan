@@ -8,4 +8,4 @@ struct Pair<A, B> {
 
 let x = pick<i64, string>(first: true, a: 1, b: 2)
 let y = plain<i64>(1)
-Pair<i64> p
+var p: Pair<i64>

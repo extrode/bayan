@@ -12,5 +12,5 @@ error BYN2742: `plain` takes 0 type argument(s), not 1
 
 error BYN2023: `Pair` takes 2 type argument(s), not 1
 
-  11 │ Pair<i64> p
-     │ ^^^^^^^^^
+  11 │ var p: Pair<i64>
+     │        ^^^^^^^^^

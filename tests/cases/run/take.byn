@@ -6,7 +6,7 @@ struct Ledger {
 }
 
 i64 sum(move List<i64> xs) {
-    i64 total = 0
+    var total: i64 = 0
     for x in xs { total += x }
     return total
 }

@@ -17,7 +17,7 @@ struct B {
 
     // Passing a field by `ref` lets the callee grow it, like passing a local list.
     void run(ref this) {
-        dyn ref IThing d = items[0]
+        let d: dyn ref IThing = items[0]
         grow(ref items)
         grow(ref this.items)
         print($"{d.get()}")

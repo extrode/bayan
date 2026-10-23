@@ -1,7 +1,7 @@
 // os: unix
 // `Io.runBatch` needs cmd.exe: elsewhere it is `unsupported`, before looking at the arguments.
 string describe(string path) {
-    List<string> none = List<string>()
+    let none: List<string> = List<string>()
     let r = Io.runBatch(path, none.asSpan()) catch switch {
         .unsupported => return "unsupported",
         .invalidInput => return "invalid input",

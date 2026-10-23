@@ -24,7 +24,7 @@ Map<string, i64> passThrough(move Map<string, i64> m) {
 }
 
 i64 total(Map<string, i64> m) {
-    i64 sum = 0
+    var sum: i64 = 0
     for e in m { sum += e.value }
     return sum
 }
@@ -56,11 +56,11 @@ var list = List<Map<string, i64>>()
 list.append(fresh("u", 6))
 var nested = Map<i64, Map<string, i64>>()
 nested[1] = fresh("t", 7)
-Map<string, i64>[2] arr = [fresh("q", 8), Map<string, i64>()]
+var arr: Map<string, i64>[2] = [fresh("q", 8), Map<string, i64>()]
 let pair = (fresh("p", 9), 1)
 let o = Owned(fresh("o", 10))
 let r = found()
-Map<string, i64>? maybe = fresh("n", 11)
+let maybe: Map<string, i64>? = fresh("n", 11)
 let c = passThrough(fresh("m", 12))
 
 // Receivers, `for` sources, read-only and `ref` arguments, formatting.

@@ -1,4 +1,4 @@
-const i32 limit = 3
+const limit: i32 = 3
 
 i32 next() {
     return 4

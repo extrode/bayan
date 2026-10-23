@@ -8,7 +8,7 @@
 // newline is ignored. The first difference in each file prints `<file>:<line>: <left> | <right>`.
 // Exit 0 if every file agrees, 1 if any differs, 2 on a usage error or a command that cannot start.
 
-const i32 usageError = 2
+const usageError: i32 = 2
 
 i32 usage(string message) {
     Io.stderr.write($"lex-diff: {message}\nusage: lex-diff --left \"<cmd>\" (--right \"<cmd>\" | --golden <ext>) <dir>\n")
@@ -22,8 +22,8 @@ i32 failure(string message) {
 
 /// The words of `cmd`, split on spaces.
 List<string> words(string cmd) {
-    List<string> result = List<string>()
-    i64 start = 0
+    var result: List<string> = List<string>()
+    var start: i64 = 0
     for i in 0..=cmd.length {
         if i == cmd.length || cmd.bytes[i] == 0x20 {
             if i > start { result.append(cmd[start..i]) }
@@ -35,8 +35,8 @@ List<string> words(string cmd) {
 
 /// The lines of `text`, without a final empty line and without the `\r` of a CRLF.
 List<string> lines(string text) {
-    List<string> result = List<string>()
-    i64 start = 0
+    var result: List<string> = List<string>()
+    var start: i64 = 0
     for i in 0..text.length {
         if text.bytes[i] == 0x0A {
             let end = i > start && text.bytes[i - 1] == 0x0D ? i - 1 : i
@@ -50,7 +50,7 @@ List<string> lines(string text) {
 
 /// Runs `cmd` on `path` and returns its standard output.
 string run(List<string> cmd, string path) fails IoError {
-    List<string> args = List<string>()
+    var args: List<string> = List<string>()
     for i in 1..cmd.length { args.append(cmd[i]) }
     args.append(path)
     let r = try Io.run(cmd[0], args.asSpan())

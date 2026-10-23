@@ -26,7 +26,7 @@ void keep(move S s) {
 
 void dynRef() {
     var s = make()
-    dyn ref IThing d = s
+    let d: dyn ref IThing = s
     var t = move s
     t.xs.append(1)
     print($"{d.get()}")
@@ -34,14 +34,14 @@ void dynRef() {
 
 void readonlyDynRef() {
     let s = make()
-    dyn ref readonly IThing d = s
+    let d: dyn ref readonly IThing = s
     keep(move s)
     print($"{d.get()}")
 }
 
 void spanOfField() {
     let s = make()
-    Span<i64> sp = s.xs.asSpan()
+    let sp: Span<i64> = s.xs.asSpan()
     var t = move s
     t.xs.append(1)
     print($"{sp[0]}")
@@ -52,8 +52,8 @@ Span<i64> items(ref Slot slot, Span<i64> none) => none
 
 void switchMove() {
     var slot = Slot.full(make())
-    i64[1] none = [0]
-    Span<i64> sp = items(ref slot, none)
+    let none: i64[1] = [0]
+    let sp: Span<i64> = items(ref slot, none)
     switch move slot {
         case .full(var x):
             x.xs.append(1)
@@ -65,7 +65,7 @@ void switchMove() {
 void take() {
     var xs = List<i64>()
     xs.append(1)
-    Span<i64> sp = xs.asSpan()
+    let sp: Span<i64> = xs.asSpan()
     var ys = xs.take()
     ys.append(2)
     print($"{sp[0]}")

@@ -43,6 +43,23 @@ public sealed class FormatTests
     }
 
     [Fact]
+    public void DeclarationsBecomeTypeFirstAndLocalsNameFirst()
+    {
+        var file = Path.Combine(Fresh("order"), "main.byn");
+        File.WriteAllText(file,
+            "struct Box { weight: i64 }\nunion Event { timeout(after: i64) }\n" +
+            "add(a: i64, i64 b) -> i64 { return a + b }\n" +
+            "main() {\n    i64 t = add(1, 2)\n    i64 u = 0\n    u = t\n    const i64 k = 3\n    print($\"{u}{k}\")\n}\n");
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(
+            "struct Box { i64 weight }\nunion Event { timeout(i64 after) }\n" +
+            "i64 add(i64 a, i64 b) { return a + b }\n" +
+            "void main() {\n    let t: i64 = add(1, 2)\n    var u: i64 = 0\n    u = t\n    const k: i64 = 3\n    print($\"{u}{k}\")\n}\n",
+            File.ReadAllText(file));
+    }
+
+    [Fact]
     public void ASecondRunChangesNothing()
     {
         var file = Path.Combine(Fresh("idempotent"), "main.byn");

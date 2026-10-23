@@ -31,5 +31,5 @@ void main() {
     print($"{twice(ref s)}")
     var n = 4
     print($"{measure(ref n)}")
-    Box<Square> b = Box<Square> { item: s }
+    let b: Box<Square> = Box<Square> { item: s }
 }

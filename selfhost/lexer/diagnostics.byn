@@ -84,10 +84,10 @@ struct Diagnostic {
 
 // ── Rendering ─────────────────────────────────────────────────────────────────────
 
-const string bar = "│"
+const bar: string = "│"
 
 /// Prose (message, label, help) wraps at this width; the lexer renders plain text for a pipe.
-const i64 wrapWidth = 100
+const wrapWidth: i64 = 100
 
 /// Renders a diagnostic as plain text (the format `DiagnosticRendererTests` fixes):
 ///
@@ -161,7 +161,7 @@ void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
         sb.append("\n")
     }
     if diagnostic.hasFix {
-        i64 offset = 0
+        var offset: i64 = 0
         for i in 0..fixLines.length {
             let text = fixLines[i].bytes
             sb.append($"{blank} {lineNumber(number: fix.firstLine + i + 1, width: width)} {bar} ")
@@ -195,10 +195,10 @@ void appendLines(ref StrBuf sb, ref List<string> lines, string separator) {
 /// `rest`. Words are never broken, so a long word overflows its line.
 void wrap(ref List<string> lines, string text, i64 first, i64 rest) {
     let t = text.bytes
-    i64 lineFrom = 0
-    i64 lineEnd = -1
-    i64 lineRunes = 0
-    i64 from = 0
+    var lineFrom: i64 = 0
+    var lineEnd: i64 = -1
+    var lineRunes: i64 = 0
+    var from: i64 = 0
     for i in 0..t.length + 1 {
         let end = i == t.length || t[i] == 0x0A
         if !end && t[i] != 0x20 { continue }
@@ -274,17 +274,17 @@ FixView applyFix(ref SourceText source, TextSpan fix, string replacement, ref Li
     let r = replacement.bytes
 
     let common = o.length < r.length ? o.length : r.length
-    i64 head = 0
+    var head: i64 = 0
     while head < common && o[head] == r[head] { head += 1 }
     while head > 0 && ((head < o.length && (o[head] & 0xC0) == 0x80) || (head < r.length && (r[head] & 0xC0) == 0x80)) { head -= 1 }
-    i64 tail = 0
+    var tail: i64 = 0
     while tail < common - head && o[o.length - 1 - tail] == r[r.length - 1 - tail] { tail += 1 }
     while tail > 0 && (o[o.length - tail] & 0xC0) == 0x80 { tail -= 1 }
 
     let inserted = r.length - head - tail > 0
     let shown = inserted ? replacement : original
     let text = $"{before}{shown}{after}"
-    i64 from = 0
+    var from: i64 = 0
     for i in 0..text.length {
         if text.bytes[i] == 0x0A {
             lines.append(text[from..i])
@@ -303,7 +303,7 @@ FixView applyFix(ref SourceText source, TextSpan fix, string replacement, ref Li
 /// Source text as shown in a diagnostic: control and bidi characters become U+FFFD, one scalar for
 /// one, so carets still line up and the terminal cannot be made to reorder text.
 void display(ref StrBuf sb, ReadOnlySpan<u8> text) {
-    i64 pos = 0
+    var pos: i64 = 0
     while pos < text.length {
         let d = decodeAt(text, pos)
         let v = d.value
@@ -315,7 +315,7 @@ void display(ref StrBuf sb, ReadOnlySpan<u8> text) {
 
 /// Whitespace that lines up with `prefix`, keeping its tabs.
 void indent(ref StrBuf sb, ReadOnlySpan<u8> prefix) {
-    i64 pos = 0
+    var pos: i64 = 0
     while pos < prefix.length {
         let d = decodeAt(prefix, pos)
         sb.append(d.value == 0x09 ? "\t" : " ")

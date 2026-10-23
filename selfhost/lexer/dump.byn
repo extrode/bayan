@@ -29,7 +29,7 @@ void dump(ref StrBuf sb, ref LexResult result) {
 /// Backtick-quoted text with line breaks, tabs and invisible characters made visible.
 void escape(ref StrBuf sb, ReadOnlySpan<u8> text) {
     sb.append("`")
-    i64 pos = 0
+    var pos: i64 = 0
     while pos < text.length {
         let d = decodeAt(text, pos)
         let v = d.value
@@ -104,7 +104,7 @@ void jsonOptional(ref StrBuf sb, string text) {
 /// A JSON string: `\"` `\\` `\n` `\r` `\t`, other controls and DEL as `\u00XX`, the rest raw.
 void jsonString(ref StrBuf sb, ReadOnlySpan<u8> text) {
     sb.append("\"")
-    i64 pos = 0
+    var pos: i64 = 0
     while pos < text.length {
         let d = decodeAt(text, pos)
         let v = d.value

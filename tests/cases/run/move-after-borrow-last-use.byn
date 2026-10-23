@@ -17,15 +17,15 @@ void main() {
     var xs = List<i64>()
     xs.append(42)
     var s = S { xs: move xs }
-    dyn ref IThing d = s
-    Span<i64> sp = s.xs.asSpan()
+    let d: dyn ref IThing = s
+    let sp: Span<i64> = s.xs.asSpan()
     print($"{d.get()} {sp[0]}")
     var t = move s
     t.xs.append(1)
     keep(move t)
     var ys = List<i64>()
     ys.append(7)
-    Span<i64> view = ys.asSpan()
+    let view: Span<i64> = ys.asSpan()
     print($"{view[0]}")
     var zs = ys.take()
     zs.append(8)

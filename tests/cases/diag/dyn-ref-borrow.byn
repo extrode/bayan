@@ -17,7 +17,7 @@ void main() {
     peek(fixed)
     show(fixed)
     var kept = Circle { r: 2 }
-    dyn ref IShape late = kept
+    var late: dyn ref IShape = kept
     {
         var inner = Circle { r: 3 }
         late = inner

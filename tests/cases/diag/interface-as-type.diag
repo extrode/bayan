@@ -7,14 +7,14 @@ error BYN2816: `IShape` is an interface, not a type
 
 error BYN2816: `IShape` is an interface, not a type
 
-  6 │     IShape t = s
-    │     ^^^^^^ an interface
+  6 │     let t: IShape = s
+    │            ^^^^^^ an interface
     │
   help: write `dyn ref IShape` or add a `where` constraint
 
 error BYN2816: `IShape` is an interface, not a type
 
-  10 │     List<IShape> shapes = []
-     │          ^^^^^^ an interface
+  10 │     let shapes: List<IShape> = []
+     │                      ^^^^^^ an interface
      │
   help: write `dyn ref IShape` or add a `where` constraint

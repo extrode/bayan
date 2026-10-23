@@ -8,7 +8,7 @@ struct Sq : IShape {
     i64 area() => s * s
 }
 
-Sq[2] xs = [Sq { s: 2 }, Sq { s: 3 }]
+let xs: Sq[2] = [Sq { s: 2 }, Sq { s: 3 }]
 var sum = 0
 for dyn ref readonly IShape x in xs {
     sum += x.area()

@@ -42,7 +42,7 @@ void main() {
     advance(p.left, 1)
     advance(p.right, 5)
     throughRef(ref p.left)
-    dyn ref ICounter r = pick(ref p)
+    let r: dyn ref ICounter = pick(ref p)
     r.bump(1)
     observe(r)
     p.left.show()

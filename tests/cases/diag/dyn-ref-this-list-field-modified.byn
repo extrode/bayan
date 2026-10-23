@@ -13,12 +13,12 @@ struct B {
 
     // A `dyn ref` into a field's list borrows `this`: growing or shrinking the list while it is live is an error.
     void run(ref this) {
-        dyn ref IThing d = items[0]
+        let d: dyn ref IThing = items[0]
         for i in 0..100 {
             items.append(S { n: i })
         }
         print($"{d.get()}")
-        dyn ref IThing e = items[0]
+        let e: dyn ref IThing = items[0]
         items.removeLast()
         items.clear()
         print($"{e.get()}")

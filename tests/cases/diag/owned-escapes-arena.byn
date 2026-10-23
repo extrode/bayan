@@ -4,7 +4,7 @@ struct Node {
 }
 
 void main() {
-    Owned<Node>? head = null
+    var head: Owned<Node>? = null
     {
         using let arena = Arena()
         context (allocator: arena) {

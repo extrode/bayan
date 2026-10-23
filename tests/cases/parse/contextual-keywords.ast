@@ -33,7 +33,7 @@ CompilationUnit
   Let error = 3
   Let flags = 1
   Var unit = 2
-  Var distinct: i64 = 4
+  Let distinct: i64 = 4
   Let open = true
   Let extensible = false
   Let set = (list 1 2)
@@ -42,7 +42,7 @@ CompilationUnit
   Let derivation = 7
   Let attribute = 8
   Let embed = 9
-  Var pair: (i64 error, i64 set) = (tuple 1 2)
+  Let pair: (i64 error, i64 set) = (tuple 1 2)
   Assign type = 1
   Expr (call (. set add) 1)
   Let n = (struct Names (error 1) (set 2) (type 3))

@@ -5,7 +5,7 @@ if !input.isOk {
 } else {
     let text = input.value
     print($"{text.length} bytes")
-    i64 lines = 0
+    var lines: i64 = 0
     for b in text.bytes {
         if b == 0x0A { lines += 1 }
     }

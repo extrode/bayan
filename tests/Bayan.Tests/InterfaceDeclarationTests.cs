@@ -65,7 +65,7 @@ public sealed class InterfaceDeclarationTests
             }
 
             void show(dyn ref IShape s, dyn ref readonly IShape r) {
-                dyn ref readonly IShape t = r
+                let t: dyn ref readonly IShape = r
             }
             """);
         Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items.Select(d => d.Message)));

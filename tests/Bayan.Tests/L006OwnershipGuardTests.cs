@@ -141,14 +141,14 @@ public sealed class L006OwnershipGuardTests
             """, "BYN2780" },
         { "implicit copy, optional holding a List", """
             void main() {
-                List<i64>? o = List<i64>()
+                let o: List<i64>? = List<i64>()
                 let p = o
             }
             """, "BYN2780" },
         { "implicit copy, List into an optional", """
             void main() {
                 let xs = List<i64>()
-                List<i64>? o = xs
+                let o: List<i64>? = xs
             }
             """, "BYN2780" },
         { "implicit copy, ref parameter stored", """

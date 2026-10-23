@@ -17,12 +17,12 @@ public sealed class L007UntrustedSinkTests
         }
 
         void main() fails IoError {
-            Untrusted<string> name = Untrusted("x")
-            List<Untrusted<string>> many = List<Untrusted<string>>()
-            Span<Untrusted<string>> span = many.asSpan()
-            Holder h = Holder { value: Untrusted("x") }
-            List<Holder> holders = List<Holder>()
-            List<string> none = List<string>()
+            let name: Untrusted<string> = Untrusted("x")
+            let many: List<Untrusted<string>> = List<Untrusted<string>>()
+            let span: Span<Untrusted<string>> = many.asSpan()
+            let h: Holder = Holder { value: Untrusted("x") }
+            let holders: List<Holder> = List<Holder>()
+            let none: List<string> = List<string>()
 
         """;
 

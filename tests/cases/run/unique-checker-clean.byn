@@ -12,7 +12,7 @@ union Payload {
 }
 
 i64 sum(move List<i64> xs) {
-    i64 total = 0
+    var total: i64 = 0
     for x in xs { total += x }
     return total
 }
@@ -46,7 +46,7 @@ void main() {
     }
     print($"batches {batches.length} {batches[3].length} {batch.length}")
 
-    i64 total = 0
+    var total: i64 = 0
     var xs = List<i64>()
     for round in 0..3 {
         xs.append(round)
@@ -83,7 +83,7 @@ void main() {
     p = Payload.items(move inner)
     print($"payload {count(p)}")
 
-    i64 kept = 0
+    var kept: i64 = 0
     for round in 0..5 {
         using let arena = Arena()
         context (allocator: arena) {

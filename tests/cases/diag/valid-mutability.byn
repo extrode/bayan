@@ -11,19 +11,19 @@ void fill(out i64 result) {
     result = 7
 }
 
-i64 count = 0
+var count: i64 = 0
 count += 1
 count++
 bump(total: ref count)
 bump(total: ref count, by: 3)
-i64 later
+var later: i64
 let ok = count > 2
 if ok {
     later = 1
 } else {
     later = 2
 }
-i64 filled
+var filled: i64
 fill(out filled)
 let id = Id { value: 1, label: "a" }
 print($"{count} {later} {filled} {id.value} {id.label}")

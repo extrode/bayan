@@ -7,5 +7,5 @@ error BYN2720: `gren` is not a member of `Color`
 
 error BYN2720: `purple` is not a member of `Color`
 
-  8 │ Color d = .purple
-    │            ^^^^^^
+  8 │ let d: Color = .purple
+    │                 ^^^^^^

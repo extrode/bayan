@@ -15,7 +15,7 @@ void main() fails IoError {
     try Io.writeFile("b.txt", text.bytes)
     try Io.writeFile("a.txt", text.bytes)
     try Io.writeFile("C.txt", text.bytes)
-    List<string> names = try Io.listDir(".")
+    let names: List<string> = try Io.listDir(".")
     print($"{names.length} entries")
     for name in names { print(name) }
     print(describe("a.txt"))

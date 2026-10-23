@@ -39,7 +39,7 @@ i64 embed(i64 embed) => embed
 let error = 3
 let flags = 1
 var unit = 2
-i64 distinct = 4
+let distinct: i64 = 4
 let open = true
 let extensible = false
 let set = [1, 2]
@@ -48,7 +48,7 @@ let law = 6
 let derivation = 7
 let attribute = 8
 let embed = 9
-(i64 error, i64 set) pair = (1, 2)
+let pair: (i64 error, i64 set) = (1, 2)
 type = 1
 set.add(1)
 let n = Names { error: 1, set: 2, type: 3 }

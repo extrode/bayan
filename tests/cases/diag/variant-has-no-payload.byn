@@ -5,7 +5,7 @@ union Shape {
 
 void main() {
     let s = Shape.none()
-    Shape t = .none
+    let t: Shape = .none
     if t is .none() {
         print("none")
     }

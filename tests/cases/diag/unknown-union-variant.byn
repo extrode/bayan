@@ -5,7 +5,7 @@ union Shape {
 
 void main() {
     let s = Shape.square(1)
-    Shape t = .circle(2)
+    let t: Shape = .circle(2)
     if t is .Triangle(let x) {
         print("never")
     }

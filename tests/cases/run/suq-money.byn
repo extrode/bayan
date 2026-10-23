@@ -16,7 +16,7 @@ public error enum PricingError {
     overflow
 }
 
-const i64 maxCents = 9223372036854775807
+const maxCents: i64 = 9223372036854775807
 
 /// An amount in minor units (sen, cents) of one currency.
 public struct Money {

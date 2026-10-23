@@ -44,7 +44,7 @@ i64 quiet(i64 n) {
 }
 
 i64 untilMissing() {
-    i64 total = 0
+    var total: i64 = 0
     for i in 0..5 {
         let v = find(3 - i) ?? break
         total += v
@@ -53,7 +53,7 @@ i64 untilMissing() {
 }
 
 i64 skipMissing() {
-    i64 total = 0
+    var total: i64 = 0
     for i in 0..5 {
         let v = find(i - 2) ?? continue
         total += v

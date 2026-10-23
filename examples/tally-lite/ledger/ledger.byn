@@ -73,7 +73,7 @@ public List<Transfer> settle(ReadOnlySpan<Share> balances) {
 
 /// Index of the smallest (or largest) balance; the earliest wins a tie.
 i64 extreme(ReadOnlySpan<Share> shares, bool lowest) {
-    i64 best = 0
+    var best: i64 = 0
     for i in 1..shares.length {
         let better = lowest ? shares[i].cents < shares[best].cents : shares[i].cents > shares[best].cents
         best = i if better

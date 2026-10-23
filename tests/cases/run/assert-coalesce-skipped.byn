@@ -3,6 +3,6 @@ i64 bump(ref i64 n) {
     return n
 }
 
-i64? found = 2
-i64 calls = 0
+let found: i64? = 2
+var calls: i64 = 0
 assert (found ?? bump(ref calls)) + calls == 3

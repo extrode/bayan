@@ -1,5 +1,5 @@
 let ok = true
-i64 total
+var total: i64
 if ok {
     total = 1
 }

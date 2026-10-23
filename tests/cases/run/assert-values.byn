@@ -1,2 +1,2 @@
-i64 net = -33
+let net: i64 = -33
 assert(net == -34)

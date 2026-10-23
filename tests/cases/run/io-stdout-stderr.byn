@@ -6,7 +6,7 @@ void main() {
     Io.stderr.write("to stderr, ")
     Io.stderr.write("no newline")
     Io.stdout.write("last, no newline")
-    i64 start = Io.monotonicNanos()
-    i64 end = Io.monotonicNanos()
+    let start: i64 = Io.monotonicNanos()
+    let end: i64 = Io.monotonicNanos()
     print("") if end < start
 }

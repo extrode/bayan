@@ -11,7 +11,7 @@ void main() {
     var b = B { items: List<i64>() }
     b.items.append(1)
     let s = b.items.asSpan()
-    dyn ref IReset r = b
+    let r: dyn ref IReset = b
     r.reset()
     print($"{s[0]}")
 }

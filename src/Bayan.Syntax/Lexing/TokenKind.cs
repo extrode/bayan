@@ -41,6 +41,7 @@ public enum TokenKind : ushort
     QuestionQuestionEquals,
     QuestionDot,
     FatArrow,
+    Arrow,
     At,
     Hash,
 
@@ -229,6 +230,7 @@ public static class TokenKindFacts
         TokenKind.QuestionQuestionEquals => "??=",
         TokenKind.QuestionDot => "?.",
         TokenKind.FatArrow => "=>",
+        TokenKind.Arrow => "->",
         TokenKind.At => "@",
         TokenKind.Hash => "#",
         TokenKind.Plus => "+",

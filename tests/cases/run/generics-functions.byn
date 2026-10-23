@@ -23,7 +23,7 @@ i64 countDown<T>(T x, i64 n) {
     return 1 + countDown(x, n - 1)
 }
 
-i64 one = 1
+let one: i64 = 1
 print($"{pick(first: true, a: one, b: 2)}")
 print(pick(first: false, a: "left", b: "right"))
 let p = pick(first: true, a: Point { x: 1, y: 2 }, b: Point { x: 3, y: 4 })

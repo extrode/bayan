@@ -5,7 +5,7 @@ struct Bag {
 }
 
 i64 sum(move List<i64> xs) {
-    i64 total = 0
+    var total: i64 = 0
     for x in xs { total += x }
     return total
 }
@@ -36,7 +36,7 @@ void main() {
     d.append(7)
     print($"d {d.length} {d[0]}")
 
-    i64 n = 8
+    let n: i64 = 8
     let m = move n
     print($"{n} {m}")
 }

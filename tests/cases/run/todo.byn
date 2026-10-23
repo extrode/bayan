@@ -1,6 +1,6 @@
 print("start")
-bool ready = true
-i64 n = ready ? 41 : todo("not ready")
+let ready: bool = true
+let n: i64 = ready ? 41 : todo("not ready")
 print($"{n + 1}")
-string label = todo($"label for {n}")
+let label: string = todo($"label for {n}")
 print(label)

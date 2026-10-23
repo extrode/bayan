@@ -14,7 +14,7 @@ void main() {
     keep.append(S { n: 7 })
     var xs = List<S>()
     xs.append(S { n: 1 })
-    dyn ref IThing d = keep[0]
+    var d: dyn ref IThing = keep[0]
     for dyn ref IThing x in xs {
         d = x
     }
@@ -22,7 +22,7 @@ void main() {
         xs.append(S { n: i })
     }
     print($"{d.get()}")
-    dyn ref readonly IThing e = keep[0]
+    var e: dyn ref readonly IThing = keep[0]
     for dyn ref readonly IThing x in xs {
         e = x
     }

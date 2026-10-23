@@ -6,12 +6,12 @@
       "name": "main",
       "span": {
         "start": 0,
-        "end": 13
+        "end": 18
       },
       "bindings": [
         {
           "name": "limit",
-          "kind": "var",
+          "kind": "let",
           "span": {
             "start": 4,
             "end": 9
@@ -22,8 +22,8 @@
           "name": "m",
           "kind": "var",
           "span": {
-            "start": 18,
-            "end": 19
+            "start": 23,
+            "end": 24
           },
           "type": "u64"
         }

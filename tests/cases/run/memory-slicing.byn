@@ -1,4 +1,4 @@
-i64[5] xs = [10, 20, 30, 40, 50]
+let xs: i64[5] = [10, 20, 30, 40, 50]
 let s = xs.asSpan()
 let mid = s[1..^1]
 print($"{mid.length} {mid[0]} {mid[^1]} {s[^1]} {s[^5]}")
@@ -19,7 +19,7 @@ print(text[7..])
 print(text[^3..])
 print($"{text.length}")
 
-i64 total = 0
+var total: i64 = 0
 for x in s[2..] {
     total += x
 }

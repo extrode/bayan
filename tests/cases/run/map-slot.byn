@@ -9,7 +9,7 @@ struct Tally {
 
 // `slot` inserts the default for a missing key, so counting needs no lookup first.
 var words = Map<string, i64>()
-string[7] text = ["the", "cat", "saw", "the", "dog", "the", "cat"]
+let text: string[7] = ["the", "cat", "saw", "the", "dog", "the", "cat"]
 for w in text { words.slot(w) += 1 }
 print($"{words} length={words.length}")
 

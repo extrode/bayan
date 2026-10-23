@@ -3,7 +3,7 @@ i64 bump(ref i64 n) {
     return n
 }
 
-i64 calls = 0
+var calls: i64 = 0
 assert(bump(ref calls) == 1)
 print($"calls {calls}")
 assert(bump(ref calls) > calls + 5)

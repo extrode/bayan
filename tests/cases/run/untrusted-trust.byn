@@ -1,9 +1,9 @@
-List<Untrusted<string>> names = []
+var names: List<Untrusted<string>> = []
 names.append(Untrusted("ada"))
 names.append(Untrusted("grace"))
 for n in names {
-    string s = trust(n, reason: "demo input")
+    let s: string = trust(n, reason: "demo input")
     print(s)
 }
-Untrusted<i64> a = Untrusted(3)
+let a: Untrusted<i64> = Untrusted(3)
 print($"{a == Untrusted(3)}")

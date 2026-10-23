@@ -29,7 +29,7 @@ void main() fails money.MoneyError {
         let trip = try sampleTrip()
         let owed = ledger.balances(trip)
         for t in ledger.settle(owed) {
-            money.Money paid = { cents: t.cents, currency: "MYR" }
+            let paid: money.Money = { cents: t.cents, currency: "MYR" }
             print($"{t.from} pays {t.to} {paid}")
         }
     }

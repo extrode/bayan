@@ -17,6 +17,6 @@ struct Bag {
 void main() {
     var b = Bag { items: List<S>() }
     b.items.append(S { n: 7 })
-    dyn ref IThing d = b.first()
+    let d: dyn ref IThing = b.first()
     print($"{d.get()}")
 }

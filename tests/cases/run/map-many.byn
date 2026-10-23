@@ -5,7 +5,7 @@ print($"count after inserts: {m.length}")
 var ok = true
 for k in 0..1000 {
     // The last i with i * 7 % 1000 == k.
-    i64 last = -1
+    var last: i64 = -1
     for i in 9000..10000 {
         if i * 7 % 1000 == k { last = i }
     }
@@ -19,7 +19,7 @@ for k in 0..1000 {
 }
 print($"removed {removed}, count {m.length}")
 var seen = 0
-i64 sum = 0
+var sum: i64 = 0
 for e in m {
     seen++
     sum += e.key
@@ -29,7 +29,7 @@ print($"0 present: {m.contains(0)}, 1 present: {m.contains(1)}")
 
 // Removed keys come back at the end, after surviving keys.
 m[0] = 42
-i64 lastKey = -1
+var lastKey: i64 = -1
 for e in m { lastKey = e.key }
 print($"last key {lastKey}, count {m.length}")
 

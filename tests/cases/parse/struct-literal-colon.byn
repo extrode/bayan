@@ -23,4 +23,4 @@ Money mk(bool ok) fails MkError {
     return .bad if !ok
     return { cents: 7 }
 }
-Money caught = mk(ok: false) catch { cents: 1 }
+let caught: Money = mk(ok: false) catch { cents: 1 }

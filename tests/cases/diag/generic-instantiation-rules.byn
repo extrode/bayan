@@ -16,4 +16,4 @@ print($"{countOf("fine")}")
 let xs = List<i64>()
 print($"{same(a: xs, b: xs)}")
 print(show(Arena()))
-Index<f64> idx
+var idx: Index<f64>

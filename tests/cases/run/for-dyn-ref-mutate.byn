@@ -12,7 +12,7 @@ struct C : IC {
 }
 
 void main() {
-    C[2] a = [C { n: 0 }, C { n: 0 }]
+    var a: C[2] = [C { n: 0 }, C { n: 0 }]
     for dyn ref IC x in a {
         x.bump()
     }

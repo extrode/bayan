@@ -7,7 +7,7 @@ void panicking(i32 x) {
 }
 
 void work() {
-    i32 x = 7
+    let x: i32 = 7
     defer failing(x)
     defer panicking(x)
     print("body")

@@ -2,7 +2,7 @@
 // identifier classes and NFC come from the generated `unicode-tables.byn` instead of the .NET
 // runtime and ICU, with NFC ported from `tools/Bayan.UnicodeGen/Nfc.cs`.
 
-const i64 maxInterpolationDepth = 32
+const maxInterpolationDepth: i64 = 32
 
 LexResult lex(move SourceText source, Keywords keywords) {
     var modes = List<ModeEntry>()
@@ -27,7 +27,7 @@ LexResult lex(move SourceText source, Keywords keywords) {
 
 /// Whether `cp` lies in one of the inclusive `lo, hi` pairs of `ranges`.
 bool inRanges(ReadOnlySpan<u32> ranges, u32 cp) {
-    i64 lo = 0
+    var lo: i64 = 0
     var hi = ranges.length / 2
     while lo < hi {
         let mid = lo + (hi - lo) / 2
@@ -60,19 +60,19 @@ bool isIdentifierContinue(u32 cp) => isIdentifierStart(cp) || inRanges(identCont
 // NFC (UAX #15) over the generated tables: full canonical decomposition (Hangul algorithmic),
 // canonical ordering by CCC, canonical composition with blocking.
 
-const i64 sBase = 0xAC00
-const i64 lBase = 0x1100
-const i64 vBase = 0x1161
-const i64 tBase = 0x11A7
-const i64 lCount = 19
-const i64 vCount = 21
-const i64 tCount = 28
-const i64 nCount = 588
-const i64 sCount = 11172
+const sBase: i64 = 0xAC00
+const lBase: i64 = 0x1100
+const vBase: i64 = 0x1161
+const tBase: i64 = 0x11A7
+const lCount: i64 = 19
+const vCount: i64 = 21
+const tCount: i64 = 28
+const nCount: i64 = 588
+const sCount: i64 = 11172
 
 /// Index of the triple whose first entry is `cp` in `table`, or -1.
 i64 findTriple(ReadOnlySpan<u32> table, u32 cp) {
-    i64 lo = 0
+    var lo: i64 = 0
     var hi = table.length / 3
     while lo < hi {
         let mid = lo + (hi - lo) / 2
@@ -87,7 +87,7 @@ i64 findTriple(ReadOnlySpan<u32> table, u32 cp) {
 
 /// The canonical combining class of `cp`.
 i64 ccc(u32 cp) {
-    i64 lo = 0
+    var lo: i64 = 0
     var hi = cccRanges.length / 3
     while lo < hi {
         let mid = lo + (hi - lo) / 2
@@ -142,7 +142,7 @@ i64 composePair(u32 first, u32 second) {
     let s = (i64)first - sBase
     let t = (i64)second - tBase
     if s >= 0 && s < sCount && s % tCount == 0 && t > 0 && t < tCount { return (i64)first + t }
-    i64 lo = 0
+    var lo: i64 = 0
     var hi = compPairs.length / 3
     while lo < hi {
         let mid = lo + (hi - lo) / 2
@@ -160,9 +160,9 @@ i64 composePair(u32 first, u32 second) {
 /// Canonical composition in place; a character is blocked by an intervening one of equal or higher CCC.
 void compose(ref List<u32> cps) {
     if cps.length == 0 { return }
-    i64 starterIndex = 0
-    i64 lastCcc = ccc(cps[0]) == 0 ? 0 : 256
-    i64 count = 1
+    var starterIndex: i64 = 0
+    var lastCcc: i64 = ccc(cps[0]) == 0 ? 0 : 256
+    var count: i64 = 1
     for i in 1..cps.length {
         let cp = cps[i]
         let c = ccc(cp)
@@ -463,6 +463,7 @@ struct LexResult {
             case '-':
                 fixed(peek(1) switch {
                     '-' => TokenKind.minusMinus,
+                    '>' => TokenKind.arrow,
                     '=' => TokenKind.minusEquals,
                     '%' => TokenKind.minusPercent,
                     '|' => TokenKind.minusBar,
@@ -560,7 +561,7 @@ struct LexResult {
     /// Reports BYN0005 when the identifier `span` (valid UTF-8) is not in NFC.
     void checkNfc(ref this, i64 start, ReadOnlySpan<u8> span) {
         var input = List<u32>()
-        i64 at = 0
+        var at: i64 = 0
         while at < span.length {
             let d = decodeAt(span, at)
             input.append(d.value)
@@ -789,7 +790,7 @@ struct LexResult {
                 }
                 pos += 2
                 let digitsStart = pos
-                i64 value = 0
+                var value: i64 = 0
                 while pos < source.bytes.length && hexValue(source.bytes[pos]) >= 0 && pos - digitsStart < 8 {
                     value = value * 16 + hexValue(source.bytes[pos])
                     pos += 1

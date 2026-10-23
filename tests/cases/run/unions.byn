@@ -42,7 +42,7 @@ Shape square(f32 side) => .rect(side, side)
 
 let c = Shape.circle(1)
 let r = square(2)
-Shape n = .none
+let n: Shape = .none
 print($"{c} {r} {n}")
 print($"{Shape.rect(w: 2, h: 3)}")
 print($"{area(c)} {area(r)} {area(n)}")
@@ -67,7 +67,7 @@ var shapes = List<Shape>()
 shapes.append(c)
 shapes.append(.rect(1, 2))
 shapes.append(Shape.none)
-f32 total = 0
+var total: f32 = 0
 for s in shapes {
     total += area(s)
     print($"list {s}")
@@ -78,8 +78,8 @@ let slot = Slot { label: "first", shape: .circle(3) }
 print($"{slot}")
 print($"{slot == Slot { label: "first", shape: Shape.circle(3) }}")
 
-Shape? maybe = shapes[1]
-Shape? missing = null
+let maybe: Shape? = shapes[1]
+let missing: Shape? = null
 print($"{maybe} {missing}")
 print(maybe switch { null => "none", .rect(let w, _) => $"rect {w}", _ => "other" })
 
