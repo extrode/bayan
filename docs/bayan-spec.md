@@ -1261,8 +1261,6 @@ print(..names)                                          // spread an existing co
 
 > Round 3 §24: variadic calls without a heap array or boxing, and overloads checked where they are declared. Codes: BYN1058, BYN3213, BYN3214, BYN3215.
 
-> Round 3 §15, O6: a particle names the argument's role, so call sites read as sentences and swapped arguments become label mismatches. Codes: BYN5004, BYN5005, BYN5006.
-
 **Mutating members: `ref this`.** `mut` is not a keyword.
 
 ```csharp
