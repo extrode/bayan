@@ -1,0 +1,26 @@
+// A `ref this` method that passes `this` as a writable `dyn ref` changes every field for its callers (BYN3004).
+interface IReset { void reset(ref this); }
+struct B : IReset {
+    List<i64> items;
+
+    void reset(ref this) {
+        items.clear();
+        items.append(7);
+    }
+
+    void pass(ref this) { poke(this); }
+
+    void run(ref this) {
+        let s = items.asSpan();
+        pass();
+        print($"{s[0]}");
+    }
+}
+
+void poke(dyn ref IReset r) { r.reset(); }
+
+void main() {
+    var b = B { items: List<i64>() };
+    b.items.append(1);
+    b.run();
+}

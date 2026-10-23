@@ -1,0 +1,9 @@
+error BYN2208: `==` cannot be applied to `i32` and `null`
+
+  3 │     let c = n == null;
+    │             ^^^^^^^^^
+
+error BYN2208: `==` cannot be applied to `null` and `null`
+
+  4 │     let d = null == null;
+    │             ^^^^^^^^^^^^

@@ -12,7 +12,7 @@ i64 eval(Expr e) => e switch {
 
 // n + (n - 1) + ... + 1, built recursively.
 Expr sum(i64 n) {
-    if (n == 1) {
+    if n == 1 {
         return .lit(1);
     }
     return .add(Owned(Expr.lit(n)), Owned(sum(n - 1)));
@@ -22,7 +22,7 @@ Expr sum(i64 n) {
 Expr sample() => Expr.mul(Owned(Expr.add(Owned(Expr.lit(1)), Owned(Expr.lit(2)))), Owned(sum(4)));
 
 i64 depth(Expr e) {
-    switch (e) {
+    switch e {
         case .lit(_):
             return 1;
         case .add(let l, let r):

@@ -4,7 +4,7 @@ string count(string path) fails IoError {
     return $"{names.length} entries";
 }
 
-string describe(string path) => count(path) catch (e) switch {
+string describe(string path) => count(path) catch switch {
     .notFound => "not found",
     .notADirectory => "not a directory",
     _ => "some other error",
@@ -17,7 +17,7 @@ void main() fails IoError {
     try Io.writeFile("C.txt", text.bytes);
     List<string> names = try Io.listDir(".");
     print($"{names.length} entries");
-    for (let name in names) print(name);
+    for name in names { print(name); }
     print(describe("a.txt"));
     print(describe("missing"));
 }

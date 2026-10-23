@@ -1,5 +1,5 @@
 CompilationUnit
   Let resp = (catch (call signUp form) (switch (caught) (EmailError => (call .badRequest "Invalid email")) ((. DbError timeout) => .unavailable) ((decl DbError e) => (call .serverError e))))
   Expr (catch (call save x) (switch (caught) ((decl IoError e) => (call log e)) (_ => (call log "other"))))
-  Let old = (catch (call parse s) (e) (switch e (.empty => 0) (_ => 1)))
-  Let n = (catch (call parse s) (e) (call fallback e))
+  Let old = (catch (call parse s) (switch (caught) (.empty => 0) (_ => 1)))
+  Let n = (catch (call parse s) (switch (caught) ((decl ParseError e) => (call fallback e))))

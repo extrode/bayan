@@ -84,6 +84,8 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `src/Bayan.Cli/Progress.cs:60-67` `Columns` counts emoji outside U+1F300–1F64F/U+1F900–1F9FF (🚀 U+1F680–1F6FF, U+1FA70–1FAFF, BMP emoji such as ✅ U+2705) as 1 column, so a long progress line can still wrap (005 review loop 3).
 - `src/Bayan.Cli/Messages.cs:156`: the unselectable-rerun notice says "control characters" for bidi-only names and is always singular (005 review loop 3).
 - Mixed selectable/unselectable failures in one `bayan test` run have no test (005 review loop 2).
+
+- (worktree audit 2026-10-22) clean worktrees whose work is already in a branch: chore-laws-timeout and feat-005-terminal-style (merged into `dev`); worker-r2-{cases,catch,defer,flow,naming,null,nullmove,refthis,requires,unions}, docs-design-round-2, worker-r3-plan, worker-007-docs (contained in their feature branches). The worker keys for r2-* and 007-docs are still live in `~/.claude`; worker-r3-plan has no key left.
 - BYN2211 help text still suggests the replaced `if (p is { } value)` idiom (round 2 §null narrowing).
 - Null narrowing not applied in `switch` `when` guards, `?:`, or `do`/`while` conditions (round 2 §null).
 - `error set` alias of several sets is rejected as a `catch switch` arm pattern (`BinderCalls.cs:754,982` accept only `ErrorSetSymbol`) (round 2 §5).
@@ -101,6 +103,13 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Interfaces declaring `ref this`, with implementations required to match, wait for spec 006 (round 2 §9).
 - `switch (move d)` on a narrowed optional types the subject as `T?` (so `case null:` is accepted as dead) while `switch (d)` types it `T` (BYN2411); re-wrap the narrowing in BindSwitchSubject as BindMove does (round 2 §4 null).
 - `move` parameters are never narrowed by `if (b is not null)` (`BinderExpressions.cs` IsNonNull); `b.length` still reports BYN2211 (round 2 §4 null).
+- 006 T7: an enumerator held in a Map slot (`m[k]`, a `BoundBuiltinCall`) is spilled and copied instead of checked for writability (Binder.cs `UserElement`).
+- 006 T9: `dyn-ref-dispatch` default `describe` prints instead of returning a string, since a returned interpolated string allocates through `byn_context`.
+- 006 reviewfix: BYN2807 is cached per instantiation, so a second call site with the same failing type argument is not reported again.
+- 006 T6: a generic interface method called through a constraint or a `dyn ref` reports Unsupported.
+- 006 T9: `CEmitter` `SlotName` can collide a getter `x` (`get_x`) with a method named `get_x`; vtable pointer member uses `PrimitiveType.I64` as a placeholder dependency type (`members.Add((PrimitiveType.I64, "void* data"))`).
+- 006 T8: a struct literal cannot be the bare iterable (`for x in S { … } {` is BYN1005); goldens wrap it in parentheses.
+- 006 T7: `Binder.cs:749` treats any `BoundField` enumerator as a place regardless of receiver, so `for n in make().stream` takes the MutationCheck path instead of spilling.
 - `[Cases(1)]` on a test with no parameters gives BYN2773 with the awkward help "in order: `()`" (`Compilation.cs:289-291`) (round 2 §16).
 - Named tuple elements in a case `(a: 1, b: 2)` are accepted and the names ignored (`Compilation.cs:284`) (round 2 §16).
 - Test parameter modifiers (`ref`/`move`) and defaults parse but are ignored; reject them (round 2 §16).
@@ -114,7 +123,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - No `chars` iterator exists, so `chars.count` was not added (round 2 §12).
 - String patterns (`"/api/" + var rest`) are not implemented, so "stay legal" under BYN2209 is untested (round 2 §12).
 - BYN2209 on `a + b + c` rewrites one pair per fix pass (round 2 §12).
-- docs/laws 003/005/006 still say `length`/`add` (round 2 §11).
 - diag/renamed-member also shows a BYN2311 warning (round 2 §11).
 - 007 Q121/Q124 give BYN1050 to `=>` in a function type; round 3 uses BYN1050 for `RequiresValue` and BYN1055 for that form (C26). Fix on feat/007-lambdas before merge (round 3, Sūq brief).
 - 007 Q115 makes a stored function type such as `onPaid: Order -> void uses net` BYN2822; Sūq and SPEC `:1287` use one (round 3, Sūq brief).
@@ -122,6 +130,26 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - No `docs/diagnostics/BYN1056.md`, `BYN1057.md`, `BYN7005.md` pages yet; GRAMMAR §3 links the first two (round 3, Sūq brief).
 - SPEC has no `T.zero` (friction F-31); the F-30 user-cleanup member name is open, conservative `dispose(ref this)` (round 3, Sūq brief).
 - SPEC `:389` `return .forbidden unless …` snippet has no signature; borderline under A2 (`fail` vs response value).
-- (worktree audit 2026-10-22) clean worktrees whose work is already in a branch: chore-laws-timeout and feat-005-terminal-style (merged into `dev`); worker-r2-{cases,catch,defer,flow,naming,null,nullmove,refthis,requires,unions}, docs-design-round-2, worker-r3-plan, worker-007-docs (contained in their feature branches). The worker keys for r2-* and 007-docs are still live in `~/.claude`; worker-r3-plan has no key left.
 - J54 type-first revert: 007 spec on feat/007-lambdas is name-first throughout (R1/R4/R15, examples :4-5, :36, :44-78); update to type-first decls and parenthesized function-type params before 007 T1. 006 C4/C20 shrink (006 already type-first).
 - J54: Sūq checker `type-first binding` rule only catches capitalised types (`i32 n = 3` unflagged); parameter lists spanning lines are only partly handled.
+- `if p == P { x: 1 } { … }` (unwrapped struct literal in a bare condition) gives BYN1012/BYN1005 with no hint to add parentheses (round 2 §4).
+- `ref this` on a constructor falls through to the `ref` modifier with type `this` instead of a targeted error (round 2 §9).
+- Postfix `break if (x);` parentheses are not reported as an input form; BYN1030 omits `sbyte`, `ushort`, `nint`, `nuint`; `RecoverIfNeeded` can resync into follow-on errors after an input-form error; the dangling-`else` case of BYN1017 is unchecked (round 2 §15).
+- The binder keeps `c.Binding` / `IsCatch` paths for `catch (e)` that only erroneous input reaches now (round 2 §15).
+- No golden covers the BYN1237 `NoTargetType` help (round 2 §15).
+- `tests/cases/run/condition-cast.byn` line 10 prints "parenthesized if" but is now `if flag { … }`; only the cast lines cover paren-vs-cast (round 2 §15).
+- Scaffold templates and `tests/cases/new/*.tree` still use `assert(...)`; move to `assert x;` (round 2 §16).
+- Power-assert: string values print unquoted; column math ignores tabs and wide characters; guarded pieces emit one `if` each, so C size grows with the square of the lazy-column count (round 2 §16).
+- Spec §20 examples and "assertion failed" wording in older docs and plans are not migrated to power-assert (round 2 §16).
+- `tryFirst` has a BYN2230 row in the grammar table but no `ReportRenamed` mapping; the BYN2230 help for `asString()` says "rename it `finish`" without `()` (round 2 §11).
+- `InterpolationSource` (`BinderExpressions.cs:865`) may cut `"""` raw strings wrong, giving a broken BYN2209 fix; BYN2201 help rows were misaligned (r2 stdlib gate; recheck).
+- r2-finalfix: `unless (!x) print("f"); else print("g");` leaves neither BYN1007 nor BYN1018 with a fix (BYN1006 already forces a rewrite).
+- r2-finalfix: `if ((!x)) { … }` gets no BYN1032; `ParseIf` (`Parser.cs:1302`) tests the condition without `Unwrap`.
+- `Parser.cs` `ParseDefer` (~:1585) still passes `clean = ErrorCount == errors` to ReportBraceless while ParseBody uses "no inner diagnostic has a fix": `defer let x = <expr with a fixless error>;` loses its braces fix (review of fix/review-2026-10-22-1)
+- `unless (a == null) s;` on a `bool` `a` reports BYN1017/1018/1006 but no BYN1023 (review of fix/review-2026-10-22-1, probe p12)
+- A field witnessing a getter declared with `fails` may get a vtable thunk that ignores the `fails` return convention (`CEmitter.cs` Vtable). Unprobed; flagged by the 006-fixa writer.
+- Region analysis runs on generic instances only, so a never-instantiated generic struct's methods get no BYN3004 (audit 2026-10-23 probe p7); instantiated ones match the non-generic case.
+- BYN2202 on a generic method's type parameter reads "expected `U`, found `U`" (two distinct `U`s print alike).
+- Reassigning an owner (`xs = List<i64>()`, `this.items = …` inside `for x in items`) while a span or loop borrows it records no mutation; memory-safe only because lists live in arenas and reassignment frees nothing (probes p4b/p8/p9 of the 006 final review, 2026-10-23). Becomes a hole if reassignment ever frees.
+- `RegionAnalysis.DirectChanges` (used by `ChangedFields`) does not count a `dyn ref` local that borrows a `this` field and is passed on to a writable `dyn ref` parameter (006-fixj note).
+- A `dyn ref` assigned from anything but a ToDynRef conversion, a tracked local or a `for` variable is assumed to hold borrowable storage, so passing it to a writable `dyn ref` parameter can give a false BYN3004 (006-fixj note).

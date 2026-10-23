@@ -56,6 +56,21 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ModifierNotAllowed = Error("BYN1016", "`{0}` is not allowed here");
     // BYN1049 is retired before it was raised: a round-3 draft gave `unless not` this code, which BYN1007 covers (and an earlier draft used it for a return-type order check, now covered by BYN1043 `TypeNameOrder`). Never reuse it.
     public static readonly DiagnosticDescriptor RetiredUnlessNot = Error("BYN1049", "retired: merged into BYN1007");
+    public static readonly DiagnosticDescriptor ParenthesizedCondition = Error("BYN1017", "parentheses around a condition are an input form");
+    public static readonly DiagnosticDescriptor BodyNeedsBraces = Error("BYN1018", "the body of `{0}` must be a block");
+    public static readonly DiagnosticDescriptor ForInputForm = Error("BYN1019", "`for (let x in xs)` is an input form; write `for x in xs`");
+    public static readonly DiagnosticDescriptor ErrdeferInput = Error("BYN1020", "`errdefer` is now `defer failing`");
+    public static readonly DiagnosticDescriptor FieldInitEquals = Error("BYN1021", "`{0} = …` in a literal is an input form; write `{0}: …`");
+    public static readonly DiagnosticDescriptor UnlessCompound = Error("BYN1022", "`unless` with `&&`/`||` reads as a double negative");
+    public static readonly DiagnosticDescriptor UnlessNull = Error("BYN1023", "`unless x is null` is not allowed; write `if x is not null`");
+    public static readonly DiagnosticDescriptor CatchBinding = Error("BYN1025", "`catch (e)` is an input form; bind the error in a `catch switch` arm");
+    public static readonly DiagnosticDescriptor DelegateDecl = Error("BYN1028", "`delegate` is not Bayan; write a function type `type OrderFilter = Order => bool;`");
+    public static readonly DiagnosticDescriptor ErrorSetPipe = Error("BYN1029", "separate error-set members with `,`");
+    public static readonly DiagnosticDescriptor CSharpTypeName = Error("BYN1030", "`{0}` is an input form; the Bayan type is `{1}`");
+    public static readonly DiagnosticDescriptor FailsShorthand = Error("BYN1031", "`T!E` is an input form; write `T f() fails E`");
+    public static readonly DiagnosticDescriptor NegatedIfToUnless = Error("BYN1032", "`if !x {{…}}` with no `else` is an input form; write `unless x {{…}}`");
+    public static readonly DiagnosticDescriptor UnlessLikelihood = Error("BYN1033", "`unless` takes no likelihood word; write `if unlikely !…` or drop `{0}`");
+    public static readonly DiagnosticDescriptor TypeNameOrder = Error("BYN1043", "`{0}` is an input form; write `{1}`");
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor UndefinedName = Error("BYN2001", "`{0}` is not defined");
@@ -82,8 +97,11 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor WrongTypeArgumentCount = Error("BYN2023", "`{0}` takes {1} type argument(s), not {2}");
     public static readonly DiagnosticDescriptor NestedOptional = Error("BYN2024", "`{0}?` is already optional");
     public static readonly DiagnosticDescriptor VoidValue = Error("BYN2025", "`void` is not a value type");
+    // BYN2026 is retired: a braceless body of `if`, `unless`, `while` or `for` is reported (BYN1018); a `defer` body may be a single statement, and only a declaration there is rejected (BYN1018), in design round 2. Never reuse it.
     public static readonly DiagnosticDescriptor DeclarationAsBody = Error("BYN2026", "a declaration cannot be the whole body of a statement");
+    public static readonly DiagnosticDescriptor NullEquality = Error("BYN2027", "compare with `is null` / `is not null`, not `==`");
     public static readonly DiagnosticDescriptor SameTypeShadowing = Warning("BYN2028", "`{0}` shadows an earlier `{0}` of the same type `{1}`");
+    public static readonly DiagnosticDescriptor ToStringCall = Error("BYN2031", "Bayan has no `toString()`; display is `format()` (derived from `formatInto(ref StrBuf)`)");
     public static readonly DiagnosticDescriptor MissingInitializer = Error("BYN2101", "`{0} {1}` needs a value");
     public static readonly DiagnosticDescriptor UseBeforeAssign = Error("BYN2102", "`{0}` is used before it is assigned");
     public static readonly DiagnosticDescriptor OutNotAssigned = Error("BYN2103", "`out` parameter `{0}` is not assigned on every path");
@@ -109,7 +127,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor InvalidCast = Error("BYN2206", "cannot convert `{0}` to `{1}`");
     public static readonly DiagnosticDescriptor BadUnaryOperand = Error("BYN2207", "`{0}` cannot be applied to `{1}`");
     public static readonly DiagnosticDescriptor BadBinaryOperands = Error("BYN2208", "`{0}` cannot be applied to `{1}` and `{2}`");
-    public static readonly DiagnosticDescriptor StringConcatenation = Error("BYN2209", "strings cannot be joined with `+`");
+    public static readonly DiagnosticDescriptor StringConcatenation = Error("BYN2209", "strings cannot be joined with `+`; use interpolation");
     public static readonly DiagnosticDescriptor CoalesceNotOptional = Error("BYN2210", "`??` needs an optional value on the left, found `{0}`");
     public static readonly DiagnosticDescriptor MemberOfOptional = Error("BYN2211", "`{0}` is not a member of `{1}`; the value may be null");
     public static readonly DiagnosticDescriptor NotIndexable = Error("BYN2212", "`{0}` cannot be indexed");
@@ -130,6 +148,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor AmbiguousVariant = Error("BYN2227", "`.{0}` is ambiguous; it exists in `{1}`");
     public static readonly DiagnosticDescriptor UnknownVariant = Error("BYN2228", "`{0}` is not a variant of `{1}`");
     public static readonly DiagnosticDescriptor InvalidConstArray = Error("BYN2229", "module-level `const` array `{0}` must hold literal numbers, `bool`s, `char`s or `string`s");
+    public static readonly DiagnosticDescriptor RenamedMember = Error("BYN2230", "`{0}` is now `{1}`");
     public static readonly DiagnosticDescriptor WhileLetNotOptional = Error("BYN2234", "`while let` needs a `T?` value, got `{0}`");
     public static readonly DiagnosticDescriptor SpreadNotSequence = Error("BYN2235", "`..{0}` spreads a `{1}`, which is not a sequence");
     public static readonly DiagnosticDescriptor MapLiteralMixed = Error("BYN2236", "a map literal needs `key: value` in every element");
@@ -170,6 +189,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor PanicHandlerRestricted = Error("BYN2612", "{0} is not allowed in a panic handler");
     public static readonly DiagnosticDescriptor PanicHandlerReads = Error("BYN2613", "a panic handler reads only `let` bindings and parameters");
     public static readonly DiagnosticDescriptor OnPanicPlacement = Error("BYN2614", "`Panic.onPanic` may be set only as the first statement of `main`");
+    public static readonly DiagnosticDescriptor PanicHandlerReadsMoved = Error("BYN2615", "a panic handler reads `{0}`, which is moved after the handler is registered");
     public static readonly DiagnosticDescriptor UnknownUnionVariant = Error("BYN2700", "`{0}` is not a variant of union `{1}`");
     public static readonly DiagnosticDescriptor DuplicateUnionVariant = Error("BYN2701", "union `{0}` already has a variant `{1}`");
     public static readonly DiagnosticDescriptor EmptyUnion = Error("BYN2702", "union `{0}` has no variants");
@@ -202,9 +222,9 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor UntrustedSink = Error("BYN2786", "`{0}` cannot be passed to `{1}`: it is `Untrusted`");
     public static readonly DiagnosticDescriptor TrustReason = Error("BYN2787", "`trust` needs a reason: a non-empty string literal");
     public static readonly DiagnosticDescriptor TakeUnsupported = Error("BYN2788", "`take()` needs a `List`, `Map`, `StrBuf` or an optional of a unique type, not `{0}`");
-    public static readonly DiagnosticDescriptor SwitchMoveSubject = Error("BYN2789", "`switch (move …)` needs a local or a `move` parameter, not {0}");
-    public static readonly DiagnosticDescriptor OwningPatternOverlap = Error("BYN2790", "pattern `{0}` binds the same storage more than once in `switch (move …)`");
-    public static readonly DiagnosticDescriptor OwningBindingMutatedInGuard = Error("BYN2791", "`{0}` is mutated in the guard of `switch (move …)`; a guard that fails gives the value back");
+    public static readonly DiagnosticDescriptor SwitchMoveSubject = Error("BYN2789", "`switch move …` needs a local or a `move` parameter, not {0}");
+    public static readonly DiagnosticDescriptor OwningPatternOverlap = Error("BYN2790", "pattern `{0}` binds the same storage more than once in `switch move …`");
+    public static readonly DiagnosticDescriptor OwningBindingMutatedInGuard = Error("BYN2791", "`{0}` is mutated in the guard of `switch move …`; a guard that fails gives the value back");
     public static readonly DiagnosticDescriptor InvalidExitCode = Error("BYN2772", "`[ExitCode]` needs one integer constant from 1 to 255");
     public static readonly DiagnosticDescriptor AssertNotBool = Error("BYN2775", "`assert` needs a `bool`, got `{0}`");
     public static readonly DiagnosticDescriptor CasesArity = Error("BYN2773", "`[Cases]` gives {0} values but the test takes {1} parameters");
@@ -215,17 +235,36 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor MutateBorrow = Error("BYN2783", "`{0}` borrows from what it was bound to and cannot be changed or moved");
     public static readonly DiagnosticDescriptor CopyUniqueElement = Error("BYN2784", "a `{0}` holding `{1}` cannot be copied: the copy would share its storage");
     public static readonly DiagnosticDescriptor MapSlotNoDefault = Error("BYN2785", "`slot` needs a default value, and `{0}` has none");
+    public static readonly DiagnosticDescriptor InterfaceName = Error("BYN2800", "`{0}` must start with `I` and an uppercase letter");
+    public static readonly DiagnosticDescriptor MissingInterfaceMember = Error("BYN2801", "`{0}` does not provide `{1}` required by `{2}`");
+    public static readonly DiagnosticDescriptor InterfaceMemberMismatch = Error("BYN2802", "`{0}.{1}` is `{2}` but `{3}` requires `{4}`");
+    public static readonly DiagnosticDescriptor MissingAssociatedType = Error("BYN2803", "`{0}` does not bind `type {1}` of `{2}`");
+    public static readonly DiagnosticDescriptor NotAnInterface = Error("BYN2804", "`{0}` is not an interface");
+    public static readonly DiagnosticDescriptor DuplicateConformance = Error("BYN2805", "`{0}` lists `{1}` twice");
+    public static readonly DiagnosticDescriptor ConstraintMember = Error("BYN2806", "`{0}` has no member `{1}` in its constraints ({2})");
+    public static readonly DiagnosticDescriptor ConstraintNotSatisfied = Error("BYN2807", "`{0}` does not conform to `{1}`: missing `{2}`");
+    public static readonly DiagnosticDescriptor NotDynSafe = Error("BYN2808", "`{0}` cannot be used with `dyn`: `{1}` {2}");
+    public static readonly DiagnosticDescriptor DynByValue = Error("BYN2809", "`dyn {0}` is not supported yet");
+    public static readonly DiagnosticDescriptor StaticAbstract = Error("BYN2810", "`static` interface members are not supported yet");
+    public static readonly DiagnosticDescriptor ExtensionConformance = Error("BYN2811", "`extension {0} : {1}` is not supported yet");
+    public static readonly DiagnosticDescriptor WhereUnknownParameter = Error("BYN2812", "`where` names `{0}`, which is not a type parameter");
+    public static readonly DiagnosticDescriptor DynReadonlyMutation = Error("BYN2813", "`{0}` takes `ref this`, but the receiver is `dyn ref readonly {1}`");
+    public static readonly DiagnosticDescriptor RefThisMismatch = Error("BYN2814", "`{0}.{1}` must match `{2}.{1}`, which {3} `ref this`");
+    public static readonly DiagnosticDescriptor NonStructConformance = Error("BYN2815", "`{0}` is {1}; only structs can conform yet");
+    public static readonly DiagnosticDescriptor InterfaceAsType = Error("BYN2816", "`{0}` is an interface, not a type");
     public static readonly DiagnosticDescriptor BorrowField = Error("BYN3001", "a struct field cannot hold a borrowed `{0}`");
     public static readonly DiagnosticDescriptor BorrowOutlivesSource = Error("BYN3002", "{0} does not live as long as `{1}`, which borrows it");
     public static readonly DiagnosticDescriptor BorrowReturned = Error("BYN3003", "cannot return a borrow of {0}, which is freed when `{1}` returns");
     public static readonly DiagnosticDescriptor ModifiedWhileBorrowed = Error("BYN3004", "`{0}` is modified while {1} still borrows it");
     public static readonly DiagnosticDescriptor RefAndValue = Error("BYN3005", "`{0}` is passed by `ref` and again in the same call");
+    public static readonly DiagnosticDescriptor MovedWhileBorrowed = Error("BYN3006", "`{0}` is moved while {1} still borrows it");
 
     // ── Manifest (`package.byn`) 3100–3199 ───────────────────────────────────────────
     public static readonly DiagnosticDescriptor ManifestNotData = Error("BYN3100", "`package.byn` is data only: expected {0}");
     public static readonly DiagnosticDescriptor ManifestUnknownField = Error("BYN3101", "`{0}` is not a field of `{1}`");
     public static readonly DiagnosticDescriptor ManifestInvalidValue = Error("BYN3102", "`{0}` must be {1}");
     public static readonly DiagnosticDescriptor ManifestMissingField = Error("BYN3103", "`package.byn` has no `{0}`");
+    public static readonly DiagnosticDescriptor ManifestEquals = Error("BYN3104", "`package.byn` uses `field: value`");
     // ── Grammar (naming patterns, spec §5.2) 5000–5999: errors 50xx, lints 51xx ────
     public static readonly DiagnosticDescriptor ParticipleWithoutVerb = Error("BYN5001", "`{0}` is the `-ed` form of `{1}`, which does not exist as a `ref this` member");
     public static readonly DiagnosticDescriptor StateMemberMutates = Error("BYN5002", "`{0}` reads as state but modifies `this`");

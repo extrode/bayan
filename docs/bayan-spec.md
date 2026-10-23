@@ -427,7 +427,7 @@ interface IParse<TSelf> where TSelf : IParse<TSelf> {
 interface IEnumerator {
     type Item                                  // associated type
     bool moveNext(ref this)
-    ref readonly Item current { get }
+    Item current { get }                       // returned by value
 }
 ```
 
@@ -440,6 +440,26 @@ interface IEnumerator {
 - Used as constraints (static dispatch) by default; `dyn ref IShape` / `dyn IShape` for dynamic dispatch through a fat pointer (no allocation).
 - Interfaces with generic methods or `static abstract` members cannot be used with `dyn` (checked, with explanation).
 - Retroactive conformance (`extension Money : IJsonEncode`) only when the module owns the type or the interface.
+
+**Supported subset (spec 006).**
+- `current` and `get` return `Item` by value; a `for … in` loop variable is a `let` copy. `unique` items are BYN2022 until ref-returning getters exist.
+- Static dispatch through `where` constraints (`where T : I, J`), monomorphized.
+- `dyn ref I` and `dyn ref readonly I`; the latter permits only members without `ref this` (BYN2813).
+- Default methods, cloned per conformer.
+- Associated types, `type Item;` without bounds; a conformer binds it with `type Item = T;`.
+- Conformance by structs only; unions and enums are BYN2815.
+- Dyn-safe interfaces have no generic methods and no associated types; using an interface name as a plain type is BYN2816.
+- `for … in` over user `IIndexable` and `IEnumerator` conformers. Codes: BYN2800–BYN2816.
+- Deferred: retroactive conformance, `static abstract` members, generic interface methods called through constraints.
+
+**Self-hosting gaps** (what spec 009's port must work around):
+- No heterogeneous child lists: no `dyn I` by value and no borrowed fields means no `List<dyn ref I>`; the tree is unions plus `Owned`, visited by `switch`.
+- By-value `current`/`get`: user iterables cannot yield `unique` items, so node lists are index loops, not `for … in`.
+- No generic interface methods: no `T accept<T>(…)` visitor; visitors are `dyn ref IVisitor` with one non-generic `visit` per node kind, or `switch`.
+- No interface inheritance: shared members are repeated per interface or reached through a default.
+- No union/enum conformance until union members land: a union that must conform is wrapped in a struct.
+- No borrowed enumerators: an `IEnumerator` either owns its data or a collection conforms to `IIndexable`.
+- No associated-type bounds: `type Item;` only.
 
 ### 3.16 Lambdas and function types
 
@@ -1664,12 +1684,17 @@ Input forms are alternate spellings that the editor and `bayan fmt` accept and r
 | `User!EmailError f()`, `User!(A, B) f()` | `User f() fails EmailError`, `fails A, B` | BYN1031 |
 | `for (let x in xs)`, `foreach (var x in xs)` | `for x in xs` | BYN1019 |
 | `if (x) {`, `while (x) {`, `switch (x) {` | no parentheses (whole-condition parentheses kept when a brace is present) | BYN1017 |
+| `if x return;`, `while x step();` | `if x { return; }` (a body is always a block) | BYN1018 |
 | `x == null`, `x != null` | `x is null`, `x is not null` | BYN2027 |
 | `{ cents = 250 }` | `{ cents: 250 }` | BYN1021 |
 | `"Hello " + name` (strings) | `$"Hello {name}"` | BYN2209 |
 | `errdefer stmt` | `defer failing stmt` | BYN1020 |
 | `catch (e) switch { … }` | `catch switch { E e => … }` (fix only before `switch`; otherwise help text) | BYN1025 |
 | `error set S = A \| B` | `union error S = A, B` | BYN1029 |
+| `unless a && b { … }` | `if !(a && b) { … }` | BYN1022 |
+| `unless x is null { … }` | `if x is not null { … }` | BYN1023 |
+| `unless unlikely x { … }` | `if unlikely !x { … }`, or drop the word | BYN1033 |
+| `delegate bool OrderFilter(Order o)` | `type OrderFilter = Order -> bool` (help text) | BYN1028 |
 | `name = "…"` in `package.byn` | `name: "…"` | BYN3104 |
 | `add`, `asString` | `append`, `finish` | BYN2230 |
 | `toString()`, `ToString()` | `format()` | BYN2031 |
@@ -1695,7 +1720,7 @@ The `add` through `toString()` rows are beyond the HANDOFF round 2 table; the pl
 - `bayan fmt` is idempotent, and rewriting an input form then formatting again produces identical bytes (acceptance tests arrive with `bayan fmt`, not in v0.1).
 - Prose mode (§22) is unchanged.
 
-> Round 2 §15: input forms replace the terse/explicit formatter modes, so stored source has one spelling and C# habits still work at the keyboard. Codes: BYN1017, BYN1019, BYN1020, BYN1021, BYN1025, BYN1029, BYN1030, BYN1031, BYN2027, BYN2031, BYN2209, BYN2230, BYN3104.
+> Round 2 §15: input forms replace the terse/explicit formatter modes, so stored source has one spelling and C# habits still work at the keyboard. Codes: BYN1017, BYN1018, BYN1019, BYN1020, BYN1021, BYN1022, BYN1023, BYN1025, BYN1028, BYN1029, BYN1030, BYN1031, BYN1033, BYN2027, BYN2031, BYN2209, BYN2230, BYN3104.
 
 > Round 3 §20: every syntax change leaves its old spelling as an input form, so C# habits still type through. Codes: BYN1040, BYN1041, BYN1043, BYN1044, BYN1045, BYN1047, BYN1048, BYN1050, BYN1051, BYN1053, BYN1055, BYN1056, BYN1057, BYN6001.
 

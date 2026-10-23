@@ -1,0 +1,24 @@
+// A bare name in a default means what it meant on the interface: `size` is the free function,
+// whatever the conformer declares under that name.
+i64 size() => 7;
+
+interface IShape {
+    i64 area();
+    i64 twice() => size() * 2;
+}
+
+struct Sq : IShape {
+    i64 side;
+
+    i64 area() => 1;
+    i64 size() => 100;
+}
+
+struct Label : IShape {
+    string size;
+
+    i64 area() => 1;
+}
+
+print($"{Sq { side: 1 }.twice()}");
+print($"{Label { size: "x" }.twice()}");

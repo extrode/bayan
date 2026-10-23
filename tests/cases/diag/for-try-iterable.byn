@@ -10,7 +10,7 @@ struct Rows {
 }
 
 void main2(List<i64> xs) fails ReadError {
-    let rows = Rows { at = 0 };
+    let rows = Rows { at: 0 };
     for row in rows {
         print($"{row}");
     }

@@ -1,0 +1,15 @@
+error BYN1025: `catch (e)` is an input form; bind the error in a `catch switch` arm
+
+  14 │     let a = parse("1") catch (e) switch {
+     │                              ^^^ the input form
+     │
+  help: remove `(e)` and bind the error in each arm: `E e => …`
+     │ 14 │     let a = parse("1") catch (e) switch {
+     │    │                              ----
+
+error BYN1025: `catch (e)` is an input form; bind the error in a `catch switch` arm
+
+  18 │     let b = parse("") catch (e) 0;
+     │                             ^^^ the input form
+     │
+  help: write `catch switch { E e => … }`, binding the error in each arm

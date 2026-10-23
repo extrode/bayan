@@ -1,10 +1,11 @@
-// A struct, optional or collection holding `Untrusted<T>` is not formattable: the label names the part (BYN2225).
+// An optional or collection holding `Untrusted<T>` is not formattable: the label names the part (BYN2225).
+// A struct without `formatInto` is not formattable whatever its fields hold, so `Box` gets no label.
 struct Box {
     Untrusted<string> s;
 }
 
 void main() {
-    let b = Box { s = Untrusted("x") };
+    let b = Box { s: Untrusted("x") };
     print($"{b}");
     Untrusted<string>? o = null;
     print($"{o}");

@@ -1,0 +1,5 @@
+struct Digits : IIndexable {
+    i64 count => 3;
+
+    i64 get(i64 index) => index * 10;
+}

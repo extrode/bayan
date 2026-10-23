@@ -15,6 +15,8 @@ internal sealed partial class Binder
     private readonly FileContext _file;
     private readonly FunctionSymbol? _fn;
     private readonly StructSymbol? _struct;
+    /// <summary>The type of <c>this</c>: the struct, or <c>Self</c> in an interface's default method.</summary>
+    private readonly TypeSymbol? _thisType;
     private readonly TypeResolver _types;
     private Scope _scope = new(null);
     private readonly List<JumpTarget> _targets = new();
@@ -42,6 +44,7 @@ internal sealed partial class Binder
         _file = file;
         _fn = fn;
         _struct = container;
+        _thisType = (TypeSymbol?)container ?? fn?.Interface?.Self;
         _types = new TypeResolver(c, file, container, typeArgs ?? fn?.TypeMap ?? container?.TypeMap);
         _seeds = seeds;
     }
@@ -412,8 +415,6 @@ internal sealed partial class Binder
         PushScope();
         var s = BindStatement(body);
         PopScope();
-        if (body is LocalDecl)
-            Report(DiagnosticCodes.DeclarationAsBody, body.Span, [], help: "wrap it in `{ … }` if the variable is used inside");
         return s;
     }
 
@@ -696,6 +697,29 @@ internal sealed partial class Binder
         return new BoundWhile(w, cond, body, target);
     }
 
+    /// <summary>Whether <paramref name="e"/> reads existing storage, through any arm, conversion, field or index, rather than a temporary the loop owns.</summary>
+    private static bool IsBorrowedPlace(BoundExpr e) => e switch
+    {
+        BoundLocal or BoundThis or BoundStaticArray or BoundBuiltinCall { Member: BuiltinMember.OwnedValue } => true,
+        BoundBuiltinCall { Member: BuiltinMember.MapIndex or BuiltinMember.ResultValue } b => IsBorrowedPlace(b.Receiver),
+        BoundBuiltinCall { Member: BuiltinMember.MapGetOr } b => IsBorrowedPlace(b.Receiver) || b.Arguments.Any(IsBorrowedPlace),
+        BoundField f => IsBorrowedPlace(f.Receiver),
+        BoundTupleElement t => IsBorrowedPlace(t.Receiver),
+        // A span points into existing storage, wherever the span itself came from.
+        BoundIndex { Target.Type: SpanType } => true,
+        BoundIndex i => IsBorrowedPlace(i.Target),
+        BoundConversion c => IsBorrowedPlace(c.Operand),
+        BoundConditional c => IsBorrowedPlace(c.WhenTrue) || IsBorrowedPlace(c.WhenFalse),
+        BoundCoalesce c => IsBorrowedPlace(c.Left) || IsBorrowedPlace(c.Right),
+        BoundSwitchExpr s => s.Arms.Any(a => IsBorrowedPlace(a.Value)),
+        // A `with` copies only the fields it does not replace.
+        BoundWith { Target.Type: StructSymbol s } w => IsBorrowedPlace(w.Target)
+            && s.Fields.Any(f => !w.Updates.Any(u => u.Field == f) && TypeFacts.IsUnique(f.Type)),
+        BoundTry t => IsBorrowedPlace(t.Operand),
+        BoundCatch c => IsBorrowedPlace(c.Operand) || IsBorrowedPlace(c.Handler),
+        _ => false,
+    };
+
     /// <summary>The pattern <c>{ } x</c>: on an optional, matches a present value and binds it unwrapped.</summary>
     private BoundPropertyPattern BindPresent(Name name, TypeSymbol input)
     {
@@ -709,7 +733,8 @@ internal sealed partial class Binder
         PushScope();
         var iterable = BindExpr(f.Iterable);
         if (f.Try) return BindForTry(f, iterable, target);
-        TypeSymbol element = iterable.Type switch
+        UserIteration? user = null;
+        TypeSymbol element = UserElement(f, iterable, ref user) ?? iterable.Type switch
         {
             RangeType r => r.Element,
             SpanType s => s.Element,
@@ -721,12 +746,70 @@ internal sealed partial class Binder
             _ => NotIterable(f, iterable.Type),
         };
         element = DeclaredElement(f, element);
+        // A writable `dyn ref` element borrows the array or list slot, so the loop mutates the iterable; a temporary is the loop's own.
+        if (element is DynRefType { ReadOnly: false } && iterable.Type is ListType or Symbols.ArrayType
+            && IsBorrowedPlace(iterable))
+            CheckWritable(iterable, f.Iterable.Span, $"it is borrowed element by element as `{element.DisplayName}`");
+        // Through a `ReadOnlySpan` it would write elements the span may not change.
+        if (element is DynRefType { ReadOnly: false } && iterable.Type is SpanType { ReadOnly: true })
+            Report(DiagnosticCodes.MutateTemporary, f.Iterable.Span, [], label: "a `ReadOnlySpan` cannot be written through");
         var variable = DeclareLocal(f.Variable, element, f.Kind == BindingKind.Var ? LocalKind.Var : LocalKind.ForVariable);
         variable.BorrowsSubject = true;
         var body = BindForBody(f, variable, target);
         PopScope();
-        return new BoundFor(f, variable, iterable, body, target);
+        return new BoundFor(f, variable, iterable, body, target) { UserIteration = user };
     }
+
+    /// <summary>
+    /// The <c>Item</c> of a struct conforming to <c>IIndexable</c> (preferred) or <c>IEnumerator</c>, with how the loop
+    /// walks it in <paramref name="user"/>; null when it conforms to neither. A named enumerator must be writable,
+    /// since the loop calls <c>moveNext(ref this)</c> on it; a temporary one is spilled to a hidden <c>var</c>.
+    /// </summary>
+    private TypeSymbol? UserElement(ForStmt f, BoundExpr iterable, ref UserIteration? user)
+    {
+        // Inside a generic body the loop is checked against the constraint; each instance rebinds it to the conformer's members.
+        if (iterable.Type is TypeParameterType tp)
+        {
+            if ((tp.Constraints.FirstOrDefault(i => i == _c.Builtins.IIndexable) ?? tp.Constraints.FirstOrDefault(i => i == _c.Builtins.IEnumerator)) is not { } constraint)
+                return null;
+            if (constraint == _c.Builtins.IEnumerator && iterable is BoundLocal or BoundThis or BoundField or BoundTupleElement or BoundIndex)
+                _c.MutationChecks.Add(new MutationCheck(this, constraint.FindMethods("moveNext").First(), iterable));
+            return _c.AssociatedType(tp, "Item");
+        }
+        if (iterable.Type is not StructSymbol s) return null;
+        var c = s.Conformances.Find(c => c.Interface == _c.Builtins.IIndexable) ?? s.Conformances.Find(c => c.Interface == _c.Builtins.IEnumerator);
+        if (c is null) return null;
+        var indexable = c.Interface == _c.Builtins.IIndexable;
+        var advance = indexable ? c.Interface.FindProperty("count")! : c.Interface.FindMethods("moveNext").First();
+        var item = indexable ? c.Interface.FindMethods("get").First() : c.Interface.FindProperty("current")!;
+        // A missing member or `Item` is reported by the conformance check.
+        if (c.AssociatedTypes.GetValueOrDefault("Item") is not { IsError: false } element
+            || Witness(c, advance) is not { } advanceWitness || Witness(c, item) is not { } itemWitness)
+            return ErrorType.Instance;
+        if (TypeFacts.IsUnique(element))
+        {
+            Report(DiagnosticCodes.Unsupported, f.Iterable.Span, [$"a `for` over the unique `Item` `{element.DisplayName}` of `{s.Name}`"],
+                help: $"make `{s.Name}.Item` a value that is not unique, such as an index, and look the item up in the loop");
+            return ErrorType.Instance;
+        }
+        LocalSymbol? spill = null;
+        if (!indexable)
+        {
+            if (iterable is BoundLocal or BoundThis or BoundField or BoundTupleElement or BoundIndex)
+                _c.MutationChecks.Add(new MutationCheck(this, advance, iterable));
+            else
+            {
+                spill = new LocalSymbol($"enumerator_{_nextLocalId}", new Location(Source, f.Iterable.Span), s, LocalKind.Var) { Id = _nextLocalId++ };
+                _fn?.Locals.Add(spill);
+            }
+        }
+        user = new UserIteration(indexable ? IterationKind.Indexable : IterationKind.Enumerator, advanceWitness, itemWitness, spill);
+        return element;
+    }
+
+    /// <summary>The struct's member standing for <paramref name="member"/>: a function, or a field for a getter.</summary>
+    private static Symbol? Witness(Conformance c, FunctionSymbol member) =>
+        c.Witnesses.TryGetValue(member, out var fn) ? fn : c.FieldWitnesses.GetValueOrDefault(member);
 
     /// <summary>The element type, or the type written in <c>for T x in e</c> when the element converts to it.</summary>
     private TypeSymbol DeclaredElement(ForStmt f, TypeSymbol element)
@@ -771,7 +854,7 @@ internal sealed partial class Binder
 
     /// <summary>
     /// <c>for try x in e { … }</c> over a value whose <c>next()</c> returns <c>T?</c> and fails: the loop owns the value
-    /// and runs <c>while (try seq.next() is { } x) { … }</c>, so a failing step propagates like any <c>try</c>.
+    /// (or borrows a <c>var</c> in place) and runs <c>while (try seq.next() is { } x) { … }</c>, so a failing step propagates like any <c>try</c>.
     /// </summary>
     private BoundStmt BindForTry(ForStmt f, BoundExpr iterable, JumpTarget target)
     {
@@ -786,15 +869,19 @@ internal sealed partial class Binder
             return new BoundErrorStmt(f);
         }
         var span = f.Iterable.Span;
-        var sequence = DeclareLocal(new Name(span, $"<sequence {_nextLocalId}>"), iterable.Type, LocalKind.Temp);
-        var next = new TryExpr(span, new CallExpr(span, new MemberExpr(span, new NameExpr(span, new Name(span, sequence.Name), []), new Name(span, "next"), false), []));
+        // A `var` (or `ref` parameter) is stepped in place, so its state advances; any other value is stepped in a hidden copy.
+        var inPlace = iterable is BoundLocal { Local: var l } && (l.IsMutable || l is ParameterSymbol { IsByRef: true });
+        var sequence = inPlace ? null : DeclareLocal(new Name(span, $"<sequence {_nextLocalId}>"), iterable.Type, LocalKind.Temp);
+        var receiver = sequence is null ? f.Iterable : new NameExpr(span, new Name(span, sequence.Name), []);
+        var next = new TryExpr(span, new CallExpr(span, new MemberExpr(span, receiver, new Name(span, "next"), false), []));
         var step = BindExpr(next);
         if (f.Type is { } t && ResolveType(t) is { IsError: false } declared && !Unwrap(step.Type).IsError && !declared.Equals(Unwrap(step.Type)))
             Report(DiagnosticCodes.TypeMismatch, t.Span, [Unwrap(step.Type).DisplayName, declared.DisplayName]);
         var pattern = BindPresent(f.Variable, step.Type);
         var body = BindForBody(f, pattern.Designation!, target);
         PopScope();
-        return new BoundBlock(f, [new BoundLocalDecl(f, sequence, iterable), new BoundWhile(f, new BoundIs(f, step, pattern), body, target)]);
+        var loop = new BoundWhile(f, new BoundIs(f, step, pattern), body, target);
+        return sequence is null ? loop : new BoundBlock(f, [new BoundLocalDecl(f, sequence, iterable), loop]);
     }
 
     /// <summary>The <c>T? next() fails …</c> method that <c>for try</c> steps with, if <paramref name="type"/> has one.</summary>
@@ -807,7 +894,7 @@ internal sealed partial class Binder
     {
         if (FallibleNext(type) is null)
             Report(DiagnosticCodes.NotIterable, f.Iterable.Span, [type.DisplayName],
-                help: "use `for` over ranges (`0..n`), spans, lists, arrays and strings");
+                help: "use `for` over ranges (`0..n`), spans, lists, arrays, strings, or a type conforming to `IIndexable` or `IEnumerator`");
         else
             Report(DiagnosticCodes.NotIterable, f.Iterable.Span, [type.DisplayName], label: "each step can fail",
                 help: "write `for try`", fix: new Fix(new TextSpan(f.Span.Start + "for".Length, 0), " try"));
@@ -966,7 +1053,8 @@ internal sealed partial class Binder
     /// </summary>
     private BoundStmt BindOnPanic(AssignStmt a)
     {
-        var value = BindExpr(a.Value);
+        var bound = BindExprOrType(a.Value);
+        var value = bound is BoundMethodGroup ? bound : AsValue(bound, a.Value);
         FunctionSymbol? handler = null;
         if (value is BoundMethodGroup { Receiver: null, Function: { } f } && f.Kind == FunctionKind.Function && !f.IsGeneric && !f.Fails
             && f.ReturnType.IsVoid && f.Parameters is [{ Modifier: ParamModifier.None, Type: BuiltinType { Kind: BuiltinKind.Panic } }])

@@ -1,0 +1,44 @@
+error BYN1017: parentheses around a condition are an input form
+
+  3 │     if (x > 2) print("big");
+    │        ^^^^^^^ not needed
+    │
+  help: remove the parentheses
+    │ 3 │     if x > 2 { print("big"); }
+    │   │        +++++++++++++++++++++++
+    │ 4 │     else { print("small"); }
+    │   │ ++++++++++++++++++++++++++++
+
+error BYN1018: the body of `if` must be a block
+
+  3 │     if (x > 2) print("big");
+    │                ^^^^^^^^^^^^ a single statement
+    │
+  help: wrap the statement in `{ }`
+
+error BYN1018: the body of `else` must be a block
+
+  4 │     else print("small");
+    │          ^^^^^^^^^^^^^^ a single statement
+    │
+  help: wrap the statement in `{ }`
+
+error BYN1017: parentheses around a condition are an input form
+
+  5 │     while (x > 5)
+    │           ^^^^^^^ not needed
+    │
+  help: remove the parentheses
+    │ 5 │     while x > 5 {
+    │   │           +++++++
+    │ 6 │         print("never");
+    │   │ +++++++++++++++++++++++
+    │ 7 │     }
+    │   │ +++++
+
+error BYN1018: the body of `while` must be a block
+
+  6 │         print("never");
+    │         ^^^^^^^^^^^^^^ a single statement
+    │
+  help: wrap the statement in `{ }`

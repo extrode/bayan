@@ -15,7 +15,7 @@ namespace Bayan.Tests;
 /// stmt       := decl | move | copy | take | call | borrow | loop | branch | switchMove | reassign
 ///             | read | return
 /// decl       := ("let"|"var") x "=" (fresh(n) | Ledger { items = fresh(n) } | Slot.full(fresh(n)))
-///             | "List&lt;i64&gt;? x = fresh(n);" | "var x = List&lt;List&lt;i64&gt;&gt;(); x.add(fresh(n));"
+///             | "List&lt;i64&gt;? x = fresh(n);" | "var x = List&lt;List&lt;i64&gt;&gt;(); x.append(fresh(n));"
 /// move       := "var y = move x;"                 if x Owned and not a let from outside the loop
 /// copy       := "let y = x.copy(to: arena);"      if x Owned
 /// take       := "let y = p.take();"               p in {x, x.items, x[0], o} with x var and Owned
@@ -23,10 +23,10 @@ namespace Bayan.Tests;
 /// borrow     := "{ let v = x.asSpan(); print($"{v.length}"); }" | for (let e in x) over a nested list
 /// loop       := for/while; the body moves an outer x only if x is var, and reassigns it at the end
 /// branch     := if/else on t; join = Moved if moved on either side | "if (s is .full(let items))" borrow
-/// switchMove := "switch (move s) {" ["case .full(let b) when b.length &gt; n: consume(move b);"]
+/// switchMove := "switch move s {" ["case .full(let b) when b.length &gt; n: consume(move b);"]
 ///               "case .full(let items): consume(move items); default: ... }"
 /// reassign   := "x = fresh(n);" (or the type's constructor)   if x var; resets Moved
-/// read       := print of x's length or null test | "x.add(n);" if x var        if x Owned
+/// read       := print of x's length or null test | "x.append(n);" if x var        if x Owned
 /// return     := "if (t &gt; 1000) return;"
 /// probe      := a deliberately illegal step: use after move or implicit copy
 /// </code>
@@ -43,11 +43,11 @@ internal static class OwnershipGenerator
             print($"{xs.length}");
         }
         void bump(ref List<i64> xs) {
-            xs.add(1);
+            xs.append(1);
         }
         List<i64> fresh(i64 n) {
             var xs = List<i64>();
-            xs.add(n);
+            xs.append(n);
             return move xs;
         }
         List<i64> pass(move List<i64> xs) {
@@ -148,7 +148,7 @@ internal static class OwnershipGenerator
         private string Constructor(Kind kind) => kind switch
         {
             Kind.List or Kind.Opt => Fresh(),
-            Kind.Ledger => $"Ledger {{ items = {Fresh()} }}",
+            Kind.Ledger => $"Ledger {{ items: {Fresh()} }}",
             Kind.Slot => $"Slot.full({Fresh()})",
             _ => "List<List<i64>>()",
         };
@@ -193,7 +193,7 @@ internal static class OwnershipGenerator
                 case 11: return Read();
                 default:
                     if (!Chance(25)) return false;
-                    Line("if (t > 1000) return;");
+                    Line("if t > 1000 { return; }");
                     return true;
             }
         }
@@ -210,7 +210,7 @@ internal static class OwnershipGenerator
                 case Kind.Nest:
                     var n = Declare(kind, true);
                     Line($"var {n.Name} = List<List<i64>>();");
-                    Line($"{n.Name}.add({Fresh()});");
+                    Line($"{n.Name}.append({Fresh()});");
                     break;
                 default:
                     var v = Declare(kind, mutable);
@@ -277,7 +277,7 @@ internal static class OwnershipGenerator
             var b = Name();
             if (x.Kind == Kind.Nest)
             {
-                Line($"for (let {b} in {x.Name}) print($\"{{{b}.length}}\");");
+                Line($"for {b} in {x.Name} {{ print($\"{{{b}.length}}\"); }}");
                 return true;
             }
             Line("{");
@@ -297,12 +297,12 @@ internal static class OwnershipGenerator
             var i = isFor ? null : Name();
             if (isFor)
             {
-                Line($"for (let {Name()} in 0..{Int(3) + 1}) {{");
+                Line($"for {Name()} in 0..{Int(3) + 1} {{");
             }
             else
             {
                 Line($"var {i} = 0;");
-                Line($"while ({i} < {Int(3) + 1}) {{");
+                Line($"while {i} < {Int(3) + 1} {{");
             }
             _indent++;
             _loopDepth++;
@@ -332,7 +332,7 @@ internal static class OwnershipGenerator
             {
                 var scope = _vars.Count;
                 var skipped = _vars.Select(v => v.Moved).ToList();
-                Line($"if ({s.Name} is .full(let {Name()})) {{");
+                Line($"if {s.Name} is .full(let {Name()}) {{");
                 _indent++;
                 // The subject stays borrowed by the pattern binding for the whole body.
                 _borrowed.Add(s);
@@ -343,7 +343,7 @@ internal static class OwnershipGenerator
             }
             var outer = _vars.Count;
             var before = _vars.Select(v => v.Moved).ToList();
-            Line($"if (t % {Int(3) + 2} == 0) {{");
+            Line($"if t % {Int(3) + 2} == 0 {{");
             _indent++;
             Body(depth + 1);
             var then = _vars.Take(outer).Select(v => v.Moved).ToList();
@@ -378,7 +378,7 @@ internal static class OwnershipGenerator
             if (Pick(v => Movable(v) && v.Kind == Kind.Slot) is not { } s) return false;
             s.Moved = true;
             var items = Name();
-            Line($"switch (move {s.Name}) {{");
+            Line($"switch move {s.Name} {{");
             if (Chance(50))
             {
                 // A guard that may fail: the next arm binds the same storage.
@@ -404,7 +404,7 @@ internal static class OwnershipGenerator
         private void Assign(Var v)
         {
             Line($"{v.Name} = {Constructor(v.Kind)};");
-            if (v.Kind == Kind.Nest) Line($"{v.Name}.add({Fresh()});");
+            if (v.Kind == Kind.Nest) Line($"{v.Name}.append({Fresh()});");
             v.Moved = false;
         }
 
@@ -414,7 +414,7 @@ internal static class OwnershipGenerator
             switch (x.Kind)
             {
                 case Kind.List when x.Mutable && Chance(40):
-                    Line($"{x.Name}.add({Int(10)});");
+                    Line($"{x.Name}.append({Int(10)});");
                     break;
                 case Kind.List:
                     Line($"print($\"{{{x.Name}.length}}\");");

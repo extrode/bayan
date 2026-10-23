@@ -1,0 +1,13 @@
+error BYN2615: a panic handler reads `ys`, which is moved after the handler is registered
+
+  9 │     sink(move ys);
+    │          ^^^^^^^ the `defer panicking` on line 8 reads it after a later panic
+    │
+  help: move `ys` before the `defer panicking`, or read a `let` copied from it there
+
+error BYN2615: a panic handler reads `zs`, which is moved after the handler is registered
+
+  17 │         sink(move zs);
+     │              ^^^^^^^ the `defer panicking` on line 15 reads it after a later panic
+     │
+  help: move `zs` before the `defer panicking`, or read a `let` copied from it there

@@ -1,0 +1,7 @@
+error BYN2022: a `for` over the unique `Item` `List<i64>` of `Rows` is not supported in v0.1
+
+  18 │     print($"{walk(Rows {})}");
+     │              ^^^^^^^^^^^^^ the generic code needs this of its type arguments
+     │
+  help: make `Rows.Item` a value that is not unique, such as an index, and look the item up in the
+        loop

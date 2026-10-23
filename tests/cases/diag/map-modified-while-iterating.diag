@@ -14,8 +14,8 @@ error BYN3004: `m` is modified while the `for` loop still borrows it
 
 error BYN3004: `m` is modified while the `for` loop still borrows it
 
-  8 │     for (let e in m) m.clear();
-    │                      ^^^^^^^^^ the loop over `m` is still running
+  8 │     for e in m { m.clear(); }
+    │                  ^^^^^^^^^ the loop over `m` is still running
     │
   help: collect the changes in another list and apply them to `m` after the loop
 

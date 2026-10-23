@@ -14,9 +14,10 @@ internal sealed partial class Binder
     // ── Entry points ─────────────────────────────────────────────────────────────
 
     /// <summary>Binds a value. <paramref name="expected"/> only guides literals and target-typed forms; no conversion is applied.</summary>
-    private BoundExpr BindExpr(Expr e, TypeSymbol? expected = null)
+    private BoundExpr BindExpr(Expr e, TypeSymbol? expected = null) => AsValue(BindExprOrType(e, expected), e);
+
+    private BoundExpr AsValue(BoundExpr bound, Expr e)
     {
-        var bound = BindExprOrType(e, expected);
         switch (bound)
         {
             case BoundTypeRef t:
@@ -28,6 +29,13 @@ internal sealed partial class Binder
             case BoundVariantGroup g:
                 Report(DiagnosticCodes.VariantNeedsPayload, e.Span, [g.Variant.Name],
                     help: $"pass it: `{g.Variant.Union.Name}.{g.Variant.Name}({string.Join(", ", g.Variant.Fields.Select(f => f.Name))})`");
+                return new BoundErrorExpr(e);
+            case BoundMethodGroup g:
+                Report(DiagnosticCodes.NotAValue, e.Span, [g.Function.Name, g.Function.Kind == FunctionKind.Function ? "function" : "method"],
+                    help: $"call it: `{g.Function.Name}({(g.Function.Parameters.Count == 0 ? "" : "…")})`");
+                return new BoundErrorExpr(e);
+            case BoundBuiltinGroup g:
+                Report(DiagnosticCodes.NotAValue, e.Span, [g.Name, "method"], help: $"call it: `{g.Name}()`");
                 return new BoundErrorExpr(e);
             default:
                 return bound;
@@ -77,6 +85,9 @@ internal sealed partial class Binder
         {
             if (kind == ConversionKind.Identity) return value;
             if (kind == ConversionKind.NullToOptional) return new BoundDefault(value.Syntax, target);
+            // A writable `dyn ref` borrows its source as `ref` does; never a copy or a move.
+            if (kind == ConversionKind.ToDynRef && target is DynRefType { ReadOnly: false })
+                CheckWritable(value, span, $"it is borrowed as `{target.DisplayName}`");
             var converted = new BoundConversion(value.Syntax, value, target, kind);
             return value.Constant is { } c && kind == ConversionKind.Widen ? converted with { Constant = WidenConstant(c, target) } : converted;
         }
@@ -215,12 +226,12 @@ internal sealed partial class Binder
             case NameExpr n:
                 return BindName(n);
             case ThisExpr t:
-                if (_struct is null || _fn is null || _fn.IsStatic || _fn.Kind is not (FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor))
+                if (_thisType is null || _fn is null || _fn.IsStatic || _fn.Kind is not (FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor))
                 {
                     Report(DiagnosticCodes.ThisOutsideMethod, t.Span, []);
                     return new BoundErrorExpr(t);
                 }
-                return new BoundThis(t, _struct);
+                return new BoundThis(t, _thisType);
             case MemberExpr m:
                 return BindMember(m);
             case TargetMemberExpr t:
@@ -413,7 +424,10 @@ internal sealed partial class Binder
                 return new BoundConversion(n, new BoundLocal(n, local), ((OptionalType)local.Type).Inner, ConversionKind.Narrow);
             return new BoundLocal(n, local);
         }
-        if (_struct is not null && LookupMember(_struct, name) is { } member)
+        // A default cloned onto a struct sees only the interface's members through `this`, as its template did,
+        // so a bare name means the same for every conformer.
+        if (_thisType is not null && (_fn?.Template?.Interface is not { } cloneOf || LookupMember(cloneOf.Self, name) is not null)
+            && LookupMember(_thisType, name) is { } member)
             return BindImplicitThisMember(n, member);
         if (Module.Constants.TryGetValue(name, out var constant)) return ConstantRef(n, constant);
         if (Module.Functions.TryGetValue(name, out var fns)) return new BoundMethodGroup(n, null, fns[0]);
@@ -482,8 +496,13 @@ internal sealed partial class Binder
         return new BoundLiteral(syntax, c.Type, c.Value) { Constant = c.Value };
     }
 
-    private static Symbol? LookupMember(StructSymbol s, string name) =>
-        (Symbol?)s.FindField(name) ?? (Symbol?)s.FindProperty(name) ?? s.FindMethods(name).FirstOrDefault();
+    /// <summary>A member reachable through an implicit <c>this</c>; in a default method, the interface's members.</summary>
+    private static Symbol? LookupMember(TypeSymbol t, string name) => t switch
+    {
+        StructSymbol s => (Symbol?)s.FindField(name) ?? (Symbol?)s.FindProperty(name) ?? s.FindMethods(name).FirstOrDefault(),
+        TypeParameterType p => p.Constraints.Select(i => i.FindProperty(name) ?? i.FindMethods(name).FirstOrDefault()).FirstOrDefault(m => m is not null),
+        _ => null,
+    };
 
     private BoundExpr BindImplicitThisMember(NameExpr n, Symbol member)
     {
@@ -495,11 +514,12 @@ internal sealed partial class Binder
                 help: _fn is { IsStatic: true } ? "call it on an instance; a `static` method has no `this`" : "set it in a constructor; field defaults cannot read other fields");
             return new BoundErrorExpr(n);
         }
-        var self = new BoundThis(n, _struct!);
+        var self = new BoundThis(n, _thisType!);
         return member switch
         {
             FieldSymbol f => new BoundField(n, self, f),
             PropertySymbol p => new BoundCall(n, p.Getter, self, [], p.Type),
+            FunctionSymbol { Kind: FunctionKind.Getter } g => new BoundCall(n, g, self, [], g.ReturnType),
             FunctionSymbol m => new BoundMethodGroup(n, self, m),
             _ => new BoundErrorExpr(n),
         };
@@ -687,15 +707,38 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(syntax);
             case ErrorType:
                 return new BoundErrorExpr(syntax);
+            // Inside a generic body, `t.area()` is the interface member; each instance rebinds it to the conformer's.
+            case TypeParameterType tp when tp.Constraints.Count > 0:
+            {
+                if (tp.Constraints.Select(i => i.FindProperty(name) ?? i.FindMethods(name).FirstOrDefault()).FirstOrDefault(m => m is not null) is { } m)
+                    return BindInterfaceMember(syntax, target, m, member);
+                var self = tp.Constraints[0].Self == tp;
+                Report(DiagnosticCodes.ConstraintMember, member.Span, [tp.Name, name, string.Join(", ", tp.Constraints.Select(i => $"`{i.DisplayName}`"))],
+                    help: self
+                        ? $"declare `{name}` in `{tp.Constraints[0].DisplayName}`; a default method sees only its interface's members"
+                        : $"add an interface declaring `{name}` to the `where` clause");
+                return new BoundErrorExpr(syntax);
+            }
             case TypeParameterType tp:
                 Report(DiagnosticCodes.TypeParameterMember, member.Span, [name, tp.Name],
-                    help: $"use a concrete type here; type parameters have no constraints, so a `{tp.Name}` has no members");
+                    help: $"add `where {tp.Name} : …` naming an interface that declares `{name}`, or use a concrete type");
                 return new BoundErrorExpr(syntax);
+            case DynRefType d when (d.Interface.FindProperty(name) ?? d.Interface.FindMethods(name).FirstOrDefault()) is { } m:
+            {
+                if (d.ReadOnly && m.IsMutating)
+                {
+                    Report(DiagnosticCodes.DynReadonlyMutation, member.Span, [name, d.Interface.DisplayName], label: "declared `ref this`",
+                        help: $"take `dyn ref {d.Interface.DisplayName}`");
+                    return new BoundErrorExpr(syntax);
+                }
+                return BindInterfaceMember(syntax, target, m, member);
+            }
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
             return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
         if (BuiltinMembers.HasMethod(target.Type, name))
             return new BoundBuiltinGroup(syntax, target, name);
+        if (ReportRenamed(target.Type, member)) return new BoundErrorExpr(syntax);
         if (name == "take")
         {
             Report(DiagnosticCodes.TakeUnsupported, member.Span, [target.Type.DisplayName],
@@ -705,6 +748,48 @@ internal sealed partial class Binder
         Report(DiagnosticCodes.UnknownMember, member.Span, [name, target.Type.DisplayName],
             help: MemberSuggestion(target.Type, name));
         return new BoundErrorExpr(syntax);
+    }
+
+    /// <summary>A member of an interface, reached through a constrained type parameter or a <c>dyn ref</c>.</summary>
+    private BoundExpr BindInterfaceMember(Node syntax, BoundExpr target, FunctionSymbol m, Name member)
+    {
+        if (m.TypeParameters.Count > 0)
+        {
+            Report(DiagnosticCodes.Unsupported, member.Span, ["calling a generic interface method"]);
+            return new BoundErrorExpr(syntax);
+        }
+        if (m.Kind == FunctionKind.Getter) return new BoundCall(syntax, m, target, [], ReturnTypeThrough(target.Type, m));
+        return new BoundMethodGroup(syntax, target, m);
+    }
+
+    /// <summary>The return type of interface member <paramref name="m"/> called on <paramref name="receiver"/>: an associated type <c>Item</c> is <c>T.Item</c>.</summary>
+    private TypeSymbol ReturnTypeThrough(TypeSymbol receiver, FunctionSymbol m) =>
+        receiver is TypeParameterType tp && m.Interface is { } i && i.Self != tp && m.ReturnType is TypeParameterType r && i.AssociatedTypes.Contains(r)
+            ? _c.AssociatedType(tp, r.Name)
+            : m.ReturnType;
+
+    /// <summary>BYN2230 and BYN2031: a member under its round-1 or C# name; the fix writes the new one.</summary>
+    private bool ReportRenamed(TypeSymbol type, Name member)
+    {
+        var name = member.Text;
+        if (name is "toString" or "ToString")
+        {
+            Report(DiagnosticCodes.ToStringCall, member.Span, [], label: "not a Bayan method",
+                help: "call `format()`, or interpolate the value: `$\"{x}\"`", fix: new Fix(member.Span, "format"));
+            return true;
+        }
+        var renamed = (type, name) switch
+        {
+            (ListType, "add") => "append",
+            (BuiltinType { Kind: BuiltinKind.StrBuf }, "asString") => "finish",
+            _ => null,
+        };
+        if (renamed is null) return false;
+        var call = name == "asString" ? "()" : "";
+        Report(DiagnosticCodes.RenamedMember, member.Span, [name + call, renamed + call], label: "the old name",
+            help: $"rename it `{renamed}`",
+            fix: new Fix(member.Span, renamed));
+        return true;
     }
 
     private static string? MemberSuggestion(TypeSymbol type, string name)
@@ -833,6 +918,21 @@ internal sealed partial class Binder
         return new BoundSlice(i, target, start, startFromEnd, end, endFromEnd, r.Inclusive, type);
     }
 
+    /// <summary>
+    /// The text <paramref name="e"/> contributes to the interpolation that replaces a string <c>+</c>:
+    /// a plain literal or an interpolation inlines its contents, anything else becomes a hole.
+    /// </summary>
+    private string InterpolationSource(Expr e)
+    {
+        var text = Source.GetText(e.Span);
+        return e switch
+        {
+            LiteralExpr { Kind: LiteralKind.String } when text.IndexOfAny(['{', '}']) < 0 => text[1..^1],
+            InterpolatedExpr when text.StartsWith("$\"", StringComparison.Ordinal) && !text.StartsWith("$\"\"\"", StringComparison.Ordinal) => text[2..^1],
+            _ => "{" + text + "}",
+        };
+    }
+
     /// <summary>BYN2201: strings have no indexer (spec §3.2); offer the four alternatives.</summary>
     private void ReportStringIndexer(IndexExpr i)
     {
@@ -841,11 +941,11 @@ internal sealed partial class Binder
         Report(DiagnosticCodes.StringIndexer, TextSpan.FromBounds(i.Target.Span.End, i.Span.End), [],
             label: "strings have no indexer",
             help: $"""
-                choose what you mean; `string` is UTF-8, so position {index} is not a character:
-                  `{s}.bytes[{index}]`   the byte at offset {index} (applied below)
-                  `{s}.runeAt({index})`  the character starting at byte offset {index}
-                  `for (let c in {s})`   each character in turn
-                  `{s}.graphemes`        user-perceived characters
+                read a byte, slice, or take characters; `string` is UTF-8, so position {index} is not a character:
+                  `{s}.bytes[{index}]`       the byte at offset {index} (applied below)
+                  `{s}[a..b]`          the text between byte offsets a and b
+                  `{s}.chars.take(n)`  the first n characters
+                  `{s}.graphemes`      user-perceived characters
                 """,
             fix: new Fix(i.Span, $"{s}.bytes[{index}]"));
     }
@@ -917,6 +1017,9 @@ internal sealed partial class Binder
 
     private BoundExpr BindBinary(BinaryExpr b, TypeSymbol? expected)
     {
+        var nullTested = b.Op is BinaryOp.Eq or BinaryOp.Ne
+            ? b.Right is LiteralExpr { Kind: LiteralKind.Null } ? b.Left : b.Left is LiteralExpr { Kind: LiteralKind.Null } ? b.Right : null
+            : null;
         switch (b.Op)
         {
             case BinaryOp.LogicalAnd or BinaryOp.LogicalOr:
@@ -945,6 +1048,12 @@ internal sealed partial class Binder
             var hint = b.Op is BinaryOp.Shl or BinaryOp.Shr ? PrimitiveType.I32 : left.Type is OptionalType o ? o.Inner : left.Type;
             right = BindExpr(b.Right, hint);
         }
+        // `x is null` is valid only on an optional `x`: for `null == null` or a non-optional operand BYN2208 reports alone.
+        if (nullTested is not null && nullTested is not LiteralExpr { Kind: LiteralKind.Null } && (nullTested == b.Left ? left : right).Type is OptionalType)
+        {
+            var test = Source.GetText(nullTested.Span) + (b.Op == BinaryOp.Eq ? " is null" : " is not null");
+            Report(DiagnosticCodes.NullEquality, b.Span, [], help: $"write `{test}`", fix: new Fix(b.Span, test));
+        }
         if (left.Type.IsError || right.Type.IsError) return new BoundErrorExpr(b);
         if (b.Op is not (BinaryOp.Eq or BinaryOp.Ne) && (TypeParameterOf(left.Type) ?? TypeParameterOf(right.Type)) is { } tp)
             return TypeParameterOperator(b, BinaryText(b.Op), tp);
@@ -966,10 +1075,16 @@ internal sealed partial class Binder
 
         if (common.IsString && b.Op == BinaryOp.Add)
         {
-            if (left.Constant is { Value: string ls } && right.Constant is { Value: string rs })
-                return Literal(b, PrimitiveType.String, ls + rs) with { Syntax = b };
+            // Two plain literals merge into one literal, which (unlike an interpolation) stays a constant.
+            if (IsPlainStringLiteral(b.Left) && IsPlainStringLiteral(b.Right))
+            {
+                var merged = Source.GetText(b.Left.Span)[..^1] + Source.GetText(b.Right.Span)[1..];
+                Report(DiagnosticCodes.StringConcatenation, b.Span, [], help: $"write one literal: `{merged}`", fix: new Fix(b.Span, merged));
+                return new BoundErrorExpr(b);
+            }
             Report(DiagnosticCodes.StringConcatenation, b.Span, [],
-                help: "use interpolation into an output: `print($\"{a}{b}\")` or `buf.append($\"{a}{b}\")`");
+                help: "write the parts as one interpolation: `$\"{a}{b}\"`, or `buf.append($\"{a}{b}\")` in a loop",
+                fix: new Fix(b.Span, $"$\"{InterpolationSource(b.Left)}{InterpolationSource(b.Right)}\""));
             return new BoundErrorExpr(b);
         }
 
@@ -980,6 +1095,10 @@ internal sealed partial class Binder
         var bound = new BoundBinary(b, b.Op, left, right, type);
         return Fold(bound, left, right, common);
     }
+
+    private bool IsPlainStringLiteral(Expr e) =>
+        e is LiteralExpr { Kind: LiteralKind.String } && Source.GetText(e.Span) is var text
+        && text.StartsWith('"') && !text.StartsWith("\"\"\"", StringComparison.Ordinal);
 
     private static TypeParameterType? TypeParameterOf(TypeSymbol t) =>
         t as TypeParameterType ?? (t as OptionalType)?.Inner as TypeParameterType;
@@ -1184,7 +1303,7 @@ internal sealed partial class Binder
         else if (expected is not null) type = expected;
         else
         {
-            Report(DiagnosticCodes.NoTargetType, s.Span, ["{ … }"], help: "name the type: `Point { x = 1 }`");
+            Report(DiagnosticCodes.NoTargetType, s.Span, ["{ … }"], help: "name the type: `Point { x: 1 }`");
             return new BoundErrorExpr(s);
         }
         if (type.IsError) return new BoundErrorExpr(s);
@@ -1238,7 +1357,7 @@ internal sealed partial class Binder
             var first = st.FindField(missing[0])!;
             Report(DiagnosticCodes.MissingFields, s.Span, [st.Name, string.Join("`, `", missing)],
                 label: missing.Count == 1 && first.IsRequired ? "`" + first.Name + "` is `required`" : null,
-                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + " = …"))} }}`");
+                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
             return new BoundErrorExpr(s);
         }
         return new BoundStructLiteral(s, st, values!);
@@ -1531,7 +1650,7 @@ internal sealed partial class Binder
             var value = BindExpr(hole.Expr);
             if (!value.Type.IsError && WhyNotFormattable(value.Type, []) is { } why)
                 Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName], label: why == "" ? null : why,
-                    help: value.Type is StructSymbol s ? $"give `{s.Name}` a `void formatInto(ref StrBuf out)` method" : null);
+                    help: value.Type is StructSymbol s ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
             parts.Add(new BoundInterpolationPart(null, value));
         }
         return new BoundInterpolated(i, parts.ToArray());
@@ -1550,8 +1669,8 @@ internal sealed partial class Binder
         OptionalType o => Part("the value", o.Inner, seen),
         ResultType r => Part("the value", r.Value, seen),
         OwnedType o => WhyNotFormattable(o.Inner, seen),
-        StructSymbol s => HasFormatInto(s) || !seen.Add(s) ? null
-            : s.Fields.Select(f => Part($"field `{f.Name}`", f.Type, seen)).FirstOrDefault(w => w is not null),
+        // Structs have no default display (HANDOFF §13): only `formatInto` formats one.
+        StructSymbol s => HasFormatInto(s) ? null : "",
         UnionSymbol u => !seen.Add(u) ? null
             : u.Variants.SelectMany(v => v.Fields.Select(f => Part($"`{v.Name}` field `{f.Name}`", f.Type, seen))).FirstOrDefault(w => w is not null),
         Symbols.TupleType tt => tt.Fields.Select((f, i) => Part($"element {i + 1}", f.Type, seen)).FirstOrDefault(w => w is not null),

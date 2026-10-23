@@ -1,0 +1,27 @@
+interface IShape {
+    i64 area();
+    void grow(ref this);
+    string describe() => $"area {area()}";
+}
+
+unique struct Tile : IShape {
+    i64 side;
+
+    i64 area() => side * side;
+
+    void grow(ref this) {
+        side += 1;
+    }
+}
+
+void enlarge<T>(ref T shape) where T : IShape {
+    shape.grow();
+    print(shape.describe());
+}
+
+void main() {
+    var t = Tile { side: 2 };
+    enlarge(ref t);
+    enlarge(ref t);
+    print(t.describe());
+}

@@ -5,7 +5,7 @@ bool take(move List<i64> xs) => xs.length > 0;
 
 void statement(U u) {
     let x = List<i64>();
-    switch (u) {
+    switch u {
         case .a when take(move x):
             print("taken");
         default:

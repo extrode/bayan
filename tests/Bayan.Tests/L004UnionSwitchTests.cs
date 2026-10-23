@@ -43,7 +43,7 @@ public sealed class L004UnionSwitchTests
         var cases = string.Concat(arms.Select(a => a == "default"
             ? "        default:\n            print(\"d\");\n"
             : $"        case {a}:\n            print(\"a\");\n"));
-        Check(name, $"{Union}void f(U u) {{\n    switch (u) {{\n{cases}    }}\n}}\nf(U.a);\n", missing);
+        Check(name, $"{Union}void f(U u) {{\n    switch u {{\n{cases}    }}\n}}\nf(U.a);\n", missing);
     }
 
     [Theory]

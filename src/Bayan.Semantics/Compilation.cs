@@ -15,7 +15,7 @@ public sealed record CompilationOptions(bool IncludeTests = false, bool Library 
 /// A whole program: the entry module plus every module it imports, transitively. Construction
 /// parses, declares and binds everything; read <see cref="Diagnostics"/> afterwards.
 /// </summary>
-public sealed class Compilation
+public sealed partial class Compilation
 {
     private readonly Dictionary<string, ModuleSymbol> _modulesByDir = new(StringComparer.Ordinal);
     private readonly List<ModuleSymbol> _loading = new();
@@ -181,6 +181,16 @@ public sealed class Compilation
         foreach (var module in Modules)
             foreach (var file in module.Files)
                 DeclareFile(file);
+        // Bounds are resolved once every type is declared, so `where T : IOrder<T>` can name `T` and later types.
+        foreach (var where in _wheres) where();
+        DeclareInterfaceMembers(Builtins.IEnumerator);
+        DeclareInterfaceMembers(Builtins.IIndexable);
+        foreach (var module in Modules)
+            foreach (var i in module.Interfaces)
+                DeclareInterfaceMembers(i);
+        _interfaceMembersDeclared = true;
+        foreach (var (instance, site, span) in _pendingInterfaces)
+            Instantiating(site, span, () => DeclareInterfaceMembers(instance));
         foreach (var module in Modules)
             foreach (var set in module.ErrorSets)
                 DeclareVariants(set);
@@ -334,6 +344,7 @@ public sealed class Compilation
                     if (AddType(file, s.Name, sym)) module.Structs.Add(sym);
                     Naming.CheckType(this, file.Source, s.Name);
                     sym.TypeMap = DeclareTypeParameters(file, s.TypeParams, sym.TypeParameters);
+                    _wheres.Add(() => DeclareWhere(file, s.Where, sym.TypeParameters, sym.TypeMap, s.Name.Text));
                     break;
                 }
                 case ErrorEnumDecl e:
@@ -348,6 +359,8 @@ public sealed class Compilation
                     var sym = new EnumSymbol(e.Name.Text, Loc(file, e.Name), module, AccessOf(e.Modifiers), e, file);
                     if (AddType(file, e.Name, sym)) module.Enums.Add(sym);
                     Naming.CheckType(this, file.Source, e.Name);
+                    RejectBases(file, e.Bases, e.Name.Text, "an enum");
+                    _wheres.Add(() => DeclareWhere(file, e.Where, [], null, e.Name.Text));
                     break;
                 }
                 case UnionDecl u:
@@ -356,6 +369,32 @@ public sealed class Compilation
                     if (AddType(file, u.Name, sym)) module.Unions.Add(sym);
                     Naming.CheckType(this, file.Source, u.Name);
                     sym.TypeMap = DeclareTypeParameters(file, u.TypeParams, sym.TypeParameters);
+                    RejectBases(file, u.Bases, u.Name.Text, "a union");
+                    _wheres.Add(() => DeclareWhere(file, u.Where, sym.TypeParameters, sym.TypeMap, u.Name.Text));
+                    break;
+                }
+                case InterfaceDecl i:
+                {
+                    var sym = new InterfaceSymbol(i.Name.Text, Loc(file, i.Name), module, AccessOf(i.Modifiers), file) { Decl = i };
+                    if (Builtins.FindInterface(i.Name.Text) is not null)
+                        Report(DiagnosticCodes.DuplicateDeclaration, file.Source, i.Name.Span, [i.Name.Text], label: "already declared as a built-in interface");
+                    else if (AddType(file, i.Name, sym))
+                        module.Interfaces.Add(sym);
+                    Naming.CheckInterface(this, file.Source, i.Name);
+                    sym.TypeMap = DeclareTypeParameters(file, i.TypeParams, sym.TypeParameters);
+                    _wheres.Add(() => DeclareWhere(file, i.Where, sym.TypeParameters, sym.TypeMap, i.Name.Text));
+                    break;
+                }
+                case ExtensionDecl x:
+                {
+                    if (x.Bases.Length == 0)
+                    {
+                        Report(DiagnosticCodes.Unsupported, file.Source, x.Name.Span, ["`extension` declarations"]);
+                        break;
+                    }
+                    var bases = string.Join(", ", x.Bases.Select(b => file.Source.GetText(b.Span)));
+                    Report(DiagnosticCodes.ExtensionConformance, file.Source, TextSpan.FromBounds(x.Span.Start, x.Bases[^1].Span.End), [x.Name.Text, bases],
+                        label: "retroactive conformance", help: $"list `{bases}` on `{x.Name.Text}`'s declaration");
                     break;
                 }
                 case TypeAliasDecl a:
@@ -380,6 +419,7 @@ public sealed class Compilation
                     };
                     Naming.CheckValue(this, file.Source, f.Name);
                     sym.TypeMap = DeclareTypeParameters(file, f.TypeParams, sym.TypeParameters);
+                    _wheres.Add(() => DeclareWhere(file, f.Where, sym.TypeParameters, sym.TypeMap, f.Name.Text));
                     if (f.Name.Text == "main" && file.Module == EntryModule)
                     {
                         if (module.Main is not null)
@@ -447,6 +487,18 @@ public sealed class Compilation
     private readonly Dictionary<FunctionSymbol, (TestDecl Decl, Expr[]? Values)> _testBodies = new();
     private readonly Dictionary<TestDecl, List<Expr[]>> _testCases = new();
     private (FunctionSymbol Main, List<GlobalStatement> Statements)? _mainStatements;
+    private readonly List<Action> _wheres = new();
+    private readonly List<(InterfaceSymbol Instance, SourceText Site, TextSpan Span)> _pendingInterfaces = new();
+    private bool _interfaceMembersDeclared;
+    private readonly Dictionary<(TypeParameterType Owner, string Name), TypeParameterType> _associatedTypes = new();
+
+    /// <summary><c>T.Item</c> in a template: one type parameter per (T, name), so every mention is the same type.</summary>
+    internal TypeParameterType AssociatedType(TypeParameterType owner, string name)
+    {
+        if (!_associatedTypes.TryGetValue((owner, name), out var t))
+            _associatedTypes[(owner, name)] = t = new TypeParameterType($"{owner.Name}.{name}");
+        return t;
+    }
 
     /// <summary>Declares the <c>&lt;A, B&gt;</c> of a generic declaration; the map is null when there are none.</summary>
     private Dictionary<string, TypeSymbol>? DeclareTypeParameters(FileContext file, Name[] names, List<TypeParameterType> into)
@@ -468,6 +520,53 @@ public sealed class Compilation
             map[name.Text] = parameter;
         }
         return map;
+    }
+
+    /// <summary>Resolves the bounds of <c>where T : IA, IB</c> into the constraints of <paramref name="parameters"/>.</summary>
+    private void DeclareWhere(FileContext file, WhereClause[] clauses, List<TypeParameterType> parameters, IReadOnlyDictionary<string, TypeSymbol>? typeMap, string owner)
+    {
+        if (clauses.Length == 0) return;
+        var types = new TypeResolver(this, file, null, typeMap);
+        foreach (var w in clauses)
+        {
+            if (parameters.Find(p => p.Name == w.Param.Text) is not { } parameter)
+            {
+                Report(DiagnosticCodes.WhereUnknownParameter, file.Source, w.Param.Span, [w.Param.Text], label: $"not a type parameter of `{owner}`",
+                    help: parameters.Count == 0
+                        ? $"remove the `where` clause; `{owner}` has no type parameters"
+                        : $"name one of {string.Join(", ", parameters.Select(p => $"`{p.Name}`"))}");
+                continue;
+            }
+            var constraints = parameter.Constraints.ToList();
+            foreach (var bound in w.Bounds)
+                if (ResolveInterface(types, file, bound) is { } i) constraints.Add(i);
+            parameter.Constraints = constraints;
+        }
+    }
+
+    /// <summary>A base or a <c>where</c> bound: an interface, or BYN2804.</summary>
+    private InterfaceSymbol? ResolveInterface(TypeResolver types, FileContext file, NamedType syntax)
+    {
+        var t = types.ResolveBound(syntax);
+        if (t is InterfaceSymbol i) return i;
+        if (!t.IsError)
+        {
+            var kind = t switch
+            {
+                StructSymbol => "a struct", UnionSymbol => "a union", EnumSymbol => "an enum", ErrorSetSymbol => "an error enum",
+                TypeParameterType => "a type parameter", _ => "a type",
+            };
+            Report(DiagnosticCodes.NotAnInterface, file.Source, syntax.Span, [t.DisplayName], label: kind, help: "list an `interface` here");
+        }
+        return null;
+    }
+
+    /// <summary>Interfaces listed on a union or enum (BYN2815): only structs conform yet.</summary>
+    private void RejectBases(FileContext file, NamedType[] bases, string name, string kind)
+    {
+        if (bases.Length > 0)
+            Report(DiagnosticCodes.NonStructConformance, file.Source, TextSpan.FromBounds(bases[0].Span.Start, bases[^1].Span.End), [name, kind],
+                label: "listed here", help: "wrap it in a struct that conforms");
     }
 
     private bool AddType(FileContext file, Name name, TypeSymbol type)
@@ -508,6 +607,7 @@ public sealed class Compilation
         ErrorSetSymbol e => e.Location,
         EnumSymbol e => e.Location,
         UnionSymbol u => u.Location,
+        InterfaceSymbol i => i.Location,
         AliasPlaceholder a => new Location(a.File.Source, a.Name.Span),
         _ => null,
     };
@@ -692,6 +792,18 @@ public sealed class Compilation
             names[n.Text] = Loc(file, n);
             return true;
         }
+        foreach (var b in s.Decl.Bases)
+        {
+            if (ResolveInterface(types, file, b) is not { } i) continue;
+            if (s.Bases.Contains(i))
+                Report(DiagnosticCodes.DuplicateConformance, file.Source, b.Span, [s.Name, i.DisplayName], label: "already listed",
+                    help: $"remove the second `{i.DisplayName}`");
+            else
+            {
+                s.Bases.Add(i);
+                _baseSpans[(s, i)] = b.Span;
+            }
+        }
         foreach (var member in s.Decl.Members)
         {
             switch (member)
@@ -723,12 +835,13 @@ public sealed class Compilation
                 {
                     Naming.CheckValue(this, file.Source, m.Name);
                     var typeMap = s.TypeMap;
+                    var ownParameters = new List<TypeParameterType>();
                     if (m.TypeParams.Length > 0)
                     {
                         Report(DiagnosticCodes.Unsupported, file.Source, m.TypeParams[0].Span, ["generic methods"],
                             help: "declare a generic free function, or make the struct generic");
                         // Declared anyway, so the signature reports nothing more.
-                        var own = DeclareTypeParameters(file, m.TypeParams, new List<TypeParameterType>())!;
+                        var own = DeclareTypeParameters(file, m.TypeParams, ownParameters)!;
                         typeMap = s.TypeMap is null ? own : new Dictionary<string, TypeSymbol>(s.TypeMap.Concat(own.Where(p => !s.TypeMap.ContainsKey(p.Key))));
                     }
                     var fn = new FunctionSymbol(m.Name.Text, Loc(file, m.Name), s.Module, FunctionKind.Method)
@@ -736,11 +849,17 @@ public sealed class Compilation
                         Owner = s, File = file, Decl = m, Access = AccessOf(m.Modifiers), IsStatic = m.Modifiers.HasFlag(Modifiers.Static),
                         TypeMap = typeMap,
                     };
+                    if (s.Template is null) DeclareWhere(file, m.Where, ownParameters, typeMap, m.Name.Text);
                     DeclareSignature(fn, m, file, s);
                     if (Unique(m.Name)) s.Methods.Add(fn);
                     s.Module.AllFunctions.Add(fn);
                     break;
                 }
+                case TypeAliasDecl a when s.Bases.Any(i => i.AssociatedTypes.Any(t => t.Name == a.Name.Text)):
+                    Naming.CheckType(this, file.Source, a.Name);
+                    // Resolved again if an earlier use did so quietly (AssociatedBinding), now reporting.
+                    if (Unique(a.Name)) _associatedBindings[(s, a.Name.Text)] = types.Resolve(a.Target);
+                    break;
                 case ConstructorDecl c:
                 {
                     var fn = new FunctionSymbol(s.Name, Loc(file, c.Name), s.Module, FunctionKind.Constructor)
@@ -764,6 +883,86 @@ public sealed class Compilation
     }
 
     private readonly Dictionary<FunctionSymbol, ConstructorDecl> _constructorBodies = new();
+
+    /// <summary>Associated types first, so member signatures can name them; then methods and getters, abstract or default.</summary>
+    private void DeclareInterfaceMembers(InterfaceSymbol i)
+    {
+        var file = i.File;
+        var names = new Dictionary<string, Location>(StringComparer.Ordinal);
+        bool Unique(Name n)
+        {
+            if (names.TryGetValue(n.Text, out var prev))
+            {
+                ReportDuplicate(file.Source, n, prev);
+                return false;
+            }
+            names[n.Text] = Loc(file, n);
+            return true;
+        }
+        var typeMap = i.TypeMap is null ? new Dictionary<string, TypeSymbol>(StringComparer.Ordinal) : new Dictionary<string, TypeSymbol>(i.TypeMap, StringComparer.Ordinal);
+        foreach (var a in i.Decl.Members.OfType<AssociatedTypeDecl>())
+        {
+            Naming.CheckType(this, file.Source, a.Name);
+            if (!Unique(a.Name)) continue;
+            var t = new TypeParameterType(a.Name.Text);
+            i.AssociatedTypes.Add(t);
+            typeMap[a.Name.Text] = t;
+        }
+        var map = typeMap.Count == 0 ? null : typeMap;
+        var types = new TypeResolver(this, file, null, map);
+        void DeclareGetter(Decl decl, Modifiers modifiers, TypeSyntax type, Name name, bool isAbstract)
+        {
+            Naming.CheckValue(this, file.Source, name);
+            RejectStatic(file, modifiers, name);
+            var getter = new FunctionSymbol(name.Text, Loc(file, name), i.Module, FunctionKind.Getter)
+            {
+                Interface = i, IsAbstract = isAbstract, File = file, ReturnType = types.Resolve(type), Access = i.Access, TypeMap = map,
+            };
+            _interfaceGetters[getter] = decl;
+            if (Unique(name)) i.Properties.Add(getter);
+        }
+        foreach (var member in i.Decl.Members)
+        {
+            switch (member)
+            {
+                case AssociatedTypeDecl:
+                    break;
+                case FunctionDecl m:
+                {
+                    Naming.CheckValue(this, file.Source, m.Name);
+                    RejectStatic(file, m.Modifiers, m.Name);
+                    var fn = new FunctionSymbol(m.Name.Text, Loc(file, m.Name), i.Module, FunctionKind.Method)
+                    {
+                        Interface = i, IsAbstract = m.Body is null && m.ExpressionBody is null, File = file, Decl = m, Access = i.Access,
+                        IsStatic = m.Modifiers.HasFlag(Modifiers.Static), TypeMap = map,
+                    };
+                    // Generic methods are declarable here so `dyn` can name them (BYN2808); calling one is not supported.
+                    if (DeclareTypeParameters(file, m.TypeParams, fn.TypeParameters) is { } own)
+                        fn.TypeMap = map is null ? own : new Dictionary<string, TypeSymbol>(map.Concat(own.Where(p => !map.ContainsKey(p.Key))));
+                    DeclareWhere(file, m.Where, fn.TypeParameters, fn.TypeMap, m.Name.Text);
+                    DeclareSignature(fn, m, file);
+                    if (Unique(m.Name)) i.Methods.Add(fn);
+                    break;
+                }
+                case GetterDecl g:
+                    DeclareGetter(g, g.Modifiers, g.Type, g.Name, isAbstract: true);
+                    break;
+                case PropertyDecl p:
+                    DeclareGetter(p, p.Modifiers, p.Type, p.Name, isAbstract: false);
+                    break;
+                default:
+                    Report(DiagnosticCodes.Unsupported, file.Source, member.Span, ["this kind of interface member"]);
+                    break;
+            }
+        }
+    }
+
+    private void RejectStatic(FileContext file, Modifiers modifiers, Name name)
+    {
+        if (modifiers.HasFlag(Modifiers.Static))
+            Report(DiagnosticCodes.StaticAbstract, file.Source, name.Span, [], label: "declared `static`",
+                help: "remove `static` or make it a free function");
+    }
 
     private void RejectModifiers(FileContext file, TextSpan span, Modifiers actual, Modifiers rejected, string what)
     {
@@ -885,6 +1084,7 @@ public sealed class Compilation
 
     private void BindAll()
     {
+        CheckConformances();
         foreach (var module in Modules)
             foreach (var c in module.AllConstants)
                 BindConstant(c);
@@ -930,6 +1130,8 @@ public sealed class Compilation
                     RegionAnalysis.Analyze(this, fn);
                     SpanParameterLint.Analyze(this, fn);
                 }
+                // A default is analysed on its template, so it is checked with no conformer; its clones repeat nothing it reports.
+                else if (fn is { Body: not null, Interface: not null, IsAbstract: false }) AnalyzeInstance(fn);
             }
         if (!Diagnostics.HasErrors && _instantiationErrors.FirstOrDefault() is { } internalError)
             throw new InvalidOperationException(
@@ -973,19 +1175,29 @@ public sealed class Compilation
     /// <summary>
     /// Runs instantiation work, whose diagnostics are not the user's: the template already reported
     /// them. The exceptions are the rules only a type argument can break (a <c>Map</c> key, <c>==</c>
-    /// and formatting on a <c>T</c>); they are reported at <paramref name="span"/>, the use that chose
-    /// the type arguments.
+    /// and formatting on a <c>T</c>, a <c>for</c> over a <c>T</c> whose <c>Item</c> is unique, a unique <c>T</c>
+    /// field standing for a getter); they are reported at <paramref name="span"/>, the use that chose the type arguments.
+    /// BYN2022 and BYN2780 are also template rules, so they are forwarded only when the template did not report them.
     /// </summary>
     private void Instantiating(SourceText site, TextSpan span, Action work)
     {
         var outer = _scratch;
         var bag = _scratch = new DiagnosticBag();
+        _instantiating++;
         try { work(); }
-        finally { _scratch = outer; }
+        finally
+        {
+            _scratch = outer;
+            _instantiating--;
+        }
+        var target = _scratch ?? Diagnostics;
+        bool Reported(Diagnostic d) => target.Items.Concat(Diagnostics.Items).Any(t => t.Code == d.Code && t.Source == d.Source && t.Span == d.Span);
         foreach (var d in bag.Items.Where(d => d.IsError))
         {
-            if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code)
-                (_scratch ?? Diagnostics).Add(d with { Source = site, Span = span, Label = InstantiationLabel });
+            if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code
+                || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code
+                || (d.Code == DiagnosticCodes.Unsupported.Code || d.Code == DiagnosticCodes.ImplicitCopy.Code) && !Reported(d))
+                target.Add(d with { Source = site, Span = span, Label = InstantiationLabel });
             else
                 _instantiationErrors.Add(d);
         }
@@ -1002,25 +1214,101 @@ public sealed class Compilation
         };
         _instances[(template, args)] = fn;
         template.Module.AllFunctions.Add(fn);
+        // The template checked the calls in its own body, so a call in an instance is not checked again.
+        var check = _instantiating == 0;
+        var satisfied = true;
+        void Declare()
+        {
+            DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner);
+            if (check) satisfied = CheckConstraints(template.TypeParameters, fn.Decl!.Where, fn.File!, fn.Owner, fn.TypeMap, args);
+        }
         if (_firstPass is { } pass)
         {
             pass.Instances.Add(fn);
             var outer = ReportInto(pass.Diagnostics);
             var errors = _instantiationErrors.Count;
-            try { Instantiating(site, span, () => DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner)); }
+            try { Instantiating(site, span, Declare); }
             finally { ReportInto(outer); }
             pass.Errors.AddRange(_instantiationErrors.Skip(errors));
             _instantiationErrors.RemoveRange(errors, _instantiationErrors.Count - errors);
         }
-        else Instantiating(site, span, () => DeclareSignature(fn, fn.Decl!, fn.File!, fn.Owner));
-        if (!fn.IsGeneric) _instantiationWork.Enqueue((site, span, () => BindFunction(fn), fn));
+        else Instantiating(site, span, Declare);
+        // A body bound with a non-conforming argument would only repeat BYN2807 as unknown members.
+        if (!fn.IsGeneric && satisfied) _instantiationWork.Enqueue((site, span, () => BindFunction(fn), fn));
         return fn;
+    }
+
+    /// <summary>Depth of <see cref="Instantiating"/> calls: nonzero while declaring or binding an instance.</summary>
+    private int _instantiating;
+
+    /// <summary>Constraint checks of types instantiated before conformances exist; run once they do.</summary>
+    private readonly List<Action> _pendingConstraints = new();
+
+    /// <summary>BYN2807 for each argument that does not conform to its parameter's <c>where</c> bounds; false when one does not.</summary>
+    private bool CheckConstraints(List<TypeParameterType> parameters, WhereClause[] where, FileContext file, StructSymbol? owner,
+        IReadOnlyDictionary<string, TypeSymbol>? typeMap, TypeSymbol[] args)
+    {
+        var satisfied = true;
+        var types = new TypeResolver(this, file, owner, typeMap);
+        for (var k = 0; k < parameters.Count; k++)
+        {
+            if (parameters[k].Constraints.Count == 0) continue;
+            // The bound is resolved again with the arguments, so `IOrder<T>` is `IOrder<Point>` here.
+            foreach (var bound in where.Where(w => w.Param.Text == parameters[k].Name).SelectMany(w => w.Bounds))
+            {
+                InterfaceSymbol? i = null;
+                Quietly(() => i = types.ResolveBound(bound) as InterfaceSymbol);
+                if (i is null || Conforms(args[k], i)) continue;
+                var missing = MissingMember(args[k], i);
+                var help = args[k] switch
+                {
+                    StructSymbol s => $"add `: {i.DisplayName}` to `{s.DisplayName}` and provide `{missing}`",
+                    TypeParameterType p => $"add `where {p.Name} : {i.DisplayName}` to the declaration of `{p.Name}`",
+                    PrimitiveType => $"pass a struct that conforms to `{i.DisplayName}`; primitives do not conform to interfaces",
+                    _ => $"pass a struct that conforms to `{i.DisplayName}`; only structs conform to interfaces",
+                };
+                Report(DiagnosticCodes.ConstraintNotSatisfied, file.Source, bound.Span, [args[k].DisplayName, i.DisplayName, missing], help: help);
+                satisfied = false;
+                break;
+            }
+        }
+        return satisfied;
+    }
+
+    /// <summary>The constraint check of a type instance, now or once conformances are checked.</summary>
+    private void CheckConstraintsAt(SourceText site, TextSpan span, List<TypeParameterType> parameters, WhereClause[] where, FileContext file,
+        IReadOnlyDictionary<string, TypeSymbol>? typeMap, TypeSymbol[] args)
+    {
+        if (parameters.All(p => p.Constraints.Count == 0)) return;
+        void Check() => Instantiating(site, span, () => CheckConstraints(parameters, where, file, null, typeMap, args));
+        if (_conformancesChecked) Check();
+        else _pendingConstraints.Add(Check);
+    }
+
+    /// <summary>A struct conforms when it lists the interface; a type parameter when its own bounds include it (D5: primitives never do).</summary>
+    private static bool Conforms(TypeSymbol t, InterfaceSymbol i) => t switch
+    {
+        _ when t.IsError => true,
+        StructSymbol s => s.Conformances.Any(c => c.Interface == i),
+        TypeParameterType p => p.Constraints.Contains(i),
+        _ => false,
+    };
+
+    /// <summary>The first abstract member of <paramref name="i"/> that <paramref name="t"/> does not have, for BYN2807.</summary>
+    private static string MissingMember(TypeSymbol t, InterfaceSymbol i)
+    {
+        var members = i.Methods.Concat(i.Properties).OrderBy(m => m.Location!.Value.Span.Start).ToList();
+        var abstracts = members.Where(m => m.IsAbstract).ToList();
+        var missing = abstracts.FirstOrDefault(m => t is not StructSymbol s || (s.FindProperty(m.Name) is null && !s.FindMethods(m.Name).Any()));
+        return (missing ?? abstracts.FirstOrDefault() ?? members.FirstOrDefault())?.Name ?? $": {i.DisplayName}";
     }
 
     /// <summary>The instantiation of a generic struct or union at <paramref name="args"/>, with its members.</summary>
     internal TypeSymbol InstantiateType(TypeSymbol template, TypeSymbol[] args, SourceText site, TextSpan span)
     {
         if (_instances.TryGetValue((template, args), out var existing)) return (TypeSymbol)existing;
+        // As for functions: a type named inside an instance was checked in its template.
+        var check = _instantiating == 0;
         switch (template)
         {
             case StructSymbol s:
@@ -1030,11 +1318,14 @@ public sealed class Compilation
                     Template = s, TypeArguments = args, TypeMap = Substitution(null, s.TypeParameters, args),
                 };
                 _instances[(s, args)] = instance;
+                if (check) CheckConstraintsAt(site, span, s.TypeParameters, s.Decl.Where, s.File, instance.TypeMap, args);
                 Instantiating(site, span, () => DeclareMembers(instance));
+                if (_conformancesChecked) Instantiating(site, span, () => Conform(instance));
                 if (instance.IsGeneric) return instance;
                 foreach (var f in instance.Fields.Where(f => f.Decl.Default is not null))
                     _instantiationWork.Enqueue((site, span, () => FieldDefault(instance, f, site, span), null));
-                foreach (var fn in instance.Methods.Concat(instance.Properties.Select(p => p.Getter!)).Concat(instance.Constructors))
+                // Cloned defaults (with a Template) are queued by Conform.
+                foreach (var fn in instance.Methods.Concat(instance.Properties.Select(p => p.Getter!)).Concat(instance.Constructors).Where(f => f.Template is null))
                     _instantiationWork.Enqueue((site, span, () => BindFunction(fn), null));
                 return instance;
             }
@@ -1045,7 +1336,21 @@ public sealed class Compilation
                     Template = u, TypeArguments = args, TypeMap = Substitution(null, u.TypeParameters, args),
                 };
                 _instances[(u, args)] = instance;
+                if (check) CheckConstraintsAt(site, span, u.TypeParameters, u.Decl.Where, u.File, instance.TypeMap, args);
                 Instantiating(site, span, () => DeclareUnionVariants(instance));
+                return instance;
+            }
+            case InterfaceSymbol i:
+            {
+                var instance = new InterfaceSymbol(i.Name, i.Location, i.Module, i.Access, i.File)
+                {
+                    Decl = i.Decl, Template = i, TypeArguments = args, TypeMap = Substitution(null, i.TypeParameters, args),
+                };
+                _instances[(i, args)] = instance;
+                if (check) CheckConstraintsAt(site, span, i.TypeParameters, i.Decl.Where, i.File, instance.TypeMap, args);
+                // A `where` bound can name an instance before the template's members are declared.
+                if (_interfaceMembersDeclared) Instantiating(site, span, () => DeclareInterfaceMembers(instance));
+                else _pendingInterfaces.Add((instance, site, span));
                 return instance;
             }
             default:
@@ -1151,6 +1456,9 @@ public sealed class Compilation
             case FunctionKind.Function or FunctionKind.Method when fn.Decl is { } decl:
                 (binder = New(fn.Owner)).BindFunctionBody(decl);
                 break;
+            case FunctionKind.Getter when fn.Interface is not null:
+                (binder = New(null)).BindGetter((PropertyDecl)_interfaceGetters[fn]);
+                break;
             case FunctionKind.Getter:
             {
                 var prop = fn.Owner!.Properties.First(p => p.Getter == fn);
@@ -1209,6 +1517,9 @@ public sealed class Compilation
 
     /// <summary>The first write to <c>this</c> in each method not declared <c>ref this</c>, with the binder that saw it.</summary>
     internal Dictionary<FunctionSymbol, (Binder Binder, TextSpan Span)> ThisWrites { get; } = new();
+
+    /// <summary>The fields of <c>this</c> each <c>ref this</c> method changes structurally, for region analysis.</summary>
+    internal Dictionary<FunctionSymbol, HashSet<FieldSymbol>> ChangedFields { get; } = new();
 
     /// <summary>
     /// A method is mutating when it is declared <c>ref this</c>. Every call of one needs a writable

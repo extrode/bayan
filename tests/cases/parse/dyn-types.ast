@@ -1,0 +1,17 @@
+CompilationUnit
+  Function show(dyn ref IShape s, dyn ref readonly ICounter c) -> void
+    Block
+      Var t: dyn ref IShape = s
+      Let u: dyn ref readonly IShape = s
+      For Let x: dyn ref IShape in shapes
+        Block
+          Expr (call print (call (. x area)))
+      For Let y: dyn ref readonly IShape in shapes
+        Block
+          Expr (call print (call (. y area)))
+  Function make() -> dyn IShape => circle
+  Var dyn = 1
+  Assign dyn = (+ dyn 1)
+  For Let dyn in xs
+    Block
+      Expr (call print dyn)

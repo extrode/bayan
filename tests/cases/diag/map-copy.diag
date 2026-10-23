@@ -107,13 +107,13 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
 
 error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it owns its storage
 
-  52 │     let t = Store { name = "t", data = a };
-     │                                        ^
+  52 │     let t = Store { name: "t", data: a };
+     │                                      ^
      │
   help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
         it by `ref` to share it instead
-     │ 52 │     let t = Store { name = "t", data = move a };
-     │    │                                        +++++
+     │ 52 │     let t = Store { name: "t", data: move a };
+     │    │                                      +++++
 
 error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it owns its storage
 
@@ -127,13 +127,13 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
 
 error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it owns its storage
 
-  56 │     list.add(a);
-     │              ^
+  56 │     list.append(a);
+     │                 ^
      │
   help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
         it by `ref` to share it instead
-     │ 56 │     list.add(move a);
-     │    │              +++++
+     │ 56 │     list.append(move a);
+     │    │                 +++++
 
 error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it owns its storage
 
@@ -207,20 +207,20 @@ error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it ow
 error BYN2780: implicit copy of a unique value: `Store` is unique because field `data` is a
 `Map<i64, i64>`
 
-  66 │     let u = s with { name = "u" };
-     │             ^^^^^^^^^^^^^^^^^^^^^
+  66 │     let u = s with { name: "u" };
+     │             ^^^^^^^^^^^^^^^^^^^^
      │
   help: pass it by `ref` to share it instead
 
 error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it owns its storage
 
-  67 │     let v = s with { data = a };
-     │                             ^
+  67 │     let v = s with { data: a };
+     │                            ^
      │
   help: hand the value over with `move a`; make an independent copy with `a.copy(to: alloc)`; pass
         it by `ref` to share it instead
-     │ 67 │     let v = s with { data = move a };
-     │    │                             +++++
+     │ 67 │     let v = s with { data: move a };
+     │    │                            +++++
 
 error BYN2780: implicit copy of a unique value: `Map<i64, i64>?` is unique because it holds a
 `Map<i64, i64>`
@@ -245,16 +245,16 @@ error BYN2780: implicit copy of a unique value: `StrBuf` is unique: it owns its 
 
 error BYN2783: `m` borrows from what it was bound to and cannot be changed or moved
 
-  80 │     for (var m in maps) m[1] = 1;
-     │                         ^^^^
+  80 │     for m in maps { m[1] = 1; }
+     │                     ^^^^
      │
   help: change the subject itself, or work on a `.copy(to: alloc)`; a loop or pattern variable of a
         unique type borrows from its subject
 
 error BYN2783: `b` borrows from what it was bound to and cannot be changed or moved
 
-  82 │     for (var b in bufs) b.append("y");
-     │                         ^ `append` modifies it
+  82 │     for b in bufs { b.append("y"); }
+     │                     ^ `append` modifies it
      │
   help: change the subject itself, or work on a `.copy(to: alloc)`; a loop or pattern variable of a
         unique type borrows from its subject
@@ -262,7 +262,7 @@ error BYN2783: `b` borrows from what it was bound to and cannot be changed or mo
 error BYN2780: implicit copy of a unique value: `Named` is unique because field `m` is a
 `Map<i64, i64>`
 
-  93 │     let kept = n with { name = "x" };
-     │                ^^^^^^^^^^^^^^^^^^^^^
+  96 │     let kept = n with { name: "x" };
+     │                ^^^^^^^^^^^^^^^^^^^^
      │
   help: pass it by `ref` to share it instead

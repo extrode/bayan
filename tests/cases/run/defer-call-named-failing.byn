@@ -1,0 +1,16 @@
+void failing(i32 x) {
+    print($"failing called with {x}");
+}
+
+void panicking(i32 x) {
+    print($"panicking called with {x}");
+}
+
+void work() {
+    i32 x = 7;
+    defer failing(x);
+    defer panicking(x);
+    print("body");
+}
+
+work();

@@ -1,0 +1,53 @@
+struct Digits : IIndexable {
+    type Item = i64;
+
+    i64 size;
+
+    i64 count => size;
+
+    i64 get(i64 index) => index * 10;
+}
+
+struct Countdown : IEnumerator {
+    type Item = i64;
+
+    i64 left;
+
+    bool moveNext(ref this) {
+        left -= 1;
+        return left >= 0;
+    }
+
+    i64 current => left;
+}
+
+void indexed() {
+    defer print("indexed deferred");
+    let digits = Digits { size: 5 };
+    var seen = 0;
+    for d in digits {
+        defer print($"after {d}");
+        seen += 1;
+        print($"saw {d}");
+        break if seen == 2;
+    }
+    print($"indexed saw {seen}");
+}
+
+void enumerated() {
+    defer print("enumerated deferred");
+    var steps = Countdown { left: 5 };
+    var seen = 0;
+    for n in steps {
+        defer print($"after {n}");
+        seen += 1;
+        print($"saw {n}");
+        break if seen == 2;
+    }
+    print($"enumerated saw {seen}, left {steps.left}");
+}
+
+void main() {
+    indexed();
+    enumerated();
+}

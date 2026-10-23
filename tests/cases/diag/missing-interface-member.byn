@@ -1,0 +1,10 @@
+interface IShape {
+    i64 area();
+    i64 sides { get; }
+}
+
+struct Square : IShape {
+    i64 side;
+
+    i64 sides => 4;
+}

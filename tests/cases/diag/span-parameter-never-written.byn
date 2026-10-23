@@ -1,6 +1,6 @@
 i64 total(Span<i64> values) {
     i64 sum = 0;
-    for (let v in values) {
+    for v in values {
         sum += v;
     }
     return sum + values[0] + values.length;

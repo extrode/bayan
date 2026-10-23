@@ -1,7 +1,7 @@
 Package {
-    name = "Tally",
-    version = "1.0",
-    edition = 2026,
-    kind = .exe,
-    dist = Dist { targets = .host, mode = .turbo },
+    name: "Tally",
+    version: "1.0",
+    edition: 2026,
+    kind: .exe,
+    dist: Dist { targets: .host, mode: .turbo },
 }

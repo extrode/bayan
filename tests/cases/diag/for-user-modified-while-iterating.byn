@@ -1,0 +1,41 @@
+struct Digits : IIndexable {
+    type Item = i64;
+
+    i64 size;
+
+    i64 count => size;
+
+    i64 get(i64 index) => index * 10;
+
+    void grow(ref this) {
+        size += 1;
+    }
+}
+
+struct Countdown : IEnumerator {
+    type Item = i64;
+
+    i64 left;
+
+    bool moveNext(ref this) {
+        left -= 1;
+        return left >= 0;
+    }
+
+    i64 current => left;
+}
+
+void main() {
+    var digits = Digits { size: 3 };
+    for d in digits {
+        for e in digits {
+            print($"{d + e}");
+        }
+        digits.grow();
+    }
+    var steps = Countdown { left: 3 };
+    for n in steps {
+        steps.moveNext();
+        print($"{n}");
+    }
+}

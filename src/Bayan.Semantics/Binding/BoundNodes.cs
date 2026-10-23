@@ -34,7 +34,12 @@ public sealed record BoundDefault(Node Syntax, TypeSymbol Type) : BoundExpr(Synt
 
 public sealed record BoundLocal(Node Syntax, LocalSymbol Local) : BoundExpr(Syntax, Local.Type);
 
-public sealed record BoundThis(Node Syntax, StructSymbol Struct) : BoundExpr(Syntax, Struct);
+/// <summary><c>this</c>: a struct, or the synthetic <c>Self</c> type parameter in an interface's default-method template.</summary>
+public sealed record BoundThis(Node Syntax, TypeSymbol Type) : BoundExpr(Syntax, Type)
+{
+    /// <summary>The struct <c>this</c> points to; only templates (never lowered or emitted) have a <c>Self</c> type here.</summary>
+    public StructSymbol Struct => (StructSymbol)Type;
+}
 
 public sealed record BoundField(Node Syntax, BoundExpr Receiver, FieldSymbol Field) : BoundExpr(Syntax, Field.Type);
 
@@ -44,7 +49,7 @@ public sealed record BoundTupleElement(Node Syntax, BoundExpr Receiver, int Inde
 public sealed record BoundCall(Node Syntax, FunctionSymbol Function, BoundExpr? Receiver, BoundExpr[] Arguments, TypeSymbol Type)
     : BoundExpr(Syntax, Type);
 
-/// <summary>Members of built-in types (<c>string.length</c>, <c>List.add</c>, …).</summary>
+/// <summary>Members of built-in types (<c>List.length</c>, <c>List.append</c>, …).</summary>
 public enum BuiltinMember
 {
     StringLength, StringBytes, StringIsEmpty, StringCopy, StringStartsWith, StringEndsWith, StringContains,
@@ -105,6 +110,8 @@ public enum ConversionKind
     FromNever,
     /// <summary>A <c>T?</c> let local or parameter read where a null check proved it present (spec §7.2).</summary>
     Narrow,
+    /// <summary>A conforming value or borrow viewed as <c>dyn ref I</c>: a borrow of the operand plus its vtable, never a move.</summary>
+    ToDynRef,
 }
 
 public sealed record BoundConversion(Node Syntax, BoundExpr Operand, TypeSymbol Type, ConversionKind Kind) : BoundExpr(Syntax, Type);
@@ -237,7 +244,19 @@ public sealed record BoundWhile(Node Syntax, BoundExpr Condition, BoundStmt Body
 public sealed record BoundDoWhile(Node Syntax, BoundStmt Body, BoundExpr Condition, JumpTarget Target) : BoundStmt(Syntax);
 
 /// <summary><c>for (let x in e)</c> over a range, span, list, array or string (by char).</summary>
-public sealed record BoundFor(Node Syntax, LocalSymbol Variable, BoundExpr Iterable, BoundStmt Body, JumpTarget Target) : BoundStmt(Syntax);
+public sealed record BoundFor(Node Syntax, LocalSymbol Variable, BoundExpr Iterable, BoundStmt Body, JumpTarget Target) : BoundStmt(Syntax)
+{
+    /// <summary>Set when <see cref="Iterable"/> is a user type iterated through <c>IIndexable</c> or <c>IEnumerator</c>.</summary>
+    public UserIteration? UserIteration { get; init; }
+}
+
+public enum IterationKind { Indexable, Enumerator }
+
+/// <summary>
+/// How a <c>for</c> loop walks a user type: <see cref="Advance"/> is the <c>count</c> getter or <c>moveNext</c>,
+/// <see cref="Item"/> is <c>get</c> or the <c>current</c> getter (either getter may be a field), and <see cref="Spill"/> holds an rvalue enumerator.
+/// </summary>
+public sealed record UserIteration(IterationKind Kind, Symbol Advance, Symbol Item, LocalSymbol? Spill);
 
 /// <summary>A <c>case</c>; a null <see cref="Pattern"/> is <c>default</c>.</summary>
 public sealed record BoundSwitchSection(Node Syntax, BoundPattern? Pattern, BoundExpr? Guard, BoundStmt[] Body);

@@ -1,0 +1,19 @@
+struct Rows : IIndexable {
+    type Item = List<i64>;
+
+    i64 count => 1;
+
+    List<i64> get(i64 index) => List<i64>();
+}
+
+i64 walk<T>(T items) where T : IIndexable {
+    var s = 0;
+    for x in items {
+        s += 1;
+    }
+    return s;
+}
+
+void main() {
+    print($"{walk(Rows {})}");
+}

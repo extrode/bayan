@@ -6,13 +6,13 @@ struct Ledger {
 
 List<i64> numbers(i64 count) {
     var xs = List<i64>();
-    for (let i in 0..count) xs.add(i * i);
+    for i in 0..count { xs.append(i * i); }
     return xs;
 }
 
 Ledger ledger(string name) {
-    var l = Ledger { name = name, entries = numbers(3) };
-    l.entries.add(100);
+    var l = Ledger { name: name, entries: numbers(3) };
+    l.entries.append(100);
     return l;
 }
 

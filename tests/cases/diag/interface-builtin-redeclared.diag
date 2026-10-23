@@ -1,0 +1,4 @@
+error BYN2006: `IEnumerator` is declared twice
+
+  1 │ interface IEnumerator {
+    │           ^^^^^^^^^^^ already declared as a built-in interface

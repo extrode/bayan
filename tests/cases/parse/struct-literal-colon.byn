@@ -14,7 +14,7 @@ let more = item with { name: "coffee", qty: 3 };
 let none = Money {};
 Money pick() => { cents: 1 };
 {
-    outer: for (let i in 0..2) {
+    outer: for i in 0..2 {
         break outer;
     }
 }

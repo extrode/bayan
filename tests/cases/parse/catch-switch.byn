@@ -7,8 +7,10 @@ save(x) catch switch {
     IoError e => log(e),
     _ => log("other"),
 };
-let old = parse(s) catch (e) switch {
+let old = parse(s) catch switch {
     .empty => 0,
     _ => 1,
 };
-let n = parse(s) catch (e) fallback(e);
+let n = parse(s) catch switch {
+    ParseError e => fallback(e),
+};

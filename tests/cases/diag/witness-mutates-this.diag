@@ -1,0 +1,8 @@
+error BYN2115: `reset` modifies `this` but is not declared `ref this`
+
+  9 │         value = 0;
+    │         ^^^^^ `this` is modified here
+    │
+  help: declare it `ref this` as the first parameter
+    │ 8 │     void reset(ref this) {
+    │   │                ++++++++

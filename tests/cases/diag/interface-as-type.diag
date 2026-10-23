@@ -1,0 +1,20 @@
+error BYN2816: `IShape` is an interface, not a type
+
+  5 │ void show(IShape s) {
+    │           ^^^^^^ an interface
+    │
+  help: write `dyn ref IShape` or add a `where` constraint
+
+error BYN2816: `IShape` is an interface, not a type
+
+  6 │     IShape t = s;
+    │     ^^^^^^ an interface
+    │
+  help: write `dyn ref IShape` or add a `where` constraint
+
+error BYN2816: `IShape` is an interface, not a type
+
+  10 │     List<IShape> shapes = [];
+     │          ^^^^^^ an interface
+     │
+  help: write `dyn ref IShape` or add a `where` constraint

@@ -14,7 +14,7 @@ i64 work() fails E {
         let xs = List<i64>();
         return 0;
     }
-    for (let i in 0..3) {
+    for i in 0..3 {
         defer panicking {
             break;
         }

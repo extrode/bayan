@@ -1,0 +1,11 @@
+placed: Awaiting payment, total MYR 24.00
+shipped: On its way, tracking EX123456789MY
+place empty: empty
+still: Draft
+ship a draft: wrongState
+after remove: total MYR 0.00
+place removed-only: empty
+qty 0: invalidLine
+SGD line: currencyMismatch
+cancel paid: wrongState
+final: Paid

@@ -213,11 +213,11 @@ public sealed class CliTests
             void main(ReadOnlySpan<string> args) fails IoError {
                 let bytes = stackalloc u8[64];
                 var sb = StrBuf(bytes);
-                for (let a in args) {
+                for a in args {
                     print(a);
                     sb.append($"{a}\n");
                 }
-                try Io.writeFile("{{written.Replace('\\', '/')}}", sb.asString().bytes);
+                try Io.writeFile("{{written.Replace('\\', '/')}}", sb.finish().bytes);
             }
 
             """);

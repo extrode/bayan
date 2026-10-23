@@ -1,0 +1,20 @@
+error BYN3004: `items` is modified while `d` still borrows it
+
+  18 │             items.append(S { n: i });
+     │             ^^^^^^^^^^^^^^^^^^^^^^^^ `d` is used again on line 20
+     │
+  help: finish using `d` first, or copy what it needs before changing `items`
+
+error BYN3004: `items` is modified while `e` still borrows it
+
+  22 │         items.removeLast();
+     │         ^^^^^^^^^^^^^^^^^^ `e` is used again on line 24
+     │
+  help: finish using `e` first, or copy what it needs before changing `items`
+
+error BYN3004: `items` is modified while `e` still borrows it
+
+  23 │         items.clear();
+     │         ^^^^^^^^^^^^^ `e` is used again on line 24
+     │
+  help: finish using `e` first, or copy what it needs before changing `items`

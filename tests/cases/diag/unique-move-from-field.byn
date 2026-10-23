@@ -6,7 +6,7 @@ struct Bag {
 List<i64> make() => List<i64>();
 
 void take(List<i64> plain, ref List<i64> shared, move List<i64> owned) {
-    let bag = Bag { items = List<i64>() };
+    let bag = Bag { items: List<i64>() };
     let lists = List<List<i64>>();
     let a = move bag.items;
     let b = move lists[0];

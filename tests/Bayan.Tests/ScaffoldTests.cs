@@ -205,7 +205,7 @@ public sealed class ScaffoldTests
     {
         var dir = Path.Combine(Fresh("bad-manifest"), "tally");
         Assert.Equal(CliApp.ExitOk, Run("new", dir, "--vcs", "none").Exit);
-        File.WriteAllText(Path.Combine(dir, "package.byn"), "Package { name = \"local/tally\" }\n");
+        File.WriteAllText(Path.Combine(dir, "package.byn"), "Package { name: \"local/tally\" }\n");
         var (exit, _, stderr) = Run("check", dir);
         Assert.Equal(CliApp.ExitFailure, exit);
         Assert.Contains("error BYN3103: `package.byn` has no `version`", stderr);

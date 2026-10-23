@@ -53,6 +53,8 @@ public sealed class ModuleSymbol(string name, string directory) : Symbol(name, n
 
     public List<UnionSymbol> Unions { get; } = new();
 
+    public List<InterfaceSymbol> Interfaces { get; } = new();
+
     public List<FunctionSymbol> AllFunctions { get; } = new();
 
     public List<TestSymbol> Tests { get; } = new();
@@ -126,6 +128,12 @@ public sealed class StructSymbol(string name, Location location, ModuleSymbol mo
 
     public IEnumerable<FunctionSymbol> FindMethods(string name) => Methods.Where(m => m.Name == name);
 
+    /// <summary>The interfaces it lists after <c>:</c>, resolved and without duplicates; not yet checked.</summary>
+    public List<InterfaceSymbol> Bases { get; } = new();
+
+    /// <summary>The checked interfaces it lists after <c>:</c>, one per interface instance.</summary>
+    public List<Conformance> Conformances { get; } = new();
+
     /// <summary>Every field has a default, so <c>T()</c> and <c>{ }</c> are valid.</summary>
     public bool IsDefaultable => Fields.All(f => f.HasDefault && !f.IsRequired);
 }
@@ -182,6 +190,12 @@ public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol
 
     public StructSymbol? Owner { get; set; }
 
+    /// <summary>For an abstract interface member or a default-method template (both with no <see cref="Owner"/>): the interface declaring it.</summary>
+    public InterfaceSymbol? Interface { get; set; }
+
+    /// <summary>An interface member without a body; a conformer provides its witness.</summary>
+    public bool IsAbstract { get; set; }
+
     public bool IsStatic { get; set; }
 
     public List<ParameterSymbol> Parameters { get; } = new();
@@ -224,15 +238,89 @@ public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol
     public IReadOnlyDictionary<string, TypeSymbol>? TypeMap { get; set; }
 
     /// <summary>Has a type parameter left (a template, or a member of one): bound only to check it, never analysed, lowered or emitted.</summary>
-    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs) || Owner is { IsGeneric: true };
+    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs) || Owner is { IsGeneric: true } || Interface is not null;
 
     /// <summary>Re-bound from a template with concrete types (directly, or as a member of an instantiated struct).</summary>
     public bool IsInstance => Template is not null || Owner?.Template is not null;
 
-    public bool HasThis => Owner is not null && !IsStatic && Kind is FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor;
+    public bool HasThis => (Owner is not null || Interface is not null) && !IsStatic && Kind is FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor;
 
     public string DisplaySignature =>
         (Owner is null ? "" : Owner.Name + ".") + Name + "(" + string.Join(", ", Parameters.Select(p => p.Type.DisplayName + " " + p.Name)) + ")";
+}
+
+/// <summary>
+/// An <c>interface</c>: abstract methods and getters, default methods and associated types (<c>type Item;</c>).
+/// Has reference identity like a struct; generic interfaces are instantiated the same way.
+/// </summary>
+public sealed class InterfaceSymbol(string name, Location location, ModuleSymbol module, Accessibility access, FileContext file)
+    : TypeSymbol
+{
+    public string Name { get; } = name;
+
+    public Location Location { get; } = location;
+
+    public ModuleSymbol Module { get; } = module;
+
+    public Accessibility Access { get; } = access;
+
+    public FileContext File { get; } = file;
+
+    public required InterfaceDecl Decl { get; init; }
+
+    /// <summary>Abstract and default methods, each with <see cref="FunctionSymbol.Interface"/> set.</summary>
+    public List<FunctionSymbol> Methods { get; } = new();
+
+    /// <summary>Getters (<c>{ get; }</c> or with a body), as <see cref="FunctionKind.Getter"/> functions.</summary>
+    public List<FunctionSymbol> Properties { get; } = new();
+
+    /// <summary>The <c>type Item;</c> declarations, as type parameters each conformer binds.</summary>
+    public List<TypeParameterType> AssociatedTypes { get; } = new();
+
+    /// <summary>The type of <c>this</c> in default methods: a type parameter constrained to this interface.</summary>
+    public TypeParameterType Self => _self ??= new TypeParameterType("Self") { Constraints = [this] };
+
+    private TypeParameterType? _self;
+
+    /// <summary>The <c>&lt;A, B&gt;</c> of a generic template; empty otherwise.</summary>
+    public List<TypeParameterType> TypeParameters { get; } = new();
+
+    /// <summary>For an instantiation: the template it was re-declared from.</summary>
+    public InterfaceSymbol? Template { get; init; }
+
+    public IReadOnlyList<TypeSymbol> TypeArguments { get; init; } = [];
+
+    /// <summary>What each type parameter name means here: itself in a template, the argument in an instantiation.</summary>
+    public IReadOnlyDictionary<string, TypeSymbol>? TypeMap { get; set; }
+
+    /// <summary>A template, or an instantiation with a type parameter among its arguments.</summary>
+    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs);
+
+    public override string DisplayName =>
+        TypeArguments.Count > 0 ? $"{Name}<{string.Join(", ", TypeArguments.Select(a => a.DisplayName))}>" :
+        TypeParameters.Count > 0 ? $"{Name}<{string.Join(", ", TypeParameters.Select(a => a.Name))}>" : Name;
+
+    public IEnumerable<FunctionSymbol> FindMethods(string name) => Methods.Where(m => m.Name == name);
+
+    public FunctionSymbol? FindProperty(string name) => Properties.Find(p => p.Name == name);
+}
+
+/// <summary>
+/// <see cref="Type"/> conforms to <see cref="Interface"/> (an instance for a generic interface): each abstract member
+/// maps to its witness (the struct's own member or a cloned default), or a getter to a stored field in
+/// <see cref="FieldWitnesses"/>, and each associated type to its binding.
+/// </summary>
+public sealed class Conformance(StructSymbol type, InterfaceSymbol @interface)
+{
+    public StructSymbol Type { get; } = type;
+
+    public InterfaceSymbol Interface { get; } = @interface;
+
+    public Dictionary<FunctionSymbol, FunctionSymbol> Witnesses { get; } = new();
+
+    public Dictionary<FunctionSymbol, FieldSymbol> FieldWitnesses { get; } = new();
+
+    public Dictionary<string, TypeSymbol> AssociatedTypes { get; } = new(StringComparer.Ordinal);
 }
 
 /// <summary>Functions implemented by the compiler and runtime.</summary>
@@ -294,7 +382,7 @@ public class LocalSymbol(string name, Location? location, TypeSymbol type, Local
     /// <summary>The <c>let</c> or <c>var</c> keyword, for the fix that turns one into the other.</summary>
     public Bayan.Syntax.Text.TextSpan? KeywordSpan { get; set; }
 
-    /// <summary>The <c>when</c> guard of the <c>switch (move …)</c> arm that binds it; inside it the binding is read-only.</summary>
+    /// <summary>The <c>when</c> guard of the <c>switch move …</c> arm that binds it; inside it the binding is read-only.</summary>
     public Bayan.Syntax.Text.TextSpan? GuardSpan { get; set; }
 
     /// <summary>Assigned or mutated through after its declaration; a <c>var</c> that never is should be a <c>let</c>.</summary>

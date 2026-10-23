@@ -1,0 +1,13 @@
+struct P { i32 x; }
+
+void f(bool a, P? p) {
+    unless ((a && a)) {
+        print("a");
+    }
+    unless ((!a)) {
+        print("b");
+    }
+    return unless (!a);
+    return unless ((a || a));
+    return unless (p is null);
+}

@@ -45,15 +45,15 @@ void copies(Map<i64, i64> p) {
     a[1] = 10;
     var b = a;
     let c = p;
-    var s = Store { name = "s", data = fresh() };
+    var s = Store { name: "s", data: fresh() };
     let d = s.data;
     b = a;
     s.data = a;
-    let t = Store { name = "t", data = a };
+    let t = Store { name: "t", data: a };
     let h = Holder(a);
     let full = Slot.full(a);
     var list = List<Map<i64, i64>>();
-    list.add(a);
+    list.append(a);
     var nested = Map<i64, Map<i64, i64>>();
     nested[1] = a;
     Map<i64, i64>[2] arr = [a, fresh()];
@@ -63,8 +63,8 @@ void copies(Map<i64, i64> p) {
     let o = Owned(fresh());
     let f = o.value;
     let g = nested[1];
-    let u = s with { name = "u" };
-    let v = s with { data = a };
+    let u = s with { name: "u" };
+    let v = s with { data: a };
     Map<i64, i64>? w = a;
 }
 
@@ -76,12 +76,15 @@ void buffers() {
 
 void loops() {
     var maps = List<Map<i64, i64>>();
-    maps.add(Map<i64, i64>());
-    for (var m in maps) m[1] = 1;
+    maps.append(Map<i64, i64>());
+    for m in maps { m[1] = 1; }
     StrBuf[1] bufs = [StrBuf()];
-    for (var b in bufs) b.append("y");
+    for b in bufs { b.append("y"); }
     let plain = List<i64>();
-    for (var n in plain) n += 1;
+    for n in plain {
+        var m = n;
+        m += 1;
+    }
 }
 
 struct Named {
@@ -90,6 +93,6 @@ struct Named {
 }
 
 void withs(Named n) {
-    let kept = n with { name = "x" };
-    let replaced = n with { m = fresh() };
+    let kept = n with { name: "x" };
+    let replaced = n with { m: fresh() };
 }

@@ -14,7 +14,7 @@ public sealed class UnionValueTests
         const string text = """
             union Reply { ok = 200, notFound = 404, moved(string to), none = -1, last }
             void show(Reply r) {
-                switch (r) {
+                switch r {
                     case .ok: print("ok");
                     case .notFound: print("not found");
                     case .moved(let to): print(to);

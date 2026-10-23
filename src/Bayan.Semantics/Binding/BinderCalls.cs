@@ -93,7 +93,8 @@ internal sealed partial class Binder
         (_printArgument, _sinkArgument) = (outer, outerSink);
         // A `ref this` call on `map[key]` changes the stored value in place.
         if (receiver is not null && fn.IsMutating) receiver = MapWriteTarget(receiver);
-        if (receiver is not null && fn.HasThis)
+        // A `dyn ref` writes through the borrow, not into the local holding it; `dyn ref readonly` is BYN2813.
+        if (receiver is not null && fn.HasThis && receiver.Type is not DynRefType)
             _c.MutationChecks.Add(new MutationCheck(this, fn, receiver));
         if (fn.Decl is { Requires.Length: > 0 } && args.Any(a => a.Constant is not null))
             _c.RequiresChecks.Add(new RequiresCheck(Source, c, fn, args));
@@ -103,7 +104,7 @@ internal sealed partial class Binder
                 help: "propagate the error with `try`, or handle it with `catch`",
                 fix: new Fix(new TextSpan(c.Span.Start, 0), "try "));
         }
-        return new BoundCall(c, fn, receiver, args, fn.ReturnType);
+        return new BoundCall(c, fn, receiver, args, receiver is null ? fn.ReturnType : ReturnTypeThrough(receiver.Type, fn));
     }
 
     /// <summary>Arguments bound early, without an expected type, to infer type arguments from; used in place of binding them again.</summary>
@@ -372,7 +373,7 @@ internal sealed partial class Binder
                 if (c.Args.Length > 0)
                 {
                     Report(DiagnosticCodes.NoConstructor, c.Callee.Span, [s.Name],
-                        help: $"set the fields with a struct literal: `{s.Name} {{ {string.Join(", ", s.Fields.Take(2).Select(f => f.Name + " = …"))} }}`");
+                        help: $"set the fields with a struct literal: `{s.Name} {{ {string.Join(", ", s.Fields.Take(2).Select(f => f.Name + ": …"))} }}`");
                     BindArgumentsForRecovery(c);
                     return new BoundErrorExpr(c);
                 }
@@ -380,7 +381,7 @@ internal sealed partial class Binder
                 if (missing.Count > 0)
                 {
                     Report(DiagnosticCodes.MissingFields, c.Span, [s.Name, string.Join("`, `", missing)],
-                        help: $"set {(missing.Count == 1 ? "it" : "them")}: `{s.Name} {{ {string.Join(", ", missing.Select(m => m + " = …"))} }}`");
+                        help: $"set {(missing.Count == 1 ? "it" : "them")}: `{s.Name} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
                     return new BoundErrorExpr(c);
                 }
                 return new BoundStructLiteral(c, s, s.Fields.Select(f => _c.FieldDefault(s, f, Source, c.Span) ?? new BoundErrorExpr(c)).ToArray());
@@ -555,7 +556,7 @@ internal sealed partial class Binder
         return new BoundMove(syntax, operand);
     }
 
-    /// <summary>Whether the patterns being bound are on a <c>switch (move x)</c> subject, so their bindings own their parts (spec §9.3).</summary>
+    /// <summary>Whether the patterns being bound are on a <c>switch move x</c> subject, so their bindings own their parts (spec §9.3).</summary>
     private bool _patternOwns;
 
     /// <summary>A switch subject; <c>move x</c> moves a local or <c>move</c> parameter into the switch, and <paramref name="owns"/> says its bindings own their parts.</summary>
@@ -1078,6 +1079,7 @@ internal sealed partial class Binder
         }
         if (BuiltinMembers.Property(type, name.Text) is { } b)
             return new BoundMemberStep(null, null, -1, b.Member, b.Type);
+        if (ReportRenamed(type, name)) return null;
         Report(DiagnosticCodes.UnknownMember, name.Span, [name.Text, type.DisplayName], help: MemberSuggestion(type, name.Text));
         return null;
     }
@@ -1254,8 +1256,10 @@ internal sealed partial class Binder
         Constrain(target, value, a.Value);
         if (target.Type.IsString && op == BinaryOp.Add)
         {
+            var text = Source.GetText(a.Target.Span);
             Report(DiagnosticCodes.StringConcatenation, a.Span, [],
-                help: "build text in a `StrBuf`: `buf.append($\"{a}{b}\")`");
+                help: "write the parts as one interpolation: `s = $\"{s}{x}\"`, or build text in a `StrBuf`: `buf.append($\"{a}{b}\")`",
+                fix: new Fix(a.Span, $"{text} = $\"{{{text}}}{InterpolationSource(a.Value)}\""));
             return new BoundErrorStmt(a);
         }
         if (!OperatorApplies(op.Value, target.Type))
@@ -1393,7 +1397,7 @@ internal sealed partial class Binder
                 break;
             case LocalKind.ForVariable:
                 label = "loop variables are immutable";
-                help = "declare it with `for (var …)` to change the copy";
+                help = "copy it into a local `var` to change it";
                 break;
             case LocalKind.PatternVariable:
                 label = "pattern variables are immutable";
