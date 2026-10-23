@@ -19,16 +19,30 @@ internal sealed class RegionAnalysis
 
     /// <summary>
     /// What a value points into: <see cref="Regions"/> bound its lifetime; <see cref="Owners"/>
-    /// are locals whose storage it borrows directly, which must not change structurally.
+    /// are locals whose storage it borrows directly, which must not change structurally. <see cref="Lends"/> holds where
+    /// each owner's own storage was first lent into this value, for loans that start inside the expression storing them.
     /// </summary>
-    private sealed record Borrow(ImmutableHashSet<Region> Regions, ImmutableHashSet<LocalSymbol> Owners)
+    private sealed record Borrow(ImmutableHashSet<Region> Regions, ImmutableHashSet<LocalSymbol> Owners, ImmutableDictionary<LocalSymbol, int>? Lends = null)
     {
         public static readonly Borrow None = new([], []);
 
         public bool IsEmpty => Regions.IsEmpty && Owners.IsEmpty;
 
         public Borrow Union(Borrow other) =>
-            other.IsEmpty ? this : IsEmpty ? other : new(Regions.Union(other.Regions), Owners.Union(other.Owners));
+            other.IsEmpty ? this : IsEmpty ? other : new(Regions.Union(other.Regions), Owners.Union(other.Owners), Merge(Lends, other.Lends));
+
+        /// <summary>This borrow plus a loan on <paramref name="owner"/>'s own storage, lent at <paramref name="at"/>.</summary>
+        public Borrow Lent(LocalSymbol owner, int at) =>
+            new(Regions, Owners.Add(owner), Merge(Lends, ImmutableDictionary<LocalSymbol, int>.Empty.Add(owner, at)));
+
+        private static ImmutableDictionary<LocalSymbol, int>? Merge(ImmutableDictionary<LocalSymbol, int>? a, ImmutableDictionary<LocalSymbol, int>? b)
+        {
+            if (a is null) return b;
+            if (b is null) return a;
+            foreach (var (owner, at) in b)
+                a = a.SetItem(owner, a.TryGetValue(owner, out var other) ? Math.Min(at, other) : at);
+            return a;
+        }
     }
 
     private sealed record Loan(LocalSymbol Owner, LocalSymbol? Holder, int Created, int LoopEnd);
@@ -45,8 +59,6 @@ internal sealed class RegionAnalysis
     private readonly Dictionary<LocalSymbol, int> _declaredAt = new();
     private readonly List<Loan> _loans = new();
     private readonly List<Mutation> _mutations = new();
-    /// <summary>Where each borrow of an owner's own storage is taken, for loans that start inside the expression storing them.</summary>
-    private readonly List<(LocalSymbol Owner, int At)> _lends = new();
     private readonly Stack<Borrow> _contexts = new();
     private readonly HashSet<(int, int)> _reported = new();
     private int _depth;
@@ -358,13 +370,17 @@ internal sealed class RegionAnalysis
         if (c.Receiver is not null && fn.IsMutating) Mutate(c.Receiver, c.Syntax.Span);
         // A `ref this` call on `this` changes the fields its body changes structurally.
         if (c.Receiver is BoundThis && fn.IsMutating && _reporting)
-            foreach (var field in ChangedFields(fn, []))
+            foreach (var field in ChangedFields(fn))
                 _mutations.Add(new Mutation(FieldLocal(field), c.Syntax.Span));
         for (var i = 0; i < c.Arguments.Length && i < fn.Parameters.Count; i++)
         {
             if (fn.Parameters[i].Modifier is not (Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out)) continue;
             // Writing an element through `ref xs[i]` does not reallocate `xs`; only what the callee can reach may change.
             if (MayBorrow(c.Arguments[i].Type, [])) Mutate(c.Arguments[i], c.Arguments[i].Syntax.Span);
+            // `ref this` hands over the whole receiver: the callee may change any of its fields.
+            if (c.Arguments[i] is BoundThis && MayBorrow(c.Arguments[i].Type, []) && _reporting && _fn.Owner is not null)
+                foreach (var field in _fn.Owner.Fields)
+                    _mutations.Add(new Mutation(FieldLocal(field), c.Arguments[i].Syntax.Span));
             if (RootLocal(c.Arguments[i]) is not { } root) continue;
             for (var j = 0; j < c.Arguments.Length; j++)
             {
@@ -384,10 +400,10 @@ internal sealed class RegionAnalysis
             : args.Aggregate(receiver, (acc, a) => acc.Union(a));
         // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
         if (c.Receiver is not null && c.Type is SpanType or DynRefType) result = result.Union(Lend(c.Receiver, receiver, c.Syntax.Span.End));
-        // So may a function returning one: the result borrows every argument passed by `ref`.
+        // So may a function returning one: the result borrows every argument passed by `ref` that has storage to lend (`in` is by value).
         if (c.Type is SpanType or DynRefType)
             for (var i = 0; i < c.Arguments.Length && i < fn.Parameters.Count; i++)
-                if (fn.Parameters[i].Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out or Syntax.Ast.ParamModifier.In)
+                if (fn.Parameters[i].Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out && MayLend(c.Arguments[i].Type, []))
                     result = result.Union(Lend(c.Arguments[i], args[i], c.Syntax.Span.End));
         // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `string.from` return (Q29).
         if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow
@@ -402,18 +418,13 @@ internal sealed class RegionAnalysis
         if (source is BoundStaticArray) return sourceBorrow;
         // Inside a method returning a span or `dyn ref`, its own fields are the caller's data; the call site lends the receiver (Q75).
         // Either way it is a loan on that field: changing it structurally invalidates the borrow.
-        if (ThisField(source) is { } field)
-        {
-            sourceBorrow = sourceBorrow.Union(new Borrow([], [field]));
-            if (_reporting) _lends.Add((field, at));
-        }
+        if (ThisField(source) is { } field) sourceBorrow = sourceBorrow.Lent(field, at);
         if (_fn.ReturnType is SpanType or DynRefType && IsThisRooted(source)) return sourceBorrow.Union(new Borrow([new Region(0, "the caller's data")], []));
         if (RootLocal(source) is { } root)
         {
-            if (_reporting) _lends.Add((root, at));
             var depth = _depthOf.GetValueOrDefault(root, 0);
             var regions = depth > 0 ? sourceBorrow.Regions.Add(new Region(depth, $"`{root.Name}`")) : sourceBorrow.Regions;
-            return new Borrow(regions, sourceBorrow.Owners.Add(root));
+            return (sourceBorrow with { Regions = regions }).Lent(root, at);
         }
         return sourceBorrow.Union(new Borrow([new Region(_depth, $"the temporary on line {Line(source.Syntax.Span)}")], []));
     }
@@ -451,14 +462,13 @@ internal sealed class RegionAnalysis
         if (value.IsEmpty) return;
         _locals[local] = _locals.GetValueOrDefault(local, Borrow.None).Union(value);
         if (!_reporting) return;
-        // The loan starts where the stored expression first borrows the owner (`first(w.items.asSpan(), w.grow())`
+        // The loan starts where the stored value's borrow of the owner was lent (`first(w.items.asSpan(), w.grow())`
         // conflicts), or once the value is stored: a mutating call that produces it (`b.pick()` on `ref this`) is not a conflict.
         foreach (var owner in value.Owners)
         {
             if (owner == local) continue;
             var created = span.End;
-            foreach (var (lent, at) in _lends)
-                if (lent == owner && span.Start <= at && at < created) created = at;
+            if (value.Lends is { } lends && lends.TryGetValue(owner, out var at) && span.Start <= at && at < created) created = at;
             _loans.Add(new Loan(owner, local, created, 0));
         }
         CheckOutlives(value, _depthOf.GetValueOrDefault(local, 0), local.Name, span);
@@ -607,17 +617,67 @@ internal sealed class RegionAnalysis
 
     /// <summary>
     /// The fields of <c>this</c> that the <c>ref this</c> method <paramref name="fn"/> changes structurally, as <see cref="Mutate"/>
-    /// sees it: a growing or shrinking builtin, a <c>ref this</c> call or a <c>ref</c> argument on one, or a <c>ref this</c> call on <c>this</c>.
+    /// sees it: a growing or shrinking builtin, a <c>ref this</c> call or a <c>ref</c> argument on one, a <c>ref this</c> call on <c>this</c>,
+    /// or <c>this</c> itself passed by <c>ref</c>. Computed once per method; methods that call each other on <c>this</c> share one set.
     /// </summary>
-    private static HashSet<FieldSymbol> ChangedFields(FunctionSymbol fn, HashSet<FunctionSymbol> seen)
+    private HashSet<FieldSymbol> ChangedFields(FunctionSymbol fn)
+    {
+        if (_c.ChangedFields.TryGetValue(fn, out var known)) return known;
+        // Tarjan's strongly connected components over `ref this` calls on `this`.
+        var index = new Dictionary<FunctionSymbol, int>();
+        var low = new Dictionary<FunctionSymbol, int>();
+        var own = new Dictionary<FunctionSymbol, HashSet<FieldSymbol>>();
+        var stack = new Stack<FunctionSymbol>();
+        void Visit(FunctionSymbol f)
+        {
+            index[f] = low[f] = index.Count;
+            stack.Push(f);
+            var (fields, callees) = DirectChanges(f);
+            own[f] = fields;
+            foreach (var callee in callees)
+            {
+                if (_c.ChangedFields.TryGetValue(callee, out var done))
+                {
+                    fields.UnionWith(done);
+                    continue;
+                }
+                if (!index.ContainsKey(callee))
+                {
+                    Visit(callee);
+                    low[f] = Math.Min(low[f], low[callee]);
+                    if (_c.ChangedFields.TryGetValue(callee, out done)) fields.UnionWith(done);
+                }
+                else if (stack.Contains(callee))
+                {
+                    low[f] = Math.Min(low[f], index[callee]);
+                }
+            }
+            if (low[f] != index[f]) return;
+            var component = new List<FunctionSymbol>();
+            var all = new HashSet<FieldSymbol>();
+            FunctionSymbol member;
+            do
+            {
+                member = stack.Pop();
+                component.Add(member);
+                all.UnionWith(own[member]);
+            } while (member != f);
+            foreach (var m in component) _c.ChangedFields[m] = all;
+        }
+        Visit(fn);
+        return _c.ChangedFields[fn];
+    }
+
+    /// <summary>The fields <paramref name="fn"/>'s own body changes, and the <c>ref this</c> methods it calls on <c>this</c>.</summary>
+    private static (HashSet<FieldSymbol> Fields, List<FunctionSymbol> Callees) DirectChanges(FunctionSymbol fn)
     {
         var fields = new HashSet<FieldSymbol>();
-        if (!seen.Add(fn)) return fields;
+        var callees = new List<FunctionSymbol>();
         if (fn.Body is null)
         {
             // Unknown: it may change any of them.
             if (fn.Owner is not null) fields.UnionWith(fn.Owner.Fields);
-            return fields;
+            return (fields, callees);
         }
         foreach (var node in BoundTree.Descendants(fn.Body))
         {
@@ -630,16 +690,18 @@ internal sealed class RegionAnalysis
                     fields.Add(field);
                     break;
                 case BoundCall c:
-                    if (c.Function.IsMutating && c.Receiver is BoundThis) fields.UnionWith(ChangedFields(c.Function, seen));
+                    if (c.Function.IsMutating && c.Receiver is BoundThis) callees.Add(c.Function);
                     else if (c.Function.IsMutating && c.Receiver is not null && ThisFieldSymbol(c.Receiver) is { } receiver) fields.Add(receiver);
                     for (var i = 0; i < c.Arguments.Length && i < c.Function.Parameters.Count; i++)
-                        if (c.Function.Parameters[i].Modifier is Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out
-                            && MayBorrow(c.Arguments[i].Type, []) && ThisFieldSymbol(c.Arguments[i]) is { } argument)
-                            fields.Add(argument);
+                    {
+                        if (c.Function.Parameters[i].Modifier is not (Syntax.Ast.ParamModifier.Ref or Syntax.Ast.ParamModifier.Out) || !MayBorrow(c.Arguments[i].Type, [])) continue;
+                        if (ThisFieldSymbol(c.Arguments[i]) is { } argument) fields.Add(argument);
+                        else if (c.Arguments[i] is BoundThis && fn.Owner is not null) fields.UnionWith(fn.Owner.Fields);
+                    }
                     break;
             }
         }
-        return fields;
+        return (fields, callees);
     }
 
     /// <summary>The local a store into <paramref name="e"/> lands in, including through a span or list element.</summary>
@@ -669,6 +731,18 @@ internal sealed class RegionAnalysis
         StructSymbol s => seen.Add(s) && s.Fields.Any(f => MayBorrow(f.Type, seen)),
         UnionSymbol u => seen.Add(u) && u.Variants.Any(v => v.Fields.Any(f => MayBorrow(f.Type, seen))),
         _ => false,
+    };
+
+    /// <summary>Whether a <c>ref</c> to a <paramref name="t"/> reaches storage a span or <c>dyn ref</c> can point into.</summary>
+    private static bool MayLend(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
+    {
+        ArrayType or TypeParameterType => true,
+        _ when TypeFacts.IsUnique(t) => true,
+        OptionalType o => MayLend(o.Inner, seen),
+        TupleType tt => tt.Fields.Any(f => MayLend(f.Type, seen)),
+        StructSymbol s => seen.Add(s) && s.Fields.Any(f => MayLend(f.Type, seen)),
+        UnionSymbol u => seen.Add(u) && u.Variants.Any(v => v.Fields.Any(f => MayLend(f.Type, seen))),
+        _ => MayBorrow(t, seen),
     };
 
     private static bool ContainsList(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch

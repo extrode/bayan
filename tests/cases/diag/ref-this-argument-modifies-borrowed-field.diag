@@ -1,0 +1,13 @@
+error BYN3004: `items` is modified while `s` still borrows it
+
+  7 │         wipe(ref this);
+    │                  ^^^^ `s` is used again on line 8
+    │
+  help: finish using `s` first, or copy what it needs before changing `items`
+
+error BYN3004: `items` is modified while `s` still borrows it
+
+  18 │         reset();
+     │         ^^^^^^^ `s` is used again on line 19
+     │
+  help: finish using `s` first, or copy what it needs before changing `items`

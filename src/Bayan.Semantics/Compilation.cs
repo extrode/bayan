@@ -1518,6 +1518,9 @@ public sealed partial class Compilation
     /// <summary>The first write to <c>this</c> in each method not declared <c>ref this</c>, with the binder that saw it.</summary>
     internal Dictionary<FunctionSymbol, (Binder Binder, TextSpan Span)> ThisWrites { get; } = new();
 
+    /// <summary>The fields of <c>this</c> each <c>ref this</c> method changes structurally, for region analysis.</summary>
+    internal Dictionary<FunctionSymbol, HashSet<FieldSymbol>> ChangedFields { get; } = new();
+
     /// <summary>
     /// A method is mutating when it is declared <c>ref this</c>. Every call of one needs a writable
     /// receiver, and a method that writes <c>this</c> without <c>ref this</c> is BYN2115.
