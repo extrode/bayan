@@ -82,4 +82,17 @@ public sealed class FormatTests
         Assert.True(exit == CliApp.ExitOk, stderr);
         Assert.Equal("let a = true;\nif a { print(\"x\"); }\n", File.ReadAllText(file));
     }
+
+    [Fact]
+    public void AnInputFormWithoutAFixIsReported()
+    {
+        var file = Path.Combine(Fresh("nofix"), "main.byn");
+        var text = "i32!Foo? f() { return 1; }\n";
+        File.WriteAllText(file, text);
+        var (exit, _, stderr) = Run("format", file);
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Contains("BYN1031", stderr);
+        Assert.Contains("main.byn", stderr);
+        Assert.Equal(text, File.ReadAllText(file));
+    }
 }

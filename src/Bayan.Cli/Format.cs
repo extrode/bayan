@@ -38,20 +38,25 @@ internal static class Format
         foreach (var file in files)
         {
             var original = File.ReadAllBytes(file);
-            var formatted = FormatFile(file, original, stderr);
+            var formatted = FormatFile(file, original, stderr, out var unfixable);
             if (formatted is null) exit = CliApp.ExitFailure;
-            else if (!formatted.AsSpan().SequenceEqual(original))
+            else
             {
-                File.WriteAllBytes(file, formatted);
-                stdout.WriteLine(Messages.FormatFormatted.Text(file));
+                if (unfixable) exit = CliApp.ExitFailure;
+                if (!formatted.AsSpan().SequenceEqual(original))
+                {
+                    File.WriteAllBytes(file, formatted);
+                    stdout.WriteLine(Messages.FormatFormatted.Text(file));
+                }
             }
         }
         return exit;
     }
 
-    /// <summary>The file's bytes with every input-form fix applied; null after reporting a diagnostic the formatter cannot fix.</summary>
-    private static byte[]? FormatFile(string file, byte[] bytes, TextWriter stderr)
+    /// <summary>The file's bytes with every input-form fix applied; null after reporting a blocking error. An input-form diagnostic left with no fix is reported and sets <paramref name="unfixable"/>.</summary>
+    private static byte[]? FormatFile(string file, byte[] bytes, TextWriter stderr, out bool unfixable)
     {
+        unfixable = false;
         for (var pass = 0; pass < MaxPasses; pass++)
         {
             var tree = SyntaxTree.Parse(new SourceText(file, bytes));
@@ -63,7 +68,16 @@ internal static class Format
             }
             var fixes = tree.Diagnostics.Where(d => InputForms.Contains(d.Code) && d.Fix is not null)
                 .Select(d => d.Fix!).OrderBy(f => f.Span.Start).ToList();
-            if (fixes.Count == 0) break;
+            if (fixes.Count == 0)
+            {
+                var fixless = tree.Diagnostics.Where(d => InputForms.Contains(d.Code)).ToList();
+                if (fixless.Count > 0)
+                {
+                    stderr.Write(DiagnosticRenderer.RenderAll(fixless, includePath: true));
+                    unfixable = true;
+                }
+                break;
+            }
             var result = new List<byte>(bytes.Length);
             var at = 0;
             foreach (var fix in fixes)
