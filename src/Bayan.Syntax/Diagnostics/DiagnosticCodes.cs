@@ -77,6 +77,7 @@ public static class DiagnosticCodes
     /// <summary>BYN1042's second message form, for a stranded postfix modifier; registered once, as <see cref="OnNewLine"/>.</summary>
     public static readonly DiagnosticDescriptor PostfixOnNewLine = new("BYN1042", Severity.Error, "a postfix `{0}` must be on the line of its statement");
     public static readonly DiagnosticDescriptor DeclarationKeywordOrder = Error("BYN1044", "`{0}` is an input form; write `{1}`");
+    public static readonly DiagnosticDescriptor PatternOutsideConst = Error("BYN1046", "`pattern` is allowed only after `=` in a `const`");
     public static readonly DiagnosticDescriptor OneLineDeclarations = Error("BYN1053", "`{0}` declares its cases on one line; write one per line");
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────

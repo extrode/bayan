@@ -287,6 +287,9 @@ internal sealed partial class Binder
             case SpreadExpr s:
                 Report(DiagnosticCodes.Unsupported, s.Span, ["spreads (`..xs`) outside a collection literal"]);
                 return new BoundErrorExpr(s);
+            case PatternExpr p:
+                Report(DiagnosticCodes.Unsupported, p.Span, ["a named pattern"]);
+                return new BoundErrorExpr(p);
             case ErrorExpr:
                 return new BoundErrorExpr(e);
             default:

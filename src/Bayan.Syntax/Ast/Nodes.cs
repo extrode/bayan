@@ -64,6 +64,9 @@ public sealed record FunctionDecl(
     /// <summary>The <c>ref this</c> written as parameter 0 of a mutating member; not in <see cref="Params"/>.</summary>
     public TextSpan? RefThis { get; init; }
 
+    /// <summary>The state of a receiver <c>this is .s</c> or <c>ref this is .s</c>; parsed only, not yet checked.</summary>
+    public Name? ReceiverState { get; init; }
+
     /// <summary>Where a <c>ref this</c> would go: just after the <c>(</c>.</summary>
     public int ParamsStart { get; init; }
 
@@ -106,8 +109,12 @@ public sealed record ExtensionDecl(TextSpan Span, Name Name, NamedType[] Bases, 
 
 public sealed record FieldDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr? Default) : Decl(Span);
 
-/// <summary>A getter-only property: <c>T name => expr;</c>.</summary>
-public sealed record PropertyDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr Body) : Decl(Span);
+/// <summary>A getter-only property: <c>T name => expr</c>, or <c>T name { … }</c> with a <see cref="Block"/> body (J46).</summary>
+public sealed record PropertyDecl(TextSpan Span, Modifiers Modifiers, TypeSyntax Type, Name Name, Expr? Body) : Decl(Span)
+{
+    /// <summary>The block body; set exactly when <see cref="Body"/> is null.</summary>
+    public BlockStmt? Block { get; init; }
+}
 
 public sealed record ConstructorDecl(TextSpan Span, Modifiers Modifiers, Name Name, Param[] Params, BlockStmt Body) : Decl(Span);
 
@@ -391,6 +398,9 @@ public sealed record ParenExpr(TextSpan Span, Expr Inner) : Expr(Span);
 public sealed record StackallocExpr(TextSpan Span, TypeSyntax Element, Expr Count) : Expr(Span);
 
 /// <summary>Placeholder after a parse error.</summary>
+/// <summary><c>pattern T { … }</c>, a named pattern's value; valid only after <c>=</c> in a <c>const</c> (BYN1046).</summary>
+public sealed record PatternExpr(TextSpan Span, Pattern Pattern) : Expr(Span);
+
 public sealed record ErrorExpr(TextSpan Span) : Expr(Span);
 
 // ── Patterns ─────────────────────────────────────────────────────────────────────
