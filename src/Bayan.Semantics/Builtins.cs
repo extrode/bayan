@@ -24,6 +24,19 @@ public sealed class Builtins
         Radix = new EnumSymbol("Radix", new Location(radixSource, radixDecl.Name.Span), Module, Accessibility.Public, radixDecl, new FileContext(Module, radixTree));
         foreach (var m in radixDecl.Members)
             Radix.Members.Add(new EnumMemberSymbol(m.Name.Text, new Location(radixSource, m.Name.Span), Radix, Radix.Members.Count, null));
+        var edgeSource = SourceText.FromString("<builtin>", EdgeSource);
+        var edgeTree = SyntaxTree.Parse(edgeSource);
+        var edgeDecl = (EnumDecl)edgeTree.Root.Members[0];
+        Edge = new EnumSymbol("Edge", new Location(edgeSource, edgeDecl.Name.Span), Module, Accessibility.Public, edgeDecl, new FileContext(Module, edgeTree));
+        foreach (var m in edgeDecl.Members)
+            Edge.Members.Add(new EnumMemberSymbol(m.Name.Text, new Location(edgeSource, m.Name.Span), Edge, Edge.Members.Count, null));
+        var comparisonSource = SourceText.FromString("<builtin>", ComparisonSource);
+        var comparisonTree = SyntaxTree.Parse(comparisonSource);
+        var comparisonDecl = (EnumDecl)comparisonTree.Root.Members[0];
+        Comparison = new EnumSymbol("Comparison", new Location(comparisonSource, comparisonDecl.Name.Span), Module, Accessibility.Public, comparisonDecl,
+            new FileContext(Module, comparisonTree));
+        foreach (var m in comparisonDecl.Members)
+            Comparison.Members.Add(new EnumMemberSymbol(m.Name.Text, new Location(comparisonSource, m.Name.Span), Comparison, Comparison.Members.Count, null));
         Print = Make("print", BuiltinFunction.Print, PrimitiveType.Void, ("text", PrimitiveType.String), ("to", Stream));
         Panic = Make("panic", BuiltinFunction.Panic, PrimitiveType.Never, ("message", PrimitiveType.String));
         Todo = Make("todo", BuiltinFunction.Todo, PrimitiveType.Never, ("message", PrimitiveType.String));
@@ -271,6 +284,26 @@ public sealed class Builtins
 
     /// <summary><c>enum Radix</c>: the base of <c>string(n, as:)</c>, in the spec's order (§6.2); <c>byn_int_string</c> reads the ordinal.</summary>
     public EnumSymbol Radix { get; }
+
+    private const string EdgeSource = """
+        public enum Edge {
+            start,
+            end,
+        }
+        """;
+
+    /// <summary><c>enum Edge</c>: the end <c>s.trimmed(from:)</c> trims; <c>byn_str_trimmed</c> reads the ordinal (2 is both ends).</summary>
+    public EnumSymbol Edge { get; }
+
+    private const string ComparisonSource = """
+        public enum Comparison {
+            ordinal,
+            caseless,
+        }
+        """;
+
+    /// <summary><c>enum Comparison</c>: how <c>s.equals(t, as:)</c> compares; <c>.caseless</c> folds ASCII letters only until <c>std.text</c>.</summary>
+    public EnumSymbol Comparison { get; }
 
     private const string LogLevelSource = """
         public enum LogLevel {

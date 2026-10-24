@@ -21,6 +21,6 @@ var numbers = List<i64>()
 numbers.append(4)
 numbers.append(5)
 let fixed: i64[3] = [1, 2, 3]
-let view: Span<i64> = fixed.span
+let view: ReadOnlySpan<i64> = fixed.span
 print($"{count(text, for: 'a')} {count(bytes, for: 'n')} {count(middle, for: 'a')} {middle.length}")
 print($"{sum(numbers)} {sum(fixed)} {sum(view)} {sum(view[1..])}")

@@ -828,10 +828,14 @@ internal sealed partial class Binder
         {
             (ListType, "add") => "append",
             (BuiltinType { Kind: BuiltinKind.StrBuf }, "asString") => "finish",
+            ({ IsString: true }, "offset") => "position",
+            (ListType or SpanType, "toList") => "copy",
+            // An array has no `copy()`; its span does.
+            (Symbols.ArrayType, "toList") => "span.copy",
             _ => null,
         };
         if (renamed is null) return false;
-        var call = name == "asString" ? "()" : "";
+        var call = name is "asString" or "toList" ? "()" : "";
         Report(DiagnosticCodes.RenamedMember, member.Span, [name + call, renamed + call], label: "the old name",
             help: $"rename it `{renamed}`",
             fix: new Fix(member.Span, renamed));
@@ -861,6 +865,8 @@ internal sealed partial class Binder
                     ? new Fix(call.Span, $"({Source.GetText(map.Span)}.tryGet(at: {key}) ?? {fallback})") : null);
             case (ListType or Symbols.ArrayType, "asSpan"):
                 return ("asSpan()", "span", call is { Args.Length: 0 } ? new Fix(tail, "span") : null);
+            case ({ IsString: true }, "toUtf16"):
+                return ("toUtf16()", "utf16", call is { Args.Length: 0 } ? new Fix(tail, "utf16") : null);
             case ({ IsInteger: true }, "toHex" or "toBinary" or "toOctal"):
             {
                 var radix = member.Text[2..].ToLowerInvariant();

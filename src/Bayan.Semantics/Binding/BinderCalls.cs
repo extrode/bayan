@@ -36,6 +36,9 @@ internal sealed partial class Binder
         if (c.Callee is MemberExpr { Member.Text: "tryFrom", NullConditional: false, Target: NameExpr into }
             && PrimitiveType.ByName.TryGetValue(into.Name.Text, out var target) && target.IsNumeric)
             return BindTryFrom(c, target);
+        if (c.Callee is MemberExpr { Member.Text: "tryParse", NullConditional: false, Target: NameExpr parsed }
+            && PrimitiveType.ByName.TryGetValue(parsed.Name.Text, out var parseTo) && parseTo.IsInteger)
+            return BindTryParse(c, parseTo);
         var outer = _calleeOf;
         _calleeOf = c;
         var callee = c.Callee is TargetMemberExpr t ? BindTargetMember(t, expected) : BindExprOrType(c.Callee);
@@ -112,6 +115,20 @@ internal sealed partial class Binder
             return new BoundErrorExpr(c);
         }
         return new BoundTryFrom(c, operand, target, new OptionalType(target));
+    }
+
+    /// <summary><c>i64.tryParse(text, as: radix)</c>: an integer read from text in a <c>Radix</c>, <c>.decimal</c> by default, or <c>null</c> (spec §6.2).</summary>
+    private BoundExpr BindTryParse(CallExpr c, PrimitiveType target)
+    {
+        var ps = new[]
+        {
+            new ParameterSymbol("text", null, PrimitiveType.String, ParamModifier.None, 0),
+            new ParameterSymbol("as", null, _c.Builtins.Radix, ParamModifier.None, 1),
+        };
+        var args = BindArguments(c, ps[..Math.Clamp(c.Args.Length, 1, 2)], null, enforceNames: false, displayName: $"{target.Name}.tryParse");
+        if (args.Length == 0 || args.Any(a => a.Type.IsError)) return new BoundErrorExpr(c);
+        var radix = args.Length > 1 ? args[1] : new BoundEnumMember(c, _c.Builtins.Radix.Find("decimal")!);
+        return new BoundBuiltinCall(c, BuiltinMember.IntTryParse, args[0], [radix], new OptionalType(target));
     }
 
     private void BindArgumentsForRecovery(CallExpr c)
@@ -551,6 +568,8 @@ internal sealed partial class Binder
     {
         var value = BindExpr(c.Args[0].Value);
         if (value.Type.IsError) return new BoundErrorExpr(c);
+        if (value.Type is SpanType { Element: PrimitiveType { Kind: PrimitiveKind.U8 } } && c.Args.Length == 1)
+            return new BoundBuiltinCall(c, BuiltinMember.BytesToString, value, [], PrimitiveType.String);
         if (!value.Type.IsInteger)
         {
             // `string(x)` as the `Display` conversion of every type is step 5.4a's later chunk.
@@ -651,6 +670,21 @@ internal sealed partial class Binder
     private BoundExpr BindBuiltinMethodCall(CallExpr c, BoundExpr receiver, string name)
     {
         var m = BuiltinMembers.Method(receiver.Type, name)!;
+        if (m.Member == BuiltinMember.StringParts && c.Args.Length > 0)
+        {
+            var sep = BindExpr(c.Args[0].Value);
+            _prebound[c.Args[0]] = sep;
+            if (sep.Type == PrimitiveType.Char)
+                m = m with { Member = BuiltinMember.StringPartsRune, Parameters = [("by", PrimitiveType.Char), m.Parameters[1]] };
+        }
+        m = m.Member switch
+        {
+            BuiltinMember.StringTrimmed when c.Args is [{ Name.Text: "by" }] =>
+                new(BuiltinMember.StringTrimmedBy, [("by", new SpanType(PrimitiveType.Char, readOnly: true))], PrimitiveType.String),
+            BuiltinMember.StringTrimmed => m with { Parameters = [("from", _c.Builtins.Edge)] },
+            BuiltinMember.StringEquals => m with { Parameters = [m.Parameters[0], ("as", _c.Builtins.Comparison)] },
+            _ => m,
+        };
         if (m.Member is BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake)
             receiver = MapWriteTarget(receiver);
         var ps = m.Parameters.Take(Math.Max(c.Args.Length, m.Parameters.Length - m.Optional))

@@ -19,7 +19,7 @@ public sealed class L007UntrustedSinkTests
         void main() fails IoError {
             let name: Untrusted<string> = Untrusted("x")
             let many: List<Untrusted<string>> = List<Untrusted<string>>()
-            let span: Span<Untrusted<string>> = many.span
+            let span: ReadOnlySpan<Untrusted<string>> = many.span
             let h: Holder = Holder { value: Untrusted("x") }
             let holders: List<Holder> = List<Holder>()
             let none: List<string> = List<string>()

@@ -18,14 +18,14 @@ void main() {
     xs.append(42)
     var s = S { xs: move xs }
     let d: dyn ref IThing = s
-    let sp: Span<i64> = s.xs.span
+    let sp: ReadOnlySpan<i64> = s.xs.span
     print($"{d.get()} {sp[0]}")
     var t = move s
     t.xs.append(1)
     keep(move t)
     var ys = List<i64>()
     ys.append(7)
-    let view: Span<i64> = ys.span
+    let view: ReadOnlySpan<i64> = ys.span
     print($"{view[0]}")
     var zs = ys.take()
     zs.append(8)

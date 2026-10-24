@@ -1,4 +1,4 @@
-Span<i64> tail(Span<i64> values) => values[1..]
+ReadOnlySpan<i64> tail(ReadOnlySpan<i64> values) => values[1..]
 
 List<i64> keep(ReadOnlySpan<i64> values, to Arena arena) => values.copy(to: arena)
 
@@ -53,8 +53,8 @@ void fillLocal() {
     let buf = stackalloc u8[16]
     var sb = StrBuf(buf)
     sb.append("hi")
-    let names: string[1] = ["x"]
-    let view = names.span
+    var names: string[1] = ["x"]
+    let view = names.mutableSpan()
     view[0] = sb.finish()
     print(names[0])
 }
@@ -63,7 +63,7 @@ struct Stack {
     List<i64> items
     i64[2] pair
 
-    Span<i64> view() => items.span
+    ReadOnlySpan<i64> view() => items.span
 
     ReadOnlySpan<i64> top() => pair.span[1..]
 

@@ -895,6 +895,7 @@ internal sealed partial class Binder
             MapType m => m.Entry,
             Symbols.ArrayType a => a.Element,
             PrimitiveType { Kind: PrimitiveKind.String } => PrimitiveType.Char,
+            TextViewType v => v.Element,
             ErrorType => ErrorType.Instance,
             _ => NotIterable(f, iterable.Type),
         };

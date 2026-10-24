@@ -347,12 +347,14 @@ internal sealed class RegionAnalysis
         var args = b.Arguments.Select(Expr).ToArray();
         switch (b.Member)
         {
-            case BuiltinMember.ListAsSpan or BuiltinMember.ArrayAsSpan or BuiltinMember.StrBufAsString:
+            case BuiltinMember.ListAsSpan or BuiltinMember.ArrayAsSpan or BuiltinMember.StrBufAsString or BuiltinMember.ListMutableSpan or BuiltinMember.ArrayMutableSpan:
                 return Lend(b.Receiver, receiver, b.Syntax.Span.End);
             case BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy
                 when b.Arguments.Length > 0:
                 return AllocatedFrom(b.Arguments[0]);
-            case BuiltinMember.IoReadAll or BuiltinMember.IntToString or BuiltinMember.StringCopy:
+            case BuiltinMember.IoReadAll or BuiltinMember.IntToString or BuiltinMember.StringCopy or BuiltinMember.StringLowercased or BuiltinMember.StringUppercased
+                or BuiltinMember.StringReplaced or BuiltinMember.StringRepeated or BuiltinMember.StringJoined or BuiltinMember.Utf16Copy
+                or BuiltinMember.StringPadded or BuiltinMember.BytesToString or BuiltinMember.SpanCopy or BuiltinMember.ListCopy:
                 // Fresh text from `context.allocator`, like `Io.readText`.
                 return _contexts.Count > 0 ? _contexts.Peek() : Borrow.None;
             case BuiltinMember.ListReplace:
@@ -800,7 +802,7 @@ internal sealed class RegionAnalysis
     private static bool MayBorrow(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.IsString,
-        SpanType or ListType or MapType or OwnedType or DynRefType => true,
+        SpanType or ListType or MapType or OwnedType or DynRefType or TextViewType => true,
         BuiltinType b => b.Kind is BuiltinKind.StrBuf or BuiltinKind.ProcessResult,
         UntrustedType u => MayBorrow(u.Inner, seen),
         OptionalType o => MayBorrow(o.Inner, seen),
