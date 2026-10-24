@@ -267,3 +267,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-54a-lib: `position`/`lastPosition`/`count`/`replaced` take only a string needle; a rune needle is BYN2202 (Question 319).
 - r3-54a-lib: the text views have no `length` (Question 318).
 - r3-54a-lib: `T.parse(text)` (fails `ParseError`) is 5.4b; only `T.tryParse(text, as:)` on integers is built (Question 324).
+- `string.matches(re)` (SPEC §21 assertions) is not built: no `Regex` type exists (handoff Question 326).
