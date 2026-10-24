@@ -12,6 +12,20 @@ struct Order {
         become .shipped(payment, tracking)
     }
     i64 amount(this is .paid or .shipped) => payment
+    i64 paidOnly() {
+        if this is .paid {
+            return payment
+        }
+        return 0
+    }
+    i64 trackingNumber() {
+        switch this {
+            case .shipped:
+                return tracking
+            default:
+                return -1
+        }
+    }
 }
 
 string describe(Order o) => o switch {
@@ -31,6 +45,8 @@ o.ship(42)
 print($"{o.amount()} {o.tracking}")
 print(describe(o))
 print($"{plainId(o)}")
+let paidOne = Order.paid { id: 9, payment: 3 }
+print($"{paidOne.paidOnly()} {paidOne.trackingNumber()} {o.paidOnly()} {o.trackingNumber()}")
 let back = Order.paid { id: 8, payment: 5 }
 if back is .paid {
     print($"{back.payment}")

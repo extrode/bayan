@@ -35,6 +35,9 @@ internal sealed partial class Binder
             Report(DiagnosticCodes.BecomeOtherState, b.State.Span, [state.Name, fn.Name, becomes.Text],
                 help: $"change the target to `.{becomes.Text}`, or declare `becomes .{state.Name}`");
         var payload = BindArguments(call, state.Fields, null, enforceNames: false, displayName: "." + state.Name);
+        // The payload reads the old state; after it, `this` is in the new one.
+        ForgetState(_thisFacts);
+        LearnState(_thisFacts, new StateType(owner!, [state]));
         return new BoundBecome(b, state, payload);
     }
 
@@ -67,7 +70,7 @@ internal sealed partial class Binder
     /// </summary>
     private bool ReportWrongState(string callee, BoundExpr value, StateType wanted, TextSpan span)
     {
-        var known = value is BoundThis && _fn is { } fn && ReceiverStates(fn) is { } own ? own : value.Type;
+        var known = value is BoundThis ? (TypeSymbol?)ThisStates() ?? value.Type : value.Type;
         var of = known is StateType ks ? ks.Struct : known;
         if (!of.Equals(wanted.Struct) || Conversions.Implicit(known, wanted) is not null) return false;
         Report(DiagnosticCodes.WrongState, span, [callee, value is BoundThis ? "this" : Source.GetText(span), string.Join(" or .", wanted.States.Select(v => v.Name)), known.DisplayName],
@@ -103,7 +106,7 @@ internal sealed partial class Binder
     {
         var name = member.Text;
         if (states.Variants.FirstOrDefault(v => v.Fields.Any(f => f.Name == name)) is not { } holder) return null;
-        var known = target is BoundThis && _fn is { } fn && ReceiverStates(fn) is { } own ? own.States : PossibleStates(target.Type, states);
+        var known = target is BoundThis && ThisStates() is { } own ? own.States : PossibleStates(target.Type, states);
         var index = known[0].Fields.FindIndex(f => f.Name == name);
         if (index >= 0 && known.All(v => v.Fields.FindIndex(f => f.Name == name) == index
             && v.Fields.Take(index + 1).Select(f => f.Type).SequenceEqual(known[0].Fields.Take(index + 1).Select(f => f.Type))))
@@ -159,6 +162,20 @@ internal sealed partial class Binder
     /// </summary>
     private readonly List<(Scope Scope, LocalSymbol Local, StateType Type)> _stateFacts = new();
 
+    /// <summary>Stands for <c>this</c> in <see cref="_stateFacts"/>, so an <c>is</c> or a switch arm narrows it like a local.</summary>
+    private readonly LocalSymbol _thisFacts = new("this", null, ErrorType.Instance, LocalKind.Let);
+
+    /// <summary>The states <c>this</c> is known to be in: a fact, else the states its receiver declares; null when any.</summary>
+    private StateType? ThisStates() => KnownState(_thisFacts) ?? (_fn is { } fn ? ReceiverStates(fn) : null);
+
+    /// <summary>The fact key and current type of a narrowable subject: a local, or <c>this</c>.</summary>
+    private (LocalSymbol Key, TypeSymbol Type)? Subject(BoundExpr e) => e switch
+    {
+        BoundLocal l => (l.Local, l.Type),
+        BoundThis t => (_thisFacts, ThisStates() ?? t.Type),
+        _ => null,
+    };
+
     private bool IsOpen(Scope scope)
     {
         for (var s = _scope; s is not null; s = s.Parent)
@@ -182,7 +199,8 @@ internal sealed partial class Binder
     /// At the start of a loop, what a <c>var</c> or <c>ref</c> parameter was known to be no longer holds: the loop body may change
     /// it after the reads that come first.
     /// </summary>
-    private void ForgetChangingStates() => _stateFacts.RemoveAll(f => f.Local.IsMutable || f.Local is ParameterSymbol { IsByRef: true });
+    private void ForgetChangingStates() => _stateFacts.RemoveAll(f => f.Local.IsMutable || f.Local is ParameterSymbol { IsByRef: true }
+        || f.Local == _thisFacts && _fn is { IsMutating: true });
 
     /// <summary>Learns, for the code that runs when <paramref name="cond"/> is <paramref name="whenTrue"/>, the states it proves.</summary>
     private List<(Scope, LocalSymbol, StateType)> LearnStates(BoundExpr cond, bool whenTrue)
@@ -196,8 +214,8 @@ internal sealed partial class Binder
         {
             switch (c)
             {
-                case BoundIs { Value: BoundLocal l } i when Narrow(l, i.Pattern, when) is { } type:
-                    learned.Add((_scope, l.Local, type));
+                case BoundIs i when Subject(i.Value) is { } s && Narrow(s.Type, i.Pattern, when) is { } type:
+                    learned.Add((_scope, s.Key, type));
                     break;
                 case BoundUnary { Op: UnaryOp.Not } u:
                     Collect(u.Operand, !when);
@@ -217,25 +235,25 @@ internal sealed partial class Binder
         _stateFacts.RemoveAll(f => !IsOpen(f.Scope));
     }
 
-    /// <summary>In a switch arm, the subject local is in the states the arm's pattern matches.</summary>
+    /// <summary>In a switch arm, the subject local or <c>this</c> is in the states the arm's pattern matches.</summary>
     private void LearnArmState(BoundExpr subject, BoundPattern pattern)
     {
-        if (subject is BoundLocal l && Narrow(l, pattern, true) is { } type) LearnState(l.Local, type);
+        if (Subject(subject) is { } s && Narrow(s.Type, pattern, true) is { } type) LearnState(s.Key, type);
     }
 
     /// <summary>
-    /// The type of <paramref name="value"/> once <paramref name="pattern"/> is known to have matched (or, with
+    /// A value of type <paramref name="type"/>, once <paramref name="pattern"/> is known to have matched (or, with
     /// <paramref name="matched"/> false, not to have matched); null when that proves nothing about its state.
     /// </summary>
-    private StateType? Narrow(BoundLocal value, BoundPattern pattern, bool matched)
+    private StateType? Narrow(TypeSymbol type, BoundPattern pattern, bool matched)
     {
-        if (value.Type is OptionalType || StatesUnion(value.Type) is not { } states) return null;
-        var possible = PossibleStates(value.Type, states);
+        if (type is OptionalType || StatesUnion(type) is not { } states) return null;
+        var possible = PossibleStates(type, states);
         // A match proves the tag even when a payload subpattern also had to hold; a failed match proves it only for a bare tag test.
         if (StatesOf(pattern, exact: !matched) is not { } tested) return null;
         var left = possible.Where(v => tested.Contains(v) == matched).ToList();
         if (left.Count == 0 || left.Count == possible.Count) return null;
-        return new StateType(value.Type is StateType st ? st.Struct : (StructSymbol)value.Type, left);
+        return new StateType(type is StateType st ? st.Struct : (StructSymbol)type, left);
 
         HashSet<UnionVariantSymbol>? StatesOf(BoundPattern p, bool exact) => p switch
         {

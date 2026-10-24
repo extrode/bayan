@@ -237,7 +237,7 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-53c2: loops forget what every `var` and `ref` parameter was known to be at loop entry, also when the body never changes it.
 - r3-53c2: an `if` whose then-branch makes a `becomes` call forgets the receiver's state after the `if`, even when the else-branch would agree.
 - r3-53c2: reading a payload field from several states that hold it after different fields is BYN2022; it needs a per-state read.
-- r3-53c2: `this.pay()` and bare `pay()` inside a method do not narrow `this`; only a local receiver learns its new state.
+- r3-53c2: `this.pay()` and bare `pay()` inside a method forget what `this` was known to be but do not learn its new state; only a local receiver learns it.
 - r3-53c2: BYN7006's message (`{0} is .{1}` … write `{2}`) differs from the plan's text (`{0} {1} is .{2}` … write `{0}.{2} {1}`).
 - r3-53c2: BYN7007 in a `.s` pattern underlines the name without its dot, like the first half's labels (line above).
 - r3-53c2: payload fields are not seen by `TypeFacts`, ownership or drops: a `List` in a state's payload does not make the struct unique and leaks.

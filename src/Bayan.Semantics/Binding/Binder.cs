@@ -1389,7 +1389,7 @@ internal sealed partial class Binder
         _targets.RemoveAt(_targets.Count - 1);
         var arms = sections.Select(x => (x.Pattern, x.Guard)).ToList();
         var exhaustive = sawDefault || (value.Type is not OptionalType && StatesUnion(value.Type) is { } states
-            ? CheckStatesExhaustive(s, value.Type, states, arms)
+            ? CheckStatesExhaustive(s, Subject(value)?.Type ?? value.Type, states, arms)
             : CheckExhaustive(s.Value.Span, value.Type, arms, statement: true));
         return new BoundSwitch(s, value, sections.ToArray(), target) { Exhaustive = exhaustive };
     }

@@ -1,0 +1,70 @@
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+        shipped(i64 payment, i64 tracking)
+    }
+    i64 paidIf() {
+        if this is .paid {
+            return payment
+        }
+        return 0
+    }
+    i64 paidCase() {
+        switch this {
+            case .paid:
+                return this.payment
+            default:
+                return 0
+        }
+    }
+    i64 trackingNumber() => this switch {
+        .shipped => tracking,
+        _ => 0,
+    }
+    i64 unchecked() => payment
+    i64 afterIf() {
+        if this is .paid {
+            print($"{payment}")
+        }
+        return payment
+    }
+    i64 settled(this is .paid or .shipped) {
+        switch this {
+            case .paid:
+                return payment
+            case .shipped:
+                return tracking
+        }
+    }
+    void pay(ref this is .draft, i64 amount) becomes .paid {
+        become .paid(amount)
+    }
+    void bump(ref this) becomes .paid {
+        if this is .paid {
+            become .paid(payment + 1)
+            print($"{payment}")
+            return
+        }
+        become .paid(0)
+    }
+    void reset(ref this) becomes .draft {
+        become .draft
+    }
+    void again(ref this) {
+        if this is .paid {
+            reset()
+            print($"{payment}")
+        }
+    }
+    void repeat(ref this, i64 times) {
+        if this is .paid {
+            var i = 0
+            while i < times {
+                print($"{payment}")
+                i += 1
+            }
+        }
+    }
+}

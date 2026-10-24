@@ -1,0 +1,27 @@
+error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
+
+  26 │     i64 unchecked() => payment
+     │                        ^^^^^^^
+     │
+  help: match `.paid` with `is` or `switch` before reading `payment`
+
+error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
+
+  31 │         return payment
+     │                ^^^^^^^
+     │
+  help: match `.paid` with `is` or `switch` before reading `payment`
+
+error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
+
+  58 │             print($"{payment}")
+     │                      ^^^^^^^
+     │
+  help: match `.paid` with `is` or `switch` before reading `payment`
+
+error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
+
+  65 │                 print($"{payment}")
+     │                          ^^^^^^^
+     │
+  help: match `.paid` with `is` or `switch` before reading `payment`

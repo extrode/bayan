@@ -149,7 +149,7 @@ internal sealed partial class Binder
         (_printArgument, _sinkArgument) = (outer, outerSink);
         if (receiver is not null && ReceiverStates(fn) is { } wanted) ReportWrongState(fn.Name, receiver, wanted, receiver.Syntax.Span);
         // A call that `becomes` changes the receiver's state; a statement learns the new one after it (`LearnBecomes`).
-        if (receiver is BoundLocal changed && fn.Decl?.Becomes is not null) ForgetState(changed.Local);
+        if (receiver is not null && fn.Decl?.Becomes is not null && Subject(receiver) is { } changed) ForgetState(changed.Key);
         // A `ref this` call on `map[key]` changes the stored value in place.
         if (receiver is not null && fn.IsMutating) receiver = MapWriteTarget(receiver);
         // A `dyn ref` writes through the borrow, not into the local holding it; `dyn ref readonly` is BYN2813.
@@ -948,7 +948,7 @@ internal sealed partial class Binder
         for (var i = 0; i < arms.Count; i++)
             arms[i] = arms[i] with { Value = Convert(arms[i].Value, type, ((SwitchArm)arms[i].Syntax).Value.Span) };
         var cases = arms.Select(a => ((BoundPattern?)a.Pattern, a.Guard)).ToList();
-        if (value.Type is not OptionalType && StatesUnion(value.Type) is { } states) CheckStatesExhaustive(s, value.Type, states, cases);
+        if (value.Type is not OptionalType && StatesUnion(value.Type) is { } states) CheckStatesExhaustive(s, Subject(value)?.Type ?? value.Type, states, cases);
         else CheckExhaustive(s.Value.Span, value.Type, cases, statement: false);
         return new BoundSwitchExpr(s, value, arms.ToArray(), type);
     }
@@ -1503,6 +1503,7 @@ internal sealed partial class Binder
                 ForgetState(written.Local);
                 if (assigned.Type is StateType st) LearnState(written.Local, st);
             }
+            else if (target is BoundThis) ForgetState(_thisFacts);
             return new BoundAssign(a, target, Convert(assigned, target.Type, a.Value.Span, constrains: !IsPending(target)), null);
         }
         if (op == BinaryOp.Coalesce)
