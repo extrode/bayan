@@ -1,6 +1,6 @@
 # 0009 — `bayan format` is in v0.1; the CLI table is one table
 
-Status: accepted 2026-10-24 (agent draft from handoff Question 242, amended in review: items 3–5 added).
+Status: accepted 2026-10-24 (agent draft from handoff Question 242, amended in review: items 3–5 added). Erratum (2026-10-24): under decision 3, a file that does not parse is reported with all its diagnostics, as `bayan check` reports them, not only the first (user decision). Erratum (2026-10-24): decision 4 also needs code: `bayan fmt` prints one more line after the unknown-command line, "the formatter is `bayan format`" (user decision; plan J71).
 
 ## Problem
 
