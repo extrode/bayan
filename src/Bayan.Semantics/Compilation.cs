@@ -1162,6 +1162,11 @@ public sealed partial class Compilation
             Report(DiagnosticCodes.Unsupported, file.Source, span, [$"`{(actual & rejected).ToString().ToLowerInvariant()}` on {what}"]);
     }
 
+    /// <summary>Makes <paramref name="decl"/>'s <c>move this</c> or plain receiver <c>ref this</c>, keeping <c>is .s</c> (BYN7010's fix, also part of BYN7003's).</summary>
+    internal static Fix RefReceiverFix(FunctionDecl decl) => decl.MoveThis is { } move
+        ? new Fix(new TextSpan(move.Start, "move".Length), "ref")
+        : new Fix(new TextSpan(decl.ParamsStart, 0), decl.ReceiverStates.Length > 0 ? "ref " : decl.Params.Length > 0 ? "ref this, " : "ref this");
+
     private void DeclareSignature(FunctionSymbol fn, FunctionDecl decl, FileContext file, StructSymbol? owner = null)
     {
         var types = new TypeResolver(this, file, owner, fn.TypeMap);
@@ -1170,6 +1175,16 @@ public sealed partial class Compilation
         if (decl.RefThis is { } refThis && fn is not { Kind: FunctionKind.Method, IsStatic: false })
             Report(DiagnosticCodes.Unsupported, file.Source, refThis, [fn.IsStatic ? "`ref this` on a static method" : "`ref this` outside a struct"],
                 help: "remove `ref this`; only an instance method has a `this` to change");
+        // Only a `ref this` caller still holds the value whose state changed (revision 0010); a static `becomes` is BYN2022 at its `become`.
+        if (decl.Becomes is { } becomes && decl.RefThis is null && fn is { Kind: FunctionKind.Method, IsStatic: false })
+        {
+            // `move this is .s` and `this is .s` are written; a method with neither takes `this` unwritten.
+            var start = decl.MoveThis?.Start ?? decl.ParamsStart;
+            var receiver = decl.ReceiverStates.Length > 0 ? TextSpan.FromBounds(start, decl.ReceiverStates[^1].Span.End) : decl.MoveThis;
+            Report(DiagnosticCodes.BecomesNeedsRef, file.Source, receiver ?? decl.Name.Span,
+                [fn.Name, becomes.Text, receiver is { } r ? file.Source.GetText(r) : "this"],
+                help: $"change the receiver of `{fn.Name}` to `ref this`, or return the new state as a value", fix: RefReceiverFix(decl));
+        }
         DeclareParameters(fn, decl.Params, file, types);
         if (decl.Fails is { } fails)
         {

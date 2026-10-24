@@ -169,6 +169,8 @@ internal sealed partial class Binder
     public void BindFunctionBody(FunctionDecl decl)
     {
         DeclareParameters();
+        // `this` starts in the states its receiver declares; a `become` or a `becomes` call on it may change that.
+        if (ReceiverStates(_fn!) is { } own) LearnState(_thisFacts, own);
         BindParameterDefaults();
         var checks = BindRequires(decl);
         if (decl.Body is { } body)
@@ -499,7 +501,11 @@ internal sealed partial class Binder
             case LocalDecl d:
                 return BindLocalDecl(d);
             case ExprStmt e:
-                return new BoundExprStmt(e, BindStatementExpression(e.Expr));
+            {
+                var expr = BindStatementExpression(e.Expr);
+                LearnBecomes(expr);
+                return new BoundExprStmt(e, expr);
+            }
             case AssignStmt { Op: AssignOp.Assign, Target: MemberExpr { Target: NameExpr { Name.Text: "Panic" }, Member.Text: "onPanic" } } a
                 when _scope.Lookup("Panic") is null:
                 return BindOnPanic(a);
@@ -538,6 +544,7 @@ internal sealed partial class Binder
             case WhileStmt w:
             {
                 var target = labelTarget ?? new JumpTarget(null, true);
+                ForgetChangingStates();
                 PushScope();
                 var cond = BindCondition(w.Condition);
                 _targets.Add(target);
@@ -547,10 +554,12 @@ internal sealed partial class Binder
                 return new BoundWhile(w, cond, body, target);
             }
             case WhileLetStmt w:
+                ForgetChangingStates();
                 return BindWhileLet(w, labelTarget ?? new JumpTarget(null, true));
             case DoWhileStmt d:
             {
                 var target = labelTarget ?? new JumpTarget(null, true);
+                ForgetChangingStates();
                 _targets.Add(target);
                 var body = BindBody(d.Body);
                 _targets.RemoveAt(_targets.Count - 1);
@@ -558,6 +567,7 @@ internal sealed partial class Binder
                 return new BoundDoWhile(d, body, cond, target);
             }
             case ForStmt f:
+                ForgetChangingStates();
                 return BindFor(f, labelTarget ?? new JumpTarget(null, true));
             case LabeledStmt l:
                 return BindLabeled(l);
@@ -669,8 +679,13 @@ internal sealed partial class Binder
     {
         var mark = _nonNull.Count;
         foreach (var l in NonNullWhen(cond, whenTrue)) _nonNull.Add((_scope, l));
+        var before = _stateFacts.ToHashSet();
+        var learned = LearnStates(cond, whenTrue);
         var result = bind();
         _nonNull.RemoveRange(mark, _nonNull.Count - mark);
+        // What the branch learned holds only when it ran.
+        _stateFacts.RemoveAll(f => !before.Contains(f));
+        UnlearnStates(learned);
         return result;
     }
 
@@ -680,7 +695,10 @@ internal sealed partial class Binder
         var thenExits = Exits(i.Then);
         var elseExits = i.Else is { } e && Exits(e);
         if (thenExits != elseExits)
+        {
             foreach (var l in NonNullWhen(i.Condition, elseExits)) _nonNull.Add((_scope, l));
+            LearnStates(i.Condition, elseExits);
+        }
         return i;
     }
 
@@ -761,6 +779,9 @@ internal sealed partial class Binder
             init = Convert(init, type, d.Init!.Span);
         }
         else type = ErrorType.Instance;
+        // A `var` can change state, so it holds the struct and what it is now is a fact (Question 295).
+        var state = d.Kind == BindingKind.Var ? type as StateType : null;
+        if (state is not null) type = state.Struct;
 
         var kind = d.Kind switch { BindingKind.Let => LocalKind.Let, BindingKind.Const => LocalKind.Const, _ => LocalKind.Var };
         var uniqueConst = d.Kind == BindingKind.Const && CheckUniqueConst(d, type);
@@ -771,6 +792,7 @@ internal sealed partial class Binder
         if (_held is not null && kind == LocalKind.Var && declared is null && type == PrimitiveType.I32 && IsUntypedLiteral(d.Init!))
             _pending[local] = d;
         local.IsUsing = d.Using;
+        if (state is not null) LearnState(local, state);
         if (kind is LocalKind.Let or LocalKind.Var && !d.Using && Source.GetText(new TextSpan(d.Span.Start, 3)) == (kind == LocalKind.Let ? "let" : "var"))
             local.KeywordSpan = new TextSpan(d.Span.Start, 3);
         if (kind == LocalKind.Const) local.Constant = init?.Constant;
@@ -1354,6 +1376,7 @@ internal sealed partial class Binder
                 _patternOwns = false;
                 if (owns) CheckOwningOverlap(pattern);
                 if (owns && section.Label.Guard is { } lg) GuardBindings(pattern, lg.Span);
+                if (section.Label.Guard is null) LearnArmState(value, pattern);
             }
             else
             {
@@ -1367,7 +1390,9 @@ internal sealed partial class Binder
         }
         _targets.RemoveAt(_targets.Count - 1);
         var arms = sections.Select(x => (x.Pattern, x.Guard)).ToList();
-        var exhaustive = sawDefault || CheckExhaustive(s.Value.Span, value.Type, arms, statement: true);
+        var exhaustive = sawDefault || (value.Type is not OptionalType && StatesUnion(value.Type) is { } states
+            ? CheckStatesExhaustive(s, Subject(value)?.Type ?? value.Type, states, arms)
+            : CheckExhaustive(s.Value.Span, value.Type, arms, statement: true));
         return new BoundSwitch(s, value, sections.ToArray(), target) { Exhaustive = exhaustive };
     }
 }

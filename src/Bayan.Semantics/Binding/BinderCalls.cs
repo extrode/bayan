@@ -148,6 +148,16 @@ internal sealed partial class Binder
         var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
         (_printArgument, _sinkArgument) = (outer, outerSink);
         if (receiver is not null && ReceiverStates(fn) is { } wanted) ReportWrongState(fn.Name, receiver, wanted, receiver.Syntax.Span);
+        // A call that `becomes` changes the receiver's state; a statement learns the new state after it (`LearnBecomes`). A call
+        // without `becomes` leaves it as it was (revision 0010).
+        if (receiver is not null && fn.Decl?.Becomes is { } to)
+        {
+            if (Subject(receiver) is { } changed) ForgetState(changed.Key);
+            if (receiver is BoundThis && _fn is { } caller) CheckBecomesCall(c, caller, fn, to);
+            else if (receiver is BoundLocal { Local: ParameterSymbol { Modifier: ParamModifier.Ref } param })
+                Report(DiagnosticCodes.BecomesOnRefParameter, c.Span, [fn.Name, param.Name],
+                    help: $"take `{param.Name}` by `move` and return the new state as a value");
+        }
         // A `ref this` call on `map[key]` changes the stored value in place.
         if (receiver is not null && fn.IsMutating) receiver = MapWriteTarget(receiver);
         // A `dyn ref` writes through the borrow, not into the local holding it; `dyn ref readonly` is BYN2813.
@@ -405,6 +415,14 @@ internal sealed partial class Binder
         {
             var place = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, p.Type);
             if (place.Type.IsError) return place;
+            // A local whose state is known is passed as its declared type. A `ref` callee keeps the state (revision 0010); an `out`
+            // callee supplies a new value, so its state is no longer known.
+            if (place is BoundLocal known && KnownState(known.Local) is not null)
+            {
+                place = new BoundLocal(known.Syntax, known.Local);
+                if (wanted == ArgModifier.Out) ForgetState(known.Local);
+            }
+            else if (place is BoundThis && wanted == ArgModifier.Out) ForgetState(_thisFacts);
             if (early is null) Constrain(place, p.Type);
             if (!place.Type.Equals(p.Type))
             {
@@ -412,6 +430,11 @@ internal sealed partial class Binder
                     help: "give a `ref` or `out` argument exactly the parameter's type");
                 return new BoundErrorExpr(arg.Value);
             }
+            // An `out` argument writes a whole value: a `ref` parameter or `this` keeps its state only when its type names one (BYN7012).
+            if (wanted == ArgModifier.Out && (place is BoundLocal { Local: ParameterSymbol { Modifier: ParamModifier.Ref } } || place is BoundThis && _fn is { IsMutating: true })
+                && (place.Type is StateType { States.Count: > 1 } || place.Type is StructSymbol s && _c.StatesOf(s) is not null))
+                Report(DiagnosticCodes.AssignmentChangesState, arg.Span, [place is BoundLocal l ? l.Local.Name : "this"],
+                    help: "assign a value in the same state, or move the transition into a `becomes` method");
             CheckWritable(place, arg.Value.Span, $"it is passed as `{(wanted == ArgModifier.Ref ? "ref" : "out")}`");
             return place;
         }
@@ -907,6 +930,7 @@ internal sealed partial class Binder
             _patternOwns = false;
             if (owns) CheckOwningOverlap(pattern);
             if (owns && arm.Guard is { } ag) GuardBindings(pattern, ag.Span);
+            if (arm.Guard is null) LearnArmState(value, pattern);
             var guard = arm.Guard is { } g ? BindCondition(g) : null;
             // A block arm of a value-giving `catch switch` has no value to give, so it must leave (J49, BYN2611).
             var result = arm.Value is BlockExpr block && s.Value is CaughtErrorExpr && expected is { IsVoid: false }
@@ -938,7 +962,9 @@ internal sealed partial class Binder
         }
         for (var i = 0; i < arms.Count; i++)
             arms[i] = arms[i] with { Value = Convert(arms[i].Value, type, ((SwitchArm)arms[i].Syntax).Value.Span) };
-        CheckExhaustive(s.Value.Span, value.Type, arms.Select(a => ((BoundPattern?)a.Pattern, a.Guard)).ToList(), statement: false);
+        var cases = arms.Select(a => ((BoundPattern?)a.Pattern, a.Guard)).ToList();
+        if (value.Type is not OptionalType && StatesUnion(value.Type) is { } states) CheckStatesExhaustive(s, Subject(value)?.Type ?? value.Type, states, cases);
+        else CheckExhaustive(s.Value.Span, value.Type, cases, statement: false);
         return new BoundSwitchExpr(s, value, arms.ToArray(), type);
     }
 
@@ -1151,6 +1177,18 @@ internal sealed partial class Binder
     {
         var target = Unwrap(input);
         UnionVariantSymbol? variant = null;
+        if (StatesUnion(input) is { } states)
+        {
+            // A struct with states matches like its states union; `Order.paid(…)` names the struct as the owner.
+            var of = StateStruct(target)!;
+            if (owner is not null && StateStruct(owner) is { } ownerStruct && ownerStruct.Equals(of)) owner = states;
+            target = states;
+            if ((owner is null || owner.Equals(states)) && states.Find(name.Text) is null)
+            {
+                Report(DiagnosticCodes.UnknownState, name.Span, [of.Name, name.Text], help: $"check the states declared in `{of.Name}`");
+                owner = ErrorType.Instance;
+            }
+        }
         if (owner is not null && !owner.IsError && !target.IsError && !owner.Equals(target))
             Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`{owner.DisplayName}.{name.Text}`", target.DisplayName]);
         else if ((owner ?? target) is UnionSymbol u)
@@ -1180,9 +1218,11 @@ internal sealed partial class Binder
     /// <summary><c>.percentOff p</c>: a tag test that binds the whole value as <c>p</c>, whose payload fields read as <c>p.rate</c>.</summary>
     private BoundUnionPattern BindWholeVariant(Pattern p, TypeSymbol input, TypeSymbol union, UnionVariantSymbol variant, Name binding)
     {
-        var local = DeclareLocal(binding, union, LocalKind.PatternVariable);
+        // A state binds as its state type, `Order.paid`, whose payload fields read without a further check.
+        var states = union is UnionSymbol u && StateStruct(Unwrap(input)) is { } s && _c.StatesOf(s) == u;
+        var local = DeclareLocal(binding, states ? new StateType(StateStruct(Unwrap(input))!, [variant]) : union, LocalKind.PatternVariable);
         local.BorrowsSubject = !_patternOwns;
-        _narrowed[local] = variant;
+        if (!states) _narrowed[local] = variant;
         return new BoundUnionPattern(p, input, variant, [], local);
     }
 
@@ -1210,6 +1250,14 @@ internal sealed partial class Binder
             if (input is not OptionalType && !input.IsError)
                 Report(DiagnosticCodes.PatternMismatch, c.Span, ["`null`", input.DisplayName]);
             return new BoundConstantPattern(c, input, new BoundDefault(c.Value, input));
+        }
+        if (c.Value is TargetMemberExpr tm && StatesUnion(input) is { } states)
+        {
+            // `.paid` on a value with states: a tag test, whatever the state's payload.
+            if (states.Find(tm.Member.Text) is { } state) return new BoundUnionPattern(c, input, state, []);
+            var of = StateStruct(target)!;
+            Report(DiagnosticCodes.UnknownState, tm.Member.Span, [of.Name, tm.Member.Text], help: $"check the states declared in `{of.Name}`");
+            return new BoundBindPattern(c, input, null);
         }
         var value = c.Value is NameExpr && target is ErrorSetSymbol or ErrorUnionType ? BindExprOrType(c.Value) : BindExpr(c.Value, target);
         if (value is BoundTypeRef { Referenced: ErrorSetSymbol set }) return BindErrorSetPattern(c, input, set, null);
@@ -1446,6 +1494,8 @@ internal sealed partial class Binder
     private BoundStmt BindAssign(AssignStmt a)
     {
         var target = BindExpr(a.Target);
+        // A local whose state is known is written as its declared type; the value's state is what it is known to be after.
+        if (target is BoundLocal known && KnownState(known.Local) is not null) target = new BoundLocal(known.Syntax, known.Local);
         var op = CompoundOperator(a.Op);
         if (target.Type.IsError)
         {
@@ -1463,6 +1513,21 @@ internal sealed partial class Binder
         {
             var assigned = BindExpr(a.Value, target.Type);
             Constrain(target, assigned, a.Value);
+            // A `ref` parameter or `this` keeps its state: only a value in the one state its type names may replace it (BYN7012).
+            if (target is BoundLocal { Local: ParameterSymbol { Modifier: ParamModifier.Ref } } or BoundThis
+                && (target.Type is StateType || target.Type is StructSymbol s && _c.StatesOf(s) is not null)
+                && !(target.Type is StateType { States: [var one] } && (Subject(assigned)?.Type ?? assigned.Type) is StateType { States: [var given] } && given == one))
+            {
+                Report(DiagnosticCodes.AssignmentChangesState, a.Span, [target is BoundLocal p ? p.Local.Name : "this"],
+                    help: "assign a value in the same state, or move the transition into a `becomes` method");
+                return new BoundErrorStmt(a);
+            }
+            if (target is BoundLocal written)
+            {
+                ForgetState(written.Local);
+                if (assigned.Type is StateType st) LearnState(written.Local, st);
+            }
+            else if (target is BoundThis) ForgetState(_thisFacts);
             return new BoundAssign(a, target, Convert(assigned, target.Type, a.Value.Span, constrains: !IsPending(target)), null);
         }
         if (op == BinaryOp.Coalesce)
@@ -1558,7 +1623,8 @@ internal sealed partial class Binder
         var decl = fn.Decl!;
         Report(DiagnosticCodes.MutatesWithoutRefThis, span, [fn.Name], label: "`this` is modified here",
             help: "declare it `ref this` as the first parameter",
-            fix: new Fix(new TextSpan(decl.ParamsStart, 0), decl.Params.Length > 0 ? "ref this, " : "ref this"));
+            // A receiver written as `this is .s` gains only `ref`.
+            fix: new Fix(new TextSpan(decl.ParamsStart, 0), decl.ReceiverStates.Length > 0 ? "ref " : decl.Params.Length > 0 ? "ref this, " : "ref this"));
     }
 
     internal FunctionSymbol? Function => _fn;

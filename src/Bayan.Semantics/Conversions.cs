@@ -15,7 +15,8 @@ public static class Conversions
         if (from.IsNever) return ConversionKind.FromNever;
         if (from is NullType) return to is OptionalType ? ConversionKind.NullToOptional : null;
         if (from is PrimitiveType f && to is PrimitiveType t && IsWidening(f, t)) return ConversionKind.Widen;
-        if (to is OptionalType o && (from.Equals(o.Inner) || Implicit(from, o.Inner) is ConversionKind.Widen)) return ConversionKind.ToOptional;
+        if (to is OptionalType o && (from.Equals(o.Inner) || Implicit(from, o.Inner) is ConversionKind.Widen
+            || from is StateType && Implicit(from, o.Inner) is ConversionKind.Identity)) return ConversionKind.ToOptional;
         if (to is ResultType r)
         {
             if (from is ErrorSetSymbol && from.Equals(r.Error)) return ConversionKind.ErrorToResult;

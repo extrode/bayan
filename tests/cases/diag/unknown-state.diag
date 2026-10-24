@@ -1,14 +1,14 @@
 error BYN7007: `Order` has no state `.lost`
 
-  7 │     void ship(move this is .lost) becomes .gone {
-    │                             ^^^^
+  7 │     void ship(ref this is .lost) becomes .gone {
+    │                            ^^^^
     │
   help: check the states declared in `Order`
 
 error BYN7007: `Order` has no state `.gone`
 
-  7 │     void ship(move this is .lost) becomes .gone {
-    │                                            ^^^^
+  7 │     void ship(ref this is .lost) becomes .gone {
+    │                                           ^^^^
     │
   help: check the states declared in `Order`
 

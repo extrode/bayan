@@ -1,0 +1,35 @@
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+        shipped
+    }
+}
+
+void show(Order order) {
+    switch order {
+        case .draft:
+            print("draft")
+        case .paid p:
+            print($"{p.payment}")
+    }
+}
+
+i64 rank(Order order) => order switch { .draft => 0, .paid(_) => 1 }
+
+void shipped(Order order is .paid or .shipped) {
+    switch order {
+        case .paid:
+            print("paid")
+    }
+}
+
+void all(Order order) {
+    switch order {
+        case .draft:
+            print("draft")
+        default:
+            print("other")
+    }
+}

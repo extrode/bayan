@@ -232,10 +232,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-53g: `..xs` mixed with other tail arguments (`f(1, ..xs)`) is BYN2215; spreading into a `rest` tail beside values needs the run-time-length span path `FinishCollection` rejects (BYN2219).
 - r3-53g: `rest` on a non-span type has no diagnostic; the parser's input forms always build `ReadOnlySpan<T>`, but `rest List<T> xs` is accepted and matched as a plain parameter.
 - r3-53g: overloads of the same name each report BYN5001 and other naming lints once per declaration.
-- r3-53c1: `TypeFacts` does not look through `StateType`, so uniqueness and similar facts of the struct are lost on a state type.
-- r3-53c1: no `ToOptional` from a state type: `Order.paid` does not convert to `Order?`.
-- r3-53c1: the Lowerer throws on `BoundBecome` and on `StateType`; programs using typestate cannot run until the second half of 5.3c.
-- r3-53c1 gate: `become .s` in a `static` method or with a `this` that is neither `ref` nor `move` binds without a diagnostic; no plan code covers it (5.3c second half or a Question).
 - r3-53c1 gate: the BYN7003 second-form and BYN7007 labels underline the state name without its leading dot; plan says "label at `.{0}`".
 - review R4/R5: `bayan audit` reuses the `format.io-error` message for its unreadable file and directory lines; a shared `io-error` id would read better.
 - review loop 3 (545965c49391..ef66c140da9f): `Restyle`'s `otherUses` counts struct field declarations and field-init labels, so a file with a field named `i8` never has `i8(x)`/`i8.max` respelled (missed rename only).
@@ -246,3 +242,14 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - review loop 4 (545965c49391..ef66c140da9f): The parent-link tests (`FormatTests.cs:~366-373`, `CliTests.cs:~312-316`) pin that `format <dir>` follows `dir/link -> ..` and writes files above `<dir>`; decide whether directory links leaving the named directory should be followed.
 - review loop 4 (545965c49391..ef66c140da9f): `Format.cs` `PackageNames` reads each file by its unresolved path while `within` filters by the resolved one, so a `<link>/..` path can feed names from a different file into the rename guard (missed or extra rename only).
 - review loop 4 (545965c49391..ef66c140da9f): `Format.cs` `ManifestFor` uses `Path.GetFullPath`, so `link/../a.byn` takes its package `style` from the lexical folder, not the folder of the file it reads and writes.
+- r3-53c2: an optional of a struct with states (`Order?`) keeps BYN2410 in a `switch`; `.s` arms on it are not checked per state.
+- r3-53c2: loops forget what every `var` and `ref` parameter was known to be at loop entry, also when the body never changes it.
+- r3-53c2: an `if` whose then-branch makes a `becomes` call forgets the receiver's state after the `if`, even when the else-branch would agree.
+- r3-53c2: reading a payload field from several states that hold it after different fields is BYN2022; it needs a per-state read.
+- r3-53c2: BYN7006's message (`{0} is .{1}` … write `{2}`) differs from the plan's text (`{0} {1} is .{2}` … write `{0}.{2} {1}`).
+- r3-53c2: BYN7007 in a `.s` pattern underlines the name without its dot, like the first half's labels (line above).
+- r3-53c2: payload fields are not seen by `TypeFacts`, ownership or drops: a `List` in a state's payload does not make the struct unique and leaks.
+- r3-53c2: a struct with states whose own field is named `tag` or `u` collides with the C layout's `tag` and `u` members.
+- r3-53c2: a generic struct with states relies on `Compilation.States` holding each instantiation; untested.
+- r3-53c2: BYN7009: a `become` inside a loop body does not count after the loop.
+- r3-53c2: BYN7003's third form on a `move this` or plain `this` method is followed by BYN2115 at the same call (one extra error).
