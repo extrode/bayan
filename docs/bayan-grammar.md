@@ -10,10 +10,10 @@ Casing (SPEC §5.1): `PascalCase` types, `camelCase` everything else, `I` prefix
 
 For any new member, take the first question that answers yes.
 
-1. **Acts on `this`?** Plain verb on `ref this`: `void sort(ref this)`. The `-ed` copy (`sorted`) is derived where the verb exists; do not write it.
+1. **Acts on `this`?** Plain verb on `ref this`: `void sort(ref this)`. The `-ed` form (`sorted`) names a changed copy or a view and never takes `ref this` (item 2).
    - A body that modifies `this` without `ref this`: [BYN2115](diagnostics/BYN2115.md).
    - Calling a `ref this` member on a `let`: [BYN2104](diagnostics/BYN2104.md) (fix: `var`).
-   - `-ed` member with no `ref this` verb of the same stem (`joined`): [BYN5001](diagnostics/BYN5001.md).
+   - `-ed` member that takes `ref this` (`void sorted(ref this)`): [BYN5001](diagnostics/BYN5001.md).
    - A noun on a `ref this` member: [BYN5101](diagnostics/BYN5101.md) (lint).
 2. **Returns a changed copy or a view of `this`?** `-ed` form: `trimmed`, `sorted`, `lowercased`. The `-ed` form does not require a mutating verb to exist: an immutable type (`string`) has `trimmed()` and `lowercased()` with no `trim` or `lowercase`. A mutable type with both forms keeps both (`xs.sort()` / `xs.sorted()`). A result that is not a changed copy of the receiver is a noun or a plain static verb (`join`, `split`).
 3. **Boolean property, no arguments?** `is` / `has` / `can`: `isEmpty`, `hasItems`, `canRetry`. Never a `?` suffix.
@@ -371,9 +371,9 @@ For error doc comments: the first line of a `///` comment on an error case is it
 
 | Rule | Source | Code |
 |---|---|---|
-| Plain verb returns a new value (tree 2) | Arabic Form I (base verb) | [BYN5001](diagnostics/BYN5001.md) |
+| Plain verb returns a new value (tree 2) | Arabic Form I (base verb) | |
 | Verb on `ref this` mutates (tree 1) | Arabic Form V (tafaʿʿala, reflexive) | [BYN2115](diagnostics/BYN2115.md), [BYN5101](diagnostics/BYN5101.md) (lint) |
-| `-ed` copy of a mutating verb (tree 1, 2) | Arabic mafʿūl (passive participle) | [BYN5001](diagnostics/BYN5001.md) |
+| `-ed` changed copy or view (tree 2) | Arabic mafʿūl (passive participle) | [BYN5001](diagnostics/BYN5001.md) |
 | `is` / `has` / `can` property (tree 3) | Arabic ṣifa (attribute) | [BYN5002](diagnostics/BYN5002.md), [BYN5102](diagnostics/BYN5102.md) (lint) |
 | `tryX` (tree 4) | Arabic Form X (istafʿala, attempt) | [BYN5003](diagnostics/BYN5003.md) |
 | `xInto(ref dst)` (tree 5) | Arabic particle إلى (ilā, "into") | none yet |
@@ -399,7 +399,7 @@ The built-in checker (`BYN5xxx`) runs on the members of every struct. Errors (`B
 
 | Code | Rule | What the checker looks at |
 |---|---|---|
-| [BYN5001](diagnostics/BYN5001.md) | An `-ed` member needs a `ref this` verb of the same stem (tree 1, 2) | One lowercase word of five letters or more ending in `-ed`, on a member that is not `ref this` and does not return `bool`. The verb is the name minus `-ed` (`sorted` → `sort`), minus `d` (`reversed` → `reverse`), with a doubled consonant undone (`trimmed` → `trim`) or `-ied` → `-y` (`copied` → `copy`). Not participles: `-eed` words (`need`, `speed`, `seed`), shorter words (`red`, `bed`, `used`), and `hundred`, `embed`, `shred`, `naked`, `wicked`, `sacred`, `kindred`. Typestate `state` names are not members and are not checked (§10). |
+| [BYN5001](diagnostics/BYN5001.md) | An `-ed` member does not take `ref this`: "`{0}` changes `this`; name it `{1}`" (tree 1, 2) | One lowercase word of five letters or more ending in `-ed`, on a member that takes `ref this` and does not return `bool`. The suggested name is the plain verb: the name minus `-ed` (`sorted` → `sort`), minus `d` (`reversed` → `reverse`), with a doubled consonant undone (`trimmed` → `trim`) or `-ied` → `-y` (`copied` → `copy`). Not participles: `-eed` words (`need`, `speed`, `seed`), shorter words (`red`, `bed`, `used`), and `hundred`, `embed`, `shred`, `naked`, `wicked`, `sacred`, `kindred`. Typestate `state` names are not members and are not checked (§10). |
 | [BYN5002](diagnostics/BYN5002.md) | A boolean property does not modify `this` (tree 3) | A `ref this` member with no arguments named `is`, `has` or `can` followed by a capital. |
 | [BYN5003](diagnostics/BYN5003.md) | A hand-written `tryX` returns `T?` or `bool` (tree 4) | `tryX` on a type with an `x()` that `fails`. |
 | [BYN5004](diagnostics/BYN5004.md), [BYN5005](diagnostics/BYN5005.md), [BYN5006](diagnostics/BYN5006.md) | Particles (§8) | Parameter lists and call sites; `rest` tails, `@positional` constructors, `extern`, operators and payloads are exempt. |

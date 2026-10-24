@@ -646,7 +646,7 @@ Users may create roots, never patterns. Derived members are generated only when 
 |---|---|---|---|---|
 | `x()` | Form I | Base act | Returns a value, may `fails` | |
 | `x(ref this)` | Form V | Reflexive: mutates self | Named with a verb | BYN5101 (lint) |
-| `xed()` | mafʿūl (participle) | Result of the act: **a view if possible, otherwise a copy** | Derived from a mutating `x(ref this)`; exists only as its copy form | BYN5001 |
+| `xed()` | mafʿūl (participle) | Result of the act: **a view if possible, otherwise a copy** | Names a changed copy or a view; never takes `ref this` and does not need a plain verb to exist | BYN5001 |
 | `tryX()` | Form X | Attempt | Returns `bool` or `T?`; derived from `x() fails` | BYN5003 |
 | `ensureX()` | Form II | Causative, idempotent | Returns `void` or `fails` | |
 | `xWith(T other)` | Form III | Act with another | Takes `T other` | |
@@ -1120,7 +1120,7 @@ struct SignupForm {
 
 > Round 2 §7: one contract form, and a bug panics in every build instead of being skipped in `fast`. Codes: BYN2320, BYN2321, BYN2322.
 
-> Round 3 §11, O3, O4: checking at construction makes validity a property of the type, so `T.Validated`, `validated()` and `Validate` are gone; `it` matches lambdas; `at` reuses a particle instead of adding `on`; a function precondition is a different job from validating data, so it gets its own word, `expects`. Codes: BYN1050, BYN1063, BYN3206, BYN3207, BYN3208, BYN5011, BYN8006.
+> Round 3 §11, O3, O4: checking at construction makes validity a property of the type, so `T.Validated`, `validated()` and `Validate` are gone; `it` matches lambdas; `at` reuses a particle instead of adding `on`; a function precondition is a different job from validating data, so it gets its own word, `expects`. Codes: BYN1050, BYN1063, BYN3206, BYN3207, BYN3208, BYN3218, BYN5011, BYN8006.
 
 ---
 
