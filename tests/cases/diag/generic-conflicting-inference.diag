@@ -1,13 +1,13 @@
 error BYN2741: type argument `T` of `pick` is inferred as both `i32` and `string`
 
-  4 │ let x = pick(first: true, a: 1, b: "one")
-    │                                    ^^^^^
+  4 │ let x = pick(1, by: "one", first: true)
+    │                     ^^^^^
     │
   help: make the arguments agree, or write it out: `pick<…>(…)`
 
 error BYN2741: type argument `T` of `head` is inferred as both `string` and `i32`
 
-  6 │ let y = head(words, 0)
-    │                     ^
+  6 │ let y = head(words, by: 0)
+    │                         ^
     │
   help: make the arguments agree, or write it out: `head<…>(…)`

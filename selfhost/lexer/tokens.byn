@@ -334,13 +334,13 @@ struct Keywords {
         let letter = text[0] - 0x61
         for i in bucketStart[letter]..bucketStart[letter + 1] {
             let kind = TokenKind.fromOrdinal(byFirstByte[i]) ?? .identifier
-            if sameBytes(a: text, b: kind.name.bytes[0..kind.name.length - 7]) { return kind }
+            if sameBytes(text, as: kind.name.bytes[0..kind.name.length - 7]) { return kind }
         }
         return .identifier
     }
 }
 
-bool sameBytes(ReadOnlySpan<u8> a, ReadOnlySpan<u8> b) {
+bool sameBytes(ReadOnlySpan<u8> a, as ReadOnlySpan<u8> b) {
     if a.length != b.length { return false }
     for i in 0..a.length {
         if a[i] != b[i] { return false }

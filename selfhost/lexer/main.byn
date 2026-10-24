@@ -30,8 +30,8 @@ i32 unreadable(string path) {
 }
 
 /// Lexes `path` and appends its dump (`json`: the JSON form) to `sb`; returns whether any diagnostic is an error.
-bool dumpFile(ref StrBuf sb, string path, move List<u8> bytes, Keywords keywords, bool json) {
-    var result = lex(SourceText.create(path, move bytes), by: keywords)
+bool dumpFile(string path, from move List<u8> bytes, by Keywords keywords, to ref StrBuf sb, bool json) {
+    var result = lex(SourceText.create(path, from: move bytes), by: keywords)
     if json {
         dumpJson(ref result, to: ref sb)
     } else {
@@ -41,22 +41,22 @@ bool dumpFile(ref StrBuf sb, string path, move List<u8> bytes, Keywords keywords
 }
 
 /// Appends a `span out of range` line for every token, doc or diagnostic span outside the input.
-void checkSpans(ref StrBuf sb, ref LexResult result) {
+void checkSpans(ref LexResult result, to ref StrBuf sb) {
     let size = result.source.bytes.length
     for token in result.tokens {
-        unless inside(TextSpan { start: token.start, length: token.length }, size) { sb.append($"span out of range: token {token.start}+{token.length}\n") }
-        unless inside(TextSpan { start: token.docStart, length: token.docLength }, size) { sb.append($"span out of range: doc {token.docStart}+{token.docLength}\n") }
+        unless inside(TextSpan { start: token.start, length: token.length }, until: size) { sb.append($"span out of range: token {token.start}+{token.length}\n") }
+        unless inside(TextSpan { start: token.docStart, length: token.docLength }, until: size) { sb.append($"span out of range: doc {token.docStart}+{token.docLength}\n") }
     }
     for d in result.diagnostics {
-        unless inside(d.span, size) { sb.append($"span out of range: {d.code} {d.span.start}+{d.span.length}\n") }
-        if d.hasFix && !inside(d.fixSpan, size) { sb.append($"span out of range: {d.code} fix {d.fixSpan.start}+{d.fixSpan.length}\n") }
+        unless inside(d.span, until: size) { sb.append($"span out of range: {d.code} {d.span.start}+{d.span.length}\n") }
+        if d.hasFix && !inside(d.fixSpan, until: size) { sb.append($"span out of range: {d.code} fix {d.fixSpan.start}+{d.fixSpan.length}\n") }
     }
 }
 
-bool inside(TextSpan span, i64 size) => span.start >= 0 && span.length >= 0 && span.end <= size
+bool inside(TextSpan span, until i64 size) => span.start >= 0 && span.length >= 0 && span.end <= size
 
 /// Dumps `path`, or stdin when `path` is `-`.
-i32 lexOne(string path, Keywords keywords, bool json) {
+i32 lexOne(string path, by Keywords keywords, bool json) {
     var bytes = List<u8>()
     if path == "-" {
         let input = Io.stdin.readAll()
@@ -69,12 +69,12 @@ i32 lexOne(string path, Keywords keywords, bool json) {
         bytes = Io.readFile(path) catch return unreadable(path)
     }
     var sb = StrBuf()
-    let failed = dumpFile(ref sb, path == "-" ? "<stdin>" : path, move bytes, keywords, json: json)
+    let failed = dumpFile(path == "-" ? "<stdin>" : path, from: move bytes, by: keywords, to: ref sb, json: json)
     Io.stdout.write(sb.finish())
     return failed ? exitFailure : exitOk
 }
 
-i32 lexMany(string dir, Keywords keywords) {
+i32 lexMany(string dir, by Keywords keywords) {
     let names = Io.listDir(dir) catch return usage($"cannot list `{dir}`")
     for name in names {
         unless name.endsWith(".byn") { continue }
@@ -84,8 +84,8 @@ i32 lexMany(string dir, Keywords keywords) {
             let bytes = Io.readFile(path) catch return fileNotFound(path)
             var sb = StrBuf()
             sb.append($"== {name}\n")
-            var result = lex(SourceText.create(path, move bytes), by: keywords)
-            checkSpans(ref sb, ref result)
+            var result = lex(SourceText.create(path, from: move bytes), by: keywords)
+            checkSpans(ref result, to: ref sb)
             dump(ref result, to: ref sb)
             Io.stdout.write(sb.finish())
         }
@@ -93,10 +93,10 @@ i32 lexMany(string dir, Keywords keywords) {
     return exitOk
 }
 
-i32 lexTimed(string path, Keywords keywords) {
+i32 lexTimed(string path, by Keywords keywords) {
     let bytes = Io.readFile(path) catch return fileNotFound(path)
     let start = Io.monotonicNanos()
-    let result = lex(SourceText.create(path, move bytes), by: keywords)
+    let result = lex(SourceText.create(path, from: move bytes), by: keywords)
     let elapsed = Io.monotonicNanos() - start
     print($"{elapsed}")
     return result.tokens.isEmpty ? exitFailure : exitOk
@@ -104,12 +104,12 @@ i32 lexTimed(string path, Keywords keywords) {
 
 i32 main(ReadOnlySpan<string> args) {
     let keywords = Keywords.build()
-    if args.length == 0 { return lexOne("-", keywords, json: false) }
-    if args.length == 1 && args[0] == "--json" { return lexOne("-", keywords, json: true) }
-    if args.length == 1 && !args[0].startsWith("--") { return lexOne(args[0], keywords, json: false) }
-    if args.length == 2 && args[0] == "--json" && !args[1].startsWith("--") { return lexOne(args[1], keywords, json: true) }
-    if args.length == 2 && args[1] == "--json" && !args[0].startsWith("--") { return lexOne(args[0], keywords, json: true) }
-    if args.length == 2 && args[0] == "--many" { return lexMany(args[1], keywords) }
-    if args.length == 2 && args[0] == "--time" { return lexTimed(args[1], keywords) }
+    if args.length == 0 { return lexOne("-", by: keywords, json: false) }
+    if args.length == 1 && args[0] == "--json" { return lexOne("-", by: keywords, json: true) }
+    if args.length == 1 && !args[0].startsWith("--") { return lexOne(args[0], by: keywords, json: false) }
+    if args.length == 2 && args[0] == "--json" && !args[1].startsWith("--") { return lexOne(args[1], by: keywords, json: true) }
+    if args.length == 2 && args[1] == "--json" && !args[0].startsWith("--") { return lexOne(args[0], by: keywords, json: true) }
+    if args.length == 2 && args[0] == "--many" { return lexMany(args[1], by: keywords) }
+    if args.length == 2 && args[0] == "--time" { return lexTimed(args[1], by: keywords) }
     return usage("expected `[--json] [<path>|-]`, `--many <dir>` or `--time <path>`")
 }

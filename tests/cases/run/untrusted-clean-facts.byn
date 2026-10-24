@@ -2,7 +2,7 @@
 let u: Untrusted<string> = Untrusted("hello")
 let n: i64 = u.length
 let e: bool = u.isEmpty
-let q: bool = u == Untrusted("hello")
+let q: bool = u == "hello"
 let b: Untrusted<bool> = Untrusted(true)
 if b {
     print("yes")

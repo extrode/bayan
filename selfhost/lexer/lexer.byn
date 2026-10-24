@@ -281,7 +281,7 @@ struct LexResult {
         if at >= source.bytes.length { return false }
         let b = source.bytes[at]
         if b < 0x80 { return isAsciiIdentStart(b) }
-        let d = decodeAt(source.bytes.asSpan(), at)
+        let d = decodeAt(source.bytes.asSpan(), at: at)
         return d.valid && isIdentifierStart(d.value)
     }
 
@@ -298,9 +298,9 @@ struct LexResult {
             pos += bidi.length
             return
         }
-        let d = decodeAt(source.bytes.asSpan(), pos)
+        let d = decodeAt(source.bytes.asSpan(), at: pos)
         unless d.valid {
-            report(.invalidUtf8, at: TextSpan { start: pos, length: 1 }, arg0: hex(b, 2))
+            report(.invalidUtf8, at: TextSpan { start: pos, length: 1 }, arg0: hex(b, to: 2))
             pos += 1
             return
         }
@@ -308,7 +308,7 @@ struct LexResult {
     }
 
     void reportBidi(ref this, u32 codePoint, at i64 start) {
-        reportFix(.bidiControl, at: TextSpan { start: start, length: 3 }, by: "", arg0: hex(codePoint, 4),
+        reportFix(.bidiControl, at: TextSpan { start: start, length: 3 }, by: "", arg0: hex(codePoint, to: 4),
             label: "invisible character that reorders how the text displays",
             help: "remove it; bidi controls may only appear inside string literals (Trojan Source, CVE-2021-42574)")
     }
@@ -345,7 +345,7 @@ struct LexResult {
                         help: "close it with `*/`")
                 } else {
                     pos += 2
-                    reportFix(.blockComment, at: TextSpan.fromBounds(start: start, end: pos), by: lineComments(start, until: pos),
+                    reportFix(.blockComment, at: TextSpan.fromBounds(start, until: pos), by: lineComments(start, until: pos),
                         label: "block comment", help: "write each line with `//`")
                 }
                 tokenFlags |= triviaBefore
@@ -390,16 +390,16 @@ struct LexResult {
         for i in first..last + 1 {
             if i > first {
                 sb.append("\n")
-                appendUtf8(ref sb, text[lineStart..indentEnd])
+                appendUtf8(text[lineStart..indentEnd], to: ref sb)
             }
             sb.append(starts[i] == ends[i] ? "//" : "// ")
-            appendUtf8(ref sb, text[starts[i]..ends[i]])
+            appendUtf8(text[starts[i]..ends[i]], to: ref sb)
         }
         var after = end
         while after < text.length && (text[after] == ' ' || text[after] == '\t' || text[after] == '\r') { after += 1 }
         if after < text.length && text[after] != '\n' {
             sb.append("\n")
-            appendUtf8(ref sb, text[lineStart..indentEnd])
+            appendUtf8(text[lineStart..indentEnd], to: ref sb)
         }
         return $"{sb.finish()}"
     }
@@ -428,9 +428,9 @@ struct LexResult {
                 tokenFlags |= triviaBefore
                 return
             }
-            let d = decodeAt(source.bytes.asSpan(), pos)
+            let d = decodeAt(source.bytes.asSpan(), at: pos)
             unless d.valid {
-                report(.invalidUtf8, at: TextSpan { start: pos, length: 1 }, arg0: hex(c, 2))
+                report(.invalidUtf8, at: TextSpan { start: pos, length: 1 }, arg0: hex(c, to: 2))
                 pos += 1
                 return
             }
@@ -444,7 +444,7 @@ struct LexResult {
 
         switch c {
             case '"':
-                lexString(start: start, quote: start, kind: .stringLiteral)
+                lexString(.stringLiteral, from: start, at: start)
             case '\'':
                 lexChar()
             case '$':
@@ -456,7 +456,7 @@ struct LexResult {
                     unless reportedTooDeep { report(.interpolationTooDeep, at: TextSpan { start: start, length: 2 }) }
                     reportedTooDeep = true
                     pos += 1
-                    lexString(start: start, quote: pos, kind: .stringLiteral)
+                    lexString(.stringLiteral, from: start, at: pos)
                     return
                 }
                 add(.interpolatedStringStart, at: TextSpan { start: start, length: 2 })
@@ -547,7 +547,7 @@ struct LexResult {
     }
 
     void reportUnexpected(ref this, u32 cp, by i64 length) {
-        let shown = cp < 0x20 || cp == 0x7F ? $"\\u{{{hex(cp, 1)}}}" : $"{(rune)cp}"
+        let shown = cp < 0x20 || cp == 0x7F ? $"\\u{{{hex(cp, to: 1)}}}" : $"{(rune)cp}"
         report(.unexpectedCharacter, at: TextSpan { start: pos, length: length }, arg0: shown)
         pos += length
         tokenFlags |= triviaBefore
@@ -573,7 +573,7 @@ struct LexResult {
                 continue
             }
             if bidiControlAt(source.bytes.asSpan(), at: pos).length > 0 { break }
-            let d = decodeAt(source.bytes.asSpan(), pos)
+            let d = decodeAt(source.bytes.asSpan(), at: pos)
             if !d.valid || !isIdentifierContinue(d.value) { break }
             ascii = false
             pos += d.length
@@ -581,7 +581,7 @@ struct LexResult {
 
         let span = source.bytes.asSpan()[start..pos]
         unless ascii {
-            checkNfc(start, span)
+            checkNfc(span, at: start)
             add(.identifier, at: TextSpan { start: start, length: pos - start })
             return
         }
@@ -589,16 +589,16 @@ struct LexResult {
         var kind = keywords.lookup(span)
         if kind == .identifier && peek() == '"' {
             if span.length == 1 && span[0] == 'c' {
-                lexString(start: start, quote: pos, kind: .cStringLiteral)
+                lexString(.cStringLiteral, from: start, at: pos)
                 return
             }
-            if sameBytes(a: span, b: "u16".bytes) {
-                lexString(start: start, quote: pos, kind: .u16StringLiteral)
+            if sameBytes(span, as: "u16".bytes) {
+                lexString(.u16StringLiteral, from: start, at: pos)
                 return
             }
         }
         if isReservedKeyword(kind) {
-            report(.reservedKeyword, at: TextSpan.fromBounds(start: start, end: pos), arg0: utf8(span),
+            report(.reservedKeyword, at: TextSpan.fromBounds(start, until: pos), arg0: utf8(span),
                 label: "reserved for a future version of Bayan", help: "choose another name")
             kind = .identifier
         }
@@ -606,11 +606,11 @@ struct LexResult {
     }
 
     /// Reports BYN0005 when the identifier `span` (valid UTF-8) is not in NFC.
-    void checkNfc(ref this, i64 start, ReadOnlySpan<u8> span) {
+    void checkNfc(ref this, ReadOnlySpan<u8> span, at i64 start) {
         var input = List<u32>()
         var at: i64 = 0
         while at < span.length {
-            let d = decodeAt(span, at)
+            let d = decodeAt(span, at: at)
             input.append(d.value)
             at += d.length
         }
@@ -624,7 +624,7 @@ struct LexResult {
         if same { return }
         var fix = StrBuf()
         for cp in normalized { fix.append($"{(rune)cp}") }
-        reportFix(.identifierNotNfc, at: TextSpan.fromBounds(start: start, end: pos), by: fix.finish(), arg0: utf8(span),
+        reportFix(.identifierNotNfc, at: TextSpan.fromBounds(start, until: pos), by: fix.finish(), arg0: utf8(span),
             label: "same letters, different encoding",
             help: "use the composed (NFC) form; identifiers that look the same must be byte-identical")
     }
@@ -637,27 +637,27 @@ struct LexResult {
         if source.bytes[pos] == '0' && (peek(1) | 0x20) == 'x' {
             radix = "hexadecimal"
             pos += 2
-            scanDigits(start, .hex, "0x")
+            scanDigits(.hex, from: start)
         } else if source.bytes[pos] == '0' && (peek(1) | 0x20) == 'b' && (peek(2) == '0' || peek(2) == '1' || peek(2) == '_') {
             radix = "binary"
             pos += 2
-            scanDigits(start, .binary, "0b")
+            scanDigits(.binary, from: start)
             if isDigit(peek()) {
                 let bad = pos
                 while isDigit(peek()) { pos += 1 }
-                report(.invalidNumber, at: TextSpan.fromBounds(start: bad, end: pos), arg0: "binary literals use only `0` and `1`")
+                report(.invalidNumber, at: TextSpan.fromBounds(bad, until: pos), arg0: "binary literals use only `0` and `1`")
             }
         } else {
-            scanDigits(start, .decimal, "")
+            scanDigits(.decimal, from: start)
             if peek() == '.' && isDigit(peek(1)) {
                 isFloat = true
                 pos += 1
-                scanDigits(start, .decimal, "")
+                scanDigits(.decimal, from: start)
             }
             if (peek() | 0x20) == 'e' && (isDigit(peek(1)) || ((peek(1) == '+' || peek(1) == '-') && isDigit(peek(2)))) {
                 isFloat = true
                 pos += peek(1) == '+' || peek(1) == '-' ? 2 : 1
-                scanDigits(start, .decimal, "")
+                scanDigits(.decimal, from: start)
             }
         }
 
@@ -672,36 +672,37 @@ struct LexResult {
                     pos += 1
                     continue
                 }
-                let d = decodeAt(source.bytes.asSpan(), pos)
+                let d = decodeAt(source.bytes.asSpan(), at: pos)
                 if !d.valid || !isIdentifierContinue(d.value) { break }
                 pos += d.length
             }
             add(.numericSuffix, at: TextSpan { start: suffixStart, length: pos - suffixStart })
             let suffix = source.bytes.asSpan()[suffixStart..pos]
-            let builtIn = sameBytes(a: suffix, b: "u".bytes) || sameBytes(a: suffix, b: "l".bytes) || sameBytes(a: suffix, b: "ul".bytes)
+            let builtIn = sameBytes(suffix, as: "u".bytes) || sameBytes(suffix, as: "l".bytes) || sameBytes(suffix, as: "ul".bytes)
             if !radix.isEmpty && !builtIn {
-                report(.suffixOnHexOrBinary, at: TextSpan.fromBounds(start: suffixStart, end: pos), arg0: utf8(suffix), arg1: radix,
+                report(.suffixOnHexOrBinary, at: TextSpan.fromBounds(suffixStart, until: pos), arg0: utf8(suffix), arg1: radix,
                     help: "write the value in decimal, or wrap it with a cast to the unit type")
             }
         }
     }
 
-    void scanDigits(ref this, i64 literalStart, DigitKind digits, string prefix) {
+    void scanDigits(ref this, DigitKind digits, from i64 literalStart) {
         let first = pos
         var lastWasUnderscore = false
-        while pos < source.bytes.length && (isDigitOf(digits, source.bytes[pos]) || source.bytes[pos] == '_') {
+        while pos < source.bytes.length && (isDigitOf(digits, for: source.bytes[pos]) || source.bytes[pos] == '_') {
             lastWasUnderscore = source.bytes[pos] == '_'
             pos += 1
         }
-        if pos == first && !prefix.isEmpty {
-            report(.invalidNumber, at: TextSpan.fromBounds(start: literalStart, end: pos), arg0: $"expected digits after `{prefix}`")
+        if pos == first && digits != .decimal {
+            let prefix = digits == .hex ? "0x" : "0b"
+            report(.invalidNumber, at: TextSpan.fromBounds(literalStart, until: pos), arg0: $"expected digits after `{prefix}`")
         } else if lastWasUnderscore {
             reportFix(.invalidNumber, at: TextSpan { start: pos - 1, length: 1 }, by: "", arg0: "`_` must sit between digits")
         }
     }
 
     /// Lexes a string whose opening quote is at `quote`.
-    void lexString(ref this, i64 start, i64 quote, TokenKind kind) {
+    void lexString(ref this, TokenKind kind, from i64 start, at i64 quote) {
         pos = quote
         if kind == .stringLiteral && peek(1) == '"' && peek(2) == '"' {
             pos += 3
@@ -720,7 +721,7 @@ struct LexResult {
         while true {
             if pos >= source.bytes.length || source.bytes[pos] == '\n' {
                 let end = pos > start && pos <= source.bytes.length && pos > 0 && source.bytes[pos - 1] == '\r' ? pos - 1 : pos
-                report(.unterminatedString, at: TextSpan.fromBounds(start: start, end: end),
+                report(.unterminatedString, at: TextSpan.fromBounds(start, until: end),
                     label: "string ends at the end of the line",
                     help: "close it with `\"`; for text spanning lines use a raw `\"\"\"` string")
                 add(kind, at: TextSpan { start: start, length: end - start })
@@ -808,13 +809,13 @@ struct LexResult {
             scalars += 1
         }
         if pos >= source.bytes.length || source.bytes[pos] != '\'' {
-            report(.unterminatedCharLiteral, at: TextSpan.fromBounds(start: start, end: pos), help: "close it with `'`")
+            report(.unterminatedCharLiteral, at: TextSpan.fromBounds(start, until: pos), help: "close it with `'`")
             add(.charLiteral, at: TextSpan { start: start, length: pos - start })
             return
         }
         pos += 1
         if scalars > 1 {
-            report(.charLiteralTooLong, at: TextSpan.fromBounds(start: start, end: pos), help: "use a string literal (\"…\") for text")
+            report(.charLiteralTooLong, at: TextSpan.fromBounds(start, until: pos), help: "use a string literal (\"…\") for text")
         }
         add(.charLiteral, at: TextSpan { start: start, length: pos - start })
     }
@@ -844,13 +845,13 @@ struct LexResult {
                 }
                 let digits = pos - digitsStart
                 if digits == 0 || peek() != '}' {
-                    report(.invalidEscape, at: TextSpan.fromBounds(start: start, end: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
+                    report(.invalidEscape, at: TextSpan.fromBounds(start, until: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
                         help: "write `\\u{` followed by 1–6 hex digits and `}`")
                     return
                 }
                 pos += 1
                 if digits > 6 || value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF) {
-                    report(.invalidUnicodeEscape, at: TextSpan.fromBounds(start: start, end: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
+                    report(.invalidUnicodeEscape, at: TextSpan.fromBounds(start, until: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
                         help: "use a scalar value in U+0000–U+D7FF or U+E000–U+10FFFF")
                 }
             default:
@@ -861,7 +862,7 @@ struct LexResult {
     /// The `default` arm of `scanEscape`.
     void invalidEscape(ref this, i64 start) {
         advanceCodePoint(allowBidi: true)
-        report(.invalidEscape, at: TextSpan.fromBounds(start: start, end: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
+        report(.invalidEscape, at: TextSpan.fromBounds(start, until: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
             help: "use a valid escape: \\n \\r \\t \\0 \\\\ \\\" \\' and \\u{…}")
     }
 }
@@ -872,7 +873,7 @@ enum DigitKind {
     binary
 }
 
-bool isDigitOf(DigitKind kind, u8 b) => kind switch {
+bool isDigitOf(DigitKind kind, for u8 b) => kind switch {
     .decimal => isDigit(b),
     .hex => isDigit(b) || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F'),
     .binary => b == '0' || b == '1',

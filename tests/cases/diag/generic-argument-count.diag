@@ -1,6 +1,6 @@
 error BYN2742: `pick` takes 1 type argument(s), not 2
 
-  9 │ let x = pick<i64, string>(first: true, a: 1, b: 2)
+  9 │ let x = pick<i64, string>(1, by: 2, first: true)
     │         ^^^^^^^^^^^^^^^^^
 
 error BYN2742: `plain` takes 0 type argument(s), not 1

@@ -7,7 +7,7 @@ error BYN2740: cannot infer type argument `T` of `none`
 
 error BYN2740: cannot infer type argument `T` of `orDefault`
 
-  5 │ let b = orDefault(x: null, fallback: null)
+  5 │ let b = orDefault(null, by: null)
     │         ^^^^^^^^^
     │
   help: pass an argument it can be read from, or write it out: `orDefault<T>(…)`

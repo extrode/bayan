@@ -28,7 +28,7 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
             return c - 0x57
         }
 
-        bool same(ReadOnlySpan<u8> a, ReadOnlySpan<u8> b) {
+        bool same(ReadOnlySpan<u8> a, as ReadOnlySpan<u8> b) {
             if a.length != b.length { return false }
             for i in 0..a.length {
                 if a[i] != b[i] { return false }
@@ -52,7 +52,7 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
             let t = string.tryFrom(bytes)
             let tryOk = t is not null
             let tryText = t ?? ""
-            return $"{at} {fromOk} {tryOk} {same(a: from.bytes, b: bytes)} {same(a: tryText.bytes, b: bytes)}"
+            return $"{at} {fromOk} {tryOk} {same(from.bytes, as: bytes)} {same(tryText.bytes, as: bytes)}"
         }
 
         void main() {

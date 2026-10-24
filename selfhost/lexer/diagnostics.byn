@@ -276,8 +276,8 @@ struct FixView {
 FixView applyFix(TextSpan fix, by string replacement, from ref SourceText source, to ref List<string> lines) {
     let firstLine = source.getLineIndex(fix.start)
     let lastLine = source.getLineIndex(fix.end)
-    let before = source.getText(TextSpan.fromBounds(start: source.getLineSpan(firstLine).start, end: fix.start))
-    let after = source.getText(TextSpan.fromBounds(start: fix.end, end: source.getLineSpan(lastLine).end))
+    let before = source.getText(TextSpan.fromBounds(source.getLineSpan(firstLine).start, until: fix.start))
+    let after = source.getText(TextSpan.fromBounds(fix.end, until: source.getLineSpan(lastLine).end))
     let original = source.getText(fix)
     let o = original.bytes
     let r = replacement.bytes
@@ -314,7 +314,7 @@ FixView applyFix(TextSpan fix, by string replacement, from ref SourceText source
 void display(ReadOnlySpan<u8> text, to ref StrBuf sb) {
     var pos: i64 = 0
     while pos < text.length {
-        let d = decodeAt(text, pos)
+        let d = decodeAt(text, at: pos)
         let v = d.value
         let hidden = (v < 0x20 && v != 0x09) || v == 0x7F || (v >= 0x202A && v <= 0x202E) || (v >= 0x2066 && v <= 0x2069)
         sb.append($"{(rune)(hidden ? replacementCharacter : v)}")
@@ -326,7 +326,7 @@ void display(ReadOnlySpan<u8> text, to ref StrBuf sb) {
 void indent(ReadOnlySpan<u8> prefix, to ref StrBuf sb) {
     var pos: i64 = 0
     while pos < prefix.length {
-        let d = decodeAt(prefix, pos)
+        let d = decodeAt(prefix, at: pos)
         sb.append(d.value == 0x09 ? "\t" : " ")
         pos += d.length
     }
