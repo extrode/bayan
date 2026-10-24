@@ -784,12 +784,18 @@ public sealed class CEmitter
         return $"{name}({w}, {v});";
     }
 
-    /// <summary>A struct's <c>formatInto(ref StrBuf)</c>, or else its <c>formatInto(ref StrBuf, as FormatSpec)</c>.</summary>
+    /// <summary>A struct's <c>formatInto(ref StrBuf)</c>, or else its <c>formatInto(ref StrBuf, as FormatSpec)</c>: the form a hole without specs calls.</summary>
     internal static FunctionSymbol? FormatInto(StructSymbol s) =>
         s.Methods.Where(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count is 1 or 2
             && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
             && (m.Parameters.Count == 1 || m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } }))
             .OrderBy(m => m.Parameters.Count).FirstOrDefault();
+
+    /// <summary>A struct's <c>formatInto(ref StrBuf, as FormatSpec)</c>: the form a hole with specs calls, as the binder's <c>TakesFormatSpec</c> assumes.</summary>
+    internal static FunctionSymbol? FormatIntoWithSpec(StructSymbol s) =>
+        s.Methods.FirstOrDefault(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 2
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
+            && m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } });
 
     /// <summary>The spec a struct's two-parameter <c>formatInto</c> receives outside a hole with specs: none given.</summary>
     internal const string NoFormatSpec = "((byn_format_spec){2, false, 0, ' ', 0, -1})";
@@ -1282,8 +1288,8 @@ internal sealed class FunctionEmitter
     {
         var t = value.Type;
         var v = Expr(value);
-        // A struct whose `formatInto` takes the `FormatSpec` reads every spec itself, padding included.
-        if (t is StructSymbol s && CEmitter.FormatInto(s) is { Parameters.Count: 2 } method)
+        // A struct with a `formatInto` that takes the `FormatSpec` reads every spec itself, padding included, even when it also has the one-parameter form.
+        if (t is StructSymbol s && CEmitter.FormatIntoWithSpec(s) is { } method)
             return $"{{ {_c.CType(t)} fv = {v}; {_c.FunctionName(method)}(&fv, w, (byn_format_spec){{{(spec.Radix switch { 2 => 0, 8 => 1, 16 => 3, _ => 2 })}, "
                 + $"{(spec.Debug ? "true" : "false")}, {spec.Width}, {spec.Fill}u, {Math.Max(spec.Align, 0)}, {spec.Digits}}}); }}";
         string Inner(string sw) => spec.Radix != 0
