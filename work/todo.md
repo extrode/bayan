@@ -12,6 +12,8 @@ wish list; the value is in recording the ones nobody has got to yet.
 Small, clear, and could be picked up without a design decision.
 
 - CI: install zig (or set `BAYAN_CC`) on all three runners so `run/` goldens execute there.
+- `#line`: function signatures and prologues map to `main.c`, so a debugger breakpoint on a function names generated code until its first statement; mapping the signature to the declaration line would fix it.
+- `CliToolchainTests.GeneratedCTheCCompilerRejectsIsAnInternalCompilerError` uses a `/bin/sh` fake compiler and returns early on Windows.
 
 ## Later
 

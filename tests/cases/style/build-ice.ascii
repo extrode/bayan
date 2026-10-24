@@ -1,0 +1,7 @@
+# CliApp.ReportToolchain
+--- stdout ---
+--- stderr ---
+[1m[38;2;255;138;128merror BYN4001[0m: internal compiler error: the C compiler rejected the generated C; this is a bug in
+the Bayan compiler
+C compiler failed (exit 1):
+main.byn:2:5: error: use of undeclared identifier 'l0_y'
