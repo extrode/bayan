@@ -33,19 +33,20 @@ const run = async (...cmd) => {
   return out.success ? new TextDecoder().decode(out.stdout) : "";
 };
 
-// Plan text: `{0}` holes become `{}`. C# text: any hole becomes `{}`, `{{`/`}}` and `\"` are undone.
-const normPlan = (s) => s.replace(/\{\d+\}/g, "{}").replace(/\\"/g, '"');
+// Plan text: `{0}` holes become `{}`; plan and C# text: `{{`/`}}` and `\"` are undone, any C# hole becomes `{}`.
+const normPlan = (s) => s.replace(/\{\{/g, "\u0001").replace(/\}\}/g, "\u0002")
+  .replace(/\{\d+\}/g, "{}").replace(/\u0001/g, "{").replace(/\u0002/g, "}").replace(/\\"/g, '"');
 const norm = (s) => s.replace(/\{\{/g, "\u0001").replace(/\}\}/g, "\u0002")
   .replace(/\{[^{}]*\}/g, "{}").replace(/\u0001/g, "{").replace(/\u0002/g, "}")
   .replace(/\\"/g, '"');
 // A plan string as a pattern over rendered output: each hole matches any text on one line.
 const pattern = (s) => new RegExp(normPlan(s).split("{}").map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[^\\n]+?"));
 
-// Plan entries: BYN#### [(plan[, warning])] `Name` ... "message" (label ...; help "..."; fix ...), one or
+// Plan entries: BYN#### [(plan[, warning|revision NNNN])] `Name` ... "message" (label ...; help "..."; fix ...), one or
 // more message forms per entry. An entry runs to the next entry start or the end of its line.
 const parsePlan = (text) => {
   const entries = new Map();
-  const start = /BYN(\d{4})(?: \(plan(?:, \w+)?\))? `\w+`/g;
+  const start = /BYN(\d{4})(?: \(plan(?:, [\w ]+)?\))? `\w+`/g;
   const form = /"((?:[^"\\]|\\.)*)" \(((?:[^;()"]*; )?label(?:[^()"]|"(?:[^"\\]|\\.)*"|\([^()]*\))*)\)/g;
   const helpIn = /help "((?:[^"\\]|\\.)*)"/;
   const starts = [...text.matchAll(start)];
