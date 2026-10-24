@@ -1,0 +1,9 @@
+@positional
+struct Door {
+    string label
+
+    states {
+        Open
+        Closed
+    }
+}

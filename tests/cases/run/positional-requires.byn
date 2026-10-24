@@ -1,0 +1,14 @@
+@positional
+struct Point {
+    i64 x
+    i64 y
+    requires x >= 0
+}
+
+Point at(i64 x, by i64 y) fails ValidationError => try Point(x, y)
+
+let origin = Point(0, 0)
+let p = at(3, by: 4) catch origin
+print($"{p.x} {p.y}")
+let q = at(-3, by: 4) catch origin
+print($"{q.x} {q.y}")

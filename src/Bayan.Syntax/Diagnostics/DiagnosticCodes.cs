@@ -297,6 +297,11 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor LiteralNeedsTry = Error("BYN3207", "a literal of `{0}` can fail its `requires`; write `try {0} {{ … }}`");
     public static readonly DiagnosticDescriptor CheckedFieldAssignment = Error("BYN3208", "fields of `{0}` cannot be assigned one at a time; its `requires` are checked at construction");
     public static readonly DiagnosticDescriptor UniqueConst = Error("BYN3209", "a `unique` type cannot be `const`");
+    // BYN3213 is reserved: v0.1 overloads differ by particle set only. Its help, once reported: "change a parameter type or particle so the overloads cannot overlap".
+    public static readonly DiagnosticDescriptor OverlappingOverloads = Error("BYN3213", "`{0}` and `{1}` both accept `{2}`");
+    public static readonly DiagnosticDescriptor RestEscapes = Error("BYN3214", "`{0}` is borrowed for the call and cannot be stored");
+    // BYN3215 is reserved: v0.1 has no references to overloaded names. Its help, once reported: "annotate it: `let f: A -> B = {0}`".
+    public static readonly DiagnosticDescriptor AmbiguousOverloadReference = Error("BYN3215", "`{0}` is overloaded; give the reference a function type");
     public static readonly DiagnosticDescriptor FieldWriteOutside = Error("BYN3216", "`{0}.{1}` can be written only by `{0}`'s own methods or with `with`: `{0}` {2}");
     // BYN3217 is reserved: v0.1 has no fibers. Its help, once reported: "copy the data first, or spawn the fiber in a scope that ends before `{1}`".
     public static readonly DiagnosticDescriptor BorrowCrossesFiber = Error("BYN3217", "`{0}` holds a reference into `{1}` and cannot be passed to a fiber that may outlive it");
@@ -312,14 +317,21 @@ public static class DiagnosticCodes
     // ── Backend 4000–4999 ────────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor CCompilerRejected = Error("BYN4001", "internal compiler error: the C compiler rejected the generated C; this is a bug in the Bayan compiler");
     // ── Grammar (naming patterns, spec §5.2) 5000–5999: errors 50xx, lints 51xx ────
-    public static readonly DiagnosticDescriptor ParticipleWithoutVerb = Error("BYN5001", "`{0}` is the `-ed` form of `{1}`, which does not exist as a `ref this` member");
+    public static readonly DiagnosticDescriptor ParticipleChangesThis = Error("BYN5001", "`{0}` changes `this`; name it `{1}`");
     public static readonly DiagnosticDescriptor StateMemberMutates = Error("BYN5002", "`{0}` reads as state but modifies `this`");
     public static readonly DiagnosticDescriptor TryWrongReturn = Error("BYN5003", "`try{0}` must return `{1}?` or `bool`; it is derived from `{2}() fails`");
     public static readonly DiagnosticDescriptor ParticleRequired = Error("BYN5004", "`{0}` has {1} unlabeled parameters; give each but one a particle");
     public static readonly DiagnosticDescriptor ArgumentNeedsParticle = Error("BYN5005", "`{0}` is passed without its particle `{1}:`");
     public static readonly DiagnosticDescriptor ParameterNeedsParticle = Error("BYN5006", "`{0}` is a required parameter besides the object and needs a particle");
+    // BYN5007 is reserved: `Log.debug(…)` is an unknown name until the binder reports it. Its help, once reported: "call `log` and pass the level `as: .{0}`".
+    public static readonly DiagnosticDescriptor LogLevelAsVerb = Error("BYN5007", "`Log.{0}` names a level, not the act; write `log(…, as: .{0})`");
     public static readonly DiagnosticDescriptor UnknownParticle = Error("BYN5008", "`{0}` is not a particle");
+    public static readonly DiagnosticDescriptor ParticleAsMemberName = Error("BYN5009", "`{0}` is a particle; name the member with a verb or a noun");
+    /// <summary>BYN5009's second message form, for an instance <c>toX</c> or <c>asX</c> member; registered once, as <see cref="ParticleAsMemberName"/>.</summary>
+    public static readonly DiagnosticDescriptor ConversionMember = new("BYN5009", Severity.Error, "`{0}` spells a conversion with `{1}`; write `{2}`");
+    public static readonly DiagnosticDescriptor ExpectsSingleParameter = Warning("BYN5011", "this `expects` reads only `{0}`; a type with `requires` checks it once");
     public static readonly DiagnosticDescriptor RepeatedParticle = Error("BYN5013", "`{0}` uses the particle `{1}` twice");
+    public static readonly DiagnosticDescriptor UnknownWord = Warning("BYN5014", "`{0}` is not a known verb or noun");
     public static readonly DiagnosticDescriptor NounOnMutator = Warning("BYN5101", "`{0}` is a noun on a `ref this` member; name the action");
     public static readonly DiagnosticDescriptor BoolWithoutPrefix = Warning("BYN5102", "`{0}` is a `bool` state; prefix with `is`, `has` or `can`");
 
@@ -337,4 +349,5 @@ public static class DiagnosticCodes
 
     // ── Security 8000–8999 ───────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor MissingBecause = Error("BYN8001", "`{0}` bypasses a safety rule and needs `because \"…\"`");
+    public static readonly DiagnosticDescriptor ExpectsReadsUntrusted = Error("BYN8006", "`expects` reads `{0}`, which is `Untrusted`; a violation would trap on outside data");
 }

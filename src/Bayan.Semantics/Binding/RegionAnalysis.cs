@@ -64,6 +64,8 @@ internal sealed class RegionAnalysis
     private readonly Dictionary<LocalSymbol, bool> _referentMayBorrow = new();
     private readonly Stack<Borrow> _contexts = new();
     private readonly HashSet<(int, int)> _reported = new();
+    /// <summary>The regions standing for <c>rest</c> parameters, with the parameter's name.</summary>
+    private readonly Dictionary<Region, string> _restTails = new();
     private int _depth;
     private bool _reporting;
 
@@ -90,6 +92,13 @@ internal sealed class RegionAnalysis
             _declaredAt[p] = -1;
             // What a parameter points to belongs to the caller; the marker keeps that known after unions.
             if (MayBorrow(p.Type, [])) _locals[p] = new Borrow([new Region(0, "the caller's data")], []);
+            // A `rest` tail is borrowed for the call only (J62): it lives in the caller's frame for this statement.
+            if (p.Syntax?.Rest == true && p.Type is SpanType)
+            {
+                var tail = new Region(1, $"`{p.Name}`");
+                _restTails[tail] = p.Name;
+                _locals[p] = new Borrow([tail], []);
+            }
         }
         // The first pass collects what each local may borrow (a loop can store into a local
         // after its first use); the second reports against the complete picture.
@@ -528,6 +537,7 @@ internal sealed class RegionAnalysis
         foreach (var region in Ordered(value.Regions))
         {
             if (region.Depth <= depth) continue;
+            if (RestEscapes(region, span)) return;
             Report(DiagnosticCodes.BorrowOutlivesSource, span, [region.Name, holder],
                 label: $"{region.Name} is freed at the end of its block",
                 help: "copy the data with `.copy(to: alloc)` into an allocator that lives long enough");
@@ -541,10 +551,18 @@ internal sealed class RegionAnalysis
         foreach (var region in Ordered(value.Regions))
         {
             if (region.Depth <= 0) continue;
+            if (RestEscapes(region, span)) return;
             Report(DiagnosticCodes.BorrowReturned, span, [region.Name, _fn.Name],
                 help: "let the caller pass the buffer or allocator in, and borrow or allocate from that");
             return;
         }
+    }
+
+    private bool RestEscapes(Region region, TextSpan span)
+    {
+        if (!_restTails.TryGetValue(region, out var name)) return false;
+        Report(DiagnosticCodes.RestEscapes, span, [name], help: $"copy it first: `{name}.copy()`");
+        return true;
     }
 
     // ── Structural modification while borrowed ───────────────────────────────────

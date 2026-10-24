@@ -220,3 +220,16 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-53h: `let e: E = .timeout` (a case with a payload, written bare outside `fail`) binds without BYN2705; the check needs to tell a value from a `catch` pattern.
 - r3-53h: `RegionAnalysis.cs:236` and `OwnershipAnalysis` treat `BoundErrorVariant` as a leaf, so moves and borrows in an error payload are not checked.
 - r3-53h: `return .case(…)` is not BYN1056; the `return .x` check (5.3f) sees only a bare `.x`.
+- End of round 3: run `/code-review --fix 545965c49391..dev` (the range starts before the partial round-3 merge ef66c14, 2026-10-24, so that merge is reviewed with the rest of the round; not `dev...feat`, which would skip it).
+- r3-54a: the parser's particle list is private (`Parser.cs`), so `Lexicon.Particles` repeats it; expose one list.
+- r3-54a: the BYN5001, BYN5101 and BYN5102 page examples still end field lines with `;`.
+- r3-54a: the manifest's invalid-value help does not mention the `[key: value]` map form that `grammar.forms` now uses.
+- r3-54a: the task names `node scripts/plan-strings-check.js`, but the script uses Deno APIs; run it with `deno run -A`.
+- r3-54a: the BYN51xx exemption for rename attributes (`@json`, `@column`) and `@allow(…) because` is not built (Question 270).
+- r3-54a: plan-strings-check skips BYN5001: its message is in revision 0005, not in a plan §2 entry.
+- r3-53g: `Conformance.cs` and non-call member lookups take the first method of a name, so an overloaded method cannot satisfy an interface member by its particles (Question 306).
+- r3-53g: a generic `rest ReadOnlySpan<T>` does not infer `T` from the tail arguments (`Instantiate` in `BinderCalls.cs` matches parameters one to one).
+- r3-53g: `..xs` mixed with other tail arguments (`f(1, ..xs)`) is BYN2215; spreading into a `rest` tail beside values needs the run-time-length span path `FinishCollection` rejects (BYN2219).
+- r3-53g: `rest` on a non-span type has no diagnostic; the parser's input forms always build `ReadOnlySpan<T>`, but `rest List<T> xs` is accepted and matched as a plain parameter.
+- r3-53g: overloads of the same name each report BYN5001 and other naming lints once per declaration.
+- plan-strings-check skips BYN5011: its plan entry reads `(plan, warning)`, which the start regex `(?: \(plan\))?` rejects; widen the regex (5.4a owns the script) (found 2026-10-24, r3-53g). Checked by hand: message, help and severity match the plan.

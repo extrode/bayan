@@ -1,0 +1,8 @@
+ReadOnlySpan<i64> keep(rest ReadOnlySpan<i64> xs) {
+    return xs
+}
+
+void stash(ref ReadOnlySpan<i64> into, rest ReadOnlySpan<i64> xs) {
+    let view = xs
+    into = view
+}

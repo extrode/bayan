@@ -216,6 +216,7 @@ public sealed partial class Compilation
             foreach (var s in module.Structs) Naming.CheckMembers(this, s);
             foreach (var f in module.AllFunctions.Where(f => f.Owner is null && !f.IsInstance && f.Kind != FunctionKind.Main && f.Kind != FunctionKind.Test).ToList())
                 DeclareSignature(f, f.Decl!, f.File!);
+            CheckOverloads(module);
         }
         foreach (var module in Modules)
         {
@@ -250,7 +251,7 @@ public sealed partial class Compilation
                 help: "write `void main()`, `i32 main()`, `void main(ReadOnlySpan<string> args)` or `i32 main(ReadOnlySpan<string> args)`, each optionally with `fails`");
     }
 
-    /// <summary><c>@cases</c> belongs on a test with parameters, <c>@exitCode</c> on an error variant and <c>@sealed</c>, bare, on a struct; nothing else takes an attribute.</summary>
+    /// <summary><c>@cases</c> belongs on a test with parameters, <c>@exitCode</c> on an error variant and <c>@sealed</c> and <c>@positional</c>, bare, on a struct; nothing else takes an attribute.</summary>
     private void CheckAttributes(FileContext file, Decl decl)
     {
         var hasCases = false;
@@ -273,6 +274,14 @@ public sealed partial class Compilation
             else if (a.Name.Text == "sealed" && (a.Args.Length > 0 || a.Because is not null))
                 Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, [file.Source.GetText(a.Span)], help: "write `@sealed` with no arguments and no `because`");
             else if (a.Name.Text == "sealed") { }
+            else if (a.Name.Text == "positional" && decl is not StructDecl)
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@positional"], help: "put `@positional` on a struct");
+            else if (a.Name.Text == "positional" && (a.Args.Length > 0 || a.Because is not null))
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, [file.Source.GetText(a.Span)], help: "write `@positional` with no arguments and no `because`");
+            else if (a.Name.Text == "positional" && decl is StructDecl { States.Length: > 0 })
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@positional"], help: "remove `@positional`: a struct with states is built with state literals");
+            else if (a.Name.Text == "positional")
+                Positional.Add((StructDecl)decl);
             else
                 Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text],
                     help: "use `@exitCode(n)` on an error variant or `@cases(...)` on a test");
@@ -617,9 +626,40 @@ public sealed partial class Compilation
 
     private void AddFunction(FileContext file, Name name, FunctionSymbol f)
     {
-        if (!CheckUnique(file, name)) return;
-        file.Module.Functions[name.Text] = [f];
+        // Another function of the name is an overload, kept if its signature cannot overlap (CheckOverloads, J65).
+        if (file.Module.Functions.TryGetValue(name.Text, out var overloads)) overloads.Add(f);
+        else if (CheckUnique(file, name)) file.Module.Functions[name.Text] = [f];
+        else return;
         file.Module.AllFunctions.Add(f);
+    }
+
+    /// <summary>Drops an overload that some call would match as well as an earlier one, reporting it as a duplicate (J65).</summary>
+    private void CheckOverloads(ModuleSymbol module)
+    {
+        foreach (var overloads in module.Functions.Values)
+            for (var i = 1; i < overloads.Count; i++)
+            {
+                if (overloads.Take(i).FirstOrDefault(o => Overlap(o, overloads[i])) is not { } earlier) continue;
+                ReportDuplicate(overloads[i].File!.Source, overloads[i].Decl!.Name, earlier.Location!.Value);
+                module.AllFunctions.Remove(overloads[i]);
+                overloads.RemoveAt(i--);
+            }
+    }
+
+    /// <summary>
+    /// Whether one call could match both <paramref name="a"/> and <paramref name="b"/>: each names every label the
+    /// other requires, and their counts of unlabeled arguments meet. Overloads differ by particle set (HANDOFF §24).
+    /// </summary>
+    internal static bool Overlap(FunctionSymbol a, FunctionSymbol b)
+    {
+        static string Label(ParameterSymbol p) => p.Syntax?.Particle?.Text ?? p.Name;
+        static IEnumerable<string> Required(FunctionSymbol f) => f.Parameters.Where(p => p.Syntax is { Particle: not null, Default: null }).Select(Label);
+        static (int Min, int Max) Positional(FunctionSymbol f) =>
+            (f.Parameters.Count(p => p.Syntax is { Particle: null, Default: null, Rest: false }),
+             f.Parameters.Any(p => p.Syntax?.Rest == true) ? int.MaxValue : f.Parameters.Count(p => p.Syntax is { Particle: null }));
+        var shared = a.Parameters.Select(Label).Intersect(b.Parameters.Select(Label)).ToHashSet();
+        var (pa, pb) = (Positional(a), Positional(b));
+        return Required(a).Concat(Required(b)).All(shared.Contains) && pa.Min <= pb.Max && pb.Min <= pa.Max;
     }
 
     private bool CheckUnique(FileContext file, Name name)
@@ -930,7 +970,9 @@ public sealed partial class Compilation
                     };
                     if (s.Template is null) DeclareWhere(file, m.Where, ownParameters, typeMap, m.Name.Text);
                     DeclareSignature(fn, m, file, s);
-                    if (Unique(m.Name)) s.Methods.Add(fn);
+                    if (s.FindMethods(m.Name.Text).FirstOrDefault(o => Overlap(o, fn)) is { } earlier)
+                        ReportDuplicate(file.Source, m.Name, earlier.Location!.Value);
+                    else if (s.FindMethods(m.Name.Text).Any() || Unique(m.Name)) s.Methods.Add(fn);
                     s.Module.AllFunctions.Add(fn);
                     break;
                 }
@@ -983,6 +1025,9 @@ public sealed partial class Compilation
 
     /// <summary>The structs that stand for a <c>type distinct</c>, built with <c>X(raw)</c>.</summary>
     internal HashSet<StructSymbol> Distinct { get; } = new();
+
+    /// <summary>Structs marked with a well-formed <c>@positional</c>: they get a constructor taking every field in order.</summary>
+    internal HashSet<StructDecl> Positional { get; } = new();
 
     private readonly Dictionary<FunctionSymbol, ConstructorDecl> _constructorBodies = new();
 

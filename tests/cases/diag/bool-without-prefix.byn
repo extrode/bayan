@@ -1,13 +1,18 @@
-struct Door {
+public struct Door {
     bool open
 
-    bool ajar => !open
+    public bool ajar => !open
 
-    bool locked() => false
+    public bool locked() => false
 
-    bool hasKey => true
+    public bool hasKey => true
 
-    bool containsAny() => false
+    public bool containsAny() => false
+
+    // A lint on the public API only: a member the module keeps to itself is not checked.
+    bool closed => false
+
+    bool shut() => false
 }
 
 print("ok")
