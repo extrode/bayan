@@ -728,7 +728,8 @@ internal sealed partial class Binder
     /// </summary>
     private BoundExpr Checked(Expr syntax, BoundExpr value, IReadOnlyCollection<FieldSymbol>? changed = null)
     {
-        if (value.Type is not StructSymbol s || !_c.Checks.TryGetValue(s, out var checks)) return value;
+        // A state literal is checked as its struct and keeps its state type.
+        if ((value.Type is StateType state ? state.Struct : value.Type) is not StructSymbol s || !_c.Checks.TryGetValue(s, out var checks)) return value;
         if (changed is not null && !checks.Rules.Any(r => (r.Field is { } f && changed.Contains(f)) || r.Reads.Any(changed.Contains)))
             return value;
         if (value is BoundStructLiteral literal && CheckConstant(syntax, literal, checks) is { } decided)
@@ -738,7 +739,7 @@ internal sealed partial class Binder
             if (_covered is not null) _covered.Add((syntax, s.Name));
             else ReportUnhandled(syntax, s.Name);
         }
-        return new BoundCall(syntax, checks.Check, value, [], s);
+        return new BoundCall(syntax, checks.Check, value, [], value.Type);
     }
 
     /// <summary>

@@ -32,13 +32,19 @@ internal sealed partial class Binder
         return new BoundBecome(b, state, payload);
     }
 
-    /// <summary>Just past the <c>)</c> that closes <paramref name="decl"/>'s parameters, where a <c>becomes</c> clause goes.</summary>
+    /// <summary>
+    /// Where a <c>becomes</c> clause goes in <paramref name="decl"/>'s signature: after the <c>)</c> that closes the
+    /// parameters and any <c>where</c> and <c>expects</c> clauses, before <c>fails</c> and <c>uses</c> (BYN1065's order).
+    /// </summary>
     private int AfterParams(FunctionDecl decl)
     {
         var at = decl.Params.Length > 0 ? decl.Params[^1].Span.End : decl.ParamsStart;
         var bytes = Source.Bytes.Span;
         while (at < bytes.Length && bytes[at] != (byte)')') at++;
-        return Math.Min(at + 1, bytes.Length);
+        at = Math.Min(at + 1, bytes.Length);
+        foreach (var clause in decl.Where) at = Math.Max(at, clause.Span.End);
+        foreach (var clause in decl.Requires) at = Math.Max(at, clause.Span.End);
+        return at;
     }
 
     /// <summary>The states <paramref name="fn"/>'s receiver must be in (<c>this is .a or .b</c>), or null when any will do.</summary>
