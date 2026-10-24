@@ -110,12 +110,16 @@ internal static class Format
     internal static string[] BynFiles(string dir, TextWriter stderr, ref int exit)
     {
         var files = new List<string>();
+        var seenFiles = new HashSet<string>(StringComparer.Ordinal);
+        var seenDirs = new HashSet<string>(StringComparer.Ordinal);
         var pending = new Stack<string>([dir]);
         while (pending.TryPop(out var at))
         {
             try
             {
-                files.AddRange(Directory.GetFiles(at, "*.byn"));
+                if (!seenDirs.Add(Resolved(at))) continue;
+                foreach (var file in Directory.GetFiles(at, "*.byn"))
+                    if (seenFiles.Add(Resolved(file))) files.Add(file);
                 foreach (var sub in Directory.GetDirectories(at)) pending.Push(sub);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -126,6 +130,10 @@ internal static class Format
         }
         return [.. files];
     }
+
+    /// <summary>The full path a file or directory finally resolves to, following symlinks.</summary>
+    private static string Resolved(string path) =>
+        (new FileInfo(path).ResolveLinkTarget(returnFinalTarget: true) ?? new FileInfo(path)).FullName;
 
     /// <summary>The <c>package.byn</c> in the file's directory or the nearest one above it; null when there is none.</summary>
     private static Manifest? ManifestFor(string file, Dictionary<string, Manifest?> cache)
@@ -239,15 +247,28 @@ internal static class Format
     {
         var names = primitives == PrimitiveStyle.Sized ? CSharpPrimitives : SizedPrimitives;
         var tokens = Lexer.Lex(new SourceText(file, bytes)).Tokens;
-        // Only a type is renamed: a field, binding, label or member spelled like a primitive keeps its name.
+        // Only a type, or a callee or receiver (`int(x)`, `i64.max`), is renamed: a field, binding, label or member
+        // spelled like a primitive keeps its name. A callee or receiver is kept when the file uses the spelling
+        // as anything else, since it may then be that binding.
         var typeNames = AstDump.TypeNames(tree).Select(n => n.Span.Start).ToHashSet();
+        var calleeNames = AstDump.CalleeAndReceiverNames(tree).Select(n => n.Span.Start).ToHashSet();
+        var otherUses = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < tokens.Length; i++)
+        {
+            var t = tokens[i];
+            if (t.Kind != TokenKind.Identifier || typeNames.Contains(t.Start) || calleeNames.Contains(t.Start)) continue;
+            if (i > 0 && tokens[i - 1].Kind is TokenKind.Dot or TokenKind.QuestionDot) continue;
+            otherUses.Add(System.Text.Encoding.UTF8.GetString(bytes, t.Start, t.Length));
+        }
         var renames = new List<Fix>();
         var operators = new List<Fix>();
         for (var i = 0; i < tokens.Length; i++)
         {
             var token = tokens[i];
-            if (token.Kind == TokenKind.Identifier && typeNames.Contains(token.Start)
-                && names.TryGetValue(System.Text.Encoding.UTF8.GetString(bytes, token.Start, token.Length), out var name))
+            if (token.Kind == TokenKind.Identifier && (typeNames.Contains(token.Start) || calleeNames.Contains(token.Start))
+                && System.Text.Encoding.UTF8.GetString(bytes, token.Start, token.Length) is var text
+                && names.TryGetValue(text, out var name)
+                && (typeNames.Contains(token.Start) || !otherUses.Contains(text)))
                 renames.Add(new Fix(new TextSpan(token.Start, token.Length), name));
             else if (OperatorFix(bytes, tokens, i, booleans) is { } fix)
                 operators.Add(fix);

@@ -108,6 +108,18 @@ public sealed class CliTests
         finally { File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
     }
 
+    [Fact]
+    public async Task AuditWalksSymlinkCyclesOnce()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("audit-cycle", "unsafe void poke() {\n}\n");
+        var sub = Directory.CreateDirectory(Path.Combine(dir, "sub")).FullName;
+        Directory.CreateSymbolicLink(Path.Combine(sub, "up"), "..");
+        Directory.CreateSymbolicLink(Path.Combine(sub, "up2"), "..");
+        var result = await Task.Run(() => Run("audit", dir)).WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Equal(1, result.Out.Split("unsafe void poke()").Length - 1);
+    }
+
     /// <summary>Whether <paramref name="read"/> succeeds despite a mode of none, as it does for root.</summary>
     private static bool CanRead(Action read)
     {
