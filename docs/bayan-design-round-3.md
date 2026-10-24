@@ -4,7 +4,7 @@
 
 Bayan is a C#-derived, natively compiled language (no .NET runtime). `SPEC.md` exists, the round-2 HANDOFF has been applied or is in progress, and the v0.1 bootstrap compiler is being built.
 
-This handoff records every decision from design round 3, including the signature review of 2026-10-23 and its follow-ups (panic handler, views and copies, formatting, grammar-checker scope, the performance contract, references in structs). It **supplements** round 2: everything in round 2 still stands unless this document changes it, and this document wins on any conflict. Section numbers §22–§23 are used by the plan for the Sūq review and friction items; the sections added by the signature review are §24–§31. The changelog at the end lists what changed and when.
+This handoff records every decision from design round 3, including the signature review of 2026-10-23 and its follow-ups (panic handler, views and copies, formatting, grammar-checker scope, the performance contract, references in structs). It **supplements** round 2: everything in round 2 still stands unless this document changes it, and this document wins on any conflict. Section numbers §22–§23 are used by the plan for the Sūq review and friction items; the sections added by the signature review are §24–§32. The changelog at the end lists what changed and when.
 
 For each area: update `SPEC.md` (with a one-line rationale per change), update `GRAMMAR.md` and `STYLE.md` where named, implement in the compiler where the area is in v0.1 scope, add tests, and add diagnostics with `BYN####` codes and `bayan explain` entries. Use these code ranges: 1xxx syntax, 3xxx types, 5xxx grammar, 6xxx effects, 7xxx typestate, 8xxx security.
 
@@ -96,6 +96,15 @@ Type name => expr | { … }             // computed property
 - **A particle comes before the passing mode:** `to ref Span<u8> dst`.
 - **Function types are parenthesized when a name follows them**, in fields and parameters: `(Line -> Money uses net) pricer`, `by (Token -> bool) p`. An alias avoids the parentheses: `type Pricer = Line -> Money uses net`, then `Pricer pricer`.
 - **State types** are written `Order.paid` (one state) or `Order order is .paid or .shipped` (several, inline after the name). Details in §14.
+- **Pointers are postfix**, like `T?`: `Sqlite3* db`, `u8** argv`, and `readonly u8* data` for a pointer that cannot be written through (C's `const char*`). The type's head comes first and its modifiers follow (head-first, §1), and a declaration line always starts with a type name, never with `*`. Pointers appear only in `extern` declarations and `unsafe because` blocks:
+  ```csharp
+  extern c {
+      c_int sqlite3_open(cstr filename, out Sqlite3* db)
+      c_int sqlite3_close(Sqlite3* db)
+      void* sodium_malloc(usize size) uses alloc
+      c_int crypto_auth_hmacsha256_verify(readonly u8* tag, readonly u8* msg, u64 len, readonly u8* key)
+  }
+  ```
 
 ### The receiver
 
@@ -558,6 +567,7 @@ In `defer failing tx.rollback() unless dryRun`, the modifier is evaluated once, 
 | `params T[] items`, `params ReadOnlySpan<T> items`, `T... items` | `rest ReadOnlySpan<T> items` (§24) |
 | Interface property `Type name { get }` | `Type name` (§26) |
 | `A => B` as a function type | `A -> B` (O5) |
+| `*T`, `*mut T`, `*const T` pointers | `T*`, `T*`, `readonly T*` (§2) |
 
 Remove from the round-2 table: `if !x { … }` → `unless x { … }`.
 
@@ -907,7 +917,7 @@ style: Style {
 }
 ```
 
-- `.sized` is the default. `bayan format` normalizes each project to its spelling; the compiler accepts both and raises no diagnostic (style is never compiler-enforced, as for booleans).
+- `.sized` is the default. `bayan format` normalizes each project to its spelling; the compiler accepts both and raises no diagnostic (style is never compiler-enforced, as for booleans). BYN1030, which rejected the C# names as input forms, is retired with a tombstone ("retired: the rewrite moved to `bayan format` `style.primitives`; never reuse").
 - **Excluded:** `char` (16-bit in C#; it stays the input form for `rune`), `decimal` and `object` (no equivalent). `bool` and `string` are shared.
 - The C# names are reserved words in every project, whatever its style.
 - Tooling renders types in the reader's project style: diagnostics, hover, `bayan expand`, generated docs and `bayan explain`.
@@ -929,6 +939,7 @@ Bayan targets Rust and Zig speed. These rules keep the safe default on the fast 
   public T max<T>(ReadOnlySpan<T> xs) where T : IOrder<T> { … }   // static: one copy per T
   public void print(rest ReadOnlySpan<Display> items) uses console  // dynamic: one copy, vtable calls
   ```
+- **Debug mapping (v0.0.1):** the emitted C carries `#line` directives that point back to the `.byn` file and line, so native debuggers (gdb, lldb, Visual Studio) step through Bayan source and report Bayan locations. A C compiler error that reaches the user is a Bayan compiler bug.
 - **Zero runtime cost by design:** typestate (erased), effects and capabilities (compile-time), `rest` spans (caller's stack), `Event.raise` (no allocation), units (plain integers), `T.Patch` and derivations (generated code, no reflection).
 
 ## 31. References in structs, trees and graphs
@@ -954,6 +965,15 @@ Bayan targets Rust and Zig speed. These rules keep the safe default on the fast 
   }
   ```
   Generational handles (`Handle<T>`, which catch a stale index after deletion at the cost of one compare per access) are added only when the selfhost AST or Sūq shows the need.
+
+## 32. Spec freeze and revisions
+
+When the agent finishes this round's documentation deliverables (1–3, 5 and 9), `SPEC.md`, `GRAMMAR.md` and `STYLE.md` are **frozen**:
+
+- Changes go only through numbered revisions in `docs/revisions/NNNN-title.md`. Each one states the problem, the decision, the sections changed, the diagnostic codes affected and the Sūq files affected.
+- A revision is applied to the spec in one commit, and the revision file stays as the record. Design rounds and addenda become revisions; no new HANDOFF-style documents.
+- The agent never changes the spec on its own. A conflict it finds goes into the end-of-run summary or a draft revision for the user to accept.
+- Sūq coverage CI (§21) is the gate: a revision that adds a feature also adds its Sūq use.
 
 ---
 
@@ -1013,20 +1033,21 @@ Bayan targets Rust and Zig speed. These rules keep the safe default on the fast 
 
 ## Deliverables
 
-1. `SPEC.md` updated for §1–20 and §24–29, each change with a one-line rationale and its diagnostic codes.
+1. `SPEC.md` updated for §1–20 and §24–32, each change with a one-line rationale and its diagnostic codes.
 2. `GRAMMAR.md` and `STYLE.md` updated (§1, §5, §12, §13, §15, §28). In STYLE.md's member order, rename "state members" to "properties" and use the order in §26 (fields, `states` block, events, properties, static factories, methods). STYLE: `uses` after `fails`, the clause order of §2, and the `style.primitives` default.
 3. Sweep every code example in SPEC.md, GRAMMAR.md, STYLE.md and `docs/` to round-3 syntax: name-first local bindings, type-first declarations; no semicolons; `@` attributes; particles; `rune`; head-first declaration keywords; `states` blocks and `T.s` types; `rest`; `bayan format`.
-4. Verify collections use `length` for size and `count(p)` only for predicate counts (round 2 §11 lists `count` among the queries).
-5. Compiler changes, in this order:
+4. Freeze the three documents and create `docs/revisions/` with a README describing the revision format (§32).
+5. Verify collections use `length` for size and `count(p)` only for predicate counts (round 2 §11 lists `count` among the queries).
+6. Compiler changes, in this order:
    1. Lexer and parser: semicolon-free termination (§3), `@` attributes and `because` (§4), head-first declaration keywords, name-first local bindings and type-first declarations with their input forms (§2), receivers including `move this` (§2), `//`-only comments, `except` (§7), `states`/`becomes`/`become` and `T.s` types (§14), particles including `until`/`through` (§15), `provide` (§13), `rest` and named parameters after it (§24), lambda and loop bindings (§25), `expects` (§11).
    2. Input-form rejection with fix-its (§20), and `bayan format` rewrites including `style.booleans` and `style.primitives`.
    3. Semantics: unused-value error, `requires` at construction and `with` re-checking, `expects` (§11), typestate (§14), effects, aliases and capabilities (§13), overload checks (§24), unit conversion and literal rules (§8), typed indices (§9), trust layers (§17), `try` scope (§18), `defer` modifier capture (§19).
    4. Standard library: `rune`, `log`, `print` with `console`, particle names, `tryGet`, `remove`/`replace`, math names (§27), sink types, `T.rules`.
    5. `bayan format` (renamed), `bayan audit` and `bayan features --used`.
-6. Tests for each item: positive, negative, and diagnostic snapshots.
-7. Sūq: coverage doc, friction log, compile-fail corpus skeleton, and the paper versions of the first three parts (§21).
-8. Verification: confirm SPEC §9 states the §31 rule in so many words (a borrow stored in a struct field binds the struct to the referent's region and never outlives it); add any missing sentence, the two safety measures (§31 items 1–2), and the typed-index tree idiom to STYLE, since the selfhost parser's AST is the first large tree.
-9. An end-of-run summary: what changed, what was not done and why, spec conflicts that needed a judgment call, and the top friction-log items.
+7. Tests for each item: positive, negative, and diagnostic snapshots.
+8. Sūq: coverage doc, friction log, compile-fail corpus skeleton, and the paper versions of the first three parts (§21).
+9. Verification: confirm SPEC §9 states the §31 rule in so many words (a borrow stored in a struct field binds the struct to the referent's region and never outlives it); add any missing sentence, the two safety measures (§31 items 1–2), and the typed-index tree idiom to STYLE, since the selfhost parser's AST is the first large tree.
+10. An end-of-run summary: what changed, what was not done and why, spec conflicts that needed a judgment call, and the top friction-log items.
 
 ---
 
@@ -1042,5 +1063,5 @@ Bayan targets Rust and Zig speed. These rules keep the safe default on the fast 
   - `expects` for preconditions beside `requires` types; validation errors as a composable `union error`; `Rule` payloads named; `at .password` in the example (§11).
   - Units: coarser conversions are `floor`/`ceiling`/`rounded` with a type argument; `round(to:)`, `roundUp`, `roundDown` and `convert(to:)` removed (§8).
   - New sections: overloading, defaults and `rest` (§24); lambdas, loops, identifiers (§25); interfaces, properties, events (§26); standard library shapes, including `std.db` (§27); primitive spellings (§28); `bayan format` (§29).
-  - Follow-ups: `Panic.handler` (§13); O11 and O12 resolved (§15, §26); views, copies and conversions without `toX`/`asX` (§12, §27); `string(x, as: Radix)` and the `utf16` view (§27); O13–O15 resolved (no `fromUtf8`; codecs for hex and base64; checker scope); project dictionary and plain-English diagnostics (§12); performance contract (§30); references in structs and typed-index trees (§31).
+  - Follow-ups: `Panic.handler` (§13); O11 and O12 resolved (§15, §26); views, copies and conversions without `toX`/`asX` (§12, §27); `string(x, as: Radix)` and the `utf16` view (§27); O13–O15 resolved (no `fromUtf8`; codecs for hex and base64; checker scope); project dictionary and plain-English diagnostics (§12); performance contract (§30); references in structs and typed-index trees (§31); postfix pointers and `readonly T*` (§2); BYN1030 retired (§28); `#line` debug mapping (§30); spec freeze and numbered revisions (§32).
   - Example fixes: `transfer` gains its receiver, `insert` gains `uses alloc`, `crc` takes `ReadOnlySpan<u8>`, `Date(year:month:day:)`, `FakeNet(label)`, the `Checkout` callback example replaced by a `Pricer` alias.

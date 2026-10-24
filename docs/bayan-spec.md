@@ -1800,7 +1800,7 @@ struct Timespec {
 public c_int settleC(…) { … }
 ```
 
-- Pointer types are postfix: `T*` (`Sqlite3* db`, `u8* buf`). A pointer C must not write through is `readonly T*` (C `const char*` is `readonly u8*`). The prefix forms `*T` and `*mut T` are input forms.
+- Pointer types are postfix: `T*` (`Sqlite3* db`, `u8* buf`). A pointer C must not write through is `readonly T*` (C `const char*` is `readonly u8*`). The prefix forms `*T`, `*mut T` and `*const T` are input forms (BYN1066).
 - `comptime CImport("header.h")` translates headers.
 - Calling `extern` functions requires `unsafe`; libraries wrap them once in safe APIs.
 - `build.addCSource(…)` compiles C dependencies from source via `zig cc`.
@@ -1813,7 +1813,7 @@ public c_int settleC(…) { … }
 
 > Round 3 §2, §5, §6: extern declarations are type-first like C signatures and every other declaration (revised 2026-10-22), and attributes use `@` like everywhere else. Codes: BYN1043, BYN1045.
 
-> Handoff Question 120 (decided 2026-10-24): postfix `T*` reads like the C signature it mirrors in a type-first declaration; `readonly` already means "no writes through this" elsewhere, so it spells C's `const`. Codes: allocated when pointer types are parsed.
+> Handoff Question 120 (decided 2026-10-24): postfix `T*` reads like the C signature it mirrors in a type-first declaration; `readonly` already means "no writes through this" elsewhere, so it spells C's `const`. Codes: BYN1066 (revision 0001).
 
 > Round 3 §27: wide strings replace `toUtf16()` with one FFI form beside `cstr`, so UTF-16 interop needs no conversion member. Codes: BYN2230.
 
