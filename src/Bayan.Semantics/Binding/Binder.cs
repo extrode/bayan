@@ -578,6 +578,8 @@ internal sealed partial class Binder
                 return BindContext(c);
             case AssertStmt a:
                 return BindAssert(a);
+            case BecomeStmt b:
+                return BindBecome(b);
             case EmptyStmt:
                 return new BoundBlock(stmt, []);
             case ErrorStmt:

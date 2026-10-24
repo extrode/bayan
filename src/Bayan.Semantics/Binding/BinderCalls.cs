@@ -147,6 +147,7 @@ internal sealed partial class Binder
         };
         var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
         (_printArgument, _sinkArgument) = (outer, outerSink);
+        if (receiver is not null && ReceiverStates(fn) is { } wanted) ReportWrongState(fn.Name, receiver, wanted, receiver.Syntax.Span);
         // A `ref this` call on `map[key]` changes the stored value in place.
         if (receiver is not null && fn.IsMutating) receiver = MapWriteTarget(receiver);
         // A `dyn ref` writes through the borrow, not into the local holding it; `dyn ref readonly` is BYN2813.
@@ -334,7 +335,7 @@ internal sealed partial class Binder
                 _prebound.Remove(arg);
                 continue;
             }
-            result[p.Ordinal] = BindArgument(arg, p);
+            result[p.Ordinal] = BindArgument(arg, p, name);
         }
         if (rest is not null && result[rest.Ordinal] is null)
             result[rest.Ordinal] = BindRestTail(c, rest, tail);
@@ -389,7 +390,7 @@ internal sealed partial class Binder
         _ => null,
     };
 
-    private BoundExpr BindArgument(Argument arg, ParameterSymbol p)
+    private BoundExpr BindArgument(Argument arg, ParameterSymbol p, string callee)
     {
         var wanted = p.Modifier switch { ParamModifier.Ref => ArgModifier.Ref, ParamModifier.Out => ArgModifier.Out, _ => ArgModifier.None };
         // `move x` hands a value to a plain or `move` parameter.
@@ -414,13 +415,14 @@ internal sealed partial class Binder
             CheckWritable(place, arg.Value.Span, $"it is passed as `{(wanted == ArgModifier.Ref ? "ref" : "out")}`");
             return place;
         }
-        return BindArgumentValue(arg, p.Type);
+        return BindArgumentValue(arg, p.Type, callee);
     }
 
-    private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type)
+    private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type, string? callee = null)
     {
         var value = _prebound.Remove(arg, out var early) ? early : Built(BindExpr(arg.Value, type), arg.Value);
         if (arg.Modifier == ArgModifier.Move) value = BindMove(arg, value);
+        if (callee is not null && type is StateType wanted && ReportWrongState(callee, value, wanted, arg.Value.Span)) return new BoundErrorExpr(arg.Value);
         // A type argument inferred from the value is not a typed use of it.
         return type is null ? value : Convert(value, type, arg.Value.Span, argument: true, constrains: early is null);
     }
@@ -453,6 +455,13 @@ internal sealed partial class Binder
             }
             case StructSymbol s:
             {
+                if (_c.StatesOf(s) is { } states)
+                {
+                    Report(DiagnosticCodes.StateLiteralNeedsState, c.Callee.Span, [s.Name, states.Variants[0].Name],
+                        help: "name the state the value starts in");
+                    BindArgumentsForRecovery(c);
+                    return new BoundErrorExpr(c);
+                }
                 if (c.Args.Length > 0)
                 {
                     Report(DiagnosticCodes.NoConstructor, c.Callee.Span, [s.Name],
@@ -719,7 +728,8 @@ internal sealed partial class Binder
     /// </summary>
     private BoundExpr Checked(Expr syntax, BoundExpr value, IReadOnlyCollection<FieldSymbol>? changed = null)
     {
-        if (value.Type is not StructSymbol s || !_c.Checks.TryGetValue(s, out var checks)) return value;
+        // A state literal is checked as its struct and keeps its state type.
+        if ((value.Type is StateType state ? state.Struct : value.Type) is not StructSymbol s || !_c.Checks.TryGetValue(s, out var checks)) return value;
         if (changed is not null && !checks.Rules.Any(r => (r.Field is { } f && changed.Contains(f)) || r.Reads.Any(changed.Contains)))
             return value;
         if (value is BoundStructLiteral literal && CheckConstant(syntax, literal, checks) is { } decided)
@@ -729,7 +739,7 @@ internal sealed partial class Binder
             if (_covered is not null) _covered.Add((syntax, s.Name));
             else ReportUnhandled(syntax, s.Name);
         }
-        return new BoundCall(syntax, checks.Check, value, [], s);
+        return new BoundCall(syntax, checks.Check, value, [], value.Type);
     }
 
     /// <summary>
@@ -1268,7 +1278,7 @@ internal sealed partial class Binder
 
     private BoundMemberStep? ResolveStep(TypeSymbol type, Name name)
     {
-        switch (type)
+        switch (type is StateType state ? state.Struct : type)
         {
             case ErrorType:
                 return null;

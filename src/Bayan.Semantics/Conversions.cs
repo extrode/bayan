@@ -36,6 +36,10 @@ public static class Conversions
             if (from is StructSymbol s && s.Conformances.Any(c => c.Interface == dyn.Interface)) return ConversionKind.ToDynRef;
             if (from is TypeParameterType p && p.Constraints.Contains(dyn.Interface)) return ConversionKind.ToDynRef;
         }
+        // Widening is free: a state type converts to its struct or to a type listing more of its states (spec §3.17).
+        if (from is StateType fs && (to.Equals(fs.Struct) || to is StateType ts && ts.Struct.Equals(fs.Struct) && fs.States.All(ts.States.Contains)))
+            return ConversionKind.Identity;
+        if (to is StateType all && from.Equals(all.Struct) && all.States.Count == all.States[0].Union.Variants.Count) return ConversionKind.Identity;
         if (from is ErrorSetSymbol set && to is ErrorUnionType u && (u.Sets.Count == 0 || u.Sets.Contains(set))) return ConversionKind.Identity;
         return null;
     }

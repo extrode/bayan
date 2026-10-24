@@ -1,0 +1,20 @@
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+        shipped
+    }
+    void pay(move this is .draft, i64 amount) {
+        become .paid(amount)
+    }
+    void ship(move this is .paid) becomes .shipped {
+        become .paid(1)
+    }
+    void settle(move this is .draft, i64 amount) expects amount > id {
+        become .paid(amount)
+    }
+    void charge(move this is .draft, i64 amount) fails {
+        become .paid(amount)
+    }
+}

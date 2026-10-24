@@ -126,7 +126,14 @@ public sealed record BoundConditional(Node Syntax, BoundExpr Condition, BoundExp
 public sealed record BoundCoalesce(Node Syntax, BoundExpr Left, BoundExpr Right, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
 /// <summary>A struct value with every field given, in declaration order.</summary>
-public sealed record BoundStructLiteral(Node Syntax, StructSymbol Struct, BoundExpr[] Fields) : BoundExpr(Syntax, Struct);
+public sealed record BoundStructLiteral(Node Syntax, StructSymbol Struct, BoundExpr[] Fields) : BoundExpr(Syntax, Struct)
+{
+    /// <summary>The state of a state literal <c>T.s { … }</c>, whose type is then <c>T.s</c>; null for a struct without states.</summary>
+    public UnionVariantSymbol? State { get; init; }
+
+    /// <summary>The payload of <see cref="State"/>, by its field order.</summary>
+    public BoundExpr[] Payload { get; init; } = [];
+}
 
 public sealed record BoundWith(Node Syntax, BoundExpr Target, (FieldSymbol Field, BoundExpr Value)[] Updates) : BoundExpr(Syntax, Target.Type);
 
@@ -225,6 +232,9 @@ public sealed record BoundReturn(Node Syntax, BoundExpr? Value) : BoundStmt(Synt
 
 /// <summary>Fails the enclosing function with <see cref="Error"/> (a value of an error-set type).</summary>
 public sealed record BoundFail(Node Syntax, BoundExpr Error) : BoundStmt(Syntax);
+
+/// <summary><c>become .s(…)</c>: <c>this</c> moves to <see cref="State"/>, a case of its struct's states union, with its payload.</summary>
+public sealed record BoundBecome(Node Syntax, UnionVariantSymbol State, BoundExpr[] Payload) : BoundStmt(Syntax);
 
 /// <summary>Identity of a loop or switch for <c>break</c>/<c>continue</c>.</summary>
 public sealed class JumpTarget(string? label, bool isLoop)

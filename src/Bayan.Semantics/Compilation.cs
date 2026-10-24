@@ -213,6 +213,7 @@ public sealed partial class Compilation
         foreach (var module in Modules)
         {
             foreach (var s in module.Structs) DeclareMembers(s);
+            foreach (var s in module.Structs) CheckStateNames(s);
             foreach (var s in module.Structs) Naming.CheckMembers(this, s);
             foreach (var f in module.AllFunctions.Where(f => f.Owner is null && !f.IsInstance && f.Kind != FunctionKind.Main && f.Kind != FunctionKind.Test).ToList())
                 DeclareSignature(f, f.Decl!, f.File!);
@@ -1018,6 +1019,50 @@ public sealed partial class Compilation
         check.ErrorSets.Add(Builtins.ValidationError);
         s.Module.AllFunctions.Add(check);
         Checks[s] = new StructChecks(check, []);
+    }
+
+    /// <summary>The states of each struct with a <c>states</c> block, as a synthetic union whose cases are the states; read by the backend.</summary>
+    public Dictionary<StructSymbol, UnionSymbol> States { get; } = new();
+
+    /// <summary>
+    /// The states union of <paramref name="s"/>, or null when it has no <c>states</c> block. Declared on first use,
+    /// so <c>T.s</c> resolves before the struct's members are declared.
+    /// </summary>
+    internal UnionSymbol? StatesOf(StructSymbol s)
+    {
+        if (s.Decl.States.Length == 0) return null;
+        if (States.TryGetValue(s, out var existing)) return existing;
+        var decl = new UnionDecl(s.Decl.Name.Span, Modifiers.None, s.Decl.Name, s.Decl.States);
+        var u = new UnionSymbol(s.Name, s.Location, s.Module, s.Access, decl, s.File) { TypeMap = s.TypeMap };
+        States[s] = u;
+        // An instance's states were checked on the template.
+        var outer = s.Template is null ? null : ReportInto(new DiagnosticBag());
+        try { DeclareUnionVariants(u); }
+        finally { if (s.Template is not null) ReportInto(outer); }
+        if (s.Template is not null) return u;
+        foreach (var member in s.Decl.Members)
+        {
+            var name = member switch
+            {
+                FunctionDecl f when f.Modifiers.HasFlag(Modifiers.Static) => f.Name.Text,
+                PropertyDecl p when p.Modifiers.HasFlag(Modifiers.Static) => p.Name.Text,
+                _ => null,
+            };
+            if (name is not null && s.Decl.States.FirstOrDefault(v => v.Name.Text == name) is { } state)
+                Report(DiagnosticCodes.StateShadowsStatic, s.File.Source, state.Name.Span, [name, s.Name],
+                    help: "rename the state or the static member");
+        }
+        return u;
+    }
+
+    /// <summary>Declares the states of <paramref name="s"/>; a receiver state or <c>becomes</c> target it does not declare is BYN7007.</summary>
+    private void CheckStateNames(StructSymbol s)
+    {
+        var states = StatesOf(s);
+        foreach (var f in s.Decl.Members.OfType<FunctionDecl>())
+            foreach (var n in f.ReceiverStates.Append(f.Becomes).OfType<Name>())
+                if (states?.Find(n.Text) is null)
+                    Report(DiagnosticCodes.UnknownState, s.File.Source, n.Span, [s.Name, n.Text], help: $"check the states declared in `{s.Name}`");
     }
 
     /// <summary>The <c>requires</c> check of each struct that has rules, by struct.</summary>

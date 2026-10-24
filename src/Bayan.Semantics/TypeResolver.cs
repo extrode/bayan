@@ -58,6 +58,8 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 return ResolveNamed(n);
             case DynType d:
                 return ResolveDyn(d);
+            case RefinedType r:
+                return ResolveStates(Resolve(r.Inner), r.States);
             default:
                 return ErrorType.Instance;
         }
@@ -193,6 +195,9 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             NoTypeArgs(n);
             return fields;
         }
+        // `Order.paid`: a camelCase last segment names a state of the struct; derived shapes are PascalCase (J56).
+        if (n.Path.Length == 2 && char.IsLower(name.Text[0]) && Lookup(file.Module, n.Path[0].Text) is StructSymbol)
+            return ResolveStates(ResolveNamed(n with { Path = [n.Path[0]] }), [name]);
         if (n.Path.Length == 2 && file.Imports.TryGetValue(n.Path[0].Text, out var module))
         {
             if (Lookup(module, name.Text) is { } t)
@@ -206,6 +211,25 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
         compilation.Report(DiagnosticCodes.UnknownType, file.Source, n.Span, [string.Join(".", n.Path.Select(x => x.Text))],
             help: n.Path.Length == 2 ? $"add `import {n.Path[0].Text}`; `{n.Path[0].Text}` is not an imported module" : null);
         return ErrorType.Instance;
+    }
+
+    /// <summary>The state type <c>T.s</c> or <c>T is .a or .b</c> of <paramref name="owner"/>; a state it does not declare is BYN7007.</summary>
+    private TypeSymbol ResolveStates(TypeSymbol owner, Name[] names)
+    {
+        if (owner.IsError) return owner;
+        var states = owner is StructSymbol s ? compilation.StatesOf(s) : null;
+        var found = new List<UnionVariantSymbol>();
+        foreach (var n in names)
+        {
+            if (states?.Find(n.Text) is not { } state)
+            {
+                compilation.Report(DiagnosticCodes.UnknownState, file.Source, n.Span, [owner.DisplayName, n.Text],
+                    help: $"check the states declared in `{owner.DisplayName}`");
+                return ErrorType.Instance;
+            }
+            found.Add(state);
+        }
+        return new StateType((StructSymbol)owner, found);
     }
 
     /// <summary><c>dyn ref I</c> and <c>dyn ref readonly I</c>; <c>dyn I</c> and interfaces that are not dyn-safe are diagnostics.</summary>

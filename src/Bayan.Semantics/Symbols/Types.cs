@@ -156,6 +156,7 @@ public sealed class TypeParameterType(string name) : TypeSymbol
         TupleType tt => tt.Fields.Any(f => Occurs(f.Type)),
         ResultType r => Occurs(r.Value),
         StructSymbol s => s.IsGeneric,
+        StateType st => st.Struct.IsGeneric,
         UnionSymbol u => u.IsGeneric,
         InterfaceSymbol i => i.IsGeneric,
         DynRefType d => Occurs(d.Interface),
@@ -329,6 +330,25 @@ public sealed class ResultType(TypeSymbol value, TypeSymbol error) : Constructed
     public override string DisplayName => $"Result<{Value.DisplayName}, {Error.DisplayName}>";
 
     public override bool IsBorrow => Value.IsBorrow;
+}
+
+/// <summary>
+/// <c>T.s</c> or <c>T is .a or .b</c>: a struct with states, known to be in one of <see cref="States"/> (spec §3.17).
+/// The states are cases of the struct's synthetic states union, in declaration order.
+/// </summary>
+public sealed class StateType(StructSymbol @struct, IReadOnlyList<UnionVariantSymbol> states) : ConstructedType
+{
+    public StructSymbol Struct { get; } = @struct;
+
+    public IReadOnlyList<UnionVariantSymbol> States { get; } = states.Distinct().OrderBy(v => v.Tag).ToArray();
+
+    protected override object Key => (Struct, string.Join(",", States.Select(v => v.Name)));
+
+    public override string DisplayName => States.Count == 1
+        ? $"{Struct.DisplayName}.{States[0].Name}"
+        : $"{Struct.DisplayName} is {string.Join(" or ", States.Select(v => "." + v.Name))}";
+
+    public override bool IsBorrow => Struct.IsBorrow;
 }
 
 /// <summary>Built-in nominal types with runtime support.</summary>

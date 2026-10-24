@@ -345,7 +345,14 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor UnknownHandler = Error("BYN6007", "`{0}` is not a handler; `provide` takes `alloc`, `net`, `fs`, `clock`, `random`, `env`, `process`, `console` or `log`");
 
     // ── Typestate 7000–7999 ──────────────────────────────────────────────────────────
+    public static readonly DiagnosticDescriptor WrongState = Error("BYN7001", "`{0}` needs `{1}` to be `.{2}`, but it is `{3}`");
+    public static readonly DiagnosticDescriptor BecomeUndeclared = Error("BYN7003", "`become` needs `becomes .{0}` on `{1}`");
+    /// <summary>BYN7003's second message form, for a signature that declares another target; registered once, as <see cref="BecomeUndeclared"/>.</summary>
+    public static readonly DiagnosticDescriptor BecomeOtherState = new("BYN7003", Severity.Error, "`become .{0}` is not declared; `{1}` becomes `.{2}`");
+    public static readonly DiagnosticDescriptor StateLiteralNeedsState = Error("BYN7005", "`{0}` has states; a literal must name one: `{0}.{1} {{ … }}`");
     public static readonly DiagnosticDescriptor SingleStateInline = Error("BYN7006", "`{0} is .{1}` is an input form; write `{2}`");
+    public static readonly DiagnosticDescriptor UnknownState = Error("BYN7007", "`{0}` has no state `.{1}`");
+    public static readonly DiagnosticDescriptor StateShadowsStatic = Error("BYN7008", "state `.{0}` has the same name as static member `{1}.{0}`");
 
     // ── Security 8000–8999 ───────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor MissingBecause = Error("BYN8001", "`{0}` bypasses a safety rule and needs `because \"…\"`");

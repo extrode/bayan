@@ -680,7 +680,8 @@ internal sealed partial class Binder
     private BoundExpr BindValueMember(Node syntax, BoundExpr target, Name member)
     {
         var name = member.Text;
-        switch (target.Type)
+        // A state type has its struct's members.
+        switch (target.Type is StateType state ? state.Struct : target.Type)
         {
             case StructSymbol s:
             {
@@ -1339,6 +1340,10 @@ internal sealed partial class Binder
             return new BoundErrorExpr(s);
         }
         if (type.IsError) return new BoundErrorExpr(s);
+        // `Order.paid { … }` builds a value in one state; with several states, none is named.
+        var stateType = type as StateType;
+        var state = stateType is { States.Count: 1 } ? stateType.States[0] : null;
+        if (stateType is not null) type = stateType.Struct;
         if (type is not StructSymbol st)
         {
             Report(DiagnosticCodes.NotAStruct, s.Span, [type.DisplayName]);
@@ -1350,10 +1355,26 @@ internal sealed partial class Binder
                 help: $"call the constructor: `{st.Name}({string.Join(", ", st.Constructors[0].Parameters.Select(p => p.Name + ": …"))})`");
             return new BoundErrorExpr(s);
         }
+        if (state is null && _c.StatesOf(st) is { } states)
+        {
+            Report(DiagnosticCodes.StateLiteralNeedsState, s.Type?.Span ?? s.Span, [st.Name, states.Variants[0].Name],
+                help: "name the state the value starts in");
+            foreach (var init in s.Fields) BindExpr(init.Value);
+            return new BoundErrorExpr(s);
+        }
         var values = new BoundExpr?[st.Fields.Count];
+        var payload = new BoundExpr?[state?.Fields.Count ?? 0];
         foreach (var init in s.Fields)
         {
             var field = st.FindField(init.Name.Text);
+            if (field is null && state?.Fields.FirstOrDefault(f => f.Name == init.Name.Text) is { } payloadField)
+            {
+                if (payload[payloadField.Ordinal] is not null)
+                    Report(DiagnosticCodes.DuplicateFieldInit, init.Name.Span, [payloadField.Name]);
+                else
+                    payload[payloadField.Ordinal] = BindConverted(init.Value, payloadField.Type);
+                continue;
+            }
             if (field is null)
             {
                 Report(DiagnosticCodes.UnknownMember, init.Name.Span, [init.Name.Text, st.Name],
@@ -1384,15 +1405,23 @@ internal sealed partial class Binder
                 values[i] = _c.FieldDefault(st, f, Source, s.Span) ?? new BoundErrorExpr(s);
             }
         }
+        for (var i = 0; i < payload.Length; i++)
+        {
+            if (payload[i] is not null) continue;
+            missing.Add(state!.Fields[i].Name);
+            payload[i] = new BoundErrorExpr(s);
+        }
         if (missing.Count > 0)
         {
-            var first = st.FindField(missing[0])!;
+            var first = st.FindField(missing[0]);
+            var written = state is null ? st.Name : $"{st.Name}.{state.Name}";
             Report(DiagnosticCodes.MissingFields, s.Span, [st.Name, string.Join("`, `", missing)],
-                label: missing.Count == 1 && first.IsRequired ? "`" + first.Name + "` is `required`" : null,
-                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
+                label: missing.Count == 1 && first is { IsRequired: true } ? "`" + first.Name + "` is `required`" : null,
+                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{written} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
             return new BoundErrorExpr(s);
         }
-        return Checked(s, new BoundStructLiteral(s, st, values!));
+        var literal = new BoundStructLiteral(s, st, values!);
+        return Checked(s, state is null ? literal : literal with { State = state, Payload = payload!, Type = stateType! });
     }
 
     private BoundExpr BindWith(WithExpr w)

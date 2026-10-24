@@ -1,0 +1,27 @@
+error BYN7001: `receipt` needs `this` to be `.paid`, but it is `Order.draft`
+
+  9 │     i64 total(this is .draft) => receipt()
+    │                                  ^^^^^^^
+    │
+  help: check the state with `is` or `switch` first
+
+error BYN7001: `refund` needs `any` to be `.paid`, but it is `Order`
+
+  18 │ let refunded = refund(any)
+     │                       ^^^
+     │
+  help: check the state with `is` or `switch` first
+
+error BYN7001: `archive` needs `order` to be `.paid or .shipped`, but it is `Order.draft`
+
+  19 │ let archived = archive(order)
+     │                        ^^^^^
+     │
+  help: check the state with `is` or `switch` first
+
+error BYN7001: `receipt` needs `order` to be `.paid`, but it is `Order.draft`
+
+  20 │ let receipt = order.receipt()
+     │               ^^^^^
+     │
+  help: check the state with `is` or `switch` first

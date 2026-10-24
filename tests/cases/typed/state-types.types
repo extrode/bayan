@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "path": "state-types.byn",
+      "name": "Order.pay",
+      "span": {
+        "start": 110,
+        "end": 113
+      },
+      "bindings": [
+        {
+          "name": "amount",
+          "kind": "param",
+          "span": {
+            "start": 139,
+            "end": 145
+          },
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "state-types.byn",
+      "name": "Order.receipt",
+      "span": {
+        "start": 206,
+        "end": 213
+      },
+      "bindings": []
+    },
+    {
+      "path": "state-types.byn",
+      "name": "archive",
+      "span": {
+        "start": 254,
+        "end": 261
+      },
+      "bindings": [
+        {
+          "name": "order",
+          "kind": "param",
+          "span": {
+            "start": 268,
+            "end": 273
+          },
+          "type": "Order is .paid or .shipped"
+        }
+      ]
+    },
+    {
+      "path": "state-types.byn",
+      "name": "refund",
+      "span": {
+        "start": 320,
+        "end": 326
+      },
+      "bindings": [
+        {
+          "name": "order",
+          "kind": "param",
+          "span": {
+            "start": 338,
+            "end": 343
+          },
+          "type": "Order.paid"
+        },
+        {
+          "name": "any",
+          "kind": "let",
+          "span": {
+            "start": 355,
+            "end": 358
+          },
+          "type": "Order"
+        },
+        {
+          "name": "done",
+          "kind": "let",
+          "span": {
+            "start": 382,
+            "end": 386
+          },
+          "type": "Order is .paid or .shipped"
+        }
+      ]
+    },
+    {
+      "path": "state-types.byn",
+      "name": "main",
+      "span": {
+        "start": 471,
+        "end": 514
+      },
+      "bindings": [
+        {
+          "name": "paid",
+          "kind": "let",
+          "span": {
+            "start": 475,
+            "end": 479
+          },
+          "type": "Order.paid"
+        },
+        {
+          "name": "draft",
+          "kind": "let",
+          "span": {
+            "start": 519,
+            "end": 524
+          },
+          "type": "Order.draft"
+        }
+      ]
+    }
+  ]
+}
