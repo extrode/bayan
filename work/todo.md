@@ -212,3 +212,7 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-52a: a user method named `trustUnchecked` with no arguments binds as the `Untrusted` unwrap (Question 143).
 - plan-strings-check: BYN1043's name-first help is "put the type before the name; declarations are type-first" (`Parser.cs:595`) where the plan says "declarations put the type first", which does not start with a verb (`HelpLanguageTests`); decide which wins, then align the plan or the code.
 - plan-strings-check: diagnostics pages for codes landed before 2026-10-24 carry no verbatim message and help lines; backfill at round-3 end so the check passes for every round-3 code.
+- r3-55: SPEC §21.2 still says `bayan format` is "not in v0.1", and a paragraph splits its CLI table (the `bayan pkg` … `bayan new test X` rows sit after the `--color` text); fix in a draft revision (SPEC is frozen).
+- r3-55: `docs/bayan-terminal-style.md` §4 has no `bayan audit` section, though `StyleTests` renders an `audit` shape (`tests/cases/style/audit.*`).
+- r3-55: `bayan audit` names a call bypass by its member only (`trustUnchecked()`), since there is no trim-safe syntax walker in `Bayan.Syntax`; a walker would let it show the full callee (Question 240).
+- r3-55: `bayan audit` lists no C sources per dependency (SPEC §19.3); add them when dependencies land.
