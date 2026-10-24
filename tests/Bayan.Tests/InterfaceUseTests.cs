@@ -13,18 +13,18 @@ public sealed class InterfaceUseTests
 
     private const string Shapes = """
         interface IShape {
-            i64 area();
-            string describe() => $"area {area()}";
+            i64 area()
+            string describe() => $"area {area()}"
         }
 
         struct Circle : IShape {
-            i64 r;
+            i64 r
 
-            i64 area() => 3 * r * r;
+            i64 area() => 3 * r * r
         }
 
         struct Square {
-            i64 side;
+            i64 side
         }
 
         """;
@@ -33,25 +33,25 @@ public sealed class InterfaceUseTests
     public void ConformingValuesConvertToDynRef()
     {
         var c = Compile(Shapes + """
-            void show(dyn ref IShape s) => print(s.describe());
+            void show(dyn ref IShape s) => print(s.describe())
 
-            void peek(dyn ref readonly IShape s) => print($"{s.area()}");
+            void peek(dyn ref readonly IShape s) => print($"{s.area()}")
 
-            dyn ref IShape pick(ref Circle c) => c;
+            dyn ref IShape pick(ref Circle c) => c
 
             void forward<T>(ref T shape) where T : IShape {
-                show(shape);
-                dyn ref readonly IShape r = shape;
-                peek(r);
+                show(shape)
+                let r: dyn ref readonly IShape = shape
+                peek(r)
             }
 
             void run() {
-                var c = Circle { r: 2 };
-                show(c);
-                dyn ref IShape d = c;
-                peek(d);
-                peek(pick(ref c));
-                forward(ref c);
+                var c = Circle { r: 2 }
+                show(c)
+                let d: dyn ref IShape = c
+                peek(d)
+                peek(pick(ref c))
+                forward(ref c)
             }
             """);
         Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items.Select(d => d.Message)));
@@ -71,13 +71,13 @@ public sealed class InterfaceUseTests
     public void AnUnsatisfiedConstraintInsideAGenericIsReportedOnceAtTheOuterCall()
     {
         var c = Compile(Shapes + """
-            i64 measure<T>(ref T shape) where T : IShape => shape.area();
+            i64 measure<T>(ref T shape) where T : IShape => shape.area()
 
-            i64 twice<T>(ref T shape) where T : IShape => measure(ref shape) * 2;
+            i64 twice<T>(ref T shape) where T : IShape => measure(ref shape) * 2
 
             void run() {
-                var s = Square { side: 2 };
-                print($"{twice(ref s)}");
+                var s = Square { side: 2 }
+                print($"{twice(ref s)}")
             }
             """);
         var error = Assert.Single(c.Diagnostics.Items);

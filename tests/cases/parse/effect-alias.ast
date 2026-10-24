@@ -1,0 +1,6 @@
+CompilationUnit
+  Effect db = net, fs
+  Effect public io = fs, console
+  Let effect = 1
+  Function save() -> void uses db
+    Block

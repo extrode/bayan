@@ -1,11 +1,9 @@
-struct Tok {
-    i64 start;
-    i64 end;
+struct Options {
+    bool verbose
 }
 
-i64 width(i64 start, i64 end) => end - start;
-i64 tokWidth(Tok tok) => width(tok.start, tok.end);
+i64 width(i64 n, bool verbose) => verbose ? n * 2 : n
+i64 optionsWidth(Options options) => width(3, options.verbose)
 
-i64 start = 2;
-i64 end = 5;
-print($"{width(start, end)}");
+let verbose = true
+print($"{width(5, verbose)}")

@@ -1,82 +1,82 @@
-import money;
+import money
 
 /// One payment, shared evenly by `participants` (the payer may or may not be among them).
 public struct Expense {
-    public string payer;
-    public money.Cents amount;
-    public List<string> participants;
+    public string payer
+    public money.Cents amount
+    public List<string> participants
 }
 
 /// One person's share of an amount, or their running balance.
-public type Share = (string name, i64 cents);
+public type Share = (string name, i64 cents)
 
 public struct Transfer {
-    public string from;
-    public string to;
-    public money.Cents cents;
+    public string from
+    public string to
+    public money.Cents cents
 }
 
 /// Splits `amount` into equal shares; the first participants absorb the leftover cents.
-public List<Share> splitEvenly(money.Cents amount, ReadOnlySpan<string> participants) {
-    var shares = List<Share>();
-    let count = participants.length;
-    let base = amount / count;
-    let leftover = amount % count;
+public List<Share> splitEvenly(money.Cents amount, to ReadOnlySpan<string> participants) uses alloc {
+    var shares = List<Share>()
+    let count = participants.length
+    let base = amount / count
+    let leftover = amount % count
     for i in 0..count {
-        let extra = i < leftover ? 1 : 0;
-        shares.append((name: participants[i], cents: base + extra));
+        let extra = i < leftover ? 1 : 0
+        shares.append((name: participants[i], cents: base + extra))
     }
-    return shares;
+    return shares
 }
 
 /// Net balance per person, in order of first appearance: positive is owed, negative owes.
-public List<Share> balances(ReadOnlySpan<Expense> expenses) {
-    var totals = List<Share>();
+public List<Share> balances(ReadOnlySpan<Expense> expenses) uses alloc {
+    var totals = List<Share>()
     for e in expenses {
-        credit(ref totals, name: e.payer, cents: e.amount);
-        for share in splitEvenly(e.amount, e.participants) {
-            credit(ref totals, name: share.name, cents: -share.cents);
+        credit((name: e.payer, cents: e.amount), to: ref totals)
+        for share in splitEvenly(e.amount, to: e.participants) {
+            credit((name: share.name, cents: -share.cents), to: ref totals)
         }
     }
-    return totals;
+    return totals
 }
 
-void credit(ref List<Share> totals, string name, i64 cents) {
+void credit(Share share, to ref List<Share> totals) {
     for i in 0..totals.length {
-        if totals[i].name == name {
-            totals[i] = (name: name, cents: totals[i].cents + cents);
-            return;
+        if totals[i].name == share.name {
+            totals[i] = (name: share.name, cents: totals[i].cents + share.cents)
+            return
         }
     }
-    totals.append((name: name, cents: cents));
+    totals.append(share)
 }
 
 /// Transfers that settle every balance: the largest debtor pays the largest creditor, repeatedly.
-public List<Transfer> settle(ReadOnlySpan<Share> balances) {
-    var pending = List<Share>();
+public List<Transfer> settle(ReadOnlySpan<Share> balances) uses alloc {
+    var pending = List<Share>()
     for b in balances {
-        pending.append(b);
+        pending.append(b)
     }
-    var transfers = List<Transfer>();
+    var transfers = List<Transfer>()
     while true {
-        let debtor = extreme(pending.asSpan(), lowest: true);
-        let creditor = extreme(pending.asSpan(), lowest: false);
-        break if pending[debtor].cents >= 0 || pending[creditor].cents <= 0;
-        let owed = -pending[debtor].cents;
-        let amount = owed < pending[creditor].cents ? owed : pending[creditor].cents;
-        transfers.append({ from: pending[debtor].name, to: pending[creditor].name, cents: amount });
-        pending[debtor] = (name: pending[debtor].name, cents: pending[debtor].cents + amount);
-        pending[creditor] = (name: pending[creditor].name, cents: pending[creditor].cents - amount);
+        let debtor = extreme(pending.asSpan(), lowest: true)
+        let creditor = extreme(pending.asSpan(), lowest: false)
+        break if pending[debtor].cents >= 0 || pending[creditor].cents <= 0
+        let owed = -pending[debtor].cents
+        let amount = owed < pending[creditor].cents ? owed : pending[creditor].cents
+        transfers.append({ from: pending[debtor].name, to: pending[creditor].name, cents: amount })
+        pending[debtor] = (name: pending[debtor].name, cents: pending[debtor].cents + amount)
+        pending[creditor] = (name: pending[creditor].name, cents: pending[creditor].cents - amount)
     }
-    return transfers;
+    return transfers
 }
 
 /// Index of the smallest (or largest) balance; the earliest wins a tie.
 i64 extreme(ReadOnlySpan<Share> shares, bool lowest) {
-    i64 best = 0;
+    var best: i64 = 0
     for i in 1..shares.length {
-        let better = lowest ? shares[i].cents < shares[best].cents : shares[i].cents > shares[best].cents;
-        best = i if better;
+        let better = lowest ? shares[i].cents < shares[best].cents : shares[i].cents > shares[best].cents
+        best = i if better
     }
-    return best;
+    return best
 }

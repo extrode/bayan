@@ -7,7 +7,7 @@ error BYN2781: `r` is used after it was moved
 
 error BYN2783: `items` borrows from what it was bound to and cannot be changed or moved
 
-  23 │             print($"{keep(move items)}");
+  23 │             print($"{keep(move items)}")
      │                                ^^^^^ moving it would take the value out of what it borrows
      │                                      from
      │

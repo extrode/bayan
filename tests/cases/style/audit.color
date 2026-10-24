@@ -1,0 +1,7 @@
+# bayan audit <dir>/tally/main.byn
+exit: 0
+--- stdout ---
+[38;2;180;178;169m<dir>/tally/main.byn:1:1[0m  @allow(BYN2230)  because "kept for the C ABI"
+[38;2;180;178;169m<dir>/tally/main.byn:5:1[0m  unsafe void poke()  [38;2;242;193;78mno reason given[0m
+[38;2;143;214;148m◆ 2 bypasses in <dir>/tally/main.byn[0m
+--- stderr ---

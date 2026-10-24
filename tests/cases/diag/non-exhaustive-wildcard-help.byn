@@ -1,7 +1,11 @@
-enum Color { red, green, blue }
+enum Color {
+    red
+    green
+    blue
+}
 
 i64 code(Color c) => c switch {
     .red => 1,
-};
+}
 
-print($"{code(.blue)}");
+print($"{code(.blue)}")

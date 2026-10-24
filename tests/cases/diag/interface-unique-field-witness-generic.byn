@@ -1,6 +1,9 @@
-interface IHas { List<i64> items { get; } }
-struct H<T> : IHas { List<i64> items; T tag; }
+interface IHas { List<i64> items }
+struct H<T> : IHas {
+    List<i64> items
+    T tag
+}
 void main() {
-    let h = H<i64> { items: List<i64>(), tag: 1 };
-    let k = H<bool> { items: List<i64>(), tag: true };
+    let h = H<i64> { items: List<i64>(), tag: 1 }
+    let k = H<bool> { items: List<i64>(), tag: true }
 }

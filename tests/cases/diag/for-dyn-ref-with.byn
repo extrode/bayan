@@ -1,11 +1,20 @@
 // A `with` shares the unique fields it does not replace: a writable `for dyn ref` over one of a `let` is rejected (BYN2106).
-interface IC { void bump(ref this); i64 n { get; } }
-struct C : IC { i64 n; void bump(ref this) { n += 1; } }
-struct W { List<C> items; i64 k; }
+interface IC {
+    void bump(ref this)
+    i64 n
+}
+struct C : IC {
+    i64 n
+    void bump(ref this) { n += 1 }
+}
+struct W {
+    List<C> items
+    i64 k
+}
 void main() {
-    var l = List<C>();
-    l.append(C { n: 1 });
-    let a = W { items: move l, k: 0 };
-    for dyn ref IC x in (a with { k: 2 }).items { x.bump(); }
-    print($"{a.items[0].n}");
+    var l = List<C>()
+    l.append(C { n: 1 })
+    let a = W { items: move l, k: 0 }
+    for x: dyn ref IC in (a with { k: 2 }).items { x.bump() }
+    print($"{a.items[0].n}")
 }

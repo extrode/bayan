@@ -1,0 +1,4 @@
+void show(i32 int) {
+    let long = 4
+    print(int + long)
+}

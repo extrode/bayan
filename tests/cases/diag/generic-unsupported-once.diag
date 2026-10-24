@@ -1,4 +1,4 @@
 error BYN2022: `?.` is not supported in v0.1
 
-  2 │ i64 peek<T>(T x, P? p) => p?.v ?? 0;
-    │                           ^^^
+  2 │ i64 peek<T>(T x, from P? p) => p?.v ?? 0
+    │                                ^^^

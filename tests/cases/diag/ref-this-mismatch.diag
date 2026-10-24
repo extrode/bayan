@@ -1,17 +1,17 @@
 error BYN2814: `Counter.next` must match `ICounter.next`, which takes `ref this`
 
-  9 │     i64 next() => value;
+  9 │     i64 next() => value
     │         ^^^^ not declared `ref this`
     │
   help: add `ref this` on `Counter.next`
-    │ 9 │     i64 next(ref this) => value;
+    │ 9 │     i64 next(ref this) => value
     │   │              ++++++++
 
 error BYN2814: `Counter.peek` must match `ICounter.peek`, which does not take `ref this`
 
-  11 │     i64 peek(ref this) => value;
+  11 │     i64 peek(ref this) => value
      │         ^^^^ declared `ref this`
      │
   help: remove `ref this` on `Counter.peek`
-     │ 11 │     i64 peek(ref this) => value;
+     │ 11 │     i64 peek(ref this) => value
      │    │              --------

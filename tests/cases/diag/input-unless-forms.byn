@@ -1,14 +1,14 @@
 void main(ReadOnlySpan<string> args) {
-    let n = args.length;
-    string? name = null;
+    let n = args.length
+    let name: string? = null
     unless n > 1 && n < 5 {
-        print("outside");
+        print("outside")
     }
     unless name is null {
-        print("named");
+        print("named")
     }
     unless unlikely n > 3 {
-        print("small");
+        print("small")
     }
-    print("one") unless n > 1 || n < 0;
+    print("one") unless n > 1 || n < 0
 }

@@ -1,4 +1,4 @@
-i64 area(i64 w) => w;
-i64 areaOf(i64 w) => w;
-i64 area(i64 w) => w * w;
-print($"{area(2)}");
+i64 area(i64 w) => w
+i64 areaOf(i64 w) => w
+i64 area(i64 w) => w * w
+print($"{area(2)}")

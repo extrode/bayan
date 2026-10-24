@@ -14,6 +14,15 @@ public sealed class Builtins
         Print = Make("print", BuiltinFunction.Print, PrimitiveType.Void, ("text", PrimitiveType.String));
         Panic = Make("panic", BuiltinFunction.Panic, PrimitiveType.Never, ("message", PrimitiveType.String));
         Todo = Make("todo", BuiltinFunction.Todo, PrimitiveType.Never, ("message", PrimitiveType.String));
+
+        // `LogLevel` is declared from source for its member names; it is not a type name users can write yet.
+        var logSource = SourceText.FromString("<builtin>", LogLevelSource);
+        var logTree = SyntaxTree.Parse(logSource);
+        var logDecl = (EnumDecl)logTree.Root.Members[0];
+        LogLevel = new EnumSymbol("LogLevel", new Location(logSource, logDecl.Name.Span), Module, Accessibility.Public, logDecl, new FileContext(Module, logTree));
+        foreach (var m in logDecl.Members)
+            LogLevel.Members.Add(new EnumMemberSymbol(m.Name.Text, new Location(logSource, m.Name.Span), LogLevel, LogLevel.Members.Count, null));
+        Log = Make("log", BuiltinFunction.Log, PrimitiveType.Void, ("text", PrimitiveType.String), ("as", LogLevel));
         ArenaNew = Make("Arena", BuiltinFunction.ArenaNew, BuiltinType.Arena);
         StrBufNew = Make("StrBuf", BuiltinFunction.StrBufNew, BuiltinType.StrBuf, ("buffer", new SpanType(PrimitiveType.U8)));
         StrBufGrow = Make("StrBuf", BuiltinFunction.StrBufGrow, BuiltinType.StrBuf);
@@ -43,6 +52,9 @@ public sealed class Builtins
         var utf8Source = SourceText.FromString("<builtin>", Utf8ErrorSource);
         var utf8Decl = (ErrorEnumDecl)SyntaxTree.Parse(utf8Source).Root.Members[0];
         Utf8Error = new ErrorSetSymbol("Utf8Error", new Location(utf8Source, utf8Decl.Name.Span), Module, Accessibility.Public, utf8Decl);
+        var validationSource = SourceText.FromString("<builtin>", ValidationErrorSource);
+        var validationDecl = (ErrorEnumDecl)SyntaxTree.Parse(validationSource).Root.Members[0];
+        ValidationError = new ErrorSetSymbol("ValidationError", new Location(validationSource, validationDecl.Name.Span), Module, Accessibility.Public, validationDecl);
         var bytes = ("bytes", (TypeSymbol)new SpanType(PrimitiveType.U8, readOnly: true));
         StringFrom = Make("from", BuiltinFunction.StringFrom, PrimitiveType.String, bytes);
         StringFrom.Fails = true;
@@ -90,14 +102,28 @@ public sealed class Builtins
     };
 
     private const string Utf8ErrorSource = """
-        public error enum Utf8Error {
+        public union error Utf8Error {
             /// The bytes are not well-formed UTF-8.
             invalidSequence,
         }
         """;
 
-    /// <summary><c>error enum Utf8Error</c>: numbered right after <c>IoError</c>, so <c>invalidSequence</c> is code 8.</summary>
+    /// <summary><c>union error Utf8Error</c>: numbered right after <c>IoError</c>, so <c>invalidSequence</c> is code 8.</summary>
     public ErrorSetSymbol Utf8Error { get; }
+
+    // Error cases have no payload yet, so `invalid` carries no `List<Violation<T>>` until step 5.3h (Q220, revision 0006).
+    private const string ValidationErrorSource = """
+        public union error ValidationError {
+            /// The value breaks a `requires` rule of its type.
+            invalid,
+        }
+        """;
+
+    /// <summary>
+    /// <c>union error ValidationError&lt;T&gt;</c>, what building a type with <c>requires</c> fails with; one set for every
+    /// <c>T</c>, numbered after the user's sets so their codes still start at 9.
+    /// </summary>
+    public ErrorSetSymbol ValidationError { get; }
 
     /// <summary><c>string string.from(ReadOnlySpan&lt;u8&gt; bytes) fails Utf8Error</c>: a copy from <c>context.allocator</c>.</summary>
     public FunctionSymbol StringFrom { get; }
@@ -118,7 +144,7 @@ public sealed class Builtins
     };
 
     private const string IoErrorSource = """
-        public error enum IoError {
+        public union error IoError {
             /// The file does not exist.
             notFound,
             /// Permission denied.
@@ -136,7 +162,7 @@ public sealed class Builtins
         }
         """;
 
-    /// <summary><c>error enum IoError</c>: its variants are numbered first, so their codes are 1 to 7 (the runtime returns them).</summary>
+    /// <summary><c>union error IoError</c>: its variants are numbered first, so their codes are 1 to 7 (the runtime returns them).</summary>
     public ErrorSetSymbol IoError { get; }
 
     /// <summary><c>List&lt;u8&gt; Io.readFile(string path) fails IoError</c>.</summary>
@@ -207,6 +233,21 @@ public sealed class Builtins
     /// <summary><c>print(string)</c>: writes the text and a newline to standard output.</summary>
     public FunctionSymbol Print { get; }
 
+    private const string LogLevelSource = """
+        public enum LogLevel {
+            debug,
+            info,
+            warn,
+            error,
+        }
+        """;
+
+    /// <summary><c>enum LogLevel</c>: the levels of <c>log</c>; ordinal 0 is <c>debug</c>, as in <c>bayan-rt.h</c>.</summary>
+    public EnumSymbol LogLevel { get; }
+
+    /// <summary><c>log(string text, LogLevel as = .info)</c>: ambient logging to standard error, not an effect (spec §14).</summary>
+    public FunctionSymbol Log { get; }
+
     /// <summary><c>panic(string)</c>: aborts with a message and location.</summary>
     public FunctionSymbol Panic { get; }
 
@@ -216,6 +257,7 @@ public sealed class Builtins
     public FunctionSymbol? Find(string name) => name switch
     {
         "print" => Print,
+        "log" => Log,
         "panic" => Panic,
         "todo" => Todo,
         "Owned" => OwnedNew,

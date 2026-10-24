@@ -1,0 +1,3 @@
+// expect: `Log.x`
+// fix-it: `log("weighing", as: .debug)`
+Log.debug("weighing")

@@ -9,7 +9,10 @@ namespace Bayan.Semantics;
 
 /// <param name="Library">A library has no <c>main</c>, so none is required.</param>
 /// <param name="SkipOwnershipCheck">Test-only: skips the static ownership check, so the debug-build checker can be exercised.</param>
-public sealed record CompilationOptions(bool IncludeTests = false, bool Library = false, bool SkipOwnershipCheck = false);
+/// <param name="Capabilities">The package's <c>capabilities</c>, the upper bound on its effects (§13); null for no bound.</param>
+/// <param name="PackageName">The package's name, for BYN6004.</param>
+public sealed record CompilationOptions(bool IncludeTests = false, bool Library = false, bool SkipOwnershipCheck = false,
+    IReadOnlyList<string>? Capabilities = null, string? PackageName = null);
 
 /// <summary>
 /// A whole program: the entry module plus every module it imports, transitively. Construction
@@ -181,6 +184,11 @@ public sealed partial class Compilation
         foreach (var module in Modules)
             foreach (var file in module.Files)
                 DeclareFile(file);
+        // Before any signature names a `union error … except .c`, whose cases must already exist.
+        foreach (var module in Modules)
+            foreach (var set in module.ErrorSets)
+                DeclareVariants(set);
+        DeclareBuiltinVariants(Builtins.ValidationError);
         // Bounds are resolved once every type is declared, so `where T : IOrder<T>` can name `T` and later types.
         foreach (var where in _wheres) where();
         DeclareInterfaceMembers(Builtins.IEnumerator);
@@ -191,9 +199,8 @@ public sealed partial class Compilation
         _interfaceMembersDeclared = true;
         foreach (var (instance, site, span) in _pendingInterfaces)
             Instantiating(site, span, () => DeclareInterfaceMembers(instance));
-        foreach (var module in Modules)
-            foreach (var set in module.ErrorSets)
-                DeclareVariants(set);
+        foreach (var alias in _aliases)
+            if (alias.Decl is ErrorSetDecl composed) CheckComposition(alias, composed);
         foreach (var module in Modules)
             foreach (var e in module.Enums)
                 DeclareEnumMembers(e);
@@ -216,9 +223,9 @@ public sealed partial class Compilation
     }
 
     /// <summary><c>IoError</c> is numbered first, so the runtime can return its codes 1 to 7 directly; <c>Utf8Error</c> follows (8).</summary>
-    private void DeclareBuiltinVariants()
+    private void DeclareBuiltinVariants(params ErrorSetSymbol[] sets)
     {
-        foreach (var set in new[] { Builtins.IoError, Builtins.Utf8Error })
+        foreach (var set in sets.Length > 0 ? sets : [Builtins.IoError, Builtins.Utf8Error])
             foreach (var v in set.Decl.Variants)
             {
                 var sym = new ErrorVariantSymbol(v.Name.Text, new Location(set.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
@@ -240,41 +247,46 @@ public sealed partial class Compilation
                 help: "write `void main()`, `i32 main()`, `void main(ReadOnlySpan<string> args)` or `i32 main(ReadOnlySpan<string> args)`, each optionally with `fails`");
     }
 
-    /// <summary><c>[Cases]</c> belongs on a test with parameters and <c>[ExitCode]</c> on an error variant; no other declaration takes an attribute.</summary>
+    /// <summary><c>@cases</c> belongs on a test with parameters, <c>@exitCode</c> on an error variant and <c>@sealed</c>, bare, on a struct; nothing else takes an attribute.</summary>
     private void CheckAttributes(FileContext file, Decl decl)
     {
         var hasCases = false;
         foreach (var a in decl.Attributes)
         {
-            if (a.Name.Text == "Cases" && decl is TestDecl test)
+            if (a.Name.Text == "cases" && decl is TestDecl test)
             {
                 if (hasCases)
-                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[Cases]"], help: "combine the cases into one `[Cases(...)]`");
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@cases"], help: "combine the cases into one `@cases(...)`");
                 else
                     _testCases[test] = CheckCases(file, test, a);
                 hasCases = true;
             }
-            else if (a.Name.Text == "Cases")
-                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[Cases]"], help: "put `[Cases(...)]` on a test that takes parameters");
-            else if (a.Name.Text == "ExitCode")
-                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "put `[ExitCode]` on an error enum variant");
+            else if (a.Name.Text == "cases")
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@cases"], help: "put `@cases(...)` on a test that takes parameters");
+            else if (a.Name.Text == "exitCode")
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@exitCode"], help: "put `@exitCode` on an error enum variant");
+            else if (a.Name.Text == "sealed" && decl is not StructDecl)
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@sealed"], help: "put `@sealed` on a struct");
+            else if (a.Name.Text == "sealed" && (a.Args.Length > 0 || a.Because is not null))
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, [file.Source.GetText(a.Span)], help: "write `@sealed` with no arguments and no `because`");
+            else if (a.Name.Text == "sealed") { }
             else
                 Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text],
-                    help: "use `[ExitCode(n)]` on an error variant or `[Cases(...)]` on a test");
+                    help: "use `@exitCode(n)` on an error variant or `@cases(...)` on a test");
         }
         if (decl is TestDecl { Params.Length: > 0 } t && !hasCases)
         {
             var span = TextSpan.FromBounds(t.Params[0].Span.Start, t.Params[^1].Span.End);
             Report(DiagnosticCodes.ModifierNotAllowed, file.Source, span, [file.Source.GetText(span)],
-                label: "a test without `[Cases]` takes no parameters",
-                help: "add `[Cases(...)]` with one value per parameter for each case, or remove the parameters");
+                label: "a test without `@cases` takes no parameters",
+                help: "add `@cases(...)` with one value per parameter for each case, or remove the parameters");
         }
         if (decl is StructDecl s)
             foreach (var m in s.Members) CheckAttributes(file, m);
     }
 
     /// <summary>
-    /// The cases of <c>[Cases(...)]</c> that fit <paramref name="test"/>: a tuple per case, or a bare value when it
+    /// The cases of <c>@cases(...)</c> that fit <paramref name="test"/>: a tuple per case, or a bare value when it
     /// takes one parameter, with one literal per parameter (BYN2773, BYN2774).
     /// </summary>
     private List<Expr[]> CheckCases(FileContext file, TestDecl test, AttributeSyntax a)
@@ -286,14 +298,14 @@ public sealed partial class Compilation
             if (arg.Value is NameExpr or MemberExpr)
             {
                 Report(DiagnosticCodes.CasesNotConstant, file.Source, arg.Value.Span, [], label: "cases from a const list are not supported yet",
-                    help: "write each case as a tuple literal, such as `[Cases((0, false), (1, true))]`");
+                    help: "write each case as a tuple literal, such as `@cases((0, false), (1, true))`");
                 continue;
             }
             Expr[] values = arg.Value is TupleExpr tuple ? tuple.Elements.Select(e => e.Value).ToArray() : [arg.Value];
             if (values.Length != test.Params.Length)
             {
                 Report(DiagnosticCodes.CasesArity, file.Source, arg.Value.Span, [values.Length, test.Params.Length],
-                    help: test.Params.Length == 1 ? "give one value per case: `[Cases(1, 2, 3)]`"
+                    help: test.Params.Length == 1 ? "give one value per case: `@cases(1, 2, 3)`"
                         : $"give each case one value per parameter, in order: `({names})`");
                 continue;
             }
@@ -343,6 +355,16 @@ public sealed partial class Compilation
                     var sym = new StructSymbol(s.Name.Text, Loc(file, s.Name), module, AccessOf(s.Modifiers), s, file);
                     if (AddType(file, s.Name, sym)) module.Structs.Add(sym);
                     Naming.CheckType(this, file.Source, s.Name);
+                    var fields = s.Members.OfType<FieldDecl>().ToArray();
+                    if (s.TypeParams.Length == 0 && (s.Rules.Length > 0 || fields.Any(f => f.Requires.Length > 0)))
+                    {
+                        // J23: `T.Field`, reachable only through `T`, so it is not added to the module's types. Not for a
+                        // generic struct, whose `requires` is BYN2022 (Question 225).
+                        var members = fields.Select(f => new EnumMember(f.Name.Span, f.Name, null, null)).ToArray();
+                        var fieldDecl = new EnumDecl(s.Name.Span, s.Modifiers, new Name(s.Name.Span, s.Name.Text + "_Field"), null, members);
+                        sym.FieldEnum = new EnumSymbol(fieldDecl.Name.Text, Loc(file, s.Name), module, AccessOf(s.Modifiers), fieldDecl, file) { FieldsOf = sym };
+                        module.Enums.Add(sym.FieldEnum);
+                    }
                     sym.TypeMap = DeclareTypeParameters(file, s.TypeParams, sym.TypeParameters);
                     _wheres.Add(() => DeclareWhere(file, s.Where, sym.TypeParameters, sym.TypeMap, s.Name.Text));
                     break;
@@ -397,8 +419,22 @@ public sealed partial class Compilation
                         label: "retroactive conformance", help: $"list `{bases}` on `{x.Name.Text}`'s declaration");
                     break;
                 }
+                case TypeAliasDecl { Distinct: true } a:
+                {
+                    // J5: a nominal wrapper, a struct whose one field `value` carries the type's `requires`.
+                    var value = new FieldDecl(a.Target.Span, Modifiers.Public, a.Target, new Name(a.Target.Span, "value"), null) { Requires = a.Requires };
+                    var sym = new StructSymbol(a.Name.Text, Loc(file, a.Name), module, AccessOf(a.Modifiers), new StructDecl(a.Span, a.Modifiers, a.Name, [value]), file);
+                    if (AddType(file, a.Name, sym))
+                    {
+                        module.Structs.Add(sym);
+                        Distinct.Add(sym);
+                    }
+                    Naming.CheckType(this, file.Source, a.Name);
+                    break;
+                }
                 case TypeAliasDecl a:
                 {
+                    if (a.Requires.Length > 0) Report(DiagnosticCodes.Unsupported, file.Source, a.Requires[0].Span, ["`requires` on a plain `type` alias"]);
                     var sym = new AliasPlaceholder(a, a.Name, a.Modifiers, file);
                     if (AddType(file, a.Name, sym)) _aliases.Add(sym);
                     Naming.CheckType(this, file.Source, a.Name);
@@ -635,12 +671,12 @@ public sealed partial class Compilation
             var seen = false;
             foreach (var a in v.Attributes)
             {
-                if (a.Name.Text == "Cases")
-                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[Cases]"], help: "put `[Cases(...)]` on a test that takes parameters");
-                else if (a.Name.Text != "ExitCode")
-                    Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "use `[ExitCode(n)]`; it is the only attribute an error variant takes");
+                if (a.Name.Text == "cases")
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@cases"], help: "put `@cases(...)` on a test that takes parameters");
+                else if (a.Name.Text != "exitCode")
+                    Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text], help: "use `@exitCode(n)`; it is the only attribute an error variant takes");
                 else if (seen)
-                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["[ExitCode]"], help: "remove the repeated attribute");
+                    Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@exitCode"], help: "remove the repeated attribute");
                 else
                 {
                     seen = true;
@@ -652,17 +688,34 @@ public sealed partial class Compilation
             Report(DiagnosticCodes.EmptyErrorSet, file.Source, set.Decl.Name.Span, [set.Name]);
     }
 
+    /// <summary>BYN3202 for two composed sets with a case of the same name.</summary>
+    private void CheckComposition(AliasPlaceholder alias, ErrorSetDecl decl)
+    {
+        var sets = new TypeResolver(this, alias.File, null).ExpandAlias(alias) switch
+        {
+            ErrorUnionType u => u.Sets, ErrorSetSymbol set => [set], _ => [],
+        };
+        var owners = new Dictionary<string, ErrorSetSymbol>();
+        foreach (var set in sets)
+            foreach (var v in set.Variants)
+                if (!owners.TryAdd(v.Name, set))
+                    Report(DiagnosticCodes.DuplicateErrorCase, alias.File.Source, decl.Head, [owners[v.Name].Name, set.Name, v.Name],
+                        label: $"two cases `{v.Name}`", help: "rename one case, or compose fewer sets");
+    }
+
     private void DeclareEnumMembers(EnumSymbol e)
     {
         var source = e.File.Source;
         DeclareEnumFields(e);
         foreach (var m in e.Decl.Members)
         {
-            Naming.CheckValue(this, source, m.Name);
+            // The fields of `T.Field` were checked on the struct.
+            if (e.FieldsOf is null) Naming.CheckValue(this, source, m.Name);
             if (e.Find(m.Name.Text) is { } existing)
             {
-                Report(DiagnosticCodes.DuplicateEnumMember, source, m.Name.Span, [e.Name, m.Name.Text],
-                    label: $"already declared on line {existing.Location!.Value.Line}");
+                if (e.FieldsOf is null)
+                    Report(DiagnosticCodes.DuplicateEnumMember, source, m.Name.Span, [e.Name, m.Name.Text],
+                        label: $"already declared on line {existing.Location!.Value.Line}");
                 continue;
             }
             e.Members.Add(new EnumMemberSymbol(m.Name.Text, Loc(e.File, m.Name), e, e.Members.Count, m.Doc));
@@ -880,7 +933,30 @@ public sealed partial class Compilation
                     break;
             }
         }
+        DeclareCheck(s);
     }
+
+    /// <summary>A struct with <c>requires</c> gets a check, run on each built value, that fails with <c>ValidationError</c>.</summary>
+    private void DeclareCheck(StructSymbol s)
+    {
+        var first = s.Decl.Members.OfType<FieldDecl>().SelectMany(f => f.Requires).Concat(s.Decl.Rules).MinBy(r => r.Span.Start);
+        if (first is null || s.Template is not null) return;
+        if (s.IsGeneric)
+        {
+            Report(DiagnosticCodes.Unsupported, s.File.Source, first.Span, ["`requires` on a generic struct"]);
+            return;
+        }
+        var check = new FunctionSymbol("requires", s.Location, s.Module, FunctionKind.Method) { Owner = s, File = s.File, Access = s.Access, Fails = true };
+        check.ErrorSets.Add(Builtins.ValidationError);
+        s.Module.AllFunctions.Add(check);
+        Checks[s] = new StructChecks(check, []);
+    }
+
+    /// <summary>The <c>requires</c> check of each struct that has rules, by struct.</summary>
+    internal Dictionary<StructSymbol, StructChecks> Checks { get; } = new();
+
+    /// <summary>The structs that stand for a <c>type distinct</c>, built with <c>X(raw)</c>.</summary>
+    internal HashSet<StructSymbol> Distinct { get; } = new();
 
     private readonly Dictionary<FunctionSymbol, ConstructorDecl> _constructorBodies = new();
 
@@ -993,8 +1069,18 @@ public sealed partial class Compilation
                 var t = types.Resolve(e);
                 if (t is ErrorSetSymbol or ErrorUnionType)
                 {
+                    // A case stays excluded only while every name that brings in its set excludes it.
+                    var excluded = t is ErrorUnionType { Excluded: var x } ? x : [];
                     foreach (var set in t is ErrorUnionType u ? u.Sets : [(ErrorSetSymbol)t])
-                        if (!fn.ErrorSets.Contains(set)) fn.ErrorSets.Add(set);
+                    {
+                        if (fn.ErrorSets.Contains(set))
+                        {
+                            fn.ExcludedErrors.RemoveAll(v => v.Set == set && !excluded.Contains(v));
+                            continue;
+                        }
+                        fn.ErrorSets.Add(set);
+                        fn.ExcludedErrors.AddRange(excluded.Where(v => v.Set == set));
+                    }
                 }
                 else if (!t.IsError)
                 {
@@ -1014,6 +1100,7 @@ public sealed partial class Compilation
                 ReportDuplicate(file.Source, p.Name, fn.Parameters.First(q => q.Name == sym.Name).Location!.Value);
             fn.Parameters.Add(sym);
         }
+        Particles.Check(this, file.Source, fn);
     }
 
     /// <summary>Recursive by-value containment, borrowed fields (BYN3001).</summary>
@@ -1085,6 +1172,9 @@ public sealed partial class Compilation
     private void BindAll()
     {
         CheckConformances();
+        // Before the constants, which may build a checked value (J38).
+        foreach (var (s, checks) in Checks)
+            new Binder(this, s.File, checks.Check, s).BindChecks(checks);
         foreach (var module in Modules)
             foreach (var c in module.AllConstants)
                 BindConstant(c);
@@ -1109,6 +1199,7 @@ public sealed partial class Compilation
         while (_instantiationWork.TryDequeue(out var work))
             Instantiating(work.Site, work.Span, work.Bind);
         InferErrorSets();
+        EffectAnalysis.Analyze(this);
         CheckMutation();
         CheckRequires();
         foreach (var module in Modules)
@@ -1367,7 +1458,7 @@ public sealed partial class Compilation
     }
 
     /// <summary>The template a function was instantiated from: itself for a generic function, its twin for a member of a generic struct.</summary>
-    private static FunctionSymbol? TemplateOf(FunctionSymbol fn) =>
+    internal static FunctionSymbol? TemplateOf(FunctionSymbol fn) =>
         fn.Template ?? (fn.Owner?.Template is { } owner ? owner.Methods.FirstOrDefault(m => m.Decl == fn.Decl && fn.Decl is not null) : null);
 
     /// <summary>Flow and region analysis of an instantiation; what two instantiations both find is reported once.</summary>
@@ -1594,7 +1685,7 @@ public sealed partial class Compilation
     internal IEnumerable<AliasPlaceholder> Aliases => _aliases;
 }
 
-/// <summary>A <c>type X = T;</c> alias or an <c>error set S = A, B;</c>; resolved to its target on first use.</summary>
+/// <summary>A <c>type X = T</c> alias or a <c>union error S = A, B</c>; resolved to its target on first use.</summary>
 internal sealed record MutationCheck(Binder Binder, FunctionSymbol Callee, BoundExpr Receiver);
 
 internal sealed record RequiresCheck(SourceText Source, CallExpr Call, FunctionSymbol Callee, BoundExpr[] Arguments);

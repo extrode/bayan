@@ -1,5 +1,5 @@
-u8 low(u8 b) => b;
+u8 low(u8 b) => b
 
-var small = 7;
-small += 1;
-print($"{low(small)}");
+var small = 7
+small += 1
+print($"{low(small)}")

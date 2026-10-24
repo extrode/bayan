@@ -7,8 +7,11 @@ namespace Bayan.Semantics.Binding;
 
 internal sealed partial class Binder
 {
-    /// <summary>The call that the enclosing <c>try</c>/<c>catch</c> handles; any other failing call is an error.</summary>
-    private CallExpr? _handled;
+    /// <summary>The call or checked construction that the enclosing <c>try</c>/<c>catch</c> handles; any other failing one is an error.</summary>
+    private Expr? _handled;
+
+    /// <summary>While a <c>try</c> operand is bound: the failing calls it does not handle, reported once it is known whether the operand fails (BYN1054).</summary>
+    private List<(Expr Call, string Name)>? _covered;
 
     /// <summary>The error a <c>catch switch</c> is switching on, while its subject is bound.</summary>
     private LocalSymbol? _caught;
@@ -23,6 +26,16 @@ internal sealed partial class Binder
 
     private BoundExpr BindCall(CallExpr c, TypeSymbol? expected)
     {
+        // A call to a member ending in `Unchecked` bypasses a safety rule and says why (J6); an empty reason is the parser's.
+        var calleeName = c.Callee switch { MemberExpr me => me.Member.Text, NameExpr ne => ne.Name.Text, _ => null };
+        if (c.Because is null && calleeName is { } m && m.EndsWith("Unchecked", StringComparison.Ordinal))
+            Report(DiagnosticCodes.MissingBecause, c.Span, [m + "()"], label: "bypasses a safety rule",
+                help: "explain the bypass in a `because` clause");
+        if (c.Callee is MemberExpr { Member.Text: "trustUnchecked", NullConditional: false } trusted && c.Args.Length == 0)
+            return BindTrustUnchecked(c, trusted);
+        if (c.Callee is MemberExpr { Member.Text: "tryFrom", NullConditional: false, Target: NameExpr into }
+            && PrimitiveType.ByName.TryGetValue(into.Name.Text, out var target) && target.IsNumeric)
+            return BindTryFrom(c, target);
         var callee = c.Callee is TargetMemberExpr t ? BindTargetMember(t, expected) : BindExprOrType(c.Callee);
         switch (callee)
         {
@@ -55,6 +68,25 @@ internal sealed partial class Binder
         }
     }
 
+    /// <summary><c>u8.tryFrom(x)</c>: a numeric conversion that gives <c>null</c> instead of trapping when the value does not fit.</summary>
+    private BoundExpr BindTryFrom(CallExpr c, PrimitiveType target)
+    {
+        if (c.Args is not [{ Name: null } arg])
+        {
+            Report(DiagnosticCodes.TooManyArguments, c.Callee.Span, [$"{target.Name}.tryFrom", 1]);
+            BindArgumentsForRecovery(c);
+            return new BoundErrorExpr(c);
+        }
+        var operand = BindExpr(arg.Value);
+        if (operand.Type.IsError) return new BoundErrorExpr(c);
+        if (!operand.Type.IsNumeric)
+        {
+            Report(DiagnosticCodes.InvalidCast, arg.Value.Span, [operand.Type.DisplayName, target.DisplayName]);
+            return new BoundErrorExpr(c);
+        }
+        return new BoundTryFrom(c, operand, target, new OptionalType(target));
+    }
+
     private void BindArgumentsForRecovery(CallExpr c)
     {
         foreach (var a in c.Args)
@@ -82,7 +114,7 @@ internal sealed partial class Binder
             fn = instance;
         }
         var (outer, outerSink) = (_printArgument, _sinkArgument);
-        _printArgument = fn.Builtin == BuiltinFunction.Print;
+        _printArgument = fn.Builtin is BuiltinFunction.Print or BuiltinFunction.Log;
         _sinkArgument = fn.Builtin switch
         {
             BuiltinFunction.IoRun => "Io.run",
@@ -100,9 +132,8 @@ internal sealed partial class Binder
             _c.RequiresChecks.Add(new RequiresCheck(Source, c, fn, args));
         if (fn.Fails && !ReferenceEquals(_handled, c))
         {
-            Report(DiagnosticCodes.UnhandledFailure, c.Span, [fn.Name],
-                help: "propagate the error with `try`, or handle it with `catch`",
-                fix: new Fix(new TextSpan(c.Span.Start, 0), "try "));
+            if (_covered is not null) _covered.Add((c, fn.Name));
+            else ReportUnhandled(c, fn.Name);
         }
         return new BoundCall(c, fn, receiver, args, receiver is null ? fn.ReturnType : ReturnTypeThrough(receiver.Type, fn));
     }
@@ -138,7 +169,7 @@ internal sealed partial class Binder
             if (arg.Name is { } n)
             {
                 sawNamed = true;
-                p = fn.Parameters.FirstOrDefault(x => x.Name == n.Text);
+                p = fn.Parameters.FirstOrDefault(x => Label(x) == n.Text);
             }
             else
                 p = sawNamed || positional >= fn.Parameters.Count ? null : fn.Parameters[positional++];
@@ -217,39 +248,22 @@ internal sealed partial class Binder
     private BoundExpr[] BindArguments(CallExpr c, IReadOnlyList<ParameterSymbol> ps, FunctionSymbol? fn, bool enforceNames, string? displayName = null)
     {
         var name = displayName ?? fn?.Name ?? "?";
-        // An instantiation follows its template's naming rule, so `T a, T b` asks for names at every type.
+        // An instantiation follows its template's rule, so a `T` parameter is not a `bool` one at `T = bool`.
         var rule = fn?.Template?.Parameters ?? ps;
         var result = new BoundExpr?[ps.Count];
         var sawNamed = false;
         var positional = 0;
         var mismatched = false;
-        // Two or more leading unnamed arguments whose implied names are the first parameters' names, out of
-        // order, are a swap; they are bound by those names so the swap is the only error.
-        var leading = c.Args.TakeWhile(a => a.Name is null).ToArray();
-        var implied = leading.Select(a => ImpliedName(a.Value)).ToArray();
-        var swapped = false;
-        if (enforceNames && leading.Length >= 2 && leading.Length <= ps.Count
-            && implied.All(n => n is not null) && implied.Distinct().Count() == implied.Length
-            && ps.Take(implied.Length).All(x => implied.Contains(x.Name)))
-        {
-            var at = Enumerable.Range(0, implied.Length).FirstOrDefault(i => implied[i] != ps[i].Name, -1);
-            if (at >= 0)
-            {
-                swapped = true;
-                Report(DiagnosticCodes.ArgumentsSwapped, TextSpan.FromBounds(leading[0].Span.Start, leading[^1].Span.End),
-                    [ps[at].Name, implied[at]!, name], help: "name them or swap them");
-            }
-        }
         foreach (var arg in c.Args)
         {
             ParameterSymbol? p;
             if (arg.Name is { } n)
             {
                 sawNamed = true;
-                p = ps.FirstOrDefault(x => x.Name == n.Text);
+                p = ps.FirstOrDefault(x => Label(x) == n.Text);
                 if (p is null)
                 {
-                    var s = Suggest(n.Text, ps.Select(x => x.Name));
+                    var s = Suggest(n.Text, ps.Select(Label));
                     Report(DiagnosticCodes.UnknownParameter, n.Span, [name, n.Text],
                         help: s is null ? null : $"did you mean `{s}`?", fix: s is null ? null : new Fix(n.Span, s));
                     BindArgumentValue(arg, null);
@@ -273,15 +287,18 @@ internal sealed partial class Binder
                     positional++;
                     continue;
                 }
-                var at = positional++;
-                p = swapped ? ps.First(x => x.Name == implied[at]) : ps[at];
-                if (enforceNames && ImpliedName(arg.Value) != p.Name && MustBeNamed(rule[p.Ordinal], rule, name) is { } reason)
-                    Report(DiagnosticCodes.ArgumentMustBeNamed, arg.Value.Span, [p.Name], help: reason,
+                p = ps[positional++];
+                // A particle is part of the function's name, so the call writes it (BYN5005).
+                if (enforceNames && p.Syntax?.Particle is { } particle)
+                    Report(DiagnosticCodes.ArgumentNeedsParticle, arg.Span, [p.Name, particle.Text], label: $"needs `{particle.Text}:`",
+                        help: $"add `{particle.Text}:` before the argument", fix: new Fix(new TextSpan(arg.Span.Start, 0), particle.Text + ": "));
+                else if (enforceNames && rule[p.Ordinal].Type.IsBool && ImpliedName(arg.Value) != p.Name)
+                    Report(DiagnosticCodes.ArgumentMustBeNamed, arg.Value.Span, [p.Name], help: $"write `{p.Name}: …`; a `bool` argument says nothing at the call site",
                         fix: new Fix(new TextSpan(arg.Span.Start, 0), p.Name + ": "));
             }
             if (result[p.Ordinal] is not null)
             {
-                Report(DiagnosticCodes.DuplicateArgument, arg.Span, [p.Name]);
+                Report(DiagnosticCodes.DuplicateArgument, arg.Span, [Label(p)]);
                 _prebound.Remove(arg);
                 continue;
             }
@@ -297,7 +314,12 @@ internal sealed partial class Binder
                 result[i] = _c.ParameterDefault(fn, p) ?? new BoundErrorExpr(c);
                 continue;
             }
-            missing.Add(p.Name);
+            if (fn?.Builtin == BuiltinFunction.Log && p.Ordinal == 1)
+            {
+                result[i] = new BoundEnumMember(c, _c.Builtins.LogLevel.Find("info")!);
+                continue;
+            }
+            missing.Add(Label(p));
             result[i] = new BoundErrorExpr(c);
         }
         if (missing.Count > 0 && !mismatched)
@@ -305,21 +327,16 @@ internal sealed partial class Binder
         return result!;
     }
 
-    // `start` and `tok.start` name the argument for a parameter `start`.
+    /// <summary>The label a call writes for <paramref name="p"/>: its particle (<c>to:</c>), else its name.</summary>
+    private static string Label(ParameterSymbol p) => p.Syntax?.Particle?.Text ?? p.Name;
+
+    // `verbose` and `opts.verbose` name the argument for a `bool` parameter `verbose`.
     private static string? ImpliedName(Expr e) => e switch
     {
         NameExpr { TypeArgs.Length: 0 } n => n.Name.Text,
         MemberExpr { NullConditional: false } m => m.Member.Text,
         _ => null,
     };
-
-    private static string? MustBeNamed(ParameterSymbol p, IReadOnlyList<ParameterSymbol> ps, string fnName)
-    {
-        if (p.Type.IsBool) return $"write `{p.Name}: …`; a `bool` argument says nothing at the call site";
-        if (!p.Type.IsError && ps.Count(q => q.Type.Equals(p.Type)) > 1)
-            return $"name them so they cannot be swapped; `{fnName}` has several `{p.Type.DisplayName}` parameters";
-        return null;
-    }
 
     private BoundExpr BindArgument(Argument arg, ParameterSymbol p)
     {
@@ -366,7 +383,15 @@ internal sealed partial class Binder
                 var ctor = s.Constructors[0];
                 CheckAccess(ctor.Access, s, s.Module, new Name(c.Callee.Span, s.Name));
                 var args = BindArguments(c, ctor.Parameters, ctor, enforceNames: true);
-                return new BoundCall(c, ctor, null, args, s);
+                return Checked(c, new BoundCall(c, ctor, null, args, s));
+            }
+            case StructSymbol s when _c.Distinct.Contains(s):
+            {
+                // `Email(raw)` wraps the value; with `requires`, the wrapper is checked like a literal.
+                var value = s.Fields[0];
+                var ps = new[] { new ParameterSymbol(value.Name, value.Location, value.Type, ParamModifier.None, 0) };
+                var args = BindArguments(c, ps, null, enforceNames: false, displayName: s.Name);
+                return Checked(c, new BoundStructLiteral(c, s, args));
             }
             case StructSymbol s:
             {
@@ -411,9 +436,11 @@ internal sealed partial class Binder
             case ErrorType:
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
+            case PrimitiveType p when (p.IsNumeric || p == PrimitiveType.Char) && c.Args is [{ Name: null } arg]:
+                return BindConversion(c, p, arg.Value);
             default:
                 Report(DiagnosticCodes.NotCallable, c.Callee.Span, [type.DisplayName],
-                    help: type.IsNumeric || type == PrimitiveType.Char ? $"convert with a cast: `({type.DisplayName})x`" : null);
+                    help: type.IsNumeric || type == PrimitiveType.Char ? $"convert one value: `{type.DisplayName}(x)`" : null);
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
         }
@@ -466,7 +493,7 @@ internal sealed partial class Binder
         if (value is null || c.Args.Length != 2 || c.Args[1].Name?.Text != "reason")
         {
             BindArgumentsForRecovery(c);
-            Report(DiagnosticCodes.TrustReason, c.Span, [], help: "write `trust(x, reason: \"why this value is safe\")`");
+            Report(DiagnosticCodes.TrustReason, c.Span, [], help: "write `x.trustUnchecked() because \"why this value is safe\"`");
             return new BoundErrorExpr(c);
         }
         var reason = c.Args[1].Value;
@@ -477,6 +504,22 @@ internal sealed partial class Binder
         if (value.Type is not UntrustedType u)
         {
             Convert(value, new UntrustedType(value.Type), c.Args[0].Value.Span, argument: true);
+            return new BoundErrorExpr(c);
+        }
+        return new BoundCall(c, _c.Builtins.Trust, null, [value], u.Inner);
+    }
+
+    /// <summary>
+    /// <c>x.trustUnchecked() because "…"</c>: <c>Untrusted&lt;T&gt;</c> to <c>T</c>, the canonical form of <c>trust</c>
+    /// (BYN1062); a missing or empty reason is BYN8001 (<see cref="BindCall"/>, the parser).
+    /// </summary>
+    private BoundExpr BindTrustUnchecked(CallExpr c, MemberExpr callee)
+    {
+        var value = BindExpr(callee.Target);
+        if (value.Type.IsError) return value;
+        if (value.Type is not UntrustedType u)
+        {
+            Convert(value, new UntrustedType(value.Type), callee.Target.Span, argument: true);
             return new BoundErrorExpr(c);
         }
         return new BoundCall(c, _c.Builtins.Trust, null, [value], u.Inner);
@@ -559,6 +602,9 @@ internal sealed partial class Binder
     /// <summary>Whether the patterns being bound are on a <c>switch move x</c> subject, so their bindings own their parts (spec §9.3).</summary>
     private bool _patternOwns;
 
+    /// <summary>Locals bound by <c>.case name</c>, and the variant each is known to hold.</summary>
+    private readonly Dictionary<LocalSymbol, UnionVariantSymbol> _narrowed = new();
+
     /// <summary>A switch subject; <c>move x</c> moves a local or <c>move</c> parameter into the switch, and <paramref name="owns"/> says its bindings own their parts.</summary>
     private BoundExpr BindSwitchSubject(Expr value, out bool owns)
     {
@@ -592,40 +638,127 @@ internal sealed partial class Binder
 
     // ── Failure handling ─────────────────────────────────────────────────────────
 
+    private void ReportUnhandled(Expr c, string name)
+    {
+        if (c is StructLiteralExpr)
+            Report(DiagnosticCodes.LiteralNeedsTry, c.Span, [name],
+                help: "add `try` before the literal and handle the `ValidationError`",
+                fix: new Fix(new TextSpan(c.Span.Start, 0), "try "));
+        else
+            Report(DiagnosticCodes.UnhandledFailure, c.Span, [name],
+                help: "propagate the error with `try`, or handle it with `catch`",
+                fix: new Fix(new TextSpan(c.Span.Start, 0), "try "));
+    }
+
+    /// <summary>Whether a <c>try</c> or <c>catch</c> can handle <paramref name="e"/> itself: a call, or a construction that may run a check.</summary>
+    private static bool Handles(Expr e) => e is CallExpr or StructLiteralExpr or WithExpr;
+
+    /// <summary>
+    /// A value just built, by a literal, a constructor, <c>X(raw)</c> or <c>with</c>: of a struct with <c>requires</c>, it
+    /// runs the struct's check and can fail with <c>ValidationError</c>. <paramref name="changed"/> lists the fields a
+    /// <c>with</c> sets; when no rule reads one, the value needs no check (J19). Built from constants, the rules are
+    /// decided here (J38).
+    /// </summary>
+    private BoundExpr Checked(Expr syntax, BoundExpr value, IReadOnlyCollection<FieldSymbol>? changed = null)
+    {
+        if (value.Type is not StructSymbol s || !_c.Checks.TryGetValue(s, out var checks)) return value;
+        if (changed is not null && !checks.Rules.Any(r => (r.Field is { } f && changed.Contains(f)) || r.Reads.Any(changed.Contains)))
+            return value;
+        if (value is BoundStructLiteral literal && CheckConstant(syntax, literal, checks) is { } decided)
+            return decided ? value : new BoundErrorExpr(syntax);
+        if (!ReferenceEquals(_handled, syntax))
+        {
+            if (_covered is not null) _covered.Add((syntax, s.Name));
+            else ReportUnhandled(syntax, s.Name);
+        }
+        return new BoundCall(syntax, checks.Check, value, [], s);
+    }
+
+    /// <summary>
+    /// J38: a literal whose fields are all constants is checked now. True when every rule holds, false after reporting
+    /// each broken one (BYN2321), null when a rule is left to run time. A struct rule reading a field whose own rule
+    /// failed is skipped (J43).
+    /// </summary>
+    private bool? CheckConstant(Expr syntax, BoundStructLiteral literal, StructChecks checks)
+    {
+        if (literal.Fields.Any(f => f.Constant is null)) return null;
+        var fields = literal.Struct.Fields.ToDictionary(f => f, f => literal.Fields[f.Index].Constant!);
+        var results = checks.Rules.Select(r => ConstantFolding.Evaluate(r.Condition, new Dictionary<LocalSymbol, ConstantValue>(), fields)).ToList();
+        if (results.Any(r => r?.Value is not bool)) return null;
+        var failed = new HashSet<FieldSymbol>();
+        for (var i = 0; i < checks.Rules.Count; i++)
+        {
+            var rule = checks.Rules[i];
+            if (results[i]!.Value is true || rule.Reads.Any(failed.Contains)) continue;
+            if (rule.Field is { } field) failed.Add(field);
+            var at = syntax.Span;
+            if (rule.Field is { } own && literal.Fields[own.Index].Syntax.Span is var v && v.Start >= at.Start && v.End <= at.End && v != at) at = v;
+            var text = literal.Struct.File.Source.GetText(rule.Syntax.Condition.Span);
+            Report(DiagnosticCodes.RequiresViolated, at, [Source.GetText(at), text, literal.Struct.Name],
+                label: "fails the contract", help: $"pass a value that meets `requires {text}`");
+        }
+        return results.All(r => r!.Value is true);
+    }
+
     private BoundExpr BindTry(TryExpr t, TypeSymbol? expected)
     {
         if (!InPanicHandler(t.Span, "try") && _deferDepth > 0)
             Report(DiagnosticCodes.TryInDefer, t.Span, [],
                 help: "handle the error here with `catch`; cleanup cannot fail");
         var inner = StripParens(t.Operand);
-        if (inner is not CallExpr call)
+        var (savedCovered, covered) = (_covered, new List<(Expr Call, string Name)>());
+        _covered = covered;
+        BoundExpr operand;
+        if (!Handles(inner))
         {
-            var v = BindExpr(t.Operand, expected);
-            if (!v.Type.IsError) Report(DiagnosticCodes.NothingToHandle, t.Operand.Span, ["try"]);
-            return v;
+            operand = BindExpr(t.Operand, expected);
         }
-        var saved = _handled;
-        _handled = call;
-        var operand = BindExpr(call, expected);
-        _handled = saved;
-        if (operand is not BoundCall { Function.Fails: true })
+        else
         {
-            if (!operand.Type.IsError)
-                Report(DiagnosticCodes.NothingToHandle, t.Operand.Span, ["try"], fix: new Fix(TextSpan.FromBounds(t.Span.Start, t.Operand.Span.Start), ""));
-            return operand;
+            var saved = _handled;
+            _handled = inner;
+            operand = BindExpr(inner, expected);
+            _handled = saved;
         }
-        return new BoundTry(t, operand, operand.Type);
+        _covered = savedCovered;
+        if (Handles(inner) && operand is BoundCall { Function.Fails: true })
+        {
+            foreach (var (c, name) in covered) ReportUnhandled(c, name);
+            return new BoundTry(t, operand, operand.Type);
+        }
+        if (covered.Count > 0)
+        {
+            ReportTryCoversMore(t, covered[0].Call);
+            foreach (var (c, name) in covered.Skip(1)) ReportUnhandled(c, name);
+        }
+        else if (!operand.Type.IsError)
+        {
+            Report(DiagnosticCodes.NothingToHandle, t.Operand.Span, ["try"],
+                fix: inner is CallExpr ? new Fix(TextSpan.FromBounds(t.Span.Start, t.Operand.Span.Start), "") : null);
+        }
+        return operand;
+    }
+
+    /// <summary>BYN1054: <c>try</c> covers an expression that cannot fail; the fix moves it onto the failing call, in parentheses (§18).</summary>
+    private void ReportTryCoversMore(TryExpr t, Expr failing)
+    {
+        var text = Source.GetText(t.Operand.Span);
+        var call = Source.GetText(failing.Span);
+        var at = failing.Span.Start - t.Operand.Span.Start;
+        var fixedText = text[..at] + "(try " + call + ")" + text[(at + call.Length)..];
+        Report(DiagnosticCodes.TryCoversMore, t.Operand.Span, [text, call], label: "cannot fail",
+            help: $"wrap the part that fails in parentheses: `(try {call})`", fix: new Fix(t.Span, fixedText));
     }
 
     private BoundExpr BindCatch(CatchExpr c, TypeSymbol? expected)
     {
         var inner = StripParens(c.Operand);
         BoundExpr operand;
-        if (inner is CallExpr call)
+        if (Handles(inner))
         {
             var saved = _handled;
-            _handled = call;
-            operand = BindExpr(call, expected);
+            _handled = inner;
+            operand = BindExpr(inner, expected);
             _handled = saved;
         }
         else
@@ -642,7 +775,7 @@ internal sealed partial class Binder
             return new BoundErrorExpr(c);
         }
         var sets = _c.ErrorSetsOf(bc.Function);
-        var errorType = ErrorUnionType.Of(sets);
+        var errorType = ErrorUnionType.Of(sets, sets.Count == 0 ? null : bc.Function.ExcludedErrors);
         PushScope();
         LocalSymbol? binding = null;
         ErrorVariantSymbol? variant = null;
@@ -707,7 +840,10 @@ internal sealed partial class Binder
             if (owns) CheckOwningOverlap(pattern);
             if (owns && arm.Guard is { } ag) GuardBindings(pattern, ag.Span);
             var guard = arm.Guard is { } g ? BindCondition(g) : null;
-            var result = BindExpr(arm.Value, expected);
+            // A block arm of a value-giving `catch switch` has no value to give, so it must leave (J49, BYN2611).
+            var result = arm.Value is BlockExpr block && s.Value is CaughtErrorExpr && expected is { IsVoid: false }
+                ? new BoundBlockExpr(block, BindBlock(block.Block), PrimitiveType.Never)
+                : BindExpr(arm.Value, expected);
             PopScope();
             arms.Add(new BoundSwitchArm(arm, pattern, guard, result));
         }
@@ -804,7 +940,7 @@ internal sealed partial class Binder
                 return new BoundPropertyPattern(p, input, tt, subs, null);
             }
             case VariantPattern vp:
-                return BindUnionPattern(vp, input, null, vp.Variant.Member, vp.Elements);
+                return BindUnionPattern(vp, input, null, vp.Variant.Member, vp.Elements, vp.Binding);
             case PositionalPattern { Type: NamedType { Path.Length: > 1, Args.Length: 0 } nt } pos:
             {
                 // `Option2.Some(let v)` on an `Option2<i64>` names the generic union without its type arguments.
@@ -883,7 +1019,8 @@ internal sealed partial class Binder
         BoundBinaryPattern b => OwningPaths(b.Left).Concat(OwningPaths(b.Right)),
         BoundPropertyPattern pp => (pp.Designation is { } d && TypeFacts.IsUnique(d.Type) ? [[]] : Enumerable.Empty<object[]>())
             .Concat(pp.Subpatterns.SelectMany(s => OwningPaths(s.Pattern).Select(q => s.Path.Concat(q).ToArray()))),
-        BoundUnionPattern up => up.Subpatterns.SelectMany((s, i) => OwningPaths(s).Select(q => q.Prepend((up.Variant, i)).ToArray())),
+        BoundUnionPattern up => (up.Designation is { } d && TypeFacts.IsUnique(d.Type) ? [[]] : Enumerable.Empty<object[]>())
+            .Concat(up.Subpatterns.SelectMany((s, i) => OwningPaths(s).Select(q => q.Prepend((up.Variant, i)).ToArray()))),
         _ => [],
     };
 
@@ -907,6 +1044,7 @@ internal sealed partial class Binder
                 foreach (var s in pp.Subpatterns) GuardBindings(s.Pattern, guard);
                 break;
             case BoundUnionPattern up:
+                if (up.Designation is { } ud) ud.GuardSpan = guard;
                 foreach (var s in up.Subpatterns) GuardBindings(s, guard);
                 break;
         }
@@ -927,15 +1065,16 @@ internal sealed partial class Binder
         BoundNotPattern n => HasBindings(n.Operand),
         BoundBinaryPattern b => HasBindings(b.Left) || HasBindings(b.Right),
         BoundPropertyPattern pp => pp.Designation is not null || pp.Subpatterns.Any(s => HasBindings(s.Pattern)),
-        BoundUnionPattern up => up.Subpatterns.Any(HasBindings),
+        BoundUnionPattern up => up.Designation is not null || up.Subpatterns.Any(HasBindings),
         _ => false,
     };
 
     /// <summary>
     /// <c>.Circle(let r)</c> or <c>Shape.Circle(let r)</c>; <paramref name="owner"/> is the written union, if any.
-    /// Elements are null for a unit variant written as a constant (<c>.None</c>).
+    /// Elements are null for a unit variant written as a constant (<c>.None</c>). <paramref name="binding"/> is the
+    /// <c>c</c> of <c>.Circle c</c>: the whole value, narrowed to the variant.
     /// </summary>
-    private BoundPattern BindUnionPattern(Pattern p, TypeSymbol input, TypeSymbol? owner, Name name, Pattern[] elements)
+    private BoundPattern BindUnionPattern(Pattern p, TypeSymbol input, TypeSymbol? owner, Name name, Pattern[] elements, Name? binding = null)
     {
         var target = Unwrap(input);
         UnionVariantSymbol? variant = null;
@@ -947,6 +1086,8 @@ internal sealed partial class Binder
             if (variant is null)
                 Report(DiagnosticCodes.UnknownUnionVariant, name.Span, [name.Text, u.Name],
                     help: Suggest(name.Text, u.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
+            else if (binding is not null)
+                return BindWholeVariant(p, input, target, variant, binding);
             else if (variant.Fields.Count == 0)
                 Report(DiagnosticCodes.VariantHasNoPayload, p.Span, [variant.Name], help: $"match it with `.{variant.Name}`");
             else if (elements.Length != variant.Fields.Count)
@@ -955,11 +1096,21 @@ internal sealed partial class Binder
         }
         else if (!target.IsError && (owner ?? target) is not ErrorType)
             Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`.{name.Text}(…)`", target.DisplayName]);
+        if (binding is not null) DeclareLocal(binding, ErrorType.Instance, LocalKind.PatternVariable);
         var ok = variant is not null && variant.Fields.Count == elements.Length && elements.Length > 0;
         var subs = new BoundPattern[elements.Length];
         for (var i = 0; i < subs.Length; i++)
             subs[i] = BindPattern(elements[i], ok ? variant!.Fields[i].Type : ErrorType.Instance);
         return ok ? new BoundUnionPattern(p, input, variant!, subs) : new BoundBindPattern(p, input, null);
+    }
+
+    /// <summary><c>.percentOff p</c>: a tag test that binds the whole value as <c>p</c>, whose payload fields read as <c>p.rate</c>.</summary>
+    private BoundUnionPattern BindWholeVariant(Pattern p, TypeSymbol input, TypeSymbol union, UnionVariantSymbol variant, Name binding)
+    {
+        var local = DeclareLocal(binding, union, LocalKind.PatternVariable);
+        local.BorrowsSubject = !_patternOwns;
+        _narrowed[local] = variant;
+        return new BoundUnionPattern(p, input, variant, [], local);
     }
 
     private void RequireConstant(BoundExpr value, TextSpan span)
@@ -992,7 +1143,7 @@ internal sealed partial class Binder
         if (value is BoundTypeRef) value = BindExpr(c.Value, target);
         if (value is BoundUnionNew { Payload.Length: 0 } unit && (target.IsError || unit.Type.Equals(target)))
             return new BoundUnionPattern(c, input, unit.Variant, []);
-        if (value is BoundErrorVariant ev && target is ErrorUnionType u && u.Sets.Count > 0 && !u.Sets.Contains(ev.Variant.Set))
+        if (value is BoundErrorVariant ev && target is ErrorUnionType u && u.Sets.Count > 0 && (!u.Sets.Contains(ev.Variant.Set) || u.Excluded.Contains(ev.Variant)))
             Report(DiagnosticCodes.PatternMismatch, c.Span, [$"`{ev.Variant.Set.Name}.{ev.Variant.Name}`", target.DisplayName]);
         else if (!(value is BoundErrorVariant && target is ErrorUnionType))
             value = Convert(value, target, c.Value.Span);
@@ -1144,7 +1295,7 @@ internal sealed partial class Binder
         ErrorSetSymbol s => s.Variants.Select(v => VariantKey(v, type)).ToList(),
         EnumSymbol e => e.Members.Select(m => "." + m.Name).ToList(),
         UnionSymbol u => u.Variants.Select(v => "." + v.Name).ToList(),
-        ErrorUnionType { Sets.Count: > 0 } u => u.Sets.SelectMany(s => s.Variants).Select(v => VariantKey(v, type)).ToList(),
+        ErrorUnionType { Sets.Count: > 0 } u => u.Sets.SelectMany(s => s.Variants).Except(u.Excluded).Select(v => VariantKey(v, type)).ToList(),
         OptionalType o => Domain(o.Inner) is { } inner ? [.. inner, "null"] : ["null", Some],
         _ => null,
     };
@@ -1226,6 +1377,11 @@ internal sealed partial class Binder
             return new BoundErrorStmt(a);
         }
         target = MapWriteTarget(target);
+        if (!CheckFieldWrite(target, a.Span))
+        {
+            BindExpr(a.Value);
+            return new BoundErrorStmt(a);
+        }
         CheckWritable(target, a.Target.Span, null);
         if (op is null)
         {
@@ -1280,10 +1436,41 @@ internal sealed partial class Binder
             return new BoundErrorStmt(i);
         }
         target = MapWriteTarget(target);
+        if (!CheckFieldWrite(target, i.Span)) return new BoundErrorStmt(i);
         CheckWritable(target, i.Target.Span, null);
         var one = Literal(i, target.Type, (Int128)1);
         return new BoundAssign(i, target, one, i.Increment ? BinaryOp.Add : BinaryOp.Sub);
     }
+
+    /// <summary>
+    /// J78 (O11, revision 0007): a field of a struct with <c>requires</c>, states or <c>@sealed</c> is written only by
+    /// its own methods (BYN3216 elsewhere); there, a field of a struct with <c>requires</c> is BYN3208, since the rules
+    /// are checked at construction. A constructor sets fields freely, and plain data is written anywhere.
+    /// </summary>
+    private bool CheckFieldWrite(BoundExpr target, TextSpan span)
+    {
+        if (target is not BoundField { Field.Owner: var owner } f) return true;
+        // Still a write for BYN2311, whichever way it is reported.
+        if (WrittenLocal(target) is { } written) written.Written = true;
+        var own = _struct is { } s && (s == owner || (s.Template ?? s) == (owner.Template ?? owner));
+        if (!own)
+        {
+            if (Invariant(owner.Template ?? owner) is not { } reason) return true;
+            Report(DiagnosticCodes.FieldWriteOutside, span, [owner.Name, f.Field.Name, reason],
+                help: $"add a `ref this` method to `{owner.Name}`, or build a new value with `with`");
+            return false;
+        }
+        if (_fn is { Kind: FunctionKind.Constructor } || !_c.Checks.ContainsKey(owner.Template ?? owner)) return true;
+        Report(DiagnosticCodes.CheckedFieldAssignment, span, [owner.Name], help: "build a new value with `with`: `try x with { f: v }`");
+        return false;
+    }
+
+    /// <summary>Why BYN3216 protects <paramref name="s"/>'s fields, the first of <c>requires</c>, states and <c>@sealed</c>; null for plain data.</summary>
+    private static string? Invariant(StructSymbol s) =>
+        s.Decl.Rules.Length > 0 || s.Decl.Members.OfType<FieldDecl>().Any(f => f.Requires.Length > 0) ? "has `requires`"
+        : s.Decl.States.Length > 0 ? "has states"
+        : s.Decl.Attributes.Any(a => a.Name.Text == "sealed") ? "is `@sealed`"
+        : null;
 
     /// <summary><c>map[k]</c> as an assignment target: <c>=</c> inserts <c>k</c> when missing; <c>op=</c>, <c>++</c> and <c>--</c> read it first and panic (lowering).</summary>
     private static BoundExpr MapWriteTarget(BoundExpr target) =>

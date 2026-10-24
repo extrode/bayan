@@ -12,21 +12,27 @@ public sealed class UnionValueTests
     public void DeclaredValuesAreTheEmittedTags()
     {
         const string text = """
-            union Reply { ok = 200, notFound = 404, moved(string to), none = -1, last }
+            union Reply {
+                ok = 200
+                notFound = 404
+                moved(string to)
+                none = -1
+                last
+            }
             void show(Reply r) {
                 switch r {
-                    case .ok: print("ok");
-                    case .notFound: print("not found");
-                    case .moved(let to): print(to);
-                    case .none: print("none");
-                    case .last: print("last");
+                    case .ok: print("ok")
+                    case .notFound: print("not found")
+                    case .moved(let to): print(to)
+                    case .none: print("none")
+                    case .last: print("last")
                 }
             }
-            show(.ok);
-            show(.notFound);
-            show(.moved("x"));
-            show(.none);
-            show(.last);
+            show(.ok)
+            show(.notFound)
+            show(.moved("x"))
+            show(.none)
+            show(.last)
 
             """;
         var dir = Path.Combine(Golden.CasesRoot, "run");

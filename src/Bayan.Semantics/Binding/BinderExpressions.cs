@@ -48,10 +48,13 @@ internal sealed partial class Binder
         return Convert(bound, target, e.Span, argument);
     }
 
-    /// <summary>An expression statement: the value is discarded.</summary>
+    /// <summary>An expression statement: a value it leaves is an error (BYN3201), so a mis-split line is never silent (§3, J2).</summary>
     private BoundExpr BindStatementExpression(Expr e)
     {
         var bound = BindExpr(e);
+        if (!bound.Type.IsVoid && !bound.Type.IsNever && !bound.Type.IsError)
+            Report(DiagnosticCodes.UnusedValue, e.Span, [Source.GetText(e.Span)], label: "value dropped",
+                help: "assign it with `let _ = …`, or remove the expression");
         return bound;
     }
 
@@ -59,6 +62,8 @@ internal sealed partial class Binder
     {
         if (constrains) Constrain(value, target);
         if (value.Type.Equals(target) || target.IsError || value.Type.IsError) return value;
+        // An `Untrusted<bool>` is a clean fact, usable as a condition (J41): a `bool` cannot reach a sink.
+        if (value.Type is UntrustedType { Inner.IsBool: true } && target.IsBool) return Fact(value);
         if (value.Constant is { Value: Int128 n } && (target.IsInteger || target.IsFloat || target is OptionalType { Inner.IsNumeric: true }) && value.Type.IsInteger)
         {
             var inner = target is OptionalType o ? o.Inner : target;
@@ -94,7 +99,15 @@ internal sealed partial class Binder
         if (_sinkArgument is { } sink && ContainsUntrusted(value.Type))
         {
             Report(DiagnosticCodes.UntrustedSink, span, [value.Type.DisplayName, sink],
-                help: "check the value, then clear the mark with `trust(x, reason: \"…\")`");
+                help: "check the value, then clear the mark with `x.trustUnchecked() because \"…\"`");
+            return new BoundErrorExpr(value.Syntax);
+        }
+        // O9: a bare literal never takes a distinct type; `ParcelId(0)` builds one.
+        if (target is StructSymbol distinct && _c.Distinct.Contains(distinct) && value.Constant is not null)
+        {
+            var text = Source.GetText(span);
+            Report(DiagnosticCodes.BareLiteralForDistinct, span, [text, distinct.Name], help: $"wrap it: `{distinct.Name}({text})`",
+                fix: new Fix(span, $"{distinct.Name}({text})"));
             return new BoundErrorExpr(value.Syntax);
         }
         ReportMismatch(value, target, span);
@@ -178,11 +191,10 @@ internal sealed partial class Binder
         if (Conversions.Explicit(value.Type, target) is ConversionKind.NumericCast or ConversionKind.CharToInteger or ConversionKind.IntegerToChar)
         {
             var text = Source.GetText(span);
-            var wrapped = value.Syntax is NameExpr or LiteralExpr or MemberExpr or CallExpr or ParenExpr or IndexExpr ? text : "(" + text + ")";
             help = value.Type.IsNumeric && target.IsNumeric
-                ? $"cast it if the value always fits; `{value.Type.DisplayName}` does not convert to `{target.DisplayName}` without loss"
-                : "cast it explicitly";
-            fix = new Fix(span, $"({target.DisplayName}){wrapped}");
+                ? $"convert it if the value always fits; `{value.Type.DisplayName}` does not convert to `{target.DisplayName}` without loss"
+                : "convert it explicitly";
+            fix = new Fix(span, $"{target.DisplayName}({text})");
         }
         else if (value.Type is OptionalType o && o.Inner.Equals(target))
         {
@@ -287,6 +299,9 @@ internal sealed partial class Binder
             case SpreadExpr s:
                 Report(DiagnosticCodes.Unsupported, s.Span, ["spreads (`..xs`) outside a collection literal"]);
                 return new BoundErrorExpr(s);
+            case PatternExpr p:
+                Report(DiagnosticCodes.Unsupported, p.Span, ["a named pattern"]);
+                return new BoundErrorExpr(p);
             case ErrorExpr:
                 return new BoundErrorExpr(e);
             default:
@@ -416,6 +431,7 @@ internal sealed partial class Binder
             var t = ResolveType(new NamedType(n.Span, [n.Name], n.TypeArgs));
             return t.IsError ? new BoundErrorExpr(n) : new BoundTypeRef(n, t);
         }
+        if (name == "it" && _it is not null) return new BoundField(n, new BoundThis(n, _thisType!), _it);
         if (_scope.Lookup(name) is { } local)
         {
             if (local.Kind == LocalKind.Const && local.Constant is { } c)
@@ -436,7 +452,7 @@ internal sealed partial class Binder
         if (_file.Imports.TryGetValue(name, out var module)) return new BoundModuleRef(n, module);
         if (_c.Builtins.Find(name) is { } builtin) return new BoundMethodGroup(n, null, builtin);
         if (PrimitiveType.ByName.TryGetValue(name, out var primitive)) return new BoundTypeRef(n, primitive);
-        if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "Utf8Error" or "ProcessResult" or "Panic")
+        if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "Utf8Error" or "ValidationError" or "ProcessResult" or "Panic")
             return new BoundTypeRef(n, ResolveType(new NamedType(n.Span, [n.Name], [])));
         if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
         ReportUndefined(n.Name);
@@ -685,6 +701,8 @@ internal sealed partial class Binder
                 }
                 break;
             }
+            case UnionSymbol when target is BoundLocal l && _narrowed.TryGetValue(l.Local, out var narrowed) && narrowed.Fields.FindIndex(f => f.Name == name) is var index and >= 0:
+                return new BoundUnionField(syntax, target, narrowed, index);
             case UnionSymbol u when u.Variants.Any(v => v.Fields.Any(f => f.Name == name)):
                 Report(DiagnosticCodes.PayloadNeedsPattern, member.Span, [u.Name, name],
                     help: "match the variant and bind the field, as in `case .Variant(let x):`");
@@ -736,6 +754,9 @@ internal sealed partial class Binder
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
             return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
+        // `length` and `isEmpty` of an untrusted value are clean facts (spec §15.1).
+        if (target.Type is UntrustedType untrusted && name is "length" or "isEmpty" && BuiltinMembers.Property(untrusted.Inner, name) is { } fact)
+            return new BoundBuiltinCall(syntax, fact.Member, Fact(target), [], fact.Type);
         if (BuiltinMembers.HasMethod(target.Type, name))
             return new BoundBuiltinGroup(syntax, target, name);
         if (ReportRenamed(target.Type, member)) return new BoundErrorExpr(syntax);
@@ -820,7 +841,7 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(t);
             case ErrorUnionType u:
             {
-                var matches = u.Sets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null).ToList();
+                var matches = u.Sets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null && !u.Excluded.Contains(v)).ToList();
                 if (matches.Count == 1) return new BoundErrorVariant(t, matches[0]!);
                 if (matches.Count > 1)
                     Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);
@@ -976,7 +997,7 @@ internal sealed partial class Binder
         if (!ok)
         {
             Report(DiagnosticCodes.BadUnaryOperand, u.Span, [UnaryText(u.Op), t.DisplayName],
-                help: u.Op == UnaryOp.Negate && t.IsUnsignedInteger ? "cast to a signed type first; unsigned values cannot be negative" : null);
+                help: u.Op == UnaryOp.Negate && t.IsUnsignedInteger ? "convert to a signed type first; unsigned values cannot be negative" : null);
             return new BoundErrorExpr(u);
         }
         var result = new BoundUnary(u, u.Op, operand, t);
@@ -1036,17 +1057,19 @@ internal sealed partial class Binder
         }
 
         var arithmetic = !IsComparison(b.Op);
+        // A comparison of an untrusted value is a clean fact (spec §15.1): it compares the inner values.
+        BoundExpr Operand(Expr e, TypeSymbol? hint) => arithmetic ? BindExpr(e, hint) : Fact(BindExpr(e, hint));
         BoundExpr left, right;
         if (IsUntypedLiteral(b.Left) && !IsUntypedLiteral(b.Right))
         {
-            right = BindExpr(b.Right, arithmetic ? expected : null);
+            right = Operand(b.Right, arithmetic ? expected : null);
             left = BindExpr(b.Left, right.Type is OptionalType o ? o.Inner : right.Type);
         }
         else
         {
-            left = BindExpr(b.Left, arithmetic ? expected : null);
+            left = Operand(b.Left, arithmetic ? expected : null);
             var hint = b.Op is BinaryOp.Shl or BinaryOp.Shr ? PrimitiveType.I32 : left.Type is OptionalType o ? o.Inner : left.Type;
-            right = BindExpr(b.Right, hint);
+            right = Operand(b.Right, hint);
         }
         // `x is null` is valid only on an optional `x`: for `null == null` or a non-optional operand BYN2208 reports alone.
         if (nullTested is not null && nullTested is not LiteralExpr { Kind: LiteralKind.Null } && (nullTested == b.Left ? left : right).Type is OptionalType)
@@ -1095,6 +1118,10 @@ internal sealed partial class Binder
         var bound = new BoundBinary(b, b.Op, left, right, type);
         return Fold(bound, left, right, common);
     }
+
+    /// <summary>The inner value of an <c>Untrusted&lt;T&gt;</c>, read for a fact; other values unchanged.</summary>
+    private static BoundExpr Fact(BoundExpr value) =>
+        value.Type is UntrustedType u ? new BoundConversion(value.Syntax, value, u.Inner, ConversionKind.Identity) : value;
 
     private bool IsPlainStringLiteral(Expr e) =>
         e is LiteralExpr { Kind: LiteralKind.String } && Source.GetText(e.Span) is var text
@@ -1166,7 +1193,7 @@ internal sealed partial class Binder
         if (left.Type.IsNumeric && right.Type.IsNumeric)
             help = $"convert one side explicitly, e.g. `({(Conversions.IsWidening((PrimitiveType)right.Type, PrimitiveType.I64) && left.Type.IsSignedInteger ? left.Type : right.Type).DisplayName})…`; mixed signedness never converts implicitly";
         else if (left.Type == PrimitiveType.Char && right.Type.IsInteger)
-            help = "use `(u32)c` for its value; a `char` is a Unicode scalar, not a number";
+            help = "use `(u32)c` for its value; a `rune` is a Unicode scalar, not a number";
         Report(DiagnosticCodes.BadBinaryOperands, b.Span, [BinaryText(b.Op), left.Type.DisplayName, right.Type.DisplayName], help: help);
         return new BoundErrorExpr(b);
     }
@@ -1270,14 +1297,16 @@ internal sealed partial class Binder
         return result;
     }
 
-    private BoundExpr BindCast(CastExpr c)
+    private BoundExpr BindCast(CastExpr c) => BindConversion(c, ResolveType(c.Type), c.Operand);
+
+    /// <summary><c>u8(x)</c> (or the input form <c>(u8)x</c>): a checked conversion that traps when the value does not fit.</summary>
+    private BoundExpr BindConversion(Expr c, TypeSymbol target, Expr operandSyntax)
     {
-        var target = ResolveType(c.Type);
-        var operand = BindExpr(c.Operand, target.IsNumeric ? null : target);
+        var operand = BindExpr(operandSyntax, target.IsNumeric ? null : target);
         if (target.IsError || operand.Type.IsError) return new BoundErrorExpr(c);
         if (operand.Constant is { Value: Int128 } && target.IsInteger && operand.Syntax is LiteralExpr or UnaryExpr)
         {
-            // `(u8)300` is a compile-time error rather than a runtime trap.
+            // `u8(300)` is a compile-time error rather than a runtime trap.
             return Convert(operand, target, c.Span);
         }
         var kind = Conversions.Explicit(operand.Type, target);
@@ -1360,7 +1389,7 @@ internal sealed partial class Binder
                 help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
             return new BoundErrorExpr(s);
         }
-        return new BoundStructLiteral(s, st, values!);
+        return Checked(s, new BoundStructLiteral(s, st, values!));
     }
 
     private BoundExpr BindWith(WithExpr w)
@@ -1389,7 +1418,7 @@ internal sealed partial class Binder
             }
             updates.Add((field, BindConverted(init.Value, field.Type)));
         }
-        return new BoundWith(w, target, updates.ToArray());
+        return Checked(w, new BoundWith(w, target, updates.ToArray()), updates.Select(u => u.Item1).ToList());
     }
 
     private BoundExpr BindCollection(CollectionExpr c, TypeSymbol? expected)
@@ -1411,7 +1440,7 @@ internal sealed partial class Binder
             if (target is null || target.IsError)
             {
                 if (target is null)
-                    Report(DiagnosticCodes.NoTargetType, c.Span, ["[ … ]"], help: "declare the type: `List<i64> xs = [1, 2];`");
+                    Report(DiagnosticCodes.NoTargetType, c.Span, ["[ … ]"], help: "declare the type: `List<i64> xs = [1, 2]`");
             }
             else
             {
@@ -1436,7 +1465,7 @@ internal sealed partial class Binder
         }
         if (element is NullType or PrimitiveType { Kind: PrimitiveKind.Void or PrimitiveKind.Never })
         {
-            Report(DiagnosticCodes.CannotInferType, c.Elements[0].Span, [Source.GetText(c.Elements[0].Span)], help: "declare the type: `List<i64> xs = [1, 2];`");
+            Report(DiagnosticCodes.CannotInferType, c.Elements[0].Span, [Source.GetText(c.Elements[0].Span)], help: "declare the type: `List<i64> xs = [1, 2]`");
             foreach (var e in c.Elements.Skip(1)) BindExpr(e);
             return new BoundErrorExpr(c);
         }
@@ -1454,7 +1483,7 @@ internal sealed partial class Binder
             var text = Source.GetText(open.Syntax.Span);
             Report(DiagnosticCodes.NotConstant, open.Syntax.Span, [$"the length of `{text}` in a `{(target is SpanType ? "Span" : "T[N]")}` literal"],
                 label: $"a `{open.Operand.Type.DisplayName}` has a run-time length",
-                help: $"spread a fixed array `T[N]` here, or build a list: `List<{open.Type.DisplayName}> all = {Source.GetText(c.Span)};`");
+                help: $"spread a fixed array `T[N]` here, or build a list: `List<{open.Type.DisplayName}> all = {Source.GetText(c.Span)}`");
             return new BoundErrorExpr(c);
         }
         if (target is Symbols.ArrayType at && at.Length != KnownLength(elements))
@@ -1542,14 +1571,14 @@ internal sealed partial class Binder
             if (!MapType.IsValidKey(key.Type))
             {
                 Report(DiagnosticCodes.InvalidMapKey, entries[0].Key.Span, [key.Type.DisplayName],
-                    help: "use an integer type, `char`, `bool`, `string` or a plain enum as the key");
+                    help: "use an integer type, `rune`, `bool`, `string` or a plain enum as the key");
                 foreach (var e in entries.Skip(1)) BindMapPart(e);
                 return new BoundErrorExpr(c);
             }
             if (value.Type is NullType or PrimitiveType { Kind: PrimitiveKind.Void or PrimitiveKind.Never })
             {
                 Report(DiagnosticCodes.CannotInferType, entries[0].Value.Span, [Source.GetText(entries[0].Value.Span)],
-                    help: $"declare the type: `Map<{key.Type.DisplayName}, i64?> m = [ … ];`");
+                    help: $"declare the type: `Map<{key.Type.DisplayName}, i64?> m = [ … ]`");
                 foreach (var e in entries.Skip(1)) BindMapPart(e);
                 return new BoundErrorExpr(c);
             }

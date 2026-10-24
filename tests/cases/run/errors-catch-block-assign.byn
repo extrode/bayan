@@ -1,20 +1,23 @@
-error enum MkError { bad }
+union error MkError { bad }
 
 i32 mk(bool ok) fails MkError {
-    return .bad if !ok;
-    return 7;
+    fail .bad if !ok
+    return 7
 }
 
 void touch(bool ok) fails MkError {
-    return .bad if !ok;
+    fail .bad if !ok
 }
 
 i32 get(bool ok) {
-    var failed = false;
-    let n = mk(ok) catch { failed = true; return -1; };
-    return n;
+    var failed = false
+    let n = mk(ok) catch {
+        failed = true
+        return -1
+    }
+    return n
 }
 
-var hit = false;
-touch(ok: false) catch { hit = true; };
-print($"{get(ok: true)} {get(ok: false)} {hit}");
+var hit = false
+touch(ok: false) catch { hit = true }
+print($"{get(ok: true)} {get(ok: false)} {hit}")

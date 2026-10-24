@@ -7,10 +7,10 @@ string describe(string path) => Io.readText(path) catch switch {
     .other => "other error",
     .invalidInput => "invalid input",
     .unsupported => "unsupported",
-};
+}
 
 void main() {
-    print(describe("no-such-file.txt"));
-    let bytes = Io.readFile("no-such-dir/file.bin") catch return;
-    print($"unexpected: {bytes.length} bytes");
+    print(describe("no-such-file.txt"))
+    let bytes = Io.readFile("no-such-dir/file.bin") catch return
+    print($"unexpected: {bytes.length} bytes")
 }

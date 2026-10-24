@@ -1,10 +1,10 @@
-i64 big = 10;
-if (i32)big > 3 {
-    print("cast if");
+var big: i64 = 10
+if i32(big) > 3 {
+    print("cast if")
 }
-while (i32)big > 9 {
-    print("cast while");
-    big -= 1;
+while i32(big) > 9 {
+    print("cast while")
+    big -= 1
 }
-bool flag = true;
-if flag { print("parenthesized if"); }
+let flag: bool = true
+if flag { print("parenthesized if") }

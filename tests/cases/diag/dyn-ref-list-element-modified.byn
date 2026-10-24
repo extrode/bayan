@@ -1,23 +1,23 @@
 interface IThing {
-    i64 get();
+    i64 get()
 }
 
 struct S : IThing {
-    i64 n;
+    i64 n
 
-    i64 get() => n;
+    i64 get() => n
 }
 
 void main() {
-    var xs = List<S>();
-    xs.append(S { n: 1 });
-    dyn ref IThing d = xs[0];
+    var xs = List<S>()
+    xs.append(S { n: 1 })
+    let d: dyn ref IThing = xs[0]
     for i in 0..100 {
-        xs.append(S { n: i });
+        xs.append(S { n: i })
     }
-    print($"{d.get()}");
-    Span<S> sp = xs.asSpan();
-    dyn ref IThing e = sp[0];
-    xs.append(S { n: 2 });
-    print($"{e.get()}");
+    print($"{d.get()}")
+    let sp: Span<S> = xs.asSpan()
+    let e: dyn ref IThing = sp[0]
+    xs.append(S { n: 2 })
+    print($"{e.get()}")
 }

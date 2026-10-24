@@ -1,0 +1,11 @@
+struct Range {
+    i64 low requires it >= 0
+    i64 high
+    requires low <= high at .high
+}
+
+void main() {
+    let r = Range { low: -1, high: -5 }
+    let s = Range { low: 3, high: 1 }
+    print($"{r.low} {s.low}")
+}

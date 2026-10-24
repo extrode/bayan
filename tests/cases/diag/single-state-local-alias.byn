@@ -1,0 +1,12 @@
+struct Order {
+    i64 total
+
+    states {
+        draft
+        paid
+    }
+}
+type Paid = Order is .paid
+void ship(Order o) {
+    let x: Order is .paid = o
+}

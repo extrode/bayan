@@ -1,17 +1,17 @@
 /// A sum of money.
 public struct Money {
-    public required i64 cents;
-    public readonly string currency = "MYR";
-    private i64? note;
-    i64[4] history;
+    public required i64 cents
+    public readonly string currency = "MYR"
+    private i64? note
+    i64[4] history
 
-    public bool isZero => cents == 0;
+    public bool isZero => cents == 0
 
-    public Money(i64 cents) { this.cents = cents; }
+    public Money(i64 cents) { this.cents = cents }
 
-    public Money plus(Money other) => Money { cents: cents + other.cents };
+    public Money plus(Money other) => Money { cents: cents + other.cents }
 
     void reset() {
-        cents = 0;
+        cents = 0
     }
 }

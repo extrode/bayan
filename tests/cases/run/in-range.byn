@@ -1,17 +1,17 @@
-let n = 7;
-let lo = 3;
-let hi = 9;
-print($"{n in lo..=hi} {n in 0..7} {n in 0..=7} {n in 8..=9}");
-print($"{'b' in 'a'..='z'} {'B' in 'a'..='z'}");
-i64 wide = 300;
-print($"{wide in 0..=255}");
-var calls = 0;
+let n = 7
+let lo = 3
+let hi = 9
+print($"{n in lo..=hi} {n in 0..7} {n in 0..=7} {n in 8..=9}")
+print($"{'b' in 'a'..='z'} {'B' in 'a'..='z'}")
+let wide: i64 = 300
+print($"{wide in 0..=255}")
+var calls = 0
 i32 next(ref i32 count) {
-    count += 1;
-    return count;
+    count += 1
+    return count
 }
-print($"{next(ref calls) in 1..=1} {calls}");
-let items = [4, 5, 6];
-print($"{n in 0..items.length} {calls in 0..=next(ref calls)} {calls}");
-i32? limit = null;
-print($"{n in 0..=(limit ?? 10)} {n in 0..(limit ?? 7)}");
+print($"{next(ref calls) in 1..=1} {calls}")
+let items = [4, 5, 6]
+print($"{n in 0..items.length} {calls in 0..=next(ref calls)} {calls}")
+let limit: i32? = null
+print($"{n in 0..=(limit ?? 10)} {n in 0..(limit ?? 7)}")

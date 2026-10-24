@@ -1,2 +1,2 @@
-i64 twice(i64 x) => x * 2;
-let n = try twice(2);
+i64 twice(i64 x) => x * 2
+let n = try twice(2)

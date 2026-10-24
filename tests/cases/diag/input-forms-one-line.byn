@@ -1,4 +1,14 @@
-struct P { i32 x; i32 y; }
+struct P {
+    i32 x
+    i32 y
+}
 
-void main() { let p = P { x = 1, y: 2 }; let q = P { x = 3, y: 4 }; print($"{p.x} {q.x}"); }
-int f(long x) { return 0; } void g() { List<double> xs = List<double>(); print($"{xs.length}"); }
+void main() {
+    let p = P { x = 1, y: 2 }
+    let q = P { x = 3, y: 4 }
+    print($"{p.x} {q.x}")
+}
+int f(long x) { return 0 } void g() {
+    let xs: List<double> = List<double>()
+    print($"{xs.length}")
+}

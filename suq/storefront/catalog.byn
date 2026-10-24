@@ -1,0 +1,90 @@
+// catalog.byn — product search: untrusted input into sink types, never into strings
+module suq.storefront
+
+import std.db.pg
+import std.http
+import suq.model
+import suq.pricing.{ Money, Currency }
+
+@derive(Row)
+@table("products")
+struct ProductRow {
+    string sku
+    string name
+    i64 priceCents
+    string currency
+    i32 stock
+    bool discontinued
+}
+
+@derive(Json)
+struct ProductDto {
+    string sku
+    string name
+    string price
+    bool inStock
+}
+
+/// Products we no longer show. Out-of-stock products are still listed, marked `inStock: false`.
+const hidden = pattern ProductRow { discontinued: true }
+
+public struct Catalog {
+    public Pool db
+
+    /// GET /products?q=…&limit=…
+    /// `q` and `limit` are `Untrusted<string>?`. The term goes into SQL only as a parameter;
+    /// the limit becomes a `PageSize`, whose `requires` bound removes its taint.
+    public Response search(Request req) uses db, alloc, suspend {
+        let term = req.query("q") ?? return .badRequest
+        return .badRequest if term.isEmpty or term.runeCount > 100
+        let limit = PageSize.tryParse(req.query("limit") ?? "20") ?? return .badRequest
+        let results = findProducts(term, limit: limit) catch _ => return .unavailable
+        return .ok(json: results)
+    }
+
+    /// Private: error set and effects are inferred.
+    List<ProductDto> findProducts(Untrusted<string> term, PageSize limit = PageSize(20)) {
+        let conn = try db.open()
+        var results = List<ProductDto>(capacity: limit.value)
+        let rows = conn.query<ProductRow>(sql"""
+            select sku, name, price_cents, currency, stock, discontinued
+            from products
+            where name ilike '%' || $1 || '%' escape '!'
+            order by name
+            limit $2
+            """, Sql.escapeLike(term, marker: '!'), limit.value)     // `!`, `%` and `_` match literally
+        for try p in rows except hidden {
+            results.append(ProductDto {
+                sku: p.sku.copy(),
+                name: p.name.copy(),
+                price: Money { cents: p.priceCents, currency: Currency.tryParse(p.currency) ?? .myr }.format(),
+                inStock: p.stock > 0,
+            })
+        }
+        return results
+    }
+
+    /// GET /search?q=… as HTML. The page is an `Html` value: text gets in only through
+    /// `Html.escape`, so a term like `<script>` renders as text.
+    public Response renderSearchPage(Request req) uses db, alloc, suspend {
+        let term = req.query("q") ?? ""
+        var page = Html.Builder()
+        page.append(Html("<h1>Results for "))       // literal only: checked at compile time
+        page.append(Html.escape(term))
+        page.append(Html("</h1>"))
+        return .html(page.build())
+    }
+}
+
+test "the search term is a parameter, not SQL" {
+    let req = Request.fake(get: "/products?q=%27%3B%20drop%20table%20products%3B--")
+    let db = FakePool()
+    let _ = Catalog { db: db.pool }.search(req)
+    assert db.statements[0].parameters[0] == "'; drop table products;--"
+}
+
+test "markup in the term is escaped" {
+    let req = Request.fake(get: "/search?q=%3Cscript%3E")
+    let res = Catalog { db: FakePool().pool }.renderSearchPage(req)
+    assert res.body.contains("&lt;script&gt;")
+}

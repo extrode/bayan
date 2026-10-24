@@ -1,4 +1,4 @@
 error BYN2108: required field `max` has a default value
 
-  2 │     required i64 max = 10;
+  2 │     required i64 max = 10
     │                  ^^^

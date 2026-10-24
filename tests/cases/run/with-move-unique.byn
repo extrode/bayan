@@ -1,0 +1,14 @@
+// `move tx with { … }` is `(move tx) with { … }` (revision 0008).
+struct Ledger {
+    string label
+    List<i64> items
+}
+
+void main() {
+    var items = List<i64>()
+    items.append(1)
+    items.append(2)
+    let tx = Ledger { label: "daily", items: move items }
+    let copy = move tx with { label: "copy" }
+    print($"{copy.label} {copy.items.length}")
+}

@@ -1,11 +1,17 @@
 // A conditional over places borrows them: a writable `for dyn ref` over it is checked writable (BYN2106).
-interface IC { void bump(ref this); i64 n { get; } }
-struct C : IC { i64 n; void bump(ref this) { n += 1; } }
+interface IC {
+    void bump(ref this)
+    i64 n
+}
+struct C : IC {
+    i64 n
+    void bump(ref this) { n += 1 }
+}
 void main() {
-    var l = List<C>();
-    l.append(C { n: 1 });
-    let a = move l;
-    let flag = a.length > 0;
-    for dyn ref IC x in (flag ? a : a) { x.bump(); }
-    print($"{a[0].n}");
+    var l = List<C>()
+    l.append(C { n: 1 })
+    let a = move l
+    let flag = a.length > 0
+    for x: dyn ref IC in (flag ? a : a) { x.bump() }
+    print($"{a[0].n}")
 }

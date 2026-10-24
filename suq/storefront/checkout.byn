@@ -1,0 +1,243 @@
+// checkout.byn — drafts, payment, shipping, the order page and payment webhooks
+module suq.storefront
+
+import std.http
+import std.json
+import suq.carrier
+import suq.db
+import suq.model
+import suq.payments
+import suq.pricing.{ Policy, Quote, quote }
+import suq.warehouse
+
+/// Who is asking. Implemented by the session middleware.
+public interface ISessions {
+    CustomerId? identify(Request req) uses db, alloc, suspend
+}
+
+/// Autosaved checkout addresses. A patch has no rules, so it is stored and loaded as
+/// `Untrusted<Address.Patch>`; only `complete()` turns it into a trusted `Address`.
+public struct DraftStore {
+    public Pool db
+
+    public void save(Untrusted<Address.Patch> patch, for OrderId order) fails DbError uses db, alloc, suspend {
+        let conn = try db.open()
+        try conn.execute(sql"""
+            insert into address_drafts (order_id, patch) values ($1, $2)
+            on conflict (order_id) do update set patch = excluded.patch
+            """, order.value, Json.encode(patch))
+    }
+
+    public Untrusted<Address.Patch>? load(for OrderId order) fails DbError, JsonError uses db, alloc, suspend {
+        let conn = try db.open()
+        let json = try conn.query<string>(sql"select patch from address_drafts where order_id = $1", order.value).tryFirst() ?? return null
+        // Rows we wrote are trusted, but this one holds what the customer typed (F-13).
+        return try Address.Patch.fromJson(Untrusted(json), maxDepth: 2, maxBytes: 2KiB)
+    }
+}
+
+@derive(Json)
+struct PayRequest {
+    CardToken card
+}
+
+/// Raised after a payment is recorded. Handlers run on the paying request's fiber, so the
+/// bound is the effects of `pay` (events are named for what happened, §26).
+public type OrderPaid = Event<Order.paid> uses db, alloc, suspend
+
+/// Everything the HTTP handlers need. Holds the gateway (unique), so it is unique too.
+public struct unique Storefront {
+    public OrdersStore orders
+    public DraftStore drafts
+    public UsersStore users
+    public Catalog catalog
+    public dyn ISessions sessions
+    public Gateway gateway
+    public dyn IShipper shipper
+    public Mutex<Outbox> outbox                 // shared by every request fiber
+    public Policy policy
+    public Map<Sku, ShelfSlot> slots
+    public OrderPaid paid
+
+    /// Loads an order only for the customer who owns it. Someone else's order is reported
+    /// as not found, so order ids can't be probed.
+    Order? loadOwnOrder(Request req) fails ReadError uses db, alloc, suspend {
+        let customer = sessions.identify(req) ?? return null
+        let id = OrderId.tryParse(req.route("id")) ?? return null
+        let order = try orders.find(id) ?? return null
+        return order if order.customer == customer
+        return null
+    }
+
+    /// PUT /orders/{id}/address — autosave while the customer types. Nothing is required yet.
+    public Response saveAddress(Request req) uses db, alloc, suspend {
+        let found = loadOwnOrder(req) catch _ => return .unavailable
+        let order = found ?? return .notFound
+        let id = order.id
+        let patch = Address.Patch.fromJson(req.body, maxDepth: 2, maxBytes: 2KiB) catch _ => return .badRequest
+        drafts.save(patch, for: id) catch _ => return .unavailable
+        return .noContent
+    }
+
+    /// POST /orders/{id}/pay — the order must be placed and the saved address complete.
+    public Response pay(Request req) uses db, alloc, suspend, clock {
+        // `CardToken` has `requires`, so a successful decode is trusted (O10).
+        let body = PayRequest.fromJson(req.body, maxDepth: 1, maxBytes: 1KiB) catch _ => return .badRequest
+        let found = loadOwnOrder(req) catch _ => return .unavailable
+        var order = found ?? return .notFound
+        let id = order.id
+        return .conflict(json: ["state": order.statusLabel]) unless order is .placed   // order: Order.placed
+
+        let draft = drafts.load(for: id) catch _ => return .unavailable
+        let patch = draft ?? return .unprocessable(json: ["address": "missing"])
+        // Constructing the `Address` checks its rules and removes the taint.
+        let address = patch.complete() catch e => return .unprocessable(json: e.violations)
+
+        // Charge what the customer was shown: the quote, with discount, shipping and tax.
+        // A second concurrent request is safe: the gateway dedupes on the order's idempotency key.
+        let lines = List((order.lines except inactive).map(it.priceLine))
+        let priced = quote(lines.span, by: policy) catch _ => return .unprocessable(json: ["order": "cannot be shipped"])
+        let payment = gateway.charge(priced.total, from: body.card, for: id) catch switch {
+            PaymentError.declined e => return .paymentRequired(json: ["code": e.code]),
+            PaymentError => return .unavailable,
+        }
+        order.markPaid(payment)                                   // order: Order.paid
+        paid.raise(order)
+        orders.saveState(order) catch _ => return .serverError
+
+        let tracking = ship(order, to: address) catch e => {
+            log($"order {id} paid; shipping queued: {e}", as: .warning)
+            return .accepted(json: OrderDto.fromOrder(order))
+        }
+        order.markShipped(tracking)                               // order: Order.shipped
+        orders.saveState(order) catch _ => return .serverError
+        return .ok(json: OrderDto.fromOrder(order))
+    }
+
+    /// Packs and books a paid order. If booking fails, every parcel waits in the outbox
+    /// as a `BookWithRetryOp` value and the order stays paid.
+    TrackingId ship(Order.paid order, to Address address) fails ShipError {
+        let units = (order.lines except inactive).map(it.qty).sum
+        var items = FixedList<PackItem>(capacity: units)
+        try listItemsInto(ref items, from: order.lines, by: slots)
+        var plan = PackPlan.allocate(for: items.length)
+        try packInto(ref plan, from: items)
+
+        var parcels = List<Parcel>(capacity: plan.boxes.length)
+        for b in plan.boxes.indices {
+            parcels.append(Parcel { order: order.id, box: plan.boxes[b].name, weight: plan.load[b] })
+        }
+        defer failing (e) {
+            if e is CarrierError {
+                let pending = outbox.lock()        // no suspension while held
+                for parcel in parcels {
+                    pending.append(BookWithRetryOp(parcel, by: shipper))
+                }
+            }
+        }
+        let tracking = try bookAll(parcels, by: shipper)
+        log($"order {order.id}: {parcels.length} parcels to {address.city}")
+        // The `shipped` state holds one tracking number; extra parcels are only logged (F-32).
+        return tracking[0]
+    }
+
+    /// GET /orders/{id}/track — redirect to the courier, only for a shipped order.
+    public Response track(Request req) uses db, alloc, suspend {
+        let found = loadOwnOrder(req) catch _ => return .unavailable
+        let order = found ?? return .notFound
+        return .conflict(json: ["state": order.statusLabel]) unless order is .shipped
+        // Narrowed: `order.tracking` exists only in `.shipped`. The redirect target is a `Url`
+        // with an allowlisted host, never a string from the request.
+        let url = Url.tryParse($"https://track.laju.example/{order.tracking.value}", allow: courierHosts) ?? return .serverError
+        return .redirect(to: url)
+    }
+
+    /// GET /orders/{id} — the order and the customer's lifetime spend load concurrently.
+    public Response renderOrderPage(Request req) uses db, alloc, suspend {
+        let id = OrderId.tryParse(req.route("id")) ?? return .notFound
+        let customer = sessions.identify(req) ?? return .unauthorized
+
+        let found = async orders.find(id)
+        let spend = async orders.sumLifetimeSpend(customer, as: policy.currency)
+        let (maybeOrder, lifetime) = await (found, spend) catch _ => return .unavailable
+        let order = maybeOrder ?? return .notFound
+        return .notFound if order.customer != customer             // don't reveal other customers' ids
+
+        let lines = List((order.lines except inactive).map(it.priceLine))
+        let priced = quote(lines.span, by: policy) catch _ => return .serverError
+        var page = Html.Builder()
+        page.append(Html("<h1>Order "))
+        page.append(Html.escape(order.id.value.format()))
+        page.append(Html("</h1><p>"))
+        page.append(Html.escape(order.statusLabel))
+        page.append(Html("</p><p>Total: "))
+        page.append(Html.escape(priced.total.format()))
+        page.append(Html("</p><p>Lifetime: "))
+        page.append(Html.escape(lifetime.format()))
+        page.append(Html("</p>"))
+        return .html(page.build())
+    }
+
+    /// Runs for the life of the server: retries queued bookings once a minute and records
+    /// each success, so an order paid during a courier outage still ends up shipped.
+    public never sweepOutbox() uses db, alloc, suspend, clock {
+        while true {
+            Clock.sleep(60s)
+            for (parcel, tracking) in retryOutbox(outbox) {
+                recordShipment(tracking, for: parcel.order) catch e => log($"order {parcel.order}: booked {tracking}, not recorded: {e}", as: .error)
+            }
+        }
+    }
+
+    void recordShipment(TrackingId tracking, for OrderId id) fails ReadError, DbError {
+        var order = try orders.find(id) ?? return
+        return unless order is .paid           // another parcel of the same order got there first
+        order.markShipped(tracking)
+        try orders.saveState(order)
+    }
+
+    /// POST /webhooks/payments — authenticated before it is parsed.
+    public Response receivePaymentWebhook(Request req) uses db, alloc, suspend {
+        return .payloadTooLarge if req.body.length > 4096      // before the MAC, which reads all of it
+        let tag = Hex.tryDecode(req.header("x-signature") ?? return .unauthorized) ?? return .unauthorized
+        let event = readWebhook(Webhook { body: req.body, tag }, by: gateway.webhookKey) catch switch {
+            WebhookError.forged => return .unauthorized,
+            WebhookError.unreadable => return .badRequest,
+        }
+        log($"payment {event.payment}: {event.kind}")
+        return .noContent
+    }
+}
+
+const courierHosts = Set(["track.laju.example"])
+
+@derive(Json)
+struct OrderDto {
+    i64 id
+    string status
+    string total
+    List<LineDto> lines
+}
+
+@derive(Json)
+struct LineDto {
+    string sku
+    i32 qty
+    string unitPrice
+    LineStatus status
+}
+
+/// DTOs are built by static factories that name their source (`fromX`), not by `toX` members.
+extension OrderDto {
+    public static OrderDto fromOrder(Order order) uses alloc => OrderDto {
+        id: order.id.value,
+        status: order.statusLabel,
+        total: order.total.format(),
+        lines: List(order.lines.map(LineDto.fromLine(it))),
+    }
+}
+
+extension LineDto {
+    public static LineDto fromLine(Line line) uses alloc =>
+        LineDto { sku: line.sku.value, qty: line.qty, unitPrice: line.unitPrice.format(), status: line.status }
+}

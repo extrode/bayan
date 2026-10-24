@@ -1,40 +1,40 @@
 interface IShape {
-    i64 area();
-    string name { get; }
-    i64 times(i64 by);
-    void describe() => print($"{name} with area {area()}");
+    i64 area()
+    string name
+    i64 times(i64 by)
+    void describe() => print($"{name} with area {area()}")
 }
 
 struct Square : IShape {
-    i64 side;
+    i64 side
 
-    i64 area() => side * side;
+    i64 area() => side * side
 
-    string name => "square";
+    string name => "square"
 
-    i64 times(i64 by) => area() * by;
+    i64 times(i64 by) => area() * by
 }
 
 struct Circle : IShape {
-    i64 r;
+    i64 r
 
-    i64 area() => 3 * r * r;
+    i64 area() => 3 * r * r
 
-    string name => "circle";
+    string name => "circle"
 
-    i64 times(i64 by) => area() * by;
+    i64 times(i64 by) => area() * by
 
-    void describe() => print($"a circle of radius {r}");
+    void describe() => print($"a circle of radius {r}")
 }
 
 void show(dyn ref readonly IShape s) {
-    s.describe();
-    print($"{s.name}: {s.area()}, doubled {s.times(2)}");
+    s.describe()
+    print($"{s.name}: {s.area()}, doubled {s.times(2)}")
 }
 
 void main() {
-    let s = Square { side: 3 };
-    let c = Circle { r: 2 };
-    show(s);
-    show(c);
+    let s = Square { side: 3 }
+    let c = Circle { r: 2 }
+    show(s)
+    show(c)
 }

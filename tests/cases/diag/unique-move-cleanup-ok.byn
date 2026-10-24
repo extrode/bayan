@@ -1,33 +1,35 @@
 // A cleanup is checked against the state at the exits where it runs: no use after move here.
-error enum E { bad, }
+union error E {
+    bad
+}
 
 void step() fails E { }
 
 void consume(move List<i64> xs) {
-    print($"{xs.length}");
+    print($"{xs.length}")
 }
 
 // An `errdefer` runs only when the function fails; the success `return` moves `xs` after the last `try`.
 List<i64> build() fails E {
-    let xs = List<i64>();
-    defer failing print($"{xs.length}");
-    try step();
-    return move xs;
+    let xs = List<i64>()
+    defer failing print($"{xs.length}")
+    try step()
+    return move xs
 }
 
 // `xs` is assigned again before the scope exits.
 void reassign() {
-    var xs = List<i64>();
-    defer print($"{xs.length}");
-    consume(move xs);
-    xs = List<i64>();
+    var xs = List<i64>()
+    defer print($"{xs.length}")
+    consume(move xs)
+    xs = List<i64>()
 }
 
 // A `defer` that only assigns `xs` does not read it.
 void assignOnly() {
-    var xs = List<i64>();
-    defer xs = List<i64>();
-    consume(move xs);
+    var xs = List<i64>()
+    defer xs = List<i64>()
+    consume(move xs)
 }
 
 void main() { }

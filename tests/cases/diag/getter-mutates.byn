@@ -1,14 +1,14 @@
 struct Counter {
-    i64 n;
-    List<i64> seen;
+    i64 n
+    List<i64> seen
 
-    i64 latest => record();
+    i64 latest => record()
 
     i64 record(ref this) {
-        n += 1;
-        return n;
+        n += 1
+        return n
     }
 }
 
-let c = Counter { n: 0, seen: List<i64>() };
-print($"{c.latest}");
+let c = Counter { n: 0, seen: List<i64>() }
+print($"{c.latest}")

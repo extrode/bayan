@@ -1,6 +1,6 @@
 error BYN2201: a `string` cannot be indexed
 
-  2 │ let first = name[0];
+  2 │ let first = name[0]
     │                 ^^^ strings have no indexer
     │
   help: read a byte, slice, or take characters; `string` is UTF-8, so position 0 is not a character:
@@ -8,5 +8,5 @@ error BYN2201: a `string` cannot be indexed
           `name[a..b]`          the text between byte offsets a and b
           `name.chars.take(n)`  the first n characters
           `name.graphemes`      user-perceived characters
-    │ 2 │ let first = name.bytes[0];
+    │ 2 │ let first = name.bytes[0]
     │   │                 ++++++

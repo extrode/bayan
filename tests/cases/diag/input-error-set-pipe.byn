@@ -1,11 +1,11 @@
-error enum EmailError {
+union error EmailError {
     /// Not an address.
-    invalid,
+    invalid
 }
 
-error enum DbError {
+union error DbError {
     /// Too slow.
-    timeout,
+    timeout
 }
 
-error set SignupError = EmailError | DbError;
+error set SignupError = EmailError | DbError

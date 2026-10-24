@@ -38,6 +38,70 @@ public sealed class CliTests
     }
 
     [Fact]
+    public void FmtIsAnUnknownCommandNamingFormat()
+    {
+        var (exit, _, stderr) = Run("fmt");
+        Assert.Equal(CliApp.ExitUsage, exit);
+        Assert.Contains("unknown command `fmt`", stderr);
+        Assert.Contains("  format <path>", stderr);
+    }
+
+    private static string Fresh(string name, string source)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "cli", name);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "main.byn"), source);
+        return dir;
+    }
+
+    [Fact]
+    public void AuditListsEveryBypassWithItsReason()
+    {
+        var dir = Fresh("audit", "@allow(BYN2230) because \"kept for the C ABI\"\nvoid toHex() {\n}\n\nunsafe void poke() {\n}\n\n"
+            + "void main() {\n    let k = input.trustUnchecked() because \"a fixture\"\n    unsafe because \"raw write\" {\n    }\n}\n\nextern i32 puts(cstr s)\n");
+        var (exit, stdout, stderr) = Run("audit", dir);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        var main = Path.Combine(dir, "main.byn");
+        Assert.Equal(
+            $"{main}:1:1  @allow(BYN2230)  because \"kept for the C ABI\"\n{main}:5:1  unsafe void poke()  no reason given\n"
+            + $"{main}:9:19  trustUnchecked()  because \"a fixture\"\n{main}:10:5  unsafe  because \"raw write\"\n"
+            + $"{main}:14:1  extern i32 puts(cstr s)  no reason given\n◆ 5 bypasses in {dir}\n",
+            stdout.ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
+    public void AuditNeedsOnePath()
+    {
+        var (exit, _, stderr) = Run("audit");
+        Assert.Equal(CliApp.ExitUsage, exit);
+        Assert.Contains("usage: bayan audit <path>", stderr);
+    }
+
+    [Fact]
+    public void FeaturesUsedListsNodesBuiltinsAndDiagnostics()
+    {
+        var dir = Fresh("features", "void main() {\n    var s = \"abc\"\n    if s.length > 1 {\n        print(s)\n    }\n}\n");
+        var (exit, stdout, stderr) = Run("features", "--used", dir);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        using var json = System.Text.Json.JsonDocument.Parse(stdout);
+        string[] Items(string name) => json.RootElement.GetProperty(name).EnumerateArray().Select(e => e.GetString()!).ToArray();
+        Assert.Equal(1, json.RootElement.GetProperty("version").GetInt32());
+        Assert.Contains("IfStmt", Items("nodes"));
+        Assert.Contains("FunctionDecl", Items("nodes"));
+        Assert.Equal(["Print", "StringLength"], Items("builtins"));
+        Assert.Equal(["BYN2311"], Items("diagnostics"));
+    }
+
+    [Fact]
+    public void FeaturesNeedsUsed()
+    {
+        var (exit, _, stderr) = Run("features", ".");
+        Assert.Equal(CliApp.ExitUsage, exit);
+        Assert.Contains("usage: bayan features --used <path>", stderr);
+    }
+
+    [Fact]
     public void ExplainPrintsTheDocCaseInsensitively()
     {
         var (exit, stdout, _) = Run("explain", "byn0003");
@@ -89,7 +153,7 @@ public sealed class CliTests
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "cli-types");
         Directory.CreateDirectory(dir);
         var file = Path.Combine(dir, "main.byn");
-        File.WriteAllText(file, "var n = 0;\nn += 1;\nprint($\"{n}\");\n");
+        File.WriteAllText(file, "var n = 0\nn += 1\nprint($\"{n}\")\n");
         var (exit, stdout, stderr) = Run("types", file);
         Assert.True(exit == CliApp.ExitOk, stderr);
         Assert.Contains("\"path\": \"main.byn\"", stdout);
@@ -147,13 +211,13 @@ public sealed class CliTests
     [Fact]
     public void RunOfAProgramThatFailsToCompileExitsOne()
     {
-        var (exit, _, stderr) = Run("run", Program("cli-run-error", "i32 x = \"no\";\n"));
+        var (exit, _, stderr) = Run("run", Program("cli-run-error", "i32 x = \"no\"\n"));
         Assert.Equal(CliApp.ExitFailure, exit);
         Assert.Contains("error BYN", stderr);
     }
 
     private static string ManyErrors(string name) =>
-        Program(name, string.Concat(Enumerable.Range(0, 25).Select(i => $"i32 x{i} = \"no\";\n")));
+        Program(name, string.Concat(Enumerable.Range(0, 25).Select(i => $"i32 x{i} = \"no\"\n")));
 
     private static int Count(string text, string needle) => text.Split(needle).Length - 1;
 
@@ -192,14 +256,14 @@ public sealed class CliTests
     [Fact]
     public void RunPassesExitZeroThrough()
     {
-        var (exit, _, stderr) = Run("run", Program("cli-run-ok", "void main() {\n    print(\"fine\");\n}\n"));
+        var (exit, _, stderr) = Run("run", Program("cli-run-ok", "void main() {\n    print(\"fine\")\n}\n"));
         Assert.True(exit == CliApp.ExitOk, stderr);
     }
 
     [Fact]
     public void RunPassesTheProgramsOwnExitCodeThrough()
     {
-        var (exit, _, _) = Run("run", Program("cli-run-panic", "panic(\"stop\");\n"));
+        var (exit, _, _) = Run("run", Program("cli-run-panic", "panic(\"stop\")\n"));
         Assert.Equal(134, exit);
     }
 
@@ -211,13 +275,13 @@ public sealed class CliTests
         if (File.Exists(written)) File.Delete(written);
         var path = Program("cli-run-args", $$"""
             void main(ReadOnlySpan<string> args) fails IoError {
-                let bytes = stackalloc u8[64];
-                var sb = StrBuf(bytes);
+                let bytes = stackalloc u8[64]
+                var sb = StrBuf(bytes)
                 for a in args {
-                    print(a);
-                    sb.append($"{a}\n");
+                    print(a)
+                    sb.append($"{a}\n")
                 }
-                try Io.writeFile("{{written.Replace('\\', '/')}}", sb.finish().bytes);
+                try Io.writeFile("{{written.Replace('\\', '/')}}", sb.finish().bytes)
             }
 
             """);
@@ -231,9 +295,9 @@ public sealed class CliTests
     {
         var path = Program("cli-io-run-version", """
             i32 main(ReadOnlySpan<string> args) fails IoError {
-                string[1] version = ["--version"];
-                let r = try Io.run(args[0], version.asSpan());
-                return r.exitCode == 0 && r.stdout.startsWith("bayan ") && r.stderr.isEmpty ? 0 : 1;
+                let version: string[1] = ["--version"]
+                let r = try Io.run(args[0], version.asSpan())
+                return r.exitCode == 0 && r.stdout.startsWith("bayan ") && r.stderr.isEmpty ? 0 : 1
             }
 
             """);
@@ -245,13 +309,13 @@ public sealed class CliTests
     public void RunCannotTellAFailingMainFromACompileError()
     {
         var path = Program("cli-run-main-fails", """
-            error enum E {
+            union error E {
                 /// It went wrong.
                 wrong,
             }
 
             void main() fails E {
-                return .wrong;
+                fail .wrong
             }
 
             """);
@@ -263,7 +327,7 @@ public sealed class CliTests
     [Fact]
     public void DiagnosticsJsonPrintsOneObjectPerLine()
     {
-        var path = Program("cli-json", "i32 x = \"no\";\nvar y = 1;\n");
+        var path = Program("cli-json", "i32 x = \"no\"\nvar y = 1\n");
         var (exit, stdout, stderr) = Run("check", "--diagnostics", "json", path);
         Assert.Equal(CliApp.ExitFailure, exit);
         Assert.Empty(stdout);
@@ -283,7 +347,7 @@ public sealed class CliTests
     [InlineData("test")]
     public void DiagnosticsJsonIsAcceptedByEveryBuildingCommand(string command)
     {
-        var path = Program("cli-json-" + command, "i32 x = \"no\";\n");
+        var path = Program("cli-json-" + command, "i32 x = \"no\"\n");
         var (exit, _, stderr) = Run(command, "--diagnostics", "json", path);
         Assert.Equal(CliApp.ExitFailure, exit);
         Assert.StartsWith("{\"code\":\"BYN", stderr);
@@ -340,7 +404,7 @@ public sealed class CliTests
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var dir = Path.Combine(Golden.RepoRoot, "tmp", name);
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, "main.byn"), "void main() {\n    print(\"main\");\n}\n");
+        File.WriteAllText(Path.Combine(dir, "main.byn"), "void main() {\n    print(\"main\")\n}\n");
         File.WriteAllText(Path.Combine(dir, "main.test.byn"), tests);
         return dir;
     }
@@ -352,30 +416,30 @@ public sealed class CliTests
     public void TestReportsPassFailAndPanicPerTest()
     {
         var dir = TestSuite("cli-test-mixed", """
-            error enum E {
+            union error E {
                 /// It went wrong.
                 wrong,
             }
 
-            void fail() fails E {
-                return .wrong;
+            void breaks() fails E {
+                fail .wrong
             }
 
             test "passes" {
-                assert(1 + 1 == 2);
+                assert(1 + 1 == 2)
             }
 
             test "asserts" {
-                print("before");
-                assert(1 + 1 == 3);
+                print("before")
+                assert(1 + 1 == 3)
             }
 
             test "fails" {
-                try fail();
+                try breaks()
             }
 
             test "panics" {
-                panic("boom");
+                panic("boom")
             }
 
             """);
@@ -408,7 +472,7 @@ public sealed class CliTests
     [Fact]
     public void TestExitsZeroWhenEveryTestPasses()
     {
-        var dir = TestSuite("cli-test-pass", "test \"one\" {\n    assert(true);\n}\n");
+        var dir = TestSuite("cli-test-pass", "test \"one\" {\n    assert(true)\n}\n");
         var (exit, stdout, _) = Run("test", "--ascii", dir);
         Assert.Equal(0, exit);
         Assert.Equal("running 1 test in 1 module\n\n* 1 passed - Ts\n", WithoutTimes(stdout));
@@ -418,7 +482,7 @@ public sealed class CliTests
     [Fact]
     public void TodoReportsPending()
     {
-        var dir = TestSuite("cli-test-todo", "test \"one\" {\n    assert(true);\n}\n\ntest \"later\" {\n    todo(\"x\");\n}\n");
+        var dir = TestSuite("cli-test-todo", "test \"one\" {\n    assert(true)\n}\n\ntest \"later\" {\n    todo(\"x\")\n}\n");
         var (exit, stdout, _) = Run("test", "--json", dir);
         Assert.Equal(CliApp.ExitOk, exit);
         Assert.Contains("\"status\": \"pending\"", stdout);
@@ -434,7 +498,7 @@ public sealed class CliTests
     [Fact]
     public void TestVerboseListsPassingAndPendingTests()
     {
-        var dir = TestSuite("cli-test-verbose", "test \"one\" {\n    assert(true);\n}\n\ntest \"later\" {\n    todo(\"x\");\n}\n");
+        var dir = TestSuite("cli-test-verbose", "test \"one\" {\n    assert(true)\n}\n\ntest \"later\" {\n    todo(\"x\")\n}\n");
         var (exit, stdout, _) = Run("test", "--ascii", "-v", dir);
         Assert.Equal(CliApp.ExitOk, exit);
         Assert.Equal("""
@@ -451,7 +515,7 @@ public sealed class CliTests
     [Fact]
     public void TestShowsAssertionValuesAndOneRerunLine()
     {
-        var dir = TestSuite("cli-test-values", "i64 cents(i64 units) {\n    return units * 100;\n}\n\ntest \"leftover cents\" {\n    assert(cents(2) == 201);\n}\n");
+        var dir = TestSuite("cli-test-values", "i64 cents(i64 units) {\n    return units * 100\n}\n\ntest \"leftover cents\" {\n    assert(cents(2) == 201)\n}\n");
         var (exit, stdout, _) = Run("test", "--ascii", dir);
         Assert.Equal(CliApp.ExitTestFailure, exit);
         Assert.Equal("""
@@ -474,7 +538,7 @@ public sealed class CliTests
     public void TheRerunHintQuotesTheNameForAShell()
     {
         const string name = "x $(touch owned) `id` it's \"hi\" \\ bye";
-        var dir = TestSuite("cli-test-quoted", "test \"x $(touch owned) `id` it's \\\"hi\\\" \\\\ bye\" {\n    assert(false);\n}\n");
+        var dir = TestSuite("cli-test-quoted", "test \"x $(touch owned) `id` it's \\\"hi\\\" \\\\ bye\" {\n    assert(false)\n}\n");
         var (exit, stdout, _) = Run("test", "--ascii", dir);
         Assert.Equal(CliApp.ExitTestFailure, exit);
         const string quoted = "'x $(touch owned) `id` it'\\''s \"hi\" \\ bye'";
@@ -495,15 +559,15 @@ public sealed class CliTests
     {
         var dir = TestSuite("cli-test-control", """
             test "ok\u{1b}]0;PWNED\u{7}" {
-                assert(true);
+                assert(true)
             }
 
             test "later\u{1b}[2J" {
-                todo("soon");
+                todo("soon")
             }
 
             test "y\u{1b}]0;PWNED\u{7}\u{1b}[2J" {
-                panic("boom\u{1b}[2J\u{9b}31m");
+                panic("boom\u{1b}[2J\u{9b}31m")
             }
 
             """);
@@ -530,7 +594,7 @@ public sealed class CliTests
     [Fact]
     public void BidiControlsInTestNamesAndOutputAreShownEscaped()
     {
-        var dir = TestSuite("cli-test-bidi", "test \"a\\u{202e}b\" {\n    panic(\"x\\u{2067}y\");\n}\n\ntest \"plain\" {\n    assert(false);\n}\n");
+        var dir = TestSuite("cli-test-bidi", "test \"a\\u{202e}b\" {\n    panic(\"x\\u{2067}y\")\n}\n\ntest \"plain\" {\n    assert(false)\n}\n");
         var (exit, stdout, _) = Run("test", "--ascii", dir);
         Assert.Equal(CliApp.ExitTestFailure, exit);
         Assert.DoesNotContain('\u202e', stdout);
@@ -545,7 +609,7 @@ public sealed class CliTests
     [Fact]
     public void TestsLeftOutByOnlyAreNotSkipped()
     {
-        var dir = TestSuite("cli-test-only-json", "test \"one\" {\n    assert(true);\n}\n\ntest \"two\" {\n    assert(true);\n}\n");
+        var dir = TestSuite("cli-test-only-json", "test \"one\" {\n    assert(true)\n}\n\ntest \"two\" {\n    assert(true)\n}\n");
         var (exit, stdout, _) = Run("test", "--json", "--only", "one", dir);
         Assert.Equal(CliApp.ExitOk, exit);
         Assert.Contains("\"passed\": 1", stdout);
@@ -555,7 +619,7 @@ public sealed class CliTests
     [Fact]
     public void MoreThanThreeFailuresGetNoRerunLine()
     {
-        var dir = TestSuite("cli-test-many", string.Concat(Enumerable.Range(1, 4).Select(n => $"test \"t{n}\" {{\n    assert(false);\n}}\n\n")));
+        var dir = TestSuite("cli-test-many", string.Concat(Enumerable.Range(1, 4).Select(n => $"test \"t{n}\" {{\n    assert(false)\n}}\n\n")));
         var (exit, stdout, _) = Run("test", "--ascii", dir);
         Assert.Equal(CliApp.ExitTestFailure, exit);
         Assert.Contains("* 0 passed - x 4 failed - 0 pending - ", stdout);
@@ -637,6 +701,22 @@ public sealed class CliToolchainTests
         var (exit, stderr) = RunWith("BAYAN_CC", Path.Combine(Golden.RepoRoot, "tmp", "no-such-cc"), command, Hello);
         Assert.Equal(CliApp.ExitToolchain, exit);
         Assert.Contains("cannot run the C compiler", stderr);
+    }
+
+    [Theory]
+    [InlineData("build")]
+    [InlineData("run")]
+    [InlineData("test")]
+    public void GeneratedCTheCCompilerRejectsIsAnInternalCompilerError(string command)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var fake = Path.Combine(Golden.RepoRoot, "tmp", "rejecting-cc.sh");
+        Directory.CreateDirectory(Path.GetDirectoryName(fake)!);
+        File.WriteAllText(fake, "echo \"main.byn:2:5: error: injected\" >&2\nexit 1\n");
+        var (exit, stderr) = RunWith("BAYAN_CC", "/bin/sh " + fake, command, Hello);
+        Assert.Equal(CliApp.ExitToolchain, exit);
+        Assert.Contains("error BYN4001: internal compiler error", stderr);
+        Assert.Contains("main.byn:2:5: error: injected\n", stderr);
     }
 
     [Fact]

@@ -1,0 +1,26 @@
+error BYN3209: a `unique` type cannot be `const`
+
+  9 │ const shared = File { fd: 0 }
+    │ ^^^^^ `File` is `unique`
+    │
+  help: declare it with `let`
+    │ 9 │ let shared = File { fd: 0 }
+    │   │ ++
+
+error BYN3209: a `unique` type cannot be `const`
+
+  12 │     const f = File { fd: 1 }
+     │     ^^^^^ `File` is `unique`
+     │
+  help: declare it with `let`
+     │ 12 │     let f = File { fd: 1 }
+     │    │     ++
+
+error BYN3209: a `unique` type cannot be `const`
+
+  13 │     const h = Holder { file: File { fd: 2 } }
+     │     ^^^^^ `File` is `unique`
+     │
+  help: declare it with `let`
+     │ 13 │     let h = Holder { file: File { fd: 2 } }
+     │    │     ++

@@ -1,0 +1,4 @@
+error BYN2022: a named pattern is not supported in v0.1
+
+  5 │ const empty = pattern Line { qty: 0 }
+    │               ^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,25 +1,25 @@
-// `for dyn ref I x in xs` over a fixed array or a List points at each element, so mutations through `x` persist.
+// `for x: dyn ref I in xs` over a fixed array or a List points at each element, so mutations through `x` persist.
 interface IC {
-    void bump(ref this);
-    i64 n { get; }
+    void bump(ref this)
+    i64 n
 }
 
 struct C : IC {
-    i64 n;
+    i64 n
     void bump(ref this) {
-        n += 1;
+        n += 1
     }
 }
 
 void main() {
-    C[2] a = [C { n: 0 }, C { n: 0 }];
-    for dyn ref IC x in a {
-        x.bump();
+    var a: C[2] = [C { n: 0 }, C { n: 0 }]
+    for x: dyn ref IC in a {
+        x.bump()
     }
-    var l = List<C>();
-    l.append(C { n: 0 });
-    for dyn ref IC x in l {
-        x.bump();
+    var l = List<C>()
+    l.append(C { n: 0 })
+    for x: dyn ref IC in l {
+        x.bump()
     }
-    print($"{a[0].n} {a[1].n} {l[0].n}");
+    print($"{a[0].n} {a[1].n} {l[0].n}")
 }

@@ -4,5 +4,5 @@ error BYN2104: `steps` is immutable
      │              ^^^^^ `moveNext` modifies it; declared with `let` on line 17
      │
   help: declare it with `var` if it should change
-     │ 17 │     var steps = Countdown { left: 3 };
+     │ 17 │     var steps = Countdown { left: 3 }
      │    │     +++

@@ -1,0 +1,3 @@
+// expect: string `+`
+// fix-it: `$"Hello {name}"`
+let s = "Hello " + name

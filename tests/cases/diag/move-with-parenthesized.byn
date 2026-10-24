@@ -1,0 +1,11 @@
+// `move (tx with { … })` moves a fresh value, not a local (BYN2782).
+struct Ledger {
+    string label
+    List<i64> items
+}
+
+void main() {
+    let tx = Ledger { label: "daily", items: List<i64>() }
+    let copy = move (tx with { label: "copy" })
+    print($"{copy.label}")
+}

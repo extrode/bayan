@@ -1,17 +1,17 @@
 // A by-value copy of an element is not a borrow: passing it next to `ref xs` or `ref xs[i]` is allowed.
-i64 sum(i64 a, ref List<i64> xs) => a + xs.length;
-i64 sumArr(i64 a, ref i64[2] xs) => a + xs[1];
-void two(i64 a, ref i64 b) { b += a; }
+i64 sum(i64 a, to ref List<i64> xs) => a + xs.length
+i64 sumArr(i64 a, to ref i64[2] xs) => a + xs[1]
+void add(i64 a, to ref i64 b) { b += a }
 
 void main() {
-    var xs = List<i64>();
-    xs.append(1);
-    xs.append(2);
-    print($"{sum(xs[0], ref xs)}");
-    two(a: xs[0], b: ref xs[1]);
-    print($"{xs[1]}");
-    i64[2] ys = [10, 20];
-    print($"{sumArr(ys[0], ref ys)}");
-    two(a: ys[0], b: ref ys[1]);
-    print($"{ys[1]}");
+    var xs = List<i64>()
+    xs.append(1)
+    xs.append(2)
+    print($"{sum(xs[0], to: ref xs)}")
+    add(xs[0], to: ref xs[1])
+    print($"{xs[1]}")
+    var ys: i64[2] = [10, 20]
+    print($"{sumArr(ys[0], to: ref ys)}")
+    add(ys[0], to: ref ys[1])
+    print($"{ys[1]}")
 }

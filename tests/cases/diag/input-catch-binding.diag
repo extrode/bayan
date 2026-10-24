@@ -9,7 +9,7 @@ error BYN1025: `catch (e)` is an input form; bind the error in a `catch switch` 
 
 error BYN1025: `catch (e)` is an input form; bind the error in a `catch switch` arm
 
-  18 │     let b = parse("") catch (e) 0;
+  18 │     let b = parse("") catch (e) 0
      │                             ^^^ the input form
      │
   help: write `catch switch { E e => … }`, binding the error in each arm

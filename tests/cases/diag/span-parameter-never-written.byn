@@ -1,35 +1,35 @@
 i64 total(Span<i64> values) {
-    i64 sum = 0;
+    var sum: i64 = 0
     for v in values {
-        sum += v;
+        sum += v
     }
-    return sum + values[0] + values.length;
+    return sum + values[0] + values.length
 }
 
 void zero(Span<i64> values) {
-    values[0] = 0;
+    values[0] = 0
 }
 
 void bump(ref i64 x) {
-    x += 1;
+    x += 1
 }
 
 void bumpFirst(Span<i64> values) {
-    bump(ref values[0]);
+    bump(ref values[0])
 }
 
 void forward(Span<i64> values) {
-    zero(values[1..]);
+    zero(values[1..])
 }
 
 void write(Span<u8> buffer) {
-    var sb = StrBuf(buffer);
-    sb.append("x");
+    var sb = StrBuf(buffer)
+    sb.append("x")
 }
 
-i64 viaReadOnly(Span<i64> values) => sum(values);
+i64 viaReadOnly(Span<i64> values) => sum(values)
 
-i64 sum(ReadOnlySpan<i64> values) => values.length;
+i64 sum(ReadOnlySpan<i64> values) => values.length
 
 void main() {
 }

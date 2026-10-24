@@ -1,0 +1,38 @@
+// `fail .x` leaves with an error: as a statement, guarded by `if`, and after `??`.
+union error E {
+    /// Below zero.
+    bad
+    /// Above ten.
+    worse
+}
+
+enum Size {
+    bad
+    good
+}
+
+i64 check(i64 n) fails E {
+    fail .bad if n < 0
+    if n > 10 {
+        fail E.worse
+    }
+    return n
+}
+
+i64? positive(i64 n) => n > 0 ? n : null
+
+i64 require(i64 n) fails E {
+    let v = positive(n) ?? fail .worse
+    return v
+}
+
+// The return type has a case `.bad`, so `return .bad` is a value, not an error.
+Size size(i64 n) fails E {
+    fail .worse if n > 10
+    return .bad if n < 5
+    return .good
+}
+
+print($"{check(1) catch -1} {check(-1) catch -2} {check(11) catch -3}")
+print($"{require(4) catch -1} {require(0) catch -4}")
+print($"{size(1) catch .good} {size(7) catch .bad} {size(11) catch .good}")

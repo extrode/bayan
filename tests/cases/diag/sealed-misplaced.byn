@@ -1,0 +1,7 @@
+@sealed
+void run() { }
+
+@sealed(strict)
+struct Options {
+    i32 retries
+}

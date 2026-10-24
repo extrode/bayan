@@ -1,23 +1,27 @@
-union Shape { circle(f32 r), rect(f32 w, f32 h), none }
+union Shape {
+    circle(f32 r)
+    rect(f32 w, f32 h)
+    none
+}
 
 f32 area(Shape s) => s switch {
     .circle(let r) => r * r,
-};
+}
 
 void describe(Shape s) {
     switch s {
         case .rect(let w, let h):
-            print($"{w} {h}");
+            print($"{w} {h}")
         case .circle(1):
-            print("unit circle");
+            print("unit circle")
     }
 }
 
 void covered(Shape s) {
     switch s {
         case .circle(_):
-            print("circle");
+            print("circle")
         default:
-            print("other");
+            print("other")
     }
 }

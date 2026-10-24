@@ -1,17 +1,17 @@
 struct P {
-    i64 v;
+    i64 v
 }
 
 i64 field() {
-    P p = { v: 1 };
-    defer p.v = 5;
-    return p.v;
+    var p: P = { v: 1 }
+    defer p.v = 5
+    return p.v
 }
 
 i64 local() {
-    i64 x = 1;
-    defer x = 2;
-    return x;
+    var x: i64 = 1
+    defer x = 2
+    return x
 }
 
-print($"{field()} {local()}");
+print($"{field()} {local()}")

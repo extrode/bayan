@@ -102,7 +102,23 @@ public sealed class CEmitter
         if (_vtableOrder.Count > 0) sb.Append('\n');
         foreach (var h in _helperOrder) sb.Append(_helpers[h].Body).Append('\n');
         sb.Append(bodies).Append(main);
-        return sb.ToString();
+        return ResolveResets(sb.ToString());
+    }
+
+    /// <summary>The C file the emitted code is compiled as; generated code after a function's <c>#line</c>s maps back to it.</summary>
+    internal const string GeneratedFile = "main.c";
+
+    /// <summary>Written after a function body that maps lines to Bayan source; <see cref="ResolveResets"/> numbers it.</summary>
+    internal const string ResetLine = "#line generated";
+
+    /// <summary>Turns each <see cref="ResetLine"/> into <c>#line N "main.c"</c> naming the line after it, so debuggers step over generated code.</summary>
+    private static string ResolveResets(string text)
+    {
+        if (!text.Contains(ResetLine, StringComparison.Ordinal)) return text;
+        var lines = text.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+            if (lines[i] == ResetLine) lines[i] = $"#line {i + 2} {CString(GeneratedFile)}";
+        return string.Join('\n', lines);
     }
 
     private string EmitMain()
@@ -186,16 +202,23 @@ public sealed class CEmitter
 
     internal string FileName(FunctionSymbol f)
     {
-        var path = f.File?.Source.Path ?? "";
-        // Project files are already relative to the project root; a loose file is named from its directory.
-        var relative = Path.IsPathRooted(path) ? Path.GetRelativePath(_packageRoot, path).Replace('\\', '/') : path.Replace('\\', '/');
-        if (relative.StartsWith("..", StringComparison.Ordinal)) relative = Path.GetFileName(path);
+        var relative = FilePath(f);
         if (!_files.TryGetValue(relative, out var name))
         {
             name = "byn_file_" + _files.Count;
             _files[relative] = name;
         }
         return name;
+    }
+
+    /// <summary>The path panics and <c>#line</c> name <paramref name="f"/>'s file by.</summary>
+    internal string FilePath(FunctionSymbol f)
+    {
+        var path = f.File?.Source.Path ?? "";
+        // Project files are already relative to the project root; a loose file is named from its directory.
+        var relative = Path.IsPathRooted(path) ? Path.GetRelativePath(_packageRoot, path).Replace('\\', '/') : path.Replace('\\', '/');
+        if (relative.StartsWith("..", StringComparison.Ordinal)) relative = Path.GetFileName(path);
+        return relative;
     }
 
     // ── Types ────────────────────────────────────────────────────────────────────
@@ -816,6 +839,10 @@ internal sealed class FunctionEmitter
     private readonly Dictionary<LocalSymbol, string> _names = new();
     private readonly StringBuilder _sb = new();
     private readonly string _file;
+    // `#line` maps the C of each statement back to this file (a C string literal); null when the function has no file.
+    private readonly string? _linePath;
+    // The line of the last `#line` written; repeats are skipped.
+    private int _lastLine;
     private int _indent = 1;
     // Ownership checks: the statement being emitted is first emitted dry to find locals it both reads and moves,
     // whose C evaluation order is unspecified, so their moved slots are not set there.
@@ -834,6 +861,7 @@ internal sealed class FunctionEmitter
         _f = f;
         _fn = f.Symbol;
         _file = c.FileName(_fn);
+        _linePath = _fn.File is null ? null : CEmitter.CString(c.FilePath(_fn));
         foreach (var p in _fn.Parameters) _names[p] = "p_" + p.Name;
         var n = 0;
         foreach (var l in f.Locals)
@@ -879,6 +907,7 @@ internal sealed class FunctionEmitter
         else if (_fn.Fails && !ReturnsValue) Line("return 0;");
         else if (_fn.ReturnType.IsNever) Line($"byn_unreachable({_file}, {LineOf(_f.Body.Syntax)});");
         _sb.Append("}\n");
+        if (_lastLine != 0) _sb.Append(CEmitter.ResetLine).Append('\n');
         return _sb.ToString();
     }
 
@@ -887,6 +916,16 @@ internal sealed class FunctionEmitter
     private int LineOf(Node syntax) => _fn.File is { } f ? f.Source.GetLinePosition(syntax.Span.Start).Line : 0;
 
     private string Loc(Node syntax) => $"{_file}, {LineOf(syntax)}";
+
+    /// <summary><c>#line N "file.byn"</c>, so debuggers and C compiler messages name the Bayan line of the code that follows.</summary>
+    private void MapLine(Node syntax)
+    {
+        if (_linePath is null) return;
+        var line = LineOf(syntax);
+        if (line == _lastLine) return;
+        _lastLine = line;
+        _sb.Append("#line ").Append(line).Append(' ').Append(_linePath).Append('\n');
+    }
 
     // ── Ownership checks ─────────────────────────────────────────────────────────
 
@@ -964,9 +1003,11 @@ internal sealed class FunctionEmitter
         _reads = [];
         _moves = [];
         var mark = _sb.Length;
+        var lastLine = _lastLine;
         if (s is BoundIf i) Expr(i.Condition);
         else Statement(s);
         _sb.Length = mark;
+        _lastLine = lastLine;
         _moved = _moves;
         _reads.IntersectWith(_moves);
         _unsequenced = _reads;
@@ -987,6 +1028,10 @@ internal sealed class FunctionEmitter
     {
         if (_c.OwnershipChecks && _reads is null && s is not (BoundBlock or LLoop or LLabel or LGoto or LPushPanicHandler)) FindUnsequenced(s);
         _afterCalls = [];
+        var mark = _sb.Length;
+        var lastLine = _lastLine;
+        if (s is not (BoundBlock or LLabel)) MapLine(s.Syntax);
+        var start = _sb.Length;
         switch (s)
         {
             case BoundBlock b:
@@ -1089,6 +1134,12 @@ internal sealed class FunctionEmitter
         }
         foreach (var c in _afterCalls) Line(c);
         _afterCalls = [];
+        // A statement with no C (a claim without ownership checks) keeps no `#line` either.
+        if (_sb.Length == start)
+        {
+            _sb.Length = mark;
+            _lastLine = lastLine;
+        }
     }
 
     /// <summary>The claims after an if's condition, at the start of a branch.</summary>
@@ -1131,8 +1182,8 @@ internal sealed class FunctionEmitter
         else
         {
             var mode = w.Sink == WriteSink.Print ? "BYN_WRITE_STDOUT" : "BYN_WRITE_TRUNCATE";
-            // A panic message keeps as much as the runtime does (`byn_panic_text`), room for an `assert` diagram.
-            var size = w.Sink == WriteSink.Panic ? 1024 : 256;
+            // A panic message keeps as much as the runtime does (`byn_panic_text`), room for an `assert` diagram; a log line never allocates, so it is cut.
+            var size = w.Sink switch { WriteSink.Panic => 1024, WriteSink.Log => 512, _ => 256 };
             Line($"uint8_t wb[{size}];");
             Line($"byn_writer wv = {{wb, {size}, 0, {mode}, {Loc(w.Syntax)}}};");
             Line("byn_writer* w = &wv;");
@@ -1148,6 +1199,7 @@ internal sealed class FunctionEmitter
         if (_c.OwnershipChecks && w.Sink == WriteSink.StrBuf && OwnerRoot(w.Target!) is not null) Line($"{_c.OwnClaim(w.Target!.Type)}(w, {Loc(w.Syntax)});");
         if (w.Sink == WriteSink.Print) Line("byn_w_println(w);");
         else if (w.Sink == WriteSink.Panic) Line($"byn_panic_str((byn_str){{wb, wv.len}}, {Loc(w.Syntax)});");
+        else if (w.Sink == WriteSink.Log) Line($"byn_log({Expr(w.Target!)}, (byn_str){{wb, wv.len}});");
         _indent--;
         Line("}");
     }
@@ -1247,6 +1299,8 @@ internal sealed class FunctionEmitter
         {
             case BuiltinFunction.Print:
                 return $"byn_print({Expr(c.Arguments[0])})";
+            case BuiltinFunction.Log:
+                return $"byn_log({Expr(c.Arguments[1])}, {Expr(c.Arguments[0])})";
             case BuiltinFunction.Panic:
                 return $"byn_panic_str({Expr(c.Arguments[0])}, {Loc(c.Syntax)})";
             case BuiltinFunction.Todo:

@@ -19,7 +19,8 @@ public sealed class ManifestTests
             var m = Manifest.Parse(Golden.Load(path));
             if (m.Diagnostics.Count > 0) return DiagnosticRenderer.RenderAll(m.Diagnostics);
             return $"name {m.Name}\nversion {m.Version}\nedition {m.Edition}\nkind {m.Kind}\n"
-                + $"targets {string.Join(" ", m.DistTargets)}\nmode {m.DistMode}\n";
+                + $"targets {string.Join(" ", m.DistTargets)}\nmode {m.DistMode}\n"
+                + $"booleans {m.Booleans}\nprimitives {m.Primitives}\n";
         });
 
     [Theory]

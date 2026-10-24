@@ -1,14 +1,14 @@
 // A plain parameter of unique type is a read-only borrow: storing it copies (BYN2780).
 struct Holder {
-    List<i64> items;
+    List<i64> items
 }
 
-Holder keep(List<i64> items) => Holder { items: items };
+Holder keep(List<i64> items) => Holder { items: items }
 
 List<i64> pass(List<i64> items) {
-    return items;
+    return items
 }
 
-Holder owned(move List<i64> items) => Holder { items: move items };
+Holder owned(move List<i64> items) => Holder { items: move items }
 
-i64 count(List<i64> items) => items.length;
+i64 count(List<i64> items) => items.length

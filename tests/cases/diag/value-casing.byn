@@ -1,2 +1,2 @@
-let Total = 0;
-print($"{Total}");
+let Total = 0
+print($"{Total}")

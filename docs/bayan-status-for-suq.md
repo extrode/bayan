@@ -104,7 +104,7 @@ Tried on a fresh `bayan new demo` project in `tmp/`.
 | `explain` | Implemented | `bayan explain BYN2104` prints the embedded page |
 | `new` / `init` | Implemented | app, `--lib`, `--script`; `init` adds missing files |
 | also present | Implemented | `lex`, `parse --ast`, `types` (typed dump JSON), `dist`, `clean`, `cache stats`, `doctor` |
-| `fmt` | Not started | `unknown command` (round 3 plan step 5.1a/5.2b) |
+| `format` | Not started | `unknown command` (round 3 plan step 5.1a/5.2b; renamed from `fmt` by round 3 §29) |
 | `expand` | Not started | `unknown command` |
 | `audit` | Not started | `unknown command` (round 3 §4) |
 | `features --used` | Not started | `unknown command` (round 3 J22) |
@@ -120,7 +120,7 @@ Evidence: `CliTests.cs`, `ScaffoldTests.cs`, `OutputTests.cs`, `tests/cases/styl
 | Item | Status | Actual syntax |
 |---|---|---|
 | Waqf termination (no `;`) | Not started | `;` required (BYN1005) |
-| Name-first bindings, fields, params, `-> T` | Not started | `i64 x = 1;`, `let x = 1;`, `struct P { i64 x; }`, `i64 f(i64 a) { … }`; `->` does not lex |
+| Name-first `let`/`var` locals; type-first declarations (J54) | Declarations: already what the compiler does. Locals: not started. `->` declaration input form: not started | `i64 x = 1;`, `let x = 1;`, `struct P { i64 x; }`, `i64 f(i64 a) { … }`; `->` does not lex |
 | `struct unique` | Changed from spec | modifier-first `unique struct S { … }`; also inferred: a struct holding `List`/`Map`/`StrBuf` is unique (`diag/unique-struct-containment`) |
 | `type distinct` | Not started | `distinct` is a contextual keyword; `distinct type` does not parse |
 | `union error` | Changed from spec | `error enum E { a, b }` and `error set S = A, B;` (`run/errors-catch-switch`, `parse/error-set`) |
@@ -176,7 +176,7 @@ Evidence: `CliTests.cs`, `ScaffoldTests.cs`, `OutputTests.cs`, `tests/cases/styl
 | `xInto` with derived allocating form | Partial | `void formatInto(ref StrBuf sb)` drives `$"{p}"`; no derived allocating form |
 | `owned()` | Not started | `owned` is not a member of `string`. Copy a borrowed string with `$"{s}"`, or a collection with `.copy(to: arena)` (`run/collection-copy`) |
 | Copy/move of structs owning collections | Implemented | collections are unique: implicit copy is BYN2780 (`diag/unique-implicit-copy`); `move x`, `move` params (`run/unique-move`); `take()` (`run/take`) |
-| `unique` and drop | Partial | `unique struct` and ownership checks are implemented; no user `drop`; `using let a = Arena();` frees owners (`run/memory-arena`, `diag/not-disposable`) |
+| `unique` and drop | Partial | `unique struct` and ownership checks are implemented; no user `drop`; `let a = Arena();` frees owners (`run/memory-arena`, `diag/not-disposable`) |
 | Overflow traps | Implemented, every mode *(round 2, unmerged)* | `run/overflow-add`, `run/overflow-cast` |
 | `checked` | Not started | reserved keyword |
 | `+%`, `-%`, `*%`, `+|`, `-|` | Implemented | `run/wrapping-fast` |
@@ -201,7 +201,7 @@ Evidence: `CliTests.cs`, `ScaffoldTests.cs`, `OutputTests.cs`, `tests/cases/styl
 | `defer`, `errdefer` | Implemented | `run/errors-cleanup` |
 | `defer failing (e)`, `defer panicking (p)` | Implemented *(round 2, unmerged)* | `run/errors-defer-failing`, `run/panic-handler-order`, `parse/defer-family`, `run/defer-call-named-failing`; a handler reading a local moved after it is BYN2615 (`diag/panic-handler-reads-moved`) |
 | When `defer` modifiers are evaluated | Changed from spec | `defer stmt if c;` parses and runs, but `c` is evaluated at scope exit, not at registration (probe; no golden). Round 3 J20 wants registration time |
-| `panic`, `Panic.onPanic` | Implemented *(round 2, unmerged)* | `Panic.onPanic = onCrash;` with `p.message` (`run/on-panic-order`, `run/panic-handler-binding`, `diag/on-panic-signature`); not on wasi |
+| `panic`, `Panic.handler` | Implemented *(round 2, unmerged; renamed to `handler` in round 3)* | `Panic.handler = onCrash` with `p.message` (`run/on-panic-order`, `run/panic-handler-binding`, `diag/on-panic-signature`); not on wasi |
 | `todo(message)` | Implemented | `run/todo` |
 
 ## 6. Effects and concurrency
@@ -245,7 +245,7 @@ Evidence: `CliTests.cs`, `ScaffoldTests.cs`, `OutputTests.cs`, `tests/cases/styl
 | db/pg (COPY, readers, transactions) | Not started |
 | `sql` literals | Not started |
 | regex, html, url, crypto | Not started |
-| hex | Partial: `toHex()` on integers (`run/to-hex`) |
+| hex | Partial: integer hex formatting (`run/to-hex`); round 3 spells it `string(n, as: .hex)` |
 | time/clock | Partial: `Io.monotonicNanos` only |
 | log | Not started |
 

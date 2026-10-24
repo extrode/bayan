@@ -1,23 +1,23 @@
-error enum ReadError { broken }
+union error ReadError { broken }
 
 struct Rows {
-    i64 at;
-    i64 limit;
+    i64 at
+    i64 limit
 
     i64? next(ref this) fails ReadError {
-        if at >= limit { return null; }
-        at += 1;
-        return at;
+        if at >= limit { return null }
+        at += 1
+        return at
     }
 }
 
 void run() fails ReadError {
-    var rows = Rows { at: 0, limit: 5 };
+    var rows = Rows { at: 0, limit: 5 }
     for try row in rows {
-        print($"row {row}");
-        break if row == 2;
+        print($"row {row}")
+        break if row == 2
     }
-    print($"rows.at {rows.at}");
+    print($"rows.at {rows.at}")
 }
 
-try run();
+try run()

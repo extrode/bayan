@@ -1,9 +1,9 @@
-[Cases((0, false), (1, true))]
+@cases((0, false), (1, true))
 test "quantity bounds" (i32 input, bool valid) {
-    assert(input >= 0);
+    assert(input >= 0)
 }
 
-[Cases(1, 2, 3)] test "positive" (i32 n) { assert(n > 0); }
+@cases(1, 2, 3) test "positive" (i32 n) { assert(n > 0) }
 
 test "plain" {
 }

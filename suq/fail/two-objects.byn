@@ -1,0 +1,4 @@
+// expect: unlabeled parameters
+// fix-it: `TrackingId book(Parcel parcel, by Carrier carrier)`
+public TrackingId book(Carrier carrier, Parcel parcel) {
+}

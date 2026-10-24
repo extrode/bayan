@@ -1,7 +1,7 @@
 CompilationUnit
   Function show(dyn ref IShape s, dyn ref readonly ICounter c) -> void
     Block
-      Var t: dyn ref IShape = s
+      Let t: dyn ref IShape = s
       Let u: dyn ref readonly IShape = s
       For Let x: dyn ref IShape in shapes
         Block

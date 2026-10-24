@@ -1,6 +1,7 @@
-i64 width(i64 start, i64 end) => end - start;
+// A swapped pair is a particle mismatch (BYN5005); BYN2307 is retired.
+i64 width(i64 start, until i64 end) => end - start
 
-i64 start = 2;
-i64 end = 5;
-print($"{width(end, start)}");
-print($"{width(end, 3)}");
+let start: i64 = 2
+let end: i64 = 5
+print($"{width(end, start)}")
+print($"{width(start, until: end)}")

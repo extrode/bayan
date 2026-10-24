@@ -1,33 +1,33 @@
-T echo<T>(move T x) => move x;
+T echo<T>(move T x) => move x
 
-T pick<T>(bool first, move T a, move T b) => first ? move a : move b;
+T pick<T>(move T a, by move T b, bool first) => first ? move a : move b
 
 i64 sum(ReadOnlySpan<i64> xs) {
-    var total = 0;
-    var i = 0;
+    var total = 0
+    var i = 0
     while i < xs.length {
-        total += xs[i];
-        i = i + 1;
+        total += xs[i]
+        i = i + 1
     }
-    return echo(total);
+    return echo(total)
 }
 
-u8 low(u8 b) => b;
+u8 low(u8 b) => b
 
-var xs = List<i64>();
-xs.append(3000000000);
-xs.append(4000000000);
-print($"{sum(xs)}");
+var xs = List<i64>()
+xs.append(3000000000)
+xs.append(4000000000)
+print($"{sum(xs)}")
 
-var small = 7;
-small += 1;
-print($"{low(small)}");
+var small = 7
+small += 1
+print($"{low(small)}")
 
-var picked = 1;
-print($"{echo(picked)}");
-picked = picked * 2;
-print($"{pick<i64>(first: true, a: picked, b: 2) + 5000000000}");
+var picked = 1
+print($"{echo(picked)}")
+picked = picked * 2
+print($"{pick<i64>(picked, by: 2, first: true) + 5000000000}")
 
-var k = 2147483647;
-k = k +% 1;
-print($"{k}");
+var k = 2147483647
+k = k +% 1
+print($"{k}")

@@ -1,16 +1,20 @@
-union Shape { circle(f32 r), rect(f32 w, f32 h), none }
+union Shape {
+    circle(f32 r)
+    rect(f32 w, f32 h)
+    none
+}
 
 f32 area(Shape s) => s switch {
     .circle(let r) when true => r,
     .rect(let w, let h) => w * h,
     .none => 0,
-};
+}
 
 void describe(Shape s) {
     switch s {
         case .circle(let r) when r > 0:
-            print("circle");
+            print("circle")
         case .rect(_, _) or .none:
-            print("other");
+            print("other")
     }
 }

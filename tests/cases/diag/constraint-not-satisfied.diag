@@ -1,6 +1,6 @@
 error BYN2807: `T` does not conform to `IShape`: missing `area`
 
-  25 │ i64 loose<T>(ref T shape) => measure(ref shape);
+  25 │ i64 loose<T>(ref T shape) => measure(ref shape)
      │                              ^^^^^^^^^^^^^^^^^^ the generic code needs this of its type
      │                                                 arguments
      │
@@ -8,7 +8,7 @@ error BYN2807: `T` does not conform to `IShape`: missing `area`
 
 error BYN2807: `Square` does not conform to `IShape`: missing `area`
 
-  30 │     print($"{measure(ref c)} {measure(ref s)}");
+  30 │     print($"{measure(ref c)} {measure(ref s)}")
      │                               ^^^^^^^^^^^^^^ the generic code needs this of its type
      │                                              arguments
      │
@@ -16,21 +16,21 @@ error BYN2807: `Square` does not conform to `IShape`: missing `area`
 
 error BYN2807: `Square` does not conform to `IShape`: missing `area`
 
-  31 │     print($"{twice(ref s)}");
+  31 │     print($"{twice(ref s)}")
      │              ^^^^^^^^^^^^ the generic code needs this of its type arguments
      │
   help: add `: IShape` to `Square` and provide `area`
 
 error BYN2807: `i32` does not conform to `IShape`: missing `area`
 
-  33 │     print($"{measure(ref n)}");
+  33 │     print($"{measure(ref n)}")
      │              ^^^^^^^^^^^^^^ the generic code needs this of its type arguments
      │
   help: pass a struct that conforms to `IShape`; primitives do not conform to interfaces
 
 error BYN2807: `Square` does not conform to `IShape`: missing `area`
 
-  34 │     Box<Square> b = Box<Square> { item: s };
-     │     ^^^^^^^^^^^ the generic code needs this of its type arguments
+  34 │     let b: Box<Square> = Box<Square> { item: s }
+     │            ^^^^^^^^^^^ the generic code needs this of its type arguments
      │
   help: add `: IShape` to `Square` and provide `area`

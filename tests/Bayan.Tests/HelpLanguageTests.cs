@@ -10,11 +10,11 @@ public sealed partial class HelpLanguageTests
 {
     private static readonly HashSet<string> Verbs =
     [
-        "add", "assign", "bind", "build", "call", "cast", "change", "check", "choose", "close", "collect",
-        "combine", "convert", "copy", "create", "declare", "drop", "end", "explain", "finish", "give",
+        "add", "annotate", "assign", "bind", "build", "call", "cast", "change", "check", "choose", "close", "collect",
+        "combine", "convert", "copy", "create", "declare", "drop", "end", "explain", "finish", "give", "group",
         "handle", "hand", "keep", "label", "leave", "let", "list", "loop", "make", "mark", "match", "move",
         "name", "pass", "pick", "propagate", "put", "read", "remove", "rename", "set", "store", "take",
-        "spread", "unwrap", "use", "wrap", "write",
+        "split", "spread", "unwrap", "use", "validate", "wrap", "write",
     ];
 
     /// <summary>Helps that may start otherwise, each with its reason.</summary>

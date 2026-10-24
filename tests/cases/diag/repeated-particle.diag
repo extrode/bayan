@@ -1,0 +1,6 @@
+error BYN5013: `copy` uses the particle `from` twice
+
+  2 │ void copy(from string src, from string backup) {
+    │                            ^^^^ used again
+    │
+  help: group the values in a struct, or choose another particle

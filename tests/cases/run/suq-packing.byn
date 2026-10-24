@@ -2,25 +2,27 @@
 // All working storage is caller-owned (`stackalloc`); the packing loop allocates nothing.
 
 public struct PackItem {
-    public string sku;
-    public i64 grams;
-    public u8 aisle;
-    public u16 bay;
+    public string sku
+    public i64 grams
+    public u8 aisle
+    public u16 bay
+
+    bool comesAfter(PackItem other) => aisle > other.aisle || (aisle == other.aisle && bay > other.bay)
 }
 
 public struct BoxSize {
-    public string name;
-    public i64 capacity;
-    public i64 tare;
+    public string name
+    public i64 capacity
+    public i64 tare
 }
 
 BoxSize boxSizes(i64 i) => i switch {
     0 => BoxSize { name: "S", capacity: 2000, tare: 150 },
     1 => BoxSize { name: "M", capacity: 5000, tare: 300 },
     _ => BoxSize { name: "L", capacity: 12000, tare: 600 },
-};
+}
 
-public error enum PackError {
+public union error PackError {
     /// an item is heavier than the largest box can hold
     tooHeavy
 }
@@ -28,127 +30,126 @@ public error enum PackError {
 /// Index of the smallest box an item fits in on its own, or -1.
 i32 findSmallestBox(i64 grams) {
     for i in 0..3 {
-        return i if boxSizes(i).capacity - boxSizes(i).tare >= grams;
+        return i if boxSizes(i).capacity - boxSizes(i).tare >= grams
     }
-    return -1;
+    return -1
 }
 
-/// First-fit decreasing. Fills `boxOf` (per item), `boxKind` and `loads` (per box, load includes
-/// tare) and returns the number of boxes. `order` is scratch. Ties keep input order.
-public i32 pack(ReadOnlySpan<PackItem> items, Span<i32> order, Span<i32> boxOf, Span<i32> boxKind, Span<i64> loads) fails PackError {
-    let n = items.length;
+public struct PackedBox {
+    public i32 kind
+    public i64 load
+}
+
+/// First-fit decreasing. Fills `boxes` (kind and load, which includes tare) and returns the number
+/// of boxes. `order` is scratch. Ties keep input order.
+public i32 pack(ReadOnlySpan<PackItem> items, by Span<i32> order, to Span<PackedBox> boxes) fails PackError {
+    let n = items.length
     for i in 0..n {
-        order[i] = (i32)i;
+        order[i] = i32(i)
     }
     // insertion sort, heaviest first; strict `<` keeps it stable
     for i in 1..n {
-        let current = order[i];
-        var j = i;
+        let current = order[i]
+        var j = i
         while j > 0 && items[order[j - 1]].grams < items[current].grams {
-            order[j] = order[j - 1];
-            j = j - 1;
+            order[j] = order[j - 1]
+            j = j - 1
         }
-        order[j] = current;
+        order[j] = current
     }
 
-    var count = 0;
+    var count = 0
     for k in 0..n {
-        let i = order[k];
-        let grams = items[i].grams;
-        let size = findSmallestBox(grams);
-        return .tooHeavy if size < 0;
-        var box = -1;
+        let i = order[k]
+        let grams = items[i].grams
+        let size = findSmallestBox(grams)
+        fail .tooHeavy if size < 0
+        var box = -1
         for b in 0..count {
-            if box < 0 && loads[b] + grams <= boxSizes(boxKind[b]).capacity {
-                box = b;
+            if box < 0 && boxes[b].load + grams <= boxSizes(boxes[b].kind).capacity {
+                box = b
             }
         }
         if box < 0 {
-            box = count;
-            boxKind[box] = size;
-            loads[box] = boxSizes(size).tare;
-            count = count + 1;
+            box = count
+            boxes[box] = PackedBox { kind: size, load: boxSizes(size).tare }
+            count = count + 1
         }
-        loads[box] = loads[box] + grams;
-        boxOf[i] = box;
+        boxes[box].load = boxes[box].load + grams
     }
-    return count;
+    return count
 }
 
 /// Pick order: by aisle, then bay; stable.
-public void sortPicks(ReadOnlySpan<PackItem> items, Span<i32> order) {
+public void sortPicks(ReadOnlySpan<PackItem> items, to Span<i32> order) {
     for i in 0..items.length {
-        order[i] = (i32)i;
+        order[i] = i32(i)
     }
     for i in 1..items.length {
-        let current = order[i];
-        var j = i;
-        while j > 0 && comesAfter(a: items[order[j - 1]], b: items[current]) {
-            order[j] = order[j - 1];
-            j = j - 1;
+        let current = order[i]
+        var j = i
+        while j > 0 && items[order[j - 1]].comesAfter(items[current]) {
+            order[j] = order[j - 1]
+            j = j - 1
         }
-        order[j] = current;
+        order[j] = current
     }
 }
-
-bool comesAfter(PackItem a, PackItem b) => a.aisle > b.aisle || (a.aisle == b.aisle && a.bay > b.bay);
 
 /// FNV-1a reduced to one digit. Wrapping multiply is the algorithm, so `*%`.
 public u8 computeCheckDigit(string text) {
-    u32 h = 2166136261;
+    var h: u32 = 2166136261
     for c in text {
-        h = (h ^ (u32)c) *% 16777619;
+        h = (h ^ u32(c)) *% 16777619
     }
-    return (u8)(h % 10);
+    return u8(h % 10)
 }
 
-void report(string name, ReadOnlySpan<PackItem> items) {
-    Span<i32> order = stackalloc i32[64];
-    Span<i32> boxOf = stackalloc i32[64];
-    Span<i32> boxKind = stackalloc i32[64];
-    Span<i64> loads = stackalloc i64[64];
-    let count = pack(items, order: order, boxOf: boxOf, boxKind: boxKind, loads: loads) catch {
-        print($"{name}: tooHeavy");
-        return;
-    };
-    print($"{name}: {count} boxes");
+void report(ReadOnlySpan<PackItem> items, as string name) {
+    let order: Span<i32> = stackalloc i32[64]
+    let boxes: Span<PackedBox> = stackalloc PackedBox[64]
+    let count = pack(items, by: order, to: boxes) catch {
+        print($"{name}: tooHeavy")
+        return
+    }
+    print($"{name}: {count} boxes")
     for b in 0..count {
-        print($"  box {b}: {boxSizes(boxKind[b]).name} {loads[b]} g");
+        print($"  box {b}: {boxSizes(boxes[b].kind).name} {boxes[b].load} g")
     }
 }
 
-List<PackItem> mixed = [
+let mixed: List<PackItem> = [
     PackItem { sku: "RUG-0001", grams: 4000, aisle: 3, bay: 1 },
     PackItem { sku: "TEA-0001", grams: 300, aisle: 1, bay: 4 },
     PackItem { sku: "MUG-0001", grams: 500, aisle: 1, bay: 2 },
-];
-List<PackItem> bed = [PackItem { sku: "BED-0001", grams: 15000, aisle: 9, bay: 1 }];
+]
+let bed: List<PackItem> = [PackItem { sku: "BED-0001", grams: 15000, aisle: 9, bay: 1 }]
 
-List<PackItem> sample = [];
+var sample: List<PackItem> = []
 for i in 0..40 {
-    sample.append(PackItem { sku: $"ITM-{1000 + i}", grams: 100 + (i * 37) % 900, aisle: (u8)(1 + i % 6), bay: (u16)(i % 20) });
+    sample.append(PackItem { sku: $"ITM-{1000 + i}", grams: 100 + (i * 37) % 900, aisle: u8(1 + i % 6), bay: u16(i % 20) })
 }
 
-report("mixed", mixed.asSpan());
-report("bed", bed.asSpan());
-report("sample", sample.asSpan());
+report(mixed.asSpan(), as: "mixed")
+report(bed.asSpan(), as: "bed")
+report(sample.asSpan(), as: "sample")
 
-Span<i32> picks = stackalloc i32[64];
-sortPicks(sample.asSpan(), picks);
-var first = StrBuf();
+let picks: Span<i32> = stackalloc i32[64]
+sortPicks(sample.asSpan(), to: picks)
+var first = StrBuf()
 for k in 0..6 {
-    first.append(" ");
-    first.append(sample[picks[k]].sku);
+    first.append(" ")
+    first.append(sample[picks[k]].sku)
 }
-print($"first picks:{first.finish()}");
+print($"first picks:{first.finish()}")
 
-print($"check digit EX123456789MY: {computeCheckDigit("EX123456789MY")}");
-print($"check digit SUQ-42: {computeCheckDigit("SUQ-42")}");
-u16 seq = 65534;
-seq = seq +% 1;
-seq = seq +% 1;
-print($"label seq wraps to {seq}");
-u32 room = 100;
-print($"saturating u32 100 -| 250 = {room -| 250}");
-i64 signedRoom = 100;
-print($"saturating i64 100 -| 250 = {signedRoom -| 250}");
+print($"check digit EX123456789MY: {computeCheckDigit("EX123456789MY")}")
+print($"check digit SUQ-42: {computeCheckDigit("SUQ-42")}")
+var seq: u16 = 65534
+seq = seq +% 1
+seq = seq +% 1
+print($"label seq wraps to {seq}")
+let room: u32 = 100
+print($"saturating u32 100 -| 250 = {room -| 250}")
+let signedRoom: i64 = 100
+print($"saturating i64 100 -| 250 = {signedRoom -| 250}")

@@ -1,24 +1,24 @@
 interface IThing {
-    i64 get();
+    i64 get()
 }
 
 struct S : IThing {
-    i64 n;
+    i64 n
 
-    i64 get() => n;
+    i64 get() => n
 }
 
-// The variable of `for dyn ref I x in span` points where the span points: kept past the loop, it borrows that list.
+// The variable of `for x: dyn ref I in span` points where the span points: kept past the loop, it borrows that list.
 void main() {
-    var keep = List<S>();
-    keep.append(S { n: 7 });
-    var xs = List<S>();
-    xs.append(S { n: 1 });
-    Span<S> sp = xs.asSpan();
-    dyn ref IThing d = keep[0];
-    for dyn ref IThing x in sp {
-        d = x;
+    var keep = List<S>()
+    keep.append(S { n: 7 })
+    var xs = List<S>()
+    xs.append(S { n: 1 })
+    let sp: Span<S> = xs.asSpan()
+    var d: dyn ref IThing = keep[0]
+    for x: dyn ref IThing in sp {
+        d = x
     }
-    xs.append(S { n: 2 });
-    print($"{d.get()}");
+    xs.append(S { n: 2 })
+    print($"{d.get()}")
 }

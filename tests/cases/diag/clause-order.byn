@@ -1,0 +1,6 @@
+union error ParseError {
+    empty
+}
+i64 parse(string s) uses io fails ParseError {
+    return 0
+}

@@ -1,13 +1,13 @@
 struct Door {
-    bool open;
+    bool open
 
-    bool ajar => !open;
+    bool ajar => !open
 
-    bool locked() => false;
+    bool locked() => false
 
-    bool hasKey => true;
+    bool hasKey => true
 
-    bool containsAny() => false;
+    bool containsAny() => false
 }
 
-print("ok");
+print("ok")

@@ -1,0 +1,3 @@
+// expect: `try` on a literal construction
+// fix-it: drop `try`; literal arguments are checked at compile time
+let s = try Sku("TEA-0001")

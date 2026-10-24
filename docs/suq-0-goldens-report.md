@@ -22,14 +22,14 @@ Line numbers are in the committed golden files.
 | File | Line | Written | Needed | Why |
 |---|---|---|---|---|
 | suq-money | 56–65 | `void tryAdd` with `catch (e) { let name = e switch {…}; print(…); return; }` | `string addText(a, b)` whose `catch switch { PricingError e => return e switch {…} }` returns the name, and `tryAdd` printing `$"add: {addText(a, b)}"` | `catch (e)` is BYN1025; a `catch switch` arm cannot hold a block, so print-then-return needs a helper (D4, Q191) |
-| suq-quote | 202–206 | `tea.asSpan` (and four more) | `tea.asSpan()` | `asSpan` is a method; without parentheses it crashed the compiler (D2) |
+| suq-quote | 202–206 | `tea.asSpan` (and four more) | `tea.span` | the round-2 span member was a method; without parentheses it crashed the compiler (D2) |
 | suq-packing | 17–21 | `const BoxSize[3] boxSizes = [BoxSize {…}, …];` | `BoxSize boxSizes(i64 i) => i switch { 0 => …, 1 => …, _ => … };` | module-level `const` arrays hold only numbers, `bool`, `char`, `string` (BYN2229) (D4, Q192) |
 | suq-packing | 31, 62, 69, 116 | `boxSizes[i]`, `boxSizes[boxKind[b]]`, `boxSizes[size]` | `boxSizes(i)`, `boxSizes(boxKind[b])`, `boxSizes(size)` | follows the workaround above |
 | suq-packing | 41, 81 | `order[i] = i;` | `order[i] = (i32)i;` | `for i in 0..n` with `n = items.length` gives an `i64` index; storing it in `Span<i32>` needs a cast (BYN2202) |
 | suq-packing | 86 | `comesAfter(items[…], items[current])` | `comesAfter(a: items[…], b: items[current])` | several same-typed parameters need named arguments (BYN2305) |
 | suq-packing | 110 | `catch (e) {` | `catch {` | BYN1025; `e` was unused |
 | suq-packing | 129 | `sample.add(…)` | `sample.append(…)` | `add` is now `append` (BYN2230) |
-| suq-packing | 132–134, 137 | `.asSpan` | `.asSpan()` | as in suq-quote |
+| suq-packing | 132–134, 137 | `.asSpan` | `.span` | as in suq-quote |
 | suq-packing | 143 | `first.asString()` | `first.finish()` | `asString()` is now `finish()` (BYN2230) |
 | suq-order | 127 | `lines.add(line);` | `lines.append(line);` | BYN2230 |
 | suq-order | 131, 165 | `return .wrongState unless state is .draft \|\| state is .placed;` | `return .wrongState if !(state is .draft \|\| state is .placed);` | `unless` with `\|\|` is BYN1022 |
@@ -42,7 +42,7 @@ Line numbers are in the committed golden files.
 
 No `.stdout` diff once each file compiled. One compiler bug was found and fixed on the way:
 
-- **`.asSpan` without parentheses crashed the compiler.** `bayan run suq-quote.byn` threw `InvalidOperationException: cannot lower BoundBuiltinGroup` in `Lowerer.LowerExpr`. Cause: a method named without its call (`xs.asSpan`, also a user method such as `box.weight`) bound to a method group with the error type, so every type check stayed silent and lowering met it. Fix: `BindExpr` (`src/Bayan.Semantics/Binding/BinderExpressions.cs`) now reports BYN2019 "`asSpan` is a method, not a value" with help "call it: `asSpan()`" for both group kinds; `BindOnPanic` (`Binder.cs`) still accepts a named function. Regression golden: `tests/cases/diag/method-group-not-a-value.{byn,diag}`; before the fix `bayan check` on it reported no diagnostics, so the golden fails when the fix is reverted. `docs/diagnostics/BYN2019.md` mentions the method case.
+- **`.asSpan` without parentheses crashed the compiler.** `bayan run suq-quote.byn` threw `InvalidOperationException: cannot lower BoundBuiltinGroup` in `Lowerer.LowerExpr`. Cause: a method named without its call (`xs.asSpan`, also a user method such as `box.weight`) bound to a method group with the error type, so every type check stayed silent and lowering met it. Fix: `BindExpr` (`src/Bayan.Semantics/Binding/BinderExpressions.cs`) now reports BYN2019 (a method used as a value, with help to call it) for both group kinds (round 3 makes the view the `span` property); `BindOnPanic` (`Binder.cs`) still accepts a named function. Regression golden: `tests/cases/diag/method-group-not-a-value.{byn,diag}`; before the fix `bayan check` on it reported no diagnostics, so the golden fails when the fix is reverted. `docs/diagnostics/BYN2019.md` mentions the method case.
 
 ## D4: workarounds and Questions
 

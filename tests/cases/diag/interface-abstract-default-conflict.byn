@@ -1,12 +1,12 @@
 // The abstract member's base is listed first; the default comes from a later base.
 interface IA {
-    i64 area() => 1;
+    i64 area() => 1
 }
 
 interface IB {
-    i64 area();
+    i64 area()
 }
 
 struct S : IB, IA {
-    i64 x;
+    i64 x
 }

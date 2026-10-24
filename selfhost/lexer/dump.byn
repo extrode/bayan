@@ -1,130 +1,130 @@
 // Text and JSON forms of a token stream, as printed by `bayan lex` (the text form is kept in the
 // `lex/` goldens). Ports `src/Bayan.Syntax/Lexing/TokenDump.cs`.
 
-void dump(ref StrBuf sb, ref LexResult result) {
+void dump(ref LexResult result, to ref StrBuf sb) {
     // By index: `getLinePosition` modifies `result.source`, so the loop may not borrow `result`.
     for i in 0..result.tokens.length {
-        let token = result.tokens[i];
-        let position = result.source.getLinePosition(token.start);
+        let token = result.tokens[i]
+        let position = result.source.getLinePosition(token.start)
         if token.hasDoc {
-            sb.append("    doc ");
-            escape(ref sb, result.source.bytes.asSpan()[token.docStart..token.docStart + token.docLength]);
-            sb.append("\n");
+            sb.append("    doc ")
+            escape(result.source.bytes.asSpan()[token.docStart..token.docStart + token.docLength], to: ref sb)
+            sb.append("\n")
         }
-        sb.append($"{position.line}:{position.column} {kindName(token.kind)}");
+        sb.append($"{position.line}:{position.column} {kindName(token.kind)}")
         if token.length > 0 {
-            sb.append(" ");
-            escape(ref sb, result.source.bytes.asSpan()[token.start..token.end]);
+            sb.append(" ")
+            escape(result.source.bytes.asSpan()[token.start..token.end], to: ref sb)
         }
-        sb.append("\n");
+        sb.append("\n")
     }
     if result.diagnostics.length > 0 {
-        sb.append("\n");
-        using var arena = Arena();
-        let diagnostics = result.diagnostics.copy(to: arena);
-        renderAll(ref sb, ref result.source, diagnostics.asSpan());
+        sb.append("\n")
+        using var arena = Arena()
+        let diagnostics = result.diagnostics.copy(to: arena)
+        renderAll(diagnostics.asSpan(), to: ref sb, from: ref result.source)
     }
 }
 
 /// Backtick-quoted text with line breaks, tabs and invisible characters made visible.
-void escape(ref StrBuf sb, ReadOnlySpan<u8> text) {
-    sb.append("`");
-    i64 pos = 0;
+void escape(ReadOnlySpan<u8> text, to ref StrBuf sb) {
+    sb.append("`")
+    var pos: i64 = 0
     while pos < text.length {
-        let d = decodeAt(text, pos);
-        let v = d.value;
+        let d = decodeAt(text, at: pos)
+        let v = d.value
         if v == 0x0A {
-            sb.append("\\n");
+            sb.append("\\n")
         } else if v == 0x0D {
-            sb.append("\\r");
+            sb.append("\\r")
         } else if v == 0x09 {
-            sb.append("\\t");
+            sb.append("\\t")
         } else if v < 0x20 || v == 0x7F || (v >= 0x202A && v <= 0x202E) || (v >= 0x2066 && v <= 0x2069) || v == 0xFEFF {
-            sb.append("\\u{");
-            appendHex(ref sb, v, 1);
-            sb.append("}");
+            sb.append("\\u{")
+            sb.append(hex(v, to: 1))
+            sb.append("}")
         } else {
-            sb.append($"{(char)v}");
+            sb.append($"{rune(v)}")
         }
-        pos += d.length;
+        pos += d.length
     }
-    sb.append("`");
+    sb.append("`")
 }
 
 /// `bayan lex --json`: one object with `tokens` and `diagnostics` (in source order), no
 /// insignificant whitespace, then `\n`. Offsets are bytes; invalid UTF-8 in source text becomes
 /// U+FFFD per maximal subpart.
-void dumpJson(ref StrBuf sb, ref LexResult result) {
-    let bytes = result.source.bytes.asSpan();
-    sb.append("{\"tokens\":[");
+void dumpJson(ref LexResult result, to ref StrBuf sb) {
+    let bytes = result.source.bytes.asSpan()
+    sb.append("{\"tokens\":[")
     for i in 0..result.tokens.length {
-        let token = result.tokens[i];
-        if i > 0 { sb.append(","); }
-        sb.append($"{{\"kind\":\"{kindName(token.kind)}\",\"start\":{token.start},\"end\":{token.end},\"text\":");
-        jsonString(ref sb, bytes[token.start..token.end]);
-        sb.append(",\"doc\":");
+        let token = result.tokens[i]
+        if i > 0 { sb.append(",") }
+        sb.append($"{{\"kind\":\"{kindName(token.kind)}\",\"start\":{token.start},\"end\":{token.end},\"text\":")
+        jsonString(bytes[token.start..token.end], to: ref sb)
+        sb.append(",\"doc\":")
         if token.hasDoc {
-            sb.append($"{{\"start\":{token.docStart},\"end\":{token.docStart + token.docLength}}}");
+            sb.append($"{{\"start\":{token.docStart},\"end\":{token.docStart + token.docLength}}}")
         } else {
-            sb.append("null");
+            sb.append("null")
         }
-        sb.append("}");
+        sb.append("}")
     }
-    sb.append("],\"diagnostics\":[");
-    let order = sourceOrder(result.diagnostics.asSpan());
+    sb.append("],\"diagnostics\":[")
+    let order = sourceOrder(result.diagnostics.asSpan())
     for k in 0..order.length {
-        let d = result.diagnostics[order[k]];
-        if k > 0 { sb.append(","); }
-        sb.append($"{{\"code\":\"{d.code}\",\"severity\":\"error\",\"start\":{d.span.start},\"end\":{d.span.end},\"message\":");
-        jsonString(ref sb, d.message.bytes);
-        sb.append(",\"label\":");
-        jsonOptional(ref sb, d.label);
-        sb.append(",\"help\":");
-        jsonOptional(ref sb, d.help);
-        sb.append(",\"fixes\":[");
+        let d = result.diagnostics[order[k]]
+        if k > 0 { sb.append(",") }
+        sb.append($"{{\"code\":\"{d.code}\",\"severity\":\"error\",\"start\":{d.span.start},\"end\":{d.span.end},\"message\":")
+        jsonString(d.message.bytes, to: ref sb)
+        sb.append(",\"label\":")
+        jsonOptional(d.label, to: ref sb)
+        sb.append(",\"help\":")
+        jsonOptional(d.help, to: ref sb)
+        sb.append(",\"fixes\":[")
         if d.hasFix {
-            sb.append($"{{\"start\":{d.fixSpan.start},\"end\":{d.fixSpan.end},\"replacement\":");
-            jsonString(ref sb, d.fixReplacement.bytes);
-            sb.append("}");
+            sb.append($"{{\"start\":{d.fixSpan.start},\"end\":{d.fixSpan.end},\"replacement\":")
+            jsonString(d.fixReplacement.bytes, to: ref sb)
+            sb.append("}")
         }
-        sb.append("]}");
+        sb.append("]}")
     }
-    sb.append("]}\n");
+    sb.append("]}\n")
 }
 
 /// `null` for an empty `text` (none), else its JSON string.
-void jsonOptional(ref StrBuf sb, string text) {
+void jsonOptional(string text, to ref StrBuf sb) {
     if text.isEmpty {
-        sb.append("null");
+        sb.append("null")
     } else {
-        jsonString(ref sb, text.bytes);
+        jsonString(text.bytes, to: ref sb)
     }
 }
 
 /// A JSON string: `\"` `\\` `\n` `\r` `\t`, other controls and DEL as `\u00XX`, the rest raw.
-void jsonString(ref StrBuf sb, ReadOnlySpan<u8> text) {
-    sb.append("\"");
-    i64 pos = 0;
+void jsonString(ReadOnlySpan<u8> text, to ref StrBuf sb) {
+    sb.append("\"")
+    var pos: i64 = 0
     while pos < text.length {
-        let d = decodeAt(text, pos);
-        let v = d.value;
+        let d = decodeAt(text, at: pos)
+        let v = d.value
         if v == 0x22 {
-            sb.append("\\\"");
+            sb.append("\\\"")
         } else if v == 0x5C {
-            sb.append("\\\\");
+            sb.append("\\\\")
         } else if v == 0x0A {
-            sb.append("\\n");
+            sb.append("\\n")
         } else if v == 0x0D {
-            sb.append("\\r");
+            sb.append("\\r")
         } else if v == 0x09 {
-            sb.append("\\t");
+            sb.append("\\t")
         } else if v < 0x20 || v == 0x7F {
-            sb.append("\\u");
-            appendHex(ref sb, v, 4);
+            sb.append("\\u")
+            sb.append(hex(v, to: 4))
         } else {
-            sb.append($"{(char)v}");
+            sb.append($"{rune(v)}")
         }
-        pos += d.length;
+        pos += d.length
     }
-    sb.append("\"");
+    sb.append("\"")
 }

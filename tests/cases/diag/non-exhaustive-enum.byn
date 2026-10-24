@@ -1,13 +1,18 @@
-enum Suit { clubs, diamonds, hearts, spades }
+enum Suit {
+    clubs
+    diamonds
+    hearts
+    spades
+}
 
 string color(Suit s) => s switch {
     .hearts or .diamonds => "red",
     .clubs => "black",
-};
+}
 
 void show(Suit s) {
     switch s {
         case Suit.hearts:
-            print("hearts");
+            print("hearts")
     }
 }

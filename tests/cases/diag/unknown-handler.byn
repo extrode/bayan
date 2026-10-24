@@ -1,0 +1,12 @@
+void main() {
+    let arena = Arena()
+    provide memory: arena {
+        print("x")
+    }
+    provide suspend: arena {
+        print("y")
+    }
+    provide alloc: arena, log: arena {
+        print("z")
+    }
+}

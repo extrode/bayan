@@ -1,18 +1,18 @@
 void work(i64 limit) {
-    var count = 0;
-    let total = 3;
-    defer panicking (p) print($"{p.message}: {total} of {limit}, {count} done");
-    count += 1;
+    var count = 0
+    let total = 3
+    defer panicking (p) print($"{p.message}: {total} of {limit}, {count} done")
+    count += 1
 }
 
 void scan(i64? found) {
     if found is let v {
-        defer panicking print($"at {v}");
+        defer panicking print($"at {v}")
     }
     for i in 0..3 {
-        defer panicking print($"step {i}");
+        defer panicking print($"step {i}")
     }
 }
 
-work(limit: 5);
-scan(found: 2);
+work(limit: 5)
+scan(found: 2)

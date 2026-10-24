@@ -1,0 +1,6 @@
+error BYN1067: pointer types are allowed only in `extern` declarations
+
+  1 │ void fill(u8* buffer) {
+    │           ^^^ a pointer type
+    │
+  help: wrap the C call in an `extern` declaration

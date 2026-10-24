@@ -1,7 +1,7 @@
 error BYN2605: `try` needs a call that can fail
 
-  2 │ let n = try twice(2);
+  2 │ let n = try twice(2)
     │             ^^^^^^^^
     │
-    │ 2 │ let n = try twice(2);
+    │ 2 │ let n = try twice(2)
     │   │         ----

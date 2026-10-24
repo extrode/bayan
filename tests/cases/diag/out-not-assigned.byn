@@ -1,14 +1,14 @@
-bool tryParse(string text, out i64 value) {
+bool tryParse(string text, to out i64 value) {
     if text.isEmpty {
-        return false;
+        return false
     }
-    value = 1;
-    return true;
+    value = 1
+    return true
 }
 
-bool tryFirst(string text, out i64 value) {
-    return false;
+bool tryFirst(string text, to out i64 value) {
+    return false
 }
 
-i64 v;
-print($"{tryParse("1", out v)} {tryFirst("", out v)}");
+var v: i64
+print($"{tryParse("1", to: out v)} {tryFirst("", to: out v)}")

@@ -1,13 +1,13 @@
 error BYN1031: `T!E` is an input form; write `T f() fails E`
 
-  2 │ i32!E? f() { return 1; }
+  2 │ i32!E? f() { return 1 }
     │    ^^^ the input form
     │
   help: write the error types in a `fails` clause after the parameters
 
 error BYN1031: `T!E` is an input form; write `T f() fails E`
 
-  3 │ i32!Result<E> g() { return 1; }
+  3 │ i32!Result<E> g() { return 1 }
     │    ^^^^^^^^^^ the input form
     │
   help: write the error types in a `fails` clause after the parameters

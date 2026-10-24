@@ -1,13 +1,13 @@
 // Text must be UTF-8; the same file still reads as bytes.
 void main() fails IoError {
-    u8[3] bad = [0x61, 0xFF, 0x62];
-    try Io.writeFile("bad.txt", bad.asSpan());
+    let bad: u8[3] = [0x61, 0xFF, 0x62]
+    try Io.writeFile("bad.txt", bad.asSpan())
     let text = Io.readText("bad.txt") catch switch {
         .invalidUtf8 => "invalidUtf8",
         _ => "some other error",
-    };
-    print($"as text: {text}");
-    List<u8> bytes = try Io.readFile("bad.txt");
-    print($"as bytes: {bytes.length} bytes, middle {bytes[1]}");
-    try Io.readText("bad.txt");
+    }
+    print($"as text: {text}")
+    let bytes: List<u8> = try Io.readFile("bad.txt")
+    print($"as bytes: {bytes.length} bytes, middle {bytes[1]}")
+    let _ = try Io.readText("bad.txt")
 }

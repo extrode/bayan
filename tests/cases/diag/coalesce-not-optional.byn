@@ -1,2 +1,2 @@
-i64 n = 5;
-let m = n ?? 0;
+let n: i64 = 5
+let m = n ?? 0

@@ -1,1 +1,1 @@
-public error enum Error { missing }
+public union error Error { missing }

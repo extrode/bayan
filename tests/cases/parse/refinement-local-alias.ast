@@ -1,0 +1,13 @@
+CompilationUnit
+  Struct Order
+    Field i64 id
+    State placed
+    State paid
+    State shipped
+  TypeAlias Done = Order is .paid or .shipped
+  TypeAlias Moving = Order is .placed or .paid or .shipped
+  Function archive(Order o) -> void
+    Block
+      Let x: Order is .paid or .shipped = o
+      Var y: Order is .placed or .paid or .shipped = o
+      Expr (call print (. x id))

@@ -1,0 +1,29 @@
+T parse<T>(string s, i64 limit)
+    where T : IParse<T>
+    expects s.length > 0
+    expects limit > 0
+    fails IoError
+    uses fs {
+    return T.parse(s)
+}
+
+void close(move this is .open)
+    becomes .closed
+    fails
+    uses console {
+    let expects = 1
+    print(expects)
+    become .closed
+}
+
+interface IStore {
+    T load<T>(string key)
+        where T : IParse<T>
+        expects key.length > 0
+        fails IoError
+        uses fs
+    void close(move this is .open)
+        becomes .closed
+        fails IoError
+    i64 size()
+}

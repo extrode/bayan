@@ -1,0 +1,4 @@
+// expect: particle after the passing mode
+// fix-it: `void fill(from ref Buf dst)`
+void fill(ref from Buf dst) {
+}

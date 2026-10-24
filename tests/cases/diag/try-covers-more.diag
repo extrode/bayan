@@ -1,0 +1,17 @@
+error BYN1054: `try` covers `parse(s) + 1`, which cannot fail
+
+  13 │     return try parse(s) + 1
+     │                ^^^^^^^^^^^^ cannot fail
+     │
+  help: wrap the part that fails in parentheses: `(try parse(s))`
+     │ 13 │     return (try parse(s)) + 1
+     │    │            +++++++++++++
+
+error BYN1054: `try` covers `one() + parse(s)`, which cannot fail
+
+  17 │     return try one() + parse(s)
+     │                ^^^^^^^^^^^^^^^^ cannot fail
+     │
+  help: wrap the part that fails in parentheses: `(try parse(s))`
+     │ 17 │     return one() + (try parse(s))
+     │    │            +++++++++++++++++++++

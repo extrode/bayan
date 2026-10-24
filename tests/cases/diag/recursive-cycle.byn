@@ -1,14 +1,14 @@
 struct Tree {
-    string name;
-    Forest forest;
+    string name
+    Forest forest
 }
 
 union Forest {
-    empty,
-    one(Tree tree),
+    empty
+    one(Tree tree)
 }
 
 struct Fine {
-    Owned<Fine>? next;
-    List<Fine> more;
+    Owned<Fine>? next
+    List<Fine> more
 }

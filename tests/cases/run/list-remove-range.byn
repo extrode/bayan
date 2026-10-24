@@ -1,42 +1,42 @@
 string show(List<i64> xs) {
-    var line = StrBuf();
-    for x in xs { line.append($" {x}"); }
-    return $"{xs.length}:{line.finish()}";
+    var line = StrBuf()
+    for x in xs { line.append($" {x}") }
+    return $"{xs.length}:{line.finish()}"
 }
 
 List<i64> make() {
-    var xs = List<i64>();
-    for i in 0..6 { xs.append(i * 10); }
-    return xs;
+    var xs = List<i64>()
+    for i in 0..6 { xs.append(i * 10) }
+    return xs
 }
 
-var middle = make();
-middle.removeRange(2, 4);
-print($"middle {show(middle)}");
+var middle = make()
+middle.removeRange(2, 4)
+print($"middle {show(middle)}")
 
-var prefix = make();
-prefix.removeRange(0, 2);
-print($"prefix {show(prefix)}");
+var prefix = make()
+prefix.removeRange(0, 2)
+print($"prefix {show(prefix)}")
 
-var suffix = make();
-suffix.removeRange(4, 6);
-print($"suffix {show(suffix)}");
+var suffix = make()
+suffix.removeRange(4, 6)
+print($"suffix {show(suffix)}")
 
-var empty = make();
-empty.removeRange(3, 3);
-empty.removeRange(6, 6);
-print($"empty {show(empty)}");
+var empty = make()
+empty.removeRange(3, 3)
+empty.removeRange(6, 6)
+print($"empty {show(empty)}")
 
-var whole = make();
-whole.removeRange(0, whole.length);
-print($"whole {show(whole)} {whole.isEmpty}");
-whole.append(7);
-print($"reused {show(whole)}");
+var whole = make()
+whole.removeRange(0, whole.length)
+print($"whole {show(whole)} {whole.isEmpty}")
+whole.append(7)
+print($"reused {show(whole)}")
 
-var words = List<string>();
-string[5] letters = ["a", "b", "c", "d", "e"];
-for w in letters { words.append(w); }
-words.removeRange(1, 3);
-var joined = StrBuf();
-for w in words { joined.append(w); }
-print($"order {joined.finish()}");
+var words = List<string>()
+let letters: string[5] = ["a", "b", "c", "d", "e"]
+for w in letters { words.append(w) }
+words.removeRange(1, 3)
+var joined = StrBuf()
+for w in words { joined.append(w) }
+print($"order {joined.finish()}")

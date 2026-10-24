@@ -1,0 +1,3 @@
+// expect: `case _ except`
+// fix-it: `case not .draft`
+case _ except .draft => 1

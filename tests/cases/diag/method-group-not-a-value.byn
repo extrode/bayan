@@ -1,17 +1,17 @@
 struct Box {
-    i64 grams;
-    i64 weight() => grams;
+    i64 grams
+    i64 weight() => grams
 }
 
 void show(i64 grams) {
-    print($"{grams}");
+    print($"{grams}")
 }
 
 void showAll(ReadOnlySpan<i64> items) {
-    print($"{items.length}");
+    print($"{items.length}")
 }
 
-let box = Box { grams: 1 };
-show(box.weight);
-List<i64> items = [1, 2];
-showAll(items.asSpan);
+let box = Box { grams: 1 }
+show(box.weight)
+let items: List<i64> = [1, 2]
+showAll(items.asSpan)

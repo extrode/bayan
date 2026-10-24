@@ -1,0 +1,8 @@
+/* Prices are in cents.
+   Discounts round down. */
+i64 total(i64 price) => price
+
+void main() {
+    let x = 1 /* inline */ + 2
+    print($"{x}")
+}

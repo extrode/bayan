@@ -212,6 +212,47 @@ internal sealed partial class Binder
         return checks.ToArray();
     }
 
+    /// <summary>The field whose own rule is being bound: there <c>it</c> reads it.</summary>
+    private FieldSymbol? _it;
+
+    /// <summary>
+    /// The body of a struct's <c>requires</c> check: each field's rules (with <c>it</c> the field), then the struct-level
+    /// rules, each failing with <c>ValidationError.invalid</c>. A field's failing rule ends the check first, so a struct
+    /// rule reading that field is skipped (J43).
+    /// </summary>
+    public void BindChecks(StructChecks checks)
+    {
+        var invalid = _c.Builtins.ValidationError.Find("invalid")!;
+        var statements = new List<BoundStmt>();
+        void Add(RequiresRule r, FieldSymbol? field)
+        {
+            _it = field;
+            var condition = BindExpr(r.Condition, PrimitiveType.Bool);
+            _it = null;
+            if (!condition.Type.IsBool)
+            {
+                if (!condition.Type.IsError)
+                    Report(DiagnosticCodes.RequiresNotBool, r.Condition.Span, [condition.Type.DisplayName],
+                        help: "write a condition the value must meet, such as `it > 0`");
+                return;
+            }
+            checks.Rules.Add(new StructRule(r, field, condition));
+            var fail = new BoundFail(r, new BoundErrorVariant(r, invalid));
+            statements.Add(new BoundIf(r, new BoundUnary(r, UnaryOp.Not, condition, PrimitiveType.Bool), fail, null));
+        }
+        foreach (var field in _struct!.Fields)
+            foreach (var r in field.Decl.Requires)
+                Add(r, field);
+        foreach (var r in _struct.Decl.Rules)
+        {
+            if (r.At is { } at && _struct.FindField(at.Text) is null)
+                Report(DiagnosticCodes.RuleTargetNotField, at.Span, [at.Text, _struct.Name], label: $"`.{at.Text}`",
+                    help: $"name a field of `{_struct.Name}`");
+            Add(r, null);
+        }
+        _fn!.Body = new BoundBlock(_struct.Decl, statements.ToArray());
+    }
+
     private void BindParameterDefaults()
     {
         foreach (var p in _fn!.Parameters)
@@ -236,7 +277,12 @@ internal sealed partial class Binder
 
     public void BindGetter(PropertyDecl decl)
     {
-        _fn!.Body = new BoundBlock(decl.Body, [new BoundReturn(decl.Body, BindConverted(decl.Body, _fn.ReturnType))]);
+        if (decl.Block is { } block)
+        {
+            _fn!.Body = BindBlock(block);
+            return;
+        }
+        _fn!.Body = new BoundBlock(decl.Body!, [new BoundReturn(decl.Body!, BindConverted(decl.Body!, _fn.ReturnType))]);
     }
 
     public void BindConstructor(ConstructorDecl decl)
@@ -255,7 +301,7 @@ internal sealed partial class Binder
         _fn.Body = new BoundBlock(statements[0], bound.ToArray());
     }
 
-    /// <summary>A test body; a <c>[Cases]</c> case first binds each parameter as a <c>let</c> of its value.</summary>
+    /// <summary>A test body; a <c>@cases</c> case first binds each parameter as a <c>let</c> of its value.</summary>
     public void BindTest(TestDecl decl, Expr[]? values)
     {
         _fn!.InfersErrors = true;
@@ -323,7 +369,7 @@ internal sealed partial class Binder
             BindStaticArray(c, value);
             return;
         }
-        if (value.Constant is null && !value.Type.IsError)
+        if (!CheckUniqueConst(decl, c.Type) && value.Constant is null && !value.Type.IsError)
             Report(DiagnosticCodes.NotConstant, decl.Init.Span, ["a `const`"]);
         c.Value = value.Constant;
         c.Bound = value;
@@ -335,7 +381,7 @@ internal sealed partial class Binder
         c.Bound = value;
         if (value.Type.IsError) return;
         var decl = c.Decl;
-        var help = $"write `const T[N] {decl.Name.Text} = [ … ];` with `T` a number type, `bool`, `char` or `string`, and only literals or constants inside";
+        var help = $"write `const T[N] {decl.Name.Text} = [ … ]` with `T` a number type, `bool`, `rune` or `string`, and only literals or constants inside";
         if (c.Type is not Symbols.ArrayType { Element: PrimitiveType { IsNumeric: true } or PrimitiveType { Kind: PrimitiveKind.Bool or PrimitiveKind.Char or PrimitiveKind.String } })
         {
             Report(DiagnosticCodes.InvalidConstArray, decl.Type?.Span ?? decl.Init!.Span, [decl.Name.Text], help: help);
@@ -374,7 +420,7 @@ internal sealed partial class Binder
         return (long)n;
     }
 
-    /// <summary>The value of <c>[ExitCode(n)]</c>: one integer constant from 1 to 255, else BYN2772 and 1.</summary>
+    /// <summary>The value of <c>@exitCode(n)</c>: one integer constant from 1 to 255, else BYN2772 and 1.</summary>
     public int BindExitCode(AttributeSyntax attribute)
     {
         if (attribute.Args is not [{ Name: null, Modifier: ArgModifier.None } arg])
@@ -437,6 +483,8 @@ internal sealed partial class Binder
                 return BindIncDec(i);
             case ReturnStmt r:
                 return BindReturn(r);
+            case FailStmt f:
+                return BindFail(f);
             case BreakStmt b:
                 return BindBreak(b);
             case ContinueStmt c:
@@ -523,12 +571,56 @@ internal sealed partial class Binder
 
     private BoundStmt BindAssert(AssertStmt a)
     {
+        if (a.Fails is not null) return BindAssertFails(a, a.Fails);
         var condition = BindExpr(a.Condition, PrimitiveType.Bool);
         if (condition.Type.IsError || Conversions.Implicit(condition.Type, PrimitiveType.Bool) is not null)
             return new BoundAssert(a, Convert(condition, PrimitiveType.Bool, a.Condition.Span));
         Report(DiagnosticCodes.AssertNotBool, a.Condition.Span, [condition.Type.DisplayName], label: "this is not a `bool`",
-            help: "check the value against what you expect, e.g. `assert count == 3;`");
+            help: "check the value against what you expect, e.g. `assert count == 3`");
         return new BoundErrorStmt(a);
+    }
+
+    /// <summary><c>assert f() fails E.x</c> or <c>assert f() fails E</c>: the call is handled here, not wrapped in <c>try</c>.</summary>
+    private BoundStmt BindAssertFails(AssertStmt a, Expr fails)
+    {
+        BoundExpr operand;
+        if (StripParens(a.Condition) is CallExpr call)
+        {
+            var saved = _handled;
+            _handled = call;
+            operand = BindExpr(call);
+            _handled = saved;
+        }
+        else
+        {
+            operand = BindExpr(a.Condition);
+        }
+        if (operand is not BoundCall { Function.Fails: true } bc)
+        {
+            if (!operand.Type.IsError) Report(DiagnosticCodes.NothingToHandle, a.Condition.Span, ["assert … fails"]);
+            return new BoundErrorStmt(a);
+        }
+        var sets = _c.ErrorSetsOf(bc.Function);
+        var errorType = ErrorUnionType.Of(sets);
+        var (setSyntax, caseName) = fails is MemberExpr m ? (m.Target, m.Member) : (fails, null);
+        if (BindExprOrType(setSyntax) is not BoundTypeRef { Referenced: ErrorSetSymbol set })
+        {
+            Report(DiagnosticCodes.PatternMismatch, setSyntax.Span, [$"`{Source.GetText(setSyntax.Span)}`", errorType.DisplayName]);
+            return new BoundErrorStmt(a);
+        }
+        var variant = caseName is null ? null : set.Find(caseName.Text);
+        if (caseName is not null && variant is null)
+        {
+            Report(DiagnosticCodes.PatternMismatch, fails.Span, [$"`{Source.GetText(fails.Span)}`", set.Name],
+                help: Suggest(caseName.Text, set.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
+            return new BoundErrorStmt(a);
+        }
+        if (sets.Count > 0 && !sets.Contains(set))
+        {
+            Report(DiagnosticCodes.PatternMismatch, setSyntax.Span, [$"`{set.Name}`", errorType.DisplayName]);
+            return new BoundErrorStmt(a);
+        }
+        return new BoundAssert(a, operand) { FailsWith = set, FailsCase = variant };
     }
 
     // ── Null narrowing (spec §7.2) ───────────────────────────────────────────────
@@ -630,7 +722,7 @@ internal sealed partial class Binder
         }
         else if (declared is null)
         {
-            Report(DiagnosticCodes.CannotInferType, d.Name.Span, [d.Name.Text], help: $"write the type: `var i64 {d.Name.Text};`");
+            Report(DiagnosticCodes.CannotInferType, d.Name.Span, [d.Name.Text], help: $"write the type: `var i64 {d.Name.Text}`");
         }
 
         TypeSymbol type;
@@ -643,7 +735,8 @@ internal sealed partial class Binder
         else type = ErrorType.Instance;
 
         var kind = d.Kind switch { BindingKind.Let => LocalKind.Let, BindingKind.Const => LocalKind.Const, _ => LocalKind.Var };
-        if (d.Kind == BindingKind.Const && init is not null && init.Constant is null && !init.Type.IsError)
+        var uniqueConst = d.Kind == BindingKind.Const && CheckUniqueConst(d, type);
+        if (d.Kind == BindingKind.Const && !uniqueConst && init is not null && init.Constant is null && !init.Type.IsError)
             Report(DiagnosticCodes.NotConstant, d.Init!.Span, ["a `const`"]);
         if (d.Using) CheckDisposable(d, type);
         var local = DeclareLocal(d.Name, type, kind);
@@ -654,6 +747,16 @@ internal sealed partial class Binder
             local.KeywordSpan = new TextSpan(d.Span.Start, 3);
         if (kind == LocalKind.Const) local.Constant = init?.Constant;
         return new BoundLocalDecl(d, local, init);
+    }
+
+    /// <summary>BYN3209: a <c>const</c> holding a <c>struct unique</c> value; the fix declares it with <c>let</c>.</summary>
+    private bool CheckUniqueConst(LocalDecl d, TypeSymbol type)
+    {
+        var keyword = new TextSpan(d.Span.Start, 5);
+        if (TypeFacts.UniquePart(type) is not StructSymbol part || Source.GetText(keyword) != "const") return false;
+        Report(DiagnosticCodes.UniqueConst, keyword, [], label: $"`{part.DisplayName}` is `unique`", help: "declare it with `let`",
+            fix: new Fix(keyword, "let"));
+        return true;
     }
 
     private void CheckDisposable(LocalDecl d, TypeSymbol type)
@@ -669,7 +772,7 @@ internal sealed partial class Binder
         switch (init.Type)
         {
             case NullType:
-                Report(DiagnosticCodes.CannotInferType, syntax.Span, ["null"], help: "write the type: `i64? x = null;`");
+                Report(DiagnosticCodes.CannotInferType, syntax.Span, ["null"], help: "write the type: `i64? x = null`");
                 return ErrorType.Instance;
             case PrimitiveType { Kind: PrimitiveKind.Void }:
                 Report(DiagnosticCodes.VoidValue, syntax.Span, []);
@@ -688,7 +791,7 @@ internal sealed partial class Binder
         var value = BindExpr(w.Value);
         if (value.Type is not (OptionalType or ErrorType))
             Report(DiagnosticCodes.WhileLetNotOptional, w.Value.Span, [value.Type.DisplayName],
-                help: $"loop with `while` and a condition, or bind it once: `let {w.Variable.Text} = …;`");
+                help: $"loop with `while` and a condition, or bind it once: `let {w.Variable.Text} = …`");
         var cond = new BoundIs(w, value, BindPresent(w.Variable, value.Type));
         _targets.Add(target);
         var body = BindBody(w.Body);
@@ -919,7 +1022,16 @@ internal sealed partial class Binder
             return new BoundReturn(r, null);
         }
         if (fn.Fails && TryBindFailure(r.Value) is { } failure)
+        {
+            // `return` always returns a value; an error leaves with `fail` (BYN1056).
+            if (failure is BoundErrorVariant fv)
+            {
+                var keyword = new TextSpan(r.Span.Start, "return".Length);
+                Report(DiagnosticCodes.ReturnErrorInput, keyword, [fv.Variant.Name], label: "this leaves with an error",
+                    help: $"leave with the error: `fail .{fv.Variant.Name}`", fix: new Fix(keyword, "fail"));
+            }
             return new BoundFail(r, failure);
+        }
         if (returnType.IsVoid)
         {
             var v = BindExpr(r.Value);
@@ -938,10 +1050,14 @@ internal sealed partial class Binder
         var fn = _fn!;
         switch (value)
         {
-            case TargetMemberExpr t when fn.ReturnType is not ErrorSetSymbol:
+            case TargetMemberExpr t when fn.ReturnType is not ErrorSetSymbol && !HasCase(fn.ReturnType, t.Member.Text):
             {
                 var matches = fn.ErrorSets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null).ToList();
-                if (matches.Count == 1) return new BoundErrorVariant(t, matches[0]!);
+                if (matches.Count == 1)
+                {
+                    CheckNotExcluded(matches[0]!, t.Span);
+                    return new BoundErrorVariant(t, matches[0]!);
+                }
                 if (matches.Count > 1)
                 {
                     Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);
@@ -950,7 +1066,7 @@ internal sealed partial class Binder
                 if (fn.InfersErrors && fn.ErrorSets.Count == 0 && fn.ReturnType is PrimitiveType { Kind: PrimitiveKind.Void })
                 {
                     Report(DiagnosticCodes.UnknownVariant, t.Span, [t.Member.Text, "the inferred error set"],
-                        help: "name the set: `return MyError.x;`");
+                        help: "name the set: `fail MyError.x`");
                     return new BoundErrorExpr(t);
                 }
                 return null;
@@ -961,6 +1077,7 @@ internal sealed partial class Binder
                 if (bound is BoundErrorVariant variant)
                 {
                     CheckCanFailWith(variant.Variant.Set, m.Span);
+                    CheckNotExcluded(variant.Variant, m.Span);
                     return variant;
                 }
                 return null;
@@ -970,6 +1087,68 @@ internal sealed partial class Binder
         }
     }
 
+    /// <summary>Whether <c>.name</c> is a value of <paramref name="type"/>, so <c>return .name</c> returns it.</summary>
+    private static bool HasCase(TypeSymbol type, string name) => (type is OptionalType o ? o.Inner : type) switch
+    {
+        EnumSymbol e => e.Find(name) is not null,
+        UnionSymbol u => u.Find(name) is not null,
+        _ => false,
+    };
+
+    /// <summary><c>fail .x</c>, <c>fail Set.x</c> or <c>fail e</c>: leaves the function with the error.</summary>
+    private BoundStmt BindFail(FailStmt f)
+    {
+        if (InPanicHandler(f.Span, "fail")) return new BoundErrorStmt(f);
+        if (_deferDepth > 0)
+        {
+            Report(DiagnosticCodes.JumpOutOfDefer, f.Span, ["fail"]);
+            return new BoundErrorStmt(f);
+        }
+        var fn = _fn;
+        if (fn is null) return new BoundErrorStmt(f);
+        var entry = fn.Kind is FunctionKind.Main or FunctionKind.Test;
+        if (!fn.Fails && !entry)
+        {
+            var named = f.Error is TargetMemberExpr target ? "." + target.Member.Text : BindExprOrType(f.Error).Type.DisplayName;
+            Report(DiagnosticCodes.PropagateFromInfallible, f.Error.Span, [fn.Name, named],
+                help: "declare the error in a `fails` clause, or handle it here");
+            return new BoundErrorStmt(f);
+        }
+        if (f.Error is TargetMemberExpr t)
+        {
+            var matches = fn.ErrorSets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null).ToList();
+            if (matches.Count == 1)
+            {
+                if (!entry) CheckNotExcluded(matches[0]!, t.Span);
+                return new BoundFail(f, new BoundErrorVariant(t, matches[0]!));
+            }
+            if (matches.Count > 1)
+                Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);
+            else if (fn.ErrorSets.Count == 0)
+                Report(DiagnosticCodes.UnknownVariant, t.Span, [t.Member.Text, "the inferred error set"], help: "name the set: `fail MyError.x`");
+            else
+                Report(DiagnosticCodes.UndeclaredError, t.Span, ["." + t.Member.Text, fn.Name],
+                    help: $"name a case of `{ErrorUnionType.Of(fn.ErrorSets).DisplayName}`");
+            return new BoundErrorStmt(f);
+        }
+        var error = BindExprOrType(f.Error);
+        var sets = error.Type switch
+        {
+            ErrorSetSymbol set => [set],
+            ErrorUnionType u => u.Sets.ToList(),
+            _ => (List<ErrorSetSymbol>?)null,
+        };
+        if (sets is null)
+        {
+            if (!error.Type.IsError)
+                Report(DiagnosticCodes.TypeMismatch, f.Error.Span, [error.Type.DisplayName, "an error"]);
+            return new BoundErrorStmt(f);
+        }
+        if (!entry) foreach (var set in sets) CheckCanFailWith(set, f.Error.Span);
+        if (!entry && error is BoundErrorVariant ev) CheckNotExcluded(ev.Variant, f.Error.Span);
+        return new BoundFail(f, error);
+    }
+
     private void CheckCanFailWith(ErrorSetSymbol set, TextSpan span)
     {
         var fn = _fn!;
@@ -977,6 +1156,14 @@ internal sealed partial class Binder
         if (fn.InfersErrors) return;
         Report(DiagnosticCodes.UndeclaredError, span, [set.Name, fn.Name],
             help: $"add it to the signature: `fails {string.Join(", ", fn.ErrorSets.Select(s => s.Name).Append(set.Name))}`");
+    }
+
+    /// <summary>BYN2603 for a case the <c>fails</c> clause takes out with <c>except</c>.</summary>
+    private void CheckNotExcluded(ErrorVariantSymbol variant, TextSpan span)
+    {
+        if (!_fn!.ExcludedErrors.Contains(variant)) return;
+        Report(DiagnosticCodes.UndeclaredError, span, [$"{variant.Set.Name}.{variant.Name}", _fn.Name],
+            help: $"pick another case, or remove `.{variant.Name}` from the `except` list");
     }
 
     private JumpTarget? FindTarget(Name? label, bool loopOnly, TextSpan span, string keyword)
@@ -1094,13 +1281,20 @@ internal sealed partial class Binder
         BoundExpr? allocator = null;
         foreach (var v in c.Values)
         {
-            if (v.Name.Text != "allocator")
+            // `alloc` is the handler's name; `allocator` is still accepted for it.
+            if (v.Name.Text is not ("alloc" or "allocator"))
             {
-                Report(DiagnosticCodes.Unsupported, v.Name.Span, [$"the context value `{v.Name.Text}`"]);
+                if (v.Name.Text is "net" or "fs" or "clock" or "random" or "env" or "process" or "console" or "log")
+                    Report(DiagnosticCodes.Unsupported, v.Name.Span, [$"the `{v.Name.Text}` handler"]);
+                else
+                    Report(DiagnosticCodes.UnknownHandler, v.Name.Span, [v.Name.Text], label: v.Name.Text == "suspend" ? "`suspend` has no handler" : "not a handler",
+                        help: "choose one of the handler names; `suspend` has no handler");
                 continue;
             }
             allocator = BindConverted(v.Value, BuiltinType.Arena);
         }
+        // Every handler was reported: the body still runs, with the handlers it already has.
+        if (allocator is null && c.Values.Length > 0) return BindBlock(c.Body);
         if (allocator is null)
         {
             Report(DiagnosticCodes.MissingArgument, c.Span, ["allocator", "context"]);

@@ -1,0 +1,4 @@
+// expect: modifier-first declaration keyword
+// fix-it: `struct unique File`
+unique struct File {
+}

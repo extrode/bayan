@@ -1,0 +1,17 @@
+error BYN1050: `value` in `requires` is now `it`
+
+  1 │ type distinct Percent = i32 requires value in 0..=100
+    │                                      ^^^^^ the input form
+    │
+  help: rename `value` to `it`
+    │ 1 │ type distinct Percent = i32 requires it in 0..=100
+    │   │                                      ++
+
+error BYN1050: `value` in `requires` is now `it`
+
+  5 │         requires value > 0
+    │                  ^^^^^ the input form
+    │
+  help: rename `value` to `it`
+    │ 5 │         requires it > 0
+    │   │                  ++

@@ -1,13 +1,16 @@
-enum Color { red, green }
-
-struct Money {
-    i64 cents;
+enum Color {
+    red
+    green
 }
 
-let price = Money { cents: 250 };
-let c = Color.green;
-assert price.cents == 250;
-assert price.cents * 2 > 400 && c == Color.green;
-assert(c.name == "green");
-assert true;
-print("passed");
+struct Money {
+    i64 cents
+}
+
+let price = Money { cents: 250 }
+let c = Color.green
+assert price.cents == 250
+assert price.cents * 2 > 400 && c == Color.green
+assert(c.name == "green")
+assert true
+print("passed")

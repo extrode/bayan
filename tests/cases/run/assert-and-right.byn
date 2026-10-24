@@ -1,6 +1,6 @@
 i64 twice(i64 n) {
-    return n * 2;
+    return n * 2
 }
 
-i64 a = 3;
-assert a > 1 && twice(a) == 7;
+let a: i64 = 3
+assert a > 1 && twice(a) == 7

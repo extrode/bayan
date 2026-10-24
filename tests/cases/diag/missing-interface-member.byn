@@ -1,10 +1,10 @@
 interface IShape {
-    i64 area();
-    i64 sides { get; }
+    i64 area()
+    i64 sides
 }
 
 struct Square : IShape {
-    i64 side;
+    i64 side
 
-    i64 sides => 4;
+    i64 sides => 4
 }

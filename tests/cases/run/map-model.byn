@@ -1,21 +1,20 @@
 // Model check for Map (L3): MapModelTests replays the same xorshift sequence against an
 // insertion-ordered reference model in C# and compares it with map-model.stdout.
 u64 next(ref u64 state) {
-    var x = state;
-    x = x ^ (x << 13);
-    x = x ^ (x >> 7);
-    x = x ^ (x << 17);
-    state = x;
-    return x;
+    var x = state
+    x = x ^ (x << 13)
+    x = x ^ (x >> 7)
+    x = x ^ (x << 17)
+    state = x
+    return x
 }
 
-u64 state = 0x9E3779B97F4A7C15;
-var m = Map<i64, i64>();
+var state: u64 = 0x9E3779B97F4A7C15
+var m = Map<i64, i64>()
 for step in 0..5000 {
-    let r = next(ref state);
-    let key = (i64)(r % 64);
-    if (r >> 8) % 3 == 2 { m.remove(key); }
-    else { m[key] = step; }
+    let r = next(ref state)
+    let key = i64(r % 64)
+    if (r >> 8) % 3 == 2 { let _ = m.remove(key) } else { m[key] = step }
 }
-print($"count {m.length}");
-for e in m { print($"{e.key} {e.value}"); }
+print($"count {m.length}")
+for e in m { print($"{e.key} {e.value}") }

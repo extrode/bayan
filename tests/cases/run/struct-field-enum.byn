@@ -1,0 +1,19 @@
+struct Booking {
+    i64 nights requires it > 0
+    i64 guests
+    requires guests <= nights * 4 at .guests
+}
+
+string describe(Booking.Field f) => f switch {
+    .nights => "nights",
+    .guests => "guests",
+}
+
+void main() {
+    let first: Booking.Field = .nights
+    let all = [first, .guests]
+    for f in all {
+        print($"{describe(f)} {f.name}")
+    }
+    assert first == .nights
+}

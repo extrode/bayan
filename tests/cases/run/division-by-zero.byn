@@ -1,2 +1,2 @@
-i64 zero = 0;
-print($"{10 / zero}");
+let zero: i64 = 0
+print($"{10 / zero}")

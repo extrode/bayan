@@ -1,16 +1,16 @@
 // A program that is not on PATH is `notFound`, handled with `catch`; nothing panics.
 string exitOf(string program) fails IoError {
-    List<string> none = List<string>();
-    let r = try Io.run(program, none.asSpan());
-    return $"exit {r.exitCode}";
+    let none: List<string> = List<string>()
+    let r = try Io.run(program, none.asSpan())
+    return $"exit {r.exitCode}"
 }
 
 string describe(string program) => exitOf(program) catch switch {
     .notFound => "not found",
     _ => "some other error",
-};
+}
 
 void main() {
-    print(describe("bayan-no-such-program"));
-    print(describe("./no-such-dir/program"));
+    print(describe("bayan-no-such-program"))
+    print(describe("./no-such-dir/program"))
 }

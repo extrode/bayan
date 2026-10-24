@@ -1,13 +1,13 @@
 error BYN3003: cannot return a borrow of `s`, which is freed when `fresh` returns
 
-  16 │         return s;
+  16 │         return s
      │                ^
      │
   help: let the caller pass the buffer or allocator in, and borrow or allocate from that
 
 error BYN3003: cannot return a borrow of `s`, which is freed when `make` returns
 
-  22 │     return s;
+  22 │     return s
      │            ^
      │
   help: let the caller pass the buffer or allocator in, and borrow or allocate from that

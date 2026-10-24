@@ -1,7 +1,7 @@
 void report(string message) {
-    print(message);
+    print(message)
 }
 
 void main() {
-    Panic.onPanic = report;
+    Panic.onPanic = report
 }

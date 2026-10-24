@@ -1,4 +1,4 @@
-i64 big = 9223372036854775807;
-print("before");
-let more = big + 1;
-print($"after {more}");
+let big: i64 = 9223372036854775807
+print("before")
+let more = big + 1
+print($"after {more}")

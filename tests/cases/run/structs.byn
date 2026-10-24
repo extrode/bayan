@@ -1,39 +1,39 @@
 struct Point {
-    i64 x;
-    i64 y = 0;
+    i64 x
+    i64 y = 0
 
-    i64 sum => x + y;
+    i64 sum => x + y
 
     void shift(ref this, i64 by) {
-        x += by;
-        y += by;
+        x += by
+        y += by
     }
 
-    static Point origin() => Point { x: 0 };
+    static Point origin() => Point { x: 0 }
 
-    i64 dot(Point other) => x * other.x + y * other.y;
+    i64 dot(Point other) => x * other.x + y * other.y
 
     void formatInto(ref StrBuf sb) {
-        sb.append($"Point {{ x: {x}, y: {y} }}");
+        sb.append($"Point {{ x: {x}, y: {y} }}")
     }
 }
 
 struct Line {
-    Point from;
-    Point to;
-    string name = "line";
+    Point from
+    Point to
+    string name = "line"
 }
 
-var p = Point { x: 1, y: 2 };
-p.shift(by: 10);
-print($"{p.x} {p.y} {p.sum}");
-let o = Point.origin();
-print($"{o.x} {o.y} {o == Point { x: 0 }} {p != o}");
-let q = p with { y: 1 };
-print($"{q.x} {q.y} {p.dot(q)}");
-var line = Line { from: p, to: q };
-line.to.shift(by: 1);
-print($"{line.name} {line.from.x} {line.to.x} {line.to.y}");
-print($"{p}");
-let pair = (name: "ann", age: 30);
-print($"{pair.name} {pair.age} {pair}");
+var p = Point { x: 1, y: 2 }
+p.shift(by: 10)
+print($"{p.x} {p.y} {p.sum}")
+let o = Point.origin()
+print($"{o.x} {o.y} {o == Point { x: 0 }} {p != o}")
+let q = p with { y: 1 }
+print($"{q.x} {q.y} {p.dot(q)}")
+var line = Line { from: p, to: q }
+line.to.shift(by: 1)
+print($"{line.name} {line.from.x} {line.to.x} {line.to.y}")
+print($"{p}")
+let pair = (name: "ann", age: 30)
+print($"{pair.name} {pair.age} {pair}")

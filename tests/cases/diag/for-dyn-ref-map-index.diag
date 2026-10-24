@@ -1,4 +1,4 @@
 error BYN2106: cannot modify this value
 
-  10 │     for dyn ref IC x in k["a"] { x.bump(); }
-     │                         ^^^^^^ it is borrowed element by element as `dyn ref IC`
+  16 │     for x: dyn ref IC in k["a"] { x.bump() }
+     │                          ^^^^^^ it is borrowed element by element as `dyn ref IC`

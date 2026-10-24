@@ -1,0 +1,2 @@
+// expect: bypass without `because`
+let raw = key.expose()

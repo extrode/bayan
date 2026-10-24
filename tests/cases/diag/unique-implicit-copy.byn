@@ -1,16 +1,16 @@
 // Storing an existing `List`, `Map` or `StrBuf` copies it implicitly (BYN2780).
 void main() {
-    using let arena = Arena();
-    var a = List<i64>();
-    a.append(1);
-    let b = a;
-    let m = Map<string, i64>();
-    let n = m;
-    var sb = StrBuf();
-    sb.append("x");
-    let other = sb;
-    print($"{a.length} {b.length} {m.length} {n.length} {sb.finish()} {other.finish()}");
-    let fine = a.copy(to: arena);
-    let moved = move m;
-    print($"{fine.length} {moved.length}");
+    using let arena = Arena()
+    var a = List<i64>()
+    a.append(1)
+    let b = a
+    let m = Map<string, i64>()
+    let n = m
+    var sb = StrBuf()
+    sb.append("x")
+    let other = sb
+    print($"{a.length} {b.length} {m.length} {n.length} {sb.finish()} {other.finish()}")
+    let fine = a.copy(to: arena)
+    let moved = move m
+    print($"{fine.length} {moved.length}")
 }

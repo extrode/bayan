@@ -1,38 +1,44 @@
 struct Circle : IShape {
-    f32 r;
+    f32 r
 
-    f32 area() => r * r;
+    f32 area() => r * r
 }
 
 struct Wrapper<T> : IShape, m.IDescribe where T : IShape, IOrder<T> {
-    T inner;
+    T inner
 }
 
 struct Stream : IEnumerator {
-    type Item = Token;
-    i64 i;
+    type Item = Token
+    i64 i
 }
 
 union Shape : IShape {
-    circle(f32 r),
-    none,
+    circle(f32 r)
+    none
 }
 
 union Box<T> : IShape where T : IShape {
-    full(T v),
-    empty,
+    full(T v)
+    empty
 }
 
-enum Color : IShape { red, green }
-
-enum Planet(f64 mass) : IShape where T : IShape { earth(1.0), mars(0.1); }
-
-T max<T>(T a, T b) where T : IOrder<T> => a.less(b) ? b : a;
-
-T parse<T>(string s) fails where T : IParse<T> {
-    return T.parse(s);
+enum Color : IShape {
+    red
+    green
 }
 
-T read<T>(string s) fails IoError where T : IParse<T>, IShape where U : IShape requires s.length > 0 {
-    return T.parse(s);
+enum Planet(f64 mass) : IShape where T : IShape {
+    earth(1.0)
+    mars(0.1)
+}
+
+T max<T>(T a, T b) where T : IOrder<T> => a.less(b) ? b : a
+
+T parse<T>(string s) where T : IParse<T> fails {
+    return T.parse(s)
+}
+
+T read<T>(string s) where T : IParse<T>, IShape where U : IShape expects s.length > 0 fails IoError {
+    return T.parse(s)
 }

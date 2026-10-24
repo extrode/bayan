@@ -1,32 +1,32 @@
 interface IThing {
-    i64 get();
+    i64 get()
 }
 
 struct S : IThing {
-    i64 n;
+    i64 n
 
-    i64 get() => n;
+    i64 get() => n
 }
 
 struct B {
-    List<S> items;
+    List<S> items
 
     // A `dyn ref` into a field's list borrows `this`: growing or shrinking the list while it is live is an error.
     void run(ref this) {
-        dyn ref IThing d = items[0];
+        let d: dyn ref IThing = items[0]
         for i in 0..100 {
-            items.append(S { n: i });
+            items.append(S { n: i })
         }
-        print($"{d.get()}");
-        dyn ref IThing e = items[0];
-        items.removeLast();
-        items.clear();
-        print($"{e.get()}");
+        print($"{d.get()}")
+        let e: dyn ref IThing = items[0]
+        let _ = items.removeLast()
+        items.clear()
+        print($"{e.get()}")
     }
 }
 
 void main() {
-    var b = B { items: List<S>() };
-    b.items.append(S { n: 1 });
-    b.run();
+    var b = B { items: List<S>() }
+    b.items.append(S { n: 1 })
+    b.run()
 }

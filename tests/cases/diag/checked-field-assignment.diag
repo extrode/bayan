@@ -1,0 +1,7 @@
+error BYN3208: fields of `Range` cannot be assigned one at a time; its `requires` are checked at
+construction
+
+  7 │         this.high = this.high + 1
+    │         ^^^^^^^^^^^^^^^^^^^^^^^^^
+    │
+  help: build a new value with `with`: `try x with { f: v }`

@@ -1,0 +1,5 @@
+// expect: per-line `state`
+// fix-it: `states { draft placed }`
+struct Order {
+    state draft
+}

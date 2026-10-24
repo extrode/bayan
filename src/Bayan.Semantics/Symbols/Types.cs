@@ -79,7 +79,7 @@ public sealed class PrimitiveType : TypeSymbol
     public static readonly PrimitiveType F32 = new(PrimitiveKind.F32, "f32", 32);
     public static readonly PrimitiveType F64 = new(PrimitiveKind.F64, "f64", 64);
     public static readonly PrimitiveType Bool = new(PrimitiveKind.Bool, "bool", 0);
-    public static readonly PrimitiveType Char = new(PrimitiveKind.Char, "char", 32);
+    public static readonly PrimitiveType Char = new(PrimitiveKind.Char, "rune", 32);
     public static readonly PrimitiveType String = new(PrimitiveKind.String, "string", 0);
     public static readonly PrimitiveType Void = new(PrimitiveKind.Void, "void", 0);
     public static readonly PrimitiveType Never = new(PrimitiveKind.Never, "never", 0);
@@ -90,7 +90,7 @@ public sealed class PrimitiveType : TypeSymbol
         ["i8"] = I8, ["i16"] = I16, ["i32"] = I32, ["i64"] = I64,
         ["u8"] = U8, ["u16"] = U16, ["u32"] = U32, ["u64"] = U64,
         ["isize"] = Isize, ["usize"] = Usize, ["f32"] = F32, ["f64"] = F64,
-        ["bool"] = Bool, ["char"] = Char, ["string"] = String, ["void"] = Void, ["never"] = Never,
+        ["bool"] = Bool, ["rune"] = Char, ["string"] = String, ["void"] = Void, ["never"] = Never,
         ["sbyte"] = I8, ["short"] = I16, ["int"] = I32, ["long"] = I64,
         ["byte"] = U8, ["ushort"] = U16, ["uint"] = U32, ["ulong"] = U64,
         ["nint"] = Isize, ["nuint"] = Usize, ["float"] = F32, ["double"] = F64,
@@ -376,16 +376,22 @@ public sealed class BuiltinType : TypeSymbol
 }
 
 /// <summary>The type of a caught error when the call can fail with more than one set.</summary>
-public sealed class ErrorUnionType(IReadOnlyList<ErrorSetSymbol> sets) : ConstructedType
+public sealed class ErrorUnionType(IReadOnlyList<ErrorSetSymbol> sets, IReadOnlyList<ErrorVariantSymbol>? excluded = null) : ConstructedType
 {
-    private readonly string _key = string.Join("|", sets.Select(s => s.Module.Name + "." + s.Name));
+    private readonly string _key = string.Join("|", sets.Select(s => s.Module.Name + "." + s.Name))
+        + string.Concat((excluded ?? []).Select(v => "-" + v.Set.Name + "." + v.Name));
 
     public IReadOnlyList<ErrorSetSymbol> Sets { get; } = sets;
+
+    /// <summary>The cases taken out with <c>except .c</c>: never raised by a value of this type.</summary>
+    public IReadOnlyList<ErrorVariantSymbol> Excluded { get; } = excluded ?? [];
 
     protected override object Key => _key;
 
     /// <summary>With no sets, any error (an inferred set not yet known).</summary>
-    public override string DisplayName => Sets.Count == 0 ? "error" : string.Join(" | ", Sets.Select(s => s.Name));
+    public override string DisplayName => Sets.Count == 0 ? "error" : string.Join(" | ", Sets.Select(s => s.Name))
+        + (Excluded.Count == 0 ? "" : " except " + string.Join(", ", Excluded.Select(v => "." + v.Name)));
 
-    public static TypeSymbol Of(IReadOnlyList<ErrorSetSymbol> sets) => sets.Count == 1 ? sets[0] : new ErrorUnionType(sets.ToArray());
+    public static TypeSymbol Of(IReadOnlyList<ErrorSetSymbol> sets, IReadOnlyList<ErrorVariantSymbol>? excluded = null) =>
+        sets.Count == 1 && excluded is not { Count: > 0 } ? sets[0] : new ErrorUnionType(sets.ToArray(), excluded?.ToArray());
 }

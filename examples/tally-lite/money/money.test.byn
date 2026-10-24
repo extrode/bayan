@@ -3,36 +3,36 @@ i64 parsed(string text) => parseAmount(text) catch switch {
     .notANumber => -2,
     .tooPrecise => -3,
     .tooLarge => -4,
-};
+}
 
-bool formatsAs(Cents cents, string expected) {
-    let bytes = stackalloc u8[32];
-    var sb = StrBuf(bytes);
-    let m = Money { cents: cents, currency: "MYR" };
-    m.formatInto(ref sb);
-    return sb.finish() == expected;
+bool formats(Cents cents, as string expected) {
+    let bytes = stackalloc u8[32]
+    var sb = StrBuf(bytes)
+    let m = Money { cents: cents, currency: "MYR" }
+    m.formatInto(ref sb)
+    return sb.finish() == expected
 }
 
 test "parses whole and fractional amounts" {
-    assert(parsed("12") == 1200);
-    assert(parsed("0.5") == 50);
-    assert(parsed("91.82") == 9182);
-    assert(parsed(".07") == 7);
-    assert(parsed("360.00") == 36000);
+    assert(parsed("12") == 1200)
+    assert(parsed("0.5") == 50)
+    assert(parsed("91.82") == 9182)
+    assert(parsed(".07") == 7)
+    assert(parsed("360.00") == 36000)
 }
 
 test "rejects malformed amounts" {
-    assert(parsed("") == -1);
-    assert(parsed("1.2.3") == -2);
-    assert(parsed("12a") == -2);
-    assert(parsed(".") == -2);
-    assert(parsed("1.234") == -3);
-    assert(parsed("1234567890123456") == -4);
+    assert(parsed("") == -1)
+    assert(parsed("1.2.3") == -2)
+    assert(parsed("12a") == -2)
+    assert(parsed(".") == -2)
+    assert(parsed("1.234") == -3)
+    assert(parsed("1234567890123456") == -4)
 }
 
 test "formats cents with two decimals" {
-    assert(formatsAs(9182, expected: "91.82 MYR"));
-    assert(formatsAs(128, expected: "1.28 MYR"));
-    assert(formatsAs(5, expected: "0.05 MYR"));
-    assert(formatsAs(-128, expected: "-1.28 MYR"));
+    assert(formats(9182, as: "91.82 MYR"))
+    assert(formats(128, as: "1.28 MYR"))
+    assert(formats(5, as: "0.05 MYR"))
+    assert(formats(-128, as: "-1.28 MYR"))
 }

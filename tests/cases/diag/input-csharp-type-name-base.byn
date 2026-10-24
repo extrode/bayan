@@ -1,5 +1,5 @@
 struct S : int {
-    i64 a;
+    i64 a
 }
 
 void main() {}
