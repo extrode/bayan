@@ -114,7 +114,7 @@ public sealed class Parser
         DiagnosticCodes.UnlessNegated, DiagnosticCodes.ParenthesizedCondition, DiagnosticCodes.BodyNeedsBraces,
         DiagnosticCodes.ForInputForm, DiagnosticCodes.ErrdeferInput, DiagnosticCodes.FieldInitEquals, DiagnosticCodes.UnlessCompound,
         DiagnosticCodes.UnlessNull, DiagnosticCodes.CatchBinding, DiagnosticCodes.DelegateDecl, DiagnosticCodes.ErrorSetPipe,
-        DiagnosticCodes.CSharpTypeName, DiagnosticCodes.FailsShorthand, DiagnosticCodes.UnlessLikelihood,
+        DiagnosticCodes.FailsShorthand, DiagnosticCodes.UnlessLikelihood,
         DiagnosticCodes.SemicolonInput, DiagnosticCodes.ElseOnNewLine, DiagnosticCodes.OnNewLine, DiagnosticCodes.PostfixOnNewLine,
         DiagnosticCodes.OneLineDeclarations, DiagnosticCodes.MissingLineBreak, DiagnosticCodes.TypeNameOrder,
         DiagnosticCodes.BracketAttribute, DiagnosticCodes.CharInput, DiagnosticCodes.RequiresValue,
@@ -1456,7 +1456,7 @@ public sealed class Parser
         }
     }
 
-    /// <summary>C# type names written in a type position (BYN1030), with the Bayan type each means.</summary>
+    /// <summary>C# type names written in a type position with the Bayan type each means.</summary>
     private static readonly Dictionary<string, string> CSharpTypeNames = new()
     {
         ["int"] = "i32", ["long"] = "i64", ["short"] = "i16", ["byte"] = "u8",
@@ -1534,8 +1534,7 @@ public sealed class Parser
         if (Kind == TokenKind.Less && ScanTypeArgs(_pos) > 0) args = ParseTypeArgs();
         if (path.Count == 1 && args.Length == 0 && CSharpTypeNames.TryGetValue(path[0].Text, out var bayan))
             // Only types reach here, so `int` as a value or variable name is untouched.
-            Report(DiagnosticCodes.CSharpTypeName, path[0].Span, [path[0].Text, bayan], label: "a C# type name",
-                help: $"write `{bayan}`", fix: new Fix(path[0].Span, bayan));
+            path[0] = path[0] with { Text = bayan };
         else if (path.Count == 1 && args.Length == 0 && path[0].Text == "char")
         {
             Report(DiagnosticCodes.CharInput, path[0].Span, label: "the input form", help: "rename the type to `rune`",
@@ -3095,8 +3094,7 @@ public sealed class Parser
         if (Kind == TokenKind.Less && ScanTypeArgs(_pos) > 0) args = ParseTypeArgs();
         if (path.Count == 1 && args.Length == 0 && CSharpTypeNames.TryGetValue(path[0].Text, out var bayan))
             // Only types reach here, so `int` as a value or variable name is untouched.
-            Report(DiagnosticCodes.CSharpTypeName, path[0].Span, [path[0].Text, bayan], label: "a C# type name",
-                help: $"write `{bayan}`", fix: new Fix(path[0].Span, bayan));
+            path[0] = path[0] with { Text = bayan };
         else if (path.Count == 1 && args.Length == 0 && path[0].Text == "char")
         {
             Report(DiagnosticCodes.CharInput, path[0].Span, label: "the input form", help: "rename the type to `rune`",

@@ -15,39 +15,3 @@ error BYN1021: `x = …` in a literal is an input form; write `x: …`
   help: write `:` after the field name
     │ 8 │     let q = P { x: 3, y: 4 }
     │   │                  +
-
-error BYN1030: `int` is an input form; the Bayan type is `i32`
-
-  11 │ int f(long x) { return 0 } void g() {
-     │ ^^^ a C# type name
-     │
-  help: write `i32`
-     │ 11 │ i32 f(long x) { return 0 } void g() {
-     │    │  ++
-
-error BYN1030: `long` is an input form; the Bayan type is `i64`
-
-  11 │ int f(long x) { return 0 } void g() {
-     │       ^^^^ a C# type name
-     │
-  help: write `i64`
-     │ 11 │ int f(i64 x) { return 0 } void g() {
-     │    │       +++
-
-error BYN1030: `double` is an input form; the Bayan type is `f64`
-
-  12 │     let xs: List<double> = List<double>()
-     │                  ^^^^^^ a C# type name
-     │
-  help: write `f64`
-     │ 12 │     let xs: List<f64> = List<double>()
-     │    │                  +++
-
-error BYN1030: `double` is an input form; the Bayan type is `f64`
-
-  12 │     let xs: List<double> = List<double>()
-     │                                 ^^^^^^ a C# type name
-     │
-  help: write `f64`
-     │ 12 │     let xs: List<double> = List<f64>()
-     │    │                                 +++

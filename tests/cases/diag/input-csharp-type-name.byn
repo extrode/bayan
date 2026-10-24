@@ -1,7 +1,7 @@
 long twice(int n) => n * 2
 
 void main() {
-    int count = 3
-    double ratio = 0.5
+    let count: int = 3
+    let ratio: double = 0.5
     print($"{twice(count)} {ratio}")
 }

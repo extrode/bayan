@@ -17,7 +17,7 @@ internal static class Format
     private static readonly HashSet<string> InputForms = new(StringComparer.Ordinal)
     {
         "BYN1007", "BYN1017", "BYN1018", "BYN1019", "BYN1020", "BYN1021", "BYN1022", "BYN1023", "BYN1025",
-        "BYN1029", "BYN1030", "BYN1031", "BYN1033",
+        "BYN1029", "BYN1031", "BYN1033",
         "BYN1040", "BYN1041", "BYN1042", "BYN1043", "BYN1044", "BYN1045", "BYN1047", "BYN1048", "BYN1050", "BYN1051", "BYN1053",
         "BYN6001", "BYN6006",
     };
@@ -161,8 +161,7 @@ internal static class Format
     {
         unfixable = false;
         var converged = false;
-        // Under `.csharp` the C# names are the project's spelling, so their input-form fix is not applied.
-        bool Applies(Diagnostic d) => InputForms.Contains(d.Code) && !(primitives == PrimitiveStyle.Csharp && d.Code == "BYN1030");
+        bool Applies(Diagnostic d) => InputForms.Contains(d.Code);
         for (var pass = 0; pass < MaxPasses; pass++)
         {
             var tree = SyntaxTree.Parse(new SourceText(file, bytes));
