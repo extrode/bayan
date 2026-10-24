@@ -15,7 +15,7 @@ void f(i64 n, Point p, List<i64> xs, Map<string, i64> prices) fails ReadError {
     }
     for x in xs { use(x) }
     for i in 0..n { use(i) }
-    for i64 x in xs { use(x) }
+    for x: i64 in xs { use(x) }
     for (key, value) in prices { use(value) }
     for try row in rows { use(row) }
     for try (a, b) in pairs { use(a) }

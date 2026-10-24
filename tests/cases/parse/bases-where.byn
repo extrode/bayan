@@ -39,6 +39,6 @@ T parse<T>(string s) where T : IParse<T> fails {
     return T.parse(s)
 }
 
-T read<T>(string s) where T : IParse<T>, IShape where U : IShape fails IoError requires s.length > 0 {
+T read<T>(string s) where T : IParse<T>, IShape where U : IShape expects s.length > 0 fails IoError {
     return T.parse(s)
 }

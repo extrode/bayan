@@ -20,7 +20,7 @@ void main() {
     for n in from(3) {
         print($"step {n}")
     }
-    for i64 n in (Countdown { left: 2 }) {
+    for n: i64 in (Countdown { left: 2 }) {
         print($"literal {n}")
     }
 }

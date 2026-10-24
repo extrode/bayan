@@ -1,4 +1,4 @@
-// `for dyn ref readonly I x in xs` over a List converts each element; a constraint walks the same List.
+// `for x: dyn ref readonly I in xs` over a List converts each element; a constraint walks the same List.
 interface IShape {
     i64 area()
 }
@@ -18,7 +18,7 @@ i64 total<T>(List<T> xs) where T : IShape {
 
 i64 totalDyn(List<Sq> xs) {
     var sum = 0
-    for dyn ref readonly IShape x in xs {
+    for x: dyn ref readonly IShape in xs {
         sum += x.area()
     }
     return sum

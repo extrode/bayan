@@ -61,6 +61,9 @@ public sealed record Param(TextSpan Span, ParamModifier Modifier, TypeSyntax Typ
 {
     /// <summary>The particle before the parameter (<c>by Carrier carrier</c>), part of the function's name; parsed only, not yet checked.</summary>
     public Name? Particle { get; init; }
+
+    /// <summary>The variadic tail <c>rest ReadOnlySpan&lt;T&gt; xs</c>; parsed only, not yet checked.</summary>
+    public bool Rest { get; init; }
 }
 
 /// <summary><c>fails</c> clause: <see cref="Errors"/> empty means the set is inferred.</summary>
@@ -80,13 +83,16 @@ public sealed record FunctionDecl(
     /// <summary>The <c>ref this</c> written as parameter 0 of a mutating member; not in <see cref="Params"/>.</summary>
     public TextSpan? RefThis { get; init; }
 
-    /// <summary>The state of a receiver <c>this is .s</c> or <c>ref this is .s</c>; parsed only, not yet checked.</summary>
-    public Name? ReceiverState { get; init; }
+    /// <summary>The <c>move this</c> written as parameter 0 of a consuming member; parsed only, not yet checked.</summary>
+    public TextSpan? MoveThis { get; init; }
+
+    /// <summary>The states of a receiver <c>this is .a or .b</c>, <c>ref this is .s</c> or <c>move this is .s</c>; parsed only, not yet checked.</summary>
+    public Name[] ReceiverStates { get; init; } = [];
 
     /// <summary>Where a <c>ref this</c> would go: just after the <c>(</c>.</summary>
     public int ParamsStart { get; init; }
 
-    /// <summary>The <c>requires</c> clauses after the signature, checked on entry.</summary>
+    /// <summary>The <c>expects</c> clauses after the signature (and the <c>requires</c> input form, BYN1063), checked on entry.</summary>
     public Expr[] Requires { get; init; } = [];
 
     /// <summary>The <c>where T : I</c> clauses after <c>fails</c>.</summary>
@@ -112,6 +118,9 @@ public sealed record StructDecl(TextSpan Span, Modifiers Modifiers, Name Name, D
 
     /// <summary>The struct-level <c>requires</c> rules: those that read more than <c>it</c> (O3).</summary>
     public RequiresRule[] Rules { get; init; } = [];
+
+    /// <summary>The <c>states { … }</c> block: each state and its named payload; parsed only, not yet checked.</summary>
+    public UnionVariant[] States { get; init; } = [];
 }
 
 /// <summary><c>interface IName&lt;T&gt; { … }</c>: methods (abstract without a body), getters, associated types.</summary>
@@ -224,6 +233,12 @@ public sealed record TupleType(TextSpan Span, TupleTypeElement[] Elements) : Typ
 /// <summary><c>dyn ref I</c>, <c>dyn ref readonly I</c>, or <c>dyn I</c> (not supported yet).</summary>
 public sealed record DynType(TextSpan Span, bool IsRef, bool IsReadOnly, NamedType Inner) : TypeSyntax(Span);
 
+/// <summary><c>T is .a or .b</c> after a parameter or field name, or in <c>let x: T is .a</c>; parsed only, resolves to <see cref="Inner"/>.</summary>
+public sealed record RefinedType(TextSpan Span, TypeSyntax Inner, Name[] States) : TypeSyntax(Span);
+
+/// <summary><c>T*</c>, or <c>readonly T*</c> when the pointee cannot be written; allowed only in <c>extern</c> declarations (BYN1067).</summary>
+public sealed record PointerType(TextSpan Span, TypeSyntax Pointee, bool ReadOnly) : TypeSyntax(Span);
+
 // ── Statements ───────────────────────────────────────────────────────────────────
 
 public abstract record Stmt(TextSpan Span) : Node(Span);
@@ -331,7 +346,11 @@ public abstract record InterpolationPart(TextSpan Span) : Node(Span);
 /// <summary>Literal text with escapes and doubled braces decoded.</summary>
 public sealed record InterpolationText(TextSpan Span, string Text) : InterpolationPart(Span);
 
-public sealed record InterpolationHole(TextSpan Span, Expr Expr) : InterpolationPart(Span);
+public sealed record InterpolationHole(TextSpan Span, Expr Expr) : InterpolationPart(Span)
+{
+    /// <summary>The named format specs after the value (<c>{n, as: .hex}</c>); parsed only, not yet checked.</summary>
+    public Argument[] Specs { get; init; } = [];
+}
 
 public sealed record InterpolatedExpr(TextSpan Span, InterpolationPart[] Parts) : Expr(Span);
 

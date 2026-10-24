@@ -1,7 +1,7 @@
 // An index into a `ReadOnlySpan` points into existing storage, from whatever expression: a writable `for dyn ref` over it is rejected (BYN2106).
 interface IC {
     void bump(ref this)
-    i64 n { get }
+    i64 n
 }
 struct C : IC {
     i64 n
@@ -14,6 +14,6 @@ void main() {
     var ll = List<List<C>>()
     ll.append(move l)
     let k = move ll
-    for dyn ref IC x in view(k.asSpan())[0] { x.bump() }
+    for x: dyn ref IC in view(k.asSpan())[0] { x.bump() }
     print($"{k[0][0].n}")
 }

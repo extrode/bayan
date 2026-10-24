@@ -1,0 +1,4 @@
+union Shape {
+    circle(f64)
+    square(f64 side)
+}

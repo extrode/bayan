@@ -1,0 +1,6 @@
+error BYN1064: payload `f64` of `.circle` needs a name
+
+  2 │     circle(f64)
+    │            ^^^ no name
+    │
+  help: name the payload: `.circle(f64 name)`

@@ -1,10 +1,10 @@
 void show(dyn ref IShape s, dyn ref readonly ICounter c) {
     let t: dyn ref IShape = s
     let u: dyn ref readonly IShape = s
-    for dyn ref IShape x in shapes {
+    for x: dyn ref IShape in shapes {
         print(x.area())
     }
-    for dyn ref readonly IShape y in shapes {
+    for y: dyn ref readonly IShape in shapes {
         print(y.area())
     }
 }

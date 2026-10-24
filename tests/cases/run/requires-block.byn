@@ -1,4 +1,4 @@
-i32 firstDigit(i32 value) requires value in 0..10 {
+i32 firstDigit(i32 value) expects value in 0..10 {
     return value
 }
 

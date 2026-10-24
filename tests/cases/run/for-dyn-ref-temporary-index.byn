@@ -1,7 +1,7 @@
 // An index into a temporary is the loop's own: a writable `for dyn ref` over it needs no writable place.
 interface IC {
     void bump(ref this)
-    i64 n { get }
+    i64 n
 }
 struct C : IC {
     i64 n
@@ -15,7 +15,7 @@ List<List<C>> make() {
     return ll
 }
 void main() {
-    for dyn ref IC x in make()[0] {
+    for x: dyn ref IC in make()[0] {
         x.bump()
         print($"{x.n}")
     }

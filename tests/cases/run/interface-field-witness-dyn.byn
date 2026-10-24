@@ -1,6 +1,6 @@
 // A field standing for a getter is read through `dyn ref` and through a constraint.
 interface INamed {
-    string name { get }
+    string name
     string greet() => $"hi {name}"
 }
 

@@ -89,6 +89,16 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor OneLineDeclarations = Error("BYN1053", "`{0}` declares its cases on one line; write one per line");
     public static readonly DiagnosticDescriptor TryCoversMore = Error("BYN1054", "`try` covers `{0}`, which cannot fail");
     public static readonly DiagnosticDescriptor TrustInput = Error("BYN1062", "`trust(x, reason: …)` is now `x.trustUnchecked() because \"…\"`");
+    public static readonly DiagnosticDescriptor RestInput = Error("BYN1058", "`{0}` is an input form; write `rest ReadOnlySpan<{1}> {2}`");
+    public static readonly DiagnosticDescriptor StateLineInput = Error("BYN1059", "`state {0}` is an input form; declare the states in one `states {{ … }}` block");
+    public static readonly DiagnosticDescriptor InterfaceGetInput = Error("BYN1060", "`{0} {1} {{ get }}` is an input form; write `{0} {1}`");
+    public static readonly DiagnosticDescriptor ReceiverWithoutState = Error("BYN1061", "`this` without a state is the default receiver");
+    public static readonly DiagnosticDescriptor RequiresOnFunction = Error("BYN1063", "`requires` on a function is an input form; write `expects`");
+    public static readonly DiagnosticDescriptor PayloadNeedsName = Error("BYN1064", "payload `{0}` of `.{1}` needs a name");
+    public static readonly DiagnosticDescriptor ClauseOrder = Error("BYN1065", "`{0}` must come before `{1}`; the order is `where`, `expects`, `becomes`, `fails`, `uses`");
+    public static readonly DiagnosticDescriptor PrefixPointerInput = Error("BYN1066", "`{0}` is an input form; write `{1}`");
+    public static readonly DiagnosticDescriptor PointerOutsideExtern = Error("BYN1067", "pointer types are allowed only in `extern` declarations");
+    public static readonly DiagnosticDescriptor CompactFormatSpec = Error("BYN1068", "`{0}` is an input form; write `{1}`");
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor UndefinedName = Error("BYN2001", "`{0}` is not defined");
@@ -305,6 +315,9 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor EffectBoundExceeded = Error("BYN6005", "`{0}` uses `{1}`, beyond the bound `{2}` declared by `{3}`");
     public static readonly DiagnosticDescriptor ContextBlockInput = Error("BYN6006", "`context (…) {{ }}` is now `provide … {{ }}`");
     public static readonly DiagnosticDescriptor UnknownHandler = Error("BYN6007", "`{0}` is not a handler; `provide` takes `alloc`, `net`, `fs`, `clock`, `random`, `env`, `process`, `console` or `log`");
+
+    // ── Typestate 7000–7999 ──────────────────────────────────────────────────────────
+    public static readonly DiagnosticDescriptor SingleStateInline = Error("BYN7006", "`{0} is .{1}` is an input form; write `{2}`");
 
     // ── Security 8000–8999 ───────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor MissingBecause = Error("BYN8001", "`{0}` bypasses a safety rule and needs `because \"…\"`");
