@@ -18,7 +18,7 @@ void main() {
     for n in steps {
         print($"{n}")
     }
-    for i64 n in from(2) {
+    for n: i64 in from(2) {
         print($"{n}")
     }
 }

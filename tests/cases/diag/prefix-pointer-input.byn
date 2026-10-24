@@ -1,0 +1,2 @@
+void copy(*const u8 from, *mut u8 to) {
+}

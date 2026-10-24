@@ -1,2 +1,2 @@
-void f(i32 n) requires n > Limit {}
+void f(i32 n) expects n > Limit {}
 void g() {}

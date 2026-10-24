@@ -1,4 +1,4 @@
-// `for dyn ref readonly I x in xs` over a fixed array converts each element.
+// `for x: dyn ref readonly I in xs` over a fixed array converts each element.
 interface IShape {
     i64 area()
 }
@@ -10,7 +10,7 @@ struct Sq : IShape {
 
 let xs: Sq[2] = [Sq { s: 2 }, Sq { s: 3 }]
 var sum = 0
-for dyn ref readonly IShape x in xs {
+for x: dyn ref readonly IShape in xs {
     sum += x.area()
 }
 print($"{sum}")

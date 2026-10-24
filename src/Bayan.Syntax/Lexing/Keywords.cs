@@ -48,6 +48,13 @@ public static class Keywords
 
     public static IEnumerable<(string Text, TokenKind Kind)> List => All;
 
+    // SPEC §2.4: reserved in every project so C# muscle memory cannot declare a name that shadows a sized type.
+    private static readonly HashSet<string> CSharpPrimitives =
+        ["sbyte", "byte", "short", "ushort", "int", "uint", "long", "ulong", "nint", "nuint", "float", "double"];
+
+    /// <summary>True for a C# primitive type name, which may not be declared as an identifier.</summary>
+    public static bool IsCSharpPrimitive(string text) => CSharpPrimitives.Contains(text);
+
     public static string TextOf(TokenKind kind) => TextByKind[(int)kind - (int)TokenKindFacts.KeywordFirst];
 
     /// <summary>The keyword kind for an ASCII identifier, or <see cref="TokenKind.Identifier"/>.</summary>

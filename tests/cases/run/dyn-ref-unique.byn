@@ -1,5 +1,5 @@
 interface IStack {
-    i64 count { get }
+    i64 count
     void push(ref this, i64 v) uses alloc
     i64 top()
 }

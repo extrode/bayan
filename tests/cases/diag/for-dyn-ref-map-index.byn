@@ -1,7 +1,7 @@
 // A map lookup is a place, not a temporary: a writable `for dyn ref` over it is checked writable (BYN2106), like `k["a"][0].bump()`.
 interface IC {
     void bump(ref this)
-    i64 n { get }
+    i64 n
 }
 struct C : IC {
     i64 n
@@ -13,6 +13,6 @@ void main() {
     l.append(C { n: 1 })
     m["a"] = move l
     let k = move m
-    for dyn ref IC x in k["a"] { x.bump() }
+    for x: dyn ref IC in k["a"] { x.bump() }
     print($"{k["a"][0].n}")
 }

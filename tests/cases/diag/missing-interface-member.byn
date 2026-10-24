@@ -1,6 +1,6 @@
 interface IShape {
     i64 area()
-    i64 sides { get }
+    i64 sides
 }
 
 struct Square : IShape {

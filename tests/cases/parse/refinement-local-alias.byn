@@ -1,0 +1,17 @@
+struct Order {
+    i64 id
+    states {
+        placed
+        paid
+        shipped
+    }
+}
+
+type Done = Order is .paid or .shipped
+type Moving = Order is .placed or .paid or .shipped
+
+void archive(Order o) {
+    let x: Order is .paid or .shipped = o
+    var y: Order is .placed or .paid or .shipped = o
+    print(x.id)
+}

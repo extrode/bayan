@@ -32,6 +32,8 @@ public sealed class Parser
     private int _conditionStart = -1;
     /// <summary>Per token: whether its innermost bracket is <c>(</c>, <c>[</c> or an interpolation hole, where a line break never ends a statement.</summary>
     private readonly bool[] _inGroup;
+    /// <summary>Whether the declaration being parsed carries <c>extern</c>, where pointer types are allowed (BYN1067).</summary>
+    private bool _inExtern;
 
     private Parser(LexResult lexed)
     {
@@ -120,6 +122,9 @@ public sealed class Parser
         DiagnosticCodes.BracketAttribute, DiagnosticCodes.CharInput, DiagnosticCodes.RequiresValue,
         DiagnosticCodes.MissingBecause, DiagnosticCodes.ExceptInCase, DiagnosticCodes.NoallocRemoved, DiagnosticCodes.ContextBlockInput,
         DiagnosticCodes.TrustInput,
+        DiagnosticCodes.RestInput, DiagnosticCodes.StateLineInput, DiagnosticCodes.InterfaceGetInput, DiagnosticCodes.ReceiverWithoutState,
+        DiagnosticCodes.RequiresOnFunction, DiagnosticCodes.ClauseOrder, DiagnosticCodes.PrefixPointerInput,
+        DiagnosticCodes.CompactFormatSpec, DiagnosticCodes.SingleStateInline,
     ];
 
     private Diagnostic? Report(DiagnosticDescriptor descriptor, TextSpan span, object?[]? args = null,
@@ -227,7 +232,15 @@ public sealed class Parser
     /// <summary>A token that joins the line it starts to the line before (waṣl).</summary>
     private bool IsWasl(int index) => KindAt(index) is TokenKind.Dot or TokenKind.QuestionDot or TokenKind.QuestionQuestion
         or TokenKind.AmpAmp or TokenKind.BarBar or TokenKind.AndKeyword or TokenKind.OrKeyword or TokenKind.CatchKeyword
-        or TokenKind.ExceptKeyword;
+        or TokenKind.ExceptKeyword or TokenKind.RequiresKeyword or TokenKind.FailsKeyword
+        or TokenKind.UsesKeyword
+        || KindAt(index) == TokenKind.Identifier && Text(_tokens[index]) switch
+        {
+            "where" => KindAt(index + 1) == TokenKind.Identifier && KindAt(index + 2) == TokenKind.Colon,
+            "becomes" => KindAt(index + 1) == TokenKind.Dot,
+            "expects" => KindAt(index + 1) is TokenKind.Identifier or TokenKind.Bang or TokenKind.NotKeyword or TokenKind.ThisKeyword,
+            _ => false,
+        };
 
     /// <summary>Whether the line before token <paramref name="index"/> ends in an operator, <c>,</c>, <c>=</c>, <c>=&gt;</c> or an opening bracket (lā), or the token is waṣl.</summary>
     private bool LineContinues(int index) => IsWasl(index) || index > 0 && KindAt(index - 1) is
@@ -253,7 +266,13 @@ public sealed class Parser
         if (IsName(Kind))
         {
             var token = Advance();
-            return new Name(token.Span, Text(token));
+            var text = Text(token);
+            // SPEC §2.4: a C# primitive name is a type, never a declared name; a member after `.` only refers to one.
+            // Not through Report: the name parsed in full, so no recovery is needed.
+            if (Keywords.IsCSharpPrimitive(text) && KindAt(_pos - 2) != TokenKind.Dot)
+                _diagnostics.Report(DiagnosticCodes.ReservedKeyword, _source, token.Span, [text],
+                    label: "a C# primitive type name", help: "choose another name");
+            return new Name(token.Span, text);
         }
         Report(DiagnosticCodes.Expected, Current.Span, [what, Describe(Current)]);
         return new Name(new TextSpan(Current.Start, 0), "<missing>");
@@ -409,6 +428,8 @@ public sealed class Parser
         var attributes = ParseAttributes();
         doc ??= DocOf(Current);
         var modifiers = ParseModifiers();
+        var outerExtern = _inExtern;
+        _inExtern |= (modifiers & Modifiers.Extern) != 0;
 
         Decl? decl;
         switch (Kind)
@@ -494,6 +515,7 @@ public sealed class Parser
                 }
                 break;
         }
+        _inExtern = outerExtern;
         return decl is null ? null : decl with { Doc = doc, Attributes = attributes };
     }
 
@@ -660,13 +682,35 @@ public sealed class Parser
         var bases = ParseBases();
         var where = ParseWhere();
         var rules = new List<RequiresRule>();
+        UnionVariant[]? states = null;
+        var stateLines = new List<(Token Keyword, UnionVariant State)>();
         var members = ParseBody("struct", () =>
         {
+            if (AtContextual("states") && Peek(1) == TokenKind.OpenBrace)
+            {
+                var keyword = Current;
+                var block = ParseStatesBlock(name.Text);
+                if (states is null) states = block;
+                else Report(DiagnosticCodes.DuplicateDeclaration, keyword.Span, ["states"], label: "a second `states` block",
+                    help: "declare every state in the first `states` block");
+                return null;
+            }
+            if (AtContextual("state") && IsName(Peek(1)) && (Peek(2) == TokenKind.OpenParen || EndsBefore(_pos + 2)))
+            {
+                var keyword = Advance();
+                var stateStart = Current.Start;
+                var stateName = ExpectName("a state name");
+                var payload = ParsePayload(stateName);
+                stateLines.Add((keyword, new UnionVariant(SpanFrom(stateStart), stateName, payload, DocOf(keyword))));
+                ExpectEnd();
+                return null;
+            }
             if (Kind != TokenKind.RequiresKeyword) return ParseDeclaration(topLevel: false, structName: name.Text);
             rules.Add(ParseRequiresRule());
             ExpectEnd();
             return null;
         });
+        if (stateLines.Count > 0) ReportStateLines(stateLines, states is not null);
         // O3: a field's rule that names another field, or has `at .f`, belongs to the struct; one that also reads `it` is BYN3218.
         var fields = members.OfType<FieldDecl>().Select(f => f.Name.Text).ToHashSet();
         for (var i = 0; i < members.Length; i++)
@@ -680,7 +724,73 @@ public sealed class Parser
             members[i] = field with { Requires = own };
         }
         return new StructDecl(SpanFrom(start), modifiers, name, members)
-            { TypeParams = typeParams, Bases = bases, Where = where, Rules = rules.OrderBy(r => r.Span.Start).ToArray() };
+        {
+            TypeParams = typeParams, Bases = bases, Where = where, Rules = rules.OrderBy(r => r.Span.Start).ToArray(),
+            States = [.. states ?? [], .. stateLines.Select(s => s.State)],
+        };
+    }
+
+    /// <summary><c>states { a  b(T x) }</c>: one state per line, each with an optional named payload (J58).</summary>
+    private UnionVariant[] ParseStatesBlock(string structName)
+    {
+        Advance();
+        var open = Expect(TokenKind.OpenBrace);
+        var states = new List<UnionVariant>();
+        var commas = new List<Token>();
+        while (IsName(Kind))
+        {
+            var doc = DocOf(Current);
+            var stateStart = Current.Start;
+            var state = ExpectName("a state name");
+            var payload = ParsePayload(state);
+            states.Add(new UnionVariant(SpanFrom(stateStart), state, payload, doc));
+            if (!NextCase(commas)) break;
+        }
+        while (Kind == TokenKind.Semicolon) ReportSemicolon(Advance());
+        ReportCaseCommas(structName, open, states.Select(s => s.Span).ToList(), commas);
+        ExpectClose(open, "states block");
+        ExpectEnd();
+        return states.ToArray();
+    }
+
+    /// <summary>
+    /// BYN1059 at each <c>state x</c> line. Every line shares one fix: the lines leave their places and one
+    /// <c>states</c> block takes the place of the last, after the members between them. No fix when the struct
+    /// already has a block, or a line shares its line with other code.
+    /// </summary>
+    private void ReportStateLines(List<(Token Keyword, UnionVariant State)> lines, bool hasBlock)
+    {
+        // The whole line of each `state x`, through its line break; -1 when other code or a comment shares the line.
+        (int Start, int End) Segment(Token keyword, UnionVariant state)
+        {
+            var bytes = _source.Bytes.Span;
+            var start = _source.GetLineSpan(_source.GetLineIndex(keyword.Start)).Start;
+            for (var i = start; i < keyword.Start; i++)
+                if (bytes[i] is not ((byte)' ' or (byte)'\t')) return (-1, -1);
+            for (var i = state.Span.End; i < bytes.Length; i++)
+            {
+                if (bytes[i] == (byte)'\n') return (start, i + 1);
+                if (bytes[i] is not ((byte)' ' or (byte)'\t' or (byte)'\r')) return (-1, -1);
+            }
+            return (-1, -1);
+        }
+        Fix? fix = null;
+        var segments = lines.Select(l => Segment(l.Keyword, l.State)).ToList();
+        if (!hasBlock && segments.All(s => s.Start >= 0))
+        {
+            var indent = IndentAt(lines[0].Keyword.Start);
+            var block = new StringBuilder();
+            for (var i = 0; i + 1 < segments.Count; i++)
+                block.Append(_source.GetText(TextSpan.FromBounds(segments[i].End, segments[i + 1].Start)));
+            block.Append(indent).Append("states {\n");
+            foreach (var (_, state) in lines) block.Append(indent).Append("    ").Append(_source.GetText(state.Span)).Append('\n');
+            block.Append(indent).Append("}\n");
+            fix = new Fix(TextSpan.FromBounds(segments[0].Start, segments[^1].End), block.ToString());
+        }
+        foreach (var (keyword, state) in lines)
+            Report(DiagnosticCodes.StateLineInput, TextSpan.FromBounds(keyword.Start, state.Span.End), [_source.GetText(state.Span)],
+                label: "the input form", help: "move each state into the struct's `states` block",
+                fix: fix);
     }
 
     private static readonly HashSet<string> ItName = ["it"];
@@ -782,7 +892,7 @@ public sealed class Parser
         return new InterfaceDecl(SpanFrom(start), modifiers, name, members) { TypeParams = typeParams, Where = where };
     }
 
-    /// <summary>A method (abstract when the line ends after its header), <c>T name { get }</c>, <c>T name =&gt; e</c> or <c>type Name</c>.</summary>
+    /// <summary>A method (abstract when the line ends after its header), <c>T name</c>, <c>T name =&gt; e</c> or <c>type Name</c>; <c>T name { get }</c> is BYN1060.</summary>
     private Decl? ParseInterfaceMember()
     {
         var first = Current;
@@ -811,11 +921,26 @@ public sealed class Parser
         {
             var type = ParseType();
             var name = ExpectName();
-            Expect(TokenKind.OpenBrace);
-            if (AtContextual("get")) Advance();
+            var open = Expect(TokenKind.OpenBrace);
+            var get = AtContextual("get");
+            if (get) Advance();
             else Report(DiagnosticCodes.Expected, Current.Span, ["`get`", Describe(Current)]);
             ExpectEnd();
             Expect(TokenKind.CloseBrace);
+            if (get)
+            {
+                var typeText = _source.GetText(type.Span);
+                Report(DiagnosticCodes.InterfaceGetInput, TextSpan.FromBounds(open.Start, _prevEnd), [typeText, name.Text],
+                    label: "the input form", help: "remove `{ get }`: a field-shaped interface member is a read-only property",
+                    fix: new Fix(TextSpan.FromBounds(name.Span.End, _prevEnd), ""));
+            }
+            decl = new GetterDecl(SpanFrom(start), modifiers, type, name);
+        }
+        else if (after > 0 && IsName(KindAt(after)) && EndsBefore(after + 1))
+        {
+            var type = ParseType();
+            var name = ExpectName();
+            ExpectEnd();
             decl = new GetterDecl(SpanFrom(start), modifiers, type, name);
         }
         else if (after > 0 && IsName(KindAt(after)) && KindAt(after + 1) == TokenKind.FatArrow)
@@ -863,6 +988,7 @@ public sealed class Parser
         {
             type = ParseType();
             name = ExpectName();
+            type = ParseRefinement(type, name);
         }
         else
         {
@@ -926,30 +1052,66 @@ public sealed class Parser
         var name = ExpectName();
         var typeParams = ParseTypeParams();
         var paramsStart = Current.End;
-        var parameters = ParseParams(out var refThis, out var receiverState);
+        var parameters = ParseParams(out var refThis, out var moveThis, out var receiverStates);
         var paramsEnd = _prevEnd;
         returnType ??= ParseNameFirstReturn(name, paramsEnd);
-        ReportRemovedEffects();
-        var where = ParseWhere();
+        var where = new List<WhereClause>();
+        var requires = new List<Expr>();
         Name? becomes = null;
-        if (AtContextual("becomes") && Peek(1) == TokenKind.Dot)
-        {
-            Advance();
-            Advance();
-            becomes = ExpectName("a state name");
-        }
         FailsClause? fails = null;
-        if (Kind == TokenKind.FailsKeyword)
+        UsesClause? uses = null;
+        var clauses = new List<(int Rank, Token Keyword, int End)>();
+        ReportRemovedEffects();
+        while (true)
         {
-            var failsStart = Advance().Start;
-            var errors = new List<TypeSyntax>();
-            if (Kind == TokenKind.Identifier && !AtContextual("where"))
+            var keyword = Current;
+            int rank;
+            if (AtContextual("where"))
             {
-                errors.Add(ParseType());
-                while (Accept(TokenKind.Comma)) errors.Add(ParseType());
+                rank = 0;
+                where.AddRange(ParseWhere());
             }
-            fails = new FailsClause(SpanFrom(failsStart), errors.ToArray());
+            else if (AtContextual("expects") || Kind == TokenKind.RequiresKeyword)
+            {
+                rank = 1;
+                Advance();
+                if (keyword.Kind == TokenKind.RequiresKeyword)
+                    Report(DiagnosticCodes.RequiresOnFunction, keyword.Span, label: "the input form",
+                        help: "use `expects` for a precondition; `requires` is checked at construction", fix: new Fix(keyword.Span, "expects"));
+                requires.Add(ParseBareCondition());
+            }
+            else if (AtContextual("becomes") && Peek(1) == TokenKind.Dot)
+            {
+                rank = 2;
+                Advance();
+                Advance();
+                becomes = ExpectName("a state name");
+            }
+            else if (Kind == TokenKind.FailsKeyword)
+            {
+                rank = 3;
+                var failsStart = Advance().Start;
+                var errors = new List<TypeSyntax>();
+                if (Kind == TokenKind.Identifier && !AtContextual("where") && !AtContextual("expects") && !(AtContextual("becomes") && Peek(1) == TokenKind.Dot))
+                {
+                    errors.Add(ParseType());
+                    while (Accept(TokenKind.Comma)) errors.Add(ParseType());
+                }
+                fails = new FailsClause(SpanFrom(failsStart), errors.ToArray());
+            }
+            else if (Kind == TokenKind.UsesKeyword)
+            {
+                rank = 4;
+                var usesStart = Advance().Start;
+                var effects = new List<Name> { ExpectName("an effect name") };
+                while (Accept(TokenKind.Comma)) effects.Add(ExpectName("an effect name"));
+                uses = new UsesClause(SpanFrom(usesStart), effects.ToArray());
+            }
+            else break;
+            clauses.Add((rank, keyword, _prevEnd));
+            ReportRemovedEffects();
         }
+        ReportClauseOrder(clauses);
         if (shorthand.Count > 0)
         {
             // `T!E f() fails F` keeps both sets; the fix rewrites the header through the explicit clause.
@@ -959,20 +1121,9 @@ public sealed class Parser
             var plain = all.All(t => t is NamedType { Args.Length: 0 });
             Report(DiagnosticCodes.FailsShorthand, TextSpan.FromBounds(bang.Start, shorthandEnd), label: "the input form",
                 help: plain ? $"write `fails {errors}` after the parameters" : "write the error types in a `fails` clause after the parameters",
-                fix: !plain ? null : new Fix(TextSpan.FromBounds(typeEnd, _prevEnd), " " + _source.GetText(TextSpan.FromBounds(name.Span.Start, paramsEnd)) + " fails " + errors));
+                fix: !plain ? null : new Fix(TextSpan.FromBounds(typeEnd, fails?.Span.End ?? paramsEnd), " " + _source.GetText(TextSpan.FromBounds(name.Span.Start, paramsEnd)) + " fails " + errors));
             fails = new FailsClause(fails?.Span ?? TextSpan.FromBounds(bang.Start, shorthandEnd), all);
         }
-        UsesClause? uses = null;
-        if (Kind == TokenKind.UsesKeyword)
-        {
-            var usesStart = Advance().Start;
-            var effects = new List<Name> { ExpectName("an effect name") };
-            while (Accept(TokenKind.Comma)) effects.Add(ExpectName("an effect name"));
-            uses = new UsesClause(SpanFrom(usesStart), effects.ToArray());
-        }
-        ReportRemovedEffects();
-        var requires = new List<Expr>();
-        while (Accept(TokenKind.RequiresKeyword)) requires.Add(ParseBareCondition());
         BlockStmt? body = null;
         Expr? expressionBody = null;
         if (Kind == TokenKind.OpenBrace)
@@ -994,9 +1145,32 @@ public sealed class Parser
         }
         return new FunctionDecl(SpanFrom(start), modifiers, returnType, name, parameters, fails, body, expressionBody)
         {
-            TypeParams = typeParams, RefThis = refThis, ReceiverState = receiverState, ParamsStart = paramsStart,
-            Requires = requires.ToArray(), Where = where, Becomes = becomes, Uses = uses,
+            TypeParams = typeParams, RefThis = refThis, MoveThis = moveThis, ReceiverStates = receiverStates, ParamsStart = paramsStart,
+            Requires = requires.ToArray(), Where = where.ToArray(), Becomes = becomes, Uses = uses,
         };
+    }
+
+    /// <summary>
+    /// BYN1065 at the first signature clause that follows one of a later rank (<c>where</c>, <c>expects</c>,
+    /// <c>becomes</c>, <c>fails</c>, <c>uses</c>); the fix sorts the clauses and keeps the gaps between them.
+    /// </summary>
+    private void ReportClauseOrder(List<(int Rank, Token Keyword, int End)> clauses)
+    {
+        for (var i = 1; i < clauses.Count; i++)
+        {
+            var before = clauses.Take(i).FirstOrDefault(c => c.Rank > clauses[i].Rank);
+            if (before.End == 0) continue;
+            var texts = clauses.Select(c => _source.GetText(TextSpan.FromBounds(c.Keyword.Start, c.End))).ToArray();
+            var sorted = clauses.Select((c, k) => (c.Rank, Text: texts[k])).OrderBy(c => c.Rank).ToArray();
+            var sb = new StringBuilder(sorted[0].Text);
+            for (var k = 1; k < clauses.Count; k++)
+                sb.Append(_source.GetText(TextSpan.FromBounds(clauses[k - 1].End, clauses[k].Keyword.Start))).Append(sorted[k].Text);
+            var moved = Text(clauses[i].Keyword);
+            Report(DiagnosticCodes.ClauseOrder, clauses[i].Keyword.Span, [moved, Text(before.Keyword)], label: "out of order",
+                help: $"move `{moved}` before `{Text(before.Keyword)}`",
+                fix: new Fix(TextSpan.FromBounds(clauses[0].Keyword.Start, clauses[^1].End), sb.ToString()));
+            return;
+        }
     }
 
     private static readonly HashSet<string> Particles = ["from", "to", "until", "through", "at", "by", "for", "as"];
@@ -1055,16 +1229,18 @@ public sealed class Parser
         return new NamedType(at, [new Name(at, "void")], []);
     }
 
-    private Param[] ParseParams() => ParseParams(out _, out _, allowRefThis: false);
+    private Param[] ParseParams() => ParseParams(out _, out _, out _, allowRefThis: false);
 
     /// <summary>
-    /// A member's parameters; <c>ref this</c> is accepted only first (BYN2117) and returned in <paramref name="refThis"/>. A
-    /// first receiver <c>this is .s</c> or <c>ref this is .s</c> returns its state in <paramref name="receiverState"/>.
+    /// A member's parameters; <c>ref this</c> is accepted only first (BYN2117) and returned in <paramref name="refThis"/>, a
+    /// first <c>move this</c> in <paramref name="moveThis"/>. A first receiver <c>this is .s</c>, <c>ref this is .s</c> or
+    /// <c>move this is .s</c> returns its states in <paramref name="receiverStates"/>; a bare <c>this</c> is BYN1061.
     /// </summary>
-    private Param[] ParseParams(out TextSpan? refThis, out Name? receiverState, bool allowRefThis = true)
+    private Param[] ParseParams(out TextSpan? refThis, out TextSpan? moveThis, out Name[] receiverStates, bool allowRefThis = true)
     {
         refThis = null;
-        receiverState = null;
+        moveThis = null;
+        receiverStates = [];
         Expect(TokenKind.OpenParen);
         var list = new List<Param>();
         if (Kind != TokenKind.CloseParen)
@@ -1077,21 +1253,45 @@ public sealed class Parser
                     Advance();
                     Advance();
                     var span = SpanFrom(start);
-                    if (list.Count > 0 || refThis is not null)
+                    if (list.Count > 0 || refThis is not null || moveThis is not null)
                         Report(DiagnosticCodes.RefThisNotFirst, span, [], label: "after other parameters",
                             help: "move `ref this` to the start of the parameter list");
                     refThis ??= span;
-                    if (list.Count == 0 && receiverState is null) receiverState = ParseReceiverState();
+                    if (list.Count == 0 && receiverStates.Length == 0) receiverStates = ParseReceiverState();
                     continue;
                 }
-                if (allowRefThis && Kind == TokenKind.ThisKeyword && list.Count == 0 && refThis is null && receiverState is null
-                    && KindAt(_pos + 1) == TokenKind.IsKeyword)
+                var first = list.Count == 0 && refThis is null && moveThis is null && receiverStates.Length == 0;
+                if (allowRefThis && first && Kind == TokenKind.MoveKeyword && KindAt(_pos + 1) == TokenKind.ThisKeyword)
                 {
                     Advance();
-                    receiverState = ParseReceiverState();
+                    Advance();
+                    moveThis = SpanFrom(start);
+                    receiverStates = ParseReceiverState();
                     continue;
                 }
-                var particle = ParseParticle();
+                if (allowRefThis && first && Kind == TokenKind.ThisKeyword && KindAt(_pos + 1) == TokenKind.IsKeyword)
+                {
+                    Advance();
+                    receiverStates = ParseReceiverState();
+                    continue;
+                }
+                if (allowRefThis && first && Kind == TokenKind.ThisKeyword && KindAt(_pos + 1) is TokenKind.Comma or TokenKind.CloseParen)
+                {
+                    var self = Advance();
+                    // `this, a` loses `this, `; `(this)` loses `this`.
+                    var to = Kind == TokenKind.Comma ? PeekToken(1).Start : self.End;
+                    Report(DiagnosticCodes.ReceiverWithoutState, self.Span, label: "the default receiver",
+                        help: "remove `this`, or add a state: `this is .s`", fix: new Fix(TextSpan.FromBounds(self.Start, to), ""));
+                    continue;
+                }
+                var rest = AtContextual("rest") && IsTypeThenName(_pos + 1);
+                if (rest) Advance();
+                else if (AtContextual("params") && IsVariadicArray(_pos + 1))
+                {
+                    list.Add(ParseParamsInput(start));
+                    continue;
+                }
+                var particle = rest ? null : ParseParticle();
                 var modifier = Kind switch
                 {
                     TokenKind.RefKeyword => ParamModifier.Ref,
@@ -1107,23 +1307,106 @@ public sealed class Parser
                 else
                 {
                     type = ParseType();
+                    if (Kind == TokenKind.DotDot && Peek(1) == TokenKind.Dot && !PeekToken(1).HasTriviaBefore && IsName(Peek(2)))
+                    {
+                        list.Add(ParseEllipsisInput(start, type));
+                        continue;
+                    }
                     name = ExpectName("a parameter name");
                 }
+                type = ParseRefinement(type, name);
                 Expr? defaultValue = null;
                 if (Accept(TokenKind.Equals)) defaultValue = ParseExpression();
-                list.Add(new Param(SpanFrom(start), modifier, type, name, defaultValue) { Particle = particle });
+                var param = new Param(SpanFrom(start), modifier, type, name, defaultValue) { Particle = particle, Rest = rest };
+                // `rest` is the last positional parameter; only named optional parameters may follow it (SPEC §10).
+                if (list.Any(p => p.Rest) && (rest || defaultValue is null))
+                    Report(DiagnosticCodes.Expected, param.Span, ["a named optional parameter after `rest`", $"`{_source.GetText(param.Span)}`"],
+                        label: rest ? "a second `rest` parameter" : "a positional parameter after `rest`",
+                        help: rest ? "keep one `rest` parameter" : "give it a default value, or move it before the `rest` parameter");
+                list.Add(param);
             } while (Accept(TokenKind.Comma));
         }
         Expect(TokenKind.CloseParen);
         return list.ToArray();
     }
 
-    /// <summary>The <c>is .s</c> after a receiver's <c>this</c>, if written.</summary>
-    private Name? ParseReceiverState()
+    /// <summary>The <c>is .a or .b</c> after a receiver's <c>this</c>, if written.</summary>
+    private Name[] ParseReceiverState() => Accept(TokenKind.IsKeyword) ? ParseStateList() : [];
+
+    /// <summary><c>.a or .b</c> after <c>is</c>: the states of a receiver or a refinement.</summary>
+    private Name[] ParseStateList()
     {
-        if (!Accept(TokenKind.IsKeyword)) return null;
-        Expect(TokenKind.Dot);
-        return ExpectName("a state name");
+        var states = new List<Name>();
+        do
+        {
+            Expect(TokenKind.Dot);
+            states.Add(ExpectName("a state name"));
+        } while (Accept(TokenKind.OrKeyword));
+        return states.ToArray();
+    }
+
+    /// <summary>
+    /// <c>is .a or .b</c> after a parameter or field <paramref name="name"/>, or after the type of a local annotation or
+    /// alias, where <paramref name="name"/> is null (J57), wrapping <paramref name="type"/>; one state is BYN7006, fixed
+    /// to <c>T.s name</c> or <c>T.s</c>.
+    /// </summary>
+    private TypeSyntax ParseRefinement(TypeSyntax type, Name? name = null)
+    {
+        if (Kind != TokenKind.IsKeyword || Peek(1) != TokenKind.Dot) return type;
+        var keyword = Advance();
+        var states = ParseStateList();
+        if (states.Length == 1)
+        {
+            var typeText = _source.GetText(type.Span);
+            var stateType = $"{typeText}.{states[0].Text}";
+            var written = name is null ? typeText : $"{typeText} {name.Text}";
+            var rewrite = name is null ? stateType : $"{stateType} {name.Text}";
+            Report(DiagnosticCodes.SingleStateInline, keyword.Span, [written, states[0].Text, rewrite], label: "one state",
+                help: $"write the state type `{stateType}`",
+                fix: new Fix(TextSpan.FromBounds(type.Span.Start, _prevEnd), rewrite));
+        }
+        return new RefinedType(TextSpan.FromBounds(type.Span.Start, _prevEnd), type, states);
+    }
+
+    /// <summary>Whether <c>T[] name</c> starts at <paramref name="index"/>: the C# <c>params</c> array.</summary>
+    private bool IsVariadicArray(int index)
+    {
+        var end = ScanType(index);
+        return end > 0 && KindAt(end) == TokenKind.OpenBracket && KindAt(end + 1) == TokenKind.CloseBracket && IsName(KindAt(end + 2));
+    }
+
+    /// <summary><c>params T[] xs</c>, the BYN1058 input form for <c>rest ReadOnlySpan&lt;T&gt; xs</c>.</summary>
+    private Param ParseParamsInput(int start)
+    {
+        var keyword = Advance();
+        var element = ParseType();
+        Advance();
+        Advance();
+        var typeEnd = _prevEnd;
+        var name = ExpectName("a parameter name");
+        return ReportRestInput(start, keyword.Span, element, typeEnd, name);
+    }
+
+    /// <summary><c>T... xs</c>, the BYN1058 input form for <c>rest ReadOnlySpan&lt;T&gt; xs</c>; the parser is at the <c>...</c>.</summary>
+    private Param ParseEllipsisInput(int start, TypeSyntax element)
+    {
+        var dots = TextSpan.FromBounds(Current.Start, PeekToken(1).End);
+        Advance();
+        Advance();
+        var typeEnd = _prevEnd;
+        var name = ExpectName("a parameter name");
+        return ReportRestInput(start, dots, element, typeEnd, name);
+    }
+
+    private Param ReportRestInput(int start, TextSpan at, TypeSyntax element, int typeEnd, Name name)
+    {
+        var elementText = _source.GetText(element.Span);
+        Report(DiagnosticCodes.RestInput, at, [_source.GetText(TextSpan.FromBounds(start, name.Span.End)), elementText, name.Text],
+            label: "the input form", help: "declare the variadic parameter with `rest`",
+            fix: new Fix(TextSpan.FromBounds(start, typeEnd), $"rest ReadOnlySpan<{elementText}>"));
+        var span = TextSpan.FromBounds(element.Span.Start, typeEnd);
+        var type = new NamedType(span, [new Name(span, "ReadOnlySpan")], [element]);
+        return new Param(SpanFrom(start), ParamModifier.None, type, name, null) { Rest = true };
     }
 
     /// <summary>
@@ -1265,35 +1548,47 @@ public sealed class Parser
             var doc = DocOf(Current);
             var variantStart = Current.Start;
             var variant = ExpectName("a variant name");
-            var fields = new List<UnionField>();
-            if (Kind == TokenKind.OpenParen)
-            {
-                Advance();
-                while (Kind != TokenKind.CloseParen && !AtEnd)
-                {
-                    var before = _pos;
-                    var fieldStart = Current.Start;
-                    TypeSyntax type;
-                    Name field;
-                    if (IsNameThenType(_pos)) (type, field) = ParseNameThenType();
-                    else
-                    {
-                        type = ParseType();
-                        field = ExpectName("a payload field name");
-                    }
-                    fields.Add(new UnionField(SpanFrom(fieldStart), type, field));
-                    if (!Accept(TokenKind.Comma) || _pos == before) break;
-                }
-                Expect(TokenKind.CloseParen);
-            }
+            var fields = ParsePayload(variant);
             var value = Accept(TokenKind.Equals) ? ParseExpression() : null;
-            variants.Add(new UnionVariant(SpanFrom(variantStart), variant, fields.ToArray(), doc, value));
+            variants.Add(new UnionVariant(SpanFrom(variantStart), variant, fields, doc, value));
             if (!NextCase(commas)) break;
         }
         while (Kind == TokenKind.Semicolon) ReportSemicolon(Advance());
         ReportCaseCommas(name.Text, open, variants.Select(v => v.Span).ToList(), commas);
         ExpectClose(open, "union");
         return new UnionDecl(SpanFrom(start), modifiers, name, variants.ToArray()) { TypeParams = typeParams, Bases = bases, Where = where };
+    }
+
+    /// <summary>The <c>(T name, …)</c> payload of a union variant or a state, if written; a type without a name is BYN1064.</summary>
+    private UnionField[] ParsePayload(Name variant)
+    {
+        if (Kind != TokenKind.OpenParen) return [];
+        Advance();
+        var fields = new List<UnionField>();
+        while (Kind != TokenKind.CloseParen && !AtEnd)
+        {
+            var before = _pos;
+            var fieldStart = Current.Start;
+            TypeSyntax type;
+            Name field;
+            if (IsNameThenType(_pos)) (type, field) = ParseNameThenType();
+            else
+            {
+                type = ParseType();
+                if (Kind is TokenKind.Comma or TokenKind.CloseParen && _pos != before)
+                {
+                    var typeText = _source.GetText(type.Span);
+                    Report(DiagnosticCodes.PayloadNeedsName, type.Span, [typeText, variant.Text], label: "no name",
+                        help: $"name the payload: `.{variant.Text}({typeText} name)`");
+                    field = new Name(new TextSpan(_prevEnd, 0), "<missing>");
+                }
+                else field = ExpectName("a payload field name");
+            }
+            fields.Add(new UnionField(SpanFrom(fieldStart), type, field));
+            if (!Accept(TokenKind.Comma) || _pos == before) break;
+        }
+        Expect(TokenKind.CloseParen);
+        return fields.ToArray();
     }
 
     /// <summary>After a case of an enum, union or union error: whether another follows, on its own line or after a <c>,</c> (kept in <paramref name="commas"/>).</summary>
@@ -1367,7 +1662,7 @@ public sealed class Parser
         else if (distinct) Advance();
         var name = ExpectName();
         Expect(TokenKind.Equals);
-        var target = ParseType();
+        var target = ParseRefinement(ParseType());
         var requires = ParseRequiresLines();
         ExpectEnd();
         return new TypeAliasDecl(SpanFrom(start), modifiers, name, target) { Distinct = distinct, Requires = requires };
@@ -1459,6 +1754,14 @@ public sealed class Parser
             {
                 i += 3;
             }
+            else if (KindAt(i) == TokenKind.Star && !_tokens[i].HasTriviaBefore)
+            {
+                // `u8* p` is a pointer type; `a*b` is a product.
+                var j = i;
+                while (KindAt(j) == TokenKind.Star && !_tokens[j].HasTriviaBefore) j++;
+                if (j >= _count || !_tokens[j].HasTriviaBefore) return i;
+                i = j;
+            }
             else
             {
                 return i;
@@ -1494,6 +1797,12 @@ public sealed class Parser
     {
         var start = Current.Start;
         TypeSyntax type;
+        if (Kind == TokenKind.Star) return ParsePrefixPointer();
+        if (Kind == TokenKind.ReadonlyKeyword && ScanType(_pos + 1) is var end && end > 0 && KindAt(end - 1) == TokenKind.Star)
+        {
+            Advance();
+            return ReadOnlyPointee(ParseType(), start);
+        }
         if (Kind == TokenKind.OpenParen && ScanType(_pos) > 0)
         {
             Advance();
@@ -1539,11 +1848,60 @@ public sealed class Parser
                 Expect(TokenKind.CloseBracket);
                 type = new ArrayType(SpanFrom(start), type, size);
             }
+            else if (Kind == TokenKind.Star && !Current.HasTriviaBefore)
+            {
+                Advance();
+                type = new PointerType(SpanFrom(start), type, false);
+                if (Kind != TokenKind.Star) ReportPointerOutsideExtern(type);
+            }
             else
             {
                 return type;
             }
         }
+    }
+
+    /// <summary><c>readonly T*</c>: the innermost pointer of <paramref name="type"/> gets a pointee that cannot be written.</summary>
+    private static TypeSyntax ReadOnlyPointee(TypeSyntax type, int start)
+    {
+        if (type is not PointerType pointer) return type;
+        var span = TextSpan.FromBounds(start, pointer.Span.End);
+        return pointer.Pointee is PointerType
+            ? pointer with { Span = span, Pointee = ReadOnlyPointee(pointer.Pointee, start) }
+            : pointer with { Span = span, ReadOnly = true };
+    }
+
+    /// <summary><c>*T</c>, <c>*mut T</c> and <c>*const T</c>, the BYN1066 input forms of <c>T*</c> and <c>readonly T*</c>.</summary>
+    private TypeSyntax ParsePrefixPointer()
+    {
+        var start = Current.Start;
+        var star = Advance();
+        var readOnly = Accept(TokenKind.ConstKeyword);
+        if (!readOnly && AtContextual("mut") && IsTypeNameToken(Peek(1))) Advance();
+        var pointee = ParseType();
+        var span = SpanFrom(start);
+        var canonical = (readOnly ? "readonly " : "") + PointeeText(pointee) + "*";
+        // `**T` nests input forms; the inner one gets the fix first, and has already raised BYN1067.
+        var nested = pointee is PointerType;
+        Report(DiagnosticCodes.PrefixPointerInput, star.Span, [_source.GetText(span), canonical], label: "the input form",
+            help: $"write the pointer after the type: `{canonical}`", fix: nested ? null : new Fix(span, canonical));
+        var type = new PointerType(span, pointee, readOnly);
+        if (!nested) ReportPointerOutsideExtern(type);
+        return type;
+    }
+
+    /// <summary>The canonical text of a pointee: its source, or for a nested pointer the postfix spelling.</summary>
+    private string PointeeText(TypeSyntax pointee) => pointee is PointerType p
+        ? (p.ReadOnly ? "readonly " : "") + PointeeText(p.Pointee) + "*"
+        : _source.GetText(pointee.Span);
+
+    private void ReportPointerOutsideExtern(TypeSyntax type)
+    {
+        if (_inExtern) return;
+        // Not through Report: the type parsed in full, so no recovery is needed, and BYN1066 for a prefix pointer
+        // starts at the same `*` and would make Report's same-start check drop this one.
+        _diagnostics.Report(DiagnosticCodes.PointerOutsideExtern, _source, type.Span, label: "a pointer type",
+            help: "wrap the C call in an `extern` declaration");
     }
 
     /// <summary><c>Name</c>, <c>m.Name</c> or <c>Name&lt;A&gt;</c> without suffixes: a type, a base, a <c>where</c> bound or after <c>dyn</c>.</summary>
@@ -1727,9 +2085,9 @@ public sealed class Parser
         Name name;
         if (IsNameThenType(_pos))
         {
-            name = NameOf(Advance());
+            name = ExpectName("a variable name");
             Advance();
-            type = ParseType();
+            type = ParseRefinement(ParseType());
         }
         else if (IsTypeThenName(_pos))
         {
@@ -2160,9 +2518,25 @@ public sealed class Parser
                 names.Clear();
             }
         }
+        else if (IsNameThenType(_pos))
+        {
+            variable = ExpectName("a loop variable");
+            Advance();
+            type = ParseType();
+        }
+        else if (IsTypeThenName(_pos))
+        {
+            // `for T x in e` follows the local rule, not the declaration rule (§25): BYN1043 with a fix to `for x: T in e`.
+            type = ParseType();
+            variable = ExpectName("a loop variable");
+            var span = TextSpan.FromBounds(type.Span.Start, variable.Span.End);
+            var typeText = _source.GetText(type.Span);
+            Report(DiagnosticCodes.TypeNameOrder, span, [$"for {typeText} {variable.Text}", $"for {variable.Text}: {typeText}"],
+                label: "type before name", help: $"write `for {variable.Text}: {typeText}`; loop variables put the name first",
+                fix: new Fix(span, $"{variable.Text}: {typeText}"));
+        }
         else
         {
-            if (IsTypeThenName(_pos)) type = ParseType();
             variable = ExpectName("a loop variable");
         }
         Expect(TokenKind.InKeyword);
@@ -3331,6 +3705,12 @@ public sealed class Parser
                     {
                         var holeStart = Advance().Start;
                         var expr = ParseExpression();
+                        var specs = Kind switch
+                        {
+                            TokenKind.Comma => ParseFormatSpecs(),
+                            TokenKind.Colon => ParseCompactSpec(),
+                            _ => [],
+                        };
                         if (Kind != TokenKind.InterpolationEnd)
                         {
                             Report(DiagnosticCodes.Expected, Current.Span, ["`}` to end the interpolated expression", Describe(Current)]);
@@ -3338,7 +3718,7 @@ public sealed class Parser
                                 Advance();
                         }
                         Accept(TokenKind.InterpolationEnd);
-                        parts.Add(new InterpolationHole(SpanFrom(holeStart), expr));
+                        parts.Add(new InterpolationHole(SpanFrom(holeStart), expr) { Specs = specs });
                         continue;
                     }
                 case TokenKind.InterpolatedStringEnd:
@@ -3349,6 +3729,60 @@ public sealed class Parser
                     return new InterpolatedExpr(SpanFrom(start), parts.ToArray());
             }
         }
+    }
+
+    /// <summary><c>, as: .hex, width: 6</c> after a hole's value: the named format specs (SPEC §6.6).</summary>
+    private Argument[] ParseFormatSpecs()
+    {
+        var specs = new List<Argument>();
+        while (Accept(TokenKind.Comma))
+        {
+            var specStart = Current.Start;
+            // `as` is a keyword, but the name of a spec.
+            if (!(IsName(Kind) || Kind == TokenKind.AsKeyword) || Peek(1) != TokenKind.Colon)
+            {
+                Report(DiagnosticCodes.Expected, Current.Span, ["a named format spec such as `as: .hex`", Describe(Current)]);
+                break;
+            }
+            var name = NameOf(Advance());
+            Advance();
+            specs.Add(new Argument(SpanFrom(specStart), name, ArgModifier.None, ParseExpression()));
+        }
+        return specs.ToArray();
+    }
+
+    /// <summary>
+    /// <c>:hex</c>, <c>:binary</c>, <c>:octal</c>, <c>:iso</c>, <c>:debug</c> or <c>:.2</c> after a hole's value: the
+    /// BYN1068 input forms of <c>, as: .hex</c> and <c>, digits: 2</c>, parsed as those specs.
+    /// </summary>
+    private Argument[] ParseCompactSpec()
+    {
+        var colon = Advance();
+        var first = _pos;
+        while (Kind is not (TokenKind.InterpolationEnd or TokenKind.InterpolatedStringEnd or TokenKind.EndOfFile)) Advance();
+        if (_pos == first)
+        {
+            Report(DiagnosticCodes.Expected, Current.Span, ["a format spec", Describe(Current)]);
+            return [];
+        }
+        var specSpan = TextSpan.FromBounds(_tokens[first].Start, _prevEnd);
+        var spec = _source.GetText(specSpan);
+        string? name = null, value = null;
+        if (spec is "hex" or "binary" or "octal" or "iso" or "debug") (name, value) = ("as", "." + spec);
+        else if (spec.Length > 1 && spec[0] == '.' && spec[1..].All(char.IsAsciiDigit)) (name, value) = ("digits", spec[1..]);
+        if (name is null || value is null)
+        {
+            Report(DiagnosticCodes.Expected, TextSpan.FromBounds(colon.Start, _prevEnd), ["a named format spec such as `, as: .hex`", $"`:{spec}`"]);
+            return [];
+        }
+        var canonical = $"{name}: {value}";
+        Report(DiagnosticCodes.CompactFormatSpec, TextSpan.FromBounds(colon.Start, _prevEnd), [":" + spec, ", " + canonical],
+            label: "the input form", help: $"write the spec as named arguments: `, {canonical}`",
+            fix: new Fix(TextSpan.FromBounds(colon.Start, _prevEnd), ", " + canonical));
+        Expr specValue = value[0] == '.'
+            ? new TargetMemberExpr(specSpan, new Name(specSpan, value[1..]))
+            : new LiteralExpr(specSpan, LiteralKind.Integer, value, null);
+        return [new Argument(specSpan, new Name(colon.Span, name), ArgModifier.None, specValue)];
     }
 
     // ── Patterns ─────────────────────────────────────────────────────────────────────

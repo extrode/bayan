@@ -35,7 +35,7 @@ struct unique TokenStream : IEnumerator {
 
 interface INode {
     i64 eval()
-    string name { get }
+    string name
     string describe() => $"{name} = {eval()}"
 }
 

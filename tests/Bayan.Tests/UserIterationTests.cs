@@ -62,10 +62,10 @@ public sealed class UserIterationTests
             void run() {
                 let digits = Digits {}
                 for d in digits { print($"{d}") }
-                for i64 d in digits { print($"{d}") }
+                for d: i64 in digits { print($"{d}") }
                 var steps = Countdown { left: 3 }
                 for n in steps { print($"{n}") }
-                for i64 n in from(2) { print($"{n}") }
+                for n: i64 in from(2) { print($"{n}") }
                 var both = Both {}
                 for b in both { print($"{b}") }
             }

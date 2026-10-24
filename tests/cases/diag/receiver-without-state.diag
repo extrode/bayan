@@ -1,0 +1,8 @@
+error BYN1061: `this` without a state is the default receiver
+
+  4 │     i64 read(this) => n
+    │              ^^^^ the default receiver
+    │
+  help: remove `this`, or add a state: `this is .s`
+    │ 4 │     i64 read(this) => n
+    │   │              ----

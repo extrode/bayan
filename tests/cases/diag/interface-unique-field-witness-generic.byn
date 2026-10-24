@@ -1,4 +1,4 @@
-interface IHas { List<i64> items { get } }
+interface IHas { List<i64> items }
 struct H<T> : IHas {
     List<i64> items
     T tag

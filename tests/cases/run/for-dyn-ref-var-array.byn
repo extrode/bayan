@@ -1,6 +1,6 @@
 interface IC {
     void bump(ref this)
-    i64 n { get }
+    i64 n
 }
 struct C : IC {
     i64 n
@@ -8,9 +8,9 @@ struct C : IC {
 }
 void main() {
     var a = [C { n: 0 }, C { n: 0 }]
-    for dyn ref IC x in a { x.bump() }
+    for x: dyn ref IC in a { x.bump() }
     var l = List<C>()
     l.append(C { n: 0 })
-    for dyn ref IC x in l { x.bump() }
+    for x: dyn ref IC in l { x.bump() }
     print($"{a[0].n} {a[1].n} {l[0].n}")
 }

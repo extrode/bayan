@@ -1,0 +1,19 @@
+CompilationUnit
+  Struct Order
+    Field i64 id
+    Function pay(move this is .draft, i64 amount) -> void becomes .paid
+      Block
+        Become .paid amount
+    Function ship(move this) -> void becomes .shipped
+      Block
+        Become .shipped
+    Function total(this is .paid or .shipped) -> i64 => id
+    State draft
+    State paid(i64 payment)
+    State shipped
+  Function archive(Order is .paid or .shipped order) -> void
+    Block
+      Expr (call print (. order id))
+  Function refund(Order.paid order) -> void
+    Block
+      Expr (call print (. order payment))

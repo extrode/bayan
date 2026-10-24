@@ -18,7 +18,7 @@ List<S> make() {
 }
 
 void main() {
-    for dyn ref IThing x in make() {
+    for x: dyn ref IThing in make() {
         x.bump()
         print($"{x.get()}")
     }

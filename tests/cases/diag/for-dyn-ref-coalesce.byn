@@ -1,7 +1,7 @@
 // A coalesce whose fallback is a place borrows it: a writable `for dyn ref` over it is checked writable (BYN2106).
 interface IC {
     void bump(ref this)
-    i64 n { get }
+    i64 n
 }
 struct C : IC {
     i64 n
@@ -12,6 +12,6 @@ void main() {
     var l = List<C>()
     l.append(C { n: 1 })
     let a = move l
-    for dyn ref IC x in none() ?? a { x.bump() }
+    for x: dyn ref IC in none() ?? a { x.bump() }
     print($"{a[0].n}")
 }

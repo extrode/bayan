@@ -8,14 +8,14 @@ struct S : IThing {
     i64 get() => n
 }
 
-// The variable of `for dyn ref I x in xs` points into `xs`: kept past the loop, it still borrows `xs`.
+// The variable of `for x: dyn ref I in xs` points into `xs`: kept past the loop, it still borrows `xs`.
 void main() {
     var keep = List<S>()
     keep.append(S { n: 7 })
     var xs = List<S>()
     xs.append(S { n: 1 })
     var d: dyn ref IThing = keep[0]
-    for dyn ref IThing x in xs {
+    for x: dyn ref IThing in xs {
         d = x
     }
     for i in 0..100 {
@@ -23,7 +23,7 @@ void main() {
     }
     print($"{d.get()}")
     var e: dyn ref readonly IThing = keep[0]
-    for dyn ref readonly IThing x in xs {
+    for x: dyn ref readonly IThing in xs {
         e = x
     }
     xs.clear()

@@ -25,7 +25,7 @@ public sealed class NeverReassignedVarLintTests
         void reset(ref P p) { p = P { x: 0 } }
         interface IC {
             void bump(ref this)
-            i64 n { get }
+            i64 n
         }
         struct C : IC {
             i64 n
@@ -41,7 +41,7 @@ public sealed class NeverReassignedVarLintTests
     [InlineData("switch expression arm", "let r = u switch { .b(var v) => v, _ => 0 }\n    print($\"{r}\")", "v")]
     [InlineData("irrefutable arm", "let r = u switch { .a => 0, var v => 1 }\n    print($\"{r}\")", "v")]
     [InlineData("property subpattern", "let q = P { x: 1 }\n    if (q is { x: var v }) { print($\"{v}\") }", "v")]
-    [InlineData("for dyn ref readonly", "var a = [C { n: 0 }]\n    for dyn ref readonly IC x in a { print($\"{x.n}\") }", "a")]
+    [InlineData("for dyn ref readonly", "var a = [C { n: 0 }]\n    for x: dyn ref readonly IC in a { print($\"{x.n}\") }", "a")]
     public void ReportsUnwrittenVar(string name, string body, string variable)
     {
         var d = Assert.Single(Compile(body));
@@ -66,8 +66,8 @@ public sealed class NeverReassignedVarLintTests
     [InlineData("pattern passed by ref", "if u is .b(var v) {\n        bump(ref v)\n        print($\"{v}\")\n    }")]
     [InlineData("pattern rebuilt with `with`", "let w = W.wrap(P { x: 1 })\n    if w is .wrap(var p) {\n        p = p with { x: 2 }\n        print($\"{p.x}\")\n    }")]
     [InlineData("pattern struct by ref", "let w = W.wrap(P { x: 1 })\n    if w is .wrap(var p) {\n        reset(ref p)\n        print($\"{p.x}\")\n    }")]
-    [InlineData("array mutated by for dyn ref", "var a = [C { n: 0 }]\n    for dyn ref IC x in a { x.bump() }")]
-    [InlineData("list mutated by for dyn ref", "var a = List<C>()\n    for dyn ref IC x in a { x.bump() }")]
+    [InlineData("array mutated by for dyn ref", "var a = [C { n: 0 }]\n    for x: dyn ref IC in a { x.bump() }")]
+    [InlineData("list mutated by for dyn ref", "var a = List<C>()\n    for x: dyn ref IC in a { x.bump() }")]
     public void SilentWhenNotAVarOrWritten(string name, string body)
     {
         var warnings = Compile(body);

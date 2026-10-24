@@ -1,0 +1,5 @@
+struct Counter {
+    i64 n
+
+    i64 read(this) => n
+}
