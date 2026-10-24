@@ -1,0 +1,7 @@
+void log(rest ReadOnlySpan<Display> items, to Stream stream = .stdout, string sep = " ") {
+    print(items)
+}
+
+i64 sum(rest ReadOnlySpan<i64> xs) {
+    return 0
+}

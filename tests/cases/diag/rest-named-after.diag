@@ -1,0 +1,13 @@
+error BYN1001: expected a named optional parameter after `rest`, found `i32 extra`
+
+  1 │ void sum(rest ReadOnlySpan<i32> xs, i32 extra) {
+    │                                     ^^^^^^^^^ a positional parameter after `rest`
+    │
+  help: give it a default value, or move it before the `rest` parameter
+
+error BYN1001: expected a named optional parameter after `rest`, found `rest ReadOnlySpan<i32> ys`
+
+  4 │ void both(rest ReadOnlySpan<i32> xs, rest ReadOnlySpan<i32> ys) {
+    │                                      ^^^^^^^^^^^^^^^^^^^^^^^^^ a second `rest` parameter
+    │
+  help: keep one `rest` parameter

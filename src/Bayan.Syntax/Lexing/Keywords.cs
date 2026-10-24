@@ -36,7 +36,7 @@ public static class Keywords
         ("fuzz", TokenKind.FuzzKeyword), ("model", TokenKind.ModelKeyword), ("foreach", TokenKind.ForeachKeyword),
         ("new", TokenKind.NewKeyword), ("goto", TokenKind.GotoKeyword), ("actor", TokenKind.ActorKeyword),
         ("effect", TokenKind.EffectKeyword), ("macro", TokenKind.MacroKeyword), ("select", TokenKind.SelectKeyword),
-        ("become", TokenKind.BecomeKeyword), ("expects", TokenKind.ExpectsKeyword), ("law", TokenKind.LawKeyword),
+        ("become", TokenKind.BecomeKeyword), ("law", TokenKind.LawKeyword),
         ("requires", TokenKind.RequiresKeyword), ("because", TokenKind.BecauseKeyword), ("uses", TokenKind.UsesKeyword),
         ("except", TokenKind.ExceptKeyword), ("provide", TokenKind.ProvideKeyword), ("ensures", TokenKind.EnsuresKeyword),
     ];

@@ -3,7 +3,7 @@ error BYN1059: `state draft` is an input form; declare the states in one `states
   3 │     state draft
     │     ^^^^^^^^^^^ the input form
     │
-  help: move the states into one `states` block after the fields
+  help: move each state into the struct's `states` block
     │ 3 │     states {
     │   │          +++
     │ 4 │         draft
@@ -20,7 +20,7 @@ block
   4 │     state paid(i64 payment)
     │     ^^^^^^^^^^^^^^^^^^^^^^^ the input form
     │
-  help: move the states into one `states` block after the fields
+  help: move each state into the struct's `states` block
     │ 3 │     states {
     │   │          +++
     │ 4 │         draft

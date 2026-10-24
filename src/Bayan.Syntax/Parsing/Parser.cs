@@ -231,12 +231,13 @@ public sealed class Parser
     /// <summary>A token that joins the line it starts to the line before (waṣl).</summary>
     private bool IsWasl(int index) => KindAt(index) is TokenKind.Dot or TokenKind.QuestionDot or TokenKind.QuestionQuestion
         or TokenKind.AmpAmp or TokenKind.BarBar or TokenKind.AndKeyword or TokenKind.OrKeyword or TokenKind.CatchKeyword
-        or TokenKind.ExceptKeyword or TokenKind.RequiresKeyword or TokenKind.ExpectsKeyword or TokenKind.FailsKeyword
+        or TokenKind.ExceptKeyword or TokenKind.RequiresKeyword or TokenKind.FailsKeyword
         or TokenKind.UsesKeyword
         || KindAt(index) == TokenKind.Identifier && Text(_tokens[index]) switch
         {
             "where" => KindAt(index + 1) == TokenKind.Identifier && KindAt(index + 2) == TokenKind.Colon,
             "becomes" => KindAt(index + 1) == TokenKind.Dot,
+            "expects" => KindAt(index + 1) is TokenKind.Identifier or TokenKind.Bang or TokenKind.NotKeyword or TokenKind.ThisKeyword,
             _ => false,
         };
 
@@ -779,7 +780,7 @@ public sealed class Parser
         }
         foreach (var (keyword, state) in lines)
             Report(DiagnosticCodes.StateLineInput, TextSpan.FromBounds(keyword.Start, state.Span.End), [_source.GetText(state.Span)],
-                label: "the input form", help: hasBlock ? "move the state into the `states` block" : "move the states into one `states` block after the fields",
+                label: "the input form", help: "move each state into the struct's `states` block",
                 fix: fix);
     }
 
@@ -1059,7 +1060,7 @@ public sealed class Parser
                 rank = 0;
                 where.AddRange(ParseWhere());
             }
-            else if (Kind is TokenKind.ExpectsKeyword or TokenKind.RequiresKeyword)
+            else if (AtContextual("expects") || Kind == TokenKind.RequiresKeyword)
             {
                 rank = 1;
                 Advance();
@@ -1080,7 +1081,7 @@ public sealed class Parser
                 rank = 3;
                 var failsStart = Advance().Start;
                 var errors = new List<TypeSyntax>();
-                if (Kind == TokenKind.Identifier && !AtContextual("where") && !(AtContextual("becomes") && Peek(1) == TokenKind.Dot))
+                if (Kind == TokenKind.Identifier && !AtContextual("where") && !AtContextual("expects") && !(AtContextual("becomes") && Peek(1) == TokenKind.Dot))
                 {
                     errors.Add(ParseType());
                     while (Accept(TokenKind.Comma)) errors.Add(ParseType());
@@ -1305,7 +1306,13 @@ public sealed class Parser
                 type = ParseRefinement(type, name);
                 Expr? defaultValue = null;
                 if (Accept(TokenKind.Equals)) defaultValue = ParseExpression();
-                list.Add(new Param(SpanFrom(start), modifier, type, name, defaultValue) { Particle = particle, Rest = rest });
+                var param = new Param(SpanFrom(start), modifier, type, name, defaultValue) { Particle = particle, Rest = rest };
+                // `rest` is the last positional parameter; only named optional parameters may follow it (SPEC §10).
+                if (list.Any(p => p.Rest) && (rest || defaultValue is null))
+                    Report(DiagnosticCodes.Expected, param.Span, ["a named optional parameter after `rest`", $"`{_source.GetText(param.Span)}`"],
+                        label: rest ? "a second `rest` parameter" : "a positional parameter after `rest`",
+                        help: rest ? "keep one `rest` parameter" : "give it a default value, or move it before the `rest` parameter");
+                list.Add(param);
             } while (Accept(TokenKind.Comma));
         }
         Expect(TokenKind.CloseParen);

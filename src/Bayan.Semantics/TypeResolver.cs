@@ -58,9 +58,6 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 return ResolveNamed(n);
             case DynType d:
                 return ResolveDyn(d);
-            case RefinedType r:
-                // States are checked in 5.3c; until then a refinement is its inner type.
-                return Resolve(r.Inner);
             default:
                 return ErrorType.Instance;
         }

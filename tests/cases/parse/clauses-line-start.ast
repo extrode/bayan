@@ -1,0 +1,13 @@
+CompilationUnit
+  Function parse<T>(string s, i64 limit) -> T where T : IParse<T> expects (> (. s length) 0) expects (> limit 0) fails IoError uses fs
+    Block
+      Return (call (. T parse) s)
+  Function close(move this is .open) -> void becomes .closed fails uses console
+    Block
+      Let expects = 1
+      Expr (call print expects)
+      Become .closed
+  Interface IStore
+    Function load<T>(string key) -> T where T : IParse<T> expects (> (. key length) 0) fails IoError uses fs
+    Function close(move this is .open) -> void becomes .closed fails IoError
+    Function size() -> i64
