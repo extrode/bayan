@@ -1,0 +1,56 @@
+error BYN7001: `receipt` needs `this` to be `.paid`, but it is `Order.draft`
+
+  9 │     i64 total(this is .draft) => receipt()
+    │                                  ^^^^^^^
+    │
+  help: check the state with `is` or `switch` first
+
+error BYN2202: expected `string`, found `i64`
+
+  13 │     print(order.id)
+     │           ^^^^^^^^
+
+error BYN2202: expected `string`, found `i64`
+
+  17 │     print(order.id)
+     │           ^^^^^^^^
+
+error BYN5004: `check` has 2 unlabeled parameters; give each but one a particle
+
+  20 │ void check(Order order, Order.draft draft) {
+     │      ^^^^^ 2 unlabeled parameters
+     │
+  help: keep one unlabeled parameter, the object
+
+error BYN5006: `draft` is a required parameter besides the object and needs a particle
+
+  20 │ void check(Order order, Order.draft draft) {
+     │                                     ^^^^^ needs a particle
+     │
+  help: label it with `from`, `to`, `until`, `through`, `at`, `by`, `for` or `as`
+
+error BYN7001: `refund` needs `order` to be `.paid`, but it is `Order`
+
+  21 │     refund(order)
+     │            ^^^^^
+     │
+  help: check the state with `is` or `switch` first
+
+error BYN7001: `archive` needs `draft` to be `.paid or .shipped`, but it is `Order.draft`
+
+  22 │     archive(draft)
+     │             ^^^^^
+     │
+  help: check the state with `is` or `switch` first
+
+error BYN7001: `receipt` needs `draft` to be `.paid`, but it is `Order.draft`
+
+  23 │     print(draft.receipt())
+     │           ^^^^^
+     │
+  help: check the state with `is` or `switch` first
+
+error BYN2202: expected `string`, found `i64`
+
+  23 │     print(draft.receipt())
+     │           ^^^^^^^^^^^^^^^

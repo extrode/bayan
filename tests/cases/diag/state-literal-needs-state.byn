@@ -1,0 +1,10 @@
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+    }
+}
+
+let order = Order { id: 1 }
+let blank = Order()

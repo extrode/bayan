@@ -1,0 +1,24 @@
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+        shipped
+    }
+    i64 receipt(this is .paid) => id
+    i64 total(this is .draft) => receipt()
+}
+
+void refund(Order.paid order) {
+    print(order.id)
+}
+
+void archive(Order order is .paid or .shipped) {
+    print(order.id)
+}
+
+void check(Order order, Order.draft draft) {
+    refund(order)
+    archive(draft)
+    print(draft.receipt())
+}

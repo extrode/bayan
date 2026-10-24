@@ -1,0 +1,18 @@
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+    }
+    void ship(move this is .lost) becomes .gone {
+        become .gone
+    }
+}
+
+void refund(Order.refunded order) {
+}
+
+void archive(Order order is .paid or .archived) {
+}
+
+let order = Order.missing { id: 1 }

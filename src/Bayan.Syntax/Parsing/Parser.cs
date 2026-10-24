@@ -3554,6 +3554,17 @@ public sealed class Parser
             var fields = ParseFieldInits();
             return new StructLiteralExpr(SpanFrom(start), type, fields);
         }
+        // A state literal `Order.paid { … }` (spec §3.17).
+        if (Kind == TokenKind.Dot && Peek(1) == TokenKind.Identifier && char.IsLower(Text(PeekToken(1))[0]) && Peek(2) == TokenKind.OpenBrace
+            && !BreaksLine(_pos + 2) && (Peek(3) == TokenKind.CloseBrace || (IsName(Peek(3)) && Peek(4) is TokenKind.Colon or TokenKind.Equals))
+            && char.IsUpper(name.Text[0]) && BraceLiteralAllowed())
+        {
+            Advance();
+            var state = NameOf(Advance());
+            var type = new NamedType(SpanFrom(start), [name, state], typeArgs);
+            var fields = ParseFieldInits();
+            return new StructLiteralExpr(SpanFrom(start), type, fields);
+        }
         return new NameExpr(SpanFrom(start), name, typeArgs);
     }
 

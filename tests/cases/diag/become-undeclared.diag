@@ -1,0 +1,15 @@
+error BYN7003: `become` needs `becomes .paid` on `pay`
+
+  9 │         become .paid(amount)
+    │         ^^^^^^
+    │
+  help: add `becomes .paid` to the signature of `pay`
+    │ 8 │     void pay(move this is .draft, i64 amount) becomes .paid {
+    │   │                                              ++++++++++++++
+
+error BYN7003: `become .paid` is not declared; `ship` becomes `.shipped`
+
+  12 │         become .paid(1)
+     │                 ^^^^
+     │
+  help: change the target to `.shipped`, or declare `becomes .paid`
