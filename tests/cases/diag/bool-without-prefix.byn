@@ -11,6 +11,8 @@ public struct Door {
 
     // A lint on the public API only: a member the module keeps to itself is not checked.
     bool closed => false
+
+    bool shut() => false
 }
 
 print("ok")

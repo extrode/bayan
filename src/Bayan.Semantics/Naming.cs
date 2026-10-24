@@ -92,7 +92,6 @@ public static class Naming
     /// <summary>BYN5001: an <c>-ed</c> name is a changed copy or a view, so a member that takes <c>ref this</c> is a plain verb (revision 0005).</summary>
     private static void CheckParticiple(Compilation c, Grammar grammar, SourceText source, Name name)
     {
-        if (Lexicon.Math.Contains(name.Text)) return;
         var stems = grammar.Forms.Where(f => f.Value == name.Text).Select(f => f.Key).ToList();
         if (stems.Count == 0) stems = ParticipleStems(name.Text);
         if (stems.Count == 0) return;
