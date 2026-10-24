@@ -439,6 +439,7 @@ union error Retryable = CarrierError except .rejected     // narrowed
 
 - Composed sets are **flattened**: `ShipError` has cases `timeout`, `rejected` and `outOfStock`. A component error converts implicitly to the composed set.
 - Two components sharing a case name is a compile error (BYN3202).
+- Different instantiations of one generic error set compose: `ValidationError<SignupForm>` and `ValidationError<Address>` are distinct components, matched by type (`ValidationError<SignupForm> e => …`). A bare case arm (`.invalid e`) is accepted when only one instantiation is in the set, and is ambiguous (BYN2227) otherwise.
 - Generic error sets compose the same way: `union error DecodeError<T> = JsonError, ValidationError<T>` (§7.9).
 - `error enum` and `error union` are input forms for `union error` (BYN1044); `error set S = A | B` is the round-2 input form (BYN1029).
 
@@ -1075,6 +1076,7 @@ struct SignupForm {
   }
   union error DecodeError<T> = JsonError, ValidationError<T>
   ```
+- `ValidationError` always takes its type argument: a bare `ValidationError` is BYN2023, since without `T` there is no `T.Field`. A function that validates two types lists both: `fails ValidationError<SignupForm>, ValidationError<Address>` (§3.14), and diagnostics print the type arguments.
 
 - **Decoders collect every violation:** `static T fromJson(Untrusted<string> body) fails DecodeError<T> uses alloc`. A caller matches both: `catch switch { .invalid e => … e.violations, .syntax s => … }`.
 - Fields of a struct with `requires` cannot be assigned one at a time (BYN3208). Updates go through `with`, which re-checks: `try f with { password: p }`.
@@ -1085,13 +1087,13 @@ struct SignupForm {
   union Rule {
       length(Range<i64> bounds)     // it.runeCount in a..=b
       range(Range<i64> bounds)      // it in a..=b
-      pattern(Regex re)             // it.matches(re)
       required                      // non-nullable field
       kind(TypeId id)               // Email, Url, Date (`type` is a keyword)
       custom(RuleId id)
   }
   ```
 
+- Not in v0.1: `pattern(Regex re)` (`it.matches(re)`), with `std.regex` (§15.4).
 - Violations are structured (field, rule, parameters) with **no message strings**; frameworks localize them.
 - A type with `requires` has **no default value** unless the default satisfies the rules.
 - **Preconditions on functions are `expects`,** not `requires`. A type with `requires` is the reusable rule (it fails at construction); `expects` is a relation between parameters:
@@ -1107,7 +1109,7 @@ struct SignupForm {
   | | Type with `requires` | `expects` |
   |---|---|---|
   | Purpose | Validating data | Contract between programmers |
-  | On violation | Fails, recoverable (`ValidationError`) | Traps, like a bounds check |
+  | On violation | Fails, recoverable (`ValidationError<T>`) | Traps, like a bounds check |
   | Checked | Once, at construction; the proof travels with the value | Every call, in every build mode |
 
   - The clause must be `bool`, a violation is a bug that **panics in every build mode** (`contract violated: <text>`), and a constant argument that violates it is a compile error. When the caller has proven it (for example, the argument's type carries the rule), the check is removed.
@@ -1631,7 +1633,7 @@ Only parameterized `sql"…"` literals with `$n` placeholders are in scope now; 
 `Random` (seeded, reproducible) and `CryptoRandom` are separate types; token, key and nonce APIs accept only `CryptoRandom`. Cryptography APIs are misuse-resistant (AEAD with nonce management; no ECB; raw block ciphers only in `unsafe`).
 
 ### 15.4 Resource limits
-Decoders default to safe limits (JSON nesting depth 128, maximum size). Per-request arenas have a memory cap. Regexes are compile-time finite automata (no ReDoS).
+Decoders default to safe limits (JSON nesting depth 128, maximum size). Per-request arenas have a memory cap. Regexes (`std.regex`, after v0.1) run in linear time with no backtracking (no ReDoS); a pattern built from `Untrusted` input still needs `Regex.escape` (§15.2).
 
 ### 15.5 Invariants versus validation
 Function `expects` contracts (§7.9) detect bugs and panic in every build mode. **Construction of a type with `requires` is the security boundary:** it is checked in every build, reports every violation, and is the only way to remove taint (§15.1).
@@ -1827,7 +1829,7 @@ for try u in db.query<User>(sql"SELECT * FROM users") { … }          // stream
 | `count(x)` | `i64` | no | Non-overlapping occurrences |
 | `words`, `graphemes` | views | no | `std.text` (Unicode segmentation) |
 
-**Assertions:** `contains(x)`, `startsWith(x)`, `endsWith(x)`, `matches(re)`, `equals(t, as: .caseless)`. Plain equality is `==`.
+**Assertions:** `contains(x)`, `startsWith(x)`, `endsWith(x)`, `equals(t, as: .caseless)`. Plain equality is `==`. After v0.1, `matches(re)` and `replaced(re, by: y)` arrive with `std.regex` (§15.4).
 
 **Copies**
 
@@ -1836,7 +1838,7 @@ for try u in db.query<User>(sql"SELECT * FROM users") { … }          // stream
 | `trimmed()`, `trimmed(from: .start / .end)`, `trimmed(by: [' ', '\t'])` | no | View |
 | `lowercased()`, `uppercased()`, `caseFolded()` | yes | Invariant |
 | `camelCased()`, `pascalCased()`, `snakeCased()`, `kebabCased()`, `slugged()` | yes | Identifier and URL forms; derivations use them |
-| `replaced(x, by: y)`, `replaced(re, by: y)` | yes | |
+| `replaced(x, by: y)` | yes | |
 | `truncated(to: n)`, `truncated(to: n, by: "…")` | yes | Cuts on a grapheme boundary |
 | `padded(to: n, by: ' ')` | yes | `width:` in a spec is usually better |
 | `wrapped(at: 80)` | yes | |

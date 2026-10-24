@@ -52,6 +52,7 @@ union error Retryable = CarrierError except .rejected     // narrowed
 
 - Composed sets are **flattened**: `ShipError` has cases `timeout`, `rejected` and `outOfStock`. A component error converts implicitly to the composed set.
 - Two components sharing a case name is a compile error.
+- Different instantiations of one generic error set compose: `ValidationError<SignupForm>` and `ValidationError<Address>` are distinct components, matched by type (`ValidationError<SignupForm> e => …`). A bare case arm (`.invalid e`) is accepted when only one instantiation is in the set, and is ambiguous otherwise.
 - Generic error sets compose the same way: `union error DecodeError<T> = JsonError, ValidationError<T>` (§11).
 - `set error` is removed.
 
@@ -262,6 +263,7 @@ struct SignupForm {
   }
   union error DecodeError<T> = JsonError, ValidationError<T>
   ```
+- `ValidationError` always takes its type argument: a bare `ValidationError` is an error, since without `T` there is no `T.Field`. A function that validates two types lists both: `fails ValidationError<SignupForm>, ValidationError<Address>` (§3.14), and diagnostics print the type arguments.
 - **Decoders collect every violation** and report malformed input in the same error set: `static T fromJson(Untrusted<string> body) fails DecodeError<T> uses alloc`. A caller matches both: `catch switch { .invalid e => … e.violations, .syntax s => … }`.
 - **Drafts** use the existing `T.Patch` (all fields optional, no `requires`), with `patch.complete()` returning `T fails ValidationError<T>`. The two-step flow (`T.Patch.fromJson`, then `complete()`) is a paraphrase of `fromJson`: both report the same errors.
 - Struct literals of a type with `requires` are fallible: `try SignupForm { … }`.
@@ -271,12 +273,12 @@ struct SignupForm {
   union Rule {
       length(Range<i64> bounds)     // it.runeCount in a..=b
       range(Range<i64> bounds)      // it in a..=b
-      pattern(Regex re)             // it.matches(re)
       required                      // non-nullable field
       kind(TypeId id)               // Email, Url, Date
       custom(RuleId id)
   }
   ```
+- Not in v0.1: `pattern(Regex re)` (`it.matches(re)`), with `std.regex` (§15.4).
 - Violations are structured (field, rule, parameters) with **no message strings**. Frameworks localize them.
 - Remove `T.Validated` from the §5.2 noun-pattern table, the `Validate` derivation from the §5.3 list, and any field-level `[Check]` from the spec.
 - Form-encoded decoding (`@derive(Form)`) belongs to the future web framework, not the standard library.
