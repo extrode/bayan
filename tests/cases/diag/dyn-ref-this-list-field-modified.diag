@@ -7,8 +7,8 @@ error BYN3004: `items` is modified while `d` still borrows it
 
 error BYN3004: `items` is modified while `e` still borrows it
 
-  22 │         items.removeLast()
-     │         ^^^^^^^^^^^^^^^^^^ `e` is used again on line 24
+  22 │         let _ = items.removeLast()
+     │                 ^^^^^^^^^^^^^^^^^^ `e` is used again on line 24
      │
   help: finish using `e` first, or copy what it needs before changing `items`
 

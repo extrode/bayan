@@ -1,0 +1,25 @@
+// catch-switch-block-arm.byn — a block arm leaves; a `return` arm has type `never` (J49)
+union error E {
+    bad
+    worse
+}
+
+i64 parse(i64 n) fails E {
+    return .bad if n == 0
+    return .worse if n < 0
+    return n
+}
+
+i64 handle(i64 n) => parse(n) catch switch {
+    E.bad => {
+        print("bad")
+        return 0
+    },
+    E.worse => return -1
+}
+
+void main() {
+    print($"{handle(0)}")
+    print($"{handle(-5)}")
+    print($"{handle(7)}")
+}

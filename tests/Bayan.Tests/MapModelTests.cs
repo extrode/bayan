@@ -115,7 +115,7 @@ public sealed class MapModelTests
                     model.Set(k, v);
                     break;
                 case < 6:
-                    source.Append($"m.remove({Key(k)})\n");
+                    source.Append($"let _ = m.remove({Key(k)})\n");
                     model.Remove(k);
                     break;
                 case 6:
@@ -165,10 +165,10 @@ public sealed class MapModelTests
     [InlineData("m[3] = 30\nm[3] = 31", "m[3]", true)]
     [InlineData("m[3] = 30\nm.slot(4) += 1", "m[4]", true)]
     [InlineData("m[3] = 30", "m[4]", false)]
-    [InlineData("m[3] = 30\nm.remove(3)", "m[3]", false)]
+    [InlineData("m[3] = 30\nlet _ = m.remove(3)", "m[3]", false)]
     [InlineData("m[3] = 30\nm.clear()", "m[3]", false)]
-    [InlineData("m[3] = 30\nm.remove(3)\nm[3] = 5", "m[3]", true)]
-    [InlineData("m.getOr(3, 0)\nm.contains(3)", "m[3]", false)]
+    [InlineData("m[3] = 30\nlet _ = m.remove(3)\nm[3] = 5", "m[3]", true)]
+    [InlineData("let _ = m.getOr(3, 0)\nlet _ = m.contains(3)", "m[3]", false)]
     public void L003IndexPanicsExactlyForNonLiveKeys(string setup, string read, bool live)
     {
         var outcome = Run("l003-index.byn", $"var m = Map<i64, i64>()\n{setup}\nprint($\"got {{{read}}}\")\n");

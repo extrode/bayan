@@ -19,7 +19,7 @@ struct B {
         }
         print($"{d.get()}")
         let e: dyn ref IThing = items[0]
-        items.removeLast()
+        let _ = items.removeLast()
         items.clear()
         print($"{e.get()}")
     }

@@ -247,7 +247,15 @@ internal sealed class FlowAnalysis
                 {
                     var branch = state.Clone();
                     if (arm.Guard is not null) branch = Expr(arm.Guard, branch);
-                    after = after.Join(Expr(arm.Value, branch));
+                    branch = Expr(arm.Value, branch);
+                    // A block arm of a value-giving `catch switch` must leave, as a `catch` block does (J49).
+                    if (arm.Value is BoundBlockExpr { Type.IsNever: true } or BoundConversion { Operand: BoundBlockExpr { Type.IsNever: true } } && branch.Reachable)
+                    {
+                        Report(DiagnosticCodes.CatchBlockCompletes, new TextSpan(Math.Max(arm.Value.Syntax.Span.End - 1, 0), 1), [],
+                            help: "leave the block instead of falling through; the call returns a value");
+                        branch = State.Unreachable();
+                    }
+                    after = after.Join(branch);
                 }
                 return after;
             }

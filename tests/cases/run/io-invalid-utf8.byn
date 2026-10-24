@@ -9,5 +9,5 @@ void main() fails IoError {
     print($"as text: {text}")
     let bytes: List<u8> = try Io.readFile("bad.txt")
     print($"as bytes: {bytes.length} bytes, middle {bytes[1]}")
-    try Io.readText("bad.txt")
+    let _ = try Io.readText("bad.txt")
 }

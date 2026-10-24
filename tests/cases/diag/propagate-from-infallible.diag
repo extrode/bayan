@@ -1,6 +1,6 @@
 error BYN2604: `total` cannot fail, so it cannot pass on `ParseError`
 
   11 │     return try parse(s)
-     │            ^^^
+     │            ^^^^^^^^^^^^
      │
   help: handle the error with `catch`, or declare `fails ParseError`
