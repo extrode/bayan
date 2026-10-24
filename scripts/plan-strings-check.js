@@ -8,6 +8,8 @@
 // Codes: those named on the command line, else every code whose descriptor line in
 // DiagnosticCodes.cs differs from <base> (default dev). Placeholders compare equal:
 // `{0}` in the plan matches `{anything}` in an interpolated C# string.
+// Each checked help must also start with a verb from HelpLanguageTests' list (R15), so the
+// plan can be copied verbatim; --all-help checks every help in the plan and nothing else.
 // Exit 0 when every checked string is found, 1 when one is missing, 2 on bad usage.
 
 const args = [...Deno.args];
@@ -20,7 +22,10 @@ const take = (flag, fallback) => {
 };
 const base = take("--base", "dev");
 const planPath = take("--plan", "docs/plans/2026-10-22-002-design-round-3.md");
+const allHelp = args.includes("--all-help");
+if (allHelp) args.splice(args.indexOf("--all-help"), 1);
 const descriptorsPath = "src/Bayan.Syntax/Diagnostics/DiagnosticCodes.cs";
+const helpTestPath = "tests/Bayan.Tests/HelpLanguageTests.cs";
 
 const run = async (...cmd) => {
   const out = await new Deno.Command(cmd[0], { args: cmd.slice(1), stdout: "piped", stderr: "null" }).output();
@@ -66,7 +71,22 @@ const srcText = async () => {
   return [...text.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => norm(m[1])).join("\n");
 };
 
+// R15's verb list and allowed openings, read from the test that enforces them on src/.
+const helpRule = async () => {
+  const text = await Deno.readTextFile(helpTestPath);
+  const verbs = new Set([...(text.match(/Verbs =\s*\[([\s\S]*?)\];/)?.[1] ?? "").matchAll(/"(\w+)"/g)].map((m) => m[1]));
+  const allowed = [...(text.match(/Allowed = new\(\)\s*\{([\s\S]*?)\};/)?.[1] ?? "").matchAll(/\["((?:[^"\\]|\\.)*)"\]/g)].map((m) => m[1]);
+  return (help) => verbs.has(help.split(/[ ,;:]/)[0]) || allowed.some((a) => help.startsWith(a));
+};
+const startsWithVerb = await helpRule();
+
 const plan = parsePlan(await Deno.readTextFile(planPath));
+if (allHelp) {
+  const bad = [...plan].flatMap(([code, forms]) => forms.filter((f) => f.help && !startsWithVerb(f.help)).map((f) => `${code} help does not start with a verb: "${f.help}"`));
+  bad.forEach((line) => console.log(line));
+  console.log(bad.length ? `${bad.length} plan help(s) without a leading verb` : "every plan help starts with a verb");
+  Deno.exit(bad.length ? 1 : 0);
+}
 const codes = args.length ? args : await changedCodes();
 if (!codes.length) {
   console.log(`no changed descriptors against ${base}`);
@@ -85,6 +105,10 @@ for (const code of codes) {
   let page = "";
   try { page = await Deno.readTextFile(`docs/diagnostics/${code}.md`); } catch { /* reported below */ }
   for (const { message, help } of entries) {
+    if (help && !startsWithVerb(help)) {
+      missing++;
+      console.log(`${code} help in the plan does not start with a verb from ${helpTestPath}: "${help}"`);
+    }
     for (const [kind, text] of [["message", message], ["help", help]]) {
       if (!text) continue;
       const want = normPlan(text);
