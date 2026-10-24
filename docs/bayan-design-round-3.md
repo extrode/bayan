@@ -4,7 +4,7 @@
 
 Bayan is a C#-derived, natively compiled language (no .NET runtime). `SPEC.md` exists, the round-2 HANDOFF has been applied or is in progress, and the v0.1 bootstrap compiler is being built.
 
-This handoff records every decision from design round 3, including the signature review of 2026-10-23 and its follow-ups (panic handler, views and copies, formatting, grammar-checker scope, the performance contract, references in structs). It **supplements** round 2: everything in round 2 still stands unless this document changes it, and this document wins on any conflict. Section numbers §22–§23 are used by the plan for the Sūq review and friction items; the sections added by the signature review are §24–§32. The changelog at the end lists what changed and when.
+This handoff records every decision from design round 3, including the signature review of 2026-10-23 and its follow-ups (panic handler, views and copies, formatting, grammar-checker scope, the performance contract, references in structs). It **supplements** round 2: everything in round 2 still stands unless this document changes it, and this document wins on any conflict. Section numbers §22–§23 are used by the plan for the Sūq review and friction items; the sections added by the signature review are §24–§31, and revision 0001 added §32. The changelog at the end lists what changed and when.
 
 For each area: update `SPEC.md` (with a one-line rationale per change), update `GRAMMAR.md` and `STYLE.md` where named, implement in the compiler where the area is in v0.1 scope, add tests, and add diagnostics with `BYN####` codes and `bayan explain` entries. Use these code ranges: 1xxx syntax, 3xxx types, 5xxx grammar, 6xxx effects, 7xxx typestate, 8xxx security.
 
@@ -74,13 +74,13 @@ public Grams shippingWeight(Order order) {
 
 - **Declarations put the type first**: return types (`public Grams shippingWeight(Order order)`, `void` when nothing is returned), parameters (`(Order order)`, `(ref this, Line line)`), fields (`Sku sku`), union and state payloads (`timeout(Millis after)`), computed properties (`public bool isEmpty => lines.isEmpty`), and test and benchmark parameters (`test "bounds" (i32 input, bool valid) { … }`).
 - **Local bindings put the name first** with explicit mutability: `let` (immutable) or `var` (mutable), with an optional `: Type`. Loop bindings follow the local rule (§25).
-- **Input forms** (`bayan format` rewrites them, BYN1043): `f() -> T` → `T f()`; `f(x: T)` → `f(T x)`; field `x: T` → `T x`; payload `case(x: T)` → `case(T x)`; in a function body, `Grams w = 0g` → `let w: Grams = 0g`, or `var w: Grams = 0g` when the local is assigned later (the fix needs binder information).
+- **Input forms** (`bayan format` rewrites them, BYN1043): `f() -> T` → `T f()`; `f(x: T)` → `f(T x)`; field `x: T` → `T x`; payload `case(x: T)` → `case(T x)`; in a function body, `Grams w = 0g` → `let w: Grams = 0g`, or `var w: Grams = 0g` when the same block later assigns the name, otherwise `let` (a syntactic scan, Q122).
 
 ### Signature shape
 
 ```csharp
 // function or method
-[modifiers] ReturnType name<T>(params) [where …] [becomes .s] [fails E] [uses e, …] { … }   // or => expr
+[modifiers] ReturnType name<T>(params) [where …] [expects …] [becomes .s] [fails E] [uses e, …] { … }   // or => expr
 // parameter
 [particle] [ref | out | const | move] Type name [= default]
 // receiver (first parameter only)
@@ -92,11 +92,11 @@ Type name => expr | { … }             // computed property
 ```
 
 - **Modifiers** (`public`, `static`) lead the declaration.
-- **Clause order** is fixed: `where` → `becomes` → `fails` → `uses` (success outcome, then failure, then effects). A signature may continue on the next line with any of these clauses (§3).
+- **Clause order** is fixed: `where` → `expects` → `becomes` → `fails` → `uses` (success outcome, then failure, then effects). A signature may continue on the next line with any of these clauses (§3).
 - **A particle comes before the passing mode:** `to ref Span<u8> dst`.
 - **Function types are parenthesized when a name follows them**, in fields and parameters: `(Line -> Money uses net) pricer`, `by (Token -> bool) p`. An alias avoids the parentheses: `type Pricer = Line -> Money uses net`, then `Pricer pricer`.
 - **State types** are written `Order.paid` (one state) or `Order order is .paid or .shipped` (several, inline after the name). Details in §14.
-- **Pointers are postfix**, like `T?`: `Sqlite3* db`, `u8** argv`, and `readonly u8* data` for a pointer that cannot be written through (C's `const char*`). The type's head comes first and its modifiers follow (head-first, §1), and a declaration line always starts with a type name, never with `*`. Pointers appear only in `extern` declarations and `unsafe because` blocks:
+- **Pointers are postfix**, like `T?`: `Sqlite3* db`, `u8** argv`, and `readonly u8* data` for a pointer that cannot be written through (C's `const char*`). The type's head comes first and its modifiers follow (head-first, §1), and a declaration line always starts with a type name, never with `*`. Pointers appear only in `extern` declarations (BYN1067); `unsafe because` blocks extend the rule when they first parse (not v0.1, Q132):
   ```csharp
   extern c {
       c_int sqlite3_open(cstr filename, out Sqlite3* db)
@@ -151,7 +151,7 @@ Patterns are `const` values of pattern type, named in camelCase. `pattern` is a 
 Supporting rules:
 
 - **An unused non-void value is a compile error.** This turns every mis-split line into a diagnostic (`let x = a` newline `-b`).
-- `return`, `break` and `continue` take their operand on the same line. A postfix modifier (`unless`, `if`) must be on the same line as its statement.
+- `return`, `break`, `continue` and `fail` take their operand on the same line. A postfix modifier (`unless`, `if`) must be on the same line as its statement.
 - `else` must follow `}` on the same line; `else` on a new line is rejected with a fix-it.
 - Comment lines are transparent to continuation. Outside `( )` and `[ ]`, a blank line always ends a statement; inside them, blank lines are ignored like other newlines.
 - Struct literals in a control-flow head: whole-condition parentheses, as already decided: `if (p is Point { x: 0, y: 0 }) { … }`.
@@ -322,10 +322,11 @@ public Span<T> slice(Index start, until Index end)
   grammar: Grammar {
       verbs: ["upsert", "reindex"],
       nouns: ["sku", "kyc"],
+      adjectives: ["idempotent"],
       forms: ["upsert": "upserted"],
   }
   ```
-  An unknown word is a warning (BYN5014) whose fix adds it to the dictionary.
+  An unknown word is a warning (BYN5014) whose fix adds it to the dictionary, in the class the checker inferred (`verbs`, `nouns` or `adjectives`).
 - **Diagnostic wording:** every grammar diagnostic is phrased in plain English ("nouns name values, verbs name actions; `get` adds nothing here"). The Arabic origin of a rule appears only in `bayan explain` and GRAMMAR.md.
 - **The property rule has one exception:** a noun member that needs `ref this` is a call (`xs.mutableSpan()`), because mutable access must be visible at the call site.
 
@@ -355,9 +356,9 @@ public u32 crc(ReadOnlySpan<u8> data) { … }   // no `uses`: no alloc, no suspe
   | `console` | Program input and output: stdin, stdout, and stderr written by `print` |
 
   The list grows only through spec revisions.
-- **Effect aliases** name a set without adding a capability: `effect db = net, fs`. An alias expands to its primitives everywhere (capabilities, bounds, `bayan expand`). `std.db` declares `db`.
+- **Effect aliases** name a set without adding a capability: `effect db = net, fs`. An alias expands to its primitives everywhere (capabilities, bounds, and `bayan expand` once it lands; deferred, §6 of the plan). `std.db` declares `db`.
 - **No `uses` clause means pure.** This replaces `noalloc nosuspend`, which are removed.
-- **Public functions declare their effects; private functions infer them** (same rule as error sets). Tests are private, so they infer. `main` and scripts infer too, bounded by the package capabilities. There is no file-level or struct-level `uses`: a public signature is a contract, and an effect inherited from elsewhere would be invisible at the declaration.
+- **Public functions declare their effects; private functions infer them** (same rule as error sets). Tests are private, so they infer. `main` and scripts infer too, bounded by the package capabilities. The entry function is exempt from BYN6002 whatever its visibility, and examples write `void main()`. There is no file-level or struct-level `uses`: a public signature is a contract, and an effect inherited from elsewhere would be invisible at the declaration.
 - `panic` is **not** an effect.
 - `fails` stays a separate clause, because it carries a type. GRAMMAR.md states this reason.
 - **Function-typed parameters with no `uses` are effect-polymorphic:** the call inherits the effects of the function passed. `map` inherits its closure's effects; there is no `tryMap` or `mapAsync`.
@@ -375,7 +376,7 @@ public u32 crc(ReadOnlySpan<u8> data) { … }   // no `uses`: no alloc, no suspe
   type OrderPlaced = Event<Order.placed> uses net, alloc, suspend    // §26
   ```
   An effect bound in a type (`Event<T> uses …`) is the only form of effect parameter; general effect variables (option B) stay deferred.
-- **Derived forms compute their effects:** `-ed` adds `alloc` for heap-owning types (§12), the allocating form derived from `xInto` adds `alloc`, and `tryX` keeps the original's effects. `bayan expand` shows them.
+- **Derived forms compute their effects:** `-ed` adds `alloc` for heap-owning types (§12), the allocating form derived from `xInto` adds `alloc`, and `tryX` keeps the original's effects. `bayan expand` will show them.
 - **Package capabilities are an upper bound:** a package without `.net` cannot contain any function that `uses net`, transitively.
 - **Logging is ambient:** allowed in pure functions, never allocates (the interpolated message is formatted through a handler into a fixed buffer, only when the level is enabled), escapes control characters, and is interceptable:
   ```csharp
@@ -383,7 +384,7 @@ public u32 crc(ReadOnlySpan<u8> data) { … }   // no `uses`: no alloc, no suspe
   log($"retry {n} of {max}", as: .debug)
   ```
   `print` is program output, not diagnostics: it `uses console`.
-- **Handlers use `provide`.** `context` remains only the value (`context.Io`). Handler names are the effects plus `log`:
+- **Handlers use `provide`.** `context` remains only the value (`context.Io`). Handler names are the effects plus `log`; `suspend` has no handler (BYN6007):
   ```csharp
   let net = FakeNet(label)
   provide net: net, clock: FakeClock(at: Date(year: 2026, month: 12, day: 1)) {
@@ -396,12 +397,12 @@ public u32 crc(ReadOnlySpan<u8> data) { … }   // no `uses`: no alloc, no suspe
   ```
   Inner `provide` blocks override individual handlers and inherit the rest. Handlers are one-shot, so they compile to context passing at zero cost.
 - **The test runner provides `console` per test as a capture buffer.** Output is shown when a test fails, or always with `bayan test --verbose`.
-- **Panic handler:** `Panic.handler` replaces round 2's `Panic.onPanic` (the `on` prefix is rejected, §12). The round-2 placement rules stay: assigned once, as the first statement of the entry function. Its type is a bound of `console` only, so it may write to stderr and may not allocate, suspend or do other I/O. `defer panicking (p) { … }` stays the scoped form.
+- **Panic handler:** `Panic.handler` replaces round 2's `Panic.onPanic` (the `on` prefix is rejected, §12). The round-2 placement rules stay: assigned once, as the first statement of the entry function. Its type is a bound of `console` only, so it may write to stderr (`print(p, to: .stderr)`; `Stderr.write` stays as the raw, unformatted writer) and may not allocate, suspend or do other I/O. `defer panicking (p) { … }` stays the scoped form.
   ```csharp
   type PanicHandler = Panic -> void uses console
 
-  public void main() {
-      Panic.handler = p => Stderr.write(p)
+  void main() {
+      Panic.handler = p => print(p, to: .stderr)
       …
   }
   ```
@@ -630,9 +631,10 @@ public i64 insert<T>(ref this, ReadOnlySpan<T> rows, bool ignoreConstraints = fa
 ### Variadic parameters: `rest`
 
 ```csharp
-public void print(rest ReadOnlySpan<Display> items) uses console
+public void print(rest ReadOnlySpan<Display> items, to Stream stream = .stdout) uses console
 
 print("total", total, "for", order.id)
+print("bad input", to: .stderr)                        // stderr through the same formatting
 let p = Path.join(root, "orders", $"{id}.json")        // rest ReadOnlySpan<PathSegment>
 let top = max(a, b, c)                                  // rest ReadOnlySpan<T> where T : IOrder<T>
 print(..names)                                          // spread an existing collection
@@ -679,8 +681,8 @@ interface IIterator<T> {
 }
 
 interface IRow {
-    static void checkShape(ref readonly Reader r, Mapping mapping) fails DbError
-    static Self fromRow(ref Reader r, Mapping mapping) fails DbError
+    static void checkShape(ref readonly Reader r, as Mapping mapping) fails DbError
+    static Self fromRow(ref Reader r, as Mapping mapping) fails DbError
 }
 ```
 
@@ -771,7 +773,7 @@ xs.remove(from: 2, through: 5)
 xs.replace(at: 2..5, by: items)
 ```
 
-`removeRange` and `replaceRange` are removed (renamed members, BYN2230). `fromBounds(start, end)` becomes `fromBounds(start, until: end)`. The particle forms are a deliberate stdlib exception to guard 1 (decided 2026-10-23): two API entries for one operation, kept because `until`/`through` read well at call sites. They are not a precedent for other APIs.
+`removeRange` and `replaceRange` are removed (renamed members, BYN2230). `fromBounds(start, end)` becomes `fromBounds(start, until: end)`. The particle forms are stdlib overloads (J65), kept because `until`/`through` read well at call sites. Guard 1 (exactly two spellings) governs the language's spellings, not library APIs, so they are not an exception to it (revision 0002).
 
 ### Views, copies and conversions
 
@@ -811,20 +813,24 @@ let n = u64.tryParse(text, as: .hex)        // u64?, the A7 parse form
 
 for unit in s.utf16 { … }                   // view of u16 code units, beside s.runes and s.bytes
 let units = s.utf16.copy()                  // owned List<u16>, uses alloc
-let back = string(units)                    // ReadOnlySpan<u16> decodes as UTF-16
+let back = try Utf16.decode(units)          // a codec (std.text); string(x) only formats
 ```
 
-- `string(x, as:)` applies to every integer type; `as:` defaults to `.decimal`. Output is lowercase with no prefix. Casing, prefixes, padding and grouping belong to round 2's pending `format()` item, together with the interpolation spec, which is a paraphrase of `string(x, as:)`.
+- `string(x, as:)` applies to every integer type; `as:` defaults to `.decimal`. Output is lowercase with no prefix. Casing, padding and grouping are named specs in the interpolation hole (`{n, as: .hex, width: 4}`); SPEC §16.4 "Text" holds the string API, culture and formatting (revision 0003).
 - `toHex()`, `toBinary()`, `toOctal()` and `toUtf16()` are removed (renamed members, BYN2230).
 - Nul-terminated UTF-16 for Windows FFI follows the same form as `cstr` for C strings.
-- **Decoding bytes** uses the A7 constructor forms; there is no `fromUtf8`:
+- **Decoding is a codec; `string(x)` always formats** (revision 0003 §1, amending revision 0002 item 24 and O13). Every binary↔text conversion is a codec, like `Hex` and `Base64` (O14); `string(x)` is only the `Display` conversion, for every type, including byte spans (`[104, 105]`):
   ```csharp
-  let s = try string(bytes)                    // fails Utf8Error with the position of the bad byte
-  let s = string.tryFrom(bytes)                // string?
-  let s = string(bytes, invalid: .replace)     // lossy: U+FFFD for invalid bytes, never fails
-  let s = try string(bytes, as: .latin1)       // other text encodings (kit); the default is UTF-8
+  let s = try Utf8.decode(bytes)                   // fails Utf8Error with the position of the bad byte
+  let s = Utf8.tryDecode(bytes)                    // string?
+  let s = Utf8.decode(bytes, invalid: .replace)    // lossy: U+FFFD, never fails
+  let s = try Latin1.decode(bytes)                 // kit
+  let s = try Utf16.decode(units)                  // std.text
+  let hex = Hex.encode(digest)
+  let raw = try Base64.decode(text)
   ```
-- **Bytes to hex or base64 text** are codecs, like `Html.escape`: `Hex.encode(digest)`, `try Hex.decode(text)`, `Base64.encode(bytes)`, `try Base64.decode(text)`. `string(x, as: Radix)` is for integers only, so `string(bytes, as: …)` always means reading bytes as text.
+  `string.fromUtf8`, `try string(bytes)`, `string.tryFrom(bytes)` and `string(bytes, as: .latin1)` are renamed under BYN2230 to the codec forms.
+- **Bytes to hex or base64 text** are codecs, like `Html.escape`: `Hex.encode(digest)`, `try Hex.decode(text)`, `Base64.encode(bytes)`, `try Base64.decode(text)`. `string(x, as: Radix)` is for integers only.
 
 ### Math
 
@@ -854,7 +860,7 @@ The database layer collapses the C# extension-method explosion (Jaunty: 684 `IDb
 effect db = net, fs
 
 public interface IQuerySource {                    // implemented by Connection and Transaction
-    Command prepare(ref this, Sql sql, Millis timeout) fails DbError uses db, suspend
+    Command prepare(ref this, Sql sql, Millis timeout = 30s) fails DbError uses db, suspend
     i64 bulkCopy<T>(ref this, ReadOnlySpan<T> rows, bool ignoreConstraints)
         where T : IEntity fails DbError uses db, suspend
 
@@ -876,7 +882,7 @@ public interface IQuerySource {                    // implemented by Connection 
 }
 
 public struct unique Rows<T> where T : IRow {
-    public bool moveNext(ref this) fails DbError uses db, suspend       // 006 iterator protocol
+    public bool moveNext(ref this) fails DbError uses db, suspend       // the iteration pattern
     public T current
     public T first(move this) fails DbError uses db, suspend            // .noRows when empty
     public T? tryFirst(move this) fails DbError uses db, suspend
@@ -920,7 +926,7 @@ style: Style {
 - `.sized` is the default. `bayan format` normalizes each project to its spelling; the compiler accepts both and raises no diagnostic (style is never compiler-enforced, as for booleans). BYN1030, which rejected the C# names as input forms, is retired with a tombstone ("retired: the rewrite moved to `bayan format` `style.primitives`; never reuse").
 - **Excluded:** `char` (16-bit in C#; it stays the input form for `rune`), `decimal` and `object` (no equivalent). `bool` and `string` are shared.
 - The C# names are reserved words in every project, whatever its style.
-- Tooling renders types in the reader's project style: diagnostics, hover, `bayan expand`, generated docs and `bayan explain`.
+- Tooling renders types in the reader's project style: diagnostics, hover, generated docs and `bayan explain`; `bayan expand` (deferred) will show them the same way.
 - The standard library, the spec's examples and the selfhost compiler are written in `.sized`.
 - Conversions read the same in both styles: `int(x)`, `int.tryFrom(x)`.
 
@@ -937,7 +943,7 @@ Bayan targets Rust and Zig speed. These rules keep the safe default on the fast 
 - **Generics are monomorphized:** each instantiation is compiled for its concrete types, so a call through a type parameter is a direct, inlinable call. Interface values (`Display` as a type, `rest ReadOnlySpan<Display>`) are the explicit way to ask for dynamic dispatch through a vtable.
   ```csharp
   public T max<T>(ReadOnlySpan<T> xs) where T : IOrder<T> { … }   // static: one copy per T
-  public void print(rest ReadOnlySpan<Display> items) uses console  // dynamic: one copy, vtable calls
+  public void print(rest ReadOnlySpan<Display> items, to Stream stream = .stdout) uses console  // dynamic: one copy, vtable calls
   ```
 - **Debug mapping (v0.0.1):** the emitted C carries `#line` directives that point back to the `.byn` file and line, so native debuggers (gdb, lldb, Visual Studio) step through Bayan source and report Bayan locations. A C compiler error that reaches the user is a Bayan compiler bug.
 - **Zero runtime cost by design:** typestate (erased), effects and capabilities (compile-time), `rest` spans (caller's stack), `Event.raise` (no allocation), units (plain integers), `T.Patch` and derivations (generated code, no reflection).
@@ -983,7 +989,7 @@ When the agent finishes this round's documentation deliverables (1–3, 5 and 9)
 
 **Resolved 2026-10-23:** O11 public fields are writable only from the struct's own `ref this` methods or through `with` (§26). O12 a particle appears at most once per signature (§15).
 
-**Resolved 2026-10-23:** O13 bytes decode through the A7 constructor forms, with no `fromUtf8` (§27). O14 binary-to-text encodings are codecs (`Hex.encode`) (§27). O15 the checker scope (§12).
+**Resolved 2026-10-23:** O13 bytes decode through the A7 constructor forms, with no `fromUtf8` (§27); superseded by revision 0003 (decoding is a codec: `Utf8.decode`). O14 binary-to-text encodings are codecs (`Hex.encode`) (§27). O15 the checker scope (§12).
 
 **Sūq review decisions, 2026-10-22** (`docs/suq-agent-brief.md` Part A; record in `docs/suq-round3-review-response.md`):
 - **A1.** A `defer` modifier is evaluated once at registration and its value captured (§19); `defer { if c { … } }` is the exit-time form.
@@ -1034,7 +1040,7 @@ When the agent finishes this round's documentation deliverables (1–3, 5 and 9)
 ## Deliverables
 
 1. `SPEC.md` updated for §1–20 and §24–32, each change with a one-line rationale and its diagnostic codes.
-2. `GRAMMAR.md` and `STYLE.md` updated (§1, §5, §12, §13, §15, §28). In STYLE.md's member order, rename "state members" to "properties" and use the order in §26 (fields, `states` block, events, properties, static factories, methods). STYLE: `uses` after `fails`, the clause order of §2, and the `style.primitives` default.
+2. `GRAMMAR.md` and `STYLE.md` updated (§1, §3, §4, §5, §7, §12–§15, §28). In STYLE.md's member order, rename "state members" to "properties" and use the order in §26 (fields, `states` block, events, properties, static factories, methods). STYLE: `uses` after `fails`, the clause order of §2, and the `style.primitives` default.
 3. Sweep every code example in SPEC.md, GRAMMAR.md, STYLE.md and `docs/` to round-3 syntax: name-first local bindings, type-first declarations; no semicolons; `@` attributes; particles; `rune`; head-first declaration keywords; `states` blocks and `T.s` types; `rest`; `bayan format`.
 4. Freeze the three documents and create `docs/revisions/` with a README describing the revision format (§32).
 5. Verify collections use `length` for size and `count(p)` only for predicate counts (round 2 §11 lists `count` among the queries).
@@ -1065,3 +1071,4 @@ When the agent finishes this round's documentation deliverables (1–3, 5 and 9)
   - New sections: overloading, defaults and `rest` (§24); lambdas, loops, identifiers (§25); interfaces, properties, events (§26); standard library shapes, including `std.db` (§27); primitive spellings (§28); `bayan format` (§29).
   - Follow-ups: `Panic.handler` (§13); O11 and O12 resolved (§15, §26); views, copies and conversions without `toX`/`asX` (§12, §27); `string(x, as: Radix)` and the `utf16` view (§27); O13–O15 resolved (no `fromUtf8`; codecs for hex and base64; checker scope); project dictionary and plain-English diagnostics (§12); performance contract (§30); references in structs and typed-index trees (§31); postfix pointers and `readonly T*` (§2); BYN1030 retired (§28); `#line` debug mapping (§30); spec freeze and numbered revisions (§32).
   - Example fixes: `transfer` gains its receiver, `insert` gains `uses alloc`, `crc` takes `ReadOnlySpan<u8>`, `Date(year:month:day:)`, `FakeNet(label)`, the `Checkout` callback example replaced by a `Pricer` alias.
+- **2026-10-24 (revisions 0001, 0002, 0003).** Revision 0001: postfix pointers in `extern` (BYN1066), BYN1030 retired, `#line` debug mapping, spec freeze and revisions (§32). Revision 0002 (consistency review): `expects` in the clause order; pattern-based `for`; guard 1 governs language spellings only; `std.db` shapes; entry function exempt from BYN6002; BYN1043 syntactic scan; `fail` on the same line; `suspend` has no handler; dictionary `adjectives:`; `print(…, to: .stderr)`; BYN1067 and BYN7009; `bayan expand` deferred (§2, §3, §11–§15, §24, §26–§28). Revision 0003: decoding is a codec and `string(x)` always formats (amends 0002 item 24 and O13); the string API, culture and formatting go to SPEC §16.4 "Text" (§27).

@@ -196,3 +196,11 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51d: `ref from Buf` (particle after the passing mode, `suq/fail/mode-particle.byn`) misparses with no diagnostic code.
 - r3-51d: the parser has no function types, so `uses` inside them is not handled.
 - `suq/fail/README.md:20` lists `csharp-alias.byn` under BYN1030, retired by revision 0001 (J92); move it out of the compile-fail corpus.
+- Revision 0002 item 16: the project-style type printer (with `TypeResolver.cs`) was not built in 5.2b; follow-up, after 5.2b.
+- Revision 0002 item 25: BYN1042 (built in 5.1a) does not cover `fail`; add `fail` to its scope and message in 5.1e.
+- Revision 0002 item 1: BYN1065 (clause order) does not know `expects`; order `where` → `expects` → `becomes` → `fails` → `uses` and the new message in 5.1e.
+- Revision 0002 item 27: 5.1c moves a field rule that reads `it` and another field to the struct (Q131); 5.3b rejects it under BYN3207 instead.
+- Revision 0002 item 8: J55 now adopts the BYN1043 syntactic scan (Q122), so the r3-51b1 entry above (move the choice to the binder) is superseded; nothing to build.
+- Revision 0002 item 9: `except .case` stays parse only with BYN2022 (Q124); 5.3b lifts it.
+- Revision 0002 item 16: the C# primitive names are reserved in `Keywords.cs` in 5.1e (the revision 0001 entry above, J92).
+- Revision 0003: the built `string.from`/`string.tryFrom`/`string.invalidUtf8At` (Q71, `Builtins.cs:47-51`) predate the codecs; rename to `Utf8.decode`/`Utf8.tryDecode` under BYN2230 in 5.4. Named format specs and BYN1068 parse in 5.1e.
