@@ -1,0 +1,35 @@
+error BYN2230: `offset` is now `position`
+
+  4 │     let _ = s.offset("b")
+    │               ^^^^^^ the old name
+    │
+  help: rename it `position`
+    │ 4 │     let _ = s.position("b")
+    │   │               ++++++++
+
+error BYN2230: `toUtf16()` is now `utf16`
+
+  5 │     let _ = s.toUtf16()
+    │               ^^^^^^^ the old name
+    │
+  help: write `utf16`
+    │ 5 │     let _ = s.utf16
+    │   │               +++++
+
+warning BYN2311: `xs` is never reassigned; declare it with `let`
+
+  6 │     var xs = List<i64>()
+    │         ^^
+    │
+  help: declare it with `let` to tell the reader the value never changes
+    │ 6 │     let xs = List<i64>()
+    │   │     +++
+
+error BYN2230: `toList()` is now `copy()`
+
+  7 │     let _ = xs.toList()
+    │                ^^^^^^ the old name
+    │
+  help: rename it `copy`
+    │ 7 │     let _ = xs.copy()
+    │   │                ++++

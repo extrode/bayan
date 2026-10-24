@@ -635,6 +635,26 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             return;
         }
 
+        if (iterable.Type is TextViewType view)
+        {
+            // The view is a copy the cursor functions advance; `parts` counts its limit down in it.
+            var copy = Spill(iterable);
+            var pos = NewTemp(PrimitiveType.I64);
+            EmitAssign(Local(syntax, pos), I64(syntax, 0));
+            var (brk, cont) = EnterLoop(f.Target);
+            var body = Capture(() =>
+            {
+                var more = new BoundBuiltinCall(syntax, BuiltinMember.TextViewMore, copy, [Local(syntax, pos)], PrimitiveType.Bool);
+                Emit(new BoundIf(syntax, Not(more), Block(syntax, [new LGoto(syntax, brk)]), null));
+                EmitAssign(variable, new BoundBuiltinCall(syntax, BuiltinMember.TextViewNext, copy, [Local(syntax, pos)], view.Element));
+                Statement(f.Body);
+                Emit(new LLabel(syntax, cont));
+            });
+            Emit(new LLoop(syntax, Block(syntax, body)));
+            Emit(new LLabel(syntax, brk));
+            return;
+        }
+
         if (iterable.Type is MapType)
         {
             // Entries in insertion order; removed entries stay as tombstones until the next rehash.
@@ -1438,7 +1458,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         }
         var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast or BuiltinMember.ListRemoveRange or BuiltinMember.ListReplace or BuiltinMember.ListSort
             or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapRemove or BuiltinMember.MapClear
-            or BuiltinMember.StrBufAppend or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan;
+            or BuiltinMember.StrBufAppend or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan or BuiltinMember.ListMutableSpan or BuiltinMember.ArrayMutableSpan;
         var operands = new List<BoundExpr> { b.Receiver };
         operands.AddRange(b.Arguments);
         // `slot` inserts the value type's default: field initializers for a struct, zero otherwise.

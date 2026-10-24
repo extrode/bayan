@@ -15,7 +15,7 @@ void main() {
     var l = List<C>()
     l.append(C { n: 1 })
     l.append(C { n: 2 })
-    let w: Span<C> = l.span
+    let w: Span<C> = l.mutableSpan()
     for x: dyn ref IC in w {
         x.bump()
     }

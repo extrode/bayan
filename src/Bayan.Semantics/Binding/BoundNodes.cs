@@ -53,8 +53,14 @@ public sealed record BoundCall(Node Syntax, FunctionSymbol Function, BoundExpr? 
 public enum BuiltinMember
 {
     StringLength, StringBytes, StringIsEmpty, StringRuneCount, StringIsAscii, StringCopy, StringStartsWith, StringEndsWith, StringContains,
+    StringPosition, StringLastPosition, StringCount, StringTrimmed, StringTrimmedBy, StringLowercased, StringUppercased, StringEquals,
+    StringReplaced, StringRepeated, StringJoined,
+    /// <summary>The views <c>runes</c>, <c>utf16</c>, <c>lines</c> and <c>parts(by:)</c>, and the view members <c>runes.take(n)</c> and <c>utf16.copy()</c>.</summary>
+    StringRunes, StringUtf16, StringLines, StringParts, RunesTake, Utf16Copy,
+    /// <summary>Lowering of <c>for</c> over a text view: whether it has another item at the cursor, and the item (advancing the cursor).</summary>
+    TextViewMore, TextViewNext,
     SpanLength, SpanIsEmpty, SpanCopy, ListCopy, MapCopy, StrBufCopy,
-    ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListClear, ListRemoveLast, ListRemoveRange, ListReplace, ListSort, ListTryGet,
+    ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListMutableSpan, ArrayMutableSpan, ListClear, ListRemoveLast, ListRemoveRange, ListReplace, ListSort, ListTryGet,
     MapLength, MapTryGet, MapContains, MapRemove, MapClear,
     /// <summary><c>map[k]</c> read (panics when missing), <c>map[k]</c> as a write target (inserts when missing), and <c>map.slot(k)</c> (inserts the default).</summary>
     MapIndex, MapIndexSet, MapSlot,

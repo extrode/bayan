@@ -263,3 +263,7 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-54a-lib: `remove(at:)` on lists, for an index and a range, Chunk 3 (J24 sweep; Question 316).
 - r3-54a-lib: `suq/fail/to-as-call.byn` keeps `asSpan` by design (a fail-corpus snippet for the `to…`/`as…` member rule); do not convert it.
 - r3-54a-lib: `for i in r` over a range held in a `let` crashes the Lowerer (`For` casts the iterable to `ArrayType`); `For` handles only a range literal.
+- r3-54a-lib: `mutableSpan()` is exclusive only as a loan (Question 322); a second writable view of the same list while the first lives is not rejected.
+- r3-54a-lib: `position`/`lastPosition`/`count`/`parts` take only a string needle; a rune needle or separator is BYN2202 (Question 319), Chunk 3a leftover.
+- r3-54a-lib: the text views have no `skip`/`takeLast`/`length` (Question 318); `runes.take(n)` and `utf16.copy()` are the only members, Chunk 3a leftover.
+- r3-54a-lib: `padded`, `string(x)` over byte spans and `parse`/`tryParse(as:)` from revision 0003 are not built or verified, Chunk 3a leftover.

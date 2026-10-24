@@ -170,7 +170,7 @@ public sealed class L006OwnershipGuardTests
             }
             """, "BYN3002" },
         { "span returned past its owner", """
-            Span<i64> leak() {
+            ReadOnlySpan<i64> leak() {
                 let xs = List<i64>()
                 return xs.span
             }

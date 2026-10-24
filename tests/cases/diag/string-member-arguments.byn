@@ -1,0 +1,10 @@
+// `trimmed(from:)` takes an `Edge`, `equals(as:)` a `Comparison`, `parts(by:)` a string.
+void main() {
+    let s = " a "
+    let _ = s.trimmed(from: .middle)
+    let _ = s.equals("A", as: .loose)
+    let _ = s.position(1)
+    for x in s.lines {
+        let _: i64 = x
+    }
+}

@@ -253,6 +253,7 @@ public sealed class CEmitter
         BuiltinType { Kind: BuiltinKind.IoStream or BuiltinKind.IoInput } => "int32_t",
         BuiltinType { Kind: BuiltinKind.ProcessResult } => "byn_process",
         BuiltinType { Kind: BuiltinKind.Panic } => "byn_panic_info",
+        TextViewType => "byn_text_view",
         // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
         OwnedType o => CType(o.Inner) + "*",
         UntrustedType u => CType(u.Inner),
@@ -281,6 +282,7 @@ public sealed class CEmitter
         OptionalType o => "opt_" + Key(o.Inner),
         ResultType r => "res_" + Key(r.Value),
         SpanType s => "span_" + Key(s.Element),
+        TextViewType => "textview",
         ListType l => "list_" + Key(l.Element),
         OwnedType o => "own_" + Key(o.Inner),
         UntrustedType u => Key(u.Inner),
@@ -1553,6 +1555,62 @@ internal sealed class FunctionEmitter
                 return $"byn_str_ends_with({Expr(r)}, {arg})";
             case BuiltinMember.StringContains:
                 return $"byn_str_contains({Expr(r)}, {arg})";
+            case BuiltinMember.StringPosition or BuiltinMember.StringLastPosition:
+            {
+                var opt = _c.CType(b.Type);
+                var name = _c.Helper("bynh_position", $"static {opt} bynh_position(int64_t p)", () => $"{{\n    return p < 0 ? ({opt}){{0}} : ({opt}){{true, p}};\n}}\n");
+                return b.Member == BuiltinMember.StringLastPosition ? $"{name}(byn_str_last_position({Expr(r)}, {arg}))"
+                    : $"{name}(byn_str_position({Expr(r)}, {arg}, {(b.Arguments.Length > 1 ? Expr(b.Arguments[1]) : "0")}, {Loc(b.Syntax)}))";
+            }
+            case BuiltinMember.StringCount:
+                return $"byn_str_count({Expr(r)}, {arg})";
+            case BuiltinMember.StringTrimmed:
+                return $"byn_str_trimmed({Expr(r)}, {(b.Arguments.Length > 0 ? arg : "2")})";
+            case BuiltinMember.StringTrimmedBy:
+            {
+                var st = _c.CType(b.Arguments[0].Type);
+                var name = _c.Helper("bynh_trimmed_by", $"static byn_str bynh_trimmed_by(byn_str s, {st} by)", () => "{\n    return byn_str_trimmed_by(s, by.ptr, by.len);\n}\n");
+                return $"{name}({Expr(r)}, {arg})";
+            }
+            case BuiltinMember.StringLowercased or BuiltinMember.StringUppercased:
+                return $"byn_str_case({Expr(r)}, {(b.Member == BuiltinMember.StringUppercased ? "true" : "false")}, byn_context)";
+            case BuiltinMember.StringEquals:
+                return b.Arguments.Length > 1 ? $"({Expr(b.Arguments[1])} == 1 ? byn_str_eq_caseless({Expr(r)}, {arg}) : byn_str_eq({Expr(r)}, {arg}))"
+                    : $"byn_str_eq({Expr(r)}, {arg})";
+            case BuiltinMember.StringReplaced:
+                return $"byn_str_replaced({Expr(r)}, {arg}, {Expr(b.Arguments[1])}, byn_context, {Loc(b.Syntax)})";
+            case BuiltinMember.StringRepeated:
+                return $"byn_str_repeated({Expr(r)}, {arg}, byn_context, {Loc(b.Syntax)})";
+            case BuiltinMember.StringJoined:
+            {
+                var xt = _c.CType(r.Type);
+                var name = "bynh_joined_" + _c.Key(r.Type);
+                _c.Helper(name, $"static byn_str {name}({xt} xs, byn_str sep)", () => "{\n    return byn_str_joined(xs.ptr, xs.len, sep, byn_context);\n}\n");
+                return $"{name}({Expr(r)}, {arg})";
+            }
+            case BuiltinMember.StringRunes or BuiltinMember.StringUtf16 or BuiltinMember.StringLines:
+                return $"((byn_text_view){{{Expr(r)}, {{NULL, 0}}, 0, 0}})";
+            case BuiltinMember.StringParts:
+                return $"byn_parts({Expr(r)}, {arg}, {(b.Arguments.Length > 1 ? Expr(b.Arguments[1]) : "0")}, {Loc(b.Syntax)})";
+            case BuiltinMember.RunesTake:
+                return $"byn_str_take_runes({Expr(r)}.s, {arg}, {Loc(b.Syntax)})";
+            case BuiltinMember.Utf16Copy:
+            {
+                var list = _c.CType(b.Type);
+                var name = _c.Helper("bynh_utf16_copy", $"static {list} bynh_utf16_copy(byn_text_view v)", () =>
+                    $"{{\n    {list} r = {{NULL, 0, 0, byn_context}};\n    r.ptr = byn_utf16_copy(v.s, &r.len, byn_context);\n    r.cap = r.len;\n    return r;\n}}\n");
+                return $"{name}({Expr(r)})";
+            }
+            case BuiltinMember.TextViewMore:
+                return $"byn_view_more({Expr(r)}, {arg}, {(int)((TextViewType)r.Type).Kind})";
+            case BuiltinMember.TextViewNext:
+                return ((TextViewType)r.Type).Kind switch
+                {
+                    TextViewKind.Runes => $"byn_str_next({Expr(r)}.s, &{arg})",
+                    TextViewKind.Utf16 => $"byn_utf16_next(&{Expr(r)}, &{arg})",
+                    TextViewKind.Lines => $"byn_lines_next(&{Expr(r)}, &{arg})",
+                    _ => $"byn_parts_next(&{Expr(r)}, &{arg})",
+                };
             case BuiltinMember.SpanCopy:
             {
                 var span = (SpanType)r.Type;
@@ -1589,6 +1647,14 @@ internal sealed class FunctionEmitter
                 var lt = _c.CType(r.Type);
                 var st = _c.CType(b.Type);
                 var name = "bynh_span_" + _c.Key(r.Type);
+                _c.Helper(name, $"static {st} {name}({lt} l)", () => $"{{\n    return ({st}){{l.ptr, l.len}};\n}}\n");
+                return $"{name}({Expr(r)})";
+            }
+            case BuiltinMember.ListMutableSpan:
+            {
+                var lt = _c.CType(r.Type);
+                var st = _c.CType(b.Type);
+                var name = "bynh_mutable_span_" + _c.Key(r.Type);
                 _c.Helper(name, $"static {st} {name}({lt} l)", () => $"{{\n    return ({st}){{l.ptr, l.len}};\n}}\n");
                 return $"{name}({Expr(r)})";
             }
@@ -1673,7 +1739,7 @@ internal sealed class FunctionEmitter
                 return _c.MapMethod(b.Member, (MapType)r.Type, Expr(r), b.Arguments.Select(Expr).ToArray(), Loc(b.Syntax));
             case BuiltinMember.ArrayLength:
                 return $"((void){Expr(r)}, INT64_C({((ArrayType)r.Type).Length}))";
-            case BuiltinMember.ArrayAsSpan:
+            case BuiltinMember.ArrayAsSpan or BuiltinMember.ArrayMutableSpan:
                 return $"(({_c.CType(b.Type)}){{{Expr(r)}.v, {((ArrayType)r.Type).Length}}})";
             case BuiltinMember.ArenaReset:
                 return $"byn_arena_reset({Expr(r)})";

@@ -200,6 +200,40 @@ public sealed class SpanType(TypeSymbol element, bool readOnly = false) : Constr
     public override bool IsBorrow => true;
 }
 
+/// <summary>The string views, in the order <c>byn_view_more</c> reads them (spec §16.4).</summary>
+public enum TextViewKind { Runes, Utf16, Lines, Parts }
+
+/// <summary><c>s.runes</c>, <c>s.utf16</c>, <c>s.lines</c> or <c>s.parts(by:)</c>: a lazy view of a string's text, walked by <c>for</c>.</summary>
+public sealed class TextViewType(TextViewKind kind) : ConstructedType
+{
+    public TextViewKind Kind { get; } = kind;
+
+    /// <summary>What <c>for</c> yields: <c>rune</c>, <c>u16</c>, or a borrowed <c>string</c>.</summary>
+    public TypeSymbol Element => Kind switch
+    {
+        TextViewKind.Runes => PrimitiveType.Char,
+        TextViewKind.Utf16 => PrimitiveType.U16,
+        _ => PrimitiveType.String,
+    };
+
+    protected override object Key => Kind;
+
+    public override string DisplayName => Kind switch
+    {
+        TextViewKind.Runes => "RuneView",
+        TextViewKind.Utf16 => "Utf16View",
+        TextViewKind.Lines => "LineView",
+        _ => "PartView",
+    };
+
+    public override bool IsBorrow => true;
+
+    public static readonly TextViewType Runes = new(TextViewKind.Runes);
+    public static readonly TextViewType Utf16 = new(TextViewKind.Utf16);
+    public static readonly TextViewType Lines = new(TextViewKind.Lines);
+    public static readonly TextViewType Parts = new(TextViewKind.Parts);
+}
+
 /// <summary><c>dyn ref I</c>: a borrow of any value conforming to <see cref="Interface"/>, passed as (data, vtable).</summary>
 public sealed class DynRefType(InterfaceSymbol @interface, bool readOnly = false) : ConstructedType
 {

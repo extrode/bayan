@@ -651,6 +651,14 @@ internal sealed partial class Binder
     private BoundExpr BindBuiltinMethodCall(CallExpr c, BoundExpr receiver, string name)
     {
         var m = BuiltinMembers.Method(receiver.Type, name)!;
+        m = m.Member switch
+        {
+            BuiltinMember.StringTrimmed when c.Args is [{ Name.Text: "by" }] =>
+                new(BuiltinMember.StringTrimmedBy, [("by", new SpanType(PrimitiveType.Char, readOnly: true))], PrimitiveType.String),
+            BuiltinMember.StringTrimmed => m with { Parameters = [("from", _c.Builtins.Edge)] },
+            BuiltinMember.StringEquals => m with { Parameters = [m.Parameters[0], ("as", _c.Builtins.Comparison)] },
+            _ => m,
+        };
         if (m.Member is BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake)
             receiver = MapWriteTarget(receiver);
         var ps = m.Parameters.Take(Math.Max(c.Args.Length, m.Parameters.Length - m.Optional))

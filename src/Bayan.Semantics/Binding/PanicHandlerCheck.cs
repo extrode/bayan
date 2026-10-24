@@ -68,7 +68,9 @@ internal static class PanicHandlerCheck
                     or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch }:
                 case BoundBuiltinCall { Member: BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy
                     or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy or BuiltinMember.IoReadAll or BuiltinMember.IntToString
-                    or BuiltinMember.ListAdd or BuiltinMember.ListReplace or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet }:
+                    or BuiltinMember.ListAdd or BuiltinMember.ListReplace or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet
+                    or BuiltinMember.StringLowercased or BuiltinMember.StringUppercased or BuiltinMember.StringReplaced or BuiltinMember.StringRepeated
+                    or BuiltinMember.StringJoined or BuiltinMember.Utf16Copy }:
                     restricted = "allocation";
                     break;
                 case BoundLocal { Local: var l } when !targets.Contains(node) && !own.Contains(l) && l.IsMutable:

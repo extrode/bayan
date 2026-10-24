@@ -17,14 +17,18 @@ internal static class BuiltinMembers
         ({ IsString: true }, "isEmpty") => (BuiltinMember.StringIsEmpty, PrimitiveType.Bool),
         ({ IsString: true }, "runeCount") => (BuiltinMember.StringRuneCount, PrimitiveType.I64),
         ({ IsString: true }, "isAscii") => (BuiltinMember.StringIsAscii, PrimitiveType.Bool),
+        ({ IsString: true }, "runes") => (BuiltinMember.StringRunes, TextViewType.Runes),
+        ({ IsString: true }, "utf16") => (BuiltinMember.StringUtf16, TextViewType.Utf16),
+        ({ IsString: true }, "lines") => (BuiltinMember.StringLines, TextViewType.Lines),
         (SpanType, "length") => (BuiltinMember.SpanLength, PrimitiveType.I64),
         (SpanType, "isEmpty") => (BuiltinMember.SpanIsEmpty, PrimitiveType.Bool),
         (ListType, "length") => (BuiltinMember.ListLength, PrimitiveType.I64),
         (ListType, "isEmpty") => (BuiltinMember.ListIsEmpty, PrimitiveType.Bool),
-        (ListType l, "span") => (BuiltinMember.ListAsSpan, new SpanType(l.Element)),
+        // `span` is the read-only view, allowed on a `let`; `mutableSpan()` is the writable one (J80).
+        (ListType l, "span") => (BuiltinMember.ListAsSpan, new SpanType(l.Element, readOnly: true)),
         (MapType, "length") => (BuiltinMember.MapLength, PrimitiveType.I64),
         (Symbols.ArrayType, "length") => (BuiltinMember.ArrayLength, PrimitiveType.I64),
-        (Symbols.ArrayType a, "span") => (BuiltinMember.ArrayAsSpan, new SpanType(a.Element)),
+        (Symbols.ArrayType a, "span") => (BuiltinMember.ArrayAsSpan, new SpanType(a.Element, readOnly: true)),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "length") => (BuiltinMember.StrBufLength, PrimitiveType.I64),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "view") => (BuiltinMember.StrBufAsString, PrimitiveType.String),
         (BuiltinType { Kind: BuiltinKind.ProcessResult }, "exitCode") => (BuiltinMember.ProcessExitCode, PrimitiveType.I32),
@@ -48,6 +52,29 @@ internal static class BuiltinMembers
         ({ IsString: true }, "startsWith") => new(BuiltinMember.StringStartsWith, [("prefix", PrimitiveType.String)], PrimitiveType.Bool),
         ({ IsString: true }, "endsWith") => new(BuiltinMember.StringEndsWith, [("suffix", PrimitiveType.String)], PrimitiveType.Bool),
         ({ IsString: true }, "contains") => new(BuiltinMember.StringContains, [("text", PrimitiveType.String)], PrimitiveType.Bool),
+        ({ IsString: true }, "position") =>
+            new(BuiltinMember.StringPosition, [("text", PrimitiveType.String), ("from", PrimitiveType.I64)], new OptionalType(PrimitiveType.I64), Optional: 1),
+        ({ IsString: true }, "lastPosition") =>
+            new(BuiltinMember.StringLastPosition, [("text", PrimitiveType.String)], new OptionalType(PrimitiveType.I64)),
+        ({ IsString: true }, "count") => new(BuiltinMember.StringCount, [("text", PrimitiveType.String)], PrimitiveType.I64),
+        // The binder gives `from:` the builtin `Edge`, picks `trimmed(by:)` by the argument's name, and gives `equals`' `as:` the builtin `Comparison`.
+        ({ IsString: true }, "trimmed") => new(BuiltinMember.StringTrimmed, [("from", ErrorType.Instance)], PrimitiveType.String, Optional: 1),
+        ({ IsString: true }, "equals") =>
+            new(BuiltinMember.StringEquals, [("text", PrimitiveType.String), ("as", ErrorType.Instance)], PrimitiveType.Bool, Optional: 1),
+        ({ IsString: true }, "lowercased") => new(BuiltinMember.StringLowercased, [], PrimitiveType.String),
+        ({ IsString: true }, "uppercased") => new(BuiltinMember.StringUppercased, [], PrimitiveType.String),
+        ({ IsString: true }, "replaced") =>
+            new(BuiltinMember.StringReplaced, [("text", PrimitiveType.String), ("by", PrimitiveType.String)], PrimitiveType.String),
+        ({ IsString: true }, "repeated") => new(BuiltinMember.StringRepeated, [("count", PrimitiveType.I64)], PrimitiveType.String),
+        // A limit of 0 means no limit.
+        ({ IsString: true }, "parts") =>
+            new(BuiltinMember.StringParts, [("by", PrimitiveType.String), ("limit", PrimitiveType.I64)], TextViewType.Parts, Optional: 1),
+        (TextViewType { Kind: TextViewKind.Runes }, "take") => new(BuiltinMember.RunesTake, [("count", PrimitiveType.I64)], PrimitiveType.String),
+        (TextViewType { Kind: TextViewKind.Utf16 }, "copy") => new(BuiltinMember.Utf16Copy, [], new ListType(PrimitiveType.U16)),
+        (SpanType { Element.IsString: true }, "joined") or (ListType { Element.IsString: true }, "joined") =>
+            new(BuiltinMember.StringJoined, [("by", PrimitiveType.String)], PrimitiveType.String),
+        (ListType l, "mutableSpan") => new(BuiltinMember.ListMutableSpan, [], new SpanType(l.Element), Mutating: true),
+        (Symbols.ArrayType a, "mutableSpan") => new(BuiltinMember.ArrayMutableSpan, [], new SpanType(a.Element), Mutating: true),
         (SpanType s, "copy") => new(BuiltinMember.SpanCopy, [("to", BuiltinType.Arena)], new ListType(s.Element)),
         (ListType l, "copy") => new(BuiltinMember.ListCopy, [("to", BuiltinType.Arena)], l),
         (ListType l, "append") => new(BuiltinMember.ListAdd, [("item", l.Element)], PrimitiveType.Void, Mutating: true),
@@ -88,7 +115,8 @@ internal static class BuiltinMembers
     public static bool HasMethod(TypeSymbol type, string name) => Method(type, name) is not null;
 
     private static readonly string[] Candidates =
-        ["length", "bytes", "isEmpty", "runeCount", "isAscii", "value", "copy", "startsWith", "endsWith", "contains", "span", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
+        ["length", "bytes", "isEmpty", "runeCount", "isAscii", "runes", "utf16", "lines", "value", "copy", "startsWith", "endsWith", "contains",
+         "position", "lastPosition", "count", "trimmed", "equals", "lowercased", "uppercased", "replaced", "repeated", "parts", "joined", "span", "mutableSpan", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>
