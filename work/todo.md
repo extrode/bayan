@@ -201,11 +201,12 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Revision 0002 item 16: the project-style type printer (with `TypeResolver.cs`) was not built in 5.2b; follow-up, after 5.2b.
 - Revision 0002 item 25: BYN1042 (built in 5.1a) does not cover `fail`; add `fail` to its scope and message in 5.1e.
 - Revision 0002 item 1: BYN1065 (clause order) does not know `expects`; order `where` → `expects` → `becomes` → `fails` → `uses` and the new message in 5.1e.
-- Revision 0002 item 27: 5.1c moves a field rule that reads `it` and another field to the struct (Q131); 5.3b rejects it under BYN3207 instead.
+- Revision 0002 item 27: 5.1c moves a field rule that reads `it` and another field to the struct (Q131); 5.3b rejects it under BYN3218 instead (revision 0004 item 1).
 - Revision 0002 item 8: J55 now adopts the BYN1043 syntactic scan (Q122), so the r3-51b1 entry above (move the choice to the binder) is superseded; nothing to build.
 - Revision 0002 item 9: `except .case` stays parse only with BYN2022 (Q124); 5.3b lifts it.
 - Revision 0002 item 16: the C# primitive names are reserved in `Keywords.cs` in 5.1e (the revision 0001 entry above, J92).
-- Revision 0003: the built `string.from`/`string.tryFrom`/`string.invalidUtf8At` (Q71, `Builtins.cs:47-51`) predate the codecs; rename to `Utf8.decode`/`Utf8.tryDecode` under BYN2230 in 5.4. Named format specs and BYN1068 parse in 5.1e.
+- Revision 0003: the built `string.from`/`string.tryFrom`/`string.invalidUtf8At` (Q71, `Builtins.cs:47-51`) predate the codecs; `invalidUtf8At` is dropped (revision 0004 item 5); rename to `Utf8.decode`/`Utf8.tryDecode` under BYN2230 in 5.4. Named format specs and BYN1068 parse in 5.1e.
+- Revision 0005: the BYN5001 checker (`src/Bayan.Semantics`) rejects an `-ed` member with no `ref this` verb; change it in 5.4 to reject an `-ed` member that takes `ref this` and accept one with no plain verb.
 - r3-52a: `struct Point { f64 x, f64 y }` (fields on one line with `,`) is BYN1005 with a fix that leaves `, f64 y }` on the next line; no BYN1053 rewrite for fields.
 - r3-52a: BYN2787's page and `trust-reason.byn` still describe `trust(x, reason:)`; decide in 5.3e whether BYN2787 retires once `trust` is only an input form.
 - r3-52a: a user method named `trustUnchecked` with no arguments binds as the `Untrusted` unwrap (Question 143).

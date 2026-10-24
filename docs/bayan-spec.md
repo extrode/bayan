@@ -180,8 +180,8 @@ Lowercase type names are reserved for the language. C interop types: `c_int`, `c
 
 ### 3.2 Strings
 - Always **valid UTF-8** and immutable; a string borrows its bytes (a literal, a request body, a slice) or owns them. Decoding is a codec (§16.4): `Utf8.tryDecode(bytes)` returns `string?`; `try Utf8.decode(bytes)` fails `Utf8Error`. There is no `fromUtf8`, and `string(bytes)` formats the bytes (`[104, 105]`), it never decodes.
-  - Both take a `ReadOnlySpan<u8>` and return a fresh copy from `context.allocator` that does not borrow the bytes. An empty span decodes to `""`. Overlong forms, surrogates, code points above U+10FFFF and truncated sequences are invalid (law L010).
-  - `Utf8Error` is a built-in `union error` with one variant, `invalidSequence`. Until error variants carry payloads, `string.invalidUtf8At(bytes)` returns the byte offset of the first invalid sequence as `i64?`, `null` when the bytes are valid (`[0x68, 0xC0, 0x80]` gives 1).
+  - Both take a `ReadOnlySpan<u8>`. Decoding validates without copying: when the input bytes are borrowed, the resulting `string` borrows them too, so decode-to-validate allocates nothing. An empty span decodes to `""`. Overlong forms, surrogates, code points above U+10FFFF and truncated sequences are invalid (law L010).
+  - `Utf8Error` is a built-in `union error` with one variant, `invalidSequence`. `try Utf8.decode(bytes)` reports the byte offset of the first invalid sequence through `Utf8Error` (`[0x68, 0xC0, 0x80]` gives 1).
   - `Utf8.decode(bytes, invalid: .replace)` is the lossy form: each invalid sequence becomes U+FFFD, and it never fails. Other text encodings are codecs in `kit` (`try Latin1.decode(bytes)`, spec-only).
 - `string(n, as: .hex)` on every integer type returns lowercase hexadecimal with no prefix and no leading zeros (`255` gives `"ff"`, `0` gives `"0"`), allocated from `context.allocator`; `.binary`, `.octal` and `.decimal` (the default) are the other `Radix` cases (§6.2). With `.hex`, a negative value prints its two's-complement bits at the type's width (an `i8` holding `-1` gives `"ff"`). Format specifiers are in §6.6.
 - **Bytes to hex or base64 text** are codecs with static `encode` and `decode`, like `Html.escape`: `Hex.encode(digest)`, `try Hex.decode(text)`, `Base64.encode(bytes)`, `try Base64.decode(text)`; `decode` fails with a codec error. `string(x, as: Radix)` is for integers only.
@@ -567,7 +567,7 @@ public Order.shipped ship(move Order.paid order, by Carrier carrier)
 8. Runtime: `T.s` has the same layout as `T` (a `u8` tag plus a payload union) and is erased in C. Widening is a no-op; the checks are compile-time only.
 9. Canonical spelling: one state is always written `T.s`. `bayan format` rewrites `Order order is .paid` → `Order.paid order` and `type X = Order is .paid` → `type X = Order.paid` (BYN7006). The receiver is exempt.
 10. State names are camelCase and may not equal a static member name of `T`, otherwise `Order.empty` would name both a type and a factory (BYN7008).
-11. `becomes .state` declares a transition; `become .state(…)` performs it. A `become` to a state the signature does not declare is an error (BYN7003). **A failed transition leaves the state unchanged.** After a `becomes` call on a `var` (with no live borrows), the variable's static type changes: after `try order.pay(card)`, `order` is `Order.paid`. A `let` cannot call `ref this` methods, so it needs no tracking.
+11. `becomes .state` declares a transition; `become .state(…)` performs it. A `become` to a state the signature does not declare is an error (BYN7003). **A failed transition leaves the state unchanged.** A method that declares `becomes .s` must `become` on every path that returns normally; a path that fails leaves the state unchanged (BYN7009). After a `becomes` call on a `var` (with no live borrows), the variable's static type changes: after `try order.pay(card)`, `order` is `Order.paid`. A `let` cannot call `ref this` methods, so it needs no tracking.
 12. A state switch is exhaustive, so adding a state is a compile error at every non-exhaustive switch (BYN7004).
 13. `states` is a contextual keyword at the start of a member declaration when followed by `{`, so fields named `state` or `states` still work. At most one `states` block per struct. The per-line `state x` form is an input form (BYN1059). `becomes` is contextual after a parameter list.
 14. States are named as participles or adjectives (`paid`, `shipped`) and are exempt from the `-ed` copy-pattern rule (§5.2), which applies only to members.
@@ -646,7 +646,7 @@ Users may create roots, never patterns. Derived members are generated only when 
 |---|---|---|---|---|
 | `x()` | Form I | Base act | Returns a value, may `fails` | |
 | `x(ref this)` | Form V | Reflexive: mutates self | Named with a verb | BYN5101 (lint) |
-| `xed()` | mafʿūl (participle) | Result of the act: **a view if possible, otherwise a copy** | Derived from a mutating `x(ref this)`; exists only as its copy form | BYN5001 |
+| `xed()` | mafʿūl (participle) | Result of the act: **a view if possible, otherwise a copy** | Names a changed copy or a view; never takes `ref this` and does not need a plain verb to exist | BYN5001 |
 | `tryX()` | Form X | Attempt | Returns `bool` or `T?`; derived from `x() fails` | BYN5003 |
 | `ensureX()` | Form II | Causative, idempotent | Returns `void` or `fails` | |
 | `xWith(T other)` | Form III | Act with another | Takes `T other` | |
@@ -956,7 +956,7 @@ do { … } while try socket.hasMore()
 - The loop owns the sequence and drops it on every exit.
 - `while try cond { … }`: the condition may fail on each evaluation.
 - `while let x = expr { … }` loops while `expr` (a `T?`) is non-null, binding `x`. It works with `try`: `while let row = try rows.next() { … }`.
-- A fallible sequence is a value with a method `T? next() fails E`; `for try` steps it until `next()` returns `null`. Iterating one without `for try` reports BYN2221 with a fix-it inserting `try`.
+- A fallible sequence is a value with the `moveNext`/`current` pattern; `for try` steps it until `moveNext()` returns `false`. Iterating one without `for try` reports BYN2221 with a fix-it inserting `try`.
 - Not in v0.1: lazy queries and readers.
 
 > Round 2 §4: one `for x in xs` form with no parentheses; fallibility is marked once, at the loop head. Codes: BYN1017, BYN1018, BYN1019, BYN2022, BYN2232, BYN2234.
@@ -1120,7 +1120,7 @@ struct SignupForm {
 
 > Round 2 §7: one contract form, and a bug panics in every build instead of being skipped in `fast`. Codes: BYN2320, BYN2321, BYN2322.
 
-> Round 3 §11, O3, O4: checking at construction makes validity a property of the type, so `T.Validated`, `validated()` and `Validate` are gone; `it` matches lambdas; `at` reuses a particle instead of adding `on`; a function precondition is a different job from validating data, so it gets its own word, `expects`. Codes: BYN1050, BYN1063, BYN3206, BYN3207, BYN3208, BYN5011, BYN8006.
+> Round 3 §11, O3, O4: checking at construction makes validity a property of the type, so `T.Validated`, `validated()` and `Validate` are gone; `it` matches lambdas; `at` reuses a particle instead of adding `on`; a function precondition is a different job from validating data, so it gets its own word, `expects`. Codes: BYN1050, BYN1063, BYN3206, BYN3207, BYN3208, BYN3218, BYN5011, BYN8006.
 
 ---
 
@@ -1638,7 +1638,7 @@ Function `expects` contracts (§7.9) detect bugs and panic in every build mode. 
 
 ## 16. Strings and collections conventions
 
-**Naming follows the grammar (§5.2):** a verb on `ref this` mutates; the same verb without `ref this` returns a new value; the `-ed` participle exists only as the copy form of a mutating verb.
+**Naming follows the grammar (§5.2):** a plain verb acts on `ref this`; `-ed` names a changed copy or a view. The `-ed` form does not require a mutating verb to exist: an immutable type (`string`) has `trimmed()` and `lowercased()` with no `trim` or `lowercase`. A mutable type with both forms keeps both (`xs.sort()` / `xs.sorted()`).
 
 | Mutating (`ref this`) | Result form (`-ed`, derived: a view if possible, otherwise a copy) |
 |---|---|
@@ -1868,7 +1868,7 @@ let raw = try Base64.decode(text)
 
 `string.fromUtf8`, `try string(bytes)`, `string.tryFrom(bytes)` and `string(bytes, as: .latin1)` are renamed under BYN2230 to the codec forms.
 
-**Literals:** `"…"`, `$"…"`, `b"…"` (bytes), `sql"…"` with `$n`. `html"…"` and interpolating `sql"…{x}…"` stay deferred. A raw multi-line literal is not decided.
+**Literals:** `"…"`, `$"…"`, `b"…"` (bytes), `sql"…"` with `$n`. `html"…"` and interpolating `sql"…{x}…"` stay deferred. A raw multi-line literal is `"""…"""` (§2.3).
 
 **Culture.**
 - **No ambient culture.** No operation reads a global or per-thread locale; a call's result never depends on the machine.
