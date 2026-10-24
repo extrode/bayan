@@ -1,0 +1,8 @@
+`12`: 12
+`-128`: -128
+`128`: overflow
+`1x9`: bad digit at 1
+`999x`: bad digit at 3
+``: bad digit at 0
+`-`: bad digit at 1
+255 -1 -42

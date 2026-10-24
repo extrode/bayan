@@ -432,7 +432,7 @@ internal sealed class RegionAnalysis
         }
         // Rule 4: a returned borrow derives from every argument. `Io` and decoded `string` results are fresh copies and borrow none.
         var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch
-            or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.StringInvalidUtf8At or BuiltinFunction.HexEncode
+            or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.StringInvalidUtf8At or BuiltinFunction.HexEncode or BuiltinFunction.HexDecode
             ? Borrow.None
             : args.Aggregate(receiver, (acc, a) => acc.Union(a));
         // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
@@ -446,9 +446,9 @@ internal sealed class RegionAnalysis
                     var lent = Lend(c.Arguments[i], args[i], c.Syntax.Span.End);
                     result = result.Union(MayLend(c.Arguments[i].Type, []) ? lent : new Borrow(lent.Regions, []));
                 }
-        // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `string.from` return (Q29).
+        // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `Utf8.decode` return (Q29).
         if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow or BuiltinFunction.StrBufOver
-                or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.HexEncode))
+                or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.HexEncode))
             result = result.Union(_contexts.Peek());
         return result;
     }

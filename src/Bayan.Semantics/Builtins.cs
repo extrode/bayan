@@ -88,12 +88,30 @@ public sealed class Builtins
         var validationSource = SourceText.FromString("<builtin>", ValidationErrorSource);
         var validationDecl = (ErrorEnumDecl)SyntaxTree.Parse(validationSource).Root.Members[0];
         ValidationError = new ErrorSetSymbol("ValidationError", new Location(validationSource, validationDecl.Name.Span), Module, Accessibility.Public, validationDecl);
+        var ruleTree = SyntaxTree.Parse(SourceText.FromString("<builtin>", RuleSource));
+        RuleFile = new FileContext(Module, ruleTree);
+        var ruleDecl = (UnionDecl)ruleTree.Root.Members[0];
+        Rule = new UnionSymbol("Rule", new Location(RuleFile.Source, ruleDecl.Name.Span), Module, Accessibility.Public, ruleDecl, RuleFile);
+        ViolationDecl = (StructDecl)ruleTree.Root.Members[1];
+        var parseSource = SourceText.FromString("<builtin>", ParseErrorSource);
+        var parseDecl = (ErrorEnumDecl)SyntaxTree.Parse(parseSource).Root.Members[0];
+        ParseError = new ErrorSetSymbol("ParseError", new Location(parseSource, parseDecl.Name.Span), Module, Accessibility.Public, parseDecl);
+        var invalidSource = SourceText.FromString("<builtin>", Utf8InvalidSource);
+        var invalidTree = SyntaxTree.Parse(invalidSource);
+        var invalidDecl = (EnumDecl)invalidTree.Root.Members[0];
+        Utf8Invalid = new EnumSymbol("Utf8Invalid", new Location(invalidSource, invalidDecl.Name.Span), Module, Accessibility.Public, invalidDecl, new FileContext(Module, invalidTree));
+        foreach (var m in invalidDecl.Members)
+            Utf8Invalid.Members.Add(new EnumMemberSymbol(m.Name.Text, new Location(invalidSource, m.Name.Span), Utf8Invalid, Utf8Invalid.Members.Count, null));
         var bytes = ("bytes", (TypeSymbol)new SpanType(PrimitiveType.U8, readOnly: true));
-        StringFrom = Make("from", BuiltinFunction.StringFrom, PrimitiveType.String, bytes);
-        StringFrom.Fails = true;
-        StringFrom.ErrorSets.Add(Utf8Error);
-        StringTryFrom = Make("tryFrom", BuiltinFunction.StringTryFrom, new OptionalType(PrimitiveType.String), bytes);
+        Utf8Decode = Make("decode", BuiltinFunction.Utf8Decode, PrimitiveType.String, bytes);
+        Utf8Decode.Fails = true;
+        Utf8Decode.ErrorSets.Add(Utf8Error);
+        Utf8TryDecode = Make("tryDecode", BuiltinFunction.Utf8TryDecode, new OptionalType(PrimitiveType.String), bytes);
+        Utf8DecodeReplace = Make("decode", BuiltinFunction.Utf8DecodeReplace, PrimitiveType.String, bytes, ("invalid", Utf8Invalid));
         HexEncode = Make("encode", BuiltinFunction.HexEncode, PrimitiveType.String, bytes);
+        HexDecode = Make("decode", BuiltinFunction.HexDecode, new ListType(PrimitiveType.U8), ("text", PrimitiveType.String));
+        HexDecode.Fails = true;
+        HexDecode.ErrorSets.Add(ParseError);
         StringInvalidUtf8At = Make("invalidUtf8At", BuiltinFunction.StringInvalidUtf8At, new OptionalType(PrimitiveType.I64), bytes);
 
         // The iteration interfaces are declared from source too; `Compilation` declares their members like a user interface's.
@@ -138,14 +156,36 @@ public sealed class Builtins
     private const string Utf8ErrorSource = """
         public union error Utf8Error {
             /// The bytes are not well-formed UTF-8.
-            invalidSequence,
+            invalidSequence(i64 at),
         }
         """;
 
     /// <summary><c>union error Utf8Error</c>: numbered right after <c>IoError</c>, so <c>invalidSequence</c> is code 8.</summary>
     public ErrorSetSymbol Utf8Error { get; }
 
-    // Error cases have no payload yet, so `invalid` carries no `List<Violation<T>>` until step 5.3h (Q220, revision 0006).
+    // SPEC §8 gives `badDigit(Bytes at)`; units are spec-only, so the position is a plain byte offset (Question 331).
+    private const string ParseErrorSource = """
+        public union error ParseError {
+            /// The text has no digit, or a character that is not a digit, at this byte offset.
+            badDigit(i64 at),
+            /// The number does not fit the type.
+            overflow,
+        }
+        """;
+
+    /// <summary><c>union error ParseError</c>: what <c>T.parse(text)</c> and <c>Hex.decode</c> fail with; numbered after the user's sets.</summary>
+    public ErrorSetSymbol ParseError { get; }
+
+    private const string Utf8InvalidSource = """
+        public enum Utf8Invalid {
+            replace,
+        }
+        """;
+
+    /// <summary><c>enum Utf8Invalid</c>: the <c>invalid:</c> argument of the lossy <c>Utf8.decode</c>; it is not a type name users can write.</summary>
+    public EnumSymbol Utf8Invalid { get; }
+
+    // The shared set, for a `T` without `requires`, has no payload; a checked struct gets its own (`Compilation.ValidationErrorOf`).
     private const string ValidationErrorSource = """
         public union error ValidationError {
             /// The value breaks a `requires` rule of its type.
@@ -154,16 +194,45 @@ public sealed class Builtins
         """;
 
     /// <summary>
-    /// <c>union error ValidationError&lt;T&gt;</c>, what building a type with <c>requires</c> fails with; one set for every
-    /// <c>T</c>, numbered after the user's sets so their codes still start at 9.
+    /// <c>union error ValidationError&lt;T&gt;</c> for a <c>T</c> that is not a struct with <c>requires</c>, payload-less;
+    /// numbered after the user's sets so their codes still start at 9.
     /// </summary>
     public ErrorSetSymbol ValidationError { get; }
 
-    /// <summary><c>string string.from(ReadOnlySpan&lt;u8&gt; bytes) fails Utf8Error</c>: a copy from <c>context.allocator</c>.</summary>
-    public FunctionSymbol StringFrom { get; }
+    // J23: `range` and `length` shapes are recognized, everything else is `custom`; `pattern`, `required` and `kind`
+    // are spec-only (Question 337). `Violation<T>`'s field types are set per `T`.
+    private const string RuleSource = """
+        public union Rule {
+            /// `it.runeCount in a..=b`.
+            length(Range<i64> bounds)
+            /// `it in a..=b`.
+            range(Range<i64> bounds)
+            /// Any other rule.
+            custom
+        }
 
-    /// <summary><c>string? string.tryFrom(ReadOnlySpan&lt;u8&gt; bytes)</c>: as <c>string.from</c>, null on invalid bytes.</summary>
-    public FunctionSymbol StringTryFrom { get; }
+        public struct Violation {
+            i64 field
+            i64 rule
+        }
+        """;
+
+    /// <summary><c>union Rule</c>: the shape of a broken <c>requires</c> rule, in a <c>Violation&lt;T&gt;</c>.</summary>
+    public UnionSymbol Rule { get; }
+
+    public FileContext RuleFile { get; }
+
+    /// <summary>The declaration each <c>Violation&lt;T&gt; { T.Field field, Rule rule }</c> is made from.</summary>
+    public StructDecl ViolationDecl { get; }
+
+    /// <summary><c>string Utf8.decode(ReadOnlySpan&lt;u8&gt; bytes) fails Utf8Error</c>: a copy from <c>context.allocator</c>.</summary>
+    public FunctionSymbol Utf8Decode { get; }
+
+    /// <summary><c>string? Utf8.tryDecode(ReadOnlySpan&lt;u8&gt; bytes)</c>: as <c>Utf8.decode</c>, null on invalid bytes.</summary>
+    public FunctionSymbol Utf8TryDecode { get; }
+
+    /// <summary><c>string Utf8.decode(ReadOnlySpan&lt;u8&gt; bytes, Utf8Invalid invalid)</c>: each invalid sequence becomes U+FFFD; never fails.</summary>
+    public FunctionSymbol Utf8DecodeReplace { get; }
 
     /// <summary><c>i64? string.invalidUtf8At(ReadOnlySpan&lt;u8&gt; bytes)</c>: the byte offset of the first invalid sequence, null when valid.</summary>
     public FunctionSymbol StringInvalidUtf8At { get; }
@@ -171,14 +240,35 @@ public sealed class Builtins
     /// <summary><c>string Hex.encode(ReadOnlySpan&lt;u8&gt; bytes)</c>: two lowercase hex digits per byte, from <c>context.allocator</c>.</summary>
     public FunctionSymbol HexEncode { get; }
 
+    /// <summary><c>List&lt;u8&gt; Hex.decode(string text) fails ParseError</c>: two hex digits, either case, per byte.</summary>
+    public FunctionSymbol HexDecode { get; }
+
     /// <summary>A static member of <c>string</c>, or null.</summary>
     public FunctionSymbol? FindString(string name) => name switch
     {
-        "from" => StringFrom,
-        "tryFrom" => StringTryFrom,
         "invalidUtf8At" => StringInvalidUtf8At,
         _ => null,
     };
+
+    /// <summary>A static member of <c>Utf8</c>, or null; <c>decode</c> with <c>invalid:</c> is <see cref="Utf8DecodeReplace"/>.</summary>
+    public FunctionSymbol? FindUtf8(string name) => name switch
+    {
+        "decode" => Utf8Decode,
+        "tryDecode" => Utf8TryDecode,
+        _ => null,
+    };
+
+    private readonly Dictionary<PrimitiveType, FunctionSymbol> _parses = new();
+
+    /// <summary><c>T T.parse(string text, Radix as = .decimal) fails ParseError</c> on the integer type <paramref name="t"/>.</summary>
+    public FunctionSymbol IntParse(PrimitiveType t)
+    {
+        if (_parses.TryGetValue(t, out var fn)) return fn;
+        fn = Make("parse", BuiltinFunction.IntParse, t, ("text", PrimitiveType.String), ("as", Radix));
+        fn.Fails = true;
+        fn.ErrorSets.Add(ParseError);
+        return _parses[t] = fn;
+    }
 
     private const string IoErrorSource = """
         public union error IoError {

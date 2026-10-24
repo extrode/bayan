@@ -940,29 +940,55 @@ byn_str byn_int_string(int64_t v, int32_t bits, bool is_signed, byn_builtin_Radi
     return byn_str_copy((byn_str){buf + n, 65 - n}, to);
 }
 
-bool byn_int_parse(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out) {
+int64_t byn_int_parse_at(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out) {
     static const uint8_t bases[] = {2, 8, 10, 16};
     uint64_t base = bases[radix];
     bool decimal = radix == 2;
     int64_t i = 0;
     bool negative = decimal && is_signed && s.len > 0 && s.ptr[0] == '-';
     if (negative) i = 1;
-    if (i >= s.len) return false;
+    if (i >= s.len) return i;
     /* Decimal: the magnitude's limit; the others: every bit of the type. */
     uint64_t max = bits < 64 ? (UINT64_C(1) << bits) - 1 : UINT64_MAX;
     if (decimal && is_signed) max = negative ? (UINT64_C(1) << (bits - 1)) : (UINT64_C(1) << (bits - 1)) - 1;
     uint64_t u = 0;
+    bool overflow = false;
     for (; i < s.len; i++) {
         uint8_t c = s.ptr[i];
         uint64_t d = c >= '0' && c <= '9' ? (uint64_t)(c - '0') : c >= 'a' && c <= 'f' ? (uint64_t)(c - 'a' + 10)
             : c >= 'A' && c <= 'F' ? (uint64_t)(c - 'A' + 10) : 99;
-        if (d >= base || u > (max - d) / base) return false;
-        u = u * base + d;
+        if (d >= base) return i;
+        /* A bad digit after the overflow is still reported first. */
+        if (overflow || u > (max - d) / base) overflow = true;
+        else u = u * base + d;
     }
+    if (overflow) return -2;
     if (negative) *out = (int64_t)(0 - u);
     else if (is_signed && bits < 64 && (u >> (bits - 1)) != 0) *out = (int64_t)(u | ~((UINT64_C(1) << bits) - 1));
     else *out = (int64_t)u;
-    return true;
+    return -1;
+}
+
+bool byn_int_parse(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out) {
+    return byn_int_parse_at(s, bits, is_signed, radix, out) == -1;
+}
+
+int64_t byn_hex_decode(byn_str s, uint8_t** out, byn_alloc* to) {
+    for (int64_t i = 0; i < s.len; i++) {
+        uint8_t c = s.ptr[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return i;
+    }
+    /* An odd count lacks the last byte's second digit, which would be at the end. */
+    if (s.len % 2 != 0) return s.len;
+    uint8_t* p = s.len == 0 ? NULL : to->resize(to, NULL, 0, s.len / 2);
+    for (int64_t i = 0; i < s.len / 2; i++) {
+        uint8_t h = s.ptr[2 * i], l = s.ptr[2 * i + 1];
+        int hi = h <= '9' ? h - '0' : (h | 0x20) - 'a' + 10;
+        int lo = l <= '9' ? l - '0' : (l | 0x20) - 'a' + 10;
+        p[i] = (uint8_t)(hi << 4 | lo);
+    }
+    *out = p;
+    return -1;
 }
 
 byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to) {
@@ -1159,6 +1185,28 @@ int64_t byn_utf8_invalid_at(const uint8_t* p, int64_t n) {
         i += len;
     }
     return -1;
+}
+
+byn_str byn_utf8_decode_replace(const uint8_t* p, int64_t n, byn_alloc* to) {
+    /* At most three bytes per input byte: a lone invalid byte becomes U+FFFD. */
+    uint8_t* out = n == 0 ? NULL : to->resize(to, NULL, 0, n * 3);
+    int64_t len = 0;
+    int64_t i = 0;
+    while (i < n) {
+        int64_t bad = byn_utf8_invalid_at(p + i, n - i);
+        int64_t valid = bad < 0 ? n - i : bad;
+        memcpy(out + len, p + i, (size_t)valid);
+        len += valid;
+        i += valid;
+        if (bad < 0) break;
+        out[len++] = 0xEF, out[len++] = 0xBF, out[len++] = 0xBD;
+        /* One U+FFFD per invalid sequence: a lead byte takes the continuation bytes it expects. */
+        uint8_t c = p[i++];
+        int expect = (c & 0xE0) == 0xC0 ? 1 : (c & 0xF0) == 0xE0 ? 2 : (c & 0xF8) == 0xF0 ? 3 : 0;
+        while (expect-- > 0 && i < n && (p[i] & 0xC0) == 0x80) i++;
+    }
+    if (out) out = to->resize(to, out, n * 3, len);
+    return (byn_str){out, len};
 }
 
 bool byn_utf8_valid(const uint8_t* p, int64_t n) {

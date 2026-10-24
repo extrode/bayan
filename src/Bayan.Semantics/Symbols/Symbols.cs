@@ -355,10 +355,13 @@ public enum BuiltinFunction
     IoStdout,
     IoStderr,
     IoStdin,
-    StringFrom,
-    StringTryFrom,
+    Utf8Decode,
+    Utf8TryDecode,
+    Utf8DecodeReplace,
     HexEncode,
+    HexDecode,
     StringInvalidUtf8At,
+    IntParse,
     EnumFromOrdinal,
     EnumParse,
 }
@@ -454,7 +457,10 @@ public sealed class ErrorSetSymbol(string name, Location location, ModuleSymbol 
 
     public List<ErrorVariantSymbol> Variants { get; } = new();
 
-    public override string DisplayName => Name;
+    /// <summary>For <c>ValidationError&lt;T&gt;</c> of a struct with <c>requires</c>, that <c>T</c>.</summary>
+    public StructSymbol? Of { get; init; }
+
+    public override string DisplayName => Of is null ? Name : $"{Name}<{Of.DisplayName}>";
 
     public ErrorVariantSymbol? Find(string name) => Variants.Find(v => v.Name == name);
 }

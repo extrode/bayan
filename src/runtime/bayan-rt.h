@@ -297,8 +297,13 @@ byn_str byn_int_string(int64_t v, int32_t bits, bool is_signed, byn_builtin_Radi
 /* `T.tryParse(text, as: radix)`: digits only, no prefix, sign or spaces, either letter case. Decimal takes a leading `-` on a
    signed type and checks the range; the other radixes read the type's bits, as `string(n, as:)` prints them. False when invalid. */
 bool byn_int_parse(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out);
+/* `T.parse(text, as: radix)`: as `byn_int_parse`; -1 when it parses, -2 on overflow, otherwise the offset of the first bad
+ * digit (the length when a digit is missing). */
+int64_t byn_int_parse_at(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out);
 /* Two lowercase hex digits per byte (`Hex.encode`). */
 byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to);
+/* `Hex.decode`: -1 and the bytes in `*out`, or the offset of the first non-hex digit (the length for an odd count). */
+int64_t byn_hex_decode(byn_str s, uint8_t** out, byn_alloc* to);
 
 /* Makes room for `need` elements: grows *ptr (capacity *cap) through alloc. */
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc);
@@ -345,6 +350,8 @@ void byn_map_copy(const byn_map_hdr* src, const void* keys, int64_t ksize, void*
 bool byn_utf8_valid(const uint8_t* p, int64_t n);
 /* Byte offset of the first invalid sequence (its first byte), or -1 when the bytes are well-formed UTF-8. */
 int64_t byn_utf8_invalid_at(const uint8_t* p, int64_t n);
+/* `Utf8.decode(bytes, invalid: .replace)`: a copy with each invalid sequence as U+FFFD. */
+byn_str byn_utf8_decode_replace(const uint8_t* p, int64_t n, byn_alloc* to);
 
 /* argv[1..argc-1] as strings. Writes `error: argument N is not valid UTF-8` (N from 1) and exits 1 on bad input.
  * On Windows they come from the UTF-16 command line instead of `argv`, and `*argc` is set to their count. */

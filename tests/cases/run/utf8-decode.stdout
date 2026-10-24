@@ -1,0 +1,6 @@
+hi, tryDecode hi, lossy hi (2 bytes)
+invalid at 1, tryDecode none, lossy h� (4 bytes)
+invalid at 1, tryDecode none, lossy a�b (5 bytes)
+invalid at 0, tryDecode none, lossy ��a (7 bytes)
+whole value: at 0
+hi

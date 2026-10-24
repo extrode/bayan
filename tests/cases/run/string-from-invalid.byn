@@ -1,11 +1,11 @@
 // Invalid UTF-8 fails, and `string.invalidUtf8At` gives the offset of the first bad sequence.
 string describe(ReadOnlySpan<u8> bytes) {
-    let s = string.from(bytes) catch switch {
+    let s = Utf8.decode(bytes) catch switch {
         .invalidSequence => "invalidSequence",
     }
     let at = string.invalidUtf8At(bytes) ?? -1
-    let t = string.tryFrom(bytes) ?? "none"
-    return $"{s} at {at}, tryFrom {t}"
+    let t = Utf8.tryDecode(bytes) ?? "none"
+    return $"{s} at {at}, tryDecode {t}"
 }
 
 void main() fails Utf8Error {
@@ -21,5 +21,5 @@ void main() fails Utf8Error {
     print($"truncated: {describe(truncated.span)}")
     let lone: u8[2] = [0x80, 0x61]
     print($"lone continuation: {describe(lone.span)}")
-    let _ = try string.from(overlongNul.span)
+    let _ = try Utf8.decode(overlongNul.span)
 }

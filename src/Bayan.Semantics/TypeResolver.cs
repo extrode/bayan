@@ -172,13 +172,26 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 NoTypeArgs(n);
                 return compilation.Builtins.Utf8Error;
             }
-            // `ValidationError<T>`: one set for every `T` while cases carry no payload, until step 5.3h (Q220, revision 0006).
+            if (text == "ParseError")
+            {
+                NoTypeArgs(n);
+                return compilation.Builtins.ParseError;
+            }
+            // `ValidationError<T>`: a set per struct with `requires`, whose `invalid` carries the violations (J23).
             if (text == "ValidationError")
             {
                 if (n.Args.Length > 1)
                     compilation.Report(DiagnosticCodes.WrongTypeArgumentCount, file.Source, n.Span, [text, 1, n.Args.Length]);
-                return compilation.Builtins.ValidationError;
+                return compilation.ValidationErrorOf(n.Args.Length == 1 ? Resolve(n.Args[0]) : ErrorType.Instance);
             }
+            if (text == "Rule")
+            {
+                NoTypeArgs(n);
+                return compilation.Builtins.Rule;
+            }
+            // `Violation<T>` only for a struct with `requires`; any other `T` falls through to BYN2002.
+            if (text == "Violation" && n.Args.Length == 1 && compilation.ValidationErrorOf(Resolve(n.Args[0])) is { Of: not null } validation)
+                return ((ListType)validation.Variants[0].Fields[0].Type).Element;
             if (compilation.Builtins.FindInterface(text) is { } builtin)
             {
                 NoTypeArgs(n);
@@ -399,7 +412,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
     private string? Suggest(string text)
     {
         var lower = text.ToLowerInvariant();
-        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ValidationError", "ProcessResult", "Panic", "FormatSpec"]))
+        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ParseError", "ValidationError", "Violation", "Rule", "ProcessResult", "Panic", "FormatSpec"]))
             if (name.Equals(text, StringComparison.OrdinalIgnoreCase)) return name;
         if (PrimitiveType.ByName.ContainsKey(lower)) return lower;
         return lower switch

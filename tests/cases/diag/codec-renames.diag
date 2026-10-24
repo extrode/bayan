@@ -1,0 +1,35 @@
+error BYN2230: `string.from` is now `Utf8.decode`
+
+  4 │     let _ = try string.from(hi.span)
+    │                        ^^^^ the old name
+    │
+  help: write `Utf8.decode`
+    │ 4 │     let _ = try Utf8.decode(hi.span)
+    │   │                 +++++++++++
+
+error BYN2230: `string.fromUtf8` is now `Utf8.decode`
+
+  5 │     let _ = try string.fromUtf8(hi.span)
+    │                        ^^^^^^^^ the old name
+    │
+  help: write `Utf8.decode`
+    │ 5 │     let _ = try Utf8.decode(hi.span)
+    │   │                 +++++++++++
+
+error BYN2230: `string.tryFrom` is now `Utf8.tryDecode`
+
+  6 │     let _ = string.tryFrom(hi.span)
+    │                    ^^^^^^^ the old name
+    │
+  help: write `Utf8.tryDecode`
+    │ 6 │     let _ = Utf8.tryDecode(hi.span)
+    │   │             ++++++++++++++
+
+error BYN2230: `try string(bytes)` is now `try Utf8.decode(bytes)`
+
+  7 │     let _ = try string(hi.span)
+    │                 ^^^^^^ the old name
+    │
+  help: write `Utf8.decode`
+    │ 7 │     let _ = try Utf8.decode(hi.span)
+    │   │                 +++++++++++

@@ -245,13 +245,18 @@ internal sealed partial class Binder
 
     /// <summary>
     /// The body of a struct's <c>requires</c> check: each field's rules (with <c>it</c> the field), then the struct-level
-    /// rules, each failing with <c>ValidationError.invalid</c>. A field's failing rule ends the check first, so a struct
-    /// rule reading that field is skipped (J43).
+    /// rules. Every broken rule adds a <c>Violation&lt;T&gt;</c>, and the check fails with <c>ValidationError&lt;T&gt;.invalid</c>
+    /// holding them all. A struct rule reading a field whose own rule broke is skipped (J43).
     /// </summary>
     public void BindChecks(StructChecks checks)
     {
-        var invalid = _c.Builtins.ValidationError.Find("invalid")!;
+        var invalid = _c.ValidationErrorOf(_struct!).Find("invalid")!;
+        var node = _struct!.Decl;
+        // A distinct type has no `T.Field`, so its set is the payload-less one and the first broken rule fails.
+        var list = invalid.Fields.Count == 0 ? null : new LocalSymbol("violations", null, invalid.Fields[0].Type, LocalKind.Var) { Id = _nextLocalId++ };
         var statements = new List<BoundStmt>();
+        if (list is not null) statements.Add(new BoundLocalDecl(node, list, new BoundCollection(node, list.Type, [])));
+        var broken = new Dictionary<FieldSymbol, LocalSymbol>();
         void Add(RequiresRule r, FieldSymbol? field)
         {
             _it = field;
@@ -264,11 +269,34 @@ internal sealed partial class Binder
                         help: "write a condition the value must meet, such as `it > 0`");
                 return;
             }
-            checks.Rules.Add(new StructRule(r, field, condition));
-            var fail = new BoundFail(r, new BoundErrorVariant(r, invalid));
-            statements.Add(new BoundIf(r, new BoundUnary(r, UnaryOp.Not, condition, PrimitiveType.Bool), fail, null));
+            var rule = new StructRule(r, field, condition);
+            checks.Rules.Add(rule);
+            BoundExpr fails = new BoundUnary(r, UnaryOp.Not, condition, PrimitiveType.Bool);
+            foreach (var read in rule.Reads.Where(f => f != field && broken.ContainsKey(f)))
+                fails = new BoundBinary(r, BinaryOp.LogicalAnd, new BoundUnary(r, UnaryOp.Not, new BoundLocal(r, broken[read]), PrimitiveType.Bool), fails, PrimitiveType.Bool);
+            // A struct rule is reported at its `at` field, else at the first field it reads.
+            var at = field ?? (r.At is { } name ? _struct.FindField(name.Text) : null) ?? rule.Reads.FirstOrDefault() ?? _struct.Fields.FirstOrDefault();
+            if (list is null || at is null)
+            {
+                BoundExpr error = list is null ? new BoundErrorVariant(r, invalid) : new BoundErrorVariant(r, invalid) { Payload = [new BoundLocal(r, list)] };
+                statements.Add(new BoundIf(r, fails, new BoundFail(r, error), null));
+                return;
+            }
+            var entry = new BoundStructLiteral(r, (StructSymbol)((ListType)list.Type).Element, [new BoundEnumMember(r, _struct.FieldEnum!.Find(at.Name)!), RuleOf(r, field, condition)]);
+            BoundStmt then = new BoundExprStmt(r, new BoundBuiltinCall(r, BuiltinMember.ListAdd, new BoundLocal(r, list), [entry], PrimitiveType.Void));
+            if (field is not null)
+            {
+                if (!broken.TryGetValue(field, out var flag))
+                {
+                    flag = new LocalSymbol($"broken_{field.Name}", null, PrimitiveType.Bool, LocalKind.Var) { Id = _nextLocalId++ };
+                    broken[field] = flag;
+                    statements.Insert(0, new BoundLocalDecl(node, flag, new BoundLiteral(node, PrimitiveType.Bool, new ConstantValue(false))));
+                }
+                then = new BoundBlock(r, [then, new BoundAssign(r, new BoundLocal(r, flag), new BoundLiteral(r, PrimitiveType.Bool, new ConstantValue(true)), null)]);
+            }
+            statements.Add(new BoundIf(r, fails, then, null));
         }
-        foreach (var field in _struct!.Fields)
+        foreach (var field in _struct.Fields)
             foreach (var r in field.Decl.Requires)
                 Add(r, field);
         foreach (var r in _struct.Decl.Rules)
@@ -278,7 +306,36 @@ internal sealed partial class Binder
                     help: $"name a field of `{_struct.Name}`");
             Add(r, null);
         }
-        _fn!.Body = new BoundBlock(_struct.Decl, statements.ToArray());
+        if (list is null)
+        {
+            _fn!.Body = new BoundBlock(node, statements.ToArray());
+            return;
+        }
+        var any = new BoundUnary(node, UnaryOp.Not, new BoundBuiltinCall(node, BuiltinMember.ListIsEmpty, new BoundLocal(node, list), [], PrimitiveType.Bool), PrimitiveType.Bool);
+        statements.Add(new BoundIf(node, any, new BoundFail(node, new BoundErrorVariant(node, invalid) { Payload = [new BoundLocal(node, list)] }), null));
+        _fn!.Body = new BoundBlock(node, statements.ToArray());
+    }
+
+    /// <summary>
+    /// The <c>Rule</c> of a field's rule (J23): <c>it in a..=b</c> is <c>range</c> and <c>it.runeCount in a..=b</c> is
+    /// <c>length</c>, with constant integer ends; anything else is <c>custom</c>.
+    /// </summary>
+    private BoundExpr RuleOf(RequiresRule r, FieldSymbol? field, BoundExpr condition)
+    {
+        var rule = _c.Builtins.Rule;
+        var shape = r.Condition is InExpr { Value: var v } ? v switch
+        {
+            NameExpr { Name.Text: "it" } => "range",
+            MemberExpr { Target: NameExpr { Name.Text: "it" }, Member.Text: "runeCount" } => "length",
+            _ => null,
+        } : null;
+        if (field is not null && shape is not null && condition is BoundIs { Pattern: BoundRangePattern p }
+            && Bound(p.Start) is { } start && Bound(p.End) is { } end)
+            return new BoundUnionNew(r, rule.Find(shape)!, [new BoundRange(r.Condition, start, end, p.Inclusive, new RangeType(PrimitiveType.I64))]);
+        return new BoundUnionNew(r, rule.Find("custom")!, []);
+
+        BoundExpr? Bound(BoundExpr e) => e.Constant?.Value is Int128 n && n >= long.MinValue && n <= long.MaxValue
+            ? new BoundLiteral(e.Syntax, PrimitiveType.I64, new ConstantValue(n)) : null;
     }
 
     private void BindParameterDefaults()
