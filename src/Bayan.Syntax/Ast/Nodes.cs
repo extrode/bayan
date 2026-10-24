@@ -199,6 +199,9 @@ public sealed record TypeAliasDecl(TextSpan Span, Modifiers Modifiers, Name Name
     public RequiresRule[] Requires { get; init; } = [];
 }
 
+/// <summary><c>effect name = net, fs</c>: names a set of effects (§14).</summary>
+public sealed record EffectDecl(TextSpan Span, Modifiers Modifiers, Name Name, Name[] Effects) : Decl(Span);
+
 /// <summary><c>test "name" { … }</c>, or <c>test "name" (T a, U b) { … }</c> run once per <c>@cases</c> value.</summary>
 public sealed record TestDecl(TextSpan Span, string Title, Param[] Params, BlockStmt Body) : Decl(Span);
 

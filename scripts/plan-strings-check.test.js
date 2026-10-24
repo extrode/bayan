@@ -5,7 +5,7 @@ const script = new URL("./plan-strings-check.js", import.meta.url).pathname;
 
 const plan = [
   '- (c) BYN1044 `KeywordOrder` "`{0}` is an input form; write `{1}`" (label at the keywords; help "put the kind first: `{1}`"; fix yes).',
-  '- (c) BYN1043 `TypeNameOrder` (revised), two forms. A field: "`{0}: {1}` is an input form; write `{1} {0}`" (label "name before type"; help "declarations put the type first"; fix yes).',
+  '- (c) BYN1043 `TypeNameOrder` (revised), two forms. A field: "`{0}: {1}` is an input form; write `{1} {0}`" (label "name before type"; help "put the type before the name; declarations are type-first"; fix yes).',
   '- (c) BYN1053 `OneLine` "`{0}` declares its cases on one line" (O1; label at the first `,`; help "write each case on its own line"; fix yes).',
   '- (c) BYN6006 `ContextInput` "`context (…) { }` is now `provide … { }`" (label at `context`; help "write `provide`"; fix yes).',
 ].join("\n");
@@ -20,10 +20,21 @@ const descriptors = `
 const parser = (help1044) => `
 class Parser {
     void A() { Report(KeywordOrder, help: $"${help1044}"); }
-    void B() { Report(TypeNameOrder, help: "declarations put the type first"); }
+    void B() { Report(TypeNameOrder, help: "put the type before the name; declarations are type-first"); }
     void C() { Report(OneLine, help: "write each case on its own line"); }
     void D() { Report(ContextInput, help: "write \`provide\`"); }
 }
+`;
+
+const helpTest = `
+    private static readonly HashSet<string> Verbs =
+    [
+        "put", "write",
+    ];
+    private static readonly Dictionary<string, string> Allowed = new()
+    {
+        ["did you mean \`"] = "question",
+    };
 `;
 
 const page = (code, message, help) => `# ${code}: title\n\n**Message.** ${message}\n\n**Help.** ${help}\n`;
@@ -41,6 +52,7 @@ async function fixture(help1044) {
   };
   await write("docs/plans/2026-10-22-002-design-round-3.md", plan);
   await write("src/Bayan.Syntax/Diagnostics/DiagnosticCodes.cs", "class DiagnosticCodes {}\n");
+  await write("tests/Bayan.Tests/HelpLanguageTests.cs", helpTest);
   await git(dir, "init", "-q", "-b", "dev");
   await git(dir, "add", "-A");
   await git(dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--no-verify", "-m", "base");
@@ -48,7 +60,7 @@ async function fixture(help1044) {
   await write("src/Bayan.Syntax/Parsing/Parser.cs", parser(help1044));
   await write("tests/cases/diag/field.diag", "error[BYN1043]: `x: i64` is an input form; write `i64 x`\n");
   await write("docs/diagnostics/BYN1044.md", page("BYN1044", "`{0}` is an input form; write `{1}`", "put the kind first: `{1}`"));
-  await write("docs/diagnostics/BYN1043.md", page("BYN1043", "`x: i64` is an input form; write `i64 x`", "declarations put the type first"));
+  await write("docs/diagnostics/BYN1043.md", page("BYN1043", "`x: i64` is an input form; write `i64 x`", "put the type before the name; declarations are type-first"));
   await write("docs/diagnostics/BYN1053.md", page("BYN1053", "`{0}` declares its cases on one line", "write each case on its own line"));
   await write("docs/diagnostics/BYN6006.md", page("BYN6006", "`context (…) { }` is now `provide … { }`", "write `provide`"));
   await git(dir, "checkout", "-q", "-b", "feat/x");
@@ -92,6 +104,25 @@ Deno.test("a page without the plan's help fails", async () => {
     assertEquals(code, 1);
     assertStringIncludes(text, "BYN1053 help not in docs/diagnostics/BYN1053.md");
     assertStringIncludes(text, "BYN1053 message not in docs/diagnostics/BYN1053.md");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("a plan help without a leading verb fails, alone and in --all-help", async () => {
+  const dir = await fixture("put the kind first: `{canonical}`");
+  try {
+    const planFile = `${dir}/docs/plans/2026-10-22-002-design-round-3.md`;
+    const text = await Deno.readTextFile(planFile);
+    await Deno.writeTextFile(planFile, text.replace('help "write each case on its own line"', 'help "each case goes on its own line"'));
+    const one = await check(dir, "BYN1053");
+    assertEquals(one.code, 1);
+    assertStringIncludes(one.text, 'BYN1053 help in the plan does not start with a verb from tests/Bayan.Tests/HelpLanguageTests.cs: "each case goes on its own line"');
+    const all = await check(dir, "--all-help");
+    assertEquals(all.code, 1);
+    assertStringIncludes(all.text, "1 plan help(s) without a leading verb");
+    await Deno.writeTextFile(planFile, text);
+    assertEquals((await check(dir, "--all-help")).code, 0);
   } finally {
     await Deno.remove(dir, { recursive: true });
   }

@@ -92,7 +92,7 @@ internal sealed partial class Binder
             fn = instance;
         }
         var (outer, outerSink) = (_printArgument, _sinkArgument);
-        _printArgument = fn.Builtin == BuiltinFunction.Print;
+        _printArgument = fn.Builtin is BuiltinFunction.Print or BuiltinFunction.Log;
         _sinkArgument = fn.Builtin switch
         {
             BuiltinFunction.IoRun => "Io.run",
@@ -304,6 +304,11 @@ internal sealed partial class Binder
             if (p.Syntax?.Default is not null && fn is not null)
             {
                 result[i] = _c.ParameterDefault(fn, p) ?? new BoundErrorExpr(c);
+                continue;
+            }
+            if (fn?.Builtin == BuiltinFunction.Log && p.Ordinal == 1)
+            {
+                result[i] = new BoundEnumMember(c, _c.Builtins.LogLevel.Find("info")!);
                 continue;
             }
             missing.Add(p.Name);

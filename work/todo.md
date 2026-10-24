@@ -172,7 +172,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51b1: the BYN1043 local fix picks `let`/`var` by a syntactic scan, so a local changed only through a mutating method gets `let` and then BYN2104; move the choice to the binder (handoff Q122).
 - r3-51b1: C# test strings still holding type-first locals are found only when a test fails; a sweep of `tests/Bayan.Tests/*.cs` program strings for `T x = e` would catch any that expect errors.
 - r3-51b1: `IsWrittenLater` scans to the enclosing `}`, so a top-level script local is scanned to end of file and a same-named local in a later function counts as a write.
-- r3-51b1 gate: plan §1 (c) BYN1043 helps ("declarations put the type first", "local bindings put the name first") do not start with a verb, so the code prefixes one to pass HelpLanguageTests; reconcile plan wording or the verb rule.
 - r3-51b2a: messages and docs still say `error enum`/`unique struct`: BYN2608, BYN2609, the BYN2804 "an error enum" kind, the `[ExitCode]` help in `Compilation.cs`, and `TypeFacts.WhyUnique` ("declared `unique struct`"); the pages under `docs/diagnostics/` that show `error enum` examples.
 - r3-51b2a: `ErrorEnumDecl`/`ErrorSetDecl` were kept (AST dump `ErrorEnum`/`ErrorSet`) instead of the plan's single `ErrorUnionDecl`; merge them if the binder needs one node.
 - r3-51b2a: `except` narrowing of a `union error` is rejected with BYN2022 until function error sets carry excluded cases (handoff Q124).
@@ -185,7 +184,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51b2b gate: `ref this is .s` after other parameters (already BYN2117) leaves `is .s` unconsumed and adds a second parse error.
 - r3-51c: BYN0007/0008/0009 messages, `TokenKind.CharLiteral` and `PrimitiveKind.Char` still say char; rename in the C# and selfhost lexers together (handoff Q133).
 - r3-51c: `unsafe because` (J6) waits for an `unsafe` block statement; none parses today.
-- r3-51c: SPEC §7.9 "Not in v0.1: `requires` on fields and distinct types (BYN2322)" disagrees with the plan's v0.1 yes; reconcile in 5.3b, which also deletes `Compilation.CheckRequires`.
 - r3-51c: BYN2322's help still suggests a function's `requires`, which becomes `expects` (BYN1063, 5.1e).
 - r3-51c: C17 lists `rune` as a keyword; 5.1c keeps it a type name like `bool`.
 - r3-51c: `suq/fail/{bracket-attr,block-comment,char,requires-value}.byn` keep their input forms on purpose (compile-fail corpus).
@@ -201,11 +199,17 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Revision 0002 item 16: the project-style type printer (with `TypeResolver.cs`) was not built in 5.2b; follow-up, after 5.2b.
 - Revision 0002 item 25: BYN1042 (built in 5.1a) does not cover `fail`; add `fail` to its scope and message in 5.1e.
 - Revision 0002 item 1: BYN1065 (clause order) does not know `expects`; order `where` → `expects` → `becomes` → `fails` → `uses` and the new message in 5.1e.
-- Revision 0002 item 27: 5.1c moves a field rule that reads `it` and another field to the struct (Q131); 5.3b rejects it under BYN3207 instead.
+- Revision 0002 item 27: 5.1c moves a field rule that reads `it` and another field to the struct (Q131); 5.3b rejects it under BYN3218 instead (revision 0004 item 1).
 - Revision 0002 item 8: J55 now adopts the BYN1043 syntactic scan (Q122), so the r3-51b1 entry above (move the choice to the binder) is superseded; nothing to build.
 - Revision 0002 item 9: `except .case` stays parse only with BYN2022 (Q124); 5.3b lifts it.
 - Revision 0002 item 16: the C# primitive names are reserved in `Keywords.cs` in 5.1e (the revision 0001 entry above, J92).
-- Revision 0003: the built `string.from`/`string.tryFrom`/`string.invalidUtf8At` (Q71, `Builtins.cs:47-51`) predate the codecs; rename to `Utf8.decode`/`Utf8.tryDecode` under BYN2230 in 5.4. Named format specs and BYN1068 parse in 5.1e.
+- Revision 0003: the built `string.from`/`string.tryFrom`/`string.invalidUtf8At` (Q71, `Builtins.cs:47-51`) predate the codecs; `invalidUtf8At` is dropped (revision 0004 item 5); rename to `Utf8.decode`/`Utf8.tryDecode` under BYN2230 in 5.4. Named format specs and BYN1068 parse in 5.1e.
+- Revision 0005: the BYN5001 checker (`src/Bayan.Semantics`) rejects an `-ed` member with no `ref this` verb; change it in 5.4 to reject an `-ed` member that takes `ref this` and accept one with no plain verb.
 - r3-52a: `struct Point { f64 x, f64 y }` (fields on one line with `,`) is BYN1005 with a fix that leaves `, f64 y }` on the next line; no BYN1053 rewrite for fields.
 - r3-52a: BYN2787's page and `trust-reason.byn` still describe `trust(x, reason:)`; decide in 5.3e whether BYN2787 retires once `trust` is only an input form.
 - r3-52a: a user method named `trustUnchecked` with no arguments binds as the `Untrusted` unwrap (Question 143).
+- plan-strings-check: diagnostics pages for codes landed before 2026-10-24 carry no verbatim message and help lines; backfill at round-3 end so the check passes for every round-3 code.
+- r3-55: SPEC §21.2 still says `bayan format` is "not in v0.1", and a paragraph splits its CLI table (the `bayan pkg` … `bayan new test X` rows sit after the `--color` text); fix in a draft revision (SPEC is frozen).
+- r3-55: `docs/bayan-terminal-style.md` §4 has no `bayan audit` section, though `StyleTests` renders an `audit` shape (`tests/cases/style/audit.*`).
+- r3-55: `bayan audit` names a call bypass by its member only (`trustUnchecked()`), since there is no trim-safe syntax walker in `Bayan.Syntax`; a walker would let it show the full callee (Question 240).
+- r3-55: `bayan audit` lists no C sources per dependency (SPEC §19.3); add them when dependencies land.

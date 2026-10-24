@@ -14,6 +14,15 @@ public sealed class Builtins
         Print = Make("print", BuiltinFunction.Print, PrimitiveType.Void, ("text", PrimitiveType.String));
         Panic = Make("panic", BuiltinFunction.Panic, PrimitiveType.Never, ("message", PrimitiveType.String));
         Todo = Make("todo", BuiltinFunction.Todo, PrimitiveType.Never, ("message", PrimitiveType.String));
+
+        // `LogLevel` is declared from source for its member names; it is not a type name users can write yet.
+        var logSource = SourceText.FromString("<builtin>", LogLevelSource);
+        var logTree = SyntaxTree.Parse(logSource);
+        var logDecl = (EnumDecl)logTree.Root.Members[0];
+        LogLevel = new EnumSymbol("LogLevel", new Location(logSource, logDecl.Name.Span), Module, Accessibility.Public, logDecl, new FileContext(Module, logTree));
+        foreach (var m in logDecl.Members)
+            LogLevel.Members.Add(new EnumMemberSymbol(m.Name.Text, new Location(logSource, m.Name.Span), LogLevel, LogLevel.Members.Count, null));
+        Log = Make("log", BuiltinFunction.Log, PrimitiveType.Void, ("text", PrimitiveType.String), ("as", LogLevel));
         ArenaNew = Make("Arena", BuiltinFunction.ArenaNew, BuiltinType.Arena);
         StrBufNew = Make("StrBuf", BuiltinFunction.StrBufNew, BuiltinType.StrBuf, ("buffer", new SpanType(PrimitiveType.U8)));
         StrBufGrow = Make("StrBuf", BuiltinFunction.StrBufGrow, BuiltinType.StrBuf);
@@ -224,6 +233,21 @@ public sealed class Builtins
     /// <summary><c>print(string)</c>: writes the text and a newline to standard output.</summary>
     public FunctionSymbol Print { get; }
 
+    private const string LogLevelSource = """
+        public enum LogLevel {
+            debug,
+            info,
+            warn,
+            error,
+        }
+        """;
+
+    /// <summary><c>enum LogLevel</c>: the levels of <c>log</c>; ordinal 0 is <c>debug</c>, as in <c>bayan-rt.h</c>.</summary>
+    public EnumSymbol LogLevel { get; }
+
+    /// <summary><c>log(string text, LogLevel as = .info)</c>: ambient logging to standard error, not an effect (spec §14).</summary>
+    public FunctionSymbol Log { get; }
+
     /// <summary><c>panic(string)</c>: aborts with a message and location.</summary>
     public FunctionSymbol Panic { get; }
 
@@ -233,6 +257,7 @@ public sealed class Builtins
     public FunctionSymbol? Find(string name) => name switch
     {
         "print" => Print,
+        "log" => Log,
         "panic" => Panic,
         "todo" => Todo,
         "Owned" => OwnedNew,

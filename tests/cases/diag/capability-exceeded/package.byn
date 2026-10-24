@@ -1,0 +1,7 @@
+Package {
+    name:         "local/report",
+    version:      "0.1.0",
+    edition:      2027,
+    kind:         .app,
+    capabilities: [.net],
+}

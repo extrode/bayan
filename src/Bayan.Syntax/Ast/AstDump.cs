@@ -184,6 +184,9 @@ public static class AstDump
                     Line(depth, $"ErrorSet {Mods(d.Modifiers)}{d.Name.Text} = {string.Join(", ", d.Members.Select(Type))}" +
                         (d.Except.Length == 0 ? "" : " except " + string.Join(", ", d.Except.Select(n => "." + n.Text))));
                     break;
+                case EffectDecl d:
+                    Line(depth, $"Effect {Mods(d.Modifiers)}{d.Name.Text} = {string.Join(", ", d.Effects.Select(e => e.Text))}");
+                    break;
                 case TestDecl d:
                     Line(depth, "Test " + TokenDump.Escape(d.Title) + (d.Params.Length == 0 ? "" : " " + Params(d.Params)));
                     Stmt(depth + 1, d.Body);

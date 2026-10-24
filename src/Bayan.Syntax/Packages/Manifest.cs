@@ -23,7 +23,7 @@ public enum PrimitiveStyle { Sized, Csharp }
 /// </summary>
 public sealed class Manifest
 {
-    /// <summary>Fields of <c>Package</c>; the first four are read, the rest are accepted as written.</summary>
+    /// <summary>Fields of <c>Package</c>; the first four and <c>capabilities</c> are read, the rest are accepted as written.</summary>
     private static readonly string[] PackageFields = ["name", "version", "edition", "kind", "codes", "capabilities", "deps", "test", "dist", "style"];
 
     private static readonly string[] DistFields = ["targets", "mode"];
@@ -46,6 +46,9 @@ public sealed class Manifest
     public int Edition { get; private set; } = 2027;
 
     public PackageKind Kind { get; private set; } = PackageKind.App;
+
+    /// <summary><c>capabilities</c> as written (<c>fs</c>, <c>net</c>, …); null when absent, so there is no bound.</summary>
+    public List<string>? Capabilities { get; private set; }
 
     /// <summary><c>dist.targets</c> as written (<c>host</c>, <c>linux-x64</c>, …); empty when absent.</summary>
     public List<string> DistTargets { get; } = new();
@@ -110,6 +113,13 @@ public sealed class Manifest
                 case EnumValue { Name: "lib" }: Kind = PackageKind.Lib; break;
                 default: Invalid(kind, "kind", "`.app` or `.lib`"); break;
             }
+        }
+        if (fields.TryGetValue("capabilities", out var capabilities))
+        {
+            if (capabilities is ListValue list && list.Items.All(c => c is EnumValue))
+                Capabilities = list.Items.Cast<EnumValue>().Select(c => c.Name).ToList();
+            else
+                Invalid(capabilities, "capabilities", "a list of capabilities, e.g. `[.fs, .net]`");
         }
         if (fields.TryGetValue("style", out var style))
         {

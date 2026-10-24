@@ -1,0 +1,9 @@
+void main() {
+    let n = 3
+    print("before")
+    log("starting")
+    log($"loaded {n} items", as: .debug)
+    log("disk almost full", as: .warn)
+    log($"line one\nline two\t{n}", as: .error)
+    print("after")
+}

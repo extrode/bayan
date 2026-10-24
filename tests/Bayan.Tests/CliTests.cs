@@ -38,6 +38,70 @@ public sealed class CliTests
     }
 
     [Fact]
+    public void FmtIsAnUnknownCommandNamingFormat()
+    {
+        var (exit, _, stderr) = Run("fmt");
+        Assert.Equal(CliApp.ExitUsage, exit);
+        Assert.Contains("unknown command `fmt`", stderr);
+        Assert.Contains("  format <path>", stderr);
+    }
+
+    private static string Fresh(string name, string source)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "cli", name);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "main.byn"), source);
+        return dir;
+    }
+
+    [Fact]
+    public void AuditListsEveryBypassWithItsReason()
+    {
+        var dir = Fresh("audit", "@allow(BYN2230) because \"kept for the C ABI\"\nvoid toHex() {\n}\n\nunsafe void poke() {\n}\n\n"
+            + "void main() {\n    let k = input.trustUnchecked() because \"a fixture\"\n    unsafe because \"raw write\" {\n    }\n}\n\nextern i32 puts(cstr s)\n");
+        var (exit, stdout, stderr) = Run("audit", dir);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        var main = Path.Combine(dir, "main.byn");
+        Assert.Equal(
+            $"{main}:1:1  @allow(BYN2230)  because \"kept for the C ABI\"\n{main}:5:1  unsafe void poke()  no reason given\n"
+            + $"{main}:9:19  trustUnchecked()  because \"a fixture\"\n{main}:10:5  unsafe  because \"raw write\"\n"
+            + $"{main}:14:1  extern i32 puts(cstr s)  no reason given\n◆ 5 bypasses in {dir}\n",
+            stdout.ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
+    public void AuditNeedsOnePath()
+    {
+        var (exit, _, stderr) = Run("audit");
+        Assert.Equal(CliApp.ExitUsage, exit);
+        Assert.Contains("usage: bayan audit <path>", stderr);
+    }
+
+    [Fact]
+    public void FeaturesUsedListsNodesBuiltinsAndDiagnostics()
+    {
+        var dir = Fresh("features", "void main() {\n    var s = \"abc\"\n    if s.length > 1 {\n        print(s)\n    }\n}\n");
+        var (exit, stdout, stderr) = Run("features", "--used", dir);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        using var json = System.Text.Json.JsonDocument.Parse(stdout);
+        string[] Items(string name) => json.RootElement.GetProperty(name).EnumerateArray().Select(e => e.GetString()!).ToArray();
+        Assert.Equal(1, json.RootElement.GetProperty("version").GetInt32());
+        Assert.Contains("IfStmt", Items("nodes"));
+        Assert.Contains("FunctionDecl", Items("nodes"));
+        Assert.Equal(["Print", "StringLength"], Items("builtins"));
+        Assert.Equal(["BYN2311"], Items("diagnostics"));
+    }
+
+    [Fact]
+    public void FeaturesNeedsUsed()
+    {
+        var (exit, _, stderr) = Run("features", ".");
+        Assert.Equal(CliApp.ExitUsage, exit);
+        Assert.Contains("usage: bayan features --used <path>", stderr);
+    }
+
+    [Fact]
     public void ExplainPrintsTheDocCaseInsensitively()
     {
         var (exit, stdout, _) = Run("explain", "byn0003");

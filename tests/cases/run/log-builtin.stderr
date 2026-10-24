@@ -1,0 +1,4 @@
+info: starting
+debug: loaded 3 items
+warn: disk almost full
+error: line one\nline two\t3

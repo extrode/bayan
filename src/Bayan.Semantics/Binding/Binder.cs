@@ -1151,13 +1151,20 @@ internal sealed partial class Binder
         BoundExpr? allocator = null;
         foreach (var v in c.Values)
         {
-            if (v.Name.Text != "allocator")
+            // `alloc` is the handler's name; `allocator` is still accepted for it.
+            if (v.Name.Text is not ("alloc" or "allocator"))
             {
-                Report(DiagnosticCodes.Unsupported, v.Name.Span, [$"the context value `{v.Name.Text}`"]);
+                if (v.Name.Text is "net" or "fs" or "clock" or "random" or "env" or "process" or "console" or "log")
+                    Report(DiagnosticCodes.Unsupported, v.Name.Span, [$"the `{v.Name.Text}` handler"]);
+                else
+                    Report(DiagnosticCodes.UnknownHandler, v.Name.Span, [v.Name.Text], label: v.Name.Text == "suspend" ? "`suspend` has no handler" : "not a handler",
+                        help: "choose one of the handler names; `suspend` has no handler");
                 continue;
             }
             allocator = BindConverted(v.Value, BuiltinType.Arena);
         }
+        // Every handler was reported: the body still runs, with the handlers it already has.
+        if (allocator is null && c.Values.Length > 0) return BindBlock(c.Body);
         if (allocator is null)
         {
             Report(DiagnosticCodes.MissingArgument, c.Span, ["allocator", "context"]);

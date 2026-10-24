@@ -1,0 +1,15 @@
+List<i64> evens(i64 n) {
+    var xs = List<i64>()
+    for i in 0..n {
+        xs.append(i * 2)
+    }
+    return xs
+}
+
+void main() {
+    using var arena = Arena()
+    provide alloc: arena {
+        let xs = evens(4)
+        print($"{xs.length} {xs[3]}")
+    }
+}

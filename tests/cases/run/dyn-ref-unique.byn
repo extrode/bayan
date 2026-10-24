@@ -1,6 +1,6 @@
 interface IStack {
     i64 count { get }
-    void push(ref this, i64 v)
+    void push(ref this, i64 v) uses alloc
     i64 top()
 }
 

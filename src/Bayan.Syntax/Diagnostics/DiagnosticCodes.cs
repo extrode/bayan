@@ -308,7 +308,12 @@ public static class DiagnosticCodes
 
     // ── Effects 6000–6999 ────────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor NoallocRemoved = Error("BYN6001", "`{0}` is removed; a function without `uses` is already pure");
+    public static readonly DiagnosticDescriptor EffectNotDeclared = Error("BYN6002", "`{0}` uses `{1}` but does not declare it");
+    public static readonly DiagnosticDescriptor UnknownEffect = Error("BYN6003", "`{0}` is not an effect");
+    public static readonly DiagnosticDescriptor CapabilityExceeded = Error("BYN6004", "`{0}` uses `{1}`, which package `{2}` does not declare in `capabilities`");
+    public static readonly DiagnosticDescriptor EffectBoundExceeded = Error("BYN6005", "`{0}` uses `{1}`, beyond the bound `{2}` declared by `{3}`");
     public static readonly DiagnosticDescriptor ContextBlockInput = Error("BYN6006", "`context (…) {{ }}` is now `provide … {{ }}`");
+    public static readonly DiagnosticDescriptor UnknownHandler = Error("BYN6007", "`{0}` is not a handler; `provide` takes `alloc`, `net`, `fs`, `clock`, `random`, `env`, `process`, `console` or `log`");
 
     // ── Security 8000–8999 ───────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor MissingBecause = Error("BYN8001", "`{0}` bypasses a safety rule and needs `because \"…\"`");
