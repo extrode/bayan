@@ -213,3 +213,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-55: `docs/bayan-terminal-style.md` §4 has no `bayan audit` section, though `StyleTests` renders an `audit` shape (`tests/cases/style/audit.*`).
 - r3-55: `bayan audit` names a call bypass by its member only (`trustUnchecked()`), since there is no trim-safe syntax walker in `Bayan.Syntax`; a walker would let it show the full callee (Question 240).
 - r3-55: `bayan audit` lists no C sources per dependency (SPEC §19.3); add them when dependencies land.
+- r3-53b: `x = x with { … }` on a `unique` struct reports BYN2780 (implicit copy of `x`) instead of moving `x`; `run/take.byn` uses a method instead. Decide whether self-assignment through `with` is a move (ownership, L006).
