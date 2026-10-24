@@ -267,6 +267,22 @@ void byn_report_error(byn_str summary) {
     fflush(stderr);
 }
 
+void byn_log(byn_builtin_LogLevel level, byn_str text) {
+    static const char* const names[] = {"debug: ", "info: ", "warn: ", "error: "};
+    byn_stdout_flush();
+    fputs(names[level & 3], stderr);
+    for (int64_t i = 0; i < text.len; i++) {
+        uint8_t b = text.ptr[i];
+        if (b == '\n') fputs("\\n", stderr);
+        else if (b == '\r') fputs("\\r", stderr);
+        else if (b == '\t') fputs("\\t", stderr);
+        else if (b < 0x20 || b == 0x7F) fprintf(stderr, "\\u{%X}", b);
+        else fputc(b, stderr);
+    }
+    fputc('\n', stderr);
+    fflush(stderr);
+}
+
 void byn_w_bytes(byn_writer* w, const uint8_t* p, int64_t n) {
     while (n > 0) {
         int64_t room = w->cap - w->len;

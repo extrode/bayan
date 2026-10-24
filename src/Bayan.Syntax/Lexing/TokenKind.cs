@@ -170,6 +170,8 @@ public enum TokenKind : ushort
     BecomeKeyword,
     // Declaration-only, no meaning yet; contextual like the other declaration keywords.
     LawKeyword,
+    // Effect aliases (§14), contextual.
+    EffectKeyword,
     // Accepted for C# compatibility.
     ForeachKeyword,
     NewKeyword,
@@ -177,7 +179,6 @@ public enum TokenKind : ushort
     GotoKeyword,
     // Reserved: no meaning yet, may not be used as identifiers.
     ActorKeyword,
-    EffectKeyword,
     MacroKeyword,
     SelectKeyword,
     EnsuresKeyword,
@@ -196,7 +197,8 @@ public static class TokenKindFacts
     public static bool IsContextualKeyword(this TokenKind kind) => kind is
         TokenKind.ErrorKeyword or TokenKind.FlagsKeyword or TokenKind.UnitKeyword or TokenKind.DistinctKeyword or
         TokenKind.OpenKeyword or TokenKind.ExtensibleKeyword or TokenKind.SetKeyword or TokenKind.TypeKeyword or
-        TokenKind.LawKeyword or TokenKind.DerivationKeyword or TokenKind.AttributeKeyword or TokenKind.EmbedKeyword;
+        TokenKind.LawKeyword or TokenKind.DerivationKeyword or TokenKind.AttributeKeyword or TokenKind.EmbedKeyword or
+        TokenKind.EffectKeyword;
 
     public static bool IsStringLiteral(this TokenKind kind) =>
         kind is TokenKind.StringLiteral or TokenKind.RawStringLiteral or TokenKind.CStringLiteral or TokenKind.U16StringLiteral;

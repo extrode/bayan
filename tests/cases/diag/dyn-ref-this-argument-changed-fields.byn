@@ -1,5 +1,5 @@
 // A `ref this` method that passes `this` as a writable `dyn ref` changes every field for its callers (BYN3004).
-interface IReset { void reset(ref this) }
+interface IReset { void reset(ref this) uses alloc }
 struct B : IReset {
     List<i64> items
 

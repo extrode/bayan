@@ -1,5 +1,5 @@
 // Passing `this` as a writable `dyn ref` lets the callee change every field, like `ref this` (BYN3004).
-interface IReset { void reset(ref this) }
+interface IReset { void reset(ref this) uses alloc }
 struct B : IReset {
     List<i64> items
 

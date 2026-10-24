@@ -1,5 +1,5 @@
 // A `ref this` call through the loop's own `dyn ref` variable changes the element in place, not the list the loop walks.
-interface IReset { void reset(ref this) }
+interface IReset { void reset(ref this) uses alloc }
 struct B : IReset {
     List<i64> items
     void reset(ref this) {

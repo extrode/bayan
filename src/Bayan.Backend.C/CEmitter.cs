@@ -1182,8 +1182,8 @@ internal sealed class FunctionEmitter
         else
         {
             var mode = w.Sink == WriteSink.Print ? "BYN_WRITE_STDOUT" : "BYN_WRITE_TRUNCATE";
-            // A panic message keeps as much as the runtime does (`byn_panic_text`), room for an `assert` diagram.
-            var size = w.Sink == WriteSink.Panic ? 1024 : 256;
+            // A panic message keeps as much as the runtime does (`byn_panic_text`), room for an `assert` diagram; a log line never allocates, so it is cut.
+            var size = w.Sink switch { WriteSink.Panic => 1024, WriteSink.Log => 512, _ => 256 };
             Line($"uint8_t wb[{size}];");
             Line($"byn_writer wv = {{wb, {size}, 0, {mode}, {Loc(w.Syntax)}}};");
             Line("byn_writer* w = &wv;");
@@ -1199,6 +1199,7 @@ internal sealed class FunctionEmitter
         if (_c.OwnershipChecks && w.Sink == WriteSink.StrBuf && OwnerRoot(w.Target!) is not null) Line($"{_c.OwnClaim(w.Target!.Type)}(w, {Loc(w.Syntax)});");
         if (w.Sink == WriteSink.Print) Line("byn_w_println(w);");
         else if (w.Sink == WriteSink.Panic) Line($"byn_panic_str((byn_str){{wb, wv.len}}, {Loc(w.Syntax)});");
+        else if (w.Sink == WriteSink.Log) Line($"byn_log({Expr(w.Target!)}, (byn_str){{wb, wv.len}});");
         _indent--;
         Line("}");
     }
@@ -1298,6 +1299,8 @@ internal sealed class FunctionEmitter
         {
             case BuiltinFunction.Print:
                 return $"byn_print({Expr(c.Arguments[0])})";
+            case BuiltinFunction.Log:
+                return $"byn_log({Expr(c.Arguments[1])}, {Expr(c.Arguments[0])})";
             case BuiltinFunction.Panic:
                 return $"byn_panic_str({Expr(c.Arguments[0])}, {Loc(c.Syntax)})";
             case BuiltinFunction.Todo:

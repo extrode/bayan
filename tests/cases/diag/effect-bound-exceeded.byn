@@ -1,0 +1,23 @@
+interface IPricer {
+    i64 price(i64 cents)
+}
+
+interface ILogged {
+    void note(string text) uses console
+}
+
+struct Logged : IPricer, ILogged {
+    i64 price(i64 cents) {
+        print($"pricing {cents}")
+        return cents
+    }
+
+    public void note(string text) uses console {
+        print(text)
+    }
+}
+
+void main() {
+    let l = Logged()
+    l.note("x")
+}

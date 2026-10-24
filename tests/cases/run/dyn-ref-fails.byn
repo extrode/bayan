@@ -7,7 +7,7 @@ union error ParseError {
 
 interface IParser {
     i64 parse(string s) fails ParseError
-    void check(string s) fails ParseError
+    void check(string s) fails ParseError uses console
 }
 
 struct Digits : IParser {

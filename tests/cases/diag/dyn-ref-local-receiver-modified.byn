@@ -1,5 +1,5 @@
 // A `ref this` call through a writable `dyn ref` local modifies what it borrows (BYN3004).
-interface IReset { void reset(ref this) }
+interface IReset { void reset(ref this) uses alloc }
 struct B : IReset {
     List<i64> items
     void reset(ref this) {

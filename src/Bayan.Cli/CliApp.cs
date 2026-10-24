@@ -261,7 +261,8 @@ public static class CliApp
                 stderr.WriteLine((manifest.Kind == PackageKind.Lib ? Messages.NoEntryLib : Messages.NoEntryApp).Text(manifest.Name, $"src/{entry}/"));
                 return null;
             }
-            c = Compilation.FromProject(root, entry, new CompilationOptions(includeTests, Library: manifest.Kind == PackageKind.Lib));
+            c = Compilation.FromProject(root, entry, new CompilationOptions(includeTests, Library: manifest.Kind == PackageKind.Lib,
+                Capabilities: manifest.Capabilities, PackageName: manifest.Name));
         }
         else
         {
@@ -630,7 +631,12 @@ public static class CliApp
             var name = TerminalStyle.Visible(test.Name);
             if (status == TestStatus.Pass)
             {
-                if (o.Verbose) human.WriteLine(Messages.TestPassLine.Text(Paint(Role.Success, symbols.Dot), module, name));
+                if (!o.Verbose) continue;
+                human.WriteLine(Messages.TestPassLine.Text(Paint(Role.Success, symbols.Dot), module, name));
+                // Each test runs in its own process, so its captured `console` output is its own (J67).
+                if (details.Length > 0)
+                    foreach (var l in details.Split('\n'))
+                        human.WriteLine(Messages.TestDetail.Text(TerminalStyle.Visible(l.TrimEnd('\r'))));
                 continue;
             }
             if (status == TestStatus.Pending)

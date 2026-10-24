@@ -12,9 +12,9 @@ namespace Bayan.Tests;
 /// <code>
 /// program    := interface{1..2} (conformer{2..3} runners)per interface main
 /// interface  := "interface IGen&lt;k&gt; {" abstract{2..4} default{1..2} "}"
-/// abstract   := "i64 m&lt;j&gt;(i64 x);" | "i64 m&lt;j&gt; { get; }" | "string m&lt;j&gt;();" | "void m&lt;j&gt;(ref this, i64 by);"
+/// abstract   := "i64 m&lt;j&gt;(i64 x);" | "i64 m&lt;j&gt; { get; }" | "string m&lt;j&gt;() uses alloc;" | "void m&lt;j&gt;(ref this, i64 by);"
 ///               (at least one i64 method or property, which the defaults call)
-/// default    := "string m&lt;j&gt;() => $\"...{call}...\";" | "i64 m&lt;j&gt;(i64 x) => call + call;"
+/// default    := "string m&lt;j&gt;() uses alloc => $\"...{call}...\";" | "i64 m&lt;j&gt;(i64 x) => call + call;"
 /// conformer  := "struct S&lt;k&gt;&lt;n&gt; : IGen&lt;k&gt; { i64 f0; i64 f1;" impl per abstract
 ///               ["// override" impl of a default, p = 0.4 each] "}"
 /// impl       := arithmetic over f0, f1, x and constants | "f0 += by * c;" | "f1 = f0 - by;" for ref this
@@ -108,9 +108,9 @@ internal static class InterfaceGenerator
                 {
                     Kind.Method => $"i64 {m.Name}(i64 x)",
                     Kind.Property => $"i64 {m.Name} {{ get }}",
-                    Kind.Text => $"string {m.Name}()",
+                    Kind.Text => $"string {m.Name}() uses alloc",
                     Kind.Mutator => $"void {m.Name}(ref this, i64 by)",
-                    Kind.DefaultText => $"string {m.Name}() => $\"{m.Name} {{{Call(members)}}} {{{Call(members)}}}\"",
+                    Kind.DefaultText => $"string {m.Name}() uses alloc => $\"{m.Name} {{{Call(members)}}} {{{Call(members)}}}\"",
                     _ => $"i64 {m.Name}(i64 x) => {Call(members, "x")} + {Call(members)}",
                 });
                 _sb.Append('\n');
