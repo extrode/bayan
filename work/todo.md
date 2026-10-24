@@ -217,3 +217,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-55: `bayan audit` names a call bypass by its member only (`trustUnchecked()`), since there is no trim-safe syntax walker in `Bayan.Syntax`; a walker would let it show the full callee (Question 240).
 - r3-55: `bayan audit` lists no C sources per dependency (SPEC §19.3); add them when dependencies land.
 - plan-strings-check skips BYN3216: its plan entry has a quoted `{2}` gloss between the message and `(label`, which the form regex rejects; reword the entry (revision erratum) or widen the regex (found 2026-10-24, r3-53b).
+- review R1: `bayan format` no longer respells a primitive in expression position (`int.tryFrom(x)`, `long.max`), only types; respelling those needs name resolution to tell a primitive from a binding named `u8`.
+- review R4/R5: `bayan audit` reuses the `format.io-error` message for its unreadable file and directory lines; a shared `io-error` id would read better.

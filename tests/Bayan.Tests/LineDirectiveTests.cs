@@ -48,10 +48,43 @@ public sealed partial class LineDirectiveTests
         var lines = Emit(mode).Split('\n');
         var mapped = lines.Select(l => Directive().Match(l)).Where(m => m.Success && m.Groups[2].Value == "main.byn")
             .Select(m => int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
-        // A `for` returns to its head (line 8) for the increment.
-        Assert.Equal([2, 3, 7, 8, 9, 8, 11], mapped);
+        // A `for` returns to its head (line 8) for the increment; a line's later statements repeat its `#line`.
+        Assert.Equal([2, 3, 7, 8, 9, 8, 11], mapped.Where((n, i) => i == 0 || n != mapped.ElementAt(i - 1)));
         var y = Array.IndexOf(lines, "#line 2 \"main.byn\"");
         Assert.Contains("byn_mul_i64(", lines[y + 1]);
+    }
+
+    [Fact]
+    public void EveryStatementOfAOneLineIfElseMapsToItsLine()
+    {
+        const string OneLine = """
+            void pick(i64 x) {
+                if x > 2 { print("a") } else { print("b") }
+            }
+
+            void main() {
+                pick(3)
+            }
+
+            """;
+        var c = Compilation.Create([SourceText.FromString("main.byn", OneLine)], ".");
+        Assert.False(c.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
+        var lines = CliApp.EmitC(c, BuildMode.Debug).Split('\n');
+        var body = Array.FindIndex(lines, l => l.StartsWith("void byn_main__pick(", StringComparison.Ordinal) && l.EndsWith(" {", StringComparison.Ordinal));
+        // The Bayan line each C line is counted as, from the last `#line` before it.
+        var at = 0;
+        var statements = new List<int>();
+        for (var i = body + 1; lines[i] != "}"; i++)
+        {
+            if (Directive().Match(lines[i]) is { Success: true } m)
+            {
+                at = int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+                continue;
+            }
+            if (lines[i].EndsWith(';') || lines[i].TrimStart().StartsWith("if (", StringComparison.Ordinal)) statements.Add(at);
+            at++;
+        }
+        Assert.Equal([2, 2, 2], statements);
     }
 
     [Fact]

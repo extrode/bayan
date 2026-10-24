@@ -25,6 +25,19 @@ public static class AstDump
         return w.ToString();
     }
 
+    /// <summary>The one-part name of every type the tree spells, in dump order.</summary>
+    public static List<Name> TypeNames(SyntaxTree tree)
+    {
+        var names = new List<Name>();
+        Writer.TypeNames = names;
+        try
+        {
+            Dump(tree);
+        }
+        finally { Writer.TypeNames = null; }
+        return names;
+    }
+
     public static string Expr(Expr expr)
     {
         var sb = new StringBuilder();
@@ -42,6 +55,9 @@ public static class AstDump
     private sealed class Writer
     {
         private readonly StringBuilder _sb = new();
+
+        /// <summary>Collects <see cref="AstDump.TypeNames"/> while it dumps.</summary>
+        [ThreadStatic] public static List<Name>? TypeNames;
 
         public override string ToString() => _sb.ToString();
 
@@ -385,6 +401,7 @@ public static class AstDump
             switch (type)
             {
                 case NamedType t:
+                    if (t.Path is [var only]) TypeNames?.Add(only);
                     sb.Append(string.Join('.', t.Path.Select(p => p.Text)));
                     if (t.Args.Length > 0) sb.Append('<').Append(string.Join(", ", t.Args.Select(Type))).Append('>');
                     break;

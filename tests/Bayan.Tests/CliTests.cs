@@ -71,6 +71,55 @@ public sealed class CliTests
     }
 
     [Fact]
+    public void AuditReportsAnUnreadableFileAndAuditsTheRest()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("audit-file", "unsafe void poke() {\n}\n");
+        var locked = Path.Combine(dir, "a.byn");
+        File.WriteAllText(locked, "unsafe void peek() {\n}\n");
+        File.SetUnixFileMode(locked, UnixFileMode.None);
+        try
+        {
+            if (CanRead(() => File.ReadAllBytes(locked))) return;
+            var (exit, stdout, stderr) = Run("audit", dir);
+            Assert.Equal(CliApp.ExitFailure, exit);
+            Assert.Contains("a.byn", stderr);
+            Assert.Contains("unsafe void poke()", stdout);
+        }
+        finally { File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+    }
+
+    [Fact]
+    public void AuditReportsAnUnreadableDirectoryAndAuditsTheRest()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("audit-dir", "unsafe void poke() {\n}\n");
+        var locked = Directory.CreateDirectory(Path.Combine(dir, "locked")).FullName;
+        File.WriteAllText(Path.Combine(locked, "b.byn"), "unsafe void peek() {\n}\n");
+        File.SetUnixFileMode(locked, UnixFileMode.None);
+        try
+        {
+            if (CanRead(() => Directory.GetFiles(locked))) return;
+            var (exit, stdout, stderr) = Run("audit", dir);
+            Assert.Equal(CliApp.ExitFailure, exit);
+            Assert.Contains("locked", stderr);
+            Assert.Contains("unsafe void poke()", stdout);
+        }
+        finally { File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+    }
+
+    /// <summary>Whether <paramref name="read"/> succeeds despite a mode of none, as it does for root.</summary>
+    private static bool CanRead(Action read)
+    {
+        try
+        {
+            read();
+            return true;
+        }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
+    [Fact]
     public void AuditNeedsOnePath()
     {
         var (exit, _, stderr) = Run("audit");

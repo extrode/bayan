@@ -174,6 +174,21 @@ public sealed class FormatTests
     }
 
     [Fact]
+    public void ANameSpelledLikeAPrimitiveIsKeptAndOnlyTypesAreRenamed()
+    {
+        var dir = Fresh("primitive-names");
+        Package(dir, "primitives: .csharp");
+        var file = Path.Combine(dir, "main.byn");
+        File.WriteAllText(file,
+            "struct P { i8: int }\nvoid main() {\n    let u8 = 1\n    let p = P { i8: 3 }\n    let w: i8 = 2\n    print($\"{u8}{p.i8}{w}\")\n}\n");
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(
+            "struct P { int i8 }\nvoid main() {\n    let u8 = 1\n    let p = P { i8: 3 }\n    let w: sbyte = 2\n    print($\"{u8}{p.i8}{w}\")\n}\n",
+            File.ReadAllText(file));
+    }
+
+    [Fact]
     public void AnInvalidPackageIsReportedAndItsFilesAreLeftAlone()
     {
         var dir = Fresh("badstyle");
@@ -324,6 +339,25 @@ public sealed class FormatTests
     }
 
     [Fact]
+    public void ARewriteThatDoesNotParseIsAbandoned()
+    {
+        var file = Path.Combine(Fresh("abandoned"), "main.byn");
+        const string Text = "let a = true\nif (a) { print(\"x\") }\n";
+        File.WriteAllText(file, Text);
+        Format.RewriteHook = next => [.. next, .. "let broken = (\n"u8.ToArray()];
+        try
+        {
+            var (exit, _, stderr) = Run("format", file);
+            Assert.Equal(CliApp.ExitFailure, exit);
+            Assert.Contains("main.byn", stderr);
+            Assert.Contains("rewrite was abandoned", stderr);
+            Assert.DoesNotContain("broken", stderr);
+            Assert.Equal(Text, File.ReadAllText(file));
+        }
+        finally { Format.RewriteHook = null; }
+    }
+
+    [Fact]
     public void AnUnreadableFileIsReportedAndTheRestAreFormatted()
     {
         if (OperatingSystem.IsWindows()) return;
@@ -341,6 +375,62 @@ public sealed class FormatTests
             Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(fixable));
         }
         finally { File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+    }
+
+    [Fact]
+    public void AnUnreadableDirectoryIsReportedAndTheRestAreFormatted()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("io-dir");
+        var locked = Directory.CreateDirectory(Path.Combine(dir, "locked")).FullName;
+        File.WriteAllText(Path.Combine(locked, "a.byn"), "let a = true;\n");
+        var fixable = Path.Combine(dir, "b.byn");
+        File.WriteAllText(fixable, "let a = true\nif (a) { print(\"x\") }\n");
+        File.SetUnixFileMode(locked, UnixFileMode.None);
+        try
+        {
+            try
+            {
+                Directory.GetFiles(locked);
+                return; // root reads it anyway
+            }
+            catch (UnauthorizedAccessException) { }
+            var (exit, _, stderr) = Run("format", dir);
+            Assert.Equal(CliApp.ExitFailure, exit);
+            Assert.Contains("locked", stderr);
+            Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(fixable));
+        }
+        finally { File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+    }
+
+    [Fact]
+    public void AnExecutableKeepsItsMode()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var file = Path.Combine(Fresh("mode"), "script.byn");
+        File.WriteAllText(file, "#!/usr/bin/env bayan\nlet a = true\nif (a) { print(\"x\") }\n");
+        const UnixFileMode Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+        File.SetUnixFileMode(file, Mode);
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Contains("if a {", File.ReadAllText(file));
+        Assert.Equal(Mode, File.GetUnixFileMode(file));
+    }
+
+    [Fact]
+    public void FormattingASymlinkUpdatesItsTarget()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("symlink");
+        var target = Path.Combine(dir, "real.byn");
+        File.WriteAllText(target, "let a = true\nif (a) { print(\"x\") }\n");
+        var link = Path.Combine(dir, "link.byn");
+        File.CreateSymbolicLink(link, "real.byn");
+        var (exit, _, stderr) = Run("format", link);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(target));
+        Assert.Equal("real.byn", new FileInfo(link).LinkTarget);
     }
 
     [Fact]

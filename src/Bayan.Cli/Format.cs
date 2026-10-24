@@ -35,6 +35,9 @@ internal static class Format
 
     internal static int MaxPasses = 10;
 
+    /// <summary>Test-only: replaces each pass's rewrite, to force one that does not parse.</summary>
+    internal static Func<byte[], byte[]>? RewriteHook;
+
     public static int Run(string[] args, TextWriter stdout, TextWriter stderr)
     {
         var check = args.Contains("--check");
@@ -45,8 +48,9 @@ internal static class Format
             return CliApp.ExitUsage;
         }
         var path = args[0];
+        var exit = CliApp.ExitOk;
         string[] files;
-        if (Directory.Exists(path)) files = Directory.GetFiles(path, "*.byn", SearchOption.AllDirectories);
+        if (Directory.Exists(path)) files = BynFiles(path, stderr, ref exit);
         else if (File.Exists(path)) files = [path];
         else
         {
@@ -54,7 +58,6 @@ internal static class Format
             return CliApp.ExitUsage;
         }
         Array.Sort(files, StringComparer.Ordinal);
-        var exit = CliApp.ExitOk;
         var manifests = new Dictionary<string, Manifest?>(StringComparer.Ordinal);
         foreach (var file in files)
         {
@@ -100,6 +103,30 @@ internal static class Format
         return exit;
     }
 
+    /// <summary>
+    /// Every <c>.byn</c> file under <paramref name="dir"/>. A directory that cannot be read is reported, sets
+    /// <paramref name="exit"/> to the failure code, and is skipped.
+    /// </summary>
+    internal static string[] BynFiles(string dir, TextWriter stderr, ref int exit)
+    {
+        var files = new List<string>();
+        var pending = new Stack<string>([dir]);
+        while (pending.TryPop(out var at))
+        {
+            try
+            {
+                files.AddRange(Directory.GetFiles(at, "*.byn"));
+                foreach (var sub in Directory.GetDirectories(at)) pending.Push(sub);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                stderr.WriteLine(Messages.FormatIoError.Text(at, e.Message));
+                exit = CliApp.ExitFailure;
+            }
+        }
+        return [.. files];
+    }
+
     /// <summary>The <c>package.byn</c> in the file's directory or the nearest one above it; null when there is none.</summary>
     private static Manifest? ManifestFor(string file, Dictionary<string, Manifest?> cache)
     {
@@ -121,13 +148,18 @@ internal static class Format
         return found;
     }
 
-    /// <summary>Writes <paramref name="bytes"/> to a temp file beside <paramref name="file"/>, then renames it over the original.</summary>
+    /// <summary>
+    /// Writes <paramref name="bytes"/> to a temp file beside the file a symlink finally points at (or the file itself),
+    /// gives it the original's Unix mode, then renames it over the original; a symlink stays a symlink.
+    /// </summary>
     private static void WriteReplacing(string file, byte[] bytes)
     {
-        var temp = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(file))!, Path.GetRandomFileName() + ".tmp");
+        file = File.ResolveLinkTarget(file, returnFinalTarget: true)?.FullName ?? Path.GetFullPath(file);
+        var temp = Path.Combine(Path.GetDirectoryName(file)!, Path.GetRandomFileName() + ".tmp");
         try
         {
             File.WriteAllBytes(temp, bytes);
+            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temp, File.GetUnixFileMode(file));
             File.Move(temp, file, overwrite: true);
         }
         catch
@@ -169,11 +201,14 @@ internal static class Format
             var blocking = tree.Diagnostics.Where(d => d.IsError && !InputForms.Contains(d.Code)).ToList();
             if (blocking.Count > 0)
             {
-                stderr.Write(DiagnosticRenderer.RenderAll(blocking, includePath: true));
+                // After a rewrite the positions and snippets would point at text the file on disk does not hold.
+                if (pass == 0) stderr.Write(DiagnosticRenderer.RenderAll(blocking, includePath: true));
+                else stderr.WriteLine(Messages.FormatRewriteAbandoned.Text(file));
                 return null;
             }
             var fixes = tree.Diagnostics.Where(d => Applies(d) && d.Fix is not null).Select(d => d.Fix!).ToList();
             var next = fixes.Count > 0 ? ApplyFixes(bytes, fixes) : Restyle(file, bytes, tree, booleans, primitives);
+            if (RewriteHook is not null) next = RewriteHook(next);
             if (next.AsSpan().SequenceEqual(bytes))
             {
                 var fixless = tree.Diagnostics.Where(Applies).ToList();
@@ -204,14 +239,15 @@ internal static class Format
     {
         var names = primitives == PrimitiveStyle.Sized ? CSharpPrimitives : SizedPrimitives;
         var tokens = Lexer.Lex(new SourceText(file, bytes)).Tokens;
+        // Only a type is renamed: a field, binding, label or member spelled like a primitive keeps its name.
+        var typeNames = AstDump.TypeNames(tree).Select(n => n.Span.Start).ToHashSet();
         var renames = new List<Fix>();
         var operators = new List<Fix>();
         for (var i = 0; i < tokens.Length; i++)
         {
             var token = tokens[i];
-            if (token.Kind == TokenKind.Identifier
-                && names.TryGetValue(System.Text.Encoding.UTF8.GetString(bytes, token.Start, token.Length), out var name)
-                && (i == 0 || tokens[i - 1].Kind is not (TokenKind.Dot or TokenKind.QuestionDot)))
+            if (token.Kind == TokenKind.Identifier && typeNames.Contains(token.Start)
+                && names.TryGetValue(System.Text.Encoding.UTF8.GetString(bytes, token.Start, token.Length), out var name))
                 renames.Add(new Fix(new TextSpan(token.Start, token.Length), name));
             else if (OperatorFix(bytes, tokens, i, booleans) is { } fix)
                 operators.Add(fix);
