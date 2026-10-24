@@ -16,8 +16,7 @@ i64 archive(Order order is .paid or .shipped) => order.receipt()
 i64 refund(Order.paid order) {
     let any: Order = order
     let done: Order is .paid or .shipped = order
-    print(any.id)
-    return archive(order) + done.id
+    return archive(order) + done.id + any.id
 }
 
 let paid = Order.paid { id: 1, payment: 5 }

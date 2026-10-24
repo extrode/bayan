@@ -230,3 +230,8 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-53g: `rest` on a non-span type has no diagnostic; the parser's input forms always build `ReadOnlySpan<T>`, but `rest List<T> xs` is accepted and matched as a plain parameter.
 - r3-53g: overloads of the same name each report BYN5001 and other naming lints once per declaration.
 - plan-strings-check skips BYN5011: its plan entry reads `(plan, warning)`, which the start regex `(?: \(plan\))?` rejects; widen the regex (5.4a owns the script) (found 2026-10-24, r3-53g). Checked by hand: message, help and severity match the plan.
+- r3-53c1: `Checked` skips `requires` checks on state literals (the literal's type is a `StateType`, not the struct).
+- r3-53c1: `TypeFacts` does not look through `StateType`, so uniqueness and similar facts of the struct are lost on a state type.
+- r3-53c1: no `ToOptional` from a state type: `Order.paid` does not convert to `Order?`.
+- r3-53c1: the Lowerer throws on `BoundBecome` and on `StateType`; programs using typestate cannot run until the second half of 5.3c.
+- plan-strings-check fails on 5.3c for two script bugs (5.4a owns the script) (found 2026-10-24, r3-53c1): it undoes `{{`/`}}` in C# text but not in plan text, so BYN7005's `{0}.{1} {{ … }}` never matches; and the start regex rejects `(plan, revision 0002)`, so BYN7009's message and help are read as BYN7008's. Checked by hand: BYN7005 and BYN7008 message and help match the plan in `DiagnosticCodes.cs` and the pages.
