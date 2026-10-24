@@ -1,0 +1,8 @@
+// J82 and Q115: decoding is a codec. `string.from`, `string.fromUtf8`, `string.tryFrom` and `try string(bytes)` name `Utf8`.
+void main() fails Utf8Error {
+    let hi: u8[2] = [0x68, 0x69]
+    let _ = try string.from(hi.span)
+    let _ = try string.fromUtf8(hi.span)
+    let _ = string.tryFrom(hi.span)
+    let _ = try string(hi.span)
+}

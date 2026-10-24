@@ -457,10 +457,11 @@ internal sealed partial class Binder
         if (_file.Imports.TryGetValue(name, out var module)) return new BoundModuleRef(n, module);
         if (_c.Builtins.Find(name) is { } builtin) return new BoundMethodGroup(n, null, builtin);
         if (PrimitiveType.ByName.TryGetValue(name, out var primitive)) return new BoundTypeRef(n, primitive);
-        if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "Utf8Error" or "ValidationError" or "ProcessResult" or "Panic")
+        if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "Utf8Error" or "ParseError" or "ValidationError" or "ProcessResult" or "Panic")
             return new BoundTypeRef(n, ResolveType(new NamedType(n.Span, [n.Name], [])));
         if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
         if (name == "Hex") return new BoundTypeRef(n, BuiltinType.Hex);
+        if (name == "Utf8") return new BoundTypeRef(n, BuiltinType.Utf8);
         ReportUndefined(n.Name);
         return new BoundErrorExpr(n);
     }
@@ -600,13 +601,25 @@ internal sealed partial class Binder
             }
             case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Hex } hex }:
                 if (name == "encode") return new BoundMethodGroup(m, null, _c.Builtins.HexEncode);
-                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, hex.Name], help: Suggest(name, ["encode"]) is { } closest ? $"did you mean `{closest}`?" : null);
+                if (name == "decode") return new BoundMethodGroup(m, null, _c.Builtins.HexDecode);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, hex.Name], help: Suggest(name, ["encode", "decode"]) is { } closest ? $"did you mean `{closest}`?" : null);
+                return new BoundErrorExpr(m);
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Utf8 } utf8 }:
+                if (_c.Builtins.FindUtf8(name) is { } decode) return new BoundMethodGroup(m, null, decode);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, utf8.Name], help: Suggest(name, ["decode", "tryDecode"]) is { } nearest ? $"did you mean `{nearest}`?" : null);
                 return new BoundErrorExpr(m);
             case BoundTypeRef { Referenced: PrimitiveType { IsString: true } str }:
             {
                 if (_c.Builtins.FindString(name) is { } member) return new BoundMethodGroup(m, null, member);
+                // Decoding is a codec (J82, Q115): the old `string` statics name the `Utf8` member that replaces them.
+                if ((name switch { "from" or "fromUtf8" => "Utf8.decode", "tryFrom" => "Utf8.tryDecode", _ => null }) is { } codec)
+                {
+                    Report(DiagnosticCodes.RenamedMember, m.Member.Span, [$"string.{name}", codec], label: "the old name",
+                        help: $"write `{codec}`", fix: new Fix(m.Span, codec));
+                    return new BoundErrorExpr(m);
+                }
                 Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, str.Name],
-                    help: Suggest(name, ["from", "tryFrom", "invalidUtf8At"]) is { } near ? $"did you mean `{near}`?" : null);
+                    help: Suggest(name, ["invalidUtf8At"]) is { } near ? $"did you mean `{near}`?" : null);
                 return new BoundErrorExpr(m);
             }
             case BoundTypeRef t:

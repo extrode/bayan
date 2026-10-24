@@ -1159,9 +1159,9 @@ internal sealed class FunctionEmitter
             case LFailingCall f:
             {
                 var result = f.Result is null ? null : "&" + _names[f.Result];
-                // Built-in failing calls return the runtime's bare code.
+                // Built-in failing calls return the runtime's bare code, except the ones whose errors carry a payload.
                 var call = Call(f.Call, result);
-                Line(f.Call.Function.Builtin == BuiltinFunction.None
+                Line(f.Call.Function.Builtin is BuiltinFunction.None or BuiltinFunction.Utf8Decode or BuiltinFunction.HexDecode or BuiltinFunction.IntParse
                     ? $"{_names[f.Error]} = {call};"
                     : $"{_names[f.Error]} = ({_c.ErrorCType}){{ .code = {call} }};");
                 break;
@@ -1541,23 +1541,54 @@ internal sealed class FunctionEmitter
                     "{\n    return byn_io_run_batch(path, args.ptr, args.len, out, byn_context);\n}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, {result ?? "NULL"})";
             }
-            case BuiltinFunction.StringFrom:
+            case BuiltinFunction.Utf8Decode:
             {
                 var span = _c.CType(fn.Parameters[0].Type);
                 var code = fn.ErrorSets[0].Variants[0].Code;
-                var name = _c.Helper("bynh_string_from", $"static uint32_t bynh_string_from({span} bytes, byn_str* out)", () =>
-                    $"{{\n    if (byn_utf8_invalid_at(bytes.ptr, bytes.len) >= 0) return UINT32_C({code});\n" +
-                    "    if (out) *out = byn_str_copy((byn_str){bytes.ptr, bytes.len}, byn_context);\n    return 0;\n}\n");
+                var name = _c.Helper("bynh_utf8_decode", $"static {_c.ErrorCType} bynh_utf8_decode({span} bytes, byn_str* out)", () =>
+                    $"{{\n    int64_t at = byn_utf8_invalid_at(bytes.ptr, bytes.len);\n" +
+                    $"    if (at >= 0) return ({_c.ErrorCType}){{ .code = UINT32_C({code}), .p.e{code} = {{ at }} }};\n" +
+                    $"    if (out) *out = byn_str_copy((byn_str){{bytes.ptr, bytes.len}}, byn_context);\n    return ({_c.ErrorCType}){{0}};\n}}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {result ?? "NULL"})";
             }
-            case BuiltinFunction.StringTryFrom:
+            case BuiltinFunction.Utf8TryDecode:
             {
                 var span = _c.CType(fn.Parameters[0].Type);
                 var opt = _c.CType(fn.ReturnType);
-                var name = _c.Helper("bynh_string_try_from", $"static {opt} bynh_string_try_from({span} bytes)", () =>
+                var name = _c.Helper("bynh_utf8_try_decode", $"static {opt} bynh_utf8_try_decode({span} bytes)", () =>
                     $"{{\n    if (byn_utf8_invalid_at(bytes.ptr, bytes.len) >= 0) return ({opt}){{0}};\n" +
                     $"    return ({opt}){{true, byn_str_copy((byn_str){{bytes.ptr, bytes.len}}, byn_context)}};\n}}\n");
                 return $"{name}({Expr(c.Arguments[0])})";
+            }
+            case BuiltinFunction.Utf8DecodeReplace:
+            {
+                // `invalid:` has one value, `.replace`, so the argument is not passed.
+                var span = _c.CType(fn.Parameters[0].Type);
+                var name = _c.Helper("bynh_utf8_decode_replace", $"static byn_str bynh_utf8_decode_replace({span} bytes)", () =>
+                    "{\n    return byn_utf8_decode_replace(bytes.ptr, bytes.len, byn_context);\n}\n");
+                return $"{name}({Expr(c.Arguments[0])})";
+            }
+            case BuiltinFunction.HexDecode:
+            {
+                var list = _c.CType(fn.ReturnType);
+                var code = fn.ErrorSets[0].Variants[0].Code;
+                var name = _c.Helper("bynh_hex_decode", $"static {_c.ErrorCType} bynh_hex_decode(byn_str text, {list}* out)", () =>
+                    $"{{\n    uint8_t* p = NULL;\n    int64_t at = byn_hex_decode(text, &p, byn_context);\n" +
+                    $"    if (at >= 0) return ({_c.ErrorCType}){{ .code = UINT32_C({code}), .p.e{code} = {{ at }} }};\n" +
+                    $"    if (out) *out = ({list}){{p, text.len / 2, text.len / 2, byn_context}};\n    return ({_c.ErrorCType}){{0}};\n}}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {result ?? "NULL"})";
+            }
+            case BuiltinFunction.IntParse:
+            {
+                var t = (PrimitiveType)fn.ReturnType;
+                var (bad, overflow) = (fn.ErrorSets[0].Variants[0].Code, fn.ErrorSets[0].Variants[1].Code);
+                var name = "bynh_parse_" + _c.Key(t);
+                _c.Helper(name, $"static {_c.ErrorCType} {name}(byn_str s, byn_builtin_Radix radix, {_c.CType(t)}* out)", () =>
+                    $"{{\n    int64_t v = 0;\n    int64_t at = byn_int_parse_at(s, {t.Bits}, {(t.IsSignedInteger ? "true" : "false")}, radix, &v);\n" +
+                    $"    if (at == -2) return ({_c.ErrorCType}){{ .code = UINT32_C({overflow}) }};\n" +
+                    $"    if (at >= 0) return ({_c.ErrorCType}){{ .code = UINT32_C({bad}), .p.e{bad} = {{ at }} }};\n" +
+                    $"    if (out) *out = ({_c.CType(t)})v;\n    return ({_c.ErrorCType}){{0}};\n}}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, {result ?? "NULL"})";
             }
             case BuiltinFunction.HexEncode:
             {

@@ -198,7 +198,7 @@ internal static class EffectAnalysis
         BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch => ["process", "alloc"],
         BuiltinFunction.IoMonotonicNanos => ["clock"],
         BuiltinFunction.ListNew or BuiltinFunction.OwnedNew or BuiltinFunction.StrBufGrow or BuiltinFunction.ArenaNew
-            or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.HexEncode => ["alloc"],
+            or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.HexEncode or BuiltinFunction.HexDecode => ["alloc"],
         _ => [],
     };
 

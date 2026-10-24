@@ -1,0 +1,19 @@
+// `Hex.decode` reads two hex digits, either case, per byte; it fails `ParseError.badDigit` at the first non-hex
+// character, or at the length when the count is odd.
+void show(string text) {
+    let bytes = Hex.decode(text) catch switch {
+        .badDigit(let at) => {
+            print($"`{text}`: bad digit at {at}")
+            return
+        },
+        .overflow => return,
+    }
+    print($"`{text}`: {bytes.length} bytes, back {Hex.encode(bytes.span)}")
+}
+
+void main() {
+    show("68690aFF")
+    show("")
+    show("6g")
+    show("abc")
+}

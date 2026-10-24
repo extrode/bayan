@@ -39,6 +39,9 @@ internal sealed partial class Binder
         if (c.Callee is MemberExpr { Member.Text: "tryParse", NullConditional: false, Target: NameExpr parsed }
             && PrimitiveType.ByName.TryGetValue(parsed.Name.Text, out var parseTo) && parseTo.IsInteger)
             return BindTryParse(c, parseTo);
+        if (c.Callee is MemberExpr { Member.Text: "parse", NullConditional: false, Target: NameExpr parsedBy }
+            && PrimitiveType.ByName.TryGetValue(parsedBy.Name.Text, out var parseAs) && parseAs.IsInteger)
+            return BindParse(c, parseAs);
         // `StrBuf.over(span)`: the span first, then `context.allocator` (spec §16.4).
         if (c.Callee is MemberExpr { Member.Text: "over", NullConditional: false, Target: NameExpr { Name.Text: "StrBuf", TypeArgs.Length: 0 } }
             && _scope.Lookup("StrBuf") is null && !Module.Types.ContainsKey("StrBuf"))
@@ -67,6 +70,9 @@ internal sealed partial class Binder
                 return BindUntrusted(c, (expected as UntrustedType)?.Inner);
             case BoundMethodGroup { Function.Builtin: BuiltinFunction.Trust }:
                 return BindTrust(c);
+            // `Utf8.decode(bytes, invalid: .replace)` is the lossy form, which never fails.
+            case BoundMethodGroup g when g.Function == _c.Builtins.Utf8Decode && c.Args.Any(a => a.Name?.Text == "invalid"):
+                return BindFunctionCall(c, _c.Builtins.Utf8DecodeReplace, null, g.TypeArgs);
             case BoundMethodGroup g:
                 return BindFunctionCall(c, Overload(g.Function, c), g.Receiver, g.TypeArgs);
             case BoundBuiltinGroup b:
@@ -145,6 +151,21 @@ internal sealed partial class Binder
         if (args.Length == 0 || args.Any(a => a.Type.IsError)) return new BoundErrorExpr(c);
         var radix = args.Length > 1 ? args[1] : new BoundEnumMember(c, _c.Builtins.Radix.Find("decimal")!);
         return new BoundBuiltinCall(c, BuiltinMember.IntTryParse, args[0], [radix], new OptionalType(target));
+    }
+
+    /// <summary><c>i64.parse(text, as: radix)</c>: as <c>tryParse</c>, but fails <c>ParseError</c> with the offset of the bad digit, or <c>overflow</c>.</summary>
+    private BoundExpr BindParse(CallExpr c, PrimitiveType target)
+    {
+        var fn = _c.Builtins.IntParse(target);
+        var args = BindArguments(c, fn.Parameters.Take(Math.Clamp(c.Args.Length, 1, 2)).ToArray(), null, enforceNames: false, displayName: $"{target.Name}.parse");
+        if (args.Length == 0 || args.Any(a => a.Type.IsError)) return new BoundErrorExpr(c);
+        var radix = args.Length > 1 ? args[1] : new BoundEnumMember(c, _c.Builtins.Radix.Find("decimal")!);
+        if (!ReferenceEquals(_handled, c))
+        {
+            if (_covered is not null) _covered.Add((c, $"{target.Name}.parse"));
+            else ReportUnhandled(c, $"{target.Name}.parse");
+        }
+        return new BoundCall(c, fn, null, [args[0], radix], target);
     }
 
     private void BindArgumentsForRecovery(CallExpr c)
@@ -923,6 +944,13 @@ internal sealed partial class Binder
             _handled = saved;
         }
         _covered = savedCovered;
+        // `try string(bytes)` decoded before round 3; `string(x)` only formats now (J82).
+        if (operand is BoundBuiltinCall { Member: BuiltinMember.BytesToString } && inner is CallExpr { Callee: NameExpr conversion })
+        {
+            Report(DiagnosticCodes.RenamedMember, conversion.Span, ["try string(bytes)", "try Utf8.decode(bytes)"], label: "the old name",
+                help: "write `Utf8.decode`", fix: new Fix(conversion.Span, "Utf8.decode"));
+            return new BoundErrorExpr(t);
+        }
         if (Handles(inner) && operand is BoundCall { Function.Fails: true })
         {
             foreach (var (c, name) in covered) ReportUnhandled(c, name);

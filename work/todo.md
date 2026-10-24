@@ -267,3 +267,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `string.matches(re)` (SPEC §21 assertions) is not built: no `Regex` type exists (handoff Question 326).
 - r3-54a-lib3b: list `remove(at:)`, `remove(at: range)` and `remove(from:through:)` do not free removed elements that own memory (Question 329).
 - `run/assert-fails.test` and other `run/` goldens fail intermittently under load (parallel workers); they pass on rerun. Find the timing dependency or mark them serial.
+- r3-54b: `ValidationError<T>.invalid(List<Violation<T>> violations)` and collecting every violation are not built (Question 335); the `requires` check still fails at the first rule.
+- r3-54b: `suq/storefront/checkout.byn:202` calls `Hex.tryDecode`, which the spec does not name; only `try Hex.decode` exists.
+- r3-54b: `Utf8.decode(bytes, invalid: .replace)` allocates 3 bytes per input byte, then shrinks; a counting pass would avoid the over-allocation.

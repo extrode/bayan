@@ -172,6 +172,11 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 NoTypeArgs(n);
                 return compilation.Builtins.Utf8Error;
             }
+            if (text == "ParseError")
+            {
+                NoTypeArgs(n);
+                return compilation.Builtins.ParseError;
+            }
             // `ValidationError<T>`: one set for every `T` while cases carry no payload, until step 5.3h (Q220, revision 0006).
             if (text == "ValidationError")
             {
@@ -399,7 +404,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
     private string? Suggest(string text)
     {
         var lower = text.ToLowerInvariant();
-        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ValidationError", "ProcessResult", "Panic", "FormatSpec"]))
+        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ParseError", "ValidationError", "ProcessResult", "Panic", "FormatSpec"]))
             if (name.Equals(text, StringComparison.OrdinalIgnoreCase)) return name;
         if (PrimitiveType.ByName.ContainsKey(lower)) return lower;
         return lower switch

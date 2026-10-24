@@ -188,7 +188,7 @@ public sealed partial class Compilation
         foreach (var module in Modules)
             foreach (var set in module.ErrorSets)
                 DeclareVariants(set);
-        DeclareBuiltinVariants(Builtins.ValidationError);
+        DeclareBuiltinVariants(Builtins.ValidationError, Builtins.ParseError);
         // Bounds are resolved once every type is declared, so `where T : IOrder<T>` can name `T` and later types.
         foreach (var where in _wheres) where();
         DeclareInterfaceMembers(Builtins.IEnumerator);
@@ -234,6 +234,10 @@ public sealed partial class Compilation
             foreach (var v in set.Decl.Variants)
             {
                 var sym = new ErrorVariantSymbol(v.Name.Text, new Location(set.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
+                // A built-in payload is a primitive: `invalidSequence(i64 at)`.
+                foreach (var f in v.Fields)
+                    sym.Fields.Add(new ParameterSymbol(f.Name.Text, new Location(set.Location.Source, f.Name.Span),
+                        PrimitiveType.ByName[((NamedType)f.Type).Path[0].Text], ParamModifier.None, sym.Fields.Count));
                 set.Variants.Add(sym);
                 ErrorVariants.Add(sym);
             }
