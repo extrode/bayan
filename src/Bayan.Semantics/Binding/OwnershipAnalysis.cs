@@ -403,6 +403,12 @@ internal sealed class OwnershipAnalysis
         var core = StripConversions(value);
         var span = core.Syntax.Span;
         var text = _source.GetText(span);
+        if (core is BoundWith w && StripConversions(w.Target) is var target && IsMovable(target))
+        {
+            var name = _source.GetText(target.Syntax.Span);
+            Report(DiagnosticCodes.ImplicitCopy, span, [why], help: $"write `move {name} with {{ … }}` to give up `{name}`");
+            return;
+        }
         var options = new List<string>();
         Fix? fix = null;
         if (IsMovable(core))

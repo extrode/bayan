@@ -3169,6 +3169,32 @@ public sealed class Parser
 
     private Expr ParseUnary()
     {
+        // `with` binds looser than every prefix operator: `move tx with { … }` is `(move tx) with { … }` (revision 0008).
+        var start = Current.Start;
+        var expr = ParsePrefixed();
+        while (!BreaksLine(_pos))
+        {
+            if (Kind == TokenKind.SwitchKeyword && Peek(1) == TokenKind.OpenBrace)
+            {
+                Advance();
+                expr = ParseSwitchArms(start, expr);
+            }
+            else if (Kind == TokenKind.WithKeyword && Peek(1) == TokenKind.OpenBrace)
+            {
+                Advance();
+                var fields = ParseFieldInits();
+                expr = new WithExpr(SpanFrom(start), expr, fields);
+            }
+            else
+            {
+                break;
+            }
+        }
+        return expr;
+    }
+
+    private Expr ParsePrefixed()
+    {
         var start = Current.Start;
         UnaryOp? op = Kind switch
         {
@@ -3182,7 +3208,7 @@ public sealed class Parser
         if (op is not null)
         {
             Advance();
-            var operand = ParseUnary();
+            var operand = ParsePrefixed();
             return new UnaryExpr(SpanFrom(start), op.Value, operand);
         }
         switch (Kind)
@@ -3196,7 +3222,7 @@ public sealed class Parser
                 }
             case TokenKind.MoveKeyword:
                 Advance();
-                return new MoveExpr(SpanFrom(start), ParseUnary());
+                return new MoveExpr(SpanFrom(start), ParsePrefixed());
             case TokenKind.NewKeyword:
                 // Accepted for C# compatibility; the formatter removes it.
                 Advance();
@@ -3221,34 +3247,19 @@ public sealed class Parser
                     Advance();
                     var type = ParseType();
                     Expect(TokenKind.CloseParen);
-                    var operand = ParseUnary();
+                    var operand = ParsePrefixed();
                     return new CastExpr(SpanFrom(start), type, operand);
                 }
         }
 
+        // `switch` stays tighter than prefix operators: `move x switch { … }` is `move (x switch { … })` (§9.3).
         var expr = ParsePostfix(ParsePrimary());
-        while (true)
+        while (!BreaksLine(_pos) && Kind == TokenKind.SwitchKeyword && Peek(1) == TokenKind.OpenBrace)
         {
-            if (BreaksLine(_pos))
-            {
-                return expr;
-            }
-            if (Kind == TokenKind.SwitchKeyword && Peek(1) == TokenKind.OpenBrace)
-            {
-                Advance();
-                expr = ParseSwitchArms(start, expr);
-            }
-            else if (Kind == TokenKind.WithKeyword && Peek(1) == TokenKind.OpenBrace)
-            {
-                Advance();
-                var fields = ParseFieldInits();
-                expr = new WithExpr(SpanFrom(start), expr, fields);
-            }
-            else
-            {
-                return expr;
-            }
+            Advance();
+            expr = ParseSwitchArms(start, expr);
         }
+        return expr;
     }
 
     private bool IsCast()
