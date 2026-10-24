@@ -209,3 +209,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-52a: `struct Point { f64 x, f64 y }` (fields on one line with `,`) is BYN1005 with a fix that leaves `, f64 y }` on the next line; no BYN1053 rewrite for fields.
 - r3-52a: BYN2787's page and `trust-reason.byn` still describe `trust(x, reason:)`; decide in 5.3e whether BYN2787 retires once `trust` is only an input form.
 - r3-52a: a user method named `trustUnchecked` with no arguments binds as the `Untrusted` unwrap (Question 143).
+- plan-strings-check: BYN1043's name-first help is "put the type before the name; declarations are type-first" (`Parser.cs:595`) where the plan says "declarations put the type first", which does not start with a verb (`HelpLanguageTests`); decide which wins, then align the plan or the code.
+- plan-strings-check: diagnostics pages for codes landed before 2026-10-24 carry no verbatim message and help lines; backfill at round-3 end so the check passes for every round-3 code.
