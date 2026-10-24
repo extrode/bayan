@@ -61,15 +61,18 @@ public static class AstDump
         private static string TypeParams(Name[] names) =>
             names.Length == 0 ? "" : "<" + string.Join(", ", names.Select(n => n.Text)) + ">";
 
-        private static string Params(Param[] parameters, bool refThis = false, Name? state = null)
+        private static string Params(Param[] parameters, bool refThis = false, bool moveThis = false, Name[]? states = null)
         {
-            var receiver = (refThis ? "ref this" : state is null ? "" : "this") + (state is null ? "" : " is ." + state.Text);
+            var stated = states is { Length: > 0 };
+            var receiver = (refThis ? "ref this" : moveThis ? "move this" : stated ? "this" : "")
+                + (stated ? " is " + string.Join(" or ", states!.Select(s => "." + s.Text)) : "");
             var sb = new StringBuilder("(" + receiver);
             for (var i = 0; i < parameters.Length; i++)
             {
                 if (i > 0 || receiver.Length > 0) sb.Append(", ");
                 var p = parameters[i];
                 if (p.Particle is not null) sb.Append(p.Particle.Text).Append(' ');
+                if (p.Rest) sb.Append("rest ");
                 if (p.Modifier != ParamModifier.None) sb.Append(p.Modifier.ToString().ToLowerInvariant()).Append(' ');
                 Type(sb, p.Type);
                 sb.Append(' ').Append(p.Name.Text);
@@ -116,13 +119,13 @@ public static class AstDump
                     break;
                 case FunctionDecl d:
                     {
-                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params, d.RefThis is not null, d.ReceiverState)} -> {Type(d.ReturnType)}";
+                        var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params, d.RefThis is not null, d.MoveThis is not null, d.ReceiverStates)} -> {Type(d.ReturnType)}";
                         if (d.Becomes is not null) head += " becomes ." + d.Becomes.Text;
                         if (d.Fails is not null)
                             head += d.Fails.Errors.Length == 0 ? " fails" : " fails " + string.Join(", ", d.Fails.Errors.Select(Type));
                         if (d.Uses is not null) head += " uses " + string.Join(", ", d.Uses.Effects.Select(e => e.Text));
                         head += Where(d.Where);
-                        foreach (var r in d.Requires) head += " requires " + AstDump.Expr(r);
+                        foreach (var r in d.Requires) head += " expects " + AstDump.Expr(r);
                         if (d.ExpressionBody is not null) head += " => " + AstDump.Expr(d.ExpressionBody);
                         Line(depth, head);
                         if (d.Body is not null) Stmt(depth + 1, d.Body);
@@ -131,6 +134,8 @@ public static class AstDump
                 case StructDecl d:
                     Line(depth, $"Struct {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Bases(d.Bases, d.Where)}{Rules(d.Rules)}");
                     foreach (var member in d.Members) Decl(depth + 1, member);
+                    foreach (var v in d.States)
+                        Line(depth + 1, "State " + v.Name.Text + (v.Fields.Length == 0 ? "" : "(" + string.Join(", ", v.Fields.Select(f => Type(f.Type) + " " + f.Name.Text)) + ")"));
                     break;
                 case InterfaceDecl d:
                     Line(depth, $"Interface {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Where(d.Where)}");
@@ -394,6 +399,15 @@ public static class AstDump
                     sb.Append(t.IsRef ? t.IsReadOnly ? "dyn ref readonly " : "dyn ref " : "dyn ");
                     Type(sb, t.Inner);
                     break;
+                case RefinedType t:
+                    Type(sb, t.Inner);
+                    sb.Append(" is ").Append(string.Join(" or ", t.States.Select(s => "." + s.Text)));
+                    break;
+                case PointerType t:
+                    if (t.ReadOnly) sb.Append("readonly ");
+                    Type(sb, t.Pointee);
+                    sb.Append('*');
+                    break;
             }
         }
 
@@ -530,6 +544,18 @@ public static class AstDump
                     {
                         sb.Append(' ');
                         if (part is InterpolationText t) sb.Append(Quote(t.Text));
+                        else if (part is InterpolationHole { Specs.Length: > 0 } h)
+                        {
+                            sb.Append("(hole ");
+                            Expr(sb, h.Expr);
+                            foreach (var spec in h.Specs)
+                            {
+                                sb.Append(" (").Append(spec.Name?.Text).Append(": ");
+                                Expr(sb, spec.Value);
+                                sb.Append(')');
+                            }
+                            sb.Append(')');
+                        }
                         else Expr(sb, ((InterpolationHole)part).Expr);
                     }
                     sb.Append(')');

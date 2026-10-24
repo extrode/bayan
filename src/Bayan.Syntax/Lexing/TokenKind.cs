@@ -168,6 +168,7 @@ public enum TokenKind : ushort
     ExceptKeyword,
     ProvideKeyword,
     BecomeKeyword,
+    ExpectsKeyword,
     // Declaration-only, no meaning yet; contextual like the other declaration keywords.
     LawKeyword,
     // Accepted for C# compatibility.

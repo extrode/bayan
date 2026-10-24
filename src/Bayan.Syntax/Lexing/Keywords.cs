@@ -36,7 +36,7 @@ public static class Keywords
         ("fuzz", TokenKind.FuzzKeyword), ("model", TokenKind.ModelKeyword), ("foreach", TokenKind.ForeachKeyword),
         ("new", TokenKind.NewKeyword), ("goto", TokenKind.GotoKeyword), ("actor", TokenKind.ActorKeyword),
         ("effect", TokenKind.EffectKeyword), ("macro", TokenKind.MacroKeyword), ("select", TokenKind.SelectKeyword),
-        ("become", TokenKind.BecomeKeyword), ("law", TokenKind.LawKeyword),
+        ("become", TokenKind.BecomeKeyword), ("expects", TokenKind.ExpectsKeyword), ("law", TokenKind.LawKeyword),
         ("requires", TokenKind.RequiresKeyword), ("because", TokenKind.BecauseKeyword), ("uses", TokenKind.UsesKeyword),
         ("except", TokenKind.ExceptKeyword), ("provide", TokenKind.ProvideKeyword), ("ensures", TokenKind.EnsuresKeyword),
     ];
@@ -47,6 +47,13 @@ public static class Keywords
     private static readonly string[] TextByKind = BuildText();
 
     public static IEnumerable<(string Text, TokenKind Kind)> List => All;
+
+    // SPEC §2.4: reserved in every project so C# muscle memory cannot declare a name that shadows a sized type.
+    private static readonly HashSet<string> CSharpPrimitives =
+        ["sbyte", "byte", "short", "ushort", "int", "uint", "long", "ulong", "nint", "nuint", "float", "double"];
+
+    /// <summary>True for a C# primitive type name, which may not be declared as an identifier.</summary>
+    public static bool IsCSharpPrimitive(string text) => CSharpPrimitives.Contains(text);
 
     public static string TextOf(TokenKind kind) => TextByKind[(int)kind - (int)TokenKindFacts.KeywordFirst];
 
