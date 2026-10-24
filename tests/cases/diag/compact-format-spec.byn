@@ -1,0 +1,3 @@
+void show(i32 n, f64 x) {
+    print($"{n:hex} {x:.2}")
+}

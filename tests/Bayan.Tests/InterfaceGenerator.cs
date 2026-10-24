@@ -107,7 +107,7 @@ internal static class InterfaceGenerator
                 _sb.Append(m.Kind switch
                 {
                     Kind.Method => $"i64 {m.Name}(i64 x)",
-                    Kind.Property => $"i64 {m.Name} {{ get }}",
+                    Kind.Property => $"i64 {m.Name}",
                     Kind.Text => $"string {m.Name}()",
                     Kind.Mutator => $"void {m.Name}(ref this, i64 by)",
                     Kind.DefaultText => $"string {m.Name}() => $\"{m.Name} {{{Call(members)}}} {{{Call(members)}}}\"",

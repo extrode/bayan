@@ -1,0 +1,8 @@
+error BYN1063: `requires` on a function is an input form; write `expects`
+
+  1 │ i64 half(i64 n) requires n >= 0 {
+    │                 ^^^^^^^^ the input form
+    │
+  help: use `expects` for a precondition; `requires` is checked at construction
+    │ 1 │ i64 half(i64 n) expects n >= 0 {
+    │   │                 ++++++

@@ -20,9 +20,9 @@ CompilationUnit
     Member earth(1.0)
     Member mars(0.1)
   Function max<T>(T a, T b) -> T where T : IOrder<T> => (? (call (. a less) b) b a)
-  Function parse<T>(string s) -> T fails where T : IParse<T>
+  Function parse<T>(string s) -> T where T : IParse<T> fails
     Block
       Return (call (. T parse) s)
-  Function read<T>(string s) -> T fails IoError where T : IParse<T>, IShape where U : IShape requires (> (. s length) 0)
+  Function read<T>(string s) -> T where T : IParse<T>, IShape where U : IShape expects (> (. s length) 0) fails IoError
     Block
       Return (call (. T parse) s)

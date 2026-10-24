@@ -15,7 +15,7 @@ void main() {
     var xs = List<S>()
     xs.append(S { n: 1 })
     let r: ReadOnlySpan<S> = xs.asSpan()
-    for dyn ref IThing x in r {
+    for x: dyn ref IThing in r {
         x.bump()
     }
     print($"{xs[0].n}")

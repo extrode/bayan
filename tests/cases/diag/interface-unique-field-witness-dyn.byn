@@ -1,5 +1,5 @@
 interface IHas {
-    List<i64> items { get }
+    List<i64> items
 }
 
 struct H : IHas {

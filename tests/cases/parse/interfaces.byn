@@ -1,6 +1,6 @@
 interface IShape {
     f32 area()
-    string name { get }
+    string name
     string describe() => $"area {area()}"
     string shout() {
         return name
@@ -10,7 +10,7 @@ interface IShape {
 interface IEnumerator {
     type Item
     bool moveNext(ref this)
-    Item current { get }
+    Item current
 }
 
 interface IOrder<T> {

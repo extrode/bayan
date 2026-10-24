@@ -1,5 +1,5 @@
 interface IC {
-    i64 n { get }
+    i64 n
 }
 
 struct C : IC {

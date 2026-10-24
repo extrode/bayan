@@ -1,4 +1,4 @@
-i32 half(i32 n) requires n {
+i32 half(i32 n) expects n {
     return n / 2
 }
 

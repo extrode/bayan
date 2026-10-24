@@ -30,7 +30,7 @@ void main() {
     do { b++ } while b < 10
     for i in 0..10 { total += i }
     for x in xs { print(x) }
-    for i64 i in 0..=n {}
+    for i: i64 in 0..=n {}
     for y in ys {}
     outer: for row in grid {
         for cell in row {

@@ -1,0 +1,8 @@
+error BYN7006: `Order order is .paid` is an input form; write `Order.paid order`
+
+  9 │ void ship(Order order is .paid) {
+    │                       ^^ one state
+    │
+  help: write the state type `Order.paid`
+    │ 9 │ void ship(Order.paid order) {
+    │   │                +++++++++++

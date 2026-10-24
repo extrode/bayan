@@ -1,6 +1,6 @@
 interface IShape {
     i64 area()
-    string name { get }
+    string name
     i64 times(i64 by)
     void describe() => print($"{name} with area {area()}")
 }

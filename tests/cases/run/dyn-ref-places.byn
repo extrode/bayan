@@ -1,5 +1,5 @@
 interface ICounter {
-    i64 value { get }
+    i64 value
     void bump(ref this, i64 by)
     void report() => print($"at {value}")
 }

@@ -1,6 +1,6 @@
 interface IC {
     void bump(ref this)
-    i64 n { get }
+    i64 n
 }
 struct C : IC {
     i64 n
@@ -8,8 +8,8 @@ struct C : IC {
 }
 void main() {
     var a = [C { n: 0 }]
-    for dyn ref readonly IC x in a { print($"{x.n}") }
+    for x: dyn ref readonly IC in a { print($"{x.n}") }
     var b = [C { n: 0 }]
-    for dyn ref IC y in b { y.bump() }
+    for y: dyn ref IC in b { y.bump() }
     print($"{b[0].n}")
 }

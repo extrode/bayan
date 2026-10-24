@@ -1,0 +1,10 @@
+struct Order {
+    i64 total
+
+    states {
+        draft
+        paid
+    }
+}
+void ship(Order order is .paid) {
+}

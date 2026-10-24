@@ -1,0 +1,13 @@
+error BYN0012: `int` is reserved and cannot be used as an identifier
+
+  1 │ void show(i32 int) {
+    │               ^^^ a C# primitive type name
+    │
+  help: choose another name
+
+error BYN0012: `long` is reserved and cannot be used as an identifier
+
+  2 │     let long = 4
+    │         ^^^^ a C# primitive type name
+    │
+  help: choose another name

@@ -10,6 +10,6 @@ struct B : IReset {
 void main() {
     var bs = List<B>()
     bs.append(B { items: List<i64>() })
-    for dyn ref IReset x in bs { x.reset() }
+    for x: dyn ref IReset in bs { x.reset() }
     print($"{bs[0].items[0]}")
 }

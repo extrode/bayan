@@ -121,6 +121,9 @@ public sealed class Parser
         DiagnosticCodes.OneLineDeclarations, DiagnosticCodes.MissingLineBreak, DiagnosticCodes.TypeNameOrder,
         DiagnosticCodes.BracketAttribute, DiagnosticCodes.CharInput, DiagnosticCodes.RequiresValue,
         DiagnosticCodes.MissingBecause, DiagnosticCodes.ExceptInCase, DiagnosticCodes.NoallocRemoved, DiagnosticCodes.ContextBlockInput,
+        DiagnosticCodes.RestInput, DiagnosticCodes.StateLineInput, DiagnosticCodes.InterfaceGetInput, DiagnosticCodes.ReceiverWithoutState,
+        DiagnosticCodes.RequiresOnFunction, DiagnosticCodes.ClauseOrder, DiagnosticCodes.PrefixPointerInput,
+        DiagnosticCodes.CompactFormatSpec, DiagnosticCodes.SingleStateInline,
     ];
 
     private Diagnostic? Report(DiagnosticDescriptor descriptor, TextSpan span, object?[]? args = null,
@@ -261,7 +264,13 @@ public sealed class Parser
         if (IsName(Kind))
         {
             var token = Advance();
-            return new Name(token.Span, Text(token));
+            var text = Text(token);
+            // SPEC §2.4: a C# primitive name is a type, never a declared name; a member after `.` only refers to one.
+            // Not through Report: the name parsed in full, so no recovery is needed.
+            if (Keywords.IsCSharpPrimitive(text) && KindAt(_pos - 2) != TokenKind.Dot)
+                _diagnostics.Report(DiagnosticCodes.ReservedKeyword, _source, token.Span, [text],
+                    label: "a C# primitive type name", help: "choose another name");
+            return new Name(token.Span, text);
         }
         Report(DiagnosticCodes.Expected, Current.Span, [what, Describe(Current)]);
         return new Name(new TextSpan(Current.Start, 0), "<missing>");
@@ -666,13 +675,35 @@ public sealed class Parser
         var bases = ParseBases();
         var where = ParseWhere();
         var rules = new List<RequiresRule>();
+        UnionVariant[]? states = null;
+        var stateLines = new List<(Token Keyword, UnionVariant State)>();
         var members = ParseBody("struct", () =>
         {
+            if (AtContextual("states") && Peek(1) == TokenKind.OpenBrace)
+            {
+                var keyword = Current;
+                var block = ParseStatesBlock(name.Text);
+                if (states is null) states = block;
+                else Report(DiagnosticCodes.DuplicateDeclaration, keyword.Span, ["states"], label: "a second `states` block",
+                    help: "declare every state in the first `states` block");
+                return null;
+            }
+            if (AtContextual("state") && IsName(Peek(1)) && (Peek(2) == TokenKind.OpenParen || EndsBefore(_pos + 2)))
+            {
+                var keyword = Advance();
+                var stateStart = Current.Start;
+                var stateName = ExpectName("a state name");
+                var payload = ParsePayload(stateName);
+                stateLines.Add((keyword, new UnionVariant(SpanFrom(stateStart), stateName, payload, DocOf(keyword))));
+                ExpectEnd();
+                return null;
+            }
             if (Kind != TokenKind.RequiresKeyword) return ParseDeclaration(topLevel: false, structName: name.Text);
             rules.Add(ParseRequiresRule());
             ExpectEnd();
             return null;
         });
+        if (stateLines.Count > 0) ReportStateLines(stateLines, states is not null);
         // O3: a field's rule that names another field, or has `at .f`, belongs to the struct.
         var fields = members.OfType<FieldDecl>().Select(f => f.Name.Text).ToHashSet();
         for (var i = 0; i < members.Length; i++)
@@ -683,7 +714,73 @@ public sealed class Parser
             members[i] = field with { Requires = own };
         }
         return new StructDecl(SpanFrom(start), modifiers, name, members)
-            { TypeParams = typeParams, Bases = bases, Where = where, Rules = rules.OrderBy(r => r.Span.Start).ToArray() };
+        {
+            TypeParams = typeParams, Bases = bases, Where = where, Rules = rules.OrderBy(r => r.Span.Start).ToArray(),
+            States = [.. states ?? [], .. stateLines.Select(s => s.State)],
+        };
+    }
+
+    /// <summary><c>states { a  b(T x) }</c>: one state per line, each with an optional named payload (J58).</summary>
+    private UnionVariant[] ParseStatesBlock(string structName)
+    {
+        Advance();
+        var open = Expect(TokenKind.OpenBrace);
+        var states = new List<UnionVariant>();
+        var commas = new List<Token>();
+        while (IsName(Kind))
+        {
+            var doc = DocOf(Current);
+            var stateStart = Current.Start;
+            var state = ExpectName("a state name");
+            var payload = ParsePayload(state);
+            states.Add(new UnionVariant(SpanFrom(stateStart), state, payload, doc));
+            if (!NextCase(commas)) break;
+        }
+        while (Kind == TokenKind.Semicolon) ReportSemicolon(Advance());
+        ReportCaseCommas(structName, open, states.Select(s => s.Span).ToList(), commas);
+        ExpectClose(open, "states block");
+        ExpectEnd();
+        return states.ToArray();
+    }
+
+    /// <summary>
+    /// BYN1059 at each <c>state x</c> line. Every line shares one fix: the lines leave their places and one
+    /// <c>states</c> block takes the place of the last, after the members between them. No fix when the struct
+    /// already has a block, or a line shares its line with other code.
+    /// </summary>
+    private void ReportStateLines(List<(Token Keyword, UnionVariant State)> lines, bool hasBlock)
+    {
+        // The whole line of each `state x`, through its line break; -1 when other code or a comment shares the line.
+        (int Start, int End) Segment(Token keyword, UnionVariant state)
+        {
+            var bytes = _source.Bytes.Span;
+            var start = _source.GetLineSpan(_source.GetLineIndex(keyword.Start)).Start;
+            for (var i = start; i < keyword.Start; i++)
+                if (bytes[i] is not ((byte)' ' or (byte)'\t')) return (-1, -1);
+            for (var i = state.Span.End; i < bytes.Length; i++)
+            {
+                if (bytes[i] == (byte)'\n') return (start, i + 1);
+                if (bytes[i] is not ((byte)' ' or (byte)'\t' or (byte)'\r')) return (-1, -1);
+            }
+            return (-1, -1);
+        }
+        Fix? fix = null;
+        var segments = lines.Select(l => Segment(l.Keyword, l.State)).ToList();
+        if (!hasBlock && segments.All(s => s.Start >= 0))
+        {
+            var indent = IndentAt(lines[0].Keyword.Start);
+            var block = new StringBuilder();
+            for (var i = 0; i + 1 < segments.Count; i++)
+                block.Append(_source.GetText(TextSpan.FromBounds(segments[i].End, segments[i + 1].Start)));
+            block.Append(indent).Append("states {\n");
+            foreach (var (_, state) in lines) block.Append(indent).Append("    ").Append(_source.GetText(state.Span)).Append('\n');
+            block.Append(indent).Append("}\n");
+            fix = new Fix(TextSpan.FromBounds(segments[0].Start, segments[^1].End), block.ToString());
+        }
+        foreach (var (keyword, state) in lines)
+            Report(DiagnosticCodes.StateLineInput, TextSpan.FromBounds(keyword.Start, state.Span.End), [_source.GetText(state.Span)],
+                label: "the input form", help: hasBlock ? "move the state into the `states` block" : "move the states into one `states` block after the fields",
+                fix: fix);
     }
 
     /// <summary>Whether <paramref name="rule"/>'s condition names one of <paramref name="fields"/> (not after a <c>.</c>).</summary>
@@ -1745,20 +1842,28 @@ public sealed class Parser
         if (!readOnly && AtContextual("mut") && IsTypeNameToken(Peek(1))) Advance();
         var pointee = ParseType();
         var span = SpanFrom(start);
-        var canonical = (readOnly ? "readonly " : "") + _source.GetText(pointee.Span) + "*";
-        // `**T` nests input forms; the inner one gets the fix first.
+        var canonical = (readOnly ? "readonly " : "") + PointeeText(pointee) + "*";
+        // `**T` nests input forms; the inner one gets the fix first, and has already raised BYN1067.
         var nested = pointee is PointerType;
         Report(DiagnosticCodes.PrefixPointerInput, star.Span, [_source.GetText(span), canonical], label: "the input form",
             help: $"write the pointer after the type: `{canonical}`", fix: nested ? null : new Fix(span, canonical));
         var type = new PointerType(span, pointee, readOnly);
-        ReportPointerOutsideExtern(type);
+        if (!nested) ReportPointerOutsideExtern(type);
         return type;
     }
+
+    /// <summary>The canonical text of a pointee: its source, or for a nested pointer the postfix spelling.</summary>
+    private string PointeeText(TypeSyntax pointee) => pointee is PointerType p
+        ? (p.ReadOnly ? "readonly " : "") + PointeeText(p.Pointee) + "*"
+        : _source.GetText(pointee.Span);
 
     private void ReportPointerOutsideExtern(TypeSyntax type)
     {
         if (_inExtern) return;
-        Report(DiagnosticCodes.PointerOutsideExtern, type.Span, label: "a pointer type", help: "wrap the C call in an `extern` declaration");
+        // Not through Report: the type parsed in full, so no recovery is needed, and BYN1066 for a prefix pointer
+        // starts at the same `*` and would make Report's same-start check drop this one.
+        _diagnostics.Report(DiagnosticCodes.PointerOutsideExtern, _source, type.Span, label: "a pointer type",
+            help: "wrap the C call in an `extern` declaration");
     }
 
     /// <summary><c>Name</c>, <c>m.Name</c> or <c>Name&lt;A&gt;</c> without suffixes: a type, a base, a <c>where</c> bound or after <c>dyn</c>.</summary>
@@ -1942,7 +2047,7 @@ public sealed class Parser
         Name name;
         if (IsNameThenType(_pos))
         {
-            name = NameOf(Advance());
+            name = ExpectName("a variable name");
             Advance();
             type = ParseType();
         }
@@ -2375,9 +2480,25 @@ public sealed class Parser
                 names.Clear();
             }
         }
+        else if (IsNameThenType(_pos))
+        {
+            variable = ExpectName("a loop variable");
+            Advance();
+            type = ParseType();
+        }
+        else if (IsTypeThenName(_pos))
+        {
+            // `for T x in e` follows the local rule, not the declaration rule (§25): BYN1043 with a fix to `for x: T in e`.
+            type = ParseType();
+            variable = ExpectName("a loop variable");
+            var span = TextSpan.FromBounds(type.Span.Start, variable.Span.End);
+            var typeText = _source.GetText(type.Span);
+            Report(DiagnosticCodes.TypeNameOrder, span, [$"for {typeText} {variable.Text}", $"for {variable.Text}: {typeText}"],
+                label: "type before name", help: $"write `for {variable.Text}: {typeText}`; loop variables put the name first",
+                fix: new Fix(span, $"{variable.Text}: {typeText}"));
+        }
         else
         {
-            if (IsTypeThenName(_pos)) type = ParseType();
             variable = ExpectName("a loop variable");
         }
         Expect(TokenKind.InKeyword);
@@ -3506,6 +3627,12 @@ public sealed class Parser
                     {
                         var holeStart = Advance().Start;
                         var expr = ParseExpression();
+                        var specs = Kind switch
+                        {
+                            TokenKind.Comma => ParseFormatSpecs(),
+                            TokenKind.Colon => ParseCompactSpec(),
+                            _ => [],
+                        };
                         if (Kind != TokenKind.InterpolationEnd)
                         {
                             Report(DiagnosticCodes.Expected, Current.Span, ["`}` to end the interpolated expression", Describe(Current)]);
@@ -3513,7 +3640,7 @@ public sealed class Parser
                                 Advance();
                         }
                         Accept(TokenKind.InterpolationEnd);
-                        parts.Add(new InterpolationHole(SpanFrom(holeStart), expr));
+                        parts.Add(new InterpolationHole(SpanFrom(holeStart), expr) { Specs = specs });
                         continue;
                     }
                 case TokenKind.InterpolatedStringEnd:
@@ -3524,6 +3651,60 @@ public sealed class Parser
                     return new InterpolatedExpr(SpanFrom(start), parts.ToArray());
             }
         }
+    }
+
+    /// <summary><c>, as: .hex, width: 6</c> after a hole's value: the named format specs (SPEC §6.6).</summary>
+    private Argument[] ParseFormatSpecs()
+    {
+        var specs = new List<Argument>();
+        while (Accept(TokenKind.Comma))
+        {
+            var specStart = Current.Start;
+            // `as` is a keyword, but the name of a spec.
+            if (!(IsName(Kind) || Kind == TokenKind.AsKeyword) || Peek(1) != TokenKind.Colon)
+            {
+                Report(DiagnosticCodes.Expected, Current.Span, ["a named format spec such as `as: .hex`", Describe(Current)]);
+                break;
+            }
+            var name = NameOf(Advance());
+            Advance();
+            specs.Add(new Argument(SpanFrom(specStart), name, ArgModifier.None, ParseExpression()));
+        }
+        return specs.ToArray();
+    }
+
+    /// <summary>
+    /// <c>:hex</c>, <c>:binary</c>, <c>:octal</c>, <c>:iso</c>, <c>:debug</c> or <c>:.2</c> after a hole's value: the
+    /// BYN1068 input forms of <c>, as: .hex</c> and <c>, digits: 2</c>, parsed as those specs.
+    /// </summary>
+    private Argument[] ParseCompactSpec()
+    {
+        var colon = Advance();
+        var first = _pos;
+        while (Kind is not (TokenKind.InterpolationEnd or TokenKind.InterpolatedStringEnd or TokenKind.EndOfFile)) Advance();
+        if (_pos == first)
+        {
+            Report(DiagnosticCodes.Expected, Current.Span, ["a format spec", Describe(Current)]);
+            return [];
+        }
+        var specSpan = TextSpan.FromBounds(_tokens[first].Start, _prevEnd);
+        var spec = _source.GetText(specSpan);
+        string? name = null, value = null;
+        if (spec is "hex" or "binary" or "octal" or "iso" or "debug") (name, value) = ("as", "." + spec);
+        else if (spec.Length > 1 && spec[0] == '.' && spec[1..].All(char.IsAsciiDigit)) (name, value) = ("digits", spec[1..]);
+        if (name is null || value is null)
+        {
+            Report(DiagnosticCodes.Expected, TextSpan.FromBounds(colon.Start, _prevEnd), ["a named format spec such as `, as: .hex`", $"`:{spec}`"]);
+            return [];
+        }
+        var canonical = $"{name}: {value}";
+        Report(DiagnosticCodes.CompactFormatSpec, TextSpan.FromBounds(colon.Start, _prevEnd), [":" + spec, ", " + canonical],
+            label: "the input form", help: $"write the spec as named arguments: `, {canonical}`",
+            fix: new Fix(TextSpan.FromBounds(colon.Start, _prevEnd), ", " + canonical));
+        Expr specValue = value[0] == '.'
+            ? new TargetMemberExpr(specSpan, new Name(specSpan, value[1..]))
+            : new LiteralExpr(specSpan, LiteralKind.Integer, value, null);
+        return [new Argument(specSpan, new Name(colon.Span, name), ArgModifier.None, specValue)];
     }
 
     // ── Patterns ─────────────────────────────────────────────────────────────────────

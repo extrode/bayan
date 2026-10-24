@@ -8,7 +8,7 @@ struct S : IThing {
     i64 get() => n
 }
 
-// The variable of `for dyn ref I x in span` points where the span points: kept past the loop, it borrows that list.
+// The variable of `for x: dyn ref I in span` points where the span points: kept past the loop, it borrows that list.
 void main() {
     var keep = List<S>()
     keep.append(S { n: 7 })
@@ -16,7 +16,7 @@ void main() {
     xs.append(S { n: 1 })
     let sp: Span<S> = xs.asSpan()
     var d: dyn ref IThing = keep[0]
-    for dyn ref IThing x in sp {
+    for x: dyn ref IThing in sp {
         d = x
     }
     xs.append(S { n: 2 })

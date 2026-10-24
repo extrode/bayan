@@ -1,6 +1,6 @@
 // A field stands for a getter, abstract or default.
 interface ICount {
-    i64 count { get }
+    i64 count
 }
 
 interface ISized {

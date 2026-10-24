@@ -1,4 +1,4 @@
 error BYN2106: cannot modify this value
 
-  17 │     for dyn ref IC x in k.getOr("a", e) { x.bump() }
-     │                         ^^^^^^^^^^^^^^^ it is borrowed element by element as `dyn ref IC`
+  17 │     for x: dyn ref IC in k.getOr("a", e) { x.bump() }
+     │                          ^^^^^^^^^^^^^^^ it is borrowed element by element as `dyn ref IC`

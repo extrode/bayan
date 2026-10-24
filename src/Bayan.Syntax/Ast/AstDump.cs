@@ -120,12 +120,12 @@ public static class AstDump
                 case FunctionDecl d:
                     {
                         var head = $"Function {Mods(d.Modifiers)}{d.Name.Text}{TypeParams(d.TypeParams)}{Params(d.Params, d.RefThis is not null, d.MoveThis is not null, d.ReceiverStates)} -> {Type(d.ReturnType)}";
+                        head += Where(d.Where);
+                        foreach (var r in d.Requires) head += " expects " + AstDump.Expr(r);
                         if (d.Becomes is not null) head += " becomes ." + d.Becomes.Text;
                         if (d.Fails is not null)
                             head += d.Fails.Errors.Length == 0 ? " fails" : " fails " + string.Join(", ", d.Fails.Errors.Select(Type));
                         if (d.Uses is not null) head += " uses " + string.Join(", ", d.Uses.Effects.Select(e => e.Text));
-                        head += Where(d.Where);
-                        foreach (var r in d.Requires) head += " expects " + AstDump.Expr(r);
                         if (d.ExpressionBody is not null) head += " => " + AstDump.Expr(d.ExpressionBody);
                         Line(depth, head);
                         if (d.Body is not null) Stmt(depth + 1, d.Body);

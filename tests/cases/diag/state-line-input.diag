@@ -1,0 +1,32 @@
+error BYN1059: `state draft` is an input form; declare the states in one `states { … }` block
+
+  3 │     state draft
+    │     ^^^^^^^^^^^ the input form
+    │
+  help: move the states into one `states` block after the fields
+    │ 3 │     states {
+    │   │          +++
+    │ 4 │         draft
+    │   │ +++++++++++++
+    │ 5 │         paid(i64 payment)
+    │   │ +++++++++++++++++++++++++
+    │ 6 │     }
+    │   │ +++++
+    │ 7 │ }
+
+error BYN1059: `state paid(i64 payment)` is an input form; declare the states in one `states { … }`
+block
+
+  4 │     state paid(i64 payment)
+    │     ^^^^^^^^^^^^^^^^^^^^^^^ the input form
+    │
+  help: move the states into one `states` block after the fields
+    │ 3 │     states {
+    │   │          +++
+    │ 4 │         draft
+    │   │ +++++++++++++
+    │ 5 │         paid(i64 payment)
+    │   │ +++++++++++++++++++++++++
+    │ 6 │     }
+    │   │ +++++
+    │ 7 │ }
