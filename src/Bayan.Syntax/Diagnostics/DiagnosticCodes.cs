@@ -278,7 +278,15 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor MovedWhileBorrowed = Error("BYN3006", "`{0}` is moved while {1} still borrows it");
     public static readonly DiagnosticDescriptor UnusedValue = Error("BYN3201", "the value of this `{0}` is unused");
     public static readonly DiagnosticDescriptor DuplicateErrorCase = Error("BYN3202", "`{0}` and `{1}` both have a case `{2}`");
+    public static readonly DiagnosticDescriptor BareLiteralForDistinct = Error("BYN3204", "`{0}` is not a `{1}`");
+    public static readonly DiagnosticDescriptor RuleTargetNotField = Error("BYN3206", "`at .{0}` names no field of `{1}`");
+    public static readonly DiagnosticDescriptor LiteralNeedsTry = Error("BYN3207", "a literal of `{0}` can fail its `requires`; write `try {0} {{ … }}`");
+    public static readonly DiagnosticDescriptor CheckedFieldAssignment = Error("BYN3208", "fields of `{0}` cannot be assigned one at a time; its `requires` are checked at construction");
     public static readonly DiagnosticDescriptor UniqueConst = Error("BYN3209", "a `unique` type cannot be `const`");
+    public static readonly DiagnosticDescriptor FieldWriteOutside = Error("BYN3216", "`{0}.{1}` can be written only by `{0}`'s own methods or with `with`");
+    // BYN3217 is reserved: v0.1 has no fibers.
+    public static readonly DiagnosticDescriptor BorrowCrossesFiber = Error("BYN3217", "`{0}` holds a reference into `{1}` and cannot be passed to a fiber that may outlive it");
+    public static readonly DiagnosticDescriptor RequiresMixesFields = Error("BYN3218", "this `requires` reads `it` and other fields");
 
     // ── Manifest (`package.byn`) 3100–3199 ───────────────────────────────────────────
     public static readonly DiagnosticDescriptor ManifestNotData = Error("BYN3100", "`package.byn` is data only: expected {0}");

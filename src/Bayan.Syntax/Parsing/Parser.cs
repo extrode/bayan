@@ -663,18 +663,24 @@ public sealed class Parser
             ExpectEnd();
             return null;
         });
-        // O3: a field's rule that names another field, or has `at .f`, belongs to the struct.
+        // O3: a field's rule that names another field, or has `at .f`, belongs to the struct; one that also reads `it` is BYN3218.
         var fields = members.OfType<FieldDecl>().Select(f => f.Name.Text).ToHashSet();
         for (var i = 0; i < members.Length; i++)
         {
             if (members[i] is not FieldDecl { Requires.Length: > 0 } field) continue;
+            var mixed = field.Requires.Where(r => NamesAny(r, fields) && NamesAny(r, ItName)).ToArray();
+            foreach (var r in mixed)
+                Report(DiagnosticCodes.RequiresMixesFields, r.Span, label: "reads `it` and another field",
+                    help: "split it: an `it` rule under the field, and a struct-level rule with `at .field`");
             var own = field.Requires.Where(r => r.At is null && !NamesAny(r, fields)).ToArray();
-            rules.AddRange(field.Requires.Where(r => !own.Contains(r)));
+            rules.AddRange(field.Requires.Where(r => !own.Contains(r) && !mixed.Contains(r)));
             members[i] = field with { Requires = own };
         }
         return new StructDecl(SpanFrom(start), modifiers, name, members)
             { TypeParams = typeParams, Bases = bases, Where = where, Rules = rules.OrderBy(r => r.Span.Start).ToArray() };
     }
+
+    private static readonly HashSet<string> ItName = ["it"];
 
     /// <summary>Whether <paramref name="rule"/>'s condition names one of <paramref name="fields"/> (not after a <c>.</c>).</summary>
     private bool NamesAny(RequiresRule rule, HashSet<string> fields)
