@@ -41,11 +41,12 @@ public sealed record LReturnError(Node Syntax, BoundExpr Code) : BoundStmt(Synta
 /// <summary><c>error = call(…, &amp;result)</c> for a function that can fail.</summary>
 public sealed record LFailingCall(Node Syntax, LocalSymbol Error, BoundCall Call, LocalSymbol? Result) : BoundStmt(Syntax);
 
-public enum WriteSink { Print, Panic, StrBuf }
+public enum WriteSink { Print, Panic, StrBuf, Log }
 
 /// <summary>
 /// Formats <see cref="Parts"/> into a stack buffer and sends it to the sink: printed with a
-/// newline, raised as a panic message, or appended to the <c>StrBuf</c> <see cref="Target"/>. A part with a
+/// newline, raised as a panic message, logged at the <c>LogLevel</c> <see cref="Target"/>, or appended to the
+/// <c>StrBuf</c> <see cref="Target"/>. A part with a
 /// <see cref="Guards"/> entry is written only when that condition holds.
 /// </summary>
 public sealed record LWrite(Node Syntax, WriteSink Sink, BoundExpr? Target, BoundInterpolationPart[] Parts, BoundExpr?[]? Guards = null) : BoundStmt(Syntax);

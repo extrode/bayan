@@ -1152,6 +1152,7 @@ public sealed partial class Compilation
         while (_instantiationWork.TryDequeue(out var work))
             Instantiating(work.Site, work.Span, work.Bind);
         InferErrorSets();
+        EffectAnalysis.Analyze(this);
         CheckMutation();
         CheckRequires();
         foreach (var module in Modules)
@@ -1410,7 +1411,7 @@ public sealed partial class Compilation
     }
 
     /// <summary>The template a function was instantiated from: itself for a generic function, its twin for a member of a generic struct.</summary>
-    private static FunctionSymbol? TemplateOf(FunctionSymbol fn) =>
+    internal static FunctionSymbol? TemplateOf(FunctionSymbol fn) =>
         fn.Template ?? (fn.Owner?.Template is { } owner ? owner.Methods.FirstOrDefault(m => m.Decl == fn.Decl && fn.Decl is not null) : null);
 
     /// <summary>Flow and region analysis of an instantiation; what two instantiations both find is reported once.</summary>

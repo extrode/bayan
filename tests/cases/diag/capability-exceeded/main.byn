@@ -1,0 +1,9 @@
+void readAll() {
+    let text = Io.readText("report.txt") catch { return }
+    print(text)
+    let result = Io.run("ls", []) catch { return }
+}
+
+void main() {
+    readAll()
+}

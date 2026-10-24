@@ -3,7 +3,7 @@
 1:11 Equals `=`
 1:13 IntegerLiteral `1`
 2:1 LetKeyword `let`
-2:5 Identifier `effect`
+2:5 EffectKeyword `effect`
 2:12 Equals `=`
 2:14 IntegerLiteral `2`
 3:1 Identifier `macro`
@@ -20,13 +20,6 @@ error BYN0012: `actor` is reserved and cannot be used as an identifier
 
   1 │ let actor = 1
     │     ^^^^^ reserved for a future version of Bayan
-    │
-  help: choose another name
-
-error BYN0012: `effect` is reserved and cannot be used as an identifier
-
-  2 │ let effect = 2
-    │     ^^^^^^ reserved for a future version of Bayan
     │
   help: choose another name
 

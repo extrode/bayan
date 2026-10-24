@@ -1,0 +1,6 @@
+error BYN6005: `price` uses `console`, beyond the bound `pure` declared by `IPricer.price`
+
+  10 │     i64 price(i64 cents) {
+     │         ^^^^^ uses `console`
+     │
+  help: remove the use of `console`, or add it to `IPricer.price`

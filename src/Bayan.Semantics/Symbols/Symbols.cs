@@ -328,6 +328,7 @@ public enum BuiltinFunction
 {
     None,
     Print,
+    Log,
     Panic,
     Todo,
     ListNew,

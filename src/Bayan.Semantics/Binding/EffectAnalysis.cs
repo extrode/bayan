@@ -1,0 +1,196 @@
+using Bayan.Semantics.Symbols;
+using Bayan.Syntax.Ast;
+using Bayan.Syntax.Diagnostics;
+using Bayan.Syntax.Text;
+
+namespace Bayan.Semantics.Binding;
+
+/// <summary>
+/// Effects (spec §14). A function with <c>uses</c> declares its set, a public function without one is pure, and every
+/// other function infers its set from its body by fixed point, as error sets do. A body that uses an effect its
+/// declaration lacks is BYN6002 (the entry function is exempt), an unknown name in <c>uses</c> or <c>effect</c> is
+/// BYN6003, an effect the package <c>capabilities</c> lack is BYN6004, and a witness beyond its interface method's
+/// bound is BYN6005. An instance has its template's effects.
+/// </summary>
+internal static class EffectAnalysis
+{
+    /// <summary>The closed effect list, in spec order.</summary>
+    public static readonly string[] Primitives = ["alloc", "suspend", "net", "fs", "clock", "random", "env", "process", "console"];
+
+    /// <summary>The effects that need a package capability; the others are always allowed.</summary>
+    private static readonly string[] Capabilities = ["net", "fs", "process", "env"];
+
+    public static void Analyze(Compilation c)
+    {
+        var aliases = new Dictionary<ModuleSymbol, Dictionary<string, string[]>>();
+        foreach (var module in c.Modules) aliases[module] = ResolveAliases(c, module);
+
+        var functions = c.Modules.SelectMany(m => m.AllFunctions).ToList();
+        var declared = new Dictionary<FunctionSymbol, HashSet<string>>();
+        var reported = new HashSet<UsesClause>(ReferenceEqualityComparer.Instance);
+        foreach (var fn in functions)
+            if (Declared(c, fn, aliases, reported) is { } set) declared[fn] = set;
+
+        // Each body's effects with the first place that uses each one; `direct` marks a built-in source, not a call of a user function.
+        var used = new Dictionary<FunctionSymbol, Dictionary<string, (TextSpan Span, bool Direct)>>();
+        foreach (var fn in functions) used[fn] = new();
+        IEnumerable<string> Visible(FunctionSymbol callee)
+        {
+            if (callee.IsInstance && Compilation.TemplateOf(callee) is { } template) callee = template;
+            if (declared.TryGetValue(callee, out var set)) return set;
+            if (used.TryGetValue(callee, out var inferred)) return inferred.Keys;
+            // Interface members of a built-in interface, and clones of a default member, are bounded like a declaration.
+            return callee.Decl?.Uses is null ? [] : Resolve(c, callee, callee.Decl.Uses, aliases, null);
+        }
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var fn in functions)
+            {
+                if (fn.IsInstance || fn.Body is null) continue;
+                var effects = used[fn];
+                var sinks = new HashSet<BoundNode>(ReferenceEqualityComparer.Instance);
+                foreach (var node in BoundTree.Descendants(fn.Body))
+                {
+                    // Interpolation written straight into an output is formatted on the stack; anywhere else it grows a `StrBuf`.
+                    if (node is BoundCall { Function.Builtin: BuiltinFunction.Print or BuiltinFunction.Log or BuiltinFunction.Panic, Arguments: [BoundInterpolated text, ..] })
+                        sinks.Add(text);
+                    if (node is BoundBuiltinCall { Member: BuiltinMember.StrBufAppend, Arguments: [BoundInterpolated appended] })
+                        sinks.Add(appended);
+                    var (sources, direct) = node switch
+                    {
+                        BoundInterpolated when !sinks.Contains(node) => (["alloc"], true),
+                        BoundCall { Function.Kind: FunctionKind.Builtin } call => (Builtin(call.Function.Builtin), true),
+                        BoundCall call => (Visible(call.Function), false),
+                        BoundBuiltinCall b => (Member(b.Member), true),
+                        BoundCollection { Type: ListType or MapType } => (["alloc"], true),
+                        _ => ((IEnumerable<string>)[], false),
+                    };
+                    foreach (var effect in sources)
+                    {
+                        if (effects.ContainsKey(effect)) continue;
+                        effects[effect] = (node.Syntax.Span, direct);
+                        changed = true;
+                    }
+                }
+            }
+        } while (changed);
+
+        foreach (var fn in functions)
+        {
+            if (fn.IsInstance || fn.Body is null || fn.File is null) continue;
+            if (declared.TryGetValue(fn, out var set))
+            {
+                foreach (var (effect, (span, _)) in used[fn].Where(e => !set.Contains(e.Key)).OrderBy(e => e.Value.Span.Start))
+                    c.Report(DiagnosticCodes.EffectNotDeclared, fn.File.Source, span, [fn.Name, effect], label: $"uses `{effect}`",
+                        help: fn.Decl?.Uses is null ? $"add `uses {effect}` after the signature of `{fn.Name}`" : $"add `{effect}` to the `uses` clause of `{fn.Name}`");
+            }
+            if (c.Options.Capabilities is { } allowed)
+            {
+                foreach (var (effect, (span, _)) in used[fn].Where(e => e.Value.Direct && Capabilities.Contains(e.Key) && !allowed.Contains(e.Key)).OrderBy(e => e.Value.Span.Start))
+                    c.Report(DiagnosticCodes.CapabilityExceeded, fn.File.Source, span, [fn.Name, effect, c.Options.PackageName ?? "main"],
+                        label: $"uses `{effect}`", help: $"add `.{effect}` to `capabilities` in `package.byn`");
+            }
+        }
+
+        foreach (var s in c.Modules.SelectMany(m => m.Structs).Where(s => s.Template is null))
+            foreach (var conformance in s.Conformances)
+                foreach (var (member, witness) in conformance.Witnesses)
+                {
+                    // A cloned default is checked against its own interface's declaration, not here.
+                    if (witness.Owner != s || witness.Location is not { } at || member.Kind == FunctionKind.Getter) continue;
+                    var bound = Visible(member).ToHashSet();
+                    foreach (var effect in Visible(witness).Where(e => !bound.Contains(e)))
+                        c.Report(DiagnosticCodes.EffectBoundExceeded, at.Source, at.Span,
+                            [witness.Name, effect, bound.Count == 0 ? "pure" : "uses " + string.Join(", ", Primitives.Where(bound.Contains)), $"{conformance.Interface.Name}.{member.Name}"],
+                            label: $"uses `{effect}`", help: $"remove the use of `{effect}`, or add it to `{conformance.Interface.Name}.{member.Name}`");
+                }
+    }
+
+    /// <summary>The declared set: the <c>uses</c> clause, or pure for a public function or an abstract method; null when inferred.</summary>
+    private static HashSet<string>? Declared(Compilation c, FunctionSymbol fn, Dictionary<ModuleSymbol, Dictionary<string, string[]>> aliases, HashSet<UsesClause> reported)
+    {
+        if (fn.IsInstance) return null;
+        var uses = fn.Decl?.Uses;
+        var set = uses is null ? null : Resolve(c, fn, uses, aliases, reported).ToHashSet();
+        // A getter or constructor has no `uses` clause to write (§14 bounds interface methods, not properties), so it infers.
+        if (fn == c.EntryModule.Main || fn.Kind is FunctionKind.Main or FunctionKind.Test or FunctionKind.Getter or FunctionKind.Constructor) return null;
+        return set ?? (fn.Access == Accessibility.Public || fn.IsAbstract ? new HashSet<string>() : null);
+    }
+
+    /// <summary>The primitives a <c>uses</c> clause names, aliases expanded; BYN6003 for an unknown name, reported once per clause.</summary>
+    private static IEnumerable<string> Resolve(Compilation c, FunctionSymbol fn, UsesClause uses, Dictionary<ModuleSymbol, Dictionary<string, string[]>> aliases, HashSet<UsesClause>? reported)
+    {
+        var report = reported is not null && fn.File is not null && reported.Add(uses);
+        var local = aliases.GetValueOrDefault(fn.Module) ?? new();
+        var result = new List<string>();
+        foreach (var name in uses.Effects)
+        {
+            if (Primitives.Contains(name.Text)) result.Add(name.Text);
+            else if (local.TryGetValue(name.Text, out var expanded)) result.AddRange(expanded);
+            else if (report) ReportUnknown(c, fn.File!.Source, name, local.Keys);
+        }
+        return result;
+    }
+
+    /// <summary>Each <c>effect name = a, b</c> of <paramref name="module"/>, expanded to primitives.</summary>
+    private static Dictionary<string, string[]> ResolveAliases(Compilation c, ModuleSymbol module)
+    {
+        var decls = new Dictionary<string, (EffectDecl Decl, FileContext File)>(StringComparer.Ordinal);
+        foreach (var file in module.Files)
+            foreach (var d in file.Tree.Root.Members.OfType<EffectDecl>())
+            {
+                if (Primitives.Contains(d.Name.Text) || !decls.TryAdd(d.Name.Text, (d, file)))
+                    c.Report(DiagnosticCodes.DuplicateDeclaration, file.Source, d.Name.Span, [d.Name.Text],
+                        label: Primitives.Contains(d.Name.Text) ? "already an effect" : null);
+                Naming.CheckValue(c, file.Source, d.Name);
+            }
+        var resolved = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        string[] Expand(string name, HashSet<string> visiting)
+        {
+            if (resolved.TryGetValue(name, out var done)) return done;
+            var (decl, file) = decls[name];
+            visiting.Add(name);
+            var result = new List<string>();
+            foreach (var e in decl.Effects)
+            {
+                if (Primitives.Contains(e.Text)) result.Add(e.Text);
+                else if (visiting.Contains(e.Text))
+                    c.Report(DiagnosticCodes.UnknownEffect, file.Source, e.Span, [e.Text], label: "the alias refers to itself",
+                        help: "list the primitive effects instead");
+                else if (decls.ContainsKey(e.Text)) result.AddRange(Expand(e.Text, visiting));
+                else ReportUnknown(c, file.Source, e, decls.Keys);
+            }
+            visiting.Remove(name);
+            return resolved[name] = result.Distinct().ToArray();
+        }
+        foreach (var name in decls.Keys) Expand(name, new HashSet<string>(StringComparer.Ordinal));
+        return resolved;
+    }
+
+    private static void ReportUnknown(Compilation c, SourceText source, Name name, IEnumerable<string> aliases) =>
+        c.Report(DiagnosticCodes.UnknownEffect, source, name.Span, [name.Text], label: "not an effect or an `effect` alias of this module",
+            help: $"use one of {string.Join(", ", Primitives.Concat(aliases).Select(e => $"`{e}`"))}");
+
+    private static string[] Builtin(BuiltinFunction f) => f switch
+    {
+        BuiltinFunction.Print or BuiltinFunction.IoStdout or BuiltinFunction.IoStderr or BuiltinFunction.IoStdin => ["console"],
+        BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir => ["fs", "alloc"],
+        BuiltinFunction.IoWriteFile => ["fs"],
+        BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch => ["process", "alloc"],
+        BuiltinFunction.IoMonotonicNanos => ["clock"],
+        BuiltinFunction.ListNew or BuiltinFunction.OwnedNew or BuiltinFunction.StrBufGrow or BuiltinFunction.ArenaNew
+            or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom => ["alloc"],
+        _ => [],
+    };
+
+    private static string[] Member(BuiltinMember m) => m switch
+    {
+        BuiltinMember.IoWrite => ["console"],
+        BuiltinMember.IoReadAll => ["console", "alloc"],
+        BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy
+            or BuiltinMember.IntToHex or BuiltinMember.ListAdd or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet => ["alloc"],
+        _ => [],
+    };
+}

@@ -142,6 +142,10 @@ void byn_print(byn_str s);
 void byn_stdout_flush(void);
 /* Reports a failed `main` or test: flushes output and writes `error: <summary>` to standard error. */
 void byn_report_error(byn_str summary);
+/* The built-in LogLevel: debug, info, warn, error, in that order. */
+typedef int32_t byn_builtin_LogLevel;
+/* `log`: flushes output and writes `<level>: <text>` to standard error, control characters escaped. */
+void byn_log(byn_builtin_LogLevel level, byn_str text);
 
 /* ── Strings ─────────────────────────────────────────────────────────────── */
 

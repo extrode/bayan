@@ -1,3 +1,10 @@
+error BYN6005: `get` uses `alloc`, beyond the bound `pure` declared by `IIndexable.get`
+
+  6 │     List<i64> get(i64 index) => List<i64>()
+    │               ^^^ uses `alloc`
+    │
+  help: remove the use of `alloc`, or add it to `IIndexable.get`
+
 error BYN2022: a `for` over the unique `Item` `List<i64>` of `Rows` is not supported in v0.1
 
   11 │     for row in rows {

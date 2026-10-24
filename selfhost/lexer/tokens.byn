@@ -171,6 +171,8 @@ enum TokenKind {
     becomeKeyword
     // Declaration-only, no meaning yet; contextual like the other declaration keywords.
     lawKeyword
+    // Effect aliases (§14), contextual.
+    effectKeyword
     // Accepted for C# compatibility.
     foreachKeyword
     newKeyword
@@ -178,7 +180,6 @@ enum TokenKind {
     gotoKeyword
     // Reserved: no meaning yet, may not be used as identifiers.
     actorKeyword
-    effectKeyword
     macroKeyword
     selectKeyword
     ensuresKeyword

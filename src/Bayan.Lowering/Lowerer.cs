@@ -399,21 +399,25 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 break;
             }
             case BoundContext c:
-            {
-                var arena = Expr(c.Allocator);
-                if (IsNever(arena)) break;
-                var slot = _contextSlots++;
-                Emit(new LSetContext(c.Syntax, arena, slot));
-                _scopes.Add(new Scope());
-                _scopes[^1].Cleanups.Add(new RestoreContext(c.Syntax, slot));
-                foreach (var inner in c.Body.Statements) Statement(inner);
-                EmitCleanups(_scopes.Count - 1, null);
-                _scopes.RemoveAt(_scopes.Count - 1);
+                Provide(c);
                 break;
-            }
             default:
                 throw new InvalidOperationException($"cannot lower {s.GetType().Name}");
         }
+    }
+
+    /// <summary><c>provide alloc: a { … }</c>: sets the allocator for the body and restores the outer one on every exit.</summary>
+    private void Provide(BoundContext c)
+    {
+        var arena = Expr(c.Allocator);
+        if (IsNever(arena)) return;
+        var slot = _contextSlots++;
+        Emit(new LSetContext(c.Syntax, arena, slot));
+        _scopes.Add(new Scope());
+        _scopes[^1].Cleanups.Add(new RestoreContext(c.Syntax, slot));
+        foreach (var inner in c.Body.Statements) Statement(inner);
+        EmitCleanups(_scopes.Count - 1, null);
+        _scopes.RemoveAt(_scopes.Count - 1);
     }
 
     private void Assign(BoundAssign a)
@@ -1151,6 +1155,13 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         {
             case BuiltinFunction.Print when c.Arguments[0] is BoundInterpolated i:
                 return Write(c, WriteSink.Print, null, i);
+            case BuiltinFunction.Log when c.Arguments[0] is BoundInterpolated i:
+            {
+                // The level is the target; it is a constant in practice, so evaluating it before the text is unobservable.
+                var level = Expr(c.Arguments[1]);
+                if (IsNever(level)) return level;
+                return Write(c, WriteSink.Log, IsTrivial(level) ? level : Spill(level), i);
+            }
             case BuiltinFunction.Panic when c.Arguments[0] is BoundInterpolated i:
                 Write(c, WriteSink.Panic, null, i);
                 return new LNever(c.Syntax, c.Type);

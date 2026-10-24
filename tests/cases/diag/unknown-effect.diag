@@ -1,0 +1,22 @@
+error BYN6003: `loop` is not an effect
+
+  2 │ effect loop = loop, fs
+    │               ^^^^ the alias refers to itself
+    │
+  help: list the primitive effects instead
+
+error BYN6003: `disk` is not an effect
+
+  3 │ effect store = db, disk
+    │                    ^^^^ not an effect or an `effect` alias of this module
+    │
+  help: use one of `alloc`, `suspend`, `net`, `fs`, `clock`, `random`, `env`, `process`, `console`,
+        `db`, `loop`, `store`
+
+error BYN6003: `disk` is not an effect
+
+  5 │ void save() uses disk, db { }
+    │                  ^^^^ not an effect or an `effect` alias of this module
+    │
+  help: use one of `alloc`, `suspend`, `net`, `fs`, `clock`, `random`, `env`, `process`, `console`,
+        `db`, `loop`, `store`
