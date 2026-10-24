@@ -8,7 +8,8 @@ namespace Bayan.Semantics.Binding;
 /// <summary>
 /// Checks that need control flow, run once every body is bound and error sets are inferred:
 /// definite assignment (locals declared without a value, <c>out</c> parameters), missing
-/// returns, unreachable code, and that each <c>try</c> propagates only declared errors.
+/// returns, unreachable code, that each <c>try</c> propagates only declared errors, and that a
+/// function that <c>becomes</c> a state does not return normally without <c>become</c>.
 /// </summary>
 internal sealed class FlowAnalysis
 {
@@ -40,8 +41,10 @@ internal sealed class FlowAnalysis
     {
         public bool Reachable = true;
         public HashSet<LocalSymbol> Assigned = new();
+        /// <summary>A <c>become</c> ran on every path.</summary>
+        public bool Became;
 
-        public State Clone() => new() { Reachable = Reachable, Assigned = new(Assigned) };
+        public State Clone() => new() { Reachable = Reachable, Assigned = new(Assigned), Became = Became };
 
         public static State Unreachable() => new() { Reachable = false };
 
@@ -52,6 +55,7 @@ internal sealed class FlowAnalysis
             if (!other.Reachable) return Clone();
             var r = Clone();
             r.Assigned.IntersectWith(other.Assigned);
+            r.Became &= other.Became;
             return r;
         }
     }
@@ -73,6 +77,7 @@ internal sealed class FlowAnalysis
             return;
         }
         CheckOutAssigned(end, closing);
+        CheckBecame(end, closing);
     }
 
     private void Report(DiagnosticDescriptor d, TextSpan span, object?[] args, string? label = null, string? help = null, Fix? fix = null) =>
@@ -82,6 +87,13 @@ internal sealed class FlowAnalysis
     {
         foreach (var p in _fn.Parameters.Where(p => p.Modifier == ParamModifier.Out && !state.Assigned.Contains(p)))
             Report(DiagnosticCodes.OutNotAssigned, span, [p.Name], help: $"assign `{p.Name}` before every `return`");
+    }
+
+    /// <summary>BYN7009: a normal return from a function that <c>becomes .s</c> must follow a <c>become</c>.</summary>
+    private void CheckBecame(State state, TextSpan span)
+    {
+        if (state.Became || _fn.Decl?.Becomes is not { } becomes) return;
+        Report(DiagnosticCodes.MissingBecome, span, [_fn.Name, becomes.Text], help: $"add `become .{becomes.Text}(…)` before returning, or fail");
     }
 
     // ── Statements ───────────────────────────────────────────────────────────────
@@ -130,7 +142,11 @@ internal sealed class FlowAnalysis
                 return Expr(a.Value, Expr(a.Target, state));
             case BoundReturn r:
                 if (r.Value is not null) state = Expr(r.Value, state);
-                if (state.Reachable) CheckOutAssigned(state, r.Syntax.Span);
+                if (state.Reachable)
+                {
+                    CheckOutAssigned(state, r.Syntax.Span);
+                    CheckBecame(state, r.Syntax.Span);
+                }
                 return State.Unreachable();
             case BoundFail f:
                 Expr(f.Error, state);
@@ -194,6 +210,14 @@ internal sealed class FlowAnalysis
                 return state;
             case BoundContext c:
                 return Statement(c.Body, Expr(c.Allocator, state));
+            case BoundBecome b:
+                foreach (var a in b.Payload) state = Expr(a, state);
+                state.Became = true;
+                return state;
+            case BoundErrorStmt { Syntax: BecomeStmt }:
+                // An unknown state was already reported (BYN7007); count the `become` so BYN7009 does not follow it.
+                state.Became = true;
+                return state;
             default:
                 return state;
         }

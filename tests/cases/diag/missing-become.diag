@@ -1,0 +1,13 @@
+error BYN7009: `pay` declares `becomes .paid` but returns here without `become`
+
+  9 │             return
+    │             ^^^^^^
+    │
+  help: add `become .paid(…)` before returning, or fail
+
+error BYN7009: `settle` declares `becomes .paid` but returns here without `become`
+
+  17 │     }
+     │     ^
+     │
+  help: add `become .paid(…)` before returning, or fail
