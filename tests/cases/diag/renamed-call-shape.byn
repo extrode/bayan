@@ -1,0 +1,12 @@
+void main() {
+    var xs = List<i64>()
+    xs.append(1)
+    xs.removeRange(0, 1)
+    xs.replaceRange(0..1, xs.span)
+    var prices = Map<string, i64>()
+    prices["tea"] = 3
+    let p = prices.getOr("tea", 0)
+    let s = xs.asSpan()
+    let n: i32 = 255
+    print($"{n.toHex()} {p} {s.length}")
+}

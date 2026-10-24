@@ -14,7 +14,7 @@ void main() {
     keep.append(S { n: 7 })
     var xs = List<S>()
     xs.append(S { n: 1 })
-    let sp: Span<S> = xs.asSpan()
+    let sp: Span<S> = xs.span
     var d: dyn ref IThing = keep[0]
     for x: dyn ref IThing in sp {
         d = x

@@ -36,7 +36,10 @@ internal sealed partial class Binder
         if (c.Callee is MemberExpr { Member.Text: "tryFrom", NullConditional: false, Target: NameExpr into }
             && PrimitiveType.ByName.TryGetValue(into.Name.Text, out var target) && target.IsNumeric)
             return BindTryFrom(c, target);
+        var outer = _calleeOf;
+        _calleeOf = c;
         var callee = c.Callee is TargetMemberExpr t ? BindTargetMember(t, expected) : BindExprOrType(c.Callee);
+        _calleeOf = outer;
         switch (callee)
         {
             case BoundMethodGroup { Function.Builtin: BuiltinFunction.OwnedNew }:
@@ -533,12 +536,37 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(c);
             case PrimitiveType p when (p.IsNumeric || p == PrimitiveType.Char) && c.Args is [{ Name: null } arg]:
                 return BindConversion(c, p, arg.Value);
+            case PrimitiveType { IsString: true } when c.Args is [{ Name: null }, ..]:
+                return BindIntegerText(c);
             default:
                 Report(DiagnosticCodes.NotCallable, c.Callee.Span, [type.DisplayName],
                     help: type.IsNumeric || type == PrimitiveType.Char ? $"convert one value: `{type.DisplayName}(x)`" : null);
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
         }
+    }
+
+    /// <summary><c>string(n, as: radix)</c>: an integer as text in a <c>Radix</c>, <c>.decimal</c> by default (spec §3.2, §6.2).</summary>
+    private BoundExpr BindIntegerText(CallExpr c)
+    {
+        var value = BindExpr(c.Args[0].Value);
+        if (value.Type.IsError) return new BoundErrorExpr(c);
+        if (!value.Type.IsInteger)
+        {
+            // `string(x)` as the `Display` conversion of every type is step 5.4a's later chunk.
+            Report(DiagnosticCodes.Unsupported, c.Callee.Span, [$"`string(x)` of a `{value.Type.DisplayName}`"]);
+            BindArgumentsForRecovery(c);
+            return new BoundErrorExpr(c);
+        }
+        var ps = new[]
+        {
+            new ParameterSymbol("value", null, value.Type, ParamModifier.None, 0),
+            new ParameterSymbol("as", null, _c.Builtins.Radix, ParamModifier.None, 1),
+        };
+        _prebound[c.Args[0]] = value;
+        var args = BindArguments(c, ps[..Math.Min(c.Args.Length, 2)], null, enforceNames: false, displayName: "string");
+        var radix = args.Length > 1 ? args[1] : new BoundEnumMember(c, _c.Builtins.Radix.Find("decimal")!);
+        return new BoundBuiltinCall(c, BuiltinMember.IntToString, args[0], [radix], PrimitiveType.String);
     }
 
     /// <summary><c>Owned(value)</c> or <c>Owned&lt;T&gt;(value)</c>: the value's type comes from <paramref name="inner"/>, else from the argument.</summary>
@@ -631,7 +659,7 @@ internal sealed partial class Binder
         if (m.Mutating) CheckWritable(receiver, receiver.Syntax.Span, $"`{name}` modifies it");
         if (m.Member == BuiltinMember.MapSlot && !IsDefaultable(m.Returns))
             Report(DiagnosticCodes.MapSlotNoDefault, c.Span, [m.Returns.DisplayName],
-                help: "read with `map[key]` or `map.getOr(key, fallback)`, and write with `map[key] = value`");
+                help: "read with `map[key]` or `map.tryGet(at: key) ?? fallback`, and write with `map[key] = value`");
         if (m.Member is BuiltinMember.ListCopy or BuiltinMember.MapCopy)
         {
             var held = m.Member == BuiltinMember.ListCopy

@@ -3,18 +3,18 @@ error BYN2785: `slot` needs a default value, and `Color` has none
   18 │     colors.slot("sky") = .red
      │     ^^^^^^^^^^^^^^^^^^
      │
-  help: read with `map[key]` or `map.getOr(key, fallback)`, and write with `map[key] = value`
+  help: read with `map[key]` or `map.tryGet(at: key) ?? fallback`, and write with `map[key] = value`
 
 error BYN2785: `slot` needs a default value, and `Point` has none
 
   20 │     points.slot(1).y += 1
      │     ^^^^^^^^^^^^^^
      │
-  help: read with `map[key]` or `map.getOr(key, fallback)`, and write with `map[key] = value`
+  help: read with `map[key]` or `map.tryGet(at: key) ?? fallback`, and write with `map[key] = value`
 
 error BYN2785: `slot` needs a default value, and `List<i64>` has none
 
   22 │     lists.slot(1).append(2)
      │     ^^^^^^^^^^^^^
      │
-  help: read with `map[key]` or `map.getOr(key, fallback)`, and write with `map[key] = value`
+  help: read with `map[key]` or `map.tryGet(at: key) ?? fallback`, and write with `map[key] = value`

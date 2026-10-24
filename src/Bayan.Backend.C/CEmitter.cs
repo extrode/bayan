@@ -260,6 +260,7 @@ public sealed class CEmitter
         StateType st => CType(st.Struct),
         // `dyn ref readonly I` shares the C type of `dyn ref I`.
         DynRefType d => Named(t, "byn_dyn_" + Key(d.Interface)),
+        RangeType r => CType(r.Layout),
         _ => Named(t),
     };
 
@@ -287,6 +288,7 @@ public sealed class CEmitter
         MapType m => "map_" + Key(m.KeyType) + "_" + Key(m.ValueType),
         ArrayType a => $"arr{a.Length}_" + Key(a.Element),
         TupleType tt => $"tup{tt.Fields.Count}_" + string.Join("_", tt.Fields.Select(f => Key(f.Type))),
+        RangeType r => Key(r.Layout),
         _ => throw new InvalidOperationException($"no C type for {t.DisplayName}"),
     };
 
@@ -643,7 +645,7 @@ public sealed class CEmitter
             $"{{\n    return {Equal(key, $"*(const {ct}*)a", $"*(const {ct}*)b")};\n}}\n");
     }
 
-    /// <summary>Index, <c>slot</c>, <c>getOr</c>, <c>contains</c> and <c>remove</c> of <paramref name="t"/>; <paramref name="map"/> is an lvalue for the mutating ones.</summary>
+    /// <summary>Index, <c>slot</c>, <c>tryGet</c>, <c>contains</c> and <c>remove</c> of <paramref name="t"/>; <paramref name="map"/> is an lvalue for the mutating ones.</summary>
     internal string MapMethod(BuiltinMember member, MapType t, string map, string[] args, string loc)
     {
         var mt = CType(t);
@@ -671,12 +673,13 @@ public sealed class CEmitter
                     $"{{\n    int64_t i = {find};\n    if (i < 0) byn_panic(\"key not found in map\", file, line);\n    return m.vals[i];\n}}\n");
                 return $"{name}({map}, {args[0]}, {loc})";
             }
-            case BuiltinMember.MapGetOr:
+            case BuiltinMember.MapTryGet:
             {
-                var name = "bynh_get_or_" + Key(t);
-                Helper(name, $"static {vt} {name}({mt} m, {kt} k, {vt} d)", () =>
-                    $"{{\n    int64_t i = {find};\n    return i < 0 ? d : m.vals[i];\n}}\n");
-                return $"{name}({map}, {args[0]}, {args[1]})";
+                var opt = CType(new OptionalType(t.ValueType));
+                var name = "bynh_try_get_" + Key(t);
+                Helper(name, $"static {opt} {name}({mt} m, {kt} k)", () =>
+                    $"{{\n    int64_t i = {find};\n    return i < 0 ? ({opt}){{0}} : ({opt}){{true, m.vals[i]}};\n}}\n");
+                return $"{name}({map}, {args[0]})";
             }
             case BuiltinMember.MapContains:
             {
@@ -1455,6 +1458,13 @@ internal sealed class FunctionEmitter
                     $"    return ({opt}){{true, byn_str_copy((byn_str){{bytes.ptr, bytes.len}}, byn_context)}};\n}}\n");
                 return $"{name}({Expr(c.Arguments[0])})";
             }
+            case BuiltinFunction.HexEncode:
+            {
+                var span = _c.CType(fn.Parameters[0].Type);
+                var name = _c.Helper("bynh_hex_encode", $"static byn_str bynh_hex_encode({span} bytes)", () =>
+                    "{\n    return byn_hex_encode(bytes.ptr, bytes.len, byn_context);\n}\n");
+                return $"{name}({Expr(c.Arguments[0])})";
+            }
             case BuiltinFunction.StringInvalidUtf8At:
             {
                 var span = _c.CType(fn.Parameters[0].Type);
@@ -1593,12 +1603,36 @@ internal sealed class FunctionEmitter
                     $"{{\n    if (l->len == 0) byn_panic(\"removeLast on an empty list\", file, line);\n    return l->ptr[--l->len];\n}}\n");
                 return $"{name}(&{Expr(r)}, {Loc(b.Syntax)})";
             }
+            case BuiltinMember.ListTryGet:
+            {
+                var lt = _c.CType(r.Type);
+                var opt = _c.CType(b.Type);
+                var name = "bynh_try_get_" + _c.Key(r.Type);
+                _c.Helper(name, $"static {opt} {name}({lt} l, int64_t i)", () =>
+                    $"{{\n    return i < 0 || i >= l.len ? ({opt}){{0}} : ({opt}){{true, l.ptr[i]}};\n}}\n");
+                return $"{name}({Expr(r)}, {arg})";
+            }
             case BuiltinMember.ListRemoveRange:
             {
                 var lt = _c.CType(r.Type);
                 var name = "bynh_remove_range_" + _c.Key(r.Type);
                 _c.Helper(name, $"static void {name}({lt}* l, int64_t start, int64_t end, const char* file, int line)", () =>
                     "{\n    byn_slice_check(start, end, l->len, file, line);\n    if (end > start) memmove(l->ptr + start, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n    l->len -= end - start;\n}\n");
+                return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})";
+            }
+            case BuiltinMember.ListReplace:
+            {
+                var lt = _c.CType(r.Type);
+                var name = "bynh_replace_" + _c.Key(r.Type);
+                _c.Helper(name, $"static void {name}({lt}* l, {_c.CType(b.Arguments[0].Type)} at, {_c.CType(b.Arguments[1].Type)} items, const char* file, int line)", () =>
+                    "{\n    int64_t start = at.item1, end = at.item3 ? at.item2 + 1 : at.item2;\n    byn_slice_check(start, end, l->len, file, line);\n"
+                    + "    int64_t len = l->len - (end - start) + items.len;\n    if (!l->alloc) l->alloc = byn_context;\n"
+                    // Items read from the list itself are copied first, since growing and shifting move them.
+                    + "    if (items.len > 0 && items.ptr >= l->ptr && items.ptr < l->ptr + l->cap)\n"
+                    + "        items.ptr = byn_copy_bytes(items.ptr, items.len * (int64_t)sizeof(*l->ptr), l->alloc);\n"
+                    + "    byn_list_reserve((void**)&l->ptr, &l->cap, len, (int64_t)sizeof(*l->ptr), l->alloc);\n"
+                    + "    memmove(l->ptr + start + items.len, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n"
+                    + "    if (items.len > 0) memcpy(l->ptr + start, items.ptr, (size_t)items.len * sizeof(*l->ptr));\n    l->len = len;\n}\n");
                 return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})";
             }
             case BuiltinMember.ListSort:
@@ -1634,7 +1668,7 @@ internal sealed class FunctionEmitter
                     $"{{\n    {mt} r;\n    byn_map_copy(&m.h, m.keys, (int64_t)sizeof({kt}), (void**)&r.keys, m.vals, (int64_t)sizeof({vt}), (void**)&r.vals, &r.h, a);\n    return r;\n}}\n");
                 return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
             }
-            case BuiltinMember.MapIndex or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapGetOr
+            case BuiltinMember.MapIndex or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapTryGet
                 or BuiltinMember.MapContains or BuiltinMember.MapRemove:
                 return _c.MapMethod(b.Member, (MapType)r.Type, Expr(r), b.Arguments.Select(Expr).ToArray(), Loc(b.Syntax));
             case BuiltinMember.ArrayLength:
@@ -1666,8 +1700,11 @@ internal sealed class FunctionEmitter
                 return $"{Expr(r)}.err";
             case BuiltinMember.CharValue:
                 return $"((uint32_t){Expr(r)})";
-            case BuiltinMember.IntToHex:
-                return $"byn_to_hex((uint{((PrimitiveType)r.Type).Bits}_t){Expr(r)}, byn_context)";
+            case BuiltinMember.IntToString:
+            {
+                var t = (PrimitiveType)r.Type;
+                return $"byn_int_string((int64_t){Expr(r)}, {t.Bits}, {(t.IsSignedInteger ? "true" : "false")}, {arg}, byn_context)";
+            }
             case BuiltinMember.EnumName:
                 return $"{_c.EnumNames((EnumSymbol)r.Type)}[{Expr(r)}]";
             case BuiltinMember.EnumOrdinal:

@@ -27,7 +27,7 @@ void main() {
             q += it.qty
         }
         print($"{items.length} {q} {items[1].name}")
-        let copy = xs.asSpan()[1..3].copy(to: arena)
+        let copy = xs.span[1..3].copy(to: arena)
         print($"{copy.length} {copy[0]} {copy[1]}")
         xs.clear()
         print($"{xs.length} {copy.length}")

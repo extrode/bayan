@@ -198,7 +198,7 @@ internal static class EffectAnalysis
         BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch => ["process", "alloc"],
         BuiltinFunction.IoMonotonicNanos => ["clock"],
         BuiltinFunction.ListNew or BuiltinFunction.OwnedNew or BuiltinFunction.StrBufGrow or BuiltinFunction.ArenaNew
-            or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom => ["alloc"],
+            or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.HexEncode => ["alloc"],
         _ => [],
     };
 
@@ -207,7 +207,7 @@ internal static class EffectAnalysis
         BuiltinMember.IoWrite => ["console"],
         BuiltinMember.IoReadAll => ["console", "alloc"],
         BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy
-            or BuiltinMember.IntToHex or BuiltinMember.ListAdd or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet => ["alloc"],
+            or BuiltinMember.IntToString or BuiltinMember.ListAdd or BuiltinMember.ListReplace or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet => ["alloc"],
         _ => [],
     };
 }

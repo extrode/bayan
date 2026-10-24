@@ -11,7 +11,7 @@ struct B : IReset {
     void pass(ref this) { poke(this) }
 
     void run(ref this) {
-        let s = items.asSpan()
+        let s = items.span
         pass()
         print($"{s[0]}")
     }

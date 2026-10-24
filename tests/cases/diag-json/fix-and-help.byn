@@ -3,4 +3,4 @@ i64 first(Span<i64> values) {
 }
 
 let xs: i64[2] = [1, 2]
-print($"{first(xs.asSpan())}")
+print($"{first(xs.span)}")

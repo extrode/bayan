@@ -3,22 +3,22 @@ string decode() fails Utf8Error {
     var bytes = List<u8>()
     bytes.append(0x68)
     bytes.append(0x69)
-    let s = try string.from(bytes.asSpan())
+    let s = try string.from(bytes.span)
     bytes.clear()
     return s
 }
 
 void main() fails Utf8Error {
     let hi: u8[2] = [0x68, 0x69]
-    print(try string.from(hi.asSpan()))
-    let empty = try string.from(hi.asSpan()[0..0])
+    print(try string.from(hi.span))
+    let empty = try string.from(hi.span[0..0])
     print($"empty: {empty.length} bytes, {empty == ""}")
     let multi: u8[9] = [0xC3, 0xA9, 0xE2, 0x82, 0xAC, 0xF0, 0x9F, 0x98, 0x80]
-    let m = try string.from(multi.asSpan())
+    let m = try string.from(multi.span)
     print($"{m} {m.length} bytes")
     print(try decode())
-    let t = string.tryFrom(hi.asSpan()) ?? "none"
+    let t = string.tryFrom(hi.span) ?? "none"
     print($"tryFrom: {t}")
-    let at = string.invalidUtf8At(multi.asSpan())
+    let at = string.invalidUtf8At(multi.span)
     print($"invalidUtf8At: {at is null}")
 }

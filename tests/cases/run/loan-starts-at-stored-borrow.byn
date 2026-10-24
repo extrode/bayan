@@ -13,6 +13,6 @@ ReadOnlySpan<i64> second(i64 a, at i64 b, from ReadOnlySpan<i64> s) => s
 void main() {
     var w = W { items: List<i64>() }
     w.items.append(3)
-    let s = second(w.items.asSpan().length, at: w.grow(), from: w.items.asSpan())
+    let s = second(w.items.span.length, at: w.grow(), from: w.items.span)
     print($"{s[0]}")
 }

@@ -223,8 +223,13 @@ byn_alloc* byn_arena_alloc(byn_arena* a);
 
 byn_str byn_str_copy(byn_str s, byn_alloc* to);
 void* byn_copy_bytes(const void* p, int64_t n, byn_alloc* to);
-/* Lowercase hexadecimal digits of v, no prefix or leading zeros. */
-byn_str byn_to_hex(uint64_t v, byn_alloc* to);
+/* The builtin `enum Radix` of `string(n, as:)`: 0 binary, 1 octal, 2 decimal, 3 hex. */
+typedef int32_t byn_builtin_Radix;
+/* v in radix, lowercase, no prefix or leading zeros. Decimal prints a signed v with its sign;
+   the others print v's two's-complement bits at the type's width. */
+byn_str byn_int_string(int64_t v, int32_t bits, bool is_signed, byn_builtin_Radix radix, byn_alloc* to);
+/* Two lowercase hex digits per byte (`Hex.encode`). */
+byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to);
 
 /* Makes room for `need` elements: grows *ptr (capacity *cap) through alloc. */
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc);

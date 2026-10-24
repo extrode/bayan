@@ -21,8 +21,10 @@ internal static class BuiltinMembers
         (SpanType, "isEmpty") => (BuiltinMember.SpanIsEmpty, PrimitiveType.Bool),
         (ListType, "length") => (BuiltinMember.ListLength, PrimitiveType.I64),
         (ListType, "isEmpty") => (BuiltinMember.ListIsEmpty, PrimitiveType.Bool),
+        (ListType l, "span") => (BuiltinMember.ListAsSpan, new SpanType(l.Element)),
         (MapType, "length") => (BuiltinMember.MapLength, PrimitiveType.I64),
         (Symbols.ArrayType, "length") => (BuiltinMember.ArrayLength, PrimitiveType.I64),
+        (Symbols.ArrayType a, "span") => (BuiltinMember.ArrayAsSpan, new SpanType(a.Element)),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "length") => (BuiltinMember.StrBufLength, PrimitiveType.I64),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "view") => (BuiltinMember.StrBufAsString, PrimitiveType.String),
         (BuiltinType { Kind: BuiltinKind.ProcessResult }, "exitCode") => (BuiltinMember.ProcessExitCode, PrimitiveType.I32),
@@ -49,23 +51,25 @@ internal static class BuiltinMembers
         (SpanType s, "copy") => new(BuiltinMember.SpanCopy, [("to", BuiltinType.Arena)], new ListType(s.Element)),
         (ListType l, "copy") => new(BuiltinMember.ListCopy, [("to", BuiltinType.Arena)], l),
         (ListType l, "append") => new(BuiltinMember.ListAdd, [("item", l.Element)], PrimitiveType.Void, Mutating: true),
-        (ListType l, "asSpan") => new(BuiltinMember.ListAsSpan, [], new SpanType(l.Element)),
         (ListType, "clear") => new(BuiltinMember.ListClear, [], PrimitiveType.Void, Mutating: true),
         (ListType l, "removeLast") => new(BuiltinMember.ListRemoveLast, [], l.Element, Mutating: true),
-        (ListType, "removeRange") =>
-            new(BuiltinMember.ListRemoveRange, [("start", PrimitiveType.I64), ("end", PrimitiveType.I64)], PrimitiveType.Void, Mutating: true),
+        (ListType, "remove") =>
+            new(BuiltinMember.ListRemoveRange, [("from", PrimitiveType.I64), ("until", PrimitiveType.I64)], PrimitiveType.Void, Mutating: true),
+        // The items are copied in, so elements that own memory are left out.
+        (ListType l, "replace") when !TypeFacts.IsUnique(l.Element) => new(BuiltinMember.ListReplace,
+            [("at", new RangeType(PrimitiveType.I64)), ("by", new SpanType(l.Element, readOnly: true))], PrimitiveType.Void, Mutating: true),
+        (ListType l, "tryGet") => new(BuiltinMember.ListTryGet, [("at", PrimitiveType.I64)], new OptionalType(l.Element)),
         // Stable (J47); elements ordered by `<`: numbers, `rune` and `string`.
         (ListType l, "sort") when l.Element is { IsNumeric: true } or { IsString: true } or PrimitiveType { Kind: PrimitiveKind.Char } =>
             new(BuiltinMember.ListSort, [], PrimitiveType.Void, Mutating: true),
         (ListType l, "take") => new(BuiltinMember.ListTake, [], l, Mutating: true),
-        (MapType m, "getOr") => new(BuiltinMember.MapGetOr, [("key", m.KeyType), ("default", m.ValueType)], m.ValueType),
+        (MapType m, "tryGet") => new(BuiltinMember.MapTryGet, [("at", m.KeyType)], new OptionalType(m.ValueType)),
         (MapType m, "slot") => new(BuiltinMember.MapSlot, [("key", m.KeyType)], m.ValueType, Mutating: true),
         (MapType m, "contains") => new(BuiltinMember.MapContains, [("key", m.KeyType)], PrimitiveType.Bool),
         (MapType m, "remove") => new(BuiltinMember.MapRemove, [("key", m.KeyType)], PrimitiveType.Bool, Mutating: true),
         (MapType m, "copy") => new(BuiltinMember.MapCopy, [("to", BuiltinType.Arena)], m),
         (MapType, "clear") => new(BuiltinMember.MapClear, [], PrimitiveType.Void, Mutating: true),
         (MapType m, "take") => new(BuiltinMember.MapTake, [], m, Mutating: true),
-        (Symbols.ArrayType a, "asSpan") => new(BuiltinMember.ArrayAsSpan, [], new SpanType(a.Element)),
         (BuiltinType { Kind: BuiltinKind.Arena }, "reset") => new(BuiltinMember.ArenaReset, [], PrimitiveType.Void, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "append") =>
             new(BuiltinMember.StrBufAppend, [("text", PrimitiveType.String)], PrimitiveType.Void, Mutating: true),
@@ -75,7 +79,6 @@ internal static class BuiltinMembers
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "clear") => new(BuiltinMember.StrBufClear, [], PrimitiveType.Void, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.StrBuf } s, "take") => new(BuiltinMember.StrBufTake, [], s, Mutating: true),
         (OptionalType o, "take") when TypeFacts.IsUnique(o.Inner) => new(BuiltinMember.OptionalTake, [], o, Mutating: true),
-        ({ IsInteger: true }, "toHex") => new(BuiltinMember.IntToHex, [], PrimitiveType.String),
         (BuiltinType { Kind: BuiltinKind.IoStream }, "write") => new(BuiltinMember.IoWrite, [("text", PrimitiveType.String)], PrimitiveType.Void),
         // The binder wraps the result in `Result<string, IoError>`.
         (BuiltinType { Kind: BuiltinKind.IoInput }, "readAll") => new(BuiltinMember.IoReadAll, [], PrimitiveType.String),
@@ -85,7 +88,7 @@ internal static class BuiltinMembers
     public static bool HasMethod(TypeSymbol type, string name) => Method(type, name) is not null;
 
     private static readonly string[] Candidates =
-        ["length", "bytes", "isEmpty", "runeCount", "isAscii", "value", "copy", "startsWith", "endsWith", "contains", "asSpan", "clear", "removeLast", "removeRange", "sort", "getOr", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "toHex", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
+        ["length", "bytes", "isEmpty", "runeCount", "isAscii", "value", "copy", "startsWith", "endsWith", "contains", "span", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>

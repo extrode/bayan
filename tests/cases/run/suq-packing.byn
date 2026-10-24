@@ -130,12 +130,12 @@ for i in 0..40 {
     sample.append(PackItem { sku: $"ITM-{1000 + i}", grams: 100 + (i * 37) % 900, aisle: u8(1 + i % 6), bay: u16(i % 20) })
 }
 
-report(mixed.asSpan(), as: "mixed")
-report(bed.asSpan(), as: "bed")
-report(sample.asSpan(), as: "sample")
+report(mixed.span, as: "mixed")
+report(bed.span, as: "bed")
+report(sample.span, as: "sample")
 
 let picks: Span<i32> = stackalloc i32[64]
-sortPicks(sample.asSpan(), to: picks)
+sortPicks(sample.span, to: picks)
 var first = StrBuf()
 for k in 0..6 {
     first.append(" ")

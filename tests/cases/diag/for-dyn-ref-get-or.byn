@@ -1,4 +1,4 @@
-// `getOr` returns a place in the map or the fallback: a writable `for dyn ref` over it is checked writable (BYN2106).
+// `tryGet(at:) ??` gives a place in the map or the fallback: a writable `for dyn ref` over it is checked writable (BYN2106).
 interface IC {
     void bump(ref this)
     i64 n
@@ -14,6 +14,6 @@ void main() {
     m["a"] = move l
     let k = move m
     let e = List<C>()
-    for x: dyn ref IC in k.getOr("a", e) { x.bump() }
+    for x: dyn ref IC in k.tryGet(at: "a") ?? e { x.bump() }
     print($"{k["a"][0].n}")
 }

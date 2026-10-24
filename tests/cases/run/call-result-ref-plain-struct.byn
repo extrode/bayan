@@ -14,7 +14,7 @@ void main() {
     var xs = List<i64>()
     xs.append(1)
     var c = C { n: 0 }
-    let s = pick(ref c, from: xs.asSpan())
+    let s = pick(ref c, from: xs.span)
     c.bump()
     print($"{s[0]} {c.n}")
 }

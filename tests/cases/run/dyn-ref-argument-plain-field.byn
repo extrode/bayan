@@ -12,7 +12,7 @@ void poke(dyn ref IC r) { r.bump() }
 void main() {
     var b = B { items: List<i64>(), c: C { n: 0 } }
     b.items.append(1)
-    let t = b.items.asSpan()
+    let t = b.items.span
     poke(b.c)
     print($"{t[0]} {b.c.n}")
 }

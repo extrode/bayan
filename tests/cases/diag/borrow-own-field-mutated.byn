@@ -5,18 +5,18 @@ struct Token {
 struct Lexer {
     List<Token> toks
 
-    Span<Token> tokens() => toks.asSpan()
+    Span<Token> tokens() => toks.span
 
     void push(ref this, Token t) {
         toks.append(t)
     }
 
-    (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.length)
+    (Span<Token>, i64) spanAndCount() => (toks.span, toks.length)
 
     Span<Token> scratch() {
         var local = List<Token>()
         local.append(Token { kind: 0 })
-        return local.asSpan()
+        return local.span
     }
 }
 

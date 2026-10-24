@@ -52,7 +52,7 @@ public sealed class RuntimeNativeTests
         var program = $$"""
             void main() fails IoError {
                 let args: string[4] = ["a b", "", "^&|<>()!", "a\\"]
-                let r = try Io.runBatch("{{script.Replace("\\", "\\\\")}}", args.asSpan())
+                let r = try Io.runBatch("{{script.Replace("\\", "\\\\")}}", args.span)
                 print($"exit {r.exitCode}")
                 Io.stdout.write(r.stdout)
             }

@@ -9,7 +9,7 @@ struct B : IReset {
     }
 
     void run(ref this) {
-        let s = items.asSpan()
+        let s = items.span
         poke(this)
         print($"{s[0]}")
     }

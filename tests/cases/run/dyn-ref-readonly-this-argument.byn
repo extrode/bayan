@@ -6,7 +6,7 @@ struct B : ICount {
     i64 count() => items.length
 
     void run(ref this) {
-        let s = items.asSpan()
+        let s = items.span
         show(this)
         print($"{s[0]}")
     }

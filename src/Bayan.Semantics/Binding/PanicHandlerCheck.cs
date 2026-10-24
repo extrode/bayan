@@ -64,11 +64,11 @@ internal static class PanicHandlerCheck
                 case BoundInterpolated when !sinks.Contains(node):
                 case BoundCollection { Type: ListType or MapType }:
                 case BoundCall { Function.Builtin: BuiltinFunction.ListNew or BuiltinFunction.OwnedNew or BuiltinFunction.StrBufGrow or BuiltinFunction.ArenaNew
-                    or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir
+                    or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.HexEncode or BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir
                     or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch }:
                 case BoundBuiltinCall { Member: BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy
-                    or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy or BuiltinMember.IoReadAll or BuiltinMember.IntToHex
-                    or BuiltinMember.ListAdd or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet }:
+                    or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy or BuiltinMember.IoReadAll or BuiltinMember.IntToString
+                    or BuiltinMember.ListAdd or BuiltinMember.ListReplace or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet }:
                     restricted = "allocation";
                     break;
                 case BoundLocal { Local: var l } when !targets.Contains(node) && !own.Contains(l) && l.IsMutable:

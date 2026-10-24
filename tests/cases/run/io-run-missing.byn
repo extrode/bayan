@@ -1,7 +1,7 @@
 // A program that is not on PATH is `notFound`, handled with `catch`; nothing panics.
 string exitOf(string program) fails IoError {
     let none: List<string> = List<string>()
-    let r = try Io.run(program, none.asSpan())
+    let r = try Io.run(program, none.span)
     return $"exit {r.exitCode}"
 }
 

@@ -960,6 +960,12 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 var elements = Operands(t.Elements);
                 return elements is null ? new LNever(e.Syntax, e.Type) : t with { Elements = elements };
             }
+            case BoundRange r:
+            {
+                // A range held as a value is its layout tuple; `for` over a range literal does not come here.
+                var bounds = Operands([r.Start, r.End]);
+                return bounds is null ? new LNever(e.Syntax, e.Type) : new BoundTuple(r.Syntax, ((RangeType)r.Type).Layout, [.. bounds, Bool(r.Syntax, r.Inclusive)]);
+            }
             case BoundCollection c:
                 return Collection(c);
             case BoundIndex i:
@@ -1430,7 +1436,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 : new BoundDefault(b.Syntax, b.Type));
             return taken;
         }
-        var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast or BuiltinMember.ListRemoveRange or BuiltinMember.ListSort
+        var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast or BuiltinMember.ListRemoveRange or BuiltinMember.ListReplace or BuiltinMember.ListSort
             or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapRemove or BuiltinMember.MapClear
             or BuiltinMember.StrBufAppend or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan;
         var operands = new List<BoundExpr> { b.Receiver };

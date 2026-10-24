@@ -5,7 +5,7 @@ void fill(Span<string> dst) {
     dst[0] = sb.finish()
 }
 let arr: string[1] = ["x"]
-fill(arr.asSpan())
+fill(arr.span)
 print(arr[0])
 
 void either(Span<string> dst, bool useCaller) {
@@ -13,7 +13,7 @@ void either(Span<string> dst, bool useCaller) {
     var sb = StrBuf(buf)
     sb.append("hi")
     let mine: string[1] = ["y"]
-    var view = mine.asSpan()
+    var view = mine.span
     if useCaller {
         view = dst
     }
