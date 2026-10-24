@@ -68,6 +68,10 @@ public static class CliApp
                 return Types(rest, stdout, stderr);
             case "format":
                 return Format.Run(rest, stdout, stderr);
+            case "audit":
+                return Audit.Run(rest, stdout, stderr, s_styleOut ?? Style.Plain);
+            case "features":
+                return Features.Run(rest, stdout, stderr);
             case "explain":
                 return Explain(rest, stdout, stderr);
             case "check":
@@ -141,7 +145,7 @@ public static class CliApp
 
     internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null);
 
-    private static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false, bool allowVerbose = false)
+    internal static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false, bool allowVerbose = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
