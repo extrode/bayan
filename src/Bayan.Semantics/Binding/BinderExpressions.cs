@@ -249,7 +249,7 @@ internal sealed partial class Binder
             case TargetMemberExpr t:
                 return BindTargetMember(t, expected);
             case CallExpr c:
-                return BindCall(c, expected);
+                return BindErrorNew(c, expected) ?? BindCall(c, expected);
             case IndexExpr i:
                 return BindIndex(i);
             case UnaryExpr u:

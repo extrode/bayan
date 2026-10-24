@@ -843,6 +843,14 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     {
         switch (e)
         {
+            case BoundErrorVariant { Payload.Length: > 0 } v:
+            {
+                // An error is still only its code: the payload is evaluated for its effects, then dropped.
+                var payload = Operands(v.Payload);
+                if (payload is null) return new LNever(e.Syntax, e.Type);
+                foreach (var p in payload) EmitEffect(p);
+                return v with { Payload = [] };
+            }
             case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
                 return e;
             case BoundLocal l:

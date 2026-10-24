@@ -1107,21 +1107,26 @@ internal sealed partial class Binder
         var fn = _fn;
         if (fn is null) return new BoundErrorStmt(f);
         var entry = fn.Kind is FunctionKind.Main or FunctionKind.Test;
+        var call = f.Error as CallExpr;
         if (!fn.Fails && !entry)
         {
-            var named = f.Error is TargetMemberExpr target ? "." + target.Member.Text : BindExprOrType(f.Error).Type.DisplayName;
+            var named = (call?.Callee ?? f.Error) is TargetMemberExpr target ? "." + target.Member.Text : BindExprOrType(f.Error).Type.DisplayName;
             Report(DiagnosticCodes.PropagateFromInfallible, f.Error.Span, [fn.Name, named],
                 help: "declare the error in a `fails` clause, or handle it here");
             return new BoundErrorStmt(f);
         }
-        if (f.Error is TargetMemberExpr t)
+        if ((call?.Callee ?? f.Error) is TargetMemberExpr t)
         {
             var matches = fn.ErrorSets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null).ToList();
             if (matches.Count == 1)
             {
                 if (!entry) CheckNotExcluded(matches[0]!, t.Span);
-                return new BoundFail(f, new BoundErrorVariant(t, matches[0]!));
+                var variant = new BoundErrorVariant(t, matches[0]!);
+                if (call is not null)
+                    return BindPayload(call, variant) is BoundErrorVariant built ? new BoundFail(f, built) : new BoundErrorStmt(f);
+                return CheckPayloadGiven(variant, f.Error) ? new BoundFail(f, variant) : new BoundErrorStmt(f);
             }
+            if (call is not null) BindArgumentsForRecovery(call);
             if (matches.Count > 1)
                 Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);
             else if (fn.ErrorSets.Count == 0)
@@ -1146,6 +1151,7 @@ internal sealed partial class Binder
         }
         if (!entry) foreach (var set in sets) CheckCanFailWith(set, f.Error.Span);
         if (!entry && error is BoundErrorVariant ev) CheckNotExcluded(ev.Variant, f.Error.Span);
+        if (f.Error is not CallExpr && !CheckPayloadGiven(error, f.Error)) return new BoundErrorStmt(f);
         return new BoundFail(f, error);
     }
 

@@ -1,0 +1,9 @@
+sent 5
+payload 500
+failed: timeout
+payload -3
+failed: rejected
+failed: rejected
+failed: closed
+payload 8
+failed: timeout

@@ -217,3 +217,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-55: `bayan audit` names a call bypass by its member only (`trustUnchecked()`), since there is no trim-safe syntax walker in `Bayan.Syntax`; a walker would let it show the full callee (Question 240).
 - r3-55: `bayan audit` lists no C sources per dependency (SPEC §19.3); add them when dependencies land.
 - plan-strings-check skips BYN3216: its plan entry has a quoted `{2}` gloss between the message and `(label`, which the form regex rejects; reword the entry (revision erratum) or widen the regex (found 2026-10-24, r3-53b).
+- r3-53h: `let e: E = .timeout` (a case with a payload, written bare outside `fail`) binds without BYN2705; the check needs to tell a value from a `catch` pattern.
+- r3-53h: `RegionAnalysis.cs:236` and `OwnershipAnalysis` treat `BoundErrorVariant` as a leaf, so moves and borrows in an error payload are not checked.
+- r3-53h: `return .case(…)` is not BYN1056; the `return .x` check (5.3f) sees only a bare `.x`.

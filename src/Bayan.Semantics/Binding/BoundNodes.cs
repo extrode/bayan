@@ -179,7 +179,11 @@ public sealed record BoundJump(Node Syntax, BoundStmt Jump) : BoundExpr(Syntax, 
 /// <summary><c>catch { … }</c> handler; type <c>void</c> for a <c>void</c> operand, else <c>never</c> (flow analysis checks the claim).</summary>
 public sealed record BoundBlockExpr(Node Syntax, BoundBlock Block, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
-public sealed record BoundErrorVariant(Node Syntax, ErrorVariantSymbol Variant) : BoundExpr(Syntax, Variant.Set);
+public sealed record BoundErrorVariant(Node Syntax, ErrorVariantSymbol Variant) : BoundExpr(Syntax, Variant.Set)
+{
+    /// <summary>The payload of <c>.timeout(after)</c>, one value per field of <see cref="Variant"/>; empty for a bare case.</summary>
+    public BoundExpr[] Payload { get; init; } = [];
+}
 
 /// <summary><c>Color.red</c> or a target-typed <c>.red</c>.</summary>
 public sealed record BoundEnumMember(Node Syntax, EnumMemberSymbol Member) : BoundExpr(Syntax, Member.Enum);

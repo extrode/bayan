@@ -27,6 +27,7 @@ public static class BoundTree
             case BoundCoalesce n: yield return n.Left; yield return n.Right; break;
             case BoundStructLiteral n: foreach (var f in n.Fields) yield return f; break;
             case BoundUnionNew n: foreach (var f in n.Payload) yield return f; break;
+            case BoundErrorVariant n: foreach (var f in n.Payload) yield return f; break;
             case BoundWith n:
                 yield return n.Target;
                 foreach (var u in n.Updates) yield return u.Value;

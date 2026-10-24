@@ -158,9 +158,12 @@ public sealed record ConstructorDecl(TextSpan Span, Modifiers Modifiers, Name Na
 public sealed record ErrorVariant(TextSpan Span, Name Name, string? Doc) : Node(Span)
 {
     public AttributeSyntax[] Attributes { get; init; } = [];
+
+    /// <summary>The <c>(Millis after)</c> payload of <c>timeout(Millis after)</c>; empty without one.</summary>
+    public UnionField[] Fields { get; init; } = [];
 }
 
-/// <summary><c>union error Name { a b }</c>, one case per line.</summary>
+/// <summary><c>union error Name { a b }</c>, one case per line; a case may carry a payload, <c>timeout(Millis after)</c>.</summary>
 public sealed record ErrorEnumDecl(TextSpan Span, Modifiers Modifiers, Name Name, ErrorVariant[] Variants) : Decl(Span);
 
 /// <summary><c>union error Name = A, B except .c</c>: a name for several error sets, flattened, less the <see cref="Except"/> cases.</summary>

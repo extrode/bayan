@@ -1,0 +1,28 @@
+union error CarrierError {
+    timeout(i64 after)
+    closed
+}
+
+void bare() fails CarrierError {
+    fail .timeout
+}
+
+void extra() fails CarrierError {
+    fail .closed(1)
+}
+
+void label() fails CarrierError {
+    fail .timeout(before: 1)
+}
+
+void kind() fails CarrierError {
+    fail .timeout(after: "soon")
+}
+
+void many() fails CarrierError {
+    fail CarrierError.timeout(1, 2)
+}
+
+void value() {
+    let e: CarrierError = .closed()
+}
