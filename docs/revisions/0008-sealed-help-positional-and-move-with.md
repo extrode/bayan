@@ -1,6 +1,6 @@
 # 0008 — `@sealed` misuse helps; `@positional` gets a step; `move x with { … }`
 
-Status: accepted 2026-10-24 (user, reviewed copy). Erratum (2026-10-24): GRAMMAR has no precedence table, so the precedence change is in SPEC §6.1 only; Questions 224 and 263 live on the 5.3b and 5.3e branches and close when those steps land. Date: 2026-10-24. Found while building 5.3b (`chore/worker-r3-53b`, handoff Question 224) and 5.3e (`chore/worker-r3-53e`, Question 263). Amends revision 0007 §2.
+Status: accepted 2026-10-24 (user, reviewed copy). Erratum (2026-10-24): GRAMMAR has no precedence table, so the precedence change is in SPEC §6.1 only; Questions 224 and 263 live on the 5.3b and 5.3e branches and close when those steps land. Erratum (2026-10-24): "every prefix operator binds tighter than `with`" excludes `try`, which is a scope keyword covering the whole expression to its right (SPEC §18); `try x with { … }` is `try (x with { … })`. Date: 2026-10-24. Found while building 5.3b (`chore/worker-r3-53b`, handoff Question 224) and 5.3e (`chore/worker-r3-53e`, Question 263). Amends revision 0007 §2.
 
 ## Problem
 
