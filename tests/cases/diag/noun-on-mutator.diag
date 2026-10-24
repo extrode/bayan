@@ -1,13 +1,13 @@
 warning BYN5101: `total` is a noun on a `ref this` member; name the action
 
-  4 │     void total(ref this, i64 by) {
-    │          ^^^^^
+  4 │     public void total(ref this, i64 by) {
+    │                 ^^^^^
     │
   help: rename it with the verb for what it does to `this`
 
 warning BYN5101: `sizeUp` is a noun on a `ref this` member; name the action
 
-  8 │     void sizeUp(ref this) {
-    │          ^^^^^^
+  8 │     public void sizeUp(ref this) {
+    │                 ^^^^^^
     │
   help: rename it with the verb for what it does to `this`

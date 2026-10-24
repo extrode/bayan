@@ -28,8 +28,8 @@ struct Track {
 
     i64 hundred() => 100
 
-    // A `ref this` member named with a verb, even one ending in `-ed`.
-    void fixed(ref this) {
+    // A `ref this` member named with the plain verb; its `-ed` form would be a copy.
+    void fix(ref this) {
         speed = 1
     }
 

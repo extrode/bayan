@@ -1,0 +1,30 @@
+struct Words {
+    string text
+
+    // `-ed` names the changed copy; the member that changes `this` is `sort`.
+    void sorted(ref this) {
+        text = text
+    }
+
+    // A copy or a view may be `-ed` with no `ref this` verb beside it.
+    string joined() => text
+
+    Words reversed => Words { text: text }
+
+    // `trimmed` undoes the doubled consonant: the verb is `trim`.
+    void trimmed(ref this, i64 times) {
+        text = text
+    }
+
+    // Words that only end in `-ed` and math vocabulary are not participles.
+    void need(ref this) {
+        text = text
+    }
+
+    f64 sqrt => 0.0
+
+    states {
+        drafted
+        shipped
+    }
+}

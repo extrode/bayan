@@ -1,12 +1,17 @@
-struct Counter {
+public struct Counter {
     i64 n
 
-    void total(ref this, i64 by) {
+    public void total(ref this, i64 by) {
         n += by
     }
 
-    void sizeUp(ref this) {
+    public void sizeUp(ref this) {
         n *= 2
+    }
+
+    // A lint on the public API only: a member the module keeps to itself is not checked.
+    void sizeDown(ref this) {
+        n /= 2
     }
 }
 

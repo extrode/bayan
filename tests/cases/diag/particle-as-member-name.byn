@@ -1,0 +1,20 @@
+struct Shelf {
+    i64 count
+
+    i64 at(i64 index) => count + index
+
+    i64 toI64() => count
+
+    i64 asCount => count
+
+    string toString() => ""
+
+    // Static factories name a source with `from`; a static `toX` is not an instance conversion.
+    static Shelf fromCount(i64 count) => Shelf { count: count }
+
+    static Shelf toShelf(i64 count) => Shelf { count: count }
+
+    i64 total() => count
+}
+
+print("ok")
