@@ -1,8 +1,0 @@
-union error CarrierError {
-    timeout
-    rejected
-}
-
-union error Retryable = CarrierError except .rejected
-
-type distinct Sku = string

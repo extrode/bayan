@@ -1,0 +1,9 @@
+struct Range {
+    i64 low
+    i64 high
+    requires low <= high at .high
+
+    void widen(ref this) {
+        this.high = this.high + 1
+    }
+}

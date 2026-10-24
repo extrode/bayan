@@ -7,11 +7,11 @@ namespace Bayan.Semantics.Binding;
 
 internal sealed partial class Binder
 {
-    /// <summary>The call that the enclosing <c>try</c>/<c>catch</c> handles; any other failing call is an error.</summary>
-    private CallExpr? _handled;
+    /// <summary>The call or checked construction that the enclosing <c>try</c>/<c>catch</c> handles; any other failing one is an error.</summary>
+    private Expr? _handled;
 
     /// <summary>While a <c>try</c> operand is bound: the failing calls it does not handle, reported once it is known whether the operand fails (BYN1054).</summary>
-    private List<(CallExpr Call, string Name)>? _covered;
+    private List<(Expr Call, string Name)>? _covered;
 
     /// <summary>The error a <c>catch switch</c> is switching on, while its subject is bound.</summary>
     private LocalSymbol? _caught;
@@ -383,7 +383,15 @@ internal sealed partial class Binder
                 var ctor = s.Constructors[0];
                 CheckAccess(ctor.Access, s, s.Module, new Name(c.Callee.Span, s.Name));
                 var args = BindArguments(c, ctor.Parameters, ctor, enforceNames: true);
-                return new BoundCall(c, ctor, null, args, s);
+                return Checked(c, new BoundCall(c, ctor, null, args, s));
+            }
+            case StructSymbol s when _c.Distinct.Contains(s):
+            {
+                // `Email(raw)` wraps the value; with `requires`, the wrapper is checked like a literal.
+                var value = s.Fields[0];
+                var ps = new[] { new ParameterSymbol(value.Name, value.Location, value.Type, ParamModifier.None, 0) };
+                var args = BindArguments(c, ps, null, enforceNames: false, displayName: s.Name);
+                return Checked(c, new BoundStructLiteral(c, s, args));
             }
             case StructSymbol s:
             {
@@ -630,10 +638,67 @@ internal sealed partial class Binder
 
     // ── Failure handling ─────────────────────────────────────────────────────────
 
-    private void ReportUnhandled(CallExpr c, string name) =>
-        Report(DiagnosticCodes.UnhandledFailure, c.Span, [name],
-            help: "propagate the error with `try`, or handle it with `catch`",
-            fix: new Fix(new TextSpan(c.Span.Start, 0), "try "));
+    private void ReportUnhandled(Expr c, string name)
+    {
+        if (c is StructLiteralExpr)
+            Report(DiagnosticCodes.LiteralNeedsTry, c.Span, [name],
+                help: "add `try` before the literal and handle the `ValidationError`",
+                fix: new Fix(new TextSpan(c.Span.Start, 0), "try "));
+        else
+            Report(DiagnosticCodes.UnhandledFailure, c.Span, [name],
+                help: "propagate the error with `try`, or handle it with `catch`",
+                fix: new Fix(new TextSpan(c.Span.Start, 0), "try "));
+    }
+
+    /// <summary>Whether a <c>try</c> or <c>catch</c> can handle <paramref name="e"/> itself: a call, or a construction that may run a check.</summary>
+    private static bool Handles(Expr e) => e is CallExpr or StructLiteralExpr or WithExpr;
+
+    /// <summary>
+    /// A value just built, by a literal, a constructor, <c>X(raw)</c> or <c>with</c>: of a struct with <c>requires</c>, it
+    /// runs the struct's check and can fail with <c>ValidationError</c>. <paramref name="changed"/> lists the fields a
+    /// <c>with</c> sets; when no rule reads one, the value needs no check (J19). Built from constants, the rules are
+    /// decided here (J38).
+    /// </summary>
+    private BoundExpr Checked(Expr syntax, BoundExpr value, IReadOnlyCollection<FieldSymbol>? changed = null)
+    {
+        if (value.Type is not StructSymbol s || !_c.Checks.TryGetValue(s, out var checks)) return value;
+        if (changed is not null && !checks.Rules.Any(r => (r.Field is { } f && changed.Contains(f)) || r.Reads.Any(changed.Contains)))
+            return value;
+        if (value is BoundStructLiteral literal && CheckConstant(syntax, literal, checks) is { } decided)
+            return decided ? value : new BoundErrorExpr(syntax);
+        if (!ReferenceEquals(_handled, syntax))
+        {
+            if (_covered is not null) _covered.Add((syntax, s.Name));
+            else ReportUnhandled(syntax, s.Name);
+        }
+        return new BoundCall(syntax, checks.Check, value, [], s);
+    }
+
+    /// <summary>
+    /// J38: a literal whose fields are all constants is checked now. True when every rule holds, false after reporting
+    /// each broken one (BYN2321), null when a rule is left to run time. A struct rule reading a field whose own rule
+    /// failed is skipped (J43).
+    /// </summary>
+    private bool? CheckConstant(Expr syntax, BoundStructLiteral literal, StructChecks checks)
+    {
+        if (literal.Fields.Any(f => f.Constant is null)) return null;
+        var fields = literal.Struct.Fields.ToDictionary(f => f, f => literal.Fields[f.Index].Constant!);
+        var results = checks.Rules.Select(r => ConstantFolding.Evaluate(r.Condition, new Dictionary<LocalSymbol, ConstantValue>(), fields)).ToList();
+        if (results.Any(r => r?.Value is not bool)) return null;
+        var failed = new HashSet<FieldSymbol>();
+        for (var i = 0; i < checks.Rules.Count; i++)
+        {
+            var rule = checks.Rules[i];
+            if (results[i]!.Value is true || rule.Reads.Any(failed.Contains)) continue;
+            if (rule.Field is { } field) failed.Add(field);
+            var at = syntax.Span;
+            if (rule.Field is { } own && literal.Fields[own.Index].Syntax.Span is var v && v.Start >= at.Start && v.End <= at.End && v != at) at = v;
+            var text = literal.Struct.File.Source.GetText(rule.Syntax.Condition.Span);
+            Report(DiagnosticCodes.RequiresViolated, at, [Source.GetText(at), text, literal.Struct.Name],
+                label: "fails the contract", help: $"pass a value that meets `requires {text}`");
+        }
+        return results.All(r => r!.Value is true);
+    }
 
     private BoundExpr BindTry(TryExpr t, TypeSymbol? expected)
     {
@@ -641,22 +706,22 @@ internal sealed partial class Binder
             Report(DiagnosticCodes.TryInDefer, t.Span, [],
                 help: "handle the error here with `catch`; cleanup cannot fail");
         var inner = StripParens(t.Operand);
-        var (savedCovered, covered) = (_covered, new List<(CallExpr Call, string Name)>());
+        var (savedCovered, covered) = (_covered, new List<(Expr Call, string Name)>());
         _covered = covered;
         BoundExpr operand;
-        if (inner is not CallExpr call)
+        if (!Handles(inner))
         {
             operand = BindExpr(t.Operand, expected);
         }
         else
         {
             var saved = _handled;
-            _handled = call;
-            operand = BindExpr(call, expected);
+            _handled = inner;
+            operand = BindExpr(inner, expected);
             _handled = saved;
         }
         _covered = savedCovered;
-        if (inner is CallExpr && operand is BoundCall { Function.Fails: true })
+        if (Handles(inner) && operand is BoundCall { Function.Fails: true })
         {
             foreach (var (c, name) in covered) ReportUnhandled(c, name);
             return new BoundTry(t, operand, operand.Type);
@@ -675,7 +740,7 @@ internal sealed partial class Binder
     }
 
     /// <summary>BYN1054: <c>try</c> covers an expression that cannot fail; the fix moves it onto the failing call, in parentheses (§18).</summary>
-    private void ReportTryCoversMore(TryExpr t, CallExpr failing)
+    private void ReportTryCoversMore(TryExpr t, Expr failing)
     {
         var text = Source.GetText(t.Operand.Span);
         var call = Source.GetText(failing.Span);
@@ -689,11 +754,11 @@ internal sealed partial class Binder
     {
         var inner = StripParens(c.Operand);
         BoundExpr operand;
-        if (inner is CallExpr call)
+        if (Handles(inner))
         {
             var saved = _handled;
-            _handled = call;
-            operand = BindExpr(call, expected);
+            _handled = inner;
+            operand = BindExpr(inner, expected);
             _handled = saved;
         }
         else
@@ -710,7 +775,7 @@ internal sealed partial class Binder
             return new BoundErrorExpr(c);
         }
         var sets = _c.ErrorSetsOf(bc.Function);
-        var errorType = ErrorUnionType.Of(sets);
+        var errorType = ErrorUnionType.Of(sets, sets.Count == 0 ? null : bc.Function.ExcludedErrors);
         PushScope();
         LocalSymbol? binding = null;
         ErrorVariantSymbol? variant = null;
@@ -1078,7 +1143,7 @@ internal sealed partial class Binder
         if (value is BoundTypeRef) value = BindExpr(c.Value, target);
         if (value is BoundUnionNew { Payload.Length: 0 } unit && (target.IsError || unit.Type.Equals(target)))
             return new BoundUnionPattern(c, input, unit.Variant, []);
-        if (value is BoundErrorVariant ev && target is ErrorUnionType u && u.Sets.Count > 0 && !u.Sets.Contains(ev.Variant.Set))
+        if (value is BoundErrorVariant ev && target is ErrorUnionType u && u.Sets.Count > 0 && (!u.Sets.Contains(ev.Variant.Set) || u.Excluded.Contains(ev.Variant)))
             Report(DiagnosticCodes.PatternMismatch, c.Span, [$"`{ev.Variant.Set.Name}.{ev.Variant.Name}`", target.DisplayName]);
         else if (!(value is BoundErrorVariant && target is ErrorUnionType))
             value = Convert(value, target, c.Value.Span);
@@ -1230,7 +1295,7 @@ internal sealed partial class Binder
         ErrorSetSymbol s => s.Variants.Select(v => VariantKey(v, type)).ToList(),
         EnumSymbol e => e.Members.Select(m => "." + m.Name).ToList(),
         UnionSymbol u => u.Variants.Select(v => "." + v.Name).ToList(),
-        ErrorUnionType { Sets.Count: > 0 } u => u.Sets.SelectMany(s => s.Variants).Select(v => VariantKey(v, type)).ToList(),
+        ErrorUnionType { Sets.Count: > 0 } u => u.Sets.SelectMany(s => s.Variants).Except(u.Excluded).Select(v => VariantKey(v, type)).ToList(),
         OptionalType o => Domain(o.Inner) is { } inner ? [.. inner, "null"] : ["null", Some],
         _ => null,
     };
@@ -1312,6 +1377,11 @@ internal sealed partial class Binder
             return new BoundErrorStmt(a);
         }
         target = MapWriteTarget(target);
+        if (!CheckFieldWrite(target, a.Span))
+        {
+            BindExpr(a.Value);
+            return new BoundErrorStmt(a);
+        }
         CheckWritable(target, a.Target.Span, null);
         if (op is null)
         {
@@ -1366,10 +1436,41 @@ internal sealed partial class Binder
             return new BoundErrorStmt(i);
         }
         target = MapWriteTarget(target);
+        if (!CheckFieldWrite(target, i.Span)) return new BoundErrorStmt(i);
         CheckWritable(target, i.Target.Span, null);
         var one = Literal(i, target.Type, (Int128)1);
         return new BoundAssign(i, target, one, i.Increment ? BinaryOp.Add : BinaryOp.Sub);
     }
+
+    /// <summary>
+    /// J78 (O11, revision 0007): a field of a struct with <c>requires</c>, states or <c>@sealed</c> is written only by
+    /// its own methods (BYN3216 elsewhere); there, a field of a struct with <c>requires</c> is BYN3208, since the rules
+    /// are checked at construction. A constructor sets fields freely, and plain data is written anywhere.
+    /// </summary>
+    private bool CheckFieldWrite(BoundExpr target, TextSpan span)
+    {
+        if (target is not BoundField { Field.Owner: var owner } f) return true;
+        // Still a write for BYN2311, whichever way it is reported.
+        if (WrittenLocal(target) is { } written) written.Written = true;
+        var own = _struct is { } s && (s == owner || (s.Template ?? s) == (owner.Template ?? owner));
+        if (!own)
+        {
+            if (Invariant(owner.Template ?? owner) is not { } reason) return true;
+            Report(DiagnosticCodes.FieldWriteOutside, span, [owner.Name, f.Field.Name, reason],
+                help: $"add a `ref this` method to `{owner.Name}`, or build a new value with `with`");
+            return false;
+        }
+        if (_fn is { Kind: FunctionKind.Constructor } || !_c.Checks.ContainsKey(owner.Template ?? owner)) return true;
+        Report(DiagnosticCodes.CheckedFieldAssignment, span, [owner.Name], help: "build a new value with `with`: `try x with { f: v }`");
+        return false;
+    }
+
+    /// <summary>Why BYN3216 protects <paramref name="s"/>'s fields, the first of <c>requires</c>, states and <c>@sealed</c>; null for plain data.</summary>
+    private static string? Invariant(StructSymbol s) =>
+        s.Decl.Rules.Length > 0 || s.Decl.Members.OfType<FieldDecl>().Any(f => f.Requires.Length > 0) ? "has `requires`"
+        : s.Decl.States.Length > 0 ? "has states"
+        : s.Decl.Attributes.Any(a => a.Name.Text == "sealed") ? "is `@sealed`"
+        : null;
 
     /// <summary><c>map[k]</c> as an assignment target: <c>=</c> inserts <c>k</c> when missing; <c>op=</c>, <c>++</c> and <c>--</c> read it first and panic (lowering).</summary>
     private static BoundExpr MapWriteTarget(BoundExpr target) =>

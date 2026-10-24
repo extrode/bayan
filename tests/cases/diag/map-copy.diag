@@ -210,7 +210,7 @@ error BYN2780: implicit copy of a unique value: `Store` is unique because field 
   66 │     let u = s with { name: "u" }
      │             ^^^^^^^^^^^^^^^^^^^^
      │
-  help: pass it by `ref` to share it instead
+  help: write `move s with { … }` to give up `s`
 
 error BYN2780: implicit copy of a unique value: `Map<i64, i64>` is unique: it owns its storage
 

@@ -1,0 +1,17 @@
+struct Mode {
+    bool inText
+    i64 braceDepth
+}
+
+struct Particle {
+    f64 life
+}
+
+var modes = [Mode { inText: false, braceDepth: 0 }, Mode { inText: true, braceDepth: 0 }]
+let depth = 1
+modes[depth].braceDepth += 1
+modes[depth].braceDepth += 1
+modes[depth].braceDepth -= 1
+var p = Particle { life: 1.0 }
+p.life -= 0.25
+print($"{modes[depth].braceDepth} {modes[0].braceDepth} {p.life}")

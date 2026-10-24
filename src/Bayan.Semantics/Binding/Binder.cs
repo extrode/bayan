@@ -212,6 +212,47 @@ internal sealed partial class Binder
         return checks.ToArray();
     }
 
+    /// <summary>The field whose own rule is being bound: there <c>it</c> reads it.</summary>
+    private FieldSymbol? _it;
+
+    /// <summary>
+    /// The body of a struct's <c>requires</c> check: each field's rules (with <c>it</c> the field), then the struct-level
+    /// rules, each failing with <c>ValidationError.invalid</c>. A field's failing rule ends the check first, so a struct
+    /// rule reading that field is skipped (J43).
+    /// </summary>
+    public void BindChecks(StructChecks checks)
+    {
+        var invalid = _c.Builtins.ValidationError.Find("invalid")!;
+        var statements = new List<BoundStmt>();
+        void Add(RequiresRule r, FieldSymbol? field)
+        {
+            _it = field;
+            var condition = BindExpr(r.Condition, PrimitiveType.Bool);
+            _it = null;
+            if (!condition.Type.IsBool)
+            {
+                if (!condition.Type.IsError)
+                    Report(DiagnosticCodes.RequiresNotBool, r.Condition.Span, [condition.Type.DisplayName],
+                        help: "write a condition the value must meet, such as `it > 0`");
+                return;
+            }
+            checks.Rules.Add(new StructRule(r, field, condition));
+            var fail = new BoundFail(r, new BoundErrorVariant(r, invalid));
+            statements.Add(new BoundIf(r, new BoundUnary(r, UnaryOp.Not, condition, PrimitiveType.Bool), fail, null));
+        }
+        foreach (var field in _struct!.Fields)
+            foreach (var r in field.Decl.Requires)
+                Add(r, field);
+        foreach (var r in _struct.Decl.Rules)
+        {
+            if (r.At is { } at && _struct.FindField(at.Text) is null)
+                Report(DiagnosticCodes.RuleTargetNotField, at.Span, [at.Text, _struct.Name], label: $"`.{at.Text}`",
+                    help: $"name a field of `{_struct.Name}`");
+            Add(r, null);
+        }
+        _fn!.Body = new BoundBlock(_struct.Decl, statements.ToArray());
+    }
+
     private void BindParameterDefaults()
     {
         foreach (var p in _fn!.Parameters)
@@ -1012,7 +1053,11 @@ internal sealed partial class Binder
             case TargetMemberExpr t when fn.ReturnType is not ErrorSetSymbol && !HasCase(fn.ReturnType, t.Member.Text):
             {
                 var matches = fn.ErrorSets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null).ToList();
-                if (matches.Count == 1) return new BoundErrorVariant(t, matches[0]!);
+                if (matches.Count == 1)
+                {
+                    CheckNotExcluded(matches[0]!, t.Span);
+                    return new BoundErrorVariant(t, matches[0]!);
+                }
                 if (matches.Count > 1)
                 {
                     Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);
@@ -1032,6 +1077,7 @@ internal sealed partial class Binder
                 if (bound is BoundErrorVariant variant)
                 {
                     CheckCanFailWith(variant.Variant.Set, m.Span);
+                    CheckNotExcluded(variant.Variant, m.Span);
                     return variant;
                 }
                 return null;
@@ -1071,7 +1117,11 @@ internal sealed partial class Binder
         if (f.Error is TargetMemberExpr t)
         {
             var matches = fn.ErrorSets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null).ToList();
-            if (matches.Count == 1) return new BoundFail(f, new BoundErrorVariant(t, matches[0]!));
+            if (matches.Count == 1)
+            {
+                if (!entry) CheckNotExcluded(matches[0]!, t.Span);
+                return new BoundFail(f, new BoundErrorVariant(t, matches[0]!));
+            }
             if (matches.Count > 1)
                 Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);
             else if (fn.ErrorSets.Count == 0)
@@ -1095,6 +1145,7 @@ internal sealed partial class Binder
             return new BoundErrorStmt(f);
         }
         if (!entry) foreach (var set in sets) CheckCanFailWith(set, f.Error.Span);
+        if (!entry && error is BoundErrorVariant ev) CheckNotExcluded(ev.Variant, f.Error.Span);
         return new BoundFail(f, error);
     }
 
@@ -1105,6 +1156,14 @@ internal sealed partial class Binder
         if (fn.InfersErrors) return;
         Report(DiagnosticCodes.UndeclaredError, span, [set.Name, fn.Name],
             help: $"add it to the signature: `fails {string.Join(", ", fn.ErrorSets.Select(s => s.Name).Append(set.Name))}`");
+    }
+
+    /// <summary>BYN2603 for a case the <c>fails</c> clause takes out with <c>except</c>.</summary>
+    private void CheckNotExcluded(ErrorVariantSymbol variant, TextSpan span)
+    {
+        if (!_fn!.ExcludedErrors.Contains(variant)) return;
+        Report(DiagnosticCodes.UndeclaredError, span, [$"{variant.Set.Name}.{variant.Name}", _fn.Name],
+            help: $"pick another case, or remove `.{variant.Name}` from the `except` list");
     }
 
     private JumpTarget? FindTarget(Name? label, bool loopOnly, TextSpan span, string keyword)
