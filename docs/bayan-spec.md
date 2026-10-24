@@ -172,6 +172,8 @@ C# primitive names are accepted per project (`style.primitives: .sized | .csharp
 
 > Round 2 §15, round 3 §28: C# type names were input forms (BYN1030); round 3 makes them a per-project spelling because the mapping is closed, one-to-one and free of cost, and style is never compiler-enforced. Codes: none.
 
+> Revision 0002 item 17: `bayan expand` is deferred until after v0.1, so this text says what it will show. Codes: none.
+
 > Round 3 §10: `char` suggests C#'s 16-bit unit; `rune` names the scalar, and the `Runes` unit and `runeCount` follow it. Codes: BYN1048.
 
 Lowercase type names are reserved for the language. C interop types: `c_int`, `c_long`, `c_char`, … (`c_long` follows the platform).
@@ -681,6 +683,8 @@ Users may create roots, never patterns. Derived members are generated only when 
 - **Logging:** `log` is the verb and the level is a particle argument (`log(msg, as: .debug)`, §14). `Log.debug` fails the grammar check, because `debug` is a level, not the act (BYN5007).
 
 > Round 3 §11, §12, §27: `T.Validated` is gone because `requires` makes every value valid at construction; the new rules name what `T.X`, states, events, particles, conversions and logging mean, so a name never hides which of them it is. Codes: BYN5001, BYN5007, BYN5009, BYN5010.
+
+> Revision 0002 item 17: `bayan expand` is deferred until after v0.1, so this text says what it will show. Codes: none.
 
 - **Checker scope (O15).** The pattern rules that make derived forms work (`tryX`, `-ed`, `xInto`, particles; `BYN50xx`) apply to all code. The naming-style rules (`BYN51xx`) apply to `public` declarations only. A name forced by an outside system (a JSON field, a C symbol, a database column) uses the derivation's rename attribute (`@json(name: …)`, `@column(…)`), which exempts it from `BYN51xx`, or `@allow(…) because "…"` (§4.4).
 - **Project dictionary.** The checker classifies each word of a member name as a verb, noun or adjective. Words it does not know (domain terms such as `upsert`, `sku`, `kyc`) are declared in `grammar` in `package.byn` (§19.2), merged with the built-in word list; an unknown word is a warning (BYN5014) whose fix adds it there.
@@ -1310,6 +1314,8 @@ print(..names)                                          // spread an existing co
 
 > Round 3 §24: variadic calls without a heap array or boxing, and overloads checked where they are declared. Codes: BYN1058, BYN3213, BYN3214, BYN3215.
 
+> Revision 0002 item 28: `print` takes `to Stream stream = .stdout`, so stderr is written with `print(p, to: .stderr)` through the same formatting; `Stderr.write` stays the raw writer. Codes: none.
+
 **Mutating members: `ref this`.** `mut` is not a keyword.
 
 ```csharp
@@ -1362,6 +1368,8 @@ interface IRepository<T, K = T.Id> where T : IEntity<T> { … }
 
 > Round 3 §30: one compilation strategy in every mode keeps a debug build's dispatch the same as a release build's; dynamic dispatch is chosen by writing an interface value, never by the build mode.
 
+> Revision 0002 item 28: `print` takes `to Stream stream = .stdout`, so stderr is written with `print(p, to: .stderr)` through the same formatting; `Stderr.write` stays the raw writer. Codes: none.
+
 ---
 
 ## 12. Comptime
@@ -1401,6 +1409,8 @@ const routes = comptime Program.functionsWith<HttpRoute>()
 Derivations are applied with `@derive(Row)`, `@derive(Json)`, `@derive(Csv)` and only add members. `bayan expand T` will show the generated code (§21.2), which must be identical to the hand-written equivalent (for example, ordinal reads for `Row`). Not in v0.1.
 
 > Round 2 §4, §19: loop and condition syntax as in §7 (also `comptime if` in §12.4); derived code is inspectable and no different from hand-written code.
+
+> Revision 0002 item 17: `bayan expand` is deferred until after v0.1, so this text says what it will show. Codes: none.
 
 Tier-3 **generators** run from `build.byn`, read declared inputs, emit Bayan source into `gen/`, are sandboxed (no network), cached by input hash, and checked for determinism by the toolchain.
 
@@ -1557,6 +1567,8 @@ public u32 crc(ReadOnlySpan<u8> data) { … }   // no `uses`: no alloc, no suspe
 > Round 3 §13: three mechanisms (`noalloc`, `nosuspend`, capabilities) for one idea become one checked clause, and the default is the cheapest promise. Codes: BYN6001, BYN6002, BYN6003, BYN6004, BYN6005, BYN6006.
 
 > Revision 0002 items 5, 21: the entry function has no caller to declare effects to, so it is exempt from BYN6002; `suspend` parks the fiber itself and has nothing to intercept, so it has no handler. Codes: BYN6002, BYN6007.
+
+> Revision 0002 item 17: `bayan expand` is deferred until after v0.1, so this text says what it will show. Codes: none.
 
 ---
 
@@ -1723,6 +1735,8 @@ Cross-process pub/sub is not an `Event`: it is a stream iterated on its own fibe
 - **Imports:** members of the numeric and collection types live in `core` and need no import; `min` and `max` are in the `core` prelude. Vectors, matrices, statistics and geo live in `std.math` and need an import.
 
 > Round 3 §27: scalars read as nouns and aggregates as verb pairs, so the same rules (§5.2) cover math. Codes: BYN5001.
+
+> Revision 0002 item 28: `print` takes `to Stream stream = .stdout`, so stderr is written with `print(p, to: .stderr)` through the same formatting; `Stderr.write` stays the raw writer. Codes: none.
 
 ### 16.3 `std.db` (spec-only)
 
@@ -2322,7 +2336,7 @@ Roadmap: v0.3 WASM + `.d.ts`; v0.4 `bayan gen ts`; post-v1 portable JS backend (
   - Typestate: the `states` block, `becomes`, `become` (§3.17).
   - Argument particles `from to until through at by for as`; a particle appears at most once per signature (§10).
   - `Panic.handler` with `uses console` (§7.6). A public field is writable only from its own `ref this` methods or through `with` (§3.10). Views and copies are `span`, `mutableSpan()`, `copy()` and `T(x)`, never `toX` or `asX` members (§16).
-  - Bytes decode with `try string(bytes)` and `string.tryFrom(bytes)`, never `fromUtf8`; integers format with `string(n, as: Radix)`; hex and base64 are codecs (§3.2, §6.2). BYN50xx rules cover all code, BYN51xx the public API; domain words go in `grammar` (§5.2, §19.2). Generics are monomorphized (§11). A struct holding a mutable reference is `unique` and no reference crosses into a fiber that may outlive it (§9.4).
+  - Bytes decode through codecs, `try Utf8.decode(bytes)` and `Utf8.tryDecode(bytes)`, never `fromUtf8`, and `string(x)` always formats (§16.4); integers format with `string(n, as: Radix)`; hex and base64 are codecs (§3.2, §6.2). BYN50xx rules cover all code, BYN51xx the public API; domain words go in `grammar` (§5.2, §19.2). Generics are monomorphized (§11). A struct holding a mutable reference is `unique` and no reference crosses into a fiber that may outlive it (§9.4).
   - Secrets need `expose … because` in derivations; `Row` is flat (§5.3). Two trust layers (§15.1).
   - `try` covers the whole expression to its right (§8). `defer` modifiers are captured at registration (§7.6).
   - Size is `length`; `count(p)` is only a predicate count (§16).
@@ -2339,6 +2353,8 @@ Roadmap: v0.3 WASM + `.d.ts`; v0.4 `bayan gen ts`; post-v1 portable JS backend (
   - `panic` as an effect.
 
 > Round 2 §15, §19: `!` survives only as an input form (C22); the `with` decision of 2026-10-21.
+
+> Revision 0003 §1 (amends revision 0002 item 24): bytes decode through codecs (`try Utf8.decode(bytes)`, `Utf8.tryDecode(bytes)`), and `string(x)` always formats. Codes: BYN2230.
 
 > Round 3, Rejected and "Resolved 2026-10-22": recorded here so they are not re-proposed.
 
