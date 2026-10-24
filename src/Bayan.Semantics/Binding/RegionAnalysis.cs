@@ -447,7 +447,7 @@ internal sealed class RegionAnalysis
                     result = result.Union(MayLend(c.Arguments[i].Type, []) ? lent : new Borrow(lent.Regions, []));
                 }
         // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `string.from` return (Q29).
-        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow
+        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow or BuiltinFunction.StrBufOver
                 or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.HexEncode))
             result = result.Union(_contexts.Peek());
         return result;

@@ -30,6 +30,12 @@ public sealed class Builtins
         Edge = new EnumSymbol("Edge", new Location(edgeSource, edgeDecl.Name.Span), Module, Accessibility.Public, edgeDecl, new FileContext(Module, edgeTree));
         foreach (var m in edgeDecl.Members)
             Edge.Members.Add(new EnumMemberSymbol(m.Name.Text, new Location(edgeSource, m.Name.Span), Edge, Edge.Members.Count, null));
+        var alignSource = SourceText.FromString("<builtin>", AlignSource);
+        var alignTree = SyntaxTree.Parse(alignSource);
+        var alignDecl = (EnumDecl)alignTree.Root.Members[0];
+        Align = new EnumSymbol("Align", new Location(alignSource, alignDecl.Name.Span), Module, Accessibility.Public, alignDecl, new FileContext(Module, alignTree));
+        foreach (var m in alignDecl.Members)
+            Align.Members.Add(new EnumMemberSymbol(m.Name.Text, new Location(alignSource, m.Name.Span), Align, Align.Members.Count, null));
         var comparisonSource = SourceText.FromString("<builtin>", ComparisonSource);
         var comparisonTree = SyntaxTree.Parse(comparisonSource);
         var comparisonDecl = (EnumDecl)comparisonTree.Root.Members[0];
@@ -52,6 +58,7 @@ public sealed class Builtins
         ArenaNew = Make("Arena", BuiltinFunction.ArenaNew, BuiltinType.Arena);
         StrBufNew = Make("StrBuf", BuiltinFunction.StrBufNew, BuiltinType.StrBuf, ("buffer", new SpanType(PrimitiveType.U8)));
         StrBufGrow = Make("StrBuf", BuiltinFunction.StrBufGrow, BuiltinType.StrBuf);
+        StrBufOver = Make("StrBuf.over", BuiltinFunction.StrBufOver, BuiltinType.StrBuf, ("buffer", new SpanType(PrimitiveType.U8)));
         // The value's type varies: the binder types each call (see `BindOwned`).
         OwnedNew = Make("Owned", BuiltinFunction.OwnedNew, ErrorType.Instance);
         UntrustedNew = Make("Untrusted", BuiltinFunction.UntrustedNew, ErrorType.Instance);
@@ -249,6 +256,9 @@ public sealed class Builtins
     /// <summary><c>StrBuf()</c>: text output that grows from <c>context.allocator</c>.</summary>
     public FunctionSymbol StrBufGrow { get; }
 
+    /// <summary><c>StrBuf.over(Span&lt;u8&gt; buffer)</c>: text output into caller-provided bytes that spills to <c>context.allocator</c> when outgrown.</summary>
+    public FunctionSymbol StrBufOver { get; }
+
     /// <summary><c>Owned(T value)</c>: copies the value into <c>context.allocator</c>.</summary>
     public FunctionSymbol OwnedNew { get; }
 
@@ -294,6 +304,17 @@ public sealed class Builtins
 
     /// <summary><c>enum Edge</c>: the end <c>s.trimmed(from:)</c> trims; <c>byn_str_trimmed</c> reads the ordinal (2 is both ends).</summary>
     public EnumSymbol Edge { get; }
+
+    private const string AlignSource = """
+        public enum Align {
+            start,
+            end,
+            center,
+        }
+        """;
+
+    /// <summary><c>enum Align</c>: a <c>FormatSpec</c>'s <c>align</c>, in the order of <c>byn_format_spec.align</c>.</summary>
+    public EnumSymbol Align { get; }
 
     private const string ComparisonSource = """
         public enum Comparison {

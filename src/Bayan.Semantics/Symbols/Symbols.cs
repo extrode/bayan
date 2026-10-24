@@ -341,6 +341,7 @@ public enum BuiltinFunction
     ArenaNew,
     StrBufNew,
     StrBufGrow,
+    StrBufOver,
     OwnedNew,
     UntrustedNew,
     Trust,

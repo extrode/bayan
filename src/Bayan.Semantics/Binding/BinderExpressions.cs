@@ -769,7 +769,7 @@ internal sealed partial class Binder
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
             return new BoundBuiltinCall(syntax, builtin.Member, target, [],
-                builtin.Type is SpanType span && target is BoundStaticArray ? new SpanType(span.Element, readOnly: true) : builtin.Type);
+                builtin.Type is SpanType span && target is BoundStaticArray ? new SpanType(span.Element, readOnly: true) : PropertyType(builtin.Member, builtin.Type));
         // `length` and `isEmpty` of an untrusted value are clean facts (spec §15.1).
         if (target.Type is UntrustedType untrusted && name is "length" or "isEmpty" && BuiltinMembers.Property(untrusted.Inner, name) is { } fact)
             return new BoundBuiltinCall(syntax, fact.Member, Fact(target), [], fact.Type);
@@ -1799,7 +1799,7 @@ internal sealed partial class Binder
                     spec = spec with { Debug = true };
                     break;
                 case "as" when a.Value is TargetMemberExpr { Member.Text: var radix } && _c.Builtins.Radix.Find(radix) is { } member:
-                    if (!type.IsInteger) Report(DiagnosticCodes.UnknownParameter, a.Span, [type.DisplayName, $"as: .{radix}"]);
+                    if (!type.IsInteger && !TakesFormatSpec(type)) Report(DiagnosticCodes.UnknownParameter, a.Span, [type.DisplayName, $"as: .{radix}"]);
                     else spec = spec with { Radix = member.Ordinal switch { 0 => 2, 1 => 8, 2 => 10, _ => 16 } };
                     break;
                 case "as":
@@ -1814,7 +1814,7 @@ internal sealed partial class Binder
                         Report(DiagnosticCodes.LiteralOutOfRange, a.Value.Span, [v.ToString(), "a format spec's `width` (0 to 1024)"]);
                     else if (name == "digits" && (v < 0 || v > 15))
                         Report(DiagnosticCodes.LiteralOutOfRange, a.Value.Span, [v.ToString(), "a format spec's `digits` (0 to 15)"]);
-                    else if (name == "digits" && !type.IsFloat)
+                    else if (name == "digits" && !type.IsFloat && !TakesFormatSpec(type))
                         Report(DiagnosticCodes.UnknownParameter, a.Span, [type.DisplayName, "digits"]);
                     else spec = name == "width" ? spec with { Width = (long)v } : spec with { Digits = (int)v };
                     break;
@@ -1868,10 +1868,25 @@ internal sealed partial class Binder
     private static string? Part(string name, TypeSymbol part, HashSet<TypeSymbol> seen) =>
         WhyNotFormattable(part, seen) is { } why ? why == "" ? $"{name} is `{part.DisplayName}`" : why : null;
 
+    /// <summary>The type of a built-in property, with the builtin enums <see cref="BuiltinMembers"/> cannot name.</summary>
+    private TypeSymbol PropertyType(BuiltinMember member, TypeSymbol type) => member switch
+    {
+        BuiltinMember.FormatSpecRadix => _c.Builtins.Radix,
+        BuiltinMember.FormatSpecAlign => _c.Builtins.Align,
+        _ => type,
+    };
+
     /// <summary>Matches the C emitter's <c>formatInto</c> lookup.</summary>
     private static bool HasFormatInto(StructSymbol s) =>
-        s.Methods.Any(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 1
-            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } });
+        s.Methods.Any(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count is 1 or 2
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
+            && (m.Parameters.Count == 1 || m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } }));
+
+    /// <summary>Whether <paramref name="t"/> is a struct whose <c>formatInto</c> takes the hole's <c>FormatSpec</c>, so reads every spec itself.</summary>
+    private static bool TakesFormatSpec(TypeSymbol t) =>
+        t is StructSymbol s && s.Methods.Any(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 2
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
+            && m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } });
 }
 
 /// <summary>A function named but not yet called (only valid as a callee).</summary>

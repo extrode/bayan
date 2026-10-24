@@ -39,6 +39,10 @@ internal sealed partial class Binder
         if (c.Callee is MemberExpr { Member.Text: "tryParse", NullConditional: false, Target: NameExpr parsed }
             && PrimitiveType.ByName.TryGetValue(parsed.Name.Text, out var parseTo) && parseTo.IsInteger)
             return BindTryParse(c, parseTo);
+        // `StrBuf.over(span)`: the span first, then `context.allocator` (spec §16.4).
+        if (c.Callee is MemberExpr { Member.Text: "over", NullConditional: false, Target: NameExpr { Name.Text: "StrBuf", TypeArgs.Length: 0 } }
+            && _scope.Lookup("StrBuf") is null && !Module.Types.ContainsKey("StrBuf"))
+            return new BoundCall(c, _c.Builtins.StrBufOver, null, BindArguments(c, _c.Builtins.StrBufOver.Parameters, _c.Builtins.StrBufOver, false, "StrBuf.over"), BuiltinType.StrBuf);
         // `Log.debug(…)` on an undeclared `Log` names the level where the act should be (BYN5007, Question 271).
         if (c.Callee is MemberExpr { NullConditional: false, Target: NameExpr { Name.Text: "Log", TypeArgs.Length: 0 }, Member.Text: var level } logged
             && _c.Builtins.LogLevel.Find(level) is not null && _scope.Lookup("Log") is null && !Module.Types.ContainsKey("Log")
@@ -1457,7 +1461,7 @@ internal sealed partial class Binder
                 return null;
         }
         if (BuiltinMembers.Property(type, name.Text) is { } b)
-            return new BoundMemberStep(null, null, -1, b.Member, b.Type);
+            return new BoundMemberStep(null, null, -1, b.Member, PropertyType(b.Member, b.Type));
         if (ReportRenamed(type, name)) return null;
         Report(DiagnosticCodes.UnknownMember, name.Span, [name.Text, type.DisplayName], help: MemberSuggestion(type, name.Text));
         return null;

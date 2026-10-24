@@ -70,7 +70,7 @@ public enum BuiltinMember
     MapSlotCount, MapSlotLive, MapSlotEntry,
     ArrayLength, ArrayAsSpan,
     ArenaReset,
-    StrBufAppend, StrBufInsert, StrBufLength, StrBufAsString, StrBufClear,
+    StrBufAppend, StrBufAppendRepeated, StrBufInsert, StrBufLength, StrBufAsString, StrBufClear,
     /// <summary><c>x.take()</c>: moves the value out of a place and leaves the type's empty value behind.</summary>
     ListTake, MapTake, StrBufTake, OptionalTake,
     CharValue, IntToString,
@@ -84,6 +84,7 @@ public enum BuiltinMember
     EnumField,
     ProcessExitCode, ProcessStdout, ProcessStderr,
     PanicMessage,
+    FormatSpecRadix, FormatSpecDebug, FormatSpecWidth, FormatSpecFill, FormatSpecAlign, FormatSpecDigits,
 }
 
 public sealed record BoundBuiltinCall(Node Syntax, BuiltinMember Member, BoundExpr Receiver, BoundExpr[] Arguments, TypeSymbol Type)

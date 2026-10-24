@@ -278,6 +278,17 @@ void* byn_copy_bytes(const void* p, int64_t n, byn_alloc* to);
 typedef int32_t byn_builtin_Radix;
 /* The builtin `enum Edge` of `s.trimmed(from:)`: 0 start, 1 end. */
 typedef int32_t byn_builtin_Edge;
+/* The builtin `enum Align` of a `FormatSpec`: 0 start, 1 end, 2 center. */
+typedef int32_t byn_builtin_Align;
+/* `FormatSpec`: a hole's specs as `formatInto(ref StrBuf, as FormatSpec)` receives them; `digits` is -1 for none. */
+typedef struct byn_format_spec {
+    byn_builtin_Radix radix;
+    bool debug;
+    int64_t width;
+    uint32_t fill;
+    byn_builtin_Align align;
+    int64_t digits;
+} byn_format_spec;
 /* The builtin `enum Comparison` of `s.equals(t, as:)`: 0 ordinal, 1 caseless. */
 typedef int32_t byn_builtin_Comparison;
 /* v in radix, lowercase, no prefix or leading zeros. Decimal prints a signed v with its sign;

@@ -265,3 +265,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-54a-lib: the text views have no `length` (Question 318).
 - r3-54a-lib: `T.parse(text)` (fails `ParseError`) is 5.4b; only `T.tryParse(text, as:)` on integers is built (Question 324).
 - `string.matches(re)` (SPEC §21 assertions) is not built: no `Regex` type exists (handoff Question 326).
+- r3-54a-lib3b: list `remove(at:)`, `remove(at: range)` and `remove(from:through:)` do not free removed elements that own memory (Question 329).

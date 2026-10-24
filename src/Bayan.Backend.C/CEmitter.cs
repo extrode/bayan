@@ -253,6 +253,7 @@ public sealed class CEmitter
         BuiltinType { Kind: BuiltinKind.IoStream or BuiltinKind.IoInput } => "int32_t",
         BuiltinType { Kind: BuiltinKind.ProcessResult } => "byn_process",
         BuiltinType { Kind: BuiltinKind.Panic } => "byn_panic_info",
+        BuiltinType { Kind: BuiltinKind.FormatSpec } => "byn_format_spec",
         TextViewType => "byn_text_view",
         // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
         OwnedType o => CType(o.Inner) + "*",
@@ -273,7 +274,7 @@ public sealed class CEmitter
     {
         PrimitiveType p => p.Kind == PrimitiveKind.String ? "str" : p.Name,
         ErrorSetSymbol or ErrorUnionType => "err",
-        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", BuiltinKind.Panic => "panic", _ => "iostream" },
+        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", BuiltinKind.Panic => "panic", BuiltinKind.FormatSpec => "formatspec", _ => "iostream" },
         StructSymbol s => s.Module.CName + "__" + s.Name + TypeArgs(s.TypeArguments),
         EnumSymbol e => e.Module.CName + "__" + e.Name,
         UnionSymbol u => u.Module.CName + "__" + u.Name + TypeArgs(u.TypeArguments),
@@ -738,7 +739,7 @@ public sealed class CEmitter
                     sb.Append($"    if (v.err.code) byn_w_error(w, v.err.code);\n    else {Format(r.Value, "v.value", "w")}\n");
                     break;
                 case StructSymbol s when FormatInto(s) is { } method:
-                    sb.Append($"    {FunctionName(method)}(&v, w);\n");
+                    sb.Append($"    {FunctionName(method)}(&v, w{(method.Parameters.Count == 2 ? ", " + NoFormatSpec : "")});\n");
                     break;
                 case UnionSymbol u:
                     sb.Append("    switch (v.tag) {\n");
@@ -783,9 +784,15 @@ public sealed class CEmitter
         return $"{name}({w}, {v});";
     }
 
-    private static FunctionSymbol? FormatInto(StructSymbol s) =>
-        s.Methods.FirstOrDefault(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 1
-            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } });
+    /// <summary>A struct's <c>formatInto(ref StrBuf)</c>, or else its <c>formatInto(ref StrBuf, as FormatSpec)</c>.</summary>
+    internal static FunctionSymbol? FormatInto(StructSymbol s) =>
+        s.Methods.Where(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count is 1 or 2
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
+            && (m.Parameters.Count == 1 || m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } }))
+            .OrderBy(m => m.Parameters.Count).FirstOrDefault();
+
+    /// <summary>The spec a struct's two-parameter <c>formatInto</c> receives outside a hole with specs: none given.</summary>
+    internal const string NoFormatSpec = "((byn_format_spec){2, false, 0, ' ', 0, -1})";
 
     // ── Static data ──────────────────────────────────────────────────────────────
 
@@ -1275,6 +1282,10 @@ internal sealed class FunctionEmitter
     {
         var t = value.Type;
         var v = Expr(value);
+        // A struct whose `formatInto` takes the `FormatSpec` reads every spec itself, padding included.
+        if (t is StructSymbol s && CEmitter.FormatInto(s) is { Parameters.Count: 2 } method)
+            return $"{{ {_c.CType(t)} fv = {v}; {_c.FunctionName(method)}(&fv, w, (byn_format_spec){{{(spec.Radix switch { 2 => 0, 8 => 1, 16 => 3, _ => 2 })}, "
+                + $"{(spec.Debug ? "true" : "false")}, {spec.Width}, {spec.Fill}u, {Math.Max(spec.Align, 0)}, {spec.Digits}}}); }}";
         string Inner(string sw) => spec.Radix != 0
             ? $"bynh_w_radix({sw}, (uint64_t)({v}), {(t.IsSignedInteger ? $"({v}) < 0" : "false")}, {spec.Radix});"
             : spec.Digits >= 0 ? $"bynh_w_digits({sw}, (double)({v}), {spec.Digits});"
@@ -1432,6 +1443,14 @@ internal sealed class FunctionEmitter
                 var span = _c.CType(fn.Parameters[0].Type);
                 var name = _c.Helper("bynh_strbuf", $"static byn_writer bynh_strbuf({span} s, const char* file, int line)", () =>
                     "{\n    return (byn_writer){s.ptr, s.len, 0, BYN_WRITE_STRICT, file, line};\n}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {Loc(c.Syntax)})";
+            }
+            // `StrBuf.over(span)` writes into the span and spills to `context.allocator` when it is outgrown.
+            case BuiltinFunction.StrBufOver:
+            {
+                var span = _c.CType(fn.Parameters[0].Type);
+                var name = _c.Helper("bynh_strbuf_over", $"static byn_writer bynh_strbuf_over({span} s, const char* file, int line)", () =>
+                    "{\n    return (byn_writer){s.ptr, s.len, 0, BYN_WRITE_GROW, file, line, byn_context};\n}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Loc(c.Syntax)})";
             }
             case BuiltinFunction.StrBufGrow when c.Arguments.Length == 0:
@@ -1836,6 +1855,13 @@ internal sealed class FunctionEmitter
                 return $"byn_arena_reset({Expr(r)})";
             case BuiltinMember.StrBufAppend:
                 return Claimed($"byn_w_str(&{Expr(r)}, {arg})", r, b.Syntax);
+            case BuiltinMember.StrBufAppendRepeated:
+            {
+                var name = _c.Helper("bynh_strbuf_repeat", "static void bynh_strbuf_repeat(byn_writer* w, uint32_t c, int64_t n, const char* file, int line)", () =>
+                    "{\n    if (n < 0) byn_panic(\"repeated a negative number of times\", file, line);\n"
+                    + "    for (int64_t i = 0; i < n; i++) byn_w_char(w, c);\n}\n");
+                return Claimed($"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})", r, b.Syntax);
+            }
             case BuiltinMember.StrBufInsert:
             {
                 // Appends the text, then rotates it into place by three reversals; text the buffer grew away from stays valid.
@@ -1863,6 +1889,9 @@ internal sealed class FunctionEmitter
                 return $"{Expr(r)}.message";
             case BuiltinMember.ProcessExitCode:
                 return $"{Expr(r)}.exit_code";
+            case BuiltinMember.FormatSpecRadix or BuiltinMember.FormatSpecDebug or BuiltinMember.FormatSpecWidth
+                or BuiltinMember.FormatSpecFill or BuiltinMember.FormatSpecAlign or BuiltinMember.FormatSpecDigits:
+                return $"{Expr(r)}.{b.Member.ToString()[10..].ToLowerInvariant()}";
             case BuiltinMember.ProcessStdout:
                 return $"{Expr(r)}.out";
             case BuiltinMember.ProcessStderr:
