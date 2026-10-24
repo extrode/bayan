@@ -54,9 +54,11 @@ public enum BuiltinMember
 {
     StringLength, StringBytes, StringIsEmpty, StringRuneCount, StringIsAscii, StringCopy, StringStartsWith, StringEndsWith, StringContains,
     StringPosition, StringLastPosition, StringCount, StringTrimmed, StringTrimmedBy, StringLowercased, StringUppercased, StringEquals,
-    StringReplaced, StringRepeated, StringJoined,
-    /// <summary>The views <c>runes</c>, <c>utf16</c>, <c>lines</c> and <c>parts(by:)</c>, and the view members <c>runes.take(n)</c> and <c>utf16.copy()</c>.</summary>
-    StringRunes, StringUtf16, StringLines, StringParts, RunesTake, Utf16Copy,
+    StringReplaced, StringRepeated, StringJoined, StringPadded,
+    /// <summary><c>string(bytes)</c> on a byte span, and <c>T.tryParse(text, as:)</c> on an integer type (the receiver is the text).</summary>
+    BytesToString, IntTryParse,
+    /// <summary>The views <c>runes</c>, <c>utf16</c>, <c>lines</c> and <c>parts(by:)</c> (a <c>rune</c> separator is <c>StringPartsRune</c>), and the view members <c>runes.take(n)</c>, <c>skip</c>, <c>takeLast</c> and <c>utf16.copy()</c>.</summary>
+    StringRunes, StringUtf16, StringLines, StringParts, StringPartsRune, RunesTake, RunesSkip, RunesTakeLast, Utf16Copy,
     /// <summary>Lowering of <c>for</c> over a text view: whether it has another item at the cursor, and the item (advancing the cursor).</summary>
     TextViewMore, TextViewNext,
     SpanLength, SpanIsEmpty, SpanCopy, ListCopy, MapCopy, StrBufCopy,

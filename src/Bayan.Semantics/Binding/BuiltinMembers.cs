@@ -66,17 +66,22 @@ internal static class BuiltinMembers
         ({ IsString: true }, "replaced") =>
             new(BuiltinMember.StringReplaced, [("text", PrimitiveType.String), ("by", PrimitiveType.String)], PrimitiveType.String),
         ({ IsString: true }, "repeated") => new(BuiltinMember.StringRepeated, [("count", PrimitiveType.I64)], PrimitiveType.String),
-        // A limit of 0 means no limit.
+        ({ IsString: true }, "padded") =>
+            new(BuiltinMember.StringPadded, [("to", PrimitiveType.I64), ("by", PrimitiveType.Char)], PrimitiveType.String),
+        // A limit of 0 means no limit. The binder picks `StringPartsRune` for a `rune` separator.
         ({ IsString: true }, "parts") =>
             new(BuiltinMember.StringParts, [("by", PrimitiveType.String), ("limit", PrimitiveType.I64)], TextViewType.Parts, Optional: 1),
         (TextViewType { Kind: TextViewKind.Runes }, "take") => new(BuiltinMember.RunesTake, [("count", PrimitiveType.I64)], PrimitiveType.String),
+        (TextViewType { Kind: TextViewKind.Runes }, "skip") => new(BuiltinMember.RunesSkip, [("count", PrimitiveType.I64)], PrimitiveType.String),
+        (TextViewType { Kind: TextViewKind.Runes }, "takeLast") => new(BuiltinMember.RunesTakeLast, [("count", PrimitiveType.I64)], PrimitiveType.String),
         (TextViewType { Kind: TextViewKind.Utf16 }, "copy") => new(BuiltinMember.Utf16Copy, [], new ListType(PrimitiveType.U16)),
         (SpanType { Element.IsString: true }, "joined") or (ListType { Element.IsString: true }, "joined") =>
             new(BuiltinMember.StringJoined, [("by", PrimitiveType.String)], PrimitiveType.String),
         (ListType l, "mutableSpan") => new(BuiltinMember.ListMutableSpan, [], new SpanType(l.Element), Mutating: true),
         (Symbols.ArrayType a, "mutableSpan") => new(BuiltinMember.ArrayMutableSpan, [], new SpanType(a.Element), Mutating: true),
-        (SpanType s, "copy") => new(BuiltinMember.SpanCopy, [("to", BuiltinType.Arena)], new ListType(s.Element)),
-        (ListType l, "copy") => new(BuiltinMember.ListCopy, [("to", BuiltinType.Arena)], l),
+        // `copy()` copies from `context.allocator`, `copy(to: arena)` into the arena, as on strings.
+        (SpanType s, "copy") => new(BuiltinMember.SpanCopy, [("to", BuiltinType.Arena)], new ListType(s.Element), Optional: 1),
+        (ListType l, "copy") => new(BuiltinMember.ListCopy, [("to", BuiltinType.Arena)], l, Optional: 1),
         (ListType l, "append") => new(BuiltinMember.ListAdd, [("item", l.Element)], PrimitiveType.Void, Mutating: true),
         (ListType, "clear") => new(BuiltinMember.ListClear, [], PrimitiveType.Void, Mutating: true),
         (ListType l, "removeLast") => new(BuiltinMember.ListRemoveLast, [], l.Element, Mutating: true),
@@ -116,7 +121,7 @@ internal static class BuiltinMembers
 
     private static readonly string[] Candidates =
         ["length", "bytes", "isEmpty", "runeCount", "isAscii", "runes", "utf16", "lines", "value", "copy", "startsWith", "endsWith", "contains",
-         "position", "lastPosition", "count", "trimmed", "equals", "lowercased", "uppercased", "replaced", "repeated", "parts", "joined", "span", "mutableSpan", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
+         "position", "lastPosition", "count", "trimmed", "equals", "lowercased", "uppercased", "replaced", "repeated", "padded", "parts", "skip", "takeLast", "joined", "span", "mutableSpan", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>

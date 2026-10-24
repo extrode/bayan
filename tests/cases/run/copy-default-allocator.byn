@@ -1,0 +1,9 @@
+// `copy()` on a list or span copies from `context.allocator`, like `s.copy()` (J80).
+let xs: i64[3] = [1, 2, 3]
+var ys = List<i64>()
+ys.append(4)
+var a = xs.span.copy()
+a.append(5)
+let b = ys.copy()
+ys.append(6)
+print($"{a.length} {a[3]} {b.length} {ys.length}")

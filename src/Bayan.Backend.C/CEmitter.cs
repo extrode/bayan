@@ -1581,6 +1581,24 @@ internal sealed class FunctionEmitter
                 return $"byn_str_replaced({Expr(r)}, {arg}, {Expr(b.Arguments[1])}, byn_context, {Loc(b.Syntax)})";
             case BuiltinMember.StringRepeated:
                 return $"byn_str_repeated({Expr(r)}, {arg}, byn_context, {Loc(b.Syntax)})";
+            case BuiltinMember.StringPadded:
+                return $"byn_str_padded({Expr(r)}, {arg}, {Expr(b.Arguments[1])}, byn_context)";
+            case BuiltinMember.BytesToString:
+            {
+                var st = _c.CType(r.Type);
+                var name = "bynh_bytes_string_" + _c.Key(r.Type);
+                _c.Helper(name, $"static byn_str {name}({st} b)", () => "{\n    return byn_bytes_string(b.ptr, b.len, byn_context);\n}\n");
+                return $"{name}({Expr(r)})";
+            }
+            case BuiltinMember.IntTryParse:
+            {
+                var opt = _c.CType(b.Type);
+                var t = (PrimitiveType)((OptionalType)b.Type).Inner;
+                var name = "bynh_try_parse_" + _c.Key(b.Type);
+                _c.Helper(name, $"static {opt} {name}(byn_str s, byn_builtin_Radix radix)", () =>
+                    $"{{\n    int64_t v;\n    if (!byn_int_parse(s, {t.Bits}, {(t.IsSignedInteger ? "true" : "false")}, radix, &v)) return ({opt}){{0}};\n    return ({opt}){{true, ({_c.CType(t)})v}};\n}}\n");
+                return $"{name}({Expr(r)}, {arg})";
+            }
             case BuiltinMember.StringJoined:
             {
                 var xt = _c.CType(r.Type);
@@ -1592,8 +1610,14 @@ internal sealed class FunctionEmitter
                 return $"((byn_text_view){{{Expr(r)}, {{NULL, 0}}, 0, 0}})";
             case BuiltinMember.StringParts:
                 return $"byn_parts({Expr(r)}, {arg}, {(b.Arguments.Length > 1 ? Expr(b.Arguments[1]) : "0")}, {Loc(b.Syntax)})";
+            case BuiltinMember.StringPartsRune:
+                return $"byn_parts_rune({Expr(r)}, {arg}, {(b.Arguments.Length > 1 ? Expr(b.Arguments[1]) : "0")}, {Loc(b.Syntax)})";
             case BuiltinMember.RunesTake:
                 return $"byn_str_take_runes({Expr(r)}.s, {arg}, {Loc(b.Syntax)})";
+            case BuiltinMember.RunesSkip:
+                return $"byn_str_skip_runes({Expr(r)}.s, {arg}, {Loc(b.Syntax)})";
+            case BuiltinMember.RunesTakeLast:
+                return $"byn_str_take_last_runes({Expr(r)}.s, {arg}, {Loc(b.Syntax)})";
             case BuiltinMember.Utf16Copy:
             {
                 var list = _c.CType(b.Type);
@@ -1620,7 +1644,7 @@ internal sealed class FunctionEmitter
                 var name = "bynh_copy_" + _c.Key(span);
                 _c.Helper(name, $"static {list} {name}({st} s, byn_alloc* a)", () =>
                     $"{{\n    {list} r = {{NULL, 0, 0, a}};\n    if (s.len > 0) {{\n        r.ptr = ({et}*)byn_copy_bytes(s.ptr, s.len * (int64_t)sizeof({et}), a);\n        r.len = r.cap = s.len;\n    }}\n    return r;\n}}\n");
-                return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
+                return $"{name}({Expr(r)}, {(b.Arguments.Length > 0 ? $"byn_arena_alloc({arg})" : "byn_context")})";
             }
             case BuiltinMember.ListCopy:
             {
@@ -1629,7 +1653,7 @@ internal sealed class FunctionEmitter
                 var name = "bynh_copy_" + _c.Key(r.Type);
                 _c.Helper(name, $"static {lt} {name}({lt} l, byn_alloc* a)", () =>
                     $"{{\n    {lt} r = {{NULL, 0, 0, a}};\n    if (l.len > 0) {{\n        r.ptr = ({et}*)byn_copy_bytes(l.ptr, l.len * (int64_t)sizeof({et}), a);\n        r.len = r.cap = l.len;\n    }}\n    return r;\n}}\n");
-                return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
+                return $"{name}({Expr(r)}, {(b.Arguments.Length > 0 ? $"byn_arena_alloc({arg})" : "byn_context")})";
             }
             case BuiltinMember.StrBufCopy:
                 return $"byn_strbuf_copy({Expr(r)}, byn_arena_alloc({arg}))";

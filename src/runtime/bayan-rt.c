@@ -639,6 +639,64 @@ byn_str byn_str_take_runes(byn_str s, int64_t n, const char* file, int line) {
     return (byn_str){s.ptr, pos};
 }
 
+byn_str byn_str_skip_runes(byn_str s, int64_t n, const char* file, int line) {
+    byn_str head = byn_str_take_runes(s, n, file, line);
+    return (byn_str){s.ptr + head.len, s.len - head.len};
+}
+
+byn_str byn_str_take_last_runes(byn_str s, int64_t n, const char* file, int line) {
+    if (n < 0) byn_panic("takeLast with a negative count", file, line);
+    int64_t pos = s.len;
+    while (n-- > 0 && pos > 0) {
+        pos--;
+        while (pos > 0 && (s.ptr[pos] & 0xC0) == 0x80) pos--;
+    }
+    return (byn_str){s.ptr + pos, s.len - pos};
+}
+
+/* c as UTF-8 into b; the byte count. */
+static int byn_utf8_put(uint8_t b[4], uint32_t c) {
+    if (c < 0x80) { b[0] = (uint8_t)c; return 1; }
+    if (c < 0x800) { b[0] = (uint8_t)(0xC0 | c >> 6); b[1] = (uint8_t)(0x80 | (c & 0x3F)); return 2; }
+    if (c < 0x10000) {
+        b[0] = (uint8_t)(0xE0 | c >> 12); b[1] = (uint8_t)(0x80 | (c >> 6 & 0x3F)); b[2] = (uint8_t)(0x80 | (c & 0x3F));
+        return 3;
+    }
+    b[0] = (uint8_t)(0xF0 | c >> 18); b[1] = (uint8_t)(0x80 | (c >> 12 & 0x3F));
+    b[2] = (uint8_t)(0x80 | (c >> 6 & 0x3F)); b[3] = (uint8_t)(0x80 | (c & 0x3F));
+    return 4;
+}
+
+byn_str byn_str_padded(byn_str s, int64_t n, uint32_t c, byn_alloc* to) {
+    int64_t runes = 0;
+    for (int64_t pos = 0; pos < s.len; runes++) byn_str_next(s, &pos);
+    uint8_t b[4];
+    int w = byn_utf8_put(b, c);
+    int64_t pad = n > runes ? n - runes : 0;
+    int64_t len = s.len + pad * w;
+    if (len == 0) return (byn_str){NULL, 0};
+    uint8_t* out = to->resize(to, NULL, 0, len);
+    if (s.len > 0) memcpy(out, s.ptr, (size_t)s.len);
+    for (int64_t i = 0; i < pad; i++) memcpy(out + s.len + i * w, b, (size_t)w);
+    return (byn_str){out, len};
+}
+
+byn_str byn_bytes_string(const uint8_t* p, int64_t n, byn_alloc* to) {
+    /* At most "255, " per byte, plus the brackets. */
+    uint8_t* out = to->resize(to, NULL, 0, n * 5 + 2);
+    int64_t o = 0;
+    out[o++] = '[';
+    for (int64_t i = 0; i < n; i++) {
+        if (i > 0) out[o++] = ',', out[o++] = ' ';
+        uint8_t v = p[i];
+        if (v >= 100) out[o++] = (uint8_t)('0' + v / 100);
+        if (v >= 10) out[o++] = (uint8_t)('0' + v / 10 % 10);
+        out[o++] = (uint8_t)('0' + v % 10);
+    }
+    out[o++] = ']';
+    return (byn_str){out, o};
+}
+
 /* Kinds as in `BuiltinMember`'s view order: 0 runes, 1 utf16, 2 lines, 3 parts. */
 bool byn_view_more(byn_text_view v, int64_t pos, int32_t kind) {
     if (kind == 3) return pos >= 0;
@@ -649,6 +707,13 @@ byn_text_view byn_parts(byn_str s, byn_str sep, int64_t limit, const char* file,
     if (sep.len == 0) byn_panic("parts with an empty separator", file, line);
     if (limit < 0) byn_panic("parts with a negative limit", file, line);
     return (byn_text_view){s, sep, limit, 0};
+}
+
+byn_text_view byn_parts_rune(byn_str s, uint32_t c, int64_t limit, const char* file, int line) {
+    if (limit < 0) byn_panic("parts with a negative limit", file, line);
+    byn_text_view v = {s, {NULL, 0}, limit, 0, {0}};
+    v.sep.len = byn_utf8_put(v.rune, c);
+    return v;
 }
 
 uint16_t byn_utf16_next(byn_text_view* v, int64_t* pos) {
@@ -674,13 +739,14 @@ byn_str byn_lines_next(byn_text_view* v, int64_t* pos) {
 
 byn_str byn_parts_next(byn_text_view* v, int64_t* pos) {
     int64_t start = *pos;
-    int64_t at = v->limit == 1 ? -1 : byn_find(v->s, v->sep, start);
+    byn_str sep = v->sep.ptr != NULL ? v->sep : (byn_str){v->rune, v->sep.len};
+    int64_t at = v->limit == 1 ? -1 : byn_find(v->s, sep, start);
     if (at < 0) {
         *pos = -1;
         return (byn_str){v->s.ptr + start, v->s.len - start};
     }
     if (v->limit > 1) v->limit--;
-    *pos = at + v->sep.len;
+    *pos = at + sep.len;
     return (byn_str){v->s.ptr + start, at - start};
 }
 
@@ -872,6 +938,31 @@ byn_str byn_int_string(int64_t v, int32_t bits, bool is_signed, byn_builtin_Radi
     } while (u != 0);
     if (negative) buf[--n] = '-';
     return byn_str_copy((byn_str){buf + n, 65 - n}, to);
+}
+
+bool byn_int_parse(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out) {
+    static const uint8_t bases[] = {2, 8, 10, 16};
+    uint64_t base = bases[radix];
+    bool decimal = radix == 2;
+    int64_t i = 0;
+    bool negative = decimal && is_signed && s.len > 0 && s.ptr[0] == '-';
+    if (negative) i = 1;
+    if (i >= s.len) return false;
+    /* Decimal: the magnitude's limit; the others: every bit of the type. */
+    uint64_t max = bits < 64 ? (UINT64_C(1) << bits) - 1 : UINT64_MAX;
+    if (decimal && is_signed) max = negative ? (UINT64_C(1) << (bits - 1)) : (UINT64_C(1) << (bits - 1)) - 1;
+    uint64_t u = 0;
+    for (; i < s.len; i++) {
+        uint8_t c = s.ptr[i];
+        uint64_t d = c >= '0' && c <= '9' ? (uint64_t)(c - '0') : c >= 'a' && c <= 'f' ? (uint64_t)(c - 'a' + 10)
+            : c >= 'A' && c <= 'F' ? (uint64_t)(c - 'A' + 10) : 99;
+        if (d >= base || u > (max - d) / base) return false;
+        u = u * base + d;
+    }
+    if (negative) *out = (int64_t)(0 - u);
+    else if (is_signed && bits < 64 && (u >> (bits - 1)) != 0) *out = (int64_t)(u | ~((UINT64_C(1) << bits) - 1));
+    else *out = (int64_t)u;
+    return true;
 }
 
 byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to) {

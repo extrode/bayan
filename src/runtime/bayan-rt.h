@@ -198,19 +198,30 @@ byn_str byn_str_repeated(byn_str s, int64_t n, byn_alloc* to, const char* file, 
 byn_str byn_str_joined(const byn_str* xs, int64_t n, byn_str sep, byn_alloc* to);
 /* `s.runes.take(n)`: the first n code points of s (all of s when it has fewer). A view of s. */
 byn_str byn_str_take_runes(byn_str s, int64_t n, const char* file, int line);
+/* `s.runes.skip(n)` / `s.runes.takeLast(n)`: s after its first n code points, or its last n. Views of s. */
+byn_str byn_str_skip_runes(byn_str s, int64_t n, const char* file, int line);
+byn_str byn_str_take_last_runes(byn_str s, int64_t n, const char* file, int line);
+/* `s.padded(to: n, by: c)`: s with c appended until it has n code points; s copied when it already has. */
+byn_str byn_str_padded(byn_str s, int64_t n, uint32_t c, byn_alloc* to);
+/* `string(bytes)`: the bytes formatted as a list, `[104, 105]`. */
+byn_str byn_bytes_string(const uint8_t* p, int64_t n, byn_alloc* to);
 
 /* The views `s.runes`, `s.utf16`, `s.lines` and `s.parts(by:, limit:)`, walked by `for` with a byte cursor.
-   `pending` holds a UTF-16 low surrogate not yet returned; `limit` counts down the parts still allowed (0: no limit). */
+   `pending` holds a UTF-16 low surrogate not yet returned; `limit` counts down the parts still allowed (0: no limit).
+   A `rune` separator is kept encoded in `rune`, with `sep.ptr` NULL and `sep.len` its length. */
 typedef struct byn_text_view {
     byn_str s;
     byn_str sep;
     int64_t limit;
     uint16_t pending;
+    uint8_t rune[4];
 } byn_text_view;
 /* Whether the view has another item at pos; `parts` marks its end with pos -1. */
 bool byn_view_more(byn_text_view v, int64_t pos, int32_t kind);
 /* `s.parts(by: sep, limit: n)`; an empty sep or a negative limit panics. */
 byn_text_view byn_parts(byn_str s, byn_str sep, int64_t limit, const char* file, int line);
+/* `s.parts(by: c, limit: n)` with a `rune` separator; a negative limit panics. */
+byn_text_view byn_parts_rune(byn_str s, uint32_t c, int64_t limit, const char* file, int line);
 uint16_t byn_utf16_next(byn_text_view* v, int64_t* pos);
 byn_str byn_lines_next(byn_text_view* v, int64_t* pos);
 byn_str byn_parts_next(byn_text_view* v, int64_t* pos);
@@ -272,6 +283,9 @@ typedef int32_t byn_builtin_Comparison;
 /* v in radix, lowercase, no prefix or leading zeros. Decimal prints a signed v with its sign;
    the others print v's two's-complement bits at the type's width. */
 byn_str byn_int_string(int64_t v, int32_t bits, bool is_signed, byn_builtin_Radix radix, byn_alloc* to);
+/* `T.tryParse(text, as: radix)`: digits only, no prefix, sign or spaces, either letter case. Decimal takes a leading `-` on a
+   signed type and checks the range; the other radixes read the type's bits, as `string(n, as:)` prints them. False when invalid. */
+bool byn_int_parse(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out);
 /* Two lowercase hex digits per byte (`Hex.encode`). */
 byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to);
 

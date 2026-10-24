@@ -1,8 +1,11 @@
-// Revision 0003 and J80 renames: `offset` → `position`, `toUtf16()` → `utf16`, `toList()` → `copy()`.
+// Revision 0003 and J80 renames: `offset` → `position`, `toUtf16()` → `utf16`, `toList()` → `copy()` (`span.copy()` on an array).
 void main() {
     let s = "abc"
     let _ = s.offset("b")
     let _ = s.toUtf16()
     var xs = List<i64>()
     let _ = xs.toList()
+    let _ = xs.span.toList()
+    let fixed: i64[2] = [1, 2]
+    let _ = fixed.toList()
 }

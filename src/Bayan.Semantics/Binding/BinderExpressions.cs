@@ -829,7 +829,9 @@ internal sealed partial class Binder
             (ListType, "add") => "append",
             (BuiltinType { Kind: BuiltinKind.StrBuf }, "asString") => "finish",
             ({ IsString: true }, "offset") => "position",
-            (ListType or SpanType or Symbols.ArrayType, "toList") => "copy",
+            (ListType or SpanType, "toList") => "copy",
+            // An array has no `copy()`; its span does.
+            (Symbols.ArrayType, "toList") => "span.copy",
             _ => null,
         };
         if (renamed is null) return false;

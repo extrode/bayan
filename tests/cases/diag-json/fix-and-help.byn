@@ -1,6 +1,6 @@
-i64 first(ReadOnlySpan<i64> values) {
+i64 first(Span<i64> values) {
     return values[0]
 }
 
-let xs: i64[2] = [1, 2]
-print($"{first(xs.span)}")
+var xs: i64[2] = [1, 2]
+print($"{first(xs.mutableSpan())}")

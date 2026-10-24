@@ -33,3 +33,21 @@ error BYN2230: `toList()` is now `copy()`
   help: rename it `copy`
     │ 7 │     let _ = xs.copy()
     │   │                ++++
+
+error BYN2230: `toList()` is now `copy()`
+
+  8 │     let _ = xs.span.toList()
+    │                     ^^^^^^ the old name
+    │
+  help: rename it `copy`
+    │ 8 │     let _ = xs.span.copy()
+    │   │                     ++++
+
+error BYN2230: `toList()` is now `span.copy()`
+
+  10 │     let _ = fixed.toList()
+     │                   ^^^^^^ the old name
+     │
+  help: rename it `span.copy`
+     │ 10 │     let _ = fixed.span.copy()
+     │    │                   +++++++++
