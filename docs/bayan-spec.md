@@ -2119,10 +2119,8 @@ Every diagnostic states **what**, **where**, **why** and a **fix** (machine-appl
 | `bayan cache stats` | Location, entries and size of the shared build cache (§21.4) |
 | `bayan doctor` | Check the compiler, host target, C compiler, `zig`, git and cache; every failure prints a fix; exits 4 on any failure |
 | `bayan --version` | Compiler version and the commit it was built from |
-| `bayan format` | Format to canonical form and rewrite input forms (§21.5) (`--check`, `--prose`, `--from-prose`, `--check-prose`); reads `style` from `package.byn` (§19.2); not in v0.1 |
+| `bayan format` | Format to canonical form and rewrite input forms (§21.5); reads `style` from `package.byn` (§19.2). `--check` writes nothing, prints each file that would change and exits 1 if any would. `--prose`, `--from-prose`, `--check-prose` are prose translation (§22), not in v0.1 |
 | `bayan lint`, `bayan doc`, `bayan repl`, `bayan lsp` | |
-
-Every command takes `--color auto|always|never` (before any `--`). `auto` colors output that goes to a terminal, unless `NO_COLOR` is set. `bayan test --changed` runs only the tests of modules with a file that differs from `HEAD` (or `--base <ref>`, which implies `--changed`), untracked files included; a changed `package.byn` runs everything. It uses git read-only.
 | `bayan pkg` | Packages (`add`, `audit`, `export --json`) |
 | `bayan expand X` | Show every derived member and the derived effects of each function; deferred (after v0.1) |
 | `bayan features --used` | Report the language features a build used (feeds the reference-app coverage matrix) |
@@ -2130,6 +2128,10 @@ Every command takes `--color auto|always|never` (before any `--`). `auto` colors
 | `bayan explain CODE` | Long explanation of a diagnostic |
 | `bayan migrate` | Rename casing, upgrade editions, apply `@replaced` |
 | `bayan new test X` | Test scaffolds |
+
+Every command takes `--color auto|always|never` (before any `--`). `auto` colors output that goes to a terminal, unless `NO_COLOR` is set. `bayan test --changed` runs only the tests of modules with a file that differs from `HEAD` (or `--base <ref>`, which implies `--changed`), untracked files included; a changed `package.byn` runs everything. It uses git read-only.
+
+`bayan fmt` is not a command; its message names `bayan format` (HANDOFF §29).
 
 `check`, `build`, `run` and `test` take `--diagnostics json`: each diagnostic goes to stderr as one JSON object per line, with `code`, `severity`, `file`, `span` (byte offsets `start`/`end` plus one-based `line`/`column`/`endLine`/`endColumn` counted in Unicode scalars), `message`, `label`, `help` and `fixes` (each a `span` and a `replacement`). `file` and `span` are null for diagnostics without a location.
 

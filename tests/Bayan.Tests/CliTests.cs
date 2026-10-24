@@ -35,6 +35,7 @@ public sealed class CliTests
         var (exit, _, stderr) = Run("frobnicate");
         Assert.Equal(CliApp.ExitUsage, exit);
         Assert.Contains("unknown command `frobnicate`", stderr);
+        Assert.DoesNotContain("the formatter is", stderr);
     }
 
     [Fact]
@@ -44,6 +45,19 @@ public sealed class CliTests
         Assert.Equal(CliApp.ExitUsage, exit);
         Assert.Contains("unknown command `fmt`", stderr);
         Assert.Contains("  format <path>", stderr);
+        Assert.Contains("unknown command `fmt`\nthe formatter is `bayan format`\nusage:", stderr.ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
+    public void FormatCheckOnAFileThatDoesNotParseReportsItsDiagnosticsAndExits1()
+    {
+        var dir = Fresh("format-check-broken", "let a = true\nunless !a { print(\"y\") }\n");
+        File.WriteAllText(Path.Combine(dir, "z.byn"), "let b = (\nlet c = (\n");
+        var (exit, stdout, stderr) = Run("format", "--check", dir);
+        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Contains($"would format {Path.Combine(dir, "main.byn")}", stdout);
+        Assert.Contains("z.byn:2:1", stderr);
+        Assert.Contains("z.byn:3:1", stderr);
     }
 
     private static string Fresh(string name, string source)
