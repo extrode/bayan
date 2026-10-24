@@ -1,6 +1,0 @@
-union error CarrierError {
-    timeout
-    rejected
-}
-
-union error Retryable = CarrierError except .rejected

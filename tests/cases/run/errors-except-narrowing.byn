@@ -1,0 +1,34 @@
+union error CarrierError {
+    timeout
+    rejected
+    offline
+}
+
+union error Retryable = CarrierError except .rejected
+
+i64 quote(i64 n) fails CarrierError {
+    if n < 0 { return .rejected }
+    if n == 0 { return .timeout }
+    return n * 2
+}
+
+i64 retry(i64 n) fails Retryable {
+    let q = quote(n) catch (CarrierError.rejected) 1
+    if q > 100 { return .offline }
+    return q
+}
+
+string describe(i64 n) {
+    let q = retry(n) catch switch {
+        .timeout => -1,
+        .offline => -2,
+    }
+    return q == -1 ? "timeout" : q == -2 ? "offline" : $"{q}"
+}
+
+void main() {
+    print(describe(5))
+    print(describe(0))
+    print(describe(-1))
+    print(describe(60))
+}

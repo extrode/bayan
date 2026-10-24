@@ -188,6 +188,11 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             NoTypeArgs(n);
             return AssociatedType(n, owner);
         }
+        if (n.Path is [var head, { Text: "Field" }] && Lookup(file.Module, head.Text) is StructSymbol { FieldEnum: { } fields })
+        {
+            NoTypeArgs(n);
+            return fields;
+        }
         if (n.Path.Length == 2 && file.Imports.TryGetValue(n.Path[0].Text, out var module))
         {
             if (Lookup(module, name.Text) is { } t)

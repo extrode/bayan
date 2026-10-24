@@ -355,6 +355,16 @@ public sealed partial class Compilation
                     var sym = new StructSymbol(s.Name.Text, Loc(file, s.Name), module, AccessOf(s.Modifiers), s, file);
                     if (AddType(file, s.Name, sym)) module.Structs.Add(sym);
                     Naming.CheckType(this, file.Source, s.Name);
+                    var fields = s.Members.OfType<FieldDecl>().ToArray();
+                    if (s.TypeParams.Length == 0 && (s.Rules.Length > 0 || fields.Any(f => f.Requires.Length > 0)))
+                    {
+                        // J23: `T.Field`, reachable only through `T`, so it is not added to the module's types. Not for a
+                        // generic struct, whose `requires` is BYN2022 (Question 225).
+                        var members = fields.Select(f => new EnumMember(f.Name.Span, f.Name, null, null)).ToArray();
+                        var fieldDecl = new EnumDecl(s.Name.Span, s.Modifiers, new Name(s.Name.Span, s.Name.Text + "_Field"), null, members);
+                        sym.FieldEnum = new EnumSymbol(fieldDecl.Name.Text, Loc(file, s.Name), module, AccessOf(s.Modifiers), fieldDecl, file) { FieldsOf = sym };
+                        module.Enums.Add(sym.FieldEnum);
+                    }
                     sym.TypeMap = DeclareTypeParameters(file, s.TypeParams, sym.TypeParameters);
                     _wheres.Add(() => DeclareWhere(file, s.Where, sym.TypeParameters, sym.TypeMap, s.Name.Text));
                     break;
@@ -699,11 +709,13 @@ public sealed partial class Compilation
         DeclareEnumFields(e);
         foreach (var m in e.Decl.Members)
         {
-            Naming.CheckValue(this, source, m.Name);
+            // The fields of `T.Field` were checked on the struct.
+            if (e.FieldsOf is null) Naming.CheckValue(this, source, m.Name);
             if (e.Find(m.Name.Text) is { } existing)
             {
-                Report(DiagnosticCodes.DuplicateEnumMember, source, m.Name.Span, [e.Name, m.Name.Text],
-                    label: $"already declared on line {existing.Location!.Value.Line}");
+                if (e.FieldsOf is null)
+                    Report(DiagnosticCodes.DuplicateEnumMember, source, m.Name.Span, [e.Name, m.Name.Text],
+                        label: $"already declared on line {existing.Location!.Value.Line}");
                 continue;
             }
             e.Members.Add(new EnumMemberSymbol(m.Name.Text, Loc(e.File, m.Name), e, e.Members.Count, m.Doc));

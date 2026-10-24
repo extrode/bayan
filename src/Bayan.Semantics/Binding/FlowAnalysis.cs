@@ -332,6 +332,6 @@ internal sealed class FlowAnalysis
         // A case the caller takes out with `except` must not arrive from the callee.
         foreach (var v in sets.SelectMany(s => s.Variants).Where(v => v != caught && _fn.ExcludedErrors.Contains(v) && !call.Function.ExcludedErrors.Contains(v)))
             Report(DiagnosticCodes.UndeclaredError, span, [$"{v.Set.Name}.{v.Name}", _fn.Name],
-                help: $"handle it with `catch .{v.Name}`, or remove `.{v.Name}` from the `except` list");
+                help: $"handle it with `catch ({v.Set.Name}.{v.Name})`, or remove `.{v.Name}` from the `except` list");
     }
 }

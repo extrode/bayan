@@ -1046,7 +1046,7 @@ internal sealed partial class Binder
     {
         if (!_fn!.ExcludedErrors.Contains(variant)) return;
         Report(DiagnosticCodes.UndeclaredError, span, [$"{variant.Set.Name}.{variant.Name}", _fn.Name],
-            help: $"fail with another case, or remove `.{variant.Name}` from the `except` list");
+            help: $"pick another case, or remove `.{variant.Name}` from the `except` list");
     }
 
     private JumpTarget? FindTarget(Name? label, bool loopOnly, TextSpan span, string keyword)
