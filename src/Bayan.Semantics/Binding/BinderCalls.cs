@@ -148,6 +148,8 @@ internal sealed partial class Binder
         var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
         (_printArgument, _sinkArgument) = (outer, outerSink);
         if (receiver is not null && ReceiverStates(fn) is { } wanted) ReportWrongState(fn.Name, receiver, wanted, receiver.Syntax.Span);
+        // A call that `becomes` changes the receiver's state; a statement learns the new one after it (`LearnBecomes`).
+        if (receiver is BoundLocal changed && fn.Decl?.Becomes is not null) ForgetState(changed.Local);
         // A `ref this` call on `map[key]` changes the stored value in place.
         if (receiver is not null && fn.IsMutating) receiver = MapWriteTarget(receiver);
         // A `dyn ref` writes through the borrow, not into the local holding it; `dyn ref readonly` is BYN2813.
@@ -405,6 +407,12 @@ internal sealed partial class Binder
         {
             var place = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, p.Type);
             if (place.Type.IsError) return place;
+            // The callee may change a local's state: it is passed as its declared type, and its state is no longer known.
+            if (place is BoundLocal known && KnownState(known.Local) is not null)
+            {
+                place = new BoundLocal(known.Syntax, known.Local);
+                ForgetState(known.Local);
+            }
             if (early is null) Constrain(place, p.Type);
             if (!place.Type.Equals(p.Type))
             {
@@ -1157,7 +1165,7 @@ internal sealed partial class Binder
         if (StatesUnion(input) is { } states)
         {
             // A struct with states matches like its states union; `Order.paid(…)` names the struct as the owner.
-            var of = StateStruct(target);
+            var of = StateStruct(target)!;
             if (owner is not null && StateStruct(owner) is { } ownerStruct && ownerStruct.Equals(of)) owner = states;
             target = states;
             if ((owner is null || owner.Equals(states)) && states.Find(name.Text) is null)
@@ -1590,7 +1598,8 @@ internal sealed partial class Binder
         var decl = fn.Decl!;
         Report(DiagnosticCodes.MutatesWithoutRefThis, span, [fn.Name], label: "`this` is modified here",
             help: "declare it `ref this` as the first parameter",
-            fix: new Fix(new TextSpan(decl.ParamsStart, 0), decl.Params.Length > 0 ? "ref this, " : "ref this"));
+            // A receiver written as `this is .s` gains only `ref`.
+            fix: new Fix(new TextSpan(decl.ParamsStart, 0), decl.ReceiverStates.Length > 0 ? "ref " : decl.Params.Length > 0 ? "ref this, " : "ref this"));
     }
 
     internal FunctionSymbol? Function => _fn;

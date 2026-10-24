@@ -21,11 +21,11 @@ internal sealed partial class Binder
             return new BoundErrorStmt(b);
         }
         var fn = _fn!;
-        // A static method has no `this` to change; a method that does not take `ref this` is BYN2115 (Question 297).
+        // A static method has no `this` to change; one that takes neither `ref this` nor `move this` is BYN2115 (Question 297).
         if (fn.IsStatic)
             Report(DiagnosticCodes.Unsupported, new TextSpan(b.Span.Start, "become".Length), ["`become` in a static method"],
                 help: "remove `become`; only an instance method has a `this` to change");
-        else
+        else if (fn.Decl?.MoveThis is null)
             CheckWritable(new BoundThis(b, owner!), new TextSpan(b.Span.Start, "become".Length), "`become` changes its state");
         if (fn.Decl?.Becomes is not { } becomes)
             Report(DiagnosticCodes.BecomeUndeclared, new TextSpan(b.Span.Start, "become".Length), [state.Name, fn.Name],

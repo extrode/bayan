@@ -355,7 +355,6 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor SingleStateInline = Error("BYN7006", "`{0} is .{1}` is an input form; write `{2}`");
     public static readonly DiagnosticDescriptor UnknownState = Error("BYN7007", "`{0}` has no state `.{1}`");
     public static readonly DiagnosticDescriptor StateShadowsStatic = Error("BYN7008", "state `.{0}` has the same name as static member `{1}.{0}`");
-    public static readonly DiagnosticDescriptor MissingBecome = Error("BYN7009", "`{0}` declares `becomes .{1}` but returns here without `become`");
 
     // ── Security 8000–8999 ───────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor MissingBecause = Error("BYN8001", "`{0}` bypasses a safety rule and needs `because \"…\"`");

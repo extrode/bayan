@@ -195,6 +195,20 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         return Local(e.Syntax, t);
     }
 
+    /// <summary>
+    /// <c>become .s(…)</c>: stores the payload in the state's part of <c>this</c>, then the tag. The payload is evaluated into
+    /// temporaries first, since it may read the old state's fields from the same storage.
+    /// </summary>
+    private void Become(BoundBecome b)
+    {
+        if (Operands(b.Payload) is not { } payload) return;
+        var values = payload.Select(v => v.Constant is null ? Spill(v) : v).ToArray();
+        var self = new BoundThis(b.Syntax, _fn.Owner!);
+        for (var i = 0; i < values.Length; i++) EmitAssign(new LUnionField(b.Syntax, self, b.State, i), values[i]);
+        var tag = new ConstantValue((Int128)b.State.Tag);
+        EmitAssign(new LUnionTag(b.Syntax, self), new BoundLiteral(b.Syntax, PrimitiveType.I32, tag) { Constant = tag });
+    }
+
     /// <summary>Stores <paramref name="value"/> in <paramref name="target"/>, or just evaluates it when it does not complete.</summary>
     private void EmitAssign(BoundExpr target, BoundExpr value)
     {
@@ -412,6 +426,9 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             }
             case BoundContext c:
                 Provide(c);
+                break;
+            case BoundBecome b:
+                Become(b);
                 break;
             default:
                 throw new InvalidOperationException($"cannot lower {s.GetType().Name}");
@@ -915,8 +932,9 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 return Coalesce(c);
             case BoundStructLiteral s:
             {
-                var fields = Operands(s.Fields);
-                return fields is null ? new LNever(e.Syntax, e.Type) : s with { Fields = fields };
+                // The fields, then a state literal's payload, in source order.
+                var operands = Operands([.. s.Fields, .. s.Payload]);
+                return operands is null ? new LNever(e.Syntax, e.Type) : s with { Fields = operands[..s.Fields.Length], Payload = operands[s.Fields.Length..] };
             }
             case BoundUnionNew u:
             {

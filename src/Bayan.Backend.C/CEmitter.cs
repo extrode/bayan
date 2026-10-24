@@ -256,6 +256,8 @@ public sealed class CEmitter
         // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
         OwnedType o => CType(o.Inner) + "*",
         UntrustedType u => CType(u.Inner),
+        // A state type is stored as its struct, which carries the tag.
+        StateType st => CType(st.Struct),
         // `dyn ref readonly I` shares the C type of `dyn ref I`.
         DynRefType d => Named(t, "byn_dyn_" + Key(d.Interface)),
         _ => Named(t),
@@ -281,6 +283,7 @@ public sealed class CEmitter
         ListType l => "list_" + Key(l.Element),
         OwnedType o => "own_" + Key(o.Inner),
         UntrustedType u => Key(u.Inner),
+        StateType st => Key(st.Struct),
         MapType m => "map_" + Key(m.KeyType) + "_" + Key(m.ValueType),
         ArrayType a => $"arr{a.Length}_" + Key(a.Element),
         TupleType tt => $"tup{tt.Fields.Count}_" + string.Join("_", tt.Fields.Select(f => Key(f.Type))),
@@ -309,7 +312,17 @@ public sealed class CEmitter
             {
                 case StructSymbol s:
                     foreach (var f in s.Fields) members.Add((f.Type, $"{CType(f.Type)} {FieldName(f.Name)}"));
-                    if (s.Fields.Count == 0) members.Add((PrimitiveType.Bool, "char unused"));
+                    if (_program.Compilation.States.TryGetValue(s, out var states))
+                    {
+                        // After the fields, the state's tag and its payload, laid out like a union (spec §3.17).
+                        members.Add((PrimitiveType.U8, "uint8_t tag"));
+                        var held = states.Variants.Where(v => v.Fields.Count > 0).ToList();
+                        if (held.Count > 0)
+                            members.Add((PrimitiveType.U8, "union {\n" + string.Concat(held.Select(v =>
+                                $"        struct {{ {string.Concat(v.Fields.Select(f => $"{CType(f.Type)} {FieldName(f.Name)}; "))}}} {FieldName(v.Name)};\n")) + "    } u"));
+                        payloads.AddRange(held.SelectMany(v => v.Fields).Select(f => f.Type));
+                    }
+                    else if (s.Fields.Count == 0) members.Add((PrimitiveType.Bool, "char unused"));
                     break;
                 case OptionalType o:
                     members.Add((PrimitiveType.Bool, "bool has"));
@@ -483,6 +496,9 @@ public sealed class CEmitter
             case StructSymbol s:
                 foreach (var f in s.Fields) StorageParts(f.Type, $"{at}.{FieldName(f.Name)}", parts);
                 break;
+            case StateType st:
+                StorageParts(st.Struct, at, parts);
+                break;
         }
     }
 
@@ -562,6 +578,8 @@ public sealed class CEmitter
                 return Equal(o.Inner, $"(*{a})", $"(*{b})");
             case UntrustedType u:
                 return Equal(u.Inner, a, b);
+            case StateType st:
+                return Equal(st.Struct, a, b);
         }
         var ct = CType(t);
         var name = "bynh_eq_" + Key(t);
@@ -571,6 +589,20 @@ public sealed class CEmitter
             {
                 var sb = new StringBuilder("{\n    if (a.tag != b.tag) return false;\n    switch (a.tag) {\n");
                 foreach (var v in u.Variants.Where(v => v.Fields.Count > 0))
+                {
+                    var fields = v.Fields.Select(f => Equal(f.Type, $"a.u.{FieldName(v.Name)}.{FieldName(f.Name)}", $"b.u.{FieldName(v.Name)}.{FieldName(f.Name)}"));
+                    sb.Append($"    case {v.Tag}: return {string.Join("\n        && ", fields)};\n");
+                }
+                return sb.Append("    default: return true;\n    }\n}\n").ToString();
+            }
+            if (t is StructSymbol ss && _program.Compilation.States.TryGetValue(ss, out var states))
+            {
+                // The fields, then the tag, then the payload of the state both are in.
+                var sb = new StringBuilder("{\n");
+                foreach (var f in ss.Fields)
+                    sb.Append($"    if (!{Equal(f.Type, "a." + FieldName(f.Name), "b." + FieldName(f.Name))}) return false;\n");
+                sb.Append("    if (a.tag != b.tag) return false;\n    switch (a.tag) {\n");
+                foreach (var v in states.Variants.Where(v => v.Fields.Count > 0))
                 {
                     var fields = v.Fields.Select(f => Equal(f.Type, $"a.u.{FieldName(v.Name)}.{FieldName(f.Name)}", $"b.u.{FieldName(v.Name)}.{FieldName(f.Name)}"));
                     sb.Append($"    case {v.Tag}: return {string.Join("\n        && ", fields)};\n");
@@ -1268,6 +1300,13 @@ internal sealed class FunctionEmitter
                 return Conversion(c2);
             case BoundConditional c2:
                 return $"({Expr(c2.Condition)} ? {Expr(c2.WhenTrue)} : {Expr(c2.WhenFalse)})";
+            case BoundStructLiteral { State: { } state } s:
+            {
+                // A state literal: the fields in order, then the tag and the state's payload by name.
+                var parts = s.Fields.Select(Expr).Append($".tag = {state.Tag}");
+                if (s.Payload.Length > 0) parts = parts.Append($".u.{CEmitter.FieldName(state.Name)} = {{{string.Join(", ", s.Payload.Select(Expr))}}}");
+                return $"(({_c.CType(s.Struct)}){{{string.Join(", ", parts)}}})";
+            }
             case BoundStructLiteral s:
                 return s.Fields.Length == 0 ? $"(({_c.CType(s.Struct)}){{0}})" : $"(({_c.CType(s.Struct)}){{{string.Join(", ", s.Fields.Select(Expr))}}})";
             case BoundTuple t:

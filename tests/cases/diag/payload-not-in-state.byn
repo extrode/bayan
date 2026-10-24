@@ -1,0 +1,55 @@
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+        shipped(i64 payment, i64 tracking)
+        lost(bool insured)
+    }
+    i64 charged(this is .paid or .shipped) => payment
+    i64 early(this is .draft or .paid) => payment
+}
+
+i64 total(Order order) => order.payment
+
+i64 tracked(Order order) {
+    if order is .shipped {
+        return order.tracking
+    }
+    return order.tracking
+}
+
+bool covered(Order order) => order is .lost l && l.insured
+
+void reset(ref Order order) {
+}
+
+struct Ticket {
+    i64 seat
+    states {
+        open
+        sold(i64 price)
+        used
+    }
+    i64 scan(ref this is .sold) becomes .used {
+        let paid = price
+        become .used
+        return paid
+    }
+}
+
+void passed(Order order) {
+    var copy = order
+    if copy is .paid {
+        reset(ref copy)
+        print($"{copy.payment}")
+    }
+}
+
+void scanned(Ticket ticket) {
+    var t = ticket
+    if t is .sold {
+        let price = t.scan()
+        print($"{price} {t.price}")
+    }
+}

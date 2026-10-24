@@ -1,0 +1,15 @@
+error BYN2115: `push` modifies `this` but is not declared `ref this`
+
+  8 │         become .open
+    │         ^^^^^^ `this` is modified here
+    │
+  help: declare it `ref this` as the first parameter
+    │ 7 │     void push(ref this is .shut) becomes .open {
+    │   │               ++++
+
+error BYN2022: `become` in a static method is not supported in v0.1
+
+  11 │         become .shut
+     │         ^^^^^^
+     │
+  help: remove `become`; only an instance method has a `this` to change
