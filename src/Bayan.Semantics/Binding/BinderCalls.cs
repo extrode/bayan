@@ -705,7 +705,7 @@ internal sealed partial class Binder
             {
                 if (WhyNotFormattable(value.Type, []) is { } why)
                     Report(DiagnosticCodes.NotFormattable, appended.Value.Span, [value.Type.DisplayName], label: why == "" ? null : why,
-                        help: value.Type is StructSymbol s ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
+                        help: value.Type is StructSymbol s ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x, as: .debug}}`" : null);
                 value = new BoundInterpolated(appended.Value, [new BoundInterpolationPart(null, value)]);
             }
             _prebound[appended] = value;

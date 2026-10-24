@@ -1769,9 +1769,11 @@ internal sealed partial class Binder
             }
             var hole = (InterpolationHole)part;
             var value = BindExpr(hole.Expr);
-            if (!value.Type.IsError && WhyNotFormattable(value.Type, []) is { } why)
+            // `as: .debug` shows a struct without `formatInto` in its literal form (spec §13).
+            var debug = hole.Specs.Any(a => a is { Name.Text: "as", Value: TargetMemberExpr { Member.Text: "debug" } });
+            if (!value.Type.IsError && (debug ? WhyNotDebugFormattable(value.Type, []) : WhyNotFormattable(value.Type, [])) is { } why)
                 Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName], label: why == "" ? null : why,
-                    help: value.Type is StructSymbol s ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
+                    help: value.Type is StructSymbol s && !debug ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x, as: .debug}}`" : null);
             parts.Add(new BoundInterpolationPart(null, value) { Spec = hole.Specs.Length == 0 || value.Type.IsError ? null : BindFormatSpec(hole.Specs, value.Type) });
         }
         return new BoundInterpolated(i, parts.ToArray());
@@ -1862,6 +1864,15 @@ internal sealed partial class Binder
         SpanType sp => Part("an element", sp.Element, seen) ?? "",
         ArrayType a => Part("an element", a.Element, seen) ?? "",
         _ => "",
+    };
+
+    /// <summary>As <see cref="WhyNotFormattable"/>, under <c>as: .debug</c>: a struct formats when each of its fields does.</summary>
+    private static string? WhyNotDebugFormattable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
+    {
+        StructSymbol s when !TakesFormatSpec(s) => !seen.Add(s) ? null
+            : s.Fields.Select(f => WhyNotDebugFormattable(f.Type, seen) is { } why ? why == "" ? $"field `{f.Name}` is `{f.Type.DisplayName}`" : why : null)
+                .FirstOrDefault(w => w is not null),
+        _ => WhyNotFormattable(t, seen),
     };
 
     /// <summary>Why <paramref name="part"/> of a type does not format, naming it when it is the culprit.</summary>

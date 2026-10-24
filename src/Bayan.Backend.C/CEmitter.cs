@@ -1289,8 +1289,7 @@ internal sealed class FunctionEmitter
         string Inner(string sw) => spec.Radix != 0
             ? $"bynh_w_radix({sw}, (uint64_t)({v}), {(t.IsSignedInteger ? $"({v}) < 0" : "false")}, {spec.Radix});"
             : spec.Digits >= 0 ? $"bynh_w_digits({sw}, (double)({v}), {spec.Digits});"
-            : spec.Debug && t.IsString ? $"bynh_w_quoted({sw}, {v}, '\"');"
-            : spec.Debug && t is PrimitiveType { Kind: PrimitiveKind.Char } ? $"byn_w_char({sw}, '\\''); byn_w_char({sw}, {v}); byn_w_char({sw}, '\\'');"
+            : spec.Debug ? Debug(t, v, sw)
             : _c.Format(t, v, sw);
         if (spec.Radix != 0)
             _c.Helper("bynh_w_radix", "static void bynh_w_radix(byn_writer* w, uint64_t v, bool negative, int base)", () =>
@@ -1305,11 +1304,6 @@ internal sealed class FunctionEmitter
                 + "    int64_t n = (int64_t)(s < 0 ? s - 0.5 : s + 0.5);\n    if (n < 0 || (n == 0 && v < 0)) byn_w_char(w, '-');\n"
                 + "    uint64_t m = n < 0 ? (uint64_t)-n : (uint64_t)n, q = (uint64_t)p;\n    byn_w_u64(w, m / q);\n    if (digits == 0) return;\n"
                 + "    byn_w_char(w, '.');\n    uint64_t f = m % q;\n    for (uint64_t k = q / 10; k > 0; k /= 10) byn_w_char(w, (uint32_t)('0' + f / k % 10));\n}\n");
-        if (spec.Debug && t.IsString)
-            _c.Helper("bynh_w_quoted", "static void bynh_w_quoted(byn_writer* w, byn_str s, uint32_t quote)", () =>
-                "{\n    byn_w_char(w, quote);\n    for (int64_t i = 0; i < s.len; i++) {\n"
-                + "        uint8_t c = s.ptr[i];\n        if (c == quote || c == '\\\\') byn_w_char(w, '\\\\');\n"
-                + "        if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n        else byn_w_bytes(w, &c, 1);\n    }\n    byn_w_char(w, quote);\n}\n");
         if (spec.Width == 0) return Inner("w");
         // Numbers align to the end by default, everything else to the start.
         var align = spec.Align >= 0 ? spec.Align : t.IsNumeric ? 1 : 0;
@@ -1320,6 +1314,35 @@ internal sealed class FunctionEmitter
             + "    for (int64_t i = before; i < gap; i++) byn_w_char(w, fill);\n}\n");
         return $"{{ uint8_t sb[1024]; byn_writer sv = {{sb, 1024, 0, BYN_WRITE_TRUNCATE, {Loc(value.Syntax)}}}; byn_writer* sw = &sv; {Inner("sw")} "
             + $"{pad}(w, (byn_str){{sb, sv.len}}, {spec.Width}, {spec.Fill}u, {align}); }}";
+    }
+
+    /// <summary>
+    /// The debug view (spec §13): strings and runes quoted, a struct in its literal form <c>P { x: 1, name: "a" }</c>
+    /// (one whose <c>formatInto</c> takes the <c>FormatSpec</c> formats itself), everything else as it displays.
+    /// </summary>
+    private string Debug(TypeSymbol t, string v, string w)
+    {
+        if (t.IsString)
+            return _c.Helper("bynh_w_quoted", "static void bynh_w_quoted(byn_writer* w, byn_str s, uint32_t quote)", () =>
+                "{\n    byn_w_char(w, quote);\n    for (int64_t i = 0; i < s.len; i++) {\n"
+                + "        uint8_t c = s.ptr[i];\n        if (c == quote || c == '\\\\') byn_w_char(w, '\\\\');\n"
+                + "        if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n        else byn_w_bytes(w, &c, 1);\n    }\n    byn_w_char(w, quote);\n}\n") + $"({w}, {v}, '\"');";
+        if (t is PrimitiveType { Kind: PrimitiveKind.Char }) return $"byn_w_char({w}, '\\''); byn_w_char({w}, {v}); byn_w_char({w}, '\\'');";
+        if (t is not StructSymbol s || CEmitter.FormatInto(s) is { Parameters.Count: 2 }) return _c.Format(t, v, w);
+        var name = _c.Helper("bynh_debug_" + _c.Key(t), $"static void bynh_debug_{_c.Key(t)}(byn_writer* w, {_c.CType(t)} v)", () =>
+        {
+            var sb = new StringBuilder("{\n");
+            sb.Append($"    byn_w_str(w, {CEmitter.StringLiteral(s.DisplayName + (s.Fields.Count == 0 ? " {}" : " { "))});\n");
+            for (var i = 0; i < s.Fields.Count; i++)
+            {
+                var f = s.Fields[i];
+                sb.Append($"    byn_w_str(w, {CEmitter.StringLiteral((i == 0 ? "" : ", ") + f.Name + ": ")});\n");
+                sb.Append("    ").Append(Debug(f.Type, "v." + CEmitter.FieldName(f.Name), "w")).Append('\n');
+            }
+            if (s.Fields.Count > 0) sb.Append($"    byn_w_str(w, {CEmitter.StringLiteral(" }")});\n");
+            return sb.Append("}\n").ToString();
+        });
+        return $"{name}({w}, {v});";
     }
 
     // ── Expressions ──────────────────────────────────────────────────────────────
