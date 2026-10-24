@@ -1456,9 +1456,10 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 : new BoundDefault(b.Syntax, b.Type));
             return taken;
         }
-        var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast or BuiltinMember.ListRemoveRange or BuiltinMember.ListReplace or BuiltinMember.ListSort
+        var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast or BuiltinMember.ListRemoveRange or BuiltinMember.ListRemoveThrough or BuiltinMember.ListRemoveAt or BuiltinMember.ListRemoveAtRange
+            or BuiltinMember.ListReplace or BuiltinMember.ListSort
             or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapRemove or BuiltinMember.MapClear
-            or BuiltinMember.StrBufAppend or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan or BuiltinMember.ListMutableSpan or BuiltinMember.ArrayMutableSpan;
+            or BuiltinMember.StrBufAppend or BuiltinMember.StrBufInsert or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan or BuiltinMember.ListMutableSpan or BuiltinMember.ArrayMutableSpan;
         var operands = new List<BoundExpr> { b.Receiver };
         operands.AddRange(b.Arguments);
         // `slot` inserts the value type's default: field initializers for a struct, zero otherwise.
@@ -1516,7 +1517,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             }
         }
         var k = 0;
-        var parts = text.Parts.Select(p => p.Value is null ? p : new BoundInterpolationPart(null, lowered[k++])).ToArray();
+        var parts = text.Parts.Select(p => p.Value is null ? p : p with { Value = lowered[k++] }).ToArray();
         Emit(new LWrite(call.Syntax, sink, target, parts));
         return new LVoid(call.Syntax);
     }

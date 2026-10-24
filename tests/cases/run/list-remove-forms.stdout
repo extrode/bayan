@@ -1,0 +1,6 @@
+through 3: 0 40 50
+last 5: 0 10 20 30 40
+at 4: 10 20 30 40
+range 4: 0 30 40 50
+inclusive 3: 0 40 50
+held 4: 0 10 20 30

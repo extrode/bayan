@@ -323,7 +323,6 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ParticleRequired = Error("BYN5004", "`{0}` has {1} unlabeled parameters; give each but one a particle");
     public static readonly DiagnosticDescriptor ArgumentNeedsParticle = Error("BYN5005", "`{0}` is passed without its particle `{1}:`");
     public static readonly DiagnosticDescriptor ParameterNeedsParticle = Error("BYN5006", "`{0}` is a required parameter besides the object and needs a particle");
-    // BYN5007 is reserved: `Log.debug(…)` is an unknown name until the binder reports it. Its help, once reported: "call `log` and pass the level `as: .{0}`".
     public static readonly DiagnosticDescriptor LogLevelAsVerb = Error("BYN5007", "`Log.{0}` names a level, not the act; write `log(…, as: .{0})`");
     public static readonly DiagnosticDescriptor UnknownParticle = Error("BYN5008", "`{0}` is not a particle");
     public static readonly DiagnosticDescriptor ParticleAsMemberName = Error("BYN5009", "`{0}` is a particle; name the member with a verb or a noun");

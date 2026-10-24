@@ -1,0 +1,6 @@
+var buf = StrBuf()
+buf.append("é")
+buf.insert("a", at: 0)
+print(buf.view)
+buf.insert("b", at: 2)
+print("unreachable")

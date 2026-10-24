@@ -39,6 +39,18 @@ internal sealed partial class Binder
         if (c.Callee is MemberExpr { Member.Text: "tryParse", NullConditional: false, Target: NameExpr parsed }
             && PrimitiveType.ByName.TryGetValue(parsed.Name.Text, out var parseTo) && parseTo.IsInteger)
             return BindTryParse(c, parseTo);
+        // `Log.debug(…)` on an undeclared `Log` names the level where the act should be (BYN5007, Question 271).
+        if (c.Callee is MemberExpr { NullConditional: false, Target: NameExpr { Name.Text: "Log", TypeArgs.Length: 0 }, Member.Text: var level } logged
+            && _c.Builtins.LogLevel.Find(level) is not null && _scope.Lookup("Log") is null && !Module.Types.ContainsKey("Log")
+            && !Module.Functions.ContainsKey("Log") && !Module.Constants.ContainsKey("Log") && !_file.Imports.ContainsKey("Log"))
+        {
+            Report(DiagnosticCodes.LogLevelAsVerb, logged.Span, [level],
+                help: $"call `log` and pass the level `as: .{level}`",
+                fix: c.Args is [{ Name: null, Modifier: ArgModifier.None } text]
+                    ? new Fix(c.Span, $"log({Source.GetText(text.Value.Span)}, as: .{level})") : null);
+            BindArgumentsForRecovery(c);
+            return new BoundErrorExpr(c);
+        }
         var outer = _calleeOf;
         _calleeOf = c;
         var callee = c.Callee is TargetMemberExpr t ? BindTargetMember(t, expected) : BindExprOrType(c.Callee);
@@ -546,6 +558,10 @@ internal sealed partial class Binder
                 return new BoundCall(c, _c.Builtins.ArenaNew, null, BindArguments(c, _c.Builtins.ArenaNew.Parameters, _c.Builtins.ArenaNew, false, "Arena"), type);
             case BuiltinType { Kind: BuiltinKind.StrBuf } when c.Args.Length == 0:
                 return new BoundCall(c, _c.Builtins.StrBufGrow, null, [], type);
+            // `StrBuf(capacity: n)` grows from `context.allocator` like `StrBuf()`, starting with room for n bytes.
+            case BuiltinType { Kind: BuiltinKind.StrBuf } when c.Args is [{ Name.Text: "capacity" }]:
+                return new BoundCall(c, _c.Builtins.StrBufGrow, null,
+                    BindArguments(c, [new ParameterSymbol("capacity", null, PrimitiveType.I64, ParamModifier.None, 0)], null, false, "StrBuf"), type);
             case BuiltinType { Kind: BuiltinKind.StrBuf }:
                 return new BoundCall(c, _c.Builtins.StrBufNew, null, BindArguments(c, _c.Builtins.StrBufNew.Parameters, _c.Builtins.StrBufNew, false, "StrBuf"), type);
             case ErrorType:
@@ -677,8 +693,31 @@ internal sealed partial class Binder
             if (sep.Type == PrimitiveType.Char)
                 m = m with { Member = BuiltinMember.StringPartsRune, Parameters = [("by", PrimitiveType.Char), m.Parameters[1]] };
         }
+        // `buf.append(x)` formats any `Display` value straight into the buffer, as the hole `$"{x}"` would.
+        if (m.Member == BuiltinMember.StrBufAppend && c.Args is [{ Value: not InterpolatedExpr } appended])
+        {
+            var value = BindExpr(appended.Value);
+            if (!value.Type.IsError && !value.Type.IsString)
+            {
+                if (WhyNotFormattable(value.Type, []) is { } why)
+                    Report(DiagnosticCodes.NotFormattable, appended.Value.Span, [value.Type.DisplayName], label: why == "" ? null : why,
+                        help: value.Type is StructSymbol s ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
+                value = new BoundInterpolated(appended.Value, [new BoundInterpolationPart(null, value)]);
+            }
+            _prebound[appended] = value;
+        }
+        // `remove(at:)` takes an index or a range; a range literal or a held `Range<i64>` picks the range form.
+        BoundExpr? removedAt = null;
+        if (m.Member == BuiltinMember.ListRemoveRange && c.Args is [{ Name.Text: "at", Value: not RangeExpr } at])
+            _prebound[at] = removedAt = BindExpr(at.Value);
         m = m.Member switch
         {
+            BuiltinMember.ListRemoveRange when c.Args is [{ Name.Text: "at", Value: RangeExpr }] || removedAt?.Type is RangeType =>
+                m with { Member = BuiltinMember.ListRemoveAtRange, Parameters = [("at", new RangeType(PrimitiveType.I64))] },
+            BuiltinMember.ListRemoveRange when c.Args is [{ Name.Text: "at" }] =>
+                m with { Member = BuiltinMember.ListRemoveAt, Parameters = [("at", PrimitiveType.I64)] },
+            BuiltinMember.ListRemoveRange when c.Args is [_, { Name.Text: "through" }] =>
+                m with { Member = BuiltinMember.ListRemoveThrough, Parameters = [m.Parameters[0], ("through", PrimitiveType.I64)] },
             BuiltinMember.StringTrimmed when c.Args is [{ Name.Text: "by" }] =>
                 new(BuiltinMember.StringTrimmedBy, [("by", new SpanType(PrimitiveType.Char, readOnly: true))], PrimitiveType.String),
             BuiltinMember.StringTrimmed => m with { Parameters = [("from", _c.Builtins.Edge)] },

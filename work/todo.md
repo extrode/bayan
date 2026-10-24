@@ -258,9 +258,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-54a-lib: comments in `src/runtime/bayan-rt.h` and `bayan-rt.c` still say `Panic.onPanic`; rename to `Panic.handler`.
 - r3-54a-lib: identifiers still named for round 2: `Compilation.OnPanic`, `BindOnPanic`, `_onPanicSet`, `BoundSetOnPanic`, `DiagnosticCodes.OnPanicPlacement`; rename for `Panic.handler`.
 - r3-54a-lib: `tests/cases/run/on-panic-order` prints the label "onPanic:" from its handler; relabel (and rename the case) for `Panic.handler`.
-- r3-54a-lib: an interpolation hole `{n, as: .hex}` prints `n` in decimal; it should format like `string(n, as: .hex)`.
-- r3-54a-lib: `remove(from:through:)` on lists, Chunk 3 (J24 sweep; Question 315).
-- r3-54a-lib: `remove(at:)` on lists, for an index and a range, Chunk 3 (J24 sweep; Question 316).
 - r3-54a-lib: `suq/fail/to-as-call.byn` keeps `asSpan` by design (a fail-corpus snippet for the `to…`/`as…` member rule); do not convert it.
 - r3-54a-lib: `for i in r` over a range held in a `let` crashes the Lowerer (`For` casts the iterable to `ArrayType`); `For` handles only a range literal.
 - r3-54a-lib: `mutableSpan()` is exclusive only as a loan (Question 322); a second writable view of the same list while the first lives is not rejected.

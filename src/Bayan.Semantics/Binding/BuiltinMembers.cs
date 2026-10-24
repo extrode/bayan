@@ -85,6 +85,7 @@ internal static class BuiltinMembers
         (ListType l, "append") => new(BuiltinMember.ListAdd, [("item", l.Element)], PrimitiveType.Void, Mutating: true),
         (ListType, "clear") => new(BuiltinMember.ListClear, [], PrimitiveType.Void, Mutating: true),
         (ListType l, "removeLast") => new(BuiltinMember.ListRemoveLast, [], l.Element, Mutating: true),
+        // The binder picks `remove(at:)` (an index or a range) and `remove(from:through:)` by the arguments' names.
         (ListType, "remove") =>
             new(BuiltinMember.ListRemoveRange, [("from", PrimitiveType.I64), ("until", PrimitiveType.I64)], PrimitiveType.Void, Mutating: true),
         // The items are copied in, so elements that own memory are left out.
@@ -105,6 +106,9 @@ internal static class BuiltinMembers
         (BuiltinType { Kind: BuiltinKind.Arena }, "reset") => new(BuiltinMember.ArenaReset, [], PrimitiveType.Void, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "append") =>
             new(BuiltinMember.StrBufAppend, [("text", PrimitiveType.String)], PrimitiveType.Void, Mutating: true),
+        // `at:` is a byte offset on a rune boundary, like a string slice's bounds.
+        (BuiltinType { Kind: BuiltinKind.StrBuf }, "insert") =>
+            new(BuiltinMember.StrBufInsert, [("text", PrimitiveType.String), ("at", PrimitiveType.I64)], PrimitiveType.Void, Mutating: true),
         (BuiltinType { Kind: BuiltinKind.StrBuf } s, "copy") => new(BuiltinMember.StrBufCopy, [("to", BuiltinType.Arena)], s),
         // `finish()` returns the text borrowed from the buffer, like `view`; it does not consume the buffer yet.
         (BuiltinType { Kind: BuiltinKind.StrBuf }, "finish") => new(BuiltinMember.StrBufAsString, [], PrimitiveType.String),
@@ -121,7 +125,7 @@ internal static class BuiltinMembers
 
     private static readonly string[] Candidates =
         ["length", "bytes", "isEmpty", "runeCount", "isAscii", "runes", "utf16", "lines", "value", "copy", "startsWith", "endsWith", "contains",
-         "position", "lastPosition", "count", "trimmed", "equals", "lowercased", "uppercased", "replaced", "repeated", "padded", "parts", "skip", "takeLast", "joined", "span", "mutableSpan", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
+         "position", "lastPosition", "count", "trimmed", "equals", "lowercased", "uppercased", "replaced", "repeated", "padded", "parts", "skip", "takeLast", "joined", "span", "mutableSpan", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append", "insert", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>

@@ -1772,9 +1772,70 @@ internal sealed partial class Binder
             if (!value.Type.IsError && WhyNotFormattable(value.Type, []) is { } why)
                 Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName], label: why == "" ? null : why,
                     help: value.Type is StructSymbol s ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
-            parts.Add(new BoundInterpolationPart(null, value));
+            parts.Add(new BoundInterpolationPart(null, value) { Spec = hole.Specs.Length == 0 || value.Type.IsError ? null : BindFormatSpec(hole.Specs, value.Type) });
         }
         return new BoundInterpolated(i, parts.ToArray());
+    }
+
+    /// <summary>
+    /// The specs of a hole (spec §16.4): <c>as:</c> a radix on integers or <c>.debug</c>, <c>digits:</c> on floats,
+    /// <c>width:</c>, <c>fill:</c> and <c>align:</c> on any value. Each is a constant; a spec that does not apply is BYN2021.
+    /// </summary>
+    private BoundFormatSpec BindFormatSpec(Argument[] specs, TypeSymbol type)
+    {
+        var spec = new BoundFormatSpec(0, false, 0, ' ', -1, -1);
+        var seen = new HashSet<string>();
+        foreach (var a in specs)
+        {
+            var name = a.Name?.Text ?? "";
+            if (!seen.Add(name))
+            {
+                Report(DiagnosticCodes.DuplicateArgument, a.Span, [name]);
+                continue;
+            }
+            switch (name)
+            {
+                case "as" when a.Value is TargetMemberExpr { Member.Text: "debug" }:
+                    spec = spec with { Debug = true };
+                    break;
+                case "as" when a.Value is TargetMemberExpr { Member.Text: var radix } && _c.Builtins.Radix.Find(radix) is { } member:
+                    if (!type.IsInteger) Report(DiagnosticCodes.UnknownParameter, a.Span, [type.DisplayName, $"as: .{radix}"]);
+                    else spec = spec with { Radix = member.Ordinal switch { 0 => 2, 1 => 8, 2 => 10, _ => 16 } };
+                    break;
+                case "as":
+                    BindConverted(a.Value, _c.Builtins.Radix);
+                    break;
+                case "width" or "digits":
+                    var n = BindConverted(a.Value, PrimitiveType.I64);
+                    if (n.Type.IsError) break;
+                    if (n.Constant is not { Value: Int128 v })
+                        Report(DiagnosticCodes.NotConstant, a.Value.Span, [$"a format spec's `{name}`"]);
+                    else if (name == "width" && (v < 0 || v > 1024))
+                        Report(DiagnosticCodes.LiteralOutOfRange, a.Value.Span, [v.ToString(), "a format spec's `width` (0 to 1024)"]);
+                    else if (name == "digits" && (v < 0 || v > 15))
+                        Report(DiagnosticCodes.LiteralOutOfRange, a.Value.Span, [v.ToString(), "a format spec's `digits` (0 to 15)"]);
+                    else if (name == "digits" && !type.IsFloat)
+                        Report(DiagnosticCodes.UnknownParameter, a.Span, [type.DisplayName, "digits"]);
+                    else spec = name == "width" ? spec with { Width = (long)v } : spec with { Digits = (int)v };
+                    break;
+                case "fill":
+                    var fill = BindConverted(a.Value, PrimitiveType.Char);
+                    if (fill.Type.IsError) break;
+                    if (fill.Constant?.Value is not { } c) Report(DiagnosticCodes.NotConstant, a.Value.Span, ["a format spec's `fill`"]);
+                    else spec = spec with { Fill = (uint)((System.Text.Rune)c).Value };
+                    break;
+                case "align" when a.Value is TargetMemberExpr { Member.Text: "start" or "end" or "center" } edge:
+                    spec = spec with { Align = edge.Member.Text switch { "start" => 0, "end" => 1, _ => 2 } };
+                    break;
+                case "align":
+                    Report(DiagnosticCodes.UnknownEnumMember, a.Value.Span, [a.Value is TargetMemberExpr tm ? tm.Member.Text : Source.GetText(a.Value.Span), "align"]);
+                    break;
+                default:
+                    Report(DiagnosticCodes.UnknownParameter, a.Span, [type.DisplayName, name]);
+                    break;
+            }
+        }
+        return spec;
     }
 
     internal static bool IsFormattable(TypeSymbol t) => WhyNotFormattable(t, []) is null;

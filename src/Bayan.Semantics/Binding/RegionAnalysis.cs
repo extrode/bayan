@@ -379,10 +379,11 @@ internal sealed class RegionAnalysis
                 return receiver with { Owners = [] };
             case BuiltinMember.MapLength or BuiltinMember.MapContains:
                 return Borrow.None;
-            case BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListSort:
+            case BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListRemoveThrough or BuiltinMember.ListRemoveAt
+                or BuiltinMember.ListRemoveAtRange or BuiltinMember.ListSort:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
-            case BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset:
+            case BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.StrBufInsert or BuiltinMember.ArenaReset:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
             default:
@@ -757,7 +758,8 @@ internal sealed class RegionAnalysis
             switch (node)
             {
                 case BoundBuiltinCall b when b.Member is BuiltinMember.ListAdd or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.ListRemoveLast
-                        or BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListReplace or BuiltinMember.ListSort or BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset
+                        or BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListRemoveThrough or BuiltinMember.ListRemoveAt or BuiltinMember.ListRemoveAtRange
+                        or BuiltinMember.ListReplace or BuiltinMember.ListSort or BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.StrBufInsert or BuiltinMember.ArenaReset
                         or BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake
                     && ThisFieldSymbol(b.Receiver) is { } field:
                     fields.Add(field);
