@@ -88,6 +88,7 @@ public static class Messages
         matters, run `bayan build` first or read `--diagnostics json`.
         """);
     public static readonly Message UnknownCommand = Register("usage.unknown-command", "bayan: unknown command `{0}`");
+    public static readonly Message FormatterHint = Register("usage.formatter-hint", "the formatter is `bayan format`");
     public static readonly Message UnknownMode = Register("usage.unknown-mode", "bayan: unknown mode `{0}` (expected debug, safe or fast)");
     public static readonly Message UnknownDiagnosticsFormat = Register("usage.unknown-diagnostics-format", "bayan: unknown diagnostics format `{0}` (expected json or text)");
     public static readonly Message UnknownTarget = Register("usage.unknown-target", "bayan: unknown target `{0}` (expected host, {1})");

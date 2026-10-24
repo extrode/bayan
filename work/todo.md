@@ -17,6 +17,7 @@ Small, clear, and could be picked up without a design decision.
 - `Lexer.cs:571` help still says "wrap it with a cast to the unit type"; casts are BYN1057 since 5.3f, so it should say `T(x)`.
 - Float-to-int conversion saturates in `bayan-rt.h` (`byn_f2i`) instead of trapping as SPEC §6.2 says.
 - `i64.tryFrom` of exactly -2^63 as a float gives `null`; the float range check is `(min-1, max+1)` in `f64`, which rounds at that edge.
+- `docs/bayan-handoff.md:250` says `--ci github` will run `bayan fmt --check` and `bayan fmt --check-prose`; the command is `bayan format`, and the CI template does not run it yet.
 
 ## Later
 

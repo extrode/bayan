@@ -97,6 +97,7 @@ public static class CliApp
                 return RunProgram([file, "--", .. rest], stderr);
             default:
                 stderr.WriteLine(Messages.UnknownCommand.Text(args[0]));
+                if (args[0] == "fmt") stderr.WriteLine(Messages.FormatterHint.Text());
                 stderr.WriteLine(Usage);
                 return ExitUsage;
         }
