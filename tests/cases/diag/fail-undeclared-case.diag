@@ -1,0 +1,15 @@
+error BYN2603: `.missing` is not in the `fails` clause of `f`
+
+  6 │     fail .missing if s.isEmpty
+    │          ^^^^^^^^
+    │
+  help: name a case of `ParseError`
+
+error BYN2602: `f` can fail; handle the error or pass it on
+
+  10 │ print($"{f("x")}")
+     │          ^^^^^^
+     │
+  help: propagate the error with `try`, or handle it with `catch`
+     │ 10 │ print($"{try f("x")}")
+     │    │          ++++

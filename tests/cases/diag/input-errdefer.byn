@@ -6,5 +6,5 @@ union error SaveError {
 void save(i64 n) fails SaveError {
     errdefer print("failed")
     errdefer (e) print($"failed: {e}")
-    return .full if n > 3
+    fail .full if n > 3
 }

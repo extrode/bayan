@@ -13,15 +13,15 @@ union error RangeError {
 }
 
 i64 digit(string s) fails ParseError {
-    return .empty if s.isEmpty
+    fail .empty if s.isEmpty
     let c = s.bytes[0]
-    return .notDigit if c < '0' || c > '9'
-    return (i64)(c - '0')
+    fail .notDigit if c < '0' || c > '9'
+    return i64(c - '0')
 }
 
 i64 positive(string s) fails ParseError, RangeError {
     let d = try digit(s)
-    return .tooSmall if d == 0
+    fail .tooSmall if d == 0
     return d
 }
 

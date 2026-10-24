@@ -288,7 +288,7 @@ public sealed class Parser
     private static bool IsStatementKeyword(TokenKind kind) => kind is
         TokenKind.LetKeyword or TokenKind.VarKeyword or TokenKind.ConstKeyword or TokenKind.IfKeyword or
         TokenKind.UnlessKeyword or TokenKind.WhileKeyword or TokenKind.DoKeyword or TokenKind.ForKeyword or
-        TokenKind.ForeachKeyword or TokenKind.SwitchKeyword or TokenKind.ReturnKeyword or TokenKind.BreakKeyword or
+        TokenKind.ForeachKeyword or TokenKind.SwitchKeyword or TokenKind.ReturnKeyword or TokenKind.FailKeyword or TokenKind.BreakKeyword or
         TokenKind.ContinueKeyword or TokenKind.DeferKeyword or TokenKind.ErrdeferKeyword or TokenKind.UsingKeyword or
         TokenKind.ContextKeyword or TokenKind.ProvideKeyword or TokenKind.BecomeKeyword or TokenKind.StructKeyword or TokenKind.PublicKeyword or TokenKind.PrivateKeyword or
         TokenKind.ImportKeyword or TokenKind.ErrorKeyword or TokenKind.TestKeyword or TokenKind.TypeKeyword or
@@ -2032,8 +2032,15 @@ public sealed class Parser
                 {
                     // `assert(x)` is `assert (x)`: the parentheses are part of the expression.
                     var condition = ParseExpression();
+                    // `assert f() fails E.x`: the call must fail with that error.
+                    Expr? fails = null;
+                    if (Kind == TokenKind.FailsKeyword && !BreaksLine(_pos))
+                    {
+                        Advance();
+                        fails = ParseExpression();
+                    }
                     ExpectEnd();
-                    return new AssertStmt(SpanFrom(start), condition);
+                    return new AssertStmt(SpanFrom(start), condition) { Fails = fails };
                 }
             case TokenKind.Identifier when Peek(1) == TokenKind.Colon:
                 {
@@ -2286,8 +2293,6 @@ public sealed class Parser
         var next = MatchingClose(_pos) + 1;
         var kind = KindAt(next);
         if (kind is TokenKind.OpenBrace or TokenKind.Semicolon || _tokens[next].HasNewlineBefore) return true;
-        // `(i32)big > 3 {`: a cast starts a bare condition, which reaches its `{` body before the statement ends; `(flag) x++` does not.
-        if (IsCast()) return !BodyBraceFirst(next);
         if (kind is TokenKind.Identifier) return true;
         if (kind.IsKeyword())
             return kind is not (TokenKind.IsKeyword or TokenKind.AsKeyword or TokenKind.CatchKeyword or TokenKind.WithKeyword or TokenKind.InKeyword);
@@ -2792,6 +2797,12 @@ public sealed class Parser
                     Expr? value = hasValue ? ParseExpression() : null;
                     return new ReturnStmt(SpanFrom(start), value);
                 }
+            case TokenKind.FailKeyword:
+                {
+                    var keyword = Advance();
+                    if (BreaksLine(_pos) && !HasBlankLineBefore(_pos) && CanStartExpression(Kind) && !IsStatementKeyword(Kind)) ReportOnNewLine(keyword);
+                    return new FailStmt(SpanFrom(start), ParseExpression());
+                }
             case TokenKind.BreakKeyword:
                 return new BreakStmt(SpanFrom(start), ParseJumpLabel(Advance()));
             case TokenKind.ContinueKeyword:
@@ -2980,7 +2991,7 @@ public sealed class Parser
         TokenKind.Dot or TokenKind.DotDot or TokenKind.DotDotEquals or TokenKind.Plus or TokenKind.Minus or TokenKind.Bang or
         TokenKind.NotKeyword or TokenKind.Tilde or TokenKind.Caret or TokenKind.TrueKeyword or TokenKind.FalseKeyword or TokenKind.NullKeyword or
         TokenKind.ThisKeyword or TokenKind.TryKeyword or TokenKind.NewKeyword or TokenKind.MoveKeyword or TokenKind.ReturnKeyword or
-        TokenKind.BreakKeyword or TokenKind.ContinueKeyword;
+        TokenKind.FailKeyword or TokenKind.BreakKeyword or TokenKind.ContinueKeyword;
 
     public Expr ParseExpression()
     {
@@ -3205,6 +3216,9 @@ public sealed class Parser
                         : null;
                     return new JumpExpr(SpanFrom(start), new ReturnStmt(SpanFrom(start), value));
                 }
+            case TokenKind.FailKeyword:
+                Advance();
+                return new JumpExpr(SpanFrom(start), new FailStmt(SpanFrom(start), ParseBinary(Prec.LogicalOr)));
             case TokenKind.BreakKeyword:
                 Advance();
                 return new JumpExpr(SpanFrom(start), new BreakStmt(SpanFrom(start), Kind == TokenKind.Identifier && !Current.HasNewlineBefore ? NameOf(Advance()) : null));
@@ -3216,7 +3230,13 @@ public sealed class Parser
                     Advance();
                     var type = ParseType();
                     Expect(TokenKind.CloseParen);
+                    var typeSpan = SpanFrom(start);
                     var operand = ParseUnary();
+                    var typeText = _source.GetText(type.Span);
+                    var inner = operand is ParenExpr p ? p.Inner : operand;
+                    Report(DiagnosticCodes.CastInput, typeSpan, [typeText], label: "a cast",
+                        help: $"call the conversion: `{typeText}(x)`",
+                        fix: new Fix(SpanFrom(start), $"{typeText}({_source.GetText(inner.Span)})"));
                     return new CastExpr(SpanFrom(start), type, operand);
                 }
         }
@@ -3851,6 +3871,15 @@ public sealed class Parser
                 }
                 Expect(TokenKind.CloseParen);
                 return new VariantPattern(SpanFrom(start), variant, elements.ToArray());
+            }
+            // `.percentOff p`: binds the whole value, narrowed to the case; `when` starts a guard.
+            case TokenKind.Dot when IsName(Peek(1)) && Peek(2) == TokenKind.Identifier && !PeekToken(2).HasNewlineBefore
+                && Text(PeekToken(2)) != "when":
+            {
+                Advance();
+                var variant = new TargetMemberExpr(SpanFrom(start), NameOf(Advance()));
+                var binding = NameOf(Advance());
+                return new VariantPattern(SpanFrom(start), variant, []) { Binding = binding };
             }
             case TokenKind.Identifier when Text(Current) == "_" && Peek(1) is not (TokenKind.Dot or TokenKind.OpenParen):
                 Advance();

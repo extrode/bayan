@@ -5,7 +5,7 @@ struct P {
 }
 
 P mk(bool ok) fails MkError {
-    return .bad if !ok
+    fail .bad if !ok
     return { x: 7 }
 }
 

@@ -5,8 +5,8 @@ union error E {
 }
 
 i64 parse(i64 n) fails E {
-    return .bad if n == 0
-    return .worse if n < 0
+    fail .bad if n == 0
+    fail .worse if n < 0
     return n
 }
 

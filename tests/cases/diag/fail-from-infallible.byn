@@ -1,0 +1,10 @@
+union error ParseError {
+    empty
+}
+
+i64 f(string s) {
+    fail ParseError.empty if s.isEmpty
+    return 1
+}
+
+print($"{f("x")}")

@@ -311,7 +311,7 @@ void display(ref StrBuf sb, ReadOnlySpan<u8> text) {
         let d = decodeAt(text, pos)
         let v = d.value
         let hidden = (v < 0x20 && v != 0x09) || v == 0x7F || (v >= 0x202A && v <= 0x202E) || (v >= 0x2066 && v <= 0x2069)
-        sb.append($"{(rune)(hidden ? replacementCharacter : v)}")
+        sb.append($"{rune(hidden ? replacementCharacter : v)}")
         pos += d.length
     }
 }

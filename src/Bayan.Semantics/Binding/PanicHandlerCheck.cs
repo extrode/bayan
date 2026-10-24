@@ -41,6 +41,7 @@ internal static class PanicHandlerCheck
                 case BoundLocalDecl d: own.Add(d.Local); break;
                 case BoundBindPattern { Local: { } l }: own.Add(l); break;
                 case BoundPropertyPattern { Designation: { } l }: own.Add(l); break;
+                case BoundUnionPattern { Designation: { } l }: own.Add(l); break;
                 case BoundFor f: own.Add(f.Variable); break;
                 case BoundCatch { Binding: { } l }: own.Add(l); break;
                 case BoundErrdefer { Error: { } l }: own.Add(l); break;

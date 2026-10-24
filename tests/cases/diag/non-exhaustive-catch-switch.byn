@@ -13,7 +13,7 @@ union error DbError {
 union error SignupError = EmailError, DbError
 
 i64 signUp(i64 n) fails SignupError {
-    return .invalid if n == 1
+    fail .invalid if n == 1
     return n
 }
 

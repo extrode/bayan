@@ -24,13 +24,13 @@ public struct Money {
     public Currency currency
 
     public Money plus(Money other) fails PricingError {
-        return .currencyMismatch if other.currency != currency
-        return .overflow if other.cents > 0 && cents > maxCents - other.cents
+        fail .currencyMismatch if other.currency != currency
+        fail .overflow if other.cents > 0 && cents > maxCents - other.cents
         return Money { cents: cents + other.cents, currency: currency }
     }
 
     public Money minus(Money other) fails PricingError {
-        return .currencyMismatch if other.currency != currency
+        fail .currencyMismatch if other.currency != currency
         return Money { cents: cents - other.cents, currency: currency }
     }
 
@@ -38,7 +38,7 @@ public struct Money {
 
     /// This amount at a rate in basis points (800 = 8%), rounded half up. Non-negative amounts.
     public Money atRate(i64 basisPoints) fails PricingError {
-        return .overflow if basisPoints > 0 && cents > (maxCents - 5000) / basisPoints
+        fail .overflow if basisPoints > 0 && cents > (maxCents - 5000) / basisPoints
         return Money { cents: (cents * basisPoints + 5000) / 10000, currency: currency }
     }
 

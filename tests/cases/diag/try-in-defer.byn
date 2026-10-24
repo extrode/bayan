@@ -3,7 +3,7 @@ union error IoError {
 }
 
 void flush() fails IoError {
-    return .full if false
+    fail .full if false
 }
 
 void work() fails IoError {

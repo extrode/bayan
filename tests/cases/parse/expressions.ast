@@ -12,7 +12,7 @@ CompilationUnit
   Let named = (tuple (x: 1) (y: 2))
   Let empty = (list)
   Let spread = (list (spread a) (spread b))
-  Let cast = (cast u8 (paren (+ x 1)))
+  Let cast = (call u8 (+ x 1))
   Let neg = (- (paren (- a b)))
   Let bits = (| (& (~ a) 0xF) (<< b 2))
   Let r = (.. 0 n)

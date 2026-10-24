@@ -116,6 +116,9 @@ public enum ConversionKind
 
 public sealed record BoundConversion(Node Syntax, BoundExpr Operand, TypeSymbol Type, ConversionKind Kind) : BoundExpr(Syntax, Type);
 
+/// <summary><c>u8.tryFrom(x)</c>: <see cref="Operand"/> converted to <see cref="Target"/>, or <c>null</c> when it does not fit.</summary>
+public sealed record BoundTryFrom(Node Syntax, BoundExpr Operand, PrimitiveType Target, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
 public sealed record BoundConditional(Node Syntax, BoundExpr Condition, BoundExpr WhenTrue, BoundExpr WhenFalse, TypeSymbol Type)
     : BoundExpr(Syntax, Type);
 
@@ -270,7 +273,14 @@ public sealed record BoundSwitch(Node Syntax, BoundExpr Value, BoundSwitchSectio
 public sealed record BoundDefer(Node Syntax, BoundStmt Body) : BoundStmt(Syntax);
 
 /// <summary><c>assert condition;</c>; <see cref="BoundNode.Syntax"/> is the <c>AssertStmt</c>.</summary>
-public sealed record BoundAssert(Node Syntax, BoundExpr Condition) : BoundStmt(Syntax);
+public sealed record BoundAssert(Node Syntax, BoundExpr Condition) : BoundStmt(Syntax)
+{
+    /// <summary><c>assert f() fails E[.x]</c>: <see cref="Condition"/> is the call, which must fail with a case of this set.</summary>
+    public ErrorSetSymbol? FailsWith { get; init; }
+
+    /// <summary>The one case <c>assert f() fails E.x</c> expects; null when any case of <see cref="FailsWith"/> will do.</summary>
+    public ErrorVariantSymbol? FailsCase { get; init; }
+}
 
 public sealed record BoundErrdefer(Node Syntax, LocalSymbol? Error, BoundStmt Body) : BoundStmt(Syntax);
 
@@ -317,9 +327,13 @@ public sealed record BoundMemberStep(FieldSymbol? Field, PropertySymbol? Propert
 public sealed record BoundPropertyPattern(Node Syntax, TypeSymbol InputType, TypeSymbol ValueType, BoundSubpattern[] Subpatterns, LocalSymbol? Designation)
     : BoundPattern(Syntax, InputType);
 
+/// <summary><c>p.rate</c> where <c>p</c> was bound by <c>.percentOff p</c>: a payload field of a value known to hold <see cref="Variant"/>.</summary>
+public sealed record BoundUnionField(Node Syntax, BoundExpr Receiver, UnionVariantSymbol Variant, int Index)
+    : BoundExpr(Syntax, Variant.Fields[Index].Type);
+
 /// <summary>
 /// <c>.Circle(let r)</c> or <c>.None</c>: a tag test, then each subpattern on its payload field.
-/// On an optional input the value must be present.
+/// On an optional input the value must be present. <c>.Circle c</c> binds the whole value to <see cref="Designation"/>.
 /// </summary>
-public sealed record BoundUnionPattern(Node Syntax, TypeSymbol InputType, UnionVariantSymbol Variant, BoundPattern[] Subpatterns)
+public sealed record BoundUnionPattern(Node Syntax, TypeSymbol InputType, UnionVariantSymbol Variant, BoundPattern[] Subpatterns, LocalSymbol? Designation = null)
     : BoundPattern(Syntax, InputType);

@@ -230,6 +230,9 @@ public static class AstDump
                 case ReturnStmt s:
                     Line(depth, "Return" + (s.Value is null ? "" : " " + AstDump.Expr(s.Value)));
                     break;
+                case FailStmt s:
+                    Line(depth, "Fail " + AstDump.Expr(s.Error));
+                    break;
                 case BreakStmt s:
                     Line(depth, "Break" + (s.Label is null ? "" : " " + s.Label.Text));
                     break;
@@ -291,7 +294,7 @@ public static class AstDump
                     Stmt(depth + 1, s.Body);
                     break;
                 case AssertStmt s:
-                    Line(depth, "Assert " + AstDump.Expr(s.Condition));
+                    Line(depth, "Assert " + AstDump.Expr(s.Condition) + (s.Fails is null ? "" : " fails " + AstDump.Expr(s.Fails)));
                     break;
                 case ContextStmt s:
                     Line(depth, "Provide " + string.Join(", ", s.Values.Select(v => v.Name.Text + ": " + AstDump.Expr(v.Value))));
@@ -478,6 +481,7 @@ public static class AstDump
                     break;
                 case VariantPattern p:
                     sb.Append("(variant .").Append(p.Variant.Member.Text);
+                    if (p.Binding is not null) sb.Append(' ').Append(p.Binding.Text);
                     foreach (var e in p.Elements)
                     {
                         sb.Append(' ');
@@ -687,6 +691,9 @@ public static class AstDump
                     {
                         case ReturnStmt r:
                             Sexp(sb, "return", r.Value is null ? [] : [r.Value]);
+                            break;
+                        case FailStmt f:
+                            Sexp(sb, "fail", [f.Error]);
                             break;
                         case BreakStmt b:
                             sb.Append("(break").Append(b.Label is null ? "" : " " + b.Label.Text).Append(')');

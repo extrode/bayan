@@ -9,7 +9,7 @@ union error RangeError {
 }
 
 i64!ParseError parse(string s) {
-    return .empty if s.length == 0
+    fail .empty if s.length == 0
     return 1
 }
 

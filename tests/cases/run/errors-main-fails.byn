@@ -4,7 +4,7 @@ union error ConfigError {
 }
 
 void load(bool present) fails ConfigError {
-    return .missing if !present
+    fail .missing if !present
 }
 
 void main() fails ConfigError {

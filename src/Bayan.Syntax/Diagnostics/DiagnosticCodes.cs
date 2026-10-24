@@ -88,6 +88,8 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ExceptNotPattern = Error("BYN1052", "`except` takes a pattern, not a condition");
     public static readonly DiagnosticDescriptor OneLineDeclarations = Error("BYN1053", "`{0}` declares its cases on one line; write one per line");
     public static readonly DiagnosticDescriptor TryCoversMore = Error("BYN1054", "`try` covers `{0}`, which cannot fail");
+    public static readonly DiagnosticDescriptor ReturnErrorInput = Error("BYN1056", "`return .{0}` returns an error; write `fail .{0}`");
+    public static readonly DiagnosticDescriptor CastInput = Error("BYN1057", "`({0})x` is an input form; write `{0}(x)`");
     public static readonly DiagnosticDescriptor TrustInput = Error("BYN1062", "`trust(x, reason: …)` is now `x.trustUnchecked() because \"…\"`");
     public static readonly DiagnosticDescriptor RestInput = Error("BYN1058", "`{0}` is an input form; write `rest ReadOnlySpan<{1}> {2}`");
     public static readonly DiagnosticDescriptor StateLineInput = Error("BYN1059", "`state {0}` is an input form; declare the states in one `states {{ … }}` block");

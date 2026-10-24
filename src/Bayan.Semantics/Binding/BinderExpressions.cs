@@ -181,11 +181,10 @@ internal sealed partial class Binder
         if (Conversions.Explicit(value.Type, target) is ConversionKind.NumericCast or ConversionKind.CharToInteger or ConversionKind.IntegerToChar)
         {
             var text = Source.GetText(span);
-            var wrapped = value.Syntax is NameExpr or LiteralExpr or MemberExpr or CallExpr or ParenExpr or IndexExpr ? text : "(" + text + ")";
             help = value.Type.IsNumeric && target.IsNumeric
-                ? $"cast it if the value always fits; `{value.Type.DisplayName}` does not convert to `{target.DisplayName}` without loss"
-                : "cast it explicitly";
-            fix = new Fix(span, $"({target.DisplayName}){wrapped}");
+                ? $"convert it if the value always fits; `{value.Type.DisplayName}` does not convert to `{target.DisplayName}` without loss"
+                : "convert it explicitly";
+            fix = new Fix(span, $"{target.DisplayName}({text})");
         }
         else if (value.Type is OptionalType o && o.Inner.Equals(target))
         {
@@ -691,6 +690,8 @@ internal sealed partial class Binder
                 }
                 break;
             }
+            case UnionSymbol when target is BoundLocal l && _narrowed.TryGetValue(l.Local, out var narrowed) && narrowed.Fields.FindIndex(f => f.Name == name) is var index and >= 0:
+                return new BoundUnionField(syntax, target, narrowed, index);
             case UnionSymbol u when u.Variants.Any(v => v.Fields.Any(f => f.Name == name)):
                 Report(DiagnosticCodes.PayloadNeedsPattern, member.Span, [u.Name, name],
                     help: "match the variant and bind the field, as in `case .Variant(let x):`");
@@ -982,7 +983,7 @@ internal sealed partial class Binder
         if (!ok)
         {
             Report(DiagnosticCodes.BadUnaryOperand, u.Span, [UnaryText(u.Op), t.DisplayName],
-                help: u.Op == UnaryOp.Negate && t.IsUnsignedInteger ? "cast to a signed type first; unsigned values cannot be negative" : null);
+                help: u.Op == UnaryOp.Negate && t.IsUnsignedInteger ? "convert to a signed type first; unsigned values cannot be negative" : null);
             return new BoundErrorExpr(u);
         }
         var result = new BoundUnary(u, u.Op, operand, t);
@@ -1276,14 +1277,16 @@ internal sealed partial class Binder
         return result;
     }
 
-    private BoundExpr BindCast(CastExpr c)
+    private BoundExpr BindCast(CastExpr c) => BindConversion(c, ResolveType(c.Type), c.Operand);
+
+    /// <summary><c>u8(x)</c> (or the input form <c>(u8)x</c>): a checked conversion that traps when the value does not fit.</summary>
+    private BoundExpr BindConversion(Expr c, TypeSymbol target, Expr operandSyntax)
     {
-        var target = ResolveType(c.Type);
-        var operand = BindExpr(c.Operand, target.IsNumeric ? null : target);
+        var operand = BindExpr(operandSyntax, target.IsNumeric ? null : target);
         if (target.IsError || operand.Type.IsError) return new BoundErrorExpr(c);
         if (operand.Constant is { Value: Int128 } && target.IsInteger && operand.Syntax is LiteralExpr or UnaryExpr)
         {
-            // `(u8)300` is a compile-time error rather than a runtime trap.
+            // `u8(300)` is a compile-time error rather than a runtime trap.
             return Convert(operand, target, c.Span);
         }
         var kind = Conversions.Explicit(operand.Type, target);

@@ -33,6 +33,9 @@ internal sealed partial class Binder
                 help: "explain the bypass in a `because` clause");
         if (c.Callee is MemberExpr { Member.Text: "trustUnchecked", NullConditional: false } trusted && c.Args.Length == 0)
             return BindTrustUnchecked(c, trusted);
+        if (c.Callee is MemberExpr { Member.Text: "tryFrom", NullConditional: false, Target: NameExpr into }
+            && PrimitiveType.ByName.TryGetValue(into.Name.Text, out var target) && target.IsNumeric)
+            return BindTryFrom(c, target);
         var callee = c.Callee is TargetMemberExpr t ? BindTargetMember(t, expected) : BindExprOrType(c.Callee);
         switch (callee)
         {
@@ -63,6 +66,25 @@ internal sealed partial class Binder
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
         }
+    }
+
+    /// <summary><c>u8.tryFrom(x)</c>: a numeric conversion that gives <c>null</c> instead of trapping when the value does not fit.</summary>
+    private BoundExpr BindTryFrom(CallExpr c, PrimitiveType target)
+    {
+        if (c.Args is not [{ Name: null } arg])
+        {
+            Report(DiagnosticCodes.TooManyArguments, c.Callee.Span, [$"{target.Name}.tryFrom", 1]);
+            BindArgumentsForRecovery(c);
+            return new BoundErrorExpr(c);
+        }
+        var operand = BindExpr(arg.Value);
+        if (operand.Type.IsError) return new BoundErrorExpr(c);
+        if (!operand.Type.IsNumeric)
+        {
+            Report(DiagnosticCodes.InvalidCast, arg.Value.Span, [operand.Type.DisplayName, target.DisplayName]);
+            return new BoundErrorExpr(c);
+        }
+        return new BoundTryFrom(c, operand, target, new OptionalType(target));
     }
 
     private void BindArgumentsForRecovery(CallExpr c)
@@ -425,9 +447,11 @@ internal sealed partial class Binder
             case ErrorType:
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
+            case PrimitiveType p when (p.IsNumeric || p == PrimitiveType.Char) && c.Args is [{ Name: null } arg]:
+                return BindConversion(c, p, arg.Value);
             default:
                 Report(DiagnosticCodes.NotCallable, c.Callee.Span, [type.DisplayName],
-                    help: type.IsNumeric || type == PrimitiveType.Char ? $"convert with a cast: `({type.DisplayName})x`" : null);
+                    help: type.IsNumeric || type == PrimitiveType.Char ? $"convert one value: `{type.DisplayName}(x)`" : null);
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
         }
@@ -588,6 +612,9 @@ internal sealed partial class Binder
 
     /// <summary>Whether the patterns being bound are on a <c>switch move x</c> subject, so their bindings own their parts (spec §9.3).</summary>
     private bool _patternOwns;
+
+    /// <summary>Locals bound by <c>.case name</c>, and the variant each is known to hold.</summary>
+    private readonly Dictionary<LocalSymbol, UnionVariantSymbol> _narrowed = new();
 
     /// <summary>A switch subject; <c>move x</c> moves a local or <c>move</c> parameter into the switch, and <paramref name="owns"/> says its bindings own their parts.</summary>
     private BoundExpr BindSwitchSubject(Expr value, out bool owns)
@@ -867,7 +894,7 @@ internal sealed partial class Binder
                 return new BoundPropertyPattern(p, input, tt, subs, null);
             }
             case VariantPattern vp:
-                return BindUnionPattern(vp, input, null, vp.Variant.Member, vp.Elements);
+                return BindUnionPattern(vp, input, null, vp.Variant.Member, vp.Elements, vp.Binding);
             case PositionalPattern { Type: NamedType { Path.Length: > 1, Args.Length: 0 } nt } pos:
             {
                 // `Option2.Some(let v)` on an `Option2<i64>` names the generic union without its type arguments.
@@ -946,7 +973,8 @@ internal sealed partial class Binder
         BoundBinaryPattern b => OwningPaths(b.Left).Concat(OwningPaths(b.Right)),
         BoundPropertyPattern pp => (pp.Designation is { } d && TypeFacts.IsUnique(d.Type) ? [[]] : Enumerable.Empty<object[]>())
             .Concat(pp.Subpatterns.SelectMany(s => OwningPaths(s.Pattern).Select(q => s.Path.Concat(q).ToArray()))),
-        BoundUnionPattern up => up.Subpatterns.SelectMany((s, i) => OwningPaths(s).Select(q => q.Prepend((up.Variant, i)).ToArray())),
+        BoundUnionPattern up => (up.Designation is { } d && TypeFacts.IsUnique(d.Type) ? [[]] : Enumerable.Empty<object[]>())
+            .Concat(up.Subpatterns.SelectMany((s, i) => OwningPaths(s).Select(q => q.Prepend((up.Variant, i)).ToArray()))),
         _ => [],
     };
 
@@ -970,6 +998,7 @@ internal sealed partial class Binder
                 foreach (var s in pp.Subpatterns) GuardBindings(s.Pattern, guard);
                 break;
             case BoundUnionPattern up:
+                if (up.Designation is { } ud) ud.GuardSpan = guard;
                 foreach (var s in up.Subpatterns) GuardBindings(s, guard);
                 break;
         }
@@ -990,15 +1019,16 @@ internal sealed partial class Binder
         BoundNotPattern n => HasBindings(n.Operand),
         BoundBinaryPattern b => HasBindings(b.Left) || HasBindings(b.Right),
         BoundPropertyPattern pp => pp.Designation is not null || pp.Subpatterns.Any(s => HasBindings(s.Pattern)),
-        BoundUnionPattern up => up.Subpatterns.Any(HasBindings),
+        BoundUnionPattern up => up.Designation is not null || up.Subpatterns.Any(HasBindings),
         _ => false,
     };
 
     /// <summary>
     /// <c>.Circle(let r)</c> or <c>Shape.Circle(let r)</c>; <paramref name="owner"/> is the written union, if any.
-    /// Elements are null for a unit variant written as a constant (<c>.None</c>).
+    /// Elements are null for a unit variant written as a constant (<c>.None</c>). <paramref name="binding"/> is the
+    /// <c>c</c> of <c>.Circle c</c>: the whole value, narrowed to the variant.
     /// </summary>
-    private BoundPattern BindUnionPattern(Pattern p, TypeSymbol input, TypeSymbol? owner, Name name, Pattern[] elements)
+    private BoundPattern BindUnionPattern(Pattern p, TypeSymbol input, TypeSymbol? owner, Name name, Pattern[] elements, Name? binding = null)
     {
         var target = Unwrap(input);
         UnionVariantSymbol? variant = null;
@@ -1010,6 +1040,8 @@ internal sealed partial class Binder
             if (variant is null)
                 Report(DiagnosticCodes.UnknownUnionVariant, name.Span, [name.Text, u.Name],
                     help: Suggest(name.Text, u.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
+            else if (binding is not null)
+                return BindWholeVariant(p, input, target, variant, binding);
             else if (variant.Fields.Count == 0)
                 Report(DiagnosticCodes.VariantHasNoPayload, p.Span, [variant.Name], help: $"match it with `.{variant.Name}`");
             else if (elements.Length != variant.Fields.Count)
@@ -1018,11 +1050,21 @@ internal sealed partial class Binder
         }
         else if (!target.IsError && (owner ?? target) is not ErrorType)
             Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`.{name.Text}(…)`", target.DisplayName]);
+        if (binding is not null) DeclareLocal(binding, ErrorType.Instance, LocalKind.PatternVariable);
         var ok = variant is not null && variant.Fields.Count == elements.Length && elements.Length > 0;
         var subs = new BoundPattern[elements.Length];
         for (var i = 0; i < subs.Length; i++)
             subs[i] = BindPattern(elements[i], ok ? variant!.Fields[i].Type : ErrorType.Instance);
         return ok ? new BoundUnionPattern(p, input, variant!, subs) : new BoundBindPattern(p, input, null);
+    }
+
+    /// <summary><c>.percentOff p</c>: a tag test that binds the whole value as <c>p</c>, whose payload fields read as <c>p.rate</c>.</summary>
+    private BoundUnionPattern BindWholeVariant(Pattern p, TypeSymbol input, TypeSymbol union, UnionVariantSymbol variant, Name binding)
+    {
+        var local = DeclareLocal(binding, union, LocalKind.PatternVariable);
+        local.BorrowsSubject = !_patternOwns;
+        _narrowed[local] = variant;
+        return new BoundUnionPattern(p, input, variant, [], local);
     }
 
     private void RequireConstant(BoundExpr value, TextSpan span)
