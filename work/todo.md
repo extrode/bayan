@@ -254,3 +254,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-53c2: a generic struct with states relies on `Compilation.States` holding each instantiation; untested.
 - r3-53c2: BYN7009: a `become` inside a loop body does not count after the loop.
 - r3-53c2: BYN7003's third form on a `move this` or plain `this` method is followed by BYN2115 at the same call (one extra error).
+- `scripts/plan-strings-check.js` parses only `BYN####` entries, so CLI `Messages` strings copied from the plan (e.g. `FormatterHint`, plan §29 (a)) are never checked against it.
