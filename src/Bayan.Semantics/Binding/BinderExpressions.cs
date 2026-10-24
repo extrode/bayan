@@ -438,13 +438,18 @@ internal sealed partial class Binder
                 return new BoundLiteral(n, local.Type, c) { Constant = c };
             if (IsNonNull(local))
                 return new BoundConversion(n, new BoundLocal(n, local), ((OptionalType)local.Type).Inner, ConversionKind.Narrow);
-            return new BoundLocal(n, local);
+            // A local whose state is known reads as its state type (spec §3.17).
+            return KnownState(local) is { } known ? new BoundLocal(n, local) { Type = known } : new BoundLocal(n, local);
         }
         // A default cloned onto a struct sees only the interface's members through `this`, as its template did,
         // so a bare name means the same for every conformer.
         if (_thisType is not null && (_fn?.Template?.Interface is not { } cloneOf || LookupMember(cloneOf.Self, name) is not null)
             && LookupMember(_thisType, name) is { } member)
             return BindImplicitThisMember(n, member);
+        // A bare payload field reads through `this`, in the states the receiver declares.
+        if (_thisType is StructSymbol self && _fn is { IsStatic: false } && _c.StatesOf(self) is { } states
+            && states.Variants.Any(v => v.Fields.Any(f => f.Name == name)))
+            return BindValueMember(n, new BoundThis(n, self), n.Name);
         if (Module.Constants.TryGetValue(name, out var constant)) return ConstantRef(n, constant);
         if (Module.Functions.TryGetValue(name, out var fns)) return new BoundMethodGroup(n, null, fns[0]);
         if (Module.Types.TryGetValue(name, out var type))
@@ -700,6 +705,7 @@ internal sealed partial class Binder
                     CheckAccess(method.Access, s, s.Module, member);
                     return new BoundMethodGroup(syntax, method.IsStatic ? null : target, method);
                 }
+                if (_c.StatesOf(s) is { } states && BindPayloadField(syntax, target, states, member) is { } payload) return payload;
                 break;
             }
             case ErrorSetSymbol or ErrorUnionType when target is BoundLocal el && _errorNarrowed.TryGetValue(el.Local, out var errorCase)

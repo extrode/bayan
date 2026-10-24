@@ -21,6 +21,12 @@ internal sealed partial class Binder
             return new BoundErrorStmt(b);
         }
         var fn = _fn!;
+        // A static method has no `this` to change; a method that does not take `ref this` is BYN2115 (Question 297).
+        if (fn.IsStatic)
+            Report(DiagnosticCodes.Unsupported, new TextSpan(b.Span.Start, "become".Length), ["`become` in a static method"],
+                help: "remove `become`; only an instance method has a `this` to change");
+        else
+            CheckWritable(new BoundThis(b, owner!), new TextSpan(b.Span.Start, "become".Length), "`become` changes its state");
         if (fn.Decl?.Becomes is not { } becomes)
             Report(DiagnosticCodes.BecomeUndeclared, new TextSpan(b.Span.Start, "become".Length), [state.Name, fn.Name],
                 help: $"add `becomes .{state.Name}` to the signature of `{fn.Name}`",
@@ -67,5 +73,188 @@ internal sealed partial class Binder
         Report(DiagnosticCodes.WrongState, span, [callee, value is BoundThis ? "this" : Source.GetText(span), string.Join(" or .", wanted.States.Select(v => v.Name)), known.DisplayName],
             help: "check the state with `is` or `switch` first");
         return true;
+    }
+
+    /// <summary>The states union of a struct with states, or of a state type, through an optional; null for any other type.</summary>
+    private UnionSymbol? StatesUnion(TypeSymbol t) => Unwrap(t) switch
+    {
+        StateType st => _c.StatesOf(st.Struct),
+        StructSymbol s => _c.StatesOf(s),
+        _ => null,
+    };
+
+    /// <summary>The struct of a state type, or the struct itself; null for any other type.</summary>
+    private static StructSymbol? StateStruct(TypeSymbol t) => t switch
+    {
+        StateType st => st.Struct,
+        StructSymbol s => s,
+        _ => null,
+    };
+
+    /// <summary>The states a value of <paramref name="t"/> may be in: those its state type lists, else every state.</summary>
+    private static IReadOnlyList<UnionVariantSymbol> PossibleStates(TypeSymbol t, UnionSymbol states) =>
+        Unwrap(t) is StateType st ? st.States : states.Variants;
+
+    /// <summary>
+    /// <c>o.payment</c>, a payload field: readable when every state <paramref name="target"/> may be in has it with the same type
+    /// (spec §3.17), else BYN7002. Null when no state has a field of that name.
+    /// </summary>
+    private BoundExpr? BindPayloadField(Node syntax, BoundExpr target, UnionSymbol states, Name member)
+    {
+        var name = member.Text;
+        if (states.Variants.FirstOrDefault(v => v.Fields.Any(f => f.Name == name)) is not { } holder) return null;
+        var known = target is BoundThis && _fn is { } fn && ReceiverStates(fn) is { } own ? own.States : PossibleStates(target.Type, states);
+        var index = known[0].Fields.FindIndex(f => f.Name == name);
+        if (index >= 0 && known.All(v => v.Fields.FindIndex(f => f.Name == name) == index
+            && v.Fields.Take(index + 1).Select(f => f.Type).SequenceEqual(known[0].Fields.Take(index + 1).Select(f => f.Type))))
+            // Every state holds the field after the same field types, so C reads it through any of them (a common initial sequence).
+            return new BoundUnionField(syntax, target, known[0], index);
+        if (index >= 0 && known.All(v => v.Fields.Any(f => f.Name == name && f.Type.Equals(known[0].Fields[index].Type))))
+        {
+            Report(DiagnosticCodes.Unsupported, syntax.Span, [$"reading `{name}` from states that hold it at different places"],
+                help: $"match one state with `is` or `switch` before reading `{name}`");
+            return new BoundErrorExpr(syntax);
+        }
+        var what = target is BoundThis ? "this" : Source.GetText(target.Syntax.Span);
+        Report(DiagnosticCodes.PayloadNotInState, syntax.Span, [name, holder.Name, what],
+            help: $"match `.{holder.Name}` with `is` or `switch` before reading `{name}`");
+        return new BoundErrorExpr(syntax);
+    }
+
+    /// <summary>
+    /// BYN7004: a <c>switch</c> on a value with states must handle each state it may be in, unless a <c>default</c> or an
+    /// irrefutable arm covers the rest. A statement's fix adds an empty <c>case .s:</c> section; an arm needs a value, so an
+    /// expression gets none (Question 296).
+    /// </summary>
+    private bool CheckStatesExhaustive(Node s, TypeSymbol type, UnionSymbol states, IReadOnlyList<(BoundPattern? Pattern, BoundExpr? Guard)> arms)
+    {
+        var covered = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (pattern, guard) in arms)
+        {
+            if (pattern is null) return true;
+            if (guard is not null) continue;
+            if (Irrefutable(pattern)) return true;
+            Collect(pattern, type, covered);
+        }
+        var missing = PossibleStates(type, states).Where(v => !covered.Contains("." + v.Name)).ToList();
+        if (missing.Count == 0) return true;
+        var bytes = Source.Bytes.Span;
+        var keyword = s is SwitchExpr e ? e.Value.Span.End + bytes[e.Value.Span.End..].IndexOf("switch"u8) : s.Span.Start;
+        var last = s is SwitchStmt { Sections.Length: > 0 } st ? st.Sections[^1] : null;
+        var indent = 0;
+        if (last is not null)
+            while (last.Span.Start - indent > 0 && bytes[last.Span.Start - indent - 1] is (byte)' ' or (byte)'\t') indent++;
+        foreach (var v in missing)
+            Report(DiagnosticCodes.StateSwitchNotExhaustive, new TextSpan(keyword, "switch".Length), [v.Name],
+                help: $"add a `case .{v.Name}` arm",
+                fix: last is null ? null : new Fix(new TextSpan(last.Span.End, 0), "\n" + Source.GetText(new TextSpan(last.Span.Start - indent, indent)) + $"case .{v.Name}:"));
+        return false;
+    }
+
+    // ── What a local is known to be (spec §3.17) ─────────────────────────────────
+
+    /// <summary>
+    /// The states locals are known to be in, each with the scope that learned it: after <c>is</c>, in a switch arm, after
+    /// a <c>becomes</c> call or an assignment. The latest fact whose scope is still open wins.
+    /// </summary>
+    private readonly List<(Scope Scope, LocalSymbol Local, StateType Type)> _stateFacts = new();
+
+    private bool IsOpen(Scope scope)
+    {
+        for (var s = _scope; s is not null; s = s.Parent)
+            if (s == scope) return true;
+        return false;
+    }
+
+    private StateType? KnownState(LocalSymbol local)
+    {
+        for (var i = _stateFacts.Count - 1; i >= 0; i--)
+            if (_stateFacts[i].Local == local && IsOpen(_stateFacts[i].Scope)) return _stateFacts[i].Type;
+        return null;
+    }
+
+    private void LearnState(LocalSymbol local, StateType type) => _stateFacts.Add((_scope, local, type));
+
+    /// <summary>The state of <paramref name="local"/> may have changed: every fact about it is dropped, also outside the current scope.</summary>
+    private void ForgetState(LocalSymbol local) => _stateFacts.RemoveAll(f => f.Local == local);
+
+    /// <summary>
+    /// At the start of a loop, what a <c>var</c> or <c>ref</c> parameter was known to be no longer holds: the loop body may change
+    /// it after the reads that come first.
+    /// </summary>
+    private void ForgetChangingStates() => _stateFacts.RemoveAll(f => f.Local.IsMutable || f.Local is ParameterSymbol { IsByRef: true });
+
+    /// <summary>Learns, for the code that runs when <paramref name="cond"/> is <paramref name="whenTrue"/>, the states it proves.</summary>
+    private List<(Scope, LocalSymbol, StateType)> LearnStates(BoundExpr cond, bool whenTrue)
+    {
+        var learned = new List<(Scope, LocalSymbol, StateType)>();
+        Collect(cond, whenTrue);
+        _stateFacts.AddRange(learned);
+        return learned;
+
+        void Collect(BoundExpr c, bool when)
+        {
+            switch (c)
+            {
+                case BoundIs { Value: BoundLocal l } i when Narrow(l, i.Pattern, when) is { } type:
+                    learned.Add((_scope, l.Local, type));
+                    break;
+                case BoundUnary { Op: UnaryOp.Not } u:
+                    Collect(u.Operand, !when);
+                    break;
+                case BoundBinary { Op: BinaryOp.LogicalAnd or BinaryOp.LogicalOr } b when when == (b.Op == BinaryOp.LogicalAnd):
+                    Collect(b.Left, when);
+                    Collect(b.Right, when);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>Drops the facts <see cref="LearnStates"/> added, and those of scopes that have closed.</summary>
+    private void UnlearnStates(List<(Scope, LocalSymbol, StateType)> learned)
+    {
+        foreach (var f in learned) _stateFacts.Remove(f);
+        _stateFacts.RemoveAll(f => !IsOpen(f.Scope));
+    }
+
+    /// <summary>In a switch arm, the subject local is in the states the arm's pattern matches.</summary>
+    private void LearnArmState(BoundExpr subject, BoundPattern pattern)
+    {
+        if (subject is BoundLocal l && Narrow(l, pattern, true) is { } type) LearnState(l.Local, type);
+    }
+
+    /// <summary>
+    /// The type of <paramref name="value"/> once <paramref name="pattern"/> is known to have matched (or, with
+    /// <paramref name="matched"/> false, not to have matched); null when that proves nothing about its state.
+    /// </summary>
+    private StateType? Narrow(BoundLocal value, BoundPattern pattern, bool matched)
+    {
+        if (value.Type is OptionalType || StatesUnion(value.Type) is not { } states) return null;
+        var possible = PossibleStates(value.Type, states);
+        // A match proves the tag even when a payload subpattern also had to hold; a failed match proves it only for a bare tag test.
+        if (StatesOf(pattern, exact: !matched) is not { } tested) return null;
+        var left = possible.Where(v => tested.Contains(v) == matched).ToList();
+        if (left.Count == 0 || left.Count == possible.Count) return null;
+        return new StateType(value.Type is StateType st ? st.Struct : (StructSymbol)value.Type, left);
+
+        HashSet<UnionVariantSymbol>? StatesOf(BoundPattern p, bool exact) => p switch
+        {
+            BoundUnionPattern up when !exact || up.Subpatterns.All(Irrefutable) => [up.Variant],
+            BoundBinaryPattern { IsAnd: false } b when StatesOf(b.Left, exact) is { } l && StatesOf(b.Right, exact) is { } r => [.. l, .. r],
+            BoundBinaryPattern { IsAnd: true } b when Irrefutable(b.Right) => StatesOf(b.Left, exact),
+            BoundNotPattern n when StatesOf(n.Operand, !exact) is { } inner => states.Variants.Where(v => !inner.Contains(v)).ToHashSet(),
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// After <c>o.pay(…)</c> or <c>try o.pay(…)</c> as a statement, where <c>pay</c> takes <c>ref this</c> and <c>becomes .paid</c>,
+    /// the local <c>o</c> is <c>Order.paid</c>. A call that may fail and is handled in place leaves the state unknown.
+    /// </summary>
+    private void LearnBecomes(BoundExpr e)
+    {
+        if ((e is BoundTry t ? t.Operand : e) is BoundCall { Function: { IsMutating: true, Decl.Becomes: { } to, Owner: { } owner } fn, Receiver: BoundLocal l }
+            && (!fn.Fails || e is BoundTry) && _c.StatesOf(owner)?.Find(to.Text) is { } state)
+            LearnState(l.Local, new StateType(owner, [state]));
     }
 }
