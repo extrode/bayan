@@ -1,6 +1,3 @@
 let u: Untrusted<string> = Untrusted("x")
-let reason: string = "because"
-print(trust(u, reason: ""))
-print(trust(u, reason: reason))
-print(trust(u, reason: $"{reason}"))
 print(trust(u))
+print(trust(u, "checked"))

@@ -38,8 +38,8 @@ public sealed class L007UntrustedSinkTests
         // The deep check does not look inside structs; a struct never converts to `string`, so it is a plain mismatch.
         { "struct holding untrusted as program", "h", "none.asSpan()", "BYN2202" },
         { "list of structs holding untrusted as args", "{p}", "holders", "BYN2202" },
-        { "trusted program", "trust(name, reason: \"checked against the allow list\")", "none.asSpan()", "" },
-        { "trusted element", "{p}", "[\"a\", trust(name, reason: \"checked against the allow list\")]", "" },
+        { "trusted program", "name.trustUnchecked() because \"checked against the allow list\"", "none.asSpan()", "" },
+        { "trusted element", "{p}", "[\"a\", name.trustUnchecked() because \"checked against the allow list\"]", "" },
         { "plain program and args", "{p}", "[\"a\", \"b\"]", "" },
         { "plain list as args", "{p}", "none.asSpan()", "" },
     };

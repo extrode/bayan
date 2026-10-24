@@ -8,5 +8,5 @@ void main() fails IoError {
     try Io.runBatch("./build.cmd", ["a", name])
     try Io.runBatch("./build.cmd", many)
     try Io.runBatch("./build.cmd", span)
-    try Io.runBatch("./build.cmd", [trust(name, reason: "checked against the allow list")])
+    try Io.runBatch("./build.cmd", [name.trustUnchecked() because "checked against the allow list"])
 }

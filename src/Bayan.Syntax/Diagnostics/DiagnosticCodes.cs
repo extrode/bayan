@@ -86,6 +86,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ExceptInCase = Error("BYN1051", "`except` is not allowed in a `case` pattern");
     public static readonly DiagnosticDescriptor ExceptNotPattern = Error("BYN1052", "`except` takes a pattern, not a condition");
     public static readonly DiagnosticDescriptor OneLineDeclarations = Error("BYN1053", "`{0}` declares its cases on one line; write one per line");
+    public static readonly DiagnosticDescriptor TrustInput = Error("BYN1062", "`trust(x, reason: …)` is now `x.trustUnchecked() because \"…\"`");
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor UndefinedName = Error("BYN2001", "`{0}` is not defined");

@@ -1,0 +1,9 @@
+let u: Untrusted<string> = Untrusted("x")
+let v: Untrusted<i64> = Untrusted(1)
+let reason: string = "checked"
+print(trust(u, reason: "checked against the allow list"))
+print($"{trust(v, reason: "small") + 1}")
+print($"{trust(u, reason: "short").length}")
+print($"{trust(u, reason: "in a hole")}")
+print(trust(u, reason: reason))
+print(u.trustUnchecked() because "checked against the allow list")

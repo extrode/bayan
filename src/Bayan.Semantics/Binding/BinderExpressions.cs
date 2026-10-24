@@ -94,7 +94,7 @@ internal sealed partial class Binder
         if (_sinkArgument is { } sink && ContainsUntrusted(value.Type))
         {
             Report(DiagnosticCodes.UntrustedSink, span, [value.Type.DisplayName, sink],
-                help: "check the value, then clear the mark with `trust(x, reason: \"…\")`");
+                help: "check the value, then clear the mark with `x.trustUnchecked() because \"…\"`");
             return new BoundErrorExpr(value.Syntax);
         }
         ReportMismatch(value, target, span);

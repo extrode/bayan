@@ -195,3 +195,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51d: the `effect` keyword is still reserved.
 - r3-51d: `ref from Buf` (particle after the passing mode, `suq/fail/mode-particle.byn`) misparses with no diagnostic code.
 - r3-51d: the parser has no function types, so `uses` inside them is not handled.
+- r3-52a: `struct Point { f64 x, f64 y }` (fields on one line with `,`) is BYN1005 with a fix that leaves `, f64 y }` on the next line; no BYN1053 rewrite for fields.
+- r3-52a: BYN2787's page and `trust-reason.byn` still describe `trust(x, reason:)`; decide in 5.3e whether BYN2787 retires once `trust` is only an input form.
+- r3-52a: a user method named `trustUnchecked` with no arguments binds as the `Untrusted` unwrap (Question 143).

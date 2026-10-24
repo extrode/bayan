@@ -1,0 +1,42 @@
+error BYN1062: `trust(x, reason: …)` is now `x.trustUnchecked() because "…"`
+
+  4 │ print(trust(u, reason: "checked against the allow list"))
+    │       ^^^^^ the input form
+    │
+  help: call `trustUnchecked()` on the value and give the reason in `because`
+    │ 4 │ print(u.trustUnchecked() because "checked against the allow list")
+    │   │       +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+error BYN1062: `trust(x, reason: …)` is now `x.trustUnchecked() because "…"`
+
+  5 │ print($"{trust(v, reason: "small") + 1}")
+    │          ^^^^^ the input form
+    │
+  help: call `trustUnchecked()` on the value and give the reason in `because`
+    │ 5 │ print($"{(v.trustUnchecked() because "small") + 1}")
+    │   │          +++++++++++++++++++++++++++
+
+error BYN1062: `trust(x, reason: …)` is now `x.trustUnchecked() because "…"`
+
+  6 │ print($"{trust(u, reason: "short").length}")
+    │          ^^^^^ the input form
+    │
+  help: call `trustUnchecked()` on the value and give the reason in `because`
+    │ 6 │ print($"{(u.trustUnchecked() because "short").length}")
+    │   │          +++++++++++++++++++++++++++
+
+error BYN1062: `trust(x, reason: …)` is now `x.trustUnchecked() because "…"`
+
+  7 │ print($"{trust(u, reason: "in a hole")}")
+    │          ^^^^^ the input form
+    │
+  help: call `trustUnchecked()` on the value and give the reason in `because`
+    │ 7 │ print($"{u.trustUnchecked() because "in a hole"}")
+    │   │          ++++++++++++++++++++++++++++++++++++++
+
+error BYN1062: `trust(x, reason: …)` is now `x.trustUnchecked() because "…"`
+
+  8 │ print(trust(u, reason: reason))
+    │       ^^^^^ the input form
+    │
+  help: call `trustUnchecked()` on the value and give the reason in `because`

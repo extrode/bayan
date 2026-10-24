@@ -7,4 +7,4 @@ let s: string = u
 let v: Untrusted<string> = "y"
 show(u)
 print($"{u}")
-print(trust("z", reason: "not wrapped"))
+print("z".trustUnchecked() because "not wrapped")

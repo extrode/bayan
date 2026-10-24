@@ -213,6 +213,42 @@ public sealed class FormatTests
         Assert.Equal(once, File.ReadAllText(file));
     }
 
+    /// <summary>One of each round-3 input form (BYN1040–1053, 1062, 6001, 6006).</summary>
+    private const string Round3InputForms =
+        "/* Shapes. */\nunion Shape { circle(f64 r), square(f64 side) }\nenum Size { /* small */ s, m /* medium */, l }\n" +
+        "unique struct File {\n    i64 fd\n}\nerror enum StockError {\n    outOfStock\n}\n" +
+        "distinct type Percent = i32 requires value in 0..=100\n[Derive(Json)]\nstruct Parcel {\n    weight: i64\n}\n" +
+        "i32 twice(i32 n) noalloc => n * 2\nbool isA(char c) => c == 'a'\n" +
+        "Shape pick(Shape s) {\n    switch s {\n        case _ except .circle: return s\n        default: return s\n    }\n}\n" +
+        "add(a: i64, i64 b) -> i64 {\n    return a + b;\n}\n" +
+        "void run(Arena arena) {\n    context (allocator: arena) {\n        print(\"x\")\n    }\n}\n" +
+        "main() {\n    i64 t = add(1, b: 2); print($\"{t}\")\n    if t > 0 {\n        print(\"pos\")\n    }\n    else {\n        print(\"other\")\n    }\n" +
+        "    let u: Untrusted<string> = Untrusted(\"x\")\n    print(trust(u, reason: \"checked\"))\n}\n";
+
+    private const string Round3Canonical =
+        "// Shapes.\nunion Shape {\n    circle(f64 r)\n    square(f64 side)\n}\nenum Size { // small\n    s\n    m // medium\n    l\n}\n" +
+        "struct unique File {\n    i64 fd\n}\nunion error StockError {\n    outOfStock\n}\n" +
+        "type distinct Percent = i32 requires it in 0..=100\n@derive(Json)\nstruct Parcel {\n    i64 weight\n}\n" +
+        "i32 twice(i32 n) => n * 2\nbool isA(rune c) => c == 'a'\n" +
+        "Shape pick(Shape s) {\n    switch s {\n        case not .circle: return s\n        default: return s\n    }\n}\n" +
+        "i64 add(i64 a, i64 b) {\n    return a + b\n}\n" +
+        "void run(Arena arena) {\n    provide allocator: arena {\n        print(\"x\")\n    }\n}\n" +
+        "void main() {\n    let t: i64 = add(1, b: 2)\n    print($\"{t}\")\n    if t > 0 {\n        print(\"pos\")\n    } else {\n        print(\"other\")\n    }\n" +
+        "    let u: Untrusted<string> = Untrusted(\"x\")\n    print(u.trustUnchecked() because \"checked\")\n}\n";
+
+    [Fact]
+    public void EveryRound3InputFormIsRewrittenOnce()
+    {
+        var file = Path.Combine(Fresh("round3-all"), "main.byn");
+        File.WriteAllText(file, Round3InputForms);
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(Round3Canonical, File.ReadAllText(file));
+        var (again, stdout, _) = Run("format", "--check", file);
+        Assert.Equal(CliApp.ExitOk, again);
+        Assert.Empty(stdout);
+    }
+
     [Fact]
     public void AFileWithARealErrorIsLeftAloneAndOthersAreFormatted()
     {

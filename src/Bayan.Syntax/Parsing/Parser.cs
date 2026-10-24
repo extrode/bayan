@@ -119,6 +119,7 @@ public sealed class Parser
         DiagnosticCodes.OneLineDeclarations, DiagnosticCodes.MissingLineBreak, DiagnosticCodes.TypeNameOrder,
         DiagnosticCodes.BracketAttribute, DiagnosticCodes.CharInput, DiagnosticCodes.RequiresValue,
         DiagnosticCodes.MissingBecause, DiagnosticCodes.ExceptInCase, DiagnosticCodes.NoallocRemoved, DiagnosticCodes.ContextBlockInput,
+        DiagnosticCodes.TrustInput,
     ];
 
     private Diagnostic? Report(DiagnosticDescriptor descriptor, TextSpan span, object?[]? args = null,
@@ -1308,13 +1309,14 @@ public sealed class Parser
             var sameLine = (int from, int to) => !_source.GetText(TextSpan.FromBounds(from, to)).Contains('\n');
             var caseIndent = sameLine(open.End, cases[0].Start) ? outer + "    " : IndentAt(cases[0].Start);
             var text = new StringBuilder();
-            text.Append(sameLine(open.End, cases[0].Start) ? "\n" + caseIndent : _source.GetText(TextSpan.FromBounds(open.End, cases[0].Start)));
+            var lead = _source.GetText(TextSpan.FromBounds(open.End, cases[0].Start));
+            text.Append(sameLine(open.End, cases[0].Start) ? KeptComment(lead) + "\n" + caseIndent : lead);
             for (var i = 0; i < cases.Count; i++)
             {
                 text.Append(_source.GetText(cases[i]));
                 var gapEnd = i + 1 < cases.Count ? cases[i + 1].Start : Current.Start;
                 var gap = WithoutCommas(cases[i].End, gapEnd, commas);
-                if (!gap.Contains('\n')) gap = "\n" + (i + 1 < cases.Count ? caseIndent : outer);
+                if (!gap.Contains('\n')) gap = KeptComment(gap) + "\n" + (i + 1 < cases.Count ? caseIndent : outer);
                 text.Append(gap);
             }
             fix = new Fix(TextSpan.FromBounds(open.End, Current.Start), text.ToString());
@@ -1322,6 +1324,9 @@ public sealed class Parser
         Report(DiagnosticCodes.OneLineDeclarations, commas[0].Span, [typeName], label: "the first `,`",
             help: "write each case on its own line", fix: fix);
     }
+
+    /// <summary>A <c>/* */</c> comment in a one-line gap between cases, kept at the end of its line; empty when there is none.</summary>
+    private static string KeptComment(string gap) => gap.Trim(' ', '\t') is { Length: > 0 } comment ? " " + comment : "";
 
     /// <summary>The source from <paramref name="from"/> to <paramref name="to"/> without its <c>,</c> tokens and the spaces before them.</summary>
     private string WithoutCommas(int from, int to, List<Token> commas)
@@ -2908,6 +2913,7 @@ public sealed class Parser
                     {
                         var args = ParseArguments();
                         var call = new CallExpr(SpanFrom(start), expr, args);
+                        ReportTrustInput(call);
                         expr = call with { Because = ParseBecause(_source.GetText(expr.Span) + "()", call.Span) };
                     }
                     break;
@@ -2929,6 +2935,31 @@ public sealed class Parser
     {
         var after = ScanTypeArgs(_pos);
         return after > 0 && KindAt(after) == TokenKind.OpenParen;
+    }
+
+    /// <summary>
+    /// BYN1062 at <c>trust(x, reason: …)</c>; the fix writes <c>x.trustUnchecked() because "…"</c> when the reason is a
+    /// string literal, with <c>x</c> in parentheses unless it is a primary expression, and the whole in parentheses
+    /// unless the call ends its expression.
+    /// </summary>
+    private void ReportTrustInput(CallExpr call)
+    {
+        if (call.Callee is not NameExpr { Name.Text: "trust", TypeArgs.Length: 0 } callee
+            || call.Args is not [{ Name: null, Modifier: ArgModifier.None } value, { Name.Text: "reason", Modifier: ArgModifier.None } reason])
+            return;
+        Fix? fix = null;
+        if (reason.Value is LiteralExpr { Kind: LiteralKind.String })
+        {
+            var text = _source.GetText(value.Value.Span);
+            if (value.Value is not (NameExpr or MemberExpr or CallExpr or IndexExpr or LiteralExpr or ParenExpr)) text = "(" + text + ")";
+            text = $"{text}.trustUnchecked() because {_source.GetText(reason.Value.Span)}";
+            // Anything after the call other than a closer would read as part of the reason.
+            var ends = Current.HasNewlineBefore || Kind is TokenKind.CloseParen or TokenKind.Comma or TokenKind.CloseBracket
+                or TokenKind.CloseBrace or TokenKind.InterpolationEnd or TokenKind.EndOfFile;
+            fix = new Fix(call.Span, ends ? text : "(" + text + ")");
+        }
+        Report(DiagnosticCodes.TrustInput, callee.Span, label: "the input form",
+            help: "call `trustUnchecked()` on the value and give the reason in `because`", fix: fix);
     }
 
     private Argument[] ParseArguments()

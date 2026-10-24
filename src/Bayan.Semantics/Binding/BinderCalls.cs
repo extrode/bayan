@@ -23,6 +23,8 @@ internal sealed partial class Binder
 
     private BoundExpr BindCall(CallExpr c, TypeSymbol? expected)
     {
+        if (c.Callee is MemberExpr { Member.Text: "trustUnchecked", NullConditional: false } trusted && c.Args.Length == 0)
+            return BindTrustUnchecked(c, trusted);
         var callee = c.Callee is TargetMemberExpr t ? BindTargetMember(t, expected) : BindExprOrType(c.Callee);
         switch (callee)
         {
@@ -466,7 +468,7 @@ internal sealed partial class Binder
         if (value is null || c.Args.Length != 2 || c.Args[1].Name?.Text != "reason")
         {
             BindArgumentsForRecovery(c);
-            Report(DiagnosticCodes.TrustReason, c.Span, [], help: "write `trust(x, reason: \"why this value is safe\")`");
+            Report(DiagnosticCodes.TrustReason, c.Span, [], help: "write `x.trustUnchecked() because \"why this value is safe\"`");
             return new BoundErrorExpr(c);
         }
         var reason = c.Args[1].Value;
@@ -477,6 +479,25 @@ internal sealed partial class Binder
         if (value.Type is not UntrustedType u)
         {
             Convert(value, new UntrustedType(value.Type), c.Args[0].Value.Span, argument: true);
+            return new BoundErrorExpr(c);
+        }
+        return new BoundCall(c, _c.Builtins.Trust, null, [value], u.Inner);
+    }
+
+    /// <summary>
+    /// <c>x.trustUnchecked() because "…"</c>: <c>Untrusted&lt;T&gt;</c> to <c>T</c>, the canonical form of <c>trust</c>
+    /// (BYN1062); an empty reason is the parser's BYN8001, a missing one is reported here.
+    /// </summary>
+    private BoundExpr BindTrustUnchecked(CallExpr c, MemberExpr callee)
+    {
+        var value = BindExpr(callee.Target);
+        if (c.Because is null)
+            Report(DiagnosticCodes.MissingBecause, c.Span, ["trustUnchecked()"], label: "bypasses a safety rule",
+                help: "explain the bypass in a `because` clause");
+        if (value.Type.IsError) return value;
+        if (value.Type is not UntrustedType u)
+        {
+            Convert(value, new UntrustedType(value.Type), callee.Target.Span, argument: true);
             return new BoundErrorExpr(c);
         }
         return new BoundCall(c, _c.Builtins.Trust, null, [value], u.Inner);
