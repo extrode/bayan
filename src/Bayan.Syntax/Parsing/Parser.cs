@@ -1335,10 +1335,11 @@ public sealed class Parser
     }
 
     /// <summary>
-    /// <c>is .a or .b</c> after a parameter or field <paramref name="name"/> (J57), wrapping <paramref name="type"/>; one
-    /// state is BYN7006, fixed to <c>T.s name</c>.
+    /// <c>is .a or .b</c> after a parameter or field <paramref name="name"/>, or after the type of a local annotation or
+    /// alias, where <paramref name="name"/> is null (J57), wrapping <paramref name="type"/>; one state is BYN7006, fixed
+    /// to <c>T.s name</c> or <c>T.s</c>.
     /// </summary>
-    private TypeSyntax ParseRefinement(TypeSyntax type, Name name)
+    private TypeSyntax ParseRefinement(TypeSyntax type, Name? name = null)
     {
         if (Kind != TokenKind.IsKeyword || Peek(1) != TokenKind.Dot) return type;
         var keyword = Advance();
@@ -1346,9 +1347,10 @@ public sealed class Parser
         if (states.Length == 1)
         {
             var typeText = _source.GetText(type.Span);
-            Report(DiagnosticCodes.SingleStateInline, keyword.Span, [typeText, name.Text, states[0].Text], label: "one state",
-                help: $"write the state type `{typeText}.{states[0].Text}`",
-                fix: new Fix(TextSpan.FromBounds(type.Span.Start, _prevEnd), $"{typeText}.{states[0].Text} {name.Text}"));
+            var stateType = $"{typeText}.{states[0].Text}";
+            Report(DiagnosticCodes.SingleStateInline, keyword.Span, [typeText, name?.Text, states[0].Text], label: "one state",
+                help: $"write the state type `{stateType}`",
+                fix: new Fix(TextSpan.FromBounds(type.Span.Start, _prevEnd), name is null ? stateType : $"{stateType} {name.Text}"));
         }
         return new RefinedType(TextSpan.FromBounds(type.Span.Start, _prevEnd), type, states);
     }
@@ -1643,7 +1645,7 @@ public sealed class Parser
         else if (distinct) Advance();
         var name = ExpectName();
         Expect(TokenKind.Equals);
-        var target = ParseType();
+        var target = ParseRefinement(ParseType());
         var requires = ParseRequiresLines();
         ExpectEnd();
         return new TypeAliasDecl(SpanFrom(start), modifiers, name, target) { Distinct = distinct, Requires = requires };
@@ -2056,7 +2058,7 @@ public sealed class Parser
         {
             name = ExpectName("a variable name");
             Advance();
-            type = ParseType();
+            type = ParseRefinement(ParseType());
         }
         else if (IsTypeThenName(_pos))
         {
