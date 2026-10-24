@@ -58,6 +58,32 @@ struct Order {
             print($"{payment}")
         }
     }
+    i64 onlyPaid(this is .paid) => payment
+    void cancelIf(ref this is .paid, bool c) becomes .draft {
+        if c {
+            become .draft
+        }
+        print($"{payment}")
+        print($"{onlyPaid()}")
+        become .draft
+    }
+    void resetIf(ref this is .paid, bool c) becomes .draft {
+        if c {
+            reset()
+        }
+        print($"{payment}")
+        print($"{onlyPaid()}")
+        become .draft
+    }
+    void drain(ref this is .paid, i64 times) becomes .draft {
+        var i = 0
+        while i < times {
+            print($"{payment}")
+            become .draft
+            i += 1
+        }
+        become .draft
+    }
     void repeat(ref this, i64 times) {
         if this is .paid {
             var i = 0

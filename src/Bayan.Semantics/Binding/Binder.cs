@@ -169,6 +169,8 @@ internal sealed partial class Binder
     public void BindFunctionBody(FunctionDecl decl)
     {
         DeclareParameters();
+        // `this` starts in the states its receiver declares; a `become` or a `becomes` call on it may change that.
+        if (ReceiverStates(_fn!) is { } own) LearnState(_thisFacts, own);
         BindParameterDefaults();
         var checks = BindRequires(decl);
         if (decl.Body is { } body)

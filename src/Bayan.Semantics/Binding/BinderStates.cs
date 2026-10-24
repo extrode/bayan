@@ -165,8 +165,8 @@ internal sealed partial class Binder
     /// <summary>Stands for <c>this</c> in <see cref="_stateFacts"/>, so an <c>is</c> or a switch arm narrows it like a local.</summary>
     private readonly LocalSymbol _thisFacts = new("this", null, ErrorType.Instance, LocalKind.Let);
 
-    /// <summary>The states <c>this</c> is known to be in: a fact, else the states its receiver declares; null when any.</summary>
-    private StateType? ThisStates() => KnownState(_thisFacts) ?? (_fn is { } fn ? ReceiverStates(fn) : null);
+    /// <summary>The states <c>this</c> is known to be in, seeded with the states its receiver declares; null when any.</summary>
+    private StateType? ThisStates() => KnownState(_thisFacts);
 
     /// <summary>The fact key and current type of a narrowable subject: a local, or <c>this</c>.</summary>
     private (LocalSymbol Key, TypeSymbol Type)? Subject(BoundExpr e) => e switch
