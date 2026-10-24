@@ -23,7 +23,7 @@ public sealed partial class StyleTests
         "diag-error-fix", "diag-removal-fix", "diag-secondary", "diag-cap", "diag-cap-all",
         "build-ok", "build-ok-cache", "build-ok-verbose", "build-fail", "build-ice", "check-ok", "run-fail",
         "test-ok", "test-fail", "test-pending", "test-verbose", "test-assert-values", "test-control-chars",
-        "doctor-ok", "doctor-fail",
+        "doctor-ok", "doctor-fail", "audit",
     ];
 
     public static TheoryData<string> AllShapes
@@ -142,6 +142,8 @@ public sealed partial class StyleTests
                     new(Doctor.Level.Ok, "git", "/usr/bin/git (git version 2.47.0)"),
                     new(Doctor.Level.Fail, "cache", "~/.cache/bayan isn't writable: Permission denied", "set BAYAN_CACHE to a writable directory"),
                 ]);
+            case "audit":
+                return Command("@allow(BYN2230) because \"kept for the C ABI\"\nvoid toHex() {\n}\n\nunsafe void poke() {\n}\n", "audit", main);
             default:
                 throw new ArgumentException($"unknown shape `{shape}`", nameof(shape));
         }

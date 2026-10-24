@@ -53,14 +53,17 @@ public static class Messages
           cache stats          show the shared build cache's location and size
           format <path>        rewrite input forms (those with a fix-it) in a `.byn` file or a directory of them,
                                and booleans and primitives to `style` in `package.byn` [--check: list, don't write]
+          audit <path>         list every `because` bypass and `unsafe` or `extern` declaration, with its reason
+          features --used <path>
+                               print the syntax node kinds, builtins and diagnostics a build touched, as JSON
           explain <code>       explain a diagnostic, e.g. `bayan explain BYN0003`
           <script>.byn         run a script, so `#!/usr/bin/env bayan` works
           doctor               check the C compiler, zig, git and the build cache, with fixes
           --version            print the compiler version and the commit it was built from
           --help               print this message
 
-        check, types, build, run and test take a project directory (one with `package.byn`; the default
-        inside a project), a script (a file starting with `#!`), or a file or directory of `.byn` files.
+        check, types, build, run, test and features take a project directory (one with `package.byn`; the
+        default inside a project), a script (a file starting with `#!`), or a file or directory of `.byn` files.
 
         options for every command:
           --color auto|always|never
@@ -103,6 +106,14 @@ public static class Messages
     public static readonly Message FormatNotConverged = Register("format.not-converged", "bayan: {0}: still changing after {1} passes; left unfixed");
     public static readonly Message FormatIoError = Register("format.io-error", "bayan: {0}: {1}");
     public static readonly Message CommandUsage = Register("usage.command", "usage: {0}");
+
+    // ── audit ────────────────────────────────────────────────────────────────────────
+    public static readonly Message AuditLine = Register("audit.line", "{0}  {1}  {2}");
+    public static readonly Message AuditBecause = Register("audit.because", "because {0}");
+    public static readonly Message AuditNoReason = Register("audit.no-reason", "no reason given");
+    public static readonly Message AuditCountOne = Register("audit.count.one", "{0} bypass");
+    public static readonly Message AuditCountMany = Register("audit.count.many", "{0} bypasses");
+    public static readonly Message AuditSummary = Register("audit.summary", "{0} {1} in {2}");
 
     // ── version ──────────────────────────────────────────────────────────────────────
     public static readonly Message VersionLine = Register("version.line", "{0} {1} (commit {2})");
