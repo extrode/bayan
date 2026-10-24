@@ -1445,7 +1445,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             target = lowered[^1];
             if (!IsTrivial(target))
             {
-                // The target is stored first, so the parts before it are stored before it.
+                // Spilling the target evaluates it ahead of the call (the emitter would evaluate it last inside the
+                // call), so the parts before it are spilled first to keep them evaluated before it.
                 for (var j = 0; j < lowered.Length - 1; j++)
                     if (!IsTrivial(lowered[j])) lowered[j] = Spill(lowered[j]);
                 target = Spill(target);
