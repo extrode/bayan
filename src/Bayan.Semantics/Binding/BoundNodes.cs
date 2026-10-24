@@ -52,20 +52,28 @@ public sealed record BoundCall(Node Syntax, FunctionSymbol Function, BoundExpr? 
 /// <summary>Members of built-in types (<c>List.length</c>, <c>List.append</c>, …).</summary>
 public enum BuiltinMember
 {
-    StringLength, StringBytes, StringIsEmpty, StringCopy, StringStartsWith, StringEndsWith, StringContains,
+    StringLength, StringBytes, StringIsEmpty, StringRuneCount, StringIsAscii, StringCopy, StringStartsWith, StringEndsWith, StringContains,
+    StringPosition, StringLastPosition, StringCount, StringTrimmed, StringTrimmedBy, StringLowercased, StringUppercased, StringEquals,
+    StringReplaced, StringRepeated, StringJoined, StringPadded,
+    /// <summary><c>string(bytes)</c> on a byte span, and <c>T.tryParse(text, as:)</c> on an integer type (the receiver is the text).</summary>
+    BytesToString, IntTryParse,
+    /// <summary>The views <c>runes</c>, <c>utf16</c>, <c>lines</c> and <c>parts(by:)</c> (a <c>rune</c> separator is <c>StringPartsRune</c>), and the view members <c>runes.take(n)</c>, <c>skip</c>, <c>takeLast</c> and <c>utf16.copy()</c>.</summary>
+    StringRunes, StringUtf16, StringLines, StringParts, StringPartsRune, RunesTake, RunesSkip, RunesTakeLast, Utf16Copy,
+    /// <summary>Lowering of <c>for</c> over a text view: whether it has another item at the cursor, and the item (advancing the cursor).</summary>
+    TextViewMore, TextViewNext,
     SpanLength, SpanIsEmpty, SpanCopy, ListCopy, MapCopy, StrBufCopy,
-    ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListClear, ListRemoveLast, ListRemoveRange,
-    MapLength, MapGetOr, MapContains, MapRemove, MapClear,
+    ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListMutableSpan, ArrayMutableSpan, ListClear, ListRemoveLast, ListRemoveRange, ListRemoveThrough, ListRemoveAt, ListRemoveAtRange, ListReplace, ListSort, ListTryGet,
+    MapLength, MapTryGet, MapContains, MapRemove, MapClear,
     /// <summary><c>map[k]</c> read (panics when missing), <c>map[k]</c> as a write target (inserts when missing), and <c>map.slot(k)</c> (inserts the default).</summary>
     MapIndex, MapIndexSet, MapSlot,
     /// <summary>Lowering of <c>for</c> over a map: entry slots (live or removed), whether slot i is live, and its entry.</summary>
     MapSlotCount, MapSlotLive, MapSlotEntry,
     ArrayLength, ArrayAsSpan,
     ArenaReset,
-    StrBufAppend, StrBufLength, StrBufAsString, StrBufClear,
+    StrBufAppend, StrBufAppendRepeated, StrBufInsert, StrBufLength, StrBufAsString, StrBufClear,
     /// <summary><c>x.take()</c>: moves the value out of a place and leaves the type's empty value behind.</summary>
     ListTake, MapTake, StrBufTake, OptionalTake,
-    CharValue, IntToHex,
+    CharValue, IntToString,
     ResultIsOk, ResultValue, ResultError,
     /// <summary><c>o.value</c> of an <c>Owned&lt;T&gt;</c>, also inserted for member access through it.</summary>
     OwnedValue,
@@ -76,6 +84,7 @@ public enum BuiltinMember
     EnumField,
     ProcessExitCode, ProcessStdout, ProcessStderr,
     PanicMessage,
+    FormatSpecRadix, FormatSpecDebug, FormatSpecWidth, FormatSpecFill, FormatSpecAlign, FormatSpecDigits,
 }
 
 public sealed record BoundBuiltinCall(Node Syntax, BuiltinMember Member, BoundExpr Receiver, BoundExpr[] Arguments, TypeSymbol Type)
@@ -126,7 +135,14 @@ public sealed record BoundConditional(Node Syntax, BoundExpr Condition, BoundExp
 public sealed record BoundCoalesce(Node Syntax, BoundExpr Left, BoundExpr Right, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
 /// <summary>A struct value with every field given, in declaration order.</summary>
-public sealed record BoundStructLiteral(Node Syntax, StructSymbol Struct, BoundExpr[] Fields) : BoundExpr(Syntax, Struct);
+public sealed record BoundStructLiteral(Node Syntax, StructSymbol Struct, BoundExpr[] Fields) : BoundExpr(Syntax, Struct)
+{
+    /// <summary>The state of a state literal <c>T.s { … }</c>, whose type is then <c>T.s</c>; null for a struct without states.</summary>
+    public UnionVariantSymbol? State { get; init; }
+
+    /// <summary>The payload of <see cref="State"/>, by its field order.</summary>
+    public BoundExpr[] Payload { get; init; } = [];
+}
 
 public sealed record BoundWith(Node Syntax, BoundExpr Target, (FieldSymbol Field, BoundExpr Value)[] Updates) : BoundExpr(Syntax, Target.Type);
 
@@ -155,7 +171,17 @@ public sealed record BoundSwitchArm(Node Syntax, BoundPattern Pattern, BoundExpr
 public sealed record BoundSwitchExpr(Node Syntax, BoundExpr Value, BoundSwitchArm[] Arms, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
 /// <summary>One piece of <c>$"…"</c>: literal text or a value to format.</summary>
-public sealed record BoundInterpolationPart(string? Text, BoundExpr? Value);
+public sealed record BoundInterpolationPart(string? Text, BoundExpr? Value)
+{
+    /// <summary>The hole's checked specs (<c>{n, as: .hex, width: 6}</c>, spec §16.4); null without any.</summary>
+    public BoundFormatSpec? Spec { get; init; }
+}
+
+/// <summary>
+/// Constant format specs: <see cref="Radix"/> 0 (none), 2, 8, 10 or 16; <see cref="Width"/> in runes, 0 for none;
+/// <see cref="Align"/> -1 (numbers to the end, the rest to the start), 0 start, 1 end, 2 center; <see cref="Digits"/> -1 for none.
+/// </summary>
+public sealed record BoundFormatSpec(int Radix, bool Debug, long Width, uint Fill, int Align, int Digits);
 
 /// <summary><c>$"…"</c>. Written straight into an output sink (<c>print</c>, <c>panic</c>, <c>StrBuf.append</c>); elsewhere a string from <c>context.allocator</c>.</summary>
 public sealed record BoundInterpolated(Node Syntax, BoundInterpolationPart[] Parts) : BoundExpr(Syntax, PrimitiveType.String);
@@ -179,7 +205,11 @@ public sealed record BoundJump(Node Syntax, BoundStmt Jump) : BoundExpr(Syntax, 
 /// <summary><c>catch { … }</c> handler; type <c>void</c> for a <c>void</c> operand, else <c>never</c> (flow analysis checks the claim).</summary>
 public sealed record BoundBlockExpr(Node Syntax, BoundBlock Block, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
-public sealed record BoundErrorVariant(Node Syntax, ErrorVariantSymbol Variant) : BoundExpr(Syntax, Variant.Set);
+public sealed record BoundErrorVariant(Node Syntax, ErrorVariantSymbol Variant) : BoundExpr(Syntax, Variant.Set)
+{
+    /// <summary>The payload of <c>.timeout(after)</c>, one value per field of <see cref="Variant"/>; empty for a bare case.</summary>
+    public BoundExpr[] Payload { get; init; } = [];
+}
 
 /// <summary><c>Color.red</c> or a target-typed <c>.red</c>.</summary>
 public sealed record BoundEnumMember(Node Syntax, EnumMemberSymbol Member) : BoundExpr(Syntax, Member.Enum);
@@ -221,6 +251,9 @@ public sealed record BoundReturn(Node Syntax, BoundExpr? Value) : BoundStmt(Synt
 
 /// <summary>Fails the enclosing function with <see cref="Error"/> (a value of an error-set type).</summary>
 public sealed record BoundFail(Node Syntax, BoundExpr Error) : BoundStmt(Syntax);
+
+/// <summary><c>become .s(…)</c>: <c>this</c> moves to <see cref="State"/>, a case of its struct's states union, with its payload.</summary>
+public sealed record BoundBecome(Node Syntax, UnionVariantSymbol State, BoundExpr[] Payload) : BoundStmt(Syntax);
 
 /// <summary>Identity of a loop or switch for <c>break</c>/<c>continue</c>.</summary>
 public sealed class JumpTarget(string? label, bool isLoop)
@@ -336,6 +369,14 @@ public sealed record BoundUnionField(Node Syntax, BoundExpr Receiver, UnionVaria
 /// On an optional input the value must be present. <c>.Circle c</c> binds the whole value to <see cref="Designation"/>.
 /// </summary>
 public sealed record BoundUnionPattern(Node Syntax, TypeSymbol InputType, UnionVariantSymbol Variant, BoundPattern[] Subpatterns, LocalSymbol? Designation = null)
+    : BoundPattern(Syntax, InputType);
+
+/// <summary><c>e.after</c> where <c>e</c> was bound by <c>.timeout e</c>: a payload field of an error known to be <see cref="Variant"/>.</summary>
+public sealed record BoundErrorField(Node Syntax, BoundExpr Receiver, ErrorVariantSymbol Variant, int Index)
+    : BoundExpr(Syntax, Variant.Fields[Index].Type);
+
+/// <summary><c>.timeout(let after)</c> on an error: a test of its code, then each subpattern on its payload field.</summary>
+public sealed record BoundErrorPattern(Node Syntax, TypeSymbol InputType, ErrorVariantSymbol Variant, BoundPattern[] Subpatterns)
     : BoundPattern(Syntax, InputType);
 
 // ── `requires` checks ────────────────────────────────────────────────────────────

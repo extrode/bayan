@@ -14,6 +14,6 @@ void main() {
     var ll = List<List<C>>()
     ll.append(move l)
     let k = move ll
-    for x: dyn ref IC in view(k.asSpan())[0] { x.bump() }
+    for x: dyn ref IC in view(k.span)[0] { x.bump() }
     print($"{k[0][0].n}")
 }

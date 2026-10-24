@@ -30,7 +30,7 @@ i64 total(Map<string, i64> m) {
 }
 
 void bump(ref Map<string, i64> m, at string key) {
-    m[key] = m.getOr(key, 0) + 1
+    m[key] = (m.tryGet(at: key) ?? 0) + 1
 }
 
 struct Counted {

@@ -1,40 +1,40 @@
 let zero: i64 = 0
 let small: i64 = 255
 let big: i64 = 3735928559
-print($"{zero.toHex()} {small.toHex()} {big.toHex()}")
+print($"{string(zero, as: .hex)} {string(small, as: .hex)} {string(big, as: .hex)}")
 
 let i8Max: i8 = 127
 let i8Neg: i8 = -1
 let i8Min: i8 = -128
-print($"i8 {i8Max.toHex()} {i8Neg.toHex()} {i8Min.toHex()}")
+print($"i8 {string(i8Max, as: .hex)} {string(i8Neg, as: .hex)} {string(i8Min, as: .hex)}")
 let i16Max: i16 = 32767
 let i16Neg: i16 = -2
-print($"i16 {i16Max.toHex()} {i16Neg.toHex()}")
+print($"i16 {string(i16Max, as: .hex)} {string(i16Neg, as: .hex)}")
 let i32Max: i32 = 2147483647
 let i32Neg: i32 = -1
 let i32Min: i32 = -2147483648
-print($"i32 {i32Max.toHex()} {i32Neg.toHex()} {i32Min.toHex()}")
+print($"i32 {string(i32Max, as: .hex)} {string(i32Neg, as: .hex)} {string(i32Min, as: .hex)}")
 let i64Max: i64 = 9223372036854775807
 let i64Neg: i64 = -1
 let i64Min: i64 = -9223372036854775808
-print($"i64 {i64Max.toHex()} {i64Neg.toHex()} {i64Min.toHex()}")
+print($"i64 {string(i64Max, as: .hex)} {string(i64Neg, as: .hex)} {string(i64Min, as: .hex)}")
 let isizeNeg: isize = -16
-print($"isize {isizeNeg.toHex()}")
+print($"isize {string(isizeNeg, as: .hex)}")
 
 let u8Small: u8 = 10
 let u8Max: u8 = 255
-print($"u8 {u8Small.toHex()} {u8Max.toHex()}")
+print($"u8 {string(u8Small, as: .hex)} {string(u8Max, as: .hex)}")
 let u16Max: u16 = 65535
-print($"u16 {u16Max.toHex()}")
+print($"u16 {string(u16Max, as: .hex)}")
 let u32Max: u32 = 4294967295
-print($"u32 {u32Max.toHex()}")
+print($"u32 {string(u32Max, as: .hex)}")
 let u64Max: u64 = 18446744073709551615
-print($"u64 {u64Max.toHex()}")
+print($"u64 {string(u64Max, as: .hex)}")
 let usizeVal: usize = 4096
-print($"usize {usizeVal.toHex()}")
+print($"usize {string(usizeVal, as: .hex)}")
 
 using let arena = Arena()
 provide allocator: arena {
-    let hex = small.toHex()
+    let hex = string(small, as: .hex)
     print($"arena {hex}")
 }

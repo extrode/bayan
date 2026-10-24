@@ -1,0 +1,16 @@
+error BYN7010: `push` declares `becomes .open` but takes `this is .shut`; a transition needs
+`ref this`
+
+  7 │     void push(this is .shut) becomes .open {
+    │               ^^^^^^^^^^^^^
+    │
+  help: change the receiver of `push` to `ref this`, or return the new state as a value
+    │ 7 │     void push(ref this is .shut) becomes .open {
+    │   │               ++++
+
+error BYN2022: `become` in a static method is not supported in v0.1
+
+  11 │         become .shut
+     │         ^^^^^^
+     │
+  help: remove `become`; only an instance method has a `this` to change

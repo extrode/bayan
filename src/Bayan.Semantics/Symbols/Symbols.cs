@@ -341,6 +341,7 @@ public enum BuiltinFunction
     ArenaNew,
     StrBufNew,
     StrBufGrow,
+    StrBufOver,
     OwnedNew,
     UntrustedNew,
     Trust,
@@ -354,9 +355,13 @@ public enum BuiltinFunction
     IoStdout,
     IoStderr,
     IoStdin,
-    StringFrom,
-    StringTryFrom,
+    Utf8Decode,
+    Utf8TryDecode,
+    Utf8DecodeReplace,
+    HexEncode,
+    HexDecode,
     StringInvalidUtf8At,
+    IntParse,
     EnumFromOrdinal,
     EnumParse,
 }
@@ -452,7 +457,10 @@ public sealed class ErrorSetSymbol(string name, Location location, ModuleSymbol 
 
     public List<ErrorVariantSymbol> Variants { get; } = new();
 
-    public override string DisplayName => Name;
+    /// <summary>For <c>ValidationError&lt;T&gt;</c> of a struct with <c>requires</c>, that <c>T</c>.</summary>
+    public StructSymbol? Of { get; init; }
+
+    public override string DisplayName => Of is null ? Name : $"{Name}<{Of.DisplayName}>";
 
     public ErrorVariantSymbol? Find(string name) => Variants.Find(v => v.Name == name);
 }
@@ -465,6 +473,9 @@ public sealed class ErrorVariantSymbol(string name, Location location, ErrorSetS
     public uint Code { get; } = code;
 
     public string? Doc { get; } = doc;
+
+    /// <summary>The named payload, <c>(Millis after)</c> of <c>timeout(Millis after)</c>; empty without one.</summary>
+    public List<ParameterSymbol> Fields { get; } = new();
 
     /// <summary>The process exit code when <c>main</c> fails with this variant: <c>@exitCode(n)</c>, else 1.</summary>
     public int ExitCode { get; set; } = 1;

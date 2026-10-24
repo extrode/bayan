@@ -1,0 +1,9 @@
+i64 percent(i64 value) expects value in 0..=100 {
+    return value
+}
+
+i64 width(i64 lo, until i64 hi) expects lo <= hi {
+    return hi - lo
+}
+
+print($"{percent(5)} {width(1, until: 4)}")

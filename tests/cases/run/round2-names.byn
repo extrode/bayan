@@ -6,7 +6,7 @@ let m = Map<string, i64>()
 var sb = StrBuf()
 sb.append("héllo")
 let view = sb.view
-print($"list {xs.length} array {a.length} span {a.asSpan().length} map {m.length}")
+print($"list {xs.length} array {a.length} span {a.span.length} map {m.length}")
 print($"strbuf {sb.length} view {view.length}")
 print($"length {"héllo".length}")
 print(sb.finish())

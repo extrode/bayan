@@ -119,6 +119,7 @@ void byn_own_forget(const void* lo, const void* hi);
 
 typedef enum byn_writer_mode {
     BYN_WRITE_STDOUT,   /* flush to standard output when full */
+    BYN_WRITE_STDERR,   /* flush to standard error when full (print(…, to: .stderr)) */
     BYN_WRITE_TRUNCATE, /* drop what does not fit (panic messages) */
     BYN_WRITE_STRICT,   /* panic when full (StrBuf(buf)) */
     BYN_WRITE_GROW,     /* grow through alloc when full (StrBuf()) */
@@ -145,10 +146,13 @@ void byn_w_f64(byn_writer* w, double v);
 void byn_w_f32(byn_writer* w, float v);
 void byn_w_bool(byn_writer* w, bool v);
 void byn_w_char(byn_writer* w, uint32_t c);
-/* Ends a print: appends a newline and flushes the buffer to standard output. */
+/* Ends a print: appends a newline and flushes the buffer to standard output, or to standard error. */
 void byn_w_println(byn_writer* w);
 
-void byn_print(byn_str s);
+/* The built-in Stream: stdout, stderr, in that order. */
+typedef int32_t byn_builtin_Stream;
+/* `print`: the text and a newline, buffered on standard output; on standard error after flushing standard output. */
+void byn_print(byn_builtin_Stream stream, byn_str s);
 void byn_stdout_flush(void);
 /* Reports a failed `main` or test: flushes output and writes `error: <summary>` to standard error. */
 void byn_report_error(byn_str summary);
@@ -164,10 +168,65 @@ int byn_str_cmp(byn_str a, byn_str b);
 bool byn_str_starts_with(byn_str s, byn_str prefix);
 bool byn_str_ends_with(byn_str s, byn_str suffix);
 bool byn_str_contains(byn_str s, byn_str text);
+/* `s.runeCount`: the number of code points, O(n). */
+int64_t byn_str_rune_count(byn_str s);
+/* `s.isAscii`: every byte is below 0x80. */
+bool byn_str_is_ascii(byn_str s);
 /* The next code point at *pos (valid UTF-8 assumed), advancing *pos. */
 uint32_t byn_str_next(byn_str s, int64_t* pos);
 /* s[start..end] by byte offset; panics out of range or mid-code-point. */
 byn_str byn_str_slice(byn_str s, int64_t start, int64_t end, const char* file, int line);
+/* `s.position(x, from: i)`: the byte position of the first x at or after i, or -1; an empty x is found at i. */
+int64_t byn_str_position(byn_str s, byn_str x, int64_t from, const char* file, int line);
+/* `s.lastPosition(x)`: the byte position of the last x, or -1; an empty x is found at s.len. */
+int64_t byn_str_last_position(byn_str s, byn_str x);
+/* `s.count(x)`: non-overlapping occurrences of x; 0 for an empty x. */
+int64_t byn_str_count(byn_str s, byn_str x);
+/* `s.trimmed(from:)` without ASCII whitespace at the start (edge 0), the end (edge 1) or both (edge 2). A view of s. */
+byn_str byn_str_trimmed(byn_str s, int32_t edge);
+/* `s.trimmed(by: runes)` without the given code points at both ends. A view of s. */
+byn_str byn_str_trimmed_by(byn_str s, const uint32_t* runes, int64_t n);
+/* `s.lowercased()` / `s.uppercased()`: ASCII letters mapped, other bytes copied. */
+byn_str byn_str_case(byn_str s, bool upper, byn_alloc* to);
+/* `s.equals(t, as: .caseless)`: equal after ASCII case folding. */
+bool byn_str_eq_caseless(byn_str a, byn_str b);
+/* `s.replaced(x, by: y)`: every non-overlapping x replaced; an empty x panics. */
+byn_str byn_str_replaced(byn_str s, byn_str x, byn_str y, byn_alloc* to, const char* file, int line);
+/* `s.repeated(n)`: n copies of s; a negative n panics. */
+byn_str byn_str_repeated(byn_str s, int64_t n, byn_alloc* to, const char* file, int line);
+/* `xs.joined(by: sep)` on a span of strings. */
+byn_str byn_str_joined(const byn_str* xs, int64_t n, byn_str sep, byn_alloc* to);
+/* `s.runes.take(n)`: the first n code points of s (all of s when it has fewer). A view of s. */
+byn_str byn_str_take_runes(byn_str s, int64_t n, const char* file, int line);
+/* `s.runes.skip(n)` / `s.runes.takeLast(n)`: s after its first n code points, or its last n. Views of s. */
+byn_str byn_str_skip_runes(byn_str s, int64_t n, const char* file, int line);
+byn_str byn_str_take_last_runes(byn_str s, int64_t n, const char* file, int line);
+/* `s.padded(to: n, by: c)`: s with c appended until it has n code points; s copied when it already has. */
+byn_str byn_str_padded(byn_str s, int64_t n, uint32_t c, byn_alloc* to);
+/* `string(bytes)`: the bytes formatted as a list, `[104, 105]`. */
+byn_str byn_bytes_string(const uint8_t* p, int64_t n, byn_alloc* to);
+
+/* The views `s.runes`, `s.utf16`, `s.lines` and `s.parts(by:, limit:)`, walked by `for` with a byte cursor.
+   `pending` holds a UTF-16 low surrogate not yet returned; `limit` counts down the parts still allowed (0: no limit).
+   A `rune` separator is kept encoded in `rune`, with `sep.ptr` NULL and `sep.len` its length. */
+typedef struct byn_text_view {
+    byn_str s;
+    byn_str sep;
+    int64_t limit;
+    uint16_t pending;
+    uint8_t rune[4];
+} byn_text_view;
+/* Whether the view has another item at pos; `parts` marks its end with pos -1. */
+bool byn_view_more(byn_text_view v, int64_t pos, int32_t kind);
+/* `s.parts(by: sep, limit: n)`; an empty sep or a negative limit panics. */
+byn_text_view byn_parts(byn_str s, byn_str sep, int64_t limit, const char* file, int line);
+/* `s.parts(by: c, limit: n)` with a `rune` separator; a negative limit panics. */
+byn_text_view byn_parts_rune(byn_str s, uint32_t c, int64_t limit, const char* file, int line);
+uint16_t byn_utf16_next(byn_text_view* v, int64_t* pos);
+byn_str byn_lines_next(byn_text_view* v, int64_t* pos);
+byn_str byn_parts_next(byn_text_view* v, int64_t* pos);
+/* `s.utf16.copy()`: the UTF-16 code units of s; ptr from `to`, *len set. */
+uint16_t* byn_utf16_copy(byn_str s, int64_t* len, byn_alloc* to);
 
 /* ── Bounds ──────────────────────────────────────────────────────────────── */
 
@@ -192,6 +251,9 @@ static inline void byn_slice_range(int64_t len, int64_t start, int start_mode, i
     *to = e;
 }
 
+/* `xs.sort()`: a stable sort of n elements of size bytes in place, without allocating; less(a, b) orders them. */
+void byn_sort(void* p, int64_t n, int64_t size, bool (*less)(const void* a, const void* b));
+
 /* ── Allocators ──────────────────────────────────────────────────────────── */
 
 struct byn_alloc {
@@ -212,8 +274,36 @@ byn_alloc* byn_arena_alloc(byn_arena* a);
 
 byn_str byn_str_copy(byn_str s, byn_alloc* to);
 void* byn_copy_bytes(const void* p, int64_t n, byn_alloc* to);
-/* Lowercase hexadecimal digits of v, no prefix or leading zeros. */
-byn_str byn_to_hex(uint64_t v, byn_alloc* to);
+/* The builtin `enum Radix` of `string(n, as:)`: 0 binary, 1 octal, 2 decimal, 3 hex. */
+typedef int32_t byn_builtin_Radix;
+/* The builtin `enum Edge` of `s.trimmed(from:)`: 0 start, 1 end. */
+typedef int32_t byn_builtin_Edge;
+/* The builtin `enum Align` of a `FormatSpec`: 0 start, 1 end, 2 center. */
+typedef int32_t byn_builtin_Align;
+/* `FormatSpec`: a hole's specs as `formatInto(ref StrBuf, as FormatSpec)` receives them; `digits` is -1 for none. */
+typedef struct byn_format_spec {
+    byn_builtin_Radix radix;
+    bool debug;
+    int64_t width;
+    uint32_t fill;
+    byn_builtin_Align align;
+    int64_t digits;
+} byn_format_spec;
+/* The builtin `enum Comparison` of `s.equals(t, as:)`: 0 ordinal, 1 caseless. */
+typedef int32_t byn_builtin_Comparison;
+/* v in radix, lowercase, no prefix or leading zeros. Decimal prints a signed v with its sign;
+   the others print v's two's-complement bits at the type's width. */
+byn_str byn_int_string(int64_t v, int32_t bits, bool is_signed, byn_builtin_Radix radix, byn_alloc* to);
+/* `T.tryParse(text, as: radix)`: digits only, no prefix, sign or spaces, either letter case. Decimal takes a leading `-` on a
+   signed type and checks the range; the other radixes read the type's bits, as `string(n, as:)` prints them. False when invalid. */
+bool byn_int_parse(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out);
+/* `T.parse(text, as: radix)`: as `byn_int_parse`; -1 when it parses, -2 on overflow, otherwise the offset of the first bad
+ * digit (the length when a digit is missing). */
+int64_t byn_int_parse_at(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out);
+/* Two lowercase hex digits per byte (`Hex.encode`). */
+byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to);
+/* `Hex.decode`: -1 and the bytes in `*out`, or the offset of the first non-hex digit (the length for an odd count). */
+int64_t byn_hex_decode(byn_str s, uint8_t** out, byn_alloc* to);
 
 /* Makes room for `need` elements: grows *ptr (capacity *cap) through alloc. */
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc);
@@ -260,6 +350,8 @@ void byn_map_copy(const byn_map_hdr* src, const void* keys, int64_t ksize, void*
 bool byn_utf8_valid(const uint8_t* p, int64_t n);
 /* Byte offset of the first invalid sequence (its first byte), or -1 when the bytes are well-formed UTF-8. */
 int64_t byn_utf8_invalid_at(const uint8_t* p, int64_t n);
+/* `Utf8.decode(bytes, invalid: .replace)`: a copy with each invalid sequence as U+FFFD. */
+byn_str byn_utf8_decode_replace(const uint8_t* p, int64_t n, byn_alloc* to);
 
 /* argv[1..argc-1] as strings. Writes `error: argument N is not valid UTF-8` (N from 1) and exits 1 on bad input.
  * On Windows they come from the UTF-16 command line instead of `argv`, and `*argc` is set to their count. */

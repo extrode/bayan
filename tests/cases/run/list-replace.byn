@@ -1,0 +1,33 @@
+void show(ReadOnlySpan<i64> xs) {
+    var line = StrBuf()
+    for x in xs { line.append($" {x}") }
+    print($"{xs.length}:{line.finish()}")
+}
+
+var xs = List<i64>()
+xs.append(1)
+xs.append(2)
+xs.append(3)
+xs.append(4)
+var ys = List<i64>()
+ys.append(7)
+ys.append(8)
+ys.append(9)
+xs.replace(at: 1..3, by: ys.span)
+show(xs.span)
+
+// A range held in a `let`, inclusive, and a list passed as the items.
+let last: i64 = 2
+let front = 0..=last
+xs.replace(at: front, by: ys)
+show(xs.span)
+
+// Fewer items shrink the list, an empty range inserts.
+let empty = List<i64>()
+xs.replace(at: 0..2, by: empty)
+xs.replace(at: 3..3, by: ys)
+show(xs.span)
+
+// Items read from the list itself.
+xs.replace(at: 0..0, by: xs.span)
+show(xs.span)

@@ -14,7 +14,7 @@ struct S : IThing {
 void main() {
     var xs = List<S>()
     xs.append(S { n: 1 })
-    let r: ReadOnlySpan<S> = xs.asSpan()
+    let r: ReadOnlySpan<S> = xs.span
     for x: dyn ref IThing in r {
         x.bump()
     }

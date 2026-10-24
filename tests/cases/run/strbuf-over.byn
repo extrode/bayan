@@ -1,0 +1,13 @@
+var small = StrBuf.over(stackalloc u8[8])
+small.append("abc")
+print($"{small.view} {small.length}")
+small.append("defghijkl")
+let grown = small.length
+small.append($" {grown}")
+print(small.view)
+
+var line = StrBuf.over(stackalloc u8[4])
+line.appendRepeated('=', by: 3)
+line.appendRepeated('é', by: 2)
+line.appendRepeated('x', by: 0)
+print($"{line.finish()} {line.length}")

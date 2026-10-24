@@ -8,7 +8,7 @@
 // Codes: those named on the command line, else every code whose descriptor line in
 // DiagnosticCodes.cs differs from <base> (default dev). Placeholders compare equal:
 // `{0}` in the plan matches `{anything}` in an interpolated C# string.
-// Each checked help must also start with a verb from HelpLanguageTests' list (R15), so the
+// Each checked help must also start with a verb from the grammar checker's list (R15), so the
 // plan can be copied verbatim; --all-help checks every help in the plan and nothing else.
 // Exit 0 when every checked string is found, 1 when one is missing, 2 on bad usage.
 
@@ -26,25 +26,27 @@ const allHelp = args.includes("--all-help");
 if (allHelp) args.splice(args.indexOf("--all-help"), 1);
 const descriptorsPath = "src/Bayan.Syntax/Diagnostics/DiagnosticCodes.cs";
 const helpTestPath = "tests/Bayan.Tests/HelpLanguageTests.cs";
+const lexiconPath = "src/Bayan.Semantics/Lexicon.cs";
 
 const run = async (...cmd) => {
   const out = await new Deno.Command(cmd[0], { args: cmd.slice(1), stdout: "piped", stderr: "null" }).output();
   return out.success ? new TextDecoder().decode(out.stdout) : "";
 };
 
-// Plan text: `{0}` holes become `{}`. C# text: any hole becomes `{}`, `{{`/`}}` and `\"` are undone.
-const normPlan = (s) => s.replace(/\{\d+\}/g, "{}").replace(/\\"/g, '"');
+// Plan text: `{0}` holes become `{}`; plan and C# text: `{{`/`}}` and `\"` are undone, any C# hole becomes `{}`.
+const normPlan = (s) => s.replace(/\{\{/g, "\u0001").replace(/\}\}/g, "\u0002")
+  .replace(/\{\d+\}/g, "{}").replace(/\u0001/g, "{").replace(/\u0002/g, "}").replace(/\\"/g, '"');
 const norm = (s) => s.replace(/\{\{/g, "\u0001").replace(/\}\}/g, "\u0002")
   .replace(/\{[^{}]*\}/g, "{}").replace(/\u0001/g, "{").replace(/\u0002/g, "}")
   .replace(/\\"/g, '"');
 // A plan string as a pattern over rendered output: each hole matches any text on one line.
 const pattern = (s) => new RegExp(normPlan(s).split("{}").map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[^\\n]+?"));
 
-// Plan entries: BYN#### [(plan)] `Name` ... "message" (label ...; help "..."; fix ...), one or
+// Plan entries: BYN#### [(plan[, warning|revision NNNN])] `Name` ... "message" (label ...; help "..."; fix ...), one or
 // more message forms per entry. An entry runs to the next entry start or the end of its line.
 const parsePlan = (text) => {
   const entries = new Map();
-  const start = /BYN(\d{4})(?: \(plan\))? `\w+`/g;
+  const start = /BYN(\d{4})(?: \(plan(?:, [\w ]+)?\))? `\w+`/g;
   const form = /"((?:[^"\\]|\\.)*)" \(((?:[^;()"]*; )?label(?:[^()"]|"(?:[^"\\]|\\.)*"|\([^()]*\))*)\)/g;
   const helpIn = /help "((?:[^"\\]|\\.)*)"/;
   const starts = [...text.matchAll(start)];
@@ -71,10 +73,11 @@ const srcText = async () => {
   return [...text.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => norm(m[1])).join("\n");
 };
 
-// R15's verb list and allowed openings, read from the test that enforces them on src/.
+// R15's verbs, the grammar checker's verb list (BYN5014), and the allowed openings from the test that enforces R15 on src/.
 const helpRule = async () => {
+  const lexicon = await Deno.readTextFile(lexiconPath);
+  const verbs = new Set([...(lexicon.match(/Verbs =\s*\[([\s\S]*?)\];/)?.[1] ?? "").matchAll(/"(\w+)"/g)].map((m) => m[1]));
   const text = await Deno.readTextFile(helpTestPath);
-  const verbs = new Set([...(text.match(/Verbs =\s*\[([\s\S]*?)\];/)?.[1] ?? "").matchAll(/"(\w+)"/g)].map((m) => m[1]));
   const allowed = [...(text.match(/Allowed = new\(\)\s*\{([\s\S]*?)\};/)?.[1] ?? "").matchAll(/\["((?:[^"\\]|\\.)*)"\]/g)].map((m) => m[1]);
   return (help) => verbs.has(help.split(/[ ,;:]/)[0]) || allowed.some((a) => help.startsWith(a));
 };
@@ -94,7 +97,7 @@ if (!codes.length) {
 }
 const src = await srcText();
 const goldenFiles = (await run("git", "ls-files", "tests/cases")).split("\n").filter((f) => f.endsWith(".diag"));
-const goldens = (await Promise.all(goldenFiles.map((f) => Deno.readTextFile(f)))).join("\n");
+const goldens = (await Promise.all(goldenFiles.map((f) => Deno.readTextFile(f).catch(() => "")))).join("\n");
 let missing = 0;
 for (const code of codes) {
   const entries = plan.get(code);
@@ -107,7 +110,7 @@ for (const code of codes) {
   for (const { message, help } of entries) {
     if (help && !startsWithVerb(help)) {
       missing++;
-      console.log(`${code} help in the plan does not start with a verb from ${helpTestPath}: "${help}"`);
+      console.log(`${code} help in the plan does not start with a verb from ${lexiconPath}: "${help}"`);
     }
     for (const [kind, text] of [["message", message], ["help", help]]) {
       if (!text) continue;

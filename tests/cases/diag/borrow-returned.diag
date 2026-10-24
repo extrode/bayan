@@ -8,7 +8,7 @@ error BYN3003: cannot return a borrow of the `stackalloc` buffer on line 2, whic
 
 error BYN3003: cannot return a borrow of `values`, which is freed when `firstTwo` returns
 
-  6 │ Span<i64> firstTwo(i64[4] values) => values.asSpan()[..2]
-    │                                      ^^^^^^^^^^^^^^^^^^^^
+  6 │ ReadOnlySpan<i64> firstTwo(i64[4] values) => values.span[..2]
+    │                                              ^^^^^^^^^^^^^^^^
     │
   help: let the caller pass the buffer or allocator in, and borrow or allocate from that

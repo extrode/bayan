@@ -1,7 +1,7 @@
 // Text must be UTF-8; the same file still reads as bytes.
 void main() fails IoError {
     let bad: u8[3] = [0x61, 0xFF, 0x62]
-    try Io.writeFile("bad.txt", bad.asSpan())
+    try Io.writeFile("bad.txt", bad.span)
     let text = Io.readText("bad.txt") catch switch {
         .invalidUtf8 => "invalidUtf8",
         _ => "some other error",

@@ -1,0 +1,6 @@
+error BYN8006: `expects` reads `name`, which is `Untrusted`; a violation would trap on outside data
+
+  1 │ i64 fit(Untrusted<string> name, by i64 limit) expects name.length <= limit {
+    │                                                       ^^^^
+    │
+  help: validate `name` with a type that has `requires` before the call

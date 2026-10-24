@@ -1,0 +1,6 @@
+// `runeCount` counts code points; `length` stays the byte length; `isAscii` checks every byte.
+void main() {
+    let s = "héllo €😀"
+    print($"{s.length} bytes, {s.runeCount} runes, ascii {s.isAscii}")
+    print($"{"".runeCount} {"".isAscii} {"plain".runeCount} {"plain".isAscii}")
+}

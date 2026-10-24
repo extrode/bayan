@@ -53,7 +53,7 @@ string run(List<string> cmd, for string path) fails IoError {
     var args: List<string> = List<string>()
     for i in 1..cmd.length { args.append(cmd[i]) }
     args.append(path)
-    let r = try Io.run(cmd[0], args.asSpan())
+    let r = try Io.run(cmd[0], args.span)
     return r.stdout
 }
 

@@ -17,6 +17,7 @@ Small, clear, and could be picked up without a design decision.
 - `Lexer.cs:571` help still says "wrap it with a cast to the unit type"; casts are BYN1057 since 5.3f, so it should say `T(x)`.
 - Float-to-int conversion saturates in `bayan-rt.h` (`byn_f2i`) instead of trapping as SPEC §6.2 says.
 - `i64.tryFrom` of exactly -2^63 as a float gives `null`; the float range check is `(min-1, max+1)` in `f64`, which rounds at that edge.
+- `docs/bayan-handoff.md:250` says `--ci github` will run `bayan fmt --check` and `bayan fmt --check-prose`; the command is `bayan format`, and the CI template does not run it yet.
 
 ## Later
 
@@ -217,6 +218,22 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-55: `bayan audit` names a call bypass by its member only (`trustUnchecked()`), since there is no trim-safe syntax walker in `Bayan.Syntax`; a walker would let it show the full callee (Question 240).
 - r3-55: `bayan audit` lists no C sources per dependency (SPEC §19.3); add them when dependencies land.
 - plan-strings-check skips BYN3216: its plan entry has a quoted `{2}` gloss between the message and `(label`, which the form regex rejects; reword the entry (revision erratum) or widen the regex (found 2026-10-24, r3-53b).
+- r3-53h: `RegionAnalysis.cs:236` and `OwnershipAnalysis` treat `BoundErrorVariant` as a leaf, so moves and borrows in an error payload are not checked.
+- r3-53h: `return .case(…)` is not BYN1056; the `return .x` check (5.3f) sees only a bare `.x`.
+- r3-53h: error-case payload fields are not dropped or moved: a `List` or other owned payload leaks, and a unique one is not tracked (Question 311).
+- End of round 3: run `/code-review --fix 8fedd073f425..dev` (545965c49391..ef66c140da9f, which holds the partial round-3 merge ef66c14, was reviewed and fixed 2026-10-24 at 8fedd07; not `dev...feat`).
+- r3-54a: the parser's particle list is private (`Parser.cs`), so `Lexicon.Particles` repeats it; expose one list.
+- r3-54a: the BYN5001, BYN5101 and BYN5102 page examples still end field lines with `;`.
+- r3-54a: the manifest's invalid-value help does not mention the `[key: value]` map form that `grammar.forms` now uses.
+- r3-54a: the task names `node scripts/plan-strings-check.js`, but the script uses Deno APIs; run it with `deno run -A`.
+- r3-54a: the BYN51xx exemption for rename attributes (`@json`, `@column`) and `@allow(…) because` is not built (Question 270).
+- r3-54a: plan-strings-check skips BYN5001: its message is in revision 0005, not in a plan §2 entry.
+- r3-53g: `Conformance.cs` and non-call member lookups take the first method of a name, so an overloaded method cannot satisfy an interface member by its particles (Question 306).
+- r3-53g: a generic `rest ReadOnlySpan<T>` does not infer `T` from the tail arguments (`Instantiate` in `BinderCalls.cs` matches parameters one to one).
+- r3-53g: `..xs` mixed with other tail arguments (`f(1, ..xs)`) is BYN2215; spreading into a `rest` tail beside values needs the run-time-length span path `FinishCollection` rejects (BYN2219).
+- r3-53g: `rest` on a non-span type has no diagnostic; the parser's input forms always build `ReadOnlySpan<T>`, but `rest List<T> xs` is accepted and matched as a plain parameter.
+- r3-53g: overloads of the same name each report BYN5001 and other naming lints once per declaration.
+- r3-53c1 gate: the BYN7003 second-form and BYN7007 labels underline the state name without its leading dot; plan says "label at `.{0}`".
 - review R4/R5: `bayan audit` reuses the `format.io-error` message for its unreadable file and directory lines; a shared `io-error` id would read better.
 - review loop 3 (545965c49391..ef66c140da9f): `Restyle`'s `otherUses` counts struct field declarations and field-init labels, so a file with a field named `i8` never has `i8(x)`/`i8.max` respelled (missed rename only).
 - review loop 3 (545965c49391..ef66c140da9f): a file reached through a symlinked directory keeps its alias path; `ManifestFor` walks up from the alias, so a link into another package uses the root package's style; audit output follows stack order, unsorted.
@@ -226,3 +243,30 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - review loop 4 (545965c49391..ef66c140da9f): The parent-link tests (`FormatTests.cs:~366-373`, `CliTests.cs:~312-316`) pin that `format <dir>` follows `dir/link -> ..` and writes files above `<dir>`; decide whether directory links leaving the named directory should be followed.
 - review loop 4 (545965c49391..ef66c140da9f): `Format.cs` `PackageNames` reads each file by its unresolved path while `within` filters by the resolved one, so a `<link>/..` path can feed names from a different file into the rename guard (missed or extra rename only).
 - review loop 4 (545965c49391..ef66c140da9f): `Format.cs` `ManifestFor` uses `Path.GetFullPath`, so `link/../a.byn` takes its package `style` from the lexical folder, not the folder of the file it reads and writes.
+- r3-53c2: an optional of a struct with states (`Order?`) keeps BYN2410 in a `switch`; `.s` arms on it are not checked per state.
+- r3-53c2: loops forget what every `var` and `ref` parameter was known to be at loop entry, also when the body never changes it.
+- r3-53c2: an `if` whose then-branch makes a `becomes` call forgets the receiver's state after the `if`, even when the else-branch would agree.
+- r3-53c2: reading a payload field from several states that hold it after different fields is BYN2022; it needs a per-state read.
+- r3-53c2: BYN7006's message (`{0} is .{1}` … write `{2}`) differs from the plan's text (`{0} {1} is .{2}` … write `{0}.{2} {1}`).
+- r3-53c2: BYN7007 in a `.s` pattern underlines the name without its dot, like the first half's labels (line above).
+- r3-53c2: payload fields are not seen by `TypeFacts`, ownership or drops: a `List` in a state's payload does not make the struct unique and leaks.
+- r3-53c2: a struct with states whose own field is named `tag` or `u` collides with the C layout's `tag` and `u` members.
+- r3-53c2: a generic struct with states relies on `Compilation.States` holding each instantiation; untested.
+- r3-53c2: BYN7009: a `become` inside a loop body does not count after the loop.
+- r3-53c2: BYN7003's third form on a `move this` or plain `this` method is followed by BYN2115 at the same call (one extra error).
+- `scripts/plan-strings-check.js` parses only `BYN####` entries, so CLI `Messages` strings copied from the plan (e.g. `FormatterHint`, plan §29 (a)) are never checked against it.
+- r3-54a-lib: comments in `src/runtime/bayan-rt.h` and `bayan-rt.c` still say `Panic.onPanic`; rename to `Panic.handler`.
+- r3-54a-lib: identifiers still named for round 2: `Compilation.OnPanic`, `BindOnPanic`, `_onPanicSet`, `BoundSetOnPanic`, `DiagnosticCodes.OnPanicPlacement`; rename for `Panic.handler`.
+- r3-54a-lib: `tests/cases/run/on-panic-order` prints the label "onPanic:" from its handler; relabel (and rename the case) for `Panic.handler`.
+- r3-54a-lib: `suq/fail/to-as-call.byn` keeps `asSpan` by design (a fail-corpus snippet for the `to…`/`as…` member rule); do not convert it.
+- r3-54a-lib: `for i in r` over a range held in a `let` crashes the Lowerer (`For` casts the iterable to `ArrayType`); `For` handles only a range literal.
+- r3-54a-lib: `mutableSpan()` is exclusive only as a loan (Question 322); a second writable view of the same list while the first lives is not rejected.
+- r3-54a-lib: `position`/`lastPosition`/`count`/`replaced` take only a string needle; a rune needle is BYN2202 (Question 319).
+- r3-54a-lib: the text views have no `length` (Question 318).
+- r3-54a-lib: `T.parse(text)` (fails `ParseError`) is 5.4b; only `T.tryParse(text, as:)` on integers is built (Question 324).
+- `string.matches(re)` (SPEC §21 assertions) is not built: no `Regex` type exists (handoff Question 326).
+- r3-54a-lib3b: list `remove(at:)`, `remove(at: range)` and `remove(from:through:)` do not free removed elements that own memory (Question 329).
+- `run/assert-fails.test` and other `run/` goldens fail intermittently under load (parallel workers); they pass on rerun. Find the timing dependency or mark them serial.
+- r3-54b: `suq/storefront/checkout.byn:202` calls `Hex.tryDecode`, which the spec does not name; only `try Hex.decode` exists.
+- r3-54b: `Utf8.decode(bytes, invalid: .replace)` allocates 3 bytes per input byte, then shrinks; a counting pass would avoid the over-allocation.
+- r3-54b: `for x in b` over a `Range` value that is not a range literal (a bound `.range(let b)`) crashes `Lowerer.cs:689` (InvalidCastException, RangeType to ArrayType); `Range<T>` also has no readers and no format, so `Rule` bounds cannot be observed.

@@ -1,0 +1,56 @@
+// validation-violations.byn — `ValidationError<T>.invalid` holds every broken rule as a `Violation<T>` (J23)
+public struct Signup {
+    string name
+        requires it.runeCount in 3..=8
+    i32 age
+        requires it in 13..=120
+    string password
+        requires it != "secret"
+
+    requires name != password  at .password
+}
+
+public Signup signup(string name, as i32 age) fails ValidationError<Signup> {
+    return try Signup { name: name, age: age, password: name }
+}
+
+void report(List<Violation<Signup>> violations) {
+    print($"{violations.length} violations")
+    for v in violations {
+        let rule = v.rule switch {
+            .length(let bounds) => "length",
+            .range(let bounds) => "range",
+            .custom => "custom",
+        }
+        print($"  {v.field}: {rule}")
+    }
+}
+
+void byPosition(string name, as i32 age) {
+    let s = signup(name, as: age) catch switch {
+        .invalid(let violations) => {
+            report(violations)
+            return
+        },
+    }
+    print($"signed up {s.name}")
+}
+
+void byValue(string name, as i32 age) {
+    let s = signup(name, as: age) catch switch {
+        .invalid e => {
+            report(e.violations)
+            return
+        },
+    }
+    print($"signed up {s.name}")
+}
+
+void main() {
+    // The name and the age break their own rules; the struct rule reads the broken name, so it is skipped (J43).
+    byPosition("ab", as: 7)
+    // The age and the password break their own rules; the struct rule reads the broken password, so it is skipped.
+    byValue("secret", as: 200)
+    // Only the struct rule breaks; it is reported at `.password`.
+    byValue("amira", as: 30)
+}

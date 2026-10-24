@@ -1,0 +1,15 @@
+// `s.copy()` copies from `context.allocator`, so the copy outlives the buffer it was read from.
+string keep() {
+    var buf = StrBuf()
+    buf.append("hello")
+    let s = buf.view.copy()
+    buf.clear()
+    buf.append("XXXXX")
+    return s
+}
+
+void main() {
+    print(keep())
+    let arena = Arena()
+    print("arena".copy(to: arena))
+}

@@ -1,0 +1,9 @@
+// `parts(by:)` with a `rune` separator, and `runes.skip(n)` / `runes.takeLast(n)` counting runes.
+for p in "a,b,,c".parts(by: ',') {
+    print($"[{p}]")
+}
+for p in "x→y→z".parts(by: '→', limit: 2) {
+    print($"<{p}>")
+}
+let s = "héllo"
+print($"{s.runes.skip(2)} {s.runes.takeLast(4)} {s.runes.takeLast(9)} [{s.runes.skip(9)}]")

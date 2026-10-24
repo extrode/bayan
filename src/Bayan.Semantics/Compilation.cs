@@ -188,7 +188,7 @@ public sealed partial class Compilation
         foreach (var module in Modules)
             foreach (var set in module.ErrorSets)
                 DeclareVariants(set);
-        DeclareBuiltinVariants(Builtins.ValidationError);
+        DeclareBuiltinVariants(Builtins.ValidationError, Builtins.ParseError);
         // Bounds are resolved once every type is declared, so `where T : IOrder<T>` can name `T` and later types.
         foreach (var where in _wheres) where();
         DeclareInterfaceMembers(Builtins.IEnumerator);
@@ -204,15 +204,28 @@ public sealed partial class Compilation
         foreach (var module in Modules)
             foreach (var e in module.Enums)
                 DeclareEnumMembers(e);
+        // `Range<i64>` is not a type name, so `Rule`'s cases are declared here rather than resolved.
+        foreach (var v in Builtins.Rule.Decl.Variants)
+        {
+            var sym = new UnionVariantSymbol(v.Name.Text, new Location(Builtins.RuleFile.Source, v.Name.Span), Builtins.Rule, Builtins.Rule.Variants.Count, v.Doc);
+            foreach (var f in v.Fields)
+                sym.Fields.Add(new ParameterSymbol(f.Name.Text, new Location(Builtins.RuleFile.Source, f.Name.Span), new RangeType(PrimitiveType.I64), ParamModifier.None, sym.Fields.Count));
+            Builtins.Rule.Variants.Add(sym);
+        }
         foreach (var module in Modules)
             foreach (var u in module.Unions)
                 DeclareUnionVariants(u);
         foreach (var module in Modules)
+            foreach (var set in module.ErrorSets)
+                DeclarePayloads(set);
+        foreach (var module in Modules)
         {
             foreach (var s in module.Structs) DeclareMembers(s);
+            foreach (var s in module.Structs) CheckStateNames(s);
             foreach (var s in module.Structs) Naming.CheckMembers(this, s);
             foreach (var f in module.AllFunctions.Where(f => f.Owner is null && !f.IsInstance && f.Kind != FunctionKind.Main && f.Kind != FunctionKind.Test).ToList())
                 DeclareSignature(f, f.Decl!, f.File!);
+            CheckOverloads(module);
         }
         foreach (var module in Modules)
         {
@@ -229,6 +242,10 @@ public sealed partial class Compilation
             foreach (var v in set.Decl.Variants)
             {
                 var sym = new ErrorVariantSymbol(v.Name.Text, new Location(set.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
+                // A built-in payload is a primitive: `invalidSequence(i64 at)`.
+                foreach (var f in v.Fields)
+                    sym.Fields.Add(new ParameterSymbol(f.Name.Text, new Location(set.Location.Source, f.Name.Span),
+                        PrimitiveType.ByName[((NamedType)f.Type).Path[0].Text], ParamModifier.None, sym.Fields.Count));
                 set.Variants.Add(sym);
                 ErrorVariants.Add(sym);
             }
@@ -247,7 +264,7 @@ public sealed partial class Compilation
                 help: "write `void main()`, `i32 main()`, `void main(ReadOnlySpan<string> args)` or `i32 main(ReadOnlySpan<string> args)`, each optionally with `fails`");
     }
 
-    /// <summary><c>@cases</c> belongs on a test with parameters, <c>@exitCode</c> on an error variant and <c>@sealed</c>, bare, on a struct; nothing else takes an attribute.</summary>
+    /// <summary><c>@cases</c> belongs on a test with parameters, <c>@exitCode</c> on an error variant and <c>@sealed</c> and <c>@positional</c>, bare, on a struct; nothing else takes an attribute.</summary>
     private void CheckAttributes(FileContext file, Decl decl)
     {
         var hasCases = false;
@@ -270,6 +287,14 @@ public sealed partial class Compilation
             else if (a.Name.Text == "sealed" && (a.Args.Length > 0 || a.Because is not null))
                 Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, [file.Source.GetText(a.Span)], help: "write `@sealed` with no arguments and no `because`");
             else if (a.Name.Text == "sealed") { }
+            else if (a.Name.Text == "positional" && decl is not StructDecl)
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@positional"], help: "put `@positional` on a struct");
+            else if (a.Name.Text == "positional" && (a.Args.Length > 0 || a.Because is not null))
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, [file.Source.GetText(a.Span)], help: "write `@positional` with no arguments and no `because`");
+            else if (a.Name.Text == "positional" && decl is StructDecl { States.Length: > 0 })
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@positional"], help: "remove `@positional`: a struct with states is built with state literals");
+            else if (a.Name.Text == "positional")
+                Positional.Add((StructDecl)decl);
             else
                 Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text],
                     help: "use `@exitCode(n)` on an error variant or `@cases(...)` on a test");
@@ -313,7 +338,7 @@ public sealed partial class Compilation
             foreach (var v in values.Where(v => !IsCaseLiteral(v)))
             {
                 Report(DiagnosticCodes.CasesNotConstant, file.Source, v.Span, [],
-                    help: "write the value as a literal: a number, string, char, `true`, `false`, `null` or a `.case`");
+                    help: "write the value as a literal: a number, string, rune, `true`, `false`, `null` or a `.case`");
                 constant = false;
             }
             if (constant) cases.Add(values);
@@ -614,9 +639,40 @@ public sealed partial class Compilation
 
     private void AddFunction(FileContext file, Name name, FunctionSymbol f)
     {
-        if (!CheckUnique(file, name)) return;
-        file.Module.Functions[name.Text] = [f];
+        // Another function of the name is an overload, kept if its signature cannot overlap (CheckOverloads, J65).
+        if (file.Module.Functions.TryGetValue(name.Text, out var overloads)) overloads.Add(f);
+        else if (CheckUnique(file, name)) file.Module.Functions[name.Text] = [f];
+        else return;
         file.Module.AllFunctions.Add(f);
+    }
+
+    /// <summary>Drops an overload that some call would match as well as an earlier one, reporting it as a duplicate (J65).</summary>
+    private void CheckOverloads(ModuleSymbol module)
+    {
+        foreach (var overloads in module.Functions.Values)
+            for (var i = 1; i < overloads.Count; i++)
+            {
+                if (overloads.Take(i).FirstOrDefault(o => Overlap(o, overloads[i])) is not { } earlier) continue;
+                ReportDuplicate(overloads[i].File!.Source, overloads[i].Decl!.Name, earlier.Location!.Value);
+                module.AllFunctions.Remove(overloads[i]);
+                overloads.RemoveAt(i--);
+            }
+    }
+
+    /// <summary>
+    /// Whether one call could match both <paramref name="a"/> and <paramref name="b"/>: each names every label the
+    /// other requires, and their counts of unlabeled arguments meet. Overloads differ by particle set (HANDOFF §24).
+    /// </summary>
+    internal static bool Overlap(FunctionSymbol a, FunctionSymbol b)
+    {
+        static string Label(ParameterSymbol p) => p.Syntax?.Particle?.Text ?? p.Name;
+        static IEnumerable<string> Required(FunctionSymbol f) => f.Parameters.Where(p => p.Syntax is { Particle: not null, Default: null }).Select(Label);
+        static (int Min, int Max) Positional(FunctionSymbol f) =>
+            (f.Parameters.Count(p => p.Syntax is { Particle: null, Default: null, Rest: false }),
+             f.Parameters.Any(p => p.Syntax?.Rest == true) ? int.MaxValue : f.Parameters.Count(p => p.Syntax is { Particle: null }));
+        var shared = a.Parameters.Select(Label).Intersect(b.Parameters.Select(Label)).ToHashSet();
+        var (pa, pb) = (Positional(a), Positional(b));
+        return Required(a).Concat(Required(b)).All(shared.Contains) && pa.Min <= pb.Max && pb.Min <= pa.Max;
     }
 
     private bool CheckUnique(FileContext file, Name name)
@@ -688,6 +744,29 @@ public sealed partial class Compilation
             Report(DiagnosticCodes.EmptyErrorSet, file.Source, set.Decl.Name.Span, [set.Name]);
     }
 
+    /// <summary>The payload fields of each case of <paramref name="set"/>, resolved once every type is declared.</summary>
+    private void DeclarePayloads(ErrorSetSymbol set)
+    {
+        var file = set.Module.Files.First(f => f.Tree.Root.Members.Contains(set.Decl));
+        var types = new TypeResolver(this, file, null);
+        foreach (var v in set.Decl.Variants)
+        {
+            if (set.Find(v.Name.Text) is not { } sym || sym.Location!.Value.Span != v.Name.Span) continue;
+            var names = new Dictionary<string, Location>(StringComparer.Ordinal);
+            foreach (var f in v.Fields)
+            {
+                Naming.CheckValue(this, file.Source, f.Name);
+                if (names.TryGetValue(f.Name.Text, out var prev))
+                {
+                    ReportDuplicate(file.Source, f.Name, prev);
+                    continue;
+                }
+                names[f.Name.Text] = Loc(file, f.Name);
+                sym.Fields.Add(new ParameterSymbol(f.Name.Text, Loc(file, f.Name), types.Resolve(f.Type), ParamModifier.None, sym.Fields.Count));
+            }
+        }
+    }
+
     /// <summary>BYN3202 for two composed sets with a case of the same name.</summary>
     private void CheckComposition(AliasPlaceholder alias, ErrorSetDecl decl)
     {
@@ -745,7 +824,7 @@ public sealed partial class Compilation
         {
             Naming.CheckValue(this, source, p.Name);
             var type = types.Resolve(p.Type);
-            const string help = "use a number type, `bool`, `char`, `string` or a plain enum; enum data is stored in static tables";
+            const string help = "use a number type, `bool`, `rune`, `string` or a plain enum; enum data is stored in static tables";
             if (p.Modifier != ParamModifier.None)
                 Report(DiagnosticCodes.InvalidEnumParameter, source, p.Span, [p.Name.Text], label: $"`{p.Modifier.ToString().ToLowerInvariant()}` is not allowed here", help: help);
             else if (p.Default is not null)
@@ -904,7 +983,9 @@ public sealed partial class Compilation
                     };
                     if (s.Template is null) DeclareWhere(file, m.Where, ownParameters, typeMap, m.Name.Text);
                     DeclareSignature(fn, m, file, s);
-                    if (Unique(m.Name)) s.Methods.Add(fn);
+                    if (s.FindMethods(m.Name.Text).FirstOrDefault(o => Overlap(o, fn)) is { } earlier)
+                        ReportDuplicate(file.Source, m.Name, earlier.Location!.Value);
+                    else if (s.FindMethods(m.Name.Text).Any() || Unique(m.Name)) s.Methods.Add(fn);
                     s.Module.AllFunctions.Add(fn);
                     break;
                 }
@@ -936,7 +1017,33 @@ public sealed partial class Compilation
         DeclareCheck(s);
     }
 
-    /// <summary>A struct with <c>requires</c> gets a check, run on each built value, that fails with <c>ValidationError</c>.</summary>
+    private readonly Dictionary<StructSymbol, ErrorSetSymbol> _validationErrors = new();
+
+    /// <summary>
+    /// <c>ValidationError&lt;T&gt;</c>: for a struct with <c>requires</c>, its own set, numbered when first named, whose
+    /// <c>invalid</c> case carries <c>List&lt;Violation&lt;T&gt;&gt; violations</c> (J23); for any other <c>T</c>, the shared
+    /// payload-less set.
+    /// </summary>
+    public ErrorSetSymbol ValidationErrorOf(TypeSymbol t)
+    {
+        if (t is not StructSymbol { FieldEnum: { } fields } s) return Builtins.ValidationError;
+        if (_validationErrors.TryGetValue(s, out var set)) return set;
+        var shared = Builtins.ValidationError;
+        set = new ErrorSetSymbol(shared.Name, shared.Location, shared.Module, shared.Access, shared.Decl) { Of = s };
+        var decl = Builtins.ViolationDecl;
+        var source = Builtins.RuleFile.Source;
+        var violation = new StructSymbol("Violation", new Location(source, decl.Name.Span), Builtins.Module, Accessibility.Public, decl, Builtins.RuleFile) { TypeArguments = [s] };
+        foreach (var (f, type) in decl.Members.OfType<FieldDecl>().Zip<FieldDecl, TypeSymbol>([fields, Builtins.Rule]))
+            violation.Fields.Add(new FieldSymbol(f.Name.Text, new Location(source, f.Name.Span), violation, Accessibility.Public, f) { Type = type });
+        var v = shared.Decl.Variants[0];
+        var invalid = new ErrorVariantSymbol(v.Name.Text, new Location(shared.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
+        invalid.Fields.Add(new ParameterSymbol("violations", invalid.Location!.Value, new ListType(violation), ParamModifier.None, 0));
+        set.Variants.Add(invalid);
+        ErrorVariants.Add(invalid);
+        return _validationErrors[s] = set;
+    }
+
+    /// <summary>A struct with <c>requires</c> gets a check, run on each built value, that fails with <c>ValidationError&lt;T&gt;</c>.</summary>
     private void DeclareCheck(StructSymbol s)
     {
         var first = s.Decl.Members.OfType<FieldDecl>().SelectMany(f => f.Requires).Concat(s.Decl.Rules).MinBy(r => r.Span.Start);
@@ -947,9 +1054,53 @@ public sealed partial class Compilation
             return;
         }
         var check = new FunctionSymbol("requires", s.Location, s.Module, FunctionKind.Method) { Owner = s, File = s.File, Access = s.Access, Fails = true };
-        check.ErrorSets.Add(Builtins.ValidationError);
+        check.ErrorSets.Add(ValidationErrorOf(s));
         s.Module.AllFunctions.Add(check);
         Checks[s] = new StructChecks(check, []);
+    }
+
+    /// <summary>The states of each struct with a <c>states</c> block, as a synthetic union whose cases are the states; read by the backend.</summary>
+    public Dictionary<StructSymbol, UnionSymbol> States { get; } = new();
+
+    /// <summary>
+    /// The states union of <paramref name="s"/>, or null when it has no <c>states</c> block. Declared on first use,
+    /// so <c>T.s</c> resolves before the struct's members are declared.
+    /// </summary>
+    internal UnionSymbol? StatesOf(StructSymbol s)
+    {
+        if (s.Decl.States.Length == 0) return null;
+        if (States.TryGetValue(s, out var existing)) return existing;
+        var decl = new UnionDecl(s.Decl.Name.Span, Modifiers.None, s.Decl.Name, s.Decl.States);
+        var u = new UnionSymbol(s.Name, s.Location, s.Module, s.Access, decl, s.File) { TypeMap = s.TypeMap };
+        States[s] = u;
+        // An instance's states were checked on the template.
+        var outer = s.Template is null ? null : ReportInto(new DiagnosticBag());
+        try { DeclareUnionVariants(u); }
+        finally { if (s.Template is not null) ReportInto(outer); }
+        if (s.Template is not null) return u;
+        foreach (var member in s.Decl.Members)
+        {
+            var name = member switch
+            {
+                FunctionDecl f when f.Modifiers.HasFlag(Modifiers.Static) => f.Name.Text,
+                PropertyDecl p when p.Modifiers.HasFlag(Modifiers.Static) => p.Name.Text,
+                _ => null,
+            };
+            if (name is not null && s.Decl.States.FirstOrDefault(v => v.Name.Text == name) is { } state)
+                Report(DiagnosticCodes.StateShadowsStatic, s.File.Source, state.Name.Span, [name, s.Name],
+                    help: "rename the state or the static member");
+        }
+        return u;
+    }
+
+    /// <summary>Declares the states of <paramref name="s"/>; a receiver state or <c>becomes</c> target it does not declare is BYN7007.</summary>
+    private void CheckStateNames(StructSymbol s)
+    {
+        var states = StatesOf(s);
+        foreach (var f in s.Decl.Members.OfType<FunctionDecl>())
+            foreach (var n in f.ReceiverStates.Append(f.Becomes).OfType<Name>())
+                if (states?.Find(n.Text) is null)
+                    Report(DiagnosticCodes.UnknownState, s.File.Source, n.Span, [s.Name, n.Text], help: $"check the states declared in `{s.Name}`");
     }
 
     /// <summary>The <c>requires</c> check of each struct that has rules, by struct.</summary>
@@ -957,6 +1108,9 @@ public sealed partial class Compilation
 
     /// <summary>The structs that stand for a <c>type distinct</c>, built with <c>X(raw)</c>.</summary>
     internal HashSet<StructSymbol> Distinct { get; } = new();
+
+    /// <summary>Structs marked with a well-formed <c>@positional</c>: they get a constructor taking every field in order.</summary>
+    internal HashSet<StructDecl> Positional { get; } = new();
 
     private readonly Dictionary<FunctionSymbol, ConstructorDecl> _constructorBodies = new();
 
@@ -1046,6 +1200,11 @@ public sealed partial class Compilation
             Report(DiagnosticCodes.Unsupported, file.Source, span, [$"`{(actual & rejected).ToString().ToLowerInvariant()}` on {what}"]);
     }
 
+    /// <summary>Makes <paramref name="decl"/>'s <c>move this</c> or plain receiver <c>ref this</c>, keeping <c>is .s</c> (BYN7010's fix, also part of BYN7003's).</summary>
+    internal static Fix RefReceiverFix(FunctionDecl decl) => decl.MoveThis is { } move
+        ? new Fix(new TextSpan(move.Start, "move".Length), "ref")
+        : new Fix(new TextSpan(decl.ParamsStart, 0), decl.ReceiverStates.Length > 0 ? "ref " : decl.Params.Length > 0 ? "ref this, " : "ref this");
+
     private void DeclareSignature(FunctionSymbol fn, FunctionDecl decl, FileContext file, StructSymbol? owner = null)
     {
         var types = new TypeResolver(this, file, owner, fn.TypeMap);
@@ -1054,6 +1213,16 @@ public sealed partial class Compilation
         if (decl.RefThis is { } refThis && fn is not { Kind: FunctionKind.Method, IsStatic: false })
             Report(DiagnosticCodes.Unsupported, file.Source, refThis, [fn.IsStatic ? "`ref this` on a static method" : "`ref this` outside a struct"],
                 help: "remove `ref this`; only an instance method has a `this` to change");
+        // Only a `ref this` caller still holds the value whose state changed (revision 0010); a static `becomes` is BYN2022 at its `become`.
+        if (decl.Becomes is { } becomes && decl.RefThis is null && fn is { Kind: FunctionKind.Method, IsStatic: false })
+        {
+            // `move this is .s` and `this is .s` are written; a method with neither takes `this` unwritten.
+            var start = decl.MoveThis?.Start ?? decl.ParamsStart;
+            var receiver = decl.ReceiverStates.Length > 0 ? TextSpan.FromBounds(start, decl.ReceiverStates[^1].Span.End) : decl.MoveThis;
+            Report(DiagnosticCodes.BecomesNeedsRef, file.Source, receiver ?? decl.Name.Span,
+                [fn.Name, becomes.Text, receiver is { } r ? file.Source.GetText(r) : "this"],
+                help: $"change the receiver of `{fn.Name}` to `ref this`, or return the new state as a value", fix: RefReceiverFix(decl));
+        }
         DeclareParameters(fn, decl.Params, file, types);
         if (decl.Fails is { } fails)
         {

@@ -8,6 +8,6 @@ void work() {
 }
 
 void main() {
-    Panic.onPanic = onCrash
+    Panic.handler = onCrash
     work()
 }

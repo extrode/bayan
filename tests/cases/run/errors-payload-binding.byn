@@ -1,0 +1,80 @@
+union error CarrierError {
+    timeout(i64 after)
+    rejected(string reason, i64 code)
+    closed
+}
+
+union error QuoteError {
+    stale(i64 age)
+}
+
+union error SendError = CarrierError, QuoteError
+
+union error Retryable = SendError except .rejected
+
+i64 send(i64 n) fails CarrierError {
+    fail .timeout(after: n * 10) if n > 100
+    fail .rejected("too small", n) if n < 0
+    fail .closed if n == 0
+    return n
+}
+
+i64 quote(i64 n) fails SendError {
+    fail .stale(age: n) if n == 42
+    return try send(n)
+}
+
+i64 retry(i64 n) fails Retryable {
+    defer failing print("retry gave up")
+    return quote(n) catch (CarrierError.rejected) 1
+}
+
+void positional(i64 n) {
+    let r = quote(n) catch switch {
+        .timeout(let after) => after,
+        .rejected(let reason, _) => reason.length,
+        QuoteError.stale(let age) => -age,
+        .closed => 0,
+    }
+    print($"positional {r}")
+}
+
+void whole(i64 n) {
+    let r = retry(n) catch switch {
+        .timeout e => {
+            print($"timeout e after {e.after}")
+            return
+        },
+        .stale s => {
+            print($"stale s {s.age}")
+            return
+        },
+        _ => {
+            print("other")
+            return
+        },
+    }
+    print($"ok {r}")
+}
+
+Result<i64, CarrierError> held(i64 n) {
+    return .timeout(after: n) if n > 0
+    return 0
+}
+
+i64 waited(Result<i64, CarrierError> r) => r.isOk ? -1 : r.err switch {
+    .timeout(let after) => after,
+    _ => 0,
+}
+
+void main() {
+    positional(500)
+    positional(-3)
+    positional(42)
+    positional(0)
+    whole(700)
+    whole(42)
+    whole(-1)
+    whole(0)
+    print($"held {waited(held(33))} {waited(held(0))}")
+}

@@ -1,4 +1,4 @@
-Span<i64> tail(Span<i64> values) => values[1..]
+ReadOnlySpan<i64> tail(ReadOnlySpan<i64> values) => values[1..]
 
 List<i64> keep(ReadOnlySpan<i64> values, to Arena arena) => values.copy(to: arena)
 
@@ -24,7 +24,7 @@ void main() {
     xs.append(1)
     xs.append(2)
     print($"{total(xs)}")
-    let view = xs.asSpan()
+    let view = xs.span
     print($"{view[0]}")
     xs.append(3)
     let longer = pick(names[0], by: names[1])
@@ -32,7 +32,7 @@ void main() {
     provide allocator: arena {
         var local = List<i64>()
         local.append(5)
-        let copy = tail(local.asSpan()).copy(to: arena)
+        let copy = tail(local.span).copy(to: arena)
         print($"{copy.length}")
     }
     var kept = ""
@@ -41,10 +41,10 @@ void main() {
     }
     print(kept)
     var fixed: i64[3] = [1, 2, 3]
-    let part = fixed.asSpan()[1..]
+    let part = fixed.span[1..]
     print($"{part[0]}")
     fixed[0] = 9
-    let kept2 = keep(fixed.asSpan(), to: arena)
+    let kept2 = keep(fixed.span, to: arena)
     print($"{kept2.length}")
     arena.reset()
 }
@@ -53,8 +53,8 @@ void fillLocal() {
     let buf = stackalloc u8[16]
     var sb = StrBuf(buf)
     sb.append("hi")
-    let names: string[1] = ["x"]
-    let view = names.asSpan()
+    var names: string[1] = ["x"]
+    let view = names.mutableSpan()
     view[0] = sb.finish()
     print(names[0])
 }
@@ -63,9 +63,9 @@ struct Stack {
     List<i64> items
     i64[2] pair
 
-    Span<i64> view() => items.asSpan()
+    ReadOnlySpan<i64> view() => items.span
 
-    ReadOnlySpan<i64> top() => pair.asSpan()[1..]
+    ReadOnlySpan<i64> top() => pair.span[1..]
 
     i64 sum() {
         var s: i64 = 0

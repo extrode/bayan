@@ -1,0 +1,13 @@
+error BYN3214: `xs` is borrowed for the call and cannot be stored
+
+  2 │     return xs
+    │            ^^
+    │
+  help: copy it first: `xs.copy()`
+
+error BYN3214: `xs` is borrowed for the call and cannot be stored
+
+  7 │     into = view
+    │            ^^^^
+    │
+  help: copy it first: `xs.copy()`

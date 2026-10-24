@@ -36,7 +36,32 @@ internal sealed partial class Binder
         if (c.Callee is MemberExpr { Member.Text: "tryFrom", NullConditional: false, Target: NameExpr into }
             && PrimitiveType.ByName.TryGetValue(into.Name.Text, out var target) && target.IsNumeric)
             return BindTryFrom(c, target);
+        if (c.Callee is MemberExpr { Member.Text: "tryParse", NullConditional: false, Target: NameExpr parsed }
+            && PrimitiveType.ByName.TryGetValue(parsed.Name.Text, out var parseTo) && parseTo.IsInteger)
+            return BindTryParse(c, parseTo);
+        if (c.Callee is MemberExpr { Member.Text: "parse", NullConditional: false, Target: NameExpr parsedBy }
+            && PrimitiveType.ByName.TryGetValue(parsedBy.Name.Text, out var parseAs) && parseAs.IsInteger)
+            return BindParse(c, parseAs);
+        // `StrBuf.over(span)`: the span first, then `context.allocator` (spec §16.4).
+        if (c.Callee is MemberExpr { Member.Text: "over", NullConditional: false, Target: NameExpr { Name.Text: "StrBuf", TypeArgs.Length: 0 } }
+            && _scope.Lookup("StrBuf") is null && !Module.Types.ContainsKey("StrBuf"))
+            return new BoundCall(c, _c.Builtins.StrBufOver, null, BindArguments(c, _c.Builtins.StrBufOver.Parameters, _c.Builtins.StrBufOver, false, "StrBuf.over"), BuiltinType.StrBuf);
+        // `Log.debug(…)` on an undeclared `Log` names the level where the act should be (BYN5007, Question 271).
+        if (c.Callee is MemberExpr { NullConditional: false, Target: NameExpr { Name.Text: "Log", TypeArgs.Length: 0 }, Member.Text: var level } logged
+            && _c.Builtins.LogLevel.Find(level) is not null && _scope.Lookup("Log") is null && !Module.Types.ContainsKey("Log")
+            && !Module.Functions.ContainsKey("Log") && !Module.Constants.ContainsKey("Log") && !_file.Imports.ContainsKey("Log"))
+        {
+            Report(DiagnosticCodes.LogLevelAsVerb, logged.Span, [level],
+                help: $"call `log` and pass the level `as: .{level}`",
+                fix: c.Args is [{ Name: null, Modifier: ArgModifier.None } text]
+                    ? new Fix(c.Span, $"log({Source.GetText(text.Value.Span)}, as: .{level})") : null);
+            BindArgumentsForRecovery(c);
+            return new BoundErrorExpr(c);
+        }
+        var outer = _calleeOf;
+        _calleeOf = c;
         var callee = c.Callee is TargetMemberExpr t ? BindTargetMember(t, expected) : BindExprOrType(c.Callee);
+        _calleeOf = outer;
         switch (callee)
         {
             case BoundMethodGroup { Function.Builtin: BuiltinFunction.OwnedNew }:
@@ -45,8 +70,11 @@ internal sealed partial class Binder
                 return BindUntrusted(c, (expected as UntrustedType)?.Inner);
             case BoundMethodGroup { Function.Builtin: BuiltinFunction.Trust }:
                 return BindTrust(c);
+            // `Utf8.decode(bytes, invalid: .replace)` is the lossy form, which never fails.
+            case BoundMethodGroup g when g.Function == _c.Builtins.Utf8Decode && c.Args.Any(a => a.Name?.Text == "invalid"):
+                return BindFunctionCall(c, _c.Builtins.Utf8DecodeReplace, null, g.TypeArgs);
             case BoundMethodGroup g:
-                return BindFunctionCall(c, g.Function, g.Receiver, g.TypeArgs);
+                return BindFunctionCall(c, Overload(g.Function, c), g.Receiver, g.TypeArgs);
             case BoundBuiltinGroup b:
                 return BindBuiltinMethodCall(c, b.Receiver, b.Name);
             case BoundTypeRef tr:
@@ -68,6 +96,30 @@ internal sealed partial class Binder
         }
     }
 
+    /// <summary>
+    /// The overload of <paramref name="fn"/> the call's labels select (J65): the first whose labels fit the named arguments
+    /// and whose unlabeled parameters fit the positional ones. Overloads cannot overlap, so at most one fits; with none, <paramref name="fn"/> reports why.
+    /// </summary>
+    private static FunctionSymbol Overload(FunctionSymbol fn, CallExpr c)
+    {
+        var overloads = fn.Owner is StructSymbol s ? s.FindMethods(fn.Name).ToList()
+            : fn.Module.Functions.TryGetValue(fn.Name, out var fs) && fs.Contains(fn) ? fs : [];
+        if (overloads.Count < 2) return fn;
+        var named = c.Args.Where(a => a.Name is not null).Select(a => a.Name!.Text).ToHashSet();
+        var positional = c.Args.Count(a => a.Name is null);
+        return overloads.FirstOrDefault(f => Accepts(f, named, positional)) ?? fn;
+    }
+
+    private static bool Accepts(FunctionSymbol f, HashSet<string> named, int positional)
+    {
+        var ps = f.Parameters;
+        if (!named.All(n => ps.Any(p => Label(p) == n))) return false;
+        if (ps.Any(p => p.Syntax is { Particle: not null, Default: null } && !named.Contains(Label(p)))) return false;
+        var open = ps.Where(p => p.Syntax is { Particle: null } && !named.Contains(p.Name)).ToList();
+        return positional >= open.Count(p => p.Syntax is { Default: null, Rest: false })
+            && (positional <= open.Count || open.Any(p => p.Syntax!.Rest));
+    }
+
     /// <summary><c>u8.tryFrom(x)</c>: a numeric conversion that gives <c>null</c> instead of trapping when the value does not fit.</summary>
     private BoundExpr BindTryFrom(CallExpr c, PrimitiveType target)
     {
@@ -85,6 +137,35 @@ internal sealed partial class Binder
             return new BoundErrorExpr(c);
         }
         return new BoundTryFrom(c, operand, target, new OptionalType(target));
+    }
+
+    /// <summary><c>i64.tryParse(text, as: radix)</c>: an integer read from text in a <c>Radix</c>, <c>.decimal</c> by default, or <c>null</c> (spec §6.2).</summary>
+    private BoundExpr BindTryParse(CallExpr c, PrimitiveType target)
+    {
+        var ps = new[]
+        {
+            new ParameterSymbol("text", null, PrimitiveType.String, ParamModifier.None, 0),
+            new ParameterSymbol("as", null, _c.Builtins.Radix, ParamModifier.None, 1),
+        };
+        var args = BindArguments(c, ps[..Math.Clamp(c.Args.Length, 1, 2)], null, enforceNames: false, displayName: $"{target.Name}.tryParse");
+        if (args.Length == 0 || args.Any(a => a.Type.IsError)) return new BoundErrorExpr(c);
+        var radix = args.Length > 1 ? args[1] : new BoundEnumMember(c, _c.Builtins.Radix.Find("decimal")!);
+        return new BoundBuiltinCall(c, BuiltinMember.IntTryParse, args[0], [radix], new OptionalType(target));
+    }
+
+    /// <summary><c>i64.parse(text, as: radix)</c>: as <c>tryParse</c>, but fails <c>ParseError</c> with the offset of the bad digit, or <c>overflow</c>.</summary>
+    private BoundExpr BindParse(CallExpr c, PrimitiveType target)
+    {
+        var fn = _c.Builtins.IntParse(target);
+        var args = BindArguments(c, fn.Parameters.Take(Math.Clamp(c.Args.Length, 1, 2)).ToArray(), null, enforceNames: false, displayName: $"{target.Name}.parse");
+        if (args.Length == 0 || args.Any(a => a.Type.IsError)) return new BoundErrorExpr(c);
+        var radix = args.Length > 1 ? args[1] : new BoundEnumMember(c, _c.Builtins.Radix.Find("decimal")!);
+        if (!ReferenceEquals(_handled, c))
+        {
+            if (_covered is not null) _covered.Add((c, $"{target.Name}.parse"));
+            else ReportUnhandled(c, $"{target.Name}.parse");
+        }
+        return new BoundCall(c, fn, null, [args[0], radix], target);
     }
 
     private void BindArgumentsForRecovery(CallExpr c)
@@ -123,6 +204,17 @@ internal sealed partial class Binder
         };
         var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
         (_printArgument, _sinkArgument) = (outer, outerSink);
+        if (receiver is not null && ReceiverStates(fn) is { } wanted) ReportWrongState(fn.Name, receiver, wanted, receiver.Syntax.Span);
+        // A call that `becomes` changes the receiver's state; a statement learns the new state after it (`LearnBecomes`). A call
+        // without `becomes` leaves it as it was (revision 0010).
+        if (receiver is not null && fn.Decl?.Becomes is { } to)
+        {
+            if (Subject(receiver) is { } changed) ForgetState(changed.Key);
+            if (receiver is BoundThis && _fn is { } caller) CheckBecomesCall(c, caller, fn, to);
+            else if (receiver is BoundLocal { Local: ParameterSymbol { Modifier: ParamModifier.Ref } param })
+                Report(DiagnosticCodes.BecomesOnRefParameter, c.Span, [fn.Name, param.Name],
+                    help: $"take `{param.Name}` by `move` and return the new state as a value");
+        }
         // A `ref this` call on `map[key]` changes the stored value in place.
         if (receiver is not null && fn.IsMutating) receiver = MapWriteTarget(receiver);
         // A `dyn ref` writes through the borrow, not into the local holding it; `dyn ref readonly` is BYN2813.
@@ -254,9 +346,17 @@ internal sealed partial class Binder
         var sawNamed = false;
         var positional = 0;
         var mismatched = false;
+        // A `rest` tail takes every positional argument from its place on; parameters after it are named only (J64).
+        var rest = ps.FirstOrDefault(x => x.Syntax?.Rest == true && x.Type is SpanType);
+        var tail = new List<Argument>();
         foreach (var arg in c.Args)
         {
             ParameterSymbol? p;
+            if (arg.Name is null && rest is not null && positional >= rest.Ordinal)
+            {
+                tail.Add(arg);
+                continue;
+            }
             if (arg.Name is { } n)
             {
                 sawNamed = true;
@@ -302,8 +402,10 @@ internal sealed partial class Binder
                 _prebound.Remove(arg);
                 continue;
             }
-            result[p.Ordinal] = BindArgument(arg, p);
+            result[p.Ordinal] = BindArgument(arg, p, name);
         }
+        if (rest is not null && result[rest.Ordinal] is null)
+            result[rest.Ordinal] = BindRestTail(c, rest, tail);
         var missing = new List<string>();
         for (var i = 0; i < ps.Count; i++)
         {
@@ -319,12 +421,34 @@ internal sealed partial class Binder
                 result[i] = new BoundEnumMember(c, _c.Builtins.LogLevel.Find("info")!);
                 continue;
             }
+            if (fn?.Builtin == BuiltinFunction.Print && p.Ordinal == 1)
+            {
+                result[i] = new BoundEnumMember(c, _c.Builtins.Stream.Find("stdout")!);
+                continue;
+            }
             missing.Add(Label(p));
             result[i] = new BoundErrorExpr(c);
         }
         if (missing.Count > 0 && !mismatched)
             Report(DiagnosticCodes.MissingArgument, c.Span, [string.Join("`, `", missing), name]);
         return result!;
+    }
+
+    /// <summary>
+    /// The arguments of a <c>rest</c> tail as a span literal, which lowers to stack slots in the caller (J62).
+    /// A lone <c>..x</c> passes the span of collection <c>x</c>; on anything else it stays a range (J63).
+    /// </summary>
+    private BoundExpr BindRestTail(CallExpr c, ParameterSymbol p, List<Argument> tail)
+    {
+        if (tail is [{ Name: null, Modifier: ArgModifier.None, Value: RangeExpr { Start: null, End: { } operand, Inclusive: false } range }])
+        {
+            var collection = BindExpr(operand);
+            if (collection.Type.IsError) return collection;
+            return collection.Type is ListType or SpanType or Symbols.ArrayType
+                ? Convert(collection, p.Type, operand.Span, argument: true) : BindRange(range, null);
+        }
+        var element = ((SpanType)p.Type).Element;
+        return new BoundCollection(c, p.Type, tail.Select(a => BindArgumentValue(a, element)).ToArray());
     }
 
     /// <summary>The label a call writes for <paramref name="p"/>: its particle (<c>to:</c>), else its name.</summary>
@@ -338,7 +462,7 @@ internal sealed partial class Binder
         _ => null,
     };
 
-    private BoundExpr BindArgument(Argument arg, ParameterSymbol p)
+    private BoundExpr BindArgument(Argument arg, ParameterSymbol p, string callee)
     {
         var wanted = p.Modifier switch { ParamModifier.Ref => ArgModifier.Ref, ParamModifier.Out => ArgModifier.Out, _ => ArgModifier.None };
         // `move x` hands a value to a plain or `move` parameter.
@@ -353,6 +477,14 @@ internal sealed partial class Binder
         {
             var place = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, p.Type);
             if (place.Type.IsError) return place;
+            // A local whose state is known is passed as its declared type. A `ref` callee keeps the state (revision 0010); an `out`
+            // callee supplies a new value, so its state is no longer known.
+            if (place is BoundLocal known && KnownState(known.Local) is not null)
+            {
+                place = new BoundLocal(known.Syntax, known.Local);
+                if (wanted == ArgModifier.Out) ForgetState(known.Local);
+            }
+            else if (place is BoundThis && wanted == ArgModifier.Out) ForgetState(_thisFacts);
             if (early is null) Constrain(place, p.Type);
             if (!place.Type.Equals(p.Type))
             {
@@ -360,16 +492,22 @@ internal sealed partial class Binder
                     help: "give a `ref` or `out` argument exactly the parameter's type");
                 return new BoundErrorExpr(arg.Value);
             }
+            // An `out` argument writes a whole value: a `ref` parameter or `this` keeps its state only when its type names one (BYN7012).
+            if (wanted == ArgModifier.Out && (place is BoundLocal { Local: ParameterSymbol { Modifier: ParamModifier.Ref } } || place is BoundThis && _fn is { IsMutating: true })
+                && (place.Type is StateType { States.Count: > 1 } || place.Type is StructSymbol s && _c.StatesOf(s) is not null))
+                Report(DiagnosticCodes.AssignmentChangesState, arg.Span, [place is BoundLocal l ? l.Local.Name : "this"],
+                    help: "assign a value in the same state, or move the transition into a `becomes` method");
             CheckWritable(place, arg.Value.Span, $"it is passed as `{(wanted == ArgModifier.Ref ? "ref" : "out")}`");
             return place;
         }
-        return BindArgumentValue(arg, p.Type);
+        return BindArgumentValue(arg, p.Type, callee);
     }
 
-    private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type)
+    private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type, string? callee = null)
     {
-        var value = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, type);
+        var value = _prebound.Remove(arg, out var early) ? early : Built(BindExpr(arg.Value, type), arg.Value);
         if (arg.Modifier == ArgModifier.Move) value = BindMove(arg, value);
+        if (callee is not null && type is StateType wanted && ReportWrongState(callee, value, wanted, arg.Value.Span)) return new BoundErrorExpr(arg.Value);
         // A type argument inferred from the value is not a typed use of it.
         return type is null ? value : Convert(value, type, arg.Value.Span, argument: true, constrains: early is null);
     }
@@ -393,8 +531,22 @@ internal sealed partial class Binder
                 var args = BindArguments(c, ps, null, enforceNames: false, displayName: s.Name);
                 return Checked(c, new BoundStructLiteral(c, s, args));
             }
+            case StructSymbol s when _c.Positional.Contains(s.Decl):
+            {
+                // `Point(3, 4)` is `Point { x: 3, y: 4 }`: every field in declaration order, checked like the literal.
+                var ps = s.Fields.Select((f, i) => new ParameterSymbol(f.Name, f.Location, f.Type, ParamModifier.None, i)).ToArray();
+                var args = BindArguments(c, ps, null, enforceNames: false, displayName: s.Name);
+                return Checked(c, new BoundStructLiteral(c, s, args));
+            }
             case StructSymbol s:
             {
+                if (_c.StatesOf(s) is { } states)
+                {
+                    Report(DiagnosticCodes.StateLiteralNeedsState, c.Callee.Span, [s.Name, states.Variants[0].Name],
+                        help: "name the state the value starts in");
+                    BindArgumentsForRecovery(c);
+                    return new BoundErrorExpr(c);
+                }
                 if (c.Args.Length > 0)
                 {
                     Report(DiagnosticCodes.NoConstructor, c.Callee.Span, [s.Name],
@@ -431,6 +583,10 @@ internal sealed partial class Binder
                 return new BoundCall(c, _c.Builtins.ArenaNew, null, BindArguments(c, _c.Builtins.ArenaNew.Parameters, _c.Builtins.ArenaNew, false, "Arena"), type);
             case BuiltinType { Kind: BuiltinKind.StrBuf } when c.Args.Length == 0:
                 return new BoundCall(c, _c.Builtins.StrBufGrow, null, [], type);
+            // `StrBuf(capacity: n)` grows from `context.allocator` like `StrBuf()`, starting with room for n bytes.
+            case BuiltinType { Kind: BuiltinKind.StrBuf } when c.Args is [{ Name.Text: "capacity" }]:
+                return new BoundCall(c, _c.Builtins.StrBufGrow, null,
+                    BindArguments(c, [new ParameterSymbol("capacity", null, PrimitiveType.I64, ParamModifier.None, 0)], null, false, "StrBuf"), type);
             case BuiltinType { Kind: BuiltinKind.StrBuf }:
                 return new BoundCall(c, _c.Builtins.StrBufNew, null, BindArguments(c, _c.Builtins.StrBufNew.Parameters, _c.Builtins.StrBufNew, false, "StrBuf"), type);
             case ErrorType:
@@ -438,12 +594,39 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(c);
             case PrimitiveType p when (p.IsNumeric || p == PrimitiveType.Char) && c.Args is [{ Name: null } arg]:
                 return BindConversion(c, p, arg.Value);
+            case PrimitiveType { IsString: true } when c.Args is [{ Name: null }, ..]:
+                return BindIntegerText(c);
             default:
                 Report(DiagnosticCodes.NotCallable, c.Callee.Span, [type.DisplayName],
                     help: type.IsNumeric || type == PrimitiveType.Char ? $"convert one value: `{type.DisplayName}(x)`" : null);
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
         }
+    }
+
+    /// <summary><c>string(n, as: radix)</c>: an integer as text in a <c>Radix</c>, <c>.decimal</c> by default (spec §3.2, §6.2).</summary>
+    private BoundExpr BindIntegerText(CallExpr c)
+    {
+        var value = BindExpr(c.Args[0].Value);
+        if (value.Type.IsError) return new BoundErrorExpr(c);
+        if (value.Type is SpanType { Element: PrimitiveType { Kind: PrimitiveKind.U8 } } && c.Args.Length == 1)
+            return new BoundBuiltinCall(c, BuiltinMember.BytesToString, value, [], PrimitiveType.String);
+        if (!value.Type.IsInteger)
+        {
+            // `string(x)` as the `Display` conversion of every type is step 5.4a's later chunk.
+            Report(DiagnosticCodes.Unsupported, c.Callee.Span, [$"`string(x)` of a `{value.Type.DisplayName}`"]);
+            BindArgumentsForRecovery(c);
+            return new BoundErrorExpr(c);
+        }
+        var ps = new[]
+        {
+            new ParameterSymbol("value", null, value.Type, ParamModifier.None, 0),
+            new ParameterSymbol("as", null, _c.Builtins.Radix, ParamModifier.None, 1),
+        };
+        _prebound[c.Args[0]] = value;
+        var args = BindArguments(c, ps[..Math.Min(c.Args.Length, 2)], null, enforceNames: false, displayName: "string");
+        var radix = args.Length > 1 ? args[1] : new BoundEnumMember(c, _c.Builtins.Radix.Find("decimal")!);
+        return new BoundBuiltinCall(c, BuiltinMember.IntToString, args[0], [radix], PrimitiveType.String);
     }
 
     /// <summary><c>Owned(value)</c> or <c>Owned&lt;T&gt;(value)</c>: the value's type comes from <paramref name="inner"/>, else from the argument.</summary>
@@ -528,14 +711,53 @@ internal sealed partial class Binder
     private BoundExpr BindBuiltinMethodCall(CallExpr c, BoundExpr receiver, string name)
     {
         var m = BuiltinMembers.Method(receiver.Type, name)!;
+        if (m.Member == BuiltinMember.StringParts && c.Args.Length > 0)
+        {
+            var sep = BindExpr(c.Args[0].Value);
+            _prebound[c.Args[0]] = sep;
+            if (sep.Type == PrimitiveType.Char)
+                m = m with { Member = BuiltinMember.StringPartsRune, Parameters = [("by", PrimitiveType.Char), m.Parameters[1]] };
+        }
+        // `buf.append(x)` formats any `Display` value straight into the buffer, as the hole `$"{x}"` would.
+        if (m.Member == BuiltinMember.StrBufAppend && c.Args is [{ Value: not InterpolatedExpr } appended])
+        {
+            var value = BindExpr(appended.Value);
+            if (!value.Type.IsError && !value.Type.IsString)
+            {
+                if (WhyNotFormattable(value.Type, []) is { } why)
+                    Report(DiagnosticCodes.NotFormattable, appended.Value.Span, [value.Type.DisplayName], label: why == "" ? null : why,
+                        help: value.Type is StructSymbol s ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x, as: .debug}}`" : null);
+                value = new BoundInterpolated(appended.Value, [new BoundInterpolationPart(null, value)]);
+            }
+            _prebound[appended] = value;
+        }
+        // `remove(at:)` takes an index or a range; a range literal or a held `Range<i64>` picks the range form.
+        BoundExpr? removedAt = null;
+        if (m.Member == BuiltinMember.ListRemoveRange && c.Args is [{ Name.Text: "at", Value: not RangeExpr } at])
+            _prebound[at] = removedAt = BindExpr(at.Value);
+        m = m.Member switch
+        {
+            BuiltinMember.ListRemoveRange when c.Args is [{ Name.Text: "at", Value: RangeExpr }] || removedAt?.Type is RangeType =>
+                m with { Member = BuiltinMember.ListRemoveAtRange, Parameters = [("at", new RangeType(PrimitiveType.I64))] },
+            BuiltinMember.ListRemoveRange when c.Args is [{ Name.Text: "at" }] =>
+                m with { Member = BuiltinMember.ListRemoveAt, Parameters = [("at", PrimitiveType.I64)] },
+            BuiltinMember.ListRemoveRange when c.Args is [_, { Name.Text: "through" }] =>
+                m with { Member = BuiltinMember.ListRemoveThrough, Parameters = [m.Parameters[0], ("through", PrimitiveType.I64)] },
+            BuiltinMember.StringTrimmed when c.Args is [{ Name.Text: "by" }] =>
+                new(BuiltinMember.StringTrimmedBy, [("by", new SpanType(PrimitiveType.Char, readOnly: true))], PrimitiveType.String),
+            BuiltinMember.StringTrimmed => m with { Parameters = [("from", _c.Builtins.Edge)] },
+            BuiltinMember.StringEquals => m with { Parameters = [m.Parameters[0], ("as", _c.Builtins.Comparison)] },
+            _ => m,
+        };
         if (m.Member is BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake)
             receiver = MapWriteTarget(receiver);
-        var ps = m.Parameters.Select((p, i) => new ParameterSymbol(p.Name, null, p.Type, ParamModifier.None, i)).ToList();
+        var ps = m.Parameters.Take(Math.Max(c.Args.Length, m.Parameters.Length - m.Optional))
+            .Select((p, i) => new ParameterSymbol(p.Name, null, p.Type, ParamModifier.None, i)).ToList();
         var args = BindArguments(c, ps, null, enforceNames: false, displayName: name);
         if (m.Mutating) CheckWritable(receiver, receiver.Syntax.Span, $"`{name}` modifies it");
         if (m.Member == BuiltinMember.MapSlot && !IsDefaultable(m.Returns))
             Report(DiagnosticCodes.MapSlotNoDefault, c.Span, [m.Returns.DisplayName],
-                help: "read with `map[key]` or `map.getOr(key, fallback)`, and write with `map[key] = value`");
+                help: "read with `map[key]` or `map.tryGet(at: key) ?? fallback`, and write with `map[key] = value`");
         if (m.Member is BuiltinMember.ListCopy or BuiltinMember.MapCopy)
         {
             var held = m.Member == BuiltinMember.ListCopy
@@ -551,7 +773,7 @@ internal sealed partial class Binder
         return new BoundBuiltinCall(c, m.Member, receiver, args, returns);
     }
 
-    /// <summary>Whether <c>map.slot</c> can insert a default <paramref name="t"/>: numbers, <c>bool</c>, <c>char</c>, <c>string</c>, optionals and structs whose fields all have defaults.</summary>
+    /// <summary>Whether <c>map.slot</c> can insert a default <paramref name="t"/>: numbers, <c>bool</c>, <c>rune</c>, <c>string</c>, optionals and structs whose fields all have defaults.</summary>
     private static bool IsDefaultable(TypeSymbol t) => t switch
     {
         PrimitiveType { Kind: PrimitiveKind.Char } => true,
@@ -661,7 +883,8 @@ internal sealed partial class Binder
     /// </summary>
     private BoundExpr Checked(Expr syntax, BoundExpr value, IReadOnlyCollection<FieldSymbol>? changed = null)
     {
-        if (value.Type is not StructSymbol s || !_c.Checks.TryGetValue(s, out var checks)) return value;
+        // A state literal is checked as its struct and keeps its state type.
+        if ((value.Type is StateType state ? state.Struct : value.Type) is not StructSymbol s || !_c.Checks.TryGetValue(s, out var checks)) return value;
         if (changed is not null && !checks.Rules.Any(r => (r.Field is { } f && changed.Contains(f)) || r.Reads.Any(changed.Contains)))
             return value;
         if (value is BoundStructLiteral literal && CheckConstant(syntax, literal, checks) is { } decided)
@@ -671,7 +894,7 @@ internal sealed partial class Binder
             if (_covered is not null) _covered.Add((syntax, s.Name));
             else ReportUnhandled(syntax, s.Name);
         }
-        return new BoundCall(syntax, checks.Check, value, [], s);
+        return new BoundCall(syntax, checks.Check, value, [], value.Type);
     }
 
     /// <summary>
@@ -721,6 +944,13 @@ internal sealed partial class Binder
             _handled = saved;
         }
         _covered = savedCovered;
+        // `try string(bytes)` decoded before round 3; `string(x)` only formats now (J82).
+        if (operand is BoundBuiltinCall { Member: BuiltinMember.BytesToString } && inner is CallExpr { Callee: NameExpr conversion })
+        {
+            Report(DiagnosticCodes.RenamedMember, conversion.Span, ["try string(bytes)", "try Utf8.decode(bytes)"], label: "the old name",
+                help: "write `Utf8.decode`", fix: new Fix(conversion.Span, "Utf8.decode"));
+            return new BoundErrorExpr(t);
+        }
         if (Handles(inner) && operand is BoundCall { Function.Fails: true })
         {
             foreach (var (c, name) in covered) ReportUnhandled(c, name);
@@ -839,6 +1069,7 @@ internal sealed partial class Binder
             _patternOwns = false;
             if (owns) CheckOwningOverlap(pattern);
             if (owns && arm.Guard is { } ag) GuardBindings(pattern, ag.Span);
+            if (arm.Guard is null) LearnArmState(value, pattern);
             var guard = arm.Guard is { } g ? BindCondition(g) : null;
             // A block arm of a value-giving `catch switch` has no value to give, so it must leave (J49, BYN2611).
             var result = arm.Value is BlockExpr block && s.Value is CaughtErrorExpr && expected is { IsVoid: false }
@@ -870,7 +1101,9 @@ internal sealed partial class Binder
         }
         for (var i = 0; i < arms.Count; i++)
             arms[i] = arms[i] with { Value = Convert(arms[i].Value, type, ((SwitchArm)arms[i].Syntax).Value.Span) };
-        CheckExhaustive(s.Value.Span, value.Type, arms.Select(a => ((BoundPattern?)a.Pattern, a.Guard)).ToList(), statement: false);
+        var cases = arms.Select(a => ((BoundPattern?)a.Pattern, a.Guard)).ToList();
+        if (value.Type is not OptionalType && StatesUnion(value.Type) is { } states) CheckStatesExhaustive(s, Subject(value)?.Type ?? value.Type, states, cases);
+        else CheckExhaustive(s.Value.Span, value.Type, cases, statement: false);
         return new BoundSwitchExpr(s, value, arms.ToArray(), type);
     }
 
@@ -939,6 +1172,11 @@ internal sealed partial class Binder
                 }
                 return new BoundPropertyPattern(p, input, tt, subs, null);
             }
+            case VariantPattern vp when Unwrap(input) is ErrorSetSymbol or ErrorUnionType:
+                return BindErrorCasePattern(vp, input, BindTargetMember(vp.Variant, Unwrap(input)), vp.Elements, vp.Binding);
+            case PositionalPattern { Type: NamedType { Path.Length: 2, Args.Length: 0 } nt } pos
+                when Unwrap(input) is ErrorSetSymbol or ErrorUnionType && Module.Types.TryGetValue(nt.Path[0].Text, out var named) && named is ErrorSetSymbol set:
+                return BindErrorCasePattern(pos, input, ErrorCase(pos, set, nt.Path[1]), pos.Elements, null);
             case VariantPattern vp:
                 return BindUnionPattern(vp, input, null, vp.Variant.Member, vp.Elements, vp.Binding);
             case PositionalPattern { Type: NamedType { Path.Length: > 1, Args.Length: 0 } nt } pos:
@@ -1078,6 +1316,18 @@ internal sealed partial class Binder
     {
         var target = Unwrap(input);
         UnionVariantSymbol? variant = null;
+        if (StatesUnion(input) is { } states)
+        {
+            // A struct with states matches like its states union; `Order.paid(…)` names the struct as the owner.
+            var of = StateStruct(target)!;
+            if (owner is not null && StateStruct(owner) is { } ownerStruct && ownerStruct.Equals(of)) owner = states;
+            target = states;
+            if ((owner is null || owner.Equals(states)) && states.Find(name.Text) is null)
+            {
+                Report(DiagnosticCodes.UnknownState, name.Span, [of.Name, name.Text], help: $"check the states declared in `{of.Name}`");
+                owner = ErrorType.Instance;
+            }
+        }
         if (owner is not null && !owner.IsError && !target.IsError && !owner.Equals(target))
             Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`{owner.DisplayName}.{name.Text}`", target.DisplayName]);
         else if ((owner ?? target) is UnionSymbol u)
@@ -1107,9 +1357,11 @@ internal sealed partial class Binder
     /// <summary><c>.percentOff p</c>: a tag test that binds the whole value as <c>p</c>, whose payload fields read as <c>p.rate</c>.</summary>
     private BoundUnionPattern BindWholeVariant(Pattern p, TypeSymbol input, TypeSymbol union, UnionVariantSymbol variant, Name binding)
     {
-        var local = DeclareLocal(binding, union, LocalKind.PatternVariable);
+        // A state binds as its state type, `Order.paid`, whose payload fields read without a further check.
+        var states = union is UnionSymbol u && StateStruct(Unwrap(input)) is { } s && _c.StatesOf(s) == u;
+        var local = DeclareLocal(binding, states ? new StateType(StateStruct(Unwrap(input))!, [variant]) : union, LocalKind.PatternVariable);
         local.BorrowsSubject = !_patternOwns;
-        _narrowed[local] = variant;
+        if (!states) _narrowed[local] = variant;
         return new BoundUnionPattern(p, input, variant, [], local);
     }
 
@@ -1137,6 +1389,14 @@ internal sealed partial class Binder
             if (input is not OptionalType && !input.IsError)
                 Report(DiagnosticCodes.PatternMismatch, c.Span, ["`null`", input.DisplayName]);
             return new BoundConstantPattern(c, input, new BoundDefault(c.Value, input));
+        }
+        if (c.Value is TargetMemberExpr tm && StatesUnion(input) is { } states)
+        {
+            // `.paid` on a value with states: a tag test, whatever the state's payload.
+            if (states.Find(tm.Member.Text) is { } state) return new BoundUnionPattern(c, input, state, []);
+            var of = StateStruct(target)!;
+            Report(DiagnosticCodes.UnknownState, tm.Member.Span, [of.Name, tm.Member.Text], help: $"check the states declared in `{of.Name}`");
+            return new BoundBindPattern(c, input, null);
         }
         var value = c.Value is NameExpr && target is ErrorSetSymbol or ErrorUnionType ? BindExprOrType(c.Value) : BindExpr(c.Value, target);
         if (value is BoundTypeRef { Referenced: ErrorSetSymbol set }) return BindErrorSetPattern(c, input, set, null);
@@ -1205,7 +1465,7 @@ internal sealed partial class Binder
 
     private BoundMemberStep? ResolveStep(TypeSymbol type, Name name)
     {
-        switch (type)
+        switch (type is StateType state ? state.Struct : type)
         {
             case ErrorType:
                 return null;
@@ -1229,7 +1489,7 @@ internal sealed partial class Binder
                 return null;
         }
         if (BuiltinMembers.Property(type, name.Text) is { } b)
-            return new BoundMemberStep(null, null, -1, b.Member, b.Type);
+            return new BoundMemberStep(null, null, -1, b.Member, PropertyType(b.Member, b.Type));
         if (ReportRenamed(type, name)) return null;
         Report(DiagnosticCodes.UnknownMember, name.Span, [name.Text, type.DisplayName], help: MemberSuggestion(type, name.Text));
         return null;
@@ -1328,6 +1588,9 @@ internal sealed partial class Binder
             case BoundUnionPattern up when up.Subpatterns.All(Irrefutable):
                 covered.Add("." + up.Variant.Name);
                 break;
+            case BoundErrorPattern ep when ep.Subpatterns.All(Irrefutable):
+                covered.Add(VariantKey(ep.Variant, type));
+                break;
             case BoundConstantPattern { Value.Constant.Value: bool b }:
                 covered.Add(b ? "true" : "false");
                 break;
@@ -1370,6 +1633,8 @@ internal sealed partial class Binder
     private BoundStmt BindAssign(AssignStmt a)
     {
         var target = BindExpr(a.Target);
+        // A local whose state is known is written as its declared type; the value's state is what it is known to be after.
+        if (target is BoundLocal known && KnownState(known.Local) is not null) target = new BoundLocal(known.Syntax, known.Local);
         var op = CompoundOperator(a.Op);
         if (target.Type.IsError)
         {
@@ -1387,6 +1652,21 @@ internal sealed partial class Binder
         {
             var assigned = BindExpr(a.Value, target.Type);
             Constrain(target, assigned, a.Value);
+            // A `ref` parameter or `this` keeps its state: only a value in the one state its type names may replace it (BYN7012).
+            if (target is BoundLocal { Local: ParameterSymbol { Modifier: ParamModifier.Ref } } or BoundThis
+                && (target.Type is StateType || target.Type is StructSymbol s && _c.StatesOf(s) is not null)
+                && !(target.Type is StateType { States: [var one] } && (Subject(assigned)?.Type ?? assigned.Type) is StateType { States: [var given] } && given == one))
+            {
+                Report(DiagnosticCodes.AssignmentChangesState, a.Span, [target is BoundLocal p ? p.Local.Name : "this"],
+                    help: "assign a value in the same state, or move the transition into a `becomes` method");
+                return new BoundErrorStmt(a);
+            }
+            if (target is BoundLocal written)
+            {
+                ForgetState(written.Local);
+                if (assigned.Type is StateType st) LearnState(written.Local, st);
+            }
+            else if (target is BoundThis) ForgetState(_thisFacts);
             return new BoundAssign(a, target, Convert(assigned, target.Type, a.Value.Span, constrains: !IsPending(target)), null);
         }
         if (op == BinaryOp.Coalesce)
@@ -1482,7 +1762,8 @@ internal sealed partial class Binder
         var decl = fn.Decl!;
         Report(DiagnosticCodes.MutatesWithoutRefThis, span, [fn.Name], label: "`this` is modified here",
             help: "declare it `ref this` as the first parameter",
-            fix: new Fix(new TextSpan(decl.ParamsStart, 0), decl.Params.Length > 0 ? "ref this, " : "ref this"));
+            // A receiver written as `this is .s` gains only `ref`.
+            fix: new Fix(new TextSpan(decl.ParamsStart, 0), decl.ReceiverStates.Length > 0 ? "ref " : decl.Params.Length > 0 ? "ref this, " : "ref this"));
     }
 
     internal FunctionSymbol? Function => _fn;

@@ -3,7 +3,7 @@ struct B {
     List<i64> items
 
     void run(ref this) {
-        let s = items.asSpan()
+        let s = items.span
         wipe(ref this)
         print($"{s[0]}")
     }
@@ -14,7 +14,7 @@ struct B {
 
     // A `ref this` method whose body passes `ref this` on changes every field too.
     void outer(ref this) {
-        let s = items.asSpan()
+        let s = items.span
         reset()
         print($"{s[0]}")
     }

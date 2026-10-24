@@ -4,5 +4,5 @@ void onCrash(Panic p) {
 
 void main() {
     print("starting")
-    Panic.onPanic = onCrash
+    Panic.handler = onCrash
 }

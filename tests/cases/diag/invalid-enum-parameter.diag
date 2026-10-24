@@ -3,7 +3,7 @@ error BYN2724: enum parameter `corner` must be a number, `bool`, `rune`, `string
   3 │ enum Shape(Point corner, ref i64 sides, i64 depth = 1) {
     │            ^^^^^ `Point` has no static form
     │
-  help: use a number type, `bool`, `char`, `string` or a plain enum; enum data is stored in static
+  help: use a number type, `bool`, `rune`, `string` or a plain enum; enum data is stored in static
         tables
 
 error BYN2724: enum parameter `sides` must be a number, `bool`, `rune`, `string` or a plain enum
@@ -11,7 +11,7 @@ error BYN2724: enum parameter `sides` must be a number, `bool`, `rune`, `string`
   3 │ enum Shape(Point corner, ref i64 sides, i64 depth = 1) {
     │                          ^^^^^^^^^^^^^ `ref` is not allowed here
     │
-  help: use a number type, `bool`, `char`, `string` or a plain enum; enum data is stored in static
+  help: use a number type, `bool`, `rune`, `string` or a plain enum; enum data is stored in static
         tables
 
 error BYN2724: enum parameter `depth` must be a number, `bool`, `rune`, `string` or a plain enum
@@ -19,7 +19,7 @@ error BYN2724: enum parameter `depth` must be a number, `bool`, `rune`, `string`
   3 │ enum Shape(Point corner, ref i64 sides, i64 depth = 1) {
     │                                                     ^ a default value is not allowed here
     │
-  help: use a number type, `bool`, `char`, `string` or a plain enum; enum data is stored in static
+  help: use a number type, `bool`, `rune`, `string` or a plain enum; enum data is stored in static
         tables
 
 error BYN2724: enum parameter `scale` must be a number, `bool`, `rune`, `string` or a plain enum
@@ -27,7 +27,7 @@ error BYN2724: enum parameter `scale` must be a number, `bool`, `rune`, `string`
   9 │ enum Length(Unit scale) { cm(.metre) }
     │             ^^^^ `Unit` has no static form
     │
-  help: use a number type, `bool`, `char`, `string` or a plain enum; enum data is stored in static
+  help: use a number type, `bool`, `rune`, `string` or a plain enum; enum data is stored in static
         tables
 
 error BYN2721: enum `Label` already has a member `name`

@@ -90,6 +90,13 @@ public sealed record LUnionTag(Node Syntax, BoundExpr Union) : BoundExpr(Syntax,
 public sealed record LUnionField(Node Syntax, BoundExpr Union, UnionVariantSymbol Variant, int Index)
     : BoundExpr(Syntax, Variant.Fields[Index].Type);
 
+/// <summary>An error's code: its case's program-wide number, 0 for none.</summary>
+public sealed record LErrorCode(Node Syntax, BoundExpr Error) : BoundExpr(Syntax, PrimitiveType.U32);
+
+/// <summary>A payload field of an error already known to be <see cref="Variant"/>.</summary>
+public sealed record LErrorField(Node Syntax, BoundExpr Error, ErrorVariantSymbol Variant, int Index)
+    : BoundExpr(Syntax, Variant.Fields[Index].Type);
+
 /// <summary><c>(target = value)</c> as an expression; used for pattern bindings.</summary>
 public sealed record LAssignExpr(Node Syntax, BoundExpr Target, BoundExpr Value) : BoundExpr(Syntax, Target.Type);
 

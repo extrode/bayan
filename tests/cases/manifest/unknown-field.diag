@@ -4,7 +4,7 @@ error BYN3101: `verison` is not a field of `Package`
     │     ^^^^^^^
     │
   help: use one of the fields `name`, `version`, `edition`, `kind`, `codes`, `capabilities`, `deps`,
-        `test`, `dist`, `style`
+        `test`, `dist`, `style`, `grammar`
 
 error BYN3101: `target` is not a field of `Dist`
 

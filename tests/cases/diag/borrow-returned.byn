@@ -3,6 +3,6 @@ Span<i64> scratch() {
     return buf[1..]
 }
 
-Span<i64> firstTwo(i64[4] values) => values.asSpan()[..2]
+ReadOnlySpan<i64> firstTwo(i64[4] values) => values.span[..2]
 
 Span<i64> fine(Span<i64> values) => values[1..]

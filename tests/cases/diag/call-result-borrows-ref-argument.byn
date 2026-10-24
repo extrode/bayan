@@ -9,7 +9,7 @@ struct C : IC {
 // A function returning a `dyn ref` or a span may point into what it was passed by `ref`: the result borrows it.
 dyn ref readonly IC pick(ref List<C> l) => l[0]
 
-Span<C> all(ref List<C> l) => l.asSpan()
+ReadOnlySpan<C> all(ref List<C> l) => l.span
 
 i64 first(ref List<C> l) => l[0].n
 

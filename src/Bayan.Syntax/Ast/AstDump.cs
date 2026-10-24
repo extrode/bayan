@@ -197,7 +197,8 @@ public static class AstDump
                 case ErrorEnumDecl d:
                     Line(depth, $"ErrorEnum {Mods(d.Modifiers)}{d.Name.Text}");
                     foreach (var v in d.Variants)
-                        Line(depth + 1, "Variant " + v.Name.Text + string.Concat(v.Attributes.Select(a => " " + Attribute(a)))
+                        Line(depth + 1, "Variant " + v.Name.Text + (v.Fields.Length == 0 ? "" : "(" + string.Join(", ", v.Fields.Select(f => Type(f.Type) + " " + f.Name.Text)) + ")")
+                            + string.Concat(v.Attributes.Select(a => " " + Attribute(a)))
                             + (v.Doc is null ? "" : " doc " + TokenDump.Escape(v.Doc)));
                     break;
                 case EnumDecl d:

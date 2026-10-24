@@ -124,7 +124,7 @@ public sealed class CEmitter
     private string EmitMain()
     {
         var sb = new StringBuilder();
-        sb.Append("int main(int argc, char** argv) {\n    uint32_t err = 0;\n");
+        sb.Append($"int main(int argc, char** argv) {{\n    {ErrorCType} err = {{0}};\n");
         // Map hashing is seeded per run; tests get a fixed seed so they are reproducible.
         if (_hashes)
             sb.Append(_program.Tests.Count > 0
@@ -139,7 +139,7 @@ public sealed class CEmitter
                 sb.Append($"        case {i}: ").Append(fn.Fails ? "err = " : "").Append(FunctionName(fn)).Append("(); break;\n");
             }
             sb.Append("        default: return 2;\n        }\n");
-            sb.Append("        if (err != 0) { byn_report_error(byn_errors[err - 1]); return 1; }\n");
+            sb.Append("        if (err.code != 0) { byn_report_error(byn_errors[err.code - 1]); return 1; }\n");
             sb.Append("        byn_stdout_flush();\n        return 0;\n    }\n");
         }
         else
@@ -170,7 +170,7 @@ public sealed class CEmitter
         {
             sb.Append("    (void)argc;\n");
         }
-        sb.Append("    if (err != 0) { byn_report_error(byn_errors[err - 1]); return byn_exit_codes[err - 1]; }\n");
+        sb.Append("    if (err.code != 0) { byn_report_error(byn_errors[err.code - 1]); return byn_exit_codes[err.code - 1]; }\n");
         sb.Append($"    byn_stdout_flush();\n    return {exit};\n}}\n");
         return sb.ToString();
     }
@@ -188,12 +188,15 @@ public sealed class CEmitter
             {
                 FunctionKind.Constructor => "init" + owner.Constructors.IndexOf(f),
                 FunctionKind.Getter => "get_" + f.Name,
-                _ => f.Name,
+                _ => f.Name + Overload(owner is StructSymbol s ? s.FindMethods(f.Name).ToList() : [], f),
             };
             return $"byn_{module}__{owner.Name}{TypeArgs(owner.TypeArguments)}__{member}";
         }
-        return $"byn_{module}__{f.Name}{TypeArgs(f.TypeArguments)}";
+        return $"byn_{module}__{f.Name}{Overload(f.Module.Functions.GetValueOrDefault(f.Name) ?? [], f.Template ?? f)}{TypeArgs(f.TypeArguments)}";
     }
+
+    /// <summary>The <c>__o1</c> that tells a second overload from the first (J65); empty for the first.</summary>
+    private static string Overload(List<FunctionSymbol> overloads, FunctionSymbol f) => overloads.IndexOf(f) is > 0 and var i ? "__o" + i : "";
 
     /// <summary>The <c>__i64__str</c> that tells instantiations of one generic apart.</summary>
     private string TypeArgs(IReadOnlyList<TypeSymbol> args) => string.Concat(args.Select(a => "__" + Key(a)));
@@ -241,7 +244,8 @@ public sealed class CEmitter
             PrimitiveKind.String => "byn_str",
             _ => "void",
         },
-        ErrorSetSymbol or ErrorUnionType => "uint32_t",
+        // One error type for the program: every set converts to every union of sets without changing its bits.
+        ErrorSetSymbol or ErrorUnionType => Named(t, "byn_err"),
         EnumSymbol e => $"byn_{e.Module.CName}_{e.Name}",
         UnionSymbol u => Named(u, $"byn_{u.Module.CName}_{u.Name}{TypeArgs(u.TypeArguments)}"),
         BuiltinType { Kind: BuiltinKind.Arena } => "byn_arena*",
@@ -249,20 +253,28 @@ public sealed class CEmitter
         BuiltinType { Kind: BuiltinKind.IoStream or BuiltinKind.IoInput } => "int32_t",
         BuiltinType { Kind: BuiltinKind.ProcessResult } => "byn_process",
         BuiltinType { Kind: BuiltinKind.Panic } => "byn_panic_info",
+        BuiltinType { Kind: BuiltinKind.FormatSpec } => "byn_format_spec",
+        TextViewType => "byn_text_view",
         // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
         OwnedType o => CType(o.Inner) + "*",
         UntrustedType u => CType(u.Inner),
+        // A state type is stored as its struct, which carries the tag.
+        StateType st => CType(st.Struct),
         // `dyn ref readonly I` shares the C type of `dyn ref I`.
         DynRefType d => Named(t, "byn_dyn_" + Key(d.Interface)),
+        RangeType r => CType(r.Layout),
         _ => Named(t),
     };
+
+    /// <summary>The C type of every error, and of what a failing function returns.</summary>
+    internal string ErrorCType => CType(ErrorUnionType.Of([]));
 
     /// <summary>An identifier fragment naming a type, for generated type and helper names.</summary>
     internal string Key(TypeSymbol t) => t switch
     {
         PrimitiveType p => p.Kind == PrimitiveKind.String ? "str" : p.Name,
         ErrorSetSymbol or ErrorUnionType => "err",
-        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", BuiltinKind.Panic => "panic", _ => "iostream" },
+        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", BuiltinKind.Panic => "panic", BuiltinKind.FormatSpec => "formatspec", _ => "iostream" },
         StructSymbol s => s.Module.CName + "__" + s.Name + TypeArgs(s.TypeArguments),
         EnumSymbol e => e.Module.CName + "__" + e.Name,
         UnionSymbol u => u.Module.CName + "__" + u.Name + TypeArgs(u.TypeArguments),
@@ -271,12 +283,15 @@ public sealed class CEmitter
         OptionalType o => "opt_" + Key(o.Inner),
         ResultType r => "res_" + Key(r.Value),
         SpanType s => "span_" + Key(s.Element),
+        TextViewType => "textview",
         ListType l => "list_" + Key(l.Element),
         OwnedType o => "own_" + Key(o.Inner),
         UntrustedType u => Key(u.Inner),
+        StateType st => Key(st.Struct),
         MapType m => "map_" + Key(m.KeyType) + "_" + Key(m.ValueType),
         ArrayType a => $"arr{a.Length}_" + Key(a.Element),
         TupleType tt => $"tup{tt.Fields.Count}_" + string.Join("_", tt.Fields.Select(f => Key(f.Type))),
+        RangeType r => Key(r.Layout),
         _ => throw new InvalidOperationException($"no C type for {t.DisplayName}"),
     };
 
@@ -302,14 +317,35 @@ public sealed class CEmitter
             {
                 case StructSymbol s:
                     foreach (var f in s.Fields) members.Add((f.Type, $"{CType(f.Type)} {FieldName(f.Name)}"));
-                    if (s.Fields.Count == 0) members.Add((PrimitiveType.Bool, "char unused"));
+                    if (_program.Compilation.States.TryGetValue(s, out var states))
+                    {
+                        // After the fields, the state's tag and its payload, laid out like a union (spec §3.17).
+                        members.Add((PrimitiveType.U8, "uint8_t tag"));
+                        var held = states.Variants.Where(v => v.Fields.Count > 0).ToList();
+                        if (held.Count > 0)
+                            members.Add((PrimitiveType.U8, "union {\n" + string.Concat(held.Select(v =>
+                                $"        struct {{ {string.Concat(v.Fields.Select(f => $"{CType(f.Type)} {FieldName(f.Name)}; "))}}} {FieldName(v.Name)};\n")) + "    } u"));
+                        payloads.AddRange(held.SelectMany(v => v.Fields).Select(f => f.Type));
+                    }
+                    else if (s.Fields.Count == 0) members.Add((PrimitiveType.Bool, "char unused"));
                     break;
                 case OptionalType o:
                     members.Add((PrimitiveType.Bool, "bool has"));
                     members.Add((o.Inner, $"{CType(o.Inner)} value"));
                     break;
+                case ErrorSetSymbol or ErrorUnionType:
+                {
+                    // The code, then the largest payload: a case with fields has a struct named by its code (SPEC §3.12).
+                    members.Add((PrimitiveType.U32, "uint32_t code"));
+                    var cases = _program.Compilation.ErrorVariants.Where(v => v.Fields.Count > 0).ToList();
+                    if (cases.Count > 0)
+                        members.Add((PrimitiveType.U32, "union {\n" + string.Concat(cases.Select(v =>
+                            $"        struct {{ {string.Concat(v.Fields.Select(f => $"{CType(f.Type)} {FieldName(f.Name)}; "))}}} e{v.Code};\n")) + "    } p"));
+                    payloads.AddRange(cases.SelectMany(v => v.Fields).Select(f => f.Type));
+                    break;
+                }
                 case ResultType r:
-                    members.Add((PrimitiveType.U32, "uint32_t err"));
+                    members.Add((r.Error, $"{CType(r.Error)} err"));
                     members.Add((r.Value, $"{CType(r.Value)} value"));
                     break;
                 case SpanType sp:
@@ -407,7 +443,7 @@ public sealed class CEmitter
             args.Add("byn_out");
             ps.Add($"{CType(m.ReturnType)}* byn_out");
         }
-        return $"{(m.Fails ? "uint32_t" : CType(m.ReturnType))} {declarator}({string.Join(", ", ps)})";
+        return $"{(m.Fails ? ErrorCType : CType(m.ReturnType))} {declarator}({string.Join(", ", ps)})";
     }
 
     // Vtables, one per (conformer, interface) converted to `dyn ref`, emitted after the helper prototypes they point at.
@@ -464,6 +500,9 @@ public sealed class CEmitter
                 break;
             case StructSymbol s:
                 foreach (var f in s.Fields) StorageParts(f.Type, $"{at}.{FieldName(f.Name)}", parts);
+                break;
+            case StateType st:
+                StorageParts(st.Struct, at, parts);
                 break;
         }
     }
@@ -536,12 +575,16 @@ public sealed class CEmitter
         {
             case PrimitiveType { IsString: true }:
                 return $"byn_str_eq({a}, {b})";
-            case PrimitiveType or ErrorSetSymbol or ErrorUnionType or EnumSymbol:
+            case PrimitiveType or EnumSymbol:
                 return $"({a} == {b})";
+            case ErrorSetSymbol or ErrorUnionType:
+                return $"({a}.code == {b}.code)";
             case OwnedType o:
                 return Equal(o.Inner, $"(*{a})", $"(*{b})");
             case UntrustedType u:
                 return Equal(u.Inner, a, b);
+            case StateType st:
+                return Equal(st.Struct, a, b);
         }
         var ct = CType(t);
         var name = "bynh_eq_" + Key(t);
@@ -557,12 +600,26 @@ public sealed class CEmitter
                 }
                 return sb.Append("    default: return true;\n    }\n}\n").ToString();
             }
+            if (t is StructSymbol ss && _program.Compilation.States.TryGetValue(ss, out var states))
+            {
+                // The fields, then the tag, then the payload of the state both are in.
+                var sb = new StringBuilder("{\n");
+                foreach (var f in ss.Fields)
+                    sb.Append($"    if (!{Equal(f.Type, "a." + FieldName(f.Name), "b." + FieldName(f.Name))}) return false;\n");
+                sb.Append("    if (a.tag != b.tag) return false;\n    switch (a.tag) {\n");
+                foreach (var v in states.Variants.Where(v => v.Fields.Count > 0))
+                {
+                    var fields = v.Fields.Select(f => Equal(f.Type, $"a.u.{FieldName(v.Name)}.{FieldName(f.Name)}", $"b.u.{FieldName(v.Name)}.{FieldName(f.Name)}"));
+                    sb.Append($"    case {v.Tag}: return {string.Join("\n        && ", fields)};\n");
+                }
+                return sb.Append("    default: return true;\n    }\n}\n").ToString();
+            }
             if (t is ArrayType arr)
                 return $"{{\n    for (int64_t i = 0; i < {arr.Length}; i++)\n        if (!{Equal(arr.Element, "a.v[i]", "b.v[i]")}) return false;\n    return true;\n}}\n";
             List<string> tests = t switch
             {
                 OptionalType o => [$"a.has == b.has && (!a.has || {Equal(o.Inner, "a.value", "b.value")})"],
-                ResultType r => [$"a.err == b.err && (a.err != 0 || {Equal(r.Value, "a.value", "b.value")})"],
+                ResultType r => [$"a.err.code == b.err.code && (a.err.code != 0 || {Equal(r.Value, "a.value", "b.value")})"],
                 StructSymbol s => s.Fields.Select(f => Equal(f.Type, "a." + FieldName(f.Name), "b." + FieldName(f.Name))).ToList(),
                 TupleType tt => tt.Fields.Select((f, i) => Equal(f.Type, $"a.item{i + 1}", $"b.item{i + 1}")).ToList(),
                 _ => throw new InvalidOperationException($"no equality for {t.DisplayName}"),
@@ -591,7 +648,7 @@ public sealed class CEmitter
             $"{{\n    return {Equal(key, $"*(const {ct}*)a", $"*(const {ct}*)b")};\n}}\n");
     }
 
-    /// <summary>Index, <c>slot</c>, <c>getOr</c>, <c>contains</c> and <c>remove</c> of <paramref name="t"/>; <paramref name="map"/> is an lvalue for the mutating ones.</summary>
+    /// <summary>Index, <c>slot</c>, <c>tryGet</c>, <c>contains</c> and <c>remove</c> of <paramref name="t"/>; <paramref name="map"/> is an lvalue for the mutating ones.</summary>
     internal string MapMethod(BuiltinMember member, MapType t, string map, string[] args, string loc)
     {
         var mt = CType(t);
@@ -619,12 +676,13 @@ public sealed class CEmitter
                     $"{{\n    int64_t i = {find};\n    if (i < 0) byn_panic(\"key not found in map\", file, line);\n    return m.vals[i];\n}}\n");
                 return $"{name}({map}, {args[0]}, {loc})";
             }
-            case BuiltinMember.MapGetOr:
+            case BuiltinMember.MapTryGet:
             {
-                var name = "bynh_get_or_" + Key(t);
-                Helper(name, $"static {vt} {name}({mt} m, {kt} k, {vt} d)", () =>
-                    $"{{\n    int64_t i = {find};\n    return i < 0 ? d : m.vals[i];\n}}\n");
-                return $"{name}({map}, {args[0]}, {args[1]})";
+                var opt = CType(new OptionalType(t.ValueType));
+                var name = "bynh_try_get_" + Key(t);
+                Helper(name, $"static {opt} {name}({mt} m, {kt} k)", () =>
+                    $"{{\n    int64_t i = {find};\n    return i < 0 ? ({opt}){{0}} : ({opt}){{true, m.vals[i]}};\n}}\n");
+                return $"{name}({map}, {args[0]})";
             }
             case BuiltinMember.MapContains:
             {
@@ -659,7 +717,7 @@ public sealed class CEmitter
                     _ => $"byn_w_u64({w}, (uint64_t)({v}));",
                 };
             case ErrorSetSymbol or ErrorUnionType:
-                return $"byn_w_error({w}, {v});";
+                return $"byn_w_error({w}, {v}.code);";
             case EnumSymbol e:
                 return $"byn_w_str({w}, {EnumNames(e)}[{v}]);";
             case OwnedType o:
@@ -678,10 +736,10 @@ public sealed class CEmitter
                     sb.Append("    else byn_w_str(w, BYN_STR(\"null\", 4));\n");
                     break;
                 case ResultType r:
-                    sb.Append($"    if (v.err) byn_w_error(w, v.err);\n    else {Format(r.Value, "v.value", "w")}\n");
+                    sb.Append($"    if (v.err.code) byn_w_error(w, v.err.code);\n    else {Format(r.Value, "v.value", "w")}\n");
                     break;
                 case StructSymbol s when FormatInto(s) is { } method:
-                    sb.Append($"    {FunctionName(method)}(&v, w);\n");
+                    sb.Append($"    {FunctionName(method)}(&v, w{(method.Parameters.Count == 2 ? ", " + NoFormatSpec : "")});\n");
                     break;
                 case UnionSymbol u:
                     sb.Append("    switch (v.tag) {\n");
@@ -726,9 +784,21 @@ public sealed class CEmitter
         return $"{name}({w}, {v});";
     }
 
-    private static FunctionSymbol? FormatInto(StructSymbol s) =>
-        s.Methods.FirstOrDefault(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 1
-            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } });
+    /// <summary>A struct's <c>formatInto(ref StrBuf)</c>, or else its <c>formatInto(ref StrBuf, as FormatSpec)</c>: the form a hole without specs calls.</summary>
+    internal static FunctionSymbol? FormatInto(StructSymbol s) =>
+        s.Methods.Where(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count is 1 or 2
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
+            && (m.Parameters.Count == 1 || m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } }))
+            .OrderBy(m => m.Parameters.Count).FirstOrDefault();
+
+    /// <summary>A struct's <c>formatInto(ref StrBuf, as FormatSpec)</c>: the form a hole with specs calls, as the binder's <c>TakesFormatSpec</c> assumes.</summary>
+    internal static FunctionSymbol? FormatIntoWithSpec(StructSymbol s) =>
+        s.Methods.FirstOrDefault(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 2
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
+            && m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } });
+
+    /// <summary>The spec a struct's two-parameter <c>formatInto</c> receives outside a hole with specs: none given.</summary>
+    internal const string NoFormatSpec = "((byn_format_spec){2, false, 0, ' ', 0, -1})";
 
     // ── Static data ──────────────────────────────────────────────────────────────
 
@@ -874,7 +944,7 @@ internal sealed class FunctionEmitter
     public string Signature()
     {
         string result;
-        if (_fn.Fails) result = "uint32_t";
+        if (_fn.Fails) result = _c.ErrorCType;
         else if (_fn.Kind == FunctionKind.Constructor) result = _c.CType(_fn.Owner!);
         else result = _c.CType(_fn.ReturnType);
         var ps = new List<string>();
@@ -905,7 +975,7 @@ internal sealed class FunctionEmitter
         for (var i = 0; i < _f.PanicSlots; i++) Line($"byn_panic_handler ph{i};");
         foreach (var s in _f.Body.Statements) Statement(s);
         if (_fn.Kind == FunctionKind.Constructor) Line("return self_v;");
-        else if (_fn.Fails && !ReturnsValue) Line("return 0;");
+        else if (_fn.Fails && !ReturnsValue) Line($"return ({_c.ErrorCType}){{0}};");
         else if (_fn.ReturnType.IsNever) Line($"byn_unreachable({_file}, {LineOf(_f.Body.Syntax)});");
         _sb.Append("}\n");
         if (_lastLine != 0) _sb.Append(CEmitter.ResetLine).Append('\n');
@@ -1089,7 +1159,11 @@ internal sealed class FunctionEmitter
             case LFailingCall f:
             {
                 var result = f.Result is null ? null : "&" + _names[f.Result];
-                Line($"{_names[f.Error]} = {Call(f.Call, result)};");
+                // Built-in failing calls return the runtime's bare code, except the ones whose errors carry a payload.
+                var call = Call(f.Call, result);
+                Line(f.Call.Function.Builtin is BuiltinFunction.None or BuiltinFunction.Utf8Decode or BuiltinFunction.HexDecode or BuiltinFunction.IntParse
+                    ? $"{_names[f.Error]} = {call};"
+                    : $"{_names[f.Error]} = ({_c.ErrorCType}){{ .code = {call} }};");
                 break;
             }
             case LWrite w:
@@ -1162,7 +1236,7 @@ internal sealed class FunctionEmitter
         if (_fn.Fails)
         {
             if (r.Value is not null) Line($"*byn_out = {Returned(r.Value)};");
-            Line("return 0;");
+            Line($"return ({_c.ErrorCType}){{0}};");
             return;
         }
         Line(r.Value is null ? "return;" : $"return {Returned(r.Value)};");
@@ -1183,7 +1257,7 @@ internal sealed class FunctionEmitter
         }
         else
         {
-            var mode = w.Sink == WriteSink.Print ? "BYN_WRITE_STDOUT" : "BYN_WRITE_TRUNCATE";
+            var mode = w.Sink == WriteSink.Print ? $"{Expr(w.Target!)} == 1 ? BYN_WRITE_STDERR : BYN_WRITE_STDOUT" : "BYN_WRITE_TRUNCATE";
             // A panic message keeps as much as the runtime does (`byn_panic_text`), room for an `assert` diagram; a log line never allocates, so it is cut.
             var size = w.Sink switch { WriteSink.Panic => 1024, WriteSink.Log => 512, _ => 256 };
             Line($"uint8_t wb[{size}];");
@@ -1194,7 +1268,7 @@ internal sealed class FunctionEmitter
         {
             var part = w.Parts[i];
             var write = part.Text is { Length: > 0 } text ? $"byn_w_str(w, {CEmitter.StringLiteral(text)});"
-                : part.Value is { } value ? _c.Format(value.Type, Expr(value), "w") : null;
+                : part.Value is { } value ? part.Spec is { } spec ? FormatWithSpec(value, spec) : _c.Format(value.Type, Expr(value), "w") : null;
             if (write is null) continue;
             Line(w.Guards?[i] is { } guard ? $"if ({Expr(guard)}) {{ {write} }}" : write);
         }
@@ -1204,6 +1278,77 @@ internal sealed class FunctionEmitter
         else if (w.Sink == WriteSink.Log) Line($"byn_log({Expr(w.Target!)}, (byn_str){{wb, wv.len}});");
         _indent--;
         Line("}");
+    }
+
+    /// <summary>
+    /// A hole with specs: the value is formatted into a stack buffer (a radix, fixed digits or the debug view),
+    /// then written padded to the width in runes.
+    /// </summary>
+    private string FormatWithSpec(BoundExpr value, BoundFormatSpec spec)
+    {
+        var t = value.Type;
+        var v = Expr(value);
+        // A struct with a `formatInto` that takes the `FormatSpec` reads every spec itself, padding included, even when it also has the one-parameter form.
+        if (t is StructSymbol s && CEmitter.FormatIntoWithSpec(s) is { } method)
+            return $"{{ {_c.CType(t)} fv = {v}; {_c.FunctionName(method)}(&fv, w, (byn_format_spec){{{(spec.Radix switch { 2 => 0, 8 => 1, 16 => 3, _ => 2 })}, "
+                + $"{(spec.Debug ? "true" : "false")}, {spec.Width}, {spec.Fill}u, {Math.Max(spec.Align, 0)}, {spec.Digits}}}); }}";
+        string Inner(string sw) => spec.Radix != 0
+            ? $"bynh_w_radix({sw}, (uint64_t)({v}), {(t.IsSignedInteger ? $"({v}) < 0" : "false")}, {spec.Radix});"
+            : spec.Digits >= 0 ? $"bynh_w_digits({sw}, (double)({v}), {spec.Digits});"
+            : spec.Debug ? Debug(t, v, sw)
+            : _c.Format(t, v, sw);
+        if (spec.Radix != 0)
+            _c.Helper("bynh_w_radix", "static void bynh_w_radix(byn_writer* w, uint64_t v, bool negative, int base)", () =>
+                "{\n    uint8_t d[64];\n    int n = 0;\n    if (negative) {\n        byn_w_char(w, '-');\n        v = 0 - v;\n    }\n"
+                + "    do {\n        d[n++] = (uint8_t)\"0123456789abcdef\"[v % (uint64_t)base];\n        v /= (uint64_t)base;\n    } while (v > 0);\n"
+                + "    while (n > 0) byn_w_bytes(w, &d[--n], 1);\n}\n");
+        if (spec.Digits >= 0)
+            // Rounds half away from zero; a value too large to scale is written as `byn_w_f64` writes it.
+            _c.Helper("bynh_w_digits", "static void bynh_w_digits(byn_writer* w, double v, int digits)", () =>
+                "{\n    double p = 1;\n    for (int i = 0; i < digits; i++) p *= 10;\n    double s = v * p;\n"
+                + "    if (!(s > -9.0e15 && s < 9.0e15)) {\n        byn_w_f64(w, v);\n        return;\n    }\n"
+                + "    int64_t n = (int64_t)(s < 0 ? s - 0.5 : s + 0.5);\n    if (n < 0 || (n == 0 && v < 0)) byn_w_char(w, '-');\n"
+                + "    uint64_t m = n < 0 ? (uint64_t)-n : (uint64_t)n, q = (uint64_t)p;\n    byn_w_u64(w, m / q);\n    if (digits == 0) return;\n"
+                + "    byn_w_char(w, '.');\n    uint64_t f = m % q;\n    for (uint64_t k = q / 10; k > 0; k /= 10) byn_w_char(w, (uint32_t)('0' + f / k % 10));\n}\n");
+        if (spec.Width == 0) return Inner("w");
+        // Numbers align to the end by default, everything else to the start.
+        var align = spec.Align >= 0 ? spec.Align : t.IsNumeric ? 1 : 0;
+        var pad = _c.Helper("bynh_w_padded", "static void bynh_w_padded(byn_writer* w, byn_str s, int64_t width, uint32_t fill, int align)", () =>
+            "{\n    int64_t runes = 0;\n    for (int64_t i = 0; i < s.len; i++) runes += (s.ptr[i] & 0xC0) != 0x80;\n"
+            + "    int64_t gap = width > runes ? width - runes : 0, before = align == 1 ? gap : align == 2 ? gap / 2 : 0;\n"
+            + "    for (int64_t i = 0; i < before; i++) byn_w_char(w, fill);\n    byn_w_str(w, s);\n"
+            + "    for (int64_t i = before; i < gap; i++) byn_w_char(w, fill);\n}\n");
+        return $"{{ uint8_t sb[1024]; byn_writer sv = {{sb, 1024, 0, BYN_WRITE_TRUNCATE, {Loc(value.Syntax)}}}; byn_writer* sw = &sv; {Inner("sw")} "
+            + $"{pad}(w, (byn_str){{sb, sv.len}}, {spec.Width}, {spec.Fill}u, {align}); }}";
+    }
+
+    /// <summary>
+    /// The debug view (spec §13): strings and runes quoted, a struct in its literal form <c>P { x: 1, name: "a" }</c>
+    /// (one whose <c>formatInto</c> takes the <c>FormatSpec</c> formats itself), everything else as it displays.
+    /// </summary>
+    private string Debug(TypeSymbol t, string v, string w)
+    {
+        if (t.IsString)
+            return _c.Helper("bynh_w_quoted", "static void bynh_w_quoted(byn_writer* w, byn_str s, uint32_t quote)", () =>
+                "{\n    byn_w_char(w, quote);\n    for (int64_t i = 0; i < s.len; i++) {\n"
+                + "        uint8_t c = s.ptr[i];\n        if (c == quote || c == '\\\\') byn_w_char(w, '\\\\');\n"
+                + "        if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n        else byn_w_bytes(w, &c, 1);\n    }\n    byn_w_char(w, quote);\n}\n") + $"({w}, {v}, '\"');";
+        if (t is PrimitiveType { Kind: PrimitiveKind.Char }) return $"byn_w_char({w}, '\\''); byn_w_char({w}, {v}); byn_w_char({w}, '\\'');";
+        if (t is not StructSymbol s || CEmitter.FormatInto(s) is { Parameters.Count: 2 }) return _c.Format(t, v, w);
+        var name = _c.Helper("bynh_debug_" + _c.Key(t), $"static void bynh_debug_{_c.Key(t)}(byn_writer* w, {_c.CType(t)} v)", () =>
+        {
+            var sb = new StringBuilder("{\n");
+            sb.Append($"    byn_w_str(w, {CEmitter.StringLiteral(s.DisplayName + (s.Fields.Count == 0 ? " {}" : " { "))});\n");
+            for (var i = 0; i < s.Fields.Count; i++)
+            {
+                var f = s.Fields[i];
+                sb.Append($"    byn_w_str(w, {CEmitter.StringLiteral((i == 0 ? "" : ", ") + f.Name + ": ")});\n");
+                sb.Append("    ").Append(Debug(f.Type, "v." + CEmitter.FieldName(f.Name), "w")).Append('\n');
+            }
+            if (s.Fields.Count > 0) sb.Append($"    byn_w_str(w, {CEmitter.StringLiteral(" }")});\n");
+            return sb.Append("}\n").ToString();
+        });
+        return $"{name}({w}, {v});";
     }
 
     // ── Expressions ──────────────────────────────────────────────────────────────
@@ -1246,6 +1391,13 @@ internal sealed class FunctionEmitter
                 return Conversion(c2);
             case BoundConditional c2:
                 return $"({Expr(c2.Condition)} ? {Expr(c2.WhenTrue)} : {Expr(c2.WhenFalse)})";
+            case BoundStructLiteral { State: { } state } s:
+            {
+                // A state literal: the fields in order, then the tag and the state's payload by name.
+                var parts = s.Fields.Select(Expr).Append($".tag = {state.Tag}");
+                if (s.Payload.Length > 0) parts = parts.Append($".u.{CEmitter.FieldName(state.Name)} = {{{string.Join(", ", s.Payload.Select(Expr))}}}");
+                return $"(({_c.CType(s.Struct)}){{{string.Join(", ", parts)}}})";
+            }
             case BoundStructLiteral s:
                 return s.Fields.Length == 0 ? $"(({_c.CType(s.Struct)}){{0}})" : $"(({_c.CType(s.Struct)}){{{string.Join(", ", s.Fields.Select(Expr))}}})";
             case BoundTuple t:
@@ -1265,7 +1417,9 @@ internal sealed class FunctionEmitter
             case BoundSlice s:
                 return Slice(s);
             case BoundErrorVariant v:
-                return $"UINT32_C({v.Variant.Code})";
+                return v.Payload.Length == 0
+                    ? $"(({_c.ErrorCType}){{ .code = UINT32_C({v.Variant.Code}) }})"
+                    : $"(({_c.ErrorCType}){{ .code = UINT32_C({v.Variant.Code}), .p.e{v.Variant.Code} = {{ {string.Join(", ", v.Payload.Select(Expr))} }} }})";
             case BoundEnumMember m:
                 return $"(({_c.CType(m.Type)}){m.Member.Ordinal})";
             case BoundEnumValues v:
@@ -1276,6 +1430,10 @@ internal sealed class FunctionEmitter
                 return $"{Expr(h.Optional)}.has";
             case LUnionTag u:
                 return $"{Expr(u.Union)}.tag";
+            case LErrorCode code:
+                return $"{Expr(code.Error)}.code";
+            case LErrorField f:
+                return $"{Expr(f.Error)}.p.e{f.Variant.Code}.{CEmitter.FieldName(f.Variant.Fields[f.Index].Name)}";
             case LUnionField u:
                 return $"{Expr(u.Union)}.u.{CEmitter.FieldName(u.Variant.Name)}.{CEmitter.FieldName(u.Variant.Fields[u.Index].Name)}";
             case LOptionalValue v:
@@ -1300,7 +1458,7 @@ internal sealed class FunctionEmitter
         switch (fn.Builtin)
         {
             case BuiltinFunction.Print:
-                return $"byn_print({Expr(c.Arguments[0])})";
+                return $"byn_print({Expr(c.Arguments[1])}, {Expr(c.Arguments[0])})";
             case BuiltinFunction.Log:
                 return $"byn_log({Expr(c.Arguments[1])}, {Expr(c.Arguments[0])})";
             case BuiltinFunction.Panic:
@@ -1316,8 +1474,23 @@ internal sealed class FunctionEmitter
                     "{\n    return (byn_writer){s.ptr, s.len, 0, BYN_WRITE_STRICT, file, line};\n}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Loc(c.Syntax)})";
             }
-            case BuiltinFunction.StrBufGrow:
+            // `StrBuf.over(span)` writes into the span and spills to `context.allocator` when it is outgrown.
+            case BuiltinFunction.StrBufOver:
+            {
+                var span = _c.CType(fn.Parameters[0].Type);
+                var name = _c.Helper("bynh_strbuf_over", $"static byn_writer bynh_strbuf_over({span} s, const char* file, int line)", () =>
+                    "{\n    return (byn_writer){s.ptr, s.len, 0, BYN_WRITE_GROW, file, line, byn_context};\n}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {Loc(c.Syntax)})";
+            }
+            case BuiltinFunction.StrBufGrow when c.Arguments.Length == 0:
                 return "byn_strbuf_grow(byn_context)";
+            case BuiltinFunction.StrBufGrow:
+            {
+                var name = _c.Helper("bynh_strbuf_capacity", "static byn_writer bynh_strbuf_capacity(int64_t n)", () =>
+                    "{\n    byn_writer w = byn_strbuf_grow(byn_context);\n"
+                    + "    if (n > 0) {\n        w.buf = (uint8_t*)byn_context->resize(byn_context, NULL, 0, n);\n        w.cap = n;\n    }\n    return w;\n}\n");
+                return $"{name}({Expr(c.Arguments[0])})";
+            }
             case BuiltinFunction.OwnedNew:
             {
                 var inner = ((OwnedType)c.Type).Inner;
@@ -1368,22 +1541,60 @@ internal sealed class FunctionEmitter
                     "{\n    return byn_io_run_batch(path, args.ptr, args.len, out, byn_context);\n}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, {result ?? "NULL"})";
             }
-            case BuiltinFunction.StringFrom:
+            case BuiltinFunction.Utf8Decode:
             {
                 var span = _c.CType(fn.Parameters[0].Type);
                 var code = fn.ErrorSets[0].Variants[0].Code;
-                var name = _c.Helper("bynh_string_from", $"static uint32_t bynh_string_from({span} bytes, byn_str* out)", () =>
-                    $"{{\n    if (byn_utf8_invalid_at(bytes.ptr, bytes.len) >= 0) return UINT32_C({code});\n" +
-                    "    if (out) *out = byn_str_copy((byn_str){bytes.ptr, bytes.len}, byn_context);\n    return 0;\n}\n");
+                var name = _c.Helper("bynh_utf8_decode", $"static {_c.ErrorCType} bynh_utf8_decode({span} bytes, byn_str* out)", () =>
+                    $"{{\n    int64_t at = byn_utf8_invalid_at(bytes.ptr, bytes.len);\n" +
+                    $"    if (at >= 0) return ({_c.ErrorCType}){{ .code = UINT32_C({code}), .p.e{code} = {{ at }} }};\n" +
+                    $"    if (out) *out = byn_str_copy((byn_str){{bytes.ptr, bytes.len}}, byn_context);\n    return ({_c.ErrorCType}){{0}};\n}}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {result ?? "NULL"})";
             }
-            case BuiltinFunction.StringTryFrom:
+            case BuiltinFunction.Utf8TryDecode:
             {
                 var span = _c.CType(fn.Parameters[0].Type);
                 var opt = _c.CType(fn.ReturnType);
-                var name = _c.Helper("bynh_string_try_from", $"static {opt} bynh_string_try_from({span} bytes)", () =>
+                var name = _c.Helper("bynh_utf8_try_decode", $"static {opt} bynh_utf8_try_decode({span} bytes)", () =>
                     $"{{\n    if (byn_utf8_invalid_at(bytes.ptr, bytes.len) >= 0) return ({opt}){{0}};\n" +
                     $"    return ({opt}){{true, byn_str_copy((byn_str){{bytes.ptr, bytes.len}}, byn_context)}};\n}}\n");
+                return $"{name}({Expr(c.Arguments[0])})";
+            }
+            case BuiltinFunction.Utf8DecodeReplace:
+            {
+                // `invalid:` has one value, `.replace`, so the argument is not passed.
+                var span = _c.CType(fn.Parameters[0].Type);
+                var name = _c.Helper("bynh_utf8_decode_replace", $"static byn_str bynh_utf8_decode_replace({span} bytes)", () =>
+                    "{\n    return byn_utf8_decode_replace(bytes.ptr, bytes.len, byn_context);\n}\n");
+                return $"{name}({Expr(c.Arguments[0])})";
+            }
+            case BuiltinFunction.HexDecode:
+            {
+                var list = _c.CType(fn.ReturnType);
+                var code = fn.ErrorSets[0].Variants[0].Code;
+                var name = _c.Helper("bynh_hex_decode", $"static {_c.ErrorCType} bynh_hex_decode(byn_str text, {list}* out)", () =>
+                    $"{{\n    uint8_t* p = NULL;\n    int64_t at = byn_hex_decode(text, &p, byn_context);\n" +
+                    $"    if (at >= 0) return ({_c.ErrorCType}){{ .code = UINT32_C({code}), .p.e{code} = {{ at }} }};\n" +
+                    $"    if (out) *out = ({list}){{p, text.len / 2, text.len / 2, byn_context}};\n    return ({_c.ErrorCType}){{0}};\n}}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {result ?? "NULL"})";
+            }
+            case BuiltinFunction.IntParse:
+            {
+                var t = (PrimitiveType)fn.ReturnType;
+                var (bad, overflow) = (fn.ErrorSets[0].Variants[0].Code, fn.ErrorSets[0].Variants[1].Code);
+                var name = "bynh_parse_" + _c.Key(t);
+                _c.Helper(name, $"static {_c.ErrorCType} {name}(byn_str s, byn_builtin_Radix radix, {_c.CType(t)}* out)", () =>
+                    $"{{\n    int64_t v = 0;\n    int64_t at = byn_int_parse_at(s, {t.Bits}, {(t.IsSignedInteger ? "true" : "false")}, radix, &v);\n" +
+                    $"    if (at == -2) return ({_c.ErrorCType}){{ .code = UINT32_C({overflow}) }};\n" +
+                    $"    if (at >= 0) return ({_c.ErrorCType}){{ .code = UINT32_C({bad}), .p.e{bad} = {{ at }} }};\n" +
+                    $"    if (out) *out = ({_c.CType(t)})v;\n    return ({_c.ErrorCType}){{0}};\n}}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, {result ?? "NULL"})";
+            }
+            case BuiltinFunction.HexEncode:
+            {
+                var span = _c.CType(fn.Parameters[0].Type);
+                var name = _c.Helper("bynh_hex_encode", $"static byn_str bynh_hex_encode({span} bytes)", () =>
+                    "{\n    return byn_hex_encode(bytes.ptr, bytes.len, byn_context);\n}\n");
                 return $"{name}({Expr(c.Arguments[0])})";
             }
             case BuiltinFunction.StringInvalidUtf8At:
@@ -1456,6 +1667,10 @@ internal sealed class FunctionEmitter
                 return $"{Expr(r)}.len";
             case BuiltinMember.StringIsEmpty or BuiltinMember.SpanIsEmpty or BuiltinMember.ListIsEmpty:
                 return $"({Expr(r)}.len == 0)";
+            case BuiltinMember.StringRuneCount:
+                return $"byn_str_rune_count({Expr(r)})";
+            case BuiltinMember.StringIsAscii:
+                return $"byn_str_is_ascii({Expr(r)})";
             case BuiltinMember.StringBytes:
             {
                 var span = _c.CType(b.Type);
@@ -1463,13 +1678,93 @@ internal sealed class FunctionEmitter
                 return $"{name}({Expr(r)})";
             }
             case BuiltinMember.StringCopy:
-                return $"byn_str_copy({Expr(r)}, byn_arena_alloc({arg}))";
+                return $"byn_str_copy({Expr(r)}, {(b.Arguments.Length > 0 ? $"byn_arena_alloc({arg})" : "byn_context")})";
             case BuiltinMember.StringStartsWith:
                 return $"byn_str_starts_with({Expr(r)}, {arg})";
             case BuiltinMember.StringEndsWith:
                 return $"byn_str_ends_with({Expr(r)}, {arg})";
             case BuiltinMember.StringContains:
                 return $"byn_str_contains({Expr(r)}, {arg})";
+            case BuiltinMember.StringPosition or BuiltinMember.StringLastPosition:
+            {
+                var opt = _c.CType(b.Type);
+                var name = _c.Helper("bynh_position", $"static {opt} bynh_position(int64_t p)", () => $"{{\n    return p < 0 ? ({opt}){{0}} : ({opt}){{true, p}};\n}}\n");
+                return b.Member == BuiltinMember.StringLastPosition ? $"{name}(byn_str_last_position({Expr(r)}, {arg}))"
+                    : $"{name}(byn_str_position({Expr(r)}, {arg}, {(b.Arguments.Length > 1 ? Expr(b.Arguments[1]) : "0")}, {Loc(b.Syntax)}))";
+            }
+            case BuiltinMember.StringCount:
+                return $"byn_str_count({Expr(r)}, {arg})";
+            case BuiltinMember.StringTrimmed:
+                return $"byn_str_trimmed({Expr(r)}, {(b.Arguments.Length > 0 ? arg : "2")})";
+            case BuiltinMember.StringTrimmedBy:
+            {
+                var st = _c.CType(b.Arguments[0].Type);
+                var name = _c.Helper("bynh_trimmed_by", $"static byn_str bynh_trimmed_by(byn_str s, {st} by)", () => "{\n    return byn_str_trimmed_by(s, by.ptr, by.len);\n}\n");
+                return $"{name}({Expr(r)}, {arg})";
+            }
+            case BuiltinMember.StringLowercased or BuiltinMember.StringUppercased:
+                return $"byn_str_case({Expr(r)}, {(b.Member == BuiltinMember.StringUppercased ? "true" : "false")}, byn_context)";
+            case BuiltinMember.StringEquals:
+                return b.Arguments.Length > 1 ? $"({Expr(b.Arguments[1])} == 1 ? byn_str_eq_caseless({Expr(r)}, {arg}) : byn_str_eq({Expr(r)}, {arg}))"
+                    : $"byn_str_eq({Expr(r)}, {arg})";
+            case BuiltinMember.StringReplaced:
+                return $"byn_str_replaced({Expr(r)}, {arg}, {Expr(b.Arguments[1])}, byn_context, {Loc(b.Syntax)})";
+            case BuiltinMember.StringRepeated:
+                return $"byn_str_repeated({Expr(r)}, {arg}, byn_context, {Loc(b.Syntax)})";
+            case BuiltinMember.StringPadded:
+                return $"byn_str_padded({Expr(r)}, {arg}, {Expr(b.Arguments[1])}, byn_context)";
+            case BuiltinMember.BytesToString:
+            {
+                var st = _c.CType(r.Type);
+                var name = "bynh_bytes_string_" + _c.Key(r.Type);
+                _c.Helper(name, $"static byn_str {name}({st} b)", () => "{\n    return byn_bytes_string(b.ptr, b.len, byn_context);\n}\n");
+                return $"{name}({Expr(r)})";
+            }
+            case BuiltinMember.IntTryParse:
+            {
+                var opt = _c.CType(b.Type);
+                var t = (PrimitiveType)((OptionalType)b.Type).Inner;
+                var name = "bynh_try_parse_" + _c.Key(b.Type);
+                _c.Helper(name, $"static {opt} {name}(byn_str s, byn_builtin_Radix radix)", () =>
+                    $"{{\n    int64_t v;\n    if (!byn_int_parse(s, {t.Bits}, {(t.IsSignedInteger ? "true" : "false")}, radix, &v)) return ({opt}){{0}};\n    return ({opt}){{true, ({_c.CType(t)})v}};\n}}\n");
+                return $"{name}({Expr(r)}, {arg})";
+            }
+            case BuiltinMember.StringJoined:
+            {
+                var xt = _c.CType(r.Type);
+                var name = "bynh_joined_" + _c.Key(r.Type);
+                _c.Helper(name, $"static byn_str {name}({xt} xs, byn_str sep)", () => "{\n    return byn_str_joined(xs.ptr, xs.len, sep, byn_context);\n}\n");
+                return $"{name}({Expr(r)}, {arg})";
+            }
+            case BuiltinMember.StringRunes or BuiltinMember.StringUtf16 or BuiltinMember.StringLines:
+                return $"((byn_text_view){{{Expr(r)}, {{NULL, 0}}, 0, 0}})";
+            case BuiltinMember.StringParts:
+                return $"byn_parts({Expr(r)}, {arg}, {(b.Arguments.Length > 1 ? Expr(b.Arguments[1]) : "0")}, {Loc(b.Syntax)})";
+            case BuiltinMember.StringPartsRune:
+                return $"byn_parts_rune({Expr(r)}, {arg}, {(b.Arguments.Length > 1 ? Expr(b.Arguments[1]) : "0")}, {Loc(b.Syntax)})";
+            case BuiltinMember.RunesTake:
+                return $"byn_str_take_runes({Expr(r)}.s, {arg}, {Loc(b.Syntax)})";
+            case BuiltinMember.RunesSkip:
+                return $"byn_str_skip_runes({Expr(r)}.s, {arg}, {Loc(b.Syntax)})";
+            case BuiltinMember.RunesTakeLast:
+                return $"byn_str_take_last_runes({Expr(r)}.s, {arg}, {Loc(b.Syntax)})";
+            case BuiltinMember.Utf16Copy:
+            {
+                var list = _c.CType(b.Type);
+                var name = _c.Helper("bynh_utf16_copy", $"static {list} bynh_utf16_copy(byn_text_view v)", () =>
+                    $"{{\n    {list} r = {{NULL, 0, 0, byn_context}};\n    r.ptr = byn_utf16_copy(v.s, &r.len, byn_context);\n    r.cap = r.len;\n    return r;\n}}\n");
+                return $"{name}({Expr(r)})";
+            }
+            case BuiltinMember.TextViewMore:
+                return $"byn_view_more({Expr(r)}, {arg}, {(int)((TextViewType)r.Type).Kind})";
+            case BuiltinMember.TextViewNext:
+                return ((TextViewType)r.Type).Kind switch
+                {
+                    TextViewKind.Runes => $"byn_str_next({Expr(r)}.s, &{arg})",
+                    TextViewKind.Utf16 => $"byn_utf16_next(&{Expr(r)}, &{arg})",
+                    TextViewKind.Lines => $"byn_lines_next(&{Expr(r)}, &{arg})",
+                    _ => $"byn_parts_next(&{Expr(r)}, &{arg})",
+                };
             case BuiltinMember.SpanCopy:
             {
                 var span = (SpanType)r.Type;
@@ -1479,7 +1774,7 @@ internal sealed class FunctionEmitter
                 var name = "bynh_copy_" + _c.Key(span);
                 _c.Helper(name, $"static {list} {name}({st} s, byn_alloc* a)", () =>
                     $"{{\n    {list} r = {{NULL, 0, 0, a}};\n    if (s.len > 0) {{\n        r.ptr = ({et}*)byn_copy_bytes(s.ptr, s.len * (int64_t)sizeof({et}), a);\n        r.len = r.cap = s.len;\n    }}\n    return r;\n}}\n");
-                return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
+                return $"{name}({Expr(r)}, {(b.Arguments.Length > 0 ? $"byn_arena_alloc({arg})" : "byn_context")})";
             }
             case BuiltinMember.ListCopy:
             {
@@ -1488,7 +1783,7 @@ internal sealed class FunctionEmitter
                 var name = "bynh_copy_" + _c.Key(r.Type);
                 _c.Helper(name, $"static {lt} {name}({lt} l, byn_alloc* a)", () =>
                     $"{{\n    {lt} r = {{NULL, 0, 0, a}};\n    if (l.len > 0) {{\n        r.ptr = ({et}*)byn_copy_bytes(l.ptr, l.len * (int64_t)sizeof({et}), a);\n        r.len = r.cap = l.len;\n    }}\n    return r;\n}}\n");
-                return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
+                return $"{name}({Expr(r)}, {(b.Arguments.Length > 0 ? $"byn_arena_alloc({arg})" : "byn_context")})";
             }
             case BuiltinMember.StrBufCopy:
                 return $"byn_strbuf_copy({Expr(r)}, byn_arena_alloc({arg}))";
@@ -1509,6 +1804,14 @@ internal sealed class FunctionEmitter
                 _c.Helper(name, $"static {st} {name}({lt} l)", () => $"{{\n    return ({st}){{l.ptr, l.len}};\n}}\n");
                 return $"{name}({Expr(r)})";
             }
+            case BuiltinMember.ListMutableSpan:
+            {
+                var lt = _c.CType(r.Type);
+                var st = _c.CType(b.Type);
+                var name = "bynh_mutable_span_" + _c.Key(r.Type);
+                _c.Helper(name, $"static {st} {name}({lt} l)", () => $"{{\n    return ({st}){{l.ptr, l.len}};\n}}\n");
+                return $"{name}({Expr(r)})";
+            }
             case BuiltinMember.ListClear or BuiltinMember.StrBufClear:
                 return $"({Expr(r)}.len = 0)";
             case BuiltinMember.ListRemoveLast:
@@ -1520,6 +1823,15 @@ internal sealed class FunctionEmitter
                     $"{{\n    if (l->len == 0) byn_panic(\"removeLast on an empty list\", file, line);\n    return l->ptr[--l->len];\n}}\n");
                 return $"{name}(&{Expr(r)}, {Loc(b.Syntax)})";
             }
+            case BuiltinMember.ListTryGet:
+            {
+                var lt = _c.CType(r.Type);
+                var opt = _c.CType(b.Type);
+                var name = "bynh_try_get_" + _c.Key(r.Type);
+                _c.Helper(name, $"static {opt} {name}({lt} l, int64_t i)", () =>
+                    $"{{\n    return i < 0 || i >= l.len ? ({opt}){{0}} : ({opt}){{true, l.ptr[i]}};\n}}\n");
+                return $"{name}({Expr(r)}, {arg})";
+            }
             case BuiltinMember.ListRemoveRange:
             {
                 var lt = _c.CType(r.Type);
@@ -1527,6 +1839,46 @@ internal sealed class FunctionEmitter
                 _c.Helper(name, $"static void {name}({lt}* l, int64_t start, int64_t end, const char* file, int line)", () =>
                     "{\n    byn_slice_check(start, end, l->len, file, line);\n    if (end > start) memmove(l->ptr + start, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n    l->len -= end - start;\n}\n");
                 return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})";
+            }
+            case BuiltinMember.ListRemoveThrough or BuiltinMember.ListRemoveAt or BuiltinMember.ListRemoveAtRange:
+            {
+                // `through:` is an inclusive end and `at: i` removes one element (mode 1 and 2; mode 0 is `until`).
+                var lt = _c.CType(r.Type);
+                var name = "bynh_remove_through_" + _c.Key(r.Type);
+                _c.Helper(name, $"static void {name}({lt}* l, int64_t start, int64_t end, int mode, const char* file, int line)", () =>
+                    "{\n    if (mode == 2) {\n        if (start < 0 || start >= l->len) bayan_trap_bounds(file, line);\n        end = start;\n    }\n    if (mode != 0) {\n        byn_slice_check(start, end, l->len - 1, file, line);\n        end++;\n    }\n"
+                    + "    byn_slice_check(start, end, l->len, file, line);\n    if (end > start) memmove(l->ptr + start, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n    l->len -= end - start;\n}\n");
+                if (b.Member == BuiltinMember.ListRemoveThrough) return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, 1, {Loc(b.Syntax)})";
+                if (b.Member == BuiltinMember.ListRemoveAt) return $"{name}(&{Expr(r)}, {arg}, 0, 2, {Loc(b.Syntax)})";
+                // `at: a..b` or `at: a..=b` reads the range's layout tuple (start, end, inclusive).
+                var range = "bynh_remove_at_range_" + _c.Key(r.Type);
+                _c.Helper(range, $"static void {range}({lt}* l, {_c.CType(b.Arguments[0].Type)} at, const char* file, int line)", () =>
+                    $"{{\n    {name}(l, at.item1, at.item2, at.item3 ? 1 : 0, file, line);\n}}\n");
+                return $"{range}(&{Expr(r)}, {arg}, {Loc(b.Syntax)})";
+            }
+            case BuiltinMember.ListReplace:
+            {
+                var lt = _c.CType(r.Type);
+                var name = "bynh_replace_" + _c.Key(r.Type);
+                _c.Helper(name, $"static void {name}({lt}* l, {_c.CType(b.Arguments[0].Type)} at, {_c.CType(b.Arguments[1].Type)} items, const char* file, int line)", () =>
+                    "{\n    int64_t start = at.item1, end = at.item3 ? at.item2 + 1 : at.item2;\n    byn_slice_check(start, end, l->len, file, line);\n"
+                    + "    int64_t len = l->len - (end - start) + items.len;\n    if (!l->alloc) l->alloc = byn_context;\n"
+                    // Items read from the list itself are copied first, since growing and shifting move them.
+                    + "    if (items.len > 0 && items.ptr >= l->ptr && items.ptr < l->ptr + l->cap)\n"
+                    + "        items.ptr = byn_copy_bytes(items.ptr, items.len * (int64_t)sizeof(*l->ptr), l->alloc);\n"
+                    + "    byn_list_reserve((void**)&l->ptr, &l->cap, len, (int64_t)sizeof(*l->ptr), l->alloc);\n"
+                    + "    memmove(l->ptr + start + items.len, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n"
+                    + "    if (items.len > 0) memcpy(l->ptr + start, items.ptr, (size_t)items.len * sizeof(*l->ptr));\n    l->len = len;\n}\n");
+                return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})";
+            }
+            case BuiltinMember.ListSort:
+            {
+                var element = ((ListType)r.Type).Element;
+                var et = _c.CType(element);
+                var less = _c.Helper("bynh_less_" + _c.Key(element), $"static bool bynh_less_{_c.Key(element)}(const void* a, const void* b)", () => element.IsString
+                    ? "{\n    return byn_str_cmp(*(const byn_str*)a, *(const byn_str*)b) < 0;\n}\n"
+                    : $"{{\n    return *(const {et}*)a < *(const {et}*)b;\n}}\n");
+                return $"byn_sort({Expr(r)}.ptr, {Expr(r)}.len, sizeof(*{Expr(r)}.ptr), {less})";
             }
             case BuiltinMember.MapLength:
                 return $"{Expr(r)}.h.live";
@@ -1552,24 +1904,43 @@ internal sealed class FunctionEmitter
                     $"{{\n    {mt} r;\n    byn_map_copy(&m.h, m.keys, (int64_t)sizeof({kt}), (void**)&r.keys, m.vals, (int64_t)sizeof({vt}), (void**)&r.vals, &r.h, a);\n    return r;\n}}\n");
                 return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
             }
-            case BuiltinMember.MapIndex or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapGetOr
+            case BuiltinMember.MapIndex or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapTryGet
                 or BuiltinMember.MapContains or BuiltinMember.MapRemove:
                 return _c.MapMethod(b.Member, (MapType)r.Type, Expr(r), b.Arguments.Select(Expr).ToArray(), Loc(b.Syntax));
             case BuiltinMember.ArrayLength:
                 return $"((void){Expr(r)}, INT64_C({((ArrayType)r.Type).Length}))";
-            case BuiltinMember.ArrayAsSpan:
+            case BuiltinMember.ArrayAsSpan or BuiltinMember.ArrayMutableSpan:
                 return $"(({_c.CType(b.Type)}){{{Expr(r)}.v, {((ArrayType)r.Type).Length}}})";
             case BuiltinMember.ArenaReset:
                 return $"byn_arena_reset({Expr(r)})";
             case BuiltinMember.StrBufAppend:
                 return Claimed($"byn_w_str(&{Expr(r)}, {arg})", r, b.Syntax);
+            case BuiltinMember.StrBufAppendRepeated:
+            {
+                var name = _c.Helper("bynh_strbuf_repeat", "static void bynh_strbuf_repeat(byn_writer* w, uint32_t c, int64_t n, const char* file, int line)", () =>
+                    "{\n    if (n < 0) byn_panic(\"repeated a negative number of times\", file, line);\n"
+                    + "    for (int64_t i = 0; i < n; i++) byn_w_char(w, c);\n}\n");
+                return Claimed($"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})", r, b.Syntax);
+            }
+            case BuiltinMember.StrBufInsert:
+            {
+                // Appends the text, then rotates it into place by three reversals; text the buffer grew away from stays valid.
+                _c.Helper("bynh_reverse", "static void bynh_reverse(uint8_t* p, int64_t n)", () =>
+                    "{\n    for (int64_t i = 0, j = n - 1; i < j; i++, j--) {\n        uint8_t t = p[i];\n        p[i] = p[j];\n        p[j] = t;\n    }\n}\n");
+                var name = _c.Helper("bynh_strbuf_insert", "static void bynh_strbuf_insert(byn_writer* w, byn_str s, int64_t at, const char* file, int line)", () =>
+                    "{\n    byn_slice_check(at, w->len, w->len, file, line);\n"
+                    + "    if (at < w->len && (w->buf[at] & 0xC0) == 0x80) byn_panic(\"string slice splits a code point\", file, line);\n"
+                    + "    int64_t end = w->len;\n    byn_w_bytes(w, s.ptr, s.len);\n"
+                    + "    bynh_reverse(w->buf + at, end - at);\n    bynh_reverse(w->buf + end, s.len);\n    bynh_reverse(w->buf + at, end - at + s.len);\n}\n");
+                return Claimed($"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})", r, b.Syntax);
+            }
             case BuiltinMember.IoWrite:
                 return $"byn_io_write({Expr(r)}, {arg})";
             case BuiltinMember.IoReadAll:
             {
                 var res = _c.CType(b.Type);
                 var name = _c.Helper("bynh_io_read_all", $"static {res} bynh_io_read_all(int32_t fd)", () =>
-                    $"{{\n    (void)fd;\n    {res} r = {{0}};\n    r.err = byn_io_read_stdin(&r.value, byn_context);\n    return r;\n}}\n");
+                    $"{{\n    (void)fd;\n    {res} r = {{0}};\n    r.err.code = byn_io_read_stdin(&r.value, byn_context);\n    return r;\n}}\n");
                 return $"{name}({Expr(r)})";
             }
             case BuiltinMember.StrBufAsString:
@@ -1578,14 +1949,20 @@ internal sealed class FunctionEmitter
                 return $"{Expr(r)}.message";
             case BuiltinMember.ProcessExitCode:
                 return $"{Expr(r)}.exit_code";
+            case BuiltinMember.FormatSpecRadix or BuiltinMember.FormatSpecDebug or BuiltinMember.FormatSpecWidth
+                or BuiltinMember.FormatSpecFill or BuiltinMember.FormatSpecAlign or BuiltinMember.FormatSpecDigits:
+                return $"{Expr(r)}.{b.Member.ToString()[10..].ToLowerInvariant()}";
             case BuiltinMember.ProcessStdout:
                 return $"{Expr(r)}.out";
             case BuiltinMember.ProcessStderr:
                 return $"{Expr(r)}.err";
             case BuiltinMember.CharValue:
                 return $"((uint32_t){Expr(r)})";
-            case BuiltinMember.IntToHex:
-                return $"byn_to_hex((uint{((PrimitiveType)r.Type).Bits}_t){Expr(r)}, byn_context)";
+            case BuiltinMember.IntToString:
+            {
+                var t = (PrimitiveType)r.Type;
+                return $"byn_int_string((int64_t){Expr(r)}, {t.Bits}, {(t.IsSignedInteger ? "true" : "false")}, {arg}, byn_context)";
+            }
             case BuiltinMember.EnumName:
                 return $"{_c.EnumNames((EnumSymbol)r.Type)}[{Expr(r)}]";
             case BuiltinMember.EnumOrdinal:
@@ -1596,7 +1973,7 @@ internal sealed class FunctionEmitter
                 return $"{_c.EnumField(e.Fields[(int)(Int128)((BoundLiteral)b.Arguments[0]).Value.Value])}[{Expr(r)}]";
             }
             case BuiltinMember.ResultIsOk:
-                return $"({Expr(r)}.err == 0)";
+                return $"({Expr(r)}.err.code == 0)";
             case BuiltinMember.OwnedValue:
                 return $"(*{Expr(r)})";
             case BuiltinMember.ResultValue or BuiltinMember.ResultError:
@@ -1606,7 +1983,7 @@ internal sealed class FunctionEmitter
                 var name = (value ? "bynh_value_" : "bynh_error_") + _c.Key(r.Type);
                 var message = value ? "result holds an error" : "result holds a value";
                 _c.Helper(name, $"static {_c.CType(b.Type)} {name}({res} r, const char* file, int line)", () =>
-                    $"{{\n    if ({(value ? "r.err" : "!r.err")}) byn_panic(\"{message}\", file, line);\n    return {(value ? "r.value" : "r.err")};\n}}\n");
+                    $"{{\n    if ({(value ? "r.err.code" : "!r.err.code")}) byn_panic(\"{message}\", file, line);\n    return {(value ? "r.value" : "r.err")};\n}}\n");
                 return $"{name}({Expr(r)}, {Loc(b.Syntax)})";
             }
             default:
@@ -1704,7 +2081,7 @@ internal sealed class FunctionEmitter
             case ConversionKind.NullToOptional:
                 return $"(({_c.CType(to)}){{0}})";
             case ConversionKind.ToResult:
-                return $"(({_c.CType(to)}){{0, {v}}})";
+                return $"(({_c.CType(to)}){{{{0}}, {v}}})";
             case ConversionKind.ErrorToResult:
                 return $"(({_c.CType(to)}){{{v}}})";
             case ConversionKind.ListToSpan:

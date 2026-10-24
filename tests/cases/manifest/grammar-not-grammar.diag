@@ -1,0 +1,4 @@
+error BYN3102: `grammar` must be a `Grammar { … }`
+
+  4 │     grammar: ["upsert"],
+    │              ^^^^^^^^^^

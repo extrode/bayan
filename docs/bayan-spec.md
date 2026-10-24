@@ -560,19 +560,19 @@ public Order.shipped ship(move Order.paid order, by Carrier carrier)
 1. `T.s` is the type of `T` values in state `s`. It is valid anywhere a type is: parameters, returns, fields, locals and generics (`List<Order.paid>`). Passing a value not known to be in that state is an error (BYN7001).
 2. Several states: `Type name is .a or .b` inline in a parameter or field, `let x: T is .a or .b` in a local, or an alias (`type Fulfilled = Order is .paid or .shipped`). Return types use `T.s` or an alias.
 3. The receiver keeps its own form: `this is .s`, `ref this is .s`, `move this is .s`, and the same with `or` (§3.10, §10).
-4. Widening is implicit and free: `Order.paid` → `Fulfilled` → `Order`. Narrowing happens only through `is`, `switch`, or a `becomes` call on a `var`.
+4. Widening is implicit and free: `Order.paid` → `Fulfilled` → `Order`. Narrowing happens only through `is`, `switch`, or a `becomes` call on a `var`. A state changes in place only through `become`, or by consuming a value and returning a new one (`move Order.paid` → `Order.shipped`); so a call to a method without `becomes` leaves what the caller knows unchanged.
 5. Narrowing results: `if o is .paid { … }` gives `Order.paid`; `.paid p => …` binds `p: Order.paid`.
 6. A payload field is readable only when the type guarantees its state (BYN7002). With several states, a field is readable if every listed state has it with the same type (`payment` is readable on `Fulfilled`, `tracking` is not). Payloads name their fields in the declaration (BYN1064, §3.12).
 7. Literals name a state: `Order.paid { id: i, lines: l, payment: p }`. A plain `Order { … }` on a struct with states is an error (BYN7005). An unknown state is BYN7007.
 8. Runtime: `T.s` has the same layout as `T` (a `u8` tag plus a payload union) and is erased in C. Widening is a no-op; the checks are compile-time only.
 9. Canonical spelling: one state is always written `T.s`. `bayan format` rewrites `Order order is .paid` → `Order.paid order` and `type X = Order is .paid` → `type X = Order.paid` (BYN7006). The receiver is exempt.
 10. State names are camelCase and may not equal a static member name of `T`, otherwise `Order.empty` would name both a type and a factory (BYN7008).
-11. `becomes .state` declares a transition; `become .state(…)` performs it. A `become` to a state the signature does not declare is an error (BYN7003). **A failed transition leaves the state unchanged.** A method that declares `becomes .s` must `become` on every path that returns normally; a path that fails leaves the state unchanged (BYN7009). After a `becomes` call on a `var` (with no live borrows), the variable's static type changes: after `try order.pay(card)`, `order` is `Order.paid`. A `let` cannot call `ref this` methods, so it needs no tracking.
+11. `becomes .state` declares a transition; `become .state(…)` performs it. Only a `ref this` method may declare `becomes`: a `move this` or `this` receiver leaves the caller with no value whose state could change (BYN7010). A method that calls a `becomes .t` method on `this` declares `becomes` including `.t` itself, and the call counts as `become .t` (BYN7003). A `becomes` method can't be called on a `ref` parameter (BYN7011). A whole-value assignment to `this` or to a `ref` parameter keeps its state: allowed only when the target's type names one state and the new value is in it (BYN7012). A `become` to a state the signature does not declare is an error (BYN7003). **A failed transition leaves the state unchanged.** A method that declares `becomes .s` must `become` on every path that returns normally; a path that fails leaves the state unchanged (BYN7009). After a `becomes` call on a `var` (with no live borrows), the variable's static type changes: after `try order.pay(card)`, `order` is `Order.paid`. A `let` cannot call `ref this` methods, so it needs no tracking.
 12. A state switch is exhaustive, so adding a state is a compile error at every non-exhaustive switch (BYN7004).
 13. `states` is a contextual keyword at the start of a member declaration when followed by `{`, so fields named `state` or `states` still work. At most one `states` block per struct. The per-line `state x` form is an input form (BYN1059). `becomes` is contextual after a parameter list.
 14. States are named as participles or adjectives (`paid`, `shipped`) and are exempt from the `-ed` copy-pattern rule (§5.2), which applies only to members.
 
-> Round 3 §14, §12, O8, payload names: a lifecycle stated in the type moves "order not paid yet" bugs to compile time at no runtime cost; one `states` block and `Order.paid` replace per-line `state` and the `Order is .shipped order` form, which collided with whole-value binding. Codes: BYN1059, BYN1064, BYN7001, BYN7002, BYN7003, BYN7004, BYN7005, BYN7006, BYN7007, BYN7008.
+> Round 3 §14, §12, O8, payload names: a lifecycle stated in the type moves "order not paid yet" bugs to compile time at no runtime cost; one `states` block and `Order.paid` replace per-line `state` and the `Order is .shipped order` form, which collided with whole-value binding. Codes: BYN1059, BYN1064, BYN7001, BYN7002, BYN7003, BYN7004, BYN7005, BYN7006, BYN7007, BYN7008, BYN7010, BYN7011, BYN7012.
 
 ---
 
@@ -2119,10 +2119,8 @@ Every diagnostic states **what**, **where**, **why** and a **fix** (machine-appl
 | `bayan cache stats` | Location, entries and size of the shared build cache (§21.4) |
 | `bayan doctor` | Check the compiler, host target, C compiler, `zig`, git and cache; every failure prints a fix; exits 4 on any failure |
 | `bayan --version` | Compiler version and the commit it was built from |
-| `bayan format` | Format to canonical form and rewrite input forms (§21.5) (`--check`, `--prose`, `--from-prose`, `--check-prose`); reads `style` from `package.byn` (§19.2); not in v0.1 |
+| `bayan format` | Format to canonical form and rewrite input forms (§21.5); reads `style` from `package.byn` (§19.2). `--check` writes nothing, prints each file that would change and exits 1 if any would. `--prose`, `--from-prose`, `--check-prose` are prose translation (§22), not in v0.1 |
 | `bayan lint`, `bayan doc`, `bayan repl`, `bayan lsp` | |
-
-Every command takes `--color auto|always|never` (before any `--`). `auto` colors output that goes to a terminal, unless `NO_COLOR` is set. `bayan test --changed` runs only the tests of modules with a file that differs from `HEAD` (or `--base <ref>`, which implies `--changed`), untracked files included; a changed `package.byn` runs everything. It uses git read-only.
 | `bayan pkg` | Packages (`add`, `audit`, `export --json`) |
 | `bayan expand X` | Show every derived member and the derived effects of each function; deferred (after v0.1) |
 | `bayan features --used` | Report the language features a build used (feeds the reference-app coverage matrix) |
@@ -2130,6 +2128,10 @@ Every command takes `--color auto|always|never` (before any `--`). `auto` colors
 | `bayan explain CODE` | Long explanation of a diagnostic |
 | `bayan migrate` | Rename casing, upgrade editions, apply `@replaced` |
 | `bayan new test X` | Test scaffolds |
+
+Every command takes `--color auto|always|never` (before any `--`). `auto` colors output that goes to a terminal, unless `NO_COLOR` is set. `bayan test --changed` runs only the tests of modules with a file that differs from `HEAD` (or `--base <ref>`, which implies `--changed`), untracked files included; a changed `package.byn` runs everything. It uses git read-only.
+
+`bayan fmt` is not a command; its message names `bayan format` (HANDOFF §29).
 
 `check`, `build`, `run` and `test` take `--diagnostics json`: each diagnostic goes to stderr as one JSON object per line, with `code`, `severity`, `file`, `span` (byte offsets `start`/`end` plus one-based `line`/`column`/`endLine`/`endColumn` counted in Unicode scalars), `message`, `label`, `help` and `fixes` (each a `span` and a `replacement`). `file` and `span` are null for diagnostics without a location.
 

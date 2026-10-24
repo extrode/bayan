@@ -19,7 +19,7 @@ public sealed class L007UntrustedSinkTests
         void main() fails IoError {
             let name: Untrusted<string> = Untrusted("x")
             let many: List<Untrusted<string>> = List<Untrusted<string>>()
-            let span: Span<Untrusted<string>> = many.asSpan()
+            let span: ReadOnlySpan<Untrusted<string>> = many.span
             let h: Holder = Holder { value: Untrusted("x") }
             let holders: List<Holder> = List<Holder>()
             let none: List<string> = List<string>()
@@ -29,19 +29,19 @@ public sealed class L007UntrustedSinkTests
     // Program or path, argument list ("{p}" is a plain program or path), and the one expected error code, or "" for none.
     public static TheoryData<string, string, string, string> Cases => new()
     {
-        { "untrusted program", "name", "none.asSpan()", "BYN2786" },
+        { "untrusted program", "name", "none.span", "BYN2786" },
         { "untrusted element in a list literal", "{p}", "[\"a\", name]", "BYN2786" },
         { "list of untrusted as args", "{p}", "many", "BYN2786" },
         { "span of untrusted as args", "{p}", "span", "BYN2786" },
-        { "untrusted struct field as program", "h.value", "none.asSpan()", "BYN2786" },
+        { "untrusted struct field as program", "h.value", "none.span", "BYN2786" },
         { "untrusted struct field in a list literal", "{p}", "[h.value]", "BYN2786" },
         // The deep check does not look inside structs; a struct never converts to `string`, so it is a plain mismatch.
-        { "struct holding untrusted as program", "h", "none.asSpan()", "BYN2202" },
+        { "struct holding untrusted as program", "h", "none.span", "BYN2202" },
         { "list of structs holding untrusted as args", "{p}", "holders", "BYN2202" },
-        { "trusted program", "name.trustUnchecked() because \"checked against the allow list\"", "none.asSpan()", "" },
+        { "trusted program", "name.trustUnchecked() because \"checked against the allow list\"", "none.span", "" },
         { "trusted element", "{p}", "[\"a\", name.trustUnchecked() because \"checked against the allow list\"]", "" },
         { "plain program and args", "{p}", "[\"a\", \"b\"]", "" },
-        { "plain list as args", "{p}", "none.asSpan()", "" },
+        { "plain list as args", "{p}", "none.span", "" },
     };
 
     [Theory]

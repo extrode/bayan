@@ -1,0 +1,7 @@
+// `T.tryParse(text, as: radix)`: `null` for empty text, a sign, prefix or space it does not take, a bad digit, or a value out of range.
+print($"{i64.tryParse("42") ?? -1} {i64.tryParse("-9223372036854775808") ?? -1} {i64.tryParse("9223372036854775808") ?? -1}")
+print($"{u8.tryParse("255") ?? 0} {u8.tryParse("256") ?? 0} {u8.tryParse("-1") ?? 7} {i8.tryParse("-128") ?? 0}")
+// The other radixes read the type's bits, as `string(n, as:)` prints them.
+print($"{i8.tryParse("ff", as: .hex) ?? 0} {u16.tryParse("FFfF", as: .hex) ?? 0} {i32.tryParse("101", as: .binary) ?? 0} {u8.tryParse("777", as: .octal) ?? 9}")
+print($"{i64.tryParse("") ?? -1} {i64.tryParse("+1") ?? -1} {i64.tryParse(" 1") ?? -1} {i64.tryParse("0x10") ?? -1}")
+print($"{i8.tryParse(string(i8(-1), as: .hex), as: .hex) ?? 0}")

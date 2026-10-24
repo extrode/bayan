@@ -8,13 +8,13 @@ void dump(ref LexResult result, to ref StrBuf sb) {
         let position = result.source.getLinePosition(token.start)
         if token.hasDoc {
             sb.append("    doc ")
-            escape(result.source.bytes.asSpan()[token.docStart..token.docStart + token.docLength], to: ref sb)
+            escape(result.source.bytes.span[token.docStart..token.docStart + token.docLength], to: ref sb)
             sb.append("\n")
         }
         sb.append($"{position.line}:{position.column} {kindName(token.kind)}")
         if token.length > 0 {
             sb.append(" ")
-            escape(result.source.bytes.asSpan()[token.start..token.end], to: ref sb)
+            escape(result.source.bytes.span[token.start..token.end], to: ref sb)
         }
         sb.append("\n")
     }
@@ -22,7 +22,7 @@ void dump(ref LexResult result, to ref StrBuf sb) {
         sb.append("\n")
         using var arena = Arena()
         let diagnostics = result.diagnostics.copy(to: arena)
-        renderAll(diagnostics.asSpan(), to: ref sb, from: ref result.source)
+        renderAll(diagnostics.span, to: ref sb, from: ref result.source)
     }
 }
 
@@ -55,7 +55,7 @@ void escape(ReadOnlySpan<u8> text, to ref StrBuf sb) {
 /// insignificant whitespace, then `\n`. Offsets are bytes; invalid UTF-8 in source text becomes
 /// U+FFFD per maximal subpart.
 void dumpJson(ref LexResult result, to ref StrBuf sb) {
-    let bytes = result.source.bytes.asSpan()
+    let bytes = result.source.bytes.span
     sb.append("{\"tokens\":[")
     for i in 0..result.tokens.length {
         let token = result.tokens[i]
@@ -71,7 +71,7 @@ void dumpJson(ref LexResult result, to ref StrBuf sb) {
         sb.append("}")
     }
     sb.append("],\"diagnostics\":[")
-    let order = sourceOrder(result.diagnostics.asSpan())
+    let order = sourceOrder(result.diagnostics.span)
     for k in 0..order.length {
         let d = result.diagnostics[order[k]]
         if k > 0 { sb.append(",") }

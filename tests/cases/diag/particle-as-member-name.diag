@@ -1,0 +1,27 @@
+error BYN5009: `at` is a particle; name the member with a verb or a noun
+
+  4 │     i64 at(i64 index) => count + index
+    │         ^^
+    │
+  help: rename the member, for example `tryGet(at:)` instead of `at(…)`
+
+error BYN5009: `toI64` spells a conversion with `to`; write `i64(shelf)`
+
+  6 │     i64 toI64() => count
+    │         ^^^^^
+    │
+  help: use a view noun, `copy()`, or a `T(x)` conversion
+
+error BYN5009: `asCount` spells a conversion with `as`; write `count`
+
+  8 │     i64 asCount => count
+    │         ^^^^^^^
+    │
+  help: use a view noun, `copy()`, or a `T(x)` conversion
+
+error BYN5009: `toString` spells a conversion with `to`; write `string(shelf)`
+
+  10 │     string toString() => ""
+     │            ^^^^^^^^
+     │
+  help: use a view noun, `copy()`, or a `T(x)` conversion

@@ -11,7 +11,7 @@ namespace Bayan.Tests;
 
 /// <summary>
 /// L010 (docs/laws/010-utf8-decode-exact.md): a compiled Bayan driver decodes edge-case and seeded random
-/// byte sequences with <c>string.from</c>, <c>string.tryFrom</c> and <c>string.invalidUtf8At</c>, and every
+/// byte sequences with <c>Utf8.decode</c>, <c>Utf8.tryDecode</c> and <c>string.invalidUtf8At</c>, and every
 /// verdict, offset and round trip must match <see cref="Rune.DecodeFromUtf8"/>.
 /// </summary>
 [Trait("Law", "L010")]
@@ -20,7 +20,8 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
     private const int Seed = 0x4C010;
     private const int RandomCount = 4000;
 
-    /// <summary>Per stdin line of hex bytes: invalid offset (-1 when valid), from ok, tryFrom ok, and both round trips.</summary>
+    /// <summary>Per stdin line of hex bytes: invalid offset (-1 when valid), decode ok, tryDecode ok, and both round trips;
+    /// the offset is -99 when <c>Utf8Error.invalidSequence</c>'s <c>at</c> disagrees with <c>string.invalidUtf8At</c>.</summary>
     private const string Driver = """
         // L010 driver: each stdin line is lowercase hex bytes.
         u8 nibble(u8 c) {
@@ -37,19 +38,27 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
         }
 
         bool decodes(ReadOnlySpan<u8> bytes) fails Utf8Error {
-            let _ = try string.from(bytes)
+            let _ = try Utf8.decode(bytes)
             return true
+        }
+
+        i64 failsAt(ReadOnlySpan<u8> bytes) {
+            let _ = Utf8.decode(bytes) catch switch {
+                .invalidSequence(let at) => return at,
+            }
+            return -1
         }
 
         string check(ReadOnlySpan<u8> bytes) {
             let fromOk = decodes(bytes) catch switch {
                 .invalidSequence => false,
             }
-            let from = string.from(bytes) catch switch {
+            let from = Utf8.decode(bytes) catch switch {
                 .invalidSequence => "",
             }
-            let at = string.invalidUtf8At(bytes) ?? -1
-            let t = string.tryFrom(bytes)
+            var at = string.invalidUtf8At(bytes) ?? -1
+            if failsAt(bytes) != at { at = -99 }
+            let t = Utf8.tryDecode(bytes)
             let tryOk = t is not null
             let tryText = t ?? ""
             return $"{at} {fromOk} {tryOk} {same(from.bytes, as: bytes)} {same(tryText.bytes, as: bytes)}"
@@ -67,7 +76,7 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
             while i < text.length {
                 let c = text[i]
                 if c == 0x0A {
-                    print(check(line.asSpan()))
+                    print(check(line.span))
                     line.clear()
                     i += 1
                 } else {

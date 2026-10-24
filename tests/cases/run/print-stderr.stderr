@@ -1,0 +1,5 @@
+err plain
+err 3 items
+crashed: broken
+panic: broken
+  at print-stderr.byn:13

@@ -1,0 +1,12 @@
+// `replaced`, `repeated` and `joined` build new text.
+void main() {
+    print("a-b-c".replaced("-", by: ", "))
+    print("aaa".replaced("aa", by: "b"))
+    print($"[{"ab".repeated(3)}] [{"ab".repeated(0)}]")
+    var xs = List<string>()
+    xs.append("x")
+    xs.append("y")
+    xs.append("z")
+    print(xs.joined(by: " / "))
+    print(xs.span.joined(by: ""))
+}

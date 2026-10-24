@@ -9,13 +9,13 @@ bool same(ReadOnlySpan<u8> a, as ReadOnlySpan<u8> b) {
 
 void main() fails IoError {
     let original: u8[6] = [0x00, 0xFF, 0x0A, 0x0D, 0x41, 0x80]
-    try Io.writeFile("input.bin", original.asSpan())
+    try Io.writeFile("input.bin", original.span)
     let read: List<u8> = try Io.readFile("input.bin")
-    try Io.writeFile("copy.bin", read.asSpan())
+    try Io.writeFile("copy.bin", read.span)
     let copy: List<u8> = try Io.readFile("copy.bin")
     print($"read {read.length} bytes, copied {copy.length}")
-    print($"identical: {same(original.asSpan(), as: copy.asSpan())}")
-    try Io.writeFile("empty.bin", copy.asSpan()[0..0])
+    print($"identical: {same(original.span, as: copy.span)}")
+    try Io.writeFile("empty.bin", copy.span[0..0])
     let empty: List<u8> = try Io.readFile("empty.bin")
     print($"empty file: {empty.length} bytes")
 }

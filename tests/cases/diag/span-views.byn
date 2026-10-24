@@ -1,0 +1,8 @@
+// `span` is read-only; `mutableSpan()` needs `ref this`, so not on a `let`.
+void main() {
+    var xs = List<i64>()
+    xs.append(1)
+    xs.span[0] = 2
+    let ys = List<i64>()
+    let _ = ys.mutableSpan()
+}

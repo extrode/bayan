@@ -1,0 +1,8 @@
+// `position`, `lastPosition` and `count` work on byte positions; a missing text gives null.
+void main() {
+    let s = "a,bb,a,bb"
+    print($"{s.position("bb") ?? -1} {s.position("bb", from: 3) ?? -1} {s.position("zz") ?? -1}")
+    print($"{s.lastPosition("a") ?? -1} {s.lastPosition("zz") ?? -1}")
+    print($"{s.count("bb")} {"aaaa".count("aa")} {s.count("")}")
+    print($"{"héllo".position("l") ?? -1}")
+}

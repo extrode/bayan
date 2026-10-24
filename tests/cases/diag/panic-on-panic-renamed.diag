@@ -1,0 +1,8 @@
+error BYN2230: `onPanic` is now `handler`
+
+  7 │     Panic.onPanic = onCrash
+    │           ^^^^^^^ the old name
+    │
+  help: rename it `handler`
+    │ 7 │     Panic.handler = onCrash
+    │   │           +++++++

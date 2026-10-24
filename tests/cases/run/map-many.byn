@@ -37,6 +37,6 @@ print($"last key {lastKey}, count {m.length}")
 var words = Map<string, i64>()
 for i in 0..2000 {
     let key = $"w{i % 500}"
-    words[key] = words.getOr(key, 0) + 1
+    words[key] = (words.tryGet(at: key) ?? 0) + 1
 }
 print($"words {words.length}, w0 {words["w0"]}, w499 {words["w499"]}, w500 {words.contains("w500")}")

@@ -1,7 +1,8 @@
 error BYN3004: `w` is modified while `sp` still borrows it
 
-  37 │     let sp: Span<i64> = first(w.items.asSpan(), at: w.grow())
-     │                                                     ^^^^^^^^ `sp` is used again on line 38
+  37 │     let sp: ReadOnlySpan<i64> = first(w.items.span, at: w.grow())
+     │                                                         ^^^^^^^^ `sp` is used again on line
+     │                                                                  38
      │
   help: finish using `sp` first, or copy what it needs before changing `w`
 

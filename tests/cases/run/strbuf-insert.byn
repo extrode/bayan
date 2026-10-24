@@ -1,0 +1,35 @@
+struct Point {
+    i64 x
+    i64 y
+
+    public void formatInto(ref StrBuf b) {
+        b.append($"({x}, {y})")
+    }
+}
+
+var buf = StrBuf(capacity: 4)
+buf.append("world")
+buf.insert("hello ", at: 0)
+buf.insert("!", at: buf.length)
+print(buf.view)
+buf.insert(", dear", at: 5)
+print(buf.view)
+
+var numbers = StrBuf()
+numbers.append(42)
+numbers.append(' ')
+numbers.append(true)
+numbers.append(' ')
+numbers.append(2.5)
+numbers.append(' ')
+numbers.append(Point { x: 1, y: 2 })
+print(numbers.finish())
+
+var runes = StrBuf()
+runes.append("é")
+runes.insert("ab", at: 2)
+runes.insert(runes.view, at: 0)
+print($"{runes.view} {runes.length}")
+runes.clear()
+runes.insert("x", at: 0)
+print(runes.view)

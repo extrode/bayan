@@ -1,0 +1,6 @@
+// `string(bytes)` formats a byte span as a list; it never decodes.
+let a: u8[3] = [104, 105, 0]
+print(string(a.span))
+print(string("hi".bytes))
+let none = List<u8>()
+print(string(none.span))

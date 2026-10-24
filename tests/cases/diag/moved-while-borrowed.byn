@@ -41,7 +41,7 @@ void readonlyDynRef() {
 
 void spanOfField() {
     let s = make()
-    let sp: Span<i64> = s.xs.asSpan()
+    let sp: ReadOnlySpan<i64> = s.xs.span
     var t = move s
     t.xs.append(1)
     print($"{sp[0]}")
@@ -65,7 +65,7 @@ void switchMove() {
 void take() {
     var xs = List<i64>()
     xs.append(1)
-    let sp: Span<i64> = xs.asSpan()
+    let sp: ReadOnlySpan<i64> = xs.span
     var ys = xs.take()
     ys.append(2)
     print($"{sp[0]}")

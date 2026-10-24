@@ -15,7 +15,8 @@ public static class Conversions
         if (from.IsNever) return ConversionKind.FromNever;
         if (from is NullType) return to is OptionalType ? ConversionKind.NullToOptional : null;
         if (from is PrimitiveType f && to is PrimitiveType t && IsWidening(f, t)) return ConversionKind.Widen;
-        if (to is OptionalType o && (from.Equals(o.Inner) || Implicit(from, o.Inner) is ConversionKind.Widen)) return ConversionKind.ToOptional;
+        if (to is OptionalType o && (from.Equals(o.Inner) || Implicit(from, o.Inner) is ConversionKind.Widen
+            || from is StateType && Implicit(from, o.Inner) is ConversionKind.Identity)) return ConversionKind.ToOptional;
         if (to is ResultType r)
         {
             if (from is ErrorSetSymbol && from.Equals(r.Error)) return ConversionKind.ErrorToResult;
@@ -36,6 +37,10 @@ public static class Conversions
             if (from is StructSymbol s && s.Conformances.Any(c => c.Interface == dyn.Interface)) return ConversionKind.ToDynRef;
             if (from is TypeParameterType p && p.Constraints.Contains(dyn.Interface)) return ConversionKind.ToDynRef;
         }
+        // Widening is free: a state type converts to its struct or to a type listing more of its states (spec §3.17).
+        if (from is StateType fs && (to.Equals(fs.Struct) || to is StateType ts && ts.Struct.Equals(fs.Struct) && fs.States.All(ts.States.Contains)))
+            return ConversionKind.Identity;
+        if (to is StateType all && from.Equals(all.Struct) && all.States.Count == all.States[0].Union.Variants.Count) return ConversionKind.Identity;
         if (from is ErrorSetSymbol set && to is ErrorUnionType u && (u.Sets.Count == 0 || u.Sets.Contains(set))) return ConversionKind.Identity;
         return null;
     }

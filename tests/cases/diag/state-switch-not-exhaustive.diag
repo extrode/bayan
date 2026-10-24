@@ -1,0 +1,26 @@
+error BYN7004: the switch does not handle state `.shipped`
+
+  11 │     switch order {
+     │     ^^^^^^
+     │
+  help: add a `case .shipped` arm
+     │ 15 │             print($"{p.payment}")
+     │ 16 │         case .shipped:
+     │    │ ++++++++++++++++++++++
+
+error BYN7004: the switch does not handle state `.shipped`
+
+  19 │ i64 rank(Order order) => order switch { .draft => 0, .paid(_) => 1 }
+     │                                ^^^^^^
+     │
+  help: add a `case .shipped` arm
+
+error BYN7004: the switch does not handle state `.shipped`
+
+  22 │     switch order {
+     │     ^^^^^^
+     │
+  help: add a `case .shipped` arm
+     │ 24 │             print("paid")
+     │ 25 │         case .shipped:
+     │    │ ++++++++++++++++++++++

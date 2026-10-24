@@ -44,7 +44,7 @@ internal sealed partial class Binder
 
     private BoundExpr BindConverted(Expr e, TypeSymbol target, bool argument = false)
     {
-        var bound = BindExpr(e, target);
+        var bound = Built(BindExpr(e, target), e);
         return Convert(bound, target, e.Span, argument);
     }
 
@@ -202,7 +202,7 @@ internal sealed partial class Binder
         }
         else if (value.Type is ListType && target is SpanType)
         {
-            help = "use `.asSpan` here; a `List` becomes a `Span` implicitly only as a call argument";
+            help = "use `.span` here; a `List` becomes a `Span` implicitly only as a call argument";
         }
         Report(DiagnosticCodes.TypeMismatch, span, [value.Type.DisplayName, target.DisplayName], help: help, fix: fix);
     }
@@ -249,7 +249,7 @@ internal sealed partial class Binder
             case TargetMemberExpr t:
                 return BindTargetMember(t, expected);
             case CallExpr c:
-                return BindCall(c, expected);
+                return BindErrorNew(c, expected) ?? BindCall(c, expected);
             case IndexExpr i:
                 return BindIndex(i);
             case UnaryExpr u:
@@ -438,13 +438,18 @@ internal sealed partial class Binder
                 return new BoundLiteral(n, local.Type, c) { Constant = c };
             if (IsNonNull(local))
                 return new BoundConversion(n, new BoundLocal(n, local), ((OptionalType)local.Type).Inner, ConversionKind.Narrow);
-            return new BoundLocal(n, local);
+            // A local whose state is known reads as its state type (spec §3.17).
+            return KnownState(local) is { } known ? new BoundLocal(n, local) { Type = known } : new BoundLocal(n, local);
         }
         // A default cloned onto a struct sees only the interface's members through `this`, as its template did,
         // so a bare name means the same for every conformer.
         if (_thisType is not null && (_fn?.Template?.Interface is not { } cloneOf || LookupMember(cloneOf.Self, name) is not null)
             && LookupMember(_thisType, name) is { } member)
             return BindImplicitThisMember(n, member);
+        // A bare payload field reads through `this`, in the states the receiver declares.
+        if (_thisType is StructSymbol self && _fn is { IsStatic: false } && _c.StatesOf(self) is { } states
+            && states.Variants.Any(v => v.Fields.Any(f => f.Name == name)))
+            return BindValueMember(n, new BoundThis(n, self), n.Name);
         if (Module.Constants.TryGetValue(name, out var constant)) return ConstantRef(n, constant);
         if (Module.Functions.TryGetValue(name, out var fns)) return new BoundMethodGroup(n, null, fns[0]);
         if (Module.Types.TryGetValue(name, out var type))
@@ -452,9 +457,11 @@ internal sealed partial class Binder
         if (_file.Imports.TryGetValue(name, out var module)) return new BoundModuleRef(n, module);
         if (_c.Builtins.Find(name) is { } builtin) return new BoundMethodGroup(n, null, builtin);
         if (PrimitiveType.ByName.TryGetValue(name, out var primitive)) return new BoundTypeRef(n, primitive);
-        if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "Utf8Error" or "ValidationError" or "ProcessResult" or "Panic")
+        if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "Utf8Error" or "ParseError" or "ValidationError" or "ProcessResult" or "Panic")
             return new BoundTypeRef(n, ResolveType(new NamedType(n.Span, [n.Name], [])));
         if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
+        if (name == "Hex") return new BoundTypeRef(n, BuiltinType.Hex);
+        if (name == "Utf8") return new BoundTypeRef(n, BuiltinType.Utf8);
         ReportUndefined(n.Name);
         return new BoundErrorExpr(n);
     }
@@ -592,11 +599,27 @@ internal sealed partial class Binder
                 if (member.Builtin is BuiltinFunction.IoStdout or BuiltinFunction.IoStderr or BuiltinFunction.IoStdin) return new BoundCall(m, member, null, [], member.ReturnType);
                 return new BoundMethodGroup(m, null, member);
             }
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Hex } hex }:
+                if (name == "encode") return new BoundMethodGroup(m, null, _c.Builtins.HexEncode);
+                if (name == "decode") return new BoundMethodGroup(m, null, _c.Builtins.HexDecode);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, hex.Name], help: Suggest(name, ["encode", "decode"]) is { } closest ? $"did you mean `{closest}`?" : null);
+                return new BoundErrorExpr(m);
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Utf8 } utf8 }:
+                if (_c.Builtins.FindUtf8(name) is { } decode) return new BoundMethodGroup(m, null, decode);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, utf8.Name], help: Suggest(name, ["decode", "tryDecode"]) is { } nearest ? $"did you mean `{nearest}`?" : null);
+                return new BoundErrorExpr(m);
             case BoundTypeRef { Referenced: PrimitiveType { IsString: true } str }:
             {
                 if (_c.Builtins.FindString(name) is { } member) return new BoundMethodGroup(m, null, member);
+                // Decoding is a codec (J82, Q115): the old `string` statics name the `Utf8` member that replaces them.
+                if ((name switch { "from" or "fromUtf8" => "Utf8.decode", "tryFrom" => "Utf8.tryDecode", _ => null }) is { } codec)
+                {
+                    Report(DiagnosticCodes.RenamedMember, m.Member.Span, [$"string.{name}", codec], label: "the old name",
+                        help: $"write `{codec}`", fix: new Fix(m.Span, codec));
+                    return new BoundErrorExpr(m);
+                }
                 Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, str.Name],
-                    help: Suggest(name, ["from", "tryFrom", "invalidUtf8At"]) is { } near ? $"did you mean `{near}`?" : null);
+                    help: Suggest(name, ["invalidUtf8At"]) is { } near ? $"did you mean `{near}`?" : null);
                 return new BoundErrorExpr(m);
             }
             case BoundTypeRef t:
@@ -680,7 +703,8 @@ internal sealed partial class Binder
     private BoundExpr BindValueMember(Node syntax, BoundExpr target, Name member)
     {
         var name = member.Text;
-        switch (target.Type)
+        // A state type has its struct's members.
+        switch (target.Type is StateType state ? state.Struct : target.Type)
         {
             case StructSymbol s:
             {
@@ -699,8 +723,12 @@ internal sealed partial class Binder
                     CheckAccess(method.Access, s, s.Module, member);
                     return new BoundMethodGroup(syntax, method.IsStatic ? null : target, method);
                 }
+                if (_c.StatesOf(s) is { } states && BindPayloadField(syntax, target, states, member) is { } payload) return payload;
                 break;
             }
+            case ErrorSetSymbol or ErrorUnionType when target is BoundLocal el && _errorNarrowed.TryGetValue(el.Local, out var errorCase)
+                && errorCase.Fields.FindIndex(f => f.Name == name) is var field and >= 0:
+                return new BoundErrorField(syntax, target, errorCase, field);
             case UnionSymbol when target is BoundLocal l && _narrowed.TryGetValue(l.Local, out var narrowed) && narrowed.Fields.FindIndex(f => f.Name == name) is var index and >= 0:
                 return new BoundUnionField(syntax, target, narrowed, index);
             case UnionSymbol u when u.Variants.Any(v => v.Fields.Any(f => f.Name == name)):
@@ -753,7 +781,8 @@ internal sealed partial class Binder
             }
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
-            return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
+            return new BoundBuiltinCall(syntax, builtin.Member, target, [],
+                builtin.Type is SpanType span && target is BoundStaticArray ? new SpanType(span.Element, readOnly: true) : PropertyType(builtin.Member, builtin.Type));
         // `length` and `isEmpty` of an untrusted value are clean facts (spec §15.1).
         if (target.Type is UntrustedType untrusted && name is "length" or "isEmpty" && BuiltinMembers.Property(untrusted.Inner, name) is { } fact)
             return new BoundBuiltinCall(syntax, fact.Member, Fact(target), [], fact.Type);
@@ -789,6 +818,9 @@ internal sealed partial class Binder
             ? _c.AssociatedType(tp, r.Name)
             : m.ReturnType;
 
+    /// <summary>The call whose callee is being bound, so <see cref="ReportRenamed"/> can rewrite its arguments.</summary>
+    private CallExpr? _calleeOf;
+
     /// <summary>BYN2230 and BYN2031: a member under its round-1 or C# name; the fix writes the new one.</summary>
     private bool ReportRenamed(TypeSymbol type, Name member)
     {
@@ -799,18 +831,63 @@ internal sealed partial class Binder
                 help: "call `format()`, or interpolate the value: `$\"{x}\"`", fix: new Fix(member.Span, "format"));
             return true;
         }
+        if (RenamedCall(type, member) is { } shape)
+        {
+            Report(DiagnosticCodes.RenamedMember, member.Span, [shape.Old, shape.New], label: "the old name",
+                help: $"write `{shape.Fix?.Replacement ?? shape.New}`", fix: shape.Fix);
+            return true;
+        }
         var renamed = (type, name) switch
         {
             (ListType, "add") => "append",
             (BuiltinType { Kind: BuiltinKind.StrBuf }, "asString") => "finish",
+            ({ IsString: true }, "offset") => "position",
+            (ListType or SpanType, "toList") => "copy",
+            // An array has no `copy()`; its span does.
+            (Symbols.ArrayType, "toList") => "span.copy",
             _ => null,
         };
         if (renamed is null) return false;
-        var call = name == "asString" ? "()" : "";
+        var call = name is "asString" or "toList" ? "()" : "";
         Report(DiagnosticCodes.RenamedMember, member.Span, [name + call, renamed + call], label: "the old name",
             help: $"rename it `{renamed}`",
             fix: new Fix(member.Span, renamed));
         return true;
+    }
+
+    /// <summary>
+    /// The renames that change the call's shape (J72, round 3 §27): the fix rewrites the member and its arguments,
+    /// so it is written only when the member is called with the old arguments.
+    /// </summary>
+    private (string Old, string New, Fix? Fix)? RenamedCall(TypeSymbol type, Name member)
+    {
+        var call = _calleeOf is { Callee: MemberExpr me } c && me.Member == member ? c : null;
+        var args = call?.Args.Select(a => a.Name is null && a.Modifier == ArgModifier.None ? Source.GetText(a.Value.Span) : null).ToArray() ?? [];
+        var tail = new TextSpan(member.Span.Start, (call?.Span.End ?? 0) - member.Span.Start);
+        switch (type, member.Text)
+        {
+            case (ListType, "removeRange"):
+                return ("removeRange", "remove(from:until:)",
+                    args is [{ } from, { } until] ? new Fix(tail, $"remove(from: {from}, until: {until})") : null);
+            case (ListType, "replaceRange"):
+                return ("replaceRange", "replace(at:by:)", call is { Args: [{ Name: null, Modifier: ArgModifier.None } at, { Name: null, Modifier: ArgModifier.None } by] }
+                    ? new Fix(tail, $"replace(at: {Source.GetText(at.Value.Span)}, by: {Source.GetText(by.Value.Span)})") : null);
+            case (MapType, "getOr"):
+                // `??` binds looser than arithmetic, so the fix keeps the call one operand.
+                return ("getOr", "tryGet(at:) ??", args is [{ } key, { } fallback] && call is { Callee: MemberExpr { Target: var map } }
+                    ? new Fix(call.Span, $"({Source.GetText(map.Span)}.tryGet(at: {key}) ?? {fallback})") : null);
+            case (ListType or Symbols.ArrayType, "asSpan"):
+                return ("asSpan()", "span", call is { Args.Length: 0 } ? new Fix(tail, "span") : null);
+            case ({ IsString: true }, "toUtf16"):
+                return ("toUtf16()", "utf16", call is { Args.Length: 0 } ? new Fix(tail, "utf16") : null);
+            case ({ IsInteger: true }, "toHex" or "toBinary" or "toOctal"):
+            {
+                var radix = member.Text[2..].ToLowerInvariant();
+                return ($"{member.Text}()", $"string(x, as: .{radix})", call is { Args.Length: 0, Callee: MemberExpr target }
+                    ? new Fix(call.Span, $"string({Source.GetText(target.Target.Span)}, as: .{radix})") : null);
+            }
+        }
+        return null;
     }
 
     private static string? MemberSuggestion(TypeSymbol type, string name)
@@ -965,7 +1042,7 @@ internal sealed partial class Binder
                 read a byte, slice, or take characters; `string` is UTF-8, so position {index} is not a character:
                   `{s}.bytes[{index}]`       the byte at offset {index} (applied below)
                   `{s}[a..b]`          the text between byte offsets a and b
-                  `{s}.chars.take(n)`  the first n characters
+                  `{s}.runes.take(n)`  the first n runes
                   `{s}.graphemes`      user-perceived characters
                 """,
             fix: new Fix(i.Span, $"{s}.bytes[{index}]"));
@@ -1336,6 +1413,10 @@ internal sealed partial class Binder
             return new BoundErrorExpr(s);
         }
         if (type.IsError) return new BoundErrorExpr(s);
+        // `Order.paid { … }` builds a value in one state; with several states, none is named.
+        var stateType = type as StateType;
+        var state = stateType is { States.Count: 1 } ? stateType.States[0] : null;
+        if (stateType is not null) type = stateType.Struct;
         if (type is not StructSymbol st)
         {
             Report(DiagnosticCodes.NotAStruct, s.Span, [type.DisplayName]);
@@ -1347,10 +1428,26 @@ internal sealed partial class Binder
                 help: $"call the constructor: `{st.Name}({string.Join(", ", st.Constructors[0].Parameters.Select(p => p.Name + ": …"))})`");
             return new BoundErrorExpr(s);
         }
+        if (state is null && _c.StatesOf(st) is { } states)
+        {
+            Report(DiagnosticCodes.StateLiteralNeedsState, s.Type?.Span ?? s.Span, [st.Name, states.Variants[0].Name],
+                help: "name the state the value starts in");
+            foreach (var init in s.Fields) BindExpr(init.Value);
+            return new BoundErrorExpr(s);
+        }
         var values = new BoundExpr?[st.Fields.Count];
+        var payload = new BoundExpr?[state?.Fields.Count ?? 0];
         foreach (var init in s.Fields)
         {
             var field = st.FindField(init.Name.Text);
+            if (field is null && state?.Fields.FirstOrDefault(f => f.Name == init.Name.Text) is { } payloadField)
+            {
+                if (payload[payloadField.Ordinal] is not null)
+                    Report(DiagnosticCodes.DuplicateFieldInit, init.Name.Span, [payloadField.Name]);
+                else
+                    payload[payloadField.Ordinal] = BindConverted(init.Value, payloadField.Type);
+                continue;
+            }
             if (field is null)
             {
                 Report(DiagnosticCodes.UnknownMember, init.Name.Span, [init.Name.Text, st.Name],
@@ -1381,15 +1478,23 @@ internal sealed partial class Binder
                 values[i] = _c.FieldDefault(st, f, Source, s.Span) ?? new BoundErrorExpr(s);
             }
         }
+        for (var i = 0; i < payload.Length; i++)
+        {
+            if (payload[i] is not null) continue;
+            missing.Add(state!.Fields[i].Name);
+            payload[i] = new BoundErrorExpr(s);
+        }
         if (missing.Count > 0)
         {
-            var first = st.FindField(missing[0])!;
+            var first = st.FindField(missing[0]);
+            var written = state is null ? st.Name : $"{st.Name}.{state.Name}";
             Report(DiagnosticCodes.MissingFields, s.Span, [st.Name, string.Join("`, `", missing)],
-                label: missing.Count == 1 && first.IsRequired ? "`" + first.Name + "` is `required`" : null,
-                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
+                label: missing.Count == 1 && first is { IsRequired: true } ? "`" + first.Name + "` is `required`" : null,
+                help: $"set {(missing.Count == 1 ? "it" : "them")}: `{written} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
             return new BoundErrorExpr(s);
         }
-        return Checked(s, new BoundStructLiteral(s, st, values!));
+        var literal = new BoundStructLiteral(s, st, values!);
+        return Checked(s, state is null ? literal : literal with { State = state, Payload = payload!, Type = stateType! });
     }
 
     private BoundExpr BindWith(WithExpr w)
@@ -1677,12 +1782,75 @@ internal sealed partial class Binder
             }
             var hole = (InterpolationHole)part;
             var value = BindExpr(hole.Expr);
-            if (!value.Type.IsError && WhyNotFormattable(value.Type, []) is { } why)
+            // `as: .debug` shows a struct without `formatInto` in its literal form (spec §13).
+            var debug = hole.Specs.Any(a => a is { Name.Text: "as", Value: TargetMemberExpr { Member.Text: "debug" } });
+            if (!value.Type.IsError && (debug ? WhyNotDebugFormattable(value.Type, []) : WhyNotFormattable(value.Type, [])) is { } why)
                 Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName], label: why == "" ? null : why,
-                    help: value.Type is StructSymbol s ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
-            parts.Add(new BoundInterpolationPart(null, value));
+                    help: value.Type is StructSymbol s && !debug ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x, as: .debug}}`" : null);
+            parts.Add(new BoundInterpolationPart(null, value) { Spec = hole.Specs.Length == 0 || value.Type.IsError ? null : BindFormatSpec(hole.Specs, value.Type) });
         }
         return new BoundInterpolated(i, parts.ToArray());
+    }
+
+    /// <summary>
+    /// The specs of a hole (spec §16.4): <c>as:</c> a radix on integers or <c>.debug</c>, <c>digits:</c> on floats,
+    /// <c>width:</c>, <c>fill:</c> and <c>align:</c> on any value. Each is a constant; a spec that does not apply is BYN2021.
+    /// </summary>
+    private BoundFormatSpec BindFormatSpec(Argument[] specs, TypeSymbol type)
+    {
+        var spec = new BoundFormatSpec(0, false, 0, ' ', -1, -1);
+        var seen = new HashSet<string>();
+        foreach (var a in specs)
+        {
+            var name = a.Name?.Text ?? "";
+            if (!seen.Add(name))
+            {
+                Report(DiagnosticCodes.DuplicateArgument, a.Span, [name]);
+                continue;
+            }
+            switch (name)
+            {
+                case "as" when a.Value is TargetMemberExpr { Member.Text: "debug" }:
+                    spec = spec with { Debug = true };
+                    break;
+                case "as" when a.Value is TargetMemberExpr { Member.Text: var radix } && _c.Builtins.Radix.Find(radix) is { } member:
+                    if (!type.IsInteger && !TakesFormatSpec(type)) Report(DiagnosticCodes.UnknownParameter, a.Span, [type.DisplayName, $"as: .{radix}"]);
+                    else spec = spec with { Radix = member.Ordinal switch { 0 => 2, 1 => 8, 2 => 10, _ => 16 } };
+                    break;
+                case "as":
+                    BindConverted(a.Value, _c.Builtins.Radix);
+                    break;
+                case "width" or "digits":
+                    var n = BindConverted(a.Value, PrimitiveType.I64);
+                    if (n.Type.IsError) break;
+                    if (n.Constant is not { Value: Int128 v })
+                        Report(DiagnosticCodes.NotConstant, a.Value.Span, [$"a format spec's `{name}`"]);
+                    else if (name == "width" && (v < 0 || v > 1024))
+                        Report(DiagnosticCodes.LiteralOutOfRange, a.Value.Span, [v.ToString(), "a format spec's `width` (0 to 1024)"]);
+                    else if (name == "digits" && (v < 0 || v > 15))
+                        Report(DiagnosticCodes.LiteralOutOfRange, a.Value.Span, [v.ToString(), "a format spec's `digits` (0 to 15)"]);
+                    else if (name == "digits" && !type.IsFloat && !TakesFormatSpec(type))
+                        Report(DiagnosticCodes.UnknownParameter, a.Span, [type.DisplayName, "digits"]);
+                    else spec = name == "width" ? spec with { Width = (long)v } : spec with { Digits = (int)v };
+                    break;
+                case "fill":
+                    var fill = BindConverted(a.Value, PrimitiveType.Char);
+                    if (fill.Type.IsError) break;
+                    if (fill.Constant?.Value is not { } c) Report(DiagnosticCodes.NotConstant, a.Value.Span, ["a format spec's `fill`"]);
+                    else spec = spec with { Fill = (uint)((System.Text.Rune)c).Value };
+                    break;
+                case "align" when a.Value is TargetMemberExpr { Member.Text: "start" or "end" or "center" } edge:
+                    spec = spec with { Align = edge.Member.Text switch { "start" => 0, "end" => 1, _ => 2 } };
+                    break;
+                case "align":
+                    Report(DiagnosticCodes.UnknownEnumMember, a.Value.Span, [a.Value is TargetMemberExpr tm ? tm.Member.Text : Source.GetText(a.Value.Span), "align"]);
+                    break;
+                default:
+                    Report(DiagnosticCodes.UnknownParameter, a.Span, [type.DisplayName, name]);
+                    break;
+            }
+        }
+        return spec;
     }
 
     internal static bool IsFormattable(TypeSymbol t) => WhyNotFormattable(t, []) is null;
@@ -1711,14 +1879,38 @@ internal sealed partial class Binder
         _ => "",
     };
 
+    /// <summary>As <see cref="WhyNotFormattable"/>, under <c>as: .debug</c>: a struct formats when each of its fields does.</summary>
+    private static string? WhyNotDebugFormattable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
+    {
+        StructSymbol s when !TakesFormatSpec(s) => !seen.Add(s) ? null
+            : s.Fields.Select(f => WhyNotDebugFormattable(f.Type, seen) is { } why ? why == "" ? $"field `{f.Name}` is `{f.Type.DisplayName}`" : why : null)
+                .FirstOrDefault(w => w is not null),
+        _ => WhyNotFormattable(t, seen),
+    };
+
     /// <summary>Why <paramref name="part"/> of a type does not format, naming it when it is the culprit.</summary>
     private static string? Part(string name, TypeSymbol part, HashSet<TypeSymbol> seen) =>
         WhyNotFormattable(part, seen) is { } why ? why == "" ? $"{name} is `{part.DisplayName}`" : why : null;
 
+    /// <summary>The type of a built-in property, with the builtin enums <see cref="BuiltinMembers"/> cannot name.</summary>
+    private TypeSymbol PropertyType(BuiltinMember member, TypeSymbol type) => member switch
+    {
+        BuiltinMember.FormatSpecRadix => _c.Builtins.Radix,
+        BuiltinMember.FormatSpecAlign => _c.Builtins.Align,
+        _ => type,
+    };
+
     /// <summary>Matches the C emitter's <c>formatInto</c> lookup.</summary>
     private static bool HasFormatInto(StructSymbol s) =>
-        s.Methods.Any(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 1
-            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } });
+        s.Methods.Any(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count is 1 or 2
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
+            && (m.Parameters.Count == 1 || m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } }));
+
+    /// <summary>Whether <paramref name="t"/> is a struct whose <c>formatInto</c> takes the hole's <c>FormatSpec</c>, so reads every spec itself.</summary>
+    private static bool TakesFormatSpec(TypeSymbol t) =>
+        t is StructSymbol s && s.Methods.Any(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 2
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
+            && m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } });
 }
 
 /// <summary>A function named but not yet called (only valid as a callee).</summary>

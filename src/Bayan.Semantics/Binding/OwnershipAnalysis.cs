@@ -447,7 +447,7 @@ internal sealed class OwnershipAnalysis
         // `take()` hands over a fresh value; the place keeps an empty one.
         BoundBuiltinCall { Member: BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake } => false,
         BoundBuiltinCall { Member: BuiltinMember.OwnedValue or BuiltinMember.ResultValue or BuiltinMember.MapIndex
-            or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapGetOr } => true,
+            or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapTryGet or BuiltinMember.ListTryGet } => true,
         BoundConversion c => IsPlace(c.Operand),
         BoundConditional c => IsPlace(c.WhenTrue) || IsPlace(c.WhenFalse),
         BoundCoalesce c => IsPlace(c.Left) || IsPlace(c.Right),

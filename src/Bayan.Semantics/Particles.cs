@@ -12,7 +12,7 @@ namespace Bayan.Semantics;
 /// </summary>
 internal static class Particles
 {
-    /// <summary>Exempt: <c>extern</c> declarations (C signatures).</summary>
+    /// <summary>Exempt: <c>extern</c> declarations (C signatures) and a <c>rest</c> tail, which takes no label (J39).</summary>
     internal static void Check(Compilation c, SourceText source, FunctionSymbol fn)
     {
         if (fn.Template is not null || fn.Decl?.Modifiers.HasFlag(Modifiers.Extern) == true) return;
@@ -21,7 +21,7 @@ internal static class Particles
             if (p.Syntax?.Particle is { } particle && !seen.Add(particle.Text))
                 c.Report(DiagnosticCodes.RepeatedParticle, source, particle.Span, [fn.Name, particle.Text], label: "used again",
                     help: "group the values in a struct, or choose another particle");
-        var unlabeled = fn.Parameters.Where(p => p.Syntax is { Particle: null, Default: null } && !p.Type.IsBool).ToList();
+        var unlabeled = fn.Parameters.Where(p => p.Syntax is { Particle: null, Default: null, Rest: false } && !p.Type.IsBool).ToList();
         if (unlabeled.Count < 2) return;
         var name = fn.Kind == FunctionKind.Constructor ? fn.Owner!.Name : fn.Name;
         var at = fn.Decl?.Name.Span ?? fn.Location!.Value.Span;

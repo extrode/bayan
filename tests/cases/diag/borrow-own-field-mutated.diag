@@ -1,15 +1,15 @@
 error BYN3003: cannot return a borrow of the temporary on line 14, which is freed when
 `spanAndCount` returns
 
-  14 │     (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.length)
-     │                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  14 │     (ReadOnlySpan<Token>, i64) spanAndCount() => (toks.span, toks.length)
+     │                                                  ^^^^^^^^^^^^^^^^^^^^^^^^
      │
   help: let the caller pass the buffer or allocator in, and borrow or allocate from that
 
 error BYN3003: cannot return a borrow of `local`, which is freed when `scratch` returns
 
-  19 │         return local.asSpan()
-     │                ^^^^^^^^^^^^^^
+  19 │         return local.span
+     │                ^^^^^^^^^^
      │
   help: let the caller pass the buffer or allocator in, and borrow or allocate from that
 

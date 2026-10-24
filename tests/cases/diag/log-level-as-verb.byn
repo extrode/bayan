@@ -1,0 +1,4 @@
+void main() {
+    Log.debug("cache miss")
+    Log.error($"lost {3} rows", 2)
+}

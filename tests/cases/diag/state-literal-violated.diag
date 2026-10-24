@@ -1,0 +1,13 @@
+error BYN2321: `-1` violates `requires it > 0` of `Order`
+
+  9 │ let order = Order.draft { id: -1 }
+    │                               ^^ fails the contract
+    │
+  help: pass a value that meets `requires it > 0`
+
+error BYN2321: `0` violates `requires it > 0` of `Order`
+
+  10 │ let paid = Order.paid { id: 0, payment: 5 }
+     │                             ^ fails the contract
+     │
+  help: pass a value that meets `requires it > 0`

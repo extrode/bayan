@@ -1,0 +1,6 @@
+error BYN7008: state `.empty` has the same name as static member `Cart.empty`
+
+  4 │         empty
+    │         ^^^^^
+    │
+  help: rename the state or the static member

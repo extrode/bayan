@@ -64,6 +64,8 @@ internal sealed class RegionAnalysis
     private readonly Dictionary<LocalSymbol, bool> _referentMayBorrow = new();
     private readonly Stack<Borrow> _contexts = new();
     private readonly HashSet<(int, int)> _reported = new();
+    /// <summary>The regions standing for <c>rest</c> parameters, with the parameter's name.</summary>
+    private readonly Dictionary<Region, string> _restTails = new();
     private int _depth;
     private bool _reporting;
 
@@ -90,6 +92,13 @@ internal sealed class RegionAnalysis
             _declaredAt[p] = -1;
             // What a parameter points to belongs to the caller; the marker keeps that known after unions.
             if (MayBorrow(p.Type, [])) _locals[p] = new Borrow([new Region(0, "the caller's data")], []);
+            // A `rest` tail is borrowed for the call only (J62): it lives in the caller's frame for this statement.
+            if (p.Syntax?.Rest == true && p.Type is SpanType)
+            {
+                var tail = new Region(1, $"`{p.Name}`");
+                _restTails[tail] = p.Name;
+                _locals[p] = new Borrow([tail], []);
+            }
         }
         // The first pass collects what each local may borrow (a loop can store into a local
         // after its first use); the second reports against the complete picture.
@@ -338,13 +347,20 @@ internal sealed class RegionAnalysis
         var args = b.Arguments.Select(Expr).ToArray();
         switch (b.Member)
         {
-            case BuiltinMember.ListAsSpan or BuiltinMember.ArrayAsSpan or BuiltinMember.StrBufAsString:
+            case BuiltinMember.ListAsSpan or BuiltinMember.ArrayAsSpan or BuiltinMember.StrBufAsString or BuiltinMember.ListMutableSpan or BuiltinMember.ArrayMutableSpan:
                 return Lend(b.Receiver, receiver, b.Syntax.Span.End);
-            case BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy:
+            case BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy
+                when b.Arguments.Length > 0:
                 return AllocatedFrom(b.Arguments[0]);
-            case BuiltinMember.IoReadAll or BuiltinMember.IntToHex:
+            case BuiltinMember.IoReadAll or BuiltinMember.IntToString or BuiltinMember.StringCopy or BuiltinMember.StringLowercased or BuiltinMember.StringUppercased
+                or BuiltinMember.StringReplaced or BuiltinMember.StringRepeated or BuiltinMember.StringJoined or BuiltinMember.Utf16Copy
+                or BuiltinMember.StringPadded or BuiltinMember.BytesToString or BuiltinMember.SpanCopy or BuiltinMember.ListCopy:
                 // Fresh text from `context.allocator`, like `Io.readText`.
                 return _contexts.Count > 0 ? _contexts.Peek() : Borrow.None;
+            case BuiltinMember.ListReplace:
+                StoreInto(b.Receiver, args[1], b.Arguments[1].Syntax.Span);
+                Mutate(b.Receiver, b.Syntax.Span);
+                return Borrow.None;
             case BuiltinMember.ListAdd:
                 StoreInto(b.Receiver, args[0], b.Arguments[0].Syntax.Span);
                 Mutate(b.Receiver, b.Syntax.Span);
@@ -359,16 +375,15 @@ internal sealed class RegionAnalysis
             case BuiltinMember.ListRemoveLast:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return receiver with { Owners = [] };
-            case BuiltinMember.MapIndex:
+            case BuiltinMember.MapIndex or BuiltinMember.MapTryGet or BuiltinMember.ListTryGet:
                 return receiver with { Owners = [] };
-            case BuiltinMember.MapGetOr:
-                return (receiver with { Owners = [] }).Union(args[1]);
             case BuiltinMember.MapLength or BuiltinMember.MapContains:
                 return Borrow.None;
-            case BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange:
+            case BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListRemoveThrough or BuiltinMember.ListRemoveAt
+                or BuiltinMember.ListRemoveAtRange or BuiltinMember.ListSort:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
-            case BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset:
+            case BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.StrBufInsert or BuiltinMember.ArenaReset:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
             default:
@@ -417,7 +432,7 @@ internal sealed class RegionAnalysis
         }
         // Rule 4: a returned borrow derives from every argument. `Io` and decoded `string` results are fresh copies and borrow none.
         var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch
-            or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.StringInvalidUtf8At
+            or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.StringInvalidUtf8At or BuiltinFunction.HexEncode or BuiltinFunction.HexDecode
             ? Borrow.None
             : args.Aggregate(receiver, (acc, a) => acc.Union(a));
         // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
@@ -431,9 +446,9 @@ internal sealed class RegionAnalysis
                     var lent = Lend(c.Arguments[i], args[i], c.Syntax.Span.End);
                     result = result.Union(MayLend(c.Arguments[i].Type, []) ? lent : new Borrow(lent.Regions, []));
                 }
-        // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `string.from` return (Q29).
-        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow
-                or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom))
+        // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `Utf8.decode` return (Q29).
+        if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow or BuiltinFunction.StrBufOver
+                or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.HexEncode))
             result = result.Union(_contexts.Peek());
         return result;
     }
@@ -528,6 +543,7 @@ internal sealed class RegionAnalysis
         foreach (var region in Ordered(value.Regions))
         {
             if (region.Depth <= depth) continue;
+            if (RestEscapes(region, span)) return;
             Report(DiagnosticCodes.BorrowOutlivesSource, span, [region.Name, holder],
                 label: $"{region.Name} is freed at the end of its block",
                 help: "copy the data with `.copy(to: alloc)` into an allocator that lives long enough");
@@ -541,10 +557,18 @@ internal sealed class RegionAnalysis
         foreach (var region in Ordered(value.Regions))
         {
             if (region.Depth <= 0) continue;
+            if (RestEscapes(region, span)) return;
             Report(DiagnosticCodes.BorrowReturned, span, [region.Name, _fn.Name],
                 help: "let the caller pass the buffer or allocator in, and borrow or allocate from that");
             return;
         }
+    }
+
+    private bool RestEscapes(Region region, TextSpan span)
+    {
+        if (!_restTails.TryGetValue(region, out var name)) return false;
+        Report(DiagnosticCodes.RestEscapes, span, [name], help: $"copy it first: `{name}.copy()`");
+        return true;
     }
 
     // ── Structural modification while borrowed ───────────────────────────────────
@@ -734,7 +758,8 @@ internal sealed class RegionAnalysis
             switch (node)
             {
                 case BoundBuiltinCall b when b.Member is BuiltinMember.ListAdd or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.ListRemoveLast
-                        or BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset
+                        or BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListRemoveThrough or BuiltinMember.ListRemoveAt or BuiltinMember.ListRemoveAtRange
+                        or BuiltinMember.ListReplace or BuiltinMember.ListSort or BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.StrBufInsert or BuiltinMember.ArenaReset
                         or BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake
                     && ThisFieldSymbol(b.Receiver) is { } field:
                     fields.Add(field);
@@ -779,7 +804,7 @@ internal sealed class RegionAnalysis
     private static bool MayBorrow(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.IsString,
-        SpanType or ListType or MapType or OwnedType or DynRefType => true,
+        SpanType or ListType or MapType or OwnedType or DynRefType or TextViewType => true,
         BuiltinType b => b.Kind is BuiltinKind.StrBuf or BuiltinKind.ProcessResult,
         UntrustedType u => MayBorrow(u.Inner, seen),
         OptionalType o => MayBorrow(o.Inner, seen),
