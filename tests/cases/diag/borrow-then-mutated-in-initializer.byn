@@ -34,7 +34,7 @@ dyn ref IThing pick(dyn ref IThing d, at i64 n) => d
 void main() {
     var w = W { items: List<i64>() }
     w.items.append(42)
-    let sp: Span<i64> = first(w.items.asSpan(), at: w.grow())
+    let sp: Span<i64> = first(w.items.span, at: w.grow())
     print($"{sp[0]}")
     var b = Bag { items: List<C>() }
     b.items.append(C { n: 1 })

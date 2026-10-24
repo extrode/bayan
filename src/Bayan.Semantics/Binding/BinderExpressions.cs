@@ -202,7 +202,7 @@ internal sealed partial class Binder
         }
         else if (value.Type is ListType && target is SpanType)
         {
-            help = "use `.asSpan` here; a `List` becomes a `Span` implicitly only as a call argument";
+            help = "use `.span` here; a `List` becomes a `Span` implicitly only as a call argument";
         }
         Report(DiagnosticCodes.TypeMismatch, span, [value.Type.DisplayName, target.DisplayName], help: help, fix: fix);
     }
@@ -460,6 +460,7 @@ internal sealed partial class Binder
         if (name is "List" or "Map" or "Span" or "ReadOnlySpan" or "Arena" or "StrBuf" or "IoError" or "Utf8Error" or "ValidationError" or "ProcessResult" or "Panic")
             return new BoundTypeRef(n, ResolveType(new NamedType(n.Span, [n.Name], [])));
         if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
+        if (name == "Hex") return new BoundTypeRef(n, BuiltinType.Hex);
         ReportUndefined(n.Name);
         return new BoundErrorExpr(n);
     }
@@ -597,6 +598,10 @@ internal sealed partial class Binder
                 if (member.Builtin is BuiltinFunction.IoStdout or BuiltinFunction.IoStderr or BuiltinFunction.IoStdin) return new BoundCall(m, member, null, [], member.ReturnType);
                 return new BoundMethodGroup(m, null, member);
             }
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Hex } hex }:
+                if (name == "encode") return new BoundMethodGroup(m, null, _c.Builtins.HexEncode);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, hex.Name], help: Suggest(name, ["encode"]) is { } closest ? $"did you mean `{closest}`?" : null);
+                return new BoundErrorExpr(m);
             case BoundTypeRef { Referenced: PrimitiveType { IsString: true } str }:
             {
                 if (_c.Builtins.FindString(name) is { } member) return new BoundMethodGroup(m, null, member);
@@ -763,7 +768,8 @@ internal sealed partial class Binder
             }
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
-            return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
+            return new BoundBuiltinCall(syntax, builtin.Member, target, [],
+                builtin.Type is SpanType span && target is BoundStaticArray ? new SpanType(span.Element, readOnly: true) : builtin.Type);
         // `length` and `isEmpty` of an untrusted value are clean facts (spec §15.1).
         if (target.Type is UntrustedType untrusted && name is "length" or "isEmpty" && BuiltinMembers.Property(untrusted.Inner, name) is { } fact)
             return new BoundBuiltinCall(syntax, fact.Member, Fact(target), [], fact.Type);
@@ -799,6 +805,9 @@ internal sealed partial class Binder
             ? _c.AssociatedType(tp, r.Name)
             : m.ReturnType;
 
+    /// <summary>The call whose callee is being bound, so <see cref="ReportRenamed"/> can rewrite its arguments.</summary>
+    private CallExpr? _calleeOf;
+
     /// <summary>BYN2230 and BYN2031: a member under its round-1 or C# name; the fix writes the new one.</summary>
     private bool ReportRenamed(TypeSymbol type, Name member)
     {
@@ -807,6 +816,12 @@ internal sealed partial class Binder
         {
             Report(DiagnosticCodes.ToStringCall, member.Span, [], label: "not a Bayan method",
                 help: "call `format()`, or interpolate the value: `$\"{x}\"`", fix: new Fix(member.Span, "format"));
+            return true;
+        }
+        if (RenamedCall(type, member) is { } shape)
+        {
+            Report(DiagnosticCodes.RenamedMember, member.Span, [shape.Old, shape.New], label: "the old name",
+                help: $"write `{shape.Fix?.Replacement ?? shape.New}`", fix: shape.Fix);
             return true;
         }
         var renamed = (type, name) switch
@@ -821,6 +836,39 @@ internal sealed partial class Binder
             help: $"rename it `{renamed}`",
             fix: new Fix(member.Span, renamed));
         return true;
+    }
+
+    /// <summary>
+    /// The renames that change the call's shape (J72, round 3 §27): the fix rewrites the member and its arguments,
+    /// so it is written only when the member is called with the old arguments.
+    /// </summary>
+    private (string Old, string New, Fix? Fix)? RenamedCall(TypeSymbol type, Name member)
+    {
+        var call = _calleeOf is { Callee: MemberExpr me } c && me.Member == member ? c : null;
+        var args = call?.Args.Select(a => a.Name is null && a.Modifier == ArgModifier.None ? Source.GetText(a.Value.Span) : null).ToArray() ?? [];
+        var tail = new TextSpan(member.Span.Start, (call?.Span.End ?? 0) - member.Span.Start);
+        switch (type, member.Text)
+        {
+            case (ListType, "removeRange"):
+                return ("removeRange", "remove(from:until:)",
+                    args is [{ } from, { } until] ? new Fix(tail, $"remove(from: {from}, until: {until})") : null);
+            case (ListType, "replaceRange"):
+                // `replace(at:by:)` is not built yet, so there is nothing to rewrite to.
+                return ("replaceRange", "replace(at:by:)", null);
+            case (MapType, "getOr"):
+                // `??` binds looser than arithmetic, so the fix keeps the call one operand.
+                return ("getOr", "tryGet(at:) ??", args is [{ } key, { } fallback] && call is { Callee: MemberExpr { Target: var map } }
+                    ? new Fix(call.Span, $"({Source.GetText(map.Span)}.tryGet(at: {key}) ?? {fallback})") : null);
+            case (ListType or Symbols.ArrayType, "asSpan"):
+                return ("asSpan()", "span", call is { Args.Length: 0 } ? new Fix(tail, "span") : null);
+            case ({ IsInteger: true }, "toHex" or "toBinary" or "toOctal"):
+            {
+                var radix = member.Text[2..].ToLowerInvariant();
+                return ($"{member.Text}()", $"string(x, as: .{radix})", call is { Args.Length: 0, Callee: MemberExpr target }
+                    ? new Fix(call.Span, $"string({Source.GetText(target.Target.Span)}, as: .{radix})") : null);
+            }
+        }
+        return null;
     }
 
     private static string? MemberSuggestion(TypeSymbol type, string name)

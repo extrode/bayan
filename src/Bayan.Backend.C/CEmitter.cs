@@ -643,7 +643,7 @@ public sealed class CEmitter
             $"{{\n    return {Equal(key, $"*(const {ct}*)a", $"*(const {ct}*)b")};\n}}\n");
     }
 
-    /// <summary>Index, <c>slot</c>, <c>getOr</c>, <c>contains</c> and <c>remove</c> of <paramref name="t"/>; <paramref name="map"/> is an lvalue for the mutating ones.</summary>
+    /// <summary>Index, <c>slot</c>, <c>tryGet</c>, <c>contains</c> and <c>remove</c> of <paramref name="t"/>; <paramref name="map"/> is an lvalue for the mutating ones.</summary>
     internal string MapMethod(BuiltinMember member, MapType t, string map, string[] args, string loc)
     {
         var mt = CType(t);
@@ -671,12 +671,13 @@ public sealed class CEmitter
                     $"{{\n    int64_t i = {find};\n    if (i < 0) byn_panic(\"key not found in map\", file, line);\n    return m.vals[i];\n}}\n");
                 return $"{name}({map}, {args[0]}, {loc})";
             }
-            case BuiltinMember.MapGetOr:
+            case BuiltinMember.MapTryGet:
             {
-                var name = "bynh_get_or_" + Key(t);
-                Helper(name, $"static {vt} {name}({mt} m, {kt} k, {vt} d)", () =>
-                    $"{{\n    int64_t i = {find};\n    return i < 0 ? d : m.vals[i];\n}}\n");
-                return $"{name}({map}, {args[0]}, {args[1]})";
+                var opt = CType(new OptionalType(t.ValueType));
+                var name = "bynh_try_get_" + Key(t);
+                Helper(name, $"static {opt} {name}({mt} m, {kt} k)", () =>
+                    $"{{\n    int64_t i = {find};\n    return i < 0 ? ({opt}){{0}} : ({opt}){{true, m.vals[i]}};\n}}\n");
+                return $"{name}({map}, {args[0]})";
             }
             case BuiltinMember.MapContains:
             {
@@ -1455,6 +1456,13 @@ internal sealed class FunctionEmitter
                     $"    return ({opt}){{true, byn_str_copy((byn_str){{bytes.ptr, bytes.len}}, byn_context)}};\n}}\n");
                 return $"{name}({Expr(c.Arguments[0])})";
             }
+            case BuiltinFunction.HexEncode:
+            {
+                var span = _c.CType(fn.Parameters[0].Type);
+                var name = _c.Helper("bynh_hex_encode", $"static byn_str bynh_hex_encode({span} bytes)", () =>
+                    "{\n    return byn_hex_encode(bytes.ptr, bytes.len, byn_context);\n}\n");
+                return $"{name}({Expr(c.Arguments[0])})";
+            }
             case BuiltinFunction.StringInvalidUtf8At:
             {
                 var span = _c.CType(fn.Parameters[0].Type);
@@ -1593,6 +1601,15 @@ internal sealed class FunctionEmitter
                     $"{{\n    if (l->len == 0) byn_panic(\"removeLast on an empty list\", file, line);\n    return l->ptr[--l->len];\n}}\n");
                 return $"{name}(&{Expr(r)}, {Loc(b.Syntax)})";
             }
+            case BuiltinMember.ListTryGet:
+            {
+                var lt = _c.CType(r.Type);
+                var opt = _c.CType(b.Type);
+                var name = "bynh_try_get_" + _c.Key(r.Type);
+                _c.Helper(name, $"static {opt} {name}({lt} l, int64_t i)", () =>
+                    $"{{\n    return i < 0 || i >= l.len ? ({opt}){{0}} : ({opt}){{true, l.ptr[i]}};\n}}\n");
+                return $"{name}({Expr(r)}, {arg})";
+            }
             case BuiltinMember.ListRemoveRange:
             {
                 var lt = _c.CType(r.Type);
@@ -1634,7 +1651,7 @@ internal sealed class FunctionEmitter
                     $"{{\n    {mt} r;\n    byn_map_copy(&m.h, m.keys, (int64_t)sizeof({kt}), (void**)&r.keys, m.vals, (int64_t)sizeof({vt}), (void**)&r.vals, &r.h, a);\n    return r;\n}}\n");
                 return $"{name}({Expr(r)}, byn_arena_alloc({arg}))";
             }
-            case BuiltinMember.MapIndex or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapGetOr
+            case BuiltinMember.MapIndex or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapTryGet
                 or BuiltinMember.MapContains or BuiltinMember.MapRemove:
                 return _c.MapMethod(b.Member, (MapType)r.Type, Expr(r), b.Arguments.Select(Expr).ToArray(), Loc(b.Syntax));
             case BuiltinMember.ArrayLength:
@@ -1666,8 +1683,11 @@ internal sealed class FunctionEmitter
                 return $"{Expr(r)}.err";
             case BuiltinMember.CharValue:
                 return $"((uint32_t){Expr(r)})";
-            case BuiltinMember.IntToHex:
-                return $"byn_to_hex((uint{((PrimitiveType)r.Type).Bits}_t){Expr(r)}, byn_context)";
+            case BuiltinMember.IntToString:
+            {
+                var t = (PrimitiveType)r.Type;
+                return $"byn_int_string((int64_t){Expr(r)}, {t.Bits}, {(t.IsSignedInteger ? "true" : "false")}, {arg}, byn_context)";
+            }
             case BuiltinMember.EnumName:
                 return $"{_c.EnumNames((EnumSymbol)r.Type)}[{Expr(r)}]";
             case BuiltinMember.EnumOrdinal:

@@ -281,7 +281,7 @@ struct LexResult {
         if at >= source.bytes.length { return false }
         let b = source.bytes[at]
         if b < 0x80 { return isAsciiIdentStart(b) }
-        let d = decodeAt(source.bytes.asSpan(), at: at)
+        let d = decodeAt(source.bytes.span, at: at)
         return d.valid && isIdentifierStart(d.value)
     }
 
@@ -292,13 +292,13 @@ struct LexResult {
             pos += 1
             return
         }
-        let bidi = bidiControlAt(source.bytes.asSpan(), at: pos)
+        let bidi = bidiControlAt(source.bytes.span, at: pos)
         if bidi.length > 0 {
             unless allowBidi { reportBidi(bidi.codePoint, at: pos) }
             pos += bidi.length
             return
         }
-        let d = decodeAt(source.bytes.asSpan(), at: pos)
+        let d = decodeAt(source.bytes.span, at: pos)
         unless d.valid {
             report(.invalidUtf8, at: TextSpan { start: pos, length: 1 }, arg0: hex(b, to: 2))
             pos += 1
@@ -362,7 +362,7 @@ struct LexResult {
     /// BYN1047's fix for the comment `[start, end)`: one `//` line per trimmed content line, the outer
     /// blank lines dropped, at the indent of the `/*` line; code after `*/` moves to its own line.
     string lineComments(ref this, i64 start, until i64 end) {
-        let text = source.bytes.asSpan()
+        let text = source.bytes.span
         var lineStart = start
         while lineStart > 0 && text[lineStart - 1] != '\n' { lineStart -= 1 }
         var indentEnd = lineStart
@@ -421,14 +421,14 @@ struct LexResult {
             return
         }
         if c >= 0x80 {
-            let bidi = bidiControlAt(source.bytes.asSpan(), at: pos)
+            let bidi = bidiControlAt(source.bytes.span, at: pos)
             if bidi.length > 0 {
                 reportBidi(bidi.codePoint, at: pos)
                 pos += bidi.length
                 tokenFlags |= triviaBefore
                 return
             }
-            let d = decodeAt(source.bytes.asSpan(), at: pos)
+            let d = decodeAt(source.bytes.span, at: pos)
             unless d.valid {
                 report(.invalidUtf8, at: TextSpan { start: pos, length: 1 }, arg0: hex(c, to: 2))
                 pos += 1
@@ -572,14 +572,14 @@ struct LexResult {
                 pos += 1
                 continue
             }
-            if bidiControlAt(source.bytes.asSpan(), at: pos).length > 0 { break }
-            let d = decodeAt(source.bytes.asSpan(), at: pos)
+            if bidiControlAt(source.bytes.span, at: pos).length > 0 { break }
+            let d = decodeAt(source.bytes.span, at: pos)
             if !d.valid || !isIdentifierContinue(d.value) { break }
             ascii = false
             pos += d.length
         }
 
-        let span = source.bytes.asSpan()[start..pos]
+        let span = source.bytes.span[start..pos]
         unless ascii {
             checkNfc(span, at: start)
             add(.identifier, at: TextSpan { start: start, length: pos - start })
@@ -614,7 +614,7 @@ struct LexResult {
             input.append(d.value)
             at += d.length
         }
-        let normalized = normalize(input.asSpan())
+        let normalized = normalize(input.span)
         var same = normalized.length == input.length
         if same {
             for i in 0..input.length {
@@ -672,12 +672,12 @@ struct LexResult {
                     pos += 1
                     continue
                 }
-                let d = decodeAt(source.bytes.asSpan(), at: pos)
+                let d = decodeAt(source.bytes.span, at: pos)
                 if !d.valid || !isIdentifierContinue(d.value) { break }
                 pos += d.length
             }
             add(.numericSuffix, at: TextSpan { start: suffixStart, length: pos - suffixStart })
-            let suffix = source.bytes.asSpan()[suffixStart..pos]
+            let suffix = source.bytes.span[suffixStart..pos]
             let builtIn = sameBytes(suffix, as: "u".bytes) || sameBytes(suffix, as: "l".bytes) || sameBytes(suffix, as: "ul".bytes)
             if !radix.isEmpty && !builtIn {
                 report(.suffixOnHexOrBinary, at: TextSpan.fromBounds(suffixStart, until: pos), arg0: utf8(suffix), arg1: radix,
@@ -845,13 +845,13 @@ struct LexResult {
                 }
                 let digits = pos - digitsStart
                 if digits == 0 || peek() != '}' {
-                    report(.invalidEscape, at: TextSpan.fromBounds(start, until: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
+                    report(.invalidEscape, at: TextSpan.fromBounds(start, until: pos), arg0: utf8(source.bytes.span[start..pos]),
                         help: "write `\\u{` followed by 1–6 hex digits and `}`")
                     return
                 }
                 pos += 1
                 if digits > 6 || value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF) {
-                    report(.invalidUnicodeEscape, at: TextSpan.fromBounds(start, until: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
+                    report(.invalidUnicodeEscape, at: TextSpan.fromBounds(start, until: pos), arg0: utf8(source.bytes.span[start..pos]),
                         help: "use a scalar value in U+0000–U+D7FF or U+E000–U+10FFFF")
                 }
             default:
@@ -862,7 +862,7 @@ struct LexResult {
     /// The `default` arm of `scanEscape`.
     void invalidEscape(ref this, i64 start) {
         advanceCodePoint(allowBidi: true)
-        report(.invalidEscape, at: TextSpan.fromBounds(start, until: pos), arg0: utf8(source.bytes.asSpan()[start..pos]),
+        report(.invalidEscape, at: TextSpan.fromBounds(start, until: pos), arg0: utf8(source.bytes.span[start..pos]),
             help: "use a valid escape: \\n \\r \\t \\0 \\\\ \\\" \\' and \\u{…}")
     }
 }

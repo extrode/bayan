@@ -161,10 +161,10 @@ public sealed class L006OwnershipGuardTests
         // A borrow stored somewhere that outlives its owner (BYN3002, BYN3003), or a borrowed binding stored (BYN2780).
         { "span stored past its owner", """
             void main() {
-                var outer = List<i64>().asSpan()
+                var outer = List<i64>().span
                 {
                     let xs = List<i64>()
-                    outer = xs.asSpan()
+                    outer = xs.span
                 }
                 print($"{outer.length}")
             }
@@ -172,7 +172,7 @@ public sealed class L006OwnershipGuardTests
         { "span returned past its owner", """
             Span<i64> leak() {
                 let xs = List<i64>()
-                return xs.asSpan()
+                return xs.span
             }
             void main() { }
             """, "BYN3003" },
@@ -192,10 +192,10 @@ public sealed class L006OwnershipGuardTests
             """, "BYN2780" },
         { "borrowed loop binding's span stored past its owner", """
             void main() {
-                var outer = List<i64>().asSpan()
+                var outer = List<i64>().span
                 {
                     let lists = List<List<i64>>()
-                    for xs in lists { outer = xs.asSpan() }
+                    for xs in lists { outer = xs.span }
                 }
                 print($"{outer.length}")
             }
@@ -209,12 +209,12 @@ public sealed class L006OwnershipGuardTests
             """, "BYN2780" },
         { "borrowed pattern binding's span stored past its owner", """
             void main() {
-                var outer = List<i64>().asSpan()
+                var outer = List<i64>().span
                 {
                     let s = Slot.full(List<i64>())
                     switch s {
                         case .full(let items):
-                            outer = items.asSpan()
+                            outer = items.span
                         default:
                             print("empty")
                     }
@@ -499,7 +499,7 @@ public sealed class L006OwnershipGuardTests
                 var xs = List<i64>()
                 xs.append(1)
                 {
-                    let view = xs.asSpan()
+                    let view = xs.span
                     print($"{view[0]}")
                 }
                 xs.append(2)
@@ -509,7 +509,7 @@ public sealed class L006OwnershipGuardTests
             void main() {
                 let lists = List<List<i64>>()
                 for xs in lists {
-                    let view = xs.asSpan()
+                    let view = xs.span
                     print($"{view.length}")
                 }
             }

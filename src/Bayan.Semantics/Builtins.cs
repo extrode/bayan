@@ -18,6 +18,12 @@ public sealed class Builtins
         Stream = new EnumSymbol("Stream", new Location(streamSource, streamDecl.Name.Span), Module, Accessibility.Public, streamDecl, new FileContext(Module, streamTree));
         foreach (var m in streamDecl.Members)
             Stream.Members.Add(new EnumMemberSymbol(m.Name.Text, new Location(streamSource, m.Name.Span), Stream, Stream.Members.Count, null));
+        var radixSource = SourceText.FromString("<builtin>", RadixSource);
+        var radixTree = SyntaxTree.Parse(radixSource);
+        var radixDecl = (EnumDecl)radixTree.Root.Members[0];
+        Radix = new EnumSymbol("Radix", new Location(radixSource, radixDecl.Name.Span), Module, Accessibility.Public, radixDecl, new FileContext(Module, radixTree));
+        foreach (var m in radixDecl.Members)
+            Radix.Members.Add(new EnumMemberSymbol(m.Name.Text, new Location(radixSource, m.Name.Span), Radix, Radix.Members.Count, null));
         Print = Make("print", BuiltinFunction.Print, PrimitiveType.Void, ("text", PrimitiveType.String), ("to", Stream));
         Panic = Make("panic", BuiltinFunction.Panic, PrimitiveType.Never, ("message", PrimitiveType.String));
         Todo = Make("todo", BuiltinFunction.Todo, PrimitiveType.Never, ("message", PrimitiveType.String));
@@ -67,6 +73,7 @@ public sealed class Builtins
         StringFrom.Fails = true;
         StringFrom.ErrorSets.Add(Utf8Error);
         StringTryFrom = Make("tryFrom", BuiltinFunction.StringTryFrom, new OptionalType(PrimitiveType.String), bytes);
+        HexEncode = Make("encode", BuiltinFunction.HexEncode, PrimitiveType.String, bytes);
         StringInvalidUtf8At = Make("invalidUtf8At", BuiltinFunction.StringInvalidUtf8At, new OptionalType(PrimitiveType.I64), bytes);
 
         // The iteration interfaces are declared from source too; `Compilation` declares their members like a user interface's.
@@ -140,6 +147,9 @@ public sealed class Builtins
 
     /// <summary><c>i64? string.invalidUtf8At(ReadOnlySpan&lt;u8&gt; bytes)</c>: the byte offset of the first invalid sequence, null when valid.</summary>
     public FunctionSymbol StringInvalidUtf8At { get; }
+
+    /// <summary><c>string Hex.encode(ReadOnlySpan&lt;u8&gt; bytes)</c>: two lowercase hex digits per byte, from <c>context.allocator</c>.</summary>
+    public FunctionSymbol HexEncode { get; }
 
     /// <summary>A static member of <c>string</c>, or null.</summary>
     public FunctionSymbol? FindString(string name) => name switch
@@ -249,6 +259,18 @@ public sealed class Builtins
 
     /// <summary><c>enum Stream</c>: where <c>print</c> writes; ordinal 0 is <c>stdout</c>, as in <c>bayan-rt.h</c>.</summary>
     public EnumSymbol Stream { get; }
+
+    private const string RadixSource = """
+        public enum Radix {
+            binary,
+            octal,
+            decimal,
+            hex,
+        }
+        """;
+
+    /// <summary><c>enum Radix</c>: the base of <c>string(n, as:)</c>, in the spec's order (§6.2); <c>byn_int_string</c> reads the ordinal.</summary>
+    public EnumSymbol Radix { get; }
 
     private const string LogLevelSource = """
         public enum LogLevel {

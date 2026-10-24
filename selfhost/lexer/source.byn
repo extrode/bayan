@@ -77,7 +77,7 @@ struct SourceText {
     }
 
     /// The text of `span`, with invalid UTF-8 replaced as `Encoding.UTF8.GetString` does.
-    string getText(TextSpan span) => $"{utf8(bytes.asSpan()[span.start..span.end])}"
+    string getText(TextSpan span) => $"{utf8(bytes.span[span.start..span.end])}"
 }
 
 // ── UTF-8 ─────────────────────────────────────────────────────────────────────────

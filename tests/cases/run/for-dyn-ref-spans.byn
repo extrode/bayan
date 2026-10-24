@@ -15,11 +15,11 @@ void main() {
     var l = List<C>()
     l.append(C { n: 1 })
     l.append(C { n: 2 })
-    let w: Span<C> = l.asSpan()
+    let w: Span<C> = l.span
     for x: dyn ref IC in w {
         x.bump()
     }
-    let r: ReadOnlySpan<C> = l.asSpan()
+    let r: ReadOnlySpan<C> = l.span
     for x: dyn ref readonly IC in r {
         print($"{x.n}")
     }

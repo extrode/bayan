@@ -1,5 +1,5 @@
 let xs: i64[3] = [1, 2, 3]
-let s = xs.asSpan()
+let s = xs.span
 var i = 0
 while i <= 3 {
     print($"{s[i]}")

@@ -6,14 +6,14 @@ struct Lexer {
     List<Token> toks
     i64[4] marks
 
-    Span<Token> tokens() => toks.asSpan()
+    Span<Token> tokens() => toks.span
 
     i64 count() => toks.length
 
-    ReadOnlySpan<Token> rest(i64 from) => toks.asSpan()[from..]
+    ReadOnlySpan<Token> rest(i64 from) => toks.span[from..]
 
     Span<i64> firstMarks() {
-        let all = marks.asSpan()
+        let all = marks.span
         return all[..2]
     }
 }

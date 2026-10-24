@@ -352,7 +352,7 @@ internal sealed class RegionAnalysis
             case BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy
                 when b.Arguments.Length > 0:
                 return AllocatedFrom(b.Arguments[0]);
-            case BuiltinMember.IoReadAll or BuiltinMember.IntToHex or BuiltinMember.StringCopy:
+            case BuiltinMember.IoReadAll or BuiltinMember.IntToString or BuiltinMember.StringCopy:
                 // Fresh text from `context.allocator`, like `Io.readText`.
                 return _contexts.Count > 0 ? _contexts.Peek() : Borrow.None;
             case BuiltinMember.ListAdd:
@@ -369,10 +369,8 @@ internal sealed class RegionAnalysis
             case BuiltinMember.ListRemoveLast:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return receiver with { Owners = [] };
-            case BuiltinMember.MapIndex:
+            case BuiltinMember.MapIndex or BuiltinMember.MapTryGet or BuiltinMember.ListTryGet:
                 return receiver with { Owners = [] };
-            case BuiltinMember.MapGetOr:
-                return (receiver with { Owners = [] }).Union(args[1]);
             case BuiltinMember.MapLength or BuiltinMember.MapContains:
                 return Borrow.None;
             case BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListSort:
@@ -427,7 +425,7 @@ internal sealed class RegionAnalysis
         }
         // Rule 4: a returned borrow derives from every argument. `Io` and decoded `string` results are fresh copies and borrow none.
         var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch
-            or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.StringInvalidUtf8At
+            or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.StringInvalidUtf8At or BuiltinFunction.HexEncode
             ? Borrow.None
             : args.Aggregate(receiver, (acc, a) => acc.Union(a));
         // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
@@ -443,7 +441,7 @@ internal sealed class RegionAnalysis
                 }
         // Allocated from `context.allocator`: a list, an `Owned`, a growable `StrBuf`, or the text `Io.readText`, `Io.run` and `string.from` return (Q29).
         if (_contexts.Count > 0 && (ContainsList(c.Type, []) || fn.Builtin is BuiltinFunction.IoReadText or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch or BuiltinFunction.StrBufGrow
-                or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom))
+                or BuiltinFunction.StringFrom or BuiltinFunction.StringTryFrom or BuiltinFunction.HexEncode))
             result = result.Union(_contexts.Peek());
         return result;
     }

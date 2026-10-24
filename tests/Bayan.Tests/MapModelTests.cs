@@ -150,7 +150,7 @@ public sealed class MapModelTests
             foreach (var key in model.Order) expected.Append($"{KeyText(key)} {model.Values[key]}\n");
             for (long key = 0; key < KeySpace; key++)
             {
-                source.Append($"print($\"get {KeyText(key)} {{m.getOr({Key(key)}, -1)}}\")\n");
+                source.Append($"print($\"get {KeyText(key)} {{m.tryGet(at: {Key(key)}) ?? -1}}\")\n");
                 expected.Append($"get {KeyText(key)} {model.Values.GetValueOrDefault(key, -1)}\n");
             }
         }
@@ -168,7 +168,7 @@ public sealed class MapModelTests
     [InlineData("m[3] = 30\nlet _ = m.remove(3)", "m[3]", false)]
     [InlineData("m[3] = 30\nm.clear()", "m[3]", false)]
     [InlineData("m[3] = 30\nlet _ = m.remove(3)\nm[3] = 5", "m[3]", true)]
-    [InlineData("let _ = m.getOr(3, 0)\nlet _ = m.contains(3)", "m[3]", false)]
+    [InlineData("let _ = m.tryGet(at: 3) ?? 0\nlet _ = m.contains(3)", "m[3]", false)]
     public void L003IndexPanicsExactlyForNonLiveKeys(string setup, string read, bool live)
     {
         var outcome = Run("l003-index.byn", $"var m = Map<i64, i64>()\n{setup}\nprint($\"got {{{read}}}\")\n");

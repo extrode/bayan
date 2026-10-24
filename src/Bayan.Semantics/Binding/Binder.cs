@@ -855,7 +855,7 @@ internal sealed partial class Binder
     {
         BoundLocal or BoundThis or BoundStaticArray or BoundBuiltinCall { Member: BuiltinMember.OwnedValue } => true,
         BoundBuiltinCall { Member: BuiltinMember.MapIndex or BuiltinMember.ResultValue } b => IsBorrowedPlace(b.Receiver),
-        BoundBuiltinCall { Member: BuiltinMember.MapGetOr } b => IsBorrowedPlace(b.Receiver) || b.Arguments.Any(IsBorrowedPlace),
+        BoundBuiltinCall { Member: BuiltinMember.MapTryGet or BuiltinMember.ListTryGet } b => IsBorrowedPlace(b.Receiver),
         BoundField f => IsBorrowedPlace(f.Receiver),
         BoundTupleElement t => IsBorrowedPlace(t.Receiver),
         // A span points into existing storage, wherever the span itself came from.

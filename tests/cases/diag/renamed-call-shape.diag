@@ -1,0 +1,42 @@
+error BYN2230: `removeRange` is now `remove(from:until:)`
+
+  4 │     xs.removeRange(0, 1)
+    │        ^^^^^^^^^^^ the old name
+    │
+  help: write `remove(from: 0, until: 1)`
+    │ 4 │     xs.remove(from: 0, until: 1)
+    │   │              ++++++++++++++++
+
+error BYN2230: `replaceRange` is now `replace(at:by:)`
+
+  5 │     xs.replaceRange(0, 1)
+    │        ^^^^^^^^^^^^ the old name
+    │
+  help: write `replace(at:by:)`
+
+error BYN2230: `getOr` is now `tryGet(at:) ??`
+
+  8 │     let p = prices.getOr("tea", 0)
+    │                    ^^^^^ the old name
+    │
+  help: write `(prices.tryGet(at: "tea") ?? 0)`
+    │ 8 │     let p = (prices.tryGet(at: "tea") ?? 0)
+    │   │             ++++++++++++++++++++++++++++
+
+error BYN2230: `asSpan()` is now `span`
+
+  9 │     let s = xs.asSpan()
+    │                ^^^^^^ the old name
+    │
+  help: write `span`
+    │ 9 │     let s = xs.span
+    │   │                ++++
+
+error BYN2230: `toHex()` is now `string(x, as: .hex)`
+
+  11 │     print($"{n.toHex()} {p} {s.length}")
+     │                ^^^^^ the old name
+     │
+  help: write `string(n, as: .hex)`
+     │ 11 │     print($"{string(n, as: .hex)} {p} {s.length}")
+     │    │              ++++++++++++++++++

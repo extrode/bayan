@@ -15,7 +15,7 @@ struct Inventory {
 }
 
 void restock(ref Inventory inv, for string item, by i64 n) {
-    let have = inv.stock.getOr(item, 0)
+    let have = inv.stock.tryGet(at: item) ?? 0
     inv.stock[item] = have + n
 }
 
@@ -27,7 +27,7 @@ prices["jam"] = 2
 prices["tea"] = 4
 print($"{prices} count={prices.length}")
 if prices.contains("cake") { print($"cake costs {prices["cake"]}") }
-print($"scone: {prices.getOr("scone", 0)}")
+print($"scone: {prices.tryGet(at: "scone") ?? 0}")
 print($"has jam: {prices.contains("jam")}, has milk: {prices.contains("milk")}")
 print($"remove cake: {prices.remove("cake")}, again: {prices.remove("cake")}")
 prices["cake"] = 6
@@ -36,7 +36,7 @@ for e in prices { print($"  {e.key} = {e.value}") }
 // Enum keys.
 var counts = Map<Suit, i32>()
 let hand: Suit[6] = [.spades, .hearts, .spades, .clubs, .spades, .hearts]
-for s in hand { counts[s] = counts.getOr(s, 0) + 1 }
+for s in hand { counts[s] = (counts.tryGet(at: s) ?? 0) + 1 }
 print($"{counts}")
 
 // Integer, rune and bool keys.

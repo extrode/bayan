@@ -7,8 +7,8 @@ error BYN3004: `xs` is modified while `view` still borrows it
 
 error BYN3004: `xs` is modified while `again` still borrows it
 
-  8 │     xs.removeRange(0, 1)
-    │     ^^^^^^^^^^^^^^^^^^^^ `again` is used again on line 9
+  8 │     xs.remove(from: 0, until: 1)
+    │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `again` is used again on line 9
     │
   help: finish using `again` first, or copy what it needs before changing `xs`
 

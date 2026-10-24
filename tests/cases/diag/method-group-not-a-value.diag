@@ -5,9 +5,9 @@ error BYN2019: `weight` is a method, not a value
      │
   help: call it: `weight()`
 
-error BYN2019: `asSpan` is a method, not a value
+error BYN2019: `copy` is a method, not a value
 
-  17 │ showAll(items.asSpan)
-     │         ^^^^^^^^^^^^
+  17 │ showAll(items.copy)
+     │         ^^^^^^^^^^
      │
-  help: call it: `asSpan()`
+  help: call it: `copy()`

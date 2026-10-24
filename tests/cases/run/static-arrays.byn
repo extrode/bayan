@@ -27,7 +27,7 @@ for key in keys {
 print($"length {primes.length} last {primes[^1]} first {primes[0]}")
 let middle = primes[4..8]
 print($"slice {middle.length} {middle[0]} {search(middle, for: 17)}")
-print($"head {head()[2]} span {search(primes.asSpan(), for: 13)}")
+print($"head {head()[2]} span {search(primes.span, for: 13)}")
 print($"{bits[1]} {letters[2]} {halves[1]}")
 var sum: u64 = 0
 for p in primes {

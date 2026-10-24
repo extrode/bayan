@@ -1,11 +1,11 @@
 void main() {
     var xs = List<i64>()
     xs.append(1)
-    let view = xs.asSpan()
+    let view = xs.span
     xs.append(2)
     print($"{view[0]}")
-    let again = xs.asSpan()
-    xs.removeRange(0, 1)
+    let again = xs.span
+    xs.remove(from: 0, until: 1)
     print($"{again[0]}")
     for x in xs {
         xs.append(x)

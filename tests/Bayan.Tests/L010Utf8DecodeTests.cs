@@ -67,7 +67,7 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
             while i < text.length {
                 let c = text[i]
                 if c == 0x0A {
-                    print(check(line.asSpan()))
+                    print(check(line.span))
                     line.clear()
                     i += 1
                 } else {

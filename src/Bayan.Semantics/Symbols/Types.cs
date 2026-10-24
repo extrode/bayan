@@ -360,6 +360,8 @@ public enum BuiltinKind
     StrBuf,
     /// <summary>The static type <c>Io</c>; it has no values.</summary>
     Io,
+    /// <summary>The static codec <c>Hex</c>; it has no values.</summary>
+    Hex,
     /// <summary><c>Io.stdout</c> or <c>Io.stderr</c>; the value is the file descriptor.</summary>
     IoStream,
     /// <summary><c>Io.stdin</c>; it has no state.</summary>
@@ -389,6 +391,7 @@ public sealed class BuiltinType : TypeSymbol
     public static readonly BuiltinType Arena = new(BuiltinKind.Arena, "Arena");
     public static readonly BuiltinType StrBuf = new(BuiltinKind.StrBuf, "StrBuf");
     public static readonly BuiltinType Io = new(BuiltinKind.Io, "Io");
+    public static readonly BuiltinType Hex = new(BuiltinKind.Hex, "Hex");
     public static readonly BuiltinType IoStream = new(BuiltinKind.IoStream, "IoStream");
     public static readonly BuiltinType IoInput = new(BuiltinKind.IoInput, "IoInput");
     public static readonly BuiltinType ProcessResult = new(BuiltinKind.ProcessResult, "ProcessResult");

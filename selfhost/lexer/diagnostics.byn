@@ -127,15 +127,15 @@ void render(Diagnostic diagnostic, to ref StrBuf sb, from ref SourceText source)
     let blank = blankBuf.finish()
 
     sb.append($"  {lineNumber(line + 1, to: width)} {bar} ")
-    display(source.bytes.asSpan()[lineSpan.start..lineSpan.end], to: ref sb)
+    display(source.bytes.span[lineSpan.start..lineSpan.end], to: ref sb)
     sb.append("\n")
 
     let underlineStart = diagnostic.span.start
     var underlineEnd = diagnostic.span.end < lineSpan.end ? diagnostic.span.end : lineSpan.end
     if underlineEnd < underlineStart { underlineEnd = underlineStart }
-    var carets = runeCount(source.bytes.asSpan()[underlineStart..underlineEnd])
+    var carets = runeCount(source.bytes.span[underlineStart..underlineEnd])
     if carets < 1 { carets = 1 }
-    let prefix = source.bytes.asSpan()[lineSpan.start..underlineStart]
+    let prefix = source.bytes.span[lineSpan.start..underlineStart]
     sb.append($"{blank} ")
     indent(prefix, to: ref sb)
     for i in 0..carets { sb.append("^") }

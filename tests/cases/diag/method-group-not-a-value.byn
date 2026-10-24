@@ -14,4 +14,4 @@ void showAll(ReadOnlySpan<i64> items) {
 let box = Box { grams: 1 }
 show(box.weight)
 let items: List<i64> = [1, 2]
-showAll(items.asSpan)
+showAll(items.copy)

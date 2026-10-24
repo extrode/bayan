@@ -356,6 +356,7 @@ public enum BuiltinFunction
     IoStdin,
     StringFrom,
     StringTryFrom,
+    HexEncode,
     StringInvalidUtf8At,
     EnumFromOrdinal,
     EnumParse,

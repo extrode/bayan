@@ -677,14 +677,29 @@ byn_str byn_str_copy(byn_str s, byn_alloc* to) {
     return (byn_str){(const uint8_t*)byn_copy_bytes(s.ptr, s.len, to), s.len};
 }
 
-byn_str byn_to_hex(uint64_t v, byn_alloc* to) {
-    uint8_t buf[16];
-    int n = 16;
+byn_str byn_int_string(int64_t v, int32_t bits, bool is_signed, byn_builtin_Radix radix, byn_alloc* to) {
+    static const uint8_t bases[] = {2, 8, 10, 16};
+    uint64_t base = bases[radix];
+    bool negative = radix == 2 && is_signed && v < 0;
+    uint64_t u = negative ? 0 - (uint64_t)v : (uint64_t)v;
+    if (bits < 64) u &= (UINT64_C(1) << bits) - 1;
+    uint8_t buf[65];
+    int n = 65;
     do {
-        buf[--n] = (uint8_t)"0123456789abcdef"[v & 0xf];
-        v >>= 4;
-    } while (v != 0);
-    return byn_str_copy((byn_str){buf + n, 16 - n}, to);
+        buf[--n] = (uint8_t)"0123456789abcdef"[u % base];
+        u /= base;
+    } while (u != 0);
+    if (negative) buf[--n] = '-';
+    return byn_str_copy((byn_str){buf + n, 65 - n}, to);
+}
+
+byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to) {
+    uint8_t* out = to->resize(to, NULL, 0, n * 2);
+    for (int64_t i = 0; i < n; i++) {
+        out[2 * i] = (uint8_t)"0123456789abcdef"[p[i] >> 4];
+        out[2 * i + 1] = (uint8_t)"0123456789abcdef"[p[i] & 0xf];
+    }
+    return (byn_str){out, n * 2};
 }
 
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc) {

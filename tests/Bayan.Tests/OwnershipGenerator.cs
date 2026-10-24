@@ -20,7 +20,7 @@ namespace Bayan.Tests;
 /// copy       := "let y = x.copy(to: arena);"      if x Owned
 /// take       := "let y = p.take();"               p in {x, x.items, x[0], o} with x var and Owned
 /// call       := consume(move x) | "var y = pass(move x);" | peek(x) | bump(ref x)   (bump: x var)
-/// borrow     := "{ let v = x.asSpan(); print($"{v.length}"); }" | for (let e in x) over a nested list
+/// borrow     := "{ let v = x.span; print($"{v.length}"); }" | for (let e in x) over a nested list
 /// loop       := for/while; the body moves an outer x only if x is var, and reassigns it at the end
 /// branch     := if/else on t; join = Moved if moved on either side | "if (s is .full(let items))" borrow
 /// switchMove := "switch move s {" ["case .full(let b) when b.length &gt; n: consume(move b);"]
@@ -282,7 +282,7 @@ internal static class OwnershipGenerator
             }
             Line("{");
             _indent++;
-            Line($"let {b} = {x.Name}.asSpan()");
+            Line($"let {b} = {x.Name}.span");
             Line($"print($\"{{{b}.length}}\")");
             _indent--;
             Line("}");

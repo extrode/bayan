@@ -208,8 +208,8 @@ let mixed: List<PriceLine> = [
     PriceLine { key: "MUG-0001", qty: 2, unitPrice: myr(2500), unitGrams: 400 },
 ]
 
-print(describe(tea.asSpan(), as: "tea", by: standard))
-print(describe(rug.asSpan(), as: "rug", by: standard))
-print(describe(bed.asSpan(), as: "bed", by: standard))
-print(describe(lamps.asSpan(), as: "lamps", by: standard))
-print(describe(mixed.asSpan(), as: "mixed", by: standard))
+print(describe(tea.span, as: "tea", by: standard))
+print(describe(rug.span, as: "rug", by: standard))
+print(describe(bed.span, as: "bed", by: standard))
+print(describe(lamps.span, as: "lamps", by: standard))
+print(describe(mixed.span, as: "mixed", by: standard))

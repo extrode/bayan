@@ -59,8 +59,8 @@ public List<Transfer> settle(ReadOnlySpan<Share> balances) uses alloc {
     }
     var transfers = List<Transfer>()
     while true {
-        let debtor = extreme(pending.asSpan(), lowest: true)
-        let creditor = extreme(pending.asSpan(), lowest: false)
+        let debtor = extreme(pending.span, lowest: true)
+        let creditor = extreme(pending.span, lowest: false)
         break if pending[debtor].cents >= 0 || pending[creditor].cents <= 0
         let owed = -pending[debtor].cents
         let amount = owed < pending[creditor].cents ? owed : pending[creditor].cents

@@ -14,7 +14,7 @@ for w in text { words.slot(w) += 1 }
 print($"{words} length={words.length}")
 
 // `getOr` reads without inserting.
-print($"cat {words.getOr("cat", 0)}, cow {words.getOr("cow", -1)}, length={words.length}")
+print($"cat {words.tryGet(at: "cat") ?? 0}, cow {words.tryGet(at: "cow") ?? -1}, length={words.length}")
 print($"contains cow: {words.contains("cow")}, contains dog: {words.contains("dog")}")
 
 // Writes and compound writes through `map[k]` (on a present key; `slot` inserts): an update keeps the key's position.
