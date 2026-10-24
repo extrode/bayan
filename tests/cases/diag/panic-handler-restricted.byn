@@ -32,6 +32,6 @@ void onCrash(Panic p) {
 }
 
 void main() {
-    Panic.onPanic = onCrash
+    Panic.handler = onCrash
     print($"{work() catch -1}")
 }

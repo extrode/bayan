@@ -254,7 +254,18 @@ void byn_stdout_flush(void) {
     fflush(stdout);
 }
 
-void byn_print(byn_str s) {
+static void byn_err(const uint8_t* p, int64_t n) {
+    byn_stdout_flush();
+    fwrite(p, 1, (size_t)n, stderr);
+}
+
+void byn_print(byn_builtin_Stream stream, byn_str s) {
+    if (stream == 1) {
+        byn_err(s.ptr, s.len);
+        byn_err((const uint8_t*)"\n", 1);
+        fflush(stderr);
+        return;
+    }
     byn_out(s.ptr, s.len);
     byn_out((const uint8_t*)"\n", 1);
 }
@@ -301,6 +312,14 @@ void byn_w_bytes(byn_writer* w, const uint8_t* p, int64_t n) {
                 return;
             }
             break;
+        case BYN_WRITE_STDERR:
+            byn_err(w->buf, w->len);
+            w->len = 0;
+            if (n > w->cap) {
+                byn_err(p, n);
+                return;
+            }
+            break;
         case BYN_WRITE_TRUNCATE:
             memcpy(w->buf + w->len, p, (size_t)room);
             w->len = w->cap;
@@ -325,8 +344,14 @@ void byn_w_bytes(byn_writer* w, const uint8_t* p, int64_t n) {
 }
 
 void byn_w_println(byn_writer* w) {
-    byn_out(w->buf, w->len);
-    byn_out((const uint8_t*)"\n", 1);
+    if (w->mode == BYN_WRITE_STDERR) {
+        byn_err(w->buf, w->len);
+        byn_err((const uint8_t*)"\n", 1);
+        fflush(stderr);
+    } else {
+        byn_out(w->buf, w->len);
+        byn_out((const uint8_t*)"\n", 1);
+    }
     w->len = 0;
 }
 
@@ -456,6 +481,19 @@ bool byn_str_contains(byn_str s, byn_str text) {
     return false;
 }
 
+int64_t byn_str_rune_count(byn_str s) {
+    int64_t n = 0;
+    for (int64_t i = 0; i < s.len; i++)
+        if ((s.ptr[i] & 0xC0) != 0x80) n++;
+    return n;
+}
+
+bool byn_str_is_ascii(byn_str s) {
+    for (int64_t i = 0; i < s.len; i++)
+        if (s.ptr[i] >= 0x80) return false;
+    return true;
+}
+
 uint32_t byn_str_next(byn_str s, int64_t* pos) {
     const uint8_t* p = s.ptr + *pos;
     uint32_t c = p[0];
@@ -475,6 +513,80 @@ byn_str byn_str_slice(byn_str s, int64_t start, int64_t end, const char* file, i
     byn_slice_check(start, end, s.len, file, line);
     if (!byn_is_boundary(s, start) || !byn_is_boundary(s, end)) byn_panic("string slice splits a code point", file, line);
     return (byn_str){s.ptr + start, end - start};
+}
+
+/* ── Sorting ─────────────────────────────────────────────────────────────── */
+
+/* Insertion sort on short runs, then in-place merges by rotation (SymMerge): stable, O(n log² n), no scratch memory. */
+
+static void byn_sort_reverse(uint8_t* p, int64_t i, int64_t j, int64_t size) {
+    for (j--; i < j; i++, j--)
+        for (int64_t k = 0; k < size; k++) {
+            uint8_t t = p[i * size + k];
+            p[i * size + k] = p[j * size + k];
+            p[j * size + k] = t;
+        }
+}
+
+/* Moves [m, j) in front of [i, m). */
+static void byn_sort_rotate(uint8_t* p, int64_t i, int64_t m, int64_t j, int64_t size) {
+    byn_sort_reverse(p, i, m, size);
+    byn_sort_reverse(p, m, j, size);
+    byn_sort_reverse(p, i, j, size);
+}
+
+/* Merges the sorted runs [lo, m) and [m, hi). */
+static void byn_sort_merge(uint8_t* p, int64_t lo, int64_t m, int64_t hi, int64_t size, bool (*less)(const void*, const void*)) {
+    if (m - lo == 1) {
+        int64_t i = m, j = hi;
+        while (i < j) {
+            int64_t h = i + (j - i) / 2;
+            if (less(p + h * size, p + lo * size)) i = h + 1;
+            else j = h;
+        }
+        byn_sort_rotate(p, lo, lo + 1, i, size);
+        return;
+    }
+    if (hi - m == 1) {
+        int64_t i = lo, j = m;
+        while (i < j) {
+            int64_t h = i + (j - i) / 2;
+            if (!less(p + m * size, p + h * size)) i = h + 1;
+            else j = h;
+        }
+        byn_sort_rotate(p, i, m, m + 1, size);
+        return;
+    }
+    int64_t mid = lo + (hi - lo) / 2, n = mid + m, start, r;
+    if (m > mid) {
+        start = n - hi;
+        r = mid;
+    } else {
+        start = lo;
+        r = m;
+    }
+    int64_t last = n - 1;
+    while (start < r) {
+        int64_t c = start + (r - start) / 2;
+        if (!less(p + (last - c) * size, p + c * size)) start = c + 1;
+        else r = c;
+    }
+    int64_t end = n - start;
+    if (start < m && m < end) byn_sort_rotate(p, start, m, end, size);
+    if (lo < start && start < mid) byn_sort_merge(p, lo, start, mid, size, less);
+    if (mid < end && end < hi) byn_sort_merge(p, mid, end, hi, size, less);
+}
+
+void byn_sort(void* base, int64_t n, int64_t size, bool (*less)(const void* a, const void* b)) {
+    enum { run = 20 };
+    uint8_t* p = (uint8_t*)base;
+    for (int64_t lo = 0; lo < n; lo += run) {
+        int64_t hi = lo + run < n ? lo + run : n;
+        for (int64_t i = lo + 1; i < hi; i++)
+            for (int64_t j = i; j > lo && less(p + j * size, p + (j - 1) * size); j--) byn_sort_reverse(p, j - 1, j + 1, size);
+    }
+    for (int64_t w = run; w < n; w *= 2)
+        for (int64_t lo = 0; lo + w < n; lo += 2 * w) byn_sort_merge(p, lo, lo + w, lo + 2 * w < n ? lo + 2 * w : n, size, less);
 }
 
 /* ── Allocators ──────────────────────────────────────────────────────────── */

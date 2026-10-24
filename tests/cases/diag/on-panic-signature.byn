@@ -3,5 +3,5 @@ void report(string message) {
 }
 
 void main() {
-    Panic.onPanic = report
+    Panic.handler = report
 }

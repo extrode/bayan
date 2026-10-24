@@ -1239,7 +1239,7 @@ internal sealed class FunctionEmitter
         }
         else
         {
-            var mode = w.Sink == WriteSink.Print ? "BYN_WRITE_STDOUT" : "BYN_WRITE_TRUNCATE";
+            var mode = w.Sink == WriteSink.Print ? $"{Expr(w.Target!)} == 1 ? BYN_WRITE_STDERR : BYN_WRITE_STDOUT" : "BYN_WRITE_TRUNCATE";
             // A panic message keeps as much as the runtime does (`byn_panic_text`), room for an `assert` diagram; a log line never allocates, so it is cut.
             var size = w.Sink switch { WriteSink.Panic => 1024, WriteSink.Log => 512, _ => 256 };
             Line($"uint8_t wb[{size}];");
@@ -1369,7 +1369,7 @@ internal sealed class FunctionEmitter
         switch (fn.Builtin)
         {
             case BuiltinFunction.Print:
-                return $"byn_print({Expr(c.Arguments[0])})";
+                return $"byn_print({Expr(c.Arguments[1])}, {Expr(c.Arguments[0])})";
             case BuiltinFunction.Log:
                 return $"byn_log({Expr(c.Arguments[1])}, {Expr(c.Arguments[0])})";
             case BuiltinFunction.Panic:
@@ -1525,6 +1525,10 @@ internal sealed class FunctionEmitter
                 return $"{Expr(r)}.len";
             case BuiltinMember.StringIsEmpty or BuiltinMember.SpanIsEmpty or BuiltinMember.ListIsEmpty:
                 return $"({Expr(r)}.len == 0)";
+            case BuiltinMember.StringRuneCount:
+                return $"byn_str_rune_count({Expr(r)})";
+            case BuiltinMember.StringIsAscii:
+                return $"byn_str_is_ascii({Expr(r)})";
             case BuiltinMember.StringBytes:
             {
                 var span = _c.CType(b.Type);
@@ -1532,7 +1536,7 @@ internal sealed class FunctionEmitter
                 return $"{name}({Expr(r)})";
             }
             case BuiltinMember.StringCopy:
-                return $"byn_str_copy({Expr(r)}, byn_arena_alloc({arg}))";
+                return $"byn_str_copy({Expr(r)}, {(b.Arguments.Length > 0 ? $"byn_arena_alloc({arg})" : "byn_context")})";
             case BuiltinMember.StringStartsWith:
                 return $"byn_str_starts_with({Expr(r)}, {arg})";
             case BuiltinMember.StringEndsWith:
@@ -1596,6 +1600,15 @@ internal sealed class FunctionEmitter
                 _c.Helper(name, $"static void {name}({lt}* l, int64_t start, int64_t end, const char* file, int line)", () =>
                     "{\n    byn_slice_check(start, end, l->len, file, line);\n    if (end > start) memmove(l->ptr + start, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n    l->len -= end - start;\n}\n");
                 return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})";
+            }
+            case BuiltinMember.ListSort:
+            {
+                var element = ((ListType)r.Type).Element;
+                var et = _c.CType(element);
+                var less = _c.Helper("bynh_less_" + _c.Key(element), $"static bool bynh_less_{_c.Key(element)}(const void* a, const void* b)", () => element.IsString
+                    ? "{\n    return byn_str_cmp(*(const byn_str*)a, *(const byn_str*)b) < 0;\n}\n"
+                    : $"{{\n    return *(const {et}*)a < *(const {et}*)b;\n}}\n");
+                return $"byn_sort({Expr(r)}.ptr, {Expr(r)}.len, sizeof(*{Expr(r)}.ptr), {less})";
             }
             case BuiltinMember.MapLength:
                 return $"{Expr(r)}.h.live";

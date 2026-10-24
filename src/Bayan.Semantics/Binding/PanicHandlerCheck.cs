@@ -55,7 +55,7 @@ internal static class PanicHandlerCheck
                     targets.Add(a.Target);
                     break;
                 // Interpolation written straight into `print`, `panic` or `StrBuf.append` is formatted on the stack.
-                case BoundCall { Function.Builtin: BuiltinFunction.Print or BuiltinFunction.Panic, Arguments: [BoundInterpolated i] }:
+                case BoundCall { Function.Builtin: BuiltinFunction.Print or BuiltinFunction.Panic, Arguments: [BoundInterpolated i, ..] }:
                     sinks.Add(i);
                     break;
                 case BoundBuiltinCall { Member: BuiltinMember.StrBufAppend, Arguments: [BoundInterpolated i] }:

@@ -2,9 +2,9 @@ using Bayan.Semantics.Symbols;
 
 namespace Bayan.Semantics.Binding;
 
-/// <summary>A built-in method: its parameters, result, and whether it writes to its receiver.</summary>
+/// <summary>A built-in method: its parameters, result, whether it writes to its receiver, and how many trailing parameters a call may leave out.</summary>
 internal sealed record BuiltinMethod(
-    BuiltinMember Member, (string Name, TypeSymbol Type)[] Parameters, TypeSymbol Returns, bool Mutating = false);
+    BuiltinMember Member, (string Name, TypeSymbol Type)[] Parameters, TypeSymbol Returns, bool Mutating = false, int Optional = 0);
 
 /// <summary>Members of strings, spans, lists, maps, arrays, results, optionals, <c>Owned</c>, <c>Arena</c>, <c>StrBuf</c>, <c>Io.stdout</c>/<c>Io.stderr</c>/<c>Io.stdin</c>, <c>ProcessResult</c>, <c>rune</c> and enums (spec §3, §16).</summary>
 internal static class BuiltinMembers
@@ -15,6 +15,8 @@ internal static class BuiltinMembers
         ({ IsString: true }, "length") => (BuiltinMember.StringLength, PrimitiveType.I64),
         ({ IsString: true }, "bytes") => (BuiltinMember.StringBytes, new SpanType(PrimitiveType.U8, readOnly: true)),
         ({ IsString: true }, "isEmpty") => (BuiltinMember.StringIsEmpty, PrimitiveType.Bool),
+        ({ IsString: true }, "runeCount") => (BuiltinMember.StringRuneCount, PrimitiveType.I64),
+        ({ IsString: true }, "isAscii") => (BuiltinMember.StringIsAscii, PrimitiveType.Bool),
         (SpanType, "length") => (BuiltinMember.SpanLength, PrimitiveType.I64),
         (SpanType, "isEmpty") => (BuiltinMember.SpanIsEmpty, PrimitiveType.Bool),
         (ListType, "length") => (BuiltinMember.ListLength, PrimitiveType.I64),
@@ -39,7 +41,8 @@ internal static class BuiltinMembers
 
     public static BuiltinMethod? Method(TypeSymbol type, string name) => (type, name) switch
     {
-        ({ IsString: true }, "copy") => new(BuiltinMember.StringCopy, [("to", BuiltinType.Arena)], PrimitiveType.String),
+        // `s.copy()` copies from `context.allocator`, `s.copy(to: arena)` into the arena.
+        ({ IsString: true }, "copy") => new(BuiltinMember.StringCopy, [("to", BuiltinType.Arena)], PrimitiveType.String, Optional: 1),
         ({ IsString: true }, "startsWith") => new(BuiltinMember.StringStartsWith, [("prefix", PrimitiveType.String)], PrimitiveType.Bool),
         ({ IsString: true }, "endsWith") => new(BuiltinMember.StringEndsWith, [("suffix", PrimitiveType.String)], PrimitiveType.Bool),
         ({ IsString: true }, "contains") => new(BuiltinMember.StringContains, [("text", PrimitiveType.String)], PrimitiveType.Bool),
@@ -51,6 +54,9 @@ internal static class BuiltinMembers
         (ListType l, "removeLast") => new(BuiltinMember.ListRemoveLast, [], l.Element, Mutating: true),
         (ListType, "removeRange") =>
             new(BuiltinMember.ListRemoveRange, [("start", PrimitiveType.I64), ("end", PrimitiveType.I64)], PrimitiveType.Void, Mutating: true),
+        // Stable (J47); elements ordered by `<`: numbers, `rune` and `string`.
+        (ListType l, "sort") when l.Element is { IsNumeric: true } or { IsString: true } or PrimitiveType { Kind: PrimitiveKind.Char } =>
+            new(BuiltinMember.ListSort, [], PrimitiveType.Void, Mutating: true),
         (ListType l, "take") => new(BuiltinMember.ListTake, [], l, Mutating: true),
         (MapType m, "getOr") => new(BuiltinMember.MapGetOr, [("key", m.KeyType), ("default", m.ValueType)], m.ValueType),
         (MapType m, "slot") => new(BuiltinMember.MapSlot, [("key", m.KeyType)], m.ValueType, Mutating: true),
@@ -79,7 +85,7 @@ internal static class BuiltinMembers
     public static bool HasMethod(TypeSymbol type, string name) => Method(type, name) is not null;
 
     private static readonly string[] Candidates =
-        ["length", "bytes", "isEmpty", "value", "copy", "startsWith", "endsWith", "contains", "asSpan", "clear", "removeLast", "removeRange", "getOr", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "toHex", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
+        ["length", "bytes", "isEmpty", "runeCount", "isAscii", "value", "copy", "startsWith", "endsWith", "contains", "asSpan", "clear", "removeLast", "removeRange", "sort", "getOr", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "toHex", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>

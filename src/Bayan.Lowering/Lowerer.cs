@@ -1201,7 +1201,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         switch (c.Function.Builtin)
         {
             case BuiltinFunction.Print when c.Arguments[0] is BoundInterpolated i:
-                return Write(c, WriteSink.Print, null, i);
+                // The stream is the target, as a log level is.
+                return WriteParts(c, WriteSink.Print, null, i, level: c.Arguments[1]);
             case BuiltinFunction.Log when c.Arguments[0] is BoundInterpolated i:
                 // The level is the target, evaluated after the text's parts as in the plain-string call.
                 return WriteParts(c, WriteSink.Log, null, i, level: c.Arguments[1]);
@@ -1429,7 +1430,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 : new BoundDefault(b.Syntax, b.Type));
             return taken;
         }
-        var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast or BuiltinMember.ListRemoveRange
+        var mutating = b.Member is BuiltinMember.ListAdd or BuiltinMember.ListClear or BuiltinMember.ListRemoveLast or BuiltinMember.ListRemoveRange or BuiltinMember.ListSort
             or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapRemove or BuiltinMember.MapClear
             or BuiltinMember.StrBufAppend or BuiltinMember.StrBufClear or BuiltinMember.ArrayAsSpan;
         var operands = new List<BoundExpr> { b.Receiver };
@@ -1469,7 +1470,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private BoundExpr Write(BoundCall c, WriteSink sink, BoundExpr? target, BoundInterpolated text) => WriteParts(c, sink, target, text);
 
-    /// <param name="level">A log level, lowered after the parts and written as the target.</param>
+    /// <param name="level">A log level or print stream, lowered after the parts and written as the target.</param>
     private BoundExpr WriteParts(BoundExpr call, WriteSink sink, BoundExpr? target, BoundInterpolated text, BoundExpr? level = null)
     {
         var values = text.Parts.Where(p => p.Value is not null).Select(p => p.Value!).ToList();

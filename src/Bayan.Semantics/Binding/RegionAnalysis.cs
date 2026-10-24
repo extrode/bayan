@@ -349,9 +349,10 @@ internal sealed class RegionAnalysis
         {
             case BuiltinMember.ListAsSpan or BuiltinMember.ArrayAsSpan or BuiltinMember.StrBufAsString:
                 return Lend(b.Receiver, receiver, b.Syntax.Span.End);
-            case BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy:
+            case BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy
+                when b.Arguments.Length > 0:
                 return AllocatedFrom(b.Arguments[0]);
-            case BuiltinMember.IoReadAll or BuiltinMember.IntToHex:
+            case BuiltinMember.IoReadAll or BuiltinMember.IntToHex or BuiltinMember.StringCopy:
                 // Fresh text from `context.allocator`, like `Io.readText`.
                 return _contexts.Count > 0 ? _contexts.Peek() : Borrow.None;
             case BuiltinMember.ListAdd:
@@ -374,7 +375,7 @@ internal sealed class RegionAnalysis
                 return (receiver with { Owners = [] }).Union(args[1]);
             case BuiltinMember.MapLength or BuiltinMember.MapContains:
                 return Borrow.None;
-            case BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange:
+            case BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListSort:
                 Mutate(b.Receiver, b.Syntax.Span);
                 return Borrow.None;
             case BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset:
@@ -752,7 +753,7 @@ internal sealed class RegionAnalysis
             switch (node)
             {
                 case BoundBuiltinCall b when b.Member is BuiltinMember.ListAdd or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.ListRemoveLast
-                        or BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset
+                        or BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListSort or BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset
                         or BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake
                     && ThisFieldSymbol(b.Receiver) is { } field:
                     fields.Add(field);

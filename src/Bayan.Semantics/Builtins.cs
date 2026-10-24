@@ -11,7 +11,14 @@ public sealed class Builtins
     public Builtins()
     {
         Module = new ModuleSymbol("builtin", "") { CName = "builtin" };
-        Print = Make("print", BuiltinFunction.Print, PrimitiveType.Void, ("text", PrimitiveType.String));
+        // `Stream` is declared from source for its member names, like `LogLevel` below.
+        var streamSource = SourceText.FromString("<builtin>", StreamSource);
+        var streamTree = SyntaxTree.Parse(streamSource);
+        var streamDecl = (EnumDecl)streamTree.Root.Members[0];
+        Stream = new EnumSymbol("Stream", new Location(streamSource, streamDecl.Name.Span), Module, Accessibility.Public, streamDecl, new FileContext(Module, streamTree));
+        foreach (var m in streamDecl.Members)
+            Stream.Members.Add(new EnumMemberSymbol(m.Name.Text, new Location(streamSource, m.Name.Span), Stream, Stream.Members.Count, null));
+        Print = Make("print", BuiltinFunction.Print, PrimitiveType.Void, ("text", PrimitiveType.String), ("to", Stream));
         Panic = Make("panic", BuiltinFunction.Panic, PrimitiveType.Never, ("message", PrimitiveType.String));
         Todo = Make("todo", BuiltinFunction.Todo, PrimitiveType.Never, ("message", PrimitiveType.String));
 
@@ -230,8 +237,18 @@ public sealed class Builtins
 
     public ModuleSymbol Module { get; }
 
-    /// <summary><c>print(string)</c>: writes the text and a newline to standard output.</summary>
+    /// <summary><c>print(string text, Stream to = .stdout)</c>: writes the text and a newline to standard output or standard error.</summary>
     public FunctionSymbol Print { get; }
+
+    private const string StreamSource = """
+        public enum Stream {
+            stdout,
+            stderr,
+        }
+        """;
+
+    /// <summary><c>enum Stream</c>: where <c>print</c> writes; ordinal 0 is <c>stdout</c>, as in <c>bayan-rt.h</c>.</summary>
+    public EnumSymbol Stream { get; }
 
     private const string LogLevelSource = """
         public enum LogLevel {
