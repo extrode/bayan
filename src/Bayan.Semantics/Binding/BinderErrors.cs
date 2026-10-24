@@ -53,4 +53,52 @@ internal sealed partial class Binder
             help: $"pass it: `.{v.Name}({string.Join(", ", v.Fields.Select(f => f.Name))})`");
         return false;
     }
+
+    // ── Error-case patterns ──────────────────────────────────────────────────────
+
+    /// <summary>The <c>c</c> of <c>.timeout c</c>, mapped to its case, so <c>c.after</c> reads the payload.</summary>
+    private readonly Dictionary<LocalSymbol, ErrorVariantSymbol> _errorNarrowed = new();
+
+    /// <summary><c>CarrierError.timeout</c> in a pattern: the case of <paramref name="set"/> named <paramref name="name"/>.</summary>
+    private BoundExpr ErrorCase(Pattern p, ErrorSetSymbol set, Name name)
+    {
+        if (set.Find(name.Text) is { } variant) return new BoundErrorVariant(p, variant);
+        Report(DiagnosticCodes.UnknownVariant, name.Span, [name.Text, set.Name],
+            help: Suggest(name.Text, set.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
+        return new BoundErrorExpr(p);
+    }
+
+    /// <summary>
+    /// <c>.timeout(let after)</c> or <c>.timeout e</c> on an error (J29): a test of the case <paramref name="bound"/> names, then
+    /// each element on its payload field, or <paramref name="binding"/> bound to the whole error.
+    /// </summary>
+    private BoundPattern BindErrorCasePattern(Pattern p, TypeSymbol input, BoundExpr bound, Pattern[] elements, Name? binding)
+    {
+        var target = Unwrap(input);
+        ErrorVariantSymbol? variant = null;
+        if (bound is BoundErrorVariant ev)
+        {
+            if (target is ErrorUnionType u && u.Sets.Count > 0 && (!u.Sets.Contains(ev.Variant.Set) || u.Excluded.Contains(ev.Variant))
+                || target is ErrorSetSymbol s && s != ev.Variant.Set)
+                Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`{ev.Variant.Set.Name}.{ev.Variant.Name}`", target.DisplayName]);
+            else variant = ev.Variant;
+        }
+        if (binding is not null)
+        {
+            var local = DeclareLocal(binding, variant is null ? ErrorType.Instance : target, LocalKind.PatternVariable);
+            if (variant is null) return new BoundBindPattern(p, input, null);
+            _errorNarrowed[local] = variant;
+            return new BoundBinaryPattern(p, input, true, new BoundErrorPattern(p, input, variant, []), new BoundBindPattern(p, input, local));
+        }
+        if (variant is { Fields.Count: 0 })
+            Report(DiagnosticCodes.VariantHasNoPayload, p.Span, [variant.Name], help: $"match it with `.{variant.Name}`");
+        else if (variant is not null && elements.Length != variant.Fields.Count)
+            Report(DiagnosticCodes.VariantPatternArity, p.Span, [variant.Name, variant.Fields.Count, elements.Length],
+                help: $"list every field: `.{variant.Name}({string.Join(", ", variant.Fields.Select(f => "let " + f.Name))})`, or `_` to skip one");
+        var ok = variant is not null && variant.Fields.Count == elements.Length && elements.Length > 0;
+        var subs = new BoundPattern[elements.Length];
+        for (var i = 0; i < subs.Length; i++)
+            subs[i] = BindPattern(elements[i], ok ? variant!.Fields[i].Type : ErrorType.Instance);
+        return ok ? new BoundErrorPattern(p, input, variant!, subs) : new BoundBindPattern(p, input, null);
+    }
 }

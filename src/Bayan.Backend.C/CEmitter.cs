@@ -124,7 +124,7 @@ public sealed class CEmitter
     private string EmitMain()
     {
         var sb = new StringBuilder();
-        sb.Append("int main(int argc, char** argv) {\n    uint32_t err = 0;\n");
+        sb.Append($"int main(int argc, char** argv) {{\n    {ErrorCType} err = {{0}};\n");
         // Map hashing is seeded per run; tests get a fixed seed so they are reproducible.
         if (_hashes)
             sb.Append(_program.Tests.Count > 0
@@ -139,7 +139,7 @@ public sealed class CEmitter
                 sb.Append($"        case {i}: ").Append(fn.Fails ? "err = " : "").Append(FunctionName(fn)).Append("(); break;\n");
             }
             sb.Append("        default: return 2;\n        }\n");
-            sb.Append("        if (err != 0) { byn_report_error(byn_errors[err - 1]); return 1; }\n");
+            sb.Append("        if (err.code != 0) { byn_report_error(byn_errors[err.code - 1]); return 1; }\n");
             sb.Append("        byn_stdout_flush();\n        return 0;\n    }\n");
         }
         else
@@ -170,7 +170,7 @@ public sealed class CEmitter
         {
             sb.Append("    (void)argc;\n");
         }
-        sb.Append("    if (err != 0) { byn_report_error(byn_errors[err - 1]); return byn_exit_codes[err - 1]; }\n");
+        sb.Append("    if (err.code != 0) { byn_report_error(byn_errors[err.code - 1]); return byn_exit_codes[err.code - 1]; }\n");
         sb.Append($"    byn_stdout_flush();\n    return {exit};\n}}\n");
         return sb.ToString();
     }
@@ -244,7 +244,8 @@ public sealed class CEmitter
             PrimitiveKind.String => "byn_str",
             _ => "void",
         },
-        ErrorSetSymbol or ErrorUnionType => "uint32_t",
+        // One error type for the program: every set converts to every union of sets without changing its bits.
+        ErrorSetSymbol or ErrorUnionType => Named(t, "byn_err"),
         EnumSymbol e => $"byn_{e.Module.CName}_{e.Name}",
         UnionSymbol u => Named(u, $"byn_{u.Module.CName}_{u.Name}{TypeArgs(u.TypeArguments)}"),
         BuiltinType { Kind: BuiltinKind.Arena } => "byn_arena*",
@@ -259,6 +260,9 @@ public sealed class CEmitter
         DynRefType d => Named(t, "byn_dyn_" + Key(d.Interface)),
         _ => Named(t),
     };
+
+    /// <summary>The C type of every error, and of what a failing function returns.</summary>
+    internal string ErrorCType => CType(ErrorUnionType.Of([]));
 
     /// <summary>An identifier fragment naming a type, for generated type and helper names.</summary>
     internal string Key(TypeSymbol t) => t switch
@@ -311,8 +315,19 @@ public sealed class CEmitter
                     members.Add((PrimitiveType.Bool, "bool has"));
                     members.Add((o.Inner, $"{CType(o.Inner)} value"));
                     break;
+                case ErrorSetSymbol or ErrorUnionType:
+                {
+                    // The code, then the largest payload: a case with fields has a struct named by its code (SPEC §3.12).
+                    members.Add((PrimitiveType.U32, "uint32_t code"));
+                    var cases = _program.Compilation.ErrorVariants.Where(v => v.Fields.Count > 0).ToList();
+                    if (cases.Count > 0)
+                        members.Add((PrimitiveType.U32, "union {\n" + string.Concat(cases.Select(v =>
+                            $"        struct {{ {string.Concat(v.Fields.Select(f => $"{CType(f.Type)} {FieldName(f.Name)}; "))}}} e{v.Code};\n")) + "    } p"));
+                    payloads.AddRange(cases.SelectMany(v => v.Fields).Select(f => f.Type));
+                    break;
+                }
                 case ResultType r:
-                    members.Add((PrimitiveType.U32, "uint32_t err"));
+                    members.Add((r.Error, $"{CType(r.Error)} err"));
                     members.Add((r.Value, $"{CType(r.Value)} value"));
                     break;
                 case SpanType sp:
@@ -410,7 +425,7 @@ public sealed class CEmitter
             args.Add("byn_out");
             ps.Add($"{CType(m.ReturnType)}* byn_out");
         }
-        return $"{(m.Fails ? "uint32_t" : CType(m.ReturnType))} {declarator}({string.Join(", ", ps)})";
+        return $"{(m.Fails ? ErrorCType : CType(m.ReturnType))} {declarator}({string.Join(", ", ps)})";
     }
 
     // Vtables, one per (conformer, interface) converted to `dyn ref`, emitted after the helper prototypes they point at.
@@ -539,8 +554,10 @@ public sealed class CEmitter
         {
             case PrimitiveType { IsString: true }:
                 return $"byn_str_eq({a}, {b})";
-            case PrimitiveType or ErrorSetSymbol or ErrorUnionType or EnumSymbol:
+            case PrimitiveType or EnumSymbol:
                 return $"({a} == {b})";
+            case ErrorSetSymbol or ErrorUnionType:
+                return $"({a}.code == {b}.code)";
             case OwnedType o:
                 return Equal(o.Inner, $"(*{a})", $"(*{b})");
             case UntrustedType u:
@@ -565,7 +582,7 @@ public sealed class CEmitter
             List<string> tests = t switch
             {
                 OptionalType o => [$"a.has == b.has && (!a.has || {Equal(o.Inner, "a.value", "b.value")})"],
-                ResultType r => [$"a.err == b.err && (a.err != 0 || {Equal(r.Value, "a.value", "b.value")})"],
+                ResultType r => [$"a.err.code == b.err.code && (a.err.code != 0 || {Equal(r.Value, "a.value", "b.value")})"],
                 StructSymbol s => s.Fields.Select(f => Equal(f.Type, "a." + FieldName(f.Name), "b." + FieldName(f.Name))).ToList(),
                 TupleType tt => tt.Fields.Select((f, i) => Equal(f.Type, $"a.item{i + 1}", $"b.item{i + 1}")).ToList(),
                 _ => throw new InvalidOperationException($"no equality for {t.DisplayName}"),
@@ -662,7 +679,7 @@ public sealed class CEmitter
                     _ => $"byn_w_u64({w}, (uint64_t)({v}));",
                 };
             case ErrorSetSymbol or ErrorUnionType:
-                return $"byn_w_error({w}, {v});";
+                return $"byn_w_error({w}, {v}.code);";
             case EnumSymbol e:
                 return $"byn_w_str({w}, {EnumNames(e)}[{v}]);";
             case OwnedType o:
@@ -681,7 +698,7 @@ public sealed class CEmitter
                     sb.Append("    else byn_w_str(w, BYN_STR(\"null\", 4));\n");
                     break;
                 case ResultType r:
-                    sb.Append($"    if (v.err) byn_w_error(w, v.err);\n    else {Format(r.Value, "v.value", "w")}\n");
+                    sb.Append($"    if (v.err.code) byn_w_error(w, v.err.code);\n    else {Format(r.Value, "v.value", "w")}\n");
                     break;
                 case StructSymbol s when FormatInto(s) is { } method:
                     sb.Append($"    {FunctionName(method)}(&v, w);\n");
@@ -876,7 +893,7 @@ internal sealed class FunctionEmitter
     public string Signature()
     {
         string result;
-        if (_fn.Fails) result = "uint32_t";
+        if (_fn.Fails) result = _c.ErrorCType;
         else if (_fn.Kind == FunctionKind.Constructor) result = _c.CType(_fn.Owner!);
         else result = _c.CType(_fn.ReturnType);
         var ps = new List<string>();
@@ -907,7 +924,7 @@ internal sealed class FunctionEmitter
         for (var i = 0; i < _f.PanicSlots; i++) Line($"byn_panic_handler ph{i};");
         foreach (var s in _f.Body.Statements) Statement(s);
         if (_fn.Kind == FunctionKind.Constructor) Line("return self_v;");
-        else if (_fn.Fails && !ReturnsValue) Line("return 0;");
+        else if (_fn.Fails && !ReturnsValue) Line($"return ({_c.ErrorCType}){{0}};");
         else if (_fn.ReturnType.IsNever) Line($"byn_unreachable({_file}, {LineOf(_f.Body.Syntax)});");
         _sb.Append("}\n");
         if (_lastLine != 0) _sb.Append(CEmitter.ResetLine).Append('\n');
@@ -1090,7 +1107,11 @@ internal sealed class FunctionEmitter
             case LFailingCall f:
             {
                 var result = f.Result is null ? null : "&" + _names[f.Result];
-                Line($"{_names[f.Error]} = {Call(f.Call, result)};");
+                // Built-in failing calls return the runtime's bare code.
+                var call = Call(f.Call, result);
+                Line(f.Call.Function.Builtin == BuiltinFunction.None
+                    ? $"{_names[f.Error]} = {call};"
+                    : $"{_names[f.Error]} = ({_c.ErrorCType}){{ .code = {call} }};");
                 break;
             }
             case LWrite w:
@@ -1163,7 +1184,7 @@ internal sealed class FunctionEmitter
         if (_fn.Fails)
         {
             if (r.Value is not null) Line($"*byn_out = {Returned(r.Value)};");
-            Line("return 0;");
+            Line($"return ({_c.ErrorCType}){{0}};");
             return;
         }
         Line(r.Value is null ? "return;" : $"return {Returned(r.Value)};");
@@ -1266,7 +1287,9 @@ internal sealed class FunctionEmitter
             case BoundSlice s:
                 return Slice(s);
             case BoundErrorVariant v:
-                return $"UINT32_C({v.Variant.Code})";
+                return v.Payload.Length == 0
+                    ? $"(({_c.ErrorCType}){{ .code = UINT32_C({v.Variant.Code}) }})"
+                    : $"(({_c.ErrorCType}){{ .code = UINT32_C({v.Variant.Code}), .p.e{v.Variant.Code} = {{ {string.Join(", ", v.Payload.Select(Expr))} }} }})";
             case BoundEnumMember m:
                 return $"(({_c.CType(m.Type)}){m.Member.Ordinal})";
             case BoundEnumValues v:
@@ -1277,6 +1300,10 @@ internal sealed class FunctionEmitter
                 return $"{Expr(h.Optional)}.has";
             case LUnionTag u:
                 return $"{Expr(u.Union)}.tag";
+            case LErrorCode code:
+                return $"{Expr(code.Error)}.code";
+            case LErrorField f:
+                return $"{Expr(f.Error)}.p.e{f.Variant.Code}.{CEmitter.FieldName(f.Variant.Fields[f.Index].Name)}";
             case LUnionField u:
                 return $"{Expr(u.Union)}.u.{CEmitter.FieldName(u.Variant.Name)}.{CEmitter.FieldName(u.Variant.Fields[u.Index].Name)}";
             case LOptionalValue v:
@@ -1570,7 +1597,7 @@ internal sealed class FunctionEmitter
             {
                 var res = _c.CType(b.Type);
                 var name = _c.Helper("bynh_io_read_all", $"static {res} bynh_io_read_all(int32_t fd)", () =>
-                    $"{{\n    (void)fd;\n    {res} r = {{0}};\n    r.err = byn_io_read_stdin(&r.value, byn_context);\n    return r;\n}}\n");
+                    $"{{\n    (void)fd;\n    {res} r = {{0}};\n    r.err.code = byn_io_read_stdin(&r.value, byn_context);\n    return r;\n}}\n");
                 return $"{name}({Expr(r)})";
             }
             case BuiltinMember.StrBufAsString:
@@ -1597,7 +1624,7 @@ internal sealed class FunctionEmitter
                 return $"{_c.EnumField(e.Fields[(int)(Int128)((BoundLiteral)b.Arguments[0]).Value.Value])}[{Expr(r)}]";
             }
             case BuiltinMember.ResultIsOk:
-                return $"({Expr(r)}.err == 0)";
+                return $"({Expr(r)}.err.code == 0)";
             case BuiltinMember.OwnedValue:
                 return $"(*{Expr(r)})";
             case BuiltinMember.ResultValue or BuiltinMember.ResultError:
@@ -1607,7 +1634,7 @@ internal sealed class FunctionEmitter
                 var name = (value ? "bynh_value_" : "bynh_error_") + _c.Key(r.Type);
                 var message = value ? "result holds an error" : "result holds a value";
                 _c.Helper(name, $"static {_c.CType(b.Type)} {name}({res} r, const char* file, int line)", () =>
-                    $"{{\n    if ({(value ? "r.err" : "!r.err")}) byn_panic(\"{message}\", file, line);\n    return {(value ? "r.value" : "r.err")};\n}}\n");
+                    $"{{\n    if ({(value ? "r.err.code" : "!r.err.code")}) byn_panic(\"{message}\", file, line);\n    return {(value ? "r.value" : "r.err")};\n}}\n");
                 return $"{name}({Expr(r)}, {Loc(b.Syntax)})";
             }
             default:
@@ -1705,7 +1732,7 @@ internal sealed class FunctionEmitter
             case ConversionKind.NullToOptional:
                 return $"(({_c.CType(to)}){{0}})";
             case ConversionKind.ToResult:
-                return $"(({_c.CType(to)}){{0, {v}}})";
+                return $"(({_c.CType(to)}){{{{0}}, {v}}})";
             case ConversionKind.ErrorToResult:
                 return $"(({_c.CType(to)}){{{v}}})";
             case ConversionKind.ListToSpan:

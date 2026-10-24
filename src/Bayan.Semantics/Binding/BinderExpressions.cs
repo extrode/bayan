@@ -701,6 +701,9 @@ internal sealed partial class Binder
                 }
                 break;
             }
+            case ErrorSetSymbol or ErrorUnionType when target is BoundLocal el && _errorNarrowed.TryGetValue(el.Local, out var errorCase)
+                && errorCase.Fields.FindIndex(f => f.Name == name) is var field and >= 0:
+                return new BoundErrorField(syntax, target, errorCase, field);
             case UnionSymbol when target is BoundLocal l && _narrowed.TryGetValue(l.Local, out var narrowed) && narrowed.Fields.FindIndex(f => f.Name == name) is var index and >= 0:
                 return new BoundUnionField(syntax, target, narrowed, index);
             case UnionSymbol u when u.Variants.Any(v => v.Fields.Any(f => f.Name == name)):

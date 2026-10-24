@@ -342,6 +342,14 @@ public sealed record BoundUnionField(Node Syntax, BoundExpr Receiver, UnionVaria
 public sealed record BoundUnionPattern(Node Syntax, TypeSymbol InputType, UnionVariantSymbol Variant, BoundPattern[] Subpatterns, LocalSymbol? Designation = null)
     : BoundPattern(Syntax, InputType);
 
+/// <summary><c>e.after</c> where <c>e</c> was bound by <c>.timeout e</c>: a payload field of an error known to be <see cref="Variant"/>.</summary>
+public sealed record BoundErrorField(Node Syntax, BoundExpr Receiver, ErrorVariantSymbol Variant, int Index)
+    : BoundExpr(Syntax, Variant.Fields[Index].Type);
+
+/// <summary><c>.timeout(let after)</c> on an error: a test of its code, then each subpattern on its payload field.</summary>
+public sealed record BoundErrorPattern(Node Syntax, TypeSymbol InputType, ErrorVariantSymbol Variant, BoundPattern[] Subpatterns)
+    : BoundPattern(Syntax, InputType);
+
 // ── `requires` checks ────────────────────────────────────────────────────────────
 
 /// <summary>A struct's <c>requires</c> check: the hidden method run on each built value, and its rules in run order.</summary>

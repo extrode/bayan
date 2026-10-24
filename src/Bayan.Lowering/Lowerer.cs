@@ -143,6 +143,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     /// <summary>Cheap and free of effects: safe to evaluate more than once or later.</summary>
     private static bool IsTrivial(BoundExpr e) => e switch
     {
+        BoundErrorVariant { Payload.Length: > 0 } v => v.Payload.All(IsTrivial),
         BoundLiteral or BoundDefault or BoundLocal or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray or LVoid => true,
         BoundField f => IsTrivial(f.Receiver),
         BoundTupleElement t => IsTrivial(t.Receiver),
@@ -150,6 +151,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         LOptionalValue v => IsTrivial(v.Optional),
         LUnionTag t => IsTrivial(t.Union),
         LUnionField f => IsTrivial(f.Union),
+        LErrorCode c => IsTrivial(c.Error),
+        LErrorField f => IsTrivial(f.Error),
         _ => false,
     };
 
@@ -162,6 +165,9 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         LOptionalValue v => IsRepeatable(v.Optional),
         LUnionTag t => IsRepeatable(t.Union),
         LUnionField f => IsRepeatable(f.Union),
+        LErrorCode c => IsRepeatable(c.Error),
+        LErrorField f => IsRepeatable(f.Error),
+        BoundErrorVariant v => v.Payload.All(IsRepeatable),
         _ => IsTrivial(e),
     };
 
@@ -246,6 +252,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         LOptionalValue v => Any(v.Optional, test),
         LUnionTag t => Any(t.Union, test),
         LUnionField f => Any(f.Union, test),
+        LErrorCode c => Any(c.Error, test),
+        LErrorField f => Any(f.Error, test),
         LAssignExpr a => Any(a.Target, test) || Any(a.Value, test),
         LSequence s => s.Effects.Any(e => Any(e, test)) || Any(s.Value, test),
         LFailingCall f => Any(f.Call, test),
@@ -474,7 +482,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 value = null;
             }
             // Cleanups run after the value is read: a `defer` that changes a local must not change the result.
-            else if (value is not (BoundLiteral or BoundDefault or BoundErrorVariant or BoundEnumMember) && _scopes.Any(s => s.Cleanups.Count > 0))
+            else if (value is not (BoundLiteral or BoundDefault or BoundErrorVariant { Payload.Length: 0 } or BoundEnumMember) && _scopes.Any(s => s.Cleanups.Count > 0))
             {
                 value = Spill(value);
             }
@@ -845,11 +853,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         {
             case BoundErrorVariant { Payload.Length: > 0 } v:
             {
-                // An error is still only its code: the payload is evaluated for its effects, then dropped.
                 var payload = Operands(v.Payload);
-                if (payload is null) return new LNever(e.Syntax, e.Type);
-                foreach (var p in payload) EmitEffect(p);
-                return v with { Payload = [] };
+                return payload is null ? new LNever(e.Syntax, e.Type) : v with { Payload = payload };
             }
             case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
                 return e;
@@ -870,6 +875,11 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             {
                 var receiver = Expr(u.Receiver);
                 return IsNever(receiver) ? new LNever(e.Syntax, e.Type) : new LUnionField(e.Syntax, receiver, u.Variant, u.Index);
+            }
+            case BoundErrorField f:
+            {
+                var receiver = Expr(f.Receiver);
+                return IsNever(receiver) ? new LNever(e.Syntax, e.Type) : new LErrorField(e.Syntax, receiver, f.Variant, f.Index);
             }
             case BoundCall c:
                 return Call(c);
@@ -1540,20 +1550,20 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         {
             var value = Spill(Expr(call.Receiver!));
             if (IsNever(value)) return null;
-            var check = NewTemp(PrimitiveType.U32);
+            var check = NewTemp(ErrorUnionType.Of(call.Function.ErrorSets));
             Emit(new LFailingCall(call.Syntax, check, call with { Receiver = value }, null));
             return (check, value);
         }
         var lowered = CallParts(call);
         if (lowered is null) return null;
-        var error = NewTemp(PrimitiveType.U32);
+        var error = NewTemp(ErrorUnionType.Of(call.Function.ErrorSets));
         var result = call.Type.IsVoid || call.Type.IsNever ? null : NewTemp(call.Type);
         Emit(new LFailingCall(call.Syntax, error, lowered, result));
         return (error, result is null ? new LVoid(call.Syntax) : Local(call.Syntax, result));
     }
 
     private BoundExpr Failed(Node syntax, LocalSymbol error) =>
-        new BoundBinary(syntax, BinaryOp.Ne, Local(syntax, error), new BoundLiteral(syntax, PrimitiveType.U32, new ConstantValue((Int128)0)), PrimitiveType.Bool);
+        new BoundBinary(syntax, BinaryOp.Ne, new LErrorCode(syntax, Local(syntax, error)), new BoundLiteral(syntax, PrimitiveType.U32, new ConstantValue((Int128)0)), PrimitiveType.Bool);
 
     /// <summary>Runs the cleanups (errdefers included) and fails the function with <paramref name="error"/>.</summary>
     private List<BoundStmt> Propagate(Node syntax, LocalSymbol error) => Capture(() =>
@@ -1670,6 +1680,17 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 }
                 return tests.Aggregate(And);
             }
+            case BoundErrorPattern ep:
+            {
+                var code = new ConstantValue((Int128)ep.Variant.Code);
+                var tests = new List<BoundExpr>
+                {
+                    Equal(syntax, new LErrorCode(syntax, value), new BoundLiteral(syntax, PrimitiveType.U32, code) { Constant = code }),
+                };
+                for (var i = 0; i < ep.Subpatterns.Length; i++)
+                    tests.Add(Match(ep.Subpatterns[i], new LErrorField(syntax, value, ep.Variant, i)));
+                return tests.Aggregate(And);
+            }
             default:
                 throw new InvalidOperationException($"cannot lower pattern {p.GetType().Name}");
         }
@@ -1697,6 +1718,9 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case BoundUnionPattern up:
                 foreach (var sub in up.Subpatterns) Claim(sub);
                 if (up.Designation is { BorrowsSubject: false } ud) Emit(new LClaim(p.Syntax, ud));
+                break;
+            case BoundErrorPattern ep:
+                foreach (var sub in ep.Subpatterns) Claim(sub);
                 break;
         }
     }
