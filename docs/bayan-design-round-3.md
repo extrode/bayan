@@ -160,7 +160,7 @@ Supporting rules:
 
 ## 4. Attributes and purpose clauses
 
-- Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5012)`, `@cases(...)`, `@positional` (§15). `[Attr]` becomes an input form (a line starting with `[` is a collection literal under §3). Attribute names are camelCase (`@derive`, `@allow`); derivation names stay PascalCase (`Json`, `Row`).
+- Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5012)`, `@cases(...)`, `@positional` (§15), `@sealed` (§26; revision 0007). `[Attr]` becomes an input form (a line starting with `[` is a collection literal under §3). Attribute names are camelCase (`@derive`, `@allow`); derivation names stay PascalCase (`Json`, `Row`).
 - **Purpose clauses (mafʿūl li-ajlihi):** `because "…"` is required wherever code bypasses a safety rule:
   - `@allow(X) because "…"`
   - `@json(expose) because "…"` on a `Secret` field (§16)
@@ -701,7 +701,7 @@ interface IRow {
 | `event` | `Event<T>` field |
 | Interface property `{ get; }` | Bare `Type name` |
 
-- **Public fields** are readable anywhere and writable only from the struct's own `ref this` methods or through `with` (O11), like C#'s `{ get; private set; }`. This keeps `requires` and typestate invariants in one place.
+- **Public fields** are readable anywhere. A field of a struct that has a `requires` rule, a `states` block or `@sealed` is writable only from the struct's own `ref this` methods or through `with` (O11, revision 0007), like C#'s `{ get; private set; }`; this keeps `requires` and typestate invariants in one place. Plain data structs allow direct field writes everywhere. `@sealed` (no arguments, no `because`) is a library author's opt-in for encapsulation without invariants. `x = x with { … }` consumes the old value, so it is a move even for a `unique` struct; `y = x with { … }` on a `unique` value needs `move x`.
 - **Stored function fields** are named for their role (`pricer`, `handler`), never `onX` (§12).
 
 STYLE member order: fields, the `states` block, events, properties, static factories, methods.
@@ -987,7 +987,7 @@ When the agent finishes this round's documentation deliverables (1–3, 5 and 9)
 
 **Resolved 2026-10-22 (user accepted every recommendation):** O1 newline-only unions, `bayan format` rewrites the one-line form. O2 counts (`length`, `runeCount`) are plain `i64`; units apply only to slice offsets. O3 field vs struct rule by content. O4 `at`, not `on`. O5 `->` is the function-type arrow (declarations return type-first); `=>` only for "evaluates to". O6 particle `for` allowed (label position only). O7 mixed-currency `+` traps; `tryAdd` and `add(…) fails` exist. O8 superseded by the `states` block (§14 rule 13). O9 bare literals for distinct types rejected (`ParcelId(0)`). O10 the trusted-field rule (§17).
 
-**Resolved 2026-10-23:** O11 public fields are writable only from the struct's own `ref this` methods or through `with` (§26). O12 a particle appears at most once per signature (§15).
+**Resolved 2026-10-23:** O11 public fields are writable only from the struct's own `ref this` methods or through `with` (§26); narrowed by revision 0007 to structs with `requires`, `states` or `@sealed`. O12 a particle appears at most once per signature (§15).
 
 **Resolved 2026-10-23:** O13 bytes decode through the A7 constructor forms, with no `fromUtf8` (§27); superseded by revision 0003 (decoding is a codec: `Utf8.decode`). O14 binary-to-text encodings are codecs (`Hex.encode`) (§27). O15 the checker scope (§12).
 
@@ -1072,3 +1072,4 @@ When the agent finishes this round's documentation deliverables (1–3, 5 and 9)
   - Follow-ups: `Panic.handler` (§13); O11 and O12 resolved (§15, §26); views, copies and conversions without `toX`/`asX` (§12, §27); `string(x, as: Radix)` and the `utf16` view (§27); O13–O15 resolved (no `fromUtf8`; codecs for hex and base64; checker scope); project dictionary and plain-English diagnostics (§12); performance contract (§30); references in structs and typed-index trees (§31); postfix pointers and `readonly T*` (§2); BYN1030 retired (§28); `#line` debug mapping (§30); spec freeze and numbered revisions (§32).
   - Example fixes: `transfer` gains its receiver, `insert` gains `uses alloc`, `crc` takes `ReadOnlySpan<u8>`, `Date(year:month:day:)`, `FakeNet(label)`, the `Checkout` callback example replaced by a `Pricer` alias.
 - **2026-10-24 (revisions 0001, 0002, 0003).** Revision 0001: postfix pointers in `extern` (BYN1066), BYN1030 retired, `#line` debug mapping, spec freeze and revisions (§32). Revision 0002 (consistency review): `expects` in the clause order; pattern-based `for`; guard 1 governs language spellings only; `std.db` shapes; entry function exempt from BYN6002; BYN1043 syntactic scan; `fail` on the same line; `suspend` has no handler; dictionary `adjectives:`; `print(…, to: .stderr)`; BYN1067 and BYN7009; `bayan expand` deferred (§2, §3, §11–§15, §24, §26–§28). Revision 0003: decoding is a codec and `string(x)` always formats (amends 0002 item 24 and O13); the string API, culture and formatting go to SPEC §16.4 "Text" (§27).
+- **2026-10-24 (revision 0007).** O11 applies only to structs with `requires`, a `states` block or `@sealed` (new attribute); BYN3216 names which; plain data structs allow direct field writes. `x = x with { … }` is a move. The plan's Files column: another active step's files are off limits, unowned files are allowed when the gate summary lists them.

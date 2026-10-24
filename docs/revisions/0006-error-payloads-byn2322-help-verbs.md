@@ -1,6 +1,6 @@
 # 0006 — Error-case payloads step; BYN2322 retired; plan help strings lead with a verb
 
-Status: approved 2026-10-24 (user, in session). Date: 2026-10-24. Found while building 5.3b (`chore/worker-r3-53b`, handoff Question 220) and while adding the plan-strings gate (`scripts/plan-strings-check.js`).
+Status: approved 2026-10-24 (user, in session). Erratum (2026-10-24): 5.4 is split into 5.4a (no payloads, after 5.3e) and 5.4b (payload-carrying stdlib errors); 5.3h comes before 5.4b only (user). Date: 2026-10-24. Found while building 5.3b (`chore/worker-r3-53b`, handoff Question 220) and while adding the plan-strings gate (`scripts/plan-strings-check.js`).
 
 ## Problem
 

@@ -322,7 +322,7 @@ public struct Order : IEquatable<Order>, IJsonEncode {
   | `event` | `Event<T>` field (§16) |
   | Interface property `{ get; }` | Bare `Type name` (§3.15) |
 
-- **Field visibility (O11).** A public field is readable anywhere and writable only from the struct's own `ref this` methods or through `with` (§6.4). This matches `{ get; private set; }` and keeps `requires` and typestate invariants in one place. Writing it elsewhere is BYN3216.
+- **Field visibility (O11).** A public field is readable anywhere. A field of a struct that has a `requires` rule, a `states` block or the `@sealed` attribute (§4.4) is writable only from the struct's own `ref this` methods or through `with` (§6.4), which re-checks `requires`. This matches `{ get; private set; }` and keeps `requires` and typestate invariants in one place. Writing it elsewhere is BYN3216, whose message names the reason. A plain data struct allows direct field writes everywhere (`modes[depth].braceDepth += 1`).
 - **A stored function field is named with a noun for its role** (`handler`, `pricer`, `formatter`), never `onX`. Events are past participles or adjectives (`placed`, `low`, §16). BYN5010.
 - **Type first.** Fields, parameters and return types put the type first (`Sku sku`, `Grams weight(Order order)`); `void` marks a function that returns nothing; visibility (`public`, `static`) leads the whole declaration. A computed property takes a type like a field: `public bool isEmpty => lines.isEmpty`. Union and state payloads follow the same order (`timeout(Millis after)`). The name-first forms `f() -> T`, `f(x: T)`, field `x: T` and payload `case(x: T)` are input forms (BYN1043). Local bindings are the exception: they put the name first (§7.1).
 - **The receiver.** `this` is the receiver parameter's name; its type is the enclosing struct and is elided. Not written: read-only, any state. `this is .shipped`: read-only, only in that state (§3.17). `ref this`: mutating, any state. `ref this is .placed`: mutating, only in that state.
@@ -336,7 +336,7 @@ public struct Order : IEquatable<Order>, IJsonEncode {
 
 > Round 3 §2, revised 2026-10-22: names first was meant only for local bindings (§7.1), where `let`/`var` lead; declarations keep round 2's type-first order. Codes: BYN1043.
 
-> Round 3 §26, §12, O11: a field-shaped member needs no `{ get }`, events are `Event<T>` fields named for what happened, and a public field writable from anywhere would bypass `requires` and state checks. Codes: BYN3216, BYN5010.
+> Round 3 §26, §12, O11: a field-shaped member needs no `{ get }`, events are `Event<T>` fields named for what happened, and a public field writable from anywhere would bypass `requires` and state checks. Revision 0007: plain data has no invariant to protect, so only structs with `requires`, states or `@sealed` restrict writes. Codes: BYN3216, BYN5010.
 - `embed T` promotes the embedded struct's fields and methods; the embedded value sits at offset 0.
 - No implementation inheritance (revisit only if a GC tier is added).
 
@@ -611,7 +611,7 @@ extension static Duration {
 Resolved statically. Instance members win over extensions. Extensions cannot add fields.
 
 ### 4.4 Attributes and purpose clauses
-Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5102)`, `@cases(…)`. Attribute names are camelCase (`@derive`, `@allow`); derivation names stay PascalCase (`Json`, `Row`). `[Name(args)]` is an input form (BYN1045): a line starting with `[` is a collection literal (§2.5). User-defined attributes are `struct attribute Route { string path }`. Arguments must be compile-time constants. Attributes are readable only at compile time.
+Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5102)`, `@cases(…)`, `@sealed` (a struct whose fields only its own methods and `with` may write, §3.10; no arguments, no `because`). Attribute names are camelCase (`@derive`, `@allow`); derivation names stay PascalCase (`Json`, `Row`). `[Name(args)]` is an input form (BYN1045): a line starting with `[` is a collection literal (§2.5). User-defined attributes are `struct attribute Route { string path }`. Arguments must be compile-time constants. Attributes are readable only at compile time.
 
 **Purpose clauses** (mafʿūl li-ajlihi): `because "…"` is required wherever code bypasses a safety rule. A missing `because` is a compile error (BYN8001); ordinary attributes (`@derive`) take none.
 
@@ -1184,6 +1184,8 @@ let resp = signUp(form) catch switch {
 
 ### 9.3 Ownership
 `unique` types move with `move` and are disposed exactly once. Using a moved value is a compile error.
+
+- **`x = x with { … }` is a move.** When an assignment's target is the variable its `with` expression reads, the old value is consumed: no copy, no BYN2780, for `unique` and every other struct. Assigning a `with` of a `unique` value anywhere else (`let copy = tx with { … }`) needs `move tx` (BYN2780 otherwise). Revision 0007.
 
 - **Only a local or a `move` parameter can be moved from.** Moving out of a field, element or plain parameter is a compile error (it would leave a half-moved value). `x.take()` moves the value out of any place it can write and leaves that type's empty value behind: `let items = ledger.items.take()` leaves `ledger.items` an empty list. `take()` exists on `List`, `Map`, `StrBuf` (empty value: an empty one) and on optionals of those (`null`); on any other type it is BYN2788, and on a place that can't be written (a `let` local, a plain parameter) it reports the usual mutation error. `map[k].take()` panics on a missing key, like `map[k]`.
 - **Pattern bindings on a `unique` subject borrow.** `switch x` and `x is …` bind borrows of `x`'s parts, so `x` stays usable after the switch. `switch move x` moves `x` into the switch, and its bindings then own their parts; `x` is moved afterwards on every path. The subject must be a local or a `move` parameter (BYN2789 otherwise). An owning pattern may not bind a value and a part of it, through both sides of an `and` or through a designation with bindings inside it (BYN2790): two bindings would own one storage. Two bindings overlap only when one's path is a prefix of the other's, and only bindings of a `unique` type count (`{ a: { b: let x }, a: { c: let y } }` and `{ items: let x, items.length: let n }` are accepted). In a `when` guard of an owning switch the arm's bindings and their parts are read-only (BYN2791): a guard that fails gives the value back to the switch. As an expression the subject needs parentheses, `(move x) switch { … }`: `move x switch { … }` parses as `move (x switch { … })`.
@@ -2335,7 +2337,7 @@ Roadmap: v0.3 WASM + `.d.ts`; v0.4 `bayan gen ts`; post-v1 portable JS backend (
   - Effects: `uses` with a closed list; `provide` installs handlers (§14).
   - Typestate: the `states` block, `becomes`, `become` (§3.17).
   - Argument particles `from to until through at by for as`; a particle appears at most once per signature (§10).
-  - `Panic.handler` with `uses console` (§7.6). A public field is writable only from its own `ref this` methods or through `with` (§3.10). Views and copies are `span`, `mutableSpan()`, `copy()` and `T(x)`, never `toX` or `asX` members (§16).
+  - `Panic.handler` with `uses console` (§7.6). A field of a struct with `requires`, states or `@sealed` is writable only from its own `ref this` methods or through `with` (§3.10, revision 0007). Views and copies are `span`, `mutableSpan()`, `copy()` and `T(x)`, never `toX` or `asX` members (§16).
   - Bytes decode through codecs, `try Utf8.decode(bytes)` and `Utf8.tryDecode(bytes)`, never `fromUtf8`, and `string(x)` always formats (§16.4); integers format with `string(n, as: Radix)`; hex and base64 are codecs (§3.2, §6.2). BYN50xx rules cover all code, BYN51xx the public API; domain words go in `grammar` (§5.2, §19.2). Generics are monomorphized (§11). A struct holding a mutable reference is `unique` and no reference crosses into a fiber that may outlive it (§9.4).
   - Secrets need `expose … because` in derivations; `Row` is flat (§5.3). Two trust layers (§15.1).
   - `try` covers the whole expression to its right (§8). `defer` modifiers are captured at registration (§7.6).
