@@ -26,3 +26,20 @@ void many() fails CarrierError {
 void value() {
     let e: CarrierError = .closed()
 }
+
+void bareLet() {
+    let e: CarrierError = .timeout
+    let f = CarrierError.timeout
+}
+
+void take(CarrierError e) {}
+
+void bareArgument() {
+    take(.timeout)
+}
+
+CarrierError bareReturn() {
+    return .timeout
+}
+
+bool compared(CarrierError e) => e == .timeout

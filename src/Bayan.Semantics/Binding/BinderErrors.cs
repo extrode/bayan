@@ -54,6 +54,14 @@ internal sealed partial class Binder
         return false;
     }
 
+    /// <summary>A value bound where it is built (a <c>let</c>, an argument, a <c>return</c>, a field): BYN2705 for a bare case
+    /// with a payload. Patterns, <c>==</c> and <c>catch</c> filters bind the bare case without it.</summary>
+    private BoundExpr Built(BoundExpr value, Expr syntax)
+    {
+        CheckPayloadGiven(value, syntax);
+        return value;
+    }
+
     // ── Error-case patterns ──────────────────────────────────────────────────────
 
     /// <summary>The <c>c</c> of <c>.timeout c</c>, mapped to its case, so <c>c.after</c> reads the payload.</summary>

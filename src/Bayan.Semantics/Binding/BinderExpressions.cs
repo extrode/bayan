@@ -44,7 +44,7 @@ internal sealed partial class Binder
 
     private BoundExpr BindConverted(Expr e, TypeSymbol target, bool argument = false)
     {
-        var bound = BindExpr(e, target);
+        var bound = Built(BindExpr(e, target), e);
         return Convert(bound, target, e.Span, argument);
     }
 

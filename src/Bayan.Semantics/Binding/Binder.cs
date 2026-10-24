@@ -387,7 +387,7 @@ internal sealed partial class Binder
             c.Type = declared ?? ErrorType.Instance;
             return;
         }
-        var value = declared is null ? BindExpr(decl.Init) : BindConverted(decl.Init, declared);
+        var value = declared is null ? Built(BindExpr(decl.Init), decl.Init) : BindConverted(decl.Init, declared);
         c.Type = declared ?? DefaultType(value, decl.Init);
         if (declared is null) value = Convert(value, c.Type, decl.Init.Span);
         if (c.Type is Symbols.ArrayType or ListType or SpanType || decl.Init is CollectionExpr)
@@ -739,7 +739,7 @@ internal sealed partial class Binder
         BoundExpr? init = null;
         if (d.Init is { } e)
         {
-            init = declared is null ? BindExpr(e) : BindConverted(e, declared);
+            init = declared is null ? Built(BindExpr(e), e) : BindConverted(e, declared);
         }
         else if (d.Kind != BindingKind.Var)
         {

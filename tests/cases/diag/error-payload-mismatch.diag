@@ -33,3 +33,31 @@ error BYN2706: variant `closed` has no payload
      │                           ^^^^^^^^^
      │
   help: write `.closed` without parentheses
+
+error BYN2705: variant `timeout` carries a payload
+
+  31 │     let e: CarrierError = .timeout
+     │                           ^^^^^^^^
+     │
+  help: pass it: `.timeout(after)`
+
+error BYN2705: variant `timeout` carries a payload
+
+  32 │     let f = CarrierError.timeout
+     │             ^^^^^^^^^^^^^^^^^^^^
+     │
+  help: pass it: `.timeout(after)`
+
+error BYN2705: variant `timeout` carries a payload
+
+  38 │     take(.timeout)
+     │          ^^^^^^^^
+     │
+  help: pass it: `.timeout(after)`
+
+error BYN2705: variant `timeout` carries a payload
+
+  42 │     return .timeout
+     │            ^^^^^^^^
+     │
+  help: pass it: `.timeout(after)`
