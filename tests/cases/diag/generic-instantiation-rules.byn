@@ -4,7 +4,7 @@ i64 countOf<K>(K key) {
     return m.length
 }
 
-bool same<T>(T a, T b) => a == b
+bool same<T>(T a, as T b) => a == b
 string show<T>(T x) => $"{x}"
 
 struct Index<K> {
@@ -14,6 +14,6 @@ struct Index<K> {
 print($"{countOf(1.5)}")
 print($"{countOf("fine")}")
 let xs = List<i64>()
-print($"{same(a: xs, b: xs)}")
+print($"{same(xs, as: xs)}")
 print(show(Arena()))
 var idx: Index<f64>

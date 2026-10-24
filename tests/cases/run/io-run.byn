@@ -1,16 +1,16 @@
 // os: unix
 // `Io.run` spawns a program found on PATH with an argument vector (no shell of its own) and captures both streams.
-void show(string label, ProcessResult r) {
+void show(ProcessResult r, as string label) {
     print($"{label}: exit {r.exitCode}, stdout [{r.stdout}], stderr [{r.stderr}]")
 }
 
 void main() fails IoError {
     let script: string[2] = ["-c", "printf hi; printf oops >&2; exit 3"]
-    show(label: "script", r: try Io.run("sh", script.asSpan()))
+    show(try Io.run("sh", script.asSpan()), as: "script")
     let quoted: string[4] = ["-c", "printf '%s|' \"$@\"", "sh", "a \"b\" c"]
-    show(label: "vector", r: try Io.run("/bin/sh", quoted.asSpan()))
+    show(try Io.run("/bin/sh", quoted.asSpan()), as: "vector")
     let killed: string[2] = ["-c", "kill -9 $$"]
-    show(label: "signal", r: try Io.run("sh", killed.asSpan()))
+    show(try Io.run("sh", killed.asSpan()), as: "signal")
     // Both pipes are drained together: 300 KB on each stream does not deadlock.
     let big: string[2] = ["-c", "yes 2>/dev/null | head -c 300000; yes e 2>/dev/null | head -c 300000 >&2"]
     let r = try Io.run("sh", big.asSpan())

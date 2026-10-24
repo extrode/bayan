@@ -1,4 +1,4 @@
-i64 count(ReadOnlySpan<u8> data, u8 target) {
+i64 count(ReadOnlySpan<u8> data, for u8 target) {
     var n: i64 = 0
     for b in data {
         n += b == target ? 1 : 0
@@ -22,5 +22,5 @@ numbers.append(4)
 numbers.append(5)
 let fixed: i64[3] = [1, 2, 3]
 let view: Span<i64> = fixed.asSpan()
-print($"{count(text, target: 'a')} {count(bytes, target: 'n')} {count(middle, target: 'a')} {middle.length}")
+print($"{count(text, for: 'a')} {count(bytes, for: 'n')} {count(middle, for: 'a')} {middle.length}")
 print($"{sum(numbers)} {sum(fixed)} {sum(view)} {sum(view[1..])}")

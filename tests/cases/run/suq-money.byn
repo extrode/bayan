@@ -57,23 +57,23 @@ public struct Money {
     }
 }
 
-string addText(Money a, Money b) {
+string addText(Money a, to Money b) {
     let sum = a.plus(b) catch switch {
         PricingError e => return e switch { .currencyMismatch => "currencyMismatch", .overflow => "overflow" },
     }
     return $"{sum}"
 }
 
-void tryAdd(Money a, Money b) {
-    print($"add: {addText(a, b)}")
+void tryAdd(Money a, to Money b) {
+    print($"add: {addText(a, to: b)}")
 }
 
 print($"{Money { cents: 1250, currency: .myr }}")
 print($"{Money { cents: 5, currency: .myr }}")
 print($"{Money { cents: -300, currency: .myr }}")
-tryAdd(a: Money { cents: 100, currency: .myr }, b: Money { cents: 100, currency: .myr })
-tryAdd(a: Money { cents: 100, currency: .myr }, b: Money { cents: 100, currency: .sgd })
-tryAdd(a: Money { cents: maxCents, currency: .myr }, b: Money { cents: 1, currency: .myr })
+tryAdd(Money { cents: 100, currency: .myr }, to: Money { cents: 100, currency: .myr })
+tryAdd(Money { cents: 100, currency: .myr }, to: Money { cents: 100, currency: .sgd })
+tryAdd(Money { cents: maxCents, currency: .myr }, to: Money { cents: 1, currency: .myr })
 let tax = try Money { cents: 1063, currency: .myr }.atRate(800)
 print($"8% of MYR 10.63: {tax}")
 print($"3 x MYR 12.50: {Money { cents: 1250, currency: .myr }.times(3)}")

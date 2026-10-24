@@ -5,7 +5,7 @@ union Discount {
     none
 }
 
-i64 price(Discount d, i64 base) => d switch {
+i64 price(Discount d, from i64 base) => d switch {
     .percentOff p => base - base * p.rate / 100,
     .fixed f when f.cents > base => 0,
     .fixed f => base - f.cents,
@@ -21,6 +21,6 @@ void show(Discount? d) {
     }
 }
 
-print($"{price(.percentOff(10), 200)} {price(.fixed(50, "x"), 200)} {price(.fixed(500, "y"), 200)} {price(.none, 200)}")
+print($"{price(.percentOff(10), from: 200)} {price(.fixed(50, "x"), from: 200)} {price(.fixed(500, "y"), from: 200)} {price(.none, from: 200)}")
 show(.fixed(5, "five"))
 show(null)

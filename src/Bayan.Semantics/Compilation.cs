@@ -1057,6 +1057,7 @@ public sealed partial class Compilation
                 ReportDuplicate(file.Source, p.Name, fn.Parameters.First(q => q.Name == sym.Name).Location!.Value);
             fn.Parameters.Add(sym);
         }
+        Particles.Check(this, file.Source, fn);
     }
 
     /// <summary>Recursive by-value containment, borrowed fields (BYN3001).</summary>

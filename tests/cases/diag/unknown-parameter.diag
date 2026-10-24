@@ -1,4 +1,4 @@
 error BYN2021: `area` has no parameter `widht`
 
-  2 │ print($"{area(widht: 3, height: 4)}")
+  2 │ print($"{area(widht: 3, by: 4)}")
     │               ^^^^^

@@ -62,6 +62,8 @@ internal sealed partial class Binder
     {
         if (constrains) Constrain(value, target);
         if (value.Type.Equals(target) || target.IsError || value.Type.IsError) return value;
+        // An `Untrusted<bool>` is a clean fact, usable as a condition (J41): a `bool` cannot reach a sink.
+        if (value.Type is UntrustedType { Inner.IsBool: true } && target.IsBool) return Fact(value);
         if (value.Constant is { Value: Int128 n } && (target.IsInteger || target.IsFloat || target is OptionalType { Inner.IsNumeric: true }) && value.Type.IsInteger)
         {
             var inner = target is OptionalType o ? o.Inner : target;
@@ -743,6 +745,9 @@ internal sealed partial class Binder
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
             return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
+        // `length` and `isEmpty` of an untrusted value are clean facts (spec §15.1).
+        if (target.Type is UntrustedType untrusted && name is "length" or "isEmpty" && BuiltinMembers.Property(untrusted.Inner, name) is { } fact)
+            return new BoundBuiltinCall(syntax, fact.Member, Fact(target), [], fact.Type);
         if (BuiltinMembers.HasMethod(target.Type, name))
             return new BoundBuiltinGroup(syntax, target, name);
         if (ReportRenamed(target.Type, member)) return new BoundErrorExpr(syntax);
@@ -1043,17 +1048,19 @@ internal sealed partial class Binder
         }
 
         var arithmetic = !IsComparison(b.Op);
+        // A comparison of an untrusted value is a clean fact (spec §15.1): it compares the inner values.
+        BoundExpr Operand(Expr e, TypeSymbol? hint) => arithmetic ? BindExpr(e, hint) : Fact(BindExpr(e, hint));
         BoundExpr left, right;
         if (IsUntypedLiteral(b.Left) && !IsUntypedLiteral(b.Right))
         {
-            right = BindExpr(b.Right, arithmetic ? expected : null);
+            right = Operand(b.Right, arithmetic ? expected : null);
             left = BindExpr(b.Left, right.Type is OptionalType o ? o.Inner : right.Type);
         }
         else
         {
-            left = BindExpr(b.Left, arithmetic ? expected : null);
+            left = Operand(b.Left, arithmetic ? expected : null);
             var hint = b.Op is BinaryOp.Shl or BinaryOp.Shr ? PrimitiveType.I32 : left.Type is OptionalType o ? o.Inner : left.Type;
-            right = BindExpr(b.Right, hint);
+            right = Operand(b.Right, hint);
         }
         // `x is null` is valid only on an optional `x`: for `null == null` or a non-optional operand BYN2208 reports alone.
         if (nullTested is not null && nullTested is not LiteralExpr { Kind: LiteralKind.Null } && (nullTested == b.Left ? left : right).Type is OptionalType)
@@ -1102,6 +1109,10 @@ internal sealed partial class Binder
         var bound = new BoundBinary(b, b.Op, left, right, type);
         return Fold(bound, left, right, common);
     }
+
+    /// <summary>The inner value of an <c>Untrusted&lt;T&gt;</c>, read for a fact; other values unchanged.</summary>
+    private static BoundExpr Fact(BoundExpr value) =>
+        value.Type is UntrustedType u ? new BoundConversion(value.Syntax, value, u.Inner, ConversionKind.Identity) : value;
 
     private bool IsPlainStringLiteral(Expr e) =>
         e is LiteralExpr { Kind: LiteralKind.String } && Source.GetText(e.Span) is var text

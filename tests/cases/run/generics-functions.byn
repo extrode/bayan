@@ -7,28 +7,28 @@ struct Point {
     }
 }
 
-T pick<T>(bool first, move T a, move T b) => first ? move a : move b
+T pick<T>(move T a, by move T b, bool first) => first ? move a : move b
 
 string first<T>(ReadOnlySpan<T> xs) {
     if xs.length == 0 { return "null" }
     return $"{xs[0]}"
 }
 
-bool same<T>(T a, T b) => a == b
+bool same<T>(T a, as T b) => a == b
 
-T twice<T>(move T x, move T y) => pick(first: false, a: move x, b: move y)
+T twice<T>(move T x, by move T y) => pick(move x, by: move y, first: false)
 
-i64 countDown<T>(T x, i64 n) {
+i64 countDown<T>(T x, from i64 n) {
     if n == 0 { return 0 }
-    return 1 + countDown(x, n - 1)
+    return 1 + countDown(x, from: n - 1)
 }
 
 let one: i64 = 1
-print($"{pick(first: true, a: one, b: 2)}")
-print(pick(first: false, a: "left", b: "right"))
-let p = pick(first: true, a: Point { x: 1, y: 2 }, b: Point { x: 3, y: 4 })
+print($"{pick(one, by: 2, first: true)}")
+print(pick("left", by: "right", first: false))
+let p = pick(Point { x: 1, y: 2 }, by: Point { x: 3, y: 4 }, first: true)
 print($"{p}")
-print($"{pick<i64>(first: false, a: 5, b: 6)}")
+print($"{pick<i64>(5, by: 6, first: false)}")
 
 var xs = List<i64>()
 xs.append(7)
@@ -37,6 +37,6 @@ print($"{first(xs)}")
 let none = List<string>()
 print($"{first(none)}")
 
-print($"{same(a: 1, b: 1)} {same(a: "a", b: "b")} {same(a: p, b: Point { x: 1, y: 2 })}")
-print(twice(x: "echo", y: "echo"))
-print($"{countDown("x", 3)}")
+print($"{same(1, as: 1)} {same("a", as: "b")} {same(p, as: Point { x: 1, y: 2 })}")
+print(twice("echo", by: "echo"))
+print($"{countDown("x", from: 3)}")

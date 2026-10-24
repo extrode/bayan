@@ -11,7 +11,7 @@ struct Pair<A, B> {
         sb.append($"Pair {{ a: {a}, b: {b} }}")
     }
 
-    Pair<B, A> swap(move B first, move A second) => Pair<B, A> { a: move first, b: move second }
+    Pair<B, A> swap(move B first, by move A second) => Pair<B, A> { a: move first, b: move second }
 
     bool sameFirst(Pair<A, B> other) => a == other.a
 }
@@ -30,7 +30,7 @@ struct Box<T> {
     T value
     List<T> history
 
-    void put(ref this, move T old, move T next) {
+    void replace(ref this, move T old, by move T next) {
         history.append(move old)
         value = move next
     }
@@ -55,7 +55,7 @@ i64 total<K>(Map<K, i64> m) {
 }
 
 let p = Pair<i64, string> { a: 1, b: "x" }
-let q = p.swap(first: p.b, second: p.a)
+let q = p.swap(p.b, by: p.a)
 print($"{p} {q} {q.a} {q.b}")
 print($"{p == Pair<i64, string> { a: 1, b: "x" }} {p.sameFirst(Pair<i64, string> { a: 2, b: "x" })}")
 let flag: Pair<Suit, bool> = { a: .hearts, b: true }
@@ -82,8 +82,8 @@ let text = t switch {
 print(text)
 
 var box = Box<string> { value: "a", history: List<string>() }
-box.put(old: box.value, next: "b")
-box.put(old: box.value, next: "c")
+box.replace(box.value, by: "b")
+box.replace(box.value, by: "c")
 print($"{box.value} {box.history.length}")
 
 var bySuit = Map<Suit, i64>()

@@ -1,6 +1,6 @@
 error BYN3005: `xs` is passed by `ref` and again in the same call
 
-  21 │     show(xs[0], ref xs)
+  21 │     show(xs[0], to: ref xs)
      │          ^^^^^ `xs` is also passed by `ref`
      │
   help: copy the value into a local first, or make two calls

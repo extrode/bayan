@@ -13,7 +13,7 @@ union Slot {
     full(Map<string, i64> data)
 }
 
-Map<string, i64> fresh(string key, i64 value) {
+Map<string, i64> fresh(i64 value, at string key) {
     var m = Map<string, i64>()
     m[key] = value
     return m
@@ -29,7 +29,7 @@ i64 total(Map<string, i64> m) {
     return sum
 }
 
-void bump(ref Map<string, i64> m, string key) {
+void bump(ref Map<string, i64> m, at string key) {
     m[key] = m.getOr(key, 0) + 1
 }
 
@@ -42,33 +42,33 @@ struct Counted {
     }
 }
 
-Result<Map<string, i64>, LookupError> found() => fresh("r", 5)
+Result<Map<string, i64>, LookupError> found() => fresh(5, at: "r")
 
 union error LookupError { missing }
 
-var a = fresh("x", 1)
+var a = fresh(1, at: "x")
 var b = Map<string, i64>()
-b = fresh("y", 2)
-var s = Store { name: "s", data: fresh("z", 3) }
-s.data = fresh("w", 4)
-let full = Slot.full(fresh("v", 5))
+b = fresh(2, at: "y")
+var s = Store { name: "s", data: fresh(3, at: "z") }
+s.data = fresh(4, at: "w")
+let full = Slot.full(fresh(5, at: "v"))
 var list = List<Map<string, i64>>()
-list.append(fresh("u", 6))
+list.append(fresh(6, at: "u"))
 var nested = Map<i64, Map<string, i64>>()
-nested[1] = fresh("t", 7)
-var arr: Map<string, i64>[2] = [fresh("q", 8), Map<string, i64>()]
-let pair = (fresh("p", 9), 1)
-let o = Owned(fresh("o", 10))
+nested[1] = fresh(7, at: "t")
+var arr: Map<string, i64>[2] = [fresh(8, at: "q"), Map<string, i64>()]
+let pair = (fresh(9, at: "p"), 1)
+let o = Owned(fresh(10, at: "o"))
 let r = found()
-let maybe: Map<string, i64>? = fresh("n", 11)
-let c = passThrough(fresh("m", 12))
+let maybe: Map<string, i64>? = fresh(11, at: "n")
+let c = passThrough(fresh(12, at: "m"))
 
 // Receivers, `for` sources, read-only and `ref` arguments, formatting.
 a["x2"] = 2
 s.data["z2"] = 30
 arr[1]["k"] = 1
-bump(ref a, "x")
-bump(ref s.data, "z")
+bump(ref a, at: "x")
+bump(ref s.data, at: "z")
 let counted = Counted(ref a)
 print($"{counted.n} {a.length} {s.data.length} {arr[1].length} {o.value.length} {list[0].length}")
 print($"{total(a)} {total(s.data)} {total(arr[0])} {total(o.value)} {total(pair.item1)}")

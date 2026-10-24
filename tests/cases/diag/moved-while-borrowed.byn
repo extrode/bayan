@@ -48,12 +48,12 @@ void spanOfField() {
 }
 
 // The result may point into what `slot` holds: it borrows `slot`.
-Span<i64> items(ref Slot slot, Span<i64> none) => none
+Span<i64> items(ref Slot slot, by Span<i64> none) => none
 
 void switchMove() {
     var slot = Slot.full(make())
     let none: i64[1] = [0]
-    let sp: Span<i64> = items(ref slot, none)
+    let sp: Span<i64> = items(ref slot, by: none)
     switch move slot {
         case .full(var x):
             x.xs.append(1)

@@ -25,7 +25,7 @@ bool fill(out List<i64> xs) {
 
 bool keep(move Bag b) => true
 
-void inspect(move Slot s, move Slot t) {
+void inspect(move Slot s) {
     switch move s {
         case .full(var x) when x.grow() > 5:
             print("call")
@@ -43,6 +43,9 @@ void inspect(move Slot s, move Slot t) {
             print("read")
         default:
     }
+}
+
+void inspectValue(move Slot t) {
     let n = (move t) switch {
         .full(var y) when y.grow() > 5 => 1,
         .full(var y) when bump(ref y.items) => 2,

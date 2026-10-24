@@ -3,9 +3,15 @@ struct Bag {
     List<i64> items
 }
 
-void read(List<i64> plain, Bag bag, ReadOnlySpan<List<i64>> view) {
+void readPlain(List<i64> plain) {
     let a = plain.take()
+}
+
+void readField(Bag bag) {
     let b = bag.items.take()
+}
+
+void readElement(ReadOnlySpan<List<i64>> view) {
     let c = view[0].take()
 }
 

@@ -1,5 +1,5 @@
 // Write bytes, read them back, copy them to a second file, and compare byte by byte.
-bool same(ReadOnlySpan<u8> a, ReadOnlySpan<u8> b) {
+bool same(ReadOnlySpan<u8> a, as ReadOnlySpan<u8> b) {
     return false if a.length != b.length
     for i in 0..a.length {
         return false if a[i] != b[i]
@@ -14,7 +14,7 @@ void main() fails IoError {
     try Io.writeFile("copy.bin", read.asSpan())
     let copy: List<u8> = try Io.readFile("copy.bin")
     print($"read {read.length} bytes, copied {copy.length}")
-    print($"identical: {same(a: original.asSpan(), b: copy.asSpan())}")
+    print($"identical: {same(original.asSpan(), as: copy.asSpan())}")
     try Io.writeFile("empty.bin", copy.asSpan()[0..0])
     let empty: List<u8> = try Io.readFile("empty.bin")
     print($"empty file: {empty.length} bytes")

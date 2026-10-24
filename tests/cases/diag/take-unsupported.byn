@@ -3,9 +3,16 @@ struct Point {
     i64 x
 }
 
-void drain(ref i64 n, ref string s, ref Point p, ref i64? o) {
-    let a = n.take()
-    let b = s.take()
-    let c = p.take()
-    let d = o.take()
+struct Places {
+    i64 n
+    string s
+    Point p
+    i64? o
+}
+
+void drain(ref Places x) {
+    let a = x.n.take()
+    let b = x.s.take()
+    let c = x.p.take()
+    let d = x.o.take()
 }

@@ -51,7 +51,7 @@ string messageFormat(DiagnosticCode code) => code switch {
 }
 
 /// `string.Format` for the templates above: `{0}`/`{1}` are replaced, `{{`/`}}` are unescaped.
-string format(string template, string arg0, string arg1) {
+string format(string template, by (string arg0, string arg1) args) {
     var sb = StrBuf()
     let t = template.bytes
     var i = 0
@@ -61,7 +61,7 @@ string format(string template, string arg0, string arg1) {
             sb.append(template[i..i + 1])
             i += 2
         } else if b == '{' && i + 2 < t.length && t[i + 2] == '}' {
-            sb.append(t[i + 1] == '0' ? arg0 : arg1)
+            sb.append(t[i + 1] == '0' ? args.arg0 : args.arg1)
             i += 3
         } else {
             sb.append(template[i..i + 1])
@@ -102,12 +102,12 @@ const wrapWidth: i64 = 100
 ///       help: declare it with `var` if it should change
 ///          │  9 │     var total = 0;
 ///          │    │     +++
-void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
+void render(Diagnostic diagnostic, to ref StrBuf sb, from ref SourceText source) {
     let head = $"error {diagnostic.code}"
     var message = List<string>()
-    wrap(ref message, diagnostic.message, first: wrapWidth - head.length - 2, rest: wrapWidth)
+    wrap(diagnostic.message, to: ref message, by: Widths { first: wrapWidth - head.length - 2, rest: wrapWidth })
     sb.append($"{head}: ")
-    appendLines(ref sb, ref message, "\n")
+    appendLines(ref message, to: ref sb, by: "\n")
     sb.append("\n\n")
 
     let line = source.getLineIndex(diagnostic.span.start)
@@ -115,7 +115,7 @@ void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
 
     var fixLines = List<string>()
     var fix = FixView { firstLine: 0, markStart: 0, markEnd: 0, marker: "+" }
-    if diagnostic.hasFix { fix = applyFix(ref source, diagnostic.fixSpan, diagnostic.fixReplacement, ref fixLines) }
+    if diagnostic.hasFix { fix = applyFix(diagnostic.fixSpan, by: diagnostic.fixReplacement, from: ref source, to: ref fixLines) }
 
     var widestLine = line + 1
     if diagnostic.hasFix && fix.firstLine + fixLines.length > widestLine { widestLine = fix.firstLine + fixLines.length }
@@ -126,8 +126,8 @@ void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
     blankBuf.append($" {bar}")
     let blank = blankBuf.finish()
 
-    sb.append($"  {lineNumber(number: line + 1, width: width)} {bar} ")
-    display(ref sb, source.bytes.asSpan()[lineSpan.start..lineSpan.end])
+    sb.append($"  {lineNumber(line + 1, to: width)} {bar} ")
+    display(source.bytes.asSpan()[lineSpan.start..lineSpan.end], to: ref sb)
     sb.append("\n")
 
     let underlineStart = diagnostic.span.start
@@ -137,16 +137,16 @@ void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
     if carets < 1 { carets = 1 }
     let prefix = source.bytes.asSpan()[lineSpan.start..underlineStart]
     sb.append($"{blank} ")
-    indent(ref sb, prefix)
+    indent(prefix, to: ref sb)
     for i in 0..carets { sb.append("^") }
     unless diagnostic.label.isEmpty {
         let room = wrapWidth - (2 + width + 3 + runeCount(prefix) + carets + 1)
         var label = List<string>()
-        wrap(ref label, diagnostic.label, first: room, rest: room)
+        wrap(diagnostic.label, to: ref label, by: Widths { first: room, rest: room })
         sb.append($" {label[0]}")
         for i in 1..label.length {
             sb.append($"\n{blank} ")
-            indent(ref sb, prefix)
+            indent(prefix, to: ref sb)
             for k in 0..carets + 1 { sb.append(" ") }
             sb.append(label[i])
         }
@@ -158,17 +158,17 @@ void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
     sb.append($"{blank}\n")
     unless diagnostic.help.isEmpty {
         var help = List<string>()
-        wrap(ref help, diagnostic.help, first: wrapWidth - 8, rest: wrapWidth - 8)
+        wrap(diagnostic.help, to: ref help, by: Widths { first: wrapWidth - 8, rest: wrapWidth - 8 })
         sb.append("  help: ")
-        appendLines(ref sb, ref help, "\n        ")
+        appendLines(ref help, to: ref sb, by: "\n        ")
         sb.append("\n")
     }
     if diagnostic.hasFix {
         var offset: i64 = 0
         for i in 0..fixLines.length {
             let text = fixLines[i].bytes
-            sb.append($"{blank} {lineNumber(number: fix.firstLine + i + 1, width: width)} {bar} ")
-            display(ref sb, text)
+            sb.append($"{blank} {lineNumber(fix.firstLine + i + 1, to: width)} {bar} ")
+            display(text, to: ref sb)
             sb.append("\n")
             let from = fix.markStart - offset > 0 ? fix.markStart - offset : 0
             let to = fix.markEnd - offset < text.length ? fix.markEnd - offset : text.length
@@ -176,7 +176,7 @@ void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
                 sb.append($"{blank} ")
                 for k in 0..width { sb.append(" ") }
                 sb.append($" {bar} ")
-                indent(ref sb, text[0..from])
+                indent(text[0..from], to: ref sb)
                 let marks = runeCount(text[from..to])
                 for k in 0..marks { sb.append(fix.marker) }
                 sb.append("\n")
@@ -186,17 +186,23 @@ void render(ref StrBuf sb, ref SourceText source, Diagnostic diagnostic) {
     }
 }
 
-/// Appends `lines` joined by `separator`.
-void appendLines(ref StrBuf sb, ref List<string> lines, string separator) {
+/// Appends `lines` to `sb`, joined by `separator`.
+void appendLines(ref List<string> lines, to ref StrBuf sb, by string separator) {
     for i in 0..lines.length {
         if i > 0 { sb.append(separator) }
         sb.append(lines[i])
     }
 }
 
-/// Fills `lines` with `text` split into lines that fit: the first gets `first` columns, the rest
-/// `rest`. Words are never broken, so a long word overflows its line.
-void wrap(ref List<string> lines, string text, i64 first, i64 rest) {
+/// Line widths for `wrap`: the first line gets `first` columns, the rest `rest`.
+struct Widths {
+    i64 first
+    i64 rest
+}
+
+/// Fills `lines` with `text` split into lines that fit `widths`. Words are never broken, so a long
+/// word overflows its line.
+void wrap(string text, to ref List<string> lines, by Widths widths) {
     let t = text.bytes
     var lineFrom: i64 = 0
     var lineEnd: i64 = -1
@@ -206,7 +212,7 @@ void wrap(ref List<string> lines, string text, i64 first, i64 rest) {
         let end = i == t.length || t[i] == 0x0A
         if !end && t[i] != 0x20 { continue }
         let words = runeCount(t[from..i])
-        let room = lines.length == 0 ? first : rest
+        let room = lines.length == 0 ? widths.first : widths.rest
         if lineEnd >= 0 && lineRunes + 1 + words > room {
             lines.append(text[lineFrom..lineEnd])
             lineFrom = from
@@ -226,11 +232,11 @@ void wrap(ref List<string> lines, string text, i64 first, i64 rest) {
 }
 
 /// Renders diagnostics in source order (a stable sort by span start), separated by blank lines.
-void renderAll(ref StrBuf sb, ref SourceText source, ReadOnlySpan<Diagnostic> diagnostics) {
+void renderAll(ReadOnlySpan<Diagnostic> diagnostics, to ref StrBuf sb, from ref SourceText source) {
     let order = sourceOrder(diagnostics)
     for k in 0..order.length {
         if k > 0 { sb.append("\n") }
-        render(ref sb, ref source, diagnostics[order[k]])
+        render(diagnostics[order[k]], to: ref sb, from: ref source)
     }
 }
 
@@ -249,7 +255,7 @@ List<i64> sourceOrder(ReadOnlySpan<Diagnostic> diagnostics) {
     return order
 }
 
-string lineNumber(i64 number, i64 width) {
+string lineNumber(i64 number, to i64 width) {
     let digits = $"{number}"
     var sb = StrBuf()
     for i in digits.length..width { sb.append(" ") }
@@ -267,11 +273,11 @@ struct FixView {
 
 /// Fills `lines` with the lines touched by the fix, replacement applied, and marks the inserted
 /// text with `+`. A pure removal shows the original lines and marks the removed text with `-`.
-FixView applyFix(ref SourceText source, TextSpan fix, string replacement, ref List<string> lines) {
+FixView applyFix(TextSpan fix, by string replacement, from ref SourceText source, to ref List<string> lines) {
     let firstLine = source.getLineIndex(fix.start)
     let lastLine = source.getLineIndex(fix.end)
-    let before = source.getText(TextSpan.fromBounds(start: source.getLineSpan(firstLine).start, end: fix.start))
-    let after = source.getText(TextSpan.fromBounds(start: fix.end, end: source.getLineSpan(lastLine).end))
+    let before = source.getText(TextSpan.fromBounds(source.getLineSpan(firstLine).start, until: fix.start))
+    let after = source.getText(TextSpan.fromBounds(fix.end, until: source.getLineSpan(lastLine).end))
     let original = source.getText(fix)
     let o = original.bytes
     let r = replacement.bytes
@@ -305,10 +311,10 @@ FixView applyFix(ref SourceText source, TextSpan fix, string replacement, ref Li
 
 /// Source text as shown in a diagnostic: control and bidi characters become U+FFFD, one scalar for
 /// one, so carets still line up and the terminal cannot be made to reorder text.
-void display(ref StrBuf sb, ReadOnlySpan<u8> text) {
+void display(ReadOnlySpan<u8> text, to ref StrBuf sb) {
     var pos: i64 = 0
     while pos < text.length {
-        let d = decodeAt(text, pos)
+        let d = decodeAt(text, at: pos)
         let v = d.value
         let hidden = (v < 0x20 && v != 0x09) || v == 0x7F || (v >= 0x202A && v <= 0x202E) || (v >= 0x2066 && v <= 0x2069)
         sb.append($"{rune(hidden ? replacementCharacter : v)}")
@@ -317,10 +323,10 @@ void display(ref StrBuf sb, ReadOnlySpan<u8> text) {
 }
 
 /// Whitespace that lines up with `prefix`, keeping its tabs.
-void indent(ref StrBuf sb, ReadOnlySpan<u8> prefix) {
+void indent(ReadOnlySpan<u8> prefix, to ref StrBuf sb) {
     var pos: i64 = 0
     while pos < prefix.length {
-        let d = decodeAt(prefix, pos)
+        let d = decodeAt(prefix, at: pos)
         sb.append(d.value == 0x09 ? "\t" : " ")
         pos += d.length
     }

@@ -1,0 +1,4 @@
+// A particle appears at most once per signature (BYN5013).
+void copy(from string src, from string backup) {
+    return
+}
