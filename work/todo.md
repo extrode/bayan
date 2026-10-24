@@ -243,4 +243,3 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-53c2: a struct with states whose own field is named `tag` or `u` collides with the C layout's `tag` and `u` members.
 - r3-53c2: a generic struct with states relies on `Compilation.States` holding each instantiation; untested.
 - r3-53c2: BYN7009: a `become` inside a loop body does not count after the loop.
-- r3-53c2: rule C (BYN7012) covers `=` only; a `ref` parameter passed on as an `out` argument can come back in another state while its caller keeps its facts (revision 0010 item 5).

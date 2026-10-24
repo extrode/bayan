@@ -306,6 +306,7 @@ internal sealed class FlowAnalysis
                 return state;
             case BoundCatch c:
             {
+                var became = state.Became;
                 state = Expr(c.Operand, state);
                 if (c.Variant is { } v && c.Operand is BoundCall call)
                 {
@@ -313,7 +314,10 @@ internal sealed class FlowAnalysis
                         Report(DiagnosticCodes.UnknownVariant, ((CatchExpr)c.Syntax).Variant!.Span, [v.Name, ErrorUnionType.Of(call.Function.ErrorSets, call.Function.ExcludedErrors).DisplayName]);
                     else CheckPropagation(c.Syntax.Span, call, v);
                 }
-                var handler = Expr(c.Handler, state.Clone());
+                // A failed `becomes` call left the state unchanged, so the handler's path has not run `become` (revision 0010 erratum).
+                var failed = state.Clone();
+                failed.Became = became;
+                var handler = Expr(c.Handler, failed);
                 if (c.Handler is BoundBlockExpr { Type.IsNever: true } b && handler.Reachable)
                 {
                     Report(DiagnosticCodes.CatchBlockCompletes, new TextSpan(Math.Max(b.Syntax.Span.End - 1, 0), 1), [],

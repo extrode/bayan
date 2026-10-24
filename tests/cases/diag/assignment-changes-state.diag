@@ -1,20 +1,41 @@
+error BYN7012: `this` would change state here; a state changes only through `become`
+
+  9 │         fresh(out this)
+    │               ^^^^^^^^
+    │
+  help: assign a value in the same state, or move the transition into a `becomes` method
+
+error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
+
+  10 │         return payment
+     │                ^^^^^^^
+     │
+  help: match `.paid` with `is` or `switch` before reading `payment`
+
 error BYN7012: `o` would change state here; a state changes only through `become`
 
-  11 │     o = Order.draft { id: o.id }
+  15 │     o = Order.draft { id: o.id }
      │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
      │
   help: assign a value in the same state, or move the transition into a `becomes` method
 
 error BYN7012: `o` would change state here; a state changes only through `become`
 
-  15 │     o = Order.paid { id: o.id, payment: 0 }
+  19 │     o = Order.paid { id: o.id, payment: 0 }
      │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
      │
   help: assign a value in the same state, or move the transition into a `becomes` method
 
 error BYN7012: `o` would change state here; a state changes only through `become`
 
-  23 │     o = Order.draft { id: o.id }
+  27 │     o = Order.draft { id: o.id }
      │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     │
+  help: assign a value in the same state, or move the transition into a `becomes` method
+
+error BYN7012: `o` would change state here; a state changes only through `become`
+
+  44 │     fresh(out o)
+     │           ^^^^^
      │
   help: assign a value in the same state, or move the transition into a `becomes` method

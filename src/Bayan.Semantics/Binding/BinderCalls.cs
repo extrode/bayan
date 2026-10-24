@@ -422,6 +422,7 @@ internal sealed partial class Binder
                 place = new BoundLocal(known.Syntax, known.Local);
                 if (wanted == ArgModifier.Out) ForgetState(known.Local);
             }
+            else if (place is BoundThis && wanted == ArgModifier.Out) ForgetState(_thisFacts);
             if (early is null) Constrain(place, p.Type);
             if (!place.Type.Equals(p.Type))
             {
@@ -429,6 +430,11 @@ internal sealed partial class Binder
                     help: "give a `ref` or `out` argument exactly the parameter's type");
                 return new BoundErrorExpr(arg.Value);
             }
+            // An `out` argument writes a whole value: a `ref` parameter or `this` keeps its state only when its type names one (BYN7012).
+            if (wanted == ArgModifier.Out && (place is BoundLocal { Local: ParameterSymbol { Modifier: ParamModifier.Ref } } || place is BoundThis && _fn is { IsMutating: true })
+                && (place.Type is StateType { States.Count: > 1 } || place.Type is StructSymbol s && _c.StatesOf(s) is not null))
+                Report(DiagnosticCodes.AssignmentChangesState, arg.Span, [place is BoundLocal l ? l.Local.Name : "this"],
+                    help: "assign a value in the same state, or move the transition into a `becomes` method");
             CheckWritable(place, arg.Value.Span, $"it is passed as `{(wanted == ArgModifier.Ref ? "ref" : "out")}`");
             return place;
         }

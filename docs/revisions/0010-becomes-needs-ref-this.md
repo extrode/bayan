@@ -1,6 +1,6 @@
 # 0010 — State changes are visible in signatures: `becomes` needs `ref this`
 
-Status: accepted 2026-10-24 (user direction, from the 5.3c gate findings on `this` narrowing).
+Status: accepted 2026-10-24 (user direction, from the 5.3c gate findings on `this` narrowing). Erratum (2026-10-24): rule C also covers passing `this` or a `ref` parameter of a stated type as an `out` argument, which writes a whole value (BYN7012 at the argument, same exemption when the type names one state and the callee's `out` parameter type is that state). Erratum (2026-10-24): under rule A, a `becomes` call whose failure is caught and handled in place does not count as `become` on the handler's path; that path keeps the old state (BYN7009 applies), matching §3.17 item 11 "a failed transition leaves the state unchanged".
 
 ## Problem
 

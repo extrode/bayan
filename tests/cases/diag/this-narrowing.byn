@@ -1,3 +1,7 @@
+union error PayError {
+    declined
+}
+
 struct Order {
     i64 id
     states {
@@ -117,6 +121,19 @@ struct Order {
     }
     void settle(ref this is .draft) becomes .paid {
         pay(1)
+        print($"{payment}")
+    }
+    void charge(ref this is .draft, i64 amount) becomes .paid fails PayError {
+        if amount <= 0 {
+            fail .declined
+        }
+        become .paid(amount)
+    }
+    void handleCharge(ref this is .draft, i64 amount) becomes .paid {
+        charge(amount) catch { print("declined") }
+    }
+    void settleTry(ref this is .draft, i64 amount) becomes .paid fails PayError {
+        try charge(amount)
         print($"{payment}")
     }
     i64 clearThrough(ref this is .paid) {

@@ -1,64 +1,64 @@
 error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
 
-  26 │     i64 unchecked() => payment
+  30 │     i64 unchecked() => payment
      │                        ^^^^^^^
      │
   help: match `.paid` with `is` or `switch` before reading `payment`
 
 error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
 
-  31 │         return payment
+  35 │         return payment
      │                ^^^^^^^
      │
   help: match `.paid` with `is` or `switch` before reading `payment`
 
 error BYN7003: `again` calls `reset`, which changes the state; declare `becomes` on `again`
 
-  57 │             reset()
+  61 │             reset()
      │             ^^^^^^^
      │
   help: add `becomes .draft` to the signature of `again`
-     │ 55 │     void again(ref this) becomes .draft {
+     │ 59 │     void again(ref this) becomes .draft {
      │    │                         +++++++++++++++
 
 error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
 
-  58 │             print($"{payment}")
+  62 │             print($"{payment}")
      │                      ^^^^^^^
      │
   help: match `.paid` with `is` or `switch` before reading `payment`
 
 error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
 
-  66 │         print($"{payment}")
+  70 │         print($"{payment}")
      │                  ^^^^^^^
      │
   help: match `.paid` with `is` or `switch` before reading `payment`
 
 error BYN7001: `onlyPaid` needs `this` to be `.paid`, but it is `Order`
 
-  67 │         print($"{onlyPaid()}")
+  71 │         print($"{onlyPaid()}")
      │                  ^^^^^^^^
      │
   help: check the state with `is` or `switch` first
 
 error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
 
-  74 │         print($"{payment}")
+  78 │         print($"{payment}")
      │                  ^^^^^^^
      │
   help: match `.paid` with `is` or `switch` before reading `payment`
 
 error BYN7001: `onlyPaid` needs `this` to be `.paid`, but it is `Order`
 
-  75 │         print($"{onlyPaid()}")
+  79 │         print($"{onlyPaid()}")
      │                  ^^^^^^^^
      │
   help: check the state with `is` or `switch` first
 
 error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
 
-  81 │             print($"{payment}")
+  85 │             print($"{payment}")
      │                      ^^^^^^^
      │
   help: match `.paid` with `is` or `switch` before reading `payment`
@@ -66,53 +66,60 @@ error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.pa
 error BYN7010: `total` declares `becomes .draft` but takes `move this is .paid`; a transition needs
 `ref this`
 
-  87 │     i64 total(move this is .paid) becomes .draft {
+  91 │     i64 total(move this is .paid) becomes .draft {
      │               ^^^^^^^^^^^^^^^^^^
      │
   help: change the receiver of `total` to `ref this`, or return the new state as a value
-     │ 87 │     i64 total(ref this is .paid) becomes .draft {
+     │ 91 │     i64 total(ref this is .paid) becomes .draft {
      │    │               +++
 
 error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
 
-  95 │             sum += payment
+  99 │             sum += payment
      │                    ^^^^^^^
      │
   help: match `.paid` with `is` or `switch` before reading `payment`
 
 error BYN7001: `onlyPaid` needs `this` to be `.paid`, but it is `Order`
 
-  96 │             sum += onlyPaid()
-     │                    ^^^^^^^^
-     │
+  100 │             sum += onlyPaid()
+      │                    ^^^^^^^^
+      │
   help: check the state with `is` or `switch` first
 
 error BYN7003: `erase` calls `reset`, which changes the state; declare `becomes` on `erase`
 
-  113 │         reset()
+  117 │         reset()
       │         ^^^^^^^
       │
   help: add `becomes .draft` to the signature of `erase`
-      │ 112 │     void erase(ref this) becomes .draft {
+      │ 116 │     void erase(ref this) becomes .draft {
       │     │                         +++++++++++++++
 
 error BYN7003: `eraseTo` calls `reset`, which changes the state; declare `becomes` on `eraseTo`
 
-  116 │         reset()
+  120 │         reset()
       │         ^^^^^^^
       │
   help: add `becomes .draft` to the signature of `eraseTo`
 
+error BYN7009: `handleCharge` declares `becomes .paid` but returns here without `become`
+
+  134 │     }
+      │     ^
+      │
+  help: add `become .paid(…)` before returning, or fail
+
 error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
 
-  130 │                 print($"{payment}")
+  147 │                 print($"{payment}")
       │                          ^^^^^^^
       │
   help: match `.paid` with `is` or `switch` before reading `payment`
 
 error BYN7012: `o` would change state here; a state changes only through `become`
 
-  138 │     o = Order.draft { id: o.id }
+  155 │     o = Order.draft { id: o.id }
       │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │
   help: assign a value in the same state, or move the transition into a `becomes` method
