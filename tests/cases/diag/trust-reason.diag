@@ -3,11 +3,11 @@ error BYN2787: `trust` needs a reason: a non-empty string literal
   2 │ print(trust(u))
     │       ^^^^^^^^
     │
-  help: write `trust(x, reason: "why this value is safe")`
+  help: write `x.trustUnchecked() because "why this value is safe"`
 
 error BYN2787: `trust` needs a reason: a non-empty string literal
 
   3 │ print(trust(u, "checked"))
     │       ^^^^^^^^^^^^^^^^^^^
     │
-  help: write `trust(x, reason: "why this value is safe")`
+  help: write `x.trustUnchecked() because "why this value is safe"`

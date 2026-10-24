@@ -40,3 +40,12 @@ error BYN1062: `trust(x, reason: …)` is now `x.trustUnchecked() because "…"`
     │       ^^^^^ the input form
     │
   help: call `trustUnchecked()` on the value and give the reason in `because`
+
+error BYN1062: `trust(x, reason: …)` is now `x.trustUnchecked() because "…"`
+
+  10 │ print(trust(v + v, reason: "sum"))
+     │       ^^^^^ the input form
+     │
+  help: call `trustUnchecked()` on the value and give the reason in `because`
+     │ 10 │ print((v + v).trustUnchecked() because "sum")
+     │    │       ++++++++++++++++++++++++++++++++++++++
