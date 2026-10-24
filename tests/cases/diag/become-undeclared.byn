@@ -8,7 +8,7 @@ struct Order {
     void pay(move this is .draft, i64 amount) {
         become .paid(amount)
     }
-    void ship(move this is .paid) becomes .shipped {
+    void ship(ref this is .paid) becomes .shipped {
         become .paid(1)
     }
     void settle(move this is .draft, i64 amount) expects amount > id {

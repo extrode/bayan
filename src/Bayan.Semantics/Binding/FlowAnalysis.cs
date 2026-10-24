@@ -89,10 +89,10 @@ internal sealed class FlowAnalysis
             Report(DiagnosticCodes.OutNotAssigned, span, [p.Name], help: $"assign `{p.Name}` before every `return`");
     }
 
-    /// <summary>BYN7009: a normal return from a function that <c>becomes .s</c> must follow a <c>become</c>.</summary>
+    /// <summary>BYN7009: a normal return from a function that <c>becomes .s</c> must follow a <c>become</c>; not after BYN7010.</summary>
     private void CheckBecame(State state, TextSpan span)
     {
-        if (state.Became || _fn.Decl?.Becomes is not { } becomes) return;
+        if (state.Became || _fn.Decl?.Becomes is not { } becomes || _fn is { Kind: FunctionKind.Method, IsStatic: false, Decl.RefThis: null }) return;
         Report(DiagnosticCodes.MissingBecome, span, [_fn.Name, becomes.Text], help: $"add `become .{becomes.Text}(…)` before returning, or fail");
     }
 

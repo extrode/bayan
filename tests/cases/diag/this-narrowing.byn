@@ -84,7 +84,11 @@ struct Order {
         }
         become .draft
     }
-    i64 sumPaid(move this is .paid, i64 times) becomes .draft {
+    i64 total(move this is .paid) becomes .draft {
+        become .draft
+        return payment
+    }
+    i64 sumPaid(ref this is .paid, i64 times) becomes .draft {
         var i = 0
         var sum = 0
         while i < times {

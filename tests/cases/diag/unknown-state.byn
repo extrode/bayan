@@ -4,7 +4,7 @@ struct Order {
         draft
         paid(i64 payment)
     }
-    void ship(move this is .lost) becomes .gone {
+    void ship(ref this is .lost) becomes .gone {
         become .gone
     }
 }

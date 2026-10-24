@@ -21,6 +21,12 @@ internal sealed partial class Binder
             return new BoundErrorStmt(b);
         }
         var fn = _fn!;
+        // A `becomes` without `ref this` is BYN7010 at the signature; its `become` reports nothing more (revision 0010).
+        if (fn is { IsStatic: false, Decl: { Becomes: not null, RefThis: null } })
+        {
+            BindArguments(call, state.Fields, null, enforceNames: false, displayName: "." + state.Name);
+            return new BoundErrorStmt(b);
+        }
         // A static method has no `this` to change; one that takes neither `ref this` nor `move this` is BYN2115 (Question 297).
         if (fn.IsStatic)
             Report(DiagnosticCodes.Unsupported, new TextSpan(b.Span.Start, "become".Length), ["`become` in a static method"],
@@ -196,11 +202,11 @@ internal sealed partial class Binder
     private void ForgetState(LocalSymbol local) => _stateFacts.RemoveAll(f => f.Local == local);
 
     /// <summary>
-    /// At the start of a loop, what a <c>var</c> or <c>ref</c> parameter, or a <c>this</c> that can change state, was known to be no
-    /// longer holds: the loop body may change it after the reads that come first.
+    /// At the start of a loop, what a <c>var</c> or <c>ref</c> parameter, or a <c>ref this</c>, was known to be no longer holds: the
+    /// loop body may change it after the reads that come first.
     /// </summary>
     private void ForgetChangingStates() => _stateFacts.RemoveAll(f => f.Local.IsMutable || f.Local is ParameterSymbol { IsByRef: true }
-        || f.Local == _thisFacts && _fn is { IsMutating: true } or { Decl.MoveThis: not null } or { Decl.Becomes: not null });
+        || f.Local == _thisFacts && _fn is { IsMutating: true });
 
     /// <summary>Learns, for the code that runs when <paramref name="cond"/> is <paramref name="whenTrue"/>, the states it proves.</summary>
     private List<(Scope, LocalSymbol, StateType)> LearnStates(BoundExpr cond, bool whenTrue)
