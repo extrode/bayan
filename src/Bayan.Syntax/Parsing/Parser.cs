@@ -1348,9 +1348,11 @@ public sealed class Parser
         {
             var typeText = _source.GetText(type.Span);
             var stateType = $"{typeText}.{states[0].Text}";
-            Report(DiagnosticCodes.SingleStateInline, keyword.Span, [typeText, name?.Text, states[0].Text], label: "one state",
+            var written = name is null ? typeText : $"{typeText} {name.Text}";
+            var rewrite = name is null ? stateType : $"{stateType} {name.Text}";
+            Report(DiagnosticCodes.SingleStateInline, keyword.Span, [written, states[0].Text, rewrite], label: "one state",
                 help: $"write the state type `{stateType}`",
-                fix: new Fix(TextSpan.FromBounds(type.Span.Start, _prevEnd), name is null ? stateType : $"{stateType} {name.Text}"));
+                fix: new Fix(TextSpan.FromBounds(type.Span.Start, _prevEnd), rewrite));
         }
         return new RefinedType(TextSpan.FromBounds(type.Span.Start, _prevEnd), type, states);
     }

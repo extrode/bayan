@@ -309,7 +309,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ContextBlockInput = Error("BYN6006", "`context (…) {{ }}` is now `provide … {{ }}`");
 
     // ── Typestate 7000–7999 ──────────────────────────────────────────────────────────
-    public static readonly DiagnosticDescriptor SingleStateInline = Error("BYN7006", "`{0} {1} is .{2}` is an input form; write `{0}.{2} {1}`");
+    public static readonly DiagnosticDescriptor SingleStateInline = Error("BYN7006", "`{0} is .{1}` is an input form; write `{2}`");
 
     // ── Security 8000–8999 ───────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor MissingBecause = Error("BYN8001", "`{0}` bypasses a safety rule and needs `because \"…\"`");

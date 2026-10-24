@@ -1,4 +1,4 @@
-error BYN7006: `Order  is .paid` is an input form; write `Order.paid `
+error BYN7006: `Order is .paid` is an input form; write `Order.paid`
 
   9 │ type Paid = Order is .paid
     │                   ^^ one state
@@ -7,7 +7,7 @@ error BYN7006: `Order  is .paid` is an input form; write `Order.paid `
     │ 9 │ type Paid = Order is .paid
     │   │                  ----
 
-error BYN7006: `Order  is .paid` is an input form; write `Order.paid `
+error BYN7006: `Order is .paid` is an input form; write `Order.paid`
 
   11 │     let x: Order is .paid = o
      │                  ^^ one state
