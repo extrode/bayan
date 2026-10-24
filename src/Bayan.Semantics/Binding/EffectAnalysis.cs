@@ -82,15 +82,20 @@ internal static class EffectAnalysis
             if (fn.IsInstance || fn.Body is null || fn.File is null) continue;
             if (declared.TryGetValue(fn, out var set))
             {
-                foreach (var (effect, (span, _)) in used[fn].Where(e => !set.Contains(e.Key)).OrderBy(e => e.Value.Span.Start))
+                var missing = used[fn].Where(e => !set.Contains(e.Key)).OrderBy(e => e.Value.Span.Start).ToList();
+                // One fix declares every missing effect, so the fixes of one function's reports are the same edit.
+                var fix = missing.Count == 0 || fn.Decl is null ? null : DeclareFix(fn.File.Source, fn.Decl, Primitives.Where(e => missing.Any(m => m.Key == e)));
+                foreach (var (effect, (span, _)) in missing)
                     c.Report(DiagnosticCodes.EffectNotDeclared, fn.File.Source, span, [fn.Name, effect], label: $"uses `{effect}`",
-                        help: fn.Decl?.Uses is null ? $"add `uses {effect}` after the signature of `{fn.Name}`" : $"add `{effect}` to the `uses` clause of `{fn.Name}`");
+                        help: $"add `{effect}` to the `uses` clause, or remove the call", fix: fix);
             }
             if (c.Options.Capabilities is { } allowed)
             {
+                // At the `uses` clause; a function that infers its effects has none, so its name stands in.
+                var at = fn.Decl?.Uses?.Span ?? fn.Decl?.Name.Span;
                 foreach (var (effect, (span, _)) in used[fn].Where(e => e.Value.Direct && Capabilities.Contains(e.Key) && !allowed.Contains(e.Key)).OrderBy(e => e.Value.Span.Start))
-                    c.Report(DiagnosticCodes.CapabilityExceeded, fn.File.Source, span, [fn.Name, effect, c.Options.PackageName ?? "main"],
-                        label: $"uses `{effect}`", help: $"add `.{effect}` to `capabilities` in `package.byn`");
+                    c.Report(DiagnosticCodes.CapabilityExceeded, fn.File.Source, at ?? span, [fn.Name, effect, c.Options.PackageName ?? "main"],
+                        label: $"uses `{effect}`", help: $"add `.{effect}` to `capabilities`, or remove the use");
             }
         }
 
@@ -104,7 +109,7 @@ internal static class EffectAnalysis
                     foreach (var effect in Visible(witness).Where(e => !bound.Contains(e)))
                         c.Report(DiagnosticCodes.EffectBoundExceeded, at.Source, at.Span,
                             [witness.Name, effect, bound.Count == 0 ? "pure" : "uses " + string.Join(", ", Primitives.Where(bound.Contains)), $"{conformance.Interface.Name}.{member.Name}"],
-                            label: $"uses `{effect}`", help: $"remove the use of `{effect}`, or add it to `{conformance.Interface.Name}.{member.Name}`");
+                            label: $"uses `{effect}`", help: $"declare `{effect}` on `{conformance.Interface.Name}.{member.Name}`, or pass a function without it");
                 }
     }
 
@@ -129,7 +134,7 @@ internal static class EffectAnalysis
         {
             if (Primitives.Contains(name.Text)) result.Add(name.Text);
             else if (local.TryGetValue(name.Text, out var expanded)) result.AddRange(expanded);
-            else if (report) ReportUnknown(c, fn.File!.Source, name, local.Keys);
+            else if (report) ReportUnknown(c, fn.File!.Source, name);
         }
         return result;
     }
@@ -157,10 +162,9 @@ internal static class EffectAnalysis
             {
                 if (Primitives.Contains(e.Text)) result.Add(e.Text);
                 else if (visiting.Contains(e.Text))
-                    c.Report(DiagnosticCodes.UnknownEffect, file.Source, e.Span, [e.Text], label: "the alias refers to itself",
-                        help: "list the primitive effects instead");
+                    c.Report(DiagnosticCodes.UnknownEffect, file.Source, e.Span, [e.Text], label: "the alias refers to itself", help: UnknownEffectHelp);
                 else if (decls.ContainsKey(e.Text)) result.AddRange(Expand(e.Text, visiting));
-                else ReportUnknown(c, file.Source, e, decls.Keys);
+                else ReportUnknown(c, file.Source, e);
             }
             visiting.Remove(name);
             return resolved[name] = result.Distinct().ToArray();
@@ -169,9 +173,22 @@ internal static class EffectAnalysis
         return resolved;
     }
 
-    private static void ReportUnknown(Compilation c, SourceText source, Name name, IEnumerable<string> aliases) =>
-        c.Report(DiagnosticCodes.UnknownEffect, source, name.Span, [name.Text], label: "not an effect or an `effect` alias of this module",
-            help: $"use one of {string.Join(", ", Primitives.Concat(aliases).Select(e => $"`{e}`"))}");
+    private const string UnknownEffectHelp =
+        "choose one of `alloc`, `suspend`, `net`, `fs`, `clock`, `random`, `env`, `process`, `console`, or a declared effect alias";
+
+    private static void ReportUnknown(Compilation c, SourceText source, Name name) =>
+        c.Report(DiagnosticCodes.UnknownEffect, source, name.Span, [name.Text], label: "not an effect or an `effect` alias of this module", help: UnknownEffectHelp);
+
+    /// <summary>Adds <paramref name="effects"/> to the <c>uses</c> clause, or writes one after the rest of the signature (clause order §5).</summary>
+    private static Fix DeclareFix(SourceText source, FunctionDecl decl, IEnumerable<string> effects)
+    {
+        var list = string.Join(", ", effects);
+        if (decl.Uses is { } uses) return new Fix(new TextSpan(uses.Span.End, 0), ", " + list);
+        var close = decl.Params.Length > 0 ? decl.Params[^1].Span.End : decl.ParamsStart;
+        while (close < source.Bytes.Length && source.Bytes.Span[close] != (byte)')') close++;
+        var end = new[] { close + 1, decl.Fails?.Span.End ?? 0, decl.Becomes?.Span.End ?? 0, decl.Where.Length > 0 ? decl.Where[^1].Span.End : 0 }.Max();
+        return new Fix(new TextSpan(end, 0), " uses " + list);
+    }
 
     private static string[] Builtin(BuiltinFunction f) => f switch
     {

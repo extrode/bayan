@@ -3,12 +3,16 @@ error BYN6007: `memory` is not a handler; `provide` takes `alloc`, `net`, `fs`, 
 
   3 │     provide memory: arena {
     │             ^^^^^^ not a handler
+    │
+  help: choose one of the handler names; `suspend` has no handler
 
 error BYN6007: `suspend` is not a handler; `provide` takes `alloc`, `net`, `fs`, `clock`, `random`,
 `env`, `process`, `console` or `log`
 
   6 │     provide suspend: arena {
     │             ^^^^^^^ `suspend` has no handler
+    │
+  help: choose one of the handler names; `suspend` has no handler
 
 error BYN2022: the `log` handler is not supported in v0.1
 

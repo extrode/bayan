@@ -1,16 +1,24 @@
 error BYN6004: `readAll` uses `fs`, which package `local/report` does not declare in `capabilities`
-  --> main.byn:2:16
+  --> main.byn:1:6
 
-  2 │     let text = Io.readText("report.txt") catch { return }
-    │                ^^^^^^^^^^^^^^^^^^^^^^^^^ uses `fs`
+  1 │ void readAll() {
+    │      ^^^^^^^ uses `fs`
     │
-  help: add `.fs` to `capabilities` in `package.byn`
+  help: add `.fs` to `capabilities`, or remove the use
 
 error BYN6004: `readAll` uses `process`, which package `local/report` does not declare in
 `capabilities`
-  --> main.byn:4:18
+  --> main.byn:1:6
 
-  4 │     let result = Io.run("ls", []) catch { return }
-    │                  ^^^^^^^^^^^^^^^^ uses `process`
+  1 │ void readAll() {
+    │      ^^^^^^^ uses `process`
     │
-  help: add `.process` to `capabilities` in `package.byn`
+  help: add `.process` to `capabilities`, or remove the use
+
+error BYN6004: `save` uses `fs`, which package `local/report` does not declare in `capabilities`
+  --> main.byn:7:24
+
+  7 │ void save(string text) uses fs {
+    │                        ^^^^^^^ uses `fs`
+    │
+  help: add `.fs` to `capabilities`, or remove the use

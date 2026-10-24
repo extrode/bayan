@@ -3,18 +3,24 @@ error BYN6002: `greet` uses `console` but does not declare it
   2 │     print($"hello {name}")
     │     ^^^^^^^^^^^^^^^^^^^^^^ uses `console`
     │
-  help: add `uses console` after the signature of `greet`
+  help: add `console` to the `uses` clause, or remove the call
+    │ 1 │ public void greet(string name) uses console {
+    │   │                               +++++++++++++
 
 error BYN6002: `measure` uses `clock` but does not declare it
 
   7 │     return Io.monotonicNanos()
     │            ^^^^^^^^^^^^^^^^^^^ uses `clock`
     │
-  help: add `clock` to the `uses` clause of `measure`
+  help: add `clock` to the `uses` clause, or remove the call
+    │ 5 │ public i64 measure(string path) uses console, clock {
+    │   │                                             +++++++
 
 error BYN6002: `callsHelper` uses `console` but does not declare it
 
   15 │     helper()
      │     ^^^^^^^^ uses `console`
      │
-  help: add `uses console` after the signature of `callsHelper`
+  help: add `console` to the `uses` clause, or remove the call
+     │ 14 │ public void callsHelper() uses console {
+     │    │                          +++++++++++++

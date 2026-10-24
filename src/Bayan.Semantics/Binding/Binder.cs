@@ -1116,7 +1116,8 @@ internal sealed partial class Binder
                 if (v.Name.Text is "net" or "fs" or "clock" or "random" or "env" or "process" or "console" or "log")
                     Report(DiagnosticCodes.Unsupported, v.Name.Span, [$"the `{v.Name.Text}` handler"]);
                 else
-                    Report(DiagnosticCodes.UnknownHandler, v.Name.Span, [v.Name.Text], label: v.Name.Text == "suspend" ? "`suspend` has no handler" : "not a handler");
+                    Report(DiagnosticCodes.UnknownHandler, v.Name.Span, [v.Name.Text], label: v.Name.Text == "suspend" ? "`suspend` has no handler" : "not a handler",
+                        help: "choose one of the handler names; `suspend` has no handler");
                 continue;
             }
             allocator = BindConverted(v.Value, BuiltinType.Arena);
