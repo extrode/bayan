@@ -169,6 +169,7 @@ enum TokenKind {
     exceptKeyword
     provideKeyword
     becomeKeyword
+    failKeyword
     // Declaration-only, no meaning yet; contextual like the other declaration keywords.
     lawKeyword
     // Effect aliases (§14), contextual.

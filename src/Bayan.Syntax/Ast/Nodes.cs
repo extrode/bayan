@@ -245,6 +245,9 @@ public sealed record IncDecStmt(TextSpan Span, Expr Target, bool Increment) : St
 
 public sealed record ReturnStmt(TextSpan Span, Expr? Value) : Stmt(Span);
 
+/// <summary><c>fail .x</c>: leaves the function with the error <see cref="Error"/>.</summary>
+public sealed record FailStmt(TextSpan Span, Expr Error) : Stmt(Span);
+
 public sealed record BreakStmt(TextSpan Span, Name? Label) : Stmt(Span);
 
 public sealed record ContinueStmt(TextSpan Span, Name? Label) : Stmt(Span);
@@ -305,7 +308,11 @@ public enum DeferKind { Always, Failing, Panicking }
 public sealed record DeferStmt(TextSpan Span, DeferKind Kind, Name? Binding, Stmt Body) : Stmt(Span);
 
 /// <summary><c>assert expr;</c>: panics with the value of each sub-expression when <see cref="Condition"/> is false.</summary>
-public sealed record AssertStmt(TextSpan Span, Expr Condition) : Stmt(Span);
+public sealed record AssertStmt(TextSpan Span, Expr Condition) : Stmt(Span)
+{
+    /// <summary><c>assert f() fails E.x</c>: the error <see cref="Condition"/> must fail with; null for a plain assert.</summary>
+    public Expr? Fails { get; init; }
+}
 
 public sealed record NamedArg(TextSpan Span, Name Name, Expr Value) : Node(Span);
 
@@ -476,7 +483,11 @@ public sealed record PropertyPattern(TextSpan Span, TypeSyntax? Type, PropertySu
 public sealed record PositionalPattern(TextSpan Span, TypeSyntax? Type, Pattern[] Elements) : Pattern(Span);
 
 /// <summary><c>.Circle(let r)</c>: a target-typed union variant with payload patterns.</summary>
-public sealed record VariantPattern(TextSpan Span, TargetMemberExpr Variant, Pattern[] Elements) : Pattern(Span);
+public sealed record VariantPattern(TextSpan Span, TargetMemberExpr Variant, Pattern[] Elements) : Pattern(Span)
+{
+    /// <summary><c>.Circle c</c>: binds the whole value, narrowed to the variant; <see cref="Elements"/> is empty.</summary>
+    public Name? Binding { get; init; }
+}
 
 /// <summary><c>..</c> or <c>.. var rest</c> inside a list pattern.</summary>
 public sealed record SlicePattern(TextSpan Span, Pattern? Inner) : Pattern(Span);

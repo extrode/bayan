@@ -33,6 +33,9 @@ internal sealed partial class Binder
                 help: "explain the bypass in a `because` clause");
         if (c.Callee is MemberExpr { Member.Text: "trustUnchecked", NullConditional: false } trusted && c.Args.Length == 0)
             return BindTrustUnchecked(c, trusted);
+        if (c.Callee is MemberExpr { Member.Text: "tryFrom", NullConditional: false, Target: NameExpr into }
+            && PrimitiveType.ByName.TryGetValue(into.Name.Text, out var target) && target.IsNumeric)
+            return BindTryFrom(c, target);
         var callee = c.Callee is TargetMemberExpr t ? BindTargetMember(t, expected) : BindExprOrType(c.Callee);
         switch (callee)
         {
@@ -63,6 +66,25 @@ internal sealed partial class Binder
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
         }
+    }
+
+    /// <summary><c>u8.tryFrom(x)</c>: a numeric conversion that gives <c>null</c> instead of trapping when the value does not fit.</summary>
+    private BoundExpr BindTryFrom(CallExpr c, PrimitiveType target)
+    {
+        if (c.Args is not [{ Name: null } arg])
+        {
+            Report(DiagnosticCodes.TooManyArguments, c.Callee.Span, [$"{target.Name}.tryFrom", 1]);
+            BindArgumentsForRecovery(c);
+            return new BoundErrorExpr(c);
+        }
+        var operand = BindExpr(arg.Value);
+        if (operand.Type.IsError) return new BoundErrorExpr(c);
+        if (!operand.Type.IsNumeric)
+        {
+            Report(DiagnosticCodes.InvalidCast, arg.Value.Span, [operand.Type.DisplayName, target.DisplayName]);
+            return new BoundErrorExpr(c);
+        }
+        return new BoundTryFrom(c, operand, target, new OptionalType(target));
     }
 
     private void BindArgumentsForRecovery(CallExpr c)
@@ -425,9 +447,11 @@ internal sealed partial class Binder
             case ErrorType:
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
+            case PrimitiveType p when (p.IsNumeric || p == PrimitiveType.Char) && c.Args is [{ Name: null } arg]:
+                return BindConversion(c, p, arg.Value);
             default:
                 Report(DiagnosticCodes.NotCallable, c.Callee.Span, [type.DisplayName],
-                    help: type.IsNumeric || type == PrimitiveType.Char ? $"convert with a cast: `({type.DisplayName})x`" : null);
+                    help: type.IsNumeric || type == PrimitiveType.Char ? $"convert one value: `{type.DisplayName}(x)`" : null);
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
         }
