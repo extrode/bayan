@@ -449,6 +449,10 @@ public sealed class Parser
                 RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
                 decl = ParseTypeAlias(start, modifiers);
                 break;
+            case TokenKind.EffectKeyword when topLevel && IsName(Peek(1)) && Peek(2) == TokenKind.Equals:
+                RejectModifiers(modifiers, Modifiers.Public | Modifiers.Private, startIndex);
+                decl = ParseEffect(start, modifiers);
+                break;
             case TokenKind.TestKeyword when topLevel && modifiers == Modifiers.None:
                 decl = ParseTest(start);
                 break;
@@ -1356,6 +1360,18 @@ public sealed class Parser
         var requires = ParseRequiresLines();
         ExpectEnd();
         return new TypeAliasDecl(SpanFrom(start), modifiers, name, target) { Distinct = distinct, Requires = requires };
+    }
+
+    /// <summary><c>effect name = net, fs</c>.</summary>
+    private EffectDecl ParseEffect(int start, Modifiers modifiers)
+    {
+        Advance();
+        var name = ExpectName();
+        Expect(TokenKind.Equals);
+        var effects = new List<Name> { ExpectName("an effect name") };
+        while (Accept(TokenKind.Comma)) effects.Add(ExpectName("an effect name"));
+        ExpectEnd();
+        return new EffectDecl(SpanFrom(start), modifiers, name, effects.ToArray());
     }
 
     private TestDecl ParseTest(int start)

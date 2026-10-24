@@ -9,7 +9,10 @@ namespace Bayan.Semantics;
 
 /// <param name="Library">A library has no <c>main</c>, so none is required.</param>
 /// <param name="SkipOwnershipCheck">Test-only: skips the static ownership check, so the debug-build checker can be exercised.</param>
-public sealed record CompilationOptions(bool IncludeTests = false, bool Library = false, bool SkipOwnershipCheck = false);
+/// <param name="Capabilities">The package's <c>capabilities</c>, the upper bound on its effects (§13); null for no bound.</param>
+/// <param name="PackageName">The package's name, for BYN6004.</param>
+public sealed record CompilationOptions(bool IncludeTests = false, bool Library = false, bool SkipOwnershipCheck = false,
+    IReadOnlyList<string>? Capabilities = null, string? PackageName = null);
 
 /// <summary>
 /// A whole program: the entry module plus every module it imports, transitively. Construction
