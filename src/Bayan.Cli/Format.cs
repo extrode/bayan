@@ -110,21 +110,44 @@ internal static class Format
     internal static string[] BynFiles(string dir, TextWriter stderr, ref int exit)
     {
         var files = new List<string>();
-        var pending = new Stack<string>([dir]);
+        var seenFiles = new HashSet<string>(StringComparer.Ordinal);
+        var seenDirs = new HashSet<string>(StringComparer.Ordinal);
+        // Each directory travels as its path as written and its canonical path, which no symlink crosses.
+        var pending = new Stack<(string Path, string? Canonical)>([(dir, null)]);
         while (pending.TryPop(out var at))
         {
             try
             {
-                files.AddRange(Directory.GetFiles(at, "*.byn"));
-                foreach (var sub in Directory.GetDirectories(at)) pending.Push(sub);
+                var canonical = at.Canonical ?? Canonical(Path.GetFullPath(at.Path));
+                if (!seenDirs.Add(canonical)) continue;
+                foreach (var file in Directory.GetFiles(at.Path, "*.byn"))
+                    if (seenFiles.Add(Step(canonical, Path.GetFileName(file)))) files.Add(file);
+                foreach (var sub in Directory.GetDirectories(at.Path))
+                    pending.Push((sub, Step(canonical, Path.GetFileName(sub))));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                stderr.WriteLine(Messages.FormatIoError.Text(at, e.Message));
+                stderr.WriteLine(Messages.FormatIoError.Text(at.Path, e.Message));
                 exit = CliApp.ExitFailure;
             }
         }
         return [.. files];
+    }
+
+    /// <summary>The full path with every symlink in it resolved.</summary>
+    private static string Canonical(string full)
+    {
+        var current = Path.GetPathRoot(full)!;
+        foreach (var part in full[current.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+            current = Step(current, part);
+        return current;
+    }
+
+    /// <summary>The canonical path of <paramref name="name"/> inside the canonical directory <paramref name="parent"/>.</summary>
+    private static string Step(string parent, string name)
+    {
+        var path = Path.Combine(parent, name);
+        return new FileInfo(path).ResolveLinkTarget(returnFinalTarget: true) is { } target ? Canonical(target.FullName) : path;
     }
 
     /// <summary>The <c>package.byn</c> in the file's directory or the nearest one above it; null when there is none.</summary>
@@ -239,15 +262,28 @@ internal static class Format
     {
         var names = primitives == PrimitiveStyle.Sized ? CSharpPrimitives : SizedPrimitives;
         var tokens = Lexer.Lex(new SourceText(file, bytes)).Tokens;
-        // Only a type is renamed: a field, binding, label or member spelled like a primitive keeps its name.
+        // Only a type, or a callee or receiver (`int(x)`, `i64.max`), is renamed: a field, binding, label or member
+        // spelled like a primitive keeps its name. A callee or receiver is kept when the file uses the spelling
+        // as anything else, since it may then be that binding.
         var typeNames = AstDump.TypeNames(tree).Select(n => n.Span.Start).ToHashSet();
+        var calleeNames = AstDump.CalleeAndReceiverNames(tree).Select(n => n.Span.Start).ToHashSet();
+        var otherUses = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < tokens.Length; i++)
+        {
+            var t = tokens[i];
+            if (t.Kind != TokenKind.Identifier || typeNames.Contains(t.Start) || calleeNames.Contains(t.Start)) continue;
+            if (i > 0 && tokens[i - 1].Kind is TokenKind.Dot or TokenKind.QuestionDot) continue;
+            otherUses.Add(System.Text.Encoding.UTF8.GetString(bytes, t.Start, t.Length));
+        }
         var renames = new List<Fix>();
         var operators = new List<Fix>();
         for (var i = 0; i < tokens.Length; i++)
         {
             var token = tokens[i];
-            if (token.Kind == TokenKind.Identifier && typeNames.Contains(token.Start)
-                && names.TryGetValue(System.Text.Encoding.UTF8.GetString(bytes, token.Start, token.Length), out var name))
+            if (token.Kind == TokenKind.Identifier && (typeNames.Contains(token.Start) || calleeNames.Contains(token.Start))
+                && System.Text.Encoding.UTF8.GetString(bytes, token.Start, token.Length) is var text
+                && names.TryGetValue(text, out var name)
+                && (typeNames.Contains(token.Start) || !otherUses.Contains(text)))
                 renames.Add(new Fix(new TextSpan(token.Start, token.Length), name));
             else if (OperatorFix(bytes, tokens, i, booleans) is { } fix)
                 operators.Add(fix);

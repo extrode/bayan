@@ -189,6 +189,37 @@ public sealed class FormatTests
     }
 
     [Fact]
+    public void ConversionsAndStaticReceiversAreRespelledToTheProjectStyle()
+    {
+        var sized = Path.Combine(Fresh("conv-sized"), "main.byn");
+        File.WriteAllText(sized, "void main() {\n    let y = 1\n    let z: long = long(y)\n    let a = int.tryFrom(y)\n    let b = long.max\n}\n");
+        var (exit, _, stderr) = Run("format", sized);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal("void main() {\n    let y = 1\n    let z: i64 = i64(y)\n    let a = i32.tryFrom(y)\n    let b = i64.max\n}\n", File.ReadAllText(sized));
+
+        var dir = Fresh("conv-csharp");
+        Package(dir, "primitives: .csharp");
+        var csharp = Path.Combine(dir, "main.byn");
+        File.WriteAllText(csharp, "void main() {\n    let y = 1\n    let a = i32.tryFrom(y)\n    let b = i64.max\n    let c = i8(y)\n}\n");
+        (exit, _, stderr) = Run("format", csharp);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal("void main() {\n    let y = 1\n    let a = int.tryFrom(y)\n    let b = long.max\n    let c = sbyte(y)\n}\n", File.ReadAllText(csharp));
+    }
+
+    [Fact]
+    public void ACalleeOrReceiverSpelledLikeADeclaredNameIsKept()
+    {
+        var dir = Fresh("conv-declared");
+        Package(dir, "primitives: .csharp");
+        var file = Path.Combine(dir, "main.byn");
+        const string source = "void main() {\n    let i8 = 1\n    let n = i8.foo\n    let m = i8(2)\n}\n";
+        File.WriteAllText(file, source);
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(source, File.ReadAllText(file));
+    }
+
+    [Fact]
     public void AnInvalidPackageIsReportedAndItsFilesAreLeftAlone()
     {
         var dir = Fresh("badstyle");
@@ -431,6 +462,33 @@ public sealed class FormatTests
         Assert.True(exit == CliApp.ExitOk, stderr);
         Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(target));
         Assert.Equal("real.byn", new FileInfo(link).LinkTarget);
+    }
+
+    [Fact]
+    public async Task SymlinkCyclesAreWalkedOnce()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("cycle");
+        File.WriteAllText(Path.Combine(dir, "main.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        var sub = Directory.CreateDirectory(Path.Combine(dir, "sub")).FullName;
+        Directory.CreateSymbolicLink(Path.Combine(sub, "up"), "..");
+        Directory.CreateSymbolicLink(Path.Combine(sub, "up2"), "..");
+        File.CreateSymbolicLink(Path.Combine(dir, "alias.byn"), "main.byn");
+        var result = await Task.Factory.StartNew(() => Run("format", "--check", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        Assert.Single(result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    [Fact]
+    public async Task ASymlinkToAParentOfTheRootIsWalkedOnce()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Directory.CreateDirectory(Path.Combine(Fresh("parent-link"), "outer", "dir")).FullName;
+        File.WriteAllText(Path.Combine(dir, "main.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        Directory.CreateSymbolicLink(Path.Combine(dir, "link"), "..");
+        var result = await Task.Factory.StartNew(() => Run("format", "--check", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        Assert.Single(result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries));
     }
 
     [Fact]
