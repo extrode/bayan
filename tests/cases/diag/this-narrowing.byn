@@ -96,6 +96,18 @@ struct Order {
         become .draft
         return sum
     }
+    i64 clear(ref this is .paid) {
+        wipe(ref this)
+        print($"{onlyPaid()}")
+        return payment
+    }
+    void erase(ref this) {
+        wipe(ref this)
+    }
+    i64 clearThrough(ref this is .paid) {
+        erase()
+        return payment
+    }
     void repeat(ref this, i64 times) {
         if this is .paid {
             var i = 0
@@ -105,4 +117,17 @@ struct Order {
             }
         }
     }
+}
+
+void wipe(ref Order o) {
+    o = Order.draft { id: o.id }
+}
+
+i64 erased(Order order) {
+    var o = order
+    if o is .paid {
+        o.erase()
+        return o.payment
+    }
+    return 0
 }

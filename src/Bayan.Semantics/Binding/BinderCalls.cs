@@ -148,8 +148,9 @@ internal sealed partial class Binder
         var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
         (_printArgument, _sinkArgument) = (outer, outerSink);
         if (receiver is not null && ReceiverStates(fn) is { } wanted) ReportWrongState(fn.Name, receiver, wanted, receiver.Syntax.Span);
-        // A call that `becomes` changes the receiver's state; a statement learns the new one after it (`LearnBecomes`).
-        if (receiver is not null && fn.Decl?.Becomes is not null && Subject(receiver) is { } changed) ForgetState(changed.Key);
+        // A call that `becomes` changes the receiver's state, and a `ref this` call may pass it on as `ref`; a statement
+        // learns the new state of a `becomes` call after it (`LearnBecomes`).
+        if (receiver is not null && (fn.Decl?.Becomes is not null || fn.IsMutating) && Subject(receiver) is { } changed) ForgetState(changed.Key);
         // A `ref this` call on `map[key]` changes the stored value in place.
         if (receiver is not null && fn.IsMutating) receiver = MapWriteTarget(receiver);
         // A `dyn ref` writes through the borrow, not into the local holding it; `dyn ref readonly` is BYN2813.
@@ -407,12 +408,13 @@ internal sealed partial class Binder
         {
             var place = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, p.Type);
             if (place.Type.IsError) return place;
-            // The callee may change a local's state: it is passed as its declared type, and its state is no longer known.
+            // The callee may change a local's or `this`'s state: it is passed as its declared type, and its state is no longer known.
             if (place is BoundLocal known && KnownState(known.Local) is not null)
             {
                 place = new BoundLocal(known.Syntax, known.Local);
                 ForgetState(known.Local);
             }
+            else if (place is BoundThis) ForgetState(_thisFacts);
             if (early is null) Constrain(place, p.Type);
             if (!place.Type.Equals(p.Type))
             {
