@@ -464,7 +464,7 @@ struct LexResult {
                 depth += 1
                 modes[depth] = ModeEntry { inText: true, braceDepth: 0, start: start }
             case '{':
-                if depth > 0 { modes[depth] = modes[depth] with { braceDepth: modes[depth].braceDepth + 1 } }
+                if depth > 0 { modes[depth].braceDepth += 1 }
                 single(.openBrace)
             case '}':
                 if depth > 0 && modes[depth].braceDepth == 0 {
@@ -473,7 +473,7 @@ struct LexResult {
                     depth -= 1
                     return
                 }
-                if depth > 0 { modes[depth] = modes[depth] with { braceDepth: modes[depth].braceDepth - 1 } }
+                if depth > 0 { modes[depth].braceDepth -= 1 }
                 single(.closeBrace)
             case '(': single(.openParen)
             case ')': single(.closeParen)

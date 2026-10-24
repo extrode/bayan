@@ -767,7 +767,7 @@ internal sealed partial class Binder
             return new BoundErrorExpr(c);
         }
         var sets = _c.ErrorSetsOf(bc.Function);
-        var errorType = ErrorUnionType.Of(sets);
+        var errorType = ErrorUnionType.Of(sets, sets.Count == 0 ? null : bc.Function.ExcludedErrors);
         PushScope();
         LocalSymbol? binding = null;
         ErrorVariantSymbol? variant = null;
@@ -1120,7 +1120,7 @@ internal sealed partial class Binder
         if (value is BoundTypeRef) value = BindExpr(c.Value, target);
         if (value is BoundUnionNew { Payload.Length: 0 } unit && (target.IsError || unit.Type.Equals(target)))
             return new BoundUnionPattern(c, input, unit.Variant, []);
-        if (value is BoundErrorVariant ev && target is ErrorUnionType u && u.Sets.Count > 0 && !u.Sets.Contains(ev.Variant.Set))
+        if (value is BoundErrorVariant ev && target is ErrorUnionType u && u.Sets.Count > 0 && (!u.Sets.Contains(ev.Variant.Set) || u.Excluded.Contains(ev.Variant)))
             Report(DiagnosticCodes.PatternMismatch, c.Span, [$"`{ev.Variant.Set.Name}.{ev.Variant.Name}`", target.DisplayName]);
         else if (!(value is BoundErrorVariant && target is ErrorUnionType))
             value = Convert(value, target, c.Value.Span);
@@ -1272,7 +1272,7 @@ internal sealed partial class Binder
         ErrorSetSymbol s => s.Variants.Select(v => VariantKey(v, type)).ToList(),
         EnumSymbol e => e.Members.Select(m => "." + m.Name).ToList(),
         UnionSymbol u => u.Variants.Select(v => "." + v.Name).ToList(),
-        ErrorUnionType { Sets.Count: > 0 } u => u.Sets.SelectMany(s => s.Variants).Select(v => VariantKey(v, type)).ToList(),
+        ErrorUnionType { Sets.Count: > 0 } u => u.Sets.SelectMany(s => s.Variants).Except(u.Excluded).Select(v => VariantKey(v, type)).ToList(),
         OptionalType o => Domain(o.Inner) is { } inner ? [.. inner, "null"] : ["null", Some],
         _ => null,
     };
@@ -1420,8 +1420,9 @@ internal sealed partial class Binder
     }
 
     /// <summary>
-    /// J78 (O11): a struct's fields are written only by its own methods (BYN3216 elsewhere); there, a field of a struct
-    /// with <c>requires</c> is BYN3208, since the rules are checked at construction. A constructor sets fields freely.
+    /// J78 (O11, revision 0007): a field of a struct with <c>requires</c>, states or <c>@sealed</c> is written only by
+    /// its own methods (BYN3216 elsewhere); there, a field of a struct with <c>requires</c> is BYN3208, since the rules
+    /// are checked at construction. A constructor sets fields freely, and plain data is written anywhere.
     /// </summary>
     private bool CheckFieldWrite(BoundExpr target, TextSpan span)
     {
@@ -1431,7 +1432,8 @@ internal sealed partial class Binder
         var own = _struct is { } s && (s == owner || (s.Template ?? s) == (owner.Template ?? owner));
         if (!own)
         {
-            Report(DiagnosticCodes.FieldWriteOutside, span, [owner.Name, f.Field.Name],
+            if (Invariant(owner.Template ?? owner) is not { } reason) return true;
+            Report(DiagnosticCodes.FieldWriteOutside, span, [owner.Name, f.Field.Name, reason],
                 help: $"add a `ref this` method to `{owner.Name}`, or build a new value with `with`");
             return false;
         }
@@ -1439,6 +1441,13 @@ internal sealed partial class Binder
         Report(DiagnosticCodes.CheckedFieldAssignment, span, [owner.Name], help: "build a new value with `with`: `try x with { f: v }`");
         return false;
     }
+
+    /// <summary>Why BYN3216 protects <paramref name="s"/>'s fields, the first of <c>requires</c>, states and <c>@sealed</c>; null for plain data.</summary>
+    private static string? Invariant(StructSymbol s) =>
+        s.Decl.Rules.Length > 0 || s.Decl.Members.OfType<FieldDecl>().Any(f => f.Requires.Length > 0) ? "has `requires`"
+        : s.Decl.States.Length > 0 ? "has states"
+        : s.Decl.Attributes.Any(a => a.Name.Text == "sealed") ? "is `@sealed`"
+        : null;
 
     /// <summary><c>map[k]</c> as an assignment target: <c>=</c> inserts <c>k</c> when missing; <c>op=</c>, <c>++</c> and <c>--</c> read it first and panic (lowering).</summary>
     private static BoundExpr MapWriteTarget(BoundExpr target) =>

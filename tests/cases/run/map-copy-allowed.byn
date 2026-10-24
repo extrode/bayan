@@ -50,7 +50,7 @@ var a = fresh("x", 1)
 var b = Map<string, i64>()
 b = fresh("y", 2)
 var s = Store { name: "s", data: fresh("z", 3) }
-s = s with { data: fresh("w", 4) }
+s.data = fresh("w", 4)
 let full = Slot.full(fresh("v", 5))
 var list = List<Map<string, i64>>()
 list.append(fresh("u", 6))

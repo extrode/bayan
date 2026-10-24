@@ -294,7 +294,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor LiteralNeedsTry = Error("BYN3207", "a literal of `{0}` can fail its `requires`; write `try {0} {{ … }}`");
     public static readonly DiagnosticDescriptor CheckedFieldAssignment = Error("BYN3208", "fields of `{0}` cannot be assigned one at a time; its `requires` are checked at construction");
     public static readonly DiagnosticDescriptor UniqueConst = Error("BYN3209", "a `unique` type cannot be `const`");
-    public static readonly DiagnosticDescriptor FieldWriteOutside = Error("BYN3216", "`{0}.{1}` can be written only by `{0}`'s own methods or with `with`");
+    public static readonly DiagnosticDescriptor FieldWriteOutside = Error("BYN3216", "`{0}.{1}` can be written only by `{0}`'s own methods or with `with`: `{0}` {2}");
     // BYN3217 is reserved: v0.1 has no fibers. Its help, once reported: "copy the data first, or spawn the fiber in a scope that ends before `{1}`".
     public static readonly DiagnosticDescriptor BorrowCrossesFiber = Error("BYN3217", "`{0}` holds a reference into `{1}` and cannot be passed to a fiber that may outlive it");
     public static readonly DiagnosticDescriptor RequiresMixesFields = Error("BYN3218", "this `requires` reads `it` and other fields");

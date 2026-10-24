@@ -998,7 +998,11 @@ internal sealed partial class Binder
             case TargetMemberExpr t when fn.ReturnType is not ErrorSetSymbol:
             {
                 var matches = fn.ErrorSets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null).ToList();
-                if (matches.Count == 1) return new BoundErrorVariant(t, matches[0]!);
+                if (matches.Count == 1)
+                {
+                    CheckNotExcluded(matches[0]!, t.Span);
+                    return new BoundErrorVariant(t, matches[0]!);
+                }
                 if (matches.Count > 1)
                 {
                     Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);
@@ -1018,6 +1022,7 @@ internal sealed partial class Binder
                 if (bound is BoundErrorVariant variant)
                 {
                     CheckCanFailWith(variant.Variant.Set, m.Span);
+                    CheckNotExcluded(variant.Variant, m.Span);
                     return variant;
                 }
                 return null;
@@ -1034,6 +1039,14 @@ internal sealed partial class Binder
         if (fn.InfersErrors) return;
         Report(DiagnosticCodes.UndeclaredError, span, [set.Name, fn.Name],
             help: $"add it to the signature: `fails {string.Join(", ", fn.ErrorSets.Select(s => s.Name).Append(set.Name))}`");
+    }
+
+    /// <summary>BYN2603 for a case the <c>fails</c> clause takes out with <c>except</c>.</summary>
+    private void CheckNotExcluded(ErrorVariantSymbol variant, TextSpan span)
+    {
+        if (!_fn!.ExcludedErrors.Contains(variant)) return;
+        Report(DiagnosticCodes.UndeclaredError, span, [$"{variant.Set.Name}.{variant.Name}", _fn.Name],
+            help: $"fail with another case, or remove `.{variant.Name}` from the `except` list");
     }
 
     private JumpTarget? FindTarget(Name? label, bool loopOnly, TextSpan span, string keyword)

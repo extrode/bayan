@@ -283,8 +283,8 @@ internal sealed class FlowAnalysis
                 state = Expr(c.Operand, state);
                 if (c.Variant is { } v && c.Operand is BoundCall call)
                 {
-                    if (!call.Function.ErrorSets.Contains(v.Set) && call.Function.ErrorSets.Count > 0)
-                        Report(DiagnosticCodes.UnknownVariant, ((CatchExpr)c.Syntax).Variant!.Span, [v.Name, ErrorUnionType.Of(call.Function.ErrorSets).DisplayName]);
+                    if (!call.Function.ErrorSets.Contains(v.Set) && call.Function.ErrorSets.Count > 0 || call.Function.ExcludedErrors.Contains(v))
+                        Report(DiagnosticCodes.UnknownVariant, ((CatchExpr)c.Syntax).Variant!.Span, [v.Name, ErrorUnionType.Of(call.Function.ErrorSets, call.Function.ExcludedErrors).DisplayName]);
                     else CheckPropagation(c.Syntax.Span, call, v);
                 }
                 var handler = Expr(c.Handler, state.Clone());
@@ -329,5 +329,9 @@ internal sealed class FlowAnalysis
         foreach (var set in sets.Where(s => !_fn.ErrorSets.Contains(s)))
             Report(DiagnosticCodes.UndeclaredError, span, [set.Name, _fn.Name],
                 help: $"add it to the signature: `fails {string.Join(", ", _fn.ErrorSets.Select(s => s.Name).Append(set.Name))}`");
+        // A case the caller takes out with `except` must not arrive from the callee.
+        foreach (var v in sets.SelectMany(s => s.Variants).Where(v => v != caught && _fn.ExcludedErrors.Contains(v) && !call.Function.ExcludedErrors.Contains(v)))
+            Report(DiagnosticCodes.UndeclaredError, span, [$"{v.Set.Name}.{v.Name}", _fn.Name],
+                help: $"handle it with `catch .{v.Name}`, or remove `.{v.Name}` from the `except` list");
     }
 }

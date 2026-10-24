@@ -293,24 +293,46 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
         return alias.Target ??= target;
     }
 
-    /// <summary>The sets named by <c>union error S = A, B</c>, one set or an <see cref="ErrorUnionType"/>.</summary>
+    /// <summary>The sets named by <c>union error S = A, B except .c</c>, one set or an <see cref="ErrorUnionType"/> less its excluded cases.</summary>
     private TypeSymbol ErrorSet(ErrorSetDecl decl)
     {
         var sets = new List<ErrorSetSymbol>();
+        var excluded = new List<ErrorVariantSymbol>();
         foreach (var member in decl.Members)
         {
             var t = Resolve(member);
             if (t is ErrorSetSymbol or ErrorUnionType)
             {
+                // A case stays excluded only while every member that brings in its set excludes it.
+                var dropped = t is ErrorUnionType { Excluded: var x } ? x : [];
                 foreach (var set in t is ErrorUnionType u ? u.Sets : [(ErrorSetSymbol)t])
-                    if (!sets.Contains(set)) sets.Add(set);
+                {
+                    if (sets.Contains(set))
+                    {
+                        excluded.RemoveAll(v => v.Set == set && !dropped.Contains(v));
+                        continue;
+                    }
+                    sets.Add(set);
+                    excluded.AddRange(dropped.Where(v => v.Set == set));
+                }
             }
             else if (!t.IsError)
             {
                 compilation.Report(DiagnosticCodes.NotAnErrorSet, file.Source, member.Span, [t.DisplayName]);
             }
         }
-        return sets.Count == 0 ? ErrorType.Instance : ErrorUnionType.Of(sets);
+        if (sets.Count == 0) return ErrorType.Instance;
+        foreach (var name in decl.Except)
+        {
+            var matches = sets.Select(s => s.Find(name.Text)).OfType<ErrorVariantSymbol>().ToList();
+            if (matches.Count == 0)
+                compilation.Report(DiagnosticCodes.UnknownVariant, file.Source, name.Span, [name.Text, ErrorUnionType.Of(sets).DisplayName]);
+            foreach (var v in matches)
+                if (!excluded.Contains(v)) excluded.Add(v);
+        }
+        if (sets.All(s => s.Variants.All(excluded.Contains)))
+            compilation.Report(DiagnosticCodes.EmptyErrorSet, file.Source, decl.Name.Span, [decl.Name.Text]);
+        return ErrorUnionType.Of(sets, excluded);
     }
 
     /// <summary>Applies the type arguments of <paramref name="n"/> to a generic struct, union or interface (instantiating it), or checks there are none.</summary>

@@ -835,7 +835,7 @@ internal sealed partial class Binder
                 return new BoundErrorExpr(t);
             case ErrorUnionType u:
             {
-                var matches = u.Sets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null).ToList();
+                var matches = u.Sets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null && !u.Excluded.Contains(v)).ToList();
                 if (matches.Count == 1) return new BoundErrorVariant(t, matches[0]!);
                 if (matches.Count > 1)
                     Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);

@@ -107,7 +107,8 @@ internal sealed class OwnershipAnalysis
                 if (a.Op is null && a.Target is BoundLocal { Local: var l })
                 {
                     state = Expr(a.Value, state);
-                    CheckStore(a.Value);
+                    // `x = x with { … }` consumes the old `x`: a move, not a copy (revision 0007).
+                    if (!IsSelfWith(a.Value, l)) CheckStore(a.Value);
                     state.Moved.Remove(l);
                     return state;
                 }
@@ -419,6 +420,14 @@ internal sealed class OwnershipAnalysis
         options.Add("pass it by `ref` to share it instead");
         Report(DiagnosticCodes.ImplicitCopy, span, [why], help: string.Join("; ", options), fix: fix);
     }
+
+    /// <summary>Whether <paramref name="value"/> is <c>local with { … }</c>, possibly under <c>try</c>, rebuilding <paramref name="local"/> itself.</summary>
+    internal static bool IsSelfWith(BoundExpr value, LocalSymbol local) => StripConversions(value) switch
+    {
+        BoundTry t => IsSelfWith(t.Operand, local),
+        BoundWith { Target: var target } => StripConversions(target) is BoundLocal { Local: var l } && l == local,
+        _ => false,
+    };
 
     /// <summary>A local or <c>move</c> parameter this function owns, which <c>move</c> can hand over.</summary>
     private static bool IsMovable(BoundExpr e) =>

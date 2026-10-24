@@ -1,7 +1,6 @@
 struct Id {
     readonly i64 value
-
-    void reset(ref this) {
-        value = 2
-    }
 }
+
+var id = Id { value: 1 }
+id.value = 2

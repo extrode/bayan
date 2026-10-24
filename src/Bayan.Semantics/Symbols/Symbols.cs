@@ -205,6 +205,9 @@ public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol
     /// <summary>Declared or inferred error sets; empty and <see cref="Fails"/> false for infallible functions.</summary>
     public List<ErrorSetSymbol> ErrorSets { get; } = new();
 
+    /// <summary>Cases of <see cref="ErrorSets"/> taken out by a <c>union error … except .c</c> in the <c>fails</c> clause.</summary>
+    public List<ErrorVariantSymbol> ExcludedErrors { get; } = new();
+
     /// <summary>The function has a <c>fails</c> clause (possibly inferred).</summary>
     public bool Fails { get; set; }
 

@@ -376,16 +376,22 @@ public sealed class BuiltinType : TypeSymbol
 }
 
 /// <summary>The type of a caught error when the call can fail with more than one set.</summary>
-public sealed class ErrorUnionType(IReadOnlyList<ErrorSetSymbol> sets) : ConstructedType
+public sealed class ErrorUnionType(IReadOnlyList<ErrorSetSymbol> sets, IReadOnlyList<ErrorVariantSymbol>? excluded = null) : ConstructedType
 {
-    private readonly string _key = string.Join("|", sets.Select(s => s.Module.Name + "." + s.Name));
+    private readonly string _key = string.Join("|", sets.Select(s => s.Module.Name + "." + s.Name))
+        + string.Concat((excluded ?? []).Select(v => "-" + v.Set.Name + "." + v.Name));
 
     public IReadOnlyList<ErrorSetSymbol> Sets { get; } = sets;
+
+    /// <summary>The cases taken out with <c>except .c</c>: never raised by a value of this type.</summary>
+    public IReadOnlyList<ErrorVariantSymbol> Excluded { get; } = excluded ?? [];
 
     protected override object Key => _key;
 
     /// <summary>With no sets, any error (an inferred set not yet known).</summary>
-    public override string DisplayName => Sets.Count == 0 ? "error" : string.Join(" | ", Sets.Select(s => s.Name));
+    public override string DisplayName => Sets.Count == 0 ? "error" : string.Join(" | ", Sets.Select(s => s.Name))
+        + (Excluded.Count == 0 ? "" : " except " + string.Join(", ", Excluded.Select(v => "." + v.Name)));
 
-    public static TypeSymbol Of(IReadOnlyList<ErrorSetSymbol> sets) => sets.Count == 1 ? sets[0] : new ErrorUnionType(sets.ToArray());
+    public static TypeSymbol Of(IReadOnlyList<ErrorSetSymbol> sets, IReadOnlyList<ErrorVariantSymbol>? excluded = null) =>
+        sets.Count == 1 && excluded is not { Count: > 0 } ? sets[0] : new ErrorUnionType(sets.ToArray(), excluded?.ToArray());
 }

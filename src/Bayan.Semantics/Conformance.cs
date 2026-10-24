@@ -198,7 +198,8 @@ public sealed partial class Compilation
         && own.Parameters.Count == expected.Parameters.Count
         && own.Parameters.Zip(expected.Parameters).All(p => p.First.Modifier == p.Second.Modifier && Same(p.First.Type, p.Second.Type))
         && own.Fails == expected.Fails
-        && (own.InfersErrors || expected.InfersErrors || own.ErrorSets.ToHashSet().SetEquals(expected.ErrorSets));
+        && (own.InfersErrors || expected.InfersErrors
+            || own.ErrorSets.ToHashSet().SetEquals(expected.ErrorSets) && own.ExcludedErrors.ToHashSet().SetEquals(expected.ExcludedErrors));
 
     private static bool Same(TypeSymbol a, TypeSymbol b) => a.IsError || b.IsError || a.Equals(b);
 
@@ -208,7 +209,7 @@ public sealed partial class Compilation
         if (f.Kind == FunctionKind.Getter) return $"{f.ReturnType.DisplayName} {f.Name} {{ get }}";
         var parameters = f.Parameters.Select(p => (p.Modifier == ParamModifier.None ? "" : p.Modifier.ToString().ToLowerInvariant() + " ") + p.Type.DisplayName + " " + p.Name);
         if (f.IsMutating) parameters = parameters.Prepend("ref this");
-        var fails = !f.Fails ? "" : f.ErrorSets.Count == 0 ? " fails" : " fails " + string.Join(", ", f.ErrorSets.Select(e => e.DisplayName));
+        var fails = !f.Fails ? "" : f.ErrorSets.Count == 0 ? " fails" : " fails " + ErrorUnionType.Of(f.ErrorSets, f.ExcludedErrors).DisplayName.Replace(" | ", ", ");
         return $"{(f.IsStatic ? "static " : "")}{f.ReturnType.DisplayName} {f.Name}({string.Join(", ", parameters)}){fails}";
     }
 

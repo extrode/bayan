@@ -184,6 +184,11 @@ public sealed partial class Compilation
         foreach (var module in Modules)
             foreach (var file in module.Files)
                 DeclareFile(file);
+        // Before any signature names a `union error … except .c`, whose cases must already exist.
+        foreach (var module in Modules)
+            foreach (var set in module.ErrorSets)
+                DeclareVariants(set);
+        DeclareBuiltinVariants(Builtins.ValidationError);
         // Bounds are resolved once every type is declared, so `where T : IOrder<T>` can name `T` and later types.
         foreach (var where in _wheres) where();
         DeclareInterfaceMembers(Builtins.IEnumerator);
@@ -194,10 +199,6 @@ public sealed partial class Compilation
         _interfaceMembersDeclared = true;
         foreach (var (instance, site, span) in _pendingInterfaces)
             Instantiating(site, span, () => DeclareInterfaceMembers(instance));
-        foreach (var module in Modules)
-            foreach (var set in module.ErrorSets)
-                DeclareVariants(set);
-        DeclareBuiltinVariants(Builtins.ValidationError);
         foreach (var alias in _aliases)
             if (alias.Decl is ErrorSetDecl composed) CheckComposition(alias, composed);
         foreach (var module in Modules)
@@ -246,7 +247,7 @@ public sealed partial class Compilation
                 help: "write `void main()`, `i32 main()`, `void main(ReadOnlySpan<string> args)` or `i32 main(ReadOnlySpan<string> args)`, each optionally with `fails`");
     }
 
-    /// <summary><c>@cases</c> belongs on a test with parameters and <c>@exitCode</c> on an error variant; no other declaration takes an attribute.</summary>
+    /// <summary><c>@cases</c> belongs on a test with parameters, <c>@exitCode</c> on an error variant and <c>@sealed</c>, bare, on a struct; nothing else takes an attribute.</summary>
     private void CheckAttributes(FileContext file, Decl decl)
     {
         var hasCases = false;
@@ -264,6 +265,11 @@ public sealed partial class Compilation
                 Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@cases"], help: "put `@cases(...)` on a test that takes parameters");
             else if (a.Name.Text == "exitCode")
                 Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@exitCode"], help: "put `@exitCode` on an error enum variant");
+            else if (a.Name.Text == "sealed" && decl is not StructDecl)
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@sealed"], help: "put `@sealed` on a struct");
+            else if (a.Name.Text == "sealed" && (a.Args.Length > 0 || a.Because is not null))
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, [file.Source.GetText(a.Span)], help: "write `@sealed` with no arguments and no `because`");
+            else if (a.Name.Text == "sealed") { }
             else
                 Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text],
                     help: "use `@exitCode(n)` on an error variant or `@cases(...)` on a test");
@@ -672,7 +678,7 @@ public sealed partial class Compilation
             Report(DiagnosticCodes.EmptyErrorSet, file.Source, set.Decl.Name.Span, [set.Name]);
     }
 
-    /// <summary>BYN3202 for two composed sets with a case of the same name; narrowing with <c>except</c> is not bound yet.</summary>
+    /// <summary>BYN3202 for two composed sets with a case of the same name.</summary>
     private void CheckComposition(AliasPlaceholder alias, ErrorSetDecl decl)
     {
         var sets = new TypeResolver(this, alias.File, null).ExpandAlias(alias) switch
@@ -685,9 +691,6 @@ public sealed partial class Compilation
                 if (!owners.TryAdd(v.Name, set))
                     Report(DiagnosticCodes.DuplicateErrorCase, alias.File.Source, decl.Head, [owners[v.Name].Name, set.Name, v.Name],
                         label: $"two cases `{v.Name}`", help: "rename one case, or compose fewer sets");
-        if (decl.Except.Length > 0)
-            Report(DiagnosticCodes.Unsupported, alias.File.Source, TextSpan.FromBounds(decl.Except[0].Span.Start, decl.Except[^1].Span.End),
-                ["narrowing a `union error` with `except`"]);
     }
 
     private void DeclareEnumMembers(EnumSymbol e)
@@ -1054,8 +1057,18 @@ public sealed partial class Compilation
                 var t = types.Resolve(e);
                 if (t is ErrorSetSymbol or ErrorUnionType)
                 {
+                    // A case stays excluded only while every name that brings in its set excludes it.
+                    var excluded = t is ErrorUnionType { Excluded: var x } ? x : [];
                     foreach (var set in t is ErrorUnionType u ? u.Sets : [(ErrorSetSymbol)t])
-                        if (!fn.ErrorSets.Contains(set)) fn.ErrorSets.Add(set);
+                    {
+                        if (fn.ErrorSets.Contains(set))
+                        {
+                            fn.ExcludedErrors.RemoveAll(v => v.Set == set && !excluded.Contains(v));
+                            continue;
+                        }
+                        fn.ErrorSets.Add(set);
+                        fn.ExcludedErrors.AddRange(excluded.Where(v => v.Set == set));
+                    }
                 }
                 else if (!t.IsError)
                 {

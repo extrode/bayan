@@ -48,7 +48,7 @@ void copies(Map<i64, i64> p) {
     var s = Store { name: "s", data: fresh() }
     let d = s.data
     b = a
-    s = s with { data: a }
+    s.data = a
     let t = Store { name: "t", data: a }
     let h = Holder(a)
     let full = Slot.full(a)
