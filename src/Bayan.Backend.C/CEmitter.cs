@@ -841,8 +841,9 @@ internal sealed class FunctionEmitter
     private readonly string _file;
     // `#line` maps the C of each statement back to this file (a C string literal); null when the function has no file.
     private readonly string? _linePath;
-    // The line of the last `#line` written; repeats are skipped.
+    // The line of the last `#line` written and the output length after it; a repeat with no C between is skipped.
     private int _lastLine;
+    private int _lastLineEnd;
     private int _indent = 1;
     // Ownership checks: the statement being emitted is first emitted dry to find locals it both reads and moves,
     // whose C evaluation order is unspecified, so their moved slots are not set there.
@@ -922,9 +923,10 @@ internal sealed class FunctionEmitter
     {
         if (_linePath is null) return;
         var line = LineOf(syntax);
-        if (line == _lastLine) return;
+        if (line == _lastLine && _sb.Length == _lastLineEnd) return;
         _lastLine = line;
         _sb.Append("#line ").Append(line).Append(' ').Append(_linePath).Append('\n');
+        _lastLineEnd = _sb.Length;
     }
 
     // ── Ownership checks ─────────────────────────────────────────────────────────
@@ -1003,11 +1005,11 @@ internal sealed class FunctionEmitter
         _reads = [];
         _moves = [];
         var mark = _sb.Length;
-        var lastLine = _lastLine;
+        var (lastLine, lastLineEnd) = (_lastLine, _lastLineEnd);
         if (s is BoundIf i) Expr(i.Condition);
         else Statement(s);
         _sb.Length = mark;
-        _lastLine = lastLine;
+        (_lastLine, _lastLineEnd) = (lastLine, lastLineEnd);
         _moved = _moves;
         _reads.IntersectWith(_moves);
         _unsequenced = _reads;
@@ -1029,7 +1031,7 @@ internal sealed class FunctionEmitter
         if (_c.OwnershipChecks && _reads is null && s is not (BoundBlock or LLoop or LLabel or LGoto or LPushPanicHandler)) FindUnsequenced(s);
         _afterCalls = [];
         var mark = _sb.Length;
-        var lastLine = _lastLine;
+        var (lastLine, lastLineEnd) = (_lastLine, _lastLineEnd);
         if (s is not (BoundBlock or LLabel)) MapLine(s.Syntax);
         var start = _sb.Length;
         switch (s)
@@ -1138,7 +1140,7 @@ internal sealed class FunctionEmitter
         if (_sb.Length == start)
         {
             _sb.Length = mark;
-            _lastLine = lastLine;
+            (_lastLine, _lastLineEnd) = (lastLine, lastLineEnd);
         }
     }
 

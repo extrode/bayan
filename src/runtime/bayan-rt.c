@@ -274,6 +274,7 @@ void byn_log(byn_builtin_LogLevel level, byn_str text) {
     for (int64_t i = 0; i < text.len; i++) {
         uint8_t b = text.ptr[i];
         if (b == '\n') fputs("\\n", stderr);
+        else if (b == '\\') fputs("\\\\", stderr);
         else if (b == '\r') fputs("\\r", stderr);
         else if (b == '\t') fputs("\\t", stderr);
         else if (b < 0x20 || b == 0x7F) fprintf(stderr, "\\u{%X}", b);
