@@ -1,0 +1,27 @@
+struct Inner {
+    string name
+    rune mark
+}
+
+struct P {
+    i64 x
+    Inner inner
+    bool? flag
+}
+
+struct Empty {
+}
+
+struct Point {
+    i64 x
+    i64 y
+
+    public void formatInto(ref StrBuf b) {
+        b.append($"({x}, {y})")
+    }
+}
+
+let p = P { x: 1, inner: Inner { name: "a\"b", mark: 'z' }, flag: null }
+print($"{p, as: .debug}")
+print($"[{Empty {}, as: .debug, width: 10}]")
+print($"{Point { x: 1, y: 2 }} {Point { x: 1, y: 2 }, as: .debug}")

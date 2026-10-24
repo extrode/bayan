@@ -1,0 +1,7 @@
+var xs = List<i64>()
+xs.append(1)
+xs.append(2)
+xs.remove(at: 1)
+print($"left {xs.length}")
+xs.remove(at: 1)
+print("unreachable")

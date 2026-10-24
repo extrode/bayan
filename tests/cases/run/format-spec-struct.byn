@@ -1,0 +1,52 @@
+struct Money {
+    i64 cents
+
+    public void formatInto(ref StrBuf output, as FormatSpec spec) {
+        var digits = spec.digits
+        if digits < 0 {
+            digits = 2
+        }
+        var text = StrBuf.over(stackalloc u8[32])
+        if spec.debug {
+            text.append("Money ")
+        }
+        if spec.radix == .hex {
+            text.append($"{cents, as: .hex}")
+        } else {
+            text.append($"{cents / 100}")
+            if digits > 0 {
+                text.append(".")
+                text.append($"{cents % 100, width: 2, fill: '0'}")
+            }
+        }
+        let gap = spec.width - text.length
+        if gap > 0 && spec.align != .start {
+            output.appendRepeated(spec.fill, by: gap)
+        }
+        output.append(text.view)
+        if gap > 0 && spec.align == .start {
+            output.appendRepeated(spec.fill, by: gap)
+        }
+    }
+}
+
+struct Point {
+    i64 x
+    i64 y
+
+    public void formatInto(ref StrBuf b) {
+        b.append($"({x}, {y})")
+    }
+}
+
+let price = Money { cents: 1250 }
+print($"[{price}]")
+print($"[{price, width: 8}]")
+print($"[{price, width: 8, fill: '*', align: .start}]")
+print($"[{price, digits: 0}]")
+print($"[{price, as: .hex}]")
+print($"[{price, as: .debug}]")
+print($"[{Point { x: 1, y: 2 }, width: 8, align: .end}]")
+var buf = StrBuf()
+buf.append(price)
+print(buf.view)

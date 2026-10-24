@@ -62,7 +62,7 @@ public enum BuiltinMember
     /// <summary>Lowering of <c>for</c> over a text view: whether it has another item at the cursor, and the item (advancing the cursor).</summary>
     TextViewMore, TextViewNext,
     SpanLength, SpanIsEmpty, SpanCopy, ListCopy, MapCopy, StrBufCopy,
-    ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListMutableSpan, ArrayMutableSpan, ListClear, ListRemoveLast, ListRemoveRange, ListReplace, ListSort, ListTryGet,
+    ListLength, ListIsEmpty, ListAdd, ListAsSpan, ListMutableSpan, ArrayMutableSpan, ListClear, ListRemoveLast, ListRemoveRange, ListRemoveThrough, ListRemoveAt, ListRemoveAtRange, ListReplace, ListSort, ListTryGet,
     MapLength, MapTryGet, MapContains, MapRemove, MapClear,
     /// <summary><c>map[k]</c> read (panics when missing), <c>map[k]</c> as a write target (inserts when missing), and <c>map.slot(k)</c> (inserts the default).</summary>
     MapIndex, MapIndexSet, MapSlot,
@@ -70,7 +70,7 @@ public enum BuiltinMember
     MapSlotCount, MapSlotLive, MapSlotEntry,
     ArrayLength, ArrayAsSpan,
     ArenaReset,
-    StrBufAppend, StrBufLength, StrBufAsString, StrBufClear,
+    StrBufAppend, StrBufAppendRepeated, StrBufInsert, StrBufLength, StrBufAsString, StrBufClear,
     /// <summary><c>x.take()</c>: moves the value out of a place and leaves the type's empty value behind.</summary>
     ListTake, MapTake, StrBufTake, OptionalTake,
     CharValue, IntToString,
@@ -84,6 +84,7 @@ public enum BuiltinMember
     EnumField,
     ProcessExitCode, ProcessStdout, ProcessStderr,
     PanicMessage,
+    FormatSpecRadix, FormatSpecDebug, FormatSpecWidth, FormatSpecFill, FormatSpecAlign, FormatSpecDigits,
 }
 
 public sealed record BoundBuiltinCall(Node Syntax, BuiltinMember Member, BoundExpr Receiver, BoundExpr[] Arguments, TypeSymbol Type)
@@ -170,7 +171,17 @@ public sealed record BoundSwitchArm(Node Syntax, BoundPattern Pattern, BoundExpr
 public sealed record BoundSwitchExpr(Node Syntax, BoundExpr Value, BoundSwitchArm[] Arms, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
 /// <summary>One piece of <c>$"…"</c>: literal text or a value to format.</summary>
-public sealed record BoundInterpolationPart(string? Text, BoundExpr? Value);
+public sealed record BoundInterpolationPart(string? Text, BoundExpr? Value)
+{
+    /// <summary>The hole's checked specs (<c>{n, as: .hex, width: 6}</c>, spec §16.4); null without any.</summary>
+    public BoundFormatSpec? Spec { get; init; }
+}
+
+/// <summary>
+/// Constant format specs: <see cref="Radix"/> 0 (none), 2, 8, 10 or 16; <see cref="Width"/> in runes, 0 for none;
+/// <see cref="Align"/> -1 (numbers to the end, the rest to the start), 0 start, 1 end, 2 center; <see cref="Digits"/> -1 for none.
+/// </summary>
+public sealed record BoundFormatSpec(int Radix, bool Debug, long Width, uint Fill, int Align, int Digits);
 
 /// <summary><c>$"…"</c>. Written straight into an output sink (<c>print</c>, <c>panic</c>, <c>StrBuf.append</c>); elsewhere a string from <c>context.allocator</c>.</summary>
 public sealed record BoundInterpolated(Node Syntax, BoundInterpolationPart[] Parts) : BoundExpr(Syntax, PrimitiveType.String);

@@ -253,6 +253,7 @@ public sealed class CEmitter
         BuiltinType { Kind: BuiltinKind.IoStream or BuiltinKind.IoInput } => "int32_t",
         BuiltinType { Kind: BuiltinKind.ProcessResult } => "byn_process",
         BuiltinType { Kind: BuiltinKind.Panic } => "byn_panic_info",
+        BuiltinType { Kind: BuiltinKind.FormatSpec } => "byn_format_spec",
         TextViewType => "byn_text_view",
         // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
         OwnedType o => CType(o.Inner) + "*",
@@ -273,7 +274,7 @@ public sealed class CEmitter
     {
         PrimitiveType p => p.Kind == PrimitiveKind.String ? "str" : p.Name,
         ErrorSetSymbol or ErrorUnionType => "err",
-        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", BuiltinKind.Panic => "panic", _ => "iostream" },
+        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", BuiltinKind.Panic => "panic", BuiltinKind.FormatSpec => "formatspec", _ => "iostream" },
         StructSymbol s => s.Module.CName + "__" + s.Name + TypeArgs(s.TypeArguments),
         EnumSymbol e => e.Module.CName + "__" + e.Name,
         UnionSymbol u => u.Module.CName + "__" + u.Name + TypeArgs(u.TypeArguments),
@@ -738,7 +739,7 @@ public sealed class CEmitter
                     sb.Append($"    if (v.err.code) byn_w_error(w, v.err.code);\n    else {Format(r.Value, "v.value", "w")}\n");
                     break;
                 case StructSymbol s when FormatInto(s) is { } method:
-                    sb.Append($"    {FunctionName(method)}(&v, w);\n");
+                    sb.Append($"    {FunctionName(method)}(&v, w{(method.Parameters.Count == 2 ? ", " + NoFormatSpec : "")});\n");
                     break;
                 case UnionSymbol u:
                     sb.Append("    switch (v.tag) {\n");
@@ -783,9 +784,21 @@ public sealed class CEmitter
         return $"{name}({w}, {v});";
     }
 
-    private static FunctionSymbol? FormatInto(StructSymbol s) =>
-        s.Methods.FirstOrDefault(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 1
-            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } });
+    /// <summary>A struct's <c>formatInto(ref StrBuf)</c>, or else its <c>formatInto(ref StrBuf, as FormatSpec)</c>: the form a hole without specs calls.</summary>
+    internal static FunctionSymbol? FormatInto(StructSymbol s) =>
+        s.Methods.Where(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count is 1 or 2
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
+            && (m.Parameters.Count == 1 || m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } }))
+            .OrderBy(m => m.Parameters.Count).FirstOrDefault();
+
+    /// <summary>A struct's <c>formatInto(ref StrBuf, as FormatSpec)</c>: the form a hole with specs calls, as the binder's <c>TakesFormatSpec</c> assumes.</summary>
+    internal static FunctionSymbol? FormatIntoWithSpec(StructSymbol s) =>
+        s.Methods.FirstOrDefault(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 2
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
+            && m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } });
+
+    /// <summary>The spec a struct's two-parameter <c>formatInto</c> receives outside a hole with specs: none given.</summary>
+    internal const string NoFormatSpec = "((byn_format_spec){2, false, 0, ' ', 0, -1})";
 
     // ── Static data ──────────────────────────────────────────────────────────────
 
@@ -1255,7 +1268,7 @@ internal sealed class FunctionEmitter
         {
             var part = w.Parts[i];
             var write = part.Text is { Length: > 0 } text ? $"byn_w_str(w, {CEmitter.StringLiteral(text)});"
-                : part.Value is { } value ? _c.Format(value.Type, Expr(value), "w") : null;
+                : part.Value is { } value ? part.Spec is { } spec ? FormatWithSpec(value, spec) : _c.Format(value.Type, Expr(value), "w") : null;
             if (write is null) continue;
             Line(w.Guards?[i] is { } guard ? $"if ({Expr(guard)}) {{ {write} }}" : write);
         }
@@ -1265,6 +1278,77 @@ internal sealed class FunctionEmitter
         else if (w.Sink == WriteSink.Log) Line($"byn_log({Expr(w.Target!)}, (byn_str){{wb, wv.len}});");
         _indent--;
         Line("}");
+    }
+
+    /// <summary>
+    /// A hole with specs: the value is formatted into a stack buffer (a radix, fixed digits or the debug view),
+    /// then written padded to the width in runes.
+    /// </summary>
+    private string FormatWithSpec(BoundExpr value, BoundFormatSpec spec)
+    {
+        var t = value.Type;
+        var v = Expr(value);
+        // A struct with a `formatInto` that takes the `FormatSpec` reads every spec itself, padding included, even when it also has the one-parameter form.
+        if (t is StructSymbol s && CEmitter.FormatIntoWithSpec(s) is { } method)
+            return $"{{ {_c.CType(t)} fv = {v}; {_c.FunctionName(method)}(&fv, w, (byn_format_spec){{{(spec.Radix switch { 2 => 0, 8 => 1, 16 => 3, _ => 2 })}, "
+                + $"{(spec.Debug ? "true" : "false")}, {spec.Width}, {spec.Fill}u, {Math.Max(spec.Align, 0)}, {spec.Digits}}}); }}";
+        string Inner(string sw) => spec.Radix != 0
+            ? $"bynh_w_radix({sw}, (uint64_t)({v}), {(t.IsSignedInteger ? $"({v}) < 0" : "false")}, {spec.Radix});"
+            : spec.Digits >= 0 ? $"bynh_w_digits({sw}, (double)({v}), {spec.Digits});"
+            : spec.Debug ? Debug(t, v, sw)
+            : _c.Format(t, v, sw);
+        if (spec.Radix != 0)
+            _c.Helper("bynh_w_radix", "static void bynh_w_radix(byn_writer* w, uint64_t v, bool negative, int base)", () =>
+                "{\n    uint8_t d[64];\n    int n = 0;\n    if (negative) {\n        byn_w_char(w, '-');\n        v = 0 - v;\n    }\n"
+                + "    do {\n        d[n++] = (uint8_t)\"0123456789abcdef\"[v % (uint64_t)base];\n        v /= (uint64_t)base;\n    } while (v > 0);\n"
+                + "    while (n > 0) byn_w_bytes(w, &d[--n], 1);\n}\n");
+        if (spec.Digits >= 0)
+            // Rounds half away from zero; a value too large to scale is written as `byn_w_f64` writes it.
+            _c.Helper("bynh_w_digits", "static void bynh_w_digits(byn_writer* w, double v, int digits)", () =>
+                "{\n    double p = 1;\n    for (int i = 0; i < digits; i++) p *= 10;\n    double s = v * p;\n"
+                + "    if (!(s > -9.0e15 && s < 9.0e15)) {\n        byn_w_f64(w, v);\n        return;\n    }\n"
+                + "    int64_t n = (int64_t)(s < 0 ? s - 0.5 : s + 0.5);\n    if (n < 0 || (n == 0 && v < 0)) byn_w_char(w, '-');\n"
+                + "    uint64_t m = n < 0 ? (uint64_t)-n : (uint64_t)n, q = (uint64_t)p;\n    byn_w_u64(w, m / q);\n    if (digits == 0) return;\n"
+                + "    byn_w_char(w, '.');\n    uint64_t f = m % q;\n    for (uint64_t k = q / 10; k > 0; k /= 10) byn_w_char(w, (uint32_t)('0' + f / k % 10));\n}\n");
+        if (spec.Width == 0) return Inner("w");
+        // Numbers align to the end by default, everything else to the start.
+        var align = spec.Align >= 0 ? spec.Align : t.IsNumeric ? 1 : 0;
+        var pad = _c.Helper("bynh_w_padded", "static void bynh_w_padded(byn_writer* w, byn_str s, int64_t width, uint32_t fill, int align)", () =>
+            "{\n    int64_t runes = 0;\n    for (int64_t i = 0; i < s.len; i++) runes += (s.ptr[i] & 0xC0) != 0x80;\n"
+            + "    int64_t gap = width > runes ? width - runes : 0, before = align == 1 ? gap : align == 2 ? gap / 2 : 0;\n"
+            + "    for (int64_t i = 0; i < before; i++) byn_w_char(w, fill);\n    byn_w_str(w, s);\n"
+            + "    for (int64_t i = before; i < gap; i++) byn_w_char(w, fill);\n}\n");
+        return $"{{ uint8_t sb[1024]; byn_writer sv = {{sb, 1024, 0, BYN_WRITE_TRUNCATE, {Loc(value.Syntax)}}}; byn_writer* sw = &sv; {Inner("sw")} "
+            + $"{pad}(w, (byn_str){{sb, sv.len}}, {spec.Width}, {spec.Fill}u, {align}); }}";
+    }
+
+    /// <summary>
+    /// The debug view (spec §13): strings and runes quoted, a struct in its literal form <c>P { x: 1, name: "a" }</c>
+    /// (one whose <c>formatInto</c> takes the <c>FormatSpec</c> formats itself), everything else as it displays.
+    /// </summary>
+    private string Debug(TypeSymbol t, string v, string w)
+    {
+        if (t.IsString)
+            return _c.Helper("bynh_w_quoted", "static void bynh_w_quoted(byn_writer* w, byn_str s, uint32_t quote)", () =>
+                "{\n    byn_w_char(w, quote);\n    for (int64_t i = 0; i < s.len; i++) {\n"
+                + "        uint8_t c = s.ptr[i];\n        if (c == quote || c == '\\\\') byn_w_char(w, '\\\\');\n"
+                + "        if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n        else byn_w_bytes(w, &c, 1);\n    }\n    byn_w_char(w, quote);\n}\n") + $"({w}, {v}, '\"');";
+        if (t is PrimitiveType { Kind: PrimitiveKind.Char }) return $"byn_w_char({w}, '\\''); byn_w_char({w}, {v}); byn_w_char({w}, '\\'');";
+        if (t is not StructSymbol s || CEmitter.FormatInto(s) is { Parameters.Count: 2 }) return _c.Format(t, v, w);
+        var name = _c.Helper("bynh_debug_" + _c.Key(t), $"static void bynh_debug_{_c.Key(t)}(byn_writer* w, {_c.CType(t)} v)", () =>
+        {
+            var sb = new StringBuilder("{\n");
+            sb.Append($"    byn_w_str(w, {CEmitter.StringLiteral(s.DisplayName + (s.Fields.Count == 0 ? " {}" : " { "))});\n");
+            for (var i = 0; i < s.Fields.Count; i++)
+            {
+                var f = s.Fields[i];
+                sb.Append($"    byn_w_str(w, {CEmitter.StringLiteral((i == 0 ? "" : ", ") + f.Name + ": ")});\n");
+                sb.Append("    ").Append(Debug(f.Type, "v." + CEmitter.FieldName(f.Name), "w")).Append('\n');
+            }
+            if (s.Fields.Count > 0) sb.Append($"    byn_w_str(w, {CEmitter.StringLiteral(" }")});\n");
+            return sb.Append("}\n").ToString();
+        });
+        return $"{name}({w}, {v});";
     }
 
     // ── Expressions ──────────────────────────────────────────────────────────────
@@ -1390,8 +1474,23 @@ internal sealed class FunctionEmitter
                     "{\n    return (byn_writer){s.ptr, s.len, 0, BYN_WRITE_STRICT, file, line};\n}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Loc(c.Syntax)})";
             }
-            case BuiltinFunction.StrBufGrow:
+            // `StrBuf.over(span)` writes into the span and spills to `context.allocator` when it is outgrown.
+            case BuiltinFunction.StrBufOver:
+            {
+                var span = _c.CType(fn.Parameters[0].Type);
+                var name = _c.Helper("bynh_strbuf_over", $"static byn_writer bynh_strbuf_over({span} s, const char* file, int line)", () =>
+                    "{\n    return (byn_writer){s.ptr, s.len, 0, BYN_WRITE_GROW, file, line, byn_context};\n}\n");
+                return $"{name}({Expr(c.Arguments[0])}, {Loc(c.Syntax)})";
+            }
+            case BuiltinFunction.StrBufGrow when c.Arguments.Length == 0:
                 return "byn_strbuf_grow(byn_context)";
+            case BuiltinFunction.StrBufGrow:
+            {
+                var name = _c.Helper("bynh_strbuf_capacity", "static byn_writer bynh_strbuf_capacity(int64_t n)", () =>
+                    "{\n    byn_writer w = byn_strbuf_grow(byn_context);\n"
+                    + "    if (n > 0) {\n        w.buf = (uint8_t*)byn_context->resize(byn_context, NULL, 0, n);\n        w.cap = n;\n    }\n    return w;\n}\n");
+                return $"{name}({Expr(c.Arguments[0])})";
+            }
             case BuiltinFunction.OwnedNew:
             {
                 var inner = ((OwnedType)c.Type).Inner;
@@ -1710,6 +1809,22 @@ internal sealed class FunctionEmitter
                     "{\n    byn_slice_check(start, end, l->len, file, line);\n    if (end > start) memmove(l->ptr + start, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n    l->len -= end - start;\n}\n");
                 return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})";
             }
+            case BuiltinMember.ListRemoveThrough or BuiltinMember.ListRemoveAt or BuiltinMember.ListRemoveAtRange:
+            {
+                // `through:` is an inclusive end and `at: i` removes one element (mode 1 and 2; mode 0 is `until`).
+                var lt = _c.CType(r.Type);
+                var name = "bynh_remove_through_" + _c.Key(r.Type);
+                _c.Helper(name, $"static void {name}({lt}* l, int64_t start, int64_t end, int mode, const char* file, int line)", () =>
+                    "{\n    if (mode == 2) {\n        if (start < 0 || start >= l->len) bayan_trap_bounds(file, line);\n        end = start;\n    }\n    if (mode != 0) {\n        byn_slice_check(start, end, l->len - 1, file, line);\n        end++;\n    }\n"
+                    + "    byn_slice_check(start, end, l->len, file, line);\n    if (end > start) memmove(l->ptr + start, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n    l->len -= end - start;\n}\n");
+                if (b.Member == BuiltinMember.ListRemoveThrough) return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, 1, {Loc(b.Syntax)})";
+                if (b.Member == BuiltinMember.ListRemoveAt) return $"{name}(&{Expr(r)}, {arg}, 0, 2, {Loc(b.Syntax)})";
+                // `at: a..b` or `at: a..=b` reads the range's layout tuple (start, end, inclusive).
+                var range = "bynh_remove_at_range_" + _c.Key(r.Type);
+                _c.Helper(range, $"static void {range}({lt}* l, {_c.CType(b.Arguments[0].Type)} at, const char* file, int line)", () =>
+                    $"{{\n    {name}(l, at.item1, at.item2, at.item3 ? 1 : 0, file, line);\n}}\n");
+                return $"{range}(&{Expr(r)}, {arg}, {Loc(b.Syntax)})";
+            }
             case BuiltinMember.ListReplace:
             {
                 var lt = _c.CType(r.Type);
@@ -1769,6 +1884,25 @@ internal sealed class FunctionEmitter
                 return $"byn_arena_reset({Expr(r)})";
             case BuiltinMember.StrBufAppend:
                 return Claimed($"byn_w_str(&{Expr(r)}, {arg})", r, b.Syntax);
+            case BuiltinMember.StrBufAppendRepeated:
+            {
+                var name = _c.Helper("bynh_strbuf_repeat", "static void bynh_strbuf_repeat(byn_writer* w, uint32_t c, int64_t n, const char* file, int line)", () =>
+                    "{\n    if (n < 0) byn_panic(\"repeated a negative number of times\", file, line);\n"
+                    + "    for (int64_t i = 0; i < n; i++) byn_w_char(w, c);\n}\n");
+                return Claimed($"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})", r, b.Syntax);
+            }
+            case BuiltinMember.StrBufInsert:
+            {
+                // Appends the text, then rotates it into place by three reversals; text the buffer grew away from stays valid.
+                _c.Helper("bynh_reverse", "static void bynh_reverse(uint8_t* p, int64_t n)", () =>
+                    "{\n    for (int64_t i = 0, j = n - 1; i < j; i++, j--) {\n        uint8_t t = p[i];\n        p[i] = p[j];\n        p[j] = t;\n    }\n}\n");
+                var name = _c.Helper("bynh_strbuf_insert", "static void bynh_strbuf_insert(byn_writer* w, byn_str s, int64_t at, const char* file, int line)", () =>
+                    "{\n    byn_slice_check(at, w->len, w->len, file, line);\n"
+                    + "    if (at < w->len && (w->buf[at] & 0xC0) == 0x80) byn_panic(\"string slice splits a code point\", file, line);\n"
+                    + "    int64_t end = w->len;\n    byn_w_bytes(w, s.ptr, s.len);\n"
+                    + "    bynh_reverse(w->buf + at, end - at);\n    bynh_reverse(w->buf + end, s.len);\n    bynh_reverse(w->buf + at, end - at + s.len);\n}\n");
+                return Claimed($"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})", r, b.Syntax);
+            }
             case BuiltinMember.IoWrite:
                 return $"byn_io_write({Expr(r)}, {arg})";
             case BuiltinMember.IoReadAll:
@@ -1784,6 +1918,9 @@ internal sealed class FunctionEmitter
                 return $"{Expr(r)}.message";
             case BuiltinMember.ProcessExitCode:
                 return $"{Expr(r)}.exit_code";
+            case BuiltinMember.FormatSpecRadix or BuiltinMember.FormatSpecDebug or BuiltinMember.FormatSpecWidth
+                or BuiltinMember.FormatSpecFill or BuiltinMember.FormatSpecAlign or BuiltinMember.FormatSpecDigits:
+                return $"{Expr(r)}.{b.Member.ToString()[10..].ToLowerInvariant()}";
             case BuiltinMember.ProcessStdout:
                 return $"{Expr(r)}.out";
             case BuiltinMember.ProcessStderr:

@@ -769,7 +769,7 @@ internal sealed partial class Binder
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
             return new BoundBuiltinCall(syntax, builtin.Member, target, [],
-                builtin.Type is SpanType span && target is BoundStaticArray ? new SpanType(span.Element, readOnly: true) : builtin.Type);
+                builtin.Type is SpanType span && target is BoundStaticArray ? new SpanType(span.Element, readOnly: true) : PropertyType(builtin.Member, builtin.Type));
         // `length` and `isEmpty` of an untrusted value are clean facts (spec §15.1).
         if (target.Type is UntrustedType untrusted && name is "length" or "isEmpty" && BuiltinMembers.Property(untrusted.Inner, name) is { } fact)
             return new BoundBuiltinCall(syntax, fact.Member, Fact(target), [], fact.Type);
@@ -1769,12 +1769,75 @@ internal sealed partial class Binder
             }
             var hole = (InterpolationHole)part;
             var value = BindExpr(hole.Expr);
-            if (!value.Type.IsError && WhyNotFormattable(value.Type, []) is { } why)
+            // `as: .debug` shows a struct without `formatInto` in its literal form (spec §13).
+            var debug = hole.Specs.Any(a => a is { Name.Text: "as", Value: TargetMemberExpr { Member.Text: "debug" } });
+            if (!value.Type.IsError && (debug ? WhyNotDebugFormattable(value.Type, []) : WhyNotFormattable(value.Type, [])) is { } why)
                 Report(DiagnosticCodes.NotFormattable, hole.Expr.Span, [value.Type.DisplayName], label: why == "" ? null : why,
-                    help: value.Type is StructSymbol s ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x:debug}}`" : null);
-            parts.Add(new BoundInterpolationPart(null, value));
+                    help: value.Type is StructSymbol s && !debug ? $"add `formatInto(ref StrBuf)` to `{s.Name}`, or use `{{x, as: .debug}}`" : null);
+            parts.Add(new BoundInterpolationPart(null, value) { Spec = hole.Specs.Length == 0 || value.Type.IsError ? null : BindFormatSpec(hole.Specs, value.Type) });
         }
         return new BoundInterpolated(i, parts.ToArray());
+    }
+
+    /// <summary>
+    /// The specs of a hole (spec §16.4): <c>as:</c> a radix on integers or <c>.debug</c>, <c>digits:</c> on floats,
+    /// <c>width:</c>, <c>fill:</c> and <c>align:</c> on any value. Each is a constant; a spec that does not apply is BYN2021.
+    /// </summary>
+    private BoundFormatSpec BindFormatSpec(Argument[] specs, TypeSymbol type)
+    {
+        var spec = new BoundFormatSpec(0, false, 0, ' ', -1, -1);
+        var seen = new HashSet<string>();
+        foreach (var a in specs)
+        {
+            var name = a.Name?.Text ?? "";
+            if (!seen.Add(name))
+            {
+                Report(DiagnosticCodes.DuplicateArgument, a.Span, [name]);
+                continue;
+            }
+            switch (name)
+            {
+                case "as" when a.Value is TargetMemberExpr { Member.Text: "debug" }:
+                    spec = spec with { Debug = true };
+                    break;
+                case "as" when a.Value is TargetMemberExpr { Member.Text: var radix } && _c.Builtins.Radix.Find(radix) is { } member:
+                    if (!type.IsInteger && !TakesFormatSpec(type)) Report(DiagnosticCodes.UnknownParameter, a.Span, [type.DisplayName, $"as: .{radix}"]);
+                    else spec = spec with { Radix = member.Ordinal switch { 0 => 2, 1 => 8, 2 => 10, _ => 16 } };
+                    break;
+                case "as":
+                    BindConverted(a.Value, _c.Builtins.Radix);
+                    break;
+                case "width" or "digits":
+                    var n = BindConverted(a.Value, PrimitiveType.I64);
+                    if (n.Type.IsError) break;
+                    if (n.Constant is not { Value: Int128 v })
+                        Report(DiagnosticCodes.NotConstant, a.Value.Span, [$"a format spec's `{name}`"]);
+                    else if (name == "width" && (v < 0 || v > 1024))
+                        Report(DiagnosticCodes.LiteralOutOfRange, a.Value.Span, [v.ToString(), "a format spec's `width` (0 to 1024)"]);
+                    else if (name == "digits" && (v < 0 || v > 15))
+                        Report(DiagnosticCodes.LiteralOutOfRange, a.Value.Span, [v.ToString(), "a format spec's `digits` (0 to 15)"]);
+                    else if (name == "digits" && !type.IsFloat && !TakesFormatSpec(type))
+                        Report(DiagnosticCodes.UnknownParameter, a.Span, [type.DisplayName, "digits"]);
+                    else spec = name == "width" ? spec with { Width = (long)v } : spec with { Digits = (int)v };
+                    break;
+                case "fill":
+                    var fill = BindConverted(a.Value, PrimitiveType.Char);
+                    if (fill.Type.IsError) break;
+                    if (fill.Constant?.Value is not { } c) Report(DiagnosticCodes.NotConstant, a.Value.Span, ["a format spec's `fill`"]);
+                    else spec = spec with { Fill = (uint)((System.Text.Rune)c).Value };
+                    break;
+                case "align" when a.Value is TargetMemberExpr { Member.Text: "start" or "end" or "center" } edge:
+                    spec = spec with { Align = edge.Member.Text switch { "start" => 0, "end" => 1, _ => 2 } };
+                    break;
+                case "align":
+                    Report(DiagnosticCodes.UnknownEnumMember, a.Value.Span, [a.Value is TargetMemberExpr tm ? tm.Member.Text : Source.GetText(a.Value.Span), "align"]);
+                    break;
+                default:
+                    Report(DiagnosticCodes.UnknownParameter, a.Span, [type.DisplayName, name]);
+                    break;
+            }
+        }
+        return spec;
     }
 
     internal static bool IsFormattable(TypeSymbol t) => WhyNotFormattable(t, []) is null;
@@ -1803,14 +1866,38 @@ internal sealed partial class Binder
         _ => "",
     };
 
+    /// <summary>As <see cref="WhyNotFormattable"/>, under <c>as: .debug</c>: a struct formats when each of its fields does.</summary>
+    private static string? WhyNotDebugFormattable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
+    {
+        StructSymbol s when !TakesFormatSpec(s) => !seen.Add(s) ? null
+            : s.Fields.Select(f => WhyNotDebugFormattable(f.Type, seen) is { } why ? why == "" ? $"field `{f.Name}` is `{f.Type.DisplayName}`" : why : null)
+                .FirstOrDefault(w => w is not null),
+        _ => WhyNotFormattable(t, seen),
+    };
+
     /// <summary>Why <paramref name="part"/> of a type does not format, naming it when it is the culprit.</summary>
     private static string? Part(string name, TypeSymbol part, HashSet<TypeSymbol> seen) =>
         WhyNotFormattable(part, seen) is { } why ? why == "" ? $"{name} is `{part.DisplayName}`" : why : null;
 
+    /// <summary>The type of a built-in property, with the builtin enums <see cref="BuiltinMembers"/> cannot name.</summary>
+    private TypeSymbol PropertyType(BuiltinMember member, TypeSymbol type) => member switch
+    {
+        BuiltinMember.FormatSpecRadix => _c.Builtins.Radix,
+        BuiltinMember.FormatSpecAlign => _c.Builtins.Align,
+        _ => type,
+    };
+
     /// <summary>Matches the C emitter's <c>formatInto</c> lookup.</summary>
     private static bool HasFormatInto(StructSymbol s) =>
-        s.Methods.Any(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 1
-            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } });
+        s.Methods.Any(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count is 1 or 2
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
+            && (m.Parameters.Count == 1 || m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } }));
+
+    /// <summary>Whether <paramref name="t"/> is a struct whose <c>formatInto</c> takes the hole's <c>FormatSpec</c>, so reads every spec itself.</summary>
+    private static bool TakesFormatSpec(TypeSymbol t) =>
+        t is StructSymbol s && s.Methods.Any(m => m.Name == "formatInto" && !m.IsStatic && !m.Fails && m.Parameters.Count == 2
+            && m.Parameters[0] is { IsByRef: true, Type: BuiltinType { Kind: BuiltinKind.StrBuf } }
+            && m.Parameters[1] is { IsByRef: false, Type: BuiltinType { Kind: BuiltinKind.FormatSpec } });
 }
 
 /// <summary>A function named but not yet called (only valid as a callee).</summary>
