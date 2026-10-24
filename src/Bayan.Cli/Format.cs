@@ -78,7 +78,9 @@ internal static class Format
                 var declared = package is { Dir: var root }
                     ? packageNames.TryGetValue(root, out var known) ? known : packageNames[root] = PackageNames(root)
                     : [];
-                var original = File.ReadAllBytes(file);
+                // Read and write the file the kernel opens, not the one a lexical `..` collapse names.
+                var real = RealPath(file);
+                var original = File.ReadAllBytes(real);
                 var formatted = FormatFile(file, original, booleans, primitives, declared, stderr, out var unfixable);
                 if (formatted is null) exit = CliApp.ExitFailure;
                 else
@@ -93,7 +95,7 @@ internal static class Format
                         }
                         else
                         {
-                            WriteReplacing(file, formatted);
+                            WriteReplacing(real, formatted);
                             stdout.WriteLine(Messages.FormatFormatted.Text(file));
                         }
                     }
@@ -110,10 +112,13 @@ internal static class Format
 
     /// <summary>
     /// Every <c>.byn</c> file under <paramref name="dir"/>. A directory or entry that cannot be read is reported, sets
-    /// <paramref name="exit"/> to the failure code, and is skipped.
+    /// <paramref name="exit"/> to the failure code, and is skipped. With <paramref name="within"/>, a file or directory
+    /// whose resolved path lies outside that resolved path is neither listed nor entered.
     /// </summary>
-    internal static string[] BynFiles(string dir, TextWriter stderr, ref int exit)
+    internal static string[] BynFiles(string dir, TextWriter stderr, ref int exit, string? within = null)
     {
+        var prefix = within is null || Path.EndsInDirectorySeparator(within) ? within : within + Path.DirectorySeparatorChar;
+        bool Inside(string real) => prefix is null || real == within || real.StartsWith(prefix, StringComparison.Ordinal);
         var files = new List<string>();
         var seenFiles = new HashSet<string>(StringComparer.Ordinal);
         var seenDirs = new HashSet<string>(StringComparer.Ordinal);
@@ -133,27 +138,31 @@ internal static class Format
             {
                 canonical = at.Canonical ?? RealPath(at.Path);
                 if (!seenDirs.Add(canonical)) continue;
-                dirFiles = Directory.GetFiles(at.Path, "*.byn");
-                subs = Directory.GetDirectories(at.Path);
+                dirFiles = Directory.GetFiles(canonical, "*.byn");
+                subs = Directory.GetDirectories(canonical);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 Report(at.Path, e);
                 continue;
             }
-            foreach (var file in dirFiles)
+            foreach (var name in dirFiles.Select(Path.GetFileName))
             {
+                var file = Path.Combine(at.Path, name!);
                 try
                 {
-                    if (seenFiles.Add(RealPath(Path.Combine(canonical, Path.GetFileName(file))))) files.Add(file);
+                    var real = RealPath(Path.Combine(canonical, name!));
+                    if (Inside(real) && seenFiles.Add(real)) files.Add(file);
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Report(file, e); }
             }
-            foreach (var sub in subs)
+            foreach (var name in subs.Select(Path.GetFileName))
             {
+                var sub = Path.Combine(at.Path, name!);
                 try
                 {
-                    pending.Push((sub, RealPath(Path.Combine(canonical, Path.GetFileName(sub)))));
+                    var real = RealPath(Path.Combine(canonical, name!));
+                    if (Inside(real)) pending.Push((sub, real));
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Report(sub, e); }
             }
@@ -162,8 +171,8 @@ internal static class Format
         return [.. files];
     }
 
-    /// <summary>The most symlinks <see cref="RealPath"/> follows, as Linux's own limit.</summary>
-    private const int MaxLinks = 40;
+    /// <summary>The most symlinks <see cref="RealPath"/> follows, as the kernel's own limit: 32 on macOS, 40 elsewhere.</summary>
+    private static readonly int MaxLinks = OperatingSystem.IsMacOS() ? 32 : 40;
 
     /// <summary>
     /// The absolute path with every symlink in it resolved as the kernel does: component by component, each link's
@@ -195,12 +204,7 @@ internal static class Format
                 current = next;
                 continue;
             }
-            if (++links > MaxLinks)
-            {
-                // Let the kernel report the loop in its own words.
-                File.OpenHandle(full).Dispose();
-                throw new IOException();
-            }
+            if (++links > MaxLinks) throw new IOException("Too many levels of symbolic links");
             if (Path.IsPathRooted(target)) current = Path.GetPathRoot(target)!;
             PushParts(target[Path.GetPathRoot(target)!.Length..]);
         }
@@ -233,13 +237,20 @@ internal static class Format
 
     /// <summary>
     /// Every name the package's <c>.byn</c> files under <paramref name="dir"/> use other than as a type, callee or
-    /// receiver, which includes every name they declare. A file that cannot be read is reported when it is formatted.
+    /// receiver, which includes every name they declare. A file or directory link resolving outside the package is not
+    /// followed. A file that cannot be read is reported when it is formatted.
     /// </summary>
     private static HashSet<string> PackageNames(string dir)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
         var ignored = CliApp.ExitOk;
-        foreach (var file in BynFiles(dir, TextWriter.Null, ref ignored))
+        string root;
+        try
+        {
+            root = RealPath(dir);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return names; }
+        foreach (var file in BynFiles(dir, TextWriter.Null, ref ignored, root))
         {
             if (Path.GetFileName(file) == "package.byn") continue;
             byte[] bytes;
@@ -254,12 +265,12 @@ internal static class Format
     }
 
     /// <summary>
-    /// Writes <paramref name="bytes"/> to a temp file beside the file a symlink finally points at (or the file itself),
-    /// gives it the original's Unix mode, then renames it over the original; a symlink stays a symlink.
+    /// Writes <paramref name="bytes"/> to a temp file beside <paramref name="file"/>, already resolved by
+    /// <see cref="RealPath"/>, gives it the original's Unix mode, then renames it over the original; a symlink to it
+    /// stays a symlink.
     /// </summary>
     private static void WriteReplacing(string file, byte[] bytes)
     {
-        file = RealPath(file);
         var temp = Path.Combine(Path.GetDirectoryName(file)!, Path.GetRandomFileName() + ".tmp");
         try
         {
