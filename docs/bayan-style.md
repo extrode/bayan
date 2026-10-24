@@ -11,7 +11,7 @@ Style is guidance: never compiler-enforced, configurable per project, applied by
 | Line length | 100 |
 | Trailing commas | Always in multi-line literals and argument lists |
 | Member order | Fields, the `states` block, events, properties, static factories, methods |
-| Signature clauses | `where`, `becomes`, `fails`, `uses` (`bayan format` reorders; BYN1065) |
+| Signature clauses | `where`, `expects`, `becomes`, `fails`, `uses` (`bayan format` reorders; BYN1065) |
 | Statements | One per line (postfix guards count as one) |
 | Booleans | One spelling per project, set by `booleans`: `.symbols` (`!` `&&` `\|\|`) or `.words` (`not` `and` `or`) |
 | Primitives | One spelling per project, set by `primitives`: `.sized` (`i32 i64 u8 f64 …`, the default) or `.csharp` (`int long byte double …`); `char`, `decimal` and `object` are not primitives under either |
@@ -27,6 +27,11 @@ Not configurable: declarations are type-first and local bindings name-first ([GR
 | `sku: Sku` (field) | `Sku sku` |
 | `timeout(after: Millis)` (payload) | `timeout(Millis after)` |
 | `Grams w = 0g` (in a function body) | `let w: Grams = 0g` |
+
+## Text
+
+- Use `std` operations for protocols, keys and identifiers, and `kit.intl` for text shown to people ([SPEC §16.4](bayan-spec.md)).
+- Prefer `width:` in a format spec (`{id, width: 6, fill: '0'}`) over `padded(to:by:)`.
 
 ## Trees and graphs
 

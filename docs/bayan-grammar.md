@@ -34,6 +34,10 @@ Further rules that sit beside the tree:
 - **`Untrusted<T>` is a status,** the same value with a different standing (`X<T>`, §10), not a different shape.
 - **Math vocabulary is exempt** from the `-ed` rule (`abs`, `sqrt`, `floor`, `ceiling`, `pow`, `rounded`): scalars have nouns and `-ed` copies only. Tool names are full words too (`bayan format`, not `fmt`).
 - **Checker scope.** The pattern rules that make derived forms work (`tryX`, `-ed`, `xInto`, particles; `BYN50xx`) apply to all code. The naming-style rules (`BYN51xx`) apply to the public API only. A name forced by an outside system (a JSON field, a C symbol, a database column) uses the derivation's rename attribute (`@json(name: …)`, `@column(…)`), which exempts it from `BYN51xx`, or `@allow(…) because "…"` (§7).
+- **What names stand for (revision 0003).** On an instance member, a noun or an adjective names a result (`s.length`, `s.position("x")`, `s.isEmpty`); a verb names an act on the receiver and takes `ref this` (`buf.append(x)`); `-ed` names a changed copy (`s.trimmed()`).
+- **Assertion verbs are queries:** third-person verbs that state a fact about the receiver and return `bool`. The group is closed: `contains`, `startsWith`, `endsWith`, `matches`, `equals`. Adding one is a GRAMMAR change.
+- **Static and free functions** have no receiver, so they name acts and are verbs: `print(x)`, `copy(from:to:)`, `Utf8.decode(b)`, `Hex.encode(d)`.
+- **Fallible pairs:** a base function `fails` with detail (`T.parse(text)`, `Utf8.decode(b)`), its derived `tryX` returns `T?` (`T.tryParse`, `Utf8.tryDecode`), and the keyword `try` marks every call to the base form. Both forms always exist.
 
 Collections follow the tree: `append`, `sort`, `reverse` on `ref this`; `appended`, `sorted`, `reversed` derived (a view if possible, otherwise a copy). Ordered collections `append`/`prepend`; unordered ones `add`. Size is `length`; `count(p)` only counts the elements matching `p`.
 
@@ -104,7 +108,7 @@ Familiar alternatives are **input forms**: the editor and `bayan format` accept 
 | `state x` member lines | One `states { … }` block | [BYN1059](diagnostics/BYN1059.md) |
 | `Order order is .paid` | `Order.paid order` | [BYN7006](diagnostics/BYN7006.md) |
 | Interface property `Type name { get }` | `Type name` | [BYN1060](diagnostics/BYN1060.md) |
-| `uses` before `fails`, or any clause out of order | `where`, `becomes`, `fails`, `uses` | [BYN1065](diagnostics/BYN1065.md) |
+| `uses` before `fails`, or any clause out of order | `where`, `expects`, `becomes`, `fails`, `uses` | [BYN1065](diagnostics/BYN1065.md) |
 
 Also rejected with a fix-it (design round 2 plan §15):
 
@@ -313,7 +317,7 @@ type OrderPlaced = Event<Order.placed> uses net, alloc, suspend
 - `->` marks the return in a function type; a declaration puts its return type first (§5). `=>` means "evaluates to" (lambdas, expression bodies, switch arms).
 - A function-typed parameter with no `uses` is polymorphic: the call inherits the effects of the function passed, so there is no `tryMap` or `mapAsync`: `map` covers both. One that the callee stores takes the bound of the place it is stored in.
 - Stored function types, interface methods and event types declare an upper bound (no `uses` there means pure); implementations may use fewer.
-- Derived forms compute their effects: the `-ed` copy adds `alloc` for heap-owning types, the allocating form of `xInto` adds `alloc`, and `tryX` keeps `x`'s effects. `bayan expand` shows them.
+- Derived forms compute their effects: the `-ed` copy adds `alloc` for heap-owning types, the allocating form of `xInto` adds `alloc`, and `tryX` keeps `x`'s effects. `bayan expand` will show them (deferred).
 - Package capabilities are an upper bound: a package without `.net` cannot contain a function that `uses net`, even transitively.
 - Logging is ambient: `log` is allowed in pure functions and never allocates.
 - Handlers are supplied with `provide`; `context` is only the value (`context.Io`). Handler names are the effects plus `log` ([BYN6007](diagnostics/BYN6007.md) otherwise). The test runner provides `console` per test as a capture buffer.
