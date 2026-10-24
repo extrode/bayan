@@ -71,7 +71,7 @@ internal sealed partial class Binder
     private BoundExpr ErrorCase(Pattern p, ErrorSetSymbol set, Name name)
     {
         if (set.Find(name.Text) is { } variant) return new BoundErrorVariant(p, variant);
-        Report(DiagnosticCodes.UnknownVariant, name.Span, [name.Text, set.Name],
+        Report(DiagnosticCodes.UnknownVariant, name.Span, [name.Text, set.DisplayName],
             help: Suggest(name.Text, set.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
         return new BoundErrorExpr(p);
     }
@@ -88,7 +88,7 @@ internal sealed partial class Binder
         {
             if (target is ErrorUnionType u && u.Sets.Count > 0 && (!u.Sets.Contains(ev.Variant.Set) || u.Excluded.Contains(ev.Variant))
                 || target is ErrorSetSymbol s && s != ev.Variant.Set)
-                Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`{ev.Variant.Set.Name}.{ev.Variant.Name}`", target.DisplayName]);
+                Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`{ev.Variant.Set.DisplayName}.{ev.Variant.Name}`", target.DisplayName]);
             else variant = ev.Variant;
         }
         if (binding is not null)

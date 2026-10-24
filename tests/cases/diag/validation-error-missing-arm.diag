@@ -1,0 +1,6 @@
+error BYN2410: `switch` does not handle every `ValidationError<Signup> | ValidationError<Address>`
+
+  18 │ register("amira") catch switch {
+     │                         ^^^^^^ not covered: ValidationError<Address>
+     │
+  help: add the missing arms, or `_ => …` for the rest

@@ -457,8 +457,8 @@ public sealed class ErrorSetSymbol(string name, Location location, ModuleSymbol 
 
     public List<ErrorVariantSymbol> Variants { get; } = new();
 
-    /// <summary>For <c>ValidationError&lt;T&gt;</c> of a struct with <c>requires</c>, that <c>T</c>.</summary>
-    public StructSymbol? Of { get; init; }
+    /// <summary>For <c>ValidationError&lt;T&gt;</c>, that <c>T</c>.</summary>
+    public TypeSymbol? Of { get; init; }
 
     public override string DisplayName => Of is null ? Name : $"{Name}<{Of.DisplayName}>";
 
