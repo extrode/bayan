@@ -639,6 +639,22 @@ public sealed class CliToolchainTests
         Assert.Contains("cannot run the C compiler", stderr);
     }
 
+    [Theory]
+    [InlineData("build")]
+    [InlineData("run")]
+    [InlineData("test")]
+    public void GeneratedCTheCCompilerRejectsIsAnInternalCompilerError(string command)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var fake = Path.Combine(Golden.RepoRoot, "tmp", "rejecting-cc.sh");
+        Directory.CreateDirectory(Path.GetDirectoryName(fake)!);
+        File.WriteAllText(fake, "echo \"main.byn:2:5: error: injected\" >&2\nexit 1\n");
+        var (exit, stderr) = RunWith("BAYAN_CC", "/bin/sh " + fake, command, Hello);
+        Assert.Equal(CliApp.ExitToolchain, exit);
+        Assert.Contains("error BYN4001: internal compiler error", stderr);
+        Assert.Contains("main.byn:2:5: error: injected\n", stderr);
+    }
+
     [Fact]
     public void AnUnwritableCacheIsAToolchainProblem()
     {

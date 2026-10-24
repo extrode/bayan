@@ -283,6 +283,9 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ManifestInvalidValue = Error("BYN3102", "`{0}` must be {1}");
     public static readonly DiagnosticDescriptor ManifestMissingField = Error("BYN3103", "`package.byn` has no `{0}`");
     public static readonly DiagnosticDescriptor ManifestEquals = Error("BYN3104", "`package.byn` uses `field: value`");
+
+    // ── Backend 4000–4999 ────────────────────────────────────────────────────────────
+    public static readonly DiagnosticDescriptor CCompilerRejected = Error("BYN4001", "internal compiler error: the C compiler rejected the generated C; this is a bug in the Bayan compiler");
     // ── Grammar (naming patterns, spec §5.2) 5000–5999: errors 50xx, lints 51xx ────
     public static readonly DiagnosticDescriptor ParticipleWithoutVerb = Error("BYN5001", "`{0}` is the `-ed` form of `{1}`, which does not exist as a `ref this` member");
     public static readonly DiagnosticDescriptor StateMemberMutates = Error("BYN5002", "`{0}` reads as state but modifies `this`");

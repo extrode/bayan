@@ -365,8 +365,27 @@ public static class CliApp
         var result = Toolchain.Build(source, mode, output, target);
         progress.Done();
         if (result.Succeeded) return result.ExecutablePath;
-        stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
+        ReportToolchain(result, stderr, json);
         return null;
+    }
+
+    /// <summary>Why the toolchain could not build; generated C the C compiler rejected is an internal compiler error (BYN4001) with its text attached.</summary>
+    internal static void ReportToolchain(NativeBuild result, TextWriter stderr, bool json, Style? style = null)
+    {
+        if (!result.Rejected)
+        {
+            stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
+            return;
+        }
+        var ice = new Diagnostic(Severity.Error, DiagnosticCodes.CCompilerRejected.Code, null, default, DiagnosticCodes.CCompilerRejected.Format(), Help: result.Errors);
+        if (json)
+        {
+            stderr.Write(DiagnosticJson.Render(ice) + "\n");
+            return;
+        }
+        // Without a location the renderer prints the head only; the C text follows verbatim.
+        stderr.Write(DiagnosticRenderer.Render(ice, includePath: true, style ?? s_styleErr ?? Style.Plain));
+        stderr.Write(result.Errors.EndsWith('\n') ? result.Errors : result.Errors + "\n");
     }
 
     /// <summary>The C translation unit for an error-free compilation.</summary>
@@ -439,7 +458,7 @@ public static class CliApp
         native.Stop();
         if (!result.Succeeded)
         {
-            stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
+            ReportToolchain(result, stderr, o.Json);
             return ExitToolchain;
         }
         if (o.Json) return ExitOk;
@@ -520,7 +539,7 @@ public static class CliApp
         progress.Done();
         if (!result.Succeeded)
         {
-            stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
+            ReportToolchain(result, stderr, o.Json);
             return ExitToolchain;
         }
         if (scriptKey is not null && result.Key is { } key) Toolchain.RememberScript(scriptKey, key);

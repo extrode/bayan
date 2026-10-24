@@ -21,7 +21,7 @@ public sealed partial class StyleTests
     public static readonly string[] Shapes =
     [
         "diag-error-fix", "diag-removal-fix", "diag-secondary", "diag-cap", "diag-cap-all",
-        "build-ok", "build-ok-cache", "build-ok-verbose", "build-fail", "check-ok", "run-fail",
+        "build-ok", "build-ok-cache", "build-ok-verbose", "build-fail", "build-ice", "check-ok", "run-fail",
         "test-ok", "test-fail", "test-pending", "test-verbose", "test-assert-values", "test-control-chars",
         "doctor-ok", "doctor-fail",
     ];
@@ -105,6 +105,8 @@ public sealed partial class StyleTests
                 return Command(Ok, "build", "-v", "-o", output, main);
             case "build-fail":
                 return Command(Broken, "build", "-o", output, main);
+            case "build-ice":
+                return Ice(ascii);
             case "check-ok":
                 return Command(Ok, "check", main);
             case "run-fail":
@@ -172,6 +174,15 @@ public sealed partial class StyleTests
             Fix: new Fix(new TextSpan(declared - "let ".Length, "let".Length), "var"),
             Related: [new RelatedSpan(new TextSpan(declared, "total".Length), "declared with `let` here")]);
         return "# DiagnosticRenderer.RenderAll\n" + Streams("", DiagnosticRenderer.RenderAll([diagnostic], includePath: true, TerminalStyleFor(ascii)));
+    }
+
+    /// <summary>Generated C the C compiler rejected (BYN4001), which no program should produce: reporting only.</summary>
+    private static string Ice(bool ascii)
+    {
+        var rejected = new NativeBuild(null, "C compiler failed (exit 1):\nmain.byn:2:5: error: use of undeclared identifier 'l0_y'\n", Rejected: true);
+        var stderr = new StringWriter();
+        CliApp.ReportToolchain(rejected, stderr, json: false, TerminalStyleFor(ascii));
+        return "# CliApp.ReportToolchain\n" + Streams("", stderr.ToString());
     }
 
     private static string DoctorShape(bool ascii, Doctor.Check[] checks)

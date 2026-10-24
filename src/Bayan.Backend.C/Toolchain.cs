@@ -10,8 +10,9 @@ namespace Bayan.Backend.C;
 /// </summary>
 public enum BuildMode { Debug, Safe, Fast }
 
-/// <summary>The executable, or the C compiler's complaint; <see cref="CacheHit"/> when nothing was compiled.</summary>
-public sealed record NativeBuild(string? ExecutablePath, string Errors, bool CacheHit = false, string? Key = null)
+/// <summary>The executable, or the C compiler's complaint; <see cref="CacheHit"/> when nothing was compiled.
+/// <see cref="Rejected"/>: the C compiler ran and refused the generated C, a Bayan compiler bug (BYN4001).</summary>
+public sealed record NativeBuild(string? ExecutablePath, string Errors, bool CacheHit = false, string? Key = null, bool Rejected = false)
 {
     public bool Succeeded => ExecutablePath is not null;
 }
@@ -209,7 +210,7 @@ public static class Toolchain
             try
             {
                 var failure = Compile(compiler, flags, cSource, key, exeName, windows: targetOs.StartsWith("windows", StringComparison.Ordinal));
-                if (failure is not null) return new NativeBuild(null, failure);
+                if (failure is not null) return new NativeBuild(null, failure, Rejected: true);
             }
             catch (System.ComponentModel.Win32Exception e)
             {
@@ -268,11 +269,11 @@ public static class Toolchain
         {
             File.WriteAllText(Path.Combine(work, "bayan-rt.h"), RuntimeHeader);
             File.WriteAllText(Path.Combine(work, "bayan-rt.c"), RuntimeSource);
-            File.WriteAllText(Path.Combine(work, "main.c"), cSource);
+            File.WriteAllText(Path.Combine(work, CEmitter.GeneratedFile), cSource);
             var args = new List<string>(compiler[1..]);
             args.AddRange(flags);
             // Debug info names `main.c`, not this temporary directory.
-            args.AddRange(["-ffile-prefix-map=" + work + "=.", "-I", ".", "main.c", "bayan-rt.c", "-o", exeName]);
+            args.AddRange(["-ffile-prefix-map=" + work + "=.", "-I", ".", CEmitter.GeneratedFile, "bayan-rt.c", "-o", exeName]);
             // `CommandLineToArgvW` (program arguments) is in shell32.
             args.Add(windows ? "-lshell32" : "-lm");
             var (code, stdout, stderr) = Exec(compiler[0], args, work);
