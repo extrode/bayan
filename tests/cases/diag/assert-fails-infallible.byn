@@ -1,0 +1,9 @@
+union error ParseError {
+    empty
+}
+
+i64 f() {
+    return 1
+}
+
+assert f() fails ParseError.empty

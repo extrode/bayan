@@ -1,2 +1,2 @@
 let x = 5
-let y = i64(x, x)
+let y = x(1)

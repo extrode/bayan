@@ -1,0 +1,4 @@
+error BYN2220: `i32` cannot be called
+
+  2 │ let y = x(1)
+    │         ^
