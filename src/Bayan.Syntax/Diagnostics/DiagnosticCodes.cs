@@ -66,7 +66,8 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor CatchBinding = Error("BYN1025", "`catch (e)` is an input form; bind the error in a `catch switch` arm");
     public static readonly DiagnosticDescriptor DelegateDecl = Error("BYN1028", "`delegate` is not Bayan; write a function type `type OrderFilter = Order => bool`");
     public static readonly DiagnosticDescriptor ErrorSetPipe = Error("BYN1029", "an error set is declared `union error {0} = A, B`");
-    public static readonly DiagnosticDescriptor CSharpTypeName = Error("BYN1030", "`{0}` is an input form; the Bayan type is `{1}`");
+    // BYN1030 is retired (design round 3 §28): the C# primitive names are accepted in type positions and `bayan format` respells them per `style.primitives`. Never reuse it.
+    public static readonly DiagnosticDescriptor RetiredCSharpTypeName = Error("BYN1030", "retired: C# primitive names are accepted");
     public static readonly DiagnosticDescriptor FailsShorthand = Error("BYN1031", "`T!E` is an input form; write `T f() fails E`");
     // BYN1032 is retired (design round 3 §5): `if !x {}` and `if not x {}` are both accepted and nothing rewrites them. Never reuse it.
     public static readonly DiagnosticDescriptor RetiredNegatedIfToUnless = Error("BYN1032", "retired: `if !x` is no longer rewritten");

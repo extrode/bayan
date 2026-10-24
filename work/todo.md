@@ -189,6 +189,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-51c: `suq/fail/{bracket-attr,block-comment,char,requires-value}.byn` keep their input forms on purpose (compile-fail corpus).
 - `tests/cases/diag/input-negated-if.byn` and `input-paren-negation.byn` keep `input-` names though BYN1032 is retired (5.1c); rename or move to a non-diag case.
 - r3-52b: SPEC §21.2 `bayan format` row still says "not in v0.1"; 5.2b ships `--check` and `style` (C16).
-- r3-52b: BYN1030 still raised for C# names in type positions though SPEC §3.1 accepts them; §21.5 still lists BYN1030 next to the "no code" primitives row (handoff Q140).
+- r3-q140: types printed in diagnostics are not yet rendered in the project style (`style.primitives`); SPEC §2 line 118 still says the C# primitive names are lexer-reserved in every project, which the lexer does not do.
 - r3-52b: `tests/cases/typed/rune.byn` and `parse/word-booleans.byn` use word booleans, which `bayan format` (default `.symbols`) rewrites; fine for goldens, but not in project style.
 - Pointer types (SPEC §18, Question 120): the parser has no `T*` types yet; when added, allocate the input-form code for prefix `*T` / `*mut T` with fix-it to `T*`; C `const` pointers are `readonly T*`. `suq/fail/drop-ref-this.byn:4` uses `*mut u8`.

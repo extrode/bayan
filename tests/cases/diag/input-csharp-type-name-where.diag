@@ -1,8 +1,6 @@
-error BYN1030: `int` is an input form; the Bayan type is `i32`
+error BYN2804: `i32` is not an interface
 
   1 │ i64 f<T>(T x) where T : int => 1
-    │                         ^^^ a C# type name
+    │                         ^^^ a type
     │
-  help: write `i32`
-    │ 1 │ i64 f<T>(T x) where T : i32 => 1
-    │   │                          ++
+  help: list an `interface` here

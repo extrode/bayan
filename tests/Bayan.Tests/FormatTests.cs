@@ -136,6 +136,23 @@ public sealed class FormatTests
     }
 
     [Fact]
+    public void ACSharpPrimitivesProjectFormatsAndBuilds()
+    {
+        var dir = Fresh("csharp-builds");
+        Package(dir, "primitives: .csharp");
+        Directory.CreateDirectory(Path.Combine(dir, "src"));
+        var file = Path.Combine(dir, "src", "main.byn");
+        const string Source = "long twice(int n) => n * 2\n\nvoid main() {\n    let r: double = 0.5\n    print($\"{twice(3)} {r}\")\n}\n";
+        File.WriteAllText(file, Source);
+        var (exit, _, stderr) = Run("format", dir);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(Source, File.ReadAllText(file));
+        (exit, _, stderr) = Run("build", "-o", Path.Combine(dir, "out"), file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.DoesNotContain("BYN1030", stderr);
+    }
+
+    [Fact]
     public void SymbolsWithoutSpacesGetThem()
     {
         var dir = Fresh("spacing");

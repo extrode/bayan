@@ -252,7 +252,7 @@ type distinct UserId = i64       // a unit without arithmetic
 > Round 3 §9: typed indices catch mixed-up indices in parallel arrays without imposing a type per element type. Codes: BYN3210.
 - **`StrBuf`** is the string builder and the target of every `xInto(ref StrBuf)` (§5.2): `StrBuf(capacity: n)` allocates from `context.allocator`; `StrBuf.over(stackalloc u8[n] uninit)` uses the stack first and spills to the allocator only if outgrown; `append(x)`, `append($"…")` (interpolation writes straight into the buffer), `appendRepeated(c, by: n)`; `buf.view` is a borrowed string view, no allocation; `buf.finish()` consumes the buffer and returns it as a string without copying. `StrBuf.over` is not in v0.1.
 
-> Round 2 §11, §12, §15: `append` replaces `add` on ordered collections; `finish()` and `view` replace `asString()`; C# type names are input forms. Codes: BYN1030. Round 3 deliverable 4 restores `length` as the size name.
+> Round 2 §11, §12, §15: `append` replaces `add` on ordered collections; `finish()` and `view` replace `asString()`; C# type names are accepted in type positions (BYN1030 is retired). Codes: none. Round 3 deliverable 4 restores `length` as the size name.
 - Every allocator-backed collection (`List`, `Map`, `HashMap`, `Set`, `Pool`) and `StrBuf` is **`unique`** (§3.11): assigning or storing one moves it, and a copy is explicit, `xs.copy(to: alloc)`. Reading without owning goes through `ReadOnlySpan<T>`, a read-only parameter or `ref`.
 - Hashing is **seeded** by default (hash-flooding resistance); tests use a fixed seed.
 
@@ -264,7 +264,7 @@ type distinct UserId = i64       // a unit without arithmetic
 ### 3.7 Tuples
 C# value tuples with named elements and deconstruction: `(Cents share, i32 extra)`.
 
-> Round 2 §15: C# type names are input forms. Codes: BYN1030.
+> Round 2 §15: C# type names are accepted in type positions (BYN1030 is retired). Codes: none.
 
 ### 3.8 Results
 `Result<T, E>` is a standard-library union (§3.12): a tag plus the larger of the value and the error payload, inline. `fails` desugars onto `Result`. Every error variant in a program has a unique compile-time number, so merging error sets is free.
@@ -1191,7 +1191,7 @@ let resp = signUp(form) catch switch {
 ### 9.5 Uninitialized memory
 `stackalloc T[n] uninit` yields `Uninit<T>`, which cannot be read. Writing APIs return the initialized prefix as a `Span<T>`. A runtime-sized `stackalloc` requires a bound: `stackalloc u8[n] max 4KiB`.
 
-> Round 2 §15: C# type names are input forms. Codes: BYN1030.
+> Round 2 §15: C# type names are accepted in type positions (BYN1030 is retired). Codes: none.
 
 ### 9.6 Handles
 `Pool<T>` + `Handle<T>` (index + generation, 8 bytes) for graphs and long-lived data; stale handles are detected.
@@ -1330,7 +1330,7 @@ interface IRepository<T, K = T.Id> where T : IEntity<T> { … }
 | `const N: i32` | Compile-time value parameter |
 | `E.Item : INumber` | Constraint on an associated type |
 
-> Round 2 §15: C# type names are input forms. Codes: BYN1030.
+> Round 2 §15: C# type names are accepted in type positions (BYN1030 is retired). Codes: none.
 
 - Constraints are **checked at definition**.
 - **No variance.**
@@ -2021,7 +2021,6 @@ Input forms are alternate spellings that the editor and `bayan format` accept an
 
 | Input form | Canonical | Code |
 |---|---|---|
-| `int long short byte uint ulong float double` | `i32 i64 i16 u8 u32 u64 f32 f64` | BYN1030 |
 | `User!EmailError f()`, `User!(A, B) f()` | `User f() fails EmailError`, `fails A, B` | BYN1031 |
 | `for (let x in xs)`, `foreach (var x in xs)` | `for x in xs` | BYN1019 |
 | `if (x) {`, `while (x) {`, `switch (x) {` | no parentheses (whole-condition parentheses kept when a brace is present) | BYN1017 |
@@ -2072,7 +2071,7 @@ The `add` through `toString()` rows are beyond the HANDOFF round 2 table; the pl
 - `bayan format` is idempotent, and rewriting an input form then formatting again produces identical bytes (acceptance tests arrive with `bayan format`, not in v0.1).
 - Prose mode (§22) is unchanged.
 
-> Round 2 §15: input forms replace the terse/explicit formatter modes, so stored source has one spelling and C# habits still work at the keyboard. Codes: BYN1017, BYN1018, BYN1019, BYN1020, BYN1021, BYN1022, BYN1023, BYN1025, BYN1028, BYN1029, BYN1030, BYN1031, BYN1033, BYN2027, BYN2031, BYN2209, BYN2230, BYN3104.
+> Round 2 §15: input forms replace the terse/explicit formatter modes, so stored source has one spelling and C# habits still work at the keyboard. Codes: BYN1017, BYN1018, BYN1019, BYN1020, BYN1021, BYN1022, BYN1023, BYN1025, BYN1028, BYN1029, BYN1031, BYN1033, BYN2027, BYN2031, BYN2209, BYN2230, BYN3104.
 
 > Round 3 §20: every syntax change leaves its old spelling as an input form, so C# habits still type through. Codes: BYN1040, BYN1041, BYN1043, BYN1044, BYN1045, BYN1047, BYN1048, BYN1050, BYN1051, BYN1053, BYN1055, BYN1056, BYN1057, BYN1058, BYN1059, BYN1060, BYN1061, BYN1062, BYN1063, BYN1065, BYN6001, BYN6006, BYN7006.
 

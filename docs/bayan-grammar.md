@@ -77,7 +77,6 @@ Familiar alternatives are **input forms**: the editor and `bayan format` accept 
 
 | Input form | Canonical | Code |
 |---|---|---|
-| `int long short byte uint ulong float double` (in a `.sized` project) | `i32 i64 i16 u8 u32 u64 f32 f64` | [BYN1030](diagnostics/BYN1030.md) |
 | `char` | `rune` | [BYN1048](diagnostics/BYN1048.md) |
 | Primitives in the non-project spelling (`int` under `.sized`, `i32` under `.csharp`) | The project's `style.primitives` spelling (SPEC §3.1); `char`, `decimal` and `object` are never accepted as primitives | none (`bayan format` only) |
 | `User!EmailError f()`, `User!(A, B) f()` | `User f() fails EmailError`, `fails A, B` | [BYN1031](diagnostics/BYN1031.md) |

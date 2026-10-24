@@ -1,8 +1,6 @@
-error BYN1030: `long` is an input form; the Bayan type is `i64`
+error BYN2804: `i64` is not an interface
 
   1 │ void g(dyn ref long x) {}
-    │                ^^^^ a C# type name
+    │                ^^^^ after `dyn`
     │
-  help: write `i64`
-    │ 1 │ void g(dyn ref i64 x) {}
-    │   │                +++
+  help: name an `interface` after `dyn ref`
