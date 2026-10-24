@@ -487,20 +487,20 @@ struct LexResult {
             case ':': single(.colon)
             case '.':
                 if peek(1) == '.' {
-                    fixed(peek(2) == '=' ? TokenKind.dotDotEquals : TokenKind.dotDot, peek(2) == '=' ? 3 : 2)
+                    addFixed(peek(2) == '=' ? TokenKind.dotDotEquals : TokenKind.dotDot, peek(2) == '=' ? 3 : 2)
                 } else {
                     single(.dot)
                 }
             case '?':
                 if peek(1) == '?' {
-                    fixed(peek(2) == '=' ? TokenKind.questionQuestionEquals : TokenKind.questionQuestion, peek(2) == '=' ? 3 : 2)
+                    addFixed(peek(2) == '=' ? TokenKind.questionQuestionEquals : TokenKind.questionQuestion, peek(2) == '=' ? 3 : 2)
                 } else if peek(1) == '.' && !isDigit(peek(2)) {
-                    fixed(.questionDot, 2)
+                    addFixed(.questionDot, 2)
                 } else {
                     single(.question)
                 }
             case '+':
-                fixed(peek(1) switch {
+                addFixed(peek(1) switch {
                     '+' => TokenKind.plusPlus,
                     '=' => TokenKind.plusEquals,
                     '%' => TokenKind.plusPercent,
@@ -508,7 +508,7 @@ struct LexResult {
                     _ => TokenKind.plus,
                 })
             case '-':
-                fixed(peek(1) switch {
+                addFixed(peek(1) switch {
                     '-' => TokenKind.minusMinus,
                     '>' => TokenKind.arrow,
                     '=' => TokenKind.minusEquals,
@@ -517,30 +517,30 @@ struct LexResult {
                     _ => TokenKind.minus,
                 })
             case '*':
-                fixed(peek(1) switch {
+                addFixed(peek(1) switch {
                     '=' => TokenKind.starEquals,
                     '%' => TokenKind.starPercent,
                     '|' => TokenKind.starBar,
                     _ => TokenKind.star,
                 })
-            case '/': fixed(peek(1) == '=' ? TokenKind.slashEquals : TokenKind.slash)
-            case '%': fixed(peek(1) == '=' ? TokenKind.percentEquals : TokenKind.percent)
-            case '^': fixed(peek(1) == '=' ? TokenKind.caretEquals : TokenKind.caret)
-            case '!': fixed(peek(1) == '=' ? TokenKind.bangEquals : TokenKind.bang)
+            case '/': addFixed(peek(1) == '=' ? TokenKind.slashEquals : TokenKind.slash)
+            case '%': addFixed(peek(1) == '=' ? TokenKind.percentEquals : TokenKind.percent)
+            case '^': addFixed(peek(1) == '=' ? TokenKind.caretEquals : TokenKind.caret)
+            case '!': addFixed(peek(1) == '=' ? TokenKind.bangEquals : TokenKind.bang)
             case '&':
-                fixed(peek(1) switch { '&' => TokenKind.ampAmp, '=' => TokenKind.ampEquals, _ => TokenKind.amp })
+                addFixed(peek(1) switch { '&' => TokenKind.ampAmp, '=' => TokenKind.ampEquals, _ => TokenKind.amp })
             case '|':
-                fixed(peek(1) switch { '|' => TokenKind.barBar, '=' => TokenKind.barEquals, _ => TokenKind.bar })
+                addFixed(peek(1) switch { '|' => TokenKind.barBar, '=' => TokenKind.barEquals, _ => TokenKind.bar })
             case '=':
-                fixed(peek(1) switch { '=' => TokenKind.equalsEquals, '>' => TokenKind.fatArrow, _ => TokenKind.equals })
+                addFixed(peek(1) switch { '=' => TokenKind.equalsEquals, '>' => TokenKind.fatArrow, _ => TokenKind.equals })
             case '<':
                 if peek(1) == '<' {
-                    fixed(peek(2) == '=' ? TokenKind.lessLessEquals : TokenKind.lessLess, peek(2) == '=' ? 3 : 2)
+                    addFixed(peek(2) == '=' ? TokenKind.lessLessEquals : TokenKind.lessLess, peek(2) == '=' ? 3 : 2)
                 } else {
-                    fixed(peek(1) == '=' ? TokenKind.lessEquals : TokenKind.less)
+                    addFixed(peek(1) == '=' ? TokenKind.lessEquals : TokenKind.less)
                 }
             case '>':
-                fixed(peek(1) == '=' ? TokenKind.greaterEquals : TokenKind.greater)
+                addFixed(peek(1) == '=' ? TokenKind.greaterEquals : TokenKind.greater)
             default:
                 reportUnexpected(c, by: 1)
         }
@@ -553,10 +553,10 @@ struct LexResult {
         tokenFlags |= triviaBefore
     }
 
-    void single(ref this, TokenKind kind) => fixed(kind, 1)
+    void single(ref this, TokenKind kind) => addFixed(kind, 1)
 
-    /// Adds a fixed token; with no explicit length, two-character kinds are inferred.
-    void fixed(ref this, TokenKind kind, i64 length = 0) {
+    /// Adds a fixed-length token; with no explicit length, two-character kinds are inferred.
+    void addFixed(ref this, TokenKind kind, i64 length = 0) {
         let n = length == 0 ? kindText(kind).length : length
         add(kind, at: TextSpan { start: pos, length: n })
         pos += n

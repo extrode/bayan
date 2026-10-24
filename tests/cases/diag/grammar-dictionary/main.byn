@@ -1,0 +1,20 @@
+struct Catalog {
+    i64 count
+
+    void upsertRow(ref this) {
+        count += 1
+    }
+
+    i64 skuCount => count
+
+    bool isIdempotent => true
+
+    // `forms` gives the irregular `-ed` spelling, so this member changes `this` under an `-ed` name.
+    void reground(ref this) {
+        count += 1
+    }
+
+    i64 kycLevel => 0
+}
+
+print("ok")

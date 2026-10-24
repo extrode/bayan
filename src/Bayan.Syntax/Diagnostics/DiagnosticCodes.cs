@@ -312,14 +312,20 @@ public static class DiagnosticCodes
     // ── Backend 4000–4999 ────────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor CCompilerRejected = Error("BYN4001", "internal compiler error: the C compiler rejected the generated C; this is a bug in the Bayan compiler");
     // ── Grammar (naming patterns, spec §5.2) 5000–5999: errors 50xx, lints 51xx ────
-    public static readonly DiagnosticDescriptor ParticipleWithoutVerb = Error("BYN5001", "`{0}` is the `-ed` form of `{1}`, which does not exist as a `ref this` member");
+    public static readonly DiagnosticDescriptor ParticipleChangesThis = Error("BYN5001", "`{0}` changes `this`; name it `{1}`");
     public static readonly DiagnosticDescriptor StateMemberMutates = Error("BYN5002", "`{0}` reads as state but modifies `this`");
     public static readonly DiagnosticDescriptor TryWrongReturn = Error("BYN5003", "`try{0}` must return `{1}?` or `bool`; it is derived from `{2}() fails`");
     public static readonly DiagnosticDescriptor ParticleRequired = Error("BYN5004", "`{0}` has {1} unlabeled parameters; give each but one a particle");
     public static readonly DiagnosticDescriptor ArgumentNeedsParticle = Error("BYN5005", "`{0}` is passed without its particle `{1}:`");
     public static readonly DiagnosticDescriptor ParameterNeedsParticle = Error("BYN5006", "`{0}` is a required parameter besides the object and needs a particle");
+    // BYN5007 is reserved: `Log.debug(…)` is an unknown name until the binder reports it. Its help, once reported: "call `log` and pass the level `as: .{0}`".
+    public static readonly DiagnosticDescriptor LogLevelAsVerb = Error("BYN5007", "`Log.{0}` names a level, not the act; write `log(…, as: .{0})`");
     public static readonly DiagnosticDescriptor UnknownParticle = Error("BYN5008", "`{0}` is not a particle");
+    public static readonly DiagnosticDescriptor ParticleAsMemberName = Error("BYN5009", "`{0}` is a particle; name the member with a verb or a noun");
+    /// <summary>BYN5009's second message form, for an instance <c>toX</c> or <c>asX</c> member; registered once, as <see cref="ParticleAsMemberName"/>.</summary>
+    public static readonly DiagnosticDescriptor ConversionMember = new("BYN5009", Severity.Error, "`{0}` spells a conversion with `{1}`; write `{2}`");
     public static readonly DiagnosticDescriptor RepeatedParticle = Error("BYN5013", "`{0}` uses the particle `{1}` twice");
+    public static readonly DiagnosticDescriptor UnknownWord = Warning("BYN5014", "`{0}` is not a known verb or noun");
     public static readonly DiagnosticDescriptor NounOnMutator = Warning("BYN5101", "`{0}` is a noun on a `ref this` member; name the action");
     public static readonly DiagnosticDescriptor BoolWithoutPrefix = Warning("BYN5102", "`{0}` is a `bool` state; prefix with `is`, `has` or `can`");
 

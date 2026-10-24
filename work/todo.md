@@ -218,3 +218,9 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-55: `bayan audit` lists no C sources per dependency (SPEC §19.3); add them when dependencies land.
 - plan-strings-check skips BYN3216: its plan entry has a quoted `{2}` gloss between the message and `(label`, which the form regex rejects; reword the entry (revision erratum) or widen the regex (found 2026-10-24, r3-53b).
 - End of round 3: run `/code-review --fix 545965c49391..dev` (the range starts before the partial round-3 merge ef66c14, 2026-10-24, so that merge is reviewed with the rest of the round; not `dev...feat`, which would skip it).
+- r3-54a: the parser's particle list is private (`Parser.cs`), so `Lexicon.Particles` repeats it; expose one list.
+- r3-54a: the BYN5001, BYN5101 and BYN5102 page examples still end field lines with `;`.
+- r3-54a: the manifest's invalid-value help does not mention the `[key: value]` map form that `grammar.forms` now uses.
+- r3-54a: the task names `node scripts/plan-strings-check.js`, but the script uses Deno APIs; run it with `deno run -A`.
+- r3-54a: the BYN51xx exemption for rename attributes (`@json`, `@column`) and `@allow(…) because` is not built (Question 270).
+- r3-54a: plan-strings-check skips BYN5001: its message is in revision 0005, not in a plan §2 entry.
