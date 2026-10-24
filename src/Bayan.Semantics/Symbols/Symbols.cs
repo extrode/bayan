@@ -466,6 +466,9 @@ public sealed class ErrorVariantSymbol(string name, Location location, ErrorSetS
 
     public string? Doc { get; } = doc;
 
+    /// <summary>The named payload, <c>(Millis after)</c> of <c>timeout(Millis after)</c>; empty without one.</summary>
+    public List<ParameterSymbol> Fields { get; } = new();
+
     /// <summary>The process exit code when <c>main</c> fails with this variant: <c>@exitCode(n)</c>, else 1.</summary>
     public int ExitCode { get; set; } = 1;
 

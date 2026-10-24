@@ -44,7 +44,7 @@ internal sealed partial class Binder
 
     private BoundExpr BindConverted(Expr e, TypeSymbol target, bool argument = false)
     {
-        var bound = BindExpr(e, target);
+        var bound = Built(BindExpr(e, target), e);
         return Convert(bound, target, e.Span, argument);
     }
 
@@ -249,7 +249,7 @@ internal sealed partial class Binder
             case TargetMemberExpr t:
                 return BindTargetMember(t, expected);
             case CallExpr c:
-                return BindCall(c, expected);
+                return BindErrorNew(c, expected) ?? BindCall(c, expected);
             case IndexExpr i:
                 return BindIndex(i);
             case UnaryExpr u:
@@ -701,6 +701,9 @@ internal sealed partial class Binder
                 }
                 break;
             }
+            case ErrorSetSymbol or ErrorUnionType when target is BoundLocal el && _errorNarrowed.TryGetValue(el.Local, out var errorCase)
+                && errorCase.Fields.FindIndex(f => f.Name == name) is var field and >= 0:
+                return new BoundErrorField(syntax, target, errorCase, field);
             case UnionSymbol when target is BoundLocal l && _narrowed.TryGetValue(l.Local, out var narrowed) && narrowed.Fields.FindIndex(f => f.Name == name) is var index and >= 0:
                 return new BoundUnionField(syntax, target, narrowed, index);
             case UnionSymbol u when u.Variants.Any(v => v.Fields.Any(f => f.Name == name)):

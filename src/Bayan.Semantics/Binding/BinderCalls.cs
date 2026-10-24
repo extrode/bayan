@@ -419,7 +419,7 @@ internal sealed partial class Binder
 
     private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type)
     {
-        var value = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, type);
+        var value = _prebound.Remove(arg, out var early) ? early : Built(BindExpr(arg.Value, type), arg.Value);
         if (arg.Modifier == ArgModifier.Move) value = BindMove(arg, value);
         // A type argument inferred from the value is not a typed use of it.
         return type is null ? value : Convert(value, type, arg.Value.Span, argument: true, constrains: early is null);
@@ -997,6 +997,11 @@ internal sealed partial class Binder
                 }
                 return new BoundPropertyPattern(p, input, tt, subs, null);
             }
+            case VariantPattern vp when Unwrap(input) is ErrorSetSymbol or ErrorUnionType:
+                return BindErrorCasePattern(vp, input, BindTargetMember(vp.Variant, Unwrap(input)), vp.Elements, vp.Binding);
+            case PositionalPattern { Type: NamedType { Path.Length: 2, Args.Length: 0 } nt } pos
+                when Unwrap(input) is ErrorSetSymbol or ErrorUnionType && Module.Types.TryGetValue(nt.Path[0].Text, out var named) && named is ErrorSetSymbol set:
+                return BindErrorCasePattern(pos, input, ErrorCase(pos, set, nt.Path[1]), pos.Elements, null);
             case VariantPattern vp:
                 return BindUnionPattern(vp, input, null, vp.Variant.Member, vp.Elements, vp.Binding);
             case PositionalPattern { Type: NamedType { Path.Length: > 1, Args.Length: 0 } nt } pos:
@@ -1385,6 +1390,9 @@ internal sealed partial class Binder
                 break;
             case BoundUnionPattern up when up.Subpatterns.All(Irrefutable):
                 covered.Add("." + up.Variant.Name);
+                break;
+            case BoundErrorPattern ep when ep.Subpatterns.All(Irrefutable):
+                covered.Add(VariantKey(ep.Variant, type));
                 break;
             case BoundConstantPattern { Value.Constant.Value: bool b }:
                 covered.Add(b ? "true" : "false");

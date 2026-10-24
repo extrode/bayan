@@ -11,6 +11,7 @@ public static class BoundTree
             case BoundField n: yield return n.Receiver; break;
             case BoundTupleElement n: yield return n.Receiver; break;
             case BoundUnionField n: yield return n.Receiver; break;
+            case BoundErrorField n: yield return n.Receiver; break;
             case BoundCall n:
                 if (n.Receiver is not null) yield return n.Receiver;
                 foreach (var a in n.Arguments) yield return a;
@@ -27,6 +28,7 @@ public static class BoundTree
             case BoundCoalesce n: yield return n.Left; yield return n.Right; break;
             case BoundStructLiteral n: foreach (var f in n.Fields) yield return f; break;
             case BoundUnionNew n: foreach (var f in n.Payload) yield return f; break;
+            case BoundErrorVariant n: foreach (var f in n.Payload) yield return f; break;
             case BoundWith n:
                 yield return n.Target;
                 foreach (var u in n.Updates) yield return u.Value;
@@ -97,6 +99,7 @@ public static class BoundTree
             case BoundBinaryPattern n: yield return n.Left; yield return n.Right; break;
             case BoundPropertyPattern n: foreach (var s in n.Subpatterns) yield return s.Pattern; break;
             case BoundUnionPattern n: foreach (var s in n.Subpatterns) yield return s; break;
+            case BoundErrorPattern n: foreach (var s in n.Subpatterns) yield return s; break;
         }
     }
 

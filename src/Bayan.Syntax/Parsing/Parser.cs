@@ -1430,7 +1430,8 @@ public sealed class Parser
             var attributes = ParseAttributes();
             var doc = DocOf(caseStart) ?? DocOf(Current);
             var variant = ExpectName("a variant name");
-            variants.Add(new ErrorVariant(variant.Span, variant, doc) { Attributes = attributes });
+            var fields = ParsePayload(variant);
+            variants.Add(new ErrorVariant(variant.Span, variant, doc) { Attributes = attributes, Fields = fields });
             cases.Add(TextSpan.FromBounds(caseStart.Start, _prevEnd));
             if (!NextCase(commas)) break;
         }

@@ -208,6 +208,9 @@ public sealed partial class Compilation
             foreach (var u in module.Unions)
                 DeclareUnionVariants(u);
         foreach (var module in Modules)
+            foreach (var set in module.ErrorSets)
+                DeclarePayloads(set);
+        foreach (var module in Modules)
         {
             foreach (var s in module.Structs) DeclareMembers(s);
             foreach (var s in module.Structs) Naming.CheckMembers(this, s);
@@ -726,6 +729,29 @@ public sealed partial class Compilation
         }
         if (set.Variants.Count == 0)
             Report(DiagnosticCodes.EmptyErrorSet, file.Source, set.Decl.Name.Span, [set.Name]);
+    }
+
+    /// <summary>The payload fields of each case of <paramref name="set"/>, resolved once every type is declared.</summary>
+    private void DeclarePayloads(ErrorSetSymbol set)
+    {
+        var file = set.Module.Files.First(f => f.Tree.Root.Members.Contains(set.Decl));
+        var types = new TypeResolver(this, file, null);
+        foreach (var v in set.Decl.Variants)
+        {
+            if (set.Find(v.Name.Text) is not { } sym || sym.Location!.Value.Span != v.Name.Span) continue;
+            var names = new Dictionary<string, Location>(StringComparer.Ordinal);
+            foreach (var f in v.Fields)
+            {
+                Naming.CheckValue(this, file.Source, f.Name);
+                if (names.TryGetValue(f.Name.Text, out var prev))
+                {
+                    ReportDuplicate(file.Source, f.Name, prev);
+                    continue;
+                }
+                names[f.Name.Text] = Loc(file, f.Name);
+                sym.Fields.Add(new ParameterSymbol(f.Name.Text, Loc(file, f.Name), types.Resolve(f.Type), ParamModifier.None, sym.Fields.Count));
+            }
+        }
     }
 
     /// <summary>BYN3202 for two composed sets with a case of the same name.</summary>
