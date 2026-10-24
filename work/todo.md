@@ -232,7 +232,8 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-53g: `..xs` mixed with other tail arguments (`f(1, ..xs)`) is BYN2215; spreading into a `rest` tail beside values needs the run-time-length span path `FinishCollection` rejects (BYN2219).
 - r3-53g: `rest` on a non-span type has no diagnostic; the parser's input forms always build `ReadOnlySpan<T>`, but `rest List<T> xs` is accepted and matched as a plain parameter.
 - r3-53g: overloads of the same name each report BYN5001 and other naming lints once per declaration.
-- plan-strings-check skips BYN5011: its plan entry reads `(plan, warning)`, which the start regex `(?: \(plan\))?` rejects; widen the regex (5.4a owns the script) (found 2026-10-24, r3-53g). Checked by hand: message, help and severity match the plan.
 - r3-53c1: `TypeFacts` does not look through `StateType`, so uniqueness and similar facts of the struct are lost on a state type.
 - r3-53c1: no `ToOptional` from a state type: `Order.paid` does not convert to `Order?`.
 - r3-53c1: the Lowerer throws on `BoundBecome` and on `StateType`; programs using typestate cannot run until the second half of 5.3c.
+- r3-53c1 gate: `become .s` in a `static` method or with a `this` that is neither `ref` nor `move` binds without a diagnostic; no plan code covers it (5.3c second half or a Question).
+- r3-53c1 gate: the BYN7003 second-form and BYN7007 labels underline the state name without its leading dot; plan says "label at `.{0}`".
