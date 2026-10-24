@@ -167,6 +167,13 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 NoTypeArgs(n);
                 return compilation.Builtins.Utf8Error;
             }
+            // `ValidationError<T>`: one set for every `T` while cases carry no payload (Q220).
+            if (text == "ValidationError")
+            {
+                if (n.Args.Length > 1)
+                    compilation.Report(DiagnosticCodes.WrongTypeArgumentCount, file.Source, n.Span, [text, 1, n.Args.Length]);
+                return compilation.Builtins.ValidationError;
+            }
             if (compilation.Builtins.FindInterface(text) is { } builtin)
             {
                 NoTypeArgs(n);
@@ -338,7 +345,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
     private string? Suggest(string text)
     {
         var lower = text.ToLowerInvariant();
-        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ProcessResult", "Panic"]))
+        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ValidationError", "ProcessResult", "Panic"]))
             if (name.Equals(text, StringComparison.OrdinalIgnoreCase)) return name;
         if (PrimitiveType.ByName.ContainsKey(lower)) return lower;
         return lower switch

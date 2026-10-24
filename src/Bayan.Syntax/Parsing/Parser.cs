@@ -670,8 +670,7 @@ public sealed class Parser
             if (members[i] is not FieldDecl { Requires.Length: > 0 } field) continue;
             var mixed = field.Requires.Where(r => NamesAny(r, fields) && NamesAny(r, ItName)).ToArray();
             foreach (var r in mixed)
-                Report(DiagnosticCodes.RequiresMixesFields, r.Span, label: "reads `it` and another field",
-                    help: "split it: an `it` rule under the field, and a struct-level rule with `at .field`");
+                Report(DiagnosticCodes.RequiresMixesFields, r.Span, help: "split it: an `it` rule under the field, and a struct-level rule with `at .field`");
             var own = field.Requires.Where(r => r.At is null && !NamesAny(r, fields)).ToArray();
             rules.AddRange(field.Requires.Where(r => !own.Contains(r) && !mixed.Contains(r)));
             members[i] = field with { Requires = own };

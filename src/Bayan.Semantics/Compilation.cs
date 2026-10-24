@@ -194,6 +194,7 @@ public sealed partial class Compilation
         foreach (var module in Modules)
             foreach (var set in module.ErrorSets)
                 DeclareVariants(set);
+        DeclareBuiltinVariants(Builtins.ValidationError);
         foreach (var alias in _aliases)
             if (alias.Decl is ErrorSetDecl composed) CheckComposition(alias, composed);
         foreach (var module in Modules)
@@ -218,9 +219,9 @@ public sealed partial class Compilation
     }
 
     /// <summary><c>IoError</c> is numbered first, so the runtime can return its codes 1 to 7 directly; <c>Utf8Error</c> follows (8).</summary>
-    private void DeclareBuiltinVariants()
+    private void DeclareBuiltinVariants(params ErrorSetSymbol[] sets)
     {
-        foreach (var set in new[] { Builtins.IoError, Builtins.Utf8Error })
+        foreach (var set in sets.Length > 0 ? sets : [Builtins.IoError, Builtins.Utf8Error])
             foreach (var v in set.Decl.Variants)
             {
                 var sym = new ErrorVariantSymbol(v.Name.Text, new Location(set.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
@@ -327,24 +328,6 @@ public sealed partial class Compilation
         _testBodies[fn] = (t, values);
     }
 
-    /// <summary>
-    /// <c>requires</c> rules on fields, structs and types parse, but are checked at construction only from round 3
-    /// step 5.3b; until then each rule is BYN2322 rather than silently unchecked.
-    /// </summary>
-    private void CheckRequires(FileContext file, Decl decl)
-    {
-        RequiresRule[] rules = decl switch
-        {
-            StructDecl s => [.. s.Members.OfType<FieldDecl>().SelectMany(f => f.Requires), .. s.Rules],
-            FieldDecl f => f.Requires,
-            TypeAliasDecl t => t.Requires,
-            _ => [],
-        };
-        foreach (var rule in rules.OrderBy(r => r.Span.Start))
-            Report(DiagnosticCodes.RequiresNotHere, file.Source, rule.Span, [decl is TypeAliasDecl ? "types" : "fields"],
-                help: "check the value where it is set, or move the rule to a function's `requires`");
-    }
-
     /// <summary><c>quantity bounds (input: 101, valid: false)</c>: the title, then each parameter with its value as written.</summary>
     private static string CaseTitle(FileContext file, TestDecl t, Expr[] values) =>
         $"{t.Title} ({string.Join(", ", t.Params.Zip(values, (p, v) => p.Name.Text + ": " + file.Source.GetText(v.Span)))})";
@@ -356,7 +339,6 @@ public sealed partial class Compilation
         foreach (var decl in file.Tree.Root.Members)
         {
             CheckAttributes(file, decl);
-            CheckRequires(file, decl);
             switch (decl)
             {
                 case StructDecl s:
@@ -418,9 +400,22 @@ public sealed partial class Compilation
                         label: "retroactive conformance", help: $"list `{bases}` on `{x.Name.Text}`'s declaration");
                     break;
                 }
+                case TypeAliasDecl { Distinct: true } a:
+                {
+                    // J5: a nominal wrapper, a struct whose one field `value` carries the type's `requires`.
+                    var value = new FieldDecl(a.Target.Span, Modifiers.Public, a.Target, new Name(a.Target.Span, "value"), null) { Requires = a.Requires };
+                    var sym = new StructSymbol(a.Name.Text, Loc(file, a.Name), module, AccessOf(a.Modifiers), new StructDecl(a.Span, a.Modifiers, a.Name, [value]), file);
+                    if (AddType(file, a.Name, sym))
+                    {
+                        module.Structs.Add(sym);
+                        Distinct.Add(sym);
+                    }
+                    Naming.CheckType(this, file.Source, a.Name);
+                    break;
+                }
                 case TypeAliasDecl a:
                 {
-                    if (a.Distinct) Report(DiagnosticCodes.Unsupported, file.Source, a.Name.Span, ["`type distinct`"]);
+                    if (a.Requires.Length > 0) Report(DiagnosticCodes.Unsupported, file.Source, a.Requires[0].Span, ["`requires` on a plain `type` alias"]);
                     var sym = new AliasPlaceholder(a, a.Name, a.Modifiers, file);
                     if (AddType(file, a.Name, sym)) _aliases.Add(sym);
                     Naming.CheckType(this, file.Source, a.Name);
@@ -920,7 +915,30 @@ public sealed partial class Compilation
                     break;
             }
         }
+        DeclareCheck(s);
     }
+
+    /// <summary>A struct with <c>requires</c> gets a check, run on each built value, that fails with <c>ValidationError</c>.</summary>
+    private void DeclareCheck(StructSymbol s)
+    {
+        var first = s.Decl.Members.OfType<FieldDecl>().SelectMany(f => f.Requires).Concat(s.Decl.Rules).MinBy(r => r.Span.Start);
+        if (first is null || s.Template is not null) return;
+        if (s.IsGeneric)
+        {
+            Report(DiagnosticCodes.Unsupported, s.File.Source, first.Span, ["`requires` on a generic struct"]);
+            return;
+        }
+        var check = new FunctionSymbol("requires", s.Location, s.Module, FunctionKind.Method) { Owner = s, File = s.File, Access = s.Access, Fails = true };
+        check.ErrorSets.Add(Builtins.ValidationError);
+        s.Module.AllFunctions.Add(check);
+        Checks[s] = new StructChecks(check, []);
+    }
+
+    /// <summary>The <c>requires</c> check of each struct that has rules, by struct.</summary>
+    internal Dictionary<StructSymbol, StructChecks> Checks { get; } = new();
+
+    /// <summary>The structs that stand for a <c>type distinct</c>, built with <c>X(raw)</c>.</summary>
+    internal HashSet<StructSymbol> Distinct { get; } = new();
 
     private readonly Dictionary<FunctionSymbol, ConstructorDecl> _constructorBodies = new();
 
@@ -1141,6 +1159,8 @@ public sealed partial class Compilation
                     f.Default = new Binder(this, s.File, null, s).BindFieldDefault(f);
             }
         }
+        foreach (var (s, checks) in Checks)
+            new Binder(this, s.File, checks.Check, s).BindChecks(checks);
         foreach (var module in Modules)
         {
             foreach (var fn in module.AllFunctions.Where(f => !f.IsInstance).ToList())

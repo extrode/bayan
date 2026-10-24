@@ -1431,6 +1431,15 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     private (LocalSymbol Error, BoundExpr Result)? FailingCall(BoundExpr operand)
     {
         var call = (BoundCall)operand;
+        // A `requires` check takes the built value as `this`; the value, not the void call, is the result.
+        if (call.Function is { Name: "requires", Owner: not null })
+        {
+            var value = Spill(Expr(call.Receiver!));
+            if (IsNever(value)) return null;
+            var check = NewTemp(PrimitiveType.U32);
+            Emit(new LFailingCall(call.Syntax, check, call with { Receiver = value }, null));
+            return (check, value);
+        }
         var lowered = CallParts(call);
         if (lowered is null) return null;
         var error = NewTemp(PrimitiveType.U32);

@@ -13,9 +13,11 @@
 
 #if defined(__GNUC__) || defined(__clang__)
 #define BYN_NORETURN __attribute__((noreturn))
+#define BYN_COLD __attribute__((cold))
 #define BYN_UNLIKELY(x) __builtin_expect(!!(x), 0)
 #else
 #define BYN_NORETURN _Noreturn
+#define BYN_COLD
 #define BYN_UNLIKELY(x) (x)
 #endif
 
@@ -36,6 +38,14 @@ BYN_NORETURN void byn_panic_str(byn_str msg, const char* file, int line);
 /* `todo(msg)`: prints `pending: msg` and exits with 4, which the test runner reports as pending. */
 BYN_NORETURN void byn_todo_str(byn_str msg, const char* file, int line);
 BYN_NORETURN void byn_unreachable(const char* file, int line);
+
+/* One cold trap per kind (J89), called after a single compare, so the hot path is only the test. */
+static inline BYN_NORETURN BYN_COLD void bayan_trap_bounds(const char* file, int line) { byn_panic("index out of range", file, line); }
+static inline BYN_NORETURN BYN_COLD void bayan_trap_slice(const char* file, int line) { byn_panic("slice out of range", file, line); }
+static inline BYN_NORETURN BYN_COLD void bayan_trap_overflow(const char* file, int line) { byn_panic("arithmetic overflow", file, line); }
+static inline BYN_NORETURN BYN_COLD void bayan_trap_range(const char* file, int line) { byn_panic("value out of range for the target type", file, line); }
+static inline BYN_NORETURN BYN_COLD void bayan_trap_divide(const char* file, int line) { byn_panic("division by zero", file, line); }
+static inline BYN_NORETURN BYN_COLD void bayan_trap_scalar(const char* file, int line) { byn_panic("value is not a Unicode scalar", file, line); }
 
 /* ── Panic handlers ──────────────────────────────────────────────────────── */
 
@@ -158,13 +168,13 @@ byn_str byn_str_slice(byn_str s, int64_t start, int64_t end, const char* file, i
 /* ── Bounds ──────────────────────────────────────────────────────────────── */
 
 static inline int64_t byn_index(int64_t i, int64_t len, const char* file, int line) {
-    if (BYN_UNLIKELY((uint64_t)i >= (uint64_t)len)) byn_panic("index out of range", file, line);
+    if (BYN_UNLIKELY((uint64_t)i >= (uint64_t)len)) bayan_trap_bounds(file, line);
     return i;
 }
 
 /* Validates a slice [start, end) of a sequence of length len. */
 static inline void byn_slice_check(int64_t start, int64_t end, int64_t len, const char* file, int line) {
-    if (BYN_UNLIKELY(start < 0 || end < start || end > len)) byn_panic("slice out of range", file, line);
+    if (BYN_UNLIKELY(start < 0 || end < start || end > len)) bayan_trap_slice(file, line);
 }
 
 /* Resolves slice bounds: a mode of 0 is an offset from the start, 1 from the end, 2 absent. */
@@ -306,7 +316,7 @@ static inline byn_writer byn_strbuf_grow(byn_alloc* alloc) {
 
 static inline uint32_t byn_to_char(int64_t v, const char* file, int line) {
     if (BYN_UNLIKELY(v < 0 || v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF)))
-        byn_panic("value is not a Unicode scalar", file, line);
+        bayan_trap_scalar(file, line);
     return (uint32_t)v;
 }
 
@@ -326,28 +336,28 @@ static inline uint32_t byn_to_char_u(uint64_t v, const char* file, int line) {
 
 #define BYN_DEF_TRAPPING(N, T, S) \
     static inline T byn_add_##N(T a, T b, const char* f, int l) { \
-        T r; if (BYN_UNLIKELY(__builtin_add_overflow(a, b, &r))) byn_panic("arithmetic overflow", f, l); return r; } \
+        T r; if (BYN_UNLIKELY(__builtin_add_overflow(a, b, &r))) bayan_trap_overflow(f, l); return r; } \
     static inline T byn_sub_##N(T a, T b, const char* f, int l) { \
-        T r; if (BYN_UNLIKELY(__builtin_sub_overflow(a, b, &r))) byn_panic("arithmetic overflow", f, l); return r; } \
+        T r; if (BYN_UNLIKELY(__builtin_sub_overflow(a, b, &r))) bayan_trap_overflow(f, l); return r; } \
     static inline T byn_mul_##N(T a, T b, const char* f, int l) { \
-        T r; if (BYN_UNLIKELY(__builtin_mul_overflow(a, b, &r))) byn_panic("arithmetic overflow", f, l); return r; } \
+        T r; if (BYN_UNLIKELY(__builtin_mul_overflow(a, b, &r))) bayan_trap_overflow(f, l); return r; } \
     static inline T byn_neg_##N(T a, const char* f, int l) { \
-        T r; if (BYN_UNLIKELY(__builtin_sub_overflow((T)0, a, &r))) byn_panic("arithmetic overflow", f, l); return r; } \
+        T r; if (BYN_UNLIKELY(__builtin_sub_overflow((T)0, a, &r))) bayan_trap_overflow(f, l); return r; } \
     static inline T byn_inc_##N(T a, const char* f, int l) { return byn_add_##N(a, (T)1, f, l); } \
     static inline T byn_dec_##N(T a, const char* f, int l) { return byn_sub_##N(a, (T)1, f, l); } \
     static inline T byn_cast_##N##_i(int64_t v, const char* f, int l) { \
-        T r = (T)v; if (BYN_UNLIKELY((int64_t)r != v || (r < (T)1) != (v < 1))) byn_panic("value out of range for the target type", f, l); return r; } \
+        T r = (T)v; if (BYN_UNLIKELY((int64_t)r != v || (r < (T)1) != (v < 1))) bayan_trap_range(f, l); return r; } \
     static inline T byn_cast_##N##_u(uint64_t v, const char* f, int l) { \
-        T r = (T)v; if (BYN_UNLIKELY((uint64_t)r != v || r < (T)0)) byn_panic("value out of range for the target type", f, l); return r; }
+        T r = (T)v; if (BYN_UNLIKELY((uint64_t)r != v || r < (T)0)) bayan_trap_range(f, l); return r; }
 
 #define BYN_DEF_ARITH(N, T, S) \
     BYN_DEF_TRAPPING(N, T, S) \
     static inline T byn_div_##N(T a, T b, const char* f, int l) { \
-        if (BYN_UNLIKELY(b == 0)) byn_panic("division by zero", f, l); \
+        if (BYN_UNLIKELY(b == 0)) bayan_trap_divide(f, l); \
         if ((S) && BYN_UNLIKELY(a == BYN_MIN(T, S) && b == (T)-1)) return byn_neg_##N(a, f, l); \
         return (T)(a / b); } \
     static inline T byn_rem_##N(T a, T b, const char* f, int l) { \
-        if (BYN_UNLIKELY(b == 0)) byn_panic("division by zero", f, l); \
+        if (BYN_UNLIKELY(b == 0)) bayan_trap_divide(f, l); \
         if ((S) && b == (T)-1) return 0; \
         return (T)(a % b); } \
     static inline T byn_addw_##N(T a, T b) { return (T)((uint64_t)a + (uint64_t)b); } \

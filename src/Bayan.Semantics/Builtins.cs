@@ -43,6 +43,9 @@ public sealed class Builtins
         var utf8Source = SourceText.FromString("<builtin>", Utf8ErrorSource);
         var utf8Decl = (ErrorEnumDecl)SyntaxTree.Parse(utf8Source).Root.Members[0];
         Utf8Error = new ErrorSetSymbol("Utf8Error", new Location(utf8Source, utf8Decl.Name.Span), Module, Accessibility.Public, utf8Decl);
+        var validationSource = SourceText.FromString("<builtin>", ValidationErrorSource);
+        var validationDecl = (ErrorEnumDecl)SyntaxTree.Parse(validationSource).Root.Members[0];
+        ValidationError = new ErrorSetSymbol("ValidationError", new Location(validationSource, validationDecl.Name.Span), Module, Accessibility.Public, validationDecl);
         var bytes = ("bytes", (TypeSymbol)new SpanType(PrimitiveType.U8, readOnly: true));
         StringFrom = Make("from", BuiltinFunction.StringFrom, PrimitiveType.String, bytes);
         StringFrom.Fails = true;
@@ -98,6 +101,20 @@ public sealed class Builtins
 
     /// <summary><c>union error Utf8Error</c>: numbered right after <c>IoError</c>, so <c>invalidSequence</c> is code 8.</summary>
     public ErrorSetSymbol Utf8Error { get; }
+
+    // Error cases have no payload yet, so `invalid` carries no `List<Violation<T>>` (Q220).
+    private const string ValidationErrorSource = """
+        public union error ValidationError {
+            /// The value breaks a `requires` rule of its type.
+            invalid,
+        }
+        """;
+
+    /// <summary>
+    /// <c>union error ValidationError&lt;T&gt;</c>, what building a type with <c>requires</c> fails with; one set for every
+    /// <c>T</c>, numbered after the user's sets so their codes still start at 9.
+    /// </summary>
+    public ErrorSetSymbol ValidationError { get; }
 
     /// <summary><c>string string.from(ReadOnlySpan&lt;u8&gt; bytes) fails Utf8Error</c>: a copy from <c>context.allocator</c>.</summary>
     public FunctionSymbol StringFrom { get; }
