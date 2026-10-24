@@ -84,6 +84,18 @@ struct Order {
         }
         become .draft
     }
+    i64 sumPaid(move this is .paid, i64 times) becomes .draft {
+        var i = 0
+        var sum = 0
+        while i < times {
+            sum += payment
+            sum += onlyPaid()
+            become .draft
+            i += 1
+        }
+        become .draft
+        return sum
+    }
     void repeat(ref this, i64 times) {
         if this is .paid {
             var i = 0

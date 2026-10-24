@@ -56,7 +56,21 @@ error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.pa
 
 error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
 
-  91 │                 print($"{payment}")
-     │                          ^^^^^^^
+  91 │             sum += payment
+     │                    ^^^^^^^
      │
+  help: match `.paid` with `is` or `switch` before reading `payment`
+
+error BYN7001: `onlyPaid` needs `this` to be `.paid`, but it is `Order`
+
+  92 │             sum += onlyPaid()
+     │                    ^^^^^^^^
+     │
+  help: check the state with `is` or `switch` first
+
+error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
+
+  103 │                 print($"{payment}")
+      │                          ^^^^^^^
+      │
   help: match `.paid` with `is` or `switch` before reading `payment`

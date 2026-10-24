@@ -196,11 +196,11 @@ internal sealed partial class Binder
     private void ForgetState(LocalSymbol local) => _stateFacts.RemoveAll(f => f.Local == local);
 
     /// <summary>
-    /// At the start of a loop, what a <c>var</c> or <c>ref</c> parameter was known to be no longer holds: the loop body may change
-    /// it after the reads that come first.
+    /// At the start of a loop, what a <c>var</c> or <c>ref</c> parameter, or a <c>this</c> that can change state, was known to be no
+    /// longer holds: the loop body may change it after the reads that come first.
     /// </summary>
     private void ForgetChangingStates() => _stateFacts.RemoveAll(f => f.Local.IsMutable || f.Local is ParameterSymbol { IsByRef: true }
-        || f.Local == _thisFacts && _fn is { IsMutating: true });
+        || f.Local == _thisFacts && _fn is { IsMutating: true } or { Decl.MoveThis: not null } or { Decl.Becomes: not null });
 
     /// <summary>Learns, for the code that runs when <paramref name="cond"/> is <paramref name="whenTrue"/>, the states it proves.</summary>
     private List<(Scope, LocalSymbol, StateType)> LearnStates(BoundExpr cond, bool whenTrue)
