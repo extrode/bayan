@@ -8,7 +8,7 @@ union error ConfigError {
 }
 
 void load(bool broken) fails ConfigError {
-    return .malformed if broken
+    fail .malformed if broken
 }
 
 void main() fails ConfigError {

@@ -200,7 +200,7 @@ bool isStringLiteral(TokenKind kind) => kind switch {
 /// The C# name of `kind`: its member name with the first byte upper-cased (plan Q52).
 string kindName(TokenKind kind) {
     let name = kind.name
-    return $"{(rune)(name.bytes[0] - 0x20)}{name[1..]}"
+    return $"{rune(name.bytes[0] - 0x20)}{name[1..]}"
 }
 
 /// Source text of fixed tokens, for messages ("expected `;`").

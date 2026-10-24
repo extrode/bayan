@@ -38,7 +38,7 @@ i32 findSmallestBox(i64 grams) {
 public i32 pack(ReadOnlySpan<PackItem> items, Span<i32> order, Span<i32> boxOf, Span<i32> boxKind, Span<i64> loads) fails PackError {
     let n = items.length
     for i in 0..n {
-        order[i] = (i32)i
+        order[i] = i32(i)
     }
     // insertion sort, heaviest first; strict `<` keeps it stable
     for i in 1..n {
@@ -56,7 +56,7 @@ public i32 pack(ReadOnlySpan<PackItem> items, Span<i32> order, Span<i32> boxOf, 
         let i = order[k]
         let grams = items[i].grams
         let size = findSmallestBox(grams)
-        return .tooHeavy if size < 0
+        fail .tooHeavy if size < 0
         var box = -1
         for b in 0..count {
             if box < 0 && loads[b] + grams <= boxSizes(boxKind[b]).capacity {
@@ -78,7 +78,7 @@ public i32 pack(ReadOnlySpan<PackItem> items, Span<i32> order, Span<i32> boxOf, 
 /// Pick order: by aisle, then bay; stable.
 public void sortPicks(ReadOnlySpan<PackItem> items, Span<i32> order) {
     for i in 0..items.length {
-        order[i] = (i32)i
+        order[i] = i32(i)
     }
     for i in 1..items.length {
         let current = order[i]
@@ -97,9 +97,9 @@ bool comesAfter(PackItem a, PackItem b) => a.aisle > b.aisle || (a.aisle == b.ai
 public u8 computeCheckDigit(string text) {
     var h: u32 = 2166136261
     for c in text {
-        h = (h ^ (u32)c) *% 16777619
+        h = (h ^ u32(c)) *% 16777619
     }
-    return (u8)(h % 10)
+    return u8(h % 10)
 }
 
 void report(string name, ReadOnlySpan<PackItem> items) {
@@ -126,7 +126,7 @@ let bed: List<PackItem> = [PackItem { sku: "BED-0001", grams: 15000, aisle: 9, b
 
 var sample: List<PackItem> = []
 for i in 0..40 {
-    sample.append(PackItem { sku: $"ITM-{1000 + i}", grams: 100 + (i * 37) % 900, aisle: (u8)(1 + i % 6), bay: (u16)(i % 20) })
+    sample.append(PackItem { sku: $"ITM-{1000 + i}", grams: 100 + (i * 37) % 900, aisle: u8(1 + i % 6), bay: u16(i % 20) })
 }
 
 report("mixed", mixed.asSpan())

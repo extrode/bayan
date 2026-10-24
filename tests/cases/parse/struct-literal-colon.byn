@@ -20,7 +20,7 @@ Money pick() => { cents: 1 }
 }
 union error MkError { bad }
 Money mk(bool ok) fails MkError {
-    return .bad if !ok
+    fail .bad if !ok
     return { cents: 7 }
 }
 let caught: Money = mk(ok: false) catch { cents: 1 }

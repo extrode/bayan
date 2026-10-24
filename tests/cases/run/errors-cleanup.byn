@@ -19,7 +19,7 @@ i64 work(bool shouldFail) fails StepError {
         defer note("inner defer")
         note("inner body")
     }
-    return .told if shouldFail
+    fail .told if shouldFail
     note("success path")
     return 42
 }

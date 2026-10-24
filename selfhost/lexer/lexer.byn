@@ -52,7 +52,7 @@ bool isIdentifierContinue(u32 cp) => isIdentifierStart(cp) || inRanges(identCont
     let b1 = text[pos + 1]
     let b2 = text[pos + 2]
     if (b1 == 0x80 && b2 >= 0xAA && b2 <= 0xAE) || (b1 == 0x81 && b2 >= 0xA6 && b2 <= 0xA9) {
-        return (length: 3, codePoint: 0x2000 | ((u32)(b1 & 0x0F) << 6) | (u32)(b2 & 0x3F))
+        return (length: 3, codePoint: 0x2000 | (u32(b1 & 0x0F) << 6) | u32(b2 & 0x3F))
     }
     return (length: 0, codePoint: 0)
 }
@@ -102,11 +102,11 @@ i64 ccc(u32 cp) {
 
 /// Appends the full canonical decomposition of `cp`.
 void decompose(u32 cp, ref List<u32> output) {
-    let s = (i64)cp - sBase
+    let s = i64(cp) - sBase
     if s >= 0 && s < sCount {
-        output.append((u32)(lBase + s / nCount))
-        output.append((u32)(vBase + s % nCount / tCount))
-        if s % tCount != 0 { output.append((u32)(tBase + s % tCount)) }
+        output.append(u32(lBase + s / nCount))
+        output.append(u32(vBase + s % nCount / tCount))
+        if s % tCount != 0 { output.append(u32(tBase + s % tCount)) }
         return
     }
     let i = findTriple(decompIndex, cp)
@@ -114,8 +114,8 @@ void decompose(u32 cp, ref List<u32> output) {
         output.append(cp)
         return
     }
-    let offset = (i64)decompIndex[i * 3 + 1]
-    let length = (i64)decompIndex[i * 3 + 2]
+    let offset = i64(decompIndex[i * 3 + 1])
+    let length = i64(decompIndex[i * 3 + 2])
     for k in offset..offset + length { output.append(decompData[k]) }
 }
 
@@ -136,12 +136,12 @@ void reorder(ref List<u32> cps) {
 
 /// Primary composite of the pair, or -1.
 i64 composePair(u32 first, u32 second) {
-    let l = (i64)first - lBase
-    let v = (i64)second - vBase
+    let l = i64(first) - lBase
+    let v = i64(second) - vBase
     if l >= 0 && l < lCount && v >= 0 && v < vCount { return sBase + (l * vCount + v) * tCount }
-    let s = (i64)first - sBase
-    let t = (i64)second - tBase
-    if s >= 0 && s < sCount && s % tCount == 0 && t > 0 && t < tCount { return (i64)first + t }
+    let s = i64(first) - sBase
+    let t = i64(second) - tBase
+    if s >= 0 && s < sCount && s % tCount == 0 && t > 0 && t < tCount { return i64(first) + t }
     var lo: i64 = 0
     var hi = compPairs.length / 3
     while lo < hi {
@@ -168,7 +168,7 @@ void compose(ref List<u32> cps) {
         let c = ccc(cp)
         let composite = composePair(first: cps[starterIndex], second: cp)
         if composite >= 0 && (lastCcc < c || lastCcc == 0) {
-            cps[starterIndex] = (u32)composite
+            cps[starterIndex] = u32(composite)
             continue
         }
         if c == 0 { starterIndex = count }
@@ -547,7 +547,7 @@ struct LexResult {
     }
 
     void reportUnexpected(ref this, u32 cp, i64 length) {
-        let shown = cp < 0x20 || cp == 0x7F ? $"\\u{{{hex(cp, 1)}}}" : $"{(rune)cp}"
+        let shown = cp < 0x20 || cp == 0x7F ? $"\\u{{{hex(cp, 1)}}}" : $"{rune(cp)}"
         report(.unexpectedCharacter, TextSpan { start: pos, length: length }, arg0: shown)
         pos += length
         tokenFlags |= triviaBefore
@@ -623,7 +623,7 @@ struct LexResult {
         }
         if same { return }
         var fix = StrBuf()
-        for cp in normalized { fix.append($"{(rune)cp}") }
+        for cp in normalized { fix.append($"{rune(cp)}") }
         reportFix(.identifierNotNfc, TextSpan.fromBounds(start: start, end: pos), replacement: fix.finish(), arg0: utf8(span),
             label: "same letters, different encoding",
             help: "use the composed (NFC) form; identifiers that look the same must be byte-identical")

@@ -7,7 +7,7 @@ struct Rows {
     i64 failAt
 
     i64? next(ref this) fails ReadError {
-        if failAt > 0 && at == failAt { return .broken }
+        if failAt > 0 && at == failAt { fail .broken }
         if at >= limit { return null }
         at += 1
         return at

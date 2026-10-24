@@ -10,6 +10,7 @@ public static class BoundTree
         {
             case BoundField n: yield return n.Receiver; break;
             case BoundTupleElement n: yield return n.Receiver; break;
+            case BoundUnionField n: yield return n.Receiver; break;
             case BoundCall n:
                 if (n.Receiver is not null) yield return n.Receiver;
                 foreach (var a in n.Arguments) yield return a;

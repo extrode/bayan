@@ -858,6 +858,11 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 var receiver = Expr(t.Receiver);
                 return IsNever(receiver) ? new LNever(e.Syntax, e.Type) : t with { Receiver = receiver };
             }
+            case BoundUnionField u:
+            {
+                var receiver = Expr(u.Receiver);
+                return IsNever(receiver) ? new LNever(e.Syntax, e.Type) : new LUnionField(e.Syntax, receiver, u.Variant, u.Index);
+            }
             case BoundCall c:
                 return Call(c);
             case BoundBuiltinCall b:
@@ -1322,7 +1327,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             BoundConditional c => [(c.Condition, mayNotRun), (c.WhenTrue, true), (c.WhenFalse, true)],
             BoundCoalesce c => [(c.Left, mayNotRun), (c.Right, true)],
             BoundIs i => [(i.Value, mayNotRun)],
-            BoundBinary or BoundUnary or BoundField or BoundTupleElement or BoundCall or BoundBuiltinCall or BoundConversion or BoundIndex
+            BoundBinary or BoundUnary or BoundField or BoundTupleElement or BoundUnionField or BoundCall or BoundBuiltinCall or BoundConversion or BoundIndex
                 => BoundTree.Children(e).Select(c => (c, mayNotRun)),
             _ => [],
         };
@@ -1641,6 +1646,11 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 tests.Add(Equal(syntax, new LUnionTag(syntax, subject), new BoundLiteral(syntax, PrimitiveType.I32, tag) { Constant = tag }));
                 for (var i = 0; i < up.Subpatterns.Length; i++)
                     tests.Add(Match(up.Subpatterns[i], new LUnionField(syntax, subject, up.Variant, i)));
+                if (up.Designation is { } d)
+                {
+                    Note(d);
+                    tests.Add(new LSequence(syntax, [new LAssignExpr(syntax, Local(syntax, d), subject)], Bool(syntax, true)));
+                }
                 return tests.Aggregate(And);
             }
             default:
@@ -1669,6 +1679,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 break;
             case BoundUnionPattern up:
                 foreach (var sub in up.Subpatterns) Claim(sub);
+                if (up.Designation is { BorrowsSubject: false } ud) Emit(new LClaim(p.Syntax, ud));
                 break;
         }
     }

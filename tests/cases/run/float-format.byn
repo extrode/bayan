@@ -12,4 +12,4 @@ print($"{1.5e-7} {-2.25e20} {42.0} {1e300} {5e-324}")
 let single: f32 = 0.00001
 let singleUnder: f32 = 0.0000099
 let singleLarge: f32 = 1e15
-print($"{single} {singleUnder} {singleLarge} {(f32)0.1}")
+print($"{single} {singleUnder} {singleLarge} {f32(0.1)}")

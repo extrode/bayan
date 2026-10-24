@@ -14,10 +14,10 @@ struct Digits : IParser {
     i64 base
 
     i64 parse(string s) fails ParseError {
-        return .empty if s.isEmpty
+        fail .empty if s.isEmpty
         let c = s.bytes[0]
-        return .notDigit if c < '0' || c > '9'
-        return base + (i64)(c - '0')
+        fail .notDigit if c < '0' || c > '9'
+        return base + i64(c - '0')
     }
 
     void check(string s) fails ParseError {

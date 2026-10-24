@@ -3,7 +3,7 @@ union error ParseError {
 }
 
 i64 parse(string s) fails ParseError {
-    return .bad if s.isEmpty
+    fail .bad if s.isEmpty
     return s.length
 }
 

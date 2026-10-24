@@ -13,7 +13,7 @@ var state: u64 = 0x9E3779B97F4A7C15
 var m = Map<i64, i64>()
 for step in 0..5000 {
     let r = next(ref state)
-    let key = (i64)(r % 64)
+    let key = i64(r % 64)
     if (r >> 8) % 3 == 2 { let _ = m.remove(key) } else { m[key] = step }
 }
 print($"count {m.length}")

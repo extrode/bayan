@@ -6,7 +6,7 @@ union error ParseError {
 }
 
 i64 parse(string s) fails ParseError {
-    return .empty if s.length == 0
+    fail .empty if s.length == 0
     return 1
 }
 

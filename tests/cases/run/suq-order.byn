@@ -26,13 +26,13 @@ public struct Money {
     public Currency currency
 
     public Money plus(Money other) fails PricingError {
-        return .currencyMismatch if other.currency != currency
-        return .overflow if other.cents > 0 && cents > maxCents - other.cents
+        fail .currencyMismatch if other.currency != currency
+        fail .overflow if other.cents > 0 && cents > maxCents - other.cents
         return Money { cents: cents + other.cents, currency: currency }
     }
 
     public Money minus(Money other) fails PricingError {
-        return .currencyMismatch if other.currency != currency
+        fail .currencyMismatch if other.currency != currency
         return Money { cents: cents - other.cents, currency: currency }
     }
 
@@ -40,7 +40,7 @@ public struct Money {
 
     /// This amount at a rate in basis points (800 = 8%), rounded half up. Non-negative amounts.
     public Money atRate(i64 basisPoints) fails PricingError {
-        return .overflow if basisPoints > 0 && cents > (maxCents - 5000) / basisPoints
+        fail .overflow if basisPoints > 0 && cents > (maxCents - 5000) / basisPoints
         return Money { cents: (cents * basisPoints + 5000) / 10000, currency: currency }
     }
 
@@ -128,32 +128,32 @@ public struct Order {
     }
 
     public void addLine(ref this, Line line) fails OrderError uses alloc {
-        return .wrongState unless state is .draft
-        return .tooManyLines if lines.length >= maxLines
-        return .currencyMismatch if line.unitPrice.currency != currency
-        return .invalidLine if line.qty < 1 || line.qty > 999 || line.unitGrams <= 0
+        fail .wrongState unless state is .draft
+        fail .tooManyLines if lines.length >= maxLines
+        fail .currencyMismatch if line.unitPrice.currency != currency
+        fail .invalidLine if line.qty < 1 || line.qty > 999 || line.unitGrams <= 0
         lines.append(line)
     }
 
     public void removeLine(ref this, string sku) fails OrderError {
-        return .wrongState if !(state is .draft || state is .placed)
+        fail .wrongState if !(state is .draft || state is .placed)
         for i in 0..lines.length {
             lines[i] = lines[i] with { status: .removed } if lines[i].sku == sku
         }
     }
 
     public void place(ref this) fails OrderError {
-        return .wrongState unless state is .draft
+        fail .wrongState unless state is .draft
         var any = false
         for line in lines {
             any = true if line.status == .active
         }
-        return .empty unless any
+        fail .empty unless any
         state = .placed
     }
 
     public void markPaid(ref this, string payment) fails OrderError {
-        return .wrongState unless state is .placed
+        fail .wrongState unless state is .placed
         state = .paid(payment)
     }
 
@@ -165,12 +165,12 @@ public struct Order {
             .shipped(_, _) => "",
             .cancelled(_) => "",
         }
-        return .wrongState unless state is .paid(_)
+        fail .wrongState unless state is .paid(_)
         state = .shipped(payment, tracking)
     }
 
     public void cancel(ref this, string reason) fails OrderError {
-        return .wrongState if !(state is .draft || state is .placed)
+        fail .wrongState if !(state is .draft || state is .placed)
         state = .cancelled(reason)
     }
 }

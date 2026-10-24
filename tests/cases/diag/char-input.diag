@@ -15,12 +15,3 @@ error BYN1048: `char` is now `rune`
   help: rename the type to `rune`
     │ 4 │     let letters = Map<rune, bool>()
     │   │                       ++++
-
-error BYN1048: `char` is now `rune`
-
-  5 │     print($"{(char)0x41}")
-    │               ^^^^ the input form
-    │
-  help: rename the type to `rune`
-    │ 5 │     print($"{(rune)0x41}")
-    │   │               ++++

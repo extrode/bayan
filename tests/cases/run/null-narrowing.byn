@@ -34,7 +34,7 @@ i64 add(i64? a, i64? b) {
 }
 
 i64 lookup(i64 n) fails LookupError {
-    let v = find(n) ?? return .missing
+    let v = find(n) ?? fail .missing
     return v
 }
 

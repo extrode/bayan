@@ -7,7 +7,7 @@ i64 work(bool shouldFail) fails StepError {
     defer print("defer")
     defer failing print("defer failing")
     defer failing (e) print($"defer failing saw {e}")
-    return .told if shouldFail
+    fail .told if shouldFail
     return 1
 }
 

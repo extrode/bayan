@@ -33,7 +33,7 @@ public struct Money {
 
 /// Parses `12`, `0.5` or `91.82` into cents.
 public Cents parseAmount(string text) fails MoneyError {
-    return .empty if text.isEmpty
+    fail .empty if text.isEmpty
     var whole: Cents = 0
     var fraction: Cents = 0
     var wholeDigits: i64 = 0
@@ -41,23 +41,23 @@ public Cents parseAmount(string text) fails MoneyError {
     var seenPoint = false
     for b in text.bytes {
         if b == '.' {
-            return .notANumber if seenPoint
+            fail .notANumber if seenPoint
             seenPoint = true
             continue
         }
-        return .notANumber if b < '0' || b > '9'
-        let digit = (i64)(b - '0')
+        fail .notANumber if b < '0' || b > '9'
+        let digit = i64(b - '0')
         if seenPoint {
             fractionDigits += 1
-            return .tooPrecise if fractionDigits > 2
+            fail .tooPrecise if fractionDigits > 2
             fraction = fraction * 10 + digit
         } else {
             wholeDigits += 1
-            return .tooLarge if wholeDigits > 15
+            fail .tooLarge if wholeDigits > 15
             whole = whole * 10 + digit
         }
     }
-    return .notANumber if wholeDigits == 0 && fractionDigits == 0
+    fail .notANumber if wholeDigits == 0 && fractionDigits == 0
     if fractionDigits == 1 {
         fraction *= 10
     }

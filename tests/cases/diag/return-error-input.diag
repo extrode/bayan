@@ -1,0 +1,17 @@
+error BYN1056: `return .empty` returns an error; write `fail .empty`
+
+  13 │     return .empty if s.isEmpty
+     │     ^^^^^^ this leaves with an error
+     │
+  help: leave with the error: `fail .empty`
+     │ 13 │     fail .empty if s.isEmpty
+     │    │     ++++
+
+error BYN1056: `return .tooLong` returns an error; write `fail .tooLong`
+
+  14 │     return ParseError.tooLong if s.length > 9
+     │     ^^^^^^ this leaves with an error
+     │
+  help: leave with the error: `fail .tooLong`
+     │ 14 │     fail ParseError.tooLong if s.length > 9
+     │    │     ++++

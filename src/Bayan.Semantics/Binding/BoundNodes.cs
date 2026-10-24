@@ -327,13 +327,13 @@ public sealed record BoundMemberStep(FieldSymbol? Field, PropertySymbol? Propert
 public sealed record BoundPropertyPattern(Node Syntax, TypeSymbol InputType, TypeSymbol ValueType, BoundSubpattern[] Subpatterns, LocalSymbol? Designation)
     : BoundPattern(Syntax, InputType);
 
-/// <summary>
-/// <c>.Circle(let r)</c> or <c>.None</c>: a tag test, then each subpattern on its payload field.
-/// On an optional input the value must be present.
-/// </summary>
 /// <summary><c>p.rate</c> where <c>p</c> was bound by <c>.percentOff p</c>: a payload field of a value known to hold <see cref="Variant"/>.</summary>
 public sealed record BoundUnionField(Node Syntax, BoundExpr Receiver, UnionVariantSymbol Variant, int Index)
     : BoundExpr(Syntax, Variant.Fields[Index].Type);
 
-public sealed record BoundUnionPattern(Node Syntax, TypeSymbol InputType, UnionVariantSymbol Variant, BoundPattern[] Subpatterns)
+/// <summary>
+/// <c>.Circle(let r)</c> or <c>.None</c>: a tag test, then each subpattern on its payload field.
+/// On an optional input the value must be present. <c>.Circle c</c> binds the whole value to <see cref="Designation"/>.
+/// </summary>
+public sealed record BoundUnionPattern(Node Syntax, TypeSymbol InputType, UnionVariantSymbol Variant, BoundPattern[] Subpatterns, LocalSymbol? Designation = null)
     : BoundPattern(Syntax, InputType);

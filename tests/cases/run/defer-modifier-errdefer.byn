@@ -8,7 +8,7 @@ void f() fails E {
     defer failing print("cleanup") if c
     c = false
     print("body")
-    return .bad
+    fail .bad
 }
 
 void main() {
