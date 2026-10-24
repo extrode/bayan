@@ -120,6 +120,18 @@ public sealed class CliTests
         Assert.Equal(1, result.Out.Split("unsafe void poke()").Length - 1);
     }
 
+    [Fact]
+    public async Task AuditWalksASymlinkToAParentOfTheRootOnce()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Path.Combine(Fresh("audit-parent-link", "unsafe void poke() {\n}\n"), "outer", "dir");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "main.byn"), "unsafe void peek() {\n}\n");
+        Directory.CreateSymbolicLink(Path.Combine(dir, "link"), "..");
+        var result = await Task.Run(() => Run("audit", dir)).WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Equal(1, result.Out.Split("unsafe void peek()").Length - 1);
+    }
+
     /// <summary>Whether <paramref name="read"/> succeeds despite a mode of none, as it does for root.</summary>
     private static bool CanRead(Action read)
     {

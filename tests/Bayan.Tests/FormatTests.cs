@@ -480,6 +480,18 @@ public sealed class FormatTests
     }
 
     [Fact]
+    public async Task ASymlinkToAParentOfTheRootIsWalkedOnce()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Directory.CreateDirectory(Path.Combine(Fresh("parent-link"), "outer", "dir")).FullName;
+        File.WriteAllText(Path.Combine(dir, "main.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        Directory.CreateSymbolicLink(Path.Combine(dir, "link"), "..");
+        var result = await Task.Run(() => Run("format", "--check", dir)).WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        Assert.Single(result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    [Fact]
     public void NoTempFileIsLeftBehind()
     {
         var dir = Fresh("temp");

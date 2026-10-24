@@ -112,28 +112,43 @@ internal static class Format
         var files = new List<string>();
         var seenFiles = new HashSet<string>(StringComparer.Ordinal);
         var seenDirs = new HashSet<string>(StringComparer.Ordinal);
-        var pending = new Stack<string>([dir]);
+        // Each directory travels as its path as written and its canonical path, which no symlink crosses.
+        var pending = new Stack<(string Path, string? Canonical)>([(dir, null)]);
         while (pending.TryPop(out var at))
         {
             try
             {
-                if (!seenDirs.Add(Resolved(at))) continue;
-                foreach (var file in Directory.GetFiles(at, "*.byn"))
-                    if (seenFiles.Add(Resolved(file))) files.Add(file);
-                foreach (var sub in Directory.GetDirectories(at)) pending.Push(sub);
+                var canonical = at.Canonical ?? Canonical(Path.GetFullPath(at.Path));
+                if (!seenDirs.Add(canonical)) continue;
+                foreach (var file in Directory.GetFiles(at.Path, "*.byn"))
+                    if (seenFiles.Add(Step(canonical, Path.GetFileName(file)))) files.Add(file);
+                foreach (var sub in Directory.GetDirectories(at.Path))
+                    pending.Push((sub, Step(canonical, Path.GetFileName(sub))));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                stderr.WriteLine(Messages.FormatIoError.Text(at, e.Message));
+                stderr.WriteLine(Messages.FormatIoError.Text(at.Path, e.Message));
                 exit = CliApp.ExitFailure;
             }
         }
         return [.. files];
     }
 
-    /// <summary>The full path a file or directory finally resolves to, following symlinks.</summary>
-    private static string Resolved(string path) =>
-        (new FileInfo(path).ResolveLinkTarget(returnFinalTarget: true) ?? new FileInfo(path)).FullName;
+    /// <summary>The full path with every symlink in it resolved.</summary>
+    private static string Canonical(string full)
+    {
+        var current = Path.GetPathRoot(full)!;
+        foreach (var part in full[current.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+            current = Step(current, part);
+        return current;
+    }
+
+    /// <summary>The canonical path of <paramref name="name"/> inside the canonical directory <paramref name="parent"/>.</summary>
+    private static string Step(string parent, string name)
+    {
+        var path = Path.Combine(parent, name);
+        return new FileInfo(path).ResolveLinkTarget(returnFinalTarget: true) is { } target ? Canonical(target.FullName) : path;
+    }
 
     /// <summary>The <c>package.byn</c> in the file's directory or the nearest one above it; null when there is none.</summary>
     private static Manifest? ManifestFor(string file, Dictionary<string, Manifest?> cache)
