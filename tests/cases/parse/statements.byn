@@ -41,7 +41,7 @@ void main() {
     defer close(f)
     defer failing rollback()
     defer failing (e) { log(e) }
-    context (allocator: arena) {
+    provide allocator: arena {
         work()
     }
     {

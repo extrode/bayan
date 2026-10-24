@@ -165,6 +165,10 @@ enum TokenKind {
     modelKeyword
     requiresKeyword
     becauseKeyword
+    usesKeyword
+    exceptKeyword
+    provideKeyword
+    becomeKeyword
     // Declaration-only, no meaning yet; contextual like the other declaration keywords.
     lawKeyword
     // Accepted for C# compatibility.
@@ -177,7 +181,6 @@ enum TokenKind {
     effectKeyword
     macroKeyword
     selectKeyword
-    becomeKeyword
     ensuresKeyword
 }
 

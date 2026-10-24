@@ -1,0 +1,8 @@
+error BYN6006: `context (…) { }` is now `provide … { }`
+
+  2 │     context (allocator: arena) {
+    │     ^^^^^^^ the input form
+    │
+  help: write `provide allocator: arena { }` without the parentheses
+    │ 2 │     provide allocator: arena {
+    │   │     ++++++++++++++++++++++++

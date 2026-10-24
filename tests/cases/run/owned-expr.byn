@@ -38,7 +38,7 @@ i64 depth(Expr e) {
 
 void main() {
     using let arena = Arena()
-    context (allocator: arena) {
+    provide allocator: arena {
         let left = Expr.add(Owned(Expr.lit(1)), Owned(Expr.lit(2)))
         let e = sample()
         print($"{e}")

@@ -15,7 +15,7 @@ i64 fill(ref StrBuf sb, i64 n) {
 void main() {
     {
         using let arena = Arena()
-        context (allocator: arena) {
+        provide allocator: arena {
             var sb = StrBuf()
             let sum = fill(ref sb, 100000)
             print($"{sb.length} {sum} {sb.length == sum}")

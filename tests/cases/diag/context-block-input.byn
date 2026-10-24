@@ -1,0 +1,5 @@
+void run(Arena arena) {
+    context (allocator: arena) {
+        print("x")
+    }
+}

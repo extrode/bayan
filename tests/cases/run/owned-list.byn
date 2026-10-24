@@ -34,7 +34,7 @@ i64 count(Tree t) {
 
 void main() {
     using let arena = Arena()
-    context (allocator: arena) {
+    provide allocator: arena {
         var head: Owned<Node>? = null
         for i in 1..6 {
             head = push(move head, i)

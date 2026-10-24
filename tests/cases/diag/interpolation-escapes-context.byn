@@ -3,7 +3,7 @@ void main() {
     var text = ""
     {
         using let arena = Arena()
-        context (allocator: arena) {
+        provide allocator: arena {
             let inside = $"n = {n}"
             print(inside)
             text = $"n = {n + 1}"

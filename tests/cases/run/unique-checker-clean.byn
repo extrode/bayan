@@ -86,7 +86,7 @@ void main() {
     var kept: i64 = 0
     for round in 0..5 {
         using let arena = Arena()
-        context (allocator: arena) {
+        provide allocator: arena {
             var local = List<i64>()
             for i in 0..300 { local.append(i) }
             var other = move local

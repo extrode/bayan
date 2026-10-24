@@ -34,7 +34,7 @@ let usizeVal: usize = 4096
 print($"usize {usizeVal.toHex()}")
 
 using let arena = Arena()
-context (allocator: arena) {
+provide allocator: arena {
     let hex = small.toHex()
     print($"arena {hex}")
 }

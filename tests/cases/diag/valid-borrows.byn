@@ -29,7 +29,7 @@ void main() {
     xs.append(3)
     let longer = pick(a: names[0], b: names[1])
     print(longer)
-    context (allocator: arena) {
+    provide allocator: arena {
         var local = List<i64>()
         local.append(5)
         let copy = tail(local.asSpan()).copy(to: arena)

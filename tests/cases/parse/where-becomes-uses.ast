@@ -1,0 +1,4 @@
+CompilationUnit
+  Function f<T>(T x) -> void becomes .done fails E uses io where T : I
+    Block
+      Expr (call print x)

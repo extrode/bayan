@@ -79,7 +79,7 @@ i32 lexMany(string dir, Keywords keywords) {
     for name in names {
         unless name.endsWith(".byn") { continue }
         using let arena = Arena()
-        context (allocator: arena) {
+        provide allocator: arena {
             let path = $"{dir}/{name}"
             let bytes = Io.readFile(path) catch return fileNotFound(path)
             var sb = StrBuf()

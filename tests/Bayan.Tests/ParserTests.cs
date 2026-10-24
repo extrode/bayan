@@ -259,7 +259,7 @@ public sealed class ParserTests
     [InlineData("let a = f(1,\n\n    2)\n")]
     [InlineData("T id<T>(T a)\n    where T : IA => a\n")]
     [InlineData("void f(i32 n)\n    fails E\n    requires n > 0\n    requires n < 9 {\n}\n")]
-    [InlineData("T id<T>(T a)\n    fails E\n    where T : IA\n    requires a == a => a\n")]
+    [InlineData("T id<T>(T a)\n    where T : IA\n    fails E\n    requires a == a => a\n")]
     public void ALineBreakContinuesAfterAnOperatorOrBeforeAJoiner(string text)
     {
         var tree = Parse(text);

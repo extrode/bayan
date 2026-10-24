@@ -1,0 +1,3 @@
+void copy(over Buf src, to Buf dst) {
+    return
+}

@@ -164,6 +164,10 @@ public enum TokenKind : ushort
     ModelKeyword,
     RequiresKeyword,
     BecauseKeyword,
+    UsesKeyword,
+    ExceptKeyword,
+    ProvideKeyword,
+    BecomeKeyword,
     // Declaration-only, no meaning yet; contextual like the other declaration keywords.
     LawKeyword,
     // Accepted for C# compatibility.
@@ -176,7 +180,6 @@ public enum TokenKind : ushort
     EffectKeyword,
     MacroKeyword,
     SelectKeyword,
-    BecomeKeyword,
     EnsuresKeyword,
 }
 
