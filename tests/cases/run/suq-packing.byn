@@ -35,7 +35,7 @@ i32 findSmallestBox(i64 grams) {
 
 /// First-fit decreasing. Fills `boxOf` (per item), `boxKind` and `loads` (per box, load includes
 /// tare) and returns the number of boxes. `order` is scratch. Ties keep input order.
-public i32 pack(ReadOnlySpan<PackItem> items, Span<i32> order, Span<i32> boxOf, Span<i32> boxKind, Span<i64> loads) fails PackError {
+public i32 pack(ReadOnlySpan<PackItem> items, to Span<i32> order, by Span<i32> boxOf, at Span<i32> boxKind, from Span<i64> loads) fails PackError {
     let n = items.length
     for i in 0..n {
         order[i] = (i32)i
@@ -76,7 +76,7 @@ public i32 pack(ReadOnlySpan<PackItem> items, Span<i32> order, Span<i32> boxOf, 
 }
 
 /// Pick order: by aisle, then bay; stable.
-public void sortPicks(ReadOnlySpan<PackItem> items, Span<i32> order) {
+public void sortPicks(ReadOnlySpan<PackItem> items, to Span<i32> order) {
     for i in 0..items.length {
         order[i] = (i32)i
     }

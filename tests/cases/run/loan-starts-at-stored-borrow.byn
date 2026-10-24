@@ -8,7 +8,7 @@ struct W {
     }
 }
 
-ReadOnlySpan<i64> second(i64 a, i64 b, ReadOnlySpan<i64> s) => s
+ReadOnlySpan<i64> second(i64 a, to i64 b, by ReadOnlySpan<i64> s) => s
 
 void main() {
     var w = W { items: List<i64>() }

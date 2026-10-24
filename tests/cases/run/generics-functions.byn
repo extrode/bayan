@@ -7,20 +7,20 @@ struct Point {
     }
 }
 
-T pick<T>(bool first, move T a, move T b) => first ? move a : move b
+T pick<T>(bool first, move T a, to move T b) => first ? move a : move b
 
 string first<T>(ReadOnlySpan<T> xs) {
     if xs.length == 0 { return "null" }
     return $"{xs[0]}"
 }
 
-bool same<T>(T a, T b) => a == b
+bool same<T>(T a, to T b) => a == b
 
-T twice<T>(move T x, move T y) => pick(first: false, a: move x, b: move y)
+T twice<T>(move T x, to move T y) => pick(first: false, a: move x, b: move y)
 
-i64 countDown<T>(T x, i64 n) {
+i64 countDown<T>(T x, to i64 n) {
     if n == 0 { return 0 }
-    return 1 + countDown(x, n - 1)
+    return 1 + countDown(x, to: n - 1)
 }
 
 let one: i64 = 1
@@ -39,4 +39,4 @@ print($"{first(none)}")
 
 print($"{same(a: 1, b: 1)} {same(a: "a", b: "b")} {same(a: p, b: Point { x: 1, y: 2 })}")
 print(twice(x: "echo", y: "echo"))
-print($"{countDown("x", 3)}")
+print($"{countDown("x", to: 3)}")

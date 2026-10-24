@@ -3,7 +3,7 @@ struct Label {
     i64 n
 }
 
-string describe(string name, i64 count) {
+string describe(string name, to i64 count) {
     return $"{name} x{count}"
 }
 
@@ -15,7 +15,7 @@ void main() {
     let n = 3
     let msg = $"total {n}"
     print(msg)
-    print(describe("pen", n))
+    print(describe("pen", to: n))
     print($"{width($"ab{n}")} {width(msg)}")
     let label = Label { text: $"#{n}", n: n }
     print($"{label.text} {label.n}")

@@ -17,7 +17,7 @@ struct Tree {
     List<Tree> children
 }
 
-Owned<Node>? push(move Owned<Node>? head, i64 item) => Owned(Node { item: item, next: move head })
+Owned<Node>? push(move Owned<Node>? head, to i64 item) => Owned(Node { item: item, next: move head })
 
 string show(Owned<Node>? head) {
     if (head is { } n) { return $"{n.item} {show(n.next)}" }
@@ -37,7 +37,7 @@ void main() {
     provide allocator: arena {
         var head: Owned<Node>? = null
         for i in 1..6 {
-            head = push(move head, i)
+            head = push(move head, to: i)
         }
         print(show(head))
         if (head is not { } h) { return }

@@ -14,7 +14,7 @@ struct Inventory {
     }
 }
 
-void restock(ref Inventory inv, string item, i64 n) {
+void restock(ref Inventory inv, to string item, by i64 n) {
     let have = inv.stock.getOr(item, 0)
     inv.stock[item] = have + n
 }
@@ -53,9 +53,9 @@ print($"{answers[true]} {answers[false]}")
 
 // A map in a struct field.
 var inv = Inventory { owner: "ada", stock: Map<string, i64>() }
-restock(ref inv, "bolts", 10)
-restock(ref inv, "nuts", 4)
-restock(ref inv, "bolts", 5)
+restock(ref inv, to: "bolts", by: 10)
+restock(ref inv, to: "nuts", by: 4)
+restock(ref inv, to: "bolts", by: 5)
 print($"{inv}")
 
 // Inside a `using` arena.

@@ -4,7 +4,7 @@ const bits: bool[3] = [true, false, true]
 const letters: rune[3] = ['a', 'b', 'c']
 const halves: f64[2] = [0.5, 1.5]
 
-i64 search(ReadOnlySpan<u32> table, u32 key) {
+i64 search(ReadOnlySpan<u32> table, to u32 key) {
     var lo: i64 = 0
     var hi = table.length
     while lo < hi {
@@ -22,12 +22,12 @@ ReadOnlySpan<u32> head() => primes[0..3]
 
 let keys: u32[6] = [2, 7, 8, 29, 41, 100]
 for key in keys {
-    print($"{key} at {search(primes, key)}")
+    print($"{key} at {search(primes, to: key)}")
 }
 print($"length {primes.length} last {primes[^1]} first {primes[0]}")
 let middle = primes[4..8]
-print($"slice {middle.length} {middle[0]} {search(middle, 17)}")
-print($"head {head()[2]} span {search(primes.asSpan(), 13)}")
+print($"slice {middle.length} {middle[0]} {search(middle, to: 17)}")
+print($"head {head()[2]} span {search(primes.asSpan(), to: 13)}")
 print($"{bits[1]} {letters[2]} {halves[1]}")
 var sum: u64 = 0
 for p in primes {

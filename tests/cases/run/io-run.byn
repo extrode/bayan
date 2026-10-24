@@ -1,6 +1,6 @@
 // os: unix
 // `Io.run` spawns a program found on PATH with an argument vector (no shell of its own) and captures both streams.
-void show(string label, ProcessResult r) {
+void show(string label, to ProcessResult r) {
     print($"{label}: exit {r.exitCode}, stdout [{r.stdout}], stderr [{r.stderr}]")
 }
 

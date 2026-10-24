@@ -1,4 +1,4 @@
-i64 count(ReadOnlySpan<u8> data, u8 target) {
+i64 count(ReadOnlySpan<u8> data, to u8 target) {
     var n: i64 = 0
     for b in data {
         n += b == target ? 1 : 0

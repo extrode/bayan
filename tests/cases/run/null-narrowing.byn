@@ -25,7 +25,7 @@ i64 tenfold(i64? p) {
 }
 
 // `else` narrows on `is null`, and the right side of `&&` sees the left side's check.
-i64 add(i64? a, i64? b) {
+i64 add(i64? a, to i64? b) {
     if a is null || b is null {
         return a is not null && a > 3 ? 1 : 0
     } else {

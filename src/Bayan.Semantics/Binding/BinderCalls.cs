@@ -147,7 +147,7 @@ internal sealed partial class Binder
             if (arg.Name is { } n)
             {
                 sawNamed = true;
-                p = fn.Parameters.FirstOrDefault(x => x.Name == n.Text);
+                p = fn.Parameters.FirstOrDefault(x => Label(x) == n.Text);
             }
             else
                 p = sawNamed || positional >= fn.Parameters.Count ? null : fn.Parameters[positional++];
@@ -226,39 +226,22 @@ internal sealed partial class Binder
     private BoundExpr[] BindArguments(CallExpr c, IReadOnlyList<ParameterSymbol> ps, FunctionSymbol? fn, bool enforceNames, string? displayName = null)
     {
         var name = displayName ?? fn?.Name ?? "?";
-        // An instantiation follows its template's naming rule, so `T a, T b` asks for names at every type.
+        // An instantiation follows its template's rule, so a `T` parameter is not a `bool` one at `T = bool`.
         var rule = fn?.Template?.Parameters ?? ps;
         var result = new BoundExpr?[ps.Count];
         var sawNamed = false;
         var positional = 0;
         var mismatched = false;
-        // Two or more leading unnamed arguments whose implied names are the first parameters' names, out of
-        // order, are a swap; they are bound by those names so the swap is the only error.
-        var leading = c.Args.TakeWhile(a => a.Name is null).ToArray();
-        var implied = leading.Select(a => ImpliedName(a.Value)).ToArray();
-        var swapped = false;
-        if (enforceNames && leading.Length >= 2 && leading.Length <= ps.Count
-            && implied.All(n => n is not null) && implied.Distinct().Count() == implied.Length
-            && ps.Take(implied.Length).All(x => implied.Contains(x.Name)))
-        {
-            var at = Enumerable.Range(0, implied.Length).FirstOrDefault(i => implied[i] != ps[i].Name, -1);
-            if (at >= 0)
-            {
-                swapped = true;
-                Report(DiagnosticCodes.ArgumentsSwapped, TextSpan.FromBounds(leading[0].Span.Start, leading[^1].Span.End),
-                    [ps[at].Name, implied[at]!, name], help: "name them or swap them");
-            }
-        }
         foreach (var arg in c.Args)
         {
             ParameterSymbol? p;
             if (arg.Name is { } n)
             {
                 sawNamed = true;
-                p = ps.FirstOrDefault(x => x.Name == n.Text);
+                p = ps.FirstOrDefault(x => Label(x) == n.Text);
                 if (p is null)
                 {
-                    var s = Suggest(n.Text, ps.Select(x => x.Name));
+                    var s = Suggest(n.Text, ps.Select(Label));
                     Report(DiagnosticCodes.UnknownParameter, n.Span, [name, n.Text],
                         help: s is null ? null : $"did you mean `{s}`?", fix: s is null ? null : new Fix(n.Span, s));
                     BindArgumentValue(arg, null);
@@ -282,15 +265,18 @@ internal sealed partial class Binder
                     positional++;
                     continue;
                 }
-                var at = positional++;
-                p = swapped ? ps.First(x => x.Name == implied[at]) : ps[at];
-                if (enforceNames && ImpliedName(arg.Value) != p.Name && MustBeNamed(rule[p.Ordinal], rule, name) is { } reason)
-                    Report(DiagnosticCodes.ArgumentMustBeNamed, arg.Value.Span, [p.Name], help: reason,
+                p = ps[positional++];
+                // A particle is part of the function's name, so the call writes it (BYN5005).
+                if (enforceNames && p.Syntax?.Particle is { } particle)
+                    Report(DiagnosticCodes.ArgumentNeedsParticle, arg.Span, [p.Name, particle.Text], label: $"needs `{particle.Text}:`",
+                        help: $"add `{particle.Text}:` before the argument", fix: new Fix(new TextSpan(arg.Span.Start, 0), particle.Text + ": "));
+                else if (enforceNames && rule[p.Ordinal].Type.IsBool && ImpliedName(arg.Value) != p.Name)
+                    Report(DiagnosticCodes.ArgumentMustBeNamed, arg.Value.Span, [p.Name], help: $"write `{p.Name}: …`; a `bool` argument says nothing at the call site",
                         fix: new Fix(new TextSpan(arg.Span.Start, 0), p.Name + ": "));
             }
             if (result[p.Ordinal] is not null)
             {
-                Report(DiagnosticCodes.DuplicateArgument, arg.Span, [p.Name]);
+                Report(DiagnosticCodes.DuplicateArgument, arg.Span, [Label(p)]);
                 _prebound.Remove(arg);
                 continue;
             }
@@ -311,7 +297,7 @@ internal sealed partial class Binder
                 result[i] = new BoundEnumMember(c, _c.Builtins.LogLevel.Find("info")!);
                 continue;
             }
-            missing.Add(p.Name);
+            missing.Add(Label(p));
             result[i] = new BoundErrorExpr(c);
         }
         if (missing.Count > 0 && !mismatched)
@@ -319,21 +305,16 @@ internal sealed partial class Binder
         return result!;
     }
 
-    // `start` and `tok.start` name the argument for a parameter `start`.
+    /// <summary>The label a call writes for <paramref name="p"/>: its particle (<c>to:</c>), else its name.</summary>
+    private static string Label(ParameterSymbol p) => p.Syntax?.Particle?.Text ?? p.Name;
+
+    // `verbose` and `opts.verbose` name the argument for a `bool` parameter `verbose`.
     private static string? ImpliedName(Expr e) => e switch
     {
         NameExpr { TypeArgs.Length: 0 } n => n.Name.Text,
         MemberExpr { NullConditional: false } m => m.Member.Text,
         _ => null,
     };
-
-    private static string? MustBeNamed(ParameterSymbol p, IReadOnlyList<ParameterSymbol> ps, string fnName)
-    {
-        if (p.Type.IsBool) return $"write `{p.Name}: …`; a `bool` argument says nothing at the call site";
-        if (!p.Type.IsError && ps.Count(q => q.Type.Equals(p.Type)) > 1)
-            return $"name them so they cannot be swapped; `{fnName}` has several `{p.Type.DisplayName}` parameters";
-        return null;
-    }
 
     private BoundExpr BindArgument(Argument arg, ParameterSymbol p)
     {

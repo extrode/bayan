@@ -21,7 +21,7 @@ struct Pair {
     Counter right
 }
 
-void advance(dyn ref ICounter c, i64 by) {
+void advance(dyn ref ICounter c, to i64 by) {
     c.bump(by)
     c.report()
 }
@@ -29,7 +29,7 @@ void advance(dyn ref ICounter c, i64 by) {
 void observe(dyn ref readonly ICounter c) => c.report()
 
 void throughRef(ref Counter c) {
-    advance(c, 10)
+    advance(c, to: 10)
     observe(c)
 }
 
@@ -39,8 +39,8 @@ Counter make(i64 n) => Counter { n: n }
 
 void main() {
     var p = Pair { left: Counter { n: 1 }, right: Counter { n: 100 } }
-    advance(p.left, 1)
-    advance(p.right, 5)
+    advance(p.left, to: 1)
+    advance(p.right, to: 5)
     throughRef(ref p.left)
     let r: dyn ref ICounter = pick(ref p)
     r.bump(1)

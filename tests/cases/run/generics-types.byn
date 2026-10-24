@@ -11,7 +11,7 @@ struct Pair<A, B> {
         sb.append($"Pair {{ a: {a}, b: {b} }}")
     }
 
-    Pair<B, A> swap(move B first, move A second) => Pair<B, A> { a: move first, b: move second }
+    Pair<B, A> swap(move B first, to move A second) => Pair<B, A> { a: move first, b: move second }
 
     bool sameFirst(Pair<A, B> other) => a == other.a
 }
@@ -30,7 +30,7 @@ struct Box<T> {
     T value
     List<T> history
 
-    void put(ref this, move T old, move T next) {
+    void put(ref this, move T old, to move T next) {
         history.append(move old)
         value = move next
     }

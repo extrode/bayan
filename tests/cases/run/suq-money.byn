@@ -52,7 +52,7 @@ public struct Money {
             whole = -cents
         }
         sb.append($"{whole / 100}.")
-        sb.append("0") if whole % 100 < 10
+        sb.append(to "0") if whole % 100 < 10
         sb.append($"{whole % 100}")
     }
 }
