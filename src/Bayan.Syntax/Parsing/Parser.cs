@@ -919,6 +919,7 @@ public sealed class Parser
         var paramsEnd = _prevEnd;
         returnType ??= ParseNameFirstReturn(name, paramsEnd);
         ReportRemovedEffects();
+        var where = ParseWhere();
         Name? becomes = null;
         if (AtContextual("becomes") && Peek(1) == TokenKind.Dot)
         {
@@ -959,7 +960,6 @@ public sealed class Parser
             uses = new UsesClause(SpanFrom(usesStart), effects.ToArray());
         }
         ReportRemovedEffects();
-        var where = ParseWhere();
         var requires = new List<Expr>();
         while (Accept(TokenKind.RequiresKeyword)) requires.Add(ParseBareCondition());
         BlockStmt? body = null;

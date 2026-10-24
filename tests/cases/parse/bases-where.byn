@@ -35,10 +35,10 @@ enum Planet(f64 mass) : IShape where T : IShape {
 
 T max<T>(T a, T b) where T : IOrder<T> => a.less(b) ? b : a
 
-T parse<T>(string s) fails where T : IParse<T> {
+T parse<T>(string s) where T : IParse<T> fails {
     return T.parse(s)
 }
 
-T read<T>(string s) fails IoError where T : IParse<T>, IShape where U : IShape requires s.length > 0 {
+T read<T>(string s) where T : IParse<T>, IShape where U : IShape fails IoError requires s.length > 0 {
     return T.parse(s)
 }
