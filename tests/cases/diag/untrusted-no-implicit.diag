@@ -20,5 +20,5 @@ error BYN2225: `Untrusted<string>` cannot be formatted
 
 error BYN2202: expected `Untrusted<string>`, found `string`
 
-  10 │ print(trust("z", reason: "not wrapped"))
-     │             ^^^
+  10 │ print("z".trustUnchecked() because "not wrapped")
+     │       ^^^

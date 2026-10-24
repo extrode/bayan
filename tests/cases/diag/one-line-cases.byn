@@ -7,3 +7,5 @@ enum Color {
 }
 
 union error ParseError { empty, tooLong }
+
+union Size { /* small */ s, m /* medium */, l }

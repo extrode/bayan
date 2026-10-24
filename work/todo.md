@@ -206,3 +206,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Revision 0002 item 9: `except .case` stays parse only with BYN2022 (Q124); 5.3b lifts it.
 - Revision 0002 item 16: the C# primitive names are reserved in `Keywords.cs` in 5.1e (the revision 0001 entry above, J92).
 - Revision 0003: the built `string.from`/`string.tryFrom`/`string.invalidUtf8At` (Q71, `Builtins.cs:47-51`) predate the codecs; rename to `Utf8.decode`/`Utf8.tryDecode` under BYN2230 in 5.4. Named format specs and BYN1068 parse in 5.1e.
+- r3-52a: `struct Point { f64 x, f64 y }` (fields on one line with `,`) is BYN1005 with a fix that leaves `, f64 y }` on the next line; no BYN1053 rewrite for fields.
+- r3-52a: BYN2787's page and `trust-reason.byn` still describe `trust(x, reason:)`; decide in 5.3e whether BYN2787 retires once `trust` is only an input form.
+- r3-52a: a user method named `trustUnchecked` with no arguments binds as the `Untrusted` unwrap (Question 143).

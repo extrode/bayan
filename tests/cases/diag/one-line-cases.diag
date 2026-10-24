@@ -37,3 +37,38 @@ error BYN1053: `ParseError` declares its cases on one line; write one per line
      │ 11 │     tooLong
      │    │ +++++++++++
      │ 12 │ }
+
+error BYN1047: `/* */` is an input form; write `//` lines
+
+  11 │ union Size { /* small */ s, m /* medium */, l }
+     │              ^^^^^^^^^^^ block comment
+     │
+  help: write each line with `//`
+     │ 11 │ union Size { // small
+     │    │               +++++++
+     │ 12 │  s, m /* medium */, l }
+
+error BYN1053: `Size` declares its cases on one line; write one per line
+
+  11 │ union Size { /* small */ s, m /* medium */, l }
+     │                           ^ the first `,`
+     │
+  help: write each case on its own line
+     │ 11 │ union Size { /* small */
+     │ 12 │     s
+     │    │ +++++
+     │ 13 │     m /* medium */
+     │    │ ++++++++++++++++++
+     │ 14 │     l
+     │    │ +++++
+     │ 15 │ }
+
+error BYN1047: `/* */` is an input form; write `//` lines
+
+  11 │ union Size { /* small */ s, m /* medium */, l }
+     │                               ^^^^^^^^^^^^ block comment
+     │
+  help: write each line with `//`
+     │ 11 │ union Size { /* small */ s, m // medium
+     │    │                                ++++++++
+     │ 12 │ , l }
