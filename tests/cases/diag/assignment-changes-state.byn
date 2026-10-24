@@ -1,0 +1,29 @@
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+        shipped(i64 payment, i64 tracking)
+    }
+}
+
+void wipe(ref Order o) {
+    o = Order.draft { id: o.id }
+}
+
+void restart(ref Order o is .paid or .shipped) {
+    o = Order.paid { id: o.id, payment: 0 }
+}
+
+void refund(ref Order.paid o) {
+    o = Order.paid { id: o.id, payment: 0 }
+}
+
+void unpay(ref Order.paid o) {
+    o = Order.draft { id: o.id }
+}
+
+void renumber(ref Order o) {
+    var copy = o
+    copy = Order.draft { id: 1 }
+}

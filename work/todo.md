@@ -237,11 +237,10 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-53c2: loops forget what every `var` and `ref` parameter was known to be at loop entry, also when the body never changes it.
 - r3-53c2: an `if` whose then-branch makes a `becomes` call forgets the receiver's state after the `if`, even when the else-branch would agree.
 - r3-53c2: reading a payload field from several states that hold it after different fields is BYN2022; it needs a per-state read.
-- r3-53c2: `this.pay()` and bare `pay()` inside a method forget what `this` was known to be but do not learn its new state; only a local receiver learns it.
 - r3-53c2: BYN7006's message (`{0} is .{1}` … write `{2}`) differs from the plan's text (`{0} {1} is .{2}` … write `{0}.{2} {1}`).
 - r3-53c2: BYN7007 in a `.s` pattern underlines the name without its dot, like the first half's labels (line above).
 - r3-53c2: payload fields are not seen by `TypeFacts`, ownership or drops: a `List` in a state's payload does not make the struct unique and leaks.
 - r3-53c2: a struct with states whose own field is named `tag` or `u` collides with the C layout's `tag` and `u` members.
 - r3-53c2: a generic struct with states relies on `Compilation.States` holding each instantiation; untested.
-- r3-53c2: BYN7009 counts only a `become` statement; a `becomes .s` method that ends by calling another `becomes .s` method on `this` is BYN7009, and a `become` inside a loop body does not count after the loop.
-- r3-53c2: BYN7003's fix adds `becomes .s` to a `move this` or plain `this` method too, which BYN7010 (revision 0010) then rejects; `diag/become-undeclared` still has three such `move this` methods.
+- r3-53c2: BYN7009: a `become` inside a loop body does not count after the loop.
+- r3-53c2: rule C (BYN7012) covers `=` only; a `ref` parameter passed on as an `out` argument can come back in another state while its caller keeps its facts (revision 0010 item 5).

@@ -1,0 +1,20 @@
+error BYN7012: `o` would change state here; a state changes only through `become`
+
+  11 │     o = Order.draft { id: o.id }
+     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     │
+  help: assign a value in the same state, or move the transition into a `becomes` method
+
+error BYN7012: `o` would change state here; a state changes only through `become`
+
+  15 │     o = Order.paid { id: o.id, payment: 0 }
+     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     │
+  help: assign a value in the same state, or move the transition into a `becomes` method
+
+error BYN7012: `o` would change state here; a state changes only through `become`
+
+  23 │     o = Order.draft { id: o.id }
+     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     │
+  help: assign a value in the same state, or move the transition into a `becomes` method

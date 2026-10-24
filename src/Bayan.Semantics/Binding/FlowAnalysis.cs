@@ -296,6 +296,8 @@ internal sealed class FlowAnalysis
                         state = Expr(arg, state);
                 }
                 state.Assigned.UnionWith(outs);
+                // A `becomes` call on `this` counts as `become` (BYN7003's third form makes the caller declare it; revision 0010).
+                if (call is { Receiver: BoundThis, Function.Decl.Becomes: not null }) state.Became = true;
                 return call.Type.IsNever ? State.Unreachable() : state;
             }
             case BoundTry t:

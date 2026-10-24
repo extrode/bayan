@@ -100,13 +100,24 @@ struct Order {
         become .draft
         return sum
     }
+    void note(ref this) {
+        id += 1
+    }
     i64 clear(ref this is .paid) {
         wipe(ref this)
+        note()
         print($"{onlyPaid()}")
         return payment
     }
     void erase(ref this) {
-        wipe(ref this)
+        reset()
+    }
+    void eraseTo(ref this) becomes .paid {
+        reset()
+    }
+    void settle(ref this is .draft) becomes .paid {
+        pay(1)
+        print($"{payment}")
     }
     i64 clearThrough(ref this is .paid) {
         erase()

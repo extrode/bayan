@@ -4,7 +4,7 @@ error BYN7010: `pay` declares `becomes .paid` but takes `move this is .draft`; a
   7 │     void pay(move this is .draft, i64 amount) becomes .paid {
     │              ^^^^^^^^^^^^^^^^^^^
     │
-  help: change the receiver of `pay` to `ref this`
+  help: change the receiver of `pay` to `ref this`, or return the new state as a value
     │ 7 │     void pay(ref this is .draft, i64 amount) becomes .paid {
     │   │              +++
 
@@ -14,7 +14,7 @@ error BYN7010: `settle` declares `becomes .paid` but takes `this is .draft`; a t
   10 │     void settle(this is .draft, i64 amount) becomes .paid {
      │                 ^^^^^^^^^^^^^^
      │
-  help: change the receiver of `settle` to `ref this`
+  help: change the receiver of `settle` to `ref this`, or return the new state as a value
      │ 10 │     void settle(ref this is .draft, i64 amount) becomes .paid {
      │    │                 ++++
 
@@ -23,7 +23,7 @@ error BYN7010: `reset` declares `becomes .draft` but takes `this`; a transition 
   13 │     void reset() becomes .draft {
      │          ^^^^^
      │
-  help: change the receiver of `reset` to `ref this`
+  help: change the receiver of `reset` to `ref this`, or return the new state as a value
      │ 13 │     void reset(ref this) becomes .draft {
      │    │                ++++++++
 
@@ -32,7 +32,7 @@ error BYN7010: `retry` declares `becomes .paid` but takes `this`; a transition n
   16 │     void retry(i64 amount) becomes .paid {
      │          ^^^^^
      │
-  help: change the receiver of `retry` to `ref this`
+  help: change the receiver of `retry` to `ref this`, or return the new state as a value
      │ 16 │     void retry(ref this, i64 amount) becomes .paid {
      │    │                ++++++++++
 
@@ -42,6 +42,6 @@ error BYN7010: `close` declares `becomes .draft` but takes `move this`; a transi
   22 │     void close(move this) becomes .draft {
      │                ^^^^^^^^^
      │
-  help: change the receiver of `close` to `ref this`
+  help: change the receiver of `close` to `ref this`, or return the new state as a value
      │ 22 │     void close(ref this) becomes .draft {
      │    │                +++

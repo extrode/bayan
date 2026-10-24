@@ -148,9 +148,16 @@ internal sealed partial class Binder
         var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
         (_printArgument, _sinkArgument) = (outer, outerSink);
         if (receiver is not null && ReceiverStates(fn) is { } wanted) ReportWrongState(fn.Name, receiver, wanted, receiver.Syntax.Span);
-        // A call that `becomes` changes the receiver's state, and a `ref this` call may pass it on as `ref`; a statement
-        // learns the new state of a `becomes` call after it (`LearnBecomes`).
-        if (receiver is not null && (fn.Decl?.Becomes is not null || fn.IsMutating) && Subject(receiver) is { } changed) ForgetState(changed.Key);
+        // A call that `becomes` changes the receiver's state; a statement learns the new state after it (`LearnBecomes`). A call
+        // without `becomes` leaves it as it was (revision 0010).
+        if (receiver is not null && fn.Decl?.Becomes is { } to)
+        {
+            if (Subject(receiver) is { } changed) ForgetState(changed.Key);
+            if (receiver is BoundThis && _fn is { } caller) CheckBecomesCall(c, caller, fn, to);
+            else if (receiver is BoundLocal { Local: ParameterSymbol { Modifier: ParamModifier.Ref } param })
+                Report(DiagnosticCodes.BecomesOnRefParameter, c.Span, [fn.Name, param.Name],
+                    help: $"take `{param.Name}` by `move` and return the new state as a value");
+        }
         // A `ref this` call on `map[key]` changes the stored value in place.
         if (receiver is not null && fn.IsMutating) receiver = MapWriteTarget(receiver);
         // A `dyn ref` writes through the borrow, not into the local holding it; `dyn ref readonly` is BYN2813.
@@ -408,13 +415,13 @@ internal sealed partial class Binder
         {
             var place = _prebound.Remove(arg, out var early) ? early : BindExpr(arg.Value, p.Type);
             if (place.Type.IsError) return place;
-            // The callee may change a local's or `this`'s state: it is passed as its declared type, and its state is no longer known.
+            // A local whose state is known is passed as its declared type. A `ref` callee keeps the state (revision 0010); an `out`
+            // callee supplies a new value, so its state is no longer known.
             if (place is BoundLocal known && KnownState(known.Local) is not null)
             {
                 place = new BoundLocal(known.Syntax, known.Local);
-                ForgetState(known.Local);
+                if (wanted == ArgModifier.Out) ForgetState(known.Local);
             }
-            else if (place is BoundThis) ForgetState(_thisFacts);
             if (early is null) Constrain(place, p.Type);
             if (!place.Type.Equals(p.Type))
             {
@@ -1500,6 +1507,15 @@ internal sealed partial class Binder
         {
             var assigned = BindExpr(a.Value, target.Type);
             Constrain(target, assigned, a.Value);
+            // A `ref` parameter or `this` keeps its state: only a value in the one state its type names may replace it (BYN7012).
+            if (target is BoundLocal { Local: ParameterSymbol { Modifier: ParamModifier.Ref } } or BoundThis
+                && (target.Type is StateType || target.Type is StructSymbol s && _c.StatesOf(s) is not null)
+                && !(target.Type is StateType { States: [var one] } && (Subject(assigned)?.Type ?? assigned.Type) is StateType { States: [var given] } && given == one))
+            {
+                Report(DiagnosticCodes.AssignmentChangesState, a.Span, [target is BoundLocal p ? p.Local.Name : "this"],
+                    help: "assign a value in the same state, or move the transition into a `becomes` method");
+                return new BoundErrorStmt(a);
+            }
             if (target is BoundLocal written)
             {
                 ForgetState(written.Local);

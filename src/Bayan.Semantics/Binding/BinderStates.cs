@@ -36,7 +36,7 @@ internal sealed partial class Binder
         if (fn.Decl?.Becomes is not { } becomes)
             Report(DiagnosticCodes.BecomeUndeclared, new TextSpan(b.Span.Start, "become".Length), [state.Name, fn.Name],
                 help: $"add `becomes .{state.Name}` to the signature of `{fn.Name}`",
-                fix: fn.Decl is { } decl ? new Fix(new TextSpan(AfterParams(decl), 0), $" becomes .{state.Name}") : null);
+                fix: fn.Decl is { } decl ? BecomesFix(fn, decl, state.Name) : null);
         else if (becomes.Text != state.Name)
             Report(DiagnosticCodes.BecomeOtherState, b.State.Span, [state.Name, fn.Name, becomes.Text],
                 help: $"change the target to `.{becomes.Text}`, or declare `becomes .{state.Name}`");
@@ -45,6 +45,28 @@ internal sealed partial class Binder
         ForgetState(_thisFacts);
         LearnState(_thisFacts, new StateType(owner!, [state]));
         return new BoundBecome(b, state, payload);
+    }
+
+    /// <summary>
+    /// A <c>becomes .t</c> call on <c>this</c> changes the caller's state, so the caller must declare <c>becomes .t</c> too (BYN7003's
+    /// third form, revision 0010); with it, the call counts as <c>become .t</c>.
+    /// </summary>
+    private void CheckBecomesCall(CallExpr c, FunctionSymbol caller, FunctionSymbol fn, Name to)
+    {
+        if (caller.Decl?.Becomes?.Text == to.Text) return;
+        Report(DiagnosticCodes.BecomesCallUndeclared, c.Span, [caller.Name, fn.Name, to.Text],
+            help: $"add `becomes .{to.Text}` to the signature of `{caller.Name}`",
+            fix: caller.Decl is { Becomes: null } decl ? BecomesFix(caller, decl, to.Text) : null);
+    }
+
+    /// <summary>Adds <c>becomes .<paramref name="state"/></c>, and makes a <c>move this</c> or plain receiver <c>ref this</c> so BYN7010 does not follow.</summary>
+    private Fix BecomesFix(FunctionSymbol fn, FunctionDecl decl, string state)
+    {
+        var at = AfterParams(decl);
+        if (decl.RefThis is not null || fn is not { Kind: FunctionKind.Method, IsStatic: false }) return new Fix(new TextSpan(at, 0), $" becomes .{state}");
+        var receiver = Compilation.RefReceiverFix(decl);
+        return new Fix(TextSpan.FromBounds(receiver.Span.Start, at),
+            receiver.Replacement + Source.GetText(TextSpan.FromBounds(receiver.Span.End, at)) + $" becomes .{state}");
     }
 
     /// <summary>
@@ -273,12 +295,15 @@ internal sealed partial class Binder
 
     /// <summary>
     /// After <c>o.pay(…)</c> or <c>try o.pay(…)</c> as a statement, where <c>pay</c> takes <c>ref this</c> and <c>becomes .paid</c>,
-    /// the local <c>o</c> is <c>Order.paid</c>. A call that may fail and is handled in place leaves the state unknown.
+    /// the local <c>o</c> is <c>Order.paid</c>, and so is <c>this</c> after <c>pay(…)</c>. A call that may fail and is handled in place leaves the state unknown.
     /// </summary>
     private void LearnBecomes(BoundExpr e)
     {
-        if ((e is BoundTry t ? t.Operand : e) is BoundCall { Function: { IsMutating: true, Decl.Becomes: { } to, Owner: { } owner } fn, Receiver: BoundLocal l }
+        if ((e is BoundTry t ? t.Operand : e) is BoundCall { Function: { IsMutating: true, Decl.Becomes: { } to, Owner: { } owner } fn, Receiver: var r }
             && (!fn.Fails || e is BoundTry) && _c.StatesOf(owner)?.Find(to.Text) is { } state)
-            LearnState(l.Local, new StateType(owner, [state]));
+        {
+            if (r is BoundLocal l) LearnState(l.Local, new StateType(owner, [state]));
+            else if (r is BoundThis) LearnState(_thisFacts, new StateType(owner, [state]));
+        }
     }
 }

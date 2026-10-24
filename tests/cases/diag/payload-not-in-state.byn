@@ -22,6 +22,7 @@ i64 tracked(Order order) {
 bool covered(Order order) => order is .lost l && l.insured
 
 void reset(ref Order order) {
+    order = Order.draft { id: order.id }
 }
 
 struct Ticket {

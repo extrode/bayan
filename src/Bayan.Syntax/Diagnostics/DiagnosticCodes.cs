@@ -350,6 +350,8 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor BecomeUndeclared = Error("BYN7003", "`become` needs `becomes .{0}` on `{1}`");
     /// <summary>BYN7003's second message form, for a signature that declares another target; registered once, as <see cref="BecomeUndeclared"/>.</summary>
     public static readonly DiagnosticDescriptor BecomeOtherState = new("BYN7003", Severity.Error, "`become .{0}` is not declared; `{1}` becomes `.{2}`");
+    /// <summary>BYN7003's third message form, for a <c>becomes</c> call on <c>this</c> (revision 0010); registered once, as <see cref="BecomeUndeclared"/>.</summary>
+    public static readonly DiagnosticDescriptor BecomesCallUndeclared = new("BYN7003", Severity.Error, "`{0}` calls `{1}`, which changes the state; declare `becomes` on `{0}`");
     public static readonly DiagnosticDescriptor StateSwitchNotExhaustive = Error("BYN7004", "the switch does not handle state `.{0}`");
     public static readonly DiagnosticDescriptor StateLiteralNeedsState = Error("BYN7005", "`{0}` has states; a literal must name one: `{0}.{1} {{ … }}`");
     public static readonly DiagnosticDescriptor SingleStateInline = Error("BYN7006", "`{0} is .{1}` is an input form; write `{2}`");
@@ -357,6 +359,8 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor StateShadowsStatic = Error("BYN7008", "state `.{0}` has the same name as static member `{1}.{0}`");
     public static readonly DiagnosticDescriptor MissingBecome = Error("BYN7009", "`{0}` declares `becomes .{1}` but returns here without `become`");
     public static readonly DiagnosticDescriptor BecomesNeedsRef = Error("BYN7010", "`{0}` declares `becomes .{1}` but takes `{2}`; a transition needs `ref this`");
+    public static readonly DiagnosticDescriptor BecomesOnRefParameter = Error("BYN7011", "`{0}` changes the state of `{1}`, a `ref` parameter; a state changes in place only through `ref this`");
+    public static readonly DiagnosticDescriptor AssignmentChangesState = Error("BYN7012", "`{0}` would change state here; a state changes only through `become`");
 
     // ── Security 8000–8999 ───────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor MissingBecause = Error("BYN8001", "`{0}` bypasses a safety rule and needs `because \"…\"`");

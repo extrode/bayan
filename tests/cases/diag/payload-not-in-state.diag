@@ -19,16 +19,16 @@ error BYN7002: `tracking` is a payload of `.shipped`; `order` is not known to be
      │
   help: match `.shipped` with `is` or `switch` before reading `tracking`
 
-error BYN7002: `payment` is a payload of `.paid`; `copy` is not known to be `.paid`
+error BYN7012: `order` would change state here; a state changes only through `become`
 
-  45 │         print($"{copy.payment}")
-     │                  ^^^^^^^^^^^^
+  25 │     order = Order.draft { id: order.id }
+     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
      │
-  help: match `.paid` with `is` or `switch` before reading `payment`
+  help: assign a value in the same state, or move the transition into a `becomes` method
 
 error BYN7002: `price` is a payload of `.sold`; `t` is not known to be `.sold`
 
-  53 │         print($"{price} {t.price}")
+  54 │         print($"{price} {t.price}")
      │                          ^^^^^^^
      │
   help: match `.sold` with `is` or `switch` before reading `price`
