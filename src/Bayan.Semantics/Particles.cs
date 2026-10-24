@@ -12,11 +12,10 @@ namespace Bayan.Semantics;
 /// </summary>
 internal static class Particles
 {
-    /// <summary>Exempt: <c>extern</c> declarations (C signatures) and constructors of a <c>@positional</c> struct (J39).</summary>
+    /// <summary>Exempt: <c>extern</c> declarations (C signatures).</summary>
     internal static void Check(Compilation c, SourceText source, FunctionSymbol fn)
     {
         if (fn.Template is not null || fn.Decl?.Modifiers.HasFlag(Modifiers.Extern) == true) return;
-        if (fn.Kind == FunctionKind.Constructor && fn.Owner?.Decl.Attributes.Any(a => a.Name.Text == "positional") == true) return;
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var p in fn.Parameters)
             if (p.Syntax?.Particle is { } particle && !seen.Add(particle.Text))
