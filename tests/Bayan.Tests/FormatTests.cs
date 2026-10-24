@@ -174,6 +174,69 @@ public sealed class FormatTests
     }
 
     [Fact]
+    public void ANameSpelledLikeAPrimitiveIsKeptAndOnlyTypesAreRenamed()
+    {
+        var dir = Fresh("primitive-names");
+        Package(dir, "primitives: .csharp");
+        var file = Path.Combine(dir, "main.byn");
+        File.WriteAllText(file,
+            "struct P { i8: int }\nvoid main() {\n    let u8 = 1\n    let p = P { i8: 3 }\n    let w: i8 = 2\n    print($\"{u8}{p.i8}{w}\")\n}\n");
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(
+            "struct P { int i8 }\nvoid main() {\n    let u8 = 1\n    let p = P { i8: 3 }\n    let w: sbyte = 2\n    print($\"{u8}{p.i8}{w}\")\n}\n",
+            File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void ConversionsAndStaticReceiversAreRespelledToTheProjectStyle()
+    {
+        var sized = Path.Combine(Fresh("conv-sized"), "main.byn");
+        File.WriteAllText(sized, "void main() {\n    let y = 1\n    let z: long = long(y)\n    let a = int.tryFrom(y)\n    let b = long.max\n}\n");
+        var (exit, _, stderr) = Run("format", sized);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal("void main() {\n    let y = 1\n    let z: i64 = i64(y)\n    let a = i32.tryFrom(y)\n    let b = i64.max\n}\n", File.ReadAllText(sized));
+
+        var dir = Fresh("conv-csharp");
+        Package(dir, "primitives: .csharp");
+        var csharp = Path.Combine(dir, "main.byn");
+        File.WriteAllText(csharp, "void main() {\n    let y = 1\n    let a = i32.tryFrom(y)\n    let b = i64.max\n    let c = i8(y)\n}\n");
+        (exit, _, stderr) = Run("format", csharp);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal("void main() {\n    let y = 1\n    let a = int.tryFrom(y)\n    let b = long.max\n    let c = sbyte(y)\n}\n", File.ReadAllText(csharp));
+    }
+
+    [Fact]
+    public void ACalleeOrReceiverSpelledLikeADeclaredNameIsKept()
+    {
+        var dir = Fresh("conv-declared");
+        Package(dir, "primitives: .csharp");
+        var file = Path.Combine(dir, "main.byn");
+        const string source = "void main() {\n    let i8 = 1\n    let n = i8.foo\n    let m = i8(2)\n}\n";
+        File.WriteAllText(file, source);
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(source, File.ReadAllText(file));
+    }
+
+    [Fact]
+    public void ACalleeSpelledLikeANameDeclaredInAnotherFileOfThePackageIsKept()
+    {
+        var dir = Fresh("conv-declared-package");
+        Package(dir, "primitives: .csharp");
+        File.WriteAllText(Path.Combine(dir, "a.byn"), "long i8(long x) => x + 1000\n");
+        var main = Path.Combine(dir, "main.byn");
+        const string source = "void main() {\n    let n = i8(3)\n}\n";
+        File.WriteAllText(main, source);
+        var (exit, _, stderr) = Run("format", dir);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(source, File.ReadAllText(main));
+        (exit, _, stderr) = Run("format", main);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(source, File.ReadAllText(main));
+    }
+
+    [Fact]
     public void AnInvalidPackageIsReportedAndItsFilesAreLeftAlone()
     {
         var dir = Fresh("badstyle");
@@ -324,6 +387,25 @@ public sealed class FormatTests
     }
 
     [Fact]
+    public void ARewriteThatDoesNotParseIsAbandoned()
+    {
+        var file = Path.Combine(Fresh("abandoned"), "main.byn");
+        const string Text = "let a = true\nif (a) { print(\"x\") }\n";
+        File.WriteAllText(file, Text);
+        Format.RewriteHook = next => [.. next, .. "let broken = (\n"u8.ToArray()];
+        try
+        {
+            var (exit, _, stderr) = Run("format", file);
+            Assert.Equal(CliApp.ExitFailure, exit);
+            Assert.Contains("main.byn", stderr);
+            Assert.Contains("rewrite was abandoned", stderr);
+            Assert.DoesNotContain("broken", stderr);
+            Assert.Equal(Text, File.ReadAllText(file));
+        }
+        finally { Format.RewriteHook = null; }
+    }
+
+    [Fact]
     public void AnUnreadableFileIsReportedAndTheRestAreFormatted()
     {
         if (OperatingSystem.IsWindows()) return;
@@ -341,6 +423,222 @@ public sealed class FormatTests
             Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(fixable));
         }
         finally { File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+    }
+
+    [Fact]
+    public void AnUnreadableDirectoryIsReportedAndTheRestAreFormatted()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("io-dir");
+        var locked = Directory.CreateDirectory(Path.Combine(dir, "locked")).FullName;
+        File.WriteAllText(Path.Combine(locked, "a.byn"), "let a = true;\n");
+        var fixable = Path.Combine(dir, "b.byn");
+        File.WriteAllText(fixable, "let a = true\nif (a) { print(\"x\") }\n");
+        File.SetUnixFileMode(locked, UnixFileMode.None);
+        try
+        {
+            try
+            {
+                Directory.GetFiles(locked);
+                return; // root reads it anyway
+            }
+            catch (UnauthorizedAccessException) { }
+            var (exit, _, stderr) = Run("format", dir);
+            Assert.Equal(CliApp.ExitFailure, exit);
+            Assert.Contains("locked", stderr);
+            Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(fixable));
+        }
+        finally { File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+    }
+
+    [Fact]
+    public void AnExecutableKeepsItsMode()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var file = Path.Combine(Fresh("mode"), "script.byn");
+        File.WriteAllText(file, "#!/usr/bin/env bayan\nlet a = true\nif (a) { print(\"x\") }\n");
+        const UnixFileMode Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+        File.SetUnixFileMode(file, Mode);
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Contains("if a {", File.ReadAllText(file));
+        Assert.Equal(Mode, File.GetUnixFileMode(file));
+    }
+
+    [Fact]
+    public void FormattingASymlinkUpdatesItsTarget()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("symlink");
+        var target = Path.Combine(dir, "real.byn");
+        File.WriteAllText(target, "let a = true\nif (a) { print(\"x\") }\n");
+        var link = Path.Combine(dir, "link.byn");
+        File.CreateSymbolicLink(link, "real.byn");
+        var (exit, _, stderr) = Run("format", link);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(target));
+        Assert.Equal("real.byn", new FileInfo(link).LinkTarget);
+    }
+
+    [Fact]
+    public async Task SymlinkCyclesAreWalkedOnce()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("cycle");
+        File.WriteAllText(Path.Combine(dir, "main.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        var sub = Directory.CreateDirectory(Path.Combine(dir, "sub")).FullName;
+        Directory.CreateSymbolicLink(Path.Combine(sub, "up"), "..");
+        Directory.CreateSymbolicLink(Path.Combine(sub, "up2"), "..");
+        File.CreateSymbolicLink(Path.Combine(dir, "alias.byn"), "main.byn");
+        var result = await Task.Factory.StartNew(() => Run("format", "--check", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        Assert.Single(result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    [Fact]
+    public async Task ASymlinkToAParentOfTheRootIsWalkedOnce()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Directory.CreateDirectory(Path.Combine(Fresh("parent-link"), "outer", "dir")).FullName;
+        File.WriteAllText(Path.Combine(dir, "main.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        File.WriteAllText(Path.Combine(dir, "..", "outside.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        Directory.CreateSymbolicLink(Path.Combine(dir, "link"), "..");
+        var result = await Task.Factory.StartNew(() => Run("format", "--check", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        var lines = result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, lines.Length);
+        Assert.Single(lines, l => l.Contains("outside.byn"));
+    }
+
+    /// <summary>
+    /// <c>proj/sub -&gt; ../real/deep</c> and <c>real/deep/f.byn -&gt; ../g.byn</c>: the kernel opens <c>real/g.byn</c>,
+    /// while resolving the link's text lexically names <c>proj/g.byn</c>.
+    /// </summary>
+    private static (string Proj, string Real) LinkThroughALinkedDirectory(string name, string? decoy)
+    {
+        var dir = Fresh(name);
+        var proj = Directory.CreateDirectory(Path.Combine(dir, "proj")).FullName;
+        var real = Directory.CreateDirectory(Path.Combine(dir, "real")).FullName;
+        Directory.CreateDirectory(Path.Combine(real, "deep"));
+        File.WriteAllText(Path.Combine(real, "g.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        File.CreateSymbolicLink(Path.Combine(real, "deep", "f.byn"), "../g.byn");
+        Directory.CreateSymbolicLink(Path.Combine(proj, "sub"), "../real/deep");
+        if (decoy is not null) File.WriteAllText(Path.Combine(proj, "g.byn"), decoy);
+        return (proj, real);
+    }
+
+    [Fact]
+    public async Task FormattingALinkThroughALinkedDirectoryWritesTheFileItRead()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        const string Decoy = "decoy, not Bayan\n";
+        var (proj, real) = LinkThroughALinkedDirectory("link-through-dir", Decoy);
+        var result = await Task.Factory.StartNew(() => Run("format", Path.Combine(proj, "sub", "f.byn")), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.True(result.Exit == CliApp.ExitOk, result.Err);
+        Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(Path.Combine(real, "g.byn")));
+        Assert.Equal(Decoy, File.ReadAllText(Path.Combine(proj, "g.byn")));
+    }
+
+    [Fact]
+    public async Task FormattingALinkThroughALinkedDirectoryCreatesNoFile()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var (proj, real) = LinkThroughALinkedDirectory("link-through-dir-nodecoy", null);
+        var result = await Task.Factory.StartNew(() => Run("format", Path.Combine(proj, "sub", "f.byn")), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.True(result.Exit == CliApp.ExitOk, result.Err);
+        Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(Path.Combine(real, "g.byn")));
+        Assert.False(File.Exists(Path.Combine(proj, "g.byn")));
+    }
+
+    [Fact]
+    public async Task TheWalkKeepsFilesALexicalResolutionWouldMerge()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var (proj, real) = LinkThroughALinkedDirectory("walk-through-dir", "let b = true\nif (b) { print(\"y\") }\n");
+        // `up` is `other` to the kernel and `proj` read lexically, which would skip it as already walked.
+        var other = Directory.CreateDirectory(Path.Combine(real, "..", "other", "deep")).Parent!.FullName;
+        File.WriteAllText(Path.Combine(other, "h.byn"), "let c = true\nif (c) { print(\"z\") }\n");
+        Directory.CreateSymbolicLink(Path.Combine(proj, "x"), "../other/deep");
+        Directory.CreateSymbolicLink(Path.Combine(proj, "up"), "x/..");
+        var result = await Task.Factory.StartNew(() => Run("format", "--check", proj), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        var lines = result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(3, lines.Length);
+        Assert.Single(lines, l => l.Contains(Path.Combine(proj, "sub", "f.byn")));
+        Assert.Single(lines, l => l.Contains(Path.Combine(proj, "g.byn")));
+        Assert.Single(lines, l => l.Contains(Path.Combine(proj, "up", "h.byn")));
+    }
+
+    [Fact]
+    public async Task ALoopingFileLinkIsReportedAndTheWalkGoesOn()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("loop-link");
+        File.WriteAllText(Path.Combine(dir, "a.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        File.CreateSymbolicLink(Path.Combine(dir, "loop.byn"), "loop.byn");
+        var sub = Directory.CreateDirectory(Path.Combine(dir, "sub")).FullName;
+        File.WriteAllText(Path.Combine(sub, "b.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        var result = await Task.Factory.StartNew(() => Run("format", "--check", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        Assert.Contains(Path.Combine(dir, "a.byn"), result.Out);
+        Assert.Contains(Path.Combine(sub, "b.byn"), result.Out);
+        Assert.Contains(Path.Combine(dir, "loop.byn"), result.Err);
+    }
+
+    /// <summary>
+    /// <c>link -&gt; other/deep</c> beside <c>a.byn</c> and <c>other/a.byn</c>: the kernel opens <c>other/a.byn</c> for
+    /// <c>link/../a.byn</c>, while .NET's lexical <c>..</c> collapse names <c>./a.byn</c>.
+    /// </summary>
+    private static string LinkToADeeperDirectory(string name, string otherText)
+    {
+        var dir = Fresh(name);
+        Directory.CreateDirectory(Path.Combine(dir, "other", "deep"));
+        File.WriteAllText(Path.Combine(dir, "a.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        File.WriteAllText(Path.Combine(dir, "other", "a.byn"), otherText);
+        Directory.CreateSymbolicLink(Path.Combine(dir, "link"), "other/deep");
+        return dir;
+    }
+
+    [Fact]
+    public async Task FormattingAPathThroughALinkAndUpReadsAndWritesTheSameFile()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        const string Other = "let b = true\nif b { print(\"y\") }\n";
+        var dir = LinkToADeeperDirectory("link-dotdot-file", Other);
+        var result = await Task.Factory.StartNew(() => Run("format", Path.Combine(dir, "link", "..", "a.byn")), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.True(result.Exit == CliApp.ExitOk, result.Err);
+        Assert.Equal(Other, File.ReadAllText(Path.Combine(dir, "other", "a.byn")));
+        Assert.Equal("let a = true\nif (a) { print(\"x\") }\n", File.ReadAllText(Path.Combine(dir, "a.byn")));
+    }
+
+    [Fact]
+    public async Task CheckingADirectoryThroughALinkAndUpReportsEachFileOnce()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = LinkToADeeperDirectory("link-dotdot-dir", "let b = true\nif (b) { print(\"y\") }\n");
+        var result = await Task.Factory.StartNew(() => Run("format", "--check", Path.Combine(dir, "link", "..")), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        Assert.Equal("", result.Err);
+        var line = Assert.Single(result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+        Assert.Contains(Path.Combine(dir, "link", "..", "a.byn"), line);
+    }
+
+    [Fact]
+    public async Task PackageNamesSkipALinkLeavingThePackage()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("package-link-outside");
+        var outside = Directory.CreateDirectory(Path.Combine(dir, "outside")).FullName;
+        File.WriteAllText(Path.Combine(outside, "x.byn"), "long i8(long x) => x\n");
+        var pkg = Directory.CreateDirectory(Path.Combine(dir, "pkg")).FullName;
+        Package(pkg, "primitives: .csharp");
+        Directory.CreateSymbolicLink(Path.Combine(pkg, "vendor"), "../outside");
+        var main = Path.Combine(pkg, "main.byn");
+        File.WriteAllText(main, "void main() {\n    let n = i8(3)\n}\n");
+        var result = await Task.Factory.StartNew(() => Run("format", main), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.True(result.Exit == CliApp.ExitOk, result.Err);
+        Assert.Equal("void main() {\n    let n = sbyte(3)\n}\n", File.ReadAllText(main));
     }
 
     [Fact]
