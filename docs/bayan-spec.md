@@ -1116,9 +1116,9 @@ struct SignupForm {
 - `x in a..=b` is a boolean range test.
 - `requires` drives boundary-test generation (§20).
 - Which tool: non-null types (no check), types and fields with `requires` (valid by construction, all violations reported), function `expects` (bugs), `fail .x unless …` (business outcomes).
-- Not in v0.1: `requires` on fields and distinct types (BYN2322), proof-based check removal, property-test generation from `requires`.
+- Not in v0.1: proof-based check removal, property-test generation from `requires`. BYN2322, which marked `requires` on fields and distinct types as not built, is retired: `docs/diagnostics/BYN2322.md` (revision 0006).
 
-> Round 2 §7: one contract form, and a bug panics in every build instead of being skipped in `fast`. Codes: BYN2320, BYN2321, BYN2322.
+> Round 2 §7: one contract form, and a bug panics in every build instead of being skipped in `fast`. Codes: BYN2320, BYN2321, BYN2322 (retired, revision 0006).
 
 > Round 3 §11, O3, O4: checking at construction makes validity a property of the type, so `T.Validated`, `validated()` and `Validate` are gone; `it` matches lambdas; `at` reuses a particle instead of adding `on`; a function precondition is a different job from validating data, so it gets its own word, `expects`. Codes: BYN1050, BYN1063, BYN3206, BYN3207, BYN3208, BYN3218, BYN5011, BYN8006.
 
