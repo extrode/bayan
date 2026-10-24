@@ -326,7 +326,7 @@ public sealed partial class Compilation
             foreach (var v in values.Where(v => !IsCaseLiteral(v)))
             {
                 Report(DiagnosticCodes.CasesNotConstant, file.Source, v.Span, [],
-                    help: "write the value as a literal: a number, string, char, `true`, `false`, `null` or a `.case`");
+                    help: "write the value as a literal: a number, string, rune, `true`, `false`, `null` or a `.case`");
                 constant = false;
             }
             if (constant) cases.Add(values);
@@ -812,7 +812,7 @@ public sealed partial class Compilation
         {
             Naming.CheckValue(this, source, p.Name);
             var type = types.Resolve(p.Type);
-            const string help = "use a number type, `bool`, `char`, `string` or a plain enum; enum data is stored in static tables";
+            const string help = "use a number type, `bool`, `rune`, `string` or a plain enum; enum data is stored in static tables";
             if (p.Modifier != ParamModifier.None)
                 Report(DiagnosticCodes.InvalidEnumParameter, source, p.Span, [p.Name.Text], label: $"`{p.Modifier.ToString().ToLowerInvariant()}` is not allowed here", help: help);
             else if (p.Default is not null)
