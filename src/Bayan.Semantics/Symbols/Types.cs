@@ -285,6 +285,9 @@ public sealed class RangeType(TypeSymbol element) : ConstructedType
     protected override object Key => Element;
 
     public override string DisplayName => $"Range<{Element.DisplayName}>";
+
+    /// <summary>How a range value is stored: its start, its end, and whether the end is included.</summary>
+    public TupleType Layout => new([new(null, Element), new(null, Element), new(null, PrimitiveType.Bool)]);
 }
 
 public sealed record TupleField(string? Name, TypeSymbol Type);

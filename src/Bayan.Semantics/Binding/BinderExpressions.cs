@@ -853,8 +853,8 @@ internal sealed partial class Binder
                 return ("removeRange", "remove(from:until:)",
                     args is [{ } from, { } until] ? new Fix(tail, $"remove(from: {from}, until: {until})") : null);
             case (ListType, "replaceRange"):
-                // `replace(at:by:)` is not built yet, so there is nothing to rewrite to.
-                return ("replaceRange", "replace(at:by:)", null);
+                return ("replaceRange", "replace(at:by:)", call is { Args: [{ Name: null, Modifier: ArgModifier.None } at, { Name: null, Modifier: ArgModifier.None } by] }
+                    ? new Fix(tail, $"replace(at: {Source.GetText(at.Value.Span)}, by: {Source.GetText(by.Value.Span)})") : null);
             case (MapType, "getOr"):
                 // `??` binds looser than arithmetic, so the fix keeps the call one operand.
                 return ("getOr", "tryGet(at:) ??", args is [{ } key, { } fallback] && call is { Callee: MemberExpr { Target: var map } }

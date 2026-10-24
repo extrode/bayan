@@ -355,6 +355,10 @@ internal sealed class RegionAnalysis
             case BuiltinMember.IoReadAll or BuiltinMember.IntToString or BuiltinMember.StringCopy:
                 // Fresh text from `context.allocator`, like `Io.readText`.
                 return _contexts.Count > 0 ? _contexts.Peek() : Borrow.None;
+            case BuiltinMember.ListReplace:
+                StoreInto(b.Receiver, args[1], b.Arguments[1].Syntax.Span);
+                Mutate(b.Receiver, b.Syntax.Span);
+                return Borrow.None;
             case BuiltinMember.ListAdd:
                 StoreInto(b.Receiver, args[0], b.Arguments[0].Syntax.Span);
                 Mutate(b.Receiver, b.Syntax.Span);
@@ -751,7 +755,7 @@ internal sealed class RegionAnalysis
             switch (node)
             {
                 case BoundBuiltinCall b when b.Member is BuiltinMember.ListAdd or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.ListRemoveLast
-                        or BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListSort or BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset
+                        or BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListReplace or BuiltinMember.ListSort or BuiltinMember.ListClear or BuiltinMember.StrBufClear or BuiltinMember.ArenaReset
                         or BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake
                     && ThisFieldSymbol(b.Receiver) is { } field:
                     fields.Add(field);

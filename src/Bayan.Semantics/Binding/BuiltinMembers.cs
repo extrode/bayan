@@ -55,6 +55,9 @@ internal static class BuiltinMembers
         (ListType l, "removeLast") => new(BuiltinMember.ListRemoveLast, [], l.Element, Mutating: true),
         (ListType, "remove") =>
             new(BuiltinMember.ListRemoveRange, [("from", PrimitiveType.I64), ("until", PrimitiveType.I64)], PrimitiveType.Void, Mutating: true),
+        // The items are copied in, so elements that own memory are left out.
+        (ListType l, "replace") when !TypeFacts.IsUnique(l.Element) => new(BuiltinMember.ListReplace,
+            [("at", new RangeType(PrimitiveType.I64)), ("by", new SpanType(l.Element, readOnly: true))], PrimitiveType.Void, Mutating: true),
         (ListType l, "tryGet") => new(BuiltinMember.ListTryGet, [("at", PrimitiveType.I64)], new OptionalType(l.Element)),
         // Stable (J47); elements ordered by `<`: numbers, `rune` and `string`.
         (ListType l, "sort") when l.Element is { IsNumeric: true } or { IsString: true } or PrimitiveType { Kind: PrimitiveKind.Char } =>
@@ -85,7 +88,7 @@ internal static class BuiltinMembers
     public static bool HasMethod(TypeSymbol type, string name) => Method(type, name) is not null;
 
     private static readonly string[] Candidates =
-        ["length", "bytes", "isEmpty", "runeCount", "isAscii", "value", "copy", "startsWith", "endsWith", "contains", "span", "clear", "removeLast", "sort", "tryGet", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
+        ["length", "bytes", "isEmpty", "runeCount", "isAscii", "value", "copy", "startsWith", "endsWith", "contains", "span", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message"];
 
     /// <summary>Every member name of <paramref name="type"/>, for suggestions.</summary>
     public static IEnumerable<string> Names(TypeSymbol type) =>

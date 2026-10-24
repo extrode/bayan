@@ -13,7 +13,7 @@ let text: string[7] = ["the", "cat", "saw", "the", "dog", "the", "cat"]
 for w in text { words.slot(w) += 1 }
 print($"{words} length={words.length}")
 
-// `getOr` reads without inserting.
+// `tryGet(at:)` reads without inserting.
 print($"cat {words.tryGet(at: "cat") ?? 0}, cow {words.tryGet(at: "cow") ?? -1}, length={words.length}")
 print($"contains cow: {words.contains("cow")}, contains dog: {words.contains("dog")}")
 

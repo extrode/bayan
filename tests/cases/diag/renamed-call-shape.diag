@@ -9,10 +9,12 @@ error BYN2230: `removeRange` is now `remove(from:until:)`
 
 error BYN2230: `replaceRange` is now `replace(at:by:)`
 
-  5 │     xs.replaceRange(0, 1)
+  5 │     xs.replaceRange(0..1, xs.span)
     │        ^^^^^^^^^^^^ the old name
     │
-  help: write `replace(at:by:)`
+  help: write `replace(at: 0..1, by: xs.span)`
+    │ 5 │     xs.replace(at: 0..1, by: xs.span)
+    │   │               ++++++++++++++
 
 error BYN2230: `getOr` is now `tryGet(at:) ??`
 

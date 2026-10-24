@@ -207,7 +207,7 @@ internal static class EffectAnalysis
         BuiltinMember.IoWrite => ["console"],
         BuiltinMember.IoReadAll => ["console", "alloc"],
         BuiltinMember.SpanCopy or BuiltinMember.StringCopy or BuiltinMember.ListCopy or BuiltinMember.MapCopy or BuiltinMember.StrBufCopy
-            or BuiltinMember.IntToString or BuiltinMember.ListAdd or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet => ["alloc"],
+            or BuiltinMember.IntToString or BuiltinMember.ListAdd or BuiltinMember.ListReplace or BuiltinMember.MapSlot or BuiltinMember.MapIndexSet => ["alloc"],
         _ => [],
     };
 }

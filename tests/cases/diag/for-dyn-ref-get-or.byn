@@ -1,4 +1,4 @@
-// `getOr` returns a place in the map or the fallback: a writable `for dyn ref` over it is checked writable (BYN2106).
+// `tryGet(at:) ??` gives a place in the map or the fallback: a writable `for dyn ref` over it is checked writable (BYN2106).
 interface IC {
     void bump(ref this)
     i64 n

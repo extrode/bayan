@@ -260,6 +260,7 @@ public sealed class CEmitter
         StateType st => CType(st.Struct),
         // `dyn ref readonly I` shares the C type of `dyn ref I`.
         DynRefType d => Named(t, "byn_dyn_" + Key(d.Interface)),
+        RangeType r => CType(r.Layout),
         _ => Named(t),
     };
 
@@ -287,6 +288,7 @@ public sealed class CEmitter
         MapType m => "map_" + Key(m.KeyType) + "_" + Key(m.ValueType),
         ArrayType a => $"arr{a.Length}_" + Key(a.Element),
         TupleType tt => $"tup{tt.Fields.Count}_" + string.Join("_", tt.Fields.Select(f => Key(f.Type))),
+        RangeType r => Key(r.Layout),
         _ => throw new InvalidOperationException($"no C type for {t.DisplayName}"),
     };
 
@@ -1616,6 +1618,21 @@ internal sealed class FunctionEmitter
                 var name = "bynh_remove_range_" + _c.Key(r.Type);
                 _c.Helper(name, $"static void {name}({lt}* l, int64_t start, int64_t end, const char* file, int line)", () =>
                     "{\n    byn_slice_check(start, end, l->len, file, line);\n    if (end > start) memmove(l->ptr + start, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n    l->len -= end - start;\n}\n");
+                return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})";
+            }
+            case BuiltinMember.ListReplace:
+            {
+                var lt = _c.CType(r.Type);
+                var name = "bynh_replace_" + _c.Key(r.Type);
+                _c.Helper(name, $"static void {name}({lt}* l, {_c.CType(b.Arguments[0].Type)} at, {_c.CType(b.Arguments[1].Type)} items, const char* file, int line)", () =>
+                    "{\n    int64_t start = at.item1, end = at.item3 ? at.item2 + 1 : at.item2;\n    byn_slice_check(start, end, l->len, file, line);\n"
+                    + "    int64_t len = l->len - (end - start) + items.len;\n    if (!l->alloc) l->alloc = byn_context;\n"
+                    // Items read from the list itself are copied first, since growing and shifting move them.
+                    + "    if (items.len > 0 && items.ptr >= l->ptr && items.ptr < l->ptr + l->cap)\n"
+                    + "        items.ptr = byn_copy_bytes(items.ptr, items.len * (int64_t)sizeof(*l->ptr), l->alloc);\n"
+                    + "    byn_list_reserve((void**)&l->ptr, &l->cap, len, (int64_t)sizeof(*l->ptr), l->alloc);\n"
+                    + "    memmove(l->ptr + start + items.len, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n"
+                    + "    if (items.len > 0) memcpy(l->ptr + start, items.ptr, (size_t)items.len * sizeof(*l->ptr));\n    l->len = len;\n}\n");
                 return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})";
             }
             case BuiltinMember.ListSort:
