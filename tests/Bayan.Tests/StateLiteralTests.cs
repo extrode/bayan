@@ -21,9 +21,9 @@ public sealed class StateLiteralTests
             }
         }
 
-        Plain plain(i64 n) fails ValidationError => try Plain { id: n }
+        Plain plain(i64 n) fails ValidationError<Plain> => try Plain { id: n }
 
-        Order.draft draft(i64 n) fails ValidationError => try Order.draft { id: n }
+        Order.draft draft(i64 n) fails ValidationError<Order> => try Order.draft { id: n }
 
         """;
 

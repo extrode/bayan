@@ -8,9 +8,9 @@ struct Box {
     requires w < h at .w
 }
 
-Box built(i32 w, by i32 h) fails ValidationError => try Box { w: w, h: h, label: "new" }
+Box built(i32 w, by i32 h) fails ValidationError<Box> => try Box { w: w, h: h, label: "new" }
 
-Box grown(Box b, by i32 amount) fails ValidationError {
+Box grown(Box b, by i32 amount) fails ValidationError<Box> {
     return try b with { w: b.w + amount }
 }
 

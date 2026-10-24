@@ -88,6 +88,11 @@ public sealed class Builtins
         var validationSource = SourceText.FromString("<builtin>", ValidationErrorSource);
         var validationDecl = (ErrorEnumDecl)SyntaxTree.Parse(validationSource).Root.Members[0];
         ValidationError = new ErrorSetSymbol("ValidationError", new Location(validationSource, validationDecl.Name.Span), Module, Accessibility.Public, validationDecl);
+        var ruleTree = SyntaxTree.Parse(SourceText.FromString("<builtin>", RuleSource));
+        RuleFile = new FileContext(Module, ruleTree);
+        var ruleDecl = (UnionDecl)ruleTree.Root.Members[0];
+        Rule = new UnionSymbol("Rule", new Location(RuleFile.Source, ruleDecl.Name.Span), Module, Accessibility.Public, ruleDecl, RuleFile);
+        ViolationDecl = (StructDecl)ruleTree.Root.Members[1];
         var parseSource = SourceText.FromString("<builtin>", ParseErrorSource);
         var parseDecl = (ErrorEnumDecl)SyntaxTree.Parse(parseSource).Root.Members[0];
         ParseError = new ErrorSetSymbol("ParseError", new Location(parseSource, parseDecl.Name.Span), Module, Accessibility.Public, parseDecl);
@@ -180,7 +185,7 @@ public sealed class Builtins
     /// <summary><c>enum Utf8Invalid</c>: the <c>invalid:</c> argument of the lossy <c>Utf8.decode</c>; it is not a type name users can write.</summary>
     public EnumSymbol Utf8Invalid { get; }
 
-    // Error cases have no payload yet, so `invalid` carries no `List<Violation<T>>` until step 5.3h (Q220, revision 0006).
+    // The shared set, for a `T` without `requires`, has no payload; a checked struct gets its own (`Compilation.ValidationErrorOf`).
     private const string ValidationErrorSource = """
         public union error ValidationError {
             /// The value breaks a `requires` rule of its type.
@@ -189,10 +194,36 @@ public sealed class Builtins
         """;
 
     /// <summary>
-    /// <c>union error ValidationError&lt;T&gt;</c>, what building a type with <c>requires</c> fails with; one set for every
-    /// <c>T</c>, numbered after the user's sets so their codes still start at 9.
+    /// <c>union error ValidationError&lt;T&gt;</c> for a <c>T</c> that is not a struct with <c>requires</c>, payload-less;
+    /// numbered after the user's sets so their codes still start at 9.
     /// </summary>
     public ErrorSetSymbol ValidationError { get; }
+
+    // J23: `range` and `length` shapes are recognized, everything else is `custom`; `pattern`, `required` and `kind`
+    // are spec-only (Question 337). `Violation<T>`'s field types are set per `T`.
+    private const string RuleSource = """
+        public union Rule {
+            /// `it.runeCount in a..=b`.
+            length(Range<i64> bounds)
+            /// `it in a..=b`.
+            range(Range<i64> bounds)
+            /// Any other rule.
+            custom
+        }
+
+        public struct Violation {
+            i64 field
+            i64 rule
+        }
+        """;
+
+    /// <summary><c>union Rule</c>: the shape of a broken <c>requires</c> rule, in a <c>Violation&lt;T&gt;</c>.</summary>
+    public UnionSymbol Rule { get; }
+
+    public FileContext RuleFile { get; }
+
+    /// <summary>The declaration each <c>Violation&lt;T&gt; { T.Field field, Rule rule }</c> is made from.</summary>
+    public StructDecl ViolationDecl { get; }
 
     /// <summary><c>string Utf8.decode(ReadOnlySpan&lt;u8&gt; bytes) fails Utf8Error</c>: a copy from <c>context.allocator</c>.</summary>
     public FunctionSymbol Utf8Decode { get; }

@@ -79,7 +79,7 @@ internal static class EffectAnalysis
 
         foreach (var fn in functions)
         {
-            if (fn.IsInstance || fn.Body is null || fn.File is null) continue;
+            if (fn.IsInstance || fn.Body is null || fn.File is null || IsCheck(fn)) continue;
             if (declared.TryGetValue(fn, out var set))
             {
                 var missing = used[fn].Where(e => !set.Contains(e.Key)).OrderBy(e => e.Value.Span.Start).ToList();
@@ -113,10 +113,17 @@ internal static class EffectAnalysis
                 }
     }
 
+    /// <summary>
+    /// A struct's <c>requires</c> check is pure to its callers: the violations it collects on failure come from
+    /// <c>context.allocator</c> like any error payload (Question 338).
+    /// </summary>
+    private static bool IsCheck(FunctionSymbol fn) => fn is { Name: "requires", Owner: not null, Decl: null };
+
     /// <summary>The declared set: the <c>uses</c> clause, or pure for a public function or an abstract method; null when inferred.</summary>
     private static HashSet<string>? Declared(Compilation c, FunctionSymbol fn, Dictionary<ModuleSymbol, Dictionary<string, string[]>> aliases, HashSet<UsesClause> reported)
     {
         if (fn.IsInstance) return null;
+        if (IsCheck(fn)) return new HashSet<string>();
         var uses = fn.Decl?.Uses;
         var set = uses is null ? null : Resolve(c, fn, uses, aliases, reported).ToHashSet();
         // A getter or constructor has no `uses` clause to write (§14 bounds interface methods, not properties), so it infers.

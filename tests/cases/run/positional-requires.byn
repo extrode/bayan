@@ -5,7 +5,7 @@ struct Point {
     requires x >= 0
 }
 
-Point at(i64 x, by i64 y) fails ValidationError => try Point(x, y)
+Point at(i64 x, by i64 y) fails ValidationError<Point> => try Point(x, y)
 
 let origin = Point(0, 0)
 let p = at(3, by: 4) catch origin
