@@ -8,7 +8,7 @@ struct S : IThing {
     i64 get() => n
 }
 
-void show(dyn ref IThing d, ref List<S> xs) {
+void show(dyn ref IThing d, to ref List<S> xs) {
     for i in 0..100 {
         xs.append(S { n: i })
     }
@@ -18,5 +18,5 @@ void show(dyn ref IThing d, ref List<S> xs) {
 void main() {
     var xs = List<S>()
     xs.append(S { n: 1 })
-    show(xs[0], ref xs)
+    show(xs[0], to: ref xs)
 }

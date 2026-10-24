@@ -74,7 +74,7 @@ if b is not null {
     print("no box")
 }
 print($"{inc(4)} {inc(null)} {tenfold(3)} {tenfold(null)}")
-print($"{add(a: 1, b: 2)} {add(a: 5, b: null)} {add(a: null, b: 2)}")
+print($"{add(1, to: 2)} {add(5, to: null)} {add(null, to: 2)}")
 print($"{lookup(3) catch -1} {lookup(0) catch -2} {quiet(4)} {quiet(0)}")
 print($"{untilMissing()} {skipMissing()}")
 show(2)

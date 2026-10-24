@@ -1,8 +1,8 @@
 Span<i64> tail(Span<i64> values) => values[1..]
 
-List<i64> keep(ReadOnlySpan<i64> values, Arena arena) => values.copy(to: arena)
+List<i64> keep(ReadOnlySpan<i64> values, to Arena arena) => values.copy(to: arena)
 
-string pick(string a, string b) => a.length > b.length ? a : b
+string pick(string a, by string b) => a.length > b.length ? a : b
 
 i64 total(ReadOnlySpan<i64> values) {
     var sum: i64 = 0
@@ -27,7 +27,7 @@ void main() {
     let view = xs.asSpan()
     print($"{view[0]}")
     xs.append(3)
-    let longer = pick(a: names[0], b: names[1])
+    let longer = pick(names[0], by: names[1])
     print(longer)
     provide allocator: arena {
         var local = List<i64>()
@@ -44,7 +44,7 @@ void main() {
     let part = fixed.asSpan()[1..]
     print($"{part[0]}")
     fixed[0] = 9
-    let kept2 = keep(fixed.asSpan(), arena: arena)
+    let kept2 = keep(fixed.asSpan(), to: arena)
     print($"{kept2.length}")
     arena.reset()
 }

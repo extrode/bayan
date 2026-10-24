@@ -17,7 +17,7 @@ public struct Transfer {
 }
 
 /// Splits `amount` into equal shares; the first participants absorb the leftover cents.
-public List<Share> splitEvenly(money.Cents amount, ReadOnlySpan<string> participants) uses alloc {
+public List<Share> splitEvenly(money.Cents amount, to ReadOnlySpan<string> participants) uses alloc {
     var shares = List<Share>()
     let count = participants.length
     let base = amount / count
@@ -33,22 +33,22 @@ public List<Share> splitEvenly(money.Cents amount, ReadOnlySpan<string> particip
 public List<Share> balances(ReadOnlySpan<Expense> expenses) uses alloc {
     var totals = List<Share>()
     for e in expenses {
-        credit(ref totals, name: e.payer, cents: e.amount)
-        for share in splitEvenly(e.amount, e.participants) {
-            credit(ref totals, name: share.name, cents: -share.cents)
+        credit((name: e.payer, cents: e.amount), to: ref totals)
+        for share in splitEvenly(e.amount, to: e.participants) {
+            credit((name: share.name, cents: -share.cents), to: ref totals)
         }
     }
     return totals
 }
 
-void credit(ref List<Share> totals, string name, i64 cents) {
+void credit(Share share, to ref List<Share> totals) {
     for i in 0..totals.length {
-        if totals[i].name == name {
-            totals[i] = (name: name, cents: totals[i].cents + cents)
+        if totals[i].name == share.name {
+            totals[i] = (name: share.name, cents: totals[i].cents + share.cents)
             return
         }
     }
-    totals.append((name: name, cents: cents))
+    totals.append(share)
 }
 
 /// Transfers that settle every balance: the largest debtor pays the largest creditor, repeatedly.

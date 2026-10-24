@@ -8,11 +8,11 @@ struct W {
     }
 }
 
-ReadOnlySpan<i64> second(i64 a, to i64 b, by ReadOnlySpan<i64> s) => s
+ReadOnlySpan<i64> second(i64 a, at i64 b, from ReadOnlySpan<i64> s) => s
 
 void main() {
     var w = W { items: List<i64>() }
     w.items.append(3)
-    let s = second(a: w.items.asSpan().length, b: w.grow(), s: w.items.asSpan())
+    let s = second(w.items.asSpan().length, at: w.grow(), from: w.items.asSpan())
     print($"{s[0]}")
 }

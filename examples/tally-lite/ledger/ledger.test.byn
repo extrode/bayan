@@ -1,5 +1,5 @@
 test "split gives leftover cents to the first participants" {
-    let shares = splitEvenly(8550, ["alice", "bob", "chen", "dina"])
+    let shares = splitEvenly(8550, to: ["alice", "bob", "chen", "dina"])
     assert(shares.length == 4)
     assert(shares[0].cents == 2138)
     assert(shares[1].cents == 2138)

@@ -31,7 +31,7 @@ i64 report(ParseError e) {
     return -1
 }
 
-void attempt(dyn ref readonly IParser p, to string s) {
+void attempt(dyn ref readonly IParser p, from string s) {
     let n = p.parse(s) catch switch {
         ParseError e => report(e),
     }
@@ -49,9 +49,9 @@ void run(dyn ref readonly IParser p) fails ParseError {
 
 void main() {
     let d = Digits { base: 10 }
-    attempt(d, to: "4")
-    attempt(d, to: "")
-    attempt(d, to: "q")
+    attempt(d, from: "4")
+    attempt(d, from: "")
+    attempt(d, from: "q")
     run(d) catch switch {
         ParseError e => print($"run failed with {e == ParseError.empty ? "empty" : "notDigit"}"),
     }

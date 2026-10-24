@@ -31,11 +31,11 @@ i32 unreadable(string path) {
 
 /// Lexes `path` and appends its dump (`json`: the JSON form) to `sb`; returns whether any diagnostic is an error.
 bool dumpFile(ref StrBuf sb, string path, move List<u8> bytes, Keywords keywords, bool json) {
-    var result = lex(SourceText.create(path, move bytes), keywords)
+    var result = lex(SourceText.create(path, move bytes), by: keywords)
     if json {
-        dumpJson(ref sb, ref result)
+        dumpJson(ref result, to: ref sb)
     } else {
-        dump(ref sb, ref result)
+        dump(ref result, to: ref sb)
     }
     return !result.diagnostics.isEmpty
 }
@@ -84,9 +84,9 @@ i32 lexMany(string dir, Keywords keywords) {
             let bytes = Io.readFile(path) catch return fileNotFound(path)
             var sb = StrBuf()
             sb.append($"== {name}\n")
-            var result = lex(SourceText.create(path, move bytes), keywords)
+            var result = lex(SourceText.create(path, move bytes), by: keywords)
             checkSpans(ref sb, ref result)
-            dump(ref sb, ref result)
+            dump(ref result, to: ref sb)
             Io.stdout.write(sb.finish())
         }
     }
@@ -96,7 +96,7 @@ i32 lexMany(string dir, Keywords keywords) {
 i32 lexTimed(string path, Keywords keywords) {
     let bytes = Io.readFile(path) catch return fileNotFound(path)
     let start = Io.monotonicNanos()
-    let result = lex(SourceText.create(path, move bytes), keywords)
+    let result = lex(SourceText.create(path, move bytes), by: keywords)
     let elapsed = Io.monotonicNanos() - start
     print($"{elapsed}")
     return result.tokens.isEmpty ? exitFailure : exitOk

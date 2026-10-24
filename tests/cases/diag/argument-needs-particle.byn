@@ -1,0 +1,4 @@
+// A particle is part of the function's name, so the call writes it (BYN5005).
+i64 width(i64 start, until i64 end) => end - start
+
+print($"{width(2, 5)}")

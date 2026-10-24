@@ -1,0 +1,12 @@
+// Clean facts of an `Untrusted<T>` are plain values: `length`, `isEmpty`, comparisons, and an `Untrusted<bool>` as a condition (J41).
+let u: Untrusted<string> = Untrusted("hello")
+let n: i64 = u.length
+let e: bool = u.isEmpty
+let q: bool = u == Untrusted("hello")
+let b: Untrusted<bool> = Untrusted(true)
+if b {
+    print("yes")
+}
+print($"{n} {e} {q}")
+let s: string = u.trustUnchecked() because "a literal"
+print(s)

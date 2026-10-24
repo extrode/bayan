@@ -5,7 +5,7 @@ i64 parsed(string text) => parseAmount(text) catch switch {
     .tooLarge => -4,
 }
 
-bool formatsAs(Cents cents, string expected) {
+bool formats(Cents cents, as string expected) {
     let bytes = stackalloc u8[32]
     var sb = StrBuf(bytes)
     let m = Money { cents: cents, currency: "MYR" }
@@ -31,8 +31,8 @@ test "rejects malformed amounts" {
 }
 
 test "formats cents with two decimals" {
-    assert(formatsAs(9182, expected: "91.82 MYR"))
-    assert(formatsAs(128, expected: "1.28 MYR"))
-    assert(formatsAs(5, expected: "0.05 MYR"))
-    assert(formatsAs(-128, expected: "-1.28 MYR"))
+    assert(formats(9182, as: "91.82 MYR"))
+    assert(formats(128, as: "1.28 MYR"))
+    assert(formats(5, as: "0.05 MYR"))
+    assert(formats(-128, as: "-1.28 MYR"))
 }

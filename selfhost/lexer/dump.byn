@@ -1,20 +1,20 @@
 // Text and JSON forms of a token stream, as printed by `bayan lex` (the text form is kept in the
 // `lex/` goldens). Ports `src/Bayan.Syntax/Lexing/TokenDump.cs`.
 
-void dump(ref StrBuf sb, ref LexResult result) {
+void dump(ref LexResult result, to ref StrBuf sb) {
     // By index: `getLinePosition` modifies `result.source`, so the loop may not borrow `result`.
     for i in 0..result.tokens.length {
         let token = result.tokens[i]
         let position = result.source.getLinePosition(token.start)
         if token.hasDoc {
             sb.append("    doc ")
-            escape(ref sb, result.source.bytes.asSpan()[token.docStart..token.docStart + token.docLength])
+            escape(result.source.bytes.asSpan()[token.docStart..token.docStart + token.docLength], to: ref sb)
             sb.append("\n")
         }
         sb.append($"{position.line}:{position.column} {kindName(token.kind)}")
         if token.length > 0 {
             sb.append(" ")
-            escape(ref sb, result.source.bytes.asSpan()[token.start..token.end])
+            escape(result.source.bytes.asSpan()[token.start..token.end], to: ref sb)
         }
         sb.append("\n")
     }
@@ -22,12 +22,12 @@ void dump(ref StrBuf sb, ref LexResult result) {
         sb.append("\n")
         using var arena = Arena()
         let diagnostics = result.diagnostics.copy(to: arena)
-        renderAll(ref sb, ref result.source, diagnostics.asSpan())
+        renderAll(diagnostics.asSpan(), to: ref sb, from: ref result.source)
     }
 }
 
 /// Backtick-quoted text with line breaks, tabs and invisible characters made visible.
-void escape(ref StrBuf sb, ReadOnlySpan<u8> text) {
+void escape(ReadOnlySpan<u8> text, to ref StrBuf sb) {
     sb.append("`")
     var pos: i64 = 0
     while pos < text.length {
@@ -54,14 +54,14 @@ void escape(ref StrBuf sb, ReadOnlySpan<u8> text) {
 /// `bayan lex --json`: one object with `tokens` and `diagnostics` (in source order), no
 /// insignificant whitespace, then `\n`. Offsets are bytes; invalid UTF-8 in source text becomes
 /// U+FFFD per maximal subpart.
-void dumpJson(ref StrBuf sb, ref LexResult result) {
+void dumpJson(ref LexResult result, to ref StrBuf sb) {
     let bytes = result.source.bytes.asSpan()
     sb.append("{\"tokens\":[")
     for i in 0..result.tokens.length {
         let token = result.tokens[i]
         if i > 0 { sb.append(",") }
         sb.append($"{{\"kind\":\"{kindName(token.kind)}\",\"start\":{token.start},\"end\":{token.end},\"text\":")
-        jsonString(ref sb, bytes[token.start..token.end])
+        jsonString(bytes[token.start..token.end], to: ref sb)
         sb.append(",\"doc\":")
         if token.hasDoc {
             sb.append($"{{\"start\":{token.docStart},\"end\":{token.docStart + token.docLength}}}")
@@ -76,15 +76,15 @@ void dumpJson(ref StrBuf sb, ref LexResult result) {
         let d = result.diagnostics[order[k]]
         if k > 0 { sb.append(",") }
         sb.append($"{{\"code\":\"{d.code}\",\"severity\":\"error\",\"start\":{d.span.start},\"end\":{d.span.end},\"message\":")
-        jsonString(ref sb, d.message.bytes)
+        jsonString(d.message.bytes, to: ref sb)
         sb.append(",\"label\":")
-        jsonOptional(ref sb, d.label)
+        jsonOptional(d.label, to: ref sb)
         sb.append(",\"help\":")
-        jsonOptional(ref sb, d.help)
+        jsonOptional(d.help, to: ref sb)
         sb.append(",\"fixes\":[")
         if d.hasFix {
             sb.append($"{{\"start\":{d.fixSpan.start},\"end\":{d.fixSpan.end},\"replacement\":")
-            jsonString(ref sb, d.fixReplacement.bytes)
+            jsonString(d.fixReplacement.bytes, to: ref sb)
             sb.append("}")
         }
         sb.append("]}")
@@ -93,16 +93,16 @@ void dumpJson(ref StrBuf sb, ref LexResult result) {
 }
 
 /// `null` for an empty `text` (none), else its JSON string.
-void jsonOptional(ref StrBuf sb, string text) {
+void jsonOptional(string text, to ref StrBuf sb) {
     if text.isEmpty {
         sb.append("null")
     } else {
-        jsonString(ref sb, text.bytes)
+        jsonString(text.bytes, to: ref sb)
     }
 }
 
 /// A JSON string: `\"` `\\` `\n` `\r` `\t`, other controls and DEL as `\u00XX`, the rest raw.
-void jsonString(ref StrBuf sb, ReadOnlySpan<u8> text) {
+void jsonString(ReadOnlySpan<u8> text, to ref StrBuf sb) {
     sb.append("\"")
     var pos: i64 = 0
     while pos < text.length {

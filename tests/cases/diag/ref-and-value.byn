@@ -1,5 +1,5 @@
-void grow(ref List<i64> items, ReadOnlySpan<i64> from) {
-    items.append(from.length)
+void grow(ref List<i64> items, from ReadOnlySpan<i64> source) {
+    items.append(source.length)
 }
 
 void main() {

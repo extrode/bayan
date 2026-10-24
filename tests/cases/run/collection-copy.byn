@@ -1,4 +1,4 @@
-void showList(string name, to ReadOnlySpan<i64> xs) {
+void showList(ReadOnlySpan<i64> xs, as string name) {
     var line = StrBuf()
     for x in xs { line.append($" {x}") }
     print($"{name}: {xs.length}{line.finish()}")
@@ -18,8 +18,8 @@ for i in 0..100 {
     }
     list[1] = i
 }
-showList("list", to: list)
-showList("listCopy", to: listCopy)
+showList(list, as: "list")
+showList(listCopy, as: "listCopy")
 
 var map = Map<i64, i64>()
 for i in 0..6 { map[i] = i * 10 }
