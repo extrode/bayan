@@ -37,7 +37,7 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
         }
 
         bool decodes(ReadOnlySpan<u8> bytes) fails Utf8Error {
-            try string.from(bytes)
+            let _ = try string.from(bytes)
             return true
         }
 

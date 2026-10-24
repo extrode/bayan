@@ -1,7 +1,7 @@
 error BYN2612: `try` is not allowed in a panic handler
 
   12 │         let n = try step()
-     │                 ^^^
+     │                 ^^^^^^^^^^
      │
   help: remove it; panic handlers can't recover
 

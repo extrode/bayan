@@ -34,7 +34,7 @@ i64 handle(i64 n) => signUp(n) catch switch {
 }
 
 void check(i64 n) fails SignupError {
-    try signUp(n)
+    let _ = try signUp(n)
 }
 
 void report(i64 n) {

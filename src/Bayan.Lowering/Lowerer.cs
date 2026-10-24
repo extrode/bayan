@@ -257,6 +257,10 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     // ── Cleanup ──────────────────────────────────────────────────────────────────
 
+    /// <summary>A guarded defer body (<c>defer stmt if c</c>) with its condition read now, at registration (J20).</summary>
+    private BoundStmt CaptureGuard(BoundStmt body) =>
+        body is BoundIf { Syntax: GuardedStmt, Else: null } g ? g with { Condition = Spill(Expr(g.Condition)) } : body;
+
     /// <summary>Emits the cleanups of scopes <paramref name="depth"/> and deeper, innermost first; errdefers only when failing with <paramref name="error"/>.</summary>
     private void EmitCleanups(int depth, LocalSymbol? error)
     {
@@ -383,10 +387,10 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 Switch(sw);
                 break;
             case BoundDefer d:
-                _scopes[^1].Cleanups.Add(new DeferCleanup(d.Body));
+                _scopes[^1].Cleanups.Add(new DeferCleanup(CaptureGuard(d.Body)));
                 break;
             case BoundErrdefer e:
-                _scopes[^1].Cleanups.Add(new ErrdeferCleanup(e.Error, e.Body));
+                _scopes[^1].Cleanups.Add(new ErrdeferCleanup(e.Error, CaptureGuard(e.Body)));
                 break;
             case BoundPanicDefer p:
             {

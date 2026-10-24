@@ -13,7 +13,7 @@ for i in 0..100 {
     list.append(i)
     listCopy.append(-i)
     if i % 3 == 0 {
-        list.removeLast()
+        let _ = list.removeLast()
         listCopy[0] = i
     }
     list[1] = i
@@ -23,13 +23,13 @@ showList("listCopy", listCopy)
 
 var map = Map<i64, i64>()
 for i in 0..6 { map[i] = i * 10 }
-map.remove(2)
+let _ = map.remove(2)
 var mapCopy = map.copy(to: arena)
 for i in 0..100 {
     map[i % 9] = i
     mapCopy[i % 13 + 20] = -i
-    if i % 4 == 0 { map.remove(i % 7) }
-    if i % 5 == 0 { mapCopy.remove(i % 11 + 20) }
+    if i % 4 == 0 { let _ = map.remove(i % 7) }
+    if i % 5 == 0 { let _ = mapCopy.remove(i % 11 + 20) }
 }
 print($"map: {map.length} {map}")
 print($"mapCopy: {mapCopy.length} {mapCopy}")

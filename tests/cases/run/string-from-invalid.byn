@@ -21,5 +21,5 @@ void main() fails Utf8Error {
     print($"truncated: {describe(truncated.asSpan())}")
     let lone: u8[2] = [0x80, 0x61]
     print($"lone continuation: {describe(lone.asSpan())}")
-    try string.from(overlongNul.asSpan())
+    let _ = try string.from(overlongNul.asSpan())
 }

@@ -1,1 +1,0 @@
-J20: a defer modifier's condition is read when the defer is registered (A1). Today it prints only `body`.

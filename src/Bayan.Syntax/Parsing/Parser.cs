@@ -524,7 +524,8 @@ public sealed class Parser
             }
             var attribute = new AttributeSyntax(SpanFrom(start), name, args);
             var because = bracket ? null : ParseBecause("@" + name.Text, attribute.Span);
-            if (because is null && !bracket && name.Text == "allow") ReportMissingBecause("@" + name.Text, attribute.Span);
+            if (because is null && !bracket && (name.Text == "allow" || name.Text == "json" && args.Any(a => a is { Name: null, Value: NameExpr { Name.Text: "expose" } })))
+                ReportMissingBecause("@" + name.Text + (name.Text == "json" ? "(expose)" : ""), attribute.Span);
             attributes.Add(attribute with { Because = because });
         }
         return attributes.ToArray();
@@ -2792,8 +2793,12 @@ public sealed class Parser
         switch (Kind)
         {
             case TokenKind.TryKeyword:
+                // `try` covers the whole expression to its right, down to `??`; `?:` and assignment stay outside (§18, J18).
                 Advance();
-                return new TryExpr(SpanFrom(start), ParseUnary());
+                {
+                    var covered = ParseBinary(Prec.Coalesce);
+                    return new TryExpr(SpanFrom(start), covered);
+                }
             case TokenKind.MoveKeyword:
                 Advance();
                 return new MoveExpr(SpanFrom(start), ParseUnary());
@@ -2878,7 +2883,17 @@ public sealed class Parser
                 guard = ParseExpression();
             }
             Expect(TokenKind.FatArrow);
-            var result = ParseExpression();
+            // A `catch switch` arm may be a block, read as a `catch` block is (J49); elsewhere `{` starts a struct literal.
+            Expr result;
+            if (value is CaughtErrorExpr && Kind == TokenKind.OpenBrace && !(IsName(Peek(1)) && Peek(2) == TokenKind.Colon && !BraceBodyHasStatementBreak()))
+            {
+                var block = ParseBlock();
+                result = new BlockExpr(block.Span, block);
+            }
+            else
+            {
+                result = ParseExpression();
+            }
             arms.Add(new SwitchArm(SpanFrom(armStart), pattern, guard, result));
             if (!Accept(TokenKind.Comma)) break;
             if (_pos == before) break;

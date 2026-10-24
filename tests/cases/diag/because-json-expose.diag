@@ -1,0 +1,6 @@
+error BYN8001: `@json(expose)` bypasses a safety rule and needs `because "…"`
+
+  1 │ @json(expose)
+    │ ^^^^^^^^^^^^^ bypasses a safety rule
+    │
+  help: explain the bypass in a `because` clause

@@ -1,0 +1,16 @@
+// defer-modifier-errdefer.byn — a `defer failing` guard is read at registration too (J20)
+union error E {
+    bad
+}
+
+void f() fails E {
+    var c = true
+    defer failing print("cleanup") if c
+    c = false
+    print("body")
+    return .bad
+}
+
+void main() {
+    f() catch { print("caught") }
+}

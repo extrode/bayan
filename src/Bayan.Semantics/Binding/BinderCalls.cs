@@ -10,6 +10,9 @@ internal sealed partial class Binder
     /// <summary>The call that the enclosing <c>try</c>/<c>catch</c> handles; any other failing call is an error.</summary>
     private CallExpr? _handled;
 
+    /// <summary>While a <c>try</c> operand is bound: the failing calls it does not handle, reported once it is known whether the operand fails (BYN1054).</summary>
+    private List<(CallExpr Call, string Name)>? _covered;
+
     /// <summary>The error a <c>catch switch</c> is switching on, while its subject is bound.</summary>
     private LocalSymbol? _caught;
 
@@ -23,6 +26,11 @@ internal sealed partial class Binder
 
     private BoundExpr BindCall(CallExpr c, TypeSymbol? expected)
     {
+        // A call to a member ending in `Unchecked` bypasses a safety rule and says why (J6); an empty reason is the parser's.
+        var calleeName = c.Callee switch { MemberExpr me => me.Member.Text, NameExpr ne => ne.Name.Text, _ => null };
+        if (c.Because is null && calleeName is { } m && m.EndsWith("Unchecked", StringComparison.Ordinal))
+            Report(DiagnosticCodes.MissingBecause, c.Span, [m + "()"], label: "bypasses a safety rule",
+                help: "explain the bypass in a `because` clause");
         if (c.Callee is MemberExpr { Member.Text: "trustUnchecked", NullConditional: false } trusted && c.Args.Length == 0)
             return BindTrustUnchecked(c, trusted);
         var callee = c.Callee is TargetMemberExpr t ? BindTargetMember(t, expected) : BindExprOrType(c.Callee);
@@ -102,9 +110,8 @@ internal sealed partial class Binder
             _c.RequiresChecks.Add(new RequiresCheck(Source, c, fn, args));
         if (fn.Fails && !ReferenceEquals(_handled, c))
         {
-            Report(DiagnosticCodes.UnhandledFailure, c.Span, [fn.Name],
-                help: "propagate the error with `try`, or handle it with `catch`",
-                fix: new Fix(new TextSpan(c.Span.Start, 0), "try "));
+            if (_covered is not null) _covered.Add((c, fn.Name));
+            else ReportUnhandled(c, fn.Name);
         }
         return new BoundCall(c, fn, receiver, args, receiver is null ? fn.ReturnType : ReturnTypeThrough(receiver.Type, fn));
     }
@@ -486,14 +493,11 @@ internal sealed partial class Binder
 
     /// <summary>
     /// <c>x.trustUnchecked() because "…"</c>: <c>Untrusted&lt;T&gt;</c> to <c>T</c>, the canonical form of <c>trust</c>
-    /// (BYN1062); an empty reason is the parser's BYN8001, a missing one is reported here.
+    /// (BYN1062); a missing or empty reason is BYN8001 (<see cref="BindCall"/>, the parser).
     /// </summary>
     private BoundExpr BindTrustUnchecked(CallExpr c, MemberExpr callee)
     {
         var value = BindExpr(callee.Target);
-        if (c.Because is null)
-            Report(DiagnosticCodes.MissingBecause, c.Span, ["trustUnchecked()"], label: "bypasses a safety rule",
-                help: "explain the bypass in a `because` clause");
         if (value.Type.IsError) return value;
         if (value.Type is not UntrustedType u)
         {
@@ -613,29 +617,59 @@ internal sealed partial class Binder
 
     // ── Failure handling ─────────────────────────────────────────────────────────
 
+    private void ReportUnhandled(CallExpr c, string name) =>
+        Report(DiagnosticCodes.UnhandledFailure, c.Span, [name],
+            help: "propagate the error with `try`, or handle it with `catch`",
+            fix: new Fix(new TextSpan(c.Span.Start, 0), "try "));
+
     private BoundExpr BindTry(TryExpr t, TypeSymbol? expected)
     {
         if (!InPanicHandler(t.Span, "try") && _deferDepth > 0)
             Report(DiagnosticCodes.TryInDefer, t.Span, [],
                 help: "handle the error here with `catch`; cleanup cannot fail");
         var inner = StripParens(t.Operand);
+        var (savedCovered, covered) = (_covered, new List<(CallExpr Call, string Name)>());
+        _covered = covered;
+        BoundExpr operand;
         if (inner is not CallExpr call)
         {
-            var v = BindExpr(t.Operand, expected);
-            if (!v.Type.IsError) Report(DiagnosticCodes.NothingToHandle, t.Operand.Span, ["try"]);
-            return v;
+            operand = BindExpr(t.Operand, expected);
         }
-        var saved = _handled;
-        _handled = call;
-        var operand = BindExpr(call, expected);
-        _handled = saved;
-        if (operand is not BoundCall { Function.Fails: true })
+        else
         {
-            if (!operand.Type.IsError)
-                Report(DiagnosticCodes.NothingToHandle, t.Operand.Span, ["try"], fix: new Fix(TextSpan.FromBounds(t.Span.Start, t.Operand.Span.Start), ""));
-            return operand;
+            var saved = _handled;
+            _handled = call;
+            operand = BindExpr(call, expected);
+            _handled = saved;
         }
-        return new BoundTry(t, operand, operand.Type);
+        _covered = savedCovered;
+        if (inner is CallExpr && operand is BoundCall { Function.Fails: true })
+        {
+            foreach (var (c, name) in covered) ReportUnhandled(c, name);
+            return new BoundTry(t, operand, operand.Type);
+        }
+        if (covered.Count > 0)
+        {
+            ReportTryCoversMore(t, covered[0].Call);
+            foreach (var (c, name) in covered.Skip(1)) ReportUnhandled(c, name);
+        }
+        else if (!operand.Type.IsError)
+        {
+            Report(DiagnosticCodes.NothingToHandle, t.Operand.Span, ["try"],
+                fix: inner is CallExpr ? new Fix(TextSpan.FromBounds(t.Span.Start, t.Operand.Span.Start), "") : null);
+        }
+        return operand;
+    }
+
+    /// <summary>BYN1054: <c>try</c> covers an expression that cannot fail; the fix moves it onto the failing call, in parentheses (§18).</summary>
+    private void ReportTryCoversMore(TryExpr t, CallExpr failing)
+    {
+        var text = Source.GetText(t.Operand.Span);
+        var call = Source.GetText(failing.Span);
+        var at = failing.Span.Start - t.Operand.Span.Start;
+        var fixedText = text[..at] + "(try " + call + ")" + text[(at + call.Length)..];
+        Report(DiagnosticCodes.TryCoversMore, t.Operand.Span, [text, call], label: "cannot fail",
+            help: $"wrap the part that fails in parentheses: `(try {call})`", fix: new Fix(t.Span, fixedText));
     }
 
     private BoundExpr BindCatch(CatchExpr c, TypeSymbol? expected)
@@ -728,7 +762,10 @@ internal sealed partial class Binder
             if (owns) CheckOwningOverlap(pattern);
             if (owns && arm.Guard is { } ag) GuardBindings(pattern, ag.Span);
             var guard = arm.Guard is { } g ? BindCondition(g) : null;
-            var result = BindExpr(arm.Value, expected);
+            // A block arm of a value-giving `catch switch` has no value to give, so it must leave (J49, BYN2611).
+            var result = arm.Value is BlockExpr block && s.Value is CaughtErrorExpr && expected is { IsVoid: false }
+                ? new BoundBlockExpr(block, BindBlock(block.Block), PrimitiveType.Never)
+                : BindExpr(arm.Value, expected);
             PopScope();
             arms.Add(new BoundSwitchArm(arm, pattern, guard, result));
         }

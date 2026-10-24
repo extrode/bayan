@@ -176,7 +176,7 @@ void compose(ref List<u32> cps) {
         cps[count] = cp
         count += 1
     }
-    while cps.length > count { cps.removeLast() }
+    while cps.length > count { let _ = cps.removeLast() }
 }
 
 /// The NFC form of the scalars `input`.

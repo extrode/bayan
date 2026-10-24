@@ -1,0 +1,11 @@
+struct Cell {
+    i64 v
+
+    i64 readUnchecked() => v
+}
+
+void main() {
+    let c = Cell { v: 1 }
+    print($"{c.readUnchecked()}")
+    print($"{c.readUnchecked() because "a fixed test value"}")
+}

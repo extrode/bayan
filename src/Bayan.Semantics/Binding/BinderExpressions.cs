@@ -48,10 +48,13 @@ internal sealed partial class Binder
         return Convert(bound, target, e.Span, argument);
     }
 
-    /// <summary>An expression statement: the value is discarded.</summary>
+    /// <summary>An expression statement: a value it leaves is an error (BYN3201), so a mis-split line is never silent (§3, J2).</summary>
     private BoundExpr BindStatementExpression(Expr e)
     {
         var bound = BindExpr(e);
+        if (!bound.Type.IsVoid && !bound.Type.IsNever && !bound.Type.IsError)
+            Report(DiagnosticCodes.UnusedValue, e.Span, [Source.GetText(e.Span)], label: "value dropped",
+                help: "assign it with `let _ = …`, or remove the expression");
         return bound;
     }
 

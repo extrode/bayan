@@ -1,0 +1,13 @@
+error BYN3201: the value of this `one()` is unused
+
+  4 │     one()
+    │     ^^^^^ value dropped
+    │
+  help: assign it with `let _ = …`, or remove the expression
+
+error BYN3201: the value of this `xs.removeLast()` is unused
+
+  8 │     xs.removeLast()
+    │     ^^^^^^^^^^^^^^^ value dropped
+    │
+  help: assign it with `let _ = …`, or remove the expression

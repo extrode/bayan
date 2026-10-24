@@ -14,7 +14,7 @@ var m = Map<i64, i64>()
 for step in 0..5000 {
     let r = next(ref state)
     let key = (i64)(r % 64)
-    if (r >> 8) % 3 == 2 { m.remove(key) } else { m[key] = step }
+    if (r >> 8) % 3 == 2 { let _ = m.remove(key) } else { m[key] = step }
 }
 print($"count {m.length}")
 for e in m { print($"{e.key} {e.value}") }

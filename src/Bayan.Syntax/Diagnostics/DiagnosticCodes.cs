@@ -87,6 +87,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ExceptInCase = Error("BYN1051", "`except` is not allowed in a `case` pattern");
     public static readonly DiagnosticDescriptor ExceptNotPattern = Error("BYN1052", "`except` takes a pattern, not a condition");
     public static readonly DiagnosticDescriptor OneLineDeclarations = Error("BYN1053", "`{0}` declares its cases on one line; write one per line");
+    public static readonly DiagnosticDescriptor TryCoversMore = Error("BYN1054", "`try` covers `{0}`, which cannot fail");
     public static readonly DiagnosticDescriptor TrustInput = Error("BYN1062", "`trust(x, reason: …)` is now `x.trustUnchecked() because \"…\"`");
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────
@@ -275,6 +276,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ModifiedWhileBorrowed = Error("BYN3004", "`{0}` is modified while {1} still borrows it");
     public static readonly DiagnosticDescriptor RefAndValue = Error("BYN3005", "`{0}` is passed by `ref` and again in the same call");
     public static readonly DiagnosticDescriptor MovedWhileBorrowed = Error("BYN3006", "`{0}` is moved while {1} still borrows it");
+    public static readonly DiagnosticDescriptor UnusedValue = Error("BYN3201", "the value of this `{0}` is unused");
     public static readonly DiagnosticDescriptor DuplicateErrorCase = Error("BYN3202", "`{0}` and `{1}` both have a case `{2}`");
     public static readonly DiagnosticDescriptor UniqueConst = Error("BYN3209", "a `unique` type cannot be `const`");
 

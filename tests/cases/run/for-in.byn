@@ -9,7 +9,7 @@ var prices = Map<string, i64>()
 prices["tea"] = 3
 prices["cake"] = 5
 prices["jam"] = 2
-prices.remove("cake")
+let _ = prices.remove("cake")
 for (item, price) in prices {
     print($"{item} costs {price}")
 }

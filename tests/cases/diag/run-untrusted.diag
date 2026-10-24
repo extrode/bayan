@@ -1,13 +1,13 @@
 error BYN2786: `Untrusted<string>` cannot be passed to `Io.run`: it is `Untrusted`
 
-  4 │     try Io.run(program, ["status"])
-    │                ^^^^^^^
+  4 │     let _ = try Io.run(program, ["status"])
+    │                        ^^^^^^^
     │
   help: check the value, then clear the mark with `x.trustUnchecked() because "…"`
 
 error BYN2786: `Untrusted<string>` cannot be passed to `Io.run`: it is `Untrusted`
 
-  5 │     try Io.run("git", ["log", name])
-    │                               ^^^^
+  5 │     let _ = try Io.run("git", ["log", name])
+    │                                       ^^^^
     │
   help: check the value, then clear the mark with `x.trustUnchecked() because "…"`
