@@ -1,0 +1,14 @@
+// A `rest` tail takes the positional arguments; a named parameter after it is passed by name; `..xs` spreads a collection.
+
+i64 total(rest ReadOnlySpan<i64> xs, by i64 scale = 1) {
+    var sum = 0
+    for x in xs {
+        sum += x
+    }
+    return sum * scale
+}
+
+let more: List<i64> = [7, 8]
+let fixed: i64[3] = [1, 2, 3]
+print($"{total(1, 2, 3)} {total()} {total(4, 5, by: 10)}")
+print($"{total(..more)} {total(..fixed, by: 2)} {total(4, by: 10, 5)}")

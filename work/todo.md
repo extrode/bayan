@@ -217,3 +217,9 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-55: `bayan audit` names a call bypass by its member only (`trustUnchecked()`), since there is no trim-safe syntax walker in `Bayan.Syntax`; a walker would let it show the full callee (Question 240).
 - r3-55: `bayan audit` lists no C sources per dependency (SPEC §19.3); add them when dependencies land.
 - plan-strings-check skips BYN3216: its plan entry has a quoted `{2}` gloss between the message and `(label`, which the form regex rejects; reword the entry (revision erratum) or widen the regex (found 2026-10-24, r3-53b).
+- r3-53g: `Conformance.cs` and non-call member lookups take the first method of a name, so an overloaded method cannot satisfy an interface member by its particles (Question 306).
+- r3-53g: a generic `rest ReadOnlySpan<T>` does not infer `T` from the tail arguments (`Instantiate` in `BinderCalls.cs` matches parameters one to one).
+- r3-53g: `..xs` mixed with other tail arguments (`f(1, ..xs)`) is BYN2215; spreading into a `rest` tail beside values needs the run-time-length span path `FinishCollection` rejects (BYN2219).
+- r3-53g: `rest` on a non-span type has no diagnostic; the parser's input forms always build `ReadOnlySpan<T>`, but `rest List<T> xs` is accepted and matched as a plain parameter.
+- r3-53g: overloads of the same name each report BYN5001 and other naming lints once per declaration.
+- plan-strings-check skips BYN5011: its plan entry reads `(plan, warning)`, which the start regex `(?: \(plan\))?` rejects; widen the regex (5.4a owns the script) (found 2026-10-24, r3-53g). Checked by hand: message, help and severity match the plan.

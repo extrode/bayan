@@ -204,12 +204,38 @@ internal sealed partial class Binder
                 continue;
             }
             conditions.Add(condition);
+            CheckExpects(r, condition);
             var message = Literal(r, PrimitiveType.String, "contract violated: " + Source.GetText(r.Span));
             var panic = new BoundCall(r, _c.Builtins.Panic, null, [message], PrimitiveType.Never);
             checks.Add(new BoundIf(r, new BoundUnary(r, UnaryOp.Not, condition, PrimitiveType.Bool), new BoundExprStmt(r, panic), null));
         }
         _fn!.Requires = conditions.ToArray();
         return checks.ToArray();
+    }
+
+    /// <summary>
+    /// An <c>expects</c> clause that reads an <c>Untrusted</c> parameter would trap on outside data (BYN8006); one that reads
+    /// a single parameter and nothing else belongs on that parameter's type as a <c>requires</c> (BYN5011).
+    /// </summary>
+    private void CheckExpects(Expr clause, BoundExpr condition)
+    {
+        var nodes = BoundTree.Descendants(condition).ToList();
+        var reads = nodes.OfType<BoundLocal>().Where(l => l.Local is ParameterSymbol p && _fn!.Parameters.Contains(p)).ToList();
+        foreach (var untrusted in reads.Where(l => l.Local.Type is UntrustedType).DistinctBy(l => l.Local))
+            Report(DiagnosticCodes.ExpectsReadsUntrusted, untrusted.Syntax.Span, [untrusted.Local.Name],
+                help: $"validate `{untrusted.Local.Name}` with a type that has `requires` before the call");
+        if (reads.Select(l => l.Local).Distinct().Count() != 1 || nodes.Any(n => n is BoundThis)) return;
+        var name = reads[0].Local.Name;
+        Report(DiagnosticCodes.ExpectsSingleParameter, ExpectsKeyword(clause), [name], help: $"declare a type with `requires` for `{name}`");
+    }
+
+    /// <summary>The <c>expects</c> keyword before <paramref name="clause"/>, which the syntax tree does not keep; the clause if it is the <c>requires</c> input form.</summary>
+    private TextSpan ExpectsKeyword(Expr clause)
+    {
+        var end = clause.Span.Start;
+        while (end > 0 && Source.Bytes.Span[end - 1] is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n') end--;
+        var keyword = TextSpan.FromBounds(Math.Max(0, end - "expects".Length), end);
+        return Source.GetText(keyword) == "expects" ? keyword : clause.Span;
     }
 
     /// <summary>The field whose own rule is being bound: there <c>it</c> reads it.</summary>

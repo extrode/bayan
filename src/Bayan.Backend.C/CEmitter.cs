@@ -188,12 +188,15 @@ public sealed class CEmitter
             {
                 FunctionKind.Constructor => "init" + owner.Constructors.IndexOf(f),
                 FunctionKind.Getter => "get_" + f.Name,
-                _ => f.Name,
+                _ => f.Name + Overload(owner is StructSymbol s ? s.FindMethods(f.Name).ToList() : [], f),
             };
             return $"byn_{module}__{owner.Name}{TypeArgs(owner.TypeArguments)}__{member}";
         }
-        return $"byn_{module}__{f.Name}{TypeArgs(f.TypeArguments)}";
+        return $"byn_{module}__{f.Name}{Overload(f.Module.Functions.GetValueOrDefault(f.Name) ?? [], f.Template ?? f)}{TypeArgs(f.TypeArguments)}";
     }
+
+    /// <summary>The <c>__o1</c> that tells a second overload from the first (J65); empty for the first.</summary>
+    private static string Overload(List<FunctionSymbol> overloads, FunctionSymbol f) => overloads.IndexOf(f) is > 0 and var i ? "__o" + i : "";
 
     /// <summary>The <c>__i64__str</c> that tells instantiations of one generic apart.</summary>
     private string TypeArgs(IReadOnlyList<TypeSymbol> args) => string.Concat(args.Select(a => "__" + Key(a)));
