@@ -4,7 +4,6 @@ struct SignupForm {
     Email email
     string username
         requires it.length in 3..=32
-        requires it != password
     string password
         requires it.length in 8..=128
     i32 age requires it in 13..=120

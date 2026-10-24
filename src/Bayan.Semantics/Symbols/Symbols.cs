@@ -92,6 +92,9 @@ public sealed class StructSymbol(string name, Location location, ModuleSymbol mo
 
     public StructDecl Decl { get; } = decl;
 
+    /// <summary><c>T.Field</c>, an enum of the fields, generated only when the struct has <c>requires</c> (J23).</summary>
+    public EnumSymbol? FieldEnum { get; set; }
+
     public FileContext File { get; } = file;
 
     public string? Doc => Decl.Doc;
@@ -204,6 +207,9 @@ public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol
 
     /// <summary>Declared or inferred error sets; empty and <see cref="Fails"/> false for infallible functions.</summary>
     public List<ErrorSetSymbol> ErrorSets { get; } = new();
+
+    /// <summary>Cases of <see cref="ErrorSets"/> taken out by a <c>union error … except .c</c> in the <c>fails</c> clause.</summary>
+    public List<ErrorVariantSymbol> ExcludedErrors { get; } = new();
 
     /// <summary>The function has a <c>fails</c> clause (possibly inferred).</summary>
     public bool Fails { get; set; }
@@ -498,7 +504,10 @@ public sealed class EnumSymbol(string name, Location location, ModuleSymbol modu
 
     public FunctionSymbol Parse { get; set; } = null!;
 
-    public override string DisplayName => Name;
+    /// <summary>For <c>T.Field</c> (J23), the struct <c>T</c> whose fields are the members; <see cref="Name"/> stays a C-safe <c>T_Field</c>.</summary>
+    public StructSymbol? FieldsOf { get; init; }
+
+    public override string DisplayName => FieldsOf is null ? Name : $"{FieldsOf.Name}.Field";
 
     public EnumMemberSymbol? Find(string name) => Members.Find(m => m.Name == name);
 

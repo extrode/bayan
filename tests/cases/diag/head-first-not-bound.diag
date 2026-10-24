@@ -1,9 +1,0 @@
-error BYN2022: narrowing a `union error` with `except` is not supported in v0.1
-
-  6 │ union error Retryable = CarrierError except .rejected
-    │                                              ^^^^^^^^
-
-error BYN2022: `type distinct` is not supported in v0.1
-
-  8 │ type distinct Sku = string
-    │               ^^^

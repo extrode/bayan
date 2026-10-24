@@ -184,6 +184,11 @@ public sealed partial class Compilation
         foreach (var module in Modules)
             foreach (var file in module.Files)
                 DeclareFile(file);
+        // Before any signature names a `union error … except .c`, whose cases must already exist.
+        foreach (var module in Modules)
+            foreach (var set in module.ErrorSets)
+                DeclareVariants(set);
+        DeclareBuiltinVariants(Builtins.ValidationError);
         // Bounds are resolved once every type is declared, so `where T : IOrder<T>` can name `T` and later types.
         foreach (var where in _wheres) where();
         DeclareInterfaceMembers(Builtins.IEnumerator);
@@ -194,9 +199,6 @@ public sealed partial class Compilation
         _interfaceMembersDeclared = true;
         foreach (var (instance, site, span) in _pendingInterfaces)
             Instantiating(site, span, () => DeclareInterfaceMembers(instance));
-        foreach (var module in Modules)
-            foreach (var set in module.ErrorSets)
-                DeclareVariants(set);
         foreach (var alias in _aliases)
             if (alias.Decl is ErrorSetDecl composed) CheckComposition(alias, composed);
         foreach (var module in Modules)
@@ -221,9 +223,9 @@ public sealed partial class Compilation
     }
 
     /// <summary><c>IoError</c> is numbered first, so the runtime can return its codes 1 to 7 directly; <c>Utf8Error</c> follows (8).</summary>
-    private void DeclareBuiltinVariants()
+    private void DeclareBuiltinVariants(params ErrorSetSymbol[] sets)
     {
-        foreach (var set in new[] { Builtins.IoError, Builtins.Utf8Error })
+        foreach (var set in sets.Length > 0 ? sets : [Builtins.IoError, Builtins.Utf8Error])
             foreach (var v in set.Decl.Variants)
             {
                 var sym = new ErrorVariantSymbol(v.Name.Text, new Location(set.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
@@ -245,7 +247,7 @@ public sealed partial class Compilation
                 help: "write `void main()`, `i32 main()`, `void main(ReadOnlySpan<string> args)` or `i32 main(ReadOnlySpan<string> args)`, each optionally with `fails`");
     }
 
-    /// <summary><c>@cases</c> belongs on a test with parameters and <c>@exitCode</c> on an error variant; no other declaration takes an attribute.</summary>
+    /// <summary><c>@cases</c> belongs on a test with parameters, <c>@exitCode</c> on an error variant and <c>@sealed</c>, bare, on a struct; nothing else takes an attribute.</summary>
     private void CheckAttributes(FileContext file, Decl decl)
     {
         var hasCases = false;
@@ -263,6 +265,11 @@ public sealed partial class Compilation
                 Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@cases"], help: "put `@cases(...)` on a test that takes parameters");
             else if (a.Name.Text == "exitCode")
                 Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@exitCode"], help: "put `@exitCode` on an error enum variant");
+            else if (a.Name.Text == "sealed" && decl is not StructDecl)
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, ["@sealed"], help: "put `@sealed` on a struct");
+            else if (a.Name.Text == "sealed" && (a.Args.Length > 0 || a.Because is not null))
+                Report(DiagnosticCodes.ModifierNotAllowed, file.Source, a.Span, [file.Source.GetText(a.Span)], help: "write `@sealed` with no arguments and no `because`");
+            else if (a.Name.Text == "sealed") { }
             else
                 Report(DiagnosticCodes.UnknownAttribute, file.Source, a.Name.Span, [a.Name.Text],
                     help: "use `@exitCode(n)` on an error variant or `@cases(...)` on a test");
@@ -330,24 +337,6 @@ public sealed partial class Compilation
         _testBodies[fn] = (t, values);
     }
 
-    /// <summary>
-    /// <c>requires</c> rules on fields, structs and types parse, but are checked at construction only from round 3
-    /// step 5.3b; until then each rule is BYN2322 rather than silently unchecked.
-    /// </summary>
-    private void CheckRequires(FileContext file, Decl decl)
-    {
-        RequiresRule[] rules = decl switch
-        {
-            StructDecl s => [.. s.Members.OfType<FieldDecl>().SelectMany(f => f.Requires), .. s.Rules],
-            FieldDecl f => f.Requires,
-            TypeAliasDecl t => t.Requires,
-            _ => [],
-        };
-        foreach (var rule in rules.OrderBy(r => r.Span.Start))
-            Report(DiagnosticCodes.RequiresNotHere, file.Source, rule.Span, [decl is TypeAliasDecl ? "types" : "fields"],
-                help: "check the value where it is set, or move the rule to a function's `requires`");
-    }
-
     /// <summary><c>quantity bounds (input: 101, valid: false)</c>: the title, then each parameter with its value as written.</summary>
     private static string CaseTitle(FileContext file, TestDecl t, Expr[] values) =>
         $"{t.Title} ({string.Join(", ", t.Params.Zip(values, (p, v) => p.Name.Text + ": " + file.Source.GetText(v.Span)))})";
@@ -359,7 +348,6 @@ public sealed partial class Compilation
         foreach (var decl in file.Tree.Root.Members)
         {
             CheckAttributes(file, decl);
-            CheckRequires(file, decl);
             switch (decl)
             {
                 case StructDecl s:
@@ -367,6 +355,16 @@ public sealed partial class Compilation
                     var sym = new StructSymbol(s.Name.Text, Loc(file, s.Name), module, AccessOf(s.Modifiers), s, file);
                     if (AddType(file, s.Name, sym)) module.Structs.Add(sym);
                     Naming.CheckType(this, file.Source, s.Name);
+                    var fields = s.Members.OfType<FieldDecl>().ToArray();
+                    if (s.TypeParams.Length == 0 && (s.Rules.Length > 0 || fields.Any(f => f.Requires.Length > 0)))
+                    {
+                        // J23: `T.Field`, reachable only through `T`, so it is not added to the module's types. Not for a
+                        // generic struct, whose `requires` is BYN2022 (Question 225).
+                        var members = fields.Select(f => new EnumMember(f.Name.Span, f.Name, null, null)).ToArray();
+                        var fieldDecl = new EnumDecl(s.Name.Span, s.Modifiers, new Name(s.Name.Span, s.Name.Text + "_Field"), null, members);
+                        sym.FieldEnum = new EnumSymbol(fieldDecl.Name.Text, Loc(file, s.Name), module, AccessOf(s.Modifiers), fieldDecl, file) { FieldsOf = sym };
+                        module.Enums.Add(sym.FieldEnum);
+                    }
                     sym.TypeMap = DeclareTypeParameters(file, s.TypeParams, sym.TypeParameters);
                     _wheres.Add(() => DeclareWhere(file, s.Where, sym.TypeParameters, sym.TypeMap, s.Name.Text));
                     break;
@@ -421,9 +419,22 @@ public sealed partial class Compilation
                         label: "retroactive conformance", help: $"list `{bases}` on `{x.Name.Text}`'s declaration");
                     break;
                 }
+                case TypeAliasDecl { Distinct: true } a:
+                {
+                    // J5: a nominal wrapper, a struct whose one field `value` carries the type's `requires`.
+                    var value = new FieldDecl(a.Target.Span, Modifiers.Public, a.Target, new Name(a.Target.Span, "value"), null) { Requires = a.Requires };
+                    var sym = new StructSymbol(a.Name.Text, Loc(file, a.Name), module, AccessOf(a.Modifiers), new StructDecl(a.Span, a.Modifiers, a.Name, [value]), file);
+                    if (AddType(file, a.Name, sym))
+                    {
+                        module.Structs.Add(sym);
+                        Distinct.Add(sym);
+                    }
+                    Naming.CheckType(this, file.Source, a.Name);
+                    break;
+                }
                 case TypeAliasDecl a:
                 {
-                    if (a.Distinct) Report(DiagnosticCodes.Unsupported, file.Source, a.Name.Span, ["`type distinct`"]);
+                    if (a.Requires.Length > 0) Report(DiagnosticCodes.Unsupported, file.Source, a.Requires[0].Span, ["`requires` on a plain `type` alias"]);
                     var sym = new AliasPlaceholder(a, a.Name, a.Modifiers, file);
                     if (AddType(file, a.Name, sym)) _aliases.Add(sym);
                     Naming.CheckType(this, file.Source, a.Name);
@@ -677,7 +688,7 @@ public sealed partial class Compilation
             Report(DiagnosticCodes.EmptyErrorSet, file.Source, set.Decl.Name.Span, [set.Name]);
     }
 
-    /// <summary>BYN3202 for two composed sets with a case of the same name; narrowing with <c>except</c> is not bound yet.</summary>
+    /// <summary>BYN3202 for two composed sets with a case of the same name.</summary>
     private void CheckComposition(AliasPlaceholder alias, ErrorSetDecl decl)
     {
         var sets = new TypeResolver(this, alias.File, null).ExpandAlias(alias) switch
@@ -690,9 +701,6 @@ public sealed partial class Compilation
                 if (!owners.TryAdd(v.Name, set))
                     Report(DiagnosticCodes.DuplicateErrorCase, alias.File.Source, decl.Head, [owners[v.Name].Name, set.Name, v.Name],
                         label: $"two cases `{v.Name}`", help: "rename one case, or compose fewer sets");
-        if (decl.Except.Length > 0)
-            Report(DiagnosticCodes.Unsupported, alias.File.Source, TextSpan.FromBounds(decl.Except[0].Span.Start, decl.Except[^1].Span.End),
-                ["narrowing a `union error` with `except`"]);
     }
 
     private void DeclareEnumMembers(EnumSymbol e)
@@ -701,11 +709,13 @@ public sealed partial class Compilation
         DeclareEnumFields(e);
         foreach (var m in e.Decl.Members)
         {
-            Naming.CheckValue(this, source, m.Name);
+            // The fields of `T.Field` were checked on the struct.
+            if (e.FieldsOf is null) Naming.CheckValue(this, source, m.Name);
             if (e.Find(m.Name.Text) is { } existing)
             {
-                Report(DiagnosticCodes.DuplicateEnumMember, source, m.Name.Span, [e.Name, m.Name.Text],
-                    label: $"already declared on line {existing.Location!.Value.Line}");
+                if (e.FieldsOf is null)
+                    Report(DiagnosticCodes.DuplicateEnumMember, source, m.Name.Span, [e.Name, m.Name.Text],
+                        label: $"already declared on line {existing.Location!.Value.Line}");
                 continue;
             }
             e.Members.Add(new EnumMemberSymbol(m.Name.Text, Loc(e.File, m.Name), e, e.Members.Count, m.Doc));
@@ -923,7 +933,30 @@ public sealed partial class Compilation
                     break;
             }
         }
+        DeclareCheck(s);
     }
+
+    /// <summary>A struct with <c>requires</c> gets a check, run on each built value, that fails with <c>ValidationError</c>.</summary>
+    private void DeclareCheck(StructSymbol s)
+    {
+        var first = s.Decl.Members.OfType<FieldDecl>().SelectMany(f => f.Requires).Concat(s.Decl.Rules).MinBy(r => r.Span.Start);
+        if (first is null || s.Template is not null) return;
+        if (s.IsGeneric)
+        {
+            Report(DiagnosticCodes.Unsupported, s.File.Source, first.Span, ["`requires` on a generic struct"]);
+            return;
+        }
+        var check = new FunctionSymbol("requires", s.Location, s.Module, FunctionKind.Method) { Owner = s, File = s.File, Access = s.Access, Fails = true };
+        check.ErrorSets.Add(Builtins.ValidationError);
+        s.Module.AllFunctions.Add(check);
+        Checks[s] = new StructChecks(check, []);
+    }
+
+    /// <summary>The <c>requires</c> check of each struct that has rules, by struct.</summary>
+    internal Dictionary<StructSymbol, StructChecks> Checks { get; } = new();
+
+    /// <summary>The structs that stand for a <c>type distinct</c>, built with <c>X(raw)</c>.</summary>
+    internal HashSet<StructSymbol> Distinct { get; } = new();
 
     private readonly Dictionary<FunctionSymbol, ConstructorDecl> _constructorBodies = new();
 
@@ -1036,8 +1069,18 @@ public sealed partial class Compilation
                 var t = types.Resolve(e);
                 if (t is ErrorSetSymbol or ErrorUnionType)
                 {
+                    // A case stays excluded only while every name that brings in its set excludes it.
+                    var excluded = t is ErrorUnionType { Excluded: var x } ? x : [];
                     foreach (var set in t is ErrorUnionType u ? u.Sets : [(ErrorSetSymbol)t])
-                        if (!fn.ErrorSets.Contains(set)) fn.ErrorSets.Add(set);
+                    {
+                        if (fn.ErrorSets.Contains(set))
+                        {
+                            fn.ExcludedErrors.RemoveAll(v => v.Set == set && !excluded.Contains(v));
+                            continue;
+                        }
+                        fn.ErrorSets.Add(set);
+                        fn.ExcludedErrors.AddRange(excluded.Where(v => v.Set == set));
+                    }
                 }
                 else if (!t.IsError)
                 {
@@ -1129,6 +1172,9 @@ public sealed partial class Compilation
     private void BindAll()
     {
         CheckConformances();
+        // Before the constants, which may build a checked value (J38).
+        foreach (var (s, checks) in Checks)
+            new Binder(this, s.File, checks.Check, s).BindChecks(checks);
         foreach (var module in Modules)
             foreach (var c in module.AllConstants)
                 BindConstant(c);

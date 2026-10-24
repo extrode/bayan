@@ -1,0 +1,5 @@
+struct Order {
+    i64 quantity requires it > 0
+}
+
+Order order(i64 n) fails ValidationError => Order { quantity: n }

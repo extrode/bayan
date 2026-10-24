@@ -1,0 +1,7 @@
+error BYN3216: `HttpClientOptions.retries` can be written only by `HttpClientOptions`'s own methods
+or with `with`: `HttpClientOptions` is `@sealed`
+
+  8 │     options.retries = 5
+    │     ^^^^^^^^^^^^^^^^^^^
+    │
+  help: add a `ref this` method to `HttpClientOptions`, or build a new value with `with`

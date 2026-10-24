@@ -1,0 +1,11 @@
+struct Order {
+    i64 total
+    states {
+        draft
+        paid
+    }
+}
+
+void clear(ref Order order) {
+    order.total = 0
+}

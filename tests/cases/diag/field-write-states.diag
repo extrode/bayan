@@ -1,0 +1,7 @@
+error BYN3216: `Order.total` can be written only by `Order`'s own methods or with `with`: `Order`
+has states
+
+  10 │     order.total = 0
+     │     ^^^^^^^^^^^^^^^
+     │
+  help: add a `ref this` method to `Order`, or build a new value with `with`
