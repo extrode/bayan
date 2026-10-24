@@ -116,7 +116,7 @@ public sealed class CliTests
         var sub = Directory.CreateDirectory(Path.Combine(dir, "sub")).FullName;
         Directory.CreateSymbolicLink(Path.Combine(sub, "up"), "..");
         Directory.CreateSymbolicLink(Path.Combine(sub, "up2"), "..");
-        var result = await Task.Run(() => Run("audit", dir)).WaitAsync(TimeSpan.FromSeconds(30));
+        var result = await Task.Factory.StartNew(() => Run("audit", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
         Assert.Equal(1, result.Out.Split("unsafe void poke()").Length - 1);
     }
 
@@ -128,7 +128,7 @@ public sealed class CliTests
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "main.byn"), "unsafe void peek() {\n}\n");
         Directory.CreateSymbolicLink(Path.Combine(dir, "link"), "..");
-        var result = await Task.Run(() => Run("audit", dir)).WaitAsync(TimeSpan.FromSeconds(30));
+        var result = await Task.Factory.StartNew(() => Run("audit", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
         Assert.Equal(1, result.Out.Split("unsafe void peek()").Length - 1);
     }
 

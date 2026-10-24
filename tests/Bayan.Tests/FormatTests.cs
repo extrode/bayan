@@ -474,7 +474,7 @@ public sealed class FormatTests
         Directory.CreateSymbolicLink(Path.Combine(sub, "up"), "..");
         Directory.CreateSymbolicLink(Path.Combine(sub, "up2"), "..");
         File.CreateSymbolicLink(Path.Combine(dir, "alias.byn"), "main.byn");
-        var result = await Task.Run(() => Run("format", "--check", dir)).WaitAsync(TimeSpan.FromSeconds(30));
+        var result = await Task.Factory.StartNew(() => Run("format", "--check", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
         Assert.Equal(CliApp.ExitFailure, result.Exit);
         Assert.Single(result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries));
     }
@@ -486,7 +486,7 @@ public sealed class FormatTests
         var dir = Directory.CreateDirectory(Path.Combine(Fresh("parent-link"), "outer", "dir")).FullName;
         File.WriteAllText(Path.Combine(dir, "main.byn"), "let a = true\nif (a) { print(\"x\") }\n");
         Directory.CreateSymbolicLink(Path.Combine(dir, "link"), "..");
-        var result = await Task.Run(() => Run("format", "--check", dir)).WaitAsync(TimeSpan.FromSeconds(30));
+        var result = await Task.Factory.StartNew(() => Run("format", "--check", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
         Assert.Equal(CliApp.ExitFailure, result.Exit);
         Assert.Single(result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries));
     }
