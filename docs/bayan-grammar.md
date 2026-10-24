@@ -10,12 +10,12 @@ Casing (SPEC §5.1): `PascalCase` types, `camelCase` everything else, `I` prefix
 
 For any new member, take the first question that answers yes.
 
-1. **Changes `this`?** Verb on `ref this`: `void sort(ref this)`. The `-ed` copy (`sorted`) is derived; do not write it.
+1. **Acts on `this`?** Plain verb on `ref this`: `void sort(ref this)`. The `-ed` copy (`sorted`) is derived where the verb exists; do not write it.
    - A body that modifies `this` without `ref this`: [BYN2115](diagnostics/BYN2115.md).
    - Calling a `ref this` member on a `let`: [BYN2104](diagnostics/BYN2104.md) (fix: `var`).
    - `-ed` member with no `ref this` verb of the same stem (`joined`): [BYN5001](diagnostics/BYN5001.md).
    - A noun on a `ref this` member: [BYN5101](diagnostics/BYN5101.md) (lint).
-2. **Returns a new value, changes nothing?** Plain verb: `join`, `trim`, `split`. Not a participle: `join`, never `joined` ([BYN5001](diagnostics/BYN5001.md)).
+2. **Returns a changed copy or a view of `this`?** `-ed` form: `trimmed`, `sorted`, `lowercased`. The `-ed` form does not require a mutating verb to exist: an immutable type (`string`) has `trimmed()` and `lowercased()` with no `trim` or `lowercase`. A mutable type with both forms keeps both (`xs.sort()` / `xs.sorted()`). A result that is not a changed copy of the receiver is a noun or a plain static verb (`join`, `split`).
 3. **Boolean property, no arguments?** `is` / `has` / `can`: `isEmpty`, `hasItems`, `canRetry`. Never a `?` suffix.
    - A boolean property that modifies `this`: [BYN5002](diagnostics/BYN5002.md).
    - A `bool` property without the prefix: [BYN5102](diagnostics/BYN5102.md) (lint, fix-it).

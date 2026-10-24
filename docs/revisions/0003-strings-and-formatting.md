@@ -90,7 +90,7 @@ let text = buf.finish()                  // move this: the buffer becomes the st
 
 **Conversions:** `string(x)` (`Display`), `string(n, as: .hex / .binary / .octal / .decimal)`, `T.parse(text)` / `T.tryParse(text)` with the same `as:`, and the codecs of §1.
 
-**Literals:** `"…"`, `$"…"`, `b"…"` (bytes), `sql"…"` with `$n`. `html"…"` and interpolating `sql"…{x}…"` stay deferred. A raw multi-line literal is not decided.
+**Literals:** `"…"`, `$"…"`, `b"…"` (bytes), `sql"…"` with `$n`. `html"…"` and interpolating `sql"…{x}…"` stay deferred. The raw multi-line literal `"""…"""` stays as SPEC §2.3 defines it (revision 0004 item 3).
 
 ### 5. Culture
 
@@ -145,7 +145,7 @@ public interface Display {
 
 - New: BYN1068 `CompactFormatSpec` "`{0}` is an input form; write `{1}`" (label at the spec; help "write the spec as named arguments: `{1}`"; fix yes). 5.1e.
 - Reused: BYN2230 for `fromUtf8`, `try string(bytes)`, `string.tryFrom(bytes)`, `offset` → `position` and the other renames.
-- Totals: 77 new (28 syntax, 17 types, 10 grammar, 7 effects, 9 typestate, 6 security), 12 reserved, 3 retired.
+- Totals: 78 new (28 syntax, 18 types, 10 grammar, 7 effects, 9 typestate, 6 security), 12 reserved, 3 retired.
 
 ## v0.1 scope
 
