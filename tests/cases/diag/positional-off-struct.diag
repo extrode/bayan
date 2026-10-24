@@ -1,0 +1,6 @@
+error BYN1016: `@positional` is not allowed here
+
+  1 │ @positional
+    │ ^^^^^^^^^^^
+    │
+  help: put `@positional` on a struct

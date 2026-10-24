@@ -1,0 +1,6 @@
+error BYN1016: `@positional` is not allowed here
+
+  1 │ @positional
+    │ ^^^^^^^^^^^
+    │
+  help: remove `@positional`: a struct with states is built with state literals

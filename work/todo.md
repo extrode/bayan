@@ -224,3 +224,9 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-54a: the task names `node scripts/plan-strings-check.js`, but the script uses Deno APIs; run it with `deno run -A`.
 - r3-54a: the BYN51xx exemption for rename attributes (`@json`, `@column`) and `@allow(…) because` is not built (Question 270).
 - r3-54a: plan-strings-check skips BYN5001: its message is in revision 0005, not in a plan §2 entry.
+- r3-53g: `Conformance.cs` and non-call member lookups take the first method of a name, so an overloaded method cannot satisfy an interface member by its particles (Question 306).
+- r3-53g: a generic `rest ReadOnlySpan<T>` does not infer `T` from the tail arguments (`Instantiate` in `BinderCalls.cs` matches parameters one to one).
+- r3-53g: `..xs` mixed with other tail arguments (`f(1, ..xs)`) is BYN2215; spreading into a `rest` tail beside values needs the run-time-length span path `FinishCollection` rejects (BYN2219).
+- r3-53g: `rest` on a non-span type has no diagnostic; the parser's input forms always build `ReadOnlySpan<T>`, but `rest List<T> xs` is accepted and matched as a plain parameter.
+- r3-53g: overloads of the same name each report BYN5001 and other naming lints once per declaration.
+- plan-strings-check skips BYN5011: its plan entry reads `(plan, warning)`, which the start regex `(?: \(plan\))?` rejects; widen the regex (5.4a owns the script) (found 2026-10-24, r3-53g). Checked by hand: message, help and severity match the plan.

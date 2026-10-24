@@ -46,7 +46,7 @@ internal sealed partial class Binder
             case BoundMethodGroup { Function.Builtin: BuiltinFunction.Trust }:
                 return BindTrust(c);
             case BoundMethodGroup g:
-                return BindFunctionCall(c, g.Function, g.Receiver, g.TypeArgs);
+                return BindFunctionCall(c, Overload(g.Function, c), g.Receiver, g.TypeArgs);
             case BoundBuiltinGroup b:
                 return BindBuiltinMethodCall(c, b.Receiver, b.Name);
             case BoundTypeRef tr:
@@ -66,6 +66,30 @@ internal sealed partial class Binder
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
         }
+    }
+
+    /// <summary>
+    /// The overload of <paramref name="fn"/> the call's labels select (J65): the first whose labels fit the named arguments
+    /// and whose unlabeled parameters fit the positional ones. Overloads cannot overlap, so at most one fits; with none, <paramref name="fn"/> reports why.
+    /// </summary>
+    private static FunctionSymbol Overload(FunctionSymbol fn, CallExpr c)
+    {
+        var overloads = fn.Owner is StructSymbol s ? s.FindMethods(fn.Name).ToList()
+            : fn.Module.Functions.TryGetValue(fn.Name, out var fs) && fs.Contains(fn) ? fs : [];
+        if (overloads.Count < 2) return fn;
+        var named = c.Args.Where(a => a.Name is not null).Select(a => a.Name!.Text).ToHashSet();
+        var positional = c.Args.Count(a => a.Name is null);
+        return overloads.FirstOrDefault(f => Accepts(f, named, positional)) ?? fn;
+    }
+
+    private static bool Accepts(FunctionSymbol f, HashSet<string> named, int positional)
+    {
+        var ps = f.Parameters;
+        if (!named.All(n => ps.Any(p => Label(p) == n))) return false;
+        if (ps.Any(p => p.Syntax is { Particle: not null, Default: null } && !named.Contains(Label(p)))) return false;
+        var open = ps.Where(p => p.Syntax is { Particle: null } && !named.Contains(p.Name)).ToList();
+        return positional >= open.Count(p => p.Syntax is { Default: null, Rest: false })
+            && (positional <= open.Count || open.Any(p => p.Syntax!.Rest));
     }
 
     /// <summary><c>u8.tryFrom(x)</c>: a numeric conversion that gives <c>null</c> instead of trapping when the value does not fit.</summary>
@@ -254,9 +278,17 @@ internal sealed partial class Binder
         var sawNamed = false;
         var positional = 0;
         var mismatched = false;
+        // A `rest` tail takes every positional argument from its place on; parameters after it are named only (J64).
+        var rest = ps.FirstOrDefault(x => x.Syntax?.Rest == true && x.Type is SpanType);
+        var tail = new List<Argument>();
         foreach (var arg in c.Args)
         {
             ParameterSymbol? p;
+            if (arg.Name is null && rest is not null && positional >= rest.Ordinal)
+            {
+                tail.Add(arg);
+                continue;
+            }
             if (arg.Name is { } n)
             {
                 sawNamed = true;
@@ -304,6 +336,8 @@ internal sealed partial class Binder
             }
             result[p.Ordinal] = BindArgument(arg, p);
         }
+        if (rest is not null && result[rest.Ordinal] is null)
+            result[rest.Ordinal] = BindRestTail(c, rest, tail);
         var missing = new List<string>();
         for (var i = 0; i < ps.Count; i++)
         {
@@ -325,6 +359,23 @@ internal sealed partial class Binder
         if (missing.Count > 0 && !mismatched)
             Report(DiagnosticCodes.MissingArgument, c.Span, [string.Join("`, `", missing), name]);
         return result!;
+    }
+
+    /// <summary>
+    /// The arguments of a <c>rest</c> tail as a span literal, which lowers to stack slots in the caller (J62).
+    /// A lone <c>..x</c> passes the span of collection <c>x</c>; on anything else it stays a range (J63).
+    /// </summary>
+    private BoundExpr BindRestTail(CallExpr c, ParameterSymbol p, List<Argument> tail)
+    {
+        if (tail is [{ Name: null, Modifier: ArgModifier.None, Value: RangeExpr { Start: null, End: { } operand, Inclusive: false } range }])
+        {
+            var collection = BindExpr(operand);
+            if (collection.Type.IsError) return collection;
+            return collection.Type is ListType or SpanType or Symbols.ArrayType
+                ? Convert(collection, p.Type, operand.Span, argument: true) : BindRange(range, null);
+        }
+        var element = ((SpanType)p.Type).Element;
+        return new BoundCollection(c, p.Type, tail.Select(a => BindArgumentValue(a, element)).ToArray());
     }
 
     /// <summary>The label a call writes for <paramref name="p"/>: its particle (<c>to:</c>), else its name.</summary>
@@ -390,6 +441,13 @@ internal sealed partial class Binder
                 // `Email(raw)` wraps the value; with `requires`, the wrapper is checked like a literal.
                 var value = s.Fields[0];
                 var ps = new[] { new ParameterSymbol(value.Name, value.Location, value.Type, ParamModifier.None, 0) };
+                var args = BindArguments(c, ps, null, enforceNames: false, displayName: s.Name);
+                return Checked(c, new BoundStructLiteral(c, s, args));
+            }
+            case StructSymbol s when _c.Positional.Contains(s.Decl):
+            {
+                // `Point(3, 4)` is `Point { x: 3, y: 4 }`: every field in declaration order, checked like the literal.
+                var ps = s.Fields.Select((f, i) => new ParameterSymbol(f.Name, f.Location, f.Type, ParamModifier.None, i)).ToArray();
                 var args = BindArguments(c, ps, null, enforceNames: false, displayName: s.Name);
                 return Checked(c, new BoundStructLiteral(c, s, args));
             }

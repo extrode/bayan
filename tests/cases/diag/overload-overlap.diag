@@ -1,0 +1,9 @@
+error BYN2006: `shift` is declared twice
+
+  2 │ i64 shift(i64 y, by i64 d, to i64 limit = 0) => y - d
+    │     ^^^^^ already declared on line 1
+
+error BYN2006: `plus` is declared twice
+
+  8 │     Pos plus(by i64 e) => Pos { x: x - e }
+    │         ^^^^ already declared on line 7

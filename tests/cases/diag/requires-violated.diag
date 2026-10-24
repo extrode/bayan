@@ -1,3 +1,17 @@
+warning BYN5011: this `expects` reads only `percent`; a type with `requires` checks it once
+
+  2 │     expects percent in 0..=100
+    │     ^^^^^^^
+    │
+  help: declare a type with `requires` for `percent`
+
+warning BYN5011: this `expects` reads only `n`; a type with `requires` checks it once
+
+  5 │ i32 positive(i32 n) expects n > 0 && n < 1000 => n
+    │                     ^^^^^^^
+    │
+  help: declare a type with `requires` for `n`
+
 error BYN2321: `150` violates `requires percent in 0..=100` of `discount`
 
   8 │ let bad = discount(200, by: 150)
