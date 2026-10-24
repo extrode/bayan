@@ -1,0 +1,6 @@
+error BYN3216: `Point.x` can be written only by `Point`'s own methods or with `with`
+
+  7 │     p.x = p.x + 1
+    │     ^^^^^^^^^^^^^
+    │
+  help: add a `ref this` method to `Point`, or build a new value with `with`

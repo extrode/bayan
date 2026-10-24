@@ -323,3 +323,16 @@ public sealed record BoundPropertyPattern(Node Syntax, TypeSymbol InputType, Typ
 /// </summary>
 public sealed record BoundUnionPattern(Node Syntax, TypeSymbol InputType, UnionVariantSymbol Variant, BoundPattern[] Subpatterns)
     : BoundPattern(Syntax, InputType);
+
+// ── `requires` checks ────────────────────────────────────────────────────────────
+
+/// <summary>A struct's <c>requires</c> check: the hidden method run on each built value, and its rules in run order.</summary>
+public sealed record StructChecks(FunctionSymbol Check, List<StructRule> Rules);
+
+/// <summary>One rule: a field's own rule (<c>it</c> is <paramref name="Field"/>), or a struct-level one when the field is null.</summary>
+public sealed record StructRule(RequiresRule Syntax, FieldSymbol? Field, BoundExpr Condition)
+{
+    /// <summary>The fields of <c>this</c> the condition reads.</summary>
+    public FieldSymbol[] Reads { get; } = BoundTree.Descendants(Condition).OfType<BoundField>()
+        .Where(f => f.Receiver is BoundThis).Select(f => f.Field).Distinct().ToArray();
+}

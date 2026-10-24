@@ -1,0 +1,6 @@
+error BYN3218: this `requires` reads `it` and other fields
+
+  3 │     i64 high requires it > 0 && it >= low
+    │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    │
+  help: split it: an `it` rule under the field, and a struct-level rule with `at .field`

@@ -102,7 +102,7 @@ public sealed class Builtins
     /// <summary><c>union error Utf8Error</c>: numbered right after <c>IoError</c>, so <c>invalidSequence</c> is code 8.</summary>
     public ErrorSetSymbol Utf8Error { get; }
 
-    // Error cases have no payload yet, so `invalid` carries no `List<Violation<T>>` (Q220).
+    // Error cases have no payload yet, so `invalid` carries no `List<Violation<T>>` until step 5.3h (Q220, revision 0006).
     private const string ValidationErrorSource = """
         public union error ValidationError {
             /// The value breaks a `requires` rule of its type.

@@ -2,6 +2,10 @@ struct Tally {
     i64 hits = 0
     string note = "new"
 
+    void count(ref this) { hits += 1 }
+
+    void annotate(ref this, string text) { note = text }
+
     void formatInto(ref StrBuf sb) {
         sb.append($"Tally {{ hits: {hits}, note: {note} }}")
     }
@@ -36,8 +40,8 @@ bump(ref words.slot("dog"))
 bump(ref words.slot("eel"))
 print($"dog {words["dog"]}, eel {words["eel"]}, length={words.length}")
 var tallies = Map<rune, Tally>()
-for c in "abca" { tallies.slot(c).hits += 1 }
-tallies.slot('z').note = "set"
+for c in "abca" { tallies.slot(c).count() }
+tallies.slot('z').annotate("set")
 print($"{tallies}")
 
 words.clear()

@@ -5,6 +5,8 @@ union Shape {
 
 struct Point {
     i64 x
+
+    void shift(ref this) { x += 1 }
 }
 
 void bump(ref i32 n) {
@@ -24,7 +26,7 @@ void main() {
     var count = 0
     count += 1
     var p = Point { x: 1 }
-    p.x = 2
+    p.shift()
     var n = 0
     bump(ref n)
     let fixed = 4

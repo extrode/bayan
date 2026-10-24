@@ -153,7 +153,7 @@ public sealed class L006OwnershipGuardTests
             """, "BYN2780" },
         { "implicit copy, ref parameter stored", """
             void keep(ref List<i64> shared, ref Ledger ledger) {
-                ledger.items = shared
+                ledger = Ledger { items: shared }
             }
             void main() { }
             """, "BYN2780" },

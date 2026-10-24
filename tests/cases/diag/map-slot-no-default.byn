@@ -6,22 +6,26 @@ enum Color {
 struct Point {
     i64 x
     i64 y = 0
+
+    void grow(ref this) { y += 1 }
 }
 
 struct Origin {
     i64 x = 0
     i64 y = 0
+
+    void shift(ref this) { x += 1 }
 }
 
 void use() {
     var colors = Map<string, Color>()
     colors.slot("sky") = .red
     var points = Map<i64, Point>()
-    points.slot(1).y += 1
+    points.slot(1).grow()
     var lists = Map<i64, List<i64>>()
     lists.slot(1).append(2)
     var origins = Map<i64, Origin>()
-    origins.slot(1).x += 1
+    origins.slot(1).shift()
     var names = Map<i64, string?>()
     names.slot(1) = "one"
 }

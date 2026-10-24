@@ -167,7 +167,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 NoTypeArgs(n);
                 return compilation.Builtins.Utf8Error;
             }
-            // `ValidationError<T>`: one set for every `T` while cases carry no payload (Q220).
+            // `ValidationError<T>`: one set for every `T` while cases carry no payload, until step 5.3h (Q220, revision 0006).
             if (text == "ValidationError")
             {
                 if (n.Args.Length > 1)

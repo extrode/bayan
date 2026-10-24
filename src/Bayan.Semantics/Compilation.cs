@@ -1143,6 +1143,9 @@ public sealed partial class Compilation
     private void BindAll()
     {
         CheckConformances();
+        // Before the constants, which may build a checked value (J38).
+        foreach (var (s, checks) in Checks)
+            new Binder(this, s.File, checks.Check, s).BindChecks(checks);
         foreach (var module in Modules)
             foreach (var c in module.AllConstants)
                 BindConstant(c);
@@ -1159,8 +1162,6 @@ public sealed partial class Compilation
                     f.Default = new Binder(this, s.File, null, s).BindFieldDefault(f);
             }
         }
-        foreach (var (s, checks) in Checks)
-            new Binder(this, s.File, checks.Check, s).BindChecks(checks);
         foreach (var module in Modules)
         {
             foreach (var fn in module.AllFunctions.Where(f => !f.IsInstance).ToList())

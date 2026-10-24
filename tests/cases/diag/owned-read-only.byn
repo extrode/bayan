@@ -1,8 +1,10 @@
 struct Node {
     i64 item
+
+    void bump(ref this) { item += 1 }
 }
 
 void main() {
     let n = Owned(Node { item: 1 })
-    n.item = 2
+    n.bump()
 }

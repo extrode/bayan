@@ -4,5 +4,3 @@ union error CarrierError {
 }
 
 union error Retryable = CarrierError except .rejected
-
-type distinct Sku = string

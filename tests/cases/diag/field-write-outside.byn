@@ -1,0 +1,8 @@
+struct Point {
+    i64 x
+    i64 y
+}
+
+void moveRight(ref Point p) {
+    p.x = p.x + 1
+}

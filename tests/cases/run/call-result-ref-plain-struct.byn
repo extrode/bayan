@@ -6,7 +6,7 @@ struct C {
 }
 
 ReadOnlySpan<i64> pick(ref C c, ReadOnlySpan<i64> xs) {
-    c.n += 1
+    c.bump()
     return xs
 }
 

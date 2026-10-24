@@ -3,6 +3,8 @@ struct Ledger {
     string name
     List<i64> items
     List<i64>? pending
+
+    void hold(ref this, move List<i64> xs) { pending = move xs }
 }
 
 i64 sum(move List<i64> xs) {
@@ -45,7 +47,7 @@ void main() {
 
     var more = List<i64>()
     more.append(4)
-    ledger.pending = more.take()
+    ledger.hold(more.take())
     let pending = ledger.pending.take()
     if (pending is { } p) { print($"optional {p.length}") }
     print($"left null {ledger.pending is null}")

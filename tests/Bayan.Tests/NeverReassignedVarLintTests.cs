@@ -22,7 +22,7 @@ public sealed class NeverReassignedVarLintTests
             none
         }
         void bump(ref i64 n) { n += 1 }
-        void reset(ref P p) { p.x = 0 }
+        void reset(ref P p) { p = P { x: 0 } }
         interface IC {
             void bump(ref this)
             i64 n { get }
@@ -60,11 +60,11 @@ public sealed class NeverReassignedVarLintTests
     [InlineData("local compound-assigned", "var v = 1\n    v += 2\n    print($\"{v}\")")]
     [InlineData("local incremented", "var v = 1\n    v++\n    print($\"{v}\")")]
     [InlineData("local passed by ref", "var v: i64 = 1\n    bump(ref v)\n    print($\"{v}\")")]
-    [InlineData("local field assigned", "var q = P { x: 1 }\n    q.x = 2\n    print($\"{q.x}\")")]
+    [InlineData("local rebuilt with `with`", "var q = P { x: 1 }\n    q = q with { x: 2 }\n    print($\"{q.x}\")")]
     [InlineData("local mutating call", "var xs = List<i64>()\n    xs.append(1)\n    print($\"{xs.length}\")")]
     [InlineData("pattern assigned", "if u is .b(var v) {\n        v = 2\n        print($\"{v}\")\n    }")]
     [InlineData("pattern passed by ref", "if u is .b(var v) {\n        bump(ref v)\n        print($\"{v}\")\n    }")]
-    [InlineData("pattern field assigned", "let w = W.wrap(P { x: 1 })\n    if w is .wrap(var p) {\n        p.x = 2\n        print($\"{p.x}\")\n    }")]
+    [InlineData("pattern rebuilt with `with`", "let w = W.wrap(P { x: 1 })\n    if w is .wrap(var p) {\n        p = p with { x: 2 }\n        print($\"{p.x}\")\n    }")]
     [InlineData("pattern struct by ref", "let w = W.wrap(P { x: 1 })\n    if w is .wrap(var p) {\n        reset(ref p)\n        print($\"{p.x}\")\n    }")]
     [InlineData("array mutated by for dyn ref", "var a = [C { n: 0 }]\n    for dyn ref IC x in a { x.bump() }")]
     [InlineData("list mutated by for dyn ref", "var a = List<C>()\n    for dyn ref IC x in a { x.bump() }")]

@@ -4,7 +4,7 @@ struct P {
 
 i64 field() {
     var p: P = { v: 1 }
-    defer p.v = 5
+    defer p = P { v: 5 }
     return p.v
 }
 

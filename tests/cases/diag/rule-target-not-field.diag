@@ -1,0 +1,6 @@
+error BYN3206: `at .top` names no field of `Range`
+
+  4 │     requires low <= high at .top
+    │                              ^^^ `.top`
+    │
+  help: name a field of `Range`

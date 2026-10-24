@@ -14,7 +14,7 @@ public sealed partial class HelpLanguageTests
         "combine", "convert", "copy", "create", "declare", "drop", "end", "explain", "finish", "give",
         "handle", "hand", "keep", "label", "leave", "let", "list", "loop", "make", "mark", "match", "move",
         "name", "pass", "pick", "propagate", "put", "read", "remove", "rename", "set", "store", "take",
-        "spread", "unwrap", "use", "wrap", "write",
+        "split", "spread", "unwrap", "use", "wrap", "write",
     ];
 
     /// <summary>Helps that may start otherwise, each with its reason.</summary>

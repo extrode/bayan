@@ -100,6 +100,14 @@ internal sealed partial class Binder
                 help: "check the value, then clear the mark with `x.trustUnchecked() because \"…\"`");
             return new BoundErrorExpr(value.Syntax);
         }
+        // O9: a bare literal never takes a distinct type; `ParcelId(0)` builds one.
+        if (target is StructSymbol distinct && _c.Distinct.Contains(distinct) && value.Constant is not null)
+        {
+            var text = Source.GetText(span);
+            Report(DiagnosticCodes.BareLiteralForDistinct, span, [text, distinct.Name], help: $"wrap it: `{distinct.Name}({text})`",
+                fix: new Fix(span, $"{distinct.Name}({text})"));
+            return new BoundErrorExpr(value.Syntax);
+        }
         ReportMismatch(value, target, span);
         return new BoundErrorExpr(value.Syntax);
     }
@@ -422,6 +430,7 @@ internal sealed partial class Binder
             var t = ResolveType(new NamedType(n.Span, [n.Name], n.TypeArgs));
             return t.IsError ? new BoundErrorExpr(n) : new BoundTypeRef(n, t);
         }
+        if (name == "it" && _it is not null) return new BoundField(n, new BoundThis(n, _thisType!), _it);
         if (_scope.Lookup(name) is { } local)
         {
             if (local.Kind == LocalKind.Const && local.Constant is { } c)
@@ -1366,7 +1375,7 @@ internal sealed partial class Binder
                 help: $"set {(missing.Count == 1 ? "it" : "them")}: `{st.Name} {{ {string.Join(", ", missing.Select(m => m + ": …"))} }}`");
             return new BoundErrorExpr(s);
         }
-        return new BoundStructLiteral(s, st, values!);
+        return Checked(s, new BoundStructLiteral(s, st, values!));
     }
 
     private BoundExpr BindWith(WithExpr w)
@@ -1395,7 +1404,7 @@ internal sealed partial class Binder
             }
             updates.Add((field, BindConverted(init.Value, field.Type)));
         }
-        return new BoundWith(w, target, updates.ToArray());
+        return Checked(w, new BoundWith(w, target, updates.ToArray()), updates.Select(u => u.Item1).ToList());
     }
 
     private BoundExpr BindCollection(CollectionExpr c, TypeSymbol? expected)
