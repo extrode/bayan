@@ -1,0 +1,23 @@
+// `return .x` returns a value; leaving with an error is `fail .x` (BYN1056).
+union error ParseError {
+    empty
+    tooLong
+}
+
+enum Outcome {
+    empty
+    full
+}
+
+i64 parse(string s) fails ParseError {
+    return .empty if s.isEmpty
+    return ParseError.tooLong if s.length > 9
+    return s.length
+}
+
+// The return type has a case `.empty`, so this `return .empty` is a value.
+Outcome classify(string s) fails ParseError {
+    fail .tooLong if s.length > 9
+    return .empty if s.isEmpty
+    return .full
+}

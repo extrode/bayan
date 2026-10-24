@@ -10,8 +10,8 @@ error BYN2609: error enum `Nothing` has no variants
 
 error BYN2603: `CarrierError.rejected` is not in the `fails` clause of `retry`
 
-  16 │     if n == 0 { return .rejected }
-     │                        ^^^^^^^^^
+  16 │     if n == 0 { fail .rejected }
+     │                      ^^^^^^^^^
      │
   help: pick another case, or remove `.rejected` from the `except` list
 
@@ -26,3 +26,10 @@ error BYN2228: `rejected` is not a variant of `CarrierError except .rejected`
 
   20 │ i64 recover(i64 n) => retry(n) catch (CarrierError.rejected) 0
      │                                       ^^^^^^^^^^^^^^^^^^^^^
+
+error BYN2603: `CarrierError.rejected` is not in the `fails` clause of `retryNamed`
+
+  23 │     if n == 0 { fail CarrierError.rejected }
+     │                      ^^^^^^^^^^^^^^^^^^^^^
+     │
+  help: pick another case, or remove `.rejected` from the `except` list

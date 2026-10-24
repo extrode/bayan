@@ -23,6 +23,6 @@ print($"{a} {b} {c}")
 print($"{a.isOk} {b.isOk} {orZero(a)} {orZero(b)}")
 print($"{b.err == LookupError.missing} {c.err}")
 print($"{a == lookup("two")} {b == c}")
-let widened: Result<i64, LookupError> = (i32)7
+let widened: Result<i64, LookupError> = i32(7)
 print($"{widened.value}")
 print($"{b.value}")

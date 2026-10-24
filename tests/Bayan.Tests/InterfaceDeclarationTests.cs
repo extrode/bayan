@@ -64,7 +64,7 @@ public sealed class InterfaceDeclarationTests
                 i64 area()
             }
 
-            void show(dyn ref IShape s, dyn ref readonly IShape r) {
+            void show(dyn ref IShape s, to dyn ref readonly IShape r) {
                 let t: dyn ref readonly IShape = r
             }
             """);
@@ -83,9 +83,9 @@ public sealed class InterfaceDeclarationTests
                 bool less(T other)
             }
 
-            T max<T>(move T a, T b) where T : IOrder<T> => a
+            T max<T>(move T a, by T b) where T : IOrder<T> => a
 
-            T.Item first<T>(ref T e, move T.Item fallback) where T : IEnumerator => fallback
+            T.Item first<T>(ref T e, by move T.Item fallback) where T : IEnumerator => fallback
             """);
         Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items.Select(d => d.Message)));
         var order = Assert.Single(c.Modules[0].Interfaces);

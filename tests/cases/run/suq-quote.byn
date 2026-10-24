@@ -26,13 +26,13 @@ public struct Money {
     public Currency currency
 
     public Money plus(Money other) fails PricingError {
-        return .currencyMismatch if other.currency != currency
-        return .overflow if other.cents > 0 && cents > maxCents - other.cents
+        fail .currencyMismatch if other.currency != currency
+        fail .overflow if other.cents > 0 && cents > maxCents - other.cents
         return Money { cents: cents + other.cents, currency: currency }
     }
 
     public Money minus(Money other) fails PricingError {
-        return .currencyMismatch if other.currency != currency
+        fail .currencyMismatch if other.currency != currency
         return Money { cents: cents - other.cents, currency: currency }
     }
 
@@ -40,7 +40,7 @@ public struct Money {
 
     /// This amount at a rate in basis points (800 = 8%), rounded half up. Non-negative amounts.
     public Money atRate(i64 basisPoints) fails PricingError {
-        return .overflow if basisPoints > 0 && cents > (maxCents - 5000) / basisPoints
+        fail .overflow if basisPoints > 0 && cents > (maxCents - 5000) / basisPoints
         return Money { cents: (cents * basisPoints + 5000) / 10000, currency: currency }
     }
 
@@ -106,14 +106,14 @@ public union error QuoteError {
 public union error QuoteFailure = PricingError, QuoteError
 
 /// Prices a basket. Overweight fails even when shipping would be free.
-public Quote quote(ReadOnlySpan<PriceLine> lines, in Policy policy) fails QuoteFailure {
+public Quote quote(ReadOnlySpan<PriceLine> lines, by in Policy policy) fails QuoteFailure {
     var subtotal = Money { cents: 0, currency: policy.currency }
     var grams: i64 = 0
     for line in lines {
         subtotal = try subtotal.plus(line.unitPrice.times(line.qty))
         grams = grams + line.unitGrams * line.qty
     }
-    let discount = bestDiscount(subtotal, lines, policy)
+    let discount = bestDiscount(subtotal, for: lines, by: policy)
 
     var freeShipping = false
     for promo in policy.promotions {
@@ -125,7 +125,7 @@ public Quote quote(ReadOnlySpan<PriceLine> lines, in Policy policy) fails QuoteF
         freeShipping = true if applies
     }
 
-    let fee = try shippingFee(grams, policy)
+    let fee = try shippingFee(grams, by: policy)
     let shipping = Money { cents: freeShipping ? 0 : fee, currency: policy.currency }
     let afterDiscount = try subtotal.minus(discount)
     let taxable = try afterDiscount.plus(shipping)
@@ -134,13 +134,12 @@ public Quote quote(ReadOnlySpan<PriceLine> lines, in Policy policy) fails QuoteF
 }
 
 /// The single best promotion wins; promotions don't stack.
-/// Bindings are named like the parameters so the implied-name rule covers same-typed arguments.
-Money bestDiscount(Money subtotal, ReadOnlySpan<PriceLine> lines, in Policy policy) {
+Money bestDiscount(Money subtotal, for ReadOnlySpan<PriceLine> lines, by in Policy policy) {
     var best: i64 = 0
     for promo in policy.promotions {
         let amount = promo switch {
-            .percentOff(let rateBp, let minimumCents) => percentDiscount(subtotal, rateBp, minimumCents),
-            .buyGetFree(let key, let buy, let free) => freeUnitsDiscount(lines, key, buy, free),
+            .percentOff(let rateBp, let minimumCents) => percentDiscount(subtotal, at: rateBp, from: minimumCents),
+            .buyGetFree(let key, let buy, let free) => freeUnitsDiscount(lines, for: key, by: Deal { buy: buy, free: free }),
             .freeShippingOver(_) => 0,
         }
         best = amount if amount > best
@@ -148,28 +147,34 @@ Money bestDiscount(Money subtotal, ReadOnlySpan<PriceLine> lines, in Policy poli
     return Money { cents: best, currency: subtotal.currency }
 }
 
-i64 percentDiscount(Money subtotal, i64 rateBp, i64 minimumCents) {
+i64 percentDiscount(Money subtotal, at i64 rateBp, from i64 minimumCents) {
     return 0 if subtotal.cents < minimumCents
     let off = subtotal.atRate(rateBp) catch { return 0 }
     return off.cents
 }
 
-i64 freeUnitsDiscount(ReadOnlySpan<PriceLine> lines, string key, i32 buy, i32 free) {
+/// Buy `buy` units, get `free` more free.
+struct Deal {
+    i32 buy
+    i32 free
+}
+
+i64 freeUnitsDiscount(ReadOnlySpan<PriceLine> lines, for string key, by Deal deal) {
     for line in lines {
-        return line.unitPrice.cents * (line.qty / (buy + free) * free) if line.key == key
+        return line.unitPrice.cents * (line.qty / (deal.buy + deal.free) * deal.free) if line.key == key
     }
     return 0
 }
 
-i64 shippingFee(i64 grams, in Policy policy) fails QuoteError {
+i64 shippingFee(i64 grams, by in Policy policy) fails QuoteError {
     for band in policy.bands {
         return band.feeCents if grams <= band.upToGrams
     }
-    return .overweight
+    fail .overweight
 }
 
-string describe(string name, ReadOnlySpan<PriceLine> lines, in Policy policy) {
-    let q = quote(lines, policy) catch switch {
+string describe(ReadOnlySpan<PriceLine> lines, as string name, by in Policy policy) {
+    let q = quote(lines, by: policy) catch switch {
         QuoteError => return $"{name}: overweight",
         PricingError => return $"{name}: pricing error",
     }
@@ -203,8 +208,8 @@ let mixed: List<PriceLine> = [
     PriceLine { key: "MUG-0001", qty: 2, unitPrice: myr(2500), unitGrams: 400 },
 ]
 
-print(describe("tea", tea.asSpan(), standard))
-print(describe("rug", rug.asSpan(), standard))
-print(describe("bed", bed.asSpan(), standard))
-print(describe("lamps", lamps.asSpan(), standard))
-print(describe("mixed", mixed.asSpan(), standard))
+print(describe(tea.asSpan(), as: "tea", by: standard))
+print(describe(rug.asSpan(), as: "rug", by: standard))
+print(describe(bed.asSpan(), as: "bed", by: standard))
+print(describe(lamps.asSpan(), as: "lamps", by: standard))
+print(describe(mixed.asSpan(), as: "mixed", by: standard))

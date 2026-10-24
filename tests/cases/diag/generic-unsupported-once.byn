@@ -1,5 +1,5 @@
 struct P { i64 v }
-i64 peek<T>(T x, P? p) => p?.v ?? 0
+i64 peek<T>(T x, from P? p) => p?.v ?? 0
 void main() {
-    print($"{peek(1, null)}")
+    print($"{peek(1, from: null)}")
 }

@@ -483,6 +483,8 @@ internal sealed partial class Binder
                 return BindIncDec(i);
             case ReturnStmt r:
                 return BindReturn(r);
+            case FailStmt f:
+                return BindFail(f);
             case BreakStmt b:
                 return BindBreak(b);
             case ContinueStmt c:
@@ -569,12 +571,56 @@ internal sealed partial class Binder
 
     private BoundStmt BindAssert(AssertStmt a)
     {
+        if (a.Fails is not null) return BindAssertFails(a, a.Fails);
         var condition = BindExpr(a.Condition, PrimitiveType.Bool);
         if (condition.Type.IsError || Conversions.Implicit(condition.Type, PrimitiveType.Bool) is not null)
             return new BoundAssert(a, Convert(condition, PrimitiveType.Bool, a.Condition.Span));
         Report(DiagnosticCodes.AssertNotBool, a.Condition.Span, [condition.Type.DisplayName], label: "this is not a `bool`",
             help: "check the value against what you expect, e.g. `assert count == 3`");
         return new BoundErrorStmt(a);
+    }
+
+    /// <summary><c>assert f() fails E.x</c> or <c>assert f() fails E</c>: the call is handled here, not wrapped in <c>try</c>.</summary>
+    private BoundStmt BindAssertFails(AssertStmt a, Expr fails)
+    {
+        BoundExpr operand;
+        if (StripParens(a.Condition) is CallExpr call)
+        {
+            var saved = _handled;
+            _handled = call;
+            operand = BindExpr(call);
+            _handled = saved;
+        }
+        else
+        {
+            operand = BindExpr(a.Condition);
+        }
+        if (operand is not BoundCall { Function.Fails: true } bc)
+        {
+            if (!operand.Type.IsError) Report(DiagnosticCodes.NothingToHandle, a.Condition.Span, ["assert … fails"]);
+            return new BoundErrorStmt(a);
+        }
+        var sets = _c.ErrorSetsOf(bc.Function);
+        var errorType = ErrorUnionType.Of(sets);
+        var (setSyntax, caseName) = fails is MemberExpr m ? (m.Target, m.Member) : (fails, null);
+        if (BindExprOrType(setSyntax) is not BoundTypeRef { Referenced: ErrorSetSymbol set })
+        {
+            Report(DiagnosticCodes.PatternMismatch, setSyntax.Span, [$"`{Source.GetText(setSyntax.Span)}`", errorType.DisplayName]);
+            return new BoundErrorStmt(a);
+        }
+        var variant = caseName is null ? null : set.Find(caseName.Text);
+        if (caseName is not null && variant is null)
+        {
+            Report(DiagnosticCodes.PatternMismatch, fails.Span, [$"`{Source.GetText(fails.Span)}`", set.Name],
+                help: Suggest(caseName.Text, set.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
+            return new BoundErrorStmt(a);
+        }
+        if (sets.Count > 0 && !sets.Contains(set))
+        {
+            Report(DiagnosticCodes.PatternMismatch, setSyntax.Span, [$"`{set.Name}`", errorType.DisplayName]);
+            return new BoundErrorStmt(a);
+        }
+        return new BoundAssert(a, operand) { FailsWith = set, FailsCase = variant };
     }
 
     // ── Null narrowing (spec §7.2) ───────────────────────────────────────────────
@@ -976,7 +1022,16 @@ internal sealed partial class Binder
             return new BoundReturn(r, null);
         }
         if (fn.Fails && TryBindFailure(r.Value) is { } failure)
+        {
+            // `return` always returns a value; an error leaves with `fail` (BYN1056).
+            if (failure is BoundErrorVariant fv)
+            {
+                var keyword = new TextSpan(r.Span.Start, "return".Length);
+                Report(DiagnosticCodes.ReturnErrorInput, keyword, [fv.Variant.Name], label: "this leaves with an error",
+                    help: $"leave with the error: `fail .{fv.Variant.Name}`", fix: new Fix(keyword, "fail"));
+            }
             return new BoundFail(r, failure);
+        }
         if (returnType.IsVoid)
         {
             var v = BindExpr(r.Value);
@@ -995,7 +1050,7 @@ internal sealed partial class Binder
         var fn = _fn!;
         switch (value)
         {
-            case TargetMemberExpr t when fn.ReturnType is not ErrorSetSymbol:
+            case TargetMemberExpr t when fn.ReturnType is not ErrorSetSymbol && !HasCase(fn.ReturnType, t.Member.Text):
             {
                 var matches = fn.ErrorSets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null).ToList();
                 if (matches.Count == 1)
@@ -1011,7 +1066,7 @@ internal sealed partial class Binder
                 if (fn.InfersErrors && fn.ErrorSets.Count == 0 && fn.ReturnType is PrimitiveType { Kind: PrimitiveKind.Void })
                 {
                     Report(DiagnosticCodes.UnknownVariant, t.Span, [t.Member.Text, "the inferred error set"],
-                        help: "name the set: `return MyError.x`");
+                        help: "name the set: `fail MyError.x`");
                     return new BoundErrorExpr(t);
                 }
                 return null;
@@ -1030,6 +1085,68 @@ internal sealed partial class Binder
             default:
                 return null;
         }
+    }
+
+    /// <summary>Whether <c>.name</c> is a value of <paramref name="type"/>, so <c>return .name</c> returns it.</summary>
+    private static bool HasCase(TypeSymbol type, string name) => (type is OptionalType o ? o.Inner : type) switch
+    {
+        EnumSymbol e => e.Find(name) is not null,
+        UnionSymbol u => u.Find(name) is not null,
+        _ => false,
+    };
+
+    /// <summary><c>fail .x</c>, <c>fail Set.x</c> or <c>fail e</c>: leaves the function with the error.</summary>
+    private BoundStmt BindFail(FailStmt f)
+    {
+        if (InPanicHandler(f.Span, "fail")) return new BoundErrorStmt(f);
+        if (_deferDepth > 0)
+        {
+            Report(DiagnosticCodes.JumpOutOfDefer, f.Span, ["fail"]);
+            return new BoundErrorStmt(f);
+        }
+        var fn = _fn;
+        if (fn is null) return new BoundErrorStmt(f);
+        var entry = fn.Kind is FunctionKind.Main or FunctionKind.Test;
+        if (!fn.Fails && !entry)
+        {
+            var named = f.Error is TargetMemberExpr target ? "." + target.Member.Text : BindExprOrType(f.Error).Type.DisplayName;
+            Report(DiagnosticCodes.PropagateFromInfallible, f.Error.Span, [fn.Name, named],
+                help: "declare the error in a `fails` clause, or handle it here");
+            return new BoundErrorStmt(f);
+        }
+        if (f.Error is TargetMemberExpr t)
+        {
+            var matches = fn.ErrorSets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null).ToList();
+            if (matches.Count == 1)
+            {
+                if (!entry) CheckNotExcluded(matches[0]!, t.Span);
+                return new BoundFail(f, new BoundErrorVariant(t, matches[0]!));
+            }
+            if (matches.Count > 1)
+                Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);
+            else if (fn.ErrorSets.Count == 0)
+                Report(DiagnosticCodes.UnknownVariant, t.Span, [t.Member.Text, "the inferred error set"], help: "name the set: `fail MyError.x`");
+            else
+                Report(DiagnosticCodes.UndeclaredError, t.Span, ["." + t.Member.Text, fn.Name],
+                    help: $"name a case of `{ErrorUnionType.Of(fn.ErrorSets).DisplayName}`");
+            return new BoundErrorStmt(f);
+        }
+        var error = BindExprOrType(f.Error);
+        var sets = error.Type switch
+        {
+            ErrorSetSymbol set => [set],
+            ErrorUnionType u => u.Sets.ToList(),
+            _ => (List<ErrorSetSymbol>?)null,
+        };
+        if (sets is null)
+        {
+            if (!error.Type.IsError)
+                Report(DiagnosticCodes.TypeMismatch, f.Error.Span, [error.Type.DisplayName, "an error"]);
+            return new BoundErrorStmt(f);
+        }
+        if (!entry) foreach (var set in sets) CheckCanFailWith(set, f.Error.Span);
+        if (!entry && error is BoundErrorVariant ev) CheckNotExcluded(ev.Variant, f.Error.Span);
+        return new BoundFail(f, error);
     }
 
     private void CheckCanFailWith(ErrorSetSymbol set, TextSpan span)

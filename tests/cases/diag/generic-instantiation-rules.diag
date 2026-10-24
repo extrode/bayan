@@ -7,8 +7,8 @@ error BYN2760: `f64` cannot be a `Map` key
 
 error BYN2208: `==` cannot be applied to `List<i64>` and `List<i64>`
 
-  17 │ print($"{same(a: xs, b: xs)}")
-     │          ^^^^^^^^^^^^^^^^^^ the generic code needs this of its type arguments
+  17 │ print($"{same(xs, as: xs)}")
+     │          ^^^^^^^^^^^^^^^^ the generic code needs this of its type arguments
 
 error BYN2225: `Arena` cannot be formatted
 

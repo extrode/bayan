@@ -62,6 +62,8 @@ internal sealed partial class Binder
     {
         if (constrains) Constrain(value, target);
         if (value.Type.Equals(target) || target.IsError || value.Type.IsError) return value;
+        // An `Untrusted<bool>` is a clean fact, usable as a condition (J41): a `bool` cannot reach a sink.
+        if (value.Type is UntrustedType { Inner.IsBool: true } && target.IsBool) return Fact(value);
         if (value.Constant is { Value: Int128 n } && (target.IsInteger || target.IsFloat || target is OptionalType { Inner.IsNumeric: true }) && value.Type.IsInteger)
         {
             var inner = target is OptionalType o ? o.Inner : target;
@@ -189,11 +191,10 @@ internal sealed partial class Binder
         if (Conversions.Explicit(value.Type, target) is ConversionKind.NumericCast or ConversionKind.CharToInteger or ConversionKind.IntegerToChar)
         {
             var text = Source.GetText(span);
-            var wrapped = value.Syntax is NameExpr or LiteralExpr or MemberExpr or CallExpr or ParenExpr or IndexExpr ? text : "(" + text + ")";
             help = value.Type.IsNumeric && target.IsNumeric
-                ? $"cast it if the value always fits; `{value.Type.DisplayName}` does not convert to `{target.DisplayName}` without loss"
-                : "cast it explicitly";
-            fix = new Fix(span, $"({target.DisplayName}){wrapped}");
+                ? $"convert it if the value always fits; `{value.Type.DisplayName}` does not convert to `{target.DisplayName}` without loss"
+                : "convert it explicitly";
+            fix = new Fix(span, $"{target.DisplayName}({text})");
         }
         else if (value.Type is OptionalType o && o.Inner.Equals(target))
         {
@@ -700,6 +701,8 @@ internal sealed partial class Binder
                 }
                 break;
             }
+            case UnionSymbol when target is BoundLocal l && _narrowed.TryGetValue(l.Local, out var narrowed) && narrowed.Fields.FindIndex(f => f.Name == name) is var index and >= 0:
+                return new BoundUnionField(syntax, target, narrowed, index);
             case UnionSymbol u when u.Variants.Any(v => v.Fields.Any(f => f.Name == name)):
                 Report(DiagnosticCodes.PayloadNeedsPattern, member.Span, [u.Name, name],
                     help: "match the variant and bind the field, as in `case .Variant(let x):`");
@@ -751,6 +754,9 @@ internal sealed partial class Binder
         }
         if (BuiltinMembers.Property(target.Type, name) is { } builtin)
             return new BoundBuiltinCall(syntax, builtin.Member, target, [], builtin.Type);
+        // `length` and `isEmpty` of an untrusted value are clean facts (spec §15.1).
+        if (target.Type is UntrustedType untrusted && name is "length" or "isEmpty" && BuiltinMembers.Property(untrusted.Inner, name) is { } fact)
+            return new BoundBuiltinCall(syntax, fact.Member, Fact(target), [], fact.Type);
         if (BuiltinMembers.HasMethod(target.Type, name))
             return new BoundBuiltinGroup(syntax, target, name);
         if (ReportRenamed(target.Type, member)) return new BoundErrorExpr(syntax);
@@ -991,7 +997,7 @@ internal sealed partial class Binder
         if (!ok)
         {
             Report(DiagnosticCodes.BadUnaryOperand, u.Span, [UnaryText(u.Op), t.DisplayName],
-                help: u.Op == UnaryOp.Negate && t.IsUnsignedInteger ? "cast to a signed type first; unsigned values cannot be negative" : null);
+                help: u.Op == UnaryOp.Negate && t.IsUnsignedInteger ? "convert to a signed type first; unsigned values cannot be negative" : null);
             return new BoundErrorExpr(u);
         }
         var result = new BoundUnary(u, u.Op, operand, t);
@@ -1051,17 +1057,19 @@ internal sealed partial class Binder
         }
 
         var arithmetic = !IsComparison(b.Op);
+        // A comparison of an untrusted value is a clean fact (spec §15.1): it compares the inner values.
+        BoundExpr Operand(Expr e, TypeSymbol? hint) => arithmetic ? BindExpr(e, hint) : Fact(BindExpr(e, hint));
         BoundExpr left, right;
         if (IsUntypedLiteral(b.Left) && !IsUntypedLiteral(b.Right))
         {
-            right = BindExpr(b.Right, arithmetic ? expected : null);
+            right = Operand(b.Right, arithmetic ? expected : null);
             left = BindExpr(b.Left, right.Type is OptionalType o ? o.Inner : right.Type);
         }
         else
         {
-            left = BindExpr(b.Left, arithmetic ? expected : null);
+            left = Operand(b.Left, arithmetic ? expected : null);
             var hint = b.Op is BinaryOp.Shl or BinaryOp.Shr ? PrimitiveType.I32 : left.Type is OptionalType o ? o.Inner : left.Type;
-            right = BindExpr(b.Right, hint);
+            right = Operand(b.Right, hint);
         }
         // `x is null` is valid only on an optional `x`: for `null == null` or a non-optional operand BYN2208 reports alone.
         if (nullTested is not null && nullTested is not LiteralExpr { Kind: LiteralKind.Null } && (nullTested == b.Left ? left : right).Type is OptionalType)
@@ -1110,6 +1118,10 @@ internal sealed partial class Binder
         var bound = new BoundBinary(b, b.Op, left, right, type);
         return Fold(bound, left, right, common);
     }
+
+    /// <summary>The inner value of an <c>Untrusted&lt;T&gt;</c>, read for a fact; other values unchanged.</summary>
+    private static BoundExpr Fact(BoundExpr value) =>
+        value.Type is UntrustedType u ? new BoundConversion(value.Syntax, value, u.Inner, ConversionKind.Identity) : value;
 
     private bool IsPlainStringLiteral(Expr e) =>
         e is LiteralExpr { Kind: LiteralKind.String } && Source.GetText(e.Span) is var text
@@ -1285,14 +1297,16 @@ internal sealed partial class Binder
         return result;
     }
 
-    private BoundExpr BindCast(CastExpr c)
+    private BoundExpr BindCast(CastExpr c) => BindConversion(c, ResolveType(c.Type), c.Operand);
+
+    /// <summary><c>u8(x)</c> (or the input form <c>(u8)x</c>): a checked conversion that traps when the value does not fit.</summary>
+    private BoundExpr BindConversion(Expr c, TypeSymbol target, Expr operandSyntax)
     {
-        var target = ResolveType(c.Type);
-        var operand = BindExpr(c.Operand, target.IsNumeric ? null : target);
+        var operand = BindExpr(operandSyntax, target.IsNumeric ? null : target);
         if (target.IsError || operand.Type.IsError) return new BoundErrorExpr(c);
         if (operand.Constant is { Value: Int128 } && target.IsInteger && operand.Syntax is LiteralExpr or UnaryExpr)
         {
-            // `(u8)300` is a compile-time error rather than a runtime trap.
+            // `u8(300)` is a compile-time error rather than a runtime trap.
             return Convert(operand, target, c.Span);
         }
         var kind = Conversions.Explicit(operand.Type, target);

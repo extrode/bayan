@@ -1,7 +1,7 @@
 error BYN2321: `150` violates `requires percent in 0..=100` of `discount`
 
-  8 │ let bad = discount(total: 200, percent: 150)
-    │                                         ^^^ fails the contract
+  8 │ let bad = discount(200, by: 150)
+    │                             ^^^ fails the contract
     │
   help: pass a value that meets `requires percent in 0..=100`
 

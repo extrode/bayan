@@ -1,5 +1,5 @@
-never fail() {
+never halt() {
     print("x")
 }
 
-fail()
+halt()

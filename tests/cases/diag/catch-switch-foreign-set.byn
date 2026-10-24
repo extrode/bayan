@@ -9,7 +9,7 @@ union error DbError {
 }
 
 i64 parse(string s) fails ParseError {
-    return .empty if s.isEmpty
+    fail .empty if s.isEmpty
     return 1
 }
 

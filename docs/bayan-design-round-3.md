@@ -487,6 +487,7 @@ xs.remove(from: 2, until: 5)
 - A function has at most one unlabeled parameter (the object). Every other required parameter takes a particle, and call sites must write it. **The receiver does not count** as the object.
 - **Optional parameters** are named parameters with defaults. They may take a particle when one fits their role (`log(m, as: .debug)`, `FakeClock(at: …)`); otherwise they use their name (`timeout: 5s`).
 - **Exempt:** a `rest` tail (§24); constructors of a struct marked `@positional`, whose components are the same kind and universally ordered (`Point(3, 4)`, `Vec3(1.0, 0.0, 0.0)`, `Rgb(…)`; not `Date`, which keeps `Date(year:month:day:)`); `extern` declarations; operator declarations; union and state payloads (fields, not parameters); laws.
+- **`@positional` constructor (revision 0008).** `@positional` generates a constructor taking every field in declaration order, `Point(3, 4)` ≡ `Point { x: 3, y: 4 }`; only that constructor is exempt, and it is fallible like the literal when the struct has `requires`.
 - The particles are part of the function's name (`copy(from:to:)`). Particle words are not member names (§12).
 - The set is closed for user code and grows only through spec revisions (`until` and `through` were added by this round).
 - `bool` parameters are still passed by name.

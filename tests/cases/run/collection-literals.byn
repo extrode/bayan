@@ -1,4 +1,4 @@
-void show(string name, ReadOnlySpan<i32> xs) {
+void show(ReadOnlySpan<i32> xs, as string name) {
     var sb = StrBuf()
     for x in xs { sb.append($" {x}") }
     print($"{name}:{sb.finish()} ({xs.length})")
@@ -18,21 +18,21 @@ print($"{empty}")
 let headers = ["Accept": "*/*", "Host": "example.com"]
 print($"{headers} {headers["Host"]}")
 let fixed = [1, 2, 3]
-show("fixed", fixed.asSpan())
+show(fixed.asSpan(), as: "fixed")
 
 // Spreads into a list, a fixed array and a span.
 let xs: List<i32> = [1, 2]
 let more: i32[2] = [5, 6]
 let all: List<i32> = [..xs, ..more, 4]
-show("list", all)
+show(all, as: "list")
 let arr: i32[5] = [..more, 0, ..more]
-show("array", arr.asSpan())
+show(arr.asSpan(), as: "array")
 let view: Span<i32> = [..more, 9]
-show("span", view)
+show(view, as: "span")
 let grown = [..arr, 7]
-show("inferred", grown.asSpan())
+show(grown.asSpan(), as: "inferred")
 
 // A span literal lives on the stack.
 var s: Span<i32> = [1, 2, 3]
 s[0] = 10
-show("stack", s)
+show(s, as: "stack")

@@ -7,14 +7,14 @@ struct Rows {
     i64 failAt
 
     i64? next(ref this) fails ReadError {
-        if failAt > 0 && at == failAt { return .broken }
+        if failAt > 0 && at == failAt { fail .broken }
         if at >= limit { return null }
         at += 1
         return at
     }
 }
 
-i64 total(i64 limit, i64 failAt) fails ReadError {
+i64 total(through i64 limit, at i64 failAt) fails ReadError {
     var sum = 0
     for try row in (Rows { at: 0, limit: limit, failAt: failAt }) {
         print($"row {row}")
@@ -24,6 +24,6 @@ i64 total(i64 limit, i64 failAt) fails ReadError {
     return sum
 }
 
-print($"total {try total(limit: 4, failAt: 0)}")
-let failed = total(limit: 4, failAt: 3) catch -1
+print($"total {try total(through: 4, at: 0)}")
+let failed = total(through: 4, at: 3) catch -1
 print($"failed {failed}")

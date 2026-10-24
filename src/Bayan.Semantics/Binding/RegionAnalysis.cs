@@ -475,6 +475,7 @@ internal sealed class RegionAnalysis
             {
                 BoundBindPattern b => b.Local,
                 BoundPropertyPattern p => p.Designation,
+                BoundUnionPattern u => u.Designation,
                 _ => null,
             };
             if (local is null) continue;

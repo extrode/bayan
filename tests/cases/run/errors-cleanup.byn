@@ -7,7 +7,7 @@ void note(string s) {
     print(s)
 }
 
-i64 work(bool fail) fails StepError {
+i64 work(bool shouldFail) fails StepError {
     note("enter")
     defer note("defer 1")
     defer failing note("errdefer 1")
@@ -19,7 +19,7 @@ i64 work(bool fail) fails StepError {
         defer note("inner defer")
         note("inner body")
     }
-    return .told if fail
+    fail .told if shouldFail
     note("success path")
     return 42
 }
@@ -36,14 +36,14 @@ void loops() {
 i64 outer() fails StepError {
     defer note("outer defer")
     defer failing note("outer errdefer")
-    let v = try work(fail: true)
+    let v = try work(shouldFail: true)
     note("not reached")
     return v
 }
 
-print($"result {work(fail: false) catch -1}")
+print($"result {work(shouldFail: false) catch -1}")
 print("---")
-print($"result {work(fail: true) catch -1}")
+print($"result {work(shouldFail: true) catch -1}")
 print("---")
 loops()
 print("---")

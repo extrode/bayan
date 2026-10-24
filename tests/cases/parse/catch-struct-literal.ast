@@ -6,7 +6,7 @@ CompilationUnit
   Function mk(bool ok) -> P fails MkError
     Block
       Guarded if (! ok)
-        Return .bad
+        Fail .bad
       Return (struct _ (x 7))
   Let a: P = (catch (call mk (ok: false)) (struct _ (x 1)))
   Let b: P = (catch (call mk (ok: true)) (struct _ (x 1)))

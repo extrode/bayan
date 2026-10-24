@@ -19,16 +19,16 @@ error BYN2782: cannot move out of parameter `plain`
      │
   help: declare it `move plain` to take ownership; a plain parameter is borrowed from the caller
 
-error BYN2782: cannot move out of `ref` parameter `shared`
-
-  14 │     let d = move shared
-     │                  ^^^^^^
-     │
-  help: copy it with `.copy(to: alloc)`; the caller still owns it
-
 error BYN2782: cannot move out of a fresh value
 
-  15 │     let e = move make()
+  14 │     let e = move make()
      │                  ^^^^^^
      │
   help: remove the `move`; a fresh value needs none
+
+error BYN2782: cannot move out of `ref` parameter `shared`
+
+  20 │     let d = move shared
+     │                  ^^^^^^
+     │
+  help: copy it with `.copy(to: alloc)`; the caller still owns it

@@ -1,0 +1,11 @@
+// `T(x)` is a checked conversion; `T.tryFrom(x)` gives `null` when the value does not fit.
+let big: i64 = 300
+let small: i64 = 7
+let neg: i64 = -1
+print($"{u8(small)} {i32(big)} {f64(small)}")
+print($"{u8.tryFrom(big) ?? 0} {u8.tryFrom(small) ?? 0} {u8.tryFrom(neg) ?? 9}")
+let f: f64 = 255.5
+let g: f64 = 256.0
+print($"{u8.tryFrom(f) ?? 0} {u8.tryFrom(g) ?? 1} {i64.tryFrom(small) ?? 0}")
+let u: u64 = 18446744073709551615
+print($"{i64.tryFrom(u) ?? -1} {u64.tryFrom(neg) ?? 5}")

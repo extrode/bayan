@@ -25,7 +25,7 @@ i64 tenfold(i64? p) {
 }
 
 // `else` narrows on `is null`, and the right side of `&&` sees the left side's check.
-i64 add(i64? a, i64? b) {
+i64 add(i64? a, to i64? b) {
     if a is null || b is null {
         return a is not null && a > 3 ? 1 : 0
     } else {
@@ -34,7 +34,7 @@ i64 add(i64? a, i64? b) {
 }
 
 i64 lookup(i64 n) fails LookupError {
-    let v = find(n) ?? return .missing
+    let v = find(n) ?? fail .missing
     return v
 }
 
@@ -74,7 +74,7 @@ if b is not null {
     print("no box")
 }
 print($"{inc(4)} {inc(null)} {tenfold(3)} {tenfold(null)}")
-print($"{add(a: 1, b: 2)} {add(a: 5, b: null)} {add(a: null, b: 2)}")
+print($"{add(1, to: 2)} {add(5, to: null)} {add(null, to: 2)}")
 print($"{lookup(3) catch -1} {lookup(0) catch -2} {quiet(4)} {quiet(0)}")
 print($"{untilMissing()} {skipMissing()}")
 show(2)

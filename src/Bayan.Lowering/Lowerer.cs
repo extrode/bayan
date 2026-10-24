@@ -858,10 +858,17 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 var receiver = Expr(t.Receiver);
                 return IsNever(receiver) ? new LNever(e.Syntax, e.Type) : t with { Receiver = receiver };
             }
+            case BoundUnionField u:
+            {
+                var receiver = Expr(u.Receiver);
+                return IsNever(receiver) ? new LNever(e.Syntax, e.Type) : new LUnionField(e.Syntax, receiver, u.Variant, u.Index);
+            }
             case BoundCall c:
                 return Call(c);
             case BoundBuiltinCall b:
                 return BuiltinCall(b);
+            case BoundTryFrom t:
+                return TryFrom(t);
             case BoundUnary u:
             {
                 var operand = Expr(u.Operand);
@@ -1196,6 +1203,11 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     /// </summary>
     private void Assert(BoundAssert a)
     {
+        if (a.FailsWith is not null)
+        {
+            AssertFails(a, a.FailsWith);
+            return;
+        }
         var syntax = (AssertStmt)a.Syntax;
         var source = _fn.File!.Source;
         string Before(int offset) => source.GetText(TextSpan.FromBounds(syntax.Span.Start, offset));
@@ -1266,6 +1278,45 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         Emit(new BoundIf(a.Syntax, Not(condition), Block(a.Syntax, [panic]), null));
     }
 
+    /// <summary>
+    /// <c>assert f() fails E[.x]</c>: panics with the statement and a bar under the call, hung with what it returned or
+    /// failed with, when the call succeeds or fails with another error.
+    /// </summary>
+    private void AssertFails(BoundAssert a, ErrorSetSymbol set)
+    {
+        var syntax = (AssertStmt)a.Syntax;
+        var call = (BoundCall)a.Condition;
+        if (FailingCall(call) is not var (error, result)) return;
+        BoundExpr Is(ErrorVariantSymbol v) =>
+            new BoundBinary(a.Syntax, BinaryOp.Eq, Local(a.Syntax, error), new BoundErrorVariant(a.Syntax, v), PrimitiveType.Bool);
+        var expected = a.FailsCase is { } only ? Is(only) : set.Variants.Select(Is).Aggregate(Or);
+        var source = _fn.File!.Source;
+        var statement = PowerAssert.Flatten(source.GetText(syntax.Span));
+        var anchor = ((CallExpr)call.Syntax).Callee is MemberExpr m ? m.Member.Span.Start : call.Syntax.Span.Start;
+        var gap = new string(' ', PowerAssert.Column(source.GetText(TextSpan.FromBounds(syntax.Span.Start, anchor))));
+        var failed = Failed(a.Syntax, error);
+        var parts = new List<BoundInterpolationPart>
+        {
+            new(statement + "\n" + PowerAssert.Indent + gap + PowerAssert.Bar + "\n" + PowerAssert.Indent + gap, null),
+            new("returned", null),
+        };
+        var guards = new List<BoundExpr?> { null, Not(failed) };
+        foreach (var v in call.Function.ErrorSets.SelectMany(e => e.Variants))
+        {
+            parts.Add(new($"failed with {v.Set.Name}.{v.Name}", null));
+            guards.Add(Is(v));
+        }
+        if (Printable(call.Type))
+        {
+            parts.Add(new(" ", null));
+            parts.Add(new(null, result));
+            guards.Add(Not(failed));
+            guards.Add(Not(failed));
+        }
+        var panic = new LWrite(a.Syntax, WriteSink.Panic, null, parts.ToArray(), guards.ToArray());
+        Emit(new BoundIf(a.Syntax, Not(expected), Block(a.Syntax, [panic]), null));
+    }
+
     /// <summary>The sub-expressions of an <c>assert</c> condition shown on failure, outermost first, each with whether it may not run.</summary>
     private static IEnumerable<(BoundExpr Expr, bool MayNotRun)> Shown(BoundExpr e, bool mayNotRun)
     {
@@ -1276,7 +1327,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             BoundConditional c => [(c.Condition, mayNotRun), (c.WhenTrue, true), (c.WhenFalse, true)],
             BoundCoalesce c => [(c.Left, mayNotRun), (c.Right, true)],
             BoundIs i => [(i.Value, mayNotRun)],
-            BoundBinary or BoundUnary or BoundField or BoundTupleElement or BoundCall or BoundBuiltinCall or BoundConversion or BoundIndex
+            BoundBinary or BoundUnary or BoundField or BoundTupleElement or BoundUnionField or BoundCall or BoundBuiltinCall or BoundConversion or BoundIndex
                 => BoundTree.Children(e).Select(c => (c, mayNotRun)),
             _ => [],
         };
@@ -1436,6 +1487,40 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         return result is null ? new LNever(s.Syntax, s.Type) : Local(s.Syntax, result);
     }
 
+    /// <summary><c>u8.tryFrom(x)</c>: <c>x</c> in range ? <c>u8(x)</c> : <c>null</c>; a float out of range or NaN gives <c>null</c>.</summary>
+    private BoundExpr TryFrom(BoundTryFrom t)
+    {
+        var value = Expr(t.Operand);
+        if (IsNever(value)) return value;
+        if (!IsRepeatable(value)) value = Spill(value);
+        var from = (PrimitiveType)value.Type;
+        var syntax = t.Syntax;
+        BoundExpr? fits = null;
+        void Check(BinaryOp op, BoundExpr bound)
+        {
+            var test = new BoundBinary(syntax, op, value, bound, PrimitiveType.Bool);
+            fits = fits is null ? test : And(fits, test);
+        }
+        if (t.Target.IsInteger && from.IsFloat)
+        {
+            var (min, max) = t.Target.Range;
+            Check(BinaryOp.Gt, new BoundLiteral(syntax, from, new ConstantValue((double)min - 1)));
+            Check(BinaryOp.Lt, new BoundLiteral(syntax, from, new ConstantValue((double)max + 1)));
+        }
+        else if (t.Target.IsInteger)
+        {
+            var (min, max) = t.Target.Range;
+            var (fromMin, fromMax) = from.Range;
+            if (min > fromMin) Check(BinaryOp.Ge, new BoundLiteral(syntax, from, new ConstantValue(min)));
+            if (max < fromMax) Check(BinaryOp.Le, new BoundLiteral(syntax, from, new ConstantValue(max)));
+        }
+        var kind = from.Equals(t.Target) ? (ConversionKind?)null : ConversionKind.NumericCast;
+        var converted = kind is null ? value : new BoundConversion(syntax, value, t.Target, kind.Value);
+        var some = new BoundConversion(syntax, converted, t.Type, ConversionKind.ToOptional);
+        if (fits is null) return some;
+        return Expr(new BoundConditional(syntax, fits, some, new BoundDefault(syntax, t.Type), t.Type));
+    }
+
     // ── Failure ──────────────────────────────────────────────────────────────────
 
     /// <summary>Emits the failing call; returns its error local and its result (or <see cref="LVoid"/>).</summary>
@@ -1570,6 +1655,11 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 tests.Add(Equal(syntax, new LUnionTag(syntax, subject), new BoundLiteral(syntax, PrimitiveType.I32, tag) { Constant = tag }));
                 for (var i = 0; i < up.Subpatterns.Length; i++)
                     tests.Add(Match(up.Subpatterns[i], new LUnionField(syntax, subject, up.Variant, i)));
+                if (up.Designation is { } d)
+                {
+                    Note(d);
+                    tests.Add(new LSequence(syntax, [new LAssignExpr(syntax, Local(syntax, d), subject)], Bool(syntax, true)));
+                }
                 return tests.Aggregate(And);
             }
             default:
@@ -1598,6 +1688,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 break;
             case BoundUnionPattern up:
                 foreach (var sub in up.Subpatterns) Claim(sub);
+                if (up.Designation is { BorrowsSubject: false } ud) Emit(new LClaim(p.Syntax, ud));
                 break;
         }
     }

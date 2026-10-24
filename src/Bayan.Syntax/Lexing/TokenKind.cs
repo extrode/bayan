@@ -168,6 +168,7 @@ public enum TokenKind : ushort
     ExceptKeyword,
     ProvideKeyword,
     BecomeKeyword,
+    FailKeyword,
     // Declaration-only, no meaning yet; contextual like the other declaration keywords.
     LawKeyword,
     // Effect aliases (§14), contextual.

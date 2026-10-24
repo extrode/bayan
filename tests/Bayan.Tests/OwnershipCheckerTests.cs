@@ -187,11 +187,11 @@ public sealed class OwnershipCheckerTests
     }
 
     private const string MoveThenReadInCall = """
-        i64 f(move List<i64> x, i64 n) => n + x.length
+        i64 f(move List<i64> x, by i64 n) => n + x.length
         void main() {
             var a = List<i64>()
             a.append(1)
-            print($"{f(move a, a.length)}")
+            print($"{f(move a, by: a.length)}")
         }
 
         """;
@@ -211,12 +211,12 @@ public sealed class OwnershipCheckerTests
         """;
 
     private const string MoveThenReadInNestedCall = """
-        i64 f(move List<i64> x, i64 n) => n + x.length
+        i64 f(move List<i64> x, by i64 n) => n + x.length
         i64 g(List<i64> x) => x.length
         void main() {
             var a = List<i64>()
             a.append(1)
-            print($"{f(move a, g(a))}")
+            print($"{f(move a, by: g(a))}")
         }
 
         """;
@@ -225,11 +225,11 @@ public sealed class OwnershipCheckerTests
         struct P {
             List<i64> xs
         }
-        i64 f(P p, i64 n) => n + p.xs.length
+        i64 f(P p, by i64 n) => n + p.xs.length
         void main() {
             var a = List<i64>()
             a.append(1)
-            print($"{f(P { xs: move a }, a.length)}")
+            print($"{f(P { xs: move a }, by: a.length)}")
         }
 
         """;
@@ -251,10 +251,10 @@ public sealed class OwnershipCheckerTests
                 return this.items.length
             }
         }
-        Bag keep(i64 n, move Bag b) => b
+        Bag keep(i64 n, from move Bag b) => b
         void main() {
             var b = Bag { items: List<i64>() }
-            let d = keep(b.grow(), move b)
+            let d = keep(b.grow(), from: move b)
             print($"{d.items.length}")
         }
 

@@ -8,13 +8,18 @@ union error Unknown = CarrierError except .lost
 union error Nothing = CarrierError except .timeout, .rejected
 
 i64 quote(i64 n) fails CarrierError {
-    if n < 0 { return .rejected }
+    if n < 0 { fail .rejected }
     return n
 }
 
 i64 retry(i64 n) fails Retryable {
-    if n == 0 { return .rejected }
+    if n == 0 { fail .rejected }
     return try quote(n)
 }
 
 i64 recover(i64 n) => retry(n) catch (CarrierError.rejected) 0
+
+i64 retryNamed(i64 n) fails Retryable {
+    if n == 0 { fail CarrierError.rejected }
+    return n
+}

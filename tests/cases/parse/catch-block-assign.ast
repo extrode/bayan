@@ -4,12 +4,12 @@ CompilationUnit
   Function mk(bool ok) -> i32 fails MkError
     Block
       Guarded if (! ok)
-        Return .bad
+        Fail .bad
       Return 7
   Function touch(bool ok) -> void fails MkError
     Block
       Guarded if (! ok)
-        Return .bad
+        Fail .bad
   Function get(bool ok) -> i32
     Block
       Var failed = false

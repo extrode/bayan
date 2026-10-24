@@ -27,17 +27,17 @@ struct Bag {
     }
 }
 
-Span<i64> first(Span<i64> s, i64 n) => s
+Span<i64> first(Span<i64> s, at i64 n) => s
 
-dyn ref IThing pick(dyn ref IThing d, i64 n) => d
+dyn ref IThing pick(dyn ref IThing d, at i64 n) => d
 
 void main() {
     var w = W { items: List<i64>() }
     w.items.append(42)
-    let sp: Span<i64> = first(w.items.asSpan(), w.grow())
+    let sp: Span<i64> = first(w.items.asSpan(), at: w.grow())
     print($"{sp[0]}")
     var b = Bag { items: List<C>() }
     b.items.append(C { n: 1 })
-    let d: dyn ref IThing = pick(b.items[0], b.grow())
+    let d: dyn ref IThing = pick(b.items[0], at: b.grow())
     print($"{d.get()}")
 }

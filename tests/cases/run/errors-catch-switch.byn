@@ -17,11 +17,11 @@ union error DbError {
 union error SignupError = EmailError, DbError
 
 i64 signUp(i64 n) fails SignupError {
-    return .invalid if n == 1
-    return .taken if n == 2
-    return .timeout if n == 3
-    return .lost if n == 4
-    return .missing if n == 5
+    fail .invalid if n == 1
+    fail .taken if n == 2
+    fail .timeout if n == 3
+    fail .lost if n == 4
+    fail .missing if n == 5
     return n * 100
 }
 

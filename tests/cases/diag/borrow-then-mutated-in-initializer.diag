@@ -1,13 +1,13 @@
 error BYN3004: `w` is modified while `sp` still borrows it
 
-  37 │     let sp: Span<i64> = first(w.items.asSpan(), w.grow())
-     │                                                 ^^^^^^^^ `sp` is used again on line 38
+  37 │     let sp: Span<i64> = first(w.items.asSpan(), at: w.grow())
+     │                                                     ^^^^^^^^ `sp` is used again on line 38
      │
   help: finish using `sp` first, or copy what it needs before changing `w`
 
 error BYN3004: `b` is modified while `d` still borrows it
 
-  41 │     let d: dyn ref IThing = pick(b.items[0], b.grow())
-     │                                              ^^^^^^^^ `d` is used again on line 42
+  41 │     let d: dyn ref IThing = pick(b.items[0], at: b.grow())
+     │                                                  ^^^^^^^^ `d` is used again on line 42
      │
   help: finish using `d` first, or copy what it needs before changing `b`

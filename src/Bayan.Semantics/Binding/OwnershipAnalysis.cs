@@ -231,6 +231,7 @@ internal sealed class OwnershipAnalysis
         foreach (var node in BoundTree.Descendants(pattern))
             if (node is BoundBindPattern { Local: { } b }) state.Moved.Remove(b);
             else if (node is BoundPropertyPattern { Designation: { } d }) state.Moved.Remove(d);
+            else if (node is BoundUnionPattern { Designation: { } u }) state.Moved.Remove(u);
         return state;
     }
 

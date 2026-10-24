@@ -1,6 +1,6 @@
 T echo<T>(move T x) => move x
 
-T pick<T>(bool first, move T a, move T b) => first ? move a : move b
+T pick<T>(move T a, by move T b, bool first) => first ? move a : move b
 
 i64 sum(ReadOnlySpan<i64> xs) {
     var total = 0
@@ -26,7 +26,7 @@ print($"{low(small)}")
 var picked = 1
 print($"{echo(picked)}")
 picked = picked * 2
-print($"{pick<i64>(first: true, a: picked, b: 2) + 5000000000}")
+print($"{pick<i64>(picked, by: 2, first: true) + 5000000000}")
 
 var k = 2147483647
 k = k +% 1

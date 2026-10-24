@@ -14,6 +14,9 @@ Small, clear, and could be picked up without a design decision.
 - CI: install zig (or set `BAYAN_CC`) on all three runners so `run/` goldens execute there.
 - `#line`: function signatures and prologues map to `main.c`, so a debugger breakpoint on a function names generated code until its first statement; mapping the signature to the declaration line would fix it.
 - `CliToolchainTests.GeneratedCTheCCompilerRejectsIsAnInternalCompilerError` uses a `/bin/sh` fake compiler and returns early on Windows.
+- `Lexer.cs:571` help still says "wrap it with a cast to the unit type"; casts are BYN1057 since 5.3f, so it should say `T(x)`.
+- Float-to-int conversion saturates in `bayan-rt.h` (`byn_f2i`) instead of trapping as SPEC §6.2 says.
+- `i64.tryFrom` of exactly -2^63 as a float gives `null`; the float range check is `(min-1, max+1)` in `f64`, which rounds at that edge.
 
 ## Later
 
@@ -213,3 +216,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-55: `docs/bayan-terminal-style.md` §4 has no `bayan audit` section, though `StyleTests` renders an `audit` shape (`tests/cases/style/audit.*`).
 - r3-55: `bayan audit` names a call bypass by its member only (`trustUnchecked()`), since there is no trim-safe syntax walker in `Bayan.Syntax`; a walker would let it show the full callee (Question 240).
 - r3-55: `bayan audit` lists no C sources per dependency (SPEC §19.3); add them when dependencies land.
+- plan-strings-check skips BYN3216: its plan entry has a quoted `{2}` gloss between the message and `(label`, which the form regex rejects; reword the entry (revision erratum) or widen the regex (found 2026-10-24, r3-53b).

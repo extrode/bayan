@@ -7,14 +7,14 @@ union error CarrierError {
 union error Retryable = CarrierError except .rejected
 
 i64 quote(i64 n) fails CarrierError {
-    if n < 0 { return .rejected }
-    if n == 0 { return .timeout }
+    if n < 0 { fail .rejected }
+    if n == 0 { fail .timeout }
     return n * 2
 }
 
 i64 retry(i64 n) fails Retryable {
     let q = quote(n) catch (CarrierError.rejected) 1
-    if q > 100 { return .offline }
+    if q > 100 { fail .offline }
     return q
 }
 

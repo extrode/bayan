@@ -1,12 +1,12 @@
 union error MkError { bad }
 
 i32 mk(bool ok) fails MkError {
-    return .bad if !ok
+    fail .bad if !ok
     return 7
 }
 
 void touch(bool ok) fails MkError {
-    return .bad if !ok
+    fail .bad if !ok
 }
 
 i32 get(bool ok) {

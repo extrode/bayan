@@ -41,7 +41,7 @@ public sealed class ParserTests
     [InlineData("x = a | b ^ c & d", "(| a (^ b (& c d)))")]
     [InlineData("x = -a * b", "(* (- a) b)")]
     [InlineData("x = c ? a : b ? d : e", "(? c a (? b d e))")]
-    [InlineData("x = (i64)a + b", "(+ (cast i64 a) b)")]
+    [InlineData("x = i64(a) + b", "(+ (call i64 a) b)")]
     [InlineData("x = (a) + b", "(+ (paren a) b)")]
     [InlineData("x = xs[^1]", "(index xs (^ 1))")]
     [InlineData("x = xs[1..^1]", "(index xs (.. 1 (^ 1)))")]

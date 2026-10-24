@@ -315,7 +315,7 @@ public sealed class CliTests
             }
 
             void main() fails E {
-                return .wrong
+                fail .wrong
             }
 
             """);
@@ -421,8 +421,8 @@ public sealed class CliTests
                 wrong,
             }
 
-            void fail() fails E {
-                return .wrong
+            void breaks() fails E {
+                fail .wrong
             }
 
             test "passes" {
@@ -435,7 +435,7 @@ public sealed class CliTests
             }
 
             test "fails" {
-                try fail()
+                try breaks()
             }
 
             test "panics" {
