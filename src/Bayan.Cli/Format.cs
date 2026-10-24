@@ -35,6 +35,9 @@ internal static class Format
 
     internal static int MaxPasses = 10;
 
+    /// <summary>Test-only: replaces each pass's rewrite, to force one that does not parse.</summary>
+    internal static Func<byte[], byte[]>? RewriteHook;
+
     public static int Run(string[] args, TextWriter stdout, TextWriter stderr)
     {
         var check = args.Contains("--check");
@@ -45,8 +48,9 @@ internal static class Format
             return CliApp.ExitUsage;
         }
         var path = args[0];
+        var exit = CliApp.ExitOk;
         string[] files;
-        if (Directory.Exists(path)) files = Directory.GetFiles(path, "*.byn", SearchOption.AllDirectories);
+        if (Directory.Exists(path)) files = BynFiles(path, stderr, ref exit);
         else if (File.Exists(path)) files = [path];
         else
         {
@@ -54,14 +58,15 @@ internal static class Format
             return CliApp.ExitUsage;
         }
         Array.Sort(files, StringComparer.Ordinal);
-        var exit = CliApp.ExitOk;
-        var manifests = new Dictionary<string, Manifest?>(StringComparer.Ordinal);
+        var manifests = new Dictionary<string, (Manifest Manifest, string Dir)?>(StringComparer.Ordinal);
+        var packageNames = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         foreach (var file in files)
         {
             try
             {
                 if (Path.GetFileName(file) == "package.byn") continue;
-                var manifest = ManifestFor(file, manifests);
+                var package = ManifestFor(file, manifests);
+                var manifest = package?.Manifest;
                 if (manifest is { HasErrors: true })
                 {
                     stderr.Write(DiagnosticRenderer.RenderAll(manifest.Diagnostics, includePath: true));
@@ -70,8 +75,13 @@ internal static class Format
                 }
                 var booleans = manifest?.Booleans ?? BooleanStyle.Symbols;
                 var primitives = manifest?.Primitives ?? PrimitiveStyle.Sized;
-                var original = File.ReadAllBytes(file);
-                var formatted = FormatFile(file, original, booleans, primitives, stderr, out var unfixable);
+                var declared = package is { Dir: var root }
+                    ? packageNames.TryGetValue(root, out var known) ? known : packageNames[root] = PackageNames(root)
+                    : [];
+                // Read and write the file the kernel opens, not the one a lexical `..` collapse names.
+                var real = RealPath(file);
+                var original = File.ReadAllBytes(real);
+                var formatted = FormatFile(file, original, booleans, primitives, declared, stderr, out var unfixable);
                 if (formatted is null) exit = CliApp.ExitFailure;
                 else
                 {
@@ -85,7 +95,7 @@ internal static class Format
                         }
                         else
                         {
-                            WriteReplacing(file, formatted);
+                            WriteReplacing(real, formatted);
                             stdout.WriteLine(Messages.FormatFormatted.Text(file));
                         }
                     }
@@ -100,12 +110,116 @@ internal static class Format
         return exit;
     }
 
-    /// <summary>The <c>package.byn</c> in the file's directory or the nearest one above it; null when there is none.</summary>
-    private static Manifest? ManifestFor(string file, Dictionary<string, Manifest?> cache)
+    /// <summary>
+    /// Every <c>.byn</c> file under <paramref name="dir"/>. A directory or entry that cannot be read is reported, sets
+    /// <paramref name="exit"/> to the failure code, and is skipped. With <paramref name="within"/>, a file or directory
+    /// whose resolved path lies outside that resolved path is neither listed nor entered.
+    /// </summary>
+    internal static string[] BynFiles(string dir, TextWriter stderr, ref int exit, string? within = null)
+    {
+        var prefix = within is null || Path.EndsInDirectorySeparator(within) ? within : within + Path.DirectorySeparatorChar;
+        bool Inside(string real) => prefix is null || real == within || real.StartsWith(prefix, StringComparison.Ordinal);
+        var files = new List<string>();
+        var seenFiles = new HashSet<string>(StringComparer.Ordinal);
+        var seenDirs = new HashSet<string>(StringComparer.Ordinal);
+        var failed = false;
+        void Report(string path, Exception e)
+        {
+            stderr.WriteLine(Messages.FormatIoError.Text(path, e.Message));
+            failed = true;
+        }
+        // Each directory travels as its path as written and its canonical path, which no symlink crosses.
+        var pending = new Stack<(string Path, string? Canonical)>([(dir, null)]);
+        while (pending.TryPop(out var at))
+        {
+            string canonical;
+            string[] dirFiles, subs;
+            try
+            {
+                canonical = at.Canonical ?? RealPath(at.Path);
+                if (!seenDirs.Add(canonical)) continue;
+                dirFiles = Directory.GetFiles(canonical, "*.byn");
+                subs = Directory.GetDirectories(canonical);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Report(at.Path, e);
+                continue;
+            }
+            foreach (var name in dirFiles.Select(Path.GetFileName))
+            {
+                var file = Path.Combine(at.Path, name!);
+                try
+                {
+                    var real = RealPath(Path.Combine(canonical, name!));
+                    if (Inside(real) && seenFiles.Add(real)) files.Add(file);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Report(file, e); }
+            }
+            foreach (var name in subs.Select(Path.GetFileName))
+            {
+                var sub = Path.Combine(at.Path, name!);
+                try
+                {
+                    var real = RealPath(Path.Combine(canonical, name!));
+                    if (Inside(real)) pending.Push((sub, real));
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Report(sub, e); }
+            }
+        }
+        if (failed) exit = CliApp.ExitFailure;
+        return [.. files];
+    }
+
+    /// <summary>The most symlinks <see cref="RealPath"/> follows, as the kernel's own limit: 32 on macOS, 40 elsewhere.</summary>
+    private static readonly int MaxLinks = OperatingSystem.IsMacOS() ? 32 : 40;
+
+    /// <summary>
+    /// The absolute path with every symlink in it resolved as the kernel does: component by component, each link's
+    /// own target joined to the resolved directory holding it, and <c>..</c> stepping back from the resolved prefix.
+    /// </summary>
+    internal static string RealPath(string path)
+    {
+        var full = Path.IsPathRooted(path) ? path : Path.Combine(Directory.GetCurrentDirectory(), path);
+        var current = Path.GetPathRoot(full)!;
+        var rest = new Stack<string>();
+        void PushParts(string text)
+        {
+            var parts = text.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+            for (var i = parts.Length - 1; i >= 0; i--) rest.Push(parts[i]);
+        }
+        PushParts(full[current.Length..]);
+        var links = 0;
+        while (rest.TryPop(out var part))
+        {
+            if (part == ".") continue;
+            if (part == "..")
+            {
+                current = Path.GetDirectoryName(current) ?? current;
+                continue;
+            }
+            var next = Path.Combine(current, part);
+            if (new FileInfo(next).LinkTarget is not { } target)
+            {
+                current = next;
+                continue;
+            }
+            if (++links > MaxLinks) throw new IOException("Too many levels of symbolic links");
+            if (Path.IsPathRooted(target)) current = Path.GetPathRoot(target)!;
+            PushParts(target[Path.GetPathRoot(target)!.Length..]);
+        }
+        return current;
+    }
+
+    /// <summary>
+    /// The <c>package.byn</c> in the file's directory or the nearest one above it, with its directory; null when
+    /// there is none.
+    /// </summary>
+    private static (Manifest Manifest, string Dir)? ManifestFor(string file, Dictionary<string, (Manifest Manifest, string Dir)?> cache)
     {
         var dir = Path.GetDirectoryName(Path.GetFullPath(file));
         var seen = new List<string>();
-        Manifest? found = null;
+        (Manifest Manifest, string Dir)? found = null;
         for (; dir is not null; dir = Path.GetDirectoryName(dir))
         {
             if (cache.TryGetValue(dir, out found)) break;
@@ -113,7 +227,7 @@ internal static class Format
             var candidate = Path.Combine(dir, "package.byn");
             if (File.Exists(candidate))
             {
-                found = Manifest.Read(candidate);
+                found = (Manifest.Read(candidate), dir);
                 break;
             }
         }
@@ -121,13 +235,47 @@ internal static class Format
         return found;
     }
 
-    /// <summary>Writes <paramref name="bytes"/> to a temp file beside <paramref name="file"/>, then renames it over the original.</summary>
+    /// <summary>
+    /// Every name the package's <c>.byn</c> files under <paramref name="dir"/> use other than as a type, callee or
+    /// receiver, which includes every name they declare. A file or directory link resolving outside the package is not
+    /// followed. A file that cannot be read is reported when it is formatted.
+    /// </summary>
+    private static HashSet<string> PackageNames(string dir)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        var ignored = CliApp.ExitOk;
+        string root;
+        try
+        {
+            root = RealPath(dir);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return names; }
+        foreach (var file in BynFiles(dir, TextWriter.Null, ref ignored, root))
+        {
+            if (Path.GetFileName(file) == "package.byn") continue;
+            byte[] bytes;
+            try
+            {
+                bytes = File.ReadAllBytes(file);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { continue; }
+            names.UnionWith(OtherUses(file, bytes, SyntaxTree.Parse(new SourceText(file, bytes))));
+        }
+        return names;
+    }
+
+    /// <summary>
+    /// Writes <paramref name="bytes"/> to a temp file beside <paramref name="file"/>, already resolved by
+    /// <see cref="RealPath"/>, gives it the original's Unix mode, then renames it over the original; a symlink to it
+    /// stays a symlink.
+    /// </summary>
     private static void WriteReplacing(string file, byte[] bytes)
     {
-        var temp = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(file))!, Path.GetRandomFileName() + ".tmp");
+        var temp = Path.Combine(Path.GetDirectoryName(file)!, Path.GetRandomFileName() + ".tmp");
         try
         {
             File.WriteAllBytes(temp, bytes);
+            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temp, File.GetUnixFileMode(file));
             File.Move(temp, file, overwrite: true);
         }
         catch
@@ -158,7 +306,7 @@ internal static class Format
     /// blocking error. An input-form diagnostic left with no fix is reported and sets <paramref name="unfixable"/>.
     /// </summary>
     private static byte[]? FormatFile(string file, byte[] bytes, BooleanStyle booleans, PrimitiveStyle primitives,
-        TextWriter stderr, out bool unfixable)
+        IReadOnlySet<string> declared, TextWriter stderr, out bool unfixable)
     {
         unfixable = false;
         var converged = false;
@@ -169,11 +317,14 @@ internal static class Format
             var blocking = tree.Diagnostics.Where(d => d.IsError && !InputForms.Contains(d.Code)).ToList();
             if (blocking.Count > 0)
             {
-                stderr.Write(DiagnosticRenderer.RenderAll(blocking, includePath: true));
+                // After a rewrite the positions and snippets would point at text the file on disk does not hold.
+                if (pass == 0) stderr.Write(DiagnosticRenderer.RenderAll(blocking, includePath: true));
+                else stderr.WriteLine(Messages.FormatRewriteAbandoned.Text(file));
                 return null;
             }
             var fixes = tree.Diagnostics.Where(d => Applies(d) && d.Fix is not null).Select(d => d.Fix!).ToList();
-            var next = fixes.Count > 0 ? ApplyFixes(bytes, fixes) : Restyle(file, bytes, tree, booleans, primitives);
+            var next = fixes.Count > 0 ? ApplyFixes(bytes, fixes) : Restyle(file, bytes, tree, booleans, primitives, declared);
+            if (RewriteHook is not null) next = RewriteHook(next);
             if (next.AsSpan().SequenceEqual(bytes))
             {
                 var fixless = tree.Diagnostics.Where(Applies).ToList();
@@ -200,18 +351,27 @@ internal static class Format
     /// A boolean rewrite is kept only when the file parses to the same tree after it, so <c>and</c>, <c>or</c> and
     /// <c>not</c> in patterns, and a <c>!</c> that is not the operator, stay as written.
     /// </summary>
-    private static byte[] Restyle(string file, byte[] bytes, SyntaxTree tree, BooleanStyle booleans, PrimitiveStyle primitives)
+    private static byte[] Restyle(string file, byte[] bytes, SyntaxTree tree, BooleanStyle booleans, PrimitiveStyle primitives,
+        IReadOnlySet<string> declared)
     {
         var names = primitives == PrimitiveStyle.Sized ? CSharpPrimitives : SizedPrimitives;
         var tokens = Lexer.Lex(new SourceText(file, bytes)).Tokens;
+        // Only a type, or a callee or receiver (`int(x)`, `i64.max`), is renamed: a field, binding, label or member
+        // spelled like a primitive keeps its name. A callee or receiver is kept when the file, or another file of
+        // its package, uses the spelling as anything else, since it may then be that binding.
+        var typeNames = AstDump.TypeNames(tree).Select(n => n.Span.Start).ToHashSet();
+        var calleeNames = AstDump.CalleeAndReceiverNames(tree).Select(n => n.Span.Start).ToHashSet();
+        var otherUses = OtherUses(file, bytes, tree);
+        otherUses.UnionWith(declared);
         var renames = new List<Fix>();
         var operators = new List<Fix>();
         for (var i = 0; i < tokens.Length; i++)
         {
             var token = tokens[i];
-            if (token.Kind == TokenKind.Identifier
-                && names.TryGetValue(System.Text.Encoding.UTF8.GetString(bytes, token.Start, token.Length), out var name)
-                && (i == 0 || tokens[i - 1].Kind is not (TokenKind.Dot or TokenKind.QuestionDot)))
+            if (token.Kind == TokenKind.Identifier && (typeNames.Contains(token.Start) || calleeNames.Contains(token.Start))
+                && System.Text.Encoding.UTF8.GetString(bytes, token.Start, token.Length) is var text
+                && names.TryGetValue(text, out var name)
+                && (typeNames.Contains(token.Start) || !otherUses.Contains(text)))
                 renames.Add(new Fix(new TextSpan(token.Start, token.Length), name));
             else if (OperatorFix(bytes, tokens, i, booleans) is { } fix)
                 operators.Add(fix);
@@ -229,6 +389,23 @@ internal static class Format
             if (Shape(SyntaxTree.Parse(new SourceText(file, one))) == shape) bytes = one;
         }
         return bytes;
+    }
+
+    /// <summary>Every identifier the file spells other than as a type, a callee or receiver, or a member after a dot.</summary>
+    private static HashSet<string> OtherUses(string file, byte[] bytes, SyntaxTree tree)
+    {
+        var tokens = Lexer.Lex(new SourceText(file, bytes)).Tokens;
+        var typeNames = AstDump.TypeNames(tree).Select(n => n.Span.Start).ToHashSet();
+        var calleeNames = AstDump.CalleeAndReceiverNames(tree).Select(n => n.Span.Start).ToHashSet();
+        var uses = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < tokens.Length; i++)
+        {
+            var t = tokens[i];
+            if (t.Kind != TokenKind.Identifier || typeNames.Contains(t.Start) || calleeNames.Contains(t.Start)) continue;
+            if (i > 0 && tokens[i - 1].Kind is TokenKind.Dot or TokenKind.QuestionDot) continue;
+            uses.Add(System.Text.Encoding.UTF8.GetString(bytes, t.Start, t.Length));
+        }
+        return uses;
     }
 
     /// <summary>The rewrite of token <paramref name="i"/> into the other boolean spelling, or null when it is not one.</summary>

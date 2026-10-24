@@ -25,6 +25,32 @@ public static class AstDump
         return w.ToString();
     }
 
+    /// <summary>The one-part name of every type the tree spells, in dump order.</summary>
+    public static List<Name> TypeNames(SyntaxTree tree)
+    {
+        var names = new List<Name>();
+        Writer.TypeNames = names;
+        try
+        {
+            Dump(tree);
+        }
+        finally { Writer.TypeNames = null; }
+        return names;
+    }
+
+    /// <summary>The name of every name expression that is a call's callee or a member access's receiver, in dump order.</summary>
+    public static List<Name> CalleeAndReceiverNames(SyntaxTree tree)
+    {
+        var names = new List<Name>();
+        Writer.CalleeNames = names;
+        try
+        {
+            Dump(tree);
+        }
+        finally { Writer.CalleeNames = null; }
+        return names;
+    }
+
     public static string Expr(Expr expr)
     {
         var sb = new StringBuilder();
@@ -42,6 +68,12 @@ public static class AstDump
     private sealed class Writer
     {
         private readonly StringBuilder _sb = new();
+
+        /// <summary>Collects <see cref="AstDump.TypeNames"/> while it dumps.</summary>
+        [ThreadStatic] public static List<Name>? TypeNames;
+
+        /// <summary>Collects <see cref="AstDump.CalleeAndReceiverNames"/> while it dumps.</summary>
+        [ThreadStatic] public static List<Name>? CalleeNames;
 
         public override string ToString() => _sb.ToString();
 
@@ -386,6 +418,7 @@ public static class AstDump
             switch (type)
             {
                 case NamedType t:
+                    if (t.Path is [var only]) TypeNames?.Add(only);
                     sb.Append(string.Join('.', t.Path.Select(p => p.Text)));
                     if (t.Args.Length > 0) sb.Append('<').Append(string.Join(", ", t.Args.Select(Type))).Append('>');
                     break;
@@ -576,6 +609,7 @@ public static class AstDump
                     sb.Append("this");
                     break;
                 case MemberExpr e:
+                    if (e.Target is NameExpr receiver) CalleeNames?.Add(receiver.Name);
                     sb.Append(e.NullConditional ? "(?. " : "(. ");
                     Expr(sb, e.Target);
                     sb.Append(' ').Append(e.Member.Text);
@@ -586,6 +620,7 @@ public static class AstDump
                     sb.Append('.').Append(e.Member.Text);
                     break;
                 case CallExpr e:
+                    if (e.Callee is NameExpr callee) CalleeNames?.Add(callee.Name);
                     sb.Append("(call ");
                     Expr(sb, e.Callee);
                     foreach (var arg in e.Args)

@@ -71,6 +71,95 @@ public sealed class CliTests
     }
 
     [Fact]
+    public void AuditReportsAnUnreadableFileAndAuditsTheRest()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("audit-file", "unsafe void poke() {\n}\n");
+        var locked = Path.Combine(dir, "a.byn");
+        File.WriteAllText(locked, "unsafe void peek() {\n}\n");
+        File.SetUnixFileMode(locked, UnixFileMode.None);
+        try
+        {
+            if (CanRead(() => File.ReadAllBytes(locked))) return;
+            var (exit, stdout, stderr) = Run("audit", dir);
+            Assert.Equal(CliApp.ExitFailure, exit);
+            Assert.Contains("a.byn", stderr);
+            Assert.Contains("unsafe void poke()", stdout);
+        }
+        finally { File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+    }
+
+    [Fact]
+    public void AuditReportsAnUnreadableDirectoryAndAuditsTheRest()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("audit-dir", "unsafe void poke() {\n}\n");
+        var locked = Directory.CreateDirectory(Path.Combine(dir, "locked")).FullName;
+        File.WriteAllText(Path.Combine(locked, "b.byn"), "unsafe void peek() {\n}\n");
+        File.SetUnixFileMode(locked, UnixFileMode.None);
+        try
+        {
+            if (CanRead(() => Directory.GetFiles(locked))) return;
+            var (exit, stdout, stderr) = Run("audit", dir);
+            Assert.Equal(CliApp.ExitFailure, exit);
+            Assert.Contains("locked", stderr);
+            Assert.Contains("unsafe void poke()", stdout);
+        }
+        finally { File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+    }
+
+    [Fact]
+    public async Task AuditWalksSymlinkCyclesOnce()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("audit-cycle", "unsafe void poke() {\n}\n");
+        var sub = Directory.CreateDirectory(Path.Combine(dir, "sub")).FullName;
+        Directory.CreateSymbolicLink(Path.Combine(sub, "up"), "..");
+        Directory.CreateSymbolicLink(Path.Combine(sub, "up2"), "..");
+        var result = await Task.Factory.StartNew(() => Run("audit", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(1, result.Out.Split("unsafe void poke()").Length - 1);
+    }
+
+    [Fact]
+    public async Task AuditWalksASymlinkToAParentOfTheRootOnce()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Path.Combine(Fresh("audit-parent-link", "unsafe void poke() {\n}\n"), "outer", "dir");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "main.byn"), "unsafe void peek() {\n}\n");
+        File.WriteAllText(Path.Combine(dir, "..", "outside.byn"), "unsafe void prod() {\n}\n");
+        Directory.CreateSymbolicLink(Path.Combine(dir, "link"), "..");
+        var result = await Task.Factory.StartNew(() => Run("audit", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(1, result.Out.Split("unsafe void peek()").Length - 1);
+        Assert.Equal(1, result.Out.Split("unsafe void prod()").Length - 1);
+    }
+
+    [Fact]
+    public async Task AuditReportsALoopingFileLinkAndGoesOn()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("audit-loop-link", "void main() {\n}\n");
+        File.CreateSymbolicLink(Path.Combine(dir, "loop.byn"), "loop.byn");
+        var sub = Directory.CreateDirectory(Path.Combine(dir, "sub")).FullName;
+        File.WriteAllText(Path.Combine(sub, "b.byn"), "unsafe void peek() {\n}\n");
+        var result = await Task.Factory.StartNew(() => Run("audit", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        Assert.Contains("unsafe void peek()", result.Out);
+        Assert.Contains(Path.Combine(dir, "loop.byn"), result.Err);
+    }
+
+    /// <summary>Whether <paramref name="read"/> succeeds despite a mode of none, as it does for root.</summary>
+    private static bool CanRead(Action read)
+    {
+        try
+        {
+            read();
+            return true;
+        }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
+    [Fact]
     public void AuditNeedsOnePath()
     {
         var (exit, _, stderr) = Run("audit");

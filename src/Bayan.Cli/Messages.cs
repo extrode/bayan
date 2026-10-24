@@ -104,6 +104,7 @@ public static class Messages
     public static readonly Message FormatFormatted = Register("format.formatted", "formatted {0}");
     public static readonly Message FormatWouldFormat = Register("format.would-format", "would format {0}");
     public static readonly Message FormatNotConverged = Register("format.not-converged", "bayan: {0}: still changing after {1} passes; left unfixed");
+    public static readonly Message FormatRewriteAbandoned = Register("format.rewrite-abandoned", "bayan: {0}: rewriting it made it unparsable, so the rewrite was abandoned and the file left unchanged");
     public static readonly Message FormatIoError = Register("format.io-error", "bayan: {0}: {1}");
     public static readonly Message CommandUsage = Register("usage.command", "usage: {0}");
 

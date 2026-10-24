@@ -21,8 +21,9 @@ internal static class Audit
             return CliApp.ExitUsage;
         }
         var path = args[0];
+        var exit = CliApp.ExitOk;
         string[] files;
-        if (Directory.Exists(path)) files = Directory.GetFiles(path, "*.byn", SearchOption.AllDirectories);
+        if (Directory.Exists(path)) files = Format.BynFiles(path, stderr, ref exit);
         else if (File.Exists(path)) files = [path];
         else
         {
@@ -34,7 +35,18 @@ internal static class Audit
         foreach (var file in files)
         {
             if (Path.GetFileName(file) == "package.byn") continue;
-            foreach (var b in Bypasses(SourceText.FromFile(file)))
+            SourceText source;
+            try
+            {
+                source = SourceText.FromFile(file);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                stderr.WriteLine(Messages.FormatIoError.Text(file, e.Message));
+                exit = CliApp.ExitFailure;
+                continue;
+            }
+            foreach (var b in Bypasses(source))
             {
                 var reason = b.Reason is null ? style.Paint(Role.Warning, Messages.AuditNoReason.Text()) : Messages.AuditBecause.Text(b.Reason);
                 stdout.WriteLine(Messages.AuditLine.Text(style.Paint(Role.Note, $"{file}:{b.Line}:{b.Column}"), b.Construct, reason));
@@ -43,7 +55,7 @@ internal static class Audit
         }
         var bypasses = (count == 1 ? Messages.AuditCountOne : Messages.AuditCountMany).Text(count);
         stdout.WriteLine(style.Paint(Role.Success, Messages.AuditSummary.Text(style.Symbols.Dot, bypasses, path)));
-        return CliApp.ExitOk;
+        return exit;
     }
 
     /// <summary>

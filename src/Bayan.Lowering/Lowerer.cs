@@ -1185,12 +1185,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             case BuiltinFunction.Print when c.Arguments[0] is BoundInterpolated i:
                 return Write(c, WriteSink.Print, null, i);
             case BuiltinFunction.Log when c.Arguments[0] is BoundInterpolated i:
-            {
-                // The level is the target; it is a constant in practice, so evaluating it before the text is unobservable.
-                var level = Expr(c.Arguments[1]);
-                if (IsNever(level)) return level;
-                return Write(c, WriteSink.Log, IsTrivial(level) ? level : Spill(level), i);
-            }
+                // The level is the target, evaluated after the text's parts as in the plain-string call.
+                return WriteParts(c, WriteSink.Log, null, i, level: c.Arguments[1]);
             case BuiltinFunction.Panic when c.Arguments[0] is BoundInterpolated i:
                 Write(c, WriteSink.Panic, null, i);
                 return new LNever(c.Syntax, c.Type);
@@ -1455,11 +1451,25 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private BoundExpr Write(BoundCall c, WriteSink sink, BoundExpr? target, BoundInterpolated text) => WriteParts(c, sink, target, text);
 
-    private BoundExpr WriteParts(BoundExpr call, WriteSink sink, BoundExpr? target, BoundInterpolated text)
+    /// <param name="level">A log level, lowered after the parts and written as the target.</param>
+    private BoundExpr WriteParts(BoundExpr call, WriteSink sink, BoundExpr? target, BoundInterpolated text, BoundExpr? level = null)
     {
         var values = text.Parts.Where(p => p.Value is not null).Select(p => p.Value!).ToList();
+        if (level is not null) values.Add(level);
         var lowered = Operands(values);
         if (lowered is null) return new LNever(call.Syntax, call.Type);
+        if (level is not null)
+        {
+            target = lowered[^1];
+            if (!IsTrivial(target))
+            {
+                // Spilling the target evaluates it ahead of the call (the emitter would evaluate it last inside the
+                // call), so the parts before it are spilled first to keep them evaluated before it.
+                for (var j = 0; j < lowered.Length - 1; j++)
+                    if (!IsTrivial(lowered[j])) lowered[j] = Spill(lowered[j]);
+                target = Spill(target);
+            }
+        }
         var k = 0;
         var parts = text.Parts.Select(p => p.Value is null ? p : new BoundInterpolationPart(null, lowered[k++])).ToArray();
         Emit(new LWrite(call.Syntax, sink, target, parts));
@@ -1522,7 +1532,11 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         if (t.Target.IsInteger && from.IsFloat)
         {
             var (min, max) = t.Target.Range;
-            Check(BinaryOp.Gt, new BoundLiteral(syntax, from, new ConstantValue((double)min - 1)));
+            // A value above min - 1 truncates into range; when min - 1 rounds to min in `from` (i64 from f64, i32
+            // from f32) no value lies between them, so the bound is min itself, inclusive.
+            var below = from.Equals(PrimitiveType.F32) ? (float)((double)min - 1) : (double)min - 1;
+            if (below == (double)min) Check(BinaryOp.Ge, new BoundLiteral(syntax, from, new ConstantValue((double)min)));
+            else Check(BinaryOp.Gt, new BoundLiteral(syntax, from, new ConstantValue(below)));
             Check(BinaryOp.Lt, new BoundLiteral(syntax, from, new ConstantValue((double)max + 1)));
         }
         else if (t.Target.IsInteger)
