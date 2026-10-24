@@ -231,7 +231,7 @@ Enforced by [BYN1040](diagnostics/BYN1040.md) (`;`), [BYN1041](diagnostics/BYN10
 
 ## 7. Attributes and purpose clauses
 
-Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5102)`, `@cases(discountCases)`. Attribute names are camelCase; derivation names stay PascalCase (`Json`, `Row`). `[Attr]` is an input form, since a line starting with `[` is a collection literal (§6).
+Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5102)`, `@cases(discountCases)`, `@sealed`, `@positional` (revision 0008). Attribute names are camelCase; derivation names stay PascalCase (`Json`, `Row`). `[Attr]` is an input form, since a line starting with `[` is a collection literal (§6).
 
 A **purpose clause** (Arabic mafʿūl li-ajlihi, the object of purpose) states why code bypasses a safety rule. `because "…"` is required on every bypass, and missing it is a compile error:
 
@@ -285,7 +285,7 @@ xs.remove(from: 2, until: 5)
 ```
 
 - A function has at most one unlabeled parameter: the object. The receiver does not count. Every other required parameter takes a particle, and call sites write it. Optional settings are named parameters with defaults; one may take a particle that fits its role (`log(m, as: .debug)`, `FakeClock(at: …)`), otherwise it uses its name (`void run(Path program, List<Arg> args = [])`, `timeout: 5s`).
-- **Exempt:** a `rest` tail (`print(rest ReadOnlySpan<Display> items)`); constructors of a struct marked `@positional`, whose components are the same kind and universally ordered (`Point(3, 4)`, not `Date`, which keeps `Date(year:month:day:)`); `extern` declarations; operator declarations; union and state payloads; laws.
+- **Exempt:** a `rest` tail (`print(rest ReadOnlySpan<Display> items)`); the generated constructor of a struct marked `@positional` (every field in declaration order, revision 0008), whose components are the same kind and universally ordered (`Point(3, 4)`, not `Date`, which keeps `Date(year:month:day:)`); `extern` declarations; operator declarations; union and state payloads; laws.
 - **A particle appears at most once per signature.** Group the values in a struct or choose another particle ([BYN5013](diagnostics/BYN5013.md)).
 - Particle words are not member names (§1).
 - The particles are part of the function's name: `copy(from:to:)`.

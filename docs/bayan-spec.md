@@ -611,7 +611,7 @@ extension static Duration {
 Resolved statically. Instance members win over extensions. Extensions cannot add fields.
 
 ### 4.4 Attributes and purpose clauses
-Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5102)`, `@cases(…)`, `@sealed` (a struct whose fields only its own methods and `with` may write, §3.10; no arguments, no `because`). Attribute names are camelCase (`@derive`, `@allow`); derivation names stay PascalCase (`Json`, `Row`). `[Name(args)]` is an input form (BYN1045): a line starting with `[` is a collection literal (§2.5). User-defined attributes are `struct attribute Route { string path }`. Arguments must be compile-time constants. Attributes are readable only at compile time.
+Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5102)`, `@cases(…)`, `@sealed` (a struct whose fields only its own methods and `with` may write, §3.10; no arguments, no `because`), `@positional` (a struct that gets a constructor taking every field in declaration order, `Point(3, 4)` ≡ `Point { x: 3, y: 4 }`, fallible like the literal when the struct has `requires`; not on a struct with `states`; no arguments, no `because`; revision 0008). Attribute names are camelCase (`@derive`, `@allow`); derivation names stay PascalCase (`Json`, `Row`). `[Name(args)]` is an input form (BYN1045): a line starting with `[` is a collection literal (§2.5). User-defined attributes are `struct attribute Route { string path }`. Arguments must be compile-time constants. Attributes are readable only at compile time.
 
 **Purpose clauses** (mafʿūl li-ajlihi): `because "…"` is required wherever code bypasses a safety rule. A missing `because` is a compile error (BYN8001); ordinary attributes (`@derive`) take none.
 
@@ -722,6 +722,8 @@ C# operators and precedence, plus:
 | `x in a..=b` | Boolean range test |
 | `xs except p` | Subtract a pattern from a sequence, set or error set (§6.8) |
 | `!` `&&` `\|\|` / `not` `and` `or` | Boolean operators, two spellings (§7.2) |
+
+`with` binds looser than every prefix operator, as in C#: `move tx with { … }` is `(move tx) with { … }` (revision 0008). Whether an operand of `move` can be moved is a semantic check (BYN2782).
 
 No user-defined operator symbols. Operator implementations must not allocate, suspend or fail (checked). Overloading and equality: §6.7.
 
@@ -1185,7 +1187,7 @@ let resp = signUp(form) catch switch {
 ### 9.3 Ownership
 `unique` types move with `move` and are disposed exactly once. Using a moved value is a compile error.
 
-- **`x = x with { … }` is a move.** When an assignment's target is the variable its `with` expression reads, the old value is consumed: no copy, no BYN2780, for `unique` and every other struct. Assigning a `with` of a `unique` value anywhere else (`let copy = tx with { … }`) needs `move tx` (BYN2780 otherwise). Revision 0007.
+- **`x = x with { … }` is a move.** When an assignment's target is the variable its `with` expression reads, the old value is consumed: no copy, no BYN2780, for `unique` and every other struct. Assigning a `with` of a `unique` value anywhere else (`let copy = tx with { … }`) needs `move tx`: `let copy = move tx with { label: "copy" }` (BYN2780 otherwise). Revisions 0007, 0008.
 
 - **Only a local or a `move` parameter can be moved from.** Moving out of a field, element or plain parameter is a compile error (it would leave a half-moved value). `x.take()` moves the value out of any place it can write and leaves that type's empty value behind: `let items = ledger.items.take()` leaves `ledger.items` an empty list. `take()` exists on `List`, `Map`, `StrBuf` (empty value: an empty one) and on optionals of those (`null`); on any other type it is BYN2788, and on a place that can't be written (a `let` local, a plain parameter) it reports the usual mutation error. `map[k].take()` panics on a missing key, like `map[k]`.
 - **Pattern bindings on a `unique` subject borrow.** `switch x` and `x is …` bind borrows of `x`'s parts, so `x` stays usable after the switch. `switch move x` moves `x` into the switch, and its bindings then own their parts; `x` is moved afterwards on every path. The subject must be a local or a `move` parameter (BYN2789 otherwise). An owning pattern may not bind a value and a part of it, through both sides of an `and` or through a designation with bindings inside it (BYN2790): two bindings would own one storage. Two bindings overlap only when one's path is a prefix of the other's, and only bindings of a `unique` type count (`{ a: { b: let x }, a: { c: let y } }` and `{ items: let x, items.length: let n }` are accepted). In a `when` guard of an owning switch the arm's bindings and their parts are read-only (BYN2791): a guard that fails gives the value back to the switch. As an expression the subject needs parentheses, `(move x) switch { … }`: `move x switch { … }` parses as `move (x switch { … })`.
@@ -1272,7 +1274,7 @@ xs.remove(from: 2, until: 5)
 
 - A function has at most one unlabeled parameter, the object (BYN5004). **The receiver does not count** as the object. Every other required parameter takes a particle (BYN5006), and call sites must write it (BYN5005). An unknown particle is BYN5008.
 - **Optional parameters** are named parameters with defaults. They may take a particle when one fits their role (`log(m, as: .debug)`, `FakeClock(at: …)`); otherwise they use their name (`timeout: 5s`).
-- **Exempt:** a `rest` tail (below); constructors of a struct marked `@positional`, whose components are the same kind and universally ordered (`Point(3, 4)`, `Vec3(1.0, 0.0, 0.0)`; not `Date`, which keeps `Date(year:month:day:)`); `extern` declarations; operator declarations; union and state payloads (fields, not parameters); laws.
+- **Exempt:** a `rest` tail (below); the generated constructor of a struct marked `@positional` (§4.4; its static factories and methods are not exempt), whose components are the same kind and universally ordered (`Point(3, 4)`, `Vec3(1.0, 0.0, 0.0)`; not `Date`, which keeps `Date(year:month:day:)`); `extern` declarations; operator declarations; union and state payloads (fields, not parameters); laws.
 - **A particle appears at most once per signature (O12, BYN5013).** Group the values in a struct or choose another particle.
 - Particle words are not member names (§5.2).
 - The particles are part of the function's name (`copy(from:to:)`).
