@@ -586,6 +586,61 @@ public sealed class FormatTests
         Assert.Contains(Path.Combine(dir, "loop.byn"), result.Err);
     }
 
+    /// <summary>
+    /// <c>link -&gt; other/deep</c> beside <c>a.byn</c> and <c>other/a.byn</c>: the kernel opens <c>other/a.byn</c> for
+    /// <c>link/../a.byn</c>, while .NET's lexical <c>..</c> collapse names <c>./a.byn</c>.
+    /// </summary>
+    private static string LinkToADeeperDirectory(string name, string otherText)
+    {
+        var dir = Fresh(name);
+        Directory.CreateDirectory(Path.Combine(dir, "other", "deep"));
+        File.WriteAllText(Path.Combine(dir, "a.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        File.WriteAllText(Path.Combine(dir, "other", "a.byn"), otherText);
+        Directory.CreateSymbolicLink(Path.Combine(dir, "link"), "other/deep");
+        return dir;
+    }
+
+    [Fact]
+    public async Task FormattingAPathThroughALinkAndUpReadsAndWritesTheSameFile()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        const string Other = "let b = true\nif b { print(\"y\") }\n";
+        var dir = LinkToADeeperDirectory("link-dotdot-file", Other);
+        var result = await Task.Factory.StartNew(() => Run("format", Path.Combine(dir, "link", "..", "a.byn")), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.True(result.Exit == CliApp.ExitOk, result.Err);
+        Assert.Equal(Other, File.ReadAllText(Path.Combine(dir, "other", "a.byn")));
+        Assert.Equal("let a = true\nif (a) { print(\"x\") }\n", File.ReadAllText(Path.Combine(dir, "a.byn")));
+    }
+
+    [Fact]
+    public async Task CheckingADirectoryThroughALinkAndUpReportsEachFileOnce()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = LinkToADeeperDirectory("link-dotdot-dir", "let b = true\nif (b) { print(\"y\") }\n");
+        var result = await Task.Factory.StartNew(() => Run("format", "--check", Path.Combine(dir, "link", "..")), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        Assert.Equal("", result.Err);
+        var line = Assert.Single(result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+        Assert.Contains(Path.Combine(dir, "link", "..", "a.byn"), line);
+    }
+
+    [Fact]
+    public async Task PackageNamesSkipALinkLeavingThePackage()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("package-link-outside");
+        var outside = Directory.CreateDirectory(Path.Combine(dir, "outside")).FullName;
+        File.WriteAllText(Path.Combine(outside, "x.byn"), "long i8(long x) => x\n");
+        var pkg = Directory.CreateDirectory(Path.Combine(dir, "pkg")).FullName;
+        Package(pkg, "primitives: .csharp");
+        Directory.CreateSymbolicLink(Path.Combine(pkg, "vendor"), "../outside");
+        var main = Path.Combine(pkg, "main.byn");
+        File.WriteAllText(main, "void main() {\n    let n = i8(3)\n}\n");
+        var result = await Task.Factory.StartNew(() => Run("format", main), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.True(result.Exit == CliApp.ExitOk, result.Err);
+        Assert.Equal("void main() {\n    let n = sbyte(3)\n}\n", File.ReadAllText(main));
+    }
+
     [Fact]
     public void NoTempFileIsLeftBehind()
     {
