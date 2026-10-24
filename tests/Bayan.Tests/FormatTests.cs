@@ -220,6 +220,23 @@ public sealed class FormatTests
     }
 
     [Fact]
+    public void ACalleeSpelledLikeANameDeclaredInAnotherFileOfThePackageIsKept()
+    {
+        var dir = Fresh("conv-declared-package");
+        Package(dir, "primitives: .csharp");
+        File.WriteAllText(Path.Combine(dir, "a.byn"), "long i8(long x) => x + 1000\n");
+        var main = Path.Combine(dir, "main.byn");
+        const string source = "void main() {\n    let n = i8(3)\n}\n";
+        File.WriteAllText(main, source);
+        var (exit, _, stderr) = Run("format", dir);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(source, File.ReadAllText(main));
+        (exit, _, stderr) = Run("format", main);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(source, File.ReadAllText(main));
+    }
+
+    [Fact]
     public void AnInvalidPackageIsReportedAndItsFilesAreLeftAlone()
     {
         var dir = Fresh("badstyle");
@@ -485,10 +502,88 @@ public sealed class FormatTests
         if (OperatingSystem.IsWindows()) return;
         var dir = Directory.CreateDirectory(Path.Combine(Fresh("parent-link"), "outer", "dir")).FullName;
         File.WriteAllText(Path.Combine(dir, "main.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        File.WriteAllText(Path.Combine(dir, "..", "outside.byn"), "let a = true\nif (a) { print(\"x\") }\n");
         Directory.CreateSymbolicLink(Path.Combine(dir, "link"), "..");
         var result = await Task.Factory.StartNew(() => Run("format", "--check", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
         Assert.Equal(CliApp.ExitFailure, result.Exit);
-        Assert.Single(result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+        var lines = result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, lines.Length);
+        Assert.Single(lines, l => l.Contains("outside.byn"));
+    }
+
+    /// <summary>
+    /// <c>proj/sub -&gt; ../real/deep</c> and <c>real/deep/f.byn -&gt; ../g.byn</c>: the kernel opens <c>real/g.byn</c>,
+    /// while resolving the link's text lexically names <c>proj/g.byn</c>.
+    /// </summary>
+    private static (string Proj, string Real) LinkThroughALinkedDirectory(string name, string? decoy)
+    {
+        var dir = Fresh(name);
+        var proj = Directory.CreateDirectory(Path.Combine(dir, "proj")).FullName;
+        var real = Directory.CreateDirectory(Path.Combine(dir, "real")).FullName;
+        Directory.CreateDirectory(Path.Combine(real, "deep"));
+        File.WriteAllText(Path.Combine(real, "g.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        File.CreateSymbolicLink(Path.Combine(real, "deep", "f.byn"), "../g.byn");
+        Directory.CreateSymbolicLink(Path.Combine(proj, "sub"), "../real/deep");
+        if (decoy is not null) File.WriteAllText(Path.Combine(proj, "g.byn"), decoy);
+        return (proj, real);
+    }
+
+    [Fact]
+    public async Task FormattingALinkThroughALinkedDirectoryWritesTheFileItRead()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        const string Decoy = "decoy, not Bayan\n";
+        var (proj, real) = LinkThroughALinkedDirectory("link-through-dir", Decoy);
+        var result = await Task.Factory.StartNew(() => Run("format", Path.Combine(proj, "sub", "f.byn")), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.True(result.Exit == CliApp.ExitOk, result.Err);
+        Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(Path.Combine(real, "g.byn")));
+        Assert.Equal(Decoy, File.ReadAllText(Path.Combine(proj, "g.byn")));
+    }
+
+    [Fact]
+    public async Task FormattingALinkThroughALinkedDirectoryCreatesNoFile()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var (proj, real) = LinkThroughALinkedDirectory("link-through-dir-nodecoy", null);
+        var result = await Task.Factory.StartNew(() => Run("format", Path.Combine(proj, "sub", "f.byn")), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.True(result.Exit == CliApp.ExitOk, result.Err);
+        Assert.Equal("let a = true\nif a { print(\"x\") }\n", File.ReadAllText(Path.Combine(real, "g.byn")));
+        Assert.False(File.Exists(Path.Combine(proj, "g.byn")));
+    }
+
+    [Fact]
+    public async Task TheWalkKeepsFilesALexicalResolutionWouldMerge()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var (proj, real) = LinkThroughALinkedDirectory("walk-through-dir", "let b = true\nif (b) { print(\"y\") }\n");
+        // `up` is `other` to the kernel and `proj` read lexically, which would skip it as already walked.
+        var other = Directory.CreateDirectory(Path.Combine(real, "..", "other", "deep")).Parent!.FullName;
+        File.WriteAllText(Path.Combine(other, "h.byn"), "let c = true\nif (c) { print(\"z\") }\n");
+        Directory.CreateSymbolicLink(Path.Combine(proj, "x"), "../other/deep");
+        Directory.CreateSymbolicLink(Path.Combine(proj, "up"), "x/..");
+        var result = await Task.Factory.StartNew(() => Run("format", "--check", proj), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        var lines = result.Out.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(3, lines.Length);
+        Assert.Single(lines, l => l.Contains(Path.Combine(proj, "sub", "f.byn")));
+        Assert.Single(lines, l => l.Contains(Path.Combine(proj, "g.byn")));
+        Assert.Single(lines, l => l.Contains(Path.Combine(proj, "up", "h.byn")));
+    }
+
+    [Fact]
+    public async Task ALoopingFileLinkIsReportedAndTheWalkGoesOn()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("loop-link");
+        File.WriteAllText(Path.Combine(dir, "a.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        File.CreateSymbolicLink(Path.Combine(dir, "loop.byn"), "loop.byn");
+        var sub = Directory.CreateDirectory(Path.Combine(dir, "sub")).FullName;
+        File.WriteAllText(Path.Combine(sub, "b.byn"), "let a = true\nif (a) { print(\"x\") }\n");
+        var result = await Task.Factory.StartNew(() => Run("format", "--check", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        Assert.Contains(Path.Combine(dir, "a.byn"), result.Out);
+        Assert.Contains(Path.Combine(sub, "b.byn"), result.Out);
+        Assert.Contains(Path.Combine(dir, "loop.byn"), result.Err);
     }
 
     [Fact]

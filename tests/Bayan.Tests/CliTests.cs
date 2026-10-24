@@ -127,9 +127,25 @@ public sealed class CliTests
         var dir = Path.Combine(Fresh("audit-parent-link", "unsafe void poke() {\n}\n"), "outer", "dir");
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "main.byn"), "unsafe void peek() {\n}\n");
+        File.WriteAllText(Path.Combine(dir, "..", "outside.byn"), "unsafe void prod() {\n}\n");
         Directory.CreateSymbolicLink(Path.Combine(dir, "link"), "..");
         var result = await Task.Factory.StartNew(() => Run("audit", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
         Assert.Equal(1, result.Out.Split("unsafe void peek()").Length - 1);
+        Assert.Equal(1, result.Out.Split("unsafe void prod()").Length - 1);
+    }
+
+    [Fact]
+    public async Task AuditReportsALoopingFileLinkAndGoesOn()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Fresh("audit-loop-link", "void main() {\n}\n");
+        File.CreateSymbolicLink(Path.Combine(dir, "loop.byn"), "loop.byn");
+        var sub = Directory.CreateDirectory(Path.Combine(dir, "sub")).FullName;
+        File.WriteAllText(Path.Combine(sub, "b.byn"), "unsafe void peek() {\n}\n");
+        var result = await Task.Factory.StartNew(() => Run("audit", dir), TaskCreationOptions.LongRunning).WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.Equal(CliApp.ExitFailure, result.Exit);
+        Assert.Contains("unsafe void peek()", result.Out);
+        Assert.Contains(Path.Combine(dir, "loop.byn"), result.Err);
     }
 
     /// <summary>Whether <paramref name="read"/> succeeds despite a mode of none, as it does for root.</summary>

@@ -218,3 +218,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-55: `bayan audit` lists no C sources per dependency (SPEC §19.3); add them when dependencies land.
 - plan-strings-check skips BYN3216: its plan entry has a quoted `{2}` gloss between the message and `(label`, which the form regex rejects; reword the entry (revision erratum) or widen the regex (found 2026-10-24, r3-53b).
 - review R4/R5: `bayan audit` reuses the `format.io-error` message for its unreadable file and directory lines; a shared `io-error` id would read better.
+- review loop 3 (545965c49391..ef66c140da9f): `Restyle`'s `otherUses` counts struct field declarations and field-init labels, so a file with a field named `i8` never has `i8(x)`/`i8.max` respelled (missed rename only).
+- review loop 3 (545965c49391..ef66c140da9f): a file reached through a symlinked directory keeps its alias path; `ManifestFor` walks up from the alias, so a link into another package uses the root package's style; audit output follows stack order, unsorted.
+- review loop 3 (545965c49391..ef66c140da9f): `WriteReplacing` copies only the Unix mode: owner, group, ACLs, xattrs are lost and hard links are split by the rename.
