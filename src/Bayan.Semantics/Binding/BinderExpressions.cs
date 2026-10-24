@@ -975,7 +975,7 @@ internal sealed partial class Binder
                 read a byte, slice, or take characters; `string` is UTF-8, so position {index} is not a character:
                   `{s}.bytes[{index}]`       the byte at offset {index} (applied below)
                   `{s}[a..b]`          the text between byte offsets a and b
-                  `{s}.chars.take(n)`  the first n characters
+                  `{s}.runes.take(n)`  the first n runes
                   `{s}.graphemes`      user-perceived characters
                 """,
             fix: new Fix(i.Span, $"{s}.bytes[{index}]"));

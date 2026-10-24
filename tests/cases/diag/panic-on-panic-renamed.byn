@@ -1,0 +1,9 @@
+// Round 2's `Panic.onPanic` is `Panic.handler` (BYN2230); the assignment still binds as the hook.
+void onCrash(Panic p) {
+    print(p.message, to: .stderr)
+}
+
+void main() {
+    Panic.onPanic = onCrash
+    print("running")
+}

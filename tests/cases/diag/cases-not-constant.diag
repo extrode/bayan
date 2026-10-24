@@ -10,14 +10,14 @@ error BYN2774: each `@cases` value must be a constant
   7 │ @cases(limit, next(), 1 + 1, 2)
     │               ^^^^^^
     │
-  help: write the value as a literal: a number, string, char, `true`, `false`, `null` or a `.case`
+  help: write the value as a literal: a number, string, rune, `true`, `false`, `null` or a `.case`
 
 error BYN2774: each `@cases` value must be a constant
 
   7 │ @cases(limit, next(), 1 + 1, 2)
     │                       ^^^^^
     │
-  help: write the value as a literal: a number, string, char, `true`, `false`, `null` or a `.case`
+  help: write the value as a literal: a number, string, rune, `true`, `false`, `null` or a `.case`
 
 error BYN2774: each `@cases` value must be a constant
 

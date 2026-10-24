@@ -22,7 +22,7 @@ internal sealed partial class Binder
     private readonly List<JumpTarget> _targets = new();
     private int _deferDepth;
     private bool _inPanicHandler;
-    /// <summary>The body's first statement: the one place <c>Panic.onPanic</c> may be set.</summary>
+    /// <summary>The body's first statement: the one place <c>Panic.handler</c> may be set.</summary>
     private Stmt? _firstStatement;
     private bool _onPanicSet;
     private int _nextLocalId;
@@ -506,7 +506,7 @@ internal sealed partial class Binder
                 LearnBecomes(expr);
                 return new BoundExprStmt(e, expr);
             }
-            case AssignStmt { Op: AssignOp.Assign, Target: MemberExpr { Target: NameExpr { Name.Text: "Panic" }, Member.Text: "onPanic" } } a
+            case AssignStmt { Op: AssignOp.Assign, Target: MemberExpr { Target: NameExpr { Name.Text: "Panic" }, Member.Text: "handler" or "onPanic" } } a
                 when _scope.Lookup("Panic") is null:
                 return BindOnPanic(a);
             case AssignStmt a:
@@ -1291,11 +1291,14 @@ internal sealed partial class Binder
     }
 
     /// <summary>
-    /// <c>Panic.onPanic = f;</c> with <c>f</c> a named <c>void f(Panic p)</c>: only as the first statement of the program's
-    /// entry function, once (BYN2614). <see cref="PanicHandlerCheck"/> checks <c>f</c>'s body.
+    /// <c>Panic.handler = f;</c> with <c>f</c> a named <c>void f(Panic p)</c>: only as the first statement of the program's
+    /// entry function, once (BYN2614). Round 2's <c>Panic.onPanic</c> is BYN2230 and binds the same way. <see cref="PanicHandlerCheck"/> checks <c>f</c>'s body.
     /// </summary>
     private BoundStmt BindOnPanic(AssignStmt a)
     {
+        if (a.Target is MemberExpr { Member: { Text: "onPanic" } old })
+            Report(DiagnosticCodes.RenamedMember, old.Span, ["onPanic", "handler"], label: "the old name",
+                help: "rename it `handler`", fix: new Fix(old.Span, "handler"));
         var bound = BindExprOrType(a.Value);
         var value = bound is BoundMethodGroup ? bound : AsValue(bound, a.Value);
         FunctionSymbol? handler = null;
@@ -1315,7 +1318,7 @@ internal sealed partial class Binder
         if (misplaced is not null)
         {
             Report(DiagnosticCodes.OnPanicPlacement, a.Span, [], label: misplaced,
-                help: _c.Options.Library ? "set `Panic.onPanic` in the program that uses this library" : "set it once, as the first statement of `main`");
+                help: _c.Options.Library ? "set `Panic.handler` in the program that uses this library" : "set it once, as the first statement of `main`");
             return new BoundErrorStmt(a);
         }
         _onPanicSet = true;

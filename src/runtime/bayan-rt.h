@@ -119,6 +119,7 @@ void byn_own_forget(const void* lo, const void* hi);
 
 typedef enum byn_writer_mode {
     BYN_WRITE_STDOUT,   /* flush to standard output when full */
+    BYN_WRITE_STDERR,   /* flush to standard error when full (print(…, to: .stderr)) */
     BYN_WRITE_TRUNCATE, /* drop what does not fit (panic messages) */
     BYN_WRITE_STRICT,   /* panic when full (StrBuf(buf)) */
     BYN_WRITE_GROW,     /* grow through alloc when full (StrBuf()) */
@@ -145,10 +146,13 @@ void byn_w_f64(byn_writer* w, double v);
 void byn_w_f32(byn_writer* w, float v);
 void byn_w_bool(byn_writer* w, bool v);
 void byn_w_char(byn_writer* w, uint32_t c);
-/* Ends a print: appends a newline and flushes the buffer to standard output. */
+/* Ends a print: appends a newline and flushes the buffer to standard output, or to standard error. */
 void byn_w_println(byn_writer* w);
 
-void byn_print(byn_str s);
+/* The built-in Stream: stdout, stderr, in that order. */
+typedef int32_t byn_builtin_Stream;
+/* `print`: the text and a newline, buffered on standard output; on standard error after flushing standard output. */
+void byn_print(byn_builtin_Stream stream, byn_str s);
 void byn_stdout_flush(void);
 /* Reports a failed `main` or test: flushes output and writes `error: <summary>` to standard error. */
 void byn_report_error(byn_str summary);
@@ -164,6 +168,10 @@ int byn_str_cmp(byn_str a, byn_str b);
 bool byn_str_starts_with(byn_str s, byn_str prefix);
 bool byn_str_ends_with(byn_str s, byn_str suffix);
 bool byn_str_contains(byn_str s, byn_str text);
+/* `s.runeCount`: the number of code points, O(n). */
+int64_t byn_str_rune_count(byn_str s);
+/* `s.isAscii`: every byte is below 0x80. */
+bool byn_str_is_ascii(byn_str s);
 /* The next code point at *pos (valid UTF-8 assumed), advancing *pos. */
 uint32_t byn_str_next(byn_str s, int64_t* pos);
 /* s[start..end] by byte offset; panics out of range or mid-code-point. */
@@ -191,6 +199,9 @@ static inline void byn_slice_range(int64_t len, int64_t start, int start_mode, i
     *from = s;
     *to = e;
 }
+
+/* `xs.sort()`: a stable sort of n elements of size bytes in place, without allocating; less(a, b) orders them. */
+void byn_sort(void* p, int64_t n, int64_t size, bool (*less)(const void* a, const void* b));
 
 /* ── Allocators ──────────────────────────────────────────────────────────── */
 

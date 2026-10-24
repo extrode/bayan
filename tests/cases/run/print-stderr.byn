@@ -1,0 +1,14 @@
+// `print(…, to: .stderr)` formats like `print` and writes to standard error; `.stdout` is the default.
+void onCrash(Panic p) {
+    print($"crashed: {p.message}", to: .stderr)
+}
+
+void main() {
+    Panic.handler = onCrash
+    let n = 3
+    print("out one")
+    print("err plain", to: .stderr)
+    print($"err {n} items", to: .stderr)
+    print($"out {n}", to: .stdout)
+    panic("broken")
+}

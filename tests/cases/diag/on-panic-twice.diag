@@ -1,6 +1,6 @@
-error BYN2614: `Panic.onPanic` may be set only as the first statement of `main`
+error BYN2614: `Panic.handler` may be set only as the first statement of `main`
 
-  7 │     Panic.onPanic = onCrash
+  7 │     Panic.handler = onCrash
     │     ^^^^^^^^^^^^^^^^^^^^^^^ set again here
     │
   help: set it once, as the first statement of `main`

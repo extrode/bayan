@@ -17,4 +17,4 @@ error BYN2760: `f64` cannot be a `Map` key
   31 │     var idx: Index<f64>
      │              ^^^^^^^^^^ the generic code needs this of its type arguments
      │
-  help: use an integer type, `char`, `bool`, `string` or a plain enum as the key
+  help: use an integer type, `rune`, `bool`, `string` or a plain enum as the key

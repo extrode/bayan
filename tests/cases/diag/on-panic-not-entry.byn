@@ -3,7 +3,7 @@ void onCrash(Panic p) {
 }
 
 void setUp() {
-    Panic.onPanic = onCrash
+    Panic.handler = onCrash
 }
 
 void main() {

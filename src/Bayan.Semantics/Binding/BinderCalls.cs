@@ -364,6 +364,11 @@ internal sealed partial class Binder
                 result[i] = new BoundEnumMember(c, _c.Builtins.LogLevel.Find("info")!);
                 continue;
             }
+            if (fn?.Builtin == BuiltinFunction.Print && p.Ordinal == 1)
+            {
+                result[i] = new BoundEnumMember(c, _c.Builtins.Stream.Find("stdout")!);
+                continue;
+            }
             missing.Add(Label(p));
             result[i] = new BoundErrorExpr(c);
         }
@@ -620,7 +625,8 @@ internal sealed partial class Binder
         var m = BuiltinMembers.Method(receiver.Type, name)!;
         if (m.Member is BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake)
             receiver = MapWriteTarget(receiver);
-        var ps = m.Parameters.Select((p, i) => new ParameterSymbol(p.Name, null, p.Type, ParamModifier.None, i)).ToList();
+        var ps = m.Parameters.Take(Math.Max(c.Args.Length, m.Parameters.Length - m.Optional))
+            .Select((p, i) => new ParameterSymbol(p.Name, null, p.Type, ParamModifier.None, i)).ToList();
         var args = BindArguments(c, ps, null, enforceNames: false, displayName: name);
         if (m.Mutating) CheckWritable(receiver, receiver.Syntax.Span, $"`{name}` modifies it");
         if (m.Member == BuiltinMember.MapSlot && !IsDefaultable(m.Returns))
@@ -641,7 +647,7 @@ internal sealed partial class Binder
         return new BoundBuiltinCall(c, m.Member, receiver, args, returns);
     }
 
-    /// <summary>Whether <c>map.slot</c> can insert a default <paramref name="t"/>: numbers, <c>bool</c>, <c>char</c>, <c>string</c>, optionals and structs whose fields all have defaults.</summary>
+    /// <summary>Whether <c>map.slot</c> can insert a default <paramref name="t"/>: numbers, <c>bool</c>, <c>rune</c>, <c>string</c>, optionals and structs whose fields all have defaults.</summary>
     private static bool IsDefaultable(TypeSymbol t) => t switch
     {
         PrimitiveType { Kind: PrimitiveKind.Char } => true,

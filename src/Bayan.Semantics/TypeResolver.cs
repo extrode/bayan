@@ -136,7 +136,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                     if (!MapType.IsValidKey(key) && key is not TypeParameterType)
                     {
                         compilation.Report(DiagnosticCodes.InvalidMapKey, file.Source, n.Args[0].Span, [key.DisplayName],
-                            help: "use an integer type, `char`, `bool`, `string` or a plain enum as the key");
+                            help: "use an integer type, `rune`, `bool`, `string` or a plain enum as the key");
                         return ErrorType.Instance;
                     }
                     return new MapType(key, value);
