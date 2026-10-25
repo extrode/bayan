@@ -395,7 +395,7 @@ Spec order (numbers are provisional; a spec may split):
 | 005 | **Done 2026-10-22.** Terminal style (remaining work of M12 — CLI completeness and machine-readable output), before any renderer is ported again |
 | 006 | Interfaces and iterators (subset above) |
 | 007 | Lambdas and function types (non-capturing and capture by copy) |
-| 008 | `HashMap` and `Symbol` interning (§3.3) |
+| 008 | `HashMap` and `Symbol` interning (§3.3). Spec draft in `docs/specs/008-hashmap-symbols/` (Questions 370–380), realigned 2026-10-25 to feat/007-lambdas at 4a746de; merges into dev after 007 |
 | 009 | Parser in Bayan (`selfhost/parser/`), checked against `bayan parse --ast` on every parse golden |
 | 010 | Semantics in Bayan (binder, flow, ownership), checked against every `diag/` golden and, through spec 004's typed dump, a binder-equivalence law (C# and Bayan dumps identical on every input) |
 | 011 | Lowering and the C emitter in Bayan, checked against `--emit-c` on every `run/` golden |
