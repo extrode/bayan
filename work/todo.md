@@ -304,3 +304,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - A struct literal cannot name its type through a module: `lexer.TextSpan { … }` is BYN1001 (Q431) (009 T1, 2026-10-26).
 - 009 T1 stubs `dumpExpr`/`dumpType`/`dumpPattern` take `ref`, which BYN2106 rejects on an `Owned` child; T11/T12 should use `in` (Q436) (009 T2, 2026-10-26).
 - 009 plan names union variants `import(…)`/`function(…)`, which are keywords; `nodes.byn` uses `importDecl`, `functionDecl` (Q437) (009 T2, 2026-10-26).
+- C# spans of `move`, `fail`, `break`/`continue` with a label, `except` and `?.` end before their child (argument evaluation order), so the child is outside its parent (L018); the port matches C# (Q473) (009 T9, 2026-10-26).
