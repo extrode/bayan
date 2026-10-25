@@ -8,6 +8,7 @@ void keys() {
     let points = Map<Point, string>()
     let planets = Map<Planet, i64>()
     let nested = Map<string?, i64>()
+    let lists = Map<List<i32>, i64>()
     let wrong = Map<string>()
 }
 
