@@ -61,11 +61,14 @@ public sealed class SelfhostParserT12Tests(ITestOutputHelper output)
     public void DumpExprTypePatternAndCheckSpans()
     {
         const string main = """
+            import lexer
             void main() {
                 using let arena = Arena()
                 provide allocator: arena {
                     var bytes = List<u8>()
-                    for b in "a+b".bytes { bytes.append(b) }
+                    bytes.append(0x61)
+                    bytes.append(0x2B)
+                    bytes.append(0x62)
                     var p = Parser.create(lexer.lex(SourceText.create("<test>", from: move bytes), by: Keywords.build()))
                     let left = Expr.nameExpr(Owned(NameExpr { span: TextSpan { start: 0, length: 1 }, name: TextSpan { start: 0, length: 1 }, typeArgs: List<TypeSyntax>() }))
                     let right = Expr.nameExpr(Owned(NameExpr { span: TextSpan { start: 2, length: 1 }, name: TextSpan { start: 2, length: 1 }, typeArgs: List<TypeSyntax>() }))
@@ -97,11 +100,20 @@ public sealed class SelfhostParserT12Tests(ITestOutputHelper output)
                     print($"spans [{cb.finish()}]")
 
                     var bad = List<Decl>()
-                    bad.append(Decl.importDecl(Owned(ImportDecl { span: TextSpan { start: 0, length: 10 }, path: List<TextSpan>(), alias: null })))
-                    let badUnit = CompilationUnit { span: TextSpan { start: 0, length: 10 }, members: move bad }
+                    var badPath = List<TextSpan>()
+                    badPath.append(TextSpan { start: 12, length: 3 })
+                    bad.append(Decl.importDecl(Owned(ImportDecl { span: TextSpan { start: 0, length: 10 }, path: move badPath, alias: null })))
+                    let badUnit = CompilationUnit { span: TextSpan { start: 0, length: 15 }, members: move bad }
                     var bb = StrBuf()
-                    checkSpans(in badUnit, until: 3, to: ref bb)
+                    checkSpans(in badUnit, until: 15, to: ref bb)
                     print($"bad [{bb.finish()}]")
+
+                    var big = List<Decl>()
+                    big.append(Decl.importDecl(Owned(ImportDecl { span: TextSpan { start: 0, length: 10 }, path: List<TextSpan>(), alias: null })))
+                    let bigUnit = CompilationUnit { span: TextSpan { start: 0, length: 10 }, members: move big }
+                    var bc = StrBuf()
+                    checkSpans(in bigUnit, until: 3, to: ref bc)
+                    print($"big [{bc.finish()}]")
                 }
             }
             """;
@@ -115,9 +127,10 @@ public sealed class SelfhostParserT12Tests(ITestOutputHelper output)
             type a
             pattern (let a)
             spans []
-            bad [span out of range: compilationUnit 0+10
+            bad [span out of range: importDecl path 12+3 outside 0+10
+            ]
+            big [span out of range: compilationUnit 0+10
             span out of range: importDecl 0+10
-            span out of range: importDecl 0+10 outside 0+10
             ]
 
             """, stdout);

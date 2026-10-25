@@ -157,7 +157,7 @@ bool allMapEntries(in List<Expr> elements) {
     var any = false
     for item in elements {
         any = true
-        unless item is .mapEntryExpr { return false }
+        unless item is .mapEntryExpr(_) { return false }
     }
     return any
 }
@@ -241,7 +241,7 @@ void dumpType(in TypeSyntax t, from ref Parser p, to ref StrBuf sb) {
             var paren = n.value.params.length != 1
             if !paren {
                 for tp in n.value.params {
-                    if tp is .tupleType || tp is .functionTypeSyntax { paren = true }
+                    if tp is .tupleType(_) || tp is .functionTypeSyntax(_) { paren = true }
                 }
             }
             if paren { sb.append("(") }
