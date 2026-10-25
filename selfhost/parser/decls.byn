@@ -20,7 +20,8 @@ CompilationUnit parseCompilationUnit(ref Parser p) {
             let _ = p.advance()
             continue
         }
-        let decl = parseDeclaration(ref p, topLevel: true, for: null)
+        var structRules = List<RequiresRule>()
+        let decl = parseDeclaration(ref p, topLevel: true, for: null, to: ref structRules)
         unless decl is .none { members.append(move decl) }
         recoverIfNeeded(ref p, from: errors)
         if p.pos == start { let _ = p.advance() }
@@ -87,7 +88,7 @@ void rejectModifiers(ref Parser p, for Modifiers modifiers, by Modifiers allowed
 }
 
 /// `.none` is the C# `null`; `structName` is the enclosing struct's name, or null (Q448).
-Decl parseDeclaration(ref Parser p, bool topLevel, for TextSpan? structName) {
+Decl parseDeclaration(ref Parser p, bool topLevel, for TextSpan? structName, to ref List<RequiresRule> structRules) {
     let first = p.current()
     var doc = docOf(ref p, for: first)
     let startIndex = p.pos
@@ -195,7 +196,7 @@ Decl parseDeclaration(ref Parser p, bool topLevel, for TextSpan? structName) {
         d.attributes = move attributes
         decl = Decl.functionDecl(Owned(move d))
     } else if structName is not null {
-        decl = parseFieldOrProperty(ref p, at: start, by: modifiers, through: move attributes, doc: doc)
+        decl = parseFieldOrProperty(ref p, at: start, by: modifiers, through: move attributes, to: ref structRules, doc: doc)
     } else if modifiers != modifierNone {
         let _ = p.report(.expected, at: spanOf(p.current()), arg0: "a declaration after the modifiers", arg1: p.describe(p.current()))
     } else {
@@ -461,7 +462,7 @@ StructDecl parseStruct(ref Parser p, at i64 start, by Modifiers modifiers) {
             stateLines.append(UnionVariant { span: p.spanFrom(stateStart), name: stateName, fields: move payload, doc: stateDoc })
             expectEnd(ref p)
         } else if p.kind() != .requiresKeyword {
-            let member = parseDeclaration(ref p, topLevel: false, for: name)
+            let member = parseDeclaration(ref p, topLevel: false, for: name, to: ref rules)
             unless member is .none { members.append(move member) }
         } else {
             rules.append(parseRequiresRule(ref p))

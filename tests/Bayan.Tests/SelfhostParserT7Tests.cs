@@ -137,8 +137,8 @@ public sealed class SelfhostParserT7Tests(ITestOutputHelper output)
     /// <summary>
     /// Statement inputs, each the body of <c>void f()</c>: blocks, <c>if</c> with likelihood and <c>else</c>, <c>unless</c> with
     /// its input forms, <c>while</c>, <c>do while</c>, <c>while let</c>, <c>for</c> and its input forms, labels, and the
-    /// BYN1017/BYN1018 fix merging of <c>ParseBody</c>. A stray <c>else</c> is left out: what follows it depends on
-    /// <c>recoverIfNeeded</c> (T3), still a stub here.
+    /// BYN1017/BYN1018 fix merging of <c>ParseBody</c>. The last row is a stray <c>else</c> after a statement,
+    /// exercising <c>recoverIfNeeded</c> (Q464).
     /// </summary>
     [Theory]
     [InlineData("if x {\n}")]
@@ -171,6 +171,7 @@ public sealed class SelfhostParserT7Tests(ITestOutputHelper output)
     [InlineData("for (let i = 0; i < n; i++) {\n}")]
     [InlineData("outer: while x {\n}")]
     [InlineData("{\n    if x {\n    }\n}")]
+    [InlineData("x = 1\nelse")]
     public void StatementsMatchTheCSharpParser(string body)
     {
         var (path, error) = Built.Value;

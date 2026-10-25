@@ -207,26 +207,32 @@ void appendFlattened(string text, to ref StrBuf sb) {
 void dumpType(in TypeSyntax t, from ref Parser p, to ref StrBuf sb) {
     switch t {
         case .namedType(let n):
-            if n.value.path.length == 1 && n.value.args.length == 1
-                && n.value.path[0].start == n.value.span.start && n.value.path[0].length == n.value.span.length {
-                sb.append("ReadOnlySpan<")
-                appendTypes(in n.value.args, from: ref p, to: ref sb)
-                sb.append(">")
-            } else if n.value.path.length == 1 && n.value.args.length == 0 {
+            if n.value.path.length == 1 && n.value.args.length == 0 {
                 let text = nameText(ref p, at: n.value.path[0])
                 let renamed = cSharpTypeName(text)
                 sb.append(renamed.isEmpty ? (text == "char" ? "rune" : text) : renamed)
             } else {
-                var first = true
-                for path in n.value.path {
-                    if !first { sb.append(".") }
-                    first = false
-                    sb.append(nameText(ref p, at: path))
+                var readOnlySpan = false
+                if n.value.path.length == 1 && n.value.args.length == 1 {
+                    let argSpan = typeSpan(in n.value.args[0])
+                    readOnlySpan = argSpan.start == n.value.path[0].start && argSpan.end < n.value.path[0].end
                 }
-                if n.value.args.length > 0 {
-                    sb.append("<")
+                if readOnlySpan {
+                    sb.append("ReadOnlySpan<")
                     appendTypes(in n.value.args, from: ref p, to: ref sb)
                     sb.append(">")
+                } else {
+                    var first = true
+                    for path in n.value.path {
+                        if !first { sb.append(".") }
+                        first = false
+                        sb.append(nameText(ref p, at: path))
+                    }
+                    if n.value.args.length > 0 {
+                        sb.append("<")
+                        appendTypes(in n.value.args, from: ref p, to: ref sb)
+                        sb.append(">")
+                    }
                 }
             }
         case .optionalType(let n):

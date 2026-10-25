@@ -303,6 +303,6 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         Assert.True(ratio <= 10, $"bayan-parse median {bayanMedian} ns is {ratio:F2}x the C# median {csharpMedian} ns");
     }
 
-    /// <summary>Placeholder for T14's <c>SelfhostParserGenerator.OneMegabyte()</c> until it merges.</summary>
-    private static SourceText OneMegabyte() => LexerTests.OneMegabyte();
+    /// <summary>T14's generator 1 MB of valid code (R8).</summary>
+    private static SourceText OneMegabyte() => SelfhostParserGenerator.OneMegabyte();
 }

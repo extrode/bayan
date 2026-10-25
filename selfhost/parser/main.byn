@@ -75,16 +75,23 @@ i32 parseMany(string dir, by Keywords keywords) {
     return exitOk
 }
 
-/// Prints the nanoseconds spent lexing, parsing and dumping `path`.
+/// Prints the total nanoseconds spent lexing, parsing and dumping `path`, and the per-phase
+/// breakdown on stderr (`lex … parse … dump …`) for Q500.
 i32 parseTimed(string path, by Keywords keywords) {
     let bytes = Io.readFile(path) catch return fileNotFound(path)
-    let start = Io.monotonicNanos()
-    var p = Parser.create(lexer.lex(SourceText.create(path, from: move bytes), by: keywords))
+    let lexStart = Io.monotonicNanos()
+    let lexed = lexer.lex(SourceText.create(path, from: move bytes), by: keywords)
+    let lexNs = Io.monotonicNanos() - lexStart
+    let parseStart = Io.monotonicNanos()
+    var p = Parser.create(move lexed)
     var unit = parseCompilationUnit(ref p)
+    let parseNs = Io.monotonicNanos() - parseStart
+    let dumpStart = Io.monotonicNanos()
     var sb = StrBuf()
     dump(in unit, from: ref p, to: ref sb)
-    let elapsed = Io.monotonicNanos() - start
-    print($"{elapsed}")
+    let dumpNs = Io.monotonicNanos() - dumpStart
+    print($"{lexNs + parseNs + dumpNs}")
+    Io.stderr.write($"lex {lexNs} parse {parseNs} dump {dumpNs}\n")
     return exitOk
 }
 

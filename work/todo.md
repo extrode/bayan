@@ -315,3 +315,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - C# parser spans end early where `SpanFrom` is an argument before the parse it should cover: a block-bodied `LambdaExpr` ends at `=>`, a `MapEntryExpr` at `:`, a named format spec's `Argument` at `:`; matched in `exprs2.byn` (009 T10, 2026-10-26).
 - 009 T10 stand-ins for sibling helpers (`struct T10` at the end of `exprs2.byn`) must go at T15 (Q476) (009 T10, 2026-10-26).
 - C# spans of `move`, `fail`, `break`/`continue` with a label, `except` and `?.` end before their child (argument evaluation order), so the child is outside its parent (L018); the port matches C# (Q473) (009 T9, 2026-10-26).
+- C# `ParsePrimary` builds `ErrorExpr` at `Current.Start`, so a dropped value (`x = `) leaves the `ErrorExpr` span outside its parent statement's span; `spans.byn` flags it (`span out of range`) and the port matches C# (009 T15, 2026-10-26).
