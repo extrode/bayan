@@ -1,3 +1,3 @@
 # Current
 
-- Spec 006 merged to `dev`. Waiting on the user's approval of design round 3 (`feat/design-round-3`, plan `docs/plans/2026-10-22-002-design-round-3.md`); spec 007 T1+ and 008–012 build on it.
+- Building spec 007 lambdas and function types (`docs/specs/007-lambdas/`, `/implement 007`) on `feat/007-lambdas`.
