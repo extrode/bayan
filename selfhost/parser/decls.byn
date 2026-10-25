@@ -1,0 +1,11 @@
+// Declarations A. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 347–about 1060: the compilation
+// unit, imports, attributes and `because`, modifiers, functions with type params, params and
+// particles, `fails`, `uses`, `requires`, `where`, `becomes`, structs and `ParseBody(string, …)`.
+// Owner: T4.
+//
+// T1 stub: the cross-file entry points only.
+
+CompilationUnit parseCompilationUnit(ref Parser p) =>
+    CompilationUnit { span: TextSpan { start: 0, length: 0 }, members: List<Decl>() }
+
+Decl parseDeclaration(ref Parser p, bool topLevel, for TextSpan structName) => .none

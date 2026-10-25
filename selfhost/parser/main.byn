@@ -1,0 +1,54 @@
+// bayan-parse: the self-hosted parser. Prints the same text as `bayan parse --ast`. Ports
+// `CliApp.Parse` in the shape of the lexer's `main.byn`. Owner: T13.
+//
+//     bayan-parse [<path>|-]    the tree dump and diagnostics of `<path>`, or of stdin given `-` or no
+//                               path; exit 0 if there are no diagnostics, else 1
+//
+// Exit 2 on a usage error; exit 4 when the input cannot be read.
+//
+// T1 stub: the single-file mode only; T13 adds `--many`, `--time` and `--codes`.
+
+import lexer
+
+const exitOk: i32 = 0
+const exitFailure: i32 = 1
+const exitUsage: i32 = 2
+const exitInput: i32 = 4
+
+i32 usage(string message) {
+    Io.stderr.write($"bayan-parse: {message}\nusage: bayan-parse [<path>|-]\n")
+    return exitUsage
+}
+
+i32 unreadable(string path) {
+    Io.stderr.write($"bayan-parse: cannot read `{path}`\n")
+    return exitInput
+}
+
+/// Parses `path`, or stdin when `path` is `-`, and prints its dump.
+i32 parseOne(string path, by Keywords keywords) {
+    var bytes = List<u8>()
+    if path == "-" {
+        let input = Io.stdin.readAll()
+        unless input.isOk {
+            Io.stderr.write("bayan-parse: cannot read standard input\n")
+            return exitInput
+        }
+        for b in input.value.bytes { bytes.append(b) }
+    } else {
+        bytes = Io.readFile(path) catch return unreadable(path)
+    }
+    var p = Parser.create(lexer.lex(SourceText.create(path == "-" ? "<stdin>" : path, from: move bytes), by: keywords))
+    var unit = parseCompilationUnit(ref p)
+    var sb = StrBuf()
+    dump(ref unit, from: ref p, to: ref sb)
+    Io.stdout.write(sb.finish())
+    return p.errorCount() == 0 ? exitOk : exitFailure
+}
+
+i32 main(ReadOnlySpan<string> args) {
+    let keywords = Keywords.build()
+    if args.length == 0 { return parseOne("-", by: keywords) }
+    if args.length == 1 && !args[0].startsWith("--") { return parseOne(args[0], by: keywords) }
+    return usage("expected `[<path>|-]`")
+}

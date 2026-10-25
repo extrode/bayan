@@ -1,0 +1,17 @@
+// The tree dump, declarations and statements. Ports `src/Bayan.Syntax/Ast/AstDump.cs` (`Dump`, the
+// `Writer` with `Decl`, `Stmt`, `Mods`, `TypeParams`, `Params`, `Doc`, `Bases`, `Where`,
+// `Attribute`, `Rules`), plus tombstone compaction before the lexer's `renderAll`. Owner: T11.
+//
+// T1 stub: the `CompilationUnit` line, then `\n` and the rendered diagnostics, as `AstDump.Dump`.
+
+import lexer
+
+void dump(ref CompilationUnit unit, from ref Parser p, to ref StrBuf sb) {
+    sb.append("CompilationUnit\n")
+    if p.lexed.diagnostics.length > 0 {
+        sb.append("\n")
+        using var arena = Arena()
+        let diagnostics = p.lexed.diagnostics.copy(to: arena)
+        lexer.renderAll(diagnostics.span, to: ref sb, from: ref p.lexed.source)
+    }
+}

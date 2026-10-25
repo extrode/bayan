@@ -1,0 +1,29 @@
+// The syntax tree. Ports `src/Bayan.Syntax/Ast/Nodes.cs`. Owner: T2.
+//
+// T1 stub: only what the other stubs name. T2 replaces this file with one struct per node record
+// and the five unions of `Owned<…>` variants, each with `none` for a C# `null` child.
+
+struct CompilationUnit {
+    TextSpan span
+    List<Decl> members
+}
+
+union Decl {
+    none
+}
+
+union TypeSyntax {
+    none
+}
+
+union Stmt {
+    none
+}
+
+union Expr {
+    none
+}
+
+union Pattern {
+    none
+}

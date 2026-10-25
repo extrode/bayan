@@ -1,0 +1,6 @@
+// Types. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 1743–2113 (`ParseType`, `ScanType`,
+// `ScanExprTypeArgs`, `CSharpTypeNames`). Owner: T6.
+//
+// T1 stub: the cross-file entry points only.
+
+TypeSyntax parseType(ref Parser p) => .none

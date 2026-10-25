@@ -4,7 +4,7 @@
 
 const maxInterpolationDepth: i64 = 32
 
-LexResult lex(move SourceText source, by Keywords keywords) {
+public LexResult lex(move SourceText source, by Keywords keywords) uses alloc {
     var modes = List<ModeEntry>()
     for i in 0..maxInterpolationDepth + 1 { modes.append(ModeEntry { inText: false, braceDepth: 0, start: 0 }) }
     var result = LexResult {
@@ -200,9 +200,9 @@ struct ModeEntry {
 }
 
 /// The tokens and diagnostics of one source, and the lexer's state while it runs; the last token is `endOfFile`.
-struct LexResult {
-    SourceText source
-    List<Diagnostic> diagnostics
+public struct LexResult {
+    public SourceText source
+    public List<Diagnostic> diagnostics
     /// `maxInterpolationDepth + 1` entries; `modes[depth]` is the current one.
     List<ModeEntry> modes
     i64 depth
@@ -211,7 +211,7 @@ struct LexResult {
     u8 tokenFlags
     i64 docStart
     i64 docEnd
-    List<Token> tokens
+    public List<Token> tokens
 
     void run(ref this, Keywords keywords) {
         if source.bytes.length >= 3 && source.bytes[0] == 0xEF && source.bytes[1] == 0xBB && source.bytes[2] == 0xBF { pos = 3 }

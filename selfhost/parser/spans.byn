@@ -1,0 +1,7 @@
+// Span checks for L018: every node span lies within `[0, length]` and every child span within its
+// parent's, one line per violation in the style of the lexer's `checkSpans`. New code, no C#
+// counterpart. Owner: T12.
+//
+// T1 stub: the cross-file entry points only.
+
+void checkSpans(ref CompilationUnit unit, until i64 length, to ref StrBuf sb) {}

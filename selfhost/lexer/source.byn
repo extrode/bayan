@@ -2,26 +2,26 @@
 // parts of .NET's UTF-8 decoding the lexer relies on (`Rune.DecodeFromUtf8`, `Encoding.UTF8.GetString`).
 
 /// A half-open range of UTF-8 byte offsets into a source.
-struct TextSpan {
-    i64 start
-    i64 length
+public struct TextSpan {
+    public i64 start
+    public i64 length
 
-    i64 end => start + length
+    public i64 end => start + length
 
-    static TextSpan fromBounds(i64 start, until i64 end) => TextSpan { start: start, length: end - start }
+    public static TextSpan fromBounds(i64 start, until i64 end) => TextSpan { start: start, length: end - start }
 }
 
 /// One source file as UTF-8 bytes. Positions everywhere are byte offsets into `bytes`; line and
 /// column are computed only when a human needs them.
-struct SourceText {
-    string path
-    List<u8> bytes
+public struct SourceText {
+    public string path
+    public List<u8> bytes
     /// Empty until a line or column is first needed.
     List<i64> lineStarts
 
-    i64 length => bytes.length
+    public i64 length => bytes.length
 
-    static SourceText create(string path, from move List<u8> bytes) =>
+    public static SourceText create(string path, from move List<u8> bytes) uses alloc =>
         SourceText { path: path, bytes: move bytes, lineStarts: List<i64>() }
 
     i64 lineCount(ref this) {
@@ -38,7 +38,7 @@ struct SourceText {
     }
 
     /// Zero-based line index containing `offset`.
-    i64 getLineIndex(ref this, i64 offset) {
+    public i64 getLineIndex(ref this, i64 offset) uses alloc {
         if offset < 0 || offset > length { panic("offset out of range") }
         ensureLineStarts()
         // The last line start <= offset.
@@ -56,7 +56,7 @@ struct SourceText {
     }
 
     /// The span of line `lineIndex`, excluding its line terminator.
-    TextSpan getLineSpan(ref this, i64 lineIndex) {
+    public TextSpan getLineSpan(ref this, i64 lineIndex) uses alloc {
         ensureLineStarts()
         let start = lineStarts[lineIndex]
         var end = lineIndex + 1 < lineStarts.length ? lineStarts[lineIndex + 1] : length
@@ -66,7 +66,7 @@ struct SourceText {
     }
 
     /// One-based line and column; the column counts Unicode scalars, not bytes.
-    (i64 line, i64 column) getLinePosition(ref this, i64 offset) {
+    public (i64 line, i64 column) getLinePosition(ref this, i64 offset) uses alloc {
         let line = getLineIndex(offset)
         let start = lineStarts[line]
         var column: i64 = 1
@@ -77,7 +77,7 @@ struct SourceText {
     }
 
     /// The text of `span`, with invalid UTF-8 replaced as `Encoding.UTF8.GetString` does.
-    string getText(TextSpan span) => $"{utf8(bytes.span[span.start..span.end])}"
+    public string getText(TextSpan span) uses alloc => $"{utf8(bytes.span[span.start..span.end])}"
 }
 
 // ── UTF-8 ─────────────────────────────────────────────────────────────────────────

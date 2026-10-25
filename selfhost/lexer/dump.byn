@@ -27,7 +27,7 @@ void dump(ref LexResult result, to ref StrBuf sb) {
 }
 
 /// Backtick-quoted text with line breaks, tabs and invisible characters made visible.
-void escape(ReadOnlySpan<u8> text, to ref StrBuf sb) {
+public void escape(ReadOnlySpan<u8> text, to ref StrBuf sb) uses alloc {
     sb.append("`")
     var pos: i64 = 0
     while pos < text.length {

@@ -1,0 +1,10 @@
+// The tree dump, S-expressions. Ports `src/Bayan.Syntax/Ast/AstDump.cs` `Type`, `Pattern`, `Expr`,
+// `Sexp`, `FieldInits`, `Quote`, `AssignText`, `BinaryText`, `UnaryText`. Owner: T12.
+//
+// T1 stub: the cross-file entry points only.
+
+void dumpExpr(ref Expr e, from ref Parser p, to ref StrBuf sb) {}
+
+void dumpType(ref TypeSyntax t, from ref Parser p, to ref StrBuf sb) {}
+
+void dumpPattern(ref Pattern pattern, from ref Parser p, to ref StrBuf sb) {}

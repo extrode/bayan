@@ -1,0 +1,5 @@
+// Statements B. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 2667–3160: `switch`, labels,
+// `defer`, `assert`, `return`, `fail`, `break`/`continue`, `become`, `provide`/context, assignment
+// and the remaining statements. Owner: T8.
+//
+// T1 stub: this file has no cross-file entry point.
