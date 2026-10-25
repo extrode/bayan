@@ -1,0 +1,15 @@
+// A local known to be in one state is passed `ref` as its declared type, so `T` is inferred as `Order`.
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+    }
+}
+
+i64 touch<T>(T v, to ref T x) => 0
+
+var o: Order = Order.paid { id: 1, payment: 5 }
+if o is .paid {
+    print($"{touch(Order.draft { id: 2 }, to: ref o)} {o.payment}")
+}

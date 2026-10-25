@@ -63,6 +63,49 @@ public sealed class RuntimeNativeTests
         Assert.Equal("exit 0\n\"a b\"\n\"\"\n\"^&|<>()!\"\n\"a\\\"\n", Run(Build(CliApp.EmitC(c, BuildMode.Debug)), []).Replace("\r\n", "\n"));
     }
 
+    /// <summary>A 0-byte request is out of memory to an allocator whose <c>realloc</c> returns NULL for it.</summary>
+    [Fact]
+    public void EmptyInputAsksNoZeroByteBlock()
+    {
+        var driver = File.ReadAllText(Path.Combine(Golden.RepoRoot, "tests", "native", "zero-resize.c"));
+        Assert.Equal("hex 0, zero-byte requests 0\n", Run(Build(driver), []).Replace("\r\n", "\n"));
+    }
+
+    /// <summary><c>replace</c> with items read from the list itself releases the copy it takes of them.</summary>
+    [Fact]
+    public void AliasingReplaceReleasesItsCopy()
+    {
+        const string program = """
+            var xs = List<i64>()
+            xs.append(1)
+            xs.append(2)
+            xs.replace(at: 0..1, by: xs.span[1..2])
+            print($"{xs[0]} {xs[1]}")
+            """;
+        var c = Compilation.Create([SourceText.FromString("replace.byn", program)], Path.Combine(Golden.RepoRoot, "tmp"));
+        Assert.False(c.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
+        var code = CliApp.EmitC(c, BuildMode.Debug);
+        const string counters = """
+            #include <stdio.h>
+            #include <stdlib.h>
+            static int live_copies;
+            static void report(void) { printf("live %d\n", live_copies); }
+            static void* counted_copy(const void* p, int64_t n, byn_alloc* to) {
+                if (live_copies++ == 0) atexit(report);
+                return byn_copy_bytes(p, n, to);
+            }
+            static void counted_release(byn_alloc* from, void* p) {
+                live_copies--;
+                byn_release(from, p);
+            }
+
+            """;
+        Assert.Contains("byn_copy_bytes(items.ptr", code);
+        code = code.Replace("#include \"bayan-rt.h\"\n", "#include \"bayan-rt.h\"\n" + counters)
+            .Replace("byn_copy_bytes(items.ptr", "counted_copy(items.ptr").Replace("byn_release(l->alloc", "counted_release(l->alloc");
+        Assert.Equal("2 2\nlive 0\n", Run(Build(code), []).Replace("\r\n", "\n"));
+    }
+
     private static string Build(string cSource)
     {
         var build = Toolchain.Build(cSource, BuildMode.Debug);
