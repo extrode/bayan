@@ -294,7 +294,7 @@ public sealed class CEmitter
         ArrayType a => $"arr{a.Length}_" + Key(a.Element),
         TupleType tt => $"tup{tt.Fields.Count}_" + string.Join("_", tt.Fields.Select(f => Key(f.Type))),
         RangeType r => Key(r.Layout),
-        FunctionType f => "fn_" + string.Concat(f.Parameters.Select(p => Key(p) + "_")) + Key(f.Return) + (f.Fails.Count > 0 ? "_fails" : "") + string.Concat(f.Uses.Select(u => "_uses_" + u)),
+        FunctionType f => $"fn{f.Parameters.Count}_" + string.Concat(f.Parameters.Select(p => Key(p) + "_")) + Key(f.Return) + (f.Fails.Count > 0 ? "_fails" : "") + string.Concat(f.Uses.Select(u => "_uses_" + u)),
         _ => throw new InvalidOperationException($"no C type for {t.DisplayName}"),
     };
 

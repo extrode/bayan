@@ -377,7 +377,11 @@ internal sealed class OwnershipAnalysis
             {
                 foreach (var child in BoundTree.Children(e))
                     if (child is BoundExpr ce) state = Expr(ce, state);
-                foreach (var stored in StoredOperands(e)) CheckStore(stored, captured: e is BoundLambda);
+                foreach (var stored in StoredOperands(e)) CheckStore(stored);
+                // A local read inside nested lambdas is a capture of each of them; only the function that owns it reports it.
+                if (e is BoundLambda l)
+                    foreach (var capture in l.Captures.Where(c => _fn.Locals.Contains(c.Local)))
+                        CheckStore(capture, captured: true);
                 return e.Type.IsNever && e is not BoundErrorExpr ? State.Unreachable() : state;
             }
         }
@@ -392,7 +396,6 @@ internal sealed class OwnershipAnalysis
         BoundTuple t => t.Elements,
         BoundWith w => w.Updates.Select(u => u.Value),
         BoundBuiltinCall { Member: BuiltinMember.ListAdd } b => [b.Arguments[0]],
-        BoundLambda l => l.Captures,
         _ => [],
     };
 

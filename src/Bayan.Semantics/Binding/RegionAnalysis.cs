@@ -450,10 +450,11 @@ internal sealed class RegionAnalysis
             }
         }
         // Rule 4: a returned borrow derives from every argument. `Io` and decoded `string` results are fresh copies and borrow none.
+        // A value passed to a function-typed parameter is not one: no function type can be returned (BYN2822, spec 007 R10).
         var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch
             or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.StringInvalidUtf8At or BuiltinFunction.HexEncode or BuiltinFunction.HexDecode
             ? Borrow.None
-            : args.Aggregate(receiver, (acc, a) => acc.Union(a));
+            : args.Where((_, i) => i >= fn.Parameters.Count || fn.Parameters[i].Type is not FunctionType).Aggregate(receiver, (acc, a) => acc.Union(a));
         // A method returning a span or `dyn ref` may lend its own fields' storage: the result borrows the receiver.
         if (c.Receiver is not null && c.Type is SpanType or DynRefType) result = result.Union(Lend(c.Receiver, receiver, c.Syntax.Span.End));
         // So may a function returning one: the result lives no longer than any argument passed by `ref` (`in` is by value),
