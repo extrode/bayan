@@ -121,9 +121,9 @@ string whereText(in List<WhereClause> where, from ref Parser p) {
 /// `Writer.Attribute`: `@name arg: value …` with the optional `because` reason.
 string attributeText(in AttributeSyntax a, from ref Parser p) {
     var sb = StrBuf()
-    let name = p.lexed.source.getText(a.name)
+    let attrName = p.lexed.source.getText(a.name)
     let bracket = a.span.length > 0 && p.lexed.source.bytes[a.span.start] == '['
-    sb.append($"@{bracket && name.length > 0 ? $"{name.runes.take(1).lowercased()}{name.runes.skip(1)}" : name}")
+    sb.append($"@{bracket && attrName.length > 0 ? $"{attrName.runes.take(1).lowercased()}{attrName.runes.skip(1)}" : attrName}")
     for arg in a.args {
         sb.append(" ")
         if (arg.name is { } name) {
