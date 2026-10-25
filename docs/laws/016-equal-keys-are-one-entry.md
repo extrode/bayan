@@ -1,11 +1,12 @@
 ---
 id: L016
 title: Equal keys are one entry
-status: proposed
+status: enacted
 kind: property
 scope: src/Bayan.Backend.C/CEmitter.cs
 proof: tests/Bayan.Tests/MapKeyLawTests.cs
 check: dotnet test -v q --filter "Law=L003|Law=L016"
+enacted: 2026-10-25
 ---
 
 ## Statement
