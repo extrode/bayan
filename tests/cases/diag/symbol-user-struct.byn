@@ -1,0 +1,11 @@
+// A user type named `Symbol` meets the built-in, as a user `StrBuf` does.
+struct Symbol {
+    i32 id
+}
+
+i32 idOf(Symbol s) => s.id
+
+void main() {
+    let s = Symbol { id: 3 }
+    print($"{idOf(s)}")
+}

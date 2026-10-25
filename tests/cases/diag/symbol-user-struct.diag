@@ -1,0 +1,9 @@
+error BYN2003: `id` is not a member of `Symbol`
+
+  6 │ i32 idOf(Symbol s) => s.id
+    │                         ^^
+
+error BYN2114: `Symbol` is not a struct
+
+  9 │     let s = Symbol { id: 3 }
+    │             ^^^^^^^^^^^^^^^^

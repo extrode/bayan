@@ -846,10 +846,10 @@ internal sealed partial class Binder
         return new BoundBuiltinCall(c, m.Member, receiver, args, returns);
     }
 
-    /// <summary>Whether <c>map.slot</c> can insert a default <paramref name="t"/>: numbers, <c>bool</c>, <c>rune</c>, <c>string</c>, optionals and structs whose fields all have defaults.</summary>
+    /// <summary>Whether <c>map.slot</c> can insert a default <paramref name="t"/>: numbers, <c>bool</c>, <c>rune</c>, <c>string</c>, <c>Symbol</c>, optionals and structs whose fields all have defaults.</summary>
     private static bool IsDefaultable(TypeSymbol t) => t switch
     {
-        PrimitiveType { Kind: PrimitiveKind.Char } => true,
+        PrimitiveType { Kind: PrimitiveKind.Char } or BuiltinType { Kind: BuiltinKind.Symbol } => true,
         OptionalType => true,
         StructSymbol s => s.IsDefaultable,
         _ => t.IsNumeric || t.IsBool || t.IsString,

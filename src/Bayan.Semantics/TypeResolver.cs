@@ -187,6 +187,9 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 case "FormatSpec":
                     NoTypeArgs(n);
                     return BuiltinType.FormatSpec;
+                case "Symbol":
+                    NoTypeArgs(n);
+                    return BuiltinType.Symbol;
                 case "dec" or "decimal":
                     compilation.Report(DiagnosticCodes.Unsupported, file.Source, n.Span, ["the `dec` type"]);
                     return ErrorType.Instance;
@@ -471,7 +474,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
     private string? Suggest(string text)
     {
         var lower = text.ToLowerInvariant();
-        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ParseError", "ValidationError", "Violation", "Rule", "ProcessResult", "Panic", "FormatSpec"]))
+        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ParseError", "ValidationError", "Violation", "Rule", "ProcessResult", "Panic", "FormatSpec", "Symbol"]))
             if (name.Equals(text, StringComparison.OrdinalIgnoreCase)) return name;
         if (PrimitiveType.ByName.ContainsKey(lower)) return lower;
         return lower switch
