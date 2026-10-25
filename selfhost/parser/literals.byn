@@ -81,7 +81,7 @@ string decodeDoc(ReadOnlySpan<u8> doc) {
     for i in 0..text.length + 1 {
         if i < text.length && text[i] != '\n' { continue }
         var from = lineStart
-        while from < i && isWhiteSpace(text[from]) { from += 1 }
+        while from < i && isUnicodeWhiteSpace(text[from]) { from += 1 }
         if i - from >= 3 && text[from] == '/' && text[from + 1] == '/' && text[from + 2] == '/' { from += 3 }
         if from < i && text[from] == ' ' { from += 1 }
         if lineStart > 0 { result.append('\n') }
@@ -159,7 +159,7 @@ i64 hexValue(ReadOnlySpan<rune> digits) {
 }
 
 /// `char.IsWhiteSpace`, which `TrimStart` trims.
-bool isWhiteSpace(rune r) {
+bool isUnicodeWhiteSpace(rune r) {
     let c = u32(r)
     return (c >= 0x09 && c <= 0x0D) || c == 0x20 || c == 0x85 || c == 0xA0 || c == 0x1680 || (c >= 0x2000 && c <= 0x200A) ||
     c == 0x2028 || c == 0x2029 || c == 0x202F || c == 0x205F || c == 0x3000
