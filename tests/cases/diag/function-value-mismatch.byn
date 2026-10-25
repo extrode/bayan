@@ -13,7 +13,18 @@ bool isChecked(i64 x) fails LexError {
     return true
 }
 
+bool isInferred(i64 x) fails {
+    fail LexError.bad if x < 0
+    return true
+}
+
+void bump(ref i64 x) {
+    x += 1
+}
+
 bool keep((i64 -> bool) p) => true
+
+bool keepVoid((i64 -> void) p) => true
 
 bool keepChecked((i64 -> bool fails LexError) p) => true
 
@@ -24,4 +35,6 @@ void main() {
     let b = keepChecked(isBig)
     let c = keepRead(isChecked)
     let d: i64 -> i64 = isBig
+    let e = keepChecked(isInferred)
+    let f = keepVoid(bump)
 }

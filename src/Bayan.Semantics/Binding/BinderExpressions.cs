@@ -145,9 +145,13 @@ internal sealed partial class Binder
                 var overloads = fn.Module.Functions.TryGetValue(fn.Name, out var fs) && fs.Contains(fn) ? fs : [fn];
                 if (overloads.FirstOrDefault(f => Conversions.Implicit(f, target) is not null) is { } match)
                     return new BoundFunctionRef(value.Syntax, match, target);
-                var signature = $"{fn.ReturnType.DisplayName} {fn.Name}({string.Join(", ", fn.Parameters.Select(p => p.Type.DisplayName))})"
+                var signature = $"{fn.ReturnType.DisplayName} {fn.Name}({string.Join(", ", fn.Parameters.Select(p => (p.Modifier == ParamModifier.None ? "" : p.Modifier.ToString().ToLowerInvariant() + " ") + p.Type.DisplayName))})"
                     + (fn.Fails ? " fails" + (fn.ErrorSets.Count > 0 ? " " + string.Join(", ", fn.ErrorSets.Select(s => s.DisplayName)) : "") : "");
-                Report(DiagnosticCodes.TypeMismatch, span, [signature, target.DisplayName], help: $"pass a function of type `{target.DisplayName}`");
+                // Inferred error sets are not known until every body is bound (Q364 a).
+                var help = fn is { Fails: true, ErrorSets.Count: 0 } && target.Fails.Count > 0
+                    ? $"declare the error sets of `{fn.Name}`: `fails {string.Join(", ", target.Fails.Select(s => s.DisplayName))}`"
+                    : $"pass a function of type `{target.DisplayName}`";
+                Report(DiagnosticCodes.TypeMismatch, span, [signature, target.DisplayName], help: help);
                 return new BoundErrorExpr(value.Syntax);
             case BoundMethodGroup g:
                 reason = g.Function.Kind switch
