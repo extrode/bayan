@@ -282,9 +282,49 @@ public sealed class MapType(TypeSymbol key, TypeSymbol value) : ConstructedType
 
     public override string DisplayName => $"Map<{KeyType.DisplayName}, {ValueType.DisplayName}>";
 
-    /// <summary>Keys hash their bytes: integers, <c>char</c>, <c>bool</c>, <c>string</c> and plain enums.</summary>
-    public static bool IsValidKey(TypeSymbol t) =>
-        t.IsInteger || t.IsString || t == PrimitiveType.Char || t.IsBool || t is EnumSymbol { Fields.Count: 0 };
+    /// <summary>
+    /// Keys hash their value: integers, <c>char</c>, <c>bool</c>, <c>string</c>, <c>Symbol</c>, plain enums, and tuples
+    /// and structs (not <c>@noEquality</c>) whose parts are keys. A type parameter part is checked at each instantiation.
+    /// </summary>
+    public static bool IsValidKey(TypeSymbol t) => IsValidKey(t, []);
+
+    /// <summary><paramref name="path"/> holds the structs being checked, so a struct that contains itself (BYN2761) ends the walk.</summary>
+    private static bool IsValidKey(TypeSymbol t, HashSet<TypeSymbol> path)
+    {
+        switch (t)
+        {
+            case TupleType tt:
+                return tt.Fields.All(f => f.Type is TypeParameterType || IsValidKey(f.Type, path));
+            case StructSymbol s:
+                if (HasNoEquality(s) || !path.Add(s)) return false;
+                var valid = s.Fields.All(f => f.Type is TypeParameterType || IsValidKey(f.Type, path));
+                path.Remove(s);
+                return valid;
+            default:
+                return t.IsInteger || t.IsString || t == PrimitiveType.Char || t.IsBool || t == BuiltinType.Symbol
+                    || t is EnumSymbol { Fields.Count: 0 };
+        }
+    }
+
+    /// <summary>
+    /// For a tuple or struct that is not a key, its first part that is not one: a field's name, or an element's name
+    /// or 1-based position. Null for any other type, and for a <c>@noEquality</c> struct, which no part disqualifies.
+    /// </summary>
+    public static (string Part, TypeSymbol Type)? InvalidKeyPart(TypeSymbol t)
+    {
+        IEnumerable<(string Part, TypeSymbol Type)> parts = t switch
+        {
+            TupleType tt => tt.Fields.Select((f, i) => (f.Name ?? (i + 1).ToString(), f.Type)),
+            StructSymbol s when !HasNoEquality(s) => s.Fields.Select(f => (f.Name, f.Type)),
+            _ => [],
+        };
+        foreach (var (part, type) in parts)
+            if (type is not TypeParameterType && !IsValidKey(type))
+                return (part, type);
+        return null;
+    }
+
+    private static bool HasNoEquality(StructSymbol s) => s.Decl.Attributes.Any(a => a.Name.Text == "noEquality");
 }
 
 /// <summary><c>Owned&lt;T&gt;</c>: a non-null pointer to a <c>T</c> copied into the context allocator; copies share it.</summary>

@@ -1764,8 +1764,13 @@ internal sealed partial class Binder
             }
             if (!MapType.IsValidKey(key.Type))
             {
-                Report(DiagnosticCodes.InvalidMapKey, entries[0].Key.Span, [key.Type.DisplayName],
-                    help: "use an integer type, `rune`, `bool`, `string` or a plain enum as the key");
+                if (MapType.InvalidKeyPart(key.Type) is var (part, partType))
+                    Report(DiagnosticCodes.KeyPartNotHashable, entries[0].Key.Span,
+                        [key.Type.DisplayName, key.Type is Symbols.TupleType ? "element" : "field", part, partType.DisplayName],
+                        help: "use a field that identifies the value as the key, such as an id or a `Symbol`");
+                else
+                    Report(DiagnosticCodes.InvalidMapKey, entries[0].Key.Span, [key.Type.DisplayName],
+                        help: "use an integer type, `rune`, `bool`, `string`, `Symbol`, a plain enum, or a tuple or struct of those as the key");
                 foreach (var e in entries.Skip(1)) BindMapPart(e);
                 return new BoundErrorExpr(c);
             }

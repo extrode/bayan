@@ -1,0 +1,52 @@
+struct Table {
+    Map<MemberKey, i32> members
+    Map<Reading, i32> readings
+}
+
+struct Weight { f64 grams }
+
+struct Reading { f64 value }
+
+struct Named { string? name }
+
+enum Planet(f64 mass) { earth(6e24) }
+
+struct Orbit { Planet planet }
+
+@noEquality
+struct Handle { i64 id }
+
+struct Owner { Handle handle }
+
+struct Scope { i32 depth }
+
+struct MemberKey {
+    i32 owner
+    Symbol name
+    Scope scope
+}
+
+V largest<K, V>(Map<K, V> m, from move V start) => start
+
+i32 heaviest<K>(K key) {
+    var m = Map<K, i32>()
+    m[key] = 1
+    return largest(m, from: 0)
+}
+
+void keys() {
+    let symbols = Map<Symbol, i32>()
+    let pairs = Map<(i32, Symbol), i32>()
+    let named = Map<(i32 scope, Symbol name), i32>()
+    let members = Map<MemberKey, i32>()
+    let weights = Map<Weight, i32>()
+    let lists = Map<(i32, List<i32>), i32>()
+    let optionals = Map<Named, i32>()
+    let orbits = Map<Orbit, i32>()
+    let owners = Map<Owner, i32>()
+    let handles = Map<Handle, i32>()
+    let byLiteral = [(1, 2.5): 1]
+    let byScope = [Scope { depth: 1 }: 1]
+    print($"{largest(symbols, from: 1)}")
+    print($"{heaviest(Weight { grams: 1.0 })}")
+}

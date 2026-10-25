@@ -164,12 +164,25 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                     if (key.IsError || value.IsError) return ErrorType.Instance;
                     if (compilation.FunctionTypeNotHere(key, file.Source, n.Args[0].Span, "a map key") |
                         compilation.FunctionTypeNotHere(value, file.Source, n.Args[1].Span, "a map value")) return ErrorType.Instance;
-                    if (!MapType.IsValidKey(key) && key is not TypeParameterType)
+                    if (key is TypeParameterType) return new MapType(key, value);
+                    var source = file.Source;
+                    var span = n.Args[0].Span;
+                    bool CheckKey()
                     {
-                        compilation.Report(DiagnosticCodes.InvalidMapKey, file.Source, n.Args[0].Span, [key.DisplayName],
-                            help: "use an integer type, `rune`, `bool`, `string` or a plain enum as the key");
-                        return ErrorType.Instance;
+                        if (MapType.IsValidKey(key)) return true;
+                        if (MapType.InvalidKeyPart(key) is var (part, partType))
+                            compilation.Report(DiagnosticCodes.KeyPartNotHashable, source, span,
+                                [key.DisplayName, key is Symbols.TupleType ? "element" : "field", part, partType.DisplayName],
+                                help: "use a field that identifies the value as the key, such as an id or a `Symbol`");
+                        else
+                            compilation.Report(DiagnosticCodes.InvalidMapKey, source, span, [key.DisplayName],
+                                help: "use an integer type, `rune`, `bool`, `string`, `Symbol`, a plain enum, or a tuple or struct of those as the key");
+                        return false;
                     }
+                    // The fields of a struct key, or of one inside a tuple key, may not be declared yet; the check waits until they are.
+                    if (!compilation.MembersDeclared && key is StructSymbol or Symbols.TupleType)
+                        compilation.AfterMembersDeclared(() => CheckKey());
+                    else if (!CheckKey()) return ErrorType.Instance;
                     return new MapType(key, value);
                 }
                 case "Arena":
