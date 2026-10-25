@@ -560,7 +560,7 @@ i64 checkUnlessCondition(ref Parser p, from in Expr condition, at TextSpan fixSp
             return checkUnlessCondition(ref p, from: in n.value.inner, at: fixSpan)
         case .unaryExpr(let n):
             if n.value.op == .notKeyword {
-                let operand = p.lexed.source.getText(exprSpan(in n.value.operand))
+                let operand = p.lexed.source.getText(T7.exprSpan(in n.value.operand))
                 return p.reportFix(.unlessNegated, at: fixSpan, through: fixSpan, by: $"if {operand}", label: "`unless` already negates",
                     help: "use `if` with the condition as written")
             }
@@ -572,7 +572,7 @@ i64 checkUnlessCondition(ref Parser p, from in Expr condition, at TextSpan fixSp
             }
         case .isExpr(let n):
             if isNullTest(in condition) {
-                let value = p.lexed.source.getText(exprSpan(in n.value.value))
+                let value = p.lexed.source.getText(T7.exprSpan(in n.value.value))
                 return p.reportFix(.unlessNull, at: fixSpan, through: fixSpan, by: $"if {value} is not null", label: "a negated null test",
                     help: "use `if` with `is not null`")
             }
@@ -720,7 +720,7 @@ Stmt parseParenFor(ref Parser p, from i64 start, by Token keyword, bool tryKeywo
     if close.length > 0 && p.errorCount() == errors {
         let span = TextSpan.fromBounds(keyword.kind == .foreachKeyword ? keyword.start : open.start, until: close.end)
         let typeText = isNoType(in type) ? "" : $"{p.lexed.source.getText(typeSpan(in type))} "
-        let header = $"{typeText}{p.lexed.source.getText(name)} in {p.lexed.source.getText(exprSpan(in iterable))}"
+        let header = $"{typeText}{p.lexed.source.getText(name)} in {p.lexed.source.getText(T7.exprSpan(in iterable))}"
         let replacement = keyword.kind == .foreachKeyword ? $"for {header}" : open.hasTriviaBefore ? header : $" {header}"
         input = p.reportFix(.forInputForm, at: span, through: span, by: replacement, label: "the input form",
             help: "write the loop variable and iterable without parentheses")
@@ -911,4 +911,43 @@ struct T7 {
     static bool isPatternExprStart(ref Parser p) => false
 
     static Expr parsePatternExpr(ref Parser p) => .none
+
+    // exprs.byn (T9): the T7 and T10 tests build without exprs.byn
+    static TextSpan exprSpan(in Expr e) => e switch {
+        .literalExpr(let n) => n.value.span,
+        .interpolatedExpr(let n) => n.value.span,
+        .nameExpr(let n) => n.value.span,
+        .thisExpr(let n) => n.value.span,
+        .memberExpr(let n) => n.value.span,
+        .targetMemberExpr(let n) => n.value.span,
+        .callExpr(let n) => n.value.span,
+        .indexExpr(let n) => n.value.span,
+        .unaryExpr(let n) => n.value.span,
+        .binaryExpr(let n) => n.value.span,
+        .rangeExpr(let n) => n.value.span,
+        .conditionalExpr(let n) => n.value.span,
+        .castExpr(let n) => n.value.span,
+        .isExpr(let n) => n.value.span,
+        .exceptExpr(let n) => n.value.span,
+        .inExpr(let n) => n.value.span,
+        .switchExpr(let n) => n.value.span,
+        .tryExpr(let n) => n.value.span,
+        .moveExpr(let n) => n.value.span,
+        .catchExpr(let n) => n.value.span,
+        .caughtErrorExpr(let n) => n.value.span,
+        .jumpExpr(let n) => n.value.span,
+        .blockExpr(let n) => n.value.span,
+        .structLiteralExpr(let n) => n.value.span,
+        .withExpr(let n) => n.value.span,
+        .spreadExpr(let n) => n.value.span,
+        .mapEntryExpr(let n) => n.value.span,
+        .collectionExpr(let n) => n.value.span,
+        .tupleExpr(let n) => n.value.span,
+        .parenExpr(let n) => n.value.span,
+        .lambdaExpr(let n) => n.value.span,
+        .stackallocExpr(let n) => n.value.span,
+        .patternExpr(let n) => n.value.span,
+        .errorExpr(let n) => n.value.span,
+        .none => TextSpan { start: 0, length: 0 },
+    }
 }
