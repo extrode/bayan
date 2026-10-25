@@ -1,0 +1,11 @@
+// Recovery and line structure. Ports from `src/Bayan.Syntax/Parsing/Parser.cs`: `Synchronize`,
+// `RecoverIfNeeded`, `ExpectEnd`, `ReportSemicolon`, `IndentAt`, `BreaksLine`, `InGroup`,
+// `HasBlankLineBefore`, `IsWasl`, `LineContinues`, `EndsBefore`, `ExpectName`, `NameOf`, `IsName`,
+// `IsStatementKeyword`, `Unreport`, `IsContextualKeyword`, `IsCSharpPrimitive`, `ItName`, `Particles`.
+// Owner: T3.
+//
+// T1 stub: the cross-file entry points only.
+
+void synchronize(ref Parser p) {}
+
+void recoverIfNeeded(ref Parser p, from i64 syntaxErrorsBefore) {}

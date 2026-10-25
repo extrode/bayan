@@ -120,7 +120,7 @@ public sealed class SelfhostLexerTests(ITestOutputHelper output)
     public void TokenKindNamesAreTheCamelCaseNamesUpperCased()
     {
         var source = File.ReadAllText(Path.Combine(LexerDir, "tokens.byn"));
-        var body = Regex.Match(source, @"^enum TokenKind \{\n(.*?)^\}", RegexOptions.Multiline | RegexOptions.Singleline).Groups[1].Value;
+        var body = Regex.Match(source, @"^(?:public )?enum TokenKind \{\n(.*?)^\}", RegexOptions.Multiline | RegexOptions.Singleline).Groups[1].Value;
         var bayan = Regex.Matches(body, @"^\s*([a-z]\w*),?\s*(?://.*)?$", RegexOptions.Multiline).Select(m => m.Groups[1].Value).ToArray();
         var csharp = Enum.GetNames<TokenKind>();
         foreach (var name in csharp)

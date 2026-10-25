@@ -1,0 +1,8 @@
+// Statements A. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 2116–about 2665: blocks,
+// `ParseStatement`, locals, `ParseBody(Token, ref …)`, `if`/`unless`/guarded, loops. Owner: T7.
+//
+// T1 stub: the cross-file entry points only.
+
+Stmt parseBlock(ref Parser p) => .none
+
+Stmt parseStatement(ref Parser p) => .none

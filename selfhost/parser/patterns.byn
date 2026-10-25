@@ -1,0 +1,6 @@
+// Patterns. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 4058–4248 (`ParsePattern` onward).
+// Owner: T3.
+//
+// T1 stub: the cross-file entry points only.
+
+Pattern parsePattern(ref Parser p) => .none

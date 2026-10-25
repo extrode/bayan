@@ -1,0 +1,13 @@
+// Literal decoding. Ports `src/Bayan.Syntax/Parsing/LiteralDecoder.cs`. Owner: T6.
+//
+// T1 stub: the cross-file entry points only; each takes the token's (or doc's) source bytes.
+
+string decodeString(ReadOnlySpan<u8> token) => ""
+
+string decodeRawString(ReadOnlySpan<u8> token) => ""
+
+string decodeInterpolatedText(ReadOnlySpan<u8> text) => ""
+
+i64 decodeChar(ReadOnlySpan<u8> token) => 0
+
+string decodeDoc(ReadOnlySpan<u8> doc) => ""

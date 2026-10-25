@@ -1,0 +1,6 @@
+// Expressions B. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 3607–4056: primaries, literals and
+// interpolation, collections, struct literals, lambdas, block and switch expressions. Owner: T10.
+//
+// T1 stub: the cross-file entry points only.
+
+Expr parsePrimary(ref Parser p) => .none

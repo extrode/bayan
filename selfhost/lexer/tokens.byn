@@ -2,7 +2,7 @@
 // `Keywords.cs` from `src/Bayan.Syntax/Lexing/`.
 
 /// Member names are the C# `TokenKind` names with the first letter lowered; the dump raises it again.
-enum TokenKind {
+public enum TokenKind {
     endOfFile
 
     // Names and literals
@@ -186,13 +186,13 @@ enum TokenKind {
     ensuresKeyword
 }
 
-bool isKeyword(TokenKind kind) =>
+public bool isKeyword(TokenKind kind) =>
     kind.ordinal >= TokenKind.structKeyword.ordinal && kind.ordinal <= TokenKind.ensuresKeyword.ordinal
 
 bool isReservedKeyword(TokenKind kind) =>
     kind.ordinal >= TokenKind.actorKeyword.ordinal && kind.ordinal <= TokenKind.ensuresKeyword.ordinal
 
-bool isStringLiteral(TokenKind kind) => kind switch {
+public bool isStringLiteral(TokenKind kind) => kind switch {
     .stringLiteral or .rawStringLiteral or .cStringLiteral or .u16StringLiteral => true,
     _ => false,
 }
@@ -204,7 +204,7 @@ string kindName(TokenKind kind) {
 }
 
 /// Source text of fixed tokens, for messages ("expected `;`").
-string kindText(TokenKind kind) {
+public string kindText(TokenKind kind) uses alloc {
     if isKeyword(kind) { return keywordText(kind) }
     return kind switch {
         .endOfFile => "end of file",
@@ -287,18 +287,18 @@ const newlineBefore: u8 = 2
 
 /// A token is a kind plus byte offsets: no text is copied. A run of `///` lines directly before the
 /// token is attached as its doc span.
-struct Token {
-    TokenKind kind
-    u8 tokenFlags
-    i64 start
-    i64 length
-    i64 docStart
-    i64 docLength
+public struct Token {
+    public TokenKind kind
+    public u8 tokenFlags
+    public i64 start
+    public i64 length
+    public i64 docStart
+    public i64 docLength
 
-    i64 end => start + length
-    bool hasDoc => docLength > 0
-    bool hasTriviaBefore => (tokenFlags & triviaBefore) != 0
-    bool hasNewlineBefore => (tokenFlags & newlineBefore) != 0
+    public i64 end => start + length
+    public bool hasDoc => docLength > 0
+    public bool hasTriviaBefore => (tokenFlags & triviaBefore) != 0
+    public bool hasNewlineBefore => (tokenFlags & newlineBefore) != 0
 }
 
 // ── Keywords ──────────────────────────────────────────────────────────────────────
@@ -310,13 +310,13 @@ string keywordText(TokenKind kind) {
 }
 
 /// Keyword kinds bucketed by first letter, so lookup compares a handful of byte strings.
-struct Keywords {
+public struct Keywords {
     /// Keyword ordinals grouped by first letter `a`..`z`.
     List<i32> byFirstByte
     /// `bucketStart[l]..bucketStart[l + 1]` is the bucket of letter `l` in `byFirstByte`.
     List<i64> bucketStart
 
-    static Keywords build() {
+    public static Keywords build() uses alloc {
         var keywords = Keywords { byFirstByte: List<i32>(), bucketStart: List<i64>() }
         for letter in 0..26 {
             keywords.bucketStart.append(keywords.byFirstByte.length)
@@ -341,7 +341,7 @@ struct Keywords {
     }
 }
 
-bool sameBytes(ReadOnlySpan<u8> a, as ReadOnlySpan<u8> b) {
+public bool sameBytes(ReadOnlySpan<u8> a, as ReadOnlySpan<u8> b) {
     if a.length != b.length { return false }
     for i in 0..a.length {
         if a[i] != b[i] { return false }

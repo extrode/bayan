@@ -300,3 +300,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - Under `as: .debug` a `string` (and so a `Symbol`) prints bare inside tuples, optionals and maps but quoted and escaped inside structs (pre-existing; found in the 008 review, 2026-10-25).
 - A repeated `case "a"` in a `switch` on a `string` or `Symbol` gets no duplicate/unreachable diagnostic; the first arm silently wins (pre-existing; 008 review, 2026-10-25).
 - `List<string>` and `List<Symbol>` cannot be formatted in an interpolation hole (BYN2225) (pre-existing; 008 review, 2026-10-25).
+- 009 plan/tasks: T1 done-when says 65 BYN1 codes and an empty-file dump of `CompilationUnit\n\n`; the C# has 69 parser codes and prints `CompilationUnit\n` (Q433) (009 T1, 2026-10-26).
+- A struct literal cannot name its type through a module: `lexer.TextSpan { … }` is BYN1001 (Q431) (009 T1, 2026-10-26).

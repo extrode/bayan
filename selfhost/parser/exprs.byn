@@ -1,0 +1,7 @@
+// Expressions A. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 3158–about 3605: precedence
+// climbing, conditional, ranges, `is`/`in`/`except`/casts, unary, postfix, members, calls, index,
+// `try`/`move`/`catch`. Owner: T9.
+//
+// T1 stub: the cross-file entry points only.
+
+Expr parseExpression(ref Parser p) => .none
