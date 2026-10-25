@@ -1,0 +1,8 @@
+T apply<T>((T -> T) f, to T x) => f(x)
+
+T twice<T>(T x, by (T -> T) step) => apply(v => step(step(v)), to: x)
+
+void main() {
+    print($"{twice(3, by: it * 2)}")
+    print(twice("a", by: s => $"{s}b"))
+}

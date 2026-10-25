@@ -86,7 +86,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private void Note(LocalSymbol l)
     {
-        if (l is ParameterSymbol) return;
+        // A lambda reads its captures through its environment, not as locals of its own.
+        if (l is ParameterSymbol || _fn.Captures.Contains(l)) return;
         if (_seen.Add(l)) _locals.Add(l);
     }
 
@@ -1036,6 +1037,20 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 Emit(new BoundAssign(s.Syntax, Local(s.Syntax, storage), new BoundDefault(s.Syntax, storage.Type), null));
                 return new BoundConversion(s.Syntax, Local(s.Syntax, storage), s.Type, ConversionKind.ArrayToSpan);
             }
+            case BoundFunctionRef r:
+                return new LFunctionValue(r.Syntax, r.Function, null, r.FunctionType);
+            case BoundLambda { Captures.Length: 0 } l:
+                return new LFunctionValue(l.Syntax, l.Lambda, null, l.FunctionType);
+            case BoundLambda l:
+            {
+                // The captures are copied, as the declared types of their locals, into a tuple in this frame: the environment.
+                var tuple = new Semantics.Symbols.TupleType(l.Captures.Select(c => new TupleField(null, c.Local.Type)).ToArray());
+                var env = NewTemp(tuple);
+                var values = Operands(l.Captures.Select(c => (BoundExpr)new BoundLocal(c.Syntax, c.Local)).ToArray());
+                if (values is null) return new LNever(e.Syntax, e.Type);
+                EmitAssign(Local(l.Syntax, env), new BoundTuple(l.Syntax, tuple, values));
+                return new LFunctionValue(l.Syntax, l.Lambda, env, l.FunctionType);
+            }
             case BoundInterpolated i:
             {
                 // Outside an output call the text goes into a temporary growable `StrBuf` (from `context.allocator`).
@@ -1407,7 +1422,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     private BoundCall? CallParts(BoundCall c)
     {
         var operands = new List<BoundExpr>();
-        var hasReceiver = c.Receiver is not null && c.Function.HasThis;
+        // A call through a function value keeps the value as its receiver.
+        var hasReceiver = c.Receiver is not null && (c.Function.HasThis || c.Function.Kind == FunctionKind.Invoke);
         if (hasReceiver) operands.Add(c.Receiver!);
         operands.AddRange(c.Arguments);
         var offset = hasReceiver ? 1 : 0;
