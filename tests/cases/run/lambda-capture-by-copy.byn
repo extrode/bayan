@@ -1,0 +1,280 @@
+struct Point {
+    i64 x
+    i64 y
+}
+
+enum Color {
+    red
+    green
+    blue
+}
+
+union Shape {
+    circle(i64 r)
+    square(i64 side)
+}
+
+// A `let` of i64 copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void i64Row() {
+    var source: i64 = 1
+    var held: () -> i64 = () => 2
+    {
+        let c = source
+        held = () => c
+        let c = "shadow"
+        print($"i64 shadow {held()} {c}")
+    }
+    {
+        let c: i64 = 2
+        print($"i64 scope {held()} {c}")
+    }
+    source = 3
+    print($"i64 reassigned {held()} {source}")
+}
+
+// A `let` of i32 copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void i32Row() {
+    var source: i32 = 1
+    var held: () -> i32 = () => 2
+    {
+        let c = source
+        held = () => c
+        let c = "shadow"
+        print($"i32 shadow {held()} {c}")
+    }
+    {
+        let c: i32 = 2
+        print($"i32 scope {held()} {c}")
+    }
+    source = 3
+    print($"i32 reassigned {held()} {source}")
+}
+
+// A `let` of u8 copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void u8Row() {
+    var source: u8 = 1
+    var held: () -> u8 = () => 2
+    {
+        let c = source
+        held = () => c
+        let c = "shadow"
+        print($"u8 shadow {held()} {c}")
+    }
+    {
+        let c: u8 = 2
+        print($"u8 scope {held()} {c}")
+    }
+    source = 3
+    print($"u8 reassigned {held()} {source}")
+}
+
+// A `let` of f64 copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void f64Row() {
+    var source: f64 = 1.5
+    var held: () -> f64 = () => 2.5
+    {
+        let c = source
+        held = () => c
+        let c = "shadow"
+        print($"f64 shadow {held()} {c}")
+    }
+    {
+        let c: f64 = 2.5
+        print($"f64 scope {held()} {c}")
+    }
+    source = 3.5
+    print($"f64 reassigned {held()} {source}")
+}
+
+// A `let` of bool copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void boolRow() {
+    var source: bool = true
+    var held: () -> bool = () => false
+    {
+        let c = source
+        held = () => c
+        let c = "shadow"
+        print($"bool shadow {held()} {c}")
+    }
+    {
+        let c: bool = false
+        print($"bool scope {held()} {c}")
+    }
+    source = false
+    print($"bool reassigned {held()} {source}")
+}
+
+// A `let` of rune copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void runeRow() {
+    var source: rune = 'a'
+    var held: () -> rune = () => 'b'
+    {
+        let c = source
+        held = () => c
+        let c = "shadow"
+        print($"rune shadow {held()} {c}")
+    }
+    {
+        let c: rune = 'b'
+        print($"rune scope {held()} {c}")
+    }
+    source = 'c'
+    print($"rune reassigned {held()} {source}")
+}
+
+// A `let` of string copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void stringRow() {
+    var source: string = "one"
+    var held: () -> string = () => "two"
+    {
+        let c = source
+        held = () => c
+        let c = 0
+        print($"string shadow {held()} {c}")
+    }
+    {
+        let c: string = "two"
+        print($"string scope {held()} {c}")
+    }
+    source = "three"
+    print($"string reassigned {held()} {source}")
+}
+
+// A `let` of struct copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void structRow() {
+    var source: Point = Point { x: 1, y: 1 }
+    var held: () -> Point = () => Point { x: 2, y: 2 }
+    {
+        let c = source
+        held = () => c
+        let c = "shadow"
+        print($"struct shadow {held(), as: .debug} {c}")
+    }
+    {
+        let c: Point = Point { x: 2, y: 2 }
+        print($"struct scope {held(), as: .debug} {c, as: .debug}")
+    }
+    source = Point { x: 3, y: 3 }
+    print($"struct reassigned {held(), as: .debug} {source, as: .debug}")
+}
+
+// A `let` of enum copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void enumRow() {
+    var source: Color = Color.red
+    var held: () -> Color = () => Color.green
+    {
+        let c = source
+        held = () => c
+        let c = "shadow"
+        print($"enum shadow {held()} {c}")
+    }
+    {
+        let c: Color = Color.green
+        print($"enum scope {held()} {c}")
+    }
+    source = Color.blue
+    print($"enum reassigned {held()} {source}")
+}
+
+// A `let` of union copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void unionRow() {
+    var source: Shape = Shape.circle(1)
+    var held: () -> Shape = () => Shape.circle(2)
+    {
+        let c = source
+        held = () => c
+        let c = "shadow"
+        print($"union shadow {held(), as: .debug} {c}")
+    }
+    {
+        let c: Shape = Shape.circle(2)
+        print($"union scope {held(), as: .debug} {c, as: .debug}")
+    }
+    source = Shape.square(3)
+    print($"union reassigned {held(), as: .debug} {source, as: .debug}")
+}
+
+// A `let` of optional copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void optionalRow() {
+    var source: i64? = 1
+    var held: () -> i64? = () => 2
+    {
+        let c = source
+        held = () => c
+        let c = "shadow"
+        print($"optional shadow {held()} {c}")
+    }
+    {
+        let c: i64? = 2
+        print($"optional scope {held()} {c}")
+    }
+    source = null
+    print($"optional reassigned {held()} {source}")
+}
+
+// A `let` of tuple copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void tupleRow() {
+    var source: (i64, string) = (1, "one")
+    var held: () -> (i64, string) = () => (2, "two")
+    {
+        let c = source
+        held = () => c
+        let c = "shadow"
+        print($"tuple shadow {held(), as: .debug} {c}")
+    }
+    {
+        let c: (i64, string) = (2, "two")
+        print($"tuple scope {held(), as: .debug} {c, as: .debug}")
+    }
+    source = (3, "three")
+    print($"tuple reassigned {held(), as: .debug} {source, as: .debug}")
+}
+
+// A `let` of function copied from a `var`, read after a shadow, after its scope ends and after the `var` changes.
+void functionRow() {
+    var source: i64 -> i64 = x => x + 1
+    var held: () -> (i64 -> i64) = () => x => x + 2
+    {
+        let c = source
+        held = () => c
+        let c = "shadow"
+        print($"function shadow {held()(10)} {c}")
+    }
+    {
+        let c: i64 -> i64 = x => x + 2
+        print($"function scope {held()(10)} {c(10)}")
+    }
+    source = x => x + 3
+    print($"function reassigned {held()(10)} {source(10)}")
+}
+
+i64 call(() -> i64 f) => f()
+
+// A plain parameter, read after a block ends and through a call.
+void parameterRow(i64 p) {
+    var held: () -> i64 = () => 0
+    {
+        held = () => p
+    }
+    print($"parameter scope {held()} {call(() => p)}")
+}
+
+void main() {
+    i64Row()
+    i32Row()
+    u8Row()
+    f64Row()
+    boolRow()
+    runeRow()
+    stringRow()
+    structRow()
+    enumRow()
+    unionRow()
+    optionalRow()
+    tupleRow()
+    functionRow()
+    var v: i64 = 7
+    parameterRow(v)
+    v = 8
+    parameterRow(v)
+}
