@@ -400,7 +400,8 @@ internal sealed class RegionAnalysis
                 return receiver with { Owners = [] };
             case BuiltinMember.MapIndex or BuiltinMember.MapTryGet or BuiltinMember.ListTryGet:
                 return receiver with { Owners = [] };
-            case BuiltinMember.MapLength or BuiltinMember.MapContains:
+            // An interned `Symbol`'s text lives until exit, like a literal.
+            case BuiltinMember.MapLength or BuiltinMember.MapContains or BuiltinMember.SymbolText:
                 return Borrow.None;
             case BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListRemoveThrough or BuiltinMember.ListRemoveAt
                 or BuiltinMember.ListRemoveAtRange or BuiltinMember.ListSort:
@@ -453,10 +454,11 @@ internal sealed class RegionAnalysis
                 break;
             }
         }
-        // Rule 4: a returned borrow derives from every argument. `Io` and decoded `string` results are fresh copies and borrow none.
+        // Rule 4: a returned borrow derives from every argument. `Io` and decoded `string` results are fresh copies and borrow none, and an interned `Symbol` lives until exit.
         // A function value's environment is not one, since no function type can be returned (BYN2822); what its captures borrow is (spec 007 R10).
         var result = fn.Builtin is BuiltinFunction.IoReadFile or BuiltinFunction.IoReadText or BuiltinFunction.IoListDir or BuiltinFunction.IoRun or BuiltinFunction.IoRunBatch
             or BuiltinFunction.Utf8Decode or BuiltinFunction.Utf8TryDecode or BuiltinFunction.Utf8DecodeReplace or BuiltinFunction.StringInvalidUtf8At or BuiltinFunction.HexEncode or BuiltinFunction.HexDecode
+            or BuiltinFunction.SymbolIntern
             ? Borrow.None
             : args.Select((a, i) => i < fn.Parameters.Count && fn.Parameters[i].Type is FunctionType ? a with { Regions = a.Regions.Except(_environments) } : a)
                 .Aggregate(receiver, (acc, a) => acc.Union(a));

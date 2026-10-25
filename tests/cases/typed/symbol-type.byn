@@ -1,0 +1,25 @@
+// `Symbol` is a built-in, copyable type: compared with `==`/`!=`, ordered by text, defaultable in `slot`.
+bool same(Symbol a, to Symbol b) => a == b
+
+bool compare(Symbol a, to Symbol b) {
+    let x: Symbol = a
+    let ne: bool = x != b
+    let lt: bool = x < b
+    let le: bool = x <= b
+    let gt: bool = x > b
+    let ge: bool = x >= b
+    return ne and lt and le and gt and ge
+}
+
+Symbol copyTwice(Symbol a) {
+    let first = a
+    let second = a
+    return first
+}
+
+void fill(ref Map<i32, Symbol> names) {
+    let name: Symbol = names.slot(1)
+}
+
+void main() {
+}

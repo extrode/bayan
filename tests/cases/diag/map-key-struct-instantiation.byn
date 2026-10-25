@@ -1,0 +1,4 @@
+struct Box<K> { Map<K, i32> m }
+struct Weight { f64 grams }
+struct Holder { Box<Weight> b }
+void main() {}

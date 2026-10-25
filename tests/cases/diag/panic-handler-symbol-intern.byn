@@ -1,0 +1,8 @@
+// `Symbol.intern` allocates, so a panic handler cannot call it (BYN2612).
+void onCrash(Panic p) {
+    let s = Symbol.intern(p.message)
+}
+
+void main() {
+    Panic.handler = onCrash
+}

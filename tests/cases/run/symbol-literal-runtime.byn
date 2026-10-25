@@ -1,0 +1,11 @@
+// A literal symbol and `Symbol.intern` of the same text built at run time are one symbol (spec 008 R2, R3).
+void main() {
+    let a: Symbol = "total"
+    var buf = StrBuf(capacity: 16)
+    buf.append("tot")
+    buf.append("al")
+    let b = Symbol.intern(buf.view)
+    print($"{a == b}")
+    let c = Symbol.intern("totals")
+    print($"{a == c}")
+}

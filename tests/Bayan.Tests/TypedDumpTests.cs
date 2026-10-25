@@ -28,6 +28,18 @@ public sealed class TypedDumpTests
         Assert.Equal(Dump(), Dump());
     }
 
+    /// <summary>Spec 008 R12: <c>bayan types</c> on the symbol-table program binds cleanly and is byte-identical across two runs.</summary>
+    [Fact]
+    public void SelfHostSymbolTablesTypesAreByteIdentical()
+    {
+        var path = Path.Combine(Golden.CasesRoot, "run", "selfhost-symbol-tables.byn");
+        var c = Compilation.FromPath(path, wholeDirectory: false);
+        Assert.False(c.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
+        var first = TypedDump.ToJson(c);
+        Assert.Contains("Symbol", first);
+        Assert.Equal(first, TypedDump.ToJson(Compilation.FromPath(path, wholeDirectory: false)));
+    }
+
     public static TheoryData<string> L009Cases
     {
         get

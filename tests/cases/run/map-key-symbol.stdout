@@ -1,0 +1,8 @@
+zeta 1
+alpha 2
+mid 3
+contains alpha: true, contains beta: false
+remove zeta: true, again: false
+{alpha: 12, mid: 3, new: 10}
+{alpha: 12, mid: 3, new: 10} 3
+{alpha: 12, mid: 30, new: 10}

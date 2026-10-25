@@ -117,6 +117,14 @@ internal sealed partial class Binder
                 help: "check the value, then clear the mark with `x.trustUnchecked() because \"…\"`");
             return new BoundErrorExpr(value.Syntax);
         }
+        // Only a string literal is a `Symbol` at compile time (spec 008 R2); any other text is interned, which allocates.
+        if (value.Type.IsString && (target == BuiltinType.Symbol || target is OptionalType { Inner: BuiltinType { Kind: BuiltinKind.Symbol } }))
+        {
+            var text = Source.GetText(span);
+            Report(DiagnosticCodes.StringNotSymbol, span, [], help: $"convert it with `Symbol.intern({text})`",
+                fix: new Fix(span, $"Symbol.intern({text})"));
+            return new BoundErrorExpr(value.Syntax);
+        }
         // O9: a bare literal never takes a distinct type; `ParcelId(0)` builds one.
         if (target is StructSymbol distinct && _c.Distinct.Contains(distinct) && value.Constant is not null)
         {
@@ -439,6 +447,8 @@ internal sealed partial class Binder
                     return Literal(l, PrimitiveType.U8, (Int128)value);
                 return Literal(l, PrimitiveType.Char, new Rune(value));
             }
+            case LiteralKind.String or LiteralKind.RawString when target == BuiltinType.Symbol:
+                return new BoundSymbolLiteral(l, l.Text) { Constant = new ConstantValue(l.Text) };
             case LiteralKind.String:
                 return Literal(l, PrimitiveType.String, l.Text);
             case LiteralKind.RawString:
@@ -509,7 +519,7 @@ internal sealed partial class Binder
         if (_scope.Lookup(name) is { } local)
         {
             if (local.Kind == LocalKind.Const && local.Constant is { } c)
-                return new BoundLiteral(n, local.Type, c) { Constant = c };
+                return ConstantLiteral(n, local.Type, c);
             var read = IsNonNull(local)
                 ? new BoundConversion(n, new BoundLocal(n, local), ((OptionalType)local.Type).Inner, ConversionKind.Narrow)
                 // A local whose state is known reads as its state type (spec §3.17).
@@ -536,6 +546,7 @@ internal sealed partial class Binder
             return new BoundTypeRef(n, ResolveType(new NamedType(n.Span, [n.Name], [])));
         if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
         if (name == "Hex") return new BoundTypeRef(n, BuiltinType.Hex);
+        if (name == "Symbol") return new BoundTypeRef(n, BuiltinType.Symbol);
         if (name == "Utf8") return new BoundTypeRef(n, BuiltinType.Utf8);
         ReportUndefined(n.Name);
         return new BoundErrorExpr(n);
@@ -591,8 +602,13 @@ internal sealed partial class Binder
         _c.BindConstant(c);
         if (c.IsStaticArray) return new BoundStaticArray(syntax, c);
         if (c.Value is null) return new BoundErrorExpr(syntax);
-        return new BoundLiteral(syntax, c.Type, c.Value) { Constant = c.Value };
+        return ConstantLiteral(syntax, c.Type, c.Value);
     }
+
+    /// <summary>A read of a <c>const</c>; a <c>Symbol</c> one is its literal-table entry (spec 008 R2).</summary>
+    private static BoundExpr ConstantLiteral(Node syntax, TypeSymbol type, ConstantValue c) => type == BuiltinType.Symbol
+        ? new BoundSymbolLiteral(syntax, (string)c.Value) { Constant = c }
+        : new BoundLiteral(syntax, type, c) { Constant = c };
 
     /// <summary>A member reachable through an implicit <c>this</c>; in a default method, the interface's members.</summary>
     private static Symbol? LookupMember(TypeSymbol t, string name) => t switch
@@ -679,6 +695,10 @@ internal sealed partial class Binder
                 if (name == "encode") return new BoundMethodGroup(m, null, _c.Builtins.HexEncode);
                 if (name == "decode") return new BoundMethodGroup(m, null, _c.Builtins.HexDecode);
                 Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, hex.Name], help: Suggest(name, ["encode", "decode"]) is { } closest ? $"did you mean `{closest}`?" : null);
+                return new BoundErrorExpr(m);
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Symbol } symbol }:
+                if (name == "intern") return new BoundMethodGroup(m, null, _c.Builtins.SymbolIntern);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, symbol.Name], help: Suggest(name, ["intern"]) is { } like ? $"did you mean `{like}`?" : null);
                 return new BoundErrorExpr(m);
             case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Utf8 } utf8 }:
                 if (_c.Builtins.FindUtf8(name) is { } decode) return new BoundMethodGroup(m, null, decode);
@@ -1220,7 +1240,8 @@ internal sealed partial class Binder
         // A comparison of an untrusted value is a clean fact (spec §15.1): it compares the inner values.
         BoundExpr Operand(Expr e, TypeSymbol? hint) => arithmetic ? BindExpr(e, hint) : Fact(BindExpr(e, hint));
         BoundExpr left, right;
-        if (IsUntypedLiteral(b.Left) && !IsUntypedLiteral(b.Right))
+        // A string literal facing a `Symbol` binds as one (spec 008 R2), so the other operand goes first.
+        if (IsUntypedLiteral(b.Left) && !IsUntypedLiteral(b.Right) || !arithmetic && IsStringLiteral(b.Left) && !IsStringLiteral(b.Right))
         {
             right = Operand(b.Right, arithmetic ? expected : null);
             left = BindExpr(b.Left, right.Type is OptionalType o ? o.Inner : right.Type);
@@ -1285,6 +1306,8 @@ internal sealed partial class Binder
     private static BoundExpr Fact(BoundExpr value) =>
         value.Type is UntrustedType u ? new BoundConversion(value.Syntax, value, u.Inner, ConversionKind.Identity) : value;
 
+    private static bool IsStringLiteral(Expr e) => e is LiteralExpr { Kind: LiteralKind.String or LiteralKind.RawString } or ParenExpr { Inner: LiteralExpr { Kind: LiteralKind.String or LiteralKind.RawString } };
+
     private bool IsPlainStringLiteral(Expr e) =>
         e is LiteralExpr { Kind: LiteralKind.String } && Source.GetText(e.Span) is var text
         && text.StartsWith('"') && !text.StartsWith("\"\"\"", StringComparison.Ordinal);
@@ -1328,7 +1351,7 @@ internal sealed partial class Binder
         BinaryOp.Add or BinaryOp.Sub or BinaryOp.Mul or BinaryOp.Div or BinaryOp.Rem => t.IsNumeric,
         BinaryOp.AddWrap or BinaryOp.SubWrap or BinaryOp.MulWrap or BinaryOp.AddSat or BinaryOp.SubSat or BinaryOp.MulSat => t.IsInteger,
         BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor => t.IsInteger || t.IsBool,
-        BinaryOp.Lt or BinaryOp.Gt or BinaryOp.Le or BinaryOp.Ge => t.IsNumeric || t == PrimitiveType.Char || t.IsString,
+        BinaryOp.Lt or BinaryOp.Gt or BinaryOp.Le or BinaryOp.Ge => t.IsNumeric || t == PrimitiveType.Char || t.IsString || t == BuiltinType.Symbol,
         BinaryOp.Eq or BinaryOp.Ne => IsEquatable(t),
         _ => false,
     };
@@ -1343,7 +1366,7 @@ internal sealed partial class Binder
         ResultType r => IsEquatable(r.Value, seen) && IsEquatable(r.Error, seen),
         OwnedType o => IsEquatable(o.Inner, seen),
         UntrustedType u => IsEquatable(u.Inner, seen),
-        EnumSymbol or TypeParameterType => true,
+        EnumSymbol or TypeParameterType or BuiltinType { Kind: BuiltinKind.Symbol } => true,
         ErrorSetSymbol s => !seen.Add(s) || s.Variants.All(v => v.Fields.All(f => IsEquatable(f.Type, seen))),
         ErrorUnionType u => u.Sets.All(s => IsEquatable(s, seen)),
         StructSymbol s => !seen.Add(s) || s.Fields.All(f => IsEquatable(f.Type, seen)),
@@ -1769,8 +1792,13 @@ internal sealed partial class Binder
             }
             if (!MapType.IsValidKey(key.Type))
             {
-                Report(DiagnosticCodes.InvalidMapKey, entries[0].Key.Span, [key.Type.DisplayName],
-                    help: "use an integer type, `rune`, `bool`, `string` or a plain enum as the key");
+                if (MapType.InvalidKeyPart(key.Type) is var (part, partType))
+                    Report(DiagnosticCodes.KeyPartNotHashable, entries[0].Key.Span,
+                        [key.Type.DisplayName, key.Type is Symbols.TupleType ? "element" : "field", part, partType.DisplayName],
+                        help: "use a field that identifies the value as the key, such as an id or a `Symbol`");
+                else
+                    Report(DiagnosticCodes.InvalidMapKey, entries[0].Key.Span, [key.Type.DisplayName],
+                        help: "use an integer type, `rune`, `bool`, `string`, `Symbol`, a plain enum, or a tuple or struct of those as the key");
                 foreach (var e in entries.Skip(1)) BindMapPart(e);
                 return new BoundErrorExpr(c);
             }
@@ -2065,7 +2093,7 @@ internal sealed partial class Binder
     private static string? WhyNotFormattable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never) ? null : "",
-        ErrorSetSymbol or ErrorUnionType or EnumSymbol or TypeParameterType => null,
+        ErrorSetSymbol or ErrorUnionType or EnumSymbol or TypeParameterType or BuiltinType { Kind: BuiltinKind.Symbol } => null,
         OptionalType o => Part("the value", o.Inner, seen),
         ResultType r => Part("the value", r.Value, seen),
         OwnedType o => WhyNotFormattable(o.Inner, seen),

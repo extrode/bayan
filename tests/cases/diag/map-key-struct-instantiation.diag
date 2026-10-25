@@ -1,0 +1,6 @@
+error BYN2831: `Weight` cannot be a `Map` key: field `grams` is a `f64`
+
+  3 │ struct Holder { Box<Weight> b }
+    │                 ^^^^^^^^^^^ the generic code needs this of its type arguments
+    │
+  help: use a field that identifies the value as the key, such as an id or a `Symbol`

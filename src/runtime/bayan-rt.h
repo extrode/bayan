@@ -346,6 +346,24 @@ void byn_map_clear(byn_map_hdr* h);
 void byn_map_copy(const byn_map_hdr* src, const void* keys, int64_t ksize, void** dkeys, const void* vals, int64_t vsize,
                   void** dvals, byn_map_hdr* dst, byn_alloc* to);
 
+/* Folds `part` into the hash `h` (FNV-1a over its 8 bytes), for keys hashed part by part. */
+uint64_t byn_hash_mix(uint64_t h, uint64_t part);
+
+/* ── Symbols ─────────────────────────────────────────────────────────────── */
+
+/* `Symbol`: an index into the program's one symbol table. */
+typedef struct byn_sym {
+    uint32_t id;
+} byn_sym;
+
+/* Starts the table with the program's literal texts (sorted, `""` first), so literal i is ID i; `main` calls it once. */
+void byn_sym_init(const byn_str* lits, uint32_t n);
+/* `Symbol.intern`: the ID of `s`, adding a copy of a new text; the table and its text come from the general allocator and
+ * are never freed. */
+byn_sym byn_sym_intern(byn_str s);
+/* `sym.text`: valid until the program exits. */
+byn_str byn_sym_text(byn_sym s);
+
 /* ── Program entry and Io ────────────────────────────────────────────────── */
 
 /* True if the bytes are well-formed UTF-8 (no overlongs, surrogates or values above U+10FFFF). */

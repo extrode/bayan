@@ -20,6 +20,8 @@ Small, clear, and could be picked up without a design decision.
 - `let e: u8[0] = []` is BYN4001: the C compiler rejects the emitted "initializer for aggregate with no elements".
 - A generic instantiated once and called from several places reports its instance BYN7012 (Q342) only at the first call; the instance is cached per type arguments.
 - `docs/bayan-handoff.md:250` says `--ci github` will run `bayan fmt --check` and `bayan fmt --check-prose`; the command is `bayan format`, and the CI template does not run it yet.
+- `if a == b` emits `if ((x == y))`, which clang rejects under `-Wall -Werror` (`-Wparentheses-equality`); L016's generator uses `<` to avoid it (008 T10).
+- A tuple-typed struct field (`(i8, i64) f1`) is BYN1001: the parser reads it as a function type; L016's generator nests only structs in structs (008 T10).
 
 ## Later
 
@@ -291,3 +293,10 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 007 T11: BYN2821 says 'a `out` parameter' / 'a `in` parameter'; use 'an'.
 - 007 T13: SPEC §21.5's BYN1028 row says "(help text)" though BYN1028 now offers a fix; GRAMMAR's input-form table has no `delegate` (BYN1028) row; the round-3 plan's "Total codes" row still counts 12 spec-only codes.
 - 007 T13: SPEC §1057 (`Panic.handler`) says the lambda form "needs §3.16"; 007 stores only non-capturing lambdas, so say whether `Panic.handler = p => …` is accepted now.
+- CEmitter: every `for` loop emits an unused `continue_N:` label, rejected by `-Wunused-label` under `-Wall -Werror` (008 T8, 2026-10-25).
+- CEmitter: `let _ = expr` emits an unused C local, rejected by `-Wunused-variable` (008 T8, 2026-10-25).
+- CEmitter: `if n == 0` emits `if ((p_n == INT64_C(0)))`, rejected by clang `-Wparentheses-equality` (008 T8, 2026-10-25).
+- `bayan run <file>` inside `tests/cases/run/` builds the whole directory as one program; single-file run needs a copy elsewhere (008 T6, 2026-10-25).
+- Under `as: .debug` a `string` (and so a `Symbol`) prints bare inside tuples, optionals and maps but quoted and escaped inside structs (pre-existing; found in the 008 review, 2026-10-25).
+- A repeated `case "a"` in a `switch` on a `string` or `Symbol` gets no duplicate/unreachable diagnostic; the first arm silently wins (pre-existing; 008 review, 2026-10-25).
+- `List<string>` and `List<Symbol>` cannot be formatted in an interpolation hole (BYN2225) (pre-existing; 008 review, 2026-10-25).

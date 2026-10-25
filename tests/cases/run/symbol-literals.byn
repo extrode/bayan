@@ -1,0 +1,35 @@
+// Each position where a string literal becomes a `Symbol` keeps its text (spec 008 R2, R4).
+struct Entry {
+    Symbol name = "entry"
+    i32 rank
+}
+
+Symbol same(Symbol a) => a
+
+Symbol keyword() {
+    return "let"
+}
+
+void main() {
+    let typed: Symbol = "total"
+    var mutable: Symbol = """raw"""
+    let optional: Symbol? = "maybe"
+    let entry = Entry { name: "field", rank: 1 }
+    let defaulted = Entry { rank: 2 }
+    let names: List<Symbol> = ["x", "y"]
+    let keys: Map<Symbol, i32> = ["one": 1, "two": 2]
+    print(typed.text)
+    print(mutable.text)
+    print($"{optional ?? "none"}")
+    print(same("argument").text)
+    print(entry.name.text)
+    print(defaulted.name.text)
+    print(keyword().text)
+    print($"{names[0]}{names[1]}")
+    for (key, value) in keys {
+        print($"{key} {value}")
+    }
+    print($"{"total" == typed} {typed != "totals"} {typed < "u"} {"a" <= typed} {typed > "a"} {"z" >= typed}")
+    mutable = "other"
+    print($"[{mutable}]")
+}

@@ -1048,6 +1048,14 @@ uint64_t byn_hash_bytes(const void* p, int64_t n) {
     return h;
 }
 
+uint64_t byn_hash_mix(uint64_t h, uint64_t part) {
+    for (int i = 0; i < 8; i++) {
+        h ^= (uint8_t)(part >> (i * 8));
+        h *= UINT64_C(1099511628211);
+    }
+    return h;
+}
+
 int64_t byn_map_find(const byn_map_hdr* h, const void* keys, int64_t ksize, const void* key, uint64_t hash, byn_key_eq eq) {
     if (h->icap == 0) return -1;
     uint64_t mask = (uint64_t)h->icap - 1;
@@ -1164,6 +1172,72 @@ byn_writer byn_strbuf_copy(byn_writer w, byn_alloc* to) {
     r.buf = (uint8_t*)byn_copy_bytes(w.buf, w.len, to);
     r.cap = r.len = w.len;
     return r;
+}
+
+/* ── Symbols ─────────────────────────────────────────────────────────────── */
+
+/* Texts and their hashes by ID, an open-addressed index of IDs (UINT32_MAX empty, twice the capacity), and the chunk new
+ * texts are copied into. All from the general allocator, never freed. */
+static byn_str* byn_sym_texts;
+static uint64_t* byn_sym_hashes;
+static uint32_t* byn_sym_index;
+static uint32_t byn_sym_len, byn_sym_cap;
+static uint8_t* byn_sym_chunk;
+static int64_t byn_sym_room;
+
+static void byn_sym_place(uint32_t id) {
+    uint64_t mask = (uint64_t)byn_sym_cap * 2 - 1;
+    uint64_t s = byn_sym_hashes[id] & mask;
+    while (byn_sym_index[s] != UINT32_MAX) s = (s + 1) & mask;
+    byn_sym_index[s] = id;
+}
+
+static uint32_t byn_sym_add(byn_str s, uint64_t hash) {
+    if (byn_sym_len == byn_sym_cap) {
+        uint32_t cap = byn_sym_cap < 64 ? 64 : byn_sym_cap * 2;
+        if (cap > UINT32_MAX / 4) byn_panic("symbol table too large", __FILE__, __LINE__);
+        byn_alloc* a = &byn_general;
+        byn_sym_texts = a->resize(a, byn_sym_texts, byn_sym_cap * (int64_t)sizeof(byn_str), cap * (int64_t)sizeof(byn_str));
+        byn_sym_hashes = a->resize(a, byn_sym_hashes, byn_sym_cap * (int64_t)sizeof(uint64_t), cap * (int64_t)sizeof(uint64_t));
+        byn_sym_index = a->resize(a, byn_sym_index, byn_sym_cap * 2 * (int64_t)sizeof(uint32_t), cap * 2 * (int64_t)sizeof(uint32_t));
+        byn_sym_cap = cap;
+        memset(byn_sym_index, 0xFF, (size_t)cap * 2 * sizeof(uint32_t));
+        for (uint32_t i = 0; i < byn_sym_len; i++) byn_sym_place(i);
+    }
+    uint32_t id = byn_sym_len++;
+    byn_sym_texts[id] = s;
+    byn_sym_hashes[id] = hash;
+    byn_sym_place(id);
+    return id;
+}
+
+void byn_sym_init(const byn_str* lits, uint32_t n) {
+    for (uint32_t i = 0; i < n; i++) byn_sym_add(lits[i], byn_hash_bytes(lits[i].ptr, lits[i].len));
+}
+
+byn_sym byn_sym_intern(byn_str s) {
+    uint64_t hash = byn_hash_bytes(s.ptr, s.len);
+    if (byn_sym_cap > 0) {
+        uint64_t mask = (uint64_t)byn_sym_cap * 2 - 1;
+        for (uint64_t i = hash & mask; byn_sym_index[i] != UINT32_MAX; i = (i + 1) & mask) {
+            uint32_t id = byn_sym_index[i];
+            if (byn_sym_hashes[id] == hash && byn_str_eq(byn_sym_texts[id], s)) return (byn_sym){id};
+        }
+    }
+    if (s.len > byn_sym_room) {
+        int64_t size = s.len > 4096 ? s.len : 4096;
+        byn_sym_chunk = byn_general.resize(&byn_general, NULL, 0, size);
+        byn_sym_room = size;
+    }
+    if (s.len > 0) memcpy(byn_sym_chunk, s.ptr, (size_t)s.len);
+    byn_str text = {byn_sym_chunk, s.len};
+    byn_sym_chunk += s.len;
+    byn_sym_room -= s.len;
+    return (byn_sym){byn_sym_add(text, hash)};
+}
+
+byn_str byn_sym_text(byn_sym s) {
+    return byn_sym_texts[s.id];
 }
 
 /* ── Program entry ───────────────────────────────────────────────────────── */

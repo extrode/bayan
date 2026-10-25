@@ -29,6 +29,9 @@ public abstract record BoundExpr(Node Syntax, TypeSymbol Type) : BoundNode(Synta
 
 public sealed record BoundLiteral(Node Syntax, TypeSymbol Type, ConstantValue Value) : BoundExpr(Syntax, Type);
 
+/// <summary>A string literal where a <c>Symbol</c> is expected: an entry of the program's literal table, fixed at compile time (spec 008 R2).</summary>
+public sealed record BoundSymbolLiteral(Node Syntax, string Text) : BoundExpr(Syntax, BuiltinType.Symbol);
+
 /// <summary>The default (zero) value of a type, or <c>null</c> of an optional.</summary>
 public sealed record BoundDefault(Node Syntax, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
@@ -71,6 +74,8 @@ public enum BuiltinMember
     ArrayLength, ArrayAsSpan,
     ArenaReset,
     StrBufAppend, StrBufAppendRepeated, StrBufInsert, StrBufLength, StrBufAsString, StrBufClear,
+    /// <summary><c>sym.text</c>: the interned text, which lives until exit.</summary>
+    SymbolText,
     /// <summary><c>x.take()</c>: moves the value out of a place and leaves the type's empty value behind.</summary>
     ListTake, MapTake, StrBufTake, OptionalTake,
     CharValue, IntToString,

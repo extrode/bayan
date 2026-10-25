@@ -367,6 +367,7 @@ public enum BuiltinFunction
     Utf8DecodeReplace,
     HexEncode,
     HexDecode,
+    SymbolIntern,
     StringInvalidUtf8At,
     IntParse,
     EnumFromOrdinal,
