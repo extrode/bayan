@@ -1,0 +1,3 @@
+void main() {
+    let f: () -> i64 = move () => 0
+}

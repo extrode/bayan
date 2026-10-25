@@ -303,12 +303,12 @@ internal sealed partial class Binder
             case NameExpr n:
                 return BindName(n);
             case ThisExpr t:
-                if (_thisType is null || _fn is null || _fn.IsStatic || _fn.Kind is not (FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor))
+                if (_thisType is null || Host is not { IsStatic: false, Kind: FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor })
                 {
                     Report(DiagnosticCodes.ThisOutsideMethod, t.Span, []);
                     return new BoundErrorExpr(t);
                 }
-                return new BoundThis(t, _thisType);
+                return InLambda(t, "this", "a lambda does not capture `this`") ? new BoundErrorExpr(t) : new BoundThis(t, _thisType);
             case MemberExpr m:
                 return BindMember(m);
             case TargetMemberExpr t:
@@ -367,6 +367,8 @@ internal sealed partial class Binder
             case PatternExpr p:
                 Report(DiagnosticCodes.Unsupported, p.Span, ["a named pattern"]);
                 return new BoundErrorExpr(p);
+            case LambdaExpr l:
+                return BindLambda(l, l.Params, l.Body, l.Block, (expected is OptionalType o ? o.Inner : expected) as FunctionType);
             case ErrorExpr:
                 return new BoundErrorExpr(e);
             default:
@@ -501,20 +503,21 @@ internal sealed partial class Binder
         {
             if (local.Kind == LocalKind.Const && local.Constant is { } c)
                 return new BoundLiteral(n, local.Type, c) { Constant = c };
-            if (IsNonNull(local))
-                return new BoundConversion(n, new BoundLocal(n, local), ((OptionalType)local.Type).Inner, ConversionKind.Narrow);
-            // A local whose state is known reads as its state type (spec §3.17).
-            return KnownState(local) is { } known ? new BoundLocal(n, local) { Type = known } : new BoundLocal(n, local);
+            var read = IsNonNull(local)
+                ? new BoundConversion(n, new BoundLocal(n, local), ((OptionalType)local.Type).Inner, ConversionKind.Narrow)
+                // A local whose state is known reads as its state type (spec §3.17).
+                : KnownState(local) is { } known ? new BoundLocal(n, local) { Type = known } : (BoundExpr)new BoundLocal(n, local);
+            return Capture(n, local, read.Type) ? read : new BoundErrorExpr(n);
         }
         // A default cloned onto a struct sees only the interface's members through `this`, as its template did,
         // so a bare name means the same for every conformer.
-        if (_thisType is not null && (_fn?.Template?.Interface is not { } cloneOf || LookupMember(cloneOf.Self, name) is not null)
+        if (_thisType is not null && (Host?.Template?.Interface is not { } cloneOf || LookupMember(cloneOf.Self, name) is not null)
             && LookupMember(_thisType, name) is { } member)
             return BindImplicitThisMember(n, member);
         // A bare payload field reads through `this`, in the states the receiver declares.
-        if (_thisType is StructSymbol self && _fn is { IsStatic: false } && _c.StatesOf(self) is { } states
+        if (_thisType is StructSymbol self && Host is { IsStatic: false } && _c.StatesOf(self) is { } states
             && states.Variants.Any(v => v.Fields.Any(f => f.Name == name)))
-            return BindValueMember(n, new BoundThis(n, self), n.Name);
+            return InLambda(n, name, "it is read through `this`, which a lambda does not capture") ? new BoundErrorExpr(n) : BindValueMember(n, new BoundThis(n, self), n.Name);
         if (Module.Constants.TryGetValue(name, out var constant)) return ConstantRef(n, constant);
         if (Module.Functions.TryGetValue(name, out var fns)) return new BoundMethodGroup(n, null, fns[0]);
         if (Module.Types.TryGetValue(name, out var type))
@@ -594,14 +597,15 @@ internal sealed partial class Binder
 
     private BoundExpr BindImplicitThisMember(NameExpr n, Symbol member)
     {
-        var inInstance = _fn is { IsStatic: false, Kind: FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor };
+        var inInstance = Host is { IsStatic: false, Kind: FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor };
         if (member is FunctionSymbol { IsStatic: true } staticMethod) return new BoundMethodGroup(n, null, staticMethod);
         if (!inInstance)
         {
             Report(DiagnosticCodes.InstanceMemberWithoutThis, n.Span, [n.Name.Text],
-                help: _fn is { IsStatic: true } ? "call it on an instance; a `static` method has no `this`" : "set it in a constructor; field defaults cannot read other fields");
+                help: Host is { IsStatic: true } ? "call it on an instance; a `static` method has no `this`" : "set it in a constructor; field defaults cannot read other fields");
             return new BoundErrorExpr(n);
         }
+        if (InLambda(n, n.Name.Text, "it is read through `this`, which a lambda does not capture")) return new BoundErrorExpr(n);
         var self = new BoundThis(n, _thisType!);
         return member switch
         {
@@ -979,6 +983,11 @@ internal sealed partial class Binder
         };
         switch (target)
         {
+            // `.member` is never a lambda (spec 007 R7).
+            case FunctionType:
+                Report(DiagnosticCodes.MemberNotLambda, t.Span, [t.Member.Text], help: $"write `it.{t.Member.Text}`",
+                    fix: new Fix(t.Span, "it." + t.Member.Text));
+                return new BoundErrorExpr(t);
             case ErrorSetSymbol set:
                 if (set.Find(t.Member.Text) is { } v) return new BoundErrorVariant(t, v);
                 Report(DiagnosticCodes.UnknownVariant, t.Member.Span, [t.Member.Text, set.DisplayName]);
@@ -1822,6 +1831,109 @@ internal sealed partial class Binder
         }
         var tupleType = new Symbols.TupleType(fields);
         return new BoundTuple(t, tupleType, elements);
+    }
+
+    // ── Lambdas ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A lambda, lifted to a <see cref="FunctionKind.Lambda"/> function of the module and bound inline with its own scope,
+    /// loops and <c>return</c>; the outer locals it reads are its captures (spec 007 R6, R8).
+    /// </summary>
+    private BoundExpr BindLambda(Node syntax, Name[] parameters, Expr? body, BlockStmt? block, FunctionType? expected)
+    {
+        if (expected is null)
+        {
+            Report(DiagnosticCodes.NoTargetType, syntax.Span, [Source.GetText(syntax.Span)],
+                help: "write the function type it has, such as `let f: i64 -> i64 = x => x`");
+            return new BoundErrorExpr(syntax);
+        }
+        var count = expected.Parameters.Count;
+        if (parameters.Length != count)
+        {
+            var names = count == 1 ? "x" : "(" + string.Join(", ", Enumerable.Range(0, count).Select(i => (char)('a' + i))) + ")";
+            Report(DiagnosticCodes.LambdaArity, syntax.Span, [parameters.Length, expected.DisplayName, count],
+                help: $"write {count} parameter name(s): `{names} => …`");
+            return new BoundErrorExpr(syntax);
+        }
+        if (_fn is null)
+        {
+            Report(DiagnosticCodes.Unsupported, syntax.Span, ["a lambda outside a function body"]);
+            return new BoundErrorExpr(syntax);
+        }
+        // Numbered in the order the enclosing function's lambdas are bound, which is source order (L009).
+        var ordinal = _lambdaCount[_fn] = _lambdaCount.GetValueOrDefault(_fn) + 1;
+        var lambda = new FunctionSymbol($"{_fn.Name}$lambda{ordinal}", new Location(Source, syntax.Span), Module, FunctionKind.Lambda)
+        {
+            File = _file, ReturnType = expected.Return, Fails = expected.Fails.Count > 0, Enclosing = _fn,
+        };
+        lambda.ErrorSets.AddRange(expected.Fails);
+        Module.AllFunctions.Add(lambda);
+        var captures = new List<BoundLocal>();
+        // `break`, `continue`, `return` and `defer` in the body are the lambda's own.
+        var (fn, targets, deferDepth, inPanicHandler, firstStatement) = (_fn, _targets.ToArray(), _deferDepth, _inPanicHandler, _firstStatement);
+        (_fn, _deferDepth, _inPanicHandler, _firstStatement) = (lambda, 0, false, null);
+        _targets.Clear();
+        _lambdas.Add((lambda, captures));
+        PushScope();
+        for (var i = 0; i < parameters.Length; i++)
+        {
+            CheckValueName(parameters[i]);
+            AddLocal(parameters[i], new ParameterSymbol(parameters[i].Text, new Location(Source, parameters[i].Span), expected.Parameters[i], ParamModifier.None, i) { Id = _nextLocalId++ });
+        }
+        lambda.Parameters.AddRange(lambda.Locals.OfType<ParameterSymbol>());
+        lambda.Body = block is not null ? BindBlock(block) : new BoundBlock(body!, [BindExpressionBody(body!)]);
+        PopScope();
+        _lambdas.RemoveAt(_lambdas.Count - 1);
+        _targets.AddRange(targets);
+        (_fn, _deferDepth, _inPanicHandler, _firstStatement) = (fn, deferDepth, inPanicHandler, firstStatement);
+        return new BoundLambda(syntax, lambda, captures.ToArray(), expected);
+    }
+
+    /// <summary>The function whose body is being bound: the one around every lambda being bound.</summary>
+    private FunctionSymbol? Host
+    {
+        get
+        {
+            var fn = _fn;
+            while (fn is { Kind: FunctionKind.Lambda }) fn = fn.Enclosing;
+            return fn;
+        }
+    }
+
+    /// <summary>A read of <c>this</c> inside a lambda, which does not capture it: BYN2821 (spec 007 R8).</summary>
+    private bool InLambda(Node syntax, string name, string reason)
+    {
+        if (_fn is not { Kind: FunctionKind.Lambda }) return false;
+        Report(DiagnosticCodes.CannotCapture, syntax.Span, [name, reason], help: "copy the fields you need into `let` values first");
+        return true;
+    }
+
+    /// <summary>
+    /// Records <paramref name="local"/>, read as <paramref name="type"/>, as a capture of each lambda being bound that it is
+    /// outer to; false after BYN2821 when it is mutable or a parameter with a modifier (spec 007 R8).
+    /// </summary>
+    private bool Capture(NameExpr n, LocalSymbol local, TypeSymbol type)
+    {
+        if (_lambdas.Count == 0 || _lambdas[^1].Lambda.Locals.Contains(local)) return true;
+        var (reason, help) = local switch
+        {
+            ParameterSymbol { Modifier: not ParamModifier.None and var m } => ($"it is a `{m.ToString().ToLowerInvariant()}` parameter", "pass it as a plain parameter"),
+            { IsMutable: true } => ("it is a `var`", "copy it into a `let` first"),
+            _ => (null, null),
+        };
+        if (reason is not null)
+        {
+            Report(DiagnosticCodes.CannotCapture, n.Span, [local.Name, reason], help: help);
+            return false;
+        }
+        for (var i = _lambdas.Count - 1; i >= 0 && !_lambdas[i].Lambda.Locals.Contains(local); i--)
+        {
+            var (lambda, captures) = _lambdas[i];
+            if (lambda.Captures.Contains(local)) continue;
+            lambda.Captures.Add(local);
+            captures.Add(new BoundLocal(n, local) { Type = type });
+        }
+        return true;
     }
 
     private BoundExpr BindStackalloc(StackallocExpr s)

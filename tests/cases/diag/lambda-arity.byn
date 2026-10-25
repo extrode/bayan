@@ -1,0 +1,7 @@
+i64 apply((i64, i64) -> i64 f) => f(1, 2)
+
+void main() {
+    let sum = apply(x => x)
+    let zero: () -> i64 = n => n
+    let one: i64 -> i64 = (a, b) => a
+}

@@ -13,7 +13,8 @@ internal sealed partial class Binder
 {
     private readonly Compilation _c;
     private readonly FileContext _file;
-    private readonly FunctionSymbol? _fn;
+    /// <summary>The function being bound; a lambda's lifted function while its body is bound.</summary>
+    private FunctionSymbol? _fn;
     private readonly StructSymbol? _struct;
     /// <summary>The type of <c>this</c>: the struct, or <c>Self</c> in an interface's default method.</summary>
     private readonly TypeSymbol? _thisType;
@@ -26,6 +27,12 @@ internal sealed partial class Binder
     private Stmt? _firstStatement;
     private bool _onPanicSet;
     private int _nextLocalId;
+    /// <summary>The lambdas whose bodies are being bound, innermost last, each with the outer locals it reads (spec 007 R8).</summary>
+    private readonly List<(FunctionSymbol Lambda, List<BoundLocal> Captures)> _lambdas = new();
+    /// <summary>How many lambdas each function has lifted so far, for their <c>$lambda&lt;N&gt;</c> names.</summary>
+    private readonly Dictionary<FunctionSymbol, int> _lambdaCount = new();
+    /// <summary>The <c>it</c> shorthands open around the expression being bound; one inside a <c>requires</c> rule (Q361).</summary>
+    private int _itDepth;
 
     // Spec R4: a first pass holds its diagnostics and records the first integer type each untyped
     // `var` literal meets; when one is not `i32`, the body is bound again with those types seeded.
@@ -259,9 +266,9 @@ internal sealed partial class Binder
         var broken = new Dictionary<FieldSymbol, LocalSymbol>();
         void Add(RequiresRule r, FieldSymbol? field)
         {
-            _it = field;
+            (_it, _itDepth) = (field, 1);
             var condition = BindExpr(r.Condition, PrimitiveType.Bool);
-            _it = null;
+            (_it, _itDepth) = (null, 0);
             if (!condition.Type.IsBool)
             {
                 if (!condition.Type.IsError)

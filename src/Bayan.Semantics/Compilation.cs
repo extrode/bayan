@@ -1725,7 +1725,16 @@ public sealed partial class Compilation
         MutationChecks.RemoveRange(checks, MutationChecks.Count - checks);
         RequiresChecks.RemoveRange(requires, RequiresChecks.Count - requires);
         fn.Locals.RemoveRange(locals, fn.Locals.Count - locals);
+        // The lambdas it lifted, in the body or in those instances, are lifted again by the second pass.
+        foreach (var module in Modules)
+            module.AllFunctions.RemoveAll(f => f.Kind == FunctionKind.Lambda && Outermost(f) is var o && (o == fn || pass.Instances.Contains(o)));
         BindBody(fn, seeds);
+
+        static FunctionSymbol Outermost(FunctionSymbol f)
+        {
+            while (f.Enclosing is { } e) f = e;
+            return f;
+        }
     }
 
     /// <summary>The function instances a first pass created, and what creating them reported.</summary>
