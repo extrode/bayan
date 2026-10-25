@@ -35,9 +35,18 @@ child-within-parent half is false of C# itself, so it cannot hold for a port tha
   take their span before the child (Q473, work/todo.md), and a dropped value's `ErrorExpr` is built at
   `Current.Start`, outside its parent statement (work/todo.md). The port's `checkSpans` reports exactly
   those inputs and no others; the test asserts the port's child-outside-parent set is a subset of C#'s.
+
+  The 28 corrupted inputs are: `corrupt-valid-AssignStmt.byn`, `corrupt-valid-BecauseClause.byn`, `corrupt-valid-BinaryPattern.byn`, `corrupt-valid-CatchExpr.byn`, `corrupt-valid-CollectionExpr.byn`, `corrupt-valid-ErrorExpr.byn`, `corrupt-valid-ErrorVariant.byn`, `corrupt-valid-FieldInit.byn`, `corrupt-valid-ForStmt.byn`, `corrupt-valid-ImportDecl.byn`, `corrupt-valid-IncDecStmt.byn`, `corrupt-valid-LabeledStmt.byn`, `corrupt-valid-MapEntryExpr.byn`, `corrupt-valid-PropertySubpattern.byn`, `corrupt-valid-RelationalPattern.byn`, `corrupt-valid-SwitchArm.byn`, `corrupt-valid-SwitchLabel.byn`, `corrupt-valid-TargetMemberExpr.byn`, `corrupt-valid-TypeAliasDecl.byn`, `corrupt-valid-VarPattern.byn`, `corrupt-valid-WhileLetStmt.byn`, `corrupt-valid-seed-000.byn`, `corrupt-valid-seed-001.byn`, `corrupt-valid-seed-002.byn`, `corrupt-valid-seed-003.byn`, `corrupt-valid-seed-004.byn`, `corrupt-valid-seed-005.byn`, `corrupt-valid-seed-007.byn`.
+
+  The 1,056 random inputs are listed one per line (sorted) in
+  `tests/cases/laws/018-csharp-span-counterexamples.txt` as `0x9E3779B97F4A7C15 <index>`; the first ten
+  are `0x9E3779B97F4A7C15 00010`, `0x9E3779B97F4A7C15 00013`, `0x9E3779B97F4A7C15 00020`, `0x9E3779B97F4A7C15 00026`, `0x9E3779B97F4A7C15 00027`, `0x9E3779B97F4A7C15 00031`, `0x9E3779B97F4A7C15 00035`, `0x9E3779B97F4A7C15 00041`, `0x9E3779B97F4A7C15 00042`, `0x9E3779B97F4A7C15 00043`.
+
 - 2 random candidates crash the C# parser itself (`Parser.ReportBraceless` throws
-  `ArgumentOutOfRangeException`, work/todo.md): `270A6C65742078203D2020800A65207B7D0A20202020696620287320202E20`
-  and `7320697320436972636C65207B7D0A20202020696620287320697320436972636C20C3C820`. The port matches C#
+  `ArgumentOutOfRangeException`, work/todo.md): `0x9E3779B97F4A7C15 02184`
+  (`270A6C65742078203D2020800A65207B7D0A20202020696620287320202E20`) and
+  `0x9E3779B97F4A7C15 02482`
+  (`7320697320436972636C65207B7D0A20202020696620287320697320436972636C20C3C820`). The port matches C#
   on both (exit 134, `panic: slice out of range` at `lexer/source.byn:80`), so these are not part of the
   no-panic corpus: the generator replaces a candidate that crashes C# with an empty input.
 
