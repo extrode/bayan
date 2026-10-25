@@ -283,3 +283,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 007 T5: the caught error (`_caught`, `CaughtErrorExpr`) read inside a lambda in a `catch` body is not recorded as a capture.
 - 007 T5: `pick([], by: it > 0)` reports a cascading BYN2218 on `[]` after BYN2740 (existing recovery in `BindArgumentsForRecovery`).
 - 007 T5: a user local named `it` in a function that also uses the `it` shorthand gives BYN2007 (shadowing) at the shorthand.
+- 007 T4 review: a built-in or generic function passed to a generic function-typed parameter (`holds(print)` with `bool holds<T>((T -> bool) p)`) is BYN2740 "cannot infer" instead of BYN2824; `Instantiate` in BinderCalls.cs should run `ConvertToFunction`'s check on a non-qualifying group.
+- 007 T4 review: the overload lookup in `ConvertToFunction` (BinderExpressions.cs, `fn.Module.Functions…fs`) is dead while a second module function of the same name is BYN2006.
