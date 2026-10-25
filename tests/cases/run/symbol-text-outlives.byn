@@ -1,0 +1,9 @@
+// An interned symbol's text is the runtime's copy, so it outlives the `StrBuf` it was read from (spec 008 R3, R4).
+void main() {
+    var buf = StrBuf(capacity: 16)
+    buf.append("name")
+    let s = Symbol.intern(buf.view)
+    buf.clear()
+    buf.append("other")
+    print(s.text)
+}
