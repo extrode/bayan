@@ -71,7 +71,7 @@ public sealed class SelfhostParserT11Tests(ITestOutputHelper output)
                 Io.stdout.write(sb.finish())
                 print($"[{mods(modifierPublic | modifierReadonly)}]")
                 print(bindingKindText(.letKeyword))
-                print(T11.assignText(.add))
+                print(assignText(.add))
             }
             """;
         var sources = Directory.GetFiles(ParserDir, "*.byn").Where(f => Path.GetFileName(f) != "main.byn").Order(StringComparer.Ordinal)

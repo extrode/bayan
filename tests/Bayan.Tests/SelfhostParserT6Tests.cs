@@ -30,14 +30,6 @@ public sealed class SelfhostParserT6Tests(ITestOutputHelper output)
     private const string Program = """
         import lexer
 
-        Expr parsePrimary(ref Parser p) {
-            let token = p.advance()
-            if token.kind == .integerLiteral {
-                return Expr.literalExpr(Owned(LiteralExpr { span: spanOf(token), kind: .integer, text: p.textOf(token), suffix: null }))
-            }
-            return Expr.nameExpr(Owned(NameExpr { span: spanOf(token), name: spanOf(token), typeArgs: List<TypeSyntax>() }))
-        }
-
         string range(TextSpan s) => $"{s.start}..{s.end}"
 
         string exprRange(in Expr e) {
@@ -148,7 +140,7 @@ public sealed class SelfhostParserT6Tests(ITestOutputHelper output)
     private static readonly Lazy<(string? Path, string Error)> Built = new(() =>
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
-        var sources = Directory.GetFiles(ParserDir, "*.byn").Where(f => Path.GetFileName(f) is not ("main.byn" or "exprs2.byn"))
+        var sources = Directory.GetFiles(ParserDir, "*.byn").Where(f => Path.GetFileName(f) != "main.byn")
             .Order(StringComparer.Ordinal).Select(f => SourceText.FromFile(f))
             .Append(SourceText.FromString(Path.Combine(ParserDir, "t6-test.byn"), Program)).ToList();
         var c = Compilation.Create(sources, packageRoot: SelfhostDir);

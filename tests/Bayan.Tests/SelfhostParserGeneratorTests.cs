@@ -142,7 +142,7 @@ public sealed class SelfhostParserGeneratorTests(ITestOutputHelper output)
     /// compared file by file with the in-process C# reference. Skipped until T13 lands <c>--many</c>; the full
     /// parity is T15's.
     /// </summary>
-    [Fact(Skip = "T15 enables once every parsing file has landed")]
+    [Fact]
     public void GeneratedSeedsAgree()
     {
         var probeDir = Path.Combine(Golden.RepoRoot, "tmp", "parser-corpus-probe");
@@ -158,7 +158,8 @@ public sealed class SelfhostParserGeneratorTests(ITestOutputHelper output)
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "parser-corpus");
         if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         Directory.CreateDirectory(dir);
-        var programs = Corpus(SelfhostParserGenerator.Seeds);
+        // `--many` prints in `Io.listDir` byte order (Q53), so iterate in that order, not the generator's.
+        var programs = Corpus(SelfhostParserGenerator.Seeds).OrderBy(p => p.Name, StringComparer.Ordinal).ToArray();
         foreach (var (name, source) in programs) File.WriteAllText(Path.Combine(dir, name), source);
 
         var (exit, stdout, stderr) = Run(Built, "--many", dir);
@@ -173,11 +174,15 @@ public sealed class SelfhostParserGeneratorTests(ITestOutputHelper output)
             var end = next < 0 ? stdout.Length : next;
             var actual = stdout[cursor..end];
             cursor = end;
+            // The dump ends where the span-check lines begin (bayan L018 has no C# counterpart),
+            // so byte parity compares only the dump against AstDump.
+            var spanIdx = actual.IndexOf("span out of range: ", StringComparison.Ordinal);
+            var actualDump = spanIdx < 0 ? actual : actual[..spanIdx];
             var expected = AstDump.Dump(SyntaxTree.Parse(SourceText.FromFile(Path.Combine(dir, programs[i].Name))));
-            if (actual == expected) continue;
+            if (actualDump == expected) continue;
             var expectedPath = Path.Combine(dir, Path.ChangeExtension(programs[i].Name, ".ast"));
             File.WriteAllText(expectedPath, expected);
-            var failure = Golden.Compare(expectedPath, actual, update: false).Failure ?? "outputs differ";
+            var failure = Golden.Compare(expectedPath, actualDump, update: false).Failure ?? "outputs differ";
             Assert.Fail($"{Path.Combine(dir, programs[i].Name)}: bayan-parse and the C# parser disagree\n{failure}");
         }
         Assert.True(exit == 0, $"exit {exit}\n{stderr}");

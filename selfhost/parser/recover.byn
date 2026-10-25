@@ -2,7 +2,7 @@
 // `ReportSemicolon`, `IndentAt`, `BreaksLine`, `HasBlankLineBefore`, `IsWasl`, `LineContinues`,
 // `StopsHere`, `EndsBefore`, `ExpectName`, `NameOf`, `IsName`, `IsStatementKeyword`, `Synchronize`,
 // `RecoverIfNeeded` (lines 165–343), `InGroup`, `Unreport`, the sets `ItName` and `Particles`, and
-// from the lexer `TokenKindFacts.IsContextualKeyword` and `Keywords.IsCSharpPrimitive`. Owner: T3.
+// from the lexer `TokenKindFacts.IsContextualKeyword` and `Keywords.IsCSharpPrimitive`. Owner: 
 //
 // A C# `Name` is its `TextSpan` (nodes.byn), so `expectName` and `nameOf` return the span; a missing
 // name is the empty span at the current token, which C# spells `<missing>`.

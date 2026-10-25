@@ -25,23 +25,6 @@ public sealed class SelfhostParserT7Tests(ITestOutputHelper output)
     private const string Program = """
         import lexer
 
-        Expr parseExpression(ref Parser p) {
-            let start = p.current().start
-            if p.kind() == .notKeyword {
-                let _ = p.advance()
-                let operand = parseExpression(ref p)
-                return Expr.unaryExpr(Owned(UnaryExpr { span: p.spanFrom(start), op: .notKeyword, operand: move operand }))
-            }
-            if p.kind() == .openParen {
-                let _ = p.advance()
-                let inner = parseExpression(ref p)
-                let _ = p.expect(.closeParen)
-                return Expr.parenExpr(Owned(ParenExpr { span: p.spanFrom(start), inner: move inner }))
-            }
-            let name = p.expect(.identifier)
-            return Expr.nameExpr(Owned(NameExpr { span: p.spanFrom(start), name: spanOf(name), typeArgs: List<TypeSyntax>() }))
-        }
-
         string t7LikelihoodText(Likelihood l) => l switch {
             .none => "",
             .unlikely => " unlikely",
@@ -96,7 +79,7 @@ public sealed class SelfhostParserT7Tests(ITestOutputHelper output)
     private static readonly Lazy<(string? Path, string Error)> Built = new(() =>
     {
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
-        var sources = Directory.GetFiles(ParserDir, "*.byn").Where(f => Path.GetFileName(f) is not ("main.byn" or "exprs.byn"))
+        var sources = Directory.GetFiles(ParserDir, "*.byn").Where(f => Path.GetFileName(f) != "main.byn")
             .Order(StringComparer.Ordinal).Select(f => SourceText.FromFile(f))
             .Append(SourceText.FromString(Path.Combine(ParserDir, "t7-test.byn"), Program)).ToList();
         var c = Compilation.Create(sources, packageRoot: SelfhostDir);
@@ -154,8 +137,8 @@ public sealed class SelfhostParserT7Tests(ITestOutputHelper output)
     /// <summary>
     /// Statement inputs, each the body of <c>void f()</c>: blocks, <c>if</c> with likelihood and <c>else</c>, <c>unless</c> with
     /// its input forms, <c>while</c>, <c>do while</c>, <c>while let</c>, <c>for</c> and its input forms, labels, and the
-    /// BYN1017/BYN1018 fix merging of <c>ParseBody</c>. A stray <c>else</c> is left out: what follows it depends on
-    /// <c>recoverIfNeeded</c> (T3), still a stub here.
+    /// BYN1017/BYN1018 fix merging of <c>ParseBody</c>. The last row is a stray <c>else</c> after a statement,
+    /// exercising <c>recoverIfNeeded</c> (Q464).
     /// </summary>
     [Theory]
     [InlineData("if x {\n}")]
@@ -188,6 +171,7 @@ public sealed class SelfhostParserT7Tests(ITestOutputHelper output)
     [InlineData("for (let i = 0; i < n; i++) {\n}")]
     [InlineData("outer: while x {\n}")]
     [InlineData("{\n    if x {\n    }\n}")]
+    [InlineData("x = 1\nelse")]
     public void StatementsMatchTheCSharpParser(string body)
     {
         var (path, error) = Built.Value;

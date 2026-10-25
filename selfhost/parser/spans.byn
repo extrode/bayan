@@ -1,6 +1,6 @@
 // Span checks for L018: every node span lies within `[0, length]` and every child span within its
 // parent's, one line per violation in the style of the lexer's `checkSpans`. New code, no C#
-// counterpart. Owner: T12.
+// counterpart. Owner: 
 //
 // The walker visits every node kind of `nodes.byn` (a checklist against `Nodes.cs`): each struct's
 // `span` is checked against the input and against its parent, then each child node is recursed and

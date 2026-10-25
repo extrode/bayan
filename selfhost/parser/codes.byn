@@ -1,6 +1,6 @@
 // The parser's entries of the message table. Ports the BYN1xxx descriptors of
 // `src/Bayan.Syntax/Diagnostics/DiagnosticCodes.cs`, the other descriptors `Parser.cs` reports, and
-// `Parser.InputForms`. Owner: T1.
+// `Parser.InputForms`. Owner: 
 
 /// Every descriptor `Parser.cs` reports and every BYN1xxx descriptor, in `DiagnosticCodes.cs` order:
 /// the lexer's BYN0012, the BYN1xxx block (with the retired codes and BYN1042's second form

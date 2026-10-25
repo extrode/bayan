@@ -1,6 +1,6 @@
 // The tree dump, S-expressions. Ports `src/Bayan.Syntax/Ast/AstDump.cs` `AssignText` (352–367),
 // `BinaryText` (369–397), `UnaryText` (399–407), `Type` (409–461), `Pattern` (463–554), `Sexp`
-// (556–566), `Expr` (568–818), `FieldInits` (820–828) and `Quote` (830–834). Owner: T12.
+// (556–566), `Expr` (568–818), `FieldInits` (820–828) and `Quote` (830–834). Owner: 
 //
 // `dumpExpr`, `dumpType` and `dumpPattern` write one node as an S-expression on one line; `dump.byn`
 // (T11) calls them for the inline parts of declarations and statements, and calls `assignText`,
@@ -67,7 +67,7 @@ string unaryText(UnaryOp op) => op switch {
 }
 
 /// The decoded text of an identifier span (the C# `Name.Text`).
-string nameText(ref Parser p, at TextSpan span) => p.lexed.source.getText(span)
+string nameText(ref Parser p, at TextSpan span) => span.length == 0 ? "<missing>" : p.lexed.source.getText(span)
 
 /// The C# `Quote`: `text` double-quoted, with `\n` `\r` `\t`, controls and bidi characters as
 /// `\u{X}`, and `"` as `\"`. The text is already decoded (valid UTF-8).
@@ -171,7 +171,7 @@ void dumpBlockExpr(in Stmt block, from ref Parser p, to ref StrBuf sb) {
         case .blockStmt(let b):
             for s in b.value.statements {
                 var w = StrBuf()
-                T12.stmt(in s, at: 0, from: ref p, to: ref w)
+                stmt(in s, at: 0, from: ref p, to: ref w)
                 sb.append(" {")
                 appendFlattened(w.finish(), to: ref sb)
                 sb.append("}")
@@ -207,16 +207,33 @@ void appendFlattened(string text, to ref StrBuf sb) {
 void dumpType(in TypeSyntax t, from ref Parser p, to ref StrBuf sb) {
     switch t {
         case .namedType(let n):
-            var first = true
-            for path in n.value.path {
-                if !first { sb.append(".") }
-                first = false
-                sb.append(nameText(ref p, at: path))
-            }
-            if n.value.args.length > 0 {
-                sb.append("<")
-                appendTypes(in n.value.args, from: ref p, to: ref sb)
-                sb.append(">")
+            if n.value.path.length == 1 && n.value.args.length == 0 {
+                let text = nameText(ref p, at: n.value.path[0])
+                let renamed = cSharpTypeName(text)
+                sb.append(renamed.isEmpty ? (text == "char" ? "rune" : text) : renamed)
+            } else {
+                var readOnlySpan = false
+                if n.value.path.length == 1 && n.value.args.length == 1 {
+                    let argSpan = typeSpan(in n.value.args[0])
+                    readOnlySpan = argSpan.start == n.value.path[0].start && argSpan.end < n.value.path[0].end
+                }
+                if readOnlySpan {
+                    sb.append("ReadOnlySpan<")
+                    appendTypes(in n.value.args, from: ref p, to: ref sb)
+                    sb.append(">")
+                } else {
+                    var first = true
+                    for path in n.value.path {
+                        if !first { sb.append(".") }
+                        first = false
+                        sb.append(nameText(ref p, at: path))
+                    }
+                    if n.value.args.length > 0 {
+                        sb.append("<")
+                        appendTypes(in n.value.args, from: ref p, to: ref sb)
+                        sb.append(">")
+                    }
+                }
             }
         case .optionalType(let n):
             dumpType(in n.value.inner, from: ref p, to: ref sb)
@@ -320,7 +337,10 @@ void dumpExpr(in Expr e, from ref Parser p, to ref StrBuf sb) {
                             dumpExpr(in h.value.expr, from: ref p, to: ref sb)
                             for spec in h.value.specs {
                                 sb.append(" (")
-                                if (spec.name is { } sn) { sb.append(nameText(ref p, at: sn)) }
+                                if (spec.name is { } sn) {
+                                    let text = nameText(ref p, at: sn)
+                                    sb.append(text == ":" ? (spec.value is .targetMemberExpr(_) ? "as" : "digits") : text)
+                                }
                                 sb.append(": ")
                                 dumpExpr(in spec.value, from: ref p, to: ref sb)
                                 sb.append(")")
@@ -696,8 +716,5 @@ void dumpPattern(in Pattern pattern, from ref Parser p, to ref StrBuf sb) {
 
 // ── T12 stand-ins (T15 deletes) ──
 // T11's `dump.byn` owns the `Stmt` switch, which `dumpExpr`'s `BlockExpr` flattens; until T11 lands
-// this stub lets the module build. T15 deletes this struct and drops the `T12.` prefix.
+// this stub lets the module build. T15 deletes this struct and drops the `` prefix.
 
-struct T12 {
-    static void stmt(in Stmt s, at i64 depth, from ref Parser p, to ref StrBuf sb) {}
-}

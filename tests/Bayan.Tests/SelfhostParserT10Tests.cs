@@ -22,8 +22,6 @@ public sealed class SelfhostParserT10Tests(ITestOutputHelper output)
     private const string Program = """
         import lexer
 
-        Expr parseExpression(ref Parser p) => parsePrimary(ref p)
-
         void span(TextSpan s, from ref Parser p, to ref StrBuf sb) {
             sb.append(p.lexed.source.getText(s))
         }
@@ -192,7 +190,7 @@ public sealed class SelfhostParserT10Tests(ITestOutputHelper output)
     public void PrimariesParseAsInCSharp()
     {
         var sources = Directory.GetFiles(ParserDir, "*.byn")
-            .Where(f => Path.GetFileName(f) is not ("main.byn" or "exprs.byn")).Order(StringComparer.Ordinal)
+            .Where(f => Path.GetFileName(f) != "main.byn").Order(StringComparer.Ordinal)
             .Select(f => SourceText.FromFile(f)).Append(SourceText.FromString(Path.Combine(ParserDir, "t10-test.byn"), Program)).ToList();
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.Create(sources, packageRoot: SelfhostDir);
@@ -233,7 +231,7 @@ public sealed class SelfhostParserT10Tests(ITestOutputHelper output)
             (interp (hole (name n))) @7 [BYN1001 4+4 expected a named format spec such as `, as: .hex`, found `:wat`]
             (stackalloc u8 (lit integer 4)) @5
             (stackalloc char (lit integer 2)) @5 [BYN1048 11+4 `char` is now `rune` fix=rune]
-            pattern @1 [BYN1046 0+7 `pattern` is allowed only after `=` in a `const`]
+            pattern @2 [BYN1046 0+7 `pattern` is allowed only after `=` in a `const`]
             error @0 [BYN1002 0+1 expected an expression, found `+`]
 
             """, stdout);

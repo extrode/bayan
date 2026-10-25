@@ -211,7 +211,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
     }
 
     /// <summary>R1, R6: <c>bayan-parse</c> prints each <c>parse/</c> golden byte-for-byte and agrees on the exit code.</summary>
-    [Theory(Skip = "T15 enables once every parsing file has landed")]
+    [Theory]
     [MemberData(nameof(ParseCases))]
     public void ParseGolden(string name)
     {
@@ -228,7 +228,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
     /// parser, whose output is written under <c>tmp/parser-ref/</c> so <see cref="Golden.Compare"/>
     /// names the input and the first differing line.
     /// </summary>
-    [Theory(Skip = "T15 enables once every parsing file has landed")]
+    [Theory]
     [MemberData(nameof(DiagCases))]
     public void DiagGolden(string name)
     {
@@ -303,6 +303,6 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         Assert.True(ratio <= 10, $"bayan-parse median {bayanMedian} ns is {ratio:F2}x the C# median {csharpMedian} ns");
     }
 
-    /// <summary>Placeholder for T14's <c>SelfhostParserGenerator.OneMegabyte()</c> until it merges.</summary>
-    private static SourceText OneMegabyte() => LexerTests.OneMegabyte();
+    /// <summary>T14's generator 1 MB of valid code (R8).</summary>
+    private static SourceText OneMegabyte() => SelfhostParserGenerator.OneMegabyte();
 }

@@ -190,27 +190,6 @@ public sealed class SelfhostParserT9Tests(ITestOutputHelper output)
             }
         }
 
-        Expr parsePrimary(ref Parser p) {
-            let start = p.current().start
-            let kind = p.kind()
-            if kind == .identifier {
-                let t = p.advance()
-                return Expr.nameExpr(Owned(NameExpr { span: spanOf(t), name: spanOf(t), typeArgs: List<TypeSyntax>() }))
-            }
-            if kind == .integerLiteral || kind == .stringLiteral {
-                let t = p.advance()
-                return Expr.literalExpr(Owned(LiteralExpr { span: spanOf(t), kind: kind == .integerLiteral ? LiteralKind.integer : LiteralKind.string, text: "", suffix: null }))
-            }
-            if kind == .openParen {
-                let _ = p.advance()
-                var inner = parseExpression(ref p)
-                let _ = p.expect(.closeParen)
-                return Expr.parenExpr(Owned(ParenExpr { span: p.spanFrom(start), inner: move inner }))
-            }
-            let _ = p.report(.expectedExpression, at: spanOf(p.current()), arg0: p.describe(p.current()))
-            return .none
-        }
-
         void parseOne(string text, by Keywords keywords) {
             var bytes = List<u8>()
             for b in text.bytes { bytes.append(b) }
@@ -265,14 +244,11 @@ public sealed class SelfhostParserT9Tests(ITestOutputHelper output)
     {
         var program = Driver.Replace("INPUTS", string.Join("\n        ", Inputs.Select(i => $"parseOne({Quote(i)}, by: keywords)")));
         var sources = Directory.GetFiles(ParserDir, "*.byn")
-            .Where(f => Path.GetFileName(f) is not ("main.byn" or "exprs2.byn")).Order(StringComparer.Ordinal)
+            .Where(f => Path.GetFileName(f) != "main.byn").Order(StringComparer.Ordinal)
             .Select(f => SourceText.FromFile(f)).Append(SourceText.FromString(Path.Combine(ParserDir, "t9-test.byn"), program)).ToList();
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.Create(sources, packageRoot: SelfhostDir);
-        // The stand-ins keep their owners' names, which BYN5014 checks once they are members of `struct T9` (Q470).
-        var standIns = File.ReadAllBytes(Path.Combine(ParserDir, "exprs.byn")).AsSpan().IndexOf("struct T9 {"u8);
-        var own = c.Diagnostics.Items.Where(d => d.IsError || Path.GetFileName(d.Source?.Path) == "exprs.byn"
-            && !(d.Code.ToString() == "BYN5014" && d.Span.Start > standIns)).ToList();
+        var own = c.Diagnostics.Items.Where(d => d.IsError).ToList();
         if (own.Count > 0) Assert.Fail(DiagnosticRenderer.RenderAll(own, includePath: true));
         var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
         if (!build.Succeeded) Assert.Fail(build.Errors);

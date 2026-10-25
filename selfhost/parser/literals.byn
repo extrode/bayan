@@ -1,4 +1,4 @@
-// Literal decoding. Ports `src/Bayan.Syntax/Parsing/LiteralDecoder.cs`. Owner: T6.
+// Literal decoding. Ports `src/Bayan.Syntax/Parsing/LiteralDecoder.cs`. Owner: 
 //
 // Each decoder takes the token's (or doc's) source bytes. C# decodes `Text(token)`, the bytes as
 // `Encoding.UTF8` reads them, and indexes its chars; here the bytes are decoded the same way (`runesOf`)
