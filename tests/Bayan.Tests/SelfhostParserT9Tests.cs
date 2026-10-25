@@ -280,7 +280,10 @@ public sealed class SelfhostParserT9Tests(ITestOutputHelper output)
             .Select(f => SourceText.FromFile(f)).Append(SourceText.FromString(Path.Combine(ParserDir, "t9-test.byn"), program)).ToList();
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.Create(sources, packageRoot: SelfhostDir);
-        var own = c.Diagnostics.Items.Where(d => d.IsError || Path.GetFileName(d.Source?.Path) == "exprs.byn").ToList();
+        // The stand-ins keep their owners' names, which BYN5014 checks once they are members of `struct T9` (Q470).
+        var standIns = File.ReadAllBytes(Path.Combine(ParserDir, "exprs.byn")).AsSpan().IndexOf("struct T9 {"u8);
+        var own = c.Diagnostics.Items.Where(d => d.IsError || Path.GetFileName(d.Source?.Path) == "exprs.byn"
+            && !(d.Code.ToString() == "BYN5014" && d.Span.Start > standIns)).ToList();
         if (own.Count > 0) Assert.Fail(DiagnosticRenderer.RenderAll(own, includePath: true));
         var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
         if (!build.Succeeded) Assert.Fail(build.Errors);
