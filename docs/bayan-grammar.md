@@ -180,7 +180,7 @@ test "bounds" (i32 input, bool valid) { … }
 - The name-first declaration forms are input forms that `bayan format` rewrites ([BYN1043](diagnostics/BYN1043.md)): `f() -> T` → `T f()`, `f(x: T)` → `f(T x)`, field `x: T` → `T x`, payload `case(x: T)` → `case(T x)`. In a function body, `Grams w = 0g` → `let w: Grams = 0g`; in a struct body the same text is a field with a default.
 - A function type used as a field or parameter type is parenthesized so the name follows the closing paren: `(Line -> Money uses net) pricer`, `(Order -> bool) pred`; a single parameter type needs no inner parentheses. Without the parentheses the name would read as part of the return type or `uses` list.
 - Revised 2026-10-22: round 3 first put names first in every declaration; that was meant only for local bindings, so declarations returned to type-first.
-- `union error` also composes and narrows error sets; composed sets are flattened, and two components sharing a case name is an error:
+- `union error` also composes and narrows error sets; composed sets are flattened, and two components sharing a case name is an error (different instantiations of one generic set, such as `ValidationError<A>` and `ValidationError<B>`, are distinct components):
   ```csharp
   union error ShipError = CarrierError, StockError
   union error Retryable = CarrierError except .rejected

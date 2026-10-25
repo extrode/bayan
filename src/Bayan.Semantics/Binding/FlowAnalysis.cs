@@ -352,16 +352,16 @@ internal sealed class FlowAnalysis
         if (_fn.InfersErrors || _fn.Kind is FunctionKind.Main or FunctionKind.Test) return;
         if (!_fn.Fails)
         {
-            Report(DiagnosticCodes.PropagateFromInfallible, span, [_fn.Name, string.Join("`, `", sets.Select(s => s.Name))],
-                help: $"handle the error with `catch`, or declare `fails {string.Join(", ", sets.Select(s => s.Name))}`");
+            Report(DiagnosticCodes.PropagateFromInfallible, span, [_fn.Name, string.Join("`, `", sets.Select(s => s.DisplayName))],
+                help: $"handle the error with `catch`, or declare `fails {string.Join(", ", sets.Select(s => s.DisplayName))}`");
             return;
         }
         foreach (var set in sets.Where(s => !_fn.ErrorSets.Contains(s)))
-            Report(DiagnosticCodes.UndeclaredError, span, [set.Name, _fn.Name],
-                help: $"add it to the signature: `fails {string.Join(", ", _fn.ErrorSets.Select(s => s.Name).Append(set.Name))}`");
+            Report(DiagnosticCodes.UndeclaredError, span, [set.DisplayName, _fn.Name],
+                help: $"add it to the signature: `fails {string.Join(", ", _fn.ErrorSets.Select(s => s.DisplayName).Append(set.DisplayName))}`");
         // A case the caller takes out with `except` must not arrive from the callee.
         foreach (var v in sets.SelectMany(s => s.Variants).Where(v => v != caught && _fn.ExcludedErrors.Contains(v) && !call.Function.ExcludedErrors.Contains(v)))
-            Report(DiagnosticCodes.UndeclaredError, span, [$"{v.Set.Name}.{v.Name}", _fn.Name],
-                help: $"handle it with `catch ({v.Set.Name}.{v.Name})`, or remove `.{v.Name}` from the `except` list");
+            Report(DiagnosticCodes.UndeclaredError, span, [$"{v.Set.DisplayName}.{v.Name}", _fn.Name],
+                help: $"handle it with `catch ({v.Set.DisplayName}.{v.Name})`, or remove `.{v.Name}` from the `except` list");
     }
 }

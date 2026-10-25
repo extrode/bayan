@@ -14,7 +14,7 @@ Box grown(Box b, by i32 amount) fails ValidationError<Box> {
     return try b with { w: b.w + amount }
 }
 
-Qty doubled(i32 raw) fails ValidationError {
+Qty doubled(i32 raw) fails ValidationError<Qty> {
     let q = try Qty(raw)
     return try Qty(q.value * 2)
 }

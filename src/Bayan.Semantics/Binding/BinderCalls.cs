@@ -864,7 +864,7 @@ internal sealed partial class Binder
     {
         if (c is StructLiteralExpr)
             Report(DiagnosticCodes.LiteralNeedsTry, c.Span, [name],
-                help: "add `try` before the literal and handle the `ValidationError`",
+                help: $"add `try` before the literal and handle the `ValidationError<{name}>`",
                 fix: new Fix(new TextSpan(c.Span.Start, 0), "try "));
         else
             Report(DiagnosticCodes.UnhandledFailure, c.Span, [name],
@@ -1404,7 +1404,7 @@ internal sealed partial class Binder
         if (value is BoundUnionNew { Payload.Length: 0 } unit && (target.IsError || unit.Type.Equals(target)))
             return new BoundUnionPattern(c, input, unit.Variant, []);
         if (value is BoundErrorVariant ev && target is ErrorUnionType u && u.Sets.Count > 0 && (!u.Sets.Contains(ev.Variant.Set) || u.Excluded.Contains(ev.Variant)))
-            Report(DiagnosticCodes.PatternMismatch, c.Span, [$"`{ev.Variant.Set.Name}.{ev.Variant.Name}`", target.DisplayName]);
+            Report(DiagnosticCodes.PatternMismatch, c.Span, [$"`{ev.Variant.Set.DisplayName}.{ev.Variant.Name}`", target.DisplayName]);
         else if (!(value is BoundErrorVariant && target is ErrorUnionType))
             value = Convert(value, target, c.Value.Span);
         RequireConstant(value, c.Value.Span);
@@ -1419,7 +1419,7 @@ internal sealed partial class Binder
     {
         var target = Unwrap(input);
         if (!target.IsError && !target.Equals(set) && !(target is ErrorUnionType u && (u.Sets.Count == 0 || u.Sets.Contains(set))))
-            Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`{set.Name}`", target.DisplayName]);
+            Report(DiagnosticCodes.PatternMismatch, p.Span, [$"`{set.DisplayName}`", target.DisplayName]);
         BoundPattern test = set.Variants.Count == 0
             ? new BoundNotPattern(p, input, new BoundBindPattern(p, input, null))
             : set.Variants.Select(v => (BoundPattern)new BoundConstantPattern(p, input, new BoundErrorVariant(p, v)))
@@ -1534,7 +1534,7 @@ internal sealed partial class Binder
             {
                 var keys = set.Variants.Select(v => VariantKey(v, type)).ToList();
                 if (keys.Count == 0 || !keys.All(missing.Contains)) continue;
-                missing.Insert(missing.IndexOf(keys[0]), set.Name);
+                missing.Insert(missing.IndexOf(keys[0]), set.DisplayName);
                 missing.RemoveAll(keys.Contains);
             }
         Report(DiagnosticCodes.NonExhaustive, span, [type.DisplayName],
@@ -1561,7 +1561,7 @@ internal sealed partial class Binder
     };
 
     private static string VariantKey(ErrorVariantSymbol v, TypeSymbol type) =>
-        Unwrap(type) is ErrorUnionType { Sets.Count: > 1 } ? $"{v.Set.Name}.{v.Name}" : "." + v.Name;
+        Unwrap(type) is ErrorUnionType { Sets.Count: > 1 } ? $"{v.Set.DisplayName}.{v.Name}" : "." + v.Name;
 
     private static bool Irrefutable(BoundPattern p) => p switch
     {
