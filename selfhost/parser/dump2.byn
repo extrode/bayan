@@ -10,6 +10,8 @@
 // are not ported. `BlockExpr` flattens a statement dump through T11's `stmt` (the `T12` stand-in
 // until T11 lands).
 
+import lexer
+
 /// The C# `AssignText`: the source spelling of an assignment operator.
 string assignText(AssignOp op) => op switch {
     .assign => "=",
@@ -379,7 +381,7 @@ void dumpExpr(in Expr e, from ref Parser p, to ref StrBuf sb) {
             }
             if (n.value.becauseKeyword is { } bc) {
                 sb.append(" because ")
-                sb.append(quote(bc.reason))
+                lexer.escape(bc.reason.bytes, to: ref sb)
             }
             sb.append(")")
         case .indexExpr(let n):
