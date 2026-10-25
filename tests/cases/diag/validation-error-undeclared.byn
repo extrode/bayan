@@ -1,0 +1,15 @@
+// Revision 0011: BYN2603 names each `ValidationError` with its type argument, in the message and the help.
+struct Signup {
+    string name
+        requires it.runeCount >= 3
+}
+
+struct Address {
+    string city
+        requires it != ""
+}
+
+void register(string name, at string city) fails ValidationError<Address> {
+    let s = try Signup { name: name }
+    let a = try Address { city: city }
+}

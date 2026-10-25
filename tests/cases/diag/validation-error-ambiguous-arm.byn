@@ -1,0 +1,20 @@
+// Revision 0011: a bare `.invalid` arm over several `ValidationError` instantiations is ambiguous (BYN2227).
+struct Signup {
+    string name
+        requires it.runeCount >= 3
+}
+
+struct Address {
+    string city
+        requires it != ""
+}
+
+union error FormError = ValidationError<Signup>, ValidationError<Address>
+
+void register(string name) fails FormError {
+    let s = try Signup { name: name }
+}
+
+register("amira") catch switch {
+    .invalid e => print("rejected"),
+}

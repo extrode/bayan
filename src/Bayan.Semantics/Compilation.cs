@@ -188,7 +188,7 @@ public sealed partial class Compilation
         foreach (var module in Modules)
             foreach (var set in module.ErrorSets)
                 DeclareVariants(set);
-        DeclareBuiltinVariants(Builtins.ValidationError, Builtins.ParseError);
+        DeclareBuiltinVariants(Builtins.ParseError);
         // Bounds are resolved once every type is declared, so `where T : IOrder<T>` can name `T` and later types.
         foreach (var where in _wheres) where();
         DeclareInterfaceMembers(Builtins.IEnumerator);
@@ -777,8 +777,9 @@ public sealed partial class Compilation
         var owners = new Dictionary<string, ErrorSetSymbol>();
         foreach (var set in sets)
             foreach (var v in set.Variants)
-                if (!owners.TryAdd(v.Name, set))
-                    Report(DiagnosticCodes.DuplicateErrorCase, alias.File.Source, decl.Head, [owners[v.Name].Name, set.Name, v.Name],
+                // Instantiations of one generic set are distinct components, matched by type (revision 0011).
+                if (!owners.TryAdd(v.Name, set) && owners[v.Name].Decl != set.Decl)
+                    Report(DiagnosticCodes.DuplicateErrorCase, alias.File.Source, decl.Head, [owners[v.Name].DisplayName, set.DisplayName, v.Name],
                         label: $"two cases `{v.Name}`", help: "rename one case, or compose fewer sets");
     }
 
@@ -1017,30 +1018,32 @@ public sealed partial class Compilation
         DeclareCheck(s);
     }
 
-    private readonly Dictionary<StructSymbol, ErrorSetSymbol> _validationErrors = new();
+    private readonly Dictionary<TypeSymbol, ErrorSetSymbol> _validationErrors = new();
 
     /// <summary>
-    /// <c>ValidationError&lt;T&gt;</c>: for a struct with <c>requires</c>, its own set, numbered when first named, whose
-    /// <c>invalid</c> case carries <c>List&lt;Violation&lt;T&gt;&gt; violations</c> (J23); for any other <c>T</c>, the shared
-    /// payload-less set.
+    /// <c>ValidationError&lt;T&gt;</c>: a set per <c>T</c>, numbered when first named. For a struct with <c>requires</c>, its
+    /// <c>invalid</c> case carries <c>List&lt;Violation&lt;T&gt;&gt; violations</c> (J23); for any other <c>T</c> (a distinct
+    /// type) it has no payload.
     /// </summary>
     public ErrorSetSymbol ValidationErrorOf(TypeSymbol t)
     {
-        if (t is not StructSymbol { FieldEnum: { } fields } s) return Builtins.ValidationError;
-        if (_validationErrors.TryGetValue(s, out var set)) return set;
-        var shared = Builtins.ValidationError;
-        set = new ErrorSetSymbol(shared.Name, shared.Location, shared.Module, shared.Access, shared.Decl) { Of = s };
-        var decl = Builtins.ViolationDecl;
-        var source = Builtins.RuleFile.Source;
-        var violation = new StructSymbol("Violation", new Location(source, decl.Name.Span), Builtins.Module, Accessibility.Public, decl, Builtins.RuleFile) { TypeArguments = [s] };
-        foreach (var (f, type) in decl.Members.OfType<FieldDecl>().Zip<FieldDecl, TypeSymbol>([fields, Builtins.Rule]))
-            violation.Fields.Add(new FieldSymbol(f.Name.Text, new Location(source, f.Name.Span), violation, Accessibility.Public, f) { Type = type });
-        var v = shared.Decl.Variants[0];
-        var invalid = new ErrorVariantSymbol(v.Name.Text, new Location(shared.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
-        invalid.Fields.Add(new ParameterSymbol("violations", invalid.Location!.Value, new ListType(violation), ParamModifier.None, 0));
+        if (_validationErrors.TryGetValue(t, out var set)) return set;
+        var template = Builtins.ValidationError;
+        set = new ErrorSetSymbol(template.Name, template.Location, template.Module, template.Access, template.Decl) { Of = t };
+        var v = template.Decl.Variants[0];
+        var invalid = new ErrorVariantSymbol(v.Name.Text, new Location(template.Location.Source, v.Name.Span), set, _nextErrorCode++, v.Doc);
+        if (t is StructSymbol { FieldEnum: { } fields } s)
+        {
+            var decl = Builtins.ViolationDecl;
+            var source = Builtins.RuleFile.Source;
+            var violation = new StructSymbol("Violation", new Location(source, decl.Name.Span), Builtins.Module, Accessibility.Public, decl, Builtins.RuleFile) { TypeArguments = [s] };
+            foreach (var (f, type) in decl.Members.OfType<FieldDecl>().Zip<FieldDecl, TypeSymbol>([fields, Builtins.Rule]))
+                violation.Fields.Add(new FieldSymbol(f.Name.Text, new Location(source, f.Name.Span), violation, Accessibility.Public, f) { Type = type });
+            invalid.Fields.Add(new ParameterSymbol("violations", invalid.Location!.Value, new ListType(violation), ParamModifier.None, 0));
+        }
         set.Variants.Add(invalid);
         ErrorVariants.Add(invalid);
-        return _validationErrors[s] = set;
+        return _validationErrors[t] = set;
     }
 
     /// <summary>A struct with <c>requires</c> gets a check, run on each built value, that fails with <c>ValidationError&lt;T&gt;</c>.</summary>

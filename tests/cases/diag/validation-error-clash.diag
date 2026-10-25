@@ -1,0 +1,6 @@
+error BYN3202: `ValidationError<Signup>` and `SignupError` both have a case `invalid`
+
+  14 │ union error Clash = ValidationError<Signup>, SignupError
+     │ ^^^^^^^^^^^ two cases `invalid`
+     │
+  help: rename one case, or compose fewer sets
