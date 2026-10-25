@@ -111,6 +111,8 @@ Familiar alternatives are **input forms**: the editor and `bayan format` accept 
 | Interface property `Type name { get }` | `Type name` | [BYN1060](diagnostics/BYN1060.md) |
 | `uses` before `fails`, or any clause out of order | `where`, `expects`, `becomes`, `fails`, `uses` | [BYN1065](diagnostics/BYN1065.md) |
 
+`HashMap<K, V>` is not in the table: it parses as any generic type and the checker reports it, [BYN2830](diagnostics/BYN2830.md), with a fix to `Map<K, V>` that `bayan format` does not apply (SPEC §3.5).
+
 Also rejected with a fix-it (design round 2 plan §15):
 
 | Old form | Canonical | Code |
