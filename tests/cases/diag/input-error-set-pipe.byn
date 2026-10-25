@@ -1,0 +1,11 @@
+union error EmailError {
+    /// Not an address.
+    invalid
+}
+
+union error DbError {
+    /// Too slow.
+    timeout
+}
+
+error set SignupError = EmailError | DbError

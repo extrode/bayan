@@ -1,5 +1,5 @@
-var a = 0;
-var b = 0;
-i64 x = a;
-b = -a;
-print($"{x} {b}");
+var a = 0
+var b = 0
+let x: i64 = a
+b = -a
+print($"{x} {b}")

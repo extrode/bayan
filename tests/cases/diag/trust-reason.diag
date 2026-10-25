@@ -1,27 +1,13 @@
 error BYN2787: `trust` needs a reason: a non-empty string literal
 
-  3 │ print(trust(u, reason: ""));
-    │                        ^^
-    │
-  help: explain why the value is safe, in a string literal such as `reason: "validated upstream"`
-
-error BYN2787: `trust` needs a reason: a non-empty string literal
-
-  4 │ print(trust(u, reason: reason));
-    │                        ^^^^^^
-    │
-  help: explain why the value is safe, in a string literal such as `reason: "validated upstream"`
-
-error BYN2787: `trust` needs a reason: a non-empty string literal
-
-  5 │ print(trust(u, reason: $"{reason}"));
-    │                        ^^^^^^^^^^^
-    │
-  help: explain why the value is safe, in a string literal such as `reason: "validated upstream"`
-
-error BYN2787: `trust` needs a reason: a non-empty string literal
-
-  6 │ print(trust(u));
+  2 │ print(trust(u))
     │       ^^^^^^^^
     │
-  help: write `trust(x, reason: "why this value is safe")`
+  help: write `x.trustUnchecked() because "why this value is safe"`
+
+error BYN2787: `trust` needs a reason: a non-empty string literal
+
+  3 │ print(trust(u, "checked"))
+    │       ^^^^^^^^^^^^^^^^^^^
+    │
+  help: write `x.trustUnchecked() because "why this value is safe"`

@@ -1,11 +1,11 @@
-var xs = List<i64>();
-xs.add(5);
-xs.add(6);
-var i = 0;
-var total = 0;
-while (i < xs.length) {
-    i64 step = i;
-    total = total - -i;
-    i += 1;
+var xs = List<i64>()
+xs.append(5)
+xs.append(6)
+var i = 0
+var total = 0
+while i < xs.length {
+    let step: i64 = i
+    total = total - -i
+    i += 1
 }
-print($"{total}");
+print($"{total}")

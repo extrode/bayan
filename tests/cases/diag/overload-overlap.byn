@@ -1,0 +1,9 @@
+i64 shift(i64 x, by i64 d) => x + d
+i64 shift(i64 y, by i64 d, to i64 limit = 0) => y - d
+
+struct Pos {
+    i64 x
+
+    Pos plus(by i64 d) => Pos { x: x + d }
+    Pos plus(by i64 e) => Pos { x: x - e }
+}

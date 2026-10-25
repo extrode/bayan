@@ -1,0 +1,9 @@
+// `trimmed()` drops ASCII whitespace from both ends; `from:` picks one end; `by:` drops the given runes. Each is a view.
+void main() {
+    let s = " \t hi there \n"
+    print($"[{s.trimmed()}]")
+    print($"[{s.trimmed(from: .start)}]")
+    print($"[{s.trimmed(from: .end)}]")
+    print($"[{"--é-x-é--".trimmed(by: ['-', 'é'])}]")
+    print($"[{"   ".trimmed()}]")
+}

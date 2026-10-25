@@ -1,0 +1,14 @@
+error BYN6005: `get` uses `alloc`, beyond the bound `pure` declared by `IIndexable.get`
+
+  6 │     List<i64> get(i64 index) => List<i64>()
+    │               ^^^ uses `alloc`
+    │
+  help: declare `alloc` on `IIndexable.get`, or pass a function without it
+
+error BYN2022: a `for` over the unique `Item` `List<i64>` of `Rows` is not supported in v0.1
+
+  18 │     print($"{walk(Rows {})}")
+     │              ^^^^^^^^^^^^^ the generic code needs this of its type arguments
+     │
+  help: make `Rows.Item` a value that is not unique, such as an index, and look the item up in the
+        loop

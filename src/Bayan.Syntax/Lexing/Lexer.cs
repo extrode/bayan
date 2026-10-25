@@ -212,7 +212,12 @@ internal ref struct LexerState
                         Report(DiagnosticCodes.UnterminatedComment, new TextSpan(start, 2), label: "comment starts here",
                             help: "close it with `*/`");
                     else
+                    {
                         _pos += 2;
+                        var span = new TextSpan(start, _pos - start);
+                        Report(DiagnosticCodes.BlockComment, span, label: "block comment", help: "write each line with `//`",
+                            fix: new Fix(span, LineComments(start, _pos)));
+                    }
                     _flags |= TokenFlags.TriviaBefore;
                     continue;
                 }
@@ -225,6 +230,41 @@ internal ref struct LexerState
                     return;
             }
         }
+    }
+
+    /// <summary>
+    /// BYN1047's fix for the comment <c>[start, end)</c>: one <c>//</c> line per trimmed content line, the outer
+    /// blank lines dropped, at the indent of the <c>/*</c> line; code after <c>*/</c> moves to its own line.
+    /// </summary>
+    private readonly string LineComments(int start, int end)
+    {
+        var lineStart = start;
+        while (lineStart > 0 && _text[lineStart - 1] != '\n') lineStart--;
+        var indentEnd = lineStart;
+        while (indentEnd < start && _text[indentEnd] is (byte)' ' or (byte)'\t') indentEnd++;
+        var indent = Encoding.UTF8.GetString(_text[lineStart..indentEnd]);
+        var lines = new List<string>();
+        var content = _text[(start + 2)..(end - 2)];
+        while (true)
+        {
+            var newline = content.IndexOf((byte)'\n');
+            var line = (newline < 0 ? content : content[..newline]).Trim(" \t\r"u8);
+            lines.Add(Encoding.UTF8.GetString(line));
+            if (newline < 0) break;
+            content = content[(newline + 1)..];
+        }
+        if (lines.Count > 1 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+        if (lines.Count > 1 && lines[0].Length == 0) lines.RemoveAt(0);
+        var sb = new StringBuilder();
+        for (var i = 0; i < lines.Count; i++)
+        {
+            if (i > 0) sb.Append('\n').Append(indent);
+            sb.Append(lines[i].Length == 0 ? "//" : "// " + lines[i]);
+        }
+        var after = end;
+        while (after < _text.Length && _text[after] is (byte)' ' or (byte)'\t' or (byte)'\r') after++;
+        if (after < _text.Length && _text[after] != '\n') sb.Append('\n').Append(indent);
+        return sb.ToString();
     }
 
     private readonly bool AtLineStart() => _pos == 0 || _text[_pos - 1] == '\n';
@@ -343,6 +383,7 @@ internal ref struct LexerState
                     (byte)'=' => TokenKind.MinusEquals,
                     (byte)'%' => TokenKind.MinusPercent,
                     (byte)'|' => TokenKind.MinusBar,
+                    (byte)'>' => TokenKind.Arrow,
                     _ => TokenKind.Minus,
                 });
                 return;

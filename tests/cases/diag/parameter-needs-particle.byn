@@ -1,0 +1,8 @@
+// The receiver is not the object: `amount` is, so `fee` needs a particle (BYN5006).
+struct Ledger {
+    i64 total
+
+    void record(ref this, i64 amount, i64 fee) {
+        total += amount - fee
+    }
+}

@@ -1,4 +1,4 @@
 error BYN2219: a `const` must be a compile-time constant
 
-  3 │ const i64 n = compute();
-    │               ^^^^^^^^^
+  3 │ const n: i64 = compute()
+    │                ^^^^^^^^^

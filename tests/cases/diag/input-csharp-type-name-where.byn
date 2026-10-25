@@ -1,0 +1,5 @@
+i64 f<T>(T x) where T : int => 1
+
+void main() {
+    print($"{f(1)}")
+}

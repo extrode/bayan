@@ -1,5 +1,5 @@
 // A missing file is an ordinary `IoError`, handled with `catch`; nothing panics.
-string describe(string path) => Io.readText(path) catch (e) switch {
+string describe(string path) => Io.readText(path) catch switch {
     .notFound => "not found",
     .permissionDenied => "permission denied",
     .invalidUtf8 => "not UTF-8",
@@ -7,10 +7,10 @@ string describe(string path) => Io.readText(path) catch (e) switch {
     .other => "other error",
     .invalidInput => "invalid input",
     .unsupported => "unsupported",
-};
+}
 
 void main() {
-    print(describe("no-such-file.txt"));
-    let bytes = Io.readFile("no-such-dir/file.bin") catch return;
-    print($"unexpected: {bytes.length} bytes");
+    print(describe("no-such-file.txt"))
+    let bytes = Io.readFile("no-such-dir/file.bin") catch return
+    print($"unexpected: {bytes.length} bytes")
 }

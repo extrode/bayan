@@ -1,0 +1,6 @@
+struct Order { i64 total }
+
+delegate bool OrderFilter(Order order)
+
+void main() {
+}

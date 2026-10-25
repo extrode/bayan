@@ -1,0 +1,13 @@
+error BYN2813: `next` takes `ref this`, but the receiver is `dyn ref readonly ICounter`
+
+  9 │     print($"{c.next()}")
+    │                ^^^^ declared `ref this`
+    │
+  help: take `dyn ref ICounter`
+
+error BYN2813: `skip` takes `ref this`, but the receiver is `dyn ref readonly ICounter`
+
+  10 │     print($"{c.skip()}")
+     │                ^^^^ declared `ref this`
+     │
+  help: take `dyn ref ICounter`

@@ -1,14 +1,14 @@
-error enum ParseError { empty }
+union error ParseError { empty }
 
 struct Reader {
-    string text;
+    string text
 
     i64 parse() fails ParseError {
-        return 0;
+        return 0
     }
 
-    i64 tryParse() => 0;
+    i64 tryParse() => 0
 
     // `T?` and `bool` are the two shapes of an attempt.
-    i64? tryParseOrNull() => null;
+    i64? tryParseOrNull() => null
 }

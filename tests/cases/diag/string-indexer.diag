@@ -1,12 +1,12 @@
 error BYN2201: a `string` cannot be indexed
 
-  2 │ let first = name[0];
+  2 │ let first = name[0]
     │                 ^^^ strings have no indexer
     │
-  help: choose what you mean; `string` is UTF-8, so position 0 is not a character:
-          `name.bytes[0]`   the byte at offset 0 (applied below)
-          `name.runeAt(0)`  the character starting at byte offset 0
-          `for (let c in name)`   each character in turn
-          `name.graphemes`        user-perceived characters
-    │ 2 │ let first = name.bytes[0];
+  help: read a byte, slice, or take characters; `string` is UTF-8, so position 0 is not a character:
+          `name.bytes[0]`       the byte at offset 0 (applied below)
+          `name[a..b]`          the text between byte offsets a and b
+          `name.runes.take(n)`  the first n runes
+          `name.graphemes`      user-perceived characters
+    │ 2 │ let first = name.bytes[0]
     │   │                 ++++++

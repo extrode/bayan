@@ -1,0 +1,8 @@
+// defer-modifier-registration.byn — the condition is read when the defer is registered
+void f() {
+    var c = true
+    defer print("cleanup") if c
+    c = false
+    print("body")
+}
+f()

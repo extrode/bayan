@@ -1,8 +1,8 @@
 void f() {
-    return;
-    print("done");
+    return
+    print("done")
 }
 
-f();
-panic("stop");
-print("after");
+f()
+panic("stop")
+print("after")

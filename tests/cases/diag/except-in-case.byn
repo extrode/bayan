@@ -1,0 +1,6 @@
+Shape pick(Shape s) {
+    switch s {
+        case _ except .circle: return s
+        default: return s
+    }
+}

@@ -1,0 +1,7 @@
+interface ICount {
+    i64 count
+}
+
+struct Box : ICount {
+    i32 count
+}

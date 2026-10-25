@@ -1,11 +1,11 @@
 error BYN2720: `gren` is not a member of `Color`
 
-  3 │ let c = Color.gren;
+  7 │ let c = Color.gren
     │               ^^^^
     │
   help: did you mean `green`?
 
 error BYN2720: `purple` is not a member of `Color`
 
-  4 │ Color d = .purple;
-    │            ^^^^^^
+  8 │ let d: Color = .purple
+    │                 ^^^^^^

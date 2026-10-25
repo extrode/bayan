@@ -1,4 +1,4 @@
 error BYN2020: no enclosing loop is labeled `outer`
 
-  2 │     break outer;
+  2 │     break outer
     │           ^^^^^

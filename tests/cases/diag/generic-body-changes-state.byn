@@ -1,0 +1,19 @@
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+    }
+}
+
+void put<T>(move T v, to ref T x, at ref Order o) {
+    o = Order.paid { id: 1, payment: 5 }
+    x = move v
+}
+
+void main() {
+    var a: i64 = 1
+    var o = Order.draft { id: 1 }
+    put(2, to: ref a, at: ref o)
+    put(3, to: ref a, at: ref o)
+}

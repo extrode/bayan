@@ -1,0 +1,15 @@
+struct unique File {
+    i64 fd
+}
+
+struct Holder {
+    File file
+}
+
+const shared = File { fd: 0 }
+
+void main() {
+    const f = File { fd: 1 }
+    const h = Holder { file: File { fd: 2 } }
+    const n = 3
+}

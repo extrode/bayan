@@ -1,0 +1,5 @@
+error BYN2106: cannot modify this value
+
+  17 │     for x: dyn ref IC in k.tryGet(at: "a") ?? e { x.bump() }
+     │                          ^^^^^^^^^^^^^^^^^^^^^^ it is borrowed element by element as
+     │                                                 `dyn ref IC`

@@ -1,0 +1,9 @@
+// Revision 0011: `ValidationError` takes its type argument; without `T` there is no `T.Field` (BYN2023).
+struct Order {
+    i64 quantity requires it > 0
+}
+
+void check(Order o) fails ValidationError {
+}
+
+union error OrderError = ValidationError

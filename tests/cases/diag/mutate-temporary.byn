@@ -1,2 +1,2 @@
-let s = "abc";
-s.bytes[0] = 65;
+let s = "abc"
+s.bytes[0] = 65

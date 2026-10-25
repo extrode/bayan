@@ -39,7 +39,7 @@ internal sealed class Progress : IDisposable
     /// <paramref name="phase"/> cut to <paramref name="room"/> columns (two per wide scalar, none per combining mark,
     /// one otherwise) ending in the ellipsis, so the line never wraps and <c>\r\e[2K</c> clears all of it.
     /// </summary>
-    private static string Fit(string phase, int room, string ellipsis)
+    internal static string Fit(string phase, int room, string ellipsis)
     {
         var width = 0;
         foreach (var r in phase.EnumerateRunes()) width += Columns(r.Value);

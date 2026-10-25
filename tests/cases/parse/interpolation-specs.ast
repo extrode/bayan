@@ -1,0 +1,4 @@
+CompilationUnit
+  Function show(i64 n, f64 x) -> void
+    Block
+      Expr (call print (interp (hole n (as: .hex)) " " (hole x (digits: 2)) " " (hole n (width: 8) (fill: "0") (align: .right))))

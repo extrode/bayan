@@ -1,0 +1,63 @@
+error BYN2705: variant `timeout` carries a payload
+
+  7 │     fail .timeout
+    │          ^^^^^^^^
+    │
+  help: pass it: `.timeout(after)`
+
+error BYN2706: variant `closed` has no payload
+
+  11 │     fail .closed(1)
+     │          ^^^^^^^^^^
+     │
+  help: write `.closed` without parentheses
+
+error BYN2021: `timeout` has no parameter `before`
+
+  15 │     fail .timeout(before: 1)
+     │                   ^^^^^^
+
+error BYN2202: expected `i64`, found `string`
+
+  19 │     fail .timeout(after: "soon")
+     │                          ^^^^^^
+
+error BYN2302: `timeout` takes 1 argument(s)
+
+  23 │     fail CarrierError.timeout(1, 2)
+     │                                  ^
+
+error BYN2706: variant `closed` has no payload
+
+  27 │     let e: CarrierError = .closed()
+     │                           ^^^^^^^^^
+     │
+  help: write `.closed` without parentheses
+
+error BYN2705: variant `timeout` carries a payload
+
+  31 │     let e: CarrierError = .timeout
+     │                           ^^^^^^^^
+     │
+  help: pass it: `.timeout(after)`
+
+error BYN2705: variant `timeout` carries a payload
+
+  32 │     let f = CarrierError.timeout
+     │             ^^^^^^^^^^^^^^^^^^^^
+     │
+  help: pass it: `.timeout(after)`
+
+error BYN2705: variant `timeout` carries a payload
+
+  38 │     take(.timeout)
+     │          ^^^^^^^^
+     │
+  help: pass it: `.timeout(after)`
+
+error BYN2705: variant `timeout` carries a payload
+
+  42 │     return .timeout
+     │            ^^^^^^^^
+     │
+  help: pass it: `.timeout(after)`

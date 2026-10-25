@@ -1,0 +1,8 @@
+error BYN3207: a literal of `Order` can fail its `requires`; write `try Order { … }`
+
+  5 │ Order order(i64 n) fails ValidationError<Order> => Order { quantity: n }
+    │                                                    ^^^^^^^^^^^^^^^^^^^^^
+    │
+  help: add `try` before the literal and handle the `ValidationError<Order>`
+    │ 5 │ Order order(i64 n) fails ValidationError<Order> => try Order { quantity: n }
+    │   │                                                    ++++

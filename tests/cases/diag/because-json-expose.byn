@@ -1,0 +1,9 @@
+@json(expose)
+struct Exposed {
+    i64 v
+}
+
+@json(expose) because "the fields are public data"
+struct Shown {
+    i64 v
+}

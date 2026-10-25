@@ -1,0 +1,6 @@
+error BYN2604: `f` cannot fail, so it cannot pass on `ParseError`
+
+  6 │     fail ParseError.empty if s.isEmpty
+    │          ^^^^^^^^^^^^^^^^
+    │
+  help: declare the error in a `fails` clause, or handle it here

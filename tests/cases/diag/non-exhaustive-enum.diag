@@ -1,13 +1,13 @@
 error BYN2410: `switch` does not handle every `Suit`
 
-  3 │ string color(Suit s) => s switch {
+  8 │ string color(Suit s) => s switch {
     │                         ^ not covered: .spades
     │
   help: add the missing arms, or `_ => …` for the rest
 
 error BYN2410: `switch` does not handle every `Suit`
 
-  9 │     switch (s) {
-    │             ^ not covered: .clubs, .diamonds, .spades
-    │
+  14 │     switch s {
+     │            ^ not covered: .clubs, .diamonds, .spades
+     │
   help: add the missing cases or a `default:` section

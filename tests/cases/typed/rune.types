@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "path": "rune.byn",
+      "name": "isVowel",
+      "span": {
+        "start": 5,
+        "end": 12
+      },
+      "bindings": [
+        {
+          "name": "c",
+          "kind": "param",
+          "span": {
+            "start": 18,
+            "end": 19
+          },
+          "type": "rune"
+        }
+      ]
+    },
+    {
+      "path": "rune.byn",
+      "name": "main",
+      "span": {
+        "start": 46,
+        "end": 67
+      },
+      "bindings": [
+        {
+          "name": "first",
+          "kind": "let",
+          "span": {
+            "start": 50,
+            "end": 55
+          },
+          "type": "rune"
+        }
+      ]
+    }
+  ]
+}

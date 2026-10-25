@@ -1,11 +1,11 @@
 error BYN2207: `-` cannot be applied to `u32`
 
-  2 │ let x = -n;
+  2 │ let x = -n
     │         ^^
     │
-  help: cast to a signed type first; unsigned values cannot be negative
+  help: convert to a signed type first; unsigned values cannot be negative
 
 error BYN2207: `!` cannot be applied to `u32`
 
-  3 │ let y = !n;
+  3 │ let y = !n
     │         ^^

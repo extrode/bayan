@@ -1,0 +1,14 @@
+union error E {
+    bad
+    worse
+}
+
+i64 parse(i64 n) fails E {
+    fail .bad if n == 0
+    return n
+}
+
+i64 handle(i64 n) => parse(n) catch switch {
+    E.bad => { print("bad") },
+    E.worse => return -1
+}

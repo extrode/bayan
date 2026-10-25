@@ -20,6 +20,6 @@ CompilationUnit
   Function mk(bool ok) -> Money fails MkError
     Block
       Guarded if (! ok)
-        Return .bad
+        Fail .bad
       Return (struct _ (cents 7))
-  Var caught: Money = (catch (call mk (ok: false)) (struct _ (cents 1)))
+  Let caught: Money = (catch (call mk (ok: false)) (struct _ (cents 1)))

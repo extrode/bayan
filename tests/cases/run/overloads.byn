@@ -1,0 +1,15 @@
+// Overloads differ by particle set; a call picks the one its labels fit.
+
+struct Pos {
+    i64 x
+
+    Pos plus(by i64 d) => Pos { x: x + d }
+    Pos plus(from i64 a, to i64 b) => Pos { x: x - a + b }
+}
+
+i64 shift(i64 x, by i64 d) => x + d
+i64 shift(i64 x, from i64 a, to i64 b) => x - a + b
+
+let p = Pos { x: 1 }
+print($"{p.plus(by: 2).x} {p.plus(from: 1, to: 9).x}")
+print($"{shift(1, by: 2)} {shift(1, from: 2, to: 5)}")

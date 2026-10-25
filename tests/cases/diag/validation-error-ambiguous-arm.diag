@@ -1,0 +1,5 @@
+error BYN2227: `.invalid` is ambiguous; it exists in `ValidationError<Signup>`,
+`ValidationError<Address>`
+
+  19 │     .invalid e => print("rejected"),
+     │     ^

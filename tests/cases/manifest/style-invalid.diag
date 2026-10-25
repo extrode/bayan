@@ -18,9 +18,20 @@ error BYN3102: `style.trailingCommas` must be `true` or `false`
   8 │         trailingCommas: .always,
     │                         ^^^^^^^
 
+error BYN3102: `style.booleans` must be `.symbols` or `.words`
+
+  9 │         booleans: .both,
+    │                   ^^^^^
+
+error BYN3102: `style.primitives` must be `.sized` or `.csharp`
+
+  10 │         primitives: .int,
+     │                     ^^^^
+
 error BYN3101: `tabs` is not a field of `Style`
 
-  9 │         tabs: true,
-    │         ^^^^
-    │
-  help: use one of the fields `indent`, `braces`, `maxLine`, `trailingCommas`
+  11 │         tabs: true,
+     │         ^^^^
+     │
+  help: use one of the fields `indent`, `braces`, `maxLine`, `trailingCommas`, `booleans`,
+        `primitives`

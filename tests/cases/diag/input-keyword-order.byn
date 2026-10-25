@@ -1,0 +1,13 @@
+unique struct File {
+    i64 fd
+}
+
+error enum StockError {
+    outOfStock
+}
+
+public error union CarrierError {
+    timeout
+}
+
+distinct type Sku = string

@@ -1,14 +1,14 @@
 struct Queue {
-    i64 count;
+    i64 count
 
     bool isEmpty(ref this) {
-        count = 0;
-        return true;
+        count = 0
+        return true
     }
 
     // Arguments make it an action, not a state.
     bool hasRoomFor(ref this, i64 n) {
-        count += n;
-        return true;
+        count += n
+        return true
     }
 }

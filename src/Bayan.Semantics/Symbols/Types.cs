@@ -9,6 +9,13 @@ public abstract class TypeSymbol
     /// <summary>The type as written in diagnostics.</summary>
     public abstract string DisplayName { get; }
 
+    /// <summary>While set, declared types display with their module (<c>a.Point</c>); see <see cref="ErrorSetSymbol.DisplayNameAmong"/>.</summary>
+    [ThreadStatic]
+    internal static bool QualifyModules;
+
+    private protected static string Qualify(ModuleSymbol module, string name) =>
+        QualifyModules && module.Name != "builtin" ? module.Name + "." + name : name;
+
     public override string ToString() => DisplayName;
 
     public bool IsError => this is ErrorType;
@@ -79,7 +86,7 @@ public sealed class PrimitiveType : TypeSymbol
     public static readonly PrimitiveType F32 = new(PrimitiveKind.F32, "f32", 32);
     public static readonly PrimitiveType F64 = new(PrimitiveKind.F64, "f64", 64);
     public static readonly PrimitiveType Bool = new(PrimitiveKind.Bool, "bool", 0);
-    public static readonly PrimitiveType Char = new(PrimitiveKind.Char, "char", 32);
+    public static readonly PrimitiveType Char = new(PrimitiveKind.Char, "rune", 32);
     public static readonly PrimitiveType String = new(PrimitiveKind.String, "string", 0);
     public static readonly PrimitiveType Void = new(PrimitiveKind.Void, "void", 0);
     public static readonly PrimitiveType Never = new(PrimitiveKind.Never, "never", 0);
@@ -90,7 +97,7 @@ public sealed class PrimitiveType : TypeSymbol
         ["i8"] = I8, ["i16"] = I16, ["i32"] = I32, ["i64"] = I64,
         ["u8"] = U8, ["u16"] = U16, ["u32"] = U32, ["u64"] = U64,
         ["isize"] = Isize, ["usize"] = Usize, ["f32"] = F32, ["f64"] = F64,
-        ["bool"] = Bool, ["char"] = Char, ["string"] = String, ["void"] = Void, ["never"] = Never,
+        ["bool"] = Bool, ["rune"] = Char, ["string"] = String, ["void"] = Void, ["never"] = Never,
         ["sbyte"] = I8, ["short"] = I16, ["int"] = I32, ["long"] = I64,
         ["byte"] = U8, ["ushort"] = U16, ["uint"] = U32, ["ulong"] = U64,
         ["nint"] = Isize, ["nuint"] = Usize, ["float"] = F32, ["double"] = F64,
@@ -141,6 +148,9 @@ public sealed class TypeParameterType(string name) : TypeSymbol
 
     public override string DisplayName => Name;
 
+    /// <summary>The interfaces of its <c>where</c> clauses (for <c>Self</c>, its interface); its members are theirs.</summary>
+    public IReadOnlyList<InterfaceSymbol> Constraints { get; set; } = [];
+
     /// <summary><paramref name="t"/> mentions a type parameter, so it belongs to a template and is never emitted.</summary>
     public static bool Occurs(TypeSymbol t) => t switch
     {
@@ -153,8 +163,11 @@ public sealed class TypeParameterType(string name) : TypeSymbol
         TupleType tt => tt.Fields.Any(f => Occurs(f.Type)),
         ResultType r => Occurs(r.Value),
         StructSymbol s => s.IsGeneric,
+        StateType st => st.Struct.IsGeneric,
         UnionSymbol u => u.IsGeneric,
         FunctionType f => f.Parameters.Any(Occurs) || Occurs(f.Return),
+        InterfaceSymbol i => i.IsGeneric,
+        DynRefType d => Occurs(d.Interface),
         _ => false,
     };
 }
@@ -191,6 +204,55 @@ public sealed class SpanType(TypeSymbol element, bool readOnly = false) : Constr
     protected override object Key => (Element, ReadOnly);
 
     public override string DisplayName => ReadOnly ? $"ReadOnlySpan<{Element.DisplayName}>" : $"Span<{Element.DisplayName}>";
+
+    public override bool IsBorrow => true;
+}
+
+/// <summary>The string views, in the order <c>byn_view_more</c> reads them (spec §16.4).</summary>
+public enum TextViewKind { Runes, Utf16, Lines, Parts }
+
+/// <summary><c>s.runes</c>, <c>s.utf16</c>, <c>s.lines</c> or <c>s.parts(by:)</c>: a lazy view of a string's text, walked by <c>for</c>.</summary>
+public sealed class TextViewType(TextViewKind kind) : ConstructedType
+{
+    public TextViewKind Kind { get; } = kind;
+
+    /// <summary>What <c>for</c> yields: <c>rune</c>, <c>u16</c>, or a borrowed <c>string</c>.</summary>
+    public TypeSymbol Element => Kind switch
+    {
+        TextViewKind.Runes => PrimitiveType.Char,
+        TextViewKind.Utf16 => PrimitiveType.U16,
+        _ => PrimitiveType.String,
+    };
+
+    protected override object Key => Kind;
+
+    public override string DisplayName => Kind switch
+    {
+        TextViewKind.Runes => "RuneView",
+        TextViewKind.Utf16 => "Utf16View",
+        TextViewKind.Lines => "LineView",
+        _ => "PartView",
+    };
+
+    public override bool IsBorrow => true;
+
+    public static readonly TextViewType Runes = new(TextViewKind.Runes);
+    public static readonly TextViewType Utf16 = new(TextViewKind.Utf16);
+    public static readonly TextViewType Lines = new(TextViewKind.Lines);
+    public static readonly TextViewType Parts = new(TextViewKind.Parts);
+}
+
+/// <summary><c>dyn ref I</c>: a borrow of any value conforming to <see cref="Interface"/>, passed as (data, vtable).</summary>
+public sealed class DynRefType(InterfaceSymbol @interface, bool readOnly = false) : ConstructedType
+{
+    public InterfaceSymbol Interface { get; } = @interface;
+
+    /// <summary><c>dyn ref readonly I</c>: only members without <c>ref this</c> can be called.</summary>
+    public bool ReadOnly { get; } = readOnly;
+
+    protected override object Key => (Interface, ReadOnly);
+
+    public override string DisplayName => ReadOnly ? $"dyn ref readonly {Interface.DisplayName}" : $"dyn ref {Interface.DisplayName}";
 
     public override bool IsBorrow => true;
 }
@@ -265,6 +327,9 @@ public sealed class RangeType(TypeSymbol element) : ConstructedType
     protected override object Key => Element;
 
     public override string DisplayName => $"Range<{Element.DisplayName}>";
+
+    /// <summary>How a range value is stored: its start, its end, and whether the end is included.</summary>
+    public TupleType Layout => new([new(null, Element), new(null, Element), new(null, PrimitiveType.Bool)]);
 }
 
 public sealed record TupleField(string? Name, TypeSymbol Type);
@@ -354,6 +419,25 @@ public sealed class ResultType(TypeSymbol value, TypeSymbol error) : Constructed
     public override bool IsBorrow => Value.IsBorrow;
 }
 
+/// <summary>
+/// <c>T.s</c> or <c>T is .a or .b</c>: a struct with states, known to be in one of <see cref="States"/> (spec §3.17).
+/// The states are cases of the struct's synthetic states union, in declaration order.
+/// </summary>
+public sealed class StateType(StructSymbol @struct, IReadOnlyList<UnionVariantSymbol> states) : ConstructedType
+{
+    public StructSymbol Struct { get; } = @struct;
+
+    public IReadOnlyList<UnionVariantSymbol> States { get; } = states.Distinct().OrderBy(v => v.Tag).ToArray();
+
+    protected override object Key => (Struct, string.Join(",", States.Select(v => v.Name)));
+
+    public override string DisplayName => States.Count == 1
+        ? $"{Struct.DisplayName}.{States[0].Name}"
+        : $"{Struct.DisplayName} is {string.Join(" or ", States.Select(v => "." + v.Name))}";
+
+    public override bool IsBorrow => Struct.IsBorrow;
+}
+
 /// <summary>Built-in nominal types with runtime support.</summary>
 public enum BuiltinKind
 {
@@ -363,6 +447,10 @@ public enum BuiltinKind
     StrBuf,
     /// <summary>The static type <c>Io</c>; it has no values.</summary>
     Io,
+    /// <summary>The static codec <c>Hex</c>; it has no values.</summary>
+    Hex,
+    /// <summary>The static codec <c>Utf8</c>; it has no values.</summary>
+    Utf8,
     /// <summary><c>Io.stdout</c> or <c>Io.stderr</c>; the value is the file descriptor.</summary>
     IoStream,
     /// <summary><c>Io.stdin</c>; it has no state.</summary>
@@ -371,6 +459,8 @@ public enum BuiltinKind
     ProcessResult,
     /// <summary>The panic a <c>defer panicking</c> handler or <c>Panic.onPanic</c> receives: <c>message</c>.</summary>
     Panic,
+    /// <summary>The specs of a hole, as <c>formatInto(ref StrBuf, as FormatSpec)</c> receives them: <c>radix</c>, <c>debug</c>, <c>width</c>, <c>fill</c>, <c>align</c>, <c>digits</c>.</summary>
+    FormatSpec,
 }
 
 public sealed class BuiltinType : TypeSymbol
@@ -392,23 +482,41 @@ public sealed class BuiltinType : TypeSymbol
     public static readonly BuiltinType Arena = new(BuiltinKind.Arena, "Arena");
     public static readonly BuiltinType StrBuf = new(BuiltinKind.StrBuf, "StrBuf");
     public static readonly BuiltinType Io = new(BuiltinKind.Io, "Io");
+    public static readonly BuiltinType Hex = new(BuiltinKind.Hex, "Hex");
+    public static readonly BuiltinType Utf8 = new(BuiltinKind.Utf8, "Utf8");
     public static readonly BuiltinType IoStream = new(BuiltinKind.IoStream, "IoStream");
     public static readonly BuiltinType IoInput = new(BuiltinKind.IoInput, "IoInput");
     public static readonly BuiltinType ProcessResult = new(BuiltinKind.ProcessResult, "ProcessResult");
     public static readonly BuiltinType Panic = new(BuiltinKind.Panic, "Panic");
+    public static readonly BuiltinType FormatSpec = new(BuiltinKind.FormatSpec, "FormatSpec");
 }
 
 /// <summary>The type of a caught error when the call can fail with more than one set.</summary>
-public sealed class ErrorUnionType(IReadOnlyList<ErrorSetSymbol> sets) : ConstructedType
+public sealed class ErrorUnionType(IReadOnlyList<ErrorSetSymbol> sets, IReadOnlyList<ErrorVariantSymbol>? excluded = null) : ConstructedType
 {
-    private readonly string _key = string.Join("|", sets.Select(s => s.Module.Name + "." + s.Name));
-
     public IReadOnlyList<ErrorSetSymbol> Sets { get; } = sets;
 
-    protected override object Key => _key;
+    /// <summary>The cases taken out with <c>except .c</c>: never raised by a value of this type.</summary>
+    public IReadOnlyList<ErrorVariantSymbol> Excluded { get; } = excluded ?? [];
+
+    // By symbol identity: `ValidationError<a.Point>` and `ValidationError<b.Point>` display alike but are different sets.
+    protected override object Key => new SetsKey(Sets, Excluded);
+
+    private sealed class SetsKey(IReadOnlyList<ErrorSetSymbol> sets, IReadOnlyList<ErrorVariantSymbol> excluded)
+    {
+        public IReadOnlyList<ErrorSetSymbol> Sets { get; } = sets;
+
+        public IReadOnlyList<ErrorVariantSymbol> Excluded { get; } = excluded;
+
+        public override bool Equals(object? obj) => obj is SetsKey k && Sets.SequenceEqual(k.Sets) && Excluded.SequenceEqual(k.Excluded);
+
+        public override int GetHashCode() => Sets.Aggregate(Excluded.Count, (h, s) => HashCode.Combine(h, s));
+    }
 
     /// <summary>With no sets, any error (an inferred set not yet known).</summary>
-    public override string DisplayName => Sets.Count == 0 ? "error" : string.Join(" | ", Sets.Select(s => s.Name));
+    public override string DisplayName => Sets.Count == 0 ? "error" : string.Join(" | ", Sets.Select(s => s.DisplayNameAmong(Sets)))
+        + (Excluded.Count == 0 ? "" : " except " + string.Join(", ", Excluded.Select(v => "." + v.Name)));
 
-    public static TypeSymbol Of(IReadOnlyList<ErrorSetSymbol> sets) => sets.Count == 1 ? sets[0] : new ErrorUnionType(sets.ToArray());
+    public static TypeSymbol Of(IReadOnlyList<ErrorSetSymbol> sets, IReadOnlyList<ErrorVariantSymbol>? excluded = null) =>
+        sets.Count == 1 && excluded is not { Count: > 0 } ? sets[0] : new ErrorUnionType(sets.ToArray(), excluded?.ToArray());
 }

@@ -1,0 +1,4 @@
+// A function has one unlabeled required parameter, the object (BYN5004); each other one needs a particle (BYN5006).
+void transfer(i64 amount, i64 payer, i64 payee) {
+    return
+}

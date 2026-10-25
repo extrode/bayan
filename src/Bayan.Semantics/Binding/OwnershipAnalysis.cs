@@ -62,9 +62,12 @@ internal sealed class OwnershipAnalysis
             Reachable == other.Reachable && Moved.Count == other.Moved.Count && Moved.Keys.All(other.Moved.ContainsKey);
     }
 
-    /// <summary>A <c>defer</c>/<c>errdefer</c>: the locals its body reads and moves, and what was already moved when it was registered.</summary>
+    /// <summary>
+    /// A <c>defer</c>/<c>errdefer</c>: the locals its body reads and moves, and what was already moved when it was registered.
+    /// A <c>defer panicking</c> (<paramref name="Panic"/>) runs at a panic anywhere in its scope, not at the scope's exit.
+    /// </summary>
     private sealed record Cleanup(TextSpan Site, bool OnFailure, HashSet<LocalSymbol> Reads,
-        List<(LocalSymbol Local, TextSpan Site)> Moves, Dictionary<LocalSymbol, TextSpan> MovedBefore);
+        List<(LocalSymbol Local, TextSpan Site)> Moves, Dictionary<LocalSymbol, TextSpan> MovedBefore, bool Panic = false);
 
     private void Report(DiagnosticDescriptor d, TextSpan span, object?[] args, string? label = null, string? help = null, Fix? fix = null)
     {
@@ -98,11 +101,14 @@ internal sealed class OwnershipAnalysis
                 return state;
             case BoundExprStmt e:
                 return Expr(e.Expr, state);
+            case BoundAssert a:
+                return Expr(a.Condition, state);
             case BoundAssign a:
                 if (a.Op is null && a.Target is BoundLocal { Local: var l })
                 {
                     state = Expr(a.Value, state);
-                    CheckStore(a.Value);
+                    // `x = x with { … }` consumes the old `x`: a move, not a copy (revision 0007).
+                    if (!IsSelfWith(a.Value, l)) CheckStore(a.Value);
                     state.Moved.Remove(l);
                     return state;
                 }
@@ -206,9 +212,10 @@ internal sealed class OwnershipAnalysis
                 Statement(e.Body, state.Clone());
                 Register(e.Body, e.Syntax.Span, onFailure: true, state);
                 return state;
-            // A panic handler runs in place of the scope's cleanups, not at its exit: nothing to register.
+            // A panic handler runs in place of the scope's cleanups, not at its exit: registered only so a later move of what it reads is BYN2615.
             case BoundPanicDefer p:
                 Statement(p.Body, state.Clone());
+                Register(p.Body, p.Syntax.Span, onFailure: false, state, panic: true);
                 return state;
             case BoundContext c:
                 return Statement(c.Body, Expr(c.Allocator, state));
@@ -224,11 +231,12 @@ internal sealed class OwnershipAnalysis
         foreach (var node in BoundTree.Descendants(pattern))
             if (node is BoundBindPattern { Local: { } b }) state.Moved.Remove(b);
             else if (node is BoundPropertyPattern { Designation: { } d }) state.Moved.Remove(d);
+            else if (node is BoundUnionPattern { Designation: { } u }) state.Moved.Remove(u);
         return state;
     }
 
     /// <summary>Registers a cleanup: the locals <paramref name="body"/> reads (not those it only assigns) and moves.</summary>
-    private void Register(BoundStmt body, TextSpan site, bool onFailure, State state)
+    private void Register(BoundStmt body, TextSpan site, bool onFailure, State state, bool panic = false)
     {
         var assigned = new HashSet<BoundNode>(ReferenceEqualityComparer.Instance);
         var reads = new HashSet<LocalSymbol>();
@@ -240,7 +248,7 @@ internal sealed class OwnershipAnalysis
             else if (n is BoundMove { Operand: BoundLocal { Local: var m } operand } move && IsMovable(operand) && TypeFacts.IsUnique(m.Type))
                 moves.Add((m, move.Syntax.Span));
         }
-        _cleanups.Add(new Cleanup(site, onFailure, reads, moves, new(state.Moved)));
+        _cleanups.Add(new Cleanup(site, onFailure, reads, moves, new(state.Moved), panic));
     }
 
     /// <summary>
@@ -254,7 +262,7 @@ internal sealed class OwnershipAnalysis
         for (var i = _cleanups.Count - 1; i >= depth; i--)
         {
             var c = _cleanups[i];
-            if (c.OnFailure && !failing) continue;
+            if (c.Panic || c.OnFailure && !failing) continue;
             foreach (var l in c.Reads)
                 if (moved.TryGetValue(l, out var site) && !(c.MovedBefore.TryGetValue(l, out var before) && before == site))
                     Report(DiagnosticCodes.UseAfterMove, site, [l.Name],
@@ -291,7 +299,14 @@ internal sealed class OwnershipAnalysis
             case BoundMove m:
                 state = Expr(m.Operand, state);
                 if (IsMovable(m.Operand) && m.Operand is BoundLocal { Local: var moved } && TypeFacts.IsUnique(moved.Type))
+                {
                     state.Moved[moved] = m.Syntax.Span;
+                    foreach (var c in _cleanups)
+                        if (c.Panic && state.Reachable && c.Reads.Contains(moved))
+                            Report(DiagnosticCodes.PanicHandlerReadsMoved, m.Syntax.Span, [moved.Name],
+                                label: $"the `defer panicking` on line {_source.GetLinePosition(c.Site.Start).Line} reads it after a later panic",
+                                help: $"move `{moved.Name}` before the `defer panicking`, or read a `let` copied from it there");
+                }
                 return state;
             case BoundTry t:
                 state = Expr(t.Operand, state);
@@ -389,6 +404,12 @@ internal sealed class OwnershipAnalysis
         var core = StripConversions(value);
         var span = core.Syntax.Span;
         var text = _source.GetText(span);
+        if (core is BoundWith w && StripConversions(w.Target) is var target && IsMovable(target))
+        {
+            var name = _source.GetText(target.Syntax.Span);
+            Report(DiagnosticCodes.ImplicitCopy, span, [why], help: $"write `move {name} with {{ … }}` to give up `{name}`");
+            return;
+        }
         var options = new List<string>();
         Fix? fix = null;
         if (IsMovable(core))
@@ -407,6 +428,14 @@ internal sealed class OwnershipAnalysis
         Report(DiagnosticCodes.ImplicitCopy, span, [why], help: string.Join("; ", options), fix: fix);
     }
 
+    /// <summary>Whether <paramref name="value"/> is <c>local with { … }</c>, possibly under <c>try</c>, rebuilding <paramref name="local"/> itself.</summary>
+    internal static bool IsSelfWith(BoundExpr value, LocalSymbol local) => StripConversions(value) switch
+    {
+        BoundTry t => IsSelfWith(t.Operand, local),
+        BoundWith { Target: var target } => StripConversions(target) is BoundLocal { Local: var l } && l == local,
+        _ => false,
+    };
+
     /// <summary>A local or <c>move</c> parameter this function owns, which <c>move</c> can hand over.</summary>
     private static bool IsMovable(BoundExpr e) =>
         e is BoundLocal { Local: { Kind: LocalKind.Let or LocalKind.Var or LocalKind.PatternVariable, BorrowsSubject: false } or ParameterSymbol { Modifier: ParamModifier.Move } };
@@ -418,7 +447,7 @@ internal sealed class OwnershipAnalysis
         // `take()` hands over a fresh value; the place keeps an empty one.
         BoundBuiltinCall { Member: BuiltinMember.ListTake or BuiltinMember.MapTake or BuiltinMember.StrBufTake or BuiltinMember.OptionalTake } => false,
         BoundBuiltinCall { Member: BuiltinMember.OwnedValue or BuiltinMember.ResultValue or BuiltinMember.MapIndex
-            or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapGetOr } => true,
+            or BuiltinMember.MapIndexSet or BuiltinMember.MapSlot or BuiltinMember.MapTryGet or BuiltinMember.ListTryGet } => true,
         BoundConversion c => IsPlace(c.Operand),
         BoundConditional c => IsPlace(c.WhenTrue) || IsPlace(c.WhenFalse),
         BoundCoalesce c => IsPlace(c.Left) || IsPlace(c.Right),

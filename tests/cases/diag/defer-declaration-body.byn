@@ -1,0 +1,10 @@
+void main() {
+    defer let x = 1
+    defer let y: i32 = 1
+    defer print("a")
+}
+
+void f() fails IoError {
+    defer failing let z = 1
+    defer failing print("b")
+}

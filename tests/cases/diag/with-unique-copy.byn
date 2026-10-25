@@ -1,0 +1,11 @@
+struct Ledger {
+    string label
+    List<i64> items
+}
+
+void main() {
+    var ledger = Ledger { label: "daily", items: List<i64>() }
+    ledger = ledger with { label: "nightly" }
+    let copy = ledger with { label: "copy" }
+    print($"{copy.label}")
+}

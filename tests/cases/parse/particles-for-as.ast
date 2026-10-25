@@ -1,0 +1,4 @@
+CompilationUnit
+  Function tag(for string label, as string alias) -> void
+    Block
+      Expr (call print label)

@@ -1,0 +1,6 @@
+const a: string = "a" + "b"
+const b: string = "x{" + "}\n"
+
+void main() {
+    print($"{a}{b}")
+}

@@ -1,0 +1,6 @@
+error BYN2801: `Box` does not provide `count` required by `ICount`
+
+  5 │ struct Box : ICount {
+    │              ^^^^^^ needs `count`
+    │
+  help: rename the field `count` and add `i64 count()` to `Box`; a field cannot provide a method

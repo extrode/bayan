@@ -1,0 +1,19 @@
+error BYN2720: `middle` is not a member of `Edge`
+
+  4 │     let _ = s.trimmed(from: .middle)
+    │                              ^^^^^^
+
+error BYN2720: `loose` is not a member of `Comparison`
+
+  5 │     let _ = s.equals("A", as: .loose)
+    │                                ^^^^^
+
+error BYN2202: expected `string`, found `i32`
+
+  6 │     let _ = s.position(1)
+    │                        ^
+
+error BYN2202: expected `i64`, found `string`
+
+  8 │         let _: i64 = x
+    │                      ^

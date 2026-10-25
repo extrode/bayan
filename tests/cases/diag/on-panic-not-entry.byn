@@ -1,11 +1,11 @@
 void onCrash(Panic p) {
-    print(p.message);
+    print(p.message)
 }
 
 void setUp() {
-    Panic.onPanic = onCrash;
+    Panic.handler = onCrash
 }
 
 void main() {
-    setUp();
+    setUp()
 }

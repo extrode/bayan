@@ -1,3 +1,4 @@
-error set SignupError = EmailError, DbError;
-public error set AnyError = SignupError | IoError;
-i64 signUp(Form f) fails SignupError => 0;
+union error SignupError = EmailError, DbError
+public union error AnyError = SignupError, IoError
+union error Retryable = SignupError except .timeout, .busy
+i64 signUp(Form f) fails SignupError => 0

@@ -125,7 +125,7 @@ public static class Scaffold
         var module = Manifest.CamelOf(kebab);
         if (layout == Layout.Lib && Keywords.Lookup(Encoding.UTF8.GetBytes(module)) != TokenKind.Identifier)
         {
-            stderr.WriteLine($"bayan: `{module}` is a keyword, so `import {module};` couldn't name the library");
+            stderr.WriteLine($"bayan: `{module}` is a keyword, so `import {module}` couldn't name the library");
             stderr.WriteLine($"  help: pick another name, e.g. `{kebab}-lib`");
             return null;
         }
@@ -197,7 +197,7 @@ public static class Scaffold
                 #!/usr/bin/env bayan
                 #:io threaded
 
-                print("Hello, world!");
+                print("Hello, world!")
 
                 """;
             return files;
@@ -222,7 +222,7 @@ public static class Scaffold
             ? $"""
                 # {n.Kebab}
 
-                A Bayan library. Its code is in `src/{n.Module}/`; other packages use it with `import {n.Module};`.
+                A Bayan library. Its code is in `src/{n.Module}/`; other packages use it with `import {n.Module}`.
 
                 ## Test
 
@@ -268,13 +268,13 @@ public static class Scaffold
             files[$"src/{n.Module}/{n.Module}.byn"] = """
                 /// Returns twice `x`.
                 public i64 twice(i64 x) {
-                    return x * 2;
+                    return x * 2
                 }
 
                 """;
             files[$"tests/{n.Module}.test.byn"] = """
                 test "twice doubles" {
-                    assert(twice(21) == 42);
+                    assert(twice(21) == 42)
                 }
 
                 """;
@@ -284,15 +284,15 @@ public static class Scaffold
             files["src/app/main.byn"] = """
                 /// The line this app prints.
                 string greeting() {
-                    return "Hello, world!";
+                    return "Hello, world!"
                 }
 
-                print(greeting());
+                print(greeting())
 
                 """;
             files["tests/app.test.byn"] = """
                 test "greets the world" {
-                    assert(greeting() == "Hello, world!");
+                    assert(greeting() == "Hello, world!")
                 }
 
                 """;

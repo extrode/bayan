@@ -1,0 +1,9 @@
+void onCrash(Panic p) {
+    var s = StrBuf.over(stackalloc u8[2])
+    s.append("abcdefghij")
+}
+
+void main() {
+    Panic.handler = onCrash
+    print("ok")
+}

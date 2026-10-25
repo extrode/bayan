@@ -5,10 +5,10 @@ exit: 1
 error BYN2605: `try` needs a call that can fail
   --> <dir>/tally/main.byn:4:17
 
-  4 │     let n = try twice(2);
+  4 │     let n = try twice(2)
     │                 ^^^^^^^^
     │
-    │ 4 │     let n = try twice(2);
+    │ 4 │     let n = try twice(2)
     │   │             ----
 
 ✗ build failed: 1 error, 0 warnings

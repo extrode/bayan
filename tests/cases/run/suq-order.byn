@@ -1,0 +1,224 @@
+// suq-order.byn — Sūq-0 slice 4: an order's lifecycle without typestate
+// Typestate is not implemented, so the state is a union field and every transition checks it
+// at run time, like the C# baseline. Needs Money from suq-money.byn.
+// Money, Currency and PricingError copied from suq-money.byn: run goldens are single-file.
+
+public enum Currency {
+    myr
+    sgd
+    usd
+}
+
+string code(Currency c) => c switch { .myr => "MYR", .sgd => "SGD", .usd => "USD" }
+
+public union error PricingError {
+    /// the currencies differ
+    currencyMismatch
+    /// the amount does not fit in i64
+    overflow
+}
+
+const maxCents: i64 = 9223372036854775807
+
+/// An amount in minor units (sen, cents) of one currency.
+public struct Money {
+    public i64 cents
+    public Currency currency
+
+    public Money plus(Money other) fails PricingError {
+        fail .currencyMismatch if other.currency != currency
+        fail .overflow if other.cents > 0 && cents > maxCents - other.cents
+        return Money { cents: cents + other.cents, currency: currency }
+    }
+
+    public Money minus(Money other) fails PricingError {
+        fail .currencyMismatch if other.currency != currency
+        return Money { cents: cents - other.cents, currency: currency }
+    }
+
+    public Money times(i32 qty) => Money { cents: cents * qty, currency: currency }
+
+    /// This amount at a rate in basis points (800 = 8%), rounded half up. Non-negative amounts.
+    public Money atRate(i64 basisPoints) fails PricingError {
+        fail .overflow if basisPoints > 0 && cents > (maxCents - 5000) / basisPoints
+        return Money { cents: (cents * basisPoints + 5000) / 10000, currency: currency }
+    }
+
+    /// Writes "MYR 12.50". Drives `$"{m}"`.
+    public void formatInto(ref StrBuf sb) {
+        sb.append(code(currency))
+        sb.append(" ")
+        var whole = cents
+        if cents < 0 {
+            sb.append("-")
+            whole = -cents
+        }
+        sb.append($"{whole / 100}.")
+        sb.append("0") if whole % 100 < 10
+        sb.append($"{whole % 100}")
+    }
+}
+
+public enum LineStatus {
+    active
+    removed
+    backordered
+}
+
+public struct Line {
+    public string sku
+    public i32 qty
+    public Money unitPrice
+    public i64 unitGrams
+    public LineStatus status
+}
+
+public union OrderState {
+    draft
+    placed
+    paid(string payment)
+    shipped(string payment, string tracking)
+    cancelled(string reason)
+}
+
+public union error OrderError {
+    /// the order is not in a state that allows this
+    wrongState
+    /// no active lines
+    empty
+    /// more lines than an order may have
+    tooManyLines
+    /// a line's currency is not the order's
+    currencyMismatch
+    /// a line breaks its rules
+    invalidLine
+}
+
+const maxLines: i32 = 200
+
+/// Holds a list, so it is unique.
+public struct Order {
+    public i64 id
+    public Currency currency
+    public List<Line> lines
+    public OrderState state
+
+    public Money total() {
+        var sum: i64 = 0
+        for line in lines {
+            sum = sum + line.unitPrice.cents * line.qty if line.status == .active
+        }
+        return Money { cents: sum, currency: currency }
+    }
+
+    public string statusLabel() => state switch {
+        .draft => "Draft",
+        .placed => "Awaiting payment",
+        .paid(_) => "Paid",
+        .shipped(_, _) => "On its way",
+        .cancelled(_) => "Cancelled",
+    }
+
+    public string tracking() => state switch {
+        .draft => "",
+        .placed => "",
+        .paid(_) => "",
+        .shipped(_, let t) => t,
+        .cancelled(_) => "",
+    }
+
+    public void addLine(ref this, Line line) fails OrderError uses alloc {
+        fail .wrongState unless state is .draft
+        fail .tooManyLines if lines.length >= maxLines
+        fail .currencyMismatch if line.unitPrice.currency != currency
+        fail .invalidLine if line.qty < 1 || line.qty > 999 || line.unitGrams <= 0
+        lines.append(line)
+    }
+
+    public void removeLine(ref this, string sku) fails OrderError {
+        fail .wrongState if !(state is .draft || state is .placed)
+        for i in 0..lines.length {
+            lines[i] = lines[i] with { status: .removed } if lines[i].sku == sku
+        }
+    }
+
+    public void place(ref this) fails OrderError {
+        fail .wrongState unless state is .draft
+        var any = false
+        for line in lines {
+            any = true if line.status == .active
+        }
+        fail .empty unless any
+        state = .placed
+    }
+
+    public void markPaid(ref this, string payment) fails OrderError {
+        fail .wrongState unless state is .placed
+        state = .paid(payment)
+    }
+
+    public void markShipped(ref this, string tracking) fails OrderError {
+        let payment = state switch {
+            .draft => "",
+            .placed => "",
+            .paid(let p) => p,
+            .shipped(_, _) => "",
+            .cancelled(_) => "",
+        }
+        fail .wrongState unless state is .paid(_)
+        state = .shipped(payment, tracking)
+    }
+
+    public void cancel(ref this, string reason) fails OrderError {
+        fail .wrongState if !(state is .draft || state is .placed)
+        state = .cancelled(reason)
+    }
+}
+
+string errorName(OrderError e) => e switch {
+    .wrongState => "wrongState",
+    .empty => "empty",
+    .tooManyLines => "tooManyLines",
+    .currencyMismatch => "currencyMismatch",
+    .invalidLine => "invalidLine",
+}
+
+Line tea() => Line { sku: "TEA-0001", qty: 2, unitPrice: Money { cents: 1200, currency: .myr }, unitGrams: 100, status: .active }
+
+// 1. the happy path
+var order = Order { id: 7, currency: .myr, lines: [], state: .draft }
+try order.addLine(tea())
+try order.place()
+print($"placed: {order.statusLabel()}, total {order.total()}")
+try order.markPaid("pay_123")
+try order.markShipped("EX123456789MY")
+print($"shipped: {order.statusLabel()}, tracking {order.tracking()}")
+
+// 2. a failed transition leaves the state unchanged
+var empty = Order { id: 8, currency: .myr, lines: [], state: .draft }
+empty.place() catch switch { OrderError e => print($"place empty: {errorName(e)}") }
+print($"still: {empty.statusLabel()}")
+
+// 3. wrong state is a run-time error here (a compile error with typestate)
+var early = Order { id: 9, currency: .myr, lines: [], state: .draft }
+early.markShipped("EX123456789MY") catch switch { OrderError e => print($"ship a draft: {errorName(e)}") }
+
+// 4. removed lines don't count
+var removed = Order { id: 10, currency: .myr, lines: [], state: .draft }
+try removed.addLine(tea())
+try removed.removeLine("TEA-0001")
+print($"after remove: total {removed.total()}")
+removed.place() catch switch { OrderError e => print($"place removed-only: {errorName(e)}") }
+
+// 5. rules on lines
+var bad = Order { id: 11, currency: .myr, lines: [], state: .draft }
+bad.addLine(tea() with { qty: 0 }) catch switch { OrderError e => print($"qty 0: {errorName(e)}") }
+bad.addLine(tea() with { unitPrice: Money { cents: 1200, currency: .sgd } }) catch switch { OrderError e => print($"SGD line: {errorName(e)}") }
+
+// 6. cancel only before payment
+var paidOrder = Order { id: 12, currency: .myr, lines: [], state: .draft }
+try paidOrder.addLine(tea())
+try paidOrder.place()
+try paidOrder.markPaid("pay_9")
+paidOrder.cancel("changed mind") catch switch { OrderError e => print($"cancel paid: {errorName(e)}") }
+print($"final: {paidOrder.statusLabel()}")

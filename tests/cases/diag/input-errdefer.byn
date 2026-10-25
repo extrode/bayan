@@ -1,0 +1,10 @@
+union error SaveError {
+    /// The disk is full.
+    full
+}
+
+void save(i64 n) fails SaveError {
+    errdefer print("failed")
+    errdefer (e) print($"failed: {e}")
+    fail .full if n > 3
+}

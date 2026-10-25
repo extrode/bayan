@@ -1,18 +1,18 @@
-struct Point { i64 x; }
+struct Point { i64 x }
 
 enum Planet(f64 mass) { earth(6e24) }
 
-Map<f64, i64> byWeight() => Map<f64, i64>();
+Map<f64, i64> byWeight() => Map<f64, i64>()
 
 void keys() {
-    let points = Map<Point, string>();
-    let planets = Map<Planet, i64>();
-    let nested = Map<string?, i64>();
-    let wrong = Map<string>();
+    let points = Map<Point, string>()
+    let planets = Map<Planet, i64>()
+    let nested = Map<string?, i64>()
+    let wrong = Map<string>()
 }
 
 void compare() {
-    let a = Map<string, i64>();
-    let b = Map<string, i64>();
-    if (a == b) print("same");
+    let a = Map<string, i64>()
+    let b = Map<string, i64>()
+    if a == b { print("same") }
 }

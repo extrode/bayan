@@ -1,0 +1,4 @@
+error BYN2411: `DbError` cannot match `ParseError`
+
+  14 │ assert f("") fails DbError.gone
+     │                    ^^^^^^^

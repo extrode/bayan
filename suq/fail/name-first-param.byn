@@ -1,0 +1,6 @@
+// expect: name-first declaration
+// fix-it: `public void addLine(ref this, Line line)` (`bayan format` puts the type first)
+struct Order {
+    public void addLine(ref this, line: Line) {
+    }
+}

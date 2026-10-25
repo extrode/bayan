@@ -1,0 +1,24 @@
+struct B {
+    i64 n
+
+    public void formatInto(ref StrBuf b) {
+        b.append($"B({n})")
+    }
+
+    public void formatInto(ref StrBuf output, as FormatSpec spec) {
+        if spec.radix == .hex {
+            output.append($"B(hex {n, as: .hex})")
+        } else if spec.digits >= 0 {
+            output.append($"B({n} with {spec.digits} digits)")
+        } else {
+            output.append($"B(spec width {spec.width})")
+        }
+    }
+}
+
+let b = B { n: 255 }
+print($"{b, as: .hex} {b, digits: 2}")
+print($"{b} {b, width: 4}")
+var buf = StrBuf()
+buf.append(b)
+print(buf.view)

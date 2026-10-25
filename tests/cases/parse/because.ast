@@ -1,0 +1,6 @@
+CompilationUnit
+  Attribute @allow unusedValue because `the cache is warmed for its effect`
+  Attribute @cases 1 because `x`
+  Function warm() -> void
+    Block
+      Let n = (call countUnchecked xs because `xs is never empty here`)

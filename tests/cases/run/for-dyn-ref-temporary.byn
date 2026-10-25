@@ -1,0 +1,25 @@
+// A writable `for dyn ref` over a temporary mutates the loop's own copy.
+interface IThing {
+    i64 get()
+    void bump(ref this)
+}
+
+struct S : IThing {
+    i64 n
+
+    i64 get() => n
+    void bump(ref this) { n += 1 }
+}
+
+List<S> make() {
+    var xs = List<S>()
+    xs.append(S { n: 1 })
+    return xs
+}
+
+void main() {
+    for x: dyn ref IThing in make() {
+        x.bump()
+        print($"{x.get()}")
+    }
+}

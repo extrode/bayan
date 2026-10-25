@@ -1,6 +1,9 @@
-union Shape { circle(f32 r), none }
+union Shape {
+    circle(f32 r)
+    none
+}
 
 void main() {
-    let s = Shape.circle;
-    Shape t = .circle;
+    let s = Shape.circle
+    let t: Shape = .circle
 }

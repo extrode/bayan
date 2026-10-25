@@ -1,0 +1,4 @@
+error BYN2225: `Q` cannot be formatted
+
+  6 │ print($"{q, as: .debug}")
+    │          ^ field `xs` is `List<i64>`

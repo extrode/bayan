@@ -1,14 +1,14 @@
 error BYN2743: `+` cannot be applied to a value of type parameter `T`
 
-  1 │ T add<T>(T a, T b) => a + b;
-    │                       ^^^^^
+  1 │ T add<T>(T a, to T b) => a + b
+    │                          ^^^^^
     │
   help: use a `T` only to copy, compare with `==` and `!=`, pass, store, return and format; type
         parameters have no constraints
 
 error BYN2743: `-` cannot be applied to a value of type parameter `T`
 
-  2 │ T negate<T>(T a) => -a;
+  2 │ T negate<T>(T a) => -a
     │                     ^^
     │
   help: use a `T` only to copy, compare with `==` and `!=`, pass, store, return and format; type
@@ -16,7 +16,7 @@ error BYN2743: `-` cannot be applied to a value of type parameter `T`
 
 error BYN2743: `*` cannot be applied to a value of type parameter `T`
 
-  7 │     T twice() => value * 2;
+  7 │     T twice() => value * 2
     │                  ^^^^^^^^^
     │
   help: use a `T` only to copy, compare with `==` and `!=`, pass, store, return and format; type

@@ -1,0 +1,12 @@
+// The generated constructor of a `@positional` struct is exempt from BYN5004-5006; a static factory is not.
+
+@positional
+struct Point {
+    i64 x
+    i64 y
+
+    static Point make(i64 x, i64 y) => Point(x, y)
+}
+
+let p = Point(3, 4)
+print($"{p.x}")

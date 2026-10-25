@@ -1,0 +1,3 @@
+// expect: bare literal for a unit type
+// fix-it: `0g`
+let w: Grams = 0

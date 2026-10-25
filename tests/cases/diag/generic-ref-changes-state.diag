@@ -1,0 +1,9 @@
+error BYN7012: `x` would change state here; a state changes only through `become`
+
+  11 │     x = move v
+     │     ---------- in `put`
+     │
+  16 │     put(Order.draft { id: 2 }, to: ref o)
+     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the generic code needs this of its type arguments
+     │
+  help: call `put` with a type without states; it replaces a value of its type argument whole

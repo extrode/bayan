@@ -1,0 +1,12 @@
+void main() {
+    let name: string? = null
+    if name == null {
+        print("none")
+    }
+    if name != null {
+        print("some")
+    }
+    if null == name {
+        print("none")
+    }
+}

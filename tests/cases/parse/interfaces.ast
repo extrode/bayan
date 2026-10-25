@@ -1,0 +1,21 @@
+CompilationUnit
+  Interface IShape
+    Function area() -> f32
+    Getter string name
+    Function describe() -> string => (interp "area " (call area))
+    Function shout() -> string
+      Block
+        Return name
+  Interface IEnumerator
+    AssociatedType Item
+    Function moveNext(ref this) -> bool
+    Getter Item current
+  Interface IOrder<T>
+    Function less(T other) -> bool
+    Function more(T other) -> bool => (call (. other less) this)
+  Interface IParse<T> where T : IOrder<T>
+    Function static parse(string text) -> T
+    Function get<U>() -> T
+  Extension Money : IShape, IOrder<Money>
+    Function area() -> f32 => 0
+  Extension Cents : IShape

@@ -1,0 +1,28 @@
+interface IC {
+    i64 n
+}
+
+struct C : IC {
+    i64 n
+}
+
+// A function returning a `dyn ref` or a span may point into what it was passed by `ref`: the result borrows it.
+dyn ref readonly IC pick(ref List<C> l) => l[0]
+
+ReadOnlySpan<C> all(ref List<C> l) => l.span
+
+i64 first(ref List<C> l) => l[0].n
+
+void main() {
+    var l = List<C>()
+    l.append(C { n: 1 })
+    let r = pick(ref l)
+    l.append(C { n: 2 })
+    print($"{r.n}")
+    let s = all(ref l)
+    l.append(C { n: 3 })
+    print($"{s[0].n}")
+    let k = first(ref l)
+    l.append(C { n: 4 })
+    print($"{k}")
+}

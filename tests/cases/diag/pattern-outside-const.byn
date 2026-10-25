@@ -1,0 +1,7 @@
+struct Line {
+    i64 qty
+}
+
+void main() {
+    let empty = pattern Line { qty: 0 }
+}

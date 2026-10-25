@@ -1,2 +1,2 @@
-import money;
-let c = money.round(1);
+import money
+let c = money.round(1)

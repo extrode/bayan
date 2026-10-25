@@ -1,8 +1,8 @@
 void onCrash(Panic p) {
-    print(p.message);
+    print(p.message)
 }
 
 void main() {
-    print("starting");
-    Panic.onPanic = onCrash;
+    print("starting")
+    Panic.handler = onCrash
 }

@@ -1,0 +1,23 @@
+// Reported once, not once per conformer.
+interface IShape {
+    i64 area()
+    i64 big() {
+        if area() > 3 {
+            return 1
+        }
+    }
+}
+
+struct Sq : IShape {
+    i64 side
+
+    i64 area() => side
+}
+
+struct Big : IShape {
+    i64 x
+
+    i64 area() => 9
+}
+
+print("x")

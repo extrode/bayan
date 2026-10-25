@@ -1,0 +1,38 @@
+union error CarrierError {
+    timeout(i64 after)
+    rejected(string reason, i64 code)
+    closed
+}
+
+union error QuoteError {
+    stale(i64 age)
+}
+
+i64 send(i64 n) fails CarrierError {
+    fail .closed if n == 0
+    return n
+}
+
+i64 bare(i64 n) => send(n) catch switch {
+    .closed(let x) => x,
+    _ => 0,
+}
+
+i64 few(i64 n) => send(n) catch switch {
+    .rejected(let reason) => 1,
+    _ => 0,
+}
+
+i64 outside(i64 n) => send(n) catch switch {
+    QuoteError.stale(let age) => age,
+    _ => 0,
+}
+
+i64 unknown(i64 n) => send(n) catch switch {
+    CarrierError.timeot(let a) => a,
+    _ => 0,
+}
+
+i64 unnarrowed(i64 n) => send(n) catch switch {
+    CarrierError e => e.after,
+}

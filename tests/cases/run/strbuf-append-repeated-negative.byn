@@ -1,0 +1,5 @@
+var buf = StrBuf()
+buf.appendRepeated('-', by: 2)
+print(buf.view)
+let n = -1
+buf.appendRepeated('-', by: n)

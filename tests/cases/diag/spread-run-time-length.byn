@@ -1,5 +1,5 @@
-List<i32> xs = [1, 2];
-i32[3] fixed = [..xs, 3];
-Span<i32> view = [..xs];
-let inferred = [0, ..xs];
-List<i64> wide = [..xs];
+let xs: List<i32> = [1, 2]
+let fixed: i32[3] = [..xs, 3]
+let view: Span<i32> = [..xs]
+let inferred = [0, ..xs]
+let wide: List<i64> = [..xs]

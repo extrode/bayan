@@ -1,0 +1,5 @@
+// `(T)x` is an input form; a conversion is a call, `T(x)` (BYN1057).
+let wide: i64 = 300
+let narrow = (u8)wide
+let sum = (i32)(wide + 1)
+print($"{narrow} {sum}")

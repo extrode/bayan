@@ -1,6 +1,6 @@
 struct Point {
-    i64 x;
-    i64 y;
+    i64 x
+    i64 y
 }
 
-let p = Point(1, 2);
+let p = Point(1, 2)

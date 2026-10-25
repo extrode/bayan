@@ -11,7 +11,7 @@ namespace Bayan.Tests;
 
 /// <summary>
 /// L010 (docs/laws/010-utf8-decode-exact.md): a compiled Bayan driver decodes edge-case and seeded random
-/// byte sequences with <c>string.from</c>, <c>string.tryFrom</c> and <c>string.invalidUtf8At</c>, and every
+/// byte sequences with <c>Utf8.decode</c>, <c>Utf8.tryDecode</c> and <c>string.invalidUtf8At</c>, and every
 /// verdict, offset and round trip must match <see cref="Rune.DecodeFromUtf8"/>.
 /// </summary>
 [Trait("Law", "L010")]
@@ -20,59 +20,68 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
     private const int Seed = 0x4C010;
     private const int RandomCount = 4000;
 
-    /// <summary>Per stdin line of hex bytes: invalid offset (-1 when valid), from ok, tryFrom ok, and both round trips.</summary>
+    /// <summary>Per stdin line of hex bytes: invalid offset (-1 when valid), decode ok, tryDecode ok, and both round trips;
+    /// the offset is -99 when <c>Utf8Error.invalidSequence</c>'s <c>at</c> disagrees with <c>string.invalidUtf8At</c>.</summary>
     private const string Driver = """
         // L010 driver: each stdin line is lowercase hex bytes.
         u8 nibble(u8 c) {
-            if (c <= 0x39) return c - 0x30;
-            return c - 0x57;
+            if c <= 0x39 { return c - 0x30 }
+            return c - 0x57
         }
 
-        bool same(ReadOnlySpan<u8> a, ReadOnlySpan<u8> b) {
-            if (a.length != b.length) return false;
-            for (let i in 0..a.length) {
-                if (a[i] != b[i]) return false;
+        bool same(ReadOnlySpan<u8> a, as ReadOnlySpan<u8> b) {
+            if a.length != b.length { return false }
+            for i in 0..a.length {
+                if a[i] != b[i] { return false }
             }
-            return true;
+            return true
         }
 
         bool decodes(ReadOnlySpan<u8> bytes) fails Utf8Error {
-            try string.from(bytes);
-            return true;
+            let _ = try Utf8.decode(bytes)
+            return true
+        }
+
+        i64 failsAt(ReadOnlySpan<u8> bytes) {
+            let _ = Utf8.decode(bytes) catch switch {
+                .invalidSequence(let at) => return at,
+            }
+            return -1
         }
 
         string check(ReadOnlySpan<u8> bytes) {
-            let fromOk = decodes(bytes) catch (e) switch {
+            let fromOk = decodes(bytes) catch switch {
                 .invalidSequence => false,
-            };
-            let from = string.from(bytes) catch (e) switch {
+            }
+            let from = Utf8.decode(bytes) catch switch {
                 .invalidSequence => "",
-            };
-            let at = string.invalidUtf8At(bytes) ?? -1;
-            let t = string.tryFrom(bytes);
-            let tryOk = t != null;
-            let tryText = t ?? "";
-            return $"{at} {fromOk} {tryOk} {same(a: from.bytes, b: bytes)} {same(a: tryText.bytes, b: bytes)}";
+            }
+            var at = string.invalidUtf8At(bytes) ?? -1
+            if failsAt(bytes) != at { at = -99 }
+            let t = Utf8.tryDecode(bytes)
+            let tryOk = t is not null
+            let tryText = t ?? ""
+            return $"{at} {fromOk} {tryOk} {same(from.bytes, as: bytes)} {same(tryText.bytes, as: bytes)}"
         }
 
         void main() {
-            let input = Io.stdin.readAll();
-            if (!input.isOk) {
-                print("read failed");
-                return;
+            let input = Io.stdin.readAll()
+            unless input.isOk {
+                print("read failed")
+                return
             }
-            let text = input.value.bytes;
-            var line = List<u8>();
-            i64 i = 0;
-            while (i < text.length) {
-                let c = text[i];
-                if (c == 0x0A) {
-                    print(check(line.asSpan()));
-                    line.clear();
-                    i += 1;
+            let text = input.value.bytes
+            var line = List<u8>()
+            var i: i64 = 0
+            while i < text.length {
+                let c = text[i]
+                if c == 0x0A {
+                    print(check(line.span))
+                    line.clear()
+                    i += 1
                 } else {
-                    line.add(nibble(c) * 16 + nibble(text[i + 1]));
-                    i += 2;
+                    line.append(nibble(c) * 16 + nibble(text[i + 1]))
+                    i += 2
                 }
             }
         }

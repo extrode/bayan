@@ -1,0 +1,6 @@
+error BYN1016: `@positional(strict)` is not allowed here
+
+  1 │ @positional(strict)
+    │ ^^^^^^^^^^^^^^^^^^^
+    │
+  help: write `@positional` with no arguments and no `because`

@@ -1,0 +1,4 @@
+error BYN2106: cannot modify this value
+
+  17 │     for x: dyn ref IC in view(k.span)[0] { x.bump() }
+     │                          ^^^^^^^^^^^^^^^ a `ReadOnlySpan` cannot be written through

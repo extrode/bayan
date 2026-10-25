@@ -1,0 +1,5 @@
+CompilationUnit
+  Function f(i32 n) -> void expects (> n Limit)
+    Block
+  Function g() -> void
+    Block

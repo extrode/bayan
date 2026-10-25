@@ -1,13 +1,13 @@
-error enum MoneyError {
-    invalid,
-    tooPrecise,
+union error MoneyError {
+    invalid
+    tooPrecise
 }
 
-MoneyError e = MoneyError.invalid;
+let e: MoneyError = MoneyError.invalid
 let n = e switch {
     .invalid => 1,
-};
-let ok = true;
+}
+let ok = true
 let m = ok switch {
     true => 1,
-};
+}

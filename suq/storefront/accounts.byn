@@ -1,0 +1,97 @@
+// accounts.byn — sign-up: validation at construction, every violation reported at once
+module suq.storefront
+
+import std.db.pg
+import std.http
+import suq.model
+import suq.payments.{ hashPassword, PasswordHash }
+
+/// The rules live on the type. Decoding collects every violation, and the derivation
+/// exposes them as `SignupForm.rules` for the web framework's HTML5 attributes.
+@derive(Json)
+struct SignupForm {
+    Email email
+    string username
+        requires it.runeCount in 3..=32
+        requires it.isAsciiAlphanumeric
+    string password
+        requires it.runeCount in 8..=128
+    i32 age
+        requires it in 13..=120
+
+    requires password != email.value at .password
+    requires password != username at .password
+}
+
+@derive(Json)
+struct AccountDto {
+    i64 id
+    string username
+}
+
+/// What gets stored. No plain password past this point.
+struct NewAccount {
+    Email email
+    string username
+    PasswordHash hash
+}
+
+union error SignupError {
+    taken
+}
+
+public struct UsersStore {
+    public Pool db
+
+    public i64 insert(NewAccount account) fails DbError, SignupError uses db, alloc, suspend {
+        let conn = try db.open()
+        return conn.query<i64>(sql"""
+            insert into users (email, username, password_hash)
+            values ($1, $2, $3)
+            returning id
+            """, account.email.value, account.username, account.hash.value).single() catch switch {
+            DbError.uniqueViolation => fail .taken,
+            DbError e => fail e,
+        }
+    }
+}
+
+/// POST /signup. `req.body` is `Untrusted<ReadOnlySpan<u8>>`; every field of `SignupForm` is covered
+/// by `requires`, so a successful decode is trusted (O10).
+public Response signUp(Request req, by UsersStore users) uses db, alloc, suspend {
+    let form = SignupForm.fromJson(req.body, maxDepth: 2, maxBytes: 4KiB) catch switch {
+        ValidationError<SignupForm> e => return .unprocessable(json: e.violations),
+        JsonError => return .badRequest,
+    }
+    // Argon2 with 64 MiB is CPU-bound: run it on the thread pool, not on the request fiber.
+    let hash = await Io.offload(() => hashPassword(form.password)) catch _ => return .serverError
+    let id = users.insert(NewAccount { email: form.email, username: form.username, hash }) catch switch {
+        SignupError.taken => return .conflict(json: ["field": "email"]),
+        DbError e => {
+            log($"signup failed: {e}", as: .error)
+            return .serverError
+        },
+    }
+    log($"new account {id}")
+    return .created(json: AccountDto { id, username: form.username })
+}
+
+// ── Tests ──────────────────────────────────────────────────────────
+
+test "every broken rule is reported, none are messages" {
+    let body = Untrusted(b"""{"email": "a@b", "username": "x!", "password": "x!", "age": 9}""")
+    let form = SignupForm.fromJson(body) catch switch {
+        ValidationError<SignupForm> e => {
+            assert e.violations.map(it.field) == [.email, .username, .username, .password, .age, .password]
+            return
+        },
+        JsonError => panic("valid JSON"),
+    }
+    panic($"expected violations, got {form.username}")
+}
+
+test "the rules are data the web framework can read" {
+    assert SignupForm.rules.contains((.username, .length(3..=32)))
+    assert SignupForm.rules.contains((.age, .range(13..=120)))
+    assert SignupForm.rules.contains((.password, .length(8..=128)))
+}

@@ -1,0 +1,26 @@
+// `for dyn ref readonly` reads through a `ReadOnlySpan`; a writable `for dyn ref` over a `Span` writes where the span points.
+interface IC {
+    void bump(ref this)
+    i64 n
+}
+
+struct C : IC {
+    i64 n
+    void bump(ref this) {
+        n += 1
+    }
+}
+
+void main() {
+    var l = List<C>()
+    l.append(C { n: 1 })
+    l.append(C { n: 2 })
+    let w: Span<C> = l.mutableSpan()
+    for x: dyn ref IC in w {
+        x.bump()
+    }
+    let r: ReadOnlySpan<C> = l.span
+    for x: dyn ref readonly IC in r {
+        print($"{x.n}")
+    }
+}

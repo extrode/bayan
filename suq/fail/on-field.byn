@@ -1,0 +1,4 @@
+// expect: `on .field`
+struct Form {
+    requires password != username on .password
+}

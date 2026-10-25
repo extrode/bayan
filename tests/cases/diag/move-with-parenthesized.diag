@@ -1,0 +1,6 @@
+error BYN2782: cannot move out of this expression
+
+  9 │     let copy = move (tx with { label: "copy" })
+    │                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+    │
+  help: move a local variable or a `move` parameter instead

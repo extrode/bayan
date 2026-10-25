@@ -1,0 +1,3 @@
+void f<T>(T x) where T : I becomes .done fails E uses io {
+    print(x)
+}

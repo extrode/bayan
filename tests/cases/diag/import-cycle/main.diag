@@ -1,7 +1,7 @@
 error BYN2010: import cycle: a → b → a
   --> b/b.byn:1:8
 
-  1 │ import a;
+  1 │ import a
     │        ^
     │
   help: move the shared declarations into a module both can import

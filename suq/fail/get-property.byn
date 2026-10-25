@@ -1,0 +1,5 @@
+// expect: `{ get }`
+// fix-it: `string name`
+interface IShipper {
+    string name { get }
+}

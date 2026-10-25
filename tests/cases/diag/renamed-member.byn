@@ -1,0 +1,7 @@
+void main() {
+    var xs = List<i64>()
+    xs.add(1)
+    var sb = StrBuf()
+    sb.append("hi")
+    print(sb.asString())
+}

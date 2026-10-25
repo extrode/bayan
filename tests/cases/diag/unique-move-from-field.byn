@@ -1,19 +1,25 @@
 // Only a local or a `move` parameter can be moved (BYN2782).
 struct Bag {
-    List<i64> items;
+    List<i64> items
 }
 
-List<i64> make() => List<i64>();
+List<i64> make() => List<i64>()
 
-void take(List<i64> plain, ref List<i64> shared, move List<i64> owned) {
-    let bag = Bag { items = List<i64>() };
-    let lists = List<List<i64>>();
-    let a = move bag.items;
-    let b = move lists[0];
-    let c = move plain;
-    let d = move shared;
-    let e = move make();
-    let f = move owned;
-    i64 n = 1;
-    let g = move n;
+void take(List<i64> plain) {
+    let bag = Bag { items: List<i64>() }
+    let lists = List<List<i64>>()
+    let a = move bag.items
+    let b = move lists[0]
+    let c = move plain
+    let e = move make()
+    let n: i64 = 1
+    let g = move n
+}
+
+void takeShared(ref List<i64> shared) {
+    let d = move shared
+}
+
+void takeOwned(move List<i64> owned) {
+    let f = move owned
 }

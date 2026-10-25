@@ -1,0 +1,3 @@
+print("x".padded(to: 3, by: '€'))
+let s = "x".padded(to: 6148914691236517207, by: '€')
+print($"{s.length}")

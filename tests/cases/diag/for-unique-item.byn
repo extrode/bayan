@@ -1,0 +1,14 @@
+struct Rows : IIndexable {
+    type Item = List<i64>
+
+    i64 count => 1
+
+    List<i64> get(i64 index) => List<i64>()
+}
+
+void main() {
+    let rows = Rows {}
+    for row in rows {
+        print($"{row.count}")
+    }
+}

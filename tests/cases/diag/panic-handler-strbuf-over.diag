@@ -1,0 +1,6 @@
+error BYN2612: allocation is not allowed in a panic handler
+
+  2 │     var s = StrBuf.over(stackalloc u8[2])
+    │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    │
+  help: remove it; panic handlers can't recover

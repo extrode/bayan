@@ -1,0 +1,5 @@
+// expect: name-first declaration
+// fix-it: `Sku sku` (`bayan format` puts the type first)
+struct Line {
+    sku: Sku
+}

@@ -1,0 +1,41 @@
+error BYN7007: `Order` has no state `.lost`
+
+  7 │     void ship(ref this is .lost) becomes .gone {
+    │                            ^^^^
+    │
+  help: check the states declared in `Order`
+
+error BYN7007: `Order` has no state `.gone`
+
+  7 │     void ship(ref this is .lost) becomes .gone {
+    │                                           ^^^^
+    │
+  help: check the states declared in `Order`
+
+error BYN7007: `Order` has no state `.gone`
+
+  8 │         become .gone
+    │                 ^^^^
+    │
+  help: check the states declared in `Order`
+
+error BYN7007: `Order` has no state `.refunded`
+
+  12 │ void refund(Order.refunded order) {
+     │                   ^^^^^^^^
+     │
+  help: check the states declared in `Order`
+
+error BYN7007: `Order` has no state `.archived`
+
+  15 │ void archive(Order order is .paid or .archived) {
+     │                                       ^^^^^^^^
+     │
+  help: check the states declared in `Order`
+
+error BYN7007: `Order` has no state `.missing`
+
+  18 │ let order = Order.missing { id: 1 }
+     │                   ^^^^^^^
+     │
+  help: check the states declared in `Order`

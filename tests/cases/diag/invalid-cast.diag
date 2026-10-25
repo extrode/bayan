@@ -1,4 +1,4 @@
 error BYN2206: cannot convert `string` to `i64`
 
-  1 │ let n = (i64)"42";
+  1 │ let n = i64("42")
     │         ^^^^^^^^^

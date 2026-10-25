@@ -1,9 +1,9 @@
 i64 bump(ref i64 n) {
-    n += 1;
-    return n;
+    n += 1
+    return n
 }
 
-i64 calls = 0;
-assert(bump(ref calls) == 1);
-print($"calls {calls}");
-assert(bump(ref calls) > calls + 5);
+var calls: i64 = 0
+assert(bump(ref calls) == 1)
+print($"calls {calls}")
+assert(bump(ref calls) > calls + 5)

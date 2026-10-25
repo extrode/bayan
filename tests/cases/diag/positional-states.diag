@@ -1,0 +1,24 @@
+error BYN1016: `@positional` is not allowed here
+
+  1 │ @positional
+    │ ^^^^^^^^^^^
+    │
+  help: remove `@positional`: a struct with states is built with state literals
+
+error BYN2009: `Open` must be camelCase
+
+  6 │         Open
+    │         ^^^^
+    │
+  help: rename it `open`; only types are PascalCase
+    │ 6 │         open
+    │   │         +
+
+error BYN2009: `Closed` must be camelCase
+
+  7 │         Closed
+    │         ^^^^^^
+    │
+  help: rename it `closed`; only types are PascalCase
+    │ 7 │         closed
+    │   │         +

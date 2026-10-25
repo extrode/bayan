@@ -1,0 +1,9 @@
+error BYN2801: `Square` does not provide `area` required by `IShape`
+
+   6 │ struct Square : IShape {
+     │                 ^^^^^^ needs `area`
+     │
+  help: add `i64 area()` to `Square`
+     │ 10 │     i64 area() => todo("area")
+     │    │ ++++++++++++++++++++++++++++++
+     │ 11 │ }

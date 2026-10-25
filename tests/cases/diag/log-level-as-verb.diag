@@ -1,0 +1,15 @@
+error BYN5007: `Log.debug` names a level, not the act; write `log(…, as: .debug)`
+
+  2 │     Log.debug("cache miss")
+    │     ^^^^^^^^^
+    │
+  help: call `log` and pass the level `as: .debug`
+    │ 2 │     log("cache miss", as: .debug)
+    │   │     ++++++++++++++++++++++++++++
+
+error BYN5007: `Log.error` names a level, not the act; write `log(…, as: .error)`
+
+  3 │     Log.error($"lost {3} rows", 2)
+    │     ^^^^^^^^^
+    │
+  help: call `log` and pass the level `as: .error`

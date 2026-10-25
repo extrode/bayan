@@ -1,0 +1,12 @@
+i64 pick() {
+    print("pick")
+    return 0
+}
+
+var ls = List<List<i64>>()
+var inner = List<i64>()
+inner.append(3)
+inner.append(1)
+ls.append(move inner)
+ls[pick()].sort()
+print($"first {ls[0][0]}")

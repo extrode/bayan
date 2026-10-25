@@ -1,4 +1,4 @@
 void f(bool ok) {
-    unless (!ok) { retry(); }
-    return unless !ok;
+    unless !ok { retry() }
+    return unless !ok
 }

@@ -1,0 +1,12 @@
+void main() {
+    let s = "ab"
+    var w = 3
+    w = 4
+    print($"{s, as: .hex}")
+    print($"{1.5, digits: 99}")
+    print($"{7, digits: 2}")
+    print($"{s, width: w}")
+    print($"{s, align: .middle}")
+    print($"{s, color: .red}")
+    print($"{s, width: 2, width: 3}")
+}

@@ -1,0 +1,13 @@
+error BYN3004: `digits` is modified while the `for` loop still borrows it
+
+  34 │         digits.grow()
+     │         ^^^^^^^^^^^^^ the loop over `digits` is still running
+     │
+  help: collect the changes in another list and apply them to `digits` after the loop
+
+error BYN3004: `steps` is modified while the `for` loop still borrows it
+
+  38 │         let _ = steps.moveNext()
+     │                 ^^^^^^^^^^^^^^^^ the loop over `steps` is still running
+     │
+  help: collect the changes in another list and apply them to `steps` after the loop

@@ -1,5 +1,5 @@
-var i16 total = 10;
-var step = 1;
-step += 1;
-total = step;
-print($"{total}");
+var total: i16 = 10
+var step = 1
+step += 1
+total = step
+print($"{total}")

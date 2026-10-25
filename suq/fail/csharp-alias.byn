@@ -1,0 +1,3 @@
+// expect: C# alias type name
+// fix-it: `i32`
+let n: int = 3

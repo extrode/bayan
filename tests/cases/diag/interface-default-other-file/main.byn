@@ -1,0 +1,7 @@
+import shapes
+
+struct S : shapes.IA, shapes.IB {
+    i64 x
+}
+
+print($"{S { x: 1 }.x}")

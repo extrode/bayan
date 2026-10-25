@@ -1,0 +1,2 @@
+// expect: `requires value`
+type distinct Age = i32 requires value in 0..=150

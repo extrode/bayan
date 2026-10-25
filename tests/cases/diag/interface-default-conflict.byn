@@ -1,0 +1,13 @@
+interface IA {
+    string name() => "a"
+}
+
+interface IB {
+    string name() => "b"
+}
+
+struct S : IA, IB {
+    i64 x
+}
+
+print(S { x: 1 }.name())

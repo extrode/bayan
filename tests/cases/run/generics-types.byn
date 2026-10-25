@@ -1,91 +1,98 @@
-enum Suit { clubs, hearts }
+enum Suit {
+    clubs
+    hearts
+}
 
 struct Pair<A, B> {
-    A a;
-    B b;
+    A a
+    B b
 
-    Pair<B, A> swap(move B first, move A second) => Pair<B, A> { a = move first, b = move second };
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Pair {{ a: {a}, b: {b} }}")
+    }
 
-    bool sameFirst(Pair<A, B> other) => a == other.a;
+    Pair<B, A> swap(move B first, by move A second) => Pair<B, A> { a: move first, b: move second }
+
+    bool sameFirst(Pair<A, B> other) => a == other.a
 }
 
 union Option2<T> {
-    some(T v),
-    nothing,
+    some(T v)
+    nothing
 }
 
 union Tree<T> {
-    leaf(T v),
-    node(Pair<T, T> kids),
+    leaf(T v)
+    node(Pair<T, T> kids)
 }
 
 struct Box<T> {
-    T value;
-    List<T> history;
+    T value
+    List<T> history
 
-    void put(ref this, move T old, move T next) {
-        history.add(move old);
-        value = move next;
+    void replace(ref this, move T old, by move T next) {
+        history.append(move old)
+        value = move next
     }
 }
 
 struct Slot<T> {
-    T? value = null;
-    i64 uses = 0;
+    T? value = null
+    i64 useCount = 0
 }
 
 string show<T>(Option2<T> o) => o switch {
     .some(let v) => $"some {v}",
     .nothing => "nothing",
-};
+}
 
-Option2<T> wrap<T>(move T x) => .some(move x);
+Option2<T> wrap<T>(move T x) => .some(move x)
 
 i64 total<K>(Map<K, i64> m) {
-    i64 sum = 0;
-    for (let e in m) sum += e.value;
-    return sum;
+    var sum: i64 = 0
+    for e in m { sum += e.value }
+    return sum
 }
 
-let p = Pair<i64, string> { a = 1, b = "x" };
-let q = p.swap(first: p.b, second: p.a);
-print($"{p} {q} {q.a} {q.b}");
-print($"{p == Pair<i64, string> { a = 1, b = "x" }} {p.sameFirst(Pair<i64, string> { a = 2, b = "x" })}");
-Pair<Suit, bool> flag = { a = .hearts, b = true };
-print($"{flag}");
+let p = Pair<i64, string> { a: 1, b: "x" }
+let q = p.swap(p.b, by: p.a)
+print($"{p} {q} {q.a} {q.b}")
+print($"{p == Pair<i64, string> { a: 1, b: "x" }} {p.sameFirst(Pair<i64, string> { a: 2, b: "x" })}")
+let flag: Pair<Suit, bool> = { a: .hearts, b: true }
+print($"{flag}")
 
-let some = Option2<i64>.some(5);
-Option2<i64> nothing = .nothing;
-let word = wrap("hi");
-print($"{show(some)} {show(nothing)} {show(word)} {some}");
-print($"{some == Option2<i64>.some(5)} {some != nothing}");
-switch (word) {
+let some = Option2<i64>.some(5)
+let nothing: Option2<i64> = .nothing
+let word = wrap("hi")
+print($"{show(some)} {show(nothing)} {show(word)} {some}")
+print($"{some == Option2<i64>.some(5)} {some != nothing}")
+switch word {
     case Option2.some(let w):
-        print($"matched {w}");
+        print($"matched {w}")
     case .nothing:
-        print("matched nothing");
+        print("matched nothing")
 }
-if (some is .some(let n) && n > 3) print($"big {n}");
+if some is .some(let n) && n > 3 { print($"big {n}") }
 
-let t = Tree<i64>.node(Pair<i64, i64> { a = 1, b = 2 });
+let t = Tree<i64>.node(Pair<i64, i64> { a: 1, b: 2 })
 let text = t switch {
     .leaf(let v) => $"leaf {v}",
     .node(let kids) => $"node {kids.a} {kids.b}",
-};
-print(text);
+}
+print(text)
 
-var box = Box<string> { value = "a", history = List<string>() };
-box.put(old: box.value, next: "b");
-box.put(old: box.value, next: "c");
-print($"{box.value} {box.history.length}");
+var box = Box<string> { value: "a", history: List<string>() }
+box.replace(box.value, by: "b")
+box.replace(box.value, by: "c")
+print($"{box.value} {box.history.length}")
 
-var bySuit = Map<Suit, i64>();
-bySuit[.clubs] = 2;
-bySuit[.hearts] = 3;
-var byName = Map<string, i64>();
-byName["x"] = 10;
-print($"{total(bySuit)} {total(byName)}");
+var bySuit = Map<Suit, i64>()
+bySuit[.clubs] = 2
+bySuit[.hearts] = 3
+var byName = Map<string, i64>()
+byName["x"] = 10
+print($"{total(bySuit)} {total(byName)}")
 
-let empty = Slot<i64> { };
-let full = Slot<string> { value = "s" };
-print($"{empty.value} {full.value} {empty.uses + full.uses}");
+let empty = Slot<i64> { }
+let full = Slot<string> { value: "s" }
+print($"{empty.value} {full.value} {empty.useCount + full.useCount}")

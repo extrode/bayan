@@ -10,6 +10,8 @@ public static class BoundTree
         {
             case BoundField n: yield return n.Receiver; break;
             case BoundTupleElement n: yield return n.Receiver; break;
+            case BoundUnionField n: yield return n.Receiver; break;
+            case BoundErrorField n: yield return n.Receiver; break;
             case BoundCall n:
                 if (n.Receiver is not null) yield return n.Receiver;
                 foreach (var a in n.Arguments) yield return a;
@@ -21,10 +23,15 @@ public static class BoundTree
             case BoundUnary n: yield return n.Operand; break;
             case BoundBinary n: yield return n.Left; yield return n.Right; break;
             case BoundConversion n: yield return n.Operand; break;
+            case BoundTryFrom n: yield return n.Operand; break;
             case BoundConditional n: yield return n.Condition; yield return n.WhenTrue; yield return n.WhenFalse; break;
             case BoundCoalesce n: yield return n.Left; yield return n.Right; break;
-            case BoundStructLiteral n: foreach (var f in n.Fields) yield return f; break;
+            case BoundStructLiteral n:
+                foreach (var f in n.Fields) yield return f;
+                foreach (var p in n.Payload) yield return p;
+                break;
             case BoundUnionNew n: foreach (var f in n.Payload) yield return f; break;
+            case BoundErrorVariant n: foreach (var f in n.Payload) yield return f; break;
             case BoundWith n:
                 yield return n.Target;
                 foreach (var u in n.Updates) yield return u.Value;
@@ -63,9 +70,11 @@ public static class BoundTree
             case BoundBlock n: foreach (var s in n.Statements) yield return s; break;
             case BoundLocalDecl n: if (n.Initializer is not null) yield return n.Initializer; break;
             case BoundExprStmt n: yield return n.Expr; break;
+            case BoundAssert n: yield return n.Condition; break;
             case BoundAssign n: yield return n.Target; yield return n.Value; break;
             case BoundReturn n: if (n.Value is not null) yield return n.Value; break;
             case BoundFail n: yield return n.Error; break;
+            case BoundBecome n: foreach (var a in n.Payload) yield return a; break;
             case BoundIf n:
                 yield return n.Condition;
                 yield return n.Then;
@@ -95,6 +104,7 @@ public static class BoundTree
             case BoundBinaryPattern n: yield return n.Left; yield return n.Right; break;
             case BoundPropertyPattern n: foreach (var s in n.Subpatterns) yield return s.Pattern; break;
             case BoundUnionPattern n: foreach (var s in n.Subpatterns) yield return s; break;
+            case BoundErrorPattern n: foreach (var s in n.Subpatterns) yield return s; break;
         }
     }
 

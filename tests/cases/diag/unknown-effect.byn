@@ -1,0 +1,12 @@
+effect db = net, fs
+effect loop = loop, fs
+effect store = db, disk
+
+void save() uses disk, db { }
+
+void load() uses store { }
+
+void main() {
+    save()
+    load()
+}

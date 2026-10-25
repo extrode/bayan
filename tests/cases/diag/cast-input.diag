@@ -1,0 +1,17 @@
+error BYN1057: `(u8)x` is an input form; write `u8(x)`
+
+  3 │ let narrow = (u8)wide
+    │              ^^^^ a cast
+    │
+  help: call the conversion: `u8(x)`
+    │ 3 │ let narrow = u8(wide)
+    │   │              ++++++++
+
+error BYN1057: `(i32)x` is an input form; write `i32(x)`
+
+  4 │ let sum = (i32)(wide + 1)
+    │           ^^^^^ a cast
+    │
+  help: call the conversion: `i32(x)`
+    │ 4 │ let sum = i32(wide + 1)
+    │   │           +++

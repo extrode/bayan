@@ -1,0 +1,13 @@
+struct Door {
+    i64 id
+    states {
+        shut
+        open
+    }
+    void push(this is .shut) becomes .open {
+        become .open
+    }
+    static void close() becomes .shut {
+        become .shut
+    }
+}

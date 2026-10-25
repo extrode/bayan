@@ -1,28 +1,28 @@
-i64 a = 17;
-i64 b = 5;
-print($"{a + b} {a - b} {a * b} {a / b} {a % b}");
-print($"{-a / b} {-a % b} {a / -b}");
-u8 x = 250;
-print($"{x +% 10} {x +| 10} {(u8)3 -| (u8)5} {(u8)3 -% (u8)5}");
-i32 big = 2147483647;
-print($"{big +| 1} {big +% 1} {big *| 2}");
-print($"{1 << 4} {256 >> 2} {0xF0 & 0x3C} {0xF0 | 0x0F} {0xFF ^ 0x0F}");
-f64 h = 1.0 / 3.0;
-print($"{h} {0.1 + 0.2} {2.5 * 4.0} {7.5 % 2.0}");
-f32 single = 0.1;
-print($"{single} {(f64)single}");
-print($"{(i64)3.99} {(i64)(-3.99)} {(u8)300.0} {(i32)(1.0 / 0.0)}");
-i64 wide = 1000;
-print($"{(i16)wide} {(u16)wide}");
-let c = 'A';
-print($"{c} {c.value} {(char)0x1F600} {'é'}");
-let abc = "abc";
-print($"{true} {false} {1 < 2} {2 <= 1} {abc < "abd"} {abc == "abc"}");
-i64 low = -9223372036854775808;
-u64 high = 18446744073709551615;
-print($"{low} {high} {low - 0}");
-f64 tiny = 0.00001;
-f64 small = 0.0001;
-f64 huge = 1000000000000000.0;
-f64 large = 100000000000000.0;
-print($"{tiny} {small} {huge} {large} {-2.5} {123.456} {1.0} {-0.0} {6.02e23}");
+let a: i64 = 17
+let b: i64 = 5
+print($"{a + b} {a - b} {a * b} {a / b} {a % b}")
+print($"{-a / b} {-a % b} {a / -b}")
+let x: u8 = 250
+print($"{x +% 10} {x +| 10} {u8(3) -| u8(5)} {u8(3) -% u8(5)}")
+let big: i32 = 2147483647
+print($"{big +| 1} {big +% 1} {big *| 2}")
+print($"{1 << 4} {256 >> 2} {0xF0 & 0x3C} {0xF0 | 0x0F} {0xFF ^ 0x0F}")
+let h: f64 = 1.0 / 3.0
+print($"{h} {0.1 + 0.2} {2.5 * 4.0} {7.5 % 2.0}")
+let single: f32 = 0.1
+print($"{single} {f64(single)}")
+print($"{i64(3.99)} {i64(-3.99)} {u8(300.0)} {i32(1.0 / 0.0)}")
+let wide: i64 = 1000
+print($"{i16(wide)} {u16(wide)}")
+let c = 'A'
+print($"{c} {c.value} {rune(0x1F600)} {'é'}")
+let abc = "abc"
+print($"{true} {false} {1 < 2} {2 <= 1} {abc < "abd"} {abc == "abc"}")
+let low: i64 = -9223372036854775808
+let high: u64 = 18446744073709551615
+print($"{low} {high} {low - 0}")
+let tiny: f64 = 0.00001
+let small: f64 = 0.0001
+let huge: f64 = 1000000000000000.0
+let large: f64 = 100000000000000.0
+print($"{tiny} {small} {huge} {large} {-2.5} {123.456} {1.0} {-0.0} {6.02e23}")

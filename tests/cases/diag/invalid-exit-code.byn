@@ -1,25 +1,25 @@
-error enum ConfigError {
-    [ExitCode(0)]
+union error ConfigError {
+    @exitCode(0)
     /// Zero means success.
-    zero,
-    [ExitCode(300)]
+    zero
+    @exitCode(300)
     /// Too large.
-    large,
-    [ExitCode]
+    large
+    @exitCode
     /// No argument.
-    missing,
-    [ExitCode("x")]
+    missing
+    @exitCode("x")
     /// Not an integer.
-    text,
-    [ExitCode(1, 2)]
+    text
+    @exitCode(1, 2)
     /// Two arguments.
-    two,
-    [ExitCode(4)]
-    [ExitCode(5)]
+    two
+    @exitCode(4)
+    @exitCode(5)
     /// Repeated.
-    repeated,
+    repeated
 }
 
 void main() fails ConfigError {
-    return .zero;
+    fail .zero
 }

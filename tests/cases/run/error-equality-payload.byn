@@ -1,0 +1,17 @@
+union error ParseError {
+    badDigit(i64 at)
+    empty
+}
+
+Result<i64, ParseError> held(i64 n) {
+    return .badDigit(at: n) if n > 0
+    return 0
+}
+
+let a: ParseError = .badDigit(at: 1)
+let b: ParseError = .badDigit(at: 5)
+let c: ParseError = .badDigit(at: 1)
+print($"{a == b} {a == c} {a != b} {a == .empty}")
+// `==` against a bare case with a payload tests the case only.
+print($"{a == .badDigit} {b == .badDigit}")
+print($"{held(1) == held(5)} {held(1) == held(1)} {held(0) == held(0)}")

@@ -1,0 +1,15 @@
+error BYN7011: `pay` changes the state of `other`, a `ref` parameter; a state changes in place only
+through `ref this`
+
+  14 │         other.pay(1)
+     │         ^^^^^^^^^^^^
+     │
+  help: take `other` by `move` and return the new state as a value
+
+error BYN7011: `pay` changes the state of `order`, a `ref` parameter; a state changes in place only
+through `ref this`
+
+  20 │     order.pay(2)
+     │     ^^^^^^^^^^^^
+     │
+  help: take `order` by `move` and return the new state as a value

@@ -1,0 +1,2 @@
+panic: string slice splits a code point
+  at strbuf-insert-splits-rune.byn:5

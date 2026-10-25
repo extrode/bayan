@@ -63,7 +63,7 @@ public sealed partial class CliEnvironmentTests
     {
         var dir = Fresh("broken");
         var file = Path.Combine(dir, "main.byn");
-        File.WriteAllText(file, "void main() {\n    let x = 1;\n    x = 2;\n}\n");
+        File.WriteAllText(file, "void main() {\n    let x = 1\n    x = 2\n}\n");
         return file;
     }
 
@@ -120,7 +120,7 @@ public sealed partial class CliEnvironmentTests
         {
             var err = Run(["check", file], new CliApp.Terminal(true, true)).Err;
             Assert.DoesNotContain("\u001b[", err, StringComparison.Ordinal);
-            Assert.Contains("  3 |     x = 2;", err, StringComparison.Ordinal);
+            Assert.Contains("  3 |     x = 2", err, StringComparison.Ordinal);
             Assert.DoesNotContain("│", err, StringComparison.Ordinal);
         }, ("TERM", "dumb"));
     }
@@ -146,16 +146,16 @@ public sealed partial class CliEnvironmentTests
         var file = Broken();
         WithTerminalEnv(() =>
         {
-            Assert.Contains("  3 │     x = 2;", Run(["check", file]).Err, StringComparison.Ordinal);
+            Assert.Contains("  3 │     x = 2", Run(["check", file]).Err, StringComparison.Ordinal);
             var ascii = Run(["--ascii", "check", file], new CliApp.Terminal(true, true)).Err;
             Assert.Contains("\u001b[", ascii, StringComparison.Ordinal);
             Assert.DoesNotContain("│", Escape().Replace(ascii, ""), StringComparison.Ordinal);
-            Assert.Contains("  3 |     x = 2;", Run(["check", file, "--ascii"]).Err, StringComparison.Ordinal);
+            Assert.Contains("  3 |     x = 2", Run(["check", file, "--ascii"]).Err, StringComparison.Ordinal);
         });
-        WithTerminalEnv(() => Assert.Contains("  3 |     x = 2;", Run(["check", file]).Err, StringComparison.Ordinal), ("LANG", "C"));
-        WithTerminalEnv(() => Assert.Contains("  3 │     x = 2;", Run(["check", file]).Err, StringComparison.Ordinal), ("LANG", "C"), ("LC_ALL", "en_US.utf8"));
-        WithTerminalEnv(() => Assert.Contains("  3 |     x = 2;", Run(["check", file]).Err, StringComparison.Ordinal), ("LC_CTYPE", "POSIX"));
-        WithTerminalEnv(() => Assert.Contains("  3 │     x = 2;", Run(["check", file]).Err, StringComparison.Ordinal), ("LANG", null));
+        WithTerminalEnv(() => Assert.Contains("  3 |     x = 2", Run(["check", file]).Err, StringComparison.Ordinal), ("LANG", "C"));
+        WithTerminalEnv(() => Assert.Contains("  3 │     x = 2", Run(["check", file]).Err, StringComparison.Ordinal), ("LANG", "C"), ("LC_ALL", "en_US.utf8"));
+        WithTerminalEnv(() => Assert.Contains("  3 |     x = 2", Run(["check", file]).Err, StringComparison.Ordinal), ("LC_CTYPE", "POSIX"));
+        WithTerminalEnv(() => Assert.Contains("  3 │     x = 2", Run(["check", file]).Err, StringComparison.Ordinal), ("LANG", null));
     }
 
     [Fact]
@@ -171,7 +171,7 @@ public sealed partial class CliEnvironmentTests
     {
         var dir = Fresh("color-tests");
         File.WriteAllText(Path.Combine(dir, "main.byn"), "void main() {\n}\n");
-        File.WriteAllText(Path.Combine(dir, "main.test.byn"), "test \"passes\" {\n    assert(true);\n}\n\ntest \"breaks\" {\n    assert(false);\n}\n");
+        File.WriteAllText(Path.Combine(dir, "main.test.byn"), "test \"passes\" {\n    assert(true)\n}\n\ntest \"breaks\" {\n    assert(false)\n}\n");
         WithTerminalEnv(() =>
         {
             var (exit, stdout, _) = Run(["test", dir], new CliApp.Terminal(true, true));
@@ -187,7 +187,7 @@ public sealed partial class CliEnvironmentTests
     {
         var dir = Fresh("script-args");
         var script = Path.Combine(dir, "tool.byn");
-        File.WriteAllText(script, "#!/usr/bin/env bayan\n#:io threaded\n\nprint(\"hi\");\n");
+        File.WriteAllText(script, "#!/usr/bin/env bayan\n#:io threaded\n\nprint(\"hi\")\n");
         Assert.Equal(CliApp.ExitOk, Run([script, "--color", "sometimes"]).Exit);
         Assert.Equal(CliApp.ExitOk, Run(["--color", "never", script, "--color", "sometimes"]).Exit);
         Assert.Equal(CliApp.ExitOk, Run(["--ascii", script, "--color", "sometimes"]).Exit);
@@ -280,8 +280,8 @@ public sealed partial class CliEnvironmentTests
         var app = Path.Combine(Fresh(name), "tally");
         Assert.Equal(CliApp.ExitOk, Run(["new", app, "--vcs", "none"]).Exit);
         Directory.CreateDirectory(Path.Combine(app, "src", "money"));
-        File.WriteAllText(Path.Combine(app, "src", "money", "money.byn"), "public i64 cents(i64 units) {\n    return units * 100;\n}\n\ntest \"cents\" {\n    assert(cents(2) == 200);\n}\n");
-        File.WriteAllText(Path.Combine(app, "src", "app", "main.byn"), "import money;\n\nstring greeting() {\n    return \"Hello, world!\";\n}\n\ntest \"in main\" {\n    assert(money.cents(1) == 100);\n}\n\nprint(greeting());\n");
+        File.WriteAllText(Path.Combine(app, "src", "money", "money.byn"), "public i64 cents(i64 units) {\n    return units * 100\n}\n\ntest \"cents\" {\n    assert(cents(2) == 200)\n}\n");
+        File.WriteAllText(Path.Combine(app, "src", "app", "main.byn"), "import money\n\nstring greeting() {\n    return \"Hello, world!\"\n}\n\ntest \"in main\" {\n    assert(money.cents(1) == 100)\n}\n\nprint(greeting())\n");
         Assert.Equal(0, Git(app, "init", "--quiet", "-b", "work").Code);
         Assert.Equal(0, Git(app, "add", "-A").Code);
         Assert.Equal(0, Git(app, "commit", "--quiet", "-m", "start").Code);
@@ -315,7 +315,7 @@ public sealed partial class CliEnvironmentTests
         File.AppendAllText(Path.Combine(app, "src", "money", "money.byn"), "\n");
         Assert.Equal(["cents"], Ran(Run(["test", "-v", app, "--changed"]).Out));
 
-        File.WriteAllText(Path.Combine(app, "tests", "extra.test.byn"), "test \"extra\" {\n    assert(true);\n}\n");
+        File.WriteAllText(Path.Combine(app, "tests", "extra.test.byn"), "test \"extra\" {\n    assert(true)\n}\n");
         Assert.Equal(["cents", "extra", "greets the world", "in main"], Ran(Run(["test", "-v", app, "--changed"]).Out));
 
         Assert.Equal(0, Git(app, "add", "-A").Code);
@@ -340,7 +340,7 @@ public sealed partial class CliEnvironmentTests
         Assert.Contains("can't compare the working tree with `no-such-ref`", err);
 
         var loose = Fresh("changed-no-repo");
-        File.WriteAllText(Path.Combine(loose, "main.byn"), "void main() {\n}\n\ntest \"t\" {\n    assert(true);\n}\n");
+        File.WriteAllText(Path.Combine(loose, "main.byn"), "void main() {\n}\n\ntest \"t\" {\n    assert(true)\n}\n");
         With("GIT_CEILING_DIRECTORIES", Path.GetDirectoryName(loose), () =>
         {
             var r = Run(["test", loose, "--changed"]);
@@ -366,7 +366,7 @@ public sealed partial class CliEnvironmentTests
         if (Toolchain.FindOnPath("git") is null) return;
         var app = ChangedProject("changed-non-ascii");
         var cafe = Path.Combine(app, "src", "money", "café.byn");
-        File.WriteAllText(cafe, "public i64 euros(i64 units) {\n    return units;\n}\n");
+        File.WriteAllText(cafe, "public i64 euros(i64 units) {\n    return units\n}\n");
         Assert.Equal(["cents"], Ran(Run(["test", "-v", app, "--changed"]).Out));
 
         Assert.Equal(0, Git(app, "add", "-A").Code);
@@ -427,7 +427,7 @@ public sealed partial class CliEnvironmentTests
     public void ATestThatRunsTooLongIsReportedAsTimedOut()
     {
         var file = Path.Combine(Fresh("timeout"), "main.byn");
-        File.WriteAllText(file, "void main() {\n}\n\ntest \"loops\" {\n    while (true) {\n    }\n}\n");
+        File.WriteAllText(file, "void main() {\n}\n\ntest \"loops\" {\n    while true {\n    }\n}\n");
         With("BAYAN_TEST_TIMEOUT_MS", "300", () =>
         {
             var (exit, stdout, _) = Run(["test", file]);

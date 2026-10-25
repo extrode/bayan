@@ -4,12 +4,12 @@
 error BYN2104: `total` is immutable
   --> src/ledger/ledger.byn:3:5
 
-  2 │     let total = 0;
+  2 │     let total = 0
     │         ----- declared with `let` here
     │
-  3 │     total += line.price;
+  3 │     total += line.price
     │     ^^^^^ cannot be changed
     │
   help: declare it with `var` if it should change
-    │ 2 │     var total = 0;
+    │ 2 │     var total = 0
     │   │     +++

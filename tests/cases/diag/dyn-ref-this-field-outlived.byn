@@ -1,0 +1,25 @@
+interface IThing {
+    i64 get()
+}
+
+struct S : IThing {
+    i64 n
+
+    i64 get() => n
+}
+
+struct Box {
+    S inner
+
+    dyn ref IThing pick(ref this) => inner
+}
+
+void main() {
+    var kept = S { n: 1 }
+    var late: dyn ref IThing = kept
+    {
+        var b = Box { inner: S { n: 2 } }
+        late = b.pick()
+    }
+    print($"{late.get()}")
+}

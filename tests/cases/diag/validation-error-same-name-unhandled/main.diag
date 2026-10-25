@@ -1,0 +1,7 @@
+error BYN2410: `switch` does not handle every `ValidationError<a.Point> | ValidationError<b.Point>`
+  --> main.byn:11:26
+
+  11 │     both(1, at: 0) catch switch {
+     │                          ^^^^^^ not covered: ValidationError<b.Point>
+     │
+  help: add the missing arms, or `_ => …` for the rest

@@ -1,0 +1,6 @@
+error BYN2603: `ValidationError<Signup>` is not in the `fails` clause of `register`
+
+  13 │     let s = try Signup { name: name }
+     │             ^^^^^^^^^^^^^^^^^^^^^^^^^
+     │
+  help: add it to the signature: `fails ValidationError<Address>, ValidationError<Signup>`

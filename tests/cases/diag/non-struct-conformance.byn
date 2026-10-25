@@ -1,0 +1,13 @@
+interface IShape {
+    i64 area()
+}
+
+union Shape : IShape {
+    circle(i64 r)
+    none
+}
+
+enum Color : IShape {
+    red
+    green
+}

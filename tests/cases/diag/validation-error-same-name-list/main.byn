@@ -1,0 +1,16 @@
+import a
+import b
+
+union error Other { boom }
+
+void both(i32 x) fails ValidationError<List<a.Point>>, ValidationError<List<b.Point>> {
+    if x > 0 { fail ValidationError<List<a.Point>>.invalid }
+    fail ValidationError<List<b.Point>>.invalid
+}
+
+void main() {
+    both(1) catch switch {
+        ValidationError<List<a.Point>> e => print("a rejected"),
+    }
+    both(2) catch (Other.boom) print("x")
+}

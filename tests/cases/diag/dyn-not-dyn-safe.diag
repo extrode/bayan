@@ -1,0 +1,13 @@
+error BYN2808: `IMap` cannot be used with `dyn`: `get` is generic
+
+  10 │ void lookup(dyn ref IMap m) { }
+     │             ^^^^^^^^^^^^ used with `dyn` here
+     │
+  help: use a `where` constraint instead
+
+error BYN2808: `ICursor` cannot be used with `dyn`: `Item` is an associated type
+
+  12 │ void walk(dyn ref readonly ICursor c) { }
+     │           ^^^^^^^^^^^^^^^^^^^^^^^^ used with `dyn` here
+     │
+  help: use a `where` constraint instead

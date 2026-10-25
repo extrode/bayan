@@ -8,7 +8,8 @@ namespace Bayan.Semantics.Binding;
 /// <summary>
 /// Checks that need control flow, run once every body is bound and error sets are inferred:
 /// definite assignment (locals declared without a value, <c>out</c> parameters), missing
-/// returns, unreachable code, and that each <c>try</c> propagates only declared errors.
+/// returns, unreachable code, that each <c>try</c> propagates only declared errors, and that a
+/// function that <c>becomes</c> a state does not return normally without <c>become</c>.
 /// </summary>
 internal sealed class FlowAnalysis
 {
@@ -40,8 +41,10 @@ internal sealed class FlowAnalysis
     {
         public bool Reachable = true;
         public HashSet<LocalSymbol> Assigned = new();
+        /// <summary>A <c>become</c> ran on every path.</summary>
+        public bool Became;
 
-        public State Clone() => new() { Reachable = Reachable, Assigned = new(Assigned) };
+        public State Clone() => new() { Reachable = Reachable, Assigned = new(Assigned), Became = Became };
 
         public static State Unreachable() => new() { Reachable = false };
 
@@ -52,6 +55,7 @@ internal sealed class FlowAnalysis
             if (!other.Reachable) return Clone();
             var r = Clone();
             r.Assigned.IntersectWith(other.Assigned);
+            r.Became &= other.Became;
             return r;
         }
     }
@@ -73,6 +77,7 @@ internal sealed class FlowAnalysis
             return;
         }
         CheckOutAssigned(end, closing);
+        CheckBecame(end, closing);
     }
 
     private void Report(DiagnosticDescriptor d, TextSpan span, object?[] args, string? label = null, string? help = null, Fix? fix = null) =>
@@ -82,6 +87,13 @@ internal sealed class FlowAnalysis
     {
         foreach (var p in _fn.Parameters.Where(p => p.Modifier == ParamModifier.Out && !state.Assigned.Contains(p)))
             Report(DiagnosticCodes.OutNotAssigned, span, [p.Name], help: $"assign `{p.Name}` before every `return`");
+    }
+
+    /// <summary>BYN7009: a normal return from a function that <c>becomes .s</c> must follow a <c>become</c>; not after BYN7010.</summary>
+    private void CheckBecame(State state, TextSpan span)
+    {
+        if (state.Became || _fn.Decl?.Becomes is not { } becomes || _fn is { Kind: FunctionKind.Method, IsStatic: false, Decl.RefThis: null }) return;
+        Report(DiagnosticCodes.MissingBecome, span, [_fn.Name, becomes.Text], help: $"add `become .{becomes.Text}(…)` before returning, or fail");
     }
 
     // ── Statements ───────────────────────────────────────────────────────────────
@@ -118,6 +130,8 @@ internal sealed class FlowAnalysis
                 return state;
             case BoundExprStmt e:
                 return Expr(e.Expr, state);
+            case BoundAssert a:
+                return Expr(a.Condition, state);
             case BoundAssign a:
                 if (a.Op is null && a.Target is BoundLocal { Local: var l })
                 {
@@ -128,7 +142,11 @@ internal sealed class FlowAnalysis
                 return Expr(a.Value, Expr(a.Target, state));
             case BoundReturn r:
                 if (r.Value is not null) state = Expr(r.Value, state);
-                if (state.Reachable) CheckOutAssigned(state, r.Syntax.Span);
+                if (state.Reachable)
+                {
+                    CheckOutAssigned(state, r.Syntax.Span);
+                    CheckBecame(state, r.Syntax.Span);
+                }
                 return State.Unreachable();
             case BoundFail f:
                 Expr(f.Error, state);
@@ -192,6 +210,14 @@ internal sealed class FlowAnalysis
                 return state;
             case BoundContext c:
                 return Statement(c.Body, Expr(c.Allocator, state));
+            case BoundBecome b:
+                foreach (var a in b.Payload) state = Expr(a, state);
+                state.Became = true;
+                return state;
+            case BoundErrorStmt { Syntax: BecomeStmt }:
+                // An unknown state was already reported (BYN7007); count the `become` so BYN7009 does not follow it.
+                state.Became = true;
+                return state;
             default:
                 return state;
         }
@@ -245,7 +271,15 @@ internal sealed class FlowAnalysis
                 {
                     var branch = state.Clone();
                     if (arm.Guard is not null) branch = Expr(arm.Guard, branch);
-                    after = after.Join(Expr(arm.Value, branch));
+                    branch = Expr(arm.Value, branch);
+                    // A block arm of a value-giving `catch switch` must leave, as a `catch` block does (J49).
+                    if (arm.Value is BoundBlockExpr { Type.IsNever: true } or BoundConversion { Operand: BoundBlockExpr { Type.IsNever: true } } && branch.Reachable)
+                    {
+                        Report(DiagnosticCodes.CatchBlockCompletes, new TextSpan(Math.Max(arm.Value.Syntax.Span.End - 1, 0), 1), [],
+                            help: "leave the block instead of falling through; the call returns a value");
+                        branch = State.Unreachable();
+                    }
+                    after = after.Join(branch);
                 }
                 return after;
             }
@@ -262,6 +296,8 @@ internal sealed class FlowAnalysis
                         state = Expr(arg, state);
                 }
                 state.Assigned.UnionWith(outs);
+                // A `becomes` call on `this` counts as `become` (BYN7003's third form makes the caller declare it; revision 0010).
+                if (call is { Receiver: BoundThis, Function.Decl.Becomes: not null }) state.Became = true;
                 return call.Type.IsNever ? State.Unreachable() : state;
             }
             case BoundTry t:
@@ -270,14 +306,18 @@ internal sealed class FlowAnalysis
                 return state;
             case BoundCatch c:
             {
+                var became = state.Became;
                 state = Expr(c.Operand, state);
                 if (c.Variant is { } v && c.Operand is BoundCall call)
                 {
-                    if (!call.Function.ErrorSets.Contains(v.Set) && call.Function.ErrorSets.Count > 0)
-                        Report(DiagnosticCodes.UnknownVariant, ((CatchExpr)c.Syntax).Variant!.Span, [v.Name, ErrorUnionType.Of(call.Function.ErrorSets).DisplayName]);
+                    if (!call.Function.ErrorSets.Contains(v.Set) && call.Function.ErrorSets.Count > 0 || call.Function.ExcludedErrors.Contains(v))
+                        Report(DiagnosticCodes.UnknownVariant, ((CatchExpr)c.Syntax).Variant!.Span, [v.Name, ErrorUnionType.Of(call.Function.ErrorSets, call.Function.ExcludedErrors).DisplayName]);
                     else CheckPropagation(c.Syntax.Span, call, v);
                 }
-                var handler = Expr(c.Handler, state.Clone());
+                // A failed `becomes` call left the state unchanged, so the handler's path has not run `become` (revision 0010 erratum).
+                var failed = state.Clone();
+                failed.Became = became;
+                var handler = Expr(c.Handler, failed);
                 if (c.Handler is BoundBlockExpr { Type.IsNever: true } b && handler.Reachable)
                 {
                     Report(DiagnosticCodes.CatchBlockCompletes, new TextSpan(Math.Max(b.Syntax.Span.End - 1, 0), 1), [],
@@ -312,12 +352,19 @@ internal sealed class FlowAnalysis
         if (_fn.InfersErrors || _fn.Kind is FunctionKind.Main or FunctionKind.Test) return;
         if (!_fn.Fails)
         {
-            Report(DiagnosticCodes.PropagateFromInfallible, span, [_fn.Name, string.Join("`, `", sets.Select(s => s.Name))],
-                help: $"handle the error with `catch`, or declare `fails {string.Join(", ", sets.Select(s => s.Name))}`");
+            Report(DiagnosticCodes.PropagateFromInfallible, span, [_fn.Name, string.Join("`, `", sets.Select(s => s.DisplayName))],
+                help: $"handle the error with `catch`, or declare `fails {string.Join(", ", sets.Select(s => s.DisplayName))}`");
             return;
         }
         foreach (var set in sets.Where(s => !_fn.ErrorSets.Contains(s)))
-            Report(DiagnosticCodes.UndeclaredError, span, [set.Name, _fn.Name],
-                help: $"add it to the signature: `fails {string.Join(", ", _fn.ErrorSets.Select(s => s.Name).Append(set.Name))}`");
+        {
+            var named = _fn.ErrorSets.Append(set).ToList();
+            Report(DiagnosticCodes.UndeclaredError, span, [set.DisplayNameAmong(named), _fn.Name],
+                help: $"add it to the signature: `fails {string.Join(", ", named.Select(s => s.DisplayNameAmong(named)))}`");
+        }
+        // A case the caller takes out with `except` must not arrive from the callee.
+        foreach (var v in sets.SelectMany(s => s.Variants).Where(v => v != caught && _fn.ExcludedErrors.Contains(v) && !call.Function.ExcludedErrors.Contains(v)))
+            Report(DiagnosticCodes.UndeclaredError, span, [$"{v.Set.DisplayName}.{v.Name}", _fn.Name],
+                help: $"handle it with `catch ({v.Set.DisplayName}.{v.Name})`, or remove `.{v.Name}` from the `except` list");
     }
 }

@@ -1,0 +1,2 @@
+panic: repeated a negative number of times
+  at strbuf-append-repeated-negative.byn:5

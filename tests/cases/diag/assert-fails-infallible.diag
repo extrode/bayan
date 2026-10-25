@@ -1,0 +1,4 @@
+error BYN2605: `assert … fails` needs a call that can fail
+
+  9 │ assert f() fails ParseError.empty
+    │        ^^^

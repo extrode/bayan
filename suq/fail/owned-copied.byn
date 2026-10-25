@@ -1,0 +1,3 @@
+// expect: `owned()`/`copied()`
+// fix-it: `items.copy()`
+let mine = items.owned()

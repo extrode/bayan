@@ -1,26 +1,26 @@
 struct Counter {
-    i64 n;
-    i64 total;
+    i64 n
+    i64 total
 
     void bump(ref this) {
-        n += 1;
+        n += 1
     }
 
     // The first write is the label, not every write.
     void reset() {
-        total = 0;
-        this.n = 0;
+        total = 0
+        this.n = 0
     }
 
     void add(i64 by) {
-        total += by;
+        total += by
     }
 
     // Calling a `ref this` member on `this` modifies it too.
     void twice() {
-        bump();
-        bump();
+        bump()
+        bump()
     }
 
-    i64 peek() => n;
+    i64 peek() => n
 }

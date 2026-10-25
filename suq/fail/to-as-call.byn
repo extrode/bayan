@@ -1,0 +1,3 @@
+// expect: instance `toX`/`asX` call
+// fix-it: `let view = items.span`
+let view = items.asSpan()

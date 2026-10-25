@@ -1,0 +1,35 @@
+error BYN1044: `unique struct` is an input form; write `struct unique`
+
+  1 │ unique struct File {
+    │ ^^^^^^^^^^^^^ the input form
+    │
+  help: put the kind first: `struct unique`
+    │ 1 │ struct unique File {
+    │   │ +++++++++++++
+
+error BYN1044: `error enum` is an input form; write `union error`
+
+  5 │ error enum StockError {
+    │ ^^^^^^^^^^ the input form
+    │
+  help: put the kind first: `union error`
+    │ 5 │ union error StockError {
+    │   │ +++++++++++
+
+error BYN1044: `error union` is an input form; write `union error`
+
+  9 │ public error union CarrierError {
+    │        ^^^^^^^^^^^ the input form
+    │
+  help: put the kind first: `union error`
+    │ 9 │ public union error CarrierError {
+    │   │        +++++++++++
+
+error BYN1044: `distinct type` is an input form; write `type distinct`
+
+  13 │ distinct type Sku = string
+     │ ^^^^^^^^^^^^^ the input form
+     │
+  help: put the kind first: `type distinct`
+     │ 13 │ type distinct Sku = string
+     │    │ +++++++++++++

@@ -1,6 +1,6 @@
 error BYN2106: cannot modify this value
 
-  7 │     n.item = 2;
+  7 │     n.item = 2
     │     ^^^^^^ an `Owned` value is read-only
     │
   help: build a new value and wrap it with `Owned(…)`

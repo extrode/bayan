@@ -1,16 +1,16 @@
-error enum ConfigError {
-    [ExitCode(3)]
+union error ConfigError {
+    @exitCode(3)
     /// The configuration is malformed.
-    malformed,
+    malformed
     /// Something else.
-    other,
+    other
 }
 
 /// Runs the tool.
-[Experimental]
-[Tag(level: 2)]
+@experimental
+@tag(level: 2)
 public void run() { }
 
-[Experimental]
+@experimental
 /// Stops the tool.
 void stop() { }

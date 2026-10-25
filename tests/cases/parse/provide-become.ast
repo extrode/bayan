@@ -1,0 +1,8 @@
+CompilationUnit
+  Function run(Arena arena) -> void
+    Block
+      Provide allocator: arena
+        Block
+          Expr (call print "x")
+      Become .done
+      Become .retry 1

@@ -1,16 +1,16 @@
-error enum StepError {
-    [Retry(3)]
+union error StepError {
+    @retry(3)
     /// The step timed out.
-    timedOut,
+    timedOut
 }
 
-[Inline]
+@inline
 void step() { }
 
-[ExitCode(2)]
+@exitCode(2)
 void other() { }
 
 void main() {
-    step();
-    other();
+    step()
+    other()
 }

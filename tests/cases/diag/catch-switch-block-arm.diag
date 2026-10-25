@@ -1,0 +1,7 @@
+error BYN2611: this `catch` block can complete normally; end it with `return`, `break`, `continue`
+or a panic
+
+  12 │     E.bad => { print("bad") },
+     │                             ^
+     │
+  help: leave the block instead of falling through; the call returns a value

@@ -1,21 +1,21 @@
 void fill(Span<string> dst) {
-    let buf = stackalloc u8[16];
-    var sb = StrBuf(buf);
-    sb.append("hello");
-    dst[0] = sb.asString();
+    let buf = stackalloc u8[16]
+    var sb = StrBuf(buf)
+    sb.append("hello")
+    dst[0] = sb.finish()
 }
-string[1] arr = ["x"];
-fill(arr.asSpan());
-print(arr[0]);
+var arr: string[1] = ["x"]
+fill(arr.mutableSpan())
+print(arr[0])
 
 void either(Span<string> dst, bool useCaller) {
-    let buf = stackalloc u8[16];
-    var sb = StrBuf(buf);
-    sb.append("hi");
-    string[1] mine = ["y"];
-    var view = mine.asSpan();
-    if (useCaller) {
-        view = dst;
+    let buf = stackalloc u8[16]
+    var sb = StrBuf(buf)
+    sb.append("hi")
+    var mine: string[1] = ["y"]
+    var view = mine.mutableSpan()
+    if useCaller {
+        view = dst
     }
-    view[0] = sb.asString();
+    view[0] = sb.finish()
 }

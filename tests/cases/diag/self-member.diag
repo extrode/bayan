@@ -1,0 +1,6 @@
+error BYN2806: `Self` has no member `nope` in its constraints (`IShape`)
+
+  3 │     i64 big() => this.nope
+    │                       ^^^^
+    │
+  help: declare `nope` in `IShape`; a default method sees only its interface's members

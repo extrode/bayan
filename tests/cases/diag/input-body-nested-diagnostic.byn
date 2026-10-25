@@ -1,0 +1,5 @@
+void main() {
+    let a: bool = true
+    let b: bool = false
+    if (a) unless b { print("s") } else { print("t") }
+}

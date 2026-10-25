@@ -1,0 +1,8 @@
+i64 bump(ref i64 n) {
+    n += 1
+    return n
+}
+
+let a: i64 = 4
+var calls: i64 = 0
+assert (a > 3 ? bump(ref calls) + a : a - calls) == 9

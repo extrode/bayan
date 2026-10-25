@@ -1,0 +1,4 @@
+error BYN2003: `matches` is not a member of `string`
+
+  4 │     let ok = s.matches("a")
+    │                ^^^^^^^ `matches` arrives with `std.regex` after v0.1

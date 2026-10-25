@@ -1,17 +1,17 @@
 void main() {
-    var xs = List<i64>();
-    xs.add(1);
-    let view = xs.asSpan();
-    xs.add(2);
-    print($"{view[0]}");
-    let again = xs.asSpan();
-    xs.removeRange(0, 1);
-    print($"{again[0]}");
-    for (let x in xs) {
-        xs.add(x);
+    var xs = List<i64>()
+    xs.append(1)
+    let view = xs.span
+    xs.append(2)
+    print($"{view[0]}")
+    let again = xs.span
+    xs.remove(from: 0, until: 1)
+    print($"{again[0]}")
+    for x in xs {
+        xs.append(x)
     }
-    using var arena = Arena();
-    let name = "ann".copy(to: arena);
-    arena.reset();
-    print(name);
+    using var arena = Arena()
+    let name = "ann".copy(to: arena)
+    arena.reset()
+    print(name)
 }

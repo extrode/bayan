@@ -1,0 +1,16 @@
+struct Cart {
+    i64 a
+    i64 b
+
+    public i64 total {
+        let t = a + b
+        if t > 10 {
+            return 10
+        }
+        return t
+    }
+}
+
+let small = Cart { a: 1, b: 2 }
+let large = Cart { a: 9, b: 9 }
+print($"{small.total} {large.total}")

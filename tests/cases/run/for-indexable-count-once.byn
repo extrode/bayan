@@ -1,0 +1,21 @@
+struct Digits : IIndexable {
+    type Item = i64
+
+    i64 size
+
+    i64 count => counted(size)
+
+    i64 get(i64 index) => index * 10
+}
+
+i64 counted(i64 n) {
+    print("count read")
+    return n
+}
+
+void main() {
+    let digits = Digits { size: 3 }
+    for d in digits {
+        print($"digit {d}")
+    }
+}

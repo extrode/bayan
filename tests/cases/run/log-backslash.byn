@@ -1,0 +1,5 @@
+// A backslash is written as `\\`, so text holding `\n` reads apart from an escaped line break.
+void main() {
+    log("p\\nq")
+    log("p\nq")
+}

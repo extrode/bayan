@@ -1,0 +1,21 @@
+struct Order {
+    i64 total
+
+    public i64 doubled {
+        let t = total * 2
+        return t
+    }
+
+    public void pay(ref this is .placed, i64 amount) {
+        total = amount
+    }
+
+    public i64 tracking(this is .shipped) => total
+}
+
+const inactive = pattern Order { total: 0 or 1 }
+let pattern = 1
+
+test "bounds" (i32 input, bool valid) {
+    assert(input >= 0)
+}

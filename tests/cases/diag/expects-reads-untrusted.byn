@@ -1,0 +1,3 @@
+i64 fit(Untrusted<string> name, by i64 limit) expects name.length <= limit {
+    return limit
+}

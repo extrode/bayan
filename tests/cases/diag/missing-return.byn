@@ -1,7 +1,7 @@
 i64 sign(i64 n) {
-    if (n > 0) {
-        return 1;
+    if n > 0 {
+        return 1
     }
 }
 
-print($"{sign(1)}");
+print($"{sign(1)}")

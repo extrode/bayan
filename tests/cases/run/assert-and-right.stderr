@@ -1,0 +1,9 @@
+panic: assert a > 1 && twice(a) == 7
+              │ │   │  │     │  │
+              │ │   │  │     │  false
+              │ │   │  │     3
+              │ │   │  6
+              │ │   false
+              │ true
+              3
+  at assert-and-right.byn:6
