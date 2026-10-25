@@ -398,7 +398,7 @@ public sealed class FunctionType(IReadOnlyList<TypeSymbol> parameters, TypeSymbo
     public override string DisplayName =>
         (Parameters is [var p] && p is not (TupleType or FunctionType) ? p.DisplayName : "(" + string.Join(", ", Parameters.Select(p => p.DisplayName)) + ")") +
         " -> " + (Return is FunctionType && (Fails.Count > 0 || Uses.Count > 0) ? "(" + Return.DisplayName + ")" : Return.DisplayName) +
-        (Fails.Count > 0 ? " fails " + string.Join(", ", Fails.Select(s => s.Name)) : "") +
+        (Fails.Count > 0 ? " fails " + string.Join(", ", Fails.Select(s => s.DisplayName)) : "") +
         (Uses.Count > 0 ? " uses " + string.Join(", ", Uses) : "");
 
     public override bool IsBorrow => true;

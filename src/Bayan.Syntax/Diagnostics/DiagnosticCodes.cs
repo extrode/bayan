@@ -285,6 +285,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor RefThisMismatch = Error("BYN2814", "`{0}.{1}` must match `{2}.{1}`, which {3} `ref this`");
     public static readonly DiagnosticDescriptor NonStructConformance = Error("BYN2815", "`{0}` is {1}; only structs can conform yet");
     public static readonly DiagnosticDescriptor InterfaceAsType = Error("BYN2816", "`{0}` is an interface, not a type");
+    public static readonly DiagnosticDescriptor FunctionTypeNotHere = Error("BYN2822", "a function type is not supported as {0} yet");
     public static readonly DiagnosticDescriptor BorrowField = Error("BYN3001", "a struct field cannot hold a borrowed `{0}`");
     public static readonly DiagnosticDescriptor BorrowOutlivesSource = Error("BYN3002", "{0} does not live as long as `{1}`, which borrows it");
     public static readonly DiagnosticDescriptor BorrowReturned = Error("BYN3003", "cannot return a borrow of {0}, which is freed when `{1}` returns");

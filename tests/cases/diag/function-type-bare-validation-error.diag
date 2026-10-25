@@ -1,0 +1,4 @@
+error BYN2023: `ValidationError` takes 1 type argument(s), not 0
+
+  5 │ bool load((() -> Form fails ValidationError) p) => true
+    │                             ^^^^^^^^^^^^^^^

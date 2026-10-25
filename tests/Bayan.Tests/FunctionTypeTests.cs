@@ -1,6 +1,7 @@
 using Bayan.Semantics;
 using Bayan.Semantics.Binding;
 using Bayan.Semantics.Symbols;
+using Bayan.Syntax.Text;
 
 namespace Bayan.Tests;
 
@@ -40,6 +41,33 @@ public sealed class FunctionTypeTests
         Assert.Equal("(i32 -> bool) -> rune", Fn([Fn([PrimitiveType.I32], PrimitiveType.Bool)], PrimitiveType.Char).DisplayName);
         Assert.Equal("((i32, i32)) -> bool", Fn([new TupleType([new(null, PrimitiveType.I32), new(null, PrimitiveType.I32)])], PrimitiveType.Bool).DisplayName);
         Assert.Equal("i32 -> (bool -> rune) fails IoError", Fn([PrimitiveType.I32], Fn([PrimitiveType.Bool], PrimitiveType.Char), [B.IoError]).DisplayName);
+    }
+
+    private static TypeSymbol ParameterType(Compilation c, string function) => c.EntryModule.Functions[function][0].Parameters[0].Type;
+
+    private static Compilation Compile(string text)
+    {
+        var dir = Path.Combine(Golden.CasesRoot, "typed");
+        var c = Compilation.Create([SourceText.FromString(Path.Combine(dir, "main.byn"), text)], dir);
+        Assert.False(c.Diagnostics.HasErrors);
+        return c;
+    }
+
+    [Fact]
+    public void AnAliasNamedTwiceIsOneType()
+    {
+        var c = Compile("type Pred = i32 -> bool\n\nbool a(Pred p) => true\n\nbool b(Pred p) => true\n\nbool d((i32 -> bool) p) => true\n\nvoid main() {\n}\n");
+        Assert.IsType<FunctionType>(ParameterType(c, "a"));
+        Assert.Equal(ParameterType(c, "a"), ParameterType(c, "b"));
+        Assert.Equal(ParameterType(c, "a"), ParameterType(c, "d"));
+    }
+
+    [Fact]
+    public void EffectsMakeADifferentType()
+    {
+        var c = Compile("effect io = net\n\nbool a((i32 -> bool) p) => true\n\nbool b((i32 -> bool uses net) p) => true\n\nbool d((i32 -> bool uses io) p) => true\n\nvoid main() {\n}\n");
+        Assert.NotEqual(ParameterType(c, "a"), ParameterType(c, "b"));
+        Assert.Equal(ParameterType(c, "b"), ParameterType(c, "d"));
     }
 
     [Fact]

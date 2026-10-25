@@ -1215,6 +1215,7 @@ public sealed partial class Compilation
     {
         var types = new TypeResolver(this, file, owner, fn.TypeMap);
         fn.ReturnType = types.Resolve(decl.ReturnType, allowVoid: true);
+        if (FunctionTypeNotHere(fn.ReturnType, file.Source, decl.ReturnType.Span, "a return type")) fn.ReturnType = ErrorType.Instance;
         fn.IsMutating = decl.RefThis is not null;
         if (decl.RefThis is { } refThis && fn is not { Kind: FunctionKind.Method, IsStatic: false })
             Report(DiagnosticCodes.Unsupported, file.Source, refThis, [fn.IsStatic ? "`ref this` on a static method" : "`ref this` outside a struct"],
@@ -1283,6 +1284,7 @@ public sealed partial class Compilation
     {
         foreach (var f in s.Fields)
         {
+            if (FunctionTypeNotHere(f.Type, s.File.Source, f.Decl.Type.Span, "a field")) continue;
             if (f.Type.IsBorrow)
             {
                 Report(DiagnosticCodes.BorrowField, s.File.Source, f.Decl.Type.Span, [f.Type.DisplayName],
@@ -1292,6 +1294,14 @@ public sealed partial class Compilation
             }
         }
         CheckRecursion(s, s.Name, s.File.Source, s.Decl.Name.Span);
+    }
+
+    /// <summary>BYN2822 when <paramref name="t"/> is a function type at <paramref name="position"/>: only a parameter, an alias or a local holds one (Q346).</summary>
+    internal bool FunctionTypeNotHere(TypeSymbol t, SourceText source, TextSpan span, string position)
+    {
+        if (t is not FunctionType) return false;
+        Report(DiagnosticCodes.FunctionTypeNotHere, source, span, [position], help: "take the function as a parameter instead");
+        return true;
     }
 
     private void CheckUnionShape(UnionSymbol u)
