@@ -9,6 +9,13 @@ public abstract class TypeSymbol
     /// <summary>The type as written in diagnostics.</summary>
     public abstract string DisplayName { get; }
 
+    /// <summary>While set, declared types display with their module (<c>a.Point</c>); see <see cref="ErrorSetSymbol.DisplayNameAmong"/>.</summary>
+    [ThreadStatic]
+    internal static bool QualifyModules;
+
+    private protected static string Qualify(ModuleSymbol module, string name) =>
+        QualifyModules && module.Name != "builtin" ? module.Name + "." + name : name;
+
     public override string ToString() => DisplayName;
 
     public bool IsError => this is ErrorType;

@@ -122,8 +122,8 @@ public sealed class StructSymbol(string name, Location location, ModuleSymbol mo
     public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs);
 
     public override string DisplayName =>
-        TypeArguments.Count > 0 ? $"{Name}<{string.Join(", ", TypeArguments.Select(a => a.DisplayName))}>" :
-        TypeParameters.Count > 0 ? $"{Name}<{string.Join(", ", TypeParameters.Select(a => a.Name))}>" : Name;
+        TypeArguments.Count > 0 ? $"{Qualify(Module, Name)}<{string.Join(", ", TypeArguments.Select(a => a.DisplayName))}>" :
+        TypeParameters.Count > 0 ? $"{Name}<{string.Join(", ", TypeParameters.Select(a => a.Name))}>" : Qualify(Module, Name);
 
     public FieldSymbol? FindField(string name) => Fields.Find(f => f.Name == name);
 
@@ -303,8 +303,8 @@ public sealed class InterfaceSymbol(string name, Location location, ModuleSymbol
     public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs);
 
     public override string DisplayName =>
-        TypeArguments.Count > 0 ? $"{Name}<{string.Join(", ", TypeArguments.Select(a => a.DisplayName))}>" :
-        TypeParameters.Count > 0 ? $"{Name}<{string.Join(", ", TypeParameters.Select(a => a.Name))}>" : Name;
+        TypeArguments.Count > 0 ? $"{Qualify(Module, Name)}<{string.Join(", ", TypeArguments.Select(a => a.DisplayName))}>" :
+        TypeParameters.Count > 0 ? $"{Name}<{string.Join(", ", TypeParameters.Select(a => a.Name))}>" : Qualify(Module, Name);
 
     public IEnumerable<FunctionSymbol> FindMethods(string name) => Methods.Where(m => m.Name == name);
 
@@ -460,7 +460,7 @@ public sealed class ErrorSetSymbol(string name, Location location, ModuleSymbol 
     /// <summary>For <c>ValidationError&lt;T&gt;</c>, that <c>T</c>.</summary>
     public TypeSymbol? Of { get; init; }
 
-    public override string DisplayName => Of is null ? Name : $"{Name}<{Of.DisplayName}>";
+    public override string DisplayName => Of is null ? Qualify(Module, Name) : $"{Name}<{Of.DisplayName}>";
 
     /// <summary>
     /// <see cref="DisplayName"/>, with <c>T</c> qualified by its module when another of <paramref name="peers"/> would read
@@ -469,16 +469,9 @@ public sealed class ErrorSetSymbol(string name, Location location, ModuleSymbol 
     public string DisplayNameAmong(IEnumerable<ErrorSetSymbol> peers)
     {
         if (Of is null || !peers.Any(p => p != this && p.DisplayName == DisplayName)) return DisplayName;
-        var module = Of switch
-        {
-            StructSymbol s => s.Module,
-            EnumSymbol e => e.Module,
-            UnionSymbol u => u.Module,
-            InterfaceSymbol i => i.Module,
-            ErrorSetSymbol e => e.Module,
-            _ => null,
-        };
-        return module is null ? DisplayName : $"{Name}<{module.Name}.{Of.DisplayName}>";
+        QualifyModules = true;
+        try { return $"{Name}<{Of.DisplayName}>"; }
+        finally { QualifyModules = false; }
     }
 
     public ErrorVariantSymbol? Find(string name) => Variants.Find(v => v.Name == name);
@@ -537,7 +530,7 @@ public sealed class EnumSymbol(string name, Location location, ModuleSymbol modu
     /// <summary>For <c>T.Field</c> (J23), the struct <c>T</c> whose fields are the members; <see cref="Name"/> stays a C-safe <c>T_Field</c>.</summary>
     public StructSymbol? FieldsOf { get; init; }
 
-    public override string DisplayName => FieldsOf is null ? Name : $"{FieldsOf.Name}.Field";
+    public override string DisplayName => FieldsOf is null ? Qualify(Module, Name) : $"{Qualify(FieldsOf.Module, FieldsOf.Name)}.Field";
 
     public EnumMemberSymbol? Find(string name) => Members.Find(m => m.Name == name);
 
@@ -599,8 +592,8 @@ public sealed class UnionSymbol(string name, Location location, ModuleSymbol mod
     public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs);
 
     public override string DisplayName =>
-        TypeArguments.Count > 0 ? $"{Name}<{string.Join(", ", TypeArguments.Select(a => a.DisplayName))}>" :
-        TypeParameters.Count > 0 ? $"{Name}<{string.Join(", ", TypeParameters.Select(a => a.Name))}>" : Name;
+        TypeArguments.Count > 0 ? $"{Qualify(Module, Name)}<{string.Join(", ", TypeArguments.Select(a => a.DisplayName))}>" :
+        TypeParameters.Count > 0 ? $"{Name}<{string.Join(", ", TypeParameters.Select(a => a.Name))}>" : Qualify(Module, Name);
 
     public UnionVariantSymbol? Find(string name) => Variants.Find(v => v.Name == name);
 }

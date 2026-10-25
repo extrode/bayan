@@ -1541,6 +1541,11 @@ internal sealed partial class Binder
                 missing.Insert(missing.IndexOf(keys[0]), set.DisplayNameAmong(union.Sets));
                 missing.RemoveAll(keys.Contains);
             }
+        if (Unwrap(type) is ErrorUnionType { Sets.Count: > 1 } shown && missing is not null)
+        {
+            var names = shown.Sets.SelectMany(s => s.Variants).ToDictionary(v => VariantKey(v, type), v => $"{v.Set.DisplayNameAmong(shown.Sets)}.{v.Name}");
+            missing = missing.Select(k => names.GetValueOrDefault(k, k)).ToList();
+        }
         Report(DiagnosticCodes.NonExhaustive, span, [type.DisplayName],
             label: missing is { Count: > 0 } ? "not covered: " + string.Join(", ", missing) : null,
             help: statement ? "add the missing cases or a `default:` section"
@@ -1564,9 +1569,9 @@ internal sealed partial class Binder
         _ => null,
     };
 
-    // The set is named by identity: two `ValidationError<Point>` from different modules get distinct, module-qualified keys.
+    // Across sets a case is keyed by its program-wide code, not its text: `ValidationError<Point>` from two modules reads alike.
     private static string VariantKey(ErrorVariantSymbol v, TypeSymbol type) =>
-        Unwrap(type) is ErrorUnionType { Sets.Count: > 1 } u ? $"{v.Set.DisplayNameAmong(u.Sets)}.{v.Name}" : "." + v.Name;
+        Unwrap(type) is ErrorUnionType { Sets.Count: > 1 } ? "\0code" + v.Code : "." + v.Name;
 
     private static bool Irrefutable(BoundPattern p) => p switch
     {
