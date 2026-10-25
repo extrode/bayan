@@ -1,0 +1,6 @@
+error BYN2780: implicit copy of a unique value: `List<i64>` is unique: it owns its storage
+
+  6 │     let a = apply(x => x + xs.length)
+    │                            ^^
+    │
+  help: copy what the lambda needs from `xs` into `let` values first
