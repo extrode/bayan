@@ -1,0 +1,6 @@
+error BYN2218: `x => x` needs a known type here
+
+  2 │     let f = x => x
+    │             ^^^^^^
+    │
+  help: write the function type it has, such as `let f: i64 -> i64 = x => x`

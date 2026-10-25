@@ -1,12 +1,4 @@
-List<T> pick<T>(List<T> xs, by (T -> bool) keep) {
-    var out: List<T> = []
-    for x in xs {
-        if keep(x) {
-            out.add(x)
-        }
-    }
-    return out
-}
+bool pick<T>(List<T> xs, by (T -> bool) keep) => false
 
 void main() {
     let none = pick([], by: it > 0)

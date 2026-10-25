@@ -1,0 +1,12 @@
+i64 apply((i64 -> i64) f, to i64 x) => f(x)
+
+i64 shift(i64? extra) {
+    if extra is not null {
+        return apply(x => x + extra, to: 1)
+    }
+    return 0
+}
+
+void main() {
+    print($"{shift(2)}")
+}

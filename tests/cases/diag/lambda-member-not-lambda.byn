@@ -2,15 +2,9 @@ struct User {
     string name
 }
 
-List<string> names(List<User> users, by (User -> string) key) {
-    var out: List<string> = []
-    for u in users {
-        out.add(key(u))
-    }
-    return out
-}
+string label(User u, by (User -> string) key) => key(u)
 
 void main() {
-    let users: List<User> = [User { name: "a" }]
-    let all = names(users, by: .name)
+    let user = User { name: "a" }
+    let text = label(user, by: .name)
 }

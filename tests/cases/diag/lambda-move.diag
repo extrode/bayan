@@ -1,0 +1,6 @@
+error BYN2782: cannot move out of a fresh value
+
+  2 │     let f: () -> i64 = move () => 0
+    │                             ^^^^^^^
+    │
+  help: remove the `move`; a fresh value needs none

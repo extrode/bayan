@@ -1,0 +1,6 @@
+error BYN3201: the value of this `x + 1` is unused
+
+  9 │     each(xs, by: x => x + 1)
+    │                       ^^^^^ value dropped
+    │
+  help: assign it with `let _ = …`, or remove the expression

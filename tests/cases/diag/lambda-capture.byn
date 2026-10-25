@@ -1,6 +1,6 @@
 union Shape {
-    case circle(i64 r)
-    case square(i64 side)
+    circle(i64 r)
+    square(i64 side)
 }
 
 i64 apply((i64 -> i64) f) => f(1)
@@ -19,12 +19,16 @@ struct Counter {
 
 void main() {
     var step = 2
+    step = 3
     let s = Shape.circle(3)
     let fixed = 5
     let a = apply(x => x + step)
     let b = apply(x => x + fixed)
     switch s {
-        case .circle(var r) => print(apply(x => x + r))
-        case .square(let side) => print(apply(x => x + side))
+        case .circle(var r):
+            r = r + 1
+            print($"{apply(x => x + r)}")
+        case .square(let side):
+            print($"{apply(x => x + side)}")
     }
 }

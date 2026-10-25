@@ -1,4 +1,4 @@
-void each(List<i32> xs, do (i32 -> void) f) {
+void each(List<i32> xs, by (i32 -> void) f) {
     for x in xs {
         f(x)
     }
@@ -6,5 +6,5 @@ void each(List<i32> xs, do (i32 -> void) f) {
 
 void main() {
     let xs: List<i32> = [1, 2]
-    each(xs, do: x => x + 1)
+    each(xs, by: x => x + 1)
 }

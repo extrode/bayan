@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "path": "lambda-narrowed-capture.byn",
+      "name": "apply",
+      "span": {
+        "start": 4,
+        "end": 9
+      },
+      "bindings": [
+        {
+          "name": "f",
+          "kind": "param",
+          "span": {
+            "start": 23,
+            "end": 24
+          },
+          "type": "i64 -> i64"
+        },
+        {
+          "name": "x",
+          "kind": "param",
+          "span": {
+            "start": 33,
+            "end": 34
+          },
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "lambda-narrowed-capture.byn",
+      "name": "shift",
+      "span": {
+        "start": 49,
+        "end": 54
+      },
+      "bindings": [
+        {
+          "name": "extra",
+          "kind": "param",
+          "span": {
+            "start": 60,
+            "end": 65
+          },
+          "type": "i64?"
+        }
+      ]
+    },
+    {
+      "path": "lambda-narrowed-capture.byn",
+      "name": "shift$lambda1",
+      "span": {
+        "start": 117,
+        "end": 131
+      },
+      "bindings": [
+        {
+          "name": "x",
+          "kind": "param",
+          "span": {
+            "start": 117,
+            "end": 118
+          },
+          "type": "i64"
+        }
+      ],
+      "captures": [
+        {
+          "name": "extra",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "lambda-narrowed-capture.byn",
+      "name": "main",
+      "span": {
+        "start": 167,
+        "end": 171
+      },
+      "bindings": []
+    }
+  ]
+}
