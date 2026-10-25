@@ -1,0 +1,20 @@
+error BYN5004: `transfer` has 3 unlabeled parameters; give each but one a particle
+
+  2 │ void transfer(i64 amount, i64 payer, i64 payee) {
+    │      ^^^^^^^^ 3 unlabeled parameters
+    │
+  help: keep one unlabeled parameter, the object
+
+error BYN5006: `payer` is a required parameter besides the object and needs a particle
+
+  2 │ void transfer(i64 amount, i64 payer, i64 payee) {
+    │                               ^^^^^ needs a particle
+    │
+  help: label it with `from`, `to`, `until`, `through`, `at`, `by`, `for` or `as`
+
+error BYN5006: `payee` is a required parameter besides the object and needs a particle
+
+  2 │ void transfer(i64 amount, i64 payer, i64 payee) {
+    │                                          ^^^^^ needs a particle
+    │
+  help: label it with `from`, `to`, `until`, `through`, `at`, `by`, `for` or `as`

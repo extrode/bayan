@@ -1,2 +1,2 @@
-import mony;
-print("hi");
+import mony
+print("hi")

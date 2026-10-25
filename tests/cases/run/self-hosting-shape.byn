@@ -1,0 +1,113 @@
+enum TokenKind {
+    number
+    plus
+    star
+}
+
+struct Token {
+    TokenKind kind
+    i64 value
+}
+
+struct unique TokenList : IIndexable {
+    type Item = Token
+
+    List<Token> tokens
+
+    i64 count => tokens.length
+
+    Token get(i64 index) => tokens[index]
+}
+
+struct unique TokenStream : IEnumerator {
+    type Item = Token
+
+    List<Token> tokens
+    i64 at
+
+    bool moveNext(ref this) {
+        at += 1
+        return at < tokens.length
+    }
+
+    Token current => tokens[at]
+}
+
+interface INode {
+    i64 eval()
+    string name
+    string describe() => $"{name} = {eval()}"
+}
+
+struct Num : INode {
+    i64 value
+
+    i64 eval() => value
+
+    string name => $"num {value}"
+}
+
+struct Add : INode {
+    i64 left
+    i64 right
+
+    i64 eval() => left + right
+
+    string name => $"add {left} {right}"
+}
+
+struct Mul : INode {
+    i64 left
+    i64 right
+
+    i64 eval() => left * right
+
+    string name => $"mul {left} {right}"
+
+    string describe() => $"product of {left} and {right} is {eval()}"
+}
+
+void visitStatic<T>(T node) where T : INode {
+    print($"static: {node.describe()}")
+}
+
+void visitDyn(dyn ref readonly INode node) {
+    print($"dyn: {node.describe()}")
+}
+
+List<Token> lex() {
+    var tokens = List<Token>()
+    tokens.append(Token { kind: .number, value: 2 })
+    tokens.append(Token { kind: .plus, value: 0 })
+    tokens.append(Token { kind: .number, value: 3 })
+    tokens.append(Token { kind: .star, value: 0 })
+    tokens.append(Token { kind: .number, value: 4 })
+    return tokens
+}
+
+void main() {
+    let list = TokenList { tokens: lex() }
+    var numbers = 0
+    for t in list {
+        print($"token {t.kind} {t.value}")
+        numbers += t.kind == .number ? 1 : 0
+    }
+    print($"{numbers} numbers")
+
+    var stream = TokenStream { tokens: lex(), at: -1 }
+    var sum = 0
+    for t in stream {
+        sum += t.value
+    }
+    print($"sum {sum}, stream at {stream.at}")
+
+    let n = Num { value: 2 }
+    let a = Add { left: 2, right: 3 }
+    let m = Mul { left: 5, right: 4 }
+    visitStatic(n)
+    visitStatic(a)
+    visitStatic(m)
+    visitDyn(n)
+    visitDyn(a)
+    visitDyn(m)
+}

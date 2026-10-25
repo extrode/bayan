@@ -1,0 +1,6 @@
+error BYN7012: `o` would change state here; a state changes only through `become`
+
+  10 │     o = Order.paid { id: 1, payment: 5 }
+     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     │
+  help: assign a value in the same state, or move the transition into a `becomes` method

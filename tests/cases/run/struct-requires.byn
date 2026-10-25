@@ -1,0 +1,36 @@
+type distinct Qty = i32 requires it > 0
+
+struct Box {
+    i32 w
+        requires it > 0
+    i32 h
+    string label
+    requires w < h at .w
+}
+
+Box built(i32 w, by i32 h) fails ValidationError<Box> => try Box { w: w, h: h, label: "new" }
+
+Box grown(Box b, by i32 amount) fails ValidationError<Box> {
+    return try b with { w: b.w + amount }
+}
+
+Qty doubled(i32 raw) fails ValidationError<Qty> {
+    let q = try Qty(raw)
+    return try Qty(q.value * 2)
+}
+
+let fallback = Box { w: 1, h: 2, label: "fallback" }
+let b = built(1, by: 5) catch fallback
+print($"{b.w} {b.label}")
+let bad = built(0, by: 5) catch fallback
+print($"{bad.label}")
+let g = grown(b, by: 2) catch fallback
+print($"{g.w}")
+let h = grown(b, by: 10) catch fallback
+print($"{h.label}")
+let renamed = b with { label: "renamed" }
+print($"{renamed.label}")
+let q = doubled(4) catch Qty(1)
+print($"{q.value}")
+let z = doubled(-4) catch Qty(7)
+print($"{z.value}")

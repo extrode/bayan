@@ -1,0 +1,19 @@
+error BYN2031: Bayan has no `toString()`; display is `format()` (derived from
+`formatInto(ref StrBuf)`)
+
+  6 │     print(n.toString())
+    │             ^^^^^^^^ not a Bayan method
+    │
+  help: call `format()`, or interpolate the value: `$"{x}"`
+    │ 6 │     print(n.format())
+    │   │             ++++++
+
+error BYN2031: Bayan has no `toString()`; display is `format()` (derived from
+`formatInto(ref StrBuf)`)
+
+  7 │     print(p.ToString())
+    │             ^^^^^^^^ not a Bayan method
+    │
+  help: call `format()`, or interpolate the value: `$"{x}"`
+    │ 7 │     print(p.format())
+    │   │             ++++++

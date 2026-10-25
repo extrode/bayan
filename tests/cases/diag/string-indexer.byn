@@ -1,2 +1,2 @@
-let name = "bayan";
-let first = name[0];
+let name = "bayan"
+let first = name[0]

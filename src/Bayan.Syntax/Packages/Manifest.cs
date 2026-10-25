@@ -9,21 +9,30 @@ namespace Bayan.Syntax.Packages;
 
 public enum PackageKind { App, Lib }
 
+/// <summary><c>style.booleans</c>: <c>! &amp;&amp; ||</c> or <c>not and or</c> (spec §7.2).</summary>
+public enum BooleanStyle { Symbols, Words }
+
+/// <summary><c>style.primitives</c>: <c>i32</c> or <c>int</c> (spec §3.1).</summary>
+public enum PrimitiveStyle { Sized, Csharp }
+
 /// <summary>
 /// <c>package.byn</c> (spec §19.2): data only. The grammar is <c>Type { field: value, … }</c>
 /// (<c>field = value</c> is still read) where a value is a string, an integer, <c>true</c>,
-/// <c>false</c>, <c>.name</c>, <c>[value, …]</c> or another
+/// <c>false</c>, <c>.name</c>, <c>[value, …]</c>, <c>[key: value, …]</c> or another
 /// <c>Type { … }</c>. Fields the compiler doesn't use yet are checked for syntax only.
 /// </summary>
 public sealed class Manifest
 {
-    /// <summary>Fields of <c>Package</c>; the first four are read, the rest are accepted as written.</summary>
-    private static readonly string[] PackageFields = ["name", "version", "edition", "kind", "codes", "capabilities", "deps", "test", "dist", "style"];
+    /// <summary>Fields of <c>Package</c>; the first four and <c>capabilities</c> are read, the rest are accepted as written.</summary>
+    private static readonly string[] PackageFields = ["name", "version", "edition", "kind", "codes", "capabilities", "deps", "test", "dist", "style", "grammar"];
 
     private static readonly string[] DistFields = ["targets", "mode"];
 
-    /// <summary>Fields of <c>Style</c> (HANDOFF §18); checked here, read by nothing yet.</summary>
-    private static readonly string[] StyleFields = ["indent", "braces", "maxLine", "trailingCommas"];
+    /// <summary>Fields of <c>Style</c> (HANDOFF §18); <c>bayan format</c> reads <c>booleans</c> and <c>primitives</c>, the rest are checked only.</summary>
+    private static readonly string[] StyleFields = ["indent", "braces", "maxLine", "trailingCommas", "booleans", "primitives"];
+
+    /// <summary>Fields of <c>Grammar</c>, the grammar checker's project dictionary (HANDOFF round 3 §12, J85).</summary>
+    private static readonly string[] GrammarFields = ["verbs", "nouns", "adjectives", "forms"];
 
     private Manifest(SourceText source) => Source = source;
 
@@ -41,11 +50,23 @@ public sealed class Manifest
 
     public PackageKind Kind { get; private set; } = PackageKind.App;
 
+    /// <summary><c>capabilities</c> as written (<c>fs</c>, <c>net</c>, …); null when absent, so there is no bound.</summary>
+    public List<string>? Capabilities { get; private set; }
+
     /// <summary><c>dist.targets</c> as written (<c>host</c>, <c>linux-x64</c>, …); empty when absent.</summary>
     public List<string> DistTargets { get; } = new();
 
     /// <summary><c>dist.mode</c>; <c>safe</c> when absent.</summary>
     public string DistMode { get; private set; } = "safe";
+
+    /// <summary><c>style.booleans</c>; <c>.symbols</c> when absent.</summary>
+    public BooleanStyle Booleans { get; private set; } = BooleanStyle.Symbols;
+
+    /// <summary><c>style.primitives</c>; <c>.sized</c> when absent.</summary>
+    public PrimitiveStyle Primitives { get; private set; } = PrimitiveStyle.Sized;
+
+    /// <summary><c>grammar</c>: words the grammar checker (BYN5014) takes as known; empty when absent.</summary>
+    public Grammar Grammar { get; } = new();
 
     public List<Diagnostic> Diagnostics { get; } = new();
 
@@ -99,6 +120,13 @@ public sealed class Manifest
                 default: Invalid(kind, "kind", "`.app` or `.lib`"); break;
             }
         }
+        if (fields.TryGetValue("capabilities", out var capabilities))
+        {
+            if (capabilities is ListValue list && list.Items.All(c => c is EnumValue))
+                Capabilities = list.Items.Cast<EnumValue>().Select(c => c.Name).ToList();
+            else
+                Invalid(capabilities, "capabilities", "a list of capabilities, e.g. `[.fs, .net]`");
+        }
         if (fields.TryGetValue("style", out var style))
         {
             if (style is not ObjectValue { Type: "Style" } st)
@@ -116,6 +144,50 @@ public sealed class Manifest
                     Invalid(maxLine, "style.maxLine", "a positive integer, e.g. `100`");
                 if (styleFields.TryGetValue("trailingCommas", out var trailingCommas) && trailingCommas is not BoolValue)
                     Invalid(trailingCommas, "style.trailingCommas", "`true` or `false`");
+                if (styleFields.TryGetValue("booleans", out var booleans))
+                {
+                    switch (booleans)
+                    {
+                        case EnumValue { Name: "symbols" }: Booleans = BooleanStyle.Symbols; break;
+                        case EnumValue { Name: "words" }: Booleans = BooleanStyle.Words; break;
+                        default: Invalid(booleans, "style.booleans", "`.symbols` or `.words`"); break;
+                    }
+                }
+                if (styleFields.TryGetValue("primitives", out var primitives))
+                {
+                    switch (primitives)
+                    {
+                        case EnumValue { Name: "sized" }: Primitives = PrimitiveStyle.Sized; break;
+                        case EnumValue { Name: "csharp" }: Primitives = PrimitiveStyle.Csharp; break;
+                        default: Invalid(primitives, "style.primitives", "`.sized` or `.csharp`"); break;
+                    }
+                }
+            }
+        }
+        if (fields.TryGetValue("grammar", out var grammar))
+        {
+            if (grammar is not ObjectValue { Type: "Grammar" } g)
+            {
+                Invalid(grammar, "grammar", "a `Grammar { … }`");
+            }
+            else
+            {
+                var grammarFields = Fields(g, GrammarFields);
+                foreach (var (field, words) in new[] { ("verbs", Grammar.Verbs), ("nouns", Grammar.Nouns), ("adjectives", Grammar.Adjectives) })
+                {
+                    if (!grammarFields.TryGetValue(field, out var list)) continue;
+                    if (list is ListValue l && l.Items.All(w => w is StringValue))
+                        words.UnionWith(l.Items.Cast<StringValue>().Select(w => w.Value));
+                    else
+                        Invalid(list, $"grammar.{field}", "a list of words, e.g. `[\"upsert\"]`");
+                }
+                if (grammarFields.TryGetValue("forms", out var forms))
+                {
+                    if (forms is MapValue map && map.Entries.All(e => e is (StringValue, StringValue)))
+                        foreach (var (word, form) in map.Entries) Grammar.Forms[((StringValue)word).Value] = ((StringValue)form).Value;
+                    else if (forms is not ListValue { Items.Count: 0 })
+                        Invalid(forms, "grammar.forms", "a map from a word to its form, e.g. `[\"upsert\": \"upserted\"]`");
+                }
             }
         }
         if (fields.TryGetValue("dist", out var dist))
@@ -262,6 +334,7 @@ public sealed class Manifest
     private sealed record BoolValue(TextSpan Span, bool Value) : Value(Span);
     private sealed record EnumValue(TextSpan Span, string Name) : Value(Span);
     private sealed record ListValue(TextSpan Span, List<Value> Items) : Value(Span);
+    private sealed record MapValue(TextSpan Span, List<(Value Key, Value Value)> Entries) : Value(Span);
     private sealed record ObjectValue(TextSpan Span, string Type, List<(string Name, TextSpan NameSpan, Value Value)> Fields) : Value(Span);
 
     private sealed class Reader(SourceText source, Token[] tokens, int count, List<Diagnostic> diagnostics)
@@ -320,17 +393,35 @@ public sealed class Manifest
                 {
                     _pos++;
                     var items = new List<Value>();
+                    var entries = new List<(Value, Value)>();
+                    // The first entry decides: `[a, b]` is a list, `[a: x, b: y]` a map.
+                    bool? isMap = null;
                     while (!Accept(TokenKind.CloseBracket))
                     {
                         if (ReadValue() is not { } item) return null;
-                        items.Add(item);
+                        isMap ??= Current.Kind == TokenKind.Colon;
+                        if (isMap.Value)
+                        {
+                            if (!Accept(TokenKind.Colon))
+                            {
+                                Fail("`:` and a value");
+                                return null;
+                            }
+                            if (ReadValue() is not { } value) return null;
+                            entries.Add((item, value));
+                        }
+                        else
+                        {
+                            items.Add(item);
+                        }
                         if (!Accept(TokenKind.Comma) && Current.Kind != TokenKind.CloseBracket)
                         {
                             Fail("`,` or `]`");
                             return null;
                         }
                     }
-                    return new ListValue(TextSpan.FromBounds(t.Start, tokens[_pos - 1].End), items);
+                    var span = TextSpan.FromBounds(t.Start, tokens[_pos - 1].End);
+                    return isMap == true ? new MapValue(span, entries) : new ListValue(span, items);
                 }
                 case TokenKind.Identifier when tokens[_pos + 1].Kind == TokenKind.OpenBrace:
                 {
@@ -339,10 +430,19 @@ public sealed class Manifest
                     while (!Accept(TokenKind.CloseBrace))
                     {
                         var name = Current;
-                        if (!AcceptName() || !Accept(TokenKind.Colon) && !Accept(TokenKind.Equals))
+                        if (!AcceptName() || !Accept(TokenKind.Colon) && Current.Kind != TokenKind.Equals)
                         {
                             Fail("`field: value` or `}`");
                             return null;
+                        }
+                        if (Current.Kind == TokenKind.Equals)
+                        {
+                            var d = DiagnosticCodes.ManifestEquals;
+                            var span = TextSpan.FromBounds(name.End, Current.End);
+                            diagnostics.Add(new Diagnostic(d.Severity, d.Code, source, Current.Span, d.Format([]),
+                                Label: "the input form", Help: tokens[_pos - 1].Kind == TokenKind.Colon ? "remove the `=`" : "write `:` after the field name",
+                                Fix: new Fix(span, ":")));
+                            _pos++;
                         }
                         if (ReadValue() is not { } value) return null;
                         fields.Add((TextOf(name), name.Span, value));
@@ -360,4 +460,17 @@ public sealed class Manifest
             }
         }
     }
+}
+
+/// <summary><c>grammar: Grammar { verbs, nouns, adjectives, forms }</c> in <c>package.byn</c>, merged with the built-in word list.</summary>
+public sealed class Grammar
+{
+    public HashSet<string> Verbs { get; } = new(StringComparer.Ordinal);
+
+    public HashSet<string> Nouns { get; } = new(StringComparer.Ordinal);
+
+    public HashSet<string> Adjectives { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Irregular derived spellings, a word to its form: <c>"upsert": "upserted"</c>.</summary>
+    public Dictionary<string, string> Forms { get; } = new(StringComparer.Ordinal);
 }

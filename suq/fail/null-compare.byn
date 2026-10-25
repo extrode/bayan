@@ -1,0 +1,3 @@
+// expect: null check with ==/!=
+// fix-it: `order is not null`
+return .ok if order != null

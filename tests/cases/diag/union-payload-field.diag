@@ -1,6 +1,6 @@
 error BYN2704: the payload of a `Shape` is read with a pattern, not `.r`
 
-  5 │     print(s.r);
+  8 │     print(s.r)
     │             ^
     │
   help: match the variant and bind the field, as in `case .Variant(let x):`

@@ -1,0 +1,20 @@
+error BYN2816: `IShape` is an interface, not a type
+
+  5 │ void show(IShape s) {
+    │           ^^^^^^ an interface
+    │
+  help: write `dyn ref IShape` or add a `where` constraint
+
+error BYN2816: `IShape` is an interface, not a type
+
+  6 │     let t: IShape = s
+    │            ^^^^^^ an interface
+    │
+  help: write `dyn ref IShape` or add a `where` constraint
+
+error BYN2816: `IShape` is an interface, not a type
+
+  10 │     let shapes: List<IShape> = []
+     │                      ^^^^^^ an interface
+     │
+  help: write `dyn ref IShape` or add a `where` constraint

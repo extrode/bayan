@@ -1,20 +1,24 @@
-union Shape { circle(f32 r), rect(f32 w, f32 h), none }
+union Shape {
+    circle(f32 r)
+    rect(f32 w, f32 h)
+    none
+}
 
 f32 area(Shape s) => s switch {
     .circle(let r) => r * r,
     _ => 0,
-};
+}
 
 f32 width(Shape s) => s switch {
     .circle(let r) => r,
     .rect(let w, _) => w,
     .none => 0,
     _ => 0,
-};
+}
 
 string label(Shape? s) => s switch {
     .none => "none",
     _ => "other",
-};
+}
 
-print($"{area(.none)} {width(.none)} {label(null)}");
+print($"{area(.none)} {width(.none)} {label(null)}")

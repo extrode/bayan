@@ -1,27 +1,27 @@
-error BYN2774: each `[Cases]` value must be a constant
+error BYN2774: each `@cases` value must be a constant
 
-  7 │ [Cases(limit, next(), 1 + 1, 2)]
+  7 │ @cases(limit, next(), 1 + 1, 2)
     │        ^^^^^ cases from a const list are not supported yet
     │
-  help: write each case as a tuple literal, such as `[Cases((0, false), (1, true))]`
+  help: write each case as a tuple literal, such as `@cases((0, false), (1, true))`
 
-error BYN2774: each `[Cases]` value must be a constant
+error BYN2774: each `@cases` value must be a constant
 
-  7 │ [Cases(limit, next(), 1 + 1, 2)]
+  7 │ @cases(limit, next(), 1 + 1, 2)
     │               ^^^^^^
     │
-  help: write the value as a literal: a number, string, char, `true`, `false`, `null` or a `.case`
+  help: write the value as a literal: a number, string, rune, `true`, `false`, `null` or a `.case`
 
-error BYN2774: each `[Cases]` value must be a constant
+error BYN2774: each `@cases` value must be a constant
 
-  7 │ [Cases(limit, next(), 1 + 1, 2)]
+  7 │ @cases(limit, next(), 1 + 1, 2)
     │                       ^^^^^
     │
-  help: write the value as a literal: a number, string, char, `true`, `false`, `null` or a `.case`
+  help: write the value as a literal: a number, string, rune, `true`, `false`, `null` or a `.case`
 
-error BYN2774: each `[Cases]` value must be a constant
+error BYN2774: each `@cases` value must be a constant
 
-  12 │ [Cases(discountCases)]
+  12 │ @cases(discountCases)
      │        ^^^^^^^^^^^^^ cases from a const list are not supported yet
      │
-  help: write each case as a tuple literal, such as `[Cases((0, false), (1, true))]`
+  help: write each case as a tuple literal, such as `@cases((0, false), (1, true))`

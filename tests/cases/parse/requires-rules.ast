@@ -1,0 +1,7 @@
+CompilationUnit
+  TypeAlias distinct Email = string requires (> (. it length) 3)
+  Struct SignupForm requires (!= password username) at .password
+    Field Email email
+    Field string username requires (in (. it length) (..= 3 32))
+    Field string password requires (in (. it length) (..= 8 128))
+    Field i32 age requires (in it (..= 13 120))

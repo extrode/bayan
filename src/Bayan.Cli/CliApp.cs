@@ -66,6 +66,12 @@ public static class CliApp
                 return Parse(rest, stdout, stderr);
             case "types":
                 return Types(rest, stdout, stderr);
+            case "format":
+                return Format.Run(rest, stdout, stderr);
+            case "audit":
+                return Audit.Run(rest, stdout, stderr, s_styleOut ?? Style.Plain);
+            case "features":
+                return Features.Run(rest, stdout, stderr);
             case "explain":
                 return Explain(rest, stdout, stderr);
             case "check":
@@ -91,6 +97,7 @@ public static class CliApp
                 return RunProgram([file, "--", .. rest], stderr);
             default:
                 stderr.WriteLine(Messages.UnknownCommand.Text(args[0]));
+                if (args[0] == "fmt") stderr.WriteLine(Messages.FormatterHint.Text());
                 stderr.WriteLine(Usage);
                 return ExitUsage;
         }
@@ -139,7 +146,7 @@ public static class CliApp
 
     internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null);
 
-    private static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false, bool allowVerbose = false)
+    internal static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false, bool allowVerbose = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
@@ -259,7 +266,8 @@ public static class CliApp
                 stderr.WriteLine((manifest.Kind == PackageKind.Lib ? Messages.NoEntryLib : Messages.NoEntryApp).Text(manifest.Name, $"src/{entry}/"));
                 return null;
             }
-            c = Compilation.FromProject(root, entry, new CompilationOptions(includeTests, Library: manifest.Kind == PackageKind.Lib));
+            c = Compilation.FromProject(root, entry, new CompilationOptions(includeTests, Library: manifest.Kind == PackageKind.Lib,
+                Capabilities: manifest.Capabilities, PackageName: manifest.Name));
         }
         else
         {
@@ -363,8 +371,27 @@ public static class CliApp
         var result = Toolchain.Build(source, mode, output, target);
         progress.Done();
         if (result.Succeeded) return result.ExecutablePath;
-        stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
+        ReportToolchain(result, stderr, json);
         return null;
+    }
+
+    /// <summary>Why the toolchain could not build; generated C the C compiler rejected is an internal compiler error (BYN4001) with its text attached.</summary>
+    internal static void ReportToolchain(NativeBuild result, TextWriter stderr, bool json, Style? style = null)
+    {
+        if (!result.Rejected)
+        {
+            stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
+            return;
+        }
+        var ice = new Diagnostic(Severity.Error, DiagnosticCodes.CCompilerRejected.Code, null, default, DiagnosticCodes.CCompilerRejected.Format(), Help: result.Errors);
+        if (json)
+        {
+            stderr.Write(DiagnosticJson.Render(ice) + "\n");
+            return;
+        }
+        // Without a location the renderer prints the head only; the C text follows verbatim.
+        stderr.Write(DiagnosticRenderer.Render(ice, includePath: true, style ?? s_styleErr ?? Style.Plain));
+        stderr.Write(result.Errors.EndsWith('\n') ? result.Errors : result.Errors + "\n");
     }
 
     /// <summary>The C translation unit for an error-free compilation.</summary>
@@ -437,7 +464,7 @@ public static class CliApp
         native.Stop();
         if (!result.Succeeded)
         {
-            stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
+            ReportToolchain(result, stderr, o.Json);
             return ExitToolchain;
         }
         if (o.Json) return ExitOk;
@@ -518,7 +545,7 @@ public static class CliApp
         progress.Done();
         if (!result.Succeeded)
         {
-            stderr.WriteLine(Messages.ToolchainError.Text(result.Errors));
+            ReportToolchain(result, stderr, o.Json);
             return ExitToolchain;
         }
         if (scriptKey is not null && result.Key is { } key) Toolchain.RememberScript(scriptKey, key);
@@ -609,7 +636,12 @@ public static class CliApp
             var name = TerminalStyle.Visible(test.Name);
             if (status == TestStatus.Pass)
             {
-                if (o.Verbose) human.WriteLine(Messages.TestPassLine.Text(Paint(Role.Success, symbols.Dot), module, name));
+                if (!o.Verbose) continue;
+                human.WriteLine(Messages.TestPassLine.Text(Paint(Role.Success, symbols.Dot), module, name));
+                // Each test runs in its own process, so its captured `console` output is its own (J67).
+                if (details.Length > 0)
+                    foreach (var l in details.Split('\n'))
+                        human.WriteLine(Messages.TestDetail.Text(TerminalStyle.Visible(l.TrimEnd('\r'))));
                 continue;
             }
             if (status == TestStatus.Pending)

@@ -1,0 +1,33 @@
+i64 apply((() -> (i64 -> i64)) make) => make()(1)
+
+void main() {
+    var kept: () -> i64 = () => 0
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        kept = () => name.length
+    }
+    print($"{kept()}")
+    var last: i64 -> i64 = x => x
+    for i in 0..3 {
+        last = x => x + i
+    }
+    var j = 0
+    while j < 2 {
+        let k = j
+        last = x => x + k
+        j += 1
+    }
+    do {
+        let k = j
+        last = x => x + k
+        j += 1
+    } while j < 4
+    print($"{last(1)}")
+    let n = apply(() => {
+        let k = 2
+        return x => x + k
+    })
+    let m = apply(() => x => x + 1)
+    print($"{n + m}")
+}

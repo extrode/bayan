@@ -1,0 +1,5 @@
+CompilationUnit
+  ErrorEnum CarrierError
+    Variant timeout(Millis after) doc `No answer in time.`
+    Variant rejected(string reason, i64 code)
+    Variant closed

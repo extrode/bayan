@@ -1,0 +1,7 @@
+void main() {
+    let a = not true and false or true
+    let b = !true && false || true
+    let c = a and not b
+        or a
+    print("x") unless not a
+}

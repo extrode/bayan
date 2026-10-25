@@ -1,23 +1,23 @@
-// `move` of a narrowed optional local moves the underlying binding, as a value and as a `switch (move b)` subject.
+// `move` of a narrowed optional local moves the underlying binding, as a value and as a `switch move b` subject.
 List<i64>? make(i64 n) {
-    if (n < 1) return null;
-    var a = List<i64>();
-    a.add(n);
-    a.add(n + 1);
-    return move a;
+    if n < 1 { return null }
+    var a = List<i64>()
+    a.append(n)
+    a.append(n + 1)
+    return move a
 }
 
 void main() {
-    let b = make(n: 1);
-    if (b is not null) {
-        let c = move b;
-        print($"{c.length}");
+    let b = make(n: 1)
+    if b is not null {
+        let c = move b
+        print($"{c.length}")
     }
-    let d = make(n: 5);
-    if (d is not null) {
-        switch (move d) {
+    let d = make(n: 5)
+    if d is not null {
+        switch move d {
             case { } l:
-                print($"{l.length} {l[0]}");
+                print($"{l.length} {l[0]}")
         }
     }
 }

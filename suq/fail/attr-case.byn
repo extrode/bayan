@@ -1,0 +1,4 @@
+// expect: attribute names are camelCase
+@Derive(Json)
+struct Line {
+}

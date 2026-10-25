@@ -1,0 +1,3 @@
+void show(i64 n, f64 x) {
+    print($"{n, as: .hex} {x, digits: 2} {n, width: 8, fill: "0", align: .right}")
+}

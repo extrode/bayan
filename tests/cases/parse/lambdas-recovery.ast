@@ -1,0 +1,53 @@
+CompilationUnit
+  Function main() -> void
+    Block
+      Let r = (< a (lambda (b) (> b (paren a))))
+      Let s = (switch a (1 when (< a b) => (> c (paren a))) (_ => false))
+      Let f = (lambda (a) 1)
+      Let g = (lambda () 1)
+      Let h = (lambda (a b) 1)
+
+error BYN1028: `delegate` is not Bayan; write a function type `type F = (A -> B) -> bool`
+
+  1 │ delegate bool F(A -> B f)
+    │ ^^^^^^^^^^^^^^^^^^^^^^^^^ a C# delegate
+    │
+  help: declare it as `type F = (A -> B) -> bool`
+    │ 1 │ type F = (A -> B) -> bool
+    │   │ +++++++++++++++++++++++++
+
+error BYN1028: `delegate` is not Bayan; write a function type `type G = ((A, B) -> C) -> bool`
+
+  3 │ delegate bool G((A, B) -> C f)
+    │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a C# delegate
+    │
+  help: declare it as `type G = ((A, B) -> C) -> bool`
+    │ 3 │ type G = ((A, B) -> C) -> bool
+    │   │ ++++++++++++++++++++++++++++++
+
+error BYN1001: expected a lambda parameter name, found `,`
+
+  8 │     let f = (, a) => 1
+    │              ^ an empty parameter
+    │
+  help: write the parameter's name
+
+error BYN1001: expected a lambda parameter name, found `a`
+
+  9 │     let g = (a] => 1
+    │              ^ not a bare name
+    │
+  help: write the parameter's name only; a lambda takes its parameter types from the function type
+        it is passed to
+
+error BYN1001: expected `)`, found `]`
+
+  9 │     let g = (a] => 1
+    │               ^
+
+error BYN1001: expected a lambda parameter name, found `,`
+
+  10 │     let h = (a,,b) => 1
+     │                ^ an empty parameter
+     │
+  help: write the parameter's name

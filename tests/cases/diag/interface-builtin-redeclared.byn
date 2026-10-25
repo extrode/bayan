@@ -1,0 +1,3 @@
+interface IEnumerator {
+    bool moveNext(ref this)
+}

@@ -1,0 +1,23 @@
+CompilationUnit
+  Function isBig(i32 x) -> bool => (> x 2)
+  Struct Lines
+    Field List<string> lines
+    Property bool isEmpty => (. lines isEmpty)
+  Function main() -> void
+    Block
+      Let inc = (lambda (x) (+ x 1))
+      Let first = (lambda (a b) a)
+      Let zero = (lambda () 0)
+      Let block = (lambda (a) (block {Return (+ a 1)}))
+      Let later = (lambda (x) (* x 2))
+      Let i = (call indexWhere items (lambda (t) (> (. t size) 2)) 3)
+      Let k = (switch v (Foo => 1) (Bar => (call apply (lambda (x) x) 2)) (_ => 0))
+      Expr (lambda (a b) a)
+
+error BYN1012: this expression does nothing as a statement
+
+  23 │     (a, b) => a
+     │     ^^^^^^^^^^^ the value is computed and discarded
+     │
+  help: write `_ = f()` to discard a call's result; only calls, assignments and `++`/`--` can stand
+        alone

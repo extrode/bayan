@@ -1,4 +1,4 @@
-error BYN2404: `fail` returns `never` but can reach its end
+error BYN2404: `halt` returns `never` but can reach its end
 
   3 │ }
     │ ^

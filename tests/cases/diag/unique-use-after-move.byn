@@ -1,11 +1,11 @@
 // A local cannot be read after it was moved (BYN2781); assigning a fresh value revives it.
 void main() {
-    var a = List<i64>();
-    a.add(1);
-    let b = move a;
-    print($"{a.length}");
-    a.add(2);
-    a = List<i64>();
-    a.add(3);
-    print($"{a.length} {b.length}");
+    var a = List<i64>()
+    a.append(1)
+    let b = move a
+    print($"{a.length}")
+    a.append(2)
+    a = List<i64>()
+    a.append(3)
+    print($"{a.length} {b.length}")
 }

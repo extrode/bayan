@@ -1,3 +1,3 @@
 # Previous
 
-Spec 005, terminal style (`docs/specs/005-terminal-style/`): one `Style` for every human-facing line, colour per stream, `--ascii`, fix markers and wrapping in diagnostics, `bayan test` failure blocks and rerun hint, `todo()` pending tests, the progress line, law L011. Review fixes: shell-safe rerun hint, escaped control and bidi characters, width-bounded progress line.
+Spec 006, interfaces and iterators (`docs/specs/006-interfaces-iterators/`): `where` constraints with monomorphized dispatch, `dyn ref I` fat pointers and vtables, default methods, associated types, `for … in` over user `IIndexable`/`IEnumerator`, BYN2800–2816, law L012. Review fixes C–J tightened region analysis: this-field borrows, `ref this` and writable `dyn ref` arguments as writes, BYN3006 for moving a borrowed value, loan starts, place checks for writable `for dyn ref`, memoized changed fields. Open: Q114 (span views of a `let`).

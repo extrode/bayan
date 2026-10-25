@@ -1,0 +1,24 @@
+error BYN6004: `readAll` uses `fs`, which package `local/report` does not declare in `capabilities`
+  --> main.byn:1:6
+
+  1 │ void readAll() {
+    │      ^^^^^^^ uses `fs`
+    │
+  help: add `.fs` to `capabilities`, or remove the use
+
+error BYN6004: `readAll` uses `process`, which package `local/report` does not declare in
+`capabilities`
+  --> main.byn:1:6
+
+  1 │ void readAll() {
+    │      ^^^^^^^ uses `process`
+    │
+  help: add `.process` to `capabilities`, or remove the use
+
+error BYN6004: `save` uses `fs`, which package `local/report` does not declare in `capabilities`
+  --> main.byn:7:24
+
+  7 │ void save(string text) uses fs {
+    │                        ^^^^^^^ uses `fs`
+    │
+  help: add `.fs` to `capabilities`, or remove the use

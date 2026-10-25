@@ -1,1 +1,1 @@
-{"code":"BYN2202","severity":"error","file":"unicode-columns.byn","span":{"start":30,"end":35,"line":2,"column":9,"endLine":2,"endColumn":13},"message":"expected `i32`, found `string`","label":null,"help":null,"fixes":[]}
+{"code":"BYN2202","severity":"error","file":"unicode-columns.byn","span":{"start":34,"end":39,"line":2,"column":14,"endLine":2,"endColumn":18},"message":"expected `i32`, found `string`","label":null,"help":null,"fixes":[]}

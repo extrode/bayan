@@ -1,0 +1,11 @@
+interface IShape {
+    i64 area()
+}
+
+struct Money {
+    i64 cents
+}
+
+extension Money : IShape {
+    i64 area() => 0
+}

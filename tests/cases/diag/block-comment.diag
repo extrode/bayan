@@ -1,0 +1,21 @@
+error BYN1047: `/* */` is an input form; write `//` lines
+
+  1 │ /* Prices are in cents.
+    │ ^^^^^^^^^^^^^^^^^^^^^^^ block comment
+    │
+  help: write each line with `//`
+    │ 1 │ // Prices are in cents.
+    │   │  ++++++++++++++++++++++
+    │ 2 │ // Discounts round down.
+    │   │ ++++++++++++++++++++++++
+
+error BYN1047: `/* */` is an input form; write `//` lines
+
+  6 │     let x = 1 /* inline */ + 2
+    │               ^^^^^^^^^^^^ block comment
+    │
+  help: write each line with `//`
+    │ 6 │     let x = 1 // inline
+    │   │                ++++++++
+    │ 7 │      + 2
+    │   │ ++++

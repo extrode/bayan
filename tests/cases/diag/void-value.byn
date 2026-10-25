@@ -1,1 +1,1 @@
-void nothing;
+var nothing: void

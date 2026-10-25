@@ -1,0 +1,8 @@
+Package {
+    name: "local/shop",
+    version: "0.1.0",
+    style: Style {
+        booleans: .words,
+        primitives: .csharp,
+    },
+}

@@ -1,0 +1,20 @@
+public void greet(string name) {
+    print($"hello {name}")
+}
+
+public i64 measure(string path) uses console {
+    print(path)
+    return Io.monotonicNanos()
+}
+
+void helper() {
+    print("inferred")
+}
+
+public void callsHelper() {
+    helper()
+}
+
+public void main() {
+    greet("x")
+}

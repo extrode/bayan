@@ -1,0 +1,53 @@
+error BYN1043: `weight: i64` is an input form; write `i64 weight`
+
+  2 │     weight: i64
+    │     ^^^^^^^^^^^ name before type
+    │
+  help: put the type before the name; declarations are type-first
+    │ 2 │     i64 weight
+    │   │     ++++++++++
+
+error BYN1043: `area(…) -> i64` is an input form; write `i64 area(…)`
+
+  4 │     area() -> i64 => weight * width
+    │            ^^ return type after the parameters
+    │
+  help: put the return type before the name
+    │ 4 │     i64 area() => weight * width
+    │   │     ++++++++++
+
+error BYN1043: `after: i64` is an input form; write `i64 after`
+
+  8 │     timeout(after: i64)
+    │             ^^^^^^^^^^ name before type
+    │
+  help: put the type before the name; declarations are type-first
+    │ 8 │     timeout(i64 after)
+    │   │             +++++++++
+
+error BYN1043: `a: i64` is an input form; write `i64 a`
+
+  11 │ add(a: i64, i64 b) -> i64 {
+     │     ^^^^^^ name before type
+     │
+  help: put the type before the name; declarations are type-first
+     │ 11 │ add(i64 a, i64 b) -> i64 {
+     │    │     +++++
+
+error BYN1043: `add(…) -> i64` is an input form; write `i64 add(…)`
+
+  11 │ add(a: i64, i64 b) -> i64 {
+     │                    ^^ return type after the parameters
+     │
+  help: put the return type before the name
+     │ 11 │ i64 add(a: i64, i64 b) {
+     │    │ ++++++++++++++++++++++
+
+error BYN1043: `main(…)` is an input form; write `void main(…)`
+
+  15 │ main() {
+     │ ^^^^ no return type
+     │
+  help: put `void` before the name when the function returns nothing
+     │ 15 │ void main() {
+     │    │ +++++

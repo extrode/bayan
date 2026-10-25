@@ -1,0 +1,3 @@
+// expect: line starts with a binary operator
+let total = subtotal
+    + shipping

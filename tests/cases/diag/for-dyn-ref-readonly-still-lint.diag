@@ -1,0 +1,8 @@
+warning BYN2311: `a` is never reassigned; declare it with `let`
+
+  10 │     var a = [C { n: 0 }]
+     │         ^
+     │
+  help: declare it with `let` to tell the reader the value never changes
+     │ 10 │     let a = [C { n: 0 }]
+     │    │     +++

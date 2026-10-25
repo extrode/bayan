@@ -1,2 +1,2 @@
 struct S {
-    i64 a;
+    i64 a

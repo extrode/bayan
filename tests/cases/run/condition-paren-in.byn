@@ -1,0 +1,12 @@
+var a: i32 = 2
+if (a) in 0..=3 {
+    print("if in")
+}
+while (a) in 0..=3 {
+    print($"while in {a}")
+    a += 1
+}
+switch (a) in 0..=3 {
+    case true: print("switch true")
+    case false: print("switch false")
+}

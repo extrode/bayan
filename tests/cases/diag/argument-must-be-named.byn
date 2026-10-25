@@ -1,6 +1,6 @@
-i64 area(i64 width, i64 height) => width * height;
+i64 area(i64 width, by i64 height) => width * height
 void show(bool verbose) {
 }
 
-print($"{area(3, height: 4)}");
-show(true);
+print($"{area(3, by: 4)}")
+show(true)

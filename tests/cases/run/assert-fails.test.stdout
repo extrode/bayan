@@ -1,0 +1,18 @@
+running 4 tests in 1 module
+  ◆ run_assert-fails.test: fails with the case
+  ◆ run_assert-fails.test: fails with the set
+
+  ✗ run_assert-fails.test: wrong case
+      assert check(11) fails E.bad
+             │
+             failed with E.worse
+      assert-fails.test.byn:25
+
+  ✗ run_assert-fails.test: does not fail
+      assert check(3) fails E
+             │
+             returned 3
+      assert-fails.test.byn:29
+
+◆ 2 passed · ✗ 2 failed · 0 pending · Ts
+  rerun the failures: bayan test --only "wrong case" --only "does not fail"

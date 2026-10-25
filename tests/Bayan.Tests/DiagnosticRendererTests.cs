@@ -15,11 +15,11 @@ public sealed class DiagnosticRendererTests
             // line 6
             // line 7
             // line 8
-            let total = 0;
+            let total = 0
             // line 10
             // line 11
-            total += line.price;
-            return total;
+            total += line.price
+            return total
         }
         """);
 
@@ -61,11 +61,11 @@ public sealed class DiagnosticRendererTests
         Assert.Equal("""
             error BYN2104: `total` is immutable
 
-              12 │     total += line.price;
+              12 │     total += line.price
                  │     ^^^^^ declared with `let` on line 9
                  │
               help: declare it with `var` if it should change
-                 │  9 │     var total = 0;
+                 │  9 │     var total = 0
                  │    │     +++
 
             """, DiagnosticRenderer.Render(diagnostic));
@@ -95,13 +95,13 @@ public sealed class DiagnosticRendererTests
     [Fact]
     public void RendersWithoutHelpOrFix()
     {
-        var source = SourceText.FromString("a.byn", "let x = 1;\n");
+        var source = SourceText.FromString("a.byn", "let x = 1\n");
         var diagnostic = new Diagnostic(Severity.Warning, "BYN2000", source, Find(source, "x"), "unused");
 
         Assert.Equal("""
             warning BYN2000: unused
 
-              1 │ let x = 1;
+              1 │ let x = 1
                 │     ^
 
             """, DiagnosticRenderer.Render(diagnostic));
@@ -110,7 +110,7 @@ public sealed class DiagnosticRendererTests
     [Fact]
     public void CaretsCountCodePointsNotBytes()
     {
-        var source = SourceText.FromString("a.byn", "let بيان = \"é\";\n");
+        var source = SourceText.FromString("a.byn", "let بيان = \"é\"\n");
         var diagnostic = new Diagnostic(Severity.Error, "BYN0005", source, Find(source, "بيان"), "m");
 
         var caretLine = DiagnosticRenderer.Render(diagnostic).Split('\n')[3];
@@ -120,7 +120,7 @@ public sealed class DiagnosticRendererTests
     [Fact]
     public void TabsInPrefixAreKept()
     {
-        var source = SourceText.FromString("a.byn", "\tx;\n");
+        var source = SourceText.FromString("a.byn", "\tx\n");
         var diagnostic = new Diagnostic(Severity.Error, "BYN1000", source, Find(source, "x"), "m");
 
         Assert.Equal("    │ \t^", DiagnosticRenderer.Render(diagnostic).Split('\n')[3]);
@@ -130,7 +130,7 @@ public sealed class DiagnosticRendererTests
     public void EmptySpanGetsOneCaret()
     {
         var source = SourceText.FromString("a.byn", "let x = 1\n");
-        var diagnostic = new Diagnostic(Severity.Error, "BYN1001", source, new TextSpan(9, 0), "expected `;`", Label: "here");
+        var diagnostic = new Diagnostic(Severity.Error, "BYN1001", source, new TextSpan(9, 0), "expected a line break", Label: "here");
 
         Assert.Equal("    │          ^ here", DiagnosticRenderer.Render(diagnostic).Split('\n')[3]);
     }
@@ -138,29 +138,29 @@ public sealed class DiagnosticRendererTests
     [Fact]
     public void GutterWidensForFixOnLongerLineNumber()
     {
-        var lines = string.Concat(Enumerable.Range(1, 10).Select(i => $"x{i};\n"));
+        var lines = string.Concat(Enumerable.Range(1, 10).Select(i => $"x{i}\n"));
         var source = SourceText.FromString("a.byn", lines);
-        var diagnostic = new Diagnostic(Severity.Error, "BYN1002", source, Find(source, "x9;"), "m",
+        var diagnostic = new Diagnostic(Severity.Error, "BYN1002", source, Find(source, "x9"), "m",
             Fix: new Fix(Find(source, "x10"), "y10"));
 
         var rendered = DiagnosticRenderer.Render(diagnostic).Split('\n');
-        Assert.Equal("   9 │ x9;", rendered[2]);
-        Assert.Equal("     │ 10 │ y10;", rendered[5]);
+        Assert.Equal("   9 │ x9", rendered[2]);
+        Assert.Equal("     │ 10 │ y10", rendered[5]);
     }
 
     [Fact]
     public void CrlfLineEndingsAreNotRendered()
     {
-        var source = SourceText.FromString("a.byn", "a;\r\nb;\r\n");
+        var source = SourceText.FromString("a.byn", "a\r\nb\r\n");
         var diagnostic = new Diagnostic(Severity.Error, "BYN1003", source, Find(source, "b"), "m");
 
-        Assert.Equal("  2 │ b;", DiagnosticRenderer.Render(diagnostic).Split('\n')[2]);
+        Assert.Equal("  2 │ b", DiagnosticRenderer.Render(diagnostic).Split('\n')[2]);
     }
 
     [Fact]
     public void IncludePathAddsLocationLine()
     {
-        var source = SourceText.FromString("dir/a.byn", "a;\n  bé c;\n");
+        var source = SourceText.FromString("dir/a.byn", "a\n  bé c\n");
         var diagnostic = new Diagnostic(Severity.Error, "BYN1004", source, Find(source, "c"), "m");
 
         Assert.Equal("  --> dir/a.byn:2:6", DiagnosticRenderer.Render(diagnostic, includePath: true).Split('\n')[1]);
@@ -181,25 +181,25 @@ public sealed class DiagnosticRendererTests
     [Fact]
     public void RemovalFixMarksRemovedText()
     {
-        var source = SourceText.FromString("a.byn", "let x = 1;;\n");
-        var semi = Find(source, ";;");
-        var diagnostic = new Diagnostic(Severity.Warning, "BYN1005", source, new TextSpan(semi.Start + 1, 1), "extra `;`",
-            Help: "remove the extra `;`", Fix: new Fix(new TextSpan(semi.Start + 1, 1), ""));
+        var source = SourceText.FromString("a.byn", "let x = 1;\n");
+        var semi = Find(source, ";");
+        var diagnostic = new Diagnostic(Severity.Error, "BYN1040", source, semi, "`;` is an input form; a statement ends at the newline",
+            Help: "remove the `;`", Fix: new Fix(semi, ""));
 
         var rendered = DiagnosticRenderer.Render(diagnostic).Split('\n');
-        Assert.Equal("    │ 1 │ let x = 1;;", rendered[6]);
-        Assert.Equal("    │   │           -", rendered[7]);
+        Assert.Equal("    │ 1 │ let x = 1;", rendered[6]);
+        Assert.Equal("    │   │          -", rendered[7]);
     }
 
     [Fact]
     public void ReplacementMarksOnlyChangedText()
     {
-        var source = SourceText.FromString("a.byn", "let bayan = 1;\n");
+        var source = SourceText.FromString("a.byn", "let bayan = 1\n");
         var diagnostic = new Diagnostic(Severity.Error, "BYN1006", source, Find(source, "bayan"), "m",
             Fix: new Fix(Find(source, "bayan"), "bayaan"));
 
         var rendered = DiagnosticRenderer.Render(diagnostic).Split('\n');
-        Assert.Equal("    │ 1 │ let bayaan = 1;", rendered[5]);
+        Assert.Equal("    │ 1 │ let bayaan = 1", rendered[5]);
         Assert.Equal("    │   │         +", rendered[6]);
     }
 
@@ -218,10 +218,10 @@ public sealed class DiagnosticRendererTests
         Assert.Equal("""
             error BYN2104: `total` is immutable
 
-               9 │     let total = 0;
+               9 │     let total = 0
                  │         ----- declared with `let` here
                  │
-              12 │     total += line.price;
+              12 │     total += line.price
                  │     ^^^^^ cannot be changed
 
             """, DiagnosticRenderer.Render(diagnostic));
@@ -234,13 +234,13 @@ public sealed class DiagnosticRendererTests
     [Fact]
     public void AsciiSymbolsReplaceTheGutter()
     {
-        var source = SourceText.FromString("a.byn", "let x = 1;\n");
+        var source = SourceText.FromString("a.byn", "let x = 1\n");
         var diagnostic = new Diagnostic(Severity.Warning, "BYN2000", source, Find(source, "x"), "unused");
 
         Assert.Equal("""
             warning BYN2000: unused
 
-              1 | let x = 1;
+              1 | let x = 1
                 |     ^
 
             """, DiagnosticRenderer.Render(diagnostic, includePath: false, Style.Plain with { Symbols = Symbols.Ascii }));
@@ -265,7 +265,7 @@ public sealed class DiagnosticRendererTests
     [Fact]
     public void LongMessageAndLabelWrapAtTheStyleWidth()
     {
-        var source = SourceText.FromString("a.byn", "let x = 1;\n");
+        var source = SourceText.FromString("a.byn", "let x = 1\n");
         var diagnostic = new Diagnostic(Severity.Error, "BYN2000", source, Find(source, "x"),
             "one two three four five six", Label: "alpha beta gamma delta");
 
@@ -273,7 +273,7 @@ public sealed class DiagnosticRendererTests
             error BYN2000: one two
             three four five six
 
-              1 │ let x = 1;
+              1 │ let x = 1
                 │     ^ alpha beta
                 │       gamma delta
 
@@ -283,7 +283,7 @@ public sealed class DiagnosticRendererTests
     [Fact]
     public void BacktickedCodeInAMessageIsNeverSplit()
     {
-        var source = SourceText.FromString("a.byn", "let x = 1;\n");
+        var source = SourceText.FromString("a.byn", "let x = 1\n");
         const string type = "`(string alpha, string bravo, string charlie, i64 delta)`";
         var diagnostic = new Diagnostic(Severity.Error, "BYN2000", source, Find(source, "x"), "expected `i64`, found " + type + " here");
 
@@ -294,7 +294,7 @@ public sealed class DiagnosticRendererTests
     [Fact]
     public void SourceAndFixLinesNeverWrap()
     {
-        var code = "let x = " + string.Join(" + ", Enumerable.Range(1, 60)) + ";";
+        var code = "let x = " + string.Join(" + ", Enumerable.Range(1, 60));
         var source = SourceText.FromString("a.byn", code + "\n");
         var diagnostic = new Diagnostic(Severity.Error, "BYN2000", source, Find(source, "x"), "m",
             Fix: new Fix(Find(source, "let"), "var"));

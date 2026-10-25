@@ -1,0 +1,13 @@
+error BYN2106: cannot modify this value
+
+  5 │     xs.span[0] = 2
+    │     ^^^^^^^^^^ a `ReadOnlySpan` cannot be written through
+
+error BYN2104: `ys` is immutable
+
+  7 │     let _ = ys.mutableSpan()
+    │             ^^ `mutableSpan` modifies it; declared with `let` on line 6
+    │
+  help: declare it with `var` if it should change
+    │ 6 │     var ys = List<i64>()
+    │   │     +++

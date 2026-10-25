@@ -1,20 +1,20 @@
 error BYN2781: `x` is used after it was moved
 
-  12 │             print($"{x.length}");
-     │                      ^ moved on line 9
+  15 │             print($"{x.length}")
+     │                      ^ moved on line 12
      │
   help: assign `x` a new value before using it again, or move a `.copy(to: alloc)` of it instead
 
 warning BYN2712: `_` hides future cases of `U`, declared in this package
 
-  20 │         _ => x.length,
+  23 │         _ => x.length,
      │         ^ matches every case added later
      │
   help: list the cases instead: .a, .b
 
 error BYN2781: `x` is used after it was moved
 
-  20 │         _ => x.length,
-     │              ^ moved on line 19
+  23 │         _ => x.length,
+     │              ^ moved on line 22
      │
   help: assign `x` a new value before using it again, or move a `.copy(to: alloc)` of it instead

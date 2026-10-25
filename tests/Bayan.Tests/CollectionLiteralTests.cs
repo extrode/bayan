@@ -19,11 +19,11 @@ public sealed class CollectionLiteralTests
     }
 
     [Theory]
-    [InlineData("Span<i32> s = [1, 2, 3];")]
-    [InlineData("i32[2] more = [5, 6];\n    Span<i32> s = [..more, 3];")]
+    [InlineData("let s: Span<i32> = [1, 2, 3]")]
+    [InlineData("let more: i32[2] = [5, 6]\n    let s: Span<i32> = [..more, 3]")]
     public void ASpanLiteralIsAStackArray(string declaration)
     {
-        var body = Body($"i32 first() {{\n    {declaration}\n    return s[0];\n}}\n\nprint($\"{{first()}}\");\n", "first");
+        var body = Body($"i32 first() {{\n    {declaration}\n    return s[0]\n}}\n\nprint($\"{{first()}}\")\n", "first");
         Assert.Contains("bynt_arr3_i32 ", body);
         Assert.DoesNotContain("byn_context", body);
         Assert.DoesNotContain("alloc", body);
@@ -32,7 +32,7 @@ public sealed class CollectionLiteralTests
     [Fact]
     public void AListLiteralAllocates()
     {
-        var body = Body("i32 first() {\n    List<i32> s = [1, 2, 3];\n    return s[0];\n}\n\nprint($\"{first()}\");\n", "first");
+        var body = Body("i32 first() {\n    let s: List<i32> = [1, 2, 3]\n    return s[0]\n}\n\nprint($\"{first()}\")\n", "first");
         Assert.Contains("byn_context", body);
     }
 }

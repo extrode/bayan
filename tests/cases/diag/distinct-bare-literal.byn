@@ -1,0 +1,6 @@
+type distinct Id = i64 requires it > 0
+
+void main() {
+    let i: Id = 7
+    print($"{i.value}")
+}

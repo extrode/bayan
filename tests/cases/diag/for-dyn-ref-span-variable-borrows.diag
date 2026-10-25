@@ -1,0 +1,6 @@
+error BYN3004: `xs` is modified while `d` still borrows it
+
+  22 │     xs.append(S { n: 2 })
+     │     ^^^^^^^^^^^^^^^^^^^^^ `d` is used again on line 23
+     │
+  help: finish using `d` first, or copy what it needs before changing `xs`

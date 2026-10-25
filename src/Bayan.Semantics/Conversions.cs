@@ -1,5 +1,6 @@
 using Bayan.Semantics.Binding;
 using Bayan.Semantics.Symbols;
+using Bayan.Syntax.Ast;
 
 namespace Bayan.Semantics;
 
@@ -15,7 +16,8 @@ public static class Conversions
         if (from.IsNever) return ConversionKind.FromNever;
         if (from is NullType) return to is OptionalType ? ConversionKind.NullToOptional : null;
         if (from is PrimitiveType f && to is PrimitiveType t && IsWidening(f, t)) return ConversionKind.Widen;
-        if (to is OptionalType o && (from.Equals(o.Inner) || Implicit(from, o.Inner) is ConversionKind.Widen)) return ConversionKind.ToOptional;
+        if (to is OptionalType o && (from.Equals(o.Inner) || Implicit(from, o.Inner) is ConversionKind.Widen
+            || from is StateType && Implicit(from, o.Inner) is ConversionKind.Identity)) return ConversionKind.ToOptional;
         if (to is ResultType r)
         {
             if (from is ErrorSetSymbol && from.Equals(r.Error)) return ConversionKind.ErrorToResult;
@@ -29,9 +31,30 @@ public static class Conversions
             if (from is Symbols.ArrayType array && array.Element.Equals(span.Element)) return ConversionKind.ArrayToSpan;
             if (from.IsString && span is { ReadOnly: true, Element: var e } && e == PrimitiveType.U8) return ConversionKind.StringToBytes;
         }
+        // A conforming value is borrowed as `dyn ref I`; a writable `dyn ref` may be read through a read-only one.
+        if (to is DynRefType dyn)
+        {
+            if (from is DynRefType d && d.Interface == dyn.Interface && dyn.ReadOnly) return ConversionKind.Identity;
+            if (from is StructSymbol s && s.Conformances.Any(c => c.Interface == dyn.Interface)) return ConversionKind.ToDynRef;
+            if (from is TypeParameterType p && p.Constraints.Contains(dyn.Interface)) return ConversionKind.ToDynRef;
+        }
+        // Widening is free: a state type converts to its struct or to a type listing more of its states (spec §3.17).
+        if (from is StateType fs && (to.Equals(fs.Struct) || to is StateType ts && ts.Struct.Equals(fs.Struct) && fs.States.All(ts.States.Contains)))
+            return ConversionKind.Identity;
+        if (to is StateType all && from.Equals(all.Struct) && all.States.Count == all.States[0].Union.Variants.Count) return ConversionKind.Identity;
         if (from is ErrorSetSymbol set && to is ErrorUnionType u && (u.Sets.Count == 0 || u.Sets.Contains(set))) return ConversionKind.Identity;
         return null;
     }
+
+    /// <summary>
+    /// <c>ToFunction</c> when module function <paramref name="fn"/> named as a value is a <paramref name="to"/>: its parameter
+    /// types, return type and error sets equal the type's exactly (spec 007 R3); effects are checked at the conversion (R16).
+    /// </summary>
+    public static ConversionKind? Implicit(FunctionSymbol fn, FunctionType to) =>
+        fn.Parameters.All(p => p.Modifier == ParamModifier.None) && fn.Parameters.Select(p => p.Type).SequenceEqual(to.Parameters)
+        && fn.ReturnType.Equals(to.Return) && fn.Fails == to.Fails.Count > 0 && fn.ExcludedErrors.Count == 0
+        && fn.ErrorSets.Count == to.Fails.Count && fn.ErrorSets.All(to.Fails.Contains)
+            ? ConversionKind.ToFunction : null;
 
     /// <summary>Lossless numeric widening; 64-bit <c>isize</c>/<c>usize</c> are assumed.</summary>
     public static bool IsWidening(PrimitiveType from, PrimitiveType to)

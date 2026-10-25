@@ -1,0 +1,8 @@
+struct SignupForm {
+    string password
+        requires it.length in 8..=128
+}
+
+void reset(ref SignupForm form) {
+    form.password = "x"
+}

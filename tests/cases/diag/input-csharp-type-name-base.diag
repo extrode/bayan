@@ -1,0 +1,6 @@
+error BYN2804: `i32` is not an interface
+
+  1 │ struct S : int {
+    │            ^^^ a type
+    │
+  help: list an `interface` here

@@ -1,0 +1,26 @@
+error BYN1040: `;` is an input form; a statement ends at the newline
+
+  1 │ let a = 1;
+    │          ^ remove `;`
+    │
+  help: remove the `;`
+    │ 1 │ let a = 1;
+    │   │          -
+
+error BYN1040: `;` is an input form; a statement ends at the newline
+
+  2 │ let b = 2; print(a + b);
+    │          ^ remove `;`
+    │
+  help: put the next statement on its own line
+    │ 2 │ let b = 2
+    │ 3 │ print(a + b);
+
+error BYN1040: `;` is an input form; a statement ends at the newline
+
+  2 │ let b = 2; print(a + b);
+    │                        ^ remove `;`
+    │
+  help: remove the `;`
+    │ 2 │ let b = 2; print(a + b);
+    │   │                        -

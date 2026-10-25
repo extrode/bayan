@@ -1,0 +1,8 @@
+@positional
+struct Point {
+    i64 x
+    i64 y
+}
+
+let p = Point(3, 4)
+print($"{p.x} {p.y}")

@@ -19,7 +19,8 @@ public sealed class ManifestTests
             var m = Manifest.Parse(Golden.Load(path));
             if (m.Diagnostics.Count > 0) return DiagnosticRenderer.RenderAll(m.Diagnostics);
             return $"name {m.Name}\nversion {m.Version}\nedition {m.Edition}\nkind {m.Kind}\n"
-                + $"targets {string.Join(" ", m.DistTargets)}\nmode {m.DistMode}\n";
+                + $"targets {string.Join(" ", m.DistTargets)}\nmode {m.DistMode}\n"
+                + $"booleans {m.Booleans}\nprimitives {m.Primitives}\n";
         });
 
     [Theory]
@@ -55,7 +56,7 @@ public sealed class ManifestTests
     [InlineData("1.0.0-rc.1", true)]
     public void ManifestVersions(string version, bool valid)
     {
-        var text = $"Package {{ name = \"local/tally\", version = \"{version}\", edition = 2027, kind = .app }}";
+        var text = $"Package {{ name: \"local/tally\", version: \"{version}\", edition: 2027, kind: .app }}";
         var m = Manifest.Parse(Bayan.Syntax.Text.SourceText.FromString("package.byn", text));
         if (valid)
         {

@@ -1,22 +1,15 @@
 using System.Text.RegularExpressions;
+using Bayan.Semantics;
 
 namespace Bayan.Tests;
 
 /// <summary>
 /// R15 (guide §7): every help text starts with an imperative verb. Checked over the rendered
 /// <c>help:</c> lines of the diag, manifest and lex goldens, and over the help literals in the sources.
+/// The verbs are the grammar checker's (<see cref="Lexicon.Verbs"/>), so R15 and BYN5014 agree on what a verb is.
 /// </summary>
 public sealed partial class HelpLanguageTests
 {
-    private static readonly HashSet<string> Verbs =
-    [
-        "add", "assign", "bind", "build", "call", "cast", "change", "check", "choose", "close", "collect",
-        "combine", "convert", "copy", "create", "declare", "drop", "end", "explain", "finish", "give",
-        "handle", "hand", "keep", "label", "leave", "let", "list", "loop", "make", "mark", "match", "move",
-        "name", "pass", "pick", "propagate", "put", "read", "remove", "rename", "set", "store", "take",
-        "spread", "unwrap", "use", "wrap", "write",
-    ];
-
     /// <summary>Helps that may start otherwise, each with its reason.</summary>
     private static readonly Dictionary<string, string> Allowed = new()
     {
@@ -30,7 +23,7 @@ public sealed partial class HelpLanguageTests
     private static partial Regex HelpLiteral();
 
     private static bool StartsWithVerb(string help) =>
-        Verbs.Contains(help.Split(' ', ',', ';', ':')[0]) || Allowed.Keys.Any(help.StartsWith);
+        Lexicon.Verbs.Contains(help.Split(' ', ',', ';', ':')[0]) || Allowed.Keys.Any(help.StartsWith);
 
     private static IEnumerable<(string File, string Help)> Find(string dir, string pattern, Regex regex) =>
         Directory.EnumerateFiles(Path.Combine(Golden.RepoRoot, dir), pattern, SearchOption.AllDirectories)

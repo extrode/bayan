@@ -1,0 +1,5 @@
+i64 apply((i64 -> i64) f) => f(1)
+void main() {
+    let xs = List<i64>()
+    let a = apply(x => apply(y => y + xs.length))
+}

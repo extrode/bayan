@@ -1,0 +1,37 @@
+union error LexError {
+    bad
+}
+
+bool isBig(i64 x) => x > 2
+
+i64 clamp(i64 x, to i64 max) {
+    if x > max {
+        return max
+    }
+    return x
+}
+
+bool isChecked(i64 x) fails LexError {
+    fail .bad if x < 0
+    return true
+}
+
+bool keep(i64 x, by (i64 -> bool) p) => p(x)
+
+i64 squeeze(i64 x, by ((i64, i64) -> i64) f) => f(x, 10)
+
+bool check(i64 x, by (i64 -> bool fails LexError) p) fails LexError => try p(x)
+
+bool holds<T>((T -> bool) p) => true
+
+void main() {
+    let f: i64 -> bool = isBig
+    let g: (i64, i64) -> i64 = clamp
+    let big = f(3)
+    let low = g(1, 2)
+    let kept = keep(3, by: isBig)
+    let squeezed = squeeze(4, by: clamp)
+    let passed = check(1, by: isChecked) catch false
+    let named = holds(isBig)
+    let local = holds(f)
+}

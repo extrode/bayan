@@ -1,0 +1,20 @@
+struct Catalog {
+    i64 count
+
+    void upsertRow(ref this) {
+        count += 1
+    }
+
+    i64 skuCount => count
+
+    // Inflected forms of known words, particles and math names are known.
+    i64 sortedRows() => count
+
+    i64 countsBy(i64 step) => step
+
+    f64 sqrt => 0.0
+
+    f64 log2 => 0.0
+}
+
+print("ok")

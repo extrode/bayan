@@ -1,0 +1,10 @@
+void each(List<i32> xs, by (i32 -> void) f) {
+    for x in xs {
+        f(x)
+    }
+}
+
+void main() {
+    let xs: List<i32> = [1, 2]
+    each(xs, by: x => x + 1)
+}

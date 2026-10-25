@@ -1,0 +1,7 @@
+error BYN2603: `ValidationError<b.Point>` is not in the `fails` clause of `ga`
+  --> main.byn:13:5
+
+  13 │     try hb(x)
+     │     ^^^^^^^^^
+     │
+  help: add it to the signature: `fails ValidationError<a.Point>, Other, ValidationError<b.Point>`

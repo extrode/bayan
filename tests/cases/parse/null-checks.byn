@@ -1,9 +1,9 @@
-let present = x is not null;
-let absent = x is null;
-let both = a is not null && b is not null;
-if (p is not null) { use(p); }
-if (p is null) { return; }
-let order = db.find(id) ?? return .notFound;
-let quiet = db.find(id) ?? return;
-let next = rows.next() ?? break;
-let item = items.get(i) ?? continue;
+let present = x is not null
+let absent = x is null
+let both = a is not null && b is not null
+if p is not null { use(p) }
+if p is null { return }
+let order = db.find(id) ?? return .notFound
+let quiet = db.find(id) ?? return
+let next = rows.next() ?? break
+let item = items.get(i) ?? continue

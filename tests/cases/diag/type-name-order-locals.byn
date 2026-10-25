@@ -1,0 +1,11 @@
+void main() {
+    i64 weight = 0
+    i64 count = 0
+    count += 1
+    i64 later
+    later = 2
+    let i64 kept = 3
+    const i64 limit = 4
+    let total: i64 = weight + count + later + kept + limit
+    print(total)
+}

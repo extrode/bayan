@@ -1,32 +1,32 @@
-type Cents = i64;
+type Cents = i64
 
 struct Point {
-    i64 x;
-    i64 y = 0;
+    i64 x
+    i64 y = 0
 
-    i64 sum => x + y;
+    i64 sum => x + y
 
     void shift(ref this, i64 by) {
-        x += by;
+        x += by
     }
 }
 
-u8 small = 255;
-i8 negative = -128;
-i64 wide = small;
-f64 ratio = 1.5;
-let narrowed = (u8)wide;
-Cents price = 1999;
-let pair = (name: "ann", cents: 5);
-i64? maybe = null;
-let fallback = maybe ?? 0;
-i64[3] fixed = [1, 2, 3];
-var p = Point { x = 1 };
-p.shift(by: 2);
-let q = p with { y = 4 };
+let small: u8 = 255
+let negative: i8 = -128
+let wide: i64 = small
+let ratio: f64 = 1.5
+let narrowed = u8(wide)
+let price: Cents = 1999
+let pair = (name: "ann", cents: 5)
+let maybe: i64? = null
+let fallback = maybe ?? 0
+let fixed: i64[3] = [1, 2, 3]
+var p = Point { x: 1 }
+p.shift(by: 2)
+let q = p with { y: 4 }
 if (maybe is { } value) {
-    print($"{value}");
+    print($"{value}")
 }
-let letter = 'a';
-let total = fixed[0] + fixed[2];
-print($"{pair.name} {pair.cents} {p.sum} {q.y} {narrowed} {ratio} {price} {fallback} {letter} {total} {negative}");
+let letter = 'a'
+let total = fixed[0] + fixed[2]
+print($"{pair.name} {pair.cents} {p.sum} {q.y} {narrowed} {ratio} {price} {fallback} {letter} {total} {negative}")

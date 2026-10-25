@@ -1,0 +1,2 @@
+panic: padded text is too long
+  at string-padded-too-long.byn:2

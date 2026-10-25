@@ -1,0 +1,13 @@
+error BYN2029: `it` inside a lambda that already uses `it`; name one lambda
+
+  13 │     List<i64> items requires any(it, by: it > 0)
+     │                                          ^^
+     │
+  help: name the lambda's parameter: `x => …`
+
+error BYN2029: `it` inside a lambda that already uses `it`; name one lambda
+
+  18 │     if first(xss, by: any(it, by: it > 1)) {
+     │                                   ^^
+     │
+  help: name the inner lambda's parameter: `x => …`

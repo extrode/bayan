@@ -1,0 +1,9 @@
+error BYN1031: `T!E` is an input form; write `T f() fails E`
+  --> main.byn:3:4
+
+  3 │ i32!store.Error f() { return 1 }
+    │    ^^^^^^^^^^^^ the input form
+    │
+  help: write `fails store.Error` after the parameters
+    │ 3 │ i32 f() fails store.Error { return 1 }
+    │   │    ++++++++++++++++++++++

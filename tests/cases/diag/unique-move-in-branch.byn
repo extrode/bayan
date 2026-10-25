@@ -1,14 +1,14 @@
 // A move in one branch makes the local unusable after the branches join (BYN2781).
 void consume(move List<i64> xs) {
-    print($"{xs.length}");
+    print($"{xs.length}")
 }
 
 void main(ReadOnlySpan<string> args) {
-    let a = List<i64>();
-    if (args.length > 0) {
-        consume(move a);
+    let a = List<i64>()
+    if args.length > 0 {
+        consume(move a)
     } else {
-        print("kept");
+        print("kept")
     }
-    print($"{a.length}");
+    print($"{a.length}")
 }

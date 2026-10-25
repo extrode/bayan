@@ -1,0 +1,22 @@
+interface IThing {
+    i64 get()
+}
+
+struct S : IThing {
+    i64 n
+
+    i64 get() => n
+}
+
+struct Bag {
+    List<S> items
+
+    dyn ref IThing first(ref this) => items[0]
+}
+
+void main() {
+    var b = Bag { items: List<S>() }
+    b.items.append(S { n: 7 })
+    let d: dyn ref IThing = b.first()
+    print($"{d.get()}")
+}

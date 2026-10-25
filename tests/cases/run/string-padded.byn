@@ -1,0 +1,5 @@
+// `padded(to: n, by: c)` appends c until the text has n runes; longer text is copied unchanged.
+print($"[{"ab".padded(to: 4, by: '.')}]")
+print($"[{"abcdef".padded(to: 3, by: ' ')}]")
+print($"[{"é".padded(to: 3, by: 'ü')}]")
+print($"[{"".padded(to: 2, by: '-')}]")

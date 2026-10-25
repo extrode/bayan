@@ -1,37 +1,37 @@
-error enum E {
-    bad,
+union error E {
+    bad
 }
 
 i64 step() fails E {
-    return 1;
+    return 1
 }
 
 i64 work() fails E {
-    var count = 0;
+    var count = 0
     defer panicking {
-        let n = try step();
-        count = n;
-        let xs = List<i64>();
-        return 0;
+        let n = try step()
+        count = n
+        let xs = List<i64>()
+        return 0
     }
-    for (let i in 0..3) {
+    for i in 0..3 {
         defer panicking {
-            break;
+            break
         }
         defer panicking {
-            continue;
+            continue
         }
     }
-    count += 1;
-    return count;
+    count += 1
+    return count
 }
 
 void onCrash(Panic p) {
-    let s = $"{p.message}";
-    return;
+    let s = $"{p.message}"
+    return
 }
 
 void main() {
-    Panic.onPanic = onCrash;
-    print($"{work() catch -1}");
+    Panic.handler = onCrash
+    print($"{work() catch -1}")
 }

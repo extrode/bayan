@@ -1,0 +1,7 @@
+print(Hex.encode("hi!".bytes))
+print($"[{Hex.encode("".bytes)}]")
+var raw = List<u8>()
+raw.append(0)
+raw.append(15)
+raw.append(255)
+print(Hex.encode(raw.span))

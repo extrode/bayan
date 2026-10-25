@@ -29,10 +29,11 @@ The output is indented JSON written by `TypedDump.ToJson` (`src/Bayan.Semantics/
 |---|---|
 | `version` | Format version, `1`. A change to the fields or ordering bumps it. |
 | `functions[].path` | The file declaring the function, relative to the compilation root (the project root in a project, otherwise the entry directory), with forward slashes. |
-| `functions[].name` | The function's name; a member is `Owner.name`. Top-level statements are `main`, test blocks `test`. |
-| `functions[].span` | Byte offsets (`start` inclusive, `end` exclusive) of the function's declaring name, or of the first statement or test for `main` and `test`. |
+| `functions[].name` | The function's name; a member is `Owner.name`. Top-level statements are `main`, test blocks `test`. A lambda is `<enclosing>$lambda<N>`, N counting the enclosing function's lambdas from 1 in source order (a lambda in a lambda is `f$lambda1$lambda1`), under its enclosing function's owner. |
+| `functions[].span` | Byte offsets (`start` inclusive, `end` exclusive) of the function's declaring name, or of the first statement or test for `main` and `test`, or of the whole lambda. |
+| `functions[].captures` | Lambdas only: the outer locals and parameters the lambda copies, in first-use order, each with `name` and the `type` it is read as (a narrowed optional is its inner type). |
 | `bindings[].name` | The name as written (`_` included). |
-| `bindings[].kind` | `param`; `var`, `let` or `const` for a declaration (a typed declaration without a keyword is `var`, as is a `for var` or `var` pattern binding); `for` for a `for` variable; `pattern` for a `let` pattern or type-pattern binding; `catch` for the error bound by `catch \|e\|` or `errdefer \|e\|`. |
+| `bindings[].kind` | `param`; `var`, `let` or `const` for a declaration (a typed declaration without a keyword is `var`, as is a `var` pattern binding); `for` for a `for` variable; `pattern` for a `let` pattern or type-pattern binding; `catch` for the error bound by `defer failing (e)`. |
 | `bindings[].span` | Byte offsets of the binding's name. |
 | `bindings[].type` | The resolved type as diagnostics display it (`i64`, `List<string>`, `T`). An unconstrained integer literal is `i32`; one constrained to another integer type by a comparison, an argument or an assignment has that type. |
 

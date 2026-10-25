@@ -1,0 +1,13 @@
+error BYN3004: `buf` is modified while `t` still borrows it
+
+  8 │     buf.clear()
+    │     ^^^^^^^^^^^ `t` is used again on line 9
+    │
+  help: finish using `t` first, or copy what it needs before changing `buf`
+
+error BYN3002: arena `arena` does not live as long as `kept`, which borrows it
+
+  14 │         kept = get(() => name)
+     │                ^^^^^^^^^^^^^^^ arena `arena` is freed at the end of its block
+     │
+  help: copy the data with `.copy(to: alloc)` into an allocator that lives long enough

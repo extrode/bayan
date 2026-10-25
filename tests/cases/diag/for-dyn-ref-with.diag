@@ -1,0 +1,5 @@
+error BYN2106: cannot modify this value
+
+  18 │     for x: dyn ref IC in (a with { k: 2 }).items { x.bump() }
+     │                          ^^^^^^^^^^^^^^^^^^^^^^^ it is borrowed element by element as
+     │                                                  `dyn ref IC`

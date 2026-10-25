@@ -1,0 +1,8 @@
+public struct Point {
+    public i32 x
+        requires it > 0
+}
+
+public Point make(i32 x) fails ValidationError<Point> {
+    return try Point { x: x }
+}

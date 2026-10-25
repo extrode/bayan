@@ -1,0 +1,9 @@
+error BYN2104: `a` is immutable
+
+  11 │     for x: dyn ref IC in a { x.bump() }
+     │                          ^ it is borrowed element by element as `dyn ref IC`; declared with
+     │                            `let` on line 10
+     │
+  help: declare it with `var` if it should change
+     │ 10 │     var a = [C { n: 0 }, C { n: 0 }]
+     │    │     +++

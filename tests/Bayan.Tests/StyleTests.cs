@@ -21,9 +21,9 @@ public sealed partial class StyleTests
     public static readonly string[] Shapes =
     [
         "diag-error-fix", "diag-removal-fix", "diag-secondary", "diag-cap", "diag-cap-all",
-        "build-ok", "build-ok-cache", "build-ok-verbose", "build-fail", "check-ok", "run-fail",
+        "build-ok", "build-ok-cache", "build-ok-verbose", "build-fail", "build-ice", "check-ok", "run-fail",
         "test-ok", "test-fail", "test-pending", "test-verbose", "test-assert-values", "test-control-chars",
-        "doctor-ok", "doctor-fail",
+        "doctor-ok", "doctor-fail", "audit",
     ];
 
     public static TheoryData<string> AllShapes
@@ -66,9 +66,9 @@ public sealed partial class StyleTests
         return text;
     }
 
-    private const string Ok = "void main() {\n    print(\"hi\");\n}\n";
+    private const string Ok = "void main() {\n    print(\"hi\")\n}\n";
 
-    private const string Broken = "void main() {\n    let x = 1;\n    x = 2;\n    print($\"{x}\");\n}\n";
+    private const string Broken = "void main() {\n    let x = 1\n    x = 2\n    print($\"{x}\")\n}\n";
 
     private static string Produce(string shape, string program, bool ascii)
     {
@@ -87,14 +87,14 @@ public sealed partial class StyleTests
         switch (shape)
         {
             case "diag-error-fix":
-                return Command("void main() {\n    let total = 0;\n    total += 1;\n    print($\"{total}\");\n}\n", "check", main);
+                return Command("void main() {\n    let total = 0\n    total += 1\n    print($\"{total}\")\n}\n", "check", main);
             case "diag-removal-fix":
-                return Command("i64 twice(i64 x) => x * 2;\n\nvoid main() {\n    let n = try twice(2);\n    print($\"{n}\");\n}\n", "check", main);
+                return Command("i64 twice(i64 x) => x * 2\n\nvoid main() {\n    let n = try twice(2)\n    print($\"{n}\")\n}\n", "check", main);
             case "diag-secondary":
                 return Secondary(ascii);
             case "diag-cap":
             case "diag-cap-all":
-                var many = "void main() {\n    var y = 0;\n" + string.Concat(Enumerable.Range(1, 25).Select(i => $"    y = x{i};\n")) + "}\n";
+                var many = "void main() {\n    var y = 0\n" + string.Concat(Enumerable.Range(1, 25).Select(i => $"    y = x{i}\n")) + "}\n";
                 return shape == "diag-cap" ? Command(many, "check", main) : Command(many, "check", "--all", main);
             case "build-ok":
                 return Command(Ok, "build", "-o", output, main);
@@ -105,20 +105,22 @@ public sealed partial class StyleTests
                 return Command(Ok, "build", "-v", "-o", output, main);
             case "build-fail":
                 return Command(Broken, "build", "-o", output, main);
+            case "build-ice":
+                return Ice(ascii);
             case "check-ok":
                 return Command(Ok, "check", main);
             case "run-fail":
                 return Command(Broken, "run", main);
             case "test-ok":
-                return Tests("test \"adds\" {\n    assert(1 + 1 == 2);\n}\n\ntest \"compares\" {\n    assert(\"a\" != \"b\");\n}\n");
+                return Tests("test \"adds\" {\n    assert(1 + 1 == 2)\n}\n\ntest \"compares\" {\n    assert(\"a\" != \"b\")\n}\n");
             case "test-fail":
-                return Tests("test \"adds\" {\n    assert(1 + 1 == 2);\n}\n\ntest \"is false\" {\n    assert(false);\n}\n\ntest \"panics\" {\n    panic(\"boom\");\n}\n");
+                return Tests("test \"adds\" {\n    assert(1 + 1 == 2)\n}\n\ntest \"is false\" {\n    assert(false)\n}\n\ntest \"panics\" {\n    panic(\"boom\")\n}\n");
             case "test-pending":
-                return Tests("test \"adds\" {\n    assert(1 + 1 == 2);\n}\n\ntest \"later\" {\n    todo(\"split by weight\");\n}\n");
+                return Tests("test \"adds\" {\n    assert(1 + 1 == 2)\n}\n\ntest \"later\" {\n    todo(\"split by weight\")\n}\n");
             case "test-verbose":
-                return Tests("test \"adds\" {\n    assert(1 + 1 == 2);\n}\n\ntest \"later\" {\n    todo(\"split by weight\");\n}\n\ntest \"is false\" {\n    assert(false);\n}\n", "-v");
+                return Tests("test \"adds\" {\n    assert(1 + 1 == 2)\n}\n\ntest \"later\" {\n    todo(\"split by weight\")\n}\n\ntest \"is false\" {\n    assert(false)\n}\n", "-v");
             case "test-assert-values":
-                return Tests("i64 cents(i64 units) {\n    return units * 100;\n}\n\ntest \"leftover cents\" {\n    let net = cents(2) - 1;\n    assert(net == cents(2));\n}\n");
+                return Tests("i64 cents(i64 units) {\n    return units * 100\n}\n\ntest \"leftover cents\" {\n    let net = cents(2) - 1\n    assert(net == cents(2))\n}\n");
             case "test-control-chars":
                 return Tests("test \"ok\\u{1b}]0;PWNED\\u{7}\" {\n    assert(true);\n}\n\ntest \"later\\u{1b}[2J\" {\n    todo(\"soon\");\n}\n\n"
                     + "test \"y\\u{1b}]0;PWNED\\u{7}\\u{1b}[2J\" {\n    panic(\"boom\\u{1b}[2J\\u{9b}31m\");\n}\n", "-v");
@@ -140,6 +142,8 @@ public sealed partial class StyleTests
                     new(Doctor.Level.Ok, "git", "/usr/bin/git (git version 2.47.0)"),
                     new(Doctor.Level.Fail, "cache", "~/.cache/bayan isn't writable: Permission denied", "set BAYAN_CACHE to a writable directory"),
                 ]);
+            case "audit":
+                return Command("@allow(BYN2230) because \"kept for the C ABI\"\nvoid toHex() {\n}\n\nunsafe void poke() {\n}\n", "audit", main);
             default:
                 throw new ArgumentException($"unknown shape `{shape}`", nameof(shape));
         }
@@ -162,7 +166,7 @@ public sealed partial class StyleTests
     /// <summary>A diagnostic with a related span, which no binder site produces yet (handoff Q81): renderer only.</summary>
     private static string Secondary(bool ascii)
     {
-        const string text = "i64 sum(Line line) {\n    let total = 0;\n    total += line.price;\n    return total;\n}\n";
+        const string text = "i64 sum(Line line) {\n    let total = 0\n    total += line.price\n    return total\n}\n";
         var source = SourceText.FromString("src/ledger/ledger.byn", text);
         var use = text.IndexOf("total +=", StringComparison.Ordinal);
         var declared = text.IndexOf("total = 0", StringComparison.Ordinal);
@@ -172,6 +176,15 @@ public sealed partial class StyleTests
             Fix: new Fix(new TextSpan(declared - "let ".Length, "let".Length), "var"),
             Related: [new RelatedSpan(new TextSpan(declared, "total".Length), "declared with `let` here")]);
         return "# DiagnosticRenderer.RenderAll\n" + Streams("", DiagnosticRenderer.RenderAll([diagnostic], includePath: true, TerminalStyleFor(ascii)));
+    }
+
+    /// <summary>Generated C the C compiler rejected (BYN4001), which no program should produce: reporting only.</summary>
+    private static string Ice(bool ascii)
+    {
+        var rejected = new NativeBuild(null, "C compiler failed (exit 1):\nmain.byn:2:5: error: use of undeclared identifier 'l0_y'\n", Rejected: true);
+        var stderr = new StringWriter();
+        CliApp.ReportToolchain(rejected, stderr, json: false, TerminalStyleFor(ascii));
+        return "# CliApp.ReportToolchain\n" + Streams("", stderr.ToString());
     }
 
     private static string DoctorShape(bool ascii, Doctor.Check[] checks)

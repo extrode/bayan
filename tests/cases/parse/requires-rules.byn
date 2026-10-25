@@ -1,0 +1,12 @@
+type distinct Email = string requires it.length > 3
+
+struct SignupForm {
+    Email email
+    string username
+        requires it.length in 3..=32
+    string password
+        requires it.length in 8..=128
+    i32 age requires it in 13..=120
+
+    requires password != username at .password
+}

@@ -1,0 +1,3 @@
+// expect: type-first binding
+// fix-it: `let w: Grams = 0g`
+let Grams w = 0g

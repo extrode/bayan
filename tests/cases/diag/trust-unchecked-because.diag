@@ -1,0 +1,11 @@
+error BYN8001: `trustUnchecked()` bypasses a safety rule and needs `because "…"`
+
+  2 │ print(u.trustUnchecked())
+    │       ^^^^^^^^^^^^^^^^^^ bypasses a safety rule
+    │
+  help: explain the bypass in a `because` clause
+
+error BYN2202: expected `Untrusted<string>`, found `string`
+
+  3 │ print("x".trustUnchecked() because "a literal")
+    │       ^^^

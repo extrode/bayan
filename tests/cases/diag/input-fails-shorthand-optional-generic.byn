@@ -1,0 +1,3 @@
+union error E { a }
+i32!E? f() { return 1 }
+i32!Result<E> g() { return 1 }

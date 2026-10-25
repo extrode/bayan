@@ -1,0 +1,13 @@
+void main(ReadOnlySpan<string> args) {
+    let x = args.length > 0
+    if (!x) {
+        print("a")
+    }
+    unless (!x) print("b")
+    unless (x && x) print("c")
+    if (!x) {
+        print("d")
+    } else {
+        print("e")
+    }
+}

@@ -1,0 +1,8 @@
+struct Cart {
+    i64 count
+    states {
+        empty
+        full
+    }
+    static Cart.empty empty() => Cart.empty { count: 0 }
+}

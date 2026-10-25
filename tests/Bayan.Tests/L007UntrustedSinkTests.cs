@@ -13,35 +13,35 @@ public sealed class L007UntrustedSinkTests
 {
     private const string Prelude = """
         struct Holder {
-            Untrusted<string> value;
+            Untrusted<string> value
         }
 
         void main() fails IoError {
-            Untrusted<string> name = Untrusted("x");
-            List<Untrusted<string>> many = List<Untrusted<string>>();
-            Span<Untrusted<string>> span = many.asSpan();
-            Holder h = Holder { value = Untrusted("x") };
-            List<Holder> holders = List<Holder>();
-            List<string> none = List<string>();
+            let name: Untrusted<string> = Untrusted("x")
+            let many: List<Untrusted<string>> = List<Untrusted<string>>()
+            let span: ReadOnlySpan<Untrusted<string>> = many.span
+            let h: Holder = Holder { value: Untrusted("x") }
+            let holders: List<Holder> = List<Holder>()
+            let none: List<string> = List<string>()
 
         """;
 
     // Program or path, argument list ("{p}" is a plain program or path), and the one expected error code, or "" for none.
     public static TheoryData<string, string, string, string> Cases => new()
     {
-        { "untrusted program", "name", "none.asSpan()", "BYN2786" },
+        { "untrusted program", "name", "none.span", "BYN2786" },
         { "untrusted element in a list literal", "{p}", "[\"a\", name]", "BYN2786" },
         { "list of untrusted as args", "{p}", "many", "BYN2786" },
         { "span of untrusted as args", "{p}", "span", "BYN2786" },
-        { "untrusted struct field as program", "h.value", "none.asSpan()", "BYN2786" },
+        { "untrusted struct field as program", "h.value", "none.span", "BYN2786" },
         { "untrusted struct field in a list literal", "{p}", "[h.value]", "BYN2786" },
         // The deep check does not look inside structs; a struct never converts to `string`, so it is a plain mismatch.
-        { "struct holding untrusted as program", "h", "none.asSpan()", "BYN2202" },
+        { "struct holding untrusted as program", "h", "none.span", "BYN2202" },
         { "list of structs holding untrusted as args", "{p}", "holders", "BYN2202" },
-        { "trusted program", "trust(name, reason: \"checked against the allow list\")", "none.asSpan()", "" },
-        { "trusted element", "{p}", "[\"a\", trust(name, reason: \"checked against the allow list\")]", "" },
+        { "trusted program", "name.trustUnchecked() because \"checked against the allow list\"", "none.span", "" },
+        { "trusted element", "{p}", "[\"a\", name.trustUnchecked() because \"checked against the allow list\"]", "" },
         { "plain program and args", "{p}", "[\"a\", \"b\"]", "" },
-        { "plain list as args", "{p}", "none.asSpan()", "" },
+        { "plain list as args", "{p}", "none.span", "" },
     };
 
     [Theory]
@@ -56,7 +56,7 @@ public sealed class L007UntrustedSinkTests
 
     private static void Check(string name, string api, string program, string args, string expected)
     {
-        var source = $"{Prelude}    try {api}({program}, {args});\n}}\n";
+        var source = $"{Prelude}    let _ = try {api}({program}, {args})\n}}\n";
         var c = Compilation.Create([new SourceText("l007.byn", System.Text.Encoding.UTF8.GetBytes(source))], ".");
         var errors = c.Diagnostics.Items.Where(d => d.IsError).ToList();
         if (expected.Length == 0)

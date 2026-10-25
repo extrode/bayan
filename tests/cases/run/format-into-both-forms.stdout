@@ -1,0 +1,3 @@
+B(hex ff) B(255 with 2 digits)
+B(255) B(spec width 4)
+B(255)

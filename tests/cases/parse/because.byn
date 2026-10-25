@@ -1,0 +1,5 @@
+@allow(unusedValue) because "the cache is warmed for its effect"
+@cases(1) because "x"
+void warm() {
+    let n = countUnchecked(xs) because "xs is never empty here"
+}

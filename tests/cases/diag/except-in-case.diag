@@ -1,0 +1,8 @@
+error BYN1051: `except` is not allowed in a `case` pattern
+
+  3 │         case _ except .circle: return s
+    │                ^^^^^^ not allowed here
+    │
+  help: write the arm as `case not .circle`
+    │ 3 │         case not .circle: return s
+    │   │              ++

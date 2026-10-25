@@ -1,0 +1,34 @@
+error BYN3006: `s` is moved while `d` still borrows it
+
+  30 │     var t = move s
+     │             ^^^^^^ `d` is used again on line 32
+     │
+  help: finish using `d` first, or copy what it needs before moving `s`
+
+error BYN3006: `s` is moved while `d` still borrows it
+
+  38 │     keep(move s)
+     │          ^^^^^^ `d` is used again on line 39
+     │
+  help: finish using `d` first, or copy what it needs before moving `s`
+
+error BYN3006: `s` is moved while `sp` still borrows it
+
+  45 │     var t = move s
+     │             ^^^^^^ `sp` is used again on line 47
+     │
+  help: finish using `sp` first, or copy what it needs before moving `s`
+
+error BYN3006: `slot` is moved while `sp` still borrows it
+
+  57 │     switch move slot {
+     │            ^^^^^^^^^ `sp` is used again on line 62
+     │
+  help: finish using `sp` first, or copy what it needs before moving `slot`
+
+error BYN3006: `xs` is moved while `sp` still borrows it
+
+  69 │     var ys = xs.take()
+     │              ^^^^^^^^^ `sp` is used again on line 71
+     │
+  help: finish using `sp` first, or copy what it needs before moving `xs`

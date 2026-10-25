@@ -1,4 +1,4 @@
 error BYN2025: `void` is not a value type
 
-  1 │ void nothing;
-    │ ^^^^
+  1 │ var nothing: void
+    │              ^^^^

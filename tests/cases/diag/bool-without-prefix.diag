@@ -1,17 +1,17 @@
 warning BYN5102: `ajar` is a `bool` state; prefix with `is`, `has` or `can`
 
-  4 │     bool ajar => !open;
-    │          ^^^^
+  4 │     public bool ajar => !open
+    │                 ^^^^
     │
   help: rename it `isAjar`
-    │ 4 │     bool isAjar => !open;
-    │   │          +++
+    │ 4 │     public bool isAjar => !open
+    │   │                 +++
 
 warning BYN5102: `locked` is a `bool` state; prefix with `is`, `has` or `can`
 
-  6 │     bool locked() => false;
-    │          ^^^^^^
+  6 │     public bool locked() => false
+    │                 ^^^^^^
     │
   help: rename it `isLocked`
-    │ 6 │     bool isLocked() => false;
-    │   │          +++
+    │ 6 │     public bool isLocked() => false
+    │   │                 +++

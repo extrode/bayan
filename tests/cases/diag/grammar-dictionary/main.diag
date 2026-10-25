@@ -1,0 +1,16 @@
+error BYN5001: `reground` changes `this`; name it `regrind`
+  --> main.byn:13:10
+
+  13 │     void reground(ref this) {
+     │          ^^^^^^^^
+     │
+  help: name the member that changes `this` with the plain verb, and keep `-ed` for the copy or view
+
+warning BYN5014: `kyc` is not a known verb or noun
+  --> main.byn:17:9
+
+  17 │     i64 kycLevel => 0
+     │         ^^^
+     │
+  help: add it to `grammar` in package.byn: `verbs: ["kyc"]`, `nouns: ["kyc"]` or
+        `adjectives: ["kyc"]`

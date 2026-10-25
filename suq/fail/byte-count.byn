@@ -1,0 +1,3 @@
+// expect: division by `1B`
+// fix-it: `let mem = usize(pwhashMemory)`
+let mem = usize(64MiB / 1B)

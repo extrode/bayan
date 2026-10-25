@@ -1,4 +1,4 @@
 error BYN2304: a positional argument cannot follow a named one
 
-  2 │ print($"{add(a: 1, "x")}");
+  2 │ print($"{add(a: 1, "x")}")
     │                    ^^^

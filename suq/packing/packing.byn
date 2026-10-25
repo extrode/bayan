@@ -1,0 +1,223 @@
+// packing.byn — the zero-allocation hot path: picking order, box packing, labels
+module suq.warehouse
+
+import suq.model
+import suq.pricing.{ Grams }
+
+/// Index into a pack plan's per-box arrays (`boxes`, `load`).
+public type distinct BoxId = Index
+
+/// Where an item sits. Pick lists walk aisles in order, then bays.
+@derive(Json)
+public struct ShelfSlot {
+    public u8 aisle
+    public u16 bay
+
+    /// One `compare` gives `<`, `<=`, `>` and `>=`.
+    public Ordering compare(ShelfSlot other) =>
+        aisle == other.aisle ? bay.compare(other.bay) : aisle.compare(other.aisle)
+}
+
+public struct PackItem {
+    public Sku sku
+    public Grams weight
+    public ShelfSlot slot
+}
+
+public struct BoxSize {
+    public Symbol name
+    public Grams capacity
+    public Grams tare
+}
+
+/// Sūq's boxes, smallest first. `"S"` becomes a `Symbol` at compile time.
+public const boxSizes = [
+    BoxSize { name: "S", capacity: 2kg, tare: 150g },
+    BoxSize { name: "M", capacity: 5kg, tare: 300g },
+    BoxSize { name: "L", capacity: 12kg, tare: 600g },
+]
+
+public union error ItemError {
+    tooHeavy(Sku sku, Grams weight)
+}
+
+public union error PackError = ItemError, CapacityError
+
+/// Caller-owned storage, sized once, so packing never allocates.
+/// `boxes` and `load` are parallel arrays indexed by `BoxId`;
+/// `boxOf` and `order` are indexed like the input items.
+public struct PackPlan {
+    public FixedList<BoxSize, BoxId> boxes
+    public FixedList<Grams, BoxId> load       // includes the box's tare
+    public FixedList<BoxId> boxOf
+    public FixedList<Index> order
+
+    public static PackPlan allocate(for i64 items) uses alloc => PackPlan {
+        boxes: FixedList(capacity: items),
+        load: FixedList(capacity: items),
+        boxOf: FixedList(capacity: items),
+        order: FixedList(capacity: items),
+    }
+
+    public void clear(ref this) {
+        boxes.clear()
+        load.clear()
+        boxOf.clear()
+        order.clear()
+    }
+
+    /// The first open box that `weight` still fits in.
+    public BoxId? findBoxWithRoom(for Grams weight) {
+        for b in load.indices {
+            return b if load[b] + weight <= boxes[b].capacity
+        }
+        return null
+    }
+
+    public BoxId open(ref this, BoxSize size) fails CapacityError {
+        try boxes.append(size)
+        try load.append(size.tare)
+        return load.lastIndex
+    }
+
+    /// Room left in a box, for the packing screen; 0g when overfull. `-|` would be wrong here:
+    /// on a signed type it saturates at the minimum, not at zero.
+    public Grams measureRoom(at BoxId b) => max(boxes[b].capacity - load[b], 0g)
+
+    /// Combined load of boxes `first` up to, not including, `end`; tare included.
+    /// A reversed range is a programmer error, so it traps (`expects`) instead of failing.
+    public Grams sumLoad(from BoxId first, until BoxId end) expects first <= end {
+        var sum: Grams = 0g
+        for b in first..end {
+            sum += load[b]
+        }
+        return sum
+    }
+}
+
+/// The smallest box an item fits in on its own, if any.
+public BoxSize? findSmallestBox(for Grams weight) =>
+    boxSizes.first(it.capacity - it.tare >= weight)
+
+/// First-fit decreasing: heaviest items first, each into the first open box with room,
+/// opening the smallest box that fits when none has room.
+public void packInto(ref PackPlan plan, from ReadOnlySpan<PackItem> items) fails PackError {
+    plan.clear()
+    for i in items.indices {
+        try plan.order.append(i)
+        try plan.boxOf.append(BoxId(0))
+    }
+    plan.order.sort(by: items[it].weight, descending: true)
+
+    for i in plan.order {
+        let item = items[i]
+        let size = findSmallestBox(for: item.weight) ?? fail .tooHeavy(sku: item.sku, weight: item.weight)
+        let box = plan.findBoxWithRoom(for: item.weight) ?? try plan.open(size)
+        plan.load[box] += item.weight
+        plan.boxOf[i] = box
+    }
+}
+
+/// One pack item per unit of every active line. `slots` maps SKUs to shelves.
+public void listItemsInto(ref FixedList<PackItem> dst, from ReadOnlySpan<Line> lines, by Map<Sku, ShelfSlot> slots) fails CapacityError {
+    dst.clear()
+    for line in lines except inactive {
+        let slot = slots.tryGet(at: line.sku) ?? ShelfSlot { aisle: 0, bay: 0 }
+        for _ in 0..line.qty {
+            try dst.append(PackItem { sku: line.sku, weight: line.unitWeight, slot })
+        }
+    }
+}
+
+/// Orders picks so the picker walks each aisle once.
+public void sortPicksInto(ref FixedList<Index> dst, from ReadOnlySpan<PackItem> items) fails CapacityError {
+    dst.clear()
+    for i in items.indices {
+        try dst.append(i)
+    }
+    dst.sort(by: (a, b) => items[a].slot < items[b].slot)
+}
+
+// ── Labels ─────────────────────────────────────────────────────────
+
+/// FNV-1a over the text, reduced to one digit. Wrapping multiply is the algorithm, so `*%`.
+public u8 computeCheckDigit(string text) {
+    var h: u32 = 2166136261
+    for b in text.bytes {
+        h = (h ^ b) *% 16777619
+    }
+    return u8(h % 10)
+}
+
+/// Writes a shipping label. Only a shipped order has a tracking number, so only a
+/// shipped order is accepted; the compiler checks it, with no runtime test.
+/// The allocating `label(for:)` is derived.
+public void labelInto(ref StrBuf dst, for Order.shipped order) {
+    dst.append("SUQ ")
+    dst.append(order.id.value)
+    dst.append(" / ")
+    dst.append(order.tracking.value)
+    dst.append(" / ")
+    dst.append(computeCheckDigit(order.tracking.value))
+}
+
+/// Sequence printed on each label of a shift. Wraps at 65535 by design.
+public u16 advanceLabelSeq(ref u16 seq) {
+    seq = seq +% 1
+    return seq
+}
+
+// ── Tests and benchmarks ───────────────────────────────────────────
+
+const sampleItems = comptime sample(40)
+
+comptime List<PackItem> sample(i64 count) {
+    var items = List<PackItem>()
+    for i in 0..count {
+        items.append(PackItem {
+            sku: Sku($"ITM-{1000 + i}"),
+            weight: (100 + (i * 37) % 900) * 1g,
+            slot: ShelfSlot { aisle: u8(1 + i % 6), bay: u16(i % 20) },
+        })
+    }
+    return items
+}
+
+test "heaviest first, smallest box that fits" {
+    var plan = PackPlan.allocate(for: 8)
+    let items = [
+        PackItem { sku: Sku("RUG-0001"), weight: 4kg, slot: ShelfSlot { aisle: 3, bay: 1 } },
+        PackItem { sku: Sku("TEA-0001"), weight: 300g, slot: ShelfSlot { aisle: 1, bay: 4 } },
+        PackItem { sku: Sku("MUG-0001"), weight: 500g, slot: ShelfSlot { aisle: 1, bay: 2 } },
+    ]
+    try packInto(ref plan, from: items)
+    assert plan.boxes.length == 2
+    assert plan.boxes[BoxId(0)].name == "M"
+    assert plan.load[BoxId(0)] == 4800g          // 4kg + 500g + 300g tare; the 300g tea no longer fits
+    assert plan.boxes[BoxId(1)].name == "S"
+    assert plan.load[BoxId(1)] == 450g           // 300g + 150g tare
+    assert plan.sumLoad(from: BoxId(0), until: BoxId(2)) == 5250g
+    assert plan.sumLoad(from: BoxId(1), until: BoxId(1)) == 0g
+}
+
+test "an item heavier than the largest box fails" {
+    var plan = PackPlan.allocate(for: 1)
+    let items = [PackItem { sku: Sku("BED-0001"), weight: 15kg, slot: ShelfSlot { aisle: 9, bay: 1 } }]
+    assert packInto(ref plan, from: items) fails ItemError.tooHeavy
+}
+
+test "picks walk aisle by aisle" {
+    var picks = FixedList<Index>(capacity: 40)
+    try sortPicksInto(ref picks, from: sampleItems.span)
+    for n in 1..picks.length {
+        assert sampleItems[picks[n - 1]].slot <= sampleItems[picks[n]].slot
+    }
+}
+
+@budget(allocs: 0)
+bench "pack 40 items" {
+    var plan = PackPlan.allocate(for: 40)
+    measure {
+        try packInto(ref plan, from: sampleItems.span)
+    }
+}

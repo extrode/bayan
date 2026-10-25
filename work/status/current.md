@@ -1,3 +1,3 @@
 # Current
 
-- Design round 2 (`docs/plans/2026-10-21-001-design-round-2.md`) on `feat/design-round-2`. Next: spec 006, interfaces and iterators.
+- Building spec 007 lambdas and function types (`docs/specs/007-lambdas/`, `/implement 007`) on `feat/007-lambdas`.

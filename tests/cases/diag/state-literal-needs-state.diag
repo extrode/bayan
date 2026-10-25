@@ -1,0 +1,13 @@
+error BYN7005: `Order` has states; a literal must name one: `Order.draft { … }`
+
+  9 │ let order = Order { id: 1 }
+    │             ^^^^^
+    │
+  help: name the state the value starts in
+
+error BYN7005: `Order` has states; a literal must name one: `Order.draft { … }`
+
+  10 │ let blank = Order()
+     │             ^^^^^
+     │
+  help: name the state the value starts in

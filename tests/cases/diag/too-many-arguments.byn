@@ -1,2 +1,2 @@
-i64 twice(i64 x) => x * 2;
-print($"{twice(1, 2)}");
+i64 twice(i64 x) => x * 2
+print($"{twice(1, 2)}")

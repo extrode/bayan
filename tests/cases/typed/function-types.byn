@@ -1,0 +1,23 @@
+struct Order {
+    i32 total
+    requires total >= 0
+}
+
+type Pred = i32 -> bool
+
+bool keep(Pred p) {
+    let f: Pred = p
+    let g: i32 -> bool = f
+    return true
+}
+
+bool check((i32 -> bool) q) => true
+
+bool save((Order -> void fails ValidationError<Order>) store) => true
+
+bool fetch((() -> string uses net) get) => true
+
+bool pair(((i32, i32) -> i32) add) => true
+
+void main() {
+}

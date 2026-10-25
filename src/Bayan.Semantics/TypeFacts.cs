@@ -40,6 +40,9 @@ public static class TypeFacts
                 foreach (var f in tt.Fields)
                     if (Find(f.Type, seen) is { } found) return Held(t, found);
                 return null;
+            // A state type is its struct, with the same storage.
+            case StateType st:
+                return Find(st.Struct, seen);
             case StructSymbol s:
                 if (s.Decl.Modifiers.HasFlag(Modifiers.Unique)) return (t, $"`{s.DisplayName}` is declared `unique struct`");
                 if (!seen.Add(s)) return null;

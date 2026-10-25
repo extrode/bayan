@@ -1,0 +1,30 @@
+// `assert f() fails E.case` and `assert f() fails E` check a failing call without `try`.
+union error E {
+    /// Below zero.
+    bad
+    /// Above ten.
+    worse
+}
+
+i64 check(i64 n) fails E {
+    fail .bad if n < 0
+    fail .worse if n > 10
+    return n
+}
+
+test "fails with the case" {
+    assert check(-1) fails E.bad
+    assert check(11) fails E.worse
+}
+
+test "fails with the set" {
+    assert check(11) fails E
+}
+
+test "wrong case" {
+    assert check(11) fails E.bad
+}
+
+test "does not fail" {
+    assert check(3) fails E
+}

@@ -1,53 +1,53 @@
 union Expr {
-    lit(i64 v),
-    add(Owned<Expr> l, Owned<Expr> r),
-    mul(Owned<Expr> l, Owned<Expr> r),
+    lit(i64 v)
+    add(Owned<Expr> l, Owned<Expr> r)
+    mul(Owned<Expr> l, Owned<Expr> r)
 }
 
 i64 eval(Expr e) => e switch {
     .lit(let v) => v,
     .add(let l, let r) => eval(l.value) + eval(r.value),
     .mul(let l, let r) => eval(l.value) * eval(r.value),
-};
+}
 
 // n + (n - 1) + ... + 1, built recursively.
 Expr sum(i64 n) {
-    if (n == 1) {
-        return .lit(1);
+    if n == 1 {
+        return .lit(1)
     }
-    return .add(Owned(Expr.lit(n)), Owned(sum(n - 1)));
+    return .add(Owned(Expr.lit(n)), Owned(sum(n - 1)))
 }
 
 // (1 + 2) * sum(4), built fresh each call.
-Expr sample() => Expr.mul(Owned(Expr.add(Owned(Expr.lit(1)), Owned(Expr.lit(2)))), Owned(sum(4)));
+Expr sample() => Expr.mul(Owned(Expr.add(Owned(Expr.lit(1)), Owned(Expr.lit(2)))), Owned(sum(4)))
 
 i64 depth(Expr e) {
-    switch (e) {
+    switch e {
         case .lit(_):
-            return 1;
+            return 1
         case .add(let l, let r):
-            let a = depth(l.value);
-            let b = depth(r.value);
-            return 1 + (a > b ? a : b);
+            let a = depth(l.value)
+            let b = depth(r.value)
+            return 1 + (a > b ? a : b)
         case .mul(let l, let r):
-            let a = depth(l.value);
-            let b = depth(r.value);
-            return 1 + (a > b ? a : b);
+            let a = depth(l.value)
+            let b = depth(r.value)
+            return 1 + (a > b ? a : b)
     }
 }
 
 void main() {
-    using let arena = Arena();
-    context (allocator: arena) {
-        let left = Expr.add(Owned(Expr.lit(1)), Owned(Expr.lit(2)));
-        let e = sample();
-        print($"{e}");
-        print($"{eval(e)} {depth(e)}");
-        let shared = Owned(sample());
-        let copy = Owned(sample());
-        print($"{copy.value == e} {eval(copy.value)}");
-        let again = sample();
-        print($"{again == e} {again == left} {shared == copy}");
-        print($"{eval(sum(1000))}");
+    using let arena = Arena()
+    provide allocator: arena {
+        let left = Expr.add(Owned(Expr.lit(1)), Owned(Expr.lit(2)))
+        let e = sample()
+        print($"{e}")
+        print($"{eval(e)} {depth(e)}")
+        let shared = Owned(sample())
+        let copy = Owned(sample())
+        print($"{copy.value == e} {eval(copy.value)}")
+        let again = sample()
+        print($"{again == e} {again == left} {shared == copy}")
+        print($"{eval(sum(1000))}")
     }
 }

@@ -41,11 +41,12 @@ public sealed record LReturnError(Node Syntax, BoundExpr Code) : BoundStmt(Synta
 /// <summary><c>error = call(…, &amp;result)</c> for a function that can fail.</summary>
 public sealed record LFailingCall(Node Syntax, LocalSymbol Error, BoundCall Call, LocalSymbol? Result) : BoundStmt(Syntax);
 
-public enum WriteSink { Print, Panic, StrBuf }
+public enum WriteSink { Print, Panic, StrBuf, Log }
 
 /// <summary>
 /// Formats <see cref="Parts"/> into a stack buffer and sends it to the sink: printed with a
-/// newline, raised as a panic message, or appended to the <c>StrBuf</c> <see cref="Target"/>. A part with a
+/// newline, raised as a panic message, logged at the <c>LogLevel</c> <see cref="Target"/>, or appended to the
+/// <c>StrBuf</c> <see cref="Target"/>. A part with a
 /// <see cref="Guards"/> entry is written only when that condition holds.
 /// </summary>
 public sealed record LWrite(Node Syntax, WriteSink Sink, BoundExpr? Target, BoundInterpolationPart[] Parts, BoundExpr?[]? Guards = null) : BoundStmt(Syntax);
@@ -71,7 +72,7 @@ public sealed record LPushPanicHandler(Node Syntax, int Slot, LocalSymbol? Panic
 /// <summary>Unregisters the handler in slot <see cref="Slot"/> as its scope ends.</summary>
 public sealed record LPopPanicHandler(Node Syntax, int Slot) : BoundStmt(Syntax);
 
-/// <summary>Debug builds: a <c>switch (move x)</c> binding owns its storage once its arm is selected; nothing otherwise.</summary>
+/// <summary>Debug builds: a <c>switch move x</c> binding owns its storage once its arm is selected; nothing otherwise.</summary>
 public sealed record LClaim(Node Syntax, LocalSymbol Local) : BoundStmt(Syntax);
 
 // ── Expressions ──────────────────────────────────────────────────────────────────
@@ -89,6 +90,13 @@ public sealed record LUnionTag(Node Syntax, BoundExpr Union) : BoundExpr(Syntax,
 public sealed record LUnionField(Node Syntax, BoundExpr Union, UnionVariantSymbol Variant, int Index)
     : BoundExpr(Syntax, Variant.Fields[Index].Type);
 
+/// <summary>An error's code: its case's program-wide number, 0 for none.</summary>
+public sealed record LErrorCode(Node Syntax, BoundExpr Error) : BoundExpr(Syntax, PrimitiveType.U32);
+
+/// <summary>A payload field of an error already known to be <see cref="Variant"/>.</summary>
+public sealed record LErrorField(Node Syntax, BoundExpr Error, ErrorVariantSymbol Variant, int Index)
+    : BoundExpr(Syntax, Variant.Fields[Index].Type);
+
 /// <summary><c>(target = value)</c> as an expression; used for pattern bindings.</summary>
 public sealed record LAssignExpr(Node Syntax, BoundExpr Target, BoundExpr Value) : BoundExpr(Syntax, Target.Type);
 
@@ -103,6 +111,9 @@ public sealed record LNextChar(Node Syntax, BoundExpr Text, LocalSymbol Position
 
 /// <summary>The value of an expression that never completes (it jumped, failed or panicked).</summary>
 public sealed record LNever(Node Syntax, TypeSymbol Type) : BoundExpr(Syntax, Type);
+
+/// <summary>A function value: <see cref="Function"/>'s code with <see cref="Env"/> (the captures tuple) or no environment.</summary>
+public sealed record LFunctionValue(Node Syntax, FunctionSymbol Function, LocalSymbol? Env, FunctionType FunctionType) : BoundExpr(Syntax, FunctionType);
 
 /// <summary>The value of a <c>void</c> expression whose effects were already emitted.</summary>
 public sealed record LVoid(Node Syntax) : BoundExpr(Syntax, PrimitiveType.Void);

@@ -1,0 +1,21 @@
+// `T.parse(text, as:)` reads like `tryParse` but fails `ParseError`: `badDigit` with the byte position of the first
+// bad digit (the length when a digit is missing), or `overflow` when every digit is good but the value does not fit.
+string read(string text) {
+    let n = i8.parse(text) catch switch {
+        .badDigit(let at) => return $"`{text}`: bad digit at {at}",
+        .overflow => return $"`{text}`: overflow",
+    }
+    return $"`{text}`: {n}"
+}
+
+void main() fails ParseError {
+    print(read("12"))
+    print(read("-128"))
+    print(read("128"))
+    print(read("1x9"))
+    print(read("999x"))
+    print(read(""))
+    print(read("-"))
+    print($"{try u16.parse("ff", as: .hex)} {try i8.parse("ff", as: .hex)} {try i64.parse("-42")}")
+    let _ = try u8.parse("256")
+}

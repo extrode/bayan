@@ -1,44 +1,44 @@
 struct Token {
-    i64 kind;
+    i64 kind
 }
 
 struct Lexer {
-    List<Token> toks;
+    List<Token> toks
 
-    Span<Token> tokens() => toks.asSpan();
+    ReadOnlySpan<Token> tokens() => toks.span
 
     void push(ref this, Token t) {
-        toks.add(t);
+        toks.append(t)
     }
 
-    (Span<Token>, i64) spanAndCount() => (toks.asSpan(), toks.length);
+    (ReadOnlySpan<Token>, i64) spanAndCount() => (toks.span, toks.length)
 
-    Span<Token> scratch() {
-        var local = List<Token>();
-        local.add(Token { kind = 0 });
-        return local.asSpan();
+    ReadOnlySpan<Token> scratch() {
+        var local = List<Token>()
+        local.append(Token { kind: 0 })
+        return local.span
     }
 }
 
 void main() {
-    var lexer = Lexer { toks = List<Token>() };
-    let all = lexer.tokens();
-    lexer.toks.add(Token { kind = 1 });
-    lexer.push(Token { kind = 2 });
-    print($"{all.length}");
-    for (let t in lexer.toks) {
-        lexer.push(t);
+    var lexer = Lexer { toks: List<Token>() }
+    let all = lexer.tokens()
+    lexer.toks.append(Token { kind: 1 })
+    lexer.push(Token { kind: 2 })
+    print($"{all.length}")
+    for t in lexer.toks {
+        lexer.push(t)
     }
-    Span<Token> kept = lexer.tokens();
+    var kept: ReadOnlySpan<Token> = lexer.tokens()
     {
-        let inner = Lexer { toks = List<Token>() };
-        kept = inner.tokens();
+        let inner = Lexer { toks: List<Token>() }
+        kept = inner.tokens()
     }
-    print($"{kept.length}");
+    print($"{kept.length}")
 }
 
 struct Writer {
-    StrBuf text;
+    StrBuf text
 
-    string view() => text.asString();
+    string view() => text.finish()
 }

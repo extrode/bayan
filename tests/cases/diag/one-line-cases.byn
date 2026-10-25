@@ -1,0 +1,11 @@
+union Shape { circle(f64 r), square(f64 side) }
+
+enum Color {
+    red,
+    green,
+    blue,
+}
+
+union error ParseError { empty, tooLong }
+
+union Size { /* small */ s, m /* medium */, l }

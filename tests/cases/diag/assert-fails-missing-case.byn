@@ -1,0 +1,11 @@
+union error ParseError {
+    empty
+    tooLong
+}
+
+i64 f(string s) fails ParseError {
+    fail .empty if s.isEmpty
+    return 1
+}
+
+assert f("") fails ParseError.blank

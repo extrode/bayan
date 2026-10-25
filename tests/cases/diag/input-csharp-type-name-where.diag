@@ -1,0 +1,6 @@
+error BYN2804: `i32` is not an interface
+
+  1 │ i64 f<T>(T x) where T : int => 1
+    │                         ^^^ a type
+    │
+  help: list an `interface` here

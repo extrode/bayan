@@ -2,7 +2,7 @@ CompilationUnit
   Enum Planet(f64 mass, f64 radius)
     Member mercury(3.3e23, 2.4e6)
     Member earth(6e24, 6.4e6)
-  Enum public Token(string text, bool keyword, char first, Kind kind)
+  Enum public Token(string text, bool keyword, rune first, Kind kind)
     Member ifKeyword("if", true, 'i', .word) doc `The `if` keyword.`
     Member plus(text: "+", keyword: false, first: '+', kind: (. Kind symbol))
   Enum Kind

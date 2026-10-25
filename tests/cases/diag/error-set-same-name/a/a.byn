@@ -1,0 +1,2 @@
+public union error Err { bad }
+public void fa() fails Err { fail Err.bad }

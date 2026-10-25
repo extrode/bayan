@@ -1,6 +1,6 @@
 struct Point {
-    i64 x;
+    i64 x
 }
 
-Point? p = null;
-let x = p.x;
+let p: Point? = null
+let x = p.x

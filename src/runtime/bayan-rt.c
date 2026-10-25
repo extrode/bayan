@@ -57,7 +57,11 @@ static BYN_NORETURN void byn_panic_raise(const uint8_t* msg, size_t len, const c
         abort();
     }
     byn_panicking = true;
-    if (len > sizeof byn_panic_text) len = sizeof byn_panic_text;
+    if (len > sizeof byn_panic_text) {
+        // Cut at a code-point boundary: while the first byte dropped is a continuation byte, drop one more.
+        len = sizeof byn_panic_text;
+        while (len > 0 && (msg[len] & 0xC0) == 0x80) len--;
+    }
     memcpy(byn_panic_text, msg, len);
     byn_panic_now.message = (byn_str){(const uint8_t*)byn_panic_text, (int64_t)len};
     byn_panic_file = file;
@@ -250,7 +254,18 @@ void byn_stdout_flush(void) {
     fflush(stdout);
 }
 
-void byn_print(byn_str s) {
+static void byn_err(const uint8_t* p, int64_t n) {
+    byn_stdout_flush();
+    fwrite(p, 1, (size_t)n, stderr);
+}
+
+void byn_print(byn_builtin_Stream stream, byn_str s) {
+    if (stream == 1) {
+        byn_err(s.ptr, s.len);
+        byn_err((const uint8_t*)"\n", 1);
+        fflush(stderr);
+        return;
+    }
     byn_out(s.ptr, s.len);
     byn_out((const uint8_t*)"\n", 1);
 }
@@ -259,6 +274,23 @@ void byn_report_error(byn_str summary) {
     byn_stdout_flush();
     fputs("error: ", stderr);
     fwrite(summary.ptr, 1, (size_t)summary.len, stderr);
+    fputc('\n', stderr);
+    fflush(stderr);
+}
+
+void byn_log(byn_builtin_LogLevel level, byn_str text) {
+    static const char* const names[] = {"debug: ", "info: ", "warn: ", "error: "};
+    byn_stdout_flush();
+    fputs(names[level & 3], stderr);
+    for (int64_t i = 0; i < text.len; i++) {
+        uint8_t b = text.ptr[i];
+        if (b == '\n') fputs("\\n", stderr);
+        else if (b == '\\') fputs("\\\\", stderr);
+        else if (b == '\r') fputs("\\r", stderr);
+        else if (b == '\t') fputs("\\t", stderr);
+        else if (b < 0x20 || b == 0x7F) fprintf(stderr, "\\u{%X}", b);
+        else fputc(b, stderr);
+    }
     fputc('\n', stderr);
     fflush(stderr);
 }
@@ -277,6 +309,14 @@ void byn_w_bytes(byn_writer* w, const uint8_t* p, int64_t n) {
             w->len = 0;
             if (n > w->cap) {
                 byn_out(p, n);
+                return;
+            }
+            break;
+        case BYN_WRITE_STDERR:
+            byn_err(w->buf, w->len);
+            w->len = 0;
+            if (n > w->cap) {
+                byn_err(p, n);
                 return;
             }
             break;
@@ -304,8 +344,14 @@ void byn_w_bytes(byn_writer* w, const uint8_t* p, int64_t n) {
 }
 
 void byn_w_println(byn_writer* w) {
-    byn_out(w->buf, w->len);
-    byn_out((const uint8_t*)"\n", 1);
+    if (w->mode == BYN_WRITE_STDERR) {
+        byn_err(w->buf, w->len);
+        byn_err((const uint8_t*)"\n", 1);
+        fflush(stderr);
+    } else {
+        byn_out(w->buf, w->len);
+        byn_out((const uint8_t*)"\n", 1);
+    }
     w->len = 0;
 }
 
@@ -435,6 +481,19 @@ bool byn_str_contains(byn_str s, byn_str text) {
     return false;
 }
 
+int64_t byn_str_rune_count(byn_str s) {
+    int64_t n = 0;
+    for (int64_t i = 0; i < s.len; i++)
+        if ((s.ptr[i] & 0xC0) != 0x80) n++;
+    return n;
+}
+
+bool byn_str_is_ascii(byn_str s) {
+    for (int64_t i = 0; i < s.len; i++)
+        if (s.ptr[i] >= 0x80) return false;
+    return true;
+}
+
 uint32_t byn_str_next(byn_str s, int64_t* pos) {
     const uint8_t* p = s.ptr + *pos;
     uint32_t c = p[0];
@@ -456,6 +515,329 @@ byn_str byn_str_slice(byn_str s, int64_t start, int64_t end, const char* file, i
     return (byn_str){s.ptr + start, end - start};
 }
 
+static int64_t byn_find(byn_str s, byn_str x, int64_t from) {
+    for (int64_t i = from; i + x.len <= s.len; i++)
+        if (x.len == 0 || memcmp(s.ptr + i, x.ptr, (size_t)x.len) == 0) return i;
+    return -1;
+}
+
+int64_t byn_str_position(byn_str s, byn_str x, int64_t from, const char* file, int line) {
+    byn_slice_check(from, s.len, s.len, file, line);
+    return byn_find(s, x, from);
+}
+
+int64_t byn_str_last_position(byn_str s, byn_str x) {
+    for (int64_t i = s.len - x.len; i >= 0; i--)
+        if (x.len == 0 || memcmp(s.ptr + i, x.ptr, (size_t)x.len) == 0) return i;
+    return -1;
+}
+
+int64_t byn_str_count(byn_str s, byn_str x) {
+    if (x.len == 0) return 0;
+    int64_t n = 0;
+    for (int64_t i = byn_find(s, x, 0); i >= 0; i = byn_find(s, x, i + x.len)) n++;
+    return n;
+}
+
+static bool byn_is_space(uint8_t c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
+}
+
+byn_str byn_str_trimmed(byn_str s, int32_t edge) {
+    int64_t a = 0, b = s.len;
+    if (edge != 1) while (a < b && byn_is_space(s.ptr[a])) a++;
+    if (edge != 0) while (b > a && byn_is_space(s.ptr[b - 1])) b--;
+    return (byn_str){s.ptr + a, b - a};
+}
+
+static bool byn_rune_in(uint32_t c, const uint32_t* runes, int64_t n) {
+    for (int64_t i = 0; i < n; i++)
+        if (runes[i] == c) return true;
+    return false;
+}
+
+byn_str byn_str_trimmed_by(byn_str s, const uint32_t* runes, int64_t n) {
+    int64_t a = 0, b = s.len;
+    while (a < b) {
+        int64_t next = a;
+        if (!byn_rune_in(byn_str_next(s, &next), runes, n)) break;
+        a = next;
+    }
+    while (b > a) {
+        int64_t start = b - 1;
+        while (start > a && (s.ptr[start] & 0xC0) == 0x80) start--;
+        int64_t p = start;
+        if (!byn_rune_in(byn_str_next(s, &p), runes, n)) break;
+        b = start;
+    }
+    return (byn_str){s.ptr + a, b - a};
+}
+
+byn_str byn_str_case(byn_str s, bool upper, byn_alloc* to) {
+    if (s.len == 0) return s;
+    uint8_t* out = to->resize(to, NULL, 0, s.len);
+    for (int64_t i = 0; i < s.len; i++) {
+        uint8_t c = s.ptr[i];
+        out[i] = upper && c >= 'a' && c <= 'z' ? (uint8_t)(c - 32) : !upper && c >= 'A' && c <= 'Z' ? (uint8_t)(c + 32) : c;
+    }
+    return (byn_str){out, s.len};
+}
+
+bool byn_str_eq_caseless(byn_str a, byn_str b) {
+    if (a.len != b.len) return false;
+    for (int64_t i = 0; i < a.len; i++) {
+        uint8_t x = a.ptr[i], y = b.ptr[i];
+        if (x >= 'A' && x <= 'Z') x += 32;
+        if (y >= 'A' && y <= 'Z') y += 32;
+        if (x != y) return false;
+    }
+    return true;
+}
+
+byn_str byn_str_replaced(byn_str s, byn_str x, byn_str y, byn_alloc* to, const char* file, int line) {
+    if (x.len == 0) byn_panic("replaced with an empty string to find", file, line);
+    int64_t len = s.len + byn_str_count(s, x) * (y.len - x.len);
+    if (len == 0) return (byn_str){NULL, 0};
+    uint8_t* out = to->resize(to, NULL, 0, len);
+    int64_t o = 0, i = 0;
+    for (int64_t at = byn_find(s, x, 0); at >= 0; i = at + x.len, at = byn_find(s, x, i)) {
+        memcpy(out + o, s.ptr + i, (size_t)(at - i));
+        o += at - i;
+        if (y.len > 0) memcpy(out + o, y.ptr, (size_t)y.len);
+        o += y.len;
+    }
+    if (s.len > i) memcpy(out + o, s.ptr + i, (size_t)(s.len - i));
+    return (byn_str){out, len};
+}
+
+byn_str byn_str_repeated(byn_str s, int64_t n, byn_alloc* to, const char* file, int line) {
+    if (n < 0) byn_panic("repeated a negative number of times", file, line);
+    if (n == 0 || s.len == 0) return (byn_str){NULL, 0};
+    if (s.len > INT64_MAX / n) byn_panic("repeated text is too long", file, line);
+    uint8_t* out = to->resize(to, NULL, 0, s.len * n);
+    for (int64_t i = 0; i < n; i++) memcpy(out + i * s.len, s.ptr, (size_t)s.len);
+    return (byn_str){out, s.len * n};
+}
+
+byn_str byn_str_joined(const byn_str* xs, int64_t n, byn_str sep, byn_alloc* to) {
+    int64_t len = n > 0 ? (n - 1) * sep.len : 0;
+    for (int64_t i = 0; i < n; i++) len += xs[i].len;
+    if (len == 0) return (byn_str){NULL, 0};
+    uint8_t* out = to->resize(to, NULL, 0, len);
+    int64_t o = 0;
+    for (int64_t i = 0; i < n; i++) {
+        if (i > 0 && sep.len > 0) memcpy(out + o, sep.ptr, (size_t)sep.len), o += sep.len;
+        if (xs[i].len > 0) memcpy(out + o, xs[i].ptr, (size_t)xs[i].len), o += xs[i].len;
+    }
+    return (byn_str){out, len};
+}
+
+byn_str byn_str_take_runes(byn_str s, int64_t n, const char* file, int line) {
+    if (n < 0) byn_panic("take with a negative count", file, line);
+    int64_t pos = 0;
+    while (n-- > 0 && pos < s.len) byn_str_next(s, &pos);
+    return (byn_str){s.ptr, pos};
+}
+
+byn_str byn_str_skip_runes(byn_str s, int64_t n, const char* file, int line) {
+    byn_str head = byn_str_take_runes(s, n, file, line);
+    return (byn_str){s.ptr + head.len, s.len - head.len};
+}
+
+byn_str byn_str_take_last_runes(byn_str s, int64_t n, const char* file, int line) {
+    if (n < 0) byn_panic("takeLast with a negative count", file, line);
+    int64_t pos = s.len;
+    while (n-- > 0 && pos > 0) {
+        pos--;
+        while (pos > 0 && (s.ptr[pos] & 0xC0) == 0x80) pos--;
+    }
+    return (byn_str){s.ptr + pos, s.len - pos};
+}
+
+/* c as UTF-8 into b; the byte count. */
+static int byn_utf8_put(uint8_t b[4], uint32_t c) {
+    if (c < 0x80) { b[0] = (uint8_t)c; return 1; }
+    if (c < 0x800) { b[0] = (uint8_t)(0xC0 | c >> 6); b[1] = (uint8_t)(0x80 | (c & 0x3F)); return 2; }
+    if (c < 0x10000) {
+        b[0] = (uint8_t)(0xE0 | c >> 12); b[1] = (uint8_t)(0x80 | (c >> 6 & 0x3F)); b[2] = (uint8_t)(0x80 | (c & 0x3F));
+        return 3;
+    }
+    b[0] = (uint8_t)(0xF0 | c >> 18); b[1] = (uint8_t)(0x80 | (c >> 12 & 0x3F));
+    b[2] = (uint8_t)(0x80 | (c >> 6 & 0x3F)); b[3] = (uint8_t)(0x80 | (c & 0x3F));
+    return 4;
+}
+
+byn_str byn_str_padded(byn_str s, int64_t n, uint32_t c, byn_alloc* to, const char* file, int line) {
+    int64_t runes = 0;
+    for (int64_t pos = 0; pos < s.len; runes++) byn_str_next(s, &pos);
+    uint8_t b[4];
+    int w = byn_utf8_put(b, c);
+    int64_t pad = n > runes ? n - runes : 0;
+    if (pad > (INT64_MAX - s.len) / w) byn_panic("padded text is too long", file, line);
+    int64_t len = s.len + pad * w;
+    if (len == 0) return (byn_str){NULL, 0};
+    uint8_t* out = to->resize(to, NULL, 0, len);
+    if (s.len > 0) memcpy(out, s.ptr, (size_t)s.len);
+    for (int64_t i = 0; i < pad; i++) memcpy(out + s.len + i * w, b, (size_t)w);
+    return (byn_str){out, len};
+}
+
+byn_str byn_bytes_string(const uint8_t* p, int64_t n, byn_alloc* to) {
+    /* At most "255, " per byte, plus the brackets. */
+    uint8_t* out = to->resize(to, NULL, 0, n * 5 + 2);
+    int64_t o = 0;
+    out[o++] = '[';
+    for (int64_t i = 0; i < n; i++) {
+        if (i > 0) out[o++] = ',', out[o++] = ' ';
+        uint8_t v = p[i];
+        if (v >= 100) out[o++] = (uint8_t)('0' + v / 100);
+        if (v >= 10) out[o++] = (uint8_t)('0' + v / 10 % 10);
+        out[o++] = (uint8_t)('0' + v % 10);
+    }
+    out[o++] = ']';
+    return (byn_str){out, o};
+}
+
+/* Kinds as in `BuiltinMember`'s view order: 0 runes, 1 utf16, 2 lines, 3 parts. */
+bool byn_view_more(byn_text_view v, int64_t pos, int32_t kind) {
+    if (kind == 3) return pos >= 0;
+    return pos < v.s.len || (kind == 1 && v.pending != 0);
+}
+
+byn_text_view byn_parts(byn_str s, byn_str sep, int64_t limit, const char* file, int line) {
+    if (sep.len == 0) byn_panic("parts with an empty separator", file, line);
+    if (limit < 0) byn_panic("parts with a negative limit", file, line);
+    return (byn_text_view){s, sep, limit, 0};
+}
+
+byn_text_view byn_parts_rune(byn_str s, uint32_t c, int64_t limit, const char* file, int line) {
+    if (limit < 0) byn_panic("parts with a negative limit", file, line);
+    byn_text_view v = {s, {NULL, 0}, limit, 0, {0}};
+    v.sep.len = byn_utf8_put(v.rune, c);
+    return v;
+}
+
+uint16_t byn_utf16_next(byn_text_view* v, int64_t* pos) {
+    if (v->pending != 0) {
+        uint16_t low = v->pending;
+        v->pending = 0;
+        return low;
+    }
+    uint32_t c = byn_str_next(v->s, pos);
+    if (c < 0x10000) return (uint16_t)c;
+    c -= 0x10000;
+    v->pending = (uint16_t)(0xDC00 | (c & 0x3FF));
+    return (uint16_t)(0xD800 | (c >> 10));
+}
+
+byn_str byn_lines_next(byn_text_view* v, int64_t* pos) {
+    int64_t start = *pos, end = start;
+    while (end < v->s.len && v->s.ptr[end] != '\n') end++;
+    bool newline = end < v->s.len;
+    *pos = newline ? end + 1 : end;
+    if (newline && end > start && v->s.ptr[end - 1] == '\r') end--;
+    return (byn_str){v->s.ptr + start, end - start};
+}
+
+byn_str byn_parts_next(byn_text_view* v, int64_t* pos) {
+    int64_t start = *pos;
+    byn_str sep = v->sep.ptr != NULL ? v->sep : (byn_str){v->rune, v->sep.len};
+    int64_t at = v->limit == 1 ? -1 : byn_find(v->s, sep, start);
+    if (at < 0) {
+        *pos = -1;
+        return (byn_str){v->s.ptr + start, v->s.len - start};
+    }
+    if (v->limit > 1) v->limit--;
+    *pos = at + sep.len;
+    return (byn_str){v->s.ptr + start, at - start};
+}
+
+uint16_t* byn_utf16_copy(byn_str s, int64_t* len, byn_alloc* to) {
+    byn_text_view v = {s, {NULL, 0}, 0, 0};
+    int64_t n = 0;
+    for (int64_t pos = 0; byn_view_more(v, pos, 1); byn_utf16_next(&v, &pos)) n++;
+    *len = n;
+    if (n == 0) return NULL;
+    uint16_t* out = to->resize(to, NULL, 0, n * (int64_t)sizeof(uint16_t));
+    int64_t i = 0;
+    for (int64_t pos = 0; byn_view_more(v, pos, 1);) out[i++] = byn_utf16_next(&v, &pos);
+    return out;
+}
+
+/* ── Sorting ─────────────────────────────────────────────────────────────── */
+
+/* Insertion sort on short runs, then in-place merges by rotation (SymMerge): stable, O(n log² n), no scratch memory. */
+
+static void byn_sort_reverse(uint8_t* p, int64_t i, int64_t j, int64_t size) {
+    for (j--; i < j; i++, j--)
+        for (int64_t k = 0; k < size; k++) {
+            uint8_t t = p[i * size + k];
+            p[i * size + k] = p[j * size + k];
+            p[j * size + k] = t;
+        }
+}
+
+/* Moves [m, j) in front of [i, m). */
+static void byn_sort_rotate(uint8_t* p, int64_t i, int64_t m, int64_t j, int64_t size) {
+    byn_sort_reverse(p, i, m, size);
+    byn_sort_reverse(p, m, j, size);
+    byn_sort_reverse(p, i, j, size);
+}
+
+/* Merges the sorted runs [lo, m) and [m, hi). */
+static void byn_sort_merge(uint8_t* p, int64_t lo, int64_t m, int64_t hi, int64_t size, bool (*less)(const void*, const void*)) {
+    if (m - lo == 1) {
+        int64_t i = m, j = hi;
+        while (i < j) {
+            int64_t h = i + (j - i) / 2;
+            if (less(p + h * size, p + lo * size)) i = h + 1;
+            else j = h;
+        }
+        byn_sort_rotate(p, lo, lo + 1, i, size);
+        return;
+    }
+    if (hi - m == 1) {
+        int64_t i = lo, j = m;
+        while (i < j) {
+            int64_t h = i + (j - i) / 2;
+            if (!less(p + m * size, p + h * size)) i = h + 1;
+            else j = h;
+        }
+        byn_sort_rotate(p, i, m, m + 1, size);
+        return;
+    }
+    int64_t mid = lo + (hi - lo) / 2, n = mid + m, start, r;
+    if (m > mid) {
+        start = n - hi;
+        r = mid;
+    } else {
+        start = lo;
+        r = m;
+    }
+    int64_t last = n - 1;
+    while (start < r) {
+        int64_t c = start + (r - start) / 2;
+        if (!less(p + (last - c) * size, p + c * size)) start = c + 1;
+        else r = c;
+    }
+    int64_t end = n - start;
+    if (start < m && m < end) byn_sort_rotate(p, start, m, end, size);
+    if (lo < start && start < mid) byn_sort_merge(p, lo, start, mid, size, less);
+    if (mid < end && end < hi) byn_sort_merge(p, mid, end, hi, size, less);
+}
+
+void byn_sort(void* base, int64_t n, int64_t size, bool (*less)(const void* a, const void* b)) {
+    enum { run = 20 };
+    uint8_t* p = (uint8_t*)base;
+    for (int64_t lo = 0; lo < n; lo += run) {
+        int64_t hi = lo + run < n ? lo + run : n;
+        for (int64_t i = lo + 1; i < hi; i++)
+            for (int64_t j = i; j > lo && less(p + j * size, p + (j - 1) * size); j--) byn_sort_reverse(p, j - 1, j + 1, size);
+    }
+    for (int64_t w = run; w < n; w *= 2)
+        for (int64_t lo = 0; lo + w < n; lo += 2 * w) byn_sort_merge(p, lo, lo + w, lo + 2 * w < n ? lo + 2 * w : n, size, less);
+}
+
 /* ── Allocators ──────────────────────────────────────────────────────────── */
 
 static void* byn_general_resize(byn_alloc* self, void* old, int64_t old_size, int64_t new_size) {
@@ -468,6 +850,10 @@ static void* byn_general_resize(byn_alloc* self, void* old, int64_t old_size, in
 
 byn_alloc byn_general = {byn_general_resize};
 byn_alloc* byn_context = &byn_general;
+
+void byn_release(byn_alloc* from, void* p) {
+    if (from == &byn_general) free(p);
+}
 
 typedef struct byn_chunk {
     struct byn_chunk* next;
@@ -544,14 +930,81 @@ byn_str byn_str_copy(byn_str s, byn_alloc* to) {
     return (byn_str){(const uint8_t*)byn_copy_bytes(s.ptr, s.len, to), s.len};
 }
 
-byn_str byn_to_hex(uint64_t v, byn_alloc* to) {
-    uint8_t buf[16];
-    int n = 16;
+byn_str byn_int_string(int64_t v, int32_t bits, bool is_signed, byn_builtin_Radix radix, byn_alloc* to) {
+    static const uint8_t bases[] = {2, 8, 10, 16};
+    uint64_t base = bases[radix];
+    bool negative = radix == 2 && is_signed && v < 0;
+    uint64_t u = negative ? 0 - (uint64_t)v : (uint64_t)v;
+    if (bits < 64) u &= (UINT64_C(1) << bits) - 1;
+    uint8_t buf[65];
+    int n = 65;
     do {
-        buf[--n] = (uint8_t)"0123456789abcdef"[v & 0xf];
-        v >>= 4;
-    } while (v != 0);
-    return byn_str_copy((byn_str){buf + n, 16 - n}, to);
+        buf[--n] = (uint8_t)"0123456789abcdef"[u % base];
+        u /= base;
+    } while (u != 0);
+    if (negative) buf[--n] = '-';
+    return byn_str_copy((byn_str){buf + n, 65 - n}, to);
+}
+
+int64_t byn_int_parse_at(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out) {
+    static const uint8_t bases[] = {2, 8, 10, 16};
+    uint64_t base = bases[radix];
+    bool decimal = radix == 2;
+    int64_t i = 0;
+    bool negative = decimal && is_signed && s.len > 0 && s.ptr[0] == '-';
+    if (negative) i = 1;
+    if (i >= s.len) return i;
+    /* Decimal: the magnitude's limit; the others: every bit of the type. */
+    uint64_t max = bits < 64 ? (UINT64_C(1) << bits) - 1 : UINT64_MAX;
+    if (decimal && is_signed) max = negative ? (UINT64_C(1) << (bits - 1)) : (UINT64_C(1) << (bits - 1)) - 1;
+    uint64_t u = 0;
+    bool overflow = false;
+    for (; i < s.len; i++) {
+        uint8_t c = s.ptr[i];
+        uint64_t d = c >= '0' && c <= '9' ? (uint64_t)(c - '0') : c >= 'a' && c <= 'f' ? (uint64_t)(c - 'a' + 10)
+            : c >= 'A' && c <= 'F' ? (uint64_t)(c - 'A' + 10) : 99;
+        if (d >= base) return i;
+        /* A bad digit after the overflow is still reported first. */
+        if (overflow || u > (max - d) / base) overflow = true;
+        else u = u * base + d;
+    }
+    if (overflow) return -2;
+    if (negative) *out = (int64_t)(0 - u);
+    else if (is_signed && bits < 64 && (u >> (bits - 1)) != 0) *out = (int64_t)(u | ~((UINT64_C(1) << bits) - 1));
+    else *out = (int64_t)u;
+    return -1;
+}
+
+bool byn_int_parse(byn_str s, int32_t bits, bool is_signed, byn_builtin_Radix radix, int64_t* out) {
+    return byn_int_parse_at(s, bits, is_signed, radix, out) == -1;
+}
+
+int64_t byn_hex_decode(byn_str s, uint8_t** out, byn_alloc* to) {
+    for (int64_t i = 0; i < s.len; i++) {
+        uint8_t c = s.ptr[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return i;
+    }
+    /* An odd count lacks the last byte's second digit, which would be at the end. */
+    if (s.len % 2 != 0) return s.len;
+    uint8_t* p = s.len == 0 ? NULL : to->resize(to, NULL, 0, s.len / 2);
+    for (int64_t i = 0; i < s.len / 2; i++) {
+        uint8_t h = s.ptr[2 * i], l = s.ptr[2 * i + 1];
+        int hi = h <= '9' ? h - '0' : (h | 0x20) - 'a' + 10;
+        int lo = l <= '9' ? l - '0' : (l | 0x20) - 'a' + 10;
+        p[i] = (uint8_t)(hi << 4 | lo);
+    }
+    *out = p;
+    return -1;
+}
+
+byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to) {
+    if (n == 0) return (byn_str){NULL, 0};
+    uint8_t* out = to->resize(to, NULL, 0, n * 2);
+    for (int64_t i = 0; i < n; i++) {
+        out[2 * i] = (uint8_t)"0123456789abcdef"[p[i] >> 4];
+        out[2 * i + 1] = (uint8_t)"0123456789abcdef"[p[i] & 0xf];
+    }
+    return (byn_str){out, n * 2};
 }
 
 void byn_list_reserve(void** ptr, int64_t* cap, int64_t need, int64_t elem_size, byn_alloc* alloc) {
@@ -739,6 +1192,28 @@ int64_t byn_utf8_invalid_at(const uint8_t* p, int64_t n) {
         i += len;
     }
     return -1;
+}
+
+byn_str byn_utf8_decode_replace(const uint8_t* p, int64_t n, byn_alloc* to) {
+    /* At most three bytes per input byte: a lone invalid byte becomes U+FFFD. */
+    uint8_t* out = n == 0 ? NULL : to->resize(to, NULL, 0, n * 3);
+    int64_t len = 0;
+    int64_t i = 0;
+    while (i < n) {
+        int64_t bad = byn_utf8_invalid_at(p + i, n - i);
+        int64_t valid = bad < 0 ? n - i : bad;
+        memcpy(out + len, p + i, (size_t)valid);
+        len += valid;
+        i += valid;
+        if (bad < 0) break;
+        out[len++] = 0xEF, out[len++] = 0xBF, out[len++] = 0xBD;
+        /* One U+FFFD per invalid sequence: a lead byte takes the continuation bytes it expects. */
+        uint8_t c = p[i++];
+        int expect = (c & 0xE0) == 0xC0 ? 1 : (c & 0xF0) == 0xE0 ? 2 : (c & 0xF8) == 0xF0 ? 3 : 0;
+        while (expect-- > 0 && i < n && (p[i] & 0xC0) == 0x80) i++;
+    }
+    if (out) out = to->resize(to, out, n * 3, len);
+    return (byn_str){out, len};
 }
 
 bool byn_utf8_valid(const uint8_t* p, int64_t n) {

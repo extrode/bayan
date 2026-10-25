@@ -1,0 +1,7 @@
+error BYN2228: `boom` is not a variant of `ValidationError<Signup> | ValidationError<Address>`
+
+  19 │     register("ab", at: "") catch (Other.boom) print("x")
+     │                                   ^^^^^^^^^^
+     │
+  help: use a variant of `ValidationError<Signup>`, `ValidationError<Address>`, the sets `register`
+        fails with

@@ -1,6 +1,3 @@
-Untrusted<string> u = Untrusted("x");
-string reason = "because";
-print(trust(u, reason: ""));
-print(trust(u, reason: reason));
-print(trust(u, reason: $"{reason}"));
-print(trust(u));
+let u: Untrusted<string> = Untrusted("x")
+print(trust(u))
+print(trust(u, "checked"))

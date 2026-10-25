@@ -1,0 +1,19 @@
+type Pred = i32 -> bool
+
+bool any(Span<i32> xs, by Pred p) {
+    for x in xs {
+        if p(x) {
+            return true
+        }
+    }
+    return false
+}
+
+bool isBig(i32 x) => x > 2
+
+void main() {
+    let xs: Span<i32> = [1, 2, 3]
+    let ys: Span<i32> = [0, 1]
+    print($"{any(xs, by: it > 2)} {any(xs, by: x => x > 2)} {any(xs, by: isBig)}")
+    print($"{any(ys, by: it > 2)} {any(ys, by: x => x > 2)} {any(ys, by: isBig)}")
+}

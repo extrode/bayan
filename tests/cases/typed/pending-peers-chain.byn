@@ -1,8 +1,8 @@
-let xs = List<i32>();
-var a = 0;
-var b = 0;
-a = b;
-while (b < xs.length) {
-    b += 1;
+let xs = List<i32>()
+var a = 0
+var b = 0
+a = b
+while b < xs.length {
+    b += 1
 }
-print($"{a}");
+print($"{a}")

@@ -1,7 +1,7 @@
 // `map[k] ??= v` reads `map[k]` first: a missing key panics.
-var m = Map<string, i64?>();
-m["x"] = null;
-m["x"] ??= 2;
-print($"{m}");
-m["y"] ??= 1;
-print("unreachable");
+var m = Map<string, i64?>()
+m["x"] = null
+m["x"] ??= 2
+print($"{m}")
+m["y"] ??= 1
+print("unreachable")

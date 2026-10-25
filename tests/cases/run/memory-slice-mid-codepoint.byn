@@ -1,2 +1,2 @@
-let text = "héllo";
-print(text[0..2]);
+let text = "héllo"
+print(text[0..2])

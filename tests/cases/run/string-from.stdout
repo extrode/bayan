@@ -2,5 +2,5 @@ hi
 empty: 0 bytes, true
 é€😀 9 bytes
 hi
-tryFrom: hi
+tryDecode: hi
 invalidUtf8At: true

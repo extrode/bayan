@@ -1,0 +1,3 @@
+interface Shape {
+    i64 area()
+}

@@ -1,0 +1,8 @@
+error BYN3204: `7` is not a `Id`
+
+  4 │     let i: Id = 7
+    │                 ^
+    │
+  help: wrap it: `Id(7)`
+    │ 4 │     let i: Id = Id(7)
+    │   │                 +++++

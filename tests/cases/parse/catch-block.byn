@@ -1,6 +1,6 @@
-let n = parse(s) catch { return -1; };
-let m = parse(s) catch (e) {
-    log(e);
-    break;
-};
-save(x) catch { log("x"); };
+let n = parse(s) catch { return -1 }
+let m = parse(s) catch {
+    log("failed")
+    break
+}
+save(x) catch { log("x") }

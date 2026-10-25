@@ -1,0 +1,44 @@
+error BYN1022: `unless` with `&&`/`||` reads as a double negative
+
+  4 │     unless ((a && a)) {
+    │     ^^^^^^^^^^^^^^^^^ a compound condition
+    │
+  help: use `if` with the negated condition
+    │ 4 │     if !(a && a) {
+    │   │     +++++++++++
+
+error BYN1007: `unless` with a negated condition is a double negative
+
+  7 │     unless ((!a)) {
+    │     ^^^^^^^^^^^^^ `unless` already negates
+    │
+  help: use `if` with the condition as written
+    │ 7 │     if a {
+    │   │     ++++
+
+error BYN1007: `unless` with a negated condition is a double negative
+
+  10 │     return unless (!a)
+     │            ^^^^^^^^^^^ `unless` already negates
+     │
+  help: use `if` with the condition as written
+     │ 10 │     return if a
+     │    │            ++++
+
+error BYN1022: `unless` with `&&`/`||` reads as a double negative
+
+  11 │     return unless ((a || a))
+     │            ^^^^^^^^^^^^^^^^^ a compound condition
+     │
+  help: use `if` with the negated condition
+     │ 11 │     return if !(a || a)
+     │    │            +++++++++++
+
+error BYN1023: `unless x is null` is not allowed; write `if x is not null`
+
+  12 │     return unless (p is null)
+     │            ^^^^^^^^^^^^^^^^^^ a negated null test
+     │
+  help: use `if` with `is not null`
+     │ 12 │     return if p is not null
+     │    │            ++++++++++++++++

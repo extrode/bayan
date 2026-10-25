@@ -1,17 +1,17 @@
 warning BYN2311: `r` is never reassigned; declare it with `let`
 
-  15 │     if (s is .circle(var r)) print($"{r}");
-     │                          ^
+  15 │     if s is .circle(var r) { print($"{r}") }
+     │                         ^
      │
   help: declare it with `let` to tell the reader the value never changes
-     │ 15 │     if (s is .circle(let r)) print($"{r}");
-     │    │                      +++
+     │ 15 │     if s is .circle(let r) { print($"{r}") }
+     │    │                     +++
 
 warning BYN2311: `total` is never reassigned; declare it with `let`
 
-  23 │     var total = 3;
+  23 │     var total = 3
      │         ^^^^^
      │
   help: declare it with `let` to tell the reader the value never changes
-     │ 23 │     let total = 3;
+     │ 23 │     let total = 3
      │    │     +++

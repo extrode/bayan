@@ -1,0 +1,17 @@
+error BYN6001: `nosuspend` is removed; a function without `uses` is already pure
+
+  1 │ void a(i32 n) nosuspend {
+    │               ^^^^^^^^^ removed
+    │
+  help: remove `nosuspend`
+    │ 1 │ void a(i32 n) nosuspend {
+    │   │              ----------
+
+error BYN6001: `suspends` is removed; a function without `uses` is already pure
+
+  4 │ void b(i32 n) uses io suspends {
+    │                       ^^^^^^^^ removed
+    │
+  help: remove `suspends`
+    │ 4 │ void b(i32 n) uses io suspends {
+    │   │                      ---------

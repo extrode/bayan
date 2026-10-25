@@ -1,0 +1,14 @@
+struct Digits : IIndexable {
+    type Item = i64
+
+    i64 count => 3
+
+    i64 get(i64 index) => index * 10
+}
+
+void show<T>(T items) where T : IIndexable {
+    let none: T.Item? = null
+    print($"{none is null}")
+}
+
+show(Digits {})

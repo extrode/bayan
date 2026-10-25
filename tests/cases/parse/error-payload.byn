@@ -1,0 +1,6 @@
+union error CarrierError {
+    /// No answer in time.
+    timeout(Millis after)
+    rejected(string reason, i64 code)
+    closed
+}

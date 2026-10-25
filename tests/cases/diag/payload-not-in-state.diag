@@ -1,0 +1,34 @@
+error BYN7002: `payment` is a payload of `.paid`; `this` is not known to be `.paid`
+
+  10 │     i64 early(this is .draft or .paid) => payment
+     │                                           ^^^^^^^
+     │
+  help: match `.paid` with `is` or `switch` before reading `payment`
+
+error BYN7002: `payment` is a payload of `.paid`; `order` is not known to be `.paid`
+
+  13 │ i64 total(Order order) => order.payment
+     │                           ^^^^^^^^^^^^^
+     │
+  help: match `.paid` with `is` or `switch` before reading `payment`
+
+error BYN7002: `tracking` is a payload of `.shipped`; `order` is not known to be `.shipped`
+
+  19 │     return order.tracking
+     │            ^^^^^^^^^^^^^^
+     │
+  help: match `.shipped` with `is` or `switch` before reading `tracking`
+
+error BYN7012: `order` would change state here; a state changes only through `become`
+
+  25 │     order = Order.draft { id: order.id }
+     │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     │
+  help: assign a value in the same state, or move the transition into a `becomes` method
+
+error BYN7002: `price` is a payload of `.sold`; `t` is not known to be `.sold`
+
+  54 │         print($"{price} {t.price}")
+     │                          ^^^^^^^
+     │
+  help: match `.sold` with `is` or `switch` before reading `price`

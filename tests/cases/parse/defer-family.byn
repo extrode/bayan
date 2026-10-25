@@ -1,10 +1,10 @@
 void f() {
-    defer close();
-    defer failing rollback();
-    defer failing (e) { log(e); }
-    defer panicking flush();
-    defer panicking (p) { log(p.message); }
-    errdefer (e) log(e);
-    defer failing();
-    defer panicking.flush();
+    defer close()
+    defer failing rollback()
+    defer failing (e) { log(e) }
+    defer panicking flush()
+    defer panicking (p) { log(p.message) }
+    defer failing (e) log(e)
+    defer failing()
+    defer panicking.flush()
 }

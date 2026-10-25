@@ -1,0 +1,21 @@
+import a
+import b
+
+union error Other { boom }
+
+void hb(i32 x) fails ValidationError<b.Point>, Other {
+    let q: b.Point = try b.make(x)
+    if x > 5 { fail .boom }
+    print($"ok {q.x}")
+}
+
+void ga(i32 x) fails ValidationError<a.Point>, Other {
+    try hb(x)
+}
+
+void main() {
+    ga(1) catch switch {
+        ValidationError<a.Point> e => print("a rejected"),
+        Other e => print("other"),
+    }
+}

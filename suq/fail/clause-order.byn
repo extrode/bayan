@@ -1,0 +1,4 @@
+// expect: signature clauses out of order
+// fix-it: `void send(Order order) fails MailError uses net`
+void send(Order order) uses net fails MailError {
+}

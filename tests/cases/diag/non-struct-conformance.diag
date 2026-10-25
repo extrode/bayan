@@ -1,0 +1,13 @@
+error BYN2815: `Shape` is a union; only structs can conform yet
+
+  5 │ union Shape : IShape {
+    │               ^^^^^^ listed here
+    │
+  help: wrap it in a struct that conforms
+
+error BYN2815: `Color` is an enum; only structs can conform yet
+
+  10 │ enum Color : IShape {
+     │              ^^^^^^ listed here
+     │
+  help: wrap it in a struct that conforms

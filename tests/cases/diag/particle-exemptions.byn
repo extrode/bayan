@@ -1,0 +1,15 @@
+// Exempt from BYN5004-5006: the receiver, `bool` parameters and parameters with a default.
+
+struct Counter {
+    i64 n
+
+    void add(ref this, i64 amount, until i64 limit) {
+        n = n + amount < limit ? n + amount : limit
+    }
+}
+
+i64 scaled(i64 n, bool doubled, i64 factor = 3) => doubled ? n * factor * 2 : n * factor
+
+var c = Counter { n: 0 }
+c.add(5, until: 4)
+print($"{c.n} {scaled(2, doubled: true)} {scaled(2, doubled: false, factor: 1)}")

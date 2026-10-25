@@ -1,6 +1,6 @@
 error BYN1016: `public` is not allowed here
 
-  1 │ public import money;
+  1 │ public import money
     │ ^^^^^^
 
 error BYN1016: `readonly` is not allowed here

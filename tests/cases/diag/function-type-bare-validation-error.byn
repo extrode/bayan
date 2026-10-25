@@ -1,0 +1,8 @@
+struct Form {
+    string name
+}
+
+bool load((() -> Form fails ValidationError) p) => true
+
+void main() {
+}

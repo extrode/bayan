@@ -1,0 +1,12 @@
+interface IMap {
+    T get<T>()
+}
+
+interface ICursor {
+    type Item
+    Item peek()
+}
+
+void lookup(dyn ref IMap m) { }
+
+void walk(dyn ref readonly ICursor c) { }

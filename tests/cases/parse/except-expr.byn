@@ -1,0 +1,2 @@
+let rest = code except .a
+let kind = tok is .word except "if"

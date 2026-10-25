@@ -1,0 +1,13 @@
+error BYN2812: `where` names `U`, which is not a type parameter
+
+  5 │ void touch<T>(ref T a) where U : IShape { }
+    │                              ^ not a type parameter of `touch`
+    │
+  help: name one of `T`
+
+error BYN2812: `where` names `T`, which is not a type parameter
+
+  7 │ struct Canvas where T : IShape {
+    │                     ^ not a type parameter of `Canvas`
+    │
+  help: remove the `where` clause; `Canvas` has no type parameters

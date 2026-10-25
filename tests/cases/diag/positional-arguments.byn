@@ -1,0 +1,5 @@
+@positional(strict)
+struct Point {
+    i64 x
+    i64 y
+}

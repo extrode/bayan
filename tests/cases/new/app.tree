@@ -61,12 +61,12 @@ Package {
 === tally/src/app/main.byn
 /// The line this app prints.
 string greeting() {
-    return "Hello, world!";
+    return "Hello, world!"
 }
 
-print(greeting());
+print(greeting())
 === tally/testdata/.gitkeep
 === tally/tests/app.test.byn
 test "greets the world" {
-    assert(greeting() == "Hello, world!");
+    assert(greeting() == "Hello, world!")
 }

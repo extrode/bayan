@@ -1,0 +1,3 @@
+void tag(for string label, as string alias) {
+    print(label)
+}

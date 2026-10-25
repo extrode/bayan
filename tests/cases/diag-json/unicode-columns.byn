@@ -1,2 +1,2 @@
-let café = "naïve";
-i32 n = café;
+let café = "naïve"
+let n: i32 = café

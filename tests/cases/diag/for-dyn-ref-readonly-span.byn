@@ -1,0 +1,22 @@
+// A writable `for dyn ref` over a `ReadOnlySpan` would write elements the span may not change (BYN2106).
+interface IThing {
+    i64 get()
+    void bump(ref this)
+}
+
+struct S : IThing {
+    i64 n
+
+    i64 get() => n
+    void bump(ref this) { n += 1 }
+}
+
+void main() {
+    var xs = List<S>()
+    xs.append(S { n: 1 })
+    let r: ReadOnlySpan<S> = xs.span
+    for x: dyn ref IThing in r {
+        x.bump()
+    }
+    print($"{xs[0].n}")
+}

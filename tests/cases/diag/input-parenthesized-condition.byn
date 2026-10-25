@@ -1,0 +1,16 @@
+void main() {
+    var x = 3
+    if (x > 2) {
+        print("big")
+    }
+    while (x > 5) {
+        x -= 1
+    }
+    switch (x) {
+        case 3: print("three")
+        default: print("other")
+    }
+    do {
+        x += 1
+    } while (x < 4)
+}

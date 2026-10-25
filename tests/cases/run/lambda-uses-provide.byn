@@ -1,0 +1,17 @@
+i64 build(i64 n, by (i64 -> i64 uses alloc) f) uses alloc => f(n)
+
+void main() {
+    using var arena = Arena()
+    let extra = 1
+    let fill: i64 -> i64 uses alloc = n => {
+        var xs = List<i64>()
+        for i in 0..n {
+            xs.append(i + extra)
+        }
+        return xs.length + xs[0]
+    }
+    provide alloc: arena {
+        print($"{fill(3)}")
+        print($"{build(4, by: fill)}")
+    }
+}

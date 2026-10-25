@@ -1,0 +1,18 @@
+// The loan starts where the stored borrow was lent: an earlier borrow of the same owner that is not stored does not conflict with `w.grow()`.
+struct W {
+    List<i64> items
+
+    i64 grow(ref this) {
+        items.append(1)
+        return 0
+    }
+}
+
+ReadOnlySpan<i64> second(i64 a, at i64 b, from ReadOnlySpan<i64> s) => s
+
+void main() {
+    var w = W { items: List<i64>() }
+    w.items.append(3)
+    let s = second(w.items.span.length, at: w.grow(), from: w.items.span)
+    print($"{s[0]}")
+}

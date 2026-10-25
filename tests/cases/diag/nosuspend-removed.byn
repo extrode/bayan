@@ -1,0 +1,6 @@
+void a(i32 n) nosuspend {
+    return
+}
+void b(i32 n) uses io suspends {
+    return
+}

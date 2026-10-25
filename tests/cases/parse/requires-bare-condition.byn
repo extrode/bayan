@@ -1,0 +1,2 @@
+void f(i32 n) expects n > Limit {}
+void g() {}

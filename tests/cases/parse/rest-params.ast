@@ -1,0 +1,7 @@
+CompilationUnit
+  Function log(rest ReadOnlySpan<Display> items, to Stream stream = .stdout, string sep = " ") -> void
+    Block
+      Expr (call print items)
+  Function sum(rest ReadOnlySpan<i64> xs) -> i64
+    Block
+      Return 0

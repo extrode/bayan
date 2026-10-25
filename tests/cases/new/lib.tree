@@ -18,7 +18,7 @@ trim_trailing_whitespace = true
 === tally/README.md
 # tally
 
-A Bayan library. Its code is in `src/tally/`; other packages use it with `import tally;`.
+A Bayan library. Its code is in `src/tally/`; other packages use it with `import tally`.
 
 ## Test
 
@@ -42,10 +42,10 @@ Package {
 === tally/src/tally/tally.byn
 /// Returns twice `x`.
 public i64 twice(i64 x) {
-    return x * 2;
+    return x * 2
 }
 === tally/testdata/.gitkeep
 === tally/tests/tally.test.byn
 test "twice doubles" {
-    assert(twice(21) == 42);
+    assert(twice(21) == 42)
 }

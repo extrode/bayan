@@ -1,6 +1,6 @@
 error BYN2606: `defer failing` in a function that cannot fail
 
-  2 │     defer failing print("x");
+  2 │     defer failing print("x")
     │     ^^^^^^^^^^^^^
     │
   help: remove `failing` to run it on every exit, or add a `fails` clause to the function

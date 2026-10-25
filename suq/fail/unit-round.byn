@@ -1,0 +1,3 @@
+// expect: removed unit rounding form
+// fix-it: `weight.rounded<Kilograms>()`
+let kg = weight.roundUp()

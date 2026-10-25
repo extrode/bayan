@@ -1,7 +1,7 @@
 error BYN2611: this `catch` block can complete normally; end it with `return`, `break`, `continue`
 or a panic
 
-  19 │ let n = parse("") catch { log("x"); };
-     │                                     ^
+  19 │ let n = parse("") catch { log("x") }
+     │                                    ^
      │
   help: leave the block instead of falling through; `parse` returns a value

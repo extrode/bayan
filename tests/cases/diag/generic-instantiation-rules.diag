@@ -1,23 +1,23 @@
 error BYN2760: `f64` cannot be a `Map` key
 
-  14 │ print($"{countOf(1.5)}");
+  14 │ print($"{countOf(1.5)}")
      │          ^^^^^^^^^^^^ the generic code needs this of its type arguments
      │
-  help: use an integer type, `char`, `bool`, `string` or a plain enum as the key
+  help: use an integer type, `rune`, `bool`, `string` or a plain enum as the key
 
 error BYN2208: `==` cannot be applied to `List<i64>` and `List<i64>`
 
-  17 │ print($"{same(a: xs, b: xs)}");
-     │          ^^^^^^^^^^^^^^^^^^ the generic code needs this of its type arguments
+  17 │ print($"{same(xs, as: xs)}")
+     │          ^^^^^^^^^^^^^^^^ the generic code needs this of its type arguments
 
 error BYN2225: `Arena` cannot be formatted
 
-  18 │ print(show(Arena()));
+  18 │ print(show(Arena()))
      │       ^^^^^^^^^^^^^ the generic code needs this of its type arguments
 
 error BYN2760: `f64` cannot be a `Map` key
 
-  19 │ Index<f64> idx;
-     │ ^^^^^^^^^^ the generic code needs this of its type arguments
+  19 │ var idx: Index<f64>
+     │          ^^^^^^^^^^ the generic code needs this of its type arguments
      │
-  help: use an integer type, `char`, `bool`, `string` or a plain enum as the key
+  help: use an integer type, `rune`, `bool`, `string` or a plain enum as the key

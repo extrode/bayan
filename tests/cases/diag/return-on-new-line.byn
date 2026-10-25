@@ -1,0 +1,13 @@
+i64 next(i64 x) {
+    return
+        x + 1
+}
+
+void scan(List<i64> xs) {
+    outer: for x in xs {
+        for y in xs {
+            break
+                outer
+        }
+    }
+}

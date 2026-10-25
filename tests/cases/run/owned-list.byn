@@ -1,52 +1,56 @@
 struct Node {
-    i64 item;
-    Owned<Node>? next;
+    i64 item
+    Owned<Node>? next
+
+    void formatInto(ref StrBuf sb) {
+        sb.append($"Node {{ item: {item}, next: {next} }}")
+    }
 
     i64 total() {
-        if (next is { } n) return item + n.total();
-        return item;
+        if (next is { } n) { return item + n.total() }
+        return item
     }
 }
 
 struct Tree {
-    string name;
-    List<Tree> children;
+    string name
+    List<Tree> children
 }
 
-Owned<Node>? push(move Owned<Node>? head, i64 item) => Owned(Node { item = item, next = move head });
+Owned<Node>? push(i64 item, to move Owned<Node>? head) => Owned(Node { item: item, next: move head })
 
 string show(Owned<Node>? head) {
-    if (head is { } n) return $"{n.item} {show(n.next)}";
-    return "";
+    if (head is { } n) { return $"{n.item} {show(n.next)}" }
+    return ""
 }
 
 i64 count(Tree t) {
-    i64 n = 1;
-    for (let c in t.children) {
-        n += count(c);
+    var n: i64 = 1
+    for c in t.children {
+        n += count(c)
     }
-    return n;
+    return n
 }
 
 void main() {
-    using let arena = Arena();
-    context (allocator: arena) {
-        Owned<Node>? head = null;
-        for (let i in 1..6) {
-            head = push(move head, i);
+    using let arena = Arena()
+    provide allocator: arena {
+        var head: Owned<Node>? = null
+        for i in 1..6 {
+            head = push(i, to: move head)
         }
-        print(show(head));
-        if (head is not { } h) return;
-        print($"{h.total()} {h.item} {h.value.item}");
-        let two = Owned(Node { item = 2, next = Owned(Node { item = 1, next = null }) });
-        print($"{two}");
-        print($"{two == Owned(Node { item = 2, next = Owned(Node { item = 1, next = null }) })} {two == h}");
+        print(show(head))
+        if (head is not { } h) { return }
+        print($"{h.total()} {h.item} {h.value.item}")
+        let two = Owned(Node { item: 2, next: Owned(Node { item: 1, next: null }) })
+        print($"{two}")
+        print($"{two == Owned(Node { item: 2, next: Owned(Node { item: 1, next: null }) })} {two == h}")
 
-        var root = Tree { name = "root", children = List<Tree>() };
-        var leaf = Tree { name = "leaf", children = List<Tree>() };
-        leaf.children.add(Tree { name = "deep", children = List<Tree>() });
-        root.children.add(move leaf);
-        root.children.add(Tree { name = "other", children = List<Tree>() });
-        print($"{count(root)}");
+        var root = Tree { name: "root", children: List<Tree>() }
+        var leaf = Tree { name: "leaf", children: List<Tree>() }
+        leaf.children.append(Tree { name: "deep", children: List<Tree>() })
+        root.children.append(move leaf)
+        root.children.append(Tree { name: "other", children: List<Tree>() })
+        print($"{count(root)}")
     }
 }

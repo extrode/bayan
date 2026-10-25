@@ -1,0 +1,165 @@
+union error PayError {
+    declined
+}
+
+struct Order {
+    i64 id
+    states {
+        draft
+        paid(i64 payment)
+        shipped(i64 payment, i64 tracking)
+    }
+    i64 paidIf() {
+        if this is .paid {
+            return payment
+        }
+        return 0
+    }
+    i64 paidCase() {
+        switch this {
+            case .paid:
+                return this.payment
+            default:
+                return 0
+        }
+    }
+    i64 trackingNumber() => this switch {
+        .shipped => tracking,
+        _ => 0,
+    }
+    i64 unchecked() => payment
+    i64 afterIf() {
+        if this is .paid {
+            print($"{payment}")
+        }
+        return payment
+    }
+    i64 settled(this is .paid or .shipped) {
+        switch this {
+            case .paid:
+                return payment
+            case .shipped:
+                return tracking
+        }
+    }
+    void pay(ref this is .draft, i64 amount) becomes .paid {
+        become .paid(amount)
+    }
+    void bump(ref this) becomes .paid {
+        if this is .paid {
+            become .paid(payment + 1)
+            print($"{payment}")
+            return
+        }
+        become .paid(0)
+    }
+    void reset(ref this) becomes .draft {
+        become .draft
+    }
+    void again(ref this) {
+        if this is .paid {
+            reset()
+            print($"{payment}")
+        }
+    }
+    i64 onlyPaid(this is .paid) => payment
+    void cancelIf(ref this is .paid, bool c) becomes .draft {
+        if c {
+            become .draft
+        }
+        print($"{payment}")
+        print($"{onlyPaid()}")
+        become .draft
+    }
+    void resetIf(ref this is .paid, bool c) becomes .draft {
+        if c {
+            reset()
+        }
+        print($"{payment}")
+        print($"{onlyPaid()}")
+        become .draft
+    }
+    void drain(ref this is .paid, i64 times) becomes .draft {
+        var i = 0
+        while i < times {
+            print($"{payment}")
+            become .draft
+            i += 1
+        }
+        become .draft
+    }
+    i64 total(move this is .paid) becomes .draft {
+        become .draft
+        return payment
+    }
+    i64 sumPaid(ref this is .paid, i64 times) becomes .draft {
+        var i = 0
+        var sum = 0
+        while i < times {
+            sum += payment
+            sum += onlyPaid()
+            become .draft
+            i += 1
+        }
+        become .draft
+        return sum
+    }
+    void note(ref this) {
+        id += 1
+    }
+    i64 clear(ref this is .paid) {
+        wipe(ref this)
+        note()
+        print($"{onlyPaid()}")
+        return payment
+    }
+    void erase(ref this) {
+        reset()
+    }
+    void eraseTo(ref this) becomes .paid {
+        reset()
+    }
+    void settle(ref this is .draft) becomes .paid {
+        pay(1)
+        print($"{payment}")
+    }
+    void charge(ref this is .draft, i64 amount) becomes .paid fails PayError {
+        if amount <= 0 {
+            fail .declined
+        }
+        become .paid(amount)
+    }
+    void handleCharge(ref this is .draft, i64 amount) becomes .paid {
+        charge(amount) catch { print("declined") }
+    }
+    void settleTry(ref this is .draft, i64 amount) becomes .paid fails PayError {
+        try charge(amount)
+        print($"{payment}")
+    }
+    i64 clearThrough(ref this is .paid) {
+        erase()
+        return payment
+    }
+    void repeat(ref this, i64 times) {
+        if this is .paid {
+            var i = 0
+            while i < times {
+                print($"{payment}")
+                i += 1
+            }
+        }
+    }
+}
+
+void wipe(ref Order o) {
+    o = Order.draft { id: o.id }
+}
+
+i64 erased(Order order) {
+    var o = order
+    if o is .paid {
+        o.erase()
+        return o.payment
+    }
+    return 0
+}

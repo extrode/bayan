@@ -1,17 +1,17 @@
-let a = x is 1;
-let b = x is not null;
-let c = x is > 0 and <= 10 or 100;
-let d = x is var y;
-let e = x is _;
-let f = x is { cents: > 0 } m;
-let g = x is Money { cents: 0, currency: "MYR" };
-let h = x is { inner.value: 1 };
-let i = xs is [var first, .. var rest];
-let j = xs is [1, .., 9];
-let k = xs is [];
-let l = r is (0, var y);
-let m = s is Text(var body);
-let n = e is MoneyError.invalid;
-let o = c is >= 'a' and <= 'z';
-let p = code is 500..=599;
-let q = x is (1 or 2);
+let a = x is 1
+let b = x is not null
+let c = x is > 0 and <= 10 or 100
+let d = x is var y
+let e = x is _
+let f = x is { cents: > 0 } m
+let g = x is Money { cents: 0, currency: "MYR" }
+let h = x is { inner.value: 1 }
+let i = xs is [var first, .. var rest]
+let j = xs is [1, .., 9]
+let k = xs is []
+let l = r is (0, var y)
+let m = s is Text(var body)
+let n = e is MoneyError.invalid
+let o = c is >= 'a' and <= 'z'
+let p = code is 500..=599
+let q = x is (1 or 2)

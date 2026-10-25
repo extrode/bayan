@@ -1,4 +1,4 @@
 error BYN2225: `List<i64>` cannot be formatted
 
-  2 │ print($"{xs}");
+  2 │ print($"{xs}")
     │          ^^

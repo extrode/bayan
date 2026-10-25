@@ -1,0 +1,37 @@
+union error CarrierError {
+    timeout(i64 after)
+    rejected(string reason, i64 code)
+    closed
+}
+
+i64 noted(i64 n) {
+    print($"payload {n}")
+    return n
+}
+
+i64 send(i64 n) fails CarrierError {
+    fail .timeout(after: noted(n)) if n > 100
+    fail .rejected("too small", noted(n)) if n < 0
+    fail CarrierError.rejected(reason: "zero", code: 0) if n == 0
+    let lookup: i64? = n == 7 ? null : n
+    let found = lookup ?? fail .closed
+    let again: i64? = n == 8 ? null : found
+    return again ?? fail .timeout(after: noted(8))
+}
+
+void report(i64 n) {
+    let r = send(n) catch switch {
+        CarrierError e => {
+            print($"failed: {e == CarrierError.timeout ? "timeout" : e == CarrierError.closed ? "closed" : "rejected"}")
+            return
+        },
+    }
+    print($"sent {r}")
+}
+
+report(5)
+report(500)
+report(-3)
+report(0)
+report(7)
+report(8)

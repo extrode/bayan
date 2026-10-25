@@ -1,0 +1,7 @@
+void run(Arena arena) {
+    provide allocator: arena {
+        print("x")
+    }
+    become .done
+    become .retry(1)
+}

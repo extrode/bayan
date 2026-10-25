@@ -1,0 +1,43 @@
+struct Line {
+    i32 qty
+}
+
+struct Money {
+    i64 cents
+}
+
+struct Shop {
+    (Line -> Money uses net) pricer
+}
+
+struct Box<T> {
+    T value
+}
+
+type Pred = i32 -> bool
+
+Pred pick() => pick()
+
+void a(Pred? p) {
+}
+
+void b(List<i32 -> bool> p) {
+}
+
+void c((i32, Pred) p) {
+}
+
+void d(Pred[2] p) {
+}
+
+void e(Box<Pred> p) {
+}
+
+void m(Map<string, Pred> p) {
+}
+
+void s(Span<Pred> p) {
+}
+
+void main() {
+}

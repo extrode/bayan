@@ -1,2 +1,2 @@
-let name = "bayan";
-let n = name.size;
+let name = "bayan"
+let n = name.size

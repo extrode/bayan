@@ -1,0 +1,3 @@
+void copy(from Buf src, to Buf dst, until i32 stop, through i32 last, at i32 pos, by i32 step) {
+    copy(from: src, to: dst, for: 1, as: 2)
+}

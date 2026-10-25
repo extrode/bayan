@@ -1,29 +1,29 @@
-import money;
-import app.users as u;
+import money
+import app.users as u
 
-type Cents = i64;
+type Cents = i64
 
 /// Things that go wrong with money.
-public error enum MoneyError {
+public union error MoneyError {
     /// The text is not a number.
-    invalid,
+    invalid
     /// Too many digits after the point.
-    tooPrecise,
+    tooPrecise
 }
 
 /// Adds two amounts.
-public i64 add(i64 a, i64 b) => a + b;
+public i64 add(i64 a, i64 b) => a + b
 
-void bump(ref i64 total, i64 by = 1) { total += by; }
+void bump(ref i64 total, i64 by = 1) { total += by }
 
-Money parse(string text) fails MoneyError { return Money { cents = 0 }; }
+Money parse(string text) fails MoneyError { return Money { cents: 0 } }
 
-Money parseAny(string text) fails MoneyError, ParseError => Money { cents = 1 };
+Money parseAny(string text) fails MoneyError, ParseError => Money { cents: 1 }
 
-i64 helper() fails { return 0; }
+i64 helper() fails { return 0 }
 
-List<string> names(Span<(string name, i64 cents)> pairs, move Owned<Buf> buf) { return []; }
+List<string> names(Span<(string name, i64 cents)> pairs, move Owned<Buf> buf) { return [] }
 
 test "adds" {
-    assert(add(1, 2) == 3);
+    assert(add(1, 2) == 3)
 }

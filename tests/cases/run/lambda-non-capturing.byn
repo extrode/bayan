@@ -1,0 +1,17 @@
+i64 apply((i64 -> i64) f, to i64 x) => f(x)
+
+bool keep(i64 x, by (i64 -> bool) p) => p(x)
+
+i64 combine(i64 a, to i64 b, by ((i64, i64) -> i64) f) => f(a, b)
+
+i64 seven((() -> i64) f) => f()
+
+void main() {
+    print($"{apply(x => x * 2, to: 21)}")
+    print($"{keep(4, by: it > 3)} {keep(2, by: it > 3)}")
+    print($"{apply(it + 1, to: 9)}")
+    print($"{combine(3, to: 4, by: (a, b) => a * 10 + b)}")
+    print($"{seven(() => 7)}")
+    let twin: i64 -> i64 = x => x + x
+    print($"{twin(5)} {twin(twin(5))}")
+}

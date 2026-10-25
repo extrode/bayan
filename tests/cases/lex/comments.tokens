@@ -2,6 +2,17 @@
     doc `/// Doc line one.\n/// Doc line two.`
 6:1 StructKeyword `struct`
 6:8 Identifier `S`
-6:9 Semicolon `;`
 8:1 Identifier `b`
 9:1 EndOfFile
+
+error BYN1047: `/* */` is an input form; write `//` lines
+
+  2 │ /* block
+    │ ^^^^^^^^ block comment
+    │
+  help: write each line with `//`
+    │ 2 │ // block
+    │   │  +++++++
+    │ 3 │ // comment
+    │   │ ++++++++++
+    │ 4 │  a

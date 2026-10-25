@@ -1,7 +1,7 @@
 void work() {
-    defer panicking print("not reached: the first handler panicked");
-    defer panicking panic("handler broke");
-    panic("first");
+    defer panicking print("not reached: the first handler panicked")
+    defer panicking panic("handler broke")
+    panic("first")
 }
 
-work();
+work()

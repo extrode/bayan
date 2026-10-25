@@ -1,0 +1,8 @@
+error BYN1043: `for i32 x` is an input form; write `for x: i32`
+
+  2 │     for i32 x in xs {
+    │         ^^^^^ type before name
+    │
+  help: write `for x: i32`; loop variables put the name first
+    │ 2 │     for x: i32 in xs {
+    │   │         ++++++

@@ -48,16 +48,16 @@ public sealed class L008OwnershipRuntimeTests(ITestOutputHelper output) : IDispo
                 return;
             }
             Interlocked.Increment(ref compiled);
-            if (source.Contains("switch (move", StringComparison.Ordinal)) Interlocked.Increment(ref switchMoves);
+            if (source.Contains("switch move", StringComparison.Ordinal)) Interlocked.Increment(ref switchMoves);
             var run = BuildAndRun(c, $"seed-{seed}");
             if (Failure(run) is { } failure)
                 failures.Add((seed, $"seed {seed}: {failure}\nexit {run.ExitCode}\nstderr:\n{run.Stderr}\nprogram:\n{source}"));
         });
         foreach (var line in rejected.Order()) output.WriteLine(line);
-        output.WriteLine($"seeds {seeds}, compiled {compiled}, rejected {rejected.Count}, asan {Toolchain.AsanAvailable}, switch (move in {switchMoves}");
+        output.WriteLine($"seeds {seeds}, compiled {compiled}, rejected {rejected.Count}, asan {Toolchain.AsanAvailable}, switch move in {switchMoves}");
         Assert.True(failures.IsEmpty, string.Join("\n\n", failures.OrderBy(f => f.Seed).Select(f => f.Message)));
         Assert.True(rejected.Count * 2 <= seeds, $"rejected {rejected.Count} of {seeds}");
-        Assert.True(switchMoves > 0, "no compiled program contains `switch (move`");
+        Assert.True(switchMoves > 0, "no compiled program contains `switch move`");
     }
 
     /// <summary>The proof can fail: an alias the static check would reject panics the checker at runtime.</summary>
@@ -66,10 +66,10 @@ public sealed class L008OwnershipRuntimeTests(ITestOutputHelper output) : IDispo
     {
         var source = OwnershipGenerator.Generate(1, Size).Replace("void main() {\n", """
             void main() {
-                var own = fresh(1);
-                var alias = own;
-                alias.add(2);
-                own.add(3);
+                var own = fresh(1)
+                var alias = own
+                alias.append(2)
+                own.append(3)
 
             """);
         var c = Compilation.Create([SourceText.FromString("alias.byn", source)], ".", new CompilationOptions(SkipOwnershipCheck: true));

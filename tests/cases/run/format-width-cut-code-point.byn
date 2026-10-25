@@ -1,0 +1,7 @@
+// The 1024-byte cut before padding drops a code point it would split: 1023 `a`, then one fill.
+var s = StrBuf()
+s.appendRepeated('a', by: 1023)
+s.append("é")
+let text = s.finish()
+let cut: string = $"{text, width: 1024, fill: '.'}"
+print($"{cut.bytes.length} {cut.bytes[1022]} {cut.bytes[1023]}")
