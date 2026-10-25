@@ -765,7 +765,9 @@ public sealed partial class Compilation
                     continue;
                 }
                 names[f.Name.Text] = Loc(file, f.Name);
-                sym.Fields.Add(new ParameterSymbol(f.Name.Text, Loc(file, f.Name), types.Resolve(f.Type), ParamModifier.None, sym.Fields.Count));
+                var type = types.Resolve(f.Type);
+                if (FunctionTypeNotHere(type, file.Source, f.Type.Span, "an error payload")) type = ErrorType.Instance;
+                sym.Fields.Add(new ParameterSymbol(f.Name.Text, Loc(file, f.Name), type, ParamModifier.None, sym.Fields.Count));
             }
         }
     }
@@ -895,7 +897,9 @@ public sealed partial class Compilation
                     continue;
                 }
                 names[f.Name.Text] = Loc(file, f.Name);
-                sym.Fields.Add(new ParameterSymbol(f.Name.Text, Loc(file, f.Name), types.Resolve(f.Type), ParamModifier.None, sym.Fields.Count));
+                var type = types.Resolve(f.Type);
+                if (FunctionTypeNotHere(type, file.Source, f.Type.Span, "a union payload")) type = ErrorType.Instance;
+                sym.Fields.Add(new ParameterSymbol(f.Name.Text, Loc(file, f.Name), type, ParamModifier.None, sym.Fields.Count));
             }
             u.Variants.Add(sym);
         }
@@ -958,6 +962,7 @@ public sealed partial class Compilation
                 {
                     Naming.CheckValue(this, file.Source, p.Name);
                     var prop = new PropertySymbol(p.Name.Text, Loc(file, p.Name), s, AccessOf(p.Modifiers), p) { Type = types.Resolve(p.Type) };
+                    if (FunctionTypeNotHere(prop.Type, file.Source, p.Type.Span, "a property")) prop.Type = ErrorType.Instance;
                     var getter = new FunctionSymbol(p.Name.Text, prop.Location, s.Module, FunctionKind.Getter)
                     {
                         Owner = s, File = file, ReturnType = prop.Type, Access = prop.Access, TypeMap = s.TypeMap,
@@ -1473,7 +1478,7 @@ public sealed partial class Compilation
         foreach (var d in bag.Items.Where(d => d.IsError))
         {
             if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code
-                || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code
+                || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code || d.Code == DiagnosticCodes.FunctionTypeNotHere.Code && !Reported(d)
                 || (d.Code == DiagnosticCodes.Unsupported.Code || d.Code == DiagnosticCodes.ImplicitCopy.Code) && !Reported(d))
                 target.Add(d with { Source = site, Span = span, Label = InstantiationLabel });
             else if (d.Code == DiagnosticCodes.AssignmentChangesState.Code && instance is not null && !Reported(d))

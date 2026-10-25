@@ -1,0 +1,29 @@
+type Pred = i32 -> bool
+
+bool isBig(i32 n) => n > 9
+
+struct S {
+    i32 x
+    Pred p => isBig
+}
+
+union error E {
+    bad(Pred p)
+}
+
+union Shape {
+    circle(Pred p)
+    square(i32 s)
+}
+
+const k: Pred = isBig
+
+bool h<T>(T x) {
+    let s: T? = null
+    return true
+}
+
+bool f(Pred p) => h(p)
+
+void main() {
+}

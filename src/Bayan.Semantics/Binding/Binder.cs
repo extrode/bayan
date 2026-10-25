@@ -440,6 +440,7 @@ internal sealed partial class Binder
     {
         var decl = c.Decl;
         var declared = decl.Type is { } t ? ResolveType(t) : null;
+        if (declared is not null && _c.FunctionTypeNotHere(declared, Source, decl.Type!.Span, "a constant")) declared = ErrorType.Instance;
         if (decl.Init is null)
         {
             Report(DiagnosticCodes.MissingInitializer, decl.Name.Span, ["const", decl.Name.Text]);
