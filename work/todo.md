@@ -298,3 +298,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - CEmitter: `if n == 0` emits `if ((p_n == INT64_C(0)))`, rejected by clang `-Wparentheses-equality` (008 T8, 2026-10-25).
 - `bayan run <file>` inside `tests/cases/run/` builds the whole directory as one program; single-file run needs a copy elsewhere (008 T6, 2026-10-25).
 - Under `as: .debug` a `string` (and so a `Symbol`) prints bare inside tuples, optionals and maps but quoted and escaped inside structs (pre-existing; found in the 008 review, 2026-10-25).
+- A repeated `case "a"` in a `switch` on a `string` or `Symbol` gets no duplicate/unreachable diagnostic; the first arm silently wins (pre-existing; 008 review, 2026-10-25).
+- `List<string>` and `List<Symbol>` cannot be formatted in an interpolation hole (BYN2225) (pre-existing; 008 review, 2026-10-25).

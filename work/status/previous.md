@@ -1,3 +1,3 @@
 # Previous
 
-Spec 007, lambdas and function types (`docs/specs/007-lambdas/`): `A -> B` function types with `fails` and `uses`, `type` aliases, named functions as values, lambda forms with `it`, capturing lambdas passed as parameters with a stack environment (no allocation), non-capturing lambdas as C function pointers, closure effects charged to the caller, BYN2820–2824, laws L013 and L014. Review fixes: function type C key, effects through calls via function values, single receiver evaluation, BYN2822 on inferred element types.
+Spec 008, HashMap and Symbol (`docs/specs/008-hashmap-symbols/`): `Symbol`, an interned 4-byte identifier (`==` by ID, ordering by text, `Symbol.intern`, `.text`); `Map` keys over tuples, structs, enums and `Symbol` with field-wise hashing; `HashMap<K, V>` as BYN2830; BYN2831–2832; laws L015 and L016. Review fixes: typed `const` of `Symbol`, `switch` on `Symbol`, `.debug` of a `Symbol` field, use-site BYN2831 for deferred struct keys.

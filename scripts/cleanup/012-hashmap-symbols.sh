@@ -2,6 +2,7 @@
 # Cleanup for spec 008, HashMap and symbols (2026-10-25): the feat/008-hashmap-symbols worktree and branch, the
 # chore/worker-008-* worker worktrees and branches, and (second flag) their untracked scratch under tmp/.
 # Dry run by default. --execute / -e acts on worktrees and branches; --delete-scratch also removes untracked scratch.
+# Not handled: /tmp/w008bt/ and /tmp/w008run.sh, scratch a 008 review-fix writer left outside the repo; remove them by hand if they are still there.
 set -euo pipefail
 
 execute=0; scratch=0
