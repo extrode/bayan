@@ -193,7 +193,7 @@ public sealed class SelfhostParserT10Tests(ITestOutputHelper output)
     {
         var sources = Directory.GetFiles(ParserDir, "*.byn")
             .Where(f => Path.GetFileName(f) is not ("main.byn" or "exprs.byn")).Order(StringComparer.Ordinal)
-            .Select(f => SourceText.FromFile(f)).Append(SourceText.FromString(Path.Combine(ParserDir, "t10-test.byn"), Program)).ToList();
+            .Select(f => SourceText.FromFile(f)).Append(SourceText.FromString(Path.Combine(ParserDir, "t10-test.byn"), Program + "\n" + SelfhostParserT7Tests.ExprSpan)).ToList();
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.Create(sources, packageRoot: SelfhostDir);
         if (c.Diagnostics.HasErrors) Assert.Fail(DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));

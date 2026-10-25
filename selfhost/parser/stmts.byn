@@ -302,27 +302,6 @@ Expr parseParenCondition(ref Parser p, to ref i64 parens) {
 /// The ASCII whitespace C# `string.Trim()` removes.
 bool isTrimmed(u8 b) => b == ' ' || b == '\t' || b == '\n' || b == '\r' || b == 0x0B || b == 0x0C
 
-/// Whether the group opened at `open` has a `kind` token at its top level.
-bool inGroup(ref Parser p, at i64 open, for TokenKind kind) {
-    var depth: i64 = 0
-    for i in open..p.count {
-        let k = p.kindAt(i)
-        if depth == 1 && k == kind { return true }
-        switch k {
-            case .openParen or .openBracket or .openBrace:
-                depth += 1
-            case .closeParen or .closeBracket or .closeBrace:
-                depth -= 1
-                if depth == 0 { return false }
-            case .endOfFile:
-                return false
-            default:
-                continue
-        }
-    }
-    return false
-}
-
 /// The body of `keyword` after a parenthesized condition: a block, or the input form of a single statement,
 /// reported (BYN1018) with a fix that wraps it in `{ }`.
 Stmt parseBody(ref Parser p, by Token keyword) {
@@ -832,44 +811,6 @@ TextSpan stmtSpan(in Stmt s) => s switch {
     .contextStmt(let n) => n.value.span,
     .emptyStmt(let n) => n.value.span,
     .errorStmt(let n) => n.value.span,
-    .none => TextSpan { start: 0, length: 0 },
-}
-
-TextSpan exprSpan(in Expr e) => e switch {
-    .literalExpr(let n) => n.value.span,
-    .interpolatedExpr(let n) => n.value.span,
-    .nameExpr(let n) => n.value.span,
-    .thisExpr(let n) => n.value.span,
-    .memberExpr(let n) => n.value.span,
-    .targetMemberExpr(let n) => n.value.span,
-    .callExpr(let n) => n.value.span,
-    .indexExpr(let n) => n.value.span,
-    .unaryExpr(let n) => n.value.span,
-    .binaryExpr(let n) => n.value.span,
-    .rangeExpr(let n) => n.value.span,
-    .conditionalExpr(let n) => n.value.span,
-    .castExpr(let n) => n.value.span,
-    .isExpr(let n) => n.value.span,
-    .exceptExpr(let n) => n.value.span,
-    .inExpr(let n) => n.value.span,
-    .switchExpr(let n) => n.value.span,
-    .tryExpr(let n) => n.value.span,
-    .moveExpr(let n) => n.value.span,
-    .catchExpr(let n) => n.value.span,
-    .caughtErrorExpr(let n) => n.value.span,
-    .jumpExpr(let n) => n.value.span,
-    .blockExpr(let n) => n.value.span,
-    .structLiteralExpr(let n) => n.value.span,
-    .withExpr(let n) => n.value.span,
-    .spreadExpr(let n) => n.value.span,
-    .mapEntryExpr(let n) => n.value.span,
-    .collectionExpr(let n) => n.value.span,
-    .tupleExpr(let n) => n.value.span,
-    .parenExpr(let n) => n.value.span,
-    .lambdaExpr(let n) => n.value.span,
-    .stackallocExpr(let n) => n.value.span,
-    .patternExpr(let n) => n.value.span,
-    .errorExpr(let n) => n.value.span,
     .none => TextSpan { start: 0, length: 0 },
 }
 

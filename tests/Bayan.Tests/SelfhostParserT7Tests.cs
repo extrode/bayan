@@ -12,7 +12,7 @@ namespace Bayan.Tests;
 
 /// <summary>
 /// <c>selfhost/parser/stmts.byn</c> (009 T7) against the C# parser, before the other tasks merge. The parser's files
-/// stand in for the module without <c>main.byn</c> and <c>exprs.byn</c>; this file's program adds a <c>parseExpression</c>
+/// stand in for the module without <c>main.byn</c> and <c>exprs.byn</c>; this file's program adds <c>exprs.byn</c>'s <c>exprSpan</c>, a <c>parseExpression</c>
 /// for names, <c>not x</c> and <c>(x)</c>, and a <c>main</c> that parses the first block of a file and prints its
 /// statement shapes with spans, then the diagnostics with their fixes. The inputs use only T7's statements.
 /// </summary>
@@ -21,6 +21,47 @@ public sealed class SelfhostParserT7Tests(ITestOutputHelper output)
     private static string SelfhostDir => Path.Combine(Golden.RepoRoot, "selfhost");
 
     private static string ParserDir => Path.Combine(SelfhostDir, "parser");
+
+    /// <summary><c>exprs.byn</c>'s <c>exprSpan</c>, for test programs built without that file.</summary>
+    internal const string ExprSpan = """
+        TextSpan exprSpan(in Expr e) => e switch {
+            .literalExpr(let n) => n.value.span,
+            .interpolatedExpr(let n) => n.value.span,
+            .nameExpr(let n) => n.value.span,
+            .thisExpr(let n) => n.value.span,
+            .memberExpr(let n) => n.value.span,
+            .targetMemberExpr(let n) => n.value.span,
+            .callExpr(let n) => n.value.span,
+            .indexExpr(let n) => n.value.span,
+            .unaryExpr(let n) => n.value.span,
+            .binaryExpr(let n) => n.value.span,
+            .rangeExpr(let n) => n.value.span,
+            .conditionalExpr(let n) => n.value.span,
+            .castExpr(let n) => n.value.span,
+            .isExpr(let n) => n.value.span,
+            .exceptExpr(let n) => n.value.span,
+            .inExpr(let n) => n.value.span,
+            .switchExpr(let n) => n.value.span,
+            .tryExpr(let n) => n.value.span,
+            .moveExpr(let n) => n.value.span,
+            .catchExpr(let n) => n.value.span,
+            .caughtErrorExpr(let n) => n.value.span,
+            .jumpExpr(let n) => n.value.span,
+            .blockExpr(let n) => n.value.span,
+            .structLiteralExpr(let n) => n.value.span,
+            .withExpr(let n) => n.value.span,
+            .spreadExpr(let n) => n.value.span,
+            .mapEntryExpr(let n) => n.value.span,
+            .collectionExpr(let n) => n.value.span,
+            .tupleExpr(let n) => n.value.span,
+            .parenExpr(let n) => n.value.span,
+            .lambdaExpr(let n) => n.value.span,
+            .stackallocExpr(let n) => n.value.span,
+            .patternExpr(let n) => n.value.span,
+            .errorExpr(let n) => n.value.span,
+            .none => TextSpan { start: 0, length: 0 },
+        }
+        """;
 
     private const string Program = """
         import lexer
@@ -42,7 +83,7 @@ public sealed class SelfhostParserT7Tests(ITestOutputHelper output)
             return Expr.nameExpr(Owned(NameExpr { span: p.spanFrom(start), name: spanOf(name), typeArgs: List<TypeSyntax>() }))
         }
 
-        string likelihoodText(Likelihood l) => l switch {
+        string t7LikelihoodText(Likelihood l) => l switch {
             .none => "",
             .unlikely => " unlikely",
             .neverKeyword => " never",
@@ -55,7 +96,7 @@ public sealed class SelfhostParserT7Tests(ITestOutputHelper output)
                     for st in n.value.statements { text = $"{text} {shape(in st, from: ref p)}" }
                     return $"{text} >"
                 case .ifStmt(let n):
-                    return $"if {n.value.span.start}..{n.value.span.end}{likelihoodText(n.value.likelihood)} {shape(in n.value.then, from: ref p)} else {shape(in n.value.elseKeyword, from: ref p)}"
+                    return $"if {n.value.span.start}..{n.value.span.end}{t7LikelihoodText(n.value.likelihood)} {shape(in n.value.then, from: ref p)} else {shape(in n.value.elseKeyword, from: ref p)}"
                 case .unlessStmt(let n):
                     return $"unless {n.value.span.start}..{n.value.span.end} {shape(in n.value.body, from: ref p)}"
                 case .whileStmt(let n):
@@ -98,7 +139,7 @@ public sealed class SelfhostParserT7Tests(ITestOutputHelper output)
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var sources = Directory.GetFiles(ParserDir, "*.byn").Where(f => Path.GetFileName(f) is not ("main.byn" or "exprs.byn"))
             .Order(StringComparer.Ordinal).Select(f => SourceText.FromFile(f))
-            .Append(SourceText.FromString(Path.Combine(ParserDir, "t7-test.byn"), Program)).ToList();
+            .Append(SourceText.FromString(Path.Combine(ParserDir, "t7-test.byn"), Program + "\n" + ExprSpan)).ToList();
         var c = Compilation.Create(sources, packageRoot: SelfhostDir);
         if (c.Diagnostics.HasErrors) return (null, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
         // BYN5014 (a word outside the package grammar) is allowed, as in `parser.byn` (Q431): the stand-in methods keep the
