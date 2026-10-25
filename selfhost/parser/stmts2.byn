@@ -254,7 +254,7 @@ Stmt parseSimpleStatement(ref Parser p, at i64 start) {
         return Stmt.incDecStmt(Owned(IncDecStmt { span: p.spanFrom(start), target: move expr, increment: increment }))
     }
     if p.errorCount() == errors && !isStatementExpression(in expr) {
-        let _ = p.report(.invalidExpressionStatement, at: exprSpan(in expr), label: "the value is computed and discarded",
+        let _ = p.report(.invalidExpressionStatement, at: T8.exprSpan(in expr), label: "the value is computed and discarded",
             help: "write `_ = f()` to discard a call's result; only calls, assignments and `++`/`--` can stand alone")
     }
     return Stmt.exprStmt(Owned(ExprStmt { span: p.spanFrom(start), expr: move expr }))
@@ -334,7 +334,7 @@ void checkAssignable(ref Parser p, for in Expr target) {
             checkAssignable(ref p, for: in paren.value.inner)
             return
         default:
-            let _ = p.report(.invalidAssignmentTarget, at: exprSpan(in target), help: "assign to a variable, a field or an indexed element")
+            let _ = p.report(.invalidAssignmentTarget, at: T8.exprSpan(in target), help: "assign to a variable, a field or an indexed element")
             return
     }
 }
@@ -357,7 +357,7 @@ Stmt finishSimpleStatement(ref Parser p, at i64 start, for move Stmt statement) 
         if isUnless { T8.skipUnlessLikelihood(ref p) }
         let condition = parseExpression(ref p)
         if isUnless {
-            T8.checkUnlessCondition(ref p, for: in condition, at: TextSpan.fromBounds(keyword.start, until: exprSpan(in condition).end))
+            T8.checkUnlessCondition(ref p, for: in condition, at: TextSpan.fromBounds(keyword.start, until: T8.exprSpan(in condition).end))
         }
         stmt = Stmt.guardedStmt(Owned(GuardedStmt {
             span: p.spanFrom(start),
@@ -548,4 +548,43 @@ struct T8 {
         .failKeyword or .breakKeyword or .continueKeyword
 
     static Expr parseUnary(ref Parser p) => .none
+
+    // exprs.byn (T9): the T10 test builds without exprs.byn
+    static TextSpan exprSpan(in Expr e) => e switch {
+        .literalExpr(let n) => n.value.span,
+        .interpolatedExpr(let n) => n.value.span,
+        .nameExpr(let n) => n.value.span,
+        .thisExpr(let n) => n.value.span,
+        .memberExpr(let n) => n.value.span,
+        .targetMemberExpr(let n) => n.value.span,
+        .callExpr(let n) => n.value.span,
+        .indexExpr(let n) => n.value.span,
+        .unaryExpr(let n) => n.value.span,
+        .binaryExpr(let n) => n.value.span,
+        .rangeExpr(let n) => n.value.span,
+        .conditionalExpr(let n) => n.value.span,
+        .castExpr(let n) => n.value.span,
+        .isExpr(let n) => n.value.span,
+        .exceptExpr(let n) => n.value.span,
+        .inExpr(let n) => n.value.span,
+        .switchExpr(let n) => n.value.span,
+        .tryExpr(let n) => n.value.span,
+        .moveExpr(let n) => n.value.span,
+        .catchExpr(let n) => n.value.span,
+        .caughtErrorExpr(let n) => n.value.span,
+        .jumpExpr(let n) => n.value.span,
+        .blockExpr(let n) => n.value.span,
+        .structLiteralExpr(let n) => n.value.span,
+        .withExpr(let n) => n.value.span,
+        .spreadExpr(let n) => n.value.span,
+        .mapEntryExpr(let n) => n.value.span,
+        .collectionExpr(let n) => n.value.span,
+        .tupleExpr(let n) => n.value.span,
+        .parenExpr(let n) => n.value.span,
+        .lambdaExpr(let n) => n.value.span,
+        .stackallocExpr(let n) => n.value.span,
+        .patternExpr(let n) => n.value.span,
+        .errorExpr(let n) => n.value.span,
+        .none => TextSpan { start: 0, length: 0 },
+    }
 }
