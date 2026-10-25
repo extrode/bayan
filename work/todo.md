@@ -288,3 +288,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 007 T7: `-Wall -Werror` on emitted C still fails outside the lambda code: `-Wunused-label` (`continue_N` of a `for` with no `continue`, seen in a lambda body in `run/lambda-uses-provide`) and `-Wparentheses-equality` from `fail … if` (`if ((p_s.len == 0))`, `run/lambda-fails`); T9 territory.
 - 007 T6: BYN3002/BYN3003 on a lambda region keep the generic help ("copy the data with `.copy(to: alloc)`") and label ("freed at the end of its block"), which fit a lambda kept past its loop iteration poorly; a lambda-specific help needs a branch in `CheckOutlives`/`CheckReturn`.
 - 007 T8: BYN6005 messages name the synthetic lambda (`main$lambda10`, `stored$lambda1`); name it as "the lambda on line N" as region diagnostics do.
+- 007 T11: BYN2821 says 'a `out` parameter' / 'a `in` parameter'; use 'an'.
