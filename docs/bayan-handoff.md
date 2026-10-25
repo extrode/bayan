@@ -378,7 +378,7 @@ Phase 1 tool: `tools/lex-diff/` (M15). Phase 2: `selfhost/lexer/` checked agains
 Run unattended, one spec at a time, each merged into `dev` (unpushed) with its worker spend in the progress log. Decisions:
 
 - **Interfaces (§3.15):** static dispatch on constraints (monomorphized), `dyn ref I` fat pointers, default methods, and associated types (`IEnumerator` with `Item`, so `for … in` works on user types). `static abstract` only if the port needs it; retroactive conformance waits.
-- **Delegates (§3.16):** `delegate` types, named functions as values, non-capturing lambdas, and lambdas that capture `let` values and parameters **by copy** (a struct with fields). `ref` captures of `var` and escaping closures wait.
+- **Lambdas and function types (§3.16):** function types (`A -> B`, named with `type` aliases), named functions as values, non-capturing lambdas, and lambdas that capture `let` values and parameters **by copy** (a struct with fields). `ref` captures of `var` and escaping closures wait.
 - **Regions (§9.4):** deferred past bootstrap; syntax nodes and tokens keep byte offsets into a source buffer, as `selfhost/lexer/` does.
 - **Finish line:** the Bayan compiler does `lex`, `parse`, `check`, `build` (incl. `--emit-c`) and `run`; stage 2's generated C is byte-identical to stage 3's; the full golden suite passes against the Bayan-built compiler; `bootstrap/bayan.c` is committed. `new`, `init`, `test`, the cache and `--json` stay in the C# CLI for now.
 - **Argument names (BYN2305):** an argument that is an identifier equal to its parameter's name, or a member access whose last segment is (`tok.start` for `start`), counts as named. Arguments whose names match the parameters in a swapped order are an error.
@@ -394,7 +394,7 @@ Spec order (numbers are provisional; a spec may split):
 | 004 | **Done 2026-10-21.** Port friction: implied and swapped argument names, contextual declaration keywords, integer literal inference, returning borrows from a method's own fields, fallible bytes→string decode, `catch { block }`, `const` string arrays, `List.removeRange`, `toHex()` (format specifiers stay deferred, Appendix B) |
 | 005 | **Done 2026-10-22.** Terminal style (remaining work of M12 — CLI completeness and machine-readable output), before any renderer is ported again |
 | 006 | Interfaces and iterators (subset above) |
-| 007 | Delegates and lambdas (non-capturing and capture by copy) |
+| 007 | Lambdas and function types (non-capturing and capture by copy) |
 | 008 | `HashMap` and `Symbol` interning (§3.3) |
 | 009 | Parser in Bayan (`selfhost/parser/`), checked against `bayan parse --ast` on every parse golden |
 | 010 | Semantics in Bayan (binder, flow, ownership), checked against every `diag/` golden and, through spec 004's typed dump, a binder-equivalence law (C# and Bayan dumps identical on every input) |
