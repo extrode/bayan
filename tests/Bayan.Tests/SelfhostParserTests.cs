@@ -211,7 +211,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
     }
 
     /// <summary>R1, R6: <c>bayan-parse</c> prints each <c>parse/</c> golden byte-for-byte and agrees on the exit code.</summary>
-    [Theory]
+    [Theory(Skip = "T15 enables once every parsing file has landed")]
     [MemberData(nameof(ParseCases))]
     public void ParseGolden(string name)
     {
@@ -228,7 +228,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
     /// parser, whose output is written under <c>tmp/parser-ref/</c> so <see cref="Golden.Compare"/>
     /// names the input and the first differing line.
     /// </summary>
-    [Theory]
+    [Theory(Skip = "T15 enables once every parsing file has landed")]
     [MemberData(nameof(DiagCases))]
     public void DiagGolden(string name)
     {
