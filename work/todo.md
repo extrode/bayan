@@ -307,6 +307,8 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 009 tasks T3 line and plan say `Unreport` decrements `syntaxErrors`; C# `Unreport` does not, and the port follows C# (Q440) (009 T3, 2026-10-26).
 - 009 T1 stubs miss helpers that `patterns.byn` needs from siblings (`ParseBinary`, `ScanType`, `BraceLiteralAllowed`, `ExpectClose`); `struct T3` stand-ins in `patterns.byn` until T15 (Q441) (009 T3, 2026-10-26).
 - 009 plan names union variants `import(…)`/`function(…)`, which are keywords; `nodes.byn` uses `importDecl`, `functionDecl` (Q437) (009 T2, 2026-10-26).
+- C# `ParseFunctionType` builds `FailsClause`/`UsesClause` with `SpanFrom(start)` before `ParseClauseList` runs, so in a function type the clause spans only the keyword (Parser.cs 2006/2011; declarations at 1144/1152 span the list); `types.byn` matches it (009 T6, 2026-10-26).
+- 009 T7's top-level stand-ins `isTypeNameToken`/`scanType` in `stmts.byn` duplicate `types.byn`; T15 deletes them at merge (009 T6, 2026-10-26).
 - 009 T15: move field requires rules into StructDecl.rules (C# O3, Parser.cs:759–775) by splitting them in parseFieldOrProperty before Owned (Q446) (009 T4, 2026-10-26).
 - C# parser spans end early where `SpanFrom` is an argument before the parse it should cover: a block-bodied `LambdaExpr` ends at `=>`, a `MapEntryExpr` at `:`, a named format spec's `Argument` at `:`; matched in `exprs2.byn` (009 T10, 2026-10-26).
 - 009 T10 stand-ins for sibling helpers (`struct T10` at the end of `exprs2.byn`) must go at T15 (Q476) (009 T10, 2026-10-26).
