@@ -2077,7 +2077,7 @@ internal sealed partial class Binder
     private static string? WhyNotFormattable(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never) ? null : "",
-        ErrorSetSymbol or ErrorUnionType or EnumSymbol or TypeParameterType => null,
+        ErrorSetSymbol or ErrorUnionType or EnumSymbol or TypeParameterType or BuiltinType { Kind: BuiltinKind.Symbol } => null,
         OptionalType o => Part("the value", o.Inner, seen),
         ResultType r => Part("the value", r.Value, seen),
         OwnedType o => WhyNotFormattable(o.Inner, seen),

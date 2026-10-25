@@ -1,0 +1,20 @@
+// `sym.text` is a `string` that borrows nothing, so it may outlive the `Symbol` it came from; `$"{sym}"` writes the text.
+string name(Symbol s) => s.text
+
+string literalText() {
+    let s: Symbol = "total"
+    let text: string = s.text
+    return text
+}
+
+string internedText(string source) {
+    let s = Symbol.intern(source)
+    return s.text
+}
+
+void main() {
+    let s: Symbol = "name"
+    let length: i64 = s.text.length
+    let shown: string = $"[{s}] {s, width: 8}"
+    print($"{s} {name(s)}")
+}

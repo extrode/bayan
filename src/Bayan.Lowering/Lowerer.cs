@@ -145,7 +145,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     private static bool IsTrivial(BoundExpr e) => e switch
     {
         BoundErrorVariant { Payload.Length: > 0 } v => v.Payload.All(IsTrivial),
-        BoundLiteral or BoundDefault or BoundLocal or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray or LVoid => true,
+        BoundLiteral or BoundSymbolLiteral or BoundDefault or BoundLocal or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray or LVoid => true,
         BoundField f => IsTrivial(f.Receiver),
         BoundTupleElement t => IsTrivial(t.Receiver),
         BoundMove m => IsTrivial(m.Operand),
@@ -894,7 +894,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 var payload = Operands(v.Payload);
                 return payload is null ? new LNever(e.Syntax, e.Type) : v with { Payload = payload };
             }
-            case BoundLiteral or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
+            case BoundLiteral or BoundSymbolLiteral or BoundDefault or BoundThis or BoundErrorVariant or BoundEnumMember or BoundEnumValues or BoundStaticArray:
                 return e;
             case BoundLocal l:
                 Note(l.Local);
@@ -1516,7 +1516,11 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
     /// <param name="level">A log level or print stream, lowered after the parts and written as the target.</param>
     private BoundExpr WriteParts(BoundExpr call, WriteSink sink, BoundExpr? target, BoundInterpolated text, BoundExpr? level = null)
     {
-        var values = text.Parts.Where(p => p.Value is not null).Select(p => p.Value!).ToList();
+        // A `Symbol` writes its text (spec 008 R4).
+        var values = text.Parts.Where(p => p.Value is not null)
+            .Select(p => p.Value!.Type is BuiltinType { Kind: BuiltinKind.Symbol }
+                ? new BoundBuiltinCall(p.Value.Syntax, BuiltinMember.SymbolText, p.Value, [], PrimitiveType.String)
+                : p.Value).ToList();
         if (level is not null) values.Add(level);
         var lowered = Operands(values);
         if (lowered is null) return new LNever(call.Syntax, call.Type);
