@@ -1,0 +1,18 @@
+i64 run((i64 -> i64 uses console) f, to i64 x) => f(x)
+
+void main() {
+    for round in 0..2 {
+        let found = run(n => {
+            defer print($"deferred {n}")
+            var i: i64 = 0
+            while true {
+                if i == n {
+                    break
+                }
+                i += 1
+            }
+            return i * 10
+        }, to: round + 2)
+        print($"round {round} {found}")
+    }
+}
