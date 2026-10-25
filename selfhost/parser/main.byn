@@ -3,10 +3,13 @@
 //
 //     bayan-parse [<path>|-]    the tree dump and diagnostics of `<path>`, or of stdin given `-` or no
 //                               path; exit 0 if there are no diagnostics, else 1
+//     bayan-parse --many <dir>  `== <name>` and the dump of every `*.byn` in `<dir>`, in name order,
+//                               followed by a `span out of range` line for any span outside the input
+//     bayan-parse --time <path> only the nanoseconds spent lexing, parsing and dumping
+//     bayan-parse --codes       `code\tmessage` for every `ParseCode`
 //
-// Exit 2 on a usage error; exit 4 when the input cannot be read.
-//
-// T1 stub: the single-file mode only; T13 adds `--many`, `--time` and `--codes`.
+// Exit 2 on a usage error or an unreadable file under `--many`/`--time`; exit 4 when the input of
+// the tree dump cannot be read.
 
 import lexer
 
@@ -16,7 +19,12 @@ const exitUsage: i32 = 2
 const exitInput: i32 = 4
 
 i32 usage(string message) {
-    Io.stderr.write($"bayan-parse: {message}\nusage: bayan-parse [<path>|-]\n")
+    Io.stderr.write($"bayan-parse: {message}\nusage: bayan-parse [<path>|-] | --many <dir> | --time <path> | --codes\n")
+    return exitUsage
+}
+
+i32 fileNotFound(string path) {
+    Io.stderr.write($"bayan: file not found: {path}\n")
     return exitUsage
 }
 
@@ -46,9 +54,54 @@ i32 parseOne(string path, by Keywords keywords) {
     return p.errorCount() == 0 ? exitOk : exitFailure
 }
 
+/// Dumps every `*.byn` in `dir`, each in a fresh arena, with `== <name>` headers and span checks.
+i32 parseMany(string dir, by Keywords keywords) {
+    let names = Io.listDir(dir) catch return usage($"cannot list `{dir}`")
+    for name in names {
+        unless name.endsWith(".byn") { continue }
+        using let arena = Arena()
+        provide allocator: arena {
+            let path = $"{dir}/{name}"
+            let bytes = Io.readFile(path) catch return fileNotFound(path)
+            var sb = StrBuf()
+            sb.append($"== {name}\n")
+            var p = Parser.create(lexer.lex(SourceText.create(path, from: move bytes), by: keywords))
+            var unit = parseCompilationUnit(ref p)
+            dump(in unit, from: ref p, to: ref sb)
+            checkSpans(in unit, until: p.lexed.source.bytes.length, to: ref sb)
+            Io.stdout.write(sb.finish())
+        }
+    }
+    return exitOk
+}
+
+/// Prints the nanoseconds spent lexing, parsing and dumping `path`.
+i32 parseTimed(string path, by Keywords keywords) {
+    let bytes = Io.readFile(path) catch return fileNotFound(path)
+    let start = Io.monotonicNanos()
+    var p = Parser.create(lexer.lex(SourceText.create(path, from: move bytes), by: keywords))
+    var unit = parseCompilationUnit(ref p)
+    var sb = StrBuf()
+    dump(in unit, from: ref p, to: ref sb)
+    let elapsed = Io.monotonicNanos() - start
+    print($"{elapsed}")
+    return exitOk
+}
+
+/// `code\tmessage` for every `ParseCode`, in `DiagnosticCodes.cs` order.
+i32 printCodes() {
+    for code in ParseCode.values {
+        print($"{codeText(code)}\t{messageFormat(code)}")
+    }
+    return exitOk
+}
+
 i32 main(ReadOnlySpan<string> args) {
     let keywords = Keywords.build()
     if args.length == 0 { return parseOne("-", by: keywords) }
     if args.length == 1 && !args[0].startsWith("--") { return parseOne(args[0], by: keywords) }
-    return usage("expected `[<path>|-]`")
+    if args.length == 2 && args[0] == "--many" { return parseMany(args[1], by: keywords) }
+    if args.length == 2 && args[0] == "--time" { return parseTimed(args[1], by: keywords) }
+    if args.length == 1 && args[0] == "--codes" { return printCodes() }
+    return usage("expected `[<path>|-]`, `--many <dir>`, `--time <path>` or `--codes`")
 }
