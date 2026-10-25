@@ -1,5 +1,666 @@
-// Declarations B. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines about 1066–1740: interfaces,
-// extensions, fields, properties, constructors, enums, error enums and sets, unions, type aliases,
-// effects and tests. Owner: T5.
+// Declarations B. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines about 929–1740 by content:
+// interfaces (`ParseInterface`, `ParseInterfaceMember`: associated types, getters), extensions,
+// `ExpectClose`, fields and properties, `ParseRequiresLines`, constructors, error enums and sets, enums,
+// unions with their payloads and case commas, type aliases, effects and tests. Owner: T5.
 //
-// T1 stub: this file has no cross-file entry point.
+// A C# method that returns one node kind returns its struct here, so the caller can set `doc` and
+// `attributes` (the C# `decl with { … }`) before wrapping it in `Owned`; one that returns a `Decl` of
+// several kinds takes them as parameters (Q451). The two `ParseBody(string, …)` sites are inlined.
+// Helpers owned by sibling files that have no stub yet are called through the `T5` shims at the end
+// of this file (Q450).
+
+InterfaceDecl parseInterface(ref Parser p, at i64 start, by Modifiers modifiers) {
+    let _ = p.advance()
+    let name = T5.expectName(ref p, what: "an interface name")
+    let typeParams = T5.parseTypeParams(ref p)
+    let where = T5.parseWhere(ref p)
+    let open = p.expect(.openBrace)
+    var members = List<Decl>()
+    while p.kind() != .closeBrace && !p.atEnd() {
+        let before = p.pos
+        let errors = p.syntaxErrors
+        let member = parseInterfaceMember(ref p)
+        unless member is .none { members.append(move member) }
+        recoverIfNeeded(ref p, from: errors)
+        if p.pos == before { let _ = p.advance() }
+    }
+    expectClose(ref p, from: open, for: "interface")
+    return InterfaceDecl {
+        span: p.spanFrom(start),
+        modifiers: modifiers,
+        name: name,
+        members: move members,
+        typeParams: move typeParams,
+        where: move where,
+    }
+}
+
+/// A method (abstract when the line ends after its header), `T name`, `T name => e` or `type Name`;
+/// `T name { get }` is BYN1060. `.none` is the C# `null`.
+Decl parseInterfaceMember(ref Parser p) {
+    let first = p.current()
+    var doc = T5.docOf(ref p, for: first)
+    let startIndex = p.pos
+    let start = first.start
+    let attributes = T5.parseAttributes(ref p)
+    if doc is null { doc = T5.docOf(ref p, for: p.current()) }
+    let modifiers = T5.parseModifiers(ref p)
+    T5.rejectModifiers(ref p, for: modifiers, by: modifierStatic, at: startIndex)
+
+    let after = T5.scanType(ref p, at: p.pos)
+    if p.kind() == .typeKeyword && T5.isName(p.peek(1)) && T5.endsBefore(ref p, at: p.pos + 2) {
+        let _ = p.advance()
+        let name = T5.expectName(ref p)
+        T5.expectEnd(ref p)
+        return Decl.associatedTypeDecl(Owned(AssociatedTypeDecl {
+            span: p.spanFrom(start),
+            name: name,
+            doc: doc,
+            attributes: move attributes,
+        }))
+    }
+    if T5.isFunctionStart(ref p) || T5.isNameFirstFunctionStart(ref p, allowNoBody: true) {
+        var decl = T5.parseFunction(ref p, at: start, by: modifiers, allowNoBody: true)
+        decl.doc = doc
+        decl.attributes = move attributes
+        return Decl.functionDecl(Owned(move decl))
+    }
+    if after > 0 && T5.isName(p.kindAt(after)) && p.kindAt(after + 1) == .openBrace {
+        let type = parseType(ref p)
+        let name = T5.expectName(ref p)
+        let open = p.expect(.openBrace)
+        let get = T5.atContextual(ref p, for: "get")
+        if get {
+            let _ = p.advance()
+        } else {
+            let _ = p.report(.expected, at: spanOf(p.current()), arg0: "`get`", arg1: p.describe(p.current()))
+        }
+        T5.expectEnd(ref p)
+        let _ = p.expect(.closeBrace)
+        if get {
+            let typeText = p.lexed.source.getText(T5.typeSpan(in type))
+            let _ = p.reportFix(.interfaceGetInput, at: TextSpan.fromBounds(open.start, until: p.prevEnd),
+                through: TextSpan.fromBounds(name.end, until: p.prevEnd), by: "", arg0: typeText, arg1: p.lexed.source.getText(name),
+                label: "the input form", help: "remove `{ get }`: a field-shaped interface member is a read-only property")
+        }
+        return Decl.getterDecl(Owned(GetterDecl {
+            span: p.spanFrom(start),
+            modifiers: modifiers,
+            type: move type,
+            name: name,
+            doc: doc,
+            attributes: move attributes,
+        }))
+    }
+    if after > 0 && T5.isName(p.kindAt(after)) && T5.endsBefore(ref p, at: after + 1) {
+        let type = parseType(ref p)
+        let name = T5.expectName(ref p)
+        T5.expectEnd(ref p)
+        return Decl.getterDecl(Owned(GetterDecl {
+            span: p.spanFrom(start),
+            modifiers: modifiers,
+            type: move type,
+            name: name,
+            doc: doc,
+            attributes: move attributes,
+        }))
+    }
+    if after > 0 && T5.isName(p.kindAt(after)) && p.kindAt(after + 1) == .fatArrow {
+        return parseFieldOrProperty(ref p, at: start, by: modifiers, through: move attributes, doc: doc)
+    }
+    let _ = p.report(.expected, at: spanOf(p.current()), arg0: "a method, getter or `type Name`", arg1: p.describe(p.current()))
+    synchronize(ref p)
+    return .none
+}
+
+/// `extension T : I { … }` or `extension T : I` alone on its line.
+ExtensionDecl parseExtension(ref Parser p, at i64 start) {
+    let _ = p.advance()
+    let name = T5.expectName(ref p, what: "a type name")
+    let bases = T5.parseBases(ref p)
+    var members = List<Decl>()
+    if p.kind() != .openBrace && T5.endsBefore(ref p, at: p.pos) {
+        T5.expectEnd(ref p)
+    } else {
+        let open = p.expect(.openBrace)
+        while p.kind() != .closeBrace && !p.atEnd() {
+            let before = p.pos
+            let errors = p.syntaxErrors
+            let member = parseDeclaration(ref p, topLevel: false, for: name)
+            unless member is .none { members.append(move member) }
+            recoverIfNeeded(ref p, from: errors)
+            if p.pos == before { let _ = p.advance() }
+        }
+        expectClose(ref p, from: open, for: "extension")
+    }
+    return ExtensionDecl { span: p.spanFrom(start), name: name, bases: move bases, members: move members }
+}
+
+void expectClose(ref Parser p, from Token open, for string what) {
+    if p.accept(.closeBrace) { return }
+    let line = p.lexed.source.getLinePosition(open.start).line
+    let _ = p.report(.expected, at: spanOf(p.current()), arg0: "`}`", arg1: p.describe(p.current()),
+        help: open.length > 0 ? $"close the {what} opened on line {line}" : "")
+}
+
+Decl parseFieldOrProperty(ref Parser p, at i64 start, by Modifiers modifiers, through move List<AttributeSyntax> attributes,
+    string? doc = null) {
+    var type: TypeSyntax = .none
+    var name = TextSpan { start: 0, length: 0 }
+    if T5.isNameThenType(ref p, at: p.pos) {
+        name = T5.parseNameThenType(ref p, to: ref type)
+    } else if T5.isTypeThenName(ref p, at: p.pos) {
+        let parsed = parseType(ref p)
+        name = T5.expectName(ref p)
+        type = T5.parseRefinement(ref p, from: move parsed, name: name)
+    } else {
+        let _ = p.report(.expectedMember, at: spanOf(p.current()), arg0: p.describe(p.current()))
+        synchronize(ref p)
+        return Decl.globalStatement(Owned(GlobalStatement {
+            span: p.spanFrom(start),
+            statement: Stmt.errorStmt(Owned(ErrorStmt { span: p.spanFrom(start) })),
+            doc: doc,
+            attributes: move attributes,
+        }))
+    }
+    if p.accept(.fatArrow) {
+        let body = parseExpression(ref p)
+        T5.expectEnd(ref p)
+        return Decl.propertyDecl(Owned(PropertyDecl {
+            span: p.spanFrom(start),
+            modifiers: modifiers,
+            type: move type,
+            name: name,
+            body: move body,
+            doc: doc,
+            attributes: move attributes,
+        }))
+    }
+    if p.kind() == .openBrace {
+        let block = parseBlock(ref p)
+        return Decl.propertyDecl(Owned(PropertyDecl {
+            span: p.spanFrom(start),
+            modifiers: modifiers,
+            type: move type,
+            name: name,
+            body: .none,
+            block: move block,
+            doc: doc,
+            attributes: move attributes,
+        }))
+    }
+    var init: Expr = .none
+    if p.accept(.equals) { init = parseExpression(ref p) }
+    let rules = parseRequiresLines(ref p)
+    T5.expectEnd(ref p)
+    return Decl.fieldDecl(Owned(FieldDecl {
+        span: p.spanFrom(start),
+        modifiers: modifiers,
+        type: move type,
+        name: name,
+        defaultKeyword: move init,
+        requiresKeyword: move rules,
+        doc: doc,
+        attributes: move attributes,
+    }))
+}
+
+/// The `requires` rules of a field or type: on its line, then one per line with no blank line between.
+List<RequiresRule> parseRequiresLines(ref Parser p) {
+    var rules = List<RequiresRule>()
+    while p.kind() == .requiresKeyword && !T5.hasBlankLineBefore(ref p, at: p.pos) { rules.append(T5.parseRequiresRule(ref p)) }
+    return rules
+}
+
+ConstructorDecl parseConstructor(ref Parser p, at i64 start, by Modifiers modifiers) {
+    let name = spanOf(p.advance())
+    let parameters = T5.parseParams(ref p)
+    let body = parseBlock(ref p)
+    return ConstructorDecl { span: p.spanFrom(start), modifiers: modifiers, name: name, params: move parameters, body: move body }
+}
+
+Decl parseErrorUnion(ref Parser p, at i64 start, by Modifiers modifiers, through move List<AttributeSyntax> attributes,
+    string? doc = null) {
+    let first = p.advance()
+    let second = p.advance()
+    if first.kind == .errorKeyword && second.kind != .setKeyword { reportKeywordOrder(ref p, from: first, to: second, as: "union error") }
+    let name = T5.expectName(ref p, what: "an error set name")
+    if p.kind() == .equals || second.kind == .setKeyword {
+        var set = parseErrorComposition(ref p, at: start, by: modifiers, from: first, through: second, for: name)
+        set.doc = doc
+        set.attributes = move attributes
+        return Decl.errorSetDecl(Owned(move set))
+    }
+    let open = p.expect(.openBrace)
+    var variants = List<ErrorVariant>()
+    var cases = List<TextSpan>()
+    var commas = List<Token>()
+    while T5.isName(p.kind()) || T5.isAttributeStart(ref p) {
+        let caseStart = p.current()
+        let caseAttributes = T5.parseAttributes(ref p)
+        var caseDoc = T5.docOf(ref p, for: caseStart)
+        if caseDoc is null { caseDoc = T5.docOf(ref p, for: p.current()) }
+        let variant = T5.expectName(ref p, what: "a variant name")
+        let fields = parsePayload(ref p, for: variant)
+        variants.append(ErrorVariant { span: variant, name: variant, doc: caseDoc, attributes: move caseAttributes, fields: move fields })
+        cases.append(TextSpan.fromBounds(caseStart.start, until: p.prevEnd))
+        unless nextCase(ref p, to: ref commas) { break }
+    }
+    reportCaseCommas(ref p, for: p.lexed.source.getText(name), from: open, through: in cases, by: in commas)
+    expectClose(ref p, from: open, for: "union error")
+    return Decl.errorEnumDecl(Owned(ErrorEnumDecl {
+        span: p.spanFrom(start),
+        modifiers: modifiers,
+        name: name,
+        variants: move variants,
+        doc: doc,
+        attributes: move attributes,
+    }))
+}
+
+/// `union error Name = A, B`, optionally narrowed by `except .a, .b`. The round-2 `error set Name = A | B`
+/// is the input form (BYN1029); its fix writes `union error` and `,` between the members.
+ErrorSetDecl parseErrorComposition(ref Parser p, at i64 start, by Modifiers modifiers, from Token first, through Token second,
+    for TextSpan name) {
+    let _ = p.expect(.equals)
+    var members = List<TypeSyntax>()
+    members.append(parseType(ref p))
+    var pipes = List<TextSpan>()
+    while p.kind() == .comma || p.kind() == .bar {
+        let memberEnd = p.prevEnd
+        if p.advance().kind == .bar { pipes.append(TextSpan.fromBounds(memberEnd, until: p.prevEnd)) }
+        members.append(parseType(ref p))
+    }
+    var exceptNames = List<TextSpan>()
+    if p.kind() == .exceptKeyword {
+        let _ = p.advance()
+        let _ = p.expect(.dot)
+        exceptNames.append(T5.expectName(ref p, what: "a case name"))
+        while p.kind() == .comma && p.peek(1) == .dot {
+            let _ = p.advance()
+            let _ = p.advance()
+            exceptNames.append(T5.expectName(ref p, what: "a case name"))
+        }
+    }
+    if second.kind == .setKeyword || pipes.length > 0 {
+        var text = StrBuf()
+        text.append(second.kind == .setKeyword ? "union error" : p.lexed.source.getText(TextSpan.fromBounds(first.start, until: second.end)))
+        var at = second.end
+        for pipe in pipes {
+            text.append(p.lexed.source.getText(TextSpan.fromBounds(at, until: pipe.start)))
+            text.append(",")
+            at = pipe.end
+        }
+        text.append(p.lexed.source.getText(TextSpan.fromBounds(at, until: p.prevEnd)))
+        let span = second.kind == .setKeyword ? TextSpan.fromBounds(first.start, until: second.end) : pipes[0]
+        let _ = p.reportFix(.errorSetPipe, at: span, through: TextSpan.fromBounds(first.start, until: p.prevEnd), by: $"{text.finish()}",
+            arg0: p.lexed.source.getText(name), label: "the input form", help: "write `union error`, with `,` between the members")
+    }
+    T5.expectEnd(ref p)
+    return ErrorSetDecl {
+        span: p.spanFrom(start),
+        modifiers: modifiers,
+        name: name,
+        members: move members,
+        head: TextSpan.fromBounds(first.start, until: second.end),
+        exceptKeyword: move exceptNames,
+    }
+}
+
+/// BYN1044 for a modifier word before the declaration kind (`unique struct`, `distinct type`, `error enum`,
+/// `error union`); the fix puts the kind first, keeping any words written between them.
+void reportKeywordOrder(ref Parser p, from Token modifier, to Token kind, as string canonical) {
+    let span = TextSpan.fromBounds(modifier.start, until: kind.end)
+    var from = modifier.end
+    while from < kind.start && isWhiteSpace(p.lexed.source.bytes[from]) { from += 1 }
+    let between = p.lexed.source.getText(TextSpan.fromBounds(from, until: kind.start))
+    let _ = p.reportFix(.declarationKeywordOrder, at: span, through: span, by: $"{between}{canonical}",
+        arg0: $"{p.textOf(modifier)} {p.textOf(kind)}", arg1: canonical, label: "the input form",
+        help: $"put the kind first: `{canonical}`")
+}
+
+/// The ASCII bytes C#'s `string.TrimStart()` removes (it also trims Unicode spaces, which a gap between two
+/// keywords holds only inside a comment, where trimming stops anyway).
+bool isWhiteSpace(u8 b) => b == ' ' || b == '\t' || b == '\n' || b == '\r' || b == 0x0B || b == 0x0C
+
+/// `enum Name { a b c }`, one member per line, or `enum Name(T x) { a(1) b(2) }`; members separated by
+/// `,` are the input form (BYN1053), and a `;` after the last is BYN1040.
+EnumDecl parseEnum(ref Parser p, at i64 start, by Modifiers modifiers) {
+    let _ = p.advance()
+    let name = T5.expectName(ref p, what: "an enum name")
+    var parameters: List<Param>? = null
+    if p.kind() == .openParen { parameters = T5.parseParams(ref p) }
+    let bases = T5.parseBases(ref p)
+    let where = T5.parseWhere(ref p)
+    let open = p.expect(.openBrace)
+    var members = List<EnumMember>()
+    var cases = List<TextSpan>()
+    var commas = List<Token>()
+    while T5.isName(p.kind()) {
+        let doc = T5.docOf(ref p, for: p.current())
+        let memberStart = p.current().start
+        let member = T5.expectName(ref p, what: "a member name")
+        var args: List<Argument>? = null
+        if p.kind() == .openParen { args = T5.parseArguments(ref p) }
+        let span = p.spanFrom(memberStart)
+        members.append(EnumMember { span: span, name: member, doc: doc, args: move args })
+        cases.append(span)
+        unless nextCase(ref p, to: ref commas) { break }
+    }
+    while p.kind() == .semicolon { T5.reportSemicolon(ref p, for: p.advance()) }
+    reportCaseCommas(ref p, for: p.lexed.source.getText(name), from: open, through: in cases, by: in commas)
+    expectClose(ref p, from: open, for: "enum")
+    return EnumDecl {
+        span: p.spanFrom(start),
+        modifiers: modifiers,
+        name: name,
+        params: move parameters,
+        members: move members,
+        bases: move bases,
+        where: move where,
+    }
+}
+
+/// `union Name { circle(f32 r) rect(f32 w, f32 h) none }` or `union Mode { read = 1 write = 2 }`, one
+/// variant per line; variants separated by `,` are the input form (BYN1053), and a `;` after the last is BYN1040.
+UnionDecl parseUnion(ref Parser p, at i64 start, by Modifiers modifiers) {
+    let _ = p.advance()
+    let name = T5.expectName(ref p, what: "a union name")
+    let typeParams = T5.parseTypeParams(ref p)
+    let bases = T5.parseBases(ref p)
+    let where = T5.parseWhere(ref p)
+    let open = p.expect(.openBrace)
+    var variants = List<UnionVariant>()
+    var cases = List<TextSpan>()
+    var commas = List<Token>()
+    while T5.isName(p.kind()) {
+        let doc = T5.docOf(ref p, for: p.current())
+        let variantStart = p.current().start
+        let variant = T5.expectName(ref p, what: "a variant name")
+        let fields = parsePayload(ref p, for: variant)
+        var value: Expr = .none
+        if p.accept(.equals) { value = parseExpression(ref p) }
+        let span = p.spanFrom(variantStart)
+        variants.append(UnionVariant { span: span, name: variant, fields: move fields, doc: doc, value: move value })
+        cases.append(span)
+        unless nextCase(ref p, to: ref commas) { break }
+    }
+    while p.kind() == .semicolon { T5.reportSemicolon(ref p, for: p.advance()) }
+    reportCaseCommas(ref p, for: p.lexed.source.getText(name), from: open, through: in cases, by: in commas)
+    expectClose(ref p, from: open, for: "union")
+    return UnionDecl {
+        span: p.spanFrom(start),
+        modifiers: modifiers,
+        name: name,
+        variants: move variants,
+        typeParams: move typeParams,
+        bases: move bases,
+        where: move where,
+    }
+}
+
+/// The `(T name, …)` payload of a union variant or a state, if written; a type without a name is BYN1064.
+List<UnionField> parsePayload(ref Parser p, for TextSpan variant) {
+    var fields = List<UnionField>()
+    if p.kind() != .openParen { return fields }
+    let _ = p.advance()
+    while p.kind() != .closeParen && !p.atEnd() {
+        let before = p.pos
+        let fieldStart = p.current().start
+        var type: TypeSyntax = .none
+        var field = TextSpan { start: 0, length: 0 }
+        if T5.isNameThenType(ref p, at: p.pos) {
+            field = T5.parseNameThenType(ref p, to: ref type)
+        } else {
+            type = parseType(ref p)
+            if (p.kind() == .comma || p.kind() == .closeParen) && p.pos != before {
+                let typeSpan = T5.typeSpan(in type)
+                let typeText = p.lexed.source.getText(typeSpan)
+                let variantText = p.lexed.source.getText(variant)
+                let _ = p.report(.payloadNeedsName, at: typeSpan, arg0: typeText, arg1: variantText, label: "no name",
+                    help: $"name the payload: `.{variantText}({typeText} name)`")
+                // The C# `Name` here has the text `<missing>`; a name is its span (Q452).
+                field = TextSpan { start: p.prevEnd, length: 0 }
+            } else {
+                field = T5.expectName(ref p, what: "a payload field name")
+            }
+        }
+        fields.append(UnionField { span: p.spanFrom(fieldStart), type: move type, name: field })
+        if !p.accept(.comma) || p.pos == before { break }
+    }
+    let _ = p.expect(.closeParen)
+    return fields
+}
+
+/// After a case of an enum, union or union error: whether another follows, on its own line or after a `,`
+/// (kept in `commas`).
+bool nextCase(ref Parser p, to ref List<Token> commas) {
+    if p.kind() == .comma {
+        commas.append(p.advance())
+        return true
+    }
+    return p.current().hasNewlineBefore
+}
+
+/// BYN1053 at the first `,` between cases; the fix puts each case on its own line and drops the commas.
+void reportCaseCommas(ref Parser p, for string typeName, from Token open, through in List<TextSpan> cases, by in List<Token> commas) {
+    // A lone case with a trailing comma (`union error E { bad, }`) is still one case on one line.
+    if commas.length == 0 || cases.length < 2 { return }
+    if p.kind() == .closeBrace && cases.length > 0 {
+        let outer = T5.indentAt(ref p, at: open.start)
+        let lead = p.lexed.source.getText(TextSpan.fromBounds(open.end, until: cases[0].start))
+        let sameLine = !lead.contains("\n")
+        let caseIndent = sameLine ? $"{outer}    " : T5.indentAt(ref p, at: cases[0].start)
+        var text = StrBuf()
+        text.append(sameLine ? $"{keptComment(lead)}\n{caseIndent}" : lead)
+        for i in 0..cases.length {
+            text.append(p.lexed.source.getText(cases[i]))
+            let gapEnd = i + 1 < cases.length ? cases[i + 1].start : p.current().start
+            var gap = withoutCommas(ref p, from: cases[i].end, until: gapEnd, by: in commas)
+            if !gap.contains("\n") {
+                let indent = i + 1 < cases.length ? caseIndent : outer
+                gap = $"{keptComment(gap)}\n{indent}"
+            }
+            text.append(gap)
+        }
+        let _ = p.reportFix(.oneLineDeclarations, at: spanOf(commas[0]), through: TextSpan.fromBounds(open.end, until: p.current().start),
+            by: $"{text.finish()}", arg0: typeName, label: "the first `,`", help: "write each case on its own line")
+        return
+    }
+    let _ = p.report(.oneLineDeclarations, at: spanOf(commas[0]), arg0: typeName, label: "the first `,`",
+        help: "write each case on its own line")
+}
+
+/// A `/* */` comment in a one-line gap between cases, kept at the end of its line; empty when there is none.
+string keptComment(string gap) {
+    var first: i64 = 0
+    var last = gap.length
+    while first < last && (gap.bytes[first] == ' ' || gap.bytes[first] == '\t') { first += 1 }
+    while last > first && (gap.bytes[last - 1] == ' ' || gap.bytes[last - 1] == '\t') { last -= 1 }
+    return first < last ? $" {gap[first..last]}" : ""
+}
+
+/// The source from `start` to `end` without its `,` tokens and the spaces before them.
+string withoutCommas(ref Parser p, from i64 start, until i64 end, by in List<Token> commas) {
+    var text = StrBuf()
+    var at = start
+    for comma in commas {
+        if comma.start < start || comma.start >= end { continue }
+        var cut = comma.start
+        while cut > at && (p.lexed.source.bytes[cut - 1] == ' ' || p.lexed.source.bytes[cut - 1] == '\t') { cut -= 1 }
+        text.append(p.lexed.source.getText(TextSpan.fromBounds(at, until: cut)))
+        at = comma.end
+    }
+    var restStart = at
+    // A comma ends its line: the spaces it left before a line break go too.
+    var blank = at
+    while blank < end && (p.lexed.source.bytes[blank] == ' ' || p.lexed.source.bytes[blank] == '\t') { blank += 1 }
+    if at > start && blank < end && p.lexed.source.bytes[blank] == '\n' { restStart = blank }
+    text.append(p.lexed.source.getText(TextSpan.fromBounds(restStart, until: end)))
+    return $"{text.finish()}"
+}
+
+/// `type Name = T`, or `type distinct Name = T`; `distinct type` is the input form (BYN1044).
+TypeAliasDecl parseTypeAlias(ref Parser p, at i64 start, by Modifiers modifiers) {
+    let first = p.advance()
+    let isDistinct = first.kind == .distinctKeyword || p.kind() == .distinctKeyword
+    if first.kind == .distinctKeyword {
+        let kind = p.advance()
+        reportKeywordOrder(ref p, from: first, to: kind, as: "type distinct")
+    } else if isDistinct {
+        let _ = p.advance()
+    }
+    let name = T5.expectName(ref p)
+    let _ = p.expect(.equals)
+    let parsed = T5.parseTypeWith(ref p, fatArrow: true, lists: true)
+    let target = T5.parseRefinement(ref p, from: move parsed)
+    let rules = parseRequiresLines(ref p)
+    T5.expectEnd(ref p)
+    return TypeAliasDecl {
+        span: p.spanFrom(start),
+        modifiers: modifiers,
+        name: name,
+        target: move target,
+        distinct: isDistinct,
+        requiresKeyword: move rules,
+    }
+}
+
+/// `effect name = net, fs`.
+EffectDecl parseEffect(ref Parser p, at i64 start, by Modifiers modifiers) {
+    let _ = p.advance()
+    let name = T5.expectName(ref p)
+    let _ = p.expect(.equals)
+    var effects = List<TextSpan>()
+    effects.append(T5.expectName(ref p, what: "an effect name"))
+    while p.accept(.comma) { effects.append(T5.expectName(ref p, what: "an effect name")) }
+    T5.expectEnd(ref p)
+    return EffectDecl { span: p.spanFrom(start), modifiers: modifiers, name: name, effects: move effects }
+}
+
+TestDecl parseTest(ref Parser p, at i64 start) {
+    let _ = p.advance()
+    var title = ""
+    if p.kind() == .stringLiteral {
+        let token = p.advance()
+        title = $"{decodeString(p.text(token))}"
+    } else {
+        let _ = p.report(.expected, at: spanOf(p.current()), arg0: "the test's name as a string literal", arg1: p.describe(p.current()))
+    }
+    var parameters = List<Param>()
+    if p.kind() == .openParen { parameters = T5.parseParams(ref p) }
+    let body = parseBlock(ref p)
+    return TestDecl { span: p.spanFrom(start), title: title, params: move parameters, body: move body }
+}
+
+// ── T5 shims (Q450) ───────────────────────────────────────────────────────────
+// Stand-ins for helpers that sibling files own and that had no stub when T5 ran. Each keeps the C#
+// name in camelCase; T15 deletes this struct and drops the `T5.` prefix at every call, adjusting a
+// call where the owner's signature differs. The bodies are just enough for the T5 tests' inputs.
+
+struct T5 {
+    // recover.byn (T3)
+    static bool isName(TokenKind kind) => kind == .identifier
+
+    static TextSpan expectName(ref Parser p, string what = "a name") {
+        if T5.isName(p.kind()) { return spanOf(p.advance()) }
+        let _ = p.report(.expected, at: spanOf(p.current()), arg0: what, arg1: p.describe(p.current()))
+        return TextSpan { start: p.current().start, length: 0 }
+    }
+
+    static void expectEnd(ref Parser p) {
+        if p.atEnd() || p.kind() == .closeBrace || p.current().hasNewlineBefore { return }
+        let _ = p.report(.missingLineBreak, at: TextSpan { start: p.prevEnd, length: 0 }, label: $"found {p.describe(p.current())}")
+    }
+
+    static void reportSemicolon(ref Parser p, for Token semicolon) {
+        let _ = p.report(.semicolonInput, at: spanOf(semicolon), label: "remove `;`", help: "remove the `;`")
+    }
+
+    static bool endsBefore(ref Parser p, at i64 index) {
+        let kind = p.kindAt(index)
+        return kind == .semicolon || kind == .closeBrace || kind == .endOfFile
+            || index < p.count && p.lexed.tokens[index].hasNewlineBefore && !p.inGroup[index]
+    }
+
+    static bool hasBlankLineBefore(ref Parser p, at i64 index) => false
+
+    static string indentAt(ref Parser p, at i64 offset) => ""
+
+    // stmts2.byn (T8)
+    static bool atContextual(ref Parser p, for string word) => p.kind() == .identifier && p.textOf(p.current()) == word
+
+    // decls.byn (T4)
+    static string? docOf(ref Parser p, for Token token) => null
+
+    static List<AttributeSyntax> parseAttributes(ref Parser p) => List<AttributeSyntax>()
+
+    static bool isAttributeStart(ref Parser p) => false
+
+    static Modifiers parseModifiers(ref Parser p) => modifierNone
+
+    static void rejectModifiers(ref Parser p, for Modifiers modifiers, by Modifiers allowed, at i64 start) {}
+
+    static bool isFunctionStart(ref Parser p) => false
+
+    static bool isNameFirstFunctionStart(ref Parser p, bool allowNoBody) => false
+
+    static FunctionDecl parseFunction(ref Parser p, at i64 start, by Modifiers modifiers, bool allowNoBody = false) =>
+        FunctionDecl {
+            span: p.spanFrom(start),
+            modifiers: modifiers,
+            returnType: .none,
+            name: TextSpan { start: start, length: 0 },
+            params: List<Param>(),
+            failsKeyword: null,
+            body: .none,
+            expressionBody: .none,
+        }
+
+    static bool isNameThenType(ref Parser p, at i64 index) => false
+
+    /// The C# `(TypeSyntax Type, Name Name) ParseNameThenType()`: a tuple element cannot be moved out of
+    /// (BYN2782), so the type comes back through `type`.
+    static TextSpan parseNameThenType(ref Parser p, to ref TypeSyntax type) => TextSpan { start: 0, length: 0 }
+
+    static bool isTypeThenName(ref Parser p, at i64 index) => false
+
+    static List<TextSpan> parseTypeParams(ref Parser p) => List<TextSpan>()
+
+    static List<TypeSyntax> parseBases(ref Parser p) => List<TypeSyntax>()
+
+    static List<WhereClause> parseWhere(ref Parser p) => List<WhereClause>()
+
+    static RequiresRule parseRequiresRule(ref Parser p) {
+        let start = p.advance().start
+        return RequiresRule { span: p.spanFrom(start), condition: .none, at: null }
+    }
+
+    static List<Param> parseParams(ref Parser p) => List<Param>()
+
+    static TypeSyntax parseRefinement(ref Parser p, from move TypeSyntax type, TextSpan? name = null) => type
+
+    // types.byn (T6)
+    static i64 scanType(ref Parser p, at i64 index) => -1
+
+    /// The C# `ParseType(fatArrow:, lists:)`; the `parseType` stub takes neither.
+    static TypeSyntax parseTypeWith(ref Parser p, bool fatArrow = false, bool lists = false) => parseType(ref p)
+
+    /// The C# `TypeSyntax.Span`.
+    static TextSpan typeSpan(in TypeSyntax type) {
+        switch type {
+            case .namedType(let n): return n.value.span
+            case .optionalType(let n): return n.value.span
+            case .arrayType(let n): return n.value.span
+            case .tupleType(let n): return n.value.span
+            case .functionTypeSyntax(let n): return n.value.span
+            case .dynType(let n): return n.value.span
+            case .refinedType(let n): return n.value.span
+            case .pointerType(let n): return n.value.span
+            case .none: return TextSpan { start: 0, length: 0 }
+        }
+    }
+
+    // exprs.byn (T9)
+    static List<Argument> parseArguments(ref Parser p) => List<Argument>()
+}
