@@ -112,6 +112,7 @@ public sealed class Builtins
         HexDecode = Make("decode", BuiltinFunction.HexDecode, new ListType(PrimitiveType.U8), ("text", PrimitiveType.String));
         HexDecode.Fails = true;
         HexDecode.ErrorSets.Add(ParseError);
+        SymbolIntern = Make("intern", BuiltinFunction.SymbolIntern, BuiltinType.Symbol, ("text", PrimitiveType.String));
         StringInvalidUtf8At = Make("invalidUtf8At", BuiltinFunction.StringInvalidUtf8At, new OptionalType(PrimitiveType.I64), bytes);
 
         // The iteration interfaces are declared from source too; `Compilation` declares their members like a user interface's.
@@ -242,6 +243,9 @@ public sealed class Builtins
 
     /// <summary><c>List&lt;u8&gt; Hex.decode(string text) fails ParseError</c>: two hex digits, either case, per byte.</summary>
     public FunctionSymbol HexDecode { get; }
+
+    /// <summary><c>Symbol Symbol.intern(string text)</c>: the symbol for <c>text</c>, copied into runtime-owned storage when new (spec 008 R3).</summary>
+    public FunctionSymbol SymbolIntern { get; }
 
     /// <summary>A static member of <c>string</c>, or null.</summary>
     public FunctionSymbol? FindString(string name) => name switch

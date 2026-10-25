@@ -117,6 +117,14 @@ internal sealed partial class Binder
                 help: "check the value, then clear the mark with `x.trustUnchecked() because \"…\"`");
             return new BoundErrorExpr(value.Syntax);
         }
+        // Only a string literal is a `Symbol` at compile time (spec 008 R2); any other text is interned, which allocates.
+        if (value.Type.IsString && (target == BuiltinType.Symbol || target is OptionalType { Inner: BuiltinType { Kind: BuiltinKind.Symbol } }))
+        {
+            var text = Source.GetText(span);
+            Report(DiagnosticCodes.StringNotSymbol, span, [], help: $"convert it with `Symbol.intern({text})`",
+                fix: new Fix(span, $"Symbol.intern({text})"));
+            return new BoundErrorExpr(value.Syntax);
+        }
         // O9: a bare literal never takes a distinct type; `ParcelId(0)` builds one.
         if (target is StructSymbol distinct && _c.Distinct.Contains(distinct) && value.Constant is not null)
         {
@@ -439,6 +447,8 @@ internal sealed partial class Binder
                     return Literal(l, PrimitiveType.U8, (Int128)value);
                 return Literal(l, PrimitiveType.Char, new Rune(value));
             }
+            case LiteralKind.String or LiteralKind.RawString when target == BuiltinType.Symbol:
+                return new BoundSymbolLiteral(l, l.Text);
             case LiteralKind.String:
                 return Literal(l, PrimitiveType.String, l.Text);
             case LiteralKind.RawString:
@@ -536,6 +546,7 @@ internal sealed partial class Binder
             return new BoundTypeRef(n, ResolveType(new NamedType(n.Span, [n.Name], [])));
         if (name == "Io") return new BoundTypeRef(n, BuiltinType.Io);
         if (name == "Hex") return new BoundTypeRef(n, BuiltinType.Hex);
+        if (name == "Symbol") return new BoundTypeRef(n, BuiltinType.Symbol);
         if (name == "Utf8") return new BoundTypeRef(n, BuiltinType.Utf8);
         ReportUndefined(n.Name);
         return new BoundErrorExpr(n);
@@ -679,6 +690,10 @@ internal sealed partial class Binder
                 if (name == "encode") return new BoundMethodGroup(m, null, _c.Builtins.HexEncode);
                 if (name == "decode") return new BoundMethodGroup(m, null, _c.Builtins.HexDecode);
                 Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, hex.Name], help: Suggest(name, ["encode", "decode"]) is { } closest ? $"did you mean `{closest}`?" : null);
+                return new BoundErrorExpr(m);
+            case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Symbol } symbol }:
+                if (name == "intern") return new BoundMethodGroup(m, null, _c.Builtins.SymbolIntern);
+                Report(DiagnosticCodes.UnknownMember, m.Member.Span, [name, symbol.Name], help: Suggest(name, ["intern"]) is { } like ? $"did you mean `{like}`?" : null);
                 return new BoundErrorExpr(m);
             case BoundTypeRef { Referenced: BuiltinType { Kind: BuiltinKind.Utf8 } utf8 }:
                 if (_c.Builtins.FindUtf8(name) is { } decode) return new BoundMethodGroup(m, null, decode);
@@ -1220,7 +1235,8 @@ internal sealed partial class Binder
         // A comparison of an untrusted value is a clean fact (spec §15.1): it compares the inner values.
         BoundExpr Operand(Expr e, TypeSymbol? hint) => arithmetic ? BindExpr(e, hint) : Fact(BindExpr(e, hint));
         BoundExpr left, right;
-        if (IsUntypedLiteral(b.Left) && !IsUntypedLiteral(b.Right))
+        // A string literal facing a `Symbol` binds as one (spec 008 R2), so the other operand goes first.
+        if (IsUntypedLiteral(b.Left) && !IsUntypedLiteral(b.Right) || !arithmetic && IsStringLiteral(b.Left) && !IsStringLiteral(b.Right))
         {
             right = Operand(b.Right, arithmetic ? expected : null);
             left = BindExpr(b.Left, right.Type is OptionalType o ? o.Inner : right.Type);
@@ -1284,6 +1300,8 @@ internal sealed partial class Binder
     /// <summary>The inner value of an <c>Untrusted&lt;T&gt;</c>, read for a fact; other values unchanged.</summary>
     private static BoundExpr Fact(BoundExpr value) =>
         value.Type is UntrustedType u ? new BoundConversion(value.Syntax, value, u.Inner, ConversionKind.Identity) : value;
+
+    private static bool IsStringLiteral(Expr e) => e is LiteralExpr { Kind: LiteralKind.String or LiteralKind.RawString } or ParenExpr { Inner: LiteralExpr { Kind: LiteralKind.String or LiteralKind.RawString } };
 
     private bool IsPlainStringLiteral(Expr e) =>
         e is LiteralExpr { Kind: LiteralKind.String } && Source.GetText(e.Span) is var text

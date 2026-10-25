@@ -29,6 +29,9 @@ public abstract record BoundExpr(Node Syntax, TypeSymbol Type) : BoundNode(Synta
 
 public sealed record BoundLiteral(Node Syntax, TypeSymbol Type, ConstantValue Value) : BoundExpr(Syntax, Type);
 
+/// <summary>A string literal where a <c>Symbol</c> is expected: an entry of the program's literal table, fixed at compile time (spec 008 R2).</summary>
+public sealed record BoundSymbolLiteral(Node Syntax, string Text) : BoundExpr(Syntax, BuiltinType.Symbol);
+
 /// <summary>The default (zero) value of a type, or <c>null</c> of an optional.</summary>
 public sealed record BoundDefault(Node Syntax, TypeSymbol Type) : BoundExpr(Syntax, Type);
 

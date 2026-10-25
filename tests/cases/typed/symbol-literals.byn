@@ -1,0 +1,28 @@
+// A string literal where a `Symbol` is expected is a `Symbol` fixed at compile time (spec 008 R2).
+struct Entry {
+    Symbol name = "entry"
+    i32 rank
+}
+
+bool same(Symbol a, to Symbol b) => a == b
+
+Symbol keyword() {
+    return "let"
+}
+
+void main() {
+    let typed: Symbol = "total"
+    var mutable: Symbol = """raw"""
+    let optional: Symbol? = "maybe"
+    let argument: bool = same("a", to: typed)
+    let entry = Entry { name: "field", rank: 1 }
+    let returned = keyword()
+    let names: List<Symbol> = ["x", "y"]
+    let left: bool = "total" == typed
+    let right: bool = typed != "totals"
+    let lt: bool = typed < "u"
+    let le: bool = "a" <= typed
+    let gt: bool = typed > "a"
+    let ge: bool = "z" >= typed
+    mutable = "other"
+}
