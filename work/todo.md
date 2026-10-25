@@ -285,3 +285,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 007 T5: a user local named `it` in a function that also uses the `it` shorthand gives BYN2007 (shadowing) at the shorthand.
 - 007 T4 review: a built-in or generic function passed to a generic function-typed parameter (`holds(print)` with `bool holds<T>((T -> bool) p)`) is BYN2740 "cannot infer" instead of BYN2824; `Instantiate` in BinderCalls.cs should run `ConvertToFunction`'s check on a non-qualifying group.
 - 007 T4 review: the overload lookup in `ConvertToFunction` (BinderExpressions.cs, `fn.Module.Functions…fs`) is dead while a second module function of the same name is BYN2006.
+- 007 T6: BYN3002/BYN3003 on a lambda region keep the generic help ("copy the data with `.copy(to: alloc)`") and label ("freed at the end of its block"), which fit a lambda kept past its loop iteration poorly; a lambda-specific help needs a branch in `CheckOutlives`/`CheckReturn`.
