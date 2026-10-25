@@ -464,7 +464,7 @@ StructDecl parseStruct(ref Parser p, at i64 start, by Modifiers modifiers) {
     T4.expectClose(ref p, from: open, for: "struct")
     if stateLines.length > 0 { reportStateLines(ref p, from: in stateKeywords, for: in stateLines, by: hasStates) }
     // O3: a field's rule that names another field, or has `at .f`, belongs to the struct; one that also reads `it` is BYN3218.
-    // A field's rules cannot be moved out of its `Owned` node, so they stay on the field (Q447).
+    // O3: deferred to T15 (Q446): parseFieldOrProperty must split a field's rules before wrapping it in Owned
     var fields = List<string>()
     for i in 0..members.length {
         switch members[i] {
