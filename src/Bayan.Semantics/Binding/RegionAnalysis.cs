@@ -67,6 +67,8 @@ internal sealed class RegionAnalysis
     /// <summary>The regions standing for <c>rest</c> parameters, with the parameter's name.</summary>
     private readonly Dictionary<Region, string> _restTails = new();
     private int _depth;
+    /// <summary>The depth of the innermost loop's iteration scope, or 0 outside a loop.</summary>
+    private int _iteration;
     private bool _reporting;
 
     private RegionAnalysis(Compilation c, FunctionSymbol fn)
@@ -154,10 +156,10 @@ internal sealed class RegionAnalysis
                 break;
             case BoundWhile w:
                 Expr(w.Condition);
-                Stmt(w.Body);
+                Iterate(_depth + 1, w.Body);
                 break;
             case BoundDoWhile w:
-                Stmt(w.Body);
+                Iterate(_depth + 1, w.Body);
                 Expr(w.Condition);
                 break;
             case BoundFor f:
@@ -186,7 +188,7 @@ internal sealed class RegionAnalysis
                         SpanType sp => MayBorrow(sp.Element, []),
                         _ => true,
                     };
-                Stmt(f.Body);
+                Iterate(_depth, f.Body);
                 _depth--;
                 break;
             }
@@ -220,6 +222,14 @@ internal sealed class RegionAnalysis
                 _contexts.Pop();
                 break;
         }
+    }
+
+    private void Iterate(int depth, BoundStmt body)
+    {
+        var outer = _iteration;
+        _iteration = depth;
+        Stmt(body);
+        _iteration = outer;
     }
 
     private void Declare(LocalSymbol local, int position)
@@ -330,6 +340,15 @@ internal sealed class RegionAnalysis
                 var operand = Expr(c.Operand);
                 if (c.Binding is not null) Declare(c.Binding, c.Syntax.Span.Start);
                 return operand.Union(Expr(c.Handler));
+            }
+            case BoundLambda l:
+            {
+                // A lambda borrows what its captures borrow, and its captures live in this frame,
+                // overwritten by each iteration of the loop that creates it.
+                var captures = Borrow.None;
+                foreach (var capture in l.Captures) captures = captures.Union(Expr(capture));
+                return l.Captures.Length == 0 ? captures
+                    : captures.Union(new Borrow([new Region(Math.Max(1, _iteration), $"the lambda on line {Line(l.Syntax.Span)}")], []));
             }
             default:
             {
@@ -804,7 +823,7 @@ internal sealed class RegionAnalysis
     private static bool MayBorrow(TypeSymbol t, HashSet<TypeSymbol> seen) => t switch
     {
         PrimitiveType p => p.IsString,
-        SpanType or ListType or MapType or OwnedType or DynRefType or TextViewType => true,
+        SpanType or ListType or MapType or OwnedType or DynRefType or TextViewType or FunctionType => true,
         BuiltinType b => b.Kind is BuiltinKind.StrBuf or BuiltinKind.ProcessResult,
         UntrustedType u => MayBorrow(u.Inner, seen),
         OptionalType o => MayBorrow(o.Inner, seen),

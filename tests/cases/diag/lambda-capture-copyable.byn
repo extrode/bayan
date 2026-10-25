@@ -1,0 +1,24 @@
+i64 apply((i64 -> i64) f) => f(1)
+
+i64 twice(i64 x, by (i64 -> i64) f) => f(f(x))
+
+i64 scale(i64 by) {
+    let offset = 3
+    let f: i64 -> i64 = x => x * by + offset
+    return apply(f) + twice(2, by: f)
+}
+
+void main() {
+    let k = 2
+    var held: i64 -> i64 = x => x
+    {
+        let j = 5
+        held = x => x + j + k
+    }
+    var total = 0
+    for i in 0..3 {
+        let g: i64 -> i64 = x => x + i
+        total = total + g(k) + apply(x => x + i)
+    }
+    print($"{held(1) + total + scale(4)}")
+}

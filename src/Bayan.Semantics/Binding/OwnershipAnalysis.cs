@@ -377,7 +377,7 @@ internal sealed class OwnershipAnalysis
             {
                 foreach (var child in BoundTree.Children(e))
                     if (child is BoundExpr ce) state = Expr(ce, state);
-                foreach (var stored in StoredOperands(e)) CheckStore(stored);
+                foreach (var stored in StoredOperands(e)) CheckStore(stored, captured: e is BoundLambda);
                 return e.Type.IsNever && e is not BoundErrorExpr ? State.Unreachable() : state;
             }
         }
@@ -392,18 +392,25 @@ internal sealed class OwnershipAnalysis
         BoundTuple t => t.Elements,
         BoundWith w => w.Updates.Select(u => u.Value),
         BoundBuiltinCall { Member: BuiltinMember.ListAdd } b => [b.Arguments[0]],
+        BoundLambda l => l.Captures,
         _ => [],
     };
 
     // ── Implicit copies (BYN2780) ────────────────────────────────────────────────
 
     /// <summary><paramref name="value"/> is stored somewhere new: it must not be an existing unique value.</summary>
-    private void CheckStore(BoundExpr value)
+    private void CheckStore(BoundExpr value, bool captured = false)
     {
         if (!IsPlace(value) || TypeFacts.WhyUnique(value.Type) is not { } why) return;
         var core = StripConversions(value);
         var span = core.Syntax.Span;
         var text = _source.GetText(span);
+        // A lambda copies its captures; a copy or a move of the local would be captured the same way.
+        if (captured)
+        {
+            Report(DiagnosticCodes.ImplicitCopy, span, [why], help: $"copy what the lambda needs from `{text}` into `let` values first");
+            return;
+        }
         if (core is BoundWith w && StripConversions(w.Target) is var target && IsMovable(target))
         {
             var name = _source.GetText(target.Syntax.Span);
