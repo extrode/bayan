@@ -1,7 +1,7 @@
 // Types. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 1743–2113 (`IsTypeNameToken`, `IsDynAt`, `ScanType`,
 // `IsTypeArrow`, `ScanFunctionType`, `ScanClauseList`, `ScanTypeArgs`, `ScanExprTypeArgs`, `CSharpTypeNames`,
 // `ParseType`, `ParseFunctionType`, `ParseClauseList`, `ReadOnlyPointee`, `ParsePrefixPointer`, `PointeeText`,
-// `ReportPointerOutsideExtern`, `ParseNamedType`, `MissingType`, `ParseTypeArgs`). Owner: T6.
+// `ReportPointerOutsideExtern`, `ParseNamedType`, `MissingType`, `ParseTypeArgs`). Owner: 
 //
 // The C# rewrites two finished nodes with `with`: a parenthesized lone function type gets the span of its
 // parentheses, and `ReadOnlyPointee` widens the outer pointers of `readonly T*` and marks the innermost one.
@@ -54,7 +54,7 @@ i64 scanType(ref Parser p, at i64 index) => scanTypeNested(ref p, at: index, nes
                 lone = element.function
                 if i < 0 { return (end: -1, function: false) }
                 names = names && i == elementStart + 1
-                if T6.isName(p.kindAt(i)) {
+                if isName(p.kindAt(i)) {
                     i += 1
                     names = false
                 }
@@ -123,7 +123,7 @@ i64 scanClauseList(ref Parser p, at i64 index, bool names) {
     var i = paren ? index + 1 : index
     while true {
         if names {
-            i = T6.isName(p.kindAt(i)) ? i + 1 : -1
+            i = isName(p.kindAt(i)) ? i + 1 : -1
         } else {
             i = scanTypeNested(ref p, at: i, nested: true).end
         }
@@ -203,7 +203,7 @@ ParsedType parseTypeParts(ref Parser p, bool fatArrow = false, bool lists = fals
             do {
                 let elementStart = p.current().start
                 let element = parseTypeParts(ref p, fatArrow: true, lists: lists)
-                let name: TextSpan? = T6.isName(p.kind()) ? spanOf(p.advance()) : null
+                let name: TextSpan? = isName(p.kind()) ? spanOf(p.advance()) : null
                 let span = p.spanFrom(elementStart)
                 if elements.length == 0 && name is null && element is .function(_) && p.kind() != .comma {
                     lone = move element
@@ -365,8 +365,8 @@ List<TextSpan> parseClauseNames(ref Parser p, bool lists) {
     let paren = p.kind() == .openParen
     if paren { let _ = p.advance() }
     var items = List<TextSpan>()
-    items.append(T6.expectName(ref p, what: "an effect name"))
-    while (lists || paren) && p.accept(.comma) { items.append(T6.expectName(ref p, what: "an effect name")) }
+    items.append(expectName(ref p, what: "an effect name"))
+    while (lists || paren) && p.accept(.comma) { items.append(expectName(ref p, what: "an effect name")) }
     if paren { let _ = p.expect(.closeParen) }
     return items
 }
@@ -376,7 +376,7 @@ TypeSyntax parsePrefixPointer(ref Parser p) {
     let start = p.current().start
     let star = p.advance()
     let readOnly = p.accept(.constKeyword)
-    if !readOnly && T6.isWord(ref p, for: "mut") && isTypeNameToken(p.peek(1)) { let _ = p.advance() }
+    if !readOnly && atContextual(ref p, as: "mut") && isTypeNameToken(p.peek(1)) { let _ = p.advance() }
     let pointee = parseType(ref p)
     let span = p.spanFrom(start)
     let canonical = $"{readOnly ? "readonly " : ""}{pointeeText(in pointee, from: ref p)}*"
@@ -400,7 +400,7 @@ string pointeeText(in TypeSyntax pointee, from ref Parser p) {
         case .pointerType(let n):
             return $"{n.value.readOnly ? "readonly " : ""}{pointeeText(in n.value.pointee, from: ref p)}*"
         default:
-            return p.lexed.source.getText(T6.typeSpan(in pointee))
+            return p.lexed.source.getText(typeSpan(in pointee))
     }
 }
 
@@ -462,45 +462,3 @@ List<TypeSyntax> parseTypeArgs(ref Parser p) {
 
 // ── T6 stand-ins (T15 deletes) ──
 
-struct T6 {
-    /// recover.byn (T3): an identifier, or a declaration keyword used as a name (spec 004 R3).
-    static bool isName(TokenKind kind) =>
-        kind == .identifier || kind == .errorKeyword || kind == .flagsKeyword || kind == .unitKeyword || kind == .distinctKeyword
-        || kind == .openKeyword || kind == .extensibleKeyword || kind == .setKeyword || kind == .typeKeyword || kind == .lawKeyword
-        || kind == .derivationKeyword || kind == .attributeKeyword || kind == .embedKeyword || kind == .effectKeyword
-
-    /// recover.byn (T3): the C# body without the BYN0012 report for a C# primitive name (`IsCSharpPrimitive` is T3's).
-    static TextSpan expectName(ref Parser p, string what = "a name") {
-        if isName(p.kind()) { return spanOf(p.advance()) }
-        let _ = p.report(.expected, at: spanOf(p.current()), arg0: what, arg1: p.describe(p.current()))
-        return TextSpan { start: p.current().start, length: 0 }
-    }
-
-    /// stmts2.byn (T8).
-    static bool isWord(ref Parser p, for string word) =>
-        p.kind() == .identifier && lexer.sameBytes(p.text(p.current()), as: word.bytes)
-
-    /// The C# `type.Span` (dump2.byn or spans.byn will need one too).
-    static TextSpan typeSpan(in TypeSyntax t) {
-        switch t {
-            case .namedType(let n):
-                return n.value.span
-            case .optionalType(let n):
-                return n.value.span
-            case .arrayType(let n):
-                return n.value.span
-            case .tupleType(let n):
-                return n.value.span
-            case .functionTypeSyntax(let n):
-                return n.value.span
-            case .dynType(let n):
-                return n.value.span
-            case .refinedType(let n):
-                return n.value.span
-            case .pointerType(let n):
-                return n.value.span
-            case .none:
-                return TextSpan { start: 0, length: 0 }
-        }
-    }
-}

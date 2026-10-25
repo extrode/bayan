@@ -1,5 +1,5 @@
 // bayan-parse: the self-hosted parser. Prints the same text as `bayan parse --ast`. Ports
-// `CliApp.Parse` in the shape of the lexer's `main.byn`. Owner: T13.
+// `CliApp.Parse` in the shape of the lexer's `main.byn`. Owner: 
 //
 //     bayan-parse [<path>|-]    the tree dump and diagnostics of `<path>`, or of stdin given `-` or no
 //                               path; exit 0 if there are no diagnostics, else 1

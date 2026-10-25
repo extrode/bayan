@@ -1,6 +1,6 @@
 // Parser state, token access and diagnostics. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 20–163
 // (fields, the constructor's `_inGroup` precompute, the cursor, `Report`, `ErrorCount`, `Describe`,
-// `Expect`) and gives the flags C# restores in `finally` a save helper each. Owner: T1.
+// `Expect`) and gives the flags C# restores in `finally` a save helper each. Owner: 
 //
 // Parsing is free functions over `ref Parser p`, one file per C# line range; the cursor and diagnostics
 // are methods, so a C# `Report(…)` is `p.report(…)` and a C# `Expect(…)` is `p.expect(…)`.

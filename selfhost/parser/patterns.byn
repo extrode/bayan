@@ -1,6 +1,6 @@
 // Patterns. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 4058–4248 (`ParsePattern` onward):
 // `ParsePattern` with `WithoutLambdas` inlined as save/restore, `ParseAndPattern`, `ParseNotPattern`,
-// `ParsePrimaryPattern`, `ParsePropertyPattern`, `ParseListPattern`. Owner: T3.
+// `ParsePrimaryPattern`, `ParsePropertyPattern`, `ParseListPattern`. Owner: 
 
 import lexer
 
@@ -53,7 +53,7 @@ Pattern parsePrimaryPattern(ref Parser p) {
             .greater => .gt,
             _ => .ge,
         }
-        let value = T3.shiftOperand(ref p)
+        let value = parseBinary(ref p, at: precShift)
         return Pattern.relationalPattern(Owned(RelationalPattern { span: p.spanFrom(start), op: op, value: move value }))
     }
     if kind == .varKeyword || kind == .letKeyword {
@@ -88,7 +88,7 @@ Pattern parsePrimaryPattern(ref Parser p) {
         let _ = p.advance()
         return Pattern.discardPattern(Owned(DiscardPattern { span: p.spanFrom(start) }))
     }
-    if kind == .openBrace && T3.braceLiteralAllowed(ref p) { return parsePropertyPattern(ref p, at: start, by: .none) }
+    if kind == .openBrace && braceLiteralAllowed(ref p) { return parsePropertyPattern(ref p, at: start, by: .none) }
     if kind == .openBracket { return parseListPattern(ref p, at: start) }
     if kind == .openParen {
         let _ = p.advance()
@@ -100,8 +100,8 @@ Pattern parsePrimaryPattern(ref Parser p) {
         return Pattern.positionalPattern(Owned(PositionalPattern { span: p.spanFrom(start), type: .none, elements: move elements }))
     }
     if kind == .identifier && startsUpper(p.text(p.current())) {
-        let after = T3.scanType(ref p, at: p.pos)
-        if after > 0 && p.kindAt(after) == .openBrace && T3.braceLiteralAllowed(ref p) {
+        let after = scanType(ref p, at: p.pos)
+        if after > 0 && p.kindAt(after) == .openBrace && braceLiteralAllowed(ref p) {
             let type = parseType(ref p)
             return parsePropertyPattern(ref p, at: start, by: move type)
         }
@@ -123,7 +123,7 @@ Pattern parsePrimaryPattern(ref Parser p) {
             return Pattern.declarationPattern(Owned(DeclarationPattern { span: p.spanFrom(start), type: move type, name: name }))
         }
     }
-    let constant = T3.rangeOperand(ref p)
+    let constant = parseBinary(ref p, at: precRange)
     return Pattern.constantPattern(Owned(ConstantPattern { span: p.spanFrom(start), value: move constant }))
 }
 
@@ -142,7 +142,7 @@ Pattern parsePropertyPattern(ref Parser p, at i64 start, by move TypeSyntax type
         unless p.accept(.comma) { break }
         if p.pos == before { break }
     }
-    T3.expectClose(ref p, for: open, as: "property pattern")
+    expectClose(ref p, from: open, for: "property pattern")
     var designation: TextSpan? = null
     if isName(p.kind()) && !(p.kind() == .identifier && lexer.sameBytes(p.text(p.current()), as: "when".bytes))
         && !p.current().hasNewlineBefore {
@@ -176,39 +176,6 @@ Pattern parseListPattern(ref Parser p, at i64 start) {
 bool startsUpper(ReadOnlySpan<u8> text) => text.length > 0 && text[0] >= 'A' && text[0] <= 'Z'
 
 // ── Cross-file stand-ins (T3) ────────────────────────────────────────────────────
-// Each stands for a C# helper another task ports in its own file (Q441). T15 replaces each `T3.` call
+// Each stands for a C# helper another task ports in its own file (Q441). T15 replaces each `` call
 // with the sibling's function and deletes this struct; until then the two parse stand-ins are placeholders.
 
-struct T3 {
-    /// C# `ParseBinary(Prec.Shift)` (exprs.byn, T9).
-    static Expr shiftOperand(ref Parser p) => .none
-
-    /// C# `ParseBinary(Prec.Range)` (exprs.byn, T9).
-    static Expr rangeOperand(ref Parser p) => .none
-
-    /// C# `ScanType(index)` (types.byn, T6): the token after the type at `index`, or -1.
-    static i64 scanType(ref Parser p, at i64 index) => -1
-
-    /// C# `BraceLiteralAllowed()` (stmts.byn, T7).
-    static bool braceLiteralAllowed(ref Parser p) {
-        if p.conditionStart < 0 { return true }
-        var depth = 0
-        for i in p.conditionStart..p.pos {
-            let k = p.kindAt(i)
-            if k == .openParen || k == .openBracket || k == .openBrace {
-                depth += 1
-            } else if k == .closeParen || k == .closeBracket || k == .closeBrace {
-                depth -= 1
-            }
-        }
-        return depth > 0
-    }
-
-    /// C# `ExpectClose(open, what)` (decls.byn, T4).
-    static void expectClose(ref Parser p, for Token open, as string what) {
-        if p.accept(.closeBrace) { return }
-        let line = p.lexed.source.getLinePosition(open.start).line
-        let _ = p.report(.expected, at: spanOf(p.current()), arg0: "`}`", arg1: p.describe(p.current()),
-            help: open.length > 0 ? $"close the {what} opened on line {line}" : "")
-    }
-}

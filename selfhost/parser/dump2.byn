@@ -1,6 +1,6 @@
 // The tree dump, S-expressions. Ports `src/Bayan.Syntax/Ast/AstDump.cs` `AssignText` (352–367),
 // `BinaryText` (369–397), `UnaryText` (399–407), `Type` (409–461), `Pattern` (463–554), `Sexp`
-// (556–566), `Expr` (568–818), `FieldInits` (820–828) and `Quote` (830–834). Owner: T12.
+// (556–566), `Expr` (568–818), `FieldInits` (820–828) and `Quote` (830–834). Owner: 
 //
 // `dumpExpr`, `dumpType` and `dumpPattern` write one node as an S-expression on one line; `dump.byn`
 // (T11) calls them for the inline parts of declarations and statements, and calls `assignText`,
@@ -171,7 +171,7 @@ void dumpBlockExpr(in Stmt block, from ref Parser p, to ref StrBuf sb) {
         case .blockStmt(let b):
             for s in b.value.statements {
                 var w = StrBuf()
-                T12.stmt(in s, at: 0, from: ref p, to: ref w)
+                stmt(in s, at: 0, from: ref p, to: ref w)
                 sb.append(" {")
                 appendFlattened(w.finish(), to: ref sb)
                 sb.append("}")
@@ -696,8 +696,5 @@ void dumpPattern(in Pattern pattern, from ref Parser p, to ref StrBuf sb) {
 
 // ── T12 stand-ins (T15 deletes) ──
 // T11's `dump.byn` owns the `Stmt` switch, which `dumpExpr`'s `BlockExpr` flattens; until T11 lands
-// this stub lets the module build. T15 deletes this struct and drops the `T12.` prefix.
+// this stub lets the module build. T15 deletes this struct and drops the `` prefix.
 
-struct T12 {
-    static void stmt(in Stmt s, at i64 depth, from ref Parser p, to ref StrBuf sb) {}
-}

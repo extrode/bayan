@@ -1,6 +1,6 @@
 // The tree dump, declarations and statements. Ports `src/Bayan.Syntax/Ast/AstDump.cs` (`Dump`, the
 // `Writer` with `Decl`, `Stmt`, `Mods`, `TypeParams`, `Params`, `Doc`, `Bases`, `Where`,
-// `Attribute`, `Rules`), plus tombstone compaction before the lexer's `renderAll`. Owner: T11.
+// `Attribute`, `Rules`), plus tombstone compaction before the lexer's `renderAll`. Owner: 
 //
 // The dump writes `CompilationUnit`, then one two-space-indented line per declaration and statement;
 // types, patterns and expressions are written by `dump2.byn` (`dumpType`, `dumpPattern`, `dumpExpr`)
@@ -479,7 +479,7 @@ void stmt(in Stmt node, at i64 depth, from ref Parser p, to ref StrBuf sb) {
         case .exprStmt(let s):
             line($"Expr {exprText(in s.value.expr, from: ref p)}", at: depth, to: ref sb)
         case .assignStmt(let s):
-            line($"Assign {exprText(in s.value.target, from: ref p)} {T11.assignText(s.value.op)} {exprText(in s.value.value, from: ref p)}", at: depth, to: ref sb)
+            line($"Assign {exprText(in s.value.target, from: ref p)} {assignText(s.value.op)} {exprText(in s.value.value, from: ref p)}", at: depth, to: ref sb)
         case .incDecStmt(let s):
             line($"{(s.value.increment ? "Inc " : "Dec ")}{exprText(in s.value.target, from: ref p)}", at: depth, to: ref sb)
         case .returnStmt(let s):
@@ -601,19 +601,3 @@ void stmt(in Stmt node, at i64 depth, from ref Parser p, to ref StrBuf sb) {
 
 // ── T11 stand-ins (T15 deletes) ──
 // `assignText` is T12's (dump2.byn); T11 needs it for `AssignStmt`. The body is the C# `AssignText`.
-struct T11 {
-    static string assignText(AssignOp op) => op switch {
-        .assign => "=",
-        .add => "+=",
-        .sub => "-=",
-        .mul => "*=",
-        .div => "/=",
-        .rem => "%=",
-        .andKeyword => "&=",
-        .orKeyword => "|=",
-        .xor => "^=",
-        .shl => "<<=",
-        .shr => ">>=",
-        .coalesce => "??=",
-    }
-}

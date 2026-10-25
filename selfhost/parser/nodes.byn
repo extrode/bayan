@@ -1,4 +1,4 @@
-// The syntax tree. Ports `src/Bayan.Syntax/Ast/Nodes.cs`. Owner: T2.
+// The syntax tree. Ports `src/Bayan.Syntax/Ast/Nodes.cs`. Owner: 
 //
 // Every C# record is a struct of the same name with `TextSpan span` first and the C# properties in
 // order, camelCase. A C# `Name` is its `TextSpan` (the dump slices the source), `Name?` is `TextSpan?`
