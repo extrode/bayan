@@ -1,0 +1,23 @@
+i64 apply((i64 -> i64) f, to i64 x) => f(x)
+
+struct Scale {
+    i64 factor
+
+    i64 times(i64 x) {
+        let k = factor
+        return apply(n => n * k, to: x)
+    }
+}
+
+i64 run(i64 base) {
+    let offset = base + 1
+    let a = apply(x => x + offset, to: base)
+    let b = apply(it * base, to: 2)
+    let c = apply(x => apply(y => y + x + offset, to: x), to: 1)
+    return a + b + c
+}
+
+void main() {
+    let s = Scale { factor: 3 }
+    print($"{run(1) + s.times(2)}")
+}

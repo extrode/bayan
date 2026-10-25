@@ -132,6 +132,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor DeclarationAsBody = Error("BYN2026", "a declaration cannot be the whole body of a statement");
     public static readonly DiagnosticDescriptor NullEquality = Error("BYN2027", "compare with `is null` / `is not null`, not `==`");
     public static readonly DiagnosticDescriptor SameTypeShadowing = Warning("BYN2028", "`{0}` shadows an earlier `{0}` of the same type `{1}`");
+    public static readonly DiagnosticDescriptor NestedIt = Error("BYN2029", "`it` inside a lambda that already uses `it`; name one lambda");
     public static readonly DiagnosticDescriptor ToStringCall = Error("BYN2031", "Bayan has no `toString()`; display is `format()` (derived from `formatInto(ref StrBuf)`)");
     public static readonly DiagnosticDescriptor MissingInitializer = Error("BYN2101", "`{0} {1}` needs a value");
     public static readonly DiagnosticDescriptor UseBeforeAssign = Error("BYN2102", "`{0}` is used before it is assigned");
@@ -285,7 +286,10 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor RefThisMismatch = Error("BYN2814", "`{0}.{1}` must match `{2}.{1}`, which {3} `ref this`");
     public static readonly DiagnosticDescriptor NonStructConformance = Error("BYN2815", "`{0}` is {1}; only structs can conform yet");
     public static readonly DiagnosticDescriptor InterfaceAsType = Error("BYN2816", "`{0}` is an interface, not a type");
+    public static readonly DiagnosticDescriptor LambdaArity = Error("BYN2820", "this lambda takes {0} parameter(s) but `{1}` takes {2}");
+    public static readonly DiagnosticDescriptor CannotCapture = Error("BYN2821", "`{0}` cannot be captured: {1}");
     public static readonly DiagnosticDescriptor FunctionTypeNotHere = Error("BYN2822", "a function type is not supported as {0} yet");
+    public static readonly DiagnosticDescriptor MemberNotLambda = Error("BYN2823", "`.{0}` is a member, not a lambda");
     public static readonly DiagnosticDescriptor NotAFunctionValue = Error("BYN2824", "`{0}` cannot be used as a value: {1}");
     public static readonly DiagnosticDescriptor BorrowField = Error("BYN3001", "a struct field cannot hold a borrowed `{0}`");
     public static readonly DiagnosticDescriptor BorrowOutlivesSource = Error("BYN3002", "{0} does not live as long as `{1}`, which borrows it");

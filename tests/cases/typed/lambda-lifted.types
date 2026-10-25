@@ -1,0 +1,264 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "path": "lambda-lifted.byn",
+      "name": "apply",
+      "span": {
+        "start": 4,
+        "end": 9
+      },
+      "bindings": [
+        {
+          "name": "f",
+          "kind": "param",
+          "span": {
+            "start": 23,
+            "end": 24
+          },
+          "type": "i64 -> i64"
+        },
+        {
+          "name": "x",
+          "kind": "param",
+          "span": {
+            "start": 33,
+            "end": 34
+          },
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "lambda-lifted.byn",
+      "name": "Scale.times",
+      "span": {
+        "start": 84,
+        "end": 89
+      },
+      "bindings": [
+        {
+          "name": "x",
+          "kind": "param",
+          "span": {
+            "start": 94,
+            "end": 95
+          },
+          "type": "i64"
+        },
+        {
+          "name": "k",
+          "kind": "let",
+          "span": {
+            "start": 111,
+            "end": 112
+          },
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "lambda-lifted.byn",
+      "name": "Scale.times$lambda1",
+      "span": {
+        "start": 143,
+        "end": 153
+      },
+      "bindings": [
+        {
+          "name": "n",
+          "kind": "param",
+          "span": {
+            "start": 143,
+            "end": 144
+          },
+          "type": "i64"
+        }
+      ],
+      "captures": [
+        {
+          "name": "k",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "lambda-lifted.byn",
+      "name": "run",
+      "span": {
+        "start": 175,
+        "end": 178
+      },
+      "bindings": [
+        {
+          "name": "base",
+          "kind": "param",
+          "span": {
+            "start": 183,
+            "end": 187
+          },
+          "type": "i64"
+        },
+        {
+          "name": "offset",
+          "kind": "let",
+          "span": {
+            "start": 199,
+            "end": 205
+          },
+          "type": "i64"
+        },
+        {
+          "name": "a",
+          "kind": "let",
+          "span": {
+            "start": 225,
+            "end": 226
+          },
+          "type": "i64"
+        },
+        {
+          "name": "b",
+          "kind": "let",
+          "span": {
+            "start": 270,
+            "end": 271
+          },
+          "type": "i64"
+        },
+        {
+          "name": "c",
+          "kind": "let",
+          "span": {
+            "start": 306,
+            "end": 307
+          },
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "lambda-lifted.byn",
+      "name": "run$lambda1",
+      "span": {
+        "start": 235,
+        "end": 250
+      },
+      "bindings": [
+        {
+          "name": "x",
+          "kind": "param",
+          "span": {
+            "start": 235,
+            "end": 236
+          },
+          "type": "i64"
+        }
+      ],
+      "captures": [
+        {
+          "name": "offset",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "lambda-lifted.byn",
+      "name": "run$lambda2",
+      "span": {
+        "start": 280,
+        "end": 289
+      },
+      "bindings": [
+        {
+          "name": "it",
+          "kind": "param",
+          "span": {
+            "start": 280,
+            "end": 282
+          },
+          "type": "i64"
+        }
+      ],
+      "captures": [
+        {
+          "name": "base",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "lambda-lifted.byn",
+      "name": "run$lambda3",
+      "span": {
+        "start": 316,
+        "end": 354
+      },
+      "bindings": [
+        {
+          "name": "x",
+          "kind": "param",
+          "span": {
+            "start": 316,
+            "end": 317
+          },
+          "type": "i64"
+        }
+      ],
+      "captures": [
+        {
+          "name": "offset",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "lambda-lifted.byn",
+      "name": "run$lambda3$lambda1",
+      "span": {
+        "start": 327,
+        "end": 346
+      },
+      "bindings": [
+        {
+          "name": "y",
+          "kind": "param",
+          "span": {
+            "start": 327,
+            "end": 328
+          },
+          "type": "i64"
+        }
+      ],
+      "captures": [
+        {
+          "name": "x",
+          "type": "i64"
+        },
+        {
+          "name": "offset",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "path": "lambda-lifted.byn",
+      "name": "main",
+      "span": {
+        "start": 392,
+        "end": 396
+      },
+      "bindings": [
+        {
+          "name": "s",
+          "kind": "let",
+          "span": {
+            "start": 409,
+            "end": 410
+          },
+          "type": "Scale"
+        }
+      ]
+    }
+  ]
+}

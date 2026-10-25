@@ -1,0 +1,13 @@
+error BYN2740: cannot infer type argument `T` of `pick`
+
+  4 │     let none = pick([], by: it > 0)
+    │                ^^^^
+    │
+  help: pass an argument it can be read from, or write it out: `pick<T>(…)`
+
+error BYN2218: `[ … ]` needs a known type here
+
+  4 │     let none = pick([], by: it > 0)
+    │                     ^^
+    │
+  help: declare the type: `List<i64> xs = [1, 2]`

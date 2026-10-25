@@ -175,7 +175,8 @@ internal sealed partial class Binder
     {
         foreach (var a in c.Args)
         {
-            if (a.Value is InterpolatedExpr || _prebound.Remove(a)) continue;
+            // A lambda or `it` argument has no type to bind with once the call failed.
+            if (a.Value is InterpolatedExpr or LambdaExpr || MentionedIt(a.Value) is not null || _prebound.Remove(a)) continue;
             BindExprOrType(a.Value);
         }
     }
@@ -271,6 +272,8 @@ internal sealed partial class Binder
             else
                 p = sawNamed || positional >= fn.Parameters.Count ? null : fn.Parameters[positional++];
             if (p is null || !TypeParameterType.Occurs(p.Type) || _prebound.ContainsKey(arg)) continue;
+            // A lambda or `it` argument never contributes to inference (R12).
+            if (arg.Value is LambdaExpr || p.Type is FunctionType { Parameters.Count: 1 } && MentionedIt(arg.Value) is not null) continue;
             var value = p.Type is FunctionType ? BindExprFor(arg.Value, p.Type) : BindExpr(arg.Value, null);
             _prebound[arg] = value;
             // A known-state local passed `ref` or `out` is inferred from its declared type, as `BindArgument` passes it (Q295).
@@ -520,11 +523,66 @@ internal sealed partial class Binder
 
     private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type, string? callee = null)
     {
-        var value = _prebound.Remove(arg, out var early) ? early : Built(BindExprFor(arg.Value, type), arg.Value);
+        var value = _prebound.Remove(arg, out var early) ? early
+            : type is FunctionType { Parameters.Count: 1 } ft && arg.Value is not LambdaExpr && MentionedIt(arg.Value) is { } it ? BindIt(arg.Value, it, ft)
+            : Built(BindExprFor(arg.Value, type), arg.Value);
         if (arg.Modifier == ArgModifier.Move) value = BindMove(arg, value);
         if (callee is not null && type is StateType wanted && ReportWrongState(callee, value, wanted, arg.Value.Span)) return new BoundErrorExpr(arg.Value);
         // A type argument inferred from the value is not a typed use of it.
         return type is null ? value : Convert(value, type, arg.Value.Span, argument: true, constrains: early is null);
+    }
+
+    /// <summary>
+    /// An argument that mentions <c>it</c> where a one-parameter function type is expected: a lambda whose parameter is
+    /// <c>it</c>. Inside another, or inside a <c>requires</c> rule where <c>it</c> is the checked value, it is BYN2029 (R7, Q361).
+    /// </summary>
+    private BoundExpr BindIt(Expr e, Name it, FunctionType type)
+    {
+        if (_itDepth > 0)
+        {
+            // Outside any lambda, the `it` in scope is a `requires` rule's checked value.
+            Report(DiagnosticCodes.NestedIt, it.Span, [], help: _lambdas.Count == 0 ? "name the lambda's parameter: `x => …`" : "name the inner lambda's parameter: `x => …`");
+            return new BoundErrorExpr(e);
+        }
+        _itDepth++;
+        var lambda = BindLambda(e, [it], e, null, type);
+        _itDepth--;
+        return lambda;
+    }
+
+    /// <summary>The first <c>it</c> the syntax of <paramref name="e"/> mentions outside a lambda nested in it.</summary>
+    private static Name? MentionedIt(Expr? e)
+    {
+        return e switch
+        {
+            NameExpr { Name: { Text: "it" } n, TypeArgs.Length: 0 } => n,
+            ParenExpr p => MentionedIt(p.Inner),
+            MemberExpr m => MentionedIt(m.Target),
+            CallExpr c => MentionedIt(c.Callee) ?? First(c.Args.Select(a => a.Value)),
+            IndexExpr i => MentionedIt(i.Target) ?? MentionedIt(i.Index),
+            UnaryExpr u => MentionedIt(u.Operand),
+            BinaryExpr b => MentionedIt(b.Left) ?? MentionedIt(b.Right),
+            RangeExpr r => MentionedIt(r.Start) ?? MentionedIt(r.End),
+            ConditionalExpr c => MentionedIt(c.Condition) ?? MentionedIt(c.WhenTrue) ?? MentionedIt(c.WhenFalse),
+            CastExpr c => MentionedIt(c.Operand),
+            IsExpr i => MentionedIt(i.Value),
+            ExceptExpr x => MentionedIt(x.Value),
+            InExpr i => MentionedIt(i.Value) ?? MentionedIt(i.Range),
+            SwitchExpr s => MentionedIt(s.Value) ?? First(s.Arms.SelectMany(a => new[] { a.Guard, a.Value })),
+            TryExpr t => MentionedIt(t.Operand),
+            MoveExpr m => MentionedIt(m.Operand),
+            CatchExpr c => MentionedIt(c.Operand) ?? MentionedIt(c.Variant) ?? MentionedIt(c.Handler),
+            StructLiteralExpr s => First(s.Fields.Select(f => f.Value)),
+            WithExpr w => MentionedIt(w.Target) ?? First(w.Fields.Select(f => f.Value)),
+            SpreadExpr s => MentionedIt(s.Operand),
+            MapEntryExpr m => MentionedIt(m.Key) ?? MentionedIt(m.Value),
+            CollectionExpr c => First(c.Elements),
+            TupleExpr t => First(t.Elements.Select(x => x.Value)),
+            InterpolatedExpr i => First(i.Parts.OfType<InterpolationHole>().Select(h => h.Expr)),
+            _ => null,
+        };
+
+        static Name? First(IEnumerable<Expr?> es) => es.Select(MentionedIt).FirstOrDefault(n => n is not null);
     }
 
     private BoundExpr BindConstruction(CallExpr c, TypeSymbol type)
@@ -829,7 +887,7 @@ internal sealed partial class Binder
             BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } => ("an element", "copy the element with `.copy(to: alloc)`; the collection keeps it"),
             BoundTupleElement => ("a tuple element", "move the whole tuple instead"),
             BoundThis => ("`this`", "move a `.copy(to: alloc)` of it instead; a method borrows `this`"),
-            BoundCall or BoundBuiltinCall or BoundStructLiteral or BoundCollection or BoundLiteral => ("a fresh value", "remove the `move`; a fresh value needs none"),
+            BoundCall or BoundBuiltinCall or BoundStructLiteral or BoundCollection or BoundLiteral or BoundLambda => ("a fresh value", "remove the `move`; a fresh value needs none"),
             _ => ("this expression", "move a local variable or a `move` parameter instead"),
         };
         Report(DiagnosticCodes.CannotMove, operand.Syntax.Span, [what], help: help);

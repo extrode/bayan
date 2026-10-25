@@ -250,11 +250,11 @@ public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol
     /// <summary>What each type parameter name means in the signature and body (the owner's included).</summary>
     public IReadOnlyDictionary<string, TypeSymbol>? TypeMap { get; set; }
 
-    /// <summary>Has a type parameter left (a template, or a member of one): bound only to check it, never analysed, lowered or emitted.</summary>
-    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs) || Owner is { IsGeneric: true } || Interface is not null;
+    /// <summary>Has a type parameter left (a template, a member of one, or a lambda in one): bound only to check it, never analysed, lowered or emitted.</summary>
+    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs) || Owner is { IsGeneric: true } || Interface is not null || Enclosing is { IsGeneric: true };
 
-    /// <summary>Re-bound from a template with concrete types (directly, or as a member of an instantiated struct).</summary>
-    public bool IsInstance => Template is not null || Owner?.Template is not null;
+    /// <summary>Re-bound from a template with concrete types (directly, as a member of an instantiated struct, or as a lambda in an instance).</summary>
+    public bool IsInstance => Template is not null || Owner?.Template is not null || Enclosing is { IsInstance: true };
 
     public bool HasThis => (Owner is not null || Interface is not null) && !IsStatic && Kind is FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor;
 

@@ -1,0 +1,10 @@
+struct User {
+    string name
+}
+
+string label(User u, by (User -> string) key) => key(u)
+
+void main() {
+    let user = User { name: "a" }
+    let text = label(user, by: .name)
+}
