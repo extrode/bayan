@@ -23,6 +23,8 @@ Small, clear, and could be picked up without a design decision.
 - `if a == b` emits `if ((x == y))`, which clang rejects under `-Wall -Werror` (`-Wparentheses-equality`); L016's generator uses `<` to avoid it (008 T10).
 - A tuple-typed struct field (`(i8, i64) f1`) is BYN1001: the parser reads it as a function type; L016's generator nests only structs in structs (008 T10).
 - `Parser.ReportBraceless` (Parser.cs:2408) throws `ArgumentOutOfRangeException` when a braceless `if` body's span starts past `_prevEnd`, reached through a misparse such as an `is { } as` pattern binding; found in 009 T12.
+- `selfhost/lexer/diagnostics.byn:205` `wrap` splits at every space, including inside backticks, while C# `DiagnosticRenderer.Wrap` keeps backticked code one word, so a diagnostic whose prose holds multi-word code can wrap differently; L017's random corpus replaced 2518 such candidates (Q505).
+- `bayan-parse` panics `slice out of range` at `selfhost/lexer/source.byn:80` on an input that makes the C# `Parser.ReportBraceless` throw (Q486); found by L017's random corpus (Q506). A bounds check in `getText` would turn the panic into the non-dump the C# reference produces.
 
 ## Later
 
