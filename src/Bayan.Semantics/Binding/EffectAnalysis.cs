@@ -63,8 +63,9 @@ internal static class EffectAnalysis
                         BoundInterpolated when !sinks.Contains(node) => (["alloc"], true),
                         BoundCall { Function.Kind: FunctionKind.Builtin } call => (Builtin(call.Function.Builtin), true),
                         // A call through a function-typed parameter adds nothing: whoever passed the value is charged (R16).
-                        BoundCall { Function.Kind: FunctionKind.Invoke, Receiver: BoundLocal { Local: ParameterSymbol } } => ([], false),
-                        BoundCall { Function.Kind: FunctionKind.Invoke, Receiver.Type: FunctionType type } => (type.Uses, false),
+                        // Its arguments are still charged here like any call's.
+                        BoundCall { Function.Kind: FunctionKind.Invoke, Receiver: BoundLocal { Local: ParameterSymbol } } call => (Passed(call).SelectMany(p => Visible(p.Function)).Concat(PassedValues(call)), false),
+                        BoundCall { Function.Kind: FunctionKind.Invoke, Receiver.Type: FunctionType type } call => (type.Uses.Concat(Passed(call).SelectMany(p => Visible(p.Function))).Concat(PassedValues(call)), false),
                         BoundCall call => (Visible(call.Function).Concat(Passed(call).SelectMany(p => Visible(p.Function))).Concat(PassedValues(call)), false),
                         BoundBuiltinCall b => (Member(b.Member), true),
                         BoundCollection { Type: ListType or MapType } => (["alloc"], true),

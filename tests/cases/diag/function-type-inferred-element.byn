@@ -1,0 +1,11 @@
+i64 inc(i64 n) => n + 1
+
+void main() {
+    let f: i64 -> i64 = inc
+    let xs = [f, f]
+    let k = 10
+    let g: i64 -> i64 = n => n + k
+    let ys = [g]
+    let t = (1, g)
+    let m = ["a": f]
+}

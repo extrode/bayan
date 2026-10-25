@@ -1,0 +1,17 @@
+error BYN6002: `run` uses `console` but does not declare it
+
+  3 │     h(x => print($"leak {x}"))
+    │     ^^^^^^^^^^^^^^^^^^^^^^^^^^ uses `console`
+    │
+  help: add `console` to the `uses` clause, or remove the call
+    │ 1 │ public void run() uses console {
+    │   │                  +++++++++++++
+
+error BYN6002: `inner` uses `console` but does not declare it
+
+  7 │     p(x => print($"leak2 {x}"))
+    │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ uses `console`
+    │
+  help: add `console` to the `uses` clause, or remove the call
+    │ 6 │ public void inner(((i64 -> void) -> void) p) uses console {
+    │   │                                             +++++++++++++
