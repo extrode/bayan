@@ -1,0 +1,19 @@
+import a
+import b
+
+void both(i32 x) fails a.Err {
+    try a.fa()
+    try b.fb()
+}
+
+void two(i32 x) fails a.Err, b.Err {
+    try a.fa()
+    try b.fb()
+}
+
+void main() {
+    both(1) catch print("x")
+    two(1) catch switch {
+        .bad => print("bad"),
+    }
+}

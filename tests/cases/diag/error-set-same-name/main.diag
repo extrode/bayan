@@ -1,0 +1,15 @@
+error BYN2603: `b.Err` is not in the `fails` clause of `both`
+  --> main.byn:6:5
+
+  6 │     try b.fb()
+    │     ^^^^^^^^^^
+    │
+  help: add it to the signature: `fails a.Err, b.Err`
+
+error BYN2410: `switch` does not handle every `a.Err | b.Err`
+  --> main.byn:16:18
+
+  16 │     two(1) catch switch {
+     │                  ^^^^^^ not covered: b.Err
+     │
+  help: add the missing arms, or `_ => …` for the rest

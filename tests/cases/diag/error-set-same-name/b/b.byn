@@ -1,0 +1,2 @@
+public union error Err { worse }
+public void fb() fails Err { fail Err.worse }
