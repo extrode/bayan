@@ -435,6 +435,15 @@ public static class AstDump
                 case TupleType t:
                     sb.Append('(').Append(string.Join(", ", t.Elements.Select(e => Type(e.Type) + (e.Name is null ? "" : " " + e.Name.Text)))).Append(')');
                     break;
+                case FunctionTypeSyntax t:
+                    // A lone parameter needs parentheses when it is itself a tuple or function type.
+                    if (t.Params is [var p] && p is not (TupleType or FunctionTypeSyntax)) Type(sb, p);
+                    else sb.Append('(').Append(string.Join(", ", t.Params.Select(Type))).Append(')');
+                    sb.Append(" -> ");
+                    Type(sb, t.Return);
+                    if (t.Fails is not null) sb.Append(" fails ").Append(string.Join(", ", t.Fails.Errors.Select(Type)));
+                    if (t.Uses is not null) sb.Append(" uses ").Append(string.Join(", ", t.Uses.Effects.Select(e => e.Text)));
+                    break;
                 case DynType t:
                     sb.Append(t.IsRef ? t.IsReadOnly ? "dyn ref readonly " : "dyn ref " : "dyn ");
                     Type(sb, t.Inner);
@@ -779,6 +788,12 @@ public static class AstDump
                     break;
                 case ParenExpr e:
                     Sexp(sb, "paren", e.Inner);
+                    break;
+                case LambdaExpr e:
+                    sb.Append("(lambda (").Append(string.Join(' ', e.Params.Select(p => p.Text))).Append(") ");
+                    if (e.Body is not null) Expr(sb, e.Body);
+                    else Expr(sb, new BlockExpr(e.Block!.Span, e.Block));
+                    sb.Append(')');
                     break;
                 case StackallocExpr e:
                     sb.Append("(stackalloc ").Append(Type(e.Element)).Append(' ');

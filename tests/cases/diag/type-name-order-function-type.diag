@@ -1,0 +1,8 @@
+error BYN1043: `i32 -> bool f` is an input form; write `let f: i32 -> bool`
+
+  4 │     i32 -> bool f = g
+    │     ^^^^^^^^^^^^^ type before name
+    │
+  help: write `let f: i32 -> bool`; local bindings put the name first
+    │ 4 │     let f: i32 -> bool = g
+    │   │     ++++++++++++++++++
