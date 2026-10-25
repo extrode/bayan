@@ -8,7 +8,7 @@ Depends on: `dev` with specs 006–008 merged. T1 then T2 land serially before t
   - `bayan-lex` goldens and `dotnet test -v q --filter "Law=L001|Law=L002"` still pass after the lexer edits.
   - Q430 (CLI has no package root; harness builds through the API) and Q431 (`public` and `uses alloc` on the lexer; any visibility or effect diagnostic met) are drafted; Q432 if the imported lexer `main.byn` causes any diagnostic.
   - Size: about 700 lines of Bayan plus about 60 changed lexer lines and 80 lines of C#.
-- [ ] T2 Node types — files: `selfhost/parser/nodes.byn` — covers: R3 — after: T1; parallel with: none (the wave waits on it) — done when:
+- [x] T2 Node types — files: `selfhost/parser/nodes.byn` — covers: R3 — after: T1; parallel with: none (the wave waits on it) — done when:
   - Every record in `Nodes.cs` has a struct with `TextSpan span` and the C# properties in order; `Decl`, `TypeSyntax`, `Stmt`, `Expr`, `Pattern` are unions of `Owned<…>` variants plus `none`; `Modifiers` is `u16` consts; the other enums exist with camelCase members.
   - A throwaway `main` (not committed) builds a three-level tree (`FunctionDecl` → `BlockStmt` → `BinaryExpr` of two `LiteralExpr`) with a `List<Stmt>` and a `none` child under `provide allocator: arena`, reads it back through `.value`, and the program runs; the plan's fallback (index arenas) is used only if this fails, and Q435–Q437 record the shapes that did or did not compile.
   - Size: about 700 lines.
