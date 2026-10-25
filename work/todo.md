@@ -306,3 +306,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 009 plan names union variants `import(…)`/`function(…)`, which are keywords; `nodes.byn` uses `importDecl`, `functionDecl` (Q437) (009 T2, 2026-10-26).
 - C# parser spans end early where `SpanFrom` is an argument before the parse it should cover: a block-bodied `LambdaExpr` ends at `=>`, a `MapEntryExpr` at `:`, a named format spec's `Argument` at `:`; matched in `exprs2.byn` (009 T10, 2026-10-26).
 - 009 T10 stand-ins for sibling helpers (`struct T10` at the end of `exprs2.byn`) must go at T15 (Q476) (009 T10, 2026-10-26).
+- C# spans of `move`, `fail`, `break`/`continue` with a label, `except` and `?.` end before their child (argument evaluation order), so the child is outside its parent (L018); the port matches C# (Q473) (009 T9, 2026-10-26).
