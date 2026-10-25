@@ -461,6 +461,8 @@ public enum BuiltinKind
     Panic,
     /// <summary>The specs of a hole, as <c>formatInto(ref StrBuf, as FormatSpec)</c> receives them: <c>radix</c>, <c>debug</c>, <c>width</c>, <c>fill</c>, <c>align</c>, <c>digits</c>.</summary>
     FormatSpec,
+    /// <summary>A 4-byte interned identifier: copyable, compared by ID, ordered by its text (spec §3.3).</summary>
+    Symbol,
 }
 
 public sealed class BuiltinType : TypeSymbol
@@ -489,6 +491,7 @@ public sealed class BuiltinType : TypeSymbol
     public static readonly BuiltinType ProcessResult = new(BuiltinKind.ProcessResult, "ProcessResult");
     public static readonly BuiltinType Panic = new(BuiltinKind.Panic, "Panic");
     public static readonly BuiltinType FormatSpec = new(BuiltinKind.FormatSpec, "FormatSpec");
+    public static readonly BuiltinType Symbol = new(BuiltinKind.Symbol, "Symbol");
 }
 
 /// <summary>The type of a caught error when the call can fail with more than one set.</summary>

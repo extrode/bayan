@@ -1328,7 +1328,7 @@ internal sealed partial class Binder
         BinaryOp.Add or BinaryOp.Sub or BinaryOp.Mul or BinaryOp.Div or BinaryOp.Rem => t.IsNumeric,
         BinaryOp.AddWrap or BinaryOp.SubWrap or BinaryOp.MulWrap or BinaryOp.AddSat or BinaryOp.SubSat or BinaryOp.MulSat => t.IsInteger,
         BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor => t.IsInteger || t.IsBool,
-        BinaryOp.Lt or BinaryOp.Gt or BinaryOp.Le or BinaryOp.Ge => t.IsNumeric || t == PrimitiveType.Char || t.IsString,
+        BinaryOp.Lt or BinaryOp.Gt or BinaryOp.Le or BinaryOp.Ge => t.IsNumeric || t == PrimitiveType.Char || t.IsString || t == BuiltinType.Symbol,
         BinaryOp.Eq or BinaryOp.Ne => IsEquatable(t),
         _ => false,
     };
@@ -1343,7 +1343,7 @@ internal sealed partial class Binder
         ResultType r => IsEquatable(r.Value, seen) && IsEquatable(r.Error, seen),
         OwnedType o => IsEquatable(o.Inner, seen),
         UntrustedType u => IsEquatable(u.Inner, seen),
-        EnumSymbol or TypeParameterType => true,
+        EnumSymbol or TypeParameterType or BuiltinType { Kind: BuiltinKind.Symbol } => true,
         ErrorSetSymbol s => !seen.Add(s) || s.Variants.All(v => v.Fields.All(f => IsEquatable(f.Type, seen))),
         ErrorUnionType u => u.Sets.All(s => IsEquatable(s, seen)),
         StructSymbol s => !seen.Add(s) || s.Fields.All(f => IsEquatable(f.Type, seen)),
