@@ -146,7 +146,6 @@ i64 scanTypeArgs(ref Parser p, at i64 index) {
         }
         return p.kindAt(i) == .greater ? i + 1 : -1
     }
-    return -1
 }
 
 /// `scanTypeArgs` for type arguments after a name in an expression.
@@ -278,7 +277,6 @@ ParsedType parseTypeParts(ref Parser p, bool fatArrow = false, bool lists = fals
             return ParsedType.done(move type)
         }
     }
-    return ParsedType.done(move type)
 }
 
 /// Whether the `*` at the cursor starts the last suffixes of the type: only `*`s follow it, so the pointers they
