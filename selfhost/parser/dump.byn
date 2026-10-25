@@ -2,16 +2,618 @@
 // `Writer` with `Decl`, `Stmt`, `Mods`, `TypeParams`, `Params`, `Doc`, `Bases`, `Where`,
 // `Attribute`, `Rules`), plus tombstone compaction before the lexer's `renderAll`. Owner: T11.
 //
-// T1 stub: the `CompilationUnit` line, then `\n` and the rendered diagnostics, as `AstDump.Dump`.
+// The dump writes `CompilationUnit`, then one two-space-indented line per declaration and statement;
+// types, patterns and expressions are written by `dump2.byn` (`dumpType`, `dumpPattern`, `dumpExpr`)
+// and turned into strings here by `typeText`, `patternText` and `exprText`. Diagnostics follow a
+// blank line once `unreport` tombstones (code `""`) are compacted away.
 
 import lexer
 
 void dump(in CompilationUnit unit, from ref Parser p, to ref StrBuf sb) {
-    sb.append("CompilationUnit\n")
+    line("CompilationUnit", at: 0, to: ref sb)
+    for member in unit.members { decl(in member, at: 1, from: ref p, to: ref sb) }
     if p.lexed.diagnostics.length > 0 {
-        sb.append("\n")
         using var arena = Arena()
-        let diagnostics = p.lexed.diagnostics.copy(to: arena)
-        lexer.renderAll(diagnostics.span, to: ref sb, from: ref p.lexed.source)
+        var live = List<Diagnostic>()
+        for d in p.lexed.diagnostics {
+            unless d.code.isEmpty { live.append(d) }
+        }
+        if live.length > 0 {
+            sb.append("\n")
+            lexer.renderAll(live.span, to: ref sb, from: ref p.lexed.source)
+        }
+    }
+}
+
+// ── Writer plumbing ──────────────────────────────────────────────────────────────
+
+/// `Writer.Line`: `depth * 2` spaces, `text`, then a newline.
+void indent(i64 depth, to ref StrBuf sb) {
+    for i in 0..depth { sb.append("  ") }
+}
+
+void line(string text, at i64 depth, to ref StrBuf sb) {
+    indent(depth, to: ref sb)
+    sb.append(text)
+    sb.append("\n")
+}
+
+/// `Writer.Doc`: a `doc `…`` line when a declaration has a doc comment.
+void doc(string? text, at i64 depth, to ref StrBuf sb) {
+    if text is null { return }
+    indent(depth, to: ref sb)
+    sb.append("doc ")
+    lexer.escape(text.bytes, to: ref sb)
+    sb.append("\n")
+}
+
+/// The `@name …` lines a declaration may carry, each on one line.
+void attributes(in List<AttributeSyntax> attributes, at i64 depth, from ref Parser p, to ref StrBuf sb) {
+    for a in attributes { line($"Attribute {attributeText(in a, from: ref p)}", at: depth, to: ref sb) }
+}
+
+// ── String helpers ───────────────────────────────────────────────────────────────
+
+/// `AstDump.Expr` as a string, so a head can embed an expression inline.
+string exprText(in Expr e, from ref Parser p) {
+    var sb = StrBuf()
+    dumpExpr(in e, from: ref p, to: ref sb)
+    return $"{sb.finish()}"
+}
+
+/// `AstDump.Type` as a string.
+string typeText(in TypeSyntax t, from ref Parser p) {
+    var sb = StrBuf()
+    dumpType(in t, from: ref p, to: ref sb)
+    return $"{sb.finish()}"
+}
+
+/// `AstDump.Pattern` as a string.
+string patternText(in Pattern pattern, from ref Parser p) {
+    var sb = StrBuf()
+    dumpPattern(in pattern, from: ref p, to: ref sb)
+    return $"{sb.finish()}"
+}
+
+/// `Writer.Mods`: the set flags in declaration order, lowercased, then a trailing space.
+string mods(Modifiers modifiers) {
+    if modifiers == modifierNone { return "" }
+    var parts = List<string>()
+    if (modifiers & modifierPublic) != 0 { parts.append("public") }
+    if (modifiers & modifierPrivate) != 0 { parts.append("private") }
+    if (modifiers & modifierStatic) != 0 { parts.append("static") }
+    if (modifiers & modifierReadonly) != 0 { parts.append("readonly") }
+    if (modifiers & modifierRequired) != 0 { parts.append("required") }
+    if (modifiers & modifierConst) != 0 { parts.append("const") }
+    if (modifiers & modifierUnique) != 0 { parts.append("unique") }
+    if (modifiers & modifierExtern) != 0 { parts.append("extern") }
+    if (modifiers & modifierUnsafe) != 0 { parts.append("unsafe") }
+    return $"{parts.joined(by: " ")} "
+}
+
+/// `Writer.TypeParams`: `<T, U>` or nothing.
+string typeParams(in List<TextSpan> names, from ref Parser p) {
+    if names.isEmpty { return "" }
+    var parts = List<string>()
+    for n in names { parts.append(p.lexed.source.getText(n)) }
+    return $"<{parts.joined(by: ", ")}>"
+}
+
+/// `Writer.Bases`: ` : I, J` or nothing.
+string basesText(in List<TypeSyntax> bases, from ref Parser p) {
+    if bases.isEmpty { return "" }
+    var parts = List<string>()
+    for b in bases { parts.append(typeText(in b, from: ref p)) }
+    return $" : {parts.joined(by: ", ")}"
+}
+
+/// `Writer.Where`: ` where T : I, J` for each clause.
+string whereText(in List<WhereClause> where, from ref Parser p) {
+    var sb = StrBuf()
+    for w in where {
+        var bounds = List<string>()
+        for b in w.bounds { bounds.append(typeText(in b, from: ref p)) }
+        sb.append($" where {p.lexed.source.getText(w.param)} : {bounds.joined(by: ", ")}")
+    }
+    return $"{sb.finish()}"
+}
+
+/// `Writer.Attribute`: `@name arg: value …` with the optional `because` reason.
+string attributeText(in AttributeSyntax a, from ref Parser p) {
+    var sb = StrBuf()
+    sb.append($"@{p.lexed.source.getText(a.name)}")
+    for arg in a.args {
+        sb.append(" ")
+        if (arg.name is { } name) {
+            sb.append(p.lexed.source.getText(name))
+            sb.append(": ")
+        }
+        sb.append(exprText(in arg.value, from: ref p))
+    }
+    if (a.becauseKeyword is { } clause) {
+        sb.append(" because ")
+        lexer.escape(clause.reason.bytes, to: ref sb)
+    }
+    return $"{sb.finish()}"
+}
+
+/// `Writer.Rules`: ` requires condition at .field` for each rule.
+string rulesText(in List<RequiresRule> rules, from ref Parser p) {
+    var sb = StrBuf()
+    for r in rules {
+        sb.append($" requires {exprText(in r.condition, from: ref p)}")
+        if (r.at is { } field) { sb.append($" at .{p.lexed.source.getText(field)}") }
+    }
+    return $"{sb.finish()}"
+}
+
+/// The receiver part of `Writer.Params`: `ref this`, `move this` or `this is .a or .b`, or nothing.
+string receiverText(in List<TextSpan> states, from ref Parser p, bool refThis = false, bool moveThis = false) {
+    let stated = !states.isEmpty
+    var sb = StrBuf()
+    if refThis {
+        sb.append("ref this")
+    } else if moveThis {
+        sb.append("move this")
+    } else if stated {
+        sb.append("this")
+    }
+    if stated {
+        sb.append(" is ")
+        var parts = List<string>()
+        for s in states { parts.append($".{p.lexed.source.getText(s)}") }
+        sb.append(parts.joined(by: " or "))
+    }
+    return $"{sb.finish()}"
+}
+
+/// `Writer.Params`: `(receiver, particle rest mod Type name = default, …)`.
+string paramsText(in List<Param> parameters, from ref Parser p, string receiver = "") {
+    var sb = StrBuf()
+    sb.append($"({receiver}")
+    var i = 0
+    for param in parameters {
+        if i > 0 || !receiver.isEmpty { sb.append(", ") }
+        if (param.particle is { } particle) {
+            sb.append(p.lexed.source.getText(particle))
+            sb.append(" ")
+        }
+        if param.rest { sb.append("rest ") }
+        if param.modifier != .none {
+            sb.append(paramModifierText(param.modifier))
+            sb.append(" ")
+        }
+        dumpType(in param.type, from: ref p, to: ref sb)
+        sb.append(" ")
+        sb.append(p.lexed.source.getText(param.name))
+        unless param.defaultKeyword is .none {
+            sb.append(" = ")
+            dumpExpr(in param.defaultKeyword, from: ref p, to: ref sb)
+        }
+        i += 1
+    }
+    sb.append(")")
+    return $"{sb.finish()}"
+}
+
+/// `ParamModifier.ToString().ToLowerInvariant()`.
+string paramModifierText(ParamModifier modifier) => modifier switch {
+    .refKeyword => "ref",
+    .moveKeyword => "move",
+    .outKeyword => "out",
+    .inKeyword => "in",
+    .none => "",
+}
+
+/// `BindingKind.ToString()`.
+string bindingKindText(BindingKind kind) => kind switch {
+    .letKeyword => "Let",
+    .varKeyword => "Var",
+    .constKeyword => "Const",
+}
+
+/// The word after `if`: `unlikely `, `never `, or nothing.
+string likelihoodText(Likelihood likelihood) => likelihood switch {
+    .unlikely => "unlikely ",
+    .neverKeyword => "never ",
+    .none => "",
+}
+
+/// The word after `defer`: ` failing`, ` panicking`, or nothing.
+string deferKindText(DeferKind kind) => kind switch {
+    .failing => " failing",
+    .panicking => " panicking",
+    .always => "",
+}
+
+// ── Declarations ─────────────────────────────────────────────────────────────────
+
+void decl(in Decl node, at i64 depth, from ref Parser p, to ref StrBuf sb) {
+    switch node {
+        case .importDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            var parts = List<string>()
+            for part in d.value.path { parts.append(p.lexed.source.getText(part)) }
+            var head = $"Import {parts.joined(by: ".")}"
+            if (d.value.alias is { } alias) { head = $"{head} as {p.lexed.source.getText(alias)}" }
+            line(head, at: depth, to: ref sb)
+        case .globalStatement(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            stmt(in d.value.statement, at: depth, from: ref p, to: ref sb)
+        case .functionDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            var head = StrBuf()
+            head.append("Function ")
+            head.append(mods(d.value.modifiers))
+            head.append(p.lexed.source.getText(d.value.name))
+            head.append(typeParams(in d.value.typeParams, from: ref p))
+            head.append(paramsText(in d.value.params, from: ref p,
+                receiver: receiverText(in d.value.receiverStates, from: ref p,
+                    refThis: d.value.refThis is not null, moveThis: d.value.moveThis is not null)))
+            head.append(" -> ")
+            head.append(typeText(in d.value.returnType, from: ref p))
+            head.append(whereText(in d.value.where, from: ref p))
+            for r in d.value.requiresKeyword { head.append($" expects {exprText(in r, from: ref p)}") }
+            if (d.value.becomes is { } becomes) { head.append($" becomes .{p.lexed.source.getText(becomes)}") }
+            if (d.value.failsKeyword is { } failsClause) {
+                if failsClause.errors.isEmpty {
+                    head.append(" fails")
+                } else {
+                    var errors = List<string>()
+                    for e in failsClause.errors { errors.append(typeText(in e, from: ref p)) }
+                    head.append($" fails {errors.joined(by: ", ")}")
+                }
+            }
+            if (d.value.usesKeyword is { } usesClause) {
+                var effects = List<string>()
+                for e in usesClause.effects { effects.append(p.lexed.source.getText(e)) }
+                head.append($" uses {effects.joined(by: ", ")}")
+            }
+            unless d.value.expressionBody is .none { head.append($" => {exprText(in d.value.expressionBody, from: ref p)}") }
+            line($"{head.finish()}", at: depth, to: ref sb)
+            unless d.value.body is .none { stmt(in d.value.body, at: depth + 1, from: ref p, to: ref sb) }
+        case .structDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            var head = StrBuf()
+            head.append("Struct ")
+            head.append(mods(d.value.modifiers))
+            head.append(p.lexed.source.getText(d.value.name))
+            head.append(typeParams(in d.value.typeParams, from: ref p))
+            head.append(basesText(in d.value.bases, from: ref p))
+            head.append(whereText(in d.value.where, from: ref p))
+            head.append(rulesText(in d.value.rules, from: ref p))
+            line($"{head.finish()}", at: depth, to: ref sb)
+            for member in d.value.members { decl(in member, at: depth + 1, from: ref p, to: ref sb) }
+            for v in d.value.states {
+                var stateHead = StrBuf()
+                stateHead.append($"State {p.lexed.source.getText(v.name)}")
+                unless v.fields.isEmpty {
+                    var fieldParts = List<string>()
+                    for f in v.fields { fieldParts.append($"{typeText(in f.type, from: ref p)} {p.lexed.source.getText(f.name)}") }
+                    stateHead.append($"({fieldParts.joined(by: ", ")})")
+                }
+                line($"{stateHead.finish()}", at: depth + 1, to: ref sb)
+            }
+        case .interfaceDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            var head = StrBuf()
+            head.append("Interface ")
+            head.append(mods(d.value.modifiers))
+            head.append(p.lexed.source.getText(d.value.name))
+            head.append(typeParams(in d.value.typeParams, from: ref p))
+            head.append(whereText(in d.value.where, from: ref p))
+            line($"{head.finish()}", at: depth, to: ref sb)
+            for member in d.value.members { decl(in member, at: depth + 1, from: ref p, to: ref sb) }
+        case .getterDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            line($"Getter {mods(d.value.modifiers)}{typeText(in d.value.type, from: ref p)} {p.lexed.source.getText(d.value.name)}", at: depth, to: ref sb)
+        case .associatedTypeDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            line($"AssociatedType {p.lexed.source.getText(d.value.name)}", at: depth, to: ref sb)
+        case .extensionDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            line($"Extension {p.lexed.source.getText(d.value.name)}{basesText(in d.value.bases, from: ref p)}", at: depth, to: ref sb)
+            for member in d.value.members { decl(in member, at: depth + 1, from: ref p, to: ref sb) }
+        case .fieldDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            var head = StrBuf()
+            head.append($"Field {mods(d.value.modifiers)}{typeText(in d.value.type, from: ref p)} {p.lexed.source.getText(d.value.name)}")
+            unless d.value.defaultKeyword is .none { head.append($" = {exprText(in d.value.defaultKeyword, from: ref p)}") }
+            head.append(rulesText(in d.value.requiresKeyword, from: ref p))
+            line($"{head.finish()}", at: depth, to: ref sb)
+        case .propertyDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            var head = StrBuf()
+            head.append($"Property {mods(d.value.modifiers)}{typeText(in d.value.type, from: ref p)} {p.lexed.source.getText(d.value.name)}")
+            unless d.value.body is .none { head.append($" => {exprText(in d.value.body, from: ref p)}") }
+            line($"{head.finish()}", at: depth, to: ref sb)
+            unless d.value.block is .none { stmt(in d.value.block, at: depth + 1, from: ref p, to: ref sb) }
+        case .constructorDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            line($"Constructor {mods(d.value.modifiers)}{p.lexed.source.getText(d.value.name)}{paramsText(in d.value.params, from: ref p)}", at: depth, to: ref sb)
+            stmt(in d.value.body, at: depth + 1, from: ref p, to: ref sb)
+        case .errorEnumDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            line($"ErrorEnum {mods(d.value.modifiers)}{p.lexed.source.getText(d.value.name)}", at: depth, to: ref sb)
+            for v in d.value.variants {
+                var variantHead = StrBuf()
+                variantHead.append($"Variant {p.lexed.source.getText(v.name)}")
+                unless v.fields.isEmpty {
+                    var fieldParts = List<string>()
+                    for f in v.fields { fieldParts.append($"{typeText(in f.type, from: ref p)} {p.lexed.source.getText(f.name)}") }
+                    variantHead.append($"({fieldParts.joined(by: ", ")})")
+                }
+                for a in v.attributes { variantHead.append($" {attributeText(in a, from: ref p)}") }
+                if (v.doc is { } vdoc) {
+                    variantHead.append(" doc ")
+                    lexer.escape(vdoc.bytes, to: ref variantHead)
+                }
+                line($"{variantHead.finish()}", at: depth + 1, to: ref sb)
+            }
+        case .errorSetDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            var members = List<string>()
+            for m in d.value.members { members.append(typeText(in m, from: ref p)) }
+            var head = $"ErrorSet {mods(d.value.modifiers)}{p.lexed.source.getText(d.value.name)} = {members.joined(by: ", ")}"
+            unless d.value.exceptKeyword.isEmpty {
+                var exceptParts = List<string>()
+                for n in d.value.exceptKeyword { exceptParts.append($".{p.lexed.source.getText(n)}") }
+                head = $"{head} except {exceptParts.joined(by: ", ")}"
+            }
+            line(head, at: depth, to: ref sb)
+        case .enumDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            var head = StrBuf()
+            head.append("Enum ")
+            head.append(mods(d.value.modifiers))
+            head.append(p.lexed.source.getText(d.value.name))
+            if (d.value.params is { } params) { head.append(paramsText(in params, from: ref p)) }
+            head.append(basesText(in d.value.bases, from: ref p))
+            head.append(whereText(in d.value.where, from: ref p))
+            line($"{head.finish()}", at: depth, to: ref sb)
+            for m in d.value.members {
+                var memberHead = StrBuf()
+                memberHead.append($"Member {p.lexed.source.getText(m.name)}")
+                if (m.args is { } args) {
+                    var argParts = List<string>()
+                    for a in args {
+                        var arg = StrBuf()
+                        if (a.name is { } name) {
+                            arg.append(p.lexed.source.getText(name))
+                            arg.append(": ")
+                        }
+                        arg.append(exprText(in a.value, from: ref p))
+                        argParts.append($"{arg.finish()}")
+                    }
+                    memberHead.append($"({argParts.joined(by: ", ")})")
+                }
+                if (m.doc is { } mdoc) {
+                    memberHead.append(" doc ")
+                    lexer.escape(mdoc.bytes, to: ref memberHead)
+                }
+                line($"{memberHead.finish()}", at: depth + 1, to: ref sb)
+            }
+        case .unionDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            var head = StrBuf()
+            head.append("Union ")
+            head.append(mods(d.value.modifiers))
+            head.append(p.lexed.source.getText(d.value.name))
+            head.append(typeParams(in d.value.typeParams, from: ref p))
+            head.append(basesText(in d.value.bases, from: ref p))
+            head.append(whereText(in d.value.where, from: ref p))
+            line($"{head.finish()}", at: depth, to: ref sb)
+            for v in d.value.variants {
+                var variantHead = StrBuf()
+                variantHead.append($"Variant {p.lexed.source.getText(v.name)}")
+                unless v.fields.isEmpty {
+                    var fieldParts = List<string>()
+                    for f in v.fields { fieldParts.append($"{typeText(in f.type, from: ref p)} {p.lexed.source.getText(f.name)}") }
+                    variantHead.append($"({fieldParts.joined(by: ", ")})")
+                }
+                unless v.value is .none { variantHead.append($" = {exprText(in v.value, from: ref p)}") }
+                if (v.doc is { } vdoc) {
+                    variantHead.append(" doc ")
+                    lexer.escape(vdoc.bytes, to: ref variantHead)
+                }
+                line($"{variantHead.finish()}", at: depth + 1, to: ref sb)
+            }
+        case .typeAliasDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            var head = StrBuf()
+            head.append($"TypeAlias {mods(d.value.modifiers)}")
+            if d.value.distinct { head.append("distinct ") }
+            head.append($"{p.lexed.source.getText(d.value.name)} = {typeText(in d.value.target, from: ref p)}")
+            head.append(rulesText(in d.value.requiresKeyword, from: ref p))
+            line($"{head.finish()}", at: depth, to: ref sb)
+        case .effectDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            var effects = List<string>()
+            for e in d.value.effects { effects.append(p.lexed.source.getText(e)) }
+            line($"Effect {mods(d.value.modifiers)}{p.lexed.source.getText(d.value.name)} = {effects.joined(by: ", ")}", at: depth, to: ref sb)
+        case .testDecl(let d):
+            doc(d.value.doc, at: depth, to: ref sb)
+            attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
+            var head = StrBuf()
+            head.append("Test ")
+            lexer.escape(d.value.title.bytes, to: ref head)
+            unless d.value.params.isEmpty { head.append($" {paramsText(in d.value.params, from: ref p)}") }
+            line($"{head.finish()}", at: depth, to: ref sb)
+            stmt(in d.value.body, at: depth + 1, from: ref p, to: ref sb)
+        case .none:
+            return
+    }
+}
+
+// ── Statements ───────────────────────────────────────────────────────────────────
+
+void stmt(in Stmt node, at i64 depth, from ref Parser p, to ref StrBuf sb) {
+    switch node {
+        case .blockStmt(let s):
+            line("Block", at: depth, to: ref sb)
+            for child in s.value.statements { stmt(in child, at: depth + 1, from: ref p, to: ref sb) }
+        case .localDecl(let s):
+            var head = StrBuf()
+            if s.value.usingKeyword { head.append("Using ") }
+            head.append($"{bindingKindText(s.value.kind)} {p.lexed.source.getText(s.value.name)}")
+            unless s.value.type is .none { head.append($": {typeText(in s.value.type, from: ref p)}") }
+            unless s.value.init is .none { head.append($" = {exprText(in s.value.init, from: ref p)}") }
+            line($"{head.finish()}", at: depth, to: ref sb)
+        case .exprStmt(let s):
+            line($"Expr {exprText(in s.value.expr, from: ref p)}", at: depth, to: ref sb)
+        case .assignStmt(let s):
+            line($"Assign {exprText(in s.value.target, from: ref p)} {T11.assignText(s.value.op)} {exprText(in s.value.value, from: ref p)}", at: depth, to: ref sb)
+        case .incDecStmt(let s):
+            line($"{(s.value.increment ? "Inc " : "Dec ")}{exprText(in s.value.target, from: ref p)}", at: depth, to: ref sb)
+        case .returnStmt(let s):
+            var head = StrBuf()
+            head.append("Return")
+            unless s.value.value is .none { head.append($" {exprText(in s.value.value, from: ref p)}") }
+            line($"{head.finish()}", at: depth, to: ref sb)
+        case .failStmt(let s):
+            line($"Fail {exprText(in s.value.error, from: ref p)}", at: depth, to: ref sb)
+        case .breakStmt(let s):
+            var head = StrBuf()
+            head.append("Break")
+            if (s.value.label is { } label) { head.append($" {p.lexed.source.getText(label)}") }
+            line($"{head.finish()}", at: depth, to: ref sb)
+        case .continueStmt(let s):
+            var head = StrBuf()
+            head.append("Continue")
+            if (s.value.label is { } label) { head.append($" {p.lexed.source.getText(label)}") }
+            line($"{head.finish()}", at: depth, to: ref sb)
+        case .becomeStmt(let s):
+            var head = StrBuf()
+            head.append($"Become .{p.lexed.source.getText(s.value.state)}")
+            for a in s.value.args {
+                head.append(" ")
+                if (a.name is { } name) {
+                    head.append(p.lexed.source.getText(name))
+                    head.append(": ")
+                }
+                head.append(exprText(in a.value, from: ref p))
+            }
+            line($"{head.finish()}", at: depth, to: ref sb)
+        case .ifStmt(let s):
+            line($"If {likelihoodText(s.value.likelihood)}{exprText(in s.value.condition, from: ref p)}", at: depth, to: ref sb)
+            stmt(in s.value.then, at: depth + 1, from: ref p, to: ref sb)
+            unless s.value.elseKeyword is .none {
+                line("Else", at: depth, to: ref sb)
+                stmt(in s.value.elseKeyword, at: depth + 1, from: ref p, to: ref sb)
+            }
+        case .unlessStmt(let s):
+            line($"Unless {exprText(in s.value.condition, from: ref p)}", at: depth, to: ref sb)
+            stmt(in s.value.body, at: depth + 1, from: ref p, to: ref sb)
+        case .guardedStmt(let s):
+            var prefix = StrBuf()
+            if s.value.unlessKeyword {
+                prefix.append("Guarded unless ")
+            } else if s.value.unlikely {
+                prefix.append("Guarded if unlikely ")
+            } else {
+                prefix.append("Guarded if ")
+            }
+            prefix.append(exprText(in s.value.condition, from: ref p))
+            line($"{prefix.finish()}", at: depth, to: ref sb)
+            stmt(in s.value.statement, at: depth + 1, from: ref p, to: ref sb)
+        case .whileStmt(let s):
+            line($"While {exprText(in s.value.condition, from: ref p)}", at: depth, to: ref sb)
+            stmt(in s.value.body, at: depth + 1, from: ref p, to: ref sb)
+        case .whileLetStmt(let s):
+            line($"WhileLet {p.lexed.source.getText(s.value.variable)} = {exprText(in s.value.value, from: ref p)}", at: depth, to: ref sb)
+            stmt(in s.value.body, at: depth + 1, from: ref p, to: ref sb)
+        case .doWhileStmt(let s):
+            line($"DoWhile {exprText(in s.value.condition, from: ref p)}", at: depth, to: ref sb)
+            stmt(in s.value.body, at: depth + 1, from: ref p, to: ref sb)
+        case .forStmt(let s):
+            var head = StrBuf()
+            if s.value.tryKeyword { head.append("For try ") } else { head.append("For ") }
+            head.append($"{bindingKindText(s.value.kind)} ")
+            if !s.value.names.isEmpty {
+                var nameParts = List<string>()
+                for n in s.value.names { nameParts.append(p.lexed.source.getText(n)) }
+                head.append($"({nameParts.joined(by: ", ")})")
+            } else {
+                head.append(p.lexed.source.getText(s.value.variable))
+            }
+            unless s.value.type is .none { head.append($": {typeText(in s.value.type, from: ref p)}") }
+            head.append($" in {exprText(in s.value.iterable, from: ref p)}")
+            line($"{head.finish()}", at: depth, to: ref sb)
+            stmt(in s.value.body, at: depth + 1, from: ref p, to: ref sb)
+        case .labeledStmt(let s):
+            line($"Label {p.lexed.source.getText(s.value.label)}", at: depth, to: ref sb)
+            stmt(in s.value.statement, at: depth + 1, from: ref p, to: ref sb)
+        case .switchStmt(let s):
+            line($"Switch {exprText(in s.value.value, from: ref p)}", at: depth, to: ref sb)
+            for section in s.value.sections {
+                var label = StrBuf()
+                if section.label.pattern is .none {
+                    label.append("Default")
+                } else {
+                    label.append($"Case {patternText(in section.label.pattern, from: ref p)}")
+                    unless section.label.guard is .none { label.append($" when {exprText(in section.label.guard, from: ref p)}") }
+                }
+                line($"{label.finish()}", at: depth + 1, to: ref sb)
+                for child in section.statements { stmt(in child, at: depth + 2, from: ref p, to: ref sb) }
+            }
+        case .deferStmt(let s):
+            var head = StrBuf()
+            head.append("Defer")
+            head.append(deferKindText(s.value.kind))
+            if (s.value.binding is { } binding) { head.append($" ({p.lexed.source.getText(binding)})") }
+            line($"{head.finish()}", at: depth, to: ref sb)
+            stmt(in s.value.body, at: depth + 1, from: ref p, to: ref sb)
+        case .assertStmt(let s):
+            var head = StrBuf()
+            head.append($"Assert {exprText(in s.value.condition, from: ref p)}")
+            unless s.value.failsKeyword is .none { head.append($" fails {exprText(in s.value.failsKeyword, from: ref p)}") }
+            line($"{head.finish()}", at: depth, to: ref sb)
+        case .contextStmt(let s):
+            var values = List<string>()
+            for v in s.value.values { values.append($"{p.lexed.source.getText(v.name)}: {exprText(in v.value, from: ref p)}") }
+            line($"Provide {values.joined(by: ", ")}", at: depth, to: ref sb)
+            stmt(in s.value.body, at: depth + 1, from: ref p, to: ref sb)
+        case .emptyStmt(_):
+            line("Empty", at: depth, to: ref sb)
+        case .errorStmt(_):
+            line("<error>", at: depth, to: ref sb)
+        case .none:
+            return
+    }
+}
+
+// ── T11 stand-ins (T15 deletes) ──
+// `assignText` is T12's (dump2.byn); T11 needs it for `AssignStmt`. The body is the C# `AssignText`.
+struct T11 {
+    static string assignText(AssignOp op) => op switch {
+        .assign => "=",
+        .add => "+=",
+        .sub => "-=",
+        .mul => "*=",
+        .div => "/=",
+        .rem => "%=",
+        .andKeyword => "&=",
+        .orKeyword => "|=",
+        .xor => "^=",
+        .shl => "<<=",
+        .shr => ">>=",
+        .coalesce => "??=",
     }
 }
