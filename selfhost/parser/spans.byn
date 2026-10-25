@@ -4,4 +4,4 @@
 //
 // T1 stub: the cross-file entry points only.
 
-void checkSpans(ref CompilationUnit unit, until i64 length, to ref StrBuf sb) {}
+void checkSpans(in CompilationUnit unit, until i64 length, to ref StrBuf sb) {}

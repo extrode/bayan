@@ -41,7 +41,7 @@ i32 parseOne(string path, by Keywords keywords) {
     var p = Parser.create(lexer.lex(SourceText.create(path == "-" ? "<stdin>" : path, from: move bytes), by: keywords))
     var unit = parseCompilationUnit(ref p)
     var sb = StrBuf()
-    dump(ref unit, from: ref p, to: ref sb)
+    dump(in unit, from: ref p, to: ref sb)
     Io.stdout.write(sb.finish())
     return p.errorCount() == 0 ? exitOk : exitFailure
 }

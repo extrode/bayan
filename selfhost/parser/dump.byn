@@ -6,7 +6,7 @@
 
 import lexer
 
-void dump(ref CompilationUnit unit, from ref Parser p, to ref StrBuf sb) {
+void dump(in CompilationUnit unit, from ref Parser p, to ref StrBuf sb) {
     sb.append("CompilationUnit\n")
     if p.lexed.diagnostics.length > 0 {
         sb.append("\n")

@@ -3,8 +3,8 @@
 //
 // T1 stub: the cross-file entry points only.
 
-void dumpExpr(ref Expr e, from ref Parser p, to ref StrBuf sb) {}
+void dumpExpr(in Expr e, from ref Parser p, to ref StrBuf sb) {}
 
-void dumpType(ref TypeSyntax t, from ref Parser p, to ref StrBuf sb) {}
+void dumpType(in TypeSyntax t, from ref Parser p, to ref StrBuf sb) {}
 
-void dumpPattern(ref Pattern pattern, from ref Parser p, to ref StrBuf sb) {}
+void dumpPattern(in Pattern pattern, from ref Parser p, to ref StrBuf sb) {}
