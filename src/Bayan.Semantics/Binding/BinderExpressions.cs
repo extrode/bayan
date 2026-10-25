@@ -1190,7 +1190,9 @@ internal sealed partial class Binder
             return new BoundErrorExpr(b);
         }
 
-        if (!OperatorApplies(b.Op, common)) return BadOperands(b, left, right);
+        // A bare case compares by code (Q312), so it needs no payload equality (Q344).
+        var byCode = b.Op is BinaryOp.Eq or BinaryOp.Ne && common is ErrorSetSymbol or ErrorUnionType && (IsBareCase(left) || IsBareCase(right));
+        if (!byCode && !OperatorApplies(b.Op, common)) return BadOperands(b, left, right);
         left = Convert(left, common, b.Left.Span, constrains: false);
         right = Convert(right, common, b.Right.Span, constrains: false);
         var type = IsComparison(b.Op) ? PrimitiveType.Bool : common;
@@ -1238,6 +1240,8 @@ internal sealed partial class Binder
         return bound with { Constant = folded };
     }
 
+    private static bool IsBareCase(BoundExpr e) => e is BoundErrorVariant { Payload.Length: 0 } or BoundConversion { Operand: BoundErrorVariant { Payload.Length: 0 } };
+
     private static bool OperatorApplies(BinaryOp op, TypeSymbol t) => op switch
     {
         BinaryOp.Add or BinaryOp.Sub or BinaryOp.Mul or BinaryOp.Div or BinaryOp.Rem => t.IsNumeric,
@@ -1255,10 +1259,12 @@ internal sealed partial class Binder
     {
         PrimitiveType p => p.Kind is not (PrimitiveKind.Void or PrimitiveKind.Never),
         OptionalType o => IsEquatable(o.Inner, seen),
-        ResultType r => IsEquatable(r.Value, seen),
+        ResultType r => IsEquatable(r.Value, seen) && IsEquatable(r.Error, seen),
         OwnedType o => IsEquatable(o.Inner, seen),
         UntrustedType u => IsEquatable(u.Inner, seen),
-        ErrorSetSymbol or ErrorUnionType or EnumSymbol or TypeParameterType => true,
+        EnumSymbol or TypeParameterType => true,
+        ErrorSetSymbol s => !seen.Add(s) || s.Variants.All(v => v.Fields.All(f => IsEquatable(f.Type, seen))),
+        ErrorUnionType u => u.Sets.All(s => IsEquatable(s, seen)),
         StructSymbol s => !seen.Add(s) || s.Fields.All(f => IsEquatable(f.Type, seen)),
         UnionSymbol u => !seen.Add(u) || u.Variants.All(v => v.Fields.All(f => IsEquatable(f.Type, seen))),
         Symbols.TupleType tt => tt.Fields.All(f => IsEquatable(f.Type, seen)),

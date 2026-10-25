@@ -1,0 +1,4 @@
+error BYN2208: `==` cannot be applied to `ListError` and `ListError`
+
+  9 │     print($"{l == m}")
+    │              ^^^^^^

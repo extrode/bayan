@@ -59,6 +59,9 @@ public sealed partial class Compilation
     /// <summary>Error variants in code order (index = code - 1).</summary>
     public List<ErrorVariantSymbol> ErrorVariants { get; } = new();
 
+    /// <summary>Whether <c>==</c> applies to values of <paramref name="t"/>.</summary>
+    public static bool IsEquatable(TypeSymbol t) => Binder.IsEquatable(t);
+
     /// <summary>
     /// Compiles a file or a directory. A file's module is its directory, but only that file is
     /// read unless <paramref name="wholeDirectory"/> is set.
@@ -1463,7 +1466,7 @@ public sealed partial class Compilation
                 || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code
                 || (d.Code == DiagnosticCodes.Unsupported.Code || d.Code == DiagnosticCodes.ImplicitCopy.Code) && !Reported(d))
                 target.Add(d with { Source = site, Span = span, Label = InstantiationLabel });
-            else if (d.Code == DiagnosticCodes.AssignmentChangesState.Code && instance is not null)
+            else if (d.Code == DiagnosticCodes.AssignmentChangesState.Code && instance is not null && !Reported(d))
                 target.Add(d with
                 {
                     Source = site, Span = span, Label = InstantiationLabel,

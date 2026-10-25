@@ -579,8 +579,11 @@ public sealed class CEmitter
                 return $"({a} == {b})";
             case ErrorSetSymbol or ErrorUnionType:
             {
-                // By code, then the payload of a case that has one (Q45, Q28).
-                var cases = _program.Compilation.ErrorVariants.Where(v => v.Fields.Count > 0).ToList();
+                // By code, then the payload of a case that has one (Q45, Q28). One helper serves every set, as the
+                // `Result`, optional and tuple helpers are keyed without theirs; a case whose payload has no equality is
+                // left out, since `==` on its set does not bind (Q344).
+                var cases = _program.Compilation.ErrorVariants
+                    .Where(v => v.Fields.Count > 0 && v.Fields.All(f => Semantics.Compilation.IsEquatable(f.Type))).ToList();
                 if (cases.Count == 0) return $"({a}.code == {b}.code)";
                 var eq = Helper("bynh_eq_err", $"static bool bynh_eq_err({ErrorCType} a, {ErrorCType} b)", () =>
                 {
