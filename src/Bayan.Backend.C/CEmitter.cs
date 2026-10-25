@@ -350,7 +350,8 @@ public sealed class CEmitter
         ArrayType a => $"arr{a.Length}_" + Key(a.Element),
         TupleType tt => $"tup{tt.Fields.Count}_" + string.Join("_", tt.Fields.Select(f => Key(f.Type))),
         RangeType r => Key(r.Layout),
-        FunctionType f => $"fn{f.Parameters.Count}_" + string.Concat(f.Parameters.Select(p => Key(p) + "_")) + Key(f.Return) + (f.Fails.Count > 0 ? "_fails" : "") + string.Concat(f.Uses.Select(u => "_uses_" + u)),
+        // The fails and uses markers come before the return key, so a nested function type cannot share a key with an outer one.
+        FunctionType f => $"fn{f.Parameters.Count}" + (f.Fails.Count > 0 ? "f" : "") + (f.Uses.Count > 0 ? $"u{f.Uses.Count}" : "") + "_" + string.Concat(f.Parameters.Select(p => Key(p) + "_")) + string.Concat(f.Uses.Select(u => u + "_")) + Key(f.Return),
         _ => throw new InvalidOperationException($"no C type for {t.DisplayName}"),
     };
 
@@ -1773,7 +1774,7 @@ internal sealed class FunctionEmitter
         }
         // Through `dyn ref` the conformer's method is the vtable slot; the receiver is a local, so naming it twice is safe.
         var dyn = c.Receiver is { Type: DynRefType } ? Expr(c.Receiver) : null;
-        // Through a function value: its code with its environment first; the receiver is a local or a field of one.
+        // Through a function value: its code with its environment first; lowering leaves the receiver a local, so naming it twice is safe.
         var value = fn.Kind == FunctionKind.Invoke ? Expr(c.Receiver!) : null;
         if (dyn is not null)
         {

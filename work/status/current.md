@@ -1,3 +1,3 @@
 # Current
 
-- Building spec 007 lambdas and function types (`docs/specs/007-lambdas/`, `/implement 007`) on `feat/007-lambdas`.
+- Building spec 008 HashMap and Symbol (`docs/specs/008-hashmap-symbols/`, `/implement 008`) on `feat/008-hashmap-symbols`.
