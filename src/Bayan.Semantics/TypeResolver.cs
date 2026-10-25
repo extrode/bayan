@@ -152,11 +152,18 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                     }
                     return new ResultType(value, error);
                 }
+                case "HashMap":
+                    // One map serves both (Q371): `HashMap` is reported once and then resolves as `Map`, so nothing cascades.
+                {
+                    var written = "Map" + file.Source.GetText(n.Span)[name.Span.Length..];
+                    compilation.Report(DiagnosticCodes.HashMapNotSupported, file.Source, name.Span, [], help: $"write `{written}`", fix: new Fix(n.Span, written));
+                    goto case "Map";
+                }
                 case "Map":
                 {
                     if (n.Args.Length != 2)
                     {
-                        compilation.Report(DiagnosticCodes.WrongTypeArgumentCount, file.Source, n.Span, [text, 2, n.Args.Length]);
+                        compilation.Report(DiagnosticCodes.WrongTypeArgumentCount, file.Source, n.Span, ["Map", 2, n.Args.Length]);
                         return ErrorType.Instance;
                     }
                     var key = Resolve(n.Args[0]);
@@ -474,7 +481,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
     private string? Suggest(string text)
     {
         var lower = text.ToLowerInvariant();
-        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ParseError", "ValidationError", "Violation", "Rule", "ProcessResult", "Panic", "FormatSpec", "Symbol"]))
+        foreach (var name in file.Module.Types.Keys.Concat(["Span", "ReadOnlySpan", "List", "Map", "HashMap", "Owned", "Untrusted", "Result", "Arena", "StrBuf", "IoError", "Utf8Error", "ParseError", "ValidationError", "Violation", "Rule", "ProcessResult", "Panic", "FormatSpec", "Symbol"]))
             if (name.Equals(text, StringComparison.OrdinalIgnoreCase)) return name;
         if (PrimitiveType.ByName.ContainsKey(lower)) return lower;
         return lower switch

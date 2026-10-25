@@ -667,4 +667,19 @@ public sealed class FormatTests
         var result = Format.ApplyFixes("ab"u8.ToArray(), [fix, new Bayan.Syntax.Diagnostics.Fix(at, "X")]);
         Assert.Equal("aXb", System.Text.Encoding.UTF8.GetString(result));
     }
+
+    /// <summary>`bayan format` applies only parse-level fixes, so BYN2830's binder fix is applied here (spec 008 R8).</summary>
+    [Fact]
+    public void HashMapFixesGiveAProgramTheCheckerAccepts()
+    {
+        var path = Path.Combine(Golden.CasesRoot, "diag", "hashmap-not-supported.byn");
+        var before = Bayan.Semantics.Compilation.Create([Golden.Load(path)], Path.GetDirectoryName(path)!);
+        var fixes = before.Diagnostics.Items.Select(d => Assert.IsType<Bayan.Syntax.Diagnostics.Fix>(d.Fix)).ToList();
+        Assert.All(before.Diagnostics.Items, d => Assert.Equal("BYN2830", d.Code));
+        Assert.Equal(4, fixes.Count);
+        var fixedBytes = Format.ApplyFixes(File.ReadAllBytes(path), fixes);
+        var after = Bayan.Semantics.Compilation.Create([new Bayan.Syntax.Text.SourceText("hashmap-not-supported.byn", fixedBytes)], Path.GetDirectoryName(path)!);
+        Assert.Empty(after.Diagnostics.Items);
+        Assert.DoesNotContain("HashMap<", System.Text.Encoding.UTF8.GetString(fixedBytes));
+    }
 }
