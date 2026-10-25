@@ -1,0 +1,13 @@
+// Only a string literal converts to `Symbol`; any other `string` is interned with `Symbol.intern` (BYN2832).
+void keep<T>(T value) {
+}
+
+void main() {
+    let name: string = "total"
+    let local: Symbol = name
+    let interpolated: Symbol = $"{name}x"
+    let slice: Symbol = name[0..2]
+    let optional: Symbol? = name
+    keep<Symbol>(name)
+    let fine: Symbol = Symbol.intern(name)
+}

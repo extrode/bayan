@@ -291,6 +291,8 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor FunctionTypeNotHere = Error("BYN2822", "a function type is not supported as {0} yet");
     public static readonly DiagnosticDescriptor MemberNotLambda = Error("BYN2823", "`.{0}` is a member, not a lambda");
     public static readonly DiagnosticDescriptor NotAFunctionValue = Error("BYN2824", "`{0}` cannot be used as a value: {1}");
+    public static readonly DiagnosticDescriptor HashMapNotSupported = Error("BYN2830", "`HashMap` is not supported yet: `Map` hashes the same way and keeps insertion order");
+    public static readonly DiagnosticDescriptor StringNotSymbol = Error("BYN2832", "a `string` value is not a `Symbol`; only a string literal converts");
     public static readonly DiagnosticDescriptor BorrowField = Error("BYN3001", "a struct field cannot hold a borrowed `{0}`");
     public static readonly DiagnosticDescriptor BorrowOutlivesSource = Error("BYN3002", "{0} does not live as long as `{1}`, which borrows it");
     public static readonly DiagnosticDescriptor BorrowReturned = Error("BYN3003", "cannot return a borrow of {0}, which is freed when `{1}` returns");

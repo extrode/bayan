@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "path": "symbol-literals.byn",
+      "name": "same",
+      "span": {
+        "start": 162,
+        "end": 166
+      },
+      "bindings": [
+        {
+          "name": "a",
+          "kind": "param",
+          "span": {
+            "start": 174,
+            "end": 175
+          },
+          "type": "Symbol"
+        },
+        {
+          "name": "b",
+          "kind": "param",
+          "span": {
+            "start": 187,
+            "end": 188
+          },
+          "type": "Symbol"
+        }
+      ]
+    },
+    {
+      "path": "symbol-literals.byn",
+      "name": "keyword",
+      "span": {
+        "start": 208,
+        "end": 215
+      },
+      "bindings": []
+    },
+    {
+      "path": "symbol-literals.byn",
+      "name": "main",
+      "span": {
+        "start": 245,
+        "end": 249
+      },
+      "bindings": [
+        {
+          "name": "typed",
+          "kind": "let",
+          "span": {
+            "start": 262,
+            "end": 267
+          },
+          "type": "Symbol"
+        },
+        {
+          "name": "mutable",
+          "kind": "var",
+          "span": {
+            "start": 294,
+            "end": 301
+          },
+          "type": "Symbol"
+        },
+        {
+          "name": "optional",
+          "kind": "let",
+          "span": {
+            "start": 330,
+            "end": 338
+          },
+          "type": "Symbol?"
+        },
+        {
+          "name": "argument",
+          "kind": "let",
+          "span": {
+            "start": 366,
+            "end": 374
+          },
+          "type": "bool"
+        },
+        {
+          "name": "entry",
+          "kind": "let",
+          "span": {
+            "start": 412,
+            "end": 417
+          },
+          "type": "Entry"
+        },
+        {
+          "name": "returned",
+          "kind": "let",
+          "span": {
+            "start": 461,
+            "end": 469
+          },
+          "type": "Symbol"
+        },
+        {
+          "name": "names",
+          "kind": "let",
+          "span": {
+            "start": 490,
+            "end": 495
+          },
+          "type": "List<Symbol>"
+        },
+        {
+          "name": "left",
+          "kind": "let",
+          "span": {
+            "start": 531,
+            "end": 535
+          },
+          "type": "bool"
+        },
+        {
+          "name": "right",
+          "kind": "let",
+          "span": {
+            "start": 569,
+            "end": 574
+          },
+          "type": "bool"
+        },
+        {
+          "name": "lt",
+          "kind": "let",
+          "span": {
+            "start": 609,
+            "end": 611
+          },
+          "type": "bool"
+        },
+        {
+          "name": "le",
+          "kind": "let",
+          "span": {
+            "start": 640,
+            "end": 642
+          },
+          "type": "bool"
+        },
+        {
+          "name": "gt",
+          "kind": "let",
+          "span": {
+            "start": 672,
+            "end": 674
+          },
+          "type": "bool"
+        },
+        {
+          "name": "ge",
+          "kind": "let",
+          "span": {
+            "start": 703,
+            "end": 705
+          },
+          "type": "bool"
+        }
+      ]
+    }
+  ]
+}
