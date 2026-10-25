@@ -27,7 +27,7 @@ Depends on: feat/007-lambdas at 4a746de (dev, round 3, spec 006 and 007 merged);
   - A program without `Symbol` emits no `byn_sym` code.
   - A public function calling `Symbol.intern` without `uses alloc` reports BYN6002; `void main()` calling it does not (entry exemption, revision 0002).
   - The suite passes.
-- [ ] T6 Field-wise key hashing and map behaviour — files: `src/Bayan.Backend.C/CEmitter.cs` (`KeyHash` → `bynh_hash_<key>` through `Helper`, `KeyEq`, `MapMethod`), `src/Bayan.Semantics/Binding/RegionAnalysis.cs` (only if the `string`-part golden fails), `tests/cases/run/`, `tests/cases/diag/` — covers: R6, R7, R11 — after T3, T5 — done when:
+- [x] T6 Field-wise key hashing and map behaviour — files: `src/Bayan.Backend.C/CEmitter.cs` (`KeyHash` → `bynh_hash_<key>` through `Helper`, `KeyEq`, `MapMethod`), `src/Bayan.Semantics/Binding/RegionAnalysis.cs` (only if the `string`-part golden fails), `tests/cases/run/`, `tests/cases/diag/` — covers: R6, R7, R11 — after T3, T5 — done when:
   - `run/map-key-struct-padding` (a struct `Pad` with fields `bool flag` and `i64 id`, two separately built equal keys) prints `1` and `2`.
   - `run/map-key-tuple` prints entries in L003 order after a remove and re-insert.
   - `run/map-key-symbol` covers `contains`, `remove`, `ref m.slot(k)`, `copy(to:)` and a map literal with symbol keys printing in literal order.

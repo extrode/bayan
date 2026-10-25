@@ -1,0 +1,14 @@
+// A tuple key keeps L003's insertion order: a removed key goes to the end when inserted again (spec 008 R7).
+void main() {
+    var m = Map<(i32 scope, Symbol name), i32>()
+    m[(0, "x")] = 1
+    m[(1, "x")] = 2
+    m[(0, "y")] = 3
+    m[(0, "x")] = 4
+    print($"remove: {m.remove((1, "x"))}, again: {m.remove((1, "x"))}")
+    m[(1, "x")] = 5
+    for (key, value) in m {
+        print($"{key.scope} {key.name} {value}")
+    }
+    print($"{m.length}")
+}
