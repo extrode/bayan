@@ -124,15 +124,15 @@ string attributeText(in AttributeSyntax a, from ref Parser p) {
     sb.append($"@{p.lexed.source.getText(a.name)}")
     for arg in a.args {
         sb.append(" ")
-        if arg.name is not null {
-            sb.append(p.lexed.source.getText(arg.name))
+        if (arg.name is { } name) {
+            sb.append(p.lexed.source.getText(name))
             sb.append(": ")
         }
         sb.append(exprText(in arg.value, from: ref p))
     }
-    if a.becauseKeyword is not null {
+    if (a.becauseKeyword is { } clause) {
         sb.append(" because ")
-        lexer.escape(a.becauseKeyword.reason.bytes, to: ref sb)
+        lexer.escape(clause.reason.bytes, to: ref sb)
     }
     return $"{sb.finish()}"
 }
@@ -142,7 +142,7 @@ string rulesText(in List<RequiresRule> rules, from ref Parser p) {
     var sb = StrBuf()
     for r in rules {
         sb.append($" requires {exprText(in r.condition, from: ref p)}")
-        if r.at is not null { sb.append($" at .{p.lexed.source.getText(r.at)}") }
+        if (r.at is { } field) { sb.append($" at .{p.lexed.source.getText(field)}") }
     }
     return $"{sb.finish()}"
 }
@@ -172,11 +172,10 @@ string paramsText(in List<Param> parameters, from ref Parser p, string receiver 
     var sb = StrBuf()
     sb.append($"({receiver}")
     var i = 0
-    while i < parameters.length {
+    for param in parameters {
         if i > 0 || !receiver.isEmpty { sb.append(", ") }
-        let param = parameters[i]
-        if param.particle is not null {
-            sb.append(p.lexed.source.getText(param.particle))
+        if (param.particle is { } particle) {
+            sb.append(p.lexed.source.getText(particle))
             sb.append(" ")
         }
         if param.rest { sb.append("rest ") }
@@ -229,15 +228,15 @@ string deferKindText(DeferKind kind) => kind switch {
 
 // ── Declarations ─────────────────────────────────────────────────────────────────
 
-void decl(in Decl decl, at i64 depth, from ref Parser p, to ref StrBuf sb) {
-    switch decl {
+void decl(in Decl node, at i64 depth, from ref Parser p, to ref StrBuf sb) {
+    switch node {
         case .importDecl(let d):
             doc(d.value.doc, at: depth, to: ref sb)
             attributes(in d.value.attributes, at: depth, from: ref p, to: ref sb)
             var parts = List<string>()
             for part in d.value.path { parts.append(p.lexed.source.getText(part)) }
             var head = $"Import {parts.joined(by: ".")}"
-            if d.value.alias is not null { head = $"{head} as {p.lexed.source.getText(d.value.alias)}" }
+            if (d.value.alias is { } alias) { head = $"{head} as {p.lexed.source.getText(alias)}" }
             line(head, at: depth, to: ref sb)
         case .globalStatement(let d):
             doc(d.value.doc, at: depth, to: ref sb)
@@ -258,19 +257,19 @@ void decl(in Decl decl, at i64 depth, from ref Parser p, to ref StrBuf sb) {
             head.append(typeText(in d.value.returnType, from: ref p))
             head.append(whereText(in d.value.where, from: ref p))
             for r in d.value.requiresKeyword { head.append($" expects {exprText(in r, from: ref p)}") }
-            if d.value.becomes is not null { head.append($" becomes .{p.lexed.source.getText(d.value.becomes)}") }
-            if d.value.failsKeyword is not null {
-                if d.value.failsKeyword.errors.isEmpty {
+            if (d.value.becomes is { } becomes) { head.append($" becomes .{p.lexed.source.getText(becomes)}") }
+            if (d.value.failsKeyword is { } failsClause) {
+                if failsClause.errors.isEmpty {
                     head.append(" fails")
                 } else {
                     var errors = List<string>()
-                    for e in d.value.failsKeyword.errors { errors.append(typeText(in e, from: ref p)) }
+                    for e in failsClause.errors { errors.append(typeText(in e, from: ref p)) }
                     head.append($" fails {errors.joined(by: ", ")}")
                 }
             }
-            if d.value.usesKeyword is not null {
+            if (d.value.usesKeyword is { } usesClause) {
                 var effects = List<string>()
-                for e in d.value.usesKeyword.effects { effects.append(p.lexed.source.getText(e)) }
+                for e in usesClause.effects { effects.append(p.lexed.source.getText(e)) }
                 head.append($" uses {effects.joined(by: ", ")}")
             }
             unless d.value.expressionBody is .none { head.append($" => {exprText(in d.value.expressionBody, from: ref p)}") }
@@ -357,9 +356,9 @@ void decl(in Decl decl, at i64 depth, from ref Parser p, to ref StrBuf sb) {
                     variantHead.append($"({fieldParts.joined(by: ", ")})")
                 }
                 for a in v.attributes { variantHead.append($" {attributeText(in a, from: ref p)}") }
-                if v.doc is not null {
+                if (v.doc is { } vdoc) {
                     variantHead.append(" doc ")
-                    lexer.escape(v.doc.bytes, to: ref variantHead)
+                    lexer.escape(vdoc.bytes, to: ref variantHead)
                 }
                 line($"{variantHead.finish()}", at: depth + 1, to: ref sb)
             }
@@ -382,19 +381,19 @@ void decl(in Decl decl, at i64 depth, from ref Parser p, to ref StrBuf sb) {
             head.append("Enum ")
             head.append(mods(d.value.modifiers))
             head.append(p.lexed.source.getText(d.value.name))
-            if d.value.params is not null { head.append(paramsText(in d.value.params, from: ref p)) }
+            if (d.value.params is { } params) { head.append(paramsText(in params, from: ref p)) }
             head.append(basesText(in d.value.bases, from: ref p))
             head.append(whereText(in d.value.where, from: ref p))
             line($"{head.finish()}", at: depth, to: ref sb)
             for m in d.value.members {
                 var memberHead = StrBuf()
                 memberHead.append($"Member {p.lexed.source.getText(m.name)}")
-                if m.args is not null {
+                if (m.args is { } args) {
                     var argParts = List<string>()
-                    for a in m.args {
+                    for a in args {
                         var arg = StrBuf()
-                        if a.name is not null {
-                            arg.append(p.lexed.source.getText(a.name))
+                        if (a.name is { } name) {
+                            arg.append(p.lexed.source.getText(name))
                             arg.append(": ")
                         }
                         arg.append(exprText(in a.value, from: ref p))
@@ -402,9 +401,9 @@ void decl(in Decl decl, at i64 depth, from ref Parser p, to ref StrBuf sb) {
                     }
                     memberHead.append($"({argParts.joined(by: ", ")})")
                 }
-                if m.doc is not null {
+                if (m.doc is { } mdoc) {
                     memberHead.append(" doc ")
-                    lexer.escape(m.doc.bytes, to: ref memberHead)
+                    lexer.escape(mdoc.bytes, to: ref memberHead)
                 }
                 line($"{memberHead.finish()}", at: depth + 1, to: ref sb)
             }
@@ -428,9 +427,9 @@ void decl(in Decl decl, at i64 depth, from ref Parser p, to ref StrBuf sb) {
                     variantHead.append($"({fieldParts.joined(by: ", ")})")
                 }
                 unless v.value is .none { variantHead.append($" = {exprText(in v.value, from: ref p)}") }
-                if v.doc is not null {
+                if (v.doc is { } vdoc) {
                     variantHead.append(" doc ")
-                    lexer.escape(v.doc.bytes, to: ref variantHead)
+                    lexer.escape(vdoc.bytes, to: ref variantHead)
                 }
                 line($"{variantHead.finish()}", at: depth + 1, to: ref sb)
             }
@@ -465,8 +464,8 @@ void decl(in Decl decl, at i64 depth, from ref Parser p, to ref StrBuf sb) {
 
 // ── Statements ───────────────────────────────────────────────────────────────────
 
-void stmt(in Stmt stmt, at i64 depth, from ref Parser p, to ref StrBuf sb) {
-    switch stmt {
+void stmt(in Stmt node, at i64 depth, from ref Parser p, to ref StrBuf sb) {
+    switch node {
         case .blockStmt(let s):
             line("Block", at: depth, to: ref sb)
             for child in s.value.statements { stmt(in child, at: depth + 1, from: ref p, to: ref sb) }
@@ -493,20 +492,20 @@ void stmt(in Stmt stmt, at i64 depth, from ref Parser p, to ref StrBuf sb) {
         case .breakStmt(let s):
             var head = StrBuf()
             head.append("Break")
-            if s.value.label is not null { head.append($" {p.lexed.source.getText(s.value.label)}") }
+            if (s.value.label is { } label) { head.append($" {p.lexed.source.getText(label)}") }
             line($"{head.finish()}", at: depth, to: ref sb)
         case .continueStmt(let s):
             var head = StrBuf()
             head.append("Continue")
-            if s.value.label is not null { head.append($" {p.lexed.source.getText(s.value.label)}") }
+            if (s.value.label is { } label) { head.append($" {p.lexed.source.getText(label)}") }
             line($"{head.finish()}", at: depth, to: ref sb)
         case .becomeStmt(let s):
             var head = StrBuf()
             head.append($"Become .{p.lexed.source.getText(s.value.state)}")
             for a in s.value.args {
                 head.append(" ")
-                if a.name is not null {
-                    head.append(p.lexed.source.getText(a.name))
+                if (a.name is { } name) {
+                    head.append(p.lexed.source.getText(name))
                     head.append(": ")
                 }
                 head.append(exprText(in a.value, from: ref p))
@@ -578,7 +577,7 @@ void stmt(in Stmt stmt, at i64 depth, from ref Parser p, to ref StrBuf sb) {
             var head = StrBuf()
             head.append("Defer")
             head.append(deferKindText(s.value.kind))
-            if s.value.binding is not null { head.append($" ({p.lexed.source.getText(s.value.binding)})") }
+            if (s.value.binding is { } binding) { head.append($" ({p.lexed.source.getText(binding)})") }
             line($"{head.finish()}", at: depth, to: ref sb)
             stmt(in s.value.body, at: depth + 1, from: ref p, to: ref sb)
         case .assertStmt(let s):

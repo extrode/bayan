@@ -45,6 +45,8 @@ public sealed class SelfhostParserT11Tests(ITestOutputHelper output)
     public void DumpWritesDeclarationsAndStatements()
     {
         const string program = """
+            import lexer
+
             void main() {
                 var bytes = List<u8>()
                 for b in "import a.b".bytes { bytes.append(b) }
@@ -90,6 +92,7 @@ public sealed class SelfhostParserT11Tests(ITestOutputHelper output)
             [public readonly ]
             Let
             +=
+
             """, stdout);
     }
 }
