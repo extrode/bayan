@@ -121,7 +121,7 @@ public sealed class SelfhostParserT3Tests(ITestOutputHelper output)
 
     /// <summary>
     /// Every pattern form whose C# parse needs no sibling helper (the two <c>ParseBinary</c> and the
-    /// <c>ScanType</c> shims are placeholders until T15, Q441), with spans and the restored <c>noLambda</c>.
+    /// <c>ScanType</c> stand-ins in <c>struct T3</c> are placeholders until T15, Q441), with spans and the restored <c>noLambda</c>.
     /// </summary>
     [Fact]
     public void PatternsParse()
