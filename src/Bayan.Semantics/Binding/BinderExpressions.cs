@@ -639,7 +639,7 @@ internal sealed partial class Binder
                 return BindEnumStatic(m, e);
             case BoundTypeRef { Referenced: UnionSymbol u }:
                 return BindVariant(m, m.Member, u);
-            case BoundTypeRef { Referenced: StructSymbol s } when Constructible(s):
+            case BoundTypeRef { Referenced: StructSymbol s }:
             {
                 var method = s.FindMethods(name).FirstOrDefault();
                 if (method is { IsStatic: true })
