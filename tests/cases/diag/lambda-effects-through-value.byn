@@ -1,0 +1,21 @@
+public void run() {
+    let h: (i64 -> void) -> void = f => f(1)
+    h(x => print($"leak {x}"))
+}
+
+public void inner(((i64 -> void) -> void) p) {
+    p(x => print($"leak2 {x}"))
+}
+
+public void declared() uses console {
+    let h: (i64 -> void) -> void = f => f(1)
+    h(x => print($"ok {x}"))
+}
+
+public void declaredInner(((i64 -> void) -> void) p) uses console {
+    p(x => print($"ok2 {x}"))
+}
+
+void main() {
+    run()
+}

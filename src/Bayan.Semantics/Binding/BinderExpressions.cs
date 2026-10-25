@@ -1663,6 +1663,11 @@ internal sealed partial class Binder
             foreach (var e in c.Elements.Skip(1)) BindExpr(e);
             return new BoundErrorExpr(c);
         }
+        if (_c.FunctionTypeNotHere(element, Source, c.Elements[0].Span, "an array element"))
+        {
+            foreach (var e in c.Elements.Skip(1)) BindExpr(e);
+            return new BoundErrorExpr(c);
+        }
         if (first is not BoundSpread) first = Convert(first, element, c.Elements[0].Span);
         var elements = c.Elements.Skip(1).Select(e => e is SpreadExpr s ? BindSpread(s, element) : BindConverted(e, element)).Prepend(first).ToArray();
         return FinishCollection(c, new Symbols.ArrayType(element, KnownLength(elements) ?? elements.Length), elements);
@@ -1776,6 +1781,11 @@ internal sealed partial class Binder
                 foreach (var e in entries.Skip(1)) BindMapPart(e);
                 return new BoundErrorExpr(c);
             }
+            if (_c.FunctionTypeNotHere(value.Type, Source, entries[0].Value.Span, "a map value"))
+            {
+                foreach (var e in entries.Skip(1)) BindMapPart(e);
+                return new BoundErrorExpr(c);
+            }
             map = new MapType(key.Type, value.Type);
             parts.Add(Convert(key, map.KeyType, entries[0].Key.Span));
             parts.Add(Convert(value, map.ValueType, entries[0].Value.Span));
@@ -1836,6 +1846,7 @@ internal sealed partial class Binder
             }
             fields.Add(new TupleField(t.Elements[i].Name?.Text, type));
         }
+        if (fields.Zip(t.Elements).Count(p => _c.FunctionTypeNotHere(p.First.Type, Source, p.Second.Value.Span, "a tuple element")) > 0) return new BoundErrorExpr(t);
         var tupleType = new Symbols.TupleType(fields);
         return new BoundTuple(t, tupleType, elements);
     }

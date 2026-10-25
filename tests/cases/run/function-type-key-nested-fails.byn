@@ -1,0 +1,13 @@
+union error E {
+    bad
+}
+i64 g((() -> (() -> i64 fails E)) f) => f()() catch 7
+i64 h((() -> (() -> i64) fails E) f) {
+    let inner: () -> i64 = () => 9
+    let got = f() catch inner
+    return got()
+}
+void main() {
+    print($"{g(() => () => 1)}")
+    print($"{h(() => () => 2)}")
+}

@@ -1439,7 +1439,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         if (hasReceiver)
         {
             receiver = parts[0];
-            if (!IsLvalue(receiver)) receiver = Spill(receiver);
+            // A function value is named twice in C (its code and its environment), so anything but a local is evaluated once first.
+            if (!IsLvalue(receiver) || c.Function.Kind == FunctionKind.Invoke && receiver is not BoundLocal) receiver = Spill(receiver);
             // `map[k].f()` with `ref this` changes the stored value; reading through the panicking index first keeps a missing key out.
             if (receiver is BoundBuiltinCall { Member: BuiltinMember.MapIndexSet })
             {

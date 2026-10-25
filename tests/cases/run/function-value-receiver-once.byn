@@ -1,0 +1,10 @@
+i64 inc(i64 n) => n + 1
+
+i64 call((() -> (i64 -> i64)) pick) => pick()(2)
+
+void main() {
+    print($"{call(() => {
+        print("pick")
+        return inc
+    })}")
+}
