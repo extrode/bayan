@@ -58,6 +58,19 @@ public sealed class L014CaptureByCopyTests(ITestOutputHelper output)
             }
 
             """ },
+        { "lambda held past its loop iteration", "BYN3002", """
+            void main() {
+                var held: i64 -> i64 = x => x
+                for i in 0..3 {
+                    let j = (i + 1) * 10
+                    if i == 0 {
+                        held = x => x + j
+                    }
+                }
+                print($"{held(1)}")
+            }
+
+            """ },
     };
 
     /// <summary>The value each accepted row's capture had when its lambda was created, as the program prints it.</summary>
