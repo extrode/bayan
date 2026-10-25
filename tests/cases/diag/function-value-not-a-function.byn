@@ -1,0 +1,46 @@
+struct Order {
+    i64 total
+
+    i64 doubled() => total * 2
+
+    static i64 zero() => 0
+
+    Order(i64 cents) {
+        this.total = cents
+    }
+}
+
+@positional
+struct Point {
+    i64 x
+}
+
+union Shape {
+    circle(i64 radius)
+    none
+}
+
+i64 zeroOf<T>() => 0
+
+bool say((string -> void) by) => true
+
+bool make((() -> i64) by) => true
+
+bool point((i64 -> Point) by) => true
+
+bool shape((i64 -> Shape) by) => true
+
+bool order((i64 -> Order) by) => true
+
+void use(Order o) {
+    let a = say(print)
+    let b = make(zeroOf)
+    let c = make(Order.zero)
+    let d = make(o.doubled)
+    let e = point(Point)
+    let f = shape(Shape.circle)
+    let g = order(Order)
+}
+
+void main() {
+}
