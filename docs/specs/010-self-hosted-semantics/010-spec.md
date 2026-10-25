@@ -4,7 +4,7 @@ Created: 2026-10-26
 
 ## Problem
 
-The handoff's "Road to self-hosting" puts semantics next: binder, flow and ownership in Bayan, checked against every `diag/` golden and, through spec 004's typed dump, a binder-equivalence law. Spec 009 delivered a Bayan parser whose tree and diagnostics match the C# parser. Nothing in Bayan yet resolves names, checks types, or runs the flow, effect, ownership and region analyses, so lowering (011) has no bound program to consume. The C# semantics are about 14,250 lines (`src/Bayan.Semantics/`), three times the parser; 418 of the 508 `diag/` goldens expect a semantic code (BYN2xxx–BYN3xxx).
+The handoff's "Road to self-hosting" puts semantics next: binder, flow and ownership in Bayan, checked against every `diag/` golden and, through spec 004's typed dump, a binder-equivalence law. Spec 009 delivered a Bayan parser whose tree and diagnostics match the C# parser. Nothing in Bayan yet resolves names, checks types, or runs the flow, effect, ownership and region analyses, so lowering (011) has no bound program to consume. The C# semantics are about 14,250 lines (`src/Bayan.Semantics/`), three times the parser; 421 of the 519 `diag/` goldens expect a semantic code (first code BYN2000 or above; some are BYN5xxx–BYN8xxx).
 
 ## Goals
 
@@ -30,11 +30,11 @@ The handoff's "Road to self-hosting" puts semantics next: binder, flow and owner
 
 ## Requirements
 
-- **R1 Program.** `selfhost/semantics/` is a Bayan program, `bayan-check`. Given the same inputs as `bayan check` (a file, a directory of `.byn` files, or a project), it prints the same diagnostics in the same rendered format and order, and exits with the same code.
-- **R2 Typed dump.** `bayan-check --types` prints the same JSON as `bayan types` for the same input, byte for byte (`docs/typed-dump.md`).
+- **R1 Program.** `selfhost/semantics/` is a Bayan program, `bayan-check`. Given the same inputs as `bayan check` (a file, a directory of `.byn` files, or a project with its manifest), it prints the same diagnostics in the same rendered format and order, the same error cap and failure footer, and exits with the same code. The success summary's timing figures are excluded from comparison. Paths are passed absolute (Bayan has no working-directory builtin); rendering of relative arguments is a Question.
+- **R2 Typed dump.** `bayan-check --types` prints the same JSON as `bayan types` for the same input, byte for byte (`docs/typed-dump.md`); on errors it prints the capped diagnostics without the failure footer and exits 1, as `bayan types` does.
 - **R3 Reuse.** Tokens and trees come from the `selfhost/lexer/` and `selfhost/parser/` modules, imported. Their behaviour is unchanged, so L001, L002, L017 and L018 still hold.
-- **R4 Coverage of the analyses.** Name resolution and imports, type resolution and conversions, constant folding, overloads and argument names, interfaces and conformance, lambdas, error flow and `fails`, effects, definite assignment and flow, ownership, regions, and the lints `bayan check` reports are all ported, each producing its C# diagnostics.
-- **R5 Golden coverage.** The suite runs `bayan-check` on every `tests/cases/diag/` case (file or directory) and compares its diagnostics with `bayan check`; and runs `bayan-check --types` on every `tests/cases/typed/*.byn` and compares with `bayan types`. A disagreement fails the run, naming the input and the first differing line.
+- **R4 Coverage of the analyses.** Name resolution and imports, type resolution and conversions, constant folding, overloads and argument names, interfaces and conformance, lambdas, error flow and `fails`, effects, definite assignment and flow, ownership, regions, the project manifest reader (BYN3100–BYN3103, entry-module selection), and the lints `bayan check` reports are all ported, each producing its C# diagnostics.
+- **R5 Golden coverage.** The suite runs `bayan-check` on every `tests/cases/diag/` case (file or directory) compiled the way the C# golden harness compiles it (each case in isolation, `*.test.byn` with tests included) and compares its diagnostics with the C# result for the same compilation; and runs `bayan-check --types` on every `tests/cases/typed/*.byn` and compares with `bayan types`. A disagreement fails the run, naming the input and the first differing line.
 - **R6 Generated inputs.** A generator produces well-typed programs and programs with one injected semantic fault (unknown name, wrong type, use after move, missing `fails`, unassigned read). The suite compares the two checkers on a fixed set of seeds.
 - **R7 Speed bound.** On a 1 MB generated well-typed program, `bayan-check` built in `fast` mode takes no more than 10 times as long as `bayan check`, median over 5 runs.
 - **R8 Port friction.** Every workaround forced by the language or the bootstrap compiler gets a handoff Question or a `work/todo.md` line; a compiler bug that blocks the port is fixed in this spec, with a test.
@@ -51,8 +51,8 @@ The handoff's "Road to self-hosting" puts semantics next: binder, flow and owner
 ## Law candidates
 
 - **L019 (binder equivalence).** For every program that parses without errors, `bayan-check --types` and `bayan types` print the same typed dump, and `bayan-check` and `bayan check` report the same diagnostics and exit with the same code.
-- **L020 (no checker panic).** For every byte sequence, `bayan-check` terminates without a panic, and every diagnostic span lies within its file.
+- **L020 (no checker panic).** For every input in the stated corpus (every golden, the generator's seeds, and random byte and token mutations of them, nesting bounded as in L018's proof), `bayan-check` terminates without a panic, and every diagnostic span lies within its file.
 
 ## Open questions
 
-- None. Inferred, not asked: full parity with `bayan check` and `bayan types` (the 001/009 standard); C# is the reference; trees come from the Bayan parser; speed bound and checks follow 009. Diagnostics outside `bayan check` stay out (finish line).
+- None. Gaps found while planning (2026-10-26) are folded in: per-case isolated compilation as reference, footer/cap/exit in R1, `--types` error behaviour, manifest in scope, absolute paths, L020's corpus. Inferred, not asked: full parity with `bayan check` and `bayan types` (the 001/009 standard); C# is the reference; trees come from the Bayan parser; speed bound and checks follow 009. Diagnostics outside `bayan check` stay out (finish line).
