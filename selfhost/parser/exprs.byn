@@ -1,7 +1,675 @@
-// Expressions A. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 3158–about 3605: precedence
+// Expressions A. Ports `src/Bayan.Syntax/Parsing/Parser.cs` lines 3141–3605: precedence
 // climbing, conditional, ranges, `is`/`in`/`except`/casts, unary, postfix, members, calls, index,
 // `try`/`move`/`catch`. Owner: T9.
 //
-// T1 stub: the cross-file entry points only.
+// A C# node built as `new X(SpanFrom(start), …, ParseY())` takes its span before the child is
+// parsed (C# evaluates arguments left to right), so the span ends before that child; the port
+// takes the span at the same point (`move`, `fail`, `break`/`continue` labels, `except`, `?.`).
+// The two `WithoutLambdas` sites save `noLambda`, make the call and restore it.
 
-Expr parseExpression(ref Parser p) => .none
+import lexer
+
+// The C# `Prec`, as `i64` so that `prec + 1` past the last level binds nothing, as in C#.
+const precNone: i64 = 0
+const precCoalesce: i64 = 1
+const precLogicalOr: i64 = 2
+const precLogicalAnd: i64 = 3
+const precBitOr: i64 = 4
+const precBitXor: i64 = 5
+const precBitAnd: i64 = 6
+const precEquality: i64 = 7
+const precRelational: i64 = 8
+const precRange: i64 = 9
+const precShift: i64 = 10
+const precAdditive: i64 = 11
+const precMultiplicative: i64 = 12
+
+bool canStartExpression(TokenKind kind) => isContextualKeyword(kind) || kind switch {
+    .identifier or .integerLiteral or .floatLiteral or .charLiteral or
+    .stringLiteral or .rawStringLiteral or .cStringLiteral or .u16StringLiteral or
+    .interpolatedStringStart or .openParen or .openBracket or .openBrace or
+    .dot or .dotDot or .dotDotEquals or .plus or .minus or .bang or
+    .notKeyword or .tilde or .caret or .trueKeyword or .falseKeyword or .nullKeyword or
+    .thisKeyword or .tryKeyword or .newKeyword or .moveKeyword or .returnKeyword or
+    .failKeyword or .breakKeyword or .continueKeyword => true,
+    _ => false,
+}
+
+Expr parseExpression(ref Parser p) {
+    let start = p.current().start
+    let condition = parseBinary(ref p, at: precCoalesce)
+    if p.kind() != .question || stopsHere(ref p) { return condition }
+    let _ = p.advance()
+    let whenTrue = parseExpression(ref p)
+    let _ = p.expect(.colon)
+    let whenFalse = parseExpression(ref p)
+    return Expr.conditionalExpr(Owned(ConditionalExpr {
+        span: p.spanFrom(start),
+        condition: move condition,
+        whenTrue: move whenTrue,
+        whenFalse: move whenFalse,
+    }))
+}
+
+(BinaryOp op, i64 prec, i64 width) binaryOperator(ref Parser p) {
+    let kind = p.kind()
+    if kind == .greater {
+        if p.atShiftRight() { return (op: BinaryOp.shr, prec: precShift, width: 2) }
+        if p.peek(1) == .greaterEquals && !p.peekToken(1).hasTriviaBefore { return (op: BinaryOp.add, prec: precNone, width: 0) }
+        return (op: BinaryOp.gt, prec: precRelational, width: 1)
+    }
+    return kind switch {
+        .questionQuestion => (op: BinaryOp.coalesce, prec: precCoalesce, width: 1),
+        .barBar or .orKeyword => (op: BinaryOp.logicalOr, prec: precLogicalOr, width: 1),
+        .ampAmp or .andKeyword => (op: BinaryOp.logicalAnd, prec: precLogicalAnd, width: 1),
+        .bar => (op: BinaryOp.bitOr, prec: precBitOr, width: 1),
+        .caret => (op: BinaryOp.bitXor, prec: precBitXor, width: 1),
+        .amp => (op: BinaryOp.bitAnd, prec: precBitAnd, width: 1),
+        .equalsEquals => (op: BinaryOp.eq, prec: precEquality, width: 1),
+        .bangEquals => (op: BinaryOp.ne, prec: precEquality, width: 1),
+        .less => (op: BinaryOp.lt, prec: precRelational, width: 1),
+        .lessEquals => (op: BinaryOp.le, prec: precRelational, width: 1),
+        .greaterEquals => (op: BinaryOp.ge, prec: precRelational, width: 1),
+        .lessLess => (op: BinaryOp.shl, prec: precShift, width: 1),
+        .plus => (op: BinaryOp.add, prec: precAdditive, width: 1),
+        .minus => (op: BinaryOp.sub, prec: precAdditive, width: 1),
+        .plusPercent => (op: BinaryOp.addWrap, prec: precAdditive, width: 1),
+        .minusPercent => (op: BinaryOp.subWrap, prec: precAdditive, width: 1),
+        .plusBar => (op: BinaryOp.addSat, prec: precAdditive, width: 1),
+        .minusBar => (op: BinaryOp.subSat, prec: precAdditive, width: 1),
+        .star => (op: BinaryOp.mul, prec: precMultiplicative, width: 1),
+        .slash => (op: BinaryOp.div, prec: precMultiplicative, width: 1),
+        .percent => (op: BinaryOp.rem, prec: precMultiplicative, width: 1),
+        .starPercent => (op: BinaryOp.mulWrap, prec: precMultiplicative, width: 1),
+        .starBar => (op: BinaryOp.mulSat, prec: precMultiplicative, width: 1),
+        _ => (op: BinaryOp.add, prec: precNone, width: 0),
+    }
+}
+
+Expr parseBinary(ref Parser p, at i64 minPrec) {
+    let start = p.current().start
+    if (p.kind() == .dotDot || p.kind() == .dotDotEquals) && minPrec <= precRange {
+        let inclusive = p.advance().kind == .dotDotEquals
+        var end: Expr = .none
+        if canStartRangeEnd(ref p) { end = parseBinary(ref p, at: precShift) }
+        let left = Expr.rangeExpr(Owned(RangeExpr { span: p.spanFrom(start), start: .none, end: move end, inclusive: inclusive }))
+        return parseBinaryRest(ref p, from: start, by: move left, at: minPrec)
+    }
+    let left = parseUnary(ref p)
+    return parseBinaryRest(ref p, from: start, by: move left, at: minPrec)
+}
+
+/// The operators after `first`, which started at `start`.
+Expr parseBinaryRest(ref Parser p, from i64 start, by move Expr first, at i64 minPrec) {
+    var left = move first
+    while true {
+        if stopsHere(ref p) { return left }
+        if p.kind() == .isKeyword && minPrec <= precRelational {
+            let _ = p.advance()
+            let pattern = parsePattern(ref p)
+            left = Expr.isExpr(Owned(IsExpr { span: p.spanFrom(start), value: move left, pattern: move pattern }))
+            continue
+        }
+        if p.kind() == .exceptKeyword && minPrec <= precRelational {
+            let _ = p.advance()
+            let span = p.spanFrom(start)
+            let pattern = parseExceptPattern(ref p)
+            left = Expr.exceptExpr(Owned(ExceptExpr { span: span, value: move left, pattern: move pattern }))
+            continue
+        }
+        if p.kind() == .inKeyword && minPrec <= precRelational {
+            let _ = p.advance()
+            let range = parseBinary(ref p, at: precRange)
+            left = Expr.inExpr(Owned(InExpr { span: p.spanFrom(start), value: move left, range: move range }))
+            continue
+        }
+        if (p.kind() == .dotDot || p.kind() == .dotDotEquals) && minPrec <= precRange {
+            let inclusive = p.advance().kind == .dotDotEquals
+            var end: Expr = .none
+            if canStartRangeEnd(ref p) { end = parseBinary(ref p, at: precShift) }
+            left = Expr.rangeExpr(Owned(RangeExpr { span: p.spanFrom(start), start: move left, end: move end, inclusive: inclusive }))
+            continue
+        }
+        if p.kind() == .catchKeyword && minPrec <= precCoalesce {
+            left = parseCatch(ref p, from: start, by: move left)
+            continue
+        }
+        let operator = binaryOperator(ref p)
+        if operator.prec == precNone || operator.prec < minPrec { return left }
+        for _ in 0..operator.width { let _ = p.advance() }
+        // A line ending in an operator continues (lā), but not across a blank line outside brackets.
+        if breaksLine(ref p, at: p.pos) && hasBlankLineBefore(ref p, at: p.pos) {
+            let _ = p.report(.expectedExpression, at: TextSpan { start: p.prevEnd, length: 0 }, arg0: "a blank line",
+                label: "the statement ends here", help: "remove the blank line, or finish the expression on this line")
+        }
+        // `??` is right-associative; everything else is left-associative.
+        let right = operator.op == .coalesce ? parseBinary(ref p, at: operator.prec) : parseBinary(ref p, at: operator.prec + 1)
+        left = Expr.binaryExpr(Owned(BinaryExpr { span: p.spanFrom(start), op: operator.op, left: move left, right: move right }))
+    }
+}
+
+/// The pattern after `except`. A constant followed by a comparison or logical operator is a condition (BYN1052);
+/// the whole condition is parsed so the statement still ends where it should.
+Pattern parseExceptPattern(ref Parser p) {
+    let pattern = parsePattern(ref p)
+    var constantStart: i64 = -1
+    switch pattern {
+        case .constantPattern(let constant):
+            constantStart = constant.value.span.start
+        default:
+            return pattern
+    }
+    if stopsHere(ref p) { return pattern }
+    let prec = binaryOperator(ref p).prec
+    if (prec == precNone || prec == precCoalesce) && p.kind() != .isKeyword && p.kind() != .inKeyword { return pattern }
+    let value = reparseConstant(ref p, from: constantStart)
+    let condition = parseBinaryRest(ref p, from: constantStart, by: move value, at: precLogicalOr)
+    let span = exprSpan(in condition)
+    let _ = p.report(.exceptNotPattern, at: span, label: "a condition", help: "use `where` for a condition")
+    return Pattern.constantPattern(Owned(ConstantPattern { span: span, value: move condition }))
+}
+
+/// The value of the constant pattern that `parsePattern` just read from `start`, which ends at the cursor. The
+/// value cannot be moved out of its `Owned` node (BYN2782, Q471), so it is parsed again as the C# `ParsePrimaryPattern`
+/// parses a constant, with the diagnostics of the second parse dropped.
+Expr reparseConstant(ref Parser p, from i64 start) {
+    let after = p.pos
+    let afterEnd = p.prevEnd
+    let diagnostics = p.lexed.diagnostics.length
+    let syntaxErrors = p.syntaxErrors
+    let lastErrorAt = p.lastErrorAt
+    var index = after
+    while index > 0 && p.lexed.tokens[index - 1].start >= start { index -= 1 }
+    p.pos = index
+    p.prevEnd = index > 0 ? p.lexed.tokens[index - 1].end : 0
+    let saved = p.setNoLambda(value: true)
+    let value = parseBinary(ref p, at: precRange)
+    p.noLambda = saved
+    while p.lexed.diagnostics.length > diagnostics { let _ = p.lexed.diagnostics.removeLast() }
+    p.syntaxErrors = syntaxErrors
+    p.lastErrorAt = lastErrorAt
+    p.pos = after
+    p.prevEnd = afterEnd
+    return value
+}
+
+bool canStartRangeEnd(ref Parser p) {
+    let kind = p.kind()
+    return canStartExpression(kind) && kind != .openBrace && kind != .dotDot && kind != .dotDotEquals
+}
+
+Expr parseCatch(ref Parser p, from i64 start, by move Expr operand) {
+    let _ = p.advance()
+    var binding: TextSpan? = null
+    var variant: Expr = .none
+    if p.kind() == .openParen && isName(p.peek(1)) && p.peek(2) == .closeParen {
+        let openToken = p.advance()
+        let name = spanOf(p.advance())
+        binding = name
+        let span = TextSpan.fromBounds(openToken.start, until: p.advance().end)
+        let text = p.lexed.source.getText(name)
+        if p.kind() == .switchKeyword {
+            let _ = p.reportFix(.catchBinding, at: span, through: TextSpan.fromBounds(openToken.start, until: p.current().start), by: "",
+                label: "the input form", help: $"remove `({text})` and bind the error in each arm: `E {text} => …`")
+        } else {
+            let _ = p.report(.catchBinding, at: span, label: "the input form",
+                help: $"write `catch switch {{ E {text} => … }}`, binding the error in each arm")
+        }
+    } else if p.kind() == .openParen {
+        let _ = p.advance()
+        variant = parseExpression(ref p)
+        let _ = p.expect(.closeParen)
+    }
+
+    var handler: Expr = .none
+    if p.kind() == .switchKeyword {
+        let switchStart = p.current().start
+        var subject = Expr.caughtErrorExpr(Owned(CaughtErrorExpr { span: spanOf(p.current()) }))
+        if binding is not null {
+            let name = binding ?? TextSpan { start: 0, length: 0 }
+            subject = Expr.nameExpr(Owned(NameExpr { span: name, name: name, typeArgs: List<TypeSyntax>() }))
+        }
+        let _ = p.advance()
+        handler = parseSwitchArms(ref p, from: switchStart, by: move subject)
+    } else if p.kind() == .openBrace && !(isName(p.peek(1)) && p.peek(2) == .colon && !braceBodyHasStatementBreak(ref p)) {
+        // `catch { x: 1 }` stays a target-typed struct literal; `catch {}`, `catch { x = 1 }` and a body of
+        // several statements, one per line, are blocks.
+        let block = parseBlock(ref p)
+        let span = blockSpan(in block)
+        handler = Expr.blockExpr(Owned(BlockExpr { span: span, block: move block }))
+    } else {
+        handler = parseBinary(ref p, at: precLogicalOr)
+    }
+    return Expr.catchExpr(Owned(CatchExpr {
+        span: p.spanFrom(start),
+        operand: move operand,
+        binding: binding,
+        variant: move variant,
+        handler: move handler,
+    }))
+}
+
+Expr parseUnary(ref Parser p) {
+    // `with` binds looser than every prefix operator: `move tx with { … }` is `(move tx) with { … }` (revision 0008).
+    let start = p.current().start
+    var expr = parsePrefixed(ref p)
+    while !breaksLine(ref p, at: p.pos) {
+        if p.kind() == .switchKeyword && p.peek(1) == .openBrace {
+            let _ = p.advance()
+            expr = parseSwitchArms(ref p, from: start, by: move expr)
+        } else if p.kind() == .withKeyword && p.peek(1) == .openBrace {
+            let _ = p.advance()
+            let fields = parseFieldInits(ref p)
+            expr = Expr.withExpr(Owned(WithExpr { span: p.spanFrom(start), target: move expr, fields: move fields }))
+        } else {
+            break
+        }
+    }
+    return expr
+}
+
+Expr parsePrefixed(ref Parser p) {
+    let start = p.current().start
+    let kind = p.kind()
+    if kind == .plus || kind == .minus || kind == .bang || kind == .notKeyword || kind == .tilde || kind == .caret {
+        let op = kind switch {
+            .plus => UnaryOp.plus,
+            .minus => UnaryOp.negate,
+            .tilde => UnaryOp.complement,
+            .caret => UnaryOp.fromEnd,
+            _ => UnaryOp.notKeyword,
+        }
+        let _ = p.advance()
+        let operand = parsePrefixed(ref p)
+        return Expr.unaryExpr(Owned(UnaryExpr { span: p.spanFrom(start), op: op, operand: move operand }))
+    }
+    if kind == .tryKeyword {
+        // `try` covers the whole expression to its right, down to `??`; `?:` and assignment stay outside (§18, J18).
+        let _ = p.advance()
+        let covered = parseBinary(ref p, at: precCoalesce)
+        return Expr.tryExpr(Owned(TryExpr { span: p.spanFrom(start), operand: move covered }))
+    }
+    if kind == .moveKeyword {
+        let _ = p.advance()
+        let span = p.spanFrom(start)
+        let operand = parsePrefixed(ref p)
+        return Expr.moveExpr(Owned(MoveExpr { span: span, operand: move operand }))
+    }
+    if kind == .newKeyword {
+        // Accepted for C# compatibility; the formatter removes it.
+        let _ = p.advance()
+        return parseUnary(ref p)
+    }
+    if kind == .returnKeyword {
+        let _ = p.advance()
+        let next = p.kind()
+        var value: Expr = .none
+        if canStartExpression(next) && !breaksLine(ref p, at: p.pos)
+            && next != .returnKeyword && next != .breakKeyword && next != .continueKeyword {
+            value = parseBinary(ref p, at: precLogicalOr)
+        }
+        let jump = Stmt.returnStmt(Owned(ReturnStmt { span: p.spanFrom(start), value: move value }))
+        return Expr.jumpExpr(Owned(JumpExpr { span: p.spanFrom(start), jump: move jump }))
+    }
+    if kind == .failKeyword {
+        let _ = p.advance()
+        let span = p.spanFrom(start)
+        let error = parseBinary(ref p, at: precLogicalOr)
+        let jump = Stmt.failStmt(Owned(FailStmt { span: span, error: move error }))
+        return Expr.jumpExpr(Owned(JumpExpr { span: span, jump: move jump }))
+    }
+    if kind == .breakKeyword || kind == .continueKeyword {
+        let _ = p.advance()
+        let span = p.spanFrom(start)
+        var label: TextSpan? = null
+        if p.kind() == .identifier && !p.current().hasNewlineBefore { label = spanOf(p.advance()) }
+        if kind == .breakKeyword {
+            let jump = Stmt.breakStmt(Owned(BreakStmt { span: span, label: label }))
+            return Expr.jumpExpr(Owned(JumpExpr { span: span, jump: move jump }))
+        }
+        let jump = Stmt.continueStmt(Owned(ContinueStmt { span: span, label: label }))
+        return Expr.jumpExpr(Owned(JumpExpr { span: span, jump: move jump }))
+    }
+    if kind == .openParen && isCast(ref p) {
+        let _ = p.advance()
+        let typeStart = p.current().start
+        let castType = parseType(ref p)
+        // The C# `type.Span`: a type's span runs from its first token to the last one parsed.
+        let typeText = p.lexed.source.getText(p.spanFrom(typeStart))
+        let _ = p.expect(.closeParen)
+        let typeSpan = p.spanFrom(start)
+        let operand = parsePrefixed(ref p)
+        var inner = exprSpan(in operand)
+        switch operand {
+            case .parenExpr(let paren):
+                inner = exprSpan(in paren.value.inner)
+            default:
+                inner = exprSpan(in operand)
+        }
+        let _ = p.reportFix(.castInput, at: typeSpan, through: p.spanFrom(start), by: $"{typeText}({p.lexed.source.getText(inner)})",
+            arg0: typeText, label: "a cast", help: $"call the conversion: `{typeText}(x)`")
+        return Expr.castExpr(Owned(CastExpr { span: p.spanFrom(start), type: move castType, operand: move operand }))
+    }
+
+    // `switch` stays tighter than prefix operators: `move x switch { … }` is `move (x switch { … })` (§9.3).
+    let primary = parsePrimary(ref p)
+    var expr = parsePostfix(ref p, by: move primary)
+    while !breaksLine(ref p, at: p.pos) && p.kind() == .switchKeyword && p.peek(1) == .openBrace {
+        let _ = p.advance()
+        expr = parseSwitchArms(ref p, from: start, by: move expr)
+    }
+    return expr
+}
+
+bool isCast(ref Parser p) {
+    let after = scanType(ref p, at: p.pos + 1)
+    if after < 0 || p.kindAt(after) != .closeParen { return false }
+    let next = p.kindAt(after + 1)
+    return isContextualKeyword(next) || next switch {
+        .identifier or .integerLiteral or .floatLiteral or .charLiteral or
+        .stringLiteral or .rawStringLiteral or .interpolatedStringStart or
+        .openParen or .bang or .tilde or .thisKeyword or
+        .trueKeyword or .falseKeyword or .nullKeyword or .tryKeyword or .newKeyword => true,
+        _ => false,
+    }
+}
+
+Expr parseSwitchArms(ref Parser p, from i64 start, by move Expr value) {
+    let subject = move value
+    var caught = false
+    switch subject {
+        case .caughtErrorExpr(_):
+            caught = true
+        default:
+            caught = false
+    }
+    let openToken = p.expect(.openBrace)
+    var arms = List<SwitchArm>()
+    while p.kind() != .closeBrace && !p.atEnd() {
+        let armStart = p.current().start
+        let before = p.pos
+        let pattern = parseArmPattern(ref p, for: "")
+        var guard: Expr = .none
+        if atContextual(ref p, for: "when") {
+            let _ = p.advance()
+            let saved = p.setNoLambda(value: true)
+            guard = parseExpression(ref p)
+            p.noLambda = saved
+        }
+        let _ = p.expect(.fatArrow)
+        // A `catch switch` arm may be a block, read as a `catch` block is (J49); elsewhere `{` starts a struct literal.
+        var result: Expr = .none
+        if caught && p.kind() == .openBrace && !(isName(p.peek(1)) && p.peek(2) == .colon && !braceBodyHasStatementBreak(ref p)) {
+            let block = parseBlock(ref p)
+            let span = blockSpan(in block)
+            result = Expr.blockExpr(Owned(BlockExpr { span: span, block: move block }))
+        } else {
+            result = parseExpression(ref p)
+        }
+        arms.append(SwitchArm { span: p.spanFrom(armStart), pattern: move pattern, guard: move guard, value: move result })
+        unless p.accept(.comma) { break }
+        if p.pos == before { break }
+    }
+    expectClose(ref p, for: openToken, as: "switch")
+    return Expr.switchExpr(Owned(SwitchExpr { span: p.spanFrom(start), value: move subject, arms: move arms }))
+}
+
+Expr parsePostfix(ref Parser p, by move Expr first) {
+    var expr = move first
+    let start = exprSpan(in expr).start
+    while true {
+        if stopsHere(ref p) { return expr }
+        let kind = p.kind()
+        if kind == .dot && isName(p.peek(1)) {
+            let _ = p.advance()
+            let member = spanOf(p.advance())
+            var typeArgs = List<TypeSyntax>()
+            if p.kind() == .less && isTypeArgsBeforeCall(ref p) { typeArgs = parseTypeArgs(ref p) }
+            expr = Expr.memberExpr(Owned(MemberExpr {
+                span: p.spanFrom(start),
+                target: move expr,
+                member: member,
+                nullConditional: false,
+                typeArgs: move typeArgs,
+            }))
+        } else if kind == .questionDot {
+            let _ = p.advance()
+            let span = p.spanFrom(start)
+            let member = expectName(ref p, "a member name")
+            expr = Expr.memberExpr(Owned(MemberExpr { span: span, target: move expr, member: member, nullConditional: true }))
+        } else if kind == .openParen {
+            let args = parseArguments(ref p)
+            var call = CallExpr { span: p.spanFrom(start), callee: move expr, args: move args }
+            reportTrustInput(ref p, for: in call)
+            let construct = $"{p.lexed.source.getText(exprSpan(in call.callee))}()"
+            call.becauseKeyword = parseBecause(ref p, for: construct, at: call.span)
+            expr = Expr.callExpr(Owned(move call))
+        } else if kind == .openBracket {
+            let _ = p.advance()
+            let index = parseExpression(ref p)
+            let _ = p.expect(.closeBracket)
+            expr = Expr.indexExpr(Owned(IndexExpr { span: p.spanFrom(start), target: move expr, index: move index }))
+        } else {
+            return expr
+        }
+    }
+}
+
+bool isTypeArgsBeforeCall(ref Parser p) {
+    let after = scanExprTypeArgs(ref p, at: p.pos)
+    return after > 0 && p.kindAt(after) == .openParen
+}
+
+/// BYN1062 at `trust(x, reason: …)`; the fix writes `x.trustUnchecked() because "…"` when the reason is a
+/// string literal, with `x` in parentheses unless it is a primary expression, and the whole in parentheses
+/// unless the call ends its expression.
+void reportTrustInput(ref Parser p, for in CallExpr call) {
+    var calleeSpan = TextSpan { start: 0, length: 0 }
+    switch call.callee {
+        case .nameExpr(let callee):
+            let name = callee.value.name
+            if callee.value.typeArgs.length != 0 || !lexer.sameBytes(p.lexed.source.bytes.span[name.start..name.end], as: "trust".bytes) { return }
+            calleeSpan = callee.value.span
+        default:
+            return
+    }
+    if call.args.length != 2 { return }
+    if call.args[0].name is not null || call.args[0].modifier != .none || call.args[1].modifier != .none { return }
+    let reasonName = call.args[1].name ?? TextSpan { start: 0, length: -1 }
+    if reasonName.length < 0 || !lexer.sameBytes(p.lexed.source.bytes.span[reasonName.start..reasonName.end], as: "reason".bytes) { return }
+    var isString = false
+    switch call.args[1].value {
+        case .literalExpr(let literal):
+            isString = literal.value.kind == .string
+        default:
+            isString = false
+    }
+    unless isString {
+        let _ = p.report(.trustInput, at: calleeSpan, label: "the input form",
+            help: "call `trustUnchecked()` on the value and give the reason in `because`")
+        return
+    }
+    var text = p.lexed.source.getText(exprSpan(in call.args[0].value))
+    var primary = false
+    switch call.args[0].value {
+        case .nameExpr(_) or .memberExpr(_) or .callExpr(_) or .indexExpr(_) or .literalExpr(_) or .parenExpr(_):
+            primary = true
+        default:
+            primary = false
+    }
+    unless primary { text = $"({text})" }
+    text = $"{text}.trustUnchecked() because {p.lexed.source.getText(exprSpan(in call.args[1].value))}"
+    // Anything after the call other than a closer would read as part of the reason.
+    let kind = p.kind()
+    let ends = p.current().hasNewlineBefore || kind == .closeParen || kind == .comma || kind == .closeBracket
+        || kind == .closeBrace || kind == .interpolationEnd || kind == .endOfFile
+    let _ = p.reportFix(.trustInput, at: calleeSpan, through: call.span, by: ends ? text : $"({text})", label: "the input form",
+        help: "call `trustUnchecked()` on the value and give the reason in `because`")
+}
+
+List<Argument> parseArguments(ref Parser p) {
+    let saved = p.setNoLambda(value: false)
+    let args = parseArgumentList(ref p)
+    p.noLambda = saved
+    return args
+}
+
+List<Argument> parseArgumentList(ref Parser p) {
+    let _ = p.expect(.openParen)
+    var args = List<Argument>()
+    if p.kind() != .closeParen {
+        while true {
+            if p.kind() == .closeParen { break }
+            let start = p.current().start
+            var name: TextSpan? = null
+            // `for` and `as` are keywords, but labels in argument position (`for: user`).
+            if (isName(p.kind()) || p.kind() == .forKeyword || p.kind() == .asKeyword) && p.peek(1) == .colon {
+                name = spanOf(p.advance())
+                let _ = p.advance()
+            }
+            let modifier = p.kind() switch {
+                .refKeyword => ArgModifier.refKeyword,
+                .moveKeyword => ArgModifier.moveKeyword,
+                .outKeyword => ArgModifier.outKeyword,
+                .inKeyword => ArgModifier.inKeyword,
+                _ => ArgModifier.none,
+            }
+            if modifier != .none { let _ = p.advance() }
+            let value = parseExpression(ref p)
+            args.append(Argument { span: p.spanFrom(start), name: name, modifier: modifier, value: move value })
+            unless p.accept(.comma) { break }
+        }
+    }
+    let _ = p.expect(.closeParen)
+    return args
+}
+
+/// The C# `Expr.Span`.
+TextSpan exprSpan(in Expr e) => e switch {
+    .literalExpr(let n) => n.value.span,
+    .interpolatedExpr(let n) => n.value.span,
+    .nameExpr(let n) => n.value.span,
+    .thisExpr(let n) => n.value.span,
+    .memberExpr(let n) => n.value.span,
+    .targetMemberExpr(let n) => n.value.span,
+    .callExpr(let n) => n.value.span,
+    .indexExpr(let n) => n.value.span,
+    .unaryExpr(let n) => n.value.span,
+    .binaryExpr(let n) => n.value.span,
+    .rangeExpr(let n) => n.value.span,
+    .conditionalExpr(let n) => n.value.span,
+    .castExpr(let n) => n.value.span,
+    .isExpr(let n) => n.value.span,
+    .exceptExpr(let n) => n.value.span,
+    .inExpr(let n) => n.value.span,
+    .switchExpr(let n) => n.value.span,
+    .tryExpr(let n) => n.value.span,
+    .moveExpr(let n) => n.value.span,
+    .catchExpr(let n) => n.value.span,
+    .caughtErrorExpr(let n) => n.value.span,
+    .jumpExpr(let n) => n.value.span,
+    .blockExpr(let n) => n.value.span,
+    .structLiteralExpr(let n) => n.value.span,
+    .withExpr(let n) => n.value.span,
+    .spreadExpr(let n) => n.value.span,
+    .mapEntryExpr(let n) => n.value.span,
+    .collectionExpr(let n) => n.value.span,
+    .tupleExpr(let n) => n.value.span,
+    .parenExpr(let n) => n.value.span,
+    .lambdaExpr(let n) => n.value.span,
+    .stackallocExpr(let n) => n.value.span,
+    .patternExpr(let n) => n.value.span,
+    .errorExpr(let n) => n.value.span,
+    .none => TextSpan { start: 0, length: 0 },
+}
+
+/// The span of the `BlockStmt` that `parseBlock` returns.
+TextSpan blockSpan(in Stmt block) {
+    switch block {
+        case .blockStmt(let n):
+            return n.value.span
+        default:
+            return TextSpan { start: 0, length: 0 }
+    }
+}
+
+// ── T9 stand-ins ──────────────────────────────────────────────────────────────────
+// Helpers other files own, which their stubs do not declare yet (Q470). Each has the signature this
+// file calls; T15 deletes this section once the owners' definitions merge.
+
+/// recover.byn (T3): `TokenKind.IsContextualKeyword`.
+bool isContextualKeyword(TokenKind kind) => kind switch {
+    .errorKeyword or .flagsKeyword or .unitKeyword or .distinctKeyword or
+    .openKeyword or .extensibleKeyword or .setKeyword or .typeKeyword or
+    .lawKeyword or .derivationKeyword or .attributeKeyword or .embedKeyword or
+    .effectKeyword => true,
+    _ => false,
+}
+
+/// recover.byn (T3): `IsName`.
+bool isName(TokenKind kind) => kind == .identifier || isContextualKeyword(kind)
+
+/// recover.byn (T3): `BreaksLine`.
+bool breaksLine(ref Parser p, at i64 index) => index < p.count && p.lexed.tokens[index].hasNewlineBefore && !p.inGroup[index]
+
+/// recover.byn (T3): `HasBlankLineBefore`.
+bool hasBlankLineBefore(ref Parser p, at i64 index) {
+    if index <= 0 || index >= p.count { return false }
+    var lineIsBlank = false
+    for b in p.lexed.source.bytes.span[p.lexed.tokens[index - 1].end..p.lexed.tokens[index].start] {
+        if b == '\n' {
+            if lineIsBlank { return true }
+            lineIsBlank = true
+        } else if b != ' ' && b != '\t' && b != '\r' {
+            lineIsBlank = false
+        }
+    }
+    return false
+}
+
+/// recover.byn (T3): `IsWasl`, without the `where`/`becomes`/`expects` cases.
+bool isWasl(ref Parser p, at i64 index) => p.kindAt(index) switch {
+    .dot or .questionDot or .questionQuestion or .ampAmp or .barBar or .andKeyword or .orKeyword or .catchKeyword or
+    .exceptKeyword or .requiresKeyword or .failsKeyword or .usesKeyword => true,
+    _ => false,
+}
+
+/// recover.byn (T3): `StopsHere`.
+bool stopsHere(ref Parser p) => breaksLine(ref p, at: p.pos) && (hasBlankLineBefore(ref p, at: p.pos) || !isWasl(ref p, at: p.pos))
+
+/// recover.byn (T3): `ExpectName`, without the BYN0012 check.
+TextSpan expectName(ref Parser p, string what = "a name") {
+    if isName(p.kind()) { return spanOf(p.advance()) }
+    let _ = p.report(.expected, at: spanOf(p.current()), arg0: what, arg1: p.describe(p.current()))
+    return TextSpan { start: p.current().start, length: 0 }
+}
+
+/// decls.byn (T4): `ExpectClose`, without the help.
+void expectClose(ref Parser p, for Token open, as string what) {
+    if p.accept(.closeBrace) { return }
+    let _ = p.report(.expected, at: spanOf(p.current()), arg0: "`}`", arg1: p.describe(p.current()))
+}
+
+/// decls.byn (T4): `ParseBecause`.
+BecauseClause? parseBecause(ref Parser p, for string construct, at TextSpan constructSpan) => null
+
+/// types.byn (T6): `ScanType(index)`.
+i64 scanType(ref Parser p, at i64 index) => -1
+
+/// types.byn (T6): `ScanExprTypeArgs`.
+i64 scanExprTypeArgs(ref Parser p, at i64 index) => -1
+
+/// types.byn (T6): `ParseTypeArgs`.
+List<TypeSyntax> parseTypeArgs(ref Parser p) => List<TypeSyntax>()
+
+/// stmts2.byn (T8): `ParseArmPattern`.
+Pattern parseArmPattern(ref Parser p, for string head) => parsePattern(ref p)
+
+/// stmts2.byn (T8): `AtContextual`.
+bool atContextual(ref Parser p, for string word) => p.kind() == .identifier && lexer.sameBytes(p.text(p.current()), as: word.bytes)
+
+/// exprs2.byn (T10): `BraceBodyHasStatementBreak`.
+bool braceBodyHasStatementBreak(ref Parser p) => false
+
+/// exprs2.byn (T10): `ParseFieldInits`.
+List<FieldInit> parseFieldInits(ref Parser p) => List<FieldInit>()
