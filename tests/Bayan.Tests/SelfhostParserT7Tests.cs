@@ -101,7 +101,9 @@ public sealed class SelfhostParserT7Tests(ITestOutputHelper output)
             .Append(SourceText.FromString(Path.Combine(ParserDir, "t7-test.byn"), Program)).ToList();
         var c = Compilation.Create(sources, packageRoot: SelfhostDir);
         if (c.Diagnostics.HasErrors) return (null, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
-        var stmts = c.Diagnostics.Items.Where(d => d.Source?.Path.EndsWith("stmts.byn") == true).ToList();
+        // BYN5014 (a word outside the package grammar) is allowed, as in `parser.byn` (Q431): the stand-in methods keep the
+        // sibling names, and there is no `package.byn` under `selfhost/` to declare the words in.
+        var stmts = c.Diagnostics.Items.Where(d => d.Source?.Path.EndsWith("stmts.byn") == true && d.Code != "BYN5014").ToList();
         if (stmts.Count > 0) return (null, DiagnosticRenderer.RenderAll(stmts, includePath: true));
         var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
         return build.Succeeded ? (build.ExecutablePath, "") : (null, build.Errors);

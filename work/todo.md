@@ -304,3 +304,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - A struct literal cannot name its type through a module: `lexer.TextSpan { … }` is BYN1001 (Q431) (009 T1, 2026-10-26).
 - 009 T1 stubs `dumpExpr`/`dumpType`/`dumpPattern` take `ref`, which BYN2106 rejects on an `Owned` child; T11/T12 should use `in` (Q436) (009 T2, 2026-10-26).
 - 009 plan names union variants `import(…)`/`function(…)`, which are keywords; `nodes.byn` uses `importDecl`, `functionDecl` (Q437) (009 T2, 2026-10-26).
+- C# `ParseStatement` builds `WhileLetStmt` and `LabeledStmt` with `SpanFrom(start)` evaluated before `ParseBlock()`/`ParseStatement()`, so their spans end before the body; `stmts.byn` matches it (009 T7, 2026-10-26).
+- C# `IsParenthesizedCondition` reads `_tokens[next]` with `next == _count` when a `(` is unclosed (`void f() { if (x`); it does not throw today, and `stmts.byn` clamps the index like `KindAt`, with the same result (009 T7, 2026-10-26).
