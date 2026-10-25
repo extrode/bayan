@@ -34,7 +34,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         return build.Succeeded ? (build.ExecutablePath, "") : (null, build.Errors);
     }
 
-    private static string Built
+    internal static string Built
     {
         get
         {
@@ -44,7 +44,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         }
     }
 
-    private static (int Exit, string Out, string Err) Run(string program, params string[] args)
+    internal static (int Exit, string Out, string Err) Run(string program, params string[] args)
     {
         var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
@@ -189,4 +189,120 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
 
             """, stdout);
     }
+
+    public static TheoryData<string> ParseCases => Golden.Cases("parse");
+
+    /// <summary>The <c>diag/</c> cases whose <c>.diag</c> holds a parser diagnostic; each <c>.byn</c> is parsed alone.</summary>
+    public static TheoryData<string> DiagCases
+    {
+        get
+        {
+            var data = new TheoryData<string>();
+            var dir = Path.Combine(Golden.CasesRoot, "diag");
+            foreach (var diag in Directory.EnumerateFiles(dir, "*.diag", SearchOption.AllDirectories)
+                                         .Where(f => File.ReadAllText(f).Contains("BYN1", StringComparison.Ordinal))
+                                         .Order(StringComparer.Ordinal))
+            {
+                var byn = Path.ChangeExtension(diag, ".byn");
+                if (File.Exists(byn)) data.Add(Path.GetRelativePath(Golden.CasesRoot, byn).Replace('\\', '/'));
+            }
+            return data;
+        }
+    }
+
+    /// <summary>R1, R6: <c>bayan-parse</c> prints each <c>parse/</c> golden byte-for-byte and agrees on the exit code.</summary>
+    [Theory]
+    [MemberData(nameof(ParseCases))]
+    public void ParseGolden(string name)
+    {
+        var input = Path.Combine(Golden.CasesRoot, name);
+        var tree = SyntaxTree.Parse(SourceText.FromFile(input));
+        var (exit, stdout, stderr) = Run(Built, input);
+        output.WriteLine(stderr);
+        if (Golden.Compare(Path.ChangeExtension(input, ".ast"), stdout, update: false).Failure is { } failure) Assert.Fail(failure);
+        Assert.Equal(tree.Diagnostics.Any(d => d.IsError) ? 1 : 0, exit);
+    }
+
+    /// <summary>
+    /// R6: each diag case with a parser diagnostic is parsed alone and must dump exactly like the C#
+    /// parser, whose output is written under <c>tmp/parser-ref/</c> so <see cref="Golden.Compare"/>
+    /// names the input and the first differing line.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(DiagCases))]
+    public void DiagGolden(string name)
+    {
+        var input = Path.Combine(Golden.CasesRoot, name);
+        var tree = SyntaxTree.Parse(SourceText.FromFile(input));
+        var refPath = Path.Combine(Golden.RepoRoot, "tmp", "parser-ref", name.Replace('/', '_') + ".ast");
+        Directory.CreateDirectory(Path.GetDirectoryName(refPath)!);
+        File.WriteAllText(refPath, AstDump.Dump(tree));
+        var (exit, stdout, stderr) = Run(Built, input);
+        output.WriteLine(stderr);
+        if (Golden.Compare(refPath, stdout, update: false).Failure is { } failure) Assert.Fail(failure);
+        Assert.Equal(tree.Diagnostics.Any(d => d.IsError) ? 1 : 0, exit);
+    }
+
+    /// <summary>The <c>--codes</c> table matches the C# <see cref="DiagnosticCodes"/> descriptors (Q433: 69 codes).</summary>
+    [Fact]
+    public void CodesMatchDiagnosticCodes()
+    {
+        var (exit, stdout, stderr) = Run(Built, "--codes");
+        output.WriteLine(stderr);
+        Assert.Equal(0, exit);
+        var lines = stdout.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Length > 0).ToArray();
+        Assert.Equal(69, lines.Length);
+        var byCode = DiagnosticCodes.All.ToDictionary(d => d.Code);
+        foreach (var line in lines)
+        {
+            var tab = line.IndexOf('\t');
+            Assert.True(tab > 0, $"no tab in --codes line: {line}");
+            var code = line[..tab];
+            var message = line[(tab + 1)..];
+            Assert.True(byCode.TryGetValue(code, out var descriptor), $"no C# descriptor for {code}");
+            Assert.True(descriptor.MessageFormat == message || (code == "BYN1042" && message == PostfixOnNewLineMessage),
+                $"{code} message differs\n  C#:    {descriptor.MessageFormat}\n  bayan: {message}");
+        }
+    }
+
+    private const string PostfixOnNewLineMessage = "a postfix `{0}` must be on the line of its statement";
+
+    /// <summary>R8: <c>bayan-parse</c>, built in fast mode, parses and dumps 1 MB within 10x the C# parser.</summary>
+    [Fact]
+    public void OneMegabyteWithinTenTimes()
+    {
+        if (Environment.GetEnvironmentVariable("BAYAN_SKIP_TIMING") == "1")
+        {
+            output.WriteLine("skipped: BAYAN_SKIP_TIMING=1");
+            return;
+        }
+        var source = OneMegabyte();
+        var path = Path.Combine(Golden.RepoRoot, "tmp", "selfhost-timing", "big.byn");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, source.Bytes.ToArray());
+
+        var bayan = new long[5];
+        for (var i = 0; i < bayan.Length; i++)
+        {
+            var (exit, stdout, stderr) = Run(Built, "--time", path);
+            Assert.True(exit == 0, stdout + stderr);
+            bayan[i] = long.Parse(stdout.Trim());
+        }
+        SyntaxTree.Parse(source); // warm up statics and JIT
+        var csharp = new long[5];
+        for (var i = 0; i < csharp.Length; i++)
+        {
+            var watch = Stopwatch.StartNew();
+            AstDump.Dump(SyntaxTree.Parse(source));
+            csharp[i] = (long)watch.Elapsed.TotalNanoseconds;
+        }
+        var bayanMedian = bayan.Order().ElementAt(2);
+        var csharpMedian = csharp.Order().ElementAt(2);
+        var ratio = (double)bayanMedian / csharpMedian;
+        output.WriteLine($"bayan-parse {bayanMedian} ns, C# {csharpMedian} ns, ratio {ratio:F2}");
+        Assert.True(ratio <= 10, $"bayan-parse median {bayanMedian} ns is {ratio:F2}x the C# median {csharpMedian} ns");
+    }
+
+    /// <summary>Placeholder for T14's <c>SelfhostParserGenerator.OneMegabyte()</c> until it merges.</summary>
+    private static SourceText OneMegabyte() => LexerTests.OneMegabyte();
 }
