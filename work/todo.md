@@ -20,6 +20,8 @@ Small, clear, and could be picked up without a design decision.
 - `let e: u8[0] = []` is BYN4001: the C compiler rejects the emitted "initializer for aggregate with no elements".
 - A generic instantiated once and called from several places reports its instance BYN7012 (Q342) only at the first call; the instance is cached per type arguments.
 - `docs/bayan-handoff.md:250` says `--ci github` will run `bayan fmt --check` and `bayan fmt --check-prose`; the command is `bayan format`, and the CI template does not run it yet.
+- `if a == b` emits `if ((x == y))`, which clang rejects under `-Wall -Werror` (`-Wparentheses-equality`); L016's generator uses `<` to avoid it (008 T10).
+- A tuple-typed struct field (`(i8, i64) f1`) is BYN1001: the parser reads it as a function type; L016's generator nests only structs in structs (008 T10).
 
 ## Later
 
