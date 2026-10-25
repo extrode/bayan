@@ -132,13 +132,11 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - String patterns (`"/api/" + var rest`) are not implemented, so "stay legal" under BYN2209 is untested (round 2 §12).
 - BYN2209 on `a + b + c` rewrites one pair per fix pass (round 2 §12).
 - diag/renamed-member also shows a BYN2311 warning (round 2 §11).
-- 007 Q121/Q124 give BYN1050 to `=>` in a function type; round 3 uses BYN1050 for `RequiresValue` and BYN1055 for that form (C26). Fix on feat/007-lambdas before merge (round 3, Sūq brief).
-- 007 Q115 makes a stored function type such as `onPaid: Order -> void uses net` BYN2822; Sūq and SPEC `:1287` use one (round 3, Sūq brief).
+- 007 Q346 makes a stored function type such as `(Line -> Money uses net) pricer` BYN2822; Sūq and SPEC §3.16 use one (round 3, Sūq brief).
 - HANDOFF round 3 §11 (~`:204-210`) still says `on .field` and §13 (~`:259`) has `Order => void`; superseded by their resolved paragraphs, not rewritten.
 - No `docs/diagnostics/BYN1056.md`, `BYN1057.md`, `BYN7005.md` pages yet; GRAMMAR §3 links the first two (round 3, Sūq brief).
 - SPEC has no `T.zero` (friction F-31); the F-30 user-cleanup member name is open, conservative `dispose(ref this)` (round 3, Sūq brief).
 - SPEC `:389` `return .forbidden unless …` snippet has no signature; borderline under A2 (`fail` vs response value).
-- J54 type-first revert: 007 spec on feat/007-lambdas is name-first throughout (R1/R4/R15, examples :4-5, :36, :44-78); update to type-first decls and parenthesized function-type params before 007 T1. 006 C4/C20 shrink (006 already type-first).
 - J54: Sūq checker `type-first binding` rule only catches capitalised types (`i32 n = 3` unflagged); parameter lists spanning lines are only partly handled.
 - `if p == P { x: 1 } { … }` (unwrapped struct literal in a bare condition) gives BYN1012/BYN1005 with no hint to add parentheses (round 2 §4).
 - `ref this` on a constructor falls through to the `ref` modifier with type `this` instead of a targeted error (round 2 §9).
