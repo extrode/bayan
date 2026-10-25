@@ -1,0 +1,25 @@
+// A `Symbol`-keyed map: `contains`, `remove`, `ref slot`, `copy(to:)` and a literal in literal order (spec 008 R7).
+void bump(ref i32 n) {
+    n += 10
+}
+
+void main() {
+    var m: Map<Symbol, i32> = ["zeta": 1, "alpha": 2, "mid": 3]
+    for (key, value) in m {
+        print($"{key} {value}")
+    }
+    var buf = StrBuf(capacity: 16)
+    buf.append("al")
+    buf.append("pha")
+    let alpha = Symbol.intern(buf.view)
+    print($"contains alpha: {m.contains(alpha)}, contains beta: {m.contains("beta")}")
+    print($"remove zeta: {m.remove("zeta")}, again: {m.remove("zeta")}")
+    bump(ref m.slot(alpha))
+    bump(ref m.slot("new"))
+    print($"{m}")
+    using let arena = Arena()
+    let copied = m.copy(to: arena)
+    m["mid"] = 30
+    print($"{copied} {copied.length}")
+    print($"{m}")
+}

@@ -742,14 +742,29 @@ public sealed class CEmitter
         return $"{name}({a}, {b})";
     }
 
-    /// <summary>The hash of a key: seeded FNV-1a over its bytes (a string's text).</summary>
+    /// <summary>The hash of a key: seeded FNV-1a over a scalar's bytes, a string's text or a symbol's ID; a tuple or struct
+    /// folds its parts' hashes in declaration order, so padding never takes part (Q377).</summary>
     private string KeyHash(TypeSymbol key)
     {
         _hashes = true;
         var name = "bynh_hash_" + Key(key);
-        return Helper(name, $"static uint64_t {name}({CType(key)} k)", () => key.IsString
-            ? "{\n    return byn_hash_bytes(k.ptr, k.len);\n}\n"
-            : "{\n    return byn_hash_bytes(&k, (int64_t)sizeof k);\n}\n");
+        return Helper(name, $"static uint64_t {name}({CType(key)} k)", () =>
+        {
+            List<(TypeSymbol Type, string Expr)>? parts = key switch
+            {
+                StructSymbol s => s.Fields.Select(f => (f.Type, "k." + FieldName(f.Name))).ToList(),
+                TupleType tt => tt.Fields.Select((f, i) => (f.Type, $"k.item{i + 1}")).ToList(),
+                _ => null,
+            };
+            if (parts is null)
+                return key.IsString ? "{\n    return byn_hash_bytes(k.ptr, k.len);\n}\n"
+                    : key == BuiltinType.Symbol ? "{\n    return byn_hash_bytes(&k.id, (int64_t)sizeof k.id);\n}\n"
+                    : "{\n    return byn_hash_bytes(&k, (int64_t)sizeof k);\n}\n";
+            var sb = new StringBuilder("{\n    uint64_t h = byn_hash_bytes(NULL, 0);\n");
+            foreach (var (type, expr) in parts)
+                sb.Append($"    h = byn_hash_mix(h, {KeyHash(type)}({expr}));\n");
+            return sb.Append("    return h;\n}\n").ToString();
+        });
     }
 
     /// <summary>Key equality through pointers, for <c>byn_map_*</c>.</summary>
