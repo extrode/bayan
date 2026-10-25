@@ -36,10 +36,10 @@ public sealed class FunctionTypeTests
         Assert.Equal("() -> void", Fn([], PrimitiveType.Void).DisplayName);
         Assert.Equal("() -> string fails IoError", Fn([], PrimitiveType.String, [B.IoError]).DisplayName);
         Assert.Equal("i32 -> void uses fs, net", Fn([PrimitiveType.I32], PrimitiveType.Void, uses: ["net", "fs"]).DisplayName);
-        Assert.Equal("i32 -> bool -> char", Fn([PrimitiveType.I32], Fn([PrimitiveType.Bool], PrimitiveType.Char)).DisplayName);
-        Assert.Equal("(i32 -> bool) -> char", Fn([Fn([PrimitiveType.I32], PrimitiveType.Bool)], PrimitiveType.Char).DisplayName);
+        Assert.Equal("i32 -> bool -> rune", Fn([PrimitiveType.I32], Fn([PrimitiveType.Bool], PrimitiveType.Char)).DisplayName);
+        Assert.Equal("(i32 -> bool) -> rune", Fn([Fn([PrimitiveType.I32], PrimitiveType.Bool)], PrimitiveType.Char).DisplayName);
         Assert.Equal("((i32, i32)) -> bool", Fn([new TupleType([new(null, PrimitiveType.I32), new(null, PrimitiveType.I32)])], PrimitiveType.Bool).DisplayName);
-        Assert.Equal("i32 -> (bool -> char) fails IoError", Fn([PrimitiveType.I32], Fn([PrimitiveType.Bool], PrimitiveType.Char), [B.IoError]).DisplayName);
+        Assert.Equal("i32 -> (bool -> rune) fails IoError", Fn([PrimitiveType.I32], Fn([PrimitiveType.Bool], PrimitiveType.Char), [B.IoError]).DisplayName);
     }
 
     [Fact]
