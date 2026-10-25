@@ -69,17 +69,6 @@ public sealed class SelfhostParserT9Tests(ITestOutputHelper output)
     private const string Driver = """
         import lexer
 
-        string binaryText(BinaryOp op) => op switch {
-            .add => "+", .sub => "-", .mul => "*", .div => "/", .rem => "%",
-            .addWrap => "+%", .subWrap => "-%", .mulWrap => "*%", .addSat => "+|", .subSat => "-|", .mulSat => "*|",
-            .shl => "<<", .shr => ">>", .lt => "<", .gt => ">", .le => "<=", .ge => ">=", .eq => "==", .ne => "!=",
-            .bitAnd => "&", .bitOr => "|", .bitXor => "^", .logicalAnd => "&&", .logicalOr => "||", .coalesce => "??",
-        }
-
-        string unaryText(UnaryOp op) => op switch {
-            .plus => "+", .negate => "-", .notKeyword => "!", .complement => "~", .fromEnd => "^",
-        }
-
         string modifierText(ArgModifier m) => m switch {
             .refKeyword => "ref ", .moveKeyword => "move ", .outKeyword => "out ", .inKeyword => "in ", .none => "",
         }
