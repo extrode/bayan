@@ -23,6 +23,7 @@ Small, clear, and could be picked up without a design decision.
 - `if a == b` emits `if ((x == y))`, which clang rejects under `-Wall -Werror` (`-Wparentheses-equality`); L016's generator uses `<` to avoid it (008 T10).
 - A tuple-typed struct field (`(i8, i64) f1`) is BYN1001: the parser reads it as a function type; L016's generator nests only structs in structs (008 T10).
 - `Parser.ReportBraceless` (Parser.cs:2408) throws `ArgumentOutOfRangeException` when a braceless `if` body's span starts past `_prevEnd`, reached through a misparse such as an `is { } as` pattern binding; found in 009 T12.
+- 009 T18 (L018 proof): C#'s own spans break child-within-parent on 28 of 128 corrupted and 1,056 of 4,000 random inputs (the `move`/`fail`/labeled `break`/`continue`/`except`/`?.` spans and the dropped-value `ErrorExpr`), and two inputs crash C#'s `ReportBraceless` with the port panicking identically (`270A6C65742078203D2020800A65207B7D0A20202020696620287320202E20`, `7320697320436972636C65207B7D0A20202020696620287320697320436972636C20C3C820`); L018 stays proposed until C# is fixed.
 
 ## Later
 

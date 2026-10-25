@@ -774,6 +774,10 @@ Spec order (numbers are provisional; a spec may split):
 
 504. **009 T15: break-test record.** Broke the O3 split at `selfhost/parser/decls2.byn:204` by replacing `if rule.at is null { own.append(move rule) } else { structRules.append(move rule) }` with an unconditional `own.append(move rule)`; `SelfhostParserGeneratorTests.GeneratedSeedsAgree` failed (1 of 1) on `valid-RequiresRule.byn` (the field's `at .password` rule stayed on the field). Restored from `tmp/scratch/decls2-backup.byn` with `cmp` clean; the rerun passed. New.
 
+508. **009 T18: the proof caps nesting because both parsers recurse unboundedly.** `SelfhostParserGenerator.NestingCap` is 8, and the random-byte corpus caps its `if true { ... }` nesting at the same depth. `Parser.cs` and the port have no nesting limit, so a deep input overflows the stack in both; the law proof excludes stack overflow and says so in the notes. *Current choice:* keep the shared unbounded recursion (a shared limit is a later spec); the proof stays within the cap. New.
+
+509. **009 T18: L018 is false of C# on two counts, and the port keeps matching C#.** (a) Child-within-parent: `move`, `fail`, labeled `break`/`continue`, `except` and `?.` end before their child (Q473) and a dropped value's `ErrorExpr` sits outside its parent (work/todo.md); the proof corpora show 28 of 128 corrupted and 1,056 of 4,000 random inputs, each verified against a C# tree walker in the test. (b) No-panic: two random candidates crash C#'s `Parser.ReportBraceless` (`ArgumentOutOfRangeException`), and the port panics identically (`slice out of range` at `lexer/source.byn:80`); their bytes are in the notes, and the generator replaces a C#-crashing candidate with an empty input. *Current choice:* L018 stays `proposed`; the test proves no panic and C#-matching spans over the non-crashing corpus. New.
+
 ## Progress log
 
 *(Date — milestone — what changed — what's next.)*
