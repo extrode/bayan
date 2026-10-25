@@ -1,0 +1,6 @@
+type F = A => B
+
+bool check((i32 => bool) p) => p(3)
+
+void main() {
+}

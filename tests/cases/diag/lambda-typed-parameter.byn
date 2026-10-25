@@ -1,0 +1,4 @@
+void main() {
+    let f = (i32 x) => x
+    let g = (by x) => x
+}

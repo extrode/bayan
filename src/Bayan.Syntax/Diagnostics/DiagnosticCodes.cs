@@ -64,7 +64,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor UnlessCompound = Error("BYN1022", "`unless` with `&&`/`||` reads as a double negative");
     public static readonly DiagnosticDescriptor UnlessNull = Error("BYN1023", "`unless x is null` is not allowed; write `if x is not null`");
     public static readonly DiagnosticDescriptor CatchBinding = Error("BYN1025", "`catch (e)` is an input form; bind the error in a `catch switch` arm");
-    public static readonly DiagnosticDescriptor DelegateDecl = Error("BYN1028", "`delegate` is not Bayan; write a function type `type OrderFilter = Order => bool`");
+    public static readonly DiagnosticDescriptor DelegateDecl = Error("BYN1028", "`delegate` is not Bayan; write a function type `type {0} = {1}`");
     public static readonly DiagnosticDescriptor ErrorSetPipe = Error("BYN1029", "an error set is declared `union error {0} = A, B`");
     // BYN1030 is retired (design round 3 §28): the C# primitive names are accepted in type positions and `bayan format` respells them per `style.primitives`. Never reuse it.
     public static readonly DiagnosticDescriptor RetiredCSharpTypeName = Error("BYN1030", "retired: C# primitive names are accepted");
@@ -88,6 +88,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor ExceptNotPattern = Error("BYN1052", "`except` takes a pattern, not a condition");
     public static readonly DiagnosticDescriptor OneLineDeclarations = Error("BYN1053", "`{0}` declares its cases on one line; write one per line");
     public static readonly DiagnosticDescriptor TryCoversMore = Error("BYN1054", "`try` covers `{0}`, which cannot fail");
+    public static readonly DiagnosticDescriptor FatArrowFunctionType = Error("BYN1055", "`=>` in a type is an input form; write `->`");
     public static readonly DiagnosticDescriptor ReturnErrorInput = Error("BYN1056", "`return .{0}` returns an error; write `fail .{0}`");
     public static readonly DiagnosticDescriptor CastInput = Error("BYN1057", "`({0})x` is an input form; write `{0}(x)`");
     public static readonly DiagnosticDescriptor TrustInput = Error("BYN1062", "`trust(x, reason: …)` is now `x.trustUnchecked() because \"…\"`");

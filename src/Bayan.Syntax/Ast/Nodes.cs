@@ -233,6 +233,9 @@ public sealed record TupleTypeElement(TextSpan Span, TypeSyntax Type, Name? Name
 
 public sealed record TupleType(TextSpan Span, TupleTypeElement[] Elements) : TypeSyntax(Span);
 
+/// <summary><c>P -&gt; R fails E uses e</c>: <c>P</c> is one type, <c>(A, B)</c> or <c>()</c>.</summary>
+public sealed record FunctionTypeSyntax(TextSpan Span, TypeSyntax[] Params, TypeSyntax Return, FailsClause? Fails, UsesClause? Uses) : TypeSyntax(Span);
+
 /// <summary><c>dyn ref I</c>, <c>dyn ref readonly I</c>, or <c>dyn I</c> (not supported yet).</summary>
 public sealed record DynType(TextSpan Span, bool IsRef, bool IsReadOnly, NamedType Inner) : TypeSyntax(Span);
 
@@ -465,6 +468,9 @@ public sealed record TupleElement(TextSpan Span, Name? Name, Expr Value) : Node(
 public sealed record TupleExpr(TextSpan Span, TupleElement[] Elements) : Expr(Span);
 
 public sealed record ParenExpr(TextSpan Span, Expr Inner) : Expr(Span);
+
+/// <summary><c>x =&gt; body</c>, <c>(a, b) =&gt; body</c> or <c>() =&gt; body</c>; the body is an expression or a block.</summary>
+public sealed record LambdaExpr(TextSpan Span, Name[] Params, Expr? Body, BlockStmt? Block) : Expr(Span);
 
 /// <summary><c>stackalloc T[n]</c>.</summary>
 public sealed record StackallocExpr(TextSpan Span, TypeSyntax Element, Expr Count) : Expr(Span);
