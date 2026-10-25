@@ -211,6 +211,46 @@ Lowercase type names are reserved for the language. C interop types: `c_int`, `c
 ### 3.3 Symbols
 `Symbol` is an interned identifier (4-byte ID). Equality and hashing use the ID; **ordering uses the text** (UTF-8 bytes = code-point order). String literals convert to `Symbol` at compile time (interned table in `.rodata`).
 
+**Supported subset (spec 008).**
+
+```csharp
+struct MemberKey {
+    i32 owner
+    Symbol name
+}
+
+Symbol readName(string src, from i64 start, until i64 end) uses alloc {
+    return Symbol.intern(src[start..end])
+}
+
+void main() {
+    let keywords: Map<Symbol, i32> = ["let": 1, "var": 2]
+    var members: Map<MemberKey, i32> = []
+    let name = readName("let x", from: 0, until: 3)
+    if keywords.contains(name) {
+        members[MemberKey { owner: 1, name: name }] = keywords[name]
+    }
+    for (key, value) in members {
+        print($"{key.name} {value}")      // let 1
+    }
+}
+```
+
+- **The type:** `Symbol` is a built-in 4-byte value, copyable (not `unique`) and not a borrow. It is defaultable; the default is the symbol of `""`. It displays as `Symbol` in diagnostics and `bayan types`. A user type named `Symbol` does not replace it: the name still resolves to the built-in, as `StrBuf` does.
+- **Comparison:** `==` and `!=` compare IDs, in O(1). `<`, `<=`, `>` and `>=` compare the texts by UTF-8 bytes, as for `string`, so the order does not depend on the order of interning.
+- **Literals:** a string literal without interpolation (plain or raw) where `Symbol` is expected (a typed `let`/`var`/`const`, an argument, a `return`, a field initializer, a collection or map literal element or key, the other operand of a comparison with a `Symbol`) is a `Symbol` fixed at compile time. The program holds one table of the distinct literal texts in `.rodata`, sorted by UTF-8 bytes with `""` first. Any other `string` where a `Symbol` is expected (a local, a parameter, a slice, an interpolated string, a call result, also through `Symbol?` or a generic argument) is BYN2832 with a fix to `Symbol.intern(…)`.
+- **Interning:** `Symbol Symbol.intern(string text)` returns the symbol for `text`; a text equal to a literal's gets the literal's symbol. A new text is copied into storage the runtime owns until the program exits, so the result borrows nothing. Interning allocates from the runtime's general allocator, never `context.allocator`: `Symbol.intern` is `uses alloc` (BYN6002 on a public caller without it), it is restricted in a panic handler (BYN2612), and the table is never freed, so a program that interns untrusted text keeps it for the whole run.
+- **Text:** `sym.text` is a `string` that borrows nothing and allocates nothing; `$"{sym}"` writes the text, and a `Map` holding symbols formats them as their texts. There is no other conversion: no cast between `Symbol` and `string` or an integer, and no ID member (BYN2003). IDs are not observable, so they may change between versions.
+- **Keys:** a `Symbol` hashes its ID; `Map<Symbol, V>` and composite keys with `Symbol` parts are §3.5's keys. A program that uses no `Symbol` emits and links none of the table.
+- Not in v0.1: freeing interned text, several independent tables, `const` arrays of `Symbol` and `Symbol` in static data beyond literals (BYN2229), interning from several threads (the table is single-threaded, §13).
+- Laws: L015 "Interning is identity on text". Codes: BYN2832. HANDOFF Questions 371–381.
+
+**Self-hosting gaps** (what spec 009's port must work around):
+- No `const` symbol arrays: a keyword table is a `Map<Symbol, TokenKind>` literal built at start-up.
+- No `Set<T>`: a set of names is a `Map<Symbol, bool>`.
+- No stored lambdas keyed by symbol (`Map<Symbol, () -> void>` is BYN2822, §3.16): key a `Map<Symbol, i32>` and switch on the value.
+- A lambda cannot capture a `Map` (BYN2780): pass the symbol table as a parameter.
+
 ### 3.4 Units and distinct types
 
 ```csharp
@@ -240,8 +280,9 @@ type distinct UserId = i64       // a unit without arithmetic
 - `T[N]`: fixed-size inline array (a value). Constant out-of-range indexes are compile errors.
 - `Span<T>`: a borrowed view (pointer, length) whose elements may be assigned.
 - `ReadOnlySpan<T>`: a borrowed view whose elements cannot be assigned. `Span<T>` → `ReadOnlySpan<T>` is implicit. `string.bytes` is a `ReadOnlySpan<u8>`, so strings stay immutable and valid UTF-8. A `Span<T>` parameter never written through gets lint BYN2310 ("use `ReadOnlySpan<T>`").
-- `List<T>`, `Deque<T>`, `Map<K, V>`, `HashMap<K, V>`, `Set<T>`, `Pool<T>`, `Ring<T, const i32 N>`, `NonEmpty<T>`: standard library, allocator-backed (API: §16).
-- `Map` **preserves insertion order**; `HashMap` is unordered and faster.
+- `List<T>`, `Deque<T>`, `Map<K, V>`, `Set<T>`, `Pool<T>`, `Ring<T, const i32 N>`, `NonEmpty<T>`: standard library, allocator-backed (API: §16).
+- `Map` **preserves insertion order** and is the only hash map. `HashMap<K, V>` is BYN2830 with a fix to `Map<K, V>`, wherever a type is written; the type is then read as `Map<K, V>`, so it is reported once (spec 008). An unordered `HashMap` would iterate in seed order; whether to add one later is HANDOFF Question 371.
+- **`Map` keys:** an integer type, `rune`, `bool`, `string`, a plain enum, `Symbol` (§3.3), a tuple whose elements are all keys, or a struct whose fields are all keys and which is not `@noEquality`. Two keys are equal when `==` says so (§6.7). A struct or tuple that is not a key is BYN2831, naming the first field or element that rules it out and its type; any other key type (a float, an optional, an enum with data, a collection) is BYN2760. A type parameter used as a key is checked at each instantiation. A key hashes its value only: a `Symbol` its ID, a `string` its text, a tuple or struct its parts in declaration order, never padding bytes, so two `==` keys built apart are one entry.
 - `xs.remove(from: start, until: end)` removes the elements in `[start, end)` and keeps the order of the rest; `xs.remove(from: start, through: end)` includes `end`; `xs.remove(at: range)` takes a range. `start > end` or `end > xs.length` panics (`slice out of range`). Like `append` and `removeLast`, they are structural modifications (§9.4 rule 5).
 - A module-level `const T[N]` with literal or constant elements is static data in `.rodata` when `T` is a number type, `bool`, `rune` or `string` (`const names: string[2] = ["a", "b"]`); it can be indexed, iterated and asked its `.length`. Any other module-level `const` array is BYN2229.
 - **Typed indices (opt-in).** There are no automatic `T.Count` or `T.Index` types. A collection may take an index type as a second parameter, keyed by the collection rather than the element type, so parallel arrays share one:
@@ -262,7 +303,7 @@ type distinct UserId = i64       // a unit without arithmetic
 - **`StrBuf`** is the string builder and the target of every `xInto(ref StrBuf)` (§5.2): `StrBuf(capacity: n)` allocates from `context.allocator`; `StrBuf.over(stackalloc u8[n] uninit)` uses the stack first and spills to the allocator only if outgrown; `append(x)`, `append($"…")` (interpolation writes straight into the buffer), `appendRepeated(c, by: n)`; `buf.view` is a borrowed string view, no allocation; `buf.finish()` consumes the buffer and returns it as a string without copying. `StrBuf.over` is not in v0.1.
 
 > Round 2 §11, §12, §15: `append` replaces `add` on ordered collections; `finish()` and `view` replace `asString()`; C# type names are accepted in type positions (BYN1030 is retired). Codes: none. Round 3 deliverable 4 restores `length` as the size name.
-- Every allocator-backed collection (`List`, `Map`, `HashMap`, `Set`, `Pool`) and `StrBuf` is **`unique`** (§3.11): assigning or storing one moves it, and a copy is explicit, `xs.copy(to: alloc)`. Reading without owning goes through `ReadOnlySpan<T>`, a read-only parameter or `ref`.
+- Every allocator-backed collection (`List`, `Map`, `Set`, `Pool`) and `StrBuf` is **`unique`** (§3.11): assigning or storing one moves it, and a copy is explicit, `xs.copy(to: alloc)`. Reading without owning goes through `ReadOnlySpan<T>`, a read-only parameter or `ref`.
 - Hashing is **seeded** by default (hash-flooding resistance); tests use a fixed seed.
 
 ### 3.6 Optionals
@@ -1735,7 +1776,7 @@ let headers = ["Accept": "*/*"]                      // no target type: Map<stri
 > Round 2 §11: one size name and verb/participle pairs that follow §5.2; `first`/`last` return `T?` instead of a parallel `tryFirst`/`tryLast`. Codes: BYN2104, BYN2230, BYN2235, BYN2236.
 
 > Round 3 deliverable 4, §12, §15, §27: the size name stays `length`, as in round 2, so `count(p)` reads as a predicate count only. `removeRange` and `replaceRange` give way to particle forms (stdlib overloads, J65, kept because `until` and `through` read well at call sites; guard 1 governs the language's spellings, not library APIs, revision 0002); `getOr` becomes `tryGet(at:) ?? x`; `toList()` and `asSpan()` would spell conversions that already have a form. Codes: BYN2230, BYN5009.
-- Maps: reading `map[k]` panics if missing; `map.tryGet(at: k) ?? fallback` reads without inserting; `ref map.slot(k)` gets or inserts a default (requires `V : default`).
+- Maps: reading `map[k]` panics if missing; `map.tryGet(at: k) ?? fallback` reads without inserting; `ref map.slot(k)` gets or inserts a default (requires `V : default`). Keys are §3.5's: scalars, `string`, plain enums, `Symbol`, and tuples and structs of those; every member works the same on each, and a map literal's string keys become symbols where the key type is `Symbol`.
 - `Grid<T>`-style types accept multi-dimensional ranges: `grid[1..^1, 1..^1]`.
 
 ### 16.1 Events

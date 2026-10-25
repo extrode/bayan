@@ -52,7 +52,7 @@ Depends on: feat/007-lambdas at 4a746de (dev, round 3, spec 006 and 007 merged);
   - A mutation back to `byn_hash_bytes(&k, sizeof k)` makes the padding case fail.
   - `dotnet test -v q --filter "Law=L003|Law=L016"` holds.
 - [ ] T11 enact L016 "Equal keys are one entry" — files: `docs/laws/016-*.md` — covers: L016 — after T10 — done when: `status: enacted` lands in the same change as T10's passing proof (standing authorization, 2026-10-21).
-- [ ] T12 Docs — files: `docs/bayan-handoff.md` (Q371–Q381, progress entry with spend, "Road to self-hosting" row 008), `docs/bayan-spec.md` (§3.3: `Symbol` as shipped; §3.5: `HashMap` deferred to a fix-it, key types; §16 `Map` keys), `docs/bayan-grammar.md` (no grammar change; `HashMap` noted beside the input-form rows with BYN2830), `CHANGELOG.md`, `008-spec.md` status — covers: all — after T7, T9, T11 — done when:
+- [x] T12 Docs — files: `docs/bayan-handoff.md` (Q371–Q381, progress entry with spend, "Road to self-hosting" row 008), `docs/bayan-spec.md` (§3.3: `Symbol` as shipped; §3.5: `HashMap` deferred to a fix-it, key types; §16 `Map` keys), `docs/bayan-grammar.md` (no grammar change; `HashMap` noted beside the input-form rows with BYN2830), `CHANGELOG.md`, `008-spec.md` status — covers: all — after T7, T9, T11 — done when:
   - The handoff lists Q371–Q381 with their choices.
   - The spec and grammar describe what shipped, with `HashMap` as BYN2830 and Q371 open.
   - The spec status is done.
