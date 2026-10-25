@@ -74,6 +74,8 @@ public enum BuiltinMember
     ArrayLength, ArrayAsSpan,
     ArenaReset,
     StrBufAppend, StrBufAppendRepeated, StrBufInsert, StrBufLength, StrBufAsString, StrBufClear,
+    /// <summary><c>sym.text</c>: the interned text, which lives until exit.</summary>
+    SymbolText,
     /// <summary><c>x.take()</c>: moves the value out of a place and leaves the type's empty value behind.</summary>
     ListTake, MapTake, StrBufTake, OptionalTake,
     CharValue, IntToString,

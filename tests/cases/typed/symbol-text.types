@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "path": "symbol-text.byn",
+      "name": "name",
+      "span": {
+        "start": 130,
+        "end": 134
+      },
+      "bindings": [
+        {
+          "name": "s",
+          "kind": "param",
+          "span": {
+            "start": 142,
+            "end": 143
+          },
+          "type": "Symbol"
+        }
+      ]
+    },
+    {
+      "path": "symbol-text.byn",
+      "name": "literalText",
+      "span": {
+        "start": 163,
+        "end": 174
+      },
+      "bindings": [
+        {
+          "name": "s",
+          "kind": "let",
+          "span": {
+            "start": 187,
+            "end": 188
+          },
+          "type": "Symbol"
+        },
+        {
+          "name": "text",
+          "kind": "let",
+          "span": {
+            "start": 215,
+            "end": 219
+          },
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "path": "symbol-text.byn",
+      "name": "internedText",
+      "span": {
+        "start": 263,
+        "end": 275
+      },
+      "bindings": [
+        {
+          "name": "source",
+          "kind": "param",
+          "span": {
+            "start": 283,
+            "end": 289
+          },
+          "type": "string"
+        },
+        {
+          "name": "s",
+          "kind": "let",
+          "span": {
+            "start": 301,
+            "end": 302
+          },
+          "type": "Symbol"
+        }
+      ]
+    },
+    {
+      "path": "symbol-text.byn",
+      "name": "main",
+      "span": {
+        "start": 353,
+        "end": 357
+      },
+      "bindings": [
+        {
+          "name": "s",
+          "kind": "let",
+          "span": {
+            "start": 370,
+            "end": 371
+          },
+          "type": "Symbol"
+        },
+        {
+          "name": "length",
+          "kind": "let",
+          "span": {
+            "start": 397,
+            "end": 403
+          },
+          "type": "i64"
+        },
+        {
+          "name": "shown",
+          "kind": "let",
+          "span": {
+            "start": 433,
+            "end": 438
+          },
+          "type": "string"
+        }
+      ]
+    }
+  ]
+}

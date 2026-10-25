@@ -400,7 +400,8 @@ internal sealed class RegionAnalysis
                 return receiver with { Owners = [] };
             case BuiltinMember.MapIndex or BuiltinMember.MapTryGet or BuiltinMember.ListTryGet:
                 return receiver with { Owners = [] };
-            case BuiltinMember.MapLength or BuiltinMember.MapContains:
+            // An interned `Symbol`'s text lives until exit, like a literal.
+            case BuiltinMember.MapLength or BuiltinMember.MapContains or BuiltinMember.SymbolText:
                 return Borrow.None;
             case BuiltinMember.MapRemove or BuiltinMember.MapClear or BuiltinMember.ListRemoveRange or BuiltinMember.ListRemoveThrough or BuiltinMember.ListRemoveAt
                 or BuiltinMember.ListRemoveAtRange or BuiltinMember.ListSort:
