@@ -3,7 +3,8 @@ error BYN2760: `f64` cannot be a `Map` key
   14 │ print($"{countOf(1.5)}")
      │          ^^^^^^^^^^^^ the generic code needs this of its type arguments
      │
-  help: use an integer type, `rune`, `bool`, `string` or a plain enum as the key
+  help: use an integer type, `rune`, `bool`, `string`, `Symbol`, a plain enum, or a tuple or struct
+        of those as the key
 
 error BYN2208: `==` cannot be applied to `List<i64>` and `List<i64>`
 
@@ -20,4 +21,5 @@ error BYN2760: `f64` cannot be a `Map` key
   19 │ var idx: Index<f64>
      │          ^^^^^^^^^^ the generic code needs this of its type arguments
      │
-  help: use an integer type, `rune`, `bool`, `string` or a plain enum as the key
+  help: use an integer type, `rune`, `bool`, `string`, `Symbol`, a plain enum, or a tuple or struct
+        of those as the key

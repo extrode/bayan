@@ -230,6 +230,8 @@ public sealed partial class Compilation
                 DeclareSignature(f, f.Decl!, f.File!);
             CheckOverloads(module);
         }
+        MembersDeclared = true;
+        foreach (var check in _pendingKeys) check();
         foreach (var module in Modules)
         {
             foreach (var s in module.Structs) CheckStructShape(s);
@@ -1477,7 +1479,7 @@ public sealed partial class Compilation
         bool Reported(Diagnostic d) => target.Items.Concat(Diagnostics.Items).Any(t => t.Code == d.Code && t.Source == d.Source && t.Span == d.Span);
         foreach (var d in bag.Items.Where(d => d.IsError))
         {
-            if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code
+            if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.KeyPartNotHashable.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code
                 || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code || d.Code == DiagnosticCodes.FunctionTypeNotHere.Code && !Reported(d)
                 || (d.Code == DiagnosticCodes.Unsupported.Code || d.Code == DiagnosticCodes.ImplicitCopy.Code) && !Reported(d))
                 target.Add(d with { Source = site, Span = span, Label = InstantiationLabel });
@@ -1530,6 +1532,14 @@ public sealed partial class Compilation
 
     /// <summary>Depth of <see cref="Instantiating"/> calls: nonzero while declaring or binding an instance.</summary>
     private int _instantiating;
+
+    /// <summary>Every struct's fields are declared, so a struct or tuple <c>Map</c> key can be checked.</summary>
+    internal bool MembersDeclared { get; private set; }
+
+    /// <summary><c>Map</c> key checks of types resolved before <see cref="MembersDeclared"/>; run once it is set.</summary>
+    private readonly List<Action> _pendingKeys = new();
+
+    internal void AfterMembersDeclared(Action check) => _pendingKeys.Add(check);
 
     /// <summary>Constraint checks of types instantiated before conformances exist; run once they do.</summary>
     private readonly List<Action> _pendingConstraints = new();
