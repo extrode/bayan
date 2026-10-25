@@ -38,7 +38,7 @@ Depends on: feat/007-lambdas at 4a746de (dev, round 3, spec 006 and 007 merged);
   - The R12 program runs and prints the expected lines. It interns identifiers sliced from a source string, looks keywords up in a `Map<Symbol, TokenKind>` literal, resolves names through a `List<Map<Symbol, i32>>` scope chain innermost first, keys by `(i32 scope, Symbol name)` and a `MemberKey` struct with fields `i32 owner` and `Symbol name`, and prints declarations in order.
   - `bayan types` on it is byte-identical across two runs.
   - The suite passes.
-- [ ] T8 prove L015 via /prove: interning is identity on text — files: `tests/Bayan.Tests/SymbolLawTests.cs` [Trait Law L015], `docs/laws/015-*.md` (status `proposed`, proof notes) — covers: L015 — after T5 — done when:
+- [x] T8 prove L015 via /prove: interning is identity on text — files: `tests/Bayan.Tests/SymbolLawTests.cs` [Trait Law L015], `docs/laws/015-*.md` (status `proposed`, proof notes) — covers: L015 — after T5 — done when:
   - Over generated texts (ASCII, multi-byte UTF-8, `""`, the program's literals, prefixes and extensions, texts built byte by byte), `intern(a) == intern(b)` holds exactly when `a == b`, and `intern(s).text == s`.
   - A literal equals its runtime twin. `<` agrees with `string` `<`.
   - Output is identical under two seeds.
