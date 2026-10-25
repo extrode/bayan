@@ -1,0 +1,8 @@
+error BYN2823: `.name` is a member, not a lambda
+
+  9 │     let text = label(user, by: .name)
+    │                                ^^^^^
+    │
+  help: write `it.name`
+    │ 9 │     let text = label(user, by: it.name)
+    │   │                                ++

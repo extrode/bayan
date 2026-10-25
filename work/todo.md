@@ -132,13 +132,11 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - String patterns (`"/api/" + var rest`) are not implemented, so "stay legal" under BYN2209 is untested (round 2 §12).
 - BYN2209 on `a + b + c` rewrites one pair per fix pass (round 2 §12).
 - diag/renamed-member also shows a BYN2311 warning (round 2 §11).
-- 007 Q121/Q124 give BYN1050 to `=>` in a function type; round 3 uses BYN1050 for `RequiresValue` and BYN1055 for that form (C26). Fix on feat/007-lambdas before merge (round 3, Sūq brief).
-- 007 Q115 makes a stored function type such as `onPaid: Order -> void uses net` BYN2822; Sūq and SPEC `:1287` use one (round 3, Sūq brief).
+- 007 Q346 makes a stored function type such as `(Line -> Money uses net) pricer` BYN2822; Sūq and SPEC §3.16 use one (round 3, Sūq brief).
 - HANDOFF round 3 §11 (~`:204-210`) still says `on .field` and §13 (~`:259`) has `Order => void`; superseded by their resolved paragraphs, not rewritten.
 - No `docs/diagnostics/BYN1056.md`, `BYN1057.md`, `BYN7005.md` pages yet; GRAMMAR §3 links the first two (round 3, Sūq brief).
 - SPEC has no `T.zero` (friction F-31); the F-30 user-cleanup member name is open, conservative `dispose(ref this)` (round 3, Sūq brief).
 - SPEC `:389` `return .forbidden unless …` snippet has no signature; borderline under A2 (`fail` vs response value).
-- J54 type-first revert: 007 spec on feat/007-lambdas is name-first throughout (R1/R4/R15, examples :4-5, :36, :44-78); update to type-first decls and parenthesized function-type params before 007 T1. 006 C4/C20 shrink (006 already type-first).
 - J54: Sūq checker `type-first binding` rule only catches capitalised types (`i32 n = 3` unflagged); parameter lists spanning lines are only partly handled.
 - `if p == P { x: 1 } { … }` (unwrapped struct literal in a bare condition) gives BYN1012/BYN1005 with no hint to add parentheses (round 2 §4).
 - `ref this` on a constructor falls through to the `ref` modifier with type `this` instead of a targeted error (round 2 §9).
@@ -276,3 +274,20 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - rv0011: under `BAYAN_UPDATE=1` a load timeout rewrites `run/` and `out/` goldens with "timed out after 60 s" (seen: `out/results-fail.json`, `run/assert-fails.test.stdout`, `run/suq-money.test.stdout`, plus a new `run/suq-money.test.exitcode`); the update mode should not record a timeout as expected output.
 - rv11 review: other messages still print `set.DisplayName` unqualified and can show look-alike sets (BYN2604 in `FlowAnalysis.CheckPropagation`, BYN2227 `AmbiguousVariant`, the `except` BYN2603 variant text, pattern-mismatch messages); switch them to `DisplayNameAmong` when one reproduces.
 - rr6: `byn_release` (`src/runtime/bayan-rt.c:854`) frees only for `&byn_general`; a future allocator that does not free through it would bring back the `ListReplace` leak.
+- 007 T1: a function-typed parameter without parentheses (`bool any(Token -> bool p)`) is accepted silently; decide whether it gets an input-form diagnostic with a fix to `(Token -> bool) p` (Q363 d).
+- 007 T3: a function type as a `union` variant payload field gets BYN3002-style `BorrowPayload`, not BYN2822 (`CheckUnionShape` has no placement check).
+- 007 T3: an explicit type argument on a generic function call (`f<i32 -> bool>()`) and an inferred one are not checked for BYN2822; only `TypeResolver.Construct` and the builtin generics are.
+- 007 T3: `FunctionType` has no excluded cases, so `fails` naming a `union error … except .c` alias keeps the excluded cases in the function type.
+- BYN2822 help "take the function as a parameter instead" reads wrong when the rejected position is already inside a parameter (`void a(Pred? p)`); found in 007 T3 review.
+- 007 T5: `become` inside a lambda builds a `BoundThis` (`BinderStates.cs:35`) without the BYN2821 `this` check.
+- 007 T5: the caught error (`_caught`, `CaughtErrorExpr`) read inside a lambda in a `catch` body is not recorded as a capture.
+- 007 T5: `pick([], by: it > 0)` reports a cascading BYN2218 on `[]` after BYN2740 (existing recovery in `BindArgumentsForRecovery`).
+- 007 T5: a user local named `it` in a function that also uses the `it` shorthand gives BYN2007 (shadowing) at the shorthand.
+- 007 T4 review: a built-in or generic function passed to a generic function-typed parameter (`holds(print)` with `bool holds<T>((T -> bool) p)`) is BYN2740 "cannot infer" instead of BYN2824; `Instantiate` in BinderCalls.cs should run `ConvertToFunction`'s check on a non-qualifying group.
+- 007 T4 review: the overload lookup in `ConvertToFunction` (BinderExpressions.cs, `fn.Module.Functions…fs`) is dead while a second module function of the same name is BYN2006.
+- 007 T7: `-Wall -Werror` on emitted C still fails outside the lambda code: `-Wunused-label` (`continue_N` of a `for` with no `continue`, seen in a lambda body in `run/lambda-uses-provide`) and `-Wparentheses-equality` from `fail … if` (`if ((p_s.len == 0))`, `run/lambda-fails`); T9 territory.
+- 007 T6: BYN3002/BYN3003 on a lambda region keep the generic help ("copy the data with `.copy(to: alloc)`") and label ("freed at the end of its block"), which fit a lambda kept past its loop iteration poorly; a lambda-specific help needs a branch in `CheckOutlives`/`CheckReturn`.
+- 007 T8: BYN6005 messages name the synthetic lambda (`main$lambda10`, `stored$lambda1`); name it as "the lambda on line N" as region diagnostics do.
+- 007 T11: BYN2821 says 'a `out` parameter' / 'a `in` parameter'; use 'an'.
+- 007 T13: SPEC §21.5's BYN1028 row says "(help text)" though BYN1028 now offers a fix; GRAMMAR's input-form table has no `delegate` (BYN1028) row; the round-3 plan's "Total codes" row still counts 12 spec-only codes.
+- 007 T13: SPEC §1057 (`Panic.handler`) says the lambda form "needs §3.16"; 007 stores only non-capturing lambdas, so say whether `Panic.handler = p => …` is accepted now.

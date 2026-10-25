@@ -1,0 +1,5 @@
+bool g(i32 x) => x > 2
+
+void main() {
+    i32 -> bool f = g
+}

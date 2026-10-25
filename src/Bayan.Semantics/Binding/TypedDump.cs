@@ -33,7 +33,8 @@ public static class TypedDump
                 {
                     w.WriteStartObject();
                     w.WriteString("path", PathOf(c, fn.File!.Source.Path));
-                    w.WriteString("name", fn.Owner is null ? fn.Name : fn.Owner.Name + "." + fn.Name);
+                    var owner = fn.Owner ?? Outermost(fn).Owner;
+                    w.WriteString("name", owner is null ? fn.Name : owner.Name + "." + fn.Name);
                     WriteSpan(w, fn.Location!.Value);
                     w.WriteStartArray("bindings");
                     foreach (var local in fn.Locals.Where(l => l.Kind != LocalKind.Temp && l.Location is not null))
@@ -46,6 +47,7 @@ public static class TypedDump
                         w.WriteEndObject();
                     }
                     w.WriteEndArray();
+                    if (fn.Kind == FunctionKind.Lambda) WriteCaptures(w, fn);
                     w.WriteEndObject();
                 }
             }
@@ -53,6 +55,27 @@ public static class TypedDump
             w.WriteEndObject();
         }
         return Encoding.UTF8.GetString(buffer.WrittenSpan) + "\n";
+    }
+
+    /// <summary>A lambda's captures, each as the type the lambda reads it as (a narrowed optional is its inner type).</summary>
+    private static void WriteCaptures(Utf8JsonWriter w, FunctionSymbol lambda)
+    {
+        var bound = lambda.Enclosing?.Body is { } body ? BoundTree.Descendants(body).OfType<BoundLambda>().FirstOrDefault(l => l.Lambda == lambda) : null;
+        w.WriteStartArray("captures");
+        foreach (var capture in bound?.Captures ?? [])
+        {
+            w.WriteStartObject();
+            w.WriteString("name", capture.Local.Name);
+            w.WriteString("type", capture.Type.DisplayName);
+            w.WriteEndObject();
+        }
+        w.WriteEndArray();
+    }
+
+    private static FunctionSymbol Outermost(FunctionSymbol fn)
+    {
+        while (fn.Enclosing is { } e) fn = e;
+        return fn;
     }
 
     private static void WriteSpan(Utf8JsonWriter w, Location location)

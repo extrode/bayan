@@ -1,0 +1,34 @@
+error BYN2822: a function type is not supported as an array element yet
+
+  5 │     let xs = [f, f]
+    │               ^
+    │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as an array element yet
+
+  8 │     let ys = [g]
+    │               ^
+    │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as a tuple element yet
+
+  9 │     let t = (1, g)
+    │                 ^
+    │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as a map value yet
+
+  10 │     let m = ["a": f]
+     │                   ^
+     │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as a tuple element yet
+
+  11 │     let u: (i64, i64 -> i64) = (1, f)
+     │                  ^^^^^^^^^^
+     │
+  help: take the function as a parameter instead

@@ -112,5 +112,8 @@ public sealed record LNextChar(Node Syntax, BoundExpr Text, LocalSymbol Position
 /// <summary>The value of an expression that never completes (it jumped, failed or panicked).</summary>
 public sealed record LNever(Node Syntax, TypeSymbol Type) : BoundExpr(Syntax, Type);
 
+/// <summary>A function value: <see cref="Function"/>'s code with <see cref="Env"/> (the captures tuple) or no environment.</summary>
+public sealed record LFunctionValue(Node Syntax, FunctionSymbol Function, LocalSymbol? Env, FunctionType FunctionType) : BoundExpr(Syntax, FunctionType);
+
 /// <summary>The value of a <c>void</c> expression whose effects were already emitted.</summary>
 public sealed record LVoid(Node Syntax) : BoundExpr(Syntax, PrimitiveType.Void);

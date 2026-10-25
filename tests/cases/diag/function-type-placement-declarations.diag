@@ -1,0 +1,48 @@
+error BYN2822: a function type is not supported as a property yet
+
+  7 │     Pred p => isBig
+    │     ^^^^
+    │
+  help: take the function as a parameter instead
+
+error BYN2019: `isBig` is a function, not a value
+
+  7 │     Pred p => isBig
+    │               ^^^^^
+    │
+  help: call it: `isBig(…)`
+
+error BYN2822: a function type is not supported as an error payload yet
+
+  11 │     bad(Pred p)
+     │         ^^^^
+     │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as a union payload yet
+
+  15 │     circle(Pred p)
+     │            ^^^^
+     │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as a constant yet
+
+  19 │ const k: Pred = isBig
+     │          ^^^^
+     │
+  help: take the function as a parameter instead
+
+error BYN2019: `isBig` is a function, not a value
+
+  19 │ const k: Pred = isBig
+     │                 ^^^^^
+     │
+  help: call it: `isBig(…)`
+
+error BYN2822: a function type is not supported as the value of an optional yet
+
+  26 │ bool f(Pred p) => h(p)
+     │                   ^^^^ the generic code needs this of its type arguments
+     │
+  help: take the function as a parameter instead

@@ -34,6 +34,11 @@ public sealed class Parser
     private readonly bool[] _inGroup;
     /// <summary>Whether the declaration being parsed carries <c>extern</c>, where pointer types are allowed (BYN1067).</summary>
     private bool _inExtern;
+    /// <summary>Whether a name or <c>( … )</c> before <c>=&gt;</c> is not a lambda: in a pattern, an arm's guard or an <c>expects</c> condition.</summary>
+    private bool _noLambda;
+
+    /// <summary>Set while type arguments are scanned inside an expression, where <c>=&gt;</c> is never a type's arrow (<c>a &lt; b =&gt; c &gt; (x)</c>).</summary>
+    private bool _exprTypeArgs;
 
     private Parser(LexResult lexed)
     {
@@ -124,7 +129,7 @@ public sealed class Parser
         DiagnosticCodes.TrustInput,
         DiagnosticCodes.RestInput, DiagnosticCodes.StateLineInput, DiagnosticCodes.InterfaceGetInput, DiagnosticCodes.ReceiverWithoutState,
         DiagnosticCodes.RequiresOnFunction, DiagnosticCodes.ClauseOrder, DiagnosticCodes.PrefixPointerInput,
-        DiagnosticCodes.CompactFormatSpec, DiagnosticCodes.SingleStateInline,
+        DiagnosticCodes.CompactFormatSpec, DiagnosticCodes.SingleStateInline, DiagnosticCodes.FatArrowFunctionType,
     ];
 
     private Diagnostic? Report(DiagnosticDescriptor descriptor, TextSpan span, object?[]? args = null,
@@ -481,10 +486,14 @@ public sealed class Parser
             case TokenKind.DelegateKeyword:
                 {
                     var keyword = Advance();
+                    var signature = _pos;
                     while (Kind is not (TokenKind.Semicolon or TokenKind.OpenBrace or TokenKind.CloseBrace or TokenKind.EndOfFile) && !BreaksLine(_pos)) Advance();
                     Accept(TokenKind.Semicolon);
-                    Report(DiagnosticCodes.DelegateDecl, TextSpan.FromBounds(keyword.Start, _prevEnd), label: "a C# delegate",
-                        help: "write a function type alias: `type Name = (Param) => Result`");
+                    var span = TextSpan.FromBounds(keyword.Start, _prevEnd);
+                    var alias = DelegateAlias(signature);
+                    var (aliasName, aliasType) = alias ?? ("Name", "(Param) -> Result");
+                    Report(DiagnosticCodes.DelegateDecl, span, [aliasName, aliasType], label: "a C# delegate",
+                        help: $"declare it as `type {aliasName} = {aliasType}`", fix: alias is null ? null : new Fix(span, $"type {aliasName} = {aliasType}"));
                     decl = null;
                     break;
                 }
@@ -575,6 +584,41 @@ public sealed class Parser
     private void ReportMissingBecause(string construct, TextSpan span) =>
         Report(DiagnosticCodes.MissingBecause, span, [construct], label: "bypasses a safety rule",
             help: "explain the bypass in a `because` clause");
+
+    /// <summary>
+    /// The alias name and function type of the C# delegate signature <c>R Name(A a, B b)</c> from token <paramref name="index"/>
+    /// to the current one, or null when the line is not that signature (generic, or with parameter modifiers).
+    /// </summary>
+    private (string Name, string Type)? DelegateAlias(int index)
+    {
+        var returnEnd = ScanType(index);
+        if (returnEnd < 0 || !IsName(KindAt(returnEnd)) || KindAt(returnEnd + 1) != TokenKind.OpenParen) return null;
+        var types = new List<string>();
+        var loneFunction = false;
+        var i = returnEnd + 2;
+        if (KindAt(i) != TokenKind.CloseParen)
+        {
+            while (true)
+            {
+                var typeEnd = ScanType(i, nested: false, out loneFunction);
+                if (typeEnd < 0 || !IsName(KindAt(typeEnd))) return null;
+                types.Add(TokensText(i, typeEnd));
+                i = typeEnd + 1;
+                if (KindAt(i) != TokenKind.Comma) break;
+                i++;
+            }
+        }
+        if (KindAt(i) != TokenKind.CloseParen) return null;
+        i++;
+        if (i != _pos && !(KindAt(i) == TokenKind.Semicolon && i + 1 == _pos)) return null;
+        // A lone tuple type keeps its own parentheses inside the parameter list's, and a lone function type needs them
+        // since `->` is right-associative.
+        var parameters = types is [var one] && !one.StartsWith('(') && !loneFunction ? one : "(" + string.Join(", ", types) + ")";
+        return (Text(_tokens[returnEnd]), parameters + " -> " + TokensText(index, returnEnd));
+    }
+
+    /// <summary>The source text of tokens <paramref name="from"/> up to, not including, <paramref name="to"/>.</summary>
+    private string TokensText(int from, int to) => _source.GetText(TextSpan.FromBounds(_tokens[from].Start, _tokens[to - 1].End));
 
     private bool IsTypeThenName(int index)
     {
@@ -1078,7 +1122,7 @@ public sealed class Parser
                 if (keyword.Kind == TokenKind.RequiresKeyword)
                     Report(DiagnosticCodes.RequiresOnFunction, keyword.Span, label: "the input form",
                         help: "use `expects` for a precondition; `requires` is checked at construction", fix: new Fix(keyword.Span, "expects"));
-                requires.Add(ParseBareCondition());
+                requires.Add(WithoutLambdas(ParseBareCondition));
             }
             else if (AtContextual("becomes") && Peek(1) == TokenKind.Dot)
             {
@@ -1306,7 +1350,7 @@ public sealed class Parser
                 if (IsNameThenType(_pos)) (type, name) = ParseNameThenType();
                 else
                 {
-                    type = ParseType();
+                    type = ParseType(fatArrow: true, lists: true);
                     if (Kind == TokenKind.DotDot && Peek(1) == TokenKind.Dot && !PeekToken(1).HasTriviaBefore && IsName(Peek(2)))
                     {
                         list.Add(ParseEllipsisInput(start, type));
@@ -1663,7 +1707,7 @@ public sealed class Parser
         else if (distinct) Advance();
         var name = ExpectName();
         Expect(TokenKind.Equals);
-        var target = ParseRefinement(ParseType());
+        var target = ParseRefinement(ParseType(fatArrow: true, lists: true));
         var requires = ParseRequiresLines();
         ExpectEnd();
         return new TypeAliasDecl(SpanFrom(start), modifiers, name, target) { Distinct = distinct, Requires = requires };
@@ -1704,28 +1748,47 @@ public sealed class Parser
         && (KindAt(index + 1) == TokenKind.RefKeyword || IsTypeNameToken(KindAt(index + 1)));
 
     /// <summary>Speculatively scans a type starting at <paramref name="index"/>; returns the index after it, or -1.</summary>
-    private int ScanType(int index)
+    private int ScanType(int index) => ScanType(index, nested: false, out _);
+
+    /// <summary>
+    /// <see cref="ScanType(int)"/>; <paramref name="nested"/> (inside a type's parentheses or type arguments, or where
+    /// <see cref="ParseType"/> takes BYN1055) scans <c>=&gt;</c> as a function type's arrow, and <paramref name="function"/>
+    /// says whether the type scanned is a function type.
+    /// </summary>
+    private int ScanType(int index, bool nested, out bool function)
     {
+        function = false;
         int i;
         if (KindAt(index) == TokenKind.OpenParen)
         {
             i = index + 1;
             var elements = 0;
-            while (true)
+            var lone = false;
+            var names = true;
+            if (KindAt(i) != TokenKind.CloseParen)
             {
-                i = ScanType(i);
-                if (i < 0) return -1;
-                if (IsName(KindAt(i))) i++;
-                elements++;
-                if (KindAt(i) == TokenKind.Comma)
+                while (true)
                 {
+                    var elementStart = i;
+                    i = ScanType(i, nested: true, out lone);
+                    if (i < 0) return -1;
+                    names &= i == elementStart + 1;
+                    if (IsName(KindAt(i)))
+                    {
+                        i++;
+                        names = false;
+                    }
+                    elements++;
+                    if (KindAt(i) != TokenKind.Comma) break;
                     i++;
-                    continue;
                 }
-                if (KindAt(i) != TokenKind.CloseParen || elements < 2) return -1;
-                i++;
-                break;
             }
+            if (KindAt(i) != TokenKind.CloseParen) return -1;
+            i++;
+            // `(a, b) => …` at a statement start is a lambda, not a tuple type.
+            if (!nested && names && KindAt(i) == TokenKind.FatArrow) return -1;
+            if (IsTypeArrow(i, nested)) return ScanFunctionType(i, nested, out function);
+            if (elements < 2 && !(elements == 1 && lone)) return -1;
         }
         else
         {
@@ -1763,11 +1826,43 @@ public sealed class Parser
                 if (j >= _count || !_tokens[j].HasTriviaBefore) return i;
                 i = j;
             }
+            else if (IsTypeArrow(i, nested))
+            {
+                return ScanFunctionType(i, nested, out function);
+            }
             else
             {
                 return i;
             }
         }
+    }
+
+    /// <summary>Whether a function type's arrow is at <paramref name="index"/>: <c>-&gt;</c>, or <c>=&gt;</c> when <paramref name="nested"/>.</summary>
+    private bool IsTypeArrow(int index, bool nested) => KindAt(index) == TokenKind.Arrow || nested && !_exprTypeArgs && KindAt(index) == TokenKind.FatArrow;
+
+    /// <summary>Scans <c>-&gt; R fails E uses e</c> starting at the arrow; returns the index after it, or -1.</summary>
+    private int ScanFunctionType(int index, bool nested, out bool function)
+    {
+        function = true;
+        var i = ScanType(index + 1, nested, out _);
+        if (i > 0 && KindAt(i) == TokenKind.FailsKeyword) i = ScanClauseList(i + 1, names: false);
+        if (i > 0 && KindAt(i) == TokenKind.UsesKeyword) i = ScanClauseList(i + 1, names: true);
+        return i;
+    }
+
+    /// <summary>Scans the types after <c>fails</c> or the names after <c>uses</c>, bare or parenthesized; returns the index after them, or -1.</summary>
+    private int ScanClauseList(int index, bool names)
+    {
+        var paren = KindAt(index) == TokenKind.OpenParen;
+        var i = paren ? index + 1 : index;
+        while (true)
+        {
+            i = names ? IsName(KindAt(i)) ? i + 1 : -1 : ScanType(i, nested: true, out _);
+            if (i < 0 || KindAt(i) != TokenKind.Comma) break;
+            i++;
+        }
+        if (!paren || i < 0) return i;
+        return KindAt(i) == TokenKind.CloseParen ? i + 1 : -1;
     }
 
     /// <summary>Scans <c>&lt;T, U&gt;</c> starting at the <c>&lt;</c>; returns the index after <c>&gt;</c>, or -1.</summary>
@@ -1776,7 +1871,7 @@ public sealed class Parser
         var i = index + 1;
         while (true)
         {
-            i = ScanType(i);
+            i = ScanType(i, nested: true, out _);
             if (i < 0) return -1;
             if (KindAt(i) == TokenKind.Comma)
             {
@@ -1787,6 +1882,15 @@ public sealed class Parser
         }
     }
 
+    /// <summary><see cref="ScanTypeArgs"/> for type arguments after a name in an expression.</summary>
+    private int ScanExprTypeArgs(int index)
+    {
+        var saved = _exprTypeArgs;
+        _exprTypeArgs = true;
+        try { return ScanTypeArgs(index); }
+        finally { _exprTypeArgs = saved; }
+    }
+
     /// <summary>C# type names written in a type position with the Bayan type each means.</summary>
     private static readonly Dictionary<string, string> CSharpTypeNames = new()
     {
@@ -1794,7 +1898,13 @@ public sealed class Parser
         ["uint"] = "u32", ["ulong"] = "u64", ["float"] = "f32", ["double"] = "f64",
     };
 
-    private TypeSyntax ParseType()
+    /// <summary>
+    /// A type. With <paramref name="fatArrow"/> (a parameter type, an alias target, a local's annotation, a type argument)
+    /// <c>=&gt;</c> after a type is a function type's input form (BYN1055); elsewhere it is left to an expression body. With
+    /// <paramref name="lists"/> (the same places but a type argument) a function type's <c>fails</c> and <c>uses</c> take
+    /// comma lists; elsewhere one name or a parenthesized list (Q352).
+    /// </summary>
+    private TypeSyntax ParseType(bool fatArrow = false, bool lists = false)
     {
         var start = Current.Start;
         TypeSyntax type;
@@ -1804,19 +1914,26 @@ public sealed class Parser
             Advance();
             return ReadOnlyPointee(ParseType(), start);
         }
-        if (Kind == TokenKind.OpenParen && ScanType(_pos) > 0)
+        if (Kind == TokenKind.OpenParen && ScanType(_pos, fatArrow, out _) > 0)
         {
             Advance();
             var elements = new List<TupleTypeElement>();
-            do
+            if (Kind != TokenKind.CloseParen)
             {
-                var elementStart = Current.Start;
-                var elementType = ParseType();
-                Name? name = IsName(Kind) ? NameOf(Advance()) : null;
-                elements.Add(new TupleTypeElement(SpanFrom(elementStart), elementType, name));
-            } while (Accept(TokenKind.Comma));
+                do
+                {
+                    var elementStart = Current.Start;
+                    var elementType = ParseType(fatArrow: true, lists);
+                    Name? name = IsName(Kind) ? NameOf(Advance()) : null;
+                    elements.Add(new TupleTypeElement(SpanFrom(elementStart), elementType, name));
+                } while (Accept(TokenKind.Comma));
+            }
             Expect(TokenKind.CloseParen);
-            type = new TupleType(SpanFrom(start), elements.ToArray());
+            if (Kind == TokenKind.Arrow || fatArrow && Kind == TokenKind.FatArrow) return ParseFunctionType(start, elements, fatArrow, lists);
+            // `(Token -> bool) p`: the parentheses around a function type only group it.
+            type = elements is [{ Name: null, Type: FunctionTypeSyntax lone }]
+                ? lone with { Span = SpanFrom(start) }
+                : new TupleType(SpanFrom(start), elements.ToArray());
         }
         else if (IsDynAt(_pos))
         {
@@ -1855,11 +1972,59 @@ public sealed class Parser
                 type = new PointerType(SpanFrom(start), type, false);
                 if (Kind != TokenKind.Star) ReportPointerOutsideExtern(type);
             }
+            else if (Kind == TokenKind.Arrow || fatArrow && Kind == TokenKind.FatArrow)
+            {
+                return ParseFunctionType(start, [new TupleTypeElement(type.Span, type, null)], fatArrow, lists);
+            }
             else
             {
                 return type;
             }
         }
+    }
+
+    /// <summary>
+    /// <c>-&gt; R fails E uses e</c> after the parameter types of a function type, right-associative: <c>A -&gt; B -&gt; C</c>
+    /// returns <c>B -&gt; C</c>. <c>=&gt;</c> for the arrow is BYN1055, fixed to <c>-&gt;</c>.
+    /// </summary>
+    private FunctionTypeSyntax ParseFunctionType(int start, List<TupleTypeElement> parameters, bool fatArrow, bool lists)
+    {
+        foreach (var p in parameters)
+            if (p.Name is not null)
+                Report(DiagnosticCodes.Expected, p.Name.Span, ["`,` or `)`", $"`{p.Name.Text}`"], label: "a parameter name",
+                    help: "remove the name; a function type lists only its parameter types");
+        var arrow = Advance();
+        if (arrow.Kind == TokenKind.FatArrow)
+            Report(DiagnosticCodes.FatArrowFunctionType, arrow.Span, label: "the input form", help: "write the function type with `->`",
+                fix: new Fix(arrow.Span, "->"));
+        var result = ParseType(fatArrow, lists);
+        FailsClause? fails = null;
+        UsesClause? uses = null;
+        if (Kind == TokenKind.FailsKeyword)
+        {
+            var failsStart = Advance().Start;
+            fails = new FailsClause(SpanFrom(failsStart), ParseClauseList(lists, () => ParseType()));
+        }
+        if (Kind == TokenKind.UsesKeyword)
+        {
+            var usesStart = Advance().Start;
+            uses = new UsesClause(SpanFrom(usesStart), ParseClauseList(lists, () => ExpectName("an effect name")));
+        }
+        return new FunctionTypeSyntax(SpanFrom(start), parameters.Select(p => p.Type).ToArray(), result, fails, uses);
+    }
+
+    /// <summary>
+    /// The error types after a function type's <c>fails</c> or the effects after its <c>uses</c>: a comma list with
+    /// <paramref name="lists"/>, else one, or a parenthesized list (Q352).
+    /// </summary>
+    private T[] ParseClauseList<T>(bool lists, Func<T> parseOne)
+    {
+        var paren = Kind == TokenKind.OpenParen;
+        if (paren) Advance();
+        var items = new List<T> { parseOne() };
+        while ((lists || paren) && Accept(TokenKind.Comma)) items.Add(parseOne());
+        if (paren) Expect(TokenKind.CloseParen);
+        return items.ToArray();
     }
 
     /// <summary><c>readonly T*</c>: the innermost pointer of <paramref name="type"/> gets a pointee that cannot be written.</summary>
@@ -1940,8 +2105,8 @@ public sealed class Parser
     private TypeSyntax[] ParseTypeArgs()
     {
         Advance();
-        var args = new List<TypeSyntax> { ParseType() };
-        while (Accept(TokenKind.Comma)) args.Add(ParseType());
+        var args = new List<TypeSyntax> { ParseType(fatArrow: true) };
+        while (Accept(TokenKind.Comma)) args.Add(ParseType(fatArrow: true));
         Expect(TokenKind.Greater);
         return args.ToArray();
     }
@@ -2095,11 +2260,11 @@ public sealed class Parser
         {
             name = ExpectName("a variable name");
             Advance();
-            type = ParseRefinement(ParseType());
+            type = ParseRefinement(ParseType(fatArrow: true, lists: true));
         }
         else if (IsTypeThenName(_pos))
         {
-            type = ParseType();
+            type = ParseType(lists: true);
             name = ExpectName("a variable name");
             // A `let` needs a value, so a local declared without one is a `var`.
             if (!keyword && !isUsing) kind = Kind != TokenKind.Equals || IsWrittenLater(name.Text) ? BindingKind.Var : BindingKind.Let;
@@ -3307,7 +3472,7 @@ public sealed class Parser
             if (AtContextual("when"))
             {
                 Advance();
-                guard = ParseExpression();
+                guard = WithoutLambdas(ParseExpression);
             }
             Expect(TokenKind.FatArrow);
             // A `catch switch` arm may be a block, read as a `catch` block is (J49); elsewhere `{` starts a struct literal.
@@ -3374,7 +3539,7 @@ public sealed class Parser
 
     private bool IsTypeArgsBeforeCall()
     {
-        var after = ScanTypeArgs(_pos);
+        var after = ScanExprTypeArgs(_pos);
         return after > 0 && KindAt(after) == TokenKind.OpenParen;
     }
 
@@ -3403,7 +3568,9 @@ public sealed class Parser
             help: "call `trustUnchecked()` on the value and give the reason in `because`", fix: fix);
     }
 
-    private Argument[] ParseArguments()
+    private Argument[] ParseArguments() => WithoutLambdas(ParseArgumentList, off: false);
+
+    private Argument[] ParseArgumentList()
     {
         Expect(TokenKind.OpenParen);
         var args = new List<Argument>();
@@ -3487,10 +3654,14 @@ public sealed class Parser
                 var member = NameOf(Advance());
                 return new TargetMemberExpr(SpanFrom(start), member);
             }
+            case TokenKind.OpenParen when !_noLambda && KindAt(MatchingClose(_pos) + 1) == TokenKind.FatArrow:
+                return ParseLambda();
             case TokenKind.OpenParen:
                 return ParseParenOrTuple();
             case TokenKind.OpenBracket:
                 return ParseCollection();
+            case var kind when IsName(kind) && Peek(1) == TokenKind.FatArrow && !_noLambda:
+                return ParseLambda();
             case TokenKind.OpenBrace when BraceLiteralAllowed():
                 {
                     var fields = ParseFieldInits();
@@ -3509,6 +3680,60 @@ public sealed class Parser
         }
         Report(DiagnosticCodes.ExpectedExpression, Current.Span, [Describe(Current)]);
         return new ErrorExpr(new TextSpan(start, 0));
+    }
+
+    /// <summary>
+    /// <c>x =&gt; body</c>, <c>(a, b) =&gt; body</c> or <c>() =&gt; body</c> (R5); the body is a block on <c>{</c>, else an
+    /// expression, which may start on the line after <c>=&gt;</c>. A parameter is a name only: a type, a modifier, a particle
+    /// or a default is an error.
+    /// </summary>
+    private LambdaExpr ParseLambda()
+    {
+        var start = Current.Start;
+        var parameters = new List<Name>();
+        if (Kind != TokenKind.OpenParen)
+        {
+            parameters.Add(NameOf(Advance()));
+        }
+        else
+        {
+            var close = MatchingClose(_pos);
+            Advance();
+            while (_pos < close)
+            {
+                if (IsName(Kind) && Peek(1) is TokenKind.Comma or TokenKind.CloseParen)
+                {
+                    parameters.Add(NameOf(Advance()));
+                    if (_pos < close) Advance();
+                    continue;
+                }
+                if (Kind == TokenKind.Comma)
+                {
+                    Report(DiagnosticCodes.Expected, Current.Span, ["a lambda parameter name", "`,`"], label: "an empty parameter",
+                        help: "write the parameter's name");
+                    Advance();
+                    continue;
+                }
+                var from = _pos;
+                var depth = 0;
+                for (; _pos < close && !(depth == 0 && Kind == TokenKind.Comma); Advance())
+                {
+                    if (Kind is TokenKind.OpenParen or TokenKind.OpenBracket or TokenKind.OpenBrace) depth++;
+                    else if (Kind is TokenKind.CloseParen or TokenKind.CloseBracket or TokenKind.CloseBrace) depth--;
+                }
+                var text = TokensText(from, _pos);
+                Report(DiagnosticCodes.Expected, TextSpan.FromBounds(_tokens[from].Start, _prevEnd), ["a lambda parameter name", $"`{text}`"],
+                    label: "not a bare name", help: "write the parameter's name only; a lambda takes its parameter types from the function type it is passed to");
+                if (_pos < close) Advance();
+            }
+            Expect(TokenKind.CloseParen);
+            // A mismatched closer (`(a] => 1`) was reported by Expect; step over it to the `=>`.
+            if (_pos == close && Kind != TokenKind.FatArrow) Advance();
+        }
+        Expect(TokenKind.FatArrow);
+        if (Kind == TokenKind.OpenBrace) return new LambdaExpr(SpanFrom(start), parameters.ToArray(), null, ParseBlock());
+        var body = ParseExpression();
+        return new LambdaExpr(SpanFrom(start), parameters.ToArray(), body, null);
     }
 
     /// <summary>
@@ -3543,7 +3768,7 @@ public sealed class Parser
         var typeArgs = Array.Empty<TypeSyntax>();
         if (Kind == TokenKind.Less)
         {
-            var after = ScanTypeArgs(_pos);
+            var after = ScanExprTypeArgs(_pos);
             if (after > 0 && KindAt(after) is TokenKind.OpenParen or TokenKind.Dot or TokenKind.CloseParen or TokenKind.Comma
                     or TokenKind.Semicolon or TokenKind.CloseBracket or TokenKind.CloseBrace or TokenKind.OpenBrace)
                 typeArgs = ParseTypeArgs();
@@ -3830,7 +4055,7 @@ public sealed class Parser
 
     // ── Patterns ─────────────────────────────────────────────────────────────────────
 
-    private Pattern ParsePattern()
+    private Pattern ParsePattern() => WithoutLambdas(() =>
     {
         var start = Current.Start;
         var left = ParseAndPattern();
@@ -3841,6 +4066,21 @@ public sealed class Parser
             left = new BinaryPattern(SpanFrom(start), false, left, right);
         }
         return left;
+    });
+
+    /// <summary>Runs <paramref name="parse"/> with <see cref="_noLambda"/> set, or cleared when <paramref name="off"/> is false.</summary>
+    private T WithoutLambdas<T>(Func<T> parse, bool off = true)
+    {
+        var saved = _noLambda;
+        _noLambda = off;
+        try
+        {
+            return parse();
+        }
+        finally
+        {
+            _noLambda = saved;
+        }
     }
 
     private Pattern ParseAndPattern()

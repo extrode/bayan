@@ -1,0 +1,17 @@
+union error LexError {
+    bad
+}
+
+i64 apply((i64 -> i64) f, to i64 x) {
+    let a = f(x, x)
+    let b = f(x: x)
+    let c = f(to: x)
+    return f(x)
+}
+
+i64 run((i64 -> i64 fails LexError) f) {
+    return f(1)
+}
+
+void main() {
+}

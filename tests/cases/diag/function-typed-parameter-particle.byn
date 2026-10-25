@@ -1,0 +1,9 @@
+bool holds(List<i64> xs, (i64 -> bool) p) => true
+
+bool isBig(i64 x) => x > 2
+
+bool keep(i64 x, by (i64 -> bool) p) => p(x)
+
+void main() {
+    let a = keep(3, isBig)
+}

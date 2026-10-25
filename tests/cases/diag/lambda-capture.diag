@@ -1,0 +1,35 @@
+error BYN2821: `total` cannot be captured: it is a `ref` parameter
+
+  8 │ i64 bump(ref i64 total) => apply(x => x + total)
+    │                                           ^^^^^
+    │
+  help: pass it as a plain parameter
+
+error BYN2821: `this` cannot be captured: a lambda does not capture `this`
+
+  14 │         let a = apply(x => x * this.count)
+     │                                ^^^^
+     │
+  help: copy the fields you need into `let` values first
+
+error BYN2821: `count` cannot be captured: it is read through `this`, which a lambda does not
+capture
+
+  15 │         let b = apply(x => x * count)
+     │                                ^^^^^
+     │
+  help: copy the fields you need into `let` values first
+
+error BYN2821: `step` cannot be captured: it is a `var`
+
+  25 │     let a = apply(x => x + step)
+     │                            ^^^^
+     │
+  help: copy it into a `let` first
+
+error BYN2821: `r` cannot be captured: it is a `var`
+
+  30 │             print($"{apply(x => x + r)}")
+     │                                     ^
+     │
+  help: copy it into a `let` first

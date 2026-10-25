@@ -62,7 +62,11 @@ internal static class EffectAnalysis
                     {
                         BoundInterpolated when !sinks.Contains(node) => (["alloc"], true),
                         BoundCall { Function.Kind: FunctionKind.Builtin } call => (Builtin(call.Function.Builtin), true),
-                        BoundCall call => (Visible(call.Function), false),
+                        // A call through a function-typed parameter adds nothing: whoever passed the value is charged (R16).
+                        // Its arguments are still charged here like any call's.
+                        BoundCall { Function.Kind: FunctionKind.Invoke, Receiver: BoundLocal { Local: ParameterSymbol } } call => (Passed(call).SelectMany(p => Visible(p.Function)).Concat(PassedValues(call)), false),
+                        BoundCall { Function.Kind: FunctionKind.Invoke, Receiver.Type: FunctionType type } call => (type.Uses.Concat(Passed(call).SelectMany(p => Visible(p.Function))).Concat(PassedValues(call)), false),
+                        BoundCall call => (Visible(call.Function).Concat(Passed(call).SelectMany(p => Visible(p.Function))).Concat(PassedValues(call)), false),
                         BoundBuiltinCall b => (Member(b.Member), true),
                         BoundCollection { Type: ListType or MapType } => (["alloc"], true),
                         _ => ((IEnumerable<string>)[], false),
@@ -99,6 +103,30 @@ internal static class EffectAnalysis
             }
         }
 
+        // Outside a parameter, a function type's `uses` bounds what converts to it (R16, Q359).
+        foreach (var fn in functions)
+        {
+            if (fn.IsInstance || fn.Body is null || fn.File is null) continue;
+            var passed = new HashSet<BoundNode>(ReferenceEqualityComparer.Instance);
+            foreach (var node in BoundTree.Descendants(fn.Body))
+            {
+                if (node is BoundCall call)
+                    foreach (var (value, _) in Passed(call)) passed.Add(value);
+                var (function, type) = node switch
+                {
+                    BoundLambda l => (l.Lambda, l.FunctionType),
+                    BoundFunctionRef r => (r.Function, r.FunctionType),
+                    _ => (null, null),
+                };
+                if (function is null || type is null || passed.Contains(node)) continue;
+                var effects = Visible(function).ToHashSet();
+                foreach (var effect in Primitives.Where(e => effects.Contains(e) && !type.Uses.Contains(e)))
+                    c.Report(DiagnosticCodes.EffectBoundExceeded, fn.File.Source, node.Syntax.Span,
+                        [function.Name, effect, type.Uses.Count == 0 ? "pure" : "uses " + string.Join(", ", type.Uses), type.DisplayName],
+                        label: $"uses `{effect}`", help: $"add `{effect}` to the function type's `uses`, or pass a function without it");
+            }
+        }
+
         foreach (var s in c.Modules.SelectMany(m => m.Structs).Where(s => s.Template is null))
             foreach (var conformance in s.Conformances)
                 foreach (var (member, witness) in conformance.Witnesses)
@@ -111,6 +139,36 @@ internal static class EffectAnalysis
                             [witness.Name, effect, bound.Count == 0 ? "pure" : "uses " + string.Join(", ", Primitives.Where(bound.Contains)), $"{conformance.Interface.Name}.{member.Name}"],
                             label: $"uses `{effect}`", help: $"declare `{effect}` on `{conformance.Interface.Name}.{member.Name}`, or pass a function without it");
                 }
+    }
+
+    /// <summary>The functions and lambdas <paramref name="call"/> passes to function-typed parameters, which charge their effects to the caller (R16).</summary>
+    private static IEnumerable<(BoundExpr Value, FunctionSymbol Function)> Passed(BoundCall call)
+    {
+        for (var i = 0; i < call.Arguments.Length && i < call.Function.Parameters.Count; i++)
+        {
+            if (call.Function.Parameters[i].Type is not FunctionType) continue;
+            var value = call.Arguments[i];
+            while (value is BoundConversion conversion) value = conversion.Operand;
+            if (value is BoundLambda l) yield return (value, l.Lambda);
+            else if (value is BoundFunctionRef r) yield return (value, r.Function);
+        }
+    }
+
+    /// <summary>
+    /// The declared effects of function-typed values other than lambdas, functions and forwarded parameters that
+    /// <paramref name="call"/> passes to function-typed parameters, such as a local holding a lambda (R16).
+    /// </summary>
+    private static IEnumerable<string> PassedValues(BoundCall call)
+    {
+        for (var i = 0; i < call.Arguments.Length && i < call.Function.Parameters.Count; i++)
+        {
+            if (call.Function.Parameters[i].Type is not FunctionType) continue;
+            var value = call.Arguments[i];
+            while (value is BoundConversion conversion) value = conversion.Operand;
+            if (value is BoundLambda or BoundFunctionRef or BoundLocal { Local: ParameterSymbol }) continue;
+            if (value.Type is FunctionType type)
+                foreach (var effect in type.Uses) yield return effect;
+        }
     }
 
     /// <summary>
@@ -183,7 +241,7 @@ internal static class EffectAnalysis
     private const string UnknownEffectHelp =
         "choose one of `alloc`, `suspend`, `net`, `fs`, `clock`, `random`, `env`, `process`, `console`, or a declared effect alias";
 
-    private static void ReportUnknown(Compilation c, SourceText source, Name name) =>
+    internal static void ReportUnknown(Compilation c, SourceText source, Name name) =>
         c.Report(DiagnosticCodes.UnknownEffect, source, name.Span, [name.Text], label: "not an effect or an `effect` alias of this module", help: UnknownEffectHelp);
 
     /// <summary>Adds <paramref name="effects"/> to the <c>uses</c> clause, or writes one after the rest of the signature (clause order §5).</summary>

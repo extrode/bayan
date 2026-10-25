@@ -378,6 +378,10 @@ internal sealed class OwnershipAnalysis
                 foreach (var child in BoundTree.Children(e))
                     if (child is BoundExpr ce) state = Expr(ce, state);
                 foreach (var stored in StoredOperands(e)) CheckStore(stored);
+                // A local read inside nested lambdas is a capture of each of them; only the function that owns it reports it.
+                if (e is BoundLambda l)
+                    foreach (var capture in l.Captures.Where(c => _fn.Locals.Contains(c.Local)))
+                        CheckStore(capture, captured: true);
                 return e.Type.IsNever && e is not BoundErrorExpr ? State.Unreachable() : state;
             }
         }
@@ -398,12 +402,18 @@ internal sealed class OwnershipAnalysis
     // ── Implicit copies (BYN2780) ────────────────────────────────────────────────
 
     /// <summary><paramref name="value"/> is stored somewhere new: it must not be an existing unique value.</summary>
-    private void CheckStore(BoundExpr value)
+    private void CheckStore(BoundExpr value, bool captured = false)
     {
         if (!IsPlace(value) || TypeFacts.WhyUnique(value.Type) is not { } why) return;
         var core = StripConversions(value);
         var span = core.Syntax.Span;
         var text = _source.GetText(span);
+        // A lambda copies its captures; a copy or a move of the local would be captured the same way.
+        if (captured)
+        {
+            Report(DiagnosticCodes.ImplicitCopy, span, [why], help: $"copy what the lambda needs from `{text}` into `let` values first");
+            return;
+        }
         if (core is BoundWith w && StripConversions(w.Target) is var target && IsMovable(target))
         {
             var name = _source.GetText(target.Syntax.Span);

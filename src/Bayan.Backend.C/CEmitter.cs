@@ -182,6 +182,8 @@ public sealed class CEmitter
         if (f.Kind == FunctionKind.Test) return "byn_test_" + _testIndex[f];
         var module = f.Module.CName;
         if (f.Kind == FunctionKind.Main) return $"byn_{module}__main";
+        // `f$lambda2` in an instance of `f` is named after that instance, so each instantiation has its own.
+        if (f.Kind == FunctionKind.Lambda) return FunctionName(f.Enclosing!) + "__lambda" + f.Name[(f.Name.LastIndexOf("$lambda", StringComparison.Ordinal) + 7)..];
         if (f.Owner is { } owner)
         {
             var member = f.Kind switch
@@ -292,6 +294,8 @@ public sealed class CEmitter
         ArrayType a => $"arr{a.Length}_" + Key(a.Element),
         TupleType tt => $"tup{tt.Fields.Count}_" + string.Join("_", tt.Fields.Select(f => Key(f.Type))),
         RangeType r => Key(r.Layout),
+        // The fails and uses markers come before the return key, so a nested function type cannot share a key with an outer one.
+        FunctionType f => $"fn{f.Parameters.Count}" + (f.Fails.Count > 0 ? "f" : "") + (f.Uses.Count > 0 ? $"u{f.Uses.Count}" : "") + "_" + string.Concat(f.Parameters.Select(p => Key(p) + "_")) + string.Concat(f.Uses.Select(u => u + "_")) + Key(f.Return),
         _ => throw new InvalidOperationException($"no C type for {t.DisplayName}"),
     };
 
@@ -381,6 +385,11 @@ public sealed class CEmitter
                     members.Add((PrimitiveType.I64, $"const struct {vt}* vt"));
                     break;
                 }
+                case FunctionType f:
+                    // The code and the environment it is called with; parameter and return types need only their typedefs.
+                    members.Add((PrimitiveType.I64, FunctionSignature(f, "(*fn)", out _)));
+                    members.Add((PrimitiveType.I64, "void* env"));
+                    break;
                 case UnionSymbol u:
                 {
                     // Unit variants have no struct; a union of only unit variants has no `u`.
@@ -444,6 +453,35 @@ public sealed class CEmitter
             ps.Add($"{CType(m.ReturnType)}* byn_out");
         }
         return $"{(m.Fails ? ErrorCType : CType(m.ReturnType))} {declarator}({string.Join(", ", ps)})";
+    }
+
+    /// <summary>A function type's C signature around <paramref name="declarator"/>, in <c>Signature</c>'s <c>fails</c> convention with
+    /// <c>void* env</c> first; <paramref name="args"/> are the names of the parameters after <c>env</c>.</summary>
+    internal string FunctionSignature(FunctionType f, string declarator, out List<string> args)
+    {
+        var fails = f.Fails.Count > 0;
+        var ps = new List<string> { "void* env" };
+        args = new List<string>();
+        for (var k = 0; k < f.Parameters.Count; k++)
+        {
+            args.Add("a" + k);
+            ps.Add($"{CType(f.Parameters[k])} a{k}");
+        }
+        if (fails && !f.Return.IsVoid && !f.Return.IsNever)
+        {
+            args.Add("byn_out");
+            ps.Add($"{CType(f.Return)}* byn_out");
+        }
+        return $"{(fails ? ErrorCType : CType(f.Return))} {declarator}({string.Join(", ", ps)})";
+    }
+
+    /// <summary>A named function as a value of <paramref name="type"/>: a thunk that takes and ignores the environment.</summary>
+    internal string FunctionThunk(FunctionSymbol fn, FunctionType type)
+    {
+        var name = "bynh_fnthunk_" + FunctionName(fn);
+        var proto = "static " + FunctionSignature(type, name, out var args);
+        var returns = type.Fails.Count > 0 || (!type.Return.IsVoid && !type.Return.IsNever);
+        return Helper(name, proto, () => $"{{\n    (void)env;\n    {(returns ? "return " : "")}{FunctionName(fn)}({string.Join(", ", args)});\n}}\n");
     }
 
     // Vtables, one per (conformer, interface) converted to `dyn ref`, emitted after the helper prototypes they point at.
@@ -952,6 +990,12 @@ internal sealed class FunctionEmitter
         _file = c.FileName(_fn);
         _linePath = _fn.File is null ? null : CEmitter.CString(c.FilePath(_fn));
         foreach (var p in _fn.Parameters) _names[p] = "p_" + p.Name;
+        // A lambda reads each capture from its environment tuple (spec 007 R13).
+        if (_fn.Captures.Count > 0)
+        {
+            var env = c.CType(new TupleType(_fn.Captures.Select(l => new TupleField(null, l.Type)).ToArray()));
+            for (var i = 0; i < _fn.Captures.Count; i++) _names[_fn.Captures[i]] = $"(({env}*)env)->item{i + 1}";
+        }
         var n = 0;
         foreach (var l in f.Locals)
             _names[l] = l.Kind == LocalKind.Temp ? "t" + n++ : "l" + n++ + "_" + l.Name;
@@ -966,6 +1010,7 @@ internal sealed class FunctionEmitter
         else if (_fn.Kind == FunctionKind.Constructor) result = _c.CType(_fn.Owner!);
         else result = _c.CType(_fn.ReturnType);
         var ps = new List<string>();
+        if (_fn.Kind == FunctionKind.Lambda) ps.Add("void* env");
         if (_fn.HasThis && _fn.Kind != FunctionKind.Constructor) ps.Add($"{_c.CType(_fn.Owner!)}* self");
         foreach (var p in _fn.Parameters) ps.Add($"{_c.CType(p.Type)}{(p.IsByRef ? "*" : "")} {_names[p]}");
         if (_fn.Fails && ReturnsValue) ps.Add($"{_c.CType(_fn.ReturnType)}* byn_out");
@@ -991,6 +1036,7 @@ internal sealed class FunctionEmitter
             if (HasSlot(l)) Line($"byn_own_slot {Slot(l)} = {{0}};");
         for (var i = 0; i < _f.ContextSlots; i++) Line($"byn_alloc* ctx{i} = byn_context;");
         for (var i = 0; i < _f.PanicSlots; i++) Line($"byn_panic_handler ph{i};");
+        if (_fn is { Kind: FunctionKind.Lambda, Captures.Count: 0 }) Line("(void)env;");
         foreach (var s in _f.Body.Statements) Statement(s);
         if (_fn.Kind == FunctionKind.Constructor) Line("return self_v;");
         else if (_fn.Fails && !ReturnsValue) Line($"return ({_c.ErrorCType}){{0}};");
@@ -1470,6 +1516,11 @@ internal sealed class FunctionEmitter
                 return u.Target.Type is ArrayType ? $"{Expr(u.Target)}.v[{Expr(u.Index)}]" : $"{Expr(u.Target)}.ptr[{Expr(u.Index)}]";
             case LNextChar n:
                 return $"byn_str_next({Expr(n.Text)}, &{_names[n.Position]})";
+            // A named function goes through a thunk taking the environment; a lambda takes it already.
+            case LFunctionValue { Function.Kind: FunctionKind.Lambda } f:
+                return $"(({_c.CType(f.Type)}){{{_c.FunctionName(f.Function)}, {(f.Env is null ? "NULL" : "&" + _names[f.Env])}}})";
+            case LFunctionValue f:
+                return $"(({_c.CType(f.Type)}){{{_c.FunctionThunk(f.Function, f.FunctionType)}, NULL}})";
             default:
                 throw new InvalidOperationException($"cannot emit {e.GetType().Name}");
         }
@@ -1659,9 +1710,15 @@ internal sealed class FunctionEmitter
         }
         // Through `dyn ref` the conformer's method is the vtable slot; the receiver is a local, so naming it twice is safe.
         var dyn = c.Receiver is { Type: DynRefType } ? Expr(c.Receiver) : null;
+        // Through a function value: its code with its environment first; lowering leaves the receiver a local, so naming it twice is safe.
+        var value = fn.Kind == FunctionKind.Invoke ? Expr(c.Receiver!) : null;
         if (dyn is not null)
         {
             args.Add(dyn + ".data");
+        }
+        else if (value is not null)
+        {
+            args.Add(value + ".env");
         }
         else if (fn.HasThis && fn.Kind != FunctionKind.Constructor)
         {
@@ -1678,7 +1735,7 @@ internal sealed class FunctionEmitter
                 args.Add(fn.Parameters[i].IsByRef ? "&" + Expr(c.Arguments[i]) : Expr(c.Arguments[i]));
         }
         if (result is not null) args.Add(result);
-        return $"{(dyn is not null ? $"{dyn}.vt->{CEmitter.SlotName(fn)}" : _c.FunctionName(fn))}({string.Join(", ", args)})";
+        return $"{(dyn is not null ? $"{dyn}.vt->{CEmitter.SlotName(fn)}" : value is not null ? value + ".fn" : _c.FunctionName(fn))}({string.Join(", ", args)})";
     }
 
     private string Builtin(BoundBuiltinCall b)

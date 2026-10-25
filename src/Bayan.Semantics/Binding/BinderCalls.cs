@@ -89,6 +89,9 @@ internal sealed partial class Binder
             case BoundErrorExpr:
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
+            // A call through a function value: the value is the receiver of its type's invoke symbol (R9).
+            case { Type: FunctionType ft }:
+                return BindFunctionCall(c, _c.InvokeSymbol(ft), callee);
             default:
                 Report(DiagnosticCodes.NotCallable, c.Callee.Span, [callee.Type.DisplayName]);
                 BindArgumentsForRecovery(c);
@@ -172,7 +175,8 @@ internal sealed partial class Binder
     {
         foreach (var a in c.Args)
         {
-            if (a.Value is InterpolatedExpr || _prebound.Remove(a)) continue;
+            // A lambda or `it` argument has no type to bind with once the call failed.
+            if (a.Value is InterpolatedExpr or LambdaExpr || MentionedIt(a.Value) is not null || _prebound.Remove(a)) continue;
             BindExprOrType(a.Value);
         }
     }
@@ -202,7 +206,9 @@ internal sealed partial class Binder
             BuiltinFunction.IoRunBatch => "Io.runBatch",
             _ => null,
         };
-        var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
+        // An invoke symbol's parameters have no names or particles, so a call through a value is positional (R9).
+        var name = fn.Kind == FunctionKind.Invoke ? Source.GetText(c.Callee.Span) : fn.Name;
+        var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind is not (FunctionKind.Builtin or FunctionKind.Invoke), name);
         (_printArgument, _sinkArgument) = (outer, outerSink);
         if (receiver is not null && ReceiverStates(fn) is { } wanted) ReportWrongState(fn.Name, receiver, wanted, receiver.Syntax.Span);
         // A call that `becomes` changes the receiver's state; a statement learns the new state after it (`LearnBecomes`). A call
@@ -224,8 +230,8 @@ internal sealed partial class Binder
             _c.RequiresChecks.Add(new RequiresCheck(Source, c, fn, args));
         if (fn.Fails && !ReferenceEquals(_handled, c))
         {
-            if (_covered is not null) _covered.Add((c, fn.Name));
-            else ReportUnhandled(c, fn.Name);
+            if (_covered is not null) _covered.Add((c, name));
+            else ReportUnhandled(c, name);
         }
         return new BoundCall(c, fn, receiver, args, receiver is null ? fn.ReturnType : ReturnTypeThrough(receiver.Type, fn));
     }
@@ -266,12 +272,17 @@ internal sealed partial class Binder
             else
                 p = sawNamed || positional >= fn.Parameters.Count ? null : fn.Parameters[positional++];
             if (p is null || !TypeParameterType.Occurs(p.Type) || _prebound.ContainsKey(arg)) continue;
-            var value = BindExpr(arg.Value, null);
+            // A lambda or `it` argument never contributes to inference (R12).
+            if (arg.Value is LambdaExpr || p.Type is FunctionType { Parameters.Count: 1 } && MentionedIt(arg.Value) is not null) continue;
+            var value = p.Type is FunctionType ? BindExprFor(arg.Value, p.Type) : BindExpr(arg.Value, null);
             _prebound[arg] = value;
             // A known-state local passed `ref` or `out` is inferred from its declared type, as `BindArgument` passes it (Q295).
+            // A module function named for a function-typed parameter is inferred from its signature (R12).
             var type = p.Modifier is ParamModifier.Ref or ParamModifier.Out && value is BoundLocal known && KnownState(known.Local) is not null
                 ? known.Local.Type
-                : value.Type;
+                : value is BoundMethodGroup { Receiver: null, Function: { Kind: FunctionKind.Function, Owner: null, IsGeneric: false } named }
+                    ? new FunctionType(named.Parameters.Select(x => x.Type).ToArray(), named.ReturnType, named.ErrorSets.ToArray(), [])
+                    : value.Type;
             conflict |= !Unify(p.Type, type, found, fn, arg.Value.Span);
         }
         if (conflict) return null;
@@ -330,6 +341,9 @@ internal sealed partial class Binder
                     || pt.Fields.Zip(at.Fields).All(f => Unify(f.First.Type, f.Second.Type, found, fn, span));
             case ResultType pr:
                 return a is not ResultType ar || Unify(pr.Value, ar.Value, found, fn, span);
+            case FunctionType pf:
+                return a is not FunctionType af || af.Parameters.Count != pf.Parameters.Count
+                    || pf.Parameters.Zip(af.Parameters).All(x => Unify(x.First, x.Second, found, fn, span)) && Unify(pf.Return, af.Return, found, fn, span);
             case StructSymbol { Template: { } ps2 } pi:
                 return a is not StructSymbol ai || ai.Template != ps2
                     || pi.TypeArguments.Zip(ai.TypeArguments).All(x => Unify(x.First, x.Second, found, fn, span));
@@ -509,11 +523,66 @@ internal sealed partial class Binder
 
     private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type, string? callee = null)
     {
-        var value = _prebound.Remove(arg, out var early) ? early : Built(BindExpr(arg.Value, type), arg.Value);
+        var value = _prebound.Remove(arg, out var early) ? early
+            : type is FunctionType { Parameters.Count: 1 } ft && arg.Value is not LambdaExpr && MentionedIt(arg.Value) is { } it ? BindIt(arg.Value, it, ft)
+            : Built(BindExprFor(arg.Value, type), arg.Value);
         if (arg.Modifier == ArgModifier.Move) value = BindMove(arg, value);
         if (callee is not null && type is StateType wanted && ReportWrongState(callee, value, wanted, arg.Value.Span)) return new BoundErrorExpr(arg.Value);
         // A type argument inferred from the value is not a typed use of it.
         return type is null ? value : Convert(value, type, arg.Value.Span, argument: true, constrains: early is null);
+    }
+
+    /// <summary>
+    /// An argument that mentions <c>it</c> where a one-parameter function type is expected: a lambda whose parameter is
+    /// <c>it</c>. Inside another, or inside a <c>requires</c> rule where <c>it</c> is the checked value, it is BYN2029 (R7, Q361).
+    /// </summary>
+    private BoundExpr BindIt(Expr e, Name it, FunctionType type)
+    {
+        if (_itDepth > 0)
+        {
+            // Outside any lambda, the `it` in scope is a `requires` rule's checked value.
+            Report(DiagnosticCodes.NestedIt, it.Span, [], help: _lambdas.Count == 0 ? "name the lambda's parameter: `x => …`" : "name the inner lambda's parameter: `x => …`");
+            return new BoundErrorExpr(e);
+        }
+        _itDepth++;
+        var lambda = BindLambda(e, [it], e, null, type);
+        _itDepth--;
+        return lambda;
+    }
+
+    /// <summary>The first <c>it</c> the syntax of <paramref name="e"/> mentions outside a lambda nested in it.</summary>
+    private static Name? MentionedIt(Expr? e)
+    {
+        return e switch
+        {
+            NameExpr { Name: { Text: "it" } n, TypeArgs.Length: 0 } => n,
+            ParenExpr p => MentionedIt(p.Inner),
+            MemberExpr m => MentionedIt(m.Target),
+            CallExpr c => MentionedIt(c.Callee) ?? First(c.Args.Select(a => a.Value)),
+            IndexExpr i => MentionedIt(i.Target) ?? MentionedIt(i.Index),
+            UnaryExpr u => MentionedIt(u.Operand),
+            BinaryExpr b => MentionedIt(b.Left) ?? MentionedIt(b.Right),
+            RangeExpr r => MentionedIt(r.Start) ?? MentionedIt(r.End),
+            ConditionalExpr c => MentionedIt(c.Condition) ?? MentionedIt(c.WhenTrue) ?? MentionedIt(c.WhenFalse),
+            CastExpr c => MentionedIt(c.Operand),
+            IsExpr i => MentionedIt(i.Value),
+            ExceptExpr x => MentionedIt(x.Value),
+            InExpr i => MentionedIt(i.Value) ?? MentionedIt(i.Range),
+            SwitchExpr s => MentionedIt(s.Value) ?? First(s.Arms.SelectMany(a => new[] { a.Guard, a.Value })),
+            TryExpr t => MentionedIt(t.Operand),
+            MoveExpr m => MentionedIt(m.Operand),
+            CatchExpr c => MentionedIt(c.Operand) ?? MentionedIt(c.Variant) ?? MentionedIt(c.Handler),
+            StructLiteralExpr s => First(s.Fields.Select(f => f.Value)),
+            WithExpr w => MentionedIt(w.Target) ?? First(w.Fields.Select(f => f.Value)),
+            SpreadExpr s => MentionedIt(s.Operand),
+            MapEntryExpr m => MentionedIt(m.Key) ?? MentionedIt(m.Value),
+            CollectionExpr c => First(c.Elements),
+            TupleExpr t => First(t.Elements.Select(x => x.Value)),
+            InterpolatedExpr i => First(i.Parts.OfType<InterpolationHole>().Select(h => h.Expr)),
+            _ => null,
+        };
+
+        static Name? First(IEnumerable<Expr?> es) => es.Select(MentionedIt).FirstOrDefault(n => n is not null);
     }
 
     private BoundExpr BindConstruction(CallExpr c, TypeSymbol type)
@@ -818,7 +887,7 @@ internal sealed partial class Binder
             BoundIndex or BoundBuiltinCall { Member: BuiltinMember.MapIndex } => ("an element", "copy the element with `.copy(to: alloc)`; the collection keeps it"),
             BoundTupleElement => ("a tuple element", "move the whole tuple instead"),
             BoundThis => ("`this`", "move a `.copy(to: alloc)` of it instead; a method borrows `this`"),
-            BoundCall or BoundBuiltinCall or BoundStructLiteral or BoundCollection or BoundLiteral => ("a fresh value", "remove the `move`; a fresh value needs none"),
+            BoundCall or BoundBuiltinCall or BoundStructLiteral or BoundCollection or BoundLiteral or BoundLambda => ("a fresh value", "remove the `move`; a fresh value needs none"),
             _ => ("this expression", "move a local variable or a `move` parameter instead"),
         };
         Report(DiagnosticCodes.CannotMove, operand.Syntax.Span, [what], help: help);

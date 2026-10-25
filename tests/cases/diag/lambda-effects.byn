@@ -1,0 +1,34 @@
+// `each` stays pure: a call through its function-typed parameter charges whoever passed the value.
+public void each(List<i64> xs, by (i64 -> void) f) {
+    for x in xs {
+        f(x)
+    }
+}
+
+// A forwarded parameter adds nothing where it is forwarded.
+public void forward(List<i64> xs, by (i64 -> void) f) {
+    each(xs, by: f)
+}
+
+// The passing call carries the lambda's `console`, which a public function must declare.
+public void quiet(List<i64> xs) {
+    each(xs, by: x => print($"{x}"))
+}
+
+public void loud(List<i64> xs) uses console {
+    each(xs, by: x => print($"{x}"))
+}
+
+// Outside a parameter, the function type's `uses` is a bound.
+public void stored() uses console {
+    let f: i64 -> void = x => print($"{x}")
+    f(1)
+    let g: i64 -> void uses console = x => print($"{x}")
+    g(2)
+}
+
+void main() {
+    let xs: List<i64> = [1, 2]
+    loud(xs)
+    stored()
+}

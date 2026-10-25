@@ -165,6 +165,7 @@ public sealed class TypeParameterType(string name) : TypeSymbol
         StructSymbol s => s.IsGeneric,
         StateType st => st.Struct.IsGeneric,
         UnionSymbol u => u.IsGeneric,
+        FunctionType f => f.Parameters.Any(Occurs) || Occurs(f.Return),
         InterfaceSymbol i => i.IsGeneric,
         DynRefType d => Occurs(d.Interface),
         _ => false,
@@ -359,6 +360,48 @@ public sealed class TupleType(IReadOnlyList<TupleField> fields) : ConstructedTyp
             if (Fields[i].Name == name || "item" + (i + 1) == name) return i;
         return -1;
     }
+}
+
+/// <summary>
+/// <c>(A, B) -> R fails E uses net</c>: a (code, environment) pair that borrows the frame that made it.
+/// Error sets compare as a set; <see cref="Uses"/> holds effect names, sorted.
+/// </summary>
+public sealed class FunctionType(IReadOnlyList<TypeSymbol> parameters, TypeSymbol @return, IReadOnlyList<ErrorSetSymbol> fails, IReadOnlyList<string> uses)
+    : ConstructedType
+{
+    public IReadOnlyList<TypeSymbol> Parameters { get; } = parameters;
+
+    public TypeSymbol Return { get; } = @return;
+
+    public IReadOnlyList<ErrorSetSymbol> Fails { get; } = fails;
+
+    public IReadOnlyList<string> Uses { get; } = uses.Order(StringComparer.Ordinal).ToArray();
+
+    // Unused: Equals and GetHashCode below compare all four parts.
+    protected override object Key => Return;
+
+    public override bool Equals(object? obj) =>
+        obj is FunctionType other && Parameters.SequenceEqual(other.Parameters) && Return.Equals(other.Return) &&
+        Fails.Count == other.Fails.Count && Fails.All(other.Fails.Contains) && Uses.SequenceEqual(other.Uses);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        foreach (var p in Parameters) hash.Add(p);
+        hash.Add(Return);
+        hash.Add(Fails.Aggregate(0, (h, s) => h ^ s.GetHashCode()));
+        foreach (var u in Uses) hash.Add(u, StringComparer.Ordinal);
+        return hash.ToHashCode();
+    }
+
+    /// <summary>A lone parameter needs parentheses when it is itself a tuple or function type.</summary>
+    public override string DisplayName =>
+        (Parameters is [var p] && p is not (TupleType or FunctionType) ? p.DisplayName : "(" + string.Join(", ", Parameters.Select(p => p.DisplayName)) + ")") +
+        " -> " + (Return is FunctionType && (Fails.Count > 0 || Uses.Count > 0) ? "(" + Return.DisplayName + ")" : Return.DisplayName) +
+        (Fails.Count > 0 ? " fails " + string.Join(", ", Fails.Select(s => s.DisplayName)) : "") +
+        (Uses.Count > 0 ? " uses " + string.Join(", ", Uses) : "");
+
+    public override bool IsBorrow => true;
 }
 
 /// <summary><c>Result&lt;T, E&gt;</c>: a value or an error from <see cref="Error"/> (spec §3.8).</summary>

@@ -1,0 +1,17 @@
+string get((() -> string) f) => f()
+
+void main() {
+    var buf = StrBuf()
+    buf.append("abc")
+    let s = buf.view
+    let t = get(() => s)
+    buf.clear()
+    print(t)
+    var kept = ""
+    {
+        using let arena = Arena()
+        let name = "ann".copy(to: arena)
+        kept = get(() => name)
+    }
+    print(kept)
+}

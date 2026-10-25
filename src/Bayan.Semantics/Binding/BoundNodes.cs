@@ -119,6 +119,8 @@ public enum ConversionKind
     FromNever,
     /// <summary>A <c>T?</c> let local or parameter read where a null check proved it present (spec §7.2).</summary>
     Narrow,
+    /// <summary>A module function named where a <see cref="FunctionType"/> of its exact signature is expected.</summary>
+    ToFunction,
     /// <summary>A conforming value or borrow viewed as <c>dyn ref I</c>: a borrow of the operand plus its vtable, never a move.</summary>
     ToDynRef,
 }
@@ -233,6 +235,12 @@ public sealed record BoundErrorExpr(Node Syntax) : BoundExpr(Syntax, ErrorType.I
 public sealed record BoundTypeRef(Node Syntax, TypeSymbol Referenced) : BoundExpr(Syntax, ErrorType.Instance);
 
 public sealed record BoundModuleRef(Node Syntax, ModuleSymbol Module) : BoundExpr(Syntax, ErrorType.Instance);
+
+/// <summary>A lambda: <see cref="Lambda"/> is the lifted function; <see cref="Captures"/> read each captured local as the value is made.</summary>
+public sealed record BoundLambda(Node Syntax, FunctionSymbol Lambda, BoundLocal[] Captures, FunctionType FunctionType) : BoundExpr(Syntax, FunctionType);
+
+/// <summary>A module function used as a value of a <see cref="FunctionType"/>.</summary>
+public sealed record BoundFunctionRef(Node Syntax, FunctionSymbol Function, FunctionType FunctionType) : BoundExpr(Syntax, FunctionType);
 
 // ── Statements ───────────────────────────────────────────────────────────────────
 

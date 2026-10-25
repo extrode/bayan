@@ -1,0 +1,37 @@
+bool isBig(i64 x) => x > 2
+
+i64 clamp(i64 x, to i64 max) {
+    if x > max {
+        return max
+    }
+    return x
+}
+
+string shout(string s) => $"{s}!"
+
+void greet(string name) {
+    print($"hello {name}")
+}
+
+bool keep(i64 x, by (i64 -> bool) p) => p(x)
+
+string hooked(string s, by (string -> string) hook) => hook(s)
+
+void each(string a, to string b, by (string -> void) act) {
+    act(a)
+    act(b)
+}
+
+void main() {
+    let f: i64 -> bool = isBig
+    print($"{f(3)} {f(1)}")
+    let g: (i64, i64) -> i64 = clamp
+    print($"{g(9, 4)} {g(2, 4)}")
+    print($"{keep(5, by: isBig)} {keep(0, by: isBig)}")
+    print(hooked("hi", by: shout))
+    let h: string -> string uses alloc = shout
+    print(h(h("twice")))
+    each("ana", to: "bo", by: greet)
+    let say: string -> void uses console = greet
+    say("cy")
+}

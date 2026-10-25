@@ -1,5 +1,6 @@
 using Bayan.Semantics.Binding;
 using Bayan.Semantics.Symbols;
+using Bayan.Syntax.Ast;
 
 namespace Bayan.Semantics;
 
@@ -44,6 +45,16 @@ public static class Conversions
         if (from is ErrorSetSymbol set && to is ErrorUnionType u && (u.Sets.Count == 0 || u.Sets.Contains(set))) return ConversionKind.Identity;
         return null;
     }
+
+    /// <summary>
+    /// <c>ToFunction</c> when module function <paramref name="fn"/> named as a value is a <paramref name="to"/>: its parameter
+    /// types, return type and error sets equal the type's exactly (spec 007 R3); effects are checked at the conversion (R16).
+    /// </summary>
+    public static ConversionKind? Implicit(FunctionSymbol fn, FunctionType to) =>
+        fn.Parameters.All(p => p.Modifier == ParamModifier.None) && fn.Parameters.Select(p => p.Type).SequenceEqual(to.Parameters)
+        && fn.ReturnType.Equals(to.Return) && fn.Fails == to.Fails.Count > 0 && fn.ExcludedErrors.Count == 0
+        && fn.ErrorSets.Count == to.Fails.Count && fn.ErrorSets.All(to.Fails.Contains)
+            ? ConversionKind.ToFunction : null;
 
     /// <summary>Lossless numeric widening; 64-bit <c>isize</c>/<c>usize</c> are assumed.</summary>
     public static bool IsWidening(PrimitiveType from, PrimitiveType to)

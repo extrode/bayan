@@ -1,0 +1,6 @@
+effect io = net, fs
+
+bool check((i32 -> bool uses io, network) p) => true
+
+void main() {
+}

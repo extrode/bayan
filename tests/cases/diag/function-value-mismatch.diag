@@ -1,0 +1,41 @@
+error BYN2202: expected `i64 -> bool`, found `bool isChecked(i64) fails LexError`
+
+  34 │     let a = keep(isChecked)
+     │                  ^^^^^^^^^
+     │
+  help: pass a function of type `i64 -> bool`
+
+error BYN2202: expected `i64 -> bool fails LexError`, found `bool isBig(i64)`
+
+  35 │     let b = keepChecked(isBig)
+     │                         ^^^^^
+     │
+  help: pass a function of type `i64 -> bool fails LexError`
+
+error BYN2202: expected `i64 -> bool fails ReadError`, found `bool isChecked(i64) fails LexError`
+
+  36 │     let c = keepRead(isChecked)
+     │                      ^^^^^^^^^
+     │
+  help: pass a function of type `i64 -> bool fails ReadError`
+
+error BYN2202: expected `i64 -> i64`, found `bool isBig(i64)`
+
+  37 │     let d: i64 -> i64 = isBig
+     │                         ^^^^^
+     │
+  help: pass a function of type `i64 -> i64`
+
+error BYN2202: expected `i64 -> bool fails LexError`, found `bool isInferred(i64) fails`
+
+  38 │     let e = keepChecked(isInferred)
+     │                         ^^^^^^^^^^
+     │
+  help: declare the error sets of `isInferred`: `fails LexError`
+
+error BYN2202: expected `i64 -> void`, found `void bump(ref i64)`
+
+  39 │     let f = keepVoid(bump)
+     │                      ^^^^
+     │
+  help: pass a function of type `i64 -> void`

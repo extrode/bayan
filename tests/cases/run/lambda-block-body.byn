@@ -1,0 +1,24 @@
+i64 apply((i64 -> i64 uses console) f, to i64 x) => f(x)
+
+void twice((i64 -> void uses console) f) {
+    f(1)
+    f(2)
+}
+
+void main() {
+    let limit = 10
+    let pick: i64 -> i64 uses console = x => {
+        defer print($"done {x}")
+        if x > limit {
+            return limit
+        }
+        return x * 2
+    }
+    print($"{pick(3)}")
+    print($"{pick(30)}")
+    print($"{apply(pick, to: 4)}")
+    twice(n => {
+        defer print($"after {n}")
+        print($"call {n}")
+    })
+}

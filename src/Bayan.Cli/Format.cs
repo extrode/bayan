@@ -17,8 +17,8 @@ internal static class Format
     private static readonly HashSet<string> InputForms = new(StringComparer.Ordinal)
     {
         "BYN1007", "BYN1017", "BYN1018", "BYN1019", "BYN1020", "BYN1021", "BYN1022", "BYN1023", "BYN1025",
-        "BYN1029", "BYN1031", "BYN1033",
-        "BYN1040", "BYN1041", "BYN1042", "BYN1043", "BYN1044", "BYN1045", "BYN1047", "BYN1048", "BYN1050", "BYN1051", "BYN1053", "BYN1057", "BYN1062",
+        "BYN1028", "BYN1029", "BYN1031", "BYN1033",
+        "BYN1040", "BYN1041", "BYN1042", "BYN1043", "BYN1044", "BYN1045", "BYN1047", "BYN1048", "BYN1050", "BYN1051", "BYN1053", "BYN1055", "BYN1057", "BYN1062",
         "BYN1058", "BYN1059", "BYN1060", "BYN1061", "BYN1063", "BYN1065", "BYN1066", "BYN1068",
         "BYN6001", "BYN6006", "BYN7006",
     };

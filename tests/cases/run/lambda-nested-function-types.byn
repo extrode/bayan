@@ -1,0 +1,9 @@
+i64 add(i64 a, to i64 b) => a + b
+i64 inc(i64 a) => a + 1
+i64 useA((i64 -> i64) f, to i64 x) => f(x)
+i64 useB(((i64, i64) -> i64) f) => f(2, 3)
+i64 callA((((i64 -> i64), i64) -> i64) g) => g(inc, 1)
+i64 callB((((i64, i64) -> i64) -> i64) g) => g(add)
+void main() {
+    print($"{callA(useA)} {callB(useB)}")
+}

@@ -179,7 +179,8 @@ public sealed class PropertySymbol(string name, Location location, StructSymbol 
     public FunctionSymbol Getter { get; set; } = null!;
 }
 
-public enum FunctionKind { Function, Method, Constructor, Getter, Main, Test, Builtin }
+/// <summary><c>Lambda</c>: a lambda lifted to a function. <c>Invoke</c>: the call through a value of a <see cref="FunctionType"/>.</summary>
+public enum FunctionKind { Function, Method, Constructor, Getter, Main, Test, Builtin, Lambda, Invoke }
 
 public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol module, FunctionKind kind) : Symbol(name, location)
 {
@@ -240,14 +241,20 @@ public sealed class FunctionSymbol(string name, Location? location, ModuleSymbol
 
     public IReadOnlyList<TypeSymbol> TypeArguments { get; init; } = [];
 
+    /// <summary>For a lambda: the outer locals and parameters it reads, in first-use order.</summary>
+    public List<LocalSymbol> Captures { get; } = new();
+
+    /// <summary>For a lambda: the function it was written in.</summary>
+    public FunctionSymbol? Enclosing { get; set; }
+
     /// <summary>What each type parameter name means in the signature and body (the owner's included).</summary>
     public IReadOnlyDictionary<string, TypeSymbol>? TypeMap { get; set; }
 
-    /// <summary>Has a type parameter left (a template, or a member of one): bound only to check it, never analysed, lowered or emitted.</summary>
-    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs) || Owner is { IsGeneric: true } || Interface is not null;
+    /// <summary>Has a type parameter left (a template, a member of one, or a lambda in one): bound only to check it, never analysed, lowered or emitted.</summary>
+    public bool IsGeneric => TypeParameters.Count > 0 || TypeArguments.Any(TypeParameterType.Occurs) || Owner is { IsGeneric: true } || Interface is not null || Enclosing is { IsGeneric: true };
 
-    /// <summary>Re-bound from a template with concrete types (directly, or as a member of an instantiated struct).</summary>
-    public bool IsInstance => Template is not null || Owner?.Template is not null;
+    /// <summary>Re-bound from a template with concrete types (directly, as a member of an instantiated struct, or as a lambda in an instance).</summary>
+    public bool IsInstance => Template is not null || Owner?.Template is not null || Enclosing is { IsInstance: true };
 
     public bool HasThis => (Owner is not null || Interface is not null) && !IsStatic && Kind is FunctionKind.Method or FunctionKind.Getter or FunctionKind.Constructor;
 

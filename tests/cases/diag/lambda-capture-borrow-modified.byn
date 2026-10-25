@@ -1,0 +1,11 @@
+void main() {
+    var buf = StrBuf()
+    buf.append("hi")
+    let s = buf.view
+    let f: () -> i64 = () => s.length
+    buf.append("more")
+    print($"{f()}")
+    buf.clear()
+    print($"{f()}")
+    buf.clear()
+}

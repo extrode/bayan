@@ -36,6 +36,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             case Syntax.Ast.OptionalType o:
             {
                 var inner = Resolve(o.Inner);
+                if (compilation.FunctionTypeNotHere(inner, file.Source, o.Inner.Span, "the value of an optional")) return ErrorType.Instance;
                 if (inner is Symbols.OptionalType)
                 {
                     compilation.Report(DiagnosticCodes.NestedOptional, file.Source, syntax.Span, [inner.DisplayName]);
@@ -46,13 +47,38 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
             case Syntax.Ast.ArrayType a:
             {
                 var element = Resolve(a.Element);
+                if (compilation.FunctionTypeNotHere(element, file.Source, a.Element.Span, "an array element")) return ErrorType.Instance;
                 var size = new Binder(compilation, file, null, container, typeArgs).BindArraySize(a.Size);
                 return element.IsError || size < 0 ? ErrorType.Instance : new Symbols.ArrayType(element, size);
             }
             case Syntax.Ast.TupleType t:
             {
                 var fields = t.Elements.Select(e => new TupleField(e.Name?.Text, Resolve(e.Type))).ToList();
-                return fields.Any(f => f.Type.IsError) ? ErrorType.Instance : new Symbols.TupleType(fields);
+                var placed = fields.Zip(t.Elements).Count(p => compilation.FunctionTypeNotHere(p.First.Type, file.Source, p.Second.Type.Span, "a tuple element"));
+                return placed > 0 || fields.Any(f => f.Type.IsError) ? ErrorType.Instance : new Symbols.TupleType(fields);
+            }
+            case FunctionTypeSyntax f:
+            {
+                var parameters = f.Params.Select(p => Resolve(p)).ToList();
+                var result = Resolve(f.Return, allowVoid: true);
+                var failed = false;
+                var fails = new List<ErrorSetSymbol>();
+                foreach (var e in f.Fails?.Errors ?? [])
+                {
+                    var t = Resolve(e);
+                    if (t is ErrorSetSymbol or ErrorUnionType)
+                    {
+                        foreach (var set in t is ErrorUnionType u ? u.Sets : [(ErrorSetSymbol)t])
+                            if (!fails.Contains(set)) fails.Add(set);
+                    }
+                    else
+                    {
+                        if (!t.IsError) compilation.Report(DiagnosticCodes.NotAnErrorSet, file.Source, e.Span, [t.DisplayName]);
+                        failed = true;
+                    }
+                }
+                var uses = f.Uses is null ? [] : Effects(f.Uses);
+                return failed || result.IsError || parameters.Any(p => p.IsError) ? ErrorType.Instance : new FunctionType(parameters, result, fails, uses);
             }
             case NamedType n:
                 return ResolveNamed(n);
@@ -92,6 +118,8 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                     }
                     var element = Resolve(n.Args[0]);
                     if (element.IsError) return element;
+                    var position = text switch { "List" => "a list element", "Span" or "ReadOnlySpan" => "a span element", _ => "a type argument" };
+                    if (compilation.FunctionTypeNotHere(element, file.Source, n.Args[0].Span, position)) return ErrorType.Instance;
                     return text switch
                     {
                         "Span" => new SpanType(element),
@@ -111,6 +139,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                     var value = Resolve(n.Args[0]);
                     var error = Resolve(n.Args[1]);
                     if (value.IsError || error.IsError) return ErrorType.Instance;
+                    if (compilation.FunctionTypeNotHere(value, file.Source, n.Args[0].Span, "a type argument")) return ErrorType.Instance;
                     if (error is not ErrorSetSymbol)
                     {
                         compilation.Report(DiagnosticCodes.NotAnErrorSet, file.Source, n.Args[1].Span, [error.DisplayName]);
@@ -133,6 +162,8 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                     var key = Resolve(n.Args[0]);
                     var value = Resolve(n.Args[1]);
                     if (key.IsError || value.IsError) return ErrorType.Instance;
+                    if (compilation.FunctionTypeNotHere(key, file.Source, n.Args[0].Span, "a map key") |
+                        compilation.FunctionTypeNotHere(value, file.Source, n.Args[1].Span, "a map value")) return ErrorType.Instance;
                     if (!MapType.IsValidKey(key) && key is not TypeParameterType)
                     {
                         compilation.Report(DiagnosticCodes.InvalidMapKey, file.Source, n.Args[0].Span, [key.DisplayName],
@@ -384,6 +415,29 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
         return ErrorUnionType.Of(sets, excluded);
     }
 
+    /// <summary>
+    /// The effects a function type's <c>uses</c> names, the module's <c>effect</c> aliases expanded; BYN6003 for an
+    /// unknown name (one inside an alias is reported by <see cref="EffectAnalysis"/>).
+    /// </summary>
+    private List<string> Effects(UsesClause uses)
+    {
+        var aliases = file.Module.Files.SelectMany(f => f.Tree.Root.Members.OfType<EffectDecl>()).ToList();
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        void Add(Name name, bool written)
+        {
+            if (EffectAnalysis.Primitives.Contains(name.Text)) result.Add(name.Text);
+            else if (aliases.FirstOrDefault(a => a.Name.Text == name.Text) is { } alias)
+            {
+                if (seen.Add(name.Text))
+                    foreach (var e in alias.Effects) Add(e, written: false);
+            }
+            else if (written) EffectAnalysis.ReportUnknown(compilation, file.Source, name);
+        }
+        foreach (var name in uses.Effects) Add(name, written: true);
+        return result.Distinct().ToList();
+    }
+
     /// <summary>Applies the type arguments of <paramref name="n"/> to a generic struct, union or interface (instantiating it), or checks there are none.</summary>
     private TypeSymbol Construct(NamedType n, TypeSymbol t)
     {
@@ -403,6 +457,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
         }
         var args = n.Args.Select(a => Resolve(a)).ToArray();
         if (args.Any(a => a.IsError)) return ErrorType.Instance;
+        if (args.Zip(n.Args).Count(a => compilation.FunctionTypeNotHere(a.First, file.Source, a.Second.Span, "a type argument")) > 0) return ErrorType.Instance;
         if (args.SequenceEqual(parameters)) return t;
         return compilation.InstantiateType(t, args, file.Source, n.Span);
     }

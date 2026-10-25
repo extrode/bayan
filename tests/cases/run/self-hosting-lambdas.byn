@@ -1,0 +1,95 @@
+enum TokenKind {
+    ident
+    number
+    plus
+    end
+}
+
+struct Token {
+    TokenKind kind
+    i64 start
+    string text
+}
+
+union error LexError {
+    bad(i64 at, string why)
+}
+
+bool any(Span<Token> ts, by (Token -> bool) p) {
+    for t in ts {
+        if p(t) {
+            return true
+        }
+    }
+    return false
+}
+
+i64 indexWhere(Span<Token> ts, by (Token -> bool) p) {
+    var i: i64 = 0
+    for t in ts {
+        if p(t) {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+i64 countWhere(Span<Token> ts, by (Token -> bool) p) {
+    var n: i64 = 0
+    for t in ts {
+        if p(t) {
+            n += 1
+        }
+    }
+    return n
+}
+
+bool isNumber(Token t) => t.kind == TokenKind.number
+
+i64 firstMatch(Span<Token> ts, by (Token -> bool) p) => indexWhere(ts, by: p)
+
+i64 findFrom(Span<Token> ts, by (Token -> bool) p) => firstMatch(ts, by: p)
+
+bool ordered(Span<Token> ts, by ((Token, Token) -> bool) before) {
+    var i: i64 = 1
+    while i < ts.length {
+        if !before(ts[i - 1], ts[i]) {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+string upper(string s) fails LexError {
+    fail .bad(at: 0, why: "empty") if s.isEmpty
+    return $"<{s}>"
+}
+
+string render(Token t, by (string -> string fails LexError) hook) fails LexError => try hook(t.text)
+
+void main() {
+    let ts: Span<Token> = [
+        Token { kind: .ident, start: 0, text: "x" },
+        Token { kind: .plus, start: 2, text: "+" },
+        Token { kind: .number, start: 4, text: "42" },
+        Token { kind: .end, start: 6, text: "" },
+    ]
+    print($"{any(ts, by: it.kind == TokenKind.plus)} {any(ts, by: it.start > 10)}")
+    print($"{any(ts, by: isNumber)} {indexWhere(ts, by: isNumber)}")
+    print($"{indexWhere(ts, by: it.text == "+")} {indexWhere(ts, by: it.kind == TokenKind.end)}")
+    let offset = 2
+    print($"{ordered(ts, by: (a, b) => a.start + offset <= b.start)}")
+    let wide = 3
+    print($"{ordered(ts, by: (a, b) => a.start + wide <= b.start)}")
+    print($"{findFrom(ts, by: isNumber)} {findFrom(ts, by: it.start == offset)} {findFrom(ts, by: it.start > 99)}")
+    print($"{countWhere(ts, by: t => t.start >= offset)}")
+    print(render(ts[2], by: upper) catch "?")
+    let r = render(ts[3], by: upper) catch switch {
+        .bad e => $"bad {e.at} {e.why}",
+    }
+    print(r)
+    let tag = "id"
+    print(render(ts[0], by: s => $"{tag}:{s}") catch "?")
+}

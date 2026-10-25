@@ -1,0 +1,54 @@
+i64 apply((i64 -> i64) f, to i64 x) => f(x)
+
+i64 relay((i64 -> i64) f, to i64 x) => apply(f, to: x)
+
+i64 forward((i64 -> i64) f, to i64 x) => relay(f, to: x)
+
+i64 shifted(i64 x) {
+    let offset = 100
+    return apply(n => n + offset, to: x)
+}
+
+i64 scaled(i64 x, by i64 factor) {
+    let bias = 3
+    return apply(n => n * factor + bias, to: x)
+}
+
+i64 nested(i64 base) {
+    let offset = base + 1
+    return apply(x => apply(y => y + x + offset, to: x), to: 1)
+}
+
+i64 maybe(i64? extra) {
+    if extra is not null {
+        return apply(x => x + extra, to: 1)
+    }
+    return 0
+}
+
+struct Scale {
+    i64 factor
+
+    i64 times(i64 x) {
+        let k = factor
+        return apply(n => n * k, to: x)
+    }
+}
+
+void main() {
+    print($"{shifted(5)}")
+    print($"{scaled(4, by: 10)}")
+    let k = 7
+    var source: i64 = 1
+    let copied = source
+    let add: i64 -> i64 = x => x + k + copied
+    source = 50
+    print($"{add(1)} {add(2)}")
+    print($"{forward(add, to: 10)} {forward(it * k, to: 3)}")
+    print($"{nested(10)}")
+    let name = "bayan"
+    let greet: string -> string uses alloc = s => $"{s} {name}"
+    print(greet("hello"))
+    let s = Scale { factor: 3 }
+    print($"{maybe(2)} {maybe(null)} {s.times(5)}")
+}

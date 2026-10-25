@@ -765,7 +765,9 @@ public sealed partial class Compilation
                     continue;
                 }
                 names[f.Name.Text] = Loc(file, f.Name);
-                sym.Fields.Add(new ParameterSymbol(f.Name.Text, Loc(file, f.Name), types.Resolve(f.Type), ParamModifier.None, sym.Fields.Count));
+                var type = types.Resolve(f.Type);
+                if (FunctionTypeNotHere(type, file.Source, f.Type.Span, "an error payload")) type = ErrorType.Instance;
+                sym.Fields.Add(new ParameterSymbol(f.Name.Text, Loc(file, f.Name), type, ParamModifier.None, sym.Fields.Count));
             }
         }
     }
@@ -895,7 +897,9 @@ public sealed partial class Compilation
                     continue;
                 }
                 names[f.Name.Text] = Loc(file, f.Name);
-                sym.Fields.Add(new ParameterSymbol(f.Name.Text, Loc(file, f.Name), types.Resolve(f.Type), ParamModifier.None, sym.Fields.Count));
+                var type = types.Resolve(f.Type);
+                if (FunctionTypeNotHere(type, file.Source, f.Type.Span, "a union payload")) type = ErrorType.Instance;
+                sym.Fields.Add(new ParameterSymbol(f.Name.Text, Loc(file, f.Name), type, ParamModifier.None, sym.Fields.Count));
             }
             u.Variants.Add(sym);
         }
@@ -958,6 +962,7 @@ public sealed partial class Compilation
                 {
                     Naming.CheckValue(this, file.Source, p.Name);
                     var prop = new PropertySymbol(p.Name.Text, Loc(file, p.Name), s, AccessOf(p.Modifiers), p) { Type = types.Resolve(p.Type) };
+                    if (FunctionTypeNotHere(prop.Type, file.Source, p.Type.Span, "a property")) prop.Type = ErrorType.Instance;
                     var getter = new FunctionSymbol(p.Name.Text, prop.Location, s.Module, FunctionKind.Getter)
                     {
                         Owner = s, File = file, ReturnType = prop.Type, Access = prop.Access, TypeMap = s.TypeMap,
@@ -1215,6 +1220,7 @@ public sealed partial class Compilation
     {
         var types = new TypeResolver(this, file, owner, fn.TypeMap);
         fn.ReturnType = types.Resolve(decl.ReturnType, allowVoid: true);
+        if (FunctionTypeNotHere(fn.ReturnType, file.Source, decl.ReturnType.Span, "a return type")) fn.ReturnType = ErrorType.Instance;
         fn.IsMutating = decl.RefThis is not null;
         if (decl.RefThis is { } refThis && fn is not { Kind: FunctionKind.Method, IsStatic: false })
             Report(DiagnosticCodes.Unsupported, file.Source, refThis, [fn.IsStatic ? "`ref this` on a static method" : "`ref this` outside a struct"],
@@ -1283,6 +1289,7 @@ public sealed partial class Compilation
     {
         foreach (var f in s.Fields)
         {
+            if (FunctionTypeNotHere(f.Type, s.File.Source, f.Decl.Type.Span, "a field")) continue;
             if (f.Type.IsBorrow)
             {
                 Report(DiagnosticCodes.BorrowField, s.File.Source, f.Decl.Type.Span, [f.Type.DisplayName],
@@ -1292,6 +1299,14 @@ public sealed partial class Compilation
             }
         }
         CheckRecursion(s, s.Name, s.File.Source, s.Decl.Name.Span);
+    }
+
+    /// <summary>BYN2822 when <paramref name="t"/> is a function type at <paramref name="position"/>: only a parameter, an alias or a local holds one (Q346).</summary>
+    internal bool FunctionTypeNotHere(TypeSymbol t, SourceText source, TextSpan span, string position)
+    {
+        if (t is not FunctionType) return false;
+        Report(DiagnosticCodes.FunctionTypeNotHere, source, span, [position], help: "take the function as a parameter instead");
+        return true;
     }
 
     private void CheckUnionShape(UnionSymbol u)
@@ -1463,7 +1478,7 @@ public sealed partial class Compilation
         foreach (var d in bag.Items.Where(d => d.IsError))
         {
             if (d.Code == DiagnosticCodes.InvalidMapKey.Code || d.Code == DiagnosticCodes.BadBinaryOperands.Code || d.Code == DiagnosticCodes.NotFormattable.Code
-                || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code
+                || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code || d.Code == DiagnosticCodes.FunctionTypeNotHere.Code && !Reported(d)
                 || (d.Code == DiagnosticCodes.Unsupported.Code || d.Code == DiagnosticCodes.ImplicitCopy.Code) && !Reported(d))
                 target.Add(d with { Source = site, Span = span, Label = InstantiationLabel });
             else if (d.Code == DiagnosticCodes.AssignmentChangesState.Code && instance is not null && !Reported(d))
@@ -1710,7 +1725,16 @@ public sealed partial class Compilation
         MutationChecks.RemoveRange(checks, MutationChecks.Count - checks);
         RequiresChecks.RemoveRange(requires, RequiresChecks.Count - requires);
         fn.Locals.RemoveRange(locals, fn.Locals.Count - locals);
+        // The lambdas it lifted, in the body or in those instances, are lifted again by the second pass.
+        foreach (var module in Modules)
+            module.AllFunctions.RemoveAll(f => f.Kind == FunctionKind.Lambda && Outermost(f) is var o && (o == fn || pass.Instances.Contains(o)));
         BindBody(fn, seeds);
+
+        static FunctionSymbol Outermost(FunctionSymbol f)
+        {
+            while (f.Enclosing is { } e) f = e;
+            return f;
+        }
     }
 
     /// <summary>The function instances a first pass created, and what creating them reported.</summary>
@@ -1758,7 +1782,9 @@ public sealed partial class Compilation
     /// <summary>Inferred <c>fails</c> sets: the union of what each body propagates, to a fixed point.</summary>
     private void InferErrorSets()
     {
-        var inferred = Modules.SelectMany(m => m.AllFunctions).Where(f => f.InfersErrors || f.Kind is FunctionKind.Main or FunctionKind.Test).ToList();
+        // A lambda's sets are its function type's, never inferred.
+        var inferred = Modules.SelectMany(m => m.AllFunctions)
+            .Where(f => f.Kind != FunctionKind.Lambda && (f.InfersErrors || f.Kind is FunctionKind.Main or FunctionKind.Test)).ToList();
         bool changed;
         do
         {
@@ -1835,6 +1861,22 @@ public sealed partial class Compilation
                     label: "fails the contract", help: $"pass a value that meets `requires {text}`");
             }
         }
+    }
+
+    private readonly Dictionary<FunctionType, FunctionSymbol> _invokeSymbols = new();
+
+    /// <summary>
+    /// What a call through a value of <paramref name="type"/> calls: one symbol per type, whose parameters <c>_0</c>, <c>_1</c>, …
+    /// carry no particle, so no argument name or label matches one (spec 007 R9).
+    /// </summary>
+    internal FunctionSymbol InvokeSymbol(FunctionType type)
+    {
+        if (_invokeSymbols.TryGetValue(type, out var invoke)) return invoke;
+        invoke = new FunctionSymbol("invoke", null, EntryModule, FunctionKind.Invoke) { ReturnType = type.Return, Fails = type.Fails.Count > 0 };
+        for (var i = 0; i < type.Parameters.Count; i++)
+            invoke.Parameters.Add(new ParameterSymbol($"_{i}", null, type.Parameters[i], ParamModifier.None, i));
+        invoke.ErrorSets.AddRange(type.Fails);
+        return _invokeSymbols[type] = invoke;
     }
 
     /// <summary>A parameter's default value, bound on first use.</summary>
