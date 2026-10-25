@@ -268,7 +268,11 @@ internal sealed partial class Binder
             if (p is null || !TypeParameterType.Occurs(p.Type) || _prebound.ContainsKey(arg)) continue;
             var value = BindExpr(arg.Value, null);
             _prebound[arg] = value;
-            conflict |= !Unify(p.Type, value.Type, found, fn, arg.Value.Span);
+            // A known-state local passed `ref` or `out` is inferred from its declared type, as `BindArgument` passes it (Q295).
+            var type = p.Modifier is ParamModifier.Ref or ParamModifier.Out && value is BoundLocal known && KnownState(known.Local) is not null
+                ? known.Local.Type
+                : value.Type;
+            conflict |= !Unify(p.Type, type, found, fn, arg.Value.Span);
         }
         if (conflict) return null;
         var args = new TypeSymbol[parameters.Count];
@@ -1028,7 +1032,7 @@ internal sealed partial class Binder
             {
                 if (sets.Count > 0 && !sets.Contains(ev.Variant.Set))
                     Report(DiagnosticCodes.UnknownVariant, v.Span, [ev.Variant.Name, errorType.DisplayName],
-                        help: $"use a variant of {string.Join(", ", sets.Select(s => "`" + s.Name + "`"))}, the sets `{bc.Function.Name}` fails with");
+                        help: $"use a variant of {string.Join(", ", sets.Select(s => "`" + s.DisplayNameAmong(sets) + "`"))}, the sets `{bc.Function.Name}` fails with");
                 else variant = ev.Variant;
             }
         }
@@ -1534,9 +1538,14 @@ internal sealed partial class Binder
             {
                 var keys = set.Variants.Select(v => VariantKey(v, type)).ToList();
                 if (keys.Count == 0 || !keys.All(missing.Contains)) continue;
-                missing.Insert(missing.IndexOf(keys[0]), set.DisplayName);
+                missing.Insert(missing.IndexOf(keys[0]), set.DisplayNameAmong(union.Sets));
                 missing.RemoveAll(keys.Contains);
             }
+        if (Unwrap(type) is ErrorUnionType { Sets.Count: > 1 } shown && missing is not null)
+        {
+            var names = shown.Sets.SelectMany(s => s.Variants).ToDictionary(v => VariantKey(v, type), v => $"{v.Set.DisplayNameAmong(shown.Sets)}.{v.Name}");
+            missing = missing.Select(k => names.GetValueOrDefault(k, k)).ToList();
+        }
         Report(DiagnosticCodes.NonExhaustive, span, [type.DisplayName],
             label: missing is { Count: > 0 } ? "not covered: " + string.Join(", ", missing) : null,
             help: statement ? "add the missing cases or a `default:` section"
@@ -1560,8 +1569,9 @@ internal sealed partial class Binder
         _ => null,
     };
 
+    // Across sets a case is keyed by its program-wide code, not its text: `ValidationError<Point>` from two modules reads alike.
     private static string VariantKey(ErrorVariantSymbol v, TypeSymbol type) =>
-        Unwrap(type) is ErrorUnionType { Sets.Count: > 1 } ? $"{v.Set.DisplayName}.{v.Name}" : "." + v.Name;
+        Unwrap(type) is ErrorUnionType { Sets.Count: > 1 } ? "\0code" + v.Code : "." + v.Name;
 
     private static bool Irrefutable(BoundPattern p) => p switch
     {

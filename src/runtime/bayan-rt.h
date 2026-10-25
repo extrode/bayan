@@ -202,7 +202,7 @@ byn_str byn_str_take_runes(byn_str s, int64_t n, const char* file, int line);
 byn_str byn_str_skip_runes(byn_str s, int64_t n, const char* file, int line);
 byn_str byn_str_take_last_runes(byn_str s, int64_t n, const char* file, int line);
 /* `s.padded(to: n, by: c)`: s with c appended until it has n code points; s copied when it already has. */
-byn_str byn_str_padded(byn_str s, int64_t n, uint32_t c, byn_alloc* to);
+byn_str byn_str_padded(byn_str s, int64_t n, uint32_t c, byn_alloc* to, const char* file, int line);
 /* `string(bytes)`: the bytes formatted as a list, `[104, 105]`. */
 byn_str byn_bytes_string(const uint8_t* p, int64_t n, byn_alloc* to);
 
@@ -265,6 +265,8 @@ struct byn_alloc {
 extern byn_alloc byn_general;
 /* `context.allocator`; set by `context (allocator: …)`. */
 extern byn_alloc* byn_context;
+/* Frees a scratch block taken from `from` where it can: General's; an arena's stays until reset. */
+void byn_release(byn_alloc* from, void* p);
 
 typedef struct byn_arena byn_arena;
 byn_arena* byn_arena_new(void);

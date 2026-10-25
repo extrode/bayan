@@ -1,0 +1,7 @@
+// Lines end at `\n` or `\r\n`; a `\r` not followed by `\n` stays in the line.
+for l in "a\r".lines {
+    print($"{l.length} {l.endsWith("\r")}")
+}
+for l in "b\r\nc\rd\n".lines {
+    print($"{l.length} {l.endsWith("\r")}")
+}

@@ -1,0 +1,14 @@
+import a
+import b
+
+void both(i32 x, at i32 y) fails ValidationError<a.Point>, ValidationError<b.Point> {
+    let p: a.Point = try a.make(x)
+    let q: b.Point = try b.make(y)
+    print($"ok {p.x} {q.x}")
+}
+
+void main() {
+    both(1, at: 0) catch switch {
+        ValidationError<a.Point> e => print("a rejected"),
+    }
+}

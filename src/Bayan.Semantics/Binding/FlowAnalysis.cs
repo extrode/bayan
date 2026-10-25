@@ -357,8 +357,11 @@ internal sealed class FlowAnalysis
             return;
         }
         foreach (var set in sets.Where(s => !_fn.ErrorSets.Contains(s)))
-            Report(DiagnosticCodes.UndeclaredError, span, [set.DisplayName, _fn.Name],
-                help: $"add it to the signature: `fails {string.Join(", ", _fn.ErrorSets.Select(s => s.DisplayName).Append(set.DisplayName))}`");
+        {
+            var named = _fn.ErrorSets.Append(set).ToList();
+            Report(DiagnosticCodes.UndeclaredError, span, [set.DisplayNameAmong(named), _fn.Name],
+                help: $"add it to the signature: `fails {string.Join(", ", named.Select(s => s.DisplayNameAmong(named)))}`");
+        }
         // A case the caller takes out with `except` must not arrive from the callee.
         foreach (var v in sets.SelectMany(s => s.Variants).Where(v => v != caught && _fn.ExcludedErrors.Contains(v) && !call.Function.ExcludedErrors.Contains(v)))
             Report(DiagnosticCodes.UndeclaredError, span, [$"{v.Set.DisplayName}.{v.Name}", _fn.Name],

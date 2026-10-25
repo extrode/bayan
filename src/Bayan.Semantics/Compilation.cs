@@ -1369,7 +1369,7 @@ public sealed partial class Compilation
                 BindFunction(fn);
         }
         while (_instantiationWork.TryDequeue(out var work))
-            Instantiating(work.Site, work.Span, work.Bind);
+            Instantiating(work.Site, work.Span, work.Bind, work.Instance);
         InferErrorSets();
         EffectAnalysis.Analyze(this);
         CheckMutation();
@@ -1441,8 +1441,10 @@ public sealed partial class Compilation
     /// and formatting on a <c>T</c>, a <c>for</c> over a <c>T</c> whose <c>Item</c> is unique, a unique <c>T</c>
     /// field standing for a getter); they are reported at <paramref name="span"/>, the use that chose the type arguments.
     /// BYN2022 and BYN2780 are also template rules, so they are forwarded only when the template did not report them.
+    /// BYN7012 in the body of <paramref name="instance"/> is a type argument with states replaced through a <c>ref</c>
+    /// (revision 0010 rule C); it is reported at the use too, naming the generic.
     /// </summary>
-    private void Instantiating(SourceText site, TextSpan span, Action work)
+    private void Instantiating(SourceText site, TextSpan span, Action work, FunctionSymbol? instance = null)
     {
         var outer = _scratch;
         var bag = _scratch = new DiagnosticBag();
@@ -1461,6 +1463,13 @@ public sealed partial class Compilation
                 || d.Code == DiagnosticCodes.ConstraintNotSatisfied.Code
                 || (d.Code == DiagnosticCodes.Unsupported.Code || d.Code == DiagnosticCodes.ImplicitCopy.Code) && !Reported(d))
                 target.Add(d with { Source = site, Span = span, Label = InstantiationLabel });
+            else if (d.Code == DiagnosticCodes.AssignmentChangesState.Code && instance is not null)
+                target.Add(d with
+                {
+                    Source = site, Span = span, Label = InstantiationLabel,
+                    Help = $"call `{instance.Name}` with a type without states; it replaces a value of its type argument whole",
+                    Related = d.Source == site ? [new RelatedSpan(d.Span, $"in `{instance.Name}`")] : null,
+                });
             else
                 _instantiationErrors.Add(d);
         }

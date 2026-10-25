@@ -1268,8 +1268,9 @@ internal sealed partial class Binder
         var fn = _fn!;
         if (fn.ErrorSets.Contains(set)) return;
         if (fn.InfersErrors) return;
-        Report(DiagnosticCodes.UndeclaredError, span, [set.DisplayName, fn.Name],
-            help: $"add it to the signature: `fails {string.Join(", ", fn.ErrorSets.Select(s => s.DisplayName).Append(set.DisplayName))}`");
+        var named = fn.ErrorSets.Append(set).ToList();
+        Report(DiagnosticCodes.UndeclaredError, span, [set.DisplayNameAmong(named), fn.Name],
+            help: $"add it to the signature: `fails {string.Join(", ", named.Select(s => s.DisplayNameAmong(named)))}`");
     }
 
     /// <summary>BYN2603 for a case the <c>fails</c> clause takes out with <c>except</c>.</summary>

@@ -1,0 +1,18 @@
+error BYN2410: `switch` does not handle every
+`ValidationError<List<a.Point>> | ValidationError<List<b.Point>>`
+  --> main.byn:12:19
+
+  12 │     both(1) catch switch {
+     │                   ^^^^^^ not covered: ValidationError<List<b.Point>>
+     │
+  help: add the missing arms, or `_ => …` for the rest
+
+error BYN2228: `boom` is not a variant of
+`ValidationError<List<a.Point>> | ValidationError<List<b.Point>>`
+  --> main.byn:15:20
+
+  15 │     both(2) catch (Other.boom) print("x")
+     │                    ^^^^^^^^^^
+     │
+  help: use a variant of `ValidationError<List<a.Point>>`, `ValidationError<List<b.Point>>`, the
+        sets `both` fails with

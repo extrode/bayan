@@ -17,6 +17,8 @@ Small, clear, and could be picked up without a design decision.
 - `Lexer.cs:571` help still says "wrap it with a cast to the unit type"; casts are BYN1057 since 5.3f, so it should say `T(x)`.
 - Float-to-int conversion saturates in `bayan-rt.h` (`byn_f2i`) instead of trapping as SPEC §6.2 says.
 - `i64.tryFrom` of exactly -2^63 as a float gives `null`; the float range check is `(min-1, max+1)` in `f64`, which rounds at that edge.
+- `let e: u8[0] = []` is BYN4001: the C compiler rejects the emitted "initializer for aggregate with no elements".
+- A generic instantiated once and called from several places reports its instance BYN7012 (Q342) only at the first call; the instance is cached per type arguments.
 - `docs/bayan-handoff.md:250` says `--ci github` will run `bayan fmt --check` and `bayan fmt --check-prose`; the command is `bayan format`, and the CI template does not run it yet.
 
 ## Later
@@ -272,3 +274,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-54b: `for x in b` over a `Range` value that is not a range literal (a bound `.range(let b)`) crashes `Lowerer.cs:689` (InvalidCastException, RangeType to ArrayType); `Range<T>` also has no readers and no format, so `Rule` bounds cannot be observed.
 - rv0011: a bare `ValidationError` in a `fails` clause whose body fails reports BYN2023 and then a cascading BYN2603 (the clause resolves to no set); an unknown type there cascades the same way. Suppress BYN2603 when a `fails` member resolved to the error type.
 - rv0011: under `BAYAN_UPDATE=1` a load timeout rewrites `run/` and `out/` goldens with "timed out after 60 s" (seen: `out/results-fail.json`, `run/assert-fails.test.stdout`, `run/suq-money.test.stdout`, plus a new `run/suq-money.test.exitcode`); the update mode should not record a timeout as expected output.
+- rv11 review: other messages still print `set.DisplayName` unqualified and can show look-alike sets (BYN2604 in `FlowAnalysis.CheckPropagation`, BYN2227 `AmbiguousVariant`, the `except` BYN2603 variant text, pattern-mismatch messages); switch them to `DisplayNameAmong` when one reproduces.

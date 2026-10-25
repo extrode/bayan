@@ -667,12 +667,13 @@ static int byn_utf8_put(uint8_t b[4], uint32_t c) {
     return 4;
 }
 
-byn_str byn_str_padded(byn_str s, int64_t n, uint32_t c, byn_alloc* to) {
+byn_str byn_str_padded(byn_str s, int64_t n, uint32_t c, byn_alloc* to, const char* file, int line) {
     int64_t runes = 0;
     for (int64_t pos = 0; pos < s.len; runes++) byn_str_next(s, &pos);
     uint8_t b[4];
     int w = byn_utf8_put(b, c);
     int64_t pad = n > runes ? n - runes : 0;
+    if (pad > (INT64_MAX - s.len) / w) byn_panic("padded text is too long", file, line);
     int64_t len = s.len + pad * w;
     if (len == 0) return (byn_str){NULL, 0};
     uint8_t* out = to->resize(to, NULL, 0, len);
@@ -732,8 +733,9 @@ uint16_t byn_utf16_next(byn_text_view* v, int64_t* pos) {
 byn_str byn_lines_next(byn_text_view* v, int64_t* pos) {
     int64_t start = *pos, end = start;
     while (end < v->s.len && v->s.ptr[end] != '\n') end++;
-    *pos = end < v->s.len ? end + 1 : end;
-    if (end > start && v->s.ptr[end - 1] == '\r') end--;
+    bool newline = end < v->s.len;
+    *pos = newline ? end + 1 : end;
+    if (newline && end > start && v->s.ptr[end - 1] == '\r') end--;
     return (byn_str){v->s.ptr + start, end - start};
 }
 
@@ -848,6 +850,10 @@ static void* byn_general_resize(byn_alloc* self, void* old, int64_t old_size, in
 
 byn_alloc byn_general = {byn_general_resize};
 byn_alloc* byn_context = &byn_general;
+
+void byn_release(byn_alloc* from, void* p) {
+    if (from == &byn_general) free(p);
+}
 
 typedef struct byn_chunk {
     struct byn_chunk* next;
@@ -992,6 +998,7 @@ int64_t byn_hex_decode(byn_str s, uint8_t** out, byn_alloc* to) {
 }
 
 byn_str byn_hex_encode(const uint8_t* p, int64_t n, byn_alloc* to) {
+    if (n == 0) return (byn_str){NULL, 0};
     uint8_t* out = to->resize(to, NULL, 0, n * 2);
     for (int64_t i = 0; i < n; i++) {
         out[2 * i] = (uint8_t)"0123456789abcdef"[p[i] >> 4];

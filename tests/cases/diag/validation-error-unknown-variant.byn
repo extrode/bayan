@@ -1,0 +1,20 @@
+struct Signup {
+    string name
+        requires it.runeCount >= 3
+}
+
+struct Address {
+    string city
+        requires it != ""
+}
+
+union error Other { boom }
+
+void register(string name, at string city) fails ValidationError<Signup>, ValidationError<Address> {
+    let s = try Signup { name: name }
+    let a = try Address { city: city }
+}
+
+void main() {
+    register("ab", at: "") catch (Other.boom) print("x")
+}
