@@ -22,6 +22,7 @@ Small, clear, and could be picked up without a design decision.
 - `docs/bayan-handoff.md:250` says `--ci github` will run `bayan fmt --check` and `bayan fmt --check-prose`; the command is `bayan format`, and the CI template does not run it yet.
 - `if a == b` emits `if ((x == y))`, which clang rejects under `-Wall -Werror` (`-Wparentheses-equality`); L016's generator uses `<` to avoid it (008 T10).
 - A tuple-typed struct field (`(i8, i64) f1`) is BYN1001: the parser reads it as a function type; L016's generator nests only structs in structs (008 T10).
+- `Parser.ReportBraceless` (Parser.cs:2408) throws `ArgumentOutOfRangeException` when a braceless `if` body's span starts past `_prevEnd`, reached through a misparse such as an `is { } as` pattern binding; found in 009 T12.
 
 ## Later
 
@@ -306,3 +307,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 009 tasks T3 line and plan say `Unreport` decrements `syntaxErrors`; C# `Unreport` does not, and the port follows C# (Q440) (009 T3, 2026-10-26).
 - 009 T1 stubs miss helpers that `patterns.byn` needs from siblings (`ParseBinary`, `ScanType`, `BraceLiteralAllowed`, `ExpectClose`); `struct T3` stand-ins in `patterns.byn` until T15 (Q441) (009 T3, 2026-10-26).
 - 009 plan names union variants `import(…)`/`function(…)`, which are keywords; `nodes.byn` uses `importDecl`, `functionDecl` (Q437) (009 T2, 2026-10-26).
+- C# parser spans end early where `SpanFrom` is an argument before the parse it should cover: a block-bodied `LambdaExpr` ends at `=>`, a `MapEntryExpr` at `:`, a named format spec's `Argument` at `:`; matched in `exprs2.byn` (009 T10, 2026-10-26).
+- 009 T10 stand-ins for sibling helpers (`struct T10` at the end of `exprs2.byn`) must go at T15 (Q476) (009 T10, 2026-10-26).
+- C# spans of `move`, `fail`, `break`/`continue` with a label, `except` and `?.` end before their child (argument evaluation order), so the child is outside its parent (L018); the port matches C# (Q473) (009 T9, 2026-10-26).
