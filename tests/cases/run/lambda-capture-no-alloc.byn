@@ -1,0 +1,6 @@
+i32 apply(i32 x, by (i32 -> i32) f) => f(x)
+
+void main() {
+    let base = 10
+    print($"{apply(1, by: x => x + base)}")
+}
