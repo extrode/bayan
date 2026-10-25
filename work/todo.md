@@ -294,3 +294,7 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 007 T13: SPEC §21.5's BYN1028 row says "(help text)" though BYN1028 now offers a fix; GRAMMAR's input-form table has no `delegate` (BYN1028) row; the round-3 plan's "Total codes" row still counts 12 spec-only codes.
 - 007 T13: SPEC §1057 (`Panic.handler`) says the lambda form "needs §3.16"; 007 stores only non-capturing lambdas, so say whether `Panic.handler = p => …` is accepted now.
 - 008 T3: a deferred `Map` key check (struct key resolved before fields are declared) reports outside `Instantiating`, so a generic struct instantiated during declaration with such a key would report at the template field, not the use.
+- CEmitter: every `for` loop emits an unused `continue_N:` label, rejected by `-Wunused-label` under `-Wall -Werror` (008 T8, 2026-10-25).
+- CEmitter: `let _ = expr` emits an unused C local, rejected by `-Wunused-variable` (008 T8, 2026-10-25).
+- CEmitter: `if n == 0` emits `if ((p_n == INT64_C(0)))`, rejected by clang `-Wparentheses-equality` (008 T8, 2026-10-25).
+- `bayan run <file>` inside `tests/cases/run/` builds the whole directory as one program; single-file run needs a copy elsewhere (008 T6, 2026-10-25).

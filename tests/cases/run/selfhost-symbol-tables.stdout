@@ -1,0 +1,16 @@
+width redeclared in scope 1, first 1
+width -> 1
+height -> 4
+area -> 0
+inner -> 3
+depth -> 5
+radius -> -1
+keyword let: true, identifier width: false
+member (1, height): varKeyword
+0: scope 0 area funcKeyword
+1: scope 1 width letKeyword
+2: scope 1 height varKeyword
+3: scope 1 inner funcKeyword
+4: scope 2 height letKeyword
+5: scope 2 depth letKeyword
+order: area width height inner height depth

@@ -34,17 +34,17 @@ Depends on: feat/007-lambdas at 4a746de (dev, round 3, spec 006 and 007 merged);
   - `diag/map-key-string-part` reports the same region diagnostic for a `(string name, i32 scope)` key whose `string` dies before the map that a `string` key reports today.
   - No emitted key hash calls `byn_hash_bytes` with `sizeof` of a struct or tuple.
   - The suite passes.
-- [ ] T7 Self-hosting reach — files: `tests/cases/run/` (`selfhost-symbol-tables.byn`), `tests/Bayan.Tests/TypedDumpTests.cs` — covers: R12 — after T6 — done when:
+- [x] T7 Self-hosting reach — files: `tests/cases/run/` (`selfhost-symbol-tables.byn`), `tests/Bayan.Tests/TypedDumpTests.cs` — covers: R12 — after T6 — done when:
   - The R12 program runs and prints the expected lines. It interns identifiers sliced from a source string, looks keywords up in a `Map<Symbol, TokenKind>` literal, resolves names through a `List<Map<Symbol, i32>>` scope chain innermost first, keys by `(i32 scope, Symbol name)` and a `MemberKey` struct with fields `i32 owner` and `Symbol name`, and prints declarations in order.
   - `bayan types` on it is byte-identical across two runs.
   - The suite passes.
-- [ ] T8 prove L015 via /prove: interning is identity on text — files: `tests/Bayan.Tests/SymbolLawTests.cs` [Trait Law L015], `docs/laws/015-*.md` (status `proposed`, proof notes) — covers: L015 — after T5 — done when:
+- [x] T8 prove L015 via /prove: interning is identity on text — files: `tests/Bayan.Tests/SymbolLawTests.cs` [Trait Law L015], `docs/laws/015-*.md` (status `proposed`, proof notes) — covers: L015 — after T5 — done when:
   - Over generated texts (ASCII, multi-byte UTF-8, `""`, the program's literals, prefixes and extensions, texts built byte by byte), `intern(a) == intern(b)` holds exactly when `a == b`, and `intern(s).text == s`.
   - A literal equals its runtime twin. `<` agrees with `string` `<`.
   - Output is identical under two seeds.
   - A mutation that numbers literals in source order without the runtime finding them makes the twin property fail.
   - `dotnet test -v q --filter "Law=L015"` holds.
-- [ ] T9 enact L015 "Interning is identity on text" — files: `docs/laws/015-*.md` — covers: L015 — after T8 — done when: `status: enacted` lands in the same change as T8's passing proof (standing authorization, 2026-10-21).
+- [x] T9 enact L015 "Interning is identity on text" — files: `docs/laws/015-*.md` — covers: L015 — after T8 — done when: `status: enacted` lands in the same change as T8's passing proof (standing authorization, 2026-10-21).
 - [x] T10 prove L016 via /prove: equal keys are one entry — files: `tests/Bayan.Tests/MapKeyLawTests.cs` [Trait Law L016], `tests/Bayan.Tests/MapModelTests.cs` (`Symbol` and composite key generators), `docs/laws/016-*.md` (status `proposed`, proof notes) — covers: L016 — after T6; parallel with T8 — done when:
   - Over generated key types (tuples and structs of `bool`, `i8`, `i64`, `rune`, `string`, `Symbol`, plain enums and nested structs, in padding-prone orders), `==` keys built separately are one entry with last write winning, and unequal keys are two entries.
   - L003's model holds over these keys.
