@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using Bayan.Lowering;
 using Bayan.Semantics.Binding;
 using Bayan.Semantics.Symbols;
@@ -30,6 +31,12 @@ public sealed class CEmitter
 
     private readonly Dictionary<string, string> _files = new(StringComparer.Ordinal);
     private bool _hashes;
+
+    // Symbol literal texts, numbered as first seen; `Run` sorts them into `byn_symtab` and puts each one's index there.
+    private readonly List<string> _symbolTexts = new();
+    private readonly Dictionary<string, int> _symbolIds = new(StringComparer.Ordinal);
+    private bool _symbols;
+    private const char SymbolMark = '\u0001';
     private readonly Dictionary<FunctionSymbol, int> _testIndex = new();
 
     private static readonly HashSet<string> CKeywords = new(StringComparer.Ordinal)
@@ -81,6 +88,7 @@ public sealed class CEmitter
 
         var statics = new StringBuilder();
         foreach (var name in _staticOrder) statics.Append(_statics[name]);
+        var symbolIndex = SymbolTable(statics);
         var types = EmitTypes();
         var enums = new StringBuilder();
         foreach (var e in _program.Compilation.Modules.SelectMany(m => m.Enums))
@@ -102,7 +110,52 @@ public sealed class CEmitter
         if (_vtableOrder.Count > 0) sb.Append('\n');
         foreach (var h in _helperOrder) sb.Append(_helpers[h].Body).Append('\n');
         sb.Append(bodies).Append(main);
-        return ResolveResets(sb.ToString());
+        var text = sb.ToString();
+        // A literal's index is known once every literal is seen; the marks cannot clash, as `Escape` writes control bytes as octal.
+        if (_symbols)
+            text = Regex.Replace(text, $"{SymbolMark}(\\d+){SymbolMark}", m => symbolIndex[int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)].ToString(CultureInfo.InvariantCulture));
+        return ResolveResets(text);
+    }
+
+    /// <summary>Appends <c>byn_symtab</c>, the distinct literal texts sorted by UTF-8 bytes with <c>""</c> first (R2), and returns each literal's index by first-seen number.</summary>
+    private int[] SymbolTable(StringBuilder sb)
+    {
+        if (!_symbols) return [];
+        var sorted = _symbolTexts.Append("").Distinct(StringComparer.Ordinal)
+            .Select(t => (Text: t, Bytes: Encoding.UTF8.GetBytes(t)))
+            .OrderBy(t => t.Bytes, Comparer<byte[]>.Create((a, b) => a.AsSpan().SequenceCompareTo(b)))
+            .Select(t => t.Text).ToList();
+        sb.Append("static const byn_str byn_symtab[] = {\n");
+        foreach (var t in sorted) sb.Append("    ").Append(StringLiteral(t)).Append(",\n");
+        sb.Append("};\n\n");
+        return _symbolTexts.Select(t => sorted.IndexOf(t)).ToArray();
+    }
+
+    /// <summary>A symbol literal; its ID is filled in by <see cref="Run"/>.</summary>
+    internal string SymbolLiteral(string text)
+    {
+        _symbols = true;
+        if (!_symbolIds.TryGetValue(text, out var k))
+        {
+            k = _symbolTexts.Count;
+            _symbolIds[text] = k;
+            _symbolTexts.Add(text);
+        }
+        return $"((byn_sym){{{SymbolMark}{k}{SymbolMark}}})";
+    }
+
+    /// <summary><c>s.text</c>: the interned text, which lives until the program exits.</summary>
+    internal string SymbolText(string s)
+    {
+        _symbols = true;
+        return $"byn_sym_text({s})";
+    }
+
+    /// <summary><c>Symbol.intern(text)</c>.</summary>
+    internal string SymbolIntern(string text)
+    {
+        _symbols = true;
+        return $"byn_sym_intern({text})";
     }
 
     /// <summary>The C file the emitted code is compiled as; generated code after a function's <c>#line</c>s maps back to it.</summary>
@@ -125,11 +178,13 @@ public sealed class CEmitter
     {
         var sb = new StringBuilder();
         sb.Append($"int main(int argc, char** argv) {{\n    {ErrorCType} err = {{0}};\n");
-        // Map hashing is seeded per run; tests get a fixed seed so they are reproducible.
-        if (_hashes)
+        // Map and symbol hashing is seeded per run; tests get a fixed seed so they are reproducible.
+        if (_hashes || _symbols)
             sb.Append(_program.Tests.Count > 0
                 ? "    byn_hash_seed_init(argc == 3 && strcmp(argv[1], \"--test\") == 0);\n"
                 : "    byn_hash_seed_init(false);\n");
+        // The literal table first and in order, so literal N is ID N and `Symbol.intern` of its text finds it.
+        if (_symbols) sb.Append("    byn_sym_init(byn_symtab, (uint32_t)(sizeof byn_symtab / sizeof byn_symtab[0]));\n");
         if (_program.Tests.Count > 0)
         {
             sb.Append("    if (argc == 3 && strcmp(argv[1], \"--test\") == 0) {\n        switch (atoi(argv[2])) {\n");
@@ -256,6 +311,7 @@ public sealed class CEmitter
         BuiltinType { Kind: BuiltinKind.ProcessResult } => "byn_process",
         BuiltinType { Kind: BuiltinKind.Panic } => "byn_panic_info",
         BuiltinType { Kind: BuiltinKind.FormatSpec } => "byn_format_spec",
+        BuiltinType { Kind: BuiltinKind.Symbol } => "byn_sym",
         TextViewType => "byn_text_view",
         // A pointer needs only the forward typedef, so a type may hold an `Owned` of itself.
         OwnedType o => CType(o.Inner) + "*",
@@ -276,7 +332,7 @@ public sealed class CEmitter
     {
         PrimitiveType p => p.Kind == PrimitiveKind.String ? "str" : p.Name,
         ErrorSetSymbol or ErrorUnionType => "err",
-        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", BuiltinKind.Panic => "panic", BuiltinKind.FormatSpec => "formatspec", _ => "iostream" },
+        BuiltinType b => b.Kind switch { BuiltinKind.Arena => "arena", BuiltinKind.StrBuf => "strbuf", BuiltinKind.ProcessResult => "process", BuiltinKind.Panic => "panic", BuiltinKind.FormatSpec => "formatspec", BuiltinKind.Symbol => "sym", _ => "iostream" },
         StructSymbol s => s.Module.CName + "__" + s.Name + TypeArgs(s.TypeArguments),
         EnumSymbol e => e.Module.CName + "__" + e.Name,
         UnionSymbol u => u.Module.CName + "__" + u.Name + TypeArgs(u.TypeArguments),
@@ -614,6 +670,8 @@ public sealed class CEmitter
                 return $"byn_str_eq({a}, {b})";
             case PrimitiveType or EnumSymbol:
                 return $"({a} == {b})";
+            case BuiltinType { Kind: BuiltinKind.Symbol }:
+                return $"(({a}).id == ({b}).id)";
             case ErrorSetSymbol or ErrorUnionType:
             {
                 // By code, then the payload of a case that has one (Q45, Q28). One helper serves every set, as the
@@ -775,6 +833,8 @@ public sealed class CEmitter
                 return $"byn_w_error({w}, {v}.code);";
             case EnumSymbol e:
                 return $"byn_w_str({w}, {EnumNames(e)}[{v}]);";
+            case BuiltinType { Kind: BuiltinKind.Symbol }:
+                return $"byn_w_str({w}, {SymbolText(v)});";
             case OwnedType o:
                 return Format(o.Inner, $"(*{v})", w);
         }
@@ -1430,6 +1490,8 @@ internal sealed class FunctionEmitter
         {
             case BoundLiteral l:
                 return _c.Constant(l.Value, l.Type);
+            case BoundSymbolLiteral s:
+                return _c.SymbolLiteral(s.Text);
             case BoundDefault d:
                 return $"(({_c.CType(d.Type)}){{0}})";
             case BoundLocal l when HasSlot(l.Local):
@@ -1664,6 +1726,8 @@ internal sealed class FunctionEmitter
                     $"    if (out) *out = ({_c.CType(t)})v;\n    return ({_c.ErrorCType}){{0}};\n}}\n");
                 return $"{name}({Expr(c.Arguments[0])}, {Expr(c.Arguments[1])}, {result ?? "NULL"})";
             }
+            case BuiltinFunction.SymbolIntern:
+                return _c.SymbolIntern(Expr(c.Arguments[0]));
             case BuiltinFunction.HexEncode:
             {
                 var span = _c.CType(fn.Parameters[0].Type);
@@ -1967,6 +2031,8 @@ internal sealed class FunctionEmitter
             }
             case BuiltinMember.MapLength:
                 return $"{Expr(r)}.h.live";
+            case BuiltinMember.SymbolText:
+                return _c.SymbolText(Expr(r));
             case BuiltinMember.MapClear:
                 return $"byn_map_clear(&{Expr(r)}.h)";
             case BuiltinMember.MapSlotCount:
@@ -2128,6 +2194,9 @@ internal sealed class FunctionEmitter
         if (t.IsFloat && b.Op == BinaryOp.Rem) return t == PrimitiveType.F32 ? $"fmodf({l}, {r})" : $"fmod({l}, {r})";
         if (t.IsString && b.Op is BinaryOp.Lt or BinaryOp.Gt or BinaryOp.Le or BinaryOp.Ge)
             return $"(byn_str_cmp({l}, {r}) {Op(b.Op)} 0)";
+        // Symbols order by text, as `string` does (R1).
+        if (t == BuiltinType.Symbol && b.Op is BinaryOp.Lt or BinaryOp.Gt or BinaryOp.Le or BinaryOp.Ge)
+            return $"(byn_str_cmp({_c.SymbolText(l)}, {_c.SymbolText(r)}) {Op(b.Op)} 0)";
         // `== .case` with a payload case written bare tests the code (Q312).
         if (b.Op is BinaryOp.Eq or BinaryOp.Ne && (BareCase(b.Left) || BareCase(b.Right)))
             return $"({l}.code {(b.Op == BinaryOp.Eq ? "==" : "!=")} {r}.code)";
