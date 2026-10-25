@@ -67,7 +67,7 @@ string unaryText(UnaryOp op) => op switch {
 }
 
 /// The decoded text of an identifier span (the C# `Name.Text`).
-string nameText(ref Parser p, at TextSpan span) => p.lexed.source.getText(span)
+string nameText(ref Parser p, at TextSpan span) => span.length == 0 ? "<missing>" : p.lexed.source.getText(span)
 
 /// The C# `Quote`: `text` double-quoted, with `\n` `\r` `\t`, controls and bidi characters as
 /// `\u{X}`, and `"` as `\"`. The text is already decoded (valid UTF-8).
@@ -207,16 +207,27 @@ void appendFlattened(string text, to ref StrBuf sb) {
 void dumpType(in TypeSyntax t, from ref Parser p, to ref StrBuf sb) {
     switch t {
         case .namedType(let n):
-            var first = true
-            for path in n.value.path {
-                if !first { sb.append(".") }
-                first = false
-                sb.append(nameText(ref p, at: path))
-            }
-            if n.value.args.length > 0 {
-                sb.append("<")
+            if n.value.path.length == 1 && n.value.args.length == 1
+                && n.value.path[0].start == n.value.span.start && n.value.path[0].length == n.value.span.length {
+                sb.append("ReadOnlySpan<")
                 appendTypes(in n.value.args, from: ref p, to: ref sb)
                 sb.append(">")
+            } else if n.value.path.length == 1 && n.value.args.length == 0 {
+                let text = nameText(ref p, at: n.value.path[0])
+                let renamed = cSharpTypeName(text)
+                sb.append(renamed.isEmpty ? (text == "char" ? "rune" : text) : renamed)
+            } else {
+                var first = true
+                for path in n.value.path {
+                    if !first { sb.append(".") }
+                    first = false
+                    sb.append(nameText(ref p, at: path))
+                }
+                if n.value.args.length > 0 {
+                    sb.append("<")
+                    appendTypes(in n.value.args, from: ref p, to: ref sb)
+                    sb.append(">")
+                }
             }
         case .optionalType(let n):
             dumpType(in n.value.inner, from: ref p, to: ref sb)
@@ -320,7 +331,10 @@ void dumpExpr(in Expr e, from ref Parser p, to ref StrBuf sb) {
                             dumpExpr(in h.value.expr, from: ref p, to: ref sb)
                             for spec in h.value.specs {
                                 sb.append(" (")
-                                if (spec.name is { } sn) { sb.append(nameText(ref p, at: sn)) }
+                                if (spec.name is { } sn) {
+                                    let text = nameText(ref p, at: sn)
+                                    sb.append(text == ":" ? (spec.value is .targetMemberExpr(_) ? "as" : "digits") : text)
+                                }
                                 sb.append(": ")
                                 dumpExpr(in spec.value, from: ref p, to: ref sb)
                                 sb.append(")")

@@ -151,13 +151,13 @@ public sealed class SelfhostParserT3Tests(ITestOutputHelper output)
             (or (var x) (and (let y) (not _))) pos 8 noLambda false
             (variant 0+15 (let v) _) pos 8 noLambda false
             (variant 0+13 bind p) pos 3 noLambda false
-            const pos 0 noLambda false
+            const pos 2 noLambda false
             _ pos 3 noLambda false
             (positional _ (var a)) pos 6 noLambda false
             (list 0+17 _ (.. none) (.. (var r))) pos 9 noLambda false
             (property 2:_ 1:(var d) as e) pos 13 noLambda false
             (property 1:_) pos 4 noLambda false [BYN1001 7+0 expected `}`, found end of file]
-            (rel lt) pos 1 noLambda false
+            (rel lt) pos 2 noLambda false
             (var int) pos 2 noLambda false [BYN0012 4+3 `int` is reserved and cannot be used as an identifier]
 
             """, stdout);

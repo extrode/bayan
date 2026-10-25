@@ -121,7 +121,9 @@ string whereText(in List<WhereClause> where, from ref Parser p) {
 /// `Writer.Attribute`: `@name arg: value …` with the optional `because` reason.
 string attributeText(in AttributeSyntax a, from ref Parser p) {
     var sb = StrBuf()
-    sb.append($"@{p.lexed.source.getText(a.name)}")
+    let name = p.lexed.source.getText(a.name)
+    let bracket = a.span.length > 0 && p.lexed.source.bytes[a.span.start] == '['
+    sb.append($"@{bracket && name.length > 0 ? $"{name.runes.take(1).lowercased()}{name.runes.skip(1)}" : name}")
     for arg in a.args {
         sb.append(" ")
         if (arg.name is { } name) {
@@ -185,7 +187,7 @@ string paramsText(in List<Param> parameters, from ref Parser p, string receiver 
         }
         dumpType(in param.type, from: ref p, to: ref sb)
         sb.append(" ")
-        sb.append(p.lexed.source.getText(param.name))
+        sb.append(param.name.length == 0 ? "<missing>" : p.lexed.source.getText(param.name))
         unless param.defaultKeyword is .none {
             sb.append(" = ")
             dumpExpr(in param.defaultKeyword, from: ref p, to: ref sb)
@@ -254,7 +256,12 @@ void decl(in Decl node, at i64 depth, from ref Parser p, to ref StrBuf sb) {
                 receiver: receiverText(in d.value.receiverStates, from: ref p,
                     refThis: d.value.refThis is not null, moveThis: d.value.moveThis is not null)))
             head.append(" -> ")
-            head.append(typeText(in d.value.returnType, from: ref p))
+            if (d.value.returnType is .namedType(let rt)) && rt.value.path.length == 1 && rt.value.path[0].length == 0
+                && rt.value.path[0].start == d.value.name.start {
+                head.append("void")
+            } else {
+                head.append(typeText(in d.value.returnType, from: ref p))
+            }
             head.append(whereText(in d.value.where, from: ref p))
             for r in d.value.requiresKeyword { head.append($" expects {exprText(in r, from: ref p)}") }
             if (d.value.becomes is { } becomes) { head.append($" becomes .{p.lexed.source.getText(becomes)}") }
