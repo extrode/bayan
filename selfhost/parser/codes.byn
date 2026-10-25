@@ -239,22 +239,27 @@ bool isInputForm(ParseCode code) => code switch {
 }
 
 /// `string.Format` for the templates above: `{0}`, `{1}` and `{2}` are replaced, `{{`/`}}` are unescaped.
+/// Text is copied in runs between braces, so a slice never splits a code point.
 string format(string template, by (string a0, string a1, string a2) args) {
     var sb = StrBuf()
     let t = template.bytes
     var i = 0
+    var run = 0
     while i < t.length {
         let b = t[i]
         if (b == '{' || b == '}') && i + 1 < t.length && t[i + 1] == b {
-            sb.append(template[i..i + 1])
+            sb.append(template[run..i + 1])
             i += 2
+            run = i
         } else if b == '{' && i + 2 < t.length && t[i + 2] == '}' {
+            sb.append(template[run..i])
             sb.append(t[i + 1] == '0' ? args.a0 : t[i + 1] == '1' ? args.a1 : args.a2)
             i += 3
+            run = i
         } else {
-            sb.append(template[i..i + 1])
             i += 1
         }
     }
+    sb.append(template[run..t.length])
     return $"{sb.finish()}"
 }
