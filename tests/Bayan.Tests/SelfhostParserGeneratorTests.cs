@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using Bayan.Backend.C;
 using Bayan.Cli;
 using Bayan.Semantics;
@@ -115,6 +117,25 @@ public sealed class SelfhostParserGeneratorTests(ITestOutputHelper output)
         Assert.Equal(1024 * 1024, source.Length);
         Assert.Empty(SyntaxTree.Parse(source).Diagnostics);
     }
+
+    /// <summary>
+    /// R7 mutation sensitivity: pins the C# reference dump of the whole generated corpus (valid + corrupted) so a
+    /// deliberate change to <c>AstDump</c> (a dropped node field) or the parser (a moved recovery point) fails this
+    /// test on at least one seed. This is the in-process reference <see cref="GeneratedSeedsAgree"/> compares the
+    /// self-hosted parser against once it lands (T15).
+    /// </summary>
+    [Fact]
+    public void GeneratedCorpusReferenceIsPinned()
+    {
+        var programs = Corpus(SelfhostParserGenerator.Seeds);
+        var sb = new StringBuilder();
+        foreach (var (name, source) in programs)
+            sb.Append(name).Append('\n').Append(AstDump.Dump(SyntaxTree.Parse(SourceText.FromString(name, source)))).Append('\0');
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
+        Assert.Equal(PinnedCorpusReference, hash);
+    }
+
+    private const string PinnedCorpusReference = "59685440FCC5EA11E638AEB4C7E974B025D2F1524CCDAA11AAD736B330D54951";
 
     /// <summary>
     /// R7: the valid and corrupted corpora under <c>tmp/parser-corpus/</c>, run with <c>bayan-parse --many</c>,

@@ -186,16 +186,14 @@ public static class SelfhostParserGenerator
         return programs;
     }
 
-    /// <summary>The corrupted corpus: each seed's assembled program with one token dropped, duplicated or swapped.</summary>
+    /// <summary>The corrupted corpus: one corrupted version of every valid program, so every recovery point is exercised.</summary>
     public static IReadOnlyList<(string Name, string Source)> GenerateCorrupt(IReadOnlyList<ulong> seeds)
     {
-        var programs = new List<(string, string)>(seeds.Count);
-        for (var i = 0; i < seeds.Count; i++)
-        {
-            var rng = new XorShift(seeds[i]);
-            var valid = Assemble(rng);
-            programs.Add(($"corrupt-seed-{i:D3}.byn", Corrupt(valid, rng)));
-        }
+        var valid = GenerateValid(seeds);
+        var programs = new List<(string, string)>(valid.Count);
+        var rng = new XorShift(seeds[0]);
+        foreach (var (name, source) in valid)
+            programs.Add(($"corrupt-{name}", Corrupt(source, rng)));
         return programs;
     }
 
@@ -222,23 +220,56 @@ public static class SelfhostParserGenerator
         return new SourceText("big.byn", bytes);
     }
 
-    /// <summary>A valid program whose blocks and binary expressions nest up to <see cref="NestingCap"/>.</summary>
+    /// <summary>Declaration templates combined at the top level of an assembled program.</summary>
+    private static readonly Type[] AssemblyDeclarations =
+    [
+        typeof(ImportDecl), typeof(StructDecl), typeof(FunctionDecl), typeof(InterfaceDecl),
+        typeof(ExtensionDecl), typeof(FieldDecl), typeof(PropertyDecl), typeof(ConstructorDecl),
+        typeof(ErrorEnumDecl), typeof(ErrorSetDecl), typeof(EnumDecl), typeof(UnionDecl),
+        typeof(TypeAliasDecl), typeof(EffectDecl), typeof(TestDecl),
+    ];
+
+    /// <summary>Statements nested inside the assembled <c>main</c>, chosen by the RNG.</summary>
+    private static readonly string[] AssemblyStatements =
+    [
+        "let a = 1",
+        "var b = a + 2",
+        "a = b",
+        "a++",
+        "if a > 0 { b = 1 }",
+        "unless b > 0 { a = 1 }",
+        "while a < 10 { a++ }",
+        "for x in xs { use(x) }",
+        "switch a { case 1: b = 1 }",
+        "defer close()",
+        "assert a > 0",
+        "print(\"x\")",
+        "return",
+    ];
+
+    /// <summary>Expressions assigned to a local in the innermost block, chosen by the RNG.</summary>
+    private static readonly string[] AssemblyExpressions =
+    [
+        "a + b", "a * b + c", "a ? b : c", "a && b", "f(a, b)", "xs[0]",
+        "a == b", "a..b", "-a", "!a", "this", "a.b", "move a", "try f(a)",
+    ];
+
+    /// <summary>A valid program that combines declaration templates and nests statements up to <see cref="NestingCap"/>.</summary>
     private static string Assemble(XorShift rng)
     {
-        var depth = 1 + rng.Below(NestingCap);
         var sb = new StringBuilder();
-        sb.Append("struct Box { i64 value }\n");
+        foreach (var decl in AssemblyDeclarations)
+            if (rng.Below(2) == 0)
+                sb.Append(TemplateFor(decl));
+        var depth = 1 + rng.Below(NestingCap);
         sb.Append("void main() {\n");
         sb.Append("    var total = 0\n");
         for (var d = 0; d < depth; d++)
-            sb.Append(new string(' ', 4 * (d + 1))).Append("if total >= 0 {\n");
-        sb.Append(new string(' ', 4 * (depth + 1))).Append("total = ");
-        for (var i = 1; i <= depth + 1; i++)
         {
-            if (i > 1) sb.Append(" + ");
-            sb.Append(i);
+            sb.Append(new string(' ', 4 * (d + 1))).Append("if total >= 0 {\n");
+            sb.Append(new string(' ', 4 * (d + 2))).Append(rng.Pick(AssemblyStatements)).Append('\n');
         }
-        sb.Append('\n');
+        sb.Append(new string(' ', 4 * (depth + 1))).Append("total = ").Append(rng.Pick(AssemblyExpressions)).Append('\n');
         for (var d = depth - 1; d >= 0; d--)
             sb.Append(new string(' ', 4 * (d + 1))).Append("}\n");
         sb.Append("}\n");
@@ -323,5 +354,7 @@ public static class SelfhostParserGenerator
         }
 
         public int Below(int n) => (int)(Next() % (ulong)n);
+
+        public T Pick<T>(T[] items) => items[Below(items.Length)];
     }
 }
