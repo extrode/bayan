@@ -34,7 +34,7 @@ Depends on: feat/007-lambdas at 4a746de (dev, round 3, spec 006 and 007 merged);
   - `diag/map-key-string-part` reports the same region diagnostic for a `(string name, i32 scope)` key whose `string` dies before the map that a `string` key reports today.
   - No emitted key hash calls `byn_hash_bytes` with `sizeof` of a struct or tuple.
   - The suite passes.
-- [ ] T7 Self-hosting reach — files: `tests/cases/run/` (`selfhost-symbol-tables.byn`), `tests/Bayan.Tests/TypedDumpTests.cs` — covers: R12 — after T6 — done when:
+- [x] T7 Self-hosting reach — files: `tests/cases/run/` (`selfhost-symbol-tables.byn`), `tests/Bayan.Tests/TypedDumpTests.cs` — covers: R12 — after T6 — done when:
   - The R12 program runs and prints the expected lines. It interns identifiers sliced from a source string, looks keywords up in a `Map<Symbol, TokenKind>` literal, resolves names through a `List<Map<Symbol, i32>>` scope chain innermost first, keys by `(i32 scope, Symbol name)` and a `MemberKey` struct with fields `i32 owner` and `Symbol name`, and prints declarations in order.
   - `bayan types` on it is byte-identical across two runs.
   - The suite passes.
