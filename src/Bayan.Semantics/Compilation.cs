@@ -1768,7 +1768,9 @@ public sealed partial class Compilation
     /// <summary>Inferred <c>fails</c> sets: the union of what each body propagates, to a fixed point.</summary>
     private void InferErrorSets()
     {
-        var inferred = Modules.SelectMany(m => m.AllFunctions).Where(f => f.InfersErrors || f.Kind is FunctionKind.Main or FunctionKind.Test).ToList();
+        // A lambda's sets are its function type's, never inferred.
+        var inferred = Modules.SelectMany(m => m.AllFunctions)
+            .Where(f => f.Kind != FunctionKind.Lambda && (f.InfersErrors || f.Kind is FunctionKind.Main or FunctionKind.Test)).ToList();
         bool changed;
         do
         {
@@ -1845,6 +1847,22 @@ public sealed partial class Compilation
                     label: "fails the contract", help: $"pass a value that meets `requires {text}`");
             }
         }
+    }
+
+    private readonly Dictionary<FunctionType, FunctionSymbol> _invokeSymbols = new();
+
+    /// <summary>
+    /// What a call through a value of <paramref name="type"/> calls: one symbol per type, whose parameters <c>_0</c>, <c>_1</c>, …
+    /// carry no particle, so no argument name or label matches one (spec 007 R9).
+    /// </summary>
+    internal FunctionSymbol InvokeSymbol(FunctionType type)
+    {
+        if (_invokeSymbols.TryGetValue(type, out var invoke)) return invoke;
+        invoke = new FunctionSymbol("invoke", null, EntryModule, FunctionKind.Invoke) { ReturnType = type.Return, Fails = type.Fails.Count > 0 };
+        for (var i = 0; i < type.Parameters.Count; i++)
+            invoke.Parameters.Add(new ParameterSymbol($"_{i}", null, type.Parameters[i], ParamModifier.None, i));
+        invoke.ErrorSets.AddRange(type.Fails);
+        return _invokeSymbols[type] = invoke;
     }
 
     /// <summary>A parameter's default value, bound on first use.</summary>

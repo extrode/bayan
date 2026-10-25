@@ -83,6 +83,56 @@ public sealed class FunctionTypeTests
         Assert.False(TypeParameterType.Occurs(Fn([PrimitiveType.I32], PrimitiveType.Bool)));
     }
 
+    private static IEnumerable<BoundNode> BodyOf(Compilation c, string function) => BoundTree.Descendants(c.EntryModule.Functions[function][0].Body!);
+
+    [Fact]
+    public void AModuleFunctionOfTheExactTypeIsAFunctionRef()
+    {
+        var c = Compile("bool isBig(i64 x) => x > 2\n\nbool keep(i64 x, by (i64 -> bool) p) => p(x)\n\nvoid main() {\n    let a = keep(3, by: isBig)\n}\n");
+        var reference = Assert.Single(BodyOf(c, "main").OfType<BoundFunctionRef>());
+        Assert.Equal("isBig", reference.Function.Name);
+        Assert.Equal("i64 -> bool", reference.Type.DisplayName);
+    }
+
+    [Fact]
+    public void AFunctionWithAParticleIsAValueWithoutIt()
+    {
+        var c = Compile("i64 clamp(i64 x, to i64 max) => max\n\nvoid main() {\n    let f: (i64, i64) -> i64 = clamp\n}\n");
+        var reference = Assert.Single(BodyOf(c, "main").OfType<BoundFunctionRef>());
+        Assert.Equal("clamp", reference.Function.Name);
+        Assert.Equal("(i64, i64) -> i64", reference.Type.DisplayName);
+    }
+
+    [Fact]
+    public void ACallThroughAValueCallsTheInvokeSymbol()
+    {
+        var c = Compile("i64 apply(i64 x, by ((i64, i64) -> i64) f) => f(x, 1)\n\nvoid main() {\n}\n");
+        var call = Assert.Single(BodyOf(c, "apply").OfType<BoundCall>());
+        Assert.Equal(FunctionKind.Invoke, call.Function.Kind);
+        Assert.Equal(PrimitiveType.I64, call.Type);
+        Assert.Equal("f", Assert.IsType<BoundLocal>(call.Receiver).Local.Name);
+        Assert.Equal(2, call.Arguments.Length);
+        Assert.Equal(["_0", "_1"], call.Function.Parameters.Select(p => p.Name));
+    }
+
+    [Fact]
+    public void ACallThroughAFunctionTypedLocal()
+    {
+        var c = Compile("bool isBig(i64 x) => x > 2\n\nvoid main() {\n    let f: i64 -> bool = isBig\n    let b = f(3)\n}\n");
+        var call = Assert.Single(BodyOf(c, "main").OfType<BoundCall>());
+        Assert.Equal(FunctionKind.Invoke, call.Function.Kind);
+        Assert.Equal(PrimitiveType.Bool, call.Type);
+    }
+
+    [Fact]
+    public void AFunctionValueArgumentInfersTheTypeArgument()
+    {
+        var c = Compile("bool isBig(i64 x) => x > 2\n\nbool holds<T>((T -> bool) p) => true\n\nvoid main() {\n    let f: i64 -> bool = isBig\n    let a = holds(isBig)\n    let b = holds(f)\n}\n");
+        var calls = BodyOf(c, "main").OfType<BoundCall>().Where(x => x.Function.Name == "holds").ToList();
+        Assert.Equal(2, calls.Count);
+        Assert.All(calls, x => Assert.Equal<TypeSymbol>([PrimitiveType.I64], x.Function.TypeArguments));
+    }
+
     [Fact]
     public void ChildrenOfALambdaAreItsCaptures()
     {

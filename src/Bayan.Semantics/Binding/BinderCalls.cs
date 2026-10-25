@@ -89,6 +89,9 @@ internal sealed partial class Binder
             case BoundErrorExpr:
                 BindArgumentsForRecovery(c);
                 return new BoundErrorExpr(c);
+            // A call through a function value: the value is the receiver of its type's invoke symbol (R9).
+            case { Type: FunctionType ft }:
+                return BindFunctionCall(c, _c.InvokeSymbol(ft), callee);
             default:
                 Report(DiagnosticCodes.NotCallable, c.Callee.Span, [callee.Type.DisplayName]);
                 BindArgumentsForRecovery(c);
@@ -202,7 +205,9 @@ internal sealed partial class Binder
             BuiltinFunction.IoRunBatch => "Io.runBatch",
             _ => null,
         };
-        var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind != FunctionKind.Builtin);
+        // An invoke symbol's parameters have no names or particles, so a call through a value is positional (R9).
+        var name = fn.Kind == FunctionKind.Invoke ? Source.GetText(c.Callee.Span) : fn.Name;
+        var args = BindArguments(c, fn.Parameters, fn, enforceNames: fn.Kind is not (FunctionKind.Builtin or FunctionKind.Invoke), name);
         (_printArgument, _sinkArgument) = (outer, outerSink);
         if (receiver is not null && ReceiverStates(fn) is { } wanted) ReportWrongState(fn.Name, receiver, wanted, receiver.Syntax.Span);
         // A call that `becomes` changes the receiver's state; a statement learns the new state after it (`LearnBecomes`). A call
@@ -224,8 +229,8 @@ internal sealed partial class Binder
             _c.RequiresChecks.Add(new RequiresCheck(Source, c, fn, args));
         if (fn.Fails && !ReferenceEquals(_handled, c))
         {
-            if (_covered is not null) _covered.Add((c, fn.Name));
-            else ReportUnhandled(c, fn.Name);
+            if (_covered is not null) _covered.Add((c, name));
+            else ReportUnhandled(c, name);
         }
         return new BoundCall(c, fn, receiver, args, receiver is null ? fn.ReturnType : ReturnTypeThrough(receiver.Type, fn));
     }
@@ -266,12 +271,15 @@ internal sealed partial class Binder
             else
                 p = sawNamed || positional >= fn.Parameters.Count ? null : fn.Parameters[positional++];
             if (p is null || !TypeParameterType.Occurs(p.Type) || _prebound.ContainsKey(arg)) continue;
-            var value = BindExpr(arg.Value, null);
+            var value = p.Type is FunctionType ? BindExprFor(arg.Value, p.Type) : BindExpr(arg.Value, null);
             _prebound[arg] = value;
             // A known-state local passed `ref` or `out` is inferred from its declared type, as `BindArgument` passes it (Q295).
+            // A module function named for a function-typed parameter is inferred from its signature (R12).
             var type = p.Modifier is ParamModifier.Ref or ParamModifier.Out && value is BoundLocal known && KnownState(known.Local) is not null
                 ? known.Local.Type
-                : value.Type;
+                : value is BoundMethodGroup { Receiver: null, Function: { Kind: FunctionKind.Function, Owner: null, IsGeneric: false } named }
+                    ? new FunctionType(named.Parameters.Select(x => x.Type).ToArray(), named.ReturnType, named.ErrorSets.ToArray(), [])
+                    : value.Type;
             conflict |= !Unify(p.Type, type, found, fn, arg.Value.Span);
         }
         if (conflict) return null;
@@ -330,6 +338,9 @@ internal sealed partial class Binder
                     || pt.Fields.Zip(at.Fields).All(f => Unify(f.First.Type, f.Second.Type, found, fn, span));
             case ResultType pr:
                 return a is not ResultType ar || Unify(pr.Value, ar.Value, found, fn, span);
+            case FunctionType pf:
+                return a is not FunctionType af || af.Parameters.Count != pf.Parameters.Count
+                    || pf.Parameters.Zip(af.Parameters).All(x => Unify(x.First, x.Second, found, fn, span)) && Unify(pf.Return, af.Return, found, fn, span);
             case StructSymbol { Template: { } ps2 } pi:
                 return a is not StructSymbol ai || ai.Template != ps2
                     || pi.TypeArguments.Zip(ai.TypeArguments).All(x => Unify(x.First, x.Second, found, fn, span));
@@ -509,7 +520,7 @@ internal sealed partial class Binder
 
     private BoundExpr BindArgumentValue(Argument arg, TypeSymbol? type, string? callee = null)
     {
-        var value = _prebound.Remove(arg, out var early) ? early : Built(BindExpr(arg.Value, type), arg.Value);
+        var value = _prebound.Remove(arg, out var early) ? early : Built(BindExprFor(arg.Value, type), arg.Value);
         if (arg.Modifier == ArgModifier.Move) value = BindMove(arg, value);
         if (callee is not null && type is StateType wanted && ReportWrongState(callee, value, wanted, arg.Value.Span)) return new BoundErrorExpr(arg.Value);
         // A type argument inferred from the value is not a typed use of it.

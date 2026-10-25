@@ -44,9 +44,23 @@ internal sealed partial class Binder
 
     private BoundExpr BindConverted(Expr e, TypeSymbol target, bool argument = false)
     {
-        var bound = Built(BindExpr(e, target), e);
+        var bound = Built(BindExprFor(e, target), e);
         return Convert(bound, target, e.Span, argument);
     }
+
+    /// <summary>
+    /// As <see cref="BindExpr"/>, but a function, constructor or variant named where a function type is expected stays a group,
+    /// so <see cref="Convert"/> can make it a function value or say why it is not one (spec 007 R4).
+    /// </summary>
+    private BoundExpr BindExprFor(Expr e, TypeSymbol? expected)
+    {
+        var bound = BindExprOrType(e, expected);
+        return expected is FunctionType && (bound is BoundMethodGroup or BoundVariantGroup || bound is BoundTypeRef { Referenced: StructSymbol s } && Constructible(s))
+            ? bound : AsValue(bound, e);
+    }
+
+    /// <summary><c>S(…)</c> builds an <paramref name="s"/>: it has a constructor, or is distinct or <c>@positional</c>.</summary>
+    private bool Constructible(StructSymbol s) => s.Constructors.Count > 0 || _c.Distinct.Contains(s) || _c.Positional.Contains(s.Decl);
 
     /// <summary>An expression statement: a value it leaves is an error (BYN3201), so a mis-split line is never silent (§3, J2).</summary>
     private BoundExpr BindStatementExpression(Expr e)
@@ -61,6 +75,7 @@ internal sealed partial class Binder
     private BoundExpr Convert(BoundExpr value, TypeSymbol target, TextSpan span, bool argument = false, bool constrains = true)
     {
         if (constrains) Constrain(value, target);
+        if (target is FunctionType function && value is BoundMethodGroup or BoundVariantGroup or BoundTypeRef) return ConvertToFunction(value, function, span);
         if (value.Type.Equals(target) || target.IsError || value.Type.IsError) return value;
         // An `Untrusted<bool>` is a clean fact, usable as a condition (J41): a `bool` cannot reach a sink.
         if (value.Type is UntrustedType { Inner.IsBool: true } && target.IsBool) return Fact(value);
@@ -111,6 +126,56 @@ internal sealed partial class Binder
             return new BoundErrorExpr(value.Syntax);
         }
         ReportMismatch(value, target, span);
+        return new BoundErrorExpr(value.Syntax);
+    }
+
+    /// <summary>
+    /// A name where function type <paramref name="target"/> is expected: a module-level, non-generic function whose signature
+    /// matches exactly is a <see cref="BoundFunctionRef"/>, its particles dropped (R4); a mismatch shows both signatures (BYN2202);
+    /// a built-in, generic function, method, constructor or variant is BYN2824.
+    /// </summary>
+    private BoundExpr ConvertToFunction(BoundExpr value, FunctionType target, TextSpan span)
+    {
+        var text = Source.GetText(span);
+        string reason;
+        IEnumerable<ParameterSymbol> parameters;
+        switch (value)
+        {
+            case BoundMethodGroup { Receiver: null, Function: { Kind: FunctionKind.Function, Owner: null, IsGeneric: false } fn, TypeArgs.Length: 0 }:
+                var overloads = fn.Module.Functions.TryGetValue(fn.Name, out var fs) && fs.Contains(fn) ? fs : [fn];
+                if (overloads.FirstOrDefault(f => Conversions.Implicit(f, target) is not null) is { } match)
+                    return new BoundFunctionRef(value.Syntax, match, target);
+                var signature = $"{fn.ReturnType.DisplayName} {fn.Name}({string.Join(", ", fn.Parameters.Select(p => p.Type.DisplayName))})"
+                    + (fn.Fails ? " fails" + (fn.ErrorSets.Count > 0 ? " " + string.Join(", ", fn.ErrorSets.Select(s => s.DisplayName)) : "") : "");
+                Report(DiagnosticCodes.TypeMismatch, span, [signature, target.DisplayName], help: $"pass a function of type `{target.DisplayName}`");
+                return new BoundErrorExpr(value.Syntax);
+            case BoundMethodGroup g:
+                reason = g.Function.Kind switch
+                {
+                    FunctionKind.Builtin => "it is built in",
+                    FunctionKind.Constructor => "it is a constructor",
+                    _ when g.Receiver is not null || g.Function.Owner is not null || g.Function.Interface is not null => "it is a method",
+                    _ when g.Function.IsGeneric || g.TypeArgs.Length > 0 => "it is generic",
+                    _ => "it is not a module function",
+                };
+                parameters = g.Function.Parameters;
+                break;
+            case BoundVariantGroup v:
+                (reason, parameters) = ("it is a union variant", v.Variant.Fields);
+                break;
+            case BoundTypeRef { Referenced: StructSymbol s } when Constructible(s):
+                reason = "it is a constructor";
+                parameters = s.Constructors.Count > 0 ? s.Constructors[0].Parameters : s.Fields.Select((f, i) => new ParameterSymbol(f.Name, null, f.Type, ParamModifier.None, i));
+                break;
+            default:
+                return value;
+        }
+        // The lambda takes what the function type passes; a built-in's defaulted tail stays out.
+        parameters = parameters.Take(target.Parameters.Count).ToList();
+        var names = parameters.Select(p => p.Name).ToList();
+        var lambda = names is [var one] ? one : "(" + string.Join(", ", names) + ")";
+        var args = string.Join(", ", parameters.Select(p => p.Syntax?.Particle is { } particle ? $"{particle.Text}: {p.Name}" : p.Name));
+        Report(DiagnosticCodes.NotAFunctionValue, span, [text, reason], help: $"wrap it in a lambda: `{lambda} => {text}({args})`");
         return new BoundErrorExpr(value.Syntax);
     }
 
@@ -574,7 +639,7 @@ internal sealed partial class Binder
                 return BindEnumStatic(m, e);
             case BoundTypeRef { Referenced: UnionSymbol u }:
                 return BindVariant(m, m.Member, u);
-            case BoundTypeRef { Referenced: StructSymbol s }:
+            case BoundTypeRef { Referenced: StructSymbol s } when Constructible(s):
             {
                 var method = s.FindMethods(name).FirstOrDefault();
                 if (method is { IsStatic: true })
