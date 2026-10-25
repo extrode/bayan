@@ -1,0 +1,18 @@
+// A string-literal case on a `Symbol` compares by identity, as `==` does (spec 008 R2).
+void pick(Symbol s) {
+    switch s {
+        case "a": print("a")
+        case "b": print("b")
+        case _: print("other")
+    }
+}
+
+void main() {
+    let s: Symbol = "b"
+    switch s {
+        case "a": print("a")
+        case "b": print("b")
+        case _: print("other")
+    }
+    pick("z")
+}

@@ -1465,16 +1465,16 @@ internal sealed class FunctionEmitter
     }
 
     /// <summary>
-    /// The debug view (spec §13): strings and runes quoted, a struct in its literal form <c>P { x: 1, name: "a" }</c>
+    /// The debug view (spec §13): strings, <c>Symbol</c>s and runes quoted, a struct in its literal form <c>P { x: 1, name: "a" }</c>
     /// (one whose <c>formatInto</c> takes the <c>FormatSpec</c> formats itself), everything else as it displays.
     /// </summary>
     private string Debug(TypeSymbol t, string v, string w)
     {
-        if (t.IsString)
+        if (t.IsString || t == BuiltinType.Symbol)
             return _c.Helper("bynh_w_quoted", "static void bynh_w_quoted(byn_writer* w, byn_str s, uint32_t quote)", () =>
                 "{\n    byn_w_char(w, quote);\n    for (int64_t i = 0; i < s.len; i++) {\n"
                 + "        uint8_t c = s.ptr[i];\n        if (c == quote || c == '\\\\') byn_w_char(w, '\\\\');\n"
-                + "        if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n        else byn_w_bytes(w, &c, 1);\n    }\n    byn_w_char(w, quote);\n}\n") + $"({w}, {v}, '\"');";
+                + "        if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n        else byn_w_bytes(w, &c, 1);\n    }\n    byn_w_char(w, quote);\n}\n") + $"({w}, {(t.IsString ? v : _c.SymbolText(v))}, '\"');";
         if (t is PrimitiveType { Kind: PrimitiveKind.Char })
             return _c.Helper("bynh_w_rune_quoted", "static void bynh_w_rune_quoted(byn_writer* w, uint32_t c)", () =>
                 "{\n    byn_w_char(w, '\\'');\n    if (c == '\\'' || c == '\\\\') byn_w_char(w, '\\\\');\n"
