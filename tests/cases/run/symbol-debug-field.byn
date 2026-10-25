@@ -1,0 +1,11 @@
+// Under `.debug` a `Symbol` struct field prints as a `string` field does: quoted and escaped.
+struct P {
+    Symbol name
+    string s
+}
+
+void main() {
+    let q: Symbol = "q\"x"
+    let p = P { name: q, s: "q\"x" }
+    print($"{p, as: .debug}")
+}

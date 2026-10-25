@@ -1468,11 +1468,14 @@ public sealed partial class Compilation
     {
         var outer = _scratch;
         var bag = _scratch = new DiagnosticBag();
+        var outerSite = _instantiationSite;
+        _instantiationSite ??= (site, span);
         _instantiating++;
         try { work(); }
         finally
         {
             _scratch = outer;
+            _instantiationSite = outerSite;
             _instantiating--;
         }
         var target = _scratch ?? Diagnostics;
@@ -1533,13 +1536,18 @@ public sealed partial class Compilation
     /// <summary>Depth of <see cref="Instantiating"/> calls: nonzero while declaring or binding an instance.</summary>
     private int _instantiating;
 
+    /// <summary>The outermost use being instantiated, where its errors end up reported; null outside <see cref="Instantiating"/>.</summary>
+    private (SourceText Site, TextSpan Span)? _instantiationSite;
+
     /// <summary>Every struct's fields are declared, so a struct or tuple <c>Map</c> key can be checked.</summary>
     internal bool MembersDeclared { get; private set; }
 
     /// <summary><c>Map</c> key checks of types resolved before <see cref="MembersDeclared"/>; run once it is set.</summary>
     private readonly List<Action> _pendingKeys = new();
 
-    internal void AfterMembersDeclared(Action check) => _pendingKeys.Add(check);
+    /// <summary>A check deferred while instantiating reports at that use, as it would have when run then (spec 008 R9).</summary>
+    internal void AfterMembersDeclared(Action check) =>
+        _pendingKeys.Add(_instantiationSite is var (site, span) ? () => Instantiating(site, span, check) : check);
 
     /// <summary>Constraint checks of types instantiated before conformances exist; run once they do.</summary>
     private readonly List<Action> _pendingConstraints = new();

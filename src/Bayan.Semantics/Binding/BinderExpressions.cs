@@ -448,7 +448,7 @@ internal sealed partial class Binder
                 return Literal(l, PrimitiveType.Char, new Rune(value));
             }
             case LiteralKind.String or LiteralKind.RawString when target == BuiltinType.Symbol:
-                return new BoundSymbolLiteral(l, l.Text);
+                return new BoundSymbolLiteral(l, l.Text) { Constant = new ConstantValue(l.Text) };
             case LiteralKind.String:
                 return Literal(l, PrimitiveType.String, l.Text);
             case LiteralKind.RawString:
@@ -519,7 +519,7 @@ internal sealed partial class Binder
         if (_scope.Lookup(name) is { } local)
         {
             if (local.Kind == LocalKind.Const && local.Constant is { } c)
-                return new BoundLiteral(n, local.Type, c) { Constant = c };
+                return ConstantLiteral(n, local.Type, c);
             var read = IsNonNull(local)
                 ? new BoundConversion(n, new BoundLocal(n, local), ((OptionalType)local.Type).Inner, ConversionKind.Narrow)
                 // A local whose state is known reads as its state type (spec §3.17).
@@ -602,8 +602,13 @@ internal sealed partial class Binder
         _c.BindConstant(c);
         if (c.IsStaticArray) return new BoundStaticArray(syntax, c);
         if (c.Value is null) return new BoundErrorExpr(syntax);
-        return new BoundLiteral(syntax, c.Type, c.Value) { Constant = c.Value };
+        return ConstantLiteral(syntax, c.Type, c.Value);
     }
+
+    /// <summary>A read of a <c>const</c>; a <c>Symbol</c> one is its literal-table entry (spec 008 R2).</summary>
+    private static BoundExpr ConstantLiteral(Node syntax, TypeSymbol type, ConstantValue c) => type == BuiltinType.Symbol
+        ? new BoundSymbolLiteral(syntax, (string)c.Value) { Constant = c }
+        : new BoundLiteral(syntax, type, c) { Constant = c };
 
     /// <summary>A member reachable through an implicit <c>this</c>; in a default method, the interface's members.</summary>
     private static Symbol? LookupMember(TypeSymbol t, string name) => t switch
