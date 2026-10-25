@@ -1,103 +1,118 @@
 # 010 — Tasks
 Plan: ./010-plan.md
-Depends on: `dev` with specs 006–009 merged. T1–T4 land serially: skeleton and the parser's public API; diagnostics and codes; symbols and types; bound nodes. T5–T25 are the wave (4–6 writers); each owns disjoint `.byn` files, calls siblings only through a `struct T#N { static … }` stand-in with the signatures in the plan's Data / interfaces, and has `tests/Bayan.Tests/SelfhostSemanticsTnTests.cs` that builds only what it needs; T26–T27 add the CLI, typed-dump and generator harness; tests needing an unlanded sibling are `[Fact(Skip = "T28 enables …")]`. T28 integrates and is the only task after the wave that may edit any semantics file. Handoff Questions are partitioned per task from 520 upward: T1 520–524, T2 525–529, T3 530–534, T4 535–539, T5 540–544, T6 545–549, T7 550–554, T8 555–559, T9 560–564, T10 565–569, T11 570–574, T12 575–579, T13 580–584, T14 585–589, T15 590–594, T16 595–599, T17 600–604, T18 605–609, T19 610–614, T20 615–619, T21 620–624, T22 625–629, T23 630–634, T24 635–639, T25 640–644, T26 645–649, T27 650–654, T28 655–657, T29/T30 658–660, T31/T32 661–663, T33 664–668; unused numbers stay unused. Line numbers refer to `src/Bayan.Semantics/` at the branch point; locate by method name when they drift.
+Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T4: skeleton and parser public API; diagnostics; 128-bit `Big`; symbols and types; bound nodes. Bigint precedes types because `PrimitiveType.Range` returns it. T6–T25 and T34–T38 are the wave (4–6 writers), each owning disjoint `.byn` files and `SelfhostSemanticsTnTests.cs`; T26–T27 add the CLI/typed-dump and generator harness, calling siblings only through a `struct Tn { static … }` stand-in with the plan's signatures, and sized at 1.45 Bayan lines per C# line under ~1,000. Tests needing an unlanded sibling are `[Fact(Skip = "T28 enables …")]`. T28 integrates and is the only task after the wave that may edit any semantics file (or fix a blocking compiler bug, with a test). Questions: T1 520–524, T2 525–529, T3 530–534, T4 535–539, T5 540–544, T6 545–549, T7 550–554, T8 555–559, T9 560–564, T10 565–569, T11 570–574, T12 575–579, T13 580–584, T14 585–589, T15 590–594, T16 595–599, T17 600–604, T18 605–609, T19 610–614, T20 615–619, T21 620–624, T22 625–629, T23 630–634, T24 635–639, T25 640–644, T26 645–649, T27 650–654, T28 655–657, T29/T30 658–660, T31/T32 661–663, T33 664–668, T34 669–673, T35 674–678, T36 679–683, T37 684–688, T38 689–693; unused numbers stay unused. Ranges name methods in `src/Bayan.Semantics/`; locate by method when they drift.
 
-- [ ] T1 Skeleton: module layout, parser public API, Ctx, stubs — files: `selfhost/parser/*.byn` (`public` on every type, union, enum, const, struct field and entry point the checker reads; `uses alloc` on `parseCompilationUnit` and `Parser.create`; no other edit), `selfhost/semantics/{ctx,main}.byn`, stub `selfhost/semantics/{codes,diag,symbols,types,bound,bigint,conversions,fold,naming,typeresolve,builtins,manifest,compile,declare,generics,conformance,binder,binder2,express,express2,express3,calls,calls2,states,errorcases,flow,effects,ownership,region,typed,json}.byn` (header naming the C# file and range, stub bodies for the plan's entry points), `tests/Bayan.Tests/SelfhostSemanticsTests.cs` (build `Lazy` via `Compilation.Create(…, packageRoot: selfhost/)`, process helpers from `SelfhostParserTests.cs`, one smoke test) — covers: R3 — after: none; parallel with: none — done when:
-  - `import parser` and `import lexer` resolve from `selfhost/semantics/`; the stubbed program builds in fast mode; the smoke test runs on an empty file and exits 0; the parser suite and `--filter "Law=L017|Law=L018"` still pass after the public edits; `ctx.byn` declares the handle aliases, `Ctx`, `Binder`, `SourceFile` and `Mod`; Q520–Q524 record the visibility and effect diagnostics met.
-  - Size: about 500 lines of Bayan, about 1,100 changed parser lines and 90 of C#.
-- [ ] T2 Diagnostic model and codes — files: `selfhost/semantics/codes.byn` (every BYN2xxx–BYN8xxx descriptor in `DiagnosticCodes.cs` order, 5-arg `format` with `{{`/`}}`), `selfhost/semantics/diag.byn` (`Diag`, severity, related spans, full `DiagnosticRenderer` with backtick-aware words, path sort, 20-error cap, failure footer), `tests/Bayan.Tests/SelfhostSemanticsT2Tests.cs` — covers: R1 — after: T1; parallel with: none — done when:
-  - every `.diag` file's diagnostics render identically through the new renderer in an in-process fixture; the `--codes` table matches `DiagnosticCodes.All` for the semantic ranges; Q525–Q529 as needed.
-  - Size: about 1,250 lines.
-- [ ] T3 Symbols and types — files: `selfhost/semantics/symbols.byn` (every class in `Symbols.cs`, copied `Decl` facts, `(FileId, declIndex, memberIndex)` links), `selfhost/semantics/types.byn` (`Types.cs`, `typeDisplay`, `typeEquals`, interning caches, builtins, `isValidKey`/`invalidKeyPart`), `tests/Bayan.Tests/SelfhostSemanticsT3Tests.cs` — covers: R2, R4 — after: T2; parallel with: none — done when:
-  - every C# symbol and type is represented, constructed types are canonical, and a fixture prints the same `DisplayName` and equality results as C#; Q530–Q534 as needed.
-  - Size: about 1,600 lines.
-- [ ] T4 Bound nodes — files: `selfhost/semantics/bound.byn` (per-kind arenas, constructors, `Constant`/`ConstantValue`, `children`/`descendants` in `BoundTree.cs` order, flags for the syntax-kind checks), `tests/Bayan.Tests/SelfhostSemanticsT4Tests.cs` — covers: R4 — after: T3; parallel with: none — done when:
-  - every `BoundNodes.cs` record exists with its fields in order, a three-level tree builds and walks back identically, and `children` order is checked against `BoundTree.Children`; Q535–Q539 as needed.
-  - Size: about 850 lines.
-- [ ] T5 128-bit integer — files: `selfhost/semantics/bigint.byn` (signed two-limb value: parse, compare, add, sub, mul, div, rem, shifts, bit ops, wrap/saturate, decimal text), `tests/Bayan.Tests/SelfhostSemanticsT5Tests.cs` — covers: R4 — after: T4; parallel with: T5–T27 — done when:
-  - seeded property tests agree with a C# `Int128`/`BigInteger` oracle over the folding operations; Q540–Q544 record the gap and any operation that could not be expressed.
+- [ ] T1 Skeleton: layout, parser public API, Ctx, stubs — files: `selfhost/parser/*.byn` (`public` on every type, union, enum, const, struct field and entry point the checker reads; `uses alloc` on `parseCompilationUnit` and `Parser.create`), `selfhost/semantics/{ctx,main}.byn`, stubs for every other semantics file (header naming the C# file/range, stub bodies for the plan's entry points), `tests/Bayan.Tests/SelfhostSemanticsTests.cs` (build `Lazy` via `Compilation.Create(…, packageRoot: selfhost/)`, helpers from `SelfhostParserTests.cs`, smoke test) — covers: R3 — after: none; parallel with: none — done when:
+  - imports resolve and the stub builds in fast mode; the smoke test exits 0; parser tests and L017/L018 still pass; `ctx.byn` declares handles, `Ctx`, `Binder`, `SourceFile` (including `"<builtin>"` and `"package.byn"` sources); Q520–Q524 record visibility/effect diagnostics.
+  - Size: about 500 lines of Bayan, about 1,100 changed parser lines, 90 of C#.
+- [ ] T2 Diagnostic model and codes — files: `codes.byn` (BYN2xxx–BYN8xxx plus BYN1016/1054/1056, 5-arg `format`), `diag.byn` (`Diag`, severity, related, `removeRepeats`, `render`, `renderAll(errorLimit, omitted)`), `SelfhostSemanticsT2Tests.cs` — covers: R1 — after: T1; parallel with: none — done when:
+  - every `.diag` file's diagnostics render identically in an in-process fixture; cap application stops at the limit and counts omitted; the table matches C# for the semantic ranges and the three BYN1 codes (checked directly; `--codes` is T26); no footer or summary here; Q525–Q529 as needed.
+  - Size: about 1,250 lines, accepted for one serial writer (Q525).
+- [ ] T3 Symbols and types — files: `symbols.byn` (every `Symbols.cs` class, copied `Decl` facts, `(FileId, declIndex, memberIndex)`), `types.byn` (`Types.cs`, `typeDisplay`, `typeEquals`, interning, `range` over `Big`), `SelfhostSemanticsT3Tests.cs` — covers: R2, R4 — after: T2, T5; parallel with: none — done when:
+  - every symbol/type is represented and canonical; a fixture matches `DisplayName`, equality and all primitive ranges against C#; Q530–Q534 as needed.
+  - Size: about 1,720 lines; the split into two files is accepted for one serial writer (Q530).
+- [ ] T4 Bound nodes — files: `bound.byn` (per-kind arenas, constructors, `Constant`, `children`/`descendants` in `BoundTree.cs` order, syntax-kind flags), `SelfhostSemanticsT4Tests.cs` — covers: R4 — after: T3; parallel with: none — done when:
+  - every `BoundNodes.cs` record exists with its fields in order; a three-level tree builds and walks identically; Q535–Q539 as needed.
+  - Size: about 770 lines.
+- [ ] T5 128-bit integer — files: `bigint.byn` (`struct Big`, parse/compare/add/sub/mul/div/rem/shifts/bit ops/wrap/saturate/`bigMin`/`bigMax`/text), `SelfhostSemanticsT5Tests.cs` — covers: R4 — after: T2; parallel with: none — done when:
+  - seeded tests match a C# `Int128`/`BigInteger` oracle over every operation and every integer boundary; Q540–Q544 record the gap and any unexpressible case.
   - Size: about 500 lines.
-- [ ] T6 Conversions, type facts and folding — files: `selfhost/semantics/conversions.byn` (`Conversions.cs`, `TypeFacts.cs`), `selfhost/semantics/fold.byn` (`ConstantFolding.cs` over bound handles), `tests/Bayan.Tests/SelfhostSemanticsT6Tests.cs` — covers: R4 — after: T4; parallel with: T5, T7–T27 — done when:
-  - method-for-method port over `bigint.byn`; seeded folding results equal the C# folder's; Q545–Q549 as needed.
-  - Size: about 600 lines.
-- [ ] T7 Naming, lexicon and particles — files: `selfhost/semantics/naming.byn` (`Naming.cs`, `Lexicon.cs`, `Particles.cs`; lexicon `Map`s built once into `Ctx`), `tests/Bayan.Tests/SelfhostSemanticsT7Tests.cs` — covers: R4 — after: T4; parallel with: T5, T6, T8–T27 — done when:
-  - every BYN50xx/51xx case form is reproduced; ASCII casing is recorded in Q550–Q554.
-  - Size: about 550 lines.
-- [ ] T8 Type resolution — files: `selfhost/semantics/typeresolve.byn` (`TypeResolver.cs`: names, qualifications, aliases, associated types, `Map`/`HashMap`, builtins, effects), `tests/Bayan.Tests/SelfhostSemanticsT8Tests.cs` — covers: R4 — after: T4; parallel with: T5–T7, T9–T27 — done when:
-  - method-for-method port; a fixture resolves named, optional, tuple, function and `Map` syntax like C#; Q555–Q559 as needed.
-  - Size: about 650 lines.
-- [ ] T9 Builtins and builtin members — files: `selfhost/semantics/builtins.byn` (`Builtins.cs`, `BuiltinMembers.cs`), `tests/Bayan.Tests/SelfhostSemanticsT9Tests.cs` — covers: R4 — after: T4; parallel with: T5–T8, T10–T27 — done when:
-  - every builtin function, type and member table exists with the C# signatures; Q560–Q564 as needed.
-  - Size: about 700 lines.
-- [ ] T10 Manifest reader — files: `selfhost/semantics/manifest.byn` (`Packages/Manifest.cs`: data grammar, BYN3100–BYN3103, fields, capabilities, grammar, `CamelOf`/`KebabOf`, entry selection), `tests/Bayan.Tests/SelfhostSemanticsT10Tests.cs` — covers: R1, R4 — after: T4; parallel with: T5–T9, T11–T27 — done when:
-  - both package diag cases and the project form parse and report identically to C#; Q565–Q569 as needed.
-  - Size: about 550 lines.
-- [ ] T11 Compilation loading and declaration A — files: `selfhost/semantics/compile.byn` (`Compilation.cs` 1–~600: `FromPath`/`FromProject`/`Create`, imports, module order, `Declare` order, `DeclareFile`, signatures; `Work` records replace `Action`s), `tests/Bayan.Tests/SelfhostSemanticsT11Tests.cs` — covers: R1, R4 — after: T4; parallel with: T5–T10, T12–T27 — done when:
-  - loading a file, directory and project yields the C# module/file order and import diagnostics; no stored closures; Q570–Q574 record the closure workaround and path parity.
-  - Size: about 850 lines.
-- [ ] T12 Declaration B — files: `selfhost/semantics/declare.byn` (`Compilation.cs` ~600–1362: variants, payloads, enums, unions, struct and interface members, signatures, shapes, recursion), `tests/Bayan.Tests/SelfhostSemanticsT12Tests.cs` — covers: R4 — after: T4; parallel with: T5–T11, T13–T27 — done when:
+- [ ] T6 Conversions, type facts and folding — files: `conversions.byn` (`Conversions.cs`, `TypeFacts.cs`), `fold.byn` (`ConstantFolding.cs` over `Big`), `SelfhostSemanticsT6Tests.cs` — covers: R4 — after: T4; parallel with: T7–T27, T34–T38 — done when:
+  - method-for-method port; seeded folding equals C#; Q545–Q549 as needed.
+  - Size: about 520 lines.
+- [ ] T7 Naming, lexicon and particles — files: `naming.byn` (`Naming.cs`, `Lexicon.cs`, `Particles.cs`; lexicon maps built once into `Ctx`, manifest grammar merged), `SelfhostSemanticsT7Tests.cs` — covers: R4 — after: T4; parallel with: T6, T8–T27, T34–T38 — done when:
+  - every BYN50xx/51xx form is reproduced; ASCII casing recorded in Q550–Q554.
+  - Size: about 670 lines.
+- [ ] T8 Type resolution — files: `typeresolve.byn` (`TypeResolver.cs`: names, aliases, associated types, `Map`/`HashMap`, builtins, effects; `afterMembersDeclared` for the deferred key check), `SelfhostSemanticsT8Tests.cs` — covers: R4 — after: T4; parallel with: T6–T7, T9–T27, T34–T38 — done when:
+  - method-for-method port; a fixture resolves named, optional, tuple, function and `Map` syntax like C#; Q555–Q559 record the closure and casing workarounds.
+  - Size: about 735 lines.
+- [ ] T9 Builtins and builtin members — files: `builtins.byn` (`Builtins.cs` incl. parsed `"<builtin>"` sources and the `Rule` variants, `BuiltinMembers.cs`), `SelfhostSemanticsT9Tests.cs` — covers: R4 — after: T4; parallel with: T6–T8, T10–T27, T34–T38 — done when:
+  - every builtin function, type and member table exists with the C# signatures; a fixture resolves `Io`, `Utf8`, `Symbol` and `Rule`; Q560–Q564 as needed.
+  - Size: about 895 lines.
+- [ ] T10 Manifest reader — files: `manifest.byn` (`src/Bayan.Syntax/Packages/Manifest.cs`: data grammar, BYN3100–BYN3103, capabilities, grammar, `camelOf`/`kebabOf`), `SelfhostSemanticsT10Tests.cs` — covers: R1, R4 — after: T4; parallel with: T6–T9, T11–T27, T34–T38 — done when:
+  - both `package.byn` diag cases parse and report identically; entry-module names match `CliApp.EntryModule`; Q565–Q569 as needed.
+  - Size: about 690 lines.
+- [ ] T11 Compilation loading and declaration A — files: `compile.byn` (`Compilation.cs` 1–~600: `FromPath`/`FromProject`/`Create`, imports, module order, `Declare` order, `DeclareFile`, `addType`/`addFunction`; `Work` records and sinks; `removeRepeats` call), `SelfhostSemanticsT11Tests.cs` — covers: R1, R4 — after: T4; parallel with: T6–T10, T12–T27, T34–T38 — done when:
+  - file, directory and project loading give the C# module/file order and import diagnostics; no stored closures; Q570–Q574 record closures and path parity.
+  - Size: about 870 lines.
+- [ ] T12 Declaration B — files: `declare.byn` (`Compilation.cs` ~600–1000: variants, payloads, enums, unions, struct members, overloads), `SelfhostSemanticsT12Tests.cs` — covers: R4 — after: T4; parallel with: T6–T11, T13–T27, T34–T38 — done when:
   - method-for-method port with copied symbol facts and no synthesized syntax; Q575–Q579 as needed.
-  - Size: about 900 lines.
-- [ ] T13 Generics and instantiation — files: `selfhost/semantics/generics.byn` (`Compilation.cs` 1364–1952: `BindAll`, instance keys, `Instantiating` inlined as sink push/pop, constraints, `InferErrorSets`, mutation/requires, `bindFunction`), `tests/Bayan.Tests/SelfhostSemanticsT13Tests.cs` — covers: R4 — after: T4; parallel with: T5–T12, T14–T27 — done when:
-  - the instantiation work list reproduces C# order and forwarding; Q580–Q584 as needed.
-  - Size: about 800 lines.
-- [ ] T14 Conformance — files: `selfhost/semantics/conformance.byn` (`Conformance.cs`: `Conform`, `CheckConformances`, quiet sinks, associated bindings), `tests/Bayan.Tests/SelfhostSemanticsT14Tests.cs` — covers: R4 — after: T4; parallel with: T5–T13, T15–T27 — done when:
+  - Size: about 580 lines.
+- [ ] T13 Generics and instantiation — files: `generics.byn` (`Compilation.cs` 1364–1952: `BindAll`, instance keys, `Instantiating` as sink push/pop, constraints, `InferErrorSets`, mutation/requires), `SelfhostSemanticsT13Tests.cs` — covers: R4 — after: T4; parallel with: T6–T12, T14–T27, T34–T38 — done when:
+  - the work list reproduces C# order and forwarding; Q580–Q584 as needed.
+  - Size: about 853 lines.
+- [ ] T14 Conformance — files: `conformance.byn` (`Conformance.cs`: `conform`, `checkConformances`, quiet sinks, associated bindings), `SelfhostSemanticsT14Tests.cs` — covers: R4 — after: T4; parallel with: T6–T13, T15–T27, T34–T38 — done when:
   - witness and default-method checks match the C# cases; Q585–Q589 as needed.
-  - Size: about 350 lines.
-- [ ] T15 Binder core and statements A — files: `selfhost/semantics/binder.byn` (`Binder.cs` 1–~700: state, scopes, locals, entry points, blocks, statement dispatch, asserts, narrowing), `tests/Bayan.Tests/SelfhostSemanticsT15Tests.cs` — covers: R4 — after: T4; parallel with: T5–T14, T16–T27 — done when:
-  - method-for-method port; a fixture binds a body of locals and statements over a hand-built `Ctx`; Q590–Q594 as needed.
-  - Size: about 850 lines.
-- [ ] T16 Binder statements B — files: `selfhost/semantics/binder2.byn` (`Binder.cs` ~700–1468: locals, loops, return/fail, break/continue, defer/errdefer/on panic, context, switch statement), `tests/Bayan.Tests/SelfhostSemanticsT16Tests.cs` — covers: R4 — after: T4; parallel with: T5–T15, T17–T27 — done when:
-  - method-for-method port; the loop and defer diag forms are named as passing after rebase; Q595–Q599 as needed.
-  - Size: about 850 lines.
-- [ ] T17 Expression binding A — files: `selfhost/semantics/express.byn` (`BinderExpressions.cs` 1–~700: conversions, literals, integer parsing, names and suggestions, members), `tests/Bayan.Tests/SelfhostSemanticsT17Tests.cs` — covers: R4 — after: T4; parallel with: T5–T16, T18–T27 — done when:
-  - method-for-method port; literals and name errors match the C# cases; Q600–Q604 as needed.
-  - Size: about 850 lines.
-- [ ] T18 Expression binding B — files: `selfhost/semantics/express2.byn` (`BinderExpressions.cs` ~700–1450: value and interface members, index/slice, unary/binary/folding, coalesce, ranges, casts, struct literals, collections), `tests/Bayan.Tests/SelfhostSemanticsT18Tests.cs` — covers: R4 — after: T4; parallel with: T5–T17, T19–T27 — done when:
-  - method-for-method port; the binary and member diag forms are named as passing after rebase; Q605–Q609 as needed.
-  - Size: about 850 lines.
-- [ ] T19 Expression binding C — files: `selfhost/semantics/express3.byn` (`BinderExpressions.cs` ~1450–2158: map/tuple literals, spread, lambdas and captures, stackalloc, interpolation and format specs), `tests/Bayan.Tests/SelfhostSemanticsT19Tests.cs` — covers: R4 — after: T4; parallel with: T5–T18, T20–T27 — done when:
-  - method-for-method port, including lambda naming and captures used by `--types`; Q610–Q614 as needed.
-  - Size: about 800 lines.
-- [ ] T20 Call binding A — files: `selfhost/semantics/calls.byn` (`BinderCalls.cs` 1–~960: calls, overloads, unification, arguments and names, construction, builtin calls, move), `tests/Bayan.Tests/SelfhostSemanticsT20Tests.cs` — covers: R4 — after: T4; parallel with: T5–T19, T21–T27 — done when:
-  - method-for-method port; the call and argument-name diag cases are named as passing after rebase; Q615–Q619 as needed.
-  - Size: about 900 lines.
-- [ ] T21 Call binding B — files: `selfhost/semantics/calls2.byn` (`BinderCalls.cs` ~960–1956: try/catch, switch expressions, patterns, exhaustiveness, assignment, inc/dec, writability), `tests/Bayan.Tests/SelfhostSemanticsT21Tests.cs` — covers: R4 — after: T4; parallel with: T5–T20, T22–T27 — done when:
-  - method-for-method port; the pattern and assignment diag forms are named as passing after rebase; Q620–Q624 as needed.
-  - Size: about 900 lines.
-- [ ] T22 Typestate and error cases — files: `selfhost/semantics/states.byn` (`BinderStates.cs`), `selfhost/semantics/errorcases.byn` (`BinderErrors.cs`), `tests/Bayan.Tests/SelfhostSemanticsT22Tests.cs` — covers: R4 — after: T4; parallel with: T5–T21, T23–T27 — done when:
+  - Size: about 345 lines.
+- [ ] T15 Binder core and statements A — files: `binder.byn` (`Binder.cs` 1–~500: state, scopes, locals, entry points, blocks), `SelfhostSemanticsT15Tests.cs` — covers: R4 — after: T4; parallel with: T6–T14, T16–T27, T34–T38 — done when:
+  - method-for-method port; a fixture binds locals and statements over a hand-built `Ctx`; Q590–Q594 as needed.
+  - Size: about 725 lines.
+- [ ] T16 Binder statements B — files: `binder2.byn` (`Binder.cs` ~500–980: statement dispatch, assert, narrowing, if/while/loops), `SelfhostSemanticsT16Tests.cs` — covers: R4 — after: T4; parallel with: T6–T15, T17–T27, T34–T38 — done when:
+  - method-for-method port; loop and narrowing diag forms named as passing after rebase; Q595–Q599 as needed.
+  - Size: about 696 lines.
+- [ ] T17 Expression binding A — files: `express.byn` (`BinderExpressions.cs` 1–~550: conversions, literals, integer parsing, names and suggestions), `SelfhostSemanticsT17Tests.cs` — covers: R4 — after: T4; parallel with: T6–T16, T18–T27, T34–T38 — done when:
+  - method-for-method port; literals and name errors match C#; Q600–Q604 as needed.
+  - Size: about 798 lines.
+- [ ] T18 Expression binding B — files: `express2.byn` (`BinderExpressions.cs` ~550–1100: members, index/slice, unary/binary/folding, ranges, coalesce), `SelfhostSemanticsT18Tests.cs` — covers: R4 — after: T4; parallel with: T6–T17, T19–T27, T34–T38 — done when:
+  - method-for-method port; binary and member diag forms named as passing after rebase; Q605–Q609 as needed.
+  - Size: about 798 lines.
+- [ ] T19 Expression binding C — files: `express3.byn` (`BinderExpressions.cs` ~1100–1620: casts, struct literals, collections), `SelfhostSemanticsT19Tests.cs` — covers: R2, R4 — after: T4; parallel with: T6–T18, T20–T27, T34–T38 — done when:
+  - method-for-method port; Q610–Q614 as needed.
+  - Size: about 754 lines.
+- [ ] T20 Call binding A — files: `calls.byn` (`BinderCalls.cs` 1–~650: calls, overloads, unification, arguments and names), `SelfhostSemanticsT20Tests.cs` — covers: R4 — after: T4; parallel with: T6–T19, T21–T27, T34–T38 — done when:
+  - method-for-method port; call and argument-name diag cases named as passing after rebase; Q615–Q619 as needed.
+  - Size: about 943 lines.
+- [ ] T21 Call binding B — files: `calls2.byn` (`BinderCalls.cs` ~650–1300: construction, builtin calls, move, try/catch), `SelfhostSemanticsT21Tests.cs` — covers: R4 — after: T4; parallel with: T6–T20, T22–T27, T34–T38 — done when:
+  - method-for-method port; Q620–Q624 as needed.
+  - Size: about 943 lines.
+- [ ] T22 Typestate and error cases — files: `states.byn` (`BinderStates.cs`), `errorcases.byn` (`BinderErrors.cs`), `SelfhostSemanticsT22Tests.cs` — covers: R4 — after: T4; parallel with: T6–T21, T23–T27, T34–T38 — done when:
   - every `become`, state-narrowing and error-payload rule is ported; Q625–Q629 as needed.
-  - Size: about 600 lines.
-- [ ] T23 Flow and effects — files: `selfhost/semantics/flow.byn` (`FlowAnalysis.cs`), `selfhost/semantics/effects.byn` (`EffectAnalysis.cs`, `ErrorFlow.cs`), `tests/Bayan.Tests/SelfhostSemanticsT23Tests.cs` — covers: R4 — after: T4; parallel with: T5–T22, T24–T27 — done when:
+  - Size: about 610 lines.
+- [ ] T23 Flow and effects — files: `flow.byn` (`FlowAnalysis.cs`), `effects.byn` (`EffectAnalysis.cs`, `ErrorFlow.cs`), `SelfhostSemanticsT23Tests.cs` — covers: R4 — after: T4; parallel with: T6–T22, T24–T27, T34–T38 — done when:
   - definite assignment, missing returns, unreachable code, `try` propagation and the effect fixed point match C#; Q630–Q634 as needed.
-  - Size: about 850 lines.
-- [ ] T24 Ownership and lints — files: `selfhost/semantics/ownership.byn` (`OwnershipAnalysis.cs`, `NeverReassignedVarLint.cs`, `SpanParameterLint.cs`, `PanicHandlerCheck.cs`), `tests/Bayan.Tests/SelfhostSemanticsT24Tests.cs` — covers: R4 — after: T4; parallel with: T5–T23, T25–T27 — done when:
+  - Size: about 992 lines.
+- [ ] T24 Ownership and lints — files: `ownership.byn` (`OwnershipAnalysis.cs`, `NeverReassignedVarLint.cs`, `SpanParameterLint.cs`, `PanicHandlerCheck.cs`), `SelfhostSemanticsT24Tests.cs` — covers: R4 — after: T4; parallel with: T6–T23, T25–T27, T34–T38 — done when:
   - move/use-after-move and the three lints are ported over bound handles; Q635–Q639 as needed.
-  - Size: about 750 lines.
-- [ ] T25 Regions — files: `selfhost/semantics/region.byn` (`RegionAnalysis.cs`; borrow sets as copied lists/maps), `tests/Bayan.Tests/SelfhostSemanticsT25Tests.cs` — covers: R4 — after: T4; parallel with: T5–T24, T26, T27 — done when:
-  - rules 3–6 and the two-pass last-use analysis match every region diag case; Q640–Q642 record the immutable-collection workaround.
-  - Size: about 950 lines.
-- [ ] T26 CLI, typed dump and golden harness — files: `selfhost/semantics/main.byn` (`bayan-check [--types] [--all] <path>`, `--many`, `--time`, `--spans`, `--codes`; plain style, cap, footer, exit codes), `selfhost/semantics/typed.byn` (`TypedDump.cs`), `selfhost/semantics/json.byn` (escaping and indented writer), `tests/Bayan.Tests/SelfhostSemanticsTests.cs` (isolated case copies, `CliApp.Run` reference, `Golden.Compare`, diag/typed theories) — covers: R1, R2, R5, L020 (check) — after: T4; parallel with: T5–T25, T27 — done when:
-  - `--types` is byte-identical on every `typed/` case; every diag case's stderr and exit match `bayan check`; `map-copy` exercises the cap; warning-only cases exit 0; `--spans` reports no violation; Q645–Q649 as needed.
-  - Size: about 650 lines of Bayan and 350 of C#.
-- [ ] T27 Generator and speed — files: `tests/Bayan.Tests/SelfhostSemanticsGenerator.cs` (XorShift seeds; one template per semantic feature; single-fault injection at a known span; `OneMegabyte()`), `tests/Bayan.Tests/SelfhostSemanticsGeneratorTests.cs` (corpora identical across runs; all fault kinds appear; a deliberate C# change fails a seed; 1 MB timing ratio) — covers: R6, R7 — after: T4; parallel with: T5–T26 — done when:
-  - fixed seeds agree on diagnostics and dumps between both checkers; a dropped diagnostic or widened conversion fails at least one seed; Q650–Q654 as needed.
+  - Size: about 967 lines.
+- [ ] T25 Regions A — files: `region.byn` (`RegionAnalysis.cs` 1–~440: regions, borrows, loans, store rules), `SelfhostSemanticsT25Tests.cs` — covers: R4 — after: T4; parallel with: T6–T24, T26, T27, T34–T38 — done when:
+  - rules 3–4 match the region diag cases; Q640–Q642 record the immutable-collection workaround.
+  - Size: about 638 lines.
+- [ ] T26 CLI, typed dump and golden harness — files: `main.byn` (the modes, cap line, footer, explain, summary, `programName`), `typed.byn`, `json.byn`, `SelfhostSemanticsTests.cs` (golden and CLI theories) — covers: R1, R2, R5, L020 (check) — after: T4; parallel with: T6–T25, T27, T34–T38 — done when:
+  - modes run on the stub; `--types` emits valid JSON; golden mode takes `--tests`, `--package`, `--include-path`; a failing comparison names the input and first differing line; parity theories are `Skip = "T28 enables …"`; Q645–Q649 as needed.
+  - Size: about 508 lines of Bayan and 350 of C#.
+- [ ] T27 Generator and speed — files: `SelfhostSemanticsGenerator.cs` (XorShift seeds, one template per feature, single-fault injection, `OneMegabyte()`), `SelfhostSemanticsGeneratorTests.cs` — covers: R6, R7 — after: T4; parallel with: T6–T26, T34–T38 — done when:
+  - corpora are deterministic, every fault kind appears, and the 1 MB input is written; checker comparisons are `Skip = "T28 enables …"`; Q650–Q654 as needed.
   - Size: about 450 lines of C#.
-- [ ] T28 Integration: parity — files: any `selfhost/semantics/*.byn` (stand-ins removed, fixes only), `work/todo.md` (C# bugs matched) — covers: R1, R2, R4, R5, R7 — after: T5–T27; parallel with: none — done when:
-  - every diag, typed and generated row passes with equal stderr, `--types` bytes and exit code; the 1 MB median ratio is at most 10 and is recorded; the whole suite passes, including L001/L002/L017/L018; Q655–Q657 as needed.
+- [ ] T28 Integration: parity — files: any `selfhost/semantics/*.byn` (stand-ins removed, fixes only), `src/Bayan.*` (only a blocking compiler bug, with a test), `work/todo.md` — covers: R1, R2, R4, R5, R6, R7, R8 — after: T6–T27, T34–T38; parallel with: none — done when:
+  - every diag (golden and CLI), typed and generated row passes with equal stderr, `--types` bytes and exit code; the 1 MB median ratio is at most 10 and recorded; the full suite including L001/L002/L017/L018 passes; any blocking compiler bug is fixed here with a test; Q655–Q657.
   - Size: fixes only, no new files.
-- [ ] T29 prove L019 via /prove: binder equivalence — files: `tests/Bayan.Tests/SelfhostSemanticsEquivalenceLawTests.cs` [Trait Law L019], `docs/laws/019-binder-equivalence.md` (status `proposed`, proof notes) — covers: L019 — after: T28; parallel with: T31 — done when:
-  - over every parsed-clean diag case, every typed case and the valid and corrupted seed corpora, dumps, diagnostics and exit codes agree; a mutation (a dropped diagnostic or widened conversion, reverted) makes it fail; `dotnet test --filter "Law=L019"` holds; Q658–Q659 as needed.
+- [ ] T29 prove L019 via /prove: binder equivalence — files: `SelfhostSemanticsEquivalenceLawTests.cs` [Trait Law L019], `docs/laws/019-binder-equivalence.md` — covers: L019 — after: T28; parallel with: T31 — done when:
+  - every parsed-clean diag case, typed case and valid/corrupted seed agree; a dropped-diagnostic or widened-conversion mutation makes it fail; `--filter "Law=L019"` holds; Q658–Q659.
   - Size: about 250 lines of C# and the law page.
 - [ ] T30 enact L019 "Binder equivalence" — files: `docs/laws/019-binder-equivalence.md` — covers: L019 — after: T29 — done when:
-  - `status: enacted` lands in the same change as T29's passing proof (standing authorization, 2026-10-21).
-  - Size: one status line and the proof's recorded measurements.
-- [ ] T31 prove L020 via /prove: no checker panic — files: `tests/Bayan.Tests/SelfhostSemanticsNoPanicLawTests.cs` [Trait Law L020], `docs/laws/020-no-checker-panic.md` (status `proposed`, proof notes) — covers: L020 — after: T28; parallel with: T29 — done when:
-  - over every golden, the seed corpora and random byte and token mutations (nesting bounded as in L018's proof), every exit is 0 or 1 and `--spans` prints no violation; a span mutation makes it fail; the bounded corpus is stated; Q661–Q662 as needed.
+  - `status: enacted` lands with T29's passing proof (standing authorization, 2026-10-21).
+  - Size: one status line and recorded measurements.
+- [ ] T31 prove L020 via /prove: no checker panic — files: `SelfhostSemanticsNoPanicLawTests.cs` [Trait Law L020], `docs/laws/020-no-checker-panic.md` — covers: L020 — after: T28; parallel with: T29 — done when:
+  - over every golden, seed corpus and random byte/token mutation (nesting bounded as in L018), exits are 0 or 1 and `--spans` prints nothing; a span mutation fails it; Q661–Q662.
   - Size: about 200 lines of C# and the law page.
 - [ ] T32 enact L020 "No checker panic" — files: `docs/laws/020-no-checker-panic.md` — covers: L020 — after: T31 — done when:
-  - `status: enacted` lands in the same change as T31's passing proof, unless T31 records a C# counterexample, in which case the law stays `proposed` and the task says so in Q663.
-  - Size: one status line and the proof's recorded measurements.
-- [ ] T33 Docs — files: `docs/bayan-handoff.md` (Q520 upward, progress entry with spend, Road row 010 done, readiness section with "Friction found porting the checker"), `CHANGELOG.md`, `work/todo.md` (consolidated lines), `docs/specs/010-self-hosted-semantics/010-spec.md` status — covers: R8, R9 — after: T28, T30, T32 — done when:
-  - every Question raised by T1–T32 is listed in number order; the readiness section names what the checker port needed and did not get; the spec status is done; no revision file is added unless SPEC or GRAMMAR changed; Q664–Q668 for docs friction.
+  - `status: enacted` lands with T31's passing proof, unless a C# counterexample keeps it `proposed` (Q663).
+  - Size: one status line and recorded measurements.
+- [ ] T33 Docs — files: `docs/bayan-handoff.md` (Q520+, spend, Road row 010, readiness), `CHANGELOG.md`, `work/todo.md`, `010-spec.md` status — covers: R8, R9 — after: T28, T30, T32 — done when:
+  - every Question raised by T1–T32 is listed in order; readiness names what the port needed and did not get; spec status done; Q664–Q668.
   - Size: about 120 lines of docs.
+- [ ] T34 Call binding C — files: `calls3.byn` (`BinderCalls.cs` ~1300–1956: patterns, switch expressions, exhaustiveness, assignment, inc/dec, writability), `SelfhostSemanticsT34Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T35–T38 — done when:
+  - method-for-method port; pattern and assignment diag forms named as passing after rebase; Q669–Q673 as needed.
+  - Size: about 951 lines.
+- [ ] T35 Expression binding D — files: `express4.byn` (`BinderExpressions.cs` ~1620–2158: map/tuple literals, spread, lambdas and captures, stackalloc, interpolation and format specs), `SelfhostSemanticsT35Tests.cs` — covers: R2, R4 — after: T4; parallel with: T6–T27, T34, T36–T38 — done when:
+  - lambda naming and captures used by `--types` are correct; method-for-method port; Q674–Q678 as needed.
+  - Size: about 780 lines.
+- [ ] T36 Binder statements C — files: `binder3.byn` (`Binder.cs` ~980–1468: return/fail, break/continue, defer/errdefer/on panic, context, switch statement), `SelfhostSemanticsT36Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34, T35, T37, T38 — done when:
+  - method-for-method port; defer and fail diag forms named as passing after rebase; Q679–Q683 as needed.
+  - Size: about 708 lines.
+- [ ] T37 Regions B — files: `region2.byn` (`RegionAnalysis.cs` ~440–882: calls, mutations, last-use, reporting), `SelfhostSemanticsT37Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34–T36, T38 — done when:
+  - rules 5–6 and the reporting pass match the region diag cases; Q684–Q688 as needed.
+  - Size: about 641 lines.
+- [ ] T38 Declaration C — files: `declare2.byn` (`Compilation.cs` ~1000–1362: interface members, signatures and parameters, struct checks, states, validation errors, shapes and recursion), `SelfhostSemanticsT38Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34–T37 — done when:
+  - method-for-method port; interface and state declaration diag forms named as passing after rebase; Q689–Q693 as needed.
+  - Size: about 525 lines.
