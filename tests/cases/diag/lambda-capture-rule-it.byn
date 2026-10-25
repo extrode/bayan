@@ -1,0 +1,7 @@
+bool any(List<i64> xs, by (i64 -> bool) p) => false
+
+struct Bag {
+    List<i64> items requires any(it, by: x => x < it[0])
+}
+
+void main() {}
