@@ -86,6 +86,7 @@ Familiar alternatives are **input forms**: the editor and `bayan format` accept 
 | `User!EmailError f()`, `User!(A, B) f()` | `User f() fails EmailError`, `fails A, B` | [BYN1031](diagnostics/BYN1031.md) |
 | `Grams w = 0g` (local binding in a function body) | `let w: Grams = 0g` | [BYN1043](diagnostics/BYN1043.md) |
 | `f() -> T`, `f(x: T)`, field `x: T`, payload `case(x: T)` | `T f()`, `f(T x)`, `T x`, `case(T x)` (§5) | [BYN1043](diagnostics/BYN1043.md) |
+| `A => B` as a type (`(i32 => bool) p`, `type F = A => B`, `let f: A => B`) | `A -> B`; after a parameter list or a field name `=>` still starts an expression body | [BYN1055](diagnostics/BYN1055.md) |
 | `unique struct`, `distinct type`, `error union`, `error enum` | `struct unique`, `type distinct`, `union error` | [BYN1044](diagnostics/BYN1044.md) |
 | Trailing `;`, `a; b` on one line | Newlines (§6) | [BYN1040](diagnostics/BYN1040.md) |
 | `[Derive(Json)]` | `@derive(Json)` (§7) | [BYN1045](diagnostics/BYN1045.md) |
@@ -179,6 +180,7 @@ test "bounds" (i32 input, bool valid) { … }
 - Local bindings put the name first: `let`/`var` already lead, and the name is what the reader scans for.
 - The name-first declaration forms are input forms that `bayan format` rewrites ([BYN1043](diagnostics/BYN1043.md)): `f() -> T` → `T f()`, `f(x: T)` → `f(T x)`, field `x: T` → `T x`, payload `case(x: T)` → `case(T x)`. In a function body, `Grams w = 0g` → `let w: Grams = 0g`; in a struct body the same text is a field with a default.
 - A function type used as a field or parameter type is parenthesized so the name follows the closing paren: `(Line -> Money uses net) pricer`, `(Order -> bool) pred`; a single parameter type needs no inner parentheses. Without the parentheses the name would read as part of the return type or `uses` list.
+- In v0.1 a function type is a parameter type, a `type` alias target or a local's type (`let f: Pred = isBig`); as a field, property, return type, constant, payload, type argument or element type it is [BYN2822](diagnostics/BYN2822.md) (SPEC §3.16).
 - Revised 2026-10-22: round 3 first put names first in every declaration; that was meant only for local bindings, so declarations returned to type-first.
 - `union error` also composes and narrows error sets; composed sets are flattened, and two components sharing a case name is an error (different instantiations of one generic set, such as `ValidationError<A>` and `ValidationError<B>`, are distinct components):
   ```csharp
@@ -315,7 +317,9 @@ type OrderPlaced = Event<Order.placed> uses net, alloc, suspend
 - `fails` is not an effect because it carries a type; effects are names from a closed list.
 - `panic` is not an effect.
 - `->` marks the return in a function type; a declaration puts its return type first (§5). `=>` means "evaluates to" (lambdas, expression bodies, switch arms).
+- Lambdas are `x => …`, `(a, b) => …` or `() => …` with an expression or block body; parameters are names only and take their types from the function type expected. `it` names the parameter of a one-parameter lambda written as a bare argument (`any(ts, by: it.start > 0)`); `it` inside such a lambda is [BYN2029](diagnostics/BYN2029.md), and `.member` is never a lambda ([BYN2823](diagnostics/BYN2823.md), fix `it.member`). A lambda reads `let` values and plain parameters by copy; a `var` is [BYN2821](diagnostics/BYN2821.md) (SPEC §3.16).
 - A function-typed parameter with no `uses` is polymorphic: the call inherits the effects of the function passed, so there is no `tryMap` or `mapAsync`: `map` covers both. One that the callee stores takes the bound of the place it is stored in.
+- A function-typed local's `uses` is an upper bound, like a stored type's: `let hook: string -> string uses fs = …`.
 - Stored function types, interface methods and event types declare an upper bound (no `uses` there means pure); implementations may use fewer.
 - Derived forms compute their effects: the `-ed` copy adds `alloc` for heap-owning types, the allocating form of `xInto` adds `alloc`, and `tryX` keeps `x`'s effects. `bayan expand` will show them (deferred).
 - Package capabilities are an upper bound: a package without `.net` cannot contain a function that `uses net`, even transitively.
