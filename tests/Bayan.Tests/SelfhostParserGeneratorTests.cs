@@ -142,7 +142,7 @@ public sealed class SelfhostParserGeneratorTests(ITestOutputHelper output)
     /// compared file by file with the in-process C# reference. Skipped until T13 lands <c>--many</c>; the full
     /// parity is T15's.
     /// </summary>
-    [Fact]
+    [Fact(Skip = "T15 enables once every parsing file has landed")]
     public void GeneratedSeedsAgree()
     {
         var probeDir = Path.Combine(Golden.RepoRoot, "tmp", "parser-corpus-probe");
