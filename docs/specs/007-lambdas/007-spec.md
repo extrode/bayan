@@ -1,5 +1,5 @@
 # 007 — Lambdas and function types
-Status: draft
+Status: done
 Created: 2026-10-22
 Revised: 2026-10-22 (design round 3: `->` function types, type-first declarations (J54), no semicolons, effects, particles)
 Revised: 2026-10-25 (revisions 0002–0011; Questions renumbered 345–362; codes realigned: BYN2221 → BYN2602, BYN6001 → BYN6002, BYN6002 → BYN6003 for an unknown effect; effects pass and `provide` lowering exist; plan references re-located on dev at 123e9ff)
