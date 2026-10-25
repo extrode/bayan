@@ -1,0 +1,8 @@
+error BYN6002: `undeclared` uses `console` but does not declare it
+
+  7 │     run(by: g)
+    │     ^^^^^^^^^^ uses `console`
+    │
+  help: add `console` to the `uses` clause, or remove the call
+    │ 5 │ public void undeclared() uses console {
+    │   │                         +++++++++++++

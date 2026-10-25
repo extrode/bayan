@@ -502,7 +502,10 @@ internal sealed partial class Binder
             var t = ResolveType(new NamedType(n.Span, [n.Name], n.TypeArgs));
             return t.IsError ? new BoundErrorExpr(n) : new BoundTypeRef(n, t);
         }
-        if (name == "it" && _it is not null) return new BoundField(n, new BoundThis(n, _thisType!), _it);
+        if (name == "it" && _it is not null)
+            return InLambda(n, "it", "the checked value is read through `this`, which a lambda does not capture")
+                ? new BoundErrorExpr(n)
+                : new BoundField(n, new BoundThis(n, _thisType!), _it);
         if (_scope.Lookup(name) is { } local)
         {
             if (local.Kind == LocalKind.Const && local.Constant is { } c)

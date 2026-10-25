@@ -65,7 +65,7 @@ internal static class EffectAnalysis
                         // A call through a function-typed parameter adds nothing: whoever passed the value is charged (R16).
                         BoundCall { Function.Kind: FunctionKind.Invoke, Receiver: BoundLocal { Local: ParameterSymbol } } => ([], false),
                         BoundCall { Function.Kind: FunctionKind.Invoke, Receiver.Type: FunctionType type } => (type.Uses, false),
-                        BoundCall call => (Visible(call.Function).Concat(Passed(call).SelectMany(p => Visible(p.Function))), false),
+                        BoundCall call => (Visible(call.Function).Concat(Passed(call).SelectMany(p => Visible(p.Function))).Concat(PassedValues(call)), false),
                         BoundBuiltinCall b => (Member(b.Member), true),
                         BoundCollection { Type: ListType or MapType } => (["alloc"], true),
                         _ => ((IEnumerable<string>)[], false),
@@ -150,6 +150,23 @@ internal static class EffectAnalysis
             while (value is BoundConversion conversion) value = conversion.Operand;
             if (value is BoundLambda l) yield return (value, l.Lambda);
             else if (value is BoundFunctionRef r) yield return (value, r.Function);
+        }
+    }
+
+    /// <summary>
+    /// The declared effects of function-typed values other than lambdas, functions and forwarded parameters that
+    /// <paramref name="call"/> passes to function-typed parameters, such as a local holding a lambda (R16).
+    /// </summary>
+    private static IEnumerable<string> PassedValues(BoundCall call)
+    {
+        for (var i = 0; i < call.Arguments.Length && i < call.Function.Parameters.Count; i++)
+        {
+            if (call.Function.Parameters[i].Type is not FunctionType) continue;
+            var value = call.Arguments[i];
+            while (value is BoundConversion conversion) value = conversion.Operand;
+            if (value is BoundLambda or BoundFunctionRef or BoundLocal { Local: ParameterSymbol }) continue;
+            if (value.Type is FunctionType type)
+                foreach (var effect in type.Uses) yield return effect;
         }
     }
 
