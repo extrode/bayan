@@ -37,6 +37,9 @@ public sealed class Parser
     /// <summary>Whether a name or <c>( … )</c> before <c>=&gt;</c> is not a lambda: in a pattern, an arm's guard or an <c>expects</c> condition.</summary>
     private bool _noLambda;
 
+    /// <summary>Set while type arguments are scanned inside an expression, where <c>=&gt;</c> is never a type's arrow (<c>a &lt; b =&gt; c &gt; (x)</c>).</summary>
+    private bool _exprTypeArgs;
+
     private Parser(LexResult lexed)
     {
         _source = lexed.Source;
@@ -591,12 +594,13 @@ public sealed class Parser
         var returnEnd = ScanType(index);
         if (returnEnd < 0 || !IsName(KindAt(returnEnd)) || KindAt(returnEnd + 1) != TokenKind.OpenParen) return null;
         var types = new List<string>();
+        var loneFunction = false;
         var i = returnEnd + 2;
         if (KindAt(i) != TokenKind.CloseParen)
         {
             while (true)
             {
-                var typeEnd = ScanType(i);
+                var typeEnd = ScanType(i, nested: false, out loneFunction);
                 if (typeEnd < 0 || !IsName(KindAt(typeEnd))) return null;
                 types.Add(TokensText(i, typeEnd));
                 i = typeEnd + 1;
@@ -607,8 +611,9 @@ public sealed class Parser
         if (KindAt(i) != TokenKind.CloseParen) return null;
         i++;
         if (i != _pos && !(KindAt(i) == TokenKind.Semicolon && i + 1 == _pos)) return null;
-        // A lone tuple type keeps its own parentheses inside the parameter list's.
-        var parameters = types is [var one] && !one.StartsWith('(') ? one : "(" + string.Join(", ", types) + ")";
+        // A lone tuple type keeps its own parentheses inside the parameter list's, and a lone function type needs them
+        // since `->` is right-associative.
+        var parameters = types is [var one] && !one.StartsWith('(') && !loneFunction ? one : "(" + string.Join(", ", types) + ")";
         return (Text(_tokens[returnEnd]), parameters + " -> " + TokensText(index, returnEnd));
     }
 
@@ -1833,7 +1838,7 @@ public sealed class Parser
     }
 
     /// <summary>Whether a function type's arrow is at <paramref name="index"/>: <c>-&gt;</c>, or <c>=&gt;</c> when <paramref name="nested"/>.</summary>
-    private bool IsTypeArrow(int index, bool nested) => KindAt(index) == TokenKind.Arrow || nested && KindAt(index) == TokenKind.FatArrow;
+    private bool IsTypeArrow(int index, bool nested) => KindAt(index) == TokenKind.Arrow || nested && !_exprTypeArgs && KindAt(index) == TokenKind.FatArrow;
 
     /// <summary>Scans <c>-&gt; R fails E uses e</c> starting at the arrow; returns the index after it, or -1.</summary>
     private int ScanFunctionType(int index, bool nested, out bool function)
@@ -1875,6 +1880,15 @@ public sealed class Parser
             }
             return KindAt(i) == TokenKind.Greater ? i + 1 : -1;
         }
+    }
+
+    /// <summary><see cref="ScanTypeArgs"/> for type arguments after a name in an expression.</summary>
+    private int ScanExprTypeArgs(int index)
+    {
+        var saved = _exprTypeArgs;
+        _exprTypeArgs = true;
+        try { return ScanTypeArgs(index); }
+        finally { _exprTypeArgs = saved; }
     }
 
     /// <summary>C# type names written in a type position with the Bayan type each means.</summary>
@@ -3525,7 +3539,7 @@ public sealed class Parser
 
     private bool IsTypeArgsBeforeCall()
     {
-        var after = ScanTypeArgs(_pos);
+        var after = ScanExprTypeArgs(_pos);
         return after > 0 && KindAt(after) == TokenKind.OpenParen;
     }
 
@@ -3693,6 +3707,13 @@ public sealed class Parser
                     if (_pos < close) Advance();
                     continue;
                 }
+                if (Kind == TokenKind.Comma)
+                {
+                    Report(DiagnosticCodes.Expected, Current.Span, ["a lambda parameter name", "`,`"], label: "an empty parameter",
+                        help: "write the parameter's name");
+                    Advance();
+                    continue;
+                }
                 var from = _pos;
                 var depth = 0;
                 for (; _pos < close && !(depth == 0 && Kind == TokenKind.Comma); Advance())
@@ -3706,8 +3727,10 @@ public sealed class Parser
                 if (_pos < close) Advance();
             }
             Expect(TokenKind.CloseParen);
+            // A mismatched closer (`(a] => 1`) was reported by Expect; step over it to the `=>`.
+            if (_pos == close && Kind != TokenKind.FatArrow) Advance();
         }
-        Advance();
+        Expect(TokenKind.FatArrow);
         if (Kind == TokenKind.OpenBrace) return new LambdaExpr(SpanFrom(start), parameters.ToArray(), null, ParseBlock());
         var body = ParseExpression();
         return new LambdaExpr(SpanFrom(start), parameters.ToArray(), body, null);
@@ -3745,7 +3768,7 @@ public sealed class Parser
         var typeArgs = Array.Empty<TypeSyntax>();
         if (Kind == TokenKind.Less)
         {
-            var after = ScanTypeArgs(_pos);
+            var after = ScanExprTypeArgs(_pos);
             if (after > 0 && KindAt(after) is TokenKind.OpenParen or TokenKind.Dot or TokenKind.CloseParen or TokenKind.Comma
                     or TokenKind.Semicolon or TokenKind.CloseBracket or TokenKind.CloseBrace or TokenKind.OpenBrace)
                 typeArgs = ParseTypeArgs();
