@@ -1,0 +1,62 @@
+error BYN2822: a function type is not supported as a field yet
+
+  10 │     (Line -> Money uses net) pricer
+     │     ^^^^^^^^^^^^^^^^^^^^^^^^
+     │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as a return type yet
+
+  19 │ Pred pick() => pick()
+     │ ^^^^
+     │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as the value of an optional yet
+
+  21 │ void a(Pred? p) {
+     │        ^^^^
+     │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as a list element yet
+
+  24 │ void b(List<i32 -> bool> p) {
+     │             ^^^^^^^^^^^
+     │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as a tuple element yet
+
+  27 │ void c((i32, Pred) p) {
+     │              ^^^^
+     │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as an array element yet
+
+  30 │ void d(Pred[2] p) {
+     │        ^^^^
+     │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as a type argument yet
+
+  33 │ void e(Box<Pred> p) {
+     │            ^^^^
+     │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as a map value yet
+
+  36 │ void m(Map<string, Pred> p) {
+     │                    ^^^^
+     │
+  help: take the function as a parameter instead
+
+error BYN2822: a function type is not supported as a span element yet
+
+  39 │ void s(Span<Pred> p) {
+     │             ^^^^
+     │
+  help: take the function as a parameter instead

@@ -275,3 +275,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - rv11 review: other messages still print `set.DisplayName` unqualified and can show look-alike sets (BYN2604 in `FlowAnalysis.CheckPropagation`, BYN2227 `AmbiguousVariant`, the `except` BYN2603 variant text, pattern-mismatch messages); switch them to `DisplayNameAmong` when one reproduces.
 - rr6: `byn_release` (`src/runtime/bayan-rt.c:854`) frees only for `&byn_general`; a future allocator that does not free through it would bring back the `ListReplace` leak.
 - 007 T1: a function-typed parameter without parentheses (`bool any(Token -> bool p)`) is accepted silently; decide whether it gets an input-form diagnostic with a fix to `(Token -> bool) p` (Q363 d).
+- 007 T3: a function type as a `union` variant payload field gets BYN3002-style `BorrowPayload`, not BYN2822 (`CheckUnionShape` has no placement check).
+- 007 T3: an explicit type argument on a generic function call (`f<i32 -> bool>()`) and an inferred one are not checked for BYN2822; only `TypeResolver.Construct` and the builtin generics are.
+- 007 T3: `FunctionType` has no excluded cases, so `fails` naming a `union error … except .c` alias keeps the excluded cases in the function type.

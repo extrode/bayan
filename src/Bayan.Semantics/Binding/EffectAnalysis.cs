@@ -183,7 +183,7 @@ internal static class EffectAnalysis
     private const string UnknownEffectHelp =
         "choose one of `alloc`, `suspend`, `net`, `fs`, `clock`, `random`, `env`, `process`, `console`, or a declared effect alias";
 
-    private static void ReportUnknown(Compilation c, SourceText source, Name name) =>
+    internal static void ReportUnknown(Compilation c, SourceText source, Name name) =>
         c.Report(DiagnosticCodes.UnknownEffect, source, name.Span, [name.Text], label: "not an effect or an `effect` alias of this module", help: UnknownEffectHelp);
 
     /// <summary>Adds <paramref name="effects"/> to the <c>uses</c> clause, or writes one after the rest of the signature (clause order §5).</summary>
