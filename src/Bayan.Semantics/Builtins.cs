@@ -185,7 +185,7 @@ public sealed class Builtins
     /// <summary><c>enum Utf8Invalid</c>: the <c>invalid:</c> argument of the lossy <c>Utf8.decode</c>; it is not a type name users can write.</summary>
     public EnumSymbol Utf8Invalid { get; }
 
-    // The shared set, for a `T` without `requires`, has no payload; a checked struct gets its own (`Compilation.ValidationErrorOf`).
+    // The template of `ValidationError<T>`; each `T` gets its own set (`Compilation.ValidationErrorOf`), and the bare name is BYN2023.
     private const string ValidationErrorSource = """
         public union error ValidationError {
             /// The value breaks a `requires` rule of its type.
@@ -194,8 +194,8 @@ public sealed class Builtins
         """;
 
     /// <summary>
-    /// <c>union error ValidationError&lt;T&gt;</c> for a <c>T</c> that is not a struct with <c>requires</c>, payload-less;
-    /// numbered after the user's sets so their codes still start at 9.
+    /// The template of <c>union error ValidationError&lt;T&gt;</c>: its name and case, never a set of its own; its cases are
+    /// declared per <c>T</c>.
     /// </summary>
     public ErrorSetSymbol ValidationError { get; }
 

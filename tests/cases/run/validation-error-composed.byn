@@ -1,0 +1,31 @@
+// Revision 0011: instantiations of one generic error set compose into a named set and are matched by type.
+struct Signup {
+    string name
+        requires it.runeCount >= 3
+}
+
+struct Address {
+    string city
+        requires it != ""
+}
+
+union error FormError = ValidationError<Signup>, ValidationError<Address>
+
+void register(string name, at string city) fails FormError {
+    let s = try Signup { name: name }
+    let a = try Address { city: city }
+    print($"registered {s.name} in {a.city}")
+}
+
+void attempt(string name, at string city) {
+    register(name, at: city) catch switch {
+        ValidationError<Signup> e => print("signup rejected"),
+        ValidationError<Address> e => print("address rejected"),
+    }
+}
+
+void main() {
+    attempt("amira", at: "Cairo")
+    attempt("ab", at: "Cairo")
+    attempt("amira", at: "")
+}

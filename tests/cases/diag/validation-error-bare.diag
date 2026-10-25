@@ -1,0 +1,9 @@
+error BYN2023: `ValidationError` takes 1 type argument(s), not 0
+
+  6 │ void check(Order o) fails ValidationError {
+    │                           ^^^^^^^^^^^^^^^
+
+error BYN2023: `ValidationError` takes 1 type argument(s), not 0
+
+  9 │ union error OrderError = ValidationError
+    │                          ^^^^^^^^^^^^^^^

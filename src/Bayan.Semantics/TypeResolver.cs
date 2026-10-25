@@ -177,12 +177,16 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 NoTypeArgs(n);
                 return compilation.Builtins.ParseError;
             }
-            // `ValidationError<T>`: a set per struct with `requires`, whose `invalid` carries the violations (J23).
+            // `ValidationError<T>`: a set per `T`, whose `invalid` carries the violations of a struct with `requires` (J23).
+            // Without `T` there is no `T.Field`, so the bare name is BYN2023 (revision 0011).
             if (text == "ValidationError")
             {
-                if (n.Args.Length > 1)
+                if (n.Args.Length != 1)
+                {
                     compilation.Report(DiagnosticCodes.WrongTypeArgumentCount, file.Source, n.Span, [text, 1, n.Args.Length]);
-                return compilation.ValidationErrorOf(n.Args.Length == 1 ? Resolve(n.Args[0]) : ErrorType.Instance);
+                    return ErrorType.Instance;
+                }
+                return Resolve(n.Args[0]) is { IsError: false } arg ? compilation.ValidationErrorOf(arg) : ErrorType.Instance;
             }
             if (text == "Rule")
             {
@@ -190,7 +194,7 @@ internal sealed class TypeResolver(Compilation compilation, FileContext file, St
                 return compilation.Builtins.Rule;
             }
             // `Violation<T>` only for a struct with `requires`; any other `T` falls through to BYN2002.
-            if (text == "Violation" && n.Args.Length == 1 && compilation.ValidationErrorOf(Resolve(n.Args[0])) is { Of: not null } validation)
+            if (text == "Violation" && n.Args.Length == 1 && Resolve(n.Args[0]) is StructSymbol { FieldEnum: not null } of && compilation.ValidationErrorOf(of) is var validation)
                 return ((ListType)validation.Variants[0].Fields[0].Type).Element;
             if (compilation.Builtins.FindInterface(text) is { } builtin)
             {

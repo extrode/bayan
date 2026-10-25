@@ -1,0 +1,14 @@
+// Revision 0011: BYN3202 still rejects two different sets sharing a case name, and names `ValidationError<Signup>`.
+// The same instantiation listed twice is one component.
+struct Signup {
+    string name
+        requires it.runeCount >= 3
+}
+
+union error SignupError {
+    invalid
+}
+
+union error Twice = ValidationError<Signup>, ValidationError<Signup>
+
+union error Clash = ValidationError<Signup>, SignupError

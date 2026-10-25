@@ -706,13 +706,13 @@ internal sealed partial class Binder
         var variant = caseName is null ? null : set.Find(caseName.Text);
         if (caseName is not null && variant is null)
         {
-            Report(DiagnosticCodes.PatternMismatch, fails.Span, [$"`{Source.GetText(fails.Span)}`", set.Name],
+            Report(DiagnosticCodes.PatternMismatch, fails.Span, [$"`{Source.GetText(fails.Span)}`", set.DisplayName],
                 help: Suggest(caseName.Text, set.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
             return new BoundErrorStmt(a);
         }
         if (sets.Count > 0 && !sets.Contains(set))
         {
-            Report(DiagnosticCodes.PatternMismatch, setSyntax.Span, [$"`{set.Name}`", errorType.DisplayName]);
+            Report(DiagnosticCodes.PatternMismatch, setSyntax.Span, [$"`{set.DisplayName}`", errorType.DisplayName]);
             return new BoundErrorStmt(a);
         }
         return new BoundAssert(a, operand) { FailsWith = set, FailsCase = variant };
@@ -1168,7 +1168,7 @@ internal sealed partial class Binder
                 }
                 if (matches.Count > 1)
                 {
-                    Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);
+                    Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.DisplayName))]);
                     return new BoundErrorExpr(t);
                 }
                 if (fn.InfersErrors && fn.ErrorSets.Count == 0 && fn.ReturnType is PrimitiveType { Kind: PrimitiveKind.Void })
@@ -1236,7 +1236,7 @@ internal sealed partial class Binder
             }
             if (call is not null) BindArgumentsForRecovery(call);
             if (matches.Count > 1)
-                Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);
+                Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.DisplayName))]);
             else if (fn.ErrorSets.Count == 0)
                 Report(DiagnosticCodes.UnknownVariant, t.Span, [t.Member.Text, "the inferred error set"], help: "name the set: `fail MyError.x`");
             else
@@ -1268,15 +1268,15 @@ internal sealed partial class Binder
         var fn = _fn!;
         if (fn.ErrorSets.Contains(set)) return;
         if (fn.InfersErrors) return;
-        Report(DiagnosticCodes.UndeclaredError, span, [set.Name, fn.Name],
-            help: $"add it to the signature: `fails {string.Join(", ", fn.ErrorSets.Select(s => s.Name).Append(set.Name))}`");
+        Report(DiagnosticCodes.UndeclaredError, span, [set.DisplayName, fn.Name],
+            help: $"add it to the signature: `fails {string.Join(", ", fn.ErrorSets.Select(s => s.DisplayName).Append(set.DisplayName))}`");
     }
 
     /// <summary>BYN2603 for a case the <c>fails</c> clause takes out with <c>except</c>.</summary>
     private void CheckNotExcluded(ErrorVariantSymbol variant, TextSpan span)
     {
         if (!_fn!.ExcludedErrors.Contains(variant)) return;
-        Report(DiagnosticCodes.UndeclaredError, span, [$"{variant.Set.Name}.{variant.Name}", _fn.Name],
+        Report(DiagnosticCodes.UndeclaredError, span, [$"{variant.Set.DisplayName}.{variant.Name}", _fn.Name],
             help: $"pick another case, or remove `.{variant.Name}` from the `except` list");
     }
 

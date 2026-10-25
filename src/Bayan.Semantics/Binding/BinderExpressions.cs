@@ -567,7 +567,7 @@ internal sealed partial class Binder
                 return BindModuleMember(m, mod.Module);
             case BoundTypeRef { Referenced: ErrorSetSymbol set }:
                 if (set.Find(name) is { } variant) return new BoundErrorVariant(m, variant);
-                Report(DiagnosticCodes.UnknownVariant, m.Member.Span, [name, set.Name],
+                Report(DiagnosticCodes.UnknownVariant, m.Member.Span, [name, set.DisplayName],
                     help: Suggest(name, set.Variants.Select(v => v.Name)) is { } close ? $"did you mean `{close}`?" : null);
                 return new BoundErrorExpr(m);
             case BoundTypeRef { Referenced: EnumSymbol e }:
@@ -795,7 +795,9 @@ internal sealed partial class Binder
                 help: "copy it, or move the whole local; only an owned collection or optional has an empty value to leave behind");
             return new BoundErrorExpr(syntax);
         }
+        // Revision 0011: regexes are not in v0.1.
         Report(DiagnosticCodes.UnknownMember, member.Span, [name, target.Type.DisplayName],
+            label: name == "matches" && target.Type.IsString ? "`matches` arrives with `std.regex` after v0.1" : null,
             help: MemberSuggestion(target.Type, name));
         return new BoundErrorExpr(syntax);
     }
@@ -914,14 +916,14 @@ internal sealed partial class Binder
         {
             case ErrorSetSymbol set:
                 if (set.Find(t.Member.Text) is { } v) return new BoundErrorVariant(t, v);
-                Report(DiagnosticCodes.UnknownVariant, t.Member.Span, [t.Member.Text, set.Name]);
+                Report(DiagnosticCodes.UnknownVariant, t.Member.Span, [t.Member.Text, set.DisplayName]);
                 return new BoundErrorExpr(t);
             case ErrorUnionType u:
             {
                 var matches = u.Sets.Select(s => s.Find(t.Member.Text)).Where(v => v is not null && !u.Excluded.Contains(v)).ToList();
                 if (matches.Count == 1) return new BoundErrorVariant(t, matches[0]!);
                 if (matches.Count > 1)
-                    Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.Name))]);
+                    Report(DiagnosticCodes.AmbiguousVariant, t.Span, [t.Member.Text, string.Join("`, `", matches.Select(m => m!.Set.DisplayName))]);
                 else
                     Report(DiagnosticCodes.UnknownVariant, t.Member.Span, [t.Member.Text, u.DisplayName]);
                 return new BoundErrorExpr(t);

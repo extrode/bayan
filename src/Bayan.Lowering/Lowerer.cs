@@ -1362,7 +1362,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         var guards = new List<BoundExpr?> { null, Not(failed) };
         foreach (var v in call.Function.ErrorSets.SelectMany(e => e.Variants))
         {
-            parts.Add(new($"failed with {v.Set.Name}.{v.Name}", null));
+            parts.Add(new($"failed with {v.Set.DisplayName}.{v.Name}", null));
             guards.Add(Is(v));
         }
         if (Printable(call.Type))
