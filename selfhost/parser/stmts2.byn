@@ -92,15 +92,15 @@ Pattern parseArmPattern(ref Parser p, for string head) {
     let keyword = p.advance()
     let excluded = parsePattern(ref p)
     let excludedText = p.lexed.source.getText(patternSpan(in excluded))
-    let not = Pattern.notPattern(Owned(NotPattern { span: patternSpan(in excluded), operand: move excluded }))
+    let notPat = Pattern.notPattern(Owned(NotPattern { span: patternSpan(in excluded), operand: move excluded }))
     let help = $"write the arm as `{head}not {excludedText}`"
-    if pattern is .discardPattern {
+    if pattern is .discardPattern(_) {
         let _ = p.reportFix(.exceptInCase, at: spanOf(keyword), through: p.spanFrom(start), by: $"not {excludedText}",
             label: "not allowed here", help: help)
-        return move not
+        return move notPat
     }
     let _ = p.report(.exceptInCase, at: spanOf(keyword), label: "not allowed here", help: help)
-    return Pattern.binaryPattern(Owned(BinaryPattern { span: p.spanFrom(start), isAnd: true, left: move pattern, right: move not }))
+    return Pattern.binaryPattern(Owned(BinaryPattern { span: p.spanFrom(start), isAnd: true, left: move pattern, right: move notPat }))
 }
 
 // ── Defer ──────────────────────────────────────────────────────────────────────
@@ -128,7 +128,7 @@ Stmt parseDefer(ref Parser p, at i64 start) {
     let gapStart = p.prevEnd
     let errors = p.errorCount()
     let body = T8.parseEmbedded(ref p)
-    if body is .localDecl {
+    if body is .localDecl(_) {
         T8.reportBraceless(ref p, for: keyword, at: gapStart, through: in body, clean: p.errorCount() == errors, to: -1)
     }
     return Stmt.deferStmt(Owned(DeferStmt { span: span, kind: kind, binding: binding, body: move body }))
@@ -157,7 +157,7 @@ Stmt parseContext(ref Parser p, at i64 start) {
             let name = T8.expectName(ref p, what: "a context name such as `allocator`")
             let _ = p.expect(.colon)
             let value = parenthesized ? parseExpression(ref p) : T8.parseBareCondition(ref p)
-            values.append(NamedArg { span: p.spanFrom(argStart), name: name, value: value })
+            values.append(NamedArg { span: p.spanFrom(argStart), name: name, value: move value })
             if !p.accept(.comma) { break }
         }
     }
@@ -205,12 +205,12 @@ Stmt parseSimpleStatement(ref Parser p, at i64 start) {
     switch p.kind() {
         case .returnKeyword:
             let keyword = p.advance()
-            var hasValue = T8.canStartExpression(p.kind()) && !T8.breaksLine(p, p.pos)
+            var hasValue = T8.canStartExpression(p.kind()) && !T8.breaksLine(ref p, at: p.pos)
             // A value alone on the next line, or indented past `return`, reads as the operand that wandered off (BYN1042).
-            let valueOnly = T8.endsBefore(p, p.pos + 1) || lexer.isStringLiteral(p.kind())
+            let valueOnly = T8.endsBefore(ref p, at: p.pos + 1) || lexer.isStringLiteral(p.kind())
                 || p.kind() is .integerLiteral or .floatLiteral or .charLiteral or .interpolatedStringStart or .dot
-                || T8.indentAt(p, p.current().start).length > T8.indentAt(p, keyword.start).length
-            if T8.breaksLine(p, p.pos) && !T8.hasBlankLineBefore(p, p.pos) && valueOnly && T8.canStartExpression(p.kind())
+                || T8.indentAt(ref p, at: p.current().start).length > T8.indentAt(ref p, at: keyword.start).length
+            if T8.breaksLine(ref p, at: p.pos) && !T8.hasBlankLineBefore(ref p, at: p.pos) && valueOnly && T8.canStartExpression(p.kind())
                 && !T8.isStatementKeyword(p.kind())
                 && !(p.kind() is .openBrace or .openParen or .openBracket or .minus or .returnKeyword or .breakKeyword or .continueKeyword) {
                 reportOnNewLine(ref p, for: keyword)
@@ -221,7 +221,7 @@ Stmt parseSimpleStatement(ref Parser p, at i64 start) {
             return Stmt.returnStmt(Owned(ReturnStmt { span: p.spanFrom(start), value: move value }))
         case .failKeyword:
             let keyword = p.advance()
-            if T8.breaksLine(p, p.pos) && !T8.hasBlankLineBefore(p, p.pos) && T8.canStartExpression(p.kind())
+            if T8.breaksLine(ref p, at: p.pos) && !T8.hasBlankLineBefore(ref p, at: p.pos) && T8.canStartExpression(p.kind())
                 && !T8.isStatementKeyword(p.kind()) {
                 reportOnNewLine(ref p, for: keyword)
             }
@@ -241,14 +241,14 @@ Stmt parseSimpleStatement(ref Parser p, at i64 start) {
     let errors = p.errorCount()
     let expr = parseExpression(ref p)
     let op = tryAssignOp(ref p)
-    if !T8.breaksLine(p, p.pos) && (op is { } assignOp) {
+    if !T8.breaksLine(ref p, at: p.pos) && (op is { } assignOp) {
         let width = assignOp == .shr ? 2 : 1
         for _ in 0..width { let _ = p.advance() }
         checkAssignable(ref p, for: in expr)
         let value = parseExpression(ref p)
         return Stmt.assignStmt(Owned(AssignStmt { span: p.spanFrom(start), target: move expr, op: assignOp, value: move value }))
     }
-    if p.kind() is .plusPlus or .minusMinus && !T8.breaksLine(p, p.pos) {
+    if p.kind() is .plusPlus or .minusMinus && !T8.breaksLine(ref p, at: p.pos) {
         let increment = p.advance().kind == .plusPlus
         checkAssignable(ref p, for: in expr)
         return Stmt.incDecStmt(Owned(IncDecStmt { span: p.spanFrom(start), target: move expr, increment: increment }))
@@ -264,7 +264,7 @@ Stmt parseSimpleStatement(ref Parser p, at i64 start) {
 TextSpan? parseJumpLabel(ref Parser p, for Token keyword) {
     if p.kind() != .identifier { return null }
     if !p.current().hasNewlineBefore { return T8.nameOf(p.advance()) }
-    if !T8.breaksLine(p, p.pos) || T8.hasBlankLineBefore(p, p.pos) || !T8.endsBefore(p, p.pos + 1) { return null }
+    if !T8.breaksLine(ref p, at: p.pos) || T8.hasBlankLineBefore(ref p, at: p.pos) || !T8.endsBefore(ref p, at: p.pos + 1) { return null }
     reportOnNewLine(ref p, for: keyword)
     return T8.nameOf(p.advance())
 }
@@ -284,7 +284,7 @@ bool isStatementExpression(in Expr expr) {
         case .catchExpr(let c):
             return isStatementExpression(in c.value.operand)
         case .binaryExpr(let b):
-            if b.value.op == .coalesce && b.value.right is .jumpExpr { return true }
+            if b.value.op == .coalesce && b.value.right is .jumpExpr(_) { return true }
             return false
         case .errorExpr(_):
             return true
@@ -330,8 +330,8 @@ void checkAssignable(ref Parser p, for in Expr target) {
         case .callExpr(let c) when c.value.callee is .memberExpr(let callee) && !callee.value.nullConditional
             && p.lexed.source.getText(callee.value.member) == "slot":
             return
-        case .parenExpr(let p):
-            checkAssignable(ref p, for: in p.value.inner)
+        case .parenExpr(let paren):
+            checkAssignable(ref p, for: in paren.value.inner)
             return
         default:
             let _ = p.report(.invalidAssignmentTarget, at: exprSpan(in target), help: "assign to a variable, a field or an indexed element")
@@ -341,8 +341,9 @@ void checkAssignable(ref Parser p, for in Expr target) {
 
 /// A postfix `if`/`unless` on the statement's line, then the end of the statement.
 Stmt finishSimpleStatement(ref Parser p, at i64 start, for move Stmt statement) {
-    let stranded = (p.kind() is .ifKeyword or .unlessKeyword) && T8.breaksLine(p, p.pos) && !T8.hasBlankLineBefore(p, p.pos)
-        && p.peek(1) != .openParen && !T8.bodyBraceFirst(ref p, p.pos + 1)
+    var stmt = move statement
+    let stranded = (p.kind() is .ifKeyword or .unlessKeyword) && T8.breaksLine(ref p, at: p.pos) && !T8.hasBlankLineBefore(ref p, at: p.pos)
+        && p.peek(1) != .openParen && !T8.bodyBraceFirst(ref p, at: p.pos + 1)
     if stranded {
         let _ = p.reportFix(.postfixOnNewLine, at: spanOf(p.current()), through: TextSpan.fromBounds(p.prevEnd, until: p.current().start),
             by: " ", arg0: p.textOf(p.current()), label: "on the next line",
@@ -350,22 +351,22 @@ Stmt finishSimpleStatement(ref Parser p, at i64 start, for move Stmt statement) 
     }
     if (p.kind() is .ifKeyword or .unlessKeyword) && (stranded || !p.current().hasNewlineBefore) {
         let keyword = p.advance()
-        let unless = keyword.kind == .unlessKeyword
-        let unlikely = !unless && T8.atUnlikely(ref p)
+        let isUnless = keyword.kind == .unlessKeyword
+        let unlikely = !isUnless && T8.atUnlikely(ref p)
         if unlikely { let _ = p.advance() }
-        if unless { T8.skipUnlessLikelihood(ref p) }
+        if isUnless { T8.skipUnlessLikelihood(ref p) }
         let condition = parseExpression(ref p)
-        if unless {
+        if isUnless {
             T8.checkUnlessCondition(ref p, for: in condition, at: TextSpan.fromBounds(keyword.start, until: exprSpan(in condition).end))
         }
-        statement = Stmt.guardedStmt(Owned(GuardedStmt {
+        stmt = Stmt.guardedStmt(Owned(GuardedStmt {
             span: p.spanFrom(start),
-            statement: move statement,
-            unlessKeyword: unless,
+            statement: move stmt,
+            unlessKeyword: isUnless,
             condition: move condition,
             unlikely: unlikely,
         }))
-        if (p.kind() is .ifKeyword or .unlessKeyword) && !T8.breaksLine(p, p.pos) {
+        if (p.kind() is .ifKeyword or .unlessKeyword) && !T8.breaksLine(ref p, at: p.pos) {
             let _ = p.report(.postfixChained, at: spanOf(p.current()), label: "a second condition",
                 help: "combine the conditions with `&&` in one postfix `if`")
             let _ = p.advance()
@@ -373,13 +374,13 @@ Stmt finishSimpleStatement(ref Parser p, at i64 start, for move Stmt statement) 
         }
     }
     T8.expectEnd(ref p)
-    return move statement
+    return move stmt
 }
 
 /// `{ … } if x` on one line: postfix conditions only attach to simple statements.
 Stmt rejectPostfixAfterCompound(ref Parser p, for move Stmt statement) {
     if (p.kind() is .ifKeyword or .unlessKeyword) && !p.current().hasNewlineBefore && p.peek(1) != .openParen
-        && !T8.bodyBraceFirst(ref p, p.pos + 1) {
+        && !T8.bodyBraceFirst(ref p, at: p.pos + 1) {
         let _ = p.report(.postfixNotSimple, at: spanOf(p.current()), arg0: p.textOf(p.current()),
             help: "put the condition first: `if cond { … }`")
         let _ = p.advance()
@@ -479,8 +480,7 @@ struct T8 {
     static string indentAt(ref Parser p, at i64 offset) {
         let line = p.lexed.source.getLineSpan(p.lexed.source.getLineIndex(offset))
         var end = line.start
-        let bytes = p.lexed.source.bytes
-        while end < line.end && (bytes[end] == 0x20 || bytes[end] == 0x09) { end += 1 }
+        while end < line.end && (p.lexed.source.bytes[end] == 0x20 || p.lexed.source.bytes[end] == 0x09) { end += 1 }
         return p.lexed.source.getText(TextSpan.fromBounds(line.start, until: end))
     }
 
