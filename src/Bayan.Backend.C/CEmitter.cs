@@ -578,7 +578,22 @@ public sealed class CEmitter
             case PrimitiveType or EnumSymbol:
                 return $"({a} == {b})";
             case ErrorSetSymbol or ErrorUnionType:
-                return $"({a}.code == {b}.code)";
+            {
+                // By code, then the payload of a case that has one (Q45, Q28).
+                var cases = _program.Compilation.ErrorVariants.Where(v => v.Fields.Count > 0).ToList();
+                if (cases.Count == 0) return $"({a}.code == {b}.code)";
+                var eq = Helper("bynh_eq_err", $"static bool bynh_eq_err({ErrorCType} a, {ErrorCType} b)", () =>
+                {
+                    var sb = new StringBuilder("{\n    if (a.code != b.code) return false;\n    switch (a.code) {\n");
+                    foreach (var v in cases)
+                    {
+                        var fields = v.Fields.Select(f => Equal(f.Type, $"a.p.e{v.Code}.{FieldName(f.Name)}", $"b.p.e{v.Code}.{FieldName(f.Name)}"));
+                        sb.Append($"    case {v.Code}: return {string.Join("\n        && ", fields)};\n");
+                    }
+                    return sb.Append("    }\n    return true;\n}\n").ToString();
+                });
+                return $"{eq}({a}, {b})";
+            }
             case OwnedType o:
                 return Equal(o.Inner, $"(*{a})", $"(*{b})");
             case UntrustedType u:
@@ -619,7 +634,7 @@ public sealed class CEmitter
             List<string> tests = t switch
             {
                 OptionalType o => [$"a.has == b.has && (!a.has || {Equal(o.Inner, "a.value", "b.value")})"],
-                ResultType r => [$"a.err.code == b.err.code && (a.err.code != 0 || {Equal(r.Value, "a.value", "b.value")})"],
+                ResultType r => [$"a.err.code == b.err.code && (a.err.code != 0 ? {Equal(r.Error, "a.err", "b.err")} : {Equal(r.Value, "a.value", "b.value")})"],
                 StructSymbol s => s.Fields.Select(f => Equal(f.Type, "a." + FieldName(f.Name), "b." + FieldName(f.Name))).ToList(),
                 TupleType tt => tt.Fields.Select((f, i) => Equal(f.Type, $"a.item{i + 1}", $"b.item{i + 1}")).ToList(),
                 _ => throw new InvalidOperationException($"no equality for {t.DisplayName}"),
@@ -1313,8 +1328,11 @@ internal sealed class FunctionEmitter
         if (spec.Width == 0) return Inner("w");
         // Numbers align to the end by default, everything else to the start.
         var align = spec.Align >= 0 ? spec.Align : t.IsNumeric ? 1 : 0;
+        // The 1024-byte cut drops a code point it would split.
         var pad = _c.Helper("bynh_w_padded", "static void bynh_w_padded(byn_writer* w, byn_str s, int64_t width, uint32_t fill, int align)", () =>
-            "{\n    int64_t runes = 0;\n    for (int64_t i = 0; i < s.len; i++) runes += (s.ptr[i] & 0xC0) != 0x80;\n"
+            "{\n    if (s.len > 0) {\n        int64_t k = s.len - 1;\n        while (k > 0 && (s.ptr[k] & 0xC0) == 0x80) k--;\n"
+            + "        uint8_t c = s.ptr[k];\n        int64_t need = c < 0x80 ? 1 : (c & 0xE0) == 0xC0 ? 2 : (c & 0xF0) == 0xE0 ? 3 : 4;\n"
+            + "        if (k + need > s.len) s.len = k;\n    }\n    int64_t runes = 0;\n    for (int64_t i = 0; i < s.len; i++) runes += (s.ptr[i] & 0xC0) != 0x80;\n"
             + "    int64_t gap = width > runes ? width - runes : 0, before = align == 1 ? gap : align == 2 ? gap / 2 : 0;\n"
             + "    for (int64_t i = 0; i < before; i++) byn_w_char(w, fill);\n    byn_w_str(w, s);\n"
             + "    for (int64_t i = before; i < gap; i++) byn_w_char(w, fill);\n}\n");
@@ -1333,7 +1351,10 @@ internal sealed class FunctionEmitter
                 "{\n    byn_w_char(w, quote);\n    for (int64_t i = 0; i < s.len; i++) {\n"
                 + "        uint8_t c = s.ptr[i];\n        if (c == quote || c == '\\\\') byn_w_char(w, '\\\\');\n"
                 + "        if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n        else byn_w_bytes(w, &c, 1);\n    }\n    byn_w_char(w, quote);\n}\n") + $"({w}, {v}, '\"');";
-        if (t is PrimitiveType { Kind: PrimitiveKind.Char }) return $"byn_w_char({w}, '\\''); byn_w_char({w}, {v}); byn_w_char({w}, '\\'');";
+        if (t is PrimitiveType { Kind: PrimitiveKind.Char })
+            return _c.Helper("bynh_w_rune_quoted", "static void bynh_w_rune_quoted(byn_writer* w, uint32_t c)", () =>
+                "{\n    byn_w_char(w, '\\'');\n    if (c == '\\'' || c == '\\\\') byn_w_char(w, '\\\\');\n"
+                + "    if (c == '\\n') byn_w_str(w, (byn_str){(const uint8_t*)\"\\\\n\", 2});\n    else byn_w_char(w, c);\n    byn_w_char(w, '\\'');\n}\n") + $"({w}, {v});";
         if (t is not StructSymbol s || CEmitter.FormatInto(s) is { Parameters.Count: 2 }) return _c.Format(t, v, w);
         var name = _c.Helper("bynh_debug_" + _c.Key(t), $"static void bynh_debug_{_c.Key(t)}(byn_writer* w, {_c.CType(t)} v)", () =>
         {
@@ -1712,7 +1733,7 @@ internal sealed class FunctionEmitter
             case BuiltinMember.StringRepeated:
                 return $"byn_str_repeated({Expr(r)}, {arg}, byn_context, {Loc(b.Syntax)})";
             case BuiltinMember.StringPadded:
-                return $"byn_str_padded({Expr(r)}, {arg}, {Expr(b.Arguments[1])}, byn_context)";
+                return $"byn_str_padded({Expr(r)}, {arg}, {Expr(b.Arguments[1])}, byn_context, {Loc(b.Syntax)})";
             case BuiltinMember.BytesToString:
             {
                 var st = _c.CType(r.Type);
@@ -1864,11 +1885,12 @@ internal sealed class FunctionEmitter
                     "{\n    int64_t start = at.item1, end = at.item3 ? at.item2 + 1 : at.item2;\n    byn_slice_check(start, end, l->len, file, line);\n"
                     + "    int64_t len = l->len - (end - start) + items.len;\n    if (!l->alloc) l->alloc = byn_context;\n"
                     // Items read from the list itself are copied first, since growing and shifting move them.
-                    + "    if (items.len > 0 && items.ptr >= l->ptr && items.ptr < l->ptr + l->cap)\n"
-                    + "        items.ptr = byn_copy_bytes(items.ptr, items.len * (int64_t)sizeof(*l->ptr), l->alloc);\n"
+                    + "    void* copy = NULL;\n    if (items.len > 0 && items.ptr >= l->ptr && items.ptr < l->ptr + l->cap)\n"
+                    + "        items.ptr = copy = byn_copy_bytes(items.ptr, items.len * (int64_t)sizeof(*l->ptr), l->alloc);\n"
                     + "    byn_list_reserve((void**)&l->ptr, &l->cap, len, (int64_t)sizeof(*l->ptr), l->alloc);\n"
                     + "    memmove(l->ptr + start + items.len, l->ptr + end, (size_t)(l->len - end) * sizeof(*l->ptr));\n"
-                    + "    if (items.len > 0) memcpy(l->ptr + start, items.ptr, (size_t)items.len * sizeof(*l->ptr));\n    l->len = len;\n}\n");
+                    + "    if (items.len > 0) memcpy(l->ptr + start, items.ptr, (size_t)items.len * sizeof(*l->ptr));\n    l->len = len;\n"
+                    + "    if (copy) byn_release(l->alloc, copy);\n}\n");
                 return $"{name}(&{Expr(r)}, {arg}, {Expr(b.Arguments[1])}, {Loc(b.Syntax)})";
             }
             case BuiltinMember.ListSort:
@@ -1878,7 +1900,11 @@ internal sealed class FunctionEmitter
                 var less = _c.Helper("bynh_less_" + _c.Key(element), $"static bool bynh_less_{_c.Key(element)}(const void* a, const void* b)", () => element.IsString
                     ? "{\n    return byn_str_cmp(*(const byn_str*)a, *(const byn_str*)b) < 0;\n}\n"
                     : $"{{\n    return *(const {et}*)a < *(const {et}*)b;\n}}\n");
-                return $"byn_sort({Expr(r)}.ptr, {Expr(r)}.len, sizeof(*{Expr(r)}.ptr), {less})";
+                // The list is read once, through a pointer, so a receiver with side effects runs once.
+                var lt = _c.CType(r.Type);
+                var name = _c.Helper("bynh_sort_" + _c.Key(r.Type), $"static void bynh_sort_{_c.Key(r.Type)}({lt}* l)", () =>
+                    $"{{\n    byn_sort(l->ptr, l->len, sizeof(*l->ptr), {less});\n}}\n");
+                return $"{name}(&{Expr(r)})";
             }
             case BuiltinMember.MapLength:
                 return $"{Expr(r)}.h.live";
@@ -2005,6 +2031,13 @@ internal sealed class FunctionEmitter
         };
     }
 
+    private static bool BareCase(BoundExpr e) => e switch
+    {
+        BoundErrorVariant { Payload.Length: 0, Variant.Fields.Count: > 0 } => true,
+        BoundConversion c => BareCase(c.Operand),
+        _ => false,
+    };
+
     private string Binary(BoundBinary b)
     {
         var l = Expr(b.Left);
@@ -2036,6 +2069,9 @@ internal sealed class FunctionEmitter
         if (t.IsFloat && b.Op == BinaryOp.Rem) return t == PrimitiveType.F32 ? $"fmodf({l}, {r})" : $"fmod({l}, {r})";
         if (t.IsString && b.Op is BinaryOp.Lt or BinaryOp.Gt or BinaryOp.Le or BinaryOp.Ge)
             return $"(byn_str_cmp({l}, {r}) {Op(b.Op)} 0)";
+        // `== .case` with a payload case written bare tests the code (Q312).
+        if (b.Op is BinaryOp.Eq or BinaryOp.Ne && (BareCase(b.Left) || BareCase(b.Right)))
+            return $"({l}.code {(b.Op == BinaryOp.Eq ? "==" : "!=")} {r}.code)";
         return b.Op switch
         {
             BinaryOp.Eq => _c.Equal(t, l, r),

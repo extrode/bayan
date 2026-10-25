@@ -268,7 +268,11 @@ internal sealed partial class Binder
             if (p is null || !TypeParameterType.Occurs(p.Type) || _prebound.ContainsKey(arg)) continue;
             var value = BindExpr(arg.Value, null);
             _prebound[arg] = value;
-            conflict |= !Unify(p.Type, value.Type, found, fn, arg.Value.Span);
+            // A known-state local passed `ref` or `out` is inferred from its declared type, as `BindArgument` passes it (Q295).
+            var type = p.Modifier is ParamModifier.Ref or ParamModifier.Out && value is BoundLocal known && KnownState(known.Local) is not null
+                ? known.Local.Type
+                : value.Type;
+            conflict |= !Unify(p.Type, type, found, fn, arg.Value.Span);
         }
         if (conflict) return null;
         var args = new TypeSymbol[parameters.Count];

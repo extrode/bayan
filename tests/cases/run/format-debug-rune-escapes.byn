@@ -1,0 +1,4 @@
+let q: rune = '\''
+let b: rune = '\\'
+let n: rune = '\n'
+print($"{q, as: .debug} {b, as: .debug} {n, as: .debug} {'é', as: .debug} {'"', as: .debug}")
