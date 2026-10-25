@@ -67,6 +67,15 @@ public sealed class FormatTests
     }
 
     [Fact]
+    public void DelegatesAndFatArrowFunctionTypesBecomeArrowTypes()
+    {
+        var file = Path.Combine(Fresh("function-types"), "main.byn");
+        File.WriteAllText(file, "struct Order { i64 total }\ndelegate bool OrderFilter(Order order)\ntype F = i32 => bool\n");
+        Run("format", file);
+        Assert.Equal("struct Order { i64 total }\ntype OrderFilter = Order -> bool\ntype F = i32 -> bool\n", File.ReadAllText(file));
+    }
+
+    [Fact]
     public void DeclarationsBecomeTypeFirstAndLocalsNameFirst()
     {
         var file = Path.Combine(Fresh("order"), "main.byn");
