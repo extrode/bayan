@@ -36,11 +36,13 @@ public sealed class SelfhostParserT8Tests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// <c>tryAssignOp</c> and <c>parseGoto</c> are self-contained (they run through no sibling stub
-    /// that changes the tree), so they can be exercised in isolation before the wave merges.
+    /// The self-contained parts of the port run without any sibling stub: <c>tryAssignOp</c> and
+    /// <c>parseGoto</c> use no parse entry point, and <c>exprSpan</c>, <c>patternSpan</c>,
+    /// <c>isStatementExpression</c> and <c>checkAssignable</c> take directly built nodes. Everything
+    /// else routes through T7/T9/T3 stubs and is checked by T15.
     /// </summary>
     [Fact]
-    public void TryAssignOpAndParseGotoBuildAndRun()
+    public void SelfContainedStatementsBuildAndRun()
     {
         const string program = """
             import lexer
@@ -76,6 +78,53 @@ public sealed class SelfhostParserT8Tests(ITestOutputHelper output)
                 }
             }
 
+            string spanExpr() {
+                let lit = Expr.literalExpr(Owned(LiteralExpr {
+                    span: TextSpan { start: 3, length: 5 },
+                    kind: .integer,
+                    text: "1",
+                    suffix: null,
+                }))
+                let s = exprSpan(in lit)
+                return $"expr {s.start} {s.end}"
+            }
+
+            string spanPattern() {
+                let d = Pattern.discardPattern(Owned(DiscardPattern { span: TextSpan { start: 7, length: 2 } }))
+                let s = patternSpan(in d)
+                return $"pattern {s.start} {s.end}"
+            }
+
+            string stmtExprs() {
+                let call = Expr.callExpr(Owned(CallExpr {
+                    span: TextSpan { start: 0, length: 1 },
+                    callee: Expr.nameExpr(Owned(NameExpr { span: TextSpan { start: 0, length: 1 }, name: TextSpan { start: 0, length: 1 }, typeArgs: List<TypeSyntax>() })),
+                    args: List<Argument>(),
+                    becauseKeyword: null,
+                }))
+                let name = Expr.nameExpr(Owned(NameExpr { span: TextSpan { start: 0, length: 1 }, name: TextSpan { start: 0, length: 1 }, typeArgs: List<TypeSyntax>() }))
+                let jump = Expr.jumpExpr(Owned(JumpExpr { span: TextSpan { start: 0, length: 1 }, jump: Stmt.breakStmt(Owned(BreakStmt { span: TextSpan { start: 0, length: 1 }, label: null })) }))
+                let left = Expr.nameExpr(Owned(NameExpr { span: TextSpan { start: 0, length: 1 }, name: TextSpan { start: 0, length: 1 }, typeArgs: List<TypeSyntax>() }))
+                let coal = Expr.binaryExpr(Owned(BinaryExpr { span: TextSpan { start: 0, length: 1 }, op: .coalesce, left: move left, right: move jump }))
+                let err = Expr.errorExpr(Owned(ErrorExpr { span: TextSpan { start: 0, length: 1 } }))
+                return $"call {isStatementExpression(in call)} name {isStatementExpression(in name)} coal {isStatementExpression(in coal)} err {isStatementExpression(in err)}"
+            }
+
+            string assignCheck() {
+                var bytes = List<u8>()
+                let source = SourceText.create("t", from: move bytes)
+                let keywords = Keywords.build()
+                let result = lexer.lex(move source, by: keywords)
+                var p = Parser.create(move result)
+                let before = p.errorCount()
+                let n = Expr.nameExpr(Owned(NameExpr { span: TextSpan { start: 0, length: 1 }, name: TextSpan { start: 0, length: 1 }, typeArgs: List<TypeSyntax>() }))
+                checkAssignable(ref p, for: in n)
+                let afterName = p.errorCount()
+                let l = Expr.literalExpr(Owned(LiteralExpr { span: TextSpan { start: 0, length: 1 }, kind: .integer, text: "1", suffix: null }))
+                checkAssignable(ref p, for: in l)
+                return $"name {afterName - before} literal {p.errorCount() - afterName}"
+            }
+
             void main() {
                 using let arena = Arena()
                 provide allocator: arena {
@@ -85,6 +134,10 @@ public sealed class SelfhostParserT8Tests(ITestOutputHelper output)
                     print($"plus {probe("+")}")
                     print($"goto {gotoKind("goto")}")
                     print($"gotoCase {gotoKind("goto case")}")
+                    print(spanExpr())
+                    print(spanPattern())
+                    print(stmtExprs())
+                    print(assignCheck())
                 }
             }
             """;
@@ -103,6 +156,10 @@ public sealed class SelfhostParserT8Tests(ITestOutputHelper output)
             plus none
             goto break
             gotoCase error
+            expr 3 8
+            pattern 7 9
+            call true name false coal true err true
+            name 0 literal 1
 
             """, stdout);
     }
