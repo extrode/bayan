@@ -24,4 +24,13 @@ public sealed class LambdaEmitTests
         Assert.DoesNotContain("byn_alloc", code);
         Assert.DoesNotContain("byn_context", code);
     }
+
+    [Fact]
+    public void CapturingCallSiteDoesNotAllocate()
+    {
+        var code = EmitGolden("lambda-capture-no-alloc.byn");
+        Assert.Contains("__main__lambda1(", code);
+        Assert.DoesNotContain("malloc", code);
+        Assert.DoesNotContain("byn_alloc", code);
+    }
 }

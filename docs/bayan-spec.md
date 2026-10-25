@@ -519,11 +519,60 @@ type OrderFilter = Order -> bool
 - A stored lambda is non-capturing (a function pointer) or an explicit `dyn (A -> B)` allocated from `context.allocator`.
 - `move () => …` moves captures in. Capturing a `var` follows the borrow rules (§9.4).
 - No multicast delegates; `Event<T>` replaces `event` (§16).
-- Not in v0.1 (spec 007).
+- v0.1 ships the subset below (spec 007); the rest of this section is later.
 
 > Round 2 §8: one function-type syntax and one shorthand (`it`); `.member` keeps a single meaning; storage cost is explicit. Codes: BYN1028, BYN2029.
 
 > Round 3 §13, O5: round-2 function types used `=>`, which collided with the lambda arrow; `->` becomes the function-type arrow and `=>` keeps "evaluates to". Declarations return type-first. `A => B` as a type is an input form. Codes: BYN1055.
+
+**Supported subset (spec 007).**
+
+```csharp
+type Pred = i64 -> bool
+
+bool any(ReadOnlySpan<i64> xs, by Pred p) {
+    for x in xs {
+        if p(x) {
+            return true
+        }
+    }
+    return false
+}
+
+i64 apply(i64 x, by (i64 -> i64) f) => f(x)
+
+bool isBig(i64 x) => x > 2
+
+void main() {
+    let xs: Span<i64> = [1, 2, 3]
+    let base = 10
+    print($"{any(xs, by: it > 2)} {any(xs, by: x => x > 5)} {any(xs, by: isBig)}")   // true false true
+    print($"{apply(1, by: x => x + base)}")                                          // 11
+}
+```
+
+- **Function types** `A -> B`, `(A, B) -> C`, `() -> void`, with `fails E, F` and then `uses e, f` after the return type. `->` is right-associative; `?` and `[N]` bind to the type they follow (`A -> B?` returns `B?`). Two function types are the same type when parameters, return, error sets and effects are equal; there is no variance. A type displays in source form, error sets with their type arguments (`() -> Form fails ValidationError<Form>`); a bare `ValidationError` is BYN2023 and an unknown effect BYN6003.
+- **Placement:** a parameter type (parenthesized before the name, `by (Token -> bool) p`, or through an alias), a `type` alias target and a local's type (`let f: Pred = isBig`). A field, property, return type, constant, union or error payload, type argument, or an optional, span, list, map, array or tuple of a function type is BYN2822, so the stored `(Line -> Money uses net) pricer` above is not in v0.1. Aliases take no type parameters: `type Predicate<T>` is later; spell one alias per type.
+- **Named functions as values:** a module-level, non-generic function whose signature matches exactly. Particles are part of the name, not the type: `i32 clamp(i32 x, to i32 max)` is a `(i32, i32) -> i32`. A built-in, generic function, method, constructor or variant named as a value is BYN2824 (wrap it in a lambda); a signature mismatch is BYN2202 showing both signatures. `Panic.handler` keeps its own rule (§7.6).
+- **Lambdas** are `x => …`, `(a, b) => …` or `() => …` with an expression or block body. Parameters are names only; a typed, modified or particle-labelled parameter is BYN1001. A lambda takes its parameter types, return type and error sets from the function type expected where it appears: none expected is BYN2218, a parameter count that differs is BYN2820. `return`, `break`, `continue` and `defer` in the body are the lambda's own; a non-`void` expression body where `void` is returned is BYN3201.
+- **`it`:** an argument that mentions `it`, where a one-parameter function type is expected, is a lambda with the parameter `it`. A second `it` shorthand inside it, or one inside a `requires` rule (where `it` is the checked value), is BYN2029; name one lambda. `.member` where a function type is expected is BYN2823 with a fix to `it.member`.
+- **Captures are by copy**, not by borrow: a lambda may read the enclosing `let`, `const`, `for`, pattern and `catch` bindings and parameters without a modifier, copied when the lambda is created. A `var`, a `var` pattern binding, a `ref`/`out`/`in` parameter and `this` (explicit or through a field) are BYN2821; a `unique` value is BYN2780. A captured borrow keeps its source borrowed while the lambda lives (BYN3004 on a structural change).
+- **Lifetime:** a function value is a borrow of the frame that made it: a local, an argument or a callee, never stored or returned. A capturing lambda held into the next loop iteration is BYN3002; one returned from a lambda is BYN3003. The value is a code and environment pointer pair; the environment lives in the creating frame, and nothing is allocated.
+- **Calls through a value** are positional; a named or particle-labelled argument is the missing-parameter diagnostic. A call through a `fails` type is handled with `try` or `catch` like any failing call (BYN2602).
+- **Effects:** a function-typed parameter is effect-polymorphic: a call through it adds nothing to the function that declares it, and the call that passes a function or lambda carries that argument's effects (BYN6002 on a public caller that does not declare them). A function-typed local's `uses` is an upper bound: a function or lambda beyond it is BYN6005, and a call through the local has the declared effects. Function types match exactly, so a local with a `uses` bound passed to a parameter without one is BYN2202.
+- **Input forms:** `A => B` in a type is BYN1055 with a fix to `A -> B`; `delegate bool F(Order o)` is BYN1028 with the fix `type F = Order -> bool`. `bayan format` applies both.
+- Not in v0.1: generic aliases, typed lambda parameters, `ref` captures of `var`, `move () => …` (BYN2782), function values that outlive their frame, `dyn (A -> B)`, built-in collection methods that take a lambda (`where`, `select`, `sumBy`; §16), effect variables.
+- Laws: L013 "Direct and indirect calls agree", L014 "Capture by copy never aliases the source". Codes: BYN1028, BYN1055, BYN2029, BYN2820–BYN2824. HANDOFF Questions 345–369.
+
+**Self-hosting gaps** (what spec 009's port must work around):
+- No stored callbacks: a visitor table, a `Dictionary<TokenKind, Func<…>>` or a parser rule table becomes a `switch` or a function-typed parameter threaded through the calls.
+- No function-typed fields or return types: no combinator style; helpers take their callback as a parameter on each call.
+- No `ref` captures: a lambda that must update a counter becomes a `ref` parameter of the called function, or the loop is written out.
+- No built-in `where`/`select`/`sort(by:)`: the port writes `any`, `indexWhere` and a sort over spans once in its own prelude.
+- No generic aliases: `type Predicate<T>` is spelled per type (`type TokenPred = Token -> bool`).
+- No effect variables: a function-typed local that may use an effect declares it (`let hook: string -> string uses fs = …`); parameters need nothing.
+- No lambdas in `const` initializers and no function values in static data: keyword tables stay arrays of names, not of handlers.
+- No `this` capture: a method that passes a lambda copies the fields it needs into `let` values first.
 
 ### 3.17 Typestate (kāna / ṣāra)
 
