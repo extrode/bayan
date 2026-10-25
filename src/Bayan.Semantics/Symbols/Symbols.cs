@@ -462,6 +462,25 @@ public sealed class ErrorSetSymbol(string name, Location location, ModuleSymbol 
 
     public override string DisplayName => Of is null ? Name : $"{Name}<{Of.DisplayName}>";
 
+    /// <summary>
+    /// <see cref="DisplayName"/>, with <c>T</c> qualified by its module when another of <paramref name="peers"/> would read
+    /// the same: <c>ValidationError&lt;a.Point&gt;</c> beside <c>ValidationError&lt;b.Point&gt;</c>.
+    /// </summary>
+    public string DisplayNameAmong(IEnumerable<ErrorSetSymbol> peers)
+    {
+        if (Of is null || !peers.Any(p => p != this && p.DisplayName == DisplayName)) return DisplayName;
+        var module = Of switch
+        {
+            StructSymbol s => s.Module,
+            EnumSymbol e => e.Module,
+            UnionSymbol u => u.Module,
+            InterfaceSymbol i => i.Module,
+            ErrorSetSymbol e => e.Module,
+            _ => null,
+        };
+        return module is null ? DisplayName : $"{Name}<{module.Name}.{Of.DisplayName}>";
+    }
+
     public ErrorVariantSymbol? Find(string name) => Variants.Find(v => v.Name == name);
 }
 

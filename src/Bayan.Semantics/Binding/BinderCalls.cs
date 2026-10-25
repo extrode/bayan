@@ -1032,7 +1032,7 @@ internal sealed partial class Binder
             {
                 if (sets.Count > 0 && !sets.Contains(ev.Variant.Set))
                     Report(DiagnosticCodes.UnknownVariant, v.Span, [ev.Variant.Name, errorType.DisplayName],
-                        help: $"use a variant of {string.Join(", ", sets.Select(s => "`" + s.Name + "`"))}, the sets `{bc.Function.Name}` fails with");
+                        help: $"use a variant of {string.Join(", ", sets.Select(s => "`" + s.DisplayNameAmong(sets) + "`"))}, the sets `{bc.Function.Name}` fails with");
                 else variant = ev.Variant;
             }
         }
@@ -1538,7 +1538,7 @@ internal sealed partial class Binder
             {
                 var keys = set.Variants.Select(v => VariantKey(v, type)).ToList();
                 if (keys.Count == 0 || !keys.All(missing.Contains)) continue;
-                missing.Insert(missing.IndexOf(keys[0]), set.DisplayName);
+                missing.Insert(missing.IndexOf(keys[0]), set.DisplayNameAmong(union.Sets));
                 missing.RemoveAll(keys.Contains);
             }
         Report(DiagnosticCodes.NonExhaustive, span, [type.DisplayName],
@@ -1564,8 +1564,9 @@ internal sealed partial class Binder
         _ => null,
     };
 
+    // The set is named by identity: two `ValidationError<Point>` from different modules get distinct, module-qualified keys.
     private static string VariantKey(ErrorVariantSymbol v, TypeSymbol type) =>
-        Unwrap(type) is ErrorUnionType { Sets.Count: > 1 } ? $"{v.Set.DisplayName}.{v.Name}" : "." + v.Name;
+        Unwrap(type) is ErrorUnionType { Sets.Count: > 1 } u ? $"{v.Set.DisplayNameAmong(u.Sets)}.{v.Name}" : "." + v.Name;
 
     private static bool Irrefutable(BoundPattern p) => p switch
     {

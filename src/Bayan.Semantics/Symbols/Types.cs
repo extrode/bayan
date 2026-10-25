@@ -444,18 +444,27 @@ public sealed class BuiltinType : TypeSymbol
 /// <summary>The type of a caught error when the call can fail with more than one set.</summary>
 public sealed class ErrorUnionType(IReadOnlyList<ErrorSetSymbol> sets, IReadOnlyList<ErrorVariantSymbol>? excluded = null) : ConstructedType
 {
-    private readonly string _key = string.Join("|", sets.Select(s => s.Module.Name + "." + s.DisplayName))
-        + string.Concat((excluded ?? []).Select(v => "-" + v.Set.DisplayName + "." + v.Name));
-
     public IReadOnlyList<ErrorSetSymbol> Sets { get; } = sets;
 
     /// <summary>The cases taken out with <c>except .c</c>: never raised by a value of this type.</summary>
     public IReadOnlyList<ErrorVariantSymbol> Excluded { get; } = excluded ?? [];
 
-    protected override object Key => _key;
+    // By symbol identity: `ValidationError<a.Point>` and `ValidationError<b.Point>` display alike but are different sets.
+    protected override object Key => new SetsKey(Sets, Excluded);
+
+    private sealed class SetsKey(IReadOnlyList<ErrorSetSymbol> sets, IReadOnlyList<ErrorVariantSymbol> excluded)
+    {
+        public IReadOnlyList<ErrorSetSymbol> Sets { get; } = sets;
+
+        public IReadOnlyList<ErrorVariantSymbol> Excluded { get; } = excluded;
+
+        public override bool Equals(object? obj) => obj is SetsKey k && Sets.SequenceEqual(k.Sets) && Excluded.SequenceEqual(k.Excluded);
+
+        public override int GetHashCode() => Sets.Aggregate(Excluded.Count, (h, s) => HashCode.Combine(h, s));
+    }
 
     /// <summary>With no sets, any error (an inferred set not yet known).</summary>
-    public override string DisplayName => Sets.Count == 0 ? "error" : string.Join(" | ", Sets.Select(s => s.DisplayName))
+    public override string DisplayName => Sets.Count == 0 ? "error" : string.Join(" | ", Sets.Select(s => s.DisplayNameAmong(Sets)))
         + (Excluded.Count == 0 ? "" : " except " + string.Join(", ", Excluded.Select(v => "." + v.Name)));
 
     public static TypeSymbol Of(IReadOnlyList<ErrorSetSymbol> sets, IReadOnlyList<ErrorVariantSymbol>? excluded = null) =>
