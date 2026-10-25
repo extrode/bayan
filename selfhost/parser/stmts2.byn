@@ -392,47 +392,6 @@ Stmt rejectPostfixAfterCompound(ref Parser p, for move Stmt statement) {
 
 // ── Node spans ─────────────────────────────────────────────────────────────────
 
-/// The `span` of an expression node (the C# `Expr.Span`).
-TextSpan exprSpan(in Expr e) {
-    switch e {
-        case .literalExpr(let n): return n.value.span
-        case .interpolatedExpr(let n): return n.value.span
-        case .nameExpr(let n): return n.value.span
-        case .thisExpr(let n): return n.value.span
-        case .memberExpr(let n): return n.value.span
-        case .targetMemberExpr(let n): return n.value.span
-        case .callExpr(let n): return n.value.span
-        case .indexExpr(let n): return n.value.span
-        case .unaryExpr(let n): return n.value.span
-        case .binaryExpr(let n): return n.value.span
-        case .rangeExpr(let n): return n.value.span
-        case .conditionalExpr(let n): return n.value.span
-        case .castExpr(let n): return n.value.span
-        case .isExpr(let n): return n.value.span
-        case .exceptExpr(let n): return n.value.span
-        case .inExpr(let n): return n.value.span
-        case .switchExpr(let n): return n.value.span
-        case .tryExpr(let n): return n.value.span
-        case .moveExpr(let n): return n.value.span
-        case .catchExpr(let n): return n.value.span
-        case .caughtErrorExpr(let n): return n.value.span
-        case .jumpExpr(let n): return n.value.span
-        case .blockExpr(let n): return n.value.span
-        case .structLiteralExpr(let n): return n.value.span
-        case .withExpr(let n): return n.value.span
-        case .spreadExpr(let n): return n.value.span
-        case .mapEntryExpr(let n): return n.value.span
-        case .collectionExpr(let n): return n.value.span
-        case .tupleExpr(let n): return n.value.span
-        case .parenExpr(let n): return n.value.span
-        case .lambdaExpr(let n): return n.value.span
-        case .stackallocExpr(let n): return n.value.span
-        case .patternExpr(let n): return n.value.span
-        case .errorExpr(let n): return n.value.span
-        case .none: return TextSpan { start: 0, length: 0 }
-    }
-}
-
 /// The `span` of a pattern node (the C# `Pattern.Span`).
 TextSpan patternSpan(in Pattern p) {
     switch p {
