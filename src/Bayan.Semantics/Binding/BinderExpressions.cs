@@ -1834,7 +1834,7 @@ internal sealed partial class Binder
             return new BoundTuple(t, tt, values);
         }
         var elements = t.Elements.Select(e => BindExpr(e.Value)).ToArray();
-        if (elements.Any(e => e.Type.IsError)) return new BoundErrorExpr(t);
+        if (elements.Any(e => e.Type.IsError) || target is { IsError: true }) return new BoundErrorExpr(t);
         var fields = new List<TupleField>();
         for (var i = 0; i < elements.Length; i++)
         {
