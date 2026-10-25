@@ -44,7 +44,7 @@ Depends on: feat/007-lambdas at 4a746de (dev, round 3, spec 006 and 007 merged);
   - Output is identical under two seeds.
   - A mutation that numbers literals in source order without the runtime finding them makes the twin property fail.
   - `dotnet test -v q --filter "Law=L015"` holds.
-- [ ] T9 enact L015 "Interning is identity on text" — files: `docs/laws/015-*.md` — covers: L015 — after T8 — done when: `status: enacted` lands in the same change as T8's passing proof (standing authorization, 2026-10-21).
+- [x] T9 enact L015 "Interning is identity on text" — files: `docs/laws/015-*.md` — covers: L015 — after T8 — done when: `status: enacted` lands in the same change as T8's passing proof (standing authorization, 2026-10-21).
 - [ ] T10 prove L016 via /prove: equal keys are one entry — files: `tests/Bayan.Tests/MapKeyLawTests.cs` [Trait Law L016], `tests/Bayan.Tests/MapModelTests.cs` (`Symbol` and composite key generators), `docs/laws/016-*.md` (status `proposed`, proof notes) — covers: L016 — after T6; parallel with T8 — done when:
   - Over generated key types (tuples and structs of `bool`, `i8`, `i64`, `rune`, `string`, `Symbol`, plain enums and nested structs, in padding-prone orders), `==` keys built separately are one entry with last write winning, and unequal keys are two entries.
   - L003's model holds over these keys.

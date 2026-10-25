@@ -1,11 +1,12 @@
 ---
 id: L015
 title: Interning is identity on text
-status: proposed
+status: enacted
 kind: property
 scope: src/runtime/bayan-rt.c
 proof: tests/Bayan.Tests/SymbolLawTests.cs
 check: dotnet test --filter Law=L015
+enacted: 2026-10-25
 ---
 
 ## Statement
