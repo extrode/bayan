@@ -278,3 +278,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 007 T3: a function type as a `union` variant payload field gets BYN3002-style `BorrowPayload`, not BYN2822 (`CheckUnionShape` has no placement check).
 - 007 T3: an explicit type argument on a generic function call (`f<i32 -> bool>()`) and an inferred one are not checked for BYN2822; only `TypeResolver.Construct` and the builtin generics are.
 - 007 T3: `FunctionType` has no excluded cases, so `fails` naming a `union error … except .c` alias keeps the excluded cases in the function type.
+- BYN2822 help "take the function as a parameter instead" reads wrong when the rejected position is already inside a parameter (`void a(Pred? p)`); found in 007 T3 review.
