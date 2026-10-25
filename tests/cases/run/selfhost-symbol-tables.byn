@@ -1,0 +1,83 @@
+// The binder port's symbol tables in Bayan: interned names, a keyword literal, a scope chain, composite keys (spec 008 R12).
+enum TokenKind {
+    letKeyword
+    varKeyword
+    funcKeyword
+    identifier
+}
+
+struct MemberKey {
+    i32 owner
+    Symbol name
+}
+
+Symbol readName(string src, from i64 start, until i64 end) uses alloc {
+    return Symbol.intern(src[start..end])
+}
+
+i32 resolve(Symbol name, through List<Map<Symbol, i32>> scopes) {
+    var i = scopes.length - 1
+    while i >= 0 {
+        if scopes[i].contains(name) { return scopes[i][name] }
+        i -= 1
+    }
+    return -1
+}
+
+void main() {
+    let keywords: Map<Symbol, TokenKind> = ["let": .letKeyword, "var": .varKeyword, "func": .funcKeyword]
+    let src = "func area let width var height let width func inner let height let depth"
+
+    // Slice the words out of the source and intern each one.
+    var words = List<Symbol>()
+    var start: i64 = 0
+    for i in 0..src.length + 1 {
+        if i == src.length or src[i..i + 1] == " " {
+            if i > start { words.append(readName(src, from: start, until: i)) }
+            start = i + 1
+        }
+    }
+
+    // Declare each name after a keyword: `func` opens a scope, `let` and `var` declare in the innermost.
+    var scopes = List<Map<Symbol, i32>>()
+    scopes.append(Map<Symbol, i32>())
+    var declared: Map<(i32 scope, Symbol name), i32> = []
+    var members: Map<MemberKey, TokenKind> = []
+    var order = List<Symbol>()
+    var next: i32 = 0
+    for w in 0..words.length - 1 {
+        let kind = keywords.contains(words[w]) ? keywords[words[w]] : TokenKind.identifier
+        if kind == .identifier { continue }
+        let name = words[w + 1]
+        let scope = i32(scopes.length - 1)
+        if kind == .funcKeyword {
+            scopes[scope][name] = next
+            scopes.append(Map<Symbol, i32>())
+        } else {
+            if declared.contains((scope, name)) {
+                print($"{name} redeclared in scope {scope}, first {declared[(scope, name)]}")
+                continue
+            }
+            scopes[scope][name] = next
+        }
+        declared[(scope, name)] = next
+        members[MemberKey { owner: scope, name: name }] = kind
+        order.append(name)
+        next += 1
+    }
+
+    // Look names up innermost first; a missing name resolves to -1.
+    for text in ["width", "height", "area", "inner", "depth", "radius"] {
+        print($"{text} -> {resolve(Symbol.intern(text), through: scopes)}")
+    }
+    print($"keyword let: {keywords.contains(words[2])}, identifier width: {keywords.contains(words[3])}")
+    print($"member (1, height): {members[MemberKey { owner: 1, name: "height" }]}")
+
+    // The declarations, in declaration order.
+    for (key, value) in declared {
+        print($"{value}: scope {key.scope} {key.name} {members[MemberKey { owner: key.scope, name: key.name }]}")
+    }
+    var line = StrBuf()
+    for name in order { line.append($" {name}") }
+    print($"order:{line.view}")
+}
