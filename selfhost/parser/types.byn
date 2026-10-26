@@ -159,7 +159,7 @@ i64 scanExprTypeArgs(ref Parser p, at i64 index) {
 /// The C# `CSharpTypeNames`: a C# type name written in a type position with the Bayan type it means, or `""`.
 /// The C# parser rewrites the name's text; a `NamedType` path here is spans, so the dump applies this to a
 /// one-name path without type arguments (Q455).
-string cSharpTypeName(string name) => name switch {
+public string cSharpTypeName(string name) => name switch {
     "int" => "i32",
     "long" => "i64",
     "short" => "i16",

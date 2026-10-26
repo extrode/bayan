@@ -1,0 +1,7 @@
+// bayan-check: the self-hosted checker's entry point. Returns 0 until T26 wires the CLI's
+// `check`/`types`/`compile` commands to the passes. Ports `CliApp`'s `Check` subset.
+
+import lexer
+import parser
+
+i32 main() => 0

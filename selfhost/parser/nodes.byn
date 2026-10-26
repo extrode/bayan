@@ -146,7 +146,7 @@
 //   ListPattern            ListPattern, Pattern.listPattern
 
 /// The C# `[Flags] enum Modifiers`.
-type Modifiers = u16
+public type Modifiers = u16
 
 const modifierNone: u16 = 0
 const modifierPublic: u16 = 1
@@ -161,33 +161,33 @@ const modifierUnsafe: u16 = 256
 
 // ── Compilation unit and declarations ────────────────────────────────────────────
 
-struct CompilationUnit {
-    TextSpan span
-    List<Decl> members
+public struct CompilationUnit {
+    public TextSpan span
+    public List<Decl> members
 }
 
 /// An attribute: `@name` or `@name(args)` before a declaration or an error variant.
-struct AttributeSyntax {
-    TextSpan span
-    TextSpan name
-    List<Argument> args
-    BecauseClause? becauseKeyword = null
+public struct AttributeSyntax {
+    public TextSpan span
+    public TextSpan name
+    public List<Argument> args
+    public BecauseClause? becauseKeyword = null
 }
 
 /// `because "reason"`: why an attribute or a call bypasses a safety rule (J6).
-struct BecauseClause {
-    TextSpan span
-    string reason
+public struct BecauseClause {
+    public TextSpan span
+    public string reason
 }
 
 /// `requires condition`, or a struct-level `requires condition at .field`.
-struct RequiresRule {
-    TextSpan span
-    Expr condition
-    TextSpan? at
+public struct RequiresRule {
+    public TextSpan span
+    public Expr condition
+    public TextSpan? at
 }
 
-union Decl {
+public union Decl {
     importDecl(Owned<ImportDecl> node)
     globalStatement(Owned<GlobalStatement> node)
     functionDecl(Owned<FunctionDecl> node)
@@ -209,23 +209,23 @@ union Decl {
     none
 }
 
-struct ImportDecl {
-    TextSpan span
-    List<TextSpan> path
-    TextSpan? alias
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct ImportDecl {
+    public TextSpan span
+    public List<TextSpan> path
+    public TextSpan? alias
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// A statement written at module level; together they form the implicit `main`.
-struct GlobalStatement {
-    TextSpan span
-    Stmt statement
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct GlobalStatement {
+    public TextSpan span
+    public Stmt statement
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
-enum ParamModifier {
+public enum ParamModifier {
     none
     refKeyword
     moveKeyword
@@ -233,261 +233,261 @@ enum ParamModifier {
     inKeyword
 }
 
-struct Param {
-    TextSpan span
-    ParamModifier modifier
-    TypeSyntax type
-    TextSpan name
-    Expr defaultKeyword
+public struct Param {
+    public TextSpan span
+    public ParamModifier modifier
+    public TypeSyntax type
+    public TextSpan name
+    public Expr defaultKeyword
     /// The particle before the parameter (`by Carrier carrier`).
-    TextSpan? particle = null
+    public TextSpan? particle = null
     /// The variadic tail `rest ReadOnlySpan<T> xs`.
-    bool rest = false
+    public bool rest = false
 }
 
 /// `fails` clause: `errors` empty means the set is inferred.
-struct FailsClause {
-    TextSpan span
-    List<TypeSyntax> errors
+public struct FailsClause {
+    public TextSpan span
+    public List<TypeSyntax> errors
 }
 
 /// `uses alloc, net`: the effects a function declares.
-struct UsesClause {
-    TextSpan span
-    List<TextSpan> effects
+public struct UsesClause {
+    public TextSpan span
+    public List<TextSpan> effects
 }
 
 /// A function or method. Exactly one of `body` and `expressionBody` is set, or neither for a declaration.
-struct FunctionDecl {
-    TextSpan span
-    Modifiers modifiers
-    TypeSyntax returnType
-    TextSpan name
-    List<Param> params
-    FailsClause? failsKeyword
-    Stmt body
-    Expr expressionBody
-    List<TextSpan> typeParams = List<TextSpan>()
-    TextSpan? refThis = null
-    TextSpan? moveThis = null
-    List<TextSpan> receiverStates = List<TextSpan>()
+public struct FunctionDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TypeSyntax returnType
+    public TextSpan name
+    public List<Param> params
+    public FailsClause? failsKeyword
+    public Stmt body
+    public Expr expressionBody
+    public List<TextSpan> typeParams = List<TextSpan>()
+    public TextSpan? refThis = null
+    public TextSpan? moveThis = null
+    public List<TextSpan> receiverStates = List<TextSpan>()
     /// Where a `ref this` would go: just after the `(`.
-    i64 paramsStart = 0
+    public i64 paramsStart = 0
     /// The `expects` clauses after the signature (and the `requires` input form, BYN1063).
-    List<Expr> requiresKeyword = List<Expr>()
-    List<WhereClause> where = List<WhereClause>()
-    TextSpan? becomes = null
-    UsesClause? usesKeyword = null
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+    public List<Expr> requiresKeyword = List<Expr>()
+    public List<WhereClause> where = List<WhereClause>()
+    public TextSpan? becomes = null
+    public UsesClause? usesKeyword = null
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `where T : IA, IB`: the interfaces a type parameter must conform to.
-struct WhereClause {
-    TextSpan span
-    TextSpan param
-    List<TypeSyntax> bounds
+public struct WhereClause {
+    public TextSpan span
+    public TextSpan param
+    public List<TypeSyntax> bounds
 }
 
-struct StructDecl {
-    TextSpan span
-    Modifiers modifiers
-    TextSpan name
-    List<Decl> members
-    List<TextSpan> typeParams = List<TextSpan>()
-    List<TypeSyntax> bases = List<TypeSyntax>()
-    List<WhereClause> where = List<WhereClause>()
-    List<RequiresRule> rules = List<RequiresRule>()
-    List<UnionVariant> states = List<UnionVariant>()
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct StructDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<Decl> members
+    public List<TextSpan> typeParams = List<TextSpan>()
+    public List<TypeSyntax> bases = List<TypeSyntax>()
+    public List<WhereClause> where = List<WhereClause>()
+    public List<RequiresRule> rules = List<RequiresRule>()
+    public List<UnionVariant> states = List<UnionVariant>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
-struct InterfaceDecl {
-    TextSpan span
-    Modifiers modifiers
-    TextSpan name
-    List<Decl> members
-    List<TextSpan> typeParams = List<TextSpan>()
-    List<WhereClause> where = List<WhereClause>()
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct InterfaceDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<Decl> members
+    public List<TextSpan> typeParams = List<TextSpan>()
+    public List<WhereClause> where = List<WhereClause>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `T name { get; }`: an abstract read-only property of an interface.
-struct GetterDecl {
-    TextSpan span
-    Modifiers modifiers
-    TypeSyntax type
-    TextSpan name
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct GetterDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TypeSyntax type
+    public TextSpan name
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `type Item;`: an interface's associated type.
-struct AssociatedTypeDecl {
-    TextSpan span
-    TextSpan name
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct AssociatedTypeDecl {
+    public TextSpan span
+    public TextSpan name
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
-struct ExtensionDecl {
-    TextSpan span
-    TextSpan name
-    List<TypeSyntax> bases
-    List<Decl> members
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct ExtensionDecl {
+    public TextSpan span
+    public TextSpan name
+    public List<TypeSyntax> bases
+    public List<Decl> members
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
-struct FieldDecl {
-    TextSpan span
-    Modifiers modifiers
-    TypeSyntax type
-    TextSpan name
-    Expr defaultKeyword
-    List<RequiresRule> requiresKeyword = List<RequiresRule>()
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct FieldDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TypeSyntax type
+    public TextSpan name
+    public Expr defaultKeyword
+    public List<RequiresRule> requiresKeyword = List<RequiresRule>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `T name => expr`, or `T name { … }` with a `block` body (set exactly when `body` is `none`).
-struct PropertyDecl {
-    TextSpan span
-    Modifiers modifiers
-    TypeSyntax type
-    TextSpan name
-    Expr body
-    Stmt block = .none
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct PropertyDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TypeSyntax type
+    public TextSpan name
+    public Expr body
+    public Stmt block = .none
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
-struct ConstructorDecl {
-    TextSpan span
-    Modifiers modifiers
-    TextSpan name
-    List<Param> params
-    Stmt body
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct ConstructorDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<Param> params
+    public Stmt body
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
-struct ErrorVariant {
-    TextSpan span
-    TextSpan name
-    string? doc
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
-    List<UnionField> fields = List<UnionField>()
+public struct ErrorVariant {
+    public TextSpan span
+    public TextSpan name
+    public string? doc
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
+    public List<UnionField> fields = List<UnionField>()
 }
 
-struct ErrorEnumDecl {
-    TextSpan span
-    Modifiers modifiers
-    TextSpan name
-    List<ErrorVariant> variants
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct ErrorEnumDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<ErrorVariant> variants
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `union error Name = A, B except .c`.
-struct ErrorSetDecl {
-    TextSpan span
-    Modifiers modifiers
-    TextSpan name
-    List<TypeSyntax> members
+public struct ErrorSetDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<TypeSyntax> members
     /// The two declaration keywords, as written.
-    TextSpan head = TextSpan { start: 0, length: 0 }
-    List<TextSpan> exceptKeyword = List<TextSpan>()
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+    public TextSpan head = TextSpan { start: 0, length: 0 }
+    public List<TextSpan> exceptKeyword = List<TextSpan>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// A member; `args` is `null` without parentheses.
-struct EnumMember {
-    TextSpan span
-    TextSpan name
-    string? doc
-    List<Argument>? args
+public struct EnumMember {
+    public TextSpan span
+    public TextSpan name
+    public string? doc
+    public List<Argument>? args
 }
 
 /// `enum Name { a, b }`, or `enum Name(T x) { a(1), b(2); }` with associated data (`params` non-null).
-struct EnumDecl {
-    TextSpan span
-    Modifiers modifiers
-    TextSpan name
-    List<Param>? params
-    List<EnumMember> members
-    List<TypeSyntax> bases = List<TypeSyntax>()
-    List<WhereClause> where = List<WhereClause>()
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct EnumDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<Param>? params
+    public List<EnumMember> members
+    public List<TypeSyntax> bases = List<TypeSyntax>()
+    public List<WhereClause> where = List<WhereClause>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// A positional payload field of a union variant: `f32 r`.
-struct UnionField {
-    TextSpan span
-    TypeSyntax type
-    TextSpan name
+public struct UnionField {
+    public TextSpan span
+    public TypeSyntax type
+    public TextSpan name
 }
 
 /// `circle(f32 r)`, or `none` without a payload; `value` is the `= 1` of `read = 1`.
-struct UnionVariant {
-    TextSpan span
-    TextSpan name
-    List<UnionField> fields
-    string? doc
-    Expr value = .none
+public struct UnionVariant {
+    public TextSpan span
+    public TextSpan name
+    public List<UnionField> fields
+    public string? doc
+    public Expr value = .none
 }
 
-struct UnionDecl {
-    TextSpan span
-    Modifiers modifiers
-    TextSpan name
-    List<UnionVariant> variants
-    List<TextSpan> typeParams = List<TextSpan>()
-    List<TypeSyntax> bases = List<TypeSyntax>()
-    List<WhereClause> where = List<WhereClause>()
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct UnionDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<UnionVariant> variants
+    public List<TextSpan> typeParams = List<TextSpan>()
+    public List<TypeSyntax> bases = List<TypeSyntax>()
+    public List<WhereClause> where = List<WhereClause>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `type Name = T`, or with `distinct` a `type distinct`.
-struct TypeAliasDecl {
-    TextSpan span
-    Modifiers modifiers
-    TextSpan name
-    TypeSyntax target
-    bool distinct = false
-    List<RequiresRule> requiresKeyword = List<RequiresRule>()
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct TypeAliasDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public TypeSyntax target
+    public bool distinct = false
+    public List<RequiresRule> requiresKeyword = List<RequiresRule>()
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `effect name = net, fs` (§14).
-struct EffectDecl {
-    TextSpan span
-    Modifiers modifiers
-    TextSpan name
-    List<TextSpan> effects
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct EffectDecl {
+    public TextSpan span
+    public Modifiers modifiers
+    public TextSpan name
+    public List<TextSpan> effects
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `test "name" { … }`, or `test "name" (T a, U b) { … }`.
-struct TestDecl {
-    TextSpan span
-    string title
-    List<Param> params
-    Stmt body
-    string? doc = null
-    List<AttributeSyntax> attributes = List<AttributeSyntax>()
+public struct TestDecl {
+    public TextSpan span
+    public string title
+    public List<Param> params
+    public Stmt body
+    public string? doc = null
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────────
 
-union TypeSyntax {
+public union TypeSyntax {
     namedType(Owned<NamedType> node)
     optionalType(Owned<OptionalType> node)
     arrayType(Owned<ArrayType> node)
@@ -500,69 +500,69 @@ union TypeSyntax {
 }
 
 /// `Name` or `Name<A, B>`, optionally qualified (`m.Name`).
-struct NamedType {
-    TextSpan span
-    List<TextSpan> path
-    List<TypeSyntax> args
+public struct NamedType {
+    public TextSpan span
+    public List<TextSpan> path
+    public List<TypeSyntax> args
 }
 
-struct OptionalType {
-    TextSpan span
-    TypeSyntax inner
+public struct OptionalType {
+    public TextSpan span
+    public TypeSyntax inner
 }
 
 /// `T[N]`.
-struct ArrayType {
-    TextSpan span
-    TypeSyntax element
-    Expr size
+public struct ArrayType {
+    public TextSpan span
+    public TypeSyntax element
+    public Expr size
 }
 
-struct TupleTypeElement {
-    TextSpan span
-    TypeSyntax type
-    TextSpan? name
+public struct TupleTypeElement {
+    public TextSpan span
+    public TypeSyntax type
+    public TextSpan? name
 }
 
-struct TupleType {
-    TextSpan span
-    List<TupleTypeElement> elements
+public struct TupleType {
+    public TextSpan span
+    public List<TupleTypeElement> elements
 }
 
 /// `P -> R fails E uses e`: `P` is one type, `(A, B)` or `()`.
-struct FunctionTypeSyntax {
-    TextSpan span
-    List<TypeSyntax> params
-    TypeSyntax returnKeyword
-    FailsClause? failsKeyword
-    UsesClause? usesKeyword
+public struct FunctionTypeSyntax {
+    public TextSpan span
+    public List<TypeSyntax> params
+    public TypeSyntax returnKeyword
+    public FailsClause? failsKeyword
+    public UsesClause? usesKeyword
 }
 
 /// `dyn ref I`, `dyn ref readonly I`, or `dyn I`; `inner` is a `namedType`.
-struct DynType {
-    TextSpan span
-    bool isRef
-    bool isReadOnly
-    TypeSyntax inner
+public struct DynType {
+    public TextSpan span
+    public bool isRef
+    public bool isReadOnly
+    public TypeSyntax inner
 }
 
 /// `T is .a or .b`.
-struct RefinedType {
-    TextSpan span
-    TypeSyntax inner
-    List<TextSpan> states
+public struct RefinedType {
+    public TextSpan span
+    public TypeSyntax inner
+    public List<TextSpan> states
 }
 
 /// `T*`, or `readonly T*`.
-struct PointerType {
-    TextSpan span
-    TypeSyntax pointee
-    bool readOnly
+public struct PointerType {
+    public TextSpan span
+    public TypeSyntax pointee
+    public bool readOnly
 }
 
 // ── Statements ───────────────────────────────────────────────────────────────────
 
-union Stmt {
+public union Stmt {
     blockStmt(Owned<BlockStmt> node)
     localDecl(Owned<LocalDecl> node)
     exprStmt(Owned<ExprStmt> node)
@@ -590,33 +590,33 @@ union Stmt {
     none
 }
 
-struct BlockStmt {
-    TextSpan span
-    List<Stmt> statements
+public struct BlockStmt {
+    public TextSpan span
+    public List<Stmt> statements
 }
 
-enum BindingKind {
+public enum BindingKind {
     letKeyword
     varKeyword
     constKeyword
 }
 
 /// `let x = e;`, `var T x = e;`, C#-style `T x = e;` (a `var`), optionally `using`.
-struct LocalDecl {
-    TextSpan span
-    BindingKind kind
-    bool usingKeyword
-    TypeSyntax type
-    TextSpan name
-    Expr init
+public struct LocalDecl {
+    public TextSpan span
+    public BindingKind kind
+    public bool usingKeyword
+    public TypeSyntax type
+    public TextSpan name
+    public Expr init
 }
 
-struct ExprStmt {
-    TextSpan span
-    Expr expr
+public struct ExprStmt {
+    public TextSpan span
+    public Expr expr
 }
 
-enum AssignOp {
+public enum AssignOp {
     assign
     add
     sub
@@ -631,180 +631,180 @@ enum AssignOp {
     coalesce
 }
 
-struct AssignStmt {
-    TextSpan span
-    Expr target
-    AssignOp op
-    Expr value
+public struct AssignStmt {
+    public TextSpan span
+    public Expr target
+    public AssignOp op
+    public Expr value
 }
 
-struct IncDecStmt {
-    TextSpan span
-    Expr target
-    bool increment
+public struct IncDecStmt {
+    public TextSpan span
+    public Expr target
+    public bool increment
 }
 
-struct ReturnStmt {
-    TextSpan span
-    Expr value
+public struct ReturnStmt {
+    public TextSpan span
+    public Expr value
 }
 
 /// `fail .x`.
-struct FailStmt {
-    TextSpan span
-    Expr error
+public struct FailStmt {
+    public TextSpan span
+    public Expr error
 }
 
-struct BreakStmt {
-    TextSpan span
-    TextSpan? label
+public struct BreakStmt {
+    public TextSpan span
+    public TextSpan? label
 }
 
-struct ContinueStmt {
-    TextSpan span
-    TextSpan? label
+public struct ContinueStmt {
+    public TextSpan span
+    public TextSpan? label
 }
 
 /// `become .s(…)`.
-struct BecomeStmt {
-    TextSpan span
-    TextSpan state
-    List<Argument> args
+public struct BecomeStmt {
+    public TextSpan span
+    public TextSpan state
+    public List<Argument> args
 }
 
 /// The word after `if`: `if unlikely` or `if never`.
-enum Likelihood {
+public enum Likelihood {
     none
     unlikely
     neverKeyword
 }
 
-struct IfStmt {
-    TextSpan span
-    Expr condition
-    Stmt then
-    Stmt elseKeyword
-    Likelihood likelihood = .none
+public struct IfStmt {
+    public TextSpan span
+    public Expr condition
+    public Stmt then
+    public Stmt elseKeyword
+    public Likelihood likelihood = .none
 }
 
-struct UnlessStmt {
-    TextSpan span
-    Expr condition
-    Stmt body
+public struct UnlessStmt {
+    public TextSpan span
+    public Expr condition
+    public Stmt body
 }
 
 /// A simple statement with a postfix `if`/`unless` (spec §7.3).
-struct GuardedStmt {
-    TextSpan span
-    Stmt statement
-    bool unlessKeyword
-    Expr condition
-    bool unlikely = false
+public struct GuardedStmt {
+    public TextSpan span
+    public Stmt statement
+    public bool unlessKeyword
+    public Expr condition
+    public bool unlikely = false
 }
 
-struct WhileStmt {
-    TextSpan span
-    Expr condition
-    Stmt body
+public struct WhileStmt {
+    public TextSpan span
+    public Expr condition
+    public Stmt body
 }
 
-struct DoWhileStmt {
-    TextSpan span
-    Stmt body
-    Expr condition
+public struct DoWhileStmt {
+    public TextSpan span
+    public Stmt body
+    public Expr condition
 }
 
 /// `while let x = e { … }`.
-struct WhileLetStmt {
-    TextSpan span
-    TextSpan variable
-    Expr value
-    Stmt body
+public struct WhileLetStmt {
+    public TextSpan span
+    public TextSpan variable
+    public Expr value
+    public Stmt body
 }
 
 /// `for x in e`, `for (k, v) in e`, `for try x in e`, or the input form `for (let x in e)`.
-struct ForStmt {
-    TextSpan span
-    BindingKind kind
-    TypeSyntax type
-    TextSpan variable
-    Expr iterable
-    Stmt body
-    bool tryKeyword = false
-    List<TextSpan> names = List<TextSpan>()
+public struct ForStmt {
+    public TextSpan span
+    public BindingKind kind
+    public TypeSyntax type
+    public TextSpan variable
+    public Expr iterable
+    public Stmt body
+    public bool tryKeyword = false
+    public List<TextSpan> names = List<TextSpan>()
 }
 
-struct LabeledStmt {
-    TextSpan span
-    TextSpan label
-    Stmt statement
+public struct LabeledStmt {
+    public TextSpan span
+    public TextSpan label
+    public Stmt statement
 }
 
 /// One `case` label: a pattern and optional `when` guard. A `none` pattern is `default`.
-struct SwitchLabel {
-    TextSpan span
-    Pattern pattern
-    Expr guard
+public struct SwitchLabel {
+    public TextSpan span
+    public Pattern pattern
+    public Expr guard
 }
 
-struct SwitchSection {
-    TextSpan span
-    SwitchLabel label
-    List<Stmt> statements
+public struct SwitchSection {
+    public TextSpan span
+    public SwitchLabel label
+    public List<Stmt> statements
 }
 
-struct SwitchStmt {
-    TextSpan span
-    Expr value
-    List<SwitchSection> sections
+public struct SwitchStmt {
+    public TextSpan span
+    public Expr value
+    public List<SwitchSection> sections
 }
 
-enum DeferKind {
+public enum DeferKind {
     always
     failing
     panicking
 }
 
 /// `defer stmt;`, `defer failing [(e)] stmt` or `defer panicking [(p)] stmt`.
-struct DeferStmt {
-    TextSpan span
-    DeferKind kind
-    TextSpan? binding
-    Stmt body
+public struct DeferStmt {
+    public TextSpan span
+    public DeferKind kind
+    public TextSpan? binding
+    public Stmt body
 }
 
 /// `assert expr;`; `failsKeyword` is the error of `assert f() fails E.x`, `none` for a plain assert.
-struct AssertStmt {
-    TextSpan span
-    Expr condition
-    Expr failsKeyword = .none
+public struct AssertStmt {
+    public TextSpan span
+    public Expr condition
+    public Expr failsKeyword = .none
 }
 
-struct NamedArg {
-    TextSpan span
-    TextSpan name
-    Expr value
+public struct NamedArg {
+    public TextSpan span
+    public TextSpan name
+    public Expr value
 }
 
 /// `provide allocator: a { … }`.
-struct ContextStmt {
-    TextSpan span
-    List<NamedArg> values
-    Stmt body
+public struct ContextStmt {
+    public TextSpan span
+    public List<NamedArg> values
+    public Stmt body
 }
 
-struct EmptyStmt {
-    TextSpan span
+public struct EmptyStmt {
+    public TextSpan span
 }
 
 /// Placeholder after a parse error.
-struct ErrorStmt {
-    TextSpan span
+public struct ErrorStmt {
+    public TextSpan span
 }
 
 // ── Expressions ──────────────────────────────────────────────────────────────────
 
-union Expr {
+public union Expr {
     literalExpr(Owned<LiteralExpr> node)
     interpolatedExpr(Owned<InterpolatedExpr> node)
     nameExpr(Owned<NameExpr> node)
@@ -842,7 +842,7 @@ union Expr {
     none
 }
 
-enum LiteralKind {
+public enum LiteralKind {
     integer
     floatKeyword
     char
@@ -856,62 +856,62 @@ enum LiteralKind {
 }
 
 /// A literal; `suffix` is the unit/width suffix of a number (`dec`, `u`, …).
-struct LiteralExpr {
-    TextSpan span
-    LiteralKind kind
-    string text
-    TextSpan? suffix
+public struct LiteralExpr {
+    public TextSpan span
+    public LiteralKind kind
+    public string text
+    public TextSpan? suffix
 }
 
-union InterpolationPart {
+public union InterpolationPart {
     interpolationText(Owned<InterpolationText> node)
     interpolationHole(Owned<InterpolationHole> node)
 }
 
 /// Literal text with escapes and doubled braces decoded.
-struct InterpolationText {
-    TextSpan span
-    string text
+public struct InterpolationText {
+    public TextSpan span
+    public string text
 }
 
-struct InterpolationHole {
-    TextSpan span
-    Expr expr
+public struct InterpolationHole {
+    public TextSpan span
+    public Expr expr
     /// The named format specs after the value (`{n, as: .hex}`).
-    List<Argument> specs = List<Argument>()
+    public List<Argument> specs = List<Argument>()
 }
 
-struct InterpolatedExpr {
-    TextSpan span
-    List<InterpolationPart> parts
+public struct InterpolatedExpr {
+    public TextSpan span
+    public List<InterpolationPart> parts
 }
 
-struct NameExpr {
-    TextSpan span
-    TextSpan name
-    List<TypeSyntax> typeArgs
+public struct NameExpr {
+    public TextSpan span
+    public TextSpan name
+    public List<TypeSyntax> typeArgs
 }
 
-struct ThisExpr {
-    TextSpan span
+public struct ThisExpr {
+    public TextSpan span
 }
 
-struct MemberExpr {
-    TextSpan span
-    Expr target
-    TextSpan member
-    bool nullConditional
+public struct MemberExpr {
+    public TextSpan span
+    public Expr target
+    public TextSpan member
+    public bool nullConditional
     /// Explicit type arguments of a generic method call, `x.f<T>()`.
-    List<TypeSyntax> typeArgs = List<TypeSyntax>()
+    public List<TypeSyntax> typeArgs = List<TypeSyntax>()
 }
 
 /// `.member` resolved from the target type.
-struct TargetMemberExpr {
-    TextSpan span
-    TextSpan member
+public struct TargetMemberExpr {
+    public TextSpan span
+    public TextSpan member
 }
 
-enum ArgModifier {
+public enum ArgModifier {
     none
     refKeyword
     moveKeyword
@@ -919,27 +919,27 @@ enum ArgModifier {
     inKeyword
 }
 
-struct Argument {
-    TextSpan span
-    TextSpan? name
-    ArgModifier modifier
-    Expr value
+public struct Argument {
+    public TextSpan span
+    public TextSpan? name
+    public ArgModifier modifier
+    public Expr value
 }
 
-struct CallExpr {
-    TextSpan span
-    Expr callee
-    List<Argument> args
-    BecauseClause? becauseKeyword = null
+public struct CallExpr {
+    public TextSpan span
+    public Expr callee
+    public List<Argument> args
+    public BecauseClause? becauseKeyword = null
 }
 
-struct IndexExpr {
-    TextSpan span
-    Expr target
-    Expr index
+public struct IndexExpr {
+    public TextSpan span
+    public Expr target
+    public Expr index
 }
 
-enum UnaryOp {
+public enum UnaryOp {
     plus
     negate
     notKeyword
@@ -947,13 +947,13 @@ enum UnaryOp {
     fromEnd
 }
 
-struct UnaryExpr {
-    TextSpan span
-    UnaryOp op
-    Expr operand
+public struct UnaryExpr {
+    public TextSpan span
+    public UnaryOp op
+    public Expr operand
 }
 
-enum BinaryOp {
+public enum BinaryOp {
     add
     sub
     mul
@@ -981,186 +981,186 @@ enum BinaryOp {
     coalesce
 }
 
-struct BinaryExpr {
-    TextSpan span
-    BinaryOp op
-    Expr left
-    Expr right
+public struct BinaryExpr {
+    public TextSpan span
+    public BinaryOp op
+    public Expr left
+    public Expr right
 }
 
 /// `a..b` / `a..=b`; either end may be `none` (`..b`, `a..`).
-struct RangeExpr {
-    TextSpan span
-    Expr start
-    Expr end
-    bool inclusive
+public struct RangeExpr {
+    public TextSpan span
+    public Expr start
+    public Expr end
+    public bool inclusive
 }
 
-struct ConditionalExpr {
-    TextSpan span
-    Expr condition
-    Expr whenTrue
-    Expr whenFalse
+public struct ConditionalExpr {
+    public TextSpan span
+    public Expr condition
+    public Expr whenTrue
+    public Expr whenFalse
 }
 
-struct CastExpr {
-    TextSpan span
-    TypeSyntax type
-    Expr operand
+public struct CastExpr {
+    public TextSpan span
+    public TypeSyntax type
+    public Expr operand
 }
 
-struct IsExpr {
-    TextSpan span
-    Expr value
-    Pattern pattern
+public struct IsExpr {
+    public TextSpan span
+    public Expr value
+    public Pattern pattern
 }
 
 /// `xs except p`.
-struct ExceptExpr {
-    TextSpan span
-    Expr value
-    Pattern pattern
+public struct ExceptExpr {
+    public TextSpan span
+    public Expr value
+    public Pattern pattern
 }
 
 /// `x in a..=b`.
-struct InExpr {
-    TextSpan span
-    Expr value
-    Expr range
+public struct InExpr {
+    public TextSpan span
+    public Expr value
+    public Expr range
 }
 
-struct SwitchArm {
-    TextSpan span
-    Pattern pattern
-    Expr guard
-    Expr value
+public struct SwitchArm {
+    public TextSpan span
+    public Pattern pattern
+    public Expr guard
+    public Expr value
 }
 
-struct SwitchExpr {
-    TextSpan span
-    Expr value
-    List<SwitchArm> arms
+public struct SwitchExpr {
+    public TextSpan span
+    public Expr value
+    public List<SwitchArm> arms
 }
 
-struct TryExpr {
-    TextSpan span
-    Expr operand
+public struct TryExpr {
+    public TextSpan span
+    public Expr operand
 }
 
 /// `move x`.
-struct MoveExpr {
-    TextSpan span
-    Expr operand
+public struct MoveExpr {
+    public TextSpan span
+    public Expr operand
 }
 
 /// `e catch h`, `e catch (x) h` or `e catch (Set.variant) h` (`variant` set).
-struct CatchExpr {
-    TextSpan span
-    Expr operand
-    TextSpan? binding
-    Expr variant
-    Expr handler
+public struct CatchExpr {
+    public TextSpan span
+    public Expr operand
+    public TextSpan? binding
+    public Expr variant
+    public Expr handler
 }
 
 /// The subject of `catch switch { … }`; `span` is the `switch` keyword.
-struct CaughtErrorExpr {
-    TextSpan span
+public struct CaughtErrorExpr {
+    public TextSpan span
 }
 
 /// `return e`, `break`, `continue` used as a `never` expression after `??` or `catch`.
-struct JumpExpr {
-    TextSpan span
-    Stmt jump
+public struct JumpExpr {
+    public TextSpan span
+    public Stmt jump
 }
 
 /// `{ … }` as a `catch` handler; `block` is a `blockStmt`.
-struct BlockExpr {
-    TextSpan span
-    Stmt block
+public struct BlockExpr {
+    public TextSpan span
+    public Stmt block
 }
 
-struct FieldInit {
-    TextSpan span
-    TextSpan name
-    Expr value
+public struct FieldInit {
+    public TextSpan span
+    public TextSpan name
+    public Expr value
 }
 
 /// `T { f = v }` or target-typed `{ f = v }` (`type` is `none`).
-struct StructLiteralExpr {
-    TextSpan span
-    TypeSyntax type
-    List<FieldInit> fields
+public struct StructLiteralExpr {
+    public TextSpan span
+    public TypeSyntax type
+    public List<FieldInit> fields
 }
 
 /// `e with { f = v }`.
-struct WithExpr {
-    TextSpan span
-    Expr target
-    List<FieldInit> fields
+public struct WithExpr {
+    public TextSpan span
+    public Expr target
+    public List<FieldInit> fields
 }
 
-struct SpreadExpr {
-    TextSpan span
-    Expr operand
+public struct SpreadExpr {
+    public TextSpan span
+    public Expr operand
 }
 
 /// `key: value` inside a collection literal.
-struct MapEntryExpr {
-    TextSpan span
-    Expr key
-    Expr value
+public struct MapEntryExpr {
+    public TextSpan span
+    public Expr key
+    public Expr value
 }
 
-struct CollectionExpr {
-    TextSpan span
-    List<Expr> elements
+public struct CollectionExpr {
+    public TextSpan span
+    public List<Expr> elements
 }
 
-struct TupleElement {
-    TextSpan span
-    TextSpan? name
-    Expr value
+public struct TupleElement {
+    public TextSpan span
+    public TextSpan? name
+    public Expr value
 }
 
-struct TupleExpr {
-    TextSpan span
-    List<TupleElement> elements
+public struct TupleExpr {
+    public TextSpan span
+    public List<TupleElement> elements
 }
 
-struct ParenExpr {
-    TextSpan span
-    Expr inner
+public struct ParenExpr {
+    public TextSpan span
+    public Expr inner
 }
 
 /// `x => body`, `(a, b) => body` or `() => body`; the body is an expression or a block.
-struct LambdaExpr {
-    TextSpan span
-    List<TextSpan> params
-    Expr body
-    Stmt block
+public struct LambdaExpr {
+    public TextSpan span
+    public List<TextSpan> params
+    public Expr body
+    public Stmt block
 }
 
 /// `stackalloc T[n]`.
-struct StackallocExpr {
-    TextSpan span
-    TypeSyntax element
-    Expr count
+public struct StackallocExpr {
+    public TextSpan span
+    public TypeSyntax element
+    public Expr count
 }
 
 /// `pattern T { … }`, a named pattern's value (BYN1046).
-struct PatternExpr {
-    TextSpan span
-    Pattern pattern
+public struct PatternExpr {
+    public TextSpan span
+    public Pattern pattern
 }
 
 /// Placeholder after a parse error.
-struct ErrorExpr {
-    TextSpan span
+public struct ErrorExpr {
+    public TextSpan span
 }
 
 // ── Patterns ─────────────────────────────────────────────────────────────────────
 
-union Pattern {
+public union Pattern {
     constantPattern(Owned<ConstantPattern> node)
     relationalPattern(Owned<RelationalPattern> node)
     varPattern(Owned<VarPattern> node)
@@ -1177,83 +1177,83 @@ union Pattern {
 }
 
 /// A constant: literal, `.member`, a qualified name or a range.
-struct ConstantPattern {
-    TextSpan span
-    Expr value
+public struct ConstantPattern {
+    public TextSpan span
+    public Expr value
 }
 
-struct RelationalPattern {
-    TextSpan span
-    BinaryOp op
-    Expr value
+public struct RelationalPattern {
+    public TextSpan span
+    public BinaryOp op
+    public Expr value
 }
 
 /// `var x` or `let x`.
-struct VarPattern {
-    TextSpan span
-    TextSpan name
-    bool isLet = false
+public struct VarPattern {
+    public TextSpan span
+    public TextSpan name
+    public bool isLet = false
 }
 
-struct DiscardPattern {
-    TextSpan span
+public struct DiscardPattern {
+    public TextSpan span
 }
 
 /// `DbError e`.
-struct DeclarationPattern {
-    TextSpan span
-    TypeSyntax type
-    TextSpan name
+public struct DeclarationPattern {
+    public TextSpan span
+    public TypeSyntax type
+    public TextSpan name
 }
 
-struct NotPattern {
-    TextSpan span
-    Pattern operand
+public struct NotPattern {
+    public TextSpan span
+    public Pattern operand
 }
 
-struct BinaryPattern {
-    TextSpan span
-    bool isAnd
-    Pattern left
-    Pattern right
+public struct BinaryPattern {
+    public TextSpan span
+    public bool isAnd
+    public Pattern left
+    public Pattern right
 }
 
-struct PropertySubpattern {
-    TextSpan span
-    List<TextSpan> path
-    Pattern pattern
+public struct PropertySubpattern {
+    public TextSpan span
+    public List<TextSpan> path
+    public Pattern pattern
 }
 
 /// `Type { a: p } name`; `{ } v` matches any non-null value.
-struct PropertyPattern {
-    TextSpan span
-    TypeSyntax type
-    List<PropertySubpattern> properties
-    TextSpan? designation
+public struct PropertyPattern {
+    public TextSpan span
+    public TypeSyntax type
+    public List<PropertySubpattern> properties
+    public TextSpan? designation
 }
 
 /// `Name(p, q)` or `(p, q)`.
-struct PositionalPattern {
-    TextSpan span
-    TypeSyntax type
-    List<Pattern> elements
+public struct PositionalPattern {
+    public TextSpan span
+    public TypeSyntax type
+    public List<Pattern> elements
 }
 
 /// `.Circle(let r)`; `variant` is a `targetMemberExpr`. `.Circle c` sets `binding` with `elements` empty.
-struct VariantPattern {
-    TextSpan span
-    Expr variant
-    List<Pattern> elements
-    TextSpan? binding = null
+public struct VariantPattern {
+    public TextSpan span
+    public Expr variant
+    public List<Pattern> elements
+    public TextSpan? binding = null
 }
 
 /// `..` or `.. var rest`.
-struct SlicePattern {
-    TextSpan span
-    Pattern inner
+public struct SlicePattern {
+    public TextSpan span
+    public Pattern inner
 }
 
-struct ListPattern {
-    TextSpan span
-    List<Pattern> elements
+public struct ListPattern {
+    public TextSpan span
+    public List<Pattern> elements
 }
