@@ -100,8 +100,7 @@ public sealed class SelfhostParserEquivalenceLawTests(ITestOutputHelper output)
             var segment = stdout[cursor..end];
             cursor = end;
 
-            var spanIdx = segment.IndexOf("span out of range: ", StringComparison.Ordinal);
-            var actual = spanIdx < 0 ? segment : segment[..spanIdx];
+            var actual = SelfhostParserTests.BeforeSpanLines(segment);
 
             var tree = SyntaxTree.Parse(new SourceText(inputs[i].Label, inputs[i].Bytes));
             var expected = AstDump.Dump(tree);

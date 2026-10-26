@@ -179,9 +179,11 @@ Decl parseFieldOrProperty(ref Parser p, at i64 start, by Modifiers modifiers, th
         }))
     }
     if p.kind() == .openBrace {
+        // C# takes the span before it parses the block, so it ends at the name (Q511).
+        let span = p.spanFrom(start)
         let block = parseBlock(ref p)
         return Decl.propertyDecl(Owned(PropertyDecl {
-            span: p.spanFrom(start),
+            span: span,
             modifiers: modifiers,
             type: move type,
             name: name,

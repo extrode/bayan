@@ -57,10 +57,12 @@ public sealed class SelfhostParserNoPanicLawTests(ITestOutputHelper output)
                 $"{Path.Combine(dir, name)}: a node span lies outside the input\n{string.Join("\n", spanLines)}");
 
             // The child-within-parent half of L018 is false of C# itself (Q473, Q509): the port must
-            // report exactly the violations C# has, never more.
+            // report exactly the inputs where C# has one, no more and no fewer.
             if (childOutside) csharpChildOutside.Add(name);
             if (childOutside && !csharp.ChildOutside)
                 Assert.Fail($"{Path.Combine(dir, name)}: the port reports a child outside its parent that C# does not have\n{string.Join("\n", spanLines)}");
+            if (!childOutside && csharp.ChildOutside)
+                Assert.Fail($"{Path.Combine(dir, name)}: C# has a child outside its parent that the port's checkSpans does not report");
         }
         output.WriteLine($"{kind}: {programs.Length} inputs, {csharpChildOutside.Count} with a C# child outside its parent: {string.Join(", ", csharpChildOutside)}");
     }

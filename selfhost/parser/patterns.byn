@@ -37,8 +37,10 @@ Pattern parseAndPattern(ref Parser p) {
 Pattern parseNotPattern(ref Parser p) {
     let start = p.current().start
     if p.accept(.notKeyword) {
+        // C# takes the span before it parses the operand, so it covers `not` alone (Q511).
+        let span = p.spanFrom(start)
         let operand = parseNotPattern(ref p)
-        return Pattern.notPattern(Owned(NotPattern { span: p.spanFrom(start), operand: move operand }))
+        return Pattern.notPattern(Owned(NotPattern { span: span, operand: move operand }))
     }
     return parsePrimaryPattern(ref p)
 }
@@ -58,8 +60,10 @@ Pattern parsePrimaryPattern(ref Parser p) {
     }
     if kind == .varKeyword || kind == .letKeyword {
         let isLet = p.advance().kind == .letKeyword
+        // C# takes the span before it reads the name, so it covers the keyword alone (Q511).
+        let span = p.spanFrom(start)
         let name = expectName(ref p, "a variable name")
-        return Pattern.varPattern(Owned(VarPattern { span: p.spanFrom(start), name: name, isLet: isLet }))
+        return Pattern.varPattern(Owned(VarPattern { span: span, name: name, isLet: isLet }))
     }
     if kind == .dot && isName(p.peek(1)) && p.peek(2) == .openParen {
         let _ = p.advance()
