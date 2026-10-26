@@ -149,11 +149,8 @@ public sealed class SelfhostParserGeneratorTests(ITestOutputHelper output)
         Directory.CreateDirectory(probeDir);
         File.WriteAllBytes(Path.Combine(probeDir, "empty.byn"), []);
         var (probeExit, _, probeErr) = Run(Built, "--many", probeDir);
-        if (probeExit == 2)
-        {
-            output.WriteLine($"skipped: bayan-parse --many is not implemented yet (T13/T15 pending); probe exit {probeExit}\n{probeErr}");
-            return;
-        }
+        output.WriteLine(probeErr);
+        Assert.True(probeExit == 0, $"bayan-parse --many on one empty file: exit {probeExit}\n{probeErr}");
 
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "parser-corpus");
         if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
@@ -176,8 +173,7 @@ public sealed class SelfhostParserGeneratorTests(ITestOutputHelper output)
             cursor = end;
             // The dump ends where the span-check lines begin (bayan L018 has no C# counterpart),
             // so byte parity compares only the dump against AstDump.
-            var spanIdx = actual.IndexOf("span out of range: ", StringComparison.Ordinal);
-            var actualDump = spanIdx < 0 ? actual : actual[..spanIdx];
+            var actualDump = SelfhostParserTests.BeforeSpanLines(actual);
             var expected = AstDump.Dump(SyntaxTree.Parse(SourceText.FromFile(Path.Combine(dir, programs[i].Name))));
             if (actualDump == expected) continue;
             var expectedPath = Path.Combine(dir, Path.ChangeExtension(programs[i].Name, ".ast"));

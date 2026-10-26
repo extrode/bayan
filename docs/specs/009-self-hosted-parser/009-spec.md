@@ -1,5 +1,5 @@
 # 009 — Self-hosting step 3: a Bayan parser
-Status: draft
+Status: done
 Created: 2026-10-25
 
 ## Problem

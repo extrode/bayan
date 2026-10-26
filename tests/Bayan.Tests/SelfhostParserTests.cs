@@ -44,6 +44,25 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         }
     }
 
+    private const string SpanLine = "span out of range: ";
+
+    /// <summary><paramref name="section"/> up to its first line that starts with L018's <c>span out of range: </c>
+    /// (<c>--many</c> appends <c>checkSpans</c> output after each dump); the text inside a dump line does not count.</summary>
+    internal static string BeforeSpanLines(string section)
+    {
+        if (section.StartsWith(SpanLine, StringComparison.Ordinal)) return "";
+        var k = section.IndexOf("\n" + SpanLine, StringComparison.Ordinal);
+        return k < 0 ? section : section[..(k + 1)];
+    }
+
+    [Fact]
+    public void SpanLinesAreCutOnlyAtALineStart()
+    {
+        Assert.Equal("(LiteralExpr \"span out of range: x\")\n", BeforeSpanLines("(LiteralExpr \"span out of range: x\")\n"));
+        Assert.Equal("CompilationUnit\n", BeforeSpanLines("CompilationUnit\nspan out of range: 1..9 outside 0..4\n"));
+        Assert.Equal("", BeforeSpanLines("span out of range: 1..9\n"));
+    }
+
     internal static (int Exit, string Out, string Err) Run(string program, params string[] args)
     {
         var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
@@ -241,6 +260,23 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         output.WriteLine(stderr);
         if (Golden.Compare(refPath, stdout, update: false).Failure is { } failure) Assert.Fail(failure);
         Assert.Equal(tree.Diagnostics.Any(d => d.IsError) ? 1 : 0, exit);
+    }
+
+    /// <summary>Q511: C# takes these nodes' spans before it parses their last child (argument order), so the child
+    /// lies outside its parent; the port's <c>checkSpans</c> reports the same child under L018.</summary>
+    [Theory]
+    [InlineData("not-pattern", "let b = x is not null\n", "constantPattern 17+4 outside 13+3")]
+    [InlineData("var-pattern", "let b = x is (1, var y)\n", "varPattern name 21+1 outside 17+3")]
+    [InlineData("block-property", "struct S {\n    i32 n { return 1 }\n}\n", "blockStmt 21+12 outside 15+5")]
+    public void SpanTakenBeforeTheLastChildLeavesItOutside(string name, string source, string expected)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "parser-span-order", name);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, name + ".byn"), source);
+        var (_, stdout, stderr) = Run(Built, "--many", dir);
+        output.WriteLine(stdout + stderr);
+        Assert.Contains(SpanLine, stdout, StringComparison.Ordinal);
+        Assert.Contains(expected, stdout, StringComparison.Ordinal);
     }
 
     /// <summary>The <c>--codes</c> table matches the C# <see cref="DiagnosticCodes"/> descriptors (Q433: 69 codes).</summary>
