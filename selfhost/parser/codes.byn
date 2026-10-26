@@ -6,7 +6,7 @@
 /// the lexer's BYN0012, the BYN1xxx block (with the retired codes and BYN1042's second form
 /// `postfixOnNewLine`), then the codes of later ranges the parser raises (Q433). Member names are the C# names with the first letter lowered; `goto` is a
 /// keyword, so `Goto` is `gotoKeyword`.
-enum ParseCode {
+public enum ParseCode {
     reservedKeyword
     expected
     expectedExpression

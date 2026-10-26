@@ -1,0 +1,211 @@
+// The shared state of the self-hosted checker: handles into the arenas, the per-file and per-module
+// records, the diagnostic bag, the deferred-work item and the binder's cursors. Every type another
+// semantics file names lives here; T3/T4 extend `Ctx` with arenas and the file is frozen after T4.
+//
+// The C# keeps this state in `Compilation` (`src/Bayan.Semantics/Compilation.cs`: the module list,
+// the diagnostic bag, the sinks, the options), in `FileContext` (`Symbols/Symbols.cs:69-80`: the
+// tree, the module, the imports) and in `Binder`. A handle is an index into an arena; -1 is C#'s
+// `null`. `Type` and the bound handles encode `(kind << 32) | index`.
+
+import lexer
+import parser
+
+type TextSpan = lexer.TextSpan
+type CompilationUnit = parser.CompilationUnit
+
+// ── Handles ─────────────────────────────────────────────────────────────────────
+
+/// A `Ctx.files` index.
+type FileId = i64
+/// A `Ctx.modules` index.
+type ModId = i64
+type StructId = i64
+type InterfaceId = i64
+type ErrorSetId = i64
+type EnumId = i64
+type UnionId = i64
+type FuncId = i64
+type LocalId = i64
+type ConstId = i64
+type TypeParamId = i64
+type FieldId = i64
+type PropertyId = i64
+type VariantId = i64
+/// `(TypeKind << 32) | index`; canonical, so C#'s structural equality is handle equality.
+type Type = i64
+/// `(BoundKind << 32) | index` into T4's bound arenas.
+type BExpr = i64
+type BStmt = i64
+type BPattern = i64
+
+// ── Files and modules ───────────────────────────────────────────────────────────
+
+/// One source the checker reads: a `.byn` file, a parsed `"<builtin>"` source, or `"package.byn"`.
+/// The C# `FileContext` keeps the imports per file; here they live on the `Mod` (Q521).
+struct SourceFile {
+    /// The path the loader opened.
+    string path
+    /// The path diagnostics print, relative to the project root.
+    string displayPath
+    /// The bytes the parser read.
+    List<u8> text
+    CompilationUnit unit
+    /// The module whose files this one belongs to.
+    ModId module = -1
+    /// The entry module's files, which hold `main` or the top-level statements.
+    bool isEntry = false
+    /// A `tests/*.test.byn` file; the C# `FileContext.IsTestFile`.
+    bool isTestFile = false
+}
+
+/// A directory of files that one `import` names.
+struct Mod {
+    string name
+    List<FileId> files
+    /// The modules this one imports, by the name its files use.
+    Map<string, ModId> imports
+}
+
+// ── Diagnostics ─────────────────────────────────────────────────────────────────
+
+/// A secondary span under a diagnostic, underlined with `---` (the C# `RelatedSpan`).
+struct Related {
+    TextSpan span
+    string label
+}
+
+/// A compiler diagnostic (the C# `Diagnostic`): a code, a place, an optional fix and related spans.
+/// An empty `label` or `help` is C#'s `null`; `file` is -1 for a diagnostic with no location.
+struct Diag {
+    string code = ""
+    FileId file = -1
+    TextSpan span
+    string message
+    string label = ""
+    string help = ""
+    bool isWarning = false
+    bool hasFix = false
+    TextSpan fixSpan
+    string fixReplacement = ""
+    List<Related> related
+}
+
+/// A nested diagnostic sink (the C# `PushBag`): its items and the bag it was pushed over.
+struct DiagBag {
+    List<Diag> items
+    /// The `Ctx.bags` index of the enclosing bag, or -1 for the outermost.
+    i64 previous = -1
+}
+
+// ── Deferred work ──────────────────────────────────────────────────────────────
+
+/// What T11's `drain` does with a `Work` item.
+enum WorkKind {
+    /// A `where` clause to check; drained by `declare`.
+    where
+    keyCheck
+    constraint
+    interfaceMembers
+    members
+    unionVariants
+    conform
+    fieldDefault
+    bindFunction
+}
+
+/// One deferred check (the C# `Work` record): a kind, the type it is about and where it came from.
+struct Work {
+    WorkKind kind
+    Type subject = -1
+    List<Type> args
+    /// The instantiated function a `bindFunction` item binds, or -1.
+    FuncId instance = -1
+    FileId file = -1
+    TextSpan span
+    i64 declIndex = -1
+    i64 memberIndex = -1
+}
+
+/// A `break`/`continue` target: a label if it has one, and whether it belongs to a loop.
+struct JumpTarget {
+    string? label = null
+    bool isLoop = false
+    i64 id = -1
+}
+
+// ── The 128-bit integer ────────────────────────────────────────────────────────
+
+/// A 128-bit two's-complement integer, as `lo` (low 64 bits) and `hi` (high 64 bits). Bayan has no
+/// `i128`, and `PrimitiveType.Range` returns one (Q540); T5 owns the operations.
+struct Big {
+    u64 lo
+    u64 hi
+}
+
+/// A parsed `Big`, or why it is not one: `ok` is false for a syntax error, `overflow` for a value
+/// outside the 128-bit range.
+struct BigParse {
+    Big value
+    bool ok = false
+    bool overflow = false
+}
+
+// ── The checker's state ────────────────────────────────────────────────────────
+
+/// Everything a pass reads and writes. T3 adds the symbol/type arenas and their caches, T4 the bound
+/// arenas; one owner per field.
+struct Ctx {
+    List<SourceFile> files
+    List<Mod> modules
+    List<Diag> diagnostics
+    /// Nested sinks; empty for the outermost.
+    List<DiagBag> bags
+    /// The bag index new diagnostics go to, or -1 for `diagnostics`.
+    i64 sink = -1
+    /// Whether diagnostics are dropped rather than kept (the C# `_quiet`).
+    bool quiet = false
+    /// A library has no `main`, so none is required.
+    bool library = false
+    /// The package's `capabilities`, the upper bound on its effects (§13); null for no bound.
+    List<string>? capabilities = null
+    /// The package's name, for BYN6004; empty when there is none.
+    string packageName = ""
+}
+
+// ── The binder's cursors ──────────────────────────────────────────────────────
+
+/// The C# `Binder`'s per-body state: the file and function being bound, the scopes, the jump targets
+/// and the narrowing facts. Every field is a T1 handle or a parser type.
+struct Binder {
+    FileId file = -1
+    FuncId fn = -1
+    StructId owner = -1
+    /// The receiver's type for `this`, or -1.
+    Type thisType = -1
+    i64 nextLocalId = 0
+    /// The open scopes, innermost last.
+    List<Map<string, LocalId>> scopes
+    /// The enclosing loops and labeled statements.
+    List<JumpTarget> targets
+    i64 deferDepth = 0
+    bool inPanicHandler = false
+    /// The first statement of the body being bound, or -1.
+    i64 firstStatement = -1
+    bool onPanicSet = false
+    /// A lambda's captured parameters, by the function it belongs to.
+    List<(FuncId, List<BExpr>)> lambdas
+    Map<FuncId, i64> lambdaCount
+    i64 itDepth = 0
+    i64 held = 0
+    /// The `out` seeds of a `try`, and the constraints on them.
+    List<(i64, Type)> seeds
+    /// Flow facts keyed by the `LocalDecl` span start.
+    Map<i64, i64> pending
+    Map<i64, i64> constraints
+    Map<i64, i64> peers
+    /// Locals known to be non-null, and their span start.
+    List<(i64, LocalId)> nonNull
+    List<(i64, LocalId, Type)> stateFacts
+    /// The variant a local's error value was narrowed to.
+    Map<LocalId, VariantId> errorNarrowed
+}
