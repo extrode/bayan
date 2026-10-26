@@ -1,0 +1,4 @@
+// T23: FlowAnalysis.cs.
+
+// stub: T23 ports FlowAnalysis.cs:33 Analyze
+void analyzeFlow(ref Ctx c, for FuncId fn) {}

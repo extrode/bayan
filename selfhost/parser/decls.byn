@@ -9,7 +9,7 @@
 // (`parseParamsWith`). Helpers owned by sibling files that have no stub yet are called through the
 // `T4` stand-ins at the end of this file (Q445).
 
-CompilationUnit parseCompilationUnit(ref Parser p) {
+public CompilationUnit parseCompilationUnit(ref Parser p) uses alloc {
     var members = List<Decl>()
     while !p.atEnd() {
         let start = p.pos

@@ -314,3 +314,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 009 tests spawn about 4,500 `bayan-parse` processes per suite and T3/T12 per-class parser builds are not `Lazy`, so each class rebuilds (`tests/Bayan.Tests/SelfhostParserT3Tests.cs`, `SelfhostParserT12Tests.cs`).
 - `selfhost/parser/main.byn` `parseOne`/`parseTimed` allocate without an arena, so `--many --time` over a large corpus grows memory per file (009 review).
 - C# also takes `NotPattern`, `VarPattern` and block `PropertyDecl` spans before their last child (Parser.cs 4102, 4126, 1050); the port copies it (Q511). Fix in C# and the port together.
+- `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray` fails intermittently in full-suite runs (passes alone); 010 T2 gate saw 1–2/2629 failures, likely allocation noise from parallel tests (2026-10-26).
+- 010 T3 gate: `typeEquals` (types.byn:195) is never called by tests; equality pairs lack same-name nominal types in different modules and text-view/builtin types (2026-10-26).

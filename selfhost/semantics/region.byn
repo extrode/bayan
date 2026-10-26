@@ -1,0 +1,78 @@
+// T25: RegionAnalysis.cs 1-~417 (regions, borrows, loans, Stmt/Expr/Compute).
+
+// The C# records: a region is a lexical depth and a name.
+struct Region {
+    i64 depth
+    string name
+}
+
+// What a value may borrow from: regions, owning locals and, per owner, the position it was lent at.
+struct Borrow {
+    List<Region> regions
+    List<LocalId> owners
+    Map<LocalId, i64>? lends = null
+}
+
+struct Loan {
+    LocalId owner
+    LocalId holder = -1
+    i64 created
+    i64 loopEnd
+}
+
+struct Mutation {
+    LocalId target
+    TextSpan span
+    bool moved = false
+    LocalId through = -1
+}
+
+// One entry of the C# `_restTails` map: a region and the tail its rest parameter names.
+struct RestTail {
+    Region region
+    string tail
+}
+
+// The C# `RegionAnalysis` instance state for one function.
+struct Regions {
+    FuncId fn
+    FileId source
+    Map<FieldId, LocalId> thisFields = []
+    Map<LocalId, Borrow> locals = []
+    Map<LocalId, i64> depthOf = []
+    Map<LocalId, i64> declaredAt = []
+    List<Loan> loans = []
+    List<Mutation> mutations = []
+    Map<LocalId, bool> referentMayBorrow = []
+    List<Borrow> contexts = []
+    List<(i64, i64)> reported = []
+    List<RestTail> restTails = []
+    i64 depth = 0
+    i64 iteration = 0
+    List<Region> environments = []
+    bool reporting = false
+}
+
+// stub: T25 ports RegionAnalysis.cs:83 Analyze
+void analyzeRegions(ref Ctx c, for FuncId fn) {}
+
+// stub: T25 ports RegionAnalysis.cs:89 Run
+void runRegions(ref Regions r, through ref Ctx c) {}
+
+// stub: T25 ports RegionAnalysis.cs:117 Stmt
+void stmtRegions(ref Regions r, through ref Ctx c, for BStmt s) {}
+
+// stub: T25 ports RegionAnalysis.cs:245 Expr
+Borrow exprRegions(ref Regions r, through ref Ctx c, for BExpr e) => Borrow { regions: [], owners: [] }
+
+// stub: T25 ports RegionAnalysis.cs:251 Compute
+Borrow computeBorrow(ref Regions r, through ref Ctx c, for BExpr e) => Borrow { regions: [], owners: [] }
+
+// stub: T25 ports RegionAnalysis.cs:237 Declare
+void declareBorrow(ref Regions r, through ref Ctx c, for LocalId local, at i64 position) {}
+
+// stub: T25 ports RegionAnalysis.cs:31 Union
+Borrow unionBorrow(in Borrow a, by in Borrow b) => Borrow { regions: [], owners: [] }
+
+// stub: T25 ports RegionAnalysis.cs:35 Lent
+Borrow lent(in Borrow b, for LocalId owner, at i64 at) => Borrow { regions: [], owners: [] }

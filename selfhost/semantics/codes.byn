@@ -1,0 +1,816 @@
+// T2: Bayan.Syntax/Diagnostics/DiagnosticCodes.cs, BYN2xxx-BYN8xxx plus BYN1016/1054/1056.
+//
+// The semantic message table: every descriptor in the BYN2000-BYN8999 ranges, in `DiagnosticCodes.cs`
+// order, plus the three BYN1xxx codes the checker reports (Q526). Member names are the C# names with the
+// first letter lowered, so `conversionMember` is BYN5009's second message form and `becomesCallUndeclared`
+// is BYN7003's third, registered once each in C#.
+
+/// Every descriptor a semantics pass reports, in `DiagnosticCodes.cs` order.
+enum SemaCode {
+    modifierNotAllowed
+    tryCoversMore
+    returnErrorInput
+    undefinedName
+    unknownType
+    unknownMember
+    unknownModule
+    notVisible
+    duplicateDeclaration
+    shadowing
+    typeCasing
+    valueCasing
+    importCycle
+    circularAlias
+    circularConstant
+    duplicateMain
+    noMain
+    statementOutsideEntry
+    instanceMemberWithoutThis
+    thisOutsideMethod
+    notAValue
+    unknownLabel
+    unknownParameter
+    unsupported
+    wrongTypeArgumentCount
+    nestedOptional
+    voidValue
+    declarationAsBody
+    nullEquality
+    sameTypeShadowing
+    nestedIt
+    toStringCall
+    missingInitializer
+    useBeforeAssign
+    outNotAssigned
+    immutableAssignment
+    readonlyField
+    mutateTemporary
+    getterMutates
+    requiredWithDefault
+    missingFields
+    duplicateFieldInit
+    literalWithConstructor
+    noConstructor
+    recursiveStruct
+    notAStruct
+    mutatesWithoutRefThis
+    refThisOnOperator
+    refThisNotFirst
+    stringIndexer
+    typeMismatch
+    literalOutOfRange
+    constantOverflow
+    divisionByZero
+    invalidCast
+    badUnaryOperand
+    badBinaryOperands
+    stringConcatenation
+    coalesceNotOptional
+    memberOfOptional
+    notIndexable
+    indexOutOfRange
+    fromEndOutsideIndex
+    openRange
+    branchTypeMismatch
+    cannotInferType
+    noTargetType
+    notConstant
+    notCallable
+    notIterable
+    arrayLengthMismatch
+    tupleNameMismatch
+    interpolationNotAllowed
+    notFormattable
+    notDisposable
+    ambiguousVariant
+    unknownVariant
+    invalidConstArray
+    renamedMember
+    whileLetNotOptional
+    spreadNotSequence
+    mapLiteralMixed
+    missingArgument
+    tooManyArguments
+    duplicateArgument
+    positionalAfterNamed
+    argumentMustBeNamed
+    argumentModifierMismatch
+    retiredArgumentsSwapped
+    spanParameterNeverWritten
+    neverReassignedVar
+    requiresNotBool
+    requiresViolated
+    retiredRequiresNotHere
+    missingReturn
+    missingReturnValue
+    returnValueInVoid
+    neverReturns
+    unreachableCode
+    jumpOutsideLoop
+    continueSwitch
+    labelNotOnLoop
+    duplicateDefault
+    nonExhaustive
+    patternMismatch
+    tryInDefer
+    unhandledFailure
+    undeclaredError
+    propagateFromInfallible
+    nothingToHandle
+    errdeferWithoutFails
+    publicInferredFails
+    notAnErrorSet
+    emptyErrorSet
+    jumpOutOfDefer
+    catchBlockCompletes
+    panicHandlerRestricted
+    panicHandlerReads
+    onPanicPlacement
+    panicHandlerReadsMoved
+    unknownUnionVariant
+    duplicateUnionVariant
+    emptyUnion
+    variantPatternArity
+    payloadNeedsPattern
+    variantNeedsPayload
+    variantHasNoPayload
+    recursiveUnion
+    borrowPayload
+    unionValueNotInteger
+    unionValueOnPayload
+    duplicateUnionValue
+    wildcardOnLocalUnion
+    unknownEnumMember
+    duplicateEnumMember
+    emptyEnum
+    enumArgumentNotConstant
+    invalidEnumParameter
+    cannotInferTypeArgument
+    conflictingTypeArgument
+    genericArgumentCount
+    typeParameterOperator
+    typeParameterMember
+    invalidMapKey
+    recursiveByValue
+    sharedStorageCopy
+    unknownAttribute
+    invalidMainSignature
+    untrustedSink
+    trustReason
+    takeUnsupported
+    switchMoveSubject
+    owningPatternOverlap
+    owningBindingMutatedInGuard
+    invalidExitCode
+    assertNotBool
+    casesArity
+    casesNotConstant
+    implicitCopy
+    useAfterMove
+    cannotMove
+    mutateBorrow
+    copyUniqueElement
+    mapSlotNoDefault
+    interfaceName
+    missingInterfaceMember
+    interfaceMemberMismatch
+    missingAssociatedType
+    notAnInterface
+    duplicateConformance
+    constraintMember
+    constraintNotSatisfied
+    notDynSafe
+    dynByValue
+    staticAbstract
+    extensionConformance
+    whereUnknownParameter
+    dynReadonlyMutation
+    refThisMismatch
+    nonStructConformance
+    interfaceAsType
+    lambdaArity
+    cannotCapture
+    functionTypeNotHere
+    memberNotLambda
+    notAFunctionValue
+    hashMapNotSupported
+    keyPartNotHashable
+    stringNotSymbol
+    borrowField
+    borrowOutlivesSource
+    borrowReturned
+    modifiedWhileBorrowed
+    refAndValue
+    movedWhileBorrowed
+    unusedValue
+    duplicateErrorCase
+    bareLiteralForDistinct
+    ruleTargetNotField
+    literalNeedsTry
+    checkedFieldAssignment
+    uniqueConst
+    overlappingOverloads
+    restEscapes
+    ambiguousOverloadReference
+    fieldWriteOutside
+    borrowCrossesFiber
+    requiresMixesFields
+    manifestNotData
+    manifestUnknownField
+    manifestInvalidValue
+    manifestMissingField
+    manifestEquals
+    cCompilerRejected
+    participleChangesThis
+    stateMemberMutates
+    tryWrongReturn
+    particleRequired
+    argumentNeedsParticle
+    parameterNeedsParticle
+    logLevelAsVerb
+    unknownParticle
+    particleAsMemberName
+    conversionMember
+    expectsSingleParameter
+    repeatedParticle
+    unknownWord
+    nounOnMutator
+    boolWithoutPrefix
+    noallocRemoved
+    effectNotDeclared
+    unknownEffect
+    capabilityExceeded
+    effectBoundExceeded
+    contextBlockInput
+    unknownHandler
+    wrongState
+    payloadNotInState
+    becomeUndeclared
+    becomeOtherState
+    becomesCallUndeclared
+    stateSwitchNotExhaustive
+    stateLiteralNeedsState
+    singleStateInline
+    unknownState
+    stateShadowsStatic
+    missingBecome
+    becomesNeedsRef
+    becomesOnRefParameter
+    assignmentChangesState
+    missingBecause
+    expectsReadsUntrusted
+}
+
+/// `BYN2001` and so on: the code the descriptor carries, verbatim.
+string codeText(SemaCode code) => code switch {
+    .modifierNotAllowed => "BYN1016",
+    .tryCoversMore => "BYN1054",
+    .returnErrorInput => "BYN1056",
+    .undefinedName => "BYN2001",
+    .unknownType => "BYN2002",
+    .unknownMember => "BYN2003",
+    .unknownModule => "BYN2004",
+    .notVisible => "BYN2005",
+    .duplicateDeclaration => "BYN2006",
+    .shadowing => "BYN2007",
+    .typeCasing => "BYN2008",
+    .valueCasing => "BYN2009",
+    .importCycle => "BYN2010",
+    .circularAlias => "BYN2011",
+    .circularConstant => "BYN2012",
+    .duplicateMain => "BYN2013",
+    .noMain => "BYN2014",
+    .statementOutsideEntry => "BYN2015",
+    .instanceMemberWithoutThis => "BYN2017",
+    .thisOutsideMethod => "BYN2018",
+    .notAValue => "BYN2019",
+    .unknownLabel => "BYN2020",
+    .unknownParameter => "BYN2021",
+    .unsupported => "BYN2022",
+    .wrongTypeArgumentCount => "BYN2023",
+    .nestedOptional => "BYN2024",
+    .voidValue => "BYN2025",
+    .declarationAsBody => "BYN2026",
+    .nullEquality => "BYN2027",
+    .sameTypeShadowing => "BYN2028",
+    .nestedIt => "BYN2029",
+    .toStringCall => "BYN2031",
+    .missingInitializer => "BYN2101",
+    .useBeforeAssign => "BYN2102",
+    .outNotAssigned => "BYN2103",
+    .immutableAssignment => "BYN2104",
+    .readonlyField => "BYN2105",
+    .mutateTemporary => "BYN2106",
+    .getterMutates => "BYN2107",
+    .requiredWithDefault => "BYN2108",
+    .missingFields => "BYN2109",
+    .duplicateFieldInit => "BYN2110",
+    .literalWithConstructor => "BYN2111",
+    .noConstructor => "BYN2112",
+    .recursiveStruct => "BYN2113",
+    .notAStruct => "BYN2114",
+    .mutatesWithoutRefThis => "BYN2115",
+    .refThisOnOperator => "BYN2116",
+    .refThisNotFirst => "BYN2117",
+    .stringIndexer => "BYN2201",
+    .typeMismatch => "BYN2202",
+    .literalOutOfRange => "BYN2203",
+    .constantOverflow => "BYN2204",
+    .divisionByZero => "BYN2205",
+    .invalidCast => "BYN2206",
+    .badUnaryOperand => "BYN2207",
+    .badBinaryOperands => "BYN2208",
+    .stringConcatenation => "BYN2209",
+    .coalesceNotOptional => "BYN2210",
+    .memberOfOptional => "BYN2211",
+    .notIndexable => "BYN2212",
+    .indexOutOfRange => "BYN2213",
+    .fromEndOutsideIndex => "BYN2214",
+    .openRange => "BYN2215",
+    .branchTypeMismatch => "BYN2216",
+    .cannotInferType => "BYN2217",
+    .noTargetType => "BYN2218",
+    .notConstant => "BYN2219",
+    .notCallable => "BYN2220",
+    .notIterable => "BYN2221",
+    .arrayLengthMismatch => "BYN2222",
+    .tupleNameMismatch => "BYN2223",
+    .interpolationNotAllowed => "BYN2224",
+    .notFormattable => "BYN2225",
+    .notDisposable => "BYN2226",
+    .ambiguousVariant => "BYN2227",
+    .unknownVariant => "BYN2228",
+    .invalidConstArray => "BYN2229",
+    .renamedMember => "BYN2230",
+    .whileLetNotOptional => "BYN2234",
+    .spreadNotSequence => "BYN2235",
+    .mapLiteralMixed => "BYN2236",
+    .missingArgument => "BYN2301",
+    .tooManyArguments => "BYN2302",
+    .duplicateArgument => "BYN2303",
+    .positionalAfterNamed => "BYN2304",
+    .argumentMustBeNamed => "BYN2305",
+    .argumentModifierMismatch => "BYN2306",
+    .retiredArgumentsSwapped => "BYN2307",
+    .spanParameterNeverWritten => "BYN2310",
+    .neverReassignedVar => "BYN2311",
+    .requiresNotBool => "BYN2320",
+    .requiresViolated => "BYN2321",
+    .retiredRequiresNotHere => "BYN2322",
+    .missingReturn => "BYN2401",
+    .missingReturnValue => "BYN2402",
+    .returnValueInVoid => "BYN2403",
+    .neverReturns => "BYN2404",
+    .unreachableCode => "BYN2405",
+    .jumpOutsideLoop => "BYN2406",
+    .continueSwitch => "BYN2407",
+    .labelNotOnLoop => "BYN2408",
+    .duplicateDefault => "BYN2409",
+    .nonExhaustive => "BYN2410",
+    .patternMismatch => "BYN2411",
+    .tryInDefer => "BYN2601",
+    .unhandledFailure => "BYN2602",
+    .undeclaredError => "BYN2603",
+    .propagateFromInfallible => "BYN2604",
+    .nothingToHandle => "BYN2605",
+    .errdeferWithoutFails => "BYN2606",
+    .publicInferredFails => "BYN2607",
+    .notAnErrorSet => "BYN2608",
+    .emptyErrorSet => "BYN2609",
+    .jumpOutOfDefer => "BYN2610",
+    .catchBlockCompletes => "BYN2611",
+    .panicHandlerRestricted => "BYN2612",
+    .panicHandlerReads => "BYN2613",
+    .onPanicPlacement => "BYN2614",
+    .panicHandlerReadsMoved => "BYN2615",
+    .unknownUnionVariant => "BYN2700",
+    .duplicateUnionVariant => "BYN2701",
+    .emptyUnion => "BYN2702",
+    .variantPatternArity => "BYN2703",
+    .payloadNeedsPattern => "BYN2704",
+    .variantNeedsPayload => "BYN2705",
+    .variantHasNoPayload => "BYN2706",
+    .recursiveUnion => "BYN2707",
+    .borrowPayload => "BYN2708",
+    .unionValueNotInteger => "BYN2709",
+    .unionValueOnPayload => "BYN2710",
+    .duplicateUnionValue => "BYN2711",
+    .wildcardOnLocalUnion => "BYN2712",
+    .unknownEnumMember => "BYN2720",
+    .duplicateEnumMember => "BYN2721",
+    .emptyEnum => "BYN2722",
+    .enumArgumentNotConstant => "BYN2723",
+    .invalidEnumParameter => "BYN2724",
+    .cannotInferTypeArgument => "BYN2740",
+    .conflictingTypeArgument => "BYN2741",
+    .genericArgumentCount => "BYN2742",
+    .typeParameterOperator => "BYN2743",
+    .typeParameterMember => "BYN2744",
+    .invalidMapKey => "BYN2760",
+    .recursiveByValue => "BYN2761",
+    .sharedStorageCopy => "BYN2762",
+    .unknownAttribute => "BYN2770",
+    .invalidMainSignature => "BYN2771",
+    .untrustedSink => "BYN2786",
+    .trustReason => "BYN2787",
+    .takeUnsupported => "BYN2788",
+    .switchMoveSubject => "BYN2789",
+    .owningPatternOverlap => "BYN2790",
+    .owningBindingMutatedInGuard => "BYN2791",
+    .invalidExitCode => "BYN2772",
+    .assertNotBool => "BYN2775",
+    .casesArity => "BYN2773",
+    .casesNotConstant => "BYN2774",
+    .implicitCopy => "BYN2780",
+    .useAfterMove => "BYN2781",
+    .cannotMove => "BYN2782",
+    .mutateBorrow => "BYN2783",
+    .copyUniqueElement => "BYN2784",
+    .mapSlotNoDefault => "BYN2785",
+    .interfaceName => "BYN2800",
+    .missingInterfaceMember => "BYN2801",
+    .interfaceMemberMismatch => "BYN2802",
+    .missingAssociatedType => "BYN2803",
+    .notAnInterface => "BYN2804",
+    .duplicateConformance => "BYN2805",
+    .constraintMember => "BYN2806",
+    .constraintNotSatisfied => "BYN2807",
+    .notDynSafe => "BYN2808",
+    .dynByValue => "BYN2809",
+    .staticAbstract => "BYN2810",
+    .extensionConformance => "BYN2811",
+    .whereUnknownParameter => "BYN2812",
+    .dynReadonlyMutation => "BYN2813",
+    .refThisMismatch => "BYN2814",
+    .nonStructConformance => "BYN2815",
+    .interfaceAsType => "BYN2816",
+    .lambdaArity => "BYN2820",
+    .cannotCapture => "BYN2821",
+    .functionTypeNotHere => "BYN2822",
+    .memberNotLambda => "BYN2823",
+    .notAFunctionValue => "BYN2824",
+    .hashMapNotSupported => "BYN2830",
+    .keyPartNotHashable => "BYN2831",
+    .stringNotSymbol => "BYN2832",
+    .borrowField => "BYN3001",
+    .borrowOutlivesSource => "BYN3002",
+    .borrowReturned => "BYN3003",
+    .modifiedWhileBorrowed => "BYN3004",
+    .refAndValue => "BYN3005",
+    .movedWhileBorrowed => "BYN3006",
+    .unusedValue => "BYN3201",
+    .duplicateErrorCase => "BYN3202",
+    .bareLiteralForDistinct => "BYN3204",
+    .ruleTargetNotField => "BYN3206",
+    .literalNeedsTry => "BYN3207",
+    .checkedFieldAssignment => "BYN3208",
+    .uniqueConst => "BYN3209",
+    .overlappingOverloads => "BYN3213",
+    .restEscapes => "BYN3214",
+    .ambiguousOverloadReference => "BYN3215",
+    .fieldWriteOutside => "BYN3216",
+    .borrowCrossesFiber => "BYN3217",
+    .requiresMixesFields => "BYN3218",
+    .manifestNotData => "BYN3100",
+    .manifestUnknownField => "BYN3101",
+    .manifestInvalidValue => "BYN3102",
+    .manifestMissingField => "BYN3103",
+    .manifestEquals => "BYN3104",
+    .cCompilerRejected => "BYN4001",
+    .participleChangesThis => "BYN5001",
+    .stateMemberMutates => "BYN5002",
+    .tryWrongReturn => "BYN5003",
+    .particleRequired => "BYN5004",
+    .argumentNeedsParticle => "BYN5005",
+    .parameterNeedsParticle => "BYN5006",
+    .logLevelAsVerb => "BYN5007",
+    .unknownParticle => "BYN5008",
+    .particleAsMemberName => "BYN5009",
+    .conversionMember => "BYN5009",
+    .expectsSingleParameter => "BYN5011",
+    .repeatedParticle => "BYN5013",
+    .unknownWord => "BYN5014",
+    .nounOnMutator => "BYN5101",
+    .boolWithoutPrefix => "BYN5102",
+    .noallocRemoved => "BYN6001",
+    .effectNotDeclared => "BYN6002",
+    .unknownEffect => "BYN6003",
+    .capabilityExceeded => "BYN6004",
+    .effectBoundExceeded => "BYN6005",
+    .contextBlockInput => "BYN6006",
+    .unknownHandler => "BYN6007",
+    .wrongState => "BYN7001",
+    .payloadNotInState => "BYN7002",
+    .becomeUndeclared => "BYN7003",
+    .becomeOtherState => "BYN7003",
+    .becomesCallUndeclared => "BYN7003",
+    .stateSwitchNotExhaustive => "BYN7004",
+    .stateLiteralNeedsState => "BYN7005",
+    .singleStateInline => "BYN7006",
+    .unknownState => "BYN7007",
+    .stateShadowsStatic => "BYN7008",
+    .missingBecome => "BYN7009",
+    .becomesNeedsRef => "BYN7010",
+    .becomesOnRefParameter => "BYN7011",
+    .assignmentChangesState => "BYN7012",
+    .missingBecause => "BYN8001",
+    .expectsReadsUntrusted => "BYN8006",
+}
+
+/// The message template, in `string.Format` syntax (`{{`/`}}` unescape; `{0}`-`{4}` substitute).
+string messageFormat(SemaCode code) => code switch {
+    .modifierNotAllowed => "`{0}` is not allowed here",
+    .tryCoversMore => "`try` covers `{0}`, which cannot fail",
+    .returnErrorInput => "`return .{0}` returns an error; write `fail .{0}`",
+    .undefinedName => "`{0}` is not defined",
+    .unknownType => "unknown type `{0}`",
+    .unknownMember => "`{0}` is not a member of `{1}`",
+    .unknownModule => "no module `{0}`",
+    .notVisible => "`{0}` is not visible here",
+    .duplicateDeclaration => "`{0}` is declared twice",
+    .shadowing => "`{0}` is already a local here",
+    .typeCasing => "type name `{0}` must be PascalCase",
+    .valueCasing => "`{0}` must be camelCase",
+    .importCycle => "import cycle: {0}",
+    .circularAlias => "type alias `{0}` refers to itself",
+    .circularConstant => "constant `{0}` depends on itself",
+    .duplicateMain => "the program has two entry points",
+    .noMain => "the program has no entry point",
+    .statementOutsideEntry => "top-level statements are allowed only in the entry module",
+    .instanceMemberWithoutThis => "`{0}` needs an instance",
+    .thisOutsideMethod => "`this` is only available inside instance methods",
+    .notAValue => "`{0}` is a {1}, not a value",
+    .unknownLabel => "no enclosing loop is labeled `{0}`",
+    .unknownParameter => "`{0}` has no parameter `{1}`",
+    .unsupported => "{0} is not supported in v0.1",
+    .wrongTypeArgumentCount => "`{0}` takes {1} type argument(s), not {2}",
+    .nestedOptional => "`{0}?` is already optional",
+    .voidValue => "`void` is not a value type",
+    .declarationAsBody => "a declaration cannot be the whole body of a statement",
+    .nullEquality => "compare with `is null` / `is not null`, not `==`",
+    .sameTypeShadowing => "`{0}` shadows an earlier `{0}` of the same type `{1}`",
+    .nestedIt => "`it` inside a lambda that already uses `it`; name one lambda",
+    .toStringCall => "Bayan has no `toString()`; display is `format()` (derived from `formatInto(ref StrBuf)`)",
+    .missingInitializer => "`{0} {1}` needs a value",
+    .useBeforeAssign => "`{0}` is used before it is assigned",
+    .outNotAssigned => "`out` parameter `{0}` is not assigned on every path",
+    .immutableAssignment => "`{0}` is immutable",
+    .readonlyField => "field `{0}` is readonly",
+    .mutateTemporary => "cannot modify this value",
+    .getterMutates => "property `{0}` modifies the value",
+    .requiredWithDefault => "required field `{0}` has a default value",
+    .missingFields => "`{0}` needs a value for `{1}`",
+    .duplicateFieldInit => "field `{0}` is set twice",
+    .literalWithConstructor => "`{0}` has a constructor; call it instead of using a struct literal",
+    .noConstructor => "`{0}` has no constructor",
+    .recursiveStruct => "struct `{0}` contains itself",
+    .notAStruct => "`{0}` is not a struct",
+    .mutatesWithoutRefThis => "`{0}` modifies `this` but is not declared `ref this`",
+    .refThisOnOperator => "operators cannot take `ref this`",
+    .refThisNotFirst => "`ref this` must be the first parameter",
+    .stringIndexer => "a `string` cannot be indexed",
+    .typeMismatch => "expected `{1}`, found `{0}`",
+    .literalOutOfRange => "{0} does not fit in {1}",
+    .constantOverflow => "constant arithmetic overflows `{0}`",
+    .divisionByZero => "division by zero",
+    .invalidCast => "cannot convert `{0}` to `{1}`",
+    .badUnaryOperand => "`{0}` cannot be applied to `{1}`",
+    .badBinaryOperands => "`{0}` cannot be applied to `{1}` and `{2}`",
+    .stringConcatenation => "strings cannot be joined with `+`; use interpolation",
+    .coalesceNotOptional => "`??` needs an optional value on the left, found `{0}`",
+    .memberOfOptional => "`{0}` is not a member of `{1}`; the value may be null",
+    .notIndexable => "`{0}` cannot be indexed",
+    .indexOutOfRange => "index {0} is out of range for `{1}`",
+    .fromEndOutsideIndex => "`^` is only allowed inside an index or slice",
+    .openRange => "a range needs both ends here",
+    .branchTypeMismatch => "branches have different types: `{0}` and `{1}`",
+    .cannotInferType => "cannot infer the type of `{0}`",
+    .noTargetType => "`{0}` needs a known type here",
+    .notConstant => "{0} must be a compile-time constant",
+    .notCallable => "`{0}` cannot be called",
+    .notIterable => "`{0}` cannot be iterated",
+    .arrayLengthMismatch => "`{0}` needs exactly its length in elements, found {1}",
+    .tupleNameMismatch => "tuple element `{0}` is named `{1}` in the target type",
+    .interpolationNotAllowed => "an interpolated string must be passed directly to an output",
+    .notFormattable => "`{0}` cannot be formatted",
+    .notDisposable => "`using` needs a value that owns memory, not `{0}`",
+    .ambiguousVariant => "`.{0}` is ambiguous; it exists in `{1}`",
+    .unknownVariant => "`{0}` is not a variant of `{1}`",
+    .invalidConstArray => "module-level `const` array `{0}` must hold literal numbers, `bool`s, `rune`s or `string`s",
+    .renamedMember => "`{0}` is now `{1}`",
+    .whileLetNotOptional => "`while let` needs a `T?` value, got `{0}`",
+    .spreadNotSequence => "`..{0}` spreads a `{1}`, which is not a sequence",
+    .mapLiteralMixed => "a map literal needs `key: value` in every element",
+    .missingArgument => "missing argument `{0}` for `{1}`",
+    .tooManyArguments => "`{0}` takes {1} argument(s)",
+    .duplicateArgument => "`{0}` is passed twice",
+    .positionalAfterNamed => "a positional argument cannot follow a named one",
+    .argumentMustBeNamed => "argument for `{0}` must be named",
+    .argumentModifierMismatch => "argument for `{0}` must be passed as {1}",
+    .retiredArgumentsSwapped => "retired: particles replace the same-type naming rule",
+    .spanParameterNeverWritten => "`{0}` is never written through; use `ReadOnlySpan<{1}>`",
+    .neverReassignedVar => "`{0}` is never reassigned; declare it with `let`",
+    .requiresNotBool => "a `requires` clause must be `bool`, got `{0}`",
+    .requiresViolated => "`{0}` violates `requires {1}` of `{2}`",
+    .retiredRequiresNotHere => "retired: `requires` is checked at construction",
+    .missingReturn => "`{0}` must return `{1}` on every path",
+    .missingReturnValue => "this function returns `{0}`; `return` needs a value",
+    .returnValueInVoid => "`{0}` returns nothing, but `return` has a value",
+    .neverReturns => "`{0}` returns `never` but can reach its end",
+    .unreachableCode => "unreachable code",
+    .jumpOutsideLoop => "`{0}` outside a loop",
+    .continueSwitch => "`continue {0}` refers to a `switch`, not a loop",
+    .labelNotOnLoop => "label `{0}` must be on a loop or `switch`",
+    .duplicateDefault => "`switch` has more than one `default` section",
+    .nonExhaustive => "`switch` does not handle every `{0}`",
+    .patternMismatch => "{0} cannot match `{1}`",
+    .tryInDefer => "`try` is not allowed in `defer`",
+    .unhandledFailure => "`{0}` can fail; handle the error or pass it on",
+    .undeclaredError => "`{0}` is not in the `fails` clause of `{1}`",
+    .propagateFromInfallible => "`{0}` cannot fail, so it cannot pass on `{1}`",
+    .nothingToHandle => "`{0}` needs a call that can fail",
+    .errdeferWithoutFails => "`defer failing` in a function that cannot fail",
+    .publicInferredFails => "public function `{0}` must list its errors",
+    .notAnErrorSet => "`{0}` is not an error enum",
+    .emptyErrorSet => "error enum `{0}` has no variants",
+    .jumpOutOfDefer => "`{0}` cannot leave a `defer` or `defer failing` body",
+    .catchBlockCompletes => "this `catch` block can complete normally; end it with `return`, `break`, `continue` or a panic",
+    .panicHandlerRestricted => "{0} is not allowed in a panic handler",
+    .panicHandlerReads => "a panic handler reads only `let` bindings and parameters",
+    .onPanicPlacement => "`Panic.handler` may be set only as the first statement of `main`",
+    .panicHandlerReadsMoved => "a panic handler reads `{0}`, which is moved after the handler is registered",
+    .unknownUnionVariant => "`{0}` is not a variant of union `{1}`",
+    .duplicateUnionVariant => "union `{0}` already has a variant `{1}`",
+    .emptyUnion => "union `{0}` has no variants",
+    .variantPatternArity => "variant `{0}` has {1} payload field(s), but the pattern lists {2}",
+    .payloadNeedsPattern => "the payload of a `{0}` is read with a pattern, not `.{1}`",
+    .variantNeedsPayload => "variant `{0}` carries a payload",
+    .variantHasNoPayload => "variant `{0}` has no payload",
+    .recursiveUnion => "union `{0}` contains itself",
+    .borrowPayload => "a union payload cannot hold a borrowed `{0}`",
+    .unionValueNotInteger => "a case value must be an integer constant",
+    .unionValueOnPayload => "`{0}` carries data and cannot have a value",
+    .duplicateUnionValue => "`{0}` and `{1}` share the value {2}",
+    .wildcardOnLocalUnion => "`_` hides future cases of `{0}`, declared in this package",
+    .unknownEnumMember => "`{0}` is not a member of `{1}`",
+    .duplicateEnumMember => "enum `{0}` already has a member `{1}`",
+    .emptyEnum => "enum `{0}` has no members",
+    .enumArgumentNotConstant => "argument `{0}` of `{1}` must be a compile-time constant",
+    .invalidEnumParameter => "enum parameter `{0}` must be a number, `bool`, `rune`, `string` or a plain enum",
+    .cannotInferTypeArgument => "cannot infer type argument `{0}` of `{1}`",
+    .conflictingTypeArgument => "type argument `{0}` of `{1}` is inferred as both `{2}` and `{3}`",
+    .genericArgumentCount => "`{0}` takes {1} type argument(s), not {2}",
+    .typeParameterOperator => "`{0}` cannot be applied to a value of type parameter `{1}`",
+    .typeParameterMember => "`{0}` is not a member of type parameter `{1}`",
+    .invalidMapKey => "`{0}` cannot be a `Map` key",
+    .recursiveByValue => "`{0}` contains itself by value: {1}",
+    .sharedStorageCopy => "a `{0}` cannot be copied",
+    .unknownAttribute => "unknown attribute `{0}`",
+    .invalidMainSignature => "`main` must return `void` or `i32` and take nothing or `ReadOnlySpan<string> args`",
+    .untrustedSink => "`{0}` cannot be passed to `{1}`: it is `Untrusted`",
+    .trustReason => "`trust` needs a reason: a non-empty string literal",
+    .takeUnsupported => "`take()` needs a `List`, `Map`, `StrBuf` or an optional of a unique type, not `{0}`",
+    .switchMoveSubject => "`switch move …` needs a local or a `move` parameter, not {0}",
+    .owningPatternOverlap => "pattern `{0}` binds the same storage more than once in `switch move …`",
+    .owningBindingMutatedInGuard => "`{0}` is mutated in the guard of `switch move …`; a guard that fails gives the value back",
+    .invalidExitCode => "`@exitCode` needs one integer constant from 1 to 255",
+    .assertNotBool => "`assert` needs a `bool`, got `{0}`",
+    .casesArity => "`@cases` gives {0} values but the test takes {1} parameters",
+    .casesNotConstant => "each `@cases` value must be a constant",
+    .implicitCopy => "implicit copy of a unique value: {0}",
+    .useAfterMove => "`{0}` is used after it was moved",
+    .cannotMove => "cannot move out of {0}",
+    .mutateBorrow => "`{0}` borrows from what it was bound to and cannot be changed or moved",
+    .copyUniqueElement => "a `{0}` holding `{1}` cannot be copied: the copy would share its storage",
+    .mapSlotNoDefault => "`slot` needs a default value, and `{0}` has none",
+    .interfaceName => "`{0}` must start with `I` and an uppercase letter",
+    .missingInterfaceMember => "`{0}` does not provide `{1}` required by `{2}`",
+    .interfaceMemberMismatch => "`{0}.{1}` is `{2}` but `{3}` requires `{4}`",
+    .missingAssociatedType => "`{0}` does not bind `type {1}` of `{2}`",
+    .notAnInterface => "`{0}` is not an interface",
+    .duplicateConformance => "`{0}` lists `{1}` twice",
+    .constraintMember => "`{0}` has no member `{1}` in its constraints ({2})",
+    .constraintNotSatisfied => "`{0}` does not conform to `{1}`: missing `{2}`",
+    .notDynSafe => "`{0}` cannot be used with `dyn`: `{1}` {2}",
+    .dynByValue => "`dyn {0}` is not supported yet",
+    .staticAbstract => "`static` interface members are not supported yet",
+    .extensionConformance => "`extension {0} : {1}` is not supported yet",
+    .whereUnknownParameter => "`where` names `{0}`, which is not a type parameter",
+    .dynReadonlyMutation => "`{0}` takes `ref this`, but the receiver is `dyn ref readonly {1}`",
+    .refThisMismatch => "`{0}.{1}` must match `{2}.{1}`, which {3} `ref this`",
+    .nonStructConformance => "`{0}` is {1}; only structs can conform yet",
+    .interfaceAsType => "`{0}` is an interface, not a type",
+    .lambdaArity => "this lambda takes {0} parameter(s) but `{1}` takes {2}",
+    .cannotCapture => "`{0}` cannot be captured: {1}",
+    .functionTypeNotHere => "a function type is not supported as {0} yet",
+    .memberNotLambda => "`.{0}` is a member, not a lambda",
+    .notAFunctionValue => "`{0}` cannot be used as a value: {1}",
+    .hashMapNotSupported => "`HashMap` is not supported yet: `Map` hashes the same way and keeps insertion order",
+    .keyPartNotHashable => "`{0}` cannot be a `Map` key: {1} `{2}` is a `{3}`",
+    .stringNotSymbol => "a `string` value is not a `Symbol`; only a string literal converts",
+    .borrowField => "a struct field cannot hold a borrowed `{0}`",
+    .borrowOutlivesSource => "{0} does not live as long as `{1}`, which borrows it",
+    .borrowReturned => "cannot return a borrow of {0}, which is freed when `{1}` returns",
+    .modifiedWhileBorrowed => "`{0}` is modified while {1} still borrows it",
+    .refAndValue => "`{0}` is passed by `ref` and again in the same call",
+    .movedWhileBorrowed => "`{0}` is moved while {1} still borrows it",
+    .unusedValue => "the value of this `{0}` is unused",
+    .duplicateErrorCase => "`{0}` and `{1}` both have a case `{2}`",
+    .bareLiteralForDistinct => "`{0}` is not a `{1}`",
+    .ruleTargetNotField => "`at .{0}` names no field of `{1}`",
+    .literalNeedsTry => "a literal of `{0}` can fail its `requires`; write `try {0} {{ … }}`",
+    .checkedFieldAssignment => "fields of `{0}` cannot be assigned one at a time; its `requires` are checked at construction",
+    .uniqueConst => "a `unique` type cannot be `const`",
+    .overlappingOverloads => "`{0}` and `{1}` both accept `{2}`",
+    .restEscapes => "`{0}` is borrowed for the call and cannot be stored",
+    .ambiguousOverloadReference => "`{0}` is overloaded; give the reference a function type",
+    .fieldWriteOutside => "`{0}.{1}` can be written only by `{0}`'s own methods or with `with`: `{0}` {2}",
+    .borrowCrossesFiber => "`{0}` holds a reference into `{1}` and cannot be passed to a fiber that may outlive it",
+    .requiresMixesFields => "this `requires` reads `it` and other fields",
+    .manifestNotData => "`package.byn` is data only: expected {0}",
+    .manifestUnknownField => "`{0}` is not a field of `{1}`",
+    .manifestInvalidValue => "`{0}` must be {1}",
+    .manifestMissingField => "`package.byn` has no `{0}`",
+    .manifestEquals => "`package.byn` uses `field: value`",
+    .cCompilerRejected => "internal compiler error: the C compiler rejected the generated C; this is a bug in the Bayan compiler",
+    .participleChangesThis => "`{0}` changes `this`; name it `{1}`",
+    .stateMemberMutates => "`{0}` reads as state but modifies `this`",
+    .tryWrongReturn => "`try{0}` must return `{1}?` or `bool`; it is derived from `{2}() fails`",
+    .particleRequired => "`{0}` has {1} unlabeled parameters; give each but one a particle",
+    .argumentNeedsParticle => "`{0}` is passed without its particle `{1}:`",
+    .parameterNeedsParticle => "`{0}` is a required parameter besides the object and needs a particle",
+    .logLevelAsVerb => "`Log.{0}` names a level, not the act; write `log(…, as: .{0})`",
+    .unknownParticle => "`{0}` is not a particle",
+    .particleAsMemberName => "`{0}` is a particle; name the member with a verb or a noun",
+    .conversionMember => "`{0}` spells a conversion with `{1}`; write `{2}`",
+    .expectsSingleParameter => "this `expects` reads only `{0}`; a type with `requires` checks it once",
+    .repeatedParticle => "`{0}` uses the particle `{1}` twice",
+    .unknownWord => "`{0}` is not a known verb or noun",
+    .nounOnMutator => "`{0}` is a noun on a `ref this` member; name the action",
+    .boolWithoutPrefix => "`{0}` is a `bool` state; prefix with `is`, `has` or `can`",
+    .noallocRemoved => "`{0}` is removed; a function without `uses` is already pure",
+    .effectNotDeclared => "`{0}` uses `{1}` but does not declare it",
+    .unknownEffect => "`{0}` is not an effect",
+    .capabilityExceeded => "`{0}` uses `{1}`, which package `{2}` does not declare in `capabilities`",
+    .effectBoundExceeded => "`{0}` uses `{1}`, beyond the bound `{2}` declared by `{3}`",
+    .contextBlockInput => "`context (…) {{ }}` is now `provide … {{ }}`",
+    .unknownHandler => "`{0}` is not a handler; `provide` takes `alloc`, `net`, `fs`, `clock`, `random`, `env`, `process`, `console` or `log`",
+    .wrongState => "`{0}` needs `{1}` to be `.{2}`, but it is `{3}`",
+    .payloadNotInState => "`{0}` is a payload of `.{1}`; `{2}` is not known to be `.{1}`",
+    .becomeUndeclared => "`become` needs `becomes .{0}` on `{1}`",
+    .becomeOtherState => "`become .{0}` is not declared; `{1}` becomes `.{2}`",
+    .becomesCallUndeclared => "`{0}` calls `{1}`, which changes the state; declare `becomes` on `{0}`",
+    .stateSwitchNotExhaustive => "the switch does not handle state `.{0}`",
+    .stateLiteralNeedsState => "`{0}` has states; a literal must name one: `{0}.{1} {{ … }}`",
+    .singleStateInline => "`{0} is .{1}` is an input form; write `{2}`",
+    .unknownState => "`{0}` has no state `.{1}`",
+    .stateShadowsStatic => "state `.{0}` has the same name as static member `{1}.{0}`",
+    .missingBecome => "`{0}` declares `becomes .{1}` but returns here without `become`",
+    .becomesNeedsRef => "`{0}` declares `becomes .{1}` but takes `{2}`; a transition needs `ref this`",
+    .becomesOnRefParameter => "`{0}` changes the state of `{1}`, a `ref` parameter; a state changes in place only through `ref this`",
+    .assignmentChangesState => "`{0}` would change state here; a state changes only through `become`",
+    .missingBecause => "`{0}` bypasses a safety rule and needs `because \"…\"`",
+    .expectsReadsUntrusted => "`expects` reads `{0}`, which is `Untrusted`; a violation would trap on outside data",
+}
+
+/// `Warning(...)` in C#; every other descriptor is an error.
+bool isWarning(SemaCode code) => code switch {
+    .sameTypeShadowing or .spanParameterNeverWritten or .neverReassignedVar or
+    .unreachableCode or .wildcardOnLocalUnion or .expectsSingleParameter or .unknownWord or
+    .nounOnMutator or .boolWithoutPrefix => true,
+    _ => false,
+}
+
+/// Every case, in order (the test prints the whole table from it).
+List<SemaCode> allSemaCodes() {
+    var codes = List<SemaCode>()
+    for code in SemaCode.values { codes.append(code) }
+    return codes
+}
+
+/// `string.Format` for the templates above: `{0}`-`{4}` are replaced and `{{`/`}}` unescaped. Text is
+/// copied in runs between braces, so a slice never splits a code point.
+string format(string template, by (string a0, string a1, string a2, string a3, string a4) args) {
+    var sb = StrBuf()
+    let t = template.bytes
+    var i: i64 = 0
+    var run: i64 = 0
+    while i < t.length {
+        let b = t[i]
+        if (b == '{' || b == '}') && i + 1 < t.length && t[i + 1] == b {
+            sb.append(template[run..i + 1])
+            i += 2
+            run = i
+        } else if b == '{' && i + 2 < t.length && t[i + 2] == '}' {
+            sb.append(template[run..i])
+            sb.append(t[i + 1] == '0' ? args.a0 : t[i + 1] == '1' ? args.a1 : t[i + 1] == '2' ? args.a2 : t[i + 1] == '3' ? args.a3 : t[i + 1] == '4' ? args.a4 : "")
+            i += 3
+            run = i
+        } else {
+            i += 1
+        }
+    }
+    sb.append(template[run..t.length])
+    return $"{sb.finish()}"
+}
+

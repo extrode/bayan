@@ -9,37 +9,37 @@ import lexer
 
 // The lexer's types under their own names: a struct literal cannot name its type through a module
 // (`lexer.TextSpan { … }` does not parse, Q431).
-type TextSpan = lexer.TextSpan
-type Token = lexer.Token
-type TokenKind = lexer.TokenKind
-type Diagnostic = lexer.Diagnostic
-type LexResult = lexer.LexResult
-type SourceText = lexer.SourceText
-type Keywords = lexer.Keywords
+public type TextSpan = lexer.TextSpan
+public type Token = lexer.Token
+public type TokenKind = lexer.TokenKind
+public type Diagnostic = lexer.Diagnostic
+public type LexResult = lexer.LexResult
+public type SourceText = lexer.SourceText
+public type Keywords = lexer.Keywords
 
 /// The parser's state over one lexed source. The lexer's diagnostics come first in `lexed.diagnostics`
 /// and the parser appends to them, as C# copies them into its bag.
-struct Parser {
+public struct Parser {
     /// Tokens (the last is `endOfFile`), diagnostics and source.
-    LexResult lexed
-    i64 count
-    i64 pos
-    i64 prevEnd
-    i64 lastErrorAt
+    public LexResult lexed
+    public i64 count
+    public i64 pos
+    public i64 prevEnd
+    public i64 lastErrorAt
     /// Reports other than input forms (`isInputForm`); only these make `recoverIfNeeded` resynchronize.
-    i64 syntaxErrors
+    public i64 syntaxErrors
     /// Token index where the bare condition being parsed starts, or -1 (see `braceLiteralAllowed`).
-    i64 conditionStart
+    public i64 conditionStart
     /// Per token: whether its innermost bracket is `(`, `[` or an interpolation hole, where a line break never ends a statement.
-    List<bool> inGroup
+    public List<bool> inGroup
     /// Whether the declaration being parsed carries `extern`, where pointer types are allowed (BYN1067).
-    bool inExtern
+    public bool inExtern
     /// Whether a name or `( … )` before `=>` is not a lambda: in a pattern, an arm's guard or an `expects` condition.
-    bool noLambda
+    public bool noLambda
     /// Set while type arguments are scanned inside an expression, where `=>` is never a type's arrow (`a < b => c > (x)`).
-    bool exprTypeArgs
+    public bool exprTypeArgs
 
-    static Parser create(move LexResult lexed) {
+    public static Parser create(move LexResult lexed) uses alloc {
         let count = lexed.tokens.length
         var inGroup = List<bool>()
         var groups = List<bool>()

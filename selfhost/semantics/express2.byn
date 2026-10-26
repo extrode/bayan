@@ -1,0 +1,58 @@
+// T18: BinderExpressions.cs ~600-1155 (members, index, slice).
+
+import parser
+
+enum MemberRefKind {
+    none
+    field
+    propertyKeyword
+    method
+}
+
+// The C# `Symbol?` `lookupMember` returns: a field, property or method of a type, by its arena id.
+struct MemberRef {
+    MemberRefKind kind
+    i64 id = -1
+}
+
+// stub: T18 ports BinderExpressions.cs:645 BindMember
+BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) => -1
+
+// stub: T18 ports BinderExpressions.cs:1003 BindTargetMember
+BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemberExpr t, to Type expected) => -1
+
+// stub: T18 ports BinderExpressions.cs:799 BindValueMember
+BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr target, by TextSpan member) => -1
+
+// stub: T18 ports BinderExpressions.cs:621 BindImplicitThisMember
+BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by MemberRef member) => -1
+
+// stub: T18 ports BinderExpressions.cs:1053 BindIndex
+BExpr bindIndex(ref Binder b, through ref Ctx c, for in parser.IndexExpr i) => -1
+
+// stub: T18 ports BinderExpressions.cs:1109 BindSlice
+BExpr bindSlice(ref Binder b, through ref Ctx c, for in parser.IndexExpr i, from BExpr target, by in parser.RangeExpr r, as Type type) => -1
+
+// stub: T18 ports BinderExpressions.cs:780 CheckAccess
+void checkAccess(ref Binder b, through ref Ctx c, for Accessibility access, from StructId owner, by ModId module, at TextSpan name, bool publicRequired = false) {}
+
+// stub: T18 ports BinderExpressions.cs:600 ConstantRef
+BExpr constantRef(ref Binder b, through ref Ctx c, at TextSpan span, for ConstId k) => -1
+
+// stub: T18 ports BinderExpressions.cs:609 ConstantLiteral
+BExpr constantLiteral(ref Ctx c, at TextSpan span, as Type type, by in Constant value) => -1
+
+// stub: T18 ports BinderExpressions.cs:614 LookupMember
+MemberRef lookupMember(ref Ctx c, for Type t, by string name) => MemberRef { kind: .none }
+
+// stub: T18 ports BinderExpressions.cs:914 ReturnTypeThrough
+Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by FuncId m) => -1
+
+// stub: T18 ports BinderExpressions.cs:923 ReportRenamed
+bool reportRenamed(ref Binder b, through ref Ctx c, for Type type, at TextSpan member) => false
+
+// stub: T18 ports BinderExpressions.cs:991 MemberSuggestion
+string? memberSuggestion(ref Ctx c, for Type type, by string name) => null
+
+// stub: T18 ports BinderExpressions.cs:1126 InterpolationSource
+string interpolationSource(ref Binder b, through ref Ctx c, for in parser.Expr e) => ""

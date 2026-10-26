@@ -1,0 +1,16 @@
+// T26: CliApp's JSON output.
+
+// stub: T26 ports Messages.cs:128 DiagCapped
+string capLine(string mark, by i64 omitted) => ""
+
+// stub: T26 ports Messages.cs:134 BuildFailed
+string buildFailed(string mark, by i64 errors, as i64 warnings) => ""
+
+// stub: T26 ports Messages.cs:139 BuildExplain
+string buildExplain(string code) => ""
+
+// stub: T26 ports Messages.cs:133 CheckSummary
+string checkSummary(string mark, for string program, by string seconds) => ""
+
+// stub: T26 ports CliApp.cs:517 ProgramName
+string programName(ref Ctx c, for string path) => ""

@@ -1,0 +1,45 @@
+// T21: BinderCalls.cs ~588-998 (construction, builtins, move, switch subject).
+
+import parser
+
+// The C# `BindSwitchSubject`'s result and its `out bool owns`.
+struct SwitchSubjectResult {
+    BExpr value
+    bool owns
+}
+
+// stub: T21 ports BinderCalls.cs:588 BindConstruction
+BExpr bindConstruction(ref Binder b, through ref Ctx c, for in parser.CallExpr call, as Type type) => -1
+
+// stub: T21 ports BinderCalls.cs:681 BindIntegerText
+BExpr bindIntegerText(ref Binder b, through ref Ctx c, for in parser.CallExpr call) => -1
+
+// stub: T21 ports BinderCalls.cs:706 BindOwned
+BExpr bindOwned(ref Binder b, through ref Ctx c, for in parser.CallExpr call, as Type inner) => -1
+
+// stub: T21 ports BinderCalls.cs:726 BindUntrusted
+BExpr bindUntrusted(ref Binder b, through ref Ctx c, for in parser.CallExpr call, as Type inner) => -1
+
+// stub: T21 ports BinderCalls.cs:746 BindTrust
+BExpr bindTrust(ref Binder b, through ref Ctx c, for in parser.CallExpr call) => -1
+
+// stub: T21 ports BinderCalls.cs:772 BindTrustUnchecked
+BExpr bindTrustUnchecked(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by in parser.MemberExpr callee) => -1
+
+// stub: T21 ports BinderCalls.cs:784 BindBuiltinMethodCall
+BExpr bindBuiltinMethodCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from BExpr receiver, by string name) => -1
+
+// stub: T21 ports BinderCalls.cs:861 BindMove
+BExpr bindMove(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr operand) => -1
+
+// stub: T21 ports BinderCalls.cs:904 BindSwitchSubject
+SwitchSubjectResult bindSwitchSubject(ref Binder b, through ref Ctx c, for in parser.Expr value) => SwitchSubjectResult { value: -1, owns: false }
+
+// stub: T21 ports BinderCalls.cs:957 Checked
+BExpr checkedValue(ref Binder b, through ref Ctx c, for in parser.Expr syntax, by BExpr value, in List<FieldId>? changed = null) => -1
+
+// stub: T21 ports BinderCalls.cs:949 Handles
+bool handles(in parser.Expr e) => false
+
+// stub: T21 ports BinderCalls.cs:936 ReportUnhandled
+void reportUnhandled(ref Binder b, through ref Ctx c, for in parser.Expr call, by string name) {}

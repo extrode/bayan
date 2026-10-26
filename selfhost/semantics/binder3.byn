@@ -1,0 +1,54 @@
+// T36: Binder.cs ~980-1468 (for bodies/iterators, return/fail, defer, context, switch statement).
+
+import parser
+
+// stub: T36 ports Binder.cs:1123 BindReturn
+BStmt bindReturn(ref Binder b, through ref Ctx c, for in parser.ReturnStmt r) => -1
+
+// stub: T36 ports Binder.cs:1215 BindFail
+BStmt bindFail(ref Binder b, through ref Ctx c, for in parser.FailStmt f) => -1
+
+// stub: T36 ports Binder.cs:1322 BindBreak
+BStmt bindBreak(ref Binder b, through ref Ctx c, for in parser.BreakStmt s) => -1
+
+// stub: T36 ports Binder.cs:1325 BindContinue
+BStmt bindContinue(ref Binder b, through ref Ctx c, for in parser.ContinueStmt s) => -1
+
+// stub: T36 ports Binder.cs:1328 BindErrdefer
+BStmt bindErrdefer(ref Binder b, through ref Ctx c, for in parser.DeferStmt d) => -1
+
+// stub: T36 ports Binder.cs:1348 BindPanicDefer
+BStmt bindPanicDefer(ref Binder b, through ref Ctx c, for in parser.DeferStmt d) => -1
+
+// stub: T36 ports Binder.cs:1364 BindOnPanic
+BStmt bindOnPanic(ref Binder b, through ref Ctx c, for in parser.AssignStmt a) => -1
+
+// stub: T36 ports Binder.cs:1405 BindContext
+BStmt bindContext(ref Binder b, through ref Ctx c, for in parser.ContextStmt s) => -1
+
+// stub: T36 ports Binder.cs:1432 BindSwitchStatement
+BStmt bindSwitchStatement(ref Binder b, through ref Ctx c, for in parser.SwitchStmt s, to JumpTarget target) => -1
+
+// stub: T36 ports Binder.cs:987 UserElement
+Type userElement(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BExpr iterable, to ref UserIteration? user) => -1
+
+// stub: T36 ports Binder.cs:1034 DeclaredElement
+Type declaredElement(ref Binder b, through ref Ctx c, for in parser.ForStmt f, as Type element) => -1
+
+// stub: T36 ports Binder.cs:1112 NotIterable
+Type notIterable(ref Binder b, through ref Ctx c, for in parser.ForStmt f, as Type type) => -1
+
+// stub: T36 ports Binder.cs:1045 BindForBody
+BStmt bindForBody(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by LocalId variable, to JumpTarget target) => -1
+
+// stub: T36 ports Binder.cs:1078 BindForTry
+BStmt bindForTry(ref Binder b, through ref Ctx c, for in parser.ForStmt f, by BExpr iterable, to JumpTarget target) => -1
+
+// stub: T36 ports Binder.cs:1398 InPanicHandler
+bool inPanicHandler(ref Binder b, through ref Ctx c, at TextSpan span, for string keyword) => false
+
+// stub: T36 ports Binder.cs:1292 FindTarget
+JumpTarget? findTarget(ref Binder b, through ref Ctx c, for TextSpan? label, bool loopOnly, at TextSpan span, by string keyword) => null
+
+// stub: T36 ports Binder.cs:1164 TryBindFailure
+BExpr tryBindFailure(ref Binder b, through ref Ctx c, for in parser.Expr value) => -1

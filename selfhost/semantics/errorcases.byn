@@ -1,0 +1,21 @@
+// T22: BinderErrors.cs.
+
+import parser
+
+// stub: T22 ports BinderErrors.cs:83 BindErrorCasePattern
+BPattern bindErrorCasePattern(ref Binder b, through ref Ctx c, for in parser.Pattern p, as Type input, by BExpr bound, from in List<parser.Pattern> elements, at TextSpan? binding) => -1
+
+// stub: T22 ports BinderErrors.cs:15 BindErrorNew
+BExpr bindErrorNew(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to Type expected) => -1
+
+// stub: T22 ports BinderErrors.cs:36 BindPayload
+BExpr bindPayload(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by BExpr variant) => -1
+
+// stub: T22 ports BinderErrors.cs:59 Built
+BExpr built(ref Binder b, through ref Ctx c, for BExpr value, from in parser.Expr syntax) => -1
+
+// stub: T22 ports BinderErrors.cs:49 CheckPayloadGiven
+bool checkPayloadGiven(ref Binder b, through ref Ctx c, for BExpr error, from in parser.Expr syntax) => true
+
+// stub: T22 ports BinderErrors.cs:71 ErrorCase
+BExpr errorCase(ref Binder b, through ref Ctx c, for in parser.Pattern p, from ErrorSetId set, at TextSpan name) => -1

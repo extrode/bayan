@@ -1,0 +1,243 @@
+// T6: Conversions.cs and TypeFacts.cs.
+//
+// C#'s `TypeSymbol?` result is a `Type` with -1 for null (`common`, `uniquePart`). `TypeFacts.Find`'s
+// `HashSet<TypeSymbol>` is a `List<Type>` of the struct and union handles already walked.
+
+import parser
+
+// ── Conversions.cs ─────────────────────────────────────────────────────────────
+
+/// The implicit conversion from `a` to `t`, or null; with `argument`, `List<T>` and `T[N]` become `Span<T>`.
+ConversionKind? implicit(ref Ctx c, from Type a, to Type t, bool argument = false) {
+    if a == t { return .identity }
+    if isError(a) || isError(t) { return .identity }
+    if isNever(a) { return .fromNever }
+    if kindOf(a) == .nullType {
+        if kindOf(t) == .optional { return .nullToOptional }
+        return null
+    }
+    if kindOf(a) == .primitive && kindOf(t) == .primitive && isWidening(a, to: t) { return .widen }
+    if kindOf(t) == .optional {
+        let inner = c.optionalTypes[typeIndex(t)]
+        if a == inner || implicit(ref c, from: a, to: inner) == .widen
+            || (kindOf(a) == .state && implicit(ref c, from: a, to: inner) == .identity) {
+            return .toOptional
+        }
+    }
+    if kindOf(t) == .result {
+        let r = c.resultTypes[typeIndex(t)]
+        if kindOf(a) == .errorSet && a == r.error { return .errorToResult }
+        if a == r.value || implicit(ref c, from: a, to: r.value) == .widen { return .toResult }
+    }
+    // A writable view may be read through a read-only one; never the reverse.
+    if kindOf(a) == .span && kindOf(t) == .span {
+        let ws = c.spanTypes[typeIndex(a)]
+        let rs = c.spanTypes[typeIndex(t)]
+        if rs.readOnly && ws.element == rs.element { return .identity }
+    }
+    if argument && kindOf(t) == .span {
+        let span = c.spanTypes[typeIndex(t)]
+        if kindOf(a) == .list && c.listTypes[typeIndex(a)] == span.element { return .listToSpan }
+        if kindOf(a) == .array && c.arrayTypes[typeIndex(a)].element == span.element { return .arrayToSpan }
+        if isString(a) && span.readOnly && span.element == prim(.u8) { return .stringToBytes }
+    }
+    // A conforming value is borrowed as `dyn ref I`; a writable `dyn ref` may be read through a read-only one.
+    if kindOf(t) == .dynRef {
+        let dyn = c.dynRefTypes[typeIndex(t)]
+        if kindOf(a) == .dynRef && c.dynRefTypes[typeIndex(a)].iface == dyn.iface && dyn.readOnly { return .identity }
+        if kindOf(a) == .structType {
+            for id in c.structs[typeIndex(a)].conformances {
+                if c.conformances[id].iface == dyn.iface { return .toDynRef }
+            }
+        }
+        if kindOf(a) == .typeParam && listContains(in c.typeParams[typeIndex(a)].constraints, by: dyn.iface) { return .toDynRef }
+    }
+    // Widening is free: a state type converts to its struct or to a type listing more of its states (spec §3.17).
+    if kindOf(a) == .state {
+        let fs = typeIndex(a)
+        if t == structTypeOf(c.stateTypes[fs].s) { return .identity }
+        if kindOf(t) == .state && c.stateTypes[typeIndex(t)].s == c.stateTypes[fs].s {
+            var all = true
+            for v in c.stateTypes[fs].states {
+                if !listContains(in c.stateTypes[typeIndex(t)].states, by: v) { all = false }
+            }
+            if all { return .identity }
+        }
+    }
+    if kindOf(t) == .state {
+        let st = typeIndex(t)
+        if a == structTypeOf(c.stateTypes[st].s)
+            && c.stateTypes[st].states.length == c.unions[c.unionVariants[c.stateTypes[st].states[0]].owner].variants.length {
+            return .identity
+        }
+    }
+    if kindOf(a) == .errorSet && kindOf(t) == .errorUnion {
+        let u = typeIndex(t)
+        if c.errorUnionTypes[u].sets.length == 0 || listContains(in c.errorUnionTypes[u].sets, by: typeIndex(a)) { return .identity }
+    }
+    return null
+}
+
+/// `toFunction` when module function `fn` named as a value is a `t`: its parameter types, return type and
+/// error sets equal the type's exactly (spec 007 R3); effects are checked at the conversion (R16).
+ConversionKind? implicitFunction(ref Ctx c, from FuncId fn, to Type t) {
+    if kindOf(t) != .function { return null }
+    let ft = typeIndex(t)
+    let parameters = copyIds(in c.functions[fn].parameters)
+    if parameters.length != c.functionTypes[ft].parameters.length { return null }
+    for i in 0..parameters.length {
+        if c.locals[parameters[i]].modifier != .none { return null }
+        if c.locals[parameters[i]].type != c.functionTypes[ft].parameters[i] { return null }
+    }
+    if c.functions[fn].returnType != c.functionTypes[ft].ret { return null }
+    if c.functions[fn].hasFails != (c.functionTypes[ft].errorSets.length > 0) { return null }
+    if c.functions[fn].excludedErrors.length != 0 { return null }
+    if c.functions[fn].errorSets.length != c.functionTypes[ft].errorSets.length { return null }
+    for e in c.functions[fn].errorSets {
+        if !listContains(in c.functionTypes[ft].errorSets, by: e) { return null }
+    }
+    return .toFunction
+}
+
+/// Lossless numeric widening; 64-bit `isize`/`usize` are assumed.
+bool isWidening(Type a, to Type t) {
+    if isInteger(a) && isInteger(t) {
+        let ab = primitiveBits(primKindOf(typeIndex(a)))
+        let tb = primitiveBits(primKindOf(typeIndex(t)))
+        if isSignedInteger(a) == isSignedInteger(t) {
+            return ab < tb || (ab == tb && a != t && ab < 64)
+        }
+        return isUnsignedInteger(a) && isSignedInteger(t) && ab < tb
+    }
+    if isInteger(a) && isFloat(t) {
+        let ab = primitiveBits(primKindOf(typeIndex(a)))
+        return t == prim(.f64) ? ab <= 32 : ab <= 16
+    }
+    return a == prim(.f32) && t == prim(.f64)
+}
+
+/// An explicit cast `(T)x`, or null when none exists.
+ConversionKind? explicit(ref Ctx c, from Type a, to Type t) {
+    if (implicit(ref c, from: a, to: t) is { } k) { return k }
+    if isNumeric(a) && isNumeric(t) { return .numericCast }
+    if a == prim(.char) && isInteger(t) { return .charToInteger }
+    if isInteger(a) && t == prim(.char) { return .integerToChar }
+    return null
+}
+
+/// The type both operands of a binary operator convert to: the wider of the two when one widens to the
+/// other, or -1.
+Type common(ref Ctx c, for Type a, as Type b) {
+    if a == b { return a }
+    if isError(a) { return b }
+    if isError(b) { return a }
+    if isNever(a) { return b }
+    if isNever(b) { return a }
+    if kindOf(a) == .nullType { return kindOf(b) == .optional ? b : -1 }
+    if kindOf(b) == .nullType { return kindOf(a) == .optional ? a : -1 }
+    if (implicit(ref c, from: a, to: b) is { } ab) {
+        if ab != .fromNever { return b }
+    }
+    if (implicit(ref c, from: b, to: a) is { } ba) {
+        if ba != .fromNever { return a }
+    }
+    return -1
+}
+
+// ── TypeFacts.cs ───────────────────────────────────────────────────────────────
+
+/// A unique type owns storage, so a value of it has one owner: it is moved or copied explicitly, never
+/// implicitly (spec §3.11). `List`, `Map`, `StrBuf`, `Owned`, a `unique struct`, a type parameter in a
+/// generic body, and anything holding one of these by value.
+bool isUnique(ref Ctx c, for Type t) => uniquePart(ref c, for: t) != -1
+
+/// The innermost unique type `t` holds by value (`t` itself for a `List`), or -1.
+Type uniquePart(ref Ctx c, for Type t) {
+    var seen = List<Type>()
+    if (t6Find(ref c, for: t, through: ref seen) is { } found) { return found.part }
+    return -1
+}
+
+/// Why `t` is unique, as a sentence naming the type; null when it is not.
+string? whyUnique(ref Ctx c, for Type t) {
+    var seen = List<Type>()
+    if (t6Find(ref c, for: t, through: ref seen) is { } found) { return found.why }
+    return null
+}
+
+/// `TypeFacts.Find`'s `(TypeSymbol Part, string Why)`.
+struct T6Unique {
+    Type part
+    string why
+}
+
+T6Unique? t6Find(ref Ctx c, for Type t, through ref List<Type> seen) {
+    switch kindOf(t) {
+        case .list or .map or .owned:
+            return T6Unique { part: t, why: $"`{typeDisplay(ref c, by: t)}` is unique: it owns its storage" }
+        case .builtin:
+            if builtinKindOf(typeIndex(t)) == .strBuf {
+                return T6Unique { part: t, why: $"`{typeDisplay(ref c, by: t)}` is unique: it owns its storage" }
+            }
+            return null
+        case .typeParam:
+            return T6Unique { part: t, why: $"type parameter `{typeDisplay(ref c, by: t)}` may stand for a unique type" }
+        case .untrusted:
+            return t6Held(ref c, for: t, by: t6Find(ref c, for: c.untrustedTypes[typeIndex(t)], through: ref seen))
+        case .optional:
+            return t6Held(ref c, for: t, by: t6Find(ref c, for: c.optionalTypes[typeIndex(t)], through: ref seen))
+        case .result:
+            return t6Held(ref c, for: t, by: t6Find(ref c, for: c.resultTypes[typeIndex(t)].value, through: ref seen))
+        case .array:
+            return t6Held(ref c, for: t, by: t6Find(ref c, for: c.arrayTypes[typeIndex(t)].element, through: ref seen))
+        case .tuple:
+            let fields = copyTupleFields(in c.tupleTypes[typeIndex(t)])
+            for f in fields {
+                if (t6Find(ref c, for: f.type, through: ref seen) is { } found) { return t6Held(ref c, for: t, by: found) }
+            }
+            return null
+        // A state type is its struct, with the same storage.
+        case .state:
+            return t6Find(ref c, for: structTypeOf(c.stateTypes[typeIndex(t)].s), through: ref seen)
+        case .structType:
+            let s = typeIndex(t)
+            if (c.structs[s].modifiers & 64) != 0 { // the parser's `modifierUnique`
+                return T6Unique { part: t, why: $"`{typeDisplay(ref c, by: t)}` is declared `unique struct`" }
+            }
+            if listContains(in seen, by: t) { return null }
+            seen.append(t)
+            let fields = copyIds(in c.structs[s].fields)
+            for f in fields {
+                let ft = c.fields[f].type
+                if (t6Find(ref c, for: ft, through: ref seen) is { } found) {
+                    let why = $"`{typeDisplay(ref c, by: t)}` is unique because field `{c.fields[f].name}` is a `{typeDisplay(ref c, by: ft)}`"
+                    return T6Unique { part: found.part, why: why }
+                }
+            }
+            return null
+        case .unionType:
+            if listContains(in seen, by: t) { return null }
+            seen.append(t)
+            let variants = copyIds(in c.unions[typeIndex(t)].variants)
+            for v in variants {
+                let fields = copyIds(in c.unionVariants[v].fields)
+                for f in fields {
+                    let ft = c.locals[f].type
+                    if (t6Find(ref c, for: ft, through: ref seen) is { } found) {
+                        let why = $"`{typeDisplay(ref c, by: t)}` is unique because variant `{c.unionVariants[v].name}` holds a `{typeDisplay(ref c, by: ft)}`"
+                        return T6Unique { part: found.part, why: why }
+                    }
+                }
+            }
+            return null
+        default:
+            return null
+    }
+}
+
+T6Unique? t6Held(ref Ctx c, for Type outer, by T6Unique? inner) {
+    if (inner is { } i) {
+        return T6Unique { part: i.part, why: $"`{typeDisplay(ref c, by: outer)}` is unique because it holds a `{typeDisplay(ref c, by: i.part)}`" }
+    }
+    return null
+}

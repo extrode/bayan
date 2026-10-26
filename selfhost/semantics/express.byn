@@ -1,0 +1,57 @@
+// T17: BinderExpressions.cs 1-~599 (conversions, literals, names).
+
+import parser
+
+// stub: T17 ports BinderExpressions.cs:17 BindExpr
+BExpr bindExpr(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type expected = -1) => -1
+
+// stub: T17 ports BinderExpressions.cs:307 BindExprOrType
+BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type expected = -1) => -1
+
+// stub: T17 ports BinderExpressions.cs:55 BindExprFor
+BExpr bindExprFor(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type expected) => -1
+
+// stub: T17 ports BinderExpressions.cs:45 BindConverted
+BExpr bindConverted(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type target, bool argument = false) => -1
+
+// stub: T17 ports BinderExpressions.cs:75 Convert
+BExpr convert(ref Binder b, through ref Ctx c, for BExpr value, to Type target, at TextSpan span, bool argument = false, bool constrains = true) => -1
+
+// stub: T17 ports BinderExpressions.cs:19 AsValue
+BExpr asValue(ref Binder b, through ref Ctx c, for BExpr bound, from in parser.Expr e) => -1
+
+// stub: T17 ports BinderExpressions.cs:505 BindName
+BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) => -1
+
+// stub: T17 ports BinderExpressions.cs:394 BindLiteral
+BExpr bindLiteral(ref Binder b, through ref Ctx c, for in parser.LiteralExpr l, to Type expected, bool negate = false, TextSpan? whole = null) => -1
+
+// stub: T17 ports BinderExpressions.cs:66 BindStatementExpression
+BExpr bindStatementExpression(ref Binder b, through ref Ctx c, for in parser.Expr e) => -1
+
+// stub: T17 ports BinderExpressions.cs:198 Constrain
+void constrain(ref Binder b, through ref Ctx c, for BExpr value, to Type target) {}
+
+// stub: T17 ports BinderExpressions.cs:215 Constrain
+void constrain(ref Binder b, through ref Ctx c, for BExpr value, as BExpr other, from in parser.Expr otherSyntax) {}
+
+// stub: T17 ports BinderExpressions.cs:234 FindPeer
+i64 findPeer(ref Binder b, for i64 key) => key
+
+// stub: T17 ports BinderExpressions.cs:293 Fits
+bool fits(Big n, for PrimitiveKind t) => false
+
+// stub: T17 ports BinderExpressions.cs:241 IsPending
+bool isPending(ref Binder b, through ref Ctx c, for BExpr e) => false
+
+// stub: T17 ports BinderExpressions.cs:493 IsUntypedLiteral
+bool isUntypedLiteral(in parser.Expr e) => false
+
+// stub: T17 ports BinderExpressions.cs:299 Literal
+BExpr literal(ref Ctx c, at TextSpan span, as Type type, by in Constant value) => -1
+
+// stub: T17 ports BinderExpressions.cs:479 ParseInteger
+Big parseInteger(string text) => Big { lo: 0, hi: 0 }
+
+// stub: T17 ports BinderExpressions.cs:576 Suggest
+string? suggest(string name, by in List<string> candidates) => null

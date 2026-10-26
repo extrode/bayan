@@ -1,0 +1,63 @@
+// T13: Compilation.cs 1363-1952 (BindAll, instantiation, error sets, mutation/requires).
+
+import parser
+
+// What `instantiatingBegin` saved for `instantiatingEnd`: the C# `Instantiating`'s `Action` split in
+// two around the caller's work. `outer` is the sink to restore, `bag` the scratch sink pushed.
+struct InstantiatingScope {
+    i64 outer
+    i64 bag
+    FileId site
+    TextSpan span
+}
+
+// stub: T13 ports Compilation.cs:1502 InstantiateFunction
+FuncId instantiateFunction(ref Ctx c, for FuncId template, by in List<Type> args, from FileId site, at TextSpan span) => -1
+
+// stub: T13 ports Compilation.cs:1615 InstantiateType
+Type instantiateType(ref Ctx c, for Type template, by in List<Type> args, from FileId site, at TextSpan span) => -1
+
+// stub: T13 ports Compilation.cs:1467 Instantiating
+InstantiatingScope instantiatingBegin(ref Ctx c, from FileId site, at TextSpan span) => InstantiatingScope { outer: -1, bag: -1, site: site, span: span }
+
+// stub: T13 ports Compilation.cs:1467 Instantiating
+void instantiatingEnd(ref Ctx c, by InstantiatingScope scope, FuncId instance = -1) {}
+
+// stub: T13 ports Compilation.cs:1890 InvokeSymbol
+FuncId invokeSymbol(ref Ctx c, for Type type) => -1
+
+// stub: T13 ports Compilation.cs:1364 BindAll
+void bindAll(ref Ctx c) {}
+
+// stub: T13 ports Compilation.cs:1716 BindFunction
+void bindFunction(ref Ctx c, for FuncId fn) {}
+
+// stub: T13 ports Compilation.cs:1801 InferErrorSets
+void inferErrorSets(ref Ctx c) {}
+
+// stub: T13 ports Compilation.cs:1556 CheckConstraints
+bool checkConstraints(ref Ctx c, for in List<TypeParamId> parameters, through in List<parser.WhereClause> clauses, from FileId file, as StructId owner, by in Map<string, Type>? typeMap, to in List<Type> args) => true
+
+// stub: T13 ports Compilation.cs:1847 CheckMutation
+void checkMutation(ref Ctx c) {}
+
+// stub: T13 ports Compilation.cs:1862 CheckRequires
+void checkRequires(ref Ctx c) {}
+
+// stub: T13 ports Compilation.cs:1670 FieldDefault
+BExpr fieldDefault(ref Ctx c, for StructId s, by FieldId f, from FileId site, at TextSpan span) => -1
+
+// stub: T13 ports Compilation.cs:1912 ErrorSetsOf
+List<ErrorSetId> errorSetsOf(ref Ctx c, for FuncId fn) => []
+
+// stub: T13 ports Compilation.cs:1678 TemplateOf
+FuncId? templateOf(ref Ctx c, for FuncId f) => null
+
+// stub: T13 ports Compilation.cs:1697 BindConstant
+void bindConstant(ref Ctx c, for ConstId k) {}
+
+// stub: T13 ports Compilation.cs:1901 ParameterDefault
+BExpr? parameterDefault(ref Ctx c, for FuncId f, by LocalId p) => null
+
+// stub: T13 ports Compilation.cs:1919 ReportHeld
+void reportHeld(ref Ctx c, for in List<Diag> held) {}

@@ -1,0 +1,48 @@
+// T16: Binder.cs ~500-979 (blocks, statement dispatch, assert, narrowing, while-let, for head).
+
+import parser
+
+// What `narrowedBegin` saved for `narrowedEnd`: the C# `Narrowed`'s `Func` split in two around the
+// caller's bind. `mark` is the `nonNull` length to cut back to, `before` the state facts to keep and
+// `learned` what `learnStates` added.
+struct NarrowedScope {
+    i64 mark
+    List<(i64, LocalId, Type)> before
+    List<(i64, LocalId, Type)> learned
+}
+
+// stub: T16 ports Binder.cs:541 BindBlock
+BStmt bindBlock(ref Binder b, through ref Ctx c, for in parser.BlockStmt block) => -1
+
+// stub: T16 ports Binder.cs:560 BindStatement
+BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, JumpTarget? labelTarget = null) => -1
+
+// stub: T16 ports Binder.cs:551 BindBody
+BStmt bindBody(ref Binder b, through ref Ctx c, for in parser.Stmt body) => -1
+
+// stub: T16 ports Binder.cs:821 BindLocalDecl
+BStmt bindLocalDecl(ref Binder b, through ref Ctx c, for in parser.LocalDecl d) => -1
+
+// stub: T16 ports Binder.cs:673 BindCondition
+BExpr bindCondition(ref Binder b, through ref Ctx c, for in parser.Expr e) => -1
+
+// stub: T16 ports Binder.cs:942 BindPresent
+BPattern bindPresent(ref Binder b, through ref Ctx c, at TextSpan name, as Type input) => -1
+
+// stub: T16 ports Binder.cs:517 BindExitCode
+i32 bindExitCode(ref Binder b, through ref Ctx c, for in parser.AttributeSyntax a) => 0
+
+// stub: T16 ports Binder.cs:868 CheckUniqueConst
+bool checkUniqueConst(ref Binder b, through ref Ctx c, for in parser.LocalDecl d, as Type type) => true
+
+// stub: T16 ports Binder.cs:885 DefaultType
+Type defaultType(ref Binder b, through ref Ctx c, for BExpr init, from in parser.Expr syntax) => -1
+
+// stub: T16 ports Binder.cs:731 IsNonNull
+bool isNonNull(ref Binder b, for LocalId local) => false
+
+// stub: T16 ports Binder.cs:743 Narrowed
+NarrowedScope narrowedBegin(ref Binder b, through ref Ctx c, for BExpr cond, bool whenTrue) => NarrowedScope { mark: 0, before: [], learned: [] }
+
+// stub: T16 ports Binder.cs:743 Narrowed
+void narrowedEnd(ref Binder b, through ref Ctx c, by move NarrowedScope scope) {}

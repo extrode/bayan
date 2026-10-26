@@ -1,0 +1,4 @@
+// T26: TypedDump.cs.
+
+// stub: T26 ports TypedDump.cs:17 ToJson
+string typedDump(ref Ctx c) => ""

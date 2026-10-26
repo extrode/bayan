@@ -1,0 +1,13 @@
+// T24: OwnershipAnalysis.cs and the three lints.
+
+// stub: T24 ports OwnershipAnalysis.cs:34 Analyze
+void analyzeOwnership(ref Ctx c, for FuncId fn) {}
+
+// stub: T24 ports NeverReassignedVarLint.cs:13 Analyze
+void lintNeverReassignedVar(ref Ctx c, for FuncId fn) {}
+
+// stub: T24 ports SpanParameterLint.cs:13 Analyze
+void lintSpanParameter(ref Ctx c, for FuncId fn) {}
+
+// stub: T24 ports PanicHandlerCheck.cs:13 Analyze
+void checkPanicHandler(ref Ctx c, for FuncId fn) {}

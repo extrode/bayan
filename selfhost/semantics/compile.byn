@@ -1,0 +1,43 @@
+// T11: Compilation.cs 1-~654 (load, imports, Declare order, DeclareFile, addType/addFunction, Work, sinks).
+
+import lexer
+import parser
+
+// stub: T11 ports Compilation.cs:184 Declare
+void declare(ref Ctx c) {}
+
+// stub: T11 ports Compilation.cs:374 DeclareFile
+void declareFile(ref Ctx c, for FileId file) {}
+
+// stub: T11 ports Compilation.cs:125 LoadModule
+ModId loadModule(ref Ctx c, for string name, at string dir, from move List<lexer.SourceText> sources, by ModId importer) => -1
+
+// stub: T11 ports Compilation.cs:146 ResolveImport
+void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {}
+
+// stub: T11 ports Compilation.cs:638 AddType
+bool addType(ref Ctx c, from FileId file, at TextSpan name, as Type type) => false
+
+// stub: T11 ports Compilation.cs:645 AddFunction
+void addFunction(ref Ctx c, from FileId file, at TextSpan name, for FuncId f) {}
+
+// stub: T11 ports Compilation.cs:570 DeclareTypeParameters
+Map<string, Type>? declareTypeParameters(ref Ctx c, from FileId file, for in List<TextSpan> names, to ref List<TypeParamId> into) => null
+
+// stub: T11 ports Compilation.cs:592 DeclareWhere
+void declareWhere(ref Ctx c, from FileId file, for in List<parser.WhereClause> clauses, to in List<TypeParamId> parameters, by in Map<string, Type>? typeMap, as string owner) {}
+
+// stub: T11 ports Compilation.cs:614 ResolveInterface
+InterfaceId resolveInterface(ref Ctx c, through in TypeResolver types, from FileId file, for in parser.NamedType syntax) => -1
+
+// stub: T11 ports Compilation.cs:562 AssociatedType
+TypeParamId associatedType(ref Ctx c, for TypeParamId owner, by string name) => -1
+
+// stub: T11 ports Compilation.cs:1549 AfterMembersDeclared
+void afterMembersDeclared(ref Ctx c, for in Work work) {}
+
+// stub: T11 ports Compilation.cs:1922 ReportInto
+void reportInto(ref Ctx c, to i64 bag) {}
+
+// stub: T11 ports Compilation.cs:184 Declare (its deferred-work dispatch)
+void runWork(ref Ctx c, for in Work work) {}
