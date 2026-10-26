@@ -17,7 +17,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T5 128-bit integer — files: `bigint.byn` (`Big`/`BigParse` operations over T1's declarations: parse/compare/add/sub/mul/div/rem/shifts/bit ops/wrap/saturate/`bigMin`/`bigMax`/text), `SelfhostSemanticsT5Tests.cs` — covers: R4 — after: T2; parallel with: none — done when:
   - seeded tests match a C# `Int128`/`BigInteger` oracle over every operation and every integer boundary; Q540–Q544 record the gap and any unexpressible case.
   - Size: about 500 lines.
-- [ ] T6 Conversions, type facts and folding — files: `conversions.byn` (`Conversions.cs`, `TypeFacts.cs`), `fold.byn` (`ConstantFolding.cs` over `Big`), `SelfhostSemanticsT6Tests.cs` — covers: R4 — after: T4; parallel with: T7–T27, T34–T39 — done when:
+- [x] T6 Conversions, type facts and folding — files: `conversions.byn` (`Conversions.cs`, `TypeFacts.cs`), `fold.byn` (`ConstantFolding.cs` over `Big`), `SelfhostSemanticsT6Tests.cs` — covers: R4 — after: T4; parallel with: T7–T27, T34–T39 — done when:
   - method-for-method port; seeded folding equals C#; Q545–Q549 as needed.
   - Size: about 520 lines.
 - [x] T7 Naming, lexicon and particles — files: `naming.byn` (`Naming.cs`, `Lexicon.cs`, `Particles.cs`; the static word sets become `lexiconVerbs`/`lexiconNouns`/`lexiconAdjectives` fields added to `Ctx` by T3, filled by `buildLexicon`; the manifest grammar is merged per lookup), `SelfhostSemanticsT7Tests.cs` — covers: R4 — after: T4; parallel with: T6, T8–T27, T34–T39 — done when:
