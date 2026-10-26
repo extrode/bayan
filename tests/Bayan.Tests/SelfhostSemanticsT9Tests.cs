@@ -1,0 +1,307 @@
+using System.Text;
+using Bayan.Semantics;
+using Bayan.Semantics.Symbols;
+using ArrayType = Bayan.Semantics.Symbols.ArrayType;
+
+namespace Bayan.Tests;
+
+/// <summary>
+/// T9: the builtin functions, types and member tables of <c>selfhost/semantics/builtins.byn</c> against
+/// the C# <c>Builtins</c> and <c>BuiltinMembers</c>. One generated <c>main.byn</c> prints labelled
+/// sections; each test builds the same lines from the C# oracle and compares one section.
+/// </summary>
+public sealed class SelfhostSemanticsT9Tests
+{
+    private static readonly Builtins B = new();
+
+    /// <summary>A lookup the generated main makes (a Bayan expression) and the C# symbol it must match.</summary>
+    private static readonly (string Label, string Bayan, FunctionSymbol? Oracle)[] Functions =
+    [
+        ("find print", "find(ref c, for: \"print\") ?? -1", B.Find("print")),
+        ("find log", "find(ref c, for: \"log\") ?? -1", B.Find("log")),
+        ("find panic", "find(ref c, for: \"panic\") ?? -1", B.Find("panic")),
+        ("find todo", "find(ref c, for: \"todo\") ?? -1", B.Find("todo")),
+        ("find Owned", "find(ref c, for: \"Owned\") ?? -1", B.Find("Owned")),
+        ("find Untrusted", "find(ref c, for: \"Untrusted\") ?? -1", B.Find("Untrusted")),
+        ("find trust", "find(ref c, for: \"trust\") ?? -1", B.Find("trust")),
+        ("find Arena", "find(ref c, for: \"Arena\") ?? -1", B.Find("Arena")),
+        ("find nope", "find(ref c, for: \"nope\") ?? -1", B.Find("nope")),
+        ("io readFile", "findIo(ref c, for: \"readFile\")", B.FindIo("readFile")),
+        ("io readText", "findIo(ref c, for: \"readText\")", B.FindIo("readText")),
+        ("io writeFile", "findIo(ref c, for: \"writeFile\")", B.FindIo("writeFile")),
+        ("io listDir", "findIo(ref c, for: \"listDir\")", B.FindIo("listDir")),
+        ("io run", "findIo(ref c, for: \"run\")", B.FindIo("run")),
+        ("io runBatch", "findIo(ref c, for: \"runBatch\")", B.FindIo("runBatch")),
+        ("io monotonicNanos", "findIo(ref c, for: \"monotonicNanos\")", B.FindIo("monotonicNanos")),
+        ("io stdout", "findIo(ref c, for: \"stdout\")", B.FindIo("stdout")),
+        ("io stderr", "findIo(ref c, for: \"stderr\")", B.FindIo("stderr")),
+        ("io stdin", "findIo(ref c, for: \"stdin\")", B.FindIo("stdin")),
+        ("io print", "findIo(ref c, for: \"print\")", B.FindIo("print")),
+        ("string invalidUtf8At", "findString(ref c, for: \"invalidUtf8At\")", B.FindString("invalidUtf8At")),
+        ("string decode", "findString(ref c, for: \"decode\")", B.FindString("decode")),
+        ("utf8 decode", "findUtf8(ref c, for: \"decode\")", B.FindUtf8("decode")),
+        ("utf8 tryDecode", "findUtf8(ref c, for: \"tryDecode\")", B.FindUtf8("tryDecode")),
+        ("utf8 encode", "findUtf8(ref c, for: \"encode\")", B.FindUtf8("encode")),
+        ("parse i32", "intParse(ref c, for: .i32)", B.IntParse(PrimitiveType.I32)),
+        ("parse u8", "intParse(ref c, for: .u8)", B.IntParse(PrimitiveType.U8)),
+        ("Arena", "t9Function(ref c, for: \"Arena\")", B.ArenaNew),
+        ("StrBuf(buffer)", "t9Function(ref c, for: \"StrBuf(buffer)\")", B.StrBufNew),
+        ("StrBuf", "t9Function(ref c, for: \"StrBuf\")", B.StrBufGrow),
+        ("StrBuf.over", "t9Function(ref c, for: \"StrBuf.over\")", B.StrBufOver),
+        ("Utf8.decode(invalid)", "t9Function(ref c, for: \"Utf8.decode(invalid)\")", B.Utf8DecodeReplace),
+        ("Hex.encode", "t9Function(ref c, for: \"Hex.encode\")", B.HexEncode),
+        ("Hex.decode", "t9Function(ref c, for: \"Hex.decode\")", B.HexDecode),
+        ("Symbol.intern", "t9Function(ref c, for: \"Symbol.intern\")", B.SymbolIntern),
+    ];
+
+    /// <summary>The types the member tables are asked about: label, Bayan expression, C# type.</summary>
+    private static readonly (string Label, string Bayan, TypeSymbol Oracle)[] Types =
+    [
+        ("string", "prim(.string)", PrimitiveType.String),
+        ("i64", "prim(.i64)", PrimitiveType.I64),
+        ("rune", "prim(.char)", PrimitiveType.Char),
+        ("roBytes", "internSpan(ref c, by: prim(.u8), readOnly: true)", new SpanType(PrimitiveType.U8, readOnly: true)),
+        ("spanStr", "internSpan(ref c, by: prim(.string), readOnly: false)", new SpanType(PrimitiveType.String)),
+        ("listI64", "internList(ref c, by: prim(.i64))", new ListType(PrimitiveType.I64)),
+        ("listStr", "internList(ref c, by: prim(.string))", new ListType(PrimitiveType.String)),
+        ("listBool", "internList(ref c, by: prim(.bool))", new ListType(PrimitiveType.Bool)),
+        ("listRune", "internList(ref c, by: prim(.char))", new ListType(PrimitiveType.Char)),
+        ("map", "internMap(ref c, by: prim(.string), to: prim(.i64))", new MapType(PrimitiveType.String, PrimitiveType.I64)),
+        ("array", "internArray(ref c, by: prim(.i32), at: 3)", new ArrayType(PrimitiveType.I32, 3)),
+        ("arena", "builtinType(.arena)", BuiltinType.Arena),
+        ("strBuf", "builtinType(.strBuf)", BuiltinType.StrBuf),
+        ("symbol", "builtinType(.symbol)", BuiltinType.Symbol),
+        ("processResult", "builtinType(.processResult)", BuiltinType.ProcessResult),
+        ("panic", "builtinType(.panic)", BuiltinType.Panic),
+        ("formatSpec", "builtinType(.formatSpec)", BuiltinType.FormatSpec),
+        ("ioStream", "builtinType(.ioStream)", BuiltinType.IoStream),
+        ("ioInput", "builtinType(.ioInput)", BuiltinType.IoInput),
+        ("io", "builtinType(.io)", BuiltinType.Io),
+        ("result", "internResult(ref c, by: prim(.i64), to: t9Type(ref c, for: \"IoError\"))", new ResultType(PrimitiveType.I64, B.IoError)),
+        ("owned", "internOwned(ref c, by: prim(.i64))", new OwnedType(PrimitiveType.I64)),
+        ("optional", "internOptional(ref c, by: prim(.i64))", new OptionalType(PrimitiveType.I64)),
+        ("enum", "t9Type(ref c, for: \"Stream\")", B.Stream),
+        ("runes", "textViewType(.runes)", TextViewType.Runes),
+        ("utf16", "textViewType(.utf16)", TextViewType.Utf16),
+        ("lines", "textViewType(.lines)", TextViewType.Lines),
+        ("parts", "textViewType(.parts)", TextViewType.Parts),
+    ];
+
+    /// <summary>The C# <c>Candidates</c> plus names no table has.</summary>
+    private static readonly string[] MemberNames =
+        ["length", "bytes", "isEmpty", "runeCount", "isAscii", "runes", "utf16", "lines", "value", "copy", "startsWith", "endsWith", "contains",
+         "position", "lastPosition", "count", "trimmed", "equals", "lowercased", "uppercased", "replaced", "repeated", "padded", "parts", "skip", "takeLast", "joined", "span", "mutableSpan", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append", "appendRepeated", "insert", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message", "radix", "debug", "width", "fill", "align", "digits",
+         "isOk", "err", "nope"];
+
+    /// <summary>The types whose <c>names</c> match the C# (see Q561 for the element-dependent members).</summary>
+    private static readonly string[] NameTypes =
+        ["string", "i64", "rune", "spanStr", "listStr", "map", "array", "strBuf", "symbol", "processResult", "formatSpec", "result", "owned", "enum", "runes", "utf16", "ioInput"];
+
+    private static readonly string[] Enums = ["Stream", "Radix", "Edge", "Align", "Comparison", "LogLevel", "Utf8Invalid"];
+
+    private static readonly string[] ErrorSets = ["IoError", "Utf8Error", "ValidationError", "ParseError"];
+
+    private static readonly Lazy<Dictionary<string, List<string>>> Output = new(() => SelfhostSemanticsHarness.RunSections(MainSource()));
+
+    /// <summary>The internal <c>BuiltinMembers</c>, reached by reflection.</summary>
+    private static readonly System.Type Members = typeof(Builtins).Assembly.GetType("Bayan.Semantics.Binding.BuiltinMembers")!;
+
+    private static object? Call(string method, TypeSymbol type, string name) => Members.GetMethod(method)!.Invoke(null, [type, name]);
+
+    private static object Field(object o, string name) =>
+        o.GetType().GetField(name) is { } f ? f.GetValue(o)! : o.GetType().GetProperty(name)!.GetValue(o)!;
+
+    private static string Bool(bool b) => b ? "true" : "false";
+
+    private static string Span(Location? l) => l is { } x ? $"{x.Span.Start}:{x.Span.Length}" : "-";
+
+    private static string MainSource()
+    {
+        var s = new StringBuilder();
+        s.AppendLine("""
+            import lexer
+            import parser
+
+            string b(bool v) => v ? "true" : "false"
+
+            string sp(TextSpan s) => $"{s.start}:{s.length}"
+
+            string fnLine(ref Ctx c, for string label, at FuncId f) {
+                if f < 0 { return $"{label} null" }
+                var sb = StrBuf()
+                let ret = typeDisplay(ref c, by: c.functions[f].returnType)
+                sb.append($"{label} {c.functions[f].name} {c.functions[f].builtin.ordinal} {ret} (")
+                for i in 0..c.functions[f].parameters.length {
+                    let l = c.functions[f].parameters[i]
+                    let t = typeDisplay(ref c, by: c.locals[l].type)
+                    if i > 0 { sb.append(", ") }
+                    sb.append($"{c.locals[l].name}: {t}")
+                }
+                sb.append($") fails={b(v: c.functions[f].hasFails)} sets=")
+                for i in 0..c.functions[f].errorSets.length {
+                    if i > 0 { sb.append(",") }
+                    sb.append(c.errorSets[c.functions[f].errorSets[i]].name)
+                }
+                return $"{sb.finish()}"
+            }
+
+            void members(ref Ctx c, for string label, at Type t, by in List<string> all) {
+                for n in all {
+                    if (builtinProperty(ref c, for: t, by: n) is { } p) {
+                        let d = typeDisplay(ref c, by: p.type)
+                        print($"{label}.{n} property {p.member.ordinal} {d}")
+                    }
+                    let found = method(ref c, for: t, by: n)
+                    if (found is { } m) {
+                        var sb = StrBuf()
+                        sb.append($"{label}.{n} method {m.member.ordinal} (")
+                        for i in 0..m.parameters.length {
+                            let d = typeDisplay(ref c, by: m.parameters[i].type)
+                            if i > 0 { sb.append(", ") }
+                            sb.append($"{m.parameters[i].name}: {d}")
+                        }
+                        let r = typeDisplay(ref c, by: m.returns)
+                        sb.append($") {r} mutating={b(v: m.mutating)} optional={m.optional}")
+                        print(sb.finish())
+                    }
+                    if hasMethod(ref c, for: t, by: n) { print($"{label}.{n} has") }
+                }
+            }
+
+            void namesLine(string label, at Type t) {
+                var sb = StrBuf()
+                sb.append($"{label}:")
+                for n in names(t) { sb.append($" {n}") }
+                print(sb.finish())
+            }
+
+            void enumLine(ref Ctx c, for string name) {
+                let e = typeIndex(t9Type(ref c, for: name))
+                var sb = StrBuf()
+                sb.append($"{c.enums[e].name} {sp(c.enums[e].span)} decl={c.enums[e].declIndex}")
+                for m in c.enums[e].members {
+                    sb.append($" {c.enumMembers[m].name}@{sp(c.enumMembers[m].span)}#{c.enumMembers[m].ordinal}")
+                }
+                print(sb.finish())
+            }
+
+            void errorSetLine(ref Ctx c, for string name) {
+                let e = typeIndex(t9Type(ref c, for: name))
+                let decl = t9Text(ref c, for: c.errorSets[e].file, at: t9DeclName(ref c, for: c.errorSets[e].file, at: 0))
+                print($"{c.errorSets[e].name} {sp(c.errorSets[e].span)} decl={decl}")
+            }
+
+            i32 main() {
+                var c = Ctx { files: List<SourceFile>(), modules: List<Mod>(), diagnostics: List<Diag>(), bags: List<DiagBag>() }
+                print("== functions")
+            """);
+        for (var i = 0; i < Functions.Length; i++)
+        {
+            s.AppendLine($"    let f{i} = {Functions[i].Bayan}");
+            s.AppendLine($"    print(fnLine(ref c, for: \"{Functions[i].Label}\", at: f{i}))");
+        }
+        s.AppendLine("    let again = intParse(ref c, for: .i32)");
+        s.AppendLine($"    print($\"parse i32 again {{b(v: again == f{Array.FindIndex(Functions, f => f.Label == "parse i32")})}}\")");
+        s.AppendLine("    print(\"== types\")");
+        foreach (var e in Enums) s.AppendLine($"    enumLine(ref c, for: \"{e}\")");
+        foreach (var e in ErrorSets) s.AppendLine($"    errorSetLine(ref c, for: \"{e}\")");
+        s.AppendLine("""
+                let rule = typeIndex(t9Type(ref c, for: "Rule"))
+                let ruleFile = c.unions[rule].file
+                let violation = t9DeclName(ref c, for: ruleFile, at: 1)
+                print($"{c.unions[rule].name} {sp(c.unions[rule].span)} violation={t9Text(ref c, for: ruleFile, at: violation)}@{sp(violation)}")
+                var variants = List<TextSpan>()
+                switch c.files[ruleFile].unit.members[0] {
+                    case .unionDecl(let d):
+                        for v in d.value.variants { variants.append(v.name) }
+                    default: print("no union")
+                }
+                for v in variants { print($"Rule.{t9Text(ref c, for: ruleFile, at: v)} {sp(v)}") }
+                let ifaces: List<string> = ["IEnumerator", "IIndexable", "nope"]
+                for name in ifaces {
+                    let i = findInterface(ref c, for: name)
+                    if i < 0 { print($"{name} null") } else { print($"{c.interfaces[i].name} {sp(c.interfaces[i].span)} decl={c.interfaces[i].declIndex}") }
+                }
+                print($"modules {c.modules.length}")
+                let all: List<string> = [
+            """);
+        s.AppendLine(string.Join(",\n", MemberNames.Select(n => $"        \"{n}\"")));
+        s.AppendLine("    ]");
+        for (var i = 0; i < Types.Length; i++) s.AppendLine($"    let t{i} = {Types[i].Bayan}");
+        s.AppendLine("    print(\"== members\")");
+        for (var i = 0; i < Types.Length; i++) s.AppendLine($"    members(ref c, for: \"{Types[i].Label}\", at: t{i}, by: all)");
+        s.AppendLine("    print(\"== names\")");
+        foreach (var n in NameTypes)
+            s.AppendLine($"    namesLine(\"{n}\", at: t{Array.FindIndex(Types, t => t.Label == n)})");
+        s.AppendLine("    return 0\n}");
+        return s.ToString();
+    }
+
+    private static string FnLine(string label, FunctionSymbol? f)
+    {
+        if (f is null) return $"{label} null";
+        var ps = string.Join(", ", f.Parameters.Select(p => $"{p.Name}: {p.Type.DisplayName}"));
+        return $"{label} {f.Name} {(int)f.Builtin} {f.ReturnType.DisplayName} ({ps}) fails={Bool(f.Fails)} sets={string.Join(",", f.ErrorSets.Select(e => e.Name))}";
+    }
+
+    [Fact]
+    public void FunctionsMatchTheCSharpBuiltins()
+    {
+        var expected = Functions.Select(f => FnLine(f.Label, f.Oracle)).ToList();
+        expected.Add($"parse i32 again {Bool(ReferenceEquals(B.IntParse(PrimitiveType.I32), B.IntParse(PrimitiveType.I32)))}");
+        SelfhostSemanticsHarness.AssertSection(Output.Value, "functions", expected);
+    }
+
+    [Fact]
+    public void TypesAreParsedFromTheBuiltinSources()
+    {
+        var expected = new List<string>();
+        foreach (var name in Enums)
+        {
+            var e = (EnumSymbol)typeof(Builtins).GetProperty(name)!.GetValue(B)!;
+            expected.Add($"{e.Name} {Span(e.Location)} decl=0" + string.Concat(e.Members.Select(m => $" {m.Name}@{Span(m.Location)}#{m.Ordinal}")));
+        }
+        foreach (var name in ErrorSets)
+        {
+            var e = (ErrorSetSymbol)typeof(Builtins).GetProperty(name)!.GetValue(B)!;
+            expected.Add($"{e.Name} {Span(e.Location)} decl={e.Decl.Name.Text}");
+        }
+        expected.Add($"{B.Rule.Name} {Span(B.Rule.Location)} violation={B.ViolationDecl.Name.Text}@{B.ViolationDecl.Name.Span.Start}:{B.ViolationDecl.Name.Span.Length}");
+        foreach (var v in B.Rule.Decl.Variants) expected.Add($"Rule.{v.Name.Text} {v.Name.Span.Start}:{v.Name.Span.Length}");
+        string[] ifaces = ["IEnumerator", "IIndexable", "nope"];
+        for (var k = 0; k < ifaces.Length; k++)
+            expected.Add(B.FindInterface(ifaces[k]) is { } i ? $"{i.Name} {Span(i.Location)} decl={k}" : $"{ifaces[k]} null");
+        expected.Add("modules 1");
+        SelfhostSemanticsHarness.AssertSection(Output.Value, "types", expected);
+    }
+
+    [Fact]
+    public void MemberTablesMatchTheCSharp()
+    {
+        var expected = new List<string>();
+        foreach (var (label, _, type) in Types)
+        foreach (var n in MemberNames)
+        {
+            if (Call("Property", type, n) is { } p)
+                expected.Add($"{label}.{n} property {Convert.ToInt32(Field(p, "Item1"))} {((TypeSymbol)Field(p, "Item2")).DisplayName}");
+            if (Call("Method", type, n) is { } m)
+            {
+                var ps = string.Join(", ", ((System.Collections.IEnumerable)Field(m, "Parameters")).Cast<object>()
+                    .Select(x => $"{Field(x, "Item1")}: {((TypeSymbol)Field(x, "Item2")).DisplayName}"));
+                expected.Add($"{label}.{n} method {Convert.ToInt32(Field(m, "Member"))} ({ps}) {((TypeSymbol)Field(m, "Returns")).DisplayName} " +
+                    $"mutating={Bool((bool)Field(m, "Mutating"))} optional={Field(m, "Optional")}");
+            }
+            if ((bool)Call("HasMethod", type, n)!) expected.Add($"{label}.{n} has");
+        }
+        SelfhostSemanticsHarness.AssertSection(Output.Value, "members", expected);
+    }
+
+    [Fact]
+    public void NamesMatchTheCSharp()
+    {
+        var expected = NameTypes
+            .Select(n => $"{n}:" + string.Concat(((IEnumerable<string>)Members.GetMethod("Names")!.Invoke(null, [Types.First(t => t.Label == n).Oracle])!).Select(x => $" {x}")))
+            .ToList();
+        SelfhostSemanticsHarness.AssertSection(Output.Value, "names", expected);
+    }
+}
