@@ -41,7 +41,7 @@ type BPattern = i64
 // ── Files and modules ───────────────────────────────────────────────────────────
 
 /// One source the checker reads: a `.byn` file, a parsed `"<builtin>"` source, or `"package.byn"`.
-/// The C# `FileContext` keeps the imports per file; here they live on the `Mod` (Q521).
+/// The C# `FileContext`: one file's tree and the imports visible in it (Q521).
 struct SourceFile {
     /// The path the loader opened.
     string path
@@ -56,14 +56,14 @@ struct SourceFile {
     bool isEntry = false
     /// A `tests/*.test.byn` file; the C# `FileContext.IsTestFile`.
     bool isTestFile = false
+    /// The modules this file imports, by the name it uses (the C# `FileContext.Imports`).
+    Map<string, ModId> imports
 }
 
 /// A directory of files that one `import` names.
 struct Mod {
     string name
     List<FileId> files
-    /// The modules this one imports, by the name its files use.
-    Map<string, ModId> imports
 }
 
 // ── Diagnostics ─────────────────────────────────────────────────────────────────
