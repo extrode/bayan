@@ -1,1 +1,401 @@
 // T5: the Big and BigParse operations declared in ctx.byn.
+
+// ── Construction, parsing and text ──────────────────────────────────────────
+
+/// The two's-complement bits of `v`.
+u64 bigBitsOfI64(i64 v) => v >= 0 ? u64(v) : ~u64(-(v + 1))
+
+/// `v` read as a two's-complement i64.
+i64 bigI64OfBits(u64 v) => v < 0x8000000000000000 ? i64(v) : -i64(~v) - 1
+
+/// Whether `a` is negative (its top bit is set).
+bool bigIsNeg(Big a) => (a.hi & 0x8000000000000000) != 0
+
+/// The zero `Big`.
+Big bigZero() => Big { lo: 0, hi: 0 }
+
+Big bigFromI64(i64 v) {
+    let hi: u64 = v >= 0 ? 0 : 0xFFFFFFFFFFFFFFFF
+    return Big { lo: bigBitsOfI64(v), hi: hi }
+}
+
+Big bigFromU64(u64 v) => Big { lo: v, hi: 0 }
+
+/// A literal's value: digits, `_` separators, and an `0x`/`0X` or `0b`/`0B` prefix. `ok` is false on an
+/// empty or bad digit; `overflow` is true above 2^127-1, where `value` is unspecified.
+BigParse bigParse(string text) {
+    let max = Big { lo: 0xFFFFFFFFFFFFFFFF, hi: 0x7FFFFFFFFFFFFFFF }
+    let b = text.bytes
+    var base: u64 = 10
+    var i: i64 = 0
+    if b.length >= 2 && b[0] == 48 {
+        if b[1] == 120 || b[1] == 88 {
+            base = 16
+            i = 2
+        } else if b[1] == 98 || b[1] == 66 {
+            base = 2
+            i = 2
+        }
+    }
+    var acc = bigZero()
+    var any = false
+    var bad = false
+    var overflow = false
+    while i < b.length {
+        let ch = b[i]
+        i += 1
+        if ch == 95 { continue }
+        var dv: u64 = 0
+        if ch >= 48 && ch <= 57 {
+            dv = u64(ch - 48)
+        } else if ch >= 97 && ch <= 102 {
+            dv = u64(ch - 87)
+        } else if ch >= 65 && ch <= 70 {
+            dv = u64(ch - 55)
+        } else {
+            bad = true
+            break
+        }
+        if dv >= base {
+            bad = true
+            break
+        }
+        any = true
+        if !overflow {
+            let digitBig = Big { lo: dv, hi: 0 }
+            let limit = bigUDivSmall(bigSub(max, by: digitBig), by: base).q
+            if bigCmp(acc, as: limit) > 0 {
+                overflow = true
+            } else {
+                acc = bigAdd(bigMul(acc, by: Big { lo: base, hi: 0 }), by: digitBig)
+            }
+        }
+    }
+    if bad || !any { return BigParse { value: bigZero(), ok: false, overflow: false } }
+    return BigParse { value: acc, ok: true, overflow: overflow }
+}
+
+/// The literal's value in decimal, of any size (C#'s `BigInteger.ToString`), for the out-of-range message.
+string literalDecimalText(string text) {
+    let b = text.bytes
+    var base: u64 = 10
+    var i: i64 = 0
+    if b.length >= 2 && b[0] == 48 {
+        if b[1] == 120 || b[1] == 88 {
+            base = 16
+            i = 2
+        } else if b[1] == 98 || b[1] == 66 {
+            base = 2
+            i = 2
+        }
+    }
+    var digits = List<i64>()
+    while i < b.length {
+        let ch = b[i]
+        i += 1
+        if ch == 95 { continue }
+        var dv: u64 = 0
+        if ch >= 48 && ch <= 57 {
+            dv = u64(ch - 48)
+        } else if ch >= 97 && ch <= 102 {
+            dv = u64(ch - 87)
+        } else if ch >= 65 && ch <= 70 {
+            dv = u64(ch - 55)
+        }
+        var carry: u64 = dv
+        for j in 0..digits.length {
+            let v = u64(digits[j]) * base + carry
+            digits[j] = i64(v % 10)
+            carry = v / 10
+        }
+        while carry > 0 {
+            digits.append(i64(carry % 10))
+            carry = carry / 10
+        }
+    }
+    if digits.length == 0 { return "0" }
+    var sb = StrBuf()
+    for k in 0..digits.length {
+        sb.append(string(digits[digits.length - 1 - k]))
+    }
+    return $"{sb.finish()}"
+}
+
+/// Signed decimal text, like `Int128.ToString()`.
+string bigText(Big n) {
+    if n.lo == 0 && n.hi == 0 { return "0" }
+    let neg = bigIsNeg(n)
+    var m = neg ? bigNeg(n) : n
+    var digits = List<i64>()
+    while m.lo != 0 || m.hi != 0 {
+        let t = bigUDivSmall(m, by: 10)
+        m = t.q
+        digits.append(i64(t.r))
+    }
+    var sb = StrBuf()
+    if neg { sb.append("-") }
+    for i in 0..digits.length {
+        sb.append(string(digits[digits.length - 1 - i]))
+    }
+    return $"{sb.finish()}"
+}
+
+// ── Comparison ──────────────────────────────────────────────────────────────
+
+/// Signed comparison: -1, 0 or 1.
+i32 bigCmp(Big a, as Big b) {
+    let ah = bigI64OfBits(a.hi)
+    let bh = bigI64OfBits(b.hi)
+    if ah < bh { return -1 }
+    if ah > bh { return 1 }
+    if a.lo < b.lo { return -1 }
+    if a.lo > b.lo { return 1 }
+    return 0
+}
+
+bool bigEq(Big a, as Big b) => a.lo == b.lo && a.hi == b.hi
+
+// ── Arithmetic ──────────────────────────────────────────────────────────────
+
+/// Two's-complement negation, so `-MIN == MIN`.
+Big bigNeg(Big a) {
+    let lo = ~a.lo +% 1
+    let hi = lo == 0 ? ~a.hi +% 1 : ~a.hi
+    return Big { lo: lo, hi: hi }
+}
+
+/// Wrapping addition, modulo 2^128.
+Big bigAdd(Big a, by Big b) {
+    let lo = a.lo +% b.lo
+    let carry: u64 = lo < a.lo ? 1 : 0
+    let hi = a.hi +% b.hi
+    return Big { lo: lo, hi: hi +% carry }
+}
+
+/// Wrapping subtraction, modulo 2^128.
+Big bigSub(Big a, by Big b) {
+    let lo = a.lo -% b.lo
+    let borrow: u64 = a.lo < b.lo ? 1 : 0
+    let hi = a.hi -% b.hi
+    return Big { lo: lo, hi: hi -% borrow }
+}
+
+/// The low 128 bits of the product.
+Big bigMul(Big a, by Big b) {
+    let al = a.lo & 0xFFFFFFFF
+    let ah = a.lo >> 32
+    let bl = b.lo & 0xFFFFFFFF
+    let bh = b.lo >> 32
+    let ll = al * bl
+    let lh = al * bh
+    let hl = ah * bl
+    let hh = ah * bh
+    let mid = (ll >> 32) + (lh & 0xFFFFFFFF) + (hl & 0xFFFFFFFF)
+    let lo = (mid << 32) | (ll & 0xFFFFFFFF)
+    let hi = hh +% (lh >> 32) +% (hl >> 32) +% (mid >> 32) +% (a.lo *% b.hi) +% (a.hi *% b.lo)
+    return Big { lo: lo, hi: hi }
+}
+
+/// Signed division, truncating toward zero; `b` is nonzero. `MIN / -1` wraps to `MIN`.
+Big bigDiv(Big a, by Big b) {
+    let negA = bigIsNeg(a)
+    let negB = bigIsNeg(b)
+    let ma = negA ? bigNeg(a) : a
+    let mb = negB ? bigNeg(b) : b
+    let q = bigUDiv(ma, by: mb)
+    return negA == negB ? q : bigNeg(q)
+}
+
+/// Signed remainder, taking the sign of `a` like C#'s `%`; `b` is nonzero.
+Big bigRem(Big a, by Big b) {
+    let ma = bigIsNeg(a) ? bigNeg(a) : a
+    let mb = bigIsNeg(b) ? bigNeg(b) : b
+    let r = bigURem(ma, by: mb)
+    return bigIsNeg(a) ? bigNeg(r) : r
+}
+
+// ── Unsigned helpers (the division below works on magnitudes) ───────────────
+
+/// Unsigned comparison: -1, 0 or 1.
+i32 bigUCmp(Big a, as Big b) {
+    if a.hi < b.hi { return -1 }
+    if a.hi > b.hi { return 1 }
+    if a.lo < b.lo { return -1 }
+    if a.lo > b.lo { return 1 }
+    return 0
+}
+
+/// Logical (zero-filling) right shift by `n` in 0..127.
+Big bigUShr(Big a, by i64 n) {
+    if n == 0 { return a }
+    if n >= 64 { return Big { lo: a.hi >> (n - 64), hi: 0 } }
+    return Big { lo: (a.lo >> n) | (a.hi << (64 - n)), hi: a.hi >> n }
+}
+
+/// The number of significant bits in `v`; 0 for zero.
+i64 bigU64BitLength(u64 v) {
+    var n: i64 = 0
+    var x = v
+    while x != 0 {
+        n += 1
+        x = x >> 1
+    }
+    return n
+}
+
+/// The number of significant bits in an unsigned `Big`; 0 for zero.
+i64 bigUBitLength(Big a) => a.hi != 0 ? 64 + bigU64BitLength(a.hi) : bigU64BitLength(a.lo)
+
+/// Unsigned 128-bit division by a nonzero `b`, by long division from bit 127 down.
+Big bigUDiv(Big a, by Big b) {
+    var q = bigZero()
+    var r = bigZero()
+    var x = a
+    for i in 0..128 {
+        let bit = x.hi >> 63
+        x = Big { lo: x.lo << 1, hi: (x.hi << 1) | (x.lo >> 63) }
+        r = Big { lo: (r.lo << 1) | bit, hi: (r.hi << 1) | (r.lo >> 63) }
+        if bigUCmp(r, as: b) >= 0 {
+            r = bigSub(r, by: b)
+            q = bigOr(q, by: bigShl(Big { lo: 1, hi: 0 }, by: 127 - i))
+        }
+    }
+    return q
+}
+
+/// Unsigned remainder by a nonzero `b`.
+Big bigURem(Big a, by Big b) => bigSub(a, by: bigMul(bigUDiv(a, by: b), by: b))
+
+/// Unsigned division by a small `d` (< 2^32), 32 bits of quotient per step.
+(Big q, u64 r) bigUDivSmall(Big a, by u64 d) {
+    var r: u64 = 0
+    let x3 = r * 4294967296 + (a.hi >> 32)
+    let q3 = x3 / d
+    r = x3 % d
+    let x2 = r * 4294967296 + (a.hi & 0xFFFFFFFF)
+    let q2 = x2 / d
+    r = x2 % d
+    let x1 = r * 4294967296 + (a.lo >> 32)
+    let q1 = x1 / d
+    r = x1 % d
+    let x0 = r * 4294967296 + (a.lo & 0xFFFFFFFF)
+    let q0 = x0 / d
+    r = x0 % d
+    return (q: Big { lo: (q1 << 32) | q0, hi: (q3 << 32) | q2 }, r: r)
+}
+
+// ── Shifts and bit operations ───────────────────────────────────────────────
+
+/// Logical left shift by `n` in 0..127; bits shifted out are lost.
+Big bigShl(Big a, by i64 n) {
+    if n == 0 { return a }
+    if n >= 64 {
+        return Big { lo: 0, hi: a.lo << (n - 64) }
+    }
+    return Big { lo: a.lo << n, hi: (a.hi << n) | (a.lo >> (64 - n)) }
+}
+
+/// Arithmetic right shift by `n` in 0..127: the sign bit fills from the left.
+Big bigShr(Big a, by i64 n) {
+    if n == 0 { return a }
+    let fill: u64 = bigIsNeg(a) ? 0xFFFFFFFFFFFFFFFF : 0
+    if n >= 64 {
+        let k = n - 64
+        let lo = k == 0 ? a.hi : (a.hi >> k) | (fill << (64 - k))
+        return Big { lo: lo, hi: fill }
+    }
+    return Big { lo: (a.lo >> n) | (a.hi << (64 - n)), hi: (a.hi >> n) | (fill << (64 - n)) }
+}
+
+Big bigAnd(Big a, by Big b) => Big { lo: a.lo & b.lo, hi: a.hi & b.hi }
+
+Big bigOr(Big a, by Big b) => Big { lo: a.lo | b.lo, hi: a.hi | b.hi }
+
+Big bigXor(Big a, by Big b) => Big { lo: a.lo ^ b.lo, hi: a.hi ^ b.hi }
+
+Big bigNot(Big a) => Big { lo: ~a.lo, hi: ~a.hi }
+
+// ── Widths: range, fitting, wrap and saturation ─────────────────────────────
+
+/// `PrimitiveType.Range.Min` for a width of 8, 16, 32 or 64.
+Big bigMin(i64 bits, bool signed) {
+    if !signed { return bigZero() }
+    return bigNeg(bigShl(Big { lo: 1, hi: 0 }, by: bits - 1))
+}
+
+/// `PrimitiveType.Range.Max` for a width of 8, 16, 32 or 64.
+Big bigMax(i64 bits, bool signed) {
+    let one = Big { lo: 1, hi: 0 }
+    if !signed { return bigSub(bigShl(one, by: bits), by: one) }
+    return bigSub(bigShl(one, by: bits - 1), by: one)
+}
+
+/// Whether `n` is within the signed or unsigned range of `bits`.
+bool bigFits(Big n, to i64 bits, bool signed) =>
+    bigCmp(n, as: bigMin(bits, signed: signed)) >= 0 && bigCmp(n, as: bigMax(bits, signed: signed)) <= 0
+
+/// `ConstantFolding.Wrap`: two's-complement truncation to `bits`.
+Big bigWrap(Big n, to i64 bits, bool signed) {
+    let one = Big { lo: 1, hi: 0 }
+    let mask = bigSub(bigShl(one, by: bits), by: one)
+    let m = bigAnd(n, by: mask)
+    if signed && bigCmp(m, as: bigMax(bits, signed: true)) > 0 {
+        return bigSub(m, by: bigShl(one, by: bits))
+    }
+    return m
+}
+
+/// `ConstantFolding.Saturate`: clamp to the width's minimum and maximum.
+Big bigSaturate(Big n, to i64 bits, bool signed) {
+    let mn = bigMin(bits, signed: signed)
+    let mx = bigMax(bits, signed: signed)
+    if bigCmp(n, as: mn) < 0 { return mn }
+    if bigCmp(n, as: mx) > 0 { return mx }
+    return n
+}
+
+// ── Conversions ─────────────────────────────────────────────────────────────
+
+/// The value as an i64; the caller has checked `bigFits(n, to: 64, signed: true)`.
+i64 bigToI64(Big n) => n.hi == 0 ? i64(n.lo) : bigI64OfBits(n.lo)
+
+/// `(double)Int128`: the nearest double, ties to even.
+f64 bigToF64(Big n) {
+    let neg = bigIsNeg(n)
+    let m = neg ? bigNeg(n) : n
+    let k = bigUBitLength(m)
+    if k <= 53 { return neg ? -f64(m.lo) : f64(m.lo) }
+    let sh = k - 53
+    let q = bigUShr(m, by: sh)
+    let rem = bigSub(m, by: bigShl(q, by: sh))
+    let half = bigShl(Big { lo: 1, hi: 0 }, by: sh - 1)
+    let c = bigUCmp(rem, as: half)
+    var qq = q
+    if c > 0 || (c == 0 && (q.lo & 1) == 1) {
+        qq = bigAdd(q, by: Big { lo: 1, hi: 0 })
+    }
+    var scale: f64 = 1.0
+    for i in 0..sh { scale = scale * 2.0 }
+    let d = f64(qq.lo) * scale
+    return neg ? -d : d
+}
+
+/// The integer part of `d`, truncated toward zero; the caller has clamped `d` to a 128-bit range.
+Big bigFromF64(f64 d) {
+    if d != d { return bigZero() }
+    let neg = d < 0.0
+    let a = neg ? -d : d
+    if a < 1.0 { return bigZero() }
+    let hiPart = bigTruncToU64(a / 18446744073709551616.0)
+    let loPart = bigTruncToU64(a - f64(hiPart) * 18446744073709551616.0)
+    let m = Big { lo: loPart, hi: hiPart }
+    return neg ? bigNeg(m) : m
+}
+
+/// The integer part of `x` as a u64, for `0 <= x < 2^64`.
+u64 bigTruncToU64(f64 x) {
+    if x < 4294967296.0 { return u64(i64(x)) }
+    let top = u64(i64(x / 4294967296.0))
+    let bot = u64(i64(x - f64(top) * 4294967296.0))
+    return (top << 32) | bot
+}
