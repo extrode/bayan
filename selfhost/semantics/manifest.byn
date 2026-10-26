@@ -1,1 +1,56 @@
 // T10: Bayan.Syntax/Packages/Manifest.cs.
+
+import lexer
+
+enum PackageKind {
+    app
+    lib
+}
+
+enum BooleanStyle {
+    symbols
+    words
+}
+
+enum PrimitiveStyle {
+    sized
+    csharp
+}
+
+// The C# `Grammar`: the package's extra lexicon words and irregular forms.
+struct Grammar {
+    List<string> verbs = []
+    List<string> nouns = []
+    List<string> adjectives = []
+    Map<string, string> forms = []
+}
+
+// The C# `Manifest`; `capabilities` is null when the package lists none.
+struct Manifest {
+    string name = ""
+    string version = ""
+    i64 edition = 2027
+    PackageKind kind = .app
+    List<string>? capabilities = null
+    List<string> distTargets = []
+    string distMode = "safe"
+    BooleanStyle booleans = .symbols
+    PrimitiveStyle primitives = .sized
+    Grammar grammar = Grammar {}
+    List<Diag> diagnostics = []
+}
+
+// stub: T10 ports Manifest.cs:75 Read
+Manifest manifestRead(string path) => Manifest {}
+
+// stub: T10 ports Manifest.cs:77 Parse
+Manifest manifestParse(move lexer.SourceText source) => Manifest {}
+
+// stub: T10 ports Manifest.cs:73 HasErrors
+i64 manifestErrorCount(in Manifest m) => 0
+
+// stub: T10 ports Manifest.cs:262 CamelOf
+string camelOf(string kebab) => ""
+
+// stub: T10 ports Manifest.cs:250 KebabOf
+string kebabOf(string camel) => ""

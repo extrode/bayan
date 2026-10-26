@@ -1,1 +1,60 @@
 // T22: BinderStates.cs.
+
+import parser
+
+// The C# `(LocalSymbol Key, TypeSymbol Type)` tuple `Subject` returns.
+struct SubjectResult {
+    LocalId key
+    Type type
+}
+
+// stub: T22 ports BinderStates.cs:12 BindBecome
+BStmt bindBecome(ref Binder b, through ref Ctx c, for in parser.BecomeStmt s) => -1
+
+// stub: T22 ports BinderStates.cs:133 BindPayloadField
+BExpr bindPayloadField(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr target, from UnionId states, by TextSpan member) => -1
+
+// stub: T22 ports BinderStates.cs:54 CheckBecomesCall
+void checkBecomesCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from FuncId caller, by FuncId fn, to TextSpan state) {}
+
+// stub: T22 ports BinderStates.cs:160 CheckStatesExhaustive
+bool checkStatesExhaustive(ref Binder b, through ref Ctx c, at TextSpan span, as Type type, from UnionId states, by in List<(BPattern, BExpr)> arms) => true
+
+// stub: T22 ports BinderStates.cs:230 ForgetChangingStates
+void forgetChangingStates(ref Binder b, through ref Ctx c) {}
+
+// stub: T22 ports BinderStates.cs:224 ForgetState
+void forgetState(ref Binder b, for LocalId local) {}
+
+// stub: T22 ports BinderStates.cs:214 KnownState
+Type knownState(ref Binder b, for LocalId local) => -1
+
+// stub: T22 ports BinderStates.cs:267 LearnArmState
+void learnArmState(ref Binder b, through ref Ctx c, for BExpr subject, by BPattern pattern) {}
+
+// stub: T22 ports BinderStates.cs:300 LearnBecomes
+void learnBecomes(ref Binder b, through ref Ctx c, for BExpr e) {}
+
+// stub: T22 ports BinderStates.cs:221 LearnState
+void learnState(ref Binder b, for LocalId local, as Type type) {}
+
+// stub: T22 ports BinderStates.cs:234 LearnStates
+List<(i64, LocalId, Type)> learnStates(ref Binder b, through ref Ctx c, for BExpr cond, bool whenTrue) => []
+
+// stub: T22 ports BinderStates.cs:88 ReceiverStates
+Type receiverStates(ref Binder b, through ref Ctx c, for FuncId fn) => -1
+
+// stub: T22 ports BinderStates.cs:99 ReportWrongState
+bool reportWrongState(ref Binder b, through ref Ctx c, for string callee, by BExpr value, as Type wanted, at TextSpan span) => false
+
+// stub: T22 ports BinderStates.cs:118 StateStruct
+StructId stateStruct(ref Ctx c, for Type t) => -1
+
+// stub: T22 ports BinderStates.cs:110 StatesUnion
+UnionId statesUnion(ref Ctx c, for Type t) => -1
+
+// stub: T22 ports BinderStates.cs:200 Subject
+SubjectResult? subject(ref Binder b, through ref Ctx c, for BExpr e) => null
+
+// stub: T22 ports BinderStates.cs:260 UnlearnStates
+void unlearnStates(ref Binder b, by in List<(i64, LocalId, Type)> learned) {}

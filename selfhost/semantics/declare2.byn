@@ -1,1 +1,51 @@
 // T38: Compilation.cs ~1038-1362 (interface members, signatures, parameters, shapes, states, recursion).
+
+import parser
+
+// The C# `Fix` `refReceiverFix` returns: the span to replace and its replacement.
+struct Fix {
+    TextSpan span
+    string replacement
+}
+
+// stub: T38 ports Compilation.cs:1131 DeclareInterfaceMembers
+void declareInterfaceMembers(ref Ctx c, for InterfaceId i) {}
+
+// stub: T38 ports Compilation.cs:1221 DeclareSignature
+void declareSignature(ref Ctx c, for FuncId fn, from in parser.FunctionDecl decl, by FileId file, StructId owner = -1) {}
+
+// stub: T38 ports Compilation.cs:1276 DeclareParameters
+void declareParameters(ref Ctx c, for FuncId fn, from in List<parser.Param> parameters, by FileId file, through in TypeResolver types) {}
+
+// stub: T38 ports Compilation.cs:1060 DeclareCheck
+void declareCheck(ref Ctx c, for StructId s) {}
+
+// stub: T38 ports Compilation.cs:1110 CheckStateNames
+void checkStateNames(ref Ctx c, for StructId s) {}
+
+// stub: T38 ports Compilation.cs:1082 StatesOf
+UnionId statesOf(ref Ctx c, for StructId s) => -1
+
+// stub: T38 ports Compilation.cs:1038 ValidationErrorOf
+ErrorSetId validationErrorOf(ref Ctx c, for Type t) => -1
+
+// stub: T38 ports Compilation.cs:1290 CheckStructShape
+void checkStructShape(ref Ctx c, for StructId s) {}
+
+// stub: T38 ports Compilation.cs:1314 CheckUnionShape
+void checkUnionShape(ref Ctx c, for UnionId u) {}
+
+// stub: T38 ports Compilation.cs:1332 CheckRecursion
+void checkRecursion(ref Ctx c, for Type t, by string name, from FileId source, at TextSpan span) {}
+
+// stub: T38 ports Compilation.cs:1307 FunctionTypeNotHere
+bool functionTypeNotHere(ref Ctx c, for Type t, from FileId source, at TextSpan span, as string position) => false
+
+// stub: T38 ports Compilation.cs:1217 RefReceiverFix
+Fix refReceiverFix(in parser.FunctionDecl decl) => Fix { span: TextSpan { start: 0, length: 0 }, replacement: "" }
+
+// stub: T38 ports Compilation.cs:1203 RejectStatic
+void rejectStatic(ref Ctx c, from FileId file, by parser.Modifiers modifiers, at TextSpan name) {}
+
+// stub: T38 ports Compilation.cs:1210 RejectModifiers
+void rejectModifiers(ref Ctx c, from FileId file, at TextSpan span, by parser.Modifiers actual, for parser.Modifiers rejected, as string what) {}

@@ -1,1 +1,46 @@
 // T37: RegionAnalysis.cs ~418-882 (calls, stores, mutations, last-use, reporting).
+
+// stub: T37 ports RegionAnalysis.cs:418 Call
+Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) => Borrow { regions: [], owners: [] }
+
+// stub: T37 ports RegionAnalysis.cs:531 Store
+void storeBorrow(ref Regions r, through ref Ctx c, for LocalId local, by in Borrow value, at TextSpan span) {}
+
+// stub: T37 ports RegionAnalysis.cs:549 StoreInto
+void storeIntoBorrow(ref Regions r, through ref Ctx c, for BExpr target, by in Borrow value, at TextSpan span) {}
+
+// stub: T37 ports RegionAnalysis.cs:568 CheckOutlives
+void checkOutlives(ref Regions r, through ref Ctx c, for in Borrow value, by i64 depth, as string holder, at TextSpan span) {}
+
+// stub: T37 ports RegionAnalysis.cs:581 CheckReturn
+void checkReturn(ref Regions r, through ref Ctx c, for in Borrow value, at TextSpan span) {}
+
+// stub: T37 ports RegionAnalysis.cs:484 Lend
+Borrow lendBorrow(ref Regions r, through ref Ctx c, for BExpr source, by in Borrow sourceBorrow, at i64 at) => Borrow { regions: [], owners: [] }
+
+// stub: T37 ports RegionAnalysis.cs:503 AllocatedFrom
+Borrow allocatedFrom(ref Regions r, through ref Ctx c, for BExpr allocator) => Borrow { regions: [], owners: [] }
+
+// stub: T37 ports RegionAnalysis.cs:603 Mutate
+void mutateBorrow(ref Regions r, through ref Ctx c, for BExpr target, at TextSpan span, bool moved = false) {}
+
+// stub: T37 ports RegionAnalysis.cs:610 MutateOwners
+void mutateOwners(ref Regions r, through ref Ctx c, for BExpr via, by in Borrow borrow, at TextSpan span) {}
+
+// stub: T37 ports RegionAnalysis.cs:617 Refer
+void referBorrow(ref Regions r, through ref Ctx c, for LocalId local, by BExpr value) {}
+
+// stub: T37 ports RegionAnalysis.cs:685 RootLocal
+LocalId rootLocal(ref Ctx c, for BExpr e) => -1
+
+// stub: T37 ports RegionAnalysis.cs:705 ThisField
+LocalId thisField(ref Regions r, through ref Ctx c, for BExpr e) => -1
+
+// stub: T37 ports RegionAnalysis.cs:629 CheckMutations
+void checkMutations(ref Regions r, through ref Ctx c) {}
+
+// stub: T37 ports RegionAnalysis.cs:831 MayBorrow
+bool mayBorrow(ref Ctx c, for Type t, by ref List<Type> seen) => false
+
+// stub: T37 ports RegionAnalysis.cs:875 Line
+i64 lineOf(ref Regions r, through ref Ctx c, at TextSpan span) => 0

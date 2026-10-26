@@ -1,1 +1,19 @@
 // T14: Conformance.cs.
+
+// stub: T14 ports Conformance.cs:39 CheckConformances
+void checkConformances(ref Ctx c) {}
+
+// stub: T14 ports Conformance.cs:56 Conform
+void conform(ref Ctx c, for StructId s) {}
+
+// stub: T14 ports Conformance.cs:28 AssociatedBinding
+Type associatedBinding(ref Ctx c, for StructId s, by string name) => -1
+
+// stub: T14 ports Conformance.cs:21 _conformancesChecked
+bool conformancesChecked(ref Ctx c) => false
+
+// stub: T14 ports Conformance.cs:188 Quietly
+i64 quietlyBegin(ref Ctx c) => -1
+
+// stub: T14 ports Conformance.cs:188 Quietly
+void quietlyEnd(ref Ctx c, to i64 previous) {}
