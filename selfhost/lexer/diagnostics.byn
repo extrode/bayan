@@ -74,15 +74,15 @@ string format(string template, by (string arg0, string arg1) args) {
 /// A compiler diagnostic; every lexer diagnostic is an error (`error` is a keyword, so there is no
 /// `Severity` enum). An empty `label` or `help` means none; `hasFix` says whether the
 /// machine-applicable edit (replace `fixSpan` with `fixReplacement`) is present.
-struct Diagnostic {
-    string code
-    TextSpan span
-    string message
-    string label
-    string help
-    bool hasFix
-    TextSpan fixSpan
-    string fixReplacement
+public struct Diagnostic {
+    public string code
+    public TextSpan span
+    public string message
+    public string label
+    public string help
+    public bool hasFix
+    public TextSpan fixSpan
+    public string fixReplacement
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────────────────
@@ -232,7 +232,7 @@ void wrap(string text, to ref List<string> lines, by Widths widths) {
 }
 
 /// Renders diagnostics in source order (a stable sort by span start), separated by blank lines.
-void renderAll(ReadOnlySpan<Diagnostic> diagnostics, to ref StrBuf sb, from ref SourceText source) {
+public void renderAll(ReadOnlySpan<Diagnostic> diagnostics, to ref StrBuf sb, from ref SourceText source) uses alloc {
     let order = sourceOrder(diagnostics)
     for k in 0..order.length {
         if k > 0 { sb.append("\n") }
@@ -241,7 +241,7 @@ void renderAll(ReadOnlySpan<Diagnostic> diagnostics, to ref StrBuf sb, from ref 
 }
 
 /// Indices of `diagnostics` in source order (a stable sort by span start).
-List<i64> sourceOrder(ReadOnlySpan<Diagnostic> diagnostics) {
+public List<i64> sourceOrder(ReadOnlySpan<Diagnostic> diagnostics) uses alloc {
     var order = List<i64>()
     for i in 0..diagnostics.length {
         order.append(i)

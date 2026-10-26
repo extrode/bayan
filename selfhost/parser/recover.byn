@@ -1,0 +1,258 @@
+// Recovery and line structure. Ports from `src/Bayan.Syntax/Parsing/Parser.cs`: `ExpectEnd`,
+// `ReportSemicolon`, `IndentAt`, `BreaksLine`, `HasBlankLineBefore`, `IsWasl`, `LineContinues`,
+// `StopsHere`, `EndsBefore`, `ExpectName`, `NameOf`, `IsName`, `IsStatementKeyword`, `Synchronize`,
+// `RecoverIfNeeded` (lines 165–343), `InGroup`, `Unreport`, the sets `ItName` and `Particles`, and
+// from the lexer `TokenKindFacts.IsContextualKeyword` and `Keywords.IsCSharpPrimitive`. Owner: 
+//
+// A C# `Name` is its `TextSpan` (nodes.byn), so `expectName` and `nameOf` return the span; a missing
+// name is the empty span at the current token, which C# spells `<missing>`.
+
+import lexer
+
+/// The end of a statement or declaration: a line break, `}` or the end of the file. Each `;` here is
+/// the input form (BYN1040); another statement on the same line is BYN1005.
+void expectEnd(ref Parser p) {
+    if p.kind() == .semicolon {
+        while p.kind() == .semicolon { reportSemicolon(ref p, for: p.advance()) }
+        return
+    }
+    if p.atEnd() || p.kind() == .closeBrace || p.current().hasNewlineBefore { return }
+    // The token after the statement was already reported (e.g. as a bad expression); one error is enough.
+    if p.lastErrorAt == p.current().start { return }
+    let _ = p.reportFix(.missingLineBreak, at: TextSpan { start: p.prevEnd, length: 0 },
+        through: TextSpan.fromBounds(p.prevEnd, until: p.current().start), by: $"\n{indentAt(ref p, at: p.prevEnd)}",
+        label: $"found {p.describe(p.current())}", help: "put the next statement on its own line")
+}
+
+/// BYN1040 for a `;` just consumed: deleted, or a line break when a statement follows on its line.
+void reportSemicolon(ref Parser p, for Token semicolon) {
+    var from = semicolon.start
+    while from > 0 && (p.lexed.source.bytes[from - 1] == ' ' || p.lexed.source.bytes[from - 1] == '\t') { from -= 1 }
+    if p.current().hasNewlineBefore || p.kind() == .semicolon || p.kind() == .closeBrace || p.kind() == .endOfFile {
+        let _ = p.reportFix(.semicolonInput, at: spanOf(semicolon), through: TextSpan.fromBounds(from, until: semicolon.end),
+            by: "", label: "remove `;`", help: "remove the `;`")
+        return
+    }
+    var to = semicolon.end
+    while to < p.lexed.source.bytes.length && (p.lexed.source.bytes[to] == ' ' || p.lexed.source.bytes[to] == '\t') { to += 1 }
+    let _ = p.reportFix(.semicolonInput, at: spanOf(semicolon), through: TextSpan.fromBounds(from, until: to),
+        by: $"\n{indentAt(ref p, at: semicolon.start)}", label: "remove `;`", help: "put the next statement on its own line")
+}
+
+/// The spaces and tabs that start the line holding `offset`.
+string indentAt(ref Parser p, at i64 offset) {
+    let line = p.lexed.source.getLineSpan(p.lexed.source.getLineIndex(offset))
+    var end = line.start
+    while end < line.end && (p.lexed.source.bytes[end] == ' ' || p.lexed.source.bytes[end] == '\t') { end += 1 }
+    return p.lexed.source.getText(TextSpan.fromBounds(line.start, until: end))
+}
+
+// ── Line breaks (waqf) ───────────────────────────────────────────────────────────
+
+/// Whether a line break before token `index` can end a statement: one outside `()`, `[]` and interpolation holes.
+bool breaksLine(ref Parser p, at i64 index) =>
+    index < p.count && p.lexed.tokens[index].hasNewlineBefore && !p.inGroup[index]
+
+/// Whether a line of only whitespace lies between token `index` and the one before it; a comment line is not blank.
+bool hasBlankLineBefore(ref Parser p, at i64 index) {
+    if index <= 0 || index >= p.count { return false }
+    var lineIsBlank = false
+    for i in p.lexed.tokens[index - 1].end..p.lexed.tokens[index].start {
+        let b = p.lexed.source.bytes[i]
+        if b == '\n' {
+            if lineIsBlank { return true }
+            lineIsBlank = true
+        } else if !(b == ' ' || b == '\t' || b == '\r') {
+            lineIsBlank = false
+        }
+    }
+    return false
+}
+
+/// A token that joins the line it starts to the line before (waṣl).
+bool isWasl(ref Parser p, at i64 index) {
+    switch p.kindAt(index) {
+        case .dot or .questionDot or .questionQuestion or .ampAmp or .barBar or .andKeyword or .orKeyword or
+            .catchKeyword or .exceptKeyword or .requiresKeyword or .failsKeyword or .usesKeyword:
+            return true
+        case .identifier:
+            let token = p.lexed.tokens[index]
+            if lexer.sameBytes(p.text(token), as: "where".bytes) {
+                return p.kindAt(index + 1) == .identifier && p.kindAt(index + 2) == .colon
+            }
+            if lexer.sameBytes(p.text(token), as: "becomes".bytes) { return p.kindAt(index + 1) == .dot }
+            if lexer.sameBytes(p.text(token), as: "expects".bytes) {
+                let next = p.kindAt(index + 1)
+                return next == .identifier || next == .bang || next == .notKeyword || next == .thisKeyword
+            }
+            return false
+        default:
+            return false
+    }
+}
+
+/// Whether the line before token `index` ends in an operator, `,`, `=`, `=>` or an opening bracket (lā), or the token is waṣl.
+bool lineContinues(ref Parser p, at i64 index) {
+    if isWasl(ref p, at: index) { return true }
+    if index <= 0 { return false }
+    switch p.kindAt(index - 1) {
+        case .comma or .fatArrow or .openBrace or .openParen or .openBracket or
+            .dot or .dotDot or .dotDotEquals or .question or .questionQuestion or
+            .questionDot or .plus or .minus or .star or .slash or .percent or
+            .plusPercent or .minusPercent or .starPercent or .plusBar or .minusBar or
+            .starBar or .amp or .ampAmp or .bar or .barBar or .caret or
+            .equalsEquals or .bangEquals or .less or .lessEquals or .greaterEquals or
+            .lessLess or .andKeyword or .orKeyword or .isKeyword or .inKeyword or
+            .equals or .plusEquals or .minusEquals or .starEquals or .slashEquals or
+            .percentEquals or .ampEquals or .barEquals or .caretEquals or
+            .lessLessEquals or .questionQuestionEquals:
+            return true
+        default:
+            return false
+    }
+}
+
+/// Whether the expression being parsed ends before the current token: it starts a new line, and is not waṣl or follows a blank line.
+bool stopsHere(ref Parser p) =>
+    breaksLine(ref p, at: p.pos) && (hasBlankLineBefore(ref p, at: p.pos) || !isWasl(ref p, at: p.pos))
+
+/// Whether a statement ends before token `index`, for lookahead: a `;`, `}`, the end, or a line break.
+bool endsBefore(ref Parser p, at i64 index) {
+    let kind = p.kindAt(index)
+    return kind == .semicolon || kind == .closeBrace || kind == .endOfFile || breaksLine(ref p, at: index)
+}
+
+/// Whether the group opened at `open` has a `kind` token at its top level.
+bool inGroup(ref Parser p, at i64 open, for TokenKind kind) {
+    var depth = 0
+    for i in open..p.count {
+        let k = p.kindAt(i)
+        if depth == 1 && k == kind { return true }
+        switch k {
+            case .openParen or .openBracket or .openBrace:
+                depth += 1
+            case .closeParen or .closeBracket or .closeBrace:
+                depth -= 1
+                if depth == 0 { return false }
+            case .endOfFile:
+                return false
+            default:
+                continue
+        }
+    }
+    return false
+}
+
+TextSpan expectName(ref Parser p, string what = "a name") {
+    if isName(p.kind()) {
+        let token = p.advance()
+        let text = p.textOf(token)
+        // SPEC §2.4: a C# primitive name is a type, never a declared name; a member after `.` only refers to one.
+        // Not through `report`: the name parsed in full, so no recovery is needed.
+        if isCSharpPrimitive(text) && p.kindAt(p.pos - 2) != .dot {
+            p.lexed.diagnostics.append(Diagnostic {
+                code: codeText(.reservedKeyword),
+                span: spanOf(token),
+                message: format(messageFormat(.reservedKeyword), by: (a0: text, a1: "", a2: "")),
+                label: "a C# primitive type name",
+                help: "choose another name",
+                hasFix: false,
+                fixSpan: spanOf(token),
+                fixReplacement: "",
+            })
+        }
+        return spanOf(token)
+    }
+    let _ = p.report(.expected, at: spanOf(p.current()), arg0: what, arg1: p.describe(p.current()))
+    return TextSpan { start: p.current().start, length: 0 }
+}
+
+TextSpan nameOf(Token token) => spanOf(token)
+
+/// An identifier, or a declaration keyword used as a name (spec 004 R3).
+bool isName(TokenKind kind) => kind == .identifier || isContextualKeyword(kind)
+
+// ── Recovery ─────────────────────────────────────────────────────────────────────
+
+bool isStatementKeyword(TokenKind kind) => kind switch {
+    .letKeyword or .varKeyword or .constKeyword or .ifKeyword or
+    .unlessKeyword or .whileKeyword or .doKeyword or .forKeyword or
+    .foreachKeyword or .switchKeyword or .returnKeyword or .failKeyword or .breakKeyword or
+    .continueKeyword or .deferKeyword or .errdeferKeyword or .usingKeyword or
+    .contextKeyword or .provideKeyword or .becomeKeyword or .structKeyword or .publicKeyword or .privateKeyword or
+    .importKeyword or .errorKeyword or .testKeyword or .typeKeyword or
+    .staticKeyword or .readonlyKeyword or .requiredKeyword or .uniqueKeyword or
+    .externKeyword or .unsafeKeyword or .unionKeyword or .distinctKeyword => true,
+    _ => false,
+}
+
+/// Skips to a plausible statement start: past a `;`, before a `}`, or at a line starting a statement.
+void synchronize(ref Parser p) {
+    var depth = 0
+    var first = true
+    while !p.atEnd() {
+        let token = p.current()
+        if !first && depth == 0 && token.hasNewlineBefore && (isStatementKeyword(token.kind) || token.kind == .identifier) {
+            return
+        }
+        first = false
+        if token.kind == .semicolon && depth == 0 {
+            let _ = p.advance()
+            return
+        } else if token.kind == .openBrace {
+            depth += 1
+        } else if token.kind == .closeBrace {
+            if depth == 0 { return }
+            depth -= 1
+            if depth == 0 {
+                let _ = p.advance()
+                return
+            }
+        }
+        let _ = p.advance()
+    }
+}
+
+/// After a syntax error inside a statement, skip only if the parser is not already at a clean restart point.
+void recoverIfNeeded(ref Parser p, from i64 syntaxErrorsBefore) {
+    if p.syntaxErrors == syntaxErrorsBefore { return }
+    if p.atEnd() || p.kind() == .closeBrace { return }
+    if p.current().hasNewlineBefore && (isStatementKeyword(p.kind()) || p.kind() == .identifier) { return }
+    synchronize(ref p)
+}
+
+/// Withdraws the diagnostic at `index` (from `report`; -1 is the C# `null`) when a later fix over the
+/// same span replaces it. `List` has no `removeAt`, so the entry becomes a tombstone (code `""`) that
+/// `errorCount` skips and the dump drops (Q440). As in C#, neither `syntaxErrors` nor `lastErrorAt` changes.
+void unreport(ref Parser p, at i64 index) {
+    if index >= 0 { p.lexed.diagnostics[index].code = "" }
+}
+
+// ── Tables ───────────────────────────────────────────────────────────────────────
+
+/// `TokenKindFacts.IsContextualKeyword`: declaration-only keywords that are names wherever the grammar
+/// does not need them as keywords.
+bool isContextualKeyword(TokenKind kind) => kind switch {
+    .errorKeyword or .flagsKeyword or .unitKeyword or .distinctKeyword or
+    .openKeyword or .extensibleKeyword or .setKeyword or .typeKeyword or
+    .lawKeyword or .derivationKeyword or .attributeKeyword or .embedKeyword or
+    .effectKeyword => true,
+    _ => false,
+}
+
+/// `Keywords.IsCSharpPrimitive` (SPEC §2.4): reserved in every project so C# muscle memory cannot
+/// declare a name that shadows a sized type.
+bool isCSharpPrimitive(string text) => text switch {
+    "sbyte" or "byte" or "short" or "ushort" or "int" or "uint" or "long" or "ulong" or "nint" or "nuint" or
+    "float" or "double" => true,
+    _ => false,
+}
+
+/// `ItName.Contains(text)`.
+bool isItName(string text) => text == "it"
+
+/// `Particles.Contains(text)`.
+bool isParticle(string text) => text switch {
+    "from" or "to" or "until" or "through" or "at" or "by" or "for" or "as" => true,
+    _ => false,
+}

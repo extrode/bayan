@@ -1,0 +1,658 @@
+// Span checks for L018: every node span lies within `[0, length]` and every child span within its
+// parent's, one line per violation in the style of the lexer's `checkSpans`. New code, no C#
+// counterpart. Owner: 
+//
+// The walker visits every node kind of `nodes.byn` (a checklist against `Nodes.cs`): each struct's
+// `span` is checked against the input and against its parent, then each child node is recursed and
+// each child `TextSpan` is checked against its parent. A name, doc or decoded text has no span and
+// is not checked. `decl`/`stmt`/`expr`/`type`/`pattern` are the five tree unions plus
+// `interpolationPart`.
+//
+// Checklist, C# record → walker (every `nodes.byn` struct is visited):
+//   CompilationUnit        checkSpans                     AttributeSyntax        walkAttribute
+//   BecauseClause          enter at the site              RequiresRule           walkRequiresRule
+//   Decl union             walkDecl                       ImportDecl/GlobalStatement/FunctionDecl/
+//                          StructDecl/InterfaceDecl/GetterDecl/AssociatedTypeDecl/ExtensionDecl/
+//                          FieldDecl/PropertyDecl/ConstructorDecl/ErrorEnumDecl/ErrorSetDecl/
+//                          EnumDecl/UnionDecl/TypeAliasDecl/EffectDecl/TestDecl   (walkDecl)
+//   Param                  walkParam                      FailsClause             walkFailsClause
+//   UsesClause             walkUsesClause                 WhereClause             walkWhereClause
+//   UnionField             walkUnionField                 UnionVariant            walkUnionVariant
+//   ErrorVariant           walkErrorVariant               EnumMember              walkEnumMember
+//   Argument               walkArgument                   SwitchLabel             walkSwitchLabel
+//   SwitchSection          walkSwitchSection              NamedArg                walkNamedArg
+//   FieldInit              walkFieldInit                  SwitchArm               walkSwitchArm
+//   TupleTypeElement       walkTupleTypeElement           TupleElement            walkTupleElement
+//   PropertySubpattern     walkPropertySubpattern         InterpolationPart       walkPart
+//   TypeSyntax union       walkType                       NamedType/OptionalType/ArrayType/TupleType/
+//                          FunctionTypeSyntax/DynType/RefinedType/PointerType    (walkType)
+//   Stmt union             walkStmt                       all 24 variants        (walkStmt)
+//   Expr union             walkExpr                       all 33 variants        (walkExpr)
+//   Pattern union          walkPattern                    all 12 variants        (walkPattern)
+
+/// Every node span through `[0, length]`.
+void nodeSpan(TextSpan span, for string what, until i64 length, to ref StrBuf sb) {
+    if !(span.start >= 0 && span.length >= 0 && span.end <= length) {
+        sb.append($"span out of range: {what} {span.start}+{span.length}\n")
+    }
+}
+
+/// Every child span through its parent span.
+void childSpan(TextSpan child, for string what, through TextSpan parent, to ref StrBuf sb) {
+    if !(child.start >= parent.start && child.end <= parent.end) {
+        sb.append($"span out of range: {what} {child.start}+{child.length} outside {parent.start}+{parent.length}\n")
+    }
+}
+
+/// A node's own span: through `[0, length]` and through its parent.
+void enter(TextSpan span, for string what, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    nodeSpan(span, for: what, until: length, to: ref sb)
+    childSpan(span, for: what, through: parent, to: ref sb)
+}
+
+/// Each span of `spans` through `parent`.
+void childSpans(in List<TextSpan> spans, for string what, through TextSpan parent, to ref StrBuf sb) {
+    for sp in spans {
+        childSpan(sp, for: what, through: parent, to: ref sb)
+    }
+}
+
+void checkSpans(in CompilationUnit unit, until i64 length, to ref StrBuf sb) {
+    nodeSpan(unit.span, for: "compilationUnit", until: length, to: ref sb)
+    for m in unit.members {
+        walkDecl(in m, through: unit.span, until: length, to: ref sb)
+    }
+}
+
+// ── Declarations ────────────────────────────────────────────────────────────────
+
+void walkDecl(in Decl d, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    switch d {
+        case .importDecl(let n):
+            enter(n.value.span, for: "importDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            childSpans(in n.value.path, for: "importDecl path", through: s, to: ref sb)
+            if (n.value.alias is { } al) { childSpan(al, for: "importDecl alias", through: s, to: ref sb) }
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .globalStatement(let n):
+            enter(n.value.span, for: "globalStatement", through: parent, until: length, to: ref sb)
+            walkStmt(in n.value.statement, through: n.value.span, until: length, to: ref sb)
+            for a in n.value.attributes { walkAttribute(in a, through: n.value.span, until: length, to: ref sb) }
+        case .functionDecl(let n):
+            enter(n.value.span, for: "functionDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            walkType(in n.value.returnType, through: s, until: length, to: ref sb)
+            childSpan(n.value.name, for: "functionDecl name", through: s, to: ref sb)
+            for p in n.value.params { walkParam(in p, through: s, until: length, to: ref sb) }
+            if (n.value.failsKeyword is { } f) { walkFailsClause(in f, through: s, until: length, to: ref sb) }
+            walkStmt(in n.value.body, through: s, until: length, to: ref sb)
+            walkExpr(in n.value.expressionBody, through: s, until: length, to: ref sb)
+            childSpans(in n.value.typeParams, for: "functionDecl typeParams", through: s, to: ref sb)
+            if (n.value.refThis is { } r) { childSpan(r, for: "functionDecl refThis", through: s, to: ref sb) }
+            if (n.value.moveThis is { } m) { childSpan(m, for: "functionDecl moveThis", through: s, to: ref sb) }
+            childSpans(in n.value.receiverStates, for: "functionDecl receiverStates", through: s, to: ref sb)
+            for e in n.value.requiresKeyword { walkExpr(in e, through: s, until: length, to: ref sb) }
+            for w in n.value.where { walkWhereClause(in w, through: s, until: length, to: ref sb) }
+            if (n.value.becomes is { } b) { childSpan(b, for: "functionDecl becomes", through: s, to: ref sb) }
+            if (n.value.usesKeyword is { } u) { walkUsesClause(in u, through: s, until: length, to: ref sb) }
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .structDecl(let n):
+            enter(n.value.span, for: "structDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            childSpan(n.value.name, for: "structDecl name", through: s, to: ref sb)
+            for m in n.value.members { walkDecl(in m, through: s, until: length, to: ref sb) }
+            childSpans(in n.value.typeParams, for: "structDecl typeParams", through: s, to: ref sb)
+            for b in n.value.bases { walkType(in b, through: s, until: length, to: ref sb) }
+            for w in n.value.where { walkWhereClause(in w, through: s, until: length, to: ref sb) }
+            for r in n.value.rules { walkRequiresRule(in r, through: s, until: length, to: ref sb) }
+            for v in n.value.states { walkUnionVariant(in v, through: s, until: length, to: ref sb) }
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .interfaceDecl(let n):
+            enter(n.value.span, for: "interfaceDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            childSpan(n.value.name, for: "interfaceDecl name", through: s, to: ref sb)
+            for m in n.value.members { walkDecl(in m, through: s, until: length, to: ref sb) }
+            childSpans(in n.value.typeParams, for: "interfaceDecl typeParams", through: s, to: ref sb)
+            for w in n.value.where { walkWhereClause(in w, through: s, until: length, to: ref sb) }
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .getterDecl(let n):
+            enter(n.value.span, for: "getterDecl", through: parent, until: length, to: ref sb)
+            walkType(in n.value.type, through: n.value.span, until: length, to: ref sb)
+            childSpan(n.value.name, for: "getterDecl name", through: n.value.span, to: ref sb)
+            for a in n.value.attributes { walkAttribute(in a, through: n.value.span, until: length, to: ref sb) }
+        case .associatedTypeDecl(let n):
+            enter(n.value.span, for: "associatedTypeDecl", through: parent, until: length, to: ref sb)
+            childSpan(n.value.name, for: "associatedTypeDecl name", through: n.value.span, to: ref sb)
+            for a in n.value.attributes { walkAttribute(in a, through: n.value.span, until: length, to: ref sb) }
+        case .extensionDecl(let n):
+            enter(n.value.span, for: "extensionDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            childSpan(n.value.name, for: "extensionDecl name", through: s, to: ref sb)
+            for b in n.value.bases { walkType(in b, through: s, until: length, to: ref sb) }
+            for m in n.value.members { walkDecl(in m, through: s, until: length, to: ref sb) }
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .fieldDecl(let n):
+            enter(n.value.span, for: "fieldDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            walkType(in n.value.type, through: s, until: length, to: ref sb)
+            childSpan(n.value.name, for: "fieldDecl name", through: s, to: ref sb)
+            walkExpr(in n.value.defaultKeyword, through: s, until: length, to: ref sb)
+            for r in n.value.requiresKeyword { walkRequiresRule(in r, through: s, until: length, to: ref sb) }
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .propertyDecl(let n):
+            enter(n.value.span, for: "propertyDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            walkType(in n.value.type, through: s, until: length, to: ref sb)
+            childSpan(n.value.name, for: "propertyDecl name", through: s, to: ref sb)
+            walkExpr(in n.value.body, through: s, until: length, to: ref sb)
+            walkStmt(in n.value.block, through: s, until: length, to: ref sb)
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .constructorDecl(let n):
+            enter(n.value.span, for: "constructorDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            childSpan(n.value.name, for: "constructorDecl name", through: s, to: ref sb)
+            for p in n.value.params { walkParam(in p, through: s, until: length, to: ref sb) }
+            walkStmt(in n.value.body, through: s, until: length, to: ref sb)
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .errorEnumDecl(let n):
+            enter(n.value.span, for: "errorEnumDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            childSpan(n.value.name, for: "errorEnumDecl name", through: s, to: ref sb)
+            for v in n.value.variants { walkErrorVariant(in v, through: s, until: length, to: ref sb) }
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .errorSetDecl(let n):
+            enter(n.value.span, for: "errorSetDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            childSpan(n.value.name, for: "errorSetDecl name", through: s, to: ref sb)
+            for t in n.value.members { walkType(in t, through: s, until: length, to: ref sb) }
+            childSpan(n.value.head, for: "errorSetDecl head", through: s, to: ref sb)
+            childSpans(in n.value.exceptKeyword, for: "errorSetDecl except", through: s, to: ref sb)
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .enumDecl(let n):
+            enter(n.value.span, for: "enumDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            childSpan(n.value.name, for: "enumDecl name", through: s, to: ref sb)
+            if (n.value.params is { } ps) { for p in ps { walkParam(in p, through: s, until: length, to: ref sb) } }
+            for m in n.value.members { walkEnumMember(in m, through: s, until: length, to: ref sb) }
+            for b in n.value.bases { walkType(in b, through: s, until: length, to: ref sb) }
+            for w in n.value.where { walkWhereClause(in w, through: s, until: length, to: ref sb) }
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .unionDecl(let n):
+            enter(n.value.span, for: "unionDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            childSpan(n.value.name, for: "unionDecl name", through: s, to: ref sb)
+            for v in n.value.variants { walkUnionVariant(in v, through: s, until: length, to: ref sb) }
+            childSpans(in n.value.typeParams, for: "unionDecl typeParams", through: s, to: ref sb)
+            for b in n.value.bases { walkType(in b, through: s, until: length, to: ref sb) }
+            for w in n.value.where { walkWhereClause(in w, through: s, until: length, to: ref sb) }
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .typeAliasDecl(let n):
+            enter(n.value.span, for: "typeAliasDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            childSpan(n.value.name, for: "typeAliasDecl name", through: s, to: ref sb)
+            walkType(in n.value.target, through: s, until: length, to: ref sb)
+            for r in n.value.requiresKeyword { walkRequiresRule(in r, through: s, until: length, to: ref sb) }
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .effectDecl(let n):
+            enter(n.value.span, for: "effectDecl", through: parent, until: length, to: ref sb)
+            childSpan(n.value.name, for: "effectDecl name", through: n.value.span, to: ref sb)
+            childSpans(in n.value.effects, for: "effectDecl effects", through: n.value.span, to: ref sb)
+            for a in n.value.attributes { walkAttribute(in a, through: n.value.span, until: length, to: ref sb) }
+        case .testDecl(let n):
+            enter(n.value.span, for: "testDecl", through: parent, until: length, to: ref sb)
+            let s = n.value.span
+            for p in n.value.params { walkParam(in p, through: s, until: length, to: ref sb) }
+            walkStmt(in n.value.body, through: s, until: length, to: ref sb)
+            for a in n.value.attributes { walkAttribute(in a, through: s, until: length, to: ref sb) }
+        case .none:
+    }
+}
+
+// ── Support records ─────────────────────────────────────────────────────────────
+
+void walkAttribute(in AttributeSyntax a, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(a.span, for: "attributeSyntax", through: parent, until: length, to: ref sb)
+    childSpan(a.name, for: "attributeSyntax name", through: a.span, to: ref sb)
+    for arg in a.args { walkArgument(in arg, through: a.span, until: length, to: ref sb) }
+    if (a.becauseKeyword is { } bc) { enter(bc.span, for: "becauseClause", through: a.span, until: length, to: ref sb) }
+}
+
+void walkRequiresRule(in RequiresRule r, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(r.span, for: "requiresRule", through: parent, until: length, to: ref sb)
+    walkExpr(in r.condition, through: r.span, until: length, to: ref sb)
+    if (r.at is { } at) { childSpan(at, for: "requiresRule at", through: r.span, to: ref sb) }
+}
+
+void walkParam(in Param p, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(p.span, for: "param", through: parent, until: length, to: ref sb)
+    walkType(in p.type, through: p.span, until: length, to: ref sb)
+    childSpan(p.name, for: "param name", through: p.span, to: ref sb)
+    walkExpr(in p.defaultKeyword, through: p.span, until: length, to: ref sb)
+    if (p.particle is { } pa) { childSpan(pa, for: "param particle", through: p.span, to: ref sb) }
+}
+
+void walkFailsClause(in FailsClause f, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(f.span, for: "failsClause", through: parent, until: length, to: ref sb)
+    for t in f.errors { walkType(in t, through: f.span, until: length, to: ref sb) }
+}
+
+void walkUsesClause(in UsesClause u, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(u.span, for: "usesClause", through: parent, until: length, to: ref sb)
+    childSpans(in u.effects, for: "usesClause effects", through: u.span, to: ref sb)
+}
+
+void walkWhereClause(in WhereClause w, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(w.span, for: "whereClause", through: parent, until: length, to: ref sb)
+    childSpan(w.param, for: "whereClause param", through: w.span, to: ref sb)
+    for b in w.bounds { walkType(in b, through: w.span, until: length, to: ref sb) }
+}
+
+void walkUnionField(in UnionField u, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(u.span, for: "unionField", through: parent, until: length, to: ref sb)
+    walkType(in u.type, through: u.span, until: length, to: ref sb)
+    childSpan(u.name, for: "unionField name", through: u.span, to: ref sb)
+}
+
+void walkUnionVariant(in UnionVariant v, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(v.span, for: "unionVariant", through: parent, until: length, to: ref sb)
+    childSpan(v.name, for: "unionVariant name", through: v.span, to: ref sb)
+    for f in v.fields { walkUnionField(in f, through: v.span, until: length, to: ref sb) }
+    walkExpr(in v.value, through: v.span, until: length, to: ref sb)
+}
+
+void walkErrorVariant(in ErrorVariant v, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(v.span, for: "errorVariant", through: parent, until: length, to: ref sb)
+    childSpan(v.name, for: "errorVariant name", through: v.span, to: ref sb)
+    for a in v.attributes { walkAttribute(in a, through: v.span, until: length, to: ref sb) }
+    for f in v.fields { walkUnionField(in f, through: v.span, until: length, to: ref sb) }
+}
+
+void walkEnumMember(in EnumMember m, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(m.span, for: "enumMember", through: parent, until: length, to: ref sb)
+    childSpan(m.name, for: "enumMember name", through: m.span, to: ref sb)
+    if (m.args is { } args) { for a in args { walkArgument(in a, through: m.span, until: length, to: ref sb) } }
+}
+
+void walkArgument(in Argument a, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(a.span, for: "argument", through: parent, until: length, to: ref sb)
+    if (a.name is { } nm) { childSpan(nm, for: "argument name", through: a.span, to: ref sb) }
+    walkExpr(in a.value, through: a.span, until: length, to: ref sb)
+}
+
+void walkSwitchLabel(in SwitchLabel l, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(l.span, for: "switchLabel", through: parent, until: length, to: ref sb)
+    walkPattern(in l.pattern, through: l.span, until: length, to: ref sb)
+    walkExpr(in l.guard, through: l.span, until: length, to: ref sb)
+}
+
+void walkSwitchSection(in SwitchSection s, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(s.span, for: "switchSection", through: parent, until: length, to: ref sb)
+    walkSwitchLabel(in s.label, through: s.span, until: length, to: ref sb)
+    for st in s.statements { walkStmt(in st, through: s.span, until: length, to: ref sb) }
+}
+
+void walkNamedArg(in NamedArg a, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(a.span, for: "namedArg", through: parent, until: length, to: ref sb)
+    childSpan(a.name, for: "namedArg name", through: a.span, to: ref sb)
+    walkExpr(in a.value, through: a.span, until: length, to: ref sb)
+}
+
+void walkFieldInit(in FieldInit f, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(f.span, for: "fieldInit", through: parent, until: length, to: ref sb)
+    childSpan(f.name, for: "fieldInit name", through: f.span, to: ref sb)
+    walkExpr(in f.value, through: f.span, until: length, to: ref sb)
+}
+
+void walkSwitchArm(in SwitchArm a, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(a.span, for: "switchArm", through: parent, until: length, to: ref sb)
+    walkPattern(in a.pattern, through: a.span, until: length, to: ref sb)
+    walkExpr(in a.guard, through: a.span, until: length, to: ref sb)
+    walkExpr(in a.value, through: a.span, until: length, to: ref sb)
+}
+
+void walkTupleTypeElement(in TupleTypeElement e, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(e.span, for: "tupleTypeElement", through: parent, until: length, to: ref sb)
+    walkType(in e.type, through: e.span, until: length, to: ref sb)
+    if (e.name is { } nm) { childSpan(nm, for: "tupleTypeElement name", through: e.span, to: ref sb) }
+}
+
+void walkTupleElement(in TupleElement e, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(e.span, for: "tupleElement", through: parent, until: length, to: ref sb)
+    if (e.name is { } nm) { childSpan(nm, for: "tupleElement name", through: e.span, to: ref sb) }
+    walkExpr(in e.value, through: e.span, until: length, to: ref sb)
+}
+
+void walkPropertySubpattern(in PropertySubpattern s, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    enter(s.span, for: "propertySubpattern", through: parent, until: length, to: ref sb)
+    childSpans(in s.path, for: "propertySubpattern path", through: s.span, to: ref sb)
+    walkPattern(in s.pattern, through: s.span, until: length, to: ref sb)
+}
+
+// ── Types ───────────────────────────────────────────────────────────────────────
+
+void walkType(in TypeSyntax t, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    switch t {
+        case .namedType(let n):
+            enter(n.value.span, for: "namedType", through: parent, until: length, to: ref sb)
+            childSpans(in n.value.path, for: "namedType path", through: n.value.span, to: ref sb)
+            for a in n.value.args { walkType(in a, through: n.value.span, until: length, to: ref sb) }
+        case .optionalType(let n):
+            enter(n.value.span, for: "optionalType", through: parent, until: length, to: ref sb)
+            walkType(in n.value.inner, through: n.value.span, until: length, to: ref sb)
+        case .arrayType(let n):
+            enter(n.value.span, for: "arrayType", through: parent, until: length, to: ref sb)
+            walkType(in n.value.element, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.size, through: n.value.span, until: length, to: ref sb)
+        case .tupleType(let n):
+            enter(n.value.span, for: "tupleType", through: parent, until: length, to: ref sb)
+            for e in n.value.elements { walkTupleTypeElement(in e, through: n.value.span, until: length, to: ref sb) }
+        case .functionTypeSyntax(let n):
+            enter(n.value.span, for: "functionTypeSyntax", through: parent, until: length, to: ref sb)
+            for tp in n.value.params { walkType(in tp, through: n.value.span, until: length, to: ref sb) }
+            walkType(in n.value.returnKeyword, through: n.value.span, until: length, to: ref sb)
+            if (n.value.failsKeyword is { } f) { walkFailsClause(in f, through: n.value.span, until: length, to: ref sb) }
+            if (n.value.usesKeyword is { } u) { walkUsesClause(in u, through: n.value.span, until: length, to: ref sb) }
+        case .dynType(let n):
+            enter(n.value.span, for: "dynType", through: parent, until: length, to: ref sb)
+            walkType(in n.value.inner, through: n.value.span, until: length, to: ref sb)
+        case .refinedType(let n):
+            enter(n.value.span, for: "refinedType", through: parent, until: length, to: ref sb)
+            walkType(in n.value.inner, through: n.value.span, until: length, to: ref sb)
+            childSpans(in n.value.states, for: "refinedType states", through: n.value.span, to: ref sb)
+        case .pointerType(let n):
+            enter(n.value.span, for: "pointerType", through: parent, until: length, to: ref sb)
+            walkType(in n.value.pointee, through: n.value.span, until: length, to: ref sb)
+        case .none:
+    }
+}
+
+// ── Statements ─────────────────────────────────────────────────────────────────
+
+void walkStmt(in Stmt s, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    switch s {
+        case .blockStmt(let n):
+            enter(n.value.span, for: "blockStmt", through: parent, until: length, to: ref sb)
+            for st in n.value.statements { walkStmt(in st, through: n.value.span, until: length, to: ref sb) }
+        case .localDecl(let n):
+            enter(n.value.span, for: "localDecl", through: parent, until: length, to: ref sb)
+            walkType(in n.value.type, through: n.value.span, until: length, to: ref sb)
+            childSpan(n.value.name, for: "localDecl name", through: n.value.span, to: ref sb)
+            walkExpr(in n.value.init, through: n.value.span, until: length, to: ref sb)
+        case .exprStmt(let n):
+            enter(n.value.span, for: "exprStmt", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.expr, through: n.value.span, until: length, to: ref sb)
+        case .assignStmt(let n):
+            enter(n.value.span, for: "assignStmt", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.target, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.value, through: n.value.span, until: length, to: ref sb)
+        case .incDecStmt(let n):
+            enter(n.value.span, for: "incDecStmt", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.target, through: n.value.span, until: length, to: ref sb)
+        case .returnStmt(let n):
+            enter(n.value.span, for: "returnStmt", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.value, through: n.value.span, until: length, to: ref sb)
+        case .failStmt(let n):
+            enter(n.value.span, for: "failStmt", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.error, through: n.value.span, until: length, to: ref sb)
+        case .breakStmt(let n):
+            enter(n.value.span, for: "breakStmt", through: parent, until: length, to: ref sb)
+            if (n.value.label is { } l) { childSpan(l, for: "breakStmt label", through: n.value.span, to: ref sb) }
+        case .continueStmt(let n):
+            enter(n.value.span, for: "continueStmt", through: parent, until: length, to: ref sb)
+            if (n.value.label is { } l) { childSpan(l, for: "continueStmt label", through: n.value.span, to: ref sb) }
+        case .becomeStmt(let n):
+            enter(n.value.span, for: "becomeStmt", through: parent, until: length, to: ref sb)
+            childSpan(n.value.state, for: "becomeStmt state", through: n.value.span, to: ref sb)
+            for a in n.value.args { walkArgument(in a, through: n.value.span, until: length, to: ref sb) }
+        case .ifStmt(let n):
+            enter(n.value.span, for: "ifStmt", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.condition, through: n.value.span, until: length, to: ref sb)
+            walkStmt(in n.value.then, through: n.value.span, until: length, to: ref sb)
+            walkStmt(in n.value.elseKeyword, through: n.value.span, until: length, to: ref sb)
+        case .unlessStmt(let n):
+            enter(n.value.span, for: "unlessStmt", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.condition, through: n.value.span, until: length, to: ref sb)
+            walkStmt(in n.value.body, through: n.value.span, until: length, to: ref sb)
+        case .guardedStmt(let n):
+            enter(n.value.span, for: "guardedStmt", through: parent, until: length, to: ref sb)
+            walkStmt(in n.value.statement, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.condition, through: n.value.span, until: length, to: ref sb)
+        case .whileStmt(let n):
+            enter(n.value.span, for: "whileStmt", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.condition, through: n.value.span, until: length, to: ref sb)
+            walkStmt(in n.value.body, through: n.value.span, until: length, to: ref sb)
+        case .doWhileStmt(let n):
+            enter(n.value.span, for: "doWhileStmt", through: parent, until: length, to: ref sb)
+            walkStmt(in n.value.body, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.condition, through: n.value.span, until: length, to: ref sb)
+        case .whileLetStmt(let n):
+            enter(n.value.span, for: "whileLetStmt", through: parent, until: length, to: ref sb)
+            childSpan(n.value.variable, for: "whileLetStmt variable", through: n.value.span, to: ref sb)
+            walkExpr(in n.value.value, through: n.value.span, until: length, to: ref sb)
+            walkStmt(in n.value.body, through: n.value.span, until: length, to: ref sb)
+        case .forStmt(let n):
+            enter(n.value.span, for: "forStmt", through: parent, until: length, to: ref sb)
+            walkType(in n.value.type, through: n.value.span, until: length, to: ref sb)
+            childSpan(n.value.variable, for: "forStmt variable", through: n.value.span, to: ref sb)
+            walkExpr(in n.value.iterable, through: n.value.span, until: length, to: ref sb)
+            walkStmt(in n.value.body, through: n.value.span, until: length, to: ref sb)
+            childSpans(in n.value.names, for: "forStmt names", through: n.value.span, to: ref sb)
+        case .labeledStmt(let n):
+            enter(n.value.span, for: "labeledStmt", through: parent, until: length, to: ref sb)
+            childSpan(n.value.label, for: "labeledStmt label", through: n.value.span, to: ref sb)
+            walkStmt(in n.value.statement, through: n.value.span, until: length, to: ref sb)
+        case .switchStmt(let n):
+            enter(n.value.span, for: "switchStmt", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.value, through: n.value.span, until: length, to: ref sb)
+            for sec in n.value.sections { walkSwitchSection(in sec, through: n.value.span, until: length, to: ref sb) }
+        case .deferStmt(let n):
+            enter(n.value.span, for: "deferStmt", through: parent, until: length, to: ref sb)
+            if (n.value.binding is { } b) { childSpan(b, for: "deferStmt binding", through: n.value.span, to: ref sb) }
+            walkStmt(in n.value.body, through: n.value.span, until: length, to: ref sb)
+        case .assertStmt(let n):
+            enter(n.value.span, for: "assertStmt", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.condition, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.failsKeyword, through: n.value.span, until: length, to: ref sb)
+        case .contextStmt(let n):
+            enter(n.value.span, for: "contextStmt", through: parent, until: length, to: ref sb)
+            for v in n.value.values { walkNamedArg(in v, through: n.value.span, until: length, to: ref sb) }
+            walkStmt(in n.value.body, through: n.value.span, until: length, to: ref sb)
+        case .emptyStmt(let n):
+            enter(n.value.span, for: "emptyStmt", through: parent, until: length, to: ref sb)
+        case .errorStmt(let n):
+            enter(n.value.span, for: "errorStmt", through: parent, until: length, to: ref sb)
+        case .none:
+    }
+}
+
+// ── Expressions ────────────────────────────────────────────────────────────────
+
+void walkExpr(in Expr e, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    switch e {
+        case .literalExpr(let n):
+            enter(n.value.span, for: "literalExpr", through: parent, until: length, to: ref sb)
+            if (n.value.suffix is { } s) { childSpan(s, for: "literalExpr suffix", through: n.value.span, to: ref sb) }
+        case .interpolatedExpr(let n):
+            enter(n.value.span, for: "interpolatedExpr", through: parent, until: length, to: ref sb)
+            for part in n.value.parts { walkPart(in part, through: n.value.span, until: length, to: ref sb) }
+        case .nameExpr(let n):
+            enter(n.value.span, for: "nameExpr", through: parent, until: length, to: ref sb)
+            childSpan(n.value.name, for: "nameExpr name", through: n.value.span, to: ref sb)
+            for a in n.value.typeArgs { walkType(in a, through: n.value.span, until: length, to: ref sb) }
+        case .thisExpr(let n):
+            enter(n.value.span, for: "thisExpr", through: parent, until: length, to: ref sb)
+        case .memberExpr(let n):
+            enter(n.value.span, for: "memberExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.target, through: n.value.span, until: length, to: ref sb)
+            childSpan(n.value.member, for: "memberExpr member", through: n.value.span, to: ref sb)
+            for a in n.value.typeArgs { walkType(in a, through: n.value.span, until: length, to: ref sb) }
+        case .targetMemberExpr(let n):
+            enter(n.value.span, for: "targetMemberExpr", through: parent, until: length, to: ref sb)
+            childSpan(n.value.member, for: "targetMemberExpr member", through: n.value.span, to: ref sb)
+        case .callExpr(let n):
+            enter(n.value.span, for: "callExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.callee, through: n.value.span, until: length, to: ref sb)
+            for a in n.value.args { walkArgument(in a, through: n.value.span, until: length, to: ref sb) }
+            if (n.value.becauseKeyword is { } bc) { enter(bc.span, for: "becauseClause", through: n.value.span, until: length, to: ref sb) }
+        case .indexExpr(let n):
+            enter(n.value.span, for: "indexExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.target, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.index, through: n.value.span, until: length, to: ref sb)
+        case .unaryExpr(let n):
+            enter(n.value.span, for: "unaryExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.operand, through: n.value.span, until: length, to: ref sb)
+        case .binaryExpr(let n):
+            enter(n.value.span, for: "binaryExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.left, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.right, through: n.value.span, until: length, to: ref sb)
+        case .rangeExpr(let n):
+            enter(n.value.span, for: "rangeExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.start, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.end, through: n.value.span, until: length, to: ref sb)
+        case .conditionalExpr(let n):
+            enter(n.value.span, for: "conditionalExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.condition, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.whenTrue, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.whenFalse, through: n.value.span, until: length, to: ref sb)
+        case .castExpr(let n):
+            enter(n.value.span, for: "castExpr", through: parent, until: length, to: ref sb)
+            walkType(in n.value.type, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.operand, through: n.value.span, until: length, to: ref sb)
+        case .isExpr(let n):
+            enter(n.value.span, for: "isExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.value, through: n.value.span, until: length, to: ref sb)
+            walkPattern(in n.value.pattern, through: n.value.span, until: length, to: ref sb)
+        case .exceptExpr(let n):
+            enter(n.value.span, for: "exceptExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.value, through: n.value.span, until: length, to: ref sb)
+            walkPattern(in n.value.pattern, through: n.value.span, until: length, to: ref sb)
+        case .inExpr(let n):
+            enter(n.value.span, for: "inExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.value, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.range, through: n.value.span, until: length, to: ref sb)
+        case .switchExpr(let n):
+            enter(n.value.span, for: "switchExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.value, through: n.value.span, until: length, to: ref sb)
+            for arm in n.value.arms { walkSwitchArm(in arm, through: n.value.span, until: length, to: ref sb) }
+        case .tryExpr(let n):
+            enter(n.value.span, for: "tryExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.operand, through: n.value.span, until: length, to: ref sb)
+        case .moveExpr(let n):
+            enter(n.value.span, for: "moveExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.operand, through: n.value.span, until: length, to: ref sb)
+        case .catchExpr(let n):
+            enter(n.value.span, for: "catchExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.operand, through: n.value.span, until: length, to: ref sb)
+            if (n.value.binding is { } b) { childSpan(b, for: "catchExpr binding", through: n.value.span, to: ref sb) }
+            walkExpr(in n.value.variant, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.handler, through: n.value.span, until: length, to: ref sb)
+        case .caughtErrorExpr(let n):
+            enter(n.value.span, for: "caughtErrorExpr", through: parent, until: length, to: ref sb)
+        case .jumpExpr(let n):
+            enter(n.value.span, for: "jumpExpr", through: parent, until: length, to: ref sb)
+            walkStmt(in n.value.jump, through: n.value.span, until: length, to: ref sb)
+        case .blockExpr(let n):
+            enter(n.value.span, for: "blockExpr", through: parent, until: length, to: ref sb)
+            walkStmt(in n.value.block, through: n.value.span, until: length, to: ref sb)
+        case .structLiteralExpr(let n):
+            enter(n.value.span, for: "structLiteralExpr", through: parent, until: length, to: ref sb)
+            walkType(in n.value.type, through: n.value.span, until: length, to: ref sb)
+            for f in n.value.fields { walkFieldInit(in f, through: n.value.span, until: length, to: ref sb) }
+        case .withExpr(let n):
+            enter(n.value.span, for: "withExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.target, through: n.value.span, until: length, to: ref sb)
+            for f in n.value.fields { walkFieldInit(in f, through: n.value.span, until: length, to: ref sb) }
+        case .spreadExpr(let n):
+            enter(n.value.span, for: "spreadExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.operand, through: n.value.span, until: length, to: ref sb)
+        case .mapEntryExpr(let n):
+            enter(n.value.span, for: "mapEntryExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.key, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.value, through: n.value.span, until: length, to: ref sb)
+        case .collectionExpr(let n):
+            enter(n.value.span, for: "collectionExpr", through: parent, until: length, to: ref sb)
+            for item in n.value.elements { walkExpr(in item, through: n.value.span, until: length, to: ref sb) }
+        case .tupleExpr(let n):
+            enter(n.value.span, for: "tupleExpr", through: parent, until: length, to: ref sb)
+            for el in n.value.elements { walkTupleElement(in el, through: n.value.span, until: length, to: ref sb) }
+        case .parenExpr(let n):
+            enter(n.value.span, for: "parenExpr", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.inner, through: n.value.span, until: length, to: ref sb)
+        case .lambdaExpr(let n):
+            enter(n.value.span, for: "lambdaExpr", through: parent, until: length, to: ref sb)
+            childSpans(in n.value.params, for: "lambdaExpr params", through: n.value.span, to: ref sb)
+            walkExpr(in n.value.body, through: n.value.span, until: length, to: ref sb)
+            walkStmt(in n.value.block, through: n.value.span, until: length, to: ref sb)
+        case .stackallocExpr(let n):
+            enter(n.value.span, for: "stackallocExpr", through: parent, until: length, to: ref sb)
+            walkType(in n.value.element, through: n.value.span, until: length, to: ref sb)
+            walkExpr(in n.value.count, through: n.value.span, until: length, to: ref sb)
+        case .patternExpr(let n):
+            enter(n.value.span, for: "patternExpr", through: parent, until: length, to: ref sb)
+            walkPattern(in n.value.pattern, through: n.value.span, until: length, to: ref sb)
+        case .errorExpr(let n):
+            enter(n.value.span, for: "errorExpr", through: parent, until: length, to: ref sb)
+        case .none:
+    }
+}
+
+// ── Patterns and interpolation parts ────────────────────────────────────────────
+
+void walkPattern(in Pattern p, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    switch p {
+        case .constantPattern(let n):
+            enter(n.value.span, for: "constantPattern", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.value, through: n.value.span, until: length, to: ref sb)
+        case .relationalPattern(let n):
+            enter(n.value.span, for: "relationalPattern", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.value, through: n.value.span, until: length, to: ref sb)
+        case .varPattern(let n):
+            enter(n.value.span, for: "varPattern", through: parent, until: length, to: ref sb)
+            childSpan(n.value.name, for: "varPattern name", through: n.value.span, to: ref sb)
+        case .discardPattern(let n):
+            enter(n.value.span, for: "discardPattern", through: parent, until: length, to: ref sb)
+        case .declarationPattern(let n):
+            enter(n.value.span, for: "declarationPattern", through: parent, until: length, to: ref sb)
+            walkType(in n.value.type, through: n.value.span, until: length, to: ref sb)
+            childSpan(n.value.name, for: "declarationPattern name", through: n.value.span, to: ref sb)
+        case .notPattern(let n):
+            enter(n.value.span, for: "notPattern", through: parent, until: length, to: ref sb)
+            walkPattern(in n.value.operand, through: n.value.span, until: length, to: ref sb)
+        case .binaryPattern(let n):
+            enter(n.value.span, for: "binaryPattern", through: parent, until: length, to: ref sb)
+            walkPattern(in n.value.left, through: n.value.span, until: length, to: ref sb)
+            walkPattern(in n.value.right, through: n.value.span, until: length, to: ref sb)
+        case .propertyPattern(let n):
+            enter(n.value.span, for: "propertyPattern", through: parent, until: length, to: ref sb)
+            walkType(in n.value.type, through: n.value.span, until: length, to: ref sb)
+            for sub in n.value.properties { walkPropertySubpattern(in sub, through: n.value.span, until: length, to: ref sb) }
+            if (n.value.designation is { } d) { childSpan(d, for: "propertyPattern designation", through: n.value.span, to: ref sb) }
+        case .positionalPattern(let n):
+            enter(n.value.span, for: "positionalPattern", through: parent, until: length, to: ref sb)
+            walkType(in n.value.type, through: n.value.span, until: length, to: ref sb)
+            for el in n.value.elements { walkPattern(in el, through: n.value.span, until: length, to: ref sb) }
+        case .variantPattern(let n):
+            enter(n.value.span, for: "variantPattern", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.variant, through: n.value.span, until: length, to: ref sb)
+            for el in n.value.elements { walkPattern(in el, through: n.value.span, until: length, to: ref sb) }
+            if (n.value.binding is { } b) { childSpan(b, for: "variantPattern binding", through: n.value.span, to: ref sb) }
+        case .slicePattern(let n):
+            enter(n.value.span, for: "slicePattern", through: parent, until: length, to: ref sb)
+            walkPattern(in n.value.inner, through: n.value.span, until: length, to: ref sb)
+        case .listPattern(let n):
+            enter(n.value.span, for: "listPattern", through: parent, until: length, to: ref sb)
+            for el in n.value.elements { walkPattern(in el, through: n.value.span, until: length, to: ref sb) }
+        case .none:
+    }
+}
+
+void walkPart(in InterpolationPart part, through TextSpan parent, until i64 length, to ref StrBuf sb) {
+    switch part {
+        case .interpolationText(let n):
+            enter(n.value.span, for: "interpolationText", through: parent, until: length, to: ref sb)
+        case .interpolationHole(let n):
+            enter(n.value.span, for: "interpolationHole", through: parent, until: length, to: ref sb)
+            walkExpr(in n.value.expr, through: n.value.span, until: length, to: ref sb)
+            for spec in n.value.specs { walkArgument(in spec, through: n.value.span, until: length, to: ref sb) }
+    }
+}

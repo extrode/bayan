@@ -1,0 +1,251 @@
+// Literal decoding. Ports `src/Bayan.Syntax/Parsing/LiteralDecoder.cs`. Owner: 
+//
+// Each decoder takes the token's (or doc's) source bytes. C# decodes `Text(token)`, the bytes as
+// `Encoding.UTF8` reads them, and indexes its chars; here the bytes are decoded the same way (`runesOf`)
+// and the runes are indexed: every character a decoder tests is ASCII or in the BMP, so the two agree.
+// A decoded string is built with `StrBuf` and copied result of it into the context allocator (the arena):
+// `finish()` borrows from the buffer, so it cannot be returned (Q455).
+//
+// `Unescape`'s fast path (no `\`, `{` or `}`: the text as is) is left result; the loop gives the same text.
+
+/// Contents of a `"…"`, `c"…"` or `u16"…"` literal.
+string decodeString(ReadOnlySpan<u8> token) {
+    let text = runesOf(token)
+    let start = indexOf(text.span, for: '"') + 1
+    let end = text.length > start && text[text.length - 1] == '"' ? text.length - 1 : text.length
+    var result = List<rune>()
+    unescape(text.span[start..end], to: ref result, interpolated: false)
+    return stringOf(move result)
+}
+
+/// Contents of a raw `"""…"""` literal. When the opening quotes end their line, that line break is dropped,
+/// the closing line's indentation is removed from every line, and the line break before the closing quotes
+/// is dropped (as in C# raw strings).
+string decodeRawString(ReadOnlySpan<u8> token) {
+    let text = runesOf(token)
+    let n = text.length
+    let open: i64 = n < 3 ? n : 3
+    let closed = n >= 6 && text[n - 1] == '"' && text[n - 2] == '"' && text[n - 3] == '"'
+    var body = List<rune>()
+    withoutCarriageReturns(text.span[open..(closed ? n - 3 : n)], to: ref body)
+    if body.length == 0 || body[0] != '\n' { return stringOf(move body) }
+    let rest = body.span[1..body.length]
+    let lastBreak = lastIndexOf(rest, for: '\n')
+    let indent = lastBreak >= 0 ? rest[lastBreak + 1..rest.length] : rest[0..0]
+    for c in indent {
+        if c != ' ' && c != '\t' {
+            var copy = List<rune>()
+            withoutCarriageReturns(rest, to: ref copy)
+            return stringOf(move copy)
+        }
+    }
+    let lines = lastBreak >= 0 ? rest[0..lastBreak] : rest[0..0]
+    var result = List<rune>()
+    var lineStart: i64 = 0
+    for i in 0..lines.length + 1 {
+        if i < lines.length && lines[i] != '\n' { continue }
+        var from = lineStart
+        if startsWith(lines[lineStart..i], by: indent) { from += indent.length }
+        if lineStart > 0 { result.append('\n') }
+        for j in from..i { result.append(lines[j]) }
+        lineStart = i + 1
+    }
+    return stringOf(move result)
+}
+
+/// A literal text run inside `$"…"`: escapes plus doubled braces.
+string decodeInterpolatedText(ReadOnlySpan<u8> text) {
+    let runes = runesOf(text)
+    var result = List<rune>()
+    unescape(runes.span, to: ref result, interpolated: true)
+    return stringOf(move result)
+}
+
+/// The scalar value of a char literal, or -1 if it does not hold exactly one.
+i64 decodeChar(ReadOnlySpan<u8> token) {
+    let text = runesOf(token)
+    let start: i64 = text.length < 1 ? text.length : 1
+    let end = text.length > 1 && text[text.length - 1] == '\'' ? text.length - 1 : text.length
+    var result = List<rune>()
+    unescape(text.span[start..end], to: ref result, interpolated: false)
+    if result.length != 1 { return -1 }
+    return i64(result[0])
+}
+
+/// Doc comment text without the `///` markers (and one following space).
+string decodeDoc(ReadOnlySpan<u8> doc) {
+    var text = List<rune>()
+    withoutCarriageReturns(runesOf(doc).span, to: ref text)
+    var result = List<rune>()
+    var lineStart: i64 = 0
+    for i in 0..text.length + 1 {
+        if i < text.length && text[i] != '\n' { continue }
+        var from = lineStart
+        while from < i && isUnicodeWhiteSpace(text[from]) { from += 1 }
+        if i - from >= 3 && text[from] == '/' && text[from + 1] == '/' && text[from + 2] == '/' { from += 3 }
+        if from < i && text[from] == ' ' { from += 1 }
+        if lineStart > 0 { result.append('\n') }
+        for j in from..i { result.append(text[j]) }
+        lineStart = i + 1
+    }
+    return stringOf(move result)
+}
+
+void unescape(ReadOnlySpan<rune> text, to ref List<rune> result, bool interpolated) {
+    var i: i64 = 0
+    while i < text.length {
+        let c = text[i]
+        if interpolated && (c == '{' || c == '}') && i + 1 < text.length && text[i + 1] == c {
+            result.append(c)
+            i += 2
+            continue
+        }
+        if c != '\\' || i + 1 >= text.length {
+            result.append(c)
+            i += 1
+            continue
+        }
+        let next = text[i + 1]
+        if next == 'n' {
+            result.append('\n')
+            i += 1
+        } else if next == 'r' {
+            result.append('\r')
+            i += 1
+        } else if next == 't' {
+            result.append('\t')
+            i += 1
+        } else if next == '0' {
+            result.append('\0')
+            i += 1
+        } else if next == '\\' || next == '"' || next == '\'' {
+            result.append(next)
+            i += 1
+        } else if next == 'u' && i + 2 < text.length && text[i + 2] == '{' {
+            let close = indexOf(text[i + 3..text.length], for: '}')
+            let value = close > 0 ? hexValue(text[i + 3..i + 3 + close]) : -1
+            if value >= 0 {
+                result.append(rune(u32(value)))
+                i += 3 + close
+            } else {
+                result.append(c)
+            }
+        } else {
+            result.append(c)
+        }
+        i += 1
+    }
+}
+
+/// The scalar `int.TryParse(…, AllowHexSpecifier)` reads from `digits` when `Rune.IsValid` accepts it, else -1.
+/// Leading zeros do not count against the eight digits an `int` holds, and every value an `int` holds past
+/// U+10FFFF (negative ones included) is not a scalar, so the value saturates instead of overflowing.
+i64 hexValue(ReadOnlySpan<rune> digits) {
+    var value: i64 = 0
+    for d in digits {
+        var digit: i64 = -1
+        if d >= '0' && d <= '9' {
+            digit = i64(u32(d)) - 0x30
+        } else if d >= 'a' && d <= 'f' {
+            digit = i64(u32(d)) - 0x57
+        } else if d >= 'A' && d <= 'F' {
+            digit = i64(u32(d)) - 0x37
+        }
+        if digit < 0 { return -1 }
+        value = value > 0x10FFFF ? value : value * 16 + digit
+    }
+    if value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF) { return -1 }
+    return value
+}
+
+/// `char.IsWhiteSpace`, which `TrimStart` trims.
+bool isUnicodeWhiteSpace(rune r) {
+    let c = u32(r)
+    return (c >= 0x09 && c <= 0x0D) || c == 0x20 || c == 0x85 || c == 0xA0 || c == 0x1680 || (c >= 0x2000 && c <= 0x200A) ||
+    c == 0x2028 || c == 0x2029 || c == 0x202F || c == 0x205F || c == 0x3000
+}
+
+/// `text` with every `\r\n` made `\n` (C# `Replace("\r\n", "\n")`).
+void withoutCarriageReturns(ReadOnlySpan<rune> text, to ref List<rune> result) {
+    for i in 0..text.length {
+        if !(text[i] == '\r' && i + 1 < text.length && text[i + 1] == '\n') { result.append(text[i]) }
+    }
+}
+
+i64 indexOf(ReadOnlySpan<rune> text, for rune c) {
+    for i in 0..text.length {
+        if text[i] == c { return i }
+    }
+    return -1
+}
+
+i64 lastIndexOf(ReadOnlySpan<rune> text, for rune c) {
+    var i = text.length - 1
+    while i >= 0 && text[i] != c { i -= 1 }
+    return i
+}
+
+bool startsWith(ReadOnlySpan<rune> text, by ReadOnlySpan<rune> prefix) {
+    if text.length < prefix.length { return false }
+    for i in 0..prefix.length {
+        if text[i] != prefix[i] { return false }
+    }
+    return true
+}
+
+/// The decoded runes as a string in the context allocator.
+string stringOf(move List<rune> runes) {
+    var sb = StrBuf()
+    for c in runes { sb.append($"{c}") }
+    return $"{sb.finish()}"
+}
+
+/// `bytes` decoded as `Encoding.UTF8.GetString` does: each invalid maximal subpart is U+FFFD. The lexer's
+/// `decodeAt` does this but is not `public`; this is its body (T15 may share it).
+List<rune> runesOf(ReadOnlySpan<u8> bytes) {
+    var runes = List<rune>()
+    var pos: i64 = 0
+    while pos < bytes.length {
+        let b0 = bytes[pos]
+        var value: u32 = 0xFFFD
+        var length: i64 = 1
+        if b0 < 0x80 {
+            value = b0
+        } else if b0 >= 0xC2 && b0 <= 0xDF {
+            if continues(bytes, at: pos + 1, from: 0x80, through: 0xBF) {
+                value = (u32(b0 & 0x1F) << 6) | u32(bytes[pos + 1] & 0x3F)
+                length = 2
+            }
+        } else if b0 >= 0xE0 && b0 <= 0xEF {
+            let lo: u8 = b0 == 0xE0 ? 0xA0 : 0x80
+            let hi: u8 = b0 == 0xED ? 0x9F : 0xBF
+            if continues(bytes, at: pos + 1, from: lo, through: hi) {
+                length = 2
+                if continues(bytes, at: pos + 2, from: 0x80, through: 0xBF) {
+                    value = (u32(b0 & 0x0F) << 12) | (u32(bytes[pos + 1] & 0x3F) << 6) | u32(bytes[pos + 2] & 0x3F)
+                    length = 3
+                }
+            }
+        } else if b0 >= 0xF0 && b0 <= 0xF4 {
+            let lo: u8 = b0 == 0xF0 ? 0x90 : 0x80
+            let hi: u8 = b0 == 0xF4 ? 0x8F : 0xBF
+            if continues(bytes, at: pos + 1, from: lo, through: hi) {
+                length = 2
+                if continues(bytes, at: pos + 2, from: 0x80, through: 0xBF) {
+                    length = 3
+                    if continues(bytes, at: pos + 3, from: 0x80, through: 0xBF) {
+                        value = (u32(b0 & 0x07) << 18) | (u32(bytes[pos + 1] & 0x3F) << 12) |
+                            (u32(bytes[pos + 2] & 0x3F) << 6) | u32(bytes[pos + 3] & 0x3F)
+                        length = 4
+                    }
+                }
+            }
+        }
+        runes.append(rune(value))
+        pos += length
+    }
+    return runes
+}
+
+bool continues(ReadOnlySpan<u8> bytes, at i64 pos, from u8 lo, through u8 hi) =>
+    pos < bytes.length && bytes[pos] >= lo && bytes[pos] <= hi
