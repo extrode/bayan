@@ -1,4 +1,14 @@
 // T9: Builtins.cs and Binding/BuiltinMembers.cs.
+//
+// The C# `Builtins` object is built once per `Compilation`; `Ctx` has no field for it (frozen after
+// T4), so the first lookup appends a `"builtin"` module to `c.modules` and builds everything into it
+// in the C# constructor's order (Q560). Its types are in the module's `types` map by name, its
+// functions in `functions` under a key (`"print"`, `"Io.readFile"`, `"parse.i32"`, …). Each
+// `"<builtin>"` source is parsed and kept as a `SourceFile` whose `module` is the builtin module,
+// so the declare pass reads its variants and members like any other file's.
+
+import lexer
+import parser
 
 // One parameter of a builtin method: the C# `(string Name, TypeSymbol Type)` pair.
 struct BuiltinParameter {
@@ -21,32 +31,587 @@ struct PropertyResult {
     Type type
 }
 
-// stub: T9 ports Builtins.cs:444 Find
-FuncId? find(ref Ctx c, for string name) => null
+// ── Builtins.cs ─────────────────────────────────────────────────────────────────
 
-// stub: T9 ports Builtins.cs:150 FindInterface
-InterfaceId findInterface(ref Ctx c, for string name) => -1
+const streamSource: string = "public enum Stream {\n    stdout,\n    stderr,\n}"
 
-// stub: T9 ports Builtins.cs:329 FindIo
-FuncId findIo(ref Ctx c, for string name) => -1
+const radixSource: string = "public enum Radix {\n    binary,\n    octal,\n    decimal,\n    hex,\n}"
 
-// stub: T9 ports Builtins.cs:251 FindString
-FuncId findString(ref Ctx c, for string name) => -1
+const edgeSource: string = "public enum Edge {\n    start,\n    end,\n}"
 
-// stub: T9 ports Builtins.cs:258 FindUtf8
-FuncId findUtf8(ref Ctx c, for string name) => -1
+const alignSource: string = "public enum Align {\n    start,\n    end,\n    center,\n}"
 
-// stub: T9 ports Builtins.cs:268 IntParse
-FuncId intParse(ref Ctx c, for PrimitiveKind t) => -1
+const comparisonSource: string = "public enum Comparison {\n    ordinal,\n    caseless,\n}"
 
-// stub: T9 ports BuiltinMembers.cs:134 HasMethod
-bool hasMethod(ref Ctx c, for Type type, by string name) => false
+const logLevelSource: string = "public enum LogLevel {\n    debug,\n    info,\n    warn,\n    error,\n}"
 
-// stub: T9 ports BuiltinMembers.cs:56 Method
-BuiltinMethod? method(ref Ctx c, for Type type, by string name) => null
+const iterationSource: string = "public interface IEnumerator {\n    type Item;\n    bool moveNext(ref this);\n    Item current { get; }\n}\n\npublic interface IIndexable {\n    type Item;\n    i64 count { get; }\n    Item get(i64 index);\n}"
 
-// stub: T9 ports BuiltinMembers.cs:141 Names
-List<string> names(Type t) => []
+const utf8ErrorSource: string = "public union error Utf8Error {\n    /// The bytes are not well-formed UTF-8.\n    invalidSequence(i64 at),\n}"
 
-// stub: T9 ports BuiltinMembers.cs:13 Property
-PropertyResult? builtinProperty(ref Ctx c, for Type type, by string name) => null
+const parseErrorSource: string = "public union error ParseError {\n    /// The text has no digit, or a character that is not a digit, at this byte offset.\n    badDigit(i64 at),\n    /// The number does not fit the type.\n    overflow,\n}"
+
+const utf8InvalidSource: string = "public enum Utf8Invalid {\n    replace,\n}"
+
+const validationErrorSource: string = "public union error ValidationError {\n    /// The value breaks a `requires` rule of its type.\n    invalid,\n}"
+
+const ruleSource: string = "public union Rule {\n    /// `it.runeCount in a..=b`.\n    length(Range<i64> bounds)\n    /// `it in a..=b`.\n    range(Range<i64> bounds)\n    /// Any other rule.\n    custom\n}\n\npublic struct Violation {\n    i64 field\n    i64 rule\n}"
+
+const ioErrorSource: string = "public union error IoError {\n    /// The file does not exist.\n    notFound,\n    /// Permission denied.\n    permissionDenied,\n    /// The file is not valid UTF-8.\n    invalidUtf8,\n    /// The path exists but is not a directory.\n    notADirectory,\n    /// An input or output operation failed.\n    other,\n    /// An argument cannot be passed exactly, so nothing was done.\n    invalidInput,\n    /// The operation is not available on this platform.\n    unsupported,\n}"
+
+/// The builtin module, built on first use (the C# `Builtins.Module`).
+ModId t9Module(ref Ctx c) {
+    for i in 0..c.modules.length {
+        if c.modules[i].name == "builtin" && c.modules[i].cName == "builtin" && c.modules[i].directory == "" { return i }
+    }
+    return t9Create(ref c)
+}
+
+/// The builtin type named `name` (`Stream`, `IoError`, `Rule`, `IEnumerator`, …), or -1.
+Type t9Type(ref Ctx c, for string name) {
+    let m = t9Module(ref c)
+    return c.modules[m].types.tryGet(at: name) ?? -1
+}
+
+/// The builtin function stored under `key`, or -1.
+FuncId t9Function(ref Ctx c, for string key) {
+    let m = t9Module(ref c)
+    if c.modules[m].functions.contains(key) { return c.modules[m].functions[key][0] }
+    return -1
+}
+
+/// The C# `Builtins` constructor.
+ModId t9Create(ref Ctx c) {
+    c.modules.append(Mod { name: "builtin", files: List<FileId>(), directory: "", cName: "builtin" })
+    let m = c.modules.length - 1
+    let stream = t9Enum(ref c, from: streamSource, by: m)
+    let _ = t9Enum(ref c, from: radixSource, by: m)
+    let _ = t9Enum(ref c, from: edgeSource, by: m)
+    let _ = t9Enum(ref c, from: alignSource, by: m)
+    let _ = t9Enum(ref c, from: comparisonSource, by: m)
+    let _ = t9Make(ref c, by: m, for: "print", as: .print, to: prim(.void), from: t9Two("text", as: prim(.string), for: "to", to: enumTypeOf(stream)), at: "print")
+    let _ = t9Make(ref c, by: m, for: "panic", as: .panic, to: prim(.neverKind), from: t9One("message", as: prim(.string)), at: "panic")
+    let _ = t9Make(ref c, by: m, for: "todo", as: .todo, to: prim(.neverKind), from: t9One("message", as: prim(.string)), at: "todo")
+
+    let logLevel = t9Enum(ref c, from: logLevelSource, by: m)
+    let _ = t9Make(ref c, by: m, for: "log", as: .log, to: prim(.void), from: t9Two("text", as: prim(.string), for: "as", to: enumTypeOf(logLevel)), at: "log")
+    let _ = t9Make(ref c, by: m, for: "Arena", as: .arenaNew, to: builtinType(.arena), from: List<BuiltinParameter>(), at: "Arena")
+    let bufferSpan = internSpan(ref c, by: prim(.u8), readOnly: false)
+    let _ = t9Make(ref c, by: m, for: "StrBuf", as: .strBufNew, to: builtinType(.strBuf), from: t9One("buffer", as: bufferSpan), at: "StrBuf(buffer)")
+    let _ = t9Make(ref c, by: m, for: "StrBuf", as: .strBufGrow, to: builtinType(.strBuf), from: List<BuiltinParameter>(), at: "StrBuf")
+    let _ = t9Make(ref c, by: m, for: "StrBuf.over", as: .strBufOver, to: builtinType(.strBuf), from: t9One("buffer", as: bufferSpan), at: "StrBuf.over")
+    // The value's type varies: the binder types each call (see `BindOwned`).
+    let _ = t9Make(ref c, by: m, for: "Owned", as: .ownedNew, to: errorType(), from: List<BuiltinParameter>(), at: "Owned")
+    let _ = t9Make(ref c, by: m, for: "Untrusted", as: .untrustedNew, to: errorType(), from: List<BuiltinParameter>(), at: "Untrusted")
+    let _ = t9Make(ref c, by: m, for: "trust", as: .trust, to: errorType(), from: List<BuiltinParameter>(), at: "trust")
+
+    let ioError = t9ErrorSet(ref c, from: ioErrorSource, by: m)
+    let roBytes = internSpan(ref c, by: prim(.u8), readOnly: true)
+    let roStrings = internSpan(ref c, by: prim(.string), readOnly: true)
+    let _ = t9MakeIo(ref c, by: m, for: "readFile", as: .ioReadFile, to: internList(ref c, by: prim(.u8)), from: t9One("path", as: prim(.string)), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "readText", as: .ioReadText, to: prim(.string), from: t9One("path", as: prim(.string)), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "writeFile", as: .ioWriteFile, to: prim(.void), from: t9Two("path", as: prim(.string), for: "bytes", to: roBytes), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "listDir", as: .ioListDir, to: internList(ref c, by: prim(.string)), from: t9One("path", as: prim(.string)), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "run", as: .ioRun, to: builtinType(.processResult), from: t9Two("program", as: prim(.string), for: "args", to: roStrings), at: ioError)
+    let _ = t9MakeIo(ref c, by: m, for: "runBatch", as: .ioRunBatch, to: builtinType(.processResult), from: t9Two("path", as: prim(.string), for: "args", to: roStrings), at: ioError)
+    let _ = t9Make(ref c, by: m, for: "monotonicNanos", as: .ioMonotonicNanos, to: prim(.i64), from: List<BuiltinParameter>(), at: "Io.monotonicNanos")
+    let _ = t9Make(ref c, by: m, for: "stdout", as: .ioStdout, to: builtinType(.ioStream), from: List<BuiltinParameter>(), at: "Io.stdout")
+    let _ = t9Make(ref c, by: m, for: "stderr", as: .ioStderr, to: builtinType(.ioStream), from: List<BuiltinParameter>(), at: "Io.stderr")
+    let _ = t9Make(ref c, by: m, for: "stdin", as: .ioStdin, to: builtinType(.ioInput), from: List<BuiltinParameter>(), at: "Io.stdin")
+
+    let utf8Error = t9ErrorSet(ref c, from: utf8ErrorSource, by: m)
+    let _ = t9ErrorSet(ref c, from: validationErrorSource, by: m)
+    let _ = t9Rule(ref c, by: m)
+    let parseError = t9ErrorSet(ref c, from: parseErrorSource, by: m)
+    let invalid = t9Enum(ref c, from: utf8InvalidSource, by: m)
+    let decode = t9Make(ref c, by: m, for: "decode", as: .utf8Decode, to: prim(.string), from: t9One("bytes", as: roBytes), at: "Utf8.decode")
+    t9Fails(ref c, for: decode, by: utf8Error)
+    let _ = t9Make(ref c, by: m, for: "tryDecode", as: .utf8TryDecode, to: internOptional(ref c, by: prim(.string)), from: t9One("bytes", as: roBytes), at: "Utf8.tryDecode")
+    let _ = t9Make(ref c, by: m, for: "decode", as: .utf8DecodeReplace, to: prim(.string), from: t9Two("bytes", as: roBytes, for: "invalid", to: enumTypeOf(invalid)), at: "Utf8.decode(invalid)")
+    let _ = t9Make(ref c, by: m, for: "encode", as: .hexEncode, to: prim(.string), from: t9One("bytes", as: roBytes), at: "Hex.encode")
+    let hexDecode = t9Make(ref c, by: m, for: "decode", as: .hexDecode, to: internList(ref c, by: prim(.u8)), from: t9One("text", as: prim(.string)), at: "Hex.decode")
+    t9Fails(ref c, for: hexDecode, by: parseError)
+    let _ = t9Make(ref c, by: m, for: "intern", as: .symbolIntern, to: builtinType(.symbol), from: t9One("text", as: prim(.string)), at: "Symbol.intern")
+    let _ = t9Make(ref c, by: m, for: "invalidUtf8At", as: .stringInvalidUtf8At, to: internOptional(ref c, by: prim(.i64)), from: t9One("bytes", as: roBytes), at: "string.invalidUtf8At")
+
+    // The iteration interfaces are declared from source too; the declare pass declares their members like a user interface's.
+    let iteration = t9Parse(ref c, for: iterationSource, by: m)
+    let _ = t9Interface(ref c, from: iteration, at: 0)
+    let _ = t9Interface(ref c, from: iteration, at: 1)
+    return m
+}
+
+/// Parses `text` as a `"<builtin>"` file of module `m`.
+FileId t9Parse(ref Ctx c, for string text, by ModId m) {
+    var bytes = List<u8>()
+    for b in text.bytes { bytes.append(b) }
+    let source = lexer.SourceText.create("<builtin>", from: move bytes)
+    var p = parser.Parser.create(lexer.lex(move source, by: lexer.Keywords.build()))
+    let unit = parser.parseCompilationUnit(ref p)
+    var textBytes = List<u8>()
+    for b in text.bytes { textBytes.append(b) }
+    c.files.append(SourceFile {
+        path: "<builtin>",
+        displayPath: "<builtin>",
+        text: move textBytes,
+        unit: move unit,
+        module: m,
+        imports: Map<string, i64>(),
+    })
+    return c.files.length - 1
+}
+
+/// The name of member `index` of `file`; zero-length for a member that has none.
+TextSpan t9DeclName(ref Ctx c, for FileId file, at i64 index) {
+    switch c.files[file].unit.members[index] {
+        case .enumDecl(let d): return d.value.name
+        case .errorEnumDecl(let d): return d.value.name
+        case .unionDecl(let d): return d.value.name
+        case .structDecl(let d): return d.value.name
+        case .interfaceDecl(let d): return d.value.name
+        default: return TextSpan { start: 0, length: 0 }
+    }
+}
+
+string t9Text(ref Ctx c, for FileId file, at TextSpan span) => getText(c.files[file].text.span, at: span)
+
+/// An `enum` declared from source, with its members (the C# `new EnumSymbol` plus its `Members.Add` loop).
+EnumId t9Enum(ref Ctx c, from string text, by ModId m) {
+    let file = t9Parse(ref c, for: text, by: m)
+    let name = t9DeclName(ref c, for: file, at: 0)
+    let e = newEnum(ref c, by: EnumSymbol { name: t9Text(ref c, for: file, at: name), nameSpan: name, span: name, module: m, file: file, declIndex: 0, access: .publicKeyword })
+    var spans = List<TextSpan>()
+    switch c.files[file].unit.members[0] {
+        case .enumDecl(let d):
+            for member in d.value.members { spans.append(member.name) }
+        default: return e
+    }
+    for s in spans {
+        let id = newEnumMember(ref c, by: EnumMemberSymbol { name: t9Text(ref c, for: file, at: s), nameSpan: s, span: s, owner: e, ordinal: c.enums[e].members.length })
+        c.enums[e].members.append(id)
+    }
+    let key = t9Text(ref c, for: file, at: name)
+    c.modules[m].types[key] = enumTypeOf(e)
+    return e
+}
+
+/// A `union error` declared from source; the declare pass declares its variants.
+ErrorSetId t9ErrorSet(ref Ctx c, from string text, by ModId m) {
+    let file = t9Parse(ref c, for: text, by: m)
+    let name = t9DeclName(ref c, for: file, at: 0)
+    let e = newErrorSet(ref c, by: ErrorSetSymbol { name: t9Text(ref c, for: file, at: name), nameSpan: name, span: name, module: m, file: file, declIndex: 0, access: .publicKeyword })
+    let key = t9Text(ref c, for: file, at: name)
+    c.modules[m].types[key] = errorSetTypeOf(e)
+    return e
+}
+
+/// `union Rule` (member 0 of its file); member 1 is the `Violation` declaration each `Violation<T>` is made from.
+UnionId t9Rule(ref Ctx c, by ModId m) {
+    let file = t9Parse(ref c, for: ruleSource, by: m)
+    let name = t9DeclName(ref c, for: file, at: 0)
+    let u = newUnion(ref c, by: UnionSymbol { name: t9Text(ref c, for: file, at: name), nameSpan: name, span: name, module: m, file: file, declIndex: 0, access: .publicKeyword })
+    let key = t9Text(ref c, for: file, at: name)
+    c.modules[m].types[key] = unionTypeOf(u)
+    return u
+}
+
+/// The C# local `MakeInterface`: member `index` of the iteration file.
+InterfaceId t9Interface(ref Ctx c, from FileId file, at i64 index) {
+    let name = t9DeclName(ref c, for: file, at: index)
+    let m = c.files[file].module
+    let i = newInterface(ref c, by: InterfaceSymbol { name: t9Text(ref c, for: file, at: name), nameSpan: name, span: name, module: m, file: file, declIndex: index, access: .publicKeyword })
+    let key = t9Text(ref c, for: file, at: name)
+    c.modules[m].types[key] = interfaceTypeOf(i)
+    return i
+}
+
+List<BuiltinParameter> t9One(string name, as Type type) {
+    var ps = List<BuiltinParameter>()
+    ps.append(BuiltinParameter { name: name, type: type })
+    return ps
+}
+
+List<BuiltinParameter> t9Two(string name, as Type type, for string name2, to Type type2) {
+    var ps = List<BuiltinParameter>()
+    ps.append(BuiltinParameter { name: name, type: type })
+    ps.append(BuiltinParameter { name: name2, type: type2 })
+    return ps
+}
+
+/// The C# `Make`: a public builtin function of the builtin module, stored under `key`.
+FuncId t9Make(ref Ctx c, by ModId m, for string name, as BuiltinFunction kind, to Type returns, from move List<BuiltinParameter> parameters, at string key) {
+    let f = newFunction(ref c, by: FunctionSymbol { name: name, module: m, kind: .builtin, builtin: kind, returnType: returns, access: .publicKeyword })
+    for p in parameters {
+        let ordinal = c.functions[f].parameters.length
+        let l = newLocal(ref c, by: LocalSymbol { name: p.name, type: p.type, kind: .parameter, isParameter: true, modifier: .none, ordinal: ordinal })
+        c.functions[f].parameters.append(l)
+    }
+    var ids = List<FuncId>()
+    ids.append(f)
+    c.modules[m].functions[key] = move ids
+    return f
+}
+
+/// The C# `MakeIo`: `Make` plus `fails IoError`, stored under `Io.<name>`.
+FuncId t9MakeIo(ref Ctx c, by ModId m, for string name, as BuiltinFunction kind, to Type returns, from move List<BuiltinParameter> parameters, at ErrorSetId ioError) {
+    let f = t9Make(ref c, by: m, for: name, as: kind, to: returns, from: move parameters, at: $"Io.{name}")
+    t9Fails(ref c, for: f, by: ioError)
+    return f
+}
+
+/// `fn.Fails = true` and `fn.ErrorSets.Add(set)`.
+void t9Fails(ref Ctx c, for FuncId f, by ErrorSetId set) {
+    c.functions[f].hasFails = true
+    c.functions[f].errorSets.append(set)
+}
+
+/// A built-in interface, or -1.
+InterfaceId findInterface(ref Ctx c, for string name) {
+    switch name {
+        case "IEnumerator": return typeIndex(t9Type(ref c, for: "IEnumerator"))
+        case "IIndexable": return typeIndex(t9Type(ref c, for: "IIndexable"))
+    }
+    return -1
+}
+
+/// A static member of `string`, or -1.
+FuncId findString(ref Ctx c, for string name) {
+    switch name {
+        case "invalidUtf8At": return t9Function(ref c, for: "string.invalidUtf8At")
+    }
+    return -1
+}
+
+/// A static member of `Utf8`, or -1; `decode` with `invalid:` is `"Utf8.decode(invalid)"`.
+FuncId findUtf8(ref Ctx c, for string name) {
+    switch name {
+        case "decode": return t9Function(ref c, for: "Utf8.decode")
+        case "tryDecode": return t9Function(ref c, for: "Utf8.tryDecode")
+    }
+    return -1
+}
+
+/// `T T.parse(string text, Radix as = .decimal) fails ParseError` on the integer type `t`, made once per type.
+FuncId intParse(ref Ctx c, for PrimitiveKind t) {
+    let key = $"parse.{primitiveName(t)}"
+    let found = t9Function(ref c, for: key)
+    if found >= 0 { return found }
+    let m = t9Module(ref c)
+    let radix = t9Type(ref c, for: "Radix")
+    let parseError = typeIndex(t9Type(ref c, for: "ParseError"))
+    let f = t9Make(ref c, by: m, for: "parse", as: .intParse, to: prim(t), from: t9Two("text", as: prim(.string), for: "as", to: radix), at: key)
+    t9Fails(ref c, for: f, by: parseError)
+    return f
+}
+
+/// A static member of `Io`, or -1.
+FuncId findIo(ref Ctx c, for string name) {
+    switch name {
+        case "readFile" or "readText" or "writeFile" or "listDir" or "run" or "runBatch" or "monotonicNanos" or "stdout" or "stderr" or "stdin":
+            return t9Function(ref c, for: $"Io.{name}")
+    }
+    return -1
+}
+
+FuncId? find(ref Ctx c, for string name) {
+    switch name {
+        case "print" or "log" or "panic" or "todo" or "Owned" or "Untrusted" or "trust": return t9Function(ref c, for: name)
+    }
+    return null
+}
+
+// ── BuiltinMembers.cs ───────────────────────────────────────────────────────────
+
+PropertyResult t9Property(BuiltinMember member, as Type type) => PropertyResult { member: member, type: type }
+
+/// A built-in property (read without parentheses), or null.
+PropertyResult? builtinProperty(ref Ctx c, for Type type, by string name) {
+    let i = typeIndex(type)
+    if isString(type) {
+        switch name {
+            case "length": return t9Property(.stringLength, as: prim(.i64))
+            case "bytes": return t9Property(.stringBytes, as: internSpan(ref c, by: prim(.u8), readOnly: true))
+            case "isEmpty": return t9Property(.stringIsEmpty, as: prim(.bool))
+            case "runeCount": return t9Property(.stringRuneCount, as: prim(.i64))
+            case "isAscii": return t9Property(.stringIsAscii, as: prim(.bool))
+            case "runes": return t9Property(.stringRunes, as: textViewType(.runes))
+            case "utf16": return t9Property(.stringUtf16, as: textViewType(.utf16))
+            case "lines": return t9Property(.stringLines, as: textViewType(.lines))
+        }
+        return null
+    }
+    switch kindOf(type) {
+        case .span:
+            switch name {
+                case "length": return t9Property(.spanLength, as: prim(.i64))
+                case "isEmpty": return t9Property(.spanIsEmpty, as: prim(.bool))
+            }
+        case .list:
+            switch name {
+                case "length": return t9Property(.listLength, as: prim(.i64))
+                case "isEmpty": return t9Property(.listIsEmpty, as: prim(.bool))
+                // `span` is the read-only view, allowed on a `let`; `mutableSpan()` is the writable one (J80).
+                case "span": return t9Property(.listAsSpan, as: internSpan(ref c, by: c.listTypes[i], readOnly: true))
+            }
+        case .map:
+            if name == "length" { return t9Property(.mapLength, as: prim(.i64)) }
+        case .array:
+            switch name {
+                case "length": return t9Property(.arrayLength, as: prim(.i64))
+                case "span": return t9Property(.arrayAsSpan, as: internSpan(ref c, by: c.arrayTypes[i].element, readOnly: true))
+            }
+        case .builtin:
+            switch builtinKindOf(i) {
+                case .strBuf:
+                    switch name {
+                        case "length": return t9Property(.strBufLength, as: prim(.i64))
+                        case "view": return t9Property(.strBufAsString, as: prim(.string))
+                    }
+                case .symbol:
+                    if name == "text" { return t9Property(.symbolText, as: prim(.string)) }
+                case .processResult:
+                    switch name {
+                        case "exitCode": return t9Property(.processExitCode, as: prim(.i32))
+                        case "stdout": return t9Property(.processStdout, as: prim(.string))
+                        case "stderr": return t9Property(.processStderr, as: prim(.string))
+                    }
+                case .panic:
+                    if name == "message" { return t9Property(.panicMessage, as: prim(.string)) }
+                // The binder gives `radix` the builtin `Radix` and `align` the builtin `Align`; `digits` is -1 when the hole gives none.
+                case .formatSpec:
+                    switch name {
+                        case "radix": return t9Property(.formatSpecRadix, as: prim(.i32))
+                        case "debug": return t9Property(.formatSpecDebug, as: prim(.bool))
+                        case "width": return t9Property(.formatSpecWidth, as: prim(.i64))
+                        case "fill": return t9Property(.formatSpecFill, as: prim(.char))
+                        case "align": return t9Property(.formatSpecAlign, as: prim(.i32))
+                        case "digits": return t9Property(.formatSpecDigits, as: prim(.i64))
+                    }
+                default: return null
+            }
+        case .primitive:
+            if type == prim(.char) && name == "value" { return t9Property(.charValue, as: prim(.u32)) }
+        case .result:
+            switch name {
+                case "isOk": return t9Property(.resultIsOk, as: prim(.bool))
+                case "value": return t9Property(.resultValue, as: c.resultTypes[i].value)
+                case "err": return t9Property(.resultError, as: c.resultTypes[i].error)
+            }
+        case .owned:
+            if name == "value" { return t9Property(.ownedValue, as: c.ownedTypes[i]) }
+        case .enumType:
+            switch name {
+                case "name": return t9Property(.enumName, as: prim(.string))
+                case "ordinal": return t9Property(.enumOrdinal, as: prim(.i32))
+            }
+        default: return null
+    }
+    return null
+}
+
+BuiltinMethod? method(ref Ctx c, for Type type, by string name) {
+    let i = typeIndex(type)
+    if isString(type) {
+        switch name {
+            // `s.copy()` copies from `context.allocator`, `s.copy(to: arena)` into the arena.
+            case "copy": return BuiltinMethod { member: .stringCopy, parameters: t9One("to", as: builtinType(.arena)), returns: prim(.string), optional: 1 }
+            case "startsWith": return BuiltinMethod { member: .stringStartsWith, parameters: t9One("prefix", as: prim(.string)), returns: prim(.bool) }
+            case "endsWith": return BuiltinMethod { member: .stringEndsWith, parameters: t9One("suffix", as: prim(.string)), returns: prim(.bool) }
+            case "contains": return BuiltinMethod { member: .stringContains, parameters: t9One("text", as: prim(.string)), returns: prim(.bool) }
+            case "position":
+                return BuiltinMethod {
+                    member: .stringPosition,
+                    parameters: t9Two("text", as: prim(.string), for: "from", to: prim(.i64)),
+                    returns: internOptional(ref c, by: prim(.i64)),
+                    optional: 1,
+                }
+            case "lastPosition":
+                return BuiltinMethod { member: .stringLastPosition, parameters: t9One("text", as: prim(.string)), returns: internOptional(ref c, by: prim(.i64)) }
+            case "count": return BuiltinMethod { member: .stringCount, parameters: t9One("text", as: prim(.string)), returns: prim(.i64) }
+            // The binder gives `from:` the builtin `Edge`, picks `trimmed(by:)` by the argument's name, and gives `equals`' `as:` the builtin `Comparison`.
+            case "trimmed": return BuiltinMethod { member: .stringTrimmed, parameters: t9One("from", as: errorType()), returns: prim(.string), optional: 1 }
+            case "equals":
+                return BuiltinMethod {
+                    member: .stringEquals,
+                    parameters: t9Two("text", as: prim(.string), for: "as", to: errorType()),
+                    returns: prim(.bool),
+                    optional: 1,
+                }
+            case "lowercased": return BuiltinMethod { member: .stringLowercased, parameters: List<BuiltinParameter>(), returns: prim(.string) }
+            case "uppercased": return BuiltinMethod { member: .stringUppercased, parameters: List<BuiltinParameter>(), returns: prim(.string) }
+            case "replaced":
+                return BuiltinMethod { member: .stringReplaced, parameters: t9Two("text", as: prim(.string), for: "by", to: prim(.string)), returns: prim(.string) }
+            case "repeated": return BuiltinMethod { member: .stringRepeated, parameters: t9One("count", as: prim(.i64)), returns: prim(.string) }
+            case "padded":
+                return BuiltinMethod { member: .stringPadded, parameters: t9Two("to", as: prim(.i64), for: "by", to: prim(.char)), returns: prim(.string) }
+            // A limit of 0 means no limit. The binder picks `StringPartsRune` for a `rune` separator.
+            case "parts":
+                return BuiltinMethod {
+                    member: .stringParts,
+                    parameters: t9Two("by", as: prim(.string), for: "limit", to: prim(.i64)),
+                    returns: textViewType(.parts),
+                    optional: 1,
+                }
+        }
+        return null
+    }
+    switch kindOf(type) {
+        case .textView:
+            switch textViewKindOf(i) {
+                case .runes:
+                    switch name {
+                        case "take": return BuiltinMethod { member: .runesTake, parameters: t9One("count", as: prim(.i64)), returns: prim(.string) }
+                        case "skip": return BuiltinMethod { member: .runesSkip, parameters: t9One("count", as: prim(.i64)), returns: prim(.string) }
+                        case "takeLast": return BuiltinMethod { member: .runesTakeLast, parameters: t9One("count", as: prim(.i64)), returns: prim(.string) }
+                    }
+                case .utf16:
+                    if name == "copy" { return BuiltinMethod { member: .utf16Copy, parameters: List<BuiltinParameter>(), returns: internList(ref c, by: prim(.u16)) } }
+                default: return null
+            }
+        case .span:
+            let e = c.spanTypes[i].element
+            switch name {
+                case "joined":
+                    if isString(e) { return BuiltinMethod { member: .stringJoined, parameters: t9One("by", as: prim(.string)), returns: prim(.string) } }
+                // `copy()` copies from `context.allocator`, `copy(to: arena)` into the arena, as on strings.
+                case "copy":
+                    return BuiltinMethod { member: .spanCopy, parameters: t9One("to", as: builtinType(.arena)), returns: internList(ref c, by: e), optional: 1 }
+            }
+        case .list:
+            let e = c.listTypes[i]
+            switch name {
+                case "joined":
+                    if isString(e) { return BuiltinMethod { member: .stringJoined, parameters: t9One("by", as: prim(.string)), returns: prim(.string) } }
+                case "mutableSpan":
+                    return BuiltinMethod {
+                        member: .listMutableSpan,
+                        parameters: List<BuiltinParameter>(),
+                        returns: internSpan(ref c, by: e, readOnly: false),
+                        mutating: true,
+                    }
+                case "copy": return BuiltinMethod { member: .listCopy, parameters: t9One("to", as: builtinType(.arena)), returns: type, optional: 1 }
+                case "append": return BuiltinMethod { member: .listAdd, parameters: t9One("item", as: e), returns: prim(.void), mutating: true }
+                case "clear": return BuiltinMethod { member: .listClear, parameters: List<BuiltinParameter>(), returns: prim(.void), mutating: true }
+                case "removeLast": return BuiltinMethod { member: .listRemoveLast, parameters: List<BuiltinParameter>(), returns: e, mutating: true }
+                // The binder picks `remove(at:)` (an index or a range) and `remove(from:through:)` by the arguments' names.
+                case "remove":
+                    return BuiltinMethod {
+                        member: .listRemoveRange,
+                        parameters: t9Two("from", as: prim(.i64), for: "until", to: prim(.i64)),
+                        returns: prim(.void),
+                        mutating: true,
+                    }
+                // The items are copied in, so elements that own memory are left out.
+                case "replace":
+                    unless t9IsUnique(ref c, for: e) {
+                        let at = internRange(ref c, by: prim(.i64))
+                        let items = internSpan(ref c, by: e, readOnly: true)
+                        return BuiltinMethod { member: .listReplace, parameters: t9Two("at", as: at, for: "by", to: items), returns: prim(.void), mutating: true }
+                    }
+                case "tryGet": return BuiltinMethod { member: .listTryGet, parameters: t9One("at", as: prim(.i64)), returns: internOptional(ref c, by: e) }
+                // Stable (J47); elements ordered by `<`: numbers, `rune` and `string`.
+                case "sort":
+                    if isNumeric(e) || isString(e) || e == prim(.char) {
+                        return BuiltinMethod { member: .listSort, parameters: List<BuiltinParameter>(), returns: prim(.void), mutating: true }
+                    }
+                case "take": return BuiltinMethod { member: .listTake, parameters: List<BuiltinParameter>(), returns: type, mutating: true }
+            }
+        case .array:
+            if name == "mutableSpan" {
+                return BuiltinMethod {
+                    member: .arrayMutableSpan,
+                    parameters: List<BuiltinParameter>(),
+                    returns: internSpan(ref c, by: c.arrayTypes[i].element, readOnly: false),
+                    mutating: true,
+                }
+            }
+        case .map:
+            let k = c.mapTypes[i].key
+            let v = c.mapTypes[i].value
+            switch name {
+                case "tryGet": return BuiltinMethod { member: .mapTryGet, parameters: t9One("at", as: k), returns: internOptional(ref c, by: v) }
+                case "slot": return BuiltinMethod { member: .mapSlot, parameters: t9One("key", as: k), returns: v, mutating: true }
+                case "contains": return BuiltinMethod { member: .mapContains, parameters: t9One("key", as: k), returns: prim(.bool) }
+                case "remove": return BuiltinMethod { member: .mapRemove, parameters: t9One("key", as: k), returns: prim(.bool), mutating: true }
+                case "copy": return BuiltinMethod { member: .mapCopy, parameters: t9One("to", as: builtinType(.arena)), returns: type }
+                case "clear": return BuiltinMethod { member: .mapClear, parameters: List<BuiltinParameter>(), returns: prim(.void), mutating: true }
+                case "take": return BuiltinMethod { member: .mapTake, parameters: List<BuiltinParameter>(), returns: type, mutating: true }
+            }
+        case .builtin:
+            switch builtinKindOf(i) {
+                case .arena:
+                    if name == "reset" { return BuiltinMethod { member: .arenaReset, parameters: List<BuiltinParameter>(), returns: prim(.void), mutating: true } }
+                case .strBuf:
+                    switch name {
+                        case "append": return BuiltinMethod { member: .strBufAppend, parameters: t9One("text", as: prim(.string)), returns: prim(.void), mutating: true }
+                        // `at:` is a byte offset on a rune boundary, like a string slice's bounds.
+                        case "appendRepeated":
+                            return BuiltinMethod {
+                                member: .strBufAppendRepeated,
+                                parameters: t9Two("rune", as: prim(.char), for: "by", to: prim(.i64)),
+                                returns: prim(.void),
+                                mutating: true,
+                            }
+                        case "insert":
+                            return BuiltinMethod {
+                                member: .strBufInsert,
+                                parameters: t9Two("text", as: prim(.string), for: "at", to: prim(.i64)),
+                                returns: prim(.void),
+                                mutating: true,
+                            }
+                        case "copy": return BuiltinMethod { member: .strBufCopy, parameters: t9One("to", as: builtinType(.arena)), returns: type }
+                        // `finish()` returns the text borrowed from the buffer, like `view`; it does not consume the buffer yet.
+                        case "finish": return BuiltinMethod { member: .strBufAsString, parameters: List<BuiltinParameter>(), returns: prim(.string) }
+                        case "clear": return BuiltinMethod { member: .strBufClear, parameters: List<BuiltinParameter>(), returns: prim(.void), mutating: true }
+                        case "take": return BuiltinMethod { member: .strBufTake, parameters: List<BuiltinParameter>(), returns: type, mutating: true }
+                    }
+                case .ioStream:
+                    if name == "write" { return BuiltinMethod { member: .ioWrite, parameters: t9One("text", as: prim(.string)), returns: prim(.void) } }
+                // The binder wraps the result in `Result<string, IoError>`.
+                case .ioInput:
+                    if name == "readAll" { return BuiltinMethod { member: .ioReadAll, parameters: List<BuiltinParameter>(), returns: prim(.string) } }
+                default: return null
+            }
+        case .optional:
+            if name == "take" && t9IsUnique(ref c, for: c.optionalTypes[i]) {
+                return BuiltinMethod { member: .optionalTake, parameters: List<BuiltinParameter>(), returns: type, mutating: true }
+            }
+        default: return null
+    }
+    return null
+}
+
+bool hasMethod(ref Ctx c, for Type type, by string name) => method(ref c, for: type, by: name) is not null
+
+/// The C# `Candidates`.
+List<string> t9Candidates() => [
+    "length", "bytes", "isEmpty", "runeCount", "isAscii", "runes", "utf16", "lines", "value", "copy", "startsWith", "endsWith", "contains",
+    "position", "lastPosition", "count", "trimmed", "equals", "lowercased", "uppercased", "replaced", "repeated", "padded", "parts", "skip",
+    "takeLast", "joined", "span", "mutableSpan", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append",
+    "appendRepeated", "insert", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message",
+    "radix", "debug", "width", "fill", "align", "digits",
+]
+
+/// Every member name of `t`, for suggestions.
+List<string> names(ref Ctx c, for Type t) {
+    var result = List<string>()
+    for n in t9Candidates() {
+        if builtinProperty(ref c, for: t, by: n) is not null || method(ref c, for: t, by: n) is not null { result.append(n) }
+    }
+    return result
+}
+
+/// `TypeFacts.IsUnique` for the types the builtin tables meet; T6's `isUnique` is a stub on this branch (Q561).
+/// Structs, unions, tuples, states and type parameters are not unique here.
+bool t9IsUnique(ref Ctx c, for Type t) {
+    let i = typeIndex(t)
+    switch kindOf(t) {
+        case .list or .map or .owned: return true
+        case .builtin: return builtinKindOf(i) == .strBuf
+        case .untrusted: return t9IsUnique(ref c, for: c.untrustedTypes[i])
+        case .optional: return t9IsUnique(ref c, for: c.optionalTypes[i])
+        case .result: return t9IsUnique(ref c, for: c.resultTypes[i].value)
+        case .array: return t9IsUnique(ref c, for: c.arrayTypes[i].element)
+        default: return false
+    }
+}
