@@ -1,16 +1,675 @@
 // T7: Naming.cs, Lexicon.cs and Particles.cs.
+//
+// Casing rules (spec §5.1): types are `PascalCase`, everything else `camelCase`, acronyms longer than
+// two letters are written as words (`HttpClient`, `IO`). Also the grammar checker (BYN5xxx). Casing is
+// ASCII only (Q550): C#'s `char.IsUpper`/`ToUpperInvariant` are Unicode, Bayan has no case table, so
+// letters outside ASCII count as uncased and stay with the word they follow.
 
-// stub: T7 ports Lexicon.cs:9 Lexicon
-void buildLexicon(ref Ctx c) {}
+import lexer
+import parser
 
-// stub: T7 ports Naming.cs:18 CheckType
-void checkType(ref Ctx c, from FileId f, at TextSpan name) {}
+// ── Lexicon.cs ──────────────────────────────────────────────────────────────────
 
-// stub: T7 ports Naming.cs:40 CheckValue
-void checkValue(ref Ctx c, from FileId f, at TextSpan name) {}
+/// Fills `c.lexiconVerbs`/`lexiconNouns`/`lexiconAdjectives` with the built-in word list
+/// (docs/bayan-grammar.md §7, §13); a second call does nothing. Inflected forms are derived, not listed.
+void buildLexicon(ref Ctx c) {
+    if c.lexiconVerbs.length > 0 { return }
+    c.lexiconVerbs = [
+        "accept", "access", "acquire", "add", "adjust", "advance", "align", "allocate", "allow", "annotate", "append",
+        "apply", "approve", "archive", "ask", "assert", "assign", "attach", "authenticate", "authorize", "await", "begin",
+        "bind", "block", "borrow", "break", "bring", "buffer", "build", "bump", "buy", "cache", "calculate", "call",
+        "cancel", "capture", "cast", "change", "charge", "check", "choose", "claim", "clamp", "classify", "clean", "clear",
+        "clip", "clone", "close", "collect", "combine", "come", "comment", "commit", "compare", "compile", "complete",
+        "compose", "compress", "compute", "concat", "configure", "confirm", "connect", "consume", "contain", "convert",
+        "copy", "correct", "count", "create", "credit", "cut", "debit", "decide", "declare", "decode", "decompress",
+        "decrement", "decrypt", "deduct", "define", "delete", "deliver", "deposit", "dequeue", "derive", "describe",
+        "destroy", "detach", "detect", "determine", "disable", "discard", "dispatch", "display", "dispose", "divide", "do",
+        "double", "drain", "draw", "drop", "dump", "echo", "edit", "emit", "empty", "enable", "encode", "encrypt", "end",
+        "enqueue", "ensure", "enter", "equal", "erase", "escape", "evaluate", "exclude", "execute", "exit", "expand",
+        "expect", "explain", "export", "extend", "extract", "fail", "fetch", "fill", "filter", "find", "finish", "fix",
+        "flag", "flatten", "flip", "flush", "fold", "follow", "force", "format", "free", "freeze", "fulfil", "fulfill",
+        "gather", "generate", "get", "give", "go", "grant", "group", "grow", "guard", "hand", "handle", "hash", "hide",
+        "hold", "ignore", "import", "include", "increment", "indent", "index", "init", "initialize", "insert", "inspect",
+        "install", "interpolate", "invert", "invoke", "issue", "join", "jump", "keep", "kill", "label", "launch", "lay",
+        "leave", "let", "lex", "limit", "link", "list", "listen", "load", "lock", "log", "look", "loop", "lower", "make",
+        "map", "mark", "match", "measure", "merge", "migrate", "mix", "move", "multiply", "mutate", "name", "need",
+        "negate", "normalize", "note", "notify", "observe", "obtain", "offset", "open", "order", "output", "overwrite",
+        "own", "pack", "pad", "page", "paint", "parse", "pass", "paste", "patch", "pause", "pay", "peek", "pick", "place",
+        "play", "plot", "poll", "pop", "post", "prefer", "prepare", "prepend", "print", "process", "produce", "promote",
+        "propagate", "prune", "publish", "pull", "purchase", "push", "put", "query", "queue", "quit", "quote", "raise",
+        "rank", "reach", "read", "rebuild", "receive", "record", "recover", "reduce", "refresh", "refund", "register",
+        "reject", "release", "reload", "remove", "rename", "render", "reorder", "repeat", "replace", "reply", "report",
+        "request", "require", "reserve", "reset", "resize", "resolve", "restart", "restock", "restore", "resume", "retry",
+        "return", "reuse", "reverse", "revert", "rewind", "rewrite", "rotate", "round", "route", "run", "sample", "save",
+        "scale", "scan", "schedule", "score", "search", "seed", "seek", "select", "sell", "send", "serialize", "serve",
+        "set", "settle", "setup", "shift", "ship", "show", "shrink", "shuffle", "shut", "sign", "simplify", "skip", "sleep",
+        "slice", "sort", "spawn", "split", "spread", "square", "stack", "stage", "start", "step", "stop", "store", "stream",
+        "strip", "submit", "subscribe", "subtract", "sum", "swap", "switch", "sync", "tag", "take", "tally", "tell", "test",
+        "throw", "tick", "toggle", "touch", "trace", "track", "transfer", "transform", "translate", "traverse", "trigger",
+        "trim", "truncate", "trust", "tune", "turn", "unlock", "unpack", "unregister", "unsubscribe", "unwrap", "update",
+        "upgrade", "upload", "use", "validate", "verify", "visit", "wait", "walk", "warn", "watch", "widen", "withdraw",
+        "work", "wrap", "write", "yield", "zip",
+    ]
+    c.lexiconNouns = [
+        "account", "action", "address", "age", "alloc", "amount", "angle", "answer", "app", "area", "arg", "args",
+        "argument", "array", "ascii", "average", "back", "balance", "bank", "base", "basket", "batch", "bed", "bidi", "bit",
+        "bits", "body", "book", "bound", "bounds", "box", "branch", "brand", "bucket", "budget", "buf", "builder", "bus",
+        "byte", "bytes", "capacity", "card", "cart", "case", "ceiling", "cell", "center", "centre", "chain", "channel",
+        "char", "chars", "check", "checksum", "child", "children", "circle", "city", "class", "client", "clock", "code",
+        "color", "colour", "column", "command", "comment", "config", "connection", "console", "content", "contents",
+        "context", "cost", "counter", "country", "cursor", "customer", "data", "date", "day", "db", "deadline", "default",
+        "delay", "delta", "depth", "detail", "device", "diff", "digit", "dir", "direction", "discount", "distance", "doc",
+        "document", "dollar", "domain", "door", "dot", "draft", "duration", "edge", "effect", "element", "elements",
+        "email", "end", "engine", "entries", "entry", "env", "error", "event", "exit", "expr", "expression", "factor",
+        "fee", "field", "file", "first", "flag", "floor", "font", "form", "frame", "front", "fund", "game", "gap", "goal",
+        "grade", "graph", "grid", "group", "guest", "half", "handler", "hash", "head", "header", "health", "heap", "height",
+        "hello", "hex", "history", "host", "hour", "html", "http", "hundred", "icon", "id", "identifier", "image", "inbox",
+        "info", "input", "instance", "interest", "inventory", "invoice", "io", "item", "items", "json", "kb", "key", "keys",
+        "keyword", "kind", "label", "language", "last", "layer", "layout", "leaf", "left", "length", "letter", "level",
+        "limit", "line", "link", "list", "literal", "load", "loan", "local", "location", "lock", "log", "lookup", "loop",
+        "magnitude", "mail", "main", "map", "margin", "mask", "match", "max", "member", "memory", "menu", "message", "meta",
+        "method", "midpoint", "min", "minus", "minute", "mode", "model", "module", "money", "month", "name", "newline",
+        "nfc", "node", "nodes", "note", "null", "number", "object", "offset", "op", "option", "order", "origin", "os",
+        "outcome", "output", "owner", "page", "pair", "parent", "part", "party", "password", "path", "pattern", "payload",
+        "payment", "peak", "percent", "percentage", "period", "person", "phone", "piece", "pixel", "place", "plan",
+        "player", "plus", "point", "pointer", "pool", "port", "position", "post", "power", "prefix", "price", "product",
+        "profile", "program", "progress", "project", "property", "quantity", "queue", "range", "rate", "ratio", "reader",
+        "reason", "receipt", "record", "rect", "rectangle", "ref", "region", "remainder", "report", "request", "response",
+        "rest", "result", "results", "right", "role", "room", "root", "row", "rule", "rune", "runes", "salary", "scale",
+        "schema", "scope", "score", "scratch", "screen", "second", "secret", "section", "seed", "segment", "sender",
+        "sequence", "server", "service", "session", "set", "shape", "share", "shelf", "side", "sign", "signal", "size",
+        "slot", "socket", "source", "space", "span", "speed", "sql", "stack", "stage", "start", "state", "status", "step",
+        "stock", "store", "stream", "string", "struct", "style", "subtotal", "suffix", "sum", "summary", "supply", "symbol",
+        "system", "table", "tag", "target", "task", "tax", "team", "temp", "term", "test", "text", "thing", "thousand",
+        "thread", "threshold", "ticket", "time", "timeout", "timer", "title", "token", "tool", "top", "total", "trace",
+        "track", "tree", "trivia", "type", "unit", "url", "user", "utf", "value", "values", "var", "vec", "vector",
+        "version", "view", "volume", "wallet", "week", "weight", "width", "window", "word", "work", "world", "year", "zone",
+    ]
+    c.lexiconAdjectives = [
+        "active", "actual", "ajar", "all", "any", "available", "average", "big", "blank", "busy", "current", "dark", "dead",
+        "deep", "default", "dirty", "due", "early", "empty", "even", "exact", "external", "fast", "final", "fresh", "full",
+        "global", "good", "high", "idle", "inner", "internal", "invalid", "large", "late", "lazy", "light", "live", "long",
+        "low", "main", "many", "maximum", "minimum", "mutable", "native", "negative", "net", "new", "next", "odd", "old",
+        "open", "other", "outer", "own", "paid", "pending", "positive", "previous", "prime", "private", "public", "raw",
+        "ready", "real", "red", "safe", "same", "short", "simple", "single", "slow", "small", "stale", "static", "strict",
+        "unique", "upper", "valid", "visible", "whole", "zero",
+    ]
+}
 
-// stub: T7 ports Naming.cs:28 CheckInterface
-void checkInterface(ref Ctx c, from FileId f, at TextSpan name) {}
+/// Particles (spec §10), the prefixes of derived names, and function words a name may join with.
+bool isParticleWord(string w) => w switch {
+    "from" or "to" or "until" or "through" or "at" or "by" or "for" or "as" => true,
+    _ => false,
+}
 
-// stub: T7 ports Naming.cs:57 CheckMembers
-void checkMembers(ref Ctx c, for StructId s) {}
+bool isFunctionWord(string w) => w switch {
+    "is" or "has" or "can" or "try" or "into" or "with" or "and" or "or" or "of" or "in" or "on" or "off" or "out" or
+    "up" or "down" or "over" or "per" or "no" or "not" or "each" or "every" or "some" or "none" or "ok" or "if" or
+    "else" or "then" or "also" or "only" or "again" or "once" or "self" or "twice" or "before" or "after" => true,
+    _ => false,
+}
+
+/// Math vocabulary: a naming exemption, not a synonym (J70). There is no `log` member.
+bool isMathWord(string w) => w switch {
+    "abs" or "sign" or "sqrt" or "cbrt" or "pow" or "exp" or "ln" or "log2" or "log10" or "sin" or "cos" or "tan" or
+    "asin" or "acos" or "atan2" or "radians" or "degrees" => true,
+    _ => false,
+}
+
+// ── Naming.cs ───────────────────────────────────────────────────────────────────
+
+void checkType(ref Ctx c, from FileId f, at TextSpan name) {
+    let text = $"{getText(c.files[f].text.span, at: name)}"
+    if text == "_" { return }
+    let fixedName = toPascal(text)
+    if fixedName != text {
+        report(ref c, for: .typeCasing, from: f, at: name, by: (a0: text, a1: "", a2: "", a3: "", a4: ""),
+            help: $"rename it `{fixedName}`", hasFix: true, fixSpan: name, fixReplacement: fixedName)
+    }
+}
+
+/// An interface name is `I`, then an uppercase letter, then PascalCase (`IShape`).
+void checkInterface(ref Ctx c, from FileId f, at TextSpan name) {
+    let text = $"{getText(c.files[f].text.span, at: name)}"
+    if text.length > 1 && text.bytes[0] == 0x49 && isUpperAscii(text.bytes[1]) {
+        checkType(ref c, from: f, at: name)
+        return
+    }
+    let fixedName = $"I{toPascal(text)}"
+    report(ref c, for: .interfaceName, from: f, at: name, by: (a0: text, a1: "", a2: "", a3: "", a4: ""), label: "an interface name",
+        help: $"rename it to `{fixedName}`", hasFix: true, fixSpan: name, fixReplacement: fixedName)
+}
+
+void checkValue(ref Ctx c, from FileId f, at TextSpan name) {
+    let text = $"{getText(c.files[f].text.span, at: name)}"
+    if text == "_" { return }
+    let fixedName = toCamel(text)
+    if fixedName != text {
+        let help = isUpperAscii(text.bytes[0]) && fixedName.length > 0 ?
+            $"rename it `{fixedName}`; only types are PascalCase" :
+            $"rename it `{fixedName}`"
+        report(ref c, for: .valueCasing, from: f, at: name, by: (a0: text, a1: "", a2: "", a3: "", a4: ""),
+            help: help, hasFix: true, fixSpan: name, fixReplacement: fixedName)
+    }
+}
+
+/// Grammar rules on the members of `s` (spec §5.2, `docs/bayan-grammar.md`): BYN50xx are pattern contracts
+/// on all code, BYN51xx word-class lints on the public API only (J84). Math vocabulary (J70) is exempt from
+/// BYN5001 and BYN5014; typestate states are not members and are not checked.
+void checkMembers(ref Ctx c, for StructId s) {
+    let grammar = grammarOf(ref c)
+    checkMembersWith(ref c, for: s, by: grammar)
+}
+
+/// `checkMembers` with the project dictionary already read.
+void checkMembersWith(ref Ctx c, for StructId s, by in Grammar grammar) {
+    buildLexicon(ref c)
+    let f = c.structs[s].file
+    let structPublic = c.structs[s].access == .publicKeyword
+    for i in 0..c.structs[s].methods.length {
+        let fn = c.structs[s].methods[i]
+        let name = c.functions[fn].nameSpan
+        let text = $"{c.functions[fn].name}"
+        let isStatic = c.functions[fn].isStatic
+        let isMutating = c.functions[fn].isMutating
+        let ret = c.functions[fn].returnType
+        let noArgs = !isStatic && c.functions[fn].parameters.length == 0
+        let isPublic = structPublic && c.functions[fn].access == .publicKeyword
+        if isMutating && !isBool(ret) { checkParticiple(ref c, by: grammar, from: f, at: name, for: text) }
+        checkParticleName(ref c, for: s, from: f, at: name, by: text, isStatic: isStatic)
+        checkWords(ref c, by: grammar, from: f, at: name, for: text)
+        if noArgs && isMutating && isStateName(text) {
+            report(ref c, for: .stateMemberMutates, from: f, at: name, by: (a0: text, a1: "", a2: "", a3: "", a4: ""), label: "declared `ref this`",
+                help: "remove `ref this` so it only reads, or name the action with a verb")
+        }
+        if text.length > 3 && text.startsWith("try") && isUpperAscii(text.bytes[3]) {
+            let target = $"{lowerAscii(text[3..4])}{text[4..text.length]}"
+            var failing: FuncId = -1
+            for m in c.structs[s].methods {
+                if c.functions[m].hasFails && c.functions[m].name == target {
+                    failing = m
+                    break
+                }
+            }
+            if failing >= 0 && kindOf(ret) != .optional && !isBool(ret) && !isError(ret) {
+                let failingType = typeDisplay(ref c, by: c.functions[failing].returnType)
+                let failingName = $"{c.functions[failing].name}"
+                let shown = typeDisplay(ref c, by: ret)
+                report(ref c, for: .tryWrongReturn, from: f, at: returnTypeSpan(ref c, for: fn),
+                    by: (a0: text[3..text.length], a1: failingType, a2: failingName, a3: "", a4: ""),
+                    label: $"returns `{shown}`",
+                    help: $"change it to return `{failingType}?` or `bool`, or remove `{text}` and call `try {failingName}()`")
+            }
+        }
+        if isPublic && isMutating {
+            let words = wordSpans(text)
+            if words.length > 0 && isThingNoun(lowerAscii(words[0].text)) {
+                report(ref c, for: .nounOnMutator, from: f, at: name, by: (a0: text, a1: "", a2: "", a3: "", a4: ""),
+                    help: "rename it with the verb for what it does to `this`")
+            }
+        }
+        if isPublic && noArgs && !isMutating && isBool(ret) { checkBoolState(ref c, from: f, at: name, for: text) }
+    }
+    for i in 0..c.structs[s].properties.length {
+        let p = c.structs[s].properties[i]
+        let name = c.properties[p].nameSpan
+        let text = $"{c.properties[p].name}"
+        checkParticleName(ref c, for: s, from: f, at: name, by: text, isStatic: false)
+        checkWords(ref c, by: grammar, from: f, at: name, for: text)
+        if isBool(c.properties[p].type) && structPublic && c.properties[p].access == .publicKeyword {
+            checkBoolState(ref c, from: f, at: name, for: text)
+        }
+    }
+}
+
+/// BYN5001: an `-ed` name is a changed copy or a view, so a member that takes `ref this` is a plain verb (revision 0005).
+void checkParticiple(ref Ctx c, by in Grammar grammar, from FileId f, at TextSpan name, for string text) {
+    var stems = List<string>()
+    for (word, form) in grammar.forms {
+        if form == text { stems.append(word) }
+    }
+    if stems.length == 0 { stems = participleStems(text) }
+    if stems.length == 0 { return }
+    var stem = stems[0]
+    for w in stems {
+        if listContainsString(c.lexiconVerbs, by: w) || listContainsString(grammar.verbs, by: w) {
+            stem = w
+            break
+        }
+    }
+    report(ref c, for: .participleChangesThis, from: f, at: name, by: (a0: text, a1: stem, a2: "", a3: "", a4: ""),
+        help: "name the member that changes `this` with the plain verb, and keep `-ed` for the copy or view")
+}
+
+/// BYN5009: a particle is not a member name, and no instance member spells a conversion with `to` or `as`:
+/// a view is a noun (`asSpan` → `span`), a conversion is `T(x)` (`toList` → `List(x)`).
+void checkParticleName(ref Ctx c, for StructId s, from FileId f, at TextSpan name, by string text, bool isStatic) {
+    if isParticleWord(text) {
+        report(ref c, for: .particleAsMemberName, from: f, at: name, by: (a0: text, a1: "", a2: "", a3: "", a4: ""),
+            help: "rename the member, for example `tryGet(at:)` instead of `at(…)`")
+        return
+    }
+    if isStatic { return }
+    let words = wordSpans(text)
+    if words.length < 2 { return }
+    let particle = words[0].text
+    if (particle != "to" && particle != "as") || !isUpperAscii(words[1].text.bytes[0]) { return }
+    let rest = text[particle.length..text.length]
+    let lowered = lowerAscii(rest)
+    let instead = particle == "as" ?
+        $"{lowerAscii(rest[0..1])}{rest[1..rest.length]}" :
+        $"{isPrimitiveWord(lowered) ? lowered : rest}({toCamel(c.structs[s].name)})"
+    report(ref c, for: .conversionMember, from: f, at: name, by: (a0: text, a1: particle, a2: instead, a3: "", a4: ""),
+        help: "use a view noun, `copy()`, or a `T(x)` conversion")
+}
+
+/// The primitive type names a `toX` conversion is written in lowercase: `toString` → `string(x)`.
+bool isPrimitiveWord(string w) => w switch {
+    "string" or "bool" or "rune" or "i8" or "i16" or "i32" or "i64" or "u8" or "u16" or "u32" or "u64" or "f32" or
+    "f64" or "sbyte" or "byte" or "short" or "ushort" or "int" or "uint" or "long" or "ulong" or "float" or
+    "double" => true,
+    _ => false,
+}
+
+/// BYN5014: every word of a member name is a word the checker knows, from the lexicon or the project's
+/// `grammar` (J85), directly or by a regular ending (`bases`). Names with letters outside ASCII, single
+/// letters and math names are not checked.
+void checkWords(ref Ctx c, by in Grammar grammar, from FileId f, at TextSpan name, for string text) {
+    if isMathWord(text) || !isAllAscii(text) { return }
+    for w in wordSpans(text) {
+        let word = trimDigits(lowerAscii(w.text))
+        if word.length < 2 || !isAllLowerLetters(word) || isMathWord(lowerAscii(w.text)) { continue }
+        if isKnown(ref c, for: word, by: grammar) { continue }
+        report(ref c, for: .unknownWord, from: f, at: TextSpan { start: name.start + w.start, length: w.text.length },
+            by: (a0: word, a1: "", a2: "", a3: "", a4: ""),
+            help: $"add it to `grammar` in package.byn: `verbs: [\"{word}\"]`, `nouns: [\"{word}\"]` or `adjectives: [\"{word}\"]`")
+    }
+}
+
+bool isKnown(ref Ctx c, for string word, by in Grammar grammar) {
+    if isListed(ref c, for: word, by: grammar) { return true }
+    for (_, form) in grammar.forms {
+        if form == word { return true }
+    }
+    for b in bases(word) {
+        if isListed(ref c, for: b, by: grammar) { return true }
+    }
+    return false
+}
+
+bool isListed(ref Ctx c, for string w, by in Grammar grammar) =>
+    listContainsString(c.lexiconVerbs, by: w) || listContainsString(c.lexiconNouns, by: w) || listContainsString(c.lexiconAdjectives, by: w)
+    || isParticleWord(w) || isFunctionWord(w)
+    || listContainsString(grammar.verbs, by: w) || listContainsString(grammar.nouns, by: w) || listContainsString(grammar.adjectives, by: w)
+
+/// The words `word` may be a regular form of: plurals and third person (`-s`, `-es`, `-ies`), `-ed`, `-ing`,
+/// doers (`-er`, `-or`), `-est`, `-ly`, and `un-`/`re-`; a doubled final consonant is undone (`runner` → `run`).
+List<string> bases(string word) {
+    var found = List<string>()
+    let endings: List<string> = ["ies", "es", "s", "ied", "ed", "ing", "ier", "er", "ers", "or", "est", "ly"]
+    for ending in endings {
+        if word.length <= ending.length + 1 || !word.endsWith(ending) { continue }
+        let bare = word[0..word.length - ending.length]
+        for r in endingReplacements(ending) { found.append($"{bare}{r}") }
+        if bare.length >= 3 && bare.bytes[bare.length - 1] == bare.bytes[bare.length - 2] { found.append(bare[0..bare.length - 1]) }
+        if ending == "ers" {
+            let more = bases(word[0..word.length - 1])
+            for b in more { found.append(b) }
+        }
+    }
+    let prefixes: List<string> = ["un", "re"]
+    for prefix in prefixes {
+        if word.length <= prefix.length + 2 || !word.startsWith(prefix) { continue }
+        let stripped = word[prefix.length..word.length]
+        found.append(stripped)
+        let more = bases(stripped)
+        for b in more { found.append(b) }
+    }
+    return found
+}
+
+/// What replaces each ending of `bases`, in the C# `Endings` table's order.
+List<string> endingReplacements(string ending) => ending switch {
+    "ies" or "ied" or "ier" => ["y"],
+    "s" or "ly" => [""],
+    "ers" => [],
+    _ => ["", "e"],
+}
+
+/// The project dictionary from `package.byn` (Q551): the file the loader read as `"package.byn"`, lowered;
+/// empty without one. The C# caches it per compilation; this reads it per `checkMembers`.
+Grammar grammarOf(ref Ctx c) {
+    let i = packageFileIndex(in c.files)
+    if i < 0 { return Grammar {} }
+    var bytes = List<u8>()
+    for b in c.files[i].text { bytes.append(b) }
+    let manifest = manifestParse(lexer.SourceText.create(c.files[i].path, from: move bytes))
+    return lowerGrammar(in manifest.grammar)
+}
+
+/// The index of the file the loader read as `"package.byn"`, or -1.
+i64 packageFileIndex(in List<SourceFile> files) {
+    for i in 0..files.length {
+        if files[i].displayPath == "package.byn" { return i }
+    }
+    return -1
+}
+
+/// `grammar` with every word and form in lowercase.
+Grammar lowerGrammar(in Grammar grammar) {
+    var lower = Grammar {}
+    for w in grammar.verbs { lower.verbs.append(lowerAscii(w)) }
+    for w in grammar.nouns { lower.nouns.append(lowerAscii(w)) }
+    for w in grammar.adjectives { lower.adjectives.append(lowerAscii(w)) }
+    for (word, form) in grammar.forms { lower.forms[lowerAscii(word)] = lowerAscii(form) }
+    return lower
+}
+
+void checkBoolState(ref Ctx c, from FileId f, at TextSpan name, for string text) {
+    if isStateName(text) || text.startsWith("contains") || text.startsWith("equals") || text.startsWith("matches")
+        || text.startsWith("startsWith") || text.startsWith("endsWith") || text.startsWith("try") { return }
+    let fixedName = $"is{upperAscii(text[0..1])}{text[1..text.length]}"
+    report(ref c, for: .boolWithoutPrefix, from: f, at: name, by: (a0: text, a1: "", a2: "", a3: "", a4: ""),
+        help: $"rename it `{fixedName}`", hasFix: true, fixSpan: name, fixReplacement: fixedName)
+}
+
+/// `isX`, `hasX`, `canX`: the prefix, then a capital.
+bool isStateName(string name) =>
+    statePrefixed(name, by: "is") || statePrefixed(name, by: "has") || statePrefixed(name, by: "can")
+
+bool statePrefixed(string name, by string prefix) =>
+    name.length > prefix.length && name.startsWith(prefix) && isUpperAscii(name.bytes[prefix.length])
+
+/// The verbs `name` may be the `-ed` form of, most likely first; empty when it is not a participle. Only a
+/// single lowercase word ending in `-ed` counts: `sorted` → sort, `reversed` → reverse, `trimmed` → trim,
+/// `copied` → copy. Words ending in `-eed`, words shorter than five letters and `isNotParticiple` are not.
+List<string> participleStems(string name) {
+    var stems = List<string>()
+    if name.length < 5 || !name.endsWith("ed") || name.endsWith("eed") || !isAllLowerLetters(name) || isNotParticiple(name) {
+        return stems
+    }
+    let bare = name[0..name.length - 2]
+    let n = bare.length
+    let last = bare.bytes[n - 1]
+    let prev = bare.bytes[n - 2]
+    if last == 0x69 { stems.append($"{bare[0..n - 1]}y") }
+    if n >= 4 && last == prev && !isVowel(last) && last != 0x6C && last != 0x73 { stems.append(bare[0..n - 1]) }
+    // `reversed`, `parsed`, `doubled`, `named` drop only the `d`; `sorted`, `joined` drop `ed`.
+    let keepsE = last == 0x63 || last == 0x75 || last == 0x76 || last == 0x7A
+        || (last == 0x73 && prev != 0x73) || (last == 0x6C && !isVowel(prev) && prev != 0x6C)
+        || (n == 3 && !isVowel(bare.bytes[0]) && isVowel(bare.bytes[1]) && !isVowel(bare.bytes[2])
+            && bare.bytes[2] != 0x77 && bare.bytes[2] != 0x78 && bare.bytes[2] != 0x79)
+    let dropD = name[0..name.length - 1]
+    if keepsE {
+        stems.append(dropD)
+        stems.append(bare)
+    } else {
+        stems.append(bare)
+        stems.append(dropD)
+    }
+    return stems
+}
+
+bool isVowel(u8 b) => b == 0x61 || b == 0x65 || b == 0x69 || b == 0x6F || b == 0x75
+
+/// Common words ending in `-ed` that are not the `-ed` form of a verb.
+bool isNotParticiple(string w) => w switch {
+    "hundred" or "embed" or "shred" or "naked" or "wicked" or "sacred" or "kindred" => true,
+    _ => false,
+}
+
+/// The first word of a `ref this` member that names a thing, not an action (BYN5101).
+bool isThingNoun(string w) => w switch {
+    "size" or "length" or "total" or "sum" or "value" or "values" or "data" or "item" or "items" or "element" or
+    "elements" or "result" or "results" or "name" or "id" or "state" or "status" or "info" or "content" or
+    "contents" or "capacity" or "amount" or "number" or "key" or "keys" or "entry" or "entries" or "node" or
+    "nodes" => true,
+    _ => false,
+}
+
+string toPascal(string name) {
+    let words = wordSpans(name)
+    if words.length == 0 { return name }
+    var sb = StrBuf()
+    for w in words { sb.append(capitalize(w.text)) }
+    return $"{sb.finish()}"
+}
+
+string toCamel(string name) {
+    let words = wordSpans(name)
+    if words.length == 0 { return name }
+    var sb = StrBuf()
+    sb.append(lowerAscii(words[0].text))
+    for i in 1..words.length { sb.append(capitalize(words[i].text)) }
+    return $"{sb.finish()}"
+}
+
+/// Two-letter acronyms stay uppercase (`IO`); other words are capitalized.
+string capitalize(string word) {
+    if word.length == 0 { return word }
+    if word.length == 2 && isUpperAscii(word.bytes[0]) && isUpperAscii(word.bytes[1]) { return word }
+    var bytes = List<u8>()
+    for i in 0..word.length {
+        let b = word.bytes[i]
+        if i == 0 && isLowerAscii(b) {
+            bytes.append(b - 32)
+        } else if i > 0 && isUpperAscii(b) {
+            bytes.append(b + 32)
+        } else {
+            bytes.append(b)
+        }
+    }
+    return $"{utf8(bytes.span)}"
+}
+
+/// One word of a name and its byte offset in the name.
+struct WordSpan {
+    i64 start
+    string text
+}
+
+/// Splits at underscores and case changes: `HTTPClient` → HTTP, Client; `parse_url` → parse, url;
+/// `IOError` → IO, Error. Uncased letters and digits stay with the word they follow.
+List<WordSpan> wordSpans(string name) {
+    var words = List<WordSpan>()
+    var start: i64 = 0
+    var length: i64 = 0
+    let n = name.length
+    for i in 0..n {
+        let ch = name.bytes[i]
+        if ch == 0x5F {
+            if length > 0 { words.append(WordSpan { start: start, text: name[start..start + length] }) }
+            length = 0
+            continue
+        }
+        if isUpperAscii(ch) && length > 0 {
+            let prev = name.bytes[i - 1]
+            let nextIsLower = i + 1 < n && isLowerAscii(name.bytes[i + 1])
+            if isLowerAscii(prev) || isDigitAscii(prev) || (isUpperAscii(prev) && nextIsLower) {
+                words.append(WordSpan { start: start, text: name[start..start + length] })
+                length = 0
+            }
+        }
+        if length == 0 { start = i }
+        length += 1
+    }
+    if length > 0 { words.append(WordSpan { start: start, text: name[start..start + length] }) }
+    return words
+}
+
+bool isUpperAscii(u8 b) => b >= 0x41 && b <= 0x5A
+
+bool isLowerAscii(u8 b) => b >= 0x61 && b <= 0x7A
+
+bool isDigitAscii(u8 b) => b >= 0x30 && b <= 0x39
+
+string lowerAscii(string s) {
+    var bytes = List<u8>()
+    for b in s.bytes {
+        if isUpperAscii(b) { bytes.append(b + 32) } else { bytes.append(b) }
+    }
+    return $"{utf8(bytes.span)}"
+}
+
+string upperAscii(string s) {
+    var bytes = List<u8>()
+    for b in s.bytes {
+        if isLowerAscii(b) { bytes.append(b - 32) } else { bytes.append(b) }
+    }
+    return $"{utf8(bytes.span)}"
+}
+
+bool isAllAscii(string s) {
+    for b in s.bytes {
+        if b >= 0x80 { return false }
+    }
+    return true
+}
+
+bool isAllLowerLetters(string s) {
+    for b in s.bytes {
+        unless isLowerAscii(b) { return false }
+    }
+    return true
+}
+
+/// `s` without its trailing digits.
+string trimDigits(string s) {
+    var n = s.length
+    while n > 0 && isDigitAscii(s.bytes[n - 1]) { n -= 1 }
+    return s[0..n]
+}
+
+/// The span of `fn`'s declared return type, read from the tree through its `declIndex`/`memberIndex`.
+TextSpan returnTypeSpan(ref Ctx c, for FuncId fn) {
+    let f = c.functions[fn].file
+    let d = c.functions[fn].declIndex
+    let m = c.functions[fn].memberIndex
+    if f < 0 || d < 0 { return c.functions[fn].nameSpan }
+    switch c.files[f].unit.members[d] {
+        case .functionDecl(let n):
+            return typeSyntaxSpan(in n.value.returnType)
+        case .structDecl(let n):
+            return memberReturnSpan(in n.value.members, at: m)
+        case .interfaceDecl(let n):
+            return memberReturnSpan(in n.value.members, at: m)
+        case .extensionDecl(let n):
+            return memberReturnSpan(in n.value.members, at: m)
+        default:
+            return c.functions[fn].nameSpan
+    }
+}
+
+TextSpan memberReturnSpan(in List<parser.Decl> members, at i64 m) {
+    if m < 0 || m >= members.length { return TextSpan { start: 0, length: 0 } }
+    switch members[m] {
+        case .functionDecl(let n):
+            return typeSyntaxSpan(in n.value.returnType)
+        default:
+            return TextSpan { start: 0, length: 0 }
+    }
+}
+
+TextSpan typeSyntaxSpan(in parser.TypeSyntax t) => t switch {
+    .namedType(let n) => n.value.span,
+    .optionalType(let n) => n.value.span,
+    .arrayType(let n) => n.value.span,
+    .tupleType(let n) => n.value.span,
+    .functionTypeSyntax(let n) => n.value.span,
+    .dynType(let n) => n.value.span,
+    .refinedType(let n) => n.value.span,
+    .pointerType(let n) => n.value.span,
+    .none => TextSpan { start: 0, length: 0 },
+}
+
+// ── Particles.cs ────────────────────────────────────────────────────────────────
+
+/// The particle rule at a declaration (spec §10): one unlabeled required parameter, the object; every other
+/// takes a particle (BYN5004, BYN5006); a particle appears once (BYN5013). The receiver is not a parameter
+/// here, and a `bool` parameter is passed by name, so neither counts. The parameters are read from the tree
+/// through `fn`'s `declIndex`/`memberIndex`, in `fn.parameters` order (Q552). Exempt: `extern` declarations
+/// and a `rest` tail, which takes no label (J39).
+void checkParticles(ref Ctx c, from FileId f, for FuncId fn) {
+    if c.functions[fn].template >= 0 || (c.functions[fn].modifiers & 128) != 0 { return }
+    let params = paramFacts(ref c, for: fn)
+    let fnName = $"{c.functions[fn].name}"
+    var seen = List<string>()
+    for p in params {
+        if (p.particle is { } particle) {
+            let text = $"{getText(c.files[f].text.span, at: particle)}"
+            if listContainsString(seen, by: text) {
+                report(ref c, for: .repeatedParticle, from: f, at: particle, by: (a0: fnName, a1: text, a2: "", a3: "", a4: ""),
+                    label: "used again", help: "group the values in a struct, or choose another particle")
+            } else {
+                seen.append(text)
+            }
+        }
+    }
+    var unlabeled = List<i64>()
+    for i in 0..params.length {
+        let isBoolParam = i < c.functions[fn].parameters.length && isBool(c.locals[c.functions[fn].parameters[i]].type)
+        if params[i].isPlain && !isBoolParam { unlabeled.append(i) }
+    }
+    if unlabeled.length < 2 { return }
+    let name = c.functions[fn].kind == .constructor ? $"{c.structs[c.functions[fn].owner].name}" : fnName
+    report(ref c, for: .particleRequired, from: f, at: c.functions[fn].nameSpan, by: (a0: name, a1: $"{unlabeled.length}", a2: "", a3: "", a4: ""),
+        label: $"{unlabeled.length} unlabeled parameters", help: "keep one unlabeled parameter, the object")
+    for k in 1..unlabeled.length {
+        let at = params[unlabeled[k]].name
+        let paramName = $"{getText(c.files[f].text.span, at: at)}"
+        report(ref c, for: .parameterNeedsParticle, from: f, at: at, by: (a0: paramName, a1: "", a2: "", a3: "", a4: ""),
+            label: "needs a particle", help: "label it with `from`, `to`, `until`, `through`, `at`, `by`, `for` or `as`")
+    }
+}
+
+/// What the particle rule reads of one parameter's syntax.
+struct ParamFacts {
+    TextSpan? particle = null
+    TextSpan name
+    /// No particle, no default and not a `rest` tail.
+    bool isPlain = false
+}
+
+/// The parameters of `fn`'s declaration, or none when it has no function or constructor declaration.
+List<ParamFacts> paramFacts(ref Ctx c, for FuncId fn) {
+    let f = c.functions[fn].file
+    let d = c.functions[fn].declIndex
+    let m = c.functions[fn].memberIndex
+    if f < 0 || d < 0 { return List<ParamFacts>() }
+    switch c.files[f].unit.members[d] {
+        case .functionDecl(let n):
+            return paramFactsOf(in n.value.params)
+        case .structDecl(let n):
+            return memberParamFacts(in n.value.members, at: m)
+        case .interfaceDecl(let n):
+            return memberParamFacts(in n.value.members, at: m)
+        case .extensionDecl(let n):
+            return memberParamFacts(in n.value.members, at: m)
+        default:
+            return List<ParamFacts>()
+    }
+}
+
+List<ParamFacts> memberParamFacts(in List<parser.Decl> members, at i64 m) {
+    if m < 0 || m >= members.length { return List<ParamFacts>() }
+    switch members[m] {
+        case .functionDecl(let n):
+            return paramFactsOf(in n.value.params)
+        case .constructorDecl(let n):
+            return paramFactsOf(in n.value.params)
+        default:
+            return List<ParamFacts>()
+    }
+}
+
+List<ParamFacts> paramFactsOf(in List<parser.Param> params) {
+    var facts = List<ParamFacts>()
+    for p in params {
+        facts.append(ParamFacts {
+            particle: p.particle,
+            name: p.name,
+            isPlain: p.particle is null && p.defaultKeyword is .none && !p.rest,
+        })
+    }
+    return facts
+}
