@@ -1,7 +1,8 @@
 ---
 id: L017
 title: Parser equivalence
-status: proposed
+status: enacted
+enacted: 2026-10-26
 kind: property
 scope: selfhost/parser/main.byn
 proof: tests/Bayan.Tests/SelfhostParserEquivalenceLawTests.cs
