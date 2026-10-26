@@ -42,6 +42,10 @@ public sealed class SelfhostSemanticsT8Tests
                 Arena l
                 StrBuf m
                 Map<(i32, bool), Cents> n
+                Panic o
+                ProcessResult p
+                FormatSpec q
+                Symbol r
                 i64 boundX
             }
             """),
@@ -103,13 +107,54 @@ public sealed class SelfhostSemanticsT8Tests
                 Result<i32, A> l
             }
             """),
+        ("dyn", """
+            interface IPlain {
+                i64 area()
+            }
+            interface IShape {
+                T pick<T>(T x)
+            }
+            interface ISized {
+                type Item
+            }
+            struct Probe {
+                dyn ref IPlain a
+                dyn ref readonly IPlain b
+                dyn ref IShape c
+                dyn ref ISized d
+                dyn IPlain e
+                dyn ref i64 f
+            }
+            """),
+        ("imports", """
+            import geo
+            struct Probe {
+                geo.Code a
+                geo.Hidden b
+                geo.Nope c
+                nogeo.Code d
+            }
+            """),
     ];
+
+    /// The second module's file, `geo/geo.byn`, of the fixture that imports it.
+    private static readonly Dictionary<string, string> Others = new()
+    {
+        ["imports"] = """
+            public union error Code {
+                bad
+            }
+            union error Hidden {
+                x
+            }
+            """,
+    };
 
     private static string Escape(string s) => s.Replace("\r", "").Replace("\n", "\\n");
 
     private static string MainSource()
     {
-        var calls = string.Join("\n", Fixtures.Select(f => $"    t8Run(\"{f.Name}\", by: \"{Escape(f.Text)}\")"));
+        var calls = string.Join("\n", Fixtures.Select(f => $"    t8Run(\"{f.Name}\", by: \"{Escape(f.Text)}\", from: \"{Escape(Others.GetValueOrDefault(f.Name, ""))}\")"));
         return MainHead + calls + "\n    return 0\n}\n";
     }
 
@@ -120,6 +165,7 @@ public sealed class SelfhostSemanticsT8Tests
         struct T8Pending {
             i64 kind
             i64 index
+            TextSpan span
             TextSpan name
             List<TextSpan> variants
         }
@@ -129,7 +175,7 @@ public sealed class SelfhostSemanticsT8Tests
             i64 index
         }
 
-        SourceFile makeFile(string text) {
+        SourceFile makeFile(string text, from ModId module) {
             var bytes = List<u8>()
             for b in text.bytes { bytes.append(b) }
             var copy = List<u8>()
@@ -137,7 +183,7 @@ public sealed class SelfhostSemanticsT8Tests
             let source = lexer.SourceText.create("t8.byn", from: move bytes)
             var p = parser.Parser.create(lexer.lex(move source, by: lexer.Keywords.build()))
             let unit = parser.parseCompilationUnit(ref p)
-            return SourceFile { path: "t8.byn", displayPath: "t8.byn", text: move copy, unit: move unit, module: 0, imports: Map<string, i64>() }
+            return SourceFile { path: "t8.byn", displayPath: "t8.byn", text: move copy, unit: move unit, module: module, imports: Map<string, i64>() }
         }
 
         string lineCol(string text, at i64 offset) {
@@ -155,37 +201,45 @@ public sealed class SelfhostSemanticsT8Tests
             return $"{line}:{col}"
         }
 
-        /// Registers the fixture's error enums as sets and its aliases and `union error` compositions as aliases.
-        List<AliasId> t8Declare(ref Ctx c) {
+        /// Registers a file's error enums as sets, its interfaces, and its aliases and `union error` compositions as aliases.
+        List<AliasId> t8Declare(ref Ctx c, from FileId file) {
+            let module = c.files[file].module
             var pending = List<T8Pending>()
-            for i in 0..c.files[0].unit.members.length {
-                switch c.files[0].unit.members[i] {
+            for i in 0..c.files[file].unit.members.length {
+                switch c.files[file].unit.members[i] {
                     case .errorEnumDecl(let d):
                         var vs = List<TextSpan>()
                         for v in d.value.variants { vs.append(v.name) }
-                        pending.append(T8Pending { kind: 0, index: i, name: d.value.name, variants: move vs })
+                        pending.append(T8Pending { kind: 0, index: i, span: d.value.span, name: d.value.name, variants: move vs })
                     case .errorSetDecl(let d):
-                        pending.append(T8Pending { kind: 1, index: i, name: d.value.name, variants: List<TextSpan>() })
+                        pending.append(T8Pending { kind: 1, index: i, span: d.value.span, name: d.value.name, variants: List<TextSpan>() })
                     case .typeAliasDecl(let d):
-                        pending.append(T8Pending { kind: 1, index: i, name: d.value.name, variants: List<TextSpan>() })
+                        pending.append(T8Pending { kind: 1, index: i, span: d.value.span, name: d.value.name, variants: List<TextSpan>() })
+                    case .interfaceDecl(let d):
+                        pending.append(T8Pending { kind: 2, index: i, span: d.value.span, name: d.value.name, variants: List<TextSpan>() })
                     default:
                         continue
                 }
             }
             var aliases = List<AliasId>()
             for p in pending {
-                let name = t8Text(in c, from: 0, at: p.name)
-                if p.kind == 0 {
-                    let s = newErrorSet(ref c, by: ErrorSetSymbol { name: name, nameSpan: p.name, module: 0, file: 0, declIndex: p.index })
+                let name = t8Text(in c, from: file, at: p.name)
+                var access: Accessibility = .module
+                if p.span.length >= 6 && t8Text(in c, from: file, at: TextSpan { start: p.span.start, length: 6 }) == "public" { access = .publicKeyword }
+                if p.kind == 2 {
+                    let i = newInterface(ref c, by: InterfaceSymbol { name: name, nameSpan: p.name, module: module, file: file, declIndex: p.index, access: access })
+                    c.modules[module].types[name] = interfaceTypeOf(i)
+                } else if p.kind == 0 {
+                    let s = newErrorSet(ref c, by: ErrorSetSymbol { name: name, nameSpan: p.name, module: module, file: file, declIndex: p.index, access: access })
                     for v in p.variants {
-                        let vName = t8Text(in c, from: 0, at: v)
-                        let id = newErrorVariant(ref c, by: ErrorVariantSymbol { name: vName, nameSpan: v, set: s, file: 0 })
+                        let vName = t8Text(in c, from: file, at: v)
+                        let id = newErrorVariant(ref c, by: ErrorVariantSymbol { name: vName, nameSpan: v, set: s, file: file })
                         c.errorSets[s].variants.append(id)
                     }
-                    c.modules[0].types[name] = errorSetTypeOf(s)
+                    c.modules[module].types[name] = errorSetTypeOf(s)
                 } else {
-                    let a = newAlias(ref c, by: AliasPlaceholder { name: name, nameSpan: p.name, file: 0, declIndex: p.index })
-                    c.modules[0].types[name] = t8AliasType(a)
+                    let a = newAlias(ref c, by: AliasPlaceholder { name: name, nameSpan: p.name, file: file, declIndex: p.index })
+                    c.modules[module].types[name] = t8AliasType(a)
                     aliases.append(a)
                 }
             }
@@ -232,13 +286,21 @@ public sealed class SelfhostSemanticsT8Tests
             for l in lines { print(l) }
         }
 
-        void t8Run(string section, by string text) {
+        void t8Run(string section, by string text, from string other) {
             var c = Ctx { files: List<SourceFile>(), modules: List<Mod>(), diagnostics: List<Diag>(), bags: List<DiagBag>() }
-            c.files.append(makeFile(text))
+            c.files.append(makeFile(text, from: 0))
             var files = List<FileId>()
             files.append(0)
             c.modules.append(Mod { name: "t8", files: move files })
-            let aliases = t8Declare(ref c)
+            if other != "" {
+                c.files.append(makeFile(other, from: 1))
+                var geoFiles = List<FileId>()
+                geoFiles.append(1)
+                c.modules.append(Mod { name: "geo", files: move geoFiles })
+                c.files[0].imports["geo"] = 1
+                let geoAliases = t8Declare(ref c, from: 1)
+            }
+            let aliases = t8Declare(ref c, from: 0)
             print($"== {section}")
             t8Probe(ref c)
             let r = TypeResolver { file: 0 }
@@ -270,7 +332,14 @@ public sealed class SelfhostSemanticsT8Tests
     private static (List<string> Fields, List<string> Diagnostics) Oracle(string name)
     {
         var text = Fixtures.Single(f => f.Name == name).Text.Replace("\r", "");
-        var c = Compilation.Create([SourceText.FromString("t8.byn", text)], Path.GetTempPath(), new CompilationOptions(Library: true));
+        // An imported module is a directory the compiler reads from disk.
+        var root = Path.Combine(Path.GetTempPath(), $"bayan-t8-{Guid.NewGuid():N}");
+        if (Others.TryGetValue(name, out var other))
+        {
+            Directory.CreateDirectory(Path.Combine(root, "geo"));
+            File.WriteAllText(Path.Combine(root, "geo", "geo.byn"), other.Replace("\r", ""));
+        }
+        var c = Compilation.Create([SourceText.FromString(Path.Combine(root, "t8.byn"), text)], root, new CompilationOptions(Library: true));
         var probe = c.Modules.SelectMany(m => m.Structs).SingleOrDefault(s => s.Name == "Probe")
             ?? throw new InvalidOperationException(string.Join("\n", c.Diagnostics.Items.Select(d => $"{d.Code} {LineCol(text, d.Span.Start)} {d.Message}")));
         var fields = probe.Fields.Select(f => $"{f.Name}: {f.Type.DisplayName}").ToList();
@@ -301,4 +370,10 @@ public sealed class SelfhostSemanticsT8Tests
 
     [Fact]
     public void Compose() => Compare("compose");
+
+    [Fact]
+    public void Dyn() => Compare("dyn");
+
+    [Fact]
+    public void Imports() => Compare("imports");
 }
