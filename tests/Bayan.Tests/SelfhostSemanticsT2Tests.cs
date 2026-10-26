@@ -499,14 +499,30 @@ public sealed class SelfhostSemanticsT2Tests
         WriteQuery(w, includePath: true, int.MaxValue, clear: true);
         expected.Add(("multi", DiagnosticRenderer.RenderAll(multi, includePath: true)));
 
+        // Four files whose display paths share a prefix and are reported out of ordinal order, so
+        // the sort must compare past the first byte (the C# ordinal order is a/x, a/y, ab, b/x).
+        var prefix = new List<Diagnostic>
+        {
+            new(Severity.Error, "BYN2001", SourceText.FromString("b/x.byn", "let bx = 1\n"), new TextSpan(4, 2), "`bx` is not defined"),
+            new(Severity.Error, "BYN2001", SourceText.FromString("a/y.byn", "let ay = 1\n"), new TextSpan(4, 2), "`ay` is not defined"),
+            new(Severity.Error, "BYN2001", SourceText.FromString("a/x.byn", "let ax = 1\n"), new TextSpan(4, 2), "`ax` is not defined"),
+            new(Severity.Error, "BYN2001", SourceText.FromString("ab.byn", "let ab = 1\n"), new TextSpan(4, 2), "`ab` is not defined"),
+        };
+        WriteItems(w, prefix);
+        WriteQuery(w, includePath: true, int.MaxValue, clear: true);
+        expected.Add(("prefix", DiagnosticRenderer.RenderAll(prefix, includePath: true)));
+
         // 2-, 3- and 4-byte scalars, a control character and a tab in the prefix exercise the UTF-8
-        // decoder and `display` at every sequence length.
-        var unicodeText = "\tlet s = \"\u0B82\U00010000\u0001\u00E9\"\n";
+        // decoder and `display` at every sequence length; the trailing U+F8FF has lead byte 0xEF, the
+        // top of the 3-byte range, so a span over it exercises the decoder's upper bound too.
+        var unicodeText = "\tlet s = \"\u0B82\U00010000\u0001\u00E9\uF8FF\"\n";
         var unicode = SourceText.FromString("u.byn", unicodeText);
         var unicodeStart = Encoding.UTF8.GetByteCount(unicodeText[..unicodeText.IndexOf('\u0B82')]);
+        var efStart = Encoding.UTF8.GetByteCount(unicodeText[..unicodeText.IndexOf('\uF8FF')]);
         var scalars = new List<Diagnostic>
         {
             new(Severity.Error, "BYN2001", unicode, new TextSpan(unicodeStart, 3), "`s` is not defined", "label `in code`"),
+            new(Severity.Error, "BYN2001", unicode, new TextSpan(efStart, 3), "`p` is not defined"),
         };
         WriteItems(w, scalars);
         WriteQuery(w, includePath: true, int.MaxValue, clear: true);
