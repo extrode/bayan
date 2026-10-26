@@ -134,6 +134,8 @@ struct FieldSymbol {
     i64 modifiers = 0
     Type type = -1
     bool hasDefault = false
+    /// T4 (Q539): C# `Default`, the bound default value, or -1.
+    BExpr defaultValue = -1
 }
 
 struct PropertySymbol {
@@ -184,6 +186,9 @@ struct FunctionSymbol {
     string? becomes = null
     TextSpan? refThis = null
     TextSpan? moveThis = null
+    /// T4 (Q539): C# `Body` (a `BoundBlock`) or -1, and `Requires`.
+    BStmt body = -1
+    List<BExpr> requirements = List<BExpr>()
 }
 
 struct InterfaceSymbol {
@@ -234,6 +239,9 @@ struct LocalSymbol {
     bool isParameter = false
     parser.ParamModifier modifier = .none
     i64 ordinal = -1
+    /// T4 (Q539): C# `Constant`, and `ParameterSymbol.Default` (-1 for none).
+    Constant? constant = null
+    BExpr defaultValue = -1
 }
 
 struct ConstSymbol {
@@ -247,6 +255,10 @@ struct ConstSymbol {
     /// Binding state, to detect constants defined in terms of themselves.
     i64 state = 0
     bool isStaticArray = false
+    /// T4 (Q539): C# `Value`, `Bound` (-1 for none) and `Elements`.
+    Constant? value = null
+    BExpr bound = -1
+    List<Constant> elements = List<Constant>()
 }
 
 struct ErrorSetSymbol {
@@ -320,6 +332,8 @@ struct EnumMemberSymbol {
     EnumId owner = -1
     i64 ordinal = -1
     string? doc = null
+    /// T4 (Q539): C# `Values`, one per enum field; null where C# has null.
+    List<Constant?> values = List<Constant?>()
 }
 
 struct UnionSymbol {
