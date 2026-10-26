@@ -317,7 +317,7 @@ public sealed class SelfhostParserEquivalenceLawTests(ITestOutputHelper output)
             AstDump.Dump(tree);
             return true;
         }
-        catch (ArgumentOutOfRangeException)
+        catch (Exception)
         {
             tree = null;
             return false;

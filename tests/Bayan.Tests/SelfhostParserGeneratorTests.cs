@@ -149,11 +149,8 @@ public sealed class SelfhostParserGeneratorTests(ITestOutputHelper output)
         Directory.CreateDirectory(probeDir);
         File.WriteAllBytes(Path.Combine(probeDir, "empty.byn"), []);
         var (probeExit, _, probeErr) = Run(Built, "--many", probeDir);
-        if (probeExit == 2)
-        {
-            output.WriteLine($"skipped: bayan-parse --many is not implemented yet (T13/T15 pending); probe exit {probeExit}\n{probeErr}");
-            return;
-        }
+        output.WriteLine(probeErr);
+        Assert.True(probeExit == 0, $"bayan-parse --many on one empty file: exit {probeExit}\n{probeErr}");
 
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "parser-corpus");
         if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
