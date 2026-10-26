@@ -23,7 +23,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T7 Naming, lexicon and particles — files: `naming.byn` (`Naming.cs`, `Lexicon.cs`, `Particles.cs`; the static word sets become `lexiconVerbs`/`lexiconNouns`/`lexiconAdjectives` fields added to `Ctx` by T3, filled by `buildLexicon`; the manifest grammar is merged per lookup), `SelfhostSemanticsT7Tests.cs` — covers: R4 — after: T4; parallel with: T6, T8–T27, T34–T39 — done when:
   - every BYN50xx/51xx form is reproduced; `buildLexicon` fills the T3 fields once; ASCII casing recorded in Q550–Q554.
   - Size: about 670 lines.
-- [ ] T8 Type resolution — files: `typeresolve.byn` (`TypeResolver.cs`: names, aliases, associated types, `Map`/`HashMap`, builtins, effects; calls `afterMembersDeclared` for the deferred key check), `SelfhostSemanticsT8Tests.cs` — covers: R4 — after: T4; parallel with: T6–T7, T9–T27, T34–T39 — done when:
+- [x] T8 Type resolution — files: `typeresolve.byn` (`TypeResolver.cs`: names, aliases, associated types, `Map`/`HashMap`, builtins, effects; calls `afterMembersDeclared` for the deferred key check), `SelfhostSemanticsT8Tests.cs` — covers: R4 — after: T4; parallel with: T6–T7, T9–T27, T34–T39 — done when:
   - method-for-method port; a fixture resolves named, optional, tuple, function and `Map` syntax like C#; Q555–Q559 record the closure and casing workarounds.
   - Size: about 735 lines.
 - [ ] T9 Builtins and builtin members — files: `builtins.byn` (`Builtins.cs` incl. parsed `"<builtin>"` sources and the `Rule` variants, `BuiltinMembers.cs`), `SelfhostSemanticsT9Tests.cs` — covers: R4 — after: T4; parallel with: T6–T8, T10–T27, T34–T39 — done when:
