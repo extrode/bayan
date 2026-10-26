@@ -95,7 +95,7 @@ enum BuiltinKind {
 
 // ── Handles ─────────────────────────────────────────────────────────────────────
 
-Type makeType(TypeKind kind, at i64 index) => (kind.ordinal << 32) | index
+Type makeType(TypeKind kind, at i64 index) => (i64(kind.ordinal) << 32) | index
 
 TypeKind kindOf(Type t) {
     switch t >> 32 {
