@@ -14,7 +14,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [ ] T4 Bound nodes — files: `bound.byn` (per-kind arenas, constructors, `Constant`, `children`/`descendants` in `BoundTree.cs` order, syntax-kind flags, `BoundMethodGroup`/`BoundBuiltinGroup`/`BoundVariantGroup`, and the `checks` field added to `Ctx`), `SelfhostSemanticsT4Tests.cs` — covers: R4 — after: T3; parallel with: none — done when:
   - every `BoundNodes.cs` record exists with its fields in order; a three-level tree builds and walks identically; Q535–Q539 as needed.
   - Size: about 800 lines.
-- [ ] T5 128-bit integer — files: `bigint.byn` (`Big`/`BigParse` operations over T1's declarations: parse/compare/add/sub/mul/div/rem/shifts/bit ops/wrap/saturate/`bigMin`/`bigMax`/text), `SelfhostSemanticsT5Tests.cs` — covers: R4 — after: T2; parallel with: none — done when:
+- [x] T5 128-bit integer — files: `bigint.byn` (`Big`/`BigParse` operations over T1's declarations: parse/compare/add/sub/mul/div/rem/shifts/bit ops/wrap/saturate/`bigMin`/`bigMax`/text), `SelfhostSemanticsT5Tests.cs` — covers: R4 — after: T2; parallel with: none — done when:
   - seeded tests match a C# `Int128`/`BigInteger` oracle over every operation and every integer boundary; Q540–Q544 record the gap and any unexpressible case.
   - Size: about 500 lines.
 - [ ] T6 Conversions, type facts and folding — files: `conversions.byn` (`Conversions.cs`, `TypeFacts.cs`), `fold.byn` (`ConstantFolding.cs` over `Big`), `SelfhostSemanticsT6Tests.cs` — covers: R4 — after: T4; parallel with: T7–T27, T34–T39 — done when:
