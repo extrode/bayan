@@ -1,1 +1,48 @@
 // T12: Compilation.cs ~655-1037 (variants, payloads, enums, unions, struct members, overloads).
+
+import parser
+
+// The C# `Location`: a file and a span in it.
+struct Location {
+    FileId file
+    TextSpan span
+}
+
+// stub: T12 ports Compilation.cs:922 DeclareMembers
+void declareMembers(ref Ctx c, for StructId s) {}
+
+// stub: T12 ports Compilation.cs:718 DeclareVariants
+void declareVariants(ref Ctx c, for ErrorSetId set) {}
+
+// stub: T12 ports Compilation.cs:753 DeclarePayloads
+void declarePayloads(ref Ctx c, for ErrorSetId set) {}
+
+// stub: T12 ports Compilation.cs:793 DeclareEnumMembers
+void declareEnumMembers(ref Ctx c, for EnumId e) {}
+
+// stub: T12 ports Compilation.cs:826 DeclareEnumFields
+void declareEnumFields(ref Ctx c, for EnumId e) {}
+
+// stub: T12 ports Compilation.cs:858 DeclareUnionVariants
+void declareUnionVariants(ref Ctx c, for UnionId u) {}
+
+// stub: T12 ports Compilation.cs:778 CheckComposition
+void checkComposition(ref Ctx c, for AliasId alias, from in parser.ErrorSetDecl decl) {}
+
+// stub: T12 ports Compilation.cs:655 CheckOverloads
+void checkOverloads(ref Ctx c, for ModId module) {}
+
+// stub: T12 ports Compilation.cs:683 CheckUnique
+bool checkUnique(ref Ctx c, from FileId file, at TextSpan name) => false
+
+// stub: T12 ports Compilation.cs:695 ReportDuplicate
+void reportDuplicate(ref Ctx c, from FileId f, at TextSpan name, as Location previous) {}
+
+// stub: T12 ports Compilation.cs:671 Overlap
+bool overlap(ref Ctx c, for FuncId a, as FuncId b) => false
+
+// stub: T12 ports Compilation.cs:712 Loc
+Location loc(FileId file, at TextSpan span) => Location { file: file, span: span }
+
+// stub: T12 ports Compilation.cs:714 AccessOf
+Accessibility accessOf(parser.Modifiers m) => .privateKeyword

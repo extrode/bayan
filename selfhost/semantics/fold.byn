@@ -1,1 +1,15 @@
 // T6: Binding/ConstantFolding.cs.
+
+import parser
+
+// stub: T6 ports ConstantFolding.cs:14 Unary
+Constant? foldUnary(ref Ctx c, for parser.UnaryOp op, by in Constant operand, as Type type) => null
+
+// stub: T6 ports ConstantFolding.cs:24 Binary
+Constant? foldBinary(ref Ctx c, for parser.BinaryOp op, from in Constant l, by in Constant r, as Type type) => null
+
+// stub: T6 ports ConstantFolding.cs:159 Cast
+Constant? foldCast(ref Ctx c, for in Constant value, from Type a, to Type t) => null
+
+// stub: T6 ports ConstantFolding.cs:122 Evaluate
+Constant? evaluate(ref Ctx c, for BExpr e, from in Map<LocalId, Constant> locals, by in Map<FieldId, Constant> fields) => null

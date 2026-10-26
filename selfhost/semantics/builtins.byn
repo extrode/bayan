@@ -1,1 +1,52 @@
 // T9: Builtins.cs and Binding/BuiltinMembers.cs.
+
+// One parameter of a builtin method: the C# `(string Name, TypeSymbol Type)` pair.
+struct BuiltinParameter {
+    string name
+    Type type
+}
+
+// The C# `BuiltinMethod` record.
+struct BuiltinMethod {
+    BuiltinMember member
+    List<BuiltinParameter> parameters
+    Type returns
+    bool mutating = false
+    i64 optional = 0
+}
+
+// The C# `(BuiltinMember Member, TypeSymbol Type)` tuple `Property` returns.
+struct PropertyResult {
+    BuiltinMember member
+    Type type
+}
+
+// stub: T9 ports Builtins.cs:444 Find
+FuncId? find(ref Ctx c, for string name) => null
+
+// stub: T9 ports Builtins.cs:150 FindInterface
+InterfaceId findInterface(ref Ctx c, for string name) => -1
+
+// stub: T9 ports Builtins.cs:329 FindIo
+FuncId findIo(ref Ctx c, for string name) => -1
+
+// stub: T9 ports Builtins.cs:251 FindString
+FuncId findString(ref Ctx c, for string name) => -1
+
+// stub: T9 ports Builtins.cs:258 FindUtf8
+FuncId findUtf8(ref Ctx c, for string name) => -1
+
+// stub: T9 ports Builtins.cs:268 IntParse
+FuncId intParse(ref Ctx c, for PrimitiveKind t) => -1
+
+// stub: T9 ports BuiltinMembers.cs:134 HasMethod
+bool hasMethod(ref Ctx c, for Type type, by string name) => false
+
+// stub: T9 ports BuiltinMembers.cs:56 Method
+BuiltinMethod? method(ref Ctx c, for Type type, by string name) => null
+
+// stub: T9 ports BuiltinMembers.cs:141 Names
+List<string> names(Type t) => []
+
+// stub: T9 ports BuiltinMembers.cs:13 Property
+PropertyResult? builtinProperty(ref Ctx c, for Type type, by string name) => null

@@ -1,1 +1,66 @@
 // T15: Binder.cs 1-~499 (state, scopes, locals, entry points).
+
+import parser
+
+// stub: T15 ports Binder.cs:60 Hold
+i64 hold(ref Binder b, through ref Ctx c) => -1
+
+// stub: T15 ports Binder.cs:71 Release
+List<(LocalId, Type)> release(ref Binder b, through ref Ctx c) => []
+
+// stub: T15 ports Binder.cs:112 Report
+void report(ref Binder b, through ref Ctx c, for SemaCode code, at TextSpan span, by (string a0, string a1, string a2, string a3, string a4) args, string label = "", string help = "", bool hasFix = false, TextSpan? fixSpan = null, string fixReplacement = "") {}
+
+// stub: T15 ports Binder.cs:176 BindFunctionBody
+void bindFunctionBody(ref Binder b, through ref Ctx c, for in parser.FunctionDecl decl) {}
+
+// stub: T15 ports Binder.cs:258 BindChecks
+void bindChecks(ref Binder b, through ref Ctx c, for in StructChecks checks) {}
+
+// stub: T15 ports Binder.cs:354 BindParameterDefault
+BExpr bindParameterDefault(ref Binder b, through ref Ctx c, for LocalId p) => -1
+
+// stub: T15 ports Binder.cs:363 BindExpressionBody
+BStmt bindExpressionBody(ref Binder b, through ref Ctx c, for in parser.Expr e) => -1
+
+// stub: T15 ports Binder.cs:370 BindGetter
+void bindGetter(ref Binder b, through ref Ctx c, for in parser.PropertyDecl d) {}
+
+// stub: T15 ports Binder.cs:380 BindConstructor
+void bindConstructor(ref Binder b, through ref Ctx c, for in parser.ConstructorDecl d) {}
+
+// stub: T15 ports Binder.cs:387 BindMain
+void bindMain(ref Binder b, through ref Ctx c, for in List<parser.GlobalStatement> statements) {}
+
+// stub: T15 ports Binder.cs:397 BindTest
+void bindTest(ref Binder b, through ref Ctx c, for in parser.TestDecl d, by in List<parser.Expr> values) {}
+
+// stub: T15 ports Binder.cs:417 BindFieldDefault
+BExpr bindFieldDefault(ref Binder b, through ref Ctx c, for FieldId f) => -1
+
+// stub: T15 ports Binder.cs:424 BindEnumArguments
+void bindEnumArguments(ref Binder b, through ref Ctx c, for EnumId e) {}
+
+// stub: T15 ports Binder.cs:446 BindModuleConstant
+void bindModuleConstant(ref Binder b, through ref Ctx c, for ConstId k) {}
+
+// stub: T15 ports Binder.cs:499 BindArraySize
+i64 bindArraySize(ref Binder b, through ref Ctx c, for in parser.Expr size) => 0
+
+// stub: T15 ports Binder.cs:118 CheckValueName
+void checkValueName(ref Binder b, through ref Ctx c, at TextSpan name) {}
+
+// stub: T15 ports Binder.cs:135 DeclareLocal
+LocalId declareLocal(ref Binder b, through ref Ctx c, at TextSpan name, as Type type, for LocalKind kind) => -1
+
+// stub: T15 ports Binder.cs:143 AddLocal
+void addLocal(ref Binder b, through ref Ctx c, at TextSpan name, for LocalId local) {}
+
+// stub: T15 ports Binder.cs:131 PushScope
+void pushScope(ref Binder b) {}
+
+// stub: T15 ports Binder.cs:133 PopScope
+void popScope(ref Binder b) {}
+
+// stub: T15 ports Binder.cs:120 ResolveType
+Type resolveType(ref Binder b, through ref Ctx c, for in parser.TypeSyntax t) => -1

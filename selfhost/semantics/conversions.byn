@@ -1,1 +1,25 @@
 // T6: Conversions.cs and TypeFacts.cs.
+
+// stub: T6 ports Conversions.cs:12 Implicit
+ConversionKind? implicit(ref Ctx c, from Type a, to Type t, bool argument = false) => null
+
+// stub: T6 ports Conversions.cs:53 Implicit
+ConversionKind? implicitFunction(ref Ctx c, from FuncId fn, to Type t) => null
+
+// stub: T6 ports Conversions.cs:74 Explicit
+ConversionKind? explicit(ref Ctx c, from Type a, to Type t) => null
+
+// stub: T6 ports Conversions.cs:60 IsWidening
+bool isWidening(Type a, to Type t) => false
+
+// stub: T6 ports Conversions.cs:87 Common
+Type common(ref Ctx c, for Type a, as Type b) => -1
+
+// stub: T6 ports TypeFacts.cs:15 IsUnique
+bool isUnique(ref Ctx c, for Type t) => false
+
+// stub: T6 ports TypeFacts.cs:18 UniquePart
+Type uniquePart(ref Ctx c, for Type t) => -1
+
+// stub: T6 ports TypeFacts.cs:21 WhyUnique
+string? whyUnique(ref Ctx c, for Type t) => null

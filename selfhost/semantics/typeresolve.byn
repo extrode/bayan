@@ -1,1 +1,26 @@
 // T8: TypeResolver.cs.
+
+import parser
+
+// The C# `TypeResolver` instance: the file whose imports resolve names, the struct whose type
+// parameters are in scope (-1 none) and the substitutions in force.
+struct TypeResolver {
+    FileId file
+    StructId container = -1
+    Map<string, Type> typeArgs = []
+}
+
+// stub: T8 ports TypeResolver.cs:12 Resolve
+Type resolve(ref Ctx c, through in TypeResolver r, for in parser.TypeSyntax syntax, bool allowVoid = false) => -1
+
+// stub: T8 ports TypeResolver.cs:30 ResolveBound
+Type resolveBound(ref Ctx c, through in TypeResolver r, for in parser.NamedType syntax) => -1
+
+// stub: T8 ports TypeResolver.cs:383 Expand
+Type expand(ref Ctx c, through in TypeResolver r, for Type t) => -1
+
+// stub: T8 ports TypeResolver.cs:381 ExpandAlias
+Type expandAlias(ref Ctx c, through in TypeResolver r, for AliasId alias) => -1
+
+// stub: T8 ports TypeResolver.cs:445 Effects
+List<string> effectsOf(ref Ctx c, through in TypeResolver r, for in parser.UsesClause clause) => []

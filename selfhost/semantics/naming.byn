@@ -1,1 +1,16 @@
 // T7: Naming.cs, Lexicon.cs and Particles.cs.
+
+// stub: T7 ports Lexicon.cs:9 Lexicon
+void buildLexicon(ref Ctx c) {}
+
+// stub: T7 ports Naming.cs:18 CheckType
+void checkType(ref Ctx c, from FileId f, at TextSpan name) {}
+
+// stub: T7 ports Naming.cs:40 CheckValue
+void checkValue(ref Ctx c, from FileId f, at TextSpan name) {}
+
+// stub: T7 ports Naming.cs:28 CheckInterface
+void checkInterface(ref Ctx c, from FileId f, at TextSpan name) {}
+
+// stub: T7 ports Naming.cs:57 CheckMembers
+void checkMembers(ref Ctx c, for StructId s) {}
