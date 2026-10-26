@@ -503,7 +503,7 @@ BuiltinMethod? method(ref Ctx c, for Type type, by string name) {
                     }
                 // The items are copied in, so elements that own memory are left out.
                 case "replace":
-                    unless isUnique(ref c, for: e) {
+                    unless t9IsUnique(ref c, for: e) {
                         let at = internRange(ref c, by: prim(.i64))
                         let items = internSpan(ref c, by: e, readOnly: true)
                         return BuiltinMethod { member: .listReplace, parameters: t9Two("at", as: at, for: "by", to: items), returns: prim(.void), mutating: true }
@@ -573,7 +573,7 @@ BuiltinMethod? method(ref Ctx c, for Type type, by string name) {
                 default: return null
             }
         case .optional:
-            if name == "take" && isUnique(ref c, for: c.optionalTypes[i]) {
+            if name == "take" && t9IsUnique(ref c, for: c.optionalTypes[i]) {
                 return BuiltinMethod { member: .optionalTake, parameters: List<BuiltinParameter>(), returns: type, mutating: true }
             }
         default: return null
@@ -592,50 +592,26 @@ List<string> t9Candidates() => [
     "radix", "debug", "width", "fill", "align", "digits",
 ]
 
-/// The property and method names of `t`'s kind. `names` has no `Ctx`, so a member that depends on the
-/// element type (`joined`, `replace`, `sort`, an optional's `take`) is listed for every element (Q561).
-string t9KindNames(Type t) {
-    if isString(t) {
-        return "length bytes isEmpty runeCount isAscii runes utf16 lines copy startsWith endsWith contains position lastPosition count trimmed equals lowercased uppercased replaced repeated padded parts"
-    }
-    switch kindOf(t) {
-        case .textView:
-            switch textViewKindOf(typeIndex(t)) {
-                case .runes: return "take skip takeLast"
-                case .utf16: return "copy"
-                default: return ""
-            }
-        case .span: return "length isEmpty joined copy"
-        case .list: return "length isEmpty span joined mutableSpan copy append clear removeLast remove replace tryGet sort take"
-        case .array: return "length span mutableSpan"
-        case .map: return "length tryGet slot contains remove copy clear take"
-        case .builtin:
-            switch builtinKindOf(typeIndex(t)) {
-                case .arena: return "reset"
-                case .strBuf: return "length view append appendRepeated insert copy finish clear take"
-                case .symbol: return "text"
-                case .processResult: return "exitCode stdout stderr"
-                case .panic: return "message"
-                case .formatSpec: return "radix debug width fill align digits"
-                case .ioStream: return "write"
-                case .ioInput: return "readAll"
-                default: return ""
-            }
-        case .primitive: return t == prim(.char) ? "value" : ""
-        case .result: return "isOk value err"
-        case .owned: return "value"
-        case .enumType: return "name ordinal"
-        case .optional: return "take"
-        default: return ""
-    }
-}
-
 /// Every member name of `t`, for suggestions.
-List<string> names(Type t) {
-    let kindNames = $" {t9KindNames(t)} "
+List<string> names(ref Ctx c, for Type t) {
     var result = List<string>()
     for n in t9Candidates() {
-        if kindNames.contains($" {n} ") { result.append(n) }
+        if builtinProperty(ref c, for: t, by: n) is not null || method(ref c, for: t, by: n) is not null { result.append(n) }
     }
     return result
+}
+
+/// `TypeFacts.IsUnique` for the types the builtin tables meet; T6's `isUnique` is a stub on this branch (Q561).
+/// Structs, unions, tuples, states and type parameters are not unique here.
+bool t9IsUnique(ref Ctx c, for Type t) {
+    let i = typeIndex(t)
+    switch kindOf(t) {
+        case .list or .map or .owned: return true
+        case .builtin: return builtinKindOf(i) == .strBuf
+        case .untrusted: return t9IsUnique(ref c, for: c.untrustedTypes[i])
+        case .optional: return t9IsUnique(ref c, for: c.optionalTypes[i])
+        case .result: return t9IsUnique(ref c, for: c.resultTypes[i].value)
+        case .array: return t9IsUnique(ref c, for: c.arrayTypes[i].element)
+        default: return false
+    }
 }

@@ -80,6 +80,10 @@ public sealed class SelfhostSemanticsT9Tests
         ("result", "internResult(ref c, by: prim(.i64), to: t9Type(ref c, for: \"IoError\"))", new ResultType(PrimitiveType.I64, B.IoError)),
         ("owned", "internOwned(ref c, by: prim(.i64))", new OwnedType(PrimitiveType.I64)),
         ("optional", "internOptional(ref c, by: prim(.i64))", new OptionalType(PrimitiveType.I64)),
+        ("listList", "internList(ref c, by: internList(ref c, by: prim(.i64)))", new ListType(new ListType(PrimitiveType.I64))),
+        ("listStrBuf", "internList(ref c, by: builtinType(.strBuf))", new ListType(BuiltinType.StrBuf)),
+        ("optStrBuf", "internOptional(ref c, by: builtinType(.strBuf))", new OptionalType(BuiltinType.StrBuf)),
+        ("optList", "internOptional(ref c, by: internList(ref c, by: prim(.i64)))", new OptionalType(new ListType(PrimitiveType.I64))),
         ("enum", "t9Type(ref c, for: \"Stream\")", B.Stream),
         ("runes", "textViewType(.runes)", TextViewType.Runes),
         ("utf16", "textViewType(.utf16)", TextViewType.Utf16),
@@ -93,9 +97,9 @@ public sealed class SelfhostSemanticsT9Tests
          "position", "lastPosition", "count", "trimmed", "equals", "lowercased", "uppercased", "replaced", "repeated", "padded", "parts", "skip", "takeLast", "joined", "span", "mutableSpan", "clear", "removeLast", "replace", "sort", "tryGet", "slot", "remove", "reset", "append", "appendRepeated", "insert", "finish", "view", "take", "write", "readAll", "name", "ordinal", "exitCode", "stdout", "stderr", "message", "radix", "debug", "width", "fill", "align", "digits",
          "isOk", "err", "nope"];
 
-    /// <summary>The types whose <c>names</c> match the C# (see Q561 for the element-dependent members).</summary>
     private static readonly string[] NameTypes =
-        ["string", "i64", "rune", "spanStr", "listStr", "map", "array", "strBuf", "symbol", "processResult", "formatSpec", "result", "owned", "enum", "runes", "utf16", "ioInput"];
+        ["string", "i64", "rune", "roBytes", "spanStr", "listI64", "listStr", "listBool", "listRune", "listList", "listStrBuf", "map", "array", "strBuf", "symbol",
+         "processResult", "formatSpec", "result", "owned", "optional", "optStrBuf", "optList", "enum", "runes", "utf16", "ioInput"];
 
     private static readonly string[] Enums = ["Stream", "Radix", "Edge", "Align", "Comparison", "LogLevel", "Utf8Invalid"];
 
@@ -168,10 +172,10 @@ public sealed class SelfhostSemanticsT9Tests
                 }
             }
 
-            void namesLine(string label, at Type t) {
+            void namesLine(ref Ctx c, for string label, at Type t) {
                 var sb = StrBuf()
                 sb.append($"{label}:")
-                for n in names(t) { sb.append($" {n}") }
+                for n in names(ref c, for: t) { sb.append($" {n}") }
                 print(sb.finish())
             }
 
@@ -232,7 +236,7 @@ public sealed class SelfhostSemanticsT9Tests
         for (var i = 0; i < Types.Length; i++) s.AppendLine($"    members(ref c, for: \"{Types[i].Label}\", at: t{i}, by: all)");
         s.AppendLine("    print(\"== names\")");
         foreach (var n in NameTypes)
-            s.AppendLine($"    namesLine(\"{n}\", at: t{Array.FindIndex(Types, t => t.Label == n)})");
+            s.AppendLine($"    namesLine(ref c, for: \"{n}\", at: t{Array.FindIndex(Types, t => t.Label == n)})");
         s.AppendLine("    return 0\n}");
         return s.ToString();
     }
