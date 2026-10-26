@@ -1,1 +1,48 @@
 // T19: BinderExpressions.cs ~1156-1640 (unary/binary/folding, coalesce, ranges, conditional, casts, struct/with).
+
+import parser
+
+// stub: T19 ports BinderExpressions.cs:1156 BindUnary
+BExpr bindUnary(ref Binder b, through ref Ctx c, for in parser.UnaryExpr u, to Type expected) => -1
+
+// stub: T19 ports BinderExpressions.cs:1219 BindBinary
+BExpr bindBinary(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e, to Type expected) => -1
+
+// stub: T19 ports BinderExpressions.cs:1326 Fold
+BExpr fold(ref Binder b, through ref Ctx c, for BExpr bound, from BExpr left, by BExpr right, as Type operandType) => -1
+
+// stub: T19 ports BinderExpressions.cs:1390 BindCoalesce
+BExpr bindCoalesce(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e, to Type expected) => -1
+
+// stub: T19 ports BinderExpressions.cs:1408 BindRange
+BExpr bindRange(ref Binder b, through ref Ctx c, for in parser.RangeExpr r, to Type expected) => -1
+
+// stub: T19 ports BinderExpressions.cs:1439 BindIn
+BExpr bindIn(ref Binder b, through ref Ctx c, for in parser.InExpr i) => -1
+
+// stub: T19 ports BinderExpressions.cs:1464 BindConditional
+BExpr bindConditional(ref Binder b, through ref Ctx c, for in parser.ConditionalExpr cond, to Type expected) => -1
+
+// stub: T19 ports BinderExpressions.cs:1489 BindCast
+BExpr bindCast(ref Binder b, through ref Ctx c, for in parser.CastExpr cast) => -1
+
+// stub: T19 ports BinderExpressions.cs:1492 BindConversion
+BExpr bindConversion(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type target, from in parser.Expr operandSyntax) => -1
+
+// stub: T19 ports BinderExpressions.cs:1516 BindStructLiteral
+BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLiteralExpr s, to Type expected) => -1
+
+// stub: T19 ports BinderExpressions.cs:1612 BindWith
+BExpr bindWith(ref Binder b, through ref Ctx c, for in parser.WithExpr w) => -1
+
+// stub: T19 ports BinderExpressions.cs:1205 BinaryText
+string binaryText(parser.BinaryOp op) => ""
+
+// stub: T19 ports BinderExpressions.cs:1306 Fact
+BExpr fact(ref Ctx c, for BExpr value) => -1
+
+// stub: T19 ports BinderExpressions.cs:1349 OperatorApplies
+bool operatorApplies(ref Ctx c, for parser.BinaryOp op, as Type t) => false
+
+// stub: T19 ports BinderExpressions.cs:1359 IsEquatable
+bool isEquatable(ref Ctx c, for Type t) => false

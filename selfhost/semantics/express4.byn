@@ -1,1 +1,39 @@
 // T35: BinderExpressions.cs ~1641-2158 (collections, map/tuple, spread, lambdas, stackalloc, interpolation).
+
+import parser
+
+// stub: T35 ports BinderExpressions.cs:1849 BindTuple
+BExpr bindTuple(ref Binder b, through ref Ctx c, for in parser.TupleExpr t, to Type expected) => -1
+
+// stub: T35 ports BinderExpressions.cs:1641 BindCollection
+BExpr bindCollection(ref Binder b, through ref Ctx c, for in parser.CollectionExpr coll, to Type expected) => -1
+
+// stub: T35 ports BinderExpressions.cs:1730 BindSpread
+BExpr bindSpread(ref Binder b, through ref Ctx c, for in parser.SpreadExpr s, to Type element) => -1
+
+// stub: T35 ports BinderExpressions.cs:1768 BindMapLiteral
+BExpr bindMapLiteral(ref Binder b, through ref Ctx c, for in parser.CollectionExpr coll, to Type target) => -1
+
+// stub: T35 ports BinderExpressions.cs:1888 BindLambda
+BExpr bindLambda(ref Binder b, through ref Ctx c, at TextSpan span, for in List<TextSpan> parameters, from in parser.Expr? body, by in parser.BlockStmt? block, to Type expected) => -1
+
+// stub: T35 ports BinderExpressions.cs:1961 Capture
+bool capture(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by LocalId local, as Type type) => false
+
+// stub: T35 ports BinderExpressions.cs:1950 InLambda
+bool inLambda(ref Binder b, through ref Ctx c, at TextSpan span, for string name, by string reason) => false
+
+// stub: T35 ports BinderExpressions.cs:1985 BindStackalloc
+BExpr bindStackalloc(ref Binder b, through ref Ctx c, for in parser.StackallocExpr s) => -1
+
+// stub: T35 ports BinderExpressions.cs:2004 BindInterpolated
+BExpr bindInterpolated(ref Binder b, through ref Ctx c, for in parser.InterpolatedExpr i) => -1
+
+// stub: T35 ports BinderExpressions.cs:2030 BindFormatSpec
+BFormatSpec bindFormatSpec(ref Binder b, through ref Ctx c, for in List<parser.Argument> specs, as Type type) => BFormatSpec {}
+
+// stub: T35 ports BinderExpressions.cs:2093 WhyNotFormattable
+string? whyNotFormattable(ref Ctx c, for Type t, by ref List<Type> seen) => null
+
+// stub: T35 ports BinderExpressions.cs:2127 PropertyType
+Type propertyType(ref Binder b, through ref Ctx c, for BuiltinMember member, as Type type) => -1

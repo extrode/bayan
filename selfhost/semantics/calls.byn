@@ -1,1 +1,30 @@
 // T20: BinderCalls.cs 1-~587 (calls, overloads, arguments).
+
+import parser
+
+// stub: T20 ports BinderCalls.cs:27 BindCall
+BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to Type expected) => -1
+
+// stub: T20 ports BinderCalls.cs:358 BindArguments
+List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by in List<LocalId> ps, as FuncId fn, bool enforceNames, string displayName = "") => []
+
+// stub: T20 ports BinderCalls.cs:174 BindArgumentsForRecovery
+void bindArgumentsForRecovery(ref Binder b, through ref Ctx c, for in parser.CallExpr call) {}
+
+// stub: T20 ports BinderCalls.cs:190 BindFunctionCall
+BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by FuncId fn, from BExpr receiver, in List<parser.TypeSyntax>? typeArgs = null) => -1
+
+// stub: T20 ports BinderCalls.cs:127 BindTryFrom
+BExpr bindTryFrom(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) => -1
+
+// stub: T20 ports BinderCalls.cs:146 BindTryParse
+BExpr bindTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) => -1
+
+// stub: T20 ports BinderCalls.cs:160 BindParse
+BExpr bindParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) => -1
+
+// stub: T20 ports BinderCalls.cs:473 Label
+string label(ref Ctx c, for LocalId p) => ""
+
+// stub: T20 ports BinderCalls.cs:19 StripParens
+TextSpan stripParens(in parser.Expr e) => TextSpan { start: 0, length: 0 }

@@ -1,1 +1,33 @@
 // T39: BinderCalls.cs ~1578-1956 (exhaustiveness, assignment, inc/dec, writability).
+
+import parser
+
+// stub: T39 ports BinderCalls.cs:1578 CheckExhaustive
+bool checkExhaustive(ref Binder b, through ref Ctx c, at TextSpan span, as Type type, by in List<(BPattern, BExpr)> arms, bool statement) => true
+
+// stub: T39 ports BinderCalls.cs:1712 BindAssign
+BStmt bindAssign(ref Binder b, through ref Ctx c, for in parser.AssignStmt a) => -1
+
+// stub: T39 ports BinderCalls.cs:1788 BindIncDec
+BStmt bindIncDec(ref Binder b, through ref Ctx c, for in parser.IncDecStmt i) => -1
+
+// stub: T39 ports BinderCalls.cs:1854 CheckWritable
+bool checkWritable(ref Binder b, through ref Ctx c, for BExpr target, at TextSpan span, by string why) => true
+
+// stub: T39 ports BinderCalls.cs:1654 Collect
+void collect(ref Ctx c, for BPattern p, as Type type, to ref List<string> covered) {}
+
+// stub: T39 ports BinderCalls.cs:1645 Irrefutable
+bool irrefutable(ref Ctx c, for BPattern p) => false
+
+// stub: T39 ports BinderCalls.cs:1835 MapWriteTarget
+BExpr mapWriteTarget(ref Ctx c, for BExpr target) => target
+
+// stub: T39 ports BinderCalls.cs:1839 ReportMutatesWithoutRefThis
+void reportMutatesWithoutRefThis(ref Ctx c, for FuncId fn, at TextSpan span) {}
+
+// stub: T39 ports BinderCalls.cs:1917 WrittenLocal
+LocalId writtenLocal(ref Ctx c, for BExpr e) => -1
+
+// stub: T39 ports BinderCalls.cs:1696 CompoundOperator
+parser.BinaryOp? compoundOperator(parser.AssignOp op) => null

@@ -1,1 +1,13 @@
 // T23: EffectAnalysis.cs and ErrorFlow.cs.
+
+// stub: T23 ports EffectAnalysis.cs:23 Analyze
+void analyzeEffects(ref Ctx c) {}
+
+// stub: T23 ports ErrorFlow.cs:8 Propagated
+List<ErrorSetId> propagated(ref Ctx c, for BStmt body) => []
+
+// stub: T23 ports ErrorFlow.cs:31 Uncaught
+List<ErrorSetId> uncaught(ref Ctx c, for FuncId callee, by VariantId caught) => []
+
+// stub: T23 ports EffectAnalysis.cs:244 ReportUnknown
+void reportUnknown(ref Ctx c, from FileId f, at TextSpan name) {}

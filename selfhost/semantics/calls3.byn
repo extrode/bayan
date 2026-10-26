@@ -1,1 +1,30 @@
 // T34: BinderCalls.cs ~999-1577 (try/catch, switch expressions, patterns, guard, resolve).
+
+import parser
+
+// stub: T34 ports BinderCalls.cs:999 BindTry
+BExpr bindTry(ref Binder b, through ref Ctx c, for in parser.TryExpr t, to Type expected) => -1
+
+// stub: T34 ports BinderCalls.cs:1056 BindCatch
+BExpr bindCatch(ref Binder b, through ref Ctx c, for in parser.CatchExpr e, to Type expected) => -1
+
+// stub: T34 ports BinderCalls.cs:1133 BindSwitchExpr
+BExpr bindSwitchExpr(ref Binder b, through ref Ctx c, for in parser.SwitchExpr s, to Type expected) => -1
+
+// stub: T34 ports BinderCalls.cs:1187 BindPattern
+BPattern bindPattern(ref Binder b, through ref Ctx c, for in parser.Pattern p, as Type input) => -1
+
+// stub: T34 ports BinderCalls.cs:1365 CheckGuardWrite
+bool checkGuardWrite(ref Binder b, through ref Ctx c, for BExpr target, at TextSpan span, by string why) => true
+
+// stub: T34 ports BinderCalls.cs:1278 CheckOwningOverlap
+void checkOwningOverlap(ref Binder b, through ref Ctx c, for BPattern p) {}
+
+// stub: T34 ports BinderCalls.cs:1339 GuardBindings
+void guardBindings(ref Ctx c, for BPattern p, at TextSpan guard) {}
+
+// stub: T34 ports BinderCalls.cs:1185 Unwrap
+Type unwrap(ref Ctx c, for Type t) => t
+
+// stub: T34 ports BinderCalls.cs:1539 ResolveStep
+BMemberStep? resolveStep(ref Binder b, through ref Ctx c, for Type type, at TextSpan name) => null
