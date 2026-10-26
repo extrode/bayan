@@ -31,6 +31,11 @@ type TypeParamId = i64
 type FieldId = i64
 type PropertyId = i64
 type VariantId = i64
+type TestId = i64
+type ConformanceId = i64
+type AliasId = i64
+type EnumFieldId = i64
+type EnumMemberId = i64
 /// `(TypeKind << 32) | index`; canonical, so C#'s structural equality is handle equality.
 type Type = i64
 /// `(BoundKind << 32) | index` into T4's bound arenas.
@@ -64,6 +69,26 @@ struct SourceFile {
 struct Mod {
     string name
     List<FileId> files
+    /// The directory the module's files came from (the C# `ModuleSymbol.Directory`).
+    string directory = ""
+    /// The name used in emitted C identifiers (the C# `ModuleSymbol.CName`).
+    string cName = ""
+    /// Named types by their declared name (the C# `ModuleSymbol.Types`).
+    Map<string, Type> types = []
+    /// Functions by name; one name may be overloaded (the C# `ModuleSymbol.Functions`).
+    Map<string, List<FuncId>> functions = []
+    /// Constants by name (the C# `ModuleSymbol.Constants`).
+    Map<string, ConstId> constants = []
+    List<StructId> structs = List<StructId>()
+    List<ErrorSetId> errorSets = List<ErrorSetId>()
+    List<EnumId> enums = List<EnumId>()
+    List<UnionId> unions = List<UnionId>()
+    List<InterfaceId> interfaces = List<InterfaceId>()
+    List<FuncId> allFunctions = List<FuncId>()
+    List<TestId> tests = List<TestId>()
+    List<ConstId> allConstants = List<ConstId>()
+    /// The implicit `main` built from top-level statements, or an explicit `main`; -1 when absent.
+    FuncId main = -1
 }
 
 // ── Diagnostics ─────────────────────────────────────────────────────────────────
@@ -150,6 +175,64 @@ struct BigParse {
     bool overflow = false
 }
 
+// ── Constructed-type data (T3) ────────────────────────────────────────────────
+
+/// The parts of a `Span<T>` / `ReadOnlySpan<T>`.
+struct SpanData {
+    Type element
+    bool readOnly
+}
+
+/// The parts of a `dyn ref [readonly] I`.
+struct DynRefData {
+    InterfaceId iface
+    bool readOnly
+}
+
+/// The key and value of a `Map<K, V>`.
+struct MapData {
+    Type key
+    Type value
+}
+
+/// The element and length of a `T[N]`.
+struct ArrayData {
+    Type element
+    i64 length
+}
+
+/// One field of a tuple type; `name` is null for an unnamed element.
+struct TupleField {
+    string? name = null
+    Type type
+}
+
+/// The parts of a function type `(A, B) -> R fails E uses net`.
+struct FunctionData {
+    List<Type> parameters
+    Type ret
+    List<ErrorSetId> errorSets
+    List<string> effects
+}
+
+/// The value and error of a `Result<T, E>`.
+struct ResultData {
+    Type value
+    Type error
+}
+
+/// The struct and known states of a state type.
+struct StateData {
+    StructId s
+    List<VariantId> states
+}
+
+/// The sets and excluded variants of an error union.
+struct ErrorUnionData {
+    List<ErrorSetId> sets
+    List<VariantId> excluded
+}
+
 // ── The checker's state ────────────────────────────────────────────────────────
 
 /// Everything a pass reads and writes. T3 adds the symbol/type arenas and their caches, T4 the bound
@@ -170,6 +253,79 @@ struct Ctx {
     List<string>? capabilities = null
     /// The package's name, for BYN6004; empty when there is none.
     string packageName = ""
+
+    // ── T3: symbol arenas (one per `Symbols.cs` class plus `AliasPlaceholder`) ──
+    List<StructSymbol> structs = List<StructSymbol>()
+    List<FieldSymbol> fields = List<FieldSymbol>()
+    List<PropertySymbol> properties = List<PropertySymbol>()
+    List<FunctionSymbol> functions = List<FunctionSymbol>()
+    List<InterfaceSymbol> interfaces = List<InterfaceSymbol>()
+    List<Conformance> conformances = List<Conformance>()
+    List<LocalSymbol> locals = List<LocalSymbol>()
+    List<ConstSymbol> consts = List<ConstSymbol>()
+    List<ErrorSetSymbol> errorSets = List<ErrorSetSymbol>()
+    List<ErrorVariantSymbol> errorVariants = List<ErrorVariantSymbol>()
+    List<TestSymbol> tests = List<TestSymbol>()
+    List<EnumSymbol> enums = List<EnumSymbol>()
+    List<EnumFieldSymbol> enumFields = List<EnumFieldSymbol>()
+    List<EnumMemberSymbol> enumMembers = List<EnumMemberSymbol>()
+    List<UnionSymbol> unions = List<UnionSymbol>()
+    List<UnionVariantSymbol> unionVariants = List<UnionVariantSymbol>()
+    List<TypeParam> typeParams = List<TypeParam>()
+    List<AliasPlaceholder> aliases = List<AliasPlaceholder>()
+
+    // ── T3: constructed-type arenas (one per constructed kind) ──
+    List<Type> optionalTypes = List<Type>()
+    List<SpanData> spanTypes = List<SpanData>()
+    List<DynRefData> dynRefTypes = List<DynRefData>()
+    List<Type> listTypes = List<Type>()
+    List<MapData> mapTypes = List<MapData>()
+    List<Type> ownedTypes = List<Type>()
+    List<Type> untrustedTypes = List<Type>()
+    List<ArrayData> arrayTypes = List<ArrayData>()
+    List<Type> rangeTypes = List<Type>()
+    List<List<TupleField>> tupleTypes = List<List<TupleField>>()
+    List<FunctionData> functionTypes = List<FunctionData>()
+    List<ResultData> resultTypes = List<ResultData>()
+    List<StateData> stateTypes = List<StateData>()
+    List<ErrorUnionData> errorUnionTypes = List<ErrorUnionData>()
+
+    // ── T3: interning caches (one `Map` per constructed kind) ──
+    Map<string, i64> optionalIntern = []
+    Map<string, i64> spanIntern = []
+    Map<string, i64> dynRefIntern = []
+    Map<string, i64> listIntern = []
+    Map<string, i64> mapIntern = []
+    Map<string, i64> ownedIntern = []
+    Map<string, i64> untrustedIntern = []
+    Map<string, i64> arrayIntern = []
+    Map<string, i64> rangeIntern = []
+    Map<string, i64> tupleIntern = []
+    Map<string, i64> functionIntern = []
+    Map<string, i64> resultIntern = []
+    Map<string, i64> stateIntern = []
+    Map<string, i64> errorUnionIntern = []
+
+    /// While set, declared types display with their module (`a.Point`); the C# `[ThreadStatic] QualifyModules`.
+    bool qualifyModules = false
+    /// Effect/verb/noun/adjective names (T6 fills them).
+    List<string> lexiconVerbs = List<string>()
+    List<string> lexiconNouns = List<string>()
+    List<string> lexiconAdjectives = List<string>()
+
+    // ── T3+: shared caches (the owner task fills them) ──
+    /// T5: template handle -> instance handle.
+    Map<i64, i64> instances = []
+    /// T5: the instantiation worklist.
+    List<Work> instantiationWork = List<Work>()
+    List<Work> pendingKeys = List<Work>()
+    List<Work> pendingConstraints = List<Work>()
+    Map<i64, i64> states = []
+    Map<i64, i64> distinct = []
+    Map<i64, i64> positional = []
+    Map<i64, i64> invokeSymbols = []
+    Map<i64, i64> validationErrors = []
+    Map<i64, i64> conformancesChecked = []
 }
 
 // ── The binder's cursors ──────────────────────────────────────────────────────
