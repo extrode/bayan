@@ -357,7 +357,7 @@ public sealed class SelfhostSemanticsT11Tests
     [Fact]
     public void DeclareMatches()
     {
-        var expected = new List<string> { "pending: 2 added: 24" };
+        var expected = new List<string> { "pending: 2 added: 27" };
         SelfhostSemanticsHarness.AssertSection(Sections.Value, "declare", expected);
     }
 
