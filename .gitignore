@@ -8,4 +8,5 @@ tmp/
 TestResults/
 .claude/worktrees/
 *.o
+*.vsix
 .DS_Store
