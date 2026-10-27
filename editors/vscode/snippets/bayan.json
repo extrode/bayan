@@ -1,0 +1,23 @@
+{
+  "main":          { "prefix": "main",    "body": ["void main() {", "\t$0", "}"], "description": "Entry point" },
+  "struct":        { "prefix": "struct",  "body": ["struct ${1:Name} {", "\t${2:string} ${3:field}", "$0", "}"], "description": "Struct" },
+  "struct unique": { "prefix": "structu", "body": ["struct unique ${1:Name} {", "\t$0", "}"], "description": "Move-only struct" },
+  "union":         { "prefix": "union",   "body": ["union ${1:Name} {", "\tcase ${2:first}", "\tcase ${3:second}", "}"], "description": "Union" },
+  "union error":   { "prefix": "unione",  "body": ["union error ${1:NameError} {", "\tcase ${2:notFound}", "\tcase ${3:invalid}", "}"], "description": "Error union" },
+  "type distinct": { "prefix": "typed",   "body": ["type distinct ${1:Name} = ${2:string} requires ${3:it.length > 0}"], "description": "Distinct type with a rule" },
+  "states":        { "prefix": "states",  "body": ["states {", "\t${1:draft}", "\t${2:placed}", "}"], "description": "Typestate block" },
+  "method":        { "prefix": "fn",      "body": ["${1:void} ${2:name}(${3}) {", "\t$0", "}"], "description": "Method" },
+  "method fails":  { "prefix": "fnf",     "body": ["${1:void} ${2:name}(${3}) fails ${4:Error} {", "\t$0", "}"], "description": "Fallible method" },
+  "ref this":      { "prefix": "fnr",     "body": ["void ${1:name}(ref this${2}) {", "\t$0", "}"], "description": "Method that changes this" },
+  "if":            { "prefix": "if",      "body": ["if ${1:cond} {", "\t$0", "}"] },
+  "if else":       { "prefix": "ife",     "body": ["if ${1:cond} {", "\t$2", "} else {", "\t$0", "}"] },
+  "unless":        { "prefix": "unless",  "body": ["unless ${1:cond} {", "\t$0", "}"] },
+  "for":           { "prefix": "for",     "body": ["for ${1:x} in ${2:xs} {", "\t$0", "}"] },
+  "for try":       { "prefix": "fort",    "body": ["for try ${1:x} in ${2:xs} {", "\t$0", "}"] },
+  "while let":     { "prefix": "whilel",  "body": ["while let ${1:x} = ${2:next()} {", "\t$0", "}"] },
+  "switch":        { "prefix": "switch",  "body": ["switch ${1:value} {", "\tcase .${2:a} -> ${3}", "\tcase .${4:b} -> ${5}", "}"] },
+  "catch switch":  { "prefix": "trycs",   "body": ["try ${1:call()} catch switch {", "\tcase .${2:error} -> ${0}", "}"] },
+  "provide":       { "prefix": "provide", "body": ["provide ${1:log}: ${2:handler} {", "\t$0", "}"] },
+  "test":          { "prefix": "test",    "body": ["test \"${1:does something}\" {", "\tassert ${0:true}", "}"] },
+  "allow":         { "prefix": "@allow",  "body": ["@allow(${1:code}) because \"${2:reason}\""] }
+}

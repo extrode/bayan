@@ -1,0 +1,463 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Bayan",
+  "scopeName": "source.bayan",
+  "fileTypes": [
+    "byn"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#attributes"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#uses-clause"
+    },
+    {
+      "include": "#defer"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#runes"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#target-member"
+    },
+    {
+      "include": "#labels"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#identifiers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.bayan",
+          "begin": "///",
+          "end": "$",
+          "patterns": [
+            {
+              "name": "markup.inline.raw.bayan",
+              "match": "`[^`]*`"
+            }
+          ]
+        },
+        {
+          "name": "comment.line.double-slash.bayan",
+          "begin": "//",
+          "end": "$"
+        },
+        {
+          "name": "invalid.deprecated.block-comment.bayan",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "attributes": {
+      "match": "(@)([a-z][A-Za-z0-9]*)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.annotation.bayan"
+        },
+        "2": {
+          "name": "storage.type.annotation.bayan"
+        }
+      }
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(struct)(?:\\s+(unique))?\\s+([A-Z][A-Za-z0-9]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.struct.bayan"
+            },
+            "2": {
+              "name": "storage.modifier.bayan"
+            },
+            "3": {
+              "name": "entity.name.type.struct.bayan"
+            }
+          }
+        },
+        {
+          "match": "\\b(union)(?:\\s+(error))?\\s+([A-Z][A-Za-z0-9]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.union.bayan"
+            },
+            "2": {
+              "name": "storage.modifier.bayan"
+            },
+            "3": {
+              "name": "entity.name.type.union.bayan"
+            }
+          }
+        },
+        {
+          "match": "\\b(type)(?:\\s+(distinct))?\\s+([A-Z][A-Za-z0-9]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.alias.bayan"
+            },
+            "2": {
+              "name": "storage.modifier.bayan"
+            },
+            "3": {
+              "name": "entity.name.type.alias.bayan"
+            }
+          }
+        },
+        {
+          "match": "\\b(interface)\\s+([A-Z][A-Za-z0-9]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.interface.bayan"
+            },
+            "2": {
+              "name": "entity.name.type.interface.bayan"
+            }
+          }
+        },
+        {
+          "match": "\\b(effect)\\s+([a-z][A-Za-z0-9]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.effect.bayan"
+            },
+            "2": {
+              "name": "entity.name.type.effect.bayan"
+            }
+          }
+        },
+        {
+          "match": "\\b(case)\\s+([a-z][A-Za-z0-9]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.case.bayan"
+            },
+            "2": {
+              "name": "variable.other.enummember.bayan"
+            }
+          }
+        },
+        {
+          "match": "\\b(let|var|const)\\s+([a-z][A-Za-z0-9]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.binding.bayan"
+            },
+            "2": {
+              "name": "variable.other.declaration.bayan"
+            }
+          }
+        }
+      ]
+    },
+    "defer": {
+      "match": "\\b(defer)(?:\\s+(failing|panicking))?\\b",
+      "captures": {
+        "1": {
+          "name": "keyword.control.defer.bayan"
+        },
+        "2": {
+          "name": "keyword.control.defer.bayan"
+        }
+      }
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.bayan",
+          "begin": "\"\"\"",
+          "end": "\"\"\""
+        },
+        {
+          "name": "string.quoted.double.interpolated.bayan",
+          "begin": "\\$\"",
+          "end": "\"|$",
+          "patterns": [
+            {
+              "include": "#escapes"
+            },
+            {
+              "name": "constant.character.escape.brace.bayan",
+              "match": "\\{\\{|\\}\\}"
+            },
+            {
+              "name": "meta.interpolation.bayan",
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": {
+                  "name": "punctuation.section.interpolation.begin.bayan"
+                }
+              },
+              "endCaptures": {
+                "0": {
+                  "name": "punctuation.section.interpolation.end.bayan"
+                }
+              },
+              "patterns": [
+                {
+                  "match": ",\\s*([a-z][A-Za-z0-9]*)(:)",
+                  "captures": {
+                    "1": {
+                      "name": "variable.parameter.label.bayan"
+                    },
+                    "2": {
+                      "name": "punctuation.separator.label.bayan"
+                    }
+                  }
+                },
+                {
+                  "include": "$self"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.double.bytes.bayan",
+          "begin": "\\bb\"",
+          "end": "\"|$",
+          "patterns": [
+            {
+              "include": "#escapes"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.double.bayan",
+          "begin": "\"",
+          "end": "\"|$",
+          "patterns": [
+            {
+              "include": "#escapes"
+            }
+          ]
+        }
+      ]
+    },
+    "escapes": {
+      "name": "constant.character.escape.bayan",
+      "match": "\\\\(?:[\\\\\"'nrt0{}]|u\\{[0-9A-Fa-f]{1,6}\\}|x[0-9A-Fa-f]{2})"
+    },
+    "runes": {
+      "name": "string.quoted.single.rune.bayan",
+      "match": "'(?:\\\\(?:[\\\\\"'nrt0]|u\\{[0-9A-Fa-f]{1,6}\\}|x[0-9A-Fa-f]{2})|[^'\\\\])'"
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.bayan",
+          "match": "\\b0x[0-9A-Fa-f_]+(?:u8|u16|u32|u64|i8|i16|i32|i64|ul|u|l)?\\b"
+        },
+        {
+          "name": "constant.numeric.binary.bayan",
+          "match": "\\b0b[01_]+(?:u8|u16|u32|u64|i8|i16|i32|i64|ul|u|l)?\\b"
+        },
+        {
+          "comment": "Decimal with an optional numeric suffix or unit (`30s`, `0g`, `2.5kg`).",
+          "match": "\\b([0-9][0-9_]*(?:\\.[0-9][0-9_]*)?(?:[eE][+-]?[0-9]+)?)([a-zA-Z][a-zA-Z0-9]*)?\\b",
+          "captures": {
+            "1": {
+              "name": "constant.numeric.decimal.bayan"
+            },
+            "2": {
+              "name": "keyword.other.unit.bayan"
+            }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.flow.bayan",
+          "match": "\\b(if|else|unless|while|for|in|switch|case|return|break|continue|fail|become|try|catch|except|with|provide|defer|panic|assert)\\b"
+        },
+        {
+          "name": "keyword.other.clause.bayan",
+          "match": "\\b(where|expects|requires|becomes|fails|uses|because)\\b"
+        },
+        {
+          "name": "keyword.operator.word.bayan",
+          "match": "\\b(is|as|not|and|or|move|ref|checked)\\b"
+        },
+        {
+          "name": "storage.modifier.bayan",
+          "match": "\\b(public|private|internal|static|readonly|unique|distinct|extern|unsafe|rest|pattern|import|module|test|bench|law)\\b"
+        },
+        {
+          "name": "storage.type.binding.bayan",
+          "match": "\\b(let|var|const)\\b"
+        },
+        {
+          "name": "storage.type.declaration.bayan",
+          "match": "\\b(struct|union|error|type|interface|effect|states)\\b"
+        },
+        {
+          "name": "variable.language.bayan",
+          "match": "\\b(this|Self|it)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.bayan",
+          "match": "\\b(void|bool|rune|string|unit|never|i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|isize|usize|f32|f64)\\b"
+        },
+        {
+          "name": "support.type.primitive.csharp-alias.bayan",
+          "match": "\\b(sbyte|byte|short|ushort|int|uint|long|ulong|nint|nuint|float|double)\\b"
+        },
+        {
+          "comment": "Single-state types and qualified cases: `Order.paid`.",
+          "match": "\\b([A-Z][A-Za-z0-9]*)(\\.)([a-z][A-Za-z0-9]*)\\b(?!\\s*\\()",
+          "captures": {
+            "1": {
+              "name": "entity.name.type.bayan"
+            },
+            "2": {
+              "name": "punctuation.accessor.bayan"
+            },
+            "3": {
+              "name": "variable.other.enummember.bayan"
+            }
+          }
+        },
+        {
+          "name": "entity.name.type.bayan",
+          "match": "\\b[A-Z][A-Za-z0-9]*\\b"
+        }
+      ]
+    },
+    "constants": {
+      "name": "constant.language.bayan",
+      "match": "\\b(true|false|null)\\b"
+    },
+    "target-member": {
+      "comment": "Target-typed `.member` (cases, states, error cases): a dot not preceded by an expression.",
+      "match": "(?<![\\w)\\]\\}\"'])(\\.)([a-z][A-Za-z0-9]*)",
+      "captures": {
+        "1": {
+          "name": "punctuation.accessor.bayan"
+        },
+        "2": {
+          "name": "variable.other.enummember.bayan"
+        }
+      }
+    },
+    "labels": {
+      "comment": "Particles and named arguments: `at: i`, `as: .hex`.",
+      "match": "\\b([a-z][A-Za-z0-9]*)(:)(?!:)",
+      "captures": {
+        "1": {
+          "name": "variable.parameter.label.bayan"
+        },
+        "2": {
+          "name": "punctuation.separator.label.bayan"
+        }
+      }
+    },
+    "functions": {
+      "match": "\\b([a-z][A-Za-z0-9]*)\\s*(?=\\()",
+      "captures": {
+        "1": {
+          "name": "entity.name.function.bayan"
+        }
+      }
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.wrapping.bayan",
+          "match": "[+\\-*][%|](?!=)"
+        },
+        {
+          "name": "keyword.operator.null.bayan",
+          "match": "\\?\\?=?|\\?\\."
+        },
+        {
+          "name": "keyword.operator.arrow.bayan",
+          "match": "->|=>"
+        },
+        {
+          "name": "keyword.operator.range.bayan",
+          "match": "\\.\\.<?"
+        },
+        {
+          "name": "keyword.operator.comparison.bayan",
+          "match": "==|!=|<=|>="
+        },
+        {
+          "name": "keyword.operator.logical.bayan",
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "name": "keyword.operator.assignment.bayan",
+          "match": "[+\\-*/%&|^]?="
+        },
+        {
+          "name": "keyword.operator.bayan",
+          "match": "[+\\-*/%&|^~<>?]"
+        },
+        {
+          "name": "invalid.illegal.semicolon.bayan",
+          "match": ";"
+        }
+      ]
+    },
+    "identifiers": {
+      "name": "variable.other.bayan",
+      "match": "\\b[a-z_][A-Za-z0-9_]*\\b"
+    },
+    "uses-clause": {
+      "comment": "Effects after `uses`: `uses alloc, net`.",
+      "match": "\\b(uses)((?:\\s*,?\\s*[a-z][A-Za-z0-9]*)+)",
+      "captures": {
+        "1": {
+          "name": "keyword.other.clause.bayan"
+        },
+        "2": {
+          "patterns": [
+            {
+              "name": "support.type.effect.bayan",
+              "match": "\\b[a-z][A-Za-z0-9]*\\b"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
