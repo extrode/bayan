@@ -9,40 +9,1072 @@ struct Location {
 }
 
 // stub: T12 ports Compilation.cs:922 DeclareMembers
-void declareMembers(ref Ctx c, for StructId s) {}
+void declareMembers(ref Ctx c, for StructId s) {
+    if s < 0 || s >= c.structs.length { return }
+    let file = c.structs[s].file
+    let dIdx = c.structs[s].declIndex
+    if file < 0 || file >= c.files.length || dIdx < 0 || dIdx >= c.files[file].unit.members.length { return }
+    switch c.files[file].unit.members[dIdx] {
+        case .structDecl(let node):
+            var types = TypeResolver { file: file, container: s }
+            for (k, v) in c.structs[s].typeMap { types.typeArgs[k] = v }
+            var names = Map<string, Location>()
+
+            for b in node.value.bases {
+                switch b {
+                    case .namedType(let n):
+                        let i = resolveInterface(ref c, through: in types, from: file, for: in n.value)
+                        if i < 0 { continue }
+                        var already = false
+                        let existingBases = copyIds(in c.structs[s].bases)
+                        for existing in existingBases {
+                            if existing == i {
+                                already = true
+                                break
+                            }
+                        }
+                        if already {
+                            let iDisp = c.interfaces[i].name
+                            report(ref c, for: .duplicateConformance, from: file, at: n.value.span, by: (c.structs[s].name, iDisp, "", "", ""), label: "already listed", help: $"remove the second `{iDisp}`")
+                        } else {
+                            c.structs[s].bases.append(i)
+                        }
+                    default:
+                        continue
+                }
+            }
+
+            for mIdx in 0..node.value.members.length {
+                switch node.value.members[mIdx] {
+                    case .fieldDecl(let fNode):
+                        let fName = fNode.value.name
+                        let fSpan = fNode.value.span
+                        let fMods = fNode.value.modifiers
+                        let fNameText = t12Text(in c, from: file, at: fName)
+                        checkValue(ref c, from: file, at: fName)
+                        rejectModifiers(ref c, from: file, at: fSpan, by: fMods, for: 4 | 32, as: "fields")
+                        let fType = resolve(ref c, through: in types, for: in fNode.value.type)
+                        let isRequired = (fMods & 16) != 0
+                        let hasDefault = fNode.value.defaultKeyword is not .none
+                        let fieldSym = FieldSymbol {
+                            name: fNameText,
+                            nameSpan: fName,
+                            span: fSpan,
+                            owner: s,
+                            file: file,
+                            declIndex: dIdx,
+                            memberIndex: mIdx,
+                            access: accessOf(fMods),
+                            modifiers: i64(fMods),
+                            type: fType,
+                            hasDefault: hasDefault,
+                        }
+                        let fId = newField(ref c, by: move fieldSym)
+                        if t12Unique(ref c, from: file, at: fName, to: ref names) {
+                            c.structs[s].fields.append(fId)
+                        }
+                        if isRequired && hasDefault {
+                            report(ref c, for: .requiredWithDefault, from: file, at: fName, by: (fNameText, "", "", "", ""))
+                        }
+                    case .propertyDecl(let pNode):
+                        let pName = pNode.value.name
+                        let pSpan = pNode.value.span
+                        let pMods = pNode.value.modifiers
+                        let pNameText = t12Text(in c, from: file, at: pName)
+                        checkValue(ref c, from: file, at: pName)
+                        var pType = resolve(ref c, through: in types, for: in pNode.value.type)
+                        if functionTypeNotHere(ref c, for: pType, from: file, at: t8TypeSpan(in pNode.value.type), as: "a property") {
+                            pType = errorType()
+                        }
+                        let pAccess = accessOf(pMods)
+                        var getterSym = FunctionSymbol {
+                            name: pNameText,
+                            nameSpan: pName,
+                            span: pSpan,
+                            module: c.structs[s].module,
+                            kind: .getter,
+                            access: pAccess,
+                            owner: s,
+                            file: file,
+                            declIndex: dIdx,
+                            memberIndex: mIdx,
+                            returnType: pType,
+                        }
+                        for (k, v) in c.structs[s].typeMap { getterSym.typeMap[k] = v }
+                        let getterId = newFunction(ref c, by: move getterSym)
+                        c.modules[c.structs[s].module].allFunctions.append(getterId)
+
+                        let propSym = PropertySymbol {
+                            name: pNameText,
+                            nameSpan: pName,
+                            span: pSpan,
+                            owner: s,
+                            file: file,
+                            declIndex: dIdx,
+                            memberIndex: mIdx,
+                            access: pAccess,
+                            modifiers: i64(pMods),
+                            type: pType,
+                            getter: getterId,
+                        }
+                        let propId = newProperty(ref c, by: move propSym)
+                        if t12Unique(ref c, from: file, at: pName, to: ref names) {
+                            c.structs[s].properties.append(propId)
+                        }
+                    case .functionDecl(let mNode):
+                        let mName = mNode.value.name
+                        let mSpan = mNode.value.span
+                        let mMods = mNode.value.modifiers
+                        let mNameText = t12Text(in c, from: file, at: mName)
+                        checkValue(ref c, from: file, at: mName)
+                        var methodTypeMap = Map<string, Type>()
+                        for (k, v) in c.structs[s].typeMap { methodTypeMap[k] = v }
+                        var ownParameters = List<TypeParamId>()
+                        if mNode.value.typeParams.length > 0 {
+                            report(ref c, for: .unsupported, from: file, at: mNode.value.typeParams[0], by: ("generic methods", "", "", "", ""), help: "declare a generic free function, or make the struct generic")
+                            let own = declareTypeParameters(ref c, from: file, for: in mNode.value.typeParams, to: ref ownParameters)
+                            if (own is { } om) {
+                                for (k, v) in om {
+                                    if !methodTypeMap.contains(k) { methodTypeMap[k] = v }
+                                }
+                            }
+                        }
+                        var fnSym = FunctionSymbol {
+                            name: mNameText,
+                            nameSpan: mName,
+                            span: mSpan,
+                            module: c.structs[s].module,
+                            kind: .method,
+                            access: accessOf(mMods),
+                            isStatic: (mMods & 4) != 0,
+                            owner: s,
+                            file: file,
+                            declIndex: dIdx,
+                            memberIndex: mIdx,
+                        }
+                        for (k, v) in methodTypeMap { fnSym.typeMap[k] = v }
+                        let fnId = newFunction(ref c, by: move fnSym)
+                        if c.structs[s].template < 0 {
+                            declareWhere(ref c, from: file, for: in mNode.value.where, to: in ownParameters, by: in methodTypeMap, as: mNameText)
+                        }
+                        declareSignature(ref c, for: fnId, from: in mNode.value, by: file, owner: s)
+
+                        var foundEarlier = false
+                        var earlierMethod: FuncId = -1
+                        var hasExistingName = false
+                        let existingMethods = copyIds(in c.structs[s].methods)
+                        for existingFn in existingMethods {
+                            if c.functions[existingFn].name == mNameText {
+                                hasExistingName = true
+                                if overlap(ref c, for: existingFn, as: fnId) {
+                                    foundEarlier = true
+                                    earlierMethod = existingFn
+                                    break
+                                }
+                            }
+                        }
+                        if foundEarlier {
+                            let prevLoc = loc(c.functions[earlierMethod].file, at: c.functions[earlierMethod].nameSpan)
+                            reportDuplicate(ref c, from: file, at: mName, as: prevLoc)
+                        } else if hasExistingName || t12Unique(ref c, from: file, at: mName, to: ref names) {
+                            c.structs[s].methods.append(fnId)
+                        }
+                        c.modules[c.structs[s].module].allFunctions.append(fnId)
+                    case .typeAliasDecl(let aNode):
+                        let aName = aNode.value.name
+                        let aNameText = t12Text(in c, from: file, at: aName)
+                        var isAssociated = false
+                        let structBases = copyIds(in c.structs[s].bases)
+                        for baseIface in structBases {
+                            let assocTypes = copyIds(in c.interfaces[baseIface].associatedTypes)
+                            for assocId in assocTypes {
+                                if c.typeParams[assocId].name == aNameText {
+                                    isAssociated = true
+                                    break
+                                }
+                            }
+                            if isAssociated { break }
+                        }
+                        if isAssociated {
+                            checkType(ref c, from: file, at: aName)
+                            let _ = resolve(ref c, through: in types, for: in aNode.value.target)
+                            let _ = t12Unique(ref c, from: file, at: aName, to: ref names)
+                        } else {
+                            report(ref c, for: .unsupported, from: file, at: aNode.value.span, by: ("this kind of struct member", "", "", "", ""))
+                        }
+                    case .constructorDecl(let cNode):
+                        let cName = cNode.value.name
+                        var fnSym = FunctionSymbol {
+                            name: c.structs[s].name,
+                            nameSpan: cName,
+                            span: cNode.value.span,
+                            module: c.structs[s].module,
+                            kind: .constructor,
+                            access: accessOf(cNode.value.modifiers),
+                            owner: s,
+                            file: file,
+                            declIndex: dIdx,
+                            memberIndex: mIdx,
+                            returnType: structTypeOf(s),
+                        }
+                        for (k, v) in c.structs[s].typeMap { fnSym.typeMap[k] = v }
+                        let fnId = newFunction(ref c, by: move fnSym)
+                        declareParameters(ref c, for: fnId, from: in cNode.value.params, by: file, through: in types)
+                        if c.structs[s].constructors.length > 0 {
+                            report(ref c, for: .unsupported, from: file, at: cName, by: ("overloaded constructors", "", "", "", ""))
+                        } else {
+                            c.structs[s].constructors.append(fnId)
+                        }
+                        c.modules[c.structs[s].module].allFunctions.append(fnId)
+                    default:
+                        report(ref c, for: .unsupported, from: file, at: t12DeclSpan(in node.value.members[mIdx]), by: ("this kind of struct member", "", "", "", ""))
+                }
+            }
+            declareCheck(ref c, for: s)
+        default:
+            break
+    }
+}
 
 // stub: T12 ports Compilation.cs:718 DeclareVariants
-void declareVariants(ref Ctx c, for ErrorSetId set) {}
+void declareVariants(ref Ctx c, for ErrorSetId set) {
+    if set < 0 || set >= c.errorSets.length { return }
+    let file = c.errorSets[set].file
+    let dIdx = c.errorSets[set].declIndex
+    if file < 0 || file >= c.files.length || dIdx < 0 || dIdx >= c.files[file].unit.members.length { return }
+    switch c.files[file].unit.members[dIdx] {
+        case .errorEnumDecl(let node):
+            for vIdx in 0..node.value.variants.length {
+                let vName = node.value.variants[vIdx].name
+                let vSpan = node.value.variants[vIdx].span
+                let vDoc = node.value.variants[vIdx].doc
+                let vNameText = t12Text(in c, from: file, at: vName)
+                checkValue(ref c, from: file, at: vName)
+                var foundExisting = false
+                var existingLoc = Location { file: -1, span: TextSpan { start: 0, length: 0 } }
+                for existingId in c.errorSets[set].variants {
+                    if c.errorVariants[existingId].name == vNameText {
+                        foundExisting = true
+                        existingLoc = loc(c.errorVariants[existingId].file, at: c.errorVariants[existingId].nameSpan)
+                        break
+                    }
+                }
+                if foundExisting {
+                    reportDuplicate(ref c, from: file, at: vName, as: existingLoc)
+                    continue
+                }
+                let sym = ErrorVariantSymbol {
+                    name: vNameText,
+                    nameSpan: vName,
+                    span: vSpan,
+                    set: set,
+                    file: file,
+                    declIndex: dIdx,
+                    memberIndex: vIdx,
+                    code: c.errorVariants.length + 1,
+                    doc: vDoc,
+                }
+                let symId = newErrorVariant(ref c, by: move sym)
+                c.errorSets[set].variants.append(symId)
+
+                var seenExitCode = false
+                for a in node.value.variants[vIdx].attributes {
+                    let aName = t12Text(in c, from: file, at: a.name)
+                    if aName == "cases" {
+                        report(ref c, for: .modifierNotAllowed, from: file, at: a.span, by: ("@cases", "", "", "", ""), help: "put `@cases(...)` on a test that takes parameters")
+                    } else if aName != "exitCode" {
+                        report(ref c, for: .unknownAttribute, from: file, at: a.name, by: (aName, "", "", "", ""), help: "use `@exitCode(n)`; it is the only attribute an error variant takes")
+                    } else if seenExitCode {
+                        report(ref c, for: .modifierNotAllowed, from: file, at: a.span, by: ("@exitCode", "", "", "", ""), help: "remove the repeated attribute")
+                    } else {
+                        seenExitCode = true
+                    }
+                }
+            }
+            if c.errorSets[set].variants.length == 0 {
+                report(ref c, for: .emptyErrorSet, from: file, at: node.value.name, by: (c.errorSets[set].name, "", "", "", ""))
+            }
+        default:
+            break
+    }
+}
 
 // stub: T12 ports Compilation.cs:753 DeclarePayloads
-void declarePayloads(ref Ctx c, for ErrorSetId set) {}
+void declarePayloads(ref Ctx c, for ErrorSetId set) {
+    if set < 0 || set >= c.errorSets.length { return }
+    let file = c.errorSets[set].file
+    let dIdx = c.errorSets[set].declIndex
+    if file < 0 || file >= c.files.length || dIdx < 0 || dIdx >= c.files[file].unit.members.length { return }
+    switch c.files[file].unit.members[dIdx] {
+        case .errorEnumDecl(let node):
+            let types = TypeResolver { file: file }
+            for vIdx in 0..node.value.variants.length {
+                let vName = node.value.variants[vIdx].name
+                let vNameText = t12Text(in c, from: file, at: vName)
+                var symId: VariantId = -1
+                for existingId in c.errorSets[set].variants {
+                    if c.errorVariants[existingId].name == vNameText && c.errorVariants[existingId].nameSpan.start == vName.start {
+                        symId = existingId
+                        break
+                    }
+                }
+                if symId < 0 { continue }
+                var names = Map<string, Location>()
+                for f in node.value.variants[vIdx].fields {
+                    let fNameText = t12Text(in c, from: file, at: f.name)
+                    checkValue(ref c, from: file, at: f.name)
+                    if (names.tryGet(at: fNameText) is { } prev) {
+                        reportDuplicate(ref c, from: file, at: f.name, as: prev)
+                        continue
+                    }
+                    names[fNameText] = loc(file, at: f.name)
+                    var fType = resolve(ref c, through: in types, for: in f.type)
+                    if functionTypeNotHere(ref c, for: fType, from: file, at: t8TypeSpan(in f.type), as: "an error payload") {
+                        fType = errorType()
+                    }
+                    let paramSym = LocalSymbol {
+                        name: fNameText,
+                        nameSpan: f.name,
+                        span: f.span,
+                        type: fType,
+                        isParameter: true,
+                        ordinal: c.errorVariants[symId].fields.length,
+                    }
+                    let paramId = newLocal(ref c, by: move paramSym)
+                    c.errorVariants[symId].fields.append(paramId)
+                }
+            }
+        default:
+            break
+    }
+}
 
 // stub: T12 ports Compilation.cs:793 DeclareEnumMembers
-void declareEnumMembers(ref Ctx c, for EnumId e) {}
+void declareEnumMembers(ref Ctx c, for EnumId e) {
+    if e < 0 || e >= c.enums.length { return }
+    declareEnumFields(ref c, for: e)
+    let file = c.enums[e].file
+    let dIdx = c.enums[e].declIndex
+    if file < 0 || file >= c.files.length || dIdx < 0 || dIdx >= c.files[file].unit.members.length { return }
+    switch c.files[file].unit.members[dIdx] {
+        case .enumDecl(let node):
+            for mIdx in 0..node.value.members.length {
+                let mName = node.value.members[mIdx].name
+                let mSpan = node.value.members[mIdx].span
+                let mDoc = node.value.members[mIdx].doc
+                let mNameText = t12Text(in c, from: file, at: mName)
+                if c.enums[e].fieldsOf < 0 {
+                    checkValue(ref c, from: file, at: mName)
+                }
+                var foundExisting = false
+                var existingLoc = Location { file: -1, span: TextSpan { start: 0, length: 0 } }
+                for existingId in c.enums[e].members {
+                    if c.enumMembers[existingId].name == mNameText {
+                        foundExisting = true
+                        existingLoc = loc(file, at: c.enumMembers[existingId].nameSpan)
+                        break
+                    }
+                }
+                if foundExisting {
+                    if c.enums[e].fieldsOf < 0 {
+                        report(ref c, for: .duplicateEnumMember, from: file, at: mName, by: (c.enums[e].name, mNameText, "", "", ""), label: $"already declared on line {t12Line(c, from: existingLoc.file, at: existingLoc.span)}")
+                    }
+                    continue
+                }
+                let sym = EnumMemberSymbol {
+                    name: mNameText,
+                    nameSpan: mName,
+                    span: mSpan,
+                    owner: e,
+                    ordinal: c.enums[e].members.length,
+                    doc: mDoc,
+                }
+                let symId = newEnumMember(ref c, by: move sym)
+                c.enums[e].members.append(symId)
+            }
+            if c.enums[e].members.length == 0 {
+                report(ref c, for: .emptyEnum, from: file, at: node.value.name, by: (c.enums[e].name, "", "", "", ""), help: "add the members, or remove the enum")
+            }
+            let optType = internOptional(ref c, by: enumTypeOf(e))
+            var fromOrd = FunctionSymbol {
+                name: "fromOrdinal",
+                nameSpan: c.enums[e].nameSpan,
+                span: c.enums[e].span,
+                module: c.enums[e].module,
+                kind: .builtin,
+                access: .publicKeyword,
+                isStatic: true,
+                returnType: optType,
+                builtin: .enumFromOrdinal,
+                file: file,
+            }
+            let ordParam = LocalSymbol {
+                name: "ordinal",
+                type: prim(PrimitiveKind.i64),
+                isParameter: true,
+                ordinal: 0,
+            }
+            let ordParamId = newLocal(ref c, by: move ordParam)
+            fromOrd.parameters.append(ordParamId)
+            let fromOrdId = newFunction(ref c, by: move fromOrd)
+            c.enums[e].fromOrdinal = fromOrdId
+
+            var parseFn = FunctionSymbol {
+                name: "parse",
+                nameSpan: c.enums[e].nameSpan,
+                span: c.enums[e].span,
+                module: c.enums[e].module,
+                kind: .builtin,
+                access: .publicKeyword,
+                isStatic: true,
+                returnType: optType,
+                builtin: .enumParse,
+                file: file,
+            }
+            let nameParam = LocalSymbol {
+                name: "name",
+                type: prim(PrimitiveKind.string),
+                isParameter: true,
+                ordinal: 0,
+            }
+            let nameParamId = newLocal(ref c, by: move nameParam)
+            parseFn.parameters.append(nameParamId)
+            let parseId = newFunction(ref c, by: move parseFn)
+            c.enums[e].parse = parseId
+        default:
+            break
+    }
+}
 
 // stub: T12 ports Compilation.cs:826 DeclareEnumFields
-void declareEnumFields(ref Ctx c, for EnumId e) {}
+void declareEnumFields(ref Ctx c, for EnumId e) {
+    if e < 0 || e >= c.enums.length { return }
+    let file = c.enums[e].file
+    let dIdx = c.enums[e].declIndex
+    if file < 0 || file >= c.files.length || dIdx < 0 || dIdx >= c.files[file].unit.members.length { return }
+    switch c.files[file].unit.members[dIdx] {
+        case .enumDecl(let node):
+            if (node.value.params is { } paramsList) {
+                let types = TypeResolver { file: file }
+                for pIdx in 0..paramsList.length {
+                    let pName = paramsList[pIdx].name
+                    let pSpan = paramsList[pIdx].span
+                    let pMod = paramsList[pIdx].modifier
+                    let pNameText = t12Text(in c, from: file, at: pName)
+                    checkValue(ref c, from: file, at: pName)
+                    let pType = resolve(ref c, through: in types, for: in paramsList[pIdx].type)
+                    let help = "use a number type, `bool`, `rune`, `string` or a plain enum; enum data is stored in static tables"
+                    if pMod != .none {
+                        let modStr = pMod == .refKeyword ? "ref" : "move"
+                        report(ref c, for: .invalidEnumParameter, from: file, at: pSpan, by: (pNameText, "", "", "", ""), label: $"`{modStr}` is not allowed here", help: help)
+                    } else if paramsList[pIdx].defaultKeyword is not .none {
+                        report(ref c, for: .invalidEnumParameter, from: file, at: t12ExprSpan(in paramsList[pIdx].defaultKeyword), by: (pNameText, "", "", "", ""), label: "a default value is not allowed here", help: help)
+                    } else if !isError(pType) && !isNumeric(pType) && !isBool(pType) && pType != prim(.char) && !isString(pType) && !(kindOf(pType) == .enumType && c.enums[typeIndex(pType)].fields.length == 0) {
+                        let disp = typeDisplay(ref c, by: pType)
+                        report(ref c, for: .invalidEnumParameter, from: file, at: t8TypeSpan(in paramsList[pIdx].type), by: (pNameText, "", "", "", ""), label: $"`{disp}` has no static form", help: help)
+                    } else {
+                        var foundField = false
+                        var fieldLoc = Location { file: -1, span: TextSpan { start: 0, length: 0 } }
+                        for fId in c.enums[e].fields {
+                            if c.enumFields[fId].name == pNameText {
+                                foundField = true
+                                fieldLoc = loc(file, at: c.enumFields[fId].nameSpan)
+                                break
+                            }
+                        }
+                        if foundField {
+                            report(ref c, for: .duplicateEnumMember, from: file, at: pName, by: (c.enums[e].name, pNameText, "", "", ""), label: $"already declared on line {t12Line(c, from: fieldLoc.file, at: fieldLoc.span)}")
+                        } else if pNameText == "name" || pNameText == "ordinal" {
+                            report(ref c, for: .duplicateEnumMember, from: file, at: pName, by: (c.enums[e].name, pNameText, "", "", ""), label: "every enum has it", help: "rename the parameter")
+                        } else {
+                            let sym = EnumFieldSymbol {
+                                name: pNameText,
+                                nameSpan: pName,
+                                span: pSpan,
+                                owner: e,
+                                type: pType,
+                                index: c.enums[e].fields.length,
+                            }
+                            let fieldId = newEnumField(ref c, by: move sym)
+                            c.enums[e].fields.append(fieldId)
+                            continue
+                        }
+                    }
+                    let errSym = EnumFieldSymbol {
+                        name: pNameText,
+                        nameSpan: pName,
+                        span: pSpan,
+                        owner: e,
+                        type: errorType(),
+                        index: c.enums[e].fields.length,
+                    }
+                    let errFieldId = newEnumField(ref c, by: move errSym)
+                    c.enums[e].fields.append(errFieldId)
+                }
+            }
+        default:
+            break
+    }
+}
 
 // stub: T12 ports Compilation.cs:858 DeclareUnionVariants
-void declareUnionVariants(ref Ctx c, for UnionId u) {}
+void declareUnionVariants(ref Ctx c, for UnionId u) {
+    if u < 0 || u >= c.unions.length { return }
+    let file = c.unions[u].file
+    let dIdx = c.unions[u].declIndex
+    if file < 0 || file >= c.files.length || dIdx < 0 || dIdx >= c.files[file].unit.members.length { return }
+    switch c.files[file].unit.members[dIdx] {
+        case .unionDecl(let node):
+            var types = TypeResolver { file: file }
+            for (k, v) in c.unions[u].typeMap { types.typeArgs[k] = v }
+            var values = Map<i64, string>()
+            var tag: i64 = 0
+            for vIdx in 0..node.value.variants.length {
+                let vName = node.value.variants[vIdx].name
+                let vSpan = node.value.variants[vIdx].span
+                let vDoc = node.value.variants[vIdx].doc
+                let vNameText = t12Text(in c, from: file, at: vName)
+                checkValue(ref c, from: file, at: vName)
+                var foundExisting = false
+                var existingLoc = Location { file: -1, span: TextSpan { start: 0, length: 0 } }
+                for existingId in c.unions[u].variants {
+                    if c.unionVariants[existingId].name == vNameText {
+                        foundExisting = true
+                        existingLoc = loc(file, at: c.unionVariants[existingId].nameSpan)
+                        break
+                    }
+                }
+                if foundExisting {
+                    report(ref c, for: .duplicateUnionVariant, from: file, at: vName, by: (c.unions[u].name, vNameText, "", "", ""), label: $"already declared on line {t12Line(c, from: existingLoc.file, at: existingLoc.span)}")
+                    continue
+                }
+                let hasValue = node.value.variants[vIdx].value is not .none
+                var valueSpan = TextSpan { start: 0, length: 0 }
+                if hasValue { valueSpan = t12ExprSpan(in node.value.variants[vIdx].value) }
+                if hasValue {
+                    if node.value.variants[vIdx].fields.length > 0 {
+                        report(ref c, for: .unionValueOnPayload, from: file, at: valueSpan, by: (vNameText, "", "", "", ""), label: "only a case without data can have a value", help: "remove the value")
+                    } else if (t12UnionValue(in node.value.variants[vIdx].value) is { } val) {
+                        tag = val
+                    } else {
+                        report(ref c, for: .unionValueNotInteger, from: file, at: valueSpan, by: ("", "", "", "", ""), label: "not an `i32` integer literal", help: "write the value as an integer literal, or remove it")
+                    }
+                }
+                let sym = UnionVariantSymbol {
+                    name: vNameText,
+                    nameSpan: vName,
+                    span: vSpan,
+                    owner: u,
+                    file: file,
+                    declIndex: dIdx,
+                    memberIndex: vIdx,
+                    tag: tag,
+                    doc: vDoc,
+                }
+                let symId = newUnionVariant(ref c, by: move sym)
+                if (values.tryGet(at: tag) is { } sameName) {
+                    let repSpan = hasValue ? valueSpan : vName
+                    var prevName = ""
+                    if c.unions[u].variants.length > 0 {
+                        let lastId = c.unions[u].variants[c.unions[u].variants.length - 1]
+                        prevName = c.unionVariants[lastId].name
+                    }
+                    let label = !hasValue ? $"follows `{prevName}`, so it is {tag}" : "already used"
+                    report(ref c, for: .duplicateUnionValue, from: file, at: repSpan, by: (sameName, vNameText, $"{tag}", "", ""), label: label, help: "give each case its own value")
+                } else {
+                    values[tag] = vNameText
+                }
+                tag += 1
+
+                var names = Map<string, Location>()
+                for f in node.value.variants[vIdx].fields {
+                    let fNameText = t12Text(in c, from: file, at: f.name)
+                    checkValue(ref c, from: file, at: f.name)
+                    if (names.tryGet(at: fNameText) is { } prev) {
+                        reportDuplicate(ref c, from: file, at: f.name, as: prev)
+                        continue
+                    }
+                    names[fNameText] = loc(file, at: f.name)
+                    var fType = resolve(ref c, through: in types, for: in f.type)
+                    if functionTypeNotHere(ref c, for: fType, from: file, at: t8TypeSpan(in f.type), as: "a union payload") {
+                        fType = errorType()
+                    }
+                    let paramSym = LocalSymbol {
+                        name: fNameText,
+                        nameSpan: f.name,
+                        span: f.span,
+                        type: fType,
+                        isParameter: true,
+                        ordinal: c.unionVariants[symId].fields.length,
+                    }
+                    let paramId = newLocal(ref c, by: move paramSym)
+                    c.unionVariants[symId].fields.append(paramId)
+                }
+                c.unions[u].variants.append(symId)
+            }
+            if c.unions[u].variants.length == 0 {
+                report(ref c, for: .emptyUnion, from: file, at: node.value.name, by: (c.unions[u].name, "", "", "", ""), help: "add the variants, or remove the union")
+            }
+        default:
+            break
+    }
+}
 
 // stub: T12 ports Compilation.cs:778 CheckComposition
-void checkComposition(ref Ctx c, for AliasId alias, from in parser.ErrorSetDecl decl) {}
+void checkComposition(ref Ctx c, for AliasId alias, from in parser.ErrorSetDecl decl) {
+    if alias < 0 || alias >= c.aliases.length { return }
+    let file = c.aliases[alias].file
+    let types = TypeResolver { file: file }
+    let expanded = expandAlias(ref c, through: in types, for: alias)
+    var sets = List<ErrorSetId>()
+    let k = kindOf(expanded)
+    if k == .errorUnion {
+        let uIdx = typeIndex(expanded)
+        for sId in c.errorUnionTypes[uIdx].sets {
+            sets.append(sId)
+        }
+    } else if k == .errorSet {
+        sets.append(typeIndex(expanded))
+    }
+    var owners = Map<string, ErrorSetId>()
+    for setId in sets {
+        let vIds = copyIds(in c.errorSets[setId].variants)
+        for vId in vIds {
+            let vName = c.errorVariants[vId].name
+            if (owners.tryGet(at: vName) is { } prevSet) {
+                if c.errorSets[prevSet].declIndex != c.errorSets[setId].declIndex || c.errorSets[prevSet].file != c.errorSets[setId].file {
+                    let prevName = c.errorSets[prevSet].name
+                    let currName = c.errorSets[setId].name
+                    report(ref c, for: .duplicateErrorCase, from: file, at: decl.head, by: (prevName, currName, vName, "", ""), label: $"two cases `{vName}`", help: "rename one case, or compose fewer sets")
+                }
+            } else {
+                owners[vName] = setId
+            }
+        }
+    }
+}
 
 // stub: T12 ports Compilation.cs:655 CheckOverloads
-void checkOverloads(ref Ctx c, for ModId module) {}
+void checkOverloads(ref Ctx c, for ModId module) {
+    if module < 0 || module >= c.modules.length { return }
+    var seenNames = Map<string, bool>()
+    var fnNames = List<string>()
+    for fnId in c.modules[module].allFunctions {
+        let name = c.functions[fnId].name
+        if !seenNames.contains(name) {
+            seenNames[name] = true
+            fnNames.append(name)
+        }
+    }
+    for name in fnNames {
+        var overloads = List<FuncId>()
+        for fn in c.modules[module].functions[name] {
+            overloads.append(fn)
+        }
+        var i: i64 = 1
+        while i < overloads.length {
+            var foundEarlier = false
+            var earlierFn: FuncId = -1
+            for j in 0..i {
+                if overlap(ref c, for: overloads[j], as: overloads[i]) {
+                    foundEarlier = true
+                    earlierFn = overloads[j]
+                    break
+                }
+            }
+            if foundEarlier {
+                let dupFn = overloads[i]
+                let f = c.functions[dupFn].file
+                let nameSpan = c.functions[dupFn].nameSpan
+                let prevLoc = loc(c.functions[earlierFn].file, at: c.functions[earlierFn].nameSpan)
+                reportDuplicate(ref c, from: f, at: nameSpan, as: prevLoc)
+                var aIdx: i64 = 0
+                while aIdx < c.modules[module].allFunctions.length {
+                    if c.modules[module].allFunctions[aIdx] == dupFn {
+                        c.modules[module].allFunctions.remove(at: aIdx)
+                        break
+                    }
+                    aIdx += 1
+                }
+                overloads.remove(at: i)
+            } else {
+                i += 1
+            }
+        }
+        c.modules[module].functions[name] = move overloads
+    }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+bool t12Unique(ref Ctx c, from FileId file, at TextSpan name, to ref Map<string, Location> names) {
+    let nameText = t12Text(in c, from: file, at: name)
+    if (names.tryGet(at: nameText) is { } prev) {
+        reportDuplicate(ref c, from: file, at: name, as: prev)
+        return false
+    }
+    names[nameText] = loc(file, at: name)
+    return true
+}
+
+TextSpan t12DeclSpan(in parser.Decl d) {
+    switch d {
+        case .importDecl(let n): return n.value.span
+        case .globalStatement(let n): return n.value.span
+        case .functionDecl(let n): return n.value.span
+        case .structDecl(let n): return n.value.span
+        case .interfaceDecl(let n): return n.value.span
+        case .getterDecl(let n): return n.value.span
+        case .associatedTypeDecl(let n): return n.value.span
+        case .extensionDecl(let n): return n.value.span
+        case .fieldDecl(let n): return n.value.span
+        case .propertyDecl(let n): return n.value.span
+        case .constructorDecl(let n): return n.value.span
+        case .errorEnumDecl(let n): return n.value.span
+        case .errorSetDecl(let n): return n.value.span
+        case .enumDecl(let n): return n.value.span
+        case .unionDecl(let n): return n.value.span
+        case .typeAliasDecl(let n): return n.value.span
+        case .effectDecl(let n): return n.value.span
+        case .testDecl(let n): return n.value.span
+        case .none: return TextSpan { start: 0, length: 0 }
+    }
+}
+
+i64 t12Line(in Ctx c, from FileId f, at TextSpan span) {
+    if f < 0 || f >= c.files.length { return 1 }
+    let bytes = c.files[f].text.span
+    let limit = span.start < bytes.length ? span.start : bytes.length
+    var line: i64 = 1
+    for i in 0..limit {
+        if bytes[i] == 0x0A { line += 1 }
+    }
+    return line
+}
+
+string t12Text(in Ctx c, from FileId f, at TextSpan span) {
+    if f < 0 || f >= c.files.length { return "" }
+    let bytes = c.files[f].text.span
+    if span.start < 0 || span.end > bytes.length || span.start > span.end { return "" }
+    return $"{getText(bytes, at: span)}"
+}
+
+Location? t12LocationOf(in Ctx c, for Type t) {
+    let kind = kindOf(t)
+    let idx = typeIndex(t)
+    if kind == .structType {
+        return loc(c.structs[idx].file, at: c.structs[idx].nameSpan)
+    } else if kind == .errorSet {
+        return loc(c.errorSets[idx].file, at: c.errorSets[idx].nameSpan)
+    } else if kind == .enumType {
+        return loc(c.enums[idx].file, at: c.enums[idx].nameSpan)
+    } else if kind == .unionType {
+        return loc(c.unions[idx].file, at: c.unions[idx].nameSpan)
+    } else if kind == .interfaceType {
+        return loc(c.interfaces[idx].file, at: c.interfaces[idx].nameSpan)
+    } else if t8IsAlias(t) {
+        let a = idx
+        return loc(c.aliases[a].file, at: c.aliases[a].nameSpan)
+    }
+    return null
+}
+
+TextSpan t12ExprSpan(in parser.Expr e) {
+    switch e {
+        case .literalExpr(let n): return n.value.span
+        case .interpolatedExpr(let n): return n.value.span
+        case .nameExpr(let n): return n.value.span
+        case .thisExpr(let n): return n.value.span
+        case .memberExpr(let n): return n.value.span
+        case .targetMemberExpr(let n): return n.value.span
+        case .callExpr(let n): return n.value.span
+        case .indexExpr(let n): return n.value.span
+        case .unaryExpr(let n): return n.value.span
+        case .binaryExpr(let n): return n.value.span
+        case .rangeExpr(let n): return n.value.span
+        case .conditionalExpr(let n): return n.value.span
+        case .castExpr(let n): return n.value.span
+        case .isExpr(let n): return n.value.span
+        case .exceptExpr(let n): return n.value.span
+        case .inExpr(let n): return n.value.span
+        case .switchExpr(let n): return n.value.span
+        case .tryExpr(let n): return n.value.span
+        case .moveExpr(let n): return n.value.span
+        case .catchExpr(let n): return n.value.span
+        case .caughtErrorExpr(let n): return n.value.span
+        case .jumpExpr(let n): return n.value.span
+        case .blockExpr(let n): return n.value.span
+        case .structLiteralExpr(let n): return n.value.span
+        case .withExpr(let n): return n.value.span
+        case .spreadExpr(let n): return n.value.span
+        case .mapEntryExpr(let n): return n.value.span
+        case .collectionExpr(let n): return n.value.span
+        case .tupleExpr(let n): return n.value.span
+        case .parenExpr(let n): return n.value.span
+        case .lambdaExpr(let n): return n.value.span
+        case .stackallocExpr(let n): return n.value.span
+        case .patternExpr(let n): return n.value.span
+        case .errorExpr(let n): return n.value.span
+        case .none: return TextSpan { start: 0, length: 0 }
+    }
+}
+
+i64? t12ParseInt(string text) {
+    if text.length == 0 { return null }
+    let bytes = text.bytes
+    var i: i64 = 0
+    var base: i64 = 10
+    if bytes.length >= 2 && bytes[0] == 0x30 {
+        if bytes[1] == 0x78 || bytes[1] == 0x58 {
+            base = 16
+            i = 2
+        } else if bytes[1] == 0x62 || bytes[1] == 0x42 {
+            base = 2
+            i = 2
+        } else if bytes[1] == 0x6F || bytes[1] == 0x4F {
+            base = 8
+            i = 2
+        }
+    }
+    var value: i64 = 0
+    var hasDigits = false
+    while i < bytes.length {
+        let b = bytes[i]
+        i += 1
+        if b == 0x5F { continue }
+        var digit: i64 = -1
+        if b >= 0x30 && b <= 0x39 {
+            digit = i64(b - 0x30)
+        } else if base == 16 && b >= 0x61 && b <= 0x66 {
+            digit = i64(b - 0x61 + 10)
+        } else if base == 16 && b >= 0x41 && b <= 0x46 {
+            digit = i64(b - 0x41 + 10)
+        }
+        if digit < 0 || digit >= base { return null }
+        hasDigits = true
+        if value > (0x7FFFFFFFFFFFFFFF - digit) / base { return null }
+        value = value * base + digit
+    }
+    if !hasDigits { return null }
+    return value
+}
+
+i64? t12UnionValue(in parser.Expr e) {
+    switch e {
+        case .unaryExpr(let u):
+            if u.value.op == .negate {
+                switch u.value.operand {
+                    case .literalExpr(let l):
+                        if l.value.kind != .integer || l.value.suffix is not null { return null }
+                        if (t12ParseInt(l.value.text) is { } n) {
+                            let signedVal = -n
+                            if signedVal >= -2147483648 && signedVal <= 2147483647 {
+                                return signedVal
+                            }
+                        }
+                    default:
+                        break
+                }
+            }
+        case .literalExpr(let l):
+            if l.value.kind != .integer || l.value.suffix is not null { return null }
+            if (t12ParseInt(l.value.text) is { } n) {
+                if n >= -2147483648 && n <= 2147483647 {
+                    return n
+                }
+            }
+        default:
+            break
+    }
+    return null
+}
 
 // stub: T12 ports Compilation.cs:683 CheckUnique
-bool checkUnique(ref Ctx c, from FileId file, at TextSpan name) => false
+bool checkUnique(ref Ctx c, from FileId file, at TextSpan name) {
+    let modId = c.files[file].module
+    if modId < 0 { return true }
+    let nameText = t12Text(in c, from: file, at: name)
+    var previous: Location? = null
+    if (c.modules[modId].types.tryGet(at: nameText) is { } t) {
+        previous = t12LocationOf(in c, for: t)
+    } else if (c.modules[modId].functions.tryGet(at: nameText) is { } fs) {
+        if fs.length > 0 {
+            let fn = fs[0]
+            previous = loc(c.functions[fn].file, at: c.functions[fn].nameSpan)
+        }
+    } else if (c.modules[modId].constants.tryGet(at: nameText) is { } cn) {
+        previous = loc(c.consts[cn].file, at: c.consts[cn].nameSpan)
+    }
+    if (previous is { } prev) {
+        reportDuplicate(ref c, from: file, at: name, as: prev)
+        return false
+    }
+    return true
+}
 
 // stub: T12 ports Compilation.cs:695 ReportDuplicate
-void reportDuplicate(ref Ctx c, from FileId f, at TextSpan name, as Location previous) {}
+void reportDuplicate(ref Ctx c, from FileId f, at TextSpan name, as Location previous) {
+    let text = t12Text(in c, from: f, at: name)
+    let where = previous.file == f ?
+        $"line {t12Line(c, from: f, at: previous.span)}" :
+        $"{c.files[previous.file].displayPath}:{t12Line(c, from: previous.file, at: previous.span)}"
+    report(ref c, for: .duplicateDeclaration, from: f, at: name, by: (text, "", "", "", ""), label: $"already declared on {where}")
+}
+
+struct T12ParamInfo {
+    string label
+    bool hasParticle
+    bool hasDefault
+    bool isRest
+}
+
+List<T12ParamInfo> t12ParamsFromAst(in Ctx c, from FileId f, for in List<parser.Param> params) {
+    var result = List<T12ParamInfo>()
+    for p in params {
+        var label = ""
+        var hasParticle = false
+        if (p.particle is { } part) {
+            hasParticle = true
+            label = t12Text(in c, from: f, at: part)
+        } else {
+            label = t12Text(in c, from: f, at: p.name)
+        }
+        let hasDefault = p.defaultKeyword is not .none
+        result.append(T12ParamInfo {
+            label: label,
+            hasParticle: hasParticle,
+            hasDefault: hasDefault,
+            isRest: p.rest,
+        })
+    }
+    return result
+}
+
+List<T12ParamInfo> t12FunctionParams(in Ctx c, for FuncId fn) {
+    var result = List<T12ParamInfo>()
+    if fn < 0 || fn >= c.functions.length { return result }
+    let f = c.functions[fn].file
+    let dIdx = c.functions[fn].declIndex
+    let mIdx = c.functions[fn].memberIndex
+    if f >= 0 && f < c.files.length && dIdx >= 0 && dIdx < c.files[f].unit.members.length {
+        if mIdx == -1 {
+            switch c.files[f].unit.members[dIdx] {
+                case .functionDecl(let node):
+                    return t12ParamsFromAst(in c, from: f, for: in node.value.params)
+                default:
+                    break
+            }
+        } else {
+            switch c.files[f].unit.members[dIdx] {
+                case .structDecl(let sNode):
+                    if mIdx < sNode.value.members.length {
+                        switch sNode.value.members[mIdx] {
+                            case .functionDecl(let node):
+                                return t12ParamsFromAst(in c, from: f, for: in node.value.params)
+                            case .constructorDecl(let node):
+                                return t12ParamsFromAst(in c, from: f, for: in node.value.params)
+                            default:
+                                break
+                        }
+                    }
+                case .interfaceDecl(let iNode):
+                    if mIdx < iNode.value.members.length {
+                        switch iNode.value.members[mIdx] {
+                            case .functionDecl(let node):
+                                return t12ParamsFromAst(in c, from: f, for: in node.value.params)
+                            default:
+                                break
+                        }
+                    }
+                case .extensionDecl(let eNode):
+                    if mIdx < eNode.value.members.length {
+                        switch eNode.value.members[mIdx] {
+                            case .functionDecl(let node):
+                                return t12ParamsFromAst(in c, from: f, for: in node.value.params)
+                            default:
+                                break
+                        }
+                    }
+                default:
+                    break
+            }
+        }
+    }
+    for pId in c.functions[fn].parameters {
+        if pId >= 0 && pId < c.locals.length {
+            result.append(T12ParamInfo {
+                label: c.locals[pId].name,
+                hasParticle: false,
+                hasDefault: c.locals[pId].defaultValue >= 0,
+                isRest: false,
+            })
+        }
+    }
+    return result
+}
+
+(i64 min, i64 max) t12Positional(in List<T12ParamInfo> ps) {
+    var min: i64 = 0
+    var count: i64 = 0
+    var hasRest = false
+    for p in ps {
+        if !p.hasParticle {
+            count += 1
+            if !p.hasDefault && !p.isRest {
+                min += 1
+            }
+        }
+        if p.isRest {
+            hasRest = true
+        }
+    }
+    let max = hasRest ? 0x7FFFFFFF : count
+    return (min: min, max: max)
+}
+
+List<string> t12Required(in List<T12ParamInfo> ps) {
+    var result = List<string>()
+    for p in ps {
+        if p.hasParticle && !p.hasDefault {
+            result.append(p.label)
+        }
+    }
+    return result
+}
 
 // stub: T12 ports Compilation.cs:671 Overlap
-bool overlap(ref Ctx c, for FuncId a, as FuncId b) => false
+bool overlap(ref Ctx c, for FuncId a, as FuncId b) {
+    let paramsA = t12FunctionParams(in c, for: a)
+    let paramsB = t12FunctionParams(in c, for: b)
+    var labelsB = Map<string, bool>()
+    for p in paramsB {
+        labelsB[p.label] = true
+    }
+    var shared = Map<string, bool>()
+    for p in paramsA {
+        if labelsB.contains(p.label) {
+            shared[p.label] = true
+        }
+    }
+    let reqA = t12Required(in paramsA)
+    for r in reqA {
+        if !shared.contains(r) { return false }
+    }
+    let reqB = t12Required(in paramsB)
+    for r in reqB {
+        if !shared.contains(r) { return false }
+    }
+    let pa = t12Positional(in paramsA)
+    let pb = t12Positional(in paramsB)
+    return pa.min <= pb.max && pb.min <= pa.max
+}
 
 // stub: T12 ports Compilation.cs:712 Loc
 Location loc(FileId file, at TextSpan span) => Location { file: file, span: span }
 
 // stub: T12 ports Compilation.cs:714 AccessOf
-Accessibility accessOf(parser.Modifiers m) => .privateKeyword
+Accessibility accessOf(parser.Modifiers m) {
+    if (m & 1) != 0 { return .publicKeyword }
+    if (m & 2) != 0 { return .privateKeyword }
+    return .module
+}
