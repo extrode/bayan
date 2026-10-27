@@ -29,7 +29,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T9 Builtins and builtin members — files: `builtins.byn` (`Builtins.cs` incl. parsed `"<builtin>"` sources and the `Rule` variants, `BuiltinMembers.cs`), `SelfhostSemanticsT9Tests.cs` — covers: R4 — after: T4; parallel with: T6–T8, T10–T27, T34–T39 — done when:
   - every builtin function, type and member table exists with the C# signatures; a fixture resolves `Io`, `Utf8`, `Symbol` and `Rule`; Q560–Q564 as needed.
   - Size: about 895 lines.
-- [ ] T10 Manifest reader — files: `manifest.byn` (`src/Bayan.Syntax/Packages/Manifest.cs`: data grammar, BYN3100–BYN3103, capabilities, grammar, `camelOf`/`kebabOf`), `SelfhostSemanticsT10Tests.cs` — covers: R1, R4 — after: T4; parallel with: T6–T9, T11–T27, T34–T39 — done when:
+- [x] T10 Manifest reader — files: `manifest.byn` (`src/Bayan.Syntax/Packages/Manifest.cs`: data grammar, BYN3100–BYN3103, capabilities, grammar, `camelOf`/`kebabOf`), `SelfhostSemanticsT10Tests.cs` — covers: R1, R4 — after: T4; parallel with: T6–T9, T11–T27, T34–T39 — done when:
   - both `package.byn` diag cases parse and report identically; entry-module names match `CliApp.EntryModule`; Q565–Q569 as needed.
   - Size: about 690 lines.
 - [ ] T11 Compilation loading and declaration A — files: `compile.byn` (`Compilation.cs` 1–~654: `FromPath`/`FromProject`/`Create`, imports, module order, `Declare` order, `DeclareFile`, `addType`/`addFunction`, `associatedType`; `Work` records and sinks, including `afterMembersDeclared`/`reportInto`; `buildLexicon` before `declare`; `removeRepeats` call), `SelfhostSemanticsT11Tests.cs` — covers: R1, R4 — after: T4; parallel with: T6–T10, T12–T27, T34–T39 — done when:
