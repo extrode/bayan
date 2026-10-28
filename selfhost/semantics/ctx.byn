@@ -237,6 +237,29 @@ struct ErrorUnionData {
 
 /// Everything a pass reads and writes. T3 adds the symbol/type arenas and their caches, T4 the bound
 /// arenas; one owner per field.
+/// Where a piece of syntax lives, for state the C# keeps as syntax references (Q714): `c.files[file].unit.members[declIndex]`,
+/// then member `memberIndex`, item `itemIndex` and sub-item `subIndex` as the owning task documents; -1 where unused.
+struct SyntaxRef {
+    FileId file = -1
+    i64 declIndex = -1
+    i64 memberIndex = -1
+    i64 itemIndex = -1
+    i64 subIndex = -1
+}
+
+/// C# `_exitCodes` entry: a variant and its `@exitCode` attribute (Q714).
+struct ExitCodeRef {
+    VariantId variant = -1
+    SyntaxRef attribute
+}
+
+/// C# `_testBodies` value: the test's declaration and, for a `@cases` test, the case whose values it binds (Q714).
+struct TestBody {
+    SyntaxRef decl
+    bool hasValues = false
+    SyntaxRef values
+}
+
 struct Ctx {
     List<SourceFile> files
     List<Mod> modules
@@ -415,6 +438,19 @@ struct Ctx {
     List<StructChecks> checks = List<StructChecks>()
     Map<StructId, i64> checksOf = []
 
+    // ── Shared state (Q714): written by one task, read by another; only the dispatcher adds fields here.
+    /// C# `_exitCodes` (T12 fills it in `declareVariants`, T13 `bindAll` binds each).
+    List<ExitCodeRef> exitCodes = List<ExitCodeRef>()
+    /// C# `_mainStatements` (T11 fills it in `declareFile`, T13 `bindFunction` binds them): the synthesized `main`, or -1,
+    /// and its top-level statements in order.
+    FuncId mainStatementsFn = -1
+    List<SyntaxRef> mainStatements = List<SyntaxRef>()
+    /// C# `_testBodies` (T11 fills it in `declareFile`, T13 `bindFunction` binds each).
+    Map<FuncId, TestBody> testBodies = []
+    /// C# `Options.IncludeTests` and `Options.SkipOwnershipCheck` (T11 sets them when it creates the compilation).
+    bool includeTests = false
+    bool skipOwnershipCheck = false
+
     // ── Per-task state (Q710). A task adds the C# fields it needs, with defaults, only under its own marker.
     // ── T10 state
     // ── T11 state
@@ -450,6 +486,26 @@ struct Ctx {
     bool membersDeclared = false
     // ── T12 state
     // ── T13 state
+    /// C# `_instances` (Q581): `t13Key` of `(Generic, Args)` to the instance (a `FuncId` or a `Type`).
+    Map<string, i64> instanceKeys = []
+    /// C# `_instantiating`: depth of `Instantiating` calls.
+    i64 instantiating = 0
+    /// C# `_instantiationSite`: whether it is set, and its file and span.
+    bool hasInstantiationSite = false
+    FileId instantiationSiteFile = -1
+    TextSpan instantiationSiteSpan = TextSpan { start: 0, length: 0 }
+    /// C# `_instantiationErrors`: what instantiation reported that is not the user's.
+    List<Diag> instantiationErrors = List<Diag>()
+    /// C# `_instanceAnalysisSeen` (a set): `code|file|start|length` of each instance-analysis diagnostic kept.
+    Map<string, i64> instanceAnalysisSeen = []
+    /// C# `_firstPass`: a `firstPasses` index, or -1 for null.
+    i64 firstPass = -1
+    List<FirstPass> firstPasses = List<FirstPass>()
+    /// C# `RequiresChecks`.
+    List<RequiresCheck> requiresChecks = List<RequiresCheck>()
+    /// C# `_interfaceMembersDeclared` and `_pendingInterfaces` (`Work { kind: .interfaceMembers }`).
+    bool interfaceMembersDeclared = false
+    List<Work> pendingInterfaces = List<Work>()
     // ── T14 state
     // ── T15 state
     // ── T16 state
@@ -517,6 +573,15 @@ struct Binder {
 
     // ── Per-task binder state (Q710), as in `Ctx`.
     // ── T15 state
+    /// The C# constructor's `typeArgs`, which `_types` resolves with before the function's or struct's map; null for none.
+    Map<string, Type>? typeArgs = null
+    /// The C# `_it`: the field whose own rule is being bound, or -1.
+    FieldId itField = -1
+    /// The C# `_thisFacts`: the fact key for `this`, made on first use; null until then.
+    LocalId? thisFacts = null
+    /// The C# `_types` map (see `typeArgs`), taken once by T15's `t15CaptureTypes`; `typesCaptured` says whether it was.
+    Map<string, Type> types = []
+    bool typesCaptured = false
     // ── T16 state
     // ── T17 state
     // ── T18 state
