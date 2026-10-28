@@ -1,135 +1,44 @@
-// T13: Compilation.cs 1363-1952 (BindAll, instantiation, error sets, mutation/requires).
+// T13: Compilation.cs 1363-1952 (BindAll, instantiation, error sets, mutation/requires), method for
+// method in C# order. C# state with no home in Ctx lives in ctx.byn's `// ── T13 state` section (Q704,
+// Q710); a C# `Decl` is the symbol's `declIndex`/`memberIndex` into its file's tree (Q581).
 
 import parser
 
-// What `instantiatingBegin` saved for `instantiatingEnd`: the C# `Instantiating`'s `Action` split in
-// two around the caller's work. `outer` is the sink to restore, `bag` the scratch sink pushed.
+// What `instantiatingBegin` saved for `instantiatingEnd`: the C# `Instantiating`'s locals around
+// `work()` (Q704). `outer` is the sink to restore (`_scratch`), `bag` the scratch pushed, `site`/`span`
+// the use, and the `outerSite…` fields the `_instantiationSite` to restore.
 struct InstantiatingScope {
     i64 outer
     i64 bag
     FileId site
     TextSpan span
+    bool outerHasSite
+    FileId outerSiteFile
+    TextSpan outerSiteSpan
 }
+
+/// The C# `_firstPass` tuple: the function instances a first pass created, and what creating them reported.
+struct FirstPass {
+    List<FuncId> instances
+    /// The `Ctx.bags` index of the pass's `DiagnosticBag`.
+    i64 bag
+    List<Diag> errors
+}
+
+/// The C# `RequiresCheck(Source, Call, Callee, Arguments)`. `Call` is its span and the spans of the
+/// argument values written in it (Q582).
+struct RequiresCheck {
+    FileId source
+    TextSpan callSpan
+    List<TextSpan> callArgs
+    FuncId callee
+    List<BExpr> arguments
+}
+
+/// C# `InstantiationLabel`.
+const instantiationLabel: string = "the generic code needs this of its type arguments"
 
 string t13Text(in Ctx c, from FileId f, at TextSpan span) => $"{getText(c.files[f].text.span, at: span)}"
-
-bool t13ArgsEqual(in List<Type> a, to in List<Type> b) {
-    if a.length != b.length { return false }
-    for i in 0..a.length {
-        if a[i] != b[i] { return false }
-    }
-    return true
-}
-
-bool t13ContainsId(in List<ErrorSetId> xs, for ErrorSetId id) {
-    for x in xs {
-        if x == id { return true }
-    }
-    return false
-}
-
-Map<string, Type> t13CopyMap(in Map<string, Type> m) {
-    var copy = Map<string, Type>()
-    for (k, v) in m {
-        copy[k] = v
-    }
-    return copy
-}
-
-Map<string, Type> t13Substitution(in Ctx c, as StructId owner, for in List<TypeParamId> parameters, by in List<Type> args) {
-    var map = Map<string, Type>()
-    if owner >= 0 && owner < c.structs.length {
-        for (k, v) in c.structs[owner].typeMap {
-            map[k] = v
-        }
-    }
-    for i in 0..parameters.length {
-        if i < args.length {
-            let pId = parameters[i]
-            if pId >= 0 && pId < c.typeParams.length {
-                map[c.typeParams[pId].name] = args[i]
-            }
-        }
-    }
-    return map
-}
-
-bool t13Conforms(in Ctx c, for Type t, to InterfaceId i) {
-    if isError(t) { return true }
-    let kind = kindOf(t)
-    switch kind {
-        case .structType:
-            let s = StructId(typeIndex(t))
-            if s >= 0 && s < c.structs.length {
-                for conf in c.structs[s].conformances {
-                    if conf >= 0 && conf < c.conformances.length {
-                        if c.conformances[conf].iface == i { return true }
-                    }
-                }
-                for b in c.structs[s].bases {
-                    if b == i { return true }
-                }
-            }
-            return false
-        case .typeParam:
-            let p = TypeParamId(typeIndex(t))
-            if p >= 0 && p < c.typeParams.length {
-                for constraint in c.typeParams[p].constraints {
-                    if constraint == i { return true }
-                }
-            }
-            return false
-        default:
-            return false
-    }
-}
-
-string t13MissingMember(in Ctx c, for Type t, to InterfaceId i) {
-    if i < 0 || i >= c.interfaces.length { return ": error" }
-    let ifaceName = c.interfaces[i].name
-    let kind = kindOf(t)
-    for m in c.interfaces[i].methods {
-        if m >= 0 && m < c.functions.length {
-            let mName = c.functions[m].name
-            var hasMember = false
-            if kind == .structType {
-                let s = StructId(typeIndex(t))
-                if s >= 0 && s < c.structs.length {
-                    for sm in c.structs[s].methods {
-                        if sm >= 0 && sm < c.functions.length && c.functions[sm].name == mName {
-                            hasMember = true
-                            break
-                        }
-                    }
-                }
-            }
-            if !hasMember {
-                return mName
-            }
-        }
-    }
-    for prop in c.interfaces[i].properties {
-        if prop >= 0 && prop < c.properties.length {
-            let pName = c.properties[prop].name
-            var hasProp = false
-            if kind == .structType {
-                let s = StructId(typeIndex(t))
-                if s >= 0 && s < c.structs.length {
-                    for sp in c.structs[s].properties {
-                        if sp >= 0 && sp < c.properties.length && c.properties[sp].name == pName {
-                            hasProp = true
-                            break
-                        }
-                    }
-                }
-            }
-            if !hasProp {
-                return pName
-            }
-        }
-    }
-    return $": {ifaceName}"
-}
 
 Diag t13CloneDiag(in Diag d) {
     var rel = List<Related>()
@@ -151,6 +60,35 @@ Diag t13CloneDiag(in Diag d) {
     }
 }
 
+/// `(_scratch ?? Diagnostics).Add(d)`: straight into the sink, as `DiagnosticBag.Add` does.
+void t13Add(ref Ctx c, by move Diag d) {
+    addDiag(ref c, by: move d)
+}
+
+/// `Diagnostics.HasErrors`.
+bool t13HasErrors(in Ctx c) {
+    for d in c.diagnostics {
+        if !d.isWarning { return true }
+    }
+    return false
+}
+
+/// `EntryModule`: the module of the entry files (`SourceFile.isEntry`), or -1 (Q583).
+ModId t13EntryModule(in Ctx c) {
+    for f in c.files {
+        if f.isEntry { return f.module }
+    }
+    return -1
+}
+
+/// The C# `_instances` key `(Generic, Args)`: `f` and a function, or `t` and a type handle, then each argument.
+string t13Key(string kind, for i64 generic, by in List<Type> args) {
+    var sb = StrBuf()
+    sb.append($"{kind}{generic}:")
+    for a in args { sb.append($"{a},") }
+    return $"{sb.finish()}"
+}
+
 Binder t13NewBinder(FileId file, FuncId fn = -1, StructId owner = -1) => Binder {
     file: file,
     fn: fn,
@@ -168,97 +106,410 @@ Binder t13NewBinder(FileId file, FuncId fn = -1, StructId owner = -1) => Binder 
     errorNarrowed: [],
 }
 
-// stub: T13 ports Compilation.cs:1467 Instantiating
-InstantiatingScope instantiatingBegin(ref Ctx c, from FileId site, at TextSpan span) {
-    let outer = c.sink
-    c.bags.append(DiagBag { items: List<Diag>(), previous: outer })
-    let bagId = c.bags.length - 1
-    c.sink = bagId
-    return InstantiatingScope { outer: outer, bag: bagId, site: site, span: span }
+// ── Bodies ─────────────────────────────────────────────────────────────────────
+
+/// Compilation.cs:1364 BindAll.
+void bindAll(ref Ctx c) {
+    checkConformances(ref c)
+    // Before the constants, which may build a checked value (J38). `Checks` in insertion order.
+    for i in 0..c.checks.length {
+        var owner: StructId = -1
+        for (s, idx) in c.checksOf {
+            if idx == i { owner = s }
+        }
+        var rules = List<StructRule>()
+        for r in c.checks[i].rules {
+            rules.append(StructRule { span: r.span, field: r.field, condition: r.condition, reads: copyIds(in r.reads) })
+        }
+        let checks = StructChecks { check: c.checks[i].check, rules: move rules }
+        var b = t13NewBinder(c.structs[owner].file, fn: checks.check, owner: owner)
+        bindChecks(ref b, through: ref c, for: in checks)
+    }
+    for m in 0..c.modules.length {
+        let consts = copyIds(in c.modules[m].allConstants)
+        for k in consts {
+            bindConstant(ref c, for: k)
+        }
+    }
+    for m in 0..c.modules.length {
+        let enums = copyIds(in c.modules[m].enums)
+        for e in enums {
+            var b = t13NewBinder(c.enums[e].file)
+            bindEnumArguments(ref b, through: ref c, for: e)
+        }
+    }
+    var exitCodes = List<ExitCodeRef>()
+    for entry in c.exitCodes { exitCodes.append(entry) }
+    for entry in exitCodes {
+        let f = entry.attribute.file
+        let d = entry.attribute.declIndex
+        let vIdx = entry.attribute.memberIndex
+        let aIdx = entry.attribute.itemIndex
+        switch c.files[f].unit.members[d] {
+            case .errorEnumDecl(let ed):
+                var b = t13NewBinder(c.errorVariants[entry.variant].file)
+                let code = bindExitCode(ref b, through: ref c, for: in ed.value.variants[vIdx].attributes[aIdx])
+                c.errorVariants[entry.variant].exitCode = code
+            default:
+                break
+        }
+    }
+    for m in 0..c.modules.length {
+        let structs = copyIds(in c.modules[m].structs)
+        for s in structs {
+            let fields = copyIds(in c.structs[s].fields)
+            for f in fields {
+                if c.fields[f].hasDefault {
+                    var b = t13NewBinder(c.structs[s].file, owner: s)
+                    c.fields[f].defaultValue = bindFieldDefault(ref b, through: ref c, for: f)
+                }
+            }
+        }
+    }
+    for m in 0..c.modules.length {
+        var fns = List<FuncId>()
+        for fn in c.modules[m].allFunctions {
+            fns.append(fn)
+        }
+        for fn in fns {
+            if !functionIsInstance(ref c, by: fn) {
+                bindFunction(ref c, for: fn)
+            }
+        }
+    }
+    while c.instantiationWork.length > 0 {
+        let kind = c.instantiationWork[0].kind
+        let site = c.instantiationWork[0].file
+        let span = c.instantiationWork[0].span
+        let instance = c.instantiationWork[0].instance
+        let target = c.instantiationWork[0].memberIndex
+        let subject = c.instantiationWork[0].subject
+        c.instantiationWork.remove(at: 0)
+        let scope = instantiatingBegin(ref c, from: site, at: span)
+        switch kind {
+            case .bindFunction:
+                bindFunction(ref c, for: target)
+            case .fieldDefault:
+                let _ = fieldDefault(ref c, for: StructId(typeIndex(subject)), by: target, from: site, at: span)
+            default:
+                panic($"internal error: instantiation work of kind {kind.ordinal}")
+        }
+        instantiatingEnd(ref c, by: scope, instance: instance)
+    }
+    inferErrorSets(ref c)
+    analyzeEffects(ref c)
+    checkMutation(ref c)
+    checkRequires(ref c)
+    for m in 0..c.modules.length {
+        let fns = copyIds(in c.modules[m].allFunctions)
+        for fn in fns {
+            let hasBody = c.functions[fn].body != -1
+            let isInstance = functionIsInstance(ref c, by: fn)
+            // Ownership is checked once, on the template, where every type parameter counts as unique.
+            if hasBody && !isInstance && !c.skipOwnershipCheck { analyzeOwnership(ref c, for: fn) }
+            // Like ownership, the lint judges the source once, on the template.
+            if hasBody && !isInstance { lintNeverReassignedVar(ref c, for: fn) }
+            if hasBody && !isInstance { checkPanicHandler(ref c, for: fn) }
+            if hasBody && !functionIsGeneric(ref c, by: fn) {
+                if isInstance {
+                    t13AnalyzeInstance(ref c, for: fn)
+                    continue
+                }
+                analyzeFlow(ref c, for: fn)
+                analyzeRegions(ref c, for: fn)
+                lintSpanParameter(ref c, for: fn)
+            } else if hasBody && c.functions[fn].iface != -1 && !c.functions[fn].isAbstract {
+                // A default is analysed on its template, so it is checked with no conformer; its clones repeat nothing it reports.
+                t13AnalyzeInstance(ref c, for: fn)
+            }
+        }
+    }
+    if !t13HasErrors(in c) && c.instantiationErrors.length > 0 {
+        let d = t13CloneDiag(in c.instantiationErrors[0])
+        let path = d.file >= 0 ? c.files[d.file].path : ""
+        panic($"internal error: instantiating a generic reported {d.code} at {path}: {d.message}")
+    }
+    let entry = t13EntryModule(in c)
+    if entry >= 0 && c.modules[entry].main == -1 && !c.includeTests && !c.library && c.modules[entry].files.length > 0 && !t13HasErrors(in c) {
+        report(ref c, for: .noMain, from: c.modules[entry].files[0], at: TextSpan { start: 0, length: 0 }, by: ("", "", "", "", ""))
+    }
 }
 
-// stub: T13 ports Compilation.cs:1467 Instantiating
+// ── Generics ───────────────────────────────────────────────────────────────────
+
+/// Compilation.cs:1451 Substitution.
+Map<string, Type> t13Substitution(in Ctx c, from in Map<string, Type>? outer, for in List<TypeParamId> parameters, by in List<Type> args) {
+    var map = Map<string, Type>()
+    if (outer is { } o) {
+        for (k, v) in o { map[k] = v }
+    }
+    for i in 0..parameters.length {
+        map[c.typeParams[parameters[i]].name] = args[i]
+    }
+    return map
+}
+
+/// Compilation.cs:1467 Instantiating, before `work()`.
+InstantiatingScope instantiatingBegin(ref Ctx c, from FileId site, at TextSpan span) {
+    let outer = pushBag(ref c)
+    let bag = c.sink
+    let scope = InstantiatingScope {
+        outer: outer,
+        bag: bag,
+        site: site,
+        span: span,
+        outerHasSite: c.hasInstantiationSite,
+        outerSiteFile: c.instantiationSiteFile,
+        outerSiteSpan: c.instantiationSiteSpan,
+    }
+    if !c.hasInstantiationSite {
+        c.hasInstantiationSite = true
+        c.instantiationSiteFile = site
+        c.instantiationSiteSpan = span
+    }
+    c.instantiating += 1
+    return scope
+}
+
+/// `Reported(d)`: the same code, source and span already in the target or in `Diagnostics`.
+bool t13Reported(in Ctx c, by in Diag d) {
+    if c.sink >= 0 {
+        for t in c.bags[c.sink].items {
+            if t.code == d.code && t.file == d.file && t.span == d.span { return true }
+        }
+    }
+    for t in c.diagnostics {
+        if t.code == d.code && t.file == d.file && t.span == d.span { return true }
+    }
+    return false
+}
+
+/// Compilation.cs:1467 Instantiating, after `work()`: forwards the type-argument rules to the use, holds the rest.
 void instantiatingEnd(ref Ctx c, by InstantiatingScope scope, FuncId instance = -1) {
     c.sink = scope.outer
-    if scope.bag < 0 || scope.bag >= c.bags.length { return }
+    c.hasInstantiationSite = scope.outerHasSite
+    c.instantiationSiteFile = scope.outerSiteFile
+    c.instantiationSiteSpan = scope.outerSiteSpan
+    c.instantiating -= 1
     let count = c.bags[scope.bag].items.length
     for i in 0..count {
-        if !c.bags[scope.bag].items[i].isWarning {
-            let code = c.bags[scope.bag].items[i].code
-            let isForwarded = code == "BYN2760" || code == "BYN2761" || code == "BYN2200"
-                || code == "BYN2201" || code == "BYN2807" || code == "BYN2822"
-                || code == "BYN2022" || code == "BYN7010"
-            if isForwarded {
-                var d = t13CloneDiag(in c.bags[scope.bag].items[i])
-                d.file = scope.site
-                d.span = scope.span
-                d.label = "the generic code needs this of its type arguments"
-                addDiag(ref c, by: move d)
-            } else if code == "BYN7012" && instance >= 0 && instance < c.functions.length {
-                var d = t13CloneDiag(in c.bags[scope.bag].items[i])
-                d.file = scope.site
-                d.span = scope.span
-                d.label = "the generic code needs this of its type arguments"
-                d.help = $"call `{c.functions[instance].name}` with a type without states; it replaces a value of its type argument whole"
-                addDiag(ref c, by: move d)
+        var d = t13CloneDiag(in c.bags[scope.bag].items[i])
+        if d.isWarning { continue }
+        let code = d.code
+        let always = code == codeText(.invalidMapKey) || code == codeText(.keyPartNotHashable) || code == codeText(.badBinaryOperands)
+            || code == codeText(.notFormattable) || code == codeText(.constraintNotSatisfied)
+        let unlessReported = code == codeText(.functionTypeNotHere) || code == codeText(.unsupported) || code == codeText(.implicitCopy)
+        if always || unlessReported && !t13Reported(in c, by: in d) {
+            d.file = scope.site
+            d.span = scope.span
+            d.label = instantiationLabel
+            t13Add(ref c, by: move d)
+        } else if code == codeText(.assignmentChangesState) && instance != -1 && !t13Reported(in c, by: in d) {
+            let name = c.functions[instance].name
+            var related = List<Related>()
+            if d.file == scope.site {
+                related.append(Related { span: d.span, label: $"in `{name}`" })
             }
+            d.file = scope.site
+            d.span = scope.span
+            d.label = instantiationLabel
+            d.help = $"call `{name}` with a type without states; it replaces a value of its type argument whole"
+            d.related = move related
+            t13Add(ref c, by: move d)
+        } else {
+            c.instantiationErrors.append(move d)
         }
     }
 }
 
-// stub: T13 ports Compilation.cs:1556 CheckConstraints
+/// `fn.Decl` for a function, method or interface member: declares its signature and checks its
+/// constraints (the `Declare` closure of InstantiateFunction); false when a constraint fails.
+bool t13DeclareInstance(ref Ctx c, for FuncId fn, by FuncId template, to in List<Type> args, bool check) {
+    let file = c.functions[fn].file
+    let d = c.functions[fn].declIndex
+    let m = c.functions[fn].memberIndex
+    let owner = c.functions[fn].owner
+    let parameters = copyIds(in c.functions[template].typeParams)
+    var typeMap = Map<string, Type>()
+    for (k, v) in c.functions[fn].typeMap { typeMap[k] = v }
+    var satisfied = true
+    switch c.files[file].unit.members[d] {
+        case .functionDecl(let n):
+            declareSignature(ref c, for: fn, from: in n.value, by: file, owner: owner)
+            if check { satisfied = checkConstraints(ref c, for: in parameters, through: in n.value.where, from: file, as: owner, by: in typeMap, to: in args) }
+        case .structDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let f):
+                    declareSignature(ref c, for: fn, from: in f.value, by: file, owner: owner)
+                    if check { satisfied = checkConstraints(ref c, for: in parameters, through: in f.value.where, from: file, as: owner, by: in typeMap, to: in args) }
+                default:
+                    panic("internal error: a generic method without a function declaration")
+            }
+        case .interfaceDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let f):
+                    declareSignature(ref c, for: fn, from: in f.value, by: file, owner: owner)
+                    if check { satisfied = checkConstraints(ref c, for: in parameters, through: in f.value.where, from: file, as: owner, by: in typeMap, to: in args) }
+                default:
+                    panic("internal error: a generic member without a function declaration")
+            }
+        default:
+            panic("internal error: a generic function without a function declaration")
+    }
+    return satisfied
+}
+
+/// A handle as C# sees it: -1 is null.
+i64? t13Handle(i64 h) => h == -1 ? null : h
+
+/// `_firstPass`, or null.
+i64? t13FirstPass(in Ctx c) => t13Handle(c.firstPass)
+
+/// The `Declare` closure run inside `Instantiating`, into the first pass's bag when there is one
+/// (InstantiateFunction's `_firstPass` branch); false when a constraint fails.
+bool t13DeclareAt(ref Ctx c, for FuncId fn, by FuncId template, to in List<Type> args, from FileId site, at TextSpan span, bool check) {
+    if (t13FirstPass(in c) is { } pass) {
+        c.firstPasses[pass].instances.append(fn)
+        let outer = c.sink
+        c.sink = c.firstPasses[pass].bag
+        let errors = c.instantiationErrors.length
+        let scope = instantiatingBegin(ref c, from: site, at: span)
+        let satisfied = t13DeclareInstance(ref c, for: fn, by: template, to: in args, check: check)
+        instantiatingEnd(ref c, by: scope)
+        c.sink = outer
+        while c.instantiationErrors.length > errors {
+            let d = t13CloneDiag(in c.instantiationErrors[errors])
+            c.firstPasses[pass].errors.append(move d)
+            c.instantiationErrors.remove(at: errors)
+        }
+        return satisfied
+    }
+    let scope = instantiatingBegin(ref c, from: site, at: span)
+    let satisfied = t13DeclareInstance(ref c, for: fn, by: template, to: in args, check: check)
+    instantiatingEnd(ref c, by: scope)
+    return satisfied
+}
+
+/// Compilation.cs:1502 InstantiateFunction: declared now, bound when the worklist drains.
+FuncId instantiateFunction(ref Ctx c, for FuncId template, by in List<Type> args, from FileId site, at TextSpan span) {
+    let key = t13Key("f", for: template, by: in args)
+    if c.instanceKeys.contains(key) { return FuncId(c.instanceKeys[key]) }
+    let owner = c.functions[template].owner
+    var typeMap = Map<string, Type>()
+    if owner != -1 {
+        typeMap = t13Substitution(in c, from: in c.structs[owner].typeMap, for: in c.functions[template].typeParams, by: in args)
+    } else {
+        typeMap = t13Substitution(in c, from: null, for: in c.functions[template].typeParams, by: in args)
+    }
+    var typeArgs = List<Type>()
+    for a in args { typeArgs.append(a) }
+    let module = c.functions[template].module
+    let fn = newFunction(ref c, by: FunctionSymbol {
+        name: c.functions[template].name,
+        nameSpan: c.functions[template].nameSpan,
+        span: c.functions[template].span,
+        module: module,
+        kind: c.functions[template].kind,
+        access: c.functions[template].access,
+        modifiers: c.functions[template].modifiers,
+        file: c.functions[template].file,
+        declIndex: c.functions[template].declIndex,
+        memberIndex: c.functions[template].memberIndex,
+        owner: owner,
+        isStatic: c.functions[template].isStatic,
+        template: template,
+        typeArgs: move typeArgs,
+        typeMap: move typeMap,
+    })
+    c.instanceKeys[key] = fn
+    c.modules[module].allFunctions.append(fn)
+    // The template checked the calls in its own body, so a call in an instance is not checked again.
+    let check = c.instantiating == 0
+    let satisfied = t13DeclareAt(ref c, for: fn, by: template, to: in args, from: site, at: span, check: check)
+    // A body bound with a non-conforming argument would only repeat BYN2807 as unknown members.
+    if !functionIsGeneric(ref c, by: fn) && satisfied {
+        c.instantiationWork.append(Work { kind: .bindFunction, args: List<Type>(), instance: fn, file: site, span: span, memberIndex: fn })
+    }
+    return fn
+}
+
+/// The `where` clauses of a type's declaration, checked against `args` (the `Check` of CheckConstraintsAt).
+bool t13CheckTypeConstraints(ref Ctx c, for Type instance) {
+    let kind = kindOf(instance)
+    let id = typeIndex(instance)
+    var file: FileId = -1
+    var d: i64 = -1
+    var parameters = List<TypeParamId>()
+    var args = List<Type>()
+    var typeMap = Map<string, Type>()
+    switch kind {
+        case .structType:
+            let template = c.structs[id].template
+            file = c.structs[template].file
+            d = c.structs[template].declIndex
+            parameters = copyIds(in c.structs[template].typeParams)
+            args = copyIds(in c.structs[id].typeArgs)
+            for (k, v) in c.structs[id].typeMap { typeMap[k] = v }
+        case .unionType:
+            let template = c.unions[id].template
+            file = c.unions[template].file
+            d = c.unions[template].declIndex
+            parameters = copyIds(in c.unions[template].typeParams)
+            args = copyIds(in c.unions[id].typeArgs)
+            for (k, v) in c.unions[id].typeMap { typeMap[k] = v }
+        case .interfaceType:
+            let template = c.interfaces[id].template
+            file = c.interfaces[template].file
+            d = c.interfaces[template].declIndex
+            parameters = copyIds(in c.interfaces[template].typeParams)
+            args = copyIds(in c.interfaces[id].typeArgs)
+            for (k, v) in c.interfaces[id].typeMap { typeMap[k] = v }
+        default:
+            panic("internal error: a constraint check of a type that is not generic")
+    }
+    switch c.files[file].unit.members[d] {
+        case .structDecl(let n):
+            return checkConstraints(ref c, for: in parameters, through: in n.value.where, from: file, as: -1, by: in typeMap, to: in args)
+        case .unionDecl(let n):
+            return checkConstraints(ref c, for: in parameters, through: in n.value.where, from: file, as: -1, by: in typeMap, to: in args)
+        case .interfaceDecl(let n):
+            return checkConstraints(ref c, for: in parameters, through: in n.value.where, from: file, as: -1, by: in typeMap, to: in args)
+        default:
+            panic("internal error: a generic type without a declaration")
+    }
+}
+
+/// A `_pendingConstraints` entry (`Work { kind: .constraint }`): `Instantiating(site, span, CheckConstraints(…))`.
+/// T11's `runWork` runs it when T14 drains the list (Q581).
+void t13RunConstraint(ref Ctx c, for in Work work) {
+    let scope = instantiatingBegin(ref c, from: work.file, at: work.span)
+    let _ = t13CheckTypeConstraints(ref c, for: work.subject)
+    instantiatingEnd(ref c, by: scope)
+}
+
+/// Compilation.cs:1556 CheckConstraints: BYN2807 for each argument that does not conform to its
+/// parameter's `where` bounds; false when one does not.
 bool checkConstraints(ref Ctx c, for in List<TypeParamId> parameters, through in List<parser.WhereClause> clauses, from FileId file, as StructId owner, by in Map<string, Type>? typeMap, to in List<Type> args) {
     var satisfied = true
-    var argsMap = Map<string, Type>()
+    var typeArgs = Map<string, Type>()
     if (typeMap is { } tm) {
-        for (k, v) in tm { argsMap[k] = v }
+        for (k, v) in tm { typeArgs[k] = v }
     }
-    let types = TypeResolver { file: file, container: owner, typeArgs: move argsMap }
+    let types = TypeResolver { file: file, container: owner, typeArgs: move typeArgs }
     for k in 0..parameters.length {
-        let pId = parameters[k]
-        if pId < 0 || pId >= c.typeParams.length { continue }
-        if c.typeParams[pId].constraints.length == 0 { continue }
-        let pName = c.typeParams[pId].name
+        if c.typeParams[parameters[k]].constraints.length == 0 { continue }
+        let name = c.typeParams[parameters[k]].name
+        // The bound is resolved again with the arguments, so `IOrder<T>` is `IOrder<Point>` here.
+        // C# flattens the clauses' bounds (`SelectMany`), so the first failure ends this parameter.
+        var done = false
         for w in clauses {
-            let wName = t13Text(in c, from: file, at: w.param)
-            if wName == pName {
-                for b in w.bounds {
-                    switch b {
-                        case .namedType(let nt):
-                            let iType = resolveBound(ref c, through: in types, for: in nt.value)
-                            let iKind = kindOf(iType)
-                            if iKind == .interfaceType {
-                                let iId = InterfaceId(typeIndex(iType))
-                                if k < args.length {
-                                    let argType = args[k]
-                                    if !t13Conforms(in c, for: argType, to: iId) {
-                                        let missing = t13MissingMember(in c, for: argType, to: iId)
-                                        let argDisp = typeDisplay(ref c, by: argType)
-                                        let ifaceDisp = typeDisplay(ref c, by: iType)
-                                        let argKind = kindOf(argType)
-                                        var help = $"pass a struct that conforms to `{ifaceDisp}`; only structs conform to interfaces"
-                                        if argKind == .structType {
-                                            let sId = StructId(typeIndex(argType))
-                                            if sId >= 0 && sId < c.structs.length {
-                                                help = $"add `: {ifaceDisp}` to `{c.structs[sId].name}` and provide `{missing}`"
-                                            }
-                                        } else if argKind == .typeParam {
-                                            let tpId = TypeParamId(typeIndex(argType))
-                                            if tpId >= 0 && tpId < c.typeParams.length {
-                                                help = $"add `where {c.typeParams[tpId].name} : {ifaceDisp}` to the declaration of `{c.typeParams[tpId].name}`"
-                                            }
-                                        } else if argKind == .primitive {
-                                            help = $"pass a struct that conforms to `{ifaceDisp}`; primitives do not conform to interfaces"
-                                        }
-                                        report(ref c, for: .constraintNotSatisfied, from: file, at: nt.value.span, by: (argDisp, ifaceDisp, missing, "", ""), help: help)
-                                        satisfied = false
-                                        break
-                                    }
-                                }
-                            }
-                        default:
-                            break
-                    }
+            if done { break }
+            if t13Text(in c, from: file, at: w.param) != name { continue }
+            for bound in w.bounds {
+                if t13CheckBound(ref c, for: in bound, through: in types, by: args[k], from: file) {
+                    satisfied = false
+                    done = true
+                    break
                 }
             }
         }
@@ -266,93 +517,116 @@ bool checkConstraints(ref Ctx c, for in List<TypeParamId> parameters, through in
     return satisfied
 }
 
-// stub: T13 ports Compilation.cs:1502 InstantiateFunction
-FuncId instantiateFunction(ref Ctx c, for FuncId template, by in List<Type> args, from FileId site, at TextSpan span) {
-    if template < 0 || template >= c.functions.length { return -1 }
-    let modId = c.functions[template].module
-    if modId >= 0 && modId < c.modules.length {
-        for fn in c.modules[modId].allFunctions {
-            if c.functions[fn].template == template && t13ArgsEqual(in c.functions[fn].typeArgs, to: in args) {
-                return fn
+/// One bound of CheckConstraints; true when it reported BYN2807. C# bounds are `NamedType` (Nodes.cs:108).
+bool t13CheckBound(ref Ctx c, for in parser.TypeSyntax bound, through in TypeResolver types, by Type arg, from FileId file) {
+    switch bound {
+        case .namedType(let n):
+            let quiet = quietlyBegin(ref c)
+            let resolved = resolveBound(ref c, through: in types, for: in n.value)
+            quietlyEnd(ref c, to: quiet)
+            if kindOf(resolved) != .interfaceType { return false }
+            let i = InterfaceId(typeIndex(resolved))
+            if t13Conforms(in c, for: arg, to: i) { return false }
+            let missing = t13MissingMember(ref c, for: arg, to: i)
+            let shown = typeDisplay(ref c, by: resolved)
+            var help = $"pass a struct that conforms to `{shown}`; only structs conform to interfaces"
+            switch kindOf(arg) {
+                case .structType:
+                    help = $"add `: {shown}` to `{typeDisplay(ref c, by: arg)}` and provide `{missing}`"
+                case .typeParam:
+                    let p = c.typeParams[typeIndex(arg)].name
+                    help = $"add `where {p} : {shown}` to the declaration of `{p}`"
+                case .primitive:
+                    help = $"pass a struct that conforms to `{shown}`; primitives do not conform to interfaces"
+                default:
+                    help = $"pass a struct that conforms to `{shown}`; only structs conform to interfaces"
             }
-        }
+            report(ref c, for: .constraintNotSatisfied, from: file, at: n.value.span, by: (typeDisplay(ref c, by: arg), shown, missing, "", ""), help: help)
+            return true
+        default:
+            panic("internal error: a `where` bound that is not a named type")
     }
-    let owner = c.functions[template].owner
-    let subMap = t13Substitution(in c, as: owner, for: in c.functions[template].typeParams, by: in args)
-    var typeArgsCopy = List<Type>()
-    for a in args { typeArgsCopy.append(a) }
-    var fnSym = FunctionSymbol {
-        name: c.functions[template].name,
-        nameSpan: c.functions[template].nameSpan,
-        span: c.functions[template].span,
-        module: c.functions[template].module,
-        kind: c.functions[template].kind,
-        access: c.functions[template].access,
-        modifiers: c.functions[template].modifiers,
-        file: c.functions[template].file,
-        declIndex: c.functions[template].declIndex,
-        memberIndex: c.functions[template].memberIndex,
-        owner: c.functions[template].owner,
-        iface: c.functions[template].iface,
-        isAbstract: c.functions[template].isAbstract,
-        isStatic: c.functions[template].isStatic,
-        template: template,
-        typeArgs: move typeArgsCopy,
-        typeMap: move subMap,
-    }
-    let fnId = newFunction(ref c, by: move fnSym)
-    if modId >= 0 && modId < c.modules.length {
-        c.modules[modId].allFunctions.append(fnId)
-    }
-    let scope = instantiatingBegin(ref c, from: site, at: span)
-    let file = c.functions[fnId].file
-    let dIdx = c.functions[fnId].declIndex
-    var satisfied = true
-    if file >= 0 && file < c.files.length && dIdx >= 0 && dIdx < c.files[file].unit.members.length {
-        switch c.files[file].unit.members[dIdx] {
-            case .functionDecl(let fNode):
-                let fnOwner = c.functions[fnId].owner
-                let tParams = copyIds(in c.functions[template].typeParams)
-                let fnTypeMap = t13CopyMap(in c.functions[fnId].typeMap)
-                declareSignature(ref c, for: fnId, from: in fNode.value, by: file, owner: fnOwner)
-                satisfied = checkConstraints(ref c, for: in tParams, through: in fNode.value.where, from: file, as: fnOwner, by: in fnTypeMap, to: in args)
-            default:
-                break
-        }
-    }
-    instantiatingEnd(ref c, by: scope, instance: fnId)
-    if satisfied {
-        c.instantiationWork.append(Work {
-            kind: .bindFunction,
-            args: List<Type>(),
-            file: site,
-            span: span,
-            instance: fnId,
-        })
-    }
-    return fnId
 }
 
-// stub: T13 ports Compilation.cs:1520 InstantiateType
-Type instantiateType(ref Ctx c, for Type template, by in List<Type> args, from FileId site, at TextSpan span) {
-    let kind = kindOf(template)
-    let id = typeIndex(template)
-    switch kind {
+/// Compilation.cs:1585 CheckConstraintsAt: the constraint check of a type instance, now or once
+/// conformances are checked.
+void t13CheckConstraintsAt(ref Ctx c, from FileId site, at TextSpan span, for in List<TypeParamId> parameters, by Type instance) {
+    var any = false
+    for p in parameters {
+        if c.typeParams[p].constraints.length != 0 { any = true }
+    }
+    if !any { return }
+    let work = Work { kind: .constraint, subject: instance, args: List<Type>(), file: site, span: span }
+    if conformancesChecked(ref c) {
+        t13RunConstraint(ref c, for: in work)
+    } else {
+        c.pendingConstraints.append(move work)
+    }
+}
+
+/// Compilation.cs:1595 Conforms: a struct when it lists the interface; a type parameter when its own
+/// bounds include it (D5: primitives never do).
+bool t13Conforms(in Ctx c, for Type t, to InterfaceId i) {
+    if isError(t) { return true }
+    switch kindOf(t) {
         case .structType:
-            let s = StructId(id)
-            if s < 0 || s >= c.structs.length { return template }
-            let modId = c.structs[s].module
-            if modId >= 0 && modId < c.modules.length {
-                for existing in c.modules[modId].structs {
-                    if c.structs[existing].template == s && t13ArgsEqual(in c.structs[existing].typeArgs, to: in args) {
-                        return makeType(.structType, at: existing)
-                    }
-                }
+            for conf in c.structs[typeIndex(t)].conformances {
+                if c.conformances[conf].iface == i { return true }
             }
-            var subMap = t13Substitution(in c, as: -1, for: in c.structs[s].typeParams, by: in args)
-            var typeArgsCopy = List<Type>()
-            for a in args { typeArgsCopy.append(a) }
-            var sSym = StructSymbol {
+            return false
+        case .typeParam:
+            for constraint in c.typeParams[typeIndex(t)].constraints {
+                if constraint == i { return true }
+            }
+            return false
+        default:
+            return false
+    }
+}
+
+/// Compilation.cs:1604 MissingMember: the first abstract member of `i` that `t` does not have, for BYN2807.
+string t13MissingMember(ref Ctx c, for Type t, to InterfaceId i) {
+    var members = copyIds(in c.interfaces[i].methods)
+    for p in c.interfaces[i].properties { members.append(p) }
+    // A stable sort by where each member is declared (`OrderBy`).
+    for a in 1..members.length {
+        var j = a
+        while j > 0 && c.functions[members[j]].nameSpan.start < c.functions[members[j - 1]].nameSpan.start {
+            let x = members[j]
+            members[j] = members[j - 1]
+            members[j - 1] = x
+            j -= 1
+        }
+    }
+    var abstracts = List<FuncId>()
+    for m in members {
+        if c.functions[m].isAbstract { abstracts.append(m) }
+    }
+    for m in abstracts {
+        let name = c.functions[m].name
+        if kindOf(t) != .structType { return name }
+        let s = StructId(typeIndex(t))
+        if findProperty(ref c, by: s, for: name) == -1 && findMethods(ref c, by: s, for: name).length == 0 { return name }
+    }
+    if abstracts.length > 0 { return c.functions[abstracts[0]].name }
+    if members.length > 0 { return c.functions[members[0]].name }
+    return $": {typeDisplay(ref c, by: interfaceTypeOf(i))}"
+}
+
+/// Compilation.cs:1615 InstantiateType: the instantiation of a generic struct, union or interface at
+/// `args`, with its members.
+Type instantiateType(ref Ctx c, for Type template, by in List<Type> args, from FileId site, at TextSpan span) {
+    let key = t13Key("t", for: template, by: in args)
+    if c.instanceKeys.contains(key) { return Type(c.instanceKeys[key]) }
+    // As for functions: a type named inside an instance was checked in its template.
+    let check = c.instantiating == 0
+    var typeArgs = List<Type>()
+    for a in args { typeArgs.append(a) }
+    switch kindOf(template) {
+        case .structType:
+            let s = StructId(typeIndex(template))
+            let typeMap = t13Substitution(in c, from: null, for: in c.structs[s].typeParams, by: in args)
+            let id = newStruct(ref c, by: StructSymbol {
                 name: c.structs[s].name,
                 nameSpan: c.structs[s].nameSpan,
                 span: c.structs[s].span,
@@ -363,83 +637,42 @@ Type instantiateType(ref Ctx c, for Type template, by in List<Type> args, from F
                 access: c.structs[s].access,
                 modifiers: c.structs[s].modifiers,
                 template: s,
-                typeArgs: move typeArgsCopy,
-                typeMap: move subMap,
+                typeArgs: move typeArgs,
+                typeMap: move typeMap,
+            })
+            let instance = structTypeOf(id)
+            c.instanceKeys[key] = instance
+            let parameters = copyIds(in c.structs[s].typeParams)
+            if check { t13CheckConstraintsAt(ref c, from: site, at: span, for: in parameters, by: instance) }
+            let members = instantiatingBegin(ref c, from: site, at: span)
+            declareMembers(ref c, for: id)
+            instantiatingEnd(ref c, by: members)
+            if conformancesChecked(ref c) {
+                let conforming = instantiatingBegin(ref c, from: site, at: span)
+                conform(ref c, for: id)
+                instantiatingEnd(ref c, by: conforming)
             }
-            let instId = newStruct(ref c, by: move sSym)
-            if modId >= 0 && modId < c.modules.length {
-                c.modules[modId].structs.append(instId)
-            }
-            let file = c.structs[instId].file
-            let dIdx = c.structs[instId].declIndex
-            if file >= 0 && file < c.files.length && dIdx >= 0 && dIdx < c.files[file].unit.members.length {
-                switch c.files[file].unit.members[dIdx] {
-                    case .structDecl(let sNode):
-                        let tParams = copyIds(in c.structs[s].typeParams)
-                        let sTypeMap = t13CopyMap(in c.structs[instId].typeMap)
-                        let _ = checkConstraints(ref c, for: in tParams, through: in sNode.value.where, from: file, as: s, by: in sTypeMap, to: in args)
-                    default:
-                        break
-                }
-            }
-            let scope = instantiatingBegin(ref c, from: site, at: span)
-            declareMembers(ref c, for: instId)
-            conform(ref c, for: instId)
-            instantiatingEnd(ref c, by: scope)
-            let fields = copyIds(in c.structs[instId].fields)
+            if structIsGeneric(ref c, by: id) { return instance }
+            let fields = copyIds(in c.structs[id].fields)
             for f in fields {
                 if c.fields[f].hasDefault {
-                    c.instantiationWork.append(Work {
-                        kind: .fieldDefault,
-                        subject: makeType(.structType, at: instId),
-                        args: List<Type>(),
-                        file: site,
-                        span: span,
-                        memberIndex: f,
-                    })
+                    c.instantiationWork.append(Work { kind: .fieldDefault, subject: instance, args: List<Type>(), file: site, span: span, memberIndex: f })
                 }
             }
-            let methods = copyIds(in c.structs[instId].methods)
-            for m in methods {
-                if c.functions[m].template == -1 {
-                    c.instantiationWork.append(Work {
-                        kind: .bindFunction,
-                        args: List<Type>(),
-                        file: site,
-                        span: span,
-                        instance: m,
-                    })
+            // Cloned defaults (with a Template) are queued by Conform.
+            var fns = copyIds(in c.structs[id].methods)
+            for p in c.structs[id].properties { fns.append(c.properties[p].getter) }
+            for k in c.structs[id].constructors { fns.append(k) }
+            for fn in fns {
+                if c.functions[fn].template == -1 {
+                    c.instantiationWork.append(Work { kind: .bindFunction, args: List<Type>(), file: site, span: span, memberIndex: fn })
                 }
             }
-            let ctors = copyIds(in c.structs[instId].constructors)
-            for ctor in ctors {
-                if c.functions[ctor].template == -1 {
-                    c.instantiationWork.append(Work {
-                        kind: .bindFunction,
-                        args: List<Type>(),
-                        file: site,
-                        span: span,
-                        instance: ctor,
-                    })
-                }
-            }
-            return makeType(.structType, at: instId)
-
+            return instance
         case .unionType:
-            let u = UnionId(id)
-            if u < 0 || u >= c.unions.length { return template }
-            let modId = c.unions[u].module
-            if modId >= 0 && modId < c.modules.length {
-                for existing in c.modules[modId].unions {
-                    if c.unions[existing].template == u && t13ArgsEqual(in c.unions[existing].typeArgs, to: in args) {
-                        return makeType(.unionType, at: existing)
-                    }
-                }
-            }
-            var subMap = t13Substitution(in c, as: -1, for: in c.unions[u].typeParams, by: in args)
-            var typeArgsCopy = List<Type>()
-            for a in args { typeArgsCopy.append(a) }
-            var uSym = UnionSymbol {
+            let u = UnionId(typeIndex(template))
+            let typeMap = t13Substitution(in c, from: null, for: in c.unions[u].typeParams, by: in args)
+            let id = newUnion(ref c, by: UnionSymbol {
                 name: c.unions[u].name,
                 nameSpan: c.unions[u].nameSpan,
                 span: c.unions[u].span,
@@ -450,45 +683,21 @@ Type instantiateType(ref Ctx c, for Type template, by in List<Type> args, from F
                 access: c.unions[u].access,
                 modifiers: c.unions[u].modifiers,
                 template: u,
-                typeArgs: move typeArgsCopy,
-                typeMap: move subMap,
-            }
-            let instId = newUnion(ref c, by: move uSym)
-            if modId >= 0 && modId < c.modules.length {
-                c.modules[modId].unions.append(instId)
-            }
-            let file = c.unions[instId].file
-            let dIdx = c.unions[instId].declIndex
-            if file >= 0 && file < c.files.length && dIdx >= 0 && dIdx < c.files[file].unit.members.length {
-                switch c.files[file].unit.members[dIdx] {
-                    case .unionDecl(let uNode):
-                        let tParams = copyIds(in c.unions[u].typeParams)
-                        let uTypeMap = t13CopyMap(in c.unions[instId].typeMap)
-                        let _ = checkConstraints(ref c, for: in tParams, through: in uNode.value.where, from: file, as: -1, by: in uTypeMap, to: in args)
-                    default:
-                        break
-                }
-            }
-            let scope = instantiatingBegin(ref c, from: site, at: span)
-            declareUnionVariants(ref c, for: instId)
-            instantiatingEnd(ref c, by: scope)
-            return makeType(.unionType, at: instId)
-
+                typeArgs: move typeArgs,
+                typeMap: move typeMap,
+            })
+            let instance = unionTypeOf(id)
+            c.instanceKeys[key] = instance
+            let parameters = copyIds(in c.unions[u].typeParams)
+            if check { t13CheckConstraintsAt(ref c, from: site, at: span, for: in parameters, by: instance) }
+            let variants = instantiatingBegin(ref c, from: site, at: span)
+            declareUnionVariants(ref c, for: id)
+            instantiatingEnd(ref c, by: variants)
+            return instance
         case .interfaceType:
-            let i = InterfaceId(id)
-            if i < 0 || i >= c.interfaces.length { return template }
-            let modId = c.interfaces[i].module
-            if modId >= 0 && modId < c.modules.length {
-                for existing in c.modules[modId].interfaces {
-                    if c.interfaces[existing].template == i && t13ArgsEqual(in c.interfaces[existing].typeArgs, to: in args) {
-                        return makeType(.interfaceType, at: existing)
-                    }
-                }
-            }
-            var subMap = t13Substitution(in c, as: -1, for: in c.interfaces[i].typeParams, by: in args)
-            var typeArgsCopy = List<Type>()
-            for a in args { typeArgsCopy.append(a) }
-            var iSym = InterfaceSymbol {
+            let i = InterfaceId(typeIndex(template))
+            let typeMap = t13Substitution(in c, from: null, for: in c.interfaces[i].typeParams, by: in args)
+            let id = newInterface(ref c, by: InterfaceSymbol {
                 name: c.interfaces[i].name,
                 nameSpan: c.interfaces[i].nameSpan,
                 span: c.interfaces[i].span,
@@ -499,244 +708,78 @@ Type instantiateType(ref Ctx c, for Type template, by in List<Type> args, from F
                 access: c.interfaces[i].access,
                 modifiers: c.interfaces[i].modifiers,
                 template: i,
-                typeArgs: move typeArgsCopy,
-                typeMap: move subMap,
+                typeArgs: move typeArgs,
+                typeMap: move typeMap,
+            })
+            let instance = interfaceTypeOf(id)
+            c.instanceKeys[key] = instance
+            let parameters = copyIds(in c.interfaces[i].typeParams)
+            if check { t13CheckConstraintsAt(ref c, from: site, at: span, for: in parameters, by: instance) }
+            // A `where` bound can name an instance before the template's members are declared.
+            if c.interfaceMembersDeclared {
+                let declaring = instantiatingBegin(ref c, from: site, at: span)
+                declareInterfaceMembers(ref c, for: id)
+                instantiatingEnd(ref c, by: declaring)
+            } else {
+                c.pendingInterfaces.append(Work { kind: .interfaceMembers, subject: instance, args: List<Type>(), file: site, span: span })
             }
-            let instId = newInterface(ref c, by: move iSym)
-            if modId >= 0 && modId < c.modules.length {
-                c.modules[modId].interfaces.append(instId)
-            }
-            let file = c.interfaces[instId].file
-            let dIdx = c.interfaces[instId].declIndex
-            if file >= 0 && file < c.files.length && dIdx >= 0 && dIdx < c.files[file].unit.members.length {
-                switch c.files[file].unit.members[dIdx] {
-                    case .interfaceDecl(let iNode):
-                        let tParams = copyIds(in c.interfaces[i].typeParams)
-                        let iTypeMap = t13CopyMap(in c.interfaces[instId].typeMap)
-                        let _ = checkConstraints(ref c, for: in tParams, through: in iNode.value.where, from: file, as: -1, by: in iTypeMap, to: in args)
-                    default:
-                        break
-                }
-            }
-            let scope = instantiatingBegin(ref c, from: site, at: span)
-            declareInterfaceMembers(ref c, for: instId)
-            instantiatingEnd(ref c, by: scope)
-            return makeType(.interfaceType, at: instId)
-
+            return instance
         default:
-            return template
+            panic($"`{typeDisplay(ref c, by: template)}` is not generic")
     }
 }
 
-// stub: T13 ports Compilation.cs:1890 InvokeSymbol
-FuncId invokeSymbol(ref Ctx c, for Type type) {
-    if c.invokeSymbols.contains(type) {
-        return FuncId(c.invokeSymbols[type])
-    }
-    let entryMod = c.modules.length > 0 ? c.modules.length - 1 : 0
-    let fIdx = typeIndex(type)
-    if fIdx < 0 || fIdx >= c.functionTypes.length { return -1 }
-    let paramCount = c.functionTypes[fIdx].parameters.length
-    var params = List<LocalId>()
-    for i in 0..paramCount {
-        let pSym = LocalSymbol {
-            name: $"_{i}",
-            type: c.functionTypes[fIdx].parameters[i],
-            ordinal: i,
-        }
-        c.locals.append(pSym)
-        params.append(c.locals.length - 1)
-    }
-    let errSets = copyIds(in c.functionTypes[fIdx].errorSets)
-    let retType = c.functionTypes[fIdx].ret
-    let hasFails = errSets.length > 0
-    var fnSym = FunctionSymbol {
-        name: "invoke",
-        module: entryMod,
-        kind: .invoke,
-        returnType: retType,
-        hasFails: hasFails,
-        parameters: move params,
-        errorSets: move errSets,
-    }
-    let fnId = newFunction(ref c, by: move fnSym)
-    c.invokeSymbols[type] = fnId
-    return fnId
-}
-
-// stub: T13 ports Compilation.cs:1364 BindAll
-void bindAll(ref Ctx c) {
-    checkConformances(ref c)
-    for m in 0..c.modules.length {
-        let consts = copyIds(in c.modules[m].allConstants)
-        for k in consts {
-            bindConstant(ref c, for: k)
-        }
-    }
-    for m in 0..c.modules.length {
-        let structs = copyIds(in c.modules[m].structs)
-        for s in structs {
-            if s >= 0 && s < c.structs.length && c.structs[s].template == -1 {
-                let fields = copyIds(in c.structs[s].fields)
-                for f in fields {
-                    if f >= 0 && f < c.fields.length && c.fields[f].hasDefault {
-                        let fFile = c.fields[f].file
-                        let fSpan = c.fields[f].span
-                        let _ = fieldDefault(ref c, for: s, by: f, from: fFile, at: fSpan)
-                    }
-                }
-            }
-        }
-    }
-    for m in 0..c.modules.length {
-        let fns = copyIds(in c.modules[m].allFunctions)
-        for fn in fns {
-            if fn >= 0 && fn < c.functions.length && c.functions[fn].template == -1 {
-                bindFunction(ref c, for: fn)
-            }
-        }
-    }
-    while c.instantiationWork.length > 0 {
-        let kind = c.instantiationWork[0].kind
-        let file = c.instantiationWork[0].file
-        let span = c.instantiationWork[0].span
-        let instance = c.instantiationWork[0].instance
-        let memberIndex = c.instantiationWork[0].memberIndex
-        let subject = c.instantiationWork[0].subject
-        c.instantiationWork.remove(at: 0)
-        let scope = instantiatingBegin(ref c, from: file, at: span)
-        switch kind {
-            case .bindFunction:
-                if instance >= 0 {
-                    bindFunction(ref c, for: instance)
-                }
-            case .fieldDefault:
-                if memberIndex >= 0 {
-                    let sId = StructId(typeIndex(subject))
-                    let _ = fieldDefault(ref c, for: sId, by: FieldId(memberIndex), from: file, at: span)
-                }
-            default:
-                break
-        }
-        instantiatingEnd(ref c, by: scope, instance: instance)
-    }
-    inferErrorSets(ref c)
-    checkMutation(ref c)
-    checkRequires(ref c)
-}
-
-// stub: T13 ports Compilation.cs:1716 BindFunction
-void bindFunction(ref Ctx c, for FuncId fn) {
-    if fn < 0 || fn >= c.functions.length { return }
-    let file = c.functions[fn].file
-    let dIdx = c.functions[fn].declIndex
-    if file >= 0 && file < c.files.length && dIdx >= 0 && dIdx < c.files[file].unit.members.length {
-        switch c.files[file].unit.members[dIdx] {
-            case .functionDecl(let fNode):
-                var b = t13NewBinder(file, fn, c.functions[fn].owner)
-                bindFunctionBody(ref b, through: ref c, for: in fNode.value)
-                if c.functions[fn].body == -1 {
-                    c.functions[fn].body = 0
-                }
-            default:
-                break
-        }
-    }
-}
-
-// stub: T13 ports Compilation.cs:1801 InferErrorSets
-void inferErrorSets(ref Ctx c) {
-    var inferred = List<FuncId>()
-    for m in 0..c.modules.length {
-        for fn in c.modules[m].allFunctions {
-            if fn >= 0 && fn < c.functions.length {
-                if c.functions[fn].kind != .lambda && (c.functions[fn].infersErrors || c.functions[fn].kind == .main || c.functions[fn].kind == .testKeyword) {
-                    inferred.append(fn)
-                }
-            }
-        }
-    }
-    var changed = true
-    while changed {
-        changed = false
-        for fn in inferred {
-            if fn >= 0 && fn < c.functions.length {
-                if (templateOf(ref c, for: fn) is { } tId) {
-                    if tId >= 0 && tId < c.functions.length {
-                        let tSets = copyIds(in c.functions[tId].errorSets)
-                        for set in tSets {
-                            if !t13ContainsId(in c.functions[fn].errorSets, for: set) {
-                                c.functions[fn].errorSets.append(set)
-                                changed = true
-                            }
-                        }
-                    }
-                    continue
-                }
-                let props = propagated(ref c, for: c.functions[fn].body)
-                for set in props {
-                    if !t13ContainsId(in c.functions[fn].errorSets, for: set) {
-                        c.functions[fn].errorSets.append(set)
-                        changed = true
-                    }
-                }
-            }
-        }
-    }
-    for fn in inferred {
-        if fn >= 0 && fn < c.functions.length {
-            if c.functions[fn].kind == .main || c.functions[fn].kind == .testKeyword {
-                if c.functions[fn].errorSets.length > 0 {
-                    c.functions[fn].hasFails = true
-                }
-            }
-        }
-    }
-}
-
-// stub: T13 ports Compilation.cs:1843 CheckMutation
-void checkMutation(ref Ctx c) {
-}
-
-// stub: T13 ports Compilation.cs:1865 CheckRequires
-void checkRequires(ref Ctx c) {
-}
-
-// stub: T13 ports Compilation.cs:1670 FieldDefault
+/// Compilation.cs:1670 FieldDefault: an instance's default is bound on first use, as a literal can
+/// need it before the worklist drains.
 BExpr fieldDefault(ref Ctx c, for StructId s, by FieldId f, from FileId site, at TextSpan span) {
-    if f < 0 || f >= c.fields.length || s < 0 || s >= c.structs.length { return -1 }
-    if c.fields[f].defaultValue == -1 && c.fields[f].hasDefault && c.structs[s].template >= 0 {
+    if c.fields[f].defaultValue == -1 && c.fields[f].hasDefault && c.structs[s].template != -1 {
         let scope = instantiatingBegin(ref c, from: site, at: span)
-        let file = c.structs[s].file
-        var b = t13NewBinder(file, -1, s)
-        let defVal = bindFieldDefault(ref b, through: ref c, for: f)
-        if defVal >= 0 {
-            c.fields[f].defaultValue = defVal
+        if c.fields[f].defaultValue == -1 {
+            var b = t13NewBinder(c.structs[s].file, owner: s)
+            c.fields[f].defaultValue = bindFieldDefault(ref b, through: ref c, for: f)
         }
         instantiatingEnd(ref c, by: scope)
     }
     return c.fields[f].defaultValue
 }
 
-// stub: T13 ports Compilation.cs:1912 ErrorSetsOf
-List<ErrorSetId> errorSetsOf(ref Ctx c, for FuncId fn) {
-    if fn < 0 || fn >= c.functions.length { return List<ErrorSetId>() }
-    if c.functions[fn].infersErrors || c.functions[fn].kind == .main || c.functions[fn].kind == .testKeyword {
-        return List<ErrorSetId>()
-    }
-    return copyIds(in c.functions[fn].errorSets)
-}
-
-// stub: T13 ports Compilation.cs:1796 TemplateOf
+/// Compilation.cs:1678 TemplateOf: itself for a generic function's instance, its twin for a member of
+/// a generic struct's instance. A `Decl` is `(file, declIndex, memberIndex)`.
 FuncId? templateOf(ref Ctx c, for FuncId f) {
-    if f < 0 || f >= c.functions.length { return null }
-    let t = c.functions[f].template
-    return t >= 0 ? t : null
+    if c.functions[f].template != -1 { return c.functions[f].template }
+    let owner = c.functions[f].owner
+    if owner == -1 || c.structs[owner].template == -1 { return null }
+    if c.functions[f].declIndex == -1 { return null }
+    for m in c.structs[c.structs[owner].template].methods {
+        if c.functions[m].file == c.functions[f].file && c.functions[m].declIndex == c.functions[f].declIndex && c.functions[m].memberIndex == c.functions[f].memberIndex {
+            return m
+        }
+    }
+    return null
 }
 
-// stub: T13 ports Compilation.cs:1753 BindConstant
+/// Compilation.cs:1682 AnalyzeInstance: flow and region analysis of an instantiation; what two
+/// instantiations both find is reported once.
+void t13AnalyzeInstance(ref Ctx c, for FuncId fn) {
+    let outer = pushBag(ref c)
+    let bag = c.sink
+    analyzeFlow(ref c, for: fn)
+    analyzeRegions(ref c, for: fn)
+    lintSpanParameter(ref c, for: fn)
+    popBag(ref c, to: outer)
+    let count = c.bags[bag].items.length
+    for i in 0..count {
+        let d = t13CloneDiag(in c.bags[bag].items[i])
+        let key = $"{d.code}|{d.file}|{d.span.start}|{d.span.length}"
+        if !c.instanceAnalysisSeen.contains(key) {
+            c.instanceAnalysisSeen[key] = 1
+            c.diagnostics.append(move d)
+        }
+    }
+}
+
+/// Compilation.cs:1697 BindConstant.
 void bindConstant(ref Ctx c, for ConstId k) {
-    if k < 0 || k >= c.consts.length { return }
     if c.consts[k].state == 2 { return }
     if c.consts[k].state == 1 {
         report(ref c, for: .circularConstant, from: c.consts[k].file, at: c.consts[k].nameSpan, by: (c.consts[k].name, "", "", "", ""))
@@ -750,26 +793,433 @@ void bindConstant(ref Ctx c, for ConstId k) {
     c.consts[k].state = 2
 }
 
-// stub: T13 ports Compilation.cs:1901 ParameterDefault
-BExpr? parameterDefault(ref Ctx c, for FuncId f, by LocalId p) {
-    if p < 0 || p >= c.locals.length { return null }
-    if c.locals[p].defaultValue >= 0 {
-        return c.locals[p].defaultValue
+/// `fn.Enclosing` to the outermost function (`Outermost` in BindFunction).
+FuncId t13Outermost(in Ctx c, for FuncId f) {
+    var o = f
+    while (t13Handle(c.functions[o].enclosing) is { } e) { o = e }
+    return o
+}
+
+/// Compilation.cs:1716 BindFunction: binds a body; when an untyped `var` literal in it meets another
+/// integer type first (spec R4), binds it again with that type, discarding the first pass.
+void bindFunction(ref Ctx c, for FuncId fn) {
+    // `MutationChecks` has no home yet (Q582), so it is not rolled back here.
+    let requireCount = c.requiresChecks.length
+    let locals = c.functions[fn].locals.length
+    let outer = c.firstPass
+    c.bags.append(DiagBag { items: List<Diag>(), previous: -1 })
+    c.firstPasses.append(FirstPass { instances: List<FuncId>(), bag: c.bags.length - 1, errors: List<Diag>() })
+    let pass = c.firstPasses.length - 1
+    c.firstPass = pass
+    let seeds = t13BindBody(ref c, for: fn, by: null)
+    c.firstPass = outer
+    let instances = copyIds(in c.firstPasses[pass].instances)
+    if seeds is null {
+        // `outer?.Instances.AddRange(pass.Instances)`
+        if (t13FirstPass(in c) is { } o) {
+            for i in instances { c.firstPasses[o].instances.append(i) }
+        }
+        let bag = c.firstPasses[pass].bag
+        var held = List<Diag>()
+        for d in c.bags[bag].items { held.append(t13CloneDiag(in d)) }
+        reportHeld(ref c, for: in held)
+        var errors = List<Diag>()
+        for d in c.firstPasses[pass].errors { errors.append(t13CloneDiag(in d)) }
+        for d in errors { c.instantiationErrors.append(t13CloneDiag(in d)) }
+        return
     }
-    if f < 0 || f >= c.functions.length { return null }
-    let fId = c.functions[f].file
-    var b = t13NewBinder(fId, f, c.functions[f].owner)
-    let d = bindParameterDefault(ref b, through: ref c, for: p)
-    if d >= 0 {
-        c.locals[p].defaultValue = d
-        return d
+    // The functions the first pass instantiated go with it, and so do their diagnostics.
+    for instance in instances {
+        let key = t13Key("f", for: c.functions[instance].template, by: in c.functions[instance].typeArgs)
+        let _ = c.instanceKeys.remove(key)
+        let module = c.functions[instance].module
+        if (t13Find(in c.modules[module].allFunctions, for: instance) is { } at) {
+            c.modules[module].allFunctions.remove(at: at)
+        }
+    }
+    // `w.Instance is null || !pass.Instances.Contains(w.Instance)`: an instance is never -1.
+    var work = List<Work>()
+    for w in c.instantiationWork {
+        if !t13Contains(in instances, for: w.instance) {
+            work.append(Work { kind: w.kind, subject: w.subject, args: copyIds(in w.args), instance: w.instance, file: w.file, span: w.span, declIndex: w.declIndex, memberIndex: w.memberIndex })
+        }
+    }
+    c.instantiationWork = move work
+    var checks = List<RequiresCheck>()
+    for i in 0..requireCount {
+        var spans = List<TextSpan>()
+        for x in c.requiresChecks[i].callArgs { spans.append(x) }
+        checks.append(RequiresCheck { source: c.requiresChecks[i].source, callSpan: c.requiresChecks[i].callSpan, callArgs: move spans, callee: c.requiresChecks[i].callee, arguments: copyIds(in c.requiresChecks[i].arguments) })
+    }
+    c.requiresChecks = move checks
+    var kept = List<LocalId>()
+    for i in 0..locals { kept.append(c.functions[fn].locals[i]) }
+    c.functions[fn].locals = move kept
+    // The lambdas it lifted, in the body or in those instances, are lifted again by the second pass.
+    var owners = copyIds(in instances)
+    owners.append(fn)
+    for m in 0..c.modules.length {
+        var lifted = List<FuncId>()
+        for f in c.modules[m].allFunctions {
+            switch c.functions[f].kind {
+                case .lambda:
+                    if !t13Contains(in owners, for: t13Outermost(in c, for: f)) { lifted.append(f) }
+                default:
+                    lifted.append(f)
+            }
+        }
+        c.modules[m].allFunctions = move lifted
+    }
+    let _ = t13BindBody(ref c, for: fn, by: seeds)
+}
+
+void t13BindMain(ref Binder b, through ref Ctx c) {
+    t15CaptureTypes(ref b, through: ref c)
+    var bound = List<BStmt>()
+    var blockSpan = TextSpan { start: 0, length: 0 }
+    var first = true
+    var mainStatements = List<SyntaxRef>()
+    for sr in c.mainStatements { mainStatements.append(sr) }
+    for sr in mainStatements {
+        switch c.files[sr.file].unit.members[sr.declIndex] {
+            case .globalStatement(let g):
+                if first {
+                    b.firstStatement = t15StmtSpan(in g.value.statement).start
+                    blockSpan = g.value.span
+                    first = false
+                }
+                bound.append(bindStatement(ref b, through: ref c, for: in g.value.statement))
+            default:
+                break
+        }
+    }
+    c.functions[b.fn].infersErrors = true
+    c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: blockSpan, statements: move bound })
+}
+
+void t13BindTest(ref Binder b, through ref Ctx c, for in parser.TestDecl d, by TestBody tb) {
+    if !tb.hasValues {
+        bindTest(ref b, through: ref c, for: in d, by: in List<parser.Expr>())
+        return
+    }
+    t15CaptureTypes(ref b, through: ref c)
+    c.functions[b.fn].infersErrors = true
+    switch d.body {
+        case .blockStmt(let body):
+            var statements = List<BStmt>()
+            let f = tb.values.file
+            let declIdx = tb.values.declIndex
+            let aIdx = tb.values.memberIndex
+            let argIdx = tb.values.itemIndex
+            switch c.files[f].unit.members[declIdx] {
+                case .testDecl(let td):
+                    switch td.value.attributes[aIdx].args[argIdx].value {
+                        case .tupleExpr(let tup):
+                            for i in 0..d.params.length {
+                                let type = resolveType(ref b, through: ref c, for: in d.params[i].type)
+                                let value = bindConverted(ref b, through: ref c, for: in tup.value.elements[i].value, to: type)
+                                let local = declareLocal(ref b, through: ref c, at: d.params[i].name, as: type, for: .letKeyword)
+                                statements.append(addLocalDecl(ref c, from: BLocalDecl { span: d.params[i].span, local: local, initializer: value }))
+                            }
+                        default:
+                            if d.params.length > 0 {
+                                let type = resolveType(ref b, through: ref c, for: in d.params[0].type)
+                                let value = bindConverted(ref b, through: ref c, for: in td.value.attributes[aIdx].args[argIdx].value, to: type)
+                                let local = declareLocal(ref b, through: ref c, at: d.params[0].name, as: type, for: .letKeyword)
+                                statements.append(addLocalDecl(ref c, from: BLocalDecl { span: d.params[0].span, local: local, initializer: value }))
+                            }
+                    }
+                default:
+                    break
+            }
+            statements.append(bindBlock(ref b, through: ref c, for: in body.value))
+            c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: body.value.span, statements: move statements })
+        default:
+            break
+    }
+}
+
+/// Compilation.cs:1765 BindBody: a first pass (no `seeds`) returns the seeds a second pass needs, if
+/// any; `release`'s empty list is C#'s null (Q582).
+List<(LocalId, Type)>? t13BindBody(ref Ctx c, for FuncId fn, by in List<(LocalId, Type)>? seeds) {
+    let file = c.functions[fn].file
+    var owner = c.functions[fn].owner
+    var d = c.functions[fn].declIndex
+    var m = c.functions[fn].memberIndex
+    switch c.functions[fn].kind {
+        case .function or .method:
+            // `when fn.Decl is { } decl`
+            if d == -1 { return null }
+        case .getter:
+            if (t13Handle(c.functions[fn].iface) is { } _) {
+                // `_interfaceGetters[fn]`: the getter's own member of the interface.
+                owner = -1
+            } else {
+                // `fn.Owner.Properties.First(p => p.Getter == fn)`, then its `Decl`.
+                var found = false
+                for p in c.structs[owner].properties {
+                    if !found && c.properties[p].getter == fn {
+                        d = c.properties[p].declIndex
+                        m = c.properties[p].memberIndex
+                        found = true
+                    }
+                }
+                if !found { panic("internal error: a getter without its property") }
+            }
+        case .constructor:
+            // `_constructorBodies[fn]`: the constructor's own member of the struct.
+            owner = c.functions[fn].owner
+        case .testKeyword:
+            owner = -1
+        case .main:
+            if c.mainStatementsFn != fn { return null }
+            owner = -1
+        default:
+            return null
+    }
+    var b = t13NewBinder(file, fn: fn, owner: owner)
+    if (seeds is { } s) {
+        for x in s { b.seeds.append(x) }
+    } else {
+        let _ = hold(ref b, through: ref c)
+    }
+    if c.functions[fn].kind == .main {
+        t13BindMain(ref b, through: ref c)
+    } else if c.functions[fn].kind == .testKeyword && c.testBodies.contains(fn) {
+        let tb = c.testBodies[fn]
+        switch c.files[tb.decl.file].unit.members[tb.decl.declIndex] {
+            case .testDecl(let n):
+                t13BindTest(ref b, through: ref c, for: in n.value, by: tb)
+            default:
+                break
+        }
+    } else {
+        switch c.files[file].unit.members[d] {
+            case .functionDecl(let n):
+                bindFunctionBody(ref b, through: ref c, for: in n.value)
+            case .testDecl(let n):
+                bindTest(ref b, through: ref c, for: in n.value, by: in List<parser.Expr>())
+            case .structDecl(let n):
+                switch n.value.members[m] {
+                    case .functionDecl(let f):
+                        bindFunctionBody(ref b, through: ref c, for: in f.value)
+                    case .propertyDecl(let p):
+                        bindGetter(ref b, through: ref c, for: in p.value)
+                    case .constructorDecl(let k):
+                        bindConstructor(ref b, through: ref c, for: in k.value)
+                    default:
+                        panic("internal error: a struct member without a body")
+                }
+            case .interfaceDecl(let n):
+                switch n.value.members[m] {
+                    case .functionDecl(let f):
+                        bindFunctionBody(ref b, through: ref c, for: in f.value)
+                    case .propertyDecl(let p):
+                        bindGetter(ref b, through: ref c, for: in p.value)
+                    default:
+                        panic("internal error: an interface member without a body")
+                }
+            default:
+                panic("internal error: a function without a declaration")
+        }
+    }
+    if seeds is null {
+        let next = release(ref b, through: ref c)
+        // mutation-exempt: Q582
+        if next.length > 0 { return next }
     }
     return null
 }
 
-// stub: T13 ports Compilation.cs:1919 ReportHeld
+/// Compilation.cs:1801 InferErrorSets: the union of what each body propagates, to a fixed point.
+void inferErrorSets(ref Ctx c) {
+    // A lambda's sets are its function type's, never inferred.
+    var inferred = List<FuncId>()
+    for m in 0..c.modules.length {
+        for f in c.modules[m].allFunctions {
+            let kind = c.functions[f].kind
+            if kind != .lambda && (c.functions[f].infersErrors || kind == .main || kind == .testKeyword) {
+                inferred.append(f)
+            }
+        }
+    }
+    // `changed`, as the number of sets added in a round.
+    var changes: i64 = 1
+    while changes > 0 {
+        changes = 0
+        for fn in inferred {
+            let before = c.functions[fn].errorSets.length
+            if functionIsInstance(ref c, by: fn) {
+                if (templateOf(ref c, for: fn) is { } template) {
+                    let sets = copyIds(in c.functions[template].errorSets)
+                    for set in sets {
+                        if !t13Contains(in c.functions[fn].errorSets, for: set) {
+                            c.functions[fn].errorSets.append(set)
+                        }
+                    }
+                    changes += c.functions[fn].errorSets.length - before
+                    continue
+                }
+            }
+            if c.functions[fn].body == -1 { continue }
+            let sets = propagated(ref c, for: c.functions[fn].body)
+            for set in sets {
+                if t13Contains(in c.functions[fn].errorSets, for: set) { continue }
+                c.functions[fn].errorSets.append(set)
+            }
+            changes += c.functions[fn].errorSets.length - before
+        }
+    }
+    for fn in inferred {
+        let kind = c.functions[fn].kind
+        if (kind == .main || kind == .testKeyword) && c.functions[fn].errorSets.length > 0 {
+            c.functions[fn].hasFails = true
+        }
+    }
+}
+
+/// The index of the first `x` in `xs`, or null.
+i64? t13Find(in List<i64> xs, for i64 x) {
+    for i in 0..xs.length {
+        if xs[i] == x { return i }
+    }
+    return null
+}
+
+bool t13Contains(in List<i64> xs, for i64 x) => t13Find(in xs, for: x) is not null
+
+// stub: T13 ports Compilation.cs:1847 CheckMutation (blocked: Q582)
+void checkMutation(ref Ctx c) {}
+
+/// Compilation.cs:1862 CheckRequires: a `requires` clause that the call's constant arguments make
+/// false is BYN2321 at the argument.
+void checkRequires(ref Ctx c) {
+    for i in 0..c.requiresChecks.length {
+        let callee = c.requiresChecks[i].callee
+        let source = c.requiresChecks[i].source
+        let parameters = copyIds(in c.functions[callee].parameters)
+        let arguments = copyIds(in c.requiresChecks[i].arguments)
+        var values = Map<LocalId, Constant>()
+        for a in 0..arguments.length {
+            if (exprConstant(in c, for: arguments[a]) is { } k) { values[parameters[a]] = k }
+        }
+        let clauses = copyIds(in c.functions[callee].requirements)
+        for clause in clauses {
+            let fields = Map<FieldId, Constant>()
+            let result = evaluate(ref c, for: clause, from: in values, by: in fields)
+            var isFalse = false
+            if (result is { } r) { isFalse = r.kind == .flag && !r.flag }
+            if !isFalse { continue }
+            var read = List<LocalId>()
+            for n in descendants(in c, for: clause) {
+                if boundKind(n) == .local { read.append(c.bLocals[boundIndex(n)].local) }
+            }
+            var at: LocalId = -1
+            for p in parameters {
+                if !t13Contains(in read, for: p) || !values.contains(p) { continue }
+                let written = nodeSpan(in c, for: arguments[c.locals[p].ordinal])
+                var inCall = false
+                for s in c.requiresChecks[i].callArgs {
+                    if s == written { inCall = true }
+                }
+                if inCall {
+                    at = p
+                    break
+                }
+            }
+            let span = at == -1 ? c.requiresChecks[i].callSpan : nodeSpan(in c, for: arguments[c.locals[at].ordinal])
+            let text = t13Text(in c, from: c.functions[callee].file, at: nodeSpan(in c, for: clause))
+            let name = c.functions[callee].name
+            report(ref c, for: .requiresViolated, from: source, at: span, by: (t13Text(in c, from: source, at: span), text, name, "", ""), label: "fails the contract", help: $"pass a value that meets `requires {text}`")
+        }
+    }
+}
+
+/// Compilation.cs:1890 InvokeSymbol: what a call through a value of `type` calls; one symbol per
+/// type, whose parameters `_0`, `_1`, … carry no particle (spec 007 R9).
+FuncId invokeSymbol(ref Ctx c, for Type type) {
+    if c.invokeSymbols.contains(type) { return FuncId(c.invokeSymbols[type]) }
+    let data = typeIndex(type)
+    var parameters = List<LocalId>()
+    for i in 0..c.functionTypes[data].parameters.length {
+        parameters.append(newLocal(ref c, by: LocalSymbol {
+            name: $"_{i}",
+            type: c.functionTypes[data].parameters[i],
+            kind: .parameter,
+            isParameter: true,
+            modifier: .none,
+            ordinal: i,
+        }))
+    }
+    let invoke = newFunction(ref c, by: FunctionSymbol {
+        name: "invoke",
+        module: t13EntryModule(in c),
+        kind: .invoke,
+        returnType: c.functionTypes[data].ret,
+        hasFails: c.functionTypes[data].errorSets.length > 0,
+        parameters: move parameters,
+        errorSets: copyIds(in c.functionTypes[data].errorSets),
+    })
+    c.invokeSymbols[type] = invoke
+    return invoke
+}
+
+/// `p.Syntax?.Default is not null`: the parameter's syntax in `fn.Decl` has a default (Q581).
+bool t13SyntaxDefault(in Ctx c, for FuncId f, by LocalId p) {
+    let file = c.functions[f].file
+    let d = c.functions[f].declIndex
+    let m = c.functions[f].memberIndex
+    let ordinal = c.locals[p].ordinal
+    if file == -1 || d == -1 { return false }
+    switch c.files[file].unit.members[d] {
+        case .functionDecl(let n):
+            return ordinal < n.value.params.length && n.value.params[ordinal].defaultKeyword is not .none
+        case .structDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let k):
+                    return ordinal < k.value.params.length && k.value.params[ordinal].defaultKeyword is not .none
+                case .constructorDecl(let k):
+                    return ordinal < k.value.params.length && k.value.params[ordinal].defaultKeyword is not .none
+                default:
+                    return false
+            }
+        case .interfaceDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let k):
+                    return ordinal < k.value.params.length && k.value.params[ordinal].defaultKeyword is not .none
+                default:
+                    return false
+            }
+        default:
+            return false
+    }
+}
+
+/// Compilation.cs:1901 ParameterDefault: bound on first use.
+BExpr? parameterDefault(ref Ctx c, for FuncId f, by LocalId p) {
+    if c.locals[p].defaultValue == -1 && t13SyntaxDefault(in c, for: f, by: p) {
+        var b = t13NewBinder(c.functions[f].file, fn: -1, owner: c.functions[f].owner)
+        if c.functions[f].typeMap.length > 0 {
+            var map = Map<string, Type>()
+            for (k, v) in c.functions[f].typeMap { map[k] = v }
+            b.typeArgs = move map
+        }
+        c.locals[p].defaultValue = bindParameterDefault(ref b, through: ref c, for: p)
+    }
+    if c.locals[p].defaultValue == -1 { return null }
+    return c.locals[p].defaultValue
+}
+
+/// Compilation.cs:1912 ErrorSetsOf: empty (any error) while an inferred set is still being computed.
+List<ErrorSetId> errorSetsOf(ref Ctx c, for FuncId fn) {
+    let kind = c.functions[fn].kind
+    if c.functions[fn].infersErrors || kind == .main || kind == .testKeyword { return List<ErrorSetId>() }
+    return copyIds(in c.functions[fn].errorSets)
+}
+
+/// Compilation.cs:1919 ReportHeld: what a first-pass binder held back, into the sink.
 void reportHeld(ref Ctx c, for in List<Diag> held) {
-    for i in 0..held.length {
-        addDiag(ref c, by: t13CloneDiag(in held[i]))
+    for d in held {
+        t13Add(ref c, by: t13CloneDiag(in d))
     }
 }
