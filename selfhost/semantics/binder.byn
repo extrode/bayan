@@ -1,16 +1,15 @@
-// T15: Binder.cs 1-~499 (state, scopes, locals, entry points).
+// T15: Binder.cs 1-514 (state, scopes, locals, entry points), cut after `BindArraySize`; `BindExitCode`
+// (Binder.cs:517) belongs to T16. Methods follow the C# order. Helpers with a `t15` prefix stand for
+// C# expressions that have no single Bayan call (spans of a union, a parameter's syntax, `Find`).
 
 import parser
-import lexer
-
-type CallExpr = parser.CallExpr
-type NameExpr = parser.NameExpr
-type Argument = parser.Argument
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// The C# `Source.GetText(span)` of the file being bound.
 string t15Text(in Ctx c, from FileId f, at TextSpan span) => $"{getText(c.files[f].text.span, at: span)}"
 
+/// A copy of a held diagnostic (`Diag` is unique, so `held.Items` cannot be handed over by value).
 Diag t15CloneDiag(in Diag d) {
     var rel = List<Related>()
     for r in d.related { rel.append(r) }
@@ -36,280 +35,208 @@ bool t15ContainsLocal(in List<LocalId> list, for LocalId id) {
     return false
 }
 
+/// The C# `Expr.Span`, one arm per variant (Q466).
 TextSpan t15ExprSpan(in parser.Expr e) {
     switch e {
         case .literalExpr(let n): return n.value.span
-        case .nameExpr(let n): return n.value.span
-        case .binaryExpr(let n): return n.value.span
-        case .unaryExpr(let n): return n.value.span
-        case .callExpr(let n): return n.value.span
-        case .parenExpr(let n): return n.value.span
-        case .blockExpr(let n): return n.value.span
-        case .collectionExpr(let n): return n.value.span
-        case .switchExpr(let n): return n.value.span
         case .interpolatedExpr(let n): return n.value.span
-        default: return TextSpan { start: 0, length: 0 }
+        case .nameExpr(let n): return n.value.span
+        case .thisExpr(let n): return n.value.span
+        case .memberExpr(let n): return n.value.span
+        case .targetMemberExpr(let n): return n.value.span
+        case .callExpr(let n): return n.value.span
+        case .indexExpr(let n): return n.value.span
+        case .unaryExpr(let n): return n.value.span
+        case .binaryExpr(let n): return n.value.span
+        case .rangeExpr(let n): return n.value.span
+        case .conditionalExpr(let n): return n.value.span
+        case .castExpr(let n): return n.value.span
+        case .isExpr(let n): return n.value.span
+        case .exceptExpr(let n): return n.value.span
+        case .inExpr(let n): return n.value.span
+        case .switchExpr(let n): return n.value.span
+        case .tryExpr(let n): return n.value.span
+        case .moveExpr(let n): return n.value.span
+        case .catchExpr(let n): return n.value.span
+        case .caughtErrorExpr(let n): return n.value.span
+        case .jumpExpr(let n): return n.value.span
+        case .blockExpr(let n): return n.value.span
+        case .structLiteralExpr(let n): return n.value.span
+        case .withExpr(let n): return n.value.span
+        case .spreadExpr(let n): return n.value.span
+        case .mapEntryExpr(let n): return n.value.span
+        case .collectionExpr(let n): return n.value.span
+        case .tupleExpr(let n): return n.value.span
+        case .parenExpr(let n): return n.value.span
+        case .lambdaExpr(let n): return n.value.span
+        case .stackallocExpr(let n): return n.value.span
+        case .patternExpr(let n): return n.value.span
+        case .errorExpr(let n): return n.value.span
+        case .none: return TextSpan { start: 0, length: 0 }
     }
 }
 
-TextSpan t15ExpectsKeyword(in Ctx c, from FileId f, for in parser.FunctionDecl decl) {
-    if decl.params.length > 0 {
-        return decl.params[decl.params.length - 1].span
-    }
-    return decl.name
-}
-
-bool t15IsCollectionExpr(in parser.Expr e) {
-    switch e {
-        case .collectionExpr(let n): return true
-        default: return false
-    }
-}
-
-// ── Entry points ──────────────────────────────────────────────────────────────
-
-// stub: T15 ports Binder.cs:40 BindFunctionBody
-void bindFunctionBody(ref Binder b, through ref Ctx c, for in parser.FunctionDecl decl) {
-    var pList = List<LocalId>()
-    for i in 0..decl.params.length {
-        let pType = resolveType(ref b, through: ref c, for: in decl.params[i].type)
-        let loc = declareLocal(ref b, through: ref c, at: decl.params[i].name, as: pType, for: .letKeyword)
-        pList.append(loc)
-    }
-
-    t15BindExpects(ref b, through: ref c, for: in decl, by: in pList)
-    let checks = t15BindRequires(ref b, through: ref c, for: in decl)
-
-    switch decl.body {
-        case .blockStmt(let bNode):
-            let oldThisType = b.thisType
-            if b.owner >= 0 && b.owner < c.structs.length {
-                b.thisType = structTypeOf(b.owner)
-            }
-            let block = bindBlock(ref b, through: ref c, for: in bNode.value)
-            b.thisType = oldThisType
-            if checks.length == 0 {
-                if b.fn >= 0 { c.functions[b.fn].body = block }
-            } else {
-                var wrapped = List<BStmt>()
-                for chk in checks { wrapped.append(chk) }
-                wrapped.append(block)
-                let fullBlock = addBlock(ref c, from: BBlock { span: bNode.value.span, statements: move wrapped })
-                if b.fn >= 0 { c.functions[b.fn].body = fullBlock }
-            }
-        default:
-            if decl.expressionBody is not .none {
-                let exprBody = bindExpressionBody(ref b, through: ref c, for: in decl.expressionBody)
-                let eSpan = t15ExprSpan(in decl.expressionBody)
-                var wrapped = List<BStmt>()
-                for chk in checks { wrapped.append(chk) }
-                wrapped.append(exprBody)
-                let fullBlock = addBlock(ref c, from: BBlock { span: eSpan, statements: move wrapped })
-                if b.fn >= 0 { c.functions[b.fn].body = fullBlock }
-            } else {
-                let emptyBlock = addBlock(ref c, from: BBlock { span: decl.span, statements: List<BStmt>() })
-                if b.fn >= 0 { c.functions[b.fn].body = emptyBlock }
-            }
-    }
-
-    t15BindParameterDefaults(ref b, through: ref c, for: in pList)
-}
-
-void t15BindExpects(ref Binder b, through ref Ctx c, for in parser.FunctionDecl decl, by in List<LocalId> ps) {
-    if decl.requiresKeyword.length == 0 { return }
-    let hasThis = b.owner >= 0
-    var reads = List<LocalId>()
-    var readSpans = List<TextSpan>()
-    for p in ps {
-        reads.append(p)
-        readSpans.append(c.locals[p].span)
-    }
-
-    for req in decl.requiresKeyword {
-        let cond = bindExpr(ref b, through: ref c, for: in req, to: prim(PrimitiveKind.bool))
-        let condType = exprType(in c, for: cond)
-        if !isBool(condType) && !isError(condType) {
-            let disp = typeDisplay(ref c, by: condType)
-            report(ref b, through: ref c, for: .requiresNotBool, at: t15ExprSpan(in req), by: (disp, "", "", "", ""),
-                help: "write a condition the arguments must meet, such as `count>0`")
-        }
-    }
-
-    var seenUntrusted = List<LocalId>()
-    for rIdx in 0..reads.length {
-        let locId = reads[rIdx]
-        let locType = c.locals[locId].type
-        if kindOf(locType) == .untrusted && !t15ContainsLocal(in seenUntrusted, for: locId) {
-            seenUntrusted.append(locId)
-            let pName = c.locals[locId].name
-            report(ref b, through: ref c, for: .expectsReadsUntrusted, at: readSpans[rIdx], by: (pName, "", "", "", ""),
-                help: $"validate `{pName}` with a type that has `requires` before the call")
-        }
-    }
-    var uniqueReads = List<LocalId>()
-    for locId in reads {
-        if !t15ContainsLocal(in uniqueReads, for: locId) { uniqueReads.append(locId) }
-    }
-    if uniqueReads.length == 1 && !hasThis {
-        let pName = c.locals[uniqueReads[0]].name
-        let kwSpan = t15ExpectsKeyword(in c, from: b.file, for: in decl)
-        report(ref b, through: ref c, for: .expectsSingleParameter, at: kwSpan, by: (pName, "", "", "", ""),
-            help: $"declare a type with `requires` for `{pName}`")
+/// The C# `Stmt.Span`, one arm per variant.
+TextSpan t15StmtSpan(in parser.Stmt s) {
+    switch s {
+        case .blockStmt(let n): return n.value.span
+        case .localDecl(let n): return n.value.span
+        case .exprStmt(let n): return n.value.span
+        case .assignStmt(let n): return n.value.span
+        case .incDecStmt(let n): return n.value.span
+        case .returnStmt(let n): return n.value.span
+        case .failStmt(let n): return n.value.span
+        case .breakStmt(let n): return n.value.span
+        case .continueStmt(let n): return n.value.span
+        case .becomeStmt(let n): return n.value.span
+        case .ifStmt(let n): return n.value.span
+        case .unlessStmt(let n): return n.value.span
+        case .guardedStmt(let n): return n.value.span
+        case .whileStmt(let n): return n.value.span
+        case .doWhileStmt(let n): return n.value.span
+        case .whileLetStmt(let n): return n.value.span
+        case .forStmt(let n): return n.value.span
+        case .labeledStmt(let n): return n.value.span
+        case .switchStmt(let n): return n.value.span
+        case .deferStmt(let n): return n.value.span
+        case .assertStmt(let n): return n.value.span
+        case .contextStmt(let n): return n.value.span
+        case .emptyStmt(let n): return n.value.span
+        case .errorStmt(let n): return n.value.span
+        case .none: return TextSpan { start: 0, length: 0 }
     }
 }
 
-List<BStmt> t15BindRequires(ref Binder b, through ref Ctx c, for in parser.FunctionDecl decl) {
-    var conditions = List<BExpr>()
-    var checks = List<BStmt>()
-    for r in decl.requiresKeyword {
-        let rSpan = t15ExprSpan(in r)
-        let condition = bindExpr(ref b, through: ref c, for: in r, to: prim(PrimitiveKind.bool))
-        let condType = exprType(in c, for: condition)
-        if !isBool(condType) {
-            if !isError(condType) {
-                let disp = typeDisplay(ref c, by: condType)
-                report(ref b, through: ref c, for: .requiresNotBool, at: rSpan, by: (disp, "", "", "", ""),
-                    help: "write a condition the arguments must meet, such as `count>0`")
-            }
-            continue
-        }
-        conditions.append(condition)
-
-        let panicArgs = List<BExpr>()
-        let panicCall = addCall(ref c, from: BCall {
-            span: rSpan,
-            function: -1,
-            receiver: -1,
-            arguments: move panicArgs,
-            type: prim(PrimitiveKind.neverKind),
-        })
-        let panicStmt = addExprStmt(ref c, from: BExprStmt { span: rSpan, expr: panicCall })
-        let notCond = addUnary(ref c, from: BUnary { span: rSpan, op: .notKeyword, operand: condition, type: prim(PrimitiveKind.bool) })
-        let ifStmt = addIf(ref c, from: BIf { span: rSpan, condition: notCond, then: panicStmt, elseBranch: -1 })
-        checks.append(ifStmt)
-    }
-    return checks
+/// The scope new locals go to (the C# `_scope`). The C# binder starts with a root scope
+/// (`_scope = new(null)`); a Bayan `Binder` literal starts with `scopes: []`, so the root is
+/// opened here on first use (Q591).
+i64 t15Scope(ref Binder b) {
+    if b.scopes.length == 0 { b.scopes.append(Map<string, LocalId>()) }
+    return b.scopes.length - 1
 }
 
-void t15BindParameterDefaults(ref Binder b, through ref Ctx c, for in List<LocalId> pList) {
-    if b.fn >= 0 && b.fn < c.functions.length {
-        for p in pList {
-            let _ = parameterDefault(ref c, for: b.fn, by: p)
-        }
+/// The C# `Scope.Lookup`: the innermost local named `name` in the current scope or an outer one, or -1.
+LocalId t15Lookup(ref Binder b, for string name) {
+    var i = t15Scope(ref b)
+    while i >= 0 {
+        if b.scopes[i].contains(name) { return b.scopes[i][name] }
+        i -= 1
     }
+    return -1
 }
 
 // ── Pass control (Hold, Release) ──────────────────────────────────────────────
 
-// stub: T15 ports Binder.cs:60 Hold
+/// Makes this binding a first pass: diagnostics are held until `release` (Q590: `held` is the bag
+/// index plus one, 0 for none).
 i64 hold(ref Binder b, through ref Ctx c) {
     c.bags.append(DiagBag { items: List<Diag>(), previous: c.sink })
     b.held = c.bags.length
     return b.held - 1
 }
 
-// stub: T15 ports Binder.cs:71 Release
+/// Ends a first pass: the `var` seeds, keyed by their `LocalDecl` (span start), when one is not `i32`,
+/// reporting only the instantiation errors held; else an empty list (C#'s null) and every held report.
 List<(LocalId, Type)> release(ref Binder b, through ref Ctx c) {
-    let bagIdx = b.held - 1
+    let held = b.held - 1
     b.held = 0
-    if bagIdx < 0 || bagIdx >= c.bags.length { return List<(LocalId, Type)>() }
-    var constrList = List<(i64, Type)>()
-    for (decl, type) in b.constraints { constrList.append((decl, type)) }
+    // A group of pending `var`s that met each other takes the first integer constraint any of them recorded;
+    // a group with a member whose own first use is a float or string stays `i32` (Q74).
+    var constraints = List<(i64, Type)>()
+    for (decl, type) in b.constraints { constraints.append((decl, type)) }
     var groups = Map<i64, Type>()
-    for (decl, type) in constrList {
+    for (decl, type) in constraints {
         if isInteger(type) {
             let peer = findPeer(ref b, for: decl)
             if !groups.contains(peer) { groups[peer] = type }
         }
     }
-    for (decl, type) in constrList {
+    for (decl, type) in constraints {
         if !isInteger(type) {
-            let peer = findPeer(ref b, for: decl)
-            let _ = groups.remove(peer)
+            let _ = groups.remove(findPeer(ref b, for: decl))
         }
     }
-    var pendingList = List<(LocalId, i64)>()
-    for (localId, decl) in b.pending { pendingList.append((localId, decl)) }
+    var pending = List<i64>()
+    for (local, decl) in b.pending { pending.append(decl) }
     var seeds = List<(LocalId, Type)>()
-    for (localId, decl) in pendingList {
+    var seeded = Map<i64, i64>()
+    for decl in pending {
         let peer = findPeer(ref b, for: decl)
         if groups.contains(peer) {
-            seeds.append((localId, groups[peer]))
-        }
-    }
-    var hasNonI32 = false
-    for (loc, t) in seeds {
-        if isInteger(t) && t != prim(PrimitiveKind.i32) {
-            hasNonI32 = true
-            break
-        }
-    }
-    if hasNonI32 {
-        var instItems = List<Diag>()
-        for i in 0..c.bags[bagIdx].items.length {
-            if c.bags[bagIdx].items[i].label == "the generic code needs this of its type arguments" {
-                instItems.append(t15CloneDiag(in c.bags[bagIdx].items[i]))
+            if seeded.contains(decl) {
+                seeds[seeded[decl]] = (decl, groups[peer])
+            } else {
+                seeded[decl] = seeds.length
+                seeds.append((decl, groups[peer]))
             }
         }
-        reportHeld(ref c, for: in instItems)
-        return seeds
     }
-    var allHeldItems = List<Diag>()
-    for i in 0..c.bags[bagIdx].items.length {
-        allHeldItems.append(t15CloneDiag(in c.bags[bagIdx].items[i]))
+    var wide = false
+    for (decl, t) in seeds {
+        if isInteger(t) && t != prim(.i32) { wide = true }
     }
-    reportHeld(ref c, for: in allHeldItems)
+    var items = List<Diag>()
+    for i in 0..c.bags[held].items.length {
+        if !wide || c.bags[held].items[i].label == "the generic code needs this of its type arguments" {
+            items.append(t15CloneDiag(in c.bags[held].items[i]))
+        }
+    }
+    reportHeld(ref c, for: in items)
+    if wide { return seeds }
     return List<(LocalId, Type)>()
 }
 
-// ── Diagnostics & Reporting ───────────────────────────────────────────────────
+// ── Diagnostics, names and types ──────────────────────────────────────────────
 
-// stub: T15 ports Binder.cs:112 Report
+/// Reports into the held bag during a first pass, else through the compilation.
 void report(ref Binder b, through ref Ctx c, for SemaCode code, at TextSpan span, by (string a0, string a1, string a2, string a3, string a4) args, string label = "", string help = "", bool hasFix = false, TextSpan? fixSpan = null, string fixReplacement = "") {
-    let oldSink = c.sink
+    let outer = c.sink
     if b.held > 0 { c.sink = b.held - 1 }
     report(ref c, for: code, from: b.file, at: span, by: args, label: label, help: help, hasFix: hasFix, fixSpan: fixSpan, fixReplacement: fixReplacement)
-    c.sink = oldSink
+    c.sink = outer
 }
 
-// stub: T15 ports Binder.cs:120 ResolveType
-Type resolveType(ref Binder b, through ref Ctx c, for in parser.TypeSyntax t) {
-    var typeMap = Map<string, Type>()
-    if b.fn >= 0 && b.fn < c.functions.length {
-        for (k, v) in c.functions[b.fn].typeMap { typeMap[k] = v }
-    } else if b.owner >= 0 && b.owner < c.structs.length {
-        for (k, v) in c.structs[b.owner].typeMap { typeMap[k] = v }
-    }
-    let r = TypeResolver { file: b.file, container: b.owner, typeArgs: move typeMap }
-    let oldSink = c.sink
+void checkValueName(ref Binder b, through ref Ctx c, at TextSpan name) {
+    let outer = c.sink
     if b.held > 0 { c.sink = b.held - 1 }
-    let res = resolve(ref c, through: in r, for: in t)
-    c.sink = oldSink
-    return res
+    checkValue(ref c, from: b.file, at: name)
+    c.sink = outer
 }
 
-// ── Scopes & Locals ───────────────────────────────────────────────────────────
+/// The C# `_types.Resolve(t)` under `Holding`: `_types` resolves in `b.owner` with the type map
+/// `typeArgs ?? fn.TypeMap ?? container.TypeMap`; an empty Bayan map is C#'s null (Q592).
+Type resolveType(ref Binder b, through ref Ctx c, for in parser.TypeSyntax t) {
+    var map = Map<string, Type>()
+    if (b.typeArgs is { } args) {
+        for (k, v) in args { map[k] = v }
+    } else if b.fn >= 0 && c.functions[b.fn].typeMap.length > 0 {
+        for (k, v) in c.functions[b.fn].typeMap { map[k] = v }
+    } else if b.owner >= 0 {
+        for (k, v) in c.structs[b.owner].typeMap { map[k] = v }
+    }
+    let r = TypeResolver { file: b.file, container: b.owner, typeArgs: move map }
+    let outer = c.sink
+    if b.held > 0 { c.sink = b.held - 1 }
+    let type = resolve(ref c, through: in r, for: in t)
+    c.sink = outer
+    return type
+}
 
-// stub: T15 ports Binder.cs:131 PushScope
+// ── Scopes and locals ─────────────────────────────────────────────────────────
+
 void pushScope(ref Binder b) {
+    let _ = t15Scope(ref b)
     b.scopes.append(Map<string, LocalId>())
 }
 
-// stub: T15 ports Binder.cs:133 PopScope
 void popScope(ref Binder b) {
-    if b.scopes.length > 0 {
-        b.scopes.remove(at: b.scopes.length - 1)
-    }
+    b.scopes.remove(at: b.scopes.length - 1)
 }
 
-// stub: T15 ports Binder.cs:135 DeclareLocal
 LocalId declareLocal(ref Binder b, through ref Ctx c, at TextSpan name, as Type type, for LocalKind kind) {
-    if kind != .temp {
-        checkValueName(ref b, through: ref c, at: name)
-    }
-    let text = t15Text(in c, from: b.file, at: name)
-    let locId = newLocal(ref c, by: LocalSymbol {
-        name: text,
+    if kind != .temp { checkValueName(ref b, through: ref c, at: name) }
+    let local = newLocal(ref c, by: LocalSymbol {
+        name: t15Text(in c, from: b.file, at: name),
         nameSpan: name,
         span: name,
         type: type,
@@ -317,479 +244,315 @@ LocalId declareLocal(ref Binder b, through ref Ctx c, at TextSpan name, as Type 
         id: b.nextLocalId,
     })
     b.nextLocalId += 1
-    addLocal(ref b, through: ref c, at: name, for: locId)
-    return locId
+    addLocal(ref b, through: ref c, at: name, for: local)
+    return local
 }
 
-// stub: T15 ports Binder.cs:143 AddLocal
 void addLocal(ref Binder b, through ref Ctx c, at TextSpan name, for LocalId local) {
-    if b.fn >= 0 && b.fn < c.functions.length {
-        c.functions[b.fn].locals.append(local)
-    }
+    if b.fn >= 0 { c.functions[b.fn].locals.append(local) }
     let text = t15Text(in c, from: b.file, at: name)
     if text == "_" { return }
-    if b.scopes.length == 0 {
-        pushScope(ref b)
-    }
-    let topScopeIdx = b.scopes.length - 1
-    let localKind = c.locals[local].kind
-    let localType = c.locals[local].type
-    if localKind == .letKeyword && b.scopes[topScopeIdx].contains(text) {
-        let same = b.scopes[topScopeIdx][text]
-        if c.locals[same].type == localType && !isError(localType) {
+    let scope = t15Scope(ref b)
+    // A `let` may take the name of another local in the same scope to give it a new type (HANDOFF §4).
+    if c.locals[local].kind == .letKeyword && b.scopes[scope].contains(text) {
+        let same = b.scopes[scope][text]
+        let type = c.locals[local].type
+        if c.locals[same].type == type && !isError(type) {
             let line = linePosition(c.files[b.file].text.span, at: c.locals[same].nameSpan.start).line
-            let typeDisp = typeDisplay(ref c, by: localType)
-            report(ref b, through: ref c, for: .sameTypeShadowing, at: name, by: (text, typeDisp, "", "", ""),
+            report(ref b, through: ref c, for: .sameTypeShadowing, at: name, by: (text, typeDisplay(ref c, by: type), "", "", ""),
                 label: $"`{text}` is declared on line {line}", help: "use the first one, or rename this one to say how it differs")
         }
     } else {
-        var existingLoc: LocalId = -1
-        var outerLevel = b.scopes.length - 2
-        while outerLevel >= 0 {
-            if b.scopes[outerLevel].contains(text) {
-                existingLoc = b.scopes[outerLevel][text]
-                break
-            }
-            outerLevel -= 1
-        }
-        if existingLoc >= 0 && !isError(localType) && !isError(c.locals[existingLoc].type) {
-            let line = linePosition(c.files[b.file].text.span, at: c.locals[existingLoc].nameSpan.start).line
-            let typeDisp = typeDisplay(ref c, by: c.locals[existingLoc].type)
-            report(ref b, through: ref c, for: .shadowing, at: name, by: (text, typeDisp, "", "", ""),
-                label: $"`{text}` is declared on line {line}", help: "use the first one, or rename this one to say how it differs")
+        let existing = t15Lookup(ref b, for: text)
+        if existing >= 0 {
+            let line = linePosition(c.files[b.file].text.span, at: c.locals[existing].nameSpan.start).line
+            report(ref b, through: ref c, for: .shadowing, at: name, by: (text, "", "", "", ""), label: $"already declared on line {line}",
+                help: "pick a different name; Bayan does not let a local hide another one")
         }
     }
-    b.scopes[topScopeIdx][text] = local
+    b.scopes[scope][text] = local
 }
 
-// stub: T15 ports Binder.cs:118 CheckValueName
-void checkValueName(ref Binder b, through ref Ctx c, at TextSpan name) {
-    let text = t15Text(in c, from: b.file, at: name)
-    if text == "_" { return }
-    let oldSink = c.sink
-    if b.held > 0 { c.sink = b.held - 1 }
-    checkValue(ref c, from: b.file, at: name)
-    c.sink = oldSink
-}
+// ── Entry points ──────────────────────────────────────────────────────────────
 
-// ── Checks and Defaults ───────────────────────────────────────────────────────
-
-// stub: T15 ports Binder.cs:258 BindChecks
-void bindChecks(ref Binder b, through ref Ctx c, for in StructChecks checks) {
-    let s = b.owner
-    if s < 0 || s >= c.structs.length { return }
-    let file = c.structs[s].file
-    let dIdx = c.structs[s].declIndex
-    if file < 0 || file >= c.files.length || dIdx < 0 || dIdx >= c.files[file].unit.members.length { return }
-    let sSpan = c.structs[s].span
-    var valErr = validationErrorOf(ref c, for: structTypeOf(s))
-    if valErr < 0 && c.validationErrors.contains(structTypeOf(s)) {
-        valErr = c.validationErrors[structTypeOf(s)]
-    }
-    var invalidVar: VariantId = -1
-    if valErr >= 0 && valErr < c.errorSets.length {
-        for vId in c.errorSets[valErr].variants {
-            if c.errorVariants[vId].name == "invalid" {
-                invalidVar = vId
-                break
-            }
-        }
-    }
-    var listType: Type = -1
-    var listLocal: LocalId = -1
-    if invalidVar >= 0 && c.errorVariants[invalidVar].fields.length > 0 {
-        listType = c.locals[c.errorVariants[invalidVar].fields[0]].type
-        listLocal = newLocal(ref c, by: LocalSymbol {
-            name: "violations",
-            nameSpan: sSpan,
-            span: sSpan,
-            type: listType,
-            kind: .varKeyword,
-            id: b.nextLocalId,
-        })
+void t15DeclareParameters(ref Binder b, through ref Ctx c) {
+    var ps = List<LocalId>()
+    for p in c.functions[b.fn].parameters { ps.append(p) }
+    let scope = t15Scope(ref b)
+    for p in ps {
+        c.locals[p].id = b.nextLocalId
         b.nextLocalId += 1
+        c.functions[b.fn].locals.append(p)
+        b.scopes[scope][c.locals[p].name] = p
     }
-    var statements = List<BStmt>()
-    var flagDecls = List<BStmt>()
-    if listLocal != -1 {
-        var emptyColl = List<BExpr>()
-        let coll = addCollection(ref c, from: BCollection { span: sSpan, elements: move emptyColl, type: listType })
-        let declStmt = addLocalDecl(ref c, from: BLocalDecl { span: sSpan, local: listLocal, initializer: coll })
-        statements.append(declStmt)
-    }
+}
 
-    var broken = Map<FieldId, LocalId>()
-    switch c.files[file].unit.members[dIdx] {
-        case .structDecl(let sNode):
-            for fIdx in 0..c.structs[s].fields.length {
-                let fId = c.structs[s].fields[fIdx]
-                let mIdx = c.fields[fId].memberIndex
-                if mIdx >= 0 && mIdx < sNode.value.members.length {
-                    switch sNode.value.members[mIdx] {
-                        case .fieldDecl(let fNode):
-                            for r in fNode.value.requiresKeyword {
-                                b.itDepth = 1
-                                let cond = bindExpr(ref b, through: ref c, for: in r.condition, to: prim(PrimitiveKind.bool))
-                                b.itDepth = 0
-                                let cType = exprType(in c, for: cond)
-                                if !isBool(cType) {
-                                    if !isError(cType) {
-                                        report(ref b, through: ref c, for: .requiresNotBool, at: t15ExprSpan(in r.condition), by: (typeDisplay(ref c, by: cType), "", "", "", ""), help: "write a condition the value must meet, such as `it>0`")
-                                    }
-                                    continue
-                                }
-                                var failsCond = addUnary(ref c, from: BUnary { span: t15ExprSpan(in r.condition), op: .notKeyword, operand: cond, type: prim(PrimitiveKind.bool) })
-                                if broken.contains(fId) {
-                                    let flagLoc = broken[fId]
-                                    let flagNode = addLocalNode(ref c, at: t15ExprSpan(in r.condition), for: flagLoc)
-                                    let notFlag = addUnary(ref c, from: BUnary { span: t15ExprSpan(in r.condition), op: .notKeyword, operand: flagNode, type: prim(PrimitiveKind.bool) })
-                                    failsCond = addBinary(ref c, from: BBinary { span: t15ExprSpan(in r.condition), op: .logicalAnd, left: notFlag, right: failsCond, type: prim(PrimitiveKind.bool) })
-                                }
-                                if listLocal < 0 {
-                                    var errPayload = List<BExpr>()
-                                    let err = addErrorVariant(ref c, from: BErrorVariant { span: t15ExprSpan(in r.condition), variant: invalidVar, payload: move errPayload, type: errorSetTypeOf(valErr) })
-                                    let failStmt = addFail(ref c, from: BFail { span: t15ExprSpan(in r.condition), error: err })
-                                    statements.append(addIf(ref c, from: BIf { span: t15ExprSpan(in r.condition), condition: failsCond, then: failStmt, elseBranch: -1 }))
-                                } else {
-                                    if !broken.contains(fId) {
-                                        let flagLocal = newLocal(ref c, by: LocalSymbol {
-                                            name: $"broken_{c.fields[fId].name}",
-                                            nameSpan: sSpan,
-                                            span: sSpan,
-                                            type: prim(PrimitiveKind.bool),
-                                            kind: .varKeyword,
-                                            id: b.nextLocalId,
-                                        })
-                                        b.nextLocalId += 1
-                                        broken[fId] = flagLocal
-                                        let falseLit = addLiteral(ref c, from: BLiteral { span: sSpan, value: Constant { kind: .flag, flag: false }, type: prim(PrimitiveKind.bool) })
-                                        let flagDecl = addLocalDecl(ref c, from: BLocalDecl { span: sSpan, local: flagLocal, initializer: falseLit })
-                                        flagDecls.append(flagDecl)
-                                    }
-                                    let trueLit = addLiteral(ref c, from: BLiteral { span: t15ExprSpan(in r.condition), value: Constant { kind: .flag, flag: true }, type: prim(PrimitiveKind.bool) })
-                                    let brokenTarget = addLocalNode(ref c, at: t15ExprSpan(in r.condition), for: broken[fId])
-                                    let setFlag = addAssign(ref c, from: BAssign { span: t15ExprSpan(in r.condition), target: brokenTarget, value: trueLit })
-                                    statements.append(addIf(ref c, from: BIf { span: t15ExprSpan(in r.condition), condition: failsCond, then: setFlag, elseBranch: -1 }))
-                                }
-                            }
-                        default:
-                            break
-                    }
-                }
+/// The C# `_thisFacts`: the fact key for `this`, a `let` named `this` of the error type, made on first use (Q593).
+LocalId t15ThisFacts(ref Binder b, through ref Ctx c) {
+    if b.thisFacts < 0 {
+        b.thisFacts = newLocal(ref c, by: LocalSymbol { name: "this", type: errorType(), kind: .letKeyword })
+    }
+    return b.thisFacts
+}
+
+void bindFunctionBody(ref Binder b, through ref Ctx c, for in parser.FunctionDecl decl) {
+    t15DeclareParameters(ref b, through: ref c)
+    // `this` starts in the states its receiver declares; a `become` or a `becomes` call on it may change that.
+    let own = receiverStates(ref b, through: ref c, for: b.fn)
+    if own != -1 { learnState(ref b, for: t15ThisFacts(ref b, through: ref c), as: own) }
+    t15BindParameterDefaults(ref b, through: ref c)
+    var checks = t15BindRequires(ref b, through: ref c, for: in decl)
+    switch decl.body {
+        case .blockStmt(let body):
+            b.firstStatement = body.value.statements.length > 0 ? t15StmtSpan(in body.value.statements[0]).start : -1
+            let block = bindBlock(ref b, through: ref c, for: in body.value)
+            if checks.length == 0 {
+                c.functions[b.fn].body = block
+            } else {
+                checks.append(block)
+                c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: body.value.span, statements: move checks })
             }
-            for r in sNode.value.rules {
-                if (r.at is { } atName) {
-                    var foundField: FieldId = -1
-                    let targetText = t15Text(in c, from: file, at: atName)
-                    for f in c.structs[s].fields {
-                        if c.fields[f].name == targetText {
-                            foundField = f
-                            break
-                        }
-                    }
-                    if foundField < 0 {
-                        report(ref b, through: ref c, for: .ruleTargetNotField, at: atName, by: (targetText, c.structs[s].name, "", "", ""), label: $"`.{targetText}`", help: $"name a field of `{c.structs[s].name}`")
-                    }
-                }
-                b.itDepth = 0
-                let cond = bindExpr(ref b, through: ref c, for: in r.condition, to: prim(PrimitiveKind.bool))
-                let cType = exprType(in c, for: cond)
-                if !isBool(cType) {
-                    if !isError(cType) {
-                        report(ref b, through: ref c, for: .requiresNotBool, at: t15ExprSpan(in r.condition), by: (typeDisplay(ref c, by: cType), "", "", "", ""), help: "write a condition the value must meet, such as `it>0`")
-                    }
-                    continue
-                }
-                let failsCond = addUnary(ref c, from: BUnary { span: t15ExprSpan(in r.condition), op: .notKeyword, operand: cond, type: prim(PrimitiveKind.bool) })
-                var errPayload = List<BExpr>()
-                if listLocal >= 0 {
-                    let errLocNode = addLocalNode(ref c, at: t15ExprSpan(in r.condition), for: listLocal)
-                    errPayload.append(errLocNode)
-                }
-                let err = addErrorVariant(ref c, from: BErrorVariant { span: t15ExprSpan(in r.condition), variant: invalidVar, payload: move errPayload, type: errorSetTypeOf(valErr) })
-                let failStmt = addFail(ref c, from: BFail { span: t15ExprSpan(in r.condition), error: err })
-                statements.append(addIf(ref c, from: BIf { span: t15ExprSpan(in r.condition), condition: failsCond, then: failStmt, elseBranch: -1 }))
-            }
+            return
         default:
             break
     }
-
-    if listLocal >= 0 {
-        var emptyArgs = List<BExpr>()
-        let recNode = addLocalNode(ref c, at: sSpan, for: listLocal)
-        let isEmp = addBuiltinCall(ref c, from: BBuiltinCall { span: sSpan, member: .listIsEmpty, receiver: recNode, arguments: move emptyArgs, type: prim(PrimitiveKind.bool) })
-        let anyFail = addUnary(ref c, from: BUnary { span: sSpan, op: .notKeyword, operand: isEmp, type: prim(PrimitiveKind.bool) })
-        var errPayload = List<BExpr>()
-        let errLocNode = addLocalNode(ref c, at: sSpan, for: listLocal)
-        errPayload.append(errLocNode)
-        let err = addErrorVariant(ref c, from: BErrorVariant { span: sSpan, variant: invalidVar, payload: move errPayload, type: errorSetTypeOf(valErr) })
-        let failStmt = addFail(ref c, from: BFail { span: sSpan, error: err })
-        statements.append(addIf(ref c, from: BIf { span: sSpan, condition: anyFail, then: failStmt, elseBranch: -1 }))
-    }
-
-    var allStmts = List<BStmt>()
-    for fd in flagDecls { allStmts.append(fd) }
-    for st in statements { allStmts.append(st) }
-    let block = addBlock(ref c, from: BBlock { span: sSpan, statements: move allStmts })
-    if b.fn >= 0 { c.functions[b.fn].body = block }
-}
-
-BExpr addLocalNode(ref Ctx c, at TextSpan span, for LocalId local) {
-    return addLocal(ref c, from: BLocal { span: span, local: local, type: c.locals[local].type })
-}
-
-// stub: T15 ports Binder.cs:354 BindParameterDefault
-BExpr bindParameterDefault(ref Binder b, through ref Ctx c, for LocalId p) {
-    if p < 0 || p >= c.locals.length { return -1 }
-    let d = c.locals[p].id
-    let retType = c.locals[p].type
-    let defaultExpr = parser.Expr.none
-    let value = bindConverted(ref b, through: ref c, for: in defaultExpr, to: c.locals[p].type)
-    return value
-}
-
-// stub: T15 ports Binder.cs:361 BindExpressionBody
-BStmt bindExpressionBody(ref Binder b, through ref Ctx c, for in parser.Expr e) {
-    let retType = b.fn >= 0 && b.fn < c.functions.length ? c.functions[b.fn].returnType : prim(PrimitiveKind.void)
-    let eSpan = t15ExprSpan(in e)
-    if isVoid(retType) {
-        let value = bindStatementExpression(ref b, through: ref c, for: in e)
-        return addExprStmt(ref c, from: BExprStmt { span: eSpan, expr: value })
-    }
-    let conv = bindConverted(ref b, through: ref c, for: in e, to: retType)
-    return addReturn(ref c, from: BReturn { span: eSpan, value: conv })
-}
-
-// stub: T15 ports Binder.cs:370 BindGetter
-void bindGetter(ref Binder b, through ref Ctx c, for in parser.PropertyDecl d) {
-    pushScope(ref b)
-    if d.body is not .none {
-        let retType = b.fn >= 0 && b.fn < c.functions.length ? c.functions[b.fn].returnType : prim(PrimitiveKind.void)
-        if isVoid(retType) {
-            let value = bindStatementExpression(ref b, through: ref c, for: in d.body)
-            let eStmt = addExprStmt(ref c, from: BExprStmt { span: d.span, expr: value })
-            if b.fn >= 0 { c.functions[b.fn].body = eStmt }
-        } else {
-            let conv = bindConverted(ref b, through: ref c, for: in d.body, to: retType)
-            let rStmt = addReturn(ref c, from: BReturn { span: d.span, value: conv })
-            if b.fn >= 0 { c.functions[b.fn].body = rStmt }
-        }
+    if decl.expressionBody is not .none {
+        checks.append(bindExpressionBody(ref b, through: ref c, for: in decl.expressionBody))
+        c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: t15ExprSpan(in decl.expressionBody), statements: move checks })
     } else {
-        switch d.block {
-            case .blockStmt(let bNode):
-                let block = bindBlock(ref b, through: ref c, for: in bNode.value)
-                if b.fn >= 0 { c.functions[b.fn].body = block }
-            default:
-                break
-        }
+        // The parser already reported the missing body.
+        c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: decl.span })
     }
-    popScope(ref b)
 }
 
-// stub: T15 ports Binder.cs:382 BindConstructor
-void bindConstructor(ref Binder b, through ref Ctx c, for in parser.ConstructorDecl d) {
-    pushScope(ref b)
-    for i in 0..d.params.length {
-        let pType = resolveType(ref b, through: ref c, for: in d.params[i].type)
-        let _ = declareLocal(ref b, through: ref c, at: d.params[i].name, as: pType, for: .letKeyword)
-    }
-    switch d.body {
-        case .blockStmt(let bNode):
-            let block = bindBlock(ref b, through: ref c, for: in bNode.value)
-            let finalBlock = block >= 0 ? block : addBlock(ref c, from: BBlock { span: bNode.value.span, statements: List<BStmt>() })
-            if b.fn >= 0 { c.functions[b.fn].body = finalBlock }
-        default:
-            break
-    }
-    popScope(ref b)
-}
-
-// stub: T15 ports Binder.cs:388 BindMain
-void bindMain(ref Binder b, through ref Ctx c, for in List<parser.GlobalStatement> statements) {
-    if b.fn < 0 { return }
-    c.functions[b.fn].infersErrors = true
-    pushScope(ref b)
-    var bound = List<BStmt>()
-    for s in statements {
-        let bs = bindStatement(ref b, through: ref c, for: in s.statement)
-        bound.append(bs)
-    }
-    popScope(ref b)
-    c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: c.functions[b.fn].span, statements: move bound })
-}
-
-// stub: T15 ports Binder.cs:397 BindTest
-void bindTest(ref Binder b, through ref Ctx c, for in parser.TestDecl d, by in List<parser.Expr> values) {
-    if b.fn >= 0 && b.fn < c.functions.length { c.functions[b.fn].infersErrors = true }
-    if values.length == 0 {
-        switch d.body {
-            case .blockStmt(let bNode):
-                let block = bindBlock(ref b, through: ref c, for: in bNode.value)
-                if b.fn >= 0 { c.functions[b.fn].body = block }
-            default:
-                break
-        }
-        return
-    }
-    var statements = List<BStmt>()
-    let n = d.params.length < values.length ? d.params.length : values.length
-    for i in 0..n {
-        let type = resolveType(ref b, through: ref c, for: in d.params[i].type)
-        let value = bindConverted(ref b, through: ref c, for: in values[i], to: type)
-        let loc = declareLocal(ref b, through: ref c, at: d.params[i].name, as: type, for: .letKeyword)
-        let locDecl = addLocalDecl(ref c, from: BLocalDecl { span: d.params[i].span, local: loc, initializer: value })
-        statements.append(locDecl)
-    }
-    switch d.body {
-        case .blockStmt(let bNode):
-            statements.append(bindBlock(ref b, through: ref c, for: in bNode.value))
-        default:
-            break
-    }
-    let block = addBlock(ref c, from: BBlock { span: d.span, statements: move statements })
-    if b.fn >= 0 { c.functions[b.fn].body = block }
-}
-
-// stub: T15 ports Binder.cs:417 BindFieldDefault
-BExpr bindFieldDefault(ref Binder b, through ref Ctx c, for FieldId f) {
-    if f < 0 || f >= c.fields.length { return -1 }
-    let file = c.fields[f].file
-    let s = c.fields[f].owner
-    if s < 0 || s >= c.structs.length { return -1 }
-    let dIdx = c.structs[s].declIndex
-    if file < 0 || file >= c.files.length || dIdx < 0 || dIdx >= c.files[file].unit.members.length { return -1 }
-    switch c.files[file].unit.members[dIdx] {
-        case .structDecl(let sNode):
-            let mIdx = c.fields[f].memberIndex
-            if mIdx >= 0 && mIdx < sNode.value.members.length {
-                switch sNode.value.members[mIdx] {
-                    case .fieldDecl(let fNode):
-                        return bindConverted(ref b, through: ref c, for: in fNode.value.defaultKeyword, to: c.fields[f].type)
-                    default:
-                        break
-                }
+/// Binds the `requires` clauses into entry checks that panic in every build mode.
+List<BStmt> t15BindRequires(ref Binder b, through ref Ctx c, for in parser.FunctionDecl decl) {
+    var conditions = List<BExpr>()
+    var checks = List<BStmt>()
+    for r in decl.requiresKeyword {
+        let span = t15ExprSpan(in r)
+        let condition = bindExpr(ref b, through: ref c, for: in r, to: prim(.bool))
+        let type = exprType(in c, for: condition)
+        if !isBool(type) {
+            if !isError(type) {
+                report(ref b, through: ref c, for: .requiresNotBool, at: span, by: (typeDisplay(ref c, by: type), "", "", "", ""),
+                    help: "write a condition the arguments must meet, such as `count > 0`")
             }
-        default:
-            break
+            continue
+        }
+        conditions.append(condition)
+        t15CheckExpects(ref b, through: ref c, for: span, by: condition)
+        let message = literal(ref c, at: span, as: prim(.string), by: Constant { kind: .text, text: $"contract violated: {t15Text(in c, from: b.file, at: span)}" })
+        var arguments = List<BExpr>()
+        arguments.append(message)
+        let panic = addCall(ref c, from: BCall { span: span, function: find(ref c, for: "panic") ?? -1, arguments: move arguments, type: prim(.neverKind) })
+        let negated = addUnary(ref c, from: BUnary { span: span, op: .notKeyword, operand: condition, type: prim(.bool) })
+        let then = addExprStmt(ref c, from: BExprStmt { span: span, expr: panic })
+        checks.append(addIf(ref c, from: BIf { span: span, condition: negated, then: then }))
+    }
+    c.functions[b.fn].requirements = move conditions
+    return checks
+}
+
+/// An `expects` clause that reads an `Untrusted` parameter would trap on outside data (BYN8006); one that reads
+/// a single parameter and nothing else belongs on that parameter's type as a `requires` (BYN5011).
+void t15CheckExpects(ref Binder b, through ref Ctx c, for TextSpan clause, by BExpr condition) {
+    let nodes = descendants(in c, for: condition)
+    var reads = List<BExpr>()
+    var hasThis = false
+    for n in nodes {
+        if boundKind(n) == .thisRef { hasThis = true }
+        if boundKind(n) == .local {
+            let l = c.bLocals[boundIndex(n)].local
+            if c.locals[l].isParameter && t15ContainsLocal(in c.functions[b.fn].parameters, for: l) { reads.append(n) }
+        }
+    }
+    var distinct = List<LocalId>()
+    for read in reads {
+        let l = c.bLocals[boundIndex(read)].local
+        if t15ContainsLocal(in distinct, for: l) { continue }
+        distinct.append(l)
+        if kindOf(c.locals[l].type) == .untrusted {
+            let name = c.locals[l].name
+            report(ref b, through: ref c, for: .expectsReadsUntrusted, at: nodeSpan(in c, for: read), by: (name, "", "", "", ""),
+                help: $"validate `{name}` with a type that has `requires` before the call")
+        }
+    }
+    if distinct.length != 1 || hasThis { return }
+    let name = c.locals[distinct[0]].name
+    report(ref b, through: ref c, for: .expectsSingleParameter, at: t15ExpectsKeyword(in c, from: b.file, at: clause), by: (name, "", "", "", ""),
+        help: $"declare a type with `requires` for `{name}`")
+}
+
+/// The `expects` keyword before the clause at `clause`, which the syntax tree does not keep; the clause if it is
+/// the `requires` input form.
+TextSpan t15ExpectsKeyword(in Ctx c, from FileId f, at TextSpan clause) {
+    let bytes = c.files[f].text.span
+    var end = clause.start
+    while end > 0 && (bytes[end - 1] == 32 || bytes[end - 1] == 9 || bytes[end - 1] == 13 || bytes[end - 1] == 10) { end -= 1 }
+    let start = end - 7 > 0 ? end - 7 : 0
+    let keyword = TextSpan { start: start, length: end - start }
+    return getText(bytes, at: keyword) == "expects" ? keyword : clause
+}
+
+/// A `BoundLocal` of `local` (express.byn calls it too; Q594).
+BExpr addLocalNode(ref Ctx c, at TextSpan span, for LocalId local) => addLocal(ref c, from: BLocal { span: span, local: local, type: c.locals[local].type })
+
+// stub: T15 ports Binder.cs:258 BindChecks (blocked: Q594)
+void bindChecks(ref Binder b, through ref Ctx c, for in StructChecks checks) {}
+
+void t15BindParameterDefaults(ref Binder b, through ref Ctx c) {
+    var ps = List<LocalId>()
+    for p in c.functions[b.fn].parameters { ps.append(p) }
+    for p in ps {
+        let _ = parameterDefault(ref c, for: b.fn, by: p)
+    }
+}
+
+/// The function whose parameter `p` is (the C# `ParameterSymbol.Syntax` has no Bayan field; Q592).
+FuncId t15ParameterOwner(in Ctx c, for LocalId p) {
+    for f in 0..c.functions.length {
+        if t15ContainsLocal(in c.functions[f].parameters, for: p) { return f }
     }
     return -1
 }
 
-// stub: T15 ports Binder.cs:422 BindEnumArguments
-void bindEnumArguments(ref Binder b, through ref Ctx c, for EnumId e) {
-    if e < 0 || e >= c.enums.length { return }
-    let file = c.enums[e].file
-    let dIdx = c.enums[e].declIndex
-    if file < 0 || file >= c.files.length || dIdx < 0 || dIdx >= c.files[file].unit.members.length { return }
-    switch c.files[file].unit.members[dIdx] {
-        case .enumDecl(let eNode):
-            var ps = List<LocalId>()
-            var enumFieldIds = List<EnumFieldId>()
-            for fId in c.enums[e].fields { enumFieldIds.append(fId) }
-            for fId in enumFieldIds {
-                let loc = newLocal(ref c, by: LocalSymbol {
-                    name: c.enumFields[fId].name,
-                    nameSpan: c.enumFields[fId].span,
-                    span: c.enumFields[fId].span,
-                    type: c.enumFields[fId].type,
-                    kind: .letKeyword,
-                    id: b.nextLocalId,
-                })
-                b.nextLocalId += 1
-                ps.append(loc)
+BExpr bindParameterDefault(ref Binder b, through ref Ctx c, for LocalId p) {
+    let f = t15ParameterOwner(in c, for: p)
+    let ordinal = c.locals[p].ordinal
+    let file = c.functions[f].file
+    let member = c.functions[f].memberIndex
+    switch c.files[file].unit.members[c.functions[f].declIndex] {
+        case .functionDecl(let d):
+            return t15BindDefault(ref b, through: ref c, for: in d.value.params[ordinal].defaultKeyword, as: c.locals[p].type)
+        case .structDecl(let d):
+            switch d.value.members[member] {
+                case .functionDecl(let m):
+                    return t15BindDefault(ref b, through: ref c, for: in m.value.params[ordinal].defaultKeyword, as: c.locals[p].type)
+                case .constructorDecl(let m):
+                    return t15BindDefault(ref b, through: ref c, for: in m.value.params[ordinal].defaultKeyword, as: c.locals[p].type)
+                default:
+                    return -1
             }
-            for d in eNode.value.members {
-                let mName = t15Text(in c, from: file, at: d.name)
-                var memberId: EnumMemberId = -1
-                for mId in c.enums[e].members {
-                    if c.enumMembers[mId].name == mName {
-                        memberId = mId
-                        break
-                    }
-                }
-                if memberId < 0 { continue }
-                if d.args is null && eNode.value.params is null { continue }
-                let fullName = $"{c.enums[e].name}.{mName}"
-                var callArgs = List<Argument>()
-                let callExpr = CallExpr {
-                    span: d.span,
-                    callee: parser.Expr.nameExpr(Owned(NameExpr { span: d.name, name: d.name, typeArgs: List<parser.TypeSyntax>() })),
-                    args: move callArgs,
-                }
-                let boundArgs = bindArguments(ref b, through: ref c, for: in callExpr, by: in ps, as: -1, enforceNames: false, displayName: fullName)
-                var args = List<BExpr>()
-                for a in boundArgs { args.append(a) }
-                if args.length == 0 && ps.length > 0 {
-                    for p in ps {
-                        args.append(addLocal(ref c, from: BLocal { span: d.span, local: p, type: prim(PrimitiveKind.i32) }))
-                    }
-                }
-                for i in 0..args.length {
-                    let arg = args[i]
-                    let aType = exprType(in c, for: arg)
-                    if isError(aType) { continue }
-                    if i < ps.length && isError(c.locals[ps[i]].type) { continue }
-                    if c.constants.contains(arg) {
-                        c.enumMembers[memberId].values.append(c.constants[arg])
-                    } else {
-                        let pName = i < ps.length ? c.locals[ps[i]].name : ""
-                        let aSpan = nodeSpan(in c, for: arg)
-                        report(ref b, through: ref c, for: .enumArgumentNotConstant, at: aSpan, by: (pName, fullName, "", "", ""),
-                            label: "computed at run time", help: "use literals and `const`s only; enum data is static")
-                    }
-                }
+        case .interfaceDecl(let d):
+            switch d.value.members[member] {
+                case .functionDecl(let m):
+                    return t15BindDefault(ref b, through: ref c, for: in m.value.params[ordinal].defaultKeyword, as: c.locals[p].type)
+                default:
+                    return -1
             }
+        case .extensionDecl(let d):
+            switch d.value.members[member] {
+                case .functionDecl(let m):
+                    return t15BindDefault(ref b, through: ref c, for: in m.value.params[ordinal].defaultKeyword, as: c.locals[p].type)
+                default:
+                    return -1
+            }
+        default:
+            return -1
+    }
+}
+
+/// The body of `BindParameterDefault` once its syntax `d` is found.
+BExpr t15BindDefault(ref Binder b, through ref Ctx c, for in parser.Expr d, as Type type) {
+    let value = bindConverted(ref b, through: ref c, for: in d, to: type)
+    let kind = boundKind(value)
+    if exprConstant(in c, for: value) is null && kind != .errorExpr && kind != .defaultValue {
+        report(ref b, through: ref c, for: .notConstant, at: t15ExprSpan(in d), by: ("a parameter default", "", "", "", ""))
+    }
+    return value
+}
+
+BStmt bindExpressionBody(ref Binder b, through ref Ctx c, for in parser.Expr e) {
+    let span = t15ExprSpan(in e)
+    if isVoid(c.functions[b.fn].returnType) {
+        return addExprStmt(ref c, from: BExprStmt { span: span, expr: bindStatementExpression(ref b, through: ref c, for: in e) })
+    }
+    return addReturn(ref c, from: BReturn { span: span, value: bindConverted(ref b, through: ref c, for: in e, to: c.functions[b.fn].returnType) })
+}
+
+void bindGetter(ref Binder b, through ref Ctx c, for in parser.PropertyDecl d) {
+    switch d.block {
+        case .blockStmt(let block):
+            c.functions[b.fn].body = bindBlock(ref b, through: ref c, for: in block.value)
+            return
+        default:
+            break
+    }
+    let span = t15ExprSpan(in d.body)
+    var statements = List<BStmt>()
+    statements.append(addReturn(ref c, from: BReturn { span: span, value: bindConverted(ref b, through: ref c, for: in d.body, to: c.functions[b.fn].returnType) }))
+    c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: span, statements: move statements })
+}
+
+/// The C# `decl.Body` is a `BlockStmt`; the parser's `Stmt` holds one for every constructor it builds.
+void bindConstructor(ref Binder b, through ref Ctx c, for in parser.ConstructorDecl d) {
+    t15DeclareParameters(ref b, through: ref c)
+    t15BindParameterDefaults(ref b, through: ref c)
+    switch d.body {
+        case .blockStmt(let block):
+            c.functions[b.fn].body = bindBlock(ref b, through: ref c, for: in block.value)
         default:
             break
     }
 }
 
-// stub: T15 ports Binder.cs:446 BindModuleConstant
+void bindMain(ref Binder b, through ref Ctx c, for in List<parser.GlobalStatement> statements) {
+    var bound = List<BStmt>()
+    b.firstStatement = t15StmtSpan(in statements[0].statement).start
+    for g in statements { bound.append(bindStatement(ref b, through: ref c, for: in g.statement)) }
+    c.functions[b.fn].infersErrors = true
+    c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: statements[0].span, statements: move bound })
+}
+
+/// A test body; a `@cases` case first binds each parameter as a `let` of its value. C#'s null
+/// `values` (no `@cases`) is an empty list (Q593).
+void bindTest(ref Binder b, through ref Ctx c, for in parser.TestDecl d, by in List<parser.Expr> values) {
+    c.functions[b.fn].infersErrors = true
+    switch d.body {
+        case .blockStmt(let body):
+            if values.length == 0 {
+                c.functions[b.fn].body = bindBlock(ref b, through: ref c, for: in body.value)
+                return
+            }
+            var statements = List<BStmt>()
+            for i in 0..d.params.length {
+                let type = resolveType(ref b, through: ref c, for: in d.params[i].type)
+                let value = bindConverted(ref b, through: ref c, for: in values[i], to: type)
+                let local = declareLocal(ref b, through: ref c, at: d.params[i].name, as: type, for: .letKeyword)
+                statements.append(addLocalDecl(ref c, from: BLocalDecl { span: d.params[i].span, local: local, initializer: value }))
+            }
+            statements.append(bindBlock(ref b, through: ref c, for: in body.value))
+            c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: body.value.span, statements: move statements })
+        default:
+            break
+    }
+}
+
+BExpr bindFieldDefault(ref Binder b, through ref Ctx c, for FieldId f) {
+    switch c.files[c.fields[f].file].unit.members[c.fields[f].declIndex] {
+        case .structDecl(let s):
+            switch s.value.members[c.fields[f].memberIndex] {
+                case .fieldDecl(let d):
+                    let value = bindConverted(ref b, through: ref c, for: in d.value.defaultKeyword, to: c.fields[f].type)
+                    return value
+                default:
+                    return -1
+            }
+        default:
+            return -1
+    }
+}
+
+// stub: T15 ports Binder.cs:424 BindEnumArguments (blocked: Q594)
+void bindEnumArguments(ref Binder b, through ref Ctx c, for EnumId e) {}
+
 void bindModuleConstant(ref Binder b, through ref Ctx c, for ConstId k) {
-    if k < 0 || k >= c.consts.length { return }
-    let file = c.consts[k].file
-    let dIdx = c.consts[k].declIndex
-    if file < 0 || file >= c.files.length || dIdx < 0 || dIdx >= c.files[file].unit.members.length { return }
-    switch c.files[file].unit.members[dIdx] {
-        case .globalStatement(let gs):
-            switch gs.value.statement {
-                case .localDecl(let locNode):
-                    var declared: Type = -1
-                    if locNode.value.type is not .none {
-                        declared = resolveType(ref b, through: ref c, for: in locNode.value.type)
-                        if functionTypeNotHere(ref c, for: declared, from: file, at: t8TypeSpan(in locNode.value.type), as: "a constant") {
-                            declared = errorType()
-                        }
-                    }
-                    if locNode.value.init is .none {
-                        report(ref b, through: ref c, for: .missingInitializer, at: locNode.value.name, by: ("const", c.consts[k].name, "", "", ""))
-                        c.consts[k].type = declared != -1 ? declared : errorType()
-                        return
-                    }
-                    var value: BExpr = -1
-                    if declared != -1 {
-                        value = bindConverted(ref b, through: ref c, for: in locNode.value.init, to: declared)
-                    } else {
-                        let boundExpr = bindExpr(ref b, through: ref c, for: in locNode.value.init)
-                        value = built(ref b, through: ref c, for: boundExpr, from: in locNode.value.init)
-                    }
-                    c.consts[k].type = declared != -1 ? declared : defaultType(ref b, through: ref c, for: value, from: in locNode.value.init)
-                    if declared == -1 {
-                        value = convert(ref b, through: ref c, for: value, to: c.consts[k].type, at: t15ExprSpan(in locNode.value.init))
-                    }
-                    let kType = c.consts[k].type
-                    let isArrOrListOrSpan = kindOf(kType) == .array || kindOf(kType) == .list || kindOf(kType) == .span
-                    if isArrOrListOrSpan || t15IsCollectionExpr(in locNode.value.init) {
-                        t15BindStaticArray(ref b, through: ref c, for: k, by: in locNode.value, as: value)
-                        return
-                    }
-                    if !checkUniqueConst(ref b, through: ref c, for: in locNode.value, as: kType) && !c.constants.contains(value) && !isError(exprType(in c, for: value)) {
-                        report(ref b, through: ref c, for: .notConstant, at: t15ExprSpan(in locNode.value.init), by: ("a `const`", "", "", "", ""))
-                    }
-                    if c.constants.contains(value) {
-                        c.consts[k].value = c.constants[value]
-                    }
-                    c.consts[k].bound = value
+    switch c.files[c.consts[k].file].unit.members[c.consts[k].declIndex] {
+        case .globalStatement(let g):
+            switch g.value.statement {
+                case .localDecl(let decl):
+                    t15BindConstant(ref b, through: ref c, for: k, by: in decl.value)
                 default:
                     break
             }
@@ -798,63 +561,87 @@ void bindModuleConstant(ref Binder b, through ref Ctx c, for ConstId k) {
     }
 }
 
+/// The body of `BindModuleConstant` once `c.Decl` is found.
+void t15BindConstant(ref Binder b, through ref Ctx c, for ConstId k, by in parser.LocalDecl decl) {
+    var declared: Type = -1
+    if decl.type is not .none {
+        declared = resolveType(ref b, through: ref c, for: in decl.type)
+        if functionTypeNotHere(ref c, for: declared, from: b.file, at: typeSyntaxSpan(in decl.type), as: "a constant") { declared = errorType() }
+    }
+    if decl.init is .none {
+        report(ref b, through: ref c, for: .missingInitializer, at: decl.name, by: ("const", t15Text(in c, from: b.file, at: decl.name), "", "", ""))
+        c.consts[k].type = declared != -1 ? declared : errorType()
+        return
+    }
+    var value: BExpr = -1
+    if declared == -1 {
+        value = built(ref b, through: ref c, for: bindExpr(ref b, through: ref c, for: in decl.init), from: in decl.init)
+    } else {
+        value = bindConverted(ref b, through: ref c, for: in decl.init, to: declared)
+    }
+    c.consts[k].type = declared != -1 ? declared : defaultType(ref b, through: ref c, for: value, from: in decl.init)
+    if declared == -1 { value = convert(ref b, through: ref c, for: value, to: c.consts[k].type, at: t15ExprSpan(in decl.init)) }
+    let type = c.consts[k].type
+    if kindOf(type) == .array || kindOf(type) == .list || kindOf(type) == .span || decl.init is .collectionExpr(_) {
+        t15BindStaticArray(ref b, through: ref c, for: k, by: in decl, as: value)
+        return
+    }
+    if !checkUniqueConst(ref b, through: ref c, for: in decl, as: type) && exprConstant(in c, for: value) is null && !isError(exprType(in c, for: value)) {
+        report(ref b, through: ref c, for: .notConstant, at: t15ExprSpan(in decl.init), by: ("a `const`", "", "", "", ""))
+    }
+    c.consts[k].value = exprConstant(in c, for: value)
+    c.consts[k].bound = value
+}
+
+/// A module-level `const T[N]` whose elements are literal numbers, `bool`s, `char`s or `string`s becomes static data (BYN2229 otherwise).
 void t15BindStaticArray(ref Binder b, through ref Ctx c, for ConstId k, by in parser.LocalDecl decl, as BExpr value) {
     c.consts[k].bound = value
-    let vType = exprType(in c, for: value)
-    if isError(vType) { return }
-    let kType = c.consts[k].type
-    let declName = c.consts[k].name
-    let help = $"write `const T[N] {declName} = [ … ]` with `T` a number type, `bool`, `rune` or `string`, and only literals or constants inside"
-    var isGoodArray = false
-    if kindOf(kType) == .array {
-        let elem = c.arrayTypes[typeIndex(kType)].element
-        let isNum = isNumeric(elem)
-        let isPrimOk = isNum || elem == prim(PrimitiveKind.bool) || elem == prim(PrimitiveKind.char) || elem == prim(PrimitiveKind.string)
-        if isPrimOk { isGoodArray = true }
-    }
-    if !isGoodArray {
-        let span = decl.type is not .none ? t8TypeSpan(in decl.type) : t15ExprSpan(in decl.init)
-        report(ref b, through: ref c, for: .invalidConstArray, at: span, by: (declName, "", "", "", ""), help: help)
+    if isError(exprType(in c, for: value)) { return }
+    let name = t15Text(in c, from: b.file, at: decl.name)
+    let help = $"write `const T[N] {name} = [ … ]` with `T` a number type, `bool`, `rune` or `string`, and only literals or constants inside"
+    let type = c.consts[k].type
+    var element: Type = -1
+    if kindOf(type) == .array { element = c.arrayTypes[typeIndex(type)].element }
+    if !(isNumeric(element) || element == prim(.bool) || element == prim(.char) || element == prim(.string)) {
+        let span = decl.type is not .none ? typeSyntaxSpan(in decl.type) : t15ExprSpan(in decl.init)
+        report(ref b, through: ref c, for: .invalidConstArray, at: span, by: (name, "", "", "", ""), help: help)
         return
     }
     if boundKind(value) != .collection {
-        report(ref b, through: ref c, for: .invalidConstArray, at: t15ExprSpan(in decl.init), by: (declName, "", "", "", ""), help: help)
+        report(ref b, through: ref c, for: .invalidConstArray, at: t15ExprSpan(in decl.init), by: (name, "", "", "", ""), help: help)
         return
     }
-    let collIdx = boundIndex(value)
-    var collElements = List<BExpr>()
-    for elem in c.bCollections[collIdx].elements { collElements.append(elem) }
-    for elem in collElements {
-        if isError(exprType(in c, for: elem)) { return }
+    var elements = List<BExpr>()
+    for x in c.bCollections[boundIndex(value)].elements { elements.append(x) }
+    for x in elements {
+        if isError(exprType(in c, for: x)) { return }
     }
-    for elem in collElements {
-        if !c.constants.contains(elem) {
-            let eSpan = nodeSpan(in c, for: elem)
-            report(ref b, through: ref c, for: .invalidConstArray, at: eSpan, by: (declName, "", "", "", ""), label: "not a constant", help: help)
+    for x in elements {
+        if exprConstant(in c, for: x) is null {
+            report(ref b, through: ref c, for: .invalidConstArray, at: nodeSpan(in c, for: x), by: (name, "", "", "", ""), label: "not a constant", help: help)
             return
         }
     }
     c.consts[k].isStaticArray = true
-    for elem in collElements {
-        c.consts[k].elements.append(c.constants[elem])
+    for x in elements {
+        if (exprConstant(in c, for: x) is { } v) { c.consts[k].elements.append(v) }
     }
 }
 
-// stub: T15 ports Binder.cs:499 BindArraySize
+/// The `N` of `T[N]`: a non-negative integer constant, or -1 after an error.
 i64 bindArraySize(ref Binder b, through ref Ctx c, for in parser.Expr size) {
-    let value = bindConverted(ref b, through: ref c, for: in size, to: prim(PrimitiveKind.i64))
-    let vType = exprType(in c, for: value)
-    if isError(vType) { return -1 }
-    let sSpan = t15ExprSpan(in size)
-    if !c.constants.contains(value) {
-        report(ref b, through: ref c, for: .notConstant, at: sSpan, by: ("an array length", "", "", "", ""))
-        return -1
+    let value = bindConverted(ref b, through: ref c, for: in size, to: prim(.i64))
+    if isError(exprType(in c, for: value)) { return -1 }
+    let span = t15ExprSpan(in size)
+    if (exprConstant(in c, for: value) is { } k) {
+        if k.kind == .integer {
+            if bigIsNeg(k.integer) {
+                report(ref b, through: ref c, for: .literalOutOfRange, at: span, by: (bigText(k.integer), "an array length", "", "", ""))
+                return -1
+            }
+            return bigToI64(k.integer)
+        }
     }
-    let constant = c.constants[value]
-    let n = constant.integer
-    if (n.hi & 0x8000000000000000) != 0 {
-        report(ref b, through: ref c, for: .literalOutOfRange, at: sSpan, by: ($"{n.lo}", "an array length", "", "", ""))
-        return -1
-    }
-    return i64(n.lo)
+    report(ref b, through: ref c, for: .notConstant, at: span, by: ("an array length", "", "", "", ""))
+    return -1
 }
