@@ -59,6 +59,11 @@ if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
     cp "$f" $LOG/mutate-orig.txt
     # candidate lines: comparison, boolean, +/- 1, &&/||, outside comments and strings
     SITES=(); while read -r s; do SITES+=("$s"); done < <(grep -nE '(==|!=|<=|>=| < | > |\btrue\b|\bfalse\b|\+ 1\b|- 1\b|&&|\|\|)' "$f" | grep -vE '^\s*[0-9]+:\s*//' | cut -d: -f1)
+    # a line whose only observable effect goes through an unported sibling may be exempted, once per file, by putting
+    # `// mutation-exempt: Qnnn` on the line above it (the Question names the sibling and the test to add when it lands)
+    EX=$(grep -nE '// mutation-exempt: Q[0-9]{3}' "$f" | cut -d: -f1)
+    [ $(echo "$EX" | grep -c .) -gt 1 ] && note "mutation: $f has more than one mutation-exempt line; at most one per file"
+    KEEP=(); for s in "${SITES[@]}"; do skip=0; for e in $EX; do [ "$s" = $((e+1)) ] && skip=1; done; [ $skip = 0 ] && KEEP+=("$s"); done; SITES=("${KEEP[@]}")
     total=${#SITES[@]}; [ "$total" = 0 ] && { note "mutation: $f has no mutable lines"; continue; }
     step=$(( total / N )); [ $step -lt 1 ] && step=1; killed=0; tried=0
     for ((i=0; i<total && tried<N; i+=step)); do
