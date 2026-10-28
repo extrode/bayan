@@ -431,6 +431,15 @@ public sealed class SelfhostSemanticsT11Tests
         lines.Add($"testcases {Count(typeof(Compilation).GetField("_testCases", Any)!.GetValue(c)!)}");
         var mainStatements = typeof(Compilation).GetField("_mainStatements", Any)!.GetValue(c);
         lines.Add($"mainstatements {(mainStatements is null ? 0 : Count(mainStatements.GetType().GetField("Item2")!.GetValue(mainStatements)!))}");
+        var testBodies = (System.Collections.IDictionary)typeof(Compilation).GetField("_testBodies", Any)!.GetValue(c)!;
+        var withValues = 0;
+        foreach (System.Collections.DictionaryEntry entry in testBodies)
+        {
+            var val = entry.Value;
+            var valuesField = val!.GetType().GetField("Item2")!.GetValue(val);
+            if (valuesField is not null) withValues++;
+        }
+        lines.Add($"testbodies {testBodies.Count} withvalues {withValues}");
     }
 
     /// <summary><paramref name="head"/> and each word after a space.</summary>
@@ -663,6 +672,11 @@ public sealed class SelfhostSemanticsT11Tests
             print($"wheres {c.wheres.length}")
             print($"testcases {c.testCases.length}")
             print($"mainstatements {c.mainStatements.length}")
+            var withValues = 0
+            for (_, tb) in c.testBodies {
+                if tb.hasValues { withValues += 1 }
+            }
+            print($"testbodies {c.testBodies.length} withvalues {withValues}")
         }
 
         void dumpDeclare(ref Ctx c) {
