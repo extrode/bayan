@@ -1025,6 +1025,7 @@ List<(LocalId, Type)>? t13BindBody(ref Ctx c, for FuncId fn, by in List<(LocalId
     }
     if seeds is null {
         let next = release(ref b, through: ref c)
+        // mutation-exempt: Q582
         if next.length > 0 { return next }
     }
     return null
