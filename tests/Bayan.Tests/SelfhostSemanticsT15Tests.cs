@@ -393,7 +393,7 @@ public sealed class SelfhostSemanticsT15Tests
     // ── ResolveType ──────────────────────────────────────────────────────────────
 
     /// <summary>Who supplies the type map: the binder's `typeArgs`, the function's, or the container's.</summary>
-    private sealed record ResolveCase(string Name, PrimitiveType? Args, PrimitiveType? FnMap, string FnKey, PrimitiveType? StructMap, bool Held);
+    private sealed record ResolveCase(string Name, PrimitiveType? Args, PrimitiveType? FnMap, string FnKey, PrimitiveType? StructMap, bool Held, bool Lambda = false);
 
     private static readonly ResolveCase[] ResolveCases =
     [
@@ -403,6 +403,7 @@ public sealed class SelfhostSemanticsT15Tests
         new("function-map-first", null, PrimitiveType.U8, "U", PrimitiveType.I64, false),
         new("no-map", null, null, "T", null, false),
         new("held", null, null, "T", null, true),
+        new("lambda-keeps-map", null, PrimitiveType.Bool, "T", PrimitiveType.I64, false, Lambda: true),
     ];
 
     private static List<string> ExpectedResolve(ResolveCase r)
@@ -422,6 +423,13 @@ public sealed class SelfhostSemanticsT15Tests
         var g = Fn(o, "g");
         for (var i = 0; i < g.Params.Length; i++)
             lines.Add($"resolve {i} {((TypeSymbol)Call(b, "ResolveType", g.Params[i].Type)!).DisplayName}");
+        if (r.Lambda)
+        {
+            // A lambda body: C# moves `_fn` to the lifted lambda, which has no type map (BinderExpressions.cs:1911-1920).
+            BinderType.GetField("_fn", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(b, new FunctionSymbol("$lambda0", null, o.Module, FunctionKind.Lambda));
+            for (var i = 0; i < g.Params.Length; i++)
+                lines.Add($"lambda {i} {((TypeSymbol)Call(b, "ResolveType", g.Params[i].Type)!).DisplayName}");
+        }
         if (r.Held)
         {
             lines.Add($"held {((DiagnosticBag)BinderType.GetField("_held", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(b)!).Count}");
@@ -454,6 +462,14 @@ public sealed class SelfhostSemanticsT15Tests
             sb.AppendLine("                let t = resolveType(ref b, through: ref c, for: in d.value.params[i].type)");
             sb.AppendLine("                print($\"resolve {i} {typeDisplay(ref c, by: t)}\")");
             sb.AppendLine("            }");
+            if (r.Lambda)
+            {
+                sb.AppendLine("            b.fn = newFunction(ref c, by: FunctionSymbol { name: \"$lambda0\", module: 0, kind: .lambda })");
+                sb.AppendLine("            for i in 0..d.value.params.length {");
+                sb.AppendLine("                let t = resolveType(ref b, through: ref c, for: in d.value.params[i].type)");
+                sb.AppendLine("                print($\"lambda {i} {typeDisplay(ref c, by: t)}\")");
+                sb.AppendLine("            }");
+            }
             sb.AppendLine("        default:");
             sb.AppendLine("            break");
             sb.AppendLine("    }");
@@ -472,6 +488,39 @@ public sealed class SelfhostSemanticsT15Tests
     }
 
     // ── Bodies (BindFunctionBody, BindExpressionBody, BindGetter, BindConstructor, BindMain, BindTest) ──
+
+    /// <summary>A function with neither a block nor an expression body: the parser reports it, and the binder gives it an empty block.</summary>
+    private const string NoBodySource = "void nobody()\n\nvoid other() {\n}\n";
+
+    private static List<string> ExpectedNoBody()
+    {
+        var o = Oracle.Of("nobody", NoBodySource);
+        var decl = o.Members.OfType<FunctionDecl>().First();
+        var fn = new FunctionSymbol("nobody", null, o.Module, FunctionKind.Function);
+        Call(o.Binder(fn, null), "BindFunctionBody", decl);
+        var lines = new List<string>();
+        Dump(lines, fn.Body);
+        Locals(lines, fn, 0);
+        lines.AddRange(o.NewDiagnostics());
+        return lines;
+    }
+
+    private static string NoBodyMain() => $$"""
+        void bodyNobody() {
+            var c = tcCtx({{Literal(NoBodySource)}})
+            let f = newFunction(ref c, by: FunctionSymbol { name: "nobody", module: 0, file: 0, declIndex: 0 })
+            var b = tcBinder(f, by: -1)
+            print("== body nobody")
+            switch c.files[0].unit.members[0] {
+                case .functionDecl(let d):
+                    bindFunctionBody(ref b, through: ref c, for: in d.value)
+                default:
+                    break
+            }
+            tcBody(ref c, for: f)
+        }
+
+        """;
 
     private static readonly string[] BodyFunctions = ["empty", "one", "flagged", "two", "single", "vd"];
 
@@ -868,7 +917,7 @@ public sealed class SelfhostSemanticsT15Tests
     }
 
     private static string MainSource() => Prelude.Replace("$SOURCE", Literal(Source)) + HoldMain() + ScopesMain() + ResolveMain() + BodiesMain()
-        + MembersMain() + MainMain() + TestsMain() + DefaultsMain() + ConstantsMain() + SizesMain() + """
+        + MembersMain() + MainMain() + TestsMain() + DefaultsMain() + ConstantsMain() + SizesMain() + NoBodyMain() + """
         i32 main() {
             holdAll()
             scopesAll()
@@ -881,6 +930,7 @@ public sealed class SelfhostSemanticsT15Tests
             defaultsAll()
             constantsAll()
             sizesAll()
+            bodyNobody()
             return 0
         }
 
@@ -1022,6 +1072,9 @@ public sealed class SelfhostSemanticsT15Tests
     [MemberData(nameof(MemberNames))]
     public void GetterAndConstructorMatch(string name) =>
         SelfhostSemanticsHarness.AssertSection(Sections.Value, $"member {name}", ExpectedMember(name));
+
+    [Fact]
+    public void MissingBodyMatches() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "body nobody", ExpectedNoBody());
 
     [Fact]
     public void MainMatches() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "main", ExpectedMain());

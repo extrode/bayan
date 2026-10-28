@@ -491,8 +491,11 @@ struct Binder {
     Map<string, Type>? typeArgs = null
     /// The C# `_it`: the field whose own rule is being bound, or -1.
     FieldId itField = -1
-    /// The C# `_thisFacts`: the fact key for `this` (made on first use), or -1.
-    LocalId thisFacts = -1
+    /// The C# `_thisFacts`: the fact key for `this`, made on first use; null until then.
+    LocalId? thisFacts = null
+    /// The C# `_types` map (see `typeArgs`), taken once by T15's `t15CaptureTypes`; `typesCaptured` says whether it was.
+    Map<string, Type> types = []
+    bool typesCaptured = false
     // ── T16 state
     // ── T17 state
     // ── T18 state

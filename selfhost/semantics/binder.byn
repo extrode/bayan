@@ -30,7 +30,7 @@ Diag t15CloneDiag(in Diag d) {
 
 bool t15ContainsLocal(in List<LocalId> list, for LocalId id) {
     for x in list {
-        if x == id { return true }
+        if x != id { return true }
     }
     return false
 }
@@ -203,17 +203,26 @@ void checkValueName(ref Binder b, through ref Ctx c, at TextSpan name) {
     c.sink = outer
 }
 
-/// The C# `_types.Resolve(t)` under `Holding`: `_types` resolves in `b.owner` with the type map
-/// `typeArgs ?? fn.TypeMap ?? container.TypeMap`; an empty Bayan map is C#'s null (Q592).
-Type resolveType(ref Binder b, through ref Ctx c, for in parser.TypeSyntax t) {
-    var map = Map<string, Type>()
+/// The C# constructor's `_types` map, `typeArgs ?? fn.TypeMap ?? container.TypeMap`, taken once per binder (an empty
+/// Bayan map is C#'s null; Q592). Each entry point takes it first, as the C# constructor does before any binding, so a
+/// lambda body (which moves `b.fn` to the lifted lambda) keeps the enclosing map.
+void t15CaptureTypes(ref Binder b, through ref Ctx c) {
+    if b.typesCaptured { return }
+    b.typesCaptured = true
     if (b.typeArgs is { } args) {
-        for (k, v) in args { map[k] = v }
+        for (k, v) in args { b.types[k] = v }
     } else if b.fn >= 0 && c.functions[b.fn].typeMap.length > 0 {
-        for (k, v) in c.functions[b.fn].typeMap { map[k] = v }
+        for (k, v) in c.functions[b.fn].typeMap { b.types[k] = v }
     } else if b.owner >= 0 {
-        for (k, v) in c.structs[b.owner].typeMap { map[k] = v }
+        for (k, v) in c.structs[b.owner].typeMap { b.types[k] = v }
     }
+}
+
+/// The C# `_types.Resolve(t)` under `Holding`: `_types` resolves in `b.owner` with the captured map.
+Type resolveType(ref Binder b, through ref Ctx c, for in parser.TypeSyntax t) {
+    t15CaptureTypes(ref b, through: ref c)
+    var map = Map<string, Type>()
+    for (k, v) in b.types { map[k] = v }
     let r = TypeResolver { file: b.file, container: b.owner, typeArgs: move map }
     let outer = c.sink
     if b.held > 0 { c.sink = b.held - 1 }
@@ -289,13 +298,14 @@ void t15DeclareParameters(ref Binder b, through ref Ctx c) {
 
 /// The C# `_thisFacts`: the fact key for `this`, a `let` named `this` of the error type, made on first use (Q593).
 LocalId t15ThisFacts(ref Binder b, through ref Ctx c) {
-    if b.thisFacts < 0 {
-        b.thisFacts = newLocal(ref c, by: LocalSymbol { name: "this", type: errorType(), kind: .letKeyword })
-    }
-    return b.thisFacts
+    if (b.thisFacts is { } made) { return made }
+    let fresh = newLocal(ref c, by: LocalSymbol { name: "this", type: errorType(), kind: .letKeyword })
+    b.thisFacts = fresh
+    return fresh
 }
 
 void bindFunctionBody(ref Binder b, through ref Ctx c, for in parser.FunctionDecl decl) {
+    t15CaptureTypes(ref b, through: ref c)
     t15DeclareParameters(ref b, through: ref c)
     // `this` starts in the states its receiver declares; a `become` or a `becomes` call on it may change that.
     let own = receiverStates(ref b, through: ref c, for: b.fn)
@@ -419,6 +429,7 @@ FuncId t15ParameterOwner(in Ctx c, for LocalId p) {
 }
 
 BExpr bindParameterDefault(ref Binder b, through ref Ctx c, for LocalId p) {
+    t15CaptureTypes(ref b, through: ref c)
     let f = t15ParameterOwner(in c, for: p)
     let ordinal = c.locals[p].ordinal
     let file = c.functions[f].file
@@ -465,6 +476,7 @@ BExpr t15BindDefault(ref Binder b, through ref Ctx c, for in parser.Expr d, as T
 }
 
 BStmt bindExpressionBody(ref Binder b, through ref Ctx c, for in parser.Expr e) {
+    t15CaptureTypes(ref b, through: ref c)
     let span = t15ExprSpan(in e)
     if isVoid(c.functions[b.fn].returnType) {
         return addExprStmt(ref c, from: BExprStmt { span: span, expr: bindStatementExpression(ref b, through: ref c, for: in e) })
@@ -473,6 +485,7 @@ BStmt bindExpressionBody(ref Binder b, through ref Ctx c, for in parser.Expr e) 
 }
 
 void bindGetter(ref Binder b, through ref Ctx c, for in parser.PropertyDecl d) {
+    t15CaptureTypes(ref b, through: ref c)
     switch d.block {
         case .blockStmt(let block):
             c.functions[b.fn].body = bindBlock(ref b, through: ref c, for: in block.value)
@@ -488,6 +501,7 @@ void bindGetter(ref Binder b, through ref Ctx c, for in parser.PropertyDecl d) {
 
 /// The C# `decl.Body` is a `BlockStmt`; the parser's `Stmt` holds one for every constructor it builds.
 void bindConstructor(ref Binder b, through ref Ctx c, for in parser.ConstructorDecl d) {
+    t15CaptureTypes(ref b, through: ref c)
     t15DeclareParameters(ref b, through: ref c)
     t15BindParameterDefaults(ref b, through: ref c)
     switch d.body {
@@ -499,6 +513,7 @@ void bindConstructor(ref Binder b, through ref Ctx c, for in parser.ConstructorD
 }
 
 void bindMain(ref Binder b, through ref Ctx c, for in List<parser.GlobalStatement> statements) {
+    t15CaptureTypes(ref b, through: ref c)
     var bound = List<BStmt>()
     b.firstStatement = t15StmtSpan(in statements[0].statement).start
     for g in statements { bound.append(bindStatement(ref b, through: ref c, for: in g.statement)) }
@@ -509,6 +524,7 @@ void bindMain(ref Binder b, through ref Ctx c, for in List<parser.GlobalStatemen
 /// A test body; a `@cases` case first binds each parameter as a `let` of its value. C#'s null
 /// `values` (no `@cases`) is an empty list (Q593).
 void bindTest(ref Binder b, through ref Ctx c, for in parser.TestDecl d, by in List<parser.Expr> values) {
+    t15CaptureTypes(ref b, through: ref c)
     c.functions[b.fn].infersErrors = true
     switch d.body {
         case .blockStmt(let body):
@@ -531,6 +547,7 @@ void bindTest(ref Binder b, through ref Ctx c, for in parser.TestDecl d, by in L
 }
 
 BExpr bindFieldDefault(ref Binder b, through ref Ctx c, for FieldId f) {
+    t15CaptureTypes(ref b, through: ref c)
     switch c.files[c.fields[f].file].unit.members[c.fields[f].declIndex] {
         case .structDecl(let s):
             switch s.value.members[c.fields[f].memberIndex] {
@@ -549,6 +566,7 @@ BExpr bindFieldDefault(ref Binder b, through ref Ctx c, for FieldId f) {
 void bindEnumArguments(ref Binder b, through ref Ctx c, for EnumId e) {}
 
 void bindModuleConstant(ref Binder b, through ref Ctx c, for ConstId k) {
+    t15CaptureTypes(ref b, through: ref c)
     switch c.files[c.consts[k].file].unit.members[c.consts[k].declIndex] {
         case .globalStatement(let g):
             switch g.value.statement {
@@ -630,6 +648,7 @@ void t15BindStaticArray(ref Binder b, through ref Ctx c, for ConstId k, by in pa
 
 /// The `N` of `T[N]`: a non-negative integer constant, or -1 after an error.
 i64 bindArraySize(ref Binder b, through ref Ctx c, for in parser.Expr size) {
+    t15CaptureTypes(ref b, through: ref c)
     let value = bindConverted(ref b, through: ref c, for: in size, to: prim(.i64))
     if isError(exprType(in c, for: value)) { return -1 }
     let span = t15ExprSpan(in size)
