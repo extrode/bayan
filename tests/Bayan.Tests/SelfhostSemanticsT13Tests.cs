@@ -691,7 +691,7 @@ public sealed class SelfhostSemanticsT13Tests
             var preset = w.Ids(f.IsInstance ? Array.Empty<object>() : f.ErrorSets.Cast<object>(), "ErrorSetId");
             var template = f.Template is { } t ? w.Vars[t] : "-1";
             var v = $"f{w.Vars.Count}";
-            w.Emit($"let {v} = newFunction(ref c, by: FunctionSymbol {{ name: {Lit(f.Name)}, module: 0, file: 0, kind: {KindName(f.Kind)}, infersErrors: {(f.InfersErrors ? "true" : "false")}, hasFails: {(!main && f.Fails ? "true" : "false")}, template: {template}, errorSets: move {preset} }})");
+            w.Emit($"let {v} = newFunction(ref c, by: FunctionSymbol {{ name: {Lit(f.Name)}, module: 0, file: 0, kind: {KindName(f.Kind)}, infersErrors: {(f.Kind == FunctionKind.Main ? "false" : (f.InfersErrors ? "true" : "false"))}, hasFails: {(!main && f.Fails ? "true" : "false")}, template: {template}, errorSets: move {preset} }})");
             w.Emit($"c.modules[0].allFunctions.append({v})");
             w.Vars[f] = v;
         }
