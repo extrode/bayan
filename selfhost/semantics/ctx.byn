@@ -476,9 +476,6 @@ struct Ctx {
     /// C# `_interfaceMembersDeclared` and `_pendingInterfaces` (`Work { kind: .interfaceMembers }`).
     bool interfaceMembersDeclared = false
     List<Work> pendingInterfaces = List<Work>()
-    /// C# `Options.IncludeTests` and `Options.SkipOwnershipCheck`.
-    bool includeTests = false
-    bool skipOwnershipCheck = false
     // ── T14 state
     // ── T15 state
     // ── T16 state
