@@ -50,7 +50,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T16 Binder statements B — files: `binder2.byn` (`Binder.cs` ~500–979: blocks, statement dispatch, assert, narrowing, while-let, for head), `SelfhostSemanticsT16Tests.cs` — covers: R4 — after: T4; parallel with: T6–T15, T17–T27, T34–T39 — done when:
   - method-for-method port; loop and narrowing diag forms named as passing after rebase; Q595–Q599 as needed.
   - Size: about 696 lines.
-- [ ] T17 Expression binding A — files: `express.byn` (`BinderExpressions.cs` 1–~599: conversions, literals, integer parsing, names and suggestions), `SelfhostSemanticsT17Tests.cs` — covers: R4 — after: T4; parallel with: T6–T16, T18–T27, T34–T39 — done when:
+- [x] T17 Expression binding A — files: `express.byn` (`BinderExpressions.cs` 1–~599: conversions, literals, integer parsing, names and suggestions), `SelfhostSemanticsT17Tests.cs` — covers: R4 — after: T4; parallel with: T6–T16, T18–T27, T34–T39 — done when:
   - method-for-method port; literals and name errors match C#; Q600–Q604 as needed.
   - Size: about 845 lines.
 - [ ] T18 Expression binding B — files: `express2.byn` (`BinderExpressions.cs` ~600–1155: members, index, slice), `SelfhostSemanticsT18Tests.cs` — covers: R4 — after: T4; parallel with: T6–T17, T19–T27, T34–T39 — done when:
