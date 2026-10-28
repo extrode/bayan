@@ -62,11 +62,7 @@ Diag t13CloneDiag(in Diag d) {
 
 /// `(_scratch ?? Diagnostics).Add(d)`: straight into the sink, as `DiagnosticBag.Add` does.
 void t13Add(ref Ctx c, by move Diag d) {
-    if c.sink >= 0 {
-        c.bags[c.sink].items.append(move d)
-    } else {
-        c.diagnostics.append(move d)
-    }
+    addDiag(ref c, by: move d)
 }
 
 /// `Diagnostics.HasErrors`.
@@ -142,7 +138,20 @@ void bindAll(ref Ctx c) {
             bindEnumArguments(ref b, through: ref c, for: e)
         }
     }
-    // `_exitCodes` has no home yet (T12 declares it; Q583), so no `BindExitCode` runs here.
+    for entry in c.exitCodes {
+        let f = entry.attribute.file
+        let d = entry.attribute.declIndex
+        let vIdx = entry.attribute.memberIndex
+        let aIdx = entry.attribute.itemIndex
+        switch c.files[f].unit.members[d] {
+            case .errorSetDecl(let ed):
+                let attr = ed.value.variants[vIdx].attributes[aIdx]
+                var b = t13NewBinder(c.errorVariants[entry.variant].file)
+                c.errorVariants[entry.variant].exitCode = bindExitCode(ref b, through: ref c, for: in attr)
+            default:
+                break
+        }
+    }
     for m in 0..c.modules.length {
         let structs = copyIds(in c.modules[m].structs)
         for s in structs {
@@ -240,10 +249,8 @@ Map<string, Type> t13Substitution(in Ctx c, from in Map<string, Type>? outer, fo
 
 /// Compilation.cs:1467 Instantiating, before `work()`.
 InstantiatingScope instantiatingBegin(ref Ctx c, from FileId site, at TextSpan span) {
-    let outer = c.sink
-    c.bags.append(DiagBag { items: List<Diag>(), previous: outer })
-    let bag = c.bags.length - 1
-    c.sink = bag
+    let outer = pushBag(ref c)
+    let bag = c.sink
     let scope = InstantiatingScope {
         outer: outer,
         bag: bag,
@@ -752,14 +759,12 @@ FuncId? templateOf(ref Ctx c, for FuncId f) {
 /// Compilation.cs:1682 AnalyzeInstance: flow and region analysis of an instantiation; what two
 /// instantiations both find is reported once.
 void t13AnalyzeInstance(ref Ctx c, for FuncId fn) {
-    let outer = c.sink
-    c.bags.append(DiagBag { items: List<Diag>(), previous: outer })
-    let bag = c.bags.length - 1
-    c.sink = bag
+    let outer = pushBag(ref c)
+    let bag = c.sink
     analyzeFlow(ref c, for: fn)
     analyzeRegions(ref c, for: fn)
     lintSpanParameter(ref c, for: fn)
-    c.sink = outer
+    popBag(ref c, to: outer)
     let count = c.bags[bag].items.length
     for i in 0..count {
         let d = t13CloneDiag(in c.bags[bag].items[i])
@@ -896,11 +901,36 @@ List<(LocalId, Type)>? t13BindBody(ref Ctx c, for FuncId fn, by in List<(LocalId
         case .constructor:
             // `_constructorBodies[fn]`: the constructor's own member of the struct.
             owner = c.functions[fn].owner
+/// Helper to extract test case expressions from a TestBody (Q714).
+List<parser.Expr> t13TestValues(in Ctx c, for in TestBody tb) {
+    var values = List<parser.Expr>()
+    if !tb.hasValues { return values }
+    let f = tb.values.file
+    let d = tb.values.declIndex
+    let aIdx = tb.values.memberIndex
+    let argIdx = tb.values.itemIndex
+    switch c.files[f].unit.members[d] {
+        case .testDecl(let td):
+            let attr = td.value.attributes[aIdx]
+            let arg = attr.args[argIdx]
+            switch arg.value {
+                case .tupleExpr(let tup):
+                    for elem in tup.value.elements { values.append(elem.value) }
+                default:
+                    values.append(arg.value)
+            }
+        default:
+            break
+    }
+    return values
+}
+
         case .testKeyword:
-            // `_testBodies[fn].Decl`.
+            owner = -1
+        case .main:
+            if c.mainStatementsFn != fn { return null }
             owner = -1
         default:
-            // `Main` needs `_mainStatements`, which has no home yet (Q583); the rest have no body.
             return null
     }
     var b = t13NewBinder(file, fn: fn, owner: owner)
@@ -909,34 +939,55 @@ List<(LocalId, Type)>? t13BindBody(ref Ctx c, for FuncId fn, by in List<(LocalId
     } else {
         let _ = hold(ref b, through: ref c)
     }
-    switch c.files[file].unit.members[d] {
-        case .functionDecl(let n):
-            bindFunctionBody(ref b, through: ref c, for: in n.value)
-        case .testDecl(let n):
-            // `_testBodies[fn].Values`: no `@cases` row reaches a test symbol yet (Q583).
-            bindTest(ref b, through: ref c, for: in n.value, by: in List<parser.Expr>())
-        case .structDecl(let n):
-            switch n.value.members[m] {
-                case .functionDecl(let f):
-                    bindFunctionBody(ref b, through: ref c, for: in f.value)
-                case .propertyDecl(let p):
-                    bindGetter(ref b, through: ref c, for: in p.value)
-                case .constructorDecl(let k):
-                    bindConstructor(ref b, through: ref c, for: in k.value)
+    if c.functions[fn].kind == .main {
+        var stmts = List<parser.GlobalStatement>()
+        for sr in c.mainStatements {
+            switch c.files[sr.file].unit.members[sr.declIndex] {
+                case .globalStatement(let g):
+                    stmts.append(g.value)
                 default:
-                    panic("internal error: a struct member without a body")
+                    break
             }
-        case .interfaceDecl(let n):
-            switch n.value.members[m] {
-                case .functionDecl(let f):
-                    bindFunctionBody(ref b, through: ref c, for: in f.value)
-                case .propertyDecl(let p):
-                    bindGetter(ref b, through: ref c, for: in p.value)
-                default:
-                    panic("internal error: an interface member without a body")
-            }
-        default:
-            panic("internal error: a function without a declaration")
+        }
+        bindMain(ref b, through: ref c, for: in stmts)
+    } else if c.functions[fn].kind == .testKeyword && c.testBodies.contains(fn) {
+        let tb = c.testBodies[fn]
+        switch c.files[tb.decl.file].unit.members[tb.decl.declIndex] {
+            case .testDecl(let n):
+                let vals = t13TestValues(in c, for: in tb)
+                bindTest(ref b, through: ref c, for: in n.value, by: in vals)
+            default:
+                break
+        }
+    } else {
+        switch c.files[file].unit.members[d] {
+            case .functionDecl(let n):
+                bindFunctionBody(ref b, through: ref c, for: in n.value)
+            case .testDecl(let n):
+                bindTest(ref b, through: ref c, for: in n.value, by: in List<parser.Expr>())
+            case .structDecl(let n):
+                switch n.value.members[m] {
+                    case .functionDecl(let f):
+                        bindFunctionBody(ref b, through: ref c, for: in f.value)
+                    case .propertyDecl(let p):
+                        bindGetter(ref b, through: ref c, for: in p.value)
+                    case .constructorDecl(let k):
+                        bindConstructor(ref b, through: ref c, for: in k.value)
+                    default:
+                        panic("internal error: a struct member without a body")
+                }
+            case .interfaceDecl(let n):
+                switch n.value.members[m] {
+                    case .functionDecl(let f):
+                        bindFunctionBody(ref b, through: ref c, for: in f.value)
+                    case .propertyDecl(let p):
+                        bindGetter(ref b, through: ref c, for: in p.value)
+                    default:
+                        panic("internal error: an interface member without a body")
+                }
+            default:
+                panic("internal error: a function without a declaration")
+        }
     }
     if seeds is null {
         let next = release(ref b, through: ref c)
@@ -1109,11 +1160,15 @@ bool t13SyntaxDefault(in Ctx c, for FuncId f, by LocalId p) {
     }
 }
 
-/// Compilation.cs:1901 ParameterDefault: bound on first use. `Binder` has no `typeArgs`, so the
-/// binder takes the owner's map, not `fn.TypeMap` (Q582).
+/// Compilation.cs:1901 ParameterDefault: bound on first use.
 BExpr? parameterDefault(ref Ctx c, for FuncId f, by LocalId p) {
     if c.locals[p].defaultValue == -1 && t13SyntaxDefault(in c, for: f, by: p) {
-        var b = t13NewBinder(c.functions[f].file, owner: c.functions[f].owner)
+        var b = t13NewBinder(c.functions[f].file, fn: -1, owner: c.functions[f].owner)
+        if c.functions[f].typeMap.length > 0 {
+            var map = Map<string, Type>()
+            for (k, v) in c.functions[f].typeMap { map[k] = v }
+            b.typeArgs = move map
+        }
         c.locals[p].defaultValue = bindParameterDefault(ref b, through: ref c, for: p)
     }
     if c.locals[p].defaultValue == -1 { return null }
