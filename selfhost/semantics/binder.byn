@@ -365,7 +365,7 @@ void t15CheckExpects(ref Binder b, through ref Ctx c, for TextSpan clause, by BE
         if boundKind(n) == .thisRef { hasThis = true }
         if boundKind(n) == .local {
             let l = c.bLocals[boundIndex(n)].local
-            if c.locals[l].isParameter && t15ContainsLocal(in c.functions[b.fn].parameters, for: l) { reads.append(n) }
+            if t15ContainsLocal(in c.functions[b.fn].parameters, for: l) { reads.append(n) }
         }
     }
     var distinct = List<LocalId>()
@@ -574,14 +574,13 @@ void t15BindConstant(ref Binder b, through ref Ctx c, for ConstId k, by in parse
         c.consts[k].type = declared != -1 ? declared : errorType()
         return
     }
-    var value: BExpr = -1
+    var value = declared == -1 ? built(ref b, through: ref c, for: bindExpr(ref b, through: ref c, for: in decl.init), from: in decl.init) : bindConverted(ref b, through: ref c, for: in decl.init, to: declared)
     if declared == -1 {
-        value = built(ref b, through: ref c, for: bindExpr(ref b, through: ref c, for: in decl.init), from: in decl.init)
+        c.consts[k].type = defaultType(ref b, through: ref c, for: value, from: in decl.init)
+        value = convert(ref b, through: ref c, for: value, to: c.consts[k].type, at: t15ExprSpan(in decl.init))
     } else {
-        value = bindConverted(ref b, through: ref c, for: in decl.init, to: declared)
+        c.consts[k].type = declared
     }
-    c.consts[k].type = declared != -1 ? declared : defaultType(ref b, through: ref c, for: value, from: in decl.init)
-    if declared == -1 { value = convert(ref b, through: ref c, for: value, to: c.consts[k].type, at: t15ExprSpan(in decl.init)) }
     let type = c.consts[k].type
     if kindOf(type) == .array || kindOf(type) == .list || kindOf(type) == .span || decl.init is .collectionExpr(_) {
         t15BindStaticArray(ref b, through: ref c, for: k, by: in decl, as: value)
