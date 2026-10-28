@@ -552,7 +552,7 @@ public sealed class SelfhostSemanticsT11Tests
                 bags: List<DiagBag>(),
                 packageRoot: dir,
                 displayRoot: dir,
-                t11IncludeTests: options.includeTests,
+                includeTests: options.includeTests,
             }
             c.entryModule = loadModule(ref c, for: "main", at: dir, from: move sources, by: -1)
             return c

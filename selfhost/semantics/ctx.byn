@@ -458,8 +458,6 @@ struct Ctx {
     string packageRoot = ""
     /// C# `DisplayRoot`: imported files are named relative to it.
     string displayRoot = ""
-    /// C# `Options.IncludeTests` until T13's `includeTests` lands; then T11 uses T13's field and this goes (Q570).
-    bool t11IncludeTests = false
     /// C# `Modules`: every loaded module, dependencies before dependents (`modules` also holds the builtin module).
     List<ModId> moduleOrder = List<ModId>()
     /// C# `EntryModule`.
@@ -472,13 +470,8 @@ struct Ctx {
     i64 checkTime = 0
     /// C# `_aliases`: the aliases `addType` accepted, in declaration order.
     List<AliasId> aliasOrder = List<AliasId>()
-    /// C# `_testBodies`: each test function's declaration and `@cases` case.
-    Map<FuncId, TestBody> testBodies = []
     /// C# `_testCases`: the accepted cases of each test with `@cases`, by `declKey(file, declIndex)`.
     Map<i64, TestCases> testCases = []
-    /// C# `_mainStatements`: the synthesized `main` (-1 for none) and its statements' indices in its file.
-    FuncId mainStatementsMain = -1
-    List<i64> mainStatements = List<i64>()
     /// C# `_wheres` and `_associatedTypes` (key `"<owner> <name>"`).
     List<Work> wheres = List<Work>()
     Map<string, TypeParamId> associatedTypes = []

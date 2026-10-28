@@ -17,14 +17,6 @@ struct CompilationOptions {
     string? packageName = null
 }
 
-/// The C# `_testBodies` value `(TestDecl Decl, Expr[]? Values)`: the test is member `declIndex` of `file`, and its
-/// values are argument `arg` of its attribute `attribute` (both -1 for a test without parameters).
-struct TestBody {
-    FileId file
-    i64 declIndex
-    i64 attribute = -1
-    i64 arg = -1
-}
 
 /// The C# `_testCases` value: the arguments of the test's first `@cases` attribute (`attribute`) that are cases.
 struct TestCases {
@@ -94,9 +86,9 @@ Ctx create(from move List<lexer.SourceText> entryFiles, at string packageRoot, b
         packageName: options.packageName ?? "",
         packageRoot: packageRoot,
         displayRoot: displayRoot ?? packageRoot,
-        t11IncludeTests: options.includeTests,
+        includeTests: options.includeTests,
+        skipOwnershipCheck: options.skipOwnershipCheck,
     }
-    // `options.skipOwnershipCheck` goes to T13's `skipOwnershipCheck` once T13 lands (Q574).
     var clock = Io.monotonicNanos()
     c.entryModule = loadModule(ref c, for: "main", at: packageRoot, from: move entryFiles, by: -1)
     for f in copyIds(in c.modules[c.entryModule].files) { c.files[f].isEntry = true }
@@ -244,7 +236,7 @@ void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
         }
     } else {
         var files = List<string>()
-        if t11DirectoryExists(dir) { files = t11ModuleFiles(dir, includeTests: c.t11IncludeTests) }
+        if t11DirectoryExists(dir) { files = t11ModuleFiles(dir, includeTests: c.includeTests) }
         if files.length == 0 {
             report(ref c, for: .unknownModule, from: file, at: span, by: (name, "", "", "", ""),
                 help: $"put the module's `.byn` files in `{t11RelativePath(c.packageRoot, to: dir)}/` next to the entry file; a module is a directory")
@@ -300,8 +292,17 @@ void declare(ref Ctx c) {
     for m in copyIds(in c.moduleOrder) {
         for i in copyIds(in c.modules[m].interfaces) { declareInterfaceMembers(ref c, for: i) }
     }
-    // C# :202-204 set `_interfaceMembersDeclared` and run `_pendingInterfaces` inside `Instantiating`; both are T13's
-    // fields (`interfaceMembersDeclared`, `pendingInterfaces`), so that code waits for T13 to land (Q574).
+    c.interfaceMembersDeclared = true
+    var pendingInterfaces = List<Work>()
+    for i in 0..c.pendingInterfaces.length {
+        pendingInterfaces.append(t11CopyWork(in c.pendingInterfaces[i]))
+    }
+    c.pendingInterfaces = List<Work>()
+    for w in pendingInterfaces {
+        let scope = instantiatingBegin(ref c, from: w.file, at: w.span)
+        runWork(ref c, for: in w)
+        instantiatingEnd(ref c, by: scope)
+    }
     for alias in copyIds(in c.aliasOrder) {
         let file = c.aliases[alias].file
         switch c.files[file].unit.members[c.aliases[alias].declIndex] {
@@ -682,7 +683,11 @@ void t11DeclareTest(ref Ctx c, from FileId file, at i64 declIndex, by TextSpan s
     let testId = newTest(ref c, by: TestSymbol { title: title, span: span, function: fn, file: file, declIndex: declIndex })
     c.modules[module].tests.append(testId)
     c.modules[module].allFunctions.append(fn)
-    c.testBodies[fn] = TestBody { file: file, declIndex: declIndex, attribute: attribute, arg: arg }
+    if attribute < 0 {
+        c.testBodies[fn] = TestBody { decl: SyntaxRef { file: file, declIndex: declIndex }, hasValues: false, values: SyntaxRef {} }
+    } else {
+        c.testBodies[fn] = TestBody { decl: SyntaxRef { file: file, declIndex: declIndex }, hasValues: true, values: SyntaxRef { file: file, declIndex: declIndex, memberIndex: attribute, itemIndex: arg } }
+    }
 }
 
 // ── Compilation.cs:371 CaseTitle ────────────────────────────────────────────────
@@ -706,7 +711,7 @@ string t11CaseTitle(in Ctx c, from FileId file, for in parser.TestDecl t, by in 
 
 void declareFile(ref Ctx c, for FileId file) {
     let module = c.files[file].module
-    var mainStatements = List<i64>()
+    var mainStatements = List<SyntaxRef>()
     for d in 0..c.files[file].unit.members.length {
         let decl = t8TakeDecl(ref c, from: file, at: d, by: .none)
         t11CheckAttributes(ref c, from: file, for: in decl, at: d)
@@ -925,11 +930,11 @@ void declareFile(ref Ctx c, for FileId file) {
                     if module != c.entryModule || c.files[file].isTestFile {
                         report(ref c, for: .statementOutsideEntry, from: file, at: g.value.span, by: ("", "", "", "", ""))
                     } else {
-                        mainStatements.append(d)
+                        mainStatements.append(SyntaxRef { file: file, declIndex: d })
                     }
                 }
             case .testDecl(let t):
-                if !c.t11IncludeTests { continue }
+                if !c.includeTests { continue }
                 if t.value.params.length == 0 {
                     t11DeclareTest(ref c, from: file, at: d, by: t.value.span, for: t.value.title, as: -1, to: -1)
                 } else if c.testCases.contains(declKey(file, at: d)) {
@@ -944,16 +949,16 @@ void declareFile(ref Ctx c, for FileId file) {
         }
     }
     if mainStatements.length > 0 {
-        let first = t11DeclSpan(in c.files[file].unit.members[mainStatements[0]])
+        let first = t11DeclSpan(in c.files[file].unit.members[mainStatements[0].declIndex])
         let main = c.modules[module].main
         if main >= 0 && c.functions[main].kind == .function {
             let line = lineIndex(c.files[c.functions[main].file].text.span, at: c.functions[main].span.start) + 1
             report(ref c, for: .duplicateMain, from: file, at: first, by: ("", "", "", "", ""), label: $"`main` is also declared on line {line}")
         } else if main < 0 {
-            let sym = newFunction(ref c, by: FunctionSymbol { name: "main", span: first, module: module, kind: .main, file: file, declIndex: mainStatements[0] })
+            let sym = newFunction(ref c, by: FunctionSymbol { name: "main", span: first, module: module, kind: .main, file: file, declIndex: mainStatements[0].declIndex })
             c.modules[module].main = sym
             c.modules[module].allFunctions.append(sym)
-            c.mainStatementsMain = sym
+            c.mainStatementsFn = sym
             c.mainStatements = move mainStatements
         } else {
             report(ref c, for: .statementOutsideEntry, from: file, at: first, by: ("", "", "", "", ""), help: "keep top-level statements in one file of the entry module")
@@ -1120,10 +1125,13 @@ void addFunction(ref Ctx c, from FileId file, at TextSpan name, for FuncId f) {
 
 // ── Compilation.cs:1549 AfterMembersDeclared ────────────────────────────────────
 
-// stub: T11 ports Compilation.cs:1549 AfterMembersDeclared — the wrap in the current instantiation site waits for T13's field (blocked: Q574)
-/// A check deferred until every struct's fields are declared; `declare` runs it through `runWork`.
 void afterMembersDeclared(ref Ctx c, for in Work work) {
-    c.pendingKeys.append(t11CopyWork(in work))
+    var w = t11CopyWork(in work)
+    if c.hasInstantiationSite {
+        w.file = c.instantiationSiteFile
+        w.span = c.instantiationSiteSpan
+    }
+    c.pendingKeys.append(move w)
 }
 
 // ── Compilation.cs:1922 ReportInto ──────────────────────────────────────────────
@@ -1136,7 +1144,6 @@ void reportInto(ref Ctx c, to i64 bag) {
 
 // ── The closures of `List<Action>` (Q570) ───────────────────────────────────────
 
-// stub: T11 ports Compilation.cs:184 Declare (its deferred-work dispatch) — the `.constraint` arm waits for T13's `t13RunConstraint` (blocked: Q574)
 /// Runs one deferred item: the body of the C# closure it stands for.
 void runWork(ref Ctx c, for in Work work) {
     switch work.kind {
@@ -1146,8 +1153,7 @@ void runWork(ref Ctx c, for in Work work) {
             // TypeResolver.cs:191 `AfterMembersDeclared(() => CheckKey())`.
             let _ = t8CheckKey(ref c, for: work.subject, from: work.file, at: work.span)
         case .constraint:
-            // Compilation.cs:1592 `Check`: T13's `t13RunConstraint(ref c, for: in work)`, which exists once T13 lands (Q574).
-            return
+            t13RunConstraint(ref c, for: in work)
         case .interfaceMembers:
             // Compilation.cs:204 and :1660 `DeclareInterfaceMembers(instance)`; the caller wraps it in `Instantiating`.
             declareInterfaceMembers(ref c, for: typeIndex(work.subject))
