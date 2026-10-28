@@ -9,3 +9,4 @@
 - Diagnostic codes `BYN####`: 0001–0999 lexer, 1000–1999 parser, 2000–3999 semantics, 4000–4999 backend. Rendered format is fixed by `DiagnosticRendererTests`.
 - Scratch goes in `tmp/` (gitignored).
 - Work in flight: `docs/handoffs/` (dated files); spec 010 continues per `docs/handoffs/2026-10-26-spec-010-dropoff.md`.
+- Spec 010 work lands only through `scripts/selfhost/land.sh` (guard + an independent review against the C#, Q712). Tests take their expected lines from the C# implementation, never typed by hand. Port, do not invent: no fallbacks for unported siblings.
