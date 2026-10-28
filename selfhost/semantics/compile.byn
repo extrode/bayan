@@ -1,114 +1,154 @@
-// T11: Compilation.cs 1-~654 (load, imports, Declare order, DeclareFile, addType/addFunction, Work, sinks).
+// T11: Compilation.cs 1-549 and 551-652 (FromPath, FromProject, Create, ModuleFiles, LoadModule, ResolveImport,
+// CNameOf, Declare, DeclareBuiltinVariants, CheckMainSignature, CheckAttributes, CheckCases, IsCaseLiteral,
+// DeclareTest, CaseTitle, DeclareFile, AssociatedType, DeclareTypeParameters, DeclareWhere, ResolveInterface,
+// RejectBases, AddType, AddFunction), plus AfterMembersDeclared (:1549), ReportInto (:1922) and the `Work`
+// dispatch (`runWork`) that replaces the C# closures (Q570). The C# fields of :22-25 and :551-559 live in
+// ctx.byn's `// ── T11 state` section.
 
 import lexer
 import parser
 
-// stub: T11 ports Compilation.cs:184 Declare
-void declare(ref Ctx c) {
-    buildLexicon(ref c)
-    var wheres = List<Work>()
-    for m in 0..c.modules.length {
-        let fIds = copyIds(in c.modules[m].files)
-        for f in fIds {
-            t11DeclareFile(ref c, for: f, to: ref wheres)
-        }
-    }
-    for m in 0..c.modules.length {
-        let sets = copyIds(in c.modules[m].errorSets)
-        for s in sets {
-            declareVariants(ref c, for: s)
-        }
-    }
-    for wIdx in 0..wheres.length {
-        runWork(ref c, for: in wheres[wIdx])
-    }
-    for a in 0..c.aliases.length {
-        let f = c.aliases[a].file
-        let dIdx = c.aliases[a].declIndex
-        switch c.files[f].unit.members[dIdx] {
-            case .errorSetDecl(let node):
-                checkComposition(ref c, for: a, from: in node.value)
-            default:
-                continue
-        }
-    }
-    for m in 0..c.modules.length {
-        let enums = copyIds(in c.modules[m].enums)
-        for e in enums {
-            declareEnumMembers(ref c, for: e)
-        }
-    }
-    for m in 0..c.modules.length {
-        let unions = copyIds(in c.modules[m].unions)
-        for u in unions {
-            declareUnionVariants(ref c, for: u)
-        }
-    }
-    for m in 0..c.modules.length {
-        let sets = copyIds(in c.modules[m].errorSets)
-        for s in sets {
-            declarePayloads(ref c, for: s)
-        }
-    }
-    for m in 0..c.modules.length {
-        let structs = copyIds(in c.modules[m].structs)
-        for s in structs {
-            declareMembers(ref c, for: s)
-            checkMembers(ref c, for: s)
-        }
-        checkOverloads(ref c, for: m)
-    }
-    var pIdx: i64 = 0
-    while pIdx < c.pendingKeys.length {
-        let kind = c.pendingKeys[pIdx].kind
-        let subj = c.pendingKeys[pIdx].subject
-        let f = c.pendingKeys[pIdx].file
-        let sp = c.pendingKeys[pIdx].span
-        if kind == .keyCheck {
-            if !isValidKey(ref c, by: subj) {
-                let disp = typeDisplay(ref c, by: subj)
-                report(ref c, for: .invalidMapKey, from: f, at: sp, by: (disp, "", "", "", ""))
-            }
-        }
-        pIdx += 1
-    }
-    if c.modules.length > 0 {
-        let entryMod = c.modules.length - 1
-        let mainFn = c.modules[entryMod].main
-        if mainFn >= 0 && c.functions[mainFn].kind == .function {
-            t11CheckMainSignature(ref c, for: mainFn)
-        }
-    }
+/// The C# `CompilationOptions` record.
+struct CompilationOptions {
+    bool includeTests = false
+    bool library = false
+    bool skipOwnershipCheck = false
+    List<string>? capabilities = null
+    string? packageName = null
 }
 
-// stub: T11 ports Compilation.cs:374 DeclareFile
-void declareFile(ref Ctx c, for FileId file) {
-    var wheres = List<Work>()
-    t11DeclareFile(ref c, for: file, to: ref wheres)
-    for wIdx in 0..wheres.length {
-        runWork(ref c, for: in wheres[wIdx])
-    }
+
+/// The C# `_testCases` value: the arguments of the test's first `@cases` attribute (`attribute`) that are cases.
+struct TestCases {
+    i64 attribute
+    List<i64> args
 }
 
-// stub: T11 ports Compilation.cs:125 LoadModule
+/// The identity of top-level declaration `declIndex` of `file` (the C# `Decl` reference, as a map key).
+i64 declKey(FileId file, at i64 declIndex) => (file << 32) | declIndex
+
+// ── Compilation.cs:69 FromPath ──────────────────────────────────────────────────
+
+/// Compiles a file or a directory. A file's module is its directory, but only that file is read unless
+/// `wholeDirectory` is set. `path` must be absolute: there is no `Path.GetFullPath` (Q571).
+Ctx fromPath(string path, by in CompilationOptions options, bool wholeDirectory = true) {
+    let full = path
+    let isDir = t11DirectoryExists(full)
+    let dir = isDir ? full : t11DirectoryName(full)
+    var files = List<string>()
+    if isDir || wholeDirectory {
+        files = t11ModuleFiles(dir, includeTests: options.includeTests)
+    } else {
+        files.append(full)
+    }
+    if !isDir && !listContainsString(in files, by: full) { files.append(full) }
+    var sources = List<lexer.SourceText>()
+    for f in files { sources.append(lexer.SourceText.create(f, from: t11ReadAllBytes(f))) }
+    return create(from: move sources, at: dir, by: in options)
+}
+
+// ── Compilation.cs:87 FromProject ───────────────────────────────────────────────
+
+/// Compiles a project: the entry module is `src/<entryModule>/`, imports resolve under `src/`, and with tests
+/// every `tests/*.test.byn` joins the entry module. Files are named relative to the project root.
+Ctx fromProject(string root, for string entryModule, by in CompilationOptions options) {
+    let src = t11Combine(root, by: "src")
+    let entry = t11Combine(src, by: entryModule)
+    var files = List<string>()
+    if t11DirectoryExists(entry) { files = t11ModuleFiles(entry, includeTests: options.includeTests) }
+    let tests = t11Combine(root, by: "tests")
+    if options.includeTests && t11DirectoryExists(tests) {
+        var found = List<string>()
+        for name in t11ListFiles(tests) {
+            if name.endsWith(".test.byn") { found.append(t11Combine(tests, by: name)) }
+        }
+        t11SortOrdinal(ref found)
+        for f in found { files.append(f) }
+    }
+    var sources = List<lexer.SourceText>()
+    for f in files { sources.append(lexer.SourceText.create(t11RelativePath(root, to: f), from: t11ReadAllBytes(f))) }
+    return create(from: move sources, at: src, by: in options, displayRoot: root)
+}
+
+// ── Compilation.cs:100 Create ───────────────────────────────────────────────────
+
+/// Compiles `entryFiles` as the entry module; imports resolve under `packageRoot`.
+Ctx create(from move List<lexer.SourceText> entryFiles, at string packageRoot, by in CompilationOptions options, string? displayRoot = null) {
+    var capabilities: List<string>? = null
+    if (options.capabilities is { } caps) { capabilities = copyStrings(in caps) }
+    var c = Ctx {
+        files: List<SourceFile>(),
+        modules: List<Mod>(),
+        diagnostics: List<Diag>(),
+        bags: List<DiagBag>(),
+        library: options.library,
+        capabilities: move capabilities,
+        packageName: options.packageName ?? "",
+        packageRoot: packageRoot,
+        displayRoot: displayRoot ?? packageRoot,
+        includeTests: options.includeTests,
+        skipOwnershipCheck: options.skipOwnershipCheck,
+    }
+    var clock = Io.monotonicNanos()
+    c.entryModule = loadModule(ref c, for: "main", at: packageRoot, from: move entryFiles, by: -1)
+    for f in copyIds(in c.modules[c.entryModule].files) { c.files[f].isEntry = true }
+    c.parseTime = Io.monotonicNanos() - clock
+    // Syntax errors stop here: binding a broken tree mostly reports their echoes.
+    if t11HasErrors(in c) { return c }
+    clock = Io.monotonicNanos()
+    declare(ref c)
+    bindAll(ref c)
+    // Each case binds and checks the same body; report what it finds there once.
+    // mutation-exempt: Q573
+    if c.testCases.length > 0 { removeRepeats(ref c) }
+    c.checkTime = Io.monotonicNanos() - clock
+    return c
+}
+
+/// The C# `DiagnosticBag.HasErrors` of `Diagnostics`.
+bool t11HasErrors(in Ctx c) {
+    for d in c.diagnostics {
+        if !d.isWarning { return true }
+    }
+    return false
+}
+
+// ── Compilation.cs:117 ModuleFiles ──────────────────────────────────────────────
+
+/// The `.byn` files of `dir` (without `.test.byn` unless `includeTests`), as `dir/name`, in ordinal order.
+List<string> t11ModuleFiles(string dir, bool includeTests) {
+    var files = List<string>()
+    for name in t11ListFiles(dir) {
+        if !name.endsWith(".byn") { continue }
+        let f = t11Combine(dir, by: name)
+        if includeTests || !f.endsWith(".test.byn") { files.append(f) }
+    }
+    t11SortOrdinal(ref files)
+    return files
+}
+
+// ── Compilation.cs:125 LoadModule ───────────────────────────────────────────────
+
 ModId loadModule(ref Ctx c, for string name, at string dir, from move List<lexer.SourceText> sources, by ModId importer) {
-    for i in 0..c.modules.length {
-        if c.modules[i].directory == dir { return i }
-    }
-    var fileIds = List<FileId>()
-    var srcList = move sources
-    var revSources = List<lexer.SourceText>()
-    while srcList.length > 0 { revSources.append(srcList.removeLast()) }
-    while revSources.length > 0 {
-        let s = revSources.removeLast()
-        let path = s.path
-        let isEntry = (importer < 0)
-        let isTest = path.endsWith(".test.byn")
-        var bytes = List<u8>()
-        for b in s.bytes { bytes.append(b) }
-        var p = parser.Parser.create(lexer.lex(move s, by: lexer.Keywords.build()))
+    c.modules.append(Mod { name: name, files: List<FileId>(), directory: dir, cName: t11CNameOf(name) })
+    let module = c.modules.length - 1
+    c.modulesByDir[dir] = module
+    c.loading.append(module)
+    var pending = move sources
+    var inOrder = List<lexer.SourceText>()
+    while pending.length > 0 { inOrder.append(pending.removeLast()) }
+    // Whether each file's tree has an error (the C# `f.Tree.Diagnostics.Any(d => d.IsError)`).
+    var broken = List<bool>()
+    while inOrder.length > 0 {
+        let source = inOrder.removeLast()
+        let path = source.path
+        var text = List<u8>()
+        for b in source.bytes { text.append(b) }
+        var p = parser.Parser.create(lexer.lex(move source, by: lexer.Keywords.build()))
         let unit = parser.parseCompilationUnit(ref p)
         let fileId = c.files.length
+        // Every lexer and parser code is an error (DiagnosticCodes.cs has no BYN0xxx/BYN1xxx warning).
+        var hasError = false
         for d in p.lexed.diagnostics {
             addDiag(ref c, by: Diag {
                 code: d.code,
@@ -123,192 +163,100 @@ ModId loadModule(ref Ctx c, for string name, at string dir, from move List<lexer
                 fixReplacement: d.fixReplacement,
                 related: List<Related>(),
             })
+            hasError = true
         }
         c.files.append(SourceFile {
             path: path,
             displayPath: path,
-            text: move bytes,
+            text: move text,
             unit: move unit,
-            module: -1,
-            isEntry: isEntry,
-            isTestFile: isTest,
+            module: module,
+            isTestFile: path.endsWith(".test.byn"),
             imports: Map<string, ModId>(),
         })
-        fileIds.append(fileId)
+        c.modules[module].files.append(fileId)
+        broken.append(hasError)
     }
-    for f in fileIds {
-        var hasSyntaxError = false
-        for dIdx in 0..c.diagnostics.length {
-            if c.diagnostics[dIdx].file == f && !c.diagnostics[dIdx].isWarning {
-                hasSyntaxError = true
-                break
-            }
-        }
-        if !hasSyntaxError {
-            var importDecls = List<i64>()
-            for mIdx in 0..c.files[f].unit.members.length {
-                switch c.files[f].unit.members[mIdx] {
-                    case .importDecl(let _):
-                        importDecls.append(mIdx)
-                    default:
-                        continue
-                }
-            }
-            for dIdx in importDecls {
-                switch c.files[f].unit.members[dIdx] {
-                    case .importDecl(let node):
-                        resolveImport(ref c, from: f, for: in node.value)
-                    default:
-                        continue
-                }
+    let files = copyIds(in c.modules[module].files)
+    for i in 0..files.length {
+        if broken[i] { continue }
+        let f = files[i]
+        for m in 0..c.files[f].unit.members.length {
+            switch c.files[f].unit.members[m] {
+                case .importDecl(let node):
+                    resolveImport(ref c, from: f, for: in node.value)
+                default:
+                    continue
             }
         }
     }
-    let modId = c.modules.length
-    var modFiles = List<FileId>()
-    for f in fileIds {
-        c.files[f].module = modId
-        modFiles.append(f)
+    var at: i64 = 0
+    while at < c.loading.length {
+        if c.loading[at] == module {
+            c.loading.remove(at: at)
+            break
+        }
+        at += 1
     }
-    c.modules.append(Mod {
-        name: name,
-        files: move modFiles,
-        directory: dir,
-        cName: t11CNameOf(name),
-    })
-    return modId
+    c.moduleOrder.append(module)
+    return module
 }
 
-// stub: T11 ports Compilation.cs:146 ResolveImport
+// ── Compilation.cs:146 ResolveImport ────────────────────────────────────────────
+
 void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
-    if decl.path.length == 0 { return }
-    var nameSb = StrBuf()
-    var pathSb = StrBuf()
+    var nameBuf = StrBuf()
+    var dir = c.packageRoot
     for i in 0..decl.path.length {
-        if i > 0 {
-            nameSb.append(".")
-            pathSb.append("/")
-        }
-        let seg = t11Text(in c, from: file, at: decl.path[i])
-        nameSb.append(seg)
-        pathSb.append(seg)
+        let part = t11Text(in c, from: file, at: decl.path[i])
+        if i > 0 { nameBuf.append(".") }
+        nameBuf.append(part)
+        dir = t11Combine(dir, by: part)
     }
-    let importName = $"{nameSb.finish()}"
-    let subPath = $"{pathSb.finish()}"
+    let name = $"{nameBuf.finish()}"
     let span = TextSpan.fromBounds(decl.path[0].start, until: decl.path[decl.path.length - 1].end)
-    let alias = (decl.alias is { } a) ? t11Text(in c, from: file, at: a) : t11Text(in c, from: file, at: decl.path[decl.path.length - 1])
-
-    let pkgRoot = t11PackageRoot(in c, from: file)
-    let dir = (pkgRoot == "." || pkgRoot == "") ? subPath : $"{pkgRoot}/{subPath}"
-
-    // 1. Cycle check:
-    var isCycle = false
-    for fIdx in 0..c.files.length {
-        if c.files[fIdx].module < 0 && (c.files[fIdx].path.startsWith($"{dir}/") || t11DirName(c.files[fIdx].path) == dir) {
-            isCycle = true
-            break
-        }
-    }
-    if isCycle {
-        var loadingNames = List<string>()
-        for fIdx in 0..c.files.length {
-            if c.files[fIdx].module < 0 {
-                let mDir = t11DirName(c.files[fIdx].path)
-                var seen = false
-                for s in loadingNames {
-                    if s == mDir {
-                        seen = true
-                        break
-                    }
+    let alias = t11Text(in c, from: file, at: decl.alias ?? decl.path[decl.path.length - 1])
+    var module: ModId = -1
+    if c.modulesByDir.contains(dir) {
+        module = c.modulesByDir[dir]
+        if listContains(in c.loading, by: module) {
+            var chain = StrBuf()
+            var started = false
+            for m in c.loading {
+                if m == module { started = true }
+                if started {
+                    chain.append(c.modules[m].name)
+                    chain.append(" → ")
                 }
-                if !seen { loadingNames.append(mDir) }
             }
+            chain.append(c.modules[module].name)
+            report(ref c, for: .importCycle, from: file, at: span, by: ($"{chain.finish()}", "", "", "", ""),
+                help: "move the shared declarations into a module both can import")
+            return
         }
-        var chainSb = StrBuf()
-        var skipping = true
-        for mDir in loadingNames {
-            if mDir == dir { skipping = false }
-            if !skipping {
-                chainSb.append(t11BaseName(mDir))
-                chainSb.append(" → ")
-            }
+    } else {
+        var files = List<string>()
+        if t11DirectoryExists(dir) { files = t11ModuleFiles(dir, includeTests: c.includeTests) }
+        if files.length == 0 {
+            report(ref c, for: .unknownModule, from: file, at: span, by: (name, "", "", "", ""),
+                help: $"put the module's `.byn` files in `{t11RelativePath(c.packageRoot, to: dir)}/` next to the entry file; a module is a directory")
+            return
         }
-        chainSb.append(importName)
-        let chain = $"{chainSb.finish()}"
-        report(ref c, for: .importCycle, from: file, at: span, by: (chain, "", "", "", ""), help: "move the shared declarations into a module both can import")
-        return
+        var sources = List<lexer.SourceText>()
+        for f in files { sources.append(lexer.SourceText.create(t11RelativePath(c.displayRoot, to: f), from: t11ReadAllBytes(f))) }
+        module = loadModule(ref c, for: name, at: dir, from: move sources, by: c.files[file].module)
     }
-
-    // 2. Already loaded check:
-    var foundMod: ModId = -1
-    for i in 0..c.modules.length {
-        if c.modules[i].directory == dir {
-            foundMod = i
-            break
-        }
-    }
-    if foundMod >= 0 {
-        if c.files[file].imports.contains(alias) {
-            report(ref c, for: .duplicateDeclaration, from: file, at: span, by: (alias, "", "", "", ""))
-        } else {
-            c.files[file].imports[alias] = foundMod
-        }
-        return
-    }
-
-    // 3. New module from disk:
-    let filePaths = t11ModuleFiles(dir, includeTests: false)
-    if filePaths.length == 0 {
-        report(ref c, for: .unknownModule, from: file, at: span, by: (importName, "", "", "", ""), help: $"put the module's `.byn` files in `{subPath}/` next to the entry file; a module is a directory")
-        return
-    }
-    var sources = List<lexer.SourceText>()
-    for fp in filePaths {
-        let bytes = Io.readFile(fp) catch continue
-        sources.append(lexer.SourceText.create(fp, from: move bytes))
-    }
-    let importedMod = loadModule(ref c, for: importName, at: dir, from: move sources, by: c.files[file].module)
     if c.files[file].imports.contains(alias) {
         report(ref c, for: .duplicateDeclaration, from: file, at: span, by: (alias, "", "", "", ""))
     } else {
-        c.files[file].imports[alias] = importedMod
+        c.files[file].imports[alias] = module
     }
 }
 
-string t11DirName(string path) {
-    var lastSlash: i64 = -1
-    var i: i64 = 0
-    for b in path.bytes {
-        if b == 0x2F { lastSlash = i }
-        i += 1
-    }
-    if lastSlash <= 0 { return "." }
-    return path[0..lastSlash]
-}
+// ── Compilation.cs:179 CNameOf ──────────────────────────────────────────────────
 
-string t11BaseName(string path) {
-    var lastSlash: i64 = -1
-    var i: i64 = 0
-    for b in path.bytes {
-        if b == 0x2F { lastSlash = i }
-        i += 1
-    }
-    if lastSlash < 0 { return path }
-    return path[lastSlash + 1..path.length]
-}
-
-string t11PackageRoot(in Ctx c, from FileId file) {
-    if c.files.length > 0 {
-        let firstPath = c.files[0].path
-        let dir = t11DirName(firstPath)
-        if dir.endsWith("/app") {
-            return dir[0..dir.length - 4]
-        }
-        return dir
-    }
-    return "."
-}
-
+/// Each character of `moduleName` that is not an ASCII letter or digit becomes `_` (`char.IsAsciiLetterOrDigit`).
+/// A non-ASCII character is one `_` per UTF-16 unit in C# and one per byte here (Q571).
 string t11CNameOf(string moduleName) {
     var sb = StrBuf()
     for b in moduleName.bytes {
@@ -321,694 +269,1060 @@ string t11CNameOf(string moduleName) {
     return $"{sb.finish()}"
 }
 
-List<string> t11ModuleFiles(string dir, bool includeTests) {
-    var files = List<string>()
-    let entries = Io.listDir(dir) catch return files
-    for name in entries {
-        if !name.endsWith(".byn") { continue }
-        if !includeTests && name.endsWith(".test.byn") { continue }
-        files.append($"{dir}/{name}")
-    }
-    return files
-}
+// ── Compilation.cs:184 Declare ──────────────────────────────────────────────────
 
-TextSpan t11TypeSpan(in parser.TypeSyntax t) {
-    switch t {
-        case .namedType(let n): return n.value.span
-        case .optionalType(let n): return n.value.span
-        case .arrayType(let n): return n.value.span
-        case .tupleType(let n): return n.value.span
-        case .functionTypeSyntax(let n): return n.value.span
-        case .dynType(let n): return n.value.span
-        case .refinedType(let n): return n.value.span
-        case .pointerType(let n): return n.value.span
-        case .none: return TextSpan { start: 0, length: 0 }
+void declare(ref Ctx c) {
+    t11DeclareBuiltinVariants(ref c, for: "IoError")
+    t11DeclareBuiltinVariants(ref c, for: "Utf8Error")
+    for m in copyIds(in c.moduleOrder) {
+        for f in copyIds(in c.modules[m].files) { declareFile(ref c, for: f) }
     }
-}
-
-void t11CheckAttributes(ref Ctx c, from FileId file, for List<parser.AttributeSyntax> attrs, bool isTest, bool isStruct) {
-    var hasCases = false
-    for a in attrs {
-        let aName = t11Text(in c, from: file, at: a.name)
-        if aName == "cases" {
-            if isTest {
-                if hasCases {
-                    report(ref c, for: .modifierNotAllowed, from: file, at: a.span, by: ("@cases", "", "", "", ""), help: "combine the cases into one `@cases(...)`")
-                }
-                hasCases = true
-            } else {
-                report(ref c, for: .modifierNotAllowed, from: file, at: a.span, by: ("@cases", "", "", "", ""), help: "put `@cases(...)` on a test that takes parameters")
-            }
-        } else if aName == "exitCode" {
-            report(ref c, for: .modifierNotAllowed, from: file, at: a.span, by: ("@exitCode", "", "", "", ""), help: "put `@exitCode` on an error enum variant")
-        } else if aName == "sealed" {
-            if !isStruct {
-                report(ref c, for: .modifierNotAllowed, from: file, at: a.span, by: ("@sealed", "", "", "", ""), help: "put `@sealed` on a struct")
-            } else if a.args.length > 0 || a.becauseKeyword is not null {
-                report(ref c, for: .modifierNotAllowed, from: file, at: a.span, by: (t11Text(in c, from: file, at: a.span), "", "", "", ""), help: "write `@sealed` with no arguments and no `because`")
-            }
-        } else if aName == "positional" {
-            if !isStruct {
-                report(ref c, for: .modifierNotAllowed, from: file, at: a.span, by: ("@positional", "", "", "", ""), help: "put `@positional` on a struct")
-            } else if a.args.length > 0 || a.becauseKeyword is not null {
-                report(ref c, for: .modifierNotAllowed, from: file, at: a.span, by: (t11Text(in c, from: file, at: a.span), "", "", "", ""), help: "write `@positional` with no arguments and no `because`")
-            }
-        } else {
-            report(ref c, for: .unknownAttribute, from: file, at: a.name, by: (aName, "", "", "", ""), help: "use `@exitCode(n)` on an error variant or `@cases(...)` on a test")
-        }
+    // Before any signature names a `union error … except .c`, whose cases must already exist.
+    for m in copyIds(in c.moduleOrder) {
+        for set in copyIds(in c.modules[m].errorSets) { declareVariants(ref c, for: set) }
     }
-}
-
-Work makeWork(WorkKind kind, Type subject = -1, FuncId instance = -1, FileId file = -1, i64 declIndex = -1, i64 memberIndex = -1) {
-    return Work {
-        kind: kind,
-        subject: subject,
-        args: List<Type>(),
-        instance: instance,
-        file: file,
-        span: TextSpan { start: 0, length: 0 },
-        declIndex: declIndex,
-        memberIndex: memberIndex,
+    t11DeclareBuiltinVariants(ref c, for: "ParseError")
+    // Bounds are resolved once every type is declared, so `where T : IOrder<T>` can name `T` and later types.
+    for i in 0..c.wheres.length {
+        let work = t11CopyWork(in c.wheres[i])
+        runWork(ref c, for: in work)
     }
-}
-
-TextSpan t11DeclSpan(in parser.Decl d) {
-    switch d {
-        case .importDecl(let n): return n.value.span
-        case .globalStatement(let n): return n.value.span
-        case .functionDecl(let n): return n.value.span
-        case .structDecl(let n): return n.value.span
-        case .interfaceDecl(let n): return n.value.span
-        case .getterDecl(let n): return n.value.span
-        case .associatedTypeDecl(let n): return n.value.span
-        case .extensionDecl(let n): return n.value.span
-        case .fieldDecl(let n): return n.value.span
-        case .propertyDecl(let n): return n.value.span
-        case .constructorDecl(let n): return n.value.span
-        case .errorEnumDecl(let n): return n.value.span
-        case .errorSetDecl(let n): return n.value.span
-        case .enumDecl(let n): return n.value.span
-        case .unionDecl(let n): return n.value.span
-        case .typeAliasDecl(let n): return n.value.span
-        case .effectDecl(let n): return n.value.span
-        case .testDecl(let n): return n.value.span
-        case .none: return TextSpan { start: 0, length: 0 }
+    declareInterfaceMembers(ref c, for: findInterface(ref c, for: "IEnumerator"))
+    declareInterfaceMembers(ref c, for: findInterface(ref c, for: "IIndexable"))
+    for m in copyIds(in c.moduleOrder) {
+        for i in copyIds(in c.modules[m].interfaces) { declareInterfaceMembers(ref c, for: i) }
     }
-}
-
-void t11CheckMainSignature(ref Ctx c, for FuncId fn) {
-    let ret = c.functions[fn].returnType
-    let retOk = isVoid(ret) || isError(ret) || ret == prim(PrimitiveKind.i32)
-    var paramsOk = false
-    let params = copyIds(in c.functions[fn].parameters)
-    if params.length == 0 {
-        paramsOk = true
-    } else if params.length == 1 {
-        let p = params[0]
-        let pt = c.locals[p].type
-        if isError(pt) {
-            paramsOk = true
-        } else if kindOf(pt) == .span && !c.locals[p].written {
-            let spanData = c.spanTypes[t11Index(pt)]
-            if spanData.readOnly && spanData.element == prim(PrimitiveKind.string) {
-                paramsOk = true
-            }
-        }
+    c.interfaceMembersDeclared = true
+    var pendingInterfaces = List<Work>()
+    for i in 0..c.pendingInterfaces.length {
+        pendingInterfaces.append(t11CopyWork(in c.pendingInterfaces[i]))
     }
-    if !retOk || !paramsOk {
-        report(ref c, for: .invalidMainSignature, from: c.functions[fn].file, at: c.functions[fn].nameSpan, by: ("", "", "", "", ""), help: "write `void main()`, `i32 main()`, `void main(ReadOnlySpan<string> args)` or `i32 main(ReadOnlySpan<string> args)`, each optionally with `fails`")
+    c.pendingInterfaces = List<Work>()
+    for w in pendingInterfaces {
+        let scope = instantiatingBegin(ref c, from: w.file, at: w.span)
+        runWork(ref c, for: in w)
+        instantiatingEnd(ref c, by: scope)
     }
-}
-
-void t11DeclareFile(ref Ctx c, for FileId file, to ref List<Work> wheres) {
-    let modId = c.files[file].module
-    var mainStatements = List<i64>()
-    for dIdx in 0..c.files[file].unit.members.length {
-        switch c.files[file].unit.members[dIdx] {
-            case .structDecl(let node):
-                t11CheckAttributes(ref c, from: file, for: node.value.attributes, isTest: false, isStruct: true)
-                let nameText = t11Text(in c, from: file, at: node.value.name)
-                var sym = StructSymbol {
-                    name: nameText,
-                    nameSpan: node.value.name,
-                    span: node.value.span,
-                    module: modId,
-                    file: file,
-                    declIndex: dIdx,
-                    memberIndex: -1,
-                    access: accessOf(node.value.modifiers),
-                    modifiers: i64(node.value.modifiers),
-                    doc: node.value.doc,
-                }
-                var typeParams = List<TypeParamId>()
-                let typeMap = declareTypeParameters(ref c, from: file, for: in node.value.typeParams, to: ref typeParams)
-                sym.typeParams = move typeParams
-                if (typeMap is { } tm) {
-                    for (k, v) in tm { sym.typeMap[k] = v }
-                }
-                let sId = newStruct(ref c, by: move sym)
-                if addType(ref c, from: file, at: node.value.name, as: structTypeOf(sId)) {
-                    if modId >= 0 { c.modules[modId].structs.append(sId) }
-                }
-                checkType(ref c, from: file, at: node.value.name)
-                if node.value.where.length > 0 {
-                    wheres.append(makeWork(.where, subject: structTypeOf(sId), file: file, declIndex: dIdx))
-                }
-            case .errorEnumDecl(let node):
-                t11CheckAttributes(ref c, from: file, for: node.value.attributes, isTest: false, isStruct: false)
-                let nameText = t11Text(in c, from: file, at: node.value.name)
-                let sym = ErrorSetSymbol {
-                    name: nameText,
-                    nameSpan: node.value.name,
-                    span: node.value.span,
-                    module: modId,
-                    file: file,
-                    declIndex: dIdx,
-                    memberIndex: -1,
-                    access: accessOf(node.value.modifiers),
-                    modifiers: i64(node.value.modifiers),
-                }
-                let eId = newErrorSet(ref c, by: move sym)
-                if addType(ref c, from: file, at: node.value.name, as: errorSetTypeOf(eId)) {
-                    if modId >= 0 { c.modules[modId].errorSets.append(eId) }
-                }
-                checkType(ref c, from: file, at: node.value.name)
-            case .enumDecl(let node):
-                t11CheckAttributes(ref c, from: file, for: node.value.attributes, isTest: false, isStruct: false)
-                let nameText = t11Text(in c, from: file, at: node.value.name)
-                let sym = EnumSymbol {
-                    name: nameText,
-                    nameSpan: node.value.name,
-                    span: node.value.span,
-                    module: modId,
-                    file: file,
-                    declIndex: dIdx,
-                    memberIndex: -1,
-                    access: accessOf(node.value.modifiers),
-                    modifiers: i64(node.value.modifiers),
-                }
-                let eId = newEnum(ref c, by: move sym)
-                if addType(ref c, from: file, at: node.value.name, as: enumTypeOf(eId)) {
-                    if modId >= 0 { c.modules[modId].enums.append(eId) }
-                }
-                checkType(ref c, from: file, at: node.value.name)
-                if node.value.bases.length > 0 {
-                    let start = t11TypeSpan(in node.value.bases[0]).start
-                    let end = t11TypeSpan(in node.value.bases[node.value.bases.length - 1]).end
-                    report(ref c, for: .nonStructConformance, from: file, at: TextSpan.fromBounds(start, until: end), by: (nameText, "an enum", "", "", ""), label: "listed here", help: "wrap it in a struct that conforms")
-                }
-                if node.value.where.length > 0 {
-                    wheres.append(makeWork(.where, subject: enumTypeOf(eId), file: file, declIndex: dIdx))
-                }
-            case .unionDecl(let node):
-                t11CheckAttributes(ref c, from: file, for: node.value.attributes, isTest: false, isStruct: false)
-                let nameText = t11Text(in c, from: file, at: node.value.name)
-                var sym = UnionSymbol {
-                    name: nameText,
-                    nameSpan: node.value.name,
-                    span: node.value.span,
-                    module: modId,
-                    file: file,
-                    declIndex: dIdx,
-                    memberIndex: -1,
-                    access: accessOf(node.value.modifiers),
-                    modifiers: i64(node.value.modifiers),
-                }
-                var typeParams = List<TypeParamId>()
-                let typeMap = declareTypeParameters(ref c, from: file, for: in node.value.typeParams, to: ref typeParams)
-                sym.typeParams = move typeParams
-                if (typeMap is { } tm) {
-                    for (k, v) in tm { sym.typeMap[k] = v }
-                }
-                let uId = newUnion(ref c, by: move sym)
-                if addType(ref c, from: file, at: node.value.name, as: unionTypeOf(uId)) {
-                    if modId >= 0 { c.modules[modId].unions.append(uId) }
-                }
-                checkType(ref c, from: file, at: node.value.name)
-                if node.value.bases.length > 0 {
-                    let start = t11TypeSpan(in node.value.bases[0]).start
-                    let end = t11TypeSpan(in node.value.bases[node.value.bases.length - 1]).end
-                    report(ref c, for: .nonStructConformance, from: file, at: TextSpan.fromBounds(start, until: end), by: (nameText, "a union", "", "", ""), label: "listed here", help: "wrap it in a struct that conforms")
-                }
-                if node.value.where.length > 0 {
-                    wheres.append(makeWork(.where, subject: unionTypeOf(uId), file: file, declIndex: dIdx))
-                }
-            case .interfaceDecl(let node):
-                t11CheckAttributes(ref c, from: file, for: node.value.attributes, isTest: false, isStruct: false)
-                let nameText = t11Text(in c, from: file, at: node.value.name)
-                var sym = InterfaceSymbol {
-                    name: nameText,
-                    nameSpan: node.value.name,
-                    span: node.value.span,
-                    module: modId,
-                    file: file,
-                    declIndex: dIdx,
-                    memberIndex: -1,
-                    access: accessOf(node.value.modifiers),
-                    modifiers: i64(node.value.modifiers),
-                }
-                var typeParams = List<TypeParamId>()
-                let typeMap = declareTypeParameters(ref c, from: file, for: in node.value.typeParams, to: ref typeParams)
-                sym.typeParams = move typeParams
-                if (typeMap is { } tm) {
-                    for (k, v) in tm { sym.typeMap[k] = v }
-                }
-                let iId = newInterface(ref c, by: move sym)
-                if findInterface(ref c, for: nameText) >= 0 {
-                    report(ref c, for: .duplicateDeclaration, from: file, at: node.value.name, by: (nameText, "", "", "", ""), label: "already declared as a built-in interface")
-                } else {
-                    if addType(ref c, from: file, at: node.value.name, as: interfaceTypeOf(iId)) {
-                        if modId >= 0 { c.modules[modId].interfaces.append(iId) }
-                    }
-                }
-                checkInterface(ref c, from: file, at: node.value.name)
-                if node.value.where.length > 0 {
-                    wheres.append(makeWork(.where, subject: interfaceTypeOf(iId), file: file, declIndex: dIdx))
-                }
-            case .extensionDecl(let node):
-                t11CheckAttributes(ref c, from: file, for: node.value.attributes, isTest: false, isStruct: false)
-                let nameText = t11Text(in c, from: file, at: node.value.name)
-                if node.value.bases.length == 0 {
-                    report(ref c, for: .unsupported, from: file, at: node.value.name, by: ("`extension` declarations", "", "", "", ""))
-                } else {
-                    var sb = StrBuf()
-                    for bIdx in 0..node.value.bases.length {
-                        if bIdx > 0 { sb.append(", ") }
-                        sb.append(t11Text(in c, from: file, at: t11TypeSpan(in node.value.bases[bIdx])))
-                    }
-                    let basesText = $"{sb.finish()}"
-                    let start = node.value.span.start
-                    let end = t11TypeSpan(in node.value.bases[node.value.bases.length - 1]).end
-                    report(ref c, for: .extensionConformance, from: file, at: TextSpan.fromBounds(start, until: end), by: (nameText, basesText, "", "", ""), label: "retroactive conformance", help: $"list `{basesText}` on `{nameText}`'s declaration")
-                }
-            case .typeAliasDecl(let node):
-                t11CheckAttributes(ref c, from: file, for: node.value.attributes, isTest: false, isStruct: false)
-                let nameText = t11Text(in c, from: file, at: node.value.name)
-                if node.value.distinct {
-                    let sym = StructSymbol {
-                        name: nameText,
-                        nameSpan: node.value.name,
-                        span: node.value.span,
-                        module: modId,
-                        file: file,
-                        declIndex: dIdx,
-                        memberIndex: -1,
-                        access: accessOf(node.value.modifiers),
-                        modifiers: i64(node.value.modifiers),
-                    }
-                    let sId = newStruct(ref c, by: move sym)
-                    if addType(ref c, from: file, at: node.value.name, as: structTypeOf(sId)) {
-                        if modId >= 0 {
-                            c.modules[modId].structs.append(sId)
-                            c.distinct[sId] = 1
-                        }
-                    }
-                    checkType(ref c, from: file, at: node.value.name)
-                } else {
-                    if node.value.requiresKeyword.length > 0 {
-                        report(ref c, for: .unsupported, from: file, at: node.value.requiresKeyword[0].span, by: ("`requires` on a plain `type` alias", "", "", "", ""))
-                    }
-                    let aliasId = newAlias(ref c, by: AliasPlaceholder {
-                        name: nameText,
-                        nameSpan: node.value.name,
-                        span: node.value.span,
-                        file: file,
-                        declIndex: dIdx,
-                        modifiers: i64(node.value.modifiers),
-                        target: -1,
-                        resolving: false,
-                    })
-                    let _ = addType(ref c, from: file, at: node.value.name, as: t8AliasType(aliasId))
-                    checkType(ref c, from: file, at: node.value.name)
-                }
-            case .errorSetDecl(let node):
-                t11CheckAttributes(ref c, from: file, for: node.value.attributes, isTest: false, isStruct: false)
-                let nameText = t11Text(in c, from: file, at: node.value.name)
-                let aliasId = newAlias(ref c, by: AliasPlaceholder {
-                    name: nameText,
-                    nameSpan: node.value.name,
-                    span: node.value.span,
-                    file: file,
-                    declIndex: dIdx,
-                    modifiers: i64(node.value.modifiers),
-                    target: -1,
-                    resolving: false,
-                })
-                let _ = addType(ref c, from: file, at: node.value.name, as: t8AliasType(aliasId))
-                checkType(ref c, from: file, at: node.value.name)
-            case .functionDecl(let node):
-                t11CheckAttributes(ref c, from: file, for: node.value.attributes, isTest: false, isStruct: false)
-                let nameText = t11Text(in c, from: file, at: node.value.name)
-                var sym = FunctionSymbol {
-                    name: nameText,
-                    nameSpan: node.value.name,
-                    span: node.value.span,
-                    module: modId,
-                    kind: .function,
-                    access: accessOf(node.value.modifiers),
-                    modifiers: i64(node.value.modifiers),
-                    file: file,
-                    declIndex: dIdx,
-                    memberIndex: -1,
-                }
-                checkValue(ref c, from: file, at: node.value.name)
-                var typeParams = List<TypeParamId>()
-                let typeMap = declareTypeParameters(ref c, from: file, for: in node.value.typeParams, to: ref typeParams)
-                sym.typeParams = move typeParams
-                if (typeMap is { } tm) {
-                    for (k, v) in tm { sym.typeMap[k] = v }
-                }
-                let fId = newFunction(ref c, by: move sym)
-                if nameText == "main" && c.files[file].isEntry {
-                    if modId >= 0 && c.modules[modId].main >= 0 {
-                        report(ref c, for: .duplicateMain, from: file, at: node.value.name, by: ("", "", "", "", ""))
-                    } else if modId >= 0 {
-                        c.modules[modId].main = fId
-                    }
-                }
-                addFunction(ref c, from: file, at: node.value.name, for: fId)
-                if node.value.where.length > 0 {
-                    wheres.append(makeWork(.where, instance: fId, file: file, declIndex: dIdx))
-                }
-            case .globalStatement(let node):
-                t11CheckAttributes(ref c, from: file, for: node.value.attributes, isTest: false, isStruct: false)
-                switch node.value.statement {
-                    case .localDecl(let locNode):
-                        if locNode.value.kind == .constKeyword {
-                            let nameText = t11Text(in c, from: file, at: locNode.value.name)
-                            let sym = ConstSymbol {
-                                name: nameText,
-                                nameSpan: locNode.value.name,
-                                span: locNode.value.span,
-                                module: modId,
-                                file: file,
-                                declIndex: dIdx,
-                            }
-                            if t11CheckUnique(ref c, from: file, at: locNode.value.name) {
-                                let kId = newConst(ref c, by: move sym)
-                                if modId >= 0 {
-                                    c.modules[modId].constants[nameText] = kId
-                                    c.modules[modId].allConstants.append(kId)
-                                }
-                            }
-                            checkValue(ref c, from: file, at: locNode.value.name)
-                        } else {
-                            if !c.files[file].isEntry || c.files[file].isTestFile {
-                                report(ref c, for: .statementOutsideEntry, from: file, at: node.value.span, by: ("", "", "", "", ""))
-                            } else {
-                                mainStatements.append(dIdx)
-                            }
-                        }
-                    default:
-                        if !c.files[file].isEntry || c.files[file].isTestFile {
-                            report(ref c, for: .statementOutsideEntry, from: file, at: node.value.span, by: ("", "", "", "", ""))
-                        } else {
-                            mainStatements.append(dIdx)
-                        }
-                }
-            case .testDecl(let node):
-                t11CheckAttributes(ref c, from: file, for: node.value.attributes, isTest: true, isStruct: false)
-                let titleText = node.value.title
-                let sym = FunctionSymbol {
-                    name: "test",
-                    span: node.value.span,
-                    module: modId,
-                    kind: .testKeyword,
-                    file: file,
-                    declIndex: dIdx,
-                    memberIndex: -1,
-                }
-                let fnId = newFunction(ref c, by: move sym)
-                let testSym = TestSymbol {
-                    title: titleText,
-                    span: node.value.span,
-                    function: fnId,
-                    file: file,
-                    declIndex: dIdx,
-                }
-                let testId = newTest(ref c, by: move testSym)
-                if modId >= 0 {
-                    c.modules[modId].tests.append(testId)
-                    c.modules[modId].allFunctions.append(fnId)
-                }
-            case .importDecl(let _):
-                continue
+    for alias in copyIds(in c.aliasOrder) {
+        let file = c.aliases[alias].file
+        switch c.files[file].unit.members[c.aliases[alias].declIndex] {
+            case .errorSetDecl(let composed):
+                checkComposition(ref c, for: alias, from: in composed.value)
             default:
                 continue
         }
     }
-    if mainStatements.length > 0 && modId >= 0 {
-        let firstIdx = mainStatements[0]
-        let mSpan = t11DeclSpan(in c.files[file].unit.members[firstIdx])
-        if c.modules[modId].main >= 0 {
-            report(ref c, for: .duplicateMain, from: file, at: mSpan, by: ("", "", "", "", ""))
-        } else {
-            let sym = FunctionSymbol {
-                name: "main",
-                span: mSpan,
-                module: modId,
-                kind: .main,
-                file: file,
-                declIndex: firstIdx,
-                memberIndex: -1,
+    for m in copyIds(in c.moduleOrder) {
+        for e in copyIds(in c.modules[m].enums) { declareEnumMembers(ref c, for: e) }
+    }
+    // `Range<i64>` is not a type name, so `Rule`'s cases are declared here rather than resolved.
+    let rule = typeIndex(t9Type(ref c, for: "Rule"))
+    let ruleFile = c.unions[rule].file
+    switch c.files[ruleFile].unit.members[c.unions[rule].declIndex] {
+        case .unionDecl(let decl):
+            for v in 0..decl.value.variants.length {
+                let vName = decl.value.variants[v].name
+                let sym = newUnionVariant(ref c, by: UnionVariantSymbol {
+                    name: t11Text(in c, from: ruleFile, at: vName),
+                    nameSpan: vName,
+                    span: vName,
+                    owner: rule,
+                    file: ruleFile,
+                    declIndex: c.unions[rule].declIndex,
+                    memberIndex: v,
+                    tag: c.unions[rule].variants.length,
+                    doc: decl.value.variants[v].doc,
+                })
+                for field in decl.value.variants[v].fields {
+                    let p = newLocal(ref c, by: LocalSymbol {
+                        name: t11Text(in c, from: ruleFile, at: field.name),
+                        nameSpan: field.name,
+                        span: field.name,
+                        type: internRange(ref c, by: prim(.i64)),
+                        kind: .parameter,
+                        isParameter: true,
+                        modifier: .none,
+                        ordinal: c.unionVariants[sym].fields.length,
+                    })
+                    c.unionVariants[sym].fields.append(p)
+                }
+                c.unions[rule].variants.append(sym)
             }
-            let fnId = newFunction(ref c, by: move sym)
-            c.modules[modId].main = fnId
-            c.modules[modId].allFunctions.append(fnId)
+        default:
+            panic("the builtin `Rule` is a union")
+    }
+    for m in copyIds(in c.moduleOrder) {
+        for u in copyIds(in c.modules[m].unions) { declareUnionVariants(ref c, for: u) }
+    }
+    for m in copyIds(in c.moduleOrder) {
+        for set in copyIds(in c.modules[m].errorSets) { declarePayloads(ref c, for: set) }
+    }
+    for m in copyIds(in c.moduleOrder) {
+        for s in copyIds(in c.modules[m].structs) { declareMembers(ref c, for: s) }
+        for s in copyIds(in c.modules[m].structs) { checkStateNames(ref c, for: s) }
+        for s in copyIds(in c.modules[m].structs) { checkMembers(ref c, for: s) }
+        var free = List<FuncId>()
+        for f in c.modules[m].allFunctions {
+            if c.functions[f].owner < 0 && !t11IsInstance(in c, for: f) && c.functions[f].kind != .main && c.functions[f].kind != .testKeyword {
+                free.append(f)
+            }
+        }
+        for f in free {
+            let file = c.functions[f].file
+            switch c.files[file].unit.members[c.functions[f].declIndex] {
+                case .functionDecl(let decl):
+                    declareSignature(ref c, for: f, from: in decl.value, by: file)
+                default:
+                    panic("a free function is declared by a `FunctionDecl`")
+            }
+        }
+        checkOverloads(ref c, for: m)
+    }
+    c.membersDeclared = true
+    for i in 0..c.pendingKeys.length {
+        let work = t11CopyWork(in c.pendingKeys[i])
+        runWork(ref c, for: in work)
+    }
+    for m in copyIds(in c.moduleOrder) {
+        for s in copyIds(in c.modules[m].structs) { checkStructShape(ref c, for: s) }
+        for u in copyIds(in c.modules[m].unions) { checkUnionShape(ref c, for: u) }
+    }
+    let main = c.modules[c.entryModule].main
+    if main >= 0 && c.functions[main].kind == .function { t11CheckMainSignature(ref c, for: main) }
+}
+
+/// The C# `FunctionSymbol.IsInstance` (Symbols.cs:257): an instantiated function, a method of an instance, or a
+/// lambda inside one.
+bool t11IsInstance(in Ctx c, for FuncId f) {
+    if c.functions[f].template >= 0 { return true }
+    let owner = c.functions[f].owner
+    if owner >= 0 && c.structs[owner].template >= 0 { return true }
+    let enclosing = c.functions[f].enclosing
+    return enclosing > 0 && t11IsInstance(in c, for: enclosing)
+}
+
+/// A copy of `w`, so a queued item can be run while `c` is passed by `ref`.
+Work t11CopyWork(in Work w) => Work {
+    kind: w.kind,
+    subject: w.subject,
+    args: copyIds(in w.args),
+    instance: w.instance,
+    file: w.file,
+    span: w.span,
+    declIndex: w.declIndex,
+    memberIndex: w.memberIndex,
+}
+
+// ── Compilation.cs:244 DeclareBuiltinVariants ───────────────────────────────────
+
+/// The variants of the builtin error set `name`. `IoError` is numbered first, so the runtime can return its codes 1
+/// to 7 directly; `Utf8Error` follows (8). The C# `_nextErrorCode` is `errorVariants.length + 1`: every
+/// `ErrorVariantSymbol` takes the next code (Q572).
+void t11DeclareBuiltinVariants(ref Ctx c, for string name) {
+    let set = typeIndex(t9Type(ref c, for: name))
+    let file = c.errorSets[set].file
+    switch c.files[file].unit.members[c.errorSets[set].declIndex] {
+        case .errorEnumDecl(let decl):
+            for v in 0..decl.value.variants.length {
+                let vName = decl.value.variants[v].name
+                let sym = newErrorVariant(ref c, by: ErrorVariantSymbol {
+                    name: t11Text(in c, from: file, at: vName),
+                    nameSpan: vName,
+                    span: vName,
+                    set: set,
+                    file: file,
+                    declIndex: c.errorSets[set].declIndex,
+                    memberIndex: v,
+                    code: c.errorVariants.length + 1,
+                    doc: decl.value.variants[v].doc,
+                })
+                // A built-in payload is a primitive: `invalidSequence(i64 at)`.
+                for field in decl.value.variants[v].fields {
+                    var type = errorType()
+                    switch field.type {
+                        case .namedType(let n):
+                            type = primitiveByName(t11Text(in c, from: file, at: n.value.path[0])) ?? panic("a built-in payload is a primitive")
+                        default:
+                            panic("a built-in payload is a named type")
+                    }
+                    let p = newLocal(ref c, by: LocalSymbol {
+                        name: t11Text(in c, from: file, at: field.name),
+                        nameSpan: field.name,
+                        span: field.name,
+                        type: type,
+                        kind: .parameter,
+                        isParameter: true,
+                        modifier: .none,
+                        ordinal: c.errorVariants[sym].fields.length,
+                    })
+                    c.errorVariants[sym].fields.append(p)
+                }
+                c.errorSets[set].variants.append(sym)
+            }
+        default:
+            panic("a builtin error set is a `union error`")
+    }
+}
+
+// ── Compilation.cs:260 CheckMainSignature ───────────────────────────────────────
+
+/// `void` or `i32 main()`, optionally with `ReadOnlySpan<string> args` and `fails` (BYN2771).
+void t11CheckMainSignature(ref Ctx c, for FuncId main) {
+    let returns = c.functions[main].returnType
+    let returnOk = isVoid(returns) || isError(returns) || returns == prim(.i32)
+    var paramsOk = c.functions[main].parameters.length == 0
+    if !paramsOk && c.functions[main].parameters.length == 1 {
+        let p = c.functions[main].parameters[0]
+        let type = c.locals[p].type
+        if c.locals[p].modifier == .none {
+            if isError(type) {
+                paramsOk = true
+            } else if kindOf(type) == .span {
+                let data = c.spanTypes[typeIndex(type)]
+                paramsOk = data.readOnly && isString(data.element)
+            }
         }
     }
-}
-
-string t11Text(in Ctx c, from FileId f, at TextSpan span) => $"{getText(c.files[f].text.span, at: span)}"
-
-bool t11CheckUnique(ref Ctx c, from FileId file, at TextSpan name) {
-    let modId = c.files[file].module
-    if modId < 0 { return true }
-    let text = t11Text(in c, from: file, at: name)
-    if c.modules[modId].types.contains(text) {
-        report(ref c, for: .duplicateDeclaration, from: file, at: name, by: (text, "", "", "", ""))
-        return false
+    if !returnOk || !paramsOk {
+        report(ref c, for: .invalidMainSignature, from: c.functions[main].file, at: c.functions[main].nameSpan, by: ("", "", "", "", ""),
+            help: "write `void main()`, `i32 main()`, `void main(ReadOnlySpan<string> args)` or `i32 main(ReadOnlySpan<string> args)`, each optionally with `fails`")
     }
-    if c.modules[modId].constants.contains(text) {
-        report(ref c, for: .duplicateDeclaration, from: file, at: name, by: (text, "", "", "", ""))
-        return false
+}
+
+// ── Compilation.cs:273 CheckAttributes ──────────────────────────────────────────
+
+/// `@cases` belongs on a test with parameters, `@exitCode` on an error variant and `@sealed` and `@positional`,
+/// bare, on a struct; nothing else takes an attribute. `decl` is member `declIndex` of `file`, or a member of it.
+void t11CheckAttributes(ref Ctx c, from FileId file, for in parser.Decl decl, at i64 declIndex) {
+    switch decl {
+        case .importDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .globalStatement(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .functionDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .structDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .interfaceDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .getterDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .associatedTypeDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .extensionDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .fieldDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .propertyDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .constructorDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .errorEnumDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .errorSetDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .enumDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .unionDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .typeAliasDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .effectDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .testDecl(let n): t11CheckAttributeList(ref c, from: file, for: in n.value.attributes, by: in decl, at: declIndex)
+        case .none: return
     }
-    return true
 }
 
-i64 t11Index(Type t) => t & 0xFFFFFFFF
-
-// stub: T11 ports Compilation.cs:638 AddType
-bool addType(ref Ctx c, from FileId file, at TextSpan name, as Type type) {
-    if !t11CheckUnique(ref c, from: file, at: name) { return false }
-    let modId = c.files[file].module
-    if modId < 0 { return false }
-    let text = t11Text(in c, from: file, at: name)
-    c.modules[modId].types[text] = type
-    return true
-}
-
-// stub: T11 ports Compilation.cs:645 AddFunction
-void addFunction(ref Ctx c, from FileId file, at TextSpan name, for FuncId f) {
-    let modId = c.files[file].module
-    if modId < 0 { return }
-    let text = t11Text(in c, from: file, at: name)
-    if c.modules[modId].functions.contains(text) {
-        var funcs = List<FuncId>()
-        for fn in c.modules[modId].functions[text] { funcs.append(fn) }
-        funcs.append(f)
-        c.modules[modId].functions[text] = move funcs
-    } else if t11CheckUnique(ref c, from: file, at: name) {
-        var list = List<FuncId>()
-        list.append(f)
-        c.modules[modId].functions[text] = move list
-    } else {
-        return
+/// The body of `CheckAttributes` over `attributes`, the C# `decl.Attributes`.
+void t11CheckAttributeList(ref Ctx c, from FileId file, for in List<parser.AttributeSyntax> attributes, by in parser.Decl decl, at i64 declIndex) {
+    var isTest = false
+    var isStruct = false
+    var hasStates = false
+    switch decl {
+        case .testDecl(_):
+            isTest = true
+        case .structDecl(let s):
+            isStruct = true
+            hasStates = s.value.states.length > 0
+        default:
+            isTest = false
     }
-    c.modules[modId].allFunctions.append(f)
+    var hasCases = false
+    for ai in 0..attributes.length {
+        let name = t11Text(in c, from: file, at: attributes[ai].name)
+        let span = attributes[ai].span
+        let bare = attributes[ai].args.length == 0 && attributes[ai].becauseKeyword is null
+        if name == "cases" && isTest {
+            if hasCases {
+                report(ref c, for: .modifierNotAllowed, from: file, at: span, by: ("@cases", "", "", "", ""), help: "combine the cases into one `@cases(...)`")
+            } else {
+                switch decl {
+                    case .testDecl(let t):
+                        c.testCases[declKey(file, at: declIndex)] = TestCases { attribute: ai, args: t11CheckCases(ref c, from: file, for: in t.value, by: in attributes[ai]) }
+                    default:
+                        isTest = true
+                }
+            }
+            hasCases = true
+        } else if name == "cases" {
+            report(ref c, for: .modifierNotAllowed, from: file, at: span, by: ("@cases", "", "", "", ""), help: "put `@cases(...)` on a test that takes parameters")
+        } else if name == "exitCode" {
+            report(ref c, for: .modifierNotAllowed, from: file, at: span, by: ("@exitCode", "", "", "", ""), help: "put `@exitCode` on an error enum variant")
+        } else if name == "sealed" && !isStruct {
+            report(ref c, for: .modifierNotAllowed, from: file, at: span, by: ("@sealed", "", "", "", ""), help: "put `@sealed` on a struct")
+        } else if name == "sealed" && !bare {
+            report(ref c, for: .modifierNotAllowed, from: file, at: span, by: (t11Text(in c, from: file, at: span), "", "", "", ""), help: "write `@sealed` with no arguments and no `because`")
+        } else if name == "sealed" {
+            continue
+        } else if name == "positional" && !isStruct {
+            report(ref c, for: .modifierNotAllowed, from: file, at: span, by: ("@positional", "", "", "", ""), help: "put `@positional` on a struct")
+        } else if name == "positional" && !bare {
+            report(ref c, for: .modifierNotAllowed, from: file, at: span, by: (t11Text(in c, from: file, at: span), "", "", "", ""), help: "write `@positional` with no arguments and no `because`")
+        } else if name == "positional" && hasStates {
+            report(ref c, for: .modifierNotAllowed, from: file, at: span, by: ("@positional", "", "", "", ""), help: "remove `@positional`: a struct with states is built with state literals")
+        } else if name == "positional" {
+            c.positional[declKey(file, at: declIndex)] = 1
+        } else {
+            report(ref c, for: .unknownAttribute, from: file, at: attributes[ai].name, by: (name, "", "", "", ""), help: "use `@exitCode(n)` on an error variant or `@cases(...)` on a test")
+        }
+    }
+    switch decl {
+        case .testDecl(let t):
+            if t.value.params.length > 0 && !hasCases {
+                let span = TextSpan.fromBounds(t.value.params[0].span.start, until: t.value.params[t.value.params.length - 1].span.end)
+                report(ref c, for: .modifierNotAllowed, from: file, at: span, by: (t11Text(in c, from: file, at: span), "", "", "", ""),
+                    label: "a test without `@cases` takes no parameters",
+                    help: "add `@cases(...)` with one value per parameter for each case, or remove the parameters")
+            }
+        case .structDecl(let s):
+            for m in s.value.members { t11CheckAttributes(ref c, from: file, for: in m, at: declIndex) }
+        default:
+            isTest = false
+    }
 }
 
-// stub: T11 ports Compilation.cs:570 DeclareTypeParameters
-Map<string, Type>? declareTypeParameters(ref Ctx c, from FileId file, for in List<TextSpan> names, to ref List<TypeParamId> into) {
-    if names.length == 0 { return null }
-    var map = Map<string, Type>()
-    var seen = Map<string, TextSpan>()
-    for span in names {
-        checkType(ref c, from: file, at: span)
-        let text = t11Text(in c, from: file, at: span)
-        if seen.contains(text) {
-            report(ref c, for: .duplicateDeclaration, from: file, at: span, by: (text, "", "", "", ""))
+// ── Compilation.cs:322 CheckCases ───────────────────────────────────────────────
+
+/// The cases of `@cases(...)` that fit `test`: a tuple per case, or a bare value when it takes one parameter, with
+/// one literal per parameter (BYN2773, BYN2774). Each case is the index of its argument in `a.args`.
+List<i64> t11CheckCases(ref Ctx c, from FileId file, for in parser.TestDecl t, by in parser.AttributeSyntax a) {
+    var cases = List<i64>()
+    var names = StrBuf()
+    for i in 0..t.params.length {
+        if i > 0 { names.append(", ") }
+        names.append(t11Text(in c, from: file, at: t.params[i].name))
+    }
+    let joined = $"{names.finish()}"
+    for ai in 0..a.args.length {
+        let value = t11ExprSpan(in a.args[ai].value)
+        var named = false
+        switch a.args[ai].value {
+            case .nameExpr(_) or .memberExpr(_):
+                named = true
+            default:
+                named = false
+        }
+        if named {
+            report(ref c, for: .casesNotConstant, from: file, at: value, by: ("", "", "", "", ""), label: "cases from a const list are not supported yet",
+                help: "write each case as a tuple literal, such as `@cases((0, false), (1, true))`")
             continue
         }
-        seen[text] = span
-        let id = newTypeParam(ref c, by: TypeParam {
-            name: text,
-            constraints: List<InterfaceId>(),
-        })
-        into.append(id)
-        map[text] = typeParamTypeOf(id)
+        let count = t11CaseValueCount(in a.args[ai].value)
+        if count != t.params.length {
+            let help = t.params.length == 1 ? "give one value per case: `@cases(1, 2, 3)`"
+                : $"give each case one value per parameter, in order: `({joined})`"
+            report(ref c, for: .casesArity, from: file, at: value, by: (string(count), string(t.params.length), "", "", ""), help: help)
+            continue
+        }
+        var constant = true
+        for k in 0..count {
+            if !t11CaseValueIsLiteral(in a.args[ai].value, at: k) {
+                report(ref c, for: .casesNotConstant, from: file, at: t11CaseValueSpan(in a.args[ai].value, at: k), by: ("", "", "", "", ""),
+                    help: "write the value as a literal: a number, string, rune, `true`, `false`, `null` or a `.case`")
+                constant = false
+            }
+        }
+        if constant { cases.append(ai) }
+    }
+    return cases
+}
+
+/// The C# `values.Length` of a case: a tuple's element count, else 1.
+i64 t11CaseValueCount(in parser.Expr e) {
+    switch e {
+        case .tupleExpr(let t): return t.value.elements.length
+        default: return 1
+    }
+}
+
+/// The span of the C# `values[k]` of a case: a tuple's element `k`, else the case itself.
+TextSpan t11CaseValueSpan(in parser.Expr e, at i64 k) {
+    switch e {
+        case .tupleExpr(let t): return t11ExprSpan(in t.value.elements[k].value)
+        default: return t11ExprSpan(in e)
+    }
+}
+
+/// `IsCaseLiteral` of the C# `values[k]` of a case.
+bool t11CaseValueIsLiteral(in parser.Expr e, at i64 k) {
+    switch e {
+        case .tupleExpr(let t): return t11IsCaseLiteral(in t.value.elements[k].value)
+        default: return t11IsCaseLiteral(in e)
+    }
+}
+
+// ── Compilation.cs:354 IsCaseLiteral ────────────────────────────────────────────
+
+bool t11IsCaseLiteral(in parser.Expr e) {
+    switch e {
+        case .literalExpr(_) or .targetMemberExpr(_):
+            return true
+        case .unaryExpr(let u):
+            if u.value.op != .negate && u.value.op != .plus { return false }
+            switch u.value.operand {
+                case .literalExpr(let l): return l.value.kind == .integer || l.value.kind == .floatKeyword
+                default: return false
+            }
+        case .parenExpr(let p):
+            return t11IsCaseLiteral(in p.value.inner)
+        default:
+            return false
+    }
+}
+
+// ── Compilation.cs:362 DeclareTest ──────────────────────────────────────────────
+
+/// A test function titled `title`; `attribute`/`arg` name its case's values (-1 for none).
+void t11DeclareTest(ref Ctx c, from FileId file, at i64 declIndex, by TextSpan span, for string title, as i64 attribute, to i64 arg) {
+    let module = c.files[file].module
+    let fn = newFunction(ref c, by: FunctionSymbol { name: "test", span: span, module: module, kind: .testKeyword, file: file, declIndex: declIndex })
+    let testId = newTest(ref c, by: TestSymbol { title: title, span: span, function: fn, file: file, declIndex: declIndex })
+    c.modules[module].tests.append(testId)
+    c.modules[module].allFunctions.append(fn)
+    if attribute < 0 {
+        c.testBodies[fn] = TestBody { decl: SyntaxRef { file: file, declIndex: declIndex }, hasValues: false, values: SyntaxRef {} }
+    } else {
+        c.testBodies[fn] = TestBody { decl: SyntaxRef { file: file, declIndex: declIndex }, hasValues: true, values: SyntaxRef { file: file, declIndex: declIndex, memberIndex: attribute, itemIndex: arg } }
+    }
+}
+
+// ── Compilation.cs:371 CaseTitle ────────────────────────────────────────────────
+
+/// `quantity bounds (input: 101, valid: false)`: the title, then each parameter with its value as written.
+string t11CaseTitle(in Ctx c, from FileId file, for in parser.TestDecl t, by in parser.Expr values) {
+    var sb = StrBuf()
+    sb.append(t.title)
+    sb.append(" (")
+    for i in 0..t.params.length {
+        if i > 0 { sb.append(", ") }
+        sb.append(t11Text(in c, from: file, at: t.params[i].name))
+        sb.append(": ")
+        sb.append(t11Text(in c, from: file, at: t11CaseValueSpan(in values, at: i)))
+    }
+    sb.append(")")
+    return $"{sb.finish()}"
+}
+
+// ── Compilation.cs:374 DeclareFile ──────────────────────────────────────────────
+
+void declareFile(ref Ctx c, for FileId file) {
+    let module = c.files[file].module
+    var mainStatements = List<SyntaxRef>()
+    for d in 0..c.files[file].unit.members.length {
+        let decl = t8TakeDecl(ref c, from: file, at: d, by: .none)
+        t11CheckAttributes(ref c, from: file, for: in decl, at: d)
+        let _ = t8TakeDecl(ref c, from: file, at: d, by: move decl)
+        switch c.files[file].unit.members[d] {
+            case .structDecl(let s):
+                let name = t11Text(in c, from: file, at: s.value.name)
+                let sym = newStruct(ref c, by: StructSymbol {
+                    name: name,
+                    nameSpan: s.value.name,
+                    span: s.value.name,
+                    module: module,
+                    file: file,
+                    declIndex: d,
+                    access: accessOf(s.value.modifiers),
+                    modifiers: i64(s.value.modifiers),
+                    doc: s.value.doc,
+                })
+                if addType(ref c, from: file, at: s.value.name, as: structTypeOf(sym)) { c.modules[module].structs.append(sym) }
+                checkType(ref c, from: file, at: s.value.name)
+                var needsFields = s.value.rules.length > 0
+                for m in s.value.members {
+                    switch m {
+                        case .fieldDecl(let f):
+                            if f.value.requiresKeyword.length > 0 { needsFields = true }
+                        default:
+                            continue
+                    }
+                }
+                if s.value.typeParams.length == 0 && needsFields {
+                    // J23: `T.Field`, reachable only through `T`, so it is not added to the module's types. Not for a
+                    // generic struct, whose `requires` is BYN2022 (Question 225). Its members are the struct's fields.
+                    let fieldEnum = newEnum(ref c, by: EnumSymbol {
+                        name: $"{name}_Field",
+                        nameSpan: s.value.name,
+                        span: s.value.name,
+                        module: module,
+                        file: file,
+                        declIndex: d,
+                        access: accessOf(s.value.modifiers),
+                        modifiers: i64(s.value.modifiers),
+                        fieldsOf: sym,
+                    })
+                    c.structs[sym].fieldEnum = fieldEnum
+                    c.modules[module].enums.append(fieldEnum)
+                }
+                var into = List<TypeParamId>()
+                let map = declareTypeParameters(ref c, from: file, for: in s.value.typeParams, to: ref into)
+                c.structs[sym].typeParams = move into
+                if (map is { } m) { c.structs[sym].typeMap = t11CopyMap(in m) }
+                c.wheres.append(Work { kind: .where, subject: structTypeOf(sym), args: List<Type>(), file: file, span: TextSpan { start: 0, length: 0 }, declIndex: d })
+            case .errorEnumDecl(let e):
+                let sym = newErrorSet(ref c, by: ErrorSetSymbol {
+                    name: t11Text(in c, from: file, at: e.value.name),
+                    nameSpan: e.value.name,
+                    span: e.value.name,
+                    module: module,
+                    file: file,
+                    declIndex: d,
+                    access: accessOf(e.value.modifiers),
+                    modifiers: i64(e.value.modifiers),
+                })
+                if addType(ref c, from: file, at: e.value.name, as: errorSetTypeOf(sym)) { c.modules[module].errorSets.append(sym) }
+                checkType(ref c, from: file, at: e.value.name)
+            case .enumDecl(let e):
+                let name = t11Text(in c, from: file, at: e.value.name)
+                let sym = newEnum(ref c, by: EnumSymbol {
+                    name: name,
+                    nameSpan: e.value.name,
+                    span: e.value.name,
+                    module: module,
+                    file: file,
+                    declIndex: d,
+                    access: accessOf(e.value.modifiers),
+                    modifiers: i64(e.value.modifiers),
+                })
+                if addType(ref c, from: file, at: e.value.name, as: enumTypeOf(sym)) { c.modules[module].enums.append(sym) }
+                checkType(ref c, from: file, at: e.value.name)
+                t11RejectBases(ref c, from: file, for: in e.value.bases, by: name, as: "an enum")
+                c.wheres.append(Work { kind: .where, subject: enumTypeOf(sym), args: List<Type>(), file: file, span: TextSpan { start: 0, length: 0 }, declIndex: d })
+            case .unionDecl(let u):
+                let name = t11Text(in c, from: file, at: u.value.name)
+                let sym = newUnion(ref c, by: UnionSymbol {
+                    name: name,
+                    nameSpan: u.value.name,
+                    span: u.value.name,
+                    module: module,
+                    file: file,
+                    declIndex: d,
+                    access: accessOf(u.value.modifiers),
+                    modifiers: i64(u.value.modifiers),
+                })
+                if addType(ref c, from: file, at: u.value.name, as: unionTypeOf(sym)) { c.modules[module].unions.append(sym) }
+                checkType(ref c, from: file, at: u.value.name)
+                var into = List<TypeParamId>()
+                let map = declareTypeParameters(ref c, from: file, for: in u.value.typeParams, to: ref into)
+                c.unions[sym].typeParams = move into
+                if (map is { } m) { c.unions[sym].typeMap = t11CopyMap(in m) }
+                t11RejectBases(ref c, from: file, for: in u.value.bases, by: name, as: "a union")
+                c.wheres.append(Work { kind: .where, subject: unionTypeOf(sym), args: List<Type>(), file: file, span: TextSpan { start: 0, length: 0 }, declIndex: d })
+            case .interfaceDecl(let i):
+                let name = t11Text(in c, from: file, at: i.value.name)
+                let sym = newInterface(ref c, by: InterfaceSymbol {
+                    name: name,
+                    nameSpan: i.value.name,
+                    span: i.value.name,
+                    module: module,
+                    file: file,
+                    declIndex: d,
+                    access: accessOf(i.value.modifiers),
+                    modifiers: i64(i.value.modifiers),
+                })
+                if findInterface(ref c, for: name) >= 0 {
+                    report(ref c, for: .duplicateDeclaration, from: file, at: i.value.name, by: (name, "", "", "", ""), label: "already declared as a built-in interface")
+                } else if addType(ref c, from: file, at: i.value.name, as: interfaceTypeOf(sym)) {
+                    c.modules[module].interfaces.append(sym)
+                }
+                checkInterface(ref c, from: file, at: i.value.name)
+                var into = List<TypeParamId>()
+                let map = declareTypeParameters(ref c, from: file, for: in i.value.typeParams, to: ref into)
+                c.interfaces[sym].typeParams = move into
+                if (map is { } m) { c.interfaces[sym].typeMap = t11CopyMap(in m) }
+                c.wheres.append(Work { kind: .where, subject: interfaceTypeOf(sym), args: List<Type>(), file: file, span: TextSpan { start: 0, length: 0 }, declIndex: d })
+            case .extensionDecl(let x):
+                let name = t11Text(in c, from: file, at: x.value.name)
+                if x.value.bases.length == 0 {
+                    report(ref c, for: .unsupported, from: file, at: x.value.name, by: ("`extension` declarations", "", "", "", ""))
+                    continue
+                }
+                var sb = StrBuf()
+                for b in 0..x.value.bases.length {
+                    if b > 0 { sb.append(", ") }
+                    sb.append(t11Text(in c, from: file, at: t8TypeSpan(in x.value.bases[b])))
+                }
+                let bases = $"{sb.finish()}"
+                let span = TextSpan.fromBounds(x.value.span.start, until: t8TypeSpan(in x.value.bases[x.value.bases.length - 1]).end)
+                report(ref c, for: .extensionConformance, from: file, at: span, by: (name, bases, "", "", ""),
+                    label: "retroactive conformance", help: $"list `{bases}` on `{name}`'s declaration")
+            case .typeAliasDecl(let a):
+                let name = t11Text(in c, from: file, at: a.value.name)
+                if a.value.distinct {
+                    // J5: a nominal wrapper, a struct whose one field `value` carries the type's `requires`. The
+                    // symbol's declaration is the alias (member `d`); the declare pass reads `value` from it (Q572).
+                    let sym = newStruct(ref c, by: StructSymbol {
+                        name: name,
+                        nameSpan: a.value.name,
+                        span: a.value.name,
+                        module: module,
+                        file: file,
+                        declIndex: d,
+                        access: accessOf(a.value.modifiers),
+                        modifiers: i64(a.value.modifiers),
+                    })
+                    if addType(ref c, from: file, at: a.value.name, as: structTypeOf(sym)) {
+                        c.modules[module].structs.append(sym)
+                        c.distinct[sym] = 1
+                    }
+                    checkType(ref c, from: file, at: a.value.name)
+                } else {
+                    if a.value.requiresKeyword.length > 0 {
+                        report(ref c, for: .unsupported, from: file, at: a.value.requiresKeyword[0].span, by: ("`requires` on a plain `type` alias", "", "", "", ""))
+                    }
+                    let sym = newAlias(ref c, by: AliasPlaceholder { name: name, nameSpan: a.value.name, span: a.value.name, file: file, declIndex: d, modifiers: i64(a.value.modifiers) })
+                    if addType(ref c, from: file, at: a.value.name, as: t8AliasType(sym)) { c.aliasOrder.append(sym) }
+                    checkType(ref c, from: file, at: a.value.name)
+                }
+            case .errorSetDecl(let s):
+                let sym = newAlias(ref c, by: AliasPlaceholder { name: t11Text(in c, from: file, at: s.value.name), nameSpan: s.value.name, span: s.value.name, file: file, declIndex: d, modifiers: i64(s.value.modifiers) })
+                if addType(ref c, from: file, at: s.value.name, as: t8AliasType(sym)) { c.aliasOrder.append(sym) }
+                checkType(ref c, from: file, at: s.value.name)
+            case .functionDecl(let f):
+                let name = t11Text(in c, from: file, at: f.value.name)
+                let sym = newFunction(ref c, by: FunctionSymbol {
+                    name: name,
+                    nameSpan: f.value.name,
+                    span: f.value.name,
+                    module: module,
+                    kind: .function,
+                    access: accessOf(f.value.modifiers),
+                    modifiers: i64(f.value.modifiers),
+                    file: file,
+                    declIndex: d,
+                })
+                checkValue(ref c, from: file, at: f.value.name)
+                var into = List<TypeParamId>()
+                let map = declareTypeParameters(ref c, from: file, for: in f.value.typeParams, to: ref into)
+                c.functions[sym].typeParams = move into
+                if (map is { } m) { c.functions[sym].typeMap = t11CopyMap(in m) }
+                c.wheres.append(Work { kind: .where, instance: sym, args: List<Type>(), file: file, span: TextSpan { start: 0, length: 0 }, declIndex: d })
+                if name == "main" && module == c.entryModule {
+                    if c.modules[module].main >= 0 {
+                        report(ref c, for: .duplicateMain, from: file, at: f.value.name, by: ("", "", "", "", ""))
+                        continue
+                    }
+                    c.modules[module].main = sym
+                }
+                addFunction(ref c, from: file, at: f.value.name, for: sym)
+            case .globalStatement(let g):
+                var isConst = false
+                switch g.value.statement {
+                    case .localDecl(let k):
+                        if k.value.kind == .constKeyword {
+                            isConst = true
+                            let name = t11Text(in c, from: file, at: k.value.name)
+                            let sym = newConst(ref c, by: ConstSymbol { name: name, nameSpan: k.value.name, span: k.value.name, module: module, file: file, declIndex: d })
+                            if checkUnique(ref c, from: file, at: k.value.name) {
+                                c.modules[module].constants[name] = sym
+                                c.modules[module].allConstants.append(sym)
+                            }
+                            checkValue(ref c, from: file, at: k.value.name)
+                        }
+                    default:
+                        isConst = false
+                }
+                if !isConst {
+                    if module != c.entryModule || c.files[file].isTestFile {
+                        report(ref c, for: .statementOutsideEntry, from: file, at: g.value.span, by: ("", "", "", "", ""))
+                    } else {
+                        mainStatements.append(SyntaxRef { file: file, declIndex: d })
+                    }
+                }
+            case .testDecl(let t):
+                if !c.includeTests { continue }
+                if t.value.params.length == 0 {
+                    t11DeclareTest(ref c, from: file, at: d, by: t.value.span, for: t.value.title, as: -1, to: -1)
+                } else if c.testCases.contains(declKey(file, at: d)) {
+                    let attribute = c.testCases[declKey(file, at: d)].attribute
+                    for arg in copyIds(in c.testCases[declKey(file, at: d)].args) {
+                        let title = t11CaseTitle(in c, from: file, for: in t.value, by: in t.value.attributes[attribute].args[arg].value)
+                        t11DeclareTest(ref c, from: file, at: d, by: t.value.span, for: title, as: attribute, to: arg)
+                    }
+                }
+            default:
+                continue
+        }
+    }
+    if mainStatements.length > 0 {
+        let first = t11DeclSpan(in c.files[file].unit.members[mainStatements[0].declIndex])
+        let main = c.modules[module].main
+        if main >= 0 && c.functions[main].kind == .function {
+            let line = lineIndex(c.files[c.functions[main].file].text.span, at: c.functions[main].span.start) + 1
+            report(ref c, for: .duplicateMain, from: file, at: first, by: ("", "", "", "", ""), label: $"`main` is also declared on line {line}")
+        } else if main < 0 {
+            let sym = newFunction(ref c, by: FunctionSymbol { name: "main", span: first, module: module, kind: .main, file: file, declIndex: mainStatements[0].declIndex })
+            c.modules[module].main = sym
+            c.modules[module].allFunctions.append(sym)
+            c.mainStatementsFn = sym
+            c.mainStatements = move mainStatements
+        } else {
+            report(ref c, for: .statementOutsideEntry, from: file, at: first, by: ("", "", "", "", ""), help: "keep top-level statements in one file of the entry module")
+        }
+    }
+}
+
+/// A copy of a type map.
+Map<string, Type> t11CopyMap(in Map<string, Type> m) {
+    var copy: Map<string, Type> = []
+    for (k, v) in m { copy[k] = v }
+    return copy
+}
+
+/// The span of a top-level statement (the C# `GlobalStatement.Span`).
+TextSpan t11DeclSpan(in parser.Decl d) {
+    switch d {
+        case .globalStatement(let g): return g.value.span
+        default: panic("main statements are global statements")
+    }
+}
+
+// ── Compilation.cs:562 AssociatedType ───────────────────────────────────────────
+
+/// `T.Item` in a template: one type parameter per (T, name), so every mention is the same type.
+TypeParamId associatedType(ref Ctx c, for TypeParamId owner, by string name) {
+    let key = $"{owner} {name}"
+    if c.associatedTypes.contains(key) { return c.associatedTypes[key] }
+    let t = newTypeParam(ref c, by: TypeParam { name: $"{c.typeParams[owner].name}.{name}" })
+    c.associatedTypes[key] = t
+    return t
+}
+
+// ── Compilation.cs:570 DeclareTypeParameters ────────────────────────────────────
+
+/// Declares the `<A, B>` of a generic declaration; the map is null when there are none.
+Map<string, Type>? declareTypeParameters(ref Ctx c, from FileId file, for in List<TextSpan> names, to ref List<TypeParamId> into) {
+    if names.length == 0 { return null }
+    var map: Map<string, Type> = []
+    var seen: Map<string, Location> = []
+    for name in names {
+        checkType(ref c, from: file, at: name)
+        let text = t11Text(in c, from: file, at: name)
+        if seen.contains(text) {
+            reportDuplicate(ref c, from: file, at: name, as: seen[text])
+            continue
+        }
+        seen[text] = loc(file, at: name)
+        let parameter = newTypeParam(ref c, by: TypeParam { name: text })
+        into.append(parameter)
+        map[text] = typeParamTypeOf(parameter)
     }
     return map
 }
 
-// stub: T11 ports Compilation.cs:592 DeclareWhere
+// ── Compilation.cs:592 DeclareWhere ─────────────────────────────────────────────
+
+/// Resolves the bounds of `where T : IA, IB` into the constraints of `parameters`.
 void declareWhere(ref Ctx c, from FileId file, for in List<parser.WhereClause> clauses, to in List<TypeParamId> parameters, by in Map<string, Type>? typeMap, as string owner) {
     if clauses.length == 0 { return }
-    var args = Map<string, Type>()
-    if (typeMap is { } tm) {
-        for (k, v) in tm { args[k] = v }
-    }
+    var args: Map<string, Type> = []
+    if (typeMap is { } m) { args = t11CopyMap(in m) }
     let types = TypeResolver { file: file, container: -1, typeArgs: move args }
     for w in clauses {
-        let paramName = t11Text(in c, from: file, at: w.param)
-        var paramId: TypeParamId = -1
+        let text = t11Text(in c, from: file, at: w.param)
+        var parameter: TypeParamId = -1
         for p in parameters {
-            if c.typeParams[p].name == paramName {
-                paramId = p
+            if c.typeParams[p].name == text {
+                parameter = p
                 break
             }
         }
-        if paramId < 0 {
-            var helpText = ""
-            if parameters.length == 0 {
-                helpText = $"remove the `where` clause; `{owner}` has no type parameters"
-            } else {
+        if parameter < 0 {
+            var help = $"remove the `where` clause; `{owner}` has no type parameters"
+            if parameters.length > 0 {
                 var sb = StrBuf()
                 sb.append("name one of ")
                 for i in 0..parameters.length {
                     if i > 0 { sb.append(", ") }
                     sb.append($"`{c.typeParams[parameters[i]].name}`")
                 }
-                helpText = $"{sb.finish()}"
+                help = $"{sb.finish()}"
             }
-            report(ref c, for: .whereUnknownParameter, from: file, at: w.param, by: (paramName, "", "", "", ""), label: $"not a type parameter of `{owner}`", help: helpText)
+            report(ref c, for: .whereUnknownParameter, from: file, at: w.param, by: (text, "", "", "", ""), label: $"not a type parameter of `{owner}`", help: help)
             continue
         }
+        var constraints = copyIds(in c.typeParams[parameter].constraints)
+        // The parser builds every bound with `parseNamedType` (decls.byn:677), the C# `NamedType[] Bounds`.
         for bound in w.bounds {
             switch bound {
                 case .namedType(let n):
-                    let iface = resolveInterface(ref c, through: in types, from: file, for: in n.value)
-                    if iface >= 0 {
-                        c.typeParams[paramId].constraints.append(iface)
-                    }
+                    let i = resolveInterface(ref c, through: in types, from: file, for: in n.value)
+                    if i >= 0 { constraints.append(i) }
                 default:
-                    let span = t8TypeSpan(in bound)
-                    report(ref c, for: .notAnInterface, from: file, at: span, by: (t11Text(in c, from: file, at: span), "", "", "", ""), label: "a type", help: "list an `interface` here")
+                    panic("a `where` bound is a named type")
             }
         }
+        c.typeParams[parameter].constraints = move constraints
     }
 }
 
-// stub: T11 ports Compilation.cs:614 ResolveInterface
+// ── Compilation.cs:614 ResolveInterface ─────────────────────────────────────────
+
+/// A base or a `where` bound: an interface, or BYN2804.
 InterfaceId resolveInterface(ref Ctx c, through in TypeResolver types, from FileId file, for in parser.NamedType syntax) {
     let t = resolveBound(ref c, through: in types, for: in syntax)
-    if isError(t) { return -1 }
-    let k = kindOf(t)
-    if k == .interfaceType {
-        return t11Index(t)
+    if kindOf(t) == .interfaceType { return typeIndex(t) }
+    if !isError(t) {
+        let k = kindOf(t)
+        var kind = "a type"
+        if k == .structType {
+            kind = "a struct"
+        } else if k == .unionType {
+            kind = "a union"
+        } else if k == .enumType {
+            kind = "an enum"
+        } else if k == .errorSet {
+            kind = "an error enum"
+        } else if k == .typeParam {
+            kind = "a type parameter"
+        }
+        report(ref c, for: .notAnInterface, from: file, at: syntax.span, by: (typeDisplay(ref c, by: t), "", "", "", ""), label: kind, help: "list an `interface` here")
     }
-    var kindName = "a type"
-    if k == .structType { kindName = "a struct"
-    } else if k == .unionType { kindName = "a union"
-    } else if k == .enumType { kindName = "an enum"
-    } else if k == .errorSet { kindName = "an error enum"
-    } else if k == .typeParam { kindName = "a type parameter" }
-    let disp = typeDisplay(ref c, by: t)
-    report(ref c, for: .notAnInterface, from: file, at: syntax.span, by: (disp, "", "", "", ""), label: kindName, help: "list an `interface` here")
     return -1
 }
 
-// stub: T11 ports Compilation.cs:562 AssociatedType
-TypeParamId associatedType(ref Ctx c, for TypeParamId owner, by string name) {
-    let fullName = $"{c.typeParams[owner].name}.{name}"
-    for i in 0..c.typeParams.length {
-        if c.typeParams[i].name == fullName { return i }
+// ── Compilation.cs:631 RejectBases ──────────────────────────────────────────────
+
+/// Interfaces listed on a union or enum (BYN2815): only structs conform yet.
+void t11RejectBases(ref Ctx c, from FileId file, for in List<parser.TypeSyntax> bases, by string name, as string kind) {
+    if bases.length > 0 {
+        let span = TextSpan.fromBounds(t8TypeSpan(in bases[0]).start, until: t8TypeSpan(in bases[bases.length - 1]).end)
+        report(ref c, for: .nonStructConformance, from: file, at: span, by: (name, kind, "", "", ""), label: "listed here", help: "wrap it in a struct that conforms")
     }
-    return newTypeParam(ref c, by: TypeParam {
-        name: fullName,
-        constraints: List<InterfaceId>(),
-    })
 }
 
-// stub: T11 ports Compilation.cs:1549 AfterMembersDeclared
+// ── Compilation.cs:638 AddType ──────────────────────────────────────────────────
+
+bool addType(ref Ctx c, from FileId file, at TextSpan name, as Type type) {
+    if !checkUnique(ref c, from: file, at: name) { return false }
+    c.modules[c.files[file].module].types[t11Text(in c, from: file, at: name)] = type
+    return true
+}
+
+// ── Compilation.cs:645 AddFunction ──────────────────────────────────────────────
+
+void addFunction(ref Ctx c, from FileId file, at TextSpan name, for FuncId f) {
+    // Another function of the name is an overload, kept if its signature cannot overlap (CheckOverloads, J65).
+    let module = c.files[file].module
+    let text = t11Text(in c, from: file, at: name)
+    if c.modules[module].functions.contains(text) {
+        var overloads = copyIds(in c.modules[module].functions[text])
+        overloads.append(f)
+        c.modules[module].functions[text] = move overloads
+    } else if checkUnique(ref c, from: file, at: name) {
+        var overloads = List<FuncId>()
+        overloads.append(f)
+        c.modules[module].functions[text] = move overloads
+    } else {
+        return
+    }
+    c.modules[module].allFunctions.append(f)
+}
+
+// ── Compilation.cs:1549 AfterMembersDeclared ────────────────────────────────────
+
 void afterMembersDeclared(ref Ctx c, for in Work work) {
-    var args = List<Type>()
-    for a in work.args { args.append(a) }
-    c.pendingKeys.append(Work {
-        kind: work.kind,
-        subject: work.subject,
-        args: move args,
-        instance: work.instance,
-        file: work.file,
-        span: work.span,
-        declIndex: work.declIndex,
-        memberIndex: work.memberIndex,
-    })
+    var w = t11CopyWork(in work)
+    if c.hasInstantiationSite {
+        w.file = c.instantiationSiteFile
+        w.span = c.instantiationSiteSpan
+    }
+    c.pendingKeys.append(move w)
 }
 
-// stub: T11 ports Compilation.cs:1922 ReportInto
+// ── Compilation.cs:1922 ReportInto ──────────────────────────────────────────────
+
+/// Sends reports to bag `bag` (-1: the compilation's own list) until called again. The C# returns the previous
+/// target; callers read `c.sink` before calling instead (Q708).
 void reportInto(ref Ctx c, to i64 bag) {
     c.sink = bag
 }
 
-// stub: T11 ports Compilation.cs:184 Declare (its deferred-work dispatch)
+// ── The closures of `List<Action>` (Q570) ───────────────────────────────────────
+
+/// Runs one deferred item: the body of the C# closure it stands for.
 void runWork(ref Ctx c, for in Work work) {
     switch work.kind {
         case .where:
-            let f = work.file
-            let dIdx = work.declIndex
-            if f >= 0 && dIdx >= 0 {
-                switch c.files[f].unit.members[dIdx] {
-                    case .structDecl(let node):
-                        let sId = t11Index(work.subject)
-                        let tParams = copyIds(in c.structs[sId].typeParams)
-                        let ownerName = c.structs[sId].name
-                        var tMap = Map<string, Type>()
-                        if (c.structs[sId].typeMap is { } tm) {
-                            for (k, v) in tm { tMap[k] = v }
-                        }
-                        declareWhere(ref c, from: f, for: in node.value.where, to: in tParams, by: in tMap, as: ownerName)
-                    case .enumDecl(let node):
-                        let eId = t11Index(work.subject)
-                        let ownerName = c.enums[eId].name
-                        declareWhere(ref c, from: f, for: in node.value.where, to: in List<TypeParamId>(), by: null, as: ownerName)
-                    case .unionDecl(let node):
-                        let uId = t11Index(work.subject)
-                        let tParams = copyIds(in c.unions[uId].typeParams)
-                        let ownerName = c.unions[uId].name
-                        var tMap = Map<string, Type>()
-                        if (c.unions[uId].typeMap is { } tm) {
-                            for (k, v) in tm { tMap[k] = v }
-                        }
-                        declareWhere(ref c, from: f, for: in node.value.where, to: in tParams, by: in tMap, as: ownerName)
-                    case .interfaceDecl(let node):
-                        let iId = t11Index(work.subject)
-                        let tParams = copyIds(in c.interfaces[iId].typeParams)
-                        let ownerName = c.interfaces[iId].name
-                        var tMap = Map<string, Type>()
-                        if (c.interfaces[iId].typeMap is { } tm) {
-                            for (k, v) in tm { tMap[k] = v }
-                        }
-                        declareWhere(ref c, from: f, for: in node.value.where, to: in tParams, by: in tMap, as: ownerName)
-                    case .functionDecl(let node):
-                        let fn = work.instance
-                        let tParams = copyIds(in c.functions[fn].typeParams)
-                        let ownerName = c.functions[fn].name
-                        var tMap = Map<string, Type>()
-                        if (c.functions[fn].typeMap is { } tm) {
-                            for (k, v) in tm { tMap[k] = v }
-                        }
-                        declareWhere(ref c, from: f, for: in node.value.where, to: in tParams, by: in tMap, as: ownerName)
-                    default:
-                        return
-                }
-            }
+            t11RunWhere(ref c, for: in work)
         case .keyCheck:
-            if !isValidKey(ref c, by: work.subject) {
-                let disp = typeDisplay(ref c, by: work.subject)
-                report(ref c, for: .invalidMapKey, from: work.file, at: work.span, by: (disp, "", "", "", ""))
+            // TypeResolver.cs:191 `AfterMembersDeclared(() => CheckKey())`.
+            let _ = t8CheckKey(ref c, for: work.subject, from: work.file, at: work.span)
+        case .constraint:
+            t13RunConstraint(ref c, for: in work)
+        case .interfaceMembers:
+            // Compilation.cs:204 and :1660 `DeclareInterfaceMembers(instance)`; the caller wraps it in `Instantiating`.
+            declareInterfaceMembers(ref c, for: typeIndex(work.subject))
+        case .members:
+            declareMembers(ref c, for: typeIndex(work.subject))
+        case .unionVariants:
+            declareUnionVariants(ref c, for: typeIndex(work.subject))
+        case .conform:
+            conform(ref c, for: typeIndex(work.subject))
+        case .fieldDefault:
+            // Compilation.cs:1634 `FieldDefault(instance, f, site, span)`.
+            let _ = fieldDefault(ref c, for: typeIndex(work.subject), by: work.memberIndex, from: work.file, at: work.span)
+        case .bindFunction:
+            // Compilation.cs:1636 `BindFunction(fn)`.
+            bindFunction(ref c, for: work.instance)
+    }
+}
+
+/// The `_wheres` closures of `DeclareFile` (Compilation.cs:399, :415, :425, :437, :488): `DeclareWhere` over
+/// the declaration's `where` clauses, its type parameters and its type map (null without type parameters).
+void t11RunWhere(ref Ctx c, for in Work work) {
+    let file = work.file
+    switch c.files[file].unit.members[work.declIndex] {
+        case .structDecl(let s):
+            let sym = typeIndex(work.subject)
+            let parameters = copyIds(in c.structs[sym].typeParams)
+            let owner = $"{c.structs[sym].name}"
+            if parameters.length == 0 {
+                declareWhere(ref c, from: file, for: in s.value.where, to: in parameters, by: null, as: owner)
+            } else {
+                declareWhere(ref c, from: file, for: in s.value.where, to: in parameters, by: t11CopyMap(in c.structs[sym].typeMap), as: owner)
+            }
+        case .enumDecl(let e):
+            let owner = $"{c.enums[typeIndex(work.subject)].name}"
+            declareWhere(ref c, from: file, for: in e.value.where, to: in List<TypeParamId>(), by: null, as: owner)
+        case .unionDecl(let u):
+            let sym = typeIndex(work.subject)
+            let parameters = copyIds(in c.unions[sym].typeParams)
+            let owner = $"{c.unions[sym].name}"
+            if parameters.length == 0 {
+                declareWhere(ref c, from: file, for: in u.value.where, to: in parameters, by: null, as: owner)
+            } else {
+                declareWhere(ref c, from: file, for: in u.value.where, to: in parameters, by: t11CopyMap(in c.unions[sym].typeMap), as: owner)
+            }
+        case .interfaceDecl(let i):
+            let sym = typeIndex(work.subject)
+            let parameters = copyIds(in c.interfaces[sym].typeParams)
+            let owner = $"{c.interfaces[sym].name}"
+            if parameters.length == 0 {
+                declareWhere(ref c, from: file, for: in i.value.where, to: in parameters, by: null, as: owner)
+            } else {
+                declareWhere(ref c, from: file, for: in i.value.where, to: in parameters, by: t11CopyMap(in c.interfaces[sym].typeMap), as: owner)
+            }
+        case .functionDecl(let f):
+            let sym = work.instance
+            let parameters = copyIds(in c.functions[sym].typeParams)
+            let owner = $"{c.functions[sym].name}"
+            if parameters.length == 0 {
+                declareWhere(ref c, from: file, for: in f.value.where, to: in parameters, by: null, as: owner)
+            } else {
+                declareWhere(ref c, from: file, for: in f.value.where, to: in parameters, by: t11CopyMap(in c.functions[sym].typeMap), as: owner)
             }
         default:
-            return
+            panic("a `where` item names a generic declaration")
+    }
+}
+
+// ── Helpers: text, paths and files ──────────────────────────────────────────────
+
+/// The source text at `span` of `f` (the C# `Name.Text` / `SourceText.GetText`).
+string t11Text(in Ctx c, from FileId f, at TextSpan span) => $"{getText(c.files[f].text.span, at: span)}"
+
+/// The C# span of an expression (`Expr.Span`); the parser's `exprSpan` is not public (Q431).
+TextSpan t11ExprSpan(in parser.Expr e) {
+    switch e {
+        case .literalExpr(let n): return n.value.span
+        case .interpolatedExpr(let n): return n.value.span
+        case .nameExpr(let n): return n.value.span
+        case .thisExpr(let n): return n.value.span
+        case .memberExpr(let n): return n.value.span
+        case .targetMemberExpr(let n): return n.value.span
+        case .callExpr(let n): return n.value.span
+        case .indexExpr(let n): return n.value.span
+        case .unaryExpr(let n): return n.value.span
+        case .binaryExpr(let n): return n.value.span
+        case .rangeExpr(let n): return n.value.span
+        case .conditionalExpr(let n): return n.value.span
+        case .castExpr(let n): return n.value.span
+        case .isExpr(let n): return n.value.span
+        case .exceptExpr(let n): return n.value.span
+        case .inExpr(let n): return n.value.span
+        case .switchExpr(let n): return n.value.span
+        case .tryExpr(let n): return n.value.span
+        case .moveExpr(let n): return n.value.span
+        case .catchExpr(let n): return n.value.span
+        case .caughtErrorExpr(let n): return n.value.span
+        case .jumpExpr(let n): return n.value.span
+        case .blockExpr(let n): return n.value.span
+        case .structLiteralExpr(let n): return n.value.span
+        case .withExpr(let n): return n.value.span
+        case .spreadExpr(let n): return n.value.span
+        case .mapEntryExpr(let n): return n.value.span
+        case .collectionExpr(let n): return n.value.span
+        case .tupleExpr(let n): return n.value.span
+        case .parenExpr(let n): return n.value.span
+        case .lambdaExpr(let n): return n.value.span
+        case .stackallocExpr(let n): return n.value.span
+        case .patternExpr(let n): return n.value.span
+        case .errorExpr(let n): return n.value.span
+        case .none: return TextSpan { start: 0, length: 0 }
+    }
+}
+
+/// The C# `File.ReadAllBytes`; an unreadable file is an exception out of the C# compiler, a panic here (Q571).
+List<u8> t11ReadAllBytes(string path) {
+    let bytes = Io.readFile(path) catch panic($"cannot read `{path}`")
+    return bytes
+}
+
+/// The C# `Directory.Exists`: whether `path` lists as a directory.
+bool t11DirectoryExists(string path) {
+    let _ = Io.listDir(path) catch return false
+    return true
+}
+
+/// The names in directory `dir`; nothing when it cannot be listed.
+List<string> t11ListFiles(string dir) {
+    let names = Io.listDir(dir) catch return List<string>()
+    return names
+}
+
+/// The C# `Path.GetDirectoryName` of an absolute `/` path: everything before the last `/` (`/` itself for a
+/// file at the root).
+string t11DirectoryName(string path) {
+    var last: i64 = -1
+    var i: i64 = 0
+    for b in path.bytes {
+        if b == 0x2F { last = i }
+        i += 1
+    }
+    if last == 0 { return "/" }
+    if last < 0 { return "" }
+    return path[0..last]
+}
+
+/// The C# `Path.Combine(a, b)` for `/` paths.
+string t11Combine(string a, by string b) {
+    if a.length == 0 { return b }
+    if a.endsWith("/") { return $"{a}{b}" }
+    return $"{a}/{b}"
+}
+
+/// The C# `Path.GetRelativePath(root, path)` for a `path` under `root`; any other path is returned whole (Q571).
+string t11RelativePath(string root, to string path) {
+    if path == root { return "." }
+    let prefix = root.endsWith("/") ? root : $"{root}/"
+    if path.startsWith(prefix) { return path[prefix.length..path.length] }
+    return path
+}
+
+/// Sorts `xs` in ordinal (byte) order, the C# `Order(StringComparer.Ordinal)`.
+void t11SortOrdinal(ref List<string> xs) {
+    for i in 1..xs.length {
+        var j = i
+        while j > 0 && pathLess(xs[j], by: xs[j - 1]) {
+            let t = xs[j]
+            xs[j] = xs[j - 1]
+            xs[j - 1] = t
+            j -= 1
+        }
     }
 }
