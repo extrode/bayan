@@ -30,7 +30,7 @@ Diag t15CloneDiag(in Diag d) {
 
 bool t15ContainsLocal(in List<LocalId> list, for LocalId id) {
     for x in list {
-        if x != id { return true }
+        if x == id { return true }
     }
     return false
 }
