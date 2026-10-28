@@ -3,7 +3,9 @@
 #   bash guard.sh --base <branch> --allow '<glob>[,<glob>…]' --filter '<dotnet test filter>' [--mutate <file.byn>[,…]] [--mutations N]
 # Checks: 1 scope (changed files match --allow, plus handoff/todo/tasks), 2 no junk (binary or extensionless files),
 # 3 build 0 warnings, 4 tests pass with 0 skipped, 5 banned C#-isms in changed .byn, 6 mutation: each of N semantic
-# mutations per --mutate file must make the filtered tests fail (a surviving mutation = an untested line).
+# mutations per --mutate file must make the filtered tests fail (a surviving mutation = an untested line),
+# 7 content checks from guard-checks.py (C# oracle in the tests, no stubs or empty bodies left, ctx.byn only in the
+# task's own section, no open gating Question, docs: progress log entry and Question line citations that hold).
 set -u
 BASE=""; ALLOW=""; FILTER=""; MUTATE=""; N=6
 while [ $# -gt 0 ]; do case "$1" in
@@ -16,7 +18,7 @@ mkdir -p "$PWD/tmp/guard-run"; LOG=$PWD/tmp/guard-run
 # 1 scope + 2 junk
 CHANGED=$( { git diff --name-only "$BASE"...HEAD; git diff --name-only; git ls-files --others --exclude-standard; } | sort -u)
 for f in $CHANGED; do
-  ok=0; case "$f" in docs/bayan-handoff.md|work/todo.md|docs/specs/*/*-tasks.md) ok=1;; esac
+  ok=0; case "$f" in docs/bayan-handoff.md|work/todo.md|docs/specs/*/*-tasks.md|selfhost/semantics/ctx.byn) ok=1;; esac
   IFS=',' read -ra PATS <<< "$ALLOW"; for p in "${PATS[@]}"; do [[ "$f" == $p ]] && ok=1; done
   [ $ok = 1 ] || note "scope: $f is outside --allow ($ALLOW); revert it or record the need as a Question"
   b=$(basename "$f"); [[ "$b" != *.* ]] && note "junk: $f has no extension (stray run-case output?); delete it"
@@ -44,6 +46,12 @@ for f in $CHANGED; do case "$f" in *.byn) [ -f "$f" ] || continue
 ;; esac; done > $LOG/banned.txt
 while read -r l; do [ -n "$l" ] && note "$l"; done < $LOG/banned.txt
 
+# 7 content checks (before mutations: they are cheap)
+TASK=$(echo "$FILTER" | grep -oE 'SelfhostSemanticsT[0-9]+Tests' | head -1 | sed -E 's/SelfhostSemantics(T[0-9]+)Tests/\1/')
+if [ -n "$TASK" ]; then
+  while read -r l; do [ -n "$l" ] && note "$l"; done < <(python3 -I "$(dirname "$0")/guard-checks.py" "$BASE" "$TASK" "$ALLOW")
+else note "checks: --filter names no SelfhostSemanticsT<n>Tests class, so the content checks cannot run"; fi
+
 # 6 mutations (only when everything above passed: a mutation run on a red tree proves nothing)
 if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
   IFS=',' read -ra MF <<< "$MUTATE"
@@ -54,12 +62,16 @@ if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
     total=${#SITES[@]}; [ "$total" = 0 ] && { note "mutation: $f has no mutable lines"; continue; }
     step=$(( total / N )); [ $step -lt 1 ] && step=1; killed=0; tried=0
     for ((i=0; i<total && tried<N; i+=step)); do
-      ln=${SITES[$i]}; tried=$((tried+1))
+      ln=${SITES[$i]}
       perl -i -pe "if (\$.==$ln) { s/==/!=/ or s/!=/==/ or s/<=/</ or s/>=/>/ or s/ < / >= / or s/ > / <= / or s/\btrue\b/false/ or s/\bfalse\b/true/ or s/\+ 1\b/+ 2/ or s/- 1\b/- 2/ or s/&&/||/ or s/\|\|/&&/ }" "$f"
-      dotnet build -v q > $LOG/mb.txt 2>&1 && dotnet test -v q --no-build --filter "$FILTER" > $LOG/mt.txt 2>&1
+      # a mutant that does not compile proves nothing about the tests: skip it and try the next site
+      if ! dotnet build -v q > $LOG/mb.txt 2>&1; then cp $LOG/mutate-orig.txt "$f"; i=$((i - step + 1)); continue; fi
+      tried=$((tried+1))
+      dotnet test -v q --no-build --filter "$FILTER" > $LOG/mt.txt 2>&1
       if [ $? = 0 ]; then note "mutation survived: $f:$ln ($(sed -n "${ln}p" "$f" | sed 's/^ *//' | cut -c1-90)) — no test fails when this line is changed; add a test that covers it"; else killed=$((killed+1)); fi
       cp $LOG/mutate-orig.txt "$f"
     done
+    [ $tried -lt $N ] && [ $tried -lt $total ] && note "mutation: only $tried of $N mutants of $f compiled; add tests until enough distinct sites are covered"
     echo "mutation $f: $killed/$tried killed"
   done
   dotnet build -v q > /dev/null 2>&1

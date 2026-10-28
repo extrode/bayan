@@ -32,25 +32,25 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T10 Manifest reader — files: `manifest.byn` (`src/Bayan.Syntax/Packages/Manifest.cs`: data grammar, BYN3100–BYN3103, capabilities, grammar, `camelOf`/`kebabOf`), `SelfhostSemanticsT10Tests.cs` — covers: R1, R4 — after: T4; parallel with: T6–T9, T11–T27, T34–T39 — done when:
   - both `package.byn` diag cases parse and report identically; entry-module names match `CliApp.EntryModule`; Q565–Q569 as needed.
   - Size: about 690 lines.
-- [x] T11 Compilation loading and declaration A — files: `compile.byn` (`Compilation.cs` 1–~654: `FromPath`/`FromProject`/`Create`, imports, module order, `Declare` order, `DeclareFile`, `addType`/`addFunction`, `associatedType`; `Work` records and sinks, including `afterMembersDeclared`/`reportInto`; `buildLexicon` before `declare`; `removeRepeats` call), `SelfhostSemanticsT11Tests.cs` — covers: R1, R4 — after: T4; parallel with: T6–T10, T12–T27, T34–T39 — done when:
+- [ ] T11 Compilation loading and declaration A — files: `compile.byn` (`Compilation.cs` 1–~654: `FromPath`/`FromProject`/`Create`, imports, module order, `Declare` order, `DeclareFile`, `addType`/`addFunction`, `associatedType`; `Work` records and sinks, including `afterMembersDeclared`/`reportInto`; `buildLexicon` before `declare`; `removeRepeats` call), `SelfhostSemanticsT11Tests.cs` — covers: R1, R4 — after: T4; parallel with: T6–T10, T12–T27, T34–T39 — done when:
   - file, directory and project loading give the C# module/file order and import diagnostics; no stored closures; Q570–Q574 record closures and path parity.
   - Size: about 940 lines.
-- [x] T12 Declaration B — files: `declare.byn` (`Compilation.cs` ~655–1037: variants, payloads, enums, unions, struct members, overloads, `overlap`), `SelfhostSemanticsT12Tests.cs` — covers: R4 — after: T4; parallel with: T6–T11, T13–T27, T34–T39 — done when:
+- [ ] T12 Declaration B — files: `declare.byn` (`Compilation.cs` ~655–1037: variants, payloads, enums, unions, struct members, overloads, `overlap`), `SelfhostSemanticsT12Tests.cs` — covers: R4 — after: T4; parallel with: T6–T11, T13–T27, T34–T39 — done when:
   - method-for-method port with copied symbol facts and no synthesized syntax; Q575–Q579 as needed.
   - Size: about 555 lines.
-- [x] T13 Generics and instantiation — files: `generics.byn` (`Compilation.cs` 1363–1952: `BindAll`, instance keys, `Instantiating` as sink push/pop, constraints, `InferErrorSets`, mutation/requires), `SelfhostSemanticsT13Tests.cs` — covers: R4 — after: T4; parallel with: T6–T12, T14–T27, T34–T39 — done when:
+- [ ] T13 Generics and instantiation — files: `generics.byn` (`Compilation.cs` 1363–1952: `BindAll`, instance keys, `Instantiating` as sink push/pop, constraints, `InferErrorSets`, mutation/requires), `SelfhostSemanticsT13Tests.cs` — covers: R4 — after: T4; parallel with: T6–T12, T14–T27, T34–T39 — done when:
   - the work list reproduces C# order and forwarding; Q580–Q584 as needed.
   - Size: about 856 lines.
-- [x] T14 Conformance — files: `conformance.byn` (`Conformance.cs`: `conform`, `checkConformances`, quiet sinks, associated bindings), `SelfhostSemanticsT14Tests.cs` — covers: R4 — after: T4; parallel with: T6–T13, T15–T27, T34–T39 — done when:
+- [ ] T14 Conformance — files: `conformance.byn` (`Conformance.cs`: `conform`, `checkConformances`, quiet sinks, associated bindings), `SelfhostSemanticsT14Tests.cs` — covers: R4 — after: T4; parallel with: T6–T13, T15–T27, T34–T39 — done when:
   - witness and default-method checks match the C# cases; Q585–Q589 as needed.
   - Size: about 345 lines.
-- [x] T15 Binder core and statements A — files: `binder.byn` (`Binder.cs` 1–~499: state, scopes, locals, entry points), `SelfhostSemanticsT15Tests.cs` — covers: R4 — after: T4; parallel with: T6–T14, T16–T27, T34–T39 — done when:
+- [ ] T15 Binder core and statements A — files: `binder.byn` (`Binder.cs` 1–~499: state, scopes, locals, entry points), `SelfhostSemanticsT15Tests.cs` — covers: R4 — after: T4; parallel with: T6–T14, T16–T27, T34–T39 — done when:
   - method-for-method port; a fixture binds locals and statements over a hand-built `Ctx`; Q590–Q594 as needed.
   - Size: about 725 lines.
-- [x] T16 Binder statements B — files: `binder2.byn` (`Binder.cs` ~500–979: blocks, statement dispatch, assert, narrowing, while-let, for head), `SelfhostSemanticsT16Tests.cs` — covers: R4 — after: T4; parallel with: T6–T15, T17–T27, T34–T39 — done when:
+- [ ] T16 Binder statements B — files: `binder2.byn` (`Binder.cs` ~500–979: blocks, statement dispatch, assert, narrowing, while-let, for head), `SelfhostSemanticsT16Tests.cs` — covers: R4 — after: T4; parallel with: T6–T15, T17–T27, T34–T39 — done when:
   - method-for-method port; loop and narrowing diag forms named as passing after rebase; Q595–Q599 as needed.
   - Size: about 696 lines.
-- [x] T17 Expression binding A — files: `express.byn` (`BinderExpressions.cs` 1–~599: conversions, literals, integer parsing, names and suggestions), `SelfhostSemanticsT17Tests.cs` — covers: R4 — after: T4; parallel with: T6–T16, T18–T27, T34–T39 — done when:
+- [ ] T17 Expression binding A — files: `express.byn` (`BinderExpressions.cs` 1–~599: conversions, literals, integer parsing, names and suggestions), `SelfhostSemanticsT17Tests.cs` — covers: R4 — after: T4; parallel with: T6–T16, T18–T27, T34–T39 — done when:
   - method-for-method port; literals and name errors match C#; Q600–Q604 as needed.
   - Size: about 845 lines.
 - [ ] T18 Expression binding B — files: `express2.byn` (`BinderExpressions.cs` ~600–1155: members, index, slice), `SelfhostSemanticsT18Tests.cs` — covers: R4 — after: T4; parallel with: T6–T17, T19–T27, T34–T39 — done when:
