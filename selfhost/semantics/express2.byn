@@ -19,7 +19,7 @@ struct MemberRef {
 struct RenamedResult {
     string oldName
     string newName
-    bool hasFix = false
+    bool hasFix
     TextSpan fixSpan = TextSpan { start: 0, length: 0 }
     string replacement = ""
 }
@@ -27,12 +27,6 @@ struct RenamedResult {
 // ── Private helpers ──────────────────────────────────────────────────────────
 
 string t18Text(in Ctx c, from FileId f, at TextSpan span) => $"{getText(c.files[f].text.span, at: span)}"
-
-string t18Lower(string s) {
-    var bytes = List<u8>()
-    for b in s.bytes { bytes.append(b >= 0x41 && b <= 0x5A ? b + 0x20 : b) }
-    return $"{utf8(bytes.span)}"
-}
 
 bool t18ContainsBraces(string text) {
     for b in text.bytes {
@@ -125,10 +119,10 @@ BExpr constantLiteral(ref Ctx c, at TextSpan span, as Type type, by in Constant 
     return literal(ref c, at: span, as: type, by: value)
 }
 
-MemberRef lookupMember(ref Ctx c, for Type type, by string name) {
-    let tk = kindOf(type)
+MemberRef lookupMember(ref Ctx c, for Type t, by string name) {
+    let tk = kindOf(t)
     if tk == .structType {
-        let s = typeIndex(type)
+        let s = typeIndex(t)
         for f in c.structs[s].fields {
             if c.fields[f].name == name { return MemberRef { kind: .field, id: f } }
         }
@@ -140,7 +134,7 @@ MemberRef lookupMember(ref Ctx c, for Type type, by string name) {
         }
     }
     if tk == .interfaceType {
-        let iface = typeIndex(type)
+        let iface = typeIndex(t)
         for p in c.interfaces[iface].properties {
             if c.functions[p].name == name { return MemberRef { kind: .propertyKeyword, id: p } }
         }
@@ -702,68 +696,81 @@ Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by Fu
 }
 
 RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at TextSpan memberSpan) {
-    if !(b.calleeOf is { } call) { return null }
-    switch call.callee {
-        case .memberExpr(let me):
-            if me.value.member.start != memberSpan.start || me.value.member.length != memberSpan.length { return null }
-            let name = t18Text(in c, from: b.file, at: memberSpan)
-            let tail = TextSpan.fromBounds(memberSpan.start, until: call.span.end)
-            let isList = kindOf(type) == .list
-            let isSpanT = kindOf(type) == .span
-            let isArrayT = kindOf(type) == .array
-            let isMap = kindOf(type) == .map
-            let isStr = isString(type)
-            let isInt = isInteger(type)
+    let name = t18Text(in c, from: b.file, at: memberSpan)
+    var isCalleeMatch = false
+    var tail = TextSpan { start: memberSpan.start, length: 0 }
+    if (b.calleeOf is { } activeCall) {
+        switch activeCall.callee {
+            case .memberExpr(let me):
+                if me.value.member.start == memberSpan.start && me.value.member.length == memberSpan.length {
+                    isCalleeMatch = true
+                    tail = TextSpan.fromBounds(memberSpan.start, until: activeCall.span.end)
+                }
+            default: {}
+        }
+    }
+
+    let isList = kindOf(type) == .list
+    let isSpanT = kindOf(type) == .span
+    let isArrayT = kindOf(type) == .array
+    let isMap = kindOf(type) == .map
+    let isStr = isString(type)
+    let isInt = isInteger(type)
 
     if isList && name == "removeRange" {
-        if call.args.length == 2 && call.args[0].name is null && call.args[0].modifier == .none && call.args[1].name is null && call.args[1].modifier == .none {
-            let from = t18Text(in c, from: b.file, at: t18ExprSpan(in call.args[0].value))
-            let until = t18Text(in c, from: b.file, at: t18ExprSpan(in call.args[1].value))
+        if isCalleeMatch && (b.calleeOf is { } cCall) && cCall.args.length == 2 && cCall.args[0].name is null && cCall.args[0].modifier == .none && cCall.args[1].name is null && cCall.args[1].modifier == .none {
+            let from = t18Text(in c, from: b.file, at: t18ExprSpan(in cCall.args[0].value))
+            let until = t18Text(in c, from: b.file, at: t18ExprSpan(in cCall.args[1].value))
             return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: true, fixSpan: tail, replacement: $"remove(from: {from}, until: {until})" }
         }
         return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
     if isList && name == "replaceRange" {
-        if call.args.length == 2 && call.args[0].name is null && call.args[0].modifier == .none && call.args[1].name is null && call.args[1].modifier == .none {
-            let at = t18Text(in c, from: b.file, at: t18ExprSpan(in call.args[0].value))
-            let by = t18Text(in c, from: b.file, at: t18ExprSpan(in call.args[1].value))
+        if isCalleeMatch && (b.calleeOf is { } rCall) && rCall.args.length == 2 && rCall.args[0].name is null && rCall.args[0].modifier == .none && rCall.args[1].name is null && rCall.args[1].modifier == .none {
+            let at = t18Text(in c, from: b.file, at: t18ExprSpan(in rCall.args[0].value))
+            let by = t18Text(in c, from: b.file, at: t18ExprSpan(in rCall.args[1].value))
             return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: true, fixSpan: tail, replacement: $"replace(at: {at}, by: {by})" }
         }
         return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
     if isMap && name == "getOr" {
-        if call.args.length == 2 && call.args[0].name is null && call.args[0].modifier == .none && call.args[1].name is null && call.args[1].modifier == .none {
-            let key = t18Text(in c, from: b.file, at: t18ExprSpan(in call.args[0].value))
-            let fallback = t18Text(in c, from: b.file, at: t18ExprSpan(in call.args[1].value))
-            let mapText = t18Text(in c, from: b.file, at: t18ExprSpan(in me.value.target))
-            return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: true, fixSpan: call.span, replacement: $"({mapText}.tryGet(at: {key}) ?? {fallback})" }
+        if isCalleeMatch && (b.calleeOf is { } mCall) && mCall.args.length == 2 && mCall.args[0].name is null && mCall.args[0].modifier == .none && mCall.args[1].name is null && mCall.args[1].modifier == .none {
+            switch mCall.callee {
+                case .memberExpr(let me):
+                    let key = t18Text(in c, from: b.file, at: t18ExprSpan(in mCall.args[0].value))
+                    let fallback = t18Text(in c, from: b.file, at: t18ExprSpan(in mCall.args[1].value))
+                    let mapText = t18Text(in c, from: b.file, at: t18ExprSpan(in me.value.target))
+                    return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: true, fixSpan: mCall.span, replacement: $"({mapText}.tryGet(at: {key}) ?? {fallback})" }
+                default: {}
+            }
         }
-        return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: false, fixSpan: call.span, replacement: "" }
+        return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: false, fixSpan: tail, replacement: "" }
     }
     if (isList || isArrayT) && name == "asSpan" {
-        if call.args.length == 0 {
+        if isCalleeMatch && (b.calleeOf is { } sCall) && sCall.args.length == 0 {
             return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: true, fixSpan: tail, replacement: "span" }
         }
         return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: false, fixSpan: tail, replacement: "" }
     }
     if isStr && name == "toUtf16" {
-        if call.args.length == 0 {
+        if isCalleeMatch && (b.calleeOf is { } uCall) && uCall.args.length == 0 {
             return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: true, fixSpan: tail, replacement: "utf16" }
         }
         return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: false, fixSpan: tail, replacement: "" }
     }
     if isInt && (name == "toHex" || name == "toBinary" || name == "toOctal") {
-        let radix = t18Lower(name[2..name.length])
-        if call.args.length == 0 {
-            let targetText = t18Text(in c, from: b.file, at: t18ExprSpan(in me.value.target))
-            return RenamedResult { oldName: $"{name}()", newName: $"string(x, as: .{radix})", hasFix: true, fixSpan: call.span, replacement: $"string({targetText}, as: .{radix})" }
+        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal")
+        if isCalleeMatch && (b.calleeOf is { } hCall) && hCall.args.length == 0 {
+            switch hCall.callee {
+                case .memberExpr(let me):
+                    let targetText = t18Text(in c, from: b.file, at: t18ExprSpan(in me.value.target))
+                    return RenamedResult { oldName: $"{name}()", newName: $"string(x, as: .{radix})", hasFix: true, fixSpan: hCall.span, replacement: $"string({targetText}, as: .{radix})" }
+                default: {}
+            }
         }
-        return RenamedResult { oldName: $"{name}()", newName: $"string(x, as: .{radix})", hasFix: false, fixSpan: call.span, replacement: "" }
+        return RenamedResult { oldName: $"{name}()", newName: $"string(x, as: .{radix})", hasFix: false, fixSpan: tail, replacement: "" }
     }
     return null
-    default:
-        return null
-    }
 }
 
 bool reportRenamed(ref Binder b, through ref Ctx c, for Type type, at TextSpan member) {

@@ -470,6 +470,137 @@ public sealed class SelfhostSemanticsT18Tests
         SelfhostSemanticsHarness.AssertSection(Sections.Value, "interpolationSource", expected);
     }
 
+    [Fact]
+    public void ReportRenamedOffsetMatches()
+    {
+        var o = Oracle.Of("main", Source);
+        var b = o.Binder();
+        var name = MkName("offset", 0, 6);
+        var res = (bool)Call(b, "ReportRenamed", PrimitiveType.String, name)!;
+        var expected = new List<string> { res.ToString() };
+        expected.AddRange(o.NewDiagnostics());
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, "reportRenamedOffset", expected);
+    }
+
+    [Fact]
+    public void ReportRenamedReplaceRangeMatches()
+    {
+        var o = Oracle.Of("main", Source);
+        var b = o.Binder();
+        var name = MkName("replaceRange", 0, 12);
+        var res = (bool)Call(b, "ReportRenamed", new ListType(PrimitiveType.I32), name)!;
+        var expected = new List<string> { res.ToString() };
+        expected.AddRange(o.NewDiagnostics());
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, "reportRenamedReplaceRange", expected);
+    }
+
+    [Fact]
+    public void ReportRenamedGetOrMatches()
+    {
+        var o = Oracle.Of("main", Source);
+        var b = o.Binder();
+        var name = MkName("getOr", 0, 5);
+        var res = (bool)Call(b, "ReportRenamed", new MapType(PrimitiveType.String, PrimitiveType.I32), name)!;
+        var expected = new List<string> { res.ToString() };
+        expected.AddRange(o.NewDiagnostics());
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, "reportRenamedGetOr", expected);
+    }
+
+    [Fact]
+    public void ReportRenamedToListMatches()
+    {
+        var o = Oracle.Of("main", Source);
+        var b = o.Binder();
+        var name = MkName("toList", 0, 6);
+        var res = (bool)Call(b, "ReportRenamed", new ListType(PrimitiveType.I32), name)!;
+        var expected = new List<string> { res.ToString() };
+        expected.AddRange(o.NewDiagnostics());
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, "reportRenamedToList", expected);
+    }
+
+    [Fact]
+    public void TargetMemberAmbiguousVariantMatches()
+    {
+        var o = Oracle.Of("main", Source);
+        var myErr = o.Module.ErrorSets.First(e => e.Name == "MyError");
+        var otherErr = o.Module.ErrorSets.First(e => e.Name == "OtherError");
+        var errUnion = new ErrorUnionType([myErr, otherErr]);
+        var tm = new TargetMemberExpr(new TextSpan(0, 9), MkName("badInput", 1, 8));
+        var node = (BoundNode)Call(o.Binder(), "BindTargetMember", tm, errUnion)!;
+        var expected = new List<string>();
+        DumpNode(expected, node);
+        expected.AddRange(o.NewDiagnostics());
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, "targetMemberAmbiguousVariant", expected);
+    }
+
+    [Fact]
+    public void MemberIoStdoutMatches()
+    {
+        var o = Oracle.Of("main", Source);
+        var b = o.Binder();
+        var target = MkNameExpr("Io", 0, 2);
+        var m = MkMemberExpr(target, "stdout", 0, 9, 3);
+        var node = (BoundNode)Call(b, "BindMember", m)!;
+        var expected = new List<string>();
+        DumpNode(expected, node);
+        expected.AddRange(o.NewDiagnostics());
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, "memberIoStdout", expected);
+    }
+
+    [Fact]
+    public void MemberDynInterfaceMethodMatches()
+    {
+        var o = Oracle.Of("main", Source);
+        var iface = o.Module.Interfaces.First(i => i.Name == "IHasArea");
+        var dynType = new DynRefType(iface, readOnly: false);
+        var b = o.Binder();
+        var nameExpr = MkNameExpr("item", 0, 4);
+        var locSym = new LocalSymbol("item", null, dynType, LocalKind.Let);
+        var target = new BoundLocal(nameExpr, locSym);
+        var node = (BoundNode)Call(b, "BindValueMember", nameExpr, target, MkName("area", 5, 4))!;
+        var expected = new List<string>();
+        DumpNode(expected, node);
+        expected.AddRange(o.NewDiagnostics());
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, "memberDynInterfaceMethod", expected);
+    }
+
+    [Fact]
+    public void MemberModuleFunctionMatches()
+    {
+        var o = Oracle.Of("main", Source);
+        var b = o.Binder();
+        var target = MkNameExpr("test", 0, 4);
+        var m = MkMemberExpr(target, "runGeneric", 0, 15, 5);
+        var node = (BoundNode)Call(b, "BindMember", m)!;
+        var expected = new List<string>();
+        DumpNode(expected, node);
+        expected.AddRange(o.NewDiagnostics());
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, "memberModuleFunction", expected);
+    }
+
+    [Fact]
+    public void MemberUnionNarrowedPayloadMatches()
+    {
+        var o = Oracle.Of("main", Source);
+        var b = o.Binder();
+        var sh = o.Module.Unions.First(u => u.Name == "Shape");
+        var circleVar = sh.Variants.First(v => v.Name == "circle");
+        var nameExpr = MkNameExpr("s", 0, 1);
+        var locSym = new LocalSymbol("s", null, sh, LocalKind.Let);
+        var bLoc = new BoundLocal(nameExpr, locSym);
+        var narrowedField = BinderType.GetField("_narrowed", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (narrowedField is not null)
+        {
+            var dict = (System.Collections.IDictionary)narrowedField.GetValue(b)!;
+            dict[locSym] = circleVar;
+        }
+        var node = (BoundNode)Call(b, "BindValueMember", nameExpr, bLoc, MkName("radius", 2, 6))!;
+        var expected = new List<string>();
+        DumpNode(expected, node);
+        expected.AddRange(o.NewDiagnostics());
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, "memberUnionNarrowedPayload", expected);
+    }
+
     private static string MainSource()
     {
         return """
@@ -781,6 +912,136 @@ public sealed class SelfhostSemanticsT18Tests
                         let lit = Expr.literalExpr(Owned(LiteralExpr { span: TextSpan { start: 0, length: 7 }, kind: .string, text: "\"hello\"", suffix: null }))
                         let s = interpolationSource(ref b, through: ref c, for: in lit)
                         print(s)
+                    }
+
+                    // Section reportRenamedOffset
+                    {
+                        print("== reportRenamedOffset")
+                        var c = makeCtx("offset")
+                        var b = makeBinder(file: 0)
+                        let res = reportRenamed(ref b, through: ref c, for: prim(.string), at: TextSpan { start: 0, length: 6 })
+                        print(res ? "True" : "False")
+                        tcDiags(ref c)
+                    }
+
+                    // Section reportRenamedReplaceRange
+                    {
+                        print("== reportRenamedReplaceRange")
+                        var c = makeCtx("replaceRange")
+                        var b = makeBinder(file: 0)
+                        let listType = internList(ref c, by: prim(.i32))
+                        let res = reportRenamed(ref b, through: ref c, for: listType, at: TextSpan { start: 0, length: 12 })
+                        print(res ? "True" : "False")
+                        tcDiags(ref c)
+                    }
+
+                    // Section reportRenamedGetOr
+                    {
+                        print("== reportRenamedGetOr")
+                        var c = makeCtx("getOr")
+                        var b = makeBinder(file: 0)
+                        let mapType = internMap(ref c, by: prim(.string), to: prim(.i32))
+                        let res = reportRenamed(ref b, through: ref c, for: mapType, at: TextSpan { start: 0, length: 5 })
+                        print(res ? "True" : "False")
+                        tcDiags(ref c)
+                    }
+
+                    // Section reportRenamedToList
+                    {
+                        print("== reportRenamedToList")
+                        var c = makeCtx("toList")
+                        var b = makeBinder(file: 0)
+                        let listType = internList(ref c, by: prim(.i32))
+                        let res = reportRenamed(ref b, through: ref c, for: listType, at: TextSpan { start: 0, length: 6 })
+                        print(res ? "True" : "False")
+                        tcDiags(ref c)
+                    }
+
+                    // Section targetMemberAmbiguousVariant
+                    {
+                        print("== targetMemberAmbiguousVariant")
+                        var c = makeCtx(".badInput")
+                        var b = makeBinder(file: 0)
+                        c.errorVariants.append(ErrorVariantSymbol { name: "badInput", set: 0, fields: [] })
+                        c.errorSets.append(ErrorSetSymbol { name: "MyError", variants: [0] })
+                        c.errorVariants.append(ErrorVariantSymbol { name: "badInput", set: 1, fields: [] })
+                        c.errorSets.append(ErrorSetSymbol { name: "OtherError", variants: [1] })
+                        var sets = List<ErrorSetId>()
+                        sets.append(0)
+                        sets.append(1)
+                        var ex = List<VariantId>()
+                        let errUnion = errorUnionOf(ref c, for: in sets, as: in ex)
+                        let tm = TargetMemberExpr { span: TextSpan { start: 0, length: 9 }, member: TextSpan { start: 1, length: 8 } }
+                        let node = bindTargetMember(ref b, through: ref c, for: in tm, to: errUnion)
+                        tcDump(ref c, for: node)
+                        tcDiags(ref c)
+                    }
+
+                    // Section memberIoStdout
+                    {
+                        print("== memberIoStdout")
+                        var c = makeCtx("Io.stdout")
+                        var b = makeBinder(file: 0)
+                        let fnId = c.functions.length
+                        c.functions.append(FunctionSymbol { name: "stdout", builtin: .ioStdout, returnType: prim(.void), isStatic: true })
+                        let target = Expr.nameExpr(Owned(NameExpr { span: TextSpan { start: 0, length: 2 }, name: TextSpan { start: 0, length: 2 }, typeArgs: [] }))
+                        let m = MemberExpr { span: TextSpan { start: 0, length: 9 }, target: move target, member: TextSpan { start: 3, length: 6 }, nullConditional: false }
+                        let node = bindMember(ref b, through: ref c, for: in m)
+                        tcDump(ref c, for: node)
+                        tcDiags(ref c)
+                    }
+
+                    // Section memberDynInterfaceMethod
+                    {
+                        print("== memberDynInterfaceMethod")
+                        var c = makeCtx("item.area")
+                        var b = makeBinder(file: 0)
+                        let ifaceId = c.interfaces.length
+                        let areaFn = c.functions.length
+                        c.functions.append(FunctionSymbol { name: "area", returnType: prim(.f64), isStatic: false })
+                        c.interfaces.append(InterfaceSymbol { name: "IHasArea", methods: [areaFn], properties: [] })
+                        let dynType = internDynRef(ref c, by: ifaceId, readOnly: false)
+                        let locId = c.locals.length
+                        c.locals.append(LocalSymbol { name: "item", type: dynType })
+                        let bLoc = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 4 }, local: locId, type: dynType })
+                        let node = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 9 }, for: bLoc, by: TextSpan { start: 5, length: 4 })
+                        tcDump(ref c, for: node)
+                        tcDiags(ref c)
+                    }
+
+                    // Section memberModuleFunction
+                    {
+                        print("== memberModuleFunction")
+                        var c = makeCtx("test.runGeneric")
+                        var b = makeBinder(file: 0)
+                        let fnId = c.functions.length
+                        c.functions.append(FunctionSymbol { name: "runGeneric", returnType: prim(.void), access: .publicKeyword })
+                        c.modules[0].functions["runGeneric"] = [fnId]
+                        let target = Expr.nameExpr(Owned(NameExpr { span: TextSpan { start: 0, length: 4 }, name: TextSpan { start: 0, length: 4 }, typeArgs: [] }))
+                        let m = MemberExpr { span: TextSpan { start: 0, length: 15 }, target: move target, member: TextSpan { start: 5, length: 10 }, nullConditional: false }
+                        let node = bindMember(ref b, through: ref c, for: in m)
+                        tcDump(ref c, for: node)
+                        tcDiags(ref c)
+                    }
+
+                    // Section memberUnionNarrowedPayload
+                    {
+                        print("== memberUnionNarrowedPayload")
+                        var c = makeCtx("s.radius")
+                        var b = makeBinder(file: 0)
+                        let fId = c.locals.length
+                        c.locals.append(LocalSymbol { name: "radius", type: prim(.f64) })
+                        let vId = c.unionVariants.length
+                        c.unionVariants.append(UnionVariantSymbol { name: "circle", owner: 0, fields: [fId] })
+                        c.unions.append(UnionSymbol { name: "Shape", variants: [vId] })
+                        let uType = makeType(.unionType, at: 0)
+                        let locId = c.locals.length
+                        c.locals.append(LocalSymbol { name: "s", type: uType })
+                        b.narrowed[locId] = vId
+                        let bLoc = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 1 }, local: locId, type: uType })
+                        let node = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 8 }, for: bLoc, by: TextSpan { start: 2, length: 6 })
+                        tcDump(ref c, for: node)
+                        tcDiags(ref c)
                     }
                 }
             }
