@@ -8,3 +8,4 @@
 - Tests: `dotnet test -v q`. Golden cases live in `tests/cases/<kind>/`; `BAYAN_UPDATE=1 dotnet test` rewrites expected files. Every new diagnostic needs a `diag/` case, every runtime feature a `run/` case.
 - Diagnostic codes `BYN####`: 0001–0999 lexer, 1000–1999 parser, 2000–3999 semantics, 4000–4999 backend. Rendered format is fixed by `DiagnosticRendererTests`.
 - Scratch goes in `tmp/` (gitignored).
+- Work in flight: `docs/handoffs/` (dated files); spec 010 continues per `docs/handoffs/2026-10-26-spec-010-dropoff.md`.

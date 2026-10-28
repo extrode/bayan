@@ -1,0 +1,169 @@
+{
+  "name": "bayan",
+  "displayName": "Bayan",
+  "description": "Bayan language support: highlighting, completion, hover docs, go to definition, debugging.",
+  "version": "0.0.1",
+  "publisher": "bayan-lang",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://example.invalid/bayan"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Debuggers",
+    "Snippets"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "workspaceContains:**/*.byn"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "bayan",
+        "aliases": [
+          "Bayan",
+          "bayan"
+        ],
+        "extensions": [
+          ".byn"
+        ],
+        "filenames": [
+          "package.byn"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "bayan",
+        "scopeName": "source.bayan",
+        "path": "./syntaxes/bayan.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "bayan",
+        "path": "./snippets/bayan.json"
+      }
+    ],
+    "configuration": {
+      "title": "Bayan",
+      "properties": {
+        "bayan.server.path": {
+          "type": "string",
+          "default": "bayan-lsp",
+          "description": "Path to the Bayan language server (bayan-lsp). Use `bayan` with args [\"lsp\"] once the compiler hosts it."
+        },
+        "bayan.server.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Arguments for the language server."
+        },
+        "bayan.compiler.path": {
+          "type": "string",
+          "default": "bayan",
+          "description": "Path to the bayan CLI (used for builds and debugging)."
+        },
+        "bayan.debug.backend": {
+          "type": "string",
+          "enum": [
+            "lldb",
+            "cppdbg",
+            "cppvsdbg"
+          ],
+          "default": "lldb",
+          "description": "Native debugger used for Bayan programs: CodeLLDB (lldb), C/C++ gdb/lldb (cppdbg) or Windows (cppvsdbg)."
+        },
+        "bayan.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "scope": "window",
+          "description": "Traces messages between VS Code and the Bayan language server."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "bayan.restartServer",
+        "title": "Bayan: Restart Language Server"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "bayan"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "bayan",
+        "label": "Bayan",
+        "languages": [
+          "bayan"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Built executable. Defaults to the output of `bayan build --debug`."
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "cwd": {
+                "type": "string",
+                "default": "${workspaceFolder}"
+              },
+              "build": {
+                "type": "boolean",
+                "default": true,
+                "description": "Run `bayan build --debug` before launching."
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "bayan",
+            "request": "launch",
+            "name": "Debug Bayan",
+            "cwd": "${workspaceFolder}",
+            "build": true
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Bayan: Launch",
+            "body": {
+              "type": "bayan",
+              "request": "launch",
+              "name": "Debug Bayan",
+              "cwd": "^\"\\${workspaceFolder}\"",
+              "build": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
