@@ -454,8 +454,51 @@ struct Ctx {
     // ── Per-task state (Q710). A task adds the C# fields it needs, with defaults, only under its own marker.
     // ── T10 state
     // ── T11 state
+    /// C# `PackageRoot`: imports resolve under it.
+    string packageRoot = ""
+    /// C# `DisplayRoot`: imported files are named relative to it.
+    string displayRoot = ""
+    /// C# `Modules`: every loaded module, dependencies before dependents (`modules` also holds the builtin module).
+    List<ModId> moduleOrder = List<ModId>()
+    /// C# `EntryModule`.
+    ModId entryModule = -1
+    /// C# `_modulesByDir` and `_loading`.
+    Map<string, ModId> modulesByDir = []
+    List<ModId> loading = List<ModId>()
+    /// C# `ParseTime` and `CheckTime`, in nanoseconds.
+    i64 parseTime = 0
+    i64 checkTime = 0
+    /// C# `_aliases`: the aliases `addType` accepted, in declaration order.
+    List<AliasId> aliasOrder = List<AliasId>()
+    /// C# `_testCases`: the accepted cases of each test with `@cases`, by `declKey(file, declIndex)`.
+    Map<i64, TestCases> testCases = []
+    /// C# `_wheres` and `_associatedTypes` (key `"<owner> <name>"`).
+    List<Work> wheres = List<Work>()
+    Map<string, TypeParamId> associatedTypes = []
+    /// C# `MembersDeclared`.
+    bool membersDeclared = false
     // ── T12 state
     // ── T13 state
+    /// C# `_instances` (Q581): `t13Key` of `(Generic, Args)` to the instance (a `FuncId` or a `Type`).
+    Map<string, i64> instanceKeys = []
+    /// C# `_instantiating`: depth of `Instantiating` calls.
+    i64 instantiating = 0
+    /// C# `_instantiationSite`: whether it is set, and its file and span.
+    bool hasInstantiationSite = false
+    FileId instantiationSiteFile = -1
+    TextSpan instantiationSiteSpan = TextSpan { start: 0, length: 0 }
+    /// C# `_instantiationErrors`: what instantiation reported that is not the user's.
+    List<Diag> instantiationErrors = List<Diag>()
+    /// C# `_instanceAnalysisSeen` (a set): `code|file|start|length` of each instance-analysis diagnostic kept.
+    Map<string, i64> instanceAnalysisSeen = []
+    /// C# `_firstPass`: a `firstPasses` index, or -1 for null.
+    i64 firstPass = -1
+    List<FirstPass> firstPasses = List<FirstPass>()
+    /// C# `RequiresChecks`.
+    List<RequiresCheck> requiresChecks = List<RequiresCheck>()
+    /// C# `_interfaceMembersDeclared` and `_pendingInterfaces` (`Work { kind: .interfaceMembers }`).
+    bool interfaceMembersDeclared = false
+    List<Work> pendingInterfaces = List<Work>()
     // ── T14 state
     // ── T15 state
     // ── T16 state
@@ -523,6 +566,15 @@ struct Binder {
 
     // ── Per-task binder state (Q710), as in `Ctx`.
     // ── T15 state
+    /// The C# constructor's `typeArgs`, which `_types` resolves with before the function's or struct's map; null for none.
+    Map<string, Type>? typeArgs = null
+    /// The C# `_it`: the field whose own rule is being bound, or -1.
+    FieldId itField = -1
+    /// The C# `_thisFacts`: the fact key for `this`, made on first use; null until then.
+    LocalId? thisFacts = null
+    /// The C# `_types` map (see `typeArgs`), taken once by T15's `t15CaptureTypes`; `typesCaptured` says whether it was.
+    Map<string, Type> types = []
+    bool typesCaptured = false
     // ── T16 state
     // ── T17 state
     // ── T18 state

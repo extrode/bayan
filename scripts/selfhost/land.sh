@@ -8,8 +8,8 @@ set -eu
 T=$1; BR=$2; N=${T#T}
 BASE=$(git rev-parse --abbrev-ref HEAD)
 [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "LAND REFUSED: the base worktree has uncommitted changes"; exit 1; }
-python3 -I scripts/selfhost/wave-brief.py . "$T" > /dev/null
-GUARD=$(grep -m1 '^bash scripts/selfhost/guard.sh' "tmp/010-${T,,}/prompt.md" | sed "s/--base [^ ]*/--base $BASE/")
+PATH="/usr/bin:$PATH" python3 -I scripts/selfhost/wave-brief.py . "$T" > /dev/null
+GUARD=$(grep -m1 '^bash scripts/selfhost/guard.sh' "tmp/010-${T,,}/prompt.md" | sed "s|--base [^ ]*|--base $BASE|")
 REVIEW=docs/specs/010-self-hosted-semantics/reviews/$T.md
 
 WT=tmp/land-${T,,}; rm -rf "$WT"; git worktree prune
@@ -31,5 +31,5 @@ trap cleanup EXIT
 )
 
 git merge --no-ff -m "chore(010): land $T" "$BR"
-sed -i -E "s/^- \[ \] $T /- [x] $T /" docs/specs/010-self-hosted-semantics/010-tasks.md
+perl -i -pe "s/^- \[ \] $T /- [x] $T /" docs/specs/010-self-hosted-semantics/010-tasks.md
 git commit -qam "chore(010): tick $T" && echo "LANDED $T"
