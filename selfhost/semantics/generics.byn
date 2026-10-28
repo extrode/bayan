@@ -138,16 +138,18 @@ void bindAll(ref Ctx c) {
             bindEnumArguments(ref b, through: ref c, for: e)
         }
     }
-    for entry in c.exitCodes {
+    var exitCodes = List<ExitCodeRef>()
+    for entry in c.exitCodes { exitCodes.append(entry) }
+    for entry in exitCodes {
         let f = entry.attribute.file
         let d = entry.attribute.declIndex
         let vIdx = entry.attribute.memberIndex
         let aIdx = entry.attribute.itemIndex
         switch c.files[f].unit.members[d] {
-            case .errorSetDecl(let ed):
-                let attr = ed.value.variants[vIdx].attributes[aIdx]
+            case .errorEnumDecl(let ed):
                 var b = t13NewBinder(c.errorVariants[entry.variant].file)
-                c.errorVariants[entry.variant].exitCode = bindExitCode(ref b, through: ref c, for: in attr)
+                let code = bindExitCode(ref b, through: ref c, for: in ed.value.variants[vIdx].attributes[aIdx])
+                c.errorVariants[entry.variant].exitCode = code
             default:
                 break
         }
@@ -871,6 +873,72 @@ void bindFunction(ref Ctx c, for FuncId fn) {
     let _ = t13BindBody(ref c, for: fn, by: seeds)
 }
 
+void t13BindMain(ref Binder b, through ref Ctx c) {
+    t15CaptureTypes(ref b, through: ref c)
+    var bound = List<BStmt>()
+    var blockSpan = TextSpan { start: 0, length: 0 }
+    var first = true
+    var mainStatements = List<SyntaxRef>()
+    for sr in c.mainStatements { mainStatements.append(sr) }
+    for sr in mainStatements {
+        switch c.files[sr.file].unit.members[sr.declIndex] {
+            case .globalStatement(let g):
+                if first {
+                    b.firstStatement = t15StmtSpan(in g.value.statement).start
+                    blockSpan = g.value.span
+                    first = false
+                }
+                bound.append(bindStatement(ref b, through: ref c, for: in g.value.statement))
+            default:
+                break
+        }
+    }
+    c.functions[b.fn].infersErrors = true
+    c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: blockSpan, statements: move bound })
+}
+
+void t13BindTest(ref Binder b, through ref Ctx c, for in parser.TestDecl d, by TestBody tb) {
+    if !tb.hasValues {
+        bindTest(ref b, through: ref c, for: in d, by: in List<parser.Expr>())
+        return
+    }
+    t15CaptureTypes(ref b, through: ref c)
+    c.functions[b.fn].infersErrors = true
+    switch d.body {
+        case .blockStmt(let body):
+            var statements = List<BStmt>()
+            let f = tb.values.file
+            let declIdx = tb.values.declIndex
+            let aIdx = tb.values.memberIndex
+            let argIdx = tb.values.itemIndex
+            switch c.files[f].unit.members[declIdx] {
+                case .testDecl(let td):
+                    switch td.value.attributes[aIdx].args[argIdx].value {
+                        case .tupleExpr(let tup):
+                            for i in 0..d.params.length {
+                                let type = resolveType(ref b, through: ref c, for: in d.params[i].type)
+                                let value = bindConverted(ref b, through: ref c, for: in tup.value.elements[i].value, to: type)
+                                let local = declareLocal(ref b, through: ref c, at: d.params[i].name, as: type, for: .letKeyword)
+                                statements.append(addLocalDecl(ref c, from: BLocalDecl { span: d.params[i].span, local: local, initializer: value }))
+                            }
+                        default:
+                            if d.params.length > 0 {
+                                let type = resolveType(ref b, through: ref c, for: in d.params[0].type)
+                                let value = bindConverted(ref b, through: ref c, for: in td.value.attributes[aIdx].args[argIdx].value, to: type)
+                                let local = declareLocal(ref b, through: ref c, at: d.params[0].name, as: type, for: .letKeyword)
+                                statements.append(addLocalDecl(ref c, from: BLocalDecl { span: d.params[0].span, local: local, initializer: value }))
+                            }
+                    }
+                default:
+                    break
+            }
+            statements.append(bindBlock(ref b, through: ref c, for: in body.value))
+            c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: body.value.span, statements: move statements })
+        default:
+            break
+    }
+}
+
 /// Compilation.cs:1765 BindBody: a first pass (no `seeds`) returns the seeds a second pass needs, if
 /// any; `release`'s empty list is C#'s null (Q582).
 List<(LocalId, Type)>? t13BindBody(ref Ctx c, for FuncId fn, by in List<(LocalId, Type)>? seeds) {
@@ -901,30 +969,6 @@ List<(LocalId, Type)>? t13BindBody(ref Ctx c, for FuncId fn, by in List<(LocalId
         case .constructor:
             // `_constructorBodies[fn]`: the constructor's own member of the struct.
             owner = c.functions[fn].owner
-/// Helper to extract test case expressions from a TestBody (Q714).
-List<parser.Expr> t13TestValues(in Ctx c, for in TestBody tb) {
-    var values = List<parser.Expr>()
-    if !tb.hasValues { return values }
-    let f = tb.values.file
-    let d = tb.values.declIndex
-    let aIdx = tb.values.memberIndex
-    let argIdx = tb.values.itemIndex
-    switch c.files[f].unit.members[d] {
-        case .testDecl(let td):
-            let attr = td.value.attributes[aIdx]
-            let arg = attr.args[argIdx]
-            switch arg.value {
-                case .tupleExpr(let tup):
-                    for elem in tup.value.elements { values.append(elem.value) }
-                default:
-                    values.append(arg.value)
-            }
-        default:
-            break
-    }
-    return values
-}
-
         case .testKeyword:
             owner = -1
         case .main:
@@ -940,22 +984,12 @@ List<parser.Expr> t13TestValues(in Ctx c, for in TestBody tb) {
         let _ = hold(ref b, through: ref c)
     }
     if c.functions[fn].kind == .main {
-        var stmts = List<parser.GlobalStatement>()
-        for sr in c.mainStatements {
-            switch c.files[sr.file].unit.members[sr.declIndex] {
-                case .globalStatement(let g):
-                    stmts.append(g.value)
-                default:
-                    break
-            }
-        }
-        bindMain(ref b, through: ref c, for: in stmts)
+        t13BindMain(ref b, through: ref c)
     } else if c.functions[fn].kind == .testKeyword && c.testBodies.contains(fn) {
         let tb = c.testBodies[fn]
         switch c.files[tb.decl.file].unit.members[tb.decl.declIndex] {
             case .testDecl(let n):
-                let vals = t13TestValues(in c, for: in tb)
-                bindTest(ref b, through: ref c, for: in n.value, by: in vals)
+                t13BindTest(ref b, through: ref c, for: in n.value, by: tb)
             default:
                 break
         }

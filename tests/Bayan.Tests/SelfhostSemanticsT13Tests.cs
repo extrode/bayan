@@ -336,6 +336,7 @@ public sealed class SelfhostSemanticsT13Tests
         ("bindFunction", BindFunction),
         ("requires", Requires),
         ("noMain", NoMain),
+        ("bindAllDrains", BindAllDrains),
     ];
 
     /// <summary>Instantiating: which codes are forwarded to the use, which are held, depth and outermost site.</summary>
@@ -934,6 +935,37 @@ public sealed class SelfhostSemanticsT13Tests
             sb.Append("    {\n").Append(w.Code).Append("    }\n");
         }
         return (sb.ToString(), lines);
+    }
+
+    /// <summary>BindAll with exit codes, main statements, and test bodies: each is drained and bound.</summary>
+    private static (string, List<string>) BindAllDrains()
+    {
+        const string text = "union error E {\n    @exitCode(42)\n    bad\n}\n\nvoid run() {\n}\n\nlet x = 1\n\ntest \"t\" {\n    let y = 2\n}\n";
+        var c = Compile(text, new CompilationOptions(IncludeTests: true));
+        var w = new World(c, text);
+        var lines = new List<string>();
+        var v = c.EntryModule.ErrorSets.SelectMany(s => s.Variants).Single(vr => vr.Name == "bad");
+        lines.Add($"exitCode {v.ExitCode}");
+        w.Emit("let es = newErrorSet(ref c, by: ErrorSetSymbol { name: \"E\", module: 0, file: 0, declIndex: 0 })");
+        w.Emit("let ev = newErrorVariant(ref c, by: ErrorVariantSymbol { name: \"bad\", file: 0, declIndex: 0, set: es })");
+        w.Emit("c.errorSets[es].variants.append(ev)");
+        w.Emit("c.exitCodes.append(ExitCodeRef { variant: ev, attribute: SyntaxRef { file: 0, declIndex: 0, memberIndex: 0, itemIndex: 0 } })");
+        var fn = c.EntryModule.AllFunctions.Single(f => f.Kind == FunctionKind.Main);
+        lines.Add($"main body {(fn.Body is null ? "no" : "yes")}");
+        w.Emit("let fnMain = newFunction(ref c, by: FunctionSymbol { name: \"main\", module: 0, file: 0, kind: .main })");
+        w.Emit("c.modules[0].allFunctions.append(fnMain)");
+        w.Emit("c.mainStatementsFn = fnMain");
+        w.Emit("c.mainStatements.append(SyntaxRef { file: 0, declIndex: 2 })");
+        var tFn = c.EntryModule.AllFunctions.Single(f => f.Kind == FunctionKind.Test);
+        lines.Add($"test body {(tFn.Body is null ? "no" : "yes")}");
+        w.Emit("let fnTest = newFunction(ref c, by: FunctionSymbol { name: \"test_t\", module: 0, file: 0, kind: .testKeyword })");
+        w.Emit("c.modules[0].allFunctions.append(fnTest)");
+        w.Emit("c.testBodies[fnTest] = TestBody { decl: SyntaxRef { file: 0, declIndex: 3 }, values: SyntaxRef {} }");
+        w.Emit("bindAll(ref c)");
+        w.Emit("print($\"exitCode {c.errorVariants[ev].exitCode}\")");
+        w.Emit("print($\"main body {(c.functions[fnMain].body != -1 ? \"yes\" : \"no\")}\")");
+        w.Emit("print($\"test body {(c.functions[fnTest].body != -1 ? \"yes\" : \"no\")}\")");
+        return (w.Code.ToString(), lines);
     }
 
     // ── The generated main ──────────────────────────────────────────────────────
