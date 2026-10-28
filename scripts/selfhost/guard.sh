@@ -18,7 +18,7 @@ mkdir -p "$PWD/tmp/guard-run"; LOG=$PWD/tmp/guard-run
 # 1 scope + 2 junk
 CHANGED=$( { git diff --name-only "$BASE"...HEAD; git diff --name-only; git ls-files --others --exclude-standard; } | sort -u)
 for f in $CHANGED; do
-  ok=0; case "$f" in docs/bayan-handoff.md|work/todo.md|docs/specs/*/*-tasks.md|selfhost/semantics/ctx.byn) ok=1;; esac
+  ok=0; case "$f" in docs/bayan-handoff.md|work/todo.md|docs/specs/*/*-tasks.md|docs/specs/*/reviews/*.md|selfhost/semantics/ctx.byn) ok=1;; esac
   IFS=',' read -ra PATS <<< "$ALLOW"; for p in "${PATS[@]}"; do [[ "$f" == $p ]] && ok=1; done
   [ $ok = 1 ] || note "scope: $f is outside --allow ($ALLOW); revert it or record the need as a Question"
   b=$(basename "$f"); [[ "$b" != *.* ]] && note "junk: $f has no extension (stray run-case output?); delete it"
