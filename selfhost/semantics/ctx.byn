@@ -414,6 +414,38 @@ struct Ctx {
     /// C# `Compilation.Checks`: each struct's `requires` check; `checksOf` maps a `StructId` to its index.
     List<StructChecks> checks = List<StructChecks>()
     Map<StructId, i64> checksOf = []
+
+    // ── Per-task state (Q710). A task adds the C# fields it needs, with defaults, only under its own marker.
+    // ── T10 state
+    // ── T11 state
+    // ── T12 state
+    // ── T13 state
+    // ── T14 state
+    // ── T15 state
+    // ── T16 state
+    // ── T17 state
+    // ── T18 state
+    // ── T19 state
+    // ── T20 state
+    // ── T21 state
+    // ── T22 state
+    // ── T23 state
+    // ── T24 state
+    // ── T25 state
+    // ── T26 state
+    // ── T27 state
+    // ── T28 state
+    // ── T29 state
+    // ── T30 state
+    // ── T31 state
+    // ── T32 state
+    // ── T33 state
+    // ── T34 state
+    // ── T35 state
+    // ── T36 state
+    // ── T37 state
+    // ── T38 state
+    // ── T39 state
 }
 
 // ── The binder's cursors ──────────────────────────────────────────────────────
@@ -452,4 +484,23 @@ struct Binder {
     List<(i64, LocalId, Type)> stateFacts
     /// The variant a local's error value was narrowed to.
     Map<LocalId, VariantId> errorNarrowed
+
+    // ── Per-task binder state (Q710), as in `Ctx`.
+    // ── T15 state
+    // ── T16 state
+    // ── T17 state
+    // ── T18 state
+    // ── T19 state
+    // ── T20 state
+    // ── T21 state
+    // ── T22 state
+    // ── T23 state
+    // ── T24 state
+    // ── T25 state
+    // ── T34 state
+    // ── T35 state
+    // ── T36 state
+    // ── T37 state
+    // ── T38 state
+    // ── T39 state
 }
