@@ -255,7 +255,7 @@ BExpr t18BindModuleMember(ref Binder b, through ref Ctx c, for parser.MemberExpr
     }
     if c.modules[mod].functions.contains(name) {
         let fnId = c.modules[mod].functions[name][0]
-        checkAccess(ref b, through: ref c, for: c.functions[fnId].access, from: -1, by: mod, at: m.member, publicRequired: false)
+        checkAccess(ref b, through: ref c, for: c.functions[fnId].access, from: -1, by: mod, at: m.member)
         return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: fnId, typeArgs: List<TextSpan>() })
     }
     if c.modules[mod].types.contains(name) {
