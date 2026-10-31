@@ -511,6 +511,8 @@ struct Ctx {
     bool interfaceMembersDeclared = false
     List<Work> pendingInterfaces = List<Work>()
     // ── T14 state
+    /// C# `_conformancesChecked` (Q709).
+    bool checkedConformances = false
     // ── T15 state
     // ── T16 state
     // ── T17 state
