@@ -30,9 +30,9 @@ i64 declKey(FileId file, at i64 declIndex) => (file << 32) | declIndex
 // ── Compilation.cs:69 FromPath ──────────────────────────────────────────────────
 
 /// Compiles a file or a directory. A file's module is its directory, but only that file is read unless
-/// `wholeDirectory` is set. `path` must be absolute: there is no `Path.GetFullPath` (Q571).
+/// `wholeDirectory` is set. `path` must be absolute: Bayan has no current directory (Q571).
 Ctx fromPath(string path, by in CompilationOptions options, bool wholeDirectory = true) {
-    let full = path
+    let full = t11FullPath(path)
     let isDir = t11DirectoryExists(full)
     let dir = isDir ? full : t11DirectoryName(full)
     var files = List<string>()
@@ -60,7 +60,8 @@ Ctx fromProject(string root, for string entryModule, by in CompilationOptions op
     if options.includeTests && t11DirectoryExists(tests) {
         var found = List<string>()
         for name in t11ListFiles(tests) {
-            if name.endsWith(".test.byn") { found.append(t11Combine(tests, by: name)) }
+            let f = t11Combine(tests, by: name)
+            if name.endsWith(".test.byn") && !t11DirectoryExists(f) { found.append(f) }
         }
         t11SortOrdinal(ref found)
         for f in found { files.append(f) }
@@ -101,7 +102,7 @@ Ctx create(from move List<lexer.SourceText> entryFiles, at string packageRoot, b
     declare(ref c)
     bindAll(ref c)
     // Each case binds and checks the same body; report what it finds there once.
-    // (blocked: Q573) Untested: a `create` with a `@cases` test panics in T12's `checkOverloads` (declare.byn:671).
+    // (blocked: Q573) Untested: no current path produces a repeated diagnostic until T12's `checkOverloads` lands.
     if c.testCases.length > 0 { removeRepeats(ref c) }
     c.checkTime = Io.monotonicNanos() - clock
     return c
@@ -123,6 +124,8 @@ List<string> t11ModuleFiles(string dir, bool includeTests) {
     for name in t11ListFiles(dir) {
         if !name.endsWith(".byn") { continue }
         let f = t11Combine(dir, by: name)
+        // `Directory.EnumerateFiles` lists files only.
+        if t11DirectoryExists(f) { continue }
         if includeTests || !f.endsWith(".test.byn") { files.append(f) }
     }
     t11SortOrdinal(ref files)
@@ -260,13 +263,16 @@ void resolveImport(ref Ctx c, from FileId file, for in parser.ImportDecl decl) {
 // ── Compilation.cs:179 CNameOf ──────────────────────────────────────────────────
 
 /// Each character of `moduleName` that is not an ASCII letter or digit becomes `_` (`char.IsAsciiLetterOrDigit`).
-/// A non-ASCII character is one `_` per UTF-16 unit in C# and one per byte here (Q571).
+/// A non-ASCII character is one `_` per UTF-16 unit, as in C#: a UTF-8 lead byte writes one, a 4-byte lead
+/// (an astral character, two UTF-16 units) writes two, a continuation byte writes none.
 string t11CNameOf(string moduleName) {
     var sb = StrBuf()
     for b in moduleName.bytes {
         if (b >= 0x61 && b <= 0x7A) || (b >= 0x41 && b <= 0x5A) || (b >= 0x30 && b <= 0x39) {
             sb.append($"{rune(b)}")
-        } else {
+        } else if b >= 0xF0 {
+            sb.append("__")
+        } else if b < 0x80 || b >= 0xC0 {
             sb.append("_")
         }
     }
@@ -1302,6 +1308,52 @@ string t11DirectoryName(string path) {
     if last == 0 { return "/" }
     if last < 0 { return "" }
     return path[0..last]
+}
+
+/// The C# `Path.GetFullPath` of an absolute `/` path: .NET's `PathInternal.RemoveRelativeSegments` with root
+/// length 1 drops `//`, `/./` and `/../` segments (`..` unwinds to the previous `/`, never past the root). A
+/// relative path is returned as given (Q571).
+string t11FullPath(string path) {
+    unless path.startsWith("/") { return path }
+    let n = path.length
+    var acc = ""
+    var run: i64 = 0
+    var i: i64 = 0
+    while i < n {
+        if path.bytes[i] == 0x2F && i + 1 < n {
+            if path.bytes[i + 1] == 0x2F {
+                acc = $"{acc}{path[run..i]}"
+                i += 1
+                run = i
+                continue
+            }
+            if (i + 2 == n || path.bytes[i + 2] == 0x2F) && path.bytes[i + 1] == 0x2E {
+                acc = $"{acc}{path[run..i]}"
+                i += 2
+                run = i
+                continue
+            }
+            if i + 2 < n && (i + 3 == n || path.bytes[i + 3] == 0x2F) && path.bytes[i + 1] == 0x2E && path.bytes[i + 2] == 0x2E {
+                acc = $"{acc}{path[run..i]}"
+                var s = acc.length - 1
+                while s >= 0 && acc.bytes[s] != 0x2F { s -= 1 }
+                // .NET keeps the root's `/` for a final `..` (`s + 1`); with root length 1 the fix below does that.
+                if s < 0 {
+                    acc = ""
+                } else {
+                    acc = acc[0..s]
+                }
+                i += 3
+                run = i
+                continue
+            }
+        }
+        i += 1
+    }
+    acc = $"{acc}{path[run..n]}"
+    // The root's `/` may have been eaten with the first segment.
+    if acc.length < 1 { acc = "/" }
+    return acc
 }
 
 /// The C# `Path.Combine(a, b)` for `/` paths.
