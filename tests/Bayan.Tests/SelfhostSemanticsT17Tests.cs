@@ -90,8 +90,13 @@ public sealed class SelfhostSemanticsT17Tests
         void qFlt() => 1.5
         void qFltF() => 1.5f
         void qFltBad() => 1.5kg
+        void qFltExp() => 19.95e9
+        void qFltUnd() => 1_0.5_0e1_0
+        void qFltExpNeg() => 1.5e-2
+        void qFltExpPos() => 1.5e+2
         void qChar() => 'a'
-        void qCharEsc() => '\n'
+        void qCharEsc() => '\t'
+        void qCharU() => '\u{41}'
         void qStr() => "hi"
         void qTrue() => true
         void qFalse() => false
@@ -148,9 +153,14 @@ public sealed class SelfhostSemanticsT17Tests
         new("float-suffix-f", "qFltF", "expr"),
         new("float-f32-target", "qFlt", "expr", "g"),
         new("float-suffix-bad", "qFltBad", "expr"),
+        new("float-exp", "qFltExp", "expr"),
+        new("float-underscore", "qFltUnd", "expr"),
+        new("float-exp-neg", "qFltExpNeg", "expr"),
+        new("float-exp-pos", "qFltExpPos", "expr"),
         new("char", "qChar", "expr"),
         new("char-u8-target", "qChar", "expr", "by"),
         new("char-escape", "qCharEsc", "expr"),
+        new("char-u-escape", "qCharU", "expr"),
         new("string", "qStr", "expr"),
         new("string-symbol-target", "qStr", "expr", "sy"),
         new("true", "qTrue", "expr"),
@@ -424,6 +434,7 @@ public sealed class SelfhostSemanticsT17Tests
         sb.AppendLine("    c.modules[0].types[\"Sku\"] = structTypeOf(sSku)");
         sb.AppendLine("    c.modules[0].structs.append(sSku)");
         sb.AppendLine("    c.distinct[sSku] = 1");
+        sb.AppendLine($"    c.structs[sSku].fields.append(newField(ref c, by: FieldSymbol {{ name: \"value\", owner: sSku, file: 0, declIndex: {skuDecl}, memberIndex: 0, type: prim(.string) }}))");
         sb.AppendLine($"    let eLexError = newErrorSet(ref c, by: ErrorSetSymbol {{ name: \"LexError\", module: 0, file: 0, declIndex: {lexDecl} }})");
         sb.AppendLine("    c.modules[0].types[\"LexError\"] = errorSetTypeOf(eLexError)");
         sb.AppendLine("    c.modules[0].errorSets.append(eLexError)");
@@ -581,13 +592,13 @@ public sealed class SelfhostSemanticsT17Tests
         var sb = new StringBuilder();
         var qInt = IndexOf(o, d => d is FunctionDecl { Name.Text: "qInt" });
         var qL = IndexOf(o, d => d is FunctionDecl { Name.Text: "qL" });
-        sb.AppendLine("string t17tConstraints(in Binder b) {");
+        sb.AppendLine("string t17tConstraints(in Binder b, through ref Ctx c) {");
         sb.AppendLine("    var sb = StrBuf()");
         sb.AppendLine("    for d in 0..3 {");
         sb.AppendLine("        if d > 0 { sb.append(\" \") }");
-        sb.AppendLine("        sb.append(b.constraints.contains(d) ? $\"{typeDisplayOf(b.constraints[d])}\" : \"none\")");
+        sb.AppendLine("        sb.append(b.constraints.contains(d) ? $\"{typeDisplay(ref c, by: b.constraints[d])}\" : \"none\")");
         sb.AppendLine("    }");
-        sb.AppendLine("    return sb.finish()");
+        sb.AppendLine("    return $\"{sb.finish()}\"");
         sb.AppendLine("}");
         sb.AppendLine("void pendingAll() {");
         sb.AppendLine("    var c = tcSource()");
@@ -605,11 +616,11 @@ public sealed class SelfhostSemanticsT17Tests
         sb.AppendLine("    b.pending[p] = 0");
         sb.AppendLine("    print($\"pending {isPending(ref b, through: ref c, for: lp)} {isPending(ref b, through: ref c, for: lq)}\")");
         sb.AppendLine("    constrain(ref b, through: ref c, for: lp, to: prim(.bool))");
-        sb.AppendLine("    print($\"constraints {t17tConstraints(in b)}\")");
+        sb.AppendLine("    print($\"constraints {t17tConstraints(in b, through: ref c)}\")");
         sb.AppendLine("    constrain(ref b, through: ref c, for: lp, to: prim(.i64))");
         sb.AppendLine("    constrain(ref b, through: ref c, for: lp, to: prim(.i32))");
         sb.AppendLine("    constrain(ref b, through: ref c, for: lq, to: prim(.i64))");
-        sb.AppendLine("    print($\"constraints {t17tConstraints(in b)}\")");
+        sb.AppendLine("    print($\"constraints {t17tConstraints(in b, through: ref c)}\")");
         sb.AppendLine("    b.pending[q] = 1");
         AtVarInit(sb, o, 1, "            constrain(ref b, through: ref c, for: lp, as: lq, from: in $E)");
         sb.AppendLine("    print($\"peers {findPeer(ref b, for: 0)} {findPeer(ref b, for: 1)} {findPeer(ref b, for: 2)}\")");
@@ -622,7 +633,7 @@ public sealed class SelfhostSemanticsT17Tests
             sb.AppendLine("        default:");
             sb.AppendLine("            break");
             sb.AppendLine("    }");
-            sb.AppendLine("    print($\"constraints {t17tConstraints(in b)}\")");
+            sb.AppendLine("    print($\"constraints {t17tConstraints(in b, through: ref c)}\")");
         }
         sb.AppendLine("    b.peers[2] = 1");
         sb.AppendLine("    print($\"peers {findPeer(ref b, for: 0)} {findPeer(ref b, for: 1)} {findPeer(ref b, for: 2)}\")");
