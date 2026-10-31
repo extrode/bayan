@@ -75,16 +75,18 @@ TextSpan t18ExprSpan(in parser.Expr e) {
     }
 }
 
+/// The C# `Host`: the enclosing non-lambda function, or -1.
 FuncId t18Host(ref Binder b, through ref Ctx c) {
     var fn = b.fn
-    while fn >= 0 && fn < c.functions.length && c.functions[fn].kind == .lambda {
+    while fn >= 0 && c.functions[fn].kind == .lambda {
         fn = c.functions[fn].enclosing
     }
     return fn
 }
 
+/// The C# `InLambda`.
 bool t18InLambda(ref Binder b, through ref Ctx c, at TextSpan span, for string name, by string reason) {
-    if b.fn < 0 || b.fn >= c.functions.length || c.functions[b.fn].kind != .lambda { return false }
+    if b.fn < 0 || c.functions[b.fn].kind != .lambda { return false }
     report(ref b, through: ref c, for: .cannotCapture, at: span, by: (name, reason, "", "", ""), help: "copy the fields you need into `let` values first")
     return true
 }
@@ -133,13 +135,15 @@ MemberRef lookupMember(ref Ctx c, for Type t, by string name) {
             if c.functions[m].name == name { return MemberRef { kind: .method, id: m } }
         }
     }
-    if tk == .interfaceType {
-        let iface = typeIndex(t)
-        for p in c.interfaces[iface].properties {
-            if c.functions[p].name == name { return MemberRef { kind: .propertyKeyword, id: p } }
-        }
-        for m in c.interfaces[iface].methods {
-            if c.functions[m].name == name { return MemberRef { kind: .method, id: m } }
+    if tk == .typeParam {
+        let tp = typeIndex(t)
+        for iface in c.typeParams[tp].constraints {
+            for p in c.interfaces[iface].properties {
+                if c.functions[p].name == name { return MemberRef { kind: .method, id: p } }
+            }
+            for m in c.interfaces[iface].methods {
+                if c.functions[m].name == name { return MemberRef { kind: .method, id: m } }
+            }
         }
     }
     return MemberRef { kind: .none, id: -1 }
@@ -147,8 +151,8 @@ MemberRef lookupMember(ref Ctx c, for Type t, by string name) {
 
 BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by MemberRef member) {
     let host = t18Host(ref b, through: ref c)
-    let hostIsStatic = host >= 0 && host < c.functions.length && c.functions[host].isStatic
-    let inInstance = host >= 0 && host < c.functions.length && !c.functions[host].isStatic && (c.functions[host].kind == .method || c.functions[host].kind == .getter || c.functions[host].kind == .constructor)
+    let hostIsStatic = host >= 0 && c.functions[host].isStatic
+    let inInstance = host >= 0 && !c.functions[host].isStatic && (c.functions[host].kind == .method || c.functions[host].kind == .getter || c.functions[host].kind == .constructor)
 
     if member.kind == .method && c.functions[member.id].isStatic {
         return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: -1, function: member.id, typeArgs: List<TextSpan>() })
@@ -167,13 +171,7 @@ BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.Name
         case .field:
             return addField(ref c, from: BField { span: n.span, receiver: self, field: member.id, type: c.fields[member.id].type })
         case .propertyKeyword:
-            if c.properties.length > member.id && c.properties[member.id].getter >= 0 {
-                return addCall(ref c, from: BCall { span: n.span, function: c.properties[member.id].getter, receiver: self, arguments: List<BExpr>(), type: c.properties[member.id].type })
-            }
-            if c.functions.length > member.id && c.functions[member.id].kind == .getter {
-                return addCall(ref c, from: BCall { span: n.span, function: member.id, receiver: self, arguments: List<BExpr>(), type: c.functions[member.id].returnType })
-            }
-            return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
+            return addCall(ref c, from: BCall { span: n.span, function: c.properties[member.id].getter, receiver: self, arguments: List<BExpr>(), type: c.properties[member.id].type })
         case .method:
             if c.functions[member.id].kind == .getter {
                 return addCall(ref c, from: BCall { span: n.span, function: member.id, receiver: self, arguments: List<BExpr>(), type: c.functions[member.id].returnType })
@@ -181,111 +179,6 @@ BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.Name
             return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: self, function: member.id, typeArgs: List<TextSpan>() })
         default:
             return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
-    }
-}
-
-BExpr t18BindVariant(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, by TextSpan memberSpan, to UnionId u) {
-    let name = t18Text(in c, from: b.file, at: memberSpan)
-    var foundVariant: VariantId = -1
-    for v in c.unions[u].variants {
-        if c.unionVariants[v].name == name {
-            foundVariant = v
-            break
-        }
-    }
-    if foundVariant != -1 {
-        if c.unionVariants[foundVariant].fields.length == 0 {
-            return addUnionNew(ref c, from: BUnionNew { span: syntaxSpan, variant: foundVariant, payload: List<BExpr>(), type: makeType(.unionType, at: u) })
-        }
-        return addVariantGroup(ref c, from: BVariantGroup { span: syntaxSpan, variant: foundVariant })
-    }
-    var variantNames = List<string>()
-    for v in c.unions[u].variants { variantNames.append(c.unionVariants[v].name) }
-    let close = suggest(name, by: in variantNames)
-    let help = close is { } ? $"did you mean `{close}`?" : ""
-    report(ref b, through: ref c, for: .unknownUnionVariant, at: memberSpan, by: (name, c.unions[u].name, "", "", ""), help: help)
-    return addErrorExpr(ref c, from: BErrorExpr { span: syntaxSpan })
-}
-
-BExpr t18BindEnumStatic(ref Binder b, through ref Ctx c, for parser.MemberExpr m, to EnumId e) {
-    let name = t18Text(in c, from: b.file, at: m.member)
-    var foundMember: EnumMemberId = -1
-    for mem in c.enums[e].members {
-        if c.enumMembers[mem].name == name {
-            foundMember = mem
-            break
-        }
-    }
-    if foundMember != -1 {
-        return addEnumMember(ref c, from: BEnumMember { span: m.span, member: foundMember, type: makeType(.enumType, at: e) })
-    }
-    switch name {
-        case "count":
-            let count = Constant { kind: .integer, integer: bigFromI64(c.enums[e].members.length) }
-            let lit = addLiteral(ref c, from: BLiteral { span: m.span, type: prim(.i64), value: count })
-            setConstant(ref c, for: lit, to: count)
-            return lit
-        case "values":
-            let spanT = internSpan(ref c, by: makeType(.enumType, at: e), readOnly: true)
-            return addEnumValues(ref c, from: BEnumValues { span: m.span, enumId: e, type: spanT })
-        case "fromOrdinal":
-            return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: c.enums[e].fromOrdinal, typeArgs: List<TextSpan>() })
-        case "parse":
-            return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: c.enums[e].parse, typeArgs: List<TextSpan>() })
-        default:
-            var candidates = List<string>()
-            for mem in c.enums[e].members { candidates.append(c.enumMembers[mem].name) }
-            candidates.append("count")
-            candidates.append("values")
-            candidates.append("fromOrdinal")
-            candidates.append("parse")
-            let close = suggest(name, by: in candidates)
-            let help = close is { } ? $"did you mean `{close}`?" : ""
-            report(ref b, through: ref c, for: .unknownEnumMember, at: m.member, by: (name, c.enums[e].name, "", "", ""), help: help)
-            return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
-    }
-}
-
-BExpr t18BindModuleMember(ref Binder b, through ref Ctx c, for parser.MemberExpr m, to ModId mod) {
-    let name = t18Text(in c, from: b.file, at: m.member)
-    if c.modules[mod].constants.contains(name) {
-        let constId = c.modules[mod].constants[name]
-        checkAccess(ref b, through: ref c, for: .module, from: -1, by: mod, at: m.member, publicRequired: true)
-        return constantRef(ref b, through: ref c, at: m.span, for: constId)
-    }
-    if c.modules[mod].functions.contains(name) {
-        let fnId = c.modules[mod].functions[name][0]
-        checkAccess(ref b, through: ref c, for: c.functions[fnId].access, from: -1, by: mod, at: m.member)
-        return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: fnId, typeArgs: List<TextSpan>() })
-    }
-    if c.modules[mod].types.contains(name) {
-        let resolved = c.modules[mod].types[name]
-        return addTypeRef(ref c, from: BTypeRef { span: m.span, referenced: resolved })
-    }
-    report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, $"module {c.modules[mod].name}", "", "", ""))
-    return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
-}
-
-void checkAccess(ref Binder b, through ref Ctx c, for Accessibility access, from StructId owner, by ModId module, at TextSpan name, bool publicRequired = false) {
-    let currModule = b.file >= 0 && b.file < c.files.length ? c.files[b.file].module : -1
-    let nameText = t18Text(in c, from: b.file, at: name)
-    if publicRequired && module != currModule {
-        report(ref b, through: ref c, for: .notVisible, at: name, by: (nameText, "", "", "", ""), label: "module constants are not visible outside their module")
-        return
-    }
-    let builtinMod = t9Module(ref c)
-    switch access {
-        case .privateKeyword:
-            if owner >= 0 && owner != b.owner {
-                report(ref b, through: ref c, for: .notVisible, at: name, by: (nameText, "", "", "", ""), label: $"`private` to `{c.structs[owner].name}`")
-            } else if module != currModule && module != builtinMod {
-                report(ref b, through: ref c, for: .notVisible, at: name, by: (nameText, "", "", "", ""), label: "not `public`", help: $"mark `{nameText}` `public` to use it from another module")
-            }
-        case .module:
-            if module != currModule && module != builtinMod {
-                report(ref b, through: ref c, for: .notVisible, at: name, by: (nameText, "", "", "", ""), label: "not `public`", help: $"mark `{nameText}` `public` to use it from another module")
-            }
-        default: {}
     }
 }
 
@@ -320,7 +213,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
             for v in c.errorSets[set].variants { varNames.append(c.errorVariants[v].name) }
             let close = suggest(name, by: in varNames)
             let help = close is { } ? $"did you mean `{close}`?" : ""
-            report(ref b, through: ref c, for: .unknownVariant, at: m.member, by: (name, c.errorSets[set].name, "", "", ""), help: help)
+            report(ref b, through: ref c, for: .unknownVariant, at: m.member, by: (name, errorSetDisplayName(ref c, by: set), "", "", ""), help: help)
             return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
         }
         if tk == .enumType {
@@ -331,41 +224,32 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
         }
         if tk == .structType {
             let s = typeIndex(refType)
-            var foundFn: FuncId = -1
-            for fn in c.structs[s].methods {
-                if c.functions[fn].name == name && c.functions[fn].isStatic {
-                    foundFn = fn
-                    break
-                }
-            }
-            if foundFn != -1 {
-                checkAccess(ref b, through: ref c, for: c.functions[foundFn].access, from: s, by: c.structs[s].module, at: m.member)
-                return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: foundFn, typeArgs: List<TextSpan>() })
-            }
-            var hasMember = false
+            var method: FuncId = -1
             for fn in c.structs[s].methods {
                 if c.functions[fn].name == name {
-                    hasMember = true
+                    method = fn
                     break
                 }
             }
-            if !hasMember {
-                for f in c.structs[s].fields {
-                    if c.fields[f].name == name {
-                        hasMember = true
-                        break
-                    }
+            if method >= 0 && c.functions[method].isStatic {
+                checkAccess(ref b, through: ref c, for: c.functions[method].access, from: s, by: c.structs[s].module, at: m.member)
+                return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: method, typeArgs: List<TextSpan>() })
+            }
+            var hasField = false
+            for f in c.structs[s].fields {
+                if c.fields[f].name == name {
+                    hasField = true
+                    break
                 }
             }
-            if !hasMember {
-                for p in c.structs[s].properties {
-                    if c.properties[p].name == name {
-                        hasMember = true
-                        break
-                    }
+            var hasProperty = false
+            for p in c.structs[s].properties {
+                if c.properties[p].name == name {
+                    hasProperty = true
+                    break
                 }
             }
-            let help = hasMember ? $"call it on a `{c.structs[s].name}` value; `{name}` belongs to a value, not the type" : ""
+            let help = (method >= 0 || hasField || hasProperty) ? $"call it on a `{c.structs[s].name}` value; `{name}` belongs to a value, not the type" : ""
             report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, c.structs[s].name, "", "", ""), help: help)
             return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
         }
@@ -437,16 +321,118 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
     return bindValueMember(ref b, through: ref c, at: m.span, for: target, by: m.member)
 }
 
-BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, for BExpr target, by FuncId m, from TextSpan memberSpan) {
-    if c.functions[m].typeParams.length > 0 {
-        report(ref b, through: ref c, for: .unsupported, at: memberSpan, by: ("calling a generic interface method", "", "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: syntaxSpan })
+/// A unit variant is a value; a variant with a payload is called like a function.
+BExpr t18BindVariant(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, by TextSpan memberSpan, to UnionId u) {
+    let name = t18Text(in c, from: b.file, at: memberSpan)
+    var foundVariant: VariantId = -1
+    for v in c.unions[u].variants {
+        if c.unionVariants[v].name == name {
+            foundVariant = v
+            break
+        }
     }
-    if c.functions[m].kind == .getter {
-        let returnType = returnTypeThrough(ref b, through: ref c, for: exprType(in c, for: target), by: m)
-        return addCall(ref c, from: BCall { span: syntaxSpan, function: m, receiver: target, arguments: List<BExpr>(), type: returnType })
+    if foundVariant != -1 {
+        if c.unionVariants[foundVariant].fields.length == 0 {
+            return addUnionNew(ref c, from: BUnionNew { span: syntaxSpan, variant: foundVariant, payload: List<BExpr>(), type: makeType(.unionType, at: u) })
+        }
+        return addVariantGroup(ref c, from: BVariantGroup { span: syntaxSpan, variant: foundVariant })
     }
-    return addMethodGroup(ref c, from: BMethodGroup { span: syntaxSpan, receiver: target, function: m, typeArgs: List<TextSpan>() })
+    var variantNames = List<string>()
+    for v in c.unions[u].variants { variantNames.append(c.unionVariants[v].name) }
+    let close = suggest(name, by: in variantNames)
+    let help = close is { } ? $"did you mean `{close}`?" : ""
+    report(ref b, through: ref c, for: .unknownUnionVariant, at: memberSpan, by: (name, c.unions[u].name, "", "", ""), help: help)
+    return addErrorExpr(ref c, from: BErrorExpr { span: syntaxSpan })
+}
+
+/// `Color.red`, `Color.count`, `Color.values`, `Color.fromOrdinal` and `Color.parse`.
+BExpr t18BindEnumStatic(ref Binder b, through ref Ctx c, for parser.MemberExpr m, to EnumId e) {
+    let name = t18Text(in c, from: b.file, at: m.member)
+    var foundMember: EnumMemberId = -1
+    for mem in c.enums[e].members {
+        if c.enumMembers[mem].name == name {
+            foundMember = mem
+            break
+        }
+    }
+    if foundMember != -1 {
+        return addEnumMember(ref c, from: BEnumMember { span: m.span, member: foundMember, type: makeType(.enumType, at: e) })
+    }
+    switch name {
+        case "count":
+            let count = Constant { kind: .integer, integer: bigFromI64(c.enums[e].members.length) }
+            let lit = addLiteral(ref c, from: BLiteral { span: m.span, type: prim(.i64), value: count })
+            setConstant(ref c, for: lit, to: count)
+            return lit
+        case "values":
+            let spanT = internSpan(ref c, by: makeType(.enumType, at: e), readOnly: true)
+            return addEnumValues(ref c, from: BEnumValues { span: m.span, enumId: e, type: spanT })
+        case "fromOrdinal":
+            return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: c.enums[e].fromOrdinal, typeArgs: List<TextSpan>() })
+        case "parse":
+            return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: c.enums[e].parse, typeArgs: List<TextSpan>() })
+        default:
+            var candidates = List<string>()
+            for mem in c.enums[e].members { candidates.append(c.enumMembers[mem].name) }
+            candidates.append("count")
+            candidates.append("values")
+            candidates.append("fromOrdinal")
+            candidates.append("parse")
+            let close = suggest(name, by: in candidates)
+            let help = close is { } ? $"did you mean `{close}`?" : ""
+            report(ref b, through: ref c, for: .unknownEnumMember, at: m.member, by: (name, c.enums[e].name, "", "", ""), help: help)
+            return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+    }
+}
+
+BExpr t18BindModuleMember(ref Binder b, through ref Ctx c, for parser.MemberExpr m, to ModId mod) {
+    let name = t18Text(in c, from: b.file, at: m.member)
+    if c.modules[mod].constants.contains(name) {
+        let constId = c.modules[mod].constants[name]
+        checkAccess(ref b, through: ref c, for: .module, from: -1, by: mod, at: m.member, publicRequired: true)
+        return constantRef(ref b, through: ref c, at: m.span, for: constId)
+    }
+    if c.modules[mod].functions.contains(name) {
+        let fnId = c.modules[mod].functions[name][0]
+        checkAccess(ref b, through: ref c, for: c.functions[fnId].access, from: -1, by: mod, at: m.member)
+        return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: fnId, typeArgs: List<TextSpan>() })
+    }
+    if c.modules[mod].types.contains(name) {
+        var path = List<TextSpan>()
+        switch m.target {
+            case .nameExpr(let n): path.append(n.value.name)
+            default: {}
+        }
+        path.append(m.member)
+        let resolved = resolveType(ref b, through: ref c, for: in parser.TypeSyntax.namedType(Owned(NamedType { span: m.span, path: move path, args: List<parser.TypeSyntax>() })))
+        return addTypeRef(ref c, from: BTypeRef { span: m.span, referenced: resolved })
+    }
+    report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, $"module {c.modules[mod].name}", "", "", ""))
+    return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
+}
+
+/// Reports a member the current code may not see. Module constants are always module-private in v0.1.
+void checkAccess(ref Binder b, through ref Ctx c, for Accessibility access, from StructId owner, by ModId module, at TextSpan name, bool publicRequired = false) {
+    let currModule = c.files[b.file].module
+    let nameText = t18Text(in c, from: b.file, at: name)
+    if publicRequired && module != currModule {
+        report(ref b, through: ref c, for: .notVisible, at: name, by: (nameText, "", "", "", ""), label: "module constants are not visible outside their module")
+        return
+    }
+    let builtinMod = t9Module(ref c)
+    switch access {
+        case .privateKeyword:
+            if owner >= 0 && owner != b.owner {
+                report(ref b, through: ref c, for: .notVisible, at: name, by: (nameText, "", "", "", ""), label: $"`private` to `{c.structs[owner].name}`")
+            } else if module != currModule && module != builtinMod {
+                report(ref b, through: ref c, for: .notVisible, at: name, by: (nameText, "", "", "", ""), label: "not `public`", help: $"mark `{nameText}` `public` to use it from another module")
+            }
+        case .module:
+            if module != currModule && module != builtinMod {
+                report(ref b, through: ref c, for: .notVisible, at: name, by: (nameText, "", "", "", ""), label: "not `public`", help: $"mark `{nameText}` `public` to use it from another module")
+            }
+        default: {}
+    }
 }
 
 BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr target, by TextSpan member) {
@@ -555,8 +541,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         for fi in 0..c.enums[e].fields.length {
             let f = c.enums[e].fields[fi]
             if c.enumFields[f].name == name {
-                let lit = addLiteral(ref c, from: BLiteral { span: span, type: prim(.i32), value: Constant { kind: .integer, integer: bigFromI64(c.enumFields[f].index) } })
-                setConstant(ref c, for: lit, to: Constant { kind: .integer, integer: bigFromI64(c.enumFields[f].index) })
+                let lit = literal(ref c, at: span, as: prim(.i32), by: Constant { kind: .integer, integer: bigFromI64(c.enumFields[f].index) })
                 return addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: .enumField, receiver: target, arguments: [lit], type: c.enumFields[f].type })
             }
         }
@@ -599,8 +584,9 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
             }
             let self = c.interfaces[c.typeParams[tp].constraints[0]].self == tp
             var constraintList = List<string>()
-            for iface in c.typeParams[tp].constraints {
-                constraintList.append($"`{c.interfaces[iface].name}`")
+            var constraints = copyIds(in c.typeParams[tp].constraints)
+            for iface in constraints {
+                constraintList.append($"`{interfaceDisplayName(ref c, by: iface)}`")
             }
             var sb = StrBuf()
             for ci in 0..constraintList.length {
@@ -608,7 +594,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
                 sb.append(constraintList[ci])
             }
             let joinedConstraints = $"{sb.finish()}"
-            let help = self ? $"declare `{name}` in `{c.interfaces[c.typeParams[tp].constraints[0]].name}`; a default method sees only its interface's members" : $"add an interface declaring `{name}` to the `where` clause"
+            let help = self ? $"declare `{name}` in `{interfaceDisplayName(ref c, by: c.typeParams[tp].constraints[0])}`; a default method sees only its interface's members" : $"add an interface declaring `{name}` to the `where` clause"
             report(ref b, through: ref c, for: .constraintMember, at: member, by: (c.typeParams[tp].name, name, joinedConstraints, "", ""), help: help)
             return addErrorExpr(ref c, from: BErrorExpr { span: span })
         }
@@ -633,7 +619,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         }
         if foundMember >= 0 {
             if d.readOnly && c.functions[foundMember].isMutating {
-                report(ref b, through: ref c, for: .dynReadonlyMutation, at: member, by: (name, c.interfaces[d.iface].name, "", "", ""), label: "declared `ref this`", help: $"take `dyn ref {c.interfaces[d.iface].name}`")
+                report(ref b, through: ref c, for: .dynReadonlyMutation, at: member, by: (name, interfaceDisplayName(ref c, by: d.iface), "", "", ""), label: "declared `ref this`", help: $"take `dyn ref {interfaceDisplayName(ref c, by: d.iface)}`")
                 return addErrorExpr(ref c, from: BErrorExpr { span: span })
             }
             return t18BindInterfaceMember(ref b, through: ref c, at: span, for: target, by: foundMember, from: member)
@@ -669,6 +655,20 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
     return addErrorExpr(ref c, from: BErrorExpr { span: span })
 }
 
+/// A member of an interface, reached through a constrained type parameter or a `dyn ref`.
+BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, for BExpr target, by FuncId m, from TextSpan memberSpan) {
+    if c.functions[m].typeParams.length > 0 {
+        report(ref b, through: ref c, for: .unsupported, at: memberSpan, by: ("calling a generic interface method", "", "", "", ""))
+        return addErrorExpr(ref c, from: BErrorExpr { span: syntaxSpan })
+    }
+    if c.functions[m].kind == .getter {
+        let returnType = returnTypeThrough(ref b, through: ref c, for: exprType(in c, for: target), by: m)
+        return addCall(ref c, from: BCall { span: syntaxSpan, function: m, receiver: target, arguments: List<BExpr>(), type: returnType })
+    }
+    return addMethodGroup(ref c, from: BMethodGroup { span: syntaxSpan, receiver: target, function: m, typeArgs: List<TextSpan>() })
+}
+
+/// The return type of interface member `m` called on `receiver`: an associated type `Item` is `T.Item`.
 Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by FuncId m) {
     if kindOf(receiver) == .typeParam {
         let tp = typeIndex(receiver)
@@ -695,6 +695,45 @@ Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by Fu
     return c.functions[m].returnType
 }
 
+/// BYN2230 and BYN2031: a member under its round-1 or C# name; the fix writes the new one.
+bool reportRenamed(ref Binder b, through ref Ctx c, for Type type, at TextSpan member) {
+    let name = t18Text(in c, from: b.file, at: member)
+    if name == "toString" || name == "ToString" {
+        report(ref b, through: ref c, for: .toStringCall, at: member, by: ("", "", "", "", ""), label: "not a Bayan method", help: "call `format()`, or interpolate the value: `$\"{x}\"`", hasFix: true, fixSpan: member, fixReplacement: "format")
+        return true
+    }
+    if (t18RenamedCall(ref b, through: ref c, for: type, at: member) is { } shape) {
+        let helpText = shape.hasFix ? $"write `{shape.replacement}`" : $"write `{shape.newName}`"
+        report(ref b, through: ref c, for: .renamedMember, at: member, by: (shape.oldName, shape.newName, "", "", ""), label: "the old name", help: helpText, hasFix: shape.hasFix, fixSpan: shape.fixSpan, fixReplacement: shape.replacement)
+        return true
+    }
+    var renamed: string? = null
+    let isList = kindOf(type) == .list
+    let isSpanT = kindOf(type) == .span
+    let isArrayT = kindOf(type) == .array
+    let isStr = isString(type)
+    let isStrBuf = kindOf(type) == .builtin && builtinKindOf(typeIndex(type)) == .strBuf
+
+    if isList && name == "add" {
+        renamed = "append"
+    } else if isStrBuf && name == "asString" {
+        renamed = "finish"
+    } else if isStr && name == "offset" {
+        renamed = "position"
+    } else if (isList || isSpanT) && name == "toList" {
+        renamed = "copy"
+    } else if isArrayT && name == "toList" {
+        renamed = "span.copy"
+    }
+    if renamed is null { return false }
+    let call = (name == "asString" || name == "toList") ? "()" : ""
+    let ren = renamed ?? ""
+    report(ref b, through: ref c, for: .renamedMember, at: member, by: ($"{name}{call}", $"{ren}{call}", "", "", ""), label: "the old name", help: $"rename it `{ren}`", hasFix: true, fixSpan: member, fixReplacement: ren)
+    return true
+}
+
+/// The renames that change the call's shape (J72, round 3 §27): the fix rewrites the member and its arguments,
+/// so it is written only when the member is called with the old arguments.
 RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at TextSpan memberSpan) {
     let name = t18Text(in c, from: b.file, at: memberSpan)
     var isCalleeMatch = false
@@ -773,42 +812,6 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
     return null
 }
 
-bool reportRenamed(ref Binder b, through ref Ctx c, for Type type, at TextSpan member) {
-    let name = t18Text(in c, from: b.file, at: member)
-    if name == "toString" || name == "ToString" {
-        report(ref b, through: ref c, for: .toStringCall, at: member, by: ("", "", "", "", ""), label: "not a Bayan method", help: "call `format()`, or interpolate the value: `$\"{x}\"`", hasFix: true, fixSpan: member, fixReplacement: "format")
-        return true
-    }
-    if (t18RenamedCall(ref b, through: ref c, for: type, at: member) is { } shape) {
-        let helpText = shape.hasFix ? $"write `{shape.replacement}`" : $"write `{shape.newName}`"
-        report(ref b, through: ref c, for: .renamedMember, at: member, by: (shape.oldName, shape.newName, "", "", ""), label: "the old name", help: helpText, hasFix: shape.hasFix, fixSpan: shape.fixSpan, fixReplacement: shape.replacement)
-        return true
-    }
-    var renamed: string? = null
-    let isList = kindOf(type) == .list
-    let isSpanT = kindOf(type) == .span
-    let isArrayT = kindOf(type) == .array
-    let isStr = isString(type)
-    let isStrBuf = kindOf(type) == .builtin && builtinKindOf(typeIndex(type)) == .strBuf
-
-    if isList && name == "add" {
-        renamed = "append"
-    } else if isStrBuf && name == "asString" {
-        renamed = "finish"
-    } else if isStr && name == "offset" {
-        renamed = "position"
-    } else if (isList || isSpanT) && name == "toList" {
-        renamed = "copy"
-    } else if isArrayT && name == "toList" {
-        renamed = "span.copy"
-    }
-    if renamed is null { return false }
-    let call = (name == "asString" || name == "toList") ? "()" : ""
-    let ren = renamed ?? ""
-    report(ref b, through: ref c, for: .renamedMember, at: member, by: ($"{name}{call}", $"{ren}{call}", "", "", ""), label: "the old name", help: $"rename it `{ren}`", hasFix: true, fixSpan: member, fixReplacement: ren)
-    return true
-}
-
 string? memberSuggestion(ref Ctx c, for Type type, by string name) {
     if name == "Length" || name == "Count" || name == "count" || name == "size" || name == "len" {
         return "use `length` for the size of anything"
@@ -820,11 +823,12 @@ string? memberSuggestion(ref Ctx c, for Type type, by string name) {
         for f in c.structs[s].fields { candidates.append(c.fields[f].name) }
         for p in c.structs[s].properties { candidates.append(c.properties[p].name) }
         for m in c.structs[s].methods { candidates.append(c.functions[m].name) }
-    }
-    if tk == .interfaceType {
-        let iface = typeIndex(type)
-        for p in c.interfaces[iface].properties { candidates.append(c.functions[p].name) }
-        for m in c.interfaces[iface].methods { candidates.append(c.functions[m].name) }
+    } else if tk == .enumType {
+        let e = typeIndex(type)
+        for f in c.enums[e].fields { candidates.append(c.enumFields[f].name) }
+        for n in names(ref c, for: type) { candidates.append(n) }
+    } else {
+        for n in names(ref c, for: type) { candidates.append(n) }
     }
     let close = suggest(name, by: in candidates)
     if (close is { } sug) { return $"did you mean `{sug}`?" }
@@ -866,7 +870,7 @@ BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemb
         if foundVariant != -1 {
             return addErrorVariant(ref c, from: BErrorVariant { span: t.span, variant: foundVariant, type: target })
         }
-        report(ref b, through: ref c, for: .unknownVariant, at: t.member, by: (name, c.errorSets[set].name, "", "", ""))
+        report(ref b, through: ref c, for: .unknownVariant, at: t.member, by: (name, errorSetDisplayName(ref c, by: set), "", "", ""))
         return addErrorExpr(ref c, from: BErrorExpr { span: t.span })
     }
     if tk == .errorUnion {
@@ -891,7 +895,7 @@ BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemb
         }
         if matches.length > 1 {
             var matchedSets = List<string>()
-            for mv in matches { matchedSets.append(c.errorSets[c.errorVariants[mv].set].name) }
+            for mv in matches { matchedSets.append(errorSetDisplayName(ref c, by: c.errorVariants[mv].set)) }
             var sb = StrBuf()
             for mi in 0..matchedSets.length {
                 if mi > 0 { sb.append("`, `") }
@@ -927,44 +931,19 @@ BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemb
     }
     if tk == .structType {
         let s = typeIndex(target)
-        var foundFn: FuncId = -1
+        var method: FuncId = -1
         for fn in c.structs[s].methods {
-            if c.functions[fn].name == name && c.functions[fn].isStatic {
-                foundFn = fn
+            if c.functions[fn].name == name {
+                method = fn
                 break
             }
         }
-        if foundFn != -1 {
-            return addMethodGroup(ref c, from: BMethodGroup { span: t.span, receiver: -1, function: foundFn, typeArgs: List<TextSpan>() })
+        if method >= 0 && c.functions[method].isStatic {
+            return addMethodGroup(ref c, from: BMethodGroup { span: t.span, receiver: -1, function: method, typeArgs: List<TextSpan>() })
         }
     }
     report(ref b, through: ref c, for: .unknownMember, at: t.member, by: (name, typeDisplay(ref c, by: target), "", "", ""))
     return addErrorExpr(ref c, from: BErrorExpr { span: t.span })
-}
-
-BExpr t18BindIndexValue(ref Binder b, through ref Ctx c, for parser.Expr syntax) {
-    let index = bindExpr(ref b, through: ref c, for: in syntax, to: prim(.i64))
-    let indexType = exprType(in c, for: index)
-    if isError(indexType) { return index }
-    let span = t18ExprSpan(in syntax)
-    if !isInteger(indexType) {
-        report(ref b, through: ref c, for: .typeMismatch, at: span, by: (typeDisplay(ref c, by: indexType), "an integer index", "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: span })
-    }
-    if isUnsignedInteger(indexType) && primitiveBits(primKindOf(typeIndex(indexType))) == 64 {
-        return addConversion(ref c, from: BConversion { span: span, operand: index, type: prim(.i64), kind: .numericCast })
-    }
-    return convert(ref b, through: ref c, for: index, to: prim(.i64), at: span)
-}
-
-void t18ReportStringIndexer(ref Binder b, through ref Ctx c, for parser.IndexExpr i) {
-    let targetSpan = t18ExprSpan(in i.target)
-    let indexSpan = t18ExprSpan(in i.index)
-    let s = t18Text(in c, from: b.file, at: targetSpan)
-    let index = t18Text(in c, from: b.file, at: indexSpan)
-    let diagSpan = TextSpan.fromBounds(targetSpan.end, until: i.span.end)
-    let help = $"read a byte, slice, or take characters; `string` is UTF-8, so position {index} is not a character:\n  `{s}.bytes[{index}]`       the byte at offset {index} (applied below)\n  `{s}[a..b]`          the text between byte offsets a and b\n  `{s}.runes.take(n)`  the first n runes\n  `{s}.graphemes`      user-perceived characters"
-    report(ref b, through: ref c, for: .stringIndexer, at: diagSpan, by: ("", "", "", "", ""), label: "strings have no indexer", help: help, hasFix: true, fixSpan: i.span, fixReplacement: $"{s}.bytes[{index}]")
 }
 
 BExpr bindIndex(ref Binder b, through ref Ctx c, for in parser.IndexExpr i) {
@@ -1040,37 +1019,52 @@ BExpr bindIndex(ref Binder b, through ref Ctx c, for in parser.IndexExpr i) {
     return addIndex(ref c, from: BIndex { span: i.span, target: target, index: index, fromEnd: fromEnd, type: element })
 }
 
+BExpr t18BindIndexValue(ref Binder b, through ref Ctx c, for parser.Expr syntax) {
+    let index = bindExpr(ref b, through: ref c, for: in syntax, to: prim(.i64))
+    let indexType = exprType(in c, for: index)
+    if isError(indexType) { return index }
+    let span = t18ExprSpan(in syntax)
+    if !isInteger(indexType) {
+        report(ref b, through: ref c, for: .typeMismatch, at: span, by: (typeDisplay(ref c, by: indexType), "an integer index", "", "", ""))
+        return addErrorExpr(ref c, from: BErrorExpr { span: span })
+    }
+    if isUnsignedInteger(indexType) && primitiveBits(primKindOf(typeIndex(indexType))) == 64 {
+        return addConversion(ref c, from: BConversion { span: span, operand: index, type: prim(.i64), kind: .numericCast })
+    }
+    return convert(ref b, through: ref c, for: index, to: prim(.i64), at: span)
+}
+
 BExpr bindSlice(ref Binder b, through ref Ctx c, for in parser.IndexExpr i, from BExpr target, by in parser.RangeExpr r, as Type type) {
     var start: BExpr = -1
     var startFromEnd = false
-    if (r.start is { } s) {
-        switch s {
-            case .unaryExpr(let u):
-                if u.value.op == .fromEnd {
-                    startFromEnd = true
-                    start = t18BindIndexValue(ref b, through: ref c, for: u.value.operand)
-                } else {
-                    start = t18BindIndexValue(ref b, through: ref c, for: s)
-                }
-            default:
-                start = t18BindIndexValue(ref b, through: ref c, for: s)
-        }
+    switch r.start {
+        case .unaryExpr(let u):
+            if u.value.op == .fromEnd {
+                startFromEnd = true
+                start = t18BindIndexValue(ref b, through: ref c, for: u.value.operand)
+            } else {
+                start = t18BindIndexValue(ref b, through: ref c, for: r.start)
+            }
+        case .none:
+            {}
+        default:
+            start = t18BindIndexValue(ref b, through: ref c, for: r.start)
     }
 
     var end: BExpr = -1
     var endFromEnd = false
-    if (r.end is { } e) {
-        switch e {
-            case .unaryExpr(let u):
-                if u.value.op == .fromEnd {
-                    endFromEnd = true
-                    end = t18BindIndexValue(ref b, through: ref c, for: u.value.operand)
-                } else {
-                    end = t18BindIndexValue(ref b, through: ref c, for: e)
-                }
-            default:
-                end = t18BindIndexValue(ref b, through: ref c, for: e)
-        }
+    switch r.end {
+        case .unaryExpr(let u):
+            if u.value.op == .fromEnd {
+                endFromEnd = true
+                end = t18BindIndexValue(ref b, through: ref c, for: u.value.operand)
+            } else {
+                end = t18BindIndexValue(ref b, through: ref c, for: r.end)
+            }
+        case .none:
+            {}
+        default:
+            end = t18BindIndexValue(ref b, through: ref c, for: r.end)
     }
 
     return addSlice(ref c, from: BSlice { span: i.span, target: target, start: start, startFromEnd: startFromEnd, end: end, endFromEnd: endFromEnd, inclusive: r.inclusive, type: type })
@@ -1090,4 +1084,15 @@ string interpolationSource(ref Binder b, through ref Ctx c, for in parser.Expr e
         default: {}
     }
     return $"{{{text}}}"
+}
+
+/// BYN2201: strings have no indexer (spec §3.2); offer the four alternatives.
+void t18ReportStringIndexer(ref Binder b, through ref Ctx c, for parser.IndexExpr i) {
+    let targetSpan = t18ExprSpan(in i.target)
+    let indexSpan = t18ExprSpan(in i.index)
+    let s = t18Text(in c, from: b.file, at: targetSpan)
+    let index = t18Text(in c, from: b.file, at: indexSpan)
+    let diagSpan = TextSpan.fromBounds(targetSpan.end, until: i.span.end)
+    let help = $"read a byte, slice, or take characters; `string` is UTF-8, so position {index} is not a character:\n  `{s}.bytes[{index}]`       the byte at offset {index} (applied below)\n  `{s}[a..b]`          the text between byte offsets a and b\n  `{s}.runes.take(n)`  the first n runes\n  `{s}.graphemes`      user-perceived characters"
+    report(ref b, through: ref c, for: .stringIndexer, at: diagSpan, by: ("", "", "", "", ""), label: "strings have no indexer", help: help, hasFix: true, fixSpan: i.span, fixReplacement: $"{s}.bytes[{index}]")
 }
