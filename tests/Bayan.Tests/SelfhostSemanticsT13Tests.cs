@@ -815,95 +815,136 @@ public sealed class SelfhostSemanticsT13Tests
         return (w.Code.ToString(), lines);
     }
 
-    /// <summary>BindFunction: which body each kind of function binds through (a getter through its property's declaration).</summary>
+    /// <summary>
+    /// BindFunction: which body each kind of function binds through (a getter through its property's declaration),
+    /// the locals it declares, and what the first pass held and then reported (no seeds).
+    /// </summary>
     private static (string, List<string>) BindFunction()
     {
-        const string text = "struct Q {\n    i64 v\n    i64 side => 1\n    i64 get() => 2\n}\n\ni64 top() => 3\n\nvoid r4() {\n    var x = 1\n    let y: i64 = x\n    print($\"{y}\")\n}\n";
+        const string text = "struct Q {\n    i64 v\n    i64 side => 1\n    i64 get() => 2\n}\n\ni64 top() => 3\n\nvoid bad() {\n    let z: Nope = 1\n}\n";
         var c = Compile(text);
-        Assert.False(c.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(c.Diagnostics.Items));
         var w = new World(c, text);
         w.Declarations();
-        var lines = new List<string>();
         var q = (StructSymbol)w.T("Q");
-        var fns = q.Methods.Concat(q.Properties.Select(p => p.Getter)).Append(w.Fn("top")).Append(w.Fn("r4")).ToList();
+        return BindFunctions(c, w, q.Methods.Concat(q.Properties.Select(p => p.Getter!)).Append(w.Fn("top")).Append(w.Fn("bad")).ToList());
+    }
+
+    private static (string, List<string>) BindFunctions(Compilation c, World w, List<FunctionSymbol> fns)
+    {
+        var lines = new List<string>();
         var invoke = (FunctionSymbol)Call(c, "InvokeSymbol", new FunctionType([], PrimitiveType.I64, [], []))!;
+        var errors = (System.Collections.ICollection)Get(c, "_instantiationErrors")!;
+        var held = errors.Count;
         foreach (var f in fns.Append(invoke))
         {
             f.Body = null;
+            var locals = f.Locals.Count;
+            var start = c.Diagnostics.Count;
             Call(c, "BindFunction", f);
             lines.Add($"{f.Name} {f.Kind} body {(f.Body is null ? "no" : "yes")}");
+            foreach (var l in f.Locals.Skip(locals)) lines.Add($"local {l.Name} {l.Type.DisplayName}");
+            lines.AddRange(NewDiags(c, start));
         }
+        lines.Add($"instantiationErrors +{errors.Count - held}");
         w.Emit("c.functionTypes.append(FunctionData { parameters: List<Type>(), ret: prim(PrimitiveKind.i64), errorSets: List<ErrorSetId>(), effects: List<string>() })");
         w.Emit("let invoke = invokeSymbol(ref c, for: makeType(.function, at: c.functionTypes.length - 1))");
         foreach (var f in fns) w.Emit($"showBody(ref c, for: {w.Vars[f]})");
         w.Emit("showBody(ref c, for: invoke)");
+        w.Emit("print($\"instantiationErrors +{c.instantiationErrors.length}\")");
         return (w.Code.ToString(), lines);
     }
 
-    /// <summary>CheckRequires over the calls the C# binder recorded: the clause, the argument it blames, or the whole call.</summary>
+    /// <summary>
+    /// CheckRequires over the calls the C# binder recorded: the clause, the argument it blames, or the whole call.
+    /// In <c>two</c> the default <c>0</c> (callee's file) has the span of the written <c>1</c> (caller's file), so only
+    /// the file tells them apart and C# blames the call.
+    /// </summary>
     private static (string, List<string>) Requires()
     {
-        const string text = "i32 positive(i32 n) expects n > 0 && n < 1000 => n\n\ni32 pair(i32 a, by i32 b = 0) expects b > 0 => a\n\nlet x = positive(0)\nlet y = positive(5)\nlet z = pair(1)\nlet v = pair(x, by: 1)\nlet u = pair(2, by: 0)\nprint($\"{x}{y}{z}{v}{u}\")\n";
-        var c = Compile(text, new CompilationOptions());
-        var w = new World(c, text);
-        var lines = c.Diagnostics.Items.Where(d => d.Code == "BYN2321").Select(Line).ToList();
-        var checks = (System.Collections.IEnumerable)Get(c, "RequiresChecks")!;
-        var n = 0;
-        // An argument is read only for its constant and its span, so it is built as a literal carrying both.
-        string Expr(BoundExpr e, bool argument = false)
+        const string one = "i32 positive(i32 n) expects n > 0 && n < 1000 => n\n\ni32 pair(i32 a, by i32 b = 0) expects b > 0 => a\n\nlet x = positive(0)\nlet y = positive(5)\nlet z = pair(1)\nlet v = pair(x, by: 1)\nlet u = pair(2, by: 0)\nprint($\"{x}{y}{z}{v}{u}\")\n";
+        const string callee = "i32 pair(i32 a, by i32 b = 0) expects b > 0 => a\n";
+        const string caller = "let pd = 1234\nlet q = pair(1)\nprint($\"{pd}{q}\")\n";
+        var sb = new StringBuilder();
+        var lines = new List<string>();
+        foreach (var (label, texts) in new[] { ("one", new[] { one }), ("two", new[] { caller, callee }) })
         {
-            var v = $"e{n++}";
-            switch (argument ? null : e)
+            var sources = texts.Select((t, i) => SourceText.FromString(Path.Combine(Root, $"t13r{i}.byn"), t)).ToList();
+            var c = Compilation.Create(sources, Root, new CompilationOptions());
+            var files = c.EntryModule.Files.Select(f => f.Source).ToList();
+            string Text(SourceText src) => texts[sources.FindIndex(x => ReferenceEquals(x, src))];
+            var w = new World(c, Text(files[0]));
+            for (var i = 1; i < files.Count; i++) w.Emit($"addSource(ref c, for: {Lit(Text(files[i]))}, as: {Lit(c.EntryModule.Name)})");
+            int FileOf(SourceText src) => files.FindIndex(x => ReferenceEquals(x, src));
+            lines.Add(label);
+            lines.AddRange(c.Diagnostics.Items.Where(d => d.Code == "BYN2321").Select(Line));
+            var checks = (System.Collections.IEnumerable)Get(c, "RequiresChecks")!;
+            var n = 0;
+            // An argument is read only for its constant and its span, so it is built as a literal carrying both.
+            string Expr(BoundExpr e, bool argument = false)
             {
-                case BoundBinary b:
-                    var l = Expr(b.Left);
-                    var r = Expr(b.Right);
-                    var op = char.ToLowerInvariant(b.Op.ToString()[0]) + b.Op.ToString()[1..];
-                    w.Emit($"let {v} = addBinary(ref c, from: BBinary {{ span: {Span(b.Syntax.Span)}, op: .{op}, left: {l}, right: {r}, type: prim(PrimitiveKind.bool) }})");
-                    break;
-                case BoundLocal loc:
-                    w.Emit($"let {v} = addLocal(ref c, from: BLocal {{ span: {Span(loc.Syntax.Span)}, local: {w.Vars[loc.Local]} }})");
-                    break;
-                default:
-                    w.Emit($"let {v} = addLiteral(ref c, from: BLiteral {{ span: {Span(e.Syntax.Span)}, type: prim(PrimitiveKind.i32), value: Constant {{ kind: .integer }} }})");
-                    break;
-            }
-            if (e.Constant is { Value: Int128 i }) w.Emit($"setConstant(ref c, for: {v}, to: Constant {{ kind: .integer, integer: bigFromI64({(long)i}) }})");
-            else if (e.Constant is { Value: bool f }) w.Emit($"setConstant(ref c, for: {v}, to: Constant {{ kind: .flag, flag: {(f ? "true" : "false")} }})");
-            return v;
-        }
-        foreach (var check in checks)
-        {
-            var callee = (FunctionSymbol)Prop(check, "Callee")!;
-            if (!w.Vars.ContainsKey(callee))
-            {
-                var ps = new List<string>();
-                foreach (var p in callee.Parameters)
+                var v = $"e{n++}";
+                switch (argument ? null : e)
                 {
-                    var pv = $"p{w.Vars.Count}";
-                    w.Emit($"let {pv} = newLocal(ref c, by: LocalSymbol {{ name: {Lit(p.Name)}, type: prim(PrimitiveKind.i32), kind: .parameter, isParameter: true, ordinal: {p.Ordinal} }})");
-                    w.Vars[p] = pv;
-                    ps.Add(pv);
+                    case BoundBinary b:
+                        var l = Expr(b.Left);
+                        var r = Expr(b.Right);
+                        var op = char.ToLowerInvariant(b.Op.ToString()[0]) + b.Op.ToString()[1..];
+                        w.Emit($"let {v} = addBinary(ref c, from: BBinary {{ span: {Span(b.Syntax.Span)}, op: .{op}, left: {l}, right: {r}, type: prim(PrimitiveKind.bool) }})");
+                        break;
+                    case BoundLocal loc:
+                        w.Emit($"let {v} = addLocal(ref c, from: BLocal {{ span: {Span(loc.Syntax.Span)}, local: {w.Vars[loc.Local]} }})");
+                        break;
+                    default:
+                        w.Emit($"let {v} = addLiteral(ref c, from: BLiteral {{ span: {Span(e.Syntax.Span)}, type: prim(PrimitiveKind.i32), value: Constant {{ kind: .integer }} }})");
+                        break;
                 }
-                var fv = $"callee{w.Vars.Count}";
-                w.Emit($"let {fv} = newFunction(ref c, by: FunctionSymbol {{ name: {Lit(callee.Name)}, module: 0, file: 0 }})");
-                foreach (var pv in ps) w.Emit($"c.functions[{fv}].parameters.append({pv})");
-                foreach (var clause in callee.Requires) w.Emit($"c.functions[{fv}].requirements.append({Expr(clause)})");
-                w.Vars[callee] = fv;
+                if (e.Constant is { Value: Int128 i }) w.Emit($"setConstant(ref c, for: {v}, to: Constant {{ kind: .integer, integer: bigFromI64({(long)i}) }})");
+                else if (e.Constant is { Value: bool f }) w.Emit($"setConstant(ref c, for: {v}, to: Constant {{ kind: .flag, flag: {(f ? "true" : "false")} }})");
+                return v;
             }
-            var call = (CallExpr)Prop(check, "Call")!;
-            var args = (BoundExpr[])Prop(check, "Arguments")!;
-            w.Emit("{");
-            w.Emit("    var spans = List<TextSpan>()");
-            foreach (var a in call.Args) w.Emit($"    spans.append({Span(a.Value.Span)})");
-            w.Emit("    var arguments = List<BExpr>()");
-            foreach (var a in args) w.Emit($"    arguments.append({Expr(a, argument: true)})");
-            w.Emit($"    c.requiresChecks.append(RequiresCheck {{ source: 0, callSpan: {Span(call.Span)}, callArgs: move spans, callee: {w.Vars[callee]}, arguments: move arguments }})");
-            w.Emit("}");
+            foreach (var check in checks)
+            {
+                var fn = (FunctionSymbol)Prop(check, "Callee")!;
+                var calleeFile = FileOf(fn.File!.Source);
+                if (!w.Vars.ContainsKey(fn))
+                {
+                    var ps = new List<string>();
+                    foreach (var p in fn.Parameters)
+                    {
+                        var pv = $"p{w.Vars.Count}";
+                        w.Emit($"let {pv} = newLocal(ref c, by: LocalSymbol {{ name: {Lit(p.Name)}, type: prim(PrimitiveKind.i32), kind: .parameter, isParameter: true, ordinal: {p.Ordinal} }})");
+                        w.Vars[p] = pv;
+                        ps.Add(pv);
+                    }
+                    var fv = $"callee{w.Vars.Count}";
+                    w.Emit($"let {fv} = newFunction(ref c, by: FunctionSymbol {{ name: {Lit(fn.Name)}, module: 0, file: {calleeFile} }})");
+                    foreach (var pv in ps) w.Emit($"c.functions[{fv}].parameters.append({pv})");
+                    foreach (var clause in fn.Requires) w.Emit($"c.functions[{fv}].requirements.append({Expr(clause)})");
+                    w.Vars[fn] = fv;
+                }
+                var call = (CallExpr)Prop(check, "Call")!;
+                var args = (BoundExpr[])Prop(check, "Arguments")!;
+                var source = FileOf((SourceText)Prop(check, "Source")!);
+                w.Emit("{");
+                w.Emit("    var callArgs = List<Location>()");
+                foreach (var a in call.Args) w.Emit($"    callArgs.append(Location {{ file: {source}, span: {Span(a.Value.Span)} }})");
+                w.Emit("    var arguments = List<BExpr>()");
+                w.Emit("    var argumentFiles = List<FileId>()");
+                foreach (var a in args)
+                {
+                    w.Emit($"    arguments.append({Expr(a, argument: true)})");
+                    // An argument not written in the call is the parameter's default, bound in the callee's file (Compilation.cs:1904).
+                    w.Emit($"    argumentFiles.append({(call.Args.Any(x => ReferenceEquals(x.Value, a.Syntax)) ? source : calleeFile)})");
+                }
+                w.Emit($"    c.requiresChecks.append(RequiresCheck {{ source: {source}, callSpan: {Span(call.Span)}, callArgs: move callArgs, callee: {w.Vars[fn]}, arguments: move arguments, argumentFiles: move argumentFiles }})");
+                w.Emit("}");
+            }
+            w.Emit("checkRequires(ref c)");
+            w.Emit($"print(\"{label}\")");
+            w.Emit("showDiags(in c, from: 0)");
+            sb.Append("    {\n").Append(w.Code).Append("    }\n");
         }
-        w.Emit("checkRequires(ref c)");
-        w.Emit("showDiags(in c, from: 0)");
-        return (w.Code.ToString(), lines);
+        return (sb.ToString(), lines);
     }
 
     /// <summary>BindAll's last step: BYN2014 only for an entry module with files, no main, no tests asked for, not a library, no errors.</summary>
@@ -937,10 +978,10 @@ public sealed class SelfhostSemanticsT13Tests
         return (sb.ToString(), lines);
     }
 
-    /// <summary>BindAll with exit codes, main statements, and test bodies: each is drained and bound.</summary>
+    /// <summary>BindAll with exit codes and a test body: each is drained and bound. Main statements and `@cases` values are blocked (Q583).</summary>
     private static (string, List<string>) BindAllDrains()
     {
-        const string text = "union error E {\n    @exitCode(42)\n    bad\n}\n\nvoid run() {\n}\n\nlet x = 1\n\ntest \"t\" {\n    let y = 2\n}\n";
+        const string text = "union error E {\n    @exitCode(42)\n    bad\n}\n\nvoid run() {\n}\n\ntest \"t\" {\n    let y = 2\n}\n";
         var c = Compile(text, new CompilationOptions(IncludeTests: true));
         var w = new World(c, text);
         var lines = new List<string>();
@@ -950,20 +991,13 @@ public sealed class SelfhostSemanticsT13Tests
         w.Emit("let ev = newErrorVariant(ref c, by: ErrorVariantSymbol { name: \"bad\", file: 0, declIndex: 0, set: es })");
         w.Emit("c.errorSets[es].variants.append(ev)");
         w.Emit("c.exitCodes.append(ExitCodeRef { variant: ev, attribute: SyntaxRef { file: 0, declIndex: 0, memberIndex: 0, itemIndex: 0 } })");
-        var fn = c.EntryModule.AllFunctions.Single(f => f.Kind == FunctionKind.Main);
-        lines.Add($"main body {(fn.Body is null ? "no" : "yes")}");
-        w.Emit("let fnMain = newFunction(ref c, by: FunctionSymbol { name: \"main\", module: 0, file: 0, kind: .main })");
-        w.Emit("c.modules[0].allFunctions.append(fnMain)");
-        w.Emit("c.mainStatementsFn = fnMain");
-        w.Emit("c.mainStatements.append(SyntaxRef { file: 0, declIndex: 2 })");
         var tFn = c.EntryModule.AllFunctions.Single(f => f.Kind == FunctionKind.Test);
         lines.Add($"test body {(tFn.Body is null ? "no" : "yes")}");
         w.Emit("let fnTest = newFunction(ref c, by: FunctionSymbol { name: \"test_t\", module: 0, file: 0, kind: .testKeyword })");
         w.Emit("c.modules[0].allFunctions.append(fnTest)");
-        w.Emit("c.testBodies[fnTest] = TestBody { decl: SyntaxRef { file: 0, declIndex: 3 }, values: SyntaxRef {} }");
+        w.Emit("c.testBodies[fnTest] = TestBody { decl: SyntaxRef { file: 0, declIndex: 2 }, values: SyntaxRef {} }");
         w.Emit("bindAll(ref c)");
         w.Emit("print($\"exitCode {c.errorVariants[ev].exitCode}\")");
-        w.Emit("print($\"main body {(c.functions[fnMain].body != -1 ? \"yes\" : \"no\")}\")");
         w.Emit("print($\"test body {(c.functions[fnTest].body != -1 ? \"yes\" : \"no\")}\")");
         return (w.Code.ToString(), lines);
     }
@@ -1126,8 +1160,15 @@ public sealed class SelfhostSemanticsT13Tests
         string constText(ref Ctx c, for BExpr e) => e == -1 ? "null" : "bound"
 
         void showBody(ref Ctx c, for FuncId f) {
+            let locals = c.functions[f].locals.length
+            let start = c.diagnostics.length
             bindFunction(ref c, for: f)
             print($"{c.functions[f].name} {kindText(c.functions[f].kind)} body {yn(b: c.functions[f].body != -1)}")
+            for i in locals..c.functions[f].locals.length {
+                let l = c.functions[f].locals[i]
+                print($"local {c.locals[l].name} {typeDisplay(ref c, by: c.locals[l].type)}")
+            }
+            showDiags(in c, from: start)
         }
 
         string kindText(FunctionKind k) => k switch {

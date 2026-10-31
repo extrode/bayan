@@ -25,14 +25,15 @@ struct FirstPass {
     List<Diag> errors
 }
 
-/// The C# `RequiresCheck(Source, Call, Callee, Arguments)`. `Call` is its span and the spans of the
-/// argument values written in it (Q582).
+/// The C# `RequiresCheck(Source, Call, Callee, Arguments)`. `Call` is its span and the file and span
+/// of each argument value written in it; `argumentFiles` is the file of each argument's syntax (Q582).
 struct RequiresCheck {
     FileId source
     TextSpan callSpan
-    List<TextSpan> callArgs
+    List<Location> callArgs
     FuncId callee
     List<BExpr> arguments
+    List<FileId> argumentFiles
 }
 
 /// C# `InstantiationLabel`.
@@ -141,17 +142,18 @@ void bindAll(ref Ctx c) {
     var exitCodes = List<ExitCodeRef>()
     for entry in c.exitCodes { exitCodes.append(entry) }
     for entry in exitCodes {
+        // C#'s `(variant, attribute, file)`: the attribute's own file is the tuple's `file` (Q583).
         let f = entry.attribute.file
         let d = entry.attribute.declIndex
         let vIdx = entry.attribute.memberIndex
         let aIdx = entry.attribute.itemIndex
         switch c.files[f].unit.members[d] {
             case .errorEnumDecl(let ed):
-                var b = t13NewBinder(c.errorVariants[entry.variant].file)
+                var b = t13NewBinder(f)
                 let code = bindExitCode(ref b, through: ref c, for: in ed.value.variants[vIdx].attributes[aIdx])
                 c.errorVariants[entry.variant].exitCode = code
             default:
-                break
+                panic("internal error: an exit code that is not on an error variant")
         }
     }
     for m in 0..c.modules.length {
@@ -847,9 +849,9 @@ void bindFunction(ref Ctx c, for FuncId fn) {
     c.instantiationWork = move work
     var checks = List<RequiresCheck>()
     for i in 0..requireCount {
-        var spans = List<TextSpan>()
-        for x in c.requiresChecks[i].callArgs { spans.append(x) }
-        checks.append(RequiresCheck { source: c.requiresChecks[i].source, callSpan: c.requiresChecks[i].callSpan, callArgs: move spans, callee: c.requiresChecks[i].callee, arguments: copyIds(in c.requiresChecks[i].arguments) })
+        var args = List<Location>()
+        for x in c.requiresChecks[i].callArgs { args.append(Location { file: x.file, span: x.span }) }
+        checks.append(RequiresCheck { source: c.requiresChecks[i].source, callSpan: c.requiresChecks[i].callSpan, callArgs: move args, callee: c.requiresChecks[i].callee, arguments: copyIds(in c.requiresChecks[i].arguments), argumentFiles: copyIds(in c.requiresChecks[i].argumentFiles) })
     }
     c.requiresChecks = move checks
     var kept = List<LocalId>()
@@ -871,72 +873,6 @@ void bindFunction(ref Ctx c, for FuncId fn) {
         c.modules[m].allFunctions = move lifted
     }
     let _ = t13BindBody(ref c, for: fn, by: seeds)
-}
-
-void t13BindMain(ref Binder b, through ref Ctx c) {
-    t15CaptureTypes(ref b, through: ref c)
-    var bound = List<BStmt>()
-    var blockSpan = TextSpan { start: 0, length: 0 }
-    var first = true
-    var mainStatements = List<SyntaxRef>()
-    for sr in c.mainStatements { mainStatements.append(sr) }
-    for sr in mainStatements {
-        switch c.files[sr.file].unit.members[sr.declIndex] {
-            case .globalStatement(let g):
-                if first {
-                    b.firstStatement = t15StmtSpan(in g.value.statement).start
-                    blockSpan = g.value.span
-                    first = false
-                }
-                bound.append(bindStatement(ref b, through: ref c, for: in g.value.statement))
-            default:
-                break
-        }
-    }
-    c.functions[b.fn].infersErrors = true
-    c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: blockSpan, statements: move bound })
-}
-
-void t13BindTest(ref Binder b, through ref Ctx c, for in parser.TestDecl d, by TestBody tb) {
-    if !tb.hasValues {
-        bindTest(ref b, through: ref c, for: in d, by: in List<parser.Expr>())
-        return
-    }
-    t15CaptureTypes(ref b, through: ref c)
-    c.functions[b.fn].infersErrors = true
-    switch d.body {
-        case .blockStmt(let body):
-            var statements = List<BStmt>()
-            let f = tb.values.file
-            let declIdx = tb.values.declIndex
-            let aIdx = tb.values.memberIndex
-            let argIdx = tb.values.itemIndex
-            switch c.files[f].unit.members[declIdx] {
-                case .testDecl(let td):
-                    switch td.value.attributes[aIdx].args[argIdx].value {
-                        case .tupleExpr(let tup):
-                            for i in 0..d.params.length {
-                                let type = resolveType(ref b, through: ref c, for: in d.params[i].type)
-                                let value = bindConverted(ref b, through: ref c, for: in tup.value.elements[i].value, to: type)
-                                let local = declareLocal(ref b, through: ref c, at: d.params[i].name, as: type, for: .letKeyword)
-                                statements.append(addLocalDecl(ref c, from: BLocalDecl { span: d.params[i].span, local: local, initializer: value }))
-                            }
-                        default:
-                            if d.params.length > 0 {
-                                let type = resolveType(ref b, through: ref c, for: in d.params[0].type)
-                                let value = bindConverted(ref b, through: ref c, for: in td.value.attributes[aIdx].args[argIdx].value, to: type)
-                                let local = declareLocal(ref b, through: ref c, at: d.params[0].name, as: type, for: .letKeyword)
-                                statements.append(addLocalDecl(ref c, from: BLocalDecl { span: d.params[0].span, local: local, initializer: value }))
-                            }
-                    }
-                default:
-                    break
-            }
-            statements.append(bindBlock(ref b, through: ref c, for: in body.value))
-            c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: body.value.span, statements: move statements })
-        default:
-            break
-    }
 }
 
 /// Compilation.cs:1765 BindBody: a first pass (no `seeds`) returns the seeds a second pass needs, if
@@ -984,21 +920,25 @@ List<(LocalId, Type)>? t13BindBody(ref Ctx c, for FuncId fn, by in List<(LocalId
         let _ = hold(ref b, through: ref c)
     }
     if c.functions[fn].kind == .main {
-        t13BindMain(ref b, through: ref c)
-    } else if c.functions[fn].kind == .testKeyword && c.testBodies.contains(fn) {
+        // stub: T13 calls `bindMain` with `m.Statements` (blocked: Q583)
+        panic("internal error: binding main statements is blocked (Q583)")
+    } else if c.functions[fn].kind == .testKeyword {
         let tb = c.testBodies[fn]
         switch c.files[tb.decl.file].unit.members[tb.decl.declIndex] {
             case .testDecl(let n):
-                t13BindTest(ref b, through: ref c, for: in n.value, by: tb)
+                if tb.hasValues {
+                    // stub: T13 calls `bindTest` with a `@cases` case's values (blocked: Q583)
+                    panic("internal error: binding a `@cases` test is blocked (Q583)")
+                }
+                // `Values` is null without `@cases`: an empty list (Q593).
+                bindTest(ref b, through: ref c, for: in n.value, by: in List<parser.Expr>())
             default:
-                break
+                panic("internal error: a test body that is not a test")
         }
     } else {
         switch c.files[file].unit.members[d] {
             case .functionDecl(let n):
                 bindFunctionBody(ref b, through: ref c, for: in n.value)
-            case .testDecl(let n):
-                bindTest(ref b, through: ref c, for: in n.value, by: in List<parser.Expr>())
             case .structDecl(let n):
                 switch n.value.members[m] {
                     case .functionDecl(let f):
@@ -1025,7 +965,6 @@ List<(LocalId, Type)>? t13BindBody(ref Ctx c, for FuncId fn, by in List<(LocalId
     }
     if seeds is null {
         let next = release(ref b, through: ref c)
-        // mutation-exempt: Q582
         if next.length > 0 { return next }
     }
     return null
@@ -1117,10 +1056,12 @@ void checkRequires(ref Ctx c) {
             var at: LocalId = -1
             for p in parameters {
                 if !t13Contains(in read, for: p) || !values.contains(p) { continue }
+                // `ReferenceEquals(a.Value, …Syntax)`: the same file and span (Q582).
                 let written = nodeSpan(in c, for: arguments[c.locals[p].ordinal])
+                let writtenFile = c.requiresChecks[i].argumentFiles[c.locals[p].ordinal]
                 var inCall = false
-                for s in c.requiresChecks[i].callArgs {
-                    if s == written { inCall = true }
+                for a in c.requiresChecks[i].callArgs {
+                    if a.file == writtenFile && a.span == written { inCall = true }
                 }
                 if inCall {
                     at = p
