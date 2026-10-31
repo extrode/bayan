@@ -595,17 +595,13 @@ bool reportRenamed(ref Binder b, through ref Ctx c, for Type type, at TextSpan m
 /// The renames that change the call's shape (J72, round 3 §27): the fix rewrites the member and its arguments,
 /// so it is written only when the member is called with the old arguments.
 RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at TextSpan memberSpan) {
-    let name = t18Text(in c, from: b.file, at: memberSpan) // mutation-exempt: Q607 through 607 (b) bindCall, calls.byn:6
+    let name = t18Text(in c, from: b.file, at: memberSpan) // mutation-exempt: Q607 through 605 (b) bindCall, calls.byn:6
     var isCalleeMatch = false
     var tail = TextSpan { start: memberSpan.start, length: 0 }
-    if (b.calleeOf is { } activeCall) { // mutation-exempt: Q607 through 616
-        switch activeCall.callee {
-            case .memberExpr(let me):
-                if me.value.member.start == memberSpan.start && me.value.member.length == memberSpan.length {
-                    isCalleeMatch = true
-                    tail = TextSpan.fromBounds(memberSpan.start, until: activeCall.span.end)
-                }
-            default: {}
+    if (b.calleeOf is { } activeCall) { // mutation-exempt: Q607 through 612
+        if activeCall.isMember && activeCall.member.start == memberSpan.start && activeCall.member.length == memberSpan.length {
+            isCalleeMatch = true
+            tail = TextSpan.fromBounds(memberSpan.start, until: activeCall.span.end)
         }
     }
 
@@ -615,55 +611,51 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
     let isStr = isString(type)
     let isInt = isInteger(type)
 
-    if isList && name == "removeRange" { // mutation-exempt: Q607 through 630
-        if isCalleeMatch && (b.calleeOf is { } cCall) && cCall.args.length == 2 && cCall.args[0].name is null && cCall.args[0].modifier == .none && cCall.args[1].name is null && cCall.args[1].modifier == .none {
-            let from = t18Text(in c, from: b.file, at: parser.exprSpan(in cCall.args[0].value))
-            let until = t18Text(in c, from: b.file, at: parser.exprSpan(in cCall.args[1].value))
+    if isList && name == "removeRange" { // mutation-exempt: Q607 through 626
+        if isCalleeMatch && (b.calleeOf is { } cCall) && cCall.argCount == 2 && cCall.firstTwoPlain {
+            let from = t18Text(in c, from: b.file, at: cCall.arg0)
+            let until = t18Text(in c, from: b.file, at: cCall.arg1)
             return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: true, fixSpan: tail, replacement: $"remove(from: {from}, until: {until})" }
         }
         return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isList && name == "replaceRange" { // mutation-exempt: Q607 through 638
-        if isCalleeMatch && (b.calleeOf is { } rCall) && rCall.args.length == 2 && rCall.args[0].name is null && rCall.args[0].modifier == .none && rCall.args[1].name is null && rCall.args[1].modifier == .none {
-            let at = t18Text(in c, from: b.file, at: parser.exprSpan(in rCall.args[0].value))
-            let by = t18Text(in c, from: b.file, at: parser.exprSpan(in rCall.args[1].value))
+    if isList && name == "replaceRange" { // mutation-exempt: Q607 through 633
+        if isCalleeMatch && (b.calleeOf is { } rCall) && rCall.argCount == 2 && rCall.firstTwoPlain {
+            let at = t18Text(in c, from: b.file, at: rCall.arg0)
+            let by = t18Text(in c, from: b.file, at: rCall.arg1)
             return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: true, fixSpan: tail, replacement: $"replace(at: {at}, by: {by})" }
         }
         return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isMap && name == "getOr" { // mutation-exempt: Q607 through 651
-        if isCalleeMatch && (b.calleeOf is { } mCall) && mCall.args.length == 2 && mCall.args[0].name is null && mCall.args[0].modifier == .none && mCall.args[1].name is null && mCall.args[1].modifier == .none {
-            switch mCall.callee {
-                case .memberExpr(let me):
-                    let key = t18Text(in c, from: b.file, at: parser.exprSpan(in mCall.args[0].value))
-                    let fallback = t18Text(in c, from: b.file, at: parser.exprSpan(in mCall.args[1].value))
-                    let mapText = t18Text(in c, from: b.file, at: parser.exprSpan(in me.value.target))
-                    return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: true, fixSpan: mCall.span, replacement: $"({mapText}.tryGet(at: {key}) ?? {fallback})" }
-                default: {}
+    if isMap && name == "getOr" { // mutation-exempt: Q607 through 645
+        if isCalleeMatch && (b.calleeOf is { } mCall) && mCall.argCount == 2 && mCall.firstTwoPlain {
+            if mCall.isMember {
+                let key = t18Text(in c, from: b.file, at: mCall.arg0)
+                let fallback = t18Text(in c, from: b.file, at: mCall.arg1)
+                let mapText = t18Text(in c, from: b.file, at: mCall.target)
+                return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: true, fixSpan: mCall.span, replacement: $"({mapText}.tryGet(at: {key}) ?? {fallback})" }
             }
         }
         return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if (isList || isArrayT) && name == "asSpan" { // mutation-exempt: Q607 through 657
-        if isCalleeMatch && (b.calleeOf is { } sCall) && sCall.args.length == 0 {
+    if (isList || isArrayT) && name == "asSpan" { // mutation-exempt: Q607 through 651
+        if isCalleeMatch && (b.calleeOf is { } sCall) && sCall.argCount == 0 {
             return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: true, fixSpan: tail, replacement: "span" }
         }
         return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isStr && name == "toUtf16" { // mutation-exempt: Q607 through 663
-        if isCalleeMatch && (b.calleeOf is { } uCall) && uCall.args.length == 0 {
+    if isStr && name == "toUtf16" { // mutation-exempt: Q607 through 656
+        if isCalleeMatch && (b.calleeOf is { } uCall) && uCall.argCount == 0 {
             return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: true, fixSpan: tail, replacement: "utf16" }
         }
         return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: false, fixSpan: tail, replacement: "" }
     }
     if isInt && (name == "toHex" || name == "toBinary" || name == "toOctal") {
-        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal") // mutation-exempt: Q607 through 675
-        if isCalleeMatch && (b.calleeOf is { } hCall) && hCall.args.length == 0 {
-            switch hCall.callee {
-                case .memberExpr(let me):
-                    let targetText = t18Text(in c, from: b.file, at: parser.exprSpan(in me.value.target))
-                    return RenamedResult { oldName: $"{name}()", newName: $"string(x, as: .{radix})", hasFix: true, fixSpan: hCall.span, replacement: $"string({targetText}, as: .{radix})" }
-                default: {}
+        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal") // mutation-exempt: Q607 through 667
+        if isCalleeMatch && (b.calleeOf is { } hCall) && hCall.argCount == 0 {
+            if hCall.isMember {
+                let targetText = t18Text(in c, from: b.file, at: hCall.target)
+                return RenamedResult { oldName: $"{name}()", newName: $"string(x, as: .{radix})", hasFix: true, fixSpan: hCall.span, replacement: $"string({targetText}, as: .{radix})" }
             }
         }
         return RenamedResult { oldName: $"{name}()", newName: $"string(x, as: .{radix})", hasFix: false, fixSpan: tail, replacement: "" }

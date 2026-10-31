@@ -41,5 +41,5 @@ BExpr checkedValue(ref Binder b, through ref Ctx c, for in parser.Expr syntax, b
 // stub: T21 ports BinderCalls.cs:949 Handles
 bool handles(in parser.Expr e) => false
 
-// stub: T21 ports BinderCalls.cs:936 ReportUnhandled
-void reportUnhandled(ref Binder b, through ref Ctx c, for in parser.Expr call, by string name) {}
+// stub: T21 ports BinderCalls.cs:944 ReportUnhandled
+void reportUnhandled(ref Binder b, through ref Ctx c, at TextSpan span, by string name, bool structLiteral) {}
