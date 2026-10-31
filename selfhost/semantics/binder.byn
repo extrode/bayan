@@ -519,13 +519,26 @@ void bindConstructor(ref Binder b, through ref Ctx c, for in parser.ConstructorD
     }
 }
 
-void bindMain(ref Binder b, through ref Ctx c, for in List<parser.GlobalStatement> statements) {
+/// The C# `List<GlobalStatement>` is `c.mainStatements`' refs (Q716); each must name a top-level statement.
+void bindMain(ref Binder b, through ref Ctx c, for in List<SyntaxRef> statements) {
     t15CaptureTypes(ref b, through: ref c)
     var bound = List<BStmt>()
-    b.firstStatement = t15StmtSpan(in statements[0].statement).start
-    for g in statements { bound.append(bindStatement(ref b, through: ref c, for: in g.statement)) }
+    var span = TextSpan { start: 0, length: 0 }
+    for i in 0..statements.length {
+        let r = statements[i]
+        switch c.files[r.file].unit.members[r.declIndex] {
+            case .globalStatement(let g):
+                if i == 0 {
+                    b.firstStatement = t15StmtSpan(in g.value.statement).start
+                    span = g.value.span
+                }
+                bound.append(bindStatement(ref b, through: ref c, for: in g.value.statement))
+            default:
+                panic("internal error: a main statement ref is not a top-level statement")
+        }
+    }
     c.functions[b.fn].infersErrors = true
-    c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: statements[0].span, statements: move bound })
+    c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: span, statements: move bound })
 }
 
 /// A test body; a `@cases` case first binds each parameter as a `let` of its value. C#'s null

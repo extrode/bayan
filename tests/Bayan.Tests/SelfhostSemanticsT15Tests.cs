@@ -90,7 +90,10 @@ public sealed class SelfhostSemanticsT15Tests
         }
 
         {
-            zz()
+            let q: bool = 3
+        }
+
+        {
         }
 
         """;
@@ -684,22 +687,15 @@ public sealed class SelfhostSemanticsT15Tests
         return sb.ToString();
     }
 
-    /// <summary>The source's top-level block `{ zz() }` with its call replaced by the bare name `zz`, built by hand on both
-    /// sides: a call goes through T20's unported `bindCall`, and the parser rejects a bare name as a statement.</summary>
-    private static (GlobalStatement Global, ExprStmt Inner, NameExpr Name) MainStatement(Oracle o)
-    {
-        var g = o.Members.OfType<GlobalStatement>().Single(g => g.Statement is BlockStmt);
-        var inner = (ExprStmt)((BlockStmt)g.Statement).Statements.Single();
-        var zz = (NameExpr)((CallExpr)inner.Expr).Callee;
-        var stmt = new ExprStmt(inner.Span, zz);
-        return (new GlobalStatement(g.Span, new BlockStmt(g.Statement.Span, [stmt])), stmt, zz);
-    }
+    /// <summary>The indexes of the source's top-level blocks, the statements `main` binds.</summary>
+    private static int[] MainIndexes(Oracle o) =>
+        Enumerable.Range(0, o.Members.Length).Where(i => o.Members[i] is GlobalStatement { Statement: BlockStmt }).ToArray();
 
     private static List<string> ExpectedMain()
     {
         var o = Oracle.Of("main", Source);
         var fn = new FunctionSymbol("main", null, o.Module, FunctionKind.Main);
-        var statements = new List<GlobalStatement> { MainStatement(o).Global };
+        var statements = MainIndexes(o).Select(i => (GlobalStatement)o.Members[i]).ToList();
         Call(o.Binder(fn, null), "BindMain", statements);
         var lines = new List<string>();
         Dump(lines, fn.Body);
@@ -711,16 +707,13 @@ public sealed class SelfhostSemanticsT15Tests
     private static string MainMain()
     {
         var o = Oracle.Of("main", Source);
-        var (g, inner, zz) = MainStatement(o);
         var sb = new StringBuilder();
         sb.AppendLine("void mainBody() {");
         sb.AppendLine("    var c = tcSource()");
         sb.AppendLine("    let f = newFunction(ref c, by: FunctionSymbol { name: \"main\", module: 0, kind: .main })");
         sb.AppendLine("    var b = tcBinder(f, by: -1)");
-        sb.AppendLine("    var statements = List<GlobalStatement>()");
-        sb.AppendLine("    var inner = List<parser.Stmt>()");
-        sb.AppendLine($"    inner.append(parser.Stmt.exprStmt(Owned(ExprStmt {{ span: {Span(inner.Span)}, expr: parser.Expr.nameExpr(Owned(NameExpr {{ span: {Span(zz.Span)}, name: {Span(zz.Name.Span)}, typeArgs: List<parser.TypeSyntax>() }})) }})))");
-        sb.AppendLine($"    statements.append(GlobalStatement {{ span: {Span(g.Span)}, statement: parser.Stmt.blockStmt(Owned(BlockStmt {{ span: {Span(g.Statement.Span)}, statements: move inner }})) }})");
+        sb.AppendLine("    var statements = List<SyntaxRef>()");
+        foreach (var i in MainIndexes(o)) sb.AppendLine($"    statements.append(SyntaxRef {{ file: 0, declIndex: {i} }})");
         sb.AppendLine("    print(\"== main\")");
         sb.AppendLine("    bindMain(ref b, through: ref c, for: in statements)");
         sb.AppendLine("    tcBody(ref c, for: f)");
@@ -1002,8 +995,6 @@ public sealed class SelfhostSemanticsT15Tests
         type GlobalStatement = parser.GlobalStatement
         type BlockStmt = parser.BlockStmt
         type LiteralExpr = parser.LiteralExpr
-        type ExprStmt = parser.ExprStmt
-        type NameExpr = parser.NameExpr
 
         Ctx tcCtx(string text) {
             var bytes = List<u8>()
