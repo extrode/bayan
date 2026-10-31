@@ -183,8 +183,27 @@ void declareMembers(ref Ctx c, for StructId s) {
                 }
             }
             declareCheck(ref c, for: s)
+        case .typeAliasDecl(let a):
+            // `type distinct` (Compilation.cs:455): a struct with no bases and one public field `value` at the target,
+            // carrying the alias's `requires`. `CheckValue("value")`, `Unique` on an empty map and the modifier checks
+            // on `Public` report nothing, so only the field is built; its `modifiers` stay 0, as only the `required`
+            // and `readonly` bits are read, and its syntax is the alias (`declIndex`), so it has no `memberIndex`.
+            let types = TypeResolver { file: file, container: s, typeArgs: t11CopyMap(in c.structs[s].typeMap) }
+            let target = t8TypeSpan(in a.value.target)
+            let field = newField(ref c, by: FieldSymbol {
+                name: "value",
+                nameSpan: target,
+                span: target,
+                owner: s,
+                file: file,
+                declIndex: dIdx,
+                access: .publicKeyword,
+                type: resolve(ref c, through: in types, for: in a.value.target),
+            })
+            c.structs[s].fields.append(field)
+            declareCheck(ref c, for: s)
         default:
-            panic("a struct is declared by a `StructDecl`")
+            panic("a struct is declared by a `StructDecl` or a `type distinct`")
     }
 }
 
@@ -406,14 +425,14 @@ void declareEnumFields(ref Ctx c, for EnumId e) {
                     checkValue(ref c, from: file, at: pName)
                     let type = resolve(ref c, through: in types, for: in ps[pIdx].type)
                     let help = "use a number type, `bool`, `rune`, `string` or a plain enum; enum data is stored in static tables"
-                    let existing = findEnumField(ref c, by: e, for: text)
                     if ps[pIdx].modifier != .none {
                         report(ref c, for: .invalidEnumParameter, from: file, at: ps[pIdx].span, by: (text, "", "", "", ""), label: $"`{t12ModifierName(ps[pIdx].modifier)}` is not allowed here", help: help)
                     } else if ps[pIdx].defaultKeyword is not .none {
                         report(ref c, for: .invalidEnumParameter, from: file, at: t11ExprSpan(in ps[pIdx].defaultKeyword), by: (text, "", "", "", ""), label: "a default value is not allowed here", help: help)
                     } else if !isError(type) && !isNumeric(type) && !isBool(type) && type != prim(.char) && !isString(type) && !(kindOf(type) == .enumType && t12PlainEnum(in c, for: typeIndex(type))) {
                         report(ref c, for: .invalidEnumParameter, from: file, at: t8TypeSpan(in ps[pIdx].type), by: (text, "", "", "", ""), label: $"`{typeDisplay(ref c, by: type)}` has no static form", help: help)
-                    } else if existing >= 0 {
+                    } else if findEnumField(ref c, by: e, for: text) >= 0 {
+                        let existing = findEnumField(ref c, by: e, for: text)
                         report(ref c, for: .duplicateEnumMember, from: file, at: pName, by: (c.enums[e].name, text, "", "", ""), label: $"already declared on line {t12Line(in c, by: loc(file, at: c.enumFields[existing].nameSpan))}")
                     } else if text == "name" || text == "ordinal" {
                         report(ref c, for: .duplicateEnumMember, from: file, at: pName, by: (c.enums[e].name, text, "", "", ""), label: "every enum has it", help: "rename the parameter")
@@ -482,7 +501,12 @@ void declareUnionVariants(ref Ctx c, for UnionId u) {
                 } else {
                     values[tag] = sym
                 }
-                tag += 1
+                // C# `tag++` on an `int`, unchecked: it wraps where Bayan's `+` traps.
+                if tag == 2147483647 {
+                    tag = -2147483648
+                } else {
+                    tag += 1
+                }
                 var names = Map<string, Location>()
                 for f in node.value.variants[vIdx].fields {
                     let fText = t12Text(in c, from: file, at: f.name)
