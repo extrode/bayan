@@ -50,10 +50,24 @@ Stmt parseStatement(ref Parser p) {
             let _ = p.report(.expected, at: spanOf(p.current()), arg0: "a statement after the attribute", arg1: p.describe(p.current()))
             return Stmt.errorStmt(Owned(ErrorStmt { span: p.spanFrom(start), attributes: move attributes }))
         }
-        // The node takes them when it is built (`takeStatementAttributes`); C# sets them on the result.
+        // C# sets `with { Span = SpanFrom(start), Attributes = attributes }` on the result, but a built node is
+        // read-only (BYN2782, Q471), so the statement is parsed twice, as in `reparseConstant`: once to find where
+        // it ends, its diagnostics dropped, then again, the node taking both when it is built (`takeStatementAttributes`).
+        let at = p.pos
+        let prevEnd = p.prevEnd
+        let diagnostics = p.lexed.diagnostics.length
+        let syntaxErrors = p.syntaxErrors
+        let lastErrorAt = p.lastErrorAt
+        let _ = parseStatement(ref p)
+        let span = p.spanFrom(start)
+        while p.lexed.diagnostics.length > diagnostics { let _ = p.lexed.diagnostics.removeLast() }
+        p.syntaxErrors = syntaxErrors
+        p.lastErrorAt = lastErrorAt
+        p.pos = at
+        p.prevEnd = prevEnd
         let key = p.current().start
         p.statementAttributeKeys.append(key)
-        p.statementAttributeStarts.append(start)
+        p.statementAttributeSpans.append(span)
         p.statementAttributes.append(move attributes)
         let statement = parseStatement(ref p)
         let _ = takeStatementAttributes(ref p, at: key)
@@ -192,15 +206,15 @@ Stmt parseStatement(ref Parser p) {
 bool hasStatementAttributes(ref Parser p, at i64 start) =>
     p.statementAttributeKeys.length > 0 && p.statementAttributeKeys[p.statementAttributeKeys.length - 1] == start
 
-/// The span of the statement at `start`: with attributes it starts at them, as the C# `with { Span = SpanFrom(start) }`.
+/// The span of the statement at `start`: with attributes it is the C# `with { Span = SpanFrom(start) }` from them.
 TextSpan statementSpan(ref Parser p, at i64 start, from TextSpan span) =>
-    hasStatementAttributes(ref p, at: start) ? p.spanFrom(p.statementAttributeStarts[p.statementAttributeStarts.length - 1]) : span
+    hasStatementAttributes(ref p, at: start) ? p.statementAttributeSpans[p.statementAttributeSpans.length - 1] : span
 
 /// The pending attributes of the statement at `start`, taken off the stack; none when they are not its.
 List<AttributeSyntax> takeStatementAttributes(ref Parser p, at i64 start) {
     unless hasStatementAttributes(ref p, at: start) { return List<AttributeSyntax>() }
     let _ = p.statementAttributeKeys.removeLast()
-    let _ = p.statementAttributeStarts.removeLast()
+    let _ = p.statementAttributeSpans.removeLast()
     return p.statementAttributes.removeLast()
 }
 

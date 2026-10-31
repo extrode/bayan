@@ -209,6 +209,148 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
             """, stdout);
     }
 
+    /// <summary>The parser's files with a <c>main</c> that prints every statement under each function's body as
+    /// <c>kind start end</c>, the kind being the C# record name.</summary>
+    private const string StatementSpansProgram = """
+        import lexer
+
+        void spans(in Stmt s, to ref StrBuf sb) {
+            switch s {
+                case .blockStmt(let n):
+                    sb.append($"BlockStmt {n.value.span.start} {n.value.span.end}\n")
+                    for st in n.value.statements { spans(in st, to: ref sb) }
+                case .localDecl(let n):
+                    sb.append($"LocalDecl {n.value.span.start} {n.value.span.end}\n")
+                case .exprStmt(let n):
+                    sb.append($"ExprStmt {n.value.span.start} {n.value.span.end}\n")
+                case .assignStmt(let n):
+                    sb.append($"AssignStmt {n.value.span.start} {n.value.span.end}\n")
+                case .incDecStmt(let n):
+                    sb.append($"IncDecStmt {n.value.span.start} {n.value.span.end}\n")
+                case .returnStmt(let n):
+                    sb.append($"ReturnStmt {n.value.span.start} {n.value.span.end}\n")
+                case .failStmt(let n):
+                    sb.append($"FailStmt {n.value.span.start} {n.value.span.end}\n")
+                case .breakStmt(let n):
+                    sb.append($"BreakStmt {n.value.span.start} {n.value.span.end}\n")
+                case .continueStmt(let n):
+                    sb.append($"ContinueStmt {n.value.span.start} {n.value.span.end}\n")
+                case .becomeStmt(let n):
+                    sb.append($"BecomeStmt {n.value.span.start} {n.value.span.end}\n")
+                case .ifStmt(let n):
+                    sb.append($"IfStmt {n.value.span.start} {n.value.span.end}\n")
+                    spans(in n.value.then, to: ref sb)
+                    spans(in n.value.elseKeyword, to: ref sb)
+                case .unlessStmt(let n):
+                    sb.append($"UnlessStmt {n.value.span.start} {n.value.span.end}\n")
+                    spans(in n.value.body, to: ref sb)
+                case .guardedStmt(let n):
+                    sb.append($"GuardedStmt {n.value.span.start} {n.value.span.end}\n")
+                    spans(in n.value.statement, to: ref sb)
+                case .whileStmt(let n):
+                    sb.append($"WhileStmt {n.value.span.start} {n.value.span.end}\n")
+                    spans(in n.value.body, to: ref sb)
+                case .doWhileStmt(let n):
+                    sb.append($"DoWhileStmt {n.value.span.start} {n.value.span.end}\n")
+                    spans(in n.value.body, to: ref sb)
+                case .whileLetStmt(let n):
+                    sb.append($"WhileLetStmt {n.value.span.start} {n.value.span.end}\n")
+                    spans(in n.value.body, to: ref sb)
+                case .forStmt(let n):
+                    sb.append($"ForStmt {n.value.span.start} {n.value.span.end}\n")
+                    spans(in n.value.body, to: ref sb)
+                case .labeledStmt(let n):
+                    sb.append($"LabeledStmt {n.value.span.start} {n.value.span.end}\n")
+                    spans(in n.value.statement, to: ref sb)
+                case .switchStmt(let n):
+                    sb.append($"SwitchStmt {n.value.span.start} {n.value.span.end}\n")
+                    for sec in n.value.sections {
+                        for st in sec.statements { spans(in st, to: ref sb) }
+                    }
+                case .deferStmt(let n):
+                    sb.append($"DeferStmt {n.value.span.start} {n.value.span.end}\n")
+                    spans(in n.value.body, to: ref sb)
+                case .assertStmt(let n):
+                    sb.append($"AssertStmt {n.value.span.start} {n.value.span.end}\n")
+                case .contextStmt(let n):
+                    sb.append($"ContextStmt {n.value.span.start} {n.value.span.end}\n")
+                    spans(in n.value.body, to: ref sb)
+                case .emptyStmt(let n):
+                    sb.append($"EmptyStmt {n.value.span.start} {n.value.span.end}\n")
+                case .errorStmt(let n):
+                    sb.append($"ErrorStmt {n.value.span.start} {n.value.span.end}\n")
+                case .none:
+                    return
+            }
+        }
+
+        i32 main(ReadOnlySpan<string> args) {
+            let keywords = Keywords.build()
+            var bytes = Io.readFile(args[0]) catch return 4
+            var p = Parser.create(lexer.lex(SourceText.create(args[0], from: move bytes), by: keywords))
+            var unit = parseCompilationUnit(ref p)
+            var sb = StrBuf()
+            for d in unit.members {
+                switch d {
+                    case .functionDecl(let f):
+                        spans(in f.value.body, to: ref sb)
+                    default:
+                        continue
+                }
+            }
+            Io.stdout.write(sb.finish())
+            return 0
+        }
+        """;
+
+    private static readonly Lazy<(string? Path, string Error)> StatementSpans = new(() =>
+        BuildParser(Directory.GetFiles(ParserDir, "*.byn").Where(f => Path.GetFileName(f) != "main.byn").Order(StringComparer.Ordinal)
+            .Select(f => SourceText.FromFile(f))
+            .Append(SourceText.FromString(Path.Combine(ParserDir, "statement-spans-test.byn"), StatementSpansProgram)).ToList()));
+
+    /// <summary>Every statement under the C# function bodies as <c>kind start end</c>, children after their parent
+    /// in the order <see cref="StatementSpansProgram"/> visits them.</summary>
+    private static void CSharpStatementSpans(Stmt? s, List<string> lines)
+    {
+        if (s is null) return;
+        lines.Add($"{s.GetType().Name} {s.Span.Start} {s.Span.End}");
+        switch (s)
+        {
+            case BlockStmt b: foreach (var st in b.Statements) CSharpStatementSpans(st, lines); break;
+            case IfStmt i: CSharpStatementSpans(i.Then, lines); CSharpStatementSpans(i.Else, lines); break;
+            case UnlessStmt u: CSharpStatementSpans(u.Body, lines); break;
+            case GuardedStmt g: CSharpStatementSpans(g.Statement, lines); break;
+            case WhileStmt w: CSharpStatementSpans(w.Body, lines); break;
+            case DoWhileStmt d: CSharpStatementSpans(d.Body, lines); break;
+            case WhileLetStmt w: CSharpStatementSpans(w.Body, lines); break;
+            case ForStmt f: CSharpStatementSpans(f.Body, lines); break;
+            case LabeledStmt l: CSharpStatementSpans(l.Statement, lines); break;
+            case SwitchStmt sw: foreach (var st in sw.Sections.SelectMany(sec => sec.Statements)) CSharpStatementSpans(st, lines); break;
+            case DeferStmt d: CSharpStatementSpans(d.Body, lines); break;
+            case ContextStmt c: CSharpStatementSpans(c.Body, lines); break;
+        }
+    }
+
+    /// <summary>R7: with statement attributes, every statement's span from the port equals the C# span, including
+    /// statements ended by <c>;</c> and by a rejected postfix condition; the expected spans come from the C# tree.</summary>
+    [Theory]
+    [InlineData("diag/statement-attribute.byn")]
+    [InlineData("diag/statement-attribute-because.byn")]
+    [InlineData("diag/statement-attribute-semicolon.byn")]
+    public void StatementSpansMatchTheCSharpParser(string name)
+    {
+        var (path, error) = StatementSpans.Value;
+        if (path is null) Assert.Fail($"the statement spans program did not build:\n{error}");
+        var input = Path.Combine(Golden.CasesRoot, name);
+        var tree = SyntaxTree.Parse(SourceText.FromFile(input));
+        var expected = new List<string>();
+        foreach (var f in tree.Root.Members.OfType<FunctionDecl>()) CSharpStatementSpans(f.Body, expected);
+        var (exit, stdout, stderr) = Run(path!, input);
+        output.WriteLine(stderr);
+        Assert.Equal(0, exit);
+        Assert.Equal(string.Join("", expected.Select(l => l + "\n")), stdout);
+    }
+
     public static TheoryData<string> ParseCases => Golden.Cases("parse");
 
     /// <summary>The <c>diag/</c> cases whose <c>.diag</c> holds a parser diagnostic; each <c>.byn</c> is parsed alone.</summary>
