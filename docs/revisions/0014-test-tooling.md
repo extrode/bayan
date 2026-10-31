@@ -1,6 +1,6 @@
 # 0014 — Test tooling: mutation operators, coverage, `@unobservable`, statement attributes
 
-Status: draft (spec 013, 2026-10-31), for the user to accept.
+Status: accepted 2026-10-31 (user decision on spec 013); applied to SPEC by spec 013's docs task.
 
 ## Problem
 
