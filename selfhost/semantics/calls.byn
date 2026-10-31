@@ -311,7 +311,7 @@ void bindArgumentsForRecovery(ref Binder b, through ref Ctx c, for in parser.Cal
         let _ = bindExprOrType(ref b, through: ref c, for: in a.value)
     }
 }
-// mutation-exempt: Q620 through 320
+// mutation-exempt: Q732 through 320
 bool t20IsLambda(parser.Expr e) {
     switch e {
         case .lambdaExpr(_): return true
@@ -825,7 +825,7 @@ BExpr t20BindArgumentValue(ref Binder b, through ref Ctx c, for parser.Argument 
     var value: BExpr = -1
     if (early is { } e) {
         let _ = b.prebound.remove(arg.span.start)
-        value = e // mutation-exempt: Q620 through 831
+        value = e // mutation-exempt: Q732 through 831
     } else if type != -1 && kindOf(type) == .function && c.functionTypes[typeIndex(type)].parameters.length == 1 && !t20IsLambda(arg.value)
         && (t20MentionedIt(c, from: b.file, for: arg.value) is { } it) {
         value = t20BindIt(ref b, through: ref c, for: arg.value, by: it, as: type)
@@ -845,7 +845,7 @@ BExpr t20BindArgumentValue(ref Binder b, through ref Ctx c, for parser.Argument 
 /// BinderCalls.cs:547 BindIt: an argument that mentions `it` where a one-parameter function type is expected: a lambda
 /// whose parameter is `it`. Inside another, or inside a `requires` rule where `it` is the checked value, it is BYN2029 (R7, Q361).
 BExpr t20BindIt(ref Binder b, through ref Ctx c, for parser.Expr e, by TextSpan it, as Type type) {
-    // mutation-exempt: Q620 through 861
+    // mutation-exempt: Q732 through 861
     if b.itDepth > 0 {
         // Outside any lambda, the `it` in scope is a `requires` rule's checked value.
         report(ref b, through: ref c, for: .nestedIt, at: it, by: ("", "", "", "", ""),
