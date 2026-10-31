@@ -1,0 +1,12 @@
+i32 f(i32 x) {
+    var y = x
+    @unobservable because "rounding is invisible"
+    y += 1;
+    @unobservable because "the block only reads"
+    { } if x > 0
+    @unobservable(boundary) because "x is clamped by the caller"
+    if x > 100 { } unless y < 0;
+    @unobservable because "kept"
+    return y if x > 0;
+    return y
+}
