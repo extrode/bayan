@@ -149,6 +149,11 @@ struct Work {
     TextSpan span
     i64 declIndex = -1
     i64 memberIndex = -1
+    /// C# `AfterMembersDeclared` wraps the check in `Instantiating(site, span, check)` when `_instantiationSite` is
+    /// set (Compilation.cs:1550): `atSite` says it was, `siteFile`/`siteSpan` hold that site (Q716, dispatcher 2026-10-31).
+    bool atSite = false
+    FileId siteFile = -1
+    TextSpan siteSpan = TextSpan { start: 0, length: 0 }
 }
 
 /// A `break`/`continue` target: a label if it has one, and whether it belongs to a loop.
@@ -552,7 +557,7 @@ struct Binder {
     Map<FuncId, i64> lambdaCount
     i64 itDepth = 0
     i64 held = 0
-    /// The `out` seeds of a `try`, and the constraints on them.
+    /// C# `_seeds`: the locals a re-bind starts from (`bindFunction`'s second pass), and their types.
     List<(i64, Type)> seeds
     /// Flow facts keyed by the `LocalDecl` span start.
     Map<i64, i64> pending
@@ -575,6 +580,13 @@ struct Binder {
     /// The C# `_types` map (see `typeArgs`), taken once by T15's `t15CaptureTypes`; `typesCaptured` says whether it was.
     Map<string, Type> types = []
     bool typesCaptured = false
+    /// The C# `Scope` identities, parallel to `scopes` (innermost last); facts keyed by a scope compare these (Q715).
+    List<i64> scopeIds = []
+    /// The identity the next opened scope takes.
+    i64 nextScopeId = 0
+    /// The C# `_firstStatement`, by its file and full span (Q719); `firstStatementFile` is -1 for none.
+    FileId firstStatementFile = -1
+    TextSpan firstStatementSpan = TextSpan { start: 0, length: 0 }
     // ── T16 state
     // ── T17 state
     // ── T18 state
