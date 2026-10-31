@@ -177,12 +177,46 @@ public sealed class CEmitter
 
     /// <summary>
     /// A <c>--mutate</c> build's selector: <c>BAYAN_MUTANT</c> read once at startup, the mutant that runs; unset, empty or
-    /// not a decimal integer is 0, no mutant (spec 013 R2).
+    /// not a decimal integer is 0, no mutant (spec 013 R2). With <c>BAYAN_SITE_REACH</c> set, every site whose switch the
+    /// run evaluates is written, one id per line, to that path at exit (R8: the mutant-0 run records what each test reaches).
     /// </summary>
     private const string MutantSelector = """
+        #include <stdio.h>
+
         static int64_t byn_mutant;
+        static const char* byn_reach_path;
+        static uint8_t* byn_reach_bits;
+        static int64_t byn_reach_cap;
+
+        static void byn_reach_write(void) {
+            FILE* f = fopen(byn_reach_path, "w");
+            if (f == NULL) return;
+            for (int64_t i = 0; i < byn_reach_cap; i++)
+                if (byn_reach_bits[i]) fprintf(f, "%lld\n", (long long)i);
+            fclose(f);
+        }
+
+        static bool byn_mutant_is(int64_t id) {
+            if (byn_reach_path != NULL && id >= 0 && id < INT32_MAX) {
+                if (id >= byn_reach_cap) {
+                    int64_t cap = id + 64;
+                    uint8_t* bits = (uint8_t*)realloc(byn_reach_bits, (size_t)cap);
+                    if (bits == NULL) abort();
+                    memset(bits + byn_reach_cap, 0, (size_t)(cap - byn_reach_cap));
+                    byn_reach_bits = bits;
+                    byn_reach_cap = cap;
+                }
+                byn_reach_bits[id] = 1;
+            }
+            return byn_mutant == id;
+        }
 
         static void byn_mutant_read(void) {
+            const char* r = getenv("BAYAN_SITE_REACH");
+            if (r != NULL && *r != 0) {
+                byn_reach_path = r;
+                atexit(byn_reach_write);
+            }
             const char* s = getenv("BAYAN_MUTANT");
             int64_t n = 0;
             if (s == NULL || *s == 0) return;
@@ -1601,7 +1635,7 @@ internal sealed class FunctionEmitter
             case LUnionTag u:
                 return $"{Expr(u.Union)}.tag";
             case LMutantIs m:
-                return $"(byn_mutant == {m.Id.ToString(CultureInfo.InvariantCulture)})";
+                return $"byn_mutant_is({m.Id.ToString(CultureInfo.InvariantCulture)})";
             case LErrorCode code:
                 return $"{Expr(code.Error)}.code";
             case LErrorField f:

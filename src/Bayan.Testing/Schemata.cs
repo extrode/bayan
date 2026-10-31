@@ -9,8 +9,8 @@ using Bayan.Syntax.Text;
 
 namespace Bayan.Testing;
 
-/// <summary>A mutant of a schemata build: its id in this binary, and whether it is in the schema (it re-bound cleanly).</summary>
-public sealed record SchemaSite(int Id, MutationSite Site, bool Emitted);
+/// <summary>A mutant of a schemata build: its id in this binary, whether it is in the schema (it re-bound cleanly), and the reason of the <c>@unobservable</c> mark that covers it, if any.</summary>
+public sealed record SchemaSite(int Id, MutationSite Site, bool Emitted, string? Unobservable = null);
 
 /// <summary>
 /// The mutants of one <c>--mutate</c> build (spec 013 R2): every site with its id, the candidates not emitted per operator
@@ -39,6 +39,7 @@ public sealed record Schema(IReadOnlyList<SchemaSite> Sites, IReadOnlyDictionary
                 w.WriteString("original", s.Site.Original);
                 w.WriteString("mutated", s.Site.Mutated);
                 if (!s.Emitted) w.WriteBoolean("emitted", false);
+                if (s.Unobservable is not null) w.WriteString("unobservable", s.Unobservable);
                 w.WriteEndObject();
             }
             w.WriteEndArray();
@@ -67,7 +68,7 @@ public static class Schemata
         {
             var emitted = Rebinds(c, site);
             if (!emitted) notEmitted[site.Operator]++;
-            sites.Add(new SchemaSite(sites.Count + 1, site, emitted));
+            sites.Add(new SchemaSite(sites.Count + 1, site, emitted, MarkOf(c, site)));
         }
         var bySyntax = new Dictionary<Node, List<SchemaSite>>(ReferenceEqualityComparer.Instance);
         foreach (var s in sites.Where(s => s.Emitted))
@@ -94,6 +95,18 @@ public static class Schemata
                 }
             }
         return new Schema(sites, notEmitted, switches);
+    }
+
+    /// <summary>The reason of the first <c>@unobservable</c> mark whose statement holds the site and whose operator argument, if any, is the site's.</summary>
+    private static string? MarkOf(Compilation c, MutationSite site)
+    {
+        if (c.Unobservable.Count == 0) return null;
+        var start = Offset(site.Function.File!.Source, site.Line, site.Column);
+        var end = start + Encoding.UTF8.GetByteCount(site.Original);
+        foreach (var m in c.Unobservable)
+            if (m.File == site.File && (m.Operator is null || m.Operator == site.Operator) && m.Span.Start <= start && end <= m.Span.Start + m.Span.Length)
+                return m.Reason;
+        return null;
     }
 
     /// <summary>
