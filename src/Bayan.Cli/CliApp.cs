@@ -722,7 +722,7 @@ public static class CliApp
             Toolchain.ReplaceFile(Path.Combine(testDir, "results.json"), temp => File.WriteAllText(temp, json));
         }
         var gated = map is not null && WriteCoverage(o, compiled, map, hits, timedOut, buildSeconds, total.Elapsed.TotalSeconds, coverageDir!, stdout, stderr);
-        return failed > 0 ? ExitTestFailure : gated ? ExitFailure : ExitOk;
+        return failed > 0 || gated ? ExitTestFailure : ExitOk;
     }
 
     /// <summary>
@@ -779,7 +779,7 @@ public static class CliApp
             var counts = Enum.GetValues<Testing.MutantStatus>().Select(s => (object)result.Mutants.Count(m => m.Status == s)).ToArray();
             stdout.WriteLine(Messages.MutateTotals.Text(counts));
             if (compiled.Manifest?.MinMutation is not { } min) return ExitOk;
-            return ReportGates(Testing.Gates.Mutation(Testing.QualityReport.Mutation("bayan test --mutate", result, schema, 0, [], 0), min), stderr) ? ExitFailure : ExitOk;
+            return ReportGates(Testing.Gates.Mutation(Testing.QualityReport.Mutation("bayan test --mutate", result, schema, 0, [], 0), min), stderr) ? ExitTestFailure : ExitOk;
         }
         finally
         {
@@ -847,7 +847,7 @@ public static class CliApp
         stdout.Write(report.Summary([]));
         Directory.CreateDirectory(reportDir);
         File.WriteAllText(Path.Combine(reportDir, "bayan-quality.json"), report.Json());
-        return ReportGates(Testing.Gates.Mutation(report, minMutation), stderr) ? ExitFailure : ExitOk;
+        return ReportGates(Testing.Gates.Mutation(report, minMutation), stderr) ? ExitTestFailure : ExitOk;
     }
 
     /// <summary>Prints a line per failed gate, each followed by what is missing; whether any gate failed.</summary>

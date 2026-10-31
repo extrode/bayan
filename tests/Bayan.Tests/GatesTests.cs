@@ -92,14 +92,14 @@ public sealed class GatesTests
     }
 
     [Fact]
-    public void MutateBelowTheMinimumExitsOneAndNamesTheSurvivor()
+    public void MutateBelowTheMinimumFailsTheTestRunAndNamesTheSurvivor()
     {
         if (OperatingSystem.IsWindows()) return;
         var app = Project("mutate-below", "mutation: 100");
         var stdout = new StringWriter();
         var stderr = new StringWriter();
         var exit = CliApp.Run(["test", "--mutate", "--run", "true", app], stdout, stderr);
-        Assert.Equal(CliApp.ExitFailure, exit);
+        Assert.Equal(CliApp.ExitTestFailure, exit);
         Assert.Contains("bayan: mutation 0% < 100%", stderr.ToString());
         Assert.Matches(@"survived mutant: \S+:\d+:\d+ \w+ `.*` -> `.*`", stderr.ToString());
     }
