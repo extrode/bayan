@@ -5,16 +5,15 @@ using Bayan.Semantics.Symbols;
 using Bayan.Syntax.Ast;
 using Bayan.Syntax.Diagnostics;
 using SourceText = Bayan.Syntax.Text.SourceText;
-using TextSpan = Bayan.Syntax.Text.TextSpan;
-using OptionalType = Bayan.Semantics.Symbols.OptionalType;
 
 namespace Bayan.Tests;
 
 /// <summary>
 /// T18: <c>selfhost/semantics/express2.byn</c> against the C# <c>BinderExpressions</c> (BinderExpressions.cs ~600-1155).
-/// One world source is compiled by both sides: the C# side via <c>Compilation.Create</c> plus reflection on the C#
-/// <c>Binder</c>, the Bayan side via <c>SelfhostSemanticsHarness.RunSections</c>. Every expected line is computed
-/// from the C# implementation; none is typed.
+/// One source, <see cref="Source"/>, is compiled by both sides: the C# side via <c>Compilation.Create</c> plus
+/// reflection on the C# <c>Binder</c>, the Bayan side via <c>loadModule</c> + <c>declare</c> in the generated main run
+/// by <c>SelfhostSemanticsHarness.RunSections</c>. Each case binds one <c>let</c> initializer of that source on both
+/// sides; every expected line is computed from the C#.
 /// </summary>
 public sealed class SelfhostSemanticsT18Tests
 {
@@ -23,12 +22,10 @@ public sealed class SelfhostSemanticsT18Tests
     private const string Source = """
         const k: i64 = 42
         const arr: i32[2] = [1, 2]
-        const msg: string = "hello"
 
         enum Color {
             red
             green
-            blue
         }
 
         enum Status(i32 code) {
@@ -41,11 +38,6 @@ public sealed class SelfhostSemanticsT18Tests
             badInput
         }
 
-        union error OtherError {
-            timeout
-            badInput
-        }
-
         union Shape {
             circle(f64 radius)
             point
@@ -54,6 +46,7 @@ public sealed class SelfhostSemanticsT18Tests
         struct Point {
             i32 x = 10
             i32 y = 20
+            private i32 hidden = 0
             i32 twice => 20
             static Point origin() => Point { x: 0, y: 0 }
             void clear() {
@@ -61,10 +54,11 @@ public sealed class SelfhostSemanticsT18Tests
             void m() {
                 let a = x
                 let b = twice
-                clear()
+                let c = clear
+                let d = origin
             }
             static void s() {
-                let p = 0
+                let e = x
             }
         }
 
@@ -72,60 +66,103 @@ public sealed class SelfhostSemanticsT18Tests
             f64 area()
         }
 
-        void runGeneric<T>(T item) where T : IHasArea {
-            let a = item.area()
+        void probes(Point p, Shape s, string str, List<i32> list, i32[2] fixed, Map<string, i32> map, Point? maybe, Status st, dyn IHasArea d, i64 n, (i32 a, i32 b) tup, (Shape a, i32 b) ts, dyn ref IHasArea dr) {
+            let m1 = MyError.notFound
+            let m2 = MyError.badVariant
+            let m3 = Color.red
+            let m4 = Shape.point
+            let m5 = Point.origin
+            let m6 = Point.nope
+            let m7 = Io.stdout
+            let m8 = string.from
+            let m9 = i32.nope
+            let m10 = p?.x
+            let m11 = nope.x
+            let m12 = Color.blue
+            let m13 = Hex.encode
+            let m14 = Symbol.intern
+            let m15 = Utf8.decode
+            let m16 = string.tryFrom
+            let m17 = string.nope
+            let u1 = main.k
+            let u2 = main.probes
+            let u3 = main.Point
+            let u4 = main.nope
+            let v1 = p.x
+            let v2 = p.twice
+            let v3 = p.clear
+            let v4 = p.hidden
+            let v5 = s.radius
+            let v6 = st.code
+            let v7 = maybe.x
+            let v8 = str.length
+            let v9 = str.matches
+            let v10 = d.area
+            let v11 = p.nope
+            let v12 = list.add
+            let v14 = n.toString
+            let v15 = str.offset
+            let v16 = fixed.toList
+            let v17 = tup.a
+            let v18 = fixed.length
+            let v19 = n.toHex
+            let v20 = n.toBinary
+            let v21 = ts.a.radius
+            let v22 = dr.nope
+            let t1: Color = .red
+            let t2: MyError = .notFound
+            let t3: MyError = .nope
+            let t4: Shape = .point
+            let t5: Point = .origin
+            let t6 = .x
+            let t7: Color? = .green
+            let t8: Color = .blue
+            let i1 = str[0]
+            let i2 = list[0]
+            let i3 = fixed[^1]
+            let i4 = fixed[5]
+            let i5 = map["a"]
+            let i6 = n[0]
+            let i7 = list[str]
+            let i8 = str[1..2]
+            let i9 = nope[0]
+            let s1 = $"a{n}b{{c}}"
+            let s2 = "plain"
         }
-
-        // names: Io Hex Symbol Utf8 string test badVariant nope stdout encode intern decode from value length take matches toString add offset
         """;
+
+    /// <summary>(op, declaration, member or "-", local): bind the initializer of <c>let local</c> in that body.</summary>
+    public static readonly (string Op, string Decl, string Member, string Name)[] Cases =
+    [
+        ("this", "Point", "m", "a"), ("this", "Point", "m", "b"), ("this", "Point", "m", "c"), ("this", "Point", "m", "d"),
+        ("this", "Point", "s", "e"),
+        ("member", "probes", "-", "m1"), ("member", "probes", "-", "m2"), ("member", "probes", "-", "m3"),
+        ("member", "probes", "-", "m4"), ("member", "probes", "-", "m5"), ("member", "probes", "-", "m6"),
+        ("member", "probes", "-", "m7"), ("member", "probes", "-", "m8"), ("member", "probes", "-", "m9"),
+        ("member", "probes", "-", "m10"), ("member", "probes", "-", "m11"), ("member", "probes", "-", "m12"),
+        ("member", "probes", "-", "m13"), ("member", "probes", "-", "m14"), ("member", "probes", "-", "m15"),
+        ("member", "probes", "-", "m16"), ("member", "probes", "-", "m17"),
+        ("module", "probes", "-", "u1"), ("module", "probes", "-", "u2"), ("module", "probes", "-", "u3"),
+        ("module", "probes", "-", "u4"),
+        ("member", "probes", "-", "v1"), ("member", "probes", "-", "v2"), ("member", "probes", "-", "v3"),
+        ("member", "probes", "-", "v4"), ("member", "probes", "-", "v5"), ("member", "probes", "-", "v6"),
+        ("member", "probes", "-", "v7"), ("member", "probes", "-", "v8"), ("member", "probes", "-", "v9"),
+        ("member", "probes", "-", "v10"), ("member", "probes", "-", "v11"), ("member", "probes", "-", "v12"),
+        ("member", "probes", "-", "v14"), ("member", "probes", "-", "v15"), ("member", "probes", "-", "v16"),
+        ("member", "probes", "-", "v17"), ("member", "probes", "-", "v18"), ("member", "probes", "-", "v19"),
+        ("member", "probes", "-", "v20"), ("member", "probes", "-", "v21"),
+        ("member", "probes", "-", "v22"),
+        ("target", "probes", "-", "t1"), ("target", "probes", "-", "t2"), ("target", "probes", "-", "t3"),
+        ("target", "probes", "-", "t4"), ("target", "probes", "-", "t5"), ("target", "probes", "-", "t6"),
+        ("target", "probes", "-", "t7"), ("target", "probes", "-", "t8"),
+        ("index", "probes", "-", "i1"), ("index", "probes", "-", "i2"), ("index", "probes", "-", "i3"),
+        ("index", "probes", "-", "i4"), ("index", "probes", "-", "i5"), ("index", "probes", "-", "i6"),
+        ("index", "probes", "-", "i7"), ("index", "probes", "-", "i8"), ("index", "probes", "-", "i9"),
+        ("interp", "probes", "-", "s1"), ("interp", "probes", "-", "s2"),
+    ];
 
     private static readonly System.Type BinderType =
         typeof(Compilation).Assembly.GetType("Bayan.Semantics.Binding.Binder") ?? throw new InvalidOperationException("Binder");
-
-    private static TextSpan S(string needle, int skip = 0)
-    {
-        var i = -1;
-        for (var k = 0; k <= skip; k++) i = Source.IndexOf(needle, i + 1, StringComparison.Ordinal);
-        return new TextSpan(i, needle.Length);
-    }
-
-    private sealed class Oracle
-    {
-        public Compilation C = null!;
-        public FileContext File = null!;
-        public int Mark;
-
-        public static Oracle Of()
-        {
-            var path = PathOf("main");
-            var c = Compilation.Create([SourceText.FromString(path, Source)], packageRoot: Dir, options: new CompilationOptions(Library: true));
-            if (c.Diagnostics.HasErrors)
-            {
-                var errs = string.Join("\n", c.Diagnostics.Items.Select(d => $"{d.Code} {d.Span.Start}: {d.Message}"));
-                throw new InvalidOperationException($"Compilation failed:\n{errs}");
-            }
-            var file = c.Modules.SelectMany(m => m.Files).First(f => f.Source.Path == path);
-            return new Oracle { C = c, File = file, Mark = c.Diagnostics.Items.Count };
-        }
-
-        public ModuleSymbol Module => File.Module;
-
-        public object Binder(FunctionSymbol? fn = null, StructSymbol? container = null) =>
-            Activator.CreateInstance(BinderType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
-                [C, File, fn, container, null, null], null)!;
-
-        public IEnumerable<string> NewDiagnostics()
-        {
-            var items = C.Diagnostics.Items;
-            var lines = new List<string>();
-            for (var i = Mark; i < items.Count; i++)
-                foreach (var line in Diag(items[i]).Split('\n')) lines.Add(line);
-            Mark = items.Count;
-            return lines;
-        }
-    }
-
-    private static string PathOf(string name) => Path.Combine(Dir, name + ".byn");
 
     private static object? Call(object? binder, string name, params object?[] args)
     {
@@ -154,17 +191,11 @@ public sealed class SelfhostSemanticsT18Tests
     {
         BoundLiteral => "literal", BoundSymbolLiteral => "symbolLiteral", BoundDefault => "defaultValue",
         BoundLocal => "local", BoundThis => "thisRef", BoundField => "field", BoundTupleElement => "tupleElement",
-        BoundCall => "call", BoundBuiltinCall => "builtinCall", BoundUnary => "unary", BoundBinary => "binary",
-        BoundConversion => "conversion", BoundTryFrom => "tryFrom", BoundConditional => "conditional",
-        BoundCoalesce => "coalesce", BoundStructLiteral => "structLiteral", BoundWith => "withExpr",
-        BoundTuple => "tuple", BoundCollection => "collection", BoundSpread => "spread", BoundIndex => "index",
-        BoundSlice => "slice", BoundRange => "range", BoundIs => "isExpr", BoundSwitchExpr => "switchExpr",
-        BoundInterpolated => "interpolated", BoundMove => "moveExpr", BoundTry => "tryExpr", BoundCatch => "catchExpr",
-        BoundJump => "jump", BoundBlockExpr => "blockExpr", BoundErrorVariant => "errorVariant",
-        BoundEnumMember => "enumMember", BoundUnionNew => "unionNew", BoundEnumValues => "enumValues",
-        BoundStaticArray => "staticArray", BoundStackalloc => "stackalloc", BoundErrorExpr => "errorExpr",
-        BoundTypeRef => "typeRef", BoundModuleRef => "moduleRef", BoundLambda => "lambda",
-        _ => node.GetType().Name.StartsWith("Bound") ? char.ToLowerInvariant(node.GetType().Name[5]) + node.GetType().Name[6..] : node.GetType().Name,
+        BoundCall => "call", BoundBuiltinCall => "builtinCall", BoundIndex => "index", BoundSlice => "slice",
+        BoundErrorVariant => "errorVariant", BoundEnumMember => "enumMember", BoundUnionNew => "unionNew",
+        BoundEnumValues => "enumValues", BoundStaticArray => "staticArray", BoundErrorExpr => "errorExpr",
+        BoundTypeRef => "typeRef", BoundModuleRef => "moduleRef",
+        _ => char.ToLowerInvariant(node.GetType().Name[5]) + node.GetType().Name[6..],
     };
 
     private static string Recv(BoundExpr? r) => r switch
@@ -174,10 +205,10 @@ public sealed class SelfhostSemanticsT18Tests
 
     private static object? Prop(BoundNode node, string name) => node.GetType().GetProperty(name)?.GetValue(node);
 
-    private static void DumpNode(List<string> lines, BoundNode? node)
+    /// <summary>kind|type|receiver|callee|variant|index|fromEnd|span: every field a port bug could change.</summary>
+    private static string DumpNode(BoundNode? node)
     {
-        if (node is null) { lines.Add("null"); return; }
-        var kind = NodeKindName(node);
+        if (node is null) return "null";
         var type = node is BoundExpr e ? e.Type.DisplayName : "-";
         var span = $"{node.Syntax.Span.Start}:{node.Syntax.Span.Length}";
         var recv = "-"; var callee = "-"; var variant = "-"; var idx = "-"; var fromEnd = "-";
@@ -186,7 +217,7 @@ public sealed class SelfhostSemanticsT18Tests
             case BoundField f: recv = Recv(f.Receiver); idx = f.Field.Name; break;
             case BoundTupleElement t: recv = Recv(t.Receiver); idx = t.Index.ToString(); break;
             case BoundCall c: callee = c.Function.Name; recv = Recv(c.Receiver); break;
-            case BoundBuiltinCall b: callee = b.Member.ToString(); recv = Recv(b.Receiver); break;
+            case BoundBuiltinCall b: callee = char.ToLowerInvariant(b.Member.ToString()[0]) + b.Member.ToString()[1..]; recv = Recv(b.Receiver); break;
             case BoundLocal l: callee = l.Local.Name; break;
             case BoundErrorVariant v: variant = v.Variant.Name; break;
             case BoundEnumMember m: callee = m.Member.Name; break;
@@ -196,7 +227,7 @@ public sealed class SelfhostSemanticsT18Tests
             case BoundUnionField uf: variant = uf.Variant.Name; idx = uf.Index.ToString(); recv = Recv(uf.Receiver); break;
             case BoundErrorField ef: variant = ef.Variant.Name; idx = ef.Index.ToString(); recv = Recv(ef.Receiver); break;
             case BoundIndex i: recv = Recv(i.Target); fromEnd = i.FromEnd ? "t" : "f"; break;
-            case BoundSlice s: recv = Recv(s.Target); fromEnd = $"{s.StartFromEnd}:{s.EndFromEnd}"; break;
+            case BoundSlice s: recv = Recv(s.Target); fromEnd = $"{(s.StartFromEnd ? "true" : "false")}:{(s.EndFromEnd ? "true" : "false")}"; break;
             case BoundTypeRef t: callee = t.Referenced.DisplayName; break;
             case BoundModuleRef m: callee = m.Module.Name; break;
         }
@@ -214,349 +245,85 @@ public sealed class SelfhostSemanticsT18Tests
                 recv = Recv((BoundExpr?)Prop(node, "Receiver"));
                 break;
         }
-        lines.Add($"{kind}|{type}|{recv}|{callee}|{variant}|{idx}|{fromEnd}|{span}");
+        return $"{NodeKindName(node)}|{type}|{recv}|{callee}|{variant}|{idx}|{fromEnd}|{span}";
     }
 
-    private static Name N(string text) => new(S(text), text);
-    private static NameExpr Nx(string text) => new(new TextSpan(0, 10), N(text), []);
-    private static MemberExpr Mx(string full)
+    /// <summary>The C# lines for one case: the node dump (or the string) then the diagnostics it reported.</summary>
+    private static List<string> Expected(string op, string decl, string member, string name)
     {
-        var dot = full.IndexOf('.');
-        var target = full[..dot];
-        var member = full[(dot + 1)..];
-        return new MemberExpr(new TextSpan(0, 10), new NameExpr(S(target), new Name(S(target), target), []),
-            new Name(S(member), member), false);
+        var path = Path.Combine(Dir, "main.byn");
+        var c = Compilation.Create([SourceText.FromString(path, Source + "\n")], packageRoot: Dir, options: new CompilationOptions(Library: true));
+        var file = c.Modules.SelectMany(m => m.Files).First(f => f.Source.Path == path);
+        var mark = c.Diagnostics.Items.Count;
+        var unit = file.Tree.Root;
+        FunctionDecl fd;
+        object b;
+        StructSymbol? owner = null;
+        if (member == "-")
+        {
+            fd = unit.Members.OfType<FunctionDecl>().First(f => f.Name.Text == decl);
+            b = Activator.CreateInstance(BinderType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+                [c, file, null, null, null, null], null)!;
+            foreach (var p in fd.Params) Call(b, "DeclareLocal", p.Name, Call(b, "ResolveType", p.Type), LocalKind.Parameter);
+        }
+        else
+        {
+            var sd = unit.Members.OfType<StructDecl>().First(s => s.Name.Text == decl);
+            fd = sd.Members.OfType<FunctionDecl>().First(f => f.Name.Text == member);
+            owner = file.Module.Structs.First(s => s.Name == decl);
+            var fn = owner.Methods.First(m => m.Name == member);
+            b = Activator.CreateInstance(BinderType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+                [c, file, fn, owner, null, null], null)!;
+        }
+        var ld = fd.Body!.Statements.OfType<LocalDecl>().First(l => l.Name.Text == name);
+        var init = ld.Init!;
+        var lines = new List<string>();
+        switch (op)
+        {
+            case "this":
+                var n = (NameExpr)init;
+                lines.Add(DumpNode((BoundNode?)Call(b, "BindImplicitThisMember", n, Call(b, "LookupMember", owner, n.Name.Text))));
+                break;
+            case "member": lines.Add(DumpNode((BoundNode?)Call(b, "BindMember", init))); break;
+            case "module": lines.Add(DumpNode((BoundNode?)Call(b, "BindModuleMember", init, file.Module))); break;
+            case "target":
+                var expected = ld.Type is null ? null : Call(b, "ResolveType", ld.Type);
+                lines.Add(DumpNode((BoundNode?)Call(b, "BindTargetMember", init, expected)));
+                break;
+            case "index": lines.Add(DumpNode((BoundNode?)Call(b, "BindIndex", init))); break;
+            case "interp": lines.Add((string)Call(b, "InterpolationSource", init)!); break;
+        }
+        var items = c.Diagnostics.Items;
+        for (var i = mark; i < items.Count; i++) lines.AddRange(Diag(items[i]).Split('\n'));
+        return lines;
     }
-    private static TargetMemberExpr Tm(string member) => new(new TextSpan(0, 10), new Name(S(member), member));
-    private static LiteralExpr Str(string text) => new(S(text), LiteralKind.String, text, null);
 
     private static readonly Lazy<Dictionary<string, List<string>>> Sections = new(() =>
+        SelfhostSemanticsHarness.RunSections(MainSource(), [.. Cases.SelectMany(k => new[] { k.Op, k.Decl, k.Member, k.Name })]));
+
+    public static TheoryData<string> CaseNames()
     {
-        Directory.CreateDirectory(Dir);
-        return SelfhostSemanticsHarness.RunSections(MainSource());
-    });
-
-    private static List<string> E(Oracle o, BoundNode? node)
-    {
-        var expected = new List<string>();
-        DumpNode(expected, node);
-        expected.AddRange(o.NewDiagnostics());
-        return expected;
-    }
-    private static void AssertMatches(string section, List<string> expected) =>
-        SelfhostSemanticsHarness.AssertSection(Sections.Value, section, expected);
-
-    private static FieldInfo CalleeOf => BinderType.GetField("_calleeOf", BindingFlags.Instance | BindingFlags.NonPublic)!;
-    private static FieldInfo Narrowed => BinderType.GetField("_narrowed", BindingFlags.Instance | BindingFlags.NonPublic)!;
-
-    // ── Tests ────────────────────────────────────────────────────────────────
-
-    [Fact] public void ConstantRefMatches() { var o = Oracle.Of(); var b = o.Binder(); var k = o.Module.Constants["k"]; AssertMatches("constantRef", E(o, (BoundNode)Call(b, "ConstantRef", k.Decl, k)!)); }
-    [Fact] public void ConstantRefArrayMatches() { var o = Oracle.Of(); var b = o.Binder(); var arr = o.Module.Constants["arr"]; AssertMatches("constantRefArray", E(o, (BoundNode)Call(b, "ConstantRef", arr.Decl, arr)!)); }
-
-    [Fact]
-    public void ConstantLiteralSymbolMatches()
-    {
-        var o = Oracle.Of();
-        var node = (BoundNode)Call(o.Binder(), "ConstantLiteral", N("k"), BuiltinType.Symbol, new ConstantValue("sym"))!;
-        AssertMatches("constantLiteralSymbol", E(o, node));
+        var data = new TheoryData<string>();
+        foreach (var k in Cases) data.Add($"{k.Op}.{k.Decl}.{k.Member}.{k.Name}");
+        return data;
     }
 
-    [Fact]
-    public void LookupMemberMatches()
+    [Theory]
+    [MemberData(nameof(CaseNames))]
+    public void CaseMatches(string section)
     {
-        var o = Oracle.Of();
-        var pt = o.Module.Structs.First(s => s.Name == "Point");
-        foreach (var (name, section) in new[] { ("x", "lookupField"), ("twice", "lookupProperty"), ("clear", "lookupMethod"), ("nonexistent", "lookupMissing") })
-        {
-            var res = (Symbol?)Call(o.Binder(), "LookupMember", pt, name);
-            AssertMatches(section, [res is null ? "null" : res.Name]);
-        }
-        var iface = o.Module.Interfaces.First(i => i.Name == "IHasArea");
-        var res2 = (Symbol?)Call(o.Binder(), "LookupMember", iface.Self, "area");
-        AssertMatches("lookupTypeParam", [res2 is null ? "null" : res2.Name]);
+        var parts = section.Split('.');
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, section, Expected(parts[0], parts[1], parts[2], parts[3]));
     }
 
-    [Fact]
-    public void ImplicitThisMatches()
-    {
-        var o = Oracle.Of();
-        var pt = o.Module.Structs.First(s => s.Name == "Point");
-        foreach (var (name, fn, section) in new[] { ("x", "m", "implicitThisField"), ("twice", "m", "implicitThisProperty"), ("clear", "m", "implicitThisMethod"), ("origin", "m", "implicitThisStaticMethod"), ("x", "s", "implicitThisStaticHost") })
-        {
-            var fnSym = pt.Methods.First(m => m.Name == fn);
-            var b = o.Binder(fnSym, pt);
-            var member = (Symbol?)Call(b, "LookupMember", pt, name);
-            AssertMatches(section, E(o, (BoundNode)Call(b, "BindImplicitThisMember", Nx(name), member!)!));
-        }
-    }
-
-    [Fact]
-    public void CheckAccessMatches()
-    {
-        var o = Oracle.Of();
-        var pt = o.Module.Structs.First(s => s.Name == "Point");
-        var b = o.Binder();
-        Call(b, "CheckAccess", Accessibility.Module, null, new ModuleSymbol("other", "."), N("k"), true);
-        AssertMatches("checkAccessPublicRequired", o.NewDiagnostics().ToList());
-        Call(b, "CheckAccess", Accessibility.Private, pt, new ModuleSymbol("other", "."), N("x"));
-        AssertMatches("checkAccessPrivate", o.NewDiagnostics().ToList());
-        Call(b, "CheckAccess", Accessibility.Module, null, new ModuleSymbol("other", "."), N("x"));
-        AssertMatches("checkAccessModule", o.NewDiagnostics().ToList());
-        Call(b, "CheckAccess", Accessibility.Public, null, o.Module, N("x"));
-        AssertMatches("checkAccessOk", o.NewDiagnostics().ToList());
-    }
-
-    [Fact]
-    public void MemberDispatchMatches()
-    {
-        var o = Oracle.Of();
-        foreach (var (full, section) in new[] {
-            ("MyError.notFound", "memberErrorSetFound"), ("MyError.badVariant", "memberErrorSetUnknown"),
-            ("Color.red", "memberEnumStatic"), ("Shape.point", "memberUnionVariant"),
-            ("Point.origin", "memberStructStatic"), ("Point.nope", "memberStructUnknown"),
-            ("Io.stdout", "memberIoStdout"), ("Hex.encode", "memberHexEncode"),
-            ("Symbol.intern", "memberSymbolIntern"), ("Utf8.decode", "memberUtf8Decode"),
-            ("string.from", "memberStringFrom"), ("i32.nope", "memberOtherTypeUnknown"),
-        })
-        {
-            var b = o.Binder();
-            AssertMatches(section, E(o, (BoundNode)Call(b, "BindMember", Mx(full))!));
-        }
-    }
-
-    [Fact]
-    public void ModuleMemberMatches()
-    {
-        var o = Oracle.Of();
-        foreach (var (member, section) in new[] { ("k", "moduleConstant"), ("runGeneric", "moduleFunction"), ("Point", "moduleType"), ("nope", "moduleUnknown") })
-        {
-            var b = o.Binder();
-            AssertMatches(section, E(o, (BoundNode)Call(b, "BindModuleMember", Mx("test." + member), o.Module)!));
-        }
-    }
-
-    [Fact]
-    public void ValueMemberStructMatches()
-    {
-        var o = Oracle.Of();
-        var pt = o.Module.Structs.First(s => s.Name == "Point");
-        var b = o.Binder();
-        var target = new BoundLocal(Nx("p"), new LocalSymbol("p", null, pt, LocalKind.Let));
-        foreach (var (name, section) in new[] { ("x", "valueStructField"), ("twice", "valueStructProperty"), ("clear", "valueStructMethod") })
-            AssertMatches(section, E(o, (BoundNode)Call(b, "BindValueMember", Nx(name), target, N(name))!));
-    }
-
-    [Fact]
-    public void ValueMemberUnionMatches()
-    {
-        var o = Oracle.Of();
-        var sh = o.Module.Unions.First(u => u.Name == "Shape");
-        var b = o.Binder();
-        var target = new BoundLocal(Nx("s"), new LocalSymbol("s", null, sh, LocalKind.Let));
-        AssertMatches("valueUnionPayloadNeeds", E(o, (BoundNode)Call(b, "BindValueMember", Nx("radius"), target, N("radius"))!));
-        var circle = sh.Variants.First(v => v.Name == "circle");
-        var b2 = o.Binder();
-        var target2 = new BoundLocal(Nx("s"), new LocalSymbol("s", null, sh, LocalKind.Let));
-        ((System.Collections.IDictionary)Narrowed.GetValue(b2)!)![((BoundLocal)target2).Local] = circle;
-        AssertMatches("valueUnionNarrowed", E(o, (BoundNode)Call(b2, "BindValueMember", Nx("radius"), target2, N("radius"))!));
-    }
-
-    [Fact]
-    public void ValueMemberEnumOptionalBuiltinMatches()
-    {
-        var o = Oracle.Of();
-        var b = o.Binder();
-        var status = o.Module.Enums.First(e => e.Name == "Status");
-        AssertMatches("valueEnumField", E(o, (BoundNode)Call(b, "BindValueMember", Nx("code"), new BoundLocal(Nx("st"), new LocalSymbol("st", null, status, LocalKind.Let)), N("code"))!));
-        var opt = new OptionalType(PrimitiveType.I32);
-        AssertMatches("valueOptional", E(o, (BoundNode)Call(b, "BindValueMember", Nx("value"), new BoundLocal(Nx("maybe"), new LocalSymbol("maybe", null, opt, LocalKind.Let)), N("value"))!));
-        var str = PrimitiveType.String;
-        AssertMatches("valueBuiltinProperty", E(o, (BoundNode)Call(b, "BindValueMember", Nx("length"), new BoundLocal(Nx("s"), new LocalSymbol("s", null, str, LocalKind.Let)), N("length"))!));
-        AssertMatches("valueTake", E(o, (BoundNode)Call(b, "BindValueMember", Nx("take"), new BoundLocal(Nx("s"), new LocalSymbol("s", null, str, LocalKind.Let)), N("take"))!));
-        AssertMatches("valueUnknownMatches", E(o, (BoundNode)Call(b, "BindValueMember", Nx("matches"), new BoundLocal(Nx("s"), new LocalSymbol("s", null, str, LocalKind.Let)), N("matches"))!));
-    }
-
-    [Fact]
-    public void ValueMemberDynMatches()
-    {
-        var o = Oracle.Of();
-        var iface = o.Module.Interfaces.First(i => i.Name == "IHasArea");
-        var b = o.Binder();
-        var dyn = new DynRefType(iface, readOnly: false);
-        AssertMatches("valueDynMethod", E(o, (BoundNode)Call(b, "BindValueMember", Nx("area"), new BoundLocal(Nx("item"), new LocalSymbol("item", null, dyn, LocalKind.Let)), N("area"))!));
-    }
-
-    [Fact]
-    public void ReportRenamedMatches()
-    {
-        var o = Oracle.Of();
-        var b = o.Binder();
-        AssertMatches("renamedToString", [((bool)Call(b, "ReportRenamed", PrimitiveType.I64, N("toString"))!).ToString(), .. o.NewDiagnostics()]);
-        AssertMatches("renamedAdd", [((bool)Call(b, "ReportRenamed", new ListType(PrimitiveType.I32), N("add"))!).ToString(), .. o.NewDiagnostics()]);
-        AssertMatches("renamedOffset", [((bool)Call(b, "ReportRenamed", PrimitiveType.String, N("offset"))!).ToString(), .. o.NewDiagnostics()]);
-    }
-
-    [Fact]
-    public void MemberSuggestionMatches()
-    {
-        var o = Oracle.Of();
-        var b = o.Binder();
-        var color = o.Module.Enums.First(e => e.Name == "Color");
-        AssertMatches("memberSuggestionEnum", [(string?)Call(b, "MemberSuggestion", color, "reed") ?? "null"]);
-        AssertMatches("memberSuggestionBuiltin", [(string?)Call(b, "MemberSuggestion", PrimitiveType.String, "lengt") ?? "null"]);
-    }
-
-    [Fact]
-    public void TargetMemberMatches()
-    {
-        var o = Oracle.Of();
-        var b = o.Binder();
-        var myErr = o.Module.ErrorSets.First(e => e.Name == "MyError");
-        AssertMatches("targetErrorSetFound", E(o, (BoundNode)Call(b, "BindTargetMember", Tm("notFound"), myErr)!));
-        AssertMatches("targetErrorSetUnknown", E(o, (BoundNode)Call(b, "BindTargetMember", Tm("nope"), myErr)!));
-        var color = o.Module.Enums.First(e => e.Name == "Color");
-        AssertMatches("targetEnum", E(o, (BoundNode)Call(b, "BindTargetMember", Tm("red"), color)!));
-        var sh = o.Module.Unions.First(u => u.Name == "Shape");
-        AssertMatches("targetUnion", E(o, (BoundNode)Call(b, "BindTargetMember", Tm("point"), sh)!));
-        var pt = o.Module.Structs.First(s => s.Name == "Point");
-        AssertMatches("targetStructStatic", E(o, (BoundNode)Call(b, "BindTargetMember", Tm("origin"), pt)!));
-        AssertMatches("targetNoTargetType", E(o, (BoundNode)Call(b, "BindTargetMember", Tm("x"), null)!));
-    }
-
-    [Fact]
-    public void InterpolationMatches()
-    {
-        var o = Oracle.Of();
-        var b = o.Binder();
-        AssertMatches("interpolationLiteral", [(string)Call(b, "InterpolationSource", Str("\"hello\""))!]);
-    }
+    private static string Escape(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n");
 
     // ── The generated main ──────────────────────────────────────────────────────
     private static string MainSource() => """
         import lexer
         import parser
 
-        type Expr = parser.Expr
-        type MemberExpr = parser.MemberExpr
-        type TargetMemberExpr = parser.TargetMemberExpr
-        type NameExpr = parser.NameExpr
-        type LiteralExpr = parser.LiteralExpr
-        type TypeSyntax = parser.TypeSyntax
-
-        const world: string = "const k: i64 = 42\nconst arr: i32[2] = [1, 2]\nconst msg: string = \"hello\"\n\nenum Color {\n    red\n    green\n    blue\n}\n\nenum Status(i32 code) {\n    ok(200)\n    err(500)\n}\n\nunion error MyError {\n    notFound\n    badInput\n}\n\nunion error OtherError {\n    timeout\n    badInput\n}\n\nunion Shape {\n    circle(f64 radius)\n    point\n}\n\nstruct Point {\n    i32 x = 10\n    i32 y = 20\n    i32 twice => 20\n    static Point origin() => Point { x: 0, y: 0 }\n    void clear() {\n    }\n    void m() {\n        let a = x\n        let b = twice\n        clear()\n    }\n    static void s() {\n        let p = 0\n    }\n}\n\ninterface IHasArea {\n    f64 area()\n}\n\nvoid runGeneric<T>(T item) where T : IHasArea {\n    let a = item.area()\n}\n\n// names: Io Hex Symbol Utf8 string test badVariant nope stdout encode intern decode from value length take matches toString add offset\n"
-
-        TextSpan spanOf(string needle) {
-            let p = world.position(needle) ?? 0
-            return TextSpan { start: p, length: needle.length }
-        }
-
-        Binder makeBinder(FileId file = 0, FuncId fn = -1, StructId owner = -1, Type thisType = -1) {
-            return Binder {
-                file: file,
-                fn: fn,
-                owner: owner,
-                thisType: thisType,
-                scopes: [],
-                targets: [],
-                lambdas: [],
-                lambdaCount: [],
-                seeds: [],
-                pending: [],
-                constraints: [],
-                peers: [],
-                nonNull: [],
-                stateFacts: [],
-                errorNarrowed: [],
-            }
-        }
-
-        NameExpr tNameExpr(string name) => NameExpr { span: TextSpan { start: 0, length: 10 }, name: spanOf(name), typeArgs: List<TypeSyntax>() }
-
-        MemberExpr tMemberExpr(string target, by string member) {
-            return MemberExpr { span: TextSpan { start: 0, length: 10 }, target: Expr.nameExpr(Owned(NameExpr { span: spanOf(target), name: spanOf(target), typeArgs: List<TypeSyntax>() })), member: spanOf(member), nullConditional: false, typeArgs: List<TypeSyntax>() }
-        }
-
-        TargetMemberExpr tTargetMember(string member) => TargetMemberExpr { span: TextSpan { start: 0, length: 10 }, member: spanOf(member) }
-
-        void buildWorld(ref Ctx c) {
-            let i32t = prim(.i32)
-            let f64t = prim(.f64)
-            let kId = newConst(ref c, by: ConstSymbol { name: "k", type: prim(.i64), state: 2, value: Constant { kind: .integer, integer: bigFromI64(42) } })
-            c.modules[0].constants["k"] = kId
-            c.modules[0].allConstants.append(kId)
-            let arrT = internArray(ref c, by: i32t, at: 2)
-            let arrId = newConst(ref c, by: ConstSymbol { name: "arr", type: arrT, state: 2, isStaticArray: true })
-            c.modules[0].constants["arr"] = arrId
-            c.modules[0].allConstants.append(arrId)
-            let point = c.structs.length
-            let xId = newField(ref c, by: FieldSymbol { name: "x", type: i32t, owner: point })
-            let yId = newField(ref c, by: FieldSymbol { name: "y", type: i32t, owner: point })
-            let twiceGet = newFunction(ref c, by: FunctionSymbol { name: "twice", kind: .getter, owner: point, returnType: i32t })
-            let twiceProp = newProperty(ref c, by: PropertySymbol { name: "twice", type: i32t, getter: twiceGet, owner: point })
-            let originFn = newFunction(ref c, by: FunctionSymbol { name: "origin", kind: .method, owner: point, isStatic: true, returnType: structTypeOf(point) })
-            let clearFn = newFunction(ref c, by: FunctionSymbol { name: "clear", kind: .method, owner: point, returnType: prim(.void) })
-            let mFn = newFunction(ref c, by: FunctionSymbol { name: "m", kind: .method, owner: point, returnType: prim(.void) })
-            let sFn = newFunction(ref c, by: FunctionSymbol { name: "s", kind: .method, owner: point, isStatic: true, returnType: prim(.void) })
-            var methods = List<FuncId>()
-            methods.append(originFn)
-            methods.append(clearFn)
-            methods.append(mFn)
-            methods.append(sFn)
-            let pointId = newStruct(ref c, by: StructSymbol { name: "Point", module: 0, fields: [xId, yId], properties: [twiceProp], methods: move methods })
-            c.modules[0].structs.append(pointId)
-            c.modules[0].types["Point"] = structTypeOf(pointId)
-            let color = c.enums.length
-            let red = newEnumMember(ref c, by: EnumMemberSymbol { name: "red", owner: color, ordinal: 0 })
-            let green = newEnumMember(ref c, by: EnumMemberSymbol { name: "green", owner: color, ordinal: 1 })
-            let blue = newEnumMember(ref c, by: EnumMemberSymbol { name: "blue", owner: color, ordinal: 2 })
-            let colorId = newEnum(ref c, by: EnumSymbol { name: "Color", members: [red, green, blue] })
-            c.modules[0].enums.append(colorId)
-            c.modules[0].types["Color"] = enumTypeOf(colorId)
-            let status = c.enums.length
-            let codeField = newEnumField(ref c, by: EnumFieldSymbol { name: "code", type: i32t, index: 0, owner: status })
-            let ok = newEnumMember(ref c, by: EnumMemberSymbol { name: "ok", owner: status, ordinal: 0 })
-            let err = newEnumMember(ref c, by: EnumMemberSymbol { name: "err", owner: status, ordinal: 1 })
-            let statusId = newEnum(ref c, by: EnumSymbol { name: "Status", members: [ok, err], fields: [codeField] })
-            c.modules[0].enums.append(statusId)
-            c.modules[0].types["Status"] = enumTypeOf(statusId)
-            let myErr = c.errorSets.length
-            let nf = newErrorVariant(ref c, by: ErrorVariantSymbol { name: "notFound", set: myErr })
-            let bi = newErrorVariant(ref c, by: ErrorVariantSymbol { name: "badInput", set: myErr })
-            let myErrId = newErrorSet(ref c, by: ErrorSetSymbol { name: "MyError", variants: [nf, bi] })
-            c.modules[0].errorSets.append(myErrId)
-            c.modules[0].types["MyError"] = errorSetTypeOf(myErrId)
-            let otherErr = c.errorSets.length
-            let to = newErrorVariant(ref c, by: ErrorVariantSymbol { name: "timeout", set: otherErr })
-            let bi2 = newErrorVariant(ref c, by: ErrorVariantSymbol { name: "badInput", set: otherErr })
-            let otherErrId = newErrorSet(ref c, by: ErrorSetSymbol { name: "OtherError", variants: [to, bi2] })
-            c.modules[0].errorSets.append(otherErrId)
-            c.modules[0].types["OtherError"] = errorSetTypeOf(otherErrId)
-            let shape = c.unions.length
-            let radius = newLocal(ref c, by: LocalSymbol { name: "radius", type: f64t, kind: .letKeyword })
-            let circle = newUnionVariant(ref c, by: UnionVariantSymbol { name: "circle", owner: shape, fields: [radius] })
-            let pointV = newUnionVariant(ref c, by: UnionVariantSymbol { name: "point", owner: shape })
-            let shapeId = newUnion(ref c, by: UnionSymbol { name: "Shape", variants: [circle, pointV] })
-            c.modules[0].unions.append(shapeId)
-            c.modules[0].types["Shape"] = unionTypeOf(shapeId)
-            let iface = c.interfaces.length
-            let areaFn = newFunction(ref c, by: FunctionSymbol { name: "area", kind: .method, returnType: f64t, iface: iface })
-            let ifaceId = newInterface(ref c, by: InterfaceSymbol { name: "IHasArea", methods: [areaFn] })
-            c.modules[0].interfaces.append(ifaceId)
-            c.modules[0].types["IHasArea"] = interfaceTypeOf(ifaceId)
-            var constrs = List<InterfaceId>()
-            constrs.append(ifaceId)
-            let selfTp = newTypeParam(ref c, by: TypeParam { name: "Self", constraints: move constrs })
-            c.interfaces[ifaceId].self = selfTp
-            var rgc = List<InterfaceId>()
-            rgc.append(ifaceId)
-            let tParam = newTypeParam(ref c, by: TypeParam { name: "T", constraints: move rgc })
-            let rg = newFunction(ref c, by: FunctionSymbol { name: "runGeneric", kind: .function, returnType: prim(.void), typeParams: [tParam], access: .publicKeyword })
-            var rgList = List<FuncId>()
-            rgList.append(rg)
-            c.modules[0].functions["runGeneric"] = move rgList
-            c.modules[0].allFunctions.append(rg)
-        }
+        const world: string = "WORLD\n"
 
         string t18Recv(ref Ctx c, for BExpr r) {
             if r == -1 { return "-1" }
@@ -644,504 +411,126 @@ public sealed class SelfhostSemanticsT18Tests
             }
         }
 
-        string memberRefName(ref Ctx c, for MemberRef m) {
-            switch m.kind {
-                case .none: return "null"
-                case .field: return c.fields[m.id].name
-                case .propertyKeyword: return c.properties[m.id].name
-                case .method: return c.functions[m.id].name
+        void runInit(ref Binder b, through ref Ctx c, for in parser.LocalDecl ld, by string op) {
+            if op == "interp" {
+                print(interpolationSource(ref b, through: ref c, for: in ld.init))
+                return
+            }
+            switch ld.init {
+                case .nameExpr(let n):
+                    if op == "this" {
+                        let member = lookupMember(ref c, for: b.thisType, by: t18Text(in c, from: b.file, at: n.value.name))
+                        tcDump(ref c, for: bindImplicitThisMember(ref b, through: ref c, for: in n.value, by: member))
+                    }
+                case .memberExpr(let m):
+                    if op == "member" { tcDump(ref c, for: bindMember(ref b, through: ref c, for: in m.value)) }
+                    if op == "module" { tcDump(ref c, for: t18BindModuleMember(ref b, through: ref c, for: m.value, to: c.files[b.file].module)) }
+                case .targetMemberExpr(let t):
+                    var expected: Type = -1
+                    switch ld.type {
+                        case .none: {}
+                        default: expected = resolveType(ref b, through: ref c, for: in ld.type)
+                    }
+                    tcDump(ref c, for: bindTargetMember(ref b, through: ref c, for: in t.value, to: expected))
+                case .indexExpr(let i):
+                    tcDump(ref c, for: bindIndex(ref b, through: ref c, for: in i.value))
+                default:
+                    print("unexpected initializer")
             }
         }
 
-        i32 main() {
-            var c = Ctx {
-                files: List<SourceFile>(),
-                modules: List<Mod>(),
-                diagnostics: List<Diag>(),
-                bags: List<DiagBag>(),
+        void runBody(ref Binder b, through ref Ctx c, for in parser.Stmt body, by string op, at string name) {
+            switch body {
+                case .blockStmt(let blk):
+                    for s in blk.value.statements {
+                        switch s {
+                            case .localDecl(let ld):
+                                if t18Text(in c, from: b.file, at: ld.value.name) == name { runInit(ref b, through: ref c, for: in ld.value, by: op) }
+                            default: {}
+                        }
+                    }
+                default: {}
             }
-            var bytes = List<u8>()
-            for b in world.bytes { bytes.append(b) }
-            c.files.append(SourceFile { path: "tmp/t18-cases/main.byn", displayPath: "tmp/t18-cases/main.byn", text: move bytes, unit: CompilationUnit { span: TextSpan { start: 0, length: 0 }, members: List<parser.Decl>() }, module: 0, isEntry: true, isTestFile: false, imports: Map<string, ModId>() })
-            var modFiles = List<FileId>()
-            modFiles.append(0)
-            c.modules.append(Mod { name: "main", files: move modFiles, directory: ".", cName: "main" })
-            var otherFiles = List<FileId>()
-            c.modules.append(Mod { name: "other", files: move otherFiles, directory: ".", cName: "other" })
-            buildWorld(ref c)
-            let pointT = structTypeOf(0)
-            let i32t = prim(.i32)
-            let f64t = prim(.f64)
-            let strT = prim(.string)
+        }
 
-            // Section constantRef
-            {
-                print("== constantRef")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = constantRef(ref b, through: ref c, at: spanOf("const k: i64 = 42"), for: 0)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
+        void runCase(ref Ctx c, for string op, from string decl, at string member, by string name) {
+            let file = c.modules[c.entryModule].files[0]
+            var b = Binder {
+                file: file,
+                fn: -1,
+                owner: -1,
+                scopes: [],
+                targets: [],
+                lambdas: [],
+                lambdaCount: [],
+                seeds: [],
+                pending: [],
+                constraints: [],
+                peers: [],
+                nonNull: [],
+                stateFacts: [],
+                errorNarrowed: [],
             }
+            pushScope(ref b)
+            let start = c.diagnostics.length
+            for i in 0..c.files[file].unit.members.length {
+                switch c.files[file].unit.members[i] {
+                    case .functionDecl(let fd):
+                        if member == "-" && t18Text(in c, from: file, at: fd.value.name) == decl {
+                            for p in fd.value.params {
+                                let t = resolveType(ref b, through: ref c, for: in p.type)
+                                let _ = declareLocal(ref b, through: ref c, at: p.name, as: t, for: .parameter)
+                            }
+                            runBody(ref b, through: ref c, for: in fd.value.body, by: op, at: name)
+                        }
+                    case .structDecl(let sd):
+                        if member != "-" && t18Text(in c, from: file, at: sd.value.name) == decl {
+                            let owner = typeIndex(c.modules[c.entryModule].types[decl])
+                            for d in sd.value.members {
+                                switch d {
+                                    case .functionDecl(let fd):
+                                        if t18Text(in c, from: file, at: fd.value.name) == member {
+                                            for f in c.structs[owner].methods {
+                                                if c.functions[f].name == member { b.fn = f }
+                                            }
+                                            b.owner = owner
+                                            b.thisType = c.modules[c.entryModule].types[decl]
+                                            runBody(ref b, through: ref c, for: in fd.value.body, by: op, at: name)
+                                        }
+                                    default: {}
+                                }
+                            }
+                        }
+                    default: {}
+                }
+            }
+            tcDiags(ref c, from: start)
+        }
 
-            // Section constantRefArray
-            {
-                print("== constantRefArray")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = constantRef(ref b, through: ref c, at: spanOf("const arr: i32[2] = [1, 2]"), for: 1)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
+        i32 main(ReadOnlySpan<string> args) {
+            var i: i64 = 0
+            while i + 3 < args.length {
+                var bytes = List<u8>()
+                for x in world.bytes { bytes.append(x) }
+                var sources = List<lexer.SourceText>()
+                sources.append(lexer.SourceText.create("tmp/t18-cases/main.byn", from: move bytes))
+                var c = Ctx {
+                    files: List<SourceFile>(),
+                    modules: List<Mod>(),
+                    diagnostics: List<Diag>(),
+                    bags: List<DiagBag>(),
+                    library: true,
+                    packageRoot: "tmp/t18-cases",
+                    displayRoot: "tmp/t18-cases",
+                }
+                c.entryModule = loadModule(ref c, for: "main", at: "tmp/t18-cases", from: move sources, by: -1)
+                buildLexicon(ref c)
+                declare(ref c)
+                print($"== {args[i]}.{args[i + 1]}.{args[i + 2]}.{args[i + 3]}")
+                runCase(ref c, for: args[i], from: args[i + 1], at: args[i + 2], by: args[i + 3])
+                i += 4
             }
-
-            // Section constantLiteralSymbol
-            {
-                print("== constantLiteralSymbol")
-                let ds = c.diagnostics.length
-                let e = constantLiteral(ref c, at: spanOf("k"), as: builtinType(.symbol), by: Constant { kind: .text, text: "sym" })
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-
-            // Section lookupField/Property/Method/Missing/TypeParam
-            {
-                print("== lookupField")
-                let m = lookupMember(ref c, for: pointT, by: "x")
-                print(memberRefName(ref c, for: m))
-            }
-            {
-                print("== lookupProperty")
-                let m = lookupMember(ref c, for: pointT, by: "twice")
-                print(memberRefName(ref c, for: m))
-            }
-            {
-                print("== lookupMethod")
-                let m = lookupMember(ref c, for: pointT, by: "clear")
-                print(memberRefName(ref c, for: m))
-            }
-            {
-                print("== lookupMissing")
-                let m = lookupMember(ref c, for: pointT, by: "nonexistent")
-                print(memberRefName(ref c, for: m))
-            }
-            {
-                print("== lookupTypeParam")
-                let m = lookupMember(ref c, for: typeParamTypeOf(c.interfaces[0].self), by: "area")
-                print(memberRefName(ref c, for: m))
-            }
-
-            // Section implicitThis*
-            {
-                print("== implicitThisField")
-                var b = makeBinder(file: 0, fn: 3, owner: 0, thisType: pointT)
-                let ds = c.diagnostics.length
-                let m = lookupMember(ref c, for: pointT, by: "x")
-                let e = bindImplicitThisMember(ref b, through: ref c, for: in tNameExpr("x"), by: m)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== implicitThisProperty")
-                var b = makeBinder(file: 0, fn: 3, owner: 0, thisType: pointT)
-                let ds = c.diagnostics.length
-                let m = lookupMember(ref c, for: pointT, by: "twice")
-                let e = bindImplicitThisMember(ref b, through: ref c, for: in tNameExpr("twice"), by: m)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== implicitThisMethod")
-                var b = makeBinder(file: 0, fn: 3, owner: 0, thisType: pointT)
-                let ds = c.diagnostics.length
-                let m = lookupMember(ref c, for: pointT, by: "clear")
-                let e = bindImplicitThisMember(ref b, through: ref c, for: in tNameExpr("clear"), by: m)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== implicitThisStaticMethod")
-                var b = makeBinder(file: 0, fn: 3, owner: 0, thisType: pointT)
-                let ds = c.diagnostics.length
-                let m = lookupMember(ref c, for: pointT, by: "origin")
-                let e = bindImplicitThisMember(ref b, through: ref c, for: in tNameExpr("origin"), by: m)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== implicitThisStaticHost")
-                var b = makeBinder(file: 0, fn: 4, owner: 0, thisType: pointT)
-                let ds = c.diagnostics.length
-                let m = lookupMember(ref c, for: pointT, by: "x")
-                let e = bindImplicitThisMember(ref b, through: ref c, for: in tNameExpr("x"), by: m)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-
-            // Section checkAccess*
-            {
-                print("== checkAccessPublicRequired")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                checkAccess(ref b, through: ref c, for: .module, from: -1, by: 1, at: spanOf("k"), publicRequired: true)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== checkAccessPrivate")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                checkAccess(ref b, through: ref c, for: .privateKeyword, from: 0, by: 1, at: spanOf("x"))
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== checkAccessModule")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                checkAccess(ref b, through: ref c, for: .module, from: -1, by: 1, at: spanOf("x"))
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== checkAccessOk")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                checkAccess(ref b, through: ref c, for: .publicKeyword, from: -1, by: 0, at: spanOf("x"))
-                tcDiags(ref c, from: ds)
-            }
-
-            // Section memberDispatch*
-            {
-                print("== memberErrorSetFound")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindMember(ref b, through: ref c, for: in tMemberExpr("MyError", by: "notFound"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== memberErrorSetUnknown")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindMember(ref b, through: ref c, for: in tMemberExpr("MyError", by: "badVariant"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== memberEnumStatic")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindMember(ref b, through: ref c, for: in tMemberExpr("Color", by: "red"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== memberUnionVariant")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindMember(ref b, through: ref c, for: in tMemberExpr("Shape", by: "point"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== memberStructStatic")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindMember(ref b, through: ref c, for: in tMemberExpr("Point", by: "origin"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== memberStructUnknown")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindMember(ref b, through: ref c, for: in tMemberExpr("Point", by: "nope"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== memberIoStdout")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindMember(ref b, through: ref c, for: in tMemberExpr("Io", by: "stdout"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== memberHexEncode")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindMember(ref b, through: ref c, for: in tMemberExpr("Hex", by: "encode"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== memberSymbolIntern")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindMember(ref b, through: ref c, for: in tMemberExpr("Symbol", by: "intern"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== memberUtf8Decode")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindMember(ref b, through: ref c, for: in tMemberExpr("Utf8", by: "decode"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== memberStringFrom")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindMember(ref b, through: ref c, for: in tMemberExpr("string", by: "from"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== memberOtherTypeUnknown")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindMember(ref b, through: ref c, for: in tMemberExpr("i32", by: "nope"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-
-            // Section moduleMember*
-            {
-                print("== moduleConstant")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = t18BindModuleMember(ref b, through: ref c, for: tMemberExpr("test", by: "k"), to: 0)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== moduleFunction")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = t18BindModuleMember(ref b, through: ref c, for: tMemberExpr("test", by: "runGeneric"), to: 0)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== moduleType")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = t18BindModuleMember(ref b, through: ref c, for: tMemberExpr("test", by: "Point"), to: 0)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== moduleUnknown")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = t18BindModuleMember(ref b, through: ref c, for: tMemberExpr("test", by: "nope"), to: 0)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-
-            // Section valueStruct*
-            {
-                print("== valueStructField")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let tgt = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 5 }, local: newLocal(ref c, by: LocalSymbol { name: "p", type: pointT, kind: .letKeyword }), type: pointT })
-                let e = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 10 }, for: tgt, by: spanOf("x"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== valueStructProperty")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let tgt = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 5 }, local: newLocal(ref c, by: LocalSymbol { name: "p", type: pointT, kind: .letKeyword }), type: pointT })
-                let e = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 10 }, for: tgt, by: spanOf("twice"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== valueStructMethod")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let tgt = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 5 }, local: newLocal(ref c, by: LocalSymbol { name: "p", type: pointT, kind: .letKeyword }), type: pointT })
-                let e = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 10 }, for: tgt, by: spanOf("clear"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== valueUnionPayloadNeeds")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let tgt = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 5 }, local: newLocal(ref c, by: LocalSymbol { name: "s", type: unionTypeOf(0), kind: .letKeyword }), type: unionTypeOf(0) })
-                let e = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 10 }, for: tgt, by: spanOf("radius"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== valueUnionNarrowed")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let locId = newLocal(ref c, by: LocalSymbol { name: "s", type: unionTypeOf(0), kind: .letKeyword })
-                b.narrowed[locId] = 0
-                let tgt = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 5 }, local: locId, type: unionTypeOf(0) })
-                let e = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 10 }, for: tgt, by: spanOf("radius"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== valueEnumField")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let tgt = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 5 }, local: newLocal(ref c, by: LocalSymbol { name: "st", type: enumTypeOf(1), kind: .letKeyword }), type: enumTypeOf(1) })
-                let e = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 10 }, for: tgt, by: spanOf("code"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== valueOptional")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let optT = internOptional(ref c, by: i32t)
-                let tgt = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 5 }, local: newLocal(ref c, by: LocalSymbol { name: "maybe", type: optT, kind: .letKeyword }), type: optT })
-                let e = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 10 }, for: tgt, by: spanOf("value"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== valueBuiltinProperty")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let tgt = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 5 }, local: newLocal(ref c, by: LocalSymbol { name: "s", type: strT, kind: .letKeyword }), type: strT })
-                let e = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 10 }, for: tgt, by: spanOf("length"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== valueTake")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let tgt = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 5 }, local: newLocal(ref c, by: LocalSymbol { name: "s", type: strT, kind: .letKeyword }), type: strT })
-                let e = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 10 }, for: tgt, by: spanOf("take"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== valueUnknownMatches")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let tgt = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 5 }, local: newLocal(ref c, by: LocalSymbol { name: "s", type: strT, kind: .letKeyword }), type: strT })
-                let e = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 10 }, for: tgt, by: spanOf("matches"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== valueDynMethod")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let dynT = internDynRef(ref c, by: 0, readOnly: false)
-                let tgt = addLocal(ref c, from: BLocal { span: TextSpan { start: 0, length: 5 }, local: newLocal(ref c, by: LocalSymbol { name: "item", type: dynT, kind: .letKeyword }), type: dynT })
-                let e = bindValueMember(ref b, through: ref c, at: TextSpan { start: 0, length: 10 }, for: tgt, by: spanOf("area"))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-
-            // Section reportRenamed*
-            {
-                print("== renamedToString")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let r = reportRenamed(ref b, through: ref c, for: prim(.i64), at: spanOf("toString"))
-                print(r ? "True" : "False")
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== renamedAdd")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let r = reportRenamed(ref b, through: ref c, for: internList(ref c, by: i32t), at: spanOf("add"))
-                print(r ? "True" : "False")
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== renamedOffset")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let r = reportRenamed(ref b, through: ref c, for: strT, at: spanOf("offset"))
-                print(r ? "True" : "False")
-                tcDiags(ref c, from: ds)
-            }
-
-            // Section memberSuggestion*
-            {
-                print("== memberSuggestionEnum")
-                let sug = memberSuggestion(ref c, for: enumTypeOf(0), by: "reed")
-                print(sug ?? "null")
-            }
-            {
-                print("== memberSuggestionBuiltin")
-                let sug = memberSuggestion(ref c, for: strT, by: "lengt")
-                print(sug ?? "null")
-            }
-
-            // Section targetMember*
-            {
-                print("== targetErrorSetFound")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindTargetMember(ref b, through: ref c, for: in tTargetMember("notFound"), to: errorSetTypeOf(0))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== targetErrorSetUnknown")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindTargetMember(ref b, through: ref c, for: in tTargetMember("nope"), to: errorSetTypeOf(0))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== targetEnum")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindTargetMember(ref b, through: ref c, for: in tTargetMember("red"), to: enumTypeOf(0))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== targetUnion")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindTargetMember(ref b, through: ref c, for: in tTargetMember("point"), to: unionTypeOf(0))
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== targetStructStatic")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindTargetMember(ref b, through: ref c, for: in tTargetMember("origin"), to: pointT)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-            {
-                print("== targetNoTargetType")
-                var b = makeBinder(file: 0)
-                let ds = c.diagnostics.length
-                let e = bindTargetMember(ref b, through: ref c, for: in tTargetMember("x"), to: -1)
-                tcDump(ref c, for: e)
-                tcDiags(ref c, from: ds)
-            }
-
-            // Section interpolationLiteral
-            {
-                print("== interpolationLiteral")
-                var b = makeBinder(file: 0)
-                let lit = Expr.literalExpr(Owned(LiteralExpr { span: spanOf("\"hello\""), kind: .string, text: "\"hello\"", suffix: null }))
-                let s = interpolationSource(ref b, through: ref c, for: in lit)
-                print(s)
-            }
-
             return 0
         }
-        """;
+        """.Replace("WORLD", Escape(Source));
 }
