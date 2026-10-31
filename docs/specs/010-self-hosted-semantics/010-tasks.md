@@ -44,7 +44,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [ ] T14 Conformance — files: `conformance.byn` (`Conformance.cs`: `conform`, `checkConformances`, quiet sinks, associated bindings), `SelfhostSemanticsT14Tests.cs` — covers: R4 — after: T4; parallel with: T6–T13, T15–T27, T34–T39 — done when:
   - witness and default-method checks match the C# cases; Q585–Q589 as needed.
   - Size: about 345 lines.
-- [ ] T15 Binder core and statements A — files: `binder.byn` (`Binder.cs` 1–~499: state, scopes, locals, entry points), `SelfhostSemanticsT15Tests.cs` — covers: R4 — after: T4; parallel with: T6–T14, T16–T27, T34–T39 — done when:
+- [x] T15 Binder core and statements A — files: `binder.byn` (`Binder.cs` 1–~499: state, scopes, locals, entry points), `SelfhostSemanticsT15Tests.cs`, `generics.byn` (only the two `bindTest` call sites its new signature breaks, Q718) — covers: R4 — after: T4; parallel with: T6–T14, T16–T27, T34–T39 — done when:
   - method-for-method port; a fixture binds locals and statements over a hand-built `Ctx`; Q590–Q594 as needed.
   - Size: about 725 lines.
 - [ ] T16 Binder statements B — files: `binder2.byn` (`Binder.cs` ~500–979: blocks, statement dispatch, assert, narrowing, while-let, for head), `SelfhostSemanticsT16Tests.cs` — covers: R4 — after: T4; parallel with: T6–T15, T17–T27, T34–T39 — done when:

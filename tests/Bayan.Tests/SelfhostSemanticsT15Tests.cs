@@ -15,8 +15,8 @@ namespace Bayan.Tests;
 /// <c>Compilation.Create</c>; the oracle then makes a fresh C# <c>Binder</c> (it is internal, so by reflection) over a
 /// symbol of that compilation and calls the method under test, while the generated <c>main.byn</c> builds the same
 /// symbols by hand in a <c>Ctx</c> and calls the Bayan port. Both print the bound tree, the locals and the new
-/// diagnostics (<c>code line:col message |label|help</c>). Inputs avoid unported siblings (Q594): every parameter has a
-/// constant default, and no case reaches <c>built</c>; <c>bindChecks</c> and <c>bindEnumArguments</c> are blocked (Q594) and have no case.
+/// diagnostics (<c>code line:col message |label|help</c>). Inputs avoid unported siblings (Q594): no case reaches
+/// <c>built</c>; <c>bindChecks</c> and <c>bindEnumArguments</c> are blocked (Q594) and have no case.
 /// </summary>
 public sealed class SelfhostSemanticsT15Tests
 {
@@ -24,13 +24,20 @@ public sealed class SelfhostSemanticsT15Tests
         struct Point {
             i32 x = 4
             bool on = true
+            bool bad = 3
             void m2(bool k = true) expects k {
             }
             i32 twice => 8
             i32 blocky {
             }
-            Point(i32 a = 1, i32 b = 2) {
+            bool wrong => 3
+            Point(i32 a = 1, i32 b = zz) {
             }
+            Point copy() => this
+        }
+
+        interface IShape {
+            void touch() => this
         }
 
         struct Holder {
@@ -52,6 +59,10 @@ public sealed class SelfhostSemanticsT15Tests
         }
 
         void vd() => 1
+
+        void guarded(bool d = true) {
+            return if d
+        }
 
         void defaults(i32 x = 3, i32 y = zz) {
         }
@@ -77,6 +88,22 @@ public sealed class SelfhostSemanticsT15Tests
 
         @cases((1, true))
         test "cased" (i32 n, bool f) {
+        }
+
+        @cases((1, 2))
+        test "dup" (i32 n, i32 n) {
+        }
+
+        @cases((true, 1))
+        test "mism" (i32 n, bool f) {
+        }
+
+        @cases(5)
+        test "lone" (bool f) {
+        }
+
+        {
+            let q: bool = 3
         }
 
         {
@@ -203,6 +230,10 @@ public sealed class SelfhostSemanticsT15Tests
     private static string Camel(string name) =>
         string.Concat(name.Split('-').Select(w => char.ToUpperInvariant(w[0]) + w[1..]));
 
+    /// <summary>The C# `_firstStatement`, by its span (Q719).</summary>
+    private static string First(object binder) =>
+        Field<Stmt?>(binder, "_firstStatement") is { } s ? $"first {s.Span.Start}..{s.Span.End}" : "first none";
+
     private static string Span(TextSpan s) => $"TextSpan {{ start: {s.Start}, length: {s.Length} }}";
 
     private static int IndexOf(Oracle o, Func<Decl, bool> pick) => Array.FindIndex(o.Members, d => pick(d));
@@ -287,7 +318,8 @@ public sealed class SelfhostSemanticsT15Tests
 
     // ── Scopes and locals ────────────────────────────────────────────────────────
 
-    /// <summary>One step: push, pop, hold, release, count (the diagnostics reported so far), or declare name #i with a type and kind (in a function when `fn`).</summary>
+    /// <summary>One step: push, pop, hold, release, count (the diagnostics reported so far), scope (the current scope, numbered
+    /// by first appearance, so a reopened depth shows a new number), or declare name #i with a type and kind (in a function when `fn`).</summary>
     private sealed record Step(string Op, int Name = 0, PrimitiveType? Type = null, LocalKind Kind = LocalKind.Let);
 
     private static readonly (string Name, bool InFunction, Step[] Steps)[] ScopeCases =
@@ -304,6 +336,11 @@ public sealed class SelfhostSemanticsT15Tests
             new("hold"), new("decl", 7, PrimitiveType.I32), new("decl", 8, PrimitiveType.I32), new("count"), new("release"),
             new("push"), new("push"), new("decl", 11, PrimitiveType.I64, LocalKind.Const), new("pop"), new("decl", 0, PrimitiveType.I64, LocalKind.Var),
             new("pop"), new("decl", 1, PrimitiveType.I64, LocalKind.Var),
+        ]),
+        ("outer-first", false, [new("decl", 0, PrimitiveType.I32), new("push"), new("decl", 1, PrimitiveType.I32), new("pop")]),
+        ("identity", false, [
+            new("scope"), new("push"), new("scope"), new("pop"), new("scope"), new("push"), new("scope"), new("push"), new("scope"),
+            new("pop"), new("scope"), new("pop"), new("scope"),
         ]),
     ];
 
@@ -326,10 +363,21 @@ public sealed class SelfhostSemanticsT15Tests
         var fn = sc.InFunction ? new FunctionSymbol("f", null, o.Module, FunctionKind.Function) : null;
         var b = o.Binder(fn, null);
         var lines = new List<string>();
+        var seen = new List<object>();
         foreach (var s in sc.Steps)
         {
             switch (s.Op)
             {
+                case "scope":
+                    var scope = Field<object>(b, "_scope");
+                    var at = seen.FindIndex(x => ReferenceEquals(x, scope));
+                    if (at < 0)
+                    {
+                        at = seen.Count;
+                        seen.Add(scope);
+                    }
+                    lines.Add($"scope {at}");
+                    break;
                 case "push": Call(b, "PushScope"); break;
                 case "pop": Call(b, "PopScope"); break;
                 case "hold": Call(b, "Hold"); break;
@@ -358,10 +406,24 @@ public sealed class SelfhostSemanticsT15Tests
             sb.AppendLine($"    let f = {(inFunction ? "newFunction(ref c, by: FunctionSymbol { name: \"f\", module: 0 })" : "-1")}");
             sb.AppendLine("    var b = tcBinder(f, by: -1)");
             sb.AppendLine($"    print(\"== scopes {name}\")");
+            if (steps.Any(s => s.Op == "scope")) sb.AppendLine("    var seen = List<i64>()");
             foreach (var s in steps)
             {
                 switch (s.Op)
                 {
+                    case "scope":
+                        sb.AppendLine("    {");
+                        sb.AppendLine("        let _ = t15Scope(ref b)");
+                        sb.AppendLine("        let id = b.scopeIds[b.scopeIds.length - 1]");
+                        sb.AppendLine("        var at = -1");
+                        sb.AppendLine("        for j in 0..seen.length { if seen[j] == id { at = j } }");
+                        sb.AppendLine("        if at < 0 {");
+                        sb.AppendLine("            at = seen.length");
+                        sb.AppendLine("            seen.append(id)");
+                        sb.AppendLine("        }");
+                        sb.AppendLine("        print($\"scope {at}\")");
+                        sb.AppendLine("    }");
+                        break;
                     case "push": sb.AppendLine("    pushScope(ref b)"); break;
                     case "pop": sb.AppendLine("    popScope(ref b)"); break;
                     case "hold": sb.AppendLine("    let _ = hold(ref b, through: ref c)"); break;
@@ -529,12 +591,47 @@ public sealed class SelfhostSemanticsT15Tests
         var o = Oracle.Of("main", Source);
         var fn = o.Module.Functions[name][0];
         var before = fn.Locals.Count;
-        Call(o.Binder(fn, null), "BindFunctionBody", fn.Decl);
-        var lines = new List<string>();
+        var binder = o.Binder(fn, null);
+        Call(binder, "BindFunctionBody", fn.Decl);
+        var lines = new List<string> { First(binder) };
         Dump(lines, fn.Body);
         Locals(lines, fn, before);
         lines.AddRange(o.NewDiagnostics());
         return lines;
+    }
+
+    /// <summary>
+    /// The first statement of `guarded`, a postfix-guarded `return` that starts where its inner statement does: only the
+    /// <c>first</c> line is compared, since T36's <c>bindReturn</c> is a stub (Q719).
+    /// </summary>
+    private static List<string> ExpectedFirst()
+    {
+        var o = Oracle.Of("main", Source);
+        var fn = o.Module.Functions["guarded"][0];
+        var binder = o.Binder(fn, null);
+        Call(binder, "BindFunctionBody", fn.Decl);
+        return [First(binder)];
+    }
+
+    private static string FirstMain()
+    {
+        var o = Oracle.Of("main", Source);
+        var sb = new StringBuilder();
+        var decl = IndexOf(o, d => d is FunctionDecl { Name.Text: "guarded" });
+        sb.AppendLine("void firstGuarded() {");
+        sb.AppendLine("    var c = tcSource()");
+        BuildFunction(sb, o, o.Module.Functions["guarded"][0], "function", decl, -1, "-1");
+        sb.AppendLine("    var b = tcBinder(f, by: -1)");
+        sb.AppendLine("    print(\"== first guarded\")");
+        sb.AppendLine($"    switch c.files[0].unit.members[{decl}] {{");
+        sb.AppendLine("        case .functionDecl(let d):");
+        sb.AppendLine("            bindFunctionBody(ref b, through: ref c, for: in d.value)");
+        sb.AppendLine("        default:");
+        sb.AppendLine("            break");
+        sb.AppendLine("    }");
+        sb.AppendLine("    tcFirst(in b)");
+        sb.AppendLine("}");
+        return sb.ToString();
     }
 
     /// <summary>Bayan statements that build function `fn` of the oracle's compilation by hand, into `f`.</summary>
@@ -564,6 +661,7 @@ public sealed class SelfhostSemanticsT15Tests
             sb.AppendLine("        default:");
             sb.AppendLine("            break");
             sb.AppendLine("    }");
+            sb.AppendLine("    tcFirst(in b)");
             sb.AppendLine("    tcBody(ref c, for: f)");
             sb.AppendLine("}");
         }
@@ -573,7 +671,7 @@ public sealed class SelfhostSemanticsT15Tests
         return sb.ToString();
     }
 
-    private static readonly string[] PointMembers = ["twice", "blocky", "Point", "m2"];
+    private static readonly string[] PointMembers = ["twice", "blocky", "wrong", "Point", "m2", "copy"];
 
     private static FunctionSymbol MemberFunction(StructSymbol point, string name) =>
         name == "Point" ? point.Constructors[0] : point.FindProperty(name)?.Getter ?? point.Methods.Single(m => m.Name == name);
@@ -584,10 +682,13 @@ public sealed class SelfhostSemanticsT15Tests
         var point = (StructSymbol)o.Module.Types["Point"];
         var fn = MemberFunction(point, name);
         var before = fn.Locals.Count;
-        if (name == "Point") Call(o.Binder(fn, point), "BindConstructor", point.Decl.Members.OfType<ConstructorDecl>().Single());
-        else if (fn.Kind == FunctionKind.Method) Call(o.Binder(fn, point), "BindFunctionBody", fn.Decl);
-        else Call(o.Binder(fn, point), "BindGetter", point.FindProperty(name)!.Decl);
-        var lines = new List<string>();
+        // Compilation.Create already bound the defaults; the Bayan side binds them on first use, so clear the cache.
+        foreach (var p in fn.Parameters) p.Default = null;
+        var binder = o.Binder(fn, point);
+        if (name == "Point") Call(binder, "BindConstructor", point.Decl.Members.OfType<ConstructorDecl>().Single());
+        else if (fn.Kind == FunctionKind.Method) Call(binder, "BindFunctionBody", fn.Decl);
+        else Call(binder, "BindGetter", point.FindProperty(name)!.Decl);
+        var lines = new List<string> { First(binder) };
         Dump(lines, fn.Body);
         Locals(lines, fn, before);
         lines.AddRange(o.NewDiagnostics());
@@ -614,7 +715,6 @@ public sealed class SelfhostSemanticsT15Tests
             }
             BuildFunction(sb, o, fn, fn.Kind switch { FunctionKind.Constructor => "constructor", FunctionKind.Method => "method", _ => "getter" }, decl, member, "s");
             sb.AppendLine("    var b = tcBinder(f, by: s)");
-            sb.AppendLine("    b.thisType = structTypeOf(s)");
             sb.AppendLine($"    print(\"== member {name}\")");
             sb.AppendLine($"    switch c.files[0].unit.members[{decl}] {{");
             sb.AppendLine("        case .structDecl(let sd):");
@@ -631,6 +731,7 @@ public sealed class SelfhostSemanticsT15Tests
             sb.AppendLine("        default:");
             sb.AppendLine("            break");
             sb.AppendLine("    }");
+            sb.AppendLine("    tcFirst(in b)");
             sb.AppendLine("    tcBody(ref c, for: f)");
             sb.AppendLine("}");
         }
@@ -640,13 +741,18 @@ public sealed class SelfhostSemanticsT15Tests
         return sb.ToString();
     }
 
+    /// <summary>The indexes of the source's top-level blocks, the statements `main` binds.</summary>
+    private static int[] MainIndexes(Oracle o) =>
+        Enumerable.Range(0, o.Members.Length).Where(i => o.Members[i] is GlobalStatement { Statement: BlockStmt }).ToArray();
+
     private static List<string> ExpectedMain()
     {
         var o = Oracle.Of("main", Source);
         var fn = new FunctionSymbol("main", null, o.Module, FunctionKind.Main);
-        var statements = o.Members.OfType<GlobalStatement>().Where(g => g.Statement is BlockStmt).ToList();
-        Call(o.Binder(fn, null), "BindMain", statements);
-        var lines = new List<string>();
+        var statements = MainIndexes(o).Select(i => (GlobalStatement)o.Members[i]).ToList();
+        var binder = o.Binder(fn, null);
+        Call(binder, "BindMain", statements);
+        var lines = new List<string> { First(binder) };
         Dump(lines, fn.Body);
         Locals(lines, fn, 0);
         lines.AddRange(o.NewDiagnostics());
@@ -656,25 +762,74 @@ public sealed class SelfhostSemanticsT15Tests
     private static string MainMain()
     {
         var o = Oracle.Of("main", Source);
-        var g = o.Members.OfType<GlobalStatement>().Single(g => g.Statement is BlockStmt);
         var sb = new StringBuilder();
         sb.AppendLine("void mainBody() {");
         sb.AppendLine("    var c = tcSource()");
         sb.AppendLine("    let f = newFunction(ref c, by: FunctionSymbol { name: \"main\", module: 0, kind: .main })");
         sb.AppendLine("    var b = tcBinder(f, by: -1)");
-        sb.AppendLine("    var statements = List<GlobalStatement>()");
-        sb.AppendLine($"    statements.append(GlobalStatement {{ span: {Span(g.Span)}, statement: parser.Stmt.blockStmt(Owned(BlockStmt {{ span: {Span(g.Statement.Span)}, statements: List<parser.Stmt>() }})) }})");
+        sb.AppendLine("    var statements = List<SyntaxRef>()");
+        foreach (var i in MainIndexes(o)) sb.AppendLine($"    statements.append(SyntaxRef {{ file: 0, declIndex: {i} }})");
         sb.AppendLine("    print(\"== main\")");
         sb.AppendLine("    bindMain(ref b, through: ref c, for: in statements)");
+        sb.AppendLine("    tcFirst(in b)");
         sb.AppendLine("    tcBody(ref c, for: f)");
         sb.AppendLine("}");
         return sb.ToString();
     }
 
-    private static readonly string[] Tests = ["plain", "cased"];
+    /// <summary>An interface's default method: `this` is the interface's `Self` (Binder.cs:54).</summary>
+    private static List<string> ExpectedIface()
+    {
+        var o = Oracle.Of("main", Source);
+        var fn = ((InterfaceSymbol)o.Module.Types["IShape"]).Methods.Single(m => m.Name == "touch");
+        var before = fn.Locals.Count;
+        var binder = o.Binder(fn, null);
+        Call(binder, "BindFunctionBody", fn.Decl);
+        var lines = new List<string> { First(binder) };
+        Dump(lines, fn.Body);
+        Locals(lines, fn, before);
+        lines.AddRange(o.NewDiagnostics());
+        return lines;
+    }
 
+    private static string IfaceMain()
+    {
+        var o = Oracle.Of("main", Source);
+        var decl = IndexOf(o, d => d is InterfaceDecl { Name.Text: "IShape" });
+        var member = Array.FindIndex(((InterfaceDecl)o.Members[decl]).Members, m => m is FunctionDecl { Name.Text: "touch" });
+        return $$"""
+            void ifaceTouch() {
+                var c = tcSource()
+                let i = newInterface(ref c, by: InterfaceSymbol { name: "IShape", module: 0, file: 0, declIndex: {{decl}} })
+                let f = newFunction(ref c, by: FunctionSymbol { name: "touch", module: 0, kind: .method, file: 0, declIndex: {{decl}}, memberIndex: {{member}}, iface: i, returnType: prim(.void) })
+                var b = tcBinder(f, by: -1)
+                print("== iface touch")
+                switch c.files[0].unit.members[{{decl}}] {
+                    case .interfaceDecl(let x):
+                        switch x.value.members[{{member}}] {
+                            case .functionDecl(let d):
+                                bindFunctionBody(ref b, through: ref c, for: in d.value)
+                            default:
+                                break
+                        }
+                    default:
+                        break
+                }
+                tcFirst(in b)
+                tcBody(ref c, for: f)
+            }
+
+            """;
+    }
+
+    private static readonly string[] Tests = ["plain", "cased", "dup", "mism", "lone"];
+
+    private static int CasesAttribute(TestDecl t) => Array.FindIndex(t.Attributes, a => a.Name.Text == "cases");
+
+    /// <summary>The first case's values as Compilation.cs:334 makes them: a tuple's element values, or the value alone; null without `@cases`.</summary>
     private static Expr[]? CaseValues(TestDecl t) =>
-        t.Attributes.FirstOrDefault(a => a.Name.Text == "cases")?.Args[0].Value is TupleExpr tuple ? tuple.Elements.Select(e => e.Value).ToArray() : null;
+        CasesAttribute(t) is var a && a < 0 ? null
+            : t.Attributes[a].Args[0].Value is TupleExpr tuple ? tuple.Elements.Select(e => e.Value).ToArray() : [t.Attributes[a].Args[0].Value];
 
     private static List<string> ExpectedTest(string title)
     {
@@ -700,20 +855,10 @@ public sealed class SelfhostSemanticsT15Tests
             sb.AppendLine("    var c = tcSource()");
             sb.AppendLine("    let f = newFunction(ref c, by: FunctionSymbol { name: \"test\", module: 0, kind: .testKeyword })");
             sb.AppendLine("    var b = tcBinder(f, by: -1)");
-            sb.AppendLine("    var values = List<parser.Expr>()");
-            foreach (var v in CaseValues((TestDecl)o.Members[decl]) ?? [])
-            {
-                var lit = (LiteralExpr)v;
-                var kind = lit.Kind switch { LiteralKind.Integer => "integer", LiteralKind.True => "trueKeyword", _ => throw new InvalidOperationException() };
-                sb.AppendLine($"    values.append(parser.Expr.literalExpr(Owned(LiteralExpr {{ span: {Span(lit.Span)}, kind: .{kind}, text: \"{lit.Text}\", suffix: null }})))");
-            }
+            var attribute = CasesAttribute((TestDecl)o.Members[decl]);
+            var values = attribute < 0 ? "SyntaxRef {}" : $"SyntaxRef {{ file: 0, declIndex: {decl}, memberIndex: {attribute}, itemIndex: 0 }}";
             sb.AppendLine($"    print(\"== test {title}\")");
-            sb.AppendLine($"    switch c.files[0].unit.members[{decl}] {{");
-            sb.AppendLine("        case .testDecl(let d):");
-            sb.AppendLine("            bindTest(ref b, through: ref c, for: in d.value, by: in values)");
-            sb.AppendLine("        default:");
-            sb.AppendLine("            break");
-            sb.AppendLine("    }");
+            sb.AppendLine($"    bindTest(ref b, through: ref c, for: TestBody {{ decl: SyntaxRef {{ file: 0, declIndex: {decl} }}, hasValues: {Lower(attribute >= 0)}, values: {values} }})");
             sb.AppendLine("    tcBody(ref c, for: f)");
             sb.AppendLine("}");
         }
@@ -807,7 +952,7 @@ public sealed class SelfhostSemanticsT15Tests
         return sb.ToString();
     }
 
-    private static readonly string[] Constants = ["K", "S", "W", "M"];
+    private static readonly string[] Constants = ["K", "S", "W", "M", "SA"];
 
     private static List<string> ExpectedConstant(string name)
     {
@@ -917,7 +1062,7 @@ public sealed class SelfhostSemanticsT15Tests
     }
 
     private static string MainSource() => Prelude.Replace("$SOURCE", Literal(Source)) + HoldMain() + ScopesMain() + ResolveMain() + BodiesMain()
-        + MembersMain() + MainMain() + TestsMain() + DefaultsMain() + ConstantsMain() + SizesMain() + NoBodyMain() + """
+        + MembersMain() + MainMain() + IfaceMain() + FirstMain() + TestsMain() + DefaultsMain() + ConstantsMain() + SizesMain() + NoBodyMain() + """
         i32 main() {
             holdAll()
             scopesAll()
@@ -925,8 +1070,13 @@ public sealed class SelfhostSemanticsT15Tests
             bodiesAll()
             membersAll()
             mainBody()
+            ifaceTouch()
+            firstGuarded()
             casePlain()
             caseCased()
+            caseDup()
+            caseMism()
+            caseLone()
             defaultsAll()
             constantsAll()
             sizesAll()
@@ -942,7 +1092,6 @@ public sealed class SelfhostSemanticsT15Tests
 
         type GlobalStatement = parser.GlobalStatement
         type BlockStmt = parser.BlockStmt
-        type LiteralExpr = parser.LiteralExpr
 
         Ctx tcCtx(string text) {
             var bytes = List<u8>()
@@ -1020,6 +1169,14 @@ public sealed class SelfhostSemanticsT15Tests
             print($"requires {c.functions[f].requirements.length} infers {c.functions[f].infersErrors}")
         }
 
+        void tcFirst(in Binder b) {
+            if b.firstStatementFile == -1 {
+                print("first none")
+            } else {
+                print($"first {b.firstStatementSpan.start}..{b.firstStatementSpan.end}")
+            }
+        }
+
         void tcBody(ref Ctx c, for FuncId f) {
             tcDump(ref c, for: c.functions[f].body, at: 0)
             tcLocals(ref c, for: f)
@@ -1078,6 +1235,12 @@ public sealed class SelfhostSemanticsT15Tests
 
     [Fact]
     public void MainMatches() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "main", ExpectedMain());
+
+    [Fact]
+    public void GuardedFirstStatementMatches() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "first guarded", ExpectedFirst());
+
+    [Fact]
+    public void InterfaceSelfMatches() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "iface touch", ExpectedIface());
 
     [Theory]
     [MemberData(nameof(TestNames))]
