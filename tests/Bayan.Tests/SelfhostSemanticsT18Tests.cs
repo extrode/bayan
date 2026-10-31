@@ -51,6 +51,11 @@ public sealed class SelfhostSemanticsT18Tests
             point
         }
 
+        union Blob {
+            empty
+            full(i32 size)
+        }
+
         struct Point {
             i32 x = 10
             i32 y = 20
@@ -74,7 +79,7 @@ public sealed class SelfhostSemanticsT18Tests
             f64 area()
         }
 
-        void probes(Point p, Shape s, string str, List<i32> list, i32[2] fixed, Map<string, i32> map, Point? maybe, Status st, dyn IHasArea d, i64 n, (i32 a, i32 b) tup, (Shape a, i32 b) ts, dyn ref IHasArea dr, Owned<Point> op, StrBuf sb, Span<i32> sp, u64 un) {
+        void probes(Point p, Shape s, string str, List<i32> list, i32[2] fixed, Map<string, i32> map, Point? maybe, Status st, dyn IHasArea d, i64 n, (i32 a, i32 b) tup, (Shape a, i32 b) ts, dyn ref IHasArea dr, Owned<Point> op, StrBuf sb, Span<i32> sp, u64 un, Blob bl) {
             let m1 = MyError.notFound
             let m2 = MyError.badVariant
             let m3 = Color.red
@@ -101,6 +106,7 @@ public sealed class SelfhostSemanticsT18Tests
             let m24 = Symbol.nope
             let m25 = Utf8.nope
             let m26 = string.invalidUtf8At
+            let m27 = string.invalidUtf8
             let u1 = main.k
             let u2 = main.probes
             let u3 = main.Point
@@ -131,6 +137,13 @@ public sealed class SelfhostSemanticsT18Tests
             let v27 = list.toList
             let v28 = sp.toList
             let v29 = Shape.point.radius
+            let v30 = bl.size
+            let v31 = list.removeRange
+            let v32 = list.replaceRange
+            let v33 = map.getOr
+            let v34 = fixed.asSpan
+            let v35 = str.toUtf16
+            let v36 = n.toOctal
             let t1: Color = .red
             let t2: MyError = .notFound
             let t3: MyError = .nope
@@ -173,7 +186,7 @@ public sealed class SelfhostSemanticsT18Tests
         ("member", "probes", "-", "m10"), ("member", "probes", "-", "m11"), ("member", "probes", "-", "m12"),
         ("member", "probes", "-", "m13"), ("member", "probes", "-", "m14"), ("member", "probes", "-", "m15"),
         ("member", "probes", "-", "m16"), ("member", "probes", "-", "m17"),
-        ("member", "probes", "-", "m18"), ("member", "probes", "-", "m19"), ("member", "probes", "-", "m20"), ("member", "probes", "-", "m21"), ("member", "probes", "-", "m22"), ("member", "probes", "-", "m23"), ("member", "probes", "-", "m24"), ("member", "probes", "-", "m25"), ("member", "probes", "-", "m26"),
+        ("member", "probes", "-", "m18"), ("member", "probes", "-", "m19"), ("member", "probes", "-", "m20"), ("member", "probes", "-", "m21"), ("member", "probes", "-", "m22"), ("member", "probes", "-", "m23"), ("member", "probes", "-", "m24"), ("member", "probes", "-", "m25"), ("member", "probes", "-", "m26"), ("member", "probes", "-", "m27"),
         ("module", "probes", "-", "u1"), ("module", "probes", "-", "u2"), ("module", "probes", "-", "u3"),
         ("module", "probes", "-", "u4"), ("module", "probes", "-", "u5"),
         ("member", "probes", "-", "v1"), ("member", "probes", "-", "v2"), ("member", "probes", "-", "v3"),
@@ -184,7 +197,7 @@ public sealed class SelfhostSemanticsT18Tests
         ("member", "probes", "-", "v17"), ("member", "probes", "-", "v19"),
         ("member", "probes", "-", "v20"), ("member", "probes", "-", "v21"),
         ("member", "probes", "-", "v22"),
-        ("member", "probes", "-", "v23"), ("member", "probes", "-", "v25"), ("member", "probes", "-", "v26"), ("member", "probes", "-", "v27"), ("member", "probes", "-", "v28"), ("member", "probes", "-", "v29"),
+        ("member", "probes", "-", "v23"), ("member", "probes", "-", "v25"), ("member", "probes", "-", "v26"), ("member", "probes", "-", "v27"), ("member", "probes", "-", "v28"), ("member", "probes", "-", "v29"), ("member", "probes", "-", "v30"), ("member", "probes", "-", "v31"), ("member", "probes", "-", "v32"), ("member", "probes", "-", "v33"), ("member", "probes", "-", "v34"), ("member", "probes", "-", "v35"), ("member", "probes", "-", "v36"),
         ("target", "probes", "-", "t1"), ("target", "probes", "-", "t2"), ("target", "probes", "-", "t3"),
         ("target", "probes", "-", "t4"), ("target", "probes", "-", "t5"), ("target", "probes", "-", "t6"),
         ("target", "probes", "-", "t7"), ("target", "probes", "-", "t8"),
@@ -277,6 +290,7 @@ public sealed class SelfhostSemanticsT18Tests
             case BoundTypeRef t: callee = t.Referenced.DisplayName; break;
             case BoundModuleRef m: callee = m.Module.Name; break;
             case BoundLiteral l: sub = l.Value.ToString(); break;
+            case BoundSymbolLiteral sl: sub = sl.Text; break;
         }
         switch (node.GetType().Name)
         {
@@ -465,6 +479,8 @@ public sealed class SelfhostSemanticsT18Tests
                     callee = c.modules[c.bModuleRefs[boundIndex(e)].module].name
                 case .literal:
                     sub = constantText(in c.bLiterals[boundIndex(e)].value)
+                case .symbolLiteral:
+                    sub = c.bSymbolLiterals[boundIndex(e)].text
                 default: {}
             }
             let sp = nodeSpan(in c, for: e)
