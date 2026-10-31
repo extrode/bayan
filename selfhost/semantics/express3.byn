@@ -30,10 +30,10 @@ BExpr bindCast(ref Binder b, through ref Ctx c, for in parser.CastExpr cast) => 
 BExpr bindConversion(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type target, from in parser.Expr operandSyntax) => -1
 
 // stub: T19 ports BinderExpressions.cs:1516 BindStructLiteral
-BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLiteralExpr s, to Type expected) => -1
+BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLiteralExpr s, from parser.Expr syntax, to Type expected) => -1
 
 // stub: T19 ports BinderExpressions.cs:1612 BindWith
-BExpr bindWith(ref Binder b, through ref Ctx c, for in parser.WithExpr w) => -1
+BExpr bindWith(ref Binder b, through ref Ctx c, for in parser.WithExpr w, from parser.Expr syntax) => -1
 
 // stub: T19 ports BinderExpressions.cs:1205 BinaryText
 string binaryText(parser.BinaryOp op) => ""
