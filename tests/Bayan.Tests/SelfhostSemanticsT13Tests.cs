@@ -401,7 +401,11 @@ public sealed class SelfhostSemanticsT13Tests
         w.Emit(BRep("duplicateDeclaration", s6));
         w.Emit("instantiatingEnd(ref c, by: inner)");
         w.Emit(bState);
+        // C# has no `_quiet`; `target.Add` (Compilation.cs:1488) is ungated, so the forwarded errors arrive while Bayan's
+        // `c.quiet` is set (Q580). The expected lines are C#'s, run without it.
+        w.Emit("c.quiet = true");
         w.Emit("instantiatingEnd(ref c, by: outer)");
+        w.Emit("c.quiet = false");
         lines.Add(State());
         w.Emit(bState);
         // A state change through a `ref` names the generic; related only when it is in the same source.
@@ -409,7 +413,9 @@ public sealed class SelfhostSemanticsT13Tests
         Call(c, "Instantiating", site, new TextSpan(50, 1), (Action)(() => Rep("BYN7012", "", s4)), f);
         w.Emit($"let named = instantiatingBegin(ref c, from: 0, at: {Span(new TextSpan(50, 1))})");
         w.Emit(BRep("assignmentChangesState", s4));
+        w.Emit("c.quiet = true");
         w.Emit("instantiatingEnd(ref c, by: named, instance: f)");
+        w.Emit("c.quiet = false");
         // Unforwarded warnings vanish; a 7012 already reported stays held.
         Call(c, "Instantiating", site, new TextSpan(52, 1), (Action)(() =>
         {
@@ -753,7 +759,11 @@ public sealed class SelfhostSemanticsT13Tests
         w.Emit("    var held = List<Diag>()");
         w.Emit("    " + B("BYN2006", 0, "one"));
         w.Emit("    " + B("BYN2007", 5, "two"));
+        // C# has no `_quiet`; `AddRange` (Compilation.cs:1919) is ungated, so held diagnostics arrive while Bayan's
+        // `c.quiet` is set (Q580). The expected lines are C#'s, run without it.
+        w.Emit("    c.quiet = true");
         w.Emit("    reportHeld(ref c, for: in held)");
+        w.Emit("    c.quiet = false");
         w.Emit("}");
         w.Emit("c.bags.append(DiagBag { items: List<Diag>() })");
         w.Emit("let bag = c.bags.length - 1");
