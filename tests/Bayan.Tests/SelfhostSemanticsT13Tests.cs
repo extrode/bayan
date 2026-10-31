@@ -119,6 +119,7 @@ public sealed class SelfhostSemanticsT13Tests
             C = c;
             Emit($"var c = newCtx()");
             Emit($"addSource(ref c, for: {Lit(text)}, as: {Lit(c.EntryModule.Name)})");
+            Emit("c.entryModule = 0");
         }
 
         public void Emit(string line) => Code.Append("    ").Append(line).Append('\n');
@@ -601,6 +602,9 @@ public sealed class SelfhostSemanticsT13Tests
         One("free", "Free", "Square");
         One("nested", "Box", "Both", "    c.instantiating = 1", "    c.instantiating = 0",
             () => Set(c, "_instantiating", 1), () => Set(c, "_instantiating", 0));
+        // Once conformances are checked: constraints run at once and a struct instance conforms.
+        One("checked", "Box", "Circle", "    c.conformancesChecked[0] = 1", before: () => Set(c, "_conformancesChecked", true));
+        One("checkedBad", "Maybe", "Both");
         // The deferred checks, as CheckConformances runs them: each at its use, with the instantiation label.
         var startRun = c.Diagnostics.Count;
         foreach (var check in pending.ToList()) check();
