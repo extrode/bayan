@@ -17,7 +17,8 @@ public sealed record LoweredProgram(
     IReadOnlyList<LoweredFunction> Functions,
     FunctionSymbol? Main,
     IReadOnlyList<(TestSymbol Test, LoweredFunction Function)> Tests,
-    bool Mutants = false);
+    bool Mutants = false,
+    CoverageProbes? Coverage = null);
 
 /// <summary>A function body with every local (not parameter) it uses, in first-use order.</summary>
 public sealed record LoweredFunction(FunctionSymbol Symbol, IReadOnlyList<LocalSymbol> Locals, int ContextSlots, int PanicSlots, BoundBlock Body);
@@ -118,6 +119,9 @@ public sealed record LFunctionValue(Node Syntax, FunctionSymbol Function, LocalS
 
 /// <summary>Whether the process-wide selector <c>byn_mutant</c> is <see cref="Id"/> (a <c>--mutate</c> build).</summary>
 public sealed record LMutantIs(Node Syntax, int Id) : BoundExpr(Syntax, PrimitiveType.Bool);
+
+/// <summary>Counts one hit of coverage counter <see cref="Id"/> (a <c>--coverage</c> build).</summary>
+public sealed record LCount(Node Syntax, int Id) : BoundExpr(Syntax, PrimitiveType.Void);
 
 /// <summary>The value of a <c>void</c> expression whose effects were already emitted.</summary>
 public sealed record LVoid(Node Syntax) : BoundExpr(Syntax, PrimitiveType.Void);
