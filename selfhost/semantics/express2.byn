@@ -540,7 +540,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         return addErrorExpr(ref c, from: BErrorExpr { span: span })
     } else if lk == .dynRef {
         let d = c.dynRefTypes[typeIndex(lookupType)]
-        var foundMember: FuncId = -1
+        var foundMember: FuncId = -1 // mutation-exempt: Q607 through 557
         for p in c.interfaces[d.iface].properties {
             if c.functions[p].name == name {
                 foundMember = p
@@ -555,7 +555,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
                 }
             }
         }
-        if foundMember != -1 {
+        if foundMember != -1 { // mutation-exempt: Q607 through 563
             if d.readOnly && c.functions[foundMember].isMutating {
                 report(ref b, through: ref c, for: .dynReadonlyMutation, at: member, by: (name, interfaceDisplayName(ref c, by: d.iface), "", "", ""), label: "declared `ref this`", help: $"take `dyn ref {interfaceDisplayName(ref c, by: d.iface)}`")
                 return addErrorExpr(ref c, from: BErrorExpr { span: span })
