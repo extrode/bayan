@@ -631,7 +631,7 @@ Type instantiateType(ref Ctx c, for Type template, by in List<Type> args, from F
                 declIndex: c.structs[s].declIndex,
                 memberIndex: c.structs[s].memberIndex,
                 access: c.structs[s].access,
-                modifiers: c.structs[s].modifiers,
+                modifiers: c.structs[s].modifiers, doc: c.structs[s].doc,
                 template: s,
                 typeArgs: move typeArgs,
                 typeMap: move typeMap,
