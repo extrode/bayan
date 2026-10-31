@@ -21,7 +21,7 @@ public sealed class SelfhostSemanticsT19Tests
 {
     private const string Dir = "tmp/t19-cases";
 
-    private const string Source = """
+    private const string Source = """"
         union error MyError {
             notFound
             badInput(i32 code)
@@ -33,6 +33,20 @@ public sealed class SelfhostSemanticsT19Tests
 
         union error Both = MyError, OtherError
 
+        const kc: i32 = 5
+
+        union error Bad {
+            plain
+            withList(List<i32> xs)
+        }
+
+        union error BadBoth = Bad, OtherError
+
+        union error Rec {
+            leaf
+            nest(Owned<Rec> inner)
+        }
+
         enum Color {
             red
             green
@@ -41,6 +55,20 @@ public sealed class SelfhostSemanticsT19Tests
         union Shape {
             circle(f64 radius)
             point
+        }
+
+        struct Holder {
+            List<i32> xs
+        }
+
+        union Bag {
+            full(List<i32> xs)
+            empty
+        }
+
+        union Tree {
+            leaf
+            node(Owned<Tree> next)
         }
 
         struct Point {
@@ -83,7 +111,7 @@ public sealed class SelfhostSemanticsT19Tests
             let e1: T = x
         }
 
-        void probes(i32 a, i32 b, u32 u, i64 n, f64 f, bool flag, string str, rune ch, i32? oi, Point p, Point? op, Untrusted<i32> ui, MyError me, u8 small) {
+        void probes(i32 a, i32 b, u32 u, i64 n, f64 f, bool flag, string str, rune ch, i32? oi, Point p, Point? op, Untrusted<i32> ui, MyError me, u8 small, Symbol sym, Bad bad, BadBoth bb, i64? on) {
             let u1 = -5
             let u2: i8 = -200
             let u3 = ^1
@@ -143,6 +171,24 @@ public sealed class SelfhostSemanticsT19Tests
             let b40 = nope + nada
             let b41 = 1 + f
             let b42 = 1 + small
+            let b43 = 300 + small
+            let b44 = small + 300
+            let b45 = "a" + str
+            let b46 = Bad.plain == bad
+            let b47 = bad == bad
+            let b48 = Bad.plain < bad
+            let b49 = "x" == sym
+            let b50 = ("x") == sym
+            let b51 = (str) == sym
+            let b52 = """x""" == sym
+            let b53 = """a""" + "b"
+            let b54 = ("x") == str
+            let b55 = kc + small
+            let b56 = small + kc
+            let b57 = (flag ? 1 : 2) == small
+            let b58 = bb == Bad.plain
+            let b60: i64 = null ?? 5
+            let b61 = oi ?? on
             let r1 = 1..10
             let r2 = a..=b
             let r3 = 1..n
@@ -151,6 +197,9 @@ public sealed class SelfhostSemanticsT19Tests
             let r6 = ..5
             let r7 = 'a'..'z'
             let r8 = a..n
+            let r9 = 1..
+            let r10 = (flag ? 1 : 2)..n
+            let r11: i64 = 1..2
             let i1 = a in 1..=5
             let i2 = a in str
             let i3 = f in 1..2
@@ -159,6 +208,7 @@ public sealed class SelfhostSemanticsT19Tests
             let i6 = n in a..b
             let i7 = a in nope
             let i8 = a in str..str
+            let i9 = small in 1..300
             let c1 = flag ? 1 : 2
             let c2 = true ? 1 : 2
             let c3 = flag ? 1 : str
@@ -166,6 +216,9 @@ public sealed class SelfhostSemanticsT19Tests
             let c5: i64 = flag ? a : 2
             let c6 = flag ? oi : null
             let c7 = false ? a : b
+            let c8 = flag ? small : 1
+            let c9: i64? = flag ? a : 2
+            let c10: string = flag ? 1 : 2
             let k1 = (u8)300
             let k2 = (u8)a
             let k3 = (string)a
@@ -219,6 +272,14 @@ public sealed class SelfhostSemanticsT19Tests
             let e14: Map<string, i32> = p
             let e15: (Point, List<i32>) = p
             let e16: ReadOnlySpan<i32> = p
+            let e17: never = p
+            let e18: void = p
+            let e19: Result<i32, Bad> = p
+            let e20: Rec = p
+            let e21: BadBoth = p
+            let e22: Holder = p
+            let e23: Bag = p
+            let e24: Tree = p
             let o1: string = a < b
             let o2: bool = a & b
             let o3: rune = a < b
@@ -262,18 +323,30 @@ public sealed class SelfhostSemanticsT19Tests
             let d5 = 7 % 0
             let d6 = 7 / 2
             let d7 = 5 - a
+            let d8 = 1.5 + 0
         }
-        """;
+
+        void pend1() {
+            var v = 1
+            let w: i64 = v + 1
+        }
+
+        void pend2() {
+            var v = 1
+            let w: i64 = 1 + v
+        }
+        """";
 
     private static readonly string[] ProbeNames =
     [
         "u1", "u2", "u3", "u4", "u5", "u6", "u7", "u8v", "u9", "u10", "u11", "u12", "u13", "u14", "u15", "u16", "u17",
         "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "b10", "b11", "b12", "b13", "b14", "b15", "b16", "b17", "b18",
         "b19", "b20", "b21", "b22", "b23", "b24", "b25", "b26", "b27", "b28", "b29", "b30", "b31", "b32", "b33", "b34", "b35",
-        "b36", "b37", "b38", "b39", "b40", "b41", "b42",
-        "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8",
-        "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8",
-        "c1", "c2", "c3", "c4", "c5", "c6", "c7",
+        "b36", "b37", "b38", "b39", "b40", "b41", "b42", "b43", "b44", "b45", "b46", "b47", "b48", "b49", "b50",
+        "b51", "b52", "b53", "b54", "b55", "b56", "b57", "b58", "b60", "b61",
+        "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11",
+        "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9",
+        "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10",
         "k1", "k2", "k3", "k4", "k5", "k6", "k7", "k8", "k9", "k10", "k11",
         "s4", "s5", "s6", "s7", "s8", "s10", "s11", "s14",
         "w2", "w5",
@@ -288,11 +361,12 @@ public sealed class SelfhostSemanticsT19Tests
         ("withd", "probes", "w1"), ("withd", "probes", "w3"), ("withd", "probes", "w4"), ("withd", "probes", "w6"),
         ("conv", "probes", "v1"), ("conv", "probes", "v2"), ("conv", "probes", "v3"),
         ("fact", "probes", "f1"), ("fact", "probes", "f2"), ("fact", "probes", "f3"),
-        .. Enumerable.Range(1, 16).Select(i => ("eq", "probes", $"e{i}")),
+        .. Enumerable.Range(1, 24).Select(i => ("eq", "probes", $"e{i}")),
         .. Enumerable.Range(1, 11).Select(i => ("applies", "probes", $"o{i}")),
         .. Enumerable.Range(1, 25).Select(i => ("text", "probes", $"t{i}")),
-        .. Enumerable.Range(1, 7).Select(i => ("fold", "probes", $"d{i}")),
+        .. Enumerable.Range(1, 8).Select(i => ("fold", "probes", $"d{i}")),
         ("bind", "gen", "g1"), ("bind", "gen", "g2"), ("bind", "gen", "g3"), ("bind", "gen", "g4"), ("bind", "gen", "g5"), ("eq", "gen", "e1"),
+        ("seq", "pend1", "none"), ("seq", "pend2", "none"),
     ];
 
     private static readonly System.Type BinderType =
@@ -374,7 +448,21 @@ public sealed class SelfhostSemanticsT19Tests
         var b = Activator.CreateInstance(BinderType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
             [c, file, fn, null, null, null], null)!;
         foreach (var p in fd.Params) Call(b, "DeclareLocal", p.Name, Call(b, "ResolveType", p.Type), LocalKind.Parameter);
-        var ld = fd.Body!.Statements.OfType<LocalDecl>().First(l => l.Name.Text == name);
+        if (op == "seq")
+        {
+            // A held (first-pass) binding, where a `var` can be pending; every statement in order, then the
+            // pending-`var` constraints by declaration start (Q614). Its diagnostics are held, so none are compared.
+            Call(b, "Hold");
+            var seq = new List<string>();
+            foreach (var s in fd.Body!.Statements) Call(b, "BindStatement", s, null);
+            var cons = (System.Collections.IDictionary)BinderType.GetField("_constraints", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(b)!;
+            foreach (System.Collections.DictionaryEntry kv in cons) seq.Add($"{((LocalDecl)kv.Key).Span.Start}|cons {((LocalDecl)kv.Key).Span.Start} {((TypeSymbol)kv.Value!).DisplayName}");
+            var sorted = seq.OrderBy(x => int.Parse(x[..x.IndexOf('|')])).Select(x => x[(x.IndexOf('|') + 1)..]).ToList();
+            sorted.Add("seq");
+            for (var i = mark; i < c.Diagnostics.Items.Count; i++) sorted.AddRange(Diag(c.Diagnostics.Items[i]).Split('\n'));
+            return sorted;
+        }
+        var ld =fd.Body!.Statements.OfType<LocalDecl>().First(l => l.Name.Text == name);
         var init = ld.Init!;
         var expected = ld.Type is null ? null : (TypeSymbol)Call(b, "ResolveType", ld.Type)!;
         var lines = new List<string>();
@@ -496,7 +584,7 @@ public sealed class SelfhostSemanticsT19Tests
                 case .rangeExpr(let r): return bindRange(ref b, through: ref c, for: in r.value, to: expected)
                 case .inExpr(let x): return bindIn(ref b, through: ref c, for: in x.value)
                 case .conditionalExpr(let x): return bindConditional(ref b, through: ref c, for: in x.value, to: expected)
-                case .castExpr(let x): return bindCast(ref b, through: ref c, for: in x.value)
+                case .castExpr(let x): return bindCast(ref b, through: ref c, for: in x.value, from: init)
                 case .structLiteralExpr(let s): return bindStructLiteral(ref b, through: ref c, for: in s.value, from: init, to: expected)
                 case .withExpr(let w): return bindWith(ref b, through: ref c, for: in w.value, from: init)
                 default: panic("unexpected initializer")
@@ -571,6 +659,19 @@ public sealed class SelfhostSemanticsT19Tests
                             }
                             switch fd.value.body {
                                 case .blockStmt(let blk):
+                                    if op == "seq" {
+                                        let _ = hold(ref b, through: ref c)
+                                        for s in blk.value.statements { let _ = bindStatement(ref b, through: ref c, for: in s) }
+                                        for s in blk.value.statements {
+                                            switch s {
+                                                case .localDecl(let ld):
+                                                    let at = ld.value.span.start
+                                                    if b.constraints.contains(at) { print($"cons {at} {typeDisplay(ref c, by: b.constraints[at])}") }
+                                                default: {}
+                                            }
+                                        }
+                                        print("seq")
+                                    }
                                     for s in blk.value.statements {
                                         switch s {
                                             case .localDecl(let ld):

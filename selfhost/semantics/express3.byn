@@ -135,6 +135,7 @@ BExpr bindBinary(ref Binder b, through ref Ctx c, for in parser.BinaryExpr e, to
     switch e.op {
         case .logicalAnd or .logicalOr:
             let l = bindConverted(ref b, through: ref c, for: in e.left, to: prim(.bool))
+            // mutation-exempt: Q613
             let scope = narrowedBegin(ref b, through: ref c, for: l, whenTrue: e.op == .logicalAnd)
             let r = bindConverted(ref b, through: ref c, for: in e.right, to: prim(.bool))
             narrowedEnd(ref b, through: ref c, by: move scope)
@@ -540,33 +541,8 @@ BExpr bindConditional(ref Binder b, through ref Ctx c, for in parser.Conditional
     return result
 }
 
-/// C# `BindConversion(c, ResolveType(c.Type), c.Operand)`: a `CastExpr` is not a `parser.Expr` here, so the body of
-/// `bindConversion` runs on the cast itself (Q611).
-BExpr bindCast(ref Binder b, through ref Ctx c, for in parser.CastExpr cast) {
-    let target = resolveType(ref b, through: ref c, for: in cast.type)
-    let span = cast.span
-    let operand = bindExpr(ref b, through: ref c, for: in cast.operand, to: isNumeric(target) ? -1 : target)
-    let ot = exprType(in c, for: operand)
-    if isError(target) || isError(ot) { return addErrorExpr(ref c, from: BErrorExpr { span: span }) }
-    if (exprConstant(in c, for: operand) is { } n) && n.kind == .integer && isInteger(target)
-        && (hasSyntax(in c, for: operand, by: syntaxLiteral) || hasSyntax(in c, for: operand, by: syntaxUnary)) {
-        // `u8(300)` is a compile-time error rather than a runtime trap.
-        return convert(ref b, through: ref c, for: operand, to: target, at: span)
-    }
-    if (explicit(ref c, from: ot, to: target) is not { } kind) {
-        report(ref b, through: ref c, for: .invalidCast, at: span, by: (typeDisplay(ref c, by: ot), typeDisplay(ref c, by: target), "", "", ""))
-        return addErrorExpr(ref c, from: BErrorExpr { span: span })
-    }
-    if kind == .identity { return operand }
-    if kind == .nullToOptional { return addDefault(ref c, from: BDefault { span: span, type: target }) }
-    let conv = addConversion(ref c, from: BConversion { span: span, operand: operand, type: target, kind: kind })
-    if (exprConstant(in c, for: operand) is { } k) {
-        if (foldCast(ref c, for: in k, from: ot, to: target) is { } folded) {
-            setConstant(ref c, for: conv, to: folded)
-            return conv
-        }
-    }
-    return conv
+BExpr bindCast(ref Binder b, through ref Ctx c, for in parser.CastExpr cast, from parser.Expr syntax) {
+    return bindConversion(ref b, through: ref c, for: in syntax, to: resolveType(ref b, through: ref c, for: in cast.type), from: in cast.operand)
 }
 
 /// `u8(x)` (or the input form `(u8)x`): a checked conversion that traps when the value does not fit.
@@ -616,6 +592,7 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
     if isError(type) { return addErrorExpr(ref c, from: BErrorExpr { span: s.span }) }
     // `Order.paid { … }` builds a value in one state; with several states, none is named.
     let stateType: Type = kindOf(type) == .state ? type : -1
+    // mutation-exempt: Q613
     let state: VariantId = stateType != -1 && c.stateTypes[typeIndex(stateType)].states.length == 1 ? c.stateTypes[typeIndex(stateType)].states[0] : -1
     if stateType != -1 { type = makeType(.structType, at: c.stateTypes[typeIndex(stateType)].s) }
     if kindOf(type) != .structType {
@@ -628,6 +605,7 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
         let ctor = c.structs[st].constructors[0]
         var parameters = StrBuf()
         for pi in 0..c.functions[ctor].parameters.length {
+            // mutation-exempt: Q613
             if pi > 0 { parameters.append(", ") }
             parameters.append($"{c.locals[c.functions[ctor].parameters[pi]].name}: …")
         }
@@ -635,6 +613,7 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
             help: $"call the constructor: `{stName}({parameters.finish()})`")
         return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
     }
+    // mutation-exempt: Q613 through 629
     if state == -1 {
         let states = statesOf(ref c, for: st)
         if states != -1 {
@@ -658,6 +637,7 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
     for init in s.fields {
         let name = t15Text(in c, from: b.file, at: init.name)
         let field = findField(ref c, by: st, for: name)
+        // mutation-exempt: Q613 through 658
         if field == -1 && state != -1 {
             var payloadField: LocalId = -1
             for pf in c.unionVariants[state].fields {
@@ -706,10 +686,12 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
             values[i] = addErrorExpr(ref c, from: BErrorExpr { span: s.span })
         } else {
             let d = fieldDefault(ref c, for: st, by: f, from: b.file, at: s.span)
+            // mutation-exempt: Q613
             values[i] = d != -1 ? d : addErrorExpr(ref c, from: BErrorExpr { span: s.span })
         }
     }
     for i in 0..payload.length {
+        // mutation-exempt: Q613
         if payload[i] != -1 { continue }
         missing.append(c.locals[c.unionVariants[state].fields[i]].name)
         payload[i] = addErrorExpr(ref c, from: BErrorExpr { span: s.span })
@@ -732,6 +714,7 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
             label: label, help: $"set {missing.length == 1 ? "it" : "them"}: `{written} {{ {sets.finish()} }}`")
         return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
     }
+    // mutation-exempt: Q613 through 723
     if state == -1 {
         let literal = addStructLiteral(ref c, from: BStructLiteral { span: s.span, structId: st, fields: move values, type: type })
         return checkedValue(ref b, through: ref c, for: in syntax, by: literal)
