@@ -339,6 +339,7 @@ public sealed class SelfhostSemanticsT13Tests
         ("requires", Requires),
         ("noMain", NoMain),
         ("bindAllDrains", BindAllDrains),
+        ("bindAllConstantsAndDefaults", BindAllConstantsAndDefaults),
         ("drainInstanceMethods", DrainInstanceMethods),
     ];
 
@@ -788,7 +789,7 @@ public sealed class SelfhostSemanticsT13Tests
     /// <summary>FieldDefault and ParameterDefault: bound on first use, only where the syntax has a default.</summary>
     private static (string, List<string>) Defaults()
     {
-        const string text = "struct Box<T> {\n    T item\n    i64 n = 1\n}\n\nstruct Plain {\n    i64 k = 5\n    i64 j\n}\n\ni64 pd(i64 a, by i64 b = 2) => a + b\n";
+        const string text = "/// A box.\nstruct Box<T> {\n    T item\n    i64 n = 1\n}\n\nstruct Plain {\n    i64 k = 5\n    i64 j\n}\n\ni64 pd(i64 a, by i64 b = 2) => a + b\n";
         var c = Compile(text);
         Assert.False(c.Diagnostics.HasErrors, DiagnosticRenderer.RenderAll(c.Diagnostics.Items));
         var w = new World(c, text);
@@ -799,6 +800,8 @@ public sealed class SelfhostSemanticsT13Tests
         static string Const(BoundExpr? e) => e is null ? "null" : "bound";
         var box = (StructSymbol)w.T("Box");
         var inst = (StructSymbol)Call(c, "InstantiateType", box, new TypeSymbol[] { PrimitiveType.I64 }, site, Site)!;
+        // C#'s `Doc => Decl.Doc` (Symbols.cs:100): an instance shares its template's doc.
+        lines.Add($"instance doc {inst.Doc ?? "null"}");
         foreach (var f in inst.Fields) lines.Add($"instance {f.Name} {Const((BoundExpr?)Call(c, "FieldDefault", inst, f, site, Site))}");
         var plain = (StructSymbol)w.T("Plain");
         foreach (var f in plain.Fields) lines.Add($"plain {f.Name} {(Call(c, "FieldDefault", plain, f, site, Site) is null ? "null" : "set")}");
@@ -807,7 +810,9 @@ public sealed class SelfhostSemanticsT13Tests
         lines.Add($"again {(ReferenceEquals(Call(c, "ParameterDefault", pd, pd.Parameters[1]), Call(c, "ParameterDefault", pd, pd.Parameters[1])) ? "same" : "new")}");
         w.Emit("var args = List<Type>()");
         w.Emit("args.append(prim(PrimitiveKind.i64))");
+        if (box.Doc is { } doc) w.Emit($"c.structs[{w.Vars[box]}].doc = {Lit(doc)}");
         w.Emit($"let inst = StructId(typeIndex(instantiateType(ref c, for: {w.Type(box)}, by: in args, from: 0, at: {Span(Site)})))");
+        w.Emit("print($\"instance doc {c.structs[inst].doc ?? \"null\"}\")");
         w.Emit("for f in copyIds(in c.structs[inst].fields) { print($\"instance {c.fields[f].name} {constText(ref c, for: fieldDefault(ref c, for: inst, by: f, from: 0, at: TextSpan { start: 0, length: 0 }))}\") }");
         // Plain's own defaults were bound by BindAll before this runs; the template is returned as it stands.
         foreach (var f in plain.Fields)
@@ -1046,6 +1051,43 @@ public sealed class SelfhostSemanticsT13Tests
         w.Emit("bindAll(ref c)");
         w.Emit("print($\"exitCode {c.errorVariants[ev].exitCode}\")");
         w.Emit("print($\"test body {(c.functions[fnTest].body != -1 ? \"yes\" : \"no\")}\")");
+        return (w.Code.ToString(), lines);
+    }
+
+    /// <summary>
+    /// BindAll's module-constant and field-default loops: every constant is bound (one with no value reports BYN2101),
+    /// and only a field with a default gets one. What a default binds to is T15/T17's business, so only whether it is set.
+    /// </summary>
+    private static (string, List<string>) BindAllConstantsAndDefaults()
+    {
+        const string text = "const a: i64 = 1\nconst b: i64\n\nstruct P {\n    i64 x = 3\n    i64 y\n}\n";
+        var c = Compile(text, new CompilationOptions(Library: true));
+        var w = new World(c, text);
+        var lines = new List<string>();
+        var members = c.EntryModule.Files[0].Tree.Root.Members;
+        w.Emit("c.library = true");
+        foreach (var name in new[] { "a", "b" })
+        {
+            var k = c.EntryModule.Constants[name];
+            lines.Add($"const {name} state {k.State} type {k.Type.DisplayName}");
+            var index = Array.FindIndex(members, m => m is GlobalStatement g && ReferenceEquals(g.Statement, k.Decl));
+            w.Emit($"let k{name} = newConst(ref c, by: ConstSymbol {{ name: {Lit(name)}, nameSpan: {Span(k.Decl.Name.Span)}, span: {Span(k.Decl.Span)}, module: 0, file: 0, declIndex: {index} }})");
+            w.Emit($"c.modules[0].allConstants.append(k{name})");
+        }
+        var p = (StructSymbol)c.EntryModule.Types["P"];
+        w.Emit($"let st = newStruct(ref c, by: StructSymbol {{ name: \"P\", nameSpan: {Span(p.Location.Span)}, span: {Span(p.Location.Span)}, module: 0, file: 0, declIndex: {MemberIndex(c, p.Decl)} }})");
+        w.Emit("c.modules[0].structs.append(st)");
+        foreach (var f in p.Fields)
+        {
+            lines.Add($"field {f.Name} default {(f.Default is null ? "null" : "set")}");
+            w.Emit($"c.structs[st].fields.append(newField(ref c, by: FieldSymbol {{ name: {Lit(f.Name)}, owner: st, file: 0, declIndex: {MemberIndex(c, p.Decl)}, memberIndex: {Array.IndexOf(p.Decl.Members, f.Decl)}, type: prim(PrimitiveKind.i64), hasDefault: {(f.HasDefault ? "true" : "false")} }}))");
+        }
+        lines.AddRange(NewDiags(c, 0));
+        w.Emit("bindAll(ref c)");
+        foreach (var name in new[] { "a", "b" })
+            w.Emit($"print($\"const {name} state {{c.consts[k{name}].state}} type {{c.consts[k{name}].type == -1 ? \"unset\" : typeDisplay(ref c, by: c.consts[k{name}].type)}}\")");
+        w.Emit("for f in copyIds(in c.structs[st].fields) { print($\"field {c.fields[f].name} default {c.fields[f].defaultValue == -1 ? \"null\" : \"set\"}\") }");
+        w.Emit("showDiags(in c, from: 0)");
         return (w.Code.ToString(), lines);
     }
 
