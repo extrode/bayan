@@ -2179,7 +2179,7 @@ model test "cart behaves like a list" {
 - A function without `uses alloc` is proven allocation-free at compile time (§14); `assertNoAlloc` checks at runtime.
 - `bayan new test X` scaffolds one case per success and error variant; `todo(…)` reports **pending**, never passing.
 - Coverage: lines, branches and **error paths** (every `fails` variant triggered). `bayan build` reports public functions no test reaches.
-- Mutation testing runs mutants in the interpreter: `bayan test --mutate`. Its output names the surviving mutant and suggests the missing case (not in v0.1).
+- Mutation testing compiles every mutant into one build (mutant schemata) and picks one per run: `bayan test --mutate`, one build per run. Its output names the surviving mutant and suggests the missing case; `@unobservable because "…"` marks a mutant no test can observe (not in v0.1).
 - Fuzz findings are minimized into `testdata/fuzz/<test>/` and require a name and a reason to be committed.
 - `bayan test --explore` enumerates interleavings for small concurrent tests; `--sanitize` builds with ASan/UBSan.
 - `snapshot(x)` with `bayan test --update`. `Io.Recording` / `Io.Replay` capture and replay traffic (untrusted fields redacted).
@@ -2361,7 +2361,8 @@ The `add` through `toString()` rows are beyond the HANDOFF round 2 table; the pl
 
 ```
 source → lex → parse → AST → sema (types, regions, effects, comptime) → DIR
-DIR → interpreter (comptime, scripts, REPL, tests, mutation)
+DIR → interpreter (comptime, scripts, REPL, tests)
+DIR → C with mutant schemata (mutation: one build per run)
 DIR → C → libtcc (debug, scripts) | clang / zig cc (release, cross-compile)
 DIR → LLVM (later) | WASM via clang wasm32 (+ generated .d.ts)
 ```

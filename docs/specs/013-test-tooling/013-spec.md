@@ -30,7 +30,15 @@ Bayan promises coverage and mutation testing (spec §20), but neither exists. Th
 - R4 A mutation that would not type-check is never emitted and never counted as killed or survived. The report counts these separately.
 - R5 The mutation operators are documented, and the report counts each operator on its own.
 - R6 A surviving mutant is reported with its file, line and column, the original and mutated text, and a suggested missing case.
-- R7 A developer can mark a mutant that no test can observe, using an attribute that requires a written reason. Marked mutants are listed with their reasons and are not survivors. A mark that matches no surviving mutant is a warning.
+- R7 A developer can mark a mutant that no test can observe with `@unobservable because "…"` on the statement whose mutants it covers. The `because` clause follows the attribute (J6) and is required. Marked mutants are listed with their reasons and are not survivors. A mark that matches no surviving mutant is a warning.
+
+  ```
+  int clamp(int x, int lo, int hi) {
+      @unobservable because "x == hi returns hi either way"
+      return hi if x >= hi
+      ...
+  }
+  ```
 - R8 Every mutation report gives: build time, mean and maximum time per mutant, total time, and per-mutant time as a share of a plain build.
 - R9 `bayan test --coverage` reports, per file and in total, line coverage, branch coverage (each outcome of each condition) and error-path coverage (each `fails` variant of each function triggered at least once).
 - R10 A coverage-instrumented program gives the same output and exit code as the plain program.
@@ -40,6 +48,7 @@ Bayan promises coverage and mutation testing (spec §20), but neither exists. Th
 - R14 The spec 010 guard uses the external mode (R3) over every mutation site in a task's files.
 - R15 The C# `src/` gets coverage and mutation reports per task, in the same machine-readable format as R12.
 - R16 Everything is verified on macOS, on Linux (Docker) and on Windows (`ssh wp1`).
+- R17 Plain `bayan test` prints a one-line coverage summary by default; a package setting turns it off.
 
 ## Acceptance criteria
 - Given `selfhost/semantics`, when the guard runs over a task file, then the report shows per-mutant time ≤10% of a full rebuild, and every site was tried.
@@ -54,9 +63,11 @@ Bayan promises coverage and mutation testing (spec §20), but neither exists. Th
 - For every run, a mutant that does not type-check is never counted as killed or survived (R4).
 - For every mutant binary, selecting "no mutant" behaves exactly as the plain build.
 
+## Decisions
+- 2026-10-31 (user): the marker is `@unobservable because "…"` (R7): an attribute with a `because` clause (J6), not a named argument; examples are type-first (J54).
+- 2026-10-31 (user): plain `bayan test` prints a one-line coverage summary by default, with a package opt-out (R17).
+- 2026-10-31 (user): spec §20 and §24 say mutants are compiled mutant schemata, one build per run, not interpreted.
+
 ## Open questions
-- Q1 (user): the name of the marking attribute (R7). Candidates: `@unobservable(because: "…")`, `@sameBehavior(because: "…")`, `@mutantIgnored(because: "…")`, `@noKill(because: "…")`.
-- Q2 (user): should plain `bayan test` print a one-line coverage summary by default, so that quality is visible without a flag?
-- Q3 (user): spec §20 says mutants run "in the interpreter", and the compilation pipeline (§24) routes mutation to it. Should both change to "compiled mutant schemata, one build per run"?
 - Q4 (/plan): which .NET tools produce the C# reports (R15), and how they map to the shared format.
 - Q5 (/plan): where the guard's per-task baseline lives, so that "no regression" can be checked.
