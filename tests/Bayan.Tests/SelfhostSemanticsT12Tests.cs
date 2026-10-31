@@ -80,6 +80,8 @@ public sealed class SelfhostSemanticsT12Tests
             union error C4 = Missing
             union error C5 = C1, B1
             """),
+        // CheckComposition of an alias that names no set, in a module with no sets: it composes nothing.
+        ("compose/main.byn", "union error C1 = Missing\n"),
         // DeclareEnumMembers, DeclareEnumFields, `T.Field`.
         ("enums/main.byn", """
             enum Color {
@@ -198,6 +200,8 @@ public sealed class SelfhostSemanticsT12Tests
             void v(i64 c) { }
             void w(i64 c) { }
             void w(i64 a, for i64 b) { }
+            void x(by i64 k = 1) { }
+            void x(i64 a) { }
             """),
     ];
 
@@ -205,6 +209,7 @@ public sealed class SelfhostSemanticsT12Tests
     [
         ("unique", ""),
         ("errors", "vcp"),
+        ("compose", "c"),
         ("enums", "e"),
         ("unions", "u"),
         ("structs", "m"),
