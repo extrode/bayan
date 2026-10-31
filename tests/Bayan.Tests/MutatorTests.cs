@@ -124,6 +124,14 @@ public sealed class MutatorTests
     }
 
     [Fact]
+    public void RemovingACallThatAssignsAnOutArgumentIsNotEmitted()
+    {
+        var m = Find("void init(out i32 r) {\n    r = 1\n}\n\nvoid pass(out i32 r) {\n    init(out r)\n}\n\ni32 use() {\n    var x: i32\n    init(out x)\n    var y: i32 = 0\n    init(out y)\n    return x + y\n}\n");
+        Assert.Equal(["13:5 init(out y) => "], Sites(m, Mutator.Statement));
+        Assert.Equal(3, m.NotEmitted[Mutator.Statement]);
+    }
+
+    [Fact]
     public void ALiteralIndexPushedOutOfAFixedArrayIsNotEmitted()
     {
         var m = Find("i32 ends(i32[4] xs) {\n    return xs[3] + xs[0]\n}\n");

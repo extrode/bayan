@@ -111,7 +111,11 @@ public static class Mutator
                     _arrayIndexes[index] = (array, i.FromEnd);
                     break;
                 case BoundExprStmt { Syntax: ExprStmt, Expr: BoundCall or BoundBuiltinCall } s when s.Expr.Type == PrimitiveType.Void:
-                    Remove(s);
+                    // A call's `out` argument is that variable's assignment (BYN2102, BYN2103).
+                    if (s.Expr is BoundCall call && call.Arguments.Where((arg, i) => i < call.Function.Parameters.Count
+                            && call.Function.Parameters[i].Modifier == ParamModifier.Out && arg is BoundLocal { Local: var l } && _uninitialized.Contains(l)).Any())
+                        NotEmitted[Statement]++;
+                    else Remove(s);
                     break;
                 case BoundAssign a when a.Syntax is AssignStmt or IncDecStmt:
                     OnAssign(a);
