@@ -1,0 +1,23 @@
+// `f64.tryParse(text)` / `f32.tryParse(text)`: the float literal form without `_`, correctly rounded; ±∞ on overflow,
+// `null` for spaces, hex floats, `inf`/`nan`, empty or partial text and `_` (revision 0015).
+string show(f64? v) {
+    if v is null { return "null" }
+    return $"{v}"
+}
+
+string showSingle(f32? v) {
+    if v is null { return "null" }
+    return $"{v}"
+}
+
+void main() {
+    for s in ["1.7976931348623157e308", "4.9e-324", "9007199254740993", "0.3e-300", "1e400", "-1e400", "-0", "1E+2", "2.5e-3", "1e-400"] {
+        print($"{s} {show(f64.tryParse(s))}")
+    }
+    for s in [" 1", "1 ", "0x1p3", "inf", "nan", "1e", ".", "", "1_000.0", "+1", "1.", ".5", "1e+", "-"] {
+        print($"[{s}] {show(f64.tryParse(s))}")
+    }
+    for s in ["3.4028235e38", "3.5e38", "1e-45", "16777217", "0.1", " 1", "inf", "1e"] {
+        print($"{s} {showSingle(f32.tryParse(s))}")
+    }
+}
