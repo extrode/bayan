@@ -122,7 +122,7 @@ public sealed class ExternalModeTests
         })
         {
             var r = Cli(dir, args);
-            Assert.Equal(1, r.Exit);
+            Assert.Equal(2, r.Exit);
             Assert.Contains("usage: bayan mutate", r.Err);
         }
     }

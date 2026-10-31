@@ -801,24 +801,24 @@ public static class CliApp
                     break;
                 default:
                     stderr.WriteLine(Messages.UnexpectedArgument.Text(args[i]));
-                    return ExitFailure;
+                    return ExitUsage;
             }
         }
         if (binary is null || sites is null || command.Length == 0)
         {
             stderr.WriteLine(Messages.MutateBinaryUsage.Text());
-            return ExitFailure;
+            return ExitUsage;
         }
         foreach (var path in new[] { binary, sites })
             if (!File.Exists(path))
             {
                 stderr.WriteLine(Messages.NotFound.Text(path));
-                return ExitFailure;
+                return ExitUsage;
             }
         if (Testing.ExternalSite.ReadAll(File.ReadAllText(sites)) is not { } map)
         {
             stderr.WriteLine(Messages.MutateBadSites.Text(sites));
-            return ExitFailure;
+            return ExitUsage;
         }
         return RunExternal(map, command, Path.GetFullPath(binary), "bayan mutate",
             Path.GetDirectoryName(Path.GetFullPath(binary))!, 0, stdout, stderr);
