@@ -507,6 +507,12 @@ struct Ctx {
     bool interfaceMembersDeclared = false
     List<Work> pendingInterfaces = List<Work>()
     // ── T14 state
+    /// C# `_conformancesChecked` (Q709).
+    bool checkedConformances = false
+    /// C# `_associatedBindings`: `"{struct} {name}"` to the resolved `type name = …;` (T12 writes it too, Q585).
+    Map<string, Type> associatedBindings = []
+    /// C# `_baseSpans`: `"{struct} {interface}"` to where the base is listed (T12 writes it, Q585).
+    Map<string, TextSpan> baseSpans = []
     // ── T15 state
     // ── T16 state
     // ── T17 state
