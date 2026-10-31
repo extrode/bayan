@@ -41,6 +41,9 @@ public sealed partial class Compilation
     private readonly Dictionary<string, ModuleSymbol> _modulesByDir = new(StringComparer.Ordinal);
     private readonly List<ModuleSymbol> _loading = new();
     private uint _nextErrorCode = 1;
+    private IReadOnlyList<SourceText> _entryFiles = [];
+    /// <summary>Files read from this text instead of from disk (<see cref="WithFile"/>).</summary>
+    private Dictionary<string, SourceText>? _replaced;
 
     private Compilation(string packageRoot, CompilationOptions options, string? displayRoot)
     {
@@ -115,9 +118,25 @@ public sealed partial class Compilation
     }
 
     /// <summary>Compiles <paramref name="entryFiles"/> as the entry module; imports resolve under <paramref name="packageRoot"/>.</summary>
-    public static Compilation Create(IReadOnlyList<SourceText> entryFiles, string packageRoot, CompilationOptions? options = null, string? displayRoot = null)
+    public static Compilation Create(IReadOnlyList<SourceText> entryFiles, string packageRoot, CompilationOptions? options = null, string? displayRoot = null) =>
+        Create(entryFiles, packageRoot, options, displayRoot, null);
+
+    /// <summary>
+    /// The same program compiled again with <paramref name="text"/> in place of the file of the same path, entry or
+    /// imported: spec 013 re-binds and ownership-checks each mutant this way.
+    /// </summary>
+    public Compilation WithFile(SourceText text)
     {
-        var c = new Compilation(packageRoot, options ?? new CompilationOptions(), displayRoot);
+        var replaced = _replaced is null ? new Dictionary<string, SourceText>(StringComparer.Ordinal) : new Dictionary<string, SourceText>(_replaced, StringComparer.Ordinal);
+        replaced[text.Path] = text;
+        var entry = _entryFiles.Select(f => f.Path == text.Path ? text : f).ToList();
+        return Create(entry, PackageRoot, Options, DisplayRoot, replaced);
+    }
+
+    private static Compilation Create(IReadOnlyList<SourceText> entryFiles, string packageRoot, CompilationOptions? options, string? displayRoot,
+        Dictionary<string, SourceText>? replaced)
+    {
+        var c = new Compilation(packageRoot, options ?? new CompilationOptions(), displayRoot) { _entryFiles = entryFiles, _replaced = replaced };
         var clock = System.Diagnostics.Stopwatch.StartNew();
         c.EntryModule = c.LoadModule("main", packageRoot, entryFiles, null);
         c.ParseTime = clock.Elapsed;
@@ -187,7 +206,8 @@ public sealed partial class Compilation
                     help: $"put the module's `.byn` files in `{Path.GetRelativePath(PackageRoot, dir)}/` next to the entry file; a module is a directory");
                 return;
             }
-            var sources = files.Select(f => new SourceText(Path.GetRelativePath(DisplayRoot, f).Replace('\\', '/'), File.ReadAllBytes(f)));
+            var sources = files.Select(f => (Path: Path.GetRelativePath(DisplayRoot, f).Replace('\\', '/'), File: f))
+                .Select(f => _replaced?.GetValueOrDefault(f.Path) ?? new SourceText(f.Path, File.ReadAllBytes(f.File)));
             module = LoadModule(name, dir, sources.ToList(), file.Module);
         }
         if (!file.Imports.TryAdd(alias, module))

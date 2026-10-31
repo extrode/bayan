@@ -16,7 +16,8 @@ public sealed record LoweredProgram(
     Bayan.Semantics.Compilation Compilation,
     IReadOnlyList<LoweredFunction> Functions,
     FunctionSymbol? Main,
-    IReadOnlyList<(TestSymbol Test, LoweredFunction Function)> Tests);
+    IReadOnlyList<(TestSymbol Test, LoweredFunction Function)> Tests,
+    bool Mutants = false);
 
 /// <summary>A function body with every local (not parameter) it uses, in first-use order.</summary>
 public sealed record LoweredFunction(FunctionSymbol Symbol, IReadOnlyList<LocalSymbol> Locals, int ContextSlots, int PanicSlots, BoundBlock Body);
@@ -114,6 +115,9 @@ public sealed record LNever(Node Syntax, TypeSymbol Type) : BoundExpr(Syntax, Ty
 
 /// <summary>A function value: <see cref="Function"/>'s code with <see cref="Env"/> (the captures tuple) or no environment.</summary>
 public sealed record LFunctionValue(Node Syntax, FunctionSymbol Function, LocalSymbol? Env, FunctionType FunctionType) : BoundExpr(Syntax, FunctionType);
+
+/// <summary>Whether the process-wide selector <c>byn_mutant</c> is <see cref="Id"/> (a <c>--mutate</c> build).</summary>
+public sealed record LMutantIs(Node Syntax, int Id) : BoundExpr(Syntax, PrimitiveType.Bool);
 
 /// <summary>The value of a <c>void</c> expression whose effects were already emitted.</summary>
 public sealed record LVoid(Node Syntax) : BoundExpr(Syntax, PrimitiveType.Void);

@@ -103,6 +103,7 @@ public sealed class CEmitter
         foreach (var (path, name) in _files)
             sb.Append($"static const char {name}[] = {CString(path)};\n");
         sb.Append('\n').Append(enums).Append(types).Append(statics).Append(errors);
+        if (_program.Mutants) sb.Append(MutantSelector);
         sb.Append(protos).Append('\n');
         foreach (var h in _helperOrder) sb.Append(_helpers[h].Proto).Append(";\n");
         sb.Append('\n');
@@ -174,10 +175,32 @@ public sealed class CEmitter
         return string.Join('\n', lines);
     }
 
+    /// <summary>
+    /// A <c>--mutate</c> build's selector: <c>BAYAN_MUTANT</c> read once at startup, the mutant that runs; unset, empty or
+    /// not a decimal integer is 0, no mutant (spec 013 R2).
+    /// </summary>
+    private const string MutantSelector = """
+        static int64_t byn_mutant;
+
+        static void byn_mutant_read(void) {
+            const char* s = getenv("BAYAN_MUTANT");
+            int64_t n = 0;
+            if (s == NULL || *s == 0) return;
+            for (; *s != 0; s++) {
+                if (*s < '0' || *s > '9' || n > (INT64_MAX - 9) / 10) return;
+                n = n * 10 + (*s - '0');
+            }
+            byn_mutant = n;
+        }
+
+
+        """;
+
     private string EmitMain()
     {
         var sb = new StringBuilder();
         sb.Append($"int main(int argc, char** argv) {{\n    {ErrorCType} err = {{0}};\n");
+        if (_program.Mutants) sb.Append("    byn_mutant_read();\n");
         // Map and symbol hashing is seeded per run; tests get a fixed seed so they are reproducible.
         if (_hashes || _symbols)
             sb.Append(_program.Tests.Count > 0
@@ -1577,6 +1600,8 @@ internal sealed class FunctionEmitter
                 return $"{Expr(h.Optional)}.has";
             case LUnionTag u:
                 return $"{Expr(u.Union)}.tag";
+            case LMutantIs m:
+                return $"(byn_mutant == {m.Id.ToString(CultureInfo.InvariantCulture)})";
             case LErrorCode code:
                 return $"{Expr(code.Error)}.code";
             case LErrorField f:
