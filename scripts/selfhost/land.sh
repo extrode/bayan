@@ -9,7 +9,7 @@ T=$1; BR=$2; N=${T#T}
 BASE=$(git rev-parse --abbrev-ref HEAD)
 [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "LAND REFUSED: the base worktree has uncommitted changes"; exit 1; }
 PATH="/usr/bin:$PATH" python3 -I scripts/selfhost/wave-brief.py . "$T" > /dev/null
-GUARD=$(grep -m1 '^bash scripts/selfhost/guard.sh' "tmp/010-${T,,}/prompt.md" | sed "s|--base [^ ]*|--base $BASE|")
+GUARD=$(grep -m1 '^bash scripts/selfhost/guard.sh' "tmp/010-${T,,}/prompt.md" | sed -e "s|--base [^ ]*|--base $BASE|" -e 's| --mutate [^ ]*||; s| --mutations [^ ]*||')
 REVIEW=docs/specs/010-self-hosted-semantics/reviews/$T.md
 
 WT=tmp/land-${T,,}; rm -rf "$WT"; git worktree prune

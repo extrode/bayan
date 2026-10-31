@@ -59,7 +59,6 @@ for t in sys.argv[2:]:
     own_api = [l for l in api if re.match(rf'^- {t} ', l)]
     q = qrange(block)
     test_class = tests[0][:-3] if tests else f'SelfhostSemantics{t}Tests'
-    mutate = f'selfhost/semantics/{byns[0]}' if byns else ''
     proto = '\n'.join(protocol[2:]).replace('SelfhostSemanticsT3Tests', test_class).replace('restore with `git checkout -- <file>`', 'restore by copying back a copy you took first (`cp f tmp/f.orig` … `cp tmp/f.orig f`; never `git checkout`, which reverts to the stub and loses your work)').replace('Skeleton by turn 12', 'Skeleton by turn 15')
     s = f"""You are doing task {t} of spec 010 (the Bayan type checker ported from C# `src/Bayan.Semantics/` into Bayan under `selfhost/semantics/`). Other writers port the sibling files in parallel; every cross-file function already exists as a compiling stub with its final signature, so you call real names and never write stand-ins. A separate reviewer compares your port with the C# line by line before it lands; invented logic, sibling fallbacks and hand-typed test expectations fail that review.
 
@@ -67,7 +66,7 @@ for t in sys.argv[2:]:
 
 Guard (run before you finish):
 ```
-bash scripts/selfhost/guard.sh --base {BASE} --allow '{allow}' --filter 'FullyQualifiedName~{test_class}' --mutate {mutate} --mutations 8
+bash scripts/selfhost/guard.sh --base {BASE} --allow '{allow}' --filter 'FullyQualifiedName~{test_class}'
 ```
 Do not commit, merge, checkout, reset or stash; the dispatcher commits for you.
 
