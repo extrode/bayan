@@ -38,7 +38,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [ ] T12 Declaration B — files: `declare.byn` (`Compilation.cs` ~655–1037: variants, payloads, enums, unions, struct members, overloads, `overlap`), `SelfhostSemanticsT12Tests.cs` — covers: R4 — after: T4; parallel with: T6–T11, T13–T27, T34–T39 — done when:
   - method-for-method port with copied symbol facts and no synthesized syntax; Q575–Q579 as needed.
   - Size: about 555 lines.
-- [ ] T13 Generics and instantiation — files: `generics.byn` (`Compilation.cs` 1363–1952: `BindAll`, instance keys, `Instantiating` as sink push/pop, constraints, `InferErrorSets`, mutation/requires), `SelfhostSemanticsT13Tests.cs` — covers: R4 — after: T4; parallel with: T6–T12, T14–T27, T34–T39 — done when:
+- [x] T13 Generics and instantiation — files: `generics.byn` (`Compilation.cs` 1363–1952: `BindAll`, instance keys, `Instantiating` as sink push/pop, constraints, `InferErrorSets`, mutation/requires), `SelfhostSemanticsT13Tests.cs` — covers: R4 — after: T4; parallel with: T6–T12, T14–T27, T34–T39 — done when:
   - the work list reproduces C# order and forwarding; Q580–Q584 as needed.
   - Size: about 856 lines.
 - [ ] T14 Conformance — files: `conformance.byn` (`Conformance.cs`: `conform`, `checkConformances`, quiet sinks, associated bindings), `SelfhostSemanticsT14Tests.cs` — covers: R4 — after: T4; parallel with: T6–T13, T15–T27, T34–T39 — done when:
