@@ -1,4 +1,4 @@
-// T16: Binder.cs ~500-979 (blocks, statement dispatch, assert, narrowing, while-let, for head).
+// T16: Binder.cs 516-980 (exit code, blocks, statement dispatch, assert, narrowing, labels, locals, while-let, for head).
 
 import parser
 import lexer
@@ -12,103 +12,18 @@ struct NarrowedScope {
     List<(i64, LocalId, Type)> learned
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-string t16Text(in Ctx c, from FileId f, at TextSpan span) => $"{getText(c.files[f].text.span, at: span)}"
-
-TextSpan t16StmtSpan(in parser.Stmt s) {
-    switch s {
-        case .blockStmt(let n): return n.value.span
-        case .localDecl(let n): return n.value.span
-        case .exprStmt(let n): return n.value.span
-        case .assignStmt(let n): return n.value.span
-        case .incDecStmt(let n): return n.value.span
-        case .returnStmt(let n): return n.value.span
-        case .failStmt(let n): return n.value.span
-        case .breakStmt(let n): return n.value.span
-        case .continueStmt(let n): return n.value.span
-        case .becomeStmt(let n): return n.value.span
-        case .ifStmt(let n): return n.value.span
-        case .unlessStmt(let n): return n.value.span
-        case .guardedStmt(let n): return n.value.span
-        case .whileStmt(let n): return n.value.span
-        case .doWhileStmt(let n): return n.value.span
-        case .whileLetStmt(let n): return n.value.span
-        case .forStmt(let n): return n.value.span
-        case .labeledStmt(let n): return n.value.span
-        case .switchStmt(let n): return n.value.span
-        case .deferStmt(let n): return n.value.span
-        case .assertStmt(let n): return n.value.span
-        case .contextStmt(let n): return n.value.span
-        case .emptyStmt(let n): return n.value.span
-        case .errorStmt(let n): return n.value.span
-        case .none: return TextSpan { start: 0, length: 0 }
-    }
-}
-
-TextSpan t16ExprSpan(in parser.Expr e) {
-    switch e {
-        case .literalExpr(let n): return n.value.span
-        case .interpolatedExpr(let n): return n.value.span
-        case .nameExpr(let n): return n.value.span
-        case .thisExpr(let n): return n.value.span
-        case .memberExpr(let n): return n.value.span
-        case .targetMemberExpr(let n): return n.value.span
-        case .callExpr(let n): return n.value.span
-        case .indexExpr(let n): return n.value.span
-        case .unaryExpr(let n): return n.value.span
-        case .binaryExpr(let n): return n.value.span
-        case .rangeExpr(let n): return n.value.span
-        case .conditionalExpr(let n): return n.value.span
-        case .castExpr(let n): return n.value.span
-        case .isExpr(let n): return n.value.span
-        case .exceptExpr(let n): return n.value.span
-        case .inExpr(let n): return n.value.span
-        case .switchExpr(let n): return n.value.span
-        case .tryExpr(let n): return n.value.span
-        case .moveExpr(let n): return n.value.span
-        case .catchExpr(let n): return n.value.span
-        case .caughtErrorExpr(let n): return n.value.span
-        case .jumpExpr(let n): return n.value.span
-        case .blockExpr(let n): return n.value.span
-        case .structLiteralExpr(let n): return n.value.span
-        case .withExpr(let n): return n.value.span
-        case .spreadExpr(let n): return n.value.span
-        case .mapEntryExpr(let n): return n.value.span
-        case .collectionExpr(let n): return n.value.span
-        case .tupleExpr(let n): return n.value.span
-        case .parenExpr(let n): return n.value.span
-        case .lambdaExpr(let n): return n.value.span
-        case .stackallocExpr(let n): return n.value.span
-        case .patternExpr(let n): return n.value.span
-        case .errorExpr(let n): return n.value.span
-        case .none: return TextSpan { start: 0, length: 0 }
-    }
-}
-
-LocalId findLocal(ref Binder b, for string name) {
-    var res: LocalId = -1
-    for s in b.scopes {
-        if s.contains(name) {
-            res = s[name]
-        }
-    }
-    return res
-}
-
-Type t16Unwrap(in Ctx c, for Type t) {
-    if kindOf(t) == .optional {
-        return c.optionalTypes[typeIndex(t)]
-    }
-    return t
-}
-
-JumpTarget ensureTarget(ref Ctx c, to JumpTarget? labelTarget, bool isLoop) {
+/// The C# `labelTarget ?? new JumpTarget(null, isLoop)`; a new target takes the next `c.jumpTargets` id.
+JumpTarget t16Target(ref Ctx c, to JumpTarget? labelTarget, bool isLoop) {
     if (labelTarget is { } lt) {
         return lt
     }
+    return t16NewTarget(ref c, for: null, isLoop: isLoop)
+}
+
+/// The C# `new JumpTarget(label, isLoop)`.
+JumpTarget t16NewTarget(ref Ctx c, for string? label, bool isLoop) {
     let target = JumpTarget {
-        label: null,
+        label: label,
         isLoop: isLoop,
         id: c.jumpTargets.length,
     }
@@ -116,235 +31,20 @@ JumpTarget ensureTarget(ref Ctx c, to JumpTarget? labelTarget, bool isLoop) {
     return target
 }
 
-BExpr negate(ref Ctx c, from in parser.Expr syntax, by BExpr cond) {
-    let span = t16ExprSpan(in syntax)
-    let k = exprConstant(in c, for: cond)
-    if (k is { } cVal) {
-        if cVal.kind == .flag {
-            let notFlag = !cVal.flag
-            let lit = addLiteral(ref c, from: BLiteral {
-                span: span,
-                type: prim(.bool),
-                value: Constant { kind: .flag, flag: notFlag },
-            })
-            setConstant(ref c, for: lit, to: Constant { kind: .flag, flag: notFlag })
-            return lit
-        }
-    }
-    return addUnary(ref c, from: BUnary {
-        span: span,
-        op: .notKeyword,
-        operand: cond,
-        type: prim(.bool),
-    })
-}
+/// The C# `_scope` a fact is keyed by: its identity (Q715).
+i64 t16ScopeId(ref Binder b) => b.scopeIds[t15Scope(ref b)]
 
-void nonNullCollect(in Ctx c, for BExpr cond, bool when, to ref List<LocalId> found) {
-    switch boundKind(cond) {
-        case .isExpr:
-            let isNode = c.bIses[boundIndex(cond)]
-            if boundKind(isNode.value) == .local {
-                let locNode = c.bLocals[boundIndex(isNode.value)]
-                let lId = locNode.local
-                if kindOf(c.locals[lId].type) == .optional && (c.locals[lId].kind == .letKeyword || (c.locals[lId].isParameter && (c.locals[lId].modifier == .none || c.locals[lId].modifier == .inKeyword))) {
-                    if boundKind(isNode.pattern) == .notPattern {
-                        let notP = c.bNotPatterns[boundIndex(isNode.pattern)]
-                        if boundKind(notP.operand) == .constantPattern {
-                            let cp = c.bConstantPatterns[boundIndex(notP.operand)]
-                            if boundKind(cp.value) == .defaultValue {
-                                if when { found.append(lId) }
-                            }
-                        }
-                    } else if boundKind(isNode.pattern) == .constantPattern {
-                        let cp = c.bConstantPatterns[boundIndex(isNode.pattern)]
-                        if boundKind(cp.value) == .defaultValue {
-                            if !when { found.append(lId) }
-                        }
-                    }
-                }
-            }
-        case .unary:
-            let u = c.bUnaries[boundIndex(cond)]
-            if u.op == .notKeyword {
-                nonNullCollect(in c, for: u.operand, when: !when, to: ref found)
-            }
-        case .binary:
-            let b = c.bBinaries[boundIndex(cond)]
-            if (b.op == .logicalAnd || b.op == .logicalOr) && when == (b.op == .logicalAnd) {
-                nonNullCollect(in c, for: b.left, when: when, to: ref found)
-                nonNullCollect(in c, for: b.right, when: when, to: ref found)
-            }
-        default:
-    }
-}
-
-List<LocalId> nonNullWhen(in Ctx c, for BExpr cond, bool whenTrue) {
-    var found = List<LocalId>()
-    nonNullCollect(in c, for: cond, when: whenTrue, to: ref found)
-    return found
-}
-
-bool exits(in Ctx c, for BStmt s) {
-    switch boundKind(s) {
-        case .returnStmt or .breakStmt or .continueStmt:
-            return true
-        case .block:
-            let blkIdx = boundIndex(s)
-            if c.bBlocks[blkIdx].statements.length > 0 {
-                return exits(in c, for: c.bBlocks[blkIdx].statements[c.bBlocks[blkIdx].statements.length - 1])
-            }
-            return false
-        case .exprStmt:
-            let eIdx = boundIndex(s)
-            return isNever(exprType(in c, for: c.bExprStmts[eIdx].expr))
-        case .ifStmt:
-            let ifIdx = boundIndex(s)
-            if c.bIfs[ifIdx].elseBranch >= 0 {
-                return exits(in c, for: c.bIfs[ifIdx].then) && exits(in c, for: c.bIfs[ifIdx].elseBranch)
-            }
-            return false
-        default:
-            return false
-    }
-}
-
-BStmt narrowAfter(ref Binder b, through ref Ctx c, for BStmt ifNodeHandle) {
-    let ifIdx = boundIndex(ifNodeHandle)
-    let thenExits = exits(in c, for: c.bIfs[ifIdx].then)
-    let elseExits = c.bIfs[ifIdx].elseBranch >= 0 && exits(in c, for: c.bIfs[ifIdx].elseBranch)
-    if thenExits != elseExits {
-        let nonNulls = nonNullWhen(in c, for: c.bIfs[ifIdx].condition, whenTrue: elseExits)
-        let scopeIdx = b.scopes.length - 1
-        for l in nonNulls {
-            b.nonNull.append((scopeIdx, l))
-        }
-        let _ = learnStates(ref b, through: ref c, for: c.bIfs[ifIdx].condition, whenTrue: elseExits)
-    }
-    return ifNodeHandle
-}
-
-void checkDisposable(ref Binder b, through ref Ctx c, for in parser.LocalDecl d, as Type type) {
-    if type == builtinType(.arena) || kindOf(type) == .list || isError(type) {
-        return
-    }
-    let typeDisp = typeDisplay(ref c, by: type)
-    report(ref b, through: ref c, for: .notDisposable, at: d.name, by: (typeDisp, "", "", "", ""),
-        help: "use `using` only for values that own memory: `Arena` and `List<T>`")
-}
-
-bool isBorrowedPlace(ref Ctx c, for BExpr e) {
-    switch boundKind(e) {
-        case .local or .thisRef or .staticArray:
-            return true
-        case .builtinCall:
-            let bIdx = boundIndex(e)
-            if c.bBuiltinCalls[bIdx].member == .ownedValue { return true }
-            if c.bBuiltinCalls[bIdx].member == .mapIndex || c.bBuiltinCalls[bIdx].member == .resultValue
-                || c.bBuiltinCalls[bIdx].member == .mapTryGet || c.bBuiltinCalls[bIdx].member == .listTryGet {
-                return isBorrowedPlace(ref c, for: c.bBuiltinCalls[bIdx].receiver)
-            }
-            return false
-        case .field:
-            let f = c.bFields[boundIndex(e)]
-            return isBorrowedPlace(ref c, for: f.receiver)
-        case .tupleElement:
-            let t = c.bTupleElements[boundIndex(e)]
-            return isBorrowedPlace(ref c, for: t.receiver)
-        case .index:
-            let i = c.bIndexes[boundIndex(e)]
-            if kindOf(exprType(in c, for: i.target)) == .span { return true }
-            return isBorrowedPlace(ref c, for: i.target)
-        case .conversion:
-            let cv = c.bConversions[boundIndex(e)]
-            return isBorrowedPlace(ref c, for: cv.operand)
-        case .conditional:
-            let cd = c.bConditionals[boundIndex(e)]
-            return isBorrowedPlace(ref c, for: cd.whenTrue) || isBorrowedPlace(ref c, for: cd.whenFalse)
-        case .coalesce:
-            let cl = c.bCoalesces[boundIndex(e)]
-            return isBorrowedPlace(ref c, for: cl.left) || isBorrowedPlace(ref c, for: cl.right)
-        case .switchExpr:
-            let swIdx = boundIndex(e)
-            var armValues = List<BExpr>()
-            for arm in c.bSwitchExprs[swIdx].arms {
-                armValues.append(arm.value)
-            }
-            for v in armValues {
-                if isBorrowedPlace(ref c, for: v) { return true }
-            }
-            return false
-        case .withExpr:
-            let wIdx = boundIndex(e)
-            let tType = exprType(in c, for: c.bWiths[wIdx].target)
-            if kindOf(tType) == .structType && isBorrowedPlace(ref c, for: c.bWiths[wIdx].target) {
-                let sId = typeIndex(tType)
-                var sFields = List<FieldId>()
-                for fId in c.structs[sId].fields { sFields.append(fId) }
-                var updatedFields = List<FieldId>()
-                for u in c.bWiths[wIdx].updates { updatedFields.append(u.field) }
-                for fId in sFields {
-                    var replaced = false
-                    for uf in updatedFields {
-                        if uf == fId {
-                            replaced = true
-                            break
-                        }
-                    }
-                    if !replaced && isUnique(ref c, for: c.fields[fId].type) {
-                        return true
-                    }
-                }
-            }
-            return false
-        case .tryExpr:
-            let tr = c.bTries[boundIndex(e)]
-            return isBorrowedPlace(ref c, for: tr.operand)
-        case .catchExpr:
-            let ct = c.bCatches[boundIndex(e)]
-            return isBorrowedPlace(ref c, for: ct.operand) || isBorrowedPlace(ref c, for: ct.handler)
-        default:
-            return false
-    }
-}
-
-// ── Entry points ──────────────────────────────────────────────────────────────
-
-// stub: T16 ports Binder.cs:517 BindExitCode
+/// The value of `@exitCode(n)`: one integer constant from 1 to 255, else BYN2772 and 1.
 i32 bindExitCode(ref Binder b, through ref Ctx c, for in parser.AttributeSyntax a) {
     if a.args.length != 1 || a.args[0].name is not null || a.args[0].modifier != .none {
         report(ref b, through: ref c, for: .invalidExitCode, at: a.span, by: ("", "", "", "", ""))
         return 1
     }
-    var val = bindExpr(ref b, through: ref c, for: in a.args[0].value)
-    if val == -1 {
-        switch a.args[0].value {
-            case .literalExpr(let lit):
-                if lit.value.kind == .integer {
-                    let bp = bigParse(lit.value.text)
-                    if bp.ok && !bp.overflow {
-                        let litHandle = addLiteral(ref c, from: BLiteral {
-                            span: lit.value.span,
-                            type: prim(PrimitiveKind.i32),
-                            value: Constant { kind: .integer, integer: bp.value },
-                        })
-                        setConstant(ref c, for: litHandle, to: Constant { kind: .integer, integer: bp.value })
-                        val = litHandle
-                    }
-                } else if lit.value.kind == .string {
-                    let litHandle = addLiteral(ref c, from: BLiteral {
-                        span: lit.value.span,
-                        type: prim(PrimitiveKind.string),
-                        value: Constant { kind: .text, text: lit.value.text },
-                    })
-                    val = litHandle
-                }
-            default:
-        }
-    }
-    let vType = exprType(in c, for: val)
+    let value = bindExpr(ref b, through: ref c, for: in a.args[0].value)
+    let vType = exprType(in c, for: value)
     if isError(vType) { return 1 }
-    let vConst = exprConstant(in c, for: val)
-    let valSpan = t16ExprSpan(in a.args[0].value)
+    let vConst = exprConstant(in c, for: value)
+    let valSpan = t15ExprSpan(in a.args[0].value)
     if !isInteger(vType) || vConst is null {
         report(ref b, through: ref c, for: .invalidExitCode, at: valSpan, by: ("", "", "", "", ""))
         return 1
@@ -360,7 +60,8 @@ i32 bindExitCode(ref Binder b, through ref Ctx c, for in parser.AttributeSyntax 
     return 1
 }
 
-// stub: T16 ports Binder.cs:541 BindBlock
+// ── Statements ───────────────────────────────────────────────────────────────
+
 BStmt bindBlock(ref Binder b, through ref Ctx c, for in parser.BlockStmt block) {
     pushScope(ref b)
     var statements = List<BStmt>()
@@ -371,7 +72,7 @@ BStmt bindBlock(ref Binder b, through ref Ctx c, for in parser.BlockStmt block) 
     return addBlock(ref c, from: BBlock { span: block.span, statements: move statements })
 }
 
-// stub: T16 ports Binder.cs:551 BindBody
+/// A loop or `if` body: a block, or one statement in its own scope.
 BStmt bindBody(ref Binder b, through ref Ctx c, for in parser.Stmt body) {
     switch body {
         case .blockStmt(let blk):
@@ -384,457 +85,6 @@ BStmt bindBody(ref Binder b, through ref Ctx c, for in parser.Stmt body) {
     }
 }
 
-// stub: T16 ports Binder.cs:673 BindCondition
-BExpr bindCondition(ref Binder b, through ref Ctx c, for in parser.Expr e) =>
-    bindConverted(ref b, through: ref c, for: in e, to: prim(.bool))
-
-// stub: T16 ports Binder.cs:675 BindAssert
-BStmt bindAssertFails(ref Binder b, through ref Ctx c, for in parser.AssertStmt a) {
-    var operand = bindExpr(ref b, through: ref c, for: in a.condition)
-    if operand == -1 {
-        switch a.condition {
-            case .literalExpr(let lit):
-                if lit.value.kind == .integer {
-                    let bp = bigParse(lit.value.text)
-                    if bp.ok {
-                        operand = addLiteral(ref c, from: BLiteral {
-                            span: lit.value.span,
-                            type: prim(PrimitiveKind.i32),
-                            value: Constant { kind: .integer, integer: bp.value },
-                        })
-                    }
-                }
-            default:
-        }
-    }
-    if boundKind(operand) != .call {
-        if !isError(exprType(in c, for: operand)) {
-            report(ref b, through: ref c, for: .nothingToHandle, at: t16ExprSpan(in a.condition), by: ("assert … fails", "", "", "", ""))
-        }
-        return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
-    }
-    let bcIdx = boundIndex(operand)
-    if !c.functions[c.bCalls[bcIdx].function].hasFails {
-        if !isError(exprType(in c, for: operand)) {
-            report(ref b, through: ref c, for: .nothingToHandle, at: t16ExprSpan(in a.condition), by: ("assert … fails", "", "", "", ""))
-        }
-        return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
-    }
-    let sets = errorSetsOf(ref c, for: c.bCalls[bcIdx].function)
-    let emptyEx = List<VariantId>()
-    let errorType = errorUnionOf(ref c, for: in sets, as: in emptyEx)
-    let errorTypeDisp = typeDisplay(ref c, by: errorType)
-
-    var boundSet = -1
-    var caseName: TextSpan? = null
-    var setSpan = a.span
-    switch a.failsKeyword {
-        case .memberExpr(let m):
-            boundSet = bindExprOrType(ref b, through: ref c, for: in m.value.target)
-            caseName = m.value.member
-            setSpan = t16ExprSpan(in m.value.target)
-        default:
-            boundSet = bindExprOrType(ref b, through: ref c, for: in a.failsKeyword)
-            setSpan = t16ExprSpan(in a.failsKeyword)
-    }
-
-    if boundKind(boundSet) != .typeRef || kindOf(c.bTypeRefs[boundIndex(boundSet)].referenced) != .errorSet {
-        let setText = t16Text(in c, from: b.file, at: setSpan)
-        report(ref b, through: ref c, for: .patternMismatch, at: setSpan, by: ($"`{setText}`", errorTypeDisp, "", "", ""))
-        return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
-    }
-    let setId = typeIndex(c.bTypeRefs[boundIndex(boundSet)].referenced)
-    var variantId: VariantId = -1
-    if (caseName is { } cn) {
-        let vName = t16Text(in c, from: b.file, at: cn)
-        for vId in c.errorSets[setId].variants {
-            if c.errorVariants[vId].name == vName {
-                variantId = vId
-                break
-            }
-        }
-        if variantId == -1 {
-            let failsSpan = t16ExprSpan(in a.failsKeyword)
-            let failsText = t16Text(in c, from: b.file, at: failsSpan)
-            var candidateNames = List<string>()
-            for vId in c.errorSets[setId].variants {
-                candidateNames.append(c.errorVariants[vId].name)
-            }
-            let close = suggest(vName, by: in candidateNames)
-            let helpText = close is not null ? $"did you mean `{close}`?" : ""
-            report(ref b, through: ref c, for: .patternMismatch, at: failsSpan, by: ($"`{failsText}`", c.errorSets[setId].name, "", "", ""), help: helpText)
-            return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
-        }
-    }
-    if sets.length > 0 {
-        var found = false
-        for s in sets {
-            if s == setId {
-                found = true
-                break
-            }
-        }
-        if !found {
-            report(ref b, through: ref c, for: .patternMismatch, at: setSpan, by: ($"`{c.errorSets[setId].name}`", errorTypeDisp, "", "", ""))
-            return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
-        }
-    }
-    return addAssert(ref c, from: BAssert {
-        span: a.span,
-        condition: operand,
-        failsWith: setId,
-        failsCase: variantId,
-    })
-}
-
-BStmt bindAssert(ref Binder b, through ref Ctx c, for in parser.AssertStmt a) {
-    switch a.failsKeyword {
-        case .none:
-            var condition = bindExpr(ref b, through: ref c, for: in a.condition, to: prim(.bool))
-            if condition == -1 {
-                switch a.condition {
-                    case .literalExpr(let lit):
-                        if lit.value.kind == .integer {
-                            let bp = bigParse(lit.value.text)
-                            if bp.ok {
-                                condition = addLiteral(ref c, from: BLiteral {
-                                    span: lit.value.span,
-                                    type: prim(PrimitiveKind.i32),
-                                    value: Constant { kind: .integer, integer: bp.value },
-                                })
-                            }
-                        }
-                    default:
-                }
-            }
-            let condType = exprType(in c, for: condition)
-            if isError(condType) || implicit(ref c, from: condType, to: prim(.bool)) is not null {
-                let conv = convert(ref b, through: ref c, for: condition, to: prim(.bool), at: t16ExprSpan(in a.condition))
-                return addAssert(ref c, from: BAssert { span: a.span, condition: conv, failsWith: -1, failsCase: -1 })
-            }
-            let typeDisp = typeDisplay(ref c, by: condType)
-            report(ref b, through: ref c, for: .assertNotBool, at: t16ExprSpan(in a.condition), by: (typeDisp, "", "", "", ""),
-                label: "this is not a `bool`", help: "check the value against what you expect, e.g. `assert count == 3`")
-            return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
-        default:
-            return bindAssertFails(ref b, through: ref c, for: in a)
-    }
-}
-
-// stub: T16 ports Binder.cs:731 IsNonNull
-bool isNonNull(ref Binder b, for LocalId local) {
-    for pair in b.nonNull {
-        if pair.item2 == local && pair.item1 >= 0 && pair.item1 < b.scopes.length {
-            return true
-        }
-    }
-    return false
-}
-
-// stub: T16 ports Binder.cs:743 Narrowed
-NarrowedScope narrowedBegin(ref Binder b, through ref Ctx c, for BExpr cond, bool whenTrue) {
-    let mark = b.nonNull.length
-    let nonNulls = nonNullWhen(in c, for: cond, whenTrue: whenTrue)
-    let scopeIdx = b.scopes.length - 1
-    for l in nonNulls {
-        b.nonNull.append((scopeIdx, l))
-    }
-    var before = List<(i64, LocalId, Type)>()
-    for f in b.stateFacts {
-        before.append(f)
-    }
-    let learned = learnStates(ref b, through: ref c, for: cond, whenTrue: whenTrue)
-    return NarrowedScope {
-        mark: mark,
-        before: move before,
-        learned: move learned,
-    }
-}
-
-// stub: T16 ports Binder.cs:743 Narrowed
-void narrowedEnd(ref Binder b, through ref Ctx c, by move NarrowedScope scope) {
-    while b.nonNull.length > scope.mark {
-        b.nonNull.remove(at: b.nonNull.length - 1)
-    }
-    var currentFacts = List<(i64, LocalId, Type)>()
-    for f in b.stateFacts {
-        currentFacts.append(f)
-    }
-    var kept = List<(i64, LocalId, Type)>()
-    for f in currentFacts {
-        var found = false
-        for bf in scope.before {
-            if bf.item1 == f.item1 && bf.item2 == f.item2 && bf.item3 == f.item3 {
-                found = true
-                break
-            }
-        }
-        if found {
-            kept.append(f)
-        }
-    }
-    b.stateFacts = move kept
-    unlearnStates(ref b, by: in scope.learned)
-}
-
-// stub: T16 ports Binder.cs:807 BindLabeled
-BStmt bindLabeled(ref Binder b, through ref Ctx c, for in parser.LabeledStmt l) {
-    checkValueName(ref b, through: ref c, at: l.label)
-    let labelText = t16Text(in c, from: b.file, at: l.label)
-    var duplicate = false
-    for t in b.targets {
-        if (t.label is { } lbl) {
-            if lbl == labelText {
-                duplicate = true
-                break
-            }
-        }
-    }
-    if duplicate {
-        report(ref b, through: ref c, for: .duplicateDeclaration, at: l.label, by: (labelText, "", "", "", ""),
-            label: "an enclosing statement has this label")
-    }
-    var isLoop = true
-    var isValid = false
-    switch l.statement {
-        case .switchStmt(_):
-            isLoop = false
-            isValid = true
-        case .whileStmt(_) or .whileLetStmt(_) or .doWhileStmt(_) or .forStmt(_):
-            isLoop = true
-            isValid = true
-        default:
-    }
-    if !isValid {
-        report(ref b, through: ref c, for: .labelNotOnLoop, at: l.label, by: (labelText, "", "", "", ""))
-        return bindStatement(ref b, through: ref c, for: in l.statement)
-    }
-    let target = JumpTarget {
-        label: labelText,
-        isLoop: isLoop,
-        id: c.jumpTargets.length,
-    }
-    c.jumpTargets.append(target)
-    return bindStatement(ref b, through: ref c, for: in l.statement, labelTarget: target)
-}
-
-// stub: T16 ports Binder.cs:868 CheckUniqueConst
-bool checkUniqueConst(ref Binder b, through ref Ctx c, for in parser.LocalDecl d, as Type type) {
-    if d.span.length < 5 { return false }
-    let keyword = TextSpan { start: d.span.start, length: 5 }
-    let part = uniquePart(ref c, for: type)
-    if part == -1 || kindOf(part) != .structType { return false }
-    if t16Text(in c, from: b.file, at: keyword) != "const" { return false }
-    let structId = typeIndex(part)
-    let partName = c.structs[structId].name
-    report(ref b, through: ref c, for: .uniqueConst, at: keyword, by: ("", "", "", "", ""),
-        label: $"`{partName}` is `unique`", help: "declare it with `let`",
-        hasFix: true, fixSpan: keyword, fixReplacement: "let")
-    return true
-}
-
-// stub: T16 ports Binder.cs:885 DefaultType
-Type defaultType(ref Binder b, through ref Ctx c, for BExpr init, from in parser.Expr syntax) {
-    let t = exprType(in c, for: init)
-    if kindOf(t) == .nullType {
-        report(ref b, through: ref c, for: .cannotInferType, at: t16ExprSpan(in syntax), by: ("null", "", "", "", ""),
-            help: "write the type: `i64? x = null`")
-        return errorType()
-    }
-    if isVoid(t) {
-        report(ref b, through: ref c, for: .voidValue, at: t16ExprSpan(in syntax), by: ("", "", "", "", ""))
-        return errorType()
-    }
-    if isNever(t) {
-        return prim(.neverKind)
-    }
-    return t
-}
-
-// stub: T16 ports Binder.cs:821 BindLocalDecl
-BStmt bindLocalDecl(ref Binder b, through ref Ctx c, for in parser.LocalDecl d) {
-    var declared: Type = -1
-    switch d.type {
-        case .none:
-            for s in b.seeds {
-                if s.item1 == d.span.start && isInteger(s.item2) {
-                    declared = s.item2
-                    break
-                }
-            }
-        default:
-            declared = resolveType(ref b, through: ref c, for: in d.type)
-    }
-
-    var init: BExpr = -1
-    switch d.init {
-        case .none:
-            let nameText = t16Text(in c, from: b.file, at: d.name)
-            if d.kind != .varKeyword {
-                let kWord = d.kind == .letKeyword ? "let" : "const"
-                let help = d.kind == .letKeyword ? "give it a value, or declare it with `var` and assign it on every path before use" : ""
-                report(ref b, through: ref c, for: .missingInitializer, at: d.name, by: (kWord, nameText, "", "", ""), help: help)
-            } else if declared == -1 {
-                report(ref b, through: ref c, for: .cannotInferType, at: d.name, by: (nameText, "", "", "", ""), help: $"write the type: `var i64 {nameText}`")
-            }
-        default:
-            if declared == -1 {
-                let boundExpr = bindExpr(ref b, through: ref c, for: in d.init)
-                init = built(ref b, through: ref c, for: boundExpr, from: in d.init)
-            } else {
-                init = bindConverted(ref b, through: ref c, for: in d.init, to: declared)
-            }
-    }
-
-    var type: Type = -1
-    if declared != -1 {
-        type = declared
-    } else if init != -1 {
-        type = defaultType(ref b, through: ref c, for: init, from: in d.init)
-        init = convert(ref b, through: ref c, for: init, to: type, at: t16ExprSpan(in d.init))
-    } else {
-        type = errorType()
-    }
-
-    var state: Type = -1
-    if d.kind == .varKeyword && kindOf(type) == .state {
-        state = type
-        type = makeType(.structType, at: c.stateTypes[typeIndex(state)].s)
-    }
-
-    let kind: LocalKind = d.kind == .letKeyword ? .letKeyword : (d.kind == .constKeyword ? .constKeyword : .varKeyword)
-    let uniqueConst = d.kind == .constKeyword && checkUniqueConst(ref b, through: ref c, for: in d, as: type)
-    if d.kind == .constKeyword && !uniqueConst && init != -1 && exprConstant(in c, for: init) is null && !isError(exprType(in c, for: init)) {
-        report(ref b, through: ref c, for: .notConstant, at: t16ExprSpan(in d.init), by: ("a `const`", "", "", "", ""))
-    }
-    if d.usingKeyword {
-        checkDisposable(ref b, through: ref c, for: in d, as: type)
-    }
-    let local = declareLocal(ref b, through: ref c, at: d.name, as: type, for: kind)
-    if b.held > 0 && kind == .varKeyword && declared == -1 && type == prim(.i32) && isUntypedLiteral(in d.init) {
-        b.pending[local] = d.span.start
-    }
-    c.locals[local].isUsing = d.usingKeyword
-    if state != -1 {
-        learnState(ref b, for: local, as: state)
-    }
-    if (kind == .letKeyword || kind == .varKeyword) && !d.usingKeyword && d.span.length >= 3 {
-        let kw = t16Text(in c, from: b.file, at: TextSpan { start: d.span.start, length: 3 })
-        if kw == (kind == .letKeyword ? "let" : "var") {
-            c.locals[local].keywordSpan = TextSpan { start: d.span.start, length: 3 }
-        }
-    }
-    if kind == .constKeyword && init != -1 {
-        c.locals[local].constant = exprConstant(in c, for: init)
-    }
-    return addLocalDecl(ref c, from: BLocalDecl { span: d.span, local: local, initializer: init })
-}
-
-// stub: T16 ports Binder.cs:942 BindPresent
-BPattern bindPresent(ref Binder b, through ref Ctx c, at TextSpan name, as Type input) {
-    let inner = t16Unwrap(in c, for: input)
-    let local = declareLocal(ref b, through: ref c, at: name, as: inner, for: .patternVariable)
-    c.locals[local].borrowsSubject = true
-    return addPropertyPattern(ref c, from: BPropertyPattern {
-        span: name,
-        inputType: input,
-        valueType: inner,
-        subpatterns: List<BSubpattern>(),
-        designation: local,
-    })
-}
-
-// stub: T16 ports Binder.cs:903 BindWhileLet
-BStmt bindWhileLet(ref Binder b, through ref Ctx c, for in parser.WhileLetStmt w, to JumpTarget target) {
-    pushScope(ref b)
-    let value = bindExpr(ref b, through: ref c, for: in w.value)
-    let valType = exprType(in c, for: value)
-    if kindOf(valType) != .optional && !isError(valType) {
-        let typeDisp = typeDisplay(ref c, by: valType)
-        let varText = t16Text(in c, from: b.file, at: w.variable)
-        report(ref b, through: ref c, for: .whileLetNotOptional, at: t16ExprSpan(in w.value), by: (typeDisp, "", "", "", ""),
-            help: $"loop with `while` and a condition, or bind it once: `let {varText} = …`")
-    }
-    let pat = bindPresent(ref b, through: ref c, at: w.variable, as: valType)
-    let cond = addIs(ref c, from: BIs {
-        span: w.span,
-        value: value,
-        pattern: pat,
-    })
-    b.targets.append(target)
-    let body = bindBody(ref b, through: ref c, for: in w.body)
-    b.targets.remove(at: b.targets.length - 1)
-    popScope(ref b)
-    return addWhile(ref c, from: BWhile {
-        span: w.span,
-        condition: cond,
-        body: body,
-        target: target.id,
-    })
-}
-
-// stub: T16 ports Binder.cs:949 BindFor
-BStmt bindFor(ref Binder b, through ref Ctx c, for in parser.ForStmt f, to JumpTarget target) {
-    pushScope(ref b)
-    let iterable = bindExpr(ref b, through: ref c, for: in f.iterable)
-    if f.tryKeyword {
-        return bindForTry(ref b, through: ref c, for: in f, by: iterable, to: target)
-    }
-    var user: UserIteration? = null
-    let userElem = userElement(ref b, through: ref c, for: in f, by: iterable, to: ref user)
-    let itType = exprType(in c, for: iterable)
-    var element = userElem
-    if element == -1 {
-        switch kindOf(itType) {
-            case .range:
-                element = c.rangeTypes[typeIndex(itType)]
-            case .span:
-                element = c.spanTypes[typeIndex(itType)].element
-            case .list:
-                element = c.listTypes[typeIndex(itType)]
-            case .map:
-                element = mapEntry(ref c, by: itType)
-            case .array:
-                element = c.arrayTypes[typeIndex(itType)].element
-            case .textView:
-                element = textViewElement(textViewKindOf(typeIndex(itType)))
-            case .error:
-                element = errorType()
-            default:
-                if isString(itType) {
-                    element = prim(.char)
-                } else {
-                    element = notIterable(ref b, through: ref c, for: in f, as: itType)
-                }
-        }
-    }
-    element = declaredElement(ref b, through: ref c, for: in f, as: element)
-    if kindOf(element) == .dynRef && !c.dynRefTypes[typeIndex(element)].readOnly {
-        if (kindOf(itType) == .list || kindOf(itType) == .array) && isBorrowedPlace(ref c, for: iterable) {
-            let elemDisp = typeDisplay(ref c, by: element)
-            let _ = checkWritable(ref b, through: ref c, for: iterable, at: t16ExprSpan(in f.iterable), by: $"it is borrowed element by element as `{elemDisp}`")
-        }
-        if kindOf(itType) == .span && c.spanTypes[typeIndex(itType)].readOnly {
-            report(ref b, through: ref c, for: .mutateTemporary, at: t16ExprSpan(in f.iterable), by: ("", "", "", "", ""),
-                label: "a `ReadOnlySpan` cannot be written through")
-        }
-    }
-    let varKind: LocalKind = f.kind == .varKeyword ? .varKeyword : .forVariable
-    let variable = declareLocal(ref b, through: ref c, at: f.variable, as: element, for: varKind)
-    c.locals[variable].borrowsSubject = true
-    let body = bindForBody(ref b, through: ref c, for: in f, by: variable, to: target)
-    popScope(ref b)
-    return addFor(ref c, from: BFor {
-        span: f.span,
-        variable: variable,
-        iterable: iterable,
-        body: body,
-        target: target.id,
-        userIteration: user,
-    })
-}
-
-// stub: T16 ports Binder.cs:560 BindStatement
 BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, JumpTarget? labelTarget = null) {
     switch stmt {
         case .blockStmt(let blk):
@@ -851,13 +101,10 @@ BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, Ju
                     case .memberExpr(let m):
                         switch m.value.target {
                             case .nameExpr(let n):
-                                if t16Text(in c, from: b.file, at: n.value.span) == "Panic" {
-                                    switch t16Text(in c, from: b.file, at: m.value.member) {
-                                        case "handler" or "onPanic":
-                                            if findLocal(ref b, for: "Panic")<0 {
-                                                return bindOnPanic(ref b, through: ref c, for: in a.value)
-                                            }
-                                        default:
+                                if t15Text(in c, from: b.file, at: n.value.name) == "Panic" {
+                                    let member = t15Text(in c, from: b.file, at: m.value.member)
+                                    if (member == "handler" || member == "onPanic") && t15Lookup(ref b, for: "Panic") == -1 {
+                                        return bindOnPanic(ref b, through: ref c, for: in a.value)
                                     }
                                 }
                             default:
@@ -890,29 +137,27 @@ BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, Ju
                     elseBranch = bindBody(ref b, through: ref c, for: in i.value.elseKeyword)
                     narrowedEnd(ref b, through: ref c, by: move sElse)
             }
-            let ifHandle = addIf(ref c, from: BIf {
+            return narrowAfter(ref b, through: ref c, for: addIf(ref c, from: BIf {
                 span: i.value.span,
                 condition: cond,
                 then: thenBranch,
                 elseBranch: elseBranch,
                 isNever: i.value.likelihood == .neverKeyword,
-            })
-            return narrowAfter(ref b, through: ref c, for: ifHandle)
+            }))
         case .unlessStmt(let u):
-            let condRaw = bindCondition(ref b, through: ref c, for: in u.value.condition)
-            let cond = negate(ref c, from: in u.value.condition, by: condRaw)
+            let cond = negate(ref c, from: in u.value.condition, by: bindCondition(ref b, through: ref c, for: in u.value.condition))
             let sThen = narrowedBegin(ref b, through: ref c, for: cond, whenTrue: true)
             let thenBranch = bindBody(ref b, through: ref c, for: in u.value.body)
             narrowedEnd(ref b, through: ref c, by: move sThen)
-            let ifHandle = addIf(ref c, from: BIf {
+            return narrowAfter(ref b, through: ref c, for: addIf(ref c, from: BIf {
                 span: u.value.span,
                 condition: cond,
                 then: thenBranch,
                 elseBranch: -1,
                 isNever: false,
-            })
-            return narrowAfter(ref b, through: ref c, for: ifHandle)
+            }))
         case .guardedStmt(let g):
+            // The condition is evaluated first (spec §7.3); pattern variables it binds stay in scope.
             var cond = bindCondition(ref b, through: ref c, for: in g.value.condition)
             if g.value.unlessKeyword {
                 cond = negate(ref c, from: in g.value.condition, by: cond)
@@ -920,16 +165,15 @@ BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, Ju
             let sThen = narrowedBegin(ref b, through: ref c, for: cond, whenTrue: true)
             let body = bindStatement(ref b, through: ref c, for: in g.value.statement)
             narrowedEnd(ref b, through: ref c, by: move sThen)
-            let ifHandle = addIf(ref c, from: BIf {
+            return narrowAfter(ref b, through: ref c, for: addIf(ref c, from: BIf {
                 span: g.value.span,
                 condition: cond,
                 then: body,
                 elseBranch: -1,
                 isNever: false,
-            })
-            return narrowAfter(ref b, through: ref c, for: ifHandle)
+            }))
         case .whileStmt(let w):
-            let target = ensureTarget(ref c, to: labelTarget, isLoop: true)
+            let target = t16Target(ref c, to: labelTarget, isLoop: true)
             forgetChangingStates(ref b, through: ref c)
             pushScope(ref b)
             let cond = bindCondition(ref b, through: ref c, for: in w.value.condition)
@@ -944,11 +188,10 @@ BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, Ju
                 target: target.id,
             })
         case .whileLetStmt(let w):
-            let target = ensureTarget(ref c, to: labelTarget, isLoop: true)
             forgetChangingStates(ref b, through: ref c)
-            return bindWhileLet(ref b, through: ref c, for: in w.value, to: target)
+            return bindWhileLet(ref b, through: ref c, for: in w.value, to: t16Target(ref c, to: labelTarget, isLoop: true))
         case .doWhileStmt(let d):
-            let target = ensureTarget(ref c, to: labelTarget, isLoop: true)
+            let target = t16Target(ref c, to: labelTarget, isLoop: true)
             forgetChangingStates(ref b, through: ref c)
             b.targets.append(target)
             let body = bindBody(ref b, through: ref c, for: in d.value.body)
@@ -961,14 +204,12 @@ BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, Ju
                 target: target.id,
             })
         case .forStmt(let f):
-            let target = ensureTarget(ref c, to: labelTarget, isLoop: true)
             forgetChangingStates(ref b, through: ref c)
-            return bindFor(ref b, through: ref c, for: in f.value, to: target)
+            return bindFor(ref b, through: ref c, for: in f.value, to: t16Target(ref c, to: labelTarget, isLoop: true))
         case .labeledStmt(let l):
             return bindLabeled(ref b, through: ref c, for: in l.value)
         case .switchStmt(let s):
-            let target = ensureTarget(ref c, to: labelTarget, isLoop: false)
-            return bindSwitchStatement(ref b, through: ref c, for: in s.value, to: target)
+            return bindSwitchStatement(ref b, through: ref c, for: in s.value, to: t16Target(ref c, to: labelTarget, isLoop: false))
         case .deferStmt(let d):
             if d.value.kind == .always {
                 b.deferDepth += 1
@@ -991,8 +232,526 @@ BStmt bindStatement(ref Binder b, through ref Ctx c, for in parser.Stmt stmt, Ju
         case .errorStmt(let err):
             return addErrorStmt(ref c, from: BErrorStmt { span: err.value.span })
         default:
-            let span = t16StmtSpan(in stmt)
+            let span = t15StmtSpan(in stmt)
             report(ref b, through: ref c, for: .unsupported, at: span, by: ("this statement", "", "", "", ""))
             return addErrorStmt(ref c, from: BErrorStmt { span: span })
     }
+}
+
+BExpr negate(ref Ctx c, from in parser.Expr syntax, by BExpr cond) {
+    let span = t15ExprSpan(in syntax)
+    if (exprConstant(in c, for: cond) is { } k) {
+        if k.kind == .flag {
+            let lit = addLiteral(ref c, from: BLiteral {
+                span: span,
+                type: prim(.bool),
+                value: Constant { kind: .flag, flag: !k.flag },
+            })
+            setConstant(ref c, for: lit, to: Constant { kind: .flag, flag: !k.flag })
+            return lit
+        }
+    }
+    return addUnary(ref c, from: BUnary {
+        span: span,
+        op: .notKeyword,
+        operand: cond,
+        type: prim(.bool),
+    })
+}
+
+BExpr bindCondition(ref Binder b, through ref Ctx c, for in parser.Expr e) =>
+    bindConverted(ref b, through: ref c, for: in e, to: prim(.bool))
+
+BStmt bindAssert(ref Binder b, through ref Ctx c, for in parser.AssertStmt a) {
+    switch a.failsKeyword {
+        case .none:
+            let _ = 0
+        default:
+            return bindAssertFails(ref b, through: ref c, for: in a)
+    }
+    let condition = bindExpr(ref b, through: ref c, for: in a.condition, to: prim(.bool))
+    let condType = exprType(in c, for: condition)
+    if isError(condType) || implicit(ref c, from: condType, to: prim(.bool)) is not null {
+        let conv = convert(ref b, through: ref c, for: condition, to: prim(.bool), at: t15ExprSpan(in a.condition))
+        return addAssert(ref c, from: BAssert { span: a.span, condition: conv, failsWith: -1, failsCase: -1 })
+    }
+    report(ref b, through: ref c, for: .assertNotBool, at: t15ExprSpan(in a.condition), by: (typeDisplay(ref c, by: condType), "", "", "", ""),
+        label: "this is not a `bool`", help: "check the value against what you expect, e.g. `assert count == 3`")
+    return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+}
+
+/// `assert f() fails E.x` or `assert f() fails E`: the call is handled here, not wrapped in `try`.
+/// C# sets `_handled` only when the unparenthesized condition is a call; T20's `stripParens` gives
+/// that expression's span, which no other call shares, so it is set for any condition (Q597).
+BStmt bindAssertFails(ref Binder b, through ref Ctx c, for in parser.AssertStmt a) {
+    let saved = b.handled
+    b.handled = stripParens(in a.condition)
+    let operand = bindExpr(ref b, through: ref c, for: in a.condition)
+    b.handled = saved
+    if boundKind(operand) != .call || !c.functions[c.bCalls[boundIndex(operand)].function].hasFails {
+        if !isError(exprType(in c, for: operand)) {
+            report(ref b, through: ref c, for: .nothingToHandle, at: t15ExprSpan(in a.condition), by: ("assert … fails", "", "", "", ""))
+        }
+        return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+    }
+    let sets = errorSetsOf(ref c, for: c.bCalls[boundIndex(operand)].function)
+    let errorType = errorUnionOf(ref c, for: in sets, as: in List<VariantId>())
+    var boundSet: BExpr = -1
+    var caseName: TextSpan? = null
+    var setSpan = a.span
+    switch a.failsKeyword {
+        case .memberExpr(let m):
+            boundSet = bindExprOrType(ref b, through: ref c, for: in m.value.target)
+            caseName = m.value.member
+            setSpan = t15ExprSpan(in m.value.target)
+        default:
+            boundSet = bindExprOrType(ref b, through: ref c, for: in a.failsKeyword)
+            setSpan = t15ExprSpan(in a.failsKeyword)
+    }
+    if boundKind(boundSet) != .typeRef || kindOf(c.bTypeRefs[boundIndex(boundSet)].referenced) != .errorSet {
+        report(ref b, through: ref c, for: .patternMismatch, at: setSpan,
+            by: ($"`{t15Text(in c, from: b.file, at: setSpan)}`", typeDisplay(ref c, by: errorType), "", "", ""))
+        return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+    }
+    let set = typeIndex(c.bTypeRefs[boundIndex(boundSet)].referenced)
+    var variant: VariantId = -1
+    if (caseName is { } cn) {
+        variant = findErrorVariant(ref c, by: set, for: t15Text(in c, from: b.file, at: cn))
+        if variant == -1 {
+            let failsSpan = t15ExprSpan(in a.failsKeyword)
+            var names = List<string>()
+            for v in c.errorSets[set].variants { names.append(c.errorVariants[v].name) }
+            let close = suggest(t15Text(in c, from: b.file, at: cn), by: in names)
+            report(ref b, through: ref c, for: .patternMismatch, at: failsSpan,
+                by: ($"`{t15Text(in c, from: b.file, at: failsSpan)}`", typeDisplay(ref c, by: errorSetTypeOf(set)), "", "", ""),
+                help: close is { } s ? $"did you mean `{s}`?" : "")
+            return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+        }
+    }
+    var listed = false
+    for s in sets {
+        if s == set { listed = true }
+    }
+    if sets.length > 0 && !listed {
+        report(ref b, through: ref c, for: .patternMismatch, at: setSpan,
+            by: ($"`{typeDisplay(ref c, by: errorSetTypeOf(set))}`", typeDisplay(ref c, by: errorType), "", "", ""))
+        return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
+    }
+    return addAssert(ref c, from: BAssert {
+        span: a.span,
+        condition: operand,
+        failsWith: set,
+        failsCase: variant,
+    })
+}
+
+// ── Null narrowing (spec §7.2) ───────────────────────────────────────────────
+
+/// A fact holds while its scope is open: the C# walk from `_scope` up its parents (Q715).
+bool isNonNull(ref Binder b, for LocalId local) {
+    for pair in b.nonNull {
+        if pair.item2 != local { continue }
+        for s in b.scopeIds {
+            if s == pair.item1 { return true }
+        }
+    }
+    return false
+}
+
+/// Binds code that runs only when `cond` is `whenTrue`: the C# `Narrowed` before `bind()`.
+NarrowedScope narrowedBegin(ref Binder b, through ref Ctx c, for BExpr cond, bool whenTrue) {
+    let mark = b.nonNull.length
+    let scope = t16ScopeId(ref b)
+    for l in nonNullWhen(in c, for: cond, whenTrue: whenTrue) {
+        b.nonNull.append((scope, l))
+    }
+    var before = List<(i64, LocalId, Type)>()
+    for f in b.stateFacts { before.append(f) }
+    let learned = learnStates(ref b, through: ref c, for: cond, whenTrue: whenTrue)
+    return NarrowedScope {
+        mark: mark,
+        before: move before,
+        learned: move learned,
+    }
+}
+
+/// The C# `Narrowed` after `bind()`.
+void narrowedEnd(ref Binder b, through ref Ctx c, by move NarrowedScope scope) {
+    while b.nonNull.length > scope.mark {
+        b.nonNull.remove(at: b.nonNull.length - 1)
+    }
+    // What the branch learned holds only when it ran.
+    var kept = List<(i64, LocalId, Type)>()
+    for f in b.stateFacts {
+        for bf in scope.before {
+            if bf.item1 == f.item1 && bf.item2 == f.item2 && bf.item3 == f.item3 {
+                kept.append(f)
+                break
+            }
+        }
+    }
+    b.stateFacts = move kept
+    unlearnStates(ref b, by: in scope.learned)
+}
+
+/// When one branch always exits, the rest of the block runs only under the other.
+BStmt narrowAfter(ref Binder b, through ref Ctx c, for BStmt i) {
+    let node = c.bIfs[boundIndex(i)]
+    let thenExits = exits(in c, for: node.then)
+    let elseExits = node.elseBranch != -1 && exits(in c, for: node.elseBranch)
+    if thenExits != elseExits {
+        let scope = t16ScopeId(ref b)
+        for l in nonNullWhen(in c, for: node.condition, whenTrue: elseExits) {
+            b.nonNull.append((scope, l))
+        }
+        let _ = learnStates(ref b, through: ref c, for: node.condition, whenTrue: elseExits)
+    }
+    return i
+}
+
+bool exits(in Ctx c, for BStmt s) {
+    switch boundKind(s) {
+        case .returnStmt or .breakStmt or .continueStmt:
+            return true
+        case .block:
+            let n = c.bBlocks[boundIndex(s)].statements.length
+            return n > 0 && exits(in c, for: c.bBlocks[boundIndex(s)].statements[n - 1])
+        case .exprStmt:
+            return isNever(exprType(in c, for: c.bExprStmts[boundIndex(s)].expr))
+        case .ifStmt:
+            let node = c.bIfs[boundIndex(s)]
+            return node.elseBranch != -1 && exits(in c, for: node.then) && exits(in c, for: node.elseBranch)
+        default:
+            return false
+    }
+}
+
+/// The let locals and parameters that `cond` being `whenTrue` proves present; `var`s can change, so they never narrow.
+List<LocalId> nonNullWhen(in Ctx c, for BExpr cond, bool whenTrue) {
+    var found = List<LocalId>()
+    nonNullCollect(in c, for: cond, when: whenTrue, to: ref found)
+    return found
+}
+
+/// The C# local function `Collect` of `NonNullWhen`.
+void nonNullCollect(in Ctx c, for BExpr cond, bool when, to ref List<LocalId> found) {
+    switch boundKind(cond) {
+        case .isExpr:
+            let i = c.bIses[boundIndex(cond)]
+            if boundKind(i.value) != .local { return }
+            let l = c.bLocals[boundIndex(i.value)].local
+            if kindOf(c.locals[l].type) != .optional { return }
+            if !(c.locals[l].kind == .letKeyword || (c.locals[l].isParameter && (c.locals[l].modifier == .none || c.locals[l].modifier == .inKeyword))) { return }
+            var proves = false
+            if boundKind(i.pattern) == .notPattern && boundKind(c.bNotPatterns[boundIndex(i.pattern)].operand) == .constantPattern
+                && boundKind(c.bConstantPatterns[boundIndex(c.bNotPatterns[boundIndex(i.pattern)].operand)].value) == .defaultValue {
+                proves = when
+            } else {
+                proves = boundKind(i.pattern) == .constantPattern && boundKind(c.bConstantPatterns[boundIndex(i.pattern)].value) == .defaultValue && !when
+            }
+            if proves { found.append(l) }
+        case .unary:
+            let u = c.bUnaries[boundIndex(cond)]
+            if u.op == .notKeyword {
+                nonNullCollect(in c, for: u.operand, when: !when, to: ref found)
+            }
+        case .binary:
+            let bin = c.bBinaries[boundIndex(cond)]
+            if (bin.op == .logicalAnd || bin.op == .logicalOr) && when == (bin.op == .logicalAnd) {
+                nonNullCollect(in c, for: bin.left, when: when, to: ref found)
+                nonNullCollect(in c, for: bin.right, when: when, to: ref found)
+            }
+        default:
+    }
+}
+
+BStmt bindLabeled(ref Binder b, through ref Ctx c, for in parser.LabeledStmt l) {
+    checkValueName(ref b, through: ref c, at: l.label)
+    let text = t15Text(in c, from: b.file, at: l.label)
+    var duplicate = false
+    for t in b.targets {
+        if t.label == text { duplicate = true }
+    }
+    if duplicate {
+        report(ref b, through: ref c, for: .duplicateDeclaration, at: l.label, by: (text, "", "", "", ""),
+            label: "an enclosing statement has this label")
+    }
+    var isSwitch = false
+    var onLoop = false
+    switch l.statement {
+        case .switchStmt(_):
+            isSwitch = true
+            onLoop = true
+        case .whileStmt(_) or .whileLetStmt(_) or .doWhileStmt(_) or .forStmt(_):
+            onLoop = true
+        default:
+    }
+    let target = t16NewTarget(ref c, for: text, isLoop: !isSwitch)
+    if !onLoop {
+        report(ref b, through: ref c, for: .labelNotOnLoop, at: l.label, by: (text, "", "", "", ""))
+        return bindStatement(ref b, through: ref c, for: in l.statement)
+    }
+    return bindStatement(ref b, through: ref c, for: in l.statement, labelTarget: target)
+}
+
+BStmt bindLocalDecl(ref Binder b, through ref Ctx c, for in parser.LocalDecl d) {
+    var declared: Type = -1
+    switch d.type {
+        case .none:
+            for s in b.seeds {
+                if s.item1 == d.span.start {
+                    if isInteger(s.item2) { declared = s.item2 }
+                    break
+                }
+            }
+        default:
+            declared = resolveType(ref b, through: ref c, for: in d.type)
+    }
+    var init: BExpr = -1
+    switch d.init {
+        case .none:
+            if d.kind != .varKeyword {
+                report(ref b, through: ref c, for: .missingInitializer, at: d.name,
+                    by: (d.kind == .letKeyword ? "let" : "const", t15Text(in c, from: b.file, at: d.name), "", "", ""),
+                    help: d.kind == .letKeyword ? "give it a value, or declare it with `var` and assign it on every path before use" : "")
+            } else if declared == -1 {
+                let name = t15Text(in c, from: b.file, at: d.name)
+                report(ref b, through: ref c, for: .cannotInferType, at: d.name, by: (name, "", "", "", ""), help: $"write the type: `var i64 {name}`")
+            }
+        default:
+            init = declared == -1 ? built(ref b, through: ref c, for: bindExpr(ref b, through: ref c, for: in d.init), from: in d.init) : bindConverted(ref b, through: ref c, for: in d.init, to: declared)
+    }
+
+    var type: Type = -1
+    if declared != -1 {
+        type = declared
+    } else if init != -1 {
+        type = defaultType(ref b, through: ref c, for: init, from: in d.init)
+        init = convert(ref b, through: ref c, for: init, to: type, at: t15ExprSpan(in d.init))
+    } else {
+        type = errorType()
+    }
+    // A `var` can change state, so it holds the struct and what it is now is a fact (Question 295).
+    var state: Type = -1
+    if d.kind == .varKeyword && kindOf(type) == .state {
+        state = type
+        type = structTypeOf(c.stateTypes[typeIndex(state)].s)
+    }
+
+    let kind: LocalKind = d.kind == .letKeyword ? .letKeyword : (d.kind == .constKeyword ? .constKeyword : .varKeyword)
+    let uniqueConst = d.kind == .constKeyword && checkUniqueConst(ref b, through: ref c, for: in d, as: type)
+    if d.kind == .constKeyword && !uniqueConst && init != -1 && exprConstant(in c, for: init) is null && !isError(exprType(in c, for: init)) {
+        report(ref b, through: ref c, for: .notConstant, at: t15ExprSpan(in d.init), by: ("a `const`", "", "", "", ""))
+    }
+    if d.usingKeyword {
+        checkDisposable(ref b, through: ref c, for: in d, as: type)
+    }
+    let local = declareLocal(ref b, through: ref c, at: d.name, as: type, for: kind)
+    if b.held > 0 && kind == .varKeyword && declared == -1 && type == prim(.i32) && isUntypedLiteral(in d.init) {
+        b.pending[local] = d.span.start
+    }
+    c.locals[local].isUsing = d.usingKeyword
+    if state != -1 {
+        learnState(ref b, for: local, as: state)
+    }
+    let keyword = TextSpan { start: d.span.start, length: 3 }
+    if (kind == .letKeyword || kind == .varKeyword) && !d.usingKeyword && t15Text(in c, from: b.file, at: keyword) == (kind == .letKeyword ? "let" : "var") {
+        c.locals[local].keywordSpan = keyword
+    }
+    if kind == .constKeyword {
+        c.locals[local].constant = init == -1 ? null : exprConstant(in c, for: init)
+    }
+    return addLocalDecl(ref c, from: BLocalDecl { span: d.span, local: local, initializer: init })
+}
+
+/// BYN3209: a `const` holding a `struct unique` value; the fix declares it with `let`.
+bool checkUniqueConst(ref Binder b, through ref Ctx c, for in parser.LocalDecl d, as Type type) {
+    let keyword = TextSpan { start: d.span.start, length: 5 }
+    let part = uniquePart(ref c, for: type)
+    if part == -1 || kindOf(part) != .structType || t15Text(in c, from: b.file, at: keyword) != "const" { return false }
+    report(ref b, through: ref c, for: .uniqueConst, at: keyword, by: ("", "", "", "", ""),
+        label: $"`{typeDisplay(ref c, by: part)}` is `unique`", help: "declare it with `let`",
+        hasFix: true, fixSpan: keyword, fixReplacement: "let")
+    return true
+}
+
+void checkDisposable(ref Binder b, through ref Ctx c, for in parser.LocalDecl d, as Type type) {
+    if type == builtinType(.arena) || kindOf(type) == .list || isError(type) { return }
+    report(ref b, through: ref c, for: .notDisposable, at: d.name, by: (typeDisplay(ref c, by: type), "", "", "", ""),
+        help: "use `using` only for values that own memory: `Arena` and `List<T>`")
+}
+
+/// The type a binding gets from its initializer when none is written.
+Type defaultType(ref Binder b, through ref Ctx c, for BExpr init, from in parser.Expr syntax) {
+    let t = exprType(in c, for: init)
+    if kindOf(t) == .nullType {
+        report(ref b, through: ref c, for: .cannotInferType, at: t15ExprSpan(in syntax), by: ("null", "", "", "", ""),
+            help: "write the type: `i64? x = null`")
+        return errorType()
+    }
+    if isVoid(t) {
+        report(ref b, through: ref c, for: .voidValue, at: t15ExprSpan(in syntax), by: ("", "", "", "", ""))
+        return errorType()
+    }
+    if isNever(t) {
+        return prim(.neverKind)
+    }
+    return t
+}
+
+/// `while let x = e { … }` is `while (e is { } x) { … }`.
+BStmt bindWhileLet(ref Binder b, through ref Ctx c, for in parser.WhileLetStmt w, to JumpTarget target) {
+    pushScope(ref b)
+    let value = bindExpr(ref b, through: ref c, for: in w.value)
+    let valType = exprType(in c, for: value)
+    if kindOf(valType) != .optional && !isError(valType) {
+        report(ref b, through: ref c, for: .whileLetNotOptional, at: t15ExprSpan(in w.value), by: (typeDisplay(ref c, by: valType), "", "", "", ""),
+            help: $"loop with `while` and a condition, or bind it once: `let {t15Text(in c, from: b.file, at: w.variable)} = …`")
+    }
+    let cond = addIs(ref c, from: BIs {
+        span: w.span,
+        value: value,
+        pattern: bindPresent(ref b, through: ref c, at: w.variable, as: valType),
+    })
+    b.targets.append(target)
+    let body = bindBody(ref b, through: ref c, for: in w.body)
+    b.targets.remove(at: b.targets.length - 1)
+    popScope(ref b)
+    return addWhile(ref c, from: BWhile {
+        span: w.span,
+        condition: cond,
+        body: body,
+        target: target.id,
+    })
+}
+
+/// Whether `e` reads existing storage, through any arm, conversion, field or index, rather than a temporary the loop owns.
+bool isBorrowedPlace(ref Ctx c, for BExpr e) {
+    switch boundKind(e) {
+        case .local or .thisRef or .staticArray:
+            return true
+        case .builtinCall:
+            let member = c.bBuiltinCalls[boundIndex(e)].member
+            if member == .ownedValue { return true }
+            if member == .mapIndex || member == .resultValue || member == .mapTryGet || member == .listTryGet {
+                return isBorrowedPlace(ref c, for: c.bBuiltinCalls[boundIndex(e)].receiver)
+            }
+            return false
+        case .field:
+            return isBorrowedPlace(ref c, for: c.bFields[boundIndex(e)].receiver)
+        case .tupleElement:
+            return isBorrowedPlace(ref c, for: c.bTupleElements[boundIndex(e)].receiver)
+        case .index:
+            // A span points into existing storage, wherever the span itself came from.
+            let target = c.bIndexes[boundIndex(e)].target
+            if kindOf(exprType(in c, for: target)) == .span { return true }
+            return isBorrowedPlace(ref c, for: target)
+        case .conversion:
+            return isBorrowedPlace(ref c, for: c.bConversions[boundIndex(e)].operand)
+        case .conditional:
+            let cd = c.bConditionals[boundIndex(e)]
+            return isBorrowedPlace(ref c, for: cd.whenTrue) || isBorrowedPlace(ref c, for: cd.whenFalse)
+        case .coalesce:
+            let cl = c.bCoalesces[boundIndex(e)]
+            return isBorrowedPlace(ref c, for: cl.left) || isBorrowedPlace(ref c, for: cl.right)
+        case .switchExpr:
+            var values = List<BExpr>()
+            for arm in c.bSwitchExprs[boundIndex(e)].arms { values.append(arm.value) }
+            for v in values {
+                if isBorrowedPlace(ref c, for: v) { return true }
+            }
+            return false
+        case .withExpr:
+            // A `with` copies only the fields it does not replace.
+            let target = c.bWiths[boundIndex(e)].target
+            if kindOf(exprType(in c, for: target)) != .structType { return false }
+            if !isBorrowedPlace(ref c, for: target) { return false }
+            var updated = List<FieldId>()
+            for u in c.bWiths[boundIndex(e)].updates { updated.append(u.field) }
+            var fields = List<FieldId>()
+            for f in c.structs[typeIndex(exprType(in c, for: target))].fields { fields.append(f) }
+            for f in fields {
+                var replaced = false
+                for u in updated {
+                    if u == f { replaced = true }
+                }
+                if !replaced && isUnique(ref c, for: c.fields[f].type) { return true }
+            }
+            return false
+        case .tryExpr:
+            return isBorrowedPlace(ref c, for: c.bTries[boundIndex(e)].operand)
+        case .catchExpr:
+            let ct = c.bCatches[boundIndex(e)]
+            return isBorrowedPlace(ref c, for: ct.operand) || isBorrowedPlace(ref c, for: ct.handler)
+        default:
+            return false
+    }
+}
+
+/// The pattern `{ } x`: on an optional, matches a present value and binds it unwrapped.
+BPattern bindPresent(ref Binder b, through ref Ctx c, at TextSpan name, as Type input) {
+    let local = declareLocal(ref b, through: ref c, at: name, as: unwrap(ref c, for: input), for: .patternVariable)
+    c.locals[local].borrowsSubject = true
+    return addPropertyPattern(ref c, from: BPropertyPattern {
+        span: name,
+        inputType: input,
+        valueType: unwrap(ref c, for: input),
+        subpatterns: List<BSubpattern>(),
+        designation: local,
+    })
+}
+
+BStmt bindFor(ref Binder b, through ref Ctx c, for in parser.ForStmt f, to JumpTarget target) {
+    pushScope(ref b)
+    let iterable = bindExpr(ref b, through: ref c, for: in f.iterable)
+    if f.tryKeyword {
+        return bindForTry(ref b, through: ref c, for: in f, by: iterable, to: target)
+    }
+    var user: UserIteration? = null
+    let itType = exprType(in c, for: iterable)
+    var element = userElement(ref b, through: ref c, for: in f, by: iterable, to: ref user)
+    if element == -1 {
+        switch kindOf(itType) {
+            case .range:
+                element = c.rangeTypes[typeIndex(itType)]
+            case .span:
+                element = c.spanTypes[typeIndex(itType)].element
+            case .list:
+                element = c.listTypes[typeIndex(itType)]
+            case .map:
+                element = mapEntry(ref c, by: itType)
+            case .array:
+                element = c.arrayTypes[typeIndex(itType)].element
+            case .textView:
+                element = textViewElement(textViewKindOf(typeIndex(itType)))
+            case .error:
+                element = errorType()
+            default:
+                element = isString(itType) ? prim(.char) : notIterable(ref b, through: ref c, for: in f, as: itType)
+        }
+    }
+    element = declaredElement(ref b, through: ref c, for: in f, as: element)
+    // A writable `dyn ref` element borrows the array or list slot, so the loop mutates the iterable; a temporary is the loop's own.
+    let writableRef = kindOf(element) == .dynRef && !c.dynRefTypes[typeIndex(element)].readOnly
+    if writableRef && (kindOf(itType) == .list || kindOf(itType) == .array) && isBorrowedPlace(ref c, for: iterable) {
+        let _ = checkWritable(ref b, through: ref c, for: iterable, at: t15ExprSpan(in f.iterable),
+            by: $"it is borrowed element by element as `{typeDisplay(ref c, by: element)}`")
+    }
+    // Through a `ReadOnlySpan` it would write elements the span may not change.
+    if writableRef && kindOf(itType) == .span && c.spanTypes[typeIndex(itType)].readOnly {
+        report(ref b, through: ref c, for: .mutateTemporary, at: t15ExprSpan(in f.iterable), by: ("", "", "", "", ""),
+            label: "a `ReadOnlySpan` cannot be written through")
+    }
+    let variable = declareLocal(ref b, through: ref c, at: f.variable, as: element, for: f.kind == .varKeyword ? .varKeyword : .forVariable)
+    c.locals[variable].borrowsSubject = true
+    let body = bindForBody(ref b, through: ref c, for: in f, by: variable, to: target)
+    popScope(ref b)
+    return addFor(ref c, from: BFor {
+        span: f.span,
+        variable: variable,
+        iterable: iterable,
+        body: body,
+        target: target.id,
+        userIteration: user,
+    })
 }

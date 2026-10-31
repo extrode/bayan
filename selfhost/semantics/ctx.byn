@@ -596,6 +596,8 @@ struct Binder {
     FileId firstStatementFile = -1
     TextSpan firstStatementSpan = TextSpan { start: 0, length: 0 }
     // ── T16 state
+    /// The C# `_handled` (BinderCalls.cs:11): the span (in `file`) of the call a `try`, `catch` or `assert … fails` handles; null for none.
+    TextSpan? handled = null
     // ── T17 state
     // ── T18 state
     // ── T19 state
