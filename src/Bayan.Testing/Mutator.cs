@@ -81,7 +81,7 @@ public static class Mutator
         private SourceText _source = null!;
         /// <summary>Integer literals that index a fixed array, with the array type and whether they count from the end.</summary>
         private readonly Dictionary<BoundLiteral, (ArrayType Array, bool FromEnd)> _arrayIndexes = new(ReferenceEqualityComparer.Instance);
-        /// <summary>Locals declared without an initializer: removing an assignment to one would read it unassigned.</summary>
+        /// <summary>Locals declared without an initializer and <c>out</c> parameters: removing an assignment to one leaves it unassigned.</summary>
         private readonly HashSet<LocalSymbol> _uninitialized = new();
 
         public void Function(FunctionSymbol fn, SourceText source)
@@ -91,6 +91,8 @@ public static class Mutator
             _arrayIndexes.Clear();
             foreach (var d in BoundTree.Descendants(fn.Body!).OfType<BoundLocalDecl>())
                 if (d.Initializer is null) _uninitialized.Add(d.Local);
+            // An `out` parameter must be assigned before every return (BYN2103).
+            _uninitialized.UnionWith(fn.Parameters.Where(p => p.Modifier == ParamModifier.Out));
             Visit(fn.Body!, null);
         }
 

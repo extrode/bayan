@@ -116,6 +116,14 @@ public sealed class MutatorTests
     }
 
     [Fact]
+    public void RemovingTheAssignmentOfAnOutParameterIsNotEmitted()
+    {
+        var m = Find("void set(out i32 r) {\n    r = 1\n}\n");
+        Assert.Empty(Sites(m, Mutator.Statement));
+        Assert.Equal(1, m.NotEmitted[Mutator.Statement]);
+    }
+
+    [Fact]
     public void ALiteralIndexPushedOutOfAFixedArrayIsNotEmitted()
     {
         var m = Find("i32 ends(i32[4] xs) {\n    return xs[3] + xs[0]\n}\n");
