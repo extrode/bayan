@@ -62,9 +62,10 @@ public sealed class SelfhostSemanticsT19Tests
             i64 num
             i64 den
 
-            public Ratio(i64 num, to i64 den) {
-                this.num = num
-                this.den = den
+            // No parameters: T38's `declareSignature` is a stub, so a Bayan constructor has none (Q612).
+            public Ratio() {
+                this.num = 1
+                this.den = 1
             }
         }
 
@@ -73,15 +74,16 @@ public sealed class SelfhostSemanticsT19Tests
             Owned<Node>? next
         }
 
-        void gen<T>(T x, T? ox) {
+        void gen<T>(T x, T? ox, i32 k) {
             let g1 = -x
             let g2 = x + x
             let g3 = ox < ox
             let g4 = x == x
+            let g5 = k + x
             let e1: T = x
         }
 
-        void probes(i32 a, i32 b, u32 u, i64 n, f64 f, bool flag, string str, char ch, i32? oi, Point p, Point? op, Untrusted<i32> ui, MyError me, u8 small) {
+        void probes(i32 a, i32 b, u32 u, i64 n, f64 f, bool flag, string str, rune ch, i32? oi, Point p, Point? op, Untrusted<i32> ui, MyError me, u8 small) {
             let u1 = -5
             let u2: i8 = -200
             let u3 = ^1
@@ -98,6 +100,7 @@ public sealed class SelfhostSemanticsT19Tests
             let u14 = !true
             let u15 = +str
             let u16: i64 = -5
+            let u17 = -flag
             let b1 = a + b
             let b2 = 1 + 2
             let b3 = flag && flag
@@ -135,6 +138,11 @@ public sealed class SelfhostSemanticsT19Tests
             let b35: i64? = oi ?? 1
             let b36 = flag & flag
             let b37 = small +% small
+            let b38 = oi != null && oi > 0
+            let b39 = oi == null || oi > 0
+            let b40 = nope + nada
+            let b41 = 1 + f
+            let b42 = 1 + small
             let r1 = 1..10
             let r2 = a..=b
             let r3 = 1..n
@@ -177,7 +185,7 @@ public sealed class SelfhostSemanticsT19Tests
             let s3 = Point { z: 1 }
             let s4 = Req { c: 1 }
             let s5 = { x: 1 }
-            let s6 = i32 { x: 1 }
+            let s6 = Color { x: 1 }
             let s7 = Ratio { num: 1, den: 0 }
             let s8 = Nope { x: 1 }
             let s9: Point? = { x: 1 }
@@ -210,10 +218,10 @@ public sealed class SelfhostSemanticsT19Tests
             let e13: Node = p
             let e14: Map<string, i32> = p
             let e15: (Point, List<i32>) = p
-            let e16: i32[] = p
+            let e16: ReadOnlySpan<i32> = p
             let o1: string = a < b
             let o2: bool = a & b
-            let o3: char = a < b
+            let o3: rune = a < b
             let o4: Symbol = a < b
             let o5: f64 = a +% b
             let o6: Point = a == b
@@ -259,31 +267,32 @@ public sealed class SelfhostSemanticsT19Tests
 
     private static readonly string[] ProbeNames =
     [
-        "u1", "u2", "u3", "u4", "u5", "u6", "u7", "u8v", "u9", "u10", "u11", "u12", "u13", "u14", "u15", "u16",
+        "u1", "u2", "u3", "u4", "u5", "u6", "u7", "u8v", "u9", "u10", "u11", "u12", "u13", "u14", "u15", "u16", "u17",
         "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "b10", "b11", "b12", "b13", "b14", "b15", "b16", "b17", "b18",
         "b19", "b20", "b21", "b22", "b23", "b24", "b25", "b26", "b27", "b28", "b29", "b30", "b31", "b32", "b33", "b34", "b35",
-        "b36", "b37",
+        "b36", "b37", "b38", "b39", "b40", "b41", "b42",
         "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8",
         "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8",
         "c1", "c2", "c3", "c4", "c5", "c6", "c7",
         "k1", "k2", "k3", "k4", "k5", "k6", "k7", "k8", "k9", "k10", "k11",
-        "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s10", "s11", "s13", "s14",
-        "w2", "w3", "w4", "w5", "w6",
+        "s4", "s5", "s6", "s7", "s8", "s10", "s11", "s14",
+        "w2", "w5",
     ];
 
     /// <summary>(op, function, local): run op on the initializer (or declared type) of <c>let local</c> in that function.</summary>
     public static readonly (string Op, string Fn, string Name)[] Cases =
     [
         .. ProbeNames.Select(n => ("bind", "probes", n)),
-        ("structd", "probes", "s1"), ("structd", "probes", "s9"), ("structd", "probes", "s12"),
-        ("withd", "probes", "w1"),
+        ("structd", "probes", "s1"), ("structd", "probes", "s2"), ("structd", "probes", "s3"), ("structd", "probes", "s9"),
+        ("structd", "probes", "s12"), ("structd", "probes", "s13"),
+        ("withd", "probes", "w1"), ("withd", "probes", "w3"), ("withd", "probes", "w4"), ("withd", "probes", "w6"),
         ("conv", "probes", "v1"), ("conv", "probes", "v2"), ("conv", "probes", "v3"),
         ("fact", "probes", "f1"), ("fact", "probes", "f2"), ("fact", "probes", "f3"),
         .. Enumerable.Range(1, 16).Select(i => ("eq", "probes", $"e{i}")),
         .. Enumerable.Range(1, 11).Select(i => ("applies", "probes", $"o{i}")),
         .. Enumerable.Range(1, 25).Select(i => ("text", "probes", $"t{i}")),
         .. Enumerable.Range(1, 7).Select(i => ("fold", "probes", $"d{i}")),
-        ("bind", "gen", "g1"), ("bind", "gen", "g2"), ("bind", "gen", "g3"), ("bind", "gen", "g4"), ("eq", "gen", "e1"),
+        ("bind", "gen", "g1"), ("bind", "gen", "g2"), ("bind", "gen", "g3"), ("bind", "gen", "g4"), ("bind", "gen", "g5"), ("eq", "gen", "e1"),
     ];
 
     private static readonly System.Type BinderType =
@@ -322,6 +331,10 @@ public sealed class SelfhostSemanticsT19Tests
         _ => Camel(node.GetType().Name[5..]),
     };
 
+    /// <summary>The Bayan syntax flags of a node, from its C# syntax: 1 a literal, 2 a unary, 4 <c>IsUntypedLiteral</c>.</summary>
+    private static int Flags(BoundNode? node) => node?.Syntax is not Expr x ? 0
+        : (x is LiteralExpr ? 1 : 0) | (x is UnaryExpr ? 2 : 0) | ((bool)Call(null, "IsUntypedLiteral", x)! ? 4 : 0);
+
     private static string Const(BoundExpr e) => e.Constant is { } k ? k.ToString() : "-";
 
     /// <summary>A node, recursively: kind:type[span]=constant(children).</summary>
@@ -353,6 +366,8 @@ public sealed class SelfhostSemanticsT19Tests
         var path = Path.Combine(Dir, "main.byn");
         var c = Compilation.Create([SourceText.FromString(path, Source + "\n")], packageRoot: Dir, options: new CompilationOptions(Library: true));
         var file = c.Modules.SelectMany(m => m.Files).First(f => f.Source.Path == path);
+        // The `(T)x` input forms are syntax errors, so `Create` stops before declaring; declare as the Bayan main does.
+        if (c.Diagnostics.HasErrors) typeof(Compilation).GetMethod("Declare", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(c, null);
         var mark = c.Diagnostics.Items.Count;
         var fd = file.Tree.Root.Members.OfType<FunctionDecl>().First(f => f.Name.Text == fnName);
         var fn = file.Module.Functions[fnName][0];
@@ -378,10 +393,11 @@ public sealed class SelfhostSemanticsT19Tests
                     WithExpr w => Call(b, "BindWith", w),
                     _ => throw new InvalidOperationException(name),
                 };
+                lines.Add($"flags {Flags((BoundNode?)bound)}");
                 lines.Add(Dump((BoundNode?)bound));
                 break;
-            case "structd": Call(b, "BindStructLiteral", (StructLiteralExpr)init, expected); break;
-            case "withd": Call(b, "BindWith", (WithExpr)init); break;
+            case "structd": Call(b, "BindStructLiteral", (StructLiteralExpr)init, expected); lines.Add("bound"); break;
+            case "withd": Call(b, "BindWith", (WithExpr)init); lines.Add("bound"); break;
             case "conv":
                 var call = (CallExpr)init;
                 lines.Add(Dump((BoundNode?)Call(b, "BindConversion", call, expected, call.Args[0].Value)));
@@ -447,10 +463,11 @@ public sealed class SelfhostSemanticsT19Tests
                 return $"rangePattern:-[{p.span.start}:{p.span.length}]=-({p.inclusive} {tcDump(ref c, for: p.start)} {tcDump(ref c, for: p.end)})"
             }
             let sp = nodeSpan(in c, for: e)
-            let head = $"{k}:{typeDisplay(ref c, by: exprType(in c, for: e))}[{sp.start}:{sp.length}]={tcConst(in c, for: e)}"
+            let kindName = k == .isExpr ? "is" : $"{k}"
+            let head = $"{kindName}:{typeDisplay(ref c, by: exprType(in c, for: e))}[{sp.start}:{sp.length}]={tcConst(in c, for: e)}"
             var kids = ""
             switch k {
-                case .unary: kids = $"{c.bUnaries[i].op} {tcDump(ref c, for: c.bUnaries[i].operand)}"
+                case .unary: kids = $"{c.bUnaries[i].op == .notKeyword ? "not" : $"{c.bUnaries[i].op}"} {tcDump(ref c, for: c.bUnaries[i].operand)}"
                 case .binary: kids = $"{c.bBinaries[i].op} {tcDump(ref c, for: c.bBinaries[i].left)} {tcDump(ref c, for: c.bBinaries[i].right)}"
                 case .conversion: kids = $"{c.bConversions[i].kind} {tcDump(ref c, for: c.bConversions[i].operand)}"
                 case .conditional: kids = $"{tcDump(ref c, for: c.bConditionals[i].condition)} {tcDump(ref c, for: c.bConditionals[i].whenTrue)} {tcDump(ref c, for: c.bConditionals[i].whenFalse)}"
@@ -480,8 +497,8 @@ public sealed class SelfhostSemanticsT19Tests
                 case .inExpr(let x): return bindIn(ref b, through: ref c, for: in x.value)
                 case .conditionalExpr(let x): return bindConditional(ref b, through: ref c, for: in x.value, to: expected)
                 case .castExpr(let x): return bindCast(ref b, through: ref c, for: in x.value)
-                case .structLiteralExpr(let s): return bindStructLiteral(ref b, through: ref c, for: in s.value, to: expected)
-                case .withExpr(let w): return bindWith(ref b, through: ref c, for: in w.value)
+                case .structLiteralExpr(let s): return bindStructLiteral(ref b, through: ref c, for: in s.value, from: init, to: expected)
+                case .withExpr(let w): return bindWith(ref b, through: ref c, for: in w.value, from: init)
                 default: panic("unexpected initializer")
             }
         }
@@ -492,8 +509,15 @@ public sealed class SelfhostSemanticsT19Tests
                 case .none: {}
                 default: expected = resolveType(ref b, through: ref c, for: in declType)
             }
-            if op == "bind" { print(tcDump(ref c, for: runBind(ref b, through: ref c, for: in init, to: expected))) }
-            if op == "structd" || op == "withd" { let _ = runBind(ref b, through: ref c, for: in init, to: expected) }
+            if op == "bind" {
+                let bound = runBind(ref b, through: ref c, for: in init, to: expected)
+                print($"flags {bound == -1 ? 0 : syntaxFlags(in c, for: bound) & 7}")
+                print(tcDump(ref c, for: bound))
+            }
+            if op == "structd" || op == "withd" {
+                let _ = runBind(ref b, through: ref c, for: in init, to: expected)
+                print("bound")
+            }
             if op == "fact" {
                 let bound = bindExpr(ref b, through: ref c, for: in init)
                 print(tcDump(ref c, for: fact(ref c, for: bound)))

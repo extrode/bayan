@@ -40,14 +40,11 @@ BExpr bindUnary(ref Binder b, through ref Ctx c, for in parser.UnaryExpr u, to T
         setSyntaxFlags(ref c, for: n, to: flags)
         return n
     }
-    var ok = false
-    switch u.op {
-        case .notKeyword: ok = isBool(t)
-        case .complement: ok = isInteger(t)
-        case .negate: ok = isSignedInteger(t) || isFloat(t)
-        case .plus: ok = isNumeric(t)
-        default: ok = false
-    }
+    // The C# `u.Op switch`; any other operator (`^`, returned above) is `false`.
+    let ok = (u.op == .notKeyword && isBool(t))
+        || (u.op == .complement && isInteger(t))
+        || (u.op == .negate && (isSignedInteger(t) || isFloat(t)))
+        || (u.op == .plus && isNumeric(t))
     if !ok {
         report(ref b, through: ref c, for: .badUnaryOperand, at: u.span, by: (t19UnaryText(u.op), typeDisplay(ref c, by: t), "", "", ""),
             help: u.op == .negate && isUnsignedInteger(t) ? "convert to a signed type first; unsigned values cannot be negative" : "")
@@ -601,7 +598,7 @@ BExpr bindConversion(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
 
 // ── Composite values ─────────────────────────────────────────────────────────
 
-BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLiteralExpr s, to Type expected) {
+BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLiteralExpr s, from parser.Expr syntax, to Type expected) {
     var type: Type = -1
     switch s.type {
         case .none:
@@ -737,13 +734,13 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
     }
     if state == -1 {
         let literal = addStructLiteral(ref c, from: BStructLiteral { span: s.span, structId: st, fields: move values, type: type })
-        return checkedValue(ref b, through: ref c, for: in s, by: literal)
+        return checkedValue(ref b, through: ref c, for: in syntax, by: literal)
     }
     let literal = addStructLiteral(ref c, from: BStructLiteral { span: s.span, structId: st, fields: move values, state: state, payload: move payload, type: stateType })
-    return checkedValue(ref b, through: ref c, for: in s, by: literal)
+    return checkedValue(ref b, through: ref c, for: in syntax, by: literal)
 }
 
-BExpr bindWith(ref Binder b, through ref Ctx c, for in parser.WithExpr w) {
+BExpr bindWith(ref Binder b, through ref Ctx c, for in parser.WithExpr w, from parser.Expr syntax) {
     let target = bindExpr(ref b, through: ref c, for: in w.target)
     let tt = exprType(in c, for: target)
     if isError(tt) { return addErrorExpr(ref c, from: BErrorExpr { span: w.span }) }
@@ -772,5 +769,5 @@ BExpr bindWith(ref Binder b, through ref Ctx c, for in parser.WithExpr w) {
     }
     let withNode = addWith(ref c, from: BWith { span: w.span, target: target, updates: move updates, type: tt })
     let fields: List<FieldId>? = move changed
-    return checkedValue(ref b, through: ref c, for: in w, by: withNode, changed: in fields)
+    return checkedValue(ref b, through: ref c, for: in syntax, by: withNode, changed: in fields)
 }
