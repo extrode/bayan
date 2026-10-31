@@ -144,13 +144,13 @@ public static class CliApp
         return ExitOk;
     }
 
-    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null, bool Mutate = false);
+    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null, bool Mutate = false, bool Coverage = false);
 
     internal static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false, bool allowVerbose = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
-        bool emitC = false, json = false, testJson = false, changed = false, all = false, verbose = false, mutate = false;
+        bool emitC = false, json = false, testJson = false, changed = false, all = false, verbose = false, mutate = false, coverage = false;
         string? baseRef = null;
         var only = new List<string>();
         var programArgs = Array.Empty<string>();
@@ -210,6 +210,9 @@ public static class CliApp
                 case "--mutate" when allowTestJson:
                     mutate = true;
                     break;
+                case "--coverage" when allowTestJson:
+                    coverage = true;
+                    break;
                 case "--only" when allowTestJson && i + 1 < args.Length:
                     only.Add(args[++i]);
                     break;
@@ -237,7 +240,7 @@ public static class CliApp
             stderr.WriteLine(Messages.NotFound.Text(path));
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null, mutate);
+        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null, mutate, coverage);
     }
 
     /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
@@ -589,7 +592,8 @@ public static class CliApp
         if (ParseBuildOptions(args, stderr, allowOutput: false, allowTestJson: true, allowVerbose: true) is not { } o) return ExitUsage;
         if (Compile(o, stderr, includeTests: true) is not { } compiled) return ExitFailure;
         if (o.Mutate) return MutateTests(o, compiled, stdout, stderr);
-        var program = Lowerer.Lower(compiled.Compilation);
+        var map = o.Coverage ? Testing.CoverageInstrumenter.Instrument(compiled.Compilation) : null;
+        var program = Lowerer.Lower(compiled.Compilation, coverage: map?.Probes);
         var source = CEmitter.Emit(program, o.Mode == BuildMode.Debug);
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName + "-test", HostTarget))
@@ -608,7 +612,18 @@ public static class CliApp
         var unchanged = program.Tests.Count - selected.Count;
         if (o.Only is { } only)
             selected = selected.Where(i => only.Any(s => program.Tests[i].Test.Name.Contains(s, StringComparison.Ordinal))).ToList();
+        var built = System.Diagnostics.Stopwatch.StartNew();
         if (BuildNative(source, o.Mode, stderr, output, json: o.Json || o.TestJson) is not { } executable) return ExitToolchain;
+        var buildSeconds = built.Elapsed.TotalSeconds;
+        string? coverageDir = null, coveragePrefix = null;
+        var hits = new Dictionary<int, ulong>();
+        var timedOut = false;
+        if (map is not null)
+        {
+            coverageDir = Directory.CreateTempSubdirectory("bayan-coverage-").FullName;
+            coveragePrefix = Path.Combine(coverageDir, "BAYAN_COVERAGE");
+            Testing.CoverageInstrumenter.DeleteStale(coveragePrefix);
+        }
         var count = selected.Count;
         var human = o.TestJson ? TextWriter.Null : stdout;
         var symbols = (s_styleOut ?? Style.Plain).Symbols;
@@ -624,8 +639,17 @@ public static class CliApp
         {
             var test = program.Tests[i].Test;
             var progress = StartProgress(o.Json || o.TestJson, stderr, Messages.TestProgress.Text(test.Name));
-            var outcome = RunTest(executable, i);
+            var outcome = RunTest(executable, i, coveragePrefix);
             progress.Done();
+            if (coveragePrefix is not null)
+            {
+                // A killed test's counters are lost: what no other test hit is unknown, not missed.
+                var counterFile = coveragePrefix + "." + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (outcome.TimedOut) timedOut = true;
+                else if (File.Exists(counterFile))
+                    foreach (var (id, n) in Testing.CoverageInstrumenter.Read(counterFile))
+                        hits[id] = hits.GetValueOrDefault(id) + n;
+            }
             var status = outcome.TimedOut ? TestStatus.Timeout : outcome.ExitCode switch
             {
                 0 => TestStatus.Pass,
@@ -687,7 +711,32 @@ public static class CliApp
             Directory.CreateDirectory(testDir);
             Toolchain.ReplaceFile(Path.Combine(testDir, "results.json"), temp => File.WriteAllText(temp, json));
         }
+        if (map is not null) WriteCoverage(o, compiled, map, hits, timedOut, buildSeconds, total.Elapsed.TotalSeconds, coverageDir!, stdout);
         return failed == 0 ? ExitOk : ExitTestFailure;
+    }
+
+    /// <summary>
+    /// <c>bayan test --coverage</c> (spec 013 R9, R12): prints the summary and writes <c>out/test/bayan-quality.json</c> and a
+    /// <c>&lt;file&gt;.cov.txt</c> per file beside it, under the project root (or the directory of the file given).
+    /// </summary>
+    private static void WriteCoverage(BuildOptions o, Compiled compiled, Testing.CoverageMap map, Dictionary<int, ulong> hits, bool timedOut,
+        double buildSeconds, double totalSeconds, string coverageDir, TextWriter stdout)
+    {
+        Directory.Delete(coverageDir, recursive: true);
+        var report = Testing.QualityReport.Coverage("bayan test --coverage", map, hits, timedOut, buildSeconds, totalSeconds);
+        stdout.Write(report.CoverageSummary());
+        var root = compiled.ProjectRoot ?? Path.GetDirectoryName(Path.GetFullPath(o.Path))!;
+        var dir = Path.Combine(root, "out", "test");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "bayan-quality.json"), report.Json());
+        foreach (var f in report.Files)
+        {
+            var path = Path.GetFullPath(f.Path, root);
+            if (!File.Exists(path)) continue;
+            var listing = Path.Combine(dir, Path.GetRelativePath(root, path).Replace("..", "_") + ".cov.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(listing)!);
+            File.WriteAllText(listing, Testing.QualityReport.Listing(f.Coverage!, File.ReadAllLines(path)));
+        }
     }
 
     /// <summary>
@@ -833,7 +882,7 @@ public static class CliApp
         return dir;
     }
 
-    private static TestOutcome RunTest(string executable, int index)
+    private static TestOutcome RunTest(string executable, int index, string? coveragePrefix = null)
     {
         var psi = new System.Diagnostics.ProcessStartInfo(executable)
         {
@@ -843,6 +892,7 @@ public static class CliApp
         };
         psi.ArgumentList.Add("--test");
         psi.ArgumentList.Add(index.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (coveragePrefix is not null) psi.Environment["BAYAN_COVERAGE"] = coveragePrefix;
         var clock = System.Diagnostics.Stopwatch.StartNew();
         using var p = System.Diagnostics.Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();

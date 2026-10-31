@@ -14,15 +14,32 @@ public sealed record ReportTiming(double BuildSeconds, double MeanMutantSeconds,
 /// <summary>One mutant in the report; <see cref="Status"/> is killed, survived, timeout, marked or not_reached.</summary>
 public sealed record ReportMutant(SchemaSite Site, string Status, int? KilledBy, string? Suggestion);
 
-/// <summary>A file's entry; <see cref="Mutants"/> is for a mutation report. Coverage fields are T10's and are left out here.</summary>
-public sealed record ReportFile(string Path, IReadOnlyList<ReportMutant> Mutants);
+/// <summary>One outcome of one condition; <see cref="Status"/> is hit, missed or unknown (a test timed out).</summary>
+public sealed record ReportBranch(int Line, int Column, bool Outcome, string Status);
+
+/// <summary>One <c>fails</c> variant of a function; <see cref="Unknown"/> when no test hit it and a test timed out. <see cref="Origins"/> are the hit <c>fail</c>, <c>try</c> or <c>catch</c> sites.</summary>
+public sealed record ReportErrorPath(string Function, string Variant, bool Hit, bool Unknown, IReadOnlyList<string> Origins);
+
+/// <summary>A file's coverage: the lines (1-based) with a counter, by outcome, every branch outcome and every error path.</summary>
+public sealed record FileCoverage(IReadOnlyList<int> CoveredLines, IReadOnlyList<int> MissedLines, IReadOnlyList<int> UnknownLines,
+    IReadOnlyList<ReportBranch> Branches, IReadOnlyList<ReportErrorPath> ErrorPaths);
+
+/// <summary>Covered and total counts of one measure.</summary>
+public sealed record Tally(int Covered, int Total);
+
+/// <summary>A coverage report's totals over every file.</summary>
+public sealed record CoverageTotals(Tally Lines, Tally Branches, Tally ErrorPaths);
+
+/// <summary>A file's entry; <see cref="Mutants"/> is for a mutation report, <see cref="Coverage"/> for a coverage report.</summary>
+public sealed record ReportFile(string Path, IReadOnlyList<ReportMutant> Mutants, FileCoverage? Coverage = null);
 
 /// <summary>
 /// The one report schema of spec 013 R12 (<c>bayan-quality.json</c>), the mutation half: version, kind, tool, timing, files,
 /// totals and per-operator counts. Written by hand (NativeAOT, no reflection). Warnings are terminal-only.
 /// </summary>
 public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing, IReadOnlyList<ReportFile> Files,
-    IReadOnlyDictionary<string, int> Totals, IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>> Operators)
+    IReadOnlyDictionary<string, int> Totals, IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>> Operators,
+    CoverageTotals? CoverageTotals = null)
 {
     public static readonly string[] Counts = ["killed", "survived", "timeout", "marked", "not_reached", "not_emitted"];
 
@@ -68,6 +85,39 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
             operators.ToDictionary(o => o.Key, o => (IReadOnlyDictionary<string, int>)o.Value));
     }
 
+    /// <summary>
+    /// Builds the coverage report of a <c>--coverage</c> run: <paramref name="hits"/> is the counter hits merged over every
+    /// test; when <paramref name="timedOut"/> a test was killed, so a counter nobody hit is unknown, never missed (R9).
+    /// </summary>
+    public static QualityReport Coverage(string tool, CoverageMap map, IReadOnlyDictionary<int, ulong> hits, bool timedOut, double buildSeconds, double totalSeconds)
+    {
+        var unhit = timedOut ? "unknown" : "missed";
+        string Status(CoverageCounter c) => hits.ContainsKey(c.Id) ? "hit" : unhit;
+        var files = new List<ReportFile>();
+        foreach (var group in map.Counters.GroupBy(c => c.File))
+        {
+            var lines = new List<int>[3] { [], [], [] };
+            foreach (var byLine in group.Where(c => c.Kind == CoverageInstrumenter.Line).GroupBy(c => c.Line).OrderBy(g => g.Key))
+            {
+                var statuses = byLine.Select(Status).ToList();
+                lines[statuses.All(s => s == "hit") ? 0 : timedOut ? 2 : 1].Add(byLine.Key);
+            }
+            var branches = group.Where(c => c.Kind == CoverageInstrumenter.Branch)
+                .Select(c => new ReportBranch(c.Line, c.Column, c.Outcome == true, Status(c))).ToList();
+            var errors = group.Where(c => c.Kind == CoverageInstrumenter.ErrorPath).GroupBy(c => (c.Function!, c.Variant!))
+                .Select(g => new ReportErrorPath(g.Key.Item1, g.Key.Item2, g.Any(c => hits.ContainsKey(c.Id)), timedOut && !g.Any(c => hits.ContainsKey(c.Id)),
+                    g.Where(c => hits.ContainsKey(c.Id)).Select(c => $"{c.Origin} {c.Line}:{c.Column}").ToList())).ToList();
+            files.Add(new ReportFile(group.Key, [], new FileCoverage(lines[0], lines[1], lines[2], branches, errors)));
+        }
+        var cov = files.Select(f => f.Coverage!).ToList();
+        var totals = new CoverageTotals(
+            new Tally(cov.Sum(f => f.CoveredLines.Count), cov.Sum(f => f.CoveredLines.Count + f.MissedLines.Count + f.UnknownLines.Count)),
+            new Tally(cov.Sum(f => f.Branches.Count(b => b.Status == "hit")), cov.Sum(f => f.Branches.Count)),
+            new Tally(cov.Sum(f => f.ErrorPaths.Count(e => e.Hit)), cov.Sum(f => f.ErrorPaths.Count)));
+        return new QualityReport("coverage", tool, new ReportTiming(buildSeconds, 0, 0, totalSeconds, 0), files, new Dictionary<string, int>(),
+            new Dictionary<string, IReadOnlyDictionary<string, int>>(), totals);
+    }
+
     private static string StatusName(MutantStatus s) => s switch
     {
         MutantStatus.Killed => "killed",
@@ -90,16 +140,25 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
             w.WriteString("tool", Tool);
             w.WriteStartObject("timing");
             w.WriteNumber("build_s", Timing.BuildSeconds);
-            w.WriteNumber("mean_mutant_s", Timing.MeanMutantSeconds);
-            w.WriteNumber("max_mutant_s", Timing.MaxMutantSeconds);
+            if (CoverageTotals is null)
+            {
+                w.WriteNumber("mean_mutant_s", Timing.MeanMutantSeconds);
+                w.WriteNumber("max_mutant_s", Timing.MaxMutantSeconds);
+            }
             w.WriteNumber("total_s", Timing.TotalSeconds);
-            w.WriteNumber("mutant_share_of_build", Timing.MutantShareOfBuild);
+            if (CoverageTotals is null) w.WriteNumber("mutant_share_of_build", Timing.MutantShareOfBuild);
             w.WriteEndObject();
             w.WriteStartArray("files");
             foreach (var f in Files)
             {
                 w.WriteStartObject();
                 w.WriteString("path", f.Path);
+                if (f.Coverage is { } cov)
+                {
+                    WriteCoverage(w, cov);
+                    w.WriteEndObject();
+                    continue;
+                }
                 w.WriteStartArray("mutants");
                 foreach (var m in f.Mutants)
                 {
@@ -124,13 +183,73 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
                 w.WriteEndObject();
             }
             w.WriteEndArray();
-            WriteCounts(w, "totals", Totals);
-            w.WriteStartObject("operators");
-            foreach (var (op, counts) in Operators) WriteCounts(w, op, counts);
-            w.WriteEndObject();
+            if (CoverageTotals is { } t)
+            {
+                w.WriteStartObject("totals");
+                foreach (var (name, tally) in new[] { ("lines", t.Lines), ("branches", t.Branches), ("errorPaths", t.ErrorPaths) })
+                {
+                    w.WriteStartObject(name);
+                    w.WriteNumber("covered", tally.Covered);
+                    w.WriteNumber("total", tally.Total);
+                    w.WriteEndObject();
+                }
+                w.WriteEndObject();
+            }
+            else
+            {
+                WriteCounts(w, "totals", Totals);
+                w.WriteStartObject("operators");
+                foreach (var (op, counts) in Operators) WriteCounts(w, op, counts);
+                w.WriteEndObject();
+            }
             w.WriteEndObject();
         }
         return Encoding.UTF8.GetString(buffer.WrittenSpan) + "\n";
+    }
+
+    private static void WriteCoverage(Utf8JsonWriter w, FileCoverage f)
+    {
+        w.WriteStartObject("lines");
+        w.WriteNumber("covered", f.CoveredLines.Count);
+        w.WriteNumber("total", f.CoveredLines.Count + f.MissedLines.Count + f.UnknownLines.Count);
+        w.WriteStartArray("missed");
+        foreach (var l in f.MissedLines) w.WriteNumberValue(l);
+        w.WriteEndArray();
+        w.WriteStartArray("unknown");
+        foreach (var l in f.UnknownLines) w.WriteNumberValue(l);
+        w.WriteEndArray();
+        w.WriteEndObject();
+        w.WriteStartObject("branches");
+        w.WriteNumber("covered", f.Branches.Count(b => b.Status == "hit"));
+        w.WriteNumber("total", f.Branches.Count);
+        foreach (var status in new[] { "missed", "unknown" })
+        {
+            w.WriteStartArray(status);
+            foreach (var b in f.Branches.Where(b => b.Status == status))
+            {
+                w.WriteStartObject();
+                w.WriteNumber("line", b.Line);
+                w.WriteNumber("column", b.Column);
+                w.WriteBoolean("outcome", b.Outcome);
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
+        }
+        w.WriteEndObject();
+        w.WriteStartArray("errorPaths");
+        foreach (var e in f.ErrorPaths)
+        {
+            w.WriteStartObject();
+            w.WriteString("function", e.Function);
+            w.WriteString("variant", e.Variant);
+            w.WriteBoolean("hit", e.Hit);
+            if (e.Unknown) w.WriteBoolean("unknown", true);
+            w.WriteStartArray("origins");
+            foreach (var o in e.Origins) w.WriteStringValue(o);
+            w.WriteEndArray();
+            w.WriteEndObject();
+        }
+        w.WriteEndArray();
     }
 
     private static void WriteCounts(Utf8JsonWriter w, string name, IReadOnlyDictionary<string, int> counts)
@@ -186,6 +305,40 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
             sb.Append(CultureInfo.InvariantCulture, $"  {op}: {string.Join(", ", Counts.Select(c => $"{counts[c]} {c.Replace('_', ' ')}"))}\n");
         sb.Append(CultureInfo.InvariantCulture, $"timing: build {Fmt(Timing.BuildSeconds)} s, mean {Fmt(Timing.MeanMutantSeconds)} s and max {Fmt(Timing.MaxMutantSeconds)} s per mutant, total {Fmt(Timing.TotalSeconds)} s, mutant share of build {Fmt(Timing.MutantShareOfBuild * 100)}%\n");
         foreach (var w in warnings) sb.Append(w).Append('\n');
+        return sb.ToString();
+    }
+
+    /// <summary>The per-line listing of a coverage file (<c>&lt;file&gt;.cov.txt</c>): a gutter of <c>+</c> hit, <c>-</c> missed, <c>~</c> unknown, blank for no counter, then the source text.</summary>
+    public static string Listing(FileCoverage f, IReadOnlyList<string> sourceLines)
+    {
+        var sb = new StringBuilder();
+        for (var i = 0; i < sourceLines.Count; i++)
+        {
+            var n = i + 1;
+            var gutter = f.CoveredLines.Contains(n) ? '+' : f.MissedLines.Contains(n) ? '-' : f.UnknownLines.Contains(n) ? '~' : ' ';
+            sb.Append(CultureInfo.InvariantCulture, $"{gutter} {sourceLines[i]}\n");
+        }
+        return sb.ToString();
+    }
+
+    private static string Percent(Tally t) => t.Total == 0 ? "100%" : Fmt(100.0 * t.Covered / t.Total) + "%";
+
+    /// <summary>The coverage terminal summary: totals, then each uncovered branch outcome and error path by name, and what is unknown.</summary>
+    public string CoverageSummary()
+    {
+        var t = CoverageTotals!;
+        var sb = new StringBuilder();
+        sb.Append(CultureInfo.InvariantCulture, $"coverage: lines {t.Lines.Covered}/{t.Lines.Total} ({Percent(t.Lines)}), branches {t.Branches.Covered}/{t.Branches.Total} ({Percent(t.Branches)}), error paths {t.ErrorPaths.Covered}/{t.ErrorPaths.Total} ({Percent(t.ErrorPaths)})\n");
+        foreach (var f in Files)
+        {
+            var c = f.Coverage!;
+            var lines = c.CoveredLines.Count + c.MissedLines.Count + c.UnknownLines.Count;
+            sb.Append(CultureInfo.InvariantCulture, $"  {f.Path}: lines {c.CoveredLines.Count}/{lines}, branches {c.Branches.Count(b => b.Status == "hit")}/{c.Branches.Count}, error paths {c.ErrorPaths.Count(e => e.Hit)}/{c.ErrorPaths.Count}\n");
+            foreach (var b in c.Branches.Where(b => b.Status != "hit"))
+                sb.Append(CultureInfo.InvariantCulture, $"{(b.Status == "missed" ? "uncovered" : "unknown")} branch: {f.Path}:{b.Line}:{b.Column} never {(b.Outcome ? "true" : "false")}\n");
+            foreach (var e in c.ErrorPaths.Where(e => !e.Hit))
+                sb.Append(CultureInfo.InvariantCulture, $"{(e.Unknown ? "unknown" : "uncovered")} error path: {f.Path}: {e.Function} {e.Variant}\n");
+        }
         return sb.ToString();
     }
 }
