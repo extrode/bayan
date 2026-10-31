@@ -146,13 +146,13 @@ public static class CliApp
         return ExitOk;
     }
 
-    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null, bool Mutate = false, bool Coverage = false, string? Run = null);
+    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null, bool Mutate = false, bool Coverage = false, string? Run = null, bool Sanitize = false);
 
     internal static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false, bool allowVerbose = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
-        bool emitC = false, json = false, testJson = false, changed = false, all = false, verbose = false, mutate = false, coverage = false;
+        bool emitC = false, json = false, testJson = false, changed = false, all = false, verbose = false, mutate = false, coverage = false, sanitize = false;
         string? baseRef = null, run = null;
         var only = new List<string>();
         var programArgs = Array.Empty<string>();
@@ -218,6 +218,9 @@ public static class CliApp
                 case "--coverage" when allowTestJson:
                     coverage = true;
                     break;
+                case "--sanitize" when allowTestJson:
+                    sanitize = true;
+                    break;
                 case "--only" when allowTestJson && i + 1 < args.Length:
                     only.Add(args[++i]);
                     break;
@@ -245,7 +248,7 @@ public static class CliApp
             stderr.WriteLine(Messages.NotFound.Text(path));
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null, mutate, coverage, run);
+        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null, mutate, coverage, run, sanitize);
     }
 
     /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
@@ -376,10 +379,10 @@ public static class CliApp
     }
 
     /// <summary>Builds, or reports why the toolchain could not.</summary>
-    internal static string? BuildNative(string source, BuildMode mode, TextWriter stderr, string? output = null, string? target = null, bool json = false)
+    internal static string? BuildNative(string source, BuildMode mode, TextWriter stderr, string? output = null, string? target = null, bool json = false, bool sanitize = false)
     {
         using var progress = StartProgress(json, stderr, Messages.BuildProgress.Text());
-        var result = Toolchain.Build(source, mode, output, target);
+        var result = Toolchain.Build(source, mode, output, target, sanitize);
         progress.Done();
         if (result.Succeeded) return result.ExecutablePath;
         ReportToolchain(result, stderr, json);
@@ -602,7 +605,9 @@ public static class CliApp
             return ExitUsage;
         }
         if (o.Mutate) return MutateTests(o, compiled, stdout, stderr);
-        var map = o.Coverage ? Testing.CoverageInstrumenter.Instrument(compiled.Compilation) : null;
+        // Debug runs carry probes for the one-line summary unless `summary: false`; sanitize runs only with --coverage (spec 013 R17).
+        var probes = o.Coverage || o.Mode == BuildMode.Debug && !o.Sanitize && (compiled.Manifest?.Summary ?? true);
+        var map = probes ? Testing.CoverageInstrumenter.Instrument(compiled.Compilation) : null;
         var program = Lowerer.Lower(compiled.Compilation, coverage: map?.Probes);
         var source = CEmitter.Emit(program, o.Mode == BuildMode.Debug);
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
@@ -623,7 +628,7 @@ public static class CliApp
         if (o.Only is { } only)
             selected = selected.Where(i => only.Any(s => program.Tests[i].Test.Name.Contains(s, StringComparison.Ordinal))).ToList();
         var built = System.Diagnostics.Stopwatch.StartNew();
-        if (BuildNative(source, o.Mode, stderr, output, json: o.Json || o.TestJson) is not { } executable) return ExitToolchain;
+        if (BuildNative(source, o.Mode, stderr, output, json: o.Json || o.TestJson, sanitize: o.Sanitize) is not { } executable) return ExitToolchain;
         var buildSeconds = built.Elapsed.TotalSeconds;
         string? coverageDir = null, coveragePrefix = null;
         var hits = new Dictionary<int, ulong>();
@@ -721,7 +726,7 @@ public static class CliApp
             Directory.CreateDirectory(testDir);
             Toolchain.ReplaceFile(Path.Combine(testDir, "results.json"), temp => File.WriteAllText(temp, json));
         }
-        var gated = map is not null && WriteCoverage(o, compiled, map, hits, timedOut, buildSeconds, total.Elapsed.TotalSeconds, coverageDir!, stdout, stderr);
+        var gated = map is not null && WriteCoverage(o, compiled, map, hits, timedOut, buildSeconds, total.Elapsed.TotalSeconds, coverageDir!, human, stdout, stderr);
         return failed > 0 || gated ? ExitTestFailure : ExitOk;
     }
 
@@ -730,10 +735,17 @@ public static class CliApp
     /// <c>&lt;file&gt;.cov.txt</c> per file beside it, under the project root (or the directory of the file given).
     /// </summary>
     private static bool WriteCoverage(BuildOptions o, Compiled compiled, Testing.CoverageMap map, Dictionary<int, ulong> hits, bool timedOut,
-        double buildSeconds, double totalSeconds, string coverageDir, TextWriter stdout, TextWriter stderr)
+        double buildSeconds, double totalSeconds, string coverageDir, TextWriter human, TextWriter stdout, TextWriter stderr)
     {
         Directory.Delete(coverageDir, recursive: true);
         var report = Testing.QualityReport.Coverage("bayan test --coverage", map, hits, timedOut, buildSeconds, totalSeconds);
+        if (!o.Coverage)
+        {
+            // The default Debug summary: one line, no files.
+            human.WriteLine(report.CoverageSummary().Split('\n')[0]);
+            var gm = compiled.Manifest;
+            return gm is not null && ReportGates(Testing.Gates.Coverage(report, gm.MinLines, gm.MinBranches, gm.MinErrorPaths), stderr);
+        }
         stdout.Write(report.CoverageSummary());
         var root = compiled.ProjectRoot ?? Path.GetDirectoryName(Path.GetFullPath(o.Path))!;
         var dir = Path.Combine(root, "out", "test");
