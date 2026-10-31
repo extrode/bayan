@@ -15,8 +15,8 @@ namespace Bayan.Tests;
 /// <c>Compilation.Create</c>; the oracle then makes a fresh C# <c>Binder</c> (it is internal, so by reflection) over a
 /// symbol of that compilation and calls the method under test, while the generated <c>main.byn</c> builds the same
 /// symbols by hand in a <c>Ctx</c> and calls the Bayan port. Both print the bound tree, the locals and the new
-/// diagnostics (<c>code line:col message |label|help</c>). Inputs avoid unported siblings (Q594): every parameter has a
-/// constant default, and no case reaches <c>built</c>; <c>bindChecks</c> and <c>bindEnumArguments</c> are blocked (Q594) and have no case.
+/// diagnostics (<c>code line:col message |label|help</c>). Inputs avoid unported siblings (Q594): no case reaches
+/// <c>built</c>; <c>bindChecks</c> and <c>bindEnumArguments</c> are blocked (Q594) and have no case.
 /// </summary>
 public sealed class SelfhostSemanticsT15Tests
 {
