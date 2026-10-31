@@ -30,6 +30,20 @@ public sealed class SelfhostSemanticsT20Tests
             dot
         }
 
+        union Opt<T> {
+            some(T value)
+            none
+        }
+
+        struct Plain {
+            i64 v
+        }
+
+
+        struct Box<T> {
+            T item
+        }
+
         void put(at i64 x) {
         }
 
@@ -42,6 +56,18 @@ public sealed class SelfhostSemanticsT20Tests
         void bump(ref i64 x) {
         }
 
+        void mix(at i64 a) {
+        }
+
+        void mix(i64 a, rest ReadOnlySpan<i64> xs) {
+        }
+
+        void fit(at i64 a) {
+        }
+
+        void fit(i64 a, i64 b = 2) {
+        }
+
         void spread(i64 a, rest ReadOnlySpan<i64> xs) {
         }
 
@@ -51,7 +77,37 @@ public sealed class SelfhostSemanticsT20Tests
 
         T zero<T>() => zero()
 
-        void probes(i64 n, string s, bool verbose, List<i64> ns) {
+        T orElse<T>(T? x, T y) => y
+
+        K keyOf<K, V>(Map<K, V> m) => keyOf(m)
+
+        T firstOf<T>(ReadOnlySpan<T> xs) => xs[0]
+
+        T via<T>((T) -> T f) => via(f)
+
+        i64 twice(i64 x) => x
+
+        i64 add2(i64 a, i64 b) => a
+
+        T unwrap<T>(Opt<T> o) => unwrap(o)
+
+        T unbox<T>(Box<T> x) => unbox(x)
+
+        T keyed<T>(Map<T, Plain> m) => keyed(m)
+
+        T pairB<T>(T a, Box<T> x) => a
+
+        T pairO<T>(T a, Opt<T> x) => a
+
+        T fst<T>((T, i64) p) => fst(p)
+
+        void guarded(i64 n, i64 k) expects n > k {
+        }
+
+        void doomed(i64 n) expects 1 > 2 {
+        }
+
+        void probes(i64 n, string s, bool verbose, List<i64> ns, ReadOnlySpan<u8> bytes, Map<string, i64> m, Opt<i64> o, Box<i64> bx, Untrusted<string> un, Map<string, Plain> mp, (i64, i64) tp) {
             let c1 = u8.tryFrom(n)
             let c2 = u8.tryFrom(s)
             let c3 = u8.tryFrom(n, n)
@@ -67,6 +123,20 @@ public sealed class SelfhostSemanticsT20Tests
             let c13 = u8.tryFrom()
             let c14 = Shape.circle(radius: 2.0)
             let c15 = Shape.circle()
+            let c16 = Utf8.decode(bytes, invalid: .replace)
+            let c17 = take<i32>(1, true)
+            let c18 = take(1, true, invalid: 2)
+            let c19 = StrBuf.over(bytes)
+            let c20 = StrBuf.under(bytes)
+            let c21 = nope(x => 1)
+            let c22 = twice(n)
+            let c23 = Foo.debug("x")
+            let c24 = twice(un)
+            let c25 = pick<i32, i64>(zz, 2)
+            let c26 = i64.frob(s)
+            let r1 = guarded(0, 1)
+            let r2 = guarded(2, 1)
+            let r3 = doomed(n)
             let a1 = take(1, true)
             let a2 = take(1, verbose)
             let a3 = take(1, verbose: true, to: 2, label: "y")
@@ -82,6 +152,7 @@ public sealed class SelfhostSemanticsT20Tests
             let a13 = take(1, 2, 3, 4, 5)
             let a14 = take(1, in verbose)
             let a15 = take(1, ref verbose)
+            let a16 = take(1, verbos: true)
             let i1 = pick(1, 2)
             let i2 = pick<i32>(1, 2)
             let i3 = pick<i32, i64>(1, 2)
@@ -90,9 +161,30 @@ public sealed class SelfhostSemanticsT20Tests
             let i6 = zero()
             let i7 = take<i32>(1)
             let i8 = pick(b: n, a: 1)
+            let i9 = pick(null, n)
+            let i10 = pick(nope, n)
+            let i11 = orElse(n, 2)
+            let i12 = orElse(null, n)
+            let i13 = keyOf(m)
+            let i14 = firstOf(ns)
+            let i15 = firstOf(bytes)
+            let i16 = via(twice)
+            let i17 = pick(null, nope)
+            let i18 = via(add2)
+            let i19 = pick(a: 1, zz: s)
+            let i20 = via(x => x)
+            let i21 = unwrap(o)
+            let i22 = unbox(bx)
+            let i23 = unwrap(bx)
+            let i24 = keyed(mp)
+            let i25 = pairB(s, bx)
+            let i26 = pairO(s, o)
+            let i27 = fst(tp)
             let o1 = put(at: 1)
             let o2 = put(by: 2)
             let o3 = put(3)
+            let o4 = mix(1, 2, 3)
+            let o5 = fit(1)
             let m1 = it + 1
             let m2 = n + 1
             let m3 = s.f(n, [it])
@@ -106,13 +198,16 @@ public sealed class SelfhostSemanticsT20Tests
     [
         ("call", "c1"), ("call", "c2"), ("call", "c3"), ("call", "c4"), ("call", "c5"), ("call", "c6"), ("call", "c7"),
         ("call", "c8"), ("call", "c9"), ("call", "c10"), ("call", "c11"), ("call", "c12"), ("call", "c13"), ("call", "c14"),
-        ("call", "c15"),
+        ("call", "c15"), ("call", "c16"), ("call", "c17"), ("call", "c18"), ("call", "c19"), ("call", "c20"), ("call", "c21"), ("call", "c22"), ("call", "c23"), ("call", "c24"), ("call", "c25"), ("call", "c26"),
+        ("req", "r1"), ("req", "r2"), ("req", "r3"),
         ("args", "a1"), ("args", "a2"), ("args", "a3"), ("args", "a4"), ("args", "a5"), ("args", "a6"), ("args", "a7"),
         ("args", "a8"), ("args", "a9"), ("args", "a10"), ("args", "a11"), ("args", "a12"), ("args", "a13"), ("args", "a14"),
-        ("args", "a15"),
+        ("args", "a15"), ("args", "a16"),
         ("inst", "i1"), ("inst", "i2"), ("inst", "i3"), ("inst", "i4"), ("inst", "i5"), ("inst", "i6"), ("inst", "i7"),
-        ("inst", "i8"),
-        ("overload", "o1"), ("overload", "o2"), ("overload", "o3"),
+        ("inst", "i8"), ("inst", "i9"), ("inst", "i10"), ("inst", "i11"), ("inst", "i12"),
+        ("inst", "i13"), ("inst", "i14"), ("inst", "i15"), ("inst", "i16"), ("inst", "i17"), ("inst", "i18"), ("inst", "i19"),
+        ("inst", "i20"), ("inst", "i21"), ("inst", "i22"), ("inst", "i23"), ("inst", "i24"), ("inst", "i25"), ("inst", "i26"), ("inst", "i27"),
+        ("overload", "o1"), ("overload", "o2"), ("overload", "o3"), ("overload", "o4"), ("overload", "o5"),
         ("mention", "m1"), ("mention", "m2"), ("mention", "m3"), ("mention", "m4"),
         ("strip", "s1"), ("strip", "s2"),
     ];
@@ -214,8 +309,12 @@ public sealed class SelfhostSemanticsT20Tests
         switch (op)
         {
             case "call":
+            case "req":
+                // `req` checks only this call's contract: the compilation's own checks are dropped first.
+                if (op == "req") ((System.Collections.IList)typeof(Compilation).GetProperty("RequiresChecks", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(c)!).Clear();
                 var expected = ld.Type is null ? null : Call(b, "ResolveType", ld.Type);
                 lines.Add(DumpNode((BoundNode?)Call(b, "BindCall", init, expected)));
+                if (op == "req") typeof(Compilation).GetMethod("CheckRequires", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(c, null);
                 break;
             case "args":
                 var fn = Fn(c, (CallExpr)init);
@@ -364,13 +463,14 @@ public sealed class SelfhostSemanticsT20Tests
         }
 
         void runCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, at parser.Expr syntax, from in parser.TypeSyntax declType, by string op) {
-            if op == "call" {
+            if op == "call" || op == "req" {
                 var expected: Type = -1
                 switch declType {
                     case .none: {}
                     default: expected = resolveType(ref b, through: ref c, for: in declType)
                 }
                 tcDump(ref c, for: bindCall(ref b, through: ref c, for: in call, from: syntax, to: expected))
+                if op == "req" { checkRequires(ref c) }
                 return
             }
             let fn = testFn(ref c, for: in call.callee, from: b.file)
@@ -438,6 +538,11 @@ public sealed class SelfhostSemanticsT20Tests
                 errorNarrowed: [],
             }
             pushScope(ref b)
+            // A callee's `requirements` are bound with its body; the C# compilation has bound them before the case runs.
+            if op == "req" {
+                tcBindBody(ref c, for: file, by: "guarded")
+                tcBindBody(ref c, for: file, by: "doomed")
+            }
             let start = c.diagnostics.length
             for i in 0..c.files[file].unit.members.length {
                 switch c.files[file].unit.members[i] {
@@ -465,7 +570,20 @@ public sealed class SelfhostSemanticsT20Tests
             tcDiags(ref c, from: start)
         }
 
-        void tcParam(ref Ctx c, for FuncId f, by string name, at TextSpan span, as Type type, to parser.ParamModifier modifier) {
+        void tcBindBody(ref Ctx c, for FileId file, by string name) {
+            for i in 0..c.files[file].unit.members.length {
+                switch c.files[file].unit.members[i] {
+                    case .functionDecl(let fd):
+                        if t15Text(in c, from: file, at: fd.value.name) == name {
+                            var fb = t13NewBinder(file, fn: tcNth(in c, by: name, at: 0))
+                            bindFunctionBody(ref fb, through: ref c, for: in fd.value)
+                        }
+                    default: {}
+                }
+            }
+        }
+
+        void tcParam(ref Ctx c,for FuncId f, by string name, at TextSpan span, as Type type, to parser.ParamModifier modifier) {
             let ordinal = c.functions[f].parameters.length
             let p = newLocal(ref c, by: LocalSymbol { name: name, nameSpan: span, span: span, type: type, kind: .parameter, isParameter: true, modifier: modifier, ordinal: ordinal })
             c.functions[f].parameters.append(p)
@@ -517,14 +635,56 @@ public sealed class SelfhostSemanticsT20Tests
 
     private static string Lower(bool b) => b ? "true" : "false";
 
-    private static string BayanType(TypeSymbol t, Dictionary<string, string> tps) => t switch
+    /// <summary>The Bayan expression for type <paramref name="t"/>; statements it needs first go to <paramref name="sb"/>.</summary>
+    private static string BayanType(System.Text.StringBuilder sb, TypeSymbol t, Dictionary<string, string> tps, ref int n)
     {
-        TypeParameterType p => $"typeParamTypeOf({tps[p.Name]})",
-        PrimitiveType p => $"prim(.{p.DisplayName})",
-        ListType l => $"internList(ref c, by: {BayanType(l.Element, tps)})",
-        SpanType sp => $"internSpan(ref c, by: {BayanType(sp.Element, tps)}, readOnly: {Lower(sp.ReadOnly)})",
-        _ => throw new InvalidOperationException(t.DisplayName),
-    };
+        switch (t)
+        {
+            case TypeParameterType p: return $"typeParamTypeOf({tps[p.Name]})";
+            case PrimitiveType p: return $"prim(.{p.DisplayName})";
+            case ListType l: return $"internList(ref c, by: {BayanType(sb, l.Element, tps, ref n)})";
+            case SpanType sp: return $"internSpan(ref c, by: {BayanType(sb, sp.Element, tps, ref n)}, readOnly: {Lower(sp.ReadOnly)})";
+            case Bayan.Semantics.Symbols.OptionalType o: return $"internOptional(ref c, by: {BayanType(sb, o.Inner, tps, ref n)})";
+            case MapType m: return $"internMap(ref c, by: {BayanType(sb, m.KeyType, tps, ref n)}, to: {BayanType(sb, m.ValueType, tps, ref n)})";
+            case FunctionType f when f.Fails.Count == 0:
+            {
+                var i = n++;
+                var ps = new List<string>();
+                foreach (var p in f.Parameters) ps.Add(BayanType(sb, p, tps, ref n));
+                var ret = BayanType(sb, f.Return, tps, ref n);
+                sb.AppendLine($"    var fp{i} = List<Type>()");
+                foreach (var p in ps) sb.AppendLine($"    fp{i}.append({p})");
+                sb.AppendLine($"    let fe{i} = List<ErrorSetId>()");
+                sb.AppendLine($"    let fu{i} = List<string>()");
+                return $"internFunction(ref c, for: in fp{i}, to: {ret}, by: in fe{i}, as: in fu{i})";
+            }
+            case Bayan.Semantics.Symbols.TupleType tt:
+            {
+                var i = n++;
+                var fs = new List<string>();
+                foreach (var f in tt.Fields) fs.Add(BayanType(sb, f.Type, tps, ref n));
+                sb.AppendLine($"    var tf{i} = List<TupleField>()");
+                for (var k = 0; k < fs.Count; k++)
+                    sb.AppendLine(tt.Fields[k].Name is { } fn ? $"    tf{i}.append(TupleField {{ name: \"{fn}\", type: {fs[k]} }})" : $"    tf{i}.append(TupleField {{ type: {fs[k]} }})");
+                return $"internTuple(ref c, for: in tf{i})";
+            }
+            case UnionSymbol { Template: { } u } us: return Instance(sb, u.Name, us.TypeArguments, tps, ref n);
+            case StructSymbol { Template: { } s } ss: return Instance(sb, s.Name, ss.TypeArguments, tps, ref n);
+            case StructSymbol s: return $"c.modules[c.entryModule].types[\"{s.Name}\"]";
+            default: throw new InvalidOperationException(t.DisplayName);
+        }
+    }
+
+    /// <summary>The entry module's generic struct or union <paramref name="name"/> at <paramref name="args"/>.</summary>
+    private static string Instance(System.Text.StringBuilder sb, string name, IReadOnlyList<TypeSymbol> args, Dictionary<string, string> tps, ref int n)
+    {
+        var i = n++;
+        var ts = new List<string>();
+        foreach (var a in args) ts.Add(BayanType(sb, a, tps, ref n));
+        sb.AppendLine($"    var ta{i} = List<Type>()");
+        foreach (var a in ts) sb.AppendLine($"    ta{i}.append({a})");
+        return $"instantiateType(ref c, for: c.modules[c.entryModule].types[\"{name}\"], by: in ta{i}, from: c.modules[c.entryModule].files[0], at: TextSpan {{ start: 0, length: 0 }})";
+    }
 
     /// <summary>
     /// What T11's stubbed <c>declareSignature</c>/<c>declareParameters</c> (declare2.byn:15, :18) would set on each free
@@ -553,7 +713,8 @@ public sealed class SelfhostSemanticsT20Tests
                     tps[fn.TypeParameters[k].Name] = tv;
                     sb.AppendLine($"    let {tv} = c.functions[{v}].typeParams[{k}]");
                 }
-                sb.AppendLine($"    c.functions[{v}].returnType = {BayanType(fn.ReturnType, tps)}");
+                var ret = BayanType(sb, fn.ReturnType, tps, ref n);
+                sb.AppendLine($"    c.functions[{v}].returnType = {ret}");
                 sb.AppendLine($"    c.functions[{v}].hasFails = {Lower(fn.Fails)}");
                 foreach (var p in fn.Parameters)
                 {
@@ -563,7 +724,8 @@ public sealed class SelfhostSemanticsT20Tests
                         ParamModifier.None => "none", ParamModifier.Ref => "refKeyword", ParamModifier.Move => "moveKeyword",
                         ParamModifier.Out => "outKeyword", _ => "inKeyword",
                     };
-                    sb.AppendLine($"    tcParam(ref c, for: {v}, by: \"{p.Name}\", at: TextSpan {{ start: {span.Start}, length: {span.Length} }}, as: {BayanType(p.Type, tps)}, to: .{modifier})");
+                    var type = BayanType(sb, p.Type, tps, ref n);
+                    sb.AppendLine($"    tcParam(ref c, for: {v}, by: \"{p.Name}\", at: TextSpan {{ start: {span.Start}, length: {span.Length} }}, as: {type}, to: .{modifier})");
                 }
             }
             if (fns.Count < 2) continue;
