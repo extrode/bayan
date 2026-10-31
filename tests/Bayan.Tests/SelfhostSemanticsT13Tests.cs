@@ -334,9 +334,11 @@ public sealed class SelfhostSemanticsT13Tests
         ("reportHeld", ReportHeld),
         ("defaults", Defaults),
         ("bindFunction", BindFunction),
+        ("bindMainAndCases", BindMainAndCases),
         ("requires", Requires),
         ("noMain", NoMain),
         ("bindAllDrains", BindAllDrains),
+        ("drainInstanceMethods", DrainInstanceMethods),
     ];
 
     /// <summary>Instantiating: which codes are forwarded to the use, which are held, depth and outermost site.</summary>
@@ -829,6 +831,37 @@ public sealed class SelfhostSemanticsT13Tests
         return BindFunctions(c, w, q.Methods.Concat(q.Properties.Select(p => p.Getter!)).Append(w.Fn("top")).Append(w.Fn("bad")).ToList());
     }
 
+    /// <summary>
+    /// BindFunction on the synthesized main (its two top-level blocks, the second with a BYN2202) and on each case of a
+    /// <c>@cases</c> test (the second case mismatched), through T15's <c>bindMain</c>/<c>bindTest</c> (Q718).
+    /// </summary>
+    private static (string, List<string>) BindMainAndCases()
+    {
+        const string text = "{\n    let a: i64 = 1\n}\n\n{\n    let q: bool = 3\n}\n\n@cases((1, true), (2, 3))\ntest \"t\"(i32 n, bool f) {\n    let y: i64 = 2\n}\n";
+        var c = Compile(text, new CompilationOptions(IncludeTests: true));
+        var w = new World(c, text);
+        var members = c.EntryModule.Files[0].Tree.Root.Members;
+        var main = c.EntryModule.AllFunctions.Single(f => f.Kind == FunctionKind.Main);
+        w.Function(main, -1);
+        w.Emit($"c.mainStatementsFn = {w.Vars[main]}");
+        for (var i = 0; i < members.Length; i++)
+            if (members[i] is GlobalStatement) w.Emit($"c.mainStatements.append(SyntaxRef {{ file: 0, declIndex: {i} }})");
+        var bodies = (System.Collections.IDictionary)Get(c, "_testBodies")!;
+        var tests = c.EntryModule.AllFunctions.Where(f => f.Kind == FunctionKind.Test).ToList();
+        foreach (var t in tests)
+        {
+            var body = bodies[t]!;
+            var decl = (TestDecl)body.GetType().GetField("Item1")!.GetValue(body)!;
+            var values = (Expr[])body.GetType().GetField("Item2")!.GetValue(body)!;
+            var d = Array.IndexOf(members, decl);
+            var a = Array.FindIndex(decl.Attributes, x => x.Name.Text == "cases");
+            var k = Array.FindIndex(decl.Attributes[a].Args, x => ReferenceEquals(((TupleExpr)x.Value).Elements[0].Value, values[0]));
+            w.Function(t, d);
+            w.Emit($"c.testBodies[{w.Vars[t]}] = TestBody {{ decl: SyntaxRef {{ file: 0, declIndex: {d} }}, hasValues: true, values: SyntaxRef {{ file: 0, declIndex: {d}, memberIndex: {a}, itemIndex: {k} }} }}");
+        }
+        return BindFunctions(c, w, tests.Prepend(main).ToList());
+    }
+
     private static (string, List<string>) BindFunctions(Compilation c, World w, List<FunctionSymbol> fns)
     {
         var lines = new List<string>();
@@ -978,7 +1011,7 @@ public sealed class SelfhostSemanticsT13Tests
         return (sb.ToString(), lines);
     }
 
-    /// <summary>BindAll with exit codes and a test body: each is drained and bound. Main statements and `@cases` values are blocked (Q583).</summary>
+    /// <summary>BindAll with exit codes and a test body: each is drained and bound. Main statements and `@cases` values are in <c>bindMainAndCases</c>.</summary>
     private static (string, List<string>) BindAllDrains()
     {
         const string text = "union error E {\n    @exitCode(42)\n    bad\n}\n\nvoid run() {\n}\n\ntest \"t\" {\n    let y = 2\n}\n";
@@ -999,6 +1032,56 @@ public sealed class SelfhostSemanticsT13Tests
         w.Emit("bindAll(ref c)");
         w.Emit("print($\"exitCode {c.errorVariants[ev].exitCode}\")");
         w.Emit("print($\"test body {(c.functions[fnTest].body != -1 ? \"yes\" : \"no\")}\")");
+        return (w.Code.ToString(), lines);
+    }
+
+    /// <summary>
+    /// BindAll's drain over the methods an instantiated struct queued (Compilation.cs:1637, no <c>Instance</c>): C# runs
+    /// <c>Instantiating(work.Site, work.Span, work.Bind, work.Instance)</c> for each; Bayan's `bindAll` binds the Work's
+    /// <c>instance</c>. No error: a held one makes `bindAll` panic (<c>HeldInstantiationErrorIsInternalError</c>).
+    /// </summary>
+    private static (string, List<string>) DrainInstanceMethods()
+    {
+        const string text = "struct Tri {\n    i64 n\n}\n\nstruct Box<T> {\n    T v\n    void get() {\n        let k: i64 = 1\n    }\n}\n";
+        var c = Compile(text);
+        var w = new World(c, text);
+        w.Declarations();
+        w.Emit("c.library = true");
+        var site = c.EntryModule.Files[0].Source;
+        var errors = (System.Collections.ICollection)Get(c, "_instantiationErrors")!;
+        var held = errors.Count;
+        var inst = (StructSymbol)Call(c, "InstantiateType", w.T("Box"), new[] { w.T("Tri") }, site, Site)!;
+        var queue = Get(c, "_instantiationWork")!;
+        var start = c.Diagnostics.Count;
+        var lines = new List<string>();
+        while (WorkCount(c) > 0)
+        {
+            var work = queue.GetType().GetMethod("Dequeue")!.Invoke(queue, null)!;
+            var item = (string n) => work.GetType().GetField(n)!.GetValue(work);
+            lines.Add($"instance {(item("Item4") is FunctionSymbol f ? f.Name : "null")}");
+            Call(c, "Instantiating", item("Item1"), item("Item2"), item("Item3"), item("Item4"));
+        }
+        foreach (var m in inst.Methods)
+        {
+            lines.Add($"{m.Name} {m.Kind} body {(m.Body is null ? "no" : "yes")}");
+            foreach (var l in m.Locals) lines.Add($"local {l.Name} {l.Type.DisplayName}");
+        }
+        lines.AddRange(NewDiags(c, start));
+        lines.Add($"instantiationErrors +{errors.Count - held}");
+        w.Emit("var args = List<Type>()");
+        w.Emit($"args.append({w.Type(w.T("Tri"))})");
+        w.Emit($"let inst = instantiateType(ref c, for: {w.Type(w.T("Box"))}, by: in args, from: 0, at: {Span(Site)})");
+        w.Emit("for x in c.instantiationWork { print($\"instance {x.kind == .bindFunction && x.memberIndex != -1 ? c.functions[x.memberIndex].name : \"null\"}\") }");
+        w.Emit("let start = c.diagnostics.length");
+        w.Emit("bindAll(ref c)");
+        w.Emit("let ms = copyIds(in c.structs[typeIndex(inst)].methods)");
+        w.Emit("for m in ms {");
+        w.Emit("    print($\"{c.functions[m].name} {kindText(c.functions[m].kind)} body {yn(b: c.functions[m].body != -1)}\")");
+        w.Emit("    let ls = copyIds(in c.functions[m].locals)");
+        w.Emit("    for l in ls { print($\"local {c.locals[l].name} {typeDisplay(ref c, by: c.locals[l].type)}\") }");
+        w.Emit("}");
+        w.Emit("showDiags(in c, from: start)");
+        w.Emit("print($\"instantiationErrors +{c.instantiationErrors.length}\")");
         return (w.Code.ToString(), lines);
     }
 
