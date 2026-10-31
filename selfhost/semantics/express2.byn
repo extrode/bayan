@@ -61,47 +61,45 @@ MemberRef lookupMember(ref Ctx c, for Type t, by string name) {
     let tk = kindOf(t)
     if tk == .structType {
         let s = typeIndex(t)
-        for f in c.structs[s].fields {
-            if c.fields[f].name == name { return MemberRef { kind: .field, id: f } }
-        }
-        for p in c.structs[s].properties {
-            if c.properties[p].name == name { return MemberRef { kind: .propertyKeyword, id: p } }
-        }
-        for m in c.structs[s].methods {
-            if c.functions[m].name == name { return MemberRef { kind: .method, id: m } }
-        }
+        let f = findField(ref c, by: s, for: name)
+        if f != -1 { return MemberRef { kind: .field, id: f } }
+        let p = findProperty(ref c, by: s, for: name)
+        if p != -1 { return MemberRef { kind: .propertyKeyword, id: p } }
+        let methods = findMethods(ref c, by: s, for: name)
+        if methods.length > 0 { return MemberRef { kind: .method, id: methods[0] } }
     }
-    if tk == .typeParam {
-        let tp = typeIndex(t)
-        for iface in c.typeParams[tp].constraints {
-            for p in c.interfaces[iface].properties {
-                if c.functions[p].name == name { return MemberRef { kind: .method, id: p } }
-            }
-            for m in c.interfaces[iface].methods {
-                if c.functions[m].name == name { return MemberRef { kind: .method, id: m } }
-            }
+    if tk == .typeParam { // mutation-exempt: Q607 through 77
+        for iface in copyIds(in c.typeParams[typeIndex(t)].constraints) {
+            let p = findInterfaceProperty(ref c, by: iface, for: name)
+            if p != -1 { return MemberRef { kind: .method, id: p } }
+            let methods = findInterfaceMethods(ref c, by: iface, for: name)
+            if methods.length > 0 { return MemberRef { kind: .method, id: methods[0] } }
         }
     }
     return MemberRef { kind: .none, id: -1 }
 }
 
-BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by MemberRef member) {
-    // The C# `Host` (BinderExpressions.cs:1939) has no entry point in T35's express4.byn (Q725).
-    var host = b.fn
-    while host != -1 && c.functions[host].kind == .lambda { host = c.functions[host].enclosing }
-    let hostIsStatic = host != -1 && c.functions[host].isStatic
-    let inInstance = host != -1 && !c.functions[host].isStatic && (c.functions[host].kind == .method || c.functions[host].kind == .getter || c.functions[host].kind == .constructor)
+/// The C# `Host` getter (BinderExpressions.cs:1939-1946): the function whose body is being bound, the one around every lambda being bound.
+FuncId t18Host(ref Binder b, through ref Ctx c) {
+    var fn = b.fn
+    while fn != -1 && c.functions[fn].kind == .lambda { fn = c.functions[fn].enclosing }
+    return fn
+}
 
+BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by MemberRef member) {
+    let host = t18Host(ref b, through: ref c)
+    let inInstance = host != -1 && !c.functions[host].isStatic && (c.functions[host].kind == .method || c.functions[host].kind == .getter || c.functions[host].kind == .constructor)
     if member.kind == .method && c.functions[member.id].isStatic {
         return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: -1, function: member.id, typeArgs: List<TextSpan>() })
     }
     let nameText = t18Text(in c, from: b.file, at: n.name)
     if !inInstance {
-        let helpText = hostIsStatic ? "call it on an instance; a `static` method has no `this`" : "set it in a constructor; field defaults cannot read other fields"
+        let staticHost = t18Host(ref b, through: ref c)
+        let helpText = staticHost != -1 && c.functions[staticHost].isStatic ? "call it on an instance; a `static` method has no `this`" : "set it in a constructor; field defaults cannot read other fields"
         report(ref b, through: ref c, for: .instanceMemberWithoutThis, at: n.span, by: (nameText, "", "", "", ""), help: helpText)
         return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
     }
-    if inLambda(ref b, through: ref c, at: n.span, for: nameText, by: "it is read through `this`, which a lambda does not capture") {
+    if inLambda(ref b, through: ref c, at: n.span, for: nameText, by: "it is read through `this`, which a lambda does not capture") { // mutation-exempt: Q607
         return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
     }
     let self = addThis(ref c, from: BThis { span: n.span, type: b.thisType })
@@ -137,15 +135,9 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
         let tk = kindOf(refType)
         if tk == .errorSet {
             let set = typeIndex(refType)
-            var foundVariant: VariantId = -1
-            for v in c.errorSets[set].variants {
-                if c.errorVariants[v].name == name {
-                    foundVariant = v
-                    break
-                }
-            }
-            if foundVariant != -1 {
-                return addErrorVariant(ref c, from: BErrorVariant { span: m.span, variant: foundVariant, type: refType })
+            let variant = findErrorVariant(ref c, by: set, for: name)
+            if variant != -1 {
+                return addErrorVariant(ref c, from: BErrorVariant { span: m.span, variant: variant, type: refType })
             }
             var varNames = List<string>()
             for v in c.errorSets[set].variants { varNames.append(c.errorVariants[v].name) }
@@ -162,32 +154,13 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
         }
         if tk == .structType {
             let s = typeIndex(refType)
-            var method: FuncId = -1
-            for fn in c.structs[s].methods {
-                if c.functions[fn].name == name {
-                    method = fn
-                    break
-                }
-            }
+            let methods = findMethods(ref c, by: s, for: name)
+            let method: FuncId = methods.length > 0 ? methods[0] : -1
             if method != -1 && c.functions[method].isStatic {
                 checkAccess(ref b, through: ref c, for: c.functions[method].access, from: c.functions[method].owner, by: c.functions[method].module, at: m.member)
                 return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: method, typeArgs: List<TextSpan>() })
             }
-            var hasField = false
-            for f in c.structs[s].fields {
-                if c.fields[f].name == name {
-                    hasField = true
-                    break
-                }
-            }
-            var hasProperty = false
-            for p in c.structs[s].properties {
-                if c.properties[p].name == name {
-                    hasProperty = true
-                    break
-                }
-            }
-            let help = (method != -1 || hasField || hasProperty) ? $"call it on a `{c.structs[s].name}` value; `{name}` belongs to a value, not the type" : ""
+            let help = (method != -1 || findField(ref c, by: s, for: name) != -1 || findProperty(ref c, by: s, for: name) != -1) ? $"call it on a `{c.structs[s].name}` value; `{name}` belongs to a value, not the type" : ""
             report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, c.structs[s].name, "", "", ""), help: help)
             return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
         }
@@ -198,7 +171,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
                 if member == -1 {
                     let near = suggest(name, by: in ["readFile", "readText", "writeFile", "listDir", "run", "runBatch", "monotonicNanos", "stdout", "stderr", "stdin"])
                     let help = near is { } ? $"did you mean `{near}`?" : ""
-                    report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, "Io", "", "", ""), help: help)
+                    report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
                     return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
                 }
                 if c.functions[member].builtin == .ioStdout || c.functions[member].builtin == .ioStderr || c.functions[member].builtin == .ioStdin {
@@ -215,7 +188,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
                 }
                 let near = suggest(name, by: in ["encode", "decode"])
                 let help = near is { } ? $"did you mean `{near}`?" : ""
-                report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, "Hex", "", "", ""), help: help)
+                report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
                 return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
             }
             if bKind == .symbol {
@@ -224,7 +197,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
                 }
                 let near = suggest(name, by: in ["intern"])
                 let help = near is { } ? $"did you mean `{near}`?" : ""
-                report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, "Symbol", "", "", ""), help: help)
+                report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
                 return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
             }
             if bKind == .utf8 {
@@ -232,7 +205,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
                 if member == -1 {
                     let near = suggest(name, by: in ["decode", "tryDecode"])
                     let help = near is { } ? $"did you mean `{near}`?" : ""
-                    report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, "Utf8", "", "", ""), help: help)
+                    report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, builtinName(bKind), "", "", ""), help: help)
                     return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
                 }
                 return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() })
@@ -250,7 +223,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
             }
             let near = suggest(name, by: in ["invalidUtf8At"])
             let help = near is { } ? $"did you mean `{near}`?" : ""
-            report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, "string", "", "", ""), help: help)
+            report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, primitiveName(primKindOf(typeIndex(refType))), "", "", ""), help: help)
             return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
         }
         report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, typeDisplay(ref c, by: refType), "", "", ""))
@@ -262,13 +235,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
 /// A unit variant is a value; a variant with a payload is called like a function.
 BExpr t18BindVariant(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, by TextSpan memberSpan, to UnionId u) {
     let name = t18Text(in c, from: b.file, at: memberSpan)
-    var foundVariant: VariantId = -1
-    for v in c.unions[u].variants {
-        if c.unionVariants[v].name == name {
-            foundVariant = v
-            break
-        }
-    }
+    let foundVariant = findUnionVariant(ref c, by: u, for: name)
     if foundVariant != -1 {
         if c.unionVariants[foundVariant].fields.length == 0 {
             return addUnionNew(ref c, from: BUnionNew { span: syntaxSpan, variant: foundVariant, payload: List<BExpr>(), type: makeType(.unionType, at: u) })
@@ -286,13 +253,7 @@ BExpr t18BindVariant(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, by
 /// `Color.red`, `Color.count`, `Color.values`, `Color.fromOrdinal` and `Color.parse`.
 BExpr t18BindEnumStatic(ref Binder b, through ref Ctx c, for parser.MemberExpr m, to EnumId e) {
     let name = t18Text(in c, from: b.file, at: m.member)
-    var foundMember: EnumMemberId = -1
-    for mem in c.enums[e].members {
-        if c.enumMembers[mem].name == name {
-            foundMember = mem
-            break
-        }
-    }
+    let foundMember = findEnumMember(ref c, by: e, for: name)
     if foundMember != -1 {
         return addEnumMember(ref c, from: BEnumMember { span: m.span, member: foundMember, type: makeType(.enumType, at: e) })
     }
@@ -327,7 +288,7 @@ BExpr t18BindModuleMember(ref Binder b, through ref Ctx c, for parser.MemberExpr
     let name = t18Text(in c, from: b.file, at: m.member)
     if c.modules[mod].constants.contains(name) {
         let constId = c.modules[mod].constants[name]
-        checkAccess(ref b, through: ref c, for: .module, from: -1, by: mod, at: m.member, publicRequired: true)
+        checkAccess(ref b, through: ref c, for: accessOf(0), from: -1, by: mod, at: m.member, publicRequired: true)
         return constantRef(ref b, through: ref c, at: m.span, for: constId)
     }
     if c.modules[mod].functions.contains(name) {
@@ -384,50 +345,34 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
     let lk = kindOf(lookupType)
     if lk == .structType {
         let s = typeIndex(lookupType)
-        var foundField: FieldId = -1
-        for f in c.structs[s].fields {
-            if c.fields[f].name == name {
-                foundField = f
-                break
-            }
-        }
+        let foundField = findField(ref c, by: s, for: name)
         if foundField != -1 {
             checkAccess(ref b, through: ref c, for: c.fields[foundField].access, from: s, by: c.structs[s].module, at: member)
             return addField(ref c, from: BField { span: span, receiver: target, field: foundField, type: c.fields[foundField].type })
         }
 
-        var foundProp: PropertyId = -1
-        for p in c.structs[s].properties {
-            if c.properties[p].name == name {
-                foundProp = p
-                break
-            }
-        }
+        let foundProp = findProperty(ref c, by: s, for: name)
         if foundProp != -1 {
             checkAccess(ref b, through: ref c, for: c.properties[foundProp].access, from: s, by: c.structs[s].module, at: member)
             return addCall(ref c, from: BCall { span: span, function: c.properties[foundProp].getter, receiver: target, arguments: List<BExpr>(), type: c.properties[foundProp].type })
         }
 
-        var foundMethod: FuncId = -1
-        for m in c.structs[s].methods {
-            if c.functions[m].name == name {
-                foundMethod = m
-                break
-            }
-        }
-        if foundMethod != -1 {
+        let methods = findMethods(ref c, by: s, for: name)
+        if methods.length > 0 {
+            let foundMethod = methods[0]
             checkAccess(ref b, through: ref c, for: c.functions[foundMethod].access, from: s, by: c.structs[s].module, at: member)
             let recv = c.functions[foundMethod].isStatic ? -1 : target
             return addMethodGroup(ref c, from: BMethodGroup { span: span, receiver: recv, function: foundMethod, typeArgs: List<TextSpan>() })
         }
 
-        if c.states.contains(s) {
-            let payload = bindPayloadField(ref b, through: ref c, at: span, for: target, from: c.states[s], by: member)
+        let states = statesOf(ref c, for: s)
+        if states != -1 { // mutation-exempt: Q607 through 371
+            let payload = bindPayloadField(ref b, through: ref c, at: span, for: target, from: states, by: member)
             if payload != -1 { return payload }
         }
     } else if lk == .errorSet || lk == .errorUnion {
         if boundKind(target) == .local {
-            let el = c.bLocals[boundIndex(target)].local
+            let el = c.bLocals[boundIndex(target)].local // mutation-exempt: Q607 through 384
             if b.errorNarrowed.contains(el) {
                 let v = b.errorNarrowed[el]
                 for fi in 0..c.errorVariants[v].fields.length {
@@ -441,8 +386,8 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
     } else if lk == .unionType {
         let u = typeIndex(lookupType)
         if boundKind(target) == .local {
-            let l = c.bLocals[boundIndex(target)].local // mutation-exempt: Q607 through 453
-            if b.narrowed.contains(l) {
+            let l = c.bLocals[boundIndex(target)].local
+            if b.narrowed.contains(l) { // mutation-exempt: Q607 through 398
                 let v = b.narrowed[l]
                 for fi in 0..c.unionVariants[v].fields.length {
                     let f = c.unionVariants[v].fields[fi]
@@ -476,12 +421,10 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         }
     } else if lk == .enumType {
         let e = typeIndex(lookupType)
-        for fi in 0..c.enums[e].fields.length {
-            let f = c.enums[e].fields[fi]
-            if c.enumFields[f].name == name {
-                let lit = literal(ref c, at: span, as: prim(.i32), by: Constant { kind: .integer, integer: bigFromI64(c.enumFields[f].index) })
-                return addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: .enumField, receiver: target, arguments: [lit], type: c.enumFields[f].type })
-            }
+        let f = findEnumField(ref c, by: e, for: name)
+        if f != -1 {
+            let lit = literal(ref c, at: span, as: prim(.i32), by: Constant { kind: .integer, integer: bigFromI64(c.enumFields[f].index) })
+            return addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: .enumField, receiver: target, arguments: [lit], type: c.enumFields[f].type })
         }
     } else if lk == .owned {
         let innerType = c.ownedTypes[typeIndex(lookupType)]
@@ -497,27 +440,19 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         }
     } else if lk == .error {
         return addErrorExpr(ref c, from: BErrorExpr { span: span })
-    } else if lk == .typeParam {
+    } else if lk == .typeParam { // mutation-exempt: Q607 through 475
         let tp = typeIndex(lookupType)
         if c.typeParams[tp].constraints.length > 0 {
             var foundMember: FuncId = -1
-            for iface in c.typeParams[tp].constraints {
-                for p in c.interfaces[iface].properties {
-                    if c.functions[p].name == name {
-                        foundMember = p
-                        break
-                    }
+            for iface in copyIds(in c.typeParams[tp].constraints) {
+                foundMember = findInterfaceProperty(ref c, by: iface, for: name)
+                if foundMember == -1 {
+                    let methods = findInterfaceMethods(ref c, by: iface, for: name)
+                    if methods.length > 0 { foundMember = methods[0] }
                 }
-                if foundMember >= 0 { break }
-                for m in c.interfaces[iface].methods {
-                    if c.functions[m].name == name {
-                        foundMember = m
-                        break
-                    }
-                }
-                if foundMember >= 0 { break }
+                if foundMember != -1 { break }
             }
-            if foundMember >= 0 {
+            if foundMember != -1 {
                 return t18BindInterfaceMember(ref b, through: ref c, at: span, for: target, by: foundMember, from: member)
             }
             let self = c.interfaces[c.typeParams[tp].constraints[0]].self == tp
@@ -540,22 +475,12 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         return addErrorExpr(ref c, from: BErrorExpr { span: span })
     } else if lk == .dynRef {
         let d = c.dynRefTypes[typeIndex(lookupType)]
-        var foundMember: FuncId = -1 // mutation-exempt: Q607 through 557
-        for p in c.interfaces[d.iface].properties {
-            if c.functions[p].name == name {
-                foundMember = p
-                break
-            }
-        }
+        var foundMember = findInterfaceProperty(ref c, by: d.iface, for: name) // mutation-exempt: Q607 through 482
         if foundMember == -1 {
-            for m in c.interfaces[d.iface].methods {
-                if c.functions[m].name == name {
-                    foundMember = m
-                    break
-                }
-            }
+            let methods = findInterfaceMethods(ref c, by: d.iface, for: name)
+            if methods.length > 0 { foundMember = methods[0] }
         }
-        if foundMember != -1 { // mutation-exempt: Q607 through 563
+        if foundMember != -1 { // mutation-exempt: Q607 through 489
             if d.readOnly && c.functions[foundMember].isMutating {
                 report(ref b, through: ref c, for: .dynReadonlyMutation, at: member, by: (name, interfaceDisplayName(ref c, by: d.iface), "", "", ""), label: "declared `ref this`", help: $"take `dyn ref {interfaceDisplayName(ref c, by: d.iface)}`")
                 return addErrorExpr(ref c, from: BErrorExpr { span: span })
@@ -565,9 +490,11 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
     }
 
     if (builtinProperty(ref c, for: targetType, by: name) is { } builtin) {
-        var callType = propertyType(ref b, through: ref c, for: builtin.member, as: builtin.type)
+        var callType: Type = -1
         if kindOf(builtin.type) == .span && boundKind(target) == .staticArray {
             callType = internSpan(ref c, by: c.spanTypes[typeIndex(builtin.type)].element, readOnly: true)
+        } else {
+            callType = propertyType(ref b, through: ref c, for: builtin.member, as: builtin.type)
         }
         return addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: builtin.member, receiver: target, arguments: List<BExpr>(), type: callType })
     }
@@ -594,7 +521,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
 }
 
 /// A member of an interface, reached through a constrained type parameter or a `dyn ref`.
-BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, for BExpr target, by FuncId m, from TextSpan memberSpan) {
+BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, for BExpr target, by FuncId m, from TextSpan memberSpan) { // mutation-exempt: Q607 through 533
     if c.functions[m].typeParams.length > 0 {
         report(ref b, through: ref c, for: .unsupported, at: memberSpan, by: ("calling a generic interface method", "", "", "", ""))
         return addErrorExpr(ref c, from: BErrorExpr { span: syntaxSpan })
@@ -607,7 +534,7 @@ BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntax
 }
 
 /// The return type of interface member `m` called on `receiver`: an associated type `Item` is `T.Item`.
-Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by FuncId m) {
+Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by FuncId m) { // mutation-exempt: Q607 through 560
     if kindOf(receiver) == .typeParam {
         let tp = typeIndex(receiver)
         let iface = c.functions[m].iface
@@ -676,7 +603,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
     let name = t18Text(in c, from: b.file, at: memberSpan)
     var isCalleeMatch = false
     var tail = TextSpan { start: memberSpan.start, length: 0 }
-    if (b.calleeOf is { } activeCall) { // mutation-exempt: Q607 through 687
+    if (b.calleeOf is { } activeCall) { // mutation-exempt: Q607 through 614
         switch activeCall.callee {
             case .memberExpr(let me):
                 if me.value.member.start == memberSpan.start && me.value.member.length == memberSpan.length {
@@ -694,7 +621,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
     let isStr = isString(type)
     let isInt = isInteger(type)
 
-    if isList && name == "removeRange" { // mutation-exempt: Q607 through 702
+    if isList && name == "removeRange" { // mutation-exempt: Q607 through 629
         if isCalleeMatch && (b.calleeOf is { } cCall) && cCall.args.length == 2 && cCall.args[0].name is null && cCall.args[0].modifier == .none && cCall.args[1].name is null && cCall.args[1].modifier == .none {
             let from = t18Text(in c, from: b.file, at: t17ExprSpan(in cCall.args[0].value))
             let until = t18Text(in c, from: b.file, at: t17ExprSpan(in cCall.args[1].value))
@@ -702,7 +629,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isList && name == "replaceRange" { // mutation-exempt: Q607 through 710
+    if isList && name == "replaceRange" { // mutation-exempt: Q607 through 637
         if isCalleeMatch && (b.calleeOf is { } rCall) && rCall.args.length == 2 && rCall.args[0].name is null && rCall.args[0].modifier == .none && rCall.args[1].name is null && rCall.args[1].modifier == .none {
             let at = t18Text(in c, from: b.file, at: t17ExprSpan(in rCall.args[0].value))
             let by = t18Text(in c, from: b.file, at: t17ExprSpan(in rCall.args[1].value))
@@ -710,7 +637,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isMap && name == "getOr" { // mutation-exempt: Q607 through 723
+    if isMap && name == "getOr" { // mutation-exempt: Q607 through 650
         if isCalleeMatch && (b.calleeOf is { } mCall) && mCall.args.length == 2 && mCall.args[0].name is null && mCall.args[0].modifier == .none && mCall.args[1].name is null && mCall.args[1].modifier == .none {
             switch mCall.callee {
                 case .memberExpr(let me):
@@ -723,20 +650,20 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if (isList || isArrayT) && name == "asSpan" { // mutation-exempt: Q607 through 729
+    if (isList || isArrayT) && name == "asSpan" { // mutation-exempt: Q607 through 656
         if isCalleeMatch && (b.calleeOf is { } sCall) && sCall.args.length == 0 {
             return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: true, fixSpan: tail, replacement: "span" }
         }
         return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isStr && name == "toUtf16" { // mutation-exempt: Q607 through 735
+    if isStr && name == "toUtf16" { // mutation-exempt: Q607 through 662
         if isCalleeMatch && (b.calleeOf is { } uCall) && uCall.args.length == 0 {
             return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: true, fixSpan: tail, replacement: "utf16" }
         }
         return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: false, fixSpan: tail, replacement: "" }
     }
     if isInt && (name == "toHex" || name == "toBinary" || name == "toOctal") {
-        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal") // mutation-exempt: Q607 through 747
+        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal") // mutation-exempt: Q607 through 674
         if isCalleeMatch && (b.calleeOf is { } hCall) && hCall.args.length == 0 {
             switch hCall.callee {
                 case .memberExpr(let me):
@@ -798,13 +725,7 @@ BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemb
     }
     if tk == .errorSet {
         let set = typeIndex(target)
-        var foundVariant: VariantId = -1
-        for v in c.errorSets[set].variants {
-            if c.errorVariants[v].name == name {
-                foundVariant = v
-                break
-            }
-        }
+        let foundVariant = findErrorVariant(ref c, by: set, for: name)
         if foundVariant != -1 {
             return addErrorVariant(ref c, from: BErrorVariant { span: t.span, variant: foundVariant, type: target })
         }
@@ -814,18 +735,17 @@ BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemb
     if tk == .errorUnion {
         let u = typeIndex(target)
         var matches = List<VariantId>()
-        for set in c.errorUnionTypes[u].sets {
-            for v in c.errorSets[set].variants {
-                if c.errorVariants[v].name == name {
-                    var excluded = false
-                    for ex in c.errorUnionTypes[u].excluded {
-                        if ex == v {
-                            excluded = true
-                            break
-                        }
+        for set in copyIds(in c.errorUnionTypes[u].sets) {
+            let v = findErrorVariant(ref c, by: set, for: name)
+            if v != -1 {
+                var excluded = false
+                for ex in c.errorUnionTypes[u].excluded {
+                    if ex == v {
+                        excluded = true
+                        break
                     }
-                    if !excluded { matches.append(v) }
                 }
+                if !excluded { matches.append(v) }
             }
         }
         if matches.length == 1 {
@@ -847,13 +767,7 @@ BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemb
     }
     if tk == .enumType {
         let e = typeIndex(target)
-        var foundMember: EnumMemberId = -1
-        for mem in c.enums[e].members {
-            if c.enumMembers[mem].name == name {
-                foundMember = mem
-                break
-            }
-        }
+        let foundMember = findEnumMember(ref c, by: e, for: name)
         if foundMember != -1 {
             return addEnumMember(ref c, from: BEnumMember { span: t.span, member: foundMember, type: target })
         }
@@ -868,14 +782,8 @@ BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemb
         return t18BindVariant(ref b, through: ref c, at: t.span, by: t.member, to: typeIndex(target))
     }
     if tk == .structType {
-        let s = typeIndex(target)
-        var method: FuncId = -1
-        for fn in c.structs[s].methods {
-            if c.functions[fn].name == name {
-                method = fn
-                break
-            }
-        }
+        let methods = findMethods(ref c, by: typeIndex(target), for: name)
+        let method: FuncId = methods.length > 0 ? methods[0] : -1
         if method != -1 && c.functions[method].isStatic {
             return addMethodGroup(ref c, from: BMethodGroup { span: t.span, receiver: -1, function: method, typeArgs: List<TextSpan>() })
         }
