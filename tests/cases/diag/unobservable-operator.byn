@@ -1,0 +1,13 @@
+i32 f(i32 x) {
+    @unobservable(bogus) because "x is clamped by the caller"
+    return x
+}
+
+i32 g(i32 x) {
+    @unobservable(boundary) because "x is clamped by the caller"
+    return x
+}
+
+i32 main() {
+    return f(1) + g(2)
+}
