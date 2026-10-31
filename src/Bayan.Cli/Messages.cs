@@ -47,6 +47,10 @@ public static class Messages
                                [--changed [--base <ref>]: only modules with files changed since HEAD or <ref>]
                                [--only <text>: only tests whose name contains <text>; repeatable]
                                [-v: also list the passing and pending tests]
+                               [--mutate: run every mutant against the tests that reach it; with --run <cmd>, run <cmd> once
+                               per mutant instead, with BAYAN_MUTANT set (exit 0 survived, non-zero killed)]
+          mutate --binary <exe> --sites <map.json> -- <cmd>
+                               run <cmd> once per mutant site of a prebuilt --mutate binary, as test --mutate --run does
           dist [<dir>]         build release binaries into dist/<version>/ [--target <t>|all] [--mode m]
                                [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]
           clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]
@@ -162,6 +166,9 @@ public static class Messages
     public static readonly Message MutateTimeoutNote = Register("mutate.timeout-note", " (counted as killed)");
     public static readonly Message MutateTotals = Register("mutate.totals", "{0} killed, {1} survived, {2} timeout, {3} not reached, {4} marked, {5} not emitted");
     public static readonly Message MutateExcluded = Register("mutate.excluded", "test {0} does not pass unmutated; left out");
+    public static readonly Message MutateBinaryUsage = Register("mutate.binary-usage", "bayan: usage: bayan mutate --binary <exe> --sites <map.json> -- <command>");
+    public static readonly Message MutateBadSites = Register("mutate.bad-sites", "bayan: `{0}` is not a version 1 site map");
+    public static readonly Message MutateBaselineFailed = Register("mutate.baseline-failed", "bayan: the command does not exit 0 on the unmutated binary");
     public static readonly Message MutateKilled = Register("mutate.killed", "killed");
     public static readonly Message MutateSurvived = Register("mutate.survived", "survived");
     public static readonly Message MutateTimeout = Register("mutate.timeout", "timeout");

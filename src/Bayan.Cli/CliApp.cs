@@ -82,6 +82,8 @@ public static class CliApp
                 return RunProgram(rest, stderr);
             case "test":
                 return Test(rest, stdout, stderr);
+            case "mutate":
+                return MutateBinary(rest, stdout, stderr);
             case "new":
                 return Scaffold.New(rest, stdout, stderr);
             case "dist":
@@ -144,14 +146,14 @@ public static class CliApp
         return ExitOk;
     }
 
-    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null, bool Mutate = false, bool Coverage = false);
+    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null, bool Mutate = false, bool Coverage = false, string? Run = null);
 
     internal static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false, bool allowVerbose = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
         bool emitC = false, json = false, testJson = false, changed = false, all = false, verbose = false, mutate = false, coverage = false;
-        string? baseRef = null;
+        string? baseRef = null, run = null;
         var only = new List<string>();
         var programArgs = Array.Empty<string>();
         for (var i = 0; i < args.Length; i++)
@@ -210,6 +212,9 @@ public static class CliApp
                 case "--mutate" when allowTestJson:
                     mutate = true;
                     break;
+                case "--run" when allowTestJson && i + 1 < args.Length:
+                    run = args[++i];
+                    break;
                 case "--coverage" when allowTestJson:
                     coverage = true;
                     break;
@@ -240,7 +245,7 @@ public static class CliApp
             stderr.WriteLine(Messages.NotFound.Text(path));
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null, mutate, coverage);
+        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null, mutate, coverage, run);
     }
 
     /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
@@ -591,6 +596,11 @@ public static class CliApp
     {
         if (ParseBuildOptions(args, stderr, allowOutput: false, allowTestJson: true, allowVerbose: true) is not { } o) return ExitUsage;
         if (Compile(o, stderr, includeTests: true) is not { } compiled) return ExitFailure;
+        if (o.Run is not null && !o.Mutate)
+        {
+            stderr.WriteLine(Messages.UnexpectedArgument.Text("--run"));
+            return ExitUsage;
+        }
         if (o.Mutate) return MutateTests(o, compiled, stdout, stderr);
         var map = o.Coverage ? Testing.CoverageInstrumenter.Instrument(compiled.Compilation) : null;
         var program = Lowerer.Lower(compiled.Compilation, coverage: map?.Probes);
@@ -751,8 +761,12 @@ public static class CliApp
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName + "-mutate", HostTarget))
             : null;
+        var build = System.Diagnostics.Stopwatch.StartNew();
         if (BuildNative(source, o.Mode, stderr, output, json: o.Json) is not { } executable) return ExitToolchain;
         File.WriteAllText(Testing.Schemata.SitesPath(executable), schema.SitesJson());
+        if (o.Run is not null)
+            return RunExternal(Testing.ExternalSite.ReadAll(schema.SitesJson())!, ShellCommand(o.Run), executable, "bayan test --mutate --run",
+                Path.Combine(compiled.ProjectRoot ?? (Directory.Exists(o.Path) ? Path.GetFullPath(o.Path) : Path.GetDirectoryName(Path.GetFullPath(o.Path))!), "out", "test"), build.Elapsed.TotalSeconds, stdout, stderr);
         var work = Directory.CreateTempSubdirectory("bayan-mutate-");
         try
         {
@@ -769,6 +783,72 @@ public static class CliApp
             work.Delete(recursive: true);
         }
     }
+
+    /// <summary><c>bayan mutate --binary &lt;exe&gt; --sites &lt;map.json&gt; -- &lt;cmd&gt;</c> (spec 013 R3): the command runs once per site of a prebuilt schemata binary.</summary>
+    private static int MutateBinary(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        string? binary = null, sites = null;
+        string[] command = [];
+        for (var i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--binary" when i + 1 < args.Length: binary = args[++i]; break;
+                case "--sites" when i + 1 < args.Length: sites = args[++i]; break;
+                case "--":
+                    command = args[(i + 1)..];
+                    i = args.Length;
+                    break;
+                default:
+                    stderr.WriteLine(Messages.UnexpectedArgument.Text(args[i]));
+                    return ExitUsage;
+            }
+        }
+        if (binary is null || sites is null || command.Length == 0)
+        {
+            stderr.WriteLine(Messages.MutateBinaryUsage.Text());
+            return ExitUsage;
+        }
+        foreach (var path in new[] { binary, sites })
+            if (!File.Exists(path))
+            {
+                stderr.WriteLine(Messages.NotFound.Text(path));
+                return ExitUsage;
+            }
+        if (Testing.ExternalSite.ReadAll(File.ReadAllText(sites)) is not { } map)
+        {
+            stderr.WriteLine(Messages.MutateBadSites.Text(sites));
+            return ExitUsage;
+        }
+        return RunExternal(map, command, Path.GetFullPath(binary), "bayan mutate",
+            Path.GetDirectoryName(Path.GetFullPath(binary))!, 0, stdout, stderr);
+    }
+
+    private static string[] ShellCommand(string command) =>
+        OperatingSystem.IsWindows() ? ["cmd", "/c", command] : ["/bin/sh", "-c", command];
+
+    /// <summary>Runs the external command over <paramref name="sites"/>, prints a line per site and the report summary, and writes <c>bayan-quality.json</c> to <paramref name="reportDir"/>.</summary>
+    private static int RunExternal(IReadOnlyList<Testing.ExternalSite> sites, IReadOnlyList<string> command, string binary, string tool,
+        string reportDir, double buildSeconds, TextWriter stdout, TextWriter stderr)
+    {
+        var total = System.Diagnostics.Stopwatch.StartNew();
+        var environment = new Dictionary<string, string> { ["BAYAN_BINARY"] = binary };
+        var results = Testing.MutationRunner.RunExternal(sites, command, environment, TestTimeout, r => stdout.WriteLine(ExternalLine(r)));
+        if (results is null)
+        {
+            stderr.WriteLine(Messages.MutateBaselineFailed.Text());
+            return ExitFailure;
+        }
+        var report = Testing.QualityReport.Mutation(tool, results, buildSeconds, total.Elapsed.TotalSeconds);
+        stdout.Write(report.Summary([]));
+        Directory.CreateDirectory(reportDir);
+        File.WriteAllText(Path.Combine(reportDir, "bayan-quality.json"), report.Json());
+        return ExitOk;
+    }
+
+    private static string ExternalLine(Testing.ExternalResult r) =>
+        Messages.MutateLine.Text(r.Site.File, r.Site.Line, r.Site.Column, r.Site.Operator, r.Site.Original, r.Site.Mutated, StatusName(r.Status))
+            + (r.Status == Testing.MutantStatus.Timeout ? Messages.MutateTimeoutNote.Text() : "");
 
     private static string StatusName(Testing.MutantStatus s) => s switch
     {
