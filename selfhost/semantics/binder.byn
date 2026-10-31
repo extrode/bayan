@@ -207,12 +207,18 @@ void checkValueName(ref Binder b, through ref Ctx c, at TextSpan name) {
     c.sink = outer
 }
 
-/// The C# constructor's `_types` map, `typeArgs ?? fn.TypeMap ?? container.TypeMap`, taken once per binder (an empty
-/// Bayan map is C#'s null; Q592). Each entry point takes it first, as the C# constructor does before any binding, so a
-/// lambda body (which moves `b.fn` to the lifted lambda) keeps the enclosing map.
+/// The C# constructor's `_thisType`, `container ?? fn.Interface.Self` (Q719), and `_types` map, `typeArgs ?? fn.TypeMap
+/// ?? container.TypeMap`, taken once per binder (an empty Bayan map is C#'s null; Q592). Each entry point takes them
+/// first, as the C# constructor does before any binding, so a lambda body (which moves `b.fn` to the lifted lambda)
+/// keeps the enclosing ones.
 void t15CaptureTypes(ref Binder b, through ref Ctx c) {
     if b.typesCaptured { return }
     b.typesCaptured = true
+    if b.owner >= 0 {
+        b.thisType = structTypeOf(b.owner)
+    } else if b.fn >= 0 && c.functions[b.fn].iface >= 0 {
+        b.thisType = t15InterfaceSelf(ref c, for: c.functions[b.fn].iface)
+    }
     if (b.typeArgs is { } args) {
         for (k, v) in args { b.types[k] = v }
     } else if b.fn >= 0 && c.functions[b.fn].typeMap.length > 0 {
@@ -220,6 +226,16 @@ void t15CaptureTypes(ref Binder b, through ref Ctx c) {
     } else if b.owner >= 0 {
         for (k, v) in c.structs[b.owner].typeMap { b.types[k] = v }
     }
+}
+
+/// The C# `InterfaceSymbol.Self` (Symbols.cs:294): a `Self` type parameter constrained to the interface, made on first use.
+Type t15InterfaceSelf(ref Ctx c, for InterfaceId i) {
+    if c.interfaces[i].self == -1 {
+        var constraints = List<InterfaceId>()
+        constraints.append(i)
+        c.interfaces[i].self = newTypeParam(ref c, by: TypeParam { name: "Self", constraints: move constraints })
+    }
+    return typeParamTypeOf(c.interfaces[i].self)
 }
 
 /// The C# `_types.Resolve(t)` under `Holding`: `_types` resolves in `b.owner` with the captured map.
@@ -322,7 +338,9 @@ void bindFunctionBody(ref Binder b, through ref Ctx c, for in parser.FunctionDec
     var checks = t15BindRequires(ref b, through: ref c, for: in decl)
     switch decl.body {
         case .blockStmt(let body):
-            b.firstStatement = body.value.statements.length > 0 ? t15StmtSpan(in body.value.statements[0]).start : -1
+            let any = body.value.statements.length > 0
+            b.firstStatementFile = any ? b.file : -1
+            if any { b.firstStatementSpan = t15StmtSpan(in body.value.statements[0]) }
             let block = bindBlock(ref b, through: ref c, for: in body.value)
             if checks.length == 0 {
                 c.functions[b.fn].body = block
@@ -529,7 +547,8 @@ void bindMain(ref Binder b, through ref Ctx c, for in List<SyntaxRef> statements
         switch c.files[r.file].unit.members[r.declIndex] {
             case .globalStatement(let g):
                 if i == 0 {
-                    b.firstStatement = t15StmtSpan(in g.value.statement).start
+                    b.firstStatementFile = r.file
+                    b.firstStatementSpan = t15StmtSpan(in g.value.statement)
                     span = g.value.span
                 }
                 bound.append(bindStatement(ref b, through: ref c, for: in g.value.statement))
