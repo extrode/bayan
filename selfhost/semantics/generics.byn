@@ -61,9 +61,9 @@ Diag t13CloneDiag(in Diag d) {
     }
 }
 
-/// `(_scratch ?? Diagnostics).Add(d)`: straight into the sink, as `DiagnosticBag.Add` does.
+/// `(_scratch ?? Diagnostics).Add(d)`: `addDiag` without its `c.quiet` gate, as C# `target.Add`/`AddRange` has none (Q580).
 void t13Add(ref Ctx c, by move Diag d) {
-    addDiag(ref c, by: move d)
+    if c.sink >= 0 { c.bags[c.sink].items.append(move d) } else { c.diagnostics.append(move d) }
 }
 
 /// `Diagnostics.HasErrors`.
