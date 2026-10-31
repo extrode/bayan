@@ -111,7 +111,7 @@ BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.Name
         case .propertyKeyword:
             return addCall(ref c, from: BCall { span: n.span, function: c.properties[member.id].getter, receiver: self, arguments: List<BExpr>(), type: c.properties[member.id].type })
         case .method:
-            if c.functions[member.id].kind == .getter {
+            if c.functions[member.id].kind == .getter { // mutation-exempt: Q607 (d) declareInterfaceMembers, declare2.byn:12
                 return addCall(ref c, from: BCall { span: n.span, function: member.id, receiver: self, arguments: List<BExpr>(), type: c.functions[member.id].returnType })
             }
             return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: self, function: member.id, typeArgs: List<TextSpan>() })
@@ -340,7 +340,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
     let name = t18Text(in c, from: b.file, at: member)
     let targetType = exprType(in c, for: target)
     var lookupType = targetType
-    if kindOf(targetType) == .state {
+    if kindOf(targetType) == .state { // mutation-exempt: Q607 (l) resolveStates, typeresolve.byn:431; statesOf, declare2.byn:27
         lookupType = makeType(.structType, at: c.stateTypes[typeIndex(targetType)].s)
     }
 
@@ -492,7 +492,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
     }
 
     if (builtinProperty(ref c, for: targetType, by: name) is { } builtin) {
-        var callType: Type = -1 // mutation-exempt: Q607 (a) bindCollection, express4.byn:9; (g) propertyType, express4.byn:39
+        var callType: Type = -1 // mutation-exempt: Q607 through 501 (a) bindCollection, express4.byn:9; (g) propertyType, express4.byn:39
         if kindOf(builtin.type) == .span && boundKind(target) == .staticArray {
             callType = internSpan(ref c, by: c.spanTypes[typeIndex(builtin.type)].element, readOnly: true)
         } else {
@@ -502,7 +502,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
     }
     if kindOf(targetType) == .untrusted && (name == "length" || name == "isEmpty") {
         let innerType = c.untrustedTypes[typeIndex(targetType)]
-        if (builtinProperty(ref c, for: innerType, by: name) is { } factProp) {
+        if (builtinProperty(ref c, for: innerType, by: name) is { } factProp) { // mutation-exempt: Q607 (h) fact, express3.byn:42
             return addBuiltinCall(ref c, from: BBuiltinCall { span: span, member: factProp.member, receiver: fact(ref c, for: target), arguments: List<BExpr>(), type: factProp.type })
         }
     }
@@ -536,7 +536,7 @@ BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntax
 }
 
 /// The return type of interface member `m` called on `receiver`: an associated type `Item` is `T.Item`.
-Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by FuncId m) { // mutation-exempt: Q607 (d) declareInterfaceMembers, declare2.byn:12
+Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by FuncId m) { // mutation-exempt: Q607 through 541 (d) declareInterfaceMembers, declare2.byn:12
     if kindOf(receiver) == .typeParam {
         let tp = typeIndex(receiver)
         let iface = c.functions[m].iface
@@ -602,7 +602,7 @@ bool reportRenamed(ref Binder b, through ref Ctx c, for Type type, at TextSpan m
 /// The renames that change the call's shape (J72, round 3 §27): the fix rewrites the member and its arguments,
 /// so it is written only when the member is called with the old arguments.
 RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at TextSpan memberSpan) {
-    let name = t18Text(in c, from: b.file, at: memberSpan) // mutation-exempt: Q607 (b) bindCall, calls.byn:6
+    let name = t18Text(in c, from: b.file, at: memberSpan) // mutation-exempt: Q607 through 607 (b) bindCall, calls.byn:6
     var isCalleeMatch = false
     var tail = TextSpan { start: memberSpan.start, length: 0 }
     if (b.calleeOf is { } activeCall) { // mutation-exempt: Q607 through 616
