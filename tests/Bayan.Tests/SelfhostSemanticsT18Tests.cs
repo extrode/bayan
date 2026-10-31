@@ -19,10 +19,24 @@ public sealed class SelfhostSemanticsT18Tests
 {
     private const string Dir = "tmp/t18-cases";
 
+    /// <summary>A second module on disk under <see cref="Dir"/>, imported by <see cref="Source"/>: the cross-module access checks.</summary>
+    private const string Other = """
+        const oc: i32 = 1
+
+        void hiddenFn() {
+        }
+
+        private void privFn() {
+        }
+        """;
+
     private const string Source = """
+        import other
+
         const k: i64 = 42
         const arr: i32[2] = [1, 2]
         const sym: Symbol = "b"
+        const bad: i64 = nope
 
         enum Color {
             red
@@ -79,7 +93,7 @@ public sealed class SelfhostSemanticsT18Tests
             f64 area()
         }
 
-        void probes(Point p, Shape s, string str, List<i32> list, i32[2] fixed, Map<string, i32> map, Point? maybe, Status st, dyn IHasArea d, i64 n, (i32 a, i32 b) tup, (Shape a, i32 b) ts, dyn ref IHasArea dr, Owned<Point> op, StrBuf sb, Span<i32> sp, u64 un, Blob bl) {
+        void probes(Point p, Shape s, string str, List<i32> list, i32[2] fixed, Map<string, i32> map, Point? maybe, Status st, dyn IHasArea d, i64 n, (i32 a, i32 b) tup, (Shape a, i32 b) ts, dyn ref IHasArea dr, Owned<Point> op, StrBuf sb, Span<i32> sp, u64 un, Blob bl, MyError me) {
             let m1 = MyError.notFound
             let m2 = MyError.badVariant
             let m3 = Color.red
@@ -107,11 +121,17 @@ public sealed class SelfhostSemanticsT18Tests
             let m25 = Utf8.nope
             let m26 = string.invalidUtf8At
             let m27 = string.invalidUtf8
+            let m28 = Shape.nope
+            let m29 = Shape.circle
+            let x1 = other.oc
+            let x2 = other.hiddenFn
+            let x3 = other.privFn
             let u1 = main.k
             let u2 = main.probes
             let u3 = main.Point
             let u4 = main.nope
             let u5 = main.sym
+            let u6 = main.bad
             let v1 = p.x
             let v2 = p.twice
             let v3 = p.clear
@@ -144,6 +164,10 @@ public sealed class SelfhostSemanticsT18Tests
             let v34 = fixed.asSpan
             let v35 = str.toUtf16
             let v36 = n.toOctal
+            let v37 = me.x
+            let v38 = MyError.notFound.x
+            let v39 = p.size
+            let v40 = st.cod
             let t1: Color = .red
             let t2: MyError = .notFound
             let t3: MyError = .nope
@@ -156,6 +180,7 @@ public sealed class SelfhostSemanticsT18Tests
             let t10: Both = .zzz
             let t11: Both = .other
             let t12: () -> void = .x
+            let t13: Point = .clear
             let i1 = str[0]
             let i2 = list[0]
             let i3 = fixed[^1]
@@ -172,6 +197,8 @@ public sealed class SelfhostSemanticsT18Tests
             let i14 = list[un]
             let s1 = $"a{n}b{{c}}"
             let s2 = "plain"
+            let s3 = "a{b}"
+            let s4 = n
         }
         """;
 
@@ -186,9 +213,9 @@ public sealed class SelfhostSemanticsT18Tests
         ("member", "probes", "-", "m10"), ("member", "probes", "-", "m11"), ("member", "probes", "-", "m12"),
         ("member", "probes", "-", "m13"), ("member", "probes", "-", "m14"), ("member", "probes", "-", "m15"),
         ("member", "probes", "-", "m16"), ("member", "probes", "-", "m17"),
-        ("member", "probes", "-", "m18"), ("member", "probes", "-", "m19"), ("member", "probes", "-", "m20"), ("member", "probes", "-", "m21"), ("member", "probes", "-", "m22"), ("member", "probes", "-", "m23"), ("member", "probes", "-", "m24"), ("member", "probes", "-", "m25"), ("member", "probes", "-", "m26"), ("member", "probes", "-", "m27"),
+        ("member", "probes", "-", "m18"), ("member", "probes", "-", "m19"), ("member", "probes", "-", "m20"), ("member", "probes", "-", "m21"), ("member", "probes", "-", "m22"), ("member", "probes", "-", "m23"), ("member", "probes", "-", "m24"), ("member", "probes", "-", "m25"), ("member", "probes", "-", "m26"), ("member", "probes", "-", "m27"), ("member", "probes", "-", "m28"), ("member", "probes", "-", "m29"), ("member", "probes", "-", "x1"), ("member", "probes", "-", "x2"), ("member", "probes", "-", "x3"),
         ("module", "probes", "-", "u1"), ("module", "probes", "-", "u2"), ("module", "probes", "-", "u3"),
-        ("module", "probes", "-", "u4"), ("module", "probes", "-", "u5"),
+        ("module", "probes", "-", "u4"), ("module", "probes", "-", "u5"), ("module", "probes", "-", "u6"),
         ("member", "probes", "-", "v1"), ("member", "probes", "-", "v2"), ("member", "probes", "-", "v3"),
         ("member", "probes", "-", "v4"), ("member", "probes", "-", "v5"), ("member", "probes", "-", "v6"),
         ("member", "probes", "-", "v7"), ("member", "probes", "-", "v9"),
@@ -197,16 +224,16 @@ public sealed class SelfhostSemanticsT18Tests
         ("member", "probes", "-", "v17"), ("member", "probes", "-", "v19"),
         ("member", "probes", "-", "v20"), ("member", "probes", "-", "v21"),
         ("member", "probes", "-", "v22"),
-        ("member", "probes", "-", "v23"), ("member", "probes", "-", "v25"), ("member", "probes", "-", "v26"), ("member", "probes", "-", "v27"), ("member", "probes", "-", "v28"), ("member", "probes", "-", "v29"), ("member", "probes", "-", "v30"), ("member", "probes", "-", "v31"), ("member", "probes", "-", "v32"), ("member", "probes", "-", "v33"), ("member", "probes", "-", "v34"), ("member", "probes", "-", "v35"), ("member", "probes", "-", "v36"),
+        ("member", "probes", "-", "v23"), ("member", "probes", "-", "v25"), ("member", "probes", "-", "v26"), ("member", "probes", "-", "v27"), ("member", "probes", "-", "v28"), ("member", "probes", "-", "v29"), ("member", "probes", "-", "v30"), ("member", "probes", "-", "v31"), ("member", "probes", "-", "v32"), ("member", "probes", "-", "v33"), ("member", "probes", "-", "v34"), ("member", "probes", "-", "v35"), ("member", "probes", "-", "v36"), ("member", "probes", "-", "v37"), ("member", "probes", "-", "v38"), ("member", "probes", "-", "v39"), ("member", "probes", "-", "v40"),
         ("target", "probes", "-", "t1"), ("target", "probes", "-", "t2"), ("target", "probes", "-", "t3"),
         ("target", "probes", "-", "t4"), ("target", "probes", "-", "t5"), ("target", "probes", "-", "t6"),
         ("target", "probes", "-", "t7"), ("target", "probes", "-", "t8"),
-        ("target", "probes", "-", "t9"), ("target", "probes", "-", "t10"), ("target", "probes", "-", "t11"), ("target", "probes", "-", "t12"),
+        ("target", "probes", "-", "t9"), ("target", "probes", "-", "t10"), ("target", "probes", "-", "t11"), ("target", "probes", "-", "t12"), ("target", "probes", "-", "t13"),
         ("index", "probes", "-", "i1"), ("index", "probes", "-", "i2"), ("index", "probes", "-", "i3"),
         ("index", "probes", "-", "i4"), ("index", "probes", "-", "i5"), ("index", "probes", "-", "i6"),
         ("index", "probes", "-", "i7"), ("index", "probes", "-", "i8"), ("index", "probes", "-", "i9"),
         ("index", "probes", "-", "i10"), ("index", "probes", "-", "i11"), ("index", "probes", "-", "i12"), ("index", "probes", "-", "i13"), ("index", "probes", "-", "i14"),
-        ("interp", "probes", "-", "s1"), ("interp", "probes", "-", "s2"),
+        ("interp", "probes", "-", "s1"), ("interp", "probes", "-", "s2"), ("interp", "probes", "-", "s3"), ("interp", "probes", "-", "s4"),
     ];
 
     private static readonly System.Type BinderType =
@@ -312,6 +339,7 @@ public sealed class SelfhostSemanticsT18Tests
     /// <summary>The C# lines for one case: the node dump (or the string) then the diagnostics it reported.</summary>
     private static List<string> Expected(string op, string decl, string member, string name)
     {
+        WriteOther();
         var path = Path.Combine(Dir, "main.byn");
         var c = Compilation.Create([SourceText.FromString(path, Source + "\n")], packageRoot: Dir, options: new CompilationOptions(Library: true));
         var file = c.Modules.SelectMany(m => m.Files).First(f => f.Source.Path == path);
@@ -359,8 +387,17 @@ public sealed class SelfhostSemanticsT18Tests
         return lines;
     }
 
+    private static void WriteOther()
+    {
+        Directory.CreateDirectory(Path.Combine(Dir, "other"));
+        File.WriteAllText(Path.Combine(Dir, "other", "other.byn"), Other + "\n");
+    }
+
     private static readonly Lazy<Dictionary<string, List<string>>> Sections = new(() =>
-        SelfhostSemanticsHarness.RunSections(MainSource(), [.. Cases.SelectMany(k => new[] { k.Op, k.Decl, k.Member, k.Name })]));
+    {
+        WriteOther();
+        return SelfhostSemanticsHarness.RunSections(MainSource(), [.. Cases.SelectMany(k => new[] { k.Op, k.Decl, k.Member, k.Name })]);
+    });
 
     public static TheoryData<string> CaseNames()
     {
@@ -556,6 +593,10 @@ public sealed class SelfhostSemanticsT18Tests
                 errorNarrowed: [],
             }
             pushScope(ref b)
+            // The C# `Compilation.Create` has bound every module constant before the case runs.
+            var consts = List<ConstId>()
+            for (_, k) in c.modules[c.entryModule].constants { consts.append(k) }
+            for k in consts { bindConstant(ref c, for: k) }
             let start = c.diagnostics.length
             for i in 0..c.files[file].unit.members.length {
                 switch c.files[file].unit.members[i] {
