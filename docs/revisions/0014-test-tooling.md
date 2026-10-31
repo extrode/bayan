@@ -17,7 +17,7 @@ SPEC §20 promises coverage and mutation testing in two bullets and marks `@unob
    | `boundary` | `<` ↔ `<=`, `>` ↔ `>=` |
    | `relational` | `==` ↔ `!=`, `<` ↔ `>=`, `>` ↔ `<=` |
    | `logical` | `&&` ↔ `||` |
-   | `condition` | the condition of `if`, `while`, `guard`, `stmt if c` → its negation |
+   | `condition` | the condition of `if`, `unless`, `while`, do-while, a switch guard, `stmt if c` → its negation |
    | `bool` | `true` ↔ `false` |
    | `arithmetic` | `+` ↔ `-`, `*` ↔ `/`, `%` → `*` |
    | `literal` | an integer literal `n` → `n + 1`, `n - 1` |
