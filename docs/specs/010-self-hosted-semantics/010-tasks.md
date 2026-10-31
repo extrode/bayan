@@ -47,13 +47,13 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T15 Binder core and statements A — files: `binder.byn` (`Binder.cs` 1–~499: state, scopes, locals, entry points), `SelfhostSemanticsT15Tests.cs`, `generics.byn` (only the two `bindTest` call sites its new signature breaks, Q718) — covers: R4 — after: T4; parallel with: T6–T14, T16–T27, T34–T39 — done when:
   - method-for-method port; a fixture binds locals and statements over a hand-built `Ctx`; Q590–Q594 as needed.
   - Size: about 725 lines.
-- [ ] T16 Binder statements B — files: `binder2.byn` (`Binder.cs` ~500–979: blocks, statement dispatch, assert, narrowing, while-let, for head), `SelfhostSemanticsT16Tests.cs` — covers: R4 — after: T4; parallel with: T6–T15, T17–T27, T34–T39 — done when:
+- [x] T16 Binder statements B — files: `binder2.byn` (`Binder.cs` ~500–979: blocks, statement dispatch, assert, narrowing, while-let, for head), `SelfhostSemanticsT16Tests.cs` — covers: R4 — after: T4; parallel with: T6–T15, T17–T27, T34–T39 — done when:
   - method-for-method port; loop and narrowing diag forms named as passing after rebase; Q595–Q599 as needed.
   - Size: about 696 lines.
 - [ ] T17 Expression binding A — files: `express.byn` (`BinderExpressions.cs` 1–~599: conversions, literals, integer parsing, names and suggestions), `SelfhostSemanticsT17Tests.cs` — covers: R4 — after: T4; parallel with: T6–T16, T18–T27, T34–T39 — done when:
   - method-for-method port; literals and name errors match C#; Q600–Q604 as needed.
   - Size: about 845 lines.
-- [ ] T18 Expression binding B — files: `express2.byn` (`BinderExpressions.cs` ~600–1155: members, index, slice), `SelfhostSemanticsT18Tests.cs` — covers: R4 — after: T4; parallel with: T6–T17, T19–T27, T34–T39 — done when:
+- [x] T18 Expression binding B — files: `express2.byn` (`BinderExpressions.cs` ~600–1155: members, index, slice), `SelfhostSemanticsT18Tests.cs` — covers: R4 — after: T4; parallel with: T6–T17, T19–T27, T34–T39 — done when:
   - method-for-method port; member, index and slice diag forms named as passing after rebase; Q605–Q609 as needed.
   - Size: about 806 lines.
 - [ ] T19 Expression binding C — files: `express3.byn` (`BinderExpressions.cs` ~1156–1640: unary/binary/folding, coalesce, ranges, conditional, casts, struct/with), `SelfhostSemanticsT19Tests.cs` — covers: R2, R4 — after: T4; parallel with: T6–T18, T20–T27, T34–T39 — done when:
@@ -83,7 +83,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [ ] T27 Generator and speed — files: `SelfhostSemanticsGenerator.cs` (XorShift seeds, one template per feature, single-fault injection, `OneMegabyte()`), `SelfhostSemanticsGeneratorTests.cs` — covers: R6, R7 — after: T4; parallel with: T6–T26, T34–T39 — done when:
   - corpora are deterministic, every fault kind appears, and the 1 MB input is written; checker comparisons are `Skip = "T28 enables …"`; Q650–Q654 as needed.
   - Size: about 450 lines of C#.
-- [ ] T28 Integration: parity — files: any `selfhost/semantics/*.byn` (stand-ins removed, fixes only), `src/Bayan.*` (only a blocking compiler bug, with a test), `work/todo.md` — covers: R1, R2, R4, R5, R6, R7, R8 — after: T6–T27, T34–T39; parallel with: none — done when:
+- [ ] T28 Integration: parity — files: any `selfhost/semantics/*.byn` (stand-ins removed, fixes only), `src/Bayan.*` (only a blocking compiler bug, with a test), `work/todo.md` (removes `t17Host`, `t18Host` and the `t11/t15/t16/t17ExprSpan` copies, Q674) — covers: R1, R2, R4, R5, R6, R7, R8 — after: T6–T27, T34–T39; parallel with: none — done when:
   - every diag (golden and CLI), typed and generated row passes with equal stderr, `--types` bytes and exit code; the 1 MB median ratio is at most 10 and recorded; the full suite including L001/L002/L017/L018 passes; any blocking compiler bug is fixed here with a test; Q655–Q657.
   - Size: fixes only, no new files.
 - [ ] T29 prove L019 via /prove: binder equivalence — files: `SelfhostSemanticsEquivalenceLawTests.cs` [Trait Law L019], `docs/laws/019-binder-equivalence.md` — covers: L019 — after: T28; parallel with: T31 — done when:
@@ -107,7 +107,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [ ] T39 Assignments and writability — files: `calls4.byn` (`BinderCalls.cs` ~1578–1956: exhaustiveness, assignment, inc/dec, writability), `SelfhostSemanticsT39Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34, T35–T38 — done when:
   - exhaustiveness, assignment, inc/dec and writability match the C# cases; Q694–Q698 as needed.
   - Size: about 550 lines.
-- [ ] T35 Expression binding D — files: `express4.byn` (`BinderExpressions.cs` ~1641–2158: collections, map/tuple, spread, lambdas and captures, stackalloc, interpolation and format specs), `SelfhostSemanticsT35Tests.cs` — covers: R2, R4 — after: T4; parallel with: T6–T27, T34, T36–T39 — done when:
+- [ ] T35 Expression binding D — files: `express4.byn` (`BinderExpressions.cs` ~1641–2158: collections, map/tuple, spread, lambdas and captures, stackalloc, interpolation and format specs), `SelfhostSemanticsT35Tests.cs` (`host` is pre-ported, Q674: call it, do not rewrite it) — covers: R2, R4 — after: T4; parallel with: T6–T27, T34, T36–T39 — done when:
   - lambda naming and captures used by `--types` are correct; method-for-method port; Q674–Q678 as needed.
   - Size: about 751 lines.
 - [ ] T36 Binder statements C — files: `binder3.byn` (`Binder.cs` ~980–1468: for bodies/iterators, return/fail, break/continue, defer/errdefer/on panic, context, switch statement), `SelfhostSemanticsT36Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34, T35, T37–T39 — done when:

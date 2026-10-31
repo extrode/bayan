@@ -1,16 +1,17 @@
 #!/bin/bash
 # guard.sh — run in a writer worktree before finishing. Prints GUARD PASS or GUARD FAIL + the items to fix.
-#   bash guard.sh --base <branch> --allow '<glob>[,<glob>…]' --filter '<dotnet test filter>' [--mutate <file.byn>[,…]] [--mutations N]
+#   bash guard.sh --base <branch> --allow '<glob>[,<glob>…]' --filter '<dotnet test filter>' [--mutate <file.byn>[,…]] [--mutations N] [--seed S]
 # Checks: 1 scope (changed files match --allow, plus handoff/todo/tasks), 2 no junk (binary or extensionless files),
 # 3 build 0 warnings, 4 tests pass with 0 skipped, 5 banned C#-isms in changed .byn, 6 mutation: each of N semantic
-# mutations per --mutate file must make the filtered tests fail (a surviving mutation = an untested line),
+# mutations per --mutate file (random (line, operator) pairs; `mutation seed: S` is printed, --seed S repeats a run) must make
+# the filtered tests fail (a surviving mutation = an untested line; a mutant run is killed after max(60s, 5x the clean run)),
 # 7 content checks from guard-checks.py (C# oracle in the tests, no stubs or empty bodies left, ctx.byn only in the
 # task's own section, no open gating Question, docs: progress log entry and Question line citations that hold).
 set -u
-BASE=""; ALLOW=""; FILTER=""; MUTATE=""; N=6
+BASE=""; ALLOW=""; FILTER=""; MUTATE=""; N=6; SEED=""; TT=0
 while [ $# -gt 0 ]; do case "$1" in
   --base) BASE=$2; shift 2;; --allow) ALLOW=$2; shift 2;; --filter) FILTER=$2; shift 2;;
-  --mutate) MUTATE=$2; shift 2;; --mutations) N=$2; shift 2;; *) echo "unknown arg $1"; exit 2;; esac; done
+  --mutate) MUTATE=$2; shift 2;; --mutations) N=$2; shift 2;; --seed) SEED=$2; shift 2;; *) echo "unknown arg $1"; exit 2;; esac; done
 [ -n "$BASE" ] && [ -n "$FILTER" ] || { echo "need --base and --filter"; exit 2; }
 FAIL=(); note() { FAIL+=("$1"); }
 mkdir -p "$PWD/tmp/guard-run"; LOG=$PWD/tmp/guard-run
@@ -32,7 +33,7 @@ W=$(grep -cE ' warning [A-Z]+[0-9]+' $LOG/build.txt); E=$(grep -cE ' error [A-Z]
 
 # 4 tests
 if [ "$E" = 0 ]; then
-  dotnet test --no-build --filter "$FILTER" --logger "console;verbosity=normal" > $LOG/test.txt 2>&1; TX=$?
+  t0=$SECONDS; dotnet test --no-build --filter "$FILTER" --logger "console;verbosity=normal" > $LOG/test.txt 2>&1; TX=$?; TT=$((SECONDS - t0))
   R=$(grep -E 'Total tests:|^ *(Passed|Failed|Skipped): *[0-9]+' $LOG/test.txt | tr -s ' \n' ' ')
   [ $TX = 0 ] || note "tests: FAIL ($R) — first failure: $(grep -m1 -A8 'Error Message' $LOG/test.txt | grep -v '^\s*$' | tr '\n' ' ' | cut -c1-400)"
   grep -qE 'No test matches|Total tests: 0' $LOG/test.txt && note "tests: filter '$FILTER' matched no tests"
@@ -55,26 +56,35 @@ else note "checks: --filter names no SelfhostSemanticsT<n>Tests class, so the co
 # 6 mutations (only when everything above passed: a mutation run on a red tree proves nothing)
 if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
   . "$(dirname "$0")/mutant-outcome.sh"
+  [ -n "$SEED" ] || SEED=$RANDOM$RANDOM; echo "mutation seed: $SEED"
+  # [regex, replacement] per operator; the first match of one operator on the line is changed
+  OPS="(['==','!='],['!=','=='],['<=','<'],['>=','>'],[' < ',' >= '],[' > ',' <= '],['\\btrue\\b','false'],['\\bfalse\\b','true'],['\\+ 1\\b','+ 2'],['- 1\\b','- 2'],['&&','||'],['\\|\\|','&&'])"
+  LIMIT=$((5 * TT)); MINT=${GUARD_MUTANT_TIMEOUT_MIN:-60}; [ $LIMIT -ge $MINT ] || LIMIT=$MINT
+  # portable timeout (no GNU coreutils): the child leads its own process group, killed whole on expiry; exit 124
+  run_limited() { perl -e '$t = shift; $p = fork; if (!$p) { setpgrp(0, 0); exec @ARGV or exit 127 } $SIG{ALRM} = sub { kill "KILL", -$p; waitpid($p, 0); exit 124 }; alarm $t; waitpid($p, 0); exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$@"; }
   IFS=',' read -ra MF <<< "$MUTATE"
   for f in "${MF[@]}"; do
     cp "$f" $LOG/mutate-orig.txt
-    # candidate lines: comparison, boolean, +/- 1, &&/||, outside comments and strings
-    SITES=(); while read -r s; do SITES+=("$s"); done < <(grep -nE '(==|!=|<=|>=| < | > |\btrue\b|\bfalse\b|\+ 1\b|- 1\b|&&|\|\|)' "$f" | grep -vE '^\s*[0-9]+:\s*//' | cut -d: -f1)
+    # candidates are (line, operator) pairs: comparison, boolean, +/- 1, &&/||, outside comment lines and strings
+    SITES=(); while read -r s; do SITES+=("$s"); done < <(OPS="$OPS" perl -ne 'BEGIN { @o = eval $ENV{OPS} } next if m{^\s*//}; for $i (0..$#o) { print "$.:$i\n" if /$o[$i][0]/ }' "$f")
     # lines whose only observable effect goes through an unported sibling may be exempted: `// mutation-exempt: Qnnn`
     # on the line above (or `… through N` for a span), the Question citing a line of the span (mutation-exempt.py)
     EX=(); while read -r k v; do case "$k" in skip) EX+=("$v");; note) note "$v";; esac; done < <(python3 -I "$(dirname "$0")/mutation-exempt.py" "$f" docs/bayan-handoff.md)
-    KEEP=(); for s in "${SITES[@]}"; do skip=0; for e in ${EX[@]+"${EX[@]}"}; do [ "$s" = "$e" ] && skip=1; done; [ $skip = 0 ] && KEEP+=("$s"); done; SITES=("${KEEP[@]}")
+    KEEP=(); for s in "${SITES[@]}"; do skip=0; for e in ${EX[@]+"${EX[@]}"}; do [ "${s%%:*}" = "$e" ] && skip=1; done; [ $skip = 0 ] && KEEP+=("$s"); done; SITES=(${KEEP[@]+"${KEEP[@]}"})
     total=${#SITES[@]}; [ "$total" = 0 ] && { note "mutation: $f has no mutable lines"; continue; }
-    step=$(( total / N )); [ $step -lt 1 ] && step=1; killed=0; tried=0
-    for ((i=0; i<total && tried<N; i+=step)); do
-      ln=${SITES[$i]}
-      perl -i -pe "if (\$.==$ln) { s/==/!=/ or s/!=/==/ or s/<=/</ or s/>=/>/ or s/ < / >= / or s/ > / <= / or s/\btrue\b/false/ or s/\bfalse\b/true/ or s/\+ 1\b/+ 2/ or s/- 1\b/- 2/ or s/&&/||/ or s/\|\|/&&/ }" "$f"
-      # the harness compiles the .byn when the tests run; a mutant it rejects proves nothing: skip it, try the next site
-      dotnet test -v q --no-build --filter "$FILTER" --logger 'console;verbosity=normal' > $LOG/mt.txt 2>&1
+    PICK=(); while read -r s; do PICK+=("$s"); done < <(printf '%s\n' "${SITES[@]}" | perl -e 'srand(shift); @a = <STDIN>; for ($i = @a; --$i > 0;) { $j = int rand($i + 1); @a[$i, $j] = @a[$j, $i] } print @a' "$SEED")
+    killed=0; tried=0
+    for s in "${PICK[@]}"; do
+      [ $tried -lt $N ] || break
+      ln=${s%%:*}
+      OPS="$OPS" LN=$ln IDX=${s##*:} perl -i -pe 'BEGIN { @o = eval $ENV{OPS} } if ($. == $ENV{LN}) { $r = $o[$ENV{IDX}]; s/$r->[0]/$r->[1]/ }' "$f"
+      # the harness compiles the .byn when the tests run; a mutant it rejects proves nothing: skip it, try the next pair
+      run_limited $LIMIT dotnet test -v q --no-build --filter "$FILTER" --logger 'console;verbosity=normal' > $LOG/mt.txt 2>&1
       outcome=$(mutant_outcome $? $LOG/mt.txt)
-      if [ "$outcome" = uncompiled ]; then cp $LOG/mutate-orig.txt "$f"; i=$((i - step + 1)); continue; fi
+      if [ "$outcome" = uncompiled ]; then cp $LOG/mutate-orig.txt "$f"; continue; fi
       tried=$((tried+1))
-      if [ "$outcome" = survived ]; then note "mutation survived: $f:$ln ($(sed -n "${ln}p" "$f" | sed 's/^ *//' | cut -c1-90)) — no test fails when this line is changed; add a test that covers it"; else killed=$((killed+1)); fi
+      if [ "$outcome" = survived ]; then note "mutation survived: $f:$ln ($(sed -n "${ln}p" "$f" | sed 's/^ *//' | cut -c1-90)) — no test fails when this line is changed; add a test that covers it"; else
+        killed=$((killed+1)); [ "$outcome" = timeout ] && echo "mutation timeout: $f:$ln killed after ${LIMIT}s"; fi
       cp $LOG/mutate-orig.txt "$f"
     done
     [ $tried -lt $N ] && [ $tried -lt $total ] && note "mutation: only $tried of $N mutants of $f compiled; add tests until enough distinct sites are covered"

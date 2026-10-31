@@ -1,0 +1,7 @@
+// `lowercased()` / `uppercased()` use Unicode simple case mapping (revision 0015): no final-sigma rule, and the dotted
+// and dotless i map to themselves, as in .NET's invariant casing; a mapping may change the byte count.
+void main() {
+    for s in ["ÉTÉ", "İ", "Σ", "ΣΑΣ", "HeLLo", "123 !?", "ı", "Ⱥ", "𐐀", "ǅ", "ß"] {
+        print($"{s} {s.lowercased()} {s.uppercased()} {s.lowercased().length}")
+    }
+}

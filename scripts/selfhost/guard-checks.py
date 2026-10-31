@@ -4,7 +4,7 @@
 # B  stubs: no `// stub: <task>` marker left in an owned file unless it names its blocking Question; no empty bodies.
 # C  ctx.byn: changes only inside the task's own `// ── <task> state` section.
 # D  gates: no Question that gates this task ("before <task>") is still Open.
-# E  docs: a Progress log entry naming the task; every `file.byn:N` a new Question cites exists and shows the quoted code.
+# E  docs: a Progress log entry naming the task; every `[dir/]file.byn:N` a new Question cites exists and shows the quoted code.
 import fnmatch, os, re, subprocess, sys
 
 base, task, allow = sys.argv[1], sys.argv[2], sys.argv[3].split(',')
@@ -97,9 +97,13 @@ if not any(l.startswith('- **') and re.search(rf'\b{task}\b', l) for l in added)
 for l in added:
     if not re.match(r'^\d{3}\. ', l):
         continue
-    for m in re.finditer(r'`?([a-z0-9_]+\.byn)`?\s*:(\d+)(?:\s*`([^`]+)`)?', l):
+    for m in re.finditer(r'`?((?:[A-Za-z0-9_.-]+/)*[a-z0-9_]+\.byn)`?\s*:(\d+)(?:\s*`([^`]+)`)?', l):
         name, ln, code = m.group(1), int(m.group(2)), m.group(3)
-        path = next((p for p in owned_byn if p.endswith('/' + name)), f'selfhost/semantics/{name}')
+        # a cited directory path is exact; a bare basename is looked up in the owned files, then selfhost/semantics/
+        path = name if '/' in name else next((p for p in owned_byn if p.endswith('/' + name)), f'selfhost/semantics/{name}')
+        if not os.path.exists(path):
+            fails.append(f'docs: Q{l[:3]} cites {name}:{ln}, but {path} does not exist; cite an existing file')
+            continue
         src = read(path).split('\n')
         if ln < 1 or ln > len(src) or src[ln - 1].strip() in ('', '}', '{'):
             fails.append(f'docs: Q{l[:3]} cites {name}:{ln}, which is blank, a brace or past the end; cite the line as it stands now')

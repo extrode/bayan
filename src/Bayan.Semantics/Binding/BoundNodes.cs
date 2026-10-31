@@ -90,6 +90,8 @@ public enum BuiltinMember
     ProcessExitCode, ProcessStdout, ProcessStderr,
     PanicMessage,
     FormatSpecRadix, FormatSpecDebug, FormatSpecWidth, FormatSpecFill, FormatSpecAlign, FormatSpecDigits,
+    /// <summary><c>f64.tryParse(text)</c> / <c>f32.tryParse(text)</c> (the receiver is the text; revision 0015).</summary>
+    FloatTryParse,
 }
 
 public sealed record BoundBuiltinCall(Node Syntax, BuiltinMember Member, BoundExpr Receiver, BoundExpr[] Arguments, TypeSymbol Type)
