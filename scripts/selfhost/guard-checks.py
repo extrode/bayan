@@ -89,7 +89,8 @@ for m in re.finditer(r'^(\d{3})\. (.*)$', hand, re.M):
         fails.append(f'gate: Q{m.group(1)} must be decided before {task} and is still Open; stop and ask the dispatcher')
 
 # E — docs
-hdiff = git('diff', f'{base}...HEAD', '--', 'docs/bayan-handoff.md') + git('diff', '--', 'docs/bayan-handoff.md')
+# One diff from the merge base to the working tree: a line fixed since the last commit is checked as it stands now.
+hdiff = git('diff', git('merge-base', base, 'HEAD').strip(), '--', 'docs/bayan-handoff.md')
 added = [l[1:] for l in hdiff.split('\n') if l.startswith('+') and not l.startswith('+++')]
 if not any(l.startswith('- **') and re.search(rf'\b{task}\b', l) for l in added):
     fails.append(f'docs: add a Progress log entry for {task} (what landed, what is left, test count)')
