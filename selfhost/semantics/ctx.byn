@@ -455,10 +455,10 @@ struct Ctx {
     /// C# `Options.IncludeTests` and `Options.SkipOwnershipCheck` (T11 sets them when it creates the compilation).
     bool includeTests = false
     bool skipOwnershipCheck = false
-    /// C# `_baseSpans` (T12 fills it in `declareMembers`, T14 reads it): each base's span, key `"<struct> <interface>"`.
-    Map<string, TextSpan> baseSpans = []
-    /// C# `_associatedBindings` (T12 fills it in `declareMembers`, T14 reads it): key `"<struct> <name>"`.
+    /// C# `_associatedBindings` (T12 fills it in `declareMembers`, T14 reads it): `"{s} {name}"` to the resolved `type name = …;`.
     Map<string, Type> associatedBindings = []
+    /// C# `_baseSpans` (T12 fills it in `declareMembers`, T14 reads it): `"{s} {i}"` to where the base is listed.
+    Map<string, TextSpan> baseSpans = []
 
     // ── Per-task state (Q710). A task adds the C# fields it needs, with defaults, only under its own marker.
     // ── T10 state

@@ -13,7 +13,7 @@ namespace Bayan.Tests;
 /// under <c>tmp/t12-cases/</c>, loaded and declared file by file (T11), then run through the T12 phases its flags
 /// name, in <c>Declare</c>'s order: <c>v</c> DeclareVariants, <c>c</c> CheckComposition, <c>e</c>
 /// DeclareEnumMembers, <c>u</c> DeclareUnionVariants, <c>p</c> DeclarePayloads, <c>m</c> DeclareMembers,
-/// <c>o</c> CheckOverloads. The oracle calls the same private methods by reflection and prints the same lines.
+/// <c>s</c> DeclareSignature of each free function, <c>o</c> CheckOverloads. The oracle calls the same private methods by reflection and prints the same lines.
 /// Diagnostics print as <c>code line:col message | label | help</c>.
 /// </summary>
 public sealed class SelfhostSemanticsT12Tests
@@ -100,6 +100,9 @@ public sealed class SelfhostSemanticsT12Tests
                 i64 x
                 i64 Y
             }
+            enum Modes(move i64 a, out i64 b, R.Field rf) {
+                z
+            }
             """),
         // DeclareUnionVariants and UnionValue.
         ("unions/main.byn", """
@@ -166,10 +169,36 @@ public sealed class SelfhostSemanticsT12Tests
                 G() { }
             }
             struct E { }
+            interface IG<T> { }
+            struct H : IG<i64>, IG<i64> {
+                public H() { }
+            }
             """),
         // CheckOverloads: the same name three times, across files, and a lone function.
         ("overloads/a.byn", "void f() { }\nvoid f() { }\nvoid f() { }\nvoid h() { }\nvoid g() { }\n"),
         ("overloads/b.byn", "void g() { }\nvoid h() { }\n"),
+        // Overlap, with the free signatures declared: positional counts, required particles, defaults, `rest`. A `bool`
+        // is positional to `Overlap` but exempt from the particle rule, so no signature reports anything.
+        ("params/main.byn", """
+            void p(i64 a) { }
+            void p(i64 b) { }
+            void p(i64 a, bool b) { }
+            void q(by i64 x) { }
+            void q(for i64 y) { }
+            void q(by i64 z) { }
+            void r(i64 a, by i64 b = 1) { }
+            void r(i64 c) { }
+            void s(rest ReadOnlySpan<i64> xs) { }
+            void s(i64 a, bool b, bool c) { }
+            void t(i64 a = 1) { }
+            void t() { }
+            void u(i64 a, for i64 b) { }
+            void u(i64 a, bool b) { }
+            void v(i64 a, for i64 b) { }
+            void v(i64 c) { }
+            void w(i64 c) { }
+            void w(i64 a, for i64 b) { }
+            """),
     ];
 
     private static readonly (string Name, string Flags)[] Runs =
@@ -182,6 +211,7 @@ public sealed class SelfhostSemanticsT12Tests
         ("overloads", "o"),
         // `DeclareMembers` adds methods to `AllFunctions` before `CheckOverloads`, which skips them.
         ("structs-o", "mo"),
+        ("params", "so"),
     ];
 
     private static string DirOf(string run) => Path.Combine(CasesDir, run.Split('-')[0]);
@@ -243,6 +273,8 @@ public sealed class SelfhostSemanticsT12Tests
         if (flags.Contains('u')) foreach (var u in m.Unions) Call(c, "DeclareUnionVariants", u);
         if (flags.Contains('p')) foreach (var set in m.ErrorSets) Call(c, "DeclarePayloads", set);
         if (flags.Contains('m')) foreach (var s in m.Structs) Call(c, "DeclareMembers", s);
+        if (flags.Contains('s'))
+            foreach (var f in m.AllFunctions.Where(f => f.Kind == FunctionKind.Function).ToList()) Call(c, "DeclareSignature", f, f.Decl, f.File, null);
         if (flags.Contains('o')) Call(c, "CheckOverloads", m);
         return Dump(c, m);
     }
@@ -259,7 +291,9 @@ public sealed class SelfhostSemanticsT12Tests
 
     private static string Lower(object o) => o.ToString()!.ToLowerInvariant();
 
-    private static string Params(IEnumerable<LocalSymbol> ps) => string.Join(",", ps.Select(p => $"{p.Name}:{p.Type.DisplayName}@{At(p.Location)}"));
+    /// <summary>Each local; a <c>ParameterSymbol</c> adds <c>#</c> and its ordinal.</summary>
+    private static string Params(IEnumerable<LocalSymbol> ps) =>
+        string.Join(",", ps.Select(p => $"{p.Name}:{p.Type.DisplayName}@{At(p.Location)}{(p is ParameterSymbol q ? $"#{q.Ordinal}" : "")}"));
 
     /// <summary>
     /// A function's T12 facts. A method's or free function's return type and parameters come from
@@ -369,6 +403,7 @@ public sealed class SelfhostSemanticsT12Tests
                 if flags.contains("m") {
                     for s in copyIds(in c.modules[m].structs) { declareMembers(ref c, for: s) }
                 }
+                if flags.contains("s") { t12Signatures(ref c, for: m) }
                 if flags.contains("o") { checkOverloads(ref c, for: m) }
                 dump(ref c, for: m)
                 i += 3
@@ -420,15 +455,16 @@ public sealed class SelfhostSemanticsT12Tests
 
         string truth(bool on) => on ? "True" : "False"
 
-        /// Each parameter's location is in file `f`; a builtin's (C# `null`) has an empty name span.
+        /// Each parameter's location is in file `f`; a builtin's (C# `null`) has an empty span. `at=` prints `span`, the C# `Location`.
         string paramList(ref Ctx c, for in List<LocalId> ps, from FileId f) {
             var sb = StrBuf()
             for k in 0..ps.length {
                 if k > 0 { sb.append(",") }
                 let p = ps[k]
-                let place = c.locals[p].nameSpan.length == 0 ? "none" : spot(in c, from: f, by: c.locals[p].nameSpan)
+                let place = c.locals[p].span.length == 0 ? "none" : spot(in c, from: f, by: c.locals[p].span)
                 let type = typeDisplay(ref c, by: c.locals[p].type)
-                sb.append($"{c.locals[p].name}:{type}@{place}")
+                let ordinal = c.locals[p].isParameter ? $"#{c.locals[p].ordinal}" : ""
+                sb.append($"{c.locals[p].name}:{type}@{place}{ordinal}")
             }
             return $"{sb.finish()}"
         }
@@ -451,7 +487,7 @@ public sealed class SelfhostSemanticsT12Tests
             }
             let fileName = kind == .builtin ? "" : $" file={c.files[file].displayPath}"
             let keyList = keys.finish()
-            return $"{c.functions[f].name} {lowerKind(kind)} {lowerAccess(c.functions[f].access)} static={truth(on: c.functions[f].isStatic)} at={spot(in c, from: file, by: c.functions[f].nameSpan)}{fileName} map=[{keyList}]{signature}"
+            return $"{c.functions[f].name} {lowerKind(kind)} {lowerAccess(c.functions[f].access)} static={truth(on: c.functions[f].isStatic)} at={spot(in c, from: file, by: c.functions[f].span)}{fileName} map=[{keyList}]{signature}"
         }
 
         void dump(ref Ctx c, for ModId m) {
@@ -464,7 +500,7 @@ public sealed class SelfhostSemanticsT12Tests
                 for v in copyIds(in c.errorSets[set].variants) {
                     let f = c.errorVariants[v].file
                     let ps = paramList(ref c, for: in copyIds(in c.errorVariants[v].fields), from: f)
-                    print($"  variant {c.errorVariants[v].name} code={c.errorVariants[v].code} at={spot(in c, from: f, by: c.errorVariants[v].nameSpan)} ({ps})")
+                    print($"  variant {c.errorVariants[v].name} code={c.errorVariants[v].code} at={spot(in c, from: f, by: c.errorVariants[v].span)} ({ps})")
                 }
             }
             for x in c.exitCodes {
@@ -483,11 +519,11 @@ public sealed class SelfhostSemanticsT12Tests
                 print($"enum {c.enums[e].name}")
                 for x in copyIds(in c.enums[e].members) {
                     let doc = c.enumMembers[x].doc ?? "none"
-                    print($"  member {c.enumMembers[x].name} ordinal={c.enumMembers[x].ordinal} at={spot(in c, from: f, by: c.enumMembers[x].nameSpan)} doc={doc}")
+                    print($"  member {c.enumMembers[x].name} ordinal={c.enumMembers[x].ordinal} at={spot(in c, from: f, by: c.enumMembers[x].span)} doc={doc}")
                 }
                 for x in copyIds(in c.enums[e].fields) {
                     let type = typeDisplay(ref c, by: c.enumFields[x].type)
-                    print($"  field {c.enumFields[x].name} {type} index={c.enumFields[x].index} at={spot(in c, from: f, by: c.enumFields[x].nameSpan)}")
+                    print($"  field {c.enumFields[x].name} {type} index={c.enumFields[x].index} at={spot(in c, from: f, by: c.enumFields[x].span)}")
                 }
                 if c.enums[e].fromOrdinal >= 0 {
                     let line = fnLine(ref c, for: c.enums[e].fromOrdinal)
@@ -503,7 +539,7 @@ public sealed class SelfhostSemanticsT12Tests
                 print($"union {c.unions[u].name}")
                 for v in copyIds(in c.unions[u].variants) {
                     let ps = paramList(ref c, for: in copyIds(in c.unionVariants[v].fields), from: f)
-                    print($"  variant {c.unionVariants[v].name} tag={c.unionVariants[v].tag} at={spot(in c, from: f, by: c.unionVariants[v].nameSpan)} ({ps})")
+                    print($"  variant {c.unionVariants[v].name} tag={c.unionVariants[v].tag} at={spot(in c, from: f, by: c.unionVariants[v].span)} ({ps})")
                 }
             }
             for s in copyIds(in c.modules[m].structs) {
@@ -515,12 +551,12 @@ public sealed class SelfhostSemanticsT12Tests
                 }
                 for x in copyIds(in c.structs[s].fields) {
                     let type = typeDisplay(ref c, by: c.fields[x].type)
-                    print($"  field {c.fields[x].name} {type} {lowerAccess(c.fields[x].access)} required={truth(on: (c.fields[x].modifiers & 16) != 0)} default={truth(on: c.fields[x].hasDefault)} at={spot(in c, from: f, by: c.fields[x].nameSpan)}")
+                    print($"  field {c.fields[x].name} {type} {lowerAccess(c.fields[x].access)} required={truth(on: (c.fields[x].modifiers & 16) != 0)} default={truth(on: c.fields[x].hasDefault)} at={spot(in c, from: f, by: c.fields[x].span)}")
                 }
                 for x in copyIds(in c.structs[s].properties) {
                     let type = typeDisplay(ref c, by: c.properties[x].type)
                     let getter = fnLine(ref c, for: c.properties[x].getter)
-                    print($"  property {c.properties[x].name} {type} {lowerAccess(c.properties[x].access)} at={spot(in c, from: f, by: c.properties[x].nameSpan)} getter={getter}")
+                    print($"  property {c.properties[x].name} {type} {lowerAccess(c.properties[x].access)} at={spot(in c, from: f, by: c.properties[x].span)} getter={getter}")
                 }
                 for x in copyIds(in c.structs[s].methods) {
                     let line = fnLine(ref c, for: x)
@@ -543,6 +579,24 @@ public sealed class SelfhostSemanticsT12Tests
             for f in copyIds(in c.modules[m].allFunctions) {
                 let line = fnLine(ref c, for: f)
                 print($"all {line}")
+            }
+        }
+
+        /// What `overlap` reads of T38's `declareSignature` (a stub): each free function's parameters, named and in order.
+        void t12Signatures(ref Ctx c, for ModId m) {
+            for f in copyIds(in c.modules[m].allFunctions) {
+                if c.functions[f].kind != .function { continue }
+                let file = c.functions[f].file
+                switch c.files[file].unit.members[c.functions[f].declIndex] {
+                    case .functionDecl(let n):
+                        for k in 0..n.value.params.length {
+                            let name = n.value.params[k].name
+                            let p = newLocal(ref c, by: LocalSymbol { name: $"{getText(c.files[file].text.span, at: name)}", nameSpan: name, span: name, kind: .parameter, isParameter: true, modifier: .none, ordinal: k })
+                            c.functions[f].parameters.append(p)
+                        }
+                    default:
+                        panic("a free function is declared by a `FunctionDecl`")
+                }
             }
         }
 
