@@ -18,7 +18,8 @@ struct BracesReport {
     string fixReplacement = ""
 }
 
-Stmt parseBlock(ref Parser p) {
+/// With `rejectPostfix`, a block statement: `rejectPostfixAfterCompound` after the `}`.
+Stmt parseBlock(ref Parser p, bool rejectPostfix = false) {
     let start = p.current().start
     let open = p.expect(.openBrace)
     if open.length == 0 {
@@ -35,8 +36,10 @@ Stmt parseBlock(ref Parser p) {
         if p.pos == before { let _ = p.advance() }
     }
     expectClose(ref p, from: open, for: "block")
+    let span = p.spanFrom(start)
+    if rejectPostfix { rejectPostfixAfterCompound(ref p) }
     return Stmt.blockStmt(Owned(BlockStmt {
-        span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+        span: statementSpan(ref p, at: start, from: span),
         statements: move statements,
         attributes: takeStatementAttributes(ref p, at: start),
     }))
@@ -51,31 +54,20 @@ Stmt parseStatement(ref Parser p) {
             return Stmt.errorStmt(Owned(ErrorStmt { span: p.spanFrom(start), attributes: move attributes }))
         }
         // C# sets `with { Span = SpanFrom(start), Attributes = attributes }` on the result, but a built node is
-        // read-only (BYN2782, Q471), so the statement is parsed twice, as in `reparseConstant`: once to find where
-        // it ends, its diagnostics dropped, then again, the node taking both when it is built (`takeStatementAttributes`).
-        let at = p.pos
-        let prevEnd = p.prevEnd
-        let diagnostics = p.lexed.diagnostics.length
-        let syntaxErrors = p.syntaxErrors
-        let lastErrorAt = p.lastErrorAt
-        let _ = parseStatement(ref p)
-        let span = p.spanFrom(start)
-        while p.lexed.diagnostics.length > diagnostics { let _ = p.lexed.diagnostics.removeLast() }
-        p.syntaxErrors = syntaxErrors
-        p.lastErrorAt = lastErrorAt
-        p.pos = at
-        p.prevEnd = prevEnd
+        // read-only (BYN2782, Q471): the node takes both when it is built (`statementSpan`, `takeStatementAttributes`),
+        // after the statement's end (`;`, a rejected postfix) is consumed.
         let key = p.current().start
         p.statementAttributeKeys.append(key)
-        p.statementAttributeSpans.append(span)
+        p.statementAttributeStarts.append(start)
         p.statementAttributes.append(move attributes)
         let statement = parseStatement(ref p)
         let _ = takeStatementAttributes(ref p, at: key)
         return statement
     }
     switch p.kind() {
+        // C# `RejectPostfixAfterCompound(…)` wraps these; it runs before the node is built (`statementSpan`).
         case .openBrace:
-            return rejectPostfixAfterCompound(ref p, for: parseBlock(ref p))
+            return parseBlock(ref p, rejectPostfix: true)
         case .semicolon:
             let semicolon = p.advance()
             reportSemicolon(ref p, for: semicolon)
@@ -86,9 +78,9 @@ Stmt parseStatement(ref Parser p) {
         case .letKeyword or .varKeyword or .constKeyword or .usingKeyword:
             return parseLocal(ref p, from: start)
         case .ifKeyword:
-            return rejectPostfixAfterCompound(ref p, for: parseIf(ref p, from: start))
+            return parseIf(ref p, from: start, rejectPostfix: true)
         case .unlessKeyword:
-            return rejectPostfixAfterCompound(ref p, for: parseUnless(ref p, from: start))
+            return parseUnless(ref p, from: start, rejectPostfix: true)
         case .whileKeyword:
             let whileKeyword = p.advance()
             if p.accept(.letKeyword) {
@@ -197,7 +189,9 @@ Stmt parseStatement(ref Parser p) {
 
     if isLocalDeclarationStart(ref p) { return parseLocal(ref p, from: start) }
 
-    let simple = parseSimpleStatement(ref p, at: start)
+    var ended = false
+    let simple = parseSimpleStatement(ref p, at: start, to: ref ended)
+    if ended { return simple }
     return finishSimpleStatement(ref p, at: start, for: move simple)
 }
 
@@ -206,15 +200,16 @@ Stmt parseStatement(ref Parser p) {
 bool hasStatementAttributes(ref Parser p, at i64 start) =>
     p.statementAttributeKeys.length > 0 && p.statementAttributeKeys[p.statementAttributeKeys.length - 1] == start
 
-/// The span of the statement at `start`: with attributes it is the C# `with { Span = SpanFrom(start) }` from them.
+/// The span of the statement at `start`: with attributes it is the C# `with { Span = SpanFrom(start) }` from them,
+/// so the statement's end must already be consumed.
 TextSpan statementSpan(ref Parser p, at i64 start, from TextSpan span) =>
-    hasStatementAttributes(ref p, at: start) ? p.statementAttributeSpans[p.statementAttributeSpans.length - 1] : span
+    hasStatementAttributes(ref p, at: start) ? p.spanFrom(p.statementAttributeStarts[p.statementAttributeStarts.length - 1]) : span
 
 /// The pending attributes of the statement at `start`, taken off the stack; none when they are not its.
 List<AttributeSyntax> takeStatementAttributes(ref Parser p, at i64 start) {
     unless hasStatementAttributes(ref p, at: start) { return List<AttributeSyntax>() }
     let _ = p.statementAttributeKeys.removeLast()
-    let _ = p.statementAttributeSpans.removeLast()
+    let _ = p.statementAttributeStarts.removeLast()
     return p.statementAttributes.removeLast()
 }
 
@@ -582,7 +577,7 @@ bool braceLiteralAllowed(ref Parser p) {
 bool atUnlikely(ref Parser p) =>
     atContextual(ref p, as: "unlikely") && p.peekToken(1).hasTriviaBefore && p.peek(1) != .openBrace && canStartExpression(p.peek(1))
 
-Stmt parseIf(ref Parser p, from i64 start, bool elseIf = false) {
+Stmt parseIf(ref Parser p, from i64 start, bool elseIf = false, bool rejectPostfix = false) {
     let keyword = p.advance()
     var likelihood = Likelihood.none
     if p.kind() == .neverKeyword && p.peek(1) != .openBrace && canStartExpression(p.peek(1)) {
@@ -605,13 +600,15 @@ Stmt parseIf(ref Parser p, from i64 start, bool elseIf = false) {
         }
         let elseKeyword = p.advance()
         if p.kind() == .ifKeyword {
-            otherwise = rejectPostfixAfterCompound(ref p, for: parseIf(ref p, from: p.current().start, elseIf: true))
+            otherwise = parseIf(ref p, from: p.current().start, elseIf: true, rejectPostfix: true)
         } else {
             otherwise = parenthesized ? parseBody(ref p, by: elseKeyword, to: ref parens) : parseBlock(ref p)
         }
     }
+    let span = p.spanFrom(start)
+    if rejectPostfix { rejectPostfixAfterCompound(ref p) }
     return Stmt.ifStmt(Owned(IfStmt {
-        span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+        span: statementSpan(ref p, at: start, from: span),
         condition: move condition,
         then: move then,
         elseKeyword: move otherwise,
@@ -679,7 +676,7 @@ void skipUnlessLikelihood(ref Parser p) {
         arg0: p.textOf(word), label: "a likelihood word", help: "remove the word, or write `if unlikely` with the negated condition")
 }
 
-Stmt parseUnless(ref Parser p, from i64 start) {
+Stmt parseUnless(ref Parser p, from i64 start, bool rejectPostfix = false) {
     let keyword = p.advance()
     skipUnlessLikelihood(ref p)
     var parenthesized = false
@@ -709,8 +706,10 @@ Stmt parseUnless(ref Parser p, from i64 start) {
             }
         }
     }
+    let span = p.spanFrom(start)
+    if rejectPostfix { rejectPostfixAfterCompound(ref p) }
     return Stmt.unlessStmt(Owned(UnlessStmt {
-        span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+        span: statementSpan(ref p, at: start, from: span),
         condition: move condition,
         body: move body,
         attributes: takeStatementAttributes(ref p, at: start),

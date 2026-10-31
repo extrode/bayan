@@ -39,10 +39,10 @@ public struct Parser {
     /// Set while type arguments are scanned inside an expression, where `=>` is never a type's arrow (`a < b => c > (x)`).
     public bool exprTypeArgs
     /// Statement attributes not yet on a node, innermost last: a statement node is read-only once built, so
-    /// `parseStatement` leaves them here with the statement's first token start and its span from the attributes.
+    /// `parseStatement` leaves them here with the statement's first token start and the first attribute's start.
     public List<List<AttributeSyntax>> statementAttributes = List<List<AttributeSyntax>>()
     public List<i64> statementAttributeKeys = List<i64>()
-    public List<TextSpan> statementAttributeSpans = List<TextSpan>()
+    public List<i64> statementAttributeStarts = List<i64>()
 
     public static Parser create(move LexResult lexed) uses alloc {
         let count = lexed.tokens.length
