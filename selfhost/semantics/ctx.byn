@@ -542,6 +542,45 @@ struct Ctx {
 
 // ── The binder's cursors ──────────────────────────────────────────────────────
 
+/// C# `_calleeOf` (BinderExpressions.cs:920), as what T18's renamed-call readers use (Q731): a parser node is
+/// unique, so the binder keeps the call's spans and argument shape instead. Spans are zero-length where absent.
+struct CalleeOf {
+    TextSpan span
+    /// The callee is a `.memberExpr`; `member` and `target` are its member and target spans.
+    bool isMember = false
+    TextSpan member = TextSpan { start: 0, length: 0 }
+    TextSpan target = TextSpan { start: 0, length: 0 }
+    i64 argCount = 0
+    /// The first two arguments are both unnamed with modifier `.none`.
+    bool firstTwoPlain = false
+    TextSpan arg0 = TextSpan { start: 0, length: 0 }
+    TextSpan arg1 = TextSpan { start: 0, length: 0 }
+}
+
+CalleeOf calleeOfCall(parser.CallExpr call) {
+    var r = CalleeOf { span: call.span, argCount: call.args.length }
+    switch call.callee {
+        case .memberExpr(let me):
+            r.isMember = true
+            r.member = me.value.member
+            r.target = parser.exprSpan(in me.value.target)
+        default: {}
+    }
+    if call.args.length > 0 { r.arg0 = parser.exprSpan(in call.args[0].value) }
+    if call.args.length > 1 {
+        r.arg1 = parser.exprSpan(in call.args[1].value)
+        r.firstTwoPlain = call.args[0].name is null && call.args[0].modifier == .none && call.args[1].name is null && call.args[1].modifier == .none
+    }
+    return r
+}
+
+/// C# `_covered` entry (BinderCalls.cs:14), as what ReportUnhandled (BinderCalls.cs:944) reads (Q731).
+struct CoveredCall {
+    TextSpan span
+    string name
+    bool structLiteral
+}
+
 /// The C# `Binder`'s per-body state: the file and function being bound, the scopes, the jump targets
 /// and the narrowing facts. Every field is a T1 handle or a parser type.
 struct Binder {
@@ -606,10 +645,12 @@ struct Binder {
     /// The C# `_sinkArgument` (BinderCalls.cs:196): the sink parameter an argument is converted to, or null.
     string? sinkArgument = null
     // ── T18 state
-    parser.CallExpr? calleeOf = null
+    CalleeOf? calleeOf = null
     Map<LocalId, VariantId> narrowed = []
     // ── T19 state
     // ── T20 state
+    /// The C# `_covered` (BinderCalls.cs:14): while a `try` operand is bound, the failing calls it does not handle; null outside one.
+    List<CoveredCall>? covered = null
     // ── T21 state
     // ── T22 state
     // ── T23 state
