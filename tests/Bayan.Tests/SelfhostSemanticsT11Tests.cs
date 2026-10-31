@@ -200,7 +200,19 @@ public sealed class SelfhostSemanticsT11Tests
         ("keysite/main.byn", "void f() {\n    var m: Map<(f64, i64), i64> = 0\n}\n"),
         // `Box<P>` resolved before conformances are checked: its constraint check waits in `pendingConstraints`.
         ("constraint/main.byn", "interface IShape { }\nstruct Box<T> where T : IShape {\n    i64 n\n}\nstruct P { }\nvoid f() {\n    var b: Box<P> = 0\n}\n"),
+        // Directories named like sources: `Directory.EnumerateFiles` skips them.
+        ("dirs/src/app/main.byn", "struct M { }\n"),
+        ("dirs/src/app/x.byn/keep.txt", "keep\n"),
+        ("dirs/src/app/y.test.byn/keep.txt", "keep\n"),
+        ("dirs/tests/t.test.byn", "struct T { }\n"),
+        ("dirs/tests/x.test.byn/keep.txt", "keep\n"),
     ];
+
+    /// <summary>Inputs of the <c>unit fullpath</c> and <c>unit cname</c> cases (the generated main lists the same).</summary>
+    private static readonly string[] FullPaths =
+        ["/a/./b/../c.byn", "/a//b/", "/..", "/../x", "/a/b/..", "/a/b/../", "/a/.", "/.", "//", "/a/..b/.c/", "/a/b/c/../../d", "/a/b/../.."];
+
+    private static readonly string[] CNames = ["café", "𝑥y", "a.b-c", "日本"];
 
     /// <summary>The runs: kind, case name, the path given (under <see cref="CasesDir"/>) and flags.</summary>
     private static readonly (string Kind, string Name, string Path, string Flags)[] Runs =
@@ -235,6 +247,11 @@ public sealed class SelfhostSemanticsT11Tests
         ("path", "unless", "unless", ""),
         ("unit", "keysite", "keysite", ""),
         ("unit", "constraint", "constraint", ""),
+        ("project", "dirs", "dirs", "t"),
+        ("path", "dirs", "dirs/src/app", "t"),
+        ("path", "dotted", "clean/./util/..//lib.byn", "l"),
+        ("unit", "fullpath", "unit", ""),
+        ("unit", "cname", "unit", ""),
     ];
 
     private static readonly Lazy<Dictionary<string, List<string>>> Run = new(() =>
@@ -388,6 +405,12 @@ public sealed class SelfhostSemanticsT11Tests
                 DumpLoad(c, lines);
                 break;
             }
+            case "unit" when name == "fullpath":
+                foreach (var p in FullPaths) lines.Add($"fullpath {p} {Path.GetFullPath(p)}");
+                break;
+            case "unit" when name == "cname":
+                foreach (var n in CNames) lines.Add($"cname {n} {typeof(Compilation).GetMethod("CNameOf", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [n])}");
+                break;
             default:
                 throw new InvalidOperationException(kind);
         }
@@ -611,6 +634,12 @@ public sealed class SelfhostSemanticsT11Tests
                     print($"sink bag {c.bags[bag].items.length} main {c.diagnostics.length} outer {shown}")
                     for d in c.bags[bag].items { print($"bag {d.message}") }
                     for d in c.diagnostics { print($"main {d.message}") }
+                } else if name == "fullpath" {
+                    for p in ["/a/./b/../c.byn", "/a//b/", "/..", "/../x", "/a/b/..", "/a/b/../", "/a/.", "/.", "//", "/a/..b/.c/", "/a/b/c/../../d", "/a/b/../.."] {
+                        print($"fullpath {p} {t11FullPath(p)}")
+                    }
+                } else if name == "cname" {
+                    for n in ["café", "𝑥y", "a.b-c", "日本"] { print($"cname {n} {t11CNameOf(n)}") }
                 }
                 i += 4
             }
