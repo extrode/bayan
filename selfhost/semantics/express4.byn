@@ -17,8 +17,11 @@ BExpr bindMapLiteral(ref Binder b, through ref Ctx c, for in parser.CollectionEx
 // stub: T35 ports BinderExpressions.cs:1888 BindLambda
 BExpr bindLambda(ref Binder b, through ref Ctx c, at TextSpan span, for in List<TextSpan> parameters, from in parser.Expr? body, by in parser.BlockStmt? block, to Type expected) => -1
 
-// stub: T35 ports BinderExpressions.cs:1961 Capture
-bool capture(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by LocalId local, as Type type) => false
+// stub: T35 ports BinderExpressions.cs:1961 Capture. Only the `_lambdas.Count == 0` clause of :1963 is ported (T17 calls it unguarded); the lambda path stays the stub.
+bool capture(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by LocalId local, as Type type) {
+    if b.lambdas.length == 0 { return true }
+    return false
+}
 
 // stub: T35 ports BinderExpressions.cs:1950 InLambda
 bool inLambda(ref Binder b, through ref Ctx c, at TextSpan span, for string name, by string reason) => false
