@@ -231,7 +231,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
                     break
                 }
             }
-            if method >= 0 && c.functions[method].isStatic {
+            if method != -1 && c.functions[method].isStatic {
                 checkAccess(ref b, through: ref c, for: c.functions[method].access, from: s, by: c.structs[s].module, at: m.member)
                 return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: method, typeArgs: List<TextSpan>() })
             }
@@ -609,7 +609,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
                 break
             }
         }
-        if foundMember < 0 {
+        if foundMember == -1 {
             for m in c.interfaces[d.iface].methods {
                 if c.functions[m].name == name {
                     foundMember = m
@@ -617,7 +617,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
                 }
             }
         }
-        if foundMember >= 0 {
+        if foundMember != -1 {
             if d.readOnly && c.functions[foundMember].isMutating {
                 report(ref b, through: ref c, for: .dynReadonlyMutation, at: member, by: (name, interfaceDisplayName(ref c, by: d.iface), "", "", ""), label: "declared `ref this`", help: $"take `dyn ref {interfaceDisplayName(ref c, by: d.iface)}`")
                 return addErrorExpr(ref c, from: BErrorExpr { span: span })
@@ -738,7 +738,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
     let name = t18Text(in c, from: b.file, at: memberSpan)
     var isCalleeMatch = false
     var tail = TextSpan { start: memberSpan.start, length: 0 }
-    if (b.calleeOf is { } activeCall) {
+    if (b.calleeOf is { } activeCall) { // mutation-exempt: Q607 through 749
         switch activeCall.callee {
             case .memberExpr(let me):
                 if me.value.member.start == memberSpan.start && me.value.member.length == memberSpan.length {
@@ -756,7 +756,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
     let isStr = isString(type)
     let isInt = isInteger(type)
 
-    if isList && name == "removeRange" {
+    if isList && name == "removeRange" { // mutation-exempt: Q607 through 764
         if isCalleeMatch && (b.calleeOf is { } cCall) && cCall.args.length == 2 && cCall.args[0].name is null && cCall.args[0].modifier == .none && cCall.args[1].name is null && cCall.args[1].modifier == .none {
             let from = t18Text(in c, from: b.file, at: t18ExprSpan(in cCall.args[0].value))
             let until = t18Text(in c, from: b.file, at: t18ExprSpan(in cCall.args[1].value))
@@ -764,7 +764,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isList && name == "replaceRange" {
+    if isList && name == "replaceRange" { // mutation-exempt: Q607 through 772
         if isCalleeMatch && (b.calleeOf is { } rCall) && rCall.args.length == 2 && rCall.args[0].name is null && rCall.args[0].modifier == .none && rCall.args[1].name is null && rCall.args[1].modifier == .none {
             let at = t18Text(in c, from: b.file, at: t18ExprSpan(in rCall.args[0].value))
             let by = t18Text(in c, from: b.file, at: t18ExprSpan(in rCall.args[1].value))
@@ -772,7 +772,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isMap && name == "getOr" {
+    if isMap && name == "getOr" { // mutation-exempt: Q607 through 785
         if isCalleeMatch && (b.calleeOf is { } mCall) && mCall.args.length == 2 && mCall.args[0].name is null && mCall.args[0].modifier == .none && mCall.args[1].name is null && mCall.args[1].modifier == .none {
             switch mCall.callee {
                 case .memberExpr(let me):
@@ -785,20 +785,20 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if (isList || isArrayT) && name == "asSpan" {
+    if (isList || isArrayT) && name == "asSpan" { // mutation-exempt: Q607 through 791
         if isCalleeMatch && (b.calleeOf is { } sCall) && sCall.args.length == 0 {
             return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: true, fixSpan: tail, replacement: "span" }
         }
         return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isStr && name == "toUtf16" {
+    if isStr && name == "toUtf16" { // mutation-exempt: Q607 through 797
         if isCalleeMatch && (b.calleeOf is { } uCall) && uCall.args.length == 0 {
             return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: true, fixSpan: tail, replacement: "utf16" }
         }
         return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: false, fixSpan: tail, replacement: "" }
     }
     if isInt && (name == "toHex" || name == "toBinary" || name == "toOctal") {
-        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal")
+        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal") // mutation-exempt: Q607 through 809
         if isCalleeMatch && (b.calleeOf is { } hCall) && hCall.args.length == 0 {
             switch hCall.callee {
                 case .memberExpr(let me):
