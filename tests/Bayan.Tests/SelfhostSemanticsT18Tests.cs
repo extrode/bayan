@@ -117,7 +117,7 @@ public sealed class SelfhostSemanticsT18Tests
             i32 b = a
         }
 
-        void probes(Point p, Shape s, string str, List<i32> list, i32[2] fixed, Map<string, i32> map, Point? maybe, Status st, dyn IHasArea d, i64 n, (i32 a, i32 b) tup, (Shape a, i32 b) ts, dyn ref IHasArea dr, Owned<Point> op, StrBuf sb, Span<i32> sp, u64 un, Blob bl, MyError me) {
+        void probes(Point p, Shape s, string str, List<i32> list, i32[2] fixed, Map<string, i32> map, Point? maybe, Status st, dyn IHasArea d, i64 n, (i32 a, i32 b) tup, (Shape a, i32 b) ts, dyn ref IHasArea dr, Owned<Point> op, StrBuf sb, Span<i32> sp, u64 un, Blob bl, MyError me, Untrusted<i32> ui) {
             let m1 = MyError.notFound
             let m2 = MyError.badVariant
             let m3 = Color.red
@@ -147,6 +147,13 @@ public sealed class SelfhostSemanticsT18Tests
             let m27 = string.invalidUtf8
             let m28 = Shape.nope
             let m29 = Shape.circle
+            let m30 = Point.x
+            let m31 = Point.twice
+            let m32 = Point.clear
+            let m33 = Io.readFile
+            let m34 = Io.stderr
+            let m35 = Io.stdin
+            let m36 = Hex.decode
             let x1 = other.oc
             let x2 = other.hiddenFn
             let x3 = other.privFn
@@ -193,6 +200,7 @@ public sealed class SelfhostSemanticsT18Tests
             let v39 = p.size
             let v40 = st.cod
             let v41 = p.length
+            let v42 = ui.length
             let t1: Color = .red
             let t2: MyError = .notFound
             let t3: MyError = .nope
@@ -240,7 +248,7 @@ public sealed class SelfhostSemanticsT18Tests
         ("member", "probes", "-", "m10"), ("member", "probes", "-", "m11"), ("member", "probes", "-", "m12"),
         ("member", "probes", "-", "m13"), ("member", "probes", "-", "m14"), ("member", "probes", "-", "m15"),
         ("member", "probes", "-", "m16"), ("member", "probes", "-", "m17"),
-        ("member", "probes", "-", "m18"), ("member", "probes", "-", "m19"), ("member", "probes", "-", "m20"), ("member", "probes", "-", "m21"), ("member", "probes", "-", "m22"), ("member", "probes", "-", "m23"), ("member", "probes", "-", "m24"), ("member", "probes", "-", "m25"), ("member", "probes", "-", "m26"), ("member", "probes", "-", "m27"), ("member", "probes", "-", "m28"), ("member", "probes", "-", "m29"), ("member", "probes", "-", "x1"), ("member", "probes", "-", "x2"), ("member", "probes", "-", "x3"),
+        ("member", "probes", "-", "m18"), ("member", "probes", "-", "m19"), ("member", "probes", "-", "m20"), ("member", "probes", "-", "m21"), ("member", "probes", "-", "m22"), ("member", "probes", "-", "m23"), ("member", "probes", "-", "m24"), ("member", "probes", "-", "m25"), ("member", "probes", "-", "m26"), ("member", "probes", "-", "m27"), ("member", "probes", "-", "m28"), ("member", "probes", "-", "m29"), ("member", "probes", "-", "m30"), ("member", "probes", "-", "m31"), ("member", "probes", "-", "m32"), ("member", "probes", "-", "m33"), ("member", "probes", "-", "m34"), ("member", "probes", "-", "m35"), ("member", "probes", "-", "m36"), ("member", "probes", "-", "x1"), ("member", "probes", "-", "x2"), ("member", "probes", "-", "x3"),
         ("module", "probes", "-", "u1"), ("module", "probes", "-", "u2"), ("module", "probes", "-", "u3"),
         ("module", "probes", "-", "u4"), ("module", "probes", "-", "u5"), ("module", "probes", "-", "u6"),
         ("member", "probes", "-", "v1"), ("member", "probes", "-", "v2"), ("member", "probes", "-", "v3"),
@@ -251,7 +259,7 @@ public sealed class SelfhostSemanticsT18Tests
         ("member", "probes", "-", "v17"), ("member", "probes", "-", "v19"),
         ("member", "probes", "-", "v20"), ("member", "probes", "-", "v21"),
         ("member", "probes", "-", "v22"),
-        ("member", "probes", "-", "v23"), ("member", "probes", "-", "v25"), ("member", "probes", "-", "v26"), ("member", "probes", "-", "v27"), ("member", "probes", "-", "v28"), ("member", "probes", "-", "v29"), ("member", "probes", "-", "v30"), ("member", "probes", "-", "v31"), ("member", "probes", "-", "v32"), ("member", "probes", "-", "v33"), ("member", "probes", "-", "v34"), ("member", "probes", "-", "v35"), ("member", "probes", "-", "v36"), ("member", "probes", "-", "v37"), ("member", "probes", "-", "v38"), ("member", "probes", "-", "v39"), ("member", "probes", "-", "v40"), ("member", "probes", "-", "v41"),
+        ("member", "probes", "-", "v23"), ("member", "probes", "-", "v25"), ("member", "probes", "-", "v26"), ("member", "probes", "-", "v27"), ("member", "probes", "-", "v28"), ("member", "probes", "-", "v29"), ("member", "probes", "-", "v30"), ("member", "probes", "-", "v31"), ("member", "probes", "-", "v32"), ("member", "probes", "-", "v33"), ("member", "probes", "-", "v34"), ("member", "probes", "-", "v35"), ("member", "probes", "-", "v36"), ("member", "probes", "-", "v37"), ("member", "probes", "-", "v38"), ("member", "probes", "-", "v39"), ("member", "probes", "-", "v40"), ("member", "probes", "-", "v41"), ("member", "probes", "-", "v42"),
         ("target", "probes", "-", "t1"), ("target", "probes", "-", "t2"), ("target", "probes", "-", "t3"),
         ("target", "probes", "-", "t4"), ("target", "probes", "-", "t5"), ("target", "probes", "-", "t6"),
         ("target", "probes", "-", "t7"), ("target", "probes", "-", "t8"),
