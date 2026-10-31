@@ -15,7 +15,7 @@ SPEC §20 promises coverage and mutation testing in two bullets and marks `@unob
    | Operator | Changes |
    |---|---|
    | `boundary` | `<` ↔ `<=`, `>` ↔ `>=` |
-   | `relational` | `==` ↔ `!=`, `<` → `>=`, `>` → `<=` |
+   | `relational` | `==` ↔ `!=`, `<` ↔ `>=`, `>` ↔ `<=` |
    | `logical` | `&&` ↔ `||` |
    | `condition` | the condition of `if`, `while`, `guard`, `stmt if c` → its negation |
    | `bool` | `true` ↔ `false` |
@@ -30,20 +30,22 @@ SPEC §20 promises coverage and mutation testing in two bullets and marks `@unob
 4. SPEC §20, `@unobservable` (the "not in v0.1" note is removed): "`@unobservable because \"…\"` on a statement marks that statement's mutants as ones no test can observe; an operator argument narrows it to one operator. Marked mutants still run: a marked mutant a test kills, or a mark with no mutant in its statement, is a warning in the report. The reason is required (BYN8001)."
 
    ```
-   i32 clamp(i32 x, i32 lo, i32 hi) {
+   i32 clamp(i32 x, i32 lo, i32 hi)
+       expects lo <= hi {
        @unobservable(boundary) because "x == hi returns hi either way"
        return hi if x >= hi
        return lo if x <= lo
        return x
    }
    ```
-5. SPEC §7 (attributes) and GRAMMAR: a statement may be preceded by attributes from an allow-list, which applies to the next statement only. The list is `@unobservable`. Any other attribute before a statement is BYN1069.
+5. SPEC §4.4 (attributes), §7 (statements) and GRAMMAR: a statement may be preceded by attributes from an allow-list, which applies to the next statement only. The list is `@unobservable`. Any other attribute before a statement is BYN1069.
 6. SPEC §19.2, `Tests` gains `lines`, `branches` (minimum percentages) and `summary` (bool, default `true`). `errorPaths` and `mutation` keep their meaning; `diffCoverage` is accepted and not enforced yet. A run below a minimum fails and names what is missing. The example becomes `test: Tests { lines: 100, branches: 100, errorPaths: 100, mutation: 75, nightly: [.fuzz] }`.
 7. The runtime source (`bayan-rt.c`) carries a version line, bumped on every change, so a change to Debug binaries can be traced to a runtime version. The coverage flush hook does nothing unless coverage is on.
 
 ## Sections
 
-- SPEC §7: the attribute paragraph (statement attributes, allow-list).
+- SPEC §4.4: the attribute paragraph (statement attributes, allow-list).
+- SPEC §7: the statement rule (optional leading attributes).
 - SPEC §19.2: the manifest example and the `Tests` field list.
 - SPEC §20: the coverage bullet, the mutation bullet, the operator table, `@unobservable`.
 - GRAMMAR: the statement rule gains an optional attribute list.

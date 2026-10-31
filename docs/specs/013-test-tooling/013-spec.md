@@ -25,19 +25,21 @@ Bayan promises coverage and mutation testing (spec §20), but neither exists. Th
 - As a maintainer, I want one report format for Bayan and C#, so that one gate can enforce "100%, no regression".
 
 ## Requirements
-- R1 `bayan test --mutate` runs the package's tests against every mutant of the code under test and reports, per mutant: killed, survived, timed out, or marked.
+- R1 `bayan test --mutate` runs the package's tests against every mutant of the code under test and reports, per mutant: killed, survived, timed out (counted as killed), not reached, or marked.
 - R2 One build per run contains every mutant. Choosing a mutant at run time needs no rebuild.
 - R3 External mode: build the mutant binary once, then run a command the user gives for each mutant. Exit 0 means survived; any other exit means killed; a timeout is reported on its own line.
 - R4 A mutation that would not type-check is never emitted and never counted as killed or survived. The report counts these separately.
 - R5 The mutation operators are documented, and the report counts each operator on its own.
 - R6 A surviving mutant is reported with its file, line and column, the original and mutated text, and a suggested missing case.
-- R7 A developer can mark a mutant that no test can observe with `@unobservable because "…"` on the statement whose mutants it covers. The mark covers every mutant in that statement unless an operator argument narrows it (`@unobservable(boundary) because "…"`). The `because` clause follows the attribute (J6) and is required. Marked mutants are listed with their reasons and are not survivors. A mark that matches no surviving mutant is a warning.
+- R7 A developer can mark a mutant that no test can observe with `@unobservable because "…"` on the statement whose mutants it covers. The mark covers every mutant in that statement unless an operator argument narrows it (`@unobservable(boundary) because "…"`). The `because` clause follows the attribute (J6) and is required. Marked mutants are listed with their reasons and are not survivors. Marked mutants still run: a marked mutant a test kills, or a mark with no mutant in its statement, is a warning.
 
   ```
-  int clamp(int x, int lo, int hi) {
-      @unobservable because "x == hi returns hi either way"
+  i32 clamp(i32 x, i32 lo, i32 hi)
+      expects lo <= hi {
+      @unobservable(boundary) because "x == hi returns hi either way"
       return hi if x >= hi
-      ...
+      return lo if x <= lo
+      return x
   }
   ```
 - R8 Every mutation report gives: build time, mean and maximum time per mutant, total time, and per-mutant time as a share of a plain build.
@@ -60,7 +62,7 @@ Bayan promises coverage and mutation testing (spec §20), but neither exists. Th
 
 ## Law candidates
 - For every program, the instrumented run's output and exit code equal the plain run's (R10).
-- For every program, a normal build is byte-identical with or without the tooling (R11).
+- For every program, a normal build's generated C is byte-identical with or without the tooling (R11).
 - For every run, a mutant that does not type-check is never counted as killed or survived (R4).
 - For every mutant binary, selecting "no mutant" behaves exactly as the plain build.
 
