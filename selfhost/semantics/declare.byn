@@ -585,6 +585,7 @@ void checkOverloads(ref Ctx c, for ModId module) {
 /// default or `...`.
 struct T12Param {
     string label
+    // mutation-exempt: Q579
     bool hasSyntax = false
     bool hasParticle = false
     bool hasDefault = false
