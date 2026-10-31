@@ -317,6 +317,7 @@ public static class DiagnosticCodes
     // BYN3217 is reserved: v0.1 has no fibers. Its help, once reported: "copy the data first, or spawn the fiber in a scope that ends before `{1}`".
     public static readonly DiagnosticDescriptor BorrowCrossesFiber = Error("BYN3217", "`{0}` holds a reference into `{1}` and cannot be passed to a fiber that may outlive it");
     public static readonly DiagnosticDescriptor RequiresMixesFields = Error("BYN3218", "this `requires` reads `it` and other fields");
+    public static readonly DiagnosticDescriptor UnknownMutationOperator = Error("BYN3219", "`{0}` is not a mutation operator");
 
     // ── Manifest (`package.byn`) 3100–3199 ───────────────────────────────────────────
     public static readonly DiagnosticDescriptor ManifestNotData = Error("BYN3100", "`package.byn` is data only: expected {0}");

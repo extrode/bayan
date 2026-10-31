@@ -14,12 +14,30 @@ namespace Bayan.Semantics;
 public sealed record CompilationOptions(bool IncludeTests = false, bool Library = false, bool SkipOwnershipCheck = false,
     IReadOnlyList<string>? Capabilities = null, string? PackageName = null);
 
+/// <summary>An <c>@unobservable</c> mark: the attributed statement's span, the operator it narrows to (null for all) and the reason.</summary>
+public sealed record UnobservableMark(string File, TextSpan Span, string? Operator, string Reason);
+
 /// <summary>
 /// A whole program: the entry module plus every module it imports, transitively. Construction
 /// parses, declares and binds everything; read <see cref="Diagnostics"/> afterwards.
 /// </summary>
 public sealed partial class Compilation
 {
+    /// <summary>The operator names <c>@unobservable(&lt;op&gt;)</c> accepts (revision 0014 §3).</summary>
+    public static readonly IReadOnlyList<string> MutationOperators =
+        ["boundary", "relational", "logical", "condition", "bool", "arithmetic", "literal", "negation", "statement", "emptyReturn", "variant"];
+
+    private readonly List<UnobservableMark> _unobservable = new();
+    private readonly HashSet<(string, TextSpan, string?)> _unobservableSeen = new();
+
+    /// <summary>Every <c>@unobservable</c> mark, in binding order.</summary>
+    public IReadOnlyList<UnobservableMark> Unobservable => _unobservable;
+
+    internal void AddUnobservable(UnobservableMark mark)
+    {
+        if (_unobservableSeen.Add((mark.File, mark.Span, mark.Operator))) _unobservable.Add(mark);
+    }
+
     private readonly Dictionary<string, ModuleSymbol> _modulesByDir = new(StringComparer.Ordinal);
     private readonly List<ModuleSymbol> _loading = new();
     private uint _nextErrorCode = 1;
