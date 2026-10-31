@@ -62,7 +62,7 @@ string decodeInterpolatedText(ReadOnlySpan<u8> text) {
 }
 
 /// The scalar value of a char literal, or -1 if it does not hold exactly one.
-i64 decodeChar(ReadOnlySpan<u8> token) {
+public i64 decodeChar(ReadOnlySpan<u8> token) uses alloc {
     let text = runesOf(token)
     let start: i64 = text.length < 1 ? text.length : 1
     let end = text.length > 1 && text[text.length - 1] == '\'' ? text.length - 1 : text.length

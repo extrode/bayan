@@ -617,16 +617,16 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
 
     if isList && name == "removeRange" { // mutation-exempt: Q607 through 630
         if isCalleeMatch && (b.calleeOf is { } cCall) && cCall.args.length == 2 && cCall.args[0].name is null && cCall.args[0].modifier == .none && cCall.args[1].name is null && cCall.args[1].modifier == .none {
-            let from = t18Text(in c, from: b.file, at: t17ExprSpan(in cCall.args[0].value))
-            let until = t18Text(in c, from: b.file, at: t17ExprSpan(in cCall.args[1].value))
+            let from = t18Text(in c, from: b.file, at: parser.exprSpan(in cCall.args[0].value))
+            let until = t18Text(in c, from: b.file, at: parser.exprSpan(in cCall.args[1].value))
             return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: true, fixSpan: tail, replacement: $"remove(from: {from}, until: {until})" }
         }
         return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
     if isList && name == "replaceRange" { // mutation-exempt: Q607 through 638
         if isCalleeMatch && (b.calleeOf is { } rCall) && rCall.args.length == 2 && rCall.args[0].name is null && rCall.args[0].modifier == .none && rCall.args[1].name is null && rCall.args[1].modifier == .none {
-            let at = t18Text(in c, from: b.file, at: t17ExprSpan(in rCall.args[0].value))
-            let by = t18Text(in c, from: b.file, at: t17ExprSpan(in rCall.args[1].value))
+            let at = t18Text(in c, from: b.file, at: parser.exprSpan(in rCall.args[0].value))
+            let by = t18Text(in c, from: b.file, at: parser.exprSpan(in rCall.args[1].value))
             return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: true, fixSpan: tail, replacement: $"replace(at: {at}, by: {by})" }
         }
         return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: false, fixSpan: tail, replacement: "" }
@@ -635,9 +635,9 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         if isCalleeMatch && (b.calleeOf is { } mCall) && mCall.args.length == 2 && mCall.args[0].name is null && mCall.args[0].modifier == .none && mCall.args[1].name is null && mCall.args[1].modifier == .none {
             switch mCall.callee {
                 case .memberExpr(let me):
-                    let key = t18Text(in c, from: b.file, at: t17ExprSpan(in mCall.args[0].value))
-                    let fallback = t18Text(in c, from: b.file, at: t17ExprSpan(in mCall.args[1].value))
-                    let mapText = t18Text(in c, from: b.file, at: t17ExprSpan(in me.value.target))
+                    let key = t18Text(in c, from: b.file, at: parser.exprSpan(in mCall.args[0].value))
+                    let fallback = t18Text(in c, from: b.file, at: parser.exprSpan(in mCall.args[1].value))
+                    let mapText = t18Text(in c, from: b.file, at: parser.exprSpan(in me.value.target))
                     return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: true, fixSpan: mCall.span, replacement: $"({mapText}.tryGet(at: {key}) ?? {fallback})" }
                 default: {}
             }
@@ -661,7 +661,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         if isCalleeMatch && (b.calleeOf is { } hCall) && hCall.args.length == 0 {
             switch hCall.callee {
                 case .memberExpr(let me):
-                    let targetText = t18Text(in c, from: b.file, at: t17ExprSpan(in me.value.target))
+                    let targetText = t18Text(in c, from: b.file, at: parser.exprSpan(in me.value.target))
                     return RenamedResult { oldName: $"{name}()", newName: $"string(x, as: .{radix})", hasFix: true, fixSpan: hCall.span, replacement: $"string({targetText}, as: .{radix})" }
                 default: {}
             }
@@ -821,7 +821,7 @@ BExpr bindIndex(ref Binder b, through ref Ctx c, for in parser.IndexExpr i) {
         element = c.arrayTypes[typeIndex(targetType)].element
     }
     if element == -1 {
-        report(ref b, through: ref c, for: .notIndexable, at: t17ExprSpan(in i.target), by: (typeDisplay(ref c, by: targetType), "", "", "", ""))
+        report(ref b, through: ref c, for: .notIndexable, at: parser.exprSpan(in i.target), by: (typeDisplay(ref c, by: targetType), "", "", "", ""))
         let _ = bindExpr(ref b, through: ref c, for: in i.index)
         return addErrorExpr(ref c, from: BErrorExpr { span: i.span })
     }
@@ -853,7 +853,7 @@ BExpr bindIndex(ref Binder b, through ref Ctx c, for in parser.IndexExpr i) {
         let effective = fromEnd ? arr.length - n : n
         if effective < 0 || effective >= arr.length || (fromEnd && n == 0) {
             let nStr = fromEnd ? $"^{n}" : $"{n}"
-            report(ref b, through: ref c, for: .indexOutOfRange, at: t17ExprSpan(in i.index), by: (nStr, typeDisplay(ref c, by: targetType), "", "", ""))
+            report(ref b, through: ref c, for: .indexOutOfRange, at: parser.exprSpan(in i.index), by: (nStr, typeDisplay(ref c, by: targetType), "", "", ""))
         }
     }
     return addIndex(ref c, from: BIndex { span: i.span, target: target, index: index, fromEnd: fromEnd, type: element })
@@ -863,7 +863,7 @@ BExpr t18BindIndexValue(ref Binder b, through ref Ctx c, for parser.Expr syntax)
     let index = bindExpr(ref b, through: ref c, for: in syntax, to: prim(.i64))
     let indexType = exprType(in c, for: index)
     if isError(indexType) { return index }
-    let span = t17ExprSpan(in syntax)
+    let span = parser.exprSpan(in syntax)
     if !isInteger(indexType) {
         report(ref b, through: ref c, for: .typeMismatch, at: span, by: (typeDisplay(ref c, by: indexType), "an integer index", "", "", ""))
         return addErrorExpr(ref c, from: BErrorExpr { span: span })
@@ -911,7 +911,7 @@ BExpr bindSlice(ref Binder b, through ref Ctx c, for in parser.IndexExpr i, from
 }
 
 string interpolationSource(ref Binder b, through ref Ctx c, for in parser.Expr e) {
-    let text = t18Text(in c, from: b.file, at: t17ExprSpan(in e))
+    let text = t18Text(in c, from: b.file, at: parser.exprSpan(in e))
     switch e {
         case .literalExpr(let l):
             if l.value.kind == .string && !t18ContainsBraces(text) {
@@ -928,8 +928,8 @@ string interpolationSource(ref Binder b, through ref Ctx c, for in parser.Expr e
 
 /// BYN2201: strings have no indexer (spec §3.2); offer the four alternatives.
 void t18ReportStringIndexer(ref Binder b, through ref Ctx c, for parser.IndexExpr i) {
-    let targetSpan = t17ExprSpan(in i.target)
-    let indexSpan = t17ExprSpan(in i.index)
+    let targetSpan = parser.exprSpan(in i.target)
+    let indexSpan = parser.exprSpan(in i.index)
     let s = t18Text(in c, from: b.file, at: targetSpan)
     let index = t18Text(in c, from: b.file, at: indexSpan)
     let diagSpan = TextSpan.fromBounds(targetSpan.end, until: i.span.end)
