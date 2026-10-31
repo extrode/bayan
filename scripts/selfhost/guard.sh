@@ -54,6 +54,7 @@ else note "checks: --filter names no SelfhostSemanticsT<n>Tests class, so the co
 
 # 6 mutations (only when everything above passed: a mutation run on a red tree proves nothing)
 if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
+  . "$(dirname "$0")/mutant-outcome.sh"
   IFS=',' read -ra MF <<< "$MUTATE"
   for f in "${MF[@]}"; do
     cp "$f" $LOG/mutate-orig.txt
@@ -69,11 +70,12 @@ if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
     for ((i=0; i<total && tried<N; i+=step)); do
       ln=${SITES[$i]}
       perl -i -pe "if (\$.==$ln) { s/==/!=/ or s/!=/==/ or s/<=/</ or s/>=/>/ or s/ < / >= / or s/ > / <= / or s/\btrue\b/false/ or s/\bfalse\b/true/ or s/\+ 1\b/+ 2/ or s/- 1\b/- 2/ or s/&&/||/ or s/\|\|/&&/ }" "$f"
-      # a mutant that does not compile proves nothing about the tests: skip it and try the next site
-      if ! dotnet build -v q > $LOG/mb.txt 2>&1; then cp $LOG/mutate-orig.txt "$f"; i=$((i - step + 1)); continue; fi
+      # the harness compiles the .byn when the tests run; a mutant it rejects proves nothing: skip it, try the next site
+      dotnet test -v q --no-build --filter "$FILTER" --logger 'console;verbosity=normal' > $LOG/mt.txt 2>&1
+      outcome=$(mutant_outcome $? $LOG/mt.txt)
+      if [ "$outcome" = uncompiled ]; then cp $LOG/mutate-orig.txt "$f"; i=$((i - step + 1)); continue; fi
       tried=$((tried+1))
-      dotnet test -v q --no-build --filter "$FILTER" > $LOG/mt.txt 2>&1
-      if [ $? = 0 ]; then note "mutation survived: $f:$ln ($(sed -n "${ln}p" "$f" | sed 's/^ *//' | cut -c1-90)) — no test fails when this line is changed; add a test that covers it"; else killed=$((killed+1)); fi
+      if [ "$outcome" = survived ]; then note "mutation survived: $f:$ln ($(sed -n "${ln}p" "$f" | sed 's/^ *//' | cut -c1-90)) — no test fails when this line is changed; add a test that covers it"; else killed=$((killed+1)); fi
       cp $LOG/mutate-orig.txt "$f"
     done
     [ $tried -lt $N ] && [ $tried -lt $total ] && note "mutation: only $tried of $N mutants of $f compiled; add tests until enough distinct sites are covered"
