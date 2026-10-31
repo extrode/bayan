@@ -316,3 +316,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - C# also takes `NotPattern`, `VarPattern` and block `PropertyDecl` spans before their last child (Parser.cs 4102, 4126, 1050); the port copies it (Q511). Fix in C# and the port together.
 - `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray` fails intermittently in full-suite runs (passes alone); 010 T2 gate saw 1–2/2629 failures, likely allocation noise from parallel tests (2026-10-26).
 - 010 T3 gate: `typeEquals` (types.byn:195) is never called by tests; equality pairs lack same-name nominal types in different modules and text-view/builtin types (2026-10-26).
+- spec 010 T28: compile.byn:1176-1177/:1180-1181 cite "generics.byn:180" for T13's drain switch (now ~generics.byn:186); ctx.byn:276 calls `quiet` "the C# `_quiet`", which does not exist (Q580). Fix at integration.
