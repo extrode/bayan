@@ -81,19 +81,61 @@ public static class MutationRunner
         return new MutantResult(site, runs == 0 ? MutantStatus.NotReached : MutantStatus.Survived, runs, null);
     }
 
+    /// <summary>
+    /// External mode (spec 013 R3): runs <paramref name="command"/> once per emitted site with <c>BAYAN_MUTANT</c> set to its id.
+    /// Exit 0 is survived (marked when the site has a mark), any other exit is killed, and a timeout of max(1 s, 5 times the
+    /// unmutated run) is killed and reported as its own status. Null when the unmutated run (mutant 0) does not exit 0 within
+    /// <paramref name="baselineTimeout"/>, since every mutant would then look killed; no mutant is run then.
+    /// </summary>
+    public static IReadOnlyList<ExternalResult>? RunExternal(IReadOnlyList<ExternalSite> sites, IReadOnlyList<string> command,
+        IReadOnlyDictionary<string, string> environment, TimeSpan baselineTimeout, Action<ExternalResult>? onMutant = null)
+    {
+        Outcome Run(int mutant, TimeSpan limit)
+        {
+            var psi = new ProcessStartInfo(command[0]);
+            for (var i = 1; i < command.Count; i++) psi.ArgumentList.Add(command[i]);
+            foreach (var (k, v) in environment) psi.Environment[k] = v;
+            psi.Environment["BAYAN_MUTANT"] = mutant.ToString(CultureInfo.InvariantCulture);
+            return Exec(psi, limit);
+        }
+        var baseline = Run(0, baselineTimeout);
+        if (baseline.TimedOut || baseline.ExitCode != 0) return null;
+        var timeout = TimeSpan.FromTicks(Math.Max(TimeSpan.TicksPerSecond, 5 * baseline.Elapsed.Ticks));
+        var results = new List<ExternalResult>();
+        foreach (var site in sites)
+        {
+            var result = new ExternalResult(site, MutantStatus.NotEmitted, 0);
+            if (site.Emitted)
+            {
+                var outcome = Run(site.Id, timeout);
+                var status = outcome.TimedOut ? MutantStatus.Timeout
+                    : outcome.ExitCode != 0 ? MutantStatus.Killed
+                    : site.Unobservable is not null ? MutantStatus.Marked
+                    : MutantStatus.Survived;
+                result = new ExternalResult(site, status, outcome.Elapsed.TotalSeconds);
+            }
+            results.Add(result);
+            onMutant?.Invoke(result);
+        }
+        return results;
+    }
+
     private static Outcome Exec(string executable, int test, int mutant, string? reachPath, TimeSpan limit)
     {
-        var psi = new ProcessStartInfo(executable)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
+        var psi = new ProcessStartInfo(executable);
         psi.ArgumentList.Add("--test");
         psi.ArgumentList.Add(test.ToString(CultureInfo.InvariantCulture));
         psi.Environment["BAYAN_MUTANT"] = mutant.ToString(CultureInfo.InvariantCulture);
         if (reachPath is null) psi.Environment.Remove("BAYAN_SITE_REACH");
         else psi.Environment["BAYAN_SITE_REACH"] = reachPath;
+        return Exec(psi, limit);
+    }
+
+    private static Outcome Exec(ProcessStartInfo psi, TimeSpan limit)
+    {
+        psi.RedirectStandardOutput = true;
+        psi.RedirectStandardError = true;
+        psi.UseShellExecute = false;
         var clock = Stopwatch.StartNew();
         using var p = Process.Start(psi)!;
         _ = p.StandardOutput.ReadToEndAsync();

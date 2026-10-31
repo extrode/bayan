@@ -12,7 +12,7 @@ namespace Bayan.Testing;
 public sealed record ReportTiming(double BuildSeconds, double MeanMutantSeconds, double MaxMutantSeconds, double TotalSeconds, double MutantShareOfBuild);
 
 /// <summary>One mutant in the report; <see cref="Status"/> is killed, survived, timeout, marked or not_reached.</summary>
-public sealed record ReportMutant(SchemaSite Site, string Status, int? KilledBy, string? Suggestion);
+public sealed record ReportMutant(ExternalSite Site, string Status, int? KilledBy, string? Suggestion);
 
 /// <summary>One outcome of one condition; <see cref="Status"/> is hit, missed or unknown (a test timed out).</summary>
 public sealed record ReportBranch(int Line, int Column, bool Outcome, string Status);
@@ -61,7 +61,19 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
     };
 
     /// <summary>Builds the mutation report of <paramref name="result"/>; <paramref name="mutantSeconds"/> is each run mutant's wall time, in order.</summary>
-    public static QualityReport Mutation(string tool, MutationResult result, Schema schema, double buildSeconds, IReadOnlyList<double> mutantSeconds, double totalSeconds)
+    public static QualityReport Mutation(string tool, MutationResult result, Schema schema, double buildSeconds, IReadOnlyList<double> mutantSeconds, double totalSeconds) =>
+        Mutation(tool, result.Mutants.Select(m => (ExternalSite.From(m.Site), m.Status, m.KilledBy)).ToList(), schema.NotEmitted, buildSeconds, mutantSeconds, totalSeconds);
+
+    /// <summary>Builds the mutation report of an external-mode run (R3); the candidates not emitted are the results with that status.</summary>
+    public static QualityReport Mutation(string tool, IReadOnlyList<ExternalResult> results, double buildSeconds, double totalSeconds)
+    {
+        var notEmitted = results.Where(r => r.Status == MutantStatus.NotEmitted).GroupBy(r => r.Site.Operator).ToDictionary(g => g.Key, g => g.Count());
+        return Mutation(tool, results.Select(r => (r.Site, r.Status, (int?)null)).ToList(), notEmitted, buildSeconds,
+            results.Where(r => r.Status != MutantStatus.NotEmitted).Select(r => r.Seconds).ToList(), totalSeconds);
+    }
+
+    private static QualityReport Mutation(string tool, IReadOnlyList<(ExternalSite Site, MutantStatus Status, int? KilledBy)> mutants,
+        IReadOnlyDictionary<string, int> notEmitted, double buildSeconds, IReadOnlyList<double> mutantSeconds, double totalSeconds)
     {
         var mean = mutantSeconds.Count == 0 ? 0 : mutantSeconds.Average();
         var max = mutantSeconds.Count == 0 ? 0 : mutantSeconds.Max();
@@ -69,15 +81,20 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
         var byFile = new List<(string Path, List<ReportMutant> Mutants)>();
         var operators = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal);
         foreach (var op in Mutator.Operators) operators[op] = Counts.ToDictionary(c => c, _ => 0);
-        foreach (var (op, n) in schema.NotEmitted) operators[op]["not_emitted"] = n;
-        foreach (var m in result.Mutants)
+        foreach (var (op, n) in notEmitted)
         {
-            if (m.Status == MutantStatus.NotEmitted) continue;
-            var status = StatusName(m.Status);
-            operators[m.Site.Site.Operator][status]++;
-            var entry = new ReportMutant(m.Site, status, m.KilledBy, m.Status == MutantStatus.Survived ? Suggest(m.Site.Site.Operator) : null);
-            var i = byFile.FindIndex(f => f.Path == m.Site.Site.File);
-            if (i < 0) byFile.Add((m.Site.Site.File, [entry]));
+            if (!operators.ContainsKey(op)) operators[op] = Counts.ToDictionary(c => c, _ => 0);
+            operators[op]["not_emitted"] = n;
+        }
+        foreach (var (site, mutantStatus, killedBy) in mutants)
+        {
+            if (mutantStatus == MutantStatus.NotEmitted) continue;
+            var status = StatusName(mutantStatus);
+            if (!operators.ContainsKey(site.Operator)) operators[site.Operator] = Counts.ToDictionary(c => c, _ => 0);
+            operators[site.Operator][status]++;
+            var entry = new ReportMutant(site, status, killedBy, mutantStatus == MutantStatus.Survived ? Suggest(site.Operator) : null);
+            var i = byFile.FindIndex(f => f.Path == site.File);
+            if (i < 0) byFile.Add((site.File, [entry]));
             else byFile[i].Mutants.Add(entry);
         }
         var totals = Counts.ToDictionary(c => c, c => operators.Values.Sum(o => o[c]));
@@ -162,17 +179,17 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
                 w.WriteStartArray("mutants");
                 foreach (var m in f.Mutants)
                 {
-                    var s = m.Site.Site;
+                    var s = m.Site;
                     w.WriteStartObject();
                     w.WriteStartObject("site");
-                    w.WriteNumber("id", m.Site.Id);
+                    w.WriteNumber("id", s.Id);
                     w.WriteString("file", s.File);
                     w.WriteNumber("line", s.Line);
                     w.WriteNumber("column", s.Column);
                     w.WriteString("operator", s.Operator);
                     w.WriteString("original", s.Original);
                     w.WriteString("mutated", s.Mutated);
-                    if (m.Site.Unobservable is not null) w.WriteString("unobservable", m.Site.Unobservable);
+                    if (s.Unobservable is not null) w.WriteString("unobservable", s.Unobservable);
                     w.WriteEndObject();
                     w.WriteString("status", m.Status);
                     if (m.KilledBy is { } k) w.WriteNumber("killedBy", k);
@@ -288,6 +305,8 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
 
     private static string Where(MutationSite s) => $"{s.File}:{s.Line}:{s.Column}";
 
+    private static string Where(ExternalSite s) => $"{s.File}:{s.Line}:{s.Column}";
+
     private static string Fmt(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
 
     /// <summary>The terminal summary: totals, each survivor with its suggestion, per-operator counts, timing and the warnings.</summary>
@@ -297,7 +316,7 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
         sb.Append(CultureInfo.InvariantCulture, $"mutation: {Totals["killed"]} killed, {Totals["survived"]} survived, {Totals["timeout"]} timeout, {Totals["marked"]} marked, {Totals["not_reached"]} not reached, {Totals["not_emitted"]} not emitted\n");
         foreach (var m in Files.SelectMany(f => f.Mutants).Where(m => m.Status == "survived"))
         {
-            var s = m.Site.Site;
+            var s = m.Site;
             sb.Append(CultureInfo.InvariantCulture, $"survived: {Where(s)}: {s.Original} → {s.Mutated} [{s.Operator}]\n  suggestion: {m.Suggestion}\n");
         }
         sb.Append("operators:\n");

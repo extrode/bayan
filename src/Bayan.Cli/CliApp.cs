@@ -761,10 +761,12 @@ public static class CliApp
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName + "-mutate", HostTarget))
             : null;
+        var build = System.Diagnostics.Stopwatch.StartNew();
         if (BuildNative(source, o.Mode, stderr, output, json: o.Json) is not { } executable) return ExitToolchain;
         File.WriteAllText(Testing.Schemata.SitesPath(executable), schema.SitesJson());
         if (o.Run is not null)
-            return RunExternal(Testing.ExternalRunner.ReadSites(schema.SitesJson())!, ShellCommand(o.Run), executable, stdout, stderr);
+            return RunExternal(Testing.ExternalSite.ReadAll(schema.SitesJson())!, ShellCommand(o.Run), executable, "bayan test --mutate --run",
+                Path.Combine(compiled.ProjectRoot ?? (Directory.Exists(o.Path) ? Path.GetFullPath(o.Path) : Path.GetDirectoryName(Path.GetFullPath(o.Path))!), "out", "test"), build.Elapsed.TotalSeconds, stdout, stderr);
         var work = Directory.CreateTempSubdirectory("bayan-mutate-");
         try
         {
@@ -802,40 +804,45 @@ public static class CliApp
                     return ExitUsage;
             }
         }
-        if (binary is null || command.Length == 0)
+        if (binary is null || sites is null || command.Length == 0)
         {
             stderr.WriteLine(Messages.MutateBinaryUsage.Text());
             return ExitUsage;
         }
-        sites ??= Testing.Schemata.SitesPath(binary);
         foreach (var path in new[] { binary, sites })
             if (!File.Exists(path))
             {
                 stderr.WriteLine(Messages.NotFound.Text(path));
                 return ExitUsage;
             }
-        if (Testing.ExternalRunner.ReadSites(File.ReadAllText(sites)) is not { } map)
+        if (Testing.ExternalSite.ReadAll(File.ReadAllText(sites)) is not { } map)
         {
             stderr.WriteLine(Messages.MutateBadSites.Text(sites));
             return ExitUsage;
         }
-        return RunExternal(map, command, Path.GetFullPath(binary), stdout, stderr);
+        return RunExternal(map, command, Path.GetFullPath(binary), "bayan mutate",
+            Path.GetDirectoryName(Path.GetFullPath(binary))!, 0, stdout, stderr);
     }
 
     private static string[] ShellCommand(string command) =>
         OperatingSystem.IsWindows() ? ["cmd", "/c", command] : ["/bin/sh", "-c", command];
 
-    private static int RunExternal(IReadOnlyList<Testing.ExternalSite> sites, IReadOnlyList<string> command, string binary, TextWriter stdout, TextWriter stderr)
+    /// <summary>Runs the external command over <paramref name="sites"/>, prints a line per site and the report summary, and writes <c>bayan-quality.json</c> to <paramref name="reportDir"/>.</summary>
+    private static int RunExternal(IReadOnlyList<Testing.ExternalSite> sites, IReadOnlyList<string> command, string binary, string tool,
+        string reportDir, double buildSeconds, TextWriter stdout, TextWriter stderr)
     {
+        var total = System.Diagnostics.Stopwatch.StartNew();
         var environment = new Dictionary<string, string> { ["BAYAN_BINARY"] = binary };
-        var results = Testing.ExternalRunner.Run(sites, command, environment, TestTimeout, r => stdout.WriteLine(ExternalLine(r)));
+        var results = Testing.MutationRunner.RunExternal(sites, command, environment, TestTimeout, r => stdout.WriteLine(ExternalLine(r)));
         if (results is null)
         {
             stderr.WriteLine(Messages.MutateBaselineFailed.Text());
             return ExitFailure;
         }
-        var counts = Enum.GetValues<Testing.MutantStatus>().Select(s => (object)results.Count(r => r.Status == s)).ToArray();
-        stdout.WriteLine(Messages.MutateTotals.Text(counts));
+        var report = Testing.QualityReport.Mutation(tool, results, buildSeconds, total.Elapsed.TotalSeconds);
+        stdout.Write(report.Summary([]));
+        Directory.CreateDirectory(reportDir);
+        File.WriteAllText(Path.Combine(reportDir, "bayan-quality.json"), report.Json());
         return ExitOk;
     }
 
