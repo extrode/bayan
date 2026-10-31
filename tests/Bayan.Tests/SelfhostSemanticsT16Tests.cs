@@ -33,7 +33,6 @@ public sealed class SelfhostSemanticsT16Tests
             var b: i32 = 2
             const k: i32 = 5
             const kp: i32 = p
-            i32 t = 3
             let u: i32
             const v: i32
             var w
@@ -90,8 +89,6 @@ public sealed class SelfhostSemanticsT16Tests
         void misc(bool p) {
             defer {
             }
-            ;
-            else
             assert true
             assert p
             assert 3
@@ -99,22 +96,12 @@ public sealed class SelfhostSemanticsT16Tests
             assert 3 fails E
             assert zz fails E
             assert (p) fails E.bad
-            p
-            p if p
-            p unless p
-            p if 3
         }
 
         void seeded() {
             var s
             var t
             var w: i32
-        }
-
-        void dts() {
-            null
-            1
-            true
         }
 
         void uq() {
@@ -167,6 +154,36 @@ public sealed class SelfhostSemanticsT16Tests
 
         @exitCode(1)
         void x11() {
+        }
+
+        """;
+
+    /// <summary>
+    /// Inputs the C# parser reports (BYN1043, BYN1040, BYN1001, BYN1012), so <c>Compilation.Create</c> stops before declaring
+    /// (Compilation.cs:107); the oracle binds them with a fresh C# <c>Binder</c> and no function.
+    /// </summary>
+    private const string BrokenSource = """
+        void misc() {
+            ;
+            let p: bool = true
+            i32 t = 3
+            else
+            p
+            p if p
+            p unless p
+            p if 3
+        }
+
+        void dtsNull() {
+            null
+        }
+
+        void dtsInt() {
+            1
+        }
+
+        void dtsBool() {
+            true
         }
 
         """;
@@ -270,16 +287,19 @@ public sealed class SelfhostSemanticsT16Tests
 
     /// <summary>
     /// The locals from <paramref name="from"/> on: name, id, kind, type, `using`, the keyword span and the constant. A pattern
-    /// variable's type comes from T34's <c>unwrap</c> (calls3.byn:27), a stub, so it is not printed (Q599).
+    /// variable's type comes from T34's <c>unwrap</c> (calls3.byn:27), a stub that returns its input; the cases bind pattern
+    /// variables only on non-optional inputs, where the C# <c>Unwrap</c> returns its input too.
     /// </summary>
     private static void Locals(List<string> lines, FunctionSymbol fn, int from)
     {
-        foreach (var l in fn.Locals.Skip(from))
-        {
-            var type = l.Kind == LocalKind.PatternVariable ? "-" : l.Type.DisplayName;
-            var keyword = l.KeywordSpan is { } s ? $"{s.Start}..{s.End}" : "-";
-            lines.Add($"local {l.Name} {l.Id} {(int)l.Kind} {type} using {Lower(l.IsUsing)} keyword {keyword} const {l.Constant?.ToString() ?? "-"}");
-        }
+        foreach (var l in fn.Locals.Skip(from)) lines.Add(LocalLine(l));
+    }
+
+    private static string LocalLine(LocalSymbol l)
+    {
+        var type = l.Type.DisplayName;
+        var keyword = l.KeywordSpan is { } s ? $"{s.Start}..{s.End}" : "-";
+        return $"local {l.Name} {l.Id} {(int)l.Kind} {type} using {Lower(l.IsUsing)} keyword {keyword} const {l.Constant?.ToString() ?? "-"}";
     }
 
     /// <summary>The Bayan expression for a type the cases use.</summary>
@@ -342,11 +362,14 @@ public sealed class SelfhostSemanticsT16Tests
             var statements = fn.Decl!.Body!.Statements;
             seeds = Seeds.ToDictionary(s => (LocalDecl)statements[s.Statement], s => (TypeSymbol)s.Type);
         }
-        Call(o.Binder(fn, seeds), "BindFunctionBody", fn.Decl);
+        var binder = o.Binder(fn, seeds);
+        Call(binder, "BindFunctionBody", fn.Decl);
         var lines = new List<string>();
         Dump(lines, fn.Body);
         Locals(lines, fn, before);
         lines.AddRange(o.NewDiagnostics());
+        var handled = (Expr?)BinderType.GetField("_handled", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(binder);
+        lines.Add($"handled {(handled is null ? "-" : $"{handled.Span.Start}..{handled.Span.End}")}");
         return lines;
     }
 
@@ -370,10 +393,53 @@ public sealed class SelfhostSemanticsT16Tests
             sb.AppendLine("            bindFunctionBody(ref b, through: ref c, for: in d.value)");
             CloseFunction(sb);
             sb.AppendLine("    tcBody(ref c, for: f)");
+            sb.AppendLine("    var handled = \"-\"");
+            sb.AppendLine("    if (b.handled is { } h) { handled = $\"{h.start}..{h.end}\" }");
+            sb.AppendLine("    print($\"handled {handled}\")");
             sb.AppendLine("}");
         }
         sb.AppendLine("void bodiesAll() {");
         foreach (var name in BodyFunctions) sb.AppendLine($"    body{Camel(name)}()");
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    // ── Statements only the C# parser rejects (BindBlock with no function) ──────
+
+    private static List<string> ExpectedBroken()
+    {
+        var o = Oracle.Of("broken", BrokenSource);
+        var block = (BoundBlock)Call(o.Binder(null), "BindBlock", Fn(o, "misc").Body)!;
+        var lines = new List<string>();
+        Dump(lines, block);
+        foreach (var d in block.Statements.OfType<BoundLocalDecl>()) lines.Add(LocalLine(d.Local));
+        lines.AddRange(o.NewDiagnostics());
+        return lines;
+    }
+
+    private static string BrokenMain()
+    {
+        var o = Oracle.Of("broken", BrokenSource);
+        var sb = new StringBuilder();
+        sb.AppendLine("void brokenAll() {");
+        sb.AppendLine($"    var c = tcCtx({Literal(BrokenSource)})");
+        sb.AppendLine("    var b = tcBinder(-1)");
+        sb.AppendLine("    print(\"== broken\")");
+        OpenFunction(sb, o, "misc");
+        sb.AppendLine("            switch d.value.body {");
+        sb.AppendLine("                case .blockStmt(let blk):");
+        sb.AppendLine("                    let s = bindBlock(ref b, through: ref c, for: in blk.value)");
+        sb.AppendLine("                    tcDump(ref c, for: s, at: 0)");
+        sb.AppendLine("                    var decls = List<LocalId>()");
+        sb.AppendLine("                    for st in c.bBlocks[boundIndex(s)].statements {");
+        sb.AppendLine("                        if boundKind(st) == .localDecl { decls.append(c.bLocalDecls[boundIndex(st)].local) }");
+        sb.AppendLine("                    }");
+        sb.AppendLine("                    for l in decls { tcLocal(ref c, for: l) }");
+        sb.AppendLine("                default:");
+        sb.AppendLine("                    break");
+        sb.AppendLine("            }");
+        CloseFunction(sb);
+        sb.AppendLine("    tcDiags(in c, from: 0)");
         sb.AppendLine("}");
         return sb.ToString();
     }
@@ -417,11 +483,14 @@ public sealed class SelfhostSemanticsT16Tests
 
     // ── DefaultType ──────────────────────────────────────────────────────────────
 
+    /// <summary>One bare literal each, since the C# parser drops the rest of a block after BYN1012.</summary>
+    private static readonly string[] DefaultFunctions = ["dtsNull", "dtsInt", "dtsBool"];
+
     private static List<string> ExpectedDefaultTypes()
     {
-        var o = Oracle.Of("main", Source);
+        var o = Oracle.Of("broken", BrokenSource);
         var lines = new List<string>();
-        foreach (var s in Fn(o, "dts").Body!.Statements)
+        foreach (var s in DefaultFunctions.Select(f => Fn(o, f).Body!.Statements[0]))
         {
             var b = o.Binder(null);
             var e = ((ExprStmt)s).Expr;
@@ -434,18 +503,18 @@ public sealed class SelfhostSemanticsT16Tests
 
     private static string DefaultTypesMain()
     {
-        var o = Oracle.Of("main", Source);
+        var o = Oracle.Of("broken", BrokenSource);
         var sb = new StringBuilder();
         sb.AppendLine("void defaultTypesAll() {");
-        sb.AppendLine("    var c = tcSource()");
+        sb.AppendLine($"    var c = tcCtx({Literal(BrokenSource)})");
         sb.AppendLine("    print(\"== default types\")");
         sb.AppendLine("    var mark = 0");
-        for (var i = 0; i < Fn(o, "dts").Body!.Statements.Length; i++)
+        foreach (var name in DefaultFunctions)
         {
-            OpenFunction(sb, o, "dts");
+            OpenFunction(sb, o, name);
             sb.AppendLine("            switch d.value.body {");
             sb.AppendLine("                case .blockStmt(let blk):");
-            sb.AppendLine($"                    switch blk.value.statements[{i}] {{");
+            sb.AppendLine("                    switch blk.value.statements[0] {");
             sb.AppendLine("                        case .exprStmt(let e):");
             sb.AppendLine("                            var b = tcBinder(-1)");
             sb.AppendLine("                            let init = bindExpr(ref b, through: ref c, for: in e.value.expr)");
@@ -775,6 +844,161 @@ public sealed class SelfhostSemanticsT16Tests
         return sb.ToString();
     }
 
+    // ── IsBorrowedPlace ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A hand-built bound expression: `L`/`LH`/`LU` a local (i32, H, U), `D`/`DH`/`DS` a default (i32, H, `i32[]`), `this`, `bi:member`,
+    /// `field` (H.u), `tuple`, `index`, `conv`, `cond`, `coal`, `switch` (one arm per operand), `with`/`withu` (no update, `u`
+    /// replaced), `try`, `catch`. The binder reaches IsBorrowedPlace only through T36's `userElement` (Q599), so both sides build it.
+    /// </summary>
+    private sealed record PExpr(string Op, params PExpr[] Kids);
+
+    private static readonly PExpr PL = new("L"), PD = new("D");
+
+    private static PExpr P(string op, params PExpr[] kids) => new(op, kids);
+
+    private static readonly (string Name, PExpr Expr)[] BorrowCases =
+    [
+        ("local", PL), ("default", PD), ("this", P("this")), ("owned", P("bi:OwnedValue", PD)),
+        ("mapIndex", P("bi:MapIndex", PL)), ("mapIndexTemp", P("bi:MapIndex", PD)), ("resultValue", P("bi:ResultValue", PL)),
+        ("mapTryGet", P("bi:MapTryGet", PL)), ("listTryGet", P("bi:ListTryGet", PL)), ("listTryGetTemp", P("bi:ListTryGet", PD)),
+        ("stringLength", P("bi:StringLength", PL)), ("field", P("field", P("LH"))), ("fieldTemp", P("field", P("DH"))),
+        ("tuple", P("tuple", PL)), ("tupleTemp", P("tuple", PD)), ("indexSpan", P("index", P("DS"))), ("index", P("index", PL)),
+        ("indexTemp", P("index", PD)), ("conv", P("conv", PL)), ("convTemp", P("conv", PD)), ("condFalse", P("cond", PD, PL)),
+        ("condTrue", P("cond", PL, PD)), ("condTemp", P("cond", PD, PD)), ("coalRight", P("coal", PD, PL)), ("coalLeft", P("coal", PL, PD)),
+        ("coalTemp", P("coal", PD, PD)), ("switch", P("switch", PD, PL)), ("switchTemp", P("switch", PD, PD)), ("switchEmpty", P("switch")),
+        ("with", P("with", P("LH"))), ("withReplaced", P("withu", P("LH"))), ("withTemp", P("with", P("DH"))), ("withI32", P("with", PL)), ("withPlain", P("with", P("LU"))),
+        ("try", P("try", PL)), ("tryTemp", P("try", PD)), ("catchHandler", P("catch", PD, PL)), ("catchOperand", P("catch", PL, PD)),
+        ("catchTemp", P("catch", PD, PD)),
+    ];
+
+    private static List<string> ExpectedBorrowed()
+    {
+        var o = Oracle.Of("main", Source);
+        var syntax = o.Members[0];
+        var h = (StructSymbol)o.Module.Types["H"];
+        var u = h.Fields[0];
+        var l = new LocalSymbol("l", null, PrimitiveType.I32, LocalKind.Let);
+        var lh = new LocalSymbol("lh", null, h, LocalKind.Let);
+        var lu = new LocalSymbol("lu", null, u.Type, LocalKind.Let);
+        var isBorrowed = BinderType.GetMethod("IsBorrowedPlace", BindingFlags.Static | BindingFlags.NonPublic)!;
+        BoundExpr D(TypeSymbol t) => new BoundDefault(syntax, t);
+        BoundExpr Cs(PExpr p)
+        {
+            var k = p.Kids.Select(Cs).ToArray();
+            return p.Op switch
+            {
+                "L" => new BoundLocal(syntax, l),
+                "LH" => new BoundLocal(syntax, lh),
+                "LU" => new BoundLocal(syntax, lu),
+                "D" => D(PrimitiveType.I32),
+                "DH" => D(h),
+                "DS" => D(new SpanType(PrimitiveType.I32)),
+                "this" => new BoundThis(syntax, h),
+                "field" => new BoundField(syntax, k[0], u),
+                "tuple" => new BoundTupleElement(syntax, k[0], 0, PrimitiveType.I32),
+                "index" => new BoundIndex(syntax, k[0], D(PrimitiveType.I32), false, PrimitiveType.I32),
+                "conv" => new BoundConversion(syntax, k[0], PrimitiveType.I32, ConversionKind.Identity),
+                "cond" => new BoundConditional(syntax, D(PrimitiveType.Bool), k[0], k[1], PrimitiveType.I32),
+                "coal" => new BoundCoalesce(syntax, k[0], k[1], PrimitiveType.I32),
+                "switch" => new BoundSwitchExpr(syntax, D(PrimitiveType.I32),
+                    k.Select(v => new BoundSwitchArm(syntax, new BoundConstantPattern(syntax, PrimitiveType.I32, D(PrimitiveType.I32)), null, v)).ToArray(),
+                    PrimitiveType.I32),
+                "with" => new BoundWith(syntax, k[0], []),
+                "withu" => new BoundWith(syntax, k[0], [(u, D(u.Type))]),
+                "try" => new BoundTry(syntax, k[0], PrimitiveType.I32),
+                "catch" => new BoundCatch(syntax, k[0], null, null, k[1], PrimitiveType.I32),
+                _ => new BoundBuiltinCall(syntax, Enum.Parse<BuiltinMember>(p.Op[3..]), k[0], [], PrimitiveType.I32),
+            };
+        }
+        return BorrowCases.Select(c => $"borrowed {c.Name} {Lower((bool)isBorrowed.Invoke(null, [Cs(c.Expr)])!)}").ToList();
+    }
+
+    /// <summary>Bayan statements that build <paramref name="p"/> into a fresh `let`, returning its name.</summary>
+    private static string BayanPlace(StringBuilder sb, PExpr p, ref int n)
+    {
+        var k = new List<string>();
+        foreach (var kid in p.Kids) k.Add(BayanPlace(sb, kid, ref n));
+        var x = $"x{n++}";
+        var i32 = $"addDefault(ref c, from: BDefault {{ span: sp, type: prim(.i32) }})";
+        switch (p.Op)
+        {
+            case "L": sb.AppendLine($"    let {x} = addLocal(ref c, from: BLocal {{ span: sp, local: l, type: prim(.i32) }})"); break;
+            case "LH": sb.AppendLine($"    let {x} = addLocal(ref c, from: BLocal {{ span: sp, local: lh, type: structTypeOf(h) }})"); break;
+            case "LU": sb.AppendLine($"    let {x} = addLocal(ref c, from: BLocal {{ span: sp, local: lu, type: structTypeOf(u) }})"); break;
+            case "D": sb.AppendLine($"    let {x} = {i32}"); break;
+            case "DH": sb.AppendLine($"    let {x} = addDefault(ref c, from: BDefault {{ span: sp, type: structTypeOf(h) }})"); break;
+            case "DS": sb.AppendLine($"    let {x} = addDefault(ref c, from: BDefault {{ span: sp, type: internSpan(ref c, by: prim(.i32), readOnly: false) }})"); break;
+            case "this": sb.AppendLine($"    let {x} = addThis(ref c, from: BThis {{ span: sp, type: structTypeOf(h) }})"); break;
+            case "field": sb.AppendLine($"    let {x} = addField(ref c, from: BField {{ span: sp, receiver: {k[0]}, field: fu }})"); break;
+            case "tuple": sb.AppendLine($"    let {x} = addTupleElement(ref c, from: BTupleElement {{ span: sp, receiver: {k[0]}, index: 0, type: prim(.i32) }})"); break;
+            case "index":
+                sb.AppendLine($"    let {x}i = {i32}");
+                sb.AppendLine($"    let {x} = addIndex(ref c, from: BIndex {{ span: sp, target: {k[0]}, index: {x}i, type: prim(.i32) }})");
+                break;
+            case "conv": sb.AppendLine($"    let {x} = addConversion(ref c, from: BConversion {{ span: sp, operand: {k[0]}, type: prim(.i32), kind: .identity }})"); break;
+            case "cond":
+                sb.AppendLine($"    let {x}c = addDefault(ref c, from: BDefault {{ span: sp, type: prim(.bool) }})");
+                sb.AppendLine($"    let {x} = addConditional(ref c, from: BConditional {{ span: sp, condition: {x}c, whenTrue: {k[0]}, whenFalse: {k[1]}, type: prim(.i32) }})");
+                break;
+            case "coal": sb.AppendLine($"    let {x} = addCoalesce(ref c, from: BCoalesce {{ span: sp, left: {k[0]}, right: {k[1]}, type: prim(.i32) }})"); break;
+            case "switch":
+                sb.AppendLine($"    var {x}a = List<BSwitchArm>()");
+                for (var i = 0; i < k.Count; i++)
+                {
+                    sb.AppendLine($"    let {x}v{i} = {i32}");
+                    sb.AppendLine($"    let {x}p{i} = addConstantPattern(ref c, from: BConstantPattern {{ span: sp, inputType: prim(.i32), value: {x}v{i} }})");
+                    sb.AppendLine($"    {x}a.append(BSwitchArm {{ span: sp, pattern: {x}p{i}, value: {k[i]} }})");
+                }
+                sb.AppendLine($"    let {x}s = {i32}");
+                sb.AppendLine($"    let {x} = addSwitchExpr(ref c, from: BSwitchExpr {{ span: sp, value: {x}s, arms: move {x}a, type: prim(.i32) }})");
+                break;
+            case "with" or "withu":
+                sb.AppendLine($"    var {x}u = List<BWithUpdate>()");
+                if (p.Op == "withu")
+                {
+                    sb.AppendLine($"    let {x}v = addDefault(ref c, from: BDefault {{ span: sp, type: structTypeOf(u) }})");
+                    sb.AppendLine($"    {x}u.append(BWithUpdate {{ field: fu, value: {x}v }})");
+                }
+                sb.AppendLine($"    let {x} = addWith(ref c, from: BWith {{ span: sp, target: {k[0]}, updates: move {x}u }})");
+                break;
+            case "try": sb.AppendLine($"    let {x} = addTry(ref c, from: BTry {{ span: sp, operand: {k[0]}, type: prim(.i32) }})"); break;
+            case "catch": sb.AppendLine($"    let {x} = addCatch(ref c, from: BCatch {{ span: sp, operand: {k[0]}, handler: {k[1]}, type: prim(.i32) }})"); break;
+            default:
+                sb.AppendLine($"    let {x} = addBuiltinCall(ref c, from: BBuiltinCall {{ span: sp, member: .{char.ToLowerInvariant(p.Op[3])}{p.Op[4..]}, receiver: {k[0]}, type: prim(.i32) }})");
+                break;
+        }
+        return x;
+    }
+
+    private static string BorrowedMain()
+    {
+        var o = Oracle.Of("main", Source);
+        var u = IndexOf(o, d => d is StructDecl { Name.Text: "U" });
+        var h = IndexOf(o, d => d is StructDecl { Name.Text: "H" });
+        var sb = new StringBuilder();
+        sb.AppendLine("void borrowedAll() {");
+        sb.AppendLine("    var c = tcSource()");
+        sb.AppendLine("    let sp = TextSpan { start: 0, length: 0 }");
+        sb.AppendLine($"    let u = newStruct(ref c, by: StructSymbol {{ name: \"U\", module: 0, file: 0, declIndex: {u}, modifiers: 64 }})");
+        sb.AppendLine($"    c.structs[u].fields.append(newField(ref c, by: FieldSymbol {{ name: \"v\", owner: u, file: 0, declIndex: {u}, memberIndex: 0, type: prim(.i32) }}))");
+        sb.AppendLine($"    let h = newStruct(ref c, by: StructSymbol {{ name: \"H\", module: 0, file: 0, declIndex: {h} }})");
+        sb.AppendLine($"    let fu = newField(ref c, by: FieldSymbol {{ name: \"u\", owner: h, file: 0, declIndex: {h}, memberIndex: 0, type: structTypeOf(u) }})");
+        sb.AppendLine("    c.structs[h].fields.append(fu)");
+        sb.AppendLine("    let l = newLocal(ref c, by: LocalSymbol { name: \"l\", type: prim(.i32), kind: .letKeyword })");
+        sb.AppendLine("    let lh = newLocal(ref c, by: LocalSymbol { name: \"lh\", type: structTypeOf(h), kind: .letKeyword })");
+        sb.AppendLine("    let lu = newLocal(ref c, by: LocalSymbol { name: \"lu\", type: structTypeOf(u), kind: .letKeyword })");
+        sb.AppendLine("    print(\"== borrowed\")");
+        var n = 0;
+        foreach (var (name, expr) in BorrowCases)
+        {
+            var x = BayanPlace(sb, expr, ref n);
+            sb.AppendLine($"    print($\"borrowed {name} {{isBorrowedPlace(ref c, for: {x})}}\")");
+        }
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
     // ── The generated main ───────────────────────────────────────────────────────
 
     private static string Literal(string s)
@@ -792,14 +1016,16 @@ public sealed class SelfhostSemanticsT16Tests
         return sb.Append('"').ToString();
     }
 
-    private static string MainSource() => Prelude.Replace("$SOURCE", Literal(Source)) + BodiesMain() + ExitCodesMain()
-        + DefaultTypesMain() + UniqueMain() + NarrowMain() + """
+    private static string MainSource() => Prelude.Replace("$SOURCE", Literal(Source)) + BodiesMain() + BrokenMain() + ExitCodesMain()
+        + DefaultTypesMain() + UniqueMain() + NarrowMain() + BorrowedMain() + """
         i32 main() {
             bodiesAll()
+            brokenAll()
             exitCodesAll()
             defaultTypesAll()
             uniqueAll()
             narrowAll()
+            borrowedAll()
             return 0
         }
 
@@ -884,19 +1110,24 @@ public sealed class SelfhostSemanticsT16Tests
             if k == .doWhile { sb.append(tcTarget(in c, for: c.bDoWhiles[boundIndex(n)].target)) }
             if k == .ifStmt && c.bIfs[boundIndex(n)].isNever { sb.append(" never") }
             print($"{sb.finish()}")
-            for ch in children(in c, for: n) { tcDump(ref c, for: ch, at: depth + 1) }
+            var kids = List<BNode>()
+            for ch in children(in c, for: n) { kids.append(ch) }
+            for ch in kids { tcDump(ref c, for: ch, at: depth + 1) }
+        }
+
+        void tcLocal(ref Ctx c, for LocalId l) {
+            let type = typeDisplay(ref c, by: c.locals[l].type)
+            var keyword = "-"
+            if (c.locals[l].keywordSpan is { } s) { keyword = $"{s.start}..{s.end}" }
+            var constant = "-"
+            if (c.locals[l].constant is { } v) { constant = constantText(in v) }
+            print($"local {c.locals[l].name} {c.locals[l].id} {c.locals[l].kind.ordinal} {type} using {c.locals[l].isUsing} keyword {keyword} const {constant}")
         }
 
         void tcLocals(ref Ctx c, for FuncId f) {
-            for l in c.functions[f].locals {
-                var type = "-"
-                if c.locals[l].kind != .patternVariable { type = typeDisplay(ref c, by: c.locals[l].type) }
-                var keyword = "-"
-                if (c.locals[l].keywordSpan is { } s) { keyword = $"{s.start}..{s.end}" }
-                var constant = "-"
-                if (c.locals[l].constant is { } v) { constant = constantText(in v) }
-                print($"local {c.locals[l].name} {c.locals[l].id} {c.locals[l].kind.ordinal} {type} using {c.locals[l].isUsing} keyword {keyword} const {constant}")
-            }
+            var ls = List<LocalId>()
+            for l in c.functions[f].locals { ls.append(l) }
+            for l in ls { tcLocal(ref c, for: l) }
         }
 
         void tcBody(ref Ctx c, for FuncId f) {
@@ -909,7 +1140,7 @@ public sealed class SelfhostSemanticsT16Tests
             var sb = StrBuf()
             sb.append("check")
             for l in ls { sb.append($" {c.locals[l].name}={isNonNull(ref b, for: l)}") }
-            return sb.finish()
+            return $"{sb.finish()}"
         }
 
         """;
@@ -930,6 +1161,9 @@ public sealed class SelfhostSemanticsT16Tests
         SelfhostSemanticsHarness.AssertSection(Sections.Value, $"body {name}", ExpectedBody(name));
 
     [Fact]
+    public void BrokenStatementsMatch() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "broken", ExpectedBroken());
+
+    [Fact]
     public void ExitCodesMatch() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "exit codes", ExpectedExitCodes());
 
     [Fact]
@@ -938,14 +1172,11 @@ public sealed class SelfhostSemanticsT16Tests
     [Fact]
     public void UniqueConstMatches() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "unique", ExpectedUnique());
 
+    [Fact]
+    public void BorrowedPlacesMatch() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "borrowed", ExpectedBorrowed());
+
     [Theory]
     [MemberData(nameof(NarrowNames))]
     public void NarrowingMatches(string name) =>
         SelfhostSemanticsHarness.AssertSection(Sections.Value, $"narrow {name}", ExpectedNarrow(name));
-    [Fact]
-    public void Debug()
-    {
-        var o = Oracle.Of("main", Source);
-        Assert.Fail(string.Join("\n", o.Module.Functions.Keys) + "\n--\n" + string.Join("\n", o.C.Diagnostics.Items.Select(Diag)));
-    }
 }
