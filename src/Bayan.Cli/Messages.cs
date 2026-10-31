@@ -158,6 +158,16 @@ public static class Messages
     public static readonly Message TestModuleCountOne = Register("test.module-count.one", "{0} module");
     public static readonly Message TestModuleCountMany = Register("test.module-count.many", "{0} modules");
     public static readonly Message TestSkipped = Register("test.skipped", " ({0} in unchanged modules skipped)");
+    public static readonly Message MutateLine = Register("mutate.line", "{0}:{1}:{2} {3} `{4}` -> `{5}`: {6}");
+    public static readonly Message MutateTimeoutNote = Register("mutate.timeout-note", " (counted as killed)");
+    public static readonly Message MutateTotals = Register("mutate.totals", "{0} killed, {1} survived, {2} timeout, {3} not reached, {4} marked, {5} not emitted");
+    public static readonly Message MutateExcluded = Register("mutate.excluded", "test {0} does not pass unmutated; left out");
+    public static readonly Message MutateKilled = Register("mutate.killed", "killed");
+    public static readonly Message MutateSurvived = Register("mutate.survived", "survived");
+    public static readonly Message MutateTimeout = Register("mutate.timeout", "timeout");
+    public static readonly Message MutateNotReached = Register("mutate.not-reached", "not reached");
+    public static readonly Message MutateMarked = Register("mutate.marked", "marked");
+    public static readonly Message MutateNotEmitted = Register("mutate.not-emitted", "not emitted");
     public static readonly Message TestOnlyNoMatch = Register("test.only.no-match", "bayan: no test name contains {0}");
     public static readonly Message TestProgress = Register("test.progress", "testing {0}");
     public static readonly Message TestTimedOut = Register("test.timed-out", "timed out after {0:0} s");

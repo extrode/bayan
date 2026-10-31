@@ -144,13 +144,13 @@ public static class CliApp
         return ExitOk;
     }
 
-    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null);
+    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null, bool Mutate = false);
 
     internal static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false, bool allowVerbose = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
-        bool emitC = false, json = false, testJson = false, changed = false, all = false, verbose = false;
+        bool emitC = false, json = false, testJson = false, changed = false, all = false, verbose = false, mutate = false;
         string? baseRef = null;
         var only = new List<string>();
         var programArgs = Array.Empty<string>();
@@ -207,6 +207,9 @@ public static class CliApp
                 case "--json" when allowTestJson:
                     testJson = true;
                     break;
+                case "--mutate" when allowTestJson:
+                    mutate = true;
+                    break;
                 case "--only" when allowTestJson && i + 1 < args.Length:
                     only.Add(args[++i]);
                     break;
@@ -234,7 +237,7 @@ public static class CliApp
             stderr.WriteLine(Messages.NotFound.Text(path));
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null);
+        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null, mutate);
     }
 
     /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
@@ -585,6 +588,7 @@ public static class CliApp
     {
         if (ParseBuildOptions(args, stderr, allowOutput: false, allowTestJson: true, allowVerbose: true) is not { } o) return ExitUsage;
         if (Compile(o, stderr, includeTests: true) is not { } compiled) return ExitFailure;
+        if (o.Mutate) return MutateTests(o, compiled, stdout, stderr);
         var program = Lowerer.Lower(compiled.Compilation);
         var source = CEmitter.Emit(program, o.Mode == BuildMode.Debug);
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
@@ -684,6 +688,54 @@ public static class CliApp
             Toolchain.ReplaceFile(Path.Combine(testDir, "results.json"), temp => File.WriteAllText(temp, json));
         }
         return failed == 0 ? ExitOk : ExitTestFailure;
+    }
+
+    /// <summary>
+    /// <c>bayan test --mutate</c> (spec 013 R1): one schemata build, then every mutant run against the tests that reach it.
+    /// Prints a line per mutant and the totals; the site map is written beside the binary.
+    /// </summary>
+    private static int MutateTests(BuildOptions o, Compiled compiled, TextWriter stdout, TextWriter stderr)
+    {
+        var schema = Testing.Schemata.Build(compiled.Compilation);
+        var program = Lowerer.Lower(compiled.Compilation, schema.Switches);
+        var source = CEmitter.Emit(program, o.Mode == BuildMode.Debug);
+        var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
+            ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName + "-mutate", HostTarget))
+            : null;
+        if (BuildNative(source, o.Mode, stderr, output, json: o.Json) is not { } executable) return ExitToolchain;
+        File.WriteAllText(Testing.Schemata.SitesPath(executable), schema.SitesJson());
+        var work = Directory.CreateTempSubdirectory("bayan-mutate-");
+        try
+        {
+            var result = Testing.MutationRunner.Run(executable, schema, Enumerable.Range(0, program.Tests.Count).ToList(), work.FullName,
+                TestTimeout, m => stdout.WriteLine(MutantLine(m)));
+            foreach (var t in result.Excluded)
+                stderr.WriteLine(Messages.MutateExcluded.Text(program.Tests[t].Test.Name));
+            var counts = Enum.GetValues<Testing.MutantStatus>().Select(s => (object)result.Mutants.Count(m => m.Status == s)).ToArray();
+            stdout.WriteLine(Messages.MutateTotals.Text(counts));
+            return ExitOk;
+        }
+        finally
+        {
+            work.Delete(recursive: true);
+        }
+    }
+
+    private static string StatusName(Testing.MutantStatus s) => s switch
+    {
+        Testing.MutantStatus.Killed => Messages.MutateKilled.Text(),
+        Testing.MutantStatus.Survived => Messages.MutateSurvived.Text(),
+        Testing.MutantStatus.Timeout => Messages.MutateTimeout.Text(),
+        Testing.MutantStatus.NotReached => Messages.MutateNotReached.Text(),
+        Testing.MutantStatus.Marked => Messages.MutateMarked.Text(),
+        _ => Messages.MutateNotEmitted.Text(),
+    };
+
+    private static string MutantLine(Testing.MutantResult m)
+    {
+        var s = m.Site.Site;
+        return Messages.MutateLine.Text(s.File, s.Line, s.Column, s.Operator, s.Original, s.Mutated, StatusName(m.Status))
+            + (m.Status == Testing.MutantStatus.Timeout ? Messages.MutateTimeoutNote.Text() : "");
     }
 
     /// <summary>

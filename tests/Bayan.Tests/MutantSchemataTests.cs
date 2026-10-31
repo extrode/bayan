@@ -270,12 +270,12 @@ public sealed class MutantSchemataTests
         var dir = Path.Combine(Golden.RepoRoot, "tmp", "schemata");
         string C(string text, out Schema schema) => EmitSchemata(Compilation.Create([SourceText.FromString(Path.Combine(dir, "main.byn"), text)], dir), BuildMode.Safe, out schema);
         var plain = C("i32 f(i32 a) {\n    return a + 1\n}\n\nprint($\"{f(2)}\")\n", out _);
-        Assert.Contains("return ((byn_mutant == 1) ? ", plain);
-        Assert.DoesNotContain("if ((byn_mutant", plain);
+        Assert.Contains("return (byn_mutant_is(1) ? ", plain);
+        Assert.DoesNotContain("if (byn_mutant_is", plain);
         // `try` lowers to a failing call before the `+`: the `-` mutant gets its own call in its own branch.
         var prelude = C(Variants.Replace("return n", "return (try check(n - 1)) + 1"), out var schema);
         var site = Assert.Single(schema.Sites, s => s.Site.Operator == Mutator.Arithmetic && s.Site.Original == "(try check(n - 1)) + 1");
-        var branch = prelude.IndexOf($"if ((byn_mutant == {site.Id})) {{", StringComparison.Ordinal);
+        var branch = prelude.IndexOf($"if (byn_mutant_is({site.Id})) {{", StringComparison.Ordinal);
         Assert.True(branch >= 0, prelude);
         var body = prelude[branch..prelude.IndexOf("\n}\n", branch, StringComparison.Ordinal)];
         Assert.Equal(2, body.Split("= byn_main__check(").Length - 1);
