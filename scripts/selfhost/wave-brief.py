@@ -54,7 +54,7 @@ for t in sys.argv[2:]:
     files = owned_files(block)
     byns = [f for f in files if f.endswith('.byn')]
     tests = [f for f in files if f.endswith('.cs')]
-    paths = [f'selfhost/semantics/{f}' for f in byns] + [f'tests/Bayan.Tests/{f}' for f in tests]
+    paths = [f if f.startswith('selfhost/') else f'selfhost/semantics/{f}' for f in byns] + [f'tests/Bayan.Tests/{f}' for f in tests]
     allow = ','.join(paths + ['docs/bayan-handoff.md', 'docs/specs/010-self-hosted-semantics/010-tasks.md'])
     own_api = [l for l in api if re.match(rf'^- {t} ', l)]
     q = qrange(block)
