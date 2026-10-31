@@ -581,15 +581,17 @@ void checkOverloads(ref Ctx c, for ModId module) {
 
 // ── Compilation.cs:671 Overlap ──────────────────────────────────────────────────
 
-/// What `Overlap` reads of one parameter: C# `Label(p)`, and whether its `Syntax` is set (Q713) with a particle, a
-/// default or `...`.
+/// What `Overlap` reads of one parameter: C# `Label(p)` and its `Syntax`, `null` where the C# one is (Q713).
 struct T12Param {
     string label
-    // mutation-exempt: Q579
-    bool hasSyntax = false
-    bool hasParticle = false
-    bool hasDefault = false
-    bool isRest = false
+    T12Syntax? syntax = null
+}
+
+/// What `Overlap` reads of a parameter's C# `Syntax`: its particle, default and `...`.
+struct T12Syntax {
+    bool hasParticle
+    bool hasDefault
+    bool isRest
 }
 
 bool overlap(ref Ctx c, for FuncId a, as FuncId b) {
@@ -602,10 +604,10 @@ bool overlap(ref Ctx c, for FuncId a, as FuncId b) {
         if labels.contains(p.label) { shared[p.label] = true }
     }
     for p in pa {
-        if p.hasSyntax && p.hasParticle && !p.hasDefault && !shared.contains(p.label) { return false }
+        if (p.syntax is { } x) && x.hasParticle && !x.hasDefault && !shared.contains(p.label) { return false }
     }
     for p in pb {
-        if p.hasSyntax && p.hasParticle && !p.hasDefault && !shared.contains(p.label) { return false }
+        if (p.syntax is { } x) && x.hasParticle && !x.hasDefault && !shared.contains(p.label) { return false }
     }
     return t12MinPositional(in pa) <= t12MaxPositional(in pb) && t12MinPositional(in pb) <= t12MaxPositional(in pa)
 }
@@ -613,7 +615,7 @@ bool overlap(ref Ctx c, for FuncId a, as FuncId b) {
 i64 t12MinPositional(in List<T12Param> ps) {
     var n: i64 = 0
     for p in ps {
-        if p.hasSyntax && !p.hasParticle && !p.hasDefault && !p.isRest { n += 1 }
+        if (p.syntax is { } x) && !x.hasParticle && !x.hasDefault && !x.isRest { n += 1 }
     }
     return n
 }
@@ -621,8 +623,10 @@ i64 t12MinPositional(in List<T12Param> ps) {
 i64 t12MaxPositional(in List<T12Param> ps) {
     var n: i64 = 0
     for p in ps {
-        if p.hasSyntax && p.isRest { return 2147483647 }
-        if p.hasSyntax && !p.hasParticle { n += 1 }
+        if (p.syntax is { } x) {
+            if x.isRest { return 2147483647 }
+            if !x.hasParticle { n += 1 }
+        }
     }
     return n
 }
@@ -672,10 +676,11 @@ List<T12Param> t12FromSyntax(in Ctx c, for FuncId fn, from in List<parser.Param>
         if (ps[o].particle is { } part) { label = t12Text(in c, from: f, at: part) }
         result.append(T12Param {
             label: label,
-            hasSyntax: true,
-            hasParticle: ps[o].particle is not null,
-            hasDefault: ps[o].defaultKeyword is not .none,
-            isRest: ps[o].rest,
+            syntax: T12Syntax {
+                hasParticle: ps[o].particle is not null,
+                hasDefault: ps[o].defaultKeyword is not .none,
+                isRest: ps[o].rest,
+            },
         })
     }
     return result
