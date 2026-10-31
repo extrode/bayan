@@ -130,6 +130,49 @@ public sealed class SelfhostSemanticsT17Tests
         void qZz() => zzqqxx
         void qThis() => this
 
+        enum Color {
+            red
+            green
+        }
+
+        union Shape {
+            circle(f64 radius, f64 scale)
+            dot
+        }
+
+        struct Box {
+            void frobnicate() {
+            }
+        }
+
+        i32 ov(i32 a) => a
+
+        i32 ov(string s) => 0
+
+        void sigs2(Untrusted<string> us, List<Untrusted<string>> lu, Span<Untrusted<string>> su, Untrusted<string>[2] au, Untrusted<string>? ou, Color col, ((string) -> i32) fs, ((i32) -> i32)? fo) {
+        }
+
+        void qFrob() => frobnicat
+        void qOv() => ov
+        void qMapArr() => Map<string, u8[4]>
+        bool qCaught() => bare(1) catch switch {
+            _ => false,
+        }
+        void qLam() => x => x
+        void qKDecl() {
+            const k = 5
+        }
+        void qK() => k
+        void qFMax() => 1.7976931348623157e308
+        void qFSub() => 4.9e-324
+        void qF2p53() => 9007199254740993.0
+        void qFInf() => 1e400
+        void qI2p53() => 9007199254740993
+        void qI2p127() => 170141183460469231731687303715884105728
+        void qCharQ() => '\q'
+        void qCharSur() => '\u{D800}'
+        void qCharMax() => '\u{110000}'
+
         """;
 
     private sealed record Case(string Name, string Fn, string Op, string? Target = null, string? Target2 = null);
@@ -138,7 +181,10 @@ public sealed class SelfhostSemanticsT17Tests
     /// <c>expr</c>: <c>BindExpr(e, target)</c>; <c>stmt</c>: <c>BindStatementExpression(e)</c>; <c>conv</c>:
     /// <c>Convert(BindExpr(e), target, e.Span)</c>, then to <c>Target2</c> if set; <c>fn</c>: <c>Convert(BindExprFor(e, target), …)</c>;
     /// <c>nofn</c>: <c>BindExpr(e)</c> in a binder with no function but <c>Point</c>'s <c>this</c>; <c>it</c>: <c>BindExpr(e)</c> with
-    /// <c>_it</c> set to <c>Point.x</c>, as a refinement check sets it.
+    /// <c>_it</c> set to <c>Point.x</c>, as a refinement check sets it; <c>caught</c>/<c>caught-none</c>: <c>BindExpr</c> of the
+    /// <c>catch switch</c> subject with and without <c>_caught</c>; <c>lambda</c>: <c>BindExpr(e, target)</c>, diagnostics only (the
+    /// lambda itself is T35's <c>bindLambda</c>, express4.byn:18); <c>const</c>: <c>BindExpr(e)</c> after <c>DeclareLocal</c> of
+    /// <c>qKDecl</c>'s <c>const k</c> holding 5.
     /// </summary>
     private static readonly Case[] Cases =
     [
@@ -231,6 +277,28 @@ public sealed class SelfhostSemanticsT17Tests
         new("fn-constructor-take", "qPoint", "fn", "f1"),
         new("fn-distinct", "qSku", "fn", "f1"),
         new("fn-type-not-constructible", "qPrim", "fn", "f1"),
+        new("float-max", "qFMax", "expr"),
+        new("float-subnormal", "qFSub", "expr"),
+        new("float-2p53-plus-1", "qF2p53", "expr"),
+        new("float-infinity", "qFInf", "expr"),
+        new("int-2p53-plus-1-float-target", "qI2p53", "expr", "d"),
+        new("int-2p127", "qI2p127", "expr"),
+        new("int-2p127-int-target", "qI2p127", "expr", "small"),
+        new("char-bad-escape", "qCharQ", "expr"),
+        new("char-surrogate", "qCharSur", "expr"),
+        new("char-above-max", "qCharMax", "expr"),
+        new("name-typo-other-method", "qFrob", "expr"),
+        new("name-array-type-arg", "qMapArr", "expr"),
+        new("name-overloads", "qOv", "expr"),
+        new("fn-overload-second", "qOv", "fn", "fs"),
+        new("fn-overload-first", "qOv", "fn", "f1"),
+        new("caught", "qCaught", "caught"),
+        new("caught-none", "qCaught", "caught-none"),
+        new("lambda-function", "qLam", "lambda", "f1"),
+        new("lambda-optional-function", "qLam", "lambda", "fo"),
+        new("lambda-value", "qLam", "lambda", "i"),
+        new("lambda-none", "qLam", "lambda"),
+        new("name-const-local", "qK", "const"),
     ];
 
     private static string Dir => Path.Combine(Golden.RepoRoot, "tmp", "t17-oracle");
@@ -298,20 +366,7 @@ public sealed class SelfhostSemanticsT17Tests
         return $"{d.Code} {line}:{col} {d.Message} |{d.Label}|{d.Help}|{(d.Fix is null ? "" : $"fix {d.Fix.Span.Start}..{d.Fix.Span.End} {d.Fix.Replacement}")}";
     }
 
-    private static readonly Dictionary<string, string> KindRenames = new()
-    {
-        ["default"] = "defaultValue", ["this"] = "thisRef", ["with"] = "withExpr", ["is"] = "isExpr", ["move"] = "moveExpr",
-        ["try"] = "tryExpr", ["catch"] = "catchExpr", ["return"] = "returnStmt", ["fail"] = "failStmt", ["become"] = "becomeStmt",
-        ["break"] = "breakStmt", ["continue"] = "continueStmt", ["if"] = "ifStmt", ["while"] = "whileStmt", ["for"] = "forStmt",
-        ["switch"] = "switchStmt", ["defer"] = "deferStmt", ["assert"] = "assertStmt", ["errdefer"] = "errdeferStmt",
-        ["context"] = "contextStmt",
-    };
-
-    private static string KindName(System.Type t)
-    {
-        var n = char.ToLowerInvariant(t.Name["Bound".Length]) + t.Name["Bound".Length..][1..];
-        return KindRenames.GetValueOrDefault(n, n);
-    }
+    private static string KindName(System.Type t) => char.ToLowerInvariant(t.Name["Bound".Length]) + t.Name["Bound".Length..][1..];
 
     private static string Lower(bool b) => b ? "true" : "false";
 
@@ -332,6 +387,7 @@ public sealed class SelfhostSemanticsT17Tests
         }
         if (n is BoundLocal l) sb.Append($" {l.Local.Name}");
         if (n is BoundCall call) sb.Append($" {call.Function.Name}");
+        if (n is BoundFunctionRef fr) sb.Append($" {fr.Function.Name}({string.Join(", ", fr.Function.Parameters.Select(p => p.Type.DisplayName))})");
         lines.Add(sb.ToString());
         foreach (var ch in BoundTree.Children(n)) Dump(lines, ch, depth + 1);
     }
@@ -363,21 +419,41 @@ public sealed class SelfhostSemanticsT17Tests
         return (o.Module.Functions[fn][0], null, Fn(o, fn).ExpressionBody!);
     }
 
-    private static TypeSymbol Sig(Oracle o, string name) => o.Module.Functions["sigs"][0].Parameters.Single(p => p.Name == name).Type;
+    private static TypeSymbol Sig(Oracle o, string name) =>
+        o.Module.Functions["sigs"][0].Parameters.Concat(o.Module.Functions["sigs2"][0].Parameters).Single(p => p.Name == name).Type;
 
-    private static BoundExpr Convert(object binder, BoundExpr value, TypeSymbol target, TextSpan span) =>
-        (BoundExpr)Call(binder, "Convert", value, target, span, false, true)!;
+    private static BoundExpr Convert(object binder, BoundExpr value, TypeSymbol target, TextSpan span, bool argument = false) =>
+        (BoundExpr)Call(binder, "Convert", value, target, span, argument, true)!;
+
+    private static void SetField(object binder, string name, object? value) =>
+        BinderType.GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(binder, value);
+
+    /// <summary>The <c>catch switch</c> subject of <paramref name="e"/>, a <c>CaughtErrorExpr</c>.</summary>
+    private static Expr CaughtSubject(Expr e) => ((SwitchExpr)((CatchExpr)e).Handler).Value;
 
     private static List<string> ExpectedCase(Case k)
     {
         var o = Oracle.Of("main", Source);
         var (fn, container, e) = Site(o, k.Fn);
         var binder = o.Binder(k.Op == "nofn" ? null : fn, container);
-        if (k.Op == "it") BinderType.GetField("_it", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(binder, Point(o).Fields[0]);
+        if (k.Op == "it") SetField(binder, "_it", Point(o).Fields[0]);
+        if (k.Op.StartsWith("caught", StringComparison.Ordinal)) e = CaughtSubject(e);
+        if (k.Op == "caught") SetField(binder, "_caught", new LocalSymbol("e", null, o.Module.Types["LexError"], LocalKind.Let));
+        if (k.Op == "const")
+        {
+            var decl = (LocalDecl)Fn(o, "qKDecl").Body!.Statements[0];
+            var local = (LocalSymbol)Call(binder, "DeclareLocal", decl.Name, PrimitiveType.I32, LocalKind.Const)!;
+            local.Constant = new ConstantValue((Int128)5);
+        }
         var target = k.Target is null ? null : Sig(o, k.Target);
+        if (k.Op == "lambda")
+        {
+            Call(binder, "BindExpr", e, target);
+            return o.NewDiagnostics().ToList();
+        }
         var r = k.Op switch
         {
-            "expr" or "nofn" or "it" => (BoundExpr)Call(binder, "BindExpr", e, target)!,
+            "expr" or "nofn" or "it" or "caught" or "caught-none" or "const" => (BoundExpr)Call(binder, "BindExpr", e, target)!,
             "stmt" => (BoundExpr)Call(binder, "BindStatementExpression", e)!,
             "conv" => Convert(binder, (BoundExpr)Call(binder, "BindExpr", e, null)!, target!, e.Span),
             "fn" => Convert(binder, (BoundExpr)Call(binder, "BindExprFor", e, target)!, target!, e.Span),
@@ -403,6 +479,10 @@ public sealed class SelfhostSemanticsT17Tests
             case ErrorType: return "errorType()";
             case BuiltinType { DisplayName: "Symbol" }: return "builtinType(.symbol)";
             case StructSymbol s: return $"structTypeOf(s{s.Name})";
+            case EnumSymbol en: return $"enumTypeOf(e{en.Name})";
+            case UntrustedType u: return $"internUntrusted(ref c, by: {BayanType(sb, u.Inner, ref n)})";
+            case ListType l: return $"internList(ref c, by: {BayanType(sb, l.Element, ref n)})";
+            case Bayan.Semantics.Symbols.ArrayType a: return $"internArray(ref c, by: {BayanType(sb, a.Element, ref n)}, at: {a.Length})";
             case SpanType sp: return $"internSpan(ref c, by: {BayanType(sb, sp.Element, ref n)}, readOnly: {Lower(sp.ReadOnly)})";
             case Bayan.Semantics.Symbols.OptionalType opt: return $"internOptional(ref c, by: {BayanType(sb, opt.Inner, ref n)})";
             case FunctionType f:
@@ -422,14 +502,21 @@ public sealed class SelfhostSemanticsT17Tests
         }
     }
 
-    private static string FunctionVar(FunctionSymbol fn) =>
-        fn.Owner is { } s ? $"fn{s.Name}{(fn.Kind == FunctionKind.Constructor ? "Ctor" : Camel(fn.Name))}" : $"fn{Camel(fn.Name)}";
+    /// <summary>The Bayan variable of <paramref name="fn"/>; a free function's later overloads add their index.</summary>
+    private static string FunctionVar(FunctionSymbol fn)
+    {
+        if (fn.Owner is { } s) return $"fn{s.Name}{(fn.Kind == FunctionKind.Constructor ? "Ctor" : Camel(fn.Name))}";
+        var i = fn.Module.Functions[fn.Name].IndexOf(fn);
+        return $"fn{Camel(fn.Name)}{(i > 0 ? i.ToString() : "")}";
+    }
 
-    private static void BuildFunction(StringBuilder sb, FunctionSymbol fn, string kind, int decl, int member, string owner, ref int n)
+    /// <summary>What T11's stubbed <c>declareSignature</c>/<c>declareParameters</c> would set on <paramref name="fn"/> (declare2.byn:15, :18).</summary>
+    private static void Signature(StringBuilder sb, FunctionSymbol fn, ref int n)
     {
         var v = FunctionVar(fn);
         var ret = BayanType(sb, fn.ReturnType, ref n);
-        sb.AppendLine($"    let {v} = newFunction(ref c, by: FunctionSymbol {{ name: \"{fn.Name}\", module: 0, kind: .{kind}, file: 0, declIndex: {decl}, memberIndex: {member}, owner: {owner}, isStatic: {Lower(fn.IsStatic)}, returnType: {ret}, hasFails: {Lower(fn.Fails)} }})");
+        sb.AppendLine($"    c.functions[{v}].returnType = {ret}");
+        sb.AppendLine($"    c.functions[{v}].hasFails = {Lower(fn.Fails)}");
         foreach (var s in fn.ErrorSets) sb.AppendLine($"    c.functions[{v}].errorSets.append(e{s.Name})");
         foreach (var tp in fn.TypeParameters) sb.AppendLine($"    c.functions[{v}].typeParams.append(newTypeParam(ref c, by: TypeParam {{ name: \"{tp.Name}\" }}))");
         foreach (var p in fn.Parameters)
@@ -439,50 +526,66 @@ public sealed class SelfhostSemanticsT17Tests
         }
     }
 
-    /// <summary>Bayan statements that declare the oracle source's types and free functions into module 0 of `c`.</summary>
+    /// <summary>
+    /// Bayan statements that declare the oracle source's types and free functions into module 0 of `c` as T11's declare pass
+    /// does: each free function through <c>addFunction</c> (compile.byn:1115) then <c>checkOverloads</c> (declare.byn:571), each
+    /// struct's members through <c>declareMembers</c> (declare.byn:13), the union's variants through <c>declareUnionVariants</c>
+    /// (declare.byn:457); only what the stubbed <c>declareSignature</c>/<c>declareParameters</c> would set is filled by hand.
+    /// </summary>
     private static string Symbols(Oracle o)
     {
         var sb = new StringBuilder();
         var n = 0;
-        var pointDecl = IndexOf(o, d => d is StructDecl { Name.Text: "Point" });
-        var skuDecl = IndexOf(o, d => d is TypeAliasDecl { Name.Text: "Sku" });
         var lexDecl = IndexOf(o, d => d is ErrorSetDecl { Name.Text: "LexError" });
-        sb.AppendLine($"    let sPoint = newStruct(ref c, by: StructSymbol {{ name: \"Point\", module: 0, file: 0, declIndex: {pointDecl} }})");
-        sb.AppendLine("    c.modules[0].types[\"Point\"] = structTypeOf(sPoint)");
-        sb.AppendLine("    c.modules[0].structs.append(sPoint)");
-        sb.AppendLine($"    let sSku = newStruct(ref c, by: StructSymbol {{ name: \"Sku\", module: 0, file: 0, declIndex: {skuDecl} }})");
-        sb.AppendLine("    c.modules[0].types[\"Sku\"] = structTypeOf(sSku)");
-        sb.AppendLine("    c.modules[0].structs.append(sSku)");
+        var colorDecl = IndexOf(o, d => d is EnumDecl { Name.Text: "Color" });
+        var shapeDecl = IndexOf(o, d => d is UnionDecl { Name.Text: "Shape" });
+        var structs = new[] { "Point", "Sku", "Box" };
+        foreach (var name in structs)
+        {
+            var decl = IndexOf(o, d => d is StructDecl sd && sd.Name.Text == name || d is TypeAliasDecl ta && ta.Name.Text == name);
+            sb.AppendLine($"    let s{name} = newStruct(ref c, by: StructSymbol {{ name: \"{name}\", module: 0, file: 0, declIndex: {decl} }})");
+            sb.AppendLine($"    c.modules[0].types[\"{name}\"] = structTypeOf(s{name})");
+            sb.AppendLine($"    c.modules[0].structs.append(s{name})");
+        }
         sb.AppendLine("    c.distinct[sSku] = 1");
-        sb.AppendLine($"    c.structs[sSku].fields.append(newField(ref c, by: FieldSymbol {{ name: \"value\", owner: sSku, file: 0, declIndex: {skuDecl}, memberIndex: 0, type: prim(.string) }}))");
         sb.AppendLine($"    let eLexError = newErrorSet(ref c, by: ErrorSetSymbol {{ name: \"LexError\", module: 0, file: 0, declIndex: {lexDecl} }})");
         sb.AppendLine("    c.modules[0].types[\"LexError\"] = errorSetTypeOf(eLexError)");
         sb.AppendLine("    c.modules[0].errorSets.append(eLexError)");
-        var point = Point(o);
-        var members = PointDecl(o).Members;
-        foreach (var field in point.Fields)
+        sb.AppendLine($"    let eColor = newEnum(ref c, by: EnumSymbol {{ name: \"Color\", module: 0, file: 0, declIndex: {colorDecl} }})");
+        sb.AppendLine("    c.modules[0].types[\"Color\"] = enumTypeOf(eColor)");
+        sb.AppendLine("    c.modules[0].enums.append(eColor)");
+        sb.AppendLine($"    let uShape = newUnion(ref c, by: UnionSymbol {{ name: \"Shape\", module: 0, file: 0, declIndex: {shapeDecl} }})");
+        sb.AppendLine("    c.modules[0].types[\"Shape\"] = unionTypeOf(uShape)");
+        sb.AppendLine("    c.modules[0].unions.append(uShape)");
+        sb.AppendLine("    declareUnionVariants(ref c, for: uShape)");
+        foreach (var name in structs) sb.AppendLine($"    declareMembers(ref c, for: s{name})");
+        foreach (var name in new[] { "Point", "Box" })
         {
-            var x = Array.FindIndex(members, m => m is FieldDecl fd && fd.Name.Text == field.Name);
-            var type = BayanType(sb, field.Type, ref n);
-            sb.AppendLine($"    c.structs[sPoint].fields.append(newField(ref c, by: FieldSymbol {{ name: \"{field.Name}\", owner: sPoint, file: 0, declIndex: {pointDecl}, memberIndex: {x}, type: {type} }}))");
-        }
-        var ctor = point.Constructors[0];
-        BuildFunction(sb, ctor, "constructor", pointDecl, Array.FindIndex(members, m => m is ConstructorDecl), "sPoint", ref n);
-        sb.AppendLine($"    c.structs[sPoint].constructors.append({FunctionVar(ctor)})");
-        foreach (var m in point.Methods)
-        {
-            BuildFunction(sb, m, "method", pointDecl, Array.FindIndex(members, d => d is FunctionDecl fd && fd.Name.Text == m.Name), "sPoint", ref n);
-            sb.AppendLine($"    c.structs[sPoint].methods.append({FunctionVar(m)})");
+            var st = (StructSymbol)o.Module.Types[name];
+            foreach (var ctor in st.Constructors)
+            {
+                sb.AppendLine($"    let {FunctionVar(ctor)} = c.structs[s{name}].constructors[0]");
+                Signature(sb, ctor, ref n);
+            }
+            foreach (var m in st.Methods)
+            {
+                sb.AppendLine($"    let {FunctionVar(m)} = tcMethod(in c, of: s{name}, by: \"{m.Name}\")");
+                Signature(sb, m, ref n);
+            }
         }
         foreach (var (name, fns) in o.Module.Functions)
         {
-            var decl = IndexOf(o, d => d is FunctionDecl fd && fd.Name.Text == name);
-            BuildFunction(sb, fns[0], "function", decl, -1, "-1", ref n);
-            sb.AppendLine($"    var list{Camel(name)} = List<FuncId>()");
-            sb.AppendLine($"    list{Camel(name)}.append({FunctionVar(fns[0])})");
-            sb.AppendLine($"    c.modules[0].functions[\"{name}\"] = move list{Camel(name)}");
-            sb.AppendLine($"    c.modules[0].allFunctions.append({FunctionVar(fns[0])})");
+            var decls = o.Members.OfType<FunctionDecl>().Where(fd => fd.Name.Text == name).ToArray();
+            for (var i = 0; i < fns.Count; i++)
+            {
+                var v = FunctionVar(fns[i]);
+                var decl = Array.IndexOf(o.Members, decls[i]);
+                sb.AppendLine($"    let {v} = newFunction(ref c, by: FunctionSymbol {{ name: \"{name}\", nameSpan: {Span(decls[i].Name.Span)}, span: {Span(decls[i].Name.Span)}, module: 0, kind: .function, file: 0, declIndex: {decl} }})");
+                sb.AppendLine($"    addFunction(ref c, from: 0, at: {Span(decls[i].Name.Span)}, for: {v})");
+                Signature(sb, fns[i], ref n);
+            }
         }
+        sb.AppendLine("    checkOverloads(ref c, for: 0)");
         return sb.ToString();
     }
 
@@ -530,6 +633,13 @@ public sealed class SelfhostSemanticsT17Tests
             sb.AppendLine("    t15CaptureTypes(ref b, through: ref c)");
             sb.AppendLine("    pushScope(ref b)");
             if (k.Op == "it") sb.AppendLine("    b.itField = c.structs[sPoint].fields[0]");
+            if (k.Op == "caught") sb.AppendLine("    b.caught = newLocal(ref c, by: LocalSymbol { name: \"e\", type: errorSetTypeOf(eLexError), kind: .letKeyword })");
+            if (k.Op == "const")
+            {
+                var decl = (LocalDecl)Fn(o, "qKDecl").Body!.Statements[0];
+                sb.AppendLine($"    let kl = declareLocal(ref b, through: ref c, at: {Span(decl.Name.Span)}, as: prim(.i32), for: .constKeyword)");
+                sb.AppendLine("    c.locals[kl].constant = Constant { kind: .integer, integer: bigFromI64(5) }");
+            }
             var n = 100;
             var target = k.Target is null ? "-1" : BayanType(sb, Sig(o, k.Target), ref n);
             sb.AppendLine($"    let target = {target}");
@@ -541,19 +651,33 @@ public sealed class SelfhostSemanticsT17Tests
             sb.AppendLine("    let mark = c.diagnostics.length");
             sb.AppendLine($"    print(\"== case {k.Name}\")");
             var body = new StringBuilder();
-            body.AppendLine("            let span = t17ExprSpan(in $E)");
+            body.AppendLine("            let span = parser.exprSpan(in $E)");
             var r = k.Target2 is null ? "let r" : "var r";
             body.AppendLine((k.Op switch
             {
-                "expr" or "nofn" or "it" => "            $R = bindExpr(ref b, through: ref c, for: in $E, to: target)",
+                "expr" or "nofn" or "it" or "caught" or "caught-none" or "const" or "lambda" => "            $R = bindExpr(ref b, through: ref c, for: in $E, to: target)",
                 "stmt" => "            $R = bindStatementExpression(ref b, through: ref c, for: in $E)",
                 "conv" => "            $R = convert(ref b, through: ref c, for: bindExpr(ref b, through: ref c, for: in $E), to: target, at: span)",
                 "fn" => "            $R = convert(ref b, through: ref c, for: bindExprFor(ref b, through: ref c, for: in $E, to: target), to: target, at: span)",
                 _ => throw new InvalidOperationException(k.Op),
             }).Replace("$R", r));
             if (k.Target2 is not null) body.AppendLine("            r = convert(ref b, through: ref c, for: r, to: target2, at: span)");
-            body.Append("            tcDump(ref c, for: r, at: 0)");
-            AtExpression(sb, o, k.Fn, body.ToString());
+            body.Append(k.Op == "lambda" ? "            let _ = r" : "            tcDump(ref c, for: r, at: 0)");
+            var text = body.ToString();
+            if (k.Op.StartsWith("caught", StringComparison.Ordinal))
+                text = string.Join("\n",
+                    "            switch $E {",
+                    "                case .catchExpr(let ce):",
+                    "                    switch ce.value.handler {",
+                    "                        case .switchExpr(let sw):",
+                    text.Replace("$E", "sw.value.value"),
+                    "                        default:",
+                    "                            break",
+                    "                    }",
+                    "                default:",
+                    "                    break",
+                    "            }");
+            AtExpression(sb, o, k.Fn, text);
             sb.AppendLine("    tcDiags(in c, from: mark)");
             sb.AppendLine("}");
         }
@@ -913,6 +1037,66 @@ public sealed class SelfhostSemanticsT17Tests
             }
         }
 
+        /// The C# node's class name without `Bound`, first letter lowered: where the Bayan kind is renamed to dodge a keyword.
+        string tcKindName(BoundKind k) {
+            switch k {
+                case .defaultValue:
+                    return "default"
+                case .thisRef:
+                    return "this"
+                case .withExpr:
+                    return "with"
+                case .isExpr:
+                    return "is"
+                case .moveExpr:
+                    return "move"
+                case .tryExpr:
+                    return "try"
+                case .catchExpr:
+                    return "catch"
+                case .returnStmt:
+                    return "return"
+                case .failStmt:
+                    return "fail"
+                case .becomeStmt:
+                    return "become"
+                case .breakStmt:
+                    return "break"
+                case .continueStmt:
+                    return "continue"
+                case .ifStmt:
+                    return "if"
+                case .whileStmt:
+                    return "while"
+                case .forStmt:
+                    return "for"
+                case .switchStmt:
+                    return "switch"
+                case .deferStmt:
+                    return "defer"
+                case .assertStmt:
+                    return "assert"
+                case .errdeferStmt:
+                    return "errdefer"
+                case .contextStmt:
+                    return "context"
+                default:
+                    return $"{k}"
+            }
+        }
+
+        FuncId tcMethod(in Ctx c, of StructId s, by string name) {
+            for m in c.structs[s].methods {
+                if c.functions[m].name == name { return m }
+            }
+            panic("internal error: the struct has the method")
+        }
+
+        BExpr tcLocalOf(ref Ctx c, by string name, at TextSpan span, as Type type) {
+            let l = newLocal(ref c, by: LocalSymbol { name: name, type: type, kind: .letKeyword })
+            return addLocal(ref c, from: BLocal { span: span, local: l, type: type })
+        }
+
         void tcDump(ref Ctx c, for BNode n, at i64 depth) {
             var sb = StrBuf()
             for i in 0..depth { sb.append("  ") }
@@ -923,13 +1107,22 @@ public sealed class SelfhostSemanticsT17Tests
             }
             let k = boundKind(n)
             let span = nodeSpan(in c, for: n)
-            sb.append($"{k} {span.start}..{span.end}")
+            sb.append($"{tcKindName(k)} {span.start}..{span.end}")
             if isExprKind(k) {
                 sb.append($" : {typeDisplay(ref c, by: exprType(in c, for: n))}")
                 if (exprConstant(in c, for: n) is { } v) { sb.append($" = {constantText(in v)}") }
             }
             if k == .local { sb.append($" {c.locals[c.bLocals[boundIndex(n)].local].name}") }
             if k == .call { sb.append($" {c.functions[c.bCalls[boundIndex(n)].function].name}") }
+            if k == .functionRef {
+                let f = c.bFunctionRefs[boundIndex(n)].function
+                var ps = StrBuf()
+                for i in 0..c.functions[f].parameters.length {
+                    if i > 0 { ps.append(", ") }
+                    ps.append(typeDisplay(ref c, by: c.locals[c.functions[f].parameters[i]].type))
+                }
+                sb.append($" {c.functions[f].name}({ps.finish()})")
+            }
             print($"{sb.finish()}")
             for ch in children(in c, for: n) { tcDump(ref c, for: ch, at: depth + 1) }
         }

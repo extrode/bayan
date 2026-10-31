@@ -670,7 +670,7 @@ BExpr bindLiteral(ref Binder b, through ref Ctx c, for in parser.LiteralExpr l, 
             }
             return t17CheckedIntegerLiteral(ref b, through: ref c, for: in l, at: wholeSpan, by: parsed, as: natural)
         case .floatKeyword:
-            var value = t17ParseFloat(l.text)
+            var value = f64.tryParse(l.text.replaced("_", by: "")) ?? panic("internal error: a float literal's text parses")
             if negate { value = -value }
             let suffixText = l.suffix is { } fs ? t15Text(in c, from: b.file, at: fs) : ""
             if suffixText == "f" || (target != -1 && target == prim(.f32)) {
@@ -682,7 +682,7 @@ BExpr bindLiteral(ref Binder b, through ref Ctx c, for in parser.LiteralExpr l, 
             }
             return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.f64), by: Constant { kind: .real, real: value }), from: in l)
         case .char:
-            let value = t17DecodeChar(l.text)
+            let value = parser.decodeChar(l.text.bytes)
             if value < 0 { return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l) }
             if target != -1 && target == prim(.u8) && value < 0x80 {
                 return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.u8), by: Constant { kind: .integer, integer: bigFromI64(value) }), from: in l)
@@ -721,7 +721,9 @@ BExpr t17FromLiteral(ref Ctx c, for BExpr n, from in parser.LiteralExpr l) {
 BExpr t17CheckedIntegerLiteral(ref Binder b, through ref Ctx c, for in parser.LiteralExpr l, at TextSpan span, by Big value, as PrimitiveKind typeKind) {
     let r = range(typeKind)
     if bigCmp(value, as: r.min) < 0 || bigCmp(value, as: r.max) > 0 {
-        report(ref b, through: ref c, for: .literalOutOfRange, at: span, by: (bigText(value), $"`{primitiveName(typeKind)}`", "", "", ""), help: t17RangeHelp(typeKind))
+        // Above 2^127-1 `value` is a truncated prefix; the text gives the exact digits (C# BigInteger).
+        let text = bigParse(l.text).overflow ? $"{bigIsNeg(value) ? "-" : ""}{literalDecimalText(l.text)}" : bigText(value)
+        report(ref b, through: ref c, for: .literalOutOfRange, at: span, by: (text, $"`{primitiveName(typeKind)}`", "", "", ""), help: t17RangeHelp(typeKind))
         return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l)
     }
     return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(typeKind), by: Constant { kind: .integer, integer: value }), from: in l)
@@ -926,10 +928,22 @@ parser.TypeSyntax t17CloneTypeSyntax(in parser.TypeSyntax t) {
             var states = List<TextSpan>()
             for x in r.value.states { states.append(x) }
             return parser.TypeSyntax.refinedType(Owned(RefinedType { span: r.value.span, inner: t17CloneTypeSyntax(in r.value.inner), states: move states }))
-        case .arrayType(let _):
-            panic("internal error: an array type argument's size expression cannot be cloned (Q603)")
+        case .arrayType(let a):
+            return parser.TypeSyntax.arrayType(Owned(parser.ArrayType { span: a.value.span, element: t17CloneTypeSyntax(in a.value.element), size: t17CloneSizeExpr(in a.value.size) }))
         case .none:
             return parser.TypeSyntax.none
+    }
+}
+
+/// An array type's size: the parser takes an integer literal or a name there (`T[4]`, `T[N]`).
+parser.Expr t17CloneSizeExpr(in parser.Expr e) {
+    switch e {
+        case .literalExpr(let l):
+            return parser.Expr.literalExpr(Owned(parser.LiteralExpr { span: l.value.span, kind: l.value.kind, text: l.value.text, suffix: l.value.suffix }))
+        case .nameExpr(let n):
+            return parser.Expr.nameExpr(Owned(parser.NameExpr { span: n.value.span, name: n.value.name, typeArgs: List<parser.TypeSyntax>() }))
+        default:
+            panic("internal error: an array size is a literal or a name")
     }
 }
 
@@ -948,8 +962,7 @@ void t17ReportUndefined(ref Binder b, through ref Ctx c, for TextSpan nameSpan) 
         for mId in c.structs[s].methods { candidates.append(c.functions[mId].name) }
     }
     let m = c.files[b.file].module
-    // The keys of `functions`: iterating that map copies each unique `List<FuncId>` (BYN2780); `suggest` drops repeats.
-    for fn in c.modules[m].allFunctions { candidates.append(c.functions[fn].name) }
+    for e in c.modules[m].functions { candidates.append(e.key) }
     for (k, _) in c.modules[m].constants { candidates.append(k) }
     for (k, _) in c.modules[m].types { candidates.append(k) }
     for (k, _) in c.files[b.file].imports { candidates.append(k) }
@@ -974,7 +987,7 @@ string? suggest(string name, by in List<string> candidates) {
         if listContainsString(in seen, by: c) { continue }
         seen.append(c)
         if c == name { continue }
-        let d = t17Distance(t17Lower(name), as: t17Lower(c))
+        let d = t17Distance(name.lowercased(), as: c.lowercased())
         if d < bestDistance {
             best = c
             bestDistance = d
