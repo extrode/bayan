@@ -319,3 +319,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 010 T28: delete the dead `Map<i64, i64> conformancesChecked` at ctx.byn:356 (Q585/Q723; guard check C blocks it before then).
 - 010 T14 LOW (review 3): `t14InsertMember`'s `.trimmed().isEmpty` (conformance.byn:469) strips ASCII whitespace only; C# `IsNullOrWhiteSpace` also counts Unicode whitespace (Conformance.cs:225). Reachable only from a source with a lex error.
 - 010 T14 LOW (review 3): Q586 says `popBag` "drops" the quiet bag; it only restores the sink, and the bag stays in `c.bags` (diag.byn:53-57). Fix the wording.
+- 010 T14 owed cases now that T12's `declareMembers` is ported (Q723 (2), (5)): BYN2780 on an instance (`Box<T> : IList` with a `T items` field, instantiated with `List<i64>`) and `t14Drop`'s left-in-arena path (an interface getter typed `Box<Item>`) in SelfhostSemanticsT14Tests.cs.
