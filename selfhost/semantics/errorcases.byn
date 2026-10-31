@@ -11,8 +11,11 @@ BExpr bindErrorNew(ref Binder b, through ref Ctx c, for in parser.CallExpr call,
 // stub: T22 ports BinderErrors.cs:36 BindPayload
 BExpr bindPayload(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by BExpr variant) => -1
 
-// stub: T22 ports BinderErrors.cs:59 Built
-BExpr built(ref Binder b, through ref Ctx c, for BExpr value, from in parser.Expr syntax) => -1
+/// C# `Built` (BinderErrors.cs:59-63). Pre-ported for T17 (callers use its result directly); T22 must not rewrite it.
+BExpr built(ref Binder b, through ref Ctx c, for BExpr value, from in parser.Expr syntax) {
+    let _ = checkPayloadGiven(ref b, through: ref c, for: value, from: in syntax)
+    return value
+}
 
 // stub: T22 ports BinderErrors.cs:49 CheckPayloadGiven
 bool checkPayloadGiven(ref Binder b, through ref Ctx c, for BExpr error, from in parser.Expr syntax) => true
