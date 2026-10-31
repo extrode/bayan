@@ -143,6 +143,7 @@ public sealed class SelfhostSemanticsT17Tests
         struct Box {
             void frobnicate() {
             }
+            void tga() => gen<string, u8[4]>
         }
 
         i32 ov(i32 a) => a
@@ -154,21 +155,24 @@ public sealed class SelfhostSemanticsT17Tests
 
         void qFrob() => frobnicat
         void qOv() => ov
-        void qMapArr() => Map<string, u8[4]>
         bool qCaught() => bare(1) catch switch {
             _ => false,
         }
-        void qLam() => x => x
         void qKDecl() {
             const k = 5
         }
         void qK() => k
         void qFMax() => 1.7976931348623157e308
         void qFSub() => 4.9e-324
-        void qF2p53() => 9007199254740993.0
+        void qFBig53() => 9007199254740993.0
         void qFInf() => 1e400
-        void qI2p53() => 9007199254740993
-        void qI2p127() => 170141183460469231731687303715884105728
+        void qIBig53() => 9007199254740993
+        void qIBig127() => 170141183460469231731687303715884105728
+
+        """;
+
+    /// <summary>Char literals the lexer rejects; a file with lex errors is not declared, so they live apart from <see cref="Source"/>.</summary>
+    private const string BadChars = """
         void qCharQ() => '\q'
         void qCharSur() => '\u{D800}'
         void qCharMax() => '\u{110000}'
@@ -182,8 +186,7 @@ public sealed class SelfhostSemanticsT17Tests
     /// <c>Convert(BindExpr(e), target, e.Span)</c>, then to <c>Target2</c> if set; <c>fn</c>: <c>Convert(BindExprFor(e, target), …)</c>;
     /// <c>nofn</c>: <c>BindExpr(e)</c> in a binder with no function but <c>Point</c>'s <c>this</c>; <c>it</c>: <c>BindExpr(e)</c> with
     /// <c>_it</c> set to <c>Point.x</c>, as a refinement check sets it; <c>caught</c>/<c>caught-none</c>: <c>BindExpr</c> of the
-    /// <c>catch switch</c> subject with and without <c>_caught</c>; <c>lambda</c>: <c>BindExpr(e, target)</c>, diagnostics only (the
-    /// lambda itself is T35's <c>bindLambda</c>, express4.byn:18); <c>const</c>: <c>BindExpr(e)</c> after <c>DeclareLocal</c> of
+    /// <c>catch switch</c> subject with and without <c>_caught</c>; <c>const</c>: <c>BindExpr(e)</c> after <c>DeclareLocal</c> of
     /// <c>qKDecl</c>'s <c>const k</c> holding 5.
     /// </summary>
     private static readonly Case[] Cases =
@@ -279,25 +282,18 @@ public sealed class SelfhostSemanticsT17Tests
         new("fn-type-not-constructible", "qPrim", "fn", "f1"),
         new("float-max", "qFMax", "expr"),
         new("float-subnormal", "qFSub", "expr"),
-        new("float-2p53-plus-1", "qF2p53", "expr"),
+        new("float-2p53-plus-1", "qFBig53", "expr"),
         new("float-infinity", "qFInf", "expr"),
-        new("int-2p53-plus-1-float-target", "qI2p53", "expr", "d"),
-        new("int-2p127", "qI2p127", "expr"),
-        new("int-2p127-int-target", "qI2p127", "expr", "small"),
-        new("char-bad-escape", "qCharQ", "expr"),
-        new("char-surrogate", "qCharSur", "expr"),
-        new("char-above-max", "qCharMax", "expr"),
+        new("int-2p53-plus-1-float-target", "qIBig53", "expr", "d"),
+        new("int-2p127", "qIBig127", "expr"),
+        new("int-2p127-int-target", "qIBig127", "expr", "small"),
         new("name-typo-other-method", "qFrob", "expr"),
-        new("name-array-type-arg", "qMapArr", "expr"),
+        new("name-array-type-arg", "Box.tga", "expr"),
         new("name-overloads", "qOv", "expr"),
         new("fn-overload-second", "qOv", "fn", "fs"),
         new("fn-overload-first", "qOv", "fn", "f1"),
         new("caught", "qCaught", "caught"),
         new("caught-none", "qCaught", "caught-none"),
-        new("lambda-function", "qLam", "lambda", "f1"),
-        new("lambda-optional-function", "qLam", "lambda", "fo"),
-        new("lambda-value", "qLam", "lambda", "i"),
-        new("lambda-none", "qLam", "lambda"),
         new("name-const-local", "qK", "const"),
     ];
 
@@ -383,7 +379,8 @@ public sealed class SelfhostSemanticsT17Tests
         if (n is BoundExpr e)
         {
             sb.Append($" : {e.Type.DisplayName}");
-            if (e.Constant is { } k) sb.Append($" = {k}");
+            // bound.byn's `realText` ports `double.ToString()` under the invariant culture; the host culture may print `∞`.
+            if (e.Constant is { } k) sb.Append($" = {(k.Value is double d ? d.ToString(System.Globalization.CultureInfo.InvariantCulture) : k)}");
         }
         if (n is BoundLocal l) sb.Append($" {l.Local.Name}");
         if (n is BoundCall call) sb.Append($" {call.Function.Name}");
@@ -402,19 +399,19 @@ public sealed class SelfhostSemanticsT17Tests
     private static FunctionDecl Fn(Oracle o, string name) =>
         o.Members.OfType<FunctionDecl>().Single(f => f.Name.Text == name);
 
-    private static StructDecl PointDecl(Oracle o) => o.Members.OfType<StructDecl>().Single(s => s.Name.Text == "Point");
+    private static StructDecl StructDeclOf(Oracle o, string name) => o.Members.OfType<StructDecl>().Single(s => s.Name.Text == name);
 
     private static StructSymbol Point(Oracle o) => (StructSymbol)o.Module.Types["Point"];
 
-    /// <summary>The function a case binds in, its struct, and the expression: the body of `q…` or of `Point.tm`/`Point.ts`.</summary>
+    /// <summary>The function a case binds in, its struct, and the expression: the body of `q…` or of a struct method `Point.tm`/`Box.tga`.</summary>
     private static (FunctionSymbol Fn, StructSymbol? Container, Expr Expr) Site(Oracle o, string fn)
     {
-        if (fn.StartsWith("Point.", StringComparison.Ordinal))
+        if (fn.IndexOf('.') is var dot and > 0)
         {
-            var name = fn["Point.".Length..];
-            var point = Point(o);
-            var decl = PointDecl(o).Members.OfType<FunctionDecl>().Single(f => f.Name.Text == name);
-            return (point.Methods.Single(m => m.Name == name), point, decl.ExpressionBody!);
+            var name = fn[(dot + 1)..];
+            var owner = (StructSymbol)o.Module.Types[fn[..dot]];
+            var decl = StructDeclOf(o, fn[..dot]).Members.OfType<FunctionDecl>().Single(f => f.Name.Text == name);
+            return (owner.Methods.Single(m => m.Name == name), owner, decl.ExpressionBody!);
         }
         return (o.Module.Functions[fn][0], null, Fn(o, fn).ExpressionBody!);
     }
@@ -446,11 +443,6 @@ public sealed class SelfhostSemanticsT17Tests
             local.Constant = new ConstantValue((Int128)5);
         }
         var target = k.Target is null ? null : Sig(o, k.Target);
-        if (k.Op == "lambda")
-        {
-            Call(binder, "BindExpr", e, target);
-            return o.NewDiagnostics().ToList();
-        }
         var r = k.Op switch
         {
             "expr" or "nofn" or "it" or "caught" or "caught-none" or "const" => (BoundExpr)Call(binder, "BindExpr", e, target)!,
@@ -569,7 +561,7 @@ public sealed class SelfhostSemanticsT17Tests
             }
             foreach (var m in st.Methods)
             {
-                sb.AppendLine($"    let {FunctionVar(m)} = tcMethod(in c, of: s{name}, by: \"{m.Name}\")");
+                sb.AppendLine($"    let {FunctionVar(m)} = tcMethod(in c, for: s{name}, by: \"{m.Name}\")");
                 Signature(sb, m, ref n);
             }
         }
@@ -592,11 +584,11 @@ public sealed class SelfhostSemanticsT17Tests
     /// <summary>A Bayan `switch` that runs <paramref name="body"/> with the case's expression as `e`.</summary>
     private static void AtExpression(StringBuilder sb, Oracle o, string fn, string body)
     {
-        if (fn.StartsWith("Point.", StringComparison.Ordinal))
+        if (fn.IndexOf('.') is var dot and > 0)
         {
-            var name = fn["Point.".Length..];
-            var decl = IndexOf(o, d => d is StructDecl { Name.Text: "Point" });
-            var member = Array.FindIndex(PointDecl(o).Members, m => m is FunctionDecl fd && fd.Name.Text == name);
+            var name = fn[(dot + 1)..];
+            var decl = IndexOf(o, d => d is StructDecl sd && sd.Name.Text == fn[..dot]);
+            var member = Array.FindIndex(StructDeclOf(o, fn[..dot]).Members, m => m is FunctionDecl fd && fd.Name.Text == name);
             sb.AppendLine($"    switch c.files[0].unit.members[{decl}] {{");
             sb.AppendLine("        case .structDecl(let sd):");
             sb.AppendLine($"            switch sd.value.members[{member}] {{");
@@ -629,7 +621,7 @@ public sealed class SelfhostSemanticsT17Tests
             sb.AppendLine($"void case{Camel(k.Name)}() {{");
             sb.AppendLine("    var c = tcSource()");
             sb.Append(symbols);
-            sb.AppendLine($"    var b = tcBinder({(k.Op == "nofn" ? "-1" : FunctionVar(fn))}, by: {(container is null ? "-1" : "sPoint")})");
+            sb.AppendLine($"    var b = tcBinder({(k.Op == "nofn" ? "-1" : FunctionVar(fn))}, by: {(container is null ? "-1" : $"s{container.Name}")})");
             sb.AppendLine("    t15CaptureTypes(ref b, through: ref c)");
             sb.AppendLine("    pushScope(ref b)");
             if (k.Op == "it") sb.AppendLine("    b.itField = c.structs[sPoint].fields[0]");
@@ -655,14 +647,14 @@ public sealed class SelfhostSemanticsT17Tests
             var r = k.Target2 is null ? "let r" : "var r";
             body.AppendLine((k.Op switch
             {
-                "expr" or "nofn" or "it" or "caught" or "caught-none" or "const" or "lambda" => "            $R = bindExpr(ref b, through: ref c, for: in $E, to: target)",
+                "expr" or "nofn" or "it" or "caught" or "caught-none" or "const" => "            $R = bindExpr(ref b, through: ref c, for: in $E, to: target)",
                 "stmt" => "            $R = bindStatementExpression(ref b, through: ref c, for: in $E)",
                 "conv" => "            $R = convert(ref b, through: ref c, for: bindExpr(ref b, through: ref c, for: in $E), to: target, at: span)",
                 "fn" => "            $R = convert(ref b, through: ref c, for: bindExprFor(ref b, through: ref c, for: in $E, to: target), to: target, at: span)",
                 _ => throw new InvalidOperationException(k.Op),
             }).Replace("$R", r));
             if (k.Target2 is not null) body.AppendLine("            r = convert(ref b, through: ref c, for: r, to: target2, at: span)");
-            body.Append(k.Op == "lambda" ? "            let _ = r" : "            tcDump(ref c, for: r, at: 0)");
+            body.Append("            tcDump(ref c, for: r, at: 0)");
             var text = body.ToString();
             if (k.Op.StartsWith("caught", StringComparison.Ordinal))
                 text = string.Join("\n",
@@ -856,6 +848,45 @@ public sealed class SelfhostSemanticsT17Tests
         sb.AppendLine("    }");
     }
 
+    // ── Char literals DecodeChar rejects ─────────────────────────────────────────
+
+    /// <summary><c>BindExpr</c> of each <see cref="BadChars"/> body in a binder with no function.</summary>
+    private static List<string> ExpectedBadChars()
+    {
+        var o = Oracle.Of("main", Source);
+        var bad = Oracle.Of("badchars", BadChars);
+        var binder = o.Binder(null, null);
+        var lines = new List<string>();
+        foreach (var d in bad.Members.Cast<FunctionDecl>()) Dump(lines, (BoundExpr)Call(binder, "BindExpr", d.ExpressionBody, null)!);
+        lines.AddRange(o.NewDiagnostics());
+        return lines;
+    }
+
+    private static string BadCharsMain()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("void badCharsAll() {");
+        sb.AppendLine($"    var c = tcCtx({Literal(BadChars)})");
+        sb.AppendLine("    var b = tcBinder(-1, by: -1)");
+        sb.AppendLine("    t15CaptureTypes(ref b, through: ref c)");
+        sb.AppendLine("    pushScope(ref b)");
+        sb.AppendLine("    let mark = c.diagnostics.length");
+        sb.AppendLine("    print(\"== badchars\")");
+        for (var i = 0; i < 3; i++)
+        {
+            sb.AppendLine($"    switch c.files[0].unit.members[{i}] {{");
+            sb.AppendLine("        case .functionDecl(let d):");
+            sb.AppendLine("            let r = bindExpr(ref b, through: ref c, for: in d.value.expressionBody, to: -1)");
+            sb.AppendLine("            tcDump(ref c, for: r, at: 0)");
+            sb.AppendLine("        default:");
+            sb.AppendLine("            break");
+            sb.AppendLine("    }");
+        }
+        sb.AppendLine("    tcDiags(in c, from: mark)");
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
     // ── IsUntypedLiteral, ParseInteger, Fits and Suggest ─────────────────────────
 
     private static readonly string[] UntypedFunctions =
@@ -931,6 +962,9 @@ public sealed class SelfhostSemanticsT17Tests
         ("abcdef", ["abcdxy"]),
         ("ab", ["ax", "ay"]),
         ("x", []),
+        ("ÉTÉ", ["été"]),
+        ("İx", ["ix", "i̇x"]),
+        ("ΣΑΣ", ["σασ", "σας"]),
     ];
 
     private static List<string> ExpectedSuggest() =>
@@ -969,11 +1003,12 @@ public sealed class SelfhostSemanticsT17Tests
         return sb.Append('"').ToString();
     }
 
-    private static string MainSource() => Prelude.Replace("$SOURCE", Literal(Source)) + CasesMain() + PendingMain() + UntypedMain()
+    private static string MainSource() => Prelude.Replace("$SOURCE", Literal(Source)) + CasesMain() + PendingMain() + BadCharsMain() + UntypedMain()
         + ParseMain() + FitsMain() + SuggestMain() + """
         i32 main() {
             casesAll()
             pendingAll()
+            badCharsAll()
             untypedAll()
             parseAll()
             fitsAll()
@@ -1085,7 +1120,7 @@ public sealed class SelfhostSemanticsT17Tests
             }
         }
 
-        FuncId tcMethod(in Ctx c, of StructId s, by string name) {
+        FuncId tcMethod(in Ctx c, for StructId s, by string name) {
             for m in c.structs[s].methods {
                 if c.functions[m].name == name { return m }
             }
@@ -1144,6 +1179,9 @@ public sealed class SelfhostSemanticsT17Tests
 
     [Fact]
     public void ConstrainAndPeersMatch() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "pending", ExpectedPending());
+
+    [Fact]
+    public void BadCharsMatch() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "badchars", ExpectedBadChars());
 
     [Fact]
     public void UntypedLiteralMatches() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "untyped", ExpectedUntyped());

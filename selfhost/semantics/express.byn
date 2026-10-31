@@ -12,6 +12,9 @@ type UsesClause = parser.UsesClause
 type FunctionTypeSyntax = parser.FunctionTypeSyntax
 type DynType = parser.DynType
 type RefinedType = parser.RefinedType
+type ArrayType = parser.ArrayType
+type LiteralExpr = parser.LiteralExpr
+type NameExpr = parser.NameExpr
 
 BExpr bindExpr(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type expected = -1) =>
     asValue(ref b, through: ref c, for: bindExprOrType(ref b, through: ref c, for: in e, to: expected), from: in e)
@@ -149,7 +152,7 @@ BExpr convert(ref Binder b, through ref Ctx c, for BExpr value, to Type target, 
     if (implicit(ref c, from: vt, to: target, argument: argument) is { } kind) {
         if kind == .identity { return value }
         if kind == .nullToOptional { return t17SameSyntax(ref c, for: addDefault(ref c, from: BDefault { span: at, type: target }), from: value) }
-    // mutation-exempt: Q600 through 203
+    // mutation-exempt: Q600 through 156
         if kind == .toDynRef && kindOf(target) == .dynRef && !c.dynRefTypes[typeIndex(target)].readOnly {
             let _ = checkWritable(ref b, through: ref c, for: value, at: span, by: $"it is borrowed as `{typeDisplay(ref c, by: target)}`")
         }
@@ -537,7 +540,7 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
             return bindTargetMember(ref b, through: ref c, for: in t.value, to: expected)
         case .callExpr(let call):
             let errNew = bindErrorNew(ref b, through: ref c, for: in call.value, to: expected)
-    // mutation-exempt: Q600 through 45
+    // mutation-exempt: Q600 through 544
             if errNew != -1 { return errNew }
             return bindCall(ref b, through: ref c, for: in call.value, to: expected)
         case .indexExpr(let i):
@@ -568,7 +571,7 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
         case .catchExpr(let ct):
             return bindCatch(ref b, through: ref c, for: in ct.value, to: expected)
         case .caughtErrorExpr(let ce):
-            if b.caught != -1 { return addLocal(ref c, from: BLocal { span: ce.value.span, local: b.caught }) }
+            if b.caught != -1 { return addLocalNode(ref c, at: ce.value.span, for: b.caught) }
             return addErrorExpr(ref c, from: BErrorExpr { span: ce.value.span })
         case .jumpExpr(let j):
             let stmt = bindStatement(ref b, through: ref c, for: in j.value.jump)
@@ -602,7 +605,7 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
         case .lambdaExpr(let l):
             var fExpected = expected
             if fExpected != -1 && kindOf(fExpected) == .optional {
-                // mutation-exempt: Q600 through 112
+                // mutation-exempt: Q600 through 611
                 fExpected = c.optionalTypes[typeIndex(fExpected)]
             }
             if fExpected != -1 && kindOf(fExpected) != .function { fExpected = -1 }
@@ -783,11 +786,11 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
 
     let local = t15Lookup(ref b, for: name)
     if local != -1 {
-        // mutation-exempt: Q600 through 388
         if c.locals[local].kind == .constKeyword && (c.locals[local].constant is { } cVal) {
             let t = c.locals[local].type
             return constantLiteral(ref c, at: n.span, as: t, by: in cVal)
         }
+        // mutation-exempt: Q600 through 805
         var read: BExpr = -1
         if isNonNull(ref b, for: local) {
             let locNode = addLocalNode(ref c, at: n.span, for: local)
@@ -803,12 +806,11 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
     }
 
     let host = host(b, through: c)
-    // mutation-exempt: Q600 through 395
     if b.thisType != -1 {
         // A default cloned onto a struct sees only the interface's members through `this`.
         var visible = true
         if host != -1 && c.functions[host].template != -1 && c.functions[c.functions[host].template].iface != -1 {
-            // mutation-exempt: Q600 through 402
+            // mutation-exempt: Q600 through 815
             let cloneOf = c.functions[c.functions[host].template].iface
             visible = lookupMember(ref c, for: t15InterfaceSelf(ref c, for: cloneOf), by: name).kind != .none
         }
@@ -820,11 +822,11 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
         }
     }
 
-    // mutation-exempt: Q600 through 411
+    // mutation-exempt: Q600 through 827
     if b.thisType != -1 && kindOf(b.thisType) == .structType && host != -1 && !c.functions[host].isStatic {
         let st = statesOf(ref c, for: typeIndex(b.thisType))
         if st != -1 {
-            // mutation-exempt: Q600 through 430
+            // mutation-exempt: Q600 through 846
             var foundVariantField = false
             for vId in c.unions[st].variants {
                 for fId in c.unionVariants[vId].fields {
@@ -929,7 +931,7 @@ parser.TypeSyntax t17CloneTypeSyntax(in parser.TypeSyntax t) {
             for x in r.value.states { states.append(x) }
             return parser.TypeSyntax.refinedType(Owned(RefinedType { span: r.value.span, inner: t17CloneTypeSyntax(in r.value.inner), states: move states }))
         case .arrayType(let a):
-            return parser.TypeSyntax.arrayType(Owned(parser.ArrayType { span: a.value.span, element: t17CloneTypeSyntax(in a.value.element), size: t17CloneSizeExpr(in a.value.size) }))
+            return parser.TypeSyntax.arrayType(Owned(ArrayType { span: a.value.span, element: t17CloneTypeSyntax(in a.value.element), size: t17CloneSizeExpr(in a.value.size) }))
         case .none:
             return parser.TypeSyntax.none
     }
@@ -939,9 +941,9 @@ parser.TypeSyntax t17CloneTypeSyntax(in parser.TypeSyntax t) {
 parser.Expr t17CloneSizeExpr(in parser.Expr e) {
     switch e {
         case .literalExpr(let l):
-            return parser.Expr.literalExpr(Owned(parser.LiteralExpr { span: l.value.span, kind: l.value.kind, text: l.value.text, suffix: l.value.suffix }))
+            return parser.Expr.literalExpr(Owned(LiteralExpr { span: l.value.span, kind: l.value.kind, text: l.value.text, suffix: l.value.suffix }))
         case .nameExpr(let n):
-            return parser.Expr.nameExpr(Owned(parser.NameExpr { span: n.value.span, name: n.value.name, typeArgs: List<parser.TypeSyntax>() }))
+            return parser.Expr.nameExpr(Owned(NameExpr { span: n.value.span, name: n.value.name, typeArgs: List<parser.TypeSyntax>() }))
         default:
             panic("internal error: an array size is a literal or a name")
     }
