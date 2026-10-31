@@ -139,7 +139,7 @@ public sealed class SelfhostSemanticsT11Tests
             """),
         ("decls/two.byn", "let y = 2\nstruct S { }\n"),
         // Top-level statements in two entry files, a test file and an imported module.
-        ("stmts/a.byn", "import m\nlet x = 1\nlet x2 = 2\n"),
+        ("stmts/a.byn", "import m\nlet x = 1\nlet x2 = 2\nprint(\"a\")\n"),
         ("stmts/b.byn", "let y = 2\n"),
         ("stmts/c.test.byn", "let z = 3\n"),
         ("stmts/m/m.byn", "let w = 1\nconst c = 1\n"),
@@ -185,12 +185,34 @@ public sealed class SelfhostSemanticsT11Tests
         ("main-span/main.byn", "void main(Span<string> args) { }\n"),
         ("main-two/main.byn", "void main(ReadOnlySpan<string> args, i64 n) { }\n"),
         ("main-i64-span/main.byn", "i32 main(ReadOnlySpan<i64> args) => 0\n"),
+        ("main-missing/main.byn", "Missing main() { }\n"),
+        ("main-missing-param/main.byn", "void main(Missing args) { }\n"),
         ("unit/main.byn", "let x = 1\n"),
         // No syntax error: `Create` goes on to `Declare` and `BindAll`.
         ("clean/lib.byn", "import util\nstruct A {\n    i64 x\n}\nstruct A { }\n"),
         ("clean/util/u.byn", "struct U { }\n"),
         ("inst/main.byn", "struct S { }\n"),
+        // The parser withdraws BYN1017 for the parentheses when the `if` fix of `unless (a && b)` replaces it.
+        ("unless/main.byn", "void main() {\n    unless (a && b) { }\n}\n"),
+        // The types are written in a function body: a top-level statement synthesizes a `main`, on which T12's
+        // `checkOverloads` panics (Q573).
+        // A tuple key resolved at an instantiation site before members are declared: `declare` runs it there.
+        ("keysite/main.byn", "void f() {\n    var m: Map<(f64, i64), i64> = 0\n}\n"),
+        // `Box<P>` resolved before conformances are checked: its constraint check waits in `pendingConstraints`.
+        ("constraint/main.byn", "interface IShape { }\nstruct Box<T> where T : IShape {\n    i64 n\n}\nstruct P { }\nvoid f() {\n    var b: Box<P> = 0\n}\n"),
+        // Directories named like sources: `Directory.EnumerateFiles` skips them.
+        ("dirs/src/app/main.byn", "struct M { }\n"),
+        ("dirs/src/app/x.byn/keep.txt", "keep\n"),
+        ("dirs/src/app/y.test.byn/keep.txt", "keep\n"),
+        ("dirs/tests/t.test.byn", "struct T { }\n"),
+        ("dirs/tests/x.test.byn/keep.txt", "keep\n"),
     ];
+
+    /// <summary>Inputs of the <c>unit fullpath</c> and <c>unit cname</c> cases (the generated main lists the same).</summary>
+    private static readonly string[] FullPaths =
+        ["/a/./b/../c.byn", "/a//b/", "/..", "/../x", "/a/b/..", "/a/b/../", "/a/.", "/.", "//", "/a/..b/.c/", "/a/b/c/../../d", "/a/b/../.."];
+
+    private static readonly string[] CNames = ["café", "𝑥y", "a.b-c", "日本"];
 
     /// <summary>The runs: kind, case name, the path given (under <see cref="CasesDir"/>) and flags.</summary>
     private static readonly (string Kind, string Name, string Path, string Flags)[] Runs =
@@ -208,6 +230,7 @@ public sealed class SelfhostSemanticsT11Tests
         ("declfile", "decls-tests", "decls", "t"),
         ("declfile", "stmts", "stmts", "t"),
         ("declare", "wheres", "wheres", ""),
+        ("declare", "main-string", "main-string", ""),
         ("mainsig", "main-i32", "main-i32", "i32:"),
         ("mainsig", "main-void-args", "main-void-args", "void:ros"),
         ("mainsig", "main-string", "main-string", "string:"),
@@ -216,9 +239,19 @@ public sealed class SelfhostSemanticsT11Tests
         ("mainsig", "main-span", "main-span", "void:span"),
         ("mainsig", "main-two", "main-two", "void:ros,i64"),
         ("mainsig", "main-i64-span", "main-i64-span", "i32:roi64"),
+        ("mainsig", "main-missing", "main-missing", "err:"),
+        ("mainsig", "main-missing-param", "main-missing-param", "void:err"),
         ("unit", "assoc", "unit", ""),
         ("unit", "sink", "unit", ""),
         ("unit", "isinstance", "inst", ""),
+        ("path", "unless", "unless", ""),
+        ("unit", "keysite", "keysite", ""),
+        ("unit", "constraint", "constraint", ""),
+        ("project", "dirs", "dirs", "t"),
+        ("path", "dirs", "dirs/src/app", "t"),
+        ("path", "dotted", "clean/./util/..//lib.byn", "l"),
+        ("unit", "fullpath", "unit", ""),
+        ("unit", "cname", "unit", ""),
     ];
 
     private static readonly Lazy<Dictionary<string, List<string>>> Run = new(() =>
@@ -350,10 +383,48 @@ public sealed class SelfhostSemanticsT11Tests
                 lines.Add(Words("isinstance", new[] { plain, copy, method, instanceMethod, inInstance, inTemplate }.Select(f => f.IsInstance ? "yes" : "no")));
                 break;
             }
+            case "unit" when name == "keysite":
+            {
+                var c = LoadOnly(path, options);
+                var site = typeof(Compilation).GetField("_instantiationSite", Any)!;
+                site.SetValue(c, ((SourceText, TextSpan)?)(c.EntryModule.Files[0].Source, new TextSpan(0, 3)));
+                ResolveLocal(c, 0);
+                site.SetValue(c, null);
+                Call(c, "Declare");
+                DumpLoad(c, lines);
+                break;
+            }
+            case "unit" when name == "constraint":
+            {
+                var c = LoadOnly(path, options);
+                Call(c, "Declare");
+                ResolveLocal(c, 3);
+                var pending = (List<Action>)typeof(Compilation).GetField("_pendingConstraints", Any)!.GetValue(c)!;
+                lines.Add($"pending {pending.Count}");
+                foreach (var check in pending) check();
+                DumpLoad(c, lines);
+                break;
+            }
+            case "unit" when name == "fullpath":
+                foreach (var p in FullPaths) lines.Add($"fullpath {p} {Path.GetFullPath(p)}");
+                break;
+            case "unit" when name == "cname":
+                foreach (var n in CNames) lines.Add($"cname {n} {typeof(Compilation).GetMethod("CNameOf", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [n])}");
+                break;
             default:
                 throw new InvalidOperationException(kind);
         }
         return lines;
+    }
+
+    /// <summary>Resolves the declared type of the first <c>var</c> in the body of the entry file's function at member <paramref name="member"/>.</summary>
+    private static void ResolveLocal(Compilation c, int member)
+    {
+        var file = c.EntryModule.Files[0];
+        var local = (Bayan.Syntax.Ast.LocalDecl)((Bayan.Syntax.Ast.FunctionDecl)file.Tree.Root.Members[member]).Body!.Statements[0];
+        var resolverType = typeof(Compilation).Assembly.GetType("Bayan.Semantics.TypeResolver")!;
+        var resolver = Activator.CreateInstance(resolverType, Any, null, [c, file, null, null], null)!;
+        resolverType.GetMethod("Resolve")!.Invoke(resolver, [local.Type!, false]);
     }
 
     private static Compilation New(string root, CompilationOptions options, string? displayRoot) =>
@@ -515,19 +586,39 @@ public sealed class SelfhostSemanticsT11Tests
                     for f in copyIds(in c.modules[c.entryModule].files) { declareFile(ref c, for: f) }
                     let s = c.modules[c.entryModule].structs[0]
                     let instance = newStruct(ref c, by: StructSymbol { name: "S", template: s })
+                    // First, so FuncId 0 is an enclosing instance function (C# `enclosing != -1`, not `> 0`).
+                    let instanceMethod = newFunction(ref c, by: FunctionSymbol { name: "f", owner: instance })
                     let plain = newFunction(ref c, by: FunctionSymbol { name: "f" })
                     let copy = newFunction(ref c, by: FunctionSymbol { name: "f", template: plain })
                     let method = newFunction(ref c, by: FunctionSymbol { name: "f", owner: s })
-                    let instanceMethod = newFunction(ref c, by: FunctionSymbol { name: "f", owner: instance })
                     let inInstance = newFunction(ref c, by: FunctionSymbol { name: "f", enclosing: instanceMethod })
                     let inTemplate = newFunction(ref c, by: FunctionSymbol { name: "f", enclosing: method })
                     var sb = StrBuf()
                     sb.append("isinstance")
                     for f in [plain, copy, method, instanceMethod, inInstance, inTemplate] {
-                        let answer = t11IsInstance(in c, for: f) ? "yes" : "no"
+                        let answer = functionIsInstance(ref c, by: f) ? "yes" : "no"
                         sb.append($" {answer}")
                     }
                     print(sb.finish())
+                } else if name == "keysite" {
+                    var c = loadOnly(path, by: in options)
+                    c.hasInstantiationSite = true
+                    c.instantiationSiteFile = 0
+                    c.instantiationSiteSpan = TextSpan { start: 0, length: 3 }
+                    resolveLocal(ref c, at: 0)
+                    c.hasInstantiationSite = false
+                    declare(ref c)
+                    dumpLoad(in c)
+                } else if name == "constraint" {
+                    var c = loadOnly(path, by: in options)
+                    declare(ref c)
+                    resolveLocal(ref c, at: 3)
+                    print($"pending {c.pendingConstraints.length}")
+                    for k in 0..c.pendingConstraints.length {
+                        let work = t11CopyWork(in c.pendingConstraints[k])
+                        runWork(ref c, for: in work)
+                    }
+                    dumpLoad(in c)
                 } else if name == "sink" {
                     var c = loadOnly(path, by: in options)
                     c.diagnostics = List<Diag>()
@@ -543,10 +634,37 @@ public sealed class SelfhostSemanticsT11Tests
                     print($"sink bag {c.bags[bag].items.length} main {c.diagnostics.length} outer {shown}")
                     for d in c.bags[bag].items { print($"bag {d.message}") }
                     for d in c.diagnostics { print($"main {d.message}") }
+                } else if name == "fullpath" {
+                    for p in ["/a/./b/../c.byn", "/a//b/", "/..", "/../x", "/a/b/..", "/a/b/../", "/a/.", "/.", "//", "/a/..b/.c/", "/a/b/c/../../d", "/a/b/../.."] {
+                        print($"fullpath {p} {t11FullPath(p)}")
+                    }
+                } else if name == "cname" {
+                    for n in ["café", "𝑥y", "a.b-c", "日本"] { print($"cname {n} {t11CNameOf(n)}") }
                 }
                 i += 4
             }
             return 0
+        }
+
+        /// Resolves the declared type of the first `var` in the body of the entry file's function at `member`.
+        void resolveLocal(ref Ctx c, at i64 member) {
+            switch c.files[0].unit.members[member] {
+                case .functionDecl(let fn):
+                    switch fn.value.body {
+                        case .blockStmt(let block):
+                            switch block.value.statements[0] {
+                                case .localDecl(let l):
+                                    let r = TypeResolver { file: 0 }
+                                    let _ = resolve(ref c, through: in r, for: in l.value.type)
+                                default:
+                                    panic("a `var`")
+                            }
+                        default:
+                            panic("a block body")
+                    }
+                default:
+                    panic("a function")
+            }
         }
 
         string same(i64 a, by i64 b) => a == b ? "same" : "new"
