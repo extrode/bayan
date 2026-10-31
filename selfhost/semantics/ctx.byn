@@ -600,6 +600,8 @@ struct Binder {
     TextSpan? handled = null
     // ── T17 state
     // ── T18 state
+    parser.CallExpr? calleeOf = null
+    Map<LocalId, VariantId> narrowed = []
     // ── T19 state
     // ── T20 state
     // ── T21 state
