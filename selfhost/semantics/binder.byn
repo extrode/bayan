@@ -109,9 +109,13 @@ TextSpan t15StmtSpan(in parser.Stmt s) {
 
 /// The scope new locals go to (the C# `_scope`). The C# binder starts with a root scope
 /// (`_scope = new(null)`); a Bayan `Binder` literal starts with `scopes: []`, so the root is
-/// opened here on first use (Q591).
+/// opened here on first use (Q591), with its identity (Q715).
 i64 t15Scope(ref Binder b) {
-    if b.scopes.length == 0 { b.scopes.append(Map<string, LocalId>()) }
+    if b.scopes.length == 0 {
+        b.scopes.append(Map<string, LocalId>())
+        b.scopeIds.append(b.nextScopeId)
+        b.nextScopeId += 1
+    }
     return b.scopes.length - 1
 }
 
@@ -236,10 +240,13 @@ Type resolveType(ref Binder b, through ref Ctx c, for in parser.TypeSyntax t) {
 void pushScope(ref Binder b) {
     let _ = t15Scope(ref b)
     b.scopes.append(Map<string, LocalId>())
+    b.scopeIds.append(b.nextScopeId)
+    b.nextScopeId += 1
 }
 
 void popScope(ref Binder b) {
     b.scopes.remove(at: b.scopes.length - 1)
+    b.scopeIds.remove(at: b.scopeIds.length - 1)
 }
 
 LocalId declareLocal(ref Binder b, through ref Ctx c, at TextSpan name, as Type type, for LocalKind kind) {
@@ -356,7 +363,7 @@ List<BStmt> t15BindRequires(ref Binder b, through ref Ctx c, for in parser.Funct
         let message = literal(ref c, at: span, as: prim(.string), by: Constant { kind: .text, text: $"contract violated: {t15Text(in c, from: b.file, at: span)}" })
         var arguments = List<BExpr>()
         arguments.append(message)
-        let panic = addCall(ref c, from: BCall { span: span, function: find(ref c, for: "panic") ?? -1, arguments: move arguments, type: prim(.neverKind) })
+        let panic = addCall(ref c, from: BCall { span: span, function: t9Function(ref c, for: "panic"), arguments: move arguments, type: prim(.neverKind) })
         let negated = addUnary(ref c, from: BUnary { span: span, op: .notKeyword, operand: condition, type: prim(.bool) })
         let then = addExprStmt(ref c, from: BExprStmt { span: span, expr: panic })
         checks.append(addIf(ref c, from: BIf { span: span, condition: negated, then: then }))
