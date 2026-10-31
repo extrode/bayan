@@ -35,70 +35,6 @@ bool t18ContainsBraces(string text) {
     return false
 }
 
-TextSpan t18ExprSpan(in parser.Expr e) {
-    switch e {
-        case .literalExpr(let n): return n.value.span
-        case .interpolatedExpr(let n): return n.value.span
-        case .nameExpr(let n): return n.value.span
-        case .thisExpr(let n): return n.value.span
-        case .memberExpr(let n): return n.value.span
-        case .targetMemberExpr(let n): return n.value.span
-        case .callExpr(let n): return n.value.span
-        case .indexExpr(let n): return n.value.span
-        case .unaryExpr(let n): return n.value.span
-        case .binaryExpr(let n): return n.value.span
-        case .rangeExpr(let n): return n.value.span
-        case .conditionalExpr(let n): return n.value.span
-        case .castExpr(let n): return n.value.span
-        case .isExpr(let n): return n.value.span
-        case .exceptExpr(let n): return n.value.span
-        case .inExpr(let n): return n.value.span
-        case .switchExpr(let n): return n.value.span
-        case .tryExpr(let n): return n.value.span
-        case .moveExpr(let n): return n.value.span
-        case .catchExpr(let n): return n.value.span
-        case .caughtErrorExpr(let n): return n.value.span
-        case .jumpExpr(let n): return n.value.span
-        case .blockExpr(let n): return n.value.span
-        case .structLiteralExpr(let n): return n.value.span
-        case .withExpr(let n): return n.value.span
-        case .spreadExpr(let n): return n.value.span
-        case .mapEntryExpr(let n): return n.value.span
-        case .collectionExpr(let n): return n.value.span
-        case .tupleExpr(let n): return n.value.span
-        case .parenExpr(let n): return n.value.span
-        case .lambdaExpr(let n): return n.value.span
-        case .stackallocExpr(let n): return n.value.span
-        case .patternExpr(let n): return n.value.span
-        case .errorExpr(let n): return n.value.span
-        case .none: return TextSpan { start: 0, length: 0 }
-    }
-}
-
-/// The C# `Host`: the enclosing non-lambda function, or -1.
-FuncId t18Host(ref Binder b, through ref Ctx c) {
-    var fn = b.fn
-    while fn != -1 && c.functions[fn].kind == .lambda {
-        fn = c.functions[fn].enclosing
-    }
-    return fn
-}
-
-/// The C# `InLambda`.
-bool t18InLambda(ref Binder b, through ref Ctx c, at TextSpan span, for string name, by string reason) {
-    if b.fn == -1 || c.functions[b.fn].kind != .lambda { return false }
-    report(ref b, through: ref c, for: .cannotCapture, at: span, by: (name, reason, "", "", ""), help: "copy the fields you need into `let` values first")
-    return true
-}
-
-Type t18PropertyType(ref Ctx c, for BuiltinMember member, as Type type) {
-    switch member {
-        case .formatSpecRadix: return t9Type(ref c, for: "Radix")
-        case .formatSpecAlign: return t9Type(ref c, for: "Align")
-        default: return type
-    }
-}
-
 // ── Entry points ─────────────────────────────────────────────────────────────
 
 BExpr constantRef(ref Binder b, through ref Ctx c, at TextSpan span, for ConstId k) {
@@ -150,7 +86,9 @@ MemberRef lookupMember(ref Ctx c, for Type t, by string name) {
 }
 
 BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by MemberRef member) {
-    let host = t18Host(ref b, through: ref c)
+    // The C# `Host` (BinderExpressions.cs:1939) has no entry point in T35's express4.byn (Q725).
+    var host = b.fn
+    while host != -1 && c.functions[host].kind == .lambda { host = c.functions[host].enclosing }
     let hostIsStatic = host != -1 && c.functions[host].isStatic
     let inInstance = host != -1 && !c.functions[host].isStatic && (c.functions[host].kind == .method || c.functions[host].kind == .getter || c.functions[host].kind == .constructor)
 
@@ -163,7 +101,7 @@ BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.Name
         report(ref b, through: ref c, for: .instanceMemberWithoutThis, at: n.span, by: (nameText, "", "", "", ""), help: helpText)
         return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
     }
-    if t18InLambda(ref b, through: ref c, at: n.span, for: nameText, by: "it is read through `this`, which a lambda does not capture") {
+    if inLambda(ref b, through: ref c, at: n.span, for: nameText, by: "it is read through `this`, which a lambda does not capture") {
         return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
     }
     let self = addThis(ref c, from: BThis { span: n.span, type: b.thisType })
@@ -232,7 +170,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
                 }
             }
             if method != -1 && c.functions[method].isStatic {
-                checkAccess(ref b, through: ref c, for: c.functions[method].access, from: s, by: c.structs[s].module, at: m.member)
+                checkAccess(ref b, through: ref c, for: c.functions[method].access, from: c.functions[method].owner, by: c.functions[method].module, at: m.member)
                 return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: method, typeArgs: List<TextSpan>() })
             }
             var hasField = false
@@ -401,7 +339,7 @@ BExpr t18BindModuleMember(ref Binder b, through ref Ctx c, for parser.MemberExpr
         var path = List<TextSpan>()
         switch m.target {
             case .nameExpr(let n): path.append(n.value.name)
-            default: {}
+            default: panic("a module member's target is a `NameExpr`")
         }
         path.append(m.member)
         let resolved = resolveType(ref b, through: ref c, for: in parser.TypeSyntax.namedType(Owned(NamedType { span: m.span, path: move path, args: List<parser.TypeSyntax>() })))
@@ -501,9 +439,9 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
             }
         }
     } else if lk == .unionType {
-        let u = typeIndex(lookupType) // mutation-exempt: Q607 through 515
+        let u = typeIndex(lookupType)
         if boundKind(target) == .local {
-            let l = c.bLocals[boundIndex(target)].local
+            let l = c.bLocals[boundIndex(target)].local // mutation-exempt: Q607 through 453
             if b.narrowed.contains(l) {
                 let v = b.narrowed[l]
                 for fi in 0..c.unionVariants[v].fields.length {
@@ -627,7 +565,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
     }
 
     if (builtinProperty(ref c, for: targetType, by: name) is { } builtin) {
-        var callType = t18PropertyType(ref c, for: builtin.member, as: builtin.type)
+        var callType = propertyType(ref b, through: ref c, for: builtin.member, as: builtin.type)
         if kindOf(builtin.type) == .span && boundKind(target) == .staticArray {
             callType = internSpan(ref c, by: c.spanTypes[typeIndex(builtin.type)].element, readOnly: true)
         }
@@ -738,7 +676,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
     let name = t18Text(in c, from: b.file, at: memberSpan)
     var isCalleeMatch = false
     var tail = TextSpan { start: memberSpan.start, length: 0 }
-    if (b.calleeOf is { } activeCall) { // mutation-exempt: Q607 through 749
+    if (b.calleeOf is { } activeCall) { // mutation-exempt: Q607 through 687
         switch activeCall.callee {
             case .memberExpr(let me):
                 if me.value.member.start == memberSpan.start && me.value.member.length == memberSpan.length {
@@ -756,53 +694,53 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
     let isStr = isString(type)
     let isInt = isInteger(type)
 
-    if isList && name == "removeRange" { // mutation-exempt: Q607 through 764
+    if isList && name == "removeRange" { // mutation-exempt: Q607 through 702
         if isCalleeMatch && (b.calleeOf is { } cCall) && cCall.args.length == 2 && cCall.args[0].name is null && cCall.args[0].modifier == .none && cCall.args[1].name is null && cCall.args[1].modifier == .none {
-            let from = t18Text(in c, from: b.file, at: t18ExprSpan(in cCall.args[0].value))
-            let until = t18Text(in c, from: b.file, at: t18ExprSpan(in cCall.args[1].value))
+            let from = t18Text(in c, from: b.file, at: t17ExprSpan(in cCall.args[0].value))
+            let until = t18Text(in c, from: b.file, at: t17ExprSpan(in cCall.args[1].value))
             return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: true, fixSpan: tail, replacement: $"remove(from: {from}, until: {until})" }
         }
         return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isList && name == "replaceRange" { // mutation-exempt: Q607 through 772
+    if isList && name == "replaceRange" { // mutation-exempt: Q607 through 710
         if isCalleeMatch && (b.calleeOf is { } rCall) && rCall.args.length == 2 && rCall.args[0].name is null && rCall.args[0].modifier == .none && rCall.args[1].name is null && rCall.args[1].modifier == .none {
-            let at = t18Text(in c, from: b.file, at: t18ExprSpan(in rCall.args[0].value))
-            let by = t18Text(in c, from: b.file, at: t18ExprSpan(in rCall.args[1].value))
+            let at = t18Text(in c, from: b.file, at: t17ExprSpan(in rCall.args[0].value))
+            let by = t18Text(in c, from: b.file, at: t17ExprSpan(in rCall.args[1].value))
             return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: true, fixSpan: tail, replacement: $"replace(at: {at}, by: {by})" }
         }
         return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isMap && name == "getOr" { // mutation-exempt: Q607 through 785
+    if isMap && name == "getOr" { // mutation-exempt: Q607 through 723
         if isCalleeMatch && (b.calleeOf is { } mCall) && mCall.args.length == 2 && mCall.args[0].name is null && mCall.args[0].modifier == .none && mCall.args[1].name is null && mCall.args[1].modifier == .none {
             switch mCall.callee {
                 case .memberExpr(let me):
-                    let key = t18Text(in c, from: b.file, at: t18ExprSpan(in mCall.args[0].value))
-                    let fallback = t18Text(in c, from: b.file, at: t18ExprSpan(in mCall.args[1].value))
-                    let mapText = t18Text(in c, from: b.file, at: t18ExprSpan(in me.value.target))
+                    let key = t18Text(in c, from: b.file, at: t17ExprSpan(in mCall.args[0].value))
+                    let fallback = t18Text(in c, from: b.file, at: t17ExprSpan(in mCall.args[1].value))
+                    let mapText = t18Text(in c, from: b.file, at: t17ExprSpan(in me.value.target))
                     return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: true, fixSpan: mCall.span, replacement: $"({mapText}.tryGet(at: {key}) ?? {fallback})" }
                 default: {}
             }
         }
         return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if (isList || isArrayT) && name == "asSpan" { // mutation-exempt: Q607 through 791
+    if (isList || isArrayT) && name == "asSpan" { // mutation-exempt: Q607 through 729
         if isCalleeMatch && (b.calleeOf is { } sCall) && sCall.args.length == 0 {
             return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: true, fixSpan: tail, replacement: "span" }
         }
         return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isStr && name == "toUtf16" { // mutation-exempt: Q607 through 797
+    if isStr && name == "toUtf16" { // mutation-exempt: Q607 through 735
         if isCalleeMatch && (b.calleeOf is { } uCall) && uCall.args.length == 0 {
             return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: true, fixSpan: tail, replacement: "utf16" }
         }
         return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: false, fixSpan: tail, replacement: "" }
     }
     if isInt && (name == "toHex" || name == "toBinary" || name == "toOctal") {
-        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal") // mutation-exempt: Q607 through 809
+        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal") // mutation-exempt: Q607 through 747
         if isCalleeMatch && (b.calleeOf is { } hCall) && hCall.args.length == 0 {
             switch hCall.callee {
                 case .memberExpr(let me):
-                    let targetText = t18Text(in c, from: b.file, at: t18ExprSpan(in me.value.target))
+                    let targetText = t18Text(in c, from: b.file, at: t17ExprSpan(in me.value.target))
                     return RenamedResult { oldName: $"{name}()", newName: $"string(x, as: .{radix})", hasFix: true, fixSpan: hCall.span, replacement: $"string({targetText}, as: .{radix})" }
                 default: {}
             }
@@ -981,7 +919,7 @@ BExpr bindIndex(ref Binder b, through ref Ctx c, for in parser.IndexExpr i) {
         element = c.arrayTypes[typeIndex(targetType)].element
     }
     if element == -1 {
-        report(ref b, through: ref c, for: .notIndexable, at: t18ExprSpan(in i.target), by: (typeDisplay(ref c, by: targetType), "", "", "", ""))
+        report(ref b, through: ref c, for: .notIndexable, at: t17ExprSpan(in i.target), by: (typeDisplay(ref c, by: targetType), "", "", "", ""))
         let _ = bindExpr(ref b, through: ref c, for: in i.index)
         return addErrorExpr(ref c, from: BErrorExpr { span: i.span })
     }
@@ -1013,7 +951,7 @@ BExpr bindIndex(ref Binder b, through ref Ctx c, for in parser.IndexExpr i) {
         let effective = fromEnd ? arr.length - n : n
         if effective < 0 || effective >= arr.length || (fromEnd && n == 0) {
             let nStr = fromEnd ? $"^{n}" : $"{n}"
-            report(ref b, through: ref c, for: .indexOutOfRange, at: t18ExprSpan(in i.index), by: (nStr, typeDisplay(ref c, by: targetType), "", "", ""))
+            report(ref b, through: ref c, for: .indexOutOfRange, at: t17ExprSpan(in i.index), by: (nStr, typeDisplay(ref c, by: targetType), "", "", ""))
         }
     }
     return addIndex(ref c, from: BIndex { span: i.span, target: target, index: index, fromEnd: fromEnd, type: element })
@@ -1023,7 +961,7 @@ BExpr t18BindIndexValue(ref Binder b, through ref Ctx c, for parser.Expr syntax)
     let index = bindExpr(ref b, through: ref c, for: in syntax, to: prim(.i64))
     let indexType = exprType(in c, for: index)
     if isError(indexType) { return index }
-    let span = t18ExprSpan(in syntax)
+    let span = t17ExprSpan(in syntax)
     if !isInteger(indexType) {
         report(ref b, through: ref c, for: .typeMismatch, at: span, by: (typeDisplay(ref c, by: indexType), "an integer index", "", "", ""))
         return addErrorExpr(ref c, from: BErrorExpr { span: span })
@@ -1071,7 +1009,7 @@ BExpr bindSlice(ref Binder b, through ref Ctx c, for in parser.IndexExpr i, from
 }
 
 string interpolationSource(ref Binder b, through ref Ctx c, for in parser.Expr e) {
-    let text = t18Text(in c, from: b.file, at: t18ExprSpan(in e))
+    let text = t18Text(in c, from: b.file, at: t17ExprSpan(in e))
     switch e {
         case .literalExpr(let l):
             if l.value.kind == .string && !t18ContainsBraces(text) {
@@ -1088,8 +1026,8 @@ string interpolationSource(ref Binder b, through ref Ctx c, for in parser.Expr e
 
 /// BYN2201: strings have no indexer (spec §3.2); offer the four alternatives.
 void t18ReportStringIndexer(ref Binder b, through ref Ctx c, for parser.IndexExpr i) {
-    let targetSpan = t18ExprSpan(in i.target)
-    let indexSpan = t18ExprSpan(in i.index)
+    let targetSpan = t17ExprSpan(in i.target)
+    let indexSpan = t17ExprSpan(in i.index)
     let s = t18Text(in c, from: b.file, at: targetSpan)
     let index = t18Text(in c, from: b.file, at: indexSpan)
     let diagSpan = TextSpan.fromBounds(targetSpan.end, until: i.span.end)
