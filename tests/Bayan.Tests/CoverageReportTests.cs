@@ -56,6 +56,20 @@ public sealed class CoverageReportTests
         """;
 
     [Fact]
+    public void ARunBelowTheManifestMinimumFailsAndNamesTheBranch()
+    {
+        var app = Project("gate", Main);
+        var manifest = Path.Combine(app, "package.byn");
+        var text = File.ReadAllText(manifest);
+        var at = text.LastIndexOf('}');
+        File.WriteAllText(manifest, text[..at].TrimEnd().TrimEnd(',') + ",\n    test: Tests { branches: 100 }\n}\n");
+        var r = Run("test", "--coverage", app);
+        Assert.Equal(CliApp.ExitFailure, r.Exit);
+        Assert.Matches(@"bayan: branches \d+(\.\d+)?% < 100%", r.Err);
+        Assert.Matches(@"uncovered branch: \S*main\.byn:\d+:\d+ never (true|false)", r.Err);
+    }
+
+    [Fact]
     public void AnUntriggeredErrorVariantIsNamed()
     {
         var app = Project("untriggered", Main);

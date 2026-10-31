@@ -721,16 +721,16 @@ public static class CliApp
             Directory.CreateDirectory(testDir);
             Toolchain.ReplaceFile(Path.Combine(testDir, "results.json"), temp => File.WriteAllText(temp, json));
         }
-        if (map is not null) WriteCoverage(o, compiled, map, hits, timedOut, buildSeconds, total.Elapsed.TotalSeconds, coverageDir!, stdout);
-        return failed == 0 ? ExitOk : ExitTestFailure;
+        var gated = map is not null && WriteCoverage(o, compiled, map, hits, timedOut, buildSeconds, total.Elapsed.TotalSeconds, coverageDir!, stdout, stderr);
+        return failed > 0 ? ExitTestFailure : gated ? ExitFailure : ExitOk;
     }
 
     /// <summary>
     /// <c>bayan test --coverage</c> (spec 013 R9, R12): prints the summary and writes <c>out/test/bayan-quality.json</c> and a
     /// <c>&lt;file&gt;.cov.txt</c> per file beside it, under the project root (or the directory of the file given).
     /// </summary>
-    private static void WriteCoverage(BuildOptions o, Compiled compiled, Testing.CoverageMap map, Dictionary<int, ulong> hits, bool timedOut,
-        double buildSeconds, double totalSeconds, string coverageDir, TextWriter stdout)
+    private static bool WriteCoverage(BuildOptions o, Compiled compiled, Testing.CoverageMap map, Dictionary<int, ulong> hits, bool timedOut,
+        double buildSeconds, double totalSeconds, string coverageDir, TextWriter stdout, TextWriter stderr)
     {
         Directory.Delete(coverageDir, recursive: true);
         var report = Testing.QualityReport.Coverage("bayan test --coverage", map, hits, timedOut, buildSeconds, totalSeconds);
@@ -747,6 +747,8 @@ public static class CliApp
             Directory.CreateDirectory(Path.GetDirectoryName(listing)!);
             File.WriteAllText(listing, Testing.QualityReport.Listing(f.Coverage!, File.ReadAllLines(path)));
         }
+        var m = compiled.Manifest;
+        return m is not null && ReportGates(Testing.Gates.Coverage(report, m.MinLines, m.MinBranches, m.MinErrorPaths), stderr);
     }
 
     /// <summary>
@@ -766,7 +768,7 @@ public static class CliApp
         File.WriteAllText(Testing.Schemata.SitesPath(executable), schema.SitesJson());
         if (o.Run is not null)
             return RunExternal(Testing.ExternalSite.ReadAll(schema.SitesJson())!, ShellCommand(o.Run), executable, "bayan test --mutate --run",
-                Path.Combine(compiled.ProjectRoot ?? (Directory.Exists(o.Path) ? Path.GetFullPath(o.Path) : Path.GetDirectoryName(Path.GetFullPath(o.Path))!), "out", "test"), build.Elapsed.TotalSeconds, stdout, stderr);
+                Path.Combine(compiled.ProjectRoot ?? (Directory.Exists(o.Path) ? Path.GetFullPath(o.Path) : Path.GetDirectoryName(Path.GetFullPath(o.Path))!), "out", "test"), build.Elapsed.TotalSeconds, stdout, stderr, compiled.Manifest?.MinMutation);
         var work = Directory.CreateTempSubdirectory("bayan-mutate-");
         try
         {
@@ -776,7 +778,8 @@ public static class CliApp
                 stderr.WriteLine(Messages.MutateExcluded.Text(program.Tests[t].Test.Name));
             var counts = Enum.GetValues<Testing.MutantStatus>().Select(s => (object)result.Mutants.Count(m => m.Status == s)).ToArray();
             stdout.WriteLine(Messages.MutateTotals.Text(counts));
-            return ExitOk;
+            if (compiled.Manifest?.MinMutation is not { } min) return ExitOk;
+            return ReportGates(Testing.Gates.Mutation(Testing.QualityReport.Mutation("bayan test --mutate", result, schema, 0, [], 0), min), stderr) ? ExitFailure : ExitOk;
         }
         finally
         {
@@ -821,7 +824,8 @@ public static class CliApp
             return ExitUsage;
         }
         return RunExternal(map, command, Path.GetFullPath(binary), "bayan mutate",
-            Path.GetDirectoryName(Path.GetFullPath(binary))!, 0, stdout, stderr);
+            Path.GetDirectoryName(Path.GetFullPath(binary))!, 0, stdout, stderr,
+            File.Exists("package.byn") ? Manifest.Read("package.byn").MinMutation : null);
     }
 
     private static string[] ShellCommand(string command) =>
@@ -829,7 +833,7 @@ public static class CliApp
 
     /// <summary>Runs the external command over <paramref name="sites"/>, prints a line per site and the report summary, and writes <c>bayan-quality.json</c> to <paramref name="reportDir"/>.</summary>
     private static int RunExternal(IReadOnlyList<Testing.ExternalSite> sites, IReadOnlyList<string> command, string binary, string tool,
-        string reportDir, double buildSeconds, TextWriter stdout, TextWriter stderr)
+        string reportDir, double buildSeconds, TextWriter stdout, TextWriter stderr, int? minMutation = null)
     {
         var total = System.Diagnostics.Stopwatch.StartNew();
         var environment = new Dictionary<string, string> { ["BAYAN_BINARY"] = binary };
@@ -843,7 +847,18 @@ public static class CliApp
         stdout.Write(report.Summary([]));
         Directory.CreateDirectory(reportDir);
         File.WriteAllText(Path.Combine(reportDir, "bayan-quality.json"), report.Json());
-        return ExitOk;
+        return ReportGates(Testing.Gates.Mutation(report, minMutation), stderr) ? ExitFailure : ExitOk;
+    }
+
+    /// <summary>Prints a line per failed gate, each followed by what is missing; whether any gate failed.</summary>
+    private static bool ReportGates(IReadOnlyList<Testing.GateFailure> failures, TextWriter stderr)
+    {
+        foreach (var f in failures)
+        {
+            stderr.WriteLine(Messages.GateBelow.Text(f.Name, Testing.Gates.Fmt(f.Percent), f.Min));
+            foreach (var line in f.Missing) stderr.WriteLine(line);
+        }
+        return failures.Count > 0;
     }
 
     private static string ExternalLine(Testing.ExternalResult r) =>
