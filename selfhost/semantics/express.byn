@@ -604,8 +604,8 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
             return addErrorExpr(ref c, from: BErrorExpr { span: pat.value.span })
         case .lambdaExpr(let l):
             var fExpected = expected
+            // mutation-exempt: Q600 through 611
             if fExpected != -1 && kindOf(fExpected) == .optional {
-                // mutation-exempt: Q600 through 611
                 fExpected = c.optionalTypes[typeIndex(fExpected)]
             }
             if fExpected != -1 && kindOf(fExpected) != .function { fExpected = -1 }
@@ -790,13 +790,13 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
             let t = c.locals[local].type
             return constantLiteral(ref c, at: n.span, as: t, by: in cVal)
         }
-        // mutation-exempt: Q600 through 805
         var read: BExpr = -1
         if isNonNull(ref b, for: local) {
             let locNode = addLocalNode(ref c, at: n.span, for: local)
             let optInner = c.optionalTypes[typeIndex(c.locals[local].type)]
             read = addConversion(ref c, from: BConversion { span: n.span, operand: locNode, type: optInner, kind: .narrow })
         } else {
+            // mutation-exempt: Q600 through 801
             let known = knownState(ref b, for: local)
             let locType = known != -1 ? known : c.locals[local].type
             read = addLocal(ref c, from: BLocal { span: n.span, local: local, type: locType })

@@ -21,20 +21,18 @@ namespace Bayan.Tests;
 ///
 /// Not compared, since only a sibling stub reaches them:
 /// <list type="bullet">
-/// <item><c>bindConverted</c>: T22 <c>built</c> (errorcases.byn:14) returns -1.</item>
-/// <item>The <c>Untrusted&lt;bool&gt;</c> fact in <c>convert</c>: T19 <c>fact</c> (express3.byn:41).</item>
-/// <item>Local reads, narrowing and known states in <c>bindName</c>: T35 <c>capture</c> (express4.byn:20) returns false.</item>
-/// <item>A <c>const</c> local: T18 <c>constantLiteral</c> (express2.byn:42); a module constant: T18 <c>constantRef</c> (express2.byn:39).</item>
-/// <item><c>it</c> and <c>this</c> in a lambda, a states payload field: T35 <c>inLambda</c> (express4.byn:23), T38 <c>statesOf</c> (declare2.byn:26).</item>
-/// <item>An implicit <c>this</c> member and an interface default's members: T18 <c>lookupMember</c> (express2.byn:45), <c>bindImplicitThisMember</c> (express2.byn:27).</item>
-/// <item>A variant group (in <c>asValue</c> and <c>ConvertToFunction</c>) and a method group with a receiver: T18 member binding (express2.byn).</item>
-/// <item>A static array to a writable <c>Span</c>: its value needs T18 <c>constantRef</c> (express2.byn:39).</item>
+/// <item><c>bindConverted</c>: its <c>built</c> (errorcases.byn:15) goes through T22 <c>checkPayloadGiven</c> (errorcases.byn:21).</item>
+/// <item>The <c>Untrusted&lt;bool&gt;</c> fact in <c>convert</c>: T19 <c>fact</c> (express3.byn:42).</item>
+/// <item>A local's known state in <c>bindName</c>: T22 <c>knownState</c> (states.byn:30); a read inside a lambda: T35 <c>capture</c> (express4.byn:21).</item>
+/// <item><c>it</c> and <c>this</c> in a lambda, a states payload field: T35 <c>inLambda</c> (express4.byn:27), T38 <c>statesOf</c> (declare2.byn:26).</item>
+/// <item>An interface default's members: T38 <c>declareInterfaceMembers</c> (declare2.byn:12).</item>
+/// <item>A static array to a writable <c>Span</c>: its value needs T18 <c>constantRef</c> (express2.byn:40).</item>
 /// <item>A <c>List</c> to <c>Span</c> mismatch help, an optional unwrap from a local: T34/T20 collection and call binding (calls3.byn, calls.byn:5).</item>
 /// <item>Dispatch to member, call, index, unary, binary, range, conditional, cast, is, in, switch, try, move, catch, jump,
 /// block, struct literal, with, collection, tuple, interpolation, stackalloc and lambda: their siblings' stubs
 /// (express2.byn, calls.byn, calls2.byn:32, calls3.byn, express3.byn:5, express4.byn:17, binder2.byn:363, binder2.byn:837).</item>
-/// <item><c>caught</c> with <c>_caught</c> set and the print and sink argument branches of <c>convert</c> (Q600).</item>
-/// <item>A module reference from an import, and the <c>dyn ref</c> writable check: no import or interface in the oracle source.</item>
+/// <item>The print and sink argument branches of <c>convert</c> (Q600).</item>
+/// <item>The <c>dyn ref</c> writable check: T39 <c>checkWritable</c> (calls4.byn:15).</item>
 /// </list>
 /// </summary>
 public sealed class SelfhostSemanticsT17Tests
@@ -295,6 +293,8 @@ public sealed class SelfhostSemanticsT17Tests
         new("caught", "qCaught", "caught"),
         new("caught-none", "qCaught", "caught-none"),
         new("name-const-local", "qK", "const"),
+        new("name-var-local", "qK", "var"),
+        new("name-nonnull-local", "qK", "nonnull"),
     ];
 
     private static string Dir => Path.Combine(Golden.RepoRoot, "tmp", "t17-oracle");
@@ -442,10 +442,21 @@ public sealed class SelfhostSemanticsT17Tests
             var local = (LocalSymbol)Call(binder, "DeclareLocal", decl.Name, PrimitiveType.I32, LocalKind.Const)!;
             local.Constant = new ConstantValue((Int128)5);
         }
+        if (k.Op is "var" or "nonnull")
+        {
+            var decl = (LocalDecl)Fn(o, "qKDecl").Body!.Statements[0];
+            var local = (LocalSymbol)Call(binder, "DeclareLocal", decl.Name, k.Op == "var" ? PrimitiveType.I32 : Sig(o, "o"), LocalKind.Var)!;
+            if (k.Op == "nonnull")
+            {
+                var nonNull = BinderType.GetField("_nonNull", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(binder)!;
+                var scope = BinderType.GetField("_scope", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(binder);
+                nonNull.GetType().GetMethod("Add")!.Invoke(nonNull, [Activator.CreateInstance(nonNull.GetType().GetGenericArguments()[0], scope, local)]);
+            }
+        }
         var target = k.Target is null ? null : Sig(o, k.Target);
         var r = k.Op switch
         {
-            "expr" or "nofn" or "it" or "caught" or "caught-none" or "const" => (BoundExpr)Call(binder, "BindExpr", e, target)!,
+            "expr" or "nofn" or "it" or "caught" or "caught-none" or "const" or "var" or "nonnull" => (BoundExpr)Call(binder, "BindExpr", e, target)!,
             "stmt" => (BoundExpr)Call(binder, "BindStatementExpression", e)!,
             "conv" => Convert(binder, (BoundExpr)Call(binder, "BindExpr", e, null)!, target!, e.Span),
             "fn" => Convert(binder, (BoundExpr)Call(binder, "BindExprFor", e, target)!, target!, e.Span),
@@ -633,6 +644,13 @@ public sealed class SelfhostSemanticsT17Tests
                 sb.AppendLine("    c.locals[kl].constant = Constant { kind: .integer, integer: bigFromI64(5) }");
             }
             var n = 100;
+            if (k.Op is "var" or "nonnull")
+            {
+                var decl = (LocalDecl)Fn(o, "qKDecl").Body!.Statements[0];
+                var type = k.Op == "var" ? "prim(.i32)" : BayanType(sb, Sig(o, "o"), ref n);
+                sb.AppendLine($"    let kl = declareLocal(ref b, through: ref c, at: {Span(decl.Name.Span)}, as: {type}, for: .varKeyword)");
+                if (k.Op == "nonnull") sb.AppendLine("    b.nonNull.append((t16ScopeId(ref b), kl))");
+            }
             var target = k.Target is null ? "-1" : BayanType(sb, Sig(o, k.Target), ref n);
             sb.AppendLine($"    let target = {target}");
             if (k.Target2 is { } t2)
@@ -647,7 +665,7 @@ public sealed class SelfhostSemanticsT17Tests
             var r = k.Target2 is null ? "let r" : "var r";
             body.AppendLine((k.Op switch
             {
-                "expr" or "nofn" or "it" or "caught" or "caught-none" or "const" => "            $R = bindExpr(ref b, through: ref c, for: in $E, to: target)",
+                "expr" or "nofn" or "it" or "caught" or "caught-none" or "const" or "var" or "nonnull" => "            $R = bindExpr(ref b, through: ref c, for: in $E, to: target)",
                 "stmt" => "            $R = bindStatementExpression(ref b, through: ref c, for: in $E)",
                 "conv" => "            $R = convert(ref b, through: ref c, for: bindExpr(ref b, through: ref c, for: in $E), to: target, at: span)",
                 "fn" => "            $R = convert(ref b, through: ref c, for: bindExprFor(ref b, through: ref c, for: in $E, to: target), to: target, at: span)",
@@ -887,6 +905,66 @@ public sealed class SelfhostSemanticsT17Tests
         return sb.ToString();
     }
 
+    // ── Groups only member binding or an import makes ────────────────────────────
+
+    /// <summary>
+    /// Groups built by hand on `qMod`'s body (the nodes T18's member binding or an import would build): a module reference,
+    /// the `Shape.circle` variant group, a built-in group and `Point.tm` with a receiver through <c>AsValue</c>, then the
+    /// variant group to `fa` and the method group to `fv` through <c>Convert</c>.
+    /// </summary>
+    private static List<string> ExpectedGroups()
+    {
+        var o = Oracle.Of("main", Source);
+        var (fn, _, e) = Site(o, "qMod");
+        var binder = o.Binder(fn, null);
+        var recv = new BoundErrorExpr(e);
+        var circle = ((UnionSymbol)o.Module.Types["Shape"]).Variants[0];
+        var tm = Point(o).Methods.Single(m => m.Name == "tm");
+        BoundExpr Group(string name, params object?[] args) =>
+            (BoundExpr)Activator.CreateInstance(BinderType.Assembly.GetType($"Bayan.Semantics.Binding.{name}")!, [e, .. args])!;
+        var lines = new List<string>();
+        BoundExpr[] groups = [new BoundModuleRef(e, new ModuleSymbol("m", "")), Group("BoundVariantGroup", circle),
+            Group("BoundBuiltinGroup", recv, "length"), Group("BoundMethodGroup", recv, tm)];
+        foreach (var g in groups) Dump(lines, (BoundExpr)Call(binder, "AsValue", g, e)!);
+        Dump(lines, Convert(binder, Group("BoundVariantGroup", circle), Sig(o, "fa"), e.Span));
+        Dump(lines, Convert(binder, Group("BoundMethodGroup", recv, tm), Sig(o, "fv"), e.Span));
+        lines.AddRange(o.NewDiagnostics());
+        return lines;
+    }
+
+    private static string GroupsMain()
+    {
+        var o = Oracle.Of("main", Source);
+        var sigs = o.Module.Functions["sigs"][0].Parameters;
+        int Param(string name) => sigs.ToList().FindIndex(p => p.Name == name);
+        var sb = new StringBuilder();
+        sb.AppendLine("void groupsAll() {");
+        sb.AppendLine("    var c = tcSource()");
+        sb.Append(Symbols(o));
+        sb.AppendLine("    var b = tcBinder(fnQMod, by: -1)");
+        sb.AppendLine("    t15CaptureTypes(ref b, through: ref c)");
+        sb.AppendLine("    pushScope(ref b)");
+        sb.AppendLine("    c.modules.append(Mod { name: \"m\", files: List<FileId>() })");
+        sb.AppendLine($"    let fa = c.locals[c.functions[fnSigs].parameters[{Param("fa")}]].type");
+        sb.AppendLine($"    let fv = c.locals[c.functions[fnSigs].parameters[{Param("fv")}]].type");
+        sb.AppendLine("    let circle = c.unions[uShape].variants[0]");
+        sb.AppendLine("    let mark = c.diagnostics.length");
+        sb.AppendLine("    print(\"== groups\")");
+        AtExpression(sb, o, "qMod", """
+                    let sp = parser.exprSpan(in $E)
+                    let recv = addErrorExpr(ref c, from: BErrorExpr { span: sp })
+                    tcDump(ref c, for: asValue(ref b, through: ref c, for: addModuleRef(ref c, from: BModuleRef { span: sp, module: 1 }), from: in $E), at: 0)
+                    tcDump(ref c, for: asValue(ref b, through: ref c, for: addVariantGroup(ref c, from: BVariantGroup { span: sp, variant: circle }), from: in $E), at: 0)
+                    tcDump(ref c, for: asValue(ref b, through: ref c, for: addBuiltinGroup(ref c, from: BBuiltinGroup { span: sp, receiver: recv, name: "length" }), from: in $E), at: 0)
+                    tcDump(ref c, for: asValue(ref b, through: ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: sp, receiver: recv, function: fnPointTm }), from: in $E), at: 0)
+                    tcDump(ref c, for: convert(ref b, through: ref c, for: addVariantGroup(ref c, from: BVariantGroup { span: sp, variant: circle }), to: fa, at: sp), at: 0)
+                    tcDump(ref c, for: convert(ref b, through: ref c, for: addMethodGroup(ref c, from: BMethodGroup { span: sp, receiver: recv, function: fnPointTm }), to: fv, at: sp), at: 0)
+        """);
+        sb.AppendLine("    tcDiags(in c, from: mark)");
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
     // ── IsUntypedLiteral, ParseInteger, Fits and Suggest ─────────────────────────
 
     private static readonly string[] UntypedFunctions =
@@ -1003,12 +1081,13 @@ public sealed class SelfhostSemanticsT17Tests
         return sb.Append('"').ToString();
     }
 
-    private static string MainSource() => Prelude.Replace("$SOURCE", Literal(Source)) + CasesMain() + PendingMain() + BadCharsMain() + UntypedMain()
+    private static string MainSource() => Prelude.Replace("$SOURCE", Literal(Source)) + CasesMain() + PendingMain() + BadCharsMain() + GroupsMain() + UntypedMain()
         + ParseMain() + FitsMain() + SuggestMain() + """
         i32 main() {
             casesAll()
             pendingAll()
             badCharsAll()
+            groupsAll()
             untypedAll()
             parseAll()
             fitsAll()
@@ -1182,6 +1261,9 @@ public sealed class SelfhostSemanticsT17Tests
 
     [Fact]
     public void BadCharsMatch() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "badchars", ExpectedBadChars());
+
+    [Fact]
+    public void GroupsMatch() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "groups", ExpectedGroups());
 
     [Fact]
     public void UntypedLiteralMatches() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "untyped", ExpectedUntyped());
