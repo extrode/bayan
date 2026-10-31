@@ -96,10 +96,12 @@ Ctx create(from move List<lexer.SourceText> entryFiles, at string packageRoot, b
     // Syntax errors stop here: binding a broken tree mostly reports their echoes.
     if t11HasErrors(in c) { return c }
     clock = Io.monotonicNanos()
+    // C# `Lexicon` is static (Lexicon.cs:9), built before anything reads it.
+    buildLexicon(ref c)
     declare(ref c)
     bindAll(ref c)
     // Each case binds and checks the same body; report what it finds there once.
-    // mutation-exempt: Q573
+    // (blocked: Q573) Untested: a `create` with a `@cases` test panics in T12's `checkOverloads` (declare.byn:671).
     if c.testCases.length > 0 { removeRepeats(ref c) }
     c.checkTime = Io.monotonicNanos() - clock
     return c
@@ -150,6 +152,8 @@ ModId loadModule(ref Ctx c, for string name, at string dir, from move List<lexer
         // Every lexer and parser code is an error (DiagnosticCodes.cs has no BYN0xxx/BYN1xxx warning).
         var hasError = false
         for d in p.lexed.diagnostics {
+            // A report the parser withdrew (`unreport`, Q440) is gone from the C# bag (Parser.cs:2627).
+            if d.code == "" { continue }
             addDiag(ref c, by: Diag {
                 code: d.code,
                 file: fileId,
@@ -293,12 +297,8 @@ void declare(ref Ctx c) {
         for i in copyIds(in c.modules[m].interfaces) { declareInterfaceMembers(ref c, for: i) }
     }
     c.interfaceMembersDeclared = true
-    var pendingInterfaces = List<Work>()
     for i in 0..c.pendingInterfaces.length {
-        pendingInterfaces.append(t11CopyWork(in c.pendingInterfaces[i]))
-    }
-    c.pendingInterfaces = List<Work>()
-    for w in pendingInterfaces {
+        let w = t11CopyWork(in c.pendingInterfaces[i])
         let scope = instantiatingBegin(ref c, from: w.file, at: w.span)
         runWork(ref c, for: in w)
         instantiatingEnd(ref c, by: scope)
@@ -362,8 +362,8 @@ void declare(ref Ctx c) {
         for s in copyIds(in c.modules[m].structs) { checkStateNames(ref c, for: s) }
         for s in copyIds(in c.modules[m].structs) { checkMembers(ref c, for: s) }
         var free = List<FuncId>()
-        for f in c.modules[m].allFunctions {
-            if c.functions[f].owner < 0 && !t11IsInstance(in c, for: f) && c.functions[f].kind != .main && c.functions[f].kind != .testKeyword {
+        for f in copyIds(in c.modules[m].allFunctions) {
+            if c.functions[f].owner < 0 && !functionIsInstance(ref c, by: f) && c.functions[f].kind != .main && c.functions[f].kind != .testKeyword {
                 free.append(f)
             }
         }
@@ -381,24 +381,22 @@ void declare(ref Ctx c) {
     c.membersDeclared = true
     for i in 0..c.pendingKeys.length {
         let work = t11CopyWork(in c.pendingKeys[i])
-        runWork(ref c, for: in work)
+        if work.atSite {
+            // Compilation.cs:1550 `() => Instantiating(site, span, check)`.
+            let scope = instantiatingBegin(ref c, from: work.siteFile, at: work.siteSpan)
+            runWork(ref c, for: in work)
+            instantiatingEnd(ref c, by: scope)
+        } else {
+            runWork(ref c, for: in work)
+        }
     }
     for m in copyIds(in c.moduleOrder) {
         for s in copyIds(in c.modules[m].structs) { checkStructShape(ref c, for: s) }
         for u in copyIds(in c.modules[m].unions) { checkUnionShape(ref c, for: u) }
     }
     let main = c.modules[c.entryModule].main
+    // mutation-exempt: Q718
     if main >= 0 && c.functions[main].kind == .function { t11CheckMainSignature(ref c, for: main) }
-}
-
-/// The C# `FunctionSymbol.IsInstance` (Symbols.cs:257): an instantiated function, a method of an instance, or a
-/// lambda inside one.
-bool t11IsInstance(in Ctx c, for FuncId f) {
-    if c.functions[f].template >= 0 { return true }
-    let owner = c.functions[f].owner
-    if owner >= 0 && c.structs[owner].template >= 0 { return true }
-    let enclosing = c.functions[f].enclosing
-    return enclosing > 0 && t11IsInstance(in c, for: enclosing)
 }
 
 /// A copy of `w`, so a queued item can be run while `c` is passed by `ref`.
@@ -411,6 +409,9 @@ Work t11CopyWork(in Work w) => Work {
     span: w.span,
     declIndex: w.declIndex,
     memberIndex: w.memberIndex,
+    atSite: w.atSite,
+    siteFile: w.siteFile,
+    siteSpan: w.siteSpan,
 }
 
 // ── Compilation.cs:244 DeclareBuiltinVariants ───────────────────────────────────
@@ -529,7 +530,7 @@ void t11CheckAttributeList(ref Ctx c, from FileId file, for in List<parser.Attri
             isStruct = true
             hasStates = s.value.states.length > 0
         default:
-            isTest = false
+            break
     }
     var hasCases = false
     for ai in 0..attributes.length {
@@ -544,7 +545,7 @@ void t11CheckAttributeList(ref Ctx c, from FileId file, for in List<parser.Attri
                     case .testDecl(let t):
                         c.testCases[declKey(file, at: declIndex)] = TestCases { attribute: ai, args: t11CheckCases(ref c, from: file, for: in t.value, by: in attributes[ai]) }
                     default:
-                        isTest = true
+                        panic("`isTest` holds only for a `TestDecl`")
                 }
             }
             hasCases = true
@@ -581,7 +582,7 @@ void t11CheckAttributeList(ref Ctx c, from FileId file, for in List<parser.Attri
         case .structDecl(let s):
             for m in s.value.members { t11CheckAttributes(ref c, from: file, for: in m, at: declIndex) }
         default:
-            isTest = false
+            break
     }
 }
 
@@ -1128,8 +1129,9 @@ void addFunction(ref Ctx c, from FileId file, at TextSpan name, for FuncId f) {
 void afterMembersDeclared(ref Ctx c, for in Work work) {
     var w = t11CopyWork(in work)
     if c.hasInstantiationSite {
-        w.file = c.instantiationSiteFile
-        w.span = c.instantiationSiteSpan
+        w.atSite = true
+        w.siteFile = c.instantiationSiteFile
+        w.siteSpan = c.instantiationSiteSpan
     }
     c.pendingKeys.append(move w)
 }
@@ -1156,18 +1158,24 @@ void runWork(ref Ctx c, for in Work work) {
             t13RunConstraint(ref c, for: in work)
         case .interfaceMembers:
             // Compilation.cs:204 and :1660 `DeclareInterfaceMembers(instance)`; the caller wraps it in `Instantiating`.
+            // Its only effect is T38's `declareInterfaceMembers`, a stub (Q718).
             declareInterfaceMembers(ref c, for: typeIndex(work.subject))
         case .members:
+            // No list `runWork` drains holds this kind yet, and T12's `declareMembers` is a stub (Q718).
             declareMembers(ref c, for: typeIndex(work.subject))
         case .unionVariants:
+            // No list `runWork` drains holds this kind yet, and T12's `declareUnionVariants` is a stub (Q718).
             declareUnionVariants(ref c, for: typeIndex(work.subject))
         case .conform:
+            // No list `runWork` drains holds this kind yet, and T14's `conform` is a stub (Q718).
             conform(ref c, for: typeIndex(work.subject))
         case .fieldDefault:
-            // Compilation.cs:1634 `FieldDefault(instance, f, site, span)`.
+            // Compilation.cs:1634 `FieldDefault(instance, f, site, span)`. T13 drains its `.fieldDefault` items with its
+            // own switch (generics.byn:180), so no list `runWork` drains holds this kind yet (Q718).
             let _ = fieldDefault(ref c, for: typeIndex(work.subject), by: work.memberIndex, from: work.file, at: work.span)
         case .bindFunction:
-            // Compilation.cs:1636 `BindFunction(fn)`.
+            // Compilation.cs:1636 `BindFunction(fn)`. T13 drains its `.bindFunction` items with its own switch
+            // (generics.byn:180), so no list `runWork` drains holds this kind yet (Q718).
             bindFunction(ref c, for: work.instance)
     }
 }
