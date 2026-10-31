@@ -33,6 +33,11 @@ public sealed class SelfhostSemanticsT15Tests
             bool wrong => 3
             Point(i32 a = 1, i32 b = zz) {
             }
+            Point copy() => this
+        }
+
+        interface IShape {
+            void touch() => this
         }
 
         struct Holder {
@@ -54,6 +59,10 @@ public sealed class SelfhostSemanticsT15Tests
         }
 
         void vd() => 1
+
+        void guarded(bool d = true) {
+            return if d
+        }
 
         void defaults(i32 x = 3, i32 y = zz) {
         }
@@ -220,6 +229,10 @@ public sealed class SelfhostSemanticsT15Tests
 
     private static string Camel(string name) =>
         string.Concat(name.Split('-').Select(w => char.ToUpperInvariant(w[0]) + w[1..]));
+
+    /// <summary>The C# `_firstStatement`, by its span (Q719).</summary>
+    private static string First(object binder) =>
+        Field<Stmt?>(binder, "_firstStatement") is { } s ? $"first {s.Span.Start}..{s.Span.End}" : "first none";
 
     private static string Span(TextSpan s) => $"TextSpan {{ start: {s.Start}, length: {s.Length} }}";
 
@@ -578,12 +591,47 @@ public sealed class SelfhostSemanticsT15Tests
         var o = Oracle.Of("main", Source);
         var fn = o.Module.Functions[name][0];
         var before = fn.Locals.Count;
-        Call(o.Binder(fn, null), "BindFunctionBody", fn.Decl);
-        var lines = new List<string>();
+        var binder = o.Binder(fn, null);
+        Call(binder, "BindFunctionBody", fn.Decl);
+        var lines = new List<string> { First(binder) };
         Dump(lines, fn.Body);
         Locals(lines, fn, before);
         lines.AddRange(o.NewDiagnostics());
         return lines;
+    }
+
+    /// <summary>
+    /// The first statement of `guarded`, a postfix-guarded `return` that starts where its inner statement does: only the
+    /// <c>first</c> line is compared, since T36's <c>bindReturn</c> is a stub (Q719).
+    /// </summary>
+    private static List<string> ExpectedFirst()
+    {
+        var o = Oracle.Of("main", Source);
+        var fn = o.Module.Functions["guarded"][0];
+        var binder = o.Binder(fn, null);
+        Call(binder, "BindFunctionBody", fn.Decl);
+        return [First(binder)];
+    }
+
+    private static string FirstMain()
+    {
+        var o = Oracle.Of("main", Source);
+        var sb = new StringBuilder();
+        var decl = IndexOf(o, d => d is FunctionDecl { Name.Text: "guarded" });
+        sb.AppendLine("void firstGuarded() {");
+        sb.AppendLine("    var c = tcSource()");
+        BuildFunction(sb, o, o.Module.Functions["guarded"][0], "function", decl, -1, "-1");
+        sb.AppendLine("    var b = tcBinder(f, by: -1)");
+        sb.AppendLine("    print(\"== first guarded\")");
+        sb.AppendLine($"    switch c.files[0].unit.members[{decl}] {{");
+        sb.AppendLine("        case .functionDecl(let d):");
+        sb.AppendLine("            bindFunctionBody(ref b, through: ref c, for: in d.value)");
+        sb.AppendLine("        default:");
+        sb.AppendLine("            break");
+        sb.AppendLine("    }");
+        sb.AppendLine("    tcFirst(in b)");
+        sb.AppendLine("}");
+        return sb.ToString();
     }
 
     /// <summary>Bayan statements that build function `fn` of the oracle's compilation by hand, into `f`.</summary>
@@ -613,6 +661,7 @@ public sealed class SelfhostSemanticsT15Tests
             sb.AppendLine("        default:");
             sb.AppendLine("            break");
             sb.AppendLine("    }");
+            sb.AppendLine("    tcFirst(in b)");
             sb.AppendLine("    tcBody(ref c, for: f)");
             sb.AppendLine("}");
         }
@@ -622,7 +671,7 @@ public sealed class SelfhostSemanticsT15Tests
         return sb.ToString();
     }
 
-    private static readonly string[] PointMembers = ["twice", "blocky", "wrong", "Point", "m2"];
+    private static readonly string[] PointMembers = ["twice", "blocky", "wrong", "Point", "m2", "copy"];
 
     private static FunctionSymbol MemberFunction(StructSymbol point, string name) =>
         name == "Point" ? point.Constructors[0] : point.FindProperty(name)?.Getter ?? point.Methods.Single(m => m.Name == name);
@@ -635,10 +684,11 @@ public sealed class SelfhostSemanticsT15Tests
         var before = fn.Locals.Count;
         // Compilation.Create already bound the defaults; the Bayan side binds them on first use, so clear the cache.
         foreach (var p in fn.Parameters) p.Default = null;
-        if (name == "Point") Call(o.Binder(fn, point), "BindConstructor", point.Decl.Members.OfType<ConstructorDecl>().Single());
-        else if (fn.Kind == FunctionKind.Method) Call(o.Binder(fn, point), "BindFunctionBody", fn.Decl);
-        else Call(o.Binder(fn, point), "BindGetter", point.FindProperty(name)!.Decl);
-        var lines = new List<string>();
+        var binder = o.Binder(fn, point);
+        if (name == "Point") Call(binder, "BindConstructor", point.Decl.Members.OfType<ConstructorDecl>().Single());
+        else if (fn.Kind == FunctionKind.Method) Call(binder, "BindFunctionBody", fn.Decl);
+        else Call(binder, "BindGetter", point.FindProperty(name)!.Decl);
+        var lines = new List<string> { First(binder) };
         Dump(lines, fn.Body);
         Locals(lines, fn, before);
         lines.AddRange(o.NewDiagnostics());
@@ -665,7 +715,6 @@ public sealed class SelfhostSemanticsT15Tests
             }
             BuildFunction(sb, o, fn, fn.Kind switch { FunctionKind.Constructor => "constructor", FunctionKind.Method => "method", _ => "getter" }, decl, member, "s");
             sb.AppendLine("    var b = tcBinder(f, by: s)");
-            sb.AppendLine("    b.thisType = structTypeOf(s)");
             sb.AppendLine($"    print(\"== member {name}\")");
             sb.AppendLine($"    switch c.files[0].unit.members[{decl}] {{");
             sb.AppendLine("        case .structDecl(let sd):");
@@ -682,6 +731,7 @@ public sealed class SelfhostSemanticsT15Tests
             sb.AppendLine("        default:");
             sb.AppendLine("            break");
             sb.AppendLine("    }");
+            sb.AppendLine("    tcFirst(in b)");
             sb.AppendLine("    tcBody(ref c, for: f)");
             sb.AppendLine("}");
         }
@@ -700,8 +750,9 @@ public sealed class SelfhostSemanticsT15Tests
         var o = Oracle.Of("main", Source);
         var fn = new FunctionSymbol("main", null, o.Module, FunctionKind.Main);
         var statements = MainIndexes(o).Select(i => (GlobalStatement)o.Members[i]).ToList();
-        Call(o.Binder(fn, null), "BindMain", statements);
-        var lines = new List<string>();
+        var binder = o.Binder(fn, null);
+        Call(binder, "BindMain", statements);
+        var lines = new List<string> { First(binder) };
         Dump(lines, fn.Body);
         Locals(lines, fn, 0);
         lines.AddRange(o.NewDiagnostics());
@@ -720,9 +771,55 @@ public sealed class SelfhostSemanticsT15Tests
         foreach (var i in MainIndexes(o)) sb.AppendLine($"    statements.append(SyntaxRef {{ file: 0, declIndex: {i} }})");
         sb.AppendLine("    print(\"== main\")");
         sb.AppendLine("    bindMain(ref b, through: ref c, for: in statements)");
+        sb.AppendLine("    tcFirst(in b)");
         sb.AppendLine("    tcBody(ref c, for: f)");
         sb.AppendLine("}");
         return sb.ToString();
+    }
+
+    /// <summary>An interface's default method: `this` is the interface's `Self` (Binder.cs:54).</summary>
+    private static List<string> ExpectedIface()
+    {
+        var o = Oracle.Of("main", Source);
+        var fn = ((InterfaceSymbol)o.Module.Types["IShape"]).Methods.Single(m => m.Name == "touch");
+        var before = fn.Locals.Count;
+        var binder = o.Binder(fn, null);
+        Call(binder, "BindFunctionBody", fn.Decl);
+        var lines = new List<string> { First(binder) };
+        Dump(lines, fn.Body);
+        Locals(lines, fn, before);
+        lines.AddRange(o.NewDiagnostics());
+        return lines;
+    }
+
+    private static string IfaceMain()
+    {
+        var o = Oracle.Of("main", Source);
+        var decl = IndexOf(o, d => d is InterfaceDecl { Name.Text: "IShape" });
+        var member = Array.FindIndex(((InterfaceDecl)o.Members[decl]).Members, m => m is FunctionDecl { Name.Text: "touch" });
+        return $$"""
+            void ifaceTouch() {
+                var c = tcSource()
+                let i = newInterface(ref c, by: InterfaceSymbol { name: "IShape", module: 0, file: 0, declIndex: {{decl}} })
+                let f = newFunction(ref c, by: FunctionSymbol { name: "touch", module: 0, kind: .method, file: 0, declIndex: {{decl}}, memberIndex: {{member}}, iface: i, returnType: prim(.void) })
+                var b = tcBinder(f, by: -1)
+                print("== iface touch")
+                switch c.files[0].unit.members[{{decl}}] {
+                    case .interfaceDecl(let x):
+                        switch x.value.members[{{member}}] {
+                            case .functionDecl(let d):
+                                bindFunctionBody(ref b, through: ref c, for: in d.value)
+                            default:
+                                break
+                        }
+                    default:
+                        break
+                }
+                tcFirst(in b)
+                tcBody(ref c, for: f)
+            }
+
+            """;
     }
 
     private static readonly string[] Tests = ["plain", "cased", "dup", "mism", "lone"];
@@ -965,7 +1062,7 @@ public sealed class SelfhostSemanticsT15Tests
     }
 
     private static string MainSource() => Prelude.Replace("$SOURCE", Literal(Source)) + HoldMain() + ScopesMain() + ResolveMain() + BodiesMain()
-        + MembersMain() + MainMain() + TestsMain() + DefaultsMain() + ConstantsMain() + SizesMain() + NoBodyMain() + """
+        + MembersMain() + MainMain() + IfaceMain() + FirstMain() + TestsMain() + DefaultsMain() + ConstantsMain() + SizesMain() + NoBodyMain() + """
         i32 main() {
             holdAll()
             scopesAll()
@@ -973,6 +1070,8 @@ public sealed class SelfhostSemanticsT15Tests
             bodiesAll()
             membersAll()
             mainBody()
+            ifaceTouch()
+            firstGuarded()
             casePlain()
             caseCased()
             caseDup()
@@ -1070,6 +1169,14 @@ public sealed class SelfhostSemanticsT15Tests
             print($"requires {c.functions[f].requirements.length} infers {c.functions[f].infersErrors}")
         }
 
+        void tcFirst(in Binder b) {
+            if b.firstStatementFile == -1 {
+                print("first none")
+            } else {
+                print($"first {b.firstStatementSpan.start}..{b.firstStatementSpan.end}")
+            }
+        }
+
         void tcBody(ref Ctx c, for FuncId f) {
             tcDump(ref c, for: c.functions[f].body, at: 0)
             tcLocals(ref c, for: f)
@@ -1128,6 +1235,12 @@ public sealed class SelfhostSemanticsT15Tests
 
     [Fact]
     public void MainMatches() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "main", ExpectedMain());
+
+    [Fact]
+    public void GuardedFirstStatementMatches() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "first guarded", ExpectedFirst());
+
+    [Fact]
+    public void InterfaceSelfMatches() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "iface touch", ExpectedIface());
 
     [Theory]
     [MemberData(nameof(TestNames))]
