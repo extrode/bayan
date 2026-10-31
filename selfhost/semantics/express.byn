@@ -266,7 +266,7 @@ BExpr asValue(ref Binder b, through ref Ctx c, for BExpr bound, from in parser.E
             for fi in 0..c.unionVariants[vId].fields.length {
                 if fi > 0 { fNames.append(", ") }
                 let fId = c.unionVariants[vId].fields[fi]
-                fNames.append(c.fields[fId].name)
+                fNames.append(c.locals[fId].name)
             }
             let help = $"pass it: `{uName}.{vName}({fNames.finish()})`"
             report(ref b, through: ref c, for: .variantNeedsPayload, at: span, by: (vName, "", "", "", ""), help: help)
@@ -406,7 +406,7 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
             var foundVariantField = false
             for vId in c.unions[st].variants {
                 for fId in c.unionVariants[vId].fields {
-                    if c.fields[fId].name == name {
+                    if c.locals[fId].name == name {
                         foundVariantField = true
                         break
                     }
@@ -706,7 +706,7 @@ BExpr t17ConvertToFunction(ref Binder b, through ref Ctx c, for BExpr value, to 
         let vId = c.bVariantGroups[boundIndex(value)].variant
         reason = "it is a union variant"
         for fId in c.unionVariants[vId].fields {
-            pNames.append(c.fields[fId].name)
+            pNames.append(c.locals[fId].name)
             pParticles.append(null)
         }
     } else if bk == .typeRef {
