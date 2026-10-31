@@ -60,6 +60,8 @@ public sealed class SelfhostSemanticsT18Tests
 
         union error Both = MyError, OtherError
 
+        union error NoBad = MyError, OtherError except .badInput
+
         union Shape {
             circle(f64 radius)
             point
@@ -204,6 +206,7 @@ public sealed class SelfhostSemanticsT18Tests
             let t11: Both = .other
             let t12: () -> void = .x
             let t13: Point = .clear
+            let t14: NoBad = .badInput
             let i1 = str[0]
             let i2 = list[0]
             let i3 = fixed[^1]
@@ -252,7 +255,7 @@ public sealed class SelfhostSemanticsT18Tests
         ("target", "probes", "-", "t1"), ("target", "probes", "-", "t2"), ("target", "probes", "-", "t3"),
         ("target", "probes", "-", "t4"), ("target", "probes", "-", "t5"), ("target", "probes", "-", "t6"),
         ("target", "probes", "-", "t7"), ("target", "probes", "-", "t8"),
-        ("target", "probes", "-", "t9"), ("target", "probes", "-", "t10"), ("target", "probes", "-", "t11"), ("target", "probes", "-", "t12"), ("target", "probes", "-", "t13"),
+        ("target", "probes", "-", "t9"), ("target", "probes", "-", "t10"), ("target", "probes", "-", "t11"), ("target", "probes", "-", "t12"), ("target", "probes", "-", "t13"), ("target", "probes", "-", "t14"),
         ("index", "probes", "-", "i1"), ("index", "probes", "-", "i2"), ("index", "probes", "-", "i3"),
         ("index", "probes", "-", "i4"), ("index", "probes", "-", "i5"), ("index", "probes", "-", "i6"),
         ("index", "probes", "-", "i7"), ("index", "probes", "-", "i8"), ("index", "probes", "-", "i9"),

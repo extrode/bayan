@@ -367,7 +367,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
             return addMethodGroup(ref c, from: BMethodGroup { span: span, receiver: recv, function: foundMethod, typeArgs: List<TextSpan>() })
         }
 
-        let states = statesOf(ref c, for: s)
+        let states = statesOf(ref c, for: s) // mutation-exempt: Q607 (j) statesOf, declare2.byn:27
         if states != -1 { // mutation-exempt: Q607 through 373
             let payload = bindPayloadField(ref b, through: ref c, at: span, for: target, from: states, by: member)
             if payload != -1 { return payload }
@@ -445,13 +445,13 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
     } else if lk == .typeParam {
         let tp = typeIndex(lookupType)
         if c.typeParams[tp].constraints.length > 0 {
-            var foundMember: FuncId = -1 // mutation-exempt: Q607 through 456
+            var foundMember: FuncId = -1
             for iface in copyIds(in c.typeParams[tp].constraints) {
-                foundMember = findInterfaceProperty(ref c, by: iface, for: name)
+                foundMember = findInterfaceProperty(ref c, by: iface, for: name) // mutation-exempt: Q607 (d) declareInterfaceMembers, declare2.byn:12
                 if foundMember == -1 {
                     let methods = findInterfaceMethods(ref c, by: iface, for: name)
                     if methods.length > 0 { foundMember = methods[0] }
-                }
+                } // mutation-exempt: Q607 (d) declareInterfaceMembers, declare2.byn:12
                 if foundMember != -1 { break }
             }
             if foundMember != -1 { // mutation-exempt: Q607
@@ -477,7 +477,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         return addErrorExpr(ref c, from: BErrorExpr { span: span })
     } else if lk == .dynRef {
         let d = c.dynRefTypes[typeIndex(lookupType)]
-        var foundMember = findInterfaceProperty(ref c, by: d.iface, for: name)
+        var foundMember = findInterfaceProperty(ref c, by: d.iface, for: name) // mutation-exempt: Q607 (i) declareInterfaceMembers, declare2.byn:12
         if foundMember == -1 {
             let methods = findInterfaceMethods(ref c, by: d.iface, for: name)
             if methods.length > 0 { foundMember = methods[0] }
@@ -492,7 +492,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
     }
 
     if (builtinProperty(ref c, for: targetType, by: name) is { } builtin) {
-        var callType: Type = -1
+        var callType: Type = -1 // mutation-exempt: Q607 (a) bindCollection, express4.byn:9; (g) propertyType, express4.byn:39
         if kindOf(builtin.type) == .span && boundKind(target) == .staticArray {
             callType = internSpan(ref c, by: c.spanTypes[typeIndex(builtin.type)].element, readOnly: true)
         } else {
@@ -536,7 +536,7 @@ BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntax
 }
 
 /// The return type of interface member `m` called on `receiver`: an associated type `Item` is `T.Item`.
-Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by FuncId m) {
+Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by FuncId m) { // mutation-exempt: Q607 (d) declareInterfaceMembers, declare2.byn:12
     if kindOf(receiver) == .typeParam {
         let tp = typeIndex(receiver)
         let iface = c.functions[m].iface
@@ -602,7 +602,7 @@ bool reportRenamed(ref Binder b, through ref Ctx c, for Type type, at TextSpan m
 /// The renames that change the call's shape (J72, round 3 §27): the fix rewrites the member and its arguments,
 /// so it is written only when the member is called with the old arguments.
 RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at TextSpan memberSpan) {
-    let name = t18Text(in c, from: b.file, at: memberSpan)
+    let name = t18Text(in c, from: b.file, at: memberSpan) // mutation-exempt: Q607 (b) bindCall, calls.byn:6
     var isCalleeMatch = false
     var tail = TextSpan { start: memberSpan.start, length: 0 }
     if (b.calleeOf is { } activeCall) { // mutation-exempt: Q607 through 616
@@ -617,13 +617,12 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
     }
 
     let isList = kindOf(type) == .list
-    let isSpanT = kindOf(type) == .span
     let isArrayT = kindOf(type) == .array
     let isMap = kindOf(type) == .map
     let isStr = isString(type)
     let isInt = isInteger(type)
 
-    if isList && name == "removeRange" { // mutation-exempt: Q607 through 631
+    if isList && name == "removeRange" { // mutation-exempt: Q607 through 630
         if isCalleeMatch && (b.calleeOf is { } cCall) && cCall.args.length == 2 && cCall.args[0].name is null && cCall.args[0].modifier == .none && cCall.args[1].name is null && cCall.args[1].modifier == .none {
             let from = t18Text(in c, from: b.file, at: t17ExprSpan(in cCall.args[0].value))
             let until = t18Text(in c, from: b.file, at: t17ExprSpan(in cCall.args[1].value))
@@ -631,7 +630,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isList && name == "replaceRange" { // mutation-exempt: Q607 through 639
+    if isList && name == "replaceRange" { // mutation-exempt: Q607 through 638
         if isCalleeMatch && (b.calleeOf is { } rCall) && rCall.args.length == 2 && rCall.args[0].name is null && rCall.args[0].modifier == .none && rCall.args[1].name is null && rCall.args[1].modifier == .none {
             let at = t18Text(in c, from: b.file, at: t17ExprSpan(in rCall.args[0].value))
             let by = t18Text(in c, from: b.file, at: t17ExprSpan(in rCall.args[1].value))
@@ -639,7 +638,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isMap && name == "getOr" { // mutation-exempt: Q607 through 652
+    if isMap && name == "getOr" { // mutation-exempt: Q607 through 651
         if isCalleeMatch && (b.calleeOf is { } mCall) && mCall.args.length == 2 && mCall.args[0].name is null && mCall.args[0].modifier == .none && mCall.args[1].name is null && mCall.args[1].modifier == .none {
             switch mCall.callee {
                 case .memberExpr(let me):
@@ -652,20 +651,20 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if (isList || isArrayT) && name == "asSpan" { // mutation-exempt: Q607 through 658
+    if (isList || isArrayT) && name == "asSpan" { // mutation-exempt: Q607 through 657
         if isCalleeMatch && (b.calleeOf is { } sCall) && sCall.args.length == 0 {
             return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: true, fixSpan: tail, replacement: "span" }
         }
         return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isStr && name == "toUtf16" { // mutation-exempt: Q607 through 664
+    if isStr && name == "toUtf16" { // mutation-exempt: Q607 through 663
         if isCalleeMatch && (b.calleeOf is { } uCall) && uCall.args.length == 0 {
             return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: true, fixSpan: tail, replacement: "utf16" }
         }
         return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: false, fixSpan: tail, replacement: "" }
     }
     if isInt && (name == "toHex" || name == "toBinary" || name == "toOctal") {
-        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal") // mutation-exempt: Q607 through 676
+        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal") // mutation-exempt: Q607 through 675
         if isCalleeMatch && (b.calleeOf is { } hCall) && hCall.args.length == 0 {
             switch hCall.callee {
                 case .memberExpr(let me):
