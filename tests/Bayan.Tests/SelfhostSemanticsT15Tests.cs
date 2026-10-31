@@ -89,6 +89,10 @@ public sealed class SelfhostSemanticsT15Tests
         test "mism" (i32 n, bool f) {
         }
 
+        @cases(5)
+        test "lone" (bool f) {
+        }
+
         {
             let q: bool = 3
         }
@@ -721,10 +725,14 @@ public sealed class SelfhostSemanticsT15Tests
         return sb.ToString();
     }
 
-    private static readonly string[] Tests = ["plain", "cased", "dup", "mism"];
+    private static readonly string[] Tests = ["plain", "cased", "dup", "mism", "lone"];
 
+    private static int CasesAttribute(TestDecl t) => Array.FindIndex(t.Attributes, a => a.Name.Text == "cases");
+
+    /// <summary>The first case's values as Compilation.cs:334 makes them: a tuple's element values, or the value alone; null without `@cases`.</summary>
     private static Expr[]? CaseValues(TestDecl t) =>
-        t.Attributes.FirstOrDefault(a => a.Name.Text == "cases")?.Args[0].Value is TupleExpr tuple ? tuple.Elements.Select(e => e.Value).ToArray() : null;
+        CasesAttribute(t) is var a && a < 0 ? null
+            : t.Attributes[a].Args[0].Value is TupleExpr tuple ? tuple.Elements.Select(e => e.Value).ToArray() : [t.Attributes[a].Args[0].Value];
 
     private static List<string> ExpectedTest(string title)
     {
@@ -750,20 +758,10 @@ public sealed class SelfhostSemanticsT15Tests
             sb.AppendLine("    var c = tcSource()");
             sb.AppendLine("    let f = newFunction(ref c, by: FunctionSymbol { name: \"test\", module: 0, kind: .testKeyword })");
             sb.AppendLine("    var b = tcBinder(f, by: -1)");
-            sb.AppendLine("    var values = List<parser.Expr>()");
-            foreach (var v in CaseValues((TestDecl)o.Members[decl]) ?? [])
-            {
-                var lit = (LiteralExpr)v;
-                var kind = lit.Kind switch { LiteralKind.Integer => "integer", LiteralKind.True => "trueKeyword", LiteralKind.False => "falseKeyword", _ => throw new InvalidOperationException() };
-                sb.AppendLine($"    values.append(parser.Expr.literalExpr(Owned(LiteralExpr {{ span: {Span(lit.Span)}, kind: .{kind}, text: \"{lit.Text}\", suffix: null }})))");
-            }
+            var attribute = CasesAttribute((TestDecl)o.Members[decl]);
+            var values = attribute < 0 ? "SyntaxRef {}" : $"SyntaxRef {{ file: 0, declIndex: {decl}, memberIndex: {attribute}, itemIndex: 0 }}";
             sb.AppendLine($"    print(\"== test {title}\")");
-            sb.AppendLine($"    switch c.files[0].unit.members[{decl}] {{");
-            sb.AppendLine("        case .testDecl(let d):");
-            sb.AppendLine("            bindTest(ref b, through: ref c, for: in d.value, by: in values)");
-            sb.AppendLine("        default:");
-            sb.AppendLine("            break");
-            sb.AppendLine("    }");
+            sb.AppendLine($"    bindTest(ref b, through: ref c, for: TestBody {{ decl: SyntaxRef {{ file: 0, declIndex: {decl} }}, hasValues: {Lower(attribute >= 0)}, values: {values} }})");
             sb.AppendLine("    tcBody(ref c, for: f)");
             sb.AppendLine("}");
         }
@@ -979,6 +977,7 @@ public sealed class SelfhostSemanticsT15Tests
             caseCased()
             caseDup()
             caseMism()
+            caseLone()
             defaultsAll()
             constantsAll()
             sizesAll()
@@ -994,7 +993,6 @@ public sealed class SelfhostSemanticsT15Tests
 
         type GlobalStatement = parser.GlobalStatement
         type BlockStmt = parser.BlockStmt
-        type LiteralExpr = parser.LiteralExpr
 
         Ctx tcCtx(string text) {
             var bytes = List<u8>()
