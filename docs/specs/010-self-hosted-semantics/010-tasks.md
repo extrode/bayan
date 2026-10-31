@@ -35,7 +35,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T11 Compilation loading and declaration A — files: `compile.byn` (`Compilation.cs` 1–~654: `FromPath`/`FromProject`/`Create`, imports, module order, `Declare` order, `DeclareFile`, `addType`/`addFunction`, `associatedType`; `Work` records and sinks, including `afterMembersDeclared`/`reportInto`; `buildLexicon` before `declare`; `removeRepeats` call), `SelfhostSemanticsT11Tests.cs` — covers: R1, R4 — after: T4; parallel with: T6–T10, T12–T27, T34–T39 — done when:
   - file, directory and project loading give the C# module/file order and import diagnostics; no stored closures; Q570–Q574 record closures and path parity.
   - Size: about 940 lines.
-- [ ] T12 Declaration B — files: `declare.byn` (`Compilation.cs` ~655–1037: variants, payloads, enums, unions, struct members, overloads, `overlap`), `SelfhostSemanticsT12Tests.cs` — covers: R4 — after: T4; parallel with: T6–T11, T13–T27, T34–T39 — done when:
+- [x] T12 Declaration B — files: `declare.byn` (`Compilation.cs` ~655–1037: variants, payloads, enums, unions, struct members, overloads, `overlap`), `SelfhostSemanticsT12Tests.cs` — covers: R4 — after: T4; parallel with: T6–T11, T13–T27, T34–T39 — done when:
   - method-for-method port with copied symbol facts and no synthesized syntax; Q575–Q579 as needed.
   - Size: about 555 lines.
 - [x] T13 Generics and instantiation — files: `generics.byn` (`Compilation.cs` 1363–1952: `BindAll`, instance keys, `Instantiating` as sink push/pop, constraints, `InferErrorSets`, mutation/requires), `SelfhostSemanticsT13Tests.cs` — covers: R4 — after: T4; parallel with: T6–T12, T14–T27, T34–T39 — done when:

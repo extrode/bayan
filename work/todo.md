@@ -319,3 +319,7 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 010 T28: delete the dead `Map<i64, i64> conformancesChecked` at ctx.byn:356 (Q585/Q723; guard check C blocks it before then).
 - 010 T14 LOW (review 3): `t14InsertMember`'s `.trimmed().isEmpty` (conformance.byn:469) strips ASCII whitespace only; C# `IsNullOrWhiteSpace` also counts Unicode whitespace (Conformance.cs:225). Reachable only from a source with a lex error.
 - 010 T14 LOW (review 3): Q586 says `popBag` "drops" the quiet bag; it only restores the sink, and the bag stays in `c.bags` (diag.byn:53-57). Fix the wording.
+- 010 T14 owed cases now that T12's `declareMembers` is ported (Q723 (2), (5)): BYN2780 on an instance (`Box<T> : IList` with a `T items` field, instantiated with `List<i64>`) and `t14Drop`'s left-in-arena path (an interface getter typed `Box<Item>`) in SelfhostSemanticsT14Tests.cs.
+- 010 T12 review 2 LOW (open): Q579 not-compared arms (associated type declare.byn:149-154, method/ctor params in `overlap` :134/:174, BYN3202 `ValidationError<T>` :321-322) get oracle cases when T38 lands.
+- 010 T12 review 2 LOW (open): T12 test dump prints `fn` lines from `allFunctions`, not `c.modules[m].functions` (SelfhostSemanticsT12Tests.cs:589-597); dump the map keys so a key without an entry is caught.
+- 010 T12 review 2 LOW (open): C# `_constructorBodies[fn]` (Compilation.cs:1020) maps to `declIndex`/`memberIndex` (declare.byn:159, :169-170); record the mapping in Q575-Q579.
