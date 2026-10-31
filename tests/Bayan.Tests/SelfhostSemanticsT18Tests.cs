@@ -93,6 +93,28 @@ public sealed class SelfhostSemanticsT18Tests
             f64 area()
         }
 
+        struct Box<T> where T : IHasArea {
+            T v
+            T first => v
+            void g() {
+                let g1 = this.v.nope
+                let l1 = nope
+                let r1 = first
+            }
+        }
+
+        struct Bag<U> {
+            U w
+            void h() {
+                let h1 = this.w.nope
+            }
+        }
+
+        struct Fd {
+            i32 a = 1
+            i32 b = a
+        }
+
         void probes(Point p, Shape s, string str, List<i32> list, i32[2] fixed, Map<string, i32> map, Point? maybe, Status st, dyn IHasArea d, i64 n, (i32 a, i32 b) tup, (Shape a, i32 b) ts, dyn ref IHasArea dr, Owned<Point> op, StrBuf sb, Span<i32> sp, u64 un, Blob bl, MyError me) {
             let m1 = MyError.notFound
             let m2 = MyError.badVariant
@@ -168,6 +190,7 @@ public sealed class SelfhostSemanticsT18Tests
             let v38 = MyError.notFound.x
             let v39 = p.size
             let v40 = st.cod
+            let v41 = p.length
             let t1: Color = .red
             let t2: MyError = .notFound
             let t3: MyError = .nope
@@ -202,11 +225,12 @@ public sealed class SelfhostSemanticsT18Tests
         }
         """;
 
-    /// <summary>(op, declaration, member or "-", local): bind the initializer of <c>let local</c> in that body.</summary>
+    /// <summary>(op, declaration, member or "-", local): bind the initializer of <c>let local</c> in that body; member "=" binds the default of field <c>local</c>.</summary>
     public static readonly (string Op, string Decl, string Member, string Name)[] Cases =
     [
         ("this", "Point", "m", "a"), ("this", "Point", "m", "b"), ("this", "Point", "m", "c"), ("this", "Point", "m", "d"),
-        ("this", "Point", "s", "e"),
+        ("this", "Point", "s", "e"), ("this", "Fd", "=", "b"),
+        ("member", "Box", "g", "g1"), ("member", "Bag", "h", "h1"), ("lookup", "Box", "g", "l1"), ("rtt", "Box", "g", "r1"),
         ("member", "probes", "-", "m1"), ("member", "probes", "-", "m2"), ("member", "probes", "-", "m3"),
         ("member", "probes", "-", "m4"), ("member", "probes", "-", "m5"), ("member", "probes", "-", "m6"),
         ("member", "probes", "-", "m7"), ("member", "probes", "-", "m8"), ("member", "probes", "-", "m9"),
@@ -224,7 +248,7 @@ public sealed class SelfhostSemanticsT18Tests
         ("member", "probes", "-", "v17"), ("member", "probes", "-", "v19"),
         ("member", "probes", "-", "v20"), ("member", "probes", "-", "v21"),
         ("member", "probes", "-", "v22"),
-        ("member", "probes", "-", "v23"), ("member", "probes", "-", "v25"), ("member", "probes", "-", "v26"), ("member", "probes", "-", "v27"), ("member", "probes", "-", "v28"), ("member", "probes", "-", "v29"), ("member", "probes", "-", "v30"), ("member", "probes", "-", "v31"), ("member", "probes", "-", "v32"), ("member", "probes", "-", "v33"), ("member", "probes", "-", "v34"), ("member", "probes", "-", "v35"), ("member", "probes", "-", "v36"), ("member", "probes", "-", "v37"), ("member", "probes", "-", "v38"), ("member", "probes", "-", "v39"), ("member", "probes", "-", "v40"),
+        ("member", "probes", "-", "v23"), ("member", "probes", "-", "v25"), ("member", "probes", "-", "v26"), ("member", "probes", "-", "v27"), ("member", "probes", "-", "v28"), ("member", "probes", "-", "v29"), ("member", "probes", "-", "v30"), ("member", "probes", "-", "v31"), ("member", "probes", "-", "v32"), ("member", "probes", "-", "v33"), ("member", "probes", "-", "v34"), ("member", "probes", "-", "v35"), ("member", "probes", "-", "v36"), ("member", "probes", "-", "v37"), ("member", "probes", "-", "v38"), ("member", "probes", "-", "v39"), ("member", "probes", "-", "v40"), ("member", "probes", "-", "v41"),
         ("target", "probes", "-", "t1"), ("target", "probes", "-", "t2"), ("target", "probes", "-", "t3"),
         ("target", "probes", "-", "t4"), ("target", "probes", "-", "t5"), ("target", "probes", "-", "t6"),
         ("target", "probes", "-", "t7"), ("target", "probes", "-", "t8"),
@@ -348,12 +372,24 @@ public sealed class SelfhostSemanticsT18Tests
         FunctionDecl fd;
         object b;
         StructSymbol? owner = null;
+        Expr init;
+        TypeSyntax? ldType = null;
         if (member == "-")
         {
             fd = unit.Members.OfType<FunctionDecl>().First(f => f.Name.Text == decl);
             b = Activator.CreateInstance(BinderType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
                 [c, file, null, null, null, null], null)!;
             foreach (var p in fd.Params) Call(b, "DeclareLocal", p.Name, Call(b, "ResolveType", p.Type), LocalKind.Parameter);
+        }
+        else if (member == "=")
+        {
+            // The field-default binder: `new Binder(this, s.File, null, s)` (Compilation.cs:1383).
+            var sd = unit.Members.OfType<StructDecl>().First(s => s.Name.Text == decl);
+            owner = file.Module.Structs.First(s => s.Name == decl);
+            b = Activator.CreateInstance(BinderType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+                [c, file, null, owner, null, null], null)!;
+            init = sd.Members.OfType<FieldDecl>().First(f => f.Name.Text == name).Default!;
+            goto bind;
         }
         else
         {
@@ -365,7 +401,9 @@ public sealed class SelfhostSemanticsT18Tests
                 [c, file, fn, owner, null, null], null)!;
         }
         var ld = fd.Body!.Statements.OfType<LocalDecl>().First(l => l.Name.Text == name);
-        var init = ld.Init!;
+        init = ld.Init!;
+        ldType = ld.Type;
+    bind:
         var lines = new List<string>();
         switch (op)
         {
@@ -376,11 +414,19 @@ public sealed class SelfhostSemanticsT18Tests
             case "member": lines.Add(DumpNode((BoundNode?)Call(b, "BindMember", init))); break;
             case "module": lines.Add(DumpNode((BoundNode?)Call(b, "BindModuleMember", init, file.Module))); break;
             case "target":
-                var expected = ld.Type is null ? null : Call(b, "ResolveType", ld.Type);
+                var expected = ldType is null ? null : Call(b, "ResolveType", ldType);
                 lines.Add(DumpNode((BoundNode?)Call(b, "BindTargetMember", init, expected)));
                 break;
             case "index": lines.Add(DumpNode((BoundNode?)Call(b, "BindIndex", init))); break;
             case "interp": lines.Add((string)Call(b, "InterpolationSource", init)!); break;
+            case "lookup":
+                var sym = (Symbol?)Call(b, "LookupMember", owner!.FindField("v")!.Type, ((NameExpr)init).Name.Text);
+                lines.Add(sym switch { null => "null", FieldSymbol f => "field:" + f.Name, PropertySymbol p => "propertyKeyword:" + p.Name, _ => "method:" + sym.Name });
+                break;
+            case "rtt":
+                var getter = owner!.FindProperty(((NameExpr)init).Name.Text)!.Getter;
+                lines.Add(((TypeSymbol)Call(b, "ReturnTypeThrough", owner.FindField("v")!.Type, getter)!).DisplayName);
+                break;
         }
         var items = c.Diagnostics.Items;
         for (var i = mark; i < items.Count; i++) lines.AddRange(Diag(items[i]).Split('\n'));
@@ -532,25 +578,44 @@ public sealed class SelfhostSemanticsT18Tests
             }
         }
 
-        void runInit(ref Binder b, through ref Ctx c, for in parser.LocalDecl ld, by string op) {
+        string t18MemberRef(ref Ctx c, for MemberRef r) {
+            switch r.kind {
+                case .none: return "null"
+                case .field: return $"field:{c.fields[r.id].name}"
+                case .propertyKeyword: return $"propertyKeyword:{c.properties[r.id].name}"
+                default: return $"method:{c.functions[r.id].name}"
+            }
+        }
+
+        void runInit(ref Binder b, through ref Ctx c, for in parser.Expr init, from in parser.TypeSyntax declType, by string op) {
             if op == "interp" {
-                print(interpolationSource(ref b, through: ref c, for: in ld.init))
+                print(interpolationSource(ref b, through: ref c, for: in init))
                 return
             }
-            switch ld.init {
+            switch init {
                 case .nameExpr(let n):
+                    let nText = t18Text(in c, from: b.file, at: n.value.name)
                     if op == "this" {
-                        let member = lookupMember(ref c, for: b.thisType, by: t18Text(in c, from: b.file, at: n.value.name))
+                        let member = lookupMember(ref c, for: b.thisType, by: nText)
                         tcDump(ref c, for: bindImplicitThisMember(ref b, through: ref c, for: in n.value, by: member))
+                    }
+                    if op == "lookup" {
+                        let vType = c.fields[findField(ref c, by: b.owner, for: "v")].type
+                        print(t18MemberRef(ref c, for: lookupMember(ref c, for: vType, by: nText)))
+                    }
+                    if op == "rtt" {
+                        let vType = c.fields[findField(ref c, by: b.owner, for: "v")].type
+                        let getter = c.properties[findProperty(ref c, by: b.owner, for: nText)].getter
+                        print(typeDisplay(ref c, by: returnTypeThrough(ref b, through: ref c, for: vType, by: getter)))
                     }
                 case .memberExpr(let m):
                     if op == "member" { tcDump(ref c, for: bindMember(ref b, through: ref c, for: in m.value)) }
                     if op == "module" { tcDump(ref c, for: t18BindModuleMember(ref b, through: ref c, for: m.value, to: c.files[b.file].module)) }
                 case .targetMemberExpr(let t):
                     var expected: Type = -1
-                    switch ld.type {
+                    switch declType {
                         case .none: {}
-                        default: expected = resolveType(ref b, through: ref c, for: in ld.type)
+                        default: expected = resolveType(ref b, through: ref c, for: in declType)
                     }
                     tcDump(ref c, for: bindTargetMember(ref b, through: ref c, for: in t.value, to: expected))
                 case .indexExpr(let i):
@@ -566,7 +631,7 @@ public sealed class SelfhostSemanticsT18Tests
                     for s in blk.value.statements {
                         switch s {
                             case .localDecl(let ld):
-                                if t18Text(in c, from: b.file, at: ld.value.name) == name { runInit(ref b, through: ref c, for: in ld.value, by: op) }
+                                if t18Text(in c, from: b.file, at: ld.value.name) == name { runInit(ref b, through: ref c, for: in ld.value.init, from: in ld.value.type, by: op) }
                             default: {}
                         }
                     }
@@ -613,6 +678,13 @@ public sealed class SelfhostSemanticsT18Tests
                             let owner = typeIndex(c.modules[c.entryModule].types[decl])
                             for d in sd.value.members {
                                 switch d {
+                                    case .fieldDecl(let fdl):
+                                        // The field-default binder: no function, `this` is the struct (Compilation.cs:1383).
+                                        if member == "=" && t18Text(in c, from: file, at: fdl.value.name) == name {
+                                            b.owner = owner
+                                            b.thisType = c.modules[c.entryModule].types[decl]
+                                            runInit(ref b, through: ref c, for: in fdl.value.defaultKeyword, from: in fdl.value.type, by: op)
+                                        }
                                     case .functionDecl(let fd):
                                         if t18Text(in c, from: file, at: fd.value.name) == member {
                                             for f in c.structs[owner].methods {
