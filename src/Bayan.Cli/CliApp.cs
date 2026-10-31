@@ -602,7 +602,9 @@ public static class CliApp
             return ExitUsage;
         }
         if (o.Mutate) return MutateTests(o, compiled, stdout, stderr);
-        var map = o.Coverage ? Testing.CoverageInstrumenter.Instrument(compiled.Compilation) : null;
+        // Debug runs carry probes for the one-line summary unless `summary: false` (spec 013 R17); a future sanitize run must skip probes unless `--coverage` is given.
+        var probes = o.Coverage || o.Mode == BuildMode.Debug && (compiled.Manifest?.Summary ?? true);
+        var map = probes ? Testing.CoverageInstrumenter.Instrument(compiled.Compilation) : null;
         var program = Lowerer.Lower(compiled.Compilation, coverage: map?.Probes);
         var source = CEmitter.Emit(program, o.Mode == BuildMode.Debug);
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
@@ -721,7 +723,7 @@ public static class CliApp
             Directory.CreateDirectory(testDir);
             Toolchain.ReplaceFile(Path.Combine(testDir, "results.json"), temp => File.WriteAllText(temp, json));
         }
-        var gated = map is not null && WriteCoverage(o, compiled, map, hits, timedOut, buildSeconds, total.Elapsed.TotalSeconds, coverageDir!, stdout, stderr);
+        var gated = map is not null && WriteCoverage(o, compiled, map, hits, timedOut, buildSeconds, total.Elapsed.TotalSeconds, coverageDir!, human, stdout, stderr);
         return failed > 0 || gated ? ExitTestFailure : ExitOk;
     }
 
@@ -730,10 +732,18 @@ public static class CliApp
     /// <c>&lt;file&gt;.cov.txt</c> per file beside it, under the project root (or the directory of the file given).
     /// </summary>
     private static bool WriteCoverage(BuildOptions o, Compiled compiled, Testing.CoverageMap map, Dictionary<int, ulong> hits, bool timedOut,
-        double buildSeconds, double totalSeconds, string coverageDir, TextWriter stdout, TextWriter stderr)
+        double buildSeconds, double totalSeconds, string coverageDir, TextWriter human, TextWriter stdout, TextWriter stderr)
     {
         Directory.Delete(coverageDir, recursive: true);
         var report = Testing.QualityReport.Coverage("bayan test --coverage", map, hits, timedOut, buildSeconds, totalSeconds);
+        if (!o.Coverage)
+        {
+            // The default Debug summary: one line, no files.
+            var t = report.CoverageTotals!;
+            static string Part(Testing.Tally x) => $"{x.Covered}/{x.Total} ({(x.Total == 0 ? "100" : Testing.Gates.Fmt(100.0 * x.Covered / x.Total))}%)";
+            human.WriteLine(Messages.TestCoverageSummary.Text(Part(t.Lines), Part(t.Branches), Part(t.ErrorPaths)));
+            return false;
+        }
         stdout.Write(report.CoverageSummary());
         var root = compiled.ProjectRoot ?? Path.GetDirectoryName(Path.GetFullPath(o.Path))!;
         var dir = Path.Combine(root, "out", "test");
