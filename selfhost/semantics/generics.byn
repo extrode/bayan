@@ -847,7 +847,7 @@ void bindFunction(ref Ctx c, for FuncId fn) {
     var work = List<Work>()
     for w in c.instantiationWork {
         if w.kind != .bindFunction || !t13Contains(in instances, for: w.memberIndex) {
-            work.append(Work { kind: w.kind, subject: w.subject, args: copyIds(in w.args), instance: w.instance, file: w.file, span: w.span, declIndex: w.declIndex, memberIndex: w.memberIndex })
+            work.append(Work { kind: w.kind, subject: w.subject, args: copyIds(in w.args), instance: w.instance, file: w.file, span: w.span, declIndex: w.declIndex, memberIndex: w.memberIndex, atSite: w.atSite, siteFile: w.siteFile, siteSpan: w.siteSpan })
         }
     }
     c.instantiationWork = move work
