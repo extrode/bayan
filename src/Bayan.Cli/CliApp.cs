@@ -602,7 +602,7 @@ public static class CliApp
             return ExitUsage;
         }
         if (o.Mutate) return MutateTests(o, compiled, stdout, stderr);
-        // Debug runs carry probes for the one-line summary unless `summary: false` (spec 013 R17).
+        // Debug runs carry probes for the one-line summary unless `summary: false` (spec 013 R17); a future sanitize run must skip probes unless `--coverage` is given.
         var probes = o.Coverage || o.Mode == BuildMode.Debug && (compiled.Manifest?.Summary ?? true);
         var map = probes ? Testing.CoverageInstrumenter.Instrument(compiled.Compilation) : null;
         var program = Lowerer.Lower(compiled.Compilation, coverage: map?.Probes);
