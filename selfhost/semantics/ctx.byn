@@ -467,6 +467,8 @@ struct Ctx {
     List<ModId> moduleOrder = List<ModId>()
     /// C# `EntryModule`.
     ModId entryModule = -1
+    /// C# `OnPanic`: the function `Panic.onPanic` is set to in `main`; -1 for none (T36 sets it).
+    FuncId onPanic = -1
     /// C# `_modulesByDir` and `_loading`.
     Map<string, ModId> modulesByDir = []
     List<ModId> loading = List<ModId>()
