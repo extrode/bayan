@@ -16,239 +16,8 @@ type RefinedType = parser.RefinedType
 BExpr bindExpr(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type expected = -1) =>
     asValue(ref b, through: ref c, for: bindExprOrType(ref b, through: ref c, for: in e, to: expected), from: in e)
 
-BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type expected = -1) {
-    switch e {
-        case .literalExpr(let l):
-            return bindLiteral(ref b, through: ref c, for: in l.value, to: expected)
-        case .parenExpr(let p):
-            return bindExprOrType(ref b, through: ref c, for: in p.value.inner, to: expected)
-        case .nameExpr(let n):
-            return bindName(ref b, through: ref c, for: in n.value)
-        case .thisExpr(let t):
-            let host = t17Host(in b, through: in c)
-            let isHostValid = host != -1 && !c.functions[host].isStatic && (c.functions[host].kind == .method || c.functions[host].kind == .getter || c.functions[host].kind == .constructor)
-            if b.thisType == -1 || !isHostValid {
-                report(ref b, through: ref c, for: .thisOutsideMethod, at: t.value.span, by: ("", "", "", "", ""))
-                return addErrorExpr(ref c, from: BErrorExpr { span: t.value.span })
-            }
-            if inLambda(ref b, through: ref c, at: t.value.span, for: "this", by: "a lambda does not capture `this`") {
-                return addErrorExpr(ref c, from: BErrorExpr { span: t.value.span })
-            }
-            return addThis(ref c, from: BThis { span: t.value.span, type: b.thisType })
-        case .memberExpr(let m):
-            return bindMember(ref b, through: ref c, for: in m.value)
-        case .targetMemberExpr(let t):
-            return bindTargetMember(ref b, through: ref c, for: in t.value, to: expected)
-        case .callExpr(let call):
-            let errNew = bindErrorNew(ref b, through: ref c, for: in call.value, to: expected)
-    // mutation-exempt: Q600 through 45
-            if errNew != -1 { return errNew }
-            return bindCall(ref b, through: ref c, for: in call.value, to: expected)
-        case .indexExpr(let i):
-            return bindIndex(ref b, through: ref c, for: in i.value)
-        case .unaryExpr(let u):
-            return bindUnary(ref b, through: ref c, for: in u.value, to: expected)
-        case .binaryExpr(let bin):
-            return bindBinary(ref b, through: ref c, for: in bin.value, to: expected)
-        case .rangeExpr(let r):
-            return bindRange(ref b, through: ref c, for: in r.value, to: expected)
-        case .conditionalExpr(let cond):
-            return bindConditional(ref b, through: ref c, for: in cond.value, to: expected)
-        case .castExpr(let cast):
-            return bindCast(ref b, through: ref c, for: in cast.value)
-        case .isExpr(let isE):
-            let val = bindExpr(ref b, through: ref c, for: in isE.value.value)
-            let pat = bindPattern(ref b, through: ref c, for: in isE.value.pattern, as: exprType(in c, for: val))
-            return addIs(ref c, from: BIs { span: isE.value.span, value: val, pattern: pat })
-        case .inExpr(let inE):
-            return bindIn(ref b, through: ref c, for: in inE.value)
-        case .switchExpr(let sw):
-            return bindSwitchExpr(ref b, through: ref c, for: in sw.value, to: expected)
-        case .tryExpr(let tr):
-            return bindTry(ref b, through: ref c, for: in tr.value, to: expected)
-        case .moveExpr(let mv):
-            let operand = bindExpr(ref b, through: ref c, for: in mv.value.operand, to: expected)
-            return bindMove(ref b, through: ref c, at: mv.value.span, for: operand)
-        case .catchExpr(let ct):
-            return bindCatch(ref b, through: ref c, for: in ct.value, to: expected)
-        case .caughtErrorExpr(let ce):
-            // C# `_caught is { } caught ? new BoundLocal(ce, caught) : …`: `_caught` is set by T34 and has no field yet (Q600).
-            return addErrorExpr(ref c, from: BErrorExpr { span: ce.value.span })
-        case .jumpExpr(let j):
-            let stmt = bindStatement(ref b, through: ref c, for: in j.value.jump)
-            return addJump(ref c, from: BJump { span: j.value.span, jump: stmt })
-        case .blockExpr(let bNode):
-            switch bNode.value.block {
-                case .blockStmt(let bs):
-                    let blk = bindBlock(ref b, through: ref c, for: in bs.value)
-                    return addBlockExpr(ref c, from: BBlockExpr { span: bNode.value.span, block: blk, type: prim(.void) })
-                default:
-                    panic("internal error: a block expression's block is a `BlockStmt`")
-            }
-        case .structLiteralExpr(let s):
-            return bindStructLiteral(ref b, through: ref c, for: in s.value, to: expected)
-        case .withExpr(let w):
-            return bindWith(ref b, through: ref c, for: in w.value)
-        case .collectionExpr(let col):
-            return bindCollection(ref b, through: ref c, for: in col.value, to: expected)
-        case .tupleExpr(let tup):
-            return bindTuple(ref b, through: ref c, for: in tup.value, to: expected)
-        case .interpolatedExpr(let ip):
-            return bindInterpolated(ref b, through: ref c, for: in ip.value)
-        case .stackallocExpr(let st):
-            return bindStackalloc(ref b, through: ref c, for: in st.value)
-        case .spreadExpr(let sp):
-            report(ref b, through: ref c, for: .unsupported, at: sp.value.span, by: ("spreads (`..xs`) outside a collection literal", "", "", "", ""))
-            return addErrorExpr(ref c, from: BErrorExpr { span: sp.value.span })
-        case .patternExpr(let pat):
-            report(ref b, through: ref c, for: .unsupported, at: pat.value.span, by: ("a named pattern", "", "", "", ""))
-            return addErrorExpr(ref c, from: BErrorExpr { span: pat.value.span })
-        case .lambdaExpr(let l):
-            var fExpected = expected
-            // mutation-exempt: Q600 through 112
-            if fExpected != -1 && kindOf(fExpected) == .optional {
-                fExpected = c.optionalTypes[typeIndex(fExpected)]
-            }
-            if fExpected != -1 && kindOf(fExpected) != .function { fExpected = -1 }
-            switch l.value.block {
-                case .blockStmt(let bs):
-                    let noBody: parser.Expr? = null
-                    return bindLambda(ref b, through: ref c, at: l.value.span, for: in l.value.params, from: in noBody, by: in bs.value, to: fExpected)
-                default:
-                    let noBlock: parser.BlockStmt? = null
-                    return bindLambda(ref b, through: ref c, at: l.value.span, for: in l.value.params, from: in l.value.body, by: in noBlock, to: fExpected)
-            }
-        case .errorExpr(let eNode):
-            return addErrorExpr(ref c, from: BErrorExpr { span: eNode.value.span })
-        default:
-            let span = t17ExprSpan(in e)
-            report(ref b, through: ref c, for: .unsupported, at: span, by: ("this expression", "", "", "", ""))
-            return addErrorExpr(ref c, from: BErrorExpr { span: span })
-    }
-}
-
-BExpr bindExprFor(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type expected) {
-    let bound = bindExprOrType(ref b, through: ref c, for: in e, to: expected)
-    if expected != -1 && kindOf(expected) == .function {
-        let bk = boundKind(bound)
-        if bk == .methodGroup || bk == .variantGroup {
-            return bound
-        }
-        if bk == .typeRef {
-            let t = c.bTypeRefs[boundIndex(bound)].referenced
-            if kindOf(t) == .structType {
-                let s = typeIndex(t)
-                if t17Constructible(in c, for: s) {
-                    return bound
-                }
-            }
-        }
-    }
-    return asValue(ref b, through: ref c, for: bound, from: in e)
-}
-
-BExpr bindConverted(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type target, bool argument = false) {
-    let bound = built(ref b, through: ref c, for: bindExprFor(ref b, through: ref c, for: in e, to: target), from: in e)
-    return convert(ref b, through: ref c, for: bound, to: target, at: t17ExprSpan(in e), argument: argument)
-}
-
-BExpr convert(ref Binder b, through ref Ctx c, for BExpr value, to Type target, at TextSpan span, bool argument = false, bool constrains = true) {
-    if constrains { constrain(ref b, through: ref c, for: value, to: target) }
-    if target != -1 && kindOf(target) == .function {
-        let bk = boundKind(value)
-        if bk == .methodGroup || bk == .variantGroup || bk == .typeRef {
-            return t17ConvertToFunction(ref b, through: ref c, for: value, to: target, at: span)
-        }
-    }
-    let vt = exprType(in c, for: value)
-    if vt == target || isError(target) || isError(vt) { return value }
-    // Every node below is built on `value.Syntax`: its span and syntax facts.
-    let at = nodeSpan(in c, for: value)
-    if kindOf(vt) == .untrusted && isBool(c.untrustedTypes[typeIndex(vt)]) && isBool(target) {
-        return fact(ref c, for: value)
-    }
-
-    if (exprConstant(in c, for: value) is { } k) && k.kind == .integer && isInteger(vt)
-        && (isInteger(target) || isFloat(target) || (kindOf(target) == .optional && isNumeric(c.optionalTypes[typeIndex(target)]))) {
-        let inner = kindOf(target) == .optional ? c.optionalTypes[typeIndex(target)] : target
-        if isInteger(inner) && !fits(k.integer, for: primKindOf(typeIndex(inner))) {
-            let innerDisp = typeDisplay(ref c, by: inner)
-            report(ref b, through: ref c, for: .literalOutOfRange, at: span, by: (bigText(k.integer), $"`{innerDisp}`", "", "", ""),
-                help: t17RangeHelp(primKindOf(typeIndex(inner))))
-            return t17SameSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: at }), from: value)
-        }
-        let litVal = isFloat(inner) ? Constant { kind: .real, real: bigToF64(k.integer) } : k
-        let lit = t17SameSyntax(ref c, for: literal(ref c, at: at, as: inner, by: litVal), from: value)
-        if inner == target { return lit }
-        return t17SameSyntax(ref c, for: addConversion(ref c, from: BConversion { span: at, operand: lit, type: target, kind: .toOptional }), from: value)
-    }
-
-    if (exprConstant(in c, for: value) is { } kReal) && kReal.kind == .real && target == prim(.f32) && hasSyntax(in c, for: value, by: syntaxLiteral) {
-        return t17SameSyntax(ref c, for: literal(ref c, at: at, as: target, by: Constant { kind: .real, real: f64(f32(kReal.real)) }), from: value)
-    }
-
-    // C# `_printArgument && argument && value.Type is EnumSymbol && target.IsString` (EnumName) waits on T20's `_printArgument` (Q600).
-
-    if boundKind(value) == .staticArray && kindOf(target) == .span && !c.spanTypes[typeIndex(target)].readOnly {
-        let elemDisp = typeDisplay(ref c, by: c.spanTypes[typeIndex(target)].element)
-        report(ref b, through: ref c, for: .typeMismatch, at: span, by: (typeDisplay(ref c, by: vt), typeDisplay(ref c, by: target), "", "", ""),
-            label: "a `const` array cannot be written through", help: $"take a `ReadOnlySpan<{elemDisp}>`")
-        return t17SameSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: at }), from: value)
-    }
-
-    if (implicit(ref c, from: vt, to: target, argument: argument) is { } kind) {
-        if kind == .identity { return value }
-        if kind == .nullToOptional { return t17SameSyntax(ref c, for: addDefault(ref c, from: BDefault { span: at, type: target }), from: value) }
-    // mutation-exempt: Q600 through 203
-        if kind == .toDynRef && kindOf(target) == .dynRef && !c.dynRefTypes[typeIndex(target)].readOnly {
-            let _ = checkWritable(ref b, through: ref c, for: value, at: span, by: $"it is borrowed as `{typeDisplay(ref c, by: target)}`")
-        }
-        let converted = t17SameSyntax(ref c, for: addConversion(ref c, from: BConversion { span: at, operand: value, type: target, kind: kind }), from: value)
-        if (exprConstant(in c, for: value) is { } cConst) && kind == .widen {
-            setConstant(ref c, for: converted, to: t17WidenConstant(in cConst, to: target))
-        }
-        return converted
-    }
-
-    // C# `_sinkArgument is { } sink && ContainsUntrusted(value.Type)` (UntrustedSink) waits on T20's `_sinkArgument` (Q600).
-
-    let isTargetSymbol = target == builtinType(.symbol) || (kindOf(target) == .optional && c.optionalTypes[typeIndex(target)] == builtinType(.symbol))
-    if isString(vt) && isTargetSymbol {
-        let text = t17Text(in c, from: b.file, at: span)
-        report(ref b, through: ref c, for: .stringNotSymbol, at: span, by: ("", "", "", "", ""),
-            help: $"convert it with `Symbol.intern({text})`", hasFix: true, fixSpan: span, fixReplacement: $"Symbol.intern({text})")
-        return t17SameSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: at }), from: value)
-    }
-
-    if kindOf(target) == .structType && c.distinct.contains(typeIndex(target)) && exprConstant(in c, for: value) is not null {
-        let s = typeIndex(target)
-        let sName = c.structs[s].name
-        let text = t17Text(in c, from: b.file, at: span)
-        report(ref b, through: ref c, for: .bareLiteralForDistinct, at: span, by: (text, sName, "", "", ""),
-            help: $"wrap it: `{sName}({text})`", hasFix: true, fixSpan: span, fixReplacement: $"{sName}({text})")
-        return t17SameSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: at }), from: value)
-    }
-
-    t17ReportMismatch(ref b, through: ref c, for: value, to: target, at: span)
-    return t17SameSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: at }), from: value)
-}
-
-/// `n`, built on the same C# `Syntax` as `value`: it carries `value`'s syntax facts.
-BExpr t17SameSyntax(ref Ctx c, for BExpr n, from BExpr value) {
-    let flags = syntaxFlags(in c, for: value)
-    if flags != 0 { setSyntaxFlags(ref c, for: n, to: flags) }
-    return n
-}
-
-/// C# `Host` (BinderExpressions.cs:1939): the function around every lambda being bound, or -1 (Q601).
-FuncId t17Host(in Binder b, through in Ctx c) {
-    var fn = b.fn
-    while fn != -1 && c.functions[fn].kind == .lambda { fn = c.functions[fn].enclosing }
-    return fn
-}
-
 BExpr asValue(ref Binder b, through ref Ctx c, for BExpr bound, from in parser.Expr e) {
-    let span = t17ExprSpan(in e)
+    let span = parser.exprSpan(in e)
     switch boundKind(bound) {
         case .typeRef:
             let t = c.bTypeRefs[boundIndex(bound)].referenced
@@ -291,336 +60,142 @@ BExpr asValue(ref Binder b, through ref Ctx c, for BExpr bound, from in parser.E
     }
 }
 
-parser.TypeSyntax t17CloneTypeSyntax(in parser.TypeSyntax t) {
-    switch t {
-        case .namedType(let n):
-            var path = List<TextSpan>()
-            for p in n.value.path { path.append(p) }
-            var args = List<parser.TypeSyntax>()
-            for a in n.value.args { args.append(t17CloneTypeSyntax(in a)) }
-            return parser.TypeSyntax.namedType(Owned(NamedType { span: n.value.span, path: move path, args: move args }))
-        case .optionalType(let o):
-            return parser.TypeSyntax.optionalType(Owned(OptionalType { span: o.value.span, inner: t17CloneTypeSyntax(in o.value.inner) }))
-        case .pointerType(let p):
-            return parser.TypeSyntax.pointerType(Owned(PointerType { span: p.value.span, pointee: t17CloneTypeSyntax(in p.value.pointee), readOnly: p.value.readOnly }))
-        case .tupleType(let tt):
-            var elements = List<TupleTypeElement>()
-            for x in tt.value.elements { elements.append(TupleTypeElement { span: x.span, type: t17CloneTypeSyntax(in x.type), name: x.name }) }
-            return parser.TypeSyntax.tupleType(Owned(TupleType { span: tt.value.span, elements: move elements }))
-        case .functionTypeSyntax(let f):
-            var params = List<parser.TypeSyntax>()
-            for x in f.value.params { params.append(t17CloneTypeSyntax(in x)) }
-            var failsClause: FailsClause? = null
-            if (f.value.failsKeyword is { } fc) {
-                var errors = List<parser.TypeSyntax>()
-                for x in fc.errors { errors.append(t17CloneTypeSyntax(in x)) }
-                failsClause = FailsClause { span: fc.span, errors: move errors }
-            }
-            var usesClause: UsesClause? = null
-            if (f.value.usesKeyword is { } uc) {
-                var effects = List<TextSpan>()
-                for x in uc.effects { effects.append(x) }
-                usesClause = UsesClause { span: uc.span, effects: move effects }
-            }
-            return parser.TypeSyntax.functionTypeSyntax(Owned(FunctionTypeSyntax {
-                span: f.value.span, params: move params, returnKeyword: t17CloneTypeSyntax(in f.value.returnKeyword),
-                failsKeyword: move failsClause, usesKeyword: move usesClause,
-            }))
-        case .dynType(let d):
-            return parser.TypeSyntax.dynType(Owned(DynType { span: d.value.span, isRef: d.value.isRef, isReadOnly: d.value.isReadOnly, inner: t17CloneTypeSyntax(in d.value.inner) }))
-        case .refinedType(let r):
-            var states = List<TextSpan>()
-            for x in r.value.states { states.append(x) }
-            return parser.TypeSyntax.refinedType(Owned(RefinedType { span: r.value.span, inner: t17CloneTypeSyntax(in r.value.inner), states: move states }))
-        case .arrayType(let _):
-            panic("internal error: an array type argument's size expression cannot be cloned (Q603)")
-        case .none:
-            return parser.TypeSyntax.none
-    }
+BExpr bindConverted(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type target, bool argument = false) {
+    let bound = built(ref b, through: ref c, for: bindExprFor(ref b, through: ref c, for: in e, to: target), from: in e)
+    return convert(ref b, through: ref c, for: bound, to: target, at: parser.exprSpan(in e), argument: argument)
 }
 
-BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
-    let name = t17Text(in c, from: b.file, at: n.name)
-    let m = c.files[b.file].module
-    if n.typeArgs.length > 0 {
-        if t15Lookup(ref b, for: name) == -1 && (c.modules[m].functions.tryGet(at: name) is { } generic) {
-            var tArgsSpans = List<TextSpan>()
-            for ta in n.typeArgs { tArgsSpans.append(t17TypeSyntaxSpan(in ta)) }
-            return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: -1, function: generic[0], typeArgs: move tArgsSpans })
+BExpr bindExprFor(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type expected) {
+    let bound = bindExprOrType(ref b, through: ref c, for: in e, to: expected)
+    if expected != -1 && kindOf(expected) == .function {
+        let bk = boundKind(bound)
+        if bk == .methodGroup || bk == .variantGroup {
+            return bound
         }
-        var path = List<TextSpan>()
-        path.append(n.name)
-        var args = List<parser.TypeSyntax>()
-        for ta in n.typeArgs { args.append(t17CloneTypeSyntax(in ta)) }
-        let t = resolveType(ref b, through: ref c, for: parser.TypeSyntax.namedType(Owned(NamedType { span: n.span, path: move path, args: move args })))
-        if isError(t) {
-            return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
-        }
-        return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: t })
-    }
-
-    if name == "it" && b.itField != -1 {
-        if inLambda(ref b, through: ref c, at: n.span, for: "it", by: "the checked value is read through `this`, which a lambda does not capture") {
-            return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
-        }
-        let thisExpr = addThis(ref c, from: BThis { span: n.span, type: b.thisType })
-        return addField(ref c, from: BField { span: n.span, receiver: thisExpr, field: b.itField, type: c.fields[b.itField].type })
-    }
-
-    let local = t15Lookup(ref b, for: name)
-    if local != -1 {
-        // mutation-exempt: Q600 through 388
-        if c.locals[local].kind == .constKeyword && (c.locals[local].constant is { } cVal) {
-            let t = c.locals[local].type
-            return constantLiteral(ref c, at: n.span, as: t, by: in cVal)
-        }
-        var read: BExpr = -1
-        if isNonNull(ref b, for: local) {
-            let locNode = addLocalNode(ref c, at: n.span, for: local)
-            let optInner = c.optionalTypes[typeIndex(c.locals[local].type)]
-            read = addConversion(ref c, from: BConversion { span: n.span, operand: locNode, type: optInner, kind: .narrow })
-        } else {
-            let known = knownState(ref b, for: local)
-            let locType = known != -1 ? known : c.locals[local].type
-            read = addLocal(ref c, from: BLocal { span: n.span, local: local, type: locType })
-        }
-        let readType = exprType(in c, for: read)
-        return capture(ref b, through: ref c, for: in n, by: local, as: readType) ? read : addErrorExpr(ref c, from: BErrorExpr { span: n.span })
-    }
-
-    let host = t17Host(in b, through: in c)
-    // mutation-exempt: Q600 through 395
-    if b.thisType != -1 {
-        // A default cloned onto a struct sees only the interface's members through `this`.
-        var visible = true
-        if host != -1 && c.functions[host].template != -1 && c.functions[c.functions[host].template].iface != -1 {
-            // mutation-exempt: Q600 through 402
-            let cloneOf = c.functions[c.functions[host].template].iface
-            visible = lookupMember(ref c, for: t15InterfaceSelf(ref c, for: cloneOf), by: name).kind != .none
-        }
-        if visible {
-            let member = lookupMember(ref c, for: b.thisType, by: name)
-            if member.kind != .none {
-                return bindImplicitThisMember(ref b, through: ref c, for: in n, by: member)
-            }
-        }
-    }
-
-    // mutation-exempt: Q600 through 411
-    if b.thisType != -1 && kindOf(b.thisType) == .structType && host != -1 && !c.functions[host].isStatic {
-        let st = statesOf(ref c, for: typeIndex(b.thisType))
-        if st != -1 {
-            // mutation-exempt: Q600 through 430
-            var foundVariantField = false
-            for vId in c.unions[st].variants {
-                for fId in c.unionVariants[vId].fields {
-                    if c.locals[fId].name == name {
-                        foundVariantField = true
-                        break
-                    }
+        if bk == .typeRef {
+            let t = c.bTypeRefs[boundIndex(bound)].referenced
+            if kindOf(t) == .structType {
+                let s = typeIndex(t)
+                if t17Constructible(in c, for: s) {
+                    return bound
                 }
-                if foundVariantField { break }
-            }
-            if foundVariantField {
-                if inLambda(ref b, through: ref c, at: n.span, for: name, by: "it is read through `this`, which a lambda does not capture") {
-                    return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
-                }
-                let thisExpr = addThis(ref c, from: BThis { span: n.span, type: b.thisType })
-                return bindValueMember(ref b, through: ref c, at: n.span, for: thisExpr, by: n.name)
             }
         }
     }
-
-    if (c.modules[m].constants.tryGet(at: name) is { } kId) {
-        return constantRef(ref b, through: ref c, at: n.span, for: kId)
-    }
-    if (c.modules[m].functions.tryGet(at: name) is { } fns) {
-        return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: -1, function: fns[0] })
-    }
-    if c.modules[m].types.contains(name) {
-        var path = List<TextSpan>()
-        path.append(n.name)
-        let t = resolveType(ref b, through: ref c, for: parser.TypeSyntax.namedType(Owned(NamedType { span: n.span, path: move path, args: List<parser.TypeSyntax>() })))
-        return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: t })
-    }
-    if (c.files[b.file].imports.tryGet(at: name) is { } impMod) {
-        return addModuleRef(ref c, from: BModuleRef { span: n.span, module: impMod })
-    }
-
-    if (find(ref c, for: name) is { } builtin) {
-        return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: -1, function: builtin })
-    }
-
-    if (primitiveByName(name) is { } primitive) {
-        return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: primitive })
-    }
-
-    if name == "List" || name == "Map" || name == "Span" || name == "ReadOnlySpan" || name == "Arena"
-        || name == "StrBuf" || name == "IoError" || name == "Utf8Error" || name == "ParseError"
-        || name == "ValidationError" || name == "ProcessResult" || name == "Panic" {
-        var path = List<TextSpan>()
-        path.append(n.name)
-        let t = resolveType(ref b, through: ref c, for: parser.TypeSyntax.namedType(Owned(NamedType { span: n.span, path: move path, args: List<parser.TypeSyntax>() })))
-        return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: t })
-    }
-
-    if name == "Io" { return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.io) }) }
-    if name == "Hex" { return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.hex) }) }
-    if name == "Symbol" { return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.symbol) }) }
-    if name == "Utf8" { return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.utf8) }) }
-
-    t17ReportUndefined(ref b, through: ref c, for: n.name)
-    return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
+    return asValue(ref b, through: ref c, for: bound, from: in e)
 }
 
-BExpr bindLiteral(ref Binder b, through ref Ctx c, for in parser.LiteralExpr l, to Type expected, bool negate = false, TextSpan? whole = null) {
-    let wholeSpan = whole ?? l.span
-    var target = expected
-    if target != -1 && kindOf(target) == .optional {
-        target = c.optionalTypes[typeIndex(target)]
-    }
-    switch l.kind {
-        case .integer:
-            var parsed = parseInteger(l.text)
-            if negate { parsed = bigNeg(parsed) }
-            if (l.suffix is { } suffix) {
-                let sText = t17Text(in c, from: b.file, at: suffix)
-                var suffixed: PrimitiveKind? = null
-                if sText == "u" {
-                    suffixed = bigCmp(parsed, as: bigMax(32, signed: false)) <= 0 ? PrimitiveKind.u32 : PrimitiveKind.u64
-                } else if sText == "l" {
-                    suffixed = PrimitiveKind.i64
-                } else if sText == "ul" {
-                    suffixed = PrimitiveKind.u64
-                } else if sText == "f" {
-                    suffixed = PrimitiveKind.f32
-                }
-                if (suffixed is not { } sk) {
-                    report(ref b, through: ref c, for: .unsupported, at: suffix, by: ($"the unit suffix `{sText}`", "", "", "", ""))
-                    return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l)
-                }
-                if sk == .f32 {
-                    return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.f32), by: Constant { kind: .real, real: bigToF64(parsed) }), from: in l)
-                }
-                return t17CheckedIntegerLiteral(ref b, through: ref c, for: in l, at: wholeSpan, by: parsed, as: sk)
-            }
-            if target != -1 && isFloat(target) {
-                return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: target, by: Constant { kind: .real, real: bigToF64(parsed) }), from: in l)
-            }
-            if target != -1 && isInteger(target) {
-                return t17CheckedIntegerLiteral(ref b, through: ref c, for: in l, at: wholeSpan, by: parsed, as: primKindOf(typeIndex(target)))
-            }
-            var natural = PrimitiveKind.u64
-            let i32R = range(.i32)
-            let i64R = range(.i64)
-            if bigCmp(parsed, as: i32R.min) >= 0 && bigCmp(parsed, as: i32R.max) <= 0 {
-                natural = .i32
-            } else if bigCmp(parsed, as: i64R.min) >= 0 && bigCmp(parsed, as: i64R.max) <= 0 {
-                natural = .i64
-            }
-            return t17CheckedIntegerLiteral(ref b, through: ref c, for: in l, at: wholeSpan, by: parsed, as: natural)
-        case .floatKeyword:
-            var value = t17ParseFloat(l.text)
-            if negate { value = -value }
-            let suffixText = l.suffix is { } fs ? t17Text(in c, from: b.file, at: fs) : ""
-            if suffixText == "f" || (target != -1 && target == prim(.f32)) {
-                return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.f32), by: Constant { kind: .real, real: f64(f32(value)) }), from: in l)
-            }
-            if (l.suffix is { } s) {
-                report(ref b, through: ref c, for: .unsupported, at: s, by: ($"the suffix `{suffixText}`", "", "", "", ""))
-                return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l)
-            }
-            return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.f64), by: Constant { kind: .real, real: value }), from: in l)
-        case .char:
-            let value = t17DecodeChar(l.text)
-            if value < 0 { return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l) }
-            if target != -1 && target == prim(.u8) && value < 0x80 {
-                return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.u8), by: Constant { kind: .integer, integer: bigFromI64(value) }), from: in l)
-            }
-            return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.char), by: Constant { kind: .rune, rune: u32(value) }), from: in l)
-        case .string or .rawString:
-            if target != -1 && target == builtinType(.symbol) {
-                let sym = addSymbolLiteral(ref c, from: BSymbolLiteral { span: l.span, text: l.text })
-                setConstant(ref c, for: sym, to: Constant { kind: .text, text: l.text })
-                return t17FromLiteral(ref c, for: sym, from: in l)
-            }
-            return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.string), by: Constant { kind: .text, text: l.text }), from: in l)
-        case .trueKeyword:
-            return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.bool), by: Constant { kind: .flag, flag: true }), from: in l)
-        case .falseKeyword:
-            return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.bool), by: Constant { kind: .flag, flag: false }), from: in l)
-        case .nullKeyword:
-            if expected != -1 && kindOf(expected) == .optional {
-                return t17FromLiteral(ref c, for: addDefault(ref c, from: BDefault { span: l.span, type: expected }), from: in l)
-            }
-            return t17FromLiteral(ref c, for: addLiteral(ref c, from: BLiteral { span: l.span, type: nullType(), value: Constant { kind: .text, text: "null" } }), from: in l)
-        default:
-            let name = l.kind == .cString ? "C string literals" : "UTF-16 string literals"
-            report(ref b, through: ref c, for: .unsupported, at: l.span, by: (name, "", "", "", ""))
-            return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l)
-    }
-}
-
-/// `n`, built on literal `l`: C# `Syntax is LiteralExpr`, and `IsUntypedLiteral(Syntax)` for an unsuffixed number, char or `null`.
-BExpr t17FromLiteral(ref Ctx c, for BExpr n, from in parser.LiteralExpr l) {
-    let untyped = l.suffix is null && (l.kind == .integer || l.kind == .floatKeyword || l.kind == .char || l.kind == .nullKeyword)
-    setSyntaxFlags(ref c, for: n, to: untyped ? syntaxLiteral | syntaxUntypedLiteral : syntaxLiteral)
-    return n
-}
+bool t17Constructible(in Ctx c, for StructId s) =>
+    c.structs[s].constructors.length > 0 || c.distinct.contains(s) || c.positional.contains(declKey(c.structs[s].file, at: c.structs[s].declIndex))
 
 BExpr bindStatementExpression(ref Binder b, through ref Ctx c, for in parser.Expr e) {
     let bound = bindExpr(ref b, through: ref c, for: in e)
     let t = exprType(in c, for: bound)
     if !isVoid(t) && !isNever(t) && !isError(t) {
-        let span = t17ExprSpan(in e)
-        let text = t17Text(in c, from: b.file, at: span)
+        let span = parser.exprSpan(in e)
+        let text = t15Text(in c, from: b.file, at: span)
         report(ref b, through: ref c, for: .unusedValue, at: span, by: (text, "", "", "", ""),
             label: "value dropped", help: "assign it with `let _ = …`, or remove the expression")
     }
     return bound
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-string t17RangeHelp(PrimitiveKind k) {
-    let r = range(k)
-    return $"use a value from {bigText(r.min)} to {bigText(r.max)}, the range of `{primitiveName(k)}`"
-}
-
-Constant t17WidenConstant(in Constant k, to Type target) {
-    if isFloat(target) && k.kind == .integer {
-        return Constant { kind: .real, real: bigToF64(k.integer) }
-    }
-    return k
-}
-
-void t17ReportMismatch(ref Binder b, through ref Ctx c, for BExpr value, to Type target, at TextSpan span) {
-    let vt = exprType(in c, for: value)
-    var help = ""
-    var hasFix = false
-    var fixReplacement = ""
-    let expKind = explicit(ref c, from: vt, to: target)
-    if expKind == .numericCast || expKind == .charToInteger || expKind == .integerToChar {
-        let text = t17Text(in c, from: b.file, at: span)
-        let targetDisp = typeDisplay(ref c, by: target)
-        if isNumeric(vt) && isNumeric(target) {
-            help = $"convert it if the value always fits; `{typeDisplay(ref c, by: vt)}` does not convert to `{targetDisp}` without loss"
-        } else {
-            help = "convert it explicitly"
+BExpr convert(ref Binder b, through ref Ctx c, for BExpr value, to Type target, at TextSpan span, bool argument = false, bool constrains = true) {
+    if constrains { constrain(ref b, through: ref c, for: value, to: target) }
+    if target != -1 && kindOf(target) == .function {
+        let bk = boundKind(value)
+        if bk == .methodGroup || bk == .variantGroup || bk == .typeRef {
+            return t17ConvertToFunction(ref b, through: ref c, for: value, to: target, at: span)
         }
-        hasFix = true
-        fixReplacement = $"{targetDisp}({text})"
-    } else if kindOf(vt) == .optional && c.optionalTypes[typeIndex(vt)] == target {
-        help = "unwrap it with `??`, `is { } v`, or `?? return`; the value may be absent"
-    } else if kindOf(vt) == .list && kindOf(target) == .span {
-        help = "use `.span` here; a `List` becomes a `Span` implicitly only as a call argument"
     }
-    report(ref b, through: ref c, for: .typeMismatch, at: span, by: (typeDisplay(ref c, by: vt), typeDisplay(ref c, by: target), "", "", ""),
-        help: help, hasFix: hasFix, fixSpan: span, fixReplacement: fixReplacement)
+    let vt = exprType(in c, for: value)
+    if vt == target || isError(target) || isError(vt) { return value }
+    // Every node below is built on `value.Syntax`: its span and syntax facts.
+    let at = nodeSpan(in c, for: value)
+    if kindOf(vt) == .untrusted && isBool(c.untrustedTypes[typeIndex(vt)]) && isBool(target) {
+        return fact(ref c, for: value)
+    }
+
+    if (exprConstant(in c, for: value) is { } k) && k.kind == .integer && isInteger(vt)
+        && (isInteger(target) || isFloat(target) || (kindOf(target) == .optional && isNumeric(c.optionalTypes[typeIndex(target)]))) {
+        let inner = kindOf(target) == .optional ? c.optionalTypes[typeIndex(target)] : target
+        if isInteger(inner) && !fits(k.integer, for: primKindOf(typeIndex(inner))) {
+            let innerDisp = typeDisplay(ref c, by: inner)
+            report(ref b, through: ref c, for: .literalOutOfRange, at: span, by: (bigText(k.integer), $"`{innerDisp}`", "", "", ""),
+                help: t17RangeHelp(primKindOf(typeIndex(inner))))
+            return t17SameSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: at }), from: value)
+        }
+        let litVal = isFloat(inner) ? Constant { kind: .real, real: bigToF64(k.integer) } : k
+        let lit = t17SameSyntax(ref c, for: literal(ref c, at: at, as: inner, by: litVal), from: value)
+        if inner == target { return lit }
+        return t17SameSyntax(ref c, for: addConversion(ref c, from: BConversion { span: at, operand: lit, type: target, kind: .toOptional }), from: value)
+    }
+
+    if (exprConstant(in c, for: value) is { } kReal) && kReal.kind == .real && target == prim(.f32) && hasSyntax(in c, for: value, by: syntaxLiteral) {
+        return t17SameSyntax(ref c, for: literal(ref c, at: at, as: target, by: Constant { kind: .real, real: f64(f32(kReal.real)) }), from: value)
+    }
+
+    if b.printArgument && argument && kindOf(vt) == .enumType && isString(target) {
+        return t17SameSyntax(ref c, for: addBuiltinCall(ref c, from: BBuiltinCall { span: at, member: .enumName, receiver: value, type: prim(.string) }), from: value)
+    }
+
+    if boundKind(value) == .staticArray && kindOf(target) == .span && !c.spanTypes[typeIndex(target)].readOnly {
+        let elemDisp = typeDisplay(ref c, by: c.spanTypes[typeIndex(target)].element)
+        report(ref b, through: ref c, for: .typeMismatch, at: span, by: (typeDisplay(ref c, by: vt), typeDisplay(ref c, by: target), "", "", ""),
+            label: "a `const` array cannot be written through", help: $"take a `ReadOnlySpan<{elemDisp}>`")
+        return t17SameSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: at }), from: value)
+    }
+
+    if (implicit(ref c, from: vt, to: target, argument: argument) is { } kind) {
+        if kind == .identity { return value }
+        if kind == .nullToOptional { return t17SameSyntax(ref c, for: addDefault(ref c, from: BDefault { span: at, type: target }), from: value) }
+    // mutation-exempt: Q600 through 203
+        if kind == .toDynRef && kindOf(target) == .dynRef && !c.dynRefTypes[typeIndex(target)].readOnly {
+            let _ = checkWritable(ref b, through: ref c, for: value, at: span, by: $"it is borrowed as `{typeDisplay(ref c, by: target)}`")
+        }
+        let converted = t17SameSyntax(ref c, for: addConversion(ref c, from: BConversion { span: at, operand: value, type: target, kind: kind }), from: value)
+        if (exprConstant(in c, for: value) is { } cConst) && kind == .widen {
+            setConstant(ref c, for: converted, to: t17WidenConstant(in cConst, to: target))
+        }
+        return converted
+    }
+
+    if (b.sinkArgument is { } sink) && t17ContainsUntrusted(in c, for: vt) {
+        report(ref b, through: ref c, for: .untrustedSink, at: span, by: (typeDisplay(ref c, by: vt), sink, "", "", ""),
+            help: "check the value, then clear the mark with `x.trustUnchecked() because \"…\"`")
+        return t17SameSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: at }), from: value)
+    }
+
+    let isTargetSymbol = target == builtinType(.symbol) || (kindOf(target) == .optional && c.optionalTypes[typeIndex(target)] == builtinType(.symbol))
+    if isString(vt) && isTargetSymbol {
+        let text = t15Text(in c, from: b.file, at: span)
+        report(ref b, through: ref c, for: .stringNotSymbol, at: span, by: ("", "", "", "", ""),
+            help: $"convert it with `Symbol.intern({text})`", hasFix: true, fixSpan: span, fixReplacement: $"Symbol.intern({text})")
+        return t17SameSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: at }), from: value)
+    }
+
+    if kindOf(target) == .structType && c.distinct.contains(typeIndex(target)) && exprConstant(in c, for: value) is not null {
+        let s = typeIndex(target)
+        let sName = c.structs[s].name
+        let text = t15Text(in c, from: b.file, at: span)
+        report(ref b, through: ref c, for: .bareLiteralForDistinct, at: span, by: (text, sName, "", "", ""),
+            help: $"wrap it: `{sName}({text})`", hasFix: true, fixSpan: span, fixReplacement: $"{sName}({text})")
+        return t17SameSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: at }), from: value)
+    }
+
+    t17ReportMismatch(ref b, through: ref c, for: value, to: target, at: span)
+    return t17SameSyntax(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: at }), from: value)
+}
+
+/// `n`, built on the same C# `Syntax` as `value`: it carries `value`'s syntax facts.
+BExpr t17SameSyntax(ref Ctx c, for BExpr n, from BExpr value) {
+    let flags = syntaxFlags(in c, for: value)
+    if flags != 0 { setSyntaxFlags(ref c, for: n, to: flags) }
+    return n
 }
 
 BExpr t17ConvertToFunction(ref Binder b, through ref Ctx c, for BExpr value, to Type target, at TextSpan span) {
-    let text = t17Text(in c, from: b.file, at: span)
+    let text = t15Text(in c, from: b.file, at: span)
     let ft = typeIndex(target)
     let bk = boundKind(value)
     if bk == .methodGroup {
@@ -781,332 +356,6 @@ void t17ParameterNames(in Ctx c, for FuncId fn, to ref List<string> names, by re
     }
 }
 
-i64 t17HexDigit(u8 b) {
-    if b >= 48 && b <= 57 { return i64(b - 48) }
-    if b >= 97 && b <= 102 { return i64(b - 87) }
-    if b >= 65 && b <= 70 { return i64(b - 55) }
-    return -1
-}
-
-i64 t17DecodeChar(string text) {
-    let b = text.bytes
-    if b.length < 2 || b[0] != 39 { return -1 }
-    let end = b.length > 1 && b[b.length - 1] == 39 ? b.length - 1 : b.length
-    if end <= 1 { return -1 }
-    if b[1] == 92 {
-        if end == 3 {
-            switch b[2] {
-                case 110: return 10
-                case 114: return 13
-                case 116: return 9
-                case 48: return 0
-                case 92: return 92
-                case 34: return 34
-                case 39: return 39
-                default: return i64(b[2])
-            }
-        }
-        if b[2] == 117 && end > 4 && b[3] == 123 {
-            var close = -1
-            var idx = 4
-            while idx < end {
-                if b[idx] == 125 {
-                    close = idx
-                    break
-                }
-                idx += 1
-            }
-            if close > 4 {
-                var code: i64 = 0
-                var j = 4
-                while j < close {
-                    let d = t17HexDigit(b[j])
-                    if d < 0 { return -1 }
-                    code = (code << 4) | d
-                    j += 1
-                }
-                return code
-            }
-            return -1
-        }
-        return -1
-    }
-    let b0 = b[1]
-    if b0 < 0x80 {
-        if end == 2 { return i64(b0) }
-        return -1
-    }
-    if b0 >= 0xC0 && b0 <= 0xDF {
-        if end == 3 { return (i64(b0 & 0x1F) << 6) | i64(b[2] & 0x3F) }
-        return -1
-    }
-    if b0 >= 0xE0 && b0 <= 0xEF {
-        if end == 4 { return (i64(b0 & 0x0F) << 12) | (i64(b[2] & 0x3F) << 6) | i64(b[3] & 0x3F) }
-        return -1
-    }
-    if b0 >= 0xF0 && b0 <= 0xF7 {
-        if end == 5 { return (i64(b0 & 0x07) << 18) | (i64(b[2] & 0x3F) << 12) | (i64(b[3] & 0x3F) << 6) | i64(b[4] & 0x3F) }
-        return -1
-    }
-    return -1
-}
-
-
-f64 t17Pow10(i64 n) {
-    var p: f64 = 10.0
-    var res: f64 = 1.0
-    var exp = n
-    while exp > 0 {
-        if (exp & 1) != 0 { res *= p }
-        p *= p
-        exp >>= 1
-    }
-    return res
-}
-
-f64 t17ParseFloat(string text) {
-    let b = text.bytes
-    var i: i64 = 0
-    var sign: f64 = 1.0
-    if i < b.length && b[i] == 45 {
-        sign = -1.0
-        i += 1
-    } else if i < b.length && b[i] == 43 {
-        i += 1
-    }
-    var intPart: f64 = 0.0
-    while i < b.length {
-        let ch = b[i]
-        if ch == 95 {
-            i += 1
-            continue
-        }
-        if ch >= 48 && ch <= 57 {
-            intPart = intPart * 10.0 + f64(ch - 48)
-            i += 1
-        } else {
-            break
-        }
-    }
-    var fracPart: f64 = 0.0
-    var fracDiv: f64 = 1.0
-    if i < b.length && b[i] == 46 {
-        i += 1
-        while i < b.length {
-            let ch = b[i]
-            if ch == 95 {
-                i += 1
-                continue
-            }
-            if ch >= 48 && ch <= 57 {
-                fracPart = fracPart * 10.0 + f64(ch - 48)
-                fracDiv *= 10.0
-                i += 1
-            } else {
-                break
-            }
-        }
-    }
-    var expSign: f64 = 1.0
-    var expVal: i64 = 0
-    if i < b.length && (b[i] == 101 || b[i] == 69) {
-        i += 1
-        if i < b.length && b[i] == 45 {
-            expSign = -1.0
-            i += 1
-        } else if i < b.length && b[i] == 43 {
-            i += 1
-        }
-        while i < b.length {
-            let ch = b[i]
-            if ch == 95 {
-                i += 1
-                continue
-            }
-            if ch >= 48 && ch <= 57 {
-                expVal = expVal * 10 + i64(ch - 48)
-                i += 1
-            } else {
-                break
-            }
-        }
-    }
-    let base = intPart + (fracDiv > 1.0 ? fracPart / fracDiv : 0.0)
-    let p10 = t17Pow10(expVal)
-    let res = expSign > 0.0 ? base * p10 : base / p10
-    return sign * res
-}
-
-BExpr t17CheckedIntegerLiteral(ref Binder b, through ref Ctx c, for in parser.LiteralExpr l, at TextSpan span, by Big value, as PrimitiveKind typeKind) {
-    let r = range(typeKind)
-    if bigCmp(value, as: r.min) < 0 || bigCmp(value, as: r.max) > 0 {
-        report(ref b, through: ref c, for: .literalOutOfRange, at: span, by: (bigText(value), $"`{primitiveName(typeKind)}`", "", "", ""), help: t17RangeHelp(typeKind))
-        return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l)
-    }
-    return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(typeKind), by: Constant { kind: .integer, integer: value }), from: in l)
-}
-
-void t17ReportUndefined(ref Binder b, through ref Ctx c, for TextSpan nameSpan) {
-    let nameText = t17Text(in c, from: b.file, at: nameSpan)
-    var candidates = List<string>()
-    var i = t15Scope(ref b)
-    while i >= 0 {
-        for (k, _) in b.scopes[i] { candidates.append(k) }
-        i -= 1
-    }
-    if b.owner != -1 {
-        let s = b.owner
-        for fId in c.structs[s].fields { candidates.append(c.fields[fId].name) }
-        for pId in c.structs[s].properties { candidates.append(c.properties[pId].name) }
-        for mId in c.structs[s].methods { candidates.append(c.functions[mId].name) }
-    }
-    let m = c.files[b.file].module
-    // The keys of `functions`: iterating that map copies each unique `List<FuncId>` (BYN2780); `suggest` drops repeats.
-    for fn in c.modules[m].allFunctions { candidates.append(c.functions[fn].name) }
-    for (k, _) in c.modules[m].constants { candidates.append(k) }
-    for (k, _) in c.modules[m].types { candidates.append(k) }
-    for (k, _) in c.files[b.file].imports { candidates.append(k) }
-    candidates.append("print")
-    candidates.append("panic")
-    candidates.append("todo")
-    candidates.append("Io")
-    let s = suggest(nameText, by: in candidates)
-    if (s is { } suggestion) {
-        report(ref b, through: ref c, for: .undefinedName, at: nameSpan, by: (nameText, "", "", "", ""),
-            help: $"did you mean `{suggestion}`?", hasFix: true, fixSpan: nameSpan, fixReplacement: suggestion)
-    } else {
-        report(ref b, through: ref c, for: .undefinedName, at: nameSpan, by: (nameText, "", "", "", ""))
-    }
-}
-
-TextSpan t17TypeSyntaxSpan(in parser.TypeSyntax t) {
-    switch t {
-        case .namedType(let n): return n.value.span
-        case .optionalType(let n): return n.value.span
-        case .arrayType(let n): return n.value.span
-        case .tupleType(let n): return n.value.span
-        case .functionTypeSyntax(let n): return n.value.span
-        case .dynType(let n): return n.value.span
-        case .refinedType(let n): return n.value.span
-        case .pointerType(let n): return n.value.span
-        default: return TextSpan { start: 0, length: 0 }
-    }
-}
-
-bool t17Constructible(in Ctx c, for StructId s) =>
-    c.structs[s].constructors.length > 0 || c.distinct.contains(s) || c.positional.contains(declKey(c.structs[s].file, at: c.structs[s].declIndex))
-
-TextSpan t17ExprSpan(in parser.Expr e) {
-    switch e {
-        case .literalExpr(let n): return n.value.span
-        case .interpolatedExpr(let n): return n.value.span
-        case .nameExpr(let n): return n.value.span
-        case .thisExpr(let n): return n.value.span
-        case .memberExpr(let n): return n.value.span
-        case .targetMemberExpr(let n): return n.value.span
-        case .callExpr(let n): return n.value.span
-        case .indexExpr(let n): return n.value.span
-        case .unaryExpr(let n): return n.value.span
-        case .binaryExpr(let n): return n.value.span
-        case .rangeExpr(let n): return n.value.span
-        case .conditionalExpr(let n): return n.value.span
-        case .castExpr(let n): return n.value.span
-        case .isExpr(let n): return n.value.span
-        case .exceptExpr(let n): return n.value.span
-        case .inExpr(let n): return n.value.span
-        case .switchExpr(let n): return n.value.span
-        case .tryExpr(let n): return n.value.span
-        case .moveExpr(let n): return n.value.span
-        case .catchExpr(let n): return n.value.span
-        case .caughtErrorExpr(let n): return n.value.span
-        case .jumpExpr(let n): return n.value.span
-        case .blockExpr(let n): return n.value.span
-        case .structLiteralExpr(let n): return n.value.span
-        case .withExpr(let n): return n.value.span
-        case .spreadExpr(let n): return n.value.span
-        case .mapEntryExpr(let n): return n.value.span
-        case .collectionExpr(let n): return n.value.span
-        case .tupleExpr(let n): return n.value.span
-        case .parenExpr(let n): return n.value.span
-        case .lambdaExpr(let n): return n.value.span
-        case .stackallocExpr(let n): return n.value.span
-        case .patternExpr(let n): return n.value.span
-        case .errorExpr(let n): return n.value.span
-        case .none: return TextSpan { start: 0, length: 0 }
-    }
-}
-
-string t17Text(in Ctx c, from FileId f, at TextSpan span) => $"{getText(c.files[f].text.span, at: span)}"
-
-
-bool t17ListContainsString(in List<string> list, by string item) {
-    for x in list {
-        if x == item { return true }
-    }
-    return false
-}
-
-string t17Lower(string s) {
-    var bytes = List<u8>()
-    for b in s.bytes { bytes.append(b >= 0x41 && b <= 0x5A ? b + 0x20 : b) }
-    return $"{utf8(bytes.span)}"
-}
-
-i64 t17Distance(string a, as string b) {
-    var aBytes = List<u16>()
-    for u in a.utf16 { aBytes.append(u) }
-    var bBytes = List<u16>()
-    for u in b.utf16 { bBytes.append(u) }
-    let aLen = aBytes.length
-    let bLen = bBytes.length
-
-    var prev = List<i64>()
-    for j in 0..bLen + 1 {
-        prev.append(j)
-    }
-
-    for i in 1..aLen + 1 {
-        var curr = List<i64>()
-        curr.append(i)
-        for j in 1..bLen + 1 {
-            let cost = aBytes[i - 1] == bBytes[j - 1] ? 0 : 1
-            let del = prev[j] + 1
-            let ins = curr[j - 1] + 1
-            let sub = prev[j - 1] + cost
-            var minVal = del
-            if ins < minVal { minVal = ins }
-            if sub < minVal { minVal = sub }
-            curr.append(minVal)
-        }
-        prev = move curr
-    }
-    return prev[bLen]
-}
-
-void t17PendingDecls(ref Binder b, through ref Ctx c, for BExpr e, to ref List<i64> outDecls) {
-    switch boundKind(e) {
-        case .local:
-            let l = c.bLocals[boundIndex(e)].local
-            if b.pending.contains(l) {
-                outDecls.append(b.pending[l])
-            }
-        case .binary:
-            let bin = c.bBinaries[boundIndex(e)]
-            t17PendingDecls(ref b, through: ref c, for: bin.left, to: ref outDecls)
-            t17PendingDecls(ref b, through: ref c, for: bin.right, to: ref outDecls)
-        case .unary:
-            let u = c.bUnaries[boundIndex(e)]
-            t17PendingDecls(ref b, through: ref c, for: u.operand, to: ref outDecls)
-        default:
-            return
-    }
-}
-
-bool t17Untyped(ref Binder b, through ref Ctx c, for BExpr e) =>
-    isPending(ref b, through: ref c, for: e) || hasSyntax(in c, for: e, by: syntaxUntypedLiteral)
-
-// ── Entry points: Constrain, Peers, Fits, Literals ────────────────────────────
-
 void constrain(ref Binder b, through ref Ctx c, for BExpr value, to Type target) {
     if !isInteger(target) && !isFloat(target) && !isString(target) { return }
     let vk = boundKind(value)
@@ -1153,17 +402,31 @@ void constrain(ref Binder b, through ref Ctx c, for BExpr value, as BExpr other,
     }
 }
 
+void t17PendingDecls(ref Binder b, through ref Ctx c, for BExpr e, to ref List<i64> outDecls) {
+    switch boundKind(e) {
+        case .local:
+            let l = c.bLocals[boundIndex(e)].local
+            if b.pending.contains(l) {
+                outDecls.append(b.pending[l])
+            }
+        case .binary:
+            let bin = c.bBinaries[boundIndex(e)]
+            t17PendingDecls(ref b, through: ref c, for: bin.left, to: ref outDecls)
+            t17PendingDecls(ref b, through: ref c, for: bin.right, to: ref outDecls)
+        case .unary:
+            let u = c.bUnaries[boundIndex(e)]
+            t17PendingDecls(ref b, through: ref c, for: u.operand, to: ref outDecls)
+        default:
+            return
+    }
+}
+
 i64 findPeer(ref Binder b, for i64 key) {
     var d = key
     while b.peers.contains(d) {
         d = b.peers[d]
     }
     return d
-}
-
-bool fits(Big n, for PrimitiveKind t) {
-    let r = range(t)
-    return bigCmp(n, as: r.min) >= 0 && bigCmp(n, as: r.max) <= 0
 }
 
 bool isPending(ref Binder b, through ref Ctx c, for BExpr e) {
@@ -1187,6 +450,285 @@ bool isPending(ref Binder b, through ref Ctx c, for BExpr e) {
     }
 }
 
+bool t17Untyped(ref Binder b, through ref Ctx c, for BExpr e) =>
+    isPending(ref b, through: ref c, for: e) || hasSyntax(in c, for: e, by: syntaxUntypedLiteral)
+
+bool t17ContainsUntrusted(in Ctx c, for Type t) {
+    switch kindOf(t) {
+        case .untrusted: return true
+        case .list: return t17ContainsUntrusted(in c, for: c.listTypes[typeIndex(t)])
+        case .span: return t17ContainsUntrusted(in c, for: c.spanTypes[typeIndex(t)].element)
+        case .array: return t17ContainsUntrusted(in c, for: c.arrayTypes[typeIndex(t)].element)
+        case .optional: return t17ContainsUntrusted(in c, for: c.optionalTypes[typeIndex(t)])
+        default: return false
+    }
+}
+
+Constant t17WidenConstant(in Constant k, to Type target) {
+    if isFloat(target) && k.kind == .integer {
+        return Constant { kind: .real, real: bigToF64(k.integer) }
+    }
+    return k
+}
+
+void t17ReportMismatch(ref Binder b, through ref Ctx c, for BExpr value, to Type target, at TextSpan span) {
+    let vt = exprType(in c, for: value)
+    var help = ""
+    var hasFix = false
+    var fixReplacement = ""
+    let expKind = explicit(ref c, from: vt, to: target)
+    if expKind == .numericCast || expKind == .charToInteger || expKind == .integerToChar {
+        let text = t15Text(in c, from: b.file, at: span)
+        let targetDisp = typeDisplay(ref c, by: target)
+        if isNumeric(vt) && isNumeric(target) {
+            help = $"convert it if the value always fits; `{typeDisplay(ref c, by: vt)}` does not convert to `{targetDisp}` without loss"
+        } else {
+            help = "convert it explicitly"
+        }
+        hasFix = true
+        fixReplacement = $"{targetDisp}({text})"
+    } else if kindOf(vt) == .optional && c.optionalTypes[typeIndex(vt)] == target {
+        help = "unwrap it with `??`, `is { } v`, or `?? return`; the value may be absent"
+    } else if kindOf(vt) == .list && kindOf(target) == .span {
+        help = "use `.span` here; a `List` becomes a `Span` implicitly only as a call argument"
+    }
+    report(ref b, through: ref c, for: .typeMismatch, at: span, by: (typeDisplay(ref c, by: vt), typeDisplay(ref c, by: target), "", "", ""),
+        help: help, hasFix: hasFix, fixSpan: span, fixReplacement: fixReplacement)
+}
+
+string t17RangeHelp(PrimitiveKind k) {
+    let r = range(k)
+    return $"use a value from {bigText(r.min)} to {bigText(r.max)}, the range of `{primitiveName(k)}`"
+}
+
+bool fits(Big n, for PrimitiveKind t) {
+    let r = range(t)
+    return bigCmp(n, as: r.min) >= 0 && bigCmp(n, as: r.max) <= 0
+}
+
+BExpr literal(ref Ctx c, at TextSpan span, as Type type, by in Constant value) {
+    let lit = addLiteral(ref c, from: BLiteral { span: span, type: type, value: value })
+    setConstant(ref c, for: lit, to: value)
+    return lit
+}
+
+BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type expected = -1) {
+    switch e {
+        case .literalExpr(let l):
+            return bindLiteral(ref b, through: ref c, for: in l.value, to: expected)
+        case .parenExpr(let p):
+            return bindExprOrType(ref b, through: ref c, for: in p.value.inner, to: expected)
+        case .nameExpr(let n):
+            return bindName(ref b, through: ref c, for: in n.value)
+        case .thisExpr(let t):
+            let host = host(b, through: c)
+            let isHostValid = host != -1 && !c.functions[host].isStatic && (c.functions[host].kind == .method || c.functions[host].kind == .getter || c.functions[host].kind == .constructor)
+            if b.thisType == -1 || !isHostValid {
+                report(ref b, through: ref c, for: .thisOutsideMethod, at: t.value.span, by: ("", "", "", "", ""))
+                return addErrorExpr(ref c, from: BErrorExpr { span: t.value.span })
+            }
+            if inLambda(ref b, through: ref c, at: t.value.span, for: "this", by: "a lambda does not capture `this`") {
+                return addErrorExpr(ref c, from: BErrorExpr { span: t.value.span })
+            }
+            return addThis(ref c, from: BThis { span: t.value.span, type: b.thisType })
+        case .memberExpr(let m):
+            return bindMember(ref b, through: ref c, for: in m.value)
+        case .targetMemberExpr(let t):
+            return bindTargetMember(ref b, through: ref c, for: in t.value, to: expected)
+        case .callExpr(let call):
+            let errNew = bindErrorNew(ref b, through: ref c, for: in call.value, to: expected)
+    // mutation-exempt: Q600 through 45
+            if errNew != -1 { return errNew }
+            return bindCall(ref b, through: ref c, for: in call.value, to: expected)
+        case .indexExpr(let i):
+            return bindIndex(ref b, through: ref c, for: in i.value)
+        case .unaryExpr(let u):
+            return bindUnary(ref b, through: ref c, for: in u.value, to: expected)
+        case .binaryExpr(let bin):
+            return bindBinary(ref b, through: ref c, for: in bin.value, to: expected)
+        case .rangeExpr(let r):
+            return bindRange(ref b, through: ref c, for: in r.value, to: expected)
+        case .conditionalExpr(let cond):
+            return bindConditional(ref b, through: ref c, for: in cond.value, to: expected)
+        case .castExpr(let cast):
+            return bindCast(ref b, through: ref c, for: in cast.value)
+        case .isExpr(let isE):
+            let val = bindExpr(ref b, through: ref c, for: in isE.value.value)
+            let pat = bindPattern(ref b, through: ref c, for: in isE.value.pattern, as: exprType(in c, for: val))
+            return addIs(ref c, from: BIs { span: isE.value.span, value: val, pattern: pat })
+        case .inExpr(let inE):
+            return bindIn(ref b, through: ref c, for: in inE.value)
+        case .switchExpr(let sw):
+            return bindSwitchExpr(ref b, through: ref c, for: in sw.value, to: expected)
+        case .tryExpr(let tr):
+            return bindTry(ref b, through: ref c, for: in tr.value, to: expected)
+        case .moveExpr(let mv):
+            let operand = bindExpr(ref b, through: ref c, for: in mv.value.operand, to: expected)
+            return bindMove(ref b, through: ref c, at: mv.value.span, for: operand)
+        case .catchExpr(let ct):
+            return bindCatch(ref b, through: ref c, for: in ct.value, to: expected)
+        case .caughtErrorExpr(let ce):
+            if b.caught != -1 { return addLocal(ref c, from: BLocal { span: ce.value.span, local: b.caught }) }
+            return addErrorExpr(ref c, from: BErrorExpr { span: ce.value.span })
+        case .jumpExpr(let j):
+            let stmt = bindStatement(ref b, through: ref c, for: in j.value.jump)
+            return addJump(ref c, from: BJump { span: j.value.span, jump: stmt })
+        case .blockExpr(let bNode):
+            switch bNode.value.block {
+                case .blockStmt(let bs):
+                    let blk = bindBlock(ref b, through: ref c, for: in bs.value)
+                    return addBlockExpr(ref c, from: BBlockExpr { span: bNode.value.span, block: blk, type: prim(.void) })
+                default:
+                    panic("internal error: a block expression's block is a `BlockStmt`")
+            }
+        case .structLiteralExpr(let s):
+            return bindStructLiteral(ref b, through: ref c, for: in s.value, to: expected)
+        case .withExpr(let w):
+            return bindWith(ref b, through: ref c, for: in w.value)
+        case .collectionExpr(let col):
+            return bindCollection(ref b, through: ref c, for: in col.value, to: expected)
+        case .tupleExpr(let tup):
+            return bindTuple(ref b, through: ref c, for: in tup.value, to: expected)
+        case .interpolatedExpr(let ip):
+            return bindInterpolated(ref b, through: ref c, for: in ip.value)
+        case .stackallocExpr(let st):
+            return bindStackalloc(ref b, through: ref c, for: in st.value)
+        case .spreadExpr(let sp):
+            report(ref b, through: ref c, for: .unsupported, at: sp.value.span, by: ("spreads (`..xs`) outside a collection literal", "", "", "", ""))
+            return addErrorExpr(ref c, from: BErrorExpr { span: sp.value.span })
+        case .patternExpr(let pat):
+            report(ref b, through: ref c, for: .unsupported, at: pat.value.span, by: ("a named pattern", "", "", "", ""))
+            return addErrorExpr(ref c, from: BErrorExpr { span: pat.value.span })
+        case .lambdaExpr(let l):
+            var fExpected = expected
+            if fExpected != -1 && kindOf(fExpected) == .optional {
+                // mutation-exempt: Q600 through 112
+                fExpected = c.optionalTypes[typeIndex(fExpected)]
+            }
+            if fExpected != -1 && kindOf(fExpected) != .function { fExpected = -1 }
+            switch l.value.block {
+                case .blockStmt(let bs):
+                    let noBody: parser.Expr? = null
+                    return bindLambda(ref b, through: ref c, at: l.value.span, for: in l.value.params, from: in noBody, by: in bs.value, to: fExpected)
+                default:
+                    let noBlock: parser.BlockStmt? = null
+                    return bindLambda(ref b, through: ref c, at: l.value.span, for: in l.value.params, from: in l.value.body, by: in noBlock, to: fExpected)
+            }
+        case .errorExpr(let eNode):
+            return addErrorExpr(ref c, from: BErrorExpr { span: eNode.value.span })
+        default:
+            let span = parser.exprSpan(in e)
+            report(ref b, through: ref c, for: .unsupported, at: span, by: ("this expression", "", "", "", ""))
+            return addErrorExpr(ref c, from: BErrorExpr { span: span })
+    }
+}
+
+BExpr bindLiteral(ref Binder b, through ref Ctx c, for in parser.LiteralExpr l, to Type expected, bool negate = false, TextSpan? whole = null) {
+    let wholeSpan = whole ?? l.span
+    var target = expected
+    if target != -1 && kindOf(target) == .optional {
+        target = c.optionalTypes[typeIndex(target)]
+    }
+    switch l.kind {
+        case .integer:
+            var parsed = parseInteger(l.text)
+            if negate { parsed = bigNeg(parsed) }
+            if (l.suffix is { } suffix) {
+                let sText = t15Text(in c, from: b.file, at: suffix)
+                var suffixed: PrimitiveKind? = null
+                if sText == "u" {
+                    suffixed = bigCmp(parsed, as: bigMax(32, signed: false)) <= 0 ? PrimitiveKind.u32 : PrimitiveKind.u64
+                } else if sText == "l" {
+                    suffixed = PrimitiveKind.i64
+                } else if sText == "ul" {
+                    suffixed = PrimitiveKind.u64
+                } else if sText == "f" {
+                    suffixed = PrimitiveKind.f32
+                }
+                if (suffixed is not { } sk) {
+                    report(ref b, through: ref c, for: .unsupported, at: suffix, by: ($"the unit suffix `{sText}`", "", "", "", ""))
+                    return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l)
+                }
+                if sk == .f32 {
+                    return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.f32), by: Constant { kind: .real, real: bigToF64(parsed) }), from: in l)
+                }
+                return t17CheckedIntegerLiteral(ref b, through: ref c, for: in l, at: wholeSpan, by: parsed, as: sk)
+            }
+            if target != -1 && isFloat(target) {
+                return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: target, by: Constant { kind: .real, real: bigToF64(parsed) }), from: in l)
+            }
+            if target != -1 && isInteger(target) {
+                return t17CheckedIntegerLiteral(ref b, through: ref c, for: in l, at: wholeSpan, by: parsed, as: primKindOf(typeIndex(target)))
+            }
+            var natural = PrimitiveKind.u64
+            let i32R = range(.i32)
+            let i64R = range(.i64)
+            if bigCmp(parsed, as: i32R.min) >= 0 && bigCmp(parsed, as: i32R.max) <= 0 {
+                natural = .i32
+            } else if bigCmp(parsed, as: i64R.min) >= 0 && bigCmp(parsed, as: i64R.max) <= 0 {
+                natural = .i64
+            }
+            return t17CheckedIntegerLiteral(ref b, through: ref c, for: in l, at: wholeSpan, by: parsed, as: natural)
+        case .floatKeyword:
+            var value = t17ParseFloat(l.text)
+            if negate { value = -value }
+            let suffixText = l.suffix is { } fs ? t15Text(in c, from: b.file, at: fs) : ""
+            if suffixText == "f" || (target != -1 && target == prim(.f32)) {
+                return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.f32), by: Constant { kind: .real, real: f64(f32(value)) }), from: in l)
+            }
+            if (l.suffix is { } s) {
+                report(ref b, through: ref c, for: .unsupported, at: s, by: ($"the suffix `{suffixText}`", "", "", "", ""))
+                return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l)
+            }
+            return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.f64), by: Constant { kind: .real, real: value }), from: in l)
+        case .char:
+            let value = t17DecodeChar(l.text)
+            if value < 0 { return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l) }
+            if target != -1 && target == prim(.u8) && value < 0x80 {
+                return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.u8), by: Constant { kind: .integer, integer: bigFromI64(value) }), from: in l)
+            }
+            return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.char), by: Constant { kind: .rune, rune: u32(value) }), from: in l)
+        case .string or .rawString:
+            if target != -1 && target == builtinType(.symbol) {
+                let sym = addSymbolLiteral(ref c, from: BSymbolLiteral { span: l.span, text: l.text })
+                setConstant(ref c, for: sym, to: Constant { kind: .text, text: l.text })
+                return t17FromLiteral(ref c, for: sym, from: in l)
+            }
+            return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.string), by: Constant { kind: .text, text: l.text }), from: in l)
+        case .trueKeyword:
+            return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.bool), by: Constant { kind: .flag, flag: true }), from: in l)
+        case .falseKeyword:
+            return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.bool), by: Constant { kind: .flag, flag: false }), from: in l)
+        case .nullKeyword:
+            if expected != -1 && kindOf(expected) == .optional {
+                return t17FromLiteral(ref c, for: addDefault(ref c, from: BDefault { span: l.span, type: expected }), from: in l)
+            }
+            return t17FromLiteral(ref c, for: addLiteral(ref c, from: BLiteral { span: l.span, type: nullType(), value: Constant { kind: .text, text: "null" } }), from: in l)
+        default:
+            let name = l.kind == .cString ? "C string literals" : "UTF-16 string literals"
+            report(ref b, through: ref c, for: .unsupported, at: l.span, by: (name, "", "", "", ""))
+            return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l)
+    }
+}
+
+/// `n`, built on literal `l`: C# `Syntax is LiteralExpr`, and `IsUntypedLiteral(Syntax)` for an unsuffixed number, char or `null`.
+BExpr t17FromLiteral(ref Ctx c, for BExpr n, from in parser.LiteralExpr l) {
+    let untyped = l.suffix is null && (l.kind == .integer || l.kind == .floatKeyword || l.kind == .char || l.kind == .nullKeyword)
+    setSyntaxFlags(ref c, for: n, to: untyped ? syntaxLiteral | syntaxUntypedLiteral : syntaxLiteral)
+    return n
+}
+
+BExpr t17CheckedIntegerLiteral(ref Binder b, through ref Ctx c, for in parser.LiteralExpr l, at TextSpan span, by Big value, as PrimitiveKind typeKind) {
+    let r = range(typeKind)
+    if bigCmp(value, as: r.min) < 0 || bigCmp(value, as: r.max) > 0 {
+        report(ref b, through: ref c, for: .literalOutOfRange, at: span, by: (bigText(value), $"`{primitiveName(typeKind)}`", "", "", ""), help: t17RangeHelp(typeKind))
+        return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l)
+    }
+    return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(typeKind), by: Constant { kind: .integer, integer: value }), from: in l)
+}
+
+Big parseInteger(string text) => bigParse(text).value
+
 bool isUntypedLiteral(in parser.Expr e) {
     switch e {
         case .literalExpr(let l):
@@ -1209,20 +751,227 @@ bool isUntypedLiteral(in parser.Expr e) {
     }
 }
 
-BExpr literal(ref Ctx c, at TextSpan span, as Type type, by in Constant value) {
-    let lit = addLiteral(ref c, from: BLiteral { span: span, type: type, value: value })
-    setConstant(ref c, for: lit, to: value)
-    return lit
+BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
+    let name = t15Text(in c, from: b.file, at: n.name)
+    let m = c.files[b.file].module
+    if n.typeArgs.length > 0 {
+        if t15Lookup(ref b, for: name) == -1 && (c.modules[m].functions.tryGet(at: name) is { } generic) {
+            var tArgsSpans = List<TextSpan>()
+            for ta in n.typeArgs { tArgsSpans.append(typeSyntaxSpan(in ta)) }
+            return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: -1, function: generic[0], typeArgs: move tArgsSpans })
+        }
+        var path = List<TextSpan>()
+        path.append(n.name)
+        var args = List<parser.TypeSyntax>()
+        for ta in n.typeArgs { args.append(t17CloneTypeSyntax(in ta)) }
+        let t = resolveType(ref b, through: ref c, for: parser.TypeSyntax.namedType(Owned(NamedType { span: n.span, path: move path, args: move args })))
+        if isError(t) {
+            return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
+        }
+        return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: t })
+    }
+
+    if name == "it" && b.itField != -1 {
+        if inLambda(ref b, through: ref c, at: n.span, for: "it", by: "the checked value is read through `this`, which a lambda does not capture") {
+            return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
+        }
+        let thisExpr = addThis(ref c, from: BThis { span: n.span, type: b.thisType })
+        return addField(ref c, from: BField { span: n.span, receiver: thisExpr, field: b.itField, type: c.fields[b.itField].type })
+    }
+
+    let local = t15Lookup(ref b, for: name)
+    if local != -1 {
+        // mutation-exempt: Q600 through 388
+        if c.locals[local].kind == .constKeyword && (c.locals[local].constant is { } cVal) {
+            let t = c.locals[local].type
+            return constantLiteral(ref c, at: n.span, as: t, by: in cVal)
+        }
+        var read: BExpr = -1
+        if isNonNull(ref b, for: local) {
+            let locNode = addLocalNode(ref c, at: n.span, for: local)
+            let optInner = c.optionalTypes[typeIndex(c.locals[local].type)]
+            read = addConversion(ref c, from: BConversion { span: n.span, operand: locNode, type: optInner, kind: .narrow })
+        } else {
+            let known = knownState(ref b, for: local)
+            let locType = known != -1 ? known : c.locals[local].type
+            read = addLocal(ref c, from: BLocal { span: n.span, local: local, type: locType })
+        }
+        let readType = exprType(in c, for: read)
+        return capture(ref b, through: ref c, for: in n, by: local, as: readType) ? read : addErrorExpr(ref c, from: BErrorExpr { span: n.span })
+    }
+
+    let host = host(b, through: c)
+    // mutation-exempt: Q600 through 395
+    if b.thisType != -1 {
+        // A default cloned onto a struct sees only the interface's members through `this`.
+        var visible = true
+        if host != -1 && c.functions[host].template != -1 && c.functions[c.functions[host].template].iface != -1 {
+            // mutation-exempt: Q600 through 402
+            let cloneOf = c.functions[c.functions[host].template].iface
+            visible = lookupMember(ref c, for: t15InterfaceSelf(ref c, for: cloneOf), by: name).kind != .none
+        }
+        if visible {
+            let member = lookupMember(ref c, for: b.thisType, by: name)
+            if member.kind != .none {
+                return bindImplicitThisMember(ref b, through: ref c, for: in n, by: member)
+            }
+        }
+    }
+
+    // mutation-exempt: Q600 through 411
+    if b.thisType != -1 && kindOf(b.thisType) == .structType && host != -1 && !c.functions[host].isStatic {
+        let st = statesOf(ref c, for: typeIndex(b.thisType))
+        if st != -1 {
+            // mutation-exempt: Q600 through 430
+            var foundVariantField = false
+            for vId in c.unions[st].variants {
+                for fId in c.unionVariants[vId].fields {
+                    if c.locals[fId].name == name {
+                        foundVariantField = true
+                        break
+                    }
+                }
+                if foundVariantField { break }
+            }
+            if foundVariantField {
+                if inLambda(ref b, through: ref c, at: n.span, for: name, by: "it is read through `this`, which a lambda does not capture") {
+                    return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
+                }
+                let thisExpr = addThis(ref c, from: BThis { span: n.span, type: b.thisType })
+                return bindValueMember(ref b, through: ref c, at: n.span, for: thisExpr, by: n.name)
+            }
+        }
+    }
+
+    if (c.modules[m].constants.tryGet(at: name) is { } kId) {
+        return constantRef(ref b, through: ref c, at: n.span, for: kId)
+    }
+    if (c.modules[m].functions.tryGet(at: name) is { } fns) {
+        return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: -1, function: fns[0] })
+    }
+    if c.modules[m].types.contains(name) {
+        var path = List<TextSpan>()
+        path.append(n.name)
+        let t = resolveType(ref b, through: ref c, for: parser.TypeSyntax.namedType(Owned(NamedType { span: n.span, path: move path, args: List<parser.TypeSyntax>() })))
+        return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: t })
+    }
+    if (c.files[b.file].imports.tryGet(at: name) is { } impMod) {
+        return addModuleRef(ref c, from: BModuleRef { span: n.span, module: impMod })
+    }
+
+    if (find(ref c, for: name) is { } builtin) {
+        return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: -1, function: builtin })
+    }
+
+    if (primitiveByName(name) is { } primitive) {
+        return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: primitive })
+    }
+
+    if name == "List" || name == "Map" || name == "Span" || name == "ReadOnlySpan" || name == "Arena"
+        || name == "StrBuf" || name == "IoError" || name == "Utf8Error" || name == "ParseError"
+        || name == "ValidationError" || name == "ProcessResult" || name == "Panic" {
+        var path = List<TextSpan>()
+        path.append(n.name)
+        let t = resolveType(ref b, through: ref c, for: parser.TypeSyntax.namedType(Owned(NamedType { span: n.span, path: move path, args: List<parser.TypeSyntax>() })))
+        return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: t })
+    }
+
+    if name == "Io" { return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.io) }) }
+    if name == "Hex" { return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.hex) }) }
+    if name == "Symbol" { return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.symbol) }) }
+    if name == "Utf8" { return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: builtinType(.utf8) }) }
+
+    t17ReportUndefined(ref b, through: ref c, for: n.name)
+    return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
 }
 
-Big parseInteger(string text) => bigParse(text).value
+parser.TypeSyntax t17CloneTypeSyntax(in parser.TypeSyntax t) {
+    switch t {
+        case .namedType(let n):
+            var path = List<TextSpan>()
+            for p in n.value.path { path.append(p) }
+            var args = List<parser.TypeSyntax>()
+            for a in n.value.args { args.append(t17CloneTypeSyntax(in a)) }
+            return parser.TypeSyntax.namedType(Owned(NamedType { span: n.value.span, path: move path, args: move args }))
+        case .optionalType(let o):
+            return parser.TypeSyntax.optionalType(Owned(OptionalType { span: o.value.span, inner: t17CloneTypeSyntax(in o.value.inner) }))
+        case .pointerType(let p):
+            return parser.TypeSyntax.pointerType(Owned(PointerType { span: p.value.span, pointee: t17CloneTypeSyntax(in p.value.pointee), readOnly: p.value.readOnly }))
+        case .tupleType(let tt):
+            var elements = List<TupleTypeElement>()
+            for x in tt.value.elements { elements.append(TupleTypeElement { span: x.span, type: t17CloneTypeSyntax(in x.type), name: x.name }) }
+            return parser.TypeSyntax.tupleType(Owned(TupleType { span: tt.value.span, elements: move elements }))
+        case .functionTypeSyntax(let f):
+            var params = List<parser.TypeSyntax>()
+            for x in f.value.params { params.append(t17CloneTypeSyntax(in x)) }
+            var failsClause: FailsClause? = null
+            if (f.value.failsKeyword is { } fc) {
+                var errors = List<parser.TypeSyntax>()
+                for x in fc.errors { errors.append(t17CloneTypeSyntax(in x)) }
+                failsClause = FailsClause { span: fc.span, errors: move errors }
+            }
+            var usesClause: UsesClause? = null
+            if (f.value.usesKeyword is { } uc) {
+                var effects = List<TextSpan>()
+                for x in uc.effects { effects.append(x) }
+                usesClause = UsesClause { span: uc.span, effects: move effects }
+            }
+            return parser.TypeSyntax.functionTypeSyntax(Owned(FunctionTypeSyntax {
+                span: f.value.span, params: move params, returnKeyword: t17CloneTypeSyntax(in f.value.returnKeyword),
+                failsKeyword: move failsClause, usesKeyword: move usesClause,
+            }))
+        case .dynType(let d):
+            return parser.TypeSyntax.dynType(Owned(DynType { span: d.value.span, isRef: d.value.isRef, isReadOnly: d.value.isReadOnly, inner: t17CloneTypeSyntax(in d.value.inner) }))
+        case .refinedType(let r):
+            var states = List<TextSpan>()
+            for x in r.value.states { states.append(x) }
+            return parser.TypeSyntax.refinedType(Owned(RefinedType { span: r.value.span, inner: t17CloneTypeSyntax(in r.value.inner), states: move states }))
+        case .arrayType(let _):
+            panic("internal error: an array type argument's size expression cannot be cloned (Q603)")
+        case .none:
+            return parser.TypeSyntax.none
+    }
+}
+
+void t17ReportUndefined(ref Binder b, through ref Ctx c, for TextSpan nameSpan) {
+    let nameText = t15Text(in c, from: b.file, at: nameSpan)
+    var candidates = List<string>()
+    var i = t15Scope(ref b)
+    while i >= 0 {
+        for (k, _) in b.scopes[i] { candidates.append(k) }
+        i -= 1
+    }
+    if b.owner != -1 {
+        let s = b.owner
+        for fId in c.structs[s].fields { candidates.append(c.fields[fId].name) }
+        for pId in c.structs[s].properties { candidates.append(c.properties[pId].name) }
+        for mId in c.structs[s].methods { candidates.append(c.functions[mId].name) }
+    }
+    let m = c.files[b.file].module
+    // The keys of `functions`: iterating that map copies each unique `List<FuncId>` (BYN2780); `suggest` drops repeats.
+    for fn in c.modules[m].allFunctions { candidates.append(c.functions[fn].name) }
+    for (k, _) in c.modules[m].constants { candidates.append(k) }
+    for (k, _) in c.modules[m].types { candidates.append(k) }
+    for (k, _) in c.files[b.file].imports { candidates.append(k) }
+    candidates.append("print")
+    candidates.append("panic")
+    candidates.append("todo")
+    candidates.append("Io")
+    let s = suggest(nameText, by: in candidates)
+    if (s is { } suggestion) {
+        report(ref b, through: ref c, for: .undefinedName, at: nameSpan, by: (nameText, "", "", "", ""),
+            help: $"did you mean `{suggestion}`?", hasFix: true, fixSpan: nameSpan, fixReplacement: suggestion)
+    } else {
+        report(ref b, through: ref c, for: .undefinedName, at: nameSpan, by: (nameText, "", "", "", ""))
+    }
+}
 
 string? suggest(string name, by in List<string> candidates) {
     var best: string? = null
     var bestDistance = 2147483647
     var seen = List<string>()
     for c in candidates {
-        if t17ListContainsString(in seen, by: c) { continue }
+        if listContainsString(in seen, by: c) { continue }
         seen.append(c)
         if c == name { continue }
         let d = t17Distance(t17Lower(name), as: t17Lower(c))
@@ -1240,3 +989,33 @@ string? suggest(string name, by in List<string> candidates) {
     return null
 }
 
+i64 t17Distance(string a, as string b) {
+    var aBytes = List<u16>()
+    for u in a.utf16 { aBytes.append(u) }
+    var bBytes = List<u16>()
+    for u in b.utf16 { bBytes.append(u) }
+    let aLen = aBytes.length
+    let bLen = bBytes.length
+
+    var prev = List<i64>()
+    for j in 0..bLen + 1 {
+        prev.append(j)
+    }
+
+    for i in 1..aLen + 1 {
+        var curr = List<i64>()
+        curr.append(i)
+        for j in 1..bLen + 1 {
+            let cost = aBytes[i - 1] == bBytes[j - 1] ? 0 : 1
+            let del = prev[j] + 1
+            let ins = curr[j - 1] + 1
+            let sub = prev[j - 1] + cost
+            var minVal = del
+            if ins < minVal { minVal = ins }
+            if sub < minVal { minVal = sub }
+            curr.append(minVal)
+        }
+        prev = move curr
+    }
+    return prev[bLen]
+}

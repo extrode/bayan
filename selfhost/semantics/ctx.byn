@@ -599,6 +599,12 @@ struct Binder {
     /// The C# `_handled` (BinderCalls.cs:11): the span (in `file`) of the call a `try`, `catch` or `assert … fails` handles; null for none.
     TextSpan? handled = null
     // ── T17 state
+    /// The C# `_caught` (BinderCalls.cs:17): the local `caught` reads in a `catch` handler, or -1.
+    LocalId caught = -1
+    /// The C# `_printArgument` (BinderCalls.cs:193): an argument of `print` is being converted.
+    bool printArgument = false
+    /// The C# `_sinkArgument` (BinderCalls.cs:196): the sink parameter an argument is converted to, or null.
+    string? sinkArgument = null
     // ── T18 state
     parser.CallExpr? calleeOf = null
     Map<LocalId, VariantId> narrowed = []
