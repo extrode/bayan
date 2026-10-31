@@ -1,0 +1,96 @@
+using System.Text.Json;
+using Bayan.Cli;
+
+namespace Bayan.Tests;
+
+/// <summary>Spec 013 T10: <c>bayan test --coverage</c> report (R9, R12).</summary>
+[Collection(nameof(ToolchainEnvironment))]
+public sealed class CoverageReportTests
+{
+    private static string Project(string name, string main)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "coverage-report", name);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(dir);
+        var app = Path.Combine(dir, "tally");
+        Assert.Equal(CliApp.ExitOk, Run("new", app, "--vcs", "none").Exit);
+        File.Delete(Path.Combine(app, "tests", "app.test.byn"));
+        File.WriteAllText(Path.Combine(app, "src", "app", "main.byn"), main);
+        return app;
+    }
+
+    private static (int Exit, string Out, string Err) Run(params string[] args)
+    {
+        var stdout = new StringWriter();
+        var stderr = new StringWriter();
+        var exit = CliApp.Run(args, stdout, stderr);
+        return (exit, stdout.ToString().ReplaceLineEndings("\n"), stderr.ToString().ReplaceLineEndings("\n"));
+    }
+
+    private const string Main = """
+        union error E {
+            a
+            b
+        }
+
+        i64 f(i64 n) fails E {
+            fail .a if n < 0
+            fail .b if n > 100
+            return n
+        }
+
+        test "negative" {
+            let r = f(-1) catch switch {
+                E.a => 1,
+                E.b => 2
+            }
+            assert(r == 1)
+        }
+
+        print("x")
+
+        """;
+
+    [Fact]
+    public void AnUntriggeredErrorVariantIsNamed()
+    {
+        var app = Project("untriggered", Main);
+        var r = Run("test", "--coverage", app);
+        Assert.True(r.Exit == CliApp.ExitOk, r.Out + r.Err);
+        Assert.Contains("uncovered error path:", r.Out);
+        Assert.Contains("f E.b", r.Out);
+        Assert.DoesNotContain("f E.a", r.Out);
+        using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(app, "out", "test", "bayan-quality.json")));
+        Assert.Equal("coverage", json.RootElement.GetProperty("kind").GetString());
+        var file = json.RootElement.GetProperty("files").EnumerateArray().Single(f => f.GetProperty("path").GetString()!.EndsWith("main.byn", StringComparison.Ordinal));
+        var paths = file.GetProperty("errorPaths").EnumerateArray().ToDictionary(e => e.GetProperty("variant").GetString()!, e => e.GetProperty("hit").GetBoolean());
+        Assert.True(paths["E.a"]);
+        Assert.False(paths["E.b"]);
+        Assert.True(json.RootElement.GetProperty("totals").GetProperty("lines").GetProperty("total").GetInt32() > 0);
+        var listing = File.ReadAllText(Directory.EnumerateFiles(Path.Combine(app, "out", "test"), "main.byn.cov.txt", SearchOption.AllDirectories).Single());
+        Assert.Contains("+ ", listing);
+        Assert.Contains("fail .b if n > 100", listing);
+    }
+
+    [Fact]
+    public void ATimedOutTestMakesItsLinesUnknown()
+    {
+        var app = Project("timeout", Main + "\ntest \"spin\" {\n    while true {\n    }\n}\n");
+        var saved = Environment.GetEnvironmentVariable("BAYAN_TEST_TIMEOUT_MS");
+        Environment.SetEnvironmentVariable("BAYAN_TEST_TIMEOUT_MS", "2000");
+        try
+        {
+            Run("test", "--coverage", app);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("BAYAN_TEST_TIMEOUT_MS", saved);
+        }
+        var json = File.ReadAllText(Path.Combine(app, "out", "test", "bayan-quality.json"));
+        using var doc = JsonDocument.Parse(json);
+        var file = doc.RootElement.GetProperty("files").EnumerateArray().Single(f => f.GetProperty("path").GetString()!.EndsWith("main.byn", StringComparison.Ordinal));
+        Assert.Equal(0, file.GetProperty("lines").GetProperty("missed").GetArrayLength());
+        Assert.True(file.GetProperty("lines").GetProperty("unknown").GetArrayLength() > 0);
+        Assert.True(file.GetProperty("errorPaths").EnumerateArray().Single(e => e.GetProperty("variant").GetString() == "E.b").GetProperty("unknown").GetBoolean());
+    }
+}
