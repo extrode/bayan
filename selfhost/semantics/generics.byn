@@ -899,7 +899,7 @@ void t13BindMain(ref Binder b, through ref Ctx c) {
 
 void t13BindTest(ref Binder b, through ref Ctx c, for in parser.TestDecl d, by TestBody tb) {
     if !tb.hasValues {
-        bindTest(ref b, through: ref c, for: in d, by: in List<parser.Expr>())
+        bindTest(ref b, through: ref c, for: tb)
         return
     }
     t15CaptureTypes(ref b, through: ref c)
@@ -997,8 +997,8 @@ List<(LocalId, Type)>? t13BindBody(ref Ctx c, for FuncId fn, by in List<(LocalId
         switch c.files[file].unit.members[d] {
             case .functionDecl(let n):
                 bindFunctionBody(ref b, through: ref c, for: in n.value)
-            case .testDecl(let n):
-                bindTest(ref b, through: ref c, for: in n.value, by: in List<parser.Expr>())
+            case .testDecl(_):
+                bindTest(ref b, through: ref c, for: TestBody { decl: SyntaxRef { file: file, declIndex: d }, hasValues: false, values: SyntaxRef {} })
             case .structDecl(let n):
                 switch n.value.members[m] {
                     case .functionDecl(let f):

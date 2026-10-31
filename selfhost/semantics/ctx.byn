@@ -580,6 +580,13 @@ struct Binder {
     /// The C# `_types` map (see `typeArgs`), taken once by T15's `t15CaptureTypes`; `typesCaptured` says whether it was.
     Map<string, Type> types = []
     bool typesCaptured = false
+    /// The C# `Scope` identities, parallel to `scopes` (innermost last); facts keyed by a scope compare these (Q715).
+    List<i64> scopeIds = []
+    /// The identity the next opened scope takes.
+    i64 nextScopeId = 0
+    /// The C# `_firstStatement`, by its file and full span (Q719); `firstStatementFile` is -1 for none.
+    FileId firstStatementFile = -1
+    TextSpan firstStatementSpan = TextSpan { start: 0, length: 0 }
     // ── T16 state
     // ── T17 state
     // ── T18 state
