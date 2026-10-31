@@ -653,12 +653,12 @@ BExpr bindLiteral(ref Binder b, through ref Ctx c, for in parser.LiteralExpr l, 
                     return t17FromLiteral(ref c, for: addErrorExpr(ref c, from: BErrorExpr { span: l.span }), from: in l)
                 }
                 if sk == .f32 {
-                    return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.f32), by: Constant { kind: .real, real: bigToF64(parsed) }), from: in l)
+                    return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: prim(.f32), by: Constant { kind: .real, real: t17LiteralToF64(l.text, negate: negate) }), from: in l)
                 }
                 return t17CheckedIntegerLiteral(ref b, through: ref c, for: in l, at: wholeSpan, by: parsed, as: sk)
             }
             if target != -1 && isFloat(target) {
-                return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: target, by: Constant { kind: .real, real: bigToF64(parsed) }), from: in l)
+                return t17FromLiteral(ref c, for: literal(ref c, at: l.span, as: target, by: Constant { kind: .real, real: t17LiteralToF64(l.text, negate: negate) }), from: in l)
             }
             if target != -1 && isInteger(target) {
                 return t17CheckedIntegerLiteral(ref b, through: ref c, for: in l, at: wholeSpan, by: parsed, as: primKindOf(typeIndex(target)))
@@ -796,7 +796,6 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
             let optInner = c.optionalTypes[typeIndex(c.locals[local].type)]
             read = addConversion(ref c, from: BConversion { span: n.span, operand: locNode, type: optInner, kind: .narrow })
         } else {
-            // mutation-exempt: Q600 through 801
             let known = knownState(ref b, for: local)
             let locType = known != -1 ? known : c.locals[local].type
             read = addLocal(ref c, from: BLocal { span: n.span, local: local, type: locType })
@@ -810,7 +809,7 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
         // A default cloned onto a struct sees only the interface's members through `this`.
         var visible = true
         if host != -1 && c.functions[host].template != -1 && c.functions[c.functions[host].template].iface != -1 {
-            // mutation-exempt: Q600 through 815
+            // mutation-exempt: Q600 through 814
             let cloneOf = c.functions[c.functions[host].template].iface
             visible = lookupMember(ref c, for: t15InterfaceSelf(ref c, for: cloneOf), by: name).kind != .none
         }
@@ -822,11 +821,11 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
         }
     }
 
-    // mutation-exempt: Q600 through 827
+    // mutation-exempt: Q600 through 826
     if b.thisType != -1 && kindOf(b.thisType) == .structType && host != -1 && !c.functions[host].isStatic {
         let st = statesOf(ref c, for: typeIndex(b.thisType))
         if st != -1 {
-            // mutation-exempt: Q600 through 846
+            // mutation-exempt: Q600 through 845
             var foundVariantField = false
             for vId in c.unions[st].variants {
                 for fId in c.unionVariants[vId].fields {
@@ -1033,4 +1032,58 @@ i64 t17Distance(string a, as string b) {
         prev = move curr
     }
     return prev[bLen]
+}
+
+/// C# `(double)BigInteger` of literal `text` (negated if `negate`), at any size: the top 53 bits, truncated, not
+/// rounded; 2^1024 and above is infinity. `bigToF64` rounds and stops at 2^127-1, so it does not fit here.
+f64 t17LiteralToF64(string text, bool negate) {
+    let b = text.bytes
+    var base: u64 = 10
+    var i: i64 = 0
+    if b.length >= 2 && b[0] == 48 {
+        if b[1] == 120 || b[1] == 88 {
+            base = 16
+            i = 2
+        } else if b[1] == 98 || b[1] == 66 {
+            base = 2
+            i = 2
+        }
+    }
+    var limbs = List<u64>()
+    while i < b.length {
+        let ch = b[i]
+        i += 1
+        if ch == 95 { continue }
+        var dv: u64 = 0
+        if ch >= 48 && ch <= 57 {
+            dv = u64(ch - 48)
+        } else if ch >= 97 && ch <= 102 {
+            dv = u64(ch - 87)
+        } else if ch >= 65 && ch <= 70 {
+            dv = u64(ch - 55)
+        }
+        var carry: u64 = dv
+        for j in 0..limbs.length {
+            let v = limbs[j] * base + carry
+            limbs[j] = v & 0xFFFFFFFF
+            carry = v >> 32
+        }
+        if carry > 0 { limbs.append(carry) }
+    }
+    if limbs.length == 0 { return 0.0 }
+    var k = (limbs.length - 1) * 32
+    var top = limbs[limbs.length - 1]
+    while top > 0 {
+        k += 1
+        top = top >> 1
+    }
+    let n = k < 53 ? k : 53
+    var m: u64 = 0
+    for p in 0..n {
+        let idx = k - 1 - p
+        m = (m << 1) | ((limbs[idx / 32] >> u64(idx % 32)) & 1)
+    }
+    var d = f64(m)
+    for p in 0..(k - n) { d = d * 2.0 }
+    return negate ? -d : d
 }

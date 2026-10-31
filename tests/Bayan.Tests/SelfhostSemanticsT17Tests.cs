@@ -166,6 +166,10 @@ public sealed class SelfhostSemanticsT17Tests
         void qFInf() => 1e400
         void qIBig53() => 9007199254740993
         void qIBig127() => 170141183460469231731687303715884105728
+        void qITrunc() => 340282366920938520131772401867510775808
+        void qITruncF() => 340282366920938520131772401867510775808f
+        void qHexTrunc() => 0x10000000000000C000000000000000000
+        void qMaxU64() => 18446744073709551615
 
         """;
 
@@ -285,6 +289,11 @@ public sealed class SelfhostSemanticsT17Tests
         new("int-2p53-plus-1-float-target", "qIBig53", "expr", "d"),
         new("int-2p127", "qIBig127", "expr"),
         new("int-2p127-int-target", "qIBig127", "expr", "small"),
+        new("int-2p127-float-target", "qIBig127", "expr", "d"),
+        new("int-above-int128-float-target", "qITrunc", "expr", "d"),
+        new("suffix-f-above-int128", "qITruncF", "expr"),
+        new("hex-above-int128-float-target", "qHexTrunc", "expr", "d"),
+        new("int-u64-max-float-target", "qMaxU64", "expr", "d"),
         new("name-typo-other-method", "qFrob", "expr"),
         new("name-array-type-arg", "Box.tga", "expr"),
         new("name-overloads", "qOv", "expr"),
