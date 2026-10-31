@@ -22,6 +22,7 @@ public sealed class SelfhostSemanticsT18Tests
     private const string Source = """
         const k: i64 = 42
         const arr: i32[2] = [1, 2]
+        const sym: Symbol = "b"
 
         enum Color {
             red
@@ -37,6 +38,13 @@ public sealed class SelfhostSemanticsT18Tests
             notFound
             badInput
         }
+
+        union error OtherError {
+            notFound
+            other
+        }
+
+        union error Both = MyError, OtherError
 
         union Shape {
             circle(f64 radius)
@@ -66,7 +74,7 @@ public sealed class SelfhostSemanticsT18Tests
             f64 area()
         }
 
-        void probes(Point p, Shape s, string str, List<i32> list, i32[2] fixed, Map<string, i32> map, Point? maybe, Status st, dyn IHasArea d, i64 n, (i32 a, i32 b) tup, (Shape a, i32 b) ts, dyn ref IHasArea dr) {
+        void probes(Point p, Shape s, string str, List<i32> list, i32[2] fixed, Map<string, i32> map, Point? maybe, Status st, dyn IHasArea d, i64 n, (i32 a, i32 b) tup, (Shape a, i32 b) ts, dyn ref IHasArea dr, Owned<Point> op, StrBuf sb, Span<i32> sp, u64 un) {
             let m1 = MyError.notFound
             let m2 = MyError.badVariant
             let m3 = Color.red
@@ -84,10 +92,20 @@ public sealed class SelfhostSemanticsT18Tests
             let m15 = Utf8.decode
             let m16 = string.tryFrom
             let m17 = string.nope
+            let m18 = Color.count
+            let m19 = Color.values
+            let m20 = Color.fromOrdinal
+            let m21 = Color.parse
+            let m22 = Io.nope
+            let m23 = Hex.nope
+            let m24 = Symbol.nope
+            let m25 = Utf8.nope
+            let m26 = string.invalidUtf8At
             let u1 = main.k
             let u2 = main.probes
             let u3 = main.Point
             let u4 = main.nope
+            let u5 = main.sym
             let v1 = p.x
             let v2 = p.twice
             let v3 = p.clear
@@ -95,7 +113,6 @@ public sealed class SelfhostSemanticsT18Tests
             let v5 = s.radius
             let v6 = st.code
             let v7 = maybe.x
-            let v8 = str.length
             let v9 = str.matches
             let v10 = d.area
             let v11 = p.nope
@@ -104,11 +121,16 @@ public sealed class SelfhostSemanticsT18Tests
             let v15 = str.offset
             let v16 = fixed.toList
             let v17 = tup.a
-            let v18 = fixed.length
             let v19 = n.toHex
             let v20 = n.toBinary
             let v21 = ts.a.radius
             let v22 = dr.nope
+            let v23 = op.x
+            let v25 = p.take
+            let v26 = sb.asString
+            let v27 = list.toList
+            let v28 = sp.toList
+            let v29 = Shape.point.radius
             let t1: Color = .red
             let t2: MyError = .notFound
             let t3: MyError = .nope
@@ -117,6 +139,10 @@ public sealed class SelfhostSemanticsT18Tests
             let t6 = .x
             let t7: Color? = .green
             let t8: Color = .blue
+            let t9: Both = .notFound
+            let t10: Both = .zzz
+            let t11: Both = .other
+            let t12: () -> void = .x
             let i1 = str[0]
             let i2 = list[0]
             let i3 = fixed[^1]
@@ -126,6 +152,11 @@ public sealed class SelfhostSemanticsT18Tests
             let i7 = list[str]
             let i8 = str[1..2]
             let i9 = nope[0]
+            let i10 = str[^2..]
+            let i11 = list[1..^1]
+            let i12 = fixed[..1]
+            let i13 = str[1..=2]
+            let i14 = list[un]
             let s1 = $"a{n}b{{c}}"
             let s2 = "plain"
         }
@@ -142,22 +173,26 @@ public sealed class SelfhostSemanticsT18Tests
         ("member", "probes", "-", "m10"), ("member", "probes", "-", "m11"), ("member", "probes", "-", "m12"),
         ("member", "probes", "-", "m13"), ("member", "probes", "-", "m14"), ("member", "probes", "-", "m15"),
         ("member", "probes", "-", "m16"), ("member", "probes", "-", "m17"),
+        ("member", "probes", "-", "m18"), ("member", "probes", "-", "m19"), ("member", "probes", "-", "m20"), ("member", "probes", "-", "m21"), ("member", "probes", "-", "m22"), ("member", "probes", "-", "m23"), ("member", "probes", "-", "m24"), ("member", "probes", "-", "m25"), ("member", "probes", "-", "m26"),
         ("module", "probes", "-", "u1"), ("module", "probes", "-", "u2"), ("module", "probes", "-", "u3"),
-        ("module", "probes", "-", "u4"),
+        ("module", "probes", "-", "u4"), ("module", "probes", "-", "u5"),
         ("member", "probes", "-", "v1"), ("member", "probes", "-", "v2"), ("member", "probes", "-", "v3"),
         ("member", "probes", "-", "v4"), ("member", "probes", "-", "v5"), ("member", "probes", "-", "v6"),
-        ("member", "probes", "-", "v7"), ("member", "probes", "-", "v8"), ("member", "probes", "-", "v9"),
+        ("member", "probes", "-", "v7"), ("member", "probes", "-", "v9"),
         ("member", "probes", "-", "v10"), ("member", "probes", "-", "v11"), ("member", "probes", "-", "v12"),
         ("member", "probes", "-", "v14"), ("member", "probes", "-", "v15"), ("member", "probes", "-", "v16"),
-        ("member", "probes", "-", "v17"), ("member", "probes", "-", "v18"), ("member", "probes", "-", "v19"),
+        ("member", "probes", "-", "v17"), ("member", "probes", "-", "v19"),
         ("member", "probes", "-", "v20"), ("member", "probes", "-", "v21"),
         ("member", "probes", "-", "v22"),
+        ("member", "probes", "-", "v23"), ("member", "probes", "-", "v25"), ("member", "probes", "-", "v26"), ("member", "probes", "-", "v27"), ("member", "probes", "-", "v28"), ("member", "probes", "-", "v29"),
         ("target", "probes", "-", "t1"), ("target", "probes", "-", "t2"), ("target", "probes", "-", "t3"),
         ("target", "probes", "-", "t4"), ("target", "probes", "-", "t5"), ("target", "probes", "-", "t6"),
         ("target", "probes", "-", "t7"), ("target", "probes", "-", "t8"),
+        ("target", "probes", "-", "t9"), ("target", "probes", "-", "t10"), ("target", "probes", "-", "t11"), ("target", "probes", "-", "t12"),
         ("index", "probes", "-", "i1"), ("index", "probes", "-", "i2"), ("index", "probes", "-", "i3"),
         ("index", "probes", "-", "i4"), ("index", "probes", "-", "i5"), ("index", "probes", "-", "i6"),
         ("index", "probes", "-", "i7"), ("index", "probes", "-", "i8"), ("index", "probes", "-", "i9"),
+        ("index", "probes", "-", "i10"), ("index", "probes", "-", "i11"), ("index", "probes", "-", "i12"), ("index", "probes", "-", "i13"), ("index", "probes", "-", "i14"),
         ("interp", "probes", "-", "s1"), ("interp", "probes", "-", "s2"),
     ];
 
@@ -205,19 +240,30 @@ public sealed class SelfhostSemanticsT18Tests
 
     private static object? Prop(BoundNode node, string name) => node.GetType().GetProperty(name)?.GetValue(node);
 
-    /// <summary>kind|type|receiver|callee|variant|index|fromEnd|span: every field a port bug could change.</summary>
+    private static string Camel(string s) => char.ToLowerInvariant(s[0]) + s[1..];
+
+    /// <summary>A child expression: kind:type, a literal's value, a conversion's kind and operand.</summary>
+    private static string Sub(BoundExpr? e) => e switch
+    {
+        null => "-",
+        BoundLiteral l => $"literal:{l.Type.DisplayName}={l.Value}",
+        BoundConversion v => $"conversion:{v.Type.DisplayName}({Camel(v.Kind.ToString())} {Sub(v.Operand)})",
+        _ => $"{NodeKindName(e)}:{e.Type.DisplayName}",
+    };
+
+    /// <summary>kind|type|receiver|callee|variant|index|fromEnd|span|sub: every field a port bug could change.</summary>
     private static string DumpNode(BoundNode? node)
     {
         if (node is null) return "null";
         var type = node is BoundExpr e ? e.Type.DisplayName : "-";
         var span = $"{node.Syntax.Span.Start}:{node.Syntax.Span.Length}";
-        var recv = "-"; var callee = "-"; var variant = "-"; var idx = "-"; var fromEnd = "-";
+        var recv = "-"; var callee = "-"; var variant = "-"; var idx = "-"; var fromEnd = "-"; var sub = "-";
         switch (node)
         {
             case BoundField f: recv = Recv(f.Receiver); idx = f.Field.Name; break;
             case BoundTupleElement t: recv = Recv(t.Receiver); idx = t.Index.ToString(); break;
             case BoundCall c: callee = c.Function.Name; recv = Recv(c.Receiver); break;
-            case BoundBuiltinCall b: callee = char.ToLowerInvariant(b.Member.ToString()[0]) + b.Member.ToString()[1..]; recv = Recv(b.Receiver); break;
+            case BoundBuiltinCall b: callee = char.ToLowerInvariant(b.Member.ToString()[0]) + b.Member.ToString()[1..]; recv = Recv(b.Receiver); sub = string.Join(",", b.Arguments.Select(Sub)); break;
             case BoundLocal l: callee = l.Local.Name; break;
             case BoundErrorVariant v: variant = v.Variant.Name; break;
             case BoundEnumMember m: callee = m.Member.Name; break;
@@ -226,10 +272,11 @@ public sealed class SelfhostSemanticsT18Tests
             case BoundStaticArray sa: callee = sa.Const.Name; break;
             case BoundUnionField uf: variant = uf.Variant.Name; idx = uf.Index.ToString(); recv = Recv(uf.Receiver); break;
             case BoundErrorField ef: variant = ef.Variant.Name; idx = ef.Index.ToString(); recv = Recv(ef.Receiver); break;
-            case BoundIndex i: recv = Recv(i.Target); fromEnd = i.FromEnd ? "t" : "f"; break;
-            case BoundSlice s: recv = Recv(s.Target); fromEnd = $"{(s.StartFromEnd ? "true" : "false")}:{(s.EndFromEnd ? "true" : "false")}"; break;
+            case BoundIndex i: recv = Recv(i.Target); fromEnd = i.FromEnd ? "t" : "f"; sub = Sub(i.Index); break;
+            case BoundSlice s: recv = Recv(s.Target); fromEnd = $"{(s.StartFromEnd ? "true" : "false")}:{(s.EndFromEnd ? "true" : "false")}"; sub = $"{Sub(s.Start)};{Sub(s.End)};{(s.Inclusive ? "true" : "false")}"; break;
             case BoundTypeRef t: callee = t.Referenced.DisplayName; break;
             case BoundModuleRef m: callee = m.Module.Name; break;
+            case BoundLiteral l: sub = l.Value.ToString(); break;
         }
         switch (node.GetType().Name)
         {
@@ -245,7 +292,7 @@ public sealed class SelfhostSemanticsT18Tests
                 recv = Recv((BoundExpr?)Prop(node, "Receiver"));
                 break;
         }
-        return $"{NodeKindName(node)}|{type}|{recv}|{callee}|{variant}|{idx}|{fromEnd}|{span}";
+        return $"{NodeKindName(node)}|{type}|{recv}|{callee}|{variant}|{idx}|{fromEnd}|{span}|{sub}";
     }
 
     /// <summary>The C# lines for one case: the node dump (or the string) then the diagnostics it reported.</summary>
@@ -333,6 +380,15 @@ public sealed class SelfhostSemanticsT18Tests
             return $"{k}"
         }
 
+        string tcSub(ref Ctx c, for BExpr e) {
+            if e == -1 { return "-" }
+            let k = boundKind(e)
+            let typeName = typeDisplay(ref c, by: exprType(in c, for: e))
+            if k == .literal { return $"literal:{typeName}={constantText(in c.bLiterals[boundIndex(e)].value)}" }
+            if k == .conversion { return $"conversion:{typeName}({c.bConversions[boundIndex(e)].kind} {tcSub(ref c, for: c.bConversions[boundIndex(e)].operand)})" }
+            return $"{k}:{typeName}"
+        }
+
         void tcDump(ref Ctx c, for BExpr e) {
             if e == -1 {
                 print("null")
@@ -346,6 +402,7 @@ public sealed class SelfhostSemanticsT18Tests
             var variant = "-"
             var idx = "-"
             var fromEnd = "-"
+            var sub = "-"
             switch k {
                 case .field:
                     recv = t18Recv(ref c, for: c.bFields[boundIndex(e)].receiver)
@@ -359,6 +416,13 @@ public sealed class SelfhostSemanticsT18Tests
                 case .builtinCall:
                     callee = $"{c.bBuiltinCalls[boundIndex(e)].member}"
                     recv = t18Recv(ref c, for: c.bBuiltinCalls[boundIndex(e)].receiver)
+                    var joined = ""
+                    var first = true
+                    for a in copyIds(in c.bBuiltinCalls[boundIndex(e)].arguments) {
+                        joined = first ? tcSub(ref c, for: a) : $"{joined},{tcSub(ref c, for: a)}"
+                        first = false
+                    }
+                    sub = joined
                 case .methodGroup:
                     callee = c.functions[c.bMethodGroups[boundIndex(e)].function].name
                     recv = t18Recv(ref c, for: c.bMethodGroups[boundIndex(e)].receiver)
@@ -390,17 +454,21 @@ public sealed class SelfhostSemanticsT18Tests
                 case .index:
                     recv = t18Recv(ref c, for: c.bIndexes[boundIndex(e)].target)
                     fromEnd = c.bIndexes[boundIndex(e)].fromEnd ? "t" : "f"
+                    sub = tcSub(ref c, for: c.bIndexes[boundIndex(e)].index)
                 case .slice:
                     recv = t18Recv(ref c, for: c.bSlices[boundIndex(e)].target)
                     fromEnd = $"{c.bSlices[boundIndex(e)].startFromEnd}:{c.bSlices[boundIndex(e)].endFromEnd}"
+                    sub = $"{tcSub(ref c, for: c.bSlices[boundIndex(e)].start)};{tcSub(ref c, for: c.bSlices[boundIndex(e)].end)};{c.bSlices[boundIndex(e)].inclusive}"
                 case .typeRef:
                     callee = typeDisplay(ref c, by: c.bTypeRefs[boundIndex(e)].referenced)
                 case .moduleRef:
                     callee = c.modules[c.bModuleRefs[boundIndex(e)].module].name
+                case .literal:
+                    sub = constantText(in c.bLiterals[boundIndex(e)].value)
                 default: {}
             }
             let sp = nodeSpan(in c, for: e)
-            print($"{k}|{typeName}|{recv}|{callee}|{variant}|{idx}|{fromEnd}|{sp.start}:{sp.length}")
+            print($"{k}|{typeName}|{recv}|{callee}|{variant}|{idx}|{fromEnd}|{sp.start}:{sp.length}|{sub}")
         }
 
         void tcDiags(ref Ctx c, from i64 start) {
