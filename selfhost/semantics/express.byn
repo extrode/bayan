@@ -26,7 +26,7 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
             return bindName(ref b, through: ref c, for: in n.value)
         case .thisExpr(let t):
             let host = t17Host(in b, through: in c)
-            let isHostValid = host != -1 && !c.functions[host].isStatic && (c.functions[host].kind != .method || c.functions[host].kind == .getter || c.functions[host].kind == .constructor)
+            let isHostValid = host != -1 && !c.functions[host].isStatic && (c.functions[host].kind == .method || c.functions[host].kind == .getter || c.functions[host].kind == .constructor)
             if b.thisType == -1 || !isHostValid {
                 report(ref b, through: ref c, for: .thisOutsideMethod, at: t.value.span, by: ("", "", "", "", ""))
                 return addErrorExpr(ref c, from: BErrorExpr { span: t.value.span })
