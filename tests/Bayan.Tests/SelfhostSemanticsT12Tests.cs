@@ -135,6 +135,12 @@ public sealed class SelfhostSemanticsT12Tests
                 one(T v)
                 two(List<T> vs)
             }
+            union W {
+                a = 2147483647
+                b
+                c = -2147483648
+                d
+            }
             """),
         // DeclareMembers.
         ("structs/main.byn", """
@@ -176,6 +182,13 @@ public sealed class SelfhostSemanticsT12Tests
                 public H() { }
             }
             """),
+        // DeclareMembers of a `type distinct` struct: its one field `value`. One with `requires` reaches T38's
+        // `declareCheck` stub (Q579).
+        ("distinct/main.byn", """
+            type distinct X = i64
+            public type distinct P = List<string>
+            type distinct M = Missing
+            """),
         // CheckOverloads: the same name three times, across files, and a lone function.
         ("overloads/a.byn", "void f() { }\nvoid f() { }\nvoid f() { }\nvoid h() { }\nvoid g() { }\n"),
         ("overloads/b.byn", "void g() { }\nvoid h() { }\n"),
@@ -213,6 +226,7 @@ public sealed class SelfhostSemanticsT12Tests
         ("enums", "e"),
         ("unions", "u"),
         ("structs", "m"),
+        ("distinct", "m"),
         ("overloads", "o"),
         // `DeclareMembers` adds methods to `AllFunctions` before `CheckOverloads`, which skips them.
         ("structs-o", "mo"),
