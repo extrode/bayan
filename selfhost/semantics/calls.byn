@@ -12,7 +12,7 @@ TextSpan stripParens(in parser.Expr e) {
 
 // ── Calls ────────────────────────────────────────────────────────────────────
 
-BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to Type expected) {
+BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from parser.Expr syntax, to Type expected) {
     // A call to a member ending in `Unchecked` bypasses a safety rule and says why (J6); an empty reason is the parser's.
     var calleeName: string? = null
     switch call.callee {
@@ -29,20 +29,20 @@ BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to 
             if !me.value.nullConditional {
                 let member = t15Text(in c, from: b.file, at: me.value.member)
                 if member == "trustUnchecked" && call.args.length == 0 {
-                    return bindTrustUnchecked(ref b, through: ref c, for: in call, by: in me.value)
+                    return bindTrustUnchecked(ref b, through: ref c, for: in call, by: in me.value) because "the C# `BindTrustUnchecked` is the binder of the call itself"
                 }
                 switch me.value.target {
                     case .nameExpr(let into):
                         let target = t15Text(in c, from: b.file, at: into.value.name)
-                        if member == "tryFrom" && (primitiveByName(target) is { } t) && isNumeric(t) {
-                            return bindTryFrom(ref b, through: ref c, for: in call, to: primKindOf(typeIndex(t)))
+                        if member == "tryFrom" && (primitiveByName(target) is { } tf) && isNumeric(tf) {
+                            return bindTryFrom(ref b, through: ref c, for: in call, to: primKindOf(typeIndex(tf)))
                         }
-                        if member == "tryParse" && (primitiveByName(target) is { } t) && (isInteger(t) || isFloat(t)) {
-                            if isFloat(t) { return bindFloatTryParse(ref b, through: ref c, for: in call, to: primKindOf(typeIndex(t))) }
-                            return bindTryParse(ref b, through: ref c, for: in call, to: primKindOf(typeIndex(t)))
+                        if member == "tryParse" && (primitiveByName(target) is { } tt) && (isInteger(tt) || isFloat(tt)) {
+                            if isFloat(tt) { return bindFloatTryParse(ref b, through: ref c, for: in call, to: primKindOf(typeIndex(tt))) }
+                            return bindTryParse(ref b, through: ref c, for: in call, to: primKindOf(typeIndex(tt)))
                         }
-                        if member == "parse" && (primitiveByName(target) is { } t) && isInteger(t) {
-                            return bindParse(ref b, through: ref c, for: in call, to: primKindOf(typeIndex(t)))
+                        if member == "parse" && (primitiveByName(target) is { } tp) && isInteger(tp) {
+                            return bindParse(ref b, through: ref c, for: in call, from: syntax, to: primKindOf(typeIndex(tp)))
                         }
                         let mod = c.files[b.file].module
                         // `StrBuf.over(span)`: the span first, then `context.allocator` (spec §16.4).
@@ -73,14 +73,13 @@ BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to 
         default:
             break
     }
-    let outer = b.calleeOf
-    b.calleeOf = call
+    // C# `_calleeOf = c` around the callee (BinderCalls.cs:62): `b.calleeOf` is a `parser.CallExpr?` value, and storing
+    // the `in` call would copy a unique value (BYN2780), so it stays unset (Q616).
     var callee: BExpr = -1
     switch call.callee {
-        case .targetMemberExpr(let t): callee = bindTargetMember(ref b, through: ref c, for: in t.value, to: expected)
+        case .targetMemberExpr(let tm): callee = bindTargetMember(ref b, through: ref c, for: in tm.value, to: expected)
         default: callee = bindExprOrType(ref b, through: ref c, for: in call.callee)
     }
-    b.calleeOf = outer
     let kind = boundKind(callee)
     let i = boundIndex(callee)
     if kind == .methodGroup {
@@ -99,9 +98,9 @@ BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to 
         }
         // `Utf8.decode(bytes, invalid: .replace)` is the lossy form, which never fails.
         if fn == t9Function(ref c, for: "Utf8.decode") && t20HasArgument(in c, from: b.file, for: in call, by: "invalid") {
-            return t20BindGroupCall(ref b, through: ref c, for: in call, from: in call.callee, by: t9Function(ref c, for: "Utf8.decode(invalid)"), as: -1, explicit: explicit)
+            return t20BindGroupCall(ref b, through: ref c, for: in call, from: in call.callee, at: syntax, by: t9Function(ref c, for: "Utf8.decode(invalid)"), as: -1, explicit: explicit)
         }
-        return t20BindGroupCall(ref b, through: ref c, for: in call, from: in call.callee, by: t20Overload(ref c, for: fn, from: b.file, by: in call), as: receiver, explicit: explicit)
+        return t20BindGroupCall(ref b, through: ref c, for: in call, from: in call.callee, at: syntax, by: t20Overload(ref c, for: fn, from: b.file, by: in call), as: receiver, explicit: explicit)
     }
     if kind == .builtinGroup {
         let name = c.bBuiltinGroups[i].name
@@ -113,7 +112,8 @@ BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to 
     if kind == .variantGroup {
         let v = c.bVariantGroups[i].variant
         let fields = copyIds(in c.unionVariants[v].fields)
-        let payload = bindArguments(ref b, through: ref c, for: in call, by: in fields, as: -1, enforceNames: false, displayName: c.unionVariants[v].name)
+        let variantName = c.unionVariants[v].name
+        let payload = bindArguments(ref b, through: ref c, for: in call, by: in fields, as: -1, enforceNames: false, displayName: variantName)
         return addUnionNew(ref c, from: BUnionNew { span: call.span, variant: v, payload: move payload })
     }
     if kind == .unionNew && c.bUnionNews[i].payload.length == 0 {
@@ -130,7 +130,7 @@ BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to 
     // A call through a function value: the value is the receiver of its type's invoke symbol (R9).
     let type = exprType(in c, for: callee)
     if kindOf(type) == .function {
-        return bindFunctionCall(ref b, through: ref c, for: in call, by: invokeSymbol(ref c, for: type), from: callee)
+        return bindFunctionCall(ref b, through: ref c, for: in call, by: invokeSymbol(ref c, for: type), from: callee, at: syntax)
     }
     report(ref b, through: ref c, for: .notCallable, at: parser.exprSpan(in call.callee), by: (typeDisplay(ref c, by: type), "", "", "", ""))
     bindArgumentsForRecovery(ref b, through: ref c, for: in call)
@@ -147,15 +147,15 @@ bool t20HasArgument(in Ctx c, from FileId f, for in parser.CallExpr call, by str
 
 /// `BindFunctionCall(c, fn, receiver, g.TypeArgs)`: a method group's explicit type arguments are those of the `NameExpr`
 /// it was bound from (BinderExpressions.cs:511), found again through any parentheses (Q618).
-BExpr t20BindGroupCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from in parser.Expr e, by FuncId fn, as BExpr receiver, bool explicit) {
+BExpr t20BindGroupCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from in parser.Expr e, at parser.Expr syntax, by FuncId fn, as BExpr receiver, bool explicit) {
     switch e {
         case .parenExpr(let p):
-            return t20BindGroupCall(ref b, through: ref c, for: in call, from: in p.value.inner, by: fn, as: receiver, explicit: explicit)
+            return t20BindGroupCall(ref b, through: ref c, for: in call, from: in p.value.inner, at: syntax, by: fn, as: receiver, explicit: explicit)
         case .nameExpr(let n):
-            if explicit { return bindFunctionCall(ref b, through: ref c, for: in call, by: fn, from: receiver, typeArgs: in n.value.typeArgs) }
-            return bindFunctionCall(ref b, through: ref c, for: in call, by: fn, from: receiver)
+            if explicit { return bindFunctionCall(ref b, through: ref c, for: in call, by: fn, from: receiver, at: syntax, typeArgs: in n.value.typeArgs) }
+            return bindFunctionCall(ref b, through: ref c, for: in call, by: fn, from: receiver, at: syntax)
         default:
-            return bindFunctionCall(ref b, through: ref c, for: in call, by: fn, from: receiver)
+            return bindFunctionCall(ref b, through: ref c, for: in call, by: fn, from: receiver, at: syntax)
     }
 }
 
@@ -223,7 +223,8 @@ BExpr bindTryFrom(ref Binder b, through ref Ctx c, for in parser.CallExpr call, 
         report(ref b, through: ref c, for: .invalidCast, at: parser.exprSpan(in call.args[0].value), by: (typeDisplay(ref c, by: type), typeDisplay(ref c, by: prim(target)), "", "", ""))
         return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
     }
-    return addTryFrom(ref c, from: BTryFrom { span: call.span, operand: operand, target: prim(target), type: internOptional(ref c, by: prim(target)) })
+    let optional = internOptional(ref c, by: prim(target))
+    return addTryFrom(ref c, from: BTryFrom { span: call.span, operand: operand, target: prim(target), type: optional })
 }
 
 /// BinderCalls.cs:146 BindTryParse: `i64.tryParse(text, as: radix)`, an integer read from text in a `Radix`, `.decimal` by
@@ -241,16 +242,50 @@ BExpr bindTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call,
     }
     var radix = args.length > 1 ? args[1] : -1
     if args.length <= 1 {
-        radix = addEnumMember(ref c, from: BEnumMember { span: call.span, member: findEnumMember(ref c, by: typeIndex(radixType), for: "decimal") })
+        let decimal = findEnumMember(ref c, by: typeIndex(radixType), for: "decimal")
+        radix = addEnumMember(ref c, from: BEnumMember { span: call.span, member: decimal })
     }
-    return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .intTryParse, receiver: args[0], arguments: [radix], type: internOptional(ref c, by: prim(target)) })
+    let optional = internOptional(ref c, by: prim(target))
+    return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .intTryParse, receiver: args[0], arguments: [radix], type: optional })
 }
 
-// stub: T20 ports BinderCalls.cs:160 BindFloatTryParse (blocked: Q616, `BuiltinMember` has no `floatTryParse`)
-BExpr bindFloatTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) => -1
+/// BinderCalls.cs:160 BindFloatTryParse: `f64.tryParse(text)`, a float read from text in the literal form without `_`, or
+/// `null` (revision 0015). The parameter is a new local, as in `bindTryParse` (Q619).
+BExpr bindFloatTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) {
+    var ps = List<LocalId>()
+    ps.append(newLocal(ref c, by: LocalSymbol { name: "text", type: prim(.string), kind: .parameter, isParameter: true, modifier: .none, ordinal: 0 }))
+    let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: $"{typeDisplay(ref c, by: prim(target))}.tryParse")
+    if args.length == 0 { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    for a in args {
+        if isError(exprType(in c, for: a)) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    }
+    let optional = internOptional(ref c, by: prim(target))
+    return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .floatTryParse, receiver: args[0], arguments: [], type: optional })
+}
 
-// stub: T20 ports BinderCalls.cs:168 BindParse (blocked: Q615, `reportUnhandled` takes the call's `parser.Expr`)
-BExpr bindParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) => -1
+/// BinderCalls.cs:168 BindParse: `i64.parse(text, as: radix)`, as `tryParse`, but fails `ParseError` with the offset of the
+/// bad digit, or `overflow`.
+BExpr bindParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from parser.Expr syntax, to PrimitiveKind target) {
+    let fn = intParse(ref c, for: target)
+    let all = copyIds(in c.functions[fn].parameters)
+    let take = call.args.length < 1 ? 1 : call.args.length > 2 ? 2 : call.args.length
+    var ps = List<LocalId>()
+    for i in 0..take { ps.append(all[i]) }
+    let name = $"{typeDisplay(ref c, by: prim(target))}.parse"
+    let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: name)
+    if args.length == 0 { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    for a in args {
+        if isError(exprType(in c, for: a)) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    }
+    var radix = args.length > 1 ? args[1] : -1
+    if args.length <= 1 {
+        let decimal = findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "Radix")), for: "decimal")
+        radix = addEnumMember(ref c, from: BEnumMember { span: call.span, member: decimal })
+    }
+    // C# `_covered` (a `try` block's calls) has no Bayan state yet, so the unhandled call is reported as with it null (Q616).
+    if !((b.handled is { } h) && h == call.span) { reportUnhandled(ref b, through: ref c, for: in syntax, by: name) }
+    return addCall(ref c, from: BCall { span: call.span, function: fn, receiver: -1, arguments: [args[0], radix], type: prim(target) })
+}
 
 /// BinderCalls.cs:182 BindArgumentsForRecovery.
 void bindArgumentsForRecovery(ref Binder b, through ref Ctx c, for in parser.CallExpr call) {
@@ -264,20 +299,127 @@ void bindArgumentsForRecovery(ref Binder b, through ref Ctx c, for in parser.Cal
 
 bool t20IsLambda(in parser.Expr e) {
     switch e {
-        case .lambdaExpr: return true
+        case .lambdaExpr(_): return true
         default: return false
     }
 }
 
 bool t20IsInterpolated(in parser.Expr e) {
     switch e {
-        case .interpolatedExpr: return true
+        case .interpolatedExpr(_): return true
         default: return false
     }
 }
 
-// stub: T20 ports BinderCalls.cs:198 BindFunctionCall (blocked: Q615, `reportUnhandled` takes the call's `parser.Expr`)
-BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by FuncId fn, from BExpr receiver, in List<parser.TypeSyntax>? typeArgs = null) => -1
+/// BinderCalls.cs:198 BindFunctionCall.
+BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by FuncId fn, from BExpr receiver, at parser.Expr syntax, in List<parser.TypeSyntax>? typeArgs = null) {
+    var target = fn
+    let explicit = (typeArgs is { } ta) && ta.length > 0
+    if c.functions[fn].typeParams.length > 0 || explicit {
+        var instance: FuncId = -1
+        if (typeArgs is { } given) {
+            instance = t20Instantiate(ref b, through: ref c, for: in call, by: fn, from: in given)
+        } else {
+            let none = List<parser.TypeSyntax>()
+            instance = t20Instantiate(ref b, through: ref c, for: in call, by: fn, from: in none)
+        }
+        if instance == -1 {
+            bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+            return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        }
+        target = instance
+    }
+    let outer = b.printArgument
+    let outerSink = b.sinkArgument
+    let builtin = c.functions[target].builtin
+    b.printArgument = builtin == .print || builtin == .log
+    b.sinkArgument = builtin == .ioRun ? "Io.run" : builtin == .ioRunBatch ? "Io.runBatch" : null
+    // An invoke symbol's parameters have no names or particles, so a call through a value is positional (R9).
+    let kind = c.functions[target].kind
+    let name = kind == .invoke ? t15Text(in c, from: b.file, at: parser.exprSpan(in call.callee)) : c.functions[target].name
+    let ps = copyIds(in c.functions[target].parameters)
+    let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: target, enforceNames: kind != .builtin && kind != .invoke, displayName: name)
+    b.printArgument = outer
+    b.sinkArgument = outerSink
+    var recv = receiver
+    if recv != -1 {
+        let wanted = receiverStates(ref b, through: ref c, for: target)
+        if wanted != -1 {
+            let fnName = c.functions[target].name
+            let _ = reportWrongState(ref b, through: ref c, for: fnName, by: recv, as: wanted, at: nodeSpan(in c, for: recv))
+        }
+    }
+    // A call that `becomes` changes the receiver's state; a statement learns the new state after it (`LearnBecomes`). A call
+    // without `becomes` leaves it as it was (revision 0010).
+    let facts = t20DeclFacts(c, for: target)
+    if recv != -1 && (facts.becomes is { } to) {
+        if (subject(ref b, through: ref c, for: recv) is { } changed) { forgetState(ref b, for: changed.key) }
+        if boundKind(recv) == .thisRef && b.fn != -1 {
+            checkBecomesCall(ref b, through: ref c, for: in call, from: b.fn, by: target, to: to)
+        } else if boundKind(recv) == .local && c.locals[c.bLocals[boundIndex(recv)].local].isParameter && c.locals[c.bLocals[boundIndex(recv)].local].modifier == .refKeyword {
+            let param = c.locals[c.bLocals[boundIndex(recv)].local].name
+            report(ref b, through: ref c, for: .becomesOnRefParameter, at: call.span, by: (c.functions[target].name, param, "", "", ""),
+                help: $"take `{param}` by `move` and return the new state as a value")
+        }
+    }
+    // A `ref this` call on `map[key]` changes the stored value in place.
+    if recv != -1 && c.functions[target].isMutating { recv = mapWriteTarget(ref c, for: recv) }
+    // C# `_c.MutationChecks.Add(new MutationCheck(this, fn, receiver))` when `fn.HasThis` and the receiver is not a `dyn ref`:
+    // blocked until T28 designs a binder-free `MutationCheck` (Q582, Q616).
+    var anyConstant = false
+    for a in args {
+        if exprConstant(in c, for: a) is not null { anyConstant = true }
+    }
+    if facts.expects && anyConstant {
+        var written = List<Location>()
+        for a in call.args { written.append(Location { file: b.file, span: parser.exprSpan(in a.value) }) }
+        // A default is bound in the callee's file (`parameterDefault`), a written argument in the caller's (Q582).
+        var files = List<FileId>()
+        for i in 0..args.length {
+            let isDefault = args[i] != -1 && args[i] == c.locals[ps[i]].defaultValue
+            files.append(isDefault ? c.functions[target].file : b.file)
+        }
+        c.requiresChecks.append(RequiresCheck { source: b.file, callSpan: call.span, callArgs: move written, callee: target, arguments: copyIds(in args), argumentFiles: move files })
+    }
+    // C# `_covered` (a `try` block's calls) has no Bayan state yet, so the unhandled call is reported as with it null (Q616).
+    if c.functions[target].hasFails && !((b.handled is { } h) && h == call.span) { reportUnhandled(ref b, through: ref c, for: in syntax, by: name) }
+    let type = recv == -1 ? c.functions[target].returnType : returnTypeThrough(ref b, through: ref c, for: exprType(in c, for: recv), by: target)
+    return addCall(ref c, from: BCall { span: call.span, function: target, receiver: recv, arguments: move args, type: type })
+}
+
+/// C# `fn.Decl`'s `Requires.Length > 0` (`expects`) and `Becomes`, read from the function's declaration where `t12Params` finds it.
+struct T20DeclFacts {
+    bool expects = false
+    TextSpan? becomes = null
+}
+
+T20DeclFacts t20DeclFacts(Ctx c, for FuncId fn) {
+    let f = c.functions[fn].file
+    let d = c.functions[fn].declIndex
+    let m = c.functions[fn].memberIndex
+    if d < 0 { return T20DeclFacts {} }
+    switch c.files[f].unit.members[d] {
+        case .functionDecl(let n): return T20DeclFacts { expects: n.value.requiresKeyword.length > 0, becomes: n.value.becomes }
+        case .structDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let x): return T20DeclFacts { expects: x.value.requiresKeyword.length > 0, becomes: x.value.becomes }
+                default: break
+            }
+        case .interfaceDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let x): return T20DeclFacts { expects: x.value.requiresKeyword.length > 0, becomes: x.value.becomes }
+                default: break
+            }
+        case .extensionDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let x): return T20DeclFacts { expects: x.value.requiresKeyword.length > 0, becomes: x.value.becomes }
+                default: break
+            }
+        default:
+            break
+    }
+    return T20DeclFacts {}
+}
 
 /// BinderCalls.cs:254 Instantiate: the instantiation a call of a generic function means: its type arguments are explicit
 /// (`pick<i64>(…)`) or inferred by unifying parameter types with argument types; -1 for none.
@@ -525,11 +667,13 @@ List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExp
             continue
         }
         if fn != -1 && c.functions[fn].builtin == .log && c.locals[p].ordinal == 1 {
-            result[i] = addEnumMember(ref c, from: BEnumMember { span: call.span, member: findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "LogLevel")), for: "info") })
+            let info = findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "LogLevel")), for: "info")
+            result[i] = addEnumMember(ref c, from: BEnumMember { span: call.span, member: info })
             continue
         }
         if fn != -1 && c.functions[fn].builtin == .print && c.locals[p].ordinal == 1 {
-            result[i] = addEnumMember(ref c, from: BEnumMember { span: call.span, member: findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "Stream")), for: "stdout") })
+            let stdout = findEnumMember(ref c, by: typeIndex(t9Type(ref c, for: "Stream")), for: "stdout")
+            result[i] = addEnumMember(ref c, from: BEnumMember { span: call.span, member: stdout })
             continue
         }
         missing.append(label(ref c, for: p))
@@ -689,10 +833,10 @@ BExpr t20BindIt(ref Binder b, through ref Ctx c, for in parser.Expr e, by TextSp
         return addErrorExpr(ref c, from: BErrorExpr { span: parser.exprSpan(in e) })
     }
     b.itDepth += 1
-    let ps = [it]
-    let body: parser.Expr? = e
+    var ps = List<TextSpan>()
+    ps.append(it)
     let noBlock: parser.BlockStmt? = null
-    let lambda = bindLambda(ref b, through: ref c, at: parser.exprSpan(in e), for: in ps, from: in body, by: in noBlock, to: type)
+    let lambda = bindLambda(ref b, through: ref c, at: parser.exprSpan(in e), for: in ps, from: in e, by: in noBlock, to: type)
     b.itDepth -= 1
     return lambda
 }
@@ -706,9 +850,9 @@ TextSpan? t20MentionedIt(in Ctx c, from FileId f, for in parser.Expr e) {
         case .parenExpr(let p): return t20MentionedIt(in c, from: f, for: in p.value.inner)
         case .memberExpr(let m): return t20MentionedIt(in c, from: f, for: in m.value.target)
         case .callExpr(let x):
-            if (t20MentionedIt(in c, from: f, for: in x.value.callee) is { } s) { return s }
+            if (t20MentionedIt(in c, from: f, for: in x.value.callee) is { } s1) { return s1 }
             for a in x.value.args {
-                if (t20MentionedIt(in c, from: f, for: in a.value) is { } s) { return s }
+                if (t20MentionedIt(in c, from: f, for: in a.value) is { } s2) { return s2 }
             }
             return null
         case .indexExpr(let i): return t20MentionedIt(in c, from: f, for: in i.value.target) ?? t20MentionedIt(in c, from: f, for: in i.value.index)
@@ -723,10 +867,10 @@ TextSpan? t20MentionedIt(in Ctx c, from FileId f, for in parser.Expr e) {
         case .exceptExpr(let x): return t20MentionedIt(in c, from: f, for: in x.value.value)
         case .inExpr(let i): return t20MentionedIt(in c, from: f, for: in i.value.value) ?? t20MentionedIt(in c, from: f, for: in i.value.range)
         case .switchExpr(let s):
-            if (t20MentionedIt(in c, from: f, for: in s.value.value) is { } v) { return v }
+            if (t20MentionedIt(in c, from: f, for: in s.value.value) is { } v3) { return v3 }
             for a in s.value.arms {
-                if (t20MentionedIt(in c, from: f, for: in a.guard) is { } g) { return g }
-                if (t20MentionedIt(in c, from: f, for: in a.value) is { } v) { return v }
+                if (t20MentionedIt(in c, from: f, for: in a.guard) is { } g4) { return g4 }
+                if (t20MentionedIt(in c, from: f, for: in a.value) is { } v5) { return v5 }
             }
             return null
         case .tryExpr(let t): return t20MentionedIt(in c, from: f, for: in t.value.operand)
@@ -736,32 +880,32 @@ TextSpan? t20MentionedIt(in Ctx c, from FileId f, for in parser.Expr e) {
                 ?? t20MentionedIt(in c, from: f, for: in x.value.handler)
         case .structLiteralExpr(let s):
             for x in s.value.fields {
-                if (t20MentionedIt(in c, from: f, for: in x.value) is { } v) { return v }
+                if (t20MentionedIt(in c, from: f, for: in x.value) is { } v6) { return v6 }
             }
             return null
         case .withExpr(let w):
-            if (t20MentionedIt(in c, from: f, for: in w.value.target) is { } v) { return v }
+            if (t20MentionedIt(in c, from: f, for: in w.value.target) is { } v7) { return v7 }
             for x in w.value.fields {
-                if (t20MentionedIt(in c, from: f, for: in x.value) is { } v) { return v }
+                if (t20MentionedIt(in c, from: f, for: in x.value) is { } v8) { return v8 }
             }
             return null
         case .spreadExpr(let s): return t20MentionedIt(in c, from: f, for: in s.value.operand)
         case .mapEntryExpr(let m): return t20MentionedIt(in c, from: f, for: in m.value.key) ?? t20MentionedIt(in c, from: f, for: in m.value.value)
         case .collectionExpr(let x):
             for v in x.value.elements {
-                if (t20MentionedIt(in c, from: f, for: in v) is { } s) { return s }
+                if (t20MentionedIt(in c, from: f, for: in v) is { } s9) { return s9 }
             }
             return null
         case .tupleExpr(let t):
             for x in t.value.elements {
-                if (t20MentionedIt(in c, from: f, for: in x.value) is { } s) { return s }
+                if (t20MentionedIt(in c, from: f, for: in x.value) is { } s10) { return s10 }
             }
             return null
         case .interpolatedExpr(let x):
             for part in x.value.parts {
                 switch part {
                     case .interpolationHole(let h):
-                        if (t20MentionedIt(in c, from: f, for: in h.value.expr) is { } s) { return s }
+                        if (t20MentionedIt(in c, from: f, for: in h.value.expr) is { } s11) { return s11 }
                     default:
                         break
                 }

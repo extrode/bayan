@@ -75,12 +75,12 @@ public sealed class SelfhostSemanticsT20Tests
             let a6 = take(1, verbose: true, verbose: false)
             let a7 = take()
             let a8 = take(1, false, 3)
-            let a9 = bump(n)
+            let a9 = bump(ref verbose)
             let a10 = spread(1, 2, 3)
             let a11 = spread(1)
             let a12 = spread(1, ..ns)
             let a13 = take(1, 2, 3, 4, 5)
-            let a14 = take(1, move verbose)
+            let a14 = take(1, in verbose)
             let a15 = take(1, ref verbose)
             let i1 = pick(1, 2)
             let i2 = pick<i32>(1, 2)
@@ -363,14 +363,14 @@ public sealed class SelfhostSemanticsT20Tests
             }
         }
 
-        void runCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from in parser.TypeSyntax declType, by string op) {
+        void runCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, at parser.Expr syntax, from in parser.TypeSyntax declType, by string op) {
             if op == "call" {
                 var expected: Type = -1
                 switch declType {
                     case .none: {}
                     default: expected = resolveType(ref b, through: ref c, for: in declType)
                 }
-                tcDump(ref c, for: bindCall(ref b, through: ref c, for: in call, to: expected))
+                tcDump(ref c, for: bindCall(ref b, through: ref c, for: in call, from: syntax, to: expected))
                 return
             }
             let fn = testFn(ref c, for: in call.callee, from: b.file)
@@ -414,7 +414,7 @@ public sealed class SelfhostSemanticsT20Tests
                 return
             }
             switch init {
-                case .callExpr(let call): runCall(ref b, through: ref c, for: in call.value, from: in declType, by: op)
+                case .callExpr(let call): runCall(ref b, through: ref c, for: in call.value, at: init, from: in declType, by: op)
                 default: print("unexpected initializer")
             }
         }
@@ -465,6 +465,28 @@ public sealed class SelfhostSemanticsT20Tests
             tcDiags(ref c, from: start)
         }
 
+        void tcParam(ref Ctx c, for FuncId f, by string name, at TextSpan span, as Type type, to parser.ParamModifier modifier) {
+            let ordinal = c.functions[f].parameters.length
+            let p = newLocal(ref c, by: LocalSymbol { name: name, nameSpan: span, span: span, type: type, kind: .parameter, isParameter: true, modifier: modifier, ordinal: ordinal })
+            c.functions[f].parameters.append(p)
+        }
+
+        /// The `k`th function named `name` of the entry module, in declaration order.
+        FuncId tcNth(in Ctx c, by string name, at i64 k) {
+            var seen: i64 = 0
+            for f in 0..c.functions.length {
+                if c.functions[f].name == name && c.functions[f].module == c.entryModule {
+                    if seen == k { return f }
+                    seen += 1
+                }
+            }
+            return -1
+        }
+
+        void t20Signatures(ref Ctx c) {
+        SIGNATURES
+        }
+
         i32 main(ReadOnlySpan<string> args) {
             var i: i64 = 0
             while i + 1 < args.length {
@@ -484,11 +506,73 @@ public sealed class SelfhostSemanticsT20Tests
                 c.entryModule = loadModule(ref c, for: "main", at: "tmp/t20-cases", from: move sources, by: -1)
                 buildLexicon(ref c)
                 declare(ref c)
+                t20Signatures(ref c)
                 print($"== {args[i]}.{args[i + 1]}")
                 runCase(ref c, for: args[i], by: args[i + 1])
                 i += 2
             }
             return 0
         }
-        """.Replace("WORLD", Escape(Source));
+        """.Replace("WORLD", Escape(Source)).Replace("SIGNATURES", Signatures());
+
+    private static string Lower(bool b) => b ? "true" : "false";
+
+    private static string BayanType(TypeSymbol t, Dictionary<string, string> tps) => t switch
+    {
+        TypeParameterType p => $"typeParamTypeOf({tps[p.Name]})",
+        PrimitiveType p => $"prim(.{p.DisplayName})",
+        ListType l => $"internList(ref c, by: {BayanType(l.Element, tps)})",
+        SpanType sp => $"internSpan(ref c, by: {BayanType(sp.Element, tps)}, readOnly: {Lower(sp.ReadOnly)})",
+        _ => throw new InvalidOperationException(t.DisplayName),
+    };
+
+    /// <summary>
+    /// What T11's stubbed <c>declareSignature</c>/<c>declareParameters</c> (declare2.byn:15, :18) would set on each free
+    /// function but <c>probes</c>, generated from the C# symbols as SelfhostSemanticsT17Tests.Signature does (Q618).
+    /// </summary>
+    private static string Signatures()
+    {
+        Directory.CreateDirectory(Dir);
+        var path = Path.Combine(Dir, "main.byn");
+        var c = Compilation.Create([SourceText.FromString(path, Source + "\n")], packageRoot: Dir, options: new CompilationOptions(Library: true));
+        var sb = new System.Text.StringBuilder();
+        var n = 0;
+        foreach (var (name, fns) in c.EntryModule.Functions)
+        {
+            if (name == "probes") continue;
+            for (var i = 0; i < fns.Count; i++)
+            {
+                var fn = fns[i];
+                var v = $"f{n++}";
+                sb.AppendLine($"    let {v} = tcNth(in c, by: \"{name}\", at: {i})");
+                var tps = new Dictionary<string, string>();
+                for (var k = 0; k < fn.TypeParameters.Count; k++)
+                {
+                    // declare already gives a generic its type parameters; only their uses in the signature are filled.
+                    var tv = $"tp{n++}";
+                    tps[fn.TypeParameters[k].Name] = tv;
+                    sb.AppendLine($"    let {tv} = c.functions[{v}].typeParams[{k}]");
+                }
+                sb.AppendLine($"    c.functions[{v}].returnType = {BayanType(fn.ReturnType, tps)}");
+                sb.AppendLine($"    c.functions[{v}].hasFails = {Lower(fn.Fails)}");
+                foreach (var p in fn.Parameters)
+                {
+                    var span = p.Location!.Value.Span;
+                    var modifier = p.Modifier switch
+                    {
+                        ParamModifier.None => "none", ParamModifier.Ref => "refKeyword", ParamModifier.Move => "moveKeyword",
+                        ParamModifier.Out => "outKeyword", _ => "inKeyword",
+                    };
+                    sb.AppendLine($"    tcParam(ref c, for: {v}, by: \"{p.Name}\", at: TextSpan {{ start: {span.Start}, length: {span.Length} }}, as: {BayanType(p.Type, tps)}, to: .{modifier})");
+                }
+            }
+            if (fns.Count < 2) continue;
+            // T12's checkOverloads ran on the empty signatures and dropped the later overloads as duplicates; with the
+            // signatures above it keeps them, as the C# does.
+            sb.AppendLine($"    var ov{n} = List<FuncId>()");
+            for (var i = 0; i < fns.Count; i++) sb.AppendLine($"    ov{n}.append(tcNth(in c, by: \"{name}\", at: {i}))");
+            sb.AppendLine($"    c.modules[c.entryModule].functions[\"{name}\"] = move ov{n++}");
+        }
+        return sb.ToString();
+    }
 }
