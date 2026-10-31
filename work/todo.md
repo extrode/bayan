@@ -323,3 +323,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 010 T12 review 2 LOW (open): Q579 not-compared arms (associated type declare.byn:149-154, method/ctor params in `overlap` :134/:174, BYN3202 `ValidationError<T>` :321-322) get oracle cases when T38 lands.
 - 010 T12 review 2 LOW (open): T12 test dump prints `fn` lines from `allFunctions`, not `c.modules[m].functions` (SelfhostSemanticsT12Tests.cs:589-597); dump the map keys so a key without an entry is caught.
 - 010 T12 review 2 LOW (open): C# `_constructorBodies[fn]` (Compilation.cs:1020) maps to `declIndex`/`memberIndex` (declare.byn:159, :169-170); record the mapping in Q575-Q579.
+- 010 T18 review 7 LOW → T28: express2.byn:370 `let states = statesOf(...)` is unobservable (stubs `statesOf`, `bindPayloadField`) but outside the exempt span; Q607 (j) should list it.
+- 010 T18 review 7 LOW → T28: express2.byn:495 `var callType: Type = -1` sits on the marker line, outside span 496-501; every mutation is unobservable (overwritten at :497/:499; reached only past `propertyType`/`bindCollection` stubs). Exempt it.
+- 010 T18 review 7 LOW → T28: Q609 survivor express2.byn:504 `untrustedTypes[typeIndex(targetType)]`→`[0]` is killable today: add a case declaring an `Untrusted<List<i32>>` parameter before `ui` in v42.
