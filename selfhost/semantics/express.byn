@@ -554,7 +554,7 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
         case .conditionalExpr(let cond):
             return bindConditional(ref b, through: ref c, for: in cond.value, to: expected)
         case .castExpr(let cast):
-            return bindCast(ref b, through: ref c, for: in cast.value)
+            return bindCast(ref b, through: ref c, for: in cast.value, from: e)
         case .isExpr(let isE):
             let val = bindExpr(ref b, through: ref c, for: in isE.value.value)
             let pat = bindPattern(ref b, through: ref c, for: in isE.value.pattern, as: exprType(in c, for: val))
