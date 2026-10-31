@@ -542,7 +542,7 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
             let errNew = bindErrorNew(ref b, through: ref c, for: in call.value, to: expected)
     // mutation-exempt: Q600 through 544
             if errNew != -1 { return errNew }
-            return bindCall(ref b, through: ref c, for: in call.value, to: expected)
+            return bindCall(ref b, through: ref c, for: in call.value, from: e, to: expected)
         case .indexExpr(let i):
             return bindIndex(ref b, through: ref c, for: in i.value)
         case .unaryExpr(let u):

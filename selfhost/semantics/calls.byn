@@ -3,7 +3,7 @@
 import parser
 
 // stub: T20 ports BinderCalls.cs:27 BindCall
-BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to Type expected) => -1
+BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from parser.Expr syntax, to Type expected) => -1
 
 // stub: T20 ports BinderCalls.cs:358 BindArguments
 List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by in List<LocalId> ps, as FuncId fn, bool enforceNames, string displayName = "") => []
@@ -12,7 +12,7 @@ List<BExpr> bindArguments(ref Binder b, through ref Ctx c, for in parser.CallExp
 void bindArgumentsForRecovery(ref Binder b, through ref Ctx c, for in parser.CallExpr call) {}
 
 // stub: T20 ports BinderCalls.cs:190 BindFunctionCall
-BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by FuncId fn, from BExpr receiver, in List<parser.TypeSyntax>? typeArgs = null) => -1
+BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by FuncId fn, from BExpr receiver, at parser.Expr syntax, in List<parser.TypeSyntax>? typeArgs = null) => -1
 
 // stub: T20 ports BinderCalls.cs:127 BindTryFrom
 BExpr bindTryFrom(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) => -1
@@ -21,7 +21,7 @@ BExpr bindTryFrom(ref Binder b, through ref Ctx c, for in parser.CallExpr call, 
 BExpr bindTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) => -1
 
 // stub: T20 ports BinderCalls.cs:160 BindParse
-BExpr bindParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) => -1
+BExpr bindParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from parser.Expr syntax, to PrimitiveKind target) => -1
 
 // stub: T20 ports BinderCalls.cs:473 Label
 string label(ref Ctx c, for LocalId p) => ""

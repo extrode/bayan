@@ -199,6 +199,7 @@ enum BuiltinMember {
     formatSpecFill
     formatSpecAlign
     formatSpecDigits
+    floatTryParse
 }
 
 /// C# `ConversionKind`, in C# order.
