@@ -307,7 +307,7 @@ BStmt bindAssertFails(ref Binder b, through ref Ctx c, for in parser.AssertStmt 
         default:
             boundSet = bindExprOrType(ref b, through: ref c, for: in a.failsKeyword)
             setSpan = t15ExprSpan(in a.failsKeyword)
-    }
+    } // mutation-exempt: Q599 (the next line is reached only through T20's bindCall)
     if boundKind(boundSet) != .typeRef || kindOf(c.bTypeRefs[boundIndex(boundSet)].referenced) != .errorSet {
         report(ref b, through: ref c, for: .patternMismatch, at: setSpan,
             by: ($"`{t15Text(in c, from: b.file, at: setSpan)}`", typeDisplay(ref c, by: errorType), "", "", ""))
