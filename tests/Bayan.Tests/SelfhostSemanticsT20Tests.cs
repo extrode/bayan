@@ -107,6 +107,12 @@ public sealed class SelfhostSemanticsT20Tests
         void doomed(i64 n) expects 1 > 2 {
         }
 
+        union error Oops {
+            bad
+        }
+
+        i64 risky(i64 n) fails Oops => n
+
         void probes(i64 n, string s, bool verbose, List<i64> ns, ReadOnlySpan<u8> bytes, Map<string, i64> m, Opt<i64> o, Box<i64> bx, Untrusted<string> un, Map<string, Plain> mp, (i64, i64) tp) {
             let c1 = u8.tryFrom(n)
             let c2 = u8.tryFrom(s)
@@ -134,6 +140,14 @@ public sealed class SelfhostSemanticsT20Tests
             let c24 = twice(un)
             let c25 = pick<i32, i64>(zz, 2)
             let c26 = i64.frob(s)
+            let p1 = i64.parse(s)
+            let p2 = i32.parse(s, as: .hex)
+            let p3 = risky(n)
+            let p4 = i64.parse()
+            let p5 = i64.parse(n)
+            let f1 = f64.tryParse(s)
+            let f2 = f32.tryParse(n)
+            let f3 = f64.tryParse()
             let r1 = guarded(0, 1)
             let r2 = guarded(2, 1)
             let r3 = doomed(n)
@@ -194,11 +208,29 @@ public sealed class SelfhostSemanticsT20Tests
         }
         """;
 
+    /// <summary>
+    /// The call-shape and argument-name goldens of <c>tests/cases/diag/</c> (the T20 done-when): each is compiled whole on
+    /// both sides and compared on the codes T20 reports (<see cref="T20Codes"/>), so a sibling's stub does not show.
+    /// </summary>
+    private static readonly string[] DiagCases =
+    [
+        "argument-modifier-mismatch", "argument-must-be-named", "not-callable", "generic-cannot-infer", "log-level-as-verb",
+    ];
+
+    /// <summary>The codes <c>calls.byn</c> reports and no other T-file does.</summary>
+    private static readonly string[] T20Codes =
+    [
+        "BYN2306", "BYN2305", "BYN5005", "BYN7011", "BYN2740", "BYN2741", "BYN2303", "BYN2742", "BYN5007", "BYN2301",
+        "BYN8001", "BYN2029", "BYN2220", "BYN2304", "BYN2302", "BYN2021", "BYN2706",
+    ];
+
     private static readonly (string Op, string Name)[] Cases =
     [
         ("call", "c1"), ("call", "c2"), ("call", "c3"), ("call", "c4"), ("call", "c5"), ("call", "c6"), ("call", "c7"),
         ("call", "c8"), ("call", "c9"), ("call", "c10"), ("call", "c11"), ("call", "c12"), ("call", "c13"), ("call", "c14"),
         ("call", "c15"), ("call", "c16"), ("call", "c17"), ("call", "c18"), ("call", "c19"), ("call", "c20"), ("call", "c21"), ("call", "c22"), ("call", "c23"), ("call", "c24"), ("call", "c25"), ("call", "c26"),
+        ("call", "f1"), ("call", "f2"), ("call", "f3"),
+        ("cov", "p1"), ("cov", "p2"), ("cov", "p3"), ("cov", "p4"), ("cov", "p5"), ("hand", "p1"), ("hand", "p3"),
         ("req", "r1"), ("req", "r2"), ("req", "r3"),
         ("args", "a1"), ("args", "a2"), ("args", "a3"), ("args", "a4"), ("args", "a5"), ("args", "a6"), ("args", "a7"),
         ("args", "a8"), ("args", "a9"), ("args", "a10"), ("args", "a11"), ("args", "a12"), ("args", "a13"), ("args", "a14"),
@@ -210,7 +242,11 @@ public sealed class SelfhostSemanticsT20Tests
         ("overload", "o1"), ("overload", "o2"), ("overload", "o3"), ("overload", "o4"), ("overload", "o5"),
         ("mention", "m1"), ("mention", "m2"), ("mention", "m3"), ("mention", "m4"),
         ("strip", "s1"), ("strip", "s2"),
+        .. DiagCases.Select(d => ("diag", d)),
     ];
+
+    private static string DiagSource(string name) =>
+        File.ReadAllText(Path.Combine(Golden.CasesRoot, "diag", name + ".byn")).Replace("\r\n", "\n");
 
     private static readonly System.Type BinderType =
         typeof(Compilation).Assembly.GetType("Bayan.Semantics.Binding.Binder") ?? throw new InvalidOperationException("Binder");
@@ -296,6 +332,11 @@ public sealed class SelfhostSemanticsT20Tests
     {
         Directory.CreateDirectory(Dir);
         var path = Path.Combine(Dir, "main.byn");
+        if (op == "diag")
+        {
+            var whole = Compilation.Create([SourceText.FromString(path, DiagSource(name))], packageRoot: Dir);
+            return [.. whole.Diagnostics.Items.Where(d => T20Codes.Contains(d.Code)).SelectMany(d => Diag(d).Split('\n'))];
+        }
         var c = Compilation.Create([SourceText.FromString(path, Source + "\n")], packageRoot: Dir, options: new CompilationOptions(Library: true));
         var file = c.Modules.SelectMany(m => m.Files).First(f => f.Source.Path == path);
         var mark = c.Diagnostics.Items.Count;
@@ -315,6 +356,15 @@ public sealed class SelfhostSemanticsT20Tests
                 var expected = ld.Type is null ? null : Call(b, "ResolveType", ld.Type);
                 lines.Add(DumpNode((BoundNode?)Call(b, "BindCall", init, expected)));
                 if (op == "req") typeof(Compilation).GetMethod("CheckRequires", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(c, null);
+                break;
+            case "cov":
+            case "hand":
+                // `cov` binds inside a `try` operand (the C# `_covered` set), `hand` as the call a `try` handles (`_handled`).
+                var covered = new List<(Expr Call, string Name)>();
+                BinderType.GetField("_covered", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(b, covered);
+                if (op == "hand") BinderType.GetField("_handled", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(b, init);
+                lines.Add(DumpNode((BoundNode?)Call(b, "BindCall", init, null)));
+                foreach (var e in covered) lines.Add($"covered {e.Call.Span.Start}:{e.Call.Span.Length} {e.Name}");
                 break;
             case "args":
                 var fn = Fn(c, (CallExpr)init);
@@ -473,6 +523,14 @@ public sealed class SelfhostSemanticsT20Tests
                 if op == "req" { checkRequires(ref c) }
                 return
             }
+            if op == "cov" || op == "hand" {
+                b.covered = List<CoveredCall>()
+                if op == "hand" { b.handled = call.span }
+                tcDump(ref c, for: bindCall(ref b, through: ref c, for: in call, from: syntax, to: -1))
+                let cv = b.covered.take() ?? List<CoveredCall>()
+                for e in cv { print($"covered {e.span.start}:{e.span.length} {e.name}") }
+                return
+            }
             let fn = testFn(ref c, for: in call.callee, from: b.file)
             if op == "args" {
                 let ps = copyIds(in c.functions[fn].parameters)
@@ -605,11 +663,35 @@ public sealed class SelfhostSemanticsT20Tests
         SIGNATURES
         }
 
+        /// Every function of the entry module bound, as the C# `BindAll` does (generics.byn:163).
+        void tcBindAll(ref Ctx c) {
+            let fns = copyIds(in c.modules[c.entryModule].allFunctions)
+            for fn in fns {
+                if !functionIsInstance(ref c, by: fn) { bindFunction(ref c, for: fn) }
+            }
+        }
+
+        /// `tcDiags` from 0, only the codes T20 reports.
+        void tcT20Diags(ref Ctx c) {
+            var keep = Map<string, bool>()
+        KEEP
+            for i in 0..c.diagnostics.length {
+                if !keep.contains(c.diagnostics[i].code) { continue }
+                let pos = linePosition(c.files[c.diagnostics[i].file].text.span, at: c.diagnostics[i].span.start)
+                let fixText = c.diagnostics[i].hasFix ? $"fix {c.diagnostics[i].fixSpan.start}..{c.diagnostics[i].fixSpan.end} {c.diagnostics[i].fixReplacement}" : ""
+                print($"{c.diagnostics[i].code} {pos.line}:{pos.column} {c.diagnostics[i].message} |{c.diagnostics[i].label}|{c.diagnostics[i].help}|{fixText}")
+            }
+        }
+
+        DIAGS
+
         i32 main(ReadOnlySpan<string> args) {
             var i: i64 = 0
             while i + 1 < args.length {
+                let isDiag = args[i] == "diag"
+                let text = isDiag ? tcDiagSource(args[i + 1]) : world
                 var bytes = List<u8>()
-                for x in world.bytes { bytes.append(x) }
+                for x in text.bytes { bytes.append(x) }
                 var sources = List<lexer.SourceText>()
                 sources.append(lexer.SourceText.create("tmp/t20-cases/main.byn", from: move bytes))
                 var c = Ctx {
@@ -617,21 +699,48 @@ public sealed class SelfhostSemanticsT20Tests
                     modules: List<Mod>(),
                     diagnostics: List<Diag>(),
                     bags: List<DiagBag>(),
-                    library: true,
+                    library: !isDiag,
                     packageRoot: "tmp/t20-cases",
                     displayRoot: "tmp/t20-cases",
                 }
                 c.entryModule = loadModule(ref c, for: "main", at: "tmp/t20-cases", from: move sources, by: -1)
                 buildLexicon(ref c)
                 declare(ref c)
-                t20Signatures(ref c)
                 print($"== {args[i]}.{args[i + 1]}")
-                runCase(ref c, for: args[i], by: args[i + 1])
+                if isDiag {
+                    tcDiagSignatures(ref c, by: args[i + 1])
+                    tcBindAll(ref c)
+                    tcT20Diags(ref c)
+                } else {
+                    t20Signatures(ref c)
+                    runCase(ref c, for: args[i], by: args[i + 1])
+                }
                 i += 2
             }
             return 0
         }
-        """.Replace("WORLD", Escape(Source)).Replace("SIGNATURES", Signatures());
+        """.Replace("WORLD", Escape(Source)).Replace("SIGNATURES", Signatures(Source + "\n", library: true))
+            .Replace("KEEP", string.Concat(T20Codes.Select(k => $"    keep[\"{k}\"] = true\n"))).Replace("DIAGS", Diags());
+
+    /// <summary>The Bayan functions that load and declare each of <see cref="DiagCases"/>: its text and its signatures.</summary>
+    private static string Diags()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("string tcDiagSource(string name) {");
+        foreach (var d in DiagCases) sb.AppendLine($"    if name == \"{d}\" {{ return \"{Escape(DiagSource(d))}\" }}");
+        sb.AppendLine("    return \"\"");
+        sb.AppendLine("}");
+        sb.AppendLine("void tcDiagSignatures(ref Ctx c, by string name) {");
+        for (var i = 0; i < DiagCases.Length; i++) sb.AppendLine($"    if name == \"{DiagCases[i]}\" {{ tcSigs{i}(ref c) }}");
+        sb.AppendLine("}");
+        for (var i = 0; i < DiagCases.Length; i++)
+        {
+            sb.AppendLine($"void tcSigs{i}(ref Ctx c) {{");
+            sb.Append(Signatures(DiagSource(DiagCases[i]), library: false));
+            sb.AppendLine("}");
+        }
+        return sb.ToString();
+    }
 
     private static string Lower(bool b) => b ? "true" : "false";
 
@@ -690,16 +799,17 @@ public sealed class SelfhostSemanticsT20Tests
     /// What T11's stubbed <c>declareSignature</c>/<c>declareParameters</c> (declare2.byn:15, :18) would set on each free
     /// function but <c>probes</c>, generated from the C# symbols as SelfhostSemanticsT17Tests.Signature does (Q618).
     /// </summary>
-    private static string Signatures()
+    private static string Signatures(string text, bool library)
     {
         Directory.CreateDirectory(Dir);
         var path = Path.Combine(Dir, "main.byn");
-        var c = Compilation.Create([SourceText.FromString(path, Source + "\n")], packageRoot: Dir, options: new CompilationOptions(Library: true));
+        var c = Compilation.Create([SourceText.FromString(path, text)], packageRoot: Dir, options: new CompilationOptions(Library: library));
         var sb = new System.Text.StringBuilder();
         var n = 0;
         foreach (var (name, fns) in c.EntryModule.Functions)
         {
-            if (name == "probes") continue;
+            // `main` of top-level statements has no declaration for the stubs to miss.
+            if (name == "probes" || fns.All(f => f.Decl is null)) continue;
             for (var i = 0; i < fns.Count; i++)
             {
                 var fn = fns[i];
