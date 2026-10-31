@@ -992,7 +992,9 @@ public static class CliApp
         var psi = new System.Diagnostics.ProcessStartInfo(executable)
         {
             RedirectStandardOutput = true,
+            StandardOutputEncoding = new System.Text.UTF8Encoding(false),
             RedirectStandardError = true,
+            StandardErrorEncoding = new System.Text.UTF8Encoding(false),
             UseShellExecute = false,
         };
         psi.ArgumentList.Add("--test");

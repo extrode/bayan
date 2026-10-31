@@ -91,8 +91,8 @@ public sealed class RunTests
         var psi = new ProcessStartInfo(build.ExecutablePath!)
         {
             RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
+            RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false),
+            RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false),
             UseShellExecute = false,
             WorkingDirectory = work,
         };

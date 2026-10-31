@@ -65,7 +65,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
 
     internal static (int Exit, string Out, string Err) Run(string program, params string[] args)
     {
-        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
@@ -80,7 +80,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
     /// <summary><see cref="RunBytes(string, string[])"/> with <paramref name="input"/> fed to stdin.</summary>
     private static (int Exit, byte[] Out, string Err) RunBytes(string program, byte[]? input, params string[] args)
     {
-        var psi = new ProcessStartInfo(program) { RedirectStandardInput = input is not null, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(program) { RedirectStandardInput = input is not null, RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         var stdout = new MemoryStream();

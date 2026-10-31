@@ -176,13 +176,13 @@ public sealed class L014CaptureByCopyTests(ITestOutputHelper output)
                 new[] { "out.o", "rt.o", "-o", exe, OperatingSystem.IsWindows() ? "-lshell32" : "-lm" },
             })
             {
-                var cc = new ProcessStartInfo(compiler[0]) { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+                var cc = new ProcessStartInfo(compiler[0]) { WorkingDirectory = dir, RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
                 foreach (var a in compiler[1..]) cc.ArgumentList.Add(a);
                 foreach (var a in args) cc.ArgumentList.Add(a);
                 var (ccCode, ccOut, ccErr) = Exec(cc);
                 if (ccCode != 0) return (null, "", ccOut + ccErr);
             }
-            var (code, stdout, stderr) = Exec(new ProcessStartInfo(exe) { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false });
+            var (code, stdout, stderr) = Exec(new ProcessStartInfo(exe) { WorkingDirectory = dir, RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false });
             return (code, stdout, stderr);
         }
         finally

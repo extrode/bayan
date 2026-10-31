@@ -108,8 +108,8 @@ public sealed class L008OwnershipRuntimeTests(ITestOutputHelper output) : IDispo
         Directory.CreateDirectory(work);
         var psi = new ProcessStartInfo(build.ExecutablePath!)
         {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
+            RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false),
+            RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false),
             UseShellExecute = false,
             WorkingDirectory = work,
         };

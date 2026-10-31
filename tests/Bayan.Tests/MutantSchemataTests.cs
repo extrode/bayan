@@ -51,8 +51,8 @@ public sealed class MutantSchemataTests
         var psi = new ProcessStartInfo(exe)
         {
             RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
+            RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false),
+            RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false),
             UseShellExecute = false,
         };
         if (work is not null) psi.WorkingDirectory = work;

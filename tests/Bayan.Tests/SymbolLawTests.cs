@@ -249,7 +249,7 @@ public sealed class SymbolLawTests(ITestOutputHelper output)
                 new[] { "out.o", "rt.o", "-o", exe, OperatingSystem.IsWindows() ? "-lshell32" : "-lm" },
             })
             {
-                var cc = new ProcessStartInfo(compiler[0]) { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+                var cc = new ProcessStartInfo(compiler[0]) { WorkingDirectory = dir, RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
                 foreach (var a in compiler[1..]) cc.ArgumentList.Add(a);
                 foreach (var a in args) cc.ArgumentList.Add(a);
                 var (ccCode, ccOut, ccErr) = Exec(cc);
@@ -258,7 +258,7 @@ public sealed class SymbolLawTests(ITestOutputHelper output)
             var runs = new List<(int, string, string)>();
             foreach (var seed in Seeds)
             {
-                var run = new ProcessStartInfo(exe) { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+                var run = new ProcessStartInfo(exe) { WorkingDirectory = dir, RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
                 run.Environment["BYN_L015_SEED"] = seed;
                 runs.Add(Exec(run));
             }

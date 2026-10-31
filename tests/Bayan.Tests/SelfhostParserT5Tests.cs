@@ -108,7 +108,7 @@ public sealed class SelfhostParserT5Tests(ITestOutputHelper output)
 
     private static (int Exit, string Out, string Err) Run(string program)
     {
-        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();

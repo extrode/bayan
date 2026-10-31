@@ -185,8 +185,8 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
         var psi = new ProcessStartInfo(build.ExecutablePath!)
         {
             RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
+            RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false),
+            RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false),
             UseShellExecute = false,
         };
         using var p = Process.Start(psi)!;
