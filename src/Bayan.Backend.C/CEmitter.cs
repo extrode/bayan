@@ -1889,6 +1889,15 @@ internal sealed class FunctionEmitter
                     $"{{\n    int64_t v;\n    if (!byn_int_parse(s, {t.Bits}, {(t.IsSignedInteger ? "true" : "false")}, radix, &v)) return ({opt}){{0}};\n    return ({opt}){{true, ({_c.CType(t)})v}};\n}}\n");
                 return $"{name}({Expr(r)}, {arg})";
             }
+            case BuiltinMember.FloatTryParse:
+            {
+                var opt = _c.CType(b.Type);
+                var t = (PrimitiveType)((OptionalType)b.Type).Inner;
+                var name = "bynh_try_parse_" + _c.Key(b.Type);
+                _c.Helper(name, $"static {opt} {name}(byn_str s)", () =>
+                    $"{{\n    double v;\n    if (!byn_float_parse(s, {(t == PrimitiveType.F32 ? "true" : "false")}, &v)) return ({opt}){{0}};\n    return ({opt}){{true, ({_c.CType(t)})v}};\n}}\n");
+                return $"{name}({Expr(r)})";
+            }
             case BuiltinMember.StringJoined:
             {
                 var xt = _c.CType(r.Type);

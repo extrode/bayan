@@ -1,4 +1,4 @@
-// ASCII `lowercased()`/`uppercased()` copy the text; `equals(as: .caseless)` folds ASCII letters.
+// `lowercased()`/`uppercased()` copy the text with Unicode simple case mapping; `equals(as: .caseless)` folds ASCII letters.
 void main() {
     let s = "Hello, Wörld"
     print(s.lowercased())
