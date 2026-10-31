@@ -41,7 +41,7 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
             return bindTargetMember(ref b, through: ref c, for: in t.value, to: expected)
         case .callExpr(let call):
             let errNew = bindErrorNew(ref b, through: ref c, for: in call.value, to: expected)
-    // mutation-exempt: Q600 through 119
+    // mutation-exempt: Q600 through 45
             if errNew != -1 { return errNew }
             return bindCall(ref b, through: ref c, for: in call.value, to: expected)
         case .indexExpr(let i):
@@ -105,6 +105,7 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
             return addErrorExpr(ref c, from: BErrorExpr { span: pat.value.span })
         case .lambdaExpr(let l):
             var fExpected = expected
+            // mutation-exempt: Q600 through 112
             if fExpected != -1 && kindOf(fExpected) == .optional {
                 fExpected = c.optionalTypes[typeIndex(fExpected)]
             }
@@ -163,7 +164,6 @@ BExpr convert(ref Binder b, through ref Ctx c, for BExpr value, to Type target, 
     if vt == target || isError(target) || isError(vt) { return value }
     // Every node below is built on `value.Syntax`: its span and syntax facts.
     let at = nodeSpan(in c, for: value)
-    // mutation-exempt: Q600 through 167
     if kindOf(vt) == .untrusted && isBool(c.untrustedTypes[typeIndex(vt)]) && isBool(target) {
         return fact(ref c, for: value)
     }
@@ -189,7 +189,6 @@ BExpr convert(ref Binder b, through ref Ctx c, for BExpr value, to Type target, 
 
     // C# `_printArgument && argument && value.Type is EnumSymbol && target.IsString` (EnumName) waits on T20's `_printArgument` (Q600).
 
-    // mutation-exempt: Q600 through 193
     if boundKind(value) == .staticArray && kindOf(target) == .span && !c.spanTypes[typeIndex(target)].readOnly {
         let elemDisp = typeDisplay(ref c, by: c.spanTypes[typeIndex(target)].element)
         report(ref b, through: ref c, for: .typeMismatch, at: span, by: (typeDisplay(ref c, by: vt), typeDisplay(ref c, by: target), "", "", ""),
@@ -200,7 +199,7 @@ BExpr convert(ref Binder b, through ref Ctx c, for BExpr value, to Type target, 
     if (implicit(ref c, from: vt, to: target, argument: argument) is { } kind) {
         if kind == .identity { return value }
         if kind == .nullToOptional { return t17SameSyntax(ref c, for: addDefault(ref c, from: BDefault { span: at, type: target }), from: value) }
-    // mutation-exempt: Q600 through 204
+    // mutation-exempt: Q600 through 203
         if kind == .toDynRef && kindOf(target) == .dynRef && !c.dynRefTypes[typeIndex(target)].readOnly {
             let _ = checkWritable(ref b, through: ref c, for: value, at: span, by: $"it is borrowed as `{typeDisplay(ref c, by: target)}`")
         }
@@ -343,7 +342,6 @@ parser.TypeSyntax t17CloneTypeSyntax(in parser.TypeSyntax t) {
 BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
     let name = t17Text(in c, from: b.file, at: n.name)
     let m = c.files[b.file].module
-    // mutation-exempt: Q600 through 348
     if n.typeArgs.length > 0 {
         if t15Lookup(ref b, for: name) == -1 && (c.modules[m].functions.tryGet(at: name) is { } generic) {
             var tArgsSpans = List<TextSpan>()
@@ -361,7 +359,6 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
         return addTypeRef(ref c, from: BTypeRef { span: n.span, referenced: t })
     }
 
-    // mutation-exempt: Q600 through 365
     if name == "it" && b.itField != -1 {
         if inLambda(ref b, through: ref c, at: n.span, for: "it", by: "the checked value is read through `this`, which a lambda does not capture") {
             return addErrorExpr(ref c, from: BErrorExpr { span: n.span })
@@ -371,8 +368,8 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
     }
 
     let local = t15Lookup(ref b, for: name)
-    // mutation-exempt: Q600 through 391
     if local != -1 {
+        // mutation-exempt: Q600 through 388
         if c.locals[local].kind == .constKeyword && (c.locals[local].constant is { } cVal) {
             let t = c.locals[local].type
             return constantLiteral(ref c, at: n.span, as: t, by: in cVal)
@@ -392,11 +389,12 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
     }
 
     let host = t17Host(in b, through: in c)
-    // mutation-exempt: Q600 through 409
+    // mutation-exempt: Q600 through 395
     if b.thisType != -1 {
         // A default cloned onto a struct sees only the interface's members through `this`.
         var visible = true
         if host != -1 && c.functions[host].template != -1 && c.functions[c.functions[host].template].iface != -1 {
+            // mutation-exempt: Q600 through 402
             let cloneOf = c.functions[c.functions[host].template].iface
             visible = lookupMember(ref c, for: t15InterfaceSelf(ref c, for: cloneOf), by: name).kind != .none
         }
@@ -408,10 +406,11 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
         }
     }
 
-    // mutation-exempt: Q600 through 433
+    // mutation-exempt: Q600 through 411
     if b.thisType != -1 && kindOf(b.thisType) == .structType && host != -1 && !c.functions[host].isStatic {
         let st = statesOf(ref c, for: typeIndex(b.thisType))
         if st != -1 {
+            // mutation-exempt: Q600 through 430
             var foundVariantField = false
             for vId in c.unions[st].variants {
                 for fId in c.unionVariants[vId].fields {
@@ -564,7 +563,6 @@ BExpr bindLiteral(ref Binder b, through ref Ctx c, for in parser.LiteralExpr l, 
 
 /// `n`, built on literal `l`: C# `Syntax is LiteralExpr`, and `IsUntypedLiteral(Syntax)` for an unsuffixed number, char or `null`.
 BExpr t17FromLiteral(ref Ctx c, for BExpr n, from in parser.LiteralExpr l) {
-    // mutation-exempt: Q600 through 568
     let untyped = l.suffix is null && (l.kind == .integer || l.kind == .floatKeyword || l.kind == .char || l.kind == .nullKeyword)
     setSyntaxFlags(ref c, for: n, to: untyped ? syntaxLiteral | syntaxUntypedLiteral : syntaxLiteral)
     return n
@@ -834,7 +832,6 @@ i64 t17DecodeChar(string text) {
         return -1
     }
     let b0 = b[1]
-    // mutation-exempt: Q600 through 854
     if b0 < 0x80 {
         if end == 2 { return i64(b0) }
         return -1
@@ -859,7 +856,6 @@ f64 t17Pow10(i64 n) {
     var p: f64 = 10.0
     var res: f64 = 1.0
     var exp = n
-    // mutation-exempt: Q600 through 867
     while exp > 0 {
         if (exp & 1) != 0 { res *= p }
         p *= p
@@ -872,7 +868,6 @@ f64 t17ParseFloat(string text) {
     let b = text.bytes
     var i: i64 = 0
     var sign: f64 = 1.0
-    // mutation-exempt: Q600 through 879
     if i < b.length && b[i] == 45 {
         sign = -1.0
         i += 1
@@ -1123,7 +1118,6 @@ void constrain(ref Binder b, through ref Ctx c, for BExpr value, to Type target)
                 b.constraints[decl] = target
             }
         }
-    // mutation-exempt: Q600 through 1134
     } else if vk == .binary && isPending(ref b, through: ref c, for: value) {
         let bin = c.bBinaries[boundIndex(value)]
         constrain(ref b, through: ref c, for: bin.left, to: target)
@@ -1177,7 +1171,6 @@ bool isPending(ref Binder b, through ref Ctx c, for BExpr e) {
         case .local:
             let l = c.bLocals[boundIndex(e)].local
             return b.pending.contains(l)
-    // mutation-exempt: Q600 through 1191
         case .binary:
             let bin = c.bBinaries[boundIndex(e)]
             if !isInteger(bin.type) { return false }

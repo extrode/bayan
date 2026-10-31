@@ -25,7 +25,7 @@ namespace Bayan.Tests;
 /// <item>The <c>Untrusted&lt;bool&gt;</c> fact in <c>convert</c>: T19 <c>fact</c> (express3.byn:41).</item>
 /// <item>Local reads, narrowing and known states in <c>bindName</c>: T35 <c>capture</c> (express4.byn:20) returns false.</item>
 /// <item>A <c>const</c> local: T18 <c>constantLiteral</c> (express2.byn:42); a module constant: T18 <c>constantRef</c> (express2.byn:39).</item>
-/// <item><c>it</c>, a states payload field and <c>this</c> in a lambda: T35 <c>inLambda</c> (express4.byn:23), T38 <c>statesOf</c> (declare2.byn:26).</item>
+/// <item><c>it</c> and <c>this</c> in a lambda, a states payload field: T35 <c>inLambda</c> (express4.byn:23), T38 <c>statesOf</c> (declare2.byn:26).</item>
 /// <item>An implicit <c>this</c> member and an interface default's members: T18 <c>lookupMember</c> (express2.byn:45), <c>bindImplicitThisMember</c> (express2.byn:27).</item>
 /// <item>A variant group (in <c>asValue</c> and <c>ConvertToFunction</c>) and a method group with a receiver: T18 member binding (express2.byn).</item>
 /// <item>A static array to a writable <c>Span</c>: its value needs T18 <c>constantRef</c> (express2.byn:39).</item>
@@ -46,6 +46,9 @@ public sealed class SelfhostSemanticsT17Tests
             }
             void tm() => this
             static void ts() => this
+            void tn() => modFunc
+            void ti() => it
+            void tg() => gen<i32>
         }
 
         type distinct Sku = string
@@ -65,13 +68,15 @@ public sealed class SelfhostSemanticsT17Tests
 
         i32 gen<T>() => 0
 
-        void sigs(i32? o, Symbol sy, f32 g, f64 d, i64 l, i32 i, u8 by, i8 small, string st, Sku sk, (() -> void) fv, ((i32, i32) -> i32) fa, ((i32) -> i32) f1, ((i64) -> bool fails LexError) fe) {
+        void sigs(i32? o, Symbol sy, f32 g, f64 d, i64 l, i32 i, u8 by, i8 small, string st, Sku sk, (() -> void) fv, ((i32, i32) -> i32) fa, ((i32) -> i32) f1, ((i64) -> bool fails LexError) fe, Span<i32> sp) {
         }
 
         void qVars() {
             var p = 1
             var q = 2
             var r = 3
+            var s = 4
+            var t = 5
         }
 
         void qInt() => 42
@@ -97,6 +102,9 @@ public sealed class SelfhostSemanticsT17Tests
         void qChar() => 'a'
         void qCharEsc() => '\t'
         void qCharU() => '\u{41}'
+        void qChar2() => '߿'
+        void qChar3() => '＀'
+        void qChar4() => '😀'
         void qStr() => "hi"
         void qTrue() => true
         void qFalse() => false
@@ -128,7 +136,9 @@ public sealed class SelfhostSemanticsT17Tests
 
     /// <summary>
     /// <c>expr</c>: <c>BindExpr(e, target)</c>; <c>stmt</c>: <c>BindStatementExpression(e)</c>; <c>conv</c>:
-    /// <c>Convert(BindExpr(e), target, e.Span)</c>, then to <c>Target2</c> if set; <c>fn</c>: <c>Convert(BindExprFor(e, target), …)</c>.
+    /// <c>Convert(BindExpr(e), target, e.Span)</c>, then to <c>Target2</c> if set; <c>fn</c>: <c>Convert(BindExprFor(e, target), …)</c>;
+    /// <c>nofn</c>: <c>BindExpr(e)</c> in a binder with no function but <c>Point</c>'s <c>this</c>; <c>it</c>: <c>BindExpr(e)</c> with
+    /// <c>_it</c> set to <c>Point.x</c>, as a refinement check sets it.
     /// </summary>
     private static readonly Case[] Cases =
     [
@@ -161,6 +171,9 @@ public sealed class SelfhostSemanticsT17Tests
         new("char-u8-target", "qChar", "expr", "by"),
         new("char-escape", "qCharEsc", "expr"),
         new("char-u-escape", "qCharU", "expr"),
+        new("char-2-byte", "qChar2", "expr"),
+        new("char-3-byte", "qChar3", "expr"),
+        new("char-4-byte", "qChar4", "expr"),
         new("string", "qStr", "expr"),
         new("string-symbol-target", "qStr", "expr", "sy"),
         new("true", "qTrue", "expr"),
@@ -178,6 +191,10 @@ public sealed class SelfhostSemanticsT17Tests
         new("name-symbol", "qSymT", "expr"),
         new("name-utf8", "qUtf8", "expr"),
         new("name-typo", "qTypo", "expr"),
+        new("name-generic-args", "Point.tg", "expr"),
+        new("name-in-method", "Point.tn", "expr"),
+        new("name-no-function", "Point.tn", "nofn"),
+        new("name-it", "Point.ti", "it"),
         new("name-undefined", "qZz", "expr"),
         new("this-free", "qThis", "expr"),
         new("this-method", "Point.tm", "expr"),
@@ -203,6 +220,7 @@ public sealed class SelfhostSemanticsT17Tests
         new("conv-mismatch-char", "qChar", "conv", "i"),
         new("conv-mismatch-optional", "qNull", "conv", "o", "i"),
         new("conv-value-to-function", "qInt", "conv", "fa"),
+        new("conv-span", "qInt", "conv", "sp"),
         new("fn-exact", "qMod", "fn", "fv"),
         new("fn-exact-params", "qAdd", "fn", "fa"),
         new("fn-mismatch", "qAdd", "fn", "fv"),
@@ -354,11 +372,12 @@ public sealed class SelfhostSemanticsT17Tests
     {
         var o = Oracle.Of("main", Source);
         var (fn, container, e) = Site(o, k.Fn);
-        var binder = o.Binder(fn, container);
+        var binder = o.Binder(k.Op == "nofn" ? null : fn, container);
+        if (k.Op == "it") BinderType.GetField("_it", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(binder, Point(o).Fields[0]);
         var target = k.Target is null ? null : Sig(o, k.Target);
         var r = k.Op switch
         {
-            "expr" => (BoundExpr)Call(binder, "BindExpr", e, target)!,
+            "expr" or "nofn" or "it" => (BoundExpr)Call(binder, "BindExpr", e, target)!,
             "stmt" => (BoundExpr)Call(binder, "BindStatementExpression", e)!,
             "conv" => Convert(binder, (BoundExpr)Call(binder, "BindExpr", e, null)!, target!, e.Span),
             "fn" => Convert(binder, (BoundExpr)Call(binder, "BindExprFor", e, target)!, target!, e.Span),
@@ -384,6 +403,7 @@ public sealed class SelfhostSemanticsT17Tests
             case ErrorType: return "errorType()";
             case BuiltinType { DisplayName: "Symbol" }: return "builtinType(.symbol)";
             case StructSymbol s: return $"structTypeOf(s{s.Name})";
+            case SpanType sp: return $"internSpan(ref c, by: {BayanType(sb, sp.Element, ref n)}, readOnly: {Lower(sp.ReadOnly)})";
             case Bayan.Semantics.Symbols.OptionalType opt: return $"internOptional(ref c, by: {BayanType(sb, opt.Inner, ref n)})";
             case FunctionType f:
             {
@@ -506,9 +526,10 @@ public sealed class SelfhostSemanticsT17Tests
             sb.AppendLine($"void case{Camel(k.Name)}() {{");
             sb.AppendLine("    var c = tcSource()");
             sb.Append(symbols);
-            sb.AppendLine($"    var b = tcBinder({FunctionVar(fn)}, by: {(container is null ? "-1" : "sPoint")})");
+            sb.AppendLine($"    var b = tcBinder({(k.Op == "nofn" ? "-1" : FunctionVar(fn))}, by: {(container is null ? "-1" : "sPoint")})");
             sb.AppendLine("    t15CaptureTypes(ref b, through: ref c)");
             sb.AppendLine("    pushScope(ref b)");
+            if (k.Op == "it") sb.AppendLine("    b.itField = c.structs[sPoint].fields[0]");
             var n = 100;
             var target = k.Target is null ? "-1" : BayanType(sb, Sig(o, k.Target), ref n);
             sb.AppendLine($"    let target = {target}");
@@ -524,7 +545,7 @@ public sealed class SelfhostSemanticsT17Tests
             var r = k.Target2 is null ? "let r" : "var r";
             body.AppendLine((k.Op switch
             {
-                "expr" => "            $R = bindExpr(ref b, through: ref c, for: in $E, to: target)",
+                "expr" or "nofn" or "it" => "            $R = bindExpr(ref b, through: ref c, for: in $E, to: target)",
                 "stmt" => "            $R = bindStatementExpression(ref b, through: ref c, for: in $E)",
                 "conv" => "            $R = convert(ref b, through: ref c, for: bindExpr(ref b, through: ref c, for: in $E), to: target, at: span)",
                 "fn" => "            $R = convert(ref b, through: ref c, for: bindExprFor(ref b, through: ref c, for: in $E, to: target), to: target, at: span)",
@@ -545,8 +566,10 @@ public sealed class SelfhostSemanticsT17Tests
     // ── Constrain, FindPeer and IsPending ────────────────────────────────────────
 
     /// <summary>
-    /// Three `var` declarations d0..d2 of `qVars` and two locals `p`, `q`: `p` pending on d0, then `q` on d1, with
-    /// <c>Constrain</c> to targets and to other values, and <c>FindPeer</c> along a chain of peers.
+    /// Five `var` declarations d0..d4 of `qVars` and locals `p`, `q`, `s`, `t`: `p` pending on d0, then `q` on d1, with
+    /// <c>Constrain</c> to targets and to other values, and <c>FindPeer</c> along a chain of peers; then `s` on d3 and `t` on
+    /// d4 inside hand-built binaries and unaries (the nodes T19's <c>BindBinary</c>/<c>BindUnary</c> would build), with
+    /// <c>IsPending</c> on each and <c>Constrain</c> through them.
     /// </summary>
     private static List<string> ExpectedPending()
     {
@@ -582,6 +605,25 @@ public sealed class SelfhostSemanticsT17Tests
         lines.Add($"constraints {Constraints()}");
         peers[decls[2]] = decls[1];
         lines.Add($"peers {Peer(0)} {Peer(1)} {Peer(2)}");
+        var s = new LocalSymbol("s", null, PrimitiveType.I32, LocalKind.Var);
+        var t = new LocalSymbol("t", null, PrimitiveType.I32, LocalKind.Var);
+        var ls = new BoundLocal(decls[3], s);
+        var lt = new BoundLocal(decls[4], t);
+        pending[s] = decls[3];
+        pending[t] = decls[4];
+        var sum = Fn(o, "qSum").ExpressionBody!;
+        var neg = Fn(o, "qNeg").ExpressionBody!;
+        var bin = new BoundBinary(sum, BinaryOp.Add, ls, lit, PrimitiveType.I32);
+        var binTyped = new BoundBinary(sum, BinaryOp.Add, ls, typed, PrimitiveType.I32);
+        var binBool = new BoundBinary(sum, BinaryOp.Add, ls, lit, PrimitiveType.Bool);
+        var un = new BoundUnary(neg, UnaryOp.Negate, lt, PrimitiveType.I32);
+        var unFloat = new BoundUnary(neg, UnaryOp.Negate, lt, PrimitiveType.F64);
+        string Pending(BoundExpr e) => Lower((bool)Call(binder, "IsPending", e)!);
+        lines.Add($"binary {Pending(bin)} {Pending(binTyped)} {Pending(binBool)}");
+        lines.Add($"unary {Pending(un)} {Pending(unFloat)}");
+        Call(binder, "Constrain", bin, PrimitiveType.I16);
+        Call(binder, "Constrain", un, PrimitiveType.I8);
+        lines.Add($"constraints {Constraints()}");
         lines.AddRange(o.NewDiagnostics());
         return lines;
     }
@@ -594,7 +636,7 @@ public sealed class SelfhostSemanticsT17Tests
         var qL = IndexOf(o, d => d is FunctionDecl { Name.Text: "qL" });
         sb.AppendLine("string t17tConstraints(in Binder b, through ref Ctx c) {");
         sb.AppendLine("    var sb = StrBuf()");
-        sb.AppendLine("    for d in 0..3 {");
+        sb.AppendLine("    for d in 0..5 {");
         sb.AppendLine("        if d > 0 { sb.append(\" \") }");
         sb.AppendLine("        sb.append(b.constraints.contains(d) ? $\"{typeDisplay(ref c, by: b.constraints[d])}\" : \"none\")");
         sb.AppendLine("    }");
@@ -608,6 +650,8 @@ public sealed class SelfhostSemanticsT17Tests
         sb.AppendLine("    pushScope(ref b)");
         sb.AppendLine("    let mark = c.diagnostics.length");
         sb.AppendLine("    let at = TextSpan { start: 0, length: 0 }");
+        sb.AppendLine("    var lit = List<BExpr>()");
+        sb.AppendLine("    var typed = List<BExpr>()");
         sb.AppendLine("    let p = newLocal(ref c, by: LocalSymbol { name: \"p\", type: prim(.i32), kind: .varKeyword })");
         sb.AppendLine("    let q = newLocal(ref c, by: LocalSymbol { name: \"q\", type: prim(.i32), kind: .varKeyword })");
         sb.AppendLine("    let lp = addLocal(ref c, from: BLocal { span: at, local: p, type: prim(.i32) })");
@@ -637,6 +681,31 @@ public sealed class SelfhostSemanticsT17Tests
         }
         sb.AppendLine("    b.peers[2] = 1");
         sb.AppendLine("    print($\"peers {findPeer(ref b, for: 0)} {findPeer(ref b, for: 1)} {findPeer(ref b, for: 2)}\")");
+        sb.AppendLine("    let s = newLocal(ref c, by: LocalSymbol { name: \"s\", type: prim(.i32), kind: .varKeyword })");
+        sb.AppendLine("    let t = newLocal(ref c, by: LocalSymbol { name: \"t\", type: prim(.i32), kind: .varKeyword })");
+        sb.AppendLine("    let ls = addLocal(ref c, from: BLocal { span: at, local: s, type: prim(.i32) })");
+        sb.AppendLine("    let lt = addLocal(ref c, from: BLocal { span: at, local: t, type: prim(.i32) })");
+        sb.AppendLine("    b.pending[s] = 3");
+        sb.AppendLine("    b.pending[t] = 4");
+        foreach (var decl in new[] { qInt, qL })
+        {
+            sb.AppendLine($"    switch c.files[0].unit.members[{decl}] {{");
+            sb.AppendLine("        case .functionDecl(let d):");
+            sb.AppendLine($"            {(decl == qInt ? "lit" : "typed")}.append(bindExpr(ref b, through: ref c, for: in d.value.expressionBody))");
+            sb.AppendLine("        default:");
+            sb.AppendLine("            break");
+            sb.AppendLine("    }");
+        }
+        sb.AppendLine("    let bin = addBinary(ref c, from: BBinary { span: at, op: .add, left: ls, right: lit[0], type: prim(.i32) })");
+        sb.AppendLine("    let binTyped = addBinary(ref c, from: BBinary { span: at, op: .add, left: ls, right: typed[0], type: prim(.i32) })");
+        sb.AppendLine("    let binBool = addBinary(ref c, from: BBinary { span: at, op: .add, left: ls, right: lit[0], type: prim(.bool) })");
+        sb.AppendLine("    let un = addUnary(ref c, from: BUnary { span: at, op: .negate, operand: lt, type: prim(.i32) })");
+        sb.AppendLine("    let unFloat = addUnary(ref c, from: BUnary { span: at, op: .negate, operand: lt, type: prim(.f64) })");
+        sb.AppendLine("    print($\"binary {isPending(ref b, through: ref c, for: bin)} {isPending(ref b, through: ref c, for: binTyped)} {isPending(ref b, through: ref c, for: binBool)}\")");
+        sb.AppendLine("    print($\"unary {isPending(ref b, through: ref c, for: un)} {isPending(ref b, through: ref c, for: unFloat)}\")");
+        sb.AppendLine("    constrain(ref b, through: ref c, for: bin, to: prim(.i16))");
+        sb.AppendLine("    constrain(ref b, through: ref c, for: un, to: prim(.i8))");
+        sb.AppendLine("    print($\"constraints {t17tConstraints(in b, through: ref c)}\")");
         sb.AppendLine("    tcDiags(in c, from: mark)");
         sb.AppendLine("}");
         return sb.ToString();
