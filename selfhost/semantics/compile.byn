@@ -395,7 +395,7 @@ void declare(ref Ctx c) {
         for u in copyIds(in c.modules[m].unions) { checkUnionShape(ref c, for: u) }
     }
     let main = c.modules[c.entryModule].main
-    // mutation-exempt: Q718
+    // mutation-exempt: Q720
     if main >= 0 && c.functions[main].kind == .function { t11CheckMainSignature(ref c, for: main) }
 }
 
@@ -605,7 +605,7 @@ List<i64> t11CheckCases(ref Ctx c, from FileId file, for in parser.TestDecl t, b
             case .nameExpr(_) or .memberExpr(_):
                 named = true
             default:
-                named = false
+                break
         }
         if named {
             report(ref c, for: .casesNotConstant, from: file, at: value, by: ("", "", "", "", ""), label: "cases from a const list are not supported yet",
@@ -1158,24 +1158,24 @@ void runWork(ref Ctx c, for in Work work) {
             t13RunConstraint(ref c, for: in work)
         case .interfaceMembers:
             // Compilation.cs:204 and :1660 `DeclareInterfaceMembers(instance)`; the caller wraps it in `Instantiating`.
-            // Its only effect is T38's `declareInterfaceMembers`, a stub (Q718).
+            // Its only effect is T38's `declareInterfaceMembers`, a stub (Q720).
             declareInterfaceMembers(ref c, for: typeIndex(work.subject))
         case .members:
-            // No list `runWork` drains holds this kind yet, and T12's `declareMembers` is a stub (Q718).
+            // No list `runWork` drains holds this kind yet, and T12's `declareMembers` is a stub (Q720).
             declareMembers(ref c, for: typeIndex(work.subject))
         case .unionVariants:
-            // No list `runWork` drains holds this kind yet, and T12's `declareUnionVariants` is a stub (Q718).
+            // No list `runWork` drains holds this kind yet, and T12's `declareUnionVariants` is a stub (Q720).
             declareUnionVariants(ref c, for: typeIndex(work.subject))
         case .conform:
-            // No list `runWork` drains holds this kind yet, and T14's `conform` is a stub (Q718).
+            // No list `runWork` drains holds this kind yet, and T14's `conform` is a stub (Q720).
             conform(ref c, for: typeIndex(work.subject))
         case .fieldDefault:
             // Compilation.cs:1634 `FieldDefault(instance, f, site, span)`. T13 drains its `.fieldDefault` items with its
-            // own switch (generics.byn:180), so no list `runWork` drains holds this kind yet (Q718).
+            // own switch (generics.byn:180), so no list `runWork` drains holds this kind yet (Q720).
             let _ = fieldDefault(ref c, for: typeIndex(work.subject), by: work.memberIndex, from: work.file, at: work.span)
         case .bindFunction:
             // Compilation.cs:1636 `BindFunction(fn)`. T13 drains its `.bindFunction` items with its own switch
-            // (generics.byn:180), so no list `runWork` drains holds this kind yet (Q718).
+            // (generics.byn:180), so no list `runWork` drains holds this kind yet (Q720).
             bindFunction(ref c, for: work.instance)
     }
 }
