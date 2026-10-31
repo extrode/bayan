@@ -610,6 +610,8 @@ struct Binder {
     Map<LocalId, VariantId> narrowed = []
     // ── T19 state
     // ── T20 state
+    /// The C# `_prebound` (BinderCalls.cs:248), keyed by the argument's span start in `file` for its identity (Q617).
+    Map<i64, BExpr> prebound = []
     // ── T21 state
     // ── T22 state
     // ── T23 state
