@@ -104,6 +104,7 @@ public sealed class CEmitter
             sb.Append($"static const char {name}[] = {CString(path)};\n");
         sb.Append('\n').Append(enums).Append(types).Append(statics).Append(errors);
         if (_program.Mutants) sb.Append(MutantSelector);
+        if (_program.Coverage is { } coverage) sb.Append(CoverageCounters(coverage.Count));
         sb.Append(protos).Append('\n');
         foreach (var h in _helperOrder) sb.Append(_helpers[h].Proto).Append(";\n");
         sb.Append('\n');
@@ -196,11 +197,66 @@ public sealed class CEmitter
 
         """;
 
+    /// <summary>
+    /// A <c>--coverage</c> build's counters and their writer (spec 013 R9, R10). The counter file is the line
+    /// <c>bayan-coverage 1</c>, then <c>&lt;counter id&gt; &lt;hits&gt;</c> per counter hit at least once. It is written
+    /// once, at exit (<c>return</c> from <c>main</c> or <c>exit()</c>, through <c>atexit</c>) or on a panic (through the
+    /// runtime's <c>byn_cov_flush</c>), and only when <c>BAYAN_COVERAGE</c> names a path prefix.
+    /// </summary>
+    private static string CoverageCounters(int count) => $$"""
+        #include <stdio.h>
+        #ifdef _WIN32
+        #include <process.h>
+        #define byn_cov_pid() ((unsigned long long)_getpid())
+        #elif defined(__wasi__)
+        #define byn_cov_pid() 0ULL
+        #else
+        #include <unistd.h>
+        #define byn_cov_pid() ((unsigned long long)getpid())
+        #endif
+
+        static uint64_t byn_cov[{{Math.Max(count, 1).ToString(CultureInfo.InvariantCulture)}}];
+        static char* byn_cov_path;
+
+        static void byn_cov_write(void) {
+            char* path = byn_cov_path;
+            byn_cov_path = NULL;
+            if (path == NULL) return;
+            FILE* f = fopen(path, "w");
+            free(path);
+            if (f == NULL) return;
+            fputs("bayan-coverage 1\n", f);
+            for (size_t i = 0; i < sizeof byn_cov / sizeof byn_cov[0]; i++)
+                if (byn_cov[i] != 0) fprintf(f, "%llu %llu\n", (unsigned long long)i, (unsigned long long)byn_cov[i]);
+            fclose(f);
+        }
+
+        /* The file is `<BAYAN_COVERAGE>.<test index>` under `--test`, else `<BAYAN_COVERAGE>.<pid>`. */
+        static void byn_cov_start(const char* test) {
+            const char* prefix = getenv("BAYAN_COVERAGE");
+            if (prefix == NULL || *prefix == 0) return;
+            size_t n = strlen(prefix) + (test != NULL ? strlen(test) : 20) + 2;
+            byn_cov_path = malloc(n);
+            if (byn_cov_path == NULL) return;
+            if (test != NULL) snprintf(byn_cov_path, n, "%s.%s", prefix, test);
+            else snprintf(byn_cov_path, n, "%s.%llu", prefix, byn_cov_pid());
+            byn_cov_flush = byn_cov_write;
+            atexit(byn_cov_write);
+        }
+
+
+        """;
+
+    private string CoverageStart() => _program.Tests.Count > 0
+        ? "    byn_cov_start(argc == 3 && strcmp(argv[1], \"--test\") == 0 ? argv[2] : NULL);\n"
+        : "    byn_cov_start(NULL);\n";
+
     private string EmitMain()
     {
         var sb = new StringBuilder();
         sb.Append($"int main(int argc, char** argv) {{\n    {ErrorCType} err = {{0}};\n");
         if (_program.Mutants) sb.Append("    byn_mutant_read();\n");
+        if (_program.Coverage is not null) sb.Append(CoverageStart());
         // Map and symbol hashing is seeded per run; tests get a fixed seed so they are reproducible.
         if (_hashes || _symbols)
             sb.Append(_program.Tests.Count > 0
@@ -1388,6 +1444,9 @@ internal sealed class FunctionEmitter
         _indent--;
     }
 
+    /// <summary>One hit of a coverage counter (a <c>--coverage</c> build).</summary>
+    private static string Count(LCount c) => $"byn_cov[{c.Id.ToString(CultureInfo.InvariantCulture)}]++";
+
     private void Return(LReturn r)
     {
         if (_fn.Kind == FunctionKind.Constructor)
@@ -1602,6 +1661,8 @@ internal sealed class FunctionEmitter
                 return $"{Expr(u.Union)}.tag";
             case LMutantIs m:
                 return $"(byn_mutant == {m.Id.ToString(CultureInfo.InvariantCulture)})";
+            case LCount count:
+                return Count(count);
             case LErrorCode code:
                 return $"{Expr(code.Error)}.code";
             case LErrorField f:

@@ -17,7 +17,7 @@ public sealed class MutantSchemataTests
     private static readonly string RunDir = Path.Combine(Golden.CasesRoot, "run");
 
     /// <summary>A case's build mode, from its first line, as <see cref="RunTests"/> reads it.</summary>
-    private static BuildMode ModeOf(string input)
+    internal static BuildMode ModeOf(string input)
     {
         var firstLine = File.ReadLines(input).FirstOrDefault() ?? "";
         var mode = BuildMode.Safe;
@@ -26,7 +26,7 @@ public sealed class MutantSchemataTests
         return mode;
     }
 
-    private static Compilation CompileCase(string name)
+    internal static Compilation CompileCase(string name)
     {
         var input = Path.Combine(Golden.CasesRoot, name);
         var tests = name.EndsWith(".test.byn", StringComparison.Ordinal);
