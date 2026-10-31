@@ -78,7 +78,7 @@ TextSpan t18ExprSpan(in parser.Expr e) {
 /// The C# `Host`: the enclosing non-lambda function, or -1.
 FuncId t18Host(ref Binder b, through ref Ctx c) {
     var fn = b.fn
-    while fn >= 0 && c.functions[fn].kind == .lambda {
+    while fn != -1 && c.functions[fn].kind == .lambda {
         fn = c.functions[fn].enclosing
     }
     return fn
@@ -86,7 +86,7 @@ FuncId t18Host(ref Binder b, through ref Ctx c) {
 
 /// The C# `InLambda`.
 bool t18InLambda(ref Binder b, through ref Ctx c, at TextSpan span, for string name, by string reason) {
-    if b.fn < 0 || c.functions[b.fn].kind != .lambda { return false }
+    if b.fn == -1 || c.functions[b.fn].kind != .lambda { return false }
     report(ref b, through: ref c, for: .cannotCapture, at: span, by: (name, reason, "", "", ""), help: "copy the fields you need into `let` values first")
     return true
 }
@@ -151,8 +151,8 @@ MemberRef lookupMember(ref Ctx c, for Type t, by string name) {
 
 BExpr bindImplicitThisMember(ref Binder b, through ref Ctx c, for in parser.NameExpr n, by MemberRef member) {
     let host = t18Host(ref b, through: ref c)
-    let hostIsStatic = host >= 0 && c.functions[host].isStatic
-    let inInstance = host >= 0 && !c.functions[host].isStatic && (c.functions[host].kind == .method || c.functions[host].kind == .getter || c.functions[host].kind == .constructor)
+    let hostIsStatic = host != -1 && c.functions[host].isStatic
+    let inInstance = host != -1 && !c.functions[host].isStatic && (c.functions[host].kind == .method || c.functions[host].kind == .getter || c.functions[host].kind == .constructor)
 
     if member.kind == .method && c.functions[member.id].isStatic {
         return addMethodGroup(ref c, from: BMethodGroup { span: n.span, receiver: -1, function: member.id, typeArgs: List<TextSpan>() })
@@ -249,7 +249,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
                     break
                 }
             }
-            let help = (method >= 0 || hasField || hasProperty) ? $"call it on a `{c.structs[s].name}` value; `{name}` belongs to a value, not the type" : ""
+            let help = (method != -1 || hasField || hasProperty) ? $"call it on a `{c.structs[s].name}` value; `{name}` belongs to a value, not the type" : ""
             report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, c.structs[s].name, "", "", ""), help: help)
             return addErrorExpr(ref c, from: BErrorExpr { span: m.span })
         }
@@ -257,7 +257,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
             let bKind = builtinKindOf(typeIndex(refType))
             if bKind == .io {
                 let member = findIo(ref c, for: name)
-                if member < 0 {
+                if member == -1 {
                     let near = suggest(name, by: in ["readFile", "readText", "writeFile", "listDir", "run", "runBatch", "monotonicNanos", "stdout", "stderr", "stdin"])
                     let help = near is { } ? $"did you mean `{near}`?" : ""
                     report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, "Io", "", "", ""), help: help)
@@ -291,7 +291,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
             }
             if bKind == .utf8 {
                 let member = findUtf8(ref c, for: name)
-                if member < 0 {
+                if member == -1 {
                     let near = suggest(name, by: in ["decode", "tryDecode"])
                     let help = near is { } ? $"did you mean `{near}`?" : ""
                     report(ref b, through: ref c, for: .unknownMember, at: m.member, by: (name, "Utf8", "", "", ""), help: help)
@@ -302,7 +302,7 @@ BExpr bindMember(ref Binder b, through ref Ctx c, for in parser.MemberExpr m) {
         }
         if isString(refType) {
             let member = findString(ref c, for: name)
-            if member >= 0 {
+            if member != -1 {
                 return addMethodGroup(ref c, from: BMethodGroup { span: m.span, receiver: -1, function: member, typeArgs: List<TextSpan>() })
             }
             let codec = (name == "from" || name == "fromUtf8") ? "Utf8.decode" : (name == "tryFrom" ? "Utf8.tryDecode" : "")
@@ -501,7 +501,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
             }
         }
     } else if lk == .unionType {
-        let u = typeIndex(lookupType)
+        let u = typeIndex(lookupType) // mutation-exempt: Q607 through 515
         if boundKind(target) == .local {
             let l = c.bLocals[boundIndex(target)].local
             if b.narrowed.contains(l) {
@@ -524,9 +524,9 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
                     break
                 }
             }
-            if fieldVariant >= 0 { break }
+            if fieldVariant != -1 { break }
         }
-        if fieldVariant >= 0 {
+        if fieldVariant != -1 {
             report(ref b, through: ref c, for: .payloadNeedsPattern, at: member, by: (c.unions[u].name, name, "", "", ""), help: "match the variant and bind the field, as in `case .Variant(let x):`")
             return addErrorExpr(ref c, from: BErrorExpr { span: span })
         }
@@ -938,7 +938,7 @@ BExpr bindTargetMember(ref Binder b, through ref Ctx c, for in parser.TargetMemb
                 break
             }
         }
-        if method >= 0 && c.functions[method].isStatic {
+        if method != -1 && c.functions[method].isStatic {
             return addMethodGroup(ref c, from: BMethodGroup { span: t.span, receiver: -1, function: method, typeArgs: List<TextSpan>() })
         }
     }

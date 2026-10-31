@@ -66,7 +66,7 @@ public sealed class SelfhostSemanticsT18Tests
             f64 area()
         }
 
-        void probes(Point p, Shape s, string str, List<i32> list, i32[2] fixed, Map<string, i32> map, Point? maybe, Status st, dyn IHasArea d, i64 n, (i32 a, i32 b) tup) {
+        void probes(Point p, Shape s, string str, List<i32> list, i32[2] fixed, Map<string, i32> map, Point? maybe, Status st, dyn IHasArea d, i64 n, (i32 a, i32 b) tup, (Shape a, i32 b) ts, dyn ref IHasArea dr) {
             let m1 = MyError.notFound
             let m2 = MyError.badVariant
             let m3 = Color.red
@@ -107,6 +107,8 @@ public sealed class SelfhostSemanticsT18Tests
             let v18 = fixed.length
             let v19 = n.toHex
             let v20 = n.toBinary
+            let v21 = ts.a.radius
+            let v22 = dr.nope
             let t1: Color = .red
             let t2: MyError = .notFound
             let t3: MyError = .nope
@@ -148,7 +150,8 @@ public sealed class SelfhostSemanticsT18Tests
         ("member", "probes", "-", "v10"), ("member", "probes", "-", "v11"), ("member", "probes", "-", "v12"),
         ("member", "probes", "-", "v14"), ("member", "probes", "-", "v15"), ("member", "probes", "-", "v16"),
         ("member", "probes", "-", "v17"), ("member", "probes", "-", "v18"), ("member", "probes", "-", "v19"),
-        ("member", "probes", "-", "v20"),
+        ("member", "probes", "-", "v20"), ("member", "probes", "-", "v21"),
+        ("member", "probes", "-", "v22"),
         ("target", "probes", "-", "t1"), ("target", "probes", "-", "t2"), ("target", "probes", "-", "t3"),
         ("target", "probes", "-", "t4"), ("target", "probes", "-", "t5"), ("target", "probes", "-", "t6"),
         ("target", "probes", "-", "t7"), ("target", "probes", "-", "t8"),
