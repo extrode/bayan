@@ -109,9 +109,13 @@ TextSpan t15StmtSpan(in parser.Stmt s) {
 
 /// The scope new locals go to (the C# `_scope`). The C# binder starts with a root scope
 /// (`_scope = new(null)`); a Bayan `Binder` literal starts with `scopes: []`, so the root is
-/// opened here on first use (Q591).
+/// opened here on first use (Q591), with its identity (Q715).
 i64 t15Scope(ref Binder b) {
-    if b.scopes.length == 0 { b.scopes.append(Map<string, LocalId>()) }
+    if b.scopes.length == 0 {
+        b.scopes.append(Map<string, LocalId>())
+        b.scopeIds.append(b.nextScopeId)
+        b.nextScopeId += 1
+    }
     return b.scopes.length - 1
 }
 
@@ -236,10 +240,13 @@ Type resolveType(ref Binder b, through ref Ctx c, for in parser.TypeSyntax t) {
 void pushScope(ref Binder b) {
     let _ = t15Scope(ref b)
     b.scopes.append(Map<string, LocalId>())
+    b.scopeIds.append(b.nextScopeId)
+    b.nextScopeId += 1
 }
 
 void popScope(ref Binder b) {
     b.scopes.remove(at: b.scopes.length - 1)
+    b.scopeIds.remove(at: b.scopeIds.length - 1)
 }
 
 LocalId declareLocal(ref Binder b, through ref Ctx c, at TextSpan name, as Type type, for LocalKind kind) {
@@ -356,7 +363,7 @@ List<BStmt> t15BindRequires(ref Binder b, through ref Ctx c, for in parser.Funct
         let message = literal(ref c, at: span, as: prim(.string), by: Constant { kind: .text, text: $"contract violated: {t15Text(in c, from: b.file, at: span)}" })
         var arguments = List<BExpr>()
         arguments.append(message)
-        let panic = addCall(ref c, from: BCall { span: span, function: find(ref c, for: "panic") ?? -1, arguments: move arguments, type: prim(.neverKind) })
+        let panic = addCall(ref c, from: BCall { span: span, function: t9Function(ref c, for: "panic"), arguments: move arguments, type: prim(.neverKind) })
         let negated = addUnary(ref c, from: BUnary { span: span, op: .notKeyword, operand: condition, type: prim(.bool) })
         let then = addExprStmt(ref c, from: BExprStmt { span: span, expr: panic })
         checks.append(addIf(ref c, from: BIf { span: span, condition: negated, then: then }))
@@ -512,37 +519,66 @@ void bindConstructor(ref Binder b, through ref Ctx c, for in parser.ConstructorD
     }
 }
 
-void bindMain(ref Binder b, through ref Ctx c, for in List<parser.GlobalStatement> statements) {
+/// The C# `List<GlobalStatement>` is `c.mainStatements`' refs (Q718); each must name a top-level statement.
+void bindMain(ref Binder b, through ref Ctx c, for in List<SyntaxRef> statements) {
     t15CaptureTypes(ref b, through: ref c)
     var bound = List<BStmt>()
-    b.firstStatement = t15StmtSpan(in statements[0].statement).start
-    for g in statements { bound.append(bindStatement(ref b, through: ref c, for: in g.statement)) }
+    var span = TextSpan { start: 0, length: 0 }
+    for i in 0..statements.length {
+        let r = statements[i]
+        switch c.files[r.file].unit.members[r.declIndex] {
+            case .globalStatement(let g):
+                if i == 0 {
+                    b.firstStatement = t15StmtSpan(in g.value.statement).start
+                    span = g.value.span
+                }
+                bound.append(bindStatement(ref b, through: ref c, for: in g.value.statement))
+            default:
+                panic("internal error: a main statement ref is not a top-level statement")
+        }
+    }
     c.functions[b.fn].infersErrors = true
-    c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: statements[0].span, statements: move bound })
+    c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: span, statements: move bound })
 }
 
-/// A test body; a `@cases` case first binds each parameter as a `let` of its value. C#'s null
-/// `values` (no `@cases`) is an empty list (Q593).
-void bindTest(ref Binder b, through ref Ctx c, for in parser.TestDecl d, by in List<parser.Expr> values) {
+/// A test body; a `@cases` case first binds each parameter as a `let` of its value. The C# `decl` and `values` are
+/// `c.testBodies[fn]`'s refs (Q718): `hasValues` false is C#'s null `values` (Q593), and `body.values` names an
+/// argument of `body.decl`'s own `@cases`.
+void bindTest(ref Binder b, through ref Ctx c, for TestBody body) {
     t15CaptureTypes(ref b, through: ref c)
     c.functions[b.fn].infersErrors = true
-    switch d.body {
-        case .blockStmt(let body):
-            if values.length == 0 {
-                c.functions[b.fn].body = bindBlock(ref b, through: ref c, for: in body.value)
-                return
+    switch c.files[body.decl.file].unit.members[body.decl.declIndex] {
+        case .testDecl(let d):
+            switch d.value.body {
+                case .blockStmt(let block):
+                    if !body.hasValues {
+                        c.functions[b.fn].body = bindBlock(ref b, through: ref c, for: in block.value)
+                        return
+                    }
+                    var statements = List<BStmt>()
+                    for i in 0..d.value.params.length {
+                        let type = resolveType(ref b, through: ref c, for: in d.value.params[i].type)
+                        let value = t15BindCaseValue(ref b, through: ref c, for: in d.value.attributes[body.values.memberIndex].args[body.values.itemIndex].value, at: i, to: type)
+                        let local = declareLocal(ref b, through: ref c, at: d.value.params[i].name, as: type, for: .letKeyword)
+                        statements.append(addLocalDecl(ref c, from: BLocalDecl { span: d.value.params[i].span, local: local, initializer: value }))
+                    }
+                    statements.append(bindBlock(ref b, through: ref c, for: in block.value))
+                    c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: block.value.span, statements: move statements })
+                default:
+                    break
             }
-            var statements = List<BStmt>()
-            for i in 0..d.params.length {
-                let type = resolveType(ref b, through: ref c, for: in d.params[i].type)
-                let value = bindConverted(ref b, through: ref c, for: in values[i], to: type)
-                let local = declareLocal(ref b, through: ref c, at: d.params[i].name, as: type, for: .letKeyword)
-                statements.append(addLocalDecl(ref c, from: BLocalDecl { span: d.params[i].span, local: local, initializer: value }))
-            }
-            statements.append(bindBlock(ref b, through: ref c, for: in body.value))
-            c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: body.value.span, statements: move statements })
         default:
-            break
+            panic("internal error: a test body ref is not a test")
+    }
+}
+
+/// The C# `values[i]` of a case: a tuple argument's element values, or the value alone (Compilation.cs:334).
+BExpr t15BindCaseValue(ref Binder b, through ref Ctx c, for in parser.Expr arg, at i64 i, to Type type) {
+    switch arg {
+        case .tupleExpr(let tuple):
+            return bindConverted(ref b, through: ref c, for: in tuple.value.elements[i].value, to: type)
+        default:
+            return bindConverted(ref b, through: ref c, for: in arg, to: type)
     }
 }
 
