@@ -84,7 +84,7 @@ public static class Messages
           0  success
           1  compile errors
           2  usage errors (unknown command or option, missing path)
-          3  test failures
+          3  test failures, or a coverage or mutation score below its minimum
           4  toolchain problems (no C compiler, unwritable cache, C compiler failure)
 
         `bayan run` exits 1 when compilation fails and otherwise passes the program's own exit code

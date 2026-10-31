@@ -468,7 +468,7 @@ public sealed class CliTests
     public void HelpListsTheExitCodes()
     {
         var (_, stdout, _) = Run("--help");
-        Assert.Contains("3  test failures", stdout);
+        Assert.Contains("3  test failures, or a coverage or mutation score below its minimum", stdout);
         Assert.Contains("4  toolchain problems", stdout);
         Assert.Contains("cannot tell a build failure from a program that exits 1", stdout);
     }

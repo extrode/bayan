@@ -2263,7 +2263,7 @@ Exit codes, documented in `bayan --help`:
 | `0` | Success |
 | `1` | Compile errors |
 | `2` | Usage errors (unknown command or option, missing input path) |
-| `3` | Test failures |
+| `3` | Test failures, or a coverage or mutation score below its manifest minimum (`bayan test --coverage`, `--mutate`) |
 | `4` | Toolchain problems (no C compiler, unwritable cache, C compiler failure) |
 
 `bayan run` uses the CLI's codes until the program starts (1 for compile errors, 4 for toolchain problems), then passes the program's own exit code through unchanged, as `cargo run` and `go run` do. It therefore cannot tell a build failure from a program that exits 1; anything that needs the distinction runs `bayan build` first or reads `--diagnostics json`.
