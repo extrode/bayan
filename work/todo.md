@@ -317,3 +317,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - `LexerTests.OneMegabyteAllocatesOnlyTheTokenArray` fails intermittently in full-suite runs (passes alone); 010 T2 gate saw 1–2/2629 failures, likely allocation noise from parallel tests (2026-10-26).
 - 010 T3 gate: `typeEquals` (types.byn:195) is never called by tests; equality pairs lack same-name nominal types in different modules and text-view/builtin types (2026-10-26).
 - 010 T28: delete the dead `Map<i64, i64> conformancesChecked` at ctx.byn:356 (Q585/Q723; guard check C blocks it before then).
+- 010 T14 LOW (review 3): `t14InsertMember`'s `.trimmed().isEmpty` (conformance.byn:469) strips ASCII whitespace only; C# `IsNullOrWhiteSpace` also counts Unicode whitespace (Conformance.cs:225). Reachable only from a source with a lex error.
+- 010 T14 LOW (review 3): Q586 says `popBag` "drops" the quiet bag; it only restores the sink, and the bag stays in `c.bags` (diag.byn:53-57). Fix the wording.
