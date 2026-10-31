@@ -280,20 +280,32 @@ BStmt bindAssert(ref Binder b, through ref Ctx c, for in parser.AssertStmt a) {
     return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
 }
 
+/// C# `StripParens(a.Condition) is CallExpr call`: walks the `parenExpr` chain in place (Q703); a call is bound with
+/// `handled` set to it, anything else is bound as the whole condition with `handled` left as it was (Q597).
+BExpr t16BindAssertOperand(ref Binder b, through ref Ctx c, for in parser.Expr e, from in parser.Expr condition) {
+    switch e {
+        case .parenExpr(let p):
+            return t16BindAssertOperand(ref b, through: ref c, for: in p.value.inner, from: in condition)
+        case .callExpr(let call):
+            let saved = b.handled
+            b.handled = call.value.span
+            let operand = bindExpr(ref b, through: ref c, for: in e)
+            b.handled = saved
+            return operand
+        default:
+            return bindExpr(ref b, through: ref c, for: in condition)
+    }
+}
+
 /// `assert f() fails E.x` or `assert f() fails E`: the call is handled here, not wrapped in `try`.
-/// C# sets `_handled` only when the unparenthesized condition is a call; T20's `stripParens` gives
-/// that expression's span, which no other call shares, so it is set for any condition (Q597).
 BStmt bindAssertFails(ref Binder b, through ref Ctx c, for in parser.AssertStmt a) {
-    let saved = b.handled
-    b.handled = stripParens(in a.condition)
-    let operand = bindExpr(ref b, through: ref c, for: in a.condition)
-    b.handled = saved
+    let operand = t16BindAssertOperand(ref b, through: ref c, for: in a.condition, from: in a.condition)
     if boundKind(operand) != .call || !c.functions[c.bCalls[boundIndex(operand)].function].hasFails {
         if !isError(exprType(in c, for: operand)) {
             report(ref b, through: ref c, for: .nothingToHandle, at: t15ExprSpan(in a.condition), by: ("assert … fails", "", "", "", ""))
         }
         return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
-    }
+    } // mutation-exempt: Q599 through 357 (reached only after T20's bindCall binds a call)
     let sets = errorSetsOf(ref c, for: c.bCalls[boundIndex(operand)].function)
     let errorType = errorUnionOf(ref c, for: in sets, as: in List<VariantId>())
     var boundSet: BExpr = -1
@@ -307,7 +319,7 @@ BStmt bindAssertFails(ref Binder b, through ref Ctx c, for in parser.AssertStmt 
         default:
             boundSet = bindExprOrType(ref b, through: ref c, for: in a.failsKeyword)
             setSpan = t15ExprSpan(in a.failsKeyword)
-    } // mutation-exempt: Q599 through 345 (reached only after T20's bindCall binds a call)
+    }
     if boundKind(boundSet) != .typeRef || kindOf(c.bTypeRefs[boundIndex(boundSet)].referenced) != .errorSet {
         report(ref b, through: ref c, for: .patternMismatch, at: setSpan,
             by: ($"`{t15Text(in c, from: b.file, at: setSpan)}`", typeDisplay(ref c, by: errorType), "", "", ""))
@@ -524,8 +536,8 @@ BStmt bindLocalDecl(ref Binder b, through ref Ctx c, for in parser.LocalDecl d) 
 
     var type: Type = -1
     if declared != -1 {
-        type = declared // mutation-exempt: Q599 through 530 (init is -1 until T22 ports built)
-    } else if init != -1 {
+        type = declared
+    } else if init != -1 { // mutation-exempt: Q599 through 542 (init is -1 until T22 ports built)
         type = defaultType(ref b, through: ref c, for: init, from: in d.init)
         init = convert(ref b, through: ref c, for: init, to: type, at: t15ExprSpan(in d.init))
     } else {
@@ -709,7 +721,7 @@ BStmt bindFor(ref Binder b, through ref Ctx c, for in parser.ForStmt f, to JumpT
     }
     var user: UserIteration? = null
     let itType = exprType(in c, for: iterable)
-    var element = userElement(ref b, through: ref c, for: in f, by: iterable, to: ref user)
+    var element = userElement(ref b, through: ref c, for: in f, by: iterable, to: ref user) // mutation-exempt: Q599 through 744 (the element goes only to T36's declaredElement)
     if element == -1 {
         switch kindOf(itType) {
             case .range:
@@ -732,7 +744,7 @@ BStmt bindFor(ref Binder b, through ref Ctx c, for in parser.ForStmt f, to JumpT
     }
     element = declaredElement(ref b, through: ref c, for: in f, as: element)
     // A writable `dyn ref` element borrows the array or list slot, so the loop mutates the iterable; a temporary is the loop's own.
-    let writableRef = kindOf(element) == .dynRef && !c.dynRefTypes[typeIndex(element)].readOnly
+    let writableRef = kindOf(element) == .dynRef && !c.dynRefTypes[typeIndex(element)].readOnly // mutation-exempt: Q599 through 756 (writableRef is false until T36's declaredElement)
     if writableRef && (kindOf(itType) == .list || kindOf(itType) == .array) && isBorrowedPlace(ref c, for: iterable) {
         let _ = checkWritable(ref b, through: ref c, for: iterable, at: t15ExprSpan(in f.iterable),
             by: $"it is borrowed element by element as `{typeDisplay(ref c, by: element)}`")
