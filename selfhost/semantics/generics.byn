@@ -74,14 +74,6 @@ bool t13HasErrors(in Ctx c) {
     return false
 }
 
-/// `EntryModule`: the module of the entry files (`SourceFile.isEntry`), or -1 (Q583).
-ModId t13EntryModule(in Ctx c) {
-    for f in c.files {
-        if f.isEntry { return f.module }
-    }
-    return -1
-}
-
 /// The C# `_instances` key `(Generic, Args)`: `f` and a function, or `t` and a type handle, then each argument.
 string t13Key(string kind, for i64 generic, by in List<Type> args) {
     var sb = StrBuf()
@@ -234,9 +226,8 @@ void bindAll(ref Ctx c) {
         let path = d.file >= 0 ? c.files[d.file].path : ""
         panic($"internal error: instantiating a generic reported {d.code} at {path}: {d.message}")
     }
-    let entry = t13EntryModule(in c)
-    if entry >= 0 && c.modules[entry].main == -1 && !c.includeTests && !c.library && c.modules[entry].files.length > 0 && !t13HasErrors(in c) {
-        report(ref c, for: .noMain, from: c.modules[entry].files[0], at: TextSpan { start: 0, length: 0 }, by: ("", "", "", "", ""))
+    if c.modules[c.entryModule].main == -1 && !c.includeTests && !c.library && c.modules[c.entryModule].files.length > 0 && !t13HasErrors(in c) {
+        report(ref c, for: .noMain, from: c.modules[c.entryModule].files[0], at: TextSpan { start: 0, length: 0 }, by: ("", "", "", "", ""))
     }
 }
 
@@ -1089,7 +1080,7 @@ FuncId invokeSymbol(ref Ctx c, for Type type) {
     }
     let invoke = newFunction(ref c, by: FunctionSymbol {
         name: "invoke",
-        module: t13EntryModule(in c),
+        module: c.entryModule,
         kind: .invoke,
         returnType: c.functionTypes[data].ret,
         hasFails: c.functionTypes[data].errorSets.length > 0,
