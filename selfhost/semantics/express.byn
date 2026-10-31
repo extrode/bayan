@@ -585,9 +585,9 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
                     panic("internal error: a block expression's block is a `BlockStmt`")
             }
         case .structLiteralExpr(let s):
-            return bindStructLiteral(ref b, through: ref c, for: in s.value, to: expected)
+            return bindStructLiteral(ref b, through: ref c, for: in s.value, from: e, to: expected)
         case .withExpr(let w):
-            return bindWith(ref b, through: ref c, for: in w.value)
+            return bindWith(ref b, through: ref c, for: in w.value, from: e)
         case .collectionExpr(let col):
             return bindCollection(ref b, through: ref c, for: in col.value, to: expected)
         case .tupleExpr(let tup):
