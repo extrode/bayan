@@ -156,6 +156,19 @@ public sealed class SelfhostSemanticsT16Tests
         void x11() {
         }
 
+        void fors(List<i32> xs, string s) {
+            for x in xs {
+            }
+            for t in s {
+            }
+            for e in zz {
+            }
+            lab: for z in xs {
+            }
+            for xs in xs {
+            }
+        }
+
         """;
 
     /// <summary>
@@ -184,6 +197,11 @@ public sealed class SelfhostSemanticsT16Tests
 
         void dtsBool() {
             true
+        }
+
+        void forVar() {
+            for (var y in "ab") {
+            }
         }
 
         """;
@@ -306,6 +324,7 @@ public sealed class SelfhostSemanticsT16Tests
     private static string BayanType(TypeSymbol t) => t switch
     {
         PrimitiveType p => $"prim(.{p.DisplayName})",
+        Bayan.Semantics.Symbols.ListType { Element: PrimitiveType { Kind: PrimitiveKind.I32 } } => "listI32",
         _ => throw new InvalidOperationException(t.DisplayName),
     };
 
@@ -435,6 +454,84 @@ public sealed class SelfhostSemanticsT16Tests
         sb.AppendLine("                        if boundKind(st) == .localDecl { decls.append(c.bLocalDecls[boundIndex(st)].local) }");
         sb.AppendLine("                    }");
         sb.AppendLine("                    for l in decls { tcLocal(ref c, for: l) }");
+        sb.AppendLine("                default:");
+        sb.AppendLine("                    break");
+        sb.AppendLine("            }");
+        CloseFunction(sb);
+        sb.AppendLine("    tcDiags(in c, from: 0)");
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    // ── BindFor ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Each `for` of a block: span, the loop variable (name, id, kind, `borrowsSubject`), the target and the bound iterable.
+    /// The element type and the body come from T36's `declaredElement`/`bindForBody` stubs, so they are not printed (Q599).
+    /// </summary>
+    private static void ForLines(List<string> lines, BoundBlock block)
+    {
+        foreach (var f in block.Statements.Cast<BoundFor>())
+        {
+            var v = f.Variable;
+            lines.Add($"for {f.Syntax.Span.Start}..{f.Syntax.Span.End} {v.Name} {v.Id} {(int)v.Kind} borrows {Lower(v.BorrowsSubject)}{Target(f.Target)}");
+            Dump(lines, f.Iterable, 1);
+        }
+    }
+
+    private static List<string> ExpectedFors()
+    {
+        var o = Oracle.Of("main", Source);
+        var fn = o.Module.Functions["fors"][0];
+        Call(o.Binder(fn), "BindFunctionBody", fn.Decl);
+        var lines = new List<string>();
+        ForLines(lines, fn.Body!);
+        lines.AddRange(o.NewDiagnostics());
+        var ob = Oracle.Of("broken", BrokenSource);
+        ForLines(lines, (BoundBlock)Call(ob.Binder(null), "BindBlock", Fn(ob, "forVar").Body)!);
+        lines.AddRange(ob.NewDiagnostics());
+        return lines;
+    }
+
+    private const string ForLinesBayan = """
+                    var ss = List<BStmt>()
+                    for st in c.bBlocks[boundIndex(s)].statements { ss.append(st) }
+                    for st in ss {
+                        let i = boundIndex(st)
+                        let v = c.bFors[i].variable
+                        print($"for {c.bFors[i].span.start}..{c.bFors[i].span.end} {c.locals[v].name} {c.locals[v].id} {c.locals[v].kind.ordinal} borrows {c.locals[v].borrowsSubject}{tcTarget(in c, for: c.bFors[i].target)}")
+                        tcDump(ref c, for: c.bFors[i].iterable, at: 1)
+                    }
+
+        """;
+
+    private static string ForsMain()
+    {
+        var o = Oracle.Of("main", Source);
+        var ob = Oracle.Of("broken", BrokenSource);
+        var sb = new StringBuilder();
+        sb.AppendLine("void forsAll() {");
+        sb.AppendLine("    var c = tcSource()");
+        sb.AppendLine("    let listI32 = internList(ref c, by: prim(.i32))");
+        BuildFunction(sb, o, "fors");
+        sb.AppendLine("    var b = tcBinder(f)");
+        sb.AppendLine("    print(\"== fors\")");
+        OpenFunction(sb, o, "fors");
+        sb.AppendLine("            bindFunctionBody(ref b, through: ref c, for: in d.value)");
+        CloseFunction(sb);
+        sb.AppendLine("    let s = c.functions[f].body");
+        sb.Append(ForLinesBayan.Replace("                    ", "    "));
+        sb.AppendLine("    tcDiags(in c, from: 0)");
+        sb.AppendLine("    forVar()");
+        sb.AppendLine("}");
+        sb.AppendLine("void forVar() {");
+        sb.AppendLine($"    var c = tcCtx({Literal(BrokenSource)})");
+        sb.AppendLine("    var b = tcBinder(-1)");
+        OpenFunction(sb, ob, "forVar");
+        sb.AppendLine("            switch d.value.body {");
+        sb.AppendLine("                case .blockStmt(let blk):");
+        sb.AppendLine("                    let s = bindBlock(ref b, through: ref c, for: in blk.value)");
+        sb.Append(ForLinesBayan);
         sb.AppendLine("                default:");
         sb.AppendLine("                    break");
         sb.AppendLine("            }");
@@ -1017,7 +1114,7 @@ public sealed class SelfhostSemanticsT16Tests
     }
 
     private static string MainSource() => Prelude.Replace("$SOURCE", Literal(Source)) + BodiesMain() + BrokenMain() + ExitCodesMain()
-        + DefaultTypesMain() + UniqueMain() + NarrowMain() + BorrowedMain() + """
+        + DefaultTypesMain() + UniqueMain() + NarrowMain() + BorrowedMain() + ForsMain() + """
         i32 main() {
             bodiesAll()
             brokenAll()
@@ -1026,6 +1123,7 @@ public sealed class SelfhostSemanticsT16Tests
             uniqueAll()
             narrowAll()
             borrowedAll()
+            forsAll()
             return 0
         }
 
@@ -1171,6 +1269,9 @@ public sealed class SelfhostSemanticsT16Tests
 
     [Fact]
     public void UniqueConstMatches() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "unique", ExpectedUnique());
+
+    [Fact]
+    public void ForStatementsMatch() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "fors", ExpectedFors());
 
     [Fact]
     public void BorrowedPlacesMatch() => SelfhostSemanticsHarness.AssertSection(Sections.Value, "borrowed", ExpectedBorrowed());
