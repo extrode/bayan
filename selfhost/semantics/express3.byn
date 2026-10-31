@@ -24,7 +24,7 @@ BExpr bindIn(ref Binder b, through ref Ctx c, for in parser.InExpr i) => -1
 BExpr bindConditional(ref Binder b, through ref Ctx c, for in parser.ConditionalExpr cond, to Type expected) => -1
 
 // stub: T19 ports BinderExpressions.cs:1489 BindCast
-BExpr bindCast(ref Binder b, through ref Ctx c, for in parser.CastExpr cast) => -1
+BExpr bindCast(ref Binder b, through ref Ctx c, for in parser.CastExpr cast, from parser.Expr syntax) => -1
 
 // stub: T19 ports BinderExpressions.cs:1492 BindConversion
 BExpr bindConversion(ref Binder b, through ref Ctx c, for in parser.Expr e, to Type target, from in parser.Expr operandSyntax) => -1
