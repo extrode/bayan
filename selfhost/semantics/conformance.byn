@@ -2,7 +2,7 @@
 //
 // C# `_interfaceGetters[member]` is the getter's own member of the interface, read through the
 // member's (file, declIndex, memberIndex) as generics.byn:886 does. `_associatedBindings`,
-// `_baseSpans` and `_conformancesChecked` are the T14 state of ctx.byn.
+// `_baseSpans` are shared state of ctx.byn (T12 fills them); `_conformancesChecked` is T14 state.
 
 import parser
 
@@ -136,11 +136,11 @@ void conform(ref Ctx c, for StructId s) {
             let expected = t14Expected(ref c, for: i, by: member, through: in map)
             let field = findField(ref c, by: s, for: mName)
             // A field reads like a getter, so it can stand for one (bare-name and constraint lookups find it); not for a method.
-            if field != -1 && c.functions[expected].kind == .getter {
+            if field != -1 && expected.kind == .getter {
                 let fType = c.fields[field].type
-                let expectedType = c.functions[expected].returnType
+                let expectedType = expected.returnType
                 if !t14Same(fType, as: expectedType) {
-                    report(ref c, for: .interfaceMemberMismatch, from: file, at: c.fields[field].nameSpan, by: (sName, mName, $"{typeDisplay(ref c, by: fType)} {c.fields[field].name}", iName, t14SignatureText(ref c, for: expected)), label: $"does not match `{iName}`", help: $"change the field's type to `{typeDisplay(ref c, by: expectedType)}`")
+                    report(ref c, for: .interfaceMemberMismatch, from: file, at: c.fields[field].nameSpan, by: (sName, mName, $"{typeDisplay(ref c, by: fType)} {c.fields[field].name}", iName, t14SignatureText(ref c, for: in expected)), label: $"does not match `{iName}`", help: $"change the field's type to `{typeDisplay(ref c, by: expectedType)}`")
                 } else {
                     conf.fieldWitnesses[member] = field
                     // A getter's result is owned by the caller, so a field read in its place would be an implicit copy.
@@ -149,7 +149,8 @@ void conform(ref Ctx c, for StructId s) {
                     var templatePart = part
                     let template = c.structs[s].template
                     if template != -1 {
-                        let t = findField(ref c, by: template, for: c.fields[field].name)
+                        let fieldName = c.fields[field].name
+                        let t = findField(ref c, by: template, for: fieldName)
                         if t != -1 { templatePart = uniquePart(ref c, for: c.fields[t].type) }
                     }
                     if part != -1 && kindOf(part) != .typeParam && (template == -1 || templatePart != -1 && kindOf(templatePart) == .typeParam) {
@@ -161,24 +162,24 @@ void conform(ref Ctx c, for StructId s) {
                 continue
             }
             var own: FuncId = -1
-            let property = findProperty(ref c, by: s, for: mName)
-            if property != -1 { own = c.properties[property].getter }
+            let prop = findProperty(ref c, by: s, for: mName)
+            if prop != -1 { own = c.properties[prop].getter }
             if own == -1 {
                 let methods = findMethods(ref c, by: s, for: mName)
                 if methods.length > 0 { own = methods[0] }
             }
             if own == -1 {
                 if field != -1 {
-                    let sig = t14SignatureText(ref c, for: expected)
+                    let sig = t14SignatureText(ref c, for: in expected)
                     report(ref c, for: .missingInterfaceMember, from: file, at: at, by: (sName, mName, iName, sig, ""), label: $"needs `{mName}`", help: $"rename the field `{c.fields[field].name}` and add `{sig}` to `{sName}`; a field cannot provide a method")
                 } else if c.functions[member].isAbstract && t14LaterDefault(ref c, for: s, from: i, by: mName) != -1 {
                     // A later base's default would stand for it: as with an earlier one, the struct must choose.
                     let laterName = typeDisplay(ref c, by: interfaceTypeOf(t14LaterDefault(ref c, for: s, from: i, by: mName)))
-                    let sig = t14SignatureText(ref c, for: expected)
+                    let sig = t14SignatureText(ref c, for: in expected)
                     report(ref c, for: .interfaceMemberMismatch, from: file, at: at, by: (sName, mName, $"{laterName}.{mName}", iName, sig), label: $"`{mName}` has a default in `{laterName}`", help: $"add `{sig}` to `{sName}` to choose one")
                 } else if c.functions[member].isAbstract {
-                    let sig = t14SignatureText(ref c, for: expected)
-                    let fix = t14InsertMember(ref c, for: s, by: expected)
+                    let sig = t14SignatureText(ref c, for: in expected)
+                    let fix = t14InsertMember(ref c, for: s, by: in expected)
                     report(ref c, for: .missingInterfaceMember, from: file, at: at, by: (sName, mName, iName, sig, ""), label: $"needs `{mName}`", help: $"add `{sig}` to `{sName}`", hasFix: fix.hasFix, fixSpan: fix.fixSpan, fixReplacement: fix.replacement)
                 } else {
                     let fn = t14CloneDefault(ref c, for: s, from: i, by: member, through: in map, at: at)
@@ -192,17 +193,18 @@ void conform(ref Ctx c, for StructId s) {
             // the spec does not say which wins, so the struct must choose.
             if cloned.contains(own) {
                 let firstName = typeDisplay(ref c, by: interfaceTypeOf(cloned[own]))
-                let sig = t14SignatureText(ref c, for: expected)
+                let sig = t14SignatureText(ref c, for: in expected)
                 report(ref c, for: .interfaceMemberMismatch, from: file, at: at, by: (sName, mName, $"{firstName}.{mName}", iName, sig), label: $"`{mName}` {c.functions[member].isAbstract ? "has" : "also has"} a default in `{firstName}`", help: $"add `{sig}` to `{sName}` to choose one")
                 continue
             }
             let span = c.functions[own].nameSpan
-            if !t14SameShape(in c, for: own, to: expected) {
-                let ownSig = t14SignatureText(ref c, for: own)
-                let sig = t14SignatureText(ref c, for: expected)
+            let ownView = t14View(in c, for: own)
+            if !t14SameShape(in c, for: in ownView, to: in expected) {
+                let ownSig = t14SignatureText(ref c, for: in ownView)
+                let sig = t14SignatureText(ref c, for: in expected)
                 report(ref c, for: .interfaceMemberMismatch, from: file, at: span, by: (sName, mName, ownSig, iName, sig), label: $"does not match `{iName}`", help: $"change the signature to `{sig}`")
-            } else if c.functions[own].isMutating != c.functions[expected].isMutating {
-                let wants = c.functions[expected].isMutating
+            } else if c.functions[own].isMutating != expected.isMutating {
+                let wants = expected.isMutating
                 let fix = t14RefThisFix(ref c, for: s, by: own)
                 report(ref c, for: .refThisMismatch, from: file, at: span, by: (sName, mName, iName, wants ? "takes" : "does not take", wants ? "add" : "remove"), label: c.functions[own].isMutating ? "declared `ref this`" : "not declared `ref this`", help: $"{wants ? "add" : "remove"} `ref this` on `{sName}.{mName}`", hasFix: fix.hasFix, fixSpan: fix.fixSpan, fixReplacement: fix.replacement)
             }
@@ -241,7 +243,7 @@ InterfaceId t14LaterDefault(ref Ctx c, for StructId s, from InterfaceId i, by st
 
 /// Conformance.cs:142 Expected: the signature `member` asks of a conformer, its declaration resolved
 /// with the interface's arguments and the conformer's associated types.
-FuncId t14Expected(ref Ctx c, for InterfaceId i, by FuncId member, through in Map<string, Type> map) {
+FunctionSymbol t14Expected(ref Ctx c, for InterfaceId i, by FuncId member, through in Map<string, Type> map) {
     let fn = newFunction(ref c, by: FunctionSymbol {
         name: c.functions[member].name,
         nameSpan: c.functions[member].nameSpan,
@@ -273,7 +275,8 @@ FuncId t14Expected(ref Ctx c, for InterfaceId i, by FuncId member, through in Ma
             panic("internal error: an interface member outside an interface")
     }
     quietlyEnd(ref c, to: quiet)
-    return fn
+    // C# makes a throwaway symbol: appended and truncated here, so nothing sees it afterwards (Q722).
+    return c.functions.removeLast()
 }
 
 /// Conformance.cs:165 CloneDefault: the default `member` as a method (or property) of `s`, bound from
@@ -366,47 +369,67 @@ bool conformancesChecked(ref Ctx c) {
 
 /// Conformance.cs:196 SameShape: same kind, parameters, return type and `fails`; an error type matches
 /// anything, so one mistake is reported once.
-bool t14SameShape(in Ctx c, for FuncId own, to FuncId expected) {
-    if c.functions[own].kind != c.functions[expected].kind || c.functions[own].isStatic { return false }
-    if !t14Same(c.functions[own].returnType, as: c.functions[expected].returnType) { return false }
-    if c.functions[own].parameters.length != c.functions[expected].parameters.length { return false }
-    for k in 0..c.functions[own].parameters.length {
-        let a = c.functions[own].parameters[k]
-        let b = c.functions[expected].parameters[k]
+bool t14SameShape(in Ctx c, for in FunctionSymbol own, to in FunctionSymbol expected) {
+    if own.kind != expected.kind || own.isStatic { return false }
+    if !t14Same(own.returnType, as: expected.returnType) { return false }
+    if own.parameters.length != expected.parameters.length { return false }
+    for k in 0..own.parameters.length {
+        let a = own.parameters[k]
+        let b = expected.parameters[k]
         if c.locals[a].modifier != c.locals[b].modifier || !t14Same(c.locals[a].type, as: c.locals[b].type) { return false }
     }
-    if c.functions[own].hasFails != c.functions[expected].hasFails { return false }
-    if c.functions[own].infersErrors || c.functions[expected].infersErrors { return true }
-    return t14SetEquals(in c.functions[own].errorSets, to: in c.functions[expected].errorSets)
-        && t14SetEquals(in c.functions[own].excludedErrors, to: in c.functions[expected].excludedErrors)
+    if own.hasFails != expected.hasFails { return false }
+    if own.infersErrors || expected.infersErrors { return true }
+    return t14SetEquals(in own.errorSets, to: in expected.errorSets) && t14SetEquals(in own.excludedErrors, to: in expected.excludedErrors)
+}
+
+/// What SameShape and SignatureText read of a symbol in the arena, as a value like the throwaway `Expected` (Q722).
+FunctionSymbol t14View(in Ctx c, for FuncId f) => FunctionSymbol {
+    name: c.functions[f].name,
+    kind: c.functions[f].kind,
+    isStatic: c.functions[f].isStatic,
+    isMutating: c.functions[f].isMutating,
+    returnType: c.functions[f].returnType,
+    parameters: copyIds(in c.functions[f].parameters),
+    hasFails: c.functions[f].hasFails,
+    infersErrors: c.functions[f].infersErrors,
+    errorSets: copyIds(in c.functions[f].errorSets),
+    excludedErrors: copyIds(in c.functions[f].excludedErrors),
 }
 
 /// `a.ToHashSet().SetEquals(b)`: duplicates do not count.
 bool t14SetEquals(in List<i64> a, to in List<i64> b) {
     for x in a {
-        if !b.contains(x) { return false }
+        if !t14Has(in b, by: x) { return false }
     }
     for y in b {
-        if !a.contains(y) { return false }
+        if !t14Has(in a, by: y) { return false }
     }
     return true
+}
+
+/// `HashSet.Contains`.
+bool t14Has(in List<i64> xs, by i64 x) {
+    for y in xs {
+        if y == x { return true }
+    }
+    return false
 }
 
 /// Conformance.cs:204 Same.
 bool t14Same(Type a, as Type b) => isError(a) || isError(b) || a == b
 
 /// Conformance.cs:207 SignatureText: `f32 area()`, `i64 next(ref this)`, `i64 count { get }`.
-string t14SignatureText(ref Ctx c, for FuncId f) {
-    let name = c.functions[f].name
-    if c.functions[f].kind == .getter { return $"{typeDisplay(ref c, by: c.functions[f].returnType)} {name} {{ get }}" }
+string t14SignatureText(ref Ctx c, for in FunctionSymbol f) {
+    let name = f.name
+    if f.kind == .getter { return $"{typeDisplay(ref c, by: f.returnType)} {name} {{ get }}" }
     var parameters = StrBuf()
     var first = true
-    if c.functions[f].isMutating {
+    if f.isMutating {
         parameters.append("ref this")
         first = false
     }
-    let ps = copyIds(in c.functions[f].parameters)
-    for p in ps {
+    for p in f.parameters {
         if !first { parameters.append(", ") }
         first = false
         switch c.locals[p].modifier {
@@ -420,23 +443,23 @@ string t14SignatureText(ref Ctx c, for FuncId f) {
         parameters.append(" ")
         parameters.append(c.locals[p].name)
     }
-    var fails = ""
-    if c.functions[f].hasFails {
-        if c.functions[f].errorSets.length == 0 {
-            fails = " fails"
+    var failsText = ""
+    if f.hasFails {
+        if f.errorSets.length == 0 {
+            failsText = " fails"
         } else {
-            let union = errorUnionOf(ref c, for: in c.functions[f].errorSets, as: in c.functions[f].excludedErrors)
-            fails = $" fails {typeDisplay(ref c, by: union).replaced(" | ", by: ", ")}"
+            let errUnion = errorUnionOf(ref c, for: in f.errorSets, as: in f.excludedErrors)
+            failsText = $" fails {typeDisplay(ref c, by: errUnion).replaced(" | ", by: ", ")}"
         }
     }
-    let prefix = c.functions[f].isStatic ? "static " : ""
-    return $"{prefix}{typeDisplay(ref c, by: c.functions[f].returnType)} {name}({parameters.finish()}){fails}"
+    let prefix = f.isStatic ? "static " : ""
+    return $"{prefix}{typeDisplay(ref c, by: f.returnType)} {name}({parameters.finish()}){failsText}"
 }
 
 /// Conformance.cs:217 InsertMember: the missing member before the struct's closing brace, with a `todo` body.
-T14Fix t14InsertMember(ref Ctx c, for StructId s, by FuncId expected) {
-    let name = c.functions[expected].name
-    let text = c.functions[expected].kind == .getter ? $"{typeDisplay(ref c, by: c.functions[expected].returnType)} {name} => todo(\"{name}\")" : $"{t14SignatureText(ref c, for: expected)} => todo(\"{name}\")"
+T14Fix t14InsertMember(ref Ctx c, for StructId s, by in FunctionSymbol expected) {
+    let name = expected.name
+    let text = expected.kind == .getter ? $"{typeDisplay(ref c, by: expected.returnType)} {name} => todo(\"{name}\")" : $"{t14SignatureText(ref c, for: in expected)} => todo(\"{name}\")"
     let file = c.structs[s].file
     switch c.files[file].unit.members[c.structs[s].declIndex] {
         case .structDecl(let n):
