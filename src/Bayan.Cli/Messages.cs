@@ -185,6 +185,7 @@ public static class Messages
     public static readonly Message TestDetail = Register("test.detail", "      {0}");
     public static readonly Message TestSummaryPassed = Register("test.summary.passed", "{0} {1} passed {2} {3}");
     public static readonly Message TestSummaryPending = Register("test.summary.pending", "{0} {1} passed {2} {3} pending {2} {4}");
+    public static readonly Message TestCoverageSummary = Register("test.summary.coverage", "coverage: lines {0}, branches {1}, error paths {2}");
     public static readonly Message TestSummaryFailed = Register("test.summary.failed", "{0} {1} passed {2} {3} {4} failed {2} {5} pending {2} {6}");
     public static readonly Message TestSeconds = Register("test.seconds", "{0}s");
     public static readonly Message TestRerunOne = Register("test.rerun.one", "  rerun the failure: {0}");
