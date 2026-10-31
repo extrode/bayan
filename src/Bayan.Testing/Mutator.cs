@@ -3,6 +3,7 @@ using Bayan.Semantics.Binding;
 using Bayan.Semantics.Symbols;
 using Bayan.Syntax.Ast;
 using Bayan.Syntax.Text;
+using ArrayType = Bayan.Semantics.Symbols.ArrayType;
 using OptionalType = Bayan.Semantics.Symbols.OptionalType;
 
 namespace Bayan.Testing;
@@ -13,7 +14,11 @@ namespace Bayan.Testing;
 /// </summary>
 public sealed record MutationSite(
     string File, int Line, int Column, string Operator, string Original, string Mutated,
-    FunctionSymbol Function, BoundNode OriginalNode, BoundNode MutatedNode);
+    FunctionSymbol Function, BoundNode OriginalNode, BoundNode MutatedNode)
+{
+    /// <summary>What names the mutant across builds; numeric ids are per binary.</summary>
+    public (string File, int Line, int Column, string Operator, string Mutated) Identity => (File, Line, Column, Operator, Mutated);
+}
 
 /// <summary>The mutants of a compilation, and per operator the candidates not emitted because they would not type-check (R4).</summary>
 public sealed record Mutations(IReadOnlyList<MutationSite> Sites, IReadOnlyDictionary<string, int> NotEmitted);
@@ -40,10 +45,11 @@ public static class Mutator
     /// <summary>The operators, in the order of the table in SPEC §20.</summary>
     public static readonly string[] Operators = [Boundary, Relational, Logical, Condition, Bool, Arithmetic, Literal, Negation, Statement, EmptyReturn, Variant];
 
-    /// <summary>The sites of every function in <paramref name="c"/>, skipping files whose path is in <paramref name="skipFiles"/> (a harness-generated <c>main.byn</c>).</summary>
+    /// <summary>The sites of every function in <paramref name="c"/>, a generic template's once (from its first instance), skipping files whose path is in <paramref name="skipFiles"/> (a harness-generated <c>main.byn</c>).</summary>
     public static Mutations Find(Compilation c, IReadOnlySet<string>? skipFiles = null)
     {
         var walker = new Walker();
+        var walked = new HashSet<Node>(ReferenceEqualityComparer.Instance);
         foreach (var module in c.Modules)
             foreach (var fn in module.AllFunctions)
             {
@@ -51,6 +57,8 @@ public static class Mutator
                 if (fn.Kind is not (FunctionKind.Function or FunctionKind.Method or FunctionKind.Constructor or FunctionKind.Getter
                     or FunctionKind.Main or FunctionKind.Lambda)) continue;
                 if (fn.File is not { } file || skipFiles?.Contains(file.Source.Path) == true) continue;
+                // Instances of one template share its body syntax, and so its sites.
+                if (!walked.Add(fn.Body.Syntax)) continue;
                 walker.Function(fn, file.Source);
             }
         return new Mutations(walker.Sites, walker.NotEmitted);
@@ -71,6 +79,8 @@ public static class Mutator
 
         private FunctionSymbol _fn = null!;
         private SourceText _source = null!;
+        /// <summary>Integer literals that index a fixed array, with the array type and whether they count from the end.</summary>
+        private readonly Dictionary<BoundLiteral, (ArrayType Array, bool FromEnd)> _arrayIndexes = new(ReferenceEqualityComparer.Instance);
         /// <summary>Locals declared without an initializer: removing an assignment to one would read it unassigned.</summary>
         private readonly HashSet<LocalSymbol> _uninitialized = new();
 
@@ -78,6 +88,7 @@ public static class Mutator
         {
             (_fn, _source) = (fn, source);
             _uninitialized.Clear();
+            _arrayIndexes.Clear();
             foreach (var d in BoundTree.Descendants(fn.Body!).OfType<BoundLocalDecl>())
                 if (d.Initializer is null) _uninitialized.Add(d.Local);
             Visit(fn.Body!, null);
@@ -91,9 +102,12 @@ public static class Mutator
             {
                 case BoundBinary b when b.Syntax is BinaryExpr be && be.Op == b.Op: OnBinary(b, be); break;
                 case BoundUnary { Op: UnaryOp.Negate } u when u.Syntax is UnaryExpr { Op: UnaryOp.Negate } ue:
-                    Add(Negation, ue.Span.Start, ue.Span, Text(ue.Operand.Span), u, u.Operand);
+                    Add(Negation, ue.Span, Text(ue.Operand.Span), u, u.Operand);
                     break;
                 case BoundLiteral l: OnLiteral(l, parent); break;
+                case BoundIndex { Target.Type: ArrayType array } i when (i.Index as BoundLiteral ?? (i.Index as BoundConversion)?.Operand as BoundLiteral) is { } index:
+                    _arrayIndexes[index] = (array, i.FromEnd);
+                    break;
                 case BoundExprStmt { Syntax: ExprStmt, Expr: BoundCall or BoundBuiltinCall } s when s.Expr.Type == PrimitiveType.Void:
                     Remove(s);
                     break;
@@ -154,7 +168,7 @@ public static class Mutator
             var between = TextSpan.FromBounds(be.Left.Span.End, be.Right.Span.Start);
             var at = be.Left.Span.End + Text(between).IndexOf(OpText(b.Op), StringComparison.Ordinal);
             var mutated = Text(TextSpan.FromBounds(be.Span.Start, at)) + OpText(to) + Text(TextSpan.FromBounds(at + OpText(b.Op).Length, be.Span.End));
-            Add(op, at, be.Span, mutated, b, b with { Op = to, Constant = null });
+            Add(op, be.Span, mutated, b, b with { Op = to, Constant = null });
         }
 
         private void OnLiteral(BoundLiteral l, BoundNode? parent)
@@ -164,7 +178,7 @@ public static class Mutator
             {
                 // `while true` is how a loop says it ends only by `break` or `return`; `while false` leaves code after it reachable.
                 if (flag && parent is BoundWhile or BoundDoWhile) NotEmitted[Bool]++;
-                else Add(Bool, le.Span.Start, le.Span, flag ? "false" : "true", l, Constant(l.Syntax, PrimitiveType.Bool, !flag));
+                else Add(Bool, le.Span, flag ? "false" : "true", l, Constant(l.Syntax, PrimitiveType.Bool, !flag));
                 return;
             }
             if (l.Type is not PrimitiveType { IsInteger: true } type || l.Value.Value is not Int128 n) return;
@@ -177,12 +191,12 @@ public static class Mutator
             if (literal is null) return;
             foreach (var m in new[] { n + 1, n - 1 })
             {
-                if (!Fits(m, type) || !FoldsInParent(l, m, parent, type))
+                if (!Fits(m, type) || !FoldsInParent(l, m, parent, type) || !InBounds(l, m))
                 {
                     NotEmitted[Literal]++;
                     continue;
                 }
-                Add(Literal, l.Syntax.Span.Start, l.Syntax.Span, m + (literal.Suffix?.Text ?? ""), l, Constant(l.Syntax, type, m));
+                Add(Literal, l.Syntax.Span, m + (literal.Suffix?.Text ?? ""), l, Constant(l.Syntax, type, m));
             }
         }
 
@@ -195,6 +209,14 @@ public static class Mutator
             return b.Left == l ? Folds(b.Op, value, o, type) : Folds(b.Op, o, value, type);
         }
 
+        /// <summary>A constant index into a fixed array must stay inside it (BYN IndexOutOfRange).</summary>
+        private bool InBounds(BoundLiteral l, Int128 value)
+        {
+            if (!_arrayIndexes.TryGetValue(l, out var a)) return true;
+            var effective = a.FromEnd ? a.Array.Length - value : value;
+            return effective >= 0 && effective < a.Array.Length && !(a.FromEnd && value == 0);
+        }
+
         private void OnAssign(BoundAssign a)
         {
             if (a.Target is BoundLocal { Local: var local } && _uninitialized.Contains(local) && a.Op is null) NotEmitted[Statement]++;
@@ -205,10 +227,10 @@ public static class Mutator
             var opText = OpText(a.Op!.Value) + "=";
             var at = s.Target.Span.End + Text(between).IndexOf(opText, StringComparison.Ordinal);
             var mutated = Text(TextSpan.FromBounds(s.Span.Start, at)) + OpText(to) + "=" + Text(TextSpan.FromBounds(at + opText.Length, s.Span.End));
-            Add(Arithmetic, at, s.Span, mutated, a, a with { Op = to });
+            Add(Arithmetic, s.Span, mutated, a, a with { Op = to });
         }
 
-        private void Remove(BoundStmt s) => Add(Statement, s.Syntax.Span.Start, s.Syntax.Span, "", s, new BoundBlock(s.Syntax, []));
+        private void Remove(BoundStmt s) => Add(Statement, s.Syntax.Span, "", s, new BoundBlock(s.Syntax, []));
 
         private void OnReturn(BoundExpr value, Expr syntax)
         {
@@ -220,7 +242,7 @@ public static class Mutator
             }
             // Already the empty value: the mutant would be the program itself.
             if (value is BoundDefault || Text(syntax.Span) == empty) return;
-            Add(EmptyReturn, syntax.Span.Start, syntax.Span, empty, value, new BoundDefault(value.Syntax, value.Type));
+            Add(EmptyReturn, syntax.Span, empty, value, new BoundDefault(value.Syntax, value.Type));
         }
 
         /// <summary>The empty value of <paramref name="t"/> as source, or null when the type has none.</summary>
@@ -251,7 +273,7 @@ public static class Mutator
                     continue;
                 }
                 var mutated = text[..name] + other.Name + text[(name + v.Name.Length)..];
-                Add(Variant, ev.Syntax.Span.Start + System.Text.Encoding.UTF8.GetByteCount(text[..name]), ev.Syntax.Span, mutated, ev,
+                Add(Variant, ev.Syntax.Span, mutated, ev,
                     new BoundErrorVariant(ev.Syntax, other) { Payload = ev.Payload });
             }
         }
@@ -265,12 +287,13 @@ public static class Mutator
                 return;
             }
             var span = cond.Syntax.Span;
-            Add(Condition, span.Start, span, "!(" + Text(span) + ")", cond, new BoundUnary(cond.Syntax, UnaryOp.Not, cond, PrimitiveType.Bool));
+            Add(Condition, span, "!(" + Text(span) + ")", cond, new BoundUnary(cond.Syntax, UnaryOp.Not, cond, PrimitiveType.Bool));
         }
 
-        private void Add(string op, int offset, TextSpan span, string mutated, BoundNode original, BoundNode replacement)
+        /// <summary>A site at the start of <paramref name="span"/>, the expression or statement the mutant replaces.</summary>
+        private void Add(string op, TextSpan span, string mutated, BoundNode original, BoundNode replacement)
         {
-            var (line, column) = _source.GetLinePosition(offset);
+            var (line, column) = _source.GetLinePosition(span.Start);
             Sites.Add(new MutationSite(_source.Path, line, column, op, Text(span), mutated, _fn, original, replacement));
         }
 

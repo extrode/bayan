@@ -26,21 +26,21 @@ public sealed class MutatorTests
     public void Boundary()
     {
         var m = Find("bool small(i32 a) {\n    return a < 10 || a >= 2\n}\n");
-        Assert.Equal(["2:14 a < 10 => a <= 10", "2:24 a >= 2 => a > 2"], Sites(m, Mutator.Boundary));
+        Assert.Equal(["2:12 a < 10 => a <= 10", "2:22 a >= 2 => a > 2"], Sites(m, Mutator.Boundary));
     }
 
     [Fact]
     public void Relational()
     {
         var m = Find("bool same(i32 a) {\n    return a == 2 && a > 0\n}\n");
-        Assert.Equal(["2:14 a == 2 => a != 2", "2:24 a > 0 => a <= 0"], Sites(m, Mutator.Relational));
+        Assert.Equal(["2:12 a == 2 => a != 2", "2:22 a > 0 => a <= 0"], Sites(m, Mutator.Relational));
     }
 
     [Fact]
     public void Logical()
     {
         var m = Find("bool both(bool a, bool b) {\n    return a && b\n}\n");
-        Assert.Equal(["2:14 a && b => a || b"], Sites(m, Mutator.Logical));
+        Assert.Equal(["2:12 a && b => a || b"], Sites(m, Mutator.Logical));
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public sealed class MutatorTests
     public void Arithmetic()
     {
         var m = Find("i32 mix(i32 a) {\n    var t: i32 = a + a * 2\n    t -= a % 3\n    return t\n}\n");
-        Assert.Equal(["2:20 a + a * 2 => a - a * 2", "2:24 a * 2 => a / 2", "3:7 t -= a % 3 => t += a % 3", "3:12 a % 3 => a * 3"],
+        Assert.Equal(["2:18 a + a * 2 => a - a * 2", "2:22 a * 2 => a / 2", "3:5 t -= a % 3 => t += a % 3", "3:10 a % 3 => a * 3"],
             Sites(m, Mutator.Arithmetic));
     }
 
@@ -97,7 +97,7 @@ public sealed class MutatorTests
     public void Variant()
     {
         var m = Find("union error E {\n    bad\n    worse\n    other(i32 code)\n}\n\ni64 check(i64 n) fails E {\n    fail .bad if n < 0\n    return n\n}\n");
-        Assert.Equal(["8:11 .bad => .worse"], Sites(m, Mutator.Variant));
+        Assert.Equal(["8:10 .bad => .worse"], Sites(m, Mutator.Variant));
         Assert.Equal(1, m.NotEmitted[Mutator.Variant]);
     }
 
@@ -113,6 +113,25 @@ public sealed class MutatorTests
         Assert.Equal(1, m.NotEmitted[Mutator.Bool]);
         Assert.Equal(1, m.NotEmitted[Mutator.Condition]);
         Assert.Equal(Mutator.Operators.Order(), m.NotEmitted.Keys.Order());
+    }
+
+    [Fact]
+    public void ALiteralIndexPushedOutOfAFixedArrayIsNotEmitted()
+    {
+        var m = Find("i32 ends(i32[4] xs) {\n    return xs[3] + xs[0]\n}\n");
+        Assert.Equal(["2:15 3 => 2", "2:23 0 => 1"], Sites(m, Mutator.Literal));
+        Assert.Equal(2, m.NotEmitted[Mutator.Literal]);
+    }
+
+    [Fact]
+    public void IdentitiesAreUniqueAndAGenericTemplateHasItsSitesOnce()
+    {
+        var m = Find("union error E {\n    bad\n    worse\n    worst\n}\n\ni64 check(i64 n) fails E {\n    fail .bad if n < 7\n    return n + 1 + 2\n}\n\n"
+            + "i64 count<T>(T v) {\n    var n: i64 = 7\n    return n\n}\n\ni64 both() => count(1) + count(true)\n");
+        Assert.Equal(m.Sites.Count, m.Sites.Select(s => s.Identity).Distinct().Count());
+        Assert.Equal(["8:10 .bad => .worse", "8:10 .bad => .worst"], Sites(m, Mutator.Variant));
+        Assert.Equal(["8:22 7 => 8", "8:22 7 => 6", "13:18 7 => 8", "13:18 7 => 6"], Sites(m, Mutator.Literal).Where(s => s.Contains(" 7 ")));
+        Assert.Equal(["9:12 n + 1 + 2 => n + 1 - 2", "9:12 n + 1 => n - 1"], Sites(m, Mutator.Arithmetic).Where(s => s.StartsWith("9:", StringComparison.Ordinal)));
     }
 
     [Fact]
