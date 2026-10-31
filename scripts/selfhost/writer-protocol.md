@@ -13,6 +13,8 @@ Turns are your scarce resource: this run has 120, and you will be resumed with t
 5. **Before you finish, run the guard** (command in the brief) and paste its last 15 lines into your summary. `GUARD PASS` is the only finished state. A surviving mutation means a line no test covers: add a test, do not weaken the guard or move code to dodge it. Only when the line's sole observable effect goes through an unported sibling's stub may you put `// mutation-exempt: Qnnn` on the line above it, or `// mutation-exempt: Qnnn through N` above a span of such lines ending at line N; the Question cites a line of the span (`file.byn:L`), names the sibling and the test to add when it lands, and the guard checks the citation.
 6. **At turn ~110, stop adding.** Make it compile, commit nothing yourself, and end with: done / not done / the exact next step. The resume picks up there.
 
+Standing rule: a C# private helper needed outside its owner task is ported early in the owner's file by a chore with its own test, and listed as pre-ported in the owner's brief; tasks call it and add no copies. Parser span helpers are called as `parser.exprSpan` etc.; write no new `tNNExprSpan` copies. Existing copies (t11/t15/t16/t17ExprSpan, t17Host, t18Host) stay until T28 removes them.
+
 Never: edit files outside the brief's list (record the need as a Question instead); leave output files in the repo root; use tuple destructuring or `.0` fields; run commands in the background; run `git commit/merge/checkout <branch>/reset`.
 
 Fast check: `dotnet build -v q 2>&1 | grep -E " error | warning " | head -20; dotnet test -v q --no-build --filter "FullyQualifiedName~SelfhostSemanticsT3Tests" 2>&1 | tail -3` (~15 s).
