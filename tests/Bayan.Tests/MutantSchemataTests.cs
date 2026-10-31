@@ -46,7 +46,7 @@ public sealed class MutantSchemataTests
     private sealed record Outcome(string Stdout, string Stderr, int ExitCode);
 
     /// <summary>Runs <paramref name="exe"/> with <c>BAYAN_MUTANT</c> set to <paramref name="mutant"/>, or unset when it is null.</summary>
-    private static Outcome Run(string exe, string? mutant, string? input = null, string? work = null)
+    private static Outcome Run(string exe, string? mutant, string? input = null, string? work = null, string[]? args = null)
     {
         var psi = new ProcessStartInfo(exe)
         {
@@ -58,6 +58,7 @@ public sealed class MutantSchemataTests
         if (work is not null) psi.WorkingDirectory = work;
         if (mutant is null) psi.Environment.Remove("BAYAN_MUTANT");
         else psi.Environment["BAYAN_MUTANT"] = mutant;
+        foreach (var arg in args ?? []) psi.ArgumentList.Add(arg);
         if (input is not null && File.Exists(Path.ChangeExtension(input, ".args")))
             foreach (var arg in File.ReadAllLines(Path.ChangeExtension(input, ".args"))) psi.ArgumentList.Add(arg);
         using var p = Process.Start(psi)!;
@@ -76,12 +77,17 @@ public sealed class MutantSchemataTests
         return new Outcome(stdout.Result, stderr.Result, code);
     }
 
-    /// <summary>The <c>run/</c> cases <c>bayan test</c> does not run (a <c>*.test.byn</c> case goes through the CLI's test runner, which T6 wires).</summary>
-    public static TheoryData<string> ProgramCases()
+    /// <summary>The <c>run/</c> cases that are programs; a <c>*.test.byn</c> case is a test binary, checked by <see cref="MutantZeroIsThePlainTestBinary"/>.</summary>
+    public static TheoryData<string> ProgramCases() => Select(tests: false);
+
+    /// <summary>The <c>run/</c> cases <c>bayan test</c> runs.</summary>
+    public static TheoryData<string> TestCases() => Select(tests: true);
+
+    private static TheoryData<string> Select(bool tests)
     {
         var data = new TheoryData<string>();
         foreach (var row in (IEnumerable<object[]>)RunTests.Cases)
-            if (!((string)row[0]).EndsWith(".test.byn", StringComparison.Ordinal)) data.Add((string)row[0]);
+            if (((string)row[0]).EndsWith(".test.byn", StringComparison.Ordinal) == tests) data.Add((string)row[0]);
         return data;
     }
 
@@ -127,6 +133,34 @@ public sealed class MutantSchemataTests
             Assert.True(Expected(".stdout") == outcome.Stdout.Replace("\r\n", "\n"), $"{label}: stdout differs:\n{outcome.Stdout}");
             Assert.True(Expected(".stderr") == outcome.Stderr.Replace("\r\n", "\n"), $"{label}: stderr differs:\n{outcome.Stderr}");
             Assert.True(Expected(".exitcode").Trim() == (outcome.ExitCode == 0 ? "" : outcome.ExitCode.ToString()), $"{label}: exit code {outcome.ExitCode}");
+        }
+    }
+
+    /// <summary>
+    /// R2 law for a <c>*.test.byn</c> case: every test of its schemata test binary, run as <c>bayan test</c> runs it
+    /// (<c>--test i</c>), gives the plain test binary's stdout, stderr and exit code with no mutant selected. The case's
+    /// golden files are the CLI's report of those runs (RunTests checks them), so equal runs give the plain output.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(TestCases))]
+    public void MutantZeroIsThePlainTestBinary(string name)
+    {
+        var input = Path.Combine(Golden.CasesRoot, name);
+        var mode = ModeOf(input);
+        var c = CompileCase(name);
+        var tests = Lowerer.Lower(c).Tests.Count;
+        Assert.True(tests > 0, $"{name} has no tests");
+        var plain = Toolchain.Build(CliApp.EmitC(c, mode), mode);
+        Assert.True(plain.Succeeded, plain.Errors);
+        var schemata = Toolchain.Build(EmitSchemata(c, mode, out _), mode);
+        Assert.True(schemata.Succeeded, schemata.Errors);
+        for (var i = 0; i < tests; i++)
+        {
+            string[] args = ["--test", i.ToString(System.Globalization.CultureInfo.InvariantCulture)];
+            var expected = Run(plain.ExecutablePath!, null, args: args);
+            foreach (var mutant in new[] { null, "0", "x1" })
+                Assert.True(expected == Run(schemata.ExecutablePath!, mutant, args: args),
+                    $"{name}, test {i}, BAYAN_MUTANT={mutant ?? "unset"}: differs from the plain test binary");
         }
     }
 

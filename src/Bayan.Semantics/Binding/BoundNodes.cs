@@ -392,18 +392,6 @@ public sealed record BoundErrorField(Node Syntax, BoundExpr Receiver, ErrorVaria
 public sealed record BoundErrorPattern(Node Syntax, TypeSymbol InputType, ErrorVariantSymbol Variant, BoundPattern[] Subpatterns)
     : BoundPattern(Syntax, InputType);
 
-// ── Mutant schemata ──────────────────────────────────────────────────────────────
-
-/// <summary>
-/// Spec 013 R2: <see cref="Original"/> (an expression or a statement) runs unless the process-wide selector
-/// <c>byn_mutant</c> names one of <see cref="Mutants"/>, which runs instead. Only a <c>--mutate</c> build makes one,
-/// beside the bound tree rather than in it: the lowerer looks each node up.
-/// </summary>
-public sealed record BoundMutantSwitch(Node Syntax, BoundNode Original, BoundMutant[] Mutants) : BoundNode(Syntax);
-
-/// <summary>One arm of a <see cref="BoundMutantSwitch"/>: the node that replaces the original when <c>byn_mutant</c> is <see cref="Id"/>.</summary>
-public sealed record BoundMutant(int Id, BoundNode Node);
-
 // ── `requires` checks ────────────────────────────────────────────────────────────
 
 /// <summary>A struct's <c>requires</c> check: the hidden method run on each built value, and its rules in run order.</summary>
