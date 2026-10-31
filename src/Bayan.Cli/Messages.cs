@@ -169,6 +169,7 @@ public static class Messages
     public static readonly Message MutateBinaryUsage = Register("mutate.binary-usage", "bayan: usage: bayan mutate --binary <exe> --sites <map.json> -- <command>");
     public static readonly Message MutateBadSites = Register("mutate.bad-sites", "bayan: `{0}` is not a version 1 site map");
     public static readonly Message MutateBaselineFailed = Register("mutate.baseline-failed", "bayan: the command does not exit 0 on the unmutated binary");
+    public static readonly Message GateBelow = Register("gate.below", "bayan: {0} {1}% < {2}%");
     public static readonly Message MutateKilled = Register("mutate.killed", "killed");
     public static readonly Message MutateSurvived = Register("mutate.survived", "survived");
     public static readonly Message MutateTimeout = Register("mutate.timeout", "timeout");
