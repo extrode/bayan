@@ -105,7 +105,8 @@ public sealed class MutationRunnerTests
         Assert.All(unused, m => Assert.Equal(MutantStatus.NotReached, m.Status));
         var hidden = run.Result.Mutants.Where(m => m.Site.Site.Function.Name == "hidden" && m.Site.Site.Line is 21).ToList();
         Assert.NotEmpty(hidden);
-        Assert.All(hidden, m => Assert.Equal(MutantStatus.Marked, m.Status));
+        Assert.All(hidden, m => Assert.Contains(m.Status, new[] { MutantStatus.Marked, MutantStatus.Killed, MutantStatus.Timeout }));
+        Assert.Contains(hidden, m => m.Runs > 0);
     }
 
     [Fact]
@@ -120,7 +121,7 @@ public sealed class MutationRunnerTests
         var survived = Mutant(run, Mutator.Boundary, "n > 5", "n >= 5");
         Assert.Equal(["%d 0".Replace("%d", survived.Site.Id.ToString())], run.Log.Where(l => l.StartsWith(survived.Site.Id + " ", StringComparison.Ordinal)).ToArray());
         // Mutants not run start no process; the total is mutant 0 once per test plus every counted run.
-        foreach (var m in run.Result.Mutants.Where(m => m.Status is MutantStatus.NotReached or MutantStatus.Marked or MutantStatus.NotEmitted))
+        foreach (var m in run.Result.Mutants.Where(m => m.Status is MutantStatus.NotReached or MutantStatus.NotEmitted))
             Assert.Equal(0, Processes(run, m.Site.Id));
         Assert.All(run.Result.Mutants, m => Assert.Equal(m.Runs, Processes(run, m.Site.Id)));
         Assert.Equal(5, Processes(run, 0));

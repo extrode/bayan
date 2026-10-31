@@ -133,4 +133,26 @@ public sealed class QualityReportTests
         Assert.Equal("warning: lib.test.byn:10:5: the mark covers no mutant (`nothing to mutate`)", w);
         Assert.Contains(w, Report(schema, Results(schema, Outcome)).Summary(warnings));
     }
+
+    [Fact]
+    public void MarksAreMatchedBySpanNotByReason()
+    {
+        var text = """
+            i64 f(i64 n) {
+                @unobservable because "same"
+                var a = n
+                var m = n
+                @unobservable because "same"
+                m += 1
+                return m
+            }
+
+            """;
+        var source = SourceText.FromString(Path, text);
+        var c = Compilation.Create([source], ".", new CompilationOptions(Library: true));
+        Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items.Select(d => d.Message)));
+        var schema = Schemata.Build(c);
+        var w = Assert.Single(QualityReport.Warnings(Results(schema, Outcome), schema, c, [source]));
+        Assert.StartsWith("warning: lib.test.byn:2:5: the mark covers no mutant", w);
+    }
 }

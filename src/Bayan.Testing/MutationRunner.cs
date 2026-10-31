@@ -65,7 +65,6 @@ public static class MutationRunner
         Dictionary<int, TimeSpan> time, ref int processes)
     {
         if (!site.Emitted) return new MutantResult(site, MutantStatus.NotEmitted, 0, null);
-        if (site.Unobservable is not null) return new MutantResult(site, MutantStatus.Marked, 0, null);
         var runs = 0;
         foreach (var t in tests)
         {
@@ -77,6 +76,8 @@ public static class MutationRunner
             if (outcome.TimedOut) return new MutantResult(site, MutantStatus.Timeout, runs, t);
             if (outcome.ExitCode != 0) return new MutantResult(site, MutantStatus.Killed, runs, t);
         }
+        // A marked mutant still runs; one a test kills stays killed so the report can warn that the mark is wrong.
+        if (site.Unobservable is not null) return new MutantResult(site, MutantStatus.Marked, runs, null);
         return new MutantResult(site, runs == 0 ? MutantStatus.NotReached : MutantStatus.Survived, runs, null);
     }
 

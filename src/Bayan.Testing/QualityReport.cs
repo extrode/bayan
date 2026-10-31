@@ -148,11 +148,23 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
             warnings.Add($"warning: {Where(m.Site.Site)}: the mark is wrong: a test sees this ({m.Site.Site.Original} → {m.Site.Site.Mutated}, `{m.Site.Unobservable}`)");
         foreach (var mark in c.Unobservable)
         {
-            if (schema.Sites.Any(s => s.Site.File == mark.File && s.Unobservable == mark.Reason)) continue;
-            var at = sources.FirstOrDefault(s => s.Path == mark.File) is { } src ? src.GetLinePosition(mark.Span.Start) : (Line: 0, Column: 0);
+            var source = sources.FirstOrDefault(s => s.Path == mark.File);
+            if (source is not null && schema.Sites.Any(s => InMark(mark, s.Site, source))) continue;
+            var at = source is not null ? source.GetLinePosition(mark.Span.Start) : (Line: 0, Column: 0);
             warnings.Add($"warning: {mark.File}:{at.Line}:{at.Column}: the mark covers no mutant (`{mark.Reason}`)");
         }
         return warnings;
+    }
+
+    /// <summary>Whether the site lies inside the mark's statement and the mark's operator argument, if any, is the site's.</summary>
+    private static bool InMark(UnobservableMark mark, MutationSite site, SourceText source)
+    {
+        if (site.File != mark.File || (mark.Operator is not null && mark.Operator != site.Operator)) return false;
+        var offset = source.GetLineSpan(site.Line - 1).Start;
+        var bytes = source.Bytes.Span;
+        for (var col = 1; col < site.Column; col++)
+            do offset++; while (offset < bytes.Length && (bytes[offset] & 0xC0) == 0x80);
+        return mark.Span.Start <= offset && offset + Encoding.UTF8.GetByteCount(site.Original) <= mark.Span.Start + mark.Span.Length;
     }
 
     private static string Where(MutationSite s) => $"{s.File}:{s.Line}:{s.Column}";
