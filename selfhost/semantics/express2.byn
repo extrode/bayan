@@ -54,7 +54,9 @@ BExpr constantLiteral(ref Ctx c, at TextSpan span, as Type type, by in Constant 
         setConstant(ref c, for: sLit, to: value)
         return sLit
     }
-    return literal(ref c, at: span, as: type, by: value)
+    let lit = addLiteral(ref c, from: BLiteral { span: span, type: type, value: value })
+    setConstant(ref c, for: lit, to: value)
+    return lit
 }
 
 MemberRef lookupMember(ref Ctx c, for Type t, by string name) {
@@ -68,7 +70,7 @@ MemberRef lookupMember(ref Ctx c, for Type t, by string name) {
         let methods = findMethods(ref c, by: s, for: name)
         if methods.length > 0 { return MemberRef { kind: .method, id: methods[0] } }
     }
-    if tk == .typeParam { // mutation-exempt: Q607 through 77
+    if tk == .typeParam {
         for iface in copyIds(in c.typeParams[typeIndex(t)].constraints) {
             let p = findInterfaceProperty(ref c, by: iface, for: name)
             if p != -1 { return MemberRef { kind: .method, id: p } }
@@ -366,14 +368,14 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         }
 
         let states = statesOf(ref c, for: s)
-        if states != -1 { // mutation-exempt: Q607 through 371
+        if states != -1 { // mutation-exempt: Q607 through 373
             let payload = bindPayloadField(ref b, through: ref c, at: span, for: target, from: states, by: member)
             if payload != -1 { return payload }
         }
     } else if lk == .errorSet || lk == .errorUnion {
         if boundKind(target) == .local {
-            let el = c.bLocals[boundIndex(target)].local // mutation-exempt: Q607 through 384
-            if b.errorNarrowed.contains(el) {
+            let el = c.bLocals[boundIndex(target)].local
+            if b.errorNarrowed.contains(el) { // mutation-exempt: Q607 through 385
                 let v = b.errorNarrowed[el]
                 for fi in 0..c.errorVariants[v].fields.length {
                     let f = c.errorVariants[v].fields[fi]
@@ -387,7 +389,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         let u = typeIndex(lookupType)
         if boundKind(target) == .local {
             let l = c.bLocals[boundIndex(target)].local
-            if b.narrowed.contains(l) { // mutation-exempt: Q607 through 398
+            if b.narrowed.contains(l) { // mutation-exempt: Q607 through 400
                 let v = b.narrowed[l]
                 for fi in 0..c.unionVariants[v].fields.length {
                     let f = c.unionVariants[v].fields[fi]
@@ -440,10 +442,10 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         }
     } else if lk == .error {
         return addErrorExpr(ref c, from: BErrorExpr { span: span })
-    } else if lk == .typeParam { // mutation-exempt: Q607 through 475
+    } else if lk == .typeParam {
         let tp = typeIndex(lookupType)
         if c.typeParams[tp].constraints.length > 0 {
-            var foundMember: FuncId = -1
+            var foundMember: FuncId = -1 // mutation-exempt: Q607 through 456
             for iface in copyIds(in c.typeParams[tp].constraints) {
                 foundMember = findInterfaceProperty(ref c, by: iface, for: name)
                 if foundMember == -1 {
@@ -452,7 +454,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
                 }
                 if foundMember != -1 { break }
             }
-            if foundMember != -1 {
+            if foundMember != -1 { // mutation-exempt: Q607
                 return t18BindInterfaceMember(ref b, through: ref c, at: span, for: target, by: foundMember, from: member)
             }
             let self = c.interfaces[c.typeParams[tp].constraints[0]].self == tp
@@ -475,12 +477,12 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
         return addErrorExpr(ref c, from: BErrorExpr { span: span })
     } else if lk == .dynRef {
         let d = c.dynRefTypes[typeIndex(lookupType)]
-        var foundMember = findInterfaceProperty(ref c, by: d.iface, for: name) // mutation-exempt: Q607 through 482
+        var foundMember = findInterfaceProperty(ref c, by: d.iface, for: name)
         if foundMember == -1 {
             let methods = findInterfaceMethods(ref c, by: d.iface, for: name)
             if methods.length > 0 { foundMember = methods[0] }
         }
-        if foundMember != -1 { // mutation-exempt: Q607 through 489
+        if foundMember != -1 { // mutation-exempt: Q607 through 491
             if d.readOnly && c.functions[foundMember].isMutating {
                 report(ref b, through: ref c, for: .dynReadonlyMutation, at: member, by: (name, interfaceDisplayName(ref c, by: d.iface), "", "", ""), label: "declared `ref this`", help: $"take `dyn ref {interfaceDisplayName(ref c, by: d.iface)}`")
                 return addErrorExpr(ref c, from: BErrorExpr { span: span })
@@ -521,7 +523,7 @@ BExpr bindValueMember(ref Binder b, through ref Ctx c, at TextSpan span, for BEx
 }
 
 /// A member of an interface, reached through a constrained type parameter or a `dyn ref`.
-BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, for BExpr target, by FuncId m, from TextSpan memberSpan) { // mutation-exempt: Q607 through 533
+BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntaxSpan, for BExpr target, by FuncId m, from TextSpan memberSpan) { // mutation-exempt: Q607 through 535
     if c.functions[m].typeParams.length > 0 {
         report(ref b, through: ref c, for: .unsupported, at: memberSpan, by: ("calling a generic interface method", "", "", "", ""))
         return addErrorExpr(ref c, from: BErrorExpr { span: syntaxSpan })
@@ -534,11 +536,11 @@ BExpr t18BindInterfaceMember(ref Binder b, through ref Ctx c, at TextSpan syntax
 }
 
 /// The return type of interface member `m` called on `receiver`: an associated type `Item` is `T.Item`.
-Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by FuncId m) { // mutation-exempt: Q607 through 560
+Type returnTypeThrough(ref Binder b, through ref Ctx c, for Type receiver, by FuncId m) {
     if kindOf(receiver) == .typeParam {
         let tp = typeIndex(receiver)
         let iface = c.functions[m].iface
-        if iface >= 0 && c.interfaces[iface].self != tp {
+        if iface >= 0 && c.interfaces[iface].self != tp { // mutation-exempt: Q607 through 559
             let ret = c.functions[m].returnType
             if kindOf(ret) == .typeParam {
                 let rIdx = typeIndex(ret)
@@ -603,7 +605,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
     let name = t18Text(in c, from: b.file, at: memberSpan)
     var isCalleeMatch = false
     var tail = TextSpan { start: memberSpan.start, length: 0 }
-    if (b.calleeOf is { } activeCall) { // mutation-exempt: Q607 through 614
+    if (b.calleeOf is { } activeCall) { // mutation-exempt: Q607 through 616
         switch activeCall.callee {
             case .memberExpr(let me):
                 if me.value.member.start == memberSpan.start && me.value.member.length == memberSpan.length {
@@ -621,7 +623,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
     let isStr = isString(type)
     let isInt = isInteger(type)
 
-    if isList && name == "removeRange" { // mutation-exempt: Q607 through 629
+    if isList && name == "removeRange" { // mutation-exempt: Q607 through 631
         if isCalleeMatch && (b.calleeOf is { } cCall) && cCall.args.length == 2 && cCall.args[0].name is null && cCall.args[0].modifier == .none && cCall.args[1].name is null && cCall.args[1].modifier == .none {
             let from = t18Text(in c, from: b.file, at: t17ExprSpan(in cCall.args[0].value))
             let until = t18Text(in c, from: b.file, at: t17ExprSpan(in cCall.args[1].value))
@@ -629,7 +631,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isList && name == "replaceRange" { // mutation-exempt: Q607 through 637
+    if isList && name == "replaceRange" { // mutation-exempt: Q607 through 639
         if isCalleeMatch && (b.calleeOf is { } rCall) && rCall.args.length == 2 && rCall.args[0].name is null && rCall.args[0].modifier == .none && rCall.args[1].name is null && rCall.args[1].modifier == .none {
             let at = t18Text(in c, from: b.file, at: t17ExprSpan(in rCall.args[0].value))
             let by = t18Text(in c, from: b.file, at: t17ExprSpan(in rCall.args[1].value))
@@ -637,7 +639,7 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "replaceRange", newName: "replace(at:by:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isMap && name == "getOr" { // mutation-exempt: Q607 through 650
+    if isMap && name == "getOr" { // mutation-exempt: Q607 through 652
         if isCalleeMatch && (b.calleeOf is { } mCall) && mCall.args.length == 2 && mCall.args[0].name is null && mCall.args[0].modifier == .none && mCall.args[1].name is null && mCall.args[1].modifier == .none {
             switch mCall.callee {
                 case .memberExpr(let me):
@@ -650,20 +652,20 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
         }
         return RenamedResult { oldName: "getOr", newName: "tryGet(at:) ??", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if (isList || isArrayT) && name == "asSpan" { // mutation-exempt: Q607 through 656
+    if (isList || isArrayT) && name == "asSpan" { // mutation-exempt: Q607 through 658
         if isCalleeMatch && (b.calleeOf is { } sCall) && sCall.args.length == 0 {
             return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: true, fixSpan: tail, replacement: "span" }
         }
         return RenamedResult { oldName: "asSpan()", newName: "span", hasFix: false, fixSpan: tail, replacement: "" }
     }
-    if isStr && name == "toUtf16" { // mutation-exempt: Q607 through 662
+    if isStr && name == "toUtf16" { // mutation-exempt: Q607 through 664
         if isCalleeMatch && (b.calleeOf is { } uCall) && uCall.args.length == 0 {
             return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: true, fixSpan: tail, replacement: "utf16" }
         }
         return RenamedResult { oldName: "toUtf16()", newName: "utf16", hasFix: false, fixSpan: tail, replacement: "" }
     }
     if isInt && (name == "toHex" || name == "toBinary" || name == "toOctal") {
-        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal") // mutation-exempt: Q607 through 674
+        let radix = name == "toHex" ? "hex" : (name == "toBinary" ? "binary" : "octal") // mutation-exempt: Q607 through 676
         if isCalleeMatch && (b.calleeOf is { } hCall) && hCall.args.length == 0 {
             switch hCall.callee {
                 case .memberExpr(let me):
