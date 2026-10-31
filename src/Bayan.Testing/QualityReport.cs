@@ -308,7 +308,7 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
         return sb.ToString();
     }
 
-    /// <summary>The per-line listing of a coverage file (<c>&lt;file&gt;.cov.txt</c>): a gutter of <c>+</c> hit, <c>-</c> missed, <c>~</c> unknown, blank for no counter, then the line number and text.</summary>
+    /// <summary>The per-line listing of a coverage file (<c>&lt;file&gt;.cov.txt</c>): a gutter of <c>+</c> hit, <c>-</c> missed, <c>~</c> unknown, blank for no counter, then the source text.</summary>
     public static string Listing(FileCoverage f, IReadOnlyList<string> sourceLines)
     {
         var sb = new StringBuilder();
@@ -316,7 +316,7 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
         {
             var n = i + 1;
             var gutter = f.CoveredLines.Contains(n) ? '+' : f.MissedLines.Contains(n) ? '-' : f.UnknownLines.Contains(n) ? '~' : ' ';
-            sb.Append(CultureInfo.InvariantCulture, $"{gutter} {n,5}  {sourceLines[i]}\n");
+            sb.Append(CultureInfo.InvariantCulture, $"{gutter} {sourceLines[i]}\n");
         }
         return sb.ToString();
     }

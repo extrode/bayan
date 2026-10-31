@@ -47,6 +47,10 @@ public sealed class CoverageReportTests
             assert(r == 1)
         }
 
+        i64 unused() {
+            return 7
+        }
+
         print("x")
 
         """;
@@ -68,8 +72,14 @@ public sealed class CoverageReportTests
         Assert.False(paths["E.b"]);
         Assert.True(json.RootElement.GetProperty("totals").GetProperty("lines").GetProperty("total").GetInt32() > 0);
         var listing = File.ReadAllText(Directory.EnumerateFiles(Path.Combine(app, "out", "test"), "main.byn.cov.txt", SearchOption.AllDirectories).Single());
-        Assert.Contains("+ ", listing);
-        Assert.Contains("fail .b if n > 100", listing);
+        var rows = listing.Split('\n');
+        Assert.Contains("+     fail .a if n < 0", rows);
+        Assert.Contains("-     return 7", rows);
+        Assert.Contains("-     return n", rows);
+        Assert.Contains(file.GetProperty("lines").GetProperty("missed").EnumerateArray(), l => rows[l.GetInt32() - 1] == "-     return 7");
+        Assert.Contains("-     fail .b if n > 100", rows);
+        var missed = file.GetProperty("branches").GetProperty("missed").EnumerateArray().Where(b => rows[b.GetProperty("line").GetInt32() - 1].Contains("n > 100", StringComparison.Ordinal));
+        Assert.Equal([false, true], missed.Select(b => b.GetProperty("outcome").GetBoolean()).Order());
     }
 
     [Fact]
@@ -89,6 +99,9 @@ public sealed class CoverageReportTests
         var json = File.ReadAllText(Path.Combine(app, "out", "test", "bayan-quality.json"));
         using var doc = JsonDocument.Parse(json);
         var file = doc.RootElement.GetProperty("files").EnumerateArray().Single(f => f.GetProperty("path").GetString()!.EndsWith("main.byn", StringComparison.Ordinal));
+        var rows = File.ReadAllText(Directory.EnumerateFiles(Path.Combine(app, "out", "test"), "main.byn.cov.txt", SearchOption.AllDirectories).Single()).Split('\n');
+        Assert.Contains("~     return 7", rows);
+        Assert.DoesNotContain(rows, r => r.StartsWith("- ", StringComparison.Ordinal));
         Assert.Equal(0, file.GetProperty("lines").GetProperty("missed").GetArrayLength());
         Assert.True(file.GetProperty("lines").GetProperty("unknown").GetArrayLength() > 0);
         Assert.True(file.GetProperty("errorPaths").EnumerateArray().Single(e => e.GetProperty("variant").GetString() == "E.b").GetProperty("unknown").GetBoolean());
