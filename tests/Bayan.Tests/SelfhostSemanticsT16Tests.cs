@@ -167,8 +167,6 @@ public sealed class SelfhostSemanticsT16Tests
             }
             for xs in xs {
             }
-            for n in 3 {
-            }
         }
 
         """;
@@ -469,8 +467,7 @@ public sealed class SelfhostSemanticsT16Tests
 
     /// <summary>
     /// Each `for` of a block: span, the loop variable (name, id, kind, `borrowsSubject`), the target and the bound iterable.
-    /// The element type and the body come from T36's `declaredElement`/`bindForBody` stubs, so they are not printed (Q599);
-    /// `for n in 3` reaches T36's `notIterable`, whose BYN2221 report is filtered out of the diagnostics for the same reason.
+    /// The element type and the body come from T36's `declaredElement`/`bindForBody` stubs, so they are not printed (Q599).
     /// </summary>
     private static void ForLines(List<string> lines, BoundBlock block)
     {
@@ -489,7 +486,7 @@ public sealed class SelfhostSemanticsT16Tests
         Call(o.Binder(fn), "BindFunctionBody", fn.Decl);
         var lines = new List<string>();
         ForLines(lines, fn.Body!);
-        lines.AddRange(o.NewDiagnostics().Where(d => !d.StartsWith("BYN2221 "))); // the notIterable report waits on T36's `notIterable` (Q599)
+        lines.AddRange(o.NewDiagnostics());
         var ob = Oracle.Of("broken", BrokenSource);
         ForLines(lines, (BoundBlock)Call(ob.Binder(null), "BindBlock", Fn(ob, "forVar").Body)!);
         lines.AddRange(ob.NewDiagnostics());
