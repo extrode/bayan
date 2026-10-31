@@ -10,7 +10,11 @@ namespace Bayan.Lowering;
 /// <summary>Turns a bound, error-free compilation into a <see cref="LoweredProgram"/>.</summary>
 public static class Lowerer
 {
-    public static LoweredProgram Lower(Compilation c)
+    /// <summary>
+    /// Lowers <paramref name="c"/>. A <c>--mutate</c> build passes <paramref name="mutants"/>, the mutant switch of each
+    /// bound node a mutant replaces (keyed by reference); without it the program is the plain one.
+    /// </summary>
+    public static LoweredProgram Lower(Compilation c, IReadOnlyDictionary<BoundNode, BoundMutantSwitch>? mutants = null)
     {
         if (c.Diagnostics.HasErrors) throw new InvalidOperationException("cannot lower a compilation with errors");
         var functions = new List<LoweredFunction>();
@@ -20,19 +24,22 @@ public static class Lowerer
             foreach (var fn in module.AllFunctions)
             {
                 if (fn.Body is null || fn.Kind == FunctionKind.Test || fn.IsGeneric) continue;
-                functions.Add(new FunctionLowerer(fn, c.Builtins).Lower());
+                functions.Add(new FunctionLowerer(fn, c.Builtins, mutants).Lower());
             }
             foreach (var t in module.Tests)
-                tests.Add((t, new FunctionLowerer(t.Function, c.Builtins).Lower()));
+                tests.Add((t, new FunctionLowerer(t.Function, c.Builtins, mutants).Lower()));
         }
-        return new LoweredProgram(c, functions, c.EntryModule.Main, tests);
+        return new LoweredProgram(c, functions, c.EntryModule.Main, tests, mutants is not null);
     }
 }
 
-internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
+internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins, IReadOnlyDictionary<BoundNode, BoundMutantSwitch>? mutants = null)
 {
     private readonly FunctionSymbol _fn = fn;
     private readonly Builtins _builtins = builtins;
+    private readonly IReadOnlyDictionary<BoundNode, BoundMutantSwitch>? _mutants = mutants;
+    /// <summary>The nodes whose mutant switch is being lowered: inside it they lower as written (a mutant may contain its original).</summary>
+    private readonly HashSet<BoundNode> _plain = new(ReferenceEqualityComparer.Instance);
     private readonly List<LocalSymbol> _locals = new();
     private readonly HashSet<LocalSymbol> _seen = new();
     private readonly List<Scope> _scopes = new();
@@ -341,6 +348,11 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private void Statement(BoundStmt s)
     {
+        if (MutantSwitch(s) is { } mutants)
+        {
+            MutantStatement(mutants);
+            return;
+        }
         switch (s)
         {
             case BoundBlock b:
@@ -887,6 +899,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private BoundExpr LowerExpr(BoundExpr e)
     {
+        if (MutantSwitch(e) is { } mutants) return MutantExpr(mutants);
         switch (e)
         {
             case BoundErrorVariant { Payload.Length: > 0 } v:
@@ -1062,6 +1075,62 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             default:
                 throw new InvalidOperationException($"cannot lower {e.GetType().Name}");
         }
+    }
+
+    // ── Mutant schemata ──────────────────────────────────────────────────────────
+
+    private BoundMutantSwitch? MutantSwitch(BoundNode node) =>
+        _mutants is not null && !_plain.Contains(node) && _mutants.TryGetValue(node, out var s) ? s : null;
+
+    /// <summary>
+    /// <c>(byn_mutant == id ? mutated : original)</c> when no arm needs statements first; otherwise, so only the selected
+    /// arm's prelude runs, <c>if (byn_mutant == id) { pre_m; t = m } else { pre_o; t = o }</c>.
+    /// </summary>
+    private BoundExpr MutantExpr(BoundMutantSwitch s)
+    {
+        var original = (BoundExpr)s.Original;
+        _plain.Add(original);
+        try
+        {
+            var arms = s.Mutants.Select(m => (m.Id, Arm: CaptureExpr((BoundExpr)m.Node))).ToList();
+            var plain = CaptureExpr(original);
+            if (plain.Pre.Count == 0 && !IsNever(plain.Value) && !original.Type.IsNever
+                && arms.All(a => a.Arm.Pre.Count == 0 && !IsNever(a.Arm.Value)))
+            {
+                var value = plain.Value;
+                for (var i = arms.Count - 1; i >= 0; i--)
+                    value = new BoundConditional(s.Syntax, new LMutantIs(s.Syntax, arms[i].Id), arms[i].Arm.Value, value, original.Type);
+                return value;
+            }
+            var result = NewTemp(original.Type);
+            var target = Local(s.Syntax, result);
+            List<BoundStmt> Assign((BoundExpr Value, List<BoundStmt> Pre) arm) =>
+                Capture(() => { _out.AddRange(arm.Pre); EmitAssign(target, arm.Value); });
+            BoundStmt chain = Block(s.Syntax, Assign(plain));
+            for (var i = arms.Count - 1; i >= 0; i--)
+                chain = new BoundIf(s.Syntax, new LMutantIs(s.Syntax, arms[i].Id), Block(s.Syntax, Assign(arms[i].Arm)), Block(s.Syntax, [chain]));
+            Emit(chain);
+            return original.Type.IsNever ? new LNever(s.Syntax, original.Type) : target;
+        }
+        finally { _plain.Remove(original); }
+    }
+
+    /// <summary><c>if (byn_mutant == id) { mutated } else { original }</c>, each arm lowered on its own.</summary>
+    private void MutantStatement(BoundMutantSwitch s)
+    {
+        var original = (BoundStmt)s.Original;
+        _plain.Add(original);
+        try
+        {
+            BoundStmt chain = Block(s.Syntax, Capture(() => Statement(original)));
+            for (var i = s.Mutants.Length - 1; i >= 0; i--)
+            {
+                var mutant = (BoundStmt)s.Mutants[i].Node;
+                chain = new BoundIf(s.Syntax, new LMutantIs(s.Syntax, s.Mutants[i].Id), Block(s.Syntax, Capture(() => Statement(mutant))), Block(s.Syntax, [chain]));
+            }
+            Emit(chain);
+        }
+        finally { _plain.Remove(original); }
     }
 
     private BoundExpr ShortCircuit(BoundBinary b)
