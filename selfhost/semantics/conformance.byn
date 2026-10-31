@@ -275,8 +275,8 @@ FunctionSymbol t14Expected(ref Ctx c, for InterfaceId i, by FuncId member, throu
             panic("internal error: an interface member outside an interface")
     }
     quietlyEnd(ref c, to: quiet)
-    // C# makes a throwaway symbol: appended and truncated here, so nothing sees it afterwards (Q722).
-    return c.functions.removeLast()
+    // C# makes a throwaway symbol: taken as a value and dropped from the arena by `t14Drop` (Q722).
+    return t14Drop(ref c, at: fn)
 }
 
 /// Conformance.cs:165 CloneDefault: the default `member` as a method (or property) of `s`, bound from
@@ -499,4 +499,12 @@ T14Fix t14RefThisEdit(in parser.FunctionDecl decl) {
         return T14Fix { hasFix: true, fixSpan: span, replacement: "" }
     }
     return T14Fix { hasFix: true, fixSpan: TextSpan { start: decl.paramsStart, length: 0 }, replacement: decl.params.length > 0 ? "ref this, " : "ref this" }
+}
+
+/// Q722: the throwaway `Expected` symbol as a value. It leaves the arena when it is still last; if the resolve
+/// appended functions after it (an instance's members), it stays as an entry no module or list registers.
+FunctionSymbol t14Drop(ref Ctx c, at FuncId fn) {
+    let expected = t14View(in c, for: fn)
+    if fn == c.functions.length - 1 { let _ = c.functions.removeLast() }
+    return expected
 }
