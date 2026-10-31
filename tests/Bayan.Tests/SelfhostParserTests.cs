@@ -279,7 +279,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         Assert.Contains(expected, stdout, StringComparison.Ordinal);
     }
 
-    /// <summary>The <c>--codes</c> table matches the C# <see cref="DiagnosticCodes"/> descriptors (Q433: 69 codes).</summary>
+    /// <summary>The <c>--codes</c> table matches the C# <see cref="DiagnosticCodes"/> descriptors (Q433: 70 codes).</summary>
     [Fact]
     public void CodesMatchDiagnosticCodes()
     {
@@ -287,7 +287,7 @@ public sealed class SelfhostParserTests(ITestOutputHelper output)
         output.WriteLine(stderr);
         Assert.Equal(0, exit);
         var lines = stdout.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Length > 0).ToArray();
-        Assert.Equal(69, lines.Length);
+        Assert.Equal(70, lines.Length);
         var byCode = DiagnosticCodes.All.ToDictionary(d => d.Code);
         foreach (var line in lines)
         {

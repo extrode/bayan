@@ -35,18 +35,40 @@ Stmt parseBlock(ref Parser p) {
         if p.pos == before { let _ = p.advance() }
     }
     expectClose(ref p, from: open, for: "block")
-    return Stmt.blockStmt(Owned(BlockStmt { span: p.spanFrom(start), statements: move statements }))
+    return Stmt.blockStmt(Owned(BlockStmt {
+        span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+        statements: move statements,
+        attributes: takeStatementAttributes(ref p, at: start),
+    }))
 }
 
 Stmt parseStatement(ref Parser p) {
     let start = p.current().start
+    if p.kind() == .at && isName(p.peek(1)) {
+        let attributes = parseStatementAttributes(ref p)
+        if p.atEnd() || p.kind() == .closeBrace {
+            let _ = p.report(.expected, at: spanOf(p.current()), arg0: "a statement after the attribute", arg1: p.describe(p.current()))
+            return Stmt.errorStmt(Owned(ErrorStmt { span: p.spanFrom(start), attributes: move attributes }))
+        }
+        // The node takes them when it is built (`takeStatementAttributes`); C# sets them on the result.
+        let key = p.current().start
+        p.statementAttributeKeys.append(key)
+        p.statementAttributeStarts.append(start)
+        p.statementAttributes.append(move attributes)
+        let statement = parseStatement(ref p)
+        let _ = takeStatementAttributes(ref p, at: key)
+        return statement
+    }
     switch p.kind() {
         case .openBrace:
             return rejectPostfixAfterCompound(ref p, for: parseBlock(ref p))
         case .semicolon:
             let semicolon = p.advance()
             reportSemicolon(ref p, for: semicolon)
-            return Stmt.emptyStmt(Owned(EmptyStmt { span: p.spanFrom(start) }))
+            return Stmt.emptyStmt(Owned(EmptyStmt {
+                span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+                attributes: takeStatementAttributes(ref p, at: start),
+            }))
         case .letKeyword or .varKeyword or .constKeyword or .usingKeyword:
             return parseLocal(ref p, from: start)
         case .ifKeyword:
@@ -62,13 +84,24 @@ Stmt parseStatement(ref Parser p) {
                 // C# takes the span before it parses the block, so it ends at the value (work/todo.md).
                 let span = p.spanFrom(start)
                 let block = parseBlock(ref p)
-                return Stmt.whileLetStmt(Owned(WhileLetStmt { span: span, variable: variable, value: move value, body: move block }))
+                return Stmt.whileLetStmt(Owned(WhileLetStmt {
+                    span: statementSpan(ref p, at: start, from: span),
+                    variable: variable,
+                    value: move value,
+                    body: move block,
+                    attributes: takeStatementAttributes(ref p, at: start),
+                }))
             }
             var parenthesized = false
             var parens: i64 = -1
             let condition = parseCondition(ref p, to: ref parenthesized, for: ref parens)
             let body = parenthesized ? parseBody(ref p, by: whileKeyword, to: ref parens) : parseBlock(ref p)
-            return Stmt.whileStmt(Owned(WhileStmt { span: p.spanFrom(start), condition: move condition, body: move body }))
+            return Stmt.whileStmt(Owned(WhileStmt {
+                span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+                condition: move condition,
+                body: move body,
+                attributes: takeStatementAttributes(ref p, at: start),
+            }))
         case .doKeyword:
             let doKeyword = p.advance()
             let body = parseBody(ref p, by: doKeyword)
@@ -77,7 +110,12 @@ Stmt parseStatement(ref Parser p) {
             let paren = p.kind() == .openParen && endsBefore(ref p, at: matchingClose(ref p, at: p.pos) + 1)
             let condition = paren ? parseParenCondition(ref p, to: ref parens) : parseBareCondition(ref p)
             expectEnd(ref p)
-            return Stmt.doWhileStmt(Owned(DoWhileStmt { span: p.spanFrom(start), body: move body, condition: move condition }))
+            return Stmt.doWhileStmt(Owned(DoWhileStmt {
+                span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+                body: move body,
+                condition: move condition,
+                attributes: takeStatementAttributes(ref p, at: start),
+            }))
         case .forKeyword or .foreachKeyword:
             return parseFor(ref p, from: start)
         case .switchKeyword:
@@ -92,7 +130,12 @@ Stmt parseStatement(ref Parser p) {
             let state = expectName(ref p, "a state name")
             let args = p.kind() == .openParen && !p.current().hasNewlineBefore ? parseArguments(ref p) : List<Argument>()
             expectEnd(ref p)
-            return Stmt.becomeStmt(Owned(BecomeStmt { span: p.spanFrom(start), state: state, args: move args }))
+            return Stmt.becomeStmt(Owned(BecomeStmt {
+                span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+                state: state,
+                args: move args,
+                attributes: takeStatementAttributes(ref p, at: start),
+            }))
         case .gotoKeyword:
             return parseGoto(ref p, at: start)
         case .assertKeyword:
@@ -106,7 +149,12 @@ Stmt parseStatement(ref Parser p) {
                 failure = parseExpression(ref p)
             }
             expectEnd(ref p)
-            return Stmt.assertStmt(Owned(AssertStmt { span: p.spanFrom(start), condition: move condition, failsKeyword: move failure }))
+            return Stmt.assertStmt(Owned(AssertStmt {
+                span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+                condition: move condition,
+                failsKeyword: move failure,
+                attributes: takeStatementAttributes(ref p, at: start),
+            }))
         case .identifier:
             if p.peek(1) == .colon {
                 let label = nameOf(p.advance())
@@ -114,13 +162,21 @@ Stmt parseStatement(ref Parser p) {
                 // C# takes the span before it parses the statement, so it ends at the `:` (work/todo.md).
                 let span = p.spanFrom(start)
                 let statement = parseStatement(ref p)
-                return Stmt.labeledStmt(Owned(LabeledStmt { span: span, label: label, statement: move statement }))
+                return Stmt.labeledStmt(Owned(LabeledStmt {
+                    span: statementSpan(ref p, at: start, from: span),
+                    label: label,
+                    statement: move statement,
+                    attributes: takeStatementAttributes(ref p, at: start),
+                }))
             }
         case .elseKeyword:
             let _ = p.report(.expected, at: spanOf(p.current()), arg0: "a statement", arg1: p.describe(p.current()),
                 help: "remove this `else`; it has no matching `if`")
             let _ = p.advance()
-            return Stmt.errorStmt(Owned(ErrorStmt { span: p.spanFrom(start) }))
+            return Stmt.errorStmt(Owned(ErrorStmt {
+                span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+                attributes: takeStatementAttributes(ref p, at: start),
+            }))
         default:
             let _ = start
     }
@@ -129,6 +185,23 @@ Stmt parseStatement(ref Parser p) {
 
     let simple = parseSimpleStatement(ref p, at: start)
     return finishSimpleStatement(ref p, at: start, for: move simple)
+}
+
+/// Whether the innermost pending statement attributes (`Parser.statementAttributes`) are for the
+/// statement whose first token starts at `start`.
+bool hasStatementAttributes(ref Parser p, at i64 start) =>
+    p.statementAttributeKeys.length > 0 && p.statementAttributeKeys[p.statementAttributeKeys.length - 1] == start
+
+/// The span of the statement at `start`: with attributes it starts at them, as the C# `with { Span = SpanFrom(start) }`.
+TextSpan statementSpan(ref Parser p, at i64 start, from TextSpan span) =>
+    hasStatementAttributes(ref p, at: start) ? p.spanFrom(p.statementAttributeStarts[p.statementAttributeStarts.length - 1]) : span
+
+/// The pending attributes of the statement at `start`, taken off the stack; none when they are not its.
+List<AttributeSyntax> takeStatementAttributes(ref Parser p, at i64 start) {
+    unless hasStatementAttributes(ref p, at: start) { return List<AttributeSyntax>() }
+    let _ = p.statementAttributeKeys.removeLast()
+    let _ = p.statementAttributeStarts.removeLast()
+    return p.statementAttributes.removeLast()
 }
 
 /// A statement used as the body of `if`, loops and cleanup: a block or a single statement.
@@ -187,12 +260,13 @@ Stmt parseLocal(ref Parser p, from i64 start) {
     }
     expectEnd(ref p)
     return Stmt.localDecl(Owned(LocalDecl {
-        span: p.spanFrom(start),
+        span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
         kind: kind,
         usingKeyword: isUsing,
         type: move type,
         name: name,
         init: move init,
+        attributes: takeStatementAttributes(ref p, at: start),
     }))
 }
 
@@ -523,11 +597,12 @@ Stmt parseIf(ref Parser p, from i64 start, bool elseIf = false) {
         }
     }
     return Stmt.ifStmt(Owned(IfStmt {
-        span: p.spanFrom(start),
+        span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
         condition: move condition,
         then: move then,
         elseKeyword: move otherwise,
         likelihood: likelihood,
+        attributes: takeStatementAttributes(ref p, at: start),
     }))
 }
 
@@ -620,7 +695,12 @@ Stmt parseUnless(ref Parser p, from i64 start) {
             }
         }
     }
-    return Stmt.unlessStmt(Owned(UnlessStmt { span: p.spanFrom(start), condition: move condition, body: move body }))
+    return Stmt.unlessStmt(Owned(UnlessStmt {
+        span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+        condition: move condition,
+        body: move body,
+        attributes: takeStatementAttributes(ref p, at: start),
+    }))
 }
 
 Stmt parseFor(ref Parser p, from i64 start) {
@@ -668,7 +748,7 @@ Stmt parseFor(ref Parser p, from i64 start) {
     let iterable = parseBareCondition(ref p)
     let body = parseBlock(ref p)
     return Stmt.forStmt(Owned(ForStmt {
-        span: p.spanFrom(start),
+        span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
         kind: .letKeyword,
         type: move type,
         variable: variable,
@@ -676,6 +756,7 @@ Stmt parseFor(ref Parser p, from i64 start) {
         body: move body,
         tryKeyword: isTry,
         names: move names,
+        attributes: takeStatementAttributes(ref p, at: start),
     }))
 }
 
@@ -703,13 +784,14 @@ Stmt parseParenFor(ref Parser p, from i64 start, by Token keyword, bool tryKeywo
         skipPastCloseParen(ref p)
         let body0 = parseEmbedded(ref p)
         return Stmt.forStmt(Owned(ForStmt {
-            span: p.spanFrom(start),
+            span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
             kind: kind,
             type: move type,
             variable: name,
             iterable: Expr.errorExpr(Owned(ErrorExpr { span: name })),
             body: move body0,
             tryKeyword: tryKeyword,
+            attributes: takeStatementAttributes(ref p, at: start),
         }))
     }
     let _ = p.advance()
@@ -727,13 +809,14 @@ Stmt parseParenFor(ref Parser p, from i64 start, by Token keyword, bool tryKeywo
     }
     let body = parseBody(ref p, by: keyword, to: ref input)
     return Stmt.forStmt(Owned(ForStmt {
-        span: p.spanFrom(start),
+        span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
         kind: kind,
         type: move type,
         variable: name,
         iterable: move iterable,
         body: move body,
         tryKeyword: tryKeyword,
+        attributes: takeStatementAttributes(ref p, at: start),
     }))
 }
 
