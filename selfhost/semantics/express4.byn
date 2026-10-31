@@ -37,3 +37,13 @@ string? whyNotFormattable(ref Ctx c, for Type t, by ref List<Type> seen) => null
 
 // stub: T35 ports BinderExpressions.cs:2127 PropertyType
 Type propertyType(ref Binder b, through ref Ctx c, for BuiltinMember member, as Type type) => -1
+
+/// C# `Host` (BinderExpressions.cs:1939-1946): the function whose body is being bound, skipping enclosing lambdas.
+/// Pre-ported for T17/T18 (user decision 2026-10-31); T35 must not rewrite it.
+FuncId host(Binder b, through Ctx c) {
+    var fn = b.fn
+    while fn != -1 && c.functions[fn].kind == .lambda {
+        fn = c.functions[fn].enclosing
+    }
+    return fn
+}

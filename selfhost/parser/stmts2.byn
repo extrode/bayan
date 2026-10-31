@@ -396,7 +396,7 @@ Stmt rejectPostfixAfterCompound(ref Parser p, for move Stmt statement) {
 // ── Node spans ─────────────────────────────────────────────────────────────────
 
 /// The `span` of a pattern node (the C# `Pattern.Span`).
-TextSpan patternSpan(in Pattern p) {
+public TextSpan patternSpan(in Pattern p) {
     switch p {
         case .constantPattern(let n): return n.value.span
         case .relationalPattern(let n): return n.value.span
