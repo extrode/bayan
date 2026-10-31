@@ -22,9 +22,9 @@ Order: T1–T3 groundwork, T4–T8 mutation, T9–T13 coverage and gates, T14–
 - [ ] T17 Apply revision 0014 — files: `docs/bayan-spec.md`, `docs/bayan-grammar.md`, `docs/diagnostics/`, `docs/revisions/0014-test-tooling.md` — covers: R5, R7, R13, R17 — done when: §4.4, §7, §19.2, §20 and the grammar carry the revision's text; BYN1069 is documented; the "not in v0.1" note is gone; every example is type-first with `because "…"`; 0014's status reads applied.
 - [ ] T18 Measure on `selfhost/semantics` — files: `docs/specs/013-test-tooling/` (results note) — covers: R8, goals — done when: the guard over one T-task file reports per-mutant time ≤10% of a full rebuild and every site tried; the numbers are recorded; a miss triggers the per-file schemata fallback in the plan's risks.
 - [ ] T19 Cross-platform verification — files: none beyond fixes — covers: R16 — done when: `dotnet test -v q`, the `run/` cases under `--mutate` and `--coverage`, and the guard pass on macOS, Linux (Docker) and Windows (`ssh wp1`).
-- [ ] T20 enact L019 instrumented run equals plain run — files: `docs/laws/019-instrumented-run-equals-plain.md` — covers: R10 — done when: the user has set `status: enacted`.
+- [x] T20 enact L019 instrumented run equals plain run — files: `docs/laws/019-instrumented-run-equals-plain.md` — covers: R10 — done when: the user has set `status: enacted`.
 - [ ] T21 prove L019 via /prove — depends on: T9 — covers: R10 — done when: `laws-check.js --run` holds.
-- [ ] T22 enact L020 normal build's generated C unchanged — files: `docs/laws/020-normal-build-c-unchanged.md` — covers: R11 — done when: the user has set `status: enacted`.
+- [x] T22 enact L020 normal build's generated C unchanged — files: `docs/laws/020-normal-build-c-unchanged.md` — covers: R11 — done when: the user has set `status: enacted`.
 - [ ] T23 prove L020 via /prove — depends on: T5, T9 — covers: R11 — done when: `laws-check.js --run` holds.
-- [ ] T24 enact L021 ill-typed mutant never counted — files: `docs/laws/021-ill-typed-mutant-never-counted.md` — covers: R4 — done when: the user has set `status: enacted`.
+- [x] T24 enact L021 ill-typed mutant never counted — files: `docs/laws/021-ill-typed-mutant-never-counted.md` — covers: R4 — done when: the user has set `status: enacted`.
 - [ ] T25 prove L021 via /prove — depends on: T4, T6 — covers: R4 — done when: `laws-check.js --run` holds.
