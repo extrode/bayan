@@ -185,18 +185,21 @@ void bindAll(ref Ctx c) {
         let span = c.instantiationWork[0].span
         let instance = c.instantiationWork[0].instance
         let target = c.instantiationWork[0].memberIndex
+        // C#'s `work.Instance`: a `bindFunction`'s `memberIndex`, set only by `instantiateFunction` (Q721).
+        // mutation-exempt: Q721
+        let workInstance = kind == .bindFunction ? target : -1
         let subject = c.instantiationWork[0].subject
         c.instantiationWork.remove(at: 0)
         let scope = instantiatingBegin(ref c, from: site, at: span)
         switch kind {
             case .bindFunction:
-                bindFunction(ref c, for: target)
+                bindFunction(ref c, for: instance)
             case .fieldDefault:
                 let _ = fieldDefault(ref c, for: StructId(typeIndex(subject)), by: target, from: site, at: span)
             default:
                 panic($"internal error: instantiation work of kind {kind.ordinal}")
         }
-        instantiatingEnd(ref c, by: scope, instance: instance)
+        instantiatingEnd(ref c, by: scope, instance: workInstance)
     }
     inferErrorSets(ref c)
     analyzeEffects(ref c)
@@ -667,7 +670,7 @@ Type instantiateType(ref Ctx c, for Type template, by in List<Type> args, from F
             for k in c.structs[id].constructors { fns.append(k) }
             for fn in fns {
                 if c.functions[fn].template == -1 {
-                    c.instantiationWork.append(Work { kind: .bindFunction, args: List<Type>(), file: site, span: span, memberIndex: fn })
+                    c.instantiationWork.append(Work { kind: .bindFunction, args: List<Type>(), instance: fn, file: site, span: span })
                 }
             }
             return instance
@@ -839,10 +842,11 @@ void bindFunction(ref Ctx c, for FuncId fn) {
             c.modules[module].allFunctions.remove(at: at)
         }
     }
-    // `w.Instance is null || !pass.Instances.Contains(w.Instance)`: an instance is never -1.
+    // `w.Instance is null || !pass.Instances.Contains(w.Instance)`: C#'s `w.Instance` is a `bindFunction`'s
+    // `memberIndex` (Q721), and an instance is never -1.
     var work = List<Work>()
     for w in c.instantiationWork {
-        if !t13Contains(in instances, for: w.instance) {
+        if w.kind != .bindFunction || !t13Contains(in instances, for: w.memberIndex) {
             work.append(Work { kind: w.kind, subject: w.subject, args: copyIds(in w.args), instance: w.instance, file: w.file, span: w.span, declIndex: w.declIndex, memberIndex: w.memberIndex })
         }
     }
@@ -920,21 +924,12 @@ List<(LocalId, Type)>? t13BindBody(ref Ctx c, for FuncId fn, by in List<(LocalId
         let _ = hold(ref b, through: ref c)
     }
     if c.functions[fn].kind == .main {
-        // stub: T13 calls `bindMain` with `m.Statements` (blocked: Q583)
-        panic("internal error: binding main statements is blocked (Q583)")
+        // A copy: `c.mainStatements` cannot be lent while `c` is passed by `ref` (Q718).
+        var statements = List<SyntaxRef>()
+        for r in c.mainStatements { statements.append(r) }
+        bindMain(ref b, through: ref c, for: in statements)
     } else if c.functions[fn].kind == .testKeyword {
-        let tb = c.testBodies[fn]
-        switch c.files[tb.decl.file].unit.members[tb.decl.declIndex] {
-            case .testDecl(let n):
-                if tb.hasValues {
-                    // stub: T13 calls `bindTest` with a `@cases` case's values (blocked: Q583)
-                    panic("internal error: binding a `@cases` test is blocked (Q583)")
-                }
-                // `Values` is null without `@cases`: an empty list (Q593).
-                bindTest(ref b, through: ref c, for: in n.value, by: in List<parser.Expr>())
-            default:
-                panic("internal error: a test body that is not a test")
-        }
+        bindTest(ref b, through: ref c, for: c.testBodies[fn])
     } else {
         switch c.files[file].unit.members[d] {
             case .functionDecl(let n):
