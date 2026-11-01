@@ -37,7 +37,7 @@ public sealed class SelfhostSemanticsTests
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.Create(sources, packageRoot: SelfhostDir);
         if (c.Diagnostics.HasErrors) return (null, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
-        var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
+        var build = SelfhostSemanticsHarness.BuildFast(c, new HashSet<string>());
         return build.Succeeded ? (build.ExecutablePath, "") : (null, build.Errors);
     }
 
@@ -398,6 +398,7 @@ public sealed class SelfhostSemanticsTests
 
     /// <summary><c>--time</c> prints one nanosecond total, and the parse and check split on stderr.</summary>
     [Fact]
+    [Trait("Snapshot", "skip")]
     public void TimePrintsNanoseconds()
     {
         // no-oracle: Q648 (C# `check` has no `--time`; the numbers differ per run)

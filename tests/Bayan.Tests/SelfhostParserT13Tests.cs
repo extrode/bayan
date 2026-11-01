@@ -50,6 +50,7 @@ public sealed class SelfhostParserT13Tests(ITestOutputHelper output)
     }
 
     [Fact]
+    [Trait("Snapshot", "skip")]
     public void TimePrintsANumberAndExitsZero()
     {
         var path = Path.Combine(Golden.RepoRoot, "tmp", "selfhost-parser-t13", "time.byn");

@@ -1,8 +1,12 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Bayan.Backend.C;
 using Bayan.Cli;
+using Bayan.Lowering;
 using Bayan.Semantics;
 using Bayan.Syntax.Diagnostics;
 using Bayan.Syntax.Text;
@@ -45,8 +49,106 @@ public static class SelfhostSemanticsHarness
         Environment.SetEnvironmentVariable("BAYAN_CACHE", Path.Combine(Golden.RepoRoot, "tmp", "cache"));
         var c = Compilation.Create(sources, packageRoot: SelfhostDir);
         if (c.Diagnostics.HasErrors) return (null, DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: true));
-        var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
+        var build = BuildFast(c, new HashSet<string>(StringComparer.Ordinal) { sources[^1].Path });
         return build.Succeeded ? (build.ExecutablePath, "") : (null, build.Errors);
+    }
+
+    /// <summary>The snapshot directory (spec 013 R14) when <c>BAYAN_SNAPSHOT</c> is set, else null; a relative path is
+    /// taken from the repo root, since the test host runs in its output directory.</summary>
+    public static string? SnapshotDir =>
+        Environment.GetEnvironmentVariable("BAYAN_SNAPSHOT") is { Length: > 0 } dir ? Path.GetFullPath(dir, Golden.RepoRoot) : null;
+
+    /// <summary>
+    /// <paramref name="c"/> built in fast mode. Under <c>BAYAN_SNAPSHOT</c> it is a schemata build without sites in
+    /// <paramref name="generated"/> (harness-generated files), and with <c>BAYAN_SNAPSHOT_FILES</c> (comma-separated,
+    /// relative to the repo root) only with sites in those files; its site map is written beside the binary and both are
+    /// listed in <c>manifest.json</c>.
+    /// </summary>
+    internal static NativeBuild BuildFast(Compilation c, IReadOnlySet<string> generated)
+    {
+        if (SnapshotDir is not { } dir) return Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
+        var skip = new HashSet<string>(generated, StringComparer.Ordinal);
+        if (Environment.GetEnvironmentVariable("BAYAN_SNAPSHOT_FILES") is { Length: > 0 } files)
+        {
+            var keep = files.Split(',').Select(f => Path.GetFullPath(f, Golden.RepoRoot)).ToHashSet(StringComparer.Ordinal);
+            skip.UnionWith(c.Modules.SelectMany(m => m.AllFunctions).Select(f => f.File?.Source.Path).OfType<string>()
+                .Where(p => !keep.Contains(Path.GetFullPath(p))));
+        }
+        var schema = Bayan.Testing.Schemata.Build(c, skip);
+        var build = Toolchain.Build(CEmitter.Emit(Lowerer.Lower(c, schema.Switches), false), BuildMode.Fast);
+        if (build.ExecutablePath is { } binary)
+        {
+            var sites = Bayan.Testing.Schemata.SitesPath(binary);
+            File.WriteAllText(sites, schema.SitesJson());
+            lock (SnapshotLock)
+            {
+                Directory.CreateDirectory(dir);
+                var path = Path.Combine(dir, "manifest.json");
+                var manifest = File.Exists(path) ? JsonNode.Parse(File.ReadAllText(path))!.AsObject() : new JsonObject { ["version"] = 1, ["builds"] = new JsonArray() };
+                var builds = manifest["builds"]!.AsArray();
+                if (!builds.Any(b => (string?)b!["binary"] == binary))
+                    builds.Add(new JsonObject { ["binary"] = binary, ["sites"] = sites });
+                File.WriteAllText(path, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");
+            }
+        }
+        return build;
+    }
+
+    private static readonly Lock SnapshotLock = new();
+
+    /// <summary>
+    /// Under <c>BAYAN_SNAPSHOT</c>: runs <paramref name="program"/> twice and appends the run to <c>runs.jsonl</c>; the
+    /// replay compares its exit code, stdout and stderr. The C# oracle checks run once, here at record time, and a
+    /// recording only completes if every recorded test passed them (013-plan.md:21, "compute the C# oracle once").
+    /// Two runs that differ in any of the three throw: such a test is tagged <c>[Trait("Snapshot", "skip")]</c>.
+    /// </summary>
+    internal static (int Exit, byte[] Out, byte[] Err) RunRecorded(string dir, string program, byte[]? input, string[] args)
+    {
+        var first = Exec(program, input, args);
+        var second = Exec(program, input, args);
+        var differ = new List<string>();
+        if (first.Exit != second.Exit) differ.Add("exit code");
+        if (!first.Out.AsSpan().SequenceEqual(second.Out)) differ.Add("stdout");
+        if (!first.Err.AsSpan().SequenceEqual(second.Err)) differ.Add("stderr");
+        if (differ.Count > 0)
+            throw new InvalidOperationException($"BAYAN_SNAPSHOT: two runs of `{string.Join(' ', args.Prepend(program))}` differ in "
+                + $"{string.Join(", ", differ)}; tag the test [Trait(\"Snapshot\", \"skip\")] if its output is not deterministic");
+        var record = new JsonObject
+        {
+            ["program"] = program,
+            ["args"] = new JsonArray(args.Select(a => (JsonNode?)a).ToArray()),
+            ["cwd"] = Environment.CurrentDirectory,
+            ["stdin"] = input is null ? null : Convert.ToBase64String(input),
+            ["stdout"] = Convert.ToBase64String(first.Out),
+            ["stderr"] = Convert.ToBase64String(first.Err),
+            ["exit"] = first.Exit,
+        };
+        lock (SnapshotLock)
+        {
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "runs.jsonl"), record.ToJsonString() + "\n");
+        }
+        return first;
+    }
+
+    private static (int Exit, byte[] Out, byte[] Err) Exec(string program, byte[]? input, string[] args)
+    {
+        var psi = new ProcessStartInfo(program) { RedirectStandardInput = input is not null, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+        using var p = Process.Start(psi)!;
+        var stdout = new MemoryStream();
+        var stderr = new MemoryStream();
+        var copyOut = p.StandardOutput.BaseStream.CopyToAsync(stdout);
+        var copyErr = p.StandardError.BaseStream.CopyToAsync(stderr);
+        if (input is not null)
+        {
+            p.StandardInput.BaseStream.Write(input);
+            p.StandardInput.Close();
+        }
+        p.WaitForExit();
+        copyOut.Wait();
+        copyErr.Wait();
+        return (p.ExitCode, stdout.ToArray(), stderr.ToArray());
     }
 
     /// <summary>Builds and runs <paramref name="mainSource"/>; it must exit 0 with empty stderr.</summary>
