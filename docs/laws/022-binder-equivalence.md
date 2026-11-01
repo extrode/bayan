@@ -1,12 +1,13 @@
 ---
 id: L022
 title: Binder equivalence
-status: proposed
+status: enacted
 kind: property
 scope: selfhost/semantics/main.byn
 proof: tests/Bayan.Tests/SelfhostSemanticsEquivalenceLawTests.cs
 check: dotnet test -v q --filter "Law=L022"
 timeout: 1800
+enacted: 2026-11-01
 ---
 
 ## Statement
@@ -29,3 +30,5 @@ Mutation 1 (widened conversion): `selfhost/semantics/conversions.byn:110`, in `i
 Mutation 2 (dropped diagnostic): `selfhost/semantics/ownership.byn:423`, the `t24Report(… for: .useAfterMove …)` call for a read after a move, commented out. `Law=L022` failed on `diag/move-narrowed-use-after.byn` (copy `tmp/l022/diag/00272/`), `check`, stderr line 1. Expected ``error BYN2781: `b` is used after it was moved``, actual an empty line.
 
 Each file was copied to `tmp/l022-bt/<file>.orig` first and restored with `cp`. `cmp` was clean after each restore, and the rerun passed.
+
+Enacted by the agent under the standing self-host authorization (2026-10-21; spec 010 T30), with T29's proof passing: `dotnet test -v q --filter "Law=L022"` 1 passed on 2026-11-01, 25 s test time (34 s wall, `bayan-check` rebuilt first).
