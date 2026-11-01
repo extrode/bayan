@@ -89,7 +89,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T29 prove L022 via /prove: binder equivalence — files: `SelfhostSemanticsEquivalenceLawTests.cs` [Trait Law L022], `docs/laws/022-binder-equivalence.md` — covers: L022 — after: T28; parallel with: T31 — done when:
   - every parsed-clean diag case, typed case and valid/corrupted seed agree; a dropped-diagnostic or widened-conversion mutation makes it fail; `--filter "Law=L022"` holds; Q658–Q659.
   - Size: about 250 lines of C# and the law page.
-- [ ] T30 enact L022 "Binder equivalence" — files: `docs/laws/022-binder-equivalence.md` — covers: L022 — after: T29 — done when:
+- [x] T30 enact L022 "Binder equivalence" — files: `docs/laws/022-binder-equivalence.md` — covers: L022 — after: T29 — done when:
   - `status: enacted` lands with T29's passing proof (standing authorization, 2026-10-21).
   - Size: one status line and recorded measurements.
 - [ ] T31 prove L023 via /prove: no checker panic — files: `SelfhostSemanticsNoPanicLawTests.cs` [Trait Law L023], `docs/laws/023-no-checker-panic.md`, `compile.byn` (Q661 fix, dispatcher 2026-11-01: `t11DeclareTest` gives the test function C#'s default `void` return type, Symbols.cs:207), `main.byn` (`--many` reports each input's exit) — covers: L023 — after: T28; parallel with: T29 — done when:
