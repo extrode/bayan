@@ -399,7 +399,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 013 T26 fix gate: guard.sh:121 a non-zero `quality-baseline.py check` exit after partial output is recorded without saying the script failed.
 - 013 T26 fix gate: guard.sh:80 the exit-status check on guard-checks.py has no test.
 - 013 T26 fix gate: coverage-gate.py:45 lines outside any function (top-level code) are never gated even when the diff changes them.
-||||||| 52e2ae0
 - Unsorted `Directory.GetFiles` builds corpora in `SelfhostParserT*Tests` and `SelfhostSemanticsHarness.cs:39`; sort them ordinally as `SelfhostSemanticsNoPanicLawTests.FlatGoldens` now does (file-system order differs on Linux).
 - `Toolchain.ReplaceFile` (and other readers of `out/` files) may hit the same Windows sharing violation as `bayan-rt.h` did (fixed in `CliApp.WriteIfChanged` only).
 - After the next Windows CI run, recheck the `Assert.Equal` "Values differ" cases and `OwnershipCheckerTests.Debug*`, which were judged from their error text only (abort exit code 3 vs 0xC0000409 depends on zig being the compiler).
@@ -420,3 +419,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - mutate-batch.sh:89: a group whose manifest lists zero builds passes the unexpanded `quality-*.json` glob to quality-baseline.py and fails with a generic message instead of naming the group (T28 gate, LOW)
 - mutate-batch.sh: only ctx.byn was run for real; other parser/lexer files may hit "matches no compiled source" with a family class that does not compile them (T28)
 - 013 perf: `src/Bayan.Testing/Schemata.cs:132` `Rebinds` re-binds the whole package per site (`Compilation.WithFile`), ~1.5 s/site over selfhost/semantics: 10 T27 files = 8087 sites = 2 h 50 min (measured) before any C compile or test. Blocks a practical nightly batch (mutation.yml shards by file group, each still pays this). Fix needs a user call (re-bind only the module and dependents, or reuse binding across sites); see 013-results.md.
+- review dev...cabca7d LOW (unverified): tests/Bayan.Tests/SelfhostSnapshotTests.cs:172-175 the nested `dotnet test` in `Record` overrides BAYAN_SNAPSHOT but inherits BAYAN_COVERAGE/BAYAN_COVERAGE_FILES; a guard run with a changed .byn (coverage on) and a filter matching SelfhostSnapshotTests fails with "BAYAN_SNAPSHOT and BAYAN_COVERAGE are both set".
+- review dev...cabca7d LOW (unverified): scripts/selfhost/coverage-gate.py:44-48 `touched` includes every function whose span holds a changed line, so a change in a nested function/lambda gates all of the enclosing function's missed lines.
