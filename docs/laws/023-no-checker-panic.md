@@ -64,10 +64,12 @@ Measured 2026-11-01 (the two facts 39 s; the corpus part 24.5 s, the CLI part 14
 `DiagnosticRenderer.RenderAll`; it is reported, not asserted (L022 owns parity).
 
 On this corpus the self-hosted checker never panics and keeps every diagnostic span inside its file. The
-law stays `proposed` (T32 enacts it) with one C# counterexample (Q662): 5 random inputs make the C# parser
+law stays `proposed` (T32 kept it so, Q663) with one C# counterexample (Q662): 5 random inputs make the C# parser
 throw `ArgumentOutOfRangeException` in `SourceText.GetText` from `Parser.ReportBraceless` (the L018 crash,
 work/todo.md): `01145.byn`, `01358.byn`, `02510.byn`, `03889.byn`, `07234.byn`. As in L018 each is replaced by
 an empty input, listed with its hex bytes in the test output, and pinned.
+
+T32 (2026-11-01) re-ran the proof on the 010 base after T29–T31 landed: `dotnet test -v q --filter "Law=L023"` 2 passed, 56 s test time (64 s wall, `bayan-check` rebuilt first, shared machine). Enacting waits on Q663.
 
 Neither checker bounds its recursion, so the proof does not exercise stack overflow (as Q508 for L018).
 
