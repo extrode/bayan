@@ -643,13 +643,14 @@ RenamedResult? t18RenamedCall(ref Binder b, through ref Ctx c, for Type type, at
     @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
     let isInt = isInteger(type)
 
-    @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
     if isList && name == "removeRange" {
+        @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
         if isCalleeMatch && (b.calleeOf is { } cCall) && cCall.argCount == 2 && cCall.firstTwoPlain {
             let from = t18Text(in c, from: b.file, at: cCall.arg0)
             let until = t18Text(in c, from: b.file, at: cCall.arg1)
             return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: true, fixSpan: tail, replacement: $"remove(from: {from}, until: {until})" }
         }
+        @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
         return RenamedResult { oldName: "removeRange", newName: "remove(from:until:)", hasFix: false, fixSpan: tail, replacement: "" }
     }
     @unobservable because "Q607: bindCall is a stub; add renamed-member fix cases when T20 lands"
