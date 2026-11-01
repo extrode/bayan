@@ -68,7 +68,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T22 Typestate and error cases — files: `states.byn` (`BinderStates.cs`), `errorcases.byn` (`BinderErrors.cs`), `SelfhostSemanticsT22Tests.cs` — covers: R4 — after: T4; parallel with: T6–T21, T23–T27, T34–T39 — done when:
   - every `become`, state-narrowing and error-payload rule is ported; Q625–Q629 as needed.
   - Size: about 610 lines.
-- [ ] T23 Flow and effects — files: `flow.byn` (`FlowAnalysis.cs`), `effects.byn` (`EffectAnalysis.cs`, `ErrorFlow.cs`), `SelfhostSemanticsT23Tests.cs` — covers: R4 — after: T4; parallel with: T6–T22, T24–T27, T34–T39 — done when:
+- [x] T23 Flow and effects — files: `flow.byn` (`FlowAnalysis.cs`), `effects.byn` (`EffectAnalysis.cs`, `ErrorFlow.cs`), `SelfhostSemanticsT23Tests.cs` — covers: R4 — after: T4; parallel with: T6–T22, T24–T27, T34–T39 — done when:
   - definite assignment, missing returns, unreachable code, `try` propagation and the effect fixed point match C#; Q630–Q634 as needed.
   - Size: about 992 lines.
 - [ ] T24 Ownership and lints — files: `ownership.byn` (`OwnershipAnalysis.cs`, `NeverReassignedVarLint.cs`, `SpanParameterLint.cs`, `PanicHandlerCheck.cs`), `SelfhostSemanticsT24Tests.cs` — covers: R4 — after: T4; parallel with: T6–T23, T25–T27, T34–T39 — done when:
@@ -102,7 +102,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
   - every Question raised by T1–T32 is listed in order; readiness names what the port needed and did not get; spec status done; Q664–Q668.
   - Size: about 120 lines of docs.
 - [ ] T34 Call binding C — files: `calls3.byn` (`BinderCalls.cs` ~999–1577: try/catch, switch expressions, patterns, guard, resolve step), `SelfhostSemanticsT34Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T35–T39 — done when:
-  - method-for-method port; pattern and assignment diag forms named as passing after rebase; Q669–Q673 as needed.
+  - method-for-method port; pattern and assignment diag forms named as passing after rebase; Q669–Q673 as needed. T34's bindCatch also fills c.catchVariantSpans for every catch with a variant (Q632, read by flow.byn BYN2228).
   - Size: about 840 lines.
 - [ ] T39 Assignments and writability — files: `calls4.byn` (`BinderCalls.cs` ~1578–1956: exhaustiveness, assignment, inc/dec, writability), `SelfhostSemanticsT39Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34, T35–T38 — done when:
   - exhaustiveness, assignment, inc/dec and writability match the C# cases; Q694–Q698 as needed.
@@ -116,6 +116,6 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [ ] T37 Regions B — files: `region2.byn` (`RegionAnalysis.cs` ~418–882: calls, stores, mutations, last-use, reporting), `SelfhostSemanticsT37Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34–T36, T38, T39 — done when:
   - rules 5–6 and the reporting pass match the region diag cases; Q684–Q688 as needed.
   - Size: about 674 lines.
-- [ ] T38 Declaration C — files: `declare2.byn` (`Compilation.cs` ~1038–1362: interface members, signatures and parameters, struct checks, states, validation errors, shapes and recursion), `SelfhostSemanticsT38Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34–T37, T39 — done when:
+- [x] T38 Declaration C — files: `declare2.byn` (`Compilation.cs` ~1038–1362: interface members, signatures and parameters, struct checks, states, validation errors, shapes and recursion), `SelfhostSemanticsT38Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34–T37, T39 — done when:
   - method-for-method port; interface and state declaration diag forms named as passing after rebase; Q689–Q693 as needed.
   - Size: about 471 lines.
