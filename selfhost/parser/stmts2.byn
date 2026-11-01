@@ -66,7 +66,12 @@ Stmt parseSwitchStatement(ref Parser p, at i64 start) {
     }
     while p.kind() != .closeBrace && !p.atEnd() { let _ = p.advance() }
     expectClose(ref p, from: open, for: "switch")
-    return Stmt.switchStmt(Owned(SwitchStmt { span: p.spanFrom(start), value: move value, sections: move sections }))
+    return Stmt.switchStmt(Owned(SwitchStmt {
+        span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+        value: move value,
+        sections: move sections,
+        attributes: takeStatementAttributes(ref p, at: start),
+    }))
 }
 
 SwitchLabel parseSwitchLabel(ref Parser p) {
@@ -134,7 +139,13 @@ Stmt parseDefer(ref Parser p, at i64 start) {
         var braces = BracesReport {}
         let _ = reportBraceless(ref p, by: keyword, from: gapStart, at: stmtSpan(in body), as: p.errorCount() == errors, to: -1, for: ref braces)
     }
-    return Stmt.deferStmt(Owned(DeferStmt { span: span, kind: kind, binding: binding, body: move body }))
+    return Stmt.deferStmt(Owned(DeferStmt {
+        span: statementSpan(ref p, at: start, from: span),
+        kind: kind,
+        binding: binding,
+        body: move body,
+        attributes: takeStatementAttributes(ref p, at: start),
+    }))
 }
 
 /// Whether a defer body starts at `n`: a statement on the same line.
@@ -177,7 +188,12 @@ Stmt parseContext(ref Parser p, at i64 start) {
         }
     }
     let body = parseBlock(ref p)
-    return Stmt.contextStmt(Owned(ContextStmt { span: p.spanFrom(start), values: move values, body: move body }))
+    return Stmt.contextStmt(Owned(ContextStmt {
+        span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+        values: move values,
+        body: move body,
+        attributes: takeStatementAttributes(ref p, at: start),
+    }))
 }
 
 // ── Goto ───────────────────────────────────────────────────────────────────────
@@ -188,7 +204,10 @@ Stmt parseGoto(ref Parser p, at i64 start) {
         let _ = p.report(.gotoKeyword, at: spanOf(keyword), label: "`goto case` does not exist",
             help: "combine patterns with `or`, or move shared code into a function; switch sections never fall through")
         synchronize(ref p)
-        return Stmt.errorStmt(Owned(ErrorStmt { span: p.spanFrom(start) }))
+        return Stmt.errorStmt(Owned(ErrorStmt {
+            span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+            attributes: takeStatementAttributes(ref p, at: start),
+        }))
     }
     let _ = p.reportFix(.gotoKeyword, at: spanOf(keyword), through: spanOf(keyword), by: "break",
         label: "not a keyword in Bayan",
@@ -198,13 +217,17 @@ Stmt parseGoto(ref Parser p, at i64 start) {
         label = nameOf(p.advance())
     }
     expectEnd(ref p)
-    return Stmt.breakStmt(Owned(BreakStmt { span: p.spanFrom(start), label: label }))
+    return Stmt.breakStmt(Owned(BreakStmt {
+        span: statementSpan(ref p, at: start, from: p.spanFrom(start)),
+        label: label,
+        attributes: takeStatementAttributes(ref p, at: start),
+    }))
 }
 
 // ── Simple statements ──────────────────────────────────────────────────────────
 
 /// A statement that may take a postfix `if`/`unless`; its end is not consumed.
-Stmt parseSimpleStatement(ref Parser p, at i64 start) {
+Stmt parseSimpleStatement(ref Parser p, at i64 start, to ref bool ended) {
     switch p.kind() {
         case .returnKeyword:
             let keyword = p.advance()
@@ -221,23 +244,57 @@ Stmt parseSimpleStatement(ref Parser p, at i64 start) {
             }
             var value: Expr = .none
             if hasValue { value = parseExpression(ref p) }
-            return Stmt.returnStmt(Owned(ReturnStmt { span: p.spanFrom(start), value: move value }))
+            let span = p.spanFrom(start)
+            let key = simpleKey(ref p, at: start, to: ref ended)
+            return Stmt.returnStmt(Owned(ReturnStmt {
+                span: statementSpan(ref p, at: key, from: span),
+                value: move value,
+                attributes: takeStatementAttributes(ref p, at: key),
+            }))
         case .failKeyword:
             let keyword = p.advance()
             if breaksLine(ref p, at: p.pos) && !hasBlankLineBefore(ref p, at: p.pos) && canStartExpression(p.kind())
                 && !isStatementKeyword(p.kind()) {
                 reportOnNewLine(ref p, for: keyword)
             }
-            return Stmt.failStmt(Owned(FailStmt { span: p.spanFrom(start), error: parseExpression(ref p) }))
+            let span = p.spanFrom(start)
+            let error = parseExpression(ref p)
+            let key = simpleKey(ref p, at: start, to: ref ended)
+            return Stmt.failStmt(Owned(FailStmt {
+                span: statementSpan(ref p, at: key, from: span),
+                error: move error,
+                attributes: takeStatementAttributes(ref p, at: key),
+            }))
         case .breakKeyword:
-            return Stmt.breakStmt(Owned(BreakStmt { span: p.spanFrom(start), label: parseJumpLabel(ref p, for: p.advance()) }))
+            let span = p.spanFrom(start)
+            let label = parseJumpLabel(ref p, for: p.advance())
+            let key = simpleKey(ref p, at: start, to: ref ended)
+            return Stmt.breakStmt(Owned(BreakStmt {
+                span: statementSpan(ref p, at: key, from: span),
+                label: label,
+                attributes: takeStatementAttributes(ref p, at: key),
+            }))
         case .continueKeyword:
-            return Stmt.continueStmt(Owned(ContinueStmt { span: p.spanFrom(start), label: parseJumpLabel(ref p, for: p.advance()) }))
+            let span = p.spanFrom(start)
+            let label = parseJumpLabel(ref p, for: p.advance())
+            let key = simpleKey(ref p, at: start, to: ref ended)
+            return Stmt.continueStmt(Owned(ContinueStmt {
+                span: statementSpan(ref p, at: key, from: span),
+                label: label,
+                attributes: takeStatementAttributes(ref p, at: key),
+            }))
         case .plusPlus or .minusMinus:
             let increment = p.advance().kind == .plusPlus
             let target = parseUnary(ref p)
             checkAssignable(ref p, for: in target)
-            return Stmt.incDecStmt(Owned(IncDecStmt { span: p.spanFrom(start), target: move target, increment: increment }))
+            let span = p.spanFrom(start)
+            let key = simpleKey(ref p, at: start, to: ref ended)
+            return Stmt.incDecStmt(Owned(IncDecStmt {
+                span: statementSpan(ref p, at: key, from: span),
+                target: move target,
+                increment: increment,
+                attributes: takeStatementAttributes(ref p, at: key),
+            }))
         default:
     }
 
@@ -249,18 +306,49 @@ Stmt parseSimpleStatement(ref Parser p, at i64 start) {
         for _ in 0..width { let _ = p.advance() }
         checkAssignable(ref p, for: in expr)
         let value = parseExpression(ref p)
-        return Stmt.assignStmt(Owned(AssignStmt { span: p.spanFrom(start), target: move expr, op: assignOp, value: move value }))
+        let span = p.spanFrom(start)
+        let key = simpleKey(ref p, at: start, to: ref ended)
+        return Stmt.assignStmt(Owned(AssignStmt {
+            span: statementSpan(ref p, at: key, from: span),
+            target: move expr,
+            op: assignOp,
+            value: move value,
+            attributes: takeStatementAttributes(ref p, at: key),
+        }))
     }
     if p.kind() is .plusPlus or .minusMinus && !breaksLine(ref p, at: p.pos) {
         let increment = p.advance().kind == .plusPlus
         checkAssignable(ref p, for: in expr)
-        return Stmt.incDecStmt(Owned(IncDecStmt { span: p.spanFrom(start), target: move expr, increment: increment }))
+        let span = p.spanFrom(start)
+        let key = simpleKey(ref p, at: start, to: ref ended)
+        return Stmt.incDecStmt(Owned(IncDecStmt {
+            span: statementSpan(ref p, at: key, from: span),
+            target: move expr,
+            increment: increment,
+            attributes: takeStatementAttributes(ref p, at: key),
+        }))
     }
     if p.errorCount() == errors && !isStatementExpression(in expr) {
         let _ = p.report(.invalidExpressionStatement, at: exprSpan(in expr), label: "the value is computed and discarded",
             help: "write `_ = f()` to discard a call's result; only calls, assignments and `++`/`--` can stand alone")
     }
-    return Stmt.exprStmt(Owned(ExprStmt { span: p.spanFrom(start), expr: move expr }))
+    let span = p.spanFrom(start)
+    let key = simpleKey(ref p, at: start, to: ref ended)
+    return Stmt.exprStmt(Owned(ExprStmt {
+        span: statementSpan(ref p, at: key, from: span),
+        expr: move expr,
+        attributes: takeStatementAttributes(ref p, at: key),
+    }))
+}
+
+/// The key a simple statement takes its attributes by: none when a postfix `if`/`unless` follows, whose
+/// `GuardedStmt` takes them instead, as C# sets them on the statement `ParseStatement` returns. Without one the
+/// statement ends here (`ended`): its `expectEnd`, run before the node is built so `statementSpan` takes in a `;`.
+i64 simpleKey(ref Parser p, at i64 start, to ref bool ended) {
+    if postfixFollows(ref p) { return -1 }
+    expectEnd(ref p)
+    ended = true
+    return start
 }
 
 /// The label of `break`/`continue`: on its line, or alone on the next (BYN1042).
@@ -342,46 +430,54 @@ void checkAssignable(ref Parser p, for in Expr target) {
     }
 }
 
-/// A postfix `if`/`unless` on the statement's line, then the end of the statement.
+/// A postfix `if`/`unless` on the statement's line, then the end of the statement. Called only when one
+/// follows (`simpleKey`); the chained condition and the end are consumed before the node is built (`statementSpan`).
 Stmt finishSimpleStatement(ref Parser p, at i64 start, for move Stmt statement) {
-    var stmt = move statement
-    let stranded = (p.kind() is .ifKeyword or .unlessKeyword) && breaksLine(ref p, at: p.pos) && !hasBlankLineBefore(ref p, at: p.pos)
-        && p.peek(1) != .openParen && !bodyBraceFirst(ref p, from: p.pos + 1)
+    let stranded = strandedPostfix(ref p)
     if stranded {
         let _ = p.reportFix(.postfixOnNewLine, at: spanOf(p.current()), through: TextSpan.fromBounds(p.prevEnd, until: p.current().start),
             by: " ", arg0: p.textOf(p.current()), label: "on the next line",
             help: $"move the `{p.textOf(p.current())}` clause up to the statement's line")
     }
-    if (p.kind() is .ifKeyword or .unlessKeyword) && (stranded || !p.current().hasNewlineBefore) {
-        let keyword = p.advance()
-        let isUnless = keyword.kind == .unlessKeyword
-        let unlikely = !isUnless && atUnlikely(ref p)
-        if unlikely { let _ = p.advance() }
-        if isUnless { skipUnlessLikelihood(ref p) }
-        let condition = parseExpression(ref p)
-        if isUnless {
-            let _ = checkUnlessCondition(ref p, from: in condition, at: TextSpan.fromBounds(keyword.start, until: exprSpan(in condition).end))
-        }
-        stmt = Stmt.guardedStmt(Owned(GuardedStmt {
-            span: p.spanFrom(start),
-            statement: move stmt,
-            unlessKeyword: isUnless,
-            condition: move condition,
-            unlikely: unlikely,
-        }))
-        if (p.kind() is .ifKeyword or .unlessKeyword) && !breaksLine(ref p, at: p.pos) {
-            let _ = p.report(.postfixChained, at: spanOf(p.current()), label: "a second condition",
-                help: "combine the conditions with `&&` in one postfix `if`")
-            let _ = p.advance()
-            let _ = parseExpression(ref p)
-        }
+    let keyword = p.advance()
+    let isUnless = keyword.kind == .unlessKeyword
+    let unlikely = !isUnless && atUnlikely(ref p)
+    if unlikely { let _ = p.advance() }
+    if isUnless { skipUnlessLikelihood(ref p) }
+    let condition = parseExpression(ref p)
+    if isUnless {
+        let _ = checkUnlessCondition(ref p, from: in condition, at: TextSpan.fromBounds(keyword.start, until: exprSpan(in condition).end))
+    }
+    let span = p.spanFrom(start)
+    if (p.kind() is .ifKeyword or .unlessKeyword) && !breaksLine(ref p, at: p.pos) {
+        let _ = p.report(.postfixChained, at: spanOf(p.current()), label: "a second condition",
+            help: "combine the conditions with `&&` in one postfix `if`")
+        let _ = p.advance()
+        let _ = parseExpression(ref p)
     }
     expectEnd(ref p)
-    return move stmt
+    return Stmt.guardedStmt(Owned(GuardedStmt {
+        span: statementSpan(ref p, at: start, from: span),
+        statement: move statement,
+        unlessKeyword: isUnless,
+        condition: move condition,
+        unlikely: unlikely,
+        attributes: takeStatementAttributes(ref p, at: start),
+    }))
 }
 
-/// `{ … } if x` on one line: postfix conditions only attach to simple statements.
-Stmt rejectPostfixAfterCompound(ref Parser p, for move Stmt statement) {
+/// A postfix `if`/`unless` alone on the next line, which still attaches (BYN1042).
+bool strandedPostfix(ref Parser p) =>
+    (p.kind() is .ifKeyword or .unlessKeyword) && breaksLine(ref p, at: p.pos) && !hasBlankLineBefore(ref p, at: p.pos)
+    && p.peek(1) != .openParen && !bodyBraceFirst(ref p, from: p.pos + 1)
+
+/// Whether a postfix `if`/`unless` that `finishSimpleStatement` attaches comes next.
+bool postfixFollows(ref Parser p) =>
+    (p.kind() is .ifKeyword or .unlessKeyword) && (strandedPostfix(ref p) || !p.current().hasNewlineBefore)
+
+/// `{ … } if x` on one line: postfix conditions only attach to simple statements. The block, `if` or `unless`
+/// calls it before building its node, so an attributed span takes it in (`statementSpan`).
+void rejectPostfixAfterCompound(ref Parser p) {
     if (p.kind() is .ifKeyword or .unlessKeyword) && !p.current().hasNewlineBefore && p.peek(1) != .openParen
         && !bodyBraceFirst(ref p, from: p.pos + 1) {
         let _ = p.report(.postfixNotSimple, at: spanOf(p.current()), arg0: p.textOf(p.current()),
@@ -390,7 +486,6 @@ Stmt rejectPostfixAfterCompound(ref Parser p, for move Stmt statement) {
         let _ = parseExpression(ref p)
         expectEnd(ref p)
     }
-    return move statement
 }
 
 // ── Node spans ─────────────────────────────────────────────────────────────────

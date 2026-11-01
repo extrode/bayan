@@ -1,0 +1,40 @@
+error BYN1040: `;` is an input form; a statement ends at the newline
+
+  4 │     y += 1;
+    │           ^ remove `;`
+    │
+  help: remove the `;`
+    │ 4 │     y += 1;
+    │   │           -
+
+error BYN1008: a postfix `if` applies only to a simple statement
+
+  6 │     { } if x > 0
+    │         ^^
+    │
+  help: put the condition first: `if cond { … }`
+
+error BYN1008: a postfix `unless` applies only to a simple statement
+
+  8 │     if x > 100 { } unless y < 0;
+    │                    ^^^^^^
+    │
+  help: put the condition first: `if cond { … }`
+
+error BYN1040: `;` is an input form; a statement ends at the newline
+
+  8 │     if x > 100 { } unless y < 0;
+    │                                ^ remove `;`
+    │
+  help: remove the `;`
+    │ 8 │     if x > 100 { } unless y < 0;
+    │   │                                -
+
+error BYN1040: `;` is an input form; a statement ends at the newline
+
+  10 │     return y if x > 0;
+     │                      ^ remove `;`
+     │
+  help: remove the `;`
+     │ 10 │     return y if x > 0;
+     │    │                      -

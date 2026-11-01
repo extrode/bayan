@@ -1,0 +1,303 @@
+{
+  "version": 1,
+  "kind": "mutation",
+  "tool": "bayan test --mutate",
+  "timing": {
+    "build_s": 20,
+    "mean_mutant_s": 1,
+    "max_mutant_s": 1.5,
+    "total_s": 25,
+    "mutant_share_of_build": 0.05
+  },
+  "files": [
+    {
+      "path": "lib.test.byn",
+      "mutants": [
+        {
+          "site": {
+            "id": 1,
+            "file": "lib.test.byn",
+            "line": 2,
+            "column": 8,
+            "operator": "condition",
+            "original": "n > 5",
+            "mutated": "!(n > 5)"
+          },
+          "status": "not_reached"
+        },
+        {
+          "site": {
+            "id": 2,
+            "file": "lib.test.byn",
+            "line": 2,
+            "column": 8,
+            "operator": "boundary",
+            "original": "n > 5",
+            "mutated": "n >= 5"
+          },
+          "status": "survived",
+          "suggestion": "add a case at the boundary value"
+        },
+        {
+          "site": {
+            "id": 3,
+            "file": "lib.test.byn",
+            "line": 2,
+            "column": 8,
+            "operator": "relational",
+            "original": "n > 5",
+            "mutated": "n <= 5"
+          },
+          "status": "killed",
+          "killedBy": 0
+        },
+        {
+          "site": {
+            "id": 4,
+            "file": "lib.test.byn",
+            "line": 2,
+            "column": 12,
+            "operator": "literal",
+            "original": "5",
+            "mutated": "6"
+          },
+          "status": "not_reached"
+        },
+        {
+          "site": {
+            "id": 5,
+            "file": "lib.test.byn",
+            "line": 2,
+            "column": 12,
+            "operator": "literal",
+            "original": "5",
+            "mutated": "4"
+          },
+          "status": "not_reached"
+        },
+        {
+          "site": {
+            "id": 6,
+            "file": "lib.test.byn",
+            "line": 2,
+            "column": 23,
+            "operator": "emptyReturn",
+            "original": "1",
+            "mutated": "0"
+          },
+          "status": "not_reached"
+        },
+        {
+          "site": {
+            "id": 7,
+            "file": "lib.test.byn",
+            "line": 2,
+            "column": 23,
+            "operator": "literal",
+            "original": "1",
+            "mutated": "2"
+          },
+          "status": "not_reached"
+        },
+        {
+          "site": {
+            "id": 8,
+            "file": "lib.test.byn",
+            "line": 2,
+            "column": 23,
+            "operator": "literal",
+            "original": "1",
+            "mutated": "0"
+          },
+          "status": "not_reached"
+        },
+        {
+          "site": {
+            "id": 9,
+            "file": "lib.test.byn",
+            "line": 3,
+            "column": 12,
+            "operator": "literal",
+            "original": "0",
+            "mutated": "1"
+          },
+          "status": "not_reached"
+        },
+        {
+          "site": {
+            "id": 10,
+            "file": "lib.test.byn",
+            "line": 3,
+            "column": 12,
+            "operator": "literal",
+            "original": "0",
+            "mutated": "-1"
+          },
+          "status": "not_reached"
+        },
+        {
+          "site": {
+            "id": 11,
+            "file": "lib.test.byn",
+            "line": 8,
+            "column": 5,
+            "operator": "statement",
+            "original": "@unobservable because \"no test can see it\"\n    y += 0",
+            "mutated": "",
+            "unobservable": "no test can see it"
+          },
+          "status": "marked"
+        },
+        {
+          "site": {
+            "id": 12,
+            "file": "lib.test.byn",
+            "line": 8,
+            "column": 5,
+            "operator": "arithmetic",
+            "original": "@unobservable because \"no test can see it\"\n    y += 0",
+            "mutated": "@unobservable because \"no test can see it\"\n    y -= 0",
+            "unobservable": "no test can see it"
+          },
+          "status": "marked"
+        },
+        {
+          "site": {
+            "id": 13,
+            "file": "lib.test.byn",
+            "line": 9,
+            "column": 10,
+            "operator": "literal",
+            "original": "0",
+            "mutated": "1",
+            "unobservable": "no test can see it"
+          },
+          "status": "marked"
+        },
+        {
+          "site": {
+            "id": 14,
+            "file": "lib.test.byn",
+            "line": 9,
+            "column": 10,
+            "operator": "literal",
+            "original": "0",
+            "mutated": "-1",
+            "unobservable": "no test can see it"
+          },
+          "status": "marked"
+        },
+        {
+          "site": {
+            "id": 15,
+            "file": "lib.test.byn",
+            "line": 12,
+            "column": 12,
+            "operator": "emptyReturn",
+            "original": "z",
+            "mutated": "0"
+          },
+          "status": "not_reached"
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "killed": 1,
+    "survived": 1,
+    "timeout": 0,
+    "marked": 4,
+    "not_reached": 9,
+    "not_emitted": 0
+  },
+  "operators": {
+    "boundary": {
+      "killed": 0,
+      "survived": 1,
+      "timeout": 0,
+      "marked": 0,
+      "not_reached": 0,
+      "not_emitted": 0
+    },
+    "relational": {
+      "killed": 1,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 0,
+      "not_reached": 0,
+      "not_emitted": 0
+    },
+    "logical": {
+      "killed": 0,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 0,
+      "not_reached": 0,
+      "not_emitted": 0
+    },
+    "condition": {
+      "killed": 0,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 0,
+      "not_reached": 1,
+      "not_emitted": 0
+    },
+    "bool": {
+      "killed": 0,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 0,
+      "not_reached": 0,
+      "not_emitted": 0
+    },
+    "arithmetic": {
+      "killed": 0,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 1,
+      "not_reached": 0,
+      "not_emitted": 0
+    },
+    "literal": {
+      "killed": 0,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 2,
+      "not_reached": 6,
+      "not_emitted": 0
+    },
+    "negation": {
+      "killed": 0,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 0,
+      "not_reached": 0,
+      "not_emitted": 0
+    },
+    "statement": {
+      "killed": 0,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 1,
+      "not_reached": 0,
+      "not_emitted": 0
+    },
+    "emptyReturn": {
+      "killed": 0,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 0,
+      "not_reached": 2,
+      "not_emitted": 0
+    },
+    "variant": {
+      "killed": 0,
+      "survived": 0,
+      "timeout": 0,
+      "marked": 0,
+      "not_reached": 0,
+      "not_emitted": 0
+    }
+  }
+}

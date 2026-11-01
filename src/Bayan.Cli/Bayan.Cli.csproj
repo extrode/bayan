@@ -11,6 +11,7 @@
     <ProjectReference Include="../Bayan.Semantics/Bayan.Semantics.csproj" />
     <ProjectReference Include="../Bayan.Lowering/Bayan.Lowering.csproj" />
     <ProjectReference Include="../Bayan.Backend.C/Bayan.Backend.C.csproj" />
+    <ProjectReference Include="../Bayan.Testing/Bayan.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Bayan.Tests" />

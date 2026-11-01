@@ -270,6 +270,29 @@ BecauseClause? parseBecause(ref Parser p, for string construct, at TextSpan cons
     return BecauseClause { span: p.spanFrom(start), reason: reason }
 }
 
+/// `@name` or `@name(args)` before a statement (R7), each with its `because "…"`; only `@unobservable`
+/// may come there (BYN1069), and it needs a reason (BYN8001). Every attribute is kept.
+List<AttributeSyntax> parseStatementAttributes(ref Parser p) {
+    var attributes = List<AttributeSyntax>()
+    while p.kind() == .at && isName(p.peek(1)) {
+        let start = p.advance().start
+        let name = expectName(ref p, what: "an attribute name")
+        var args = List<Argument>()
+        if p.kind() == .openParen && !breaksLine(ref p, at: p.pos) { args = parseArguments(ref p) }
+        let span = p.spanFrom(start)
+        let nameText = p.lexed.source.getText(name)
+        let becauseClause = parseBecause(ref p, for: $"@{nameText}", at: span)
+        if nameText != "unobservable" {
+            let _ = p.report(.statementAttribute, at: span, arg0: $"@{nameText}", label: "before a statement",
+                help: "remove the attribute; only `@unobservable` may come before a statement")
+        } else if becauseClause is null {
+            reportMissingBecause(ref p, for: $"@{nameText}", at: span)
+        }
+        attributes.append(AttributeSyntax { span: span, name: name, args: move args, becauseKeyword: becauseClause })
+    }
+    return attributes
+}
+
 void reportMissingBecause(ref Parser p, for string construct, at TextSpan span) {
     let _ = p.report(.missingBecause, at: span, arg0: construct, label: "bypasses a safety rule",
         help: "explain the bypass in a `because` clause")

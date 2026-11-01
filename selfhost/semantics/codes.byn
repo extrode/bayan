@@ -215,6 +215,7 @@ enum SemaCode {
     fieldWriteOutside
     borrowCrossesFiber
     requiresMixesFields
+    unknownMutationOperator
     manifestNotData
     manifestUnknownField
     manifestInvalidValue
@@ -471,6 +472,7 @@ string codeText(SemaCode code) => code switch {
     .fieldWriteOutside => "BYN3216",
     .borrowCrossesFiber => "BYN3217",
     .requiresMixesFields => "BYN3218",
+    .unknownMutationOperator => "BYN3219",
     .manifestNotData => "BYN3100",
     .manifestUnknownField => "BYN3101",
     .manifestInvalidValue => "BYN3102",
@@ -727,6 +729,7 @@ string messageFormat(SemaCode code) => code switch {
     .fieldWriteOutside => "`{0}.{1}` can be written only by `{0}`'s own methods or with `with`: `{0}` {2}",
     .borrowCrossesFiber => "`{0}` holds a reference into `{1}` and cannot be passed to a fiber that may outlive it",
     .requiresMixesFields => "this `requires` reads `it` and other fields",
+    .unknownMutationOperator => "`{0}` is not a mutation operator",
     .manifestNotData => "`package.byn` is data only: expected {0}",
     .manifestUnknownField => "`{0}` is not a field of `{1}`",
     .manifestInvalidValue => "`{0}` must be {1}",

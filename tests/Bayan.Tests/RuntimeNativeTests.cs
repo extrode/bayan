@@ -106,6 +106,20 @@ public sealed class RuntimeNativeTests
         Assert.Equal("2 2\nlive 0\n", Run(Build(code), []).Replace("\r\n", "\n"));
     }
 
+    /// <summary><c>byn_cov_flush</c> runs once when a panic aborts the program.</summary>
+    [Fact]
+    public void CovFlushRunsOnPanic()
+    {
+        var driver = File.ReadAllText(Path.Combine(Golden.RepoRoot, "tests", "native", "cov-flush.c"));
+        var psi = new ProcessStartInfo(Build(driver)) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        using var p = Process.Start(psi)!;
+        var stdout = p.StandardOutput.ReadToEnd();
+        p.StandardError.ReadToEnd();
+        p.WaitForExit();
+        Assert.NotEqual(0, p.ExitCode);
+        Assert.Equal("flushed\n", stdout.Replace("\r\n", "\n"));
+    }
+
     private static string Build(string cSource)
     {
         var build = Toolchain.Build(cSource, BuildMode.Debug);
