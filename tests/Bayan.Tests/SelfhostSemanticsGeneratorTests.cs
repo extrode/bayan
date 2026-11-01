@@ -132,7 +132,7 @@ public sealed class SelfhostSemanticsGeneratorTests(ITestOutputHelper output)
         var stdout = new StringWriter();
         var stderr = new StringWriter();
         var exit = CliApp.Run(["check", path], stdout, stderr);
-        return (exit, WithoutSummary(stdout.ToString().ReplaceLineEndings("\n")), stderr.ToString().ReplaceLineEndings("\n"));
+        return (exit, WithoutSummary(ProcessText.Lf(stdout.ToString())), ProcessText.Lf(stderr.ToString()));
     }
 
     internal static string WithoutSummary(string text) =>
