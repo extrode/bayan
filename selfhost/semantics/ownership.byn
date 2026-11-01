@@ -1,13 +1,1000 @@
 // T24: OwnershipAnalysis.cs and the three lints.
+//
+// Ownership of unique values (spec §3.11, §9.3), run once every body is bound: an existing unique value may not be
+// stored without `move` or `copy` (BYN2780), and a moved local may not be used on any path until it is assigned again
+// (BYN2781). The C# `Dictionary<LocalSymbol, TextSpan>` and `HashSet` fields are `List`s searched in order; a
+// `JumpTarget` is its `Ctx.jumpTargets` index and a bound node its handle, which are their identities.
 
-// stub: T24 ports OwnershipAnalysis.cs:34 Analyze
-void analyzeOwnership(ref Ctx c, for FuncId fn) {}
+import parser
 
-// stub: T24 ports NeverReassignedVarLint.cs:13 Analyze
-void lintNeverReassignedVar(ref Ctx c, for FuncId fn) {}
+/// One entry of C# `State.Moved`: a local and where it was moved.
+struct T24Moved {
+    LocalId local
+    TextSpan site
+}
 
-// stub: T24 ports SpanParameterLint.cs:13 Analyze
-void lintSpanParameter(ref Ctx c, for FuncId fn) {}
+/// C# `OwnershipAnalysis.State`: reachability plus the locals moved on some path, with where.
+struct OwnState {
+    bool reachable = true
+    List<T24Moved> moved = List<T24Moved>()
+}
 
-// stub: T24 ports PanicHandlerCheck.cs:13 Analyze
-void checkPanicHandler(ref Ctx c, for FuncId fn) {}
+/// C# `Cleanup`: a `defer`/`errdefer`, the locals its body reads and moves, and what was already moved when it was
+/// registered; `panic` for a `defer panicking`.
+struct T24Cleanup {
+    TextSpan site
+    bool onFailure = false
+    List<LocalId> reads = List<LocalId>()
+    List<T24Moved> moves = List<T24Moved>()
+    List<T24Moved> movedBefore = List<T24Moved>()
+    bool panic = false
+}
+
+/// One entry of C# `_reported`: a code and a span.
+struct T24Reported {
+    string code
+    TextSpan span
+}
+
+/// The C# `OwnershipAnalysis` instance.
+struct Ownership {
+    FuncId fn
+    FileId file
+    Map<i64, OwnState> breaks = []
+    Map<i64, OwnState> continues = []
+    List<T24Reported> reported = List<T24Reported>()
+    /// Cleanups registered in the enclosing scopes, innermost last.
+    List<T24Cleanup> cleanups = List<T24Cleanup>()
+    /// How many cleanups were active where each loop or switch began: a jump to it runs the rest.
+    Map<i64, i64> depths = []
+}
+
+void analyzeOwnership(ref Ctx c, for FuncId fn) {
+    if c.functions[fn].file == -1 || c.functions[fn].body == -1 { return }
+    var a = Ownership { fn: fn, file: c.functions[fn].file }
+    let statements = copyIds(in c.bBlocks[boundIndex(c.functions[fn].body)].statements)
+    let _ = t24Block(ref a, through: ref c, for: in statements, by: OwnState {})
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+
+List<T24Moved> t24CopyMoved(in List<T24Moved> xs) {
+    var r = List<T24Moved>()
+    for x in xs { r.append(T24Moved { local: x.local, site: x.site }) }
+    return r
+}
+
+OwnState t24Clone(in OwnState s) => OwnState { reachable: s.reachable, moved: t24CopyMoved(in s.moved) }
+
+OwnState t24Unreachable() => OwnState { reachable: false }
+
+/// The index of `l` in `moved`, or -1 (C# `Moved.TryGetValue`).
+i64 t24Find(in List<T24Moved> moved, by LocalId l) {
+    for k in 0..moved.length {
+        if moved[k].local == l { return k }
+    }
+    return -1
+}
+
+/// C# `Moved[l] = site`.
+void t24Set(ref List<T24Moved> moved, for LocalId l, at TextSpan site) {
+    let k = t24Find(in moved, by: l)
+    if k >= 0 {
+        moved[k].site = site
+    } else {
+        moved.append(T24Moved { local: l, site: site })
+    }
+}
+
+/// C# `Moved.Remove(l)`.
+void t24Remove(ref List<T24Moved> moved, by LocalId l) {
+    let k = t24Find(in moved, by: l)
+    if k >= 0 { moved.remove(at: k) }
+}
+
+/// Paths meeting: moved if moved on any reachable path.
+OwnState t24Join(in OwnState s, by in OwnState other) {
+    if !s.reachable { return t24Clone(in other) }
+    if !other.reachable { return t24Clone(in s) }
+    var r = t24Clone(in s)
+    for x in other.moved {
+        if t24Find(in r.moved, by: x.local) < 0 { r.moved.append(T24Moved { local: x.local, site: x.site }) }
+    }
+    return move r
+}
+
+bool t24SameAs(in OwnState s, by in OwnState other) {
+    if s.reachable != other.reachable || s.moved.length != other.moved.length { return false }
+    for x in s.moved {
+        if t24Find(in other.moved, by: x.local) < 0 { return false }
+    }
+    return true
+}
+
+bool t24SameSpan(TextSpan a, as TextSpan b) => a.start == b.start && a.length == b.length
+
+void t24Report(ref Ownership a, through ref Ctx c, for SemaCode code, at TextSpan span, by string arg, string label = "", string help = "", bool hasFix = false, TextSpan? fixSpan = null, string fixReplacement = "") {
+    let text = codeText(code)
+    for r in a.reported {
+        if r.code == text && t24SameSpan(r.span, as: span) { return }
+    }
+    a.reported.append(T24Reported { code: text, span: span })
+    report(ref c, for: code, from: a.file, at: span, by: (arg, "", "", "", ""), label: label, help: help, hasFix: hasFix, fixSpan: fixSpan, fixReplacement: fixReplacement)
+}
+
+/// C# `Constant?.Value as bool?`.
+bool? t24ConstantBool(in Ctx c, for BExpr e) {
+    let k = exprConstant(in c, for: e) ?? return null
+    if k.kind != .flag { return null }
+    return k.flag
+}
+
+i64 t24Line(in Ctx c, for FileId file, at i64 offset) => linePosition(c.files[file].text.span, at: offset).line
+
+// ── Statements ───────────────────────────────────────────────────────────────
+
+OwnState t24Block(ref Ownership a, through ref Ctx c, for in List<BStmt> statements, by move OwnState start) {
+    var state = move start
+    let depth = a.cleanups.length
+    for s in statements { state = t24Statement(ref a, through: ref c, for: s, by: move state) }
+    t24RunCleanups(ref a, through: ref c, for: in state, from: depth, failing: false)
+    while a.cleanups.length > depth { let _ = a.cleanups.removeLast() }
+    return move state
+}
+
+OwnState t24Statement(ref Ownership a, through ref Ctx c, for BStmt s, by move OwnState start) {
+    var state = move start
+    let i = boundIndex(s)
+    switch boundKind(s) {
+        case .block:
+            let statements = copyIds(in c.bBlocks[i].statements)
+            return t24Block(ref a, through: ref c, for: in statements, by: move state)
+        case .localDecl:
+            let local = c.bLocalDecls[i].local
+            let initializer = c.bLocalDecls[i].initializer
+            if initializer != -1 {
+                state = t24Expr(ref a, through: ref c, for: initializer, by: move state)
+                t24CheckStore(ref a, through: ref c, for: initializer)
+            }
+            t24Remove(ref state.moved, by: local)
+            return move state
+        case .exprStmt:
+            return t24Expr(ref a, through: ref c, for: c.bExprStmts[i].expr, by: move state)
+        case .assertStmt:
+            return t24Expr(ref a, through: ref c, for: c.bAsserts[i].condition, by: move state)
+        case .assign:
+            let target = c.bAssigns[i].target
+            let value = c.bAssigns[i].value
+            if c.bAssigns[i].op is null && boundKind(target) == .local {
+                let l = c.bLocals[boundIndex(target)].local
+                state = t24Expr(ref a, through: ref c, for: value, by: move state)
+                // `x = x with { … }` consumes the old `x`: a move, not a copy (revision 0007).
+                if !t24IsSelfWith(in c, for: value, by: l) { t24CheckStore(ref a, through: ref c, for: value) }
+                t24Remove(ref state.moved, by: l)
+                return move state
+            }
+            state = t24Expr(ref a, through: ref c, for: target, by: move state)
+            state = t24Expr(ref a, through: ref c, for: value, by: move state)
+            t24CheckStore(ref a, through: ref c, for: value)
+            return move state
+        case .returnStmt:
+            let value = c.bReturns[i].value
+            if value != -1 {
+                state = t24Expr(ref a, through: ref c, for: value, by: move state)
+                // A local or `move` parameter returned is going out of scope: it moves.
+                if !t24IsMovable(in c, for: t24StripConversions(in c, for: value)) { t24CheckStore(ref a, through: ref c, for: value) }
+            }
+            t24RunCleanups(ref a, through: ref c, for: in state, from: 0, failing: false)
+            return t24Unreachable()
+        case .failStmt:
+            let after = t24Expr(ref a, through: ref c, for: c.bFails[i].error, by: move state)
+            t24RunCleanups(ref a, through: ref c, for: in after, from: 0, failing: true)
+            return t24Unreachable()
+        case .breakStmt:
+            let target = c.bBreaks[i].target
+            t24RunCleanups(ref a, through: ref c, for: in state, from: a.depths.tryGet(at: target) ?? 0, failing: false)
+            t24Merge(ref a.breaks, for: target, by: in state)
+            return t24Unreachable()
+        case .continueStmt:
+            let target = c.bContinues[i].target
+            t24RunCleanups(ref a, through: ref c, for: in state, from: a.depths.tryGet(at: target) ?? 0, failing: false)
+            t24Merge(ref a.continues, for: target, by: in state)
+            return t24Unreachable()
+        case .ifStmt:
+            let condition = c.bIfs[i].condition
+            let thenBranch = c.bIfs[i].then
+            let elseBranch = c.bIfs[i].elseBranch
+            state = t24Expr(ref a, through: ref c, for: condition, by: move state)
+            let constant = t24ConstantBool(in c, for: condition)
+            let thenStart = constant == false ? t24Unreachable() : t24Clone(in state)
+            let thenState = t24Statement(ref a, through: ref c, for: thenBranch, by: move thenStart)
+            var otherwise = t24Unreachable()
+            if constant == true {
+                otherwise = t24Unreachable()
+            } else if elseBranch == -1 {
+                otherwise = t24Clone(in state)
+            } else {
+                otherwise = t24Statement(ref a, through: ref c, for: elseBranch, by: t24Clone(in state))
+            }
+            return t24Join(in thenState, by: in otherwise)
+        case .whileStmt:
+            // A move in the body reaches the next iteration: repeat until the entry state is stable.
+            let condition = c.bWhiles[i].condition
+            let body = c.bWhiles[i].body
+            let target = c.bWhiles[i].target
+            a.depths[target] = a.cleanups.length
+            var entry = t24Clone(in state)
+            while true {
+                let head = t24Expr(ref a, through: ref c, for: condition, by: t24Clone(in entry))
+                let bodyStart = t24ConstantBool(in c, for: condition) == false ? t24Unreachable() : t24Clone(in head)
+                var bodyState = t24Statement(ref a, through: ref c, for: body, by: move bodyStart)
+                if a.continues.contains(target) {
+                    bodyState = t24Join(in bodyState, by: in a.continues[target])
+                    let _ = a.continues.remove(target)
+                }
+                let next = t24Join(in state, by: in bodyState)
+                if t24SameAs(in next, by: in entry) {
+                    let after = t24ConstantBool(in c, for: condition) == true ? t24Unreachable() : move head
+                    return t24Exit(ref a, for: target, by: move after)
+                }
+                entry = move next
+            }
+            return move state
+        case .doWhile:
+            let condition = c.bDoWhiles[i].condition
+            let body = c.bDoWhiles[i].body
+            let target = c.bDoWhiles[i].target
+            a.depths[target] = a.cleanups.length
+            var entry = t24Clone(in state)
+            while true {
+                var bodyState = t24Statement(ref a, through: ref c, for: body, by: t24Clone(in entry))
+                if a.continues.contains(target) {
+                    bodyState = t24Join(in bodyState, by: in a.continues[target])
+                    let _ = a.continues.remove(target)
+                }
+                let afterCondition = t24Expr(ref a, through: ref c, for: condition, by: move bodyState)
+                let next = t24Join(in state, by: in afterCondition)
+                if t24SameAs(in next, by: in entry) {
+                    let after = t24ConstantBool(in c, for: condition) == true ? t24Unreachable() : move afterCondition
+                    return t24Exit(ref a, for: target, by: move after)
+                }
+                entry = move next
+            }
+            return move state
+        case .forStmt:
+            let body = c.bFors[i].body
+            let target = c.bFors[i].target
+            state = t24Expr(ref a, through: ref c, for: c.bFors[i].iterable, by: move state)
+            a.depths[target] = a.cleanups.length
+            var entry = t24Clone(in state)
+            while true {
+                var bodyState = t24Statement(ref a, through: ref c, for: body, by: t24Clone(in entry))
+                if a.continues.contains(target) {
+                    bodyState = t24Join(in bodyState, by: in a.continues[target])
+                    let _ = a.continues.remove(target)
+                }
+                let next = t24Join(in state, by: in bodyState)
+                if t24SameAs(in next, by: in entry) { return t24Exit(ref a, for: target, by: move entry) }
+                entry = move next
+            }
+            return move state
+        case .switchStmt:
+            let target = c.bSwitches[i].target
+            state = t24Expr(ref a, through: ref c, for: c.bSwitches[i].value, by: move state)
+            a.depths[target] = a.cleanups.length
+            var after = t24Unreachable()
+            // A guard that ran and failed has made its moves: later sections start from that too.
+            var next = t24Clone(in state)
+            let count = c.bSwitches[i].sections.length
+            for k in 0..count {
+                let pattern = c.bSwitches[i].sections[k].pattern
+                let guard = c.bSwitches[i].sections[k].guard
+                let sectionBody = copyIds(in c.bSwitches[i].sections[k].body)
+                var branch = t24Bind(in c, for: pattern, by: t24Clone(in next))
+                if guard != -1 {
+                    branch = t24Expr(ref a, through: ref c, for: guard, by: move branch)
+                    next = t24Join(in next, by: in branch)
+                }
+                let ended = t24Block(ref a, through: ref c, for: in sectionBody, by: t24Clone(in branch))
+                after = t24Join(in after, by: in ended)
+            }
+            if !c.bSwitches[i].exhaustive { after = t24Join(in after, by: in next) }
+            return t24Exit(ref a, for: target, by: move after)
+        case .deferStmt:
+            let body = c.bDefers[i].body
+            let _ = t24Statement(ref a, through: ref c, for: body, by: t24Clone(in state))
+            t24Register(ref a, through: ref c, for: body, at: c.bDefers[i].span, onFailure: false, by: in state)
+            return move state
+        case .errdeferStmt:
+            let body = c.bErrdefers[i].body
+            let _ = t24Statement(ref a, through: ref c, for: body, by: t24Clone(in state))
+            t24Register(ref a, through: ref c, for: body, at: c.bErrdefers[i].span, onFailure: true, by: in state)
+            return move state
+        // A panic handler runs in place of the scope's cleanups, not at its exit: registered only so a later move of what it reads is BYN2615.
+        case .panicDefer:
+            let body = c.bPanicDefers[i].body
+            let _ = t24Statement(ref a, through: ref c, for: body, by: t24Clone(in state))
+            t24Register(ref a, through: ref c, for: body, at: c.bPanicDefers[i].span, onFailure: false, by: in state, panic: true)
+            return move state
+        case .contextStmt:
+            let body = c.bContexts[i].body
+            state = t24Expr(ref a, through: ref c, for: c.bContexts[i].allocator, by: move state)
+            return t24Statement(ref a, through: ref c, for: body, by: move state)
+        default:
+            return move state
+    }
+}
+
+/// A pattern's bindings hold a fresh value each time it matches, as a declaration does.
+OwnState t24Bind(in Ctx c, for BPattern pattern, by move OwnState start) {
+    var state = move start
+    if pattern == -1 { return move state }
+    for node in descendants(in c, for: pattern) {
+        let i = boundIndex(node)
+        switch boundKind(node) {
+            case .bindPattern:
+                if c.bBindPatterns[i].local != -1 { t24Remove(ref state.moved, by: c.bBindPatterns[i].local) }
+            case .propertyPattern:
+                if c.bPropertyPatterns[i].designation != -1 { t24Remove(ref state.moved, by: c.bPropertyPatterns[i].designation) }
+            case .unionPattern:
+                if c.bUnionPatterns[i].designation != -1 { t24Remove(ref state.moved, by: c.bUnionPatterns[i].designation) }
+            default:
+                continue
+        }
+    }
+    return move state
+}
+
+/// Registers a cleanup: the locals `body` reads (not those it only assigns) and moves.
+void t24Register(ref Ownership a, through ref Ctx c, for BStmt body, at TextSpan site, bool onFailure, by in OwnState state, bool panic = false) {
+    var assigned = List<BNode>()
+    var reads = List<LocalId>()
+    var moves = List<T24Moved>()
+    for n in descendants(in c, for: body) {
+        let i = boundIndex(n)
+        let kind = boundKind(n)
+        if kind == .assign && c.bAssigns[i].op is null && boundKind(c.bAssigns[i].target) == .local {
+            assigned.append(c.bAssigns[i].target)
+        } else if kind == .local && !listContains(in assigned, by: n) {
+            if !listContains(in reads, by: c.bLocals[i].local) { reads.append(c.bLocals[i].local) }
+        } else if kind == .moveExpr && boundKind(c.bMoves[i].operand) == .local {
+            let operand = c.bMoves[i].operand
+            let m = c.bLocals[boundIndex(operand)].local
+            if t24IsMovable(in c, for: operand) && isUnique(ref c, for: c.locals[m].type) {
+                moves.append(T24Moved { local: m, site: c.bMoves[i].span })
+            }
+        }
+    }
+    a.cleanups.append(T24Cleanup { site: site, onFailure: onFailure, reads: move reads, moves: move moves, movedBefore: t24CopyMoved(in state.moved), panic: panic })
+}
+
+/// Runs the cleanups from `depth` up, innermost first, at an exit reached in `state`: a local one reads that was moved
+/// after it was registered is a use after move, reported at the move.
+void t24RunCleanups(ref Ownership a, through ref Ctx c, for in OwnState state, from i64 depth, bool failing) {
+    if !state.reachable { return }
+    var moved = t24CopyMoved(in state.moved)
+    var i = a.cleanups.length - 1
+    while i >= depth {
+        let onFailure = a.cleanups[i].onFailure
+        if a.cleanups[i].panic || onFailure && !failing {
+            i -= 1
+            continue
+        }
+        let line = t24Line(in c, for: a.file, at: a.cleanups[i].site.start)
+        let reads = copyIds(in a.cleanups[i].reads)
+        for l in reads {
+            let k = t24Find(in moved, by: l)
+            if k < 0 { continue }
+            let site = moved[k].site
+            let b = t24Find(in a.cleanups[i].movedBefore, by: l)
+            if b >= 0 && t24SameSpan(a.cleanups[i].movedBefore[b].site, as: site) { continue }
+            let name = c.locals[l].name
+            let label = $"{onFailure ? "a `defer failing`" : "a `defer`"} on line {line} uses it at scope exit"
+            let help = $"move `{name}` before the `{onFailure ? "defer failing" : "defer"}`, or move a `.copy(to: alloc)` of it instead"
+            t24Report(ref a, through: ref c, for: .useAfterMove, at: site, by: name, label: label, help: help)
+        }
+        for x in a.cleanups[i].moves { t24Set(ref moved, for: x.local, at: x.site) }
+        i -= 1
+    }
+}
+
+void t24Merge(ref Map<i64, OwnState> map, for i64 target, by in OwnState state) {
+    if !state.reachable { return }
+    if map.contains(target) {
+        let joined = t24Join(in map[target], by: in state)
+        map[target] = move joined
+    } else {
+        map[target] = t24Clone(in state)
+    }
+}
+
+OwnState t24Exit(ref Ownership a, for i64 target, by move OwnState after) {
+    let _ = a.continues.remove(target)
+    if a.breaks.contains(target) {
+        let joined = t24Join(in after, by: in a.breaks[target])
+        let _ = a.breaks.remove(target)
+        return move joined
+    }
+    return move after
+}
+
+// ── Expressions ──────────────────────────────────────────────────────────────
+
+OwnState t24Expr(ref Ownership a, through ref Ctx c, for BExpr e, by move OwnState start) {
+    var state = move start
+    let i = boundIndex(e)
+    switch boundKind(e) {
+        case .local:
+            let l = c.bLocals[i].local
+            let k = t24Find(in state.moved, by: l)
+            if state.reachable && k >= 0 {
+                let name = c.locals[l].name
+                let line = t24Line(in c, for: a.file, at: state.moved[k].site.start)
+                t24Report(ref a, through: ref c, for: .useAfterMove, at: c.bLocals[i].span, by: name, label: $"moved on line {line}", help: $"assign `{name}` a new value before using it again, or move a `.copy(to: alloc)` of it instead")
+            }
+            return move state
+        case .moveExpr:
+            let operand = c.bMoves[i].operand
+            state = t24Expr(ref a, through: ref c, for: operand, by: move state)
+            if t24IsMovable(in c, for: operand) && boundKind(operand) == .local {
+                let moved = c.bLocals[boundIndex(operand)].local
+                if isUnique(ref c, for: c.locals[moved].type) {
+                    let span = c.bMoves[i].span
+                    t24Set(ref state.moved, for: moved, at: span)
+                    for k in 0..a.cleanups.length {
+                        if a.cleanups[k].panic && state.reachable && listContains(in a.cleanups[k].reads, by: moved) {
+                            let name = c.locals[moved].name
+                            let line = t24Line(in c, for: a.file, at: a.cleanups[k].site.start)
+                            t24Report(ref a, through: ref c, for: .panicHandlerReadsMoved, at: span, by: name, label: $"the `defer panicking` on line {line} reads it after a later panic", help: $"move `{name}` before the `defer panicking`, or read a `let` copied from it there")
+                        }
+                    }
+                }
+            }
+            return move state
+        case .tryExpr:
+            state = t24Expr(ref a, through: ref c, for: c.bTries[i].operand, by: move state)
+            t24RunCleanups(ref a, through: ref c, for: in state, from: 0, failing: true)
+            return isNever(c.bTries[i].type) ? t24Unreachable() : move state
+        case .binary:
+            let op = c.bBinaries[i].op
+            if op == .logicalAnd || op == .logicalOr {
+                let right = c.bBinaries[i].right
+                state = t24Expr(ref a, through: ref c, for: c.bBinaries[i].left, by: move state)
+                let rightState = t24Expr(ref a, through: ref c, for: right, by: t24Clone(in state))
+                return t24Join(in state, by: in rightState)
+            }
+            return t24Default(ref a, through: ref c, for: e, by: move state)
+        case .conditional:
+            let whenTrue = c.bConditionals[i].whenTrue
+            let whenFalse = c.bConditionals[i].whenFalse
+            state = t24Expr(ref a, through: ref c, for: c.bConditionals[i].condition, by: move state)
+            let t = t24Expr(ref a, through: ref c, for: whenTrue, by: t24Clone(in state))
+            let o = t24Expr(ref a, through: ref c, for: whenFalse, by: t24Clone(in state))
+            return t24Join(in t, by: in o)
+        case .coalesce:
+            let right = c.bCoalesces[i].right
+            state = t24Expr(ref a, through: ref c, for: c.bCoalesces[i].left, by: move state)
+            let r = t24Expr(ref a, through: ref c, for: right, by: t24Clone(in state))
+            return t24Join(in state, by: in r)
+        case .switchExpr:
+            state = t24Expr(ref a, through: ref c, for: c.bSwitchExprs[i].value, by: move state)
+            var after = t24Unreachable()
+            var next = t24Clone(in state)
+            let count = c.bSwitchExprs[i].arms.length
+            for k in 0..count {
+                let pattern = c.bSwitchExprs[i].arms[k].pattern
+                let guard = c.bSwitchExprs[i].arms[k].guard
+                let value = c.bSwitchExprs[i].arms[k].value
+                var branch = t24Bind(in c, for: pattern, by: t24Clone(in next))
+                if guard != -1 {
+                    branch = t24Expr(ref a, through: ref c, for: guard, by: move branch)
+                    next = t24Join(in next, by: in branch)
+                }
+                let ended = t24Expr(ref a, through: ref c, for: value, by: t24Clone(in branch))
+                after = t24Join(in after, by: in ended)
+            }
+            return move after
+        case .call:
+            let function = c.bCalls[i].function
+            let receiver = c.bCalls[i].receiver
+            let arguments = copyIds(in c.bCalls[i].arguments)
+            if receiver != -1 { state = t24Expr(ref a, through: ref c, for: receiver, by: move state) }
+            var outs = List<LocalId>()
+            let parameters = copyIds(in c.functions[function].parameters)
+            let builtin = c.functions[function].builtin
+            for k in 0..arguments.length {
+                let arg = arguments[k]
+                let modifier = k < parameters.length ? c.locals[parameters[k]].modifier : parser.ParamModifier.none
+                if modifier == .outKeyword && boundKind(arg) == .local {
+                    outs.append(c.bLocals[boundIndex(arg)].local)
+                    continue
+                }
+                state = t24Expr(ref a, through: ref c, for: arg, by: move state)
+                if modifier == .moveKeyword || (k == 0 && (builtin == .ownedNew || builtin == .untrustedNew || builtin == .trust)) {
+                    t24CheckStore(ref a, through: ref c, for: arg)
+                }
+            }
+            for l in outs { t24Remove(ref state.moved, by: l) }
+            return isNever(c.bCalls[i].type) ? t24Unreachable() : move state
+        case .catchExpr:
+            let handler = c.bCatches[i].handler
+            state = t24Expr(ref a, through: ref c, for: c.bCatches[i].operand, by: move state)
+            if c.bCatches[i].variant != -1 { t24RunCleanups(ref a, through: ref c, for: in state, from: 0, failing: true) }
+            let h = t24Expr(ref a, through: ref c, for: handler, by: t24Clone(in state))
+            return t24Join(in state, by: in h)
+        case .jump:
+            return t24Statement(ref a, through: ref c, for: c.bJumps[i].jump, by: move state)
+        case .blockExpr:
+            return t24Statement(ref a, through: ref c, for: c.bBlockExprs[i].block, by: move state)
+        case .isExpr:
+            return t24Expr(ref a, through: ref c, for: c.bIses[i].value, by: move state)
+        default:
+            return t24Default(ref a, through: ref c, for: e, by: move state)
+    }
+}
+
+/// The C# `default` arm of `Expr`.
+OwnState t24Default(ref Ownership a, through ref Ctx c, for BExpr e, by move OwnState start) {
+    var state = move start
+    for child in children(in c, for: e) {
+        if isExprKind(boundKind(child)) { state = t24Expr(ref a, through: ref c, for: child, by: move state) }
+    }
+    for stored in t24StoredOperands(in c, for: e) { t24CheckStore(ref a, through: ref c, for: stored) }
+    // A local read inside nested lambdas is a capture of each of them; only the function that owns it reports it.
+    if boundKind(e) == .lambda {
+        let captures = copyIds(in c.bLambdas[boundIndex(e)].captures)
+        for capture in captures {
+            if listContains(in c.functions[a.fn].locals, by: c.bLocals[boundIndex(capture)].local) {
+                t24CheckStore(ref a, through: ref c, for: capture, captured: true)
+            }
+        }
+    }
+    return isNever(exprType(in c, for: e)) && boundKind(e) != .errorExpr ? t24Unreachable() : move state
+}
+
+/// Operands that `e` stores into a new location: elements, fields, payloads, inserted values.
+List<BExpr> t24StoredOperands(in Ctx c, for BExpr e) {
+    var r = List<BExpr>()
+    let i = boundIndex(e)
+    switch boundKind(e) {
+        case .collection:
+            for x in c.bCollections[i].elements { r.append(x) }
+        case .structLiteral:
+            for x in c.bStructLiterals[i].fields { r.append(x) }
+        case .unionNew:
+            for x in c.bUnionNews[i].payload { r.append(x) }
+        case .tuple:
+            for x in c.bTuples[i].elements { r.append(x) }
+        case .withExpr:
+            for u in c.bWiths[i].updates { r.append(u.value) }
+        case .builtinCall:
+            if c.bBuiltinCalls[i].member == .listAdd { r.append(c.bBuiltinCalls[i].arguments[0]) }
+        default:
+            return r
+    }
+    return r
+}
+
+// ── Implicit copies (BYN2780) ────────────────────────────────────────────────
+
+/// `value` is stored somewhere new: it must not be an existing unique value.
+void t24CheckStore(ref Ownership a, through ref Ctx c, for BExpr value, bool captured = false) {
+    if !t24IsPlace(ref c, for: value) { return }
+    let why = whyUnique(ref c, for: exprType(in c, for: value)) ?? return
+    let core = t24StripConversions(in c, for: value)
+    let span = nodeSpan(in c, for: core)
+    let text = getText(c.files[a.file].text.span, at: span)
+    // A lambda copies its captures; a copy or a move of the local would be captured the same way.
+    if captured {
+        t24Report(ref a, through: ref c, for: .implicitCopy, at: span, by: why, help: $"copy what the lambda needs from `{text}` into `let` values first")
+        return
+    }
+    if boundKind(core) == .withExpr {
+        let target = t24StripConversions(in c, for: c.bWiths[boundIndex(core)].target)
+        if t24IsMovable(in c, for: target) {
+            let name = getText(c.files[a.file].text.span, at: nodeSpan(in c, for: target))
+            t24Report(ref a, through: ref c, for: .implicitCopy, at: span, by: why, help: $"write `move {name} with \{ … \}` to give up `{name}`")
+            return
+        }
+    }
+    var options = List<string>()
+    var hasFix = false
+    var fixSpan = TextSpan { start: 0, length: 0 }
+    var fixReplacement = ""
+    if t24IsMovable(in c, for: core) {
+        options.append($"hand the value over with `move {text}`")
+        hasFix = true
+        fixSpan = TextSpan { start: span.start, length: 0 }
+        fixReplacement = "move "
+    }
+    let coreType = exprType(in c, for: core)
+    if kindOf(coreType) == .list || kindOf(coreType) == .map || (kindOf(coreType) == .builtin && builtinKindOf(typeIndex(coreType)) == .strBuf) {
+        options.append($"make an independent copy with `{text}.copy(to: alloc)`")
+        if !hasFix {
+            hasFix = true
+            fixSpan = TextSpan { start: span.end, length: 0 }
+            fixReplacement = ".copy(to: alloc)"
+        }
+    }
+    if boundKind(core) == .local {
+        let l = c.bLocals[boundIndex(core)].local
+        if c.locals[l].isParameter && c.locals[l].modifier == .none { options.append($"declare the parameter `move {c.locals[l].name}` to take ownership") }
+    }
+    options.append("pass it by `ref` to share it instead")
+    var sb = StrBuf()
+    for k in 0..options.length {
+        if k > 0 { sb.append("; ") }
+        sb.append(options[k])
+    }
+    let help = $"{sb.finish()}"
+    t24Report(ref a, through: ref c, for: .implicitCopy, at: span, by: why, help: help, hasFix: hasFix, fixSpan: fixSpan, fixReplacement: fixReplacement)
+}
+
+/// Whether `value` is `local with { … }`, possibly under `try`, rebuilding `local` itself.
+bool t24IsSelfWith(in Ctx c, for BExpr value, by LocalId local) {
+    let core = t24StripConversions(in c, for: value)
+    switch boundKind(core) {
+        case .tryExpr:
+            return t24IsSelfWith(in c, for: c.bTries[boundIndex(core)].operand, by: local)
+        case .withExpr:
+            let target = t24StripConversions(in c, for: c.bWiths[boundIndex(core)].target)
+            return boundKind(target) == .local && c.bLocals[boundIndex(target)].local == local
+        default:
+            return false
+    }
+}
+
+/// A local or `move` parameter this function owns, which `move` can hand over.
+bool t24IsMovable(in Ctx c, for BExpr e) {
+    if boundKind(e) != .local { return false }
+    let l = c.bLocals[boundIndex(e)].local
+    let kind = c.locals[l].kind
+    if (kind == .letKeyword || kind == .varKeyword || kind == .patternVariable) && !c.locals[l].borrowsSubject { return true }
+    return c.locals[l].isParameter && c.locals[l].modifier == .moveKeyword
+}
+
+/// Whether `e` reads existing storage (a local, parameter, field, element or `.value`) rather than making a fresh value.
+bool t24IsPlace(ref Ctx c, for BExpr e) {
+    let i = boundIndex(e)
+    switch boundKind(e) {
+        case .local or .thisRef or .field or .tupleElement or .index:
+            return true
+        case .builtinCall:
+            switch c.bBuiltinCalls[i].member {
+                // `take()` hands over a fresh value; the place keeps an empty one.
+                case .listTake or .mapTake or .strBufTake or .optionalTake:
+                    return false
+                case .ownedValue or .resultValue or .mapIndex or .mapIndexSet or .mapSlot or .mapTryGet or .listTryGet:
+                    return true
+                default:
+                    return false
+            }
+        case .conversion:
+            return t24IsPlace(ref c, for: c.bConversions[i].operand)
+        case .conditional:
+            return t24IsPlace(ref c, for: c.bConditionals[i].whenTrue) || t24IsPlace(ref c, for: c.bConditionals[i].whenFalse)
+        case .coalesce:
+            return t24IsPlace(ref c, for: c.bCoalesces[i].left) || t24IsPlace(ref c, for: c.bCoalesces[i].right)
+        case .switchExpr:
+            let count = c.bSwitchExprs[i].arms.length
+            for k in 0..count {
+                if t24IsPlace(ref c, for: c.bSwitchExprs[i].arms[k].value) { return true }
+            }
+            return false
+        // A `with` copies only the fields it does not replace.
+        case .withExpr:
+            let target = c.bWiths[i].target
+            let targetType = exprType(in c, for: target)
+            if kindOf(targetType) != .structType { return false }
+            if !t24IsPlace(ref c, for: target) { return false }
+            let fields = copyIds(in c.structs[typeIndex(targetType)].fields)
+            for f in fields {
+                var updated = false
+                for u in c.bWiths[i].updates {
+                    if u.field == f { updated = true }
+                }
+                if !updated && isUnique(ref c, for: c.fields[f].type) { return true }
+            }
+            return false
+        case .tryExpr:
+            return t24IsPlace(ref c, for: c.bTries[i].operand)
+        case .catchExpr:
+            return t24IsPlace(ref c, for: c.bCatches[i].operand) || t24IsPlace(ref c, for: c.bCatches[i].handler)
+        default:
+            return false
+    }
+}
+
+BExpr t24StripConversions(in Ctx c, for BExpr e) => boundKind(e) == .conversion ? t24StripConversions(in c, for: c.bConversions[boundIndex(e)].operand) : e
+
+// ── NeverReassignedVarLint.cs ────────────────────────────────────────────────
+
+/// BYN2311: a `var` local or pattern binding that is never assigned or mutated through should be a `let`.
+void lintNeverReassignedVar(ref Ctx c, for FuncId fn) {
+    let file = c.functions[fn].file
+    let body = c.functions[fn].body
+    if file == -1 || body == -1 { return }
+    for node in descendants(in c, for: body) {
+        var local: LocalId = -1
+        if boundKind(node) == .localDecl && c.bLocalDecls[boundIndex(node)].initializer != -1 { local = c.bLocalDecls[boundIndex(node)].local }
+        if boundKind(node) == .bindPattern { local = c.bBindPatterns[boundIndex(node)].local }
+        if local == -1 { continue }
+        if c.locals[local].kind != .varKeyword || c.locals[local].written { continue }
+        let keyword = c.locals[local].keywordSpan ?? continue
+        report(ref c, for: .neverReassignedVar, from: file, at: c.locals[local].nameSpan, by: (c.locals[local].name, "", "", "", ""),
+            help: "declare it with `let` to tell the reader the value never changes", hasFix: true, fixSpan: keyword, fixReplacement: "let")
+    }
+}
+
+// ── SpanParameterLint.cs ─────────────────────────────────────────────────────
+
+/// A parameter's C# `Syntax.Type` where it is a `NamedType`: its span and its last path segment.
+struct T24NamedParam {
+    bool named = false
+    TextSpan span = TextSpan { start: 0, length: 0 }
+    TextSpan last = TextSpan { start: 0, length: 0 }
+}
+
+/// BYN2310: a `Span<T>` parameter that the function only reads should be a `ReadOnlySpan<T>`.
+void lintSpanParameter(ref Ctx c, for FuncId fn) {
+    let file = c.functions[fn].file
+    let body = c.functions[fn].body
+    if file == -1 || body == -1 { return }
+    let parameters = copyIds(in c.functions[fn].parameters)
+    let syntax = t24ParamSyntax(in c, for: fn)
+    var candidates = List<LocalId>()
+    for k in 0..parameters.length {
+        let p = parameters[k]
+        let t = c.locals[p].type
+        if c.locals[p].modifier == .none && kindOf(t) == .span && !c.spanTypes[typeIndex(t)].readOnly && syntax[k].named { candidates.append(p) }
+    }
+    if candidates.length == 0 { return }
+    for node in descendants(in c, for: body) {
+        let i = boundIndex(node)
+        switch boundKind(node) {
+            case .assign:
+                t24Written(ref candidates, through: in c, for: c.bAssigns[i].target)
+            case .call:
+                if c.bCalls[i].receiver != -1 { t24Written(ref candidates, through: in c, for: c.bCalls[i].receiver) }
+                let callee = c.bCalls[i].function
+                var j: i64 = 0
+                while j < c.bCalls[i].arguments.length && j < c.functions[callee].parameters.length {
+                    if c.locals[c.functions[callee].parameters[j]].modifier != .none { t24Written(ref candidates, through: in c, for: c.bCalls[i].arguments[j]) }
+                    j += 1
+                }
+            case .builtinCall:
+                let member = c.bBuiltinCalls[i].member
+                if member != .spanLength && member != .spanIsEmpty && member != .spanCopy { t24Written(ref candidates, through: in c, for: c.bBuiltinCalls[i].receiver) }
+            default:
+                break
+        }
+        for child in children(in c, for: node) {
+            if boundKind(child) != .local { continue }
+            let l = c.bLocals[boundIndex(child)].local
+            if listContains(in candidates, by: l) && !t24ReadOnlyUse(ref c, for: node, by: child) { t24RemoveId(ref candidates, by: l) }
+        }
+    }
+    for k in 0..parameters.length {
+        let p = parameters[k]
+        if !listContains(in candidates, by: p) { continue }
+        let element = typeDisplay(ref c, by: c.spanTypes[typeIndex(c.locals[p].type)].element)
+        report(ref c, for: .spanParameterNeverWritten, from: file, at: syntax[k].span, by: (c.locals[p].name, element, "", "", ""),
+            help: "take a `ReadOnlySpan`; it also accepts strings and read-only views", hasFix: true, fixSpan: syntax[k].last, fixReplacement: "ReadOnlySpan")
+    }
+}
+
+/// C# `Written`: the span parameter `target` goes through is written.
+void t24Written(ref List<LocalId> candidates, through in Ctx c, for BExpr target) {
+    let root = t24Root(in c, for: target)
+    if root != -1 { t24RemoveId(ref candidates, by: root) }
+}
+
+void t24RemoveId(ref List<LocalId> xs, by LocalId x) {
+    var kept = List<LocalId>()
+    for y in xs {
+        if y != x { kept.append(y) }
+    }
+    xs = move kept
+}
+
+/// Uses that only read the span's elements: indexing, length, iteration, copying, viewing read-only.
+bool t24ReadOnlyUse(ref Ctx c, for BNode parent, by BExpr use) {
+    let i = boundIndex(parent)
+    switch boundKind(parent) {
+        case .index:
+            return c.bIndexes[i].target == use
+        case .builtinCall:
+            let member = c.bBuiltinCalls[i].member
+            return member == .spanLength || member == .spanIsEmpty || member == .spanCopy
+        case .forStmt:
+            return c.bFors[i].iterable == use
+        case .conversion:
+            let t = c.bConversions[i].type
+            return kindOf(t) == .span && c.spanTypes[typeIndex(t)].readOnly
+        case .call:
+            var at: i64 = -1
+            for k in 0..c.bCalls[i].arguments.length {
+                if at == -1 && c.bCalls[i].arguments[k] == use { at = k }
+            }
+            let callee = c.bCalls[i].function
+            if at < 0 || at >= c.functions[callee].parameters.length { return false }
+            let p = c.functions[callee].parameters[at]
+            let t = c.locals[p].type
+            return c.locals[p].modifier == .none && kindOf(t) == .span && c.spanTypes[typeIndex(t)].readOnly
+        default:
+            return false
+    }
+}
+
+/// The span parameter an lvalue path goes through (`p[i]`, `p[i].f`, `p[a..b][i]`); -1 for none.
+LocalId t24Root(in Ctx c, for BExpr e) {
+    let i = boundIndex(e)
+    switch boundKind(e) {
+        case .local: return c.bLocals[i].local
+        case .field: return t24Root(in c, for: c.bFields[i].receiver)
+        case .tupleElement: return t24Root(in c, for: c.bTupleElements[i].receiver)
+        case .index: return t24Root(in c, for: c.bIndexes[i].target)
+        case .slice: return t24Root(in c, for: c.bSlices[i].target)
+        default: return -1
+    }
+}
+
+/// Each of `fn`'s parameters' C# `Syntax?.Type is NamedType`, found the way `t12Params` finds `decl.params[ordinal]`.
+List<T24NamedParam> t24ParamSyntax(in Ctx c, for FuncId fn) {
+    let f = c.functions[fn].file
+    let d = c.functions[fn].declIndex
+    let m = c.functions[fn].memberIndex
+    if d >= 0 {
+        switch c.files[f].unit.members[d] {
+            case .functionDecl(let n):
+                return t24FromSyntax(in c, for: fn, from: in n.value.params)
+            case .structDecl(let n):
+                switch n.value.members[m] {
+                    case .functionDecl(let x): return t24FromSyntax(in c, for: fn, from: in x.value.params)
+                    case .constructorDecl(let x): return t24FromSyntax(in c, for: fn, from: in x.value.params)
+                    default: break
+                }
+            case .interfaceDecl(let n):
+                switch n.value.members[m] {
+                    case .functionDecl(let x): return t24FromSyntax(in c, for: fn, from: in x.value.params)
+                    default: break
+                }
+            case .extensionDecl(let n):
+                switch n.value.members[m] {
+                    case .functionDecl(let x): return t24FromSyntax(in c, for: fn, from: in x.value.params)
+                    default: break
+                }
+            default:
+                break
+        }
+    }
+    var result = List<T24NamedParam>()
+    for p in c.functions[fn].parameters { result.append(T24NamedParam {}) }
+    return result
+}
+
+List<T24NamedParam> t24FromSyntax(in Ctx c, for FuncId fn, from in List<parser.Param> ps) {
+    var result = List<T24NamedParam>()
+    for p in c.functions[fn].parameters {
+        let o = c.locals[p].ordinal
+        switch ps[o].type {
+            case .namedType(let n):
+                result.append(T24NamedParam { named: true, span: n.value.span, last: n.value.path[n.value.path.length - 1] })
+            default:
+                result.append(T24NamedParam {})
+        }
+    }
+    return result
+}
+
+// ── PanicHandlerCheck.cs ─────────────────────────────────────────────────────
+
+/// Panic handlers can't recover: a `defer panicking` body and the function `Panic.onPanic` names may not assign or
+/// allocate (BYN2612) and read only `let` bindings and parameters (BYN2613).
+void checkPanicHandler(ref Ctx c, for FuncId fn) {
+    let file = c.functions[fn].file
+    let body = c.functions[fn].body
+    if file == -1 || body == -1 { return }
+    if fn == c.onPanic { t24CheckHandler(ref c, for: fn, at: body, whole: true) }
+    else { t24FindHandlers(ref c, for: fn, at: body) }
+}
+
+/// Checks each outermost `defer panicking` body; its nested handlers are checked with it.
+void t24FindHandlers(ref Ctx c, for FuncId fn, at BNode node) {
+    if boundKind(node) == .panicDefer {
+        t24CheckHandler(ref c, for: fn, at: c.bPanicDefers[boundIndex(node)].body, whole: false)
+        return
+    }
+    for child in children(in c, for: node) { t24FindHandlers(ref c, for: fn, at: child) }
+}
+
+void t24CheckHandler(ref Ctx c, for FuncId fn, at BNode body, bool whole) {
+    let file = c.functions[fn].file
+    var own = List<LocalId>()
+    var sinks = List<BNode>()
+    var targets = List<BNode>()
+    for node in descendants(in c, for: body) {
+        let i = boundIndex(node)
+        var restricted = ""
+        switch boundKind(node) {
+            case .localDecl:
+                own.append(c.bLocalDecls[i].local)
+            case .bindPattern:
+                if c.bBindPatterns[i].local != -1 { own.append(c.bBindPatterns[i].local) }
+            case .propertyPattern:
+                if c.bPropertyPatterns[i].designation != -1 { own.append(c.bPropertyPatterns[i].designation) }
+            case .unionPattern:
+                if c.bUnionPatterns[i].designation != -1 { own.append(c.bUnionPatterns[i].designation) }
+            case .forStmt:
+                own.append(c.bFors[i].variable)
+            case .catchExpr:
+                if c.bCatches[i].binding != -1 { own.append(c.bCatches[i].binding) }
+            case .errdeferStmt:
+                if c.bErrdefers[i].error != -1 { own.append(c.bErrdefers[i].error) }
+            case .panicDefer:
+                if c.bPanicDefers[i].panic != -1 { own.append(c.bPanicDefers[i].panic) }
+            case .returnStmt:
+                if whole { restricted = "`return`" }
+            case .breakStmt:
+                if whole { restricted = "`break`" }
+            case .continueStmt:
+                if whole { restricted = "`continue`" }
+            case .tryExpr:
+                if whole { restricted = "`try`" }
+            case .assign:
+                restricted = "assignment"
+                targets.append(c.bAssigns[i].target)
+            case .call:
+                let builtin = c.functions[c.bCalls[i].function].builtin
+                // Interpolation written straight into `print`, `panic` or `StrBuf.append` is formatted on the stack.
+                if (builtin == .print || builtin == .panic) && c.bCalls[i].arguments.length > 0 && boundKind(c.bCalls[i].arguments[0]) == .interpolated {
+                    sinks.append(c.bCalls[i].arguments[0])
+                } else if t24AllocatingFunction(builtin) {
+                    restricted = "allocation"
+                }
+            case .builtinCall:
+                let member = c.bBuiltinCalls[i].member
+                if member == .strBufAppend && c.bBuiltinCalls[i].arguments.length == 1 && boundKind(c.bBuiltinCalls[i].arguments[0]) == .interpolated {
+                    sinks.append(c.bBuiltinCalls[i].arguments[0])
+                } else if t24AllocatingMember(member) {
+                    restricted = "allocation"
+                }
+            case .interpolated:
+                if !listContains(in sinks, by: node) { restricted = "allocation" }
+            case .collection:
+                let t = c.bCollections[i].type
+                if kindOf(t) == .list || kindOf(t) == .map { restricted = "allocation" }
+            case .local:
+                let l = c.bLocals[i].local
+                let kind = c.locals[l].kind
+                if !listContains(in targets, by: node) && !listContains(in own, by: l) && (kind == .varKeyword || kind == .temp) {
+                    report(ref c, for: .panicHandlerReads, from: file, at: nodeSpan(in c, for: node), by: ("", "", "", "", ""),
+                        label: $"`{c.locals[l].name}` is not a `let` or a parameter", help: "copy the value into a `let` before the handler and read that")
+                }
+            default:
+                break
+        }
+        if restricted != "" {
+            report(ref c, for: .panicHandlerRestricted, from: file, at: nodeSpan(in c, for: node), by: (restricted, "", "", "", ""),
+                help: "remove it; panic handlers can't recover")
+        }
+    }
+}
+
+bool t24AllocatingFunction(BuiltinFunction b) {
+    switch b {
+        case .listNew or .ownedNew or .strBufGrow or .strBufOver or .arenaNew or .utf8Decode or .utf8TryDecode or .utf8DecodeReplace or .hexEncode or .hexDecode or .symbolIntern or .ioReadFile or .ioReadText or .ioListDir or .ioRun or .ioRunBatch:
+            return true
+        default:
+            return false
+    }
+}
+
+bool t24AllocatingMember(BuiltinMember m) {
+    switch m {
+        case .spanCopy or .stringCopy or .listCopy or .mapCopy or .strBufCopy or .ioReadAll or .intToString or .listAdd or .listReplace or .mapSlot or .mapIndexSet or .stringLowercased or .stringUppercased or .stringReplaced or .stringRepeated or .stringPadded or .bytesToString or .stringJoined or .utf16Copy:
+            return true
+        default:
+            return false
+    }
+}
