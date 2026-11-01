@@ -1,6 +1,6 @@
-// bayan-check: the self-hosted checker. Ports the `check` and `types` subset of `CliApp` (CliApp.cs:139
-// `Types`, :149 `ParseBuildOptions`, :248 `Compile`, :287 `Report`, :304 `TakeGlobalOptions`, :351 `IsScript`,
-// :430 `Check`, :502 `Failed`, :517 `ProgramName` in json.byn), `DiagnosticJson` (json.byn) and the golden
+// bayan-check: the self-hosted checker. Ports the `check` and `types` subset of `CliApp` (CliApp.cs:141
+// `Types`, :151 `ParseBuildOptions`, :259 `Compile`, :298 `Report`, :315 `TakeGlobalOptions`, :362 `IsScript`,
+// :441 `Check`, :513 `Failed`, :528 `ProgramName` in json.byn), `DiagnosticJson` (json.byn) and the golden
 // harness's compilation (DiagTests.cs:20-26). Plain style only: `--color` is checked but paints nothing, and
 // the symbols are `Symbols.Unicode`, or `Symbols.Ascii` with `--ascii` (Q646).
 //
@@ -29,7 +29,7 @@ const exitOk: i32 = 0
 const exitFailure: i32 = 1
 const exitUsage: i32 = 2
 
-/// CliApp.cs:285 `ErrorLimit`.
+/// CliApp.cs:296 `ErrorLimit`.
 const errorLimit: i64 = 20
 
 /// C# `int.MaxValue` as `RenderAll`'s uncapped limit.
@@ -42,7 +42,7 @@ struct T26Symbols {
     string ellipsis
 }
 
-/// The `BuildOptions` subset `check` and `types` read (CliApp.cs:147).
+/// The `BuildOptions` subset `check` and `types` read (CliApp.cs:149).
 struct T26Options {
     string path
     bool json = false
@@ -73,7 +73,7 @@ bool t26FileExists(string path) {
     return true
 }
 
-/// CliApp.cs:149 `ParseBuildOptions` (`allowOutput: false`): `--`, `--mode`, `--diagnostics`, `--all`, and
+/// CliApp.cs:151 `ParseBuildOptions` (`allowOutput: false`): `--`, `--mode`, `--diagnostics`, `--all`, and
 /// bayan-check's `--spans`. Null after reporting.
 T26Options? t26ParseBuildOptions(in List<string> args, bool allowSpans) {
     var path: string? = null
@@ -138,7 +138,7 @@ Ctx t26EmptyCtx() => Ctx {
     bags: List<DiagBag>(),
 }
 
-/// CliApp.cs:248 `Compile`: a project directory (one with `package.byn`), a script (a file starting with
+/// CliApp.cs:259 `Compile`: a project directory (one with `package.byn`), a script (a file starting with
 /// `#!`, compiled alone) or a file or directory (the whole directory is the entry module). Prints
 /// diagnostics and adds them to `reported`; `ok` is false where C# returns null.
 Ctx t26Compile(in T26Options o, by in T26Symbols symbols, to ref List<T26Reported> reported, through ref bool ok) {
@@ -171,7 +171,7 @@ Ctx t26Compile(in T26Options o, by in T26Symbols symbols, to ref List<T26Reporte
     return c
 }
 
-/// CliApp.cs:287 `Report` for the compilation's diagnostics.
+/// CliApp.cs:298 `Report` for the compilation's diagnostics.
 void t26Report(in T26Options o, by in T26Symbols symbols, for ref Ctx c, to ref List<T26Reported> reported) {
     for d in c.diagnostics {
         reported.append(T26Reported { path: pathOf(in c, for: in d), start: d.span.start, code: d.code, isWarning: d.isWarning })
@@ -187,7 +187,7 @@ void t26Report(in T26Options o, by in T26Symbols symbols, for ref Ctx c, to ref 
     if omitted > 0 { Io.stderr.write($"{capLine(symbols.ellipsis, by: omitted)}\n") }
 }
 
-/// CliApp.cs:287 `Report` for a manifest's diagnostics. They have no file (Q565), so they render against
+/// CliApp.cs:298 `Report` for a manifest's diagnostics. They have no file (Q565), so they render against
 /// a `Ctx` holding the manifest's text as file 0, named `package.byn` as `Manifest.Read` names it.
 void t26ReportManifest(in T26Options o, by in T26Symbols symbols, for in Manifest m, at string path, to ref List<T26Reported> reported) {
     if m.diagnostics.length == 0 { return }
@@ -205,14 +205,14 @@ void t26ReportManifest(in T26Options o, by in T26Symbols symbols, for in Manifes
     t26Report(in o, by: in symbols, for: ref c, to: ref reported)
 }
 
-/// CliApp.cs:351 `IsScript`: a file whose first two bytes are `#!`.
+/// CliApp.cs:362 `IsScript`: a file whose first two bytes are `#!`.
 bool t26IsScript(string path) {
     unless t26FileExists(path) { return false }
     let bytes = Io.readFile(path) catch return false
     return bytes.length >= 2 && bytes[0] == 0x23 && bytes[1] == 0x21
 }
 
-/// CliApp.cs:139 `Types`.
+/// CliApp.cs:141 `Types`.
 i32 types(in List<string> args, by in T26Symbols symbols) {
     let o = t26ParseBuildOptions(in args, allowSpans: false) ?? return exitUsage
     var reported = List<T26Reported>()
@@ -223,7 +223,7 @@ i32 types(in List<string> args, by in T26Symbols symbols) {
     return exitOk
 }
 
-/// CliApp.cs:430 `Check`.
+/// CliApp.cs:441 `Check`.
 i32 check(in List<string> args, by in T26Symbols symbols) {
     let clock = Io.monotonicNanos()
     let o = t26ParseBuildOptions(in args, allowSpans: true) ?? return exitUsage
@@ -236,14 +236,14 @@ i32 check(in List<string> args, by in T26Symbols symbols) {
     return exitOk
 }
 
-/// CliApp.cs:495 `Seconds`: `{0}s` with two decimals (`0.00` rounds half away from zero).
+/// CliApp.cs:506 `Seconds`: `{0}s` with two decimals (`0.00` rounds half away from zero).
 string t26Seconds(i64 nanos) {
     let hundredths = (nanos + 5000000) / 10000000
     let rest = hundredths % 100
     return rest < 10 ? $"{hundredths / 100}.0{rest}s" : $"{hundredths / 100}.{rest}s"
 }
 
-/// CliApp.cs:502 `Failed`: the footer after a failed compile; nothing in JSON mode, or when no error caused
+/// CliApp.cs:513 `Failed`: the footer after a failed compile; nothing in JSON mode, or when no error caused
 /// the failure. The first error is the first of `DiagnosticRenderer.Sort` (path ordinal, then start; ties
 /// keep order).
 i32 t26Failed(in T26Options o, from in List<T26Reported> reported, by in T26Symbols symbols) {
@@ -379,7 +379,7 @@ i32 printCodes() {
 }
 
 i32 main(ReadOnlySpan<string> args) {
-    // CliApp.cs:304 `TakeGlobalOptions`: `--color` and `--ascii` come out of everything before a `--`. The
+    // CliApp.cs:315 `TakeGlobalOptions`: `--color` and `--ascii` come out of everything before a `--`. The
     // arguments are `check`'s (R1), so a command is always given and the script branch never applies.
     var ascii = false
     var rest = List<string>()
