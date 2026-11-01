@@ -23,14 +23,15 @@ public sealed class SelfhostSemanticsT36Tests
     /// <summary>
     /// Golden diag inputs. Dropped (Q680): the T35 <c>propertyType</c> stub (express4.byn:42) types every builtin property
     /// -1, which panics in <c>typeDisplay</c>; T34's <c>bindTry</c> and T35's <c>bindInterpolated</c> and <c>bindLambda</c>
-    /// stubs change the rest (Q681).
+    /// stubs change the rest (Q681). ambiguous-variant is dropped because the script <c>main</c> has return type -1
+    /// (compile.byn:965 sets none; C# defaults to <c>void</c>), which panics in <c>bindReturn</c> (Q681).
     /// The <see cref="Inline"/> cases cover their T36 branches without those.
     /// </summary>
     private static readonly string[] Golden =
     [
         "not-iterable", "jump-out-of-defer", "fail-in-defer", "missing-return-value", "return-value-in-void", "continue-switch",
         "unknown-label", "jump-outside-loop", "errdefer-without-fails", "defer-failing-without-fails", "unknown-handler",
-        "duplicate-default", "ambiguous-variant", "unknown-variant", "coalesce-break-outside-loop",
+        "duplicate-default", "unknown-variant", "coalesce-break-outside-loop",
     ];
 
     /// <summary>Inputs written for T36: each reaches the branches named, with no builtin property, `try` or interpolation.</summary>
