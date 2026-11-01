@@ -60,7 +60,7 @@ fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
 echo "$chore" | grep -q "LAND REFUSED: the branch's last commit must" || fail "a chore(worker) review commit was accepted" "$chore"
 echo "$extra" | grep -q "LAND REFUSED: the branch's last commit must" || fail "a review commit touching another file was accepted" "$extra"
 echo "$guard" | grep -q 'LAND REFUSED: feat-guard changes scripts/selfhost/' || fail "a branch that changes scripts/selfhost/ was accepted" "$guard"
-echo "$baseline" | grep -q 'LAND REFUSED: feat-baseline edits tests/quality-baseline.json; only land.sh writes it' || fail "a branch that edits tests/quality-baseline.json was accepted" "$baseline"
+echo "$baseline" | grep -q 'LAND REFUSED: feat-baseline edits tests/quality-baseline.json; only land.sh and the batch mutation run write it' || fail "a branch that edits tests/quality-baseline.json was accepted" "$baseline"
 echo "$orphan" | grep -q 'LAND REFUSED: cannot diff feat-orphan' || fail "a branch with no merge base was not refused" "$orphan"
 echo "$noguard" | grep -q "LAND REFUSED: tmp/010-t99/prompt.md has no line starting 'bash scripts/selfhost/guard.sh'" || fail "a prompt with no guard line did not refuse with a message" "$noguard"
 echo "$moved" | grep -q 'LAND REFUSED: feat-move moved' || fail "a branch that moved during the guard was not refused" "$moved"
