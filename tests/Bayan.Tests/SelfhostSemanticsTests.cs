@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Reflection;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -275,6 +277,63 @@ public sealed class SelfhostSemanticsTests
         var dir = Fixture("args", ("hello.byn", Hello));
         SameAsCli("unexpected", "check", "--bogus", Path.Combine(dir, "hello.byn"));
         SameAsCli("not found", "check", Path.Combine(dir, "missing.byn"));
+        SameAsCli("output", "check", "-o", "x", Path.Combine(dir, "hello.byn"));
+    }
+
+    /// <summary>The ported <c>ParseBuildOptions</c> cases: <c>--mode</c>, an unknown mode, and <c>--</c>.</summary>
+    [Fact]
+    public void CheckBuildOptions()
+    {
+        var dir = Fixture("options", ("hello.byn", Hello));
+        var file = Path.Combine(dir, "hello.byn");
+        SameAsCli("mode", "check", "--mode", "fast", file);
+        SameAsCli("unknown mode", "check", "--mode", "turbo", file);
+        SameAsCli("program args", "check", file, "--", "--bogus");
+        SameAsCli("types mode", "types", "--mode", "debug", file);
+    }
+
+    /// <summary><c>--codes</c> against <c>DiagnosticCodes</c>: the semantic ranges, the three BYN1 codes the checker reports, and the three second message forms after their codes (Q527).</summary>
+    [Fact]
+    public void CodesMatchDiagnosticCodes()
+    {
+        static bool Checker(string code) =>
+            int.Parse(code.AsSpan(3), CultureInfo.InvariantCulture) is >= 2000 and <= 8999 || code is "BYN1016" or "BYN1054" or "BYN1056";
+        var table = DiagnosticCodes.All.Where(d => Checker(d.Code)).ToList();
+        foreach (var name in new[] { "ConversionMember", "BecomeOtherState", "BecomesCallUndeclared" })
+        {
+            var extra = (DiagnosticDescriptor)typeof(DiagnosticCodes).GetField(name, BindingFlags.Public | BindingFlags.Static)!.GetValue(null)!;
+            table.Insert(table.FindLastIndex(d => d.Code == extra.Code) + 1, extra);
+        }
+        var (exit, output, error) = SelfhostParserTests.Run(Built, "--codes");
+        Assert.True(exit == 0 && error.Length == 0, $"--codes: exit {exit}\n{error}");
+        AssertSameLines("--codes", "stdout", string.Concat(table.Select(d => $"{d.Code}\t{d.MessageFormat}\n")), output);
+    }
+
+    /// <summary><c>--many</c>: each <c>*.byn</c> in name order, under <c>== name</c>, as <see cref="DiagTests"/> renders it alone.</summary>
+    [Fact]
+    public void ManyMatchesCompilation()
+    {
+        var dir = Fixture("many-dir", ("b.byn", Hello), ("a.byn", "void main( {\n"), ("c.byn", "i32 main() {\n    return \"x\"\n}\n"), ("notes.txt", "x"));
+        var expected = string.Concat(new[] { "a.byn", "b.byn", "c.byn" }.Select(name =>
+        {
+            var c = Compilation.Create([Golden.Load(Path.Combine(dir, name))], dir, new CompilationOptions(IncludeTests: false));
+            return $"== {name}\n" + DiagnosticRenderer.RenderAll(c.Diagnostics.Items, includePath: false);
+        }));
+        var (exit, output, error) = SelfhostParserTests.Run(Built, "--many", dir);
+        Assert.True(exit == 0 && error.Length == 0, $"--many: exit {exit}\n{error}");
+        AssertSameLines("--many", "stdout", expected, output);
+    }
+
+    /// <summary><c>--time</c> prints one nanosecond total, and the parse and check split on stderr.</summary>
+    [Fact]
+    public void TimePrintsNanoseconds()
+    {
+        // no-oracle: Q648 (C# `check` has no `--time`; the numbers differ per run)
+        var dir = Fixture("time", ("hello.byn", Hello));
+        var (exit, output, error) = SelfhostParserTests.Run(Built, "--time", Path.Combine(dir, "hello.byn"));
+        Assert.Equal(0, exit);
+        Assert.Matches(@"^[0-9]+\n$", output);
+        Assert.Matches(@"^parse [0-9]+ check [0-9]+\n$", error);
     }
 
     /// <summary><c>types</c> prints valid JSON, the same bytes as <c>bayan types</c>.</summary>

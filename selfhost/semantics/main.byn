@@ -7,9 +7,14 @@
 //                                                              a `span out of range:` line per diagnostic
 //                                                              span outside its file (L020)
 //     bayan-check [--ascii] types [--all] <path>             as `bayan types <path>`
-//     bayan-check --golden [--tests] [--include-path] --package <dir> <file>
+//     bayan-check --golden [--tests] [--include-path] [--spans] --package <dir> <file>
 //                                    `<file>` compiled alone with `<dir>` as package root, as `DiagTests`
 //                                    does, and its diagnostics rendered uncapped to stdout; exit 0
+//     bayan-check --many <dir>       `== <name>` and, for every `*.byn` in `<dir>` in name order, its
+//                                    `--golden --package <dir>` output and `--spans` lines (corpora, L020)
+//     bayan-check --time <path>      the nanoseconds `check` spends parsing and checking `<path>`, and
+//                                    `parse … check …` on stderr (R7)
+//     bayan-check --codes            `code\tmessage` for every `SemaCode`, in `DiagnosticCodes.cs` order
 //
 // Paths are absolute (R1): Bayan has no current directory (Q571).
 
@@ -52,7 +57,7 @@ T26Symbols t26Symbols(bool ascii) =>
     ascii ? T26Symbols { dot: "*", cross: "x", ellipsis: "..." } : T26Symbols { dot: "◆", cross: "✗", ellipsis: "…" }
 
 i32 usage() {
-    Io.stderr.write("usage: bayan-check [--ascii] check|types [--all] [--spans] <path> | --golden [--tests] [--include-path] --package <dir> <file>\n")
+    Io.stderr.write("usage: bayan-check [--ascii] check|types [--all] [--spans] <path> | --golden [--tests] [--include-path] [--spans] --package <dir> <file> | --many <dir> | --time <path> | --codes\n")
     return exitUsage
 }
 
@@ -63,13 +68,28 @@ bool t26FileExists(string path) {
     return true
 }
 
-/// CliApp.cs:148 `ParseBuildOptions` (`allowOutput: false`), the `--all` subset (Q646); null after reporting.
+/// CliApp.cs:148 `ParseBuildOptions` (`allowOutput: false`): `--`, `--mode`, `--all`; not `--diagnostics`
+/// (Q648). Null after reporting.
 T26Options? t26ParseBuildOptions(in List<string> args, bool allowSpans) {
     var path: string? = null
     var all = false
     var spans = false
-    for a in args {
-        if a == "--all" {
+    var i: i64 = 0
+    while i < args.length {
+        let a = args[i]
+        i += 1
+        if a == "--" {
+            // `programArgs`: `check` and `types` ignore them.
+            break
+        } else if a == "--mode" && i < args.length {
+            // Toolchain.cs:68 `TryParseMode`; the mode itself does not change a check.
+            let m = args[i]
+            i += 1
+            if m != "debug" && m != "safe" && m != "fast" {
+                Io.stderr.write($"bayan: unknown mode `{m}` (expected debug, safe or fast)\n")
+                return null
+            }
+        } else if a == "--all" {
             all = true
         } else if a == "--spans" && allowSpans {
             spans = true
@@ -249,6 +269,7 @@ void t26CheckSpan(TextSpan span, until i64 size, for string code, at string path
 i32 golden(in List<string> args) {
     var tests = false
     var includePath = false
+    var spans = false
     var dir: string? = null
     var file: string? = null
     var i: i64 = 0
@@ -258,6 +279,8 @@ i32 golden(in List<string> args) {
             tests = true
         } else if a == "--include-path" {
             includePath = true
+        } else if a == "--spans" {
+            spans = true
         } else if a == "--package" && i + 1 < args.length {
             i += 1
             dir = args[i]
@@ -285,6 +308,50 @@ i32 golden(in List<string> args) {
     var c = create(from: move sources, at: root, by: in options)
     var omitted: i64 = 0
     Io.stdout.write(renderAll(in c, from: in c.diagnostics, by: includePath, until: noLimit, to: ref omitted))
+    if spans { t26CheckSpans(ref c) }
+    return exitOk
+}
+
+/// `--many`: every `*.byn` in `dir`, in name order, as `--golden --package <dir>` prints it, then its
+/// `--spans` lines; the shape of `bayan-parse --many` (selfhost/parser/main.byn:58).
+i32 many(string dir) {
+    var names = Io.listDir(dir) catch return usage()
+    names.sort()
+    for name in names {
+        unless name.endsWith(".byn") { continue }
+        let path = t11Combine(dir, by: name)
+        var args = List<string>()
+        args.append("--package")
+        args.append(dir)
+        if name.endsWith(".test.byn") { args.append("--tests") }
+        args.append("--spans")
+        args.append(path)
+        print($"== {name}")
+        let _ = golden(in args)
+    }
+    return exitOk
+}
+
+/// `--time` (R7): `check`'s compile of `path`, timed by `Compilation.ParseTime`/`CheckTime`
+/// (compile.byn:96, :107); the total on stdout as `bayan-parse --time` does (selfhost/parser/main.byn:80).
+i32 timed(string path, by in T26Symbols symbols) {
+    var args = List<string>()
+    args.append(path)
+    let o = t26ParseBuildOptions(in args, allowSpans: false) ?? return exitUsage
+    var reported = List<T26Reported>()
+    var ok = false
+    let c = t26Compile(in o, by: in symbols, to: ref reported, through: ref ok)
+    print($"{c.parseTime + c.checkTime}")
+    Io.stderr.write($"parse {c.parseTime} check {c.checkTime}\n")
+    return exitOk
+}
+
+/// `--codes`: `code\tmessage` for every `SemaCode` (codes.byn:785 `allSemaCodes`), as `bayan-parse --codes`
+/// prints `ParseCode` (selfhost/parser/main.byn:99).
+i32 printCodes() {
+    for code in allSemaCodes() {
+        print($"{codeText(code)}\t{messageFormat(code)}")
+    }
     return exitOk
 }
 
@@ -306,5 +373,8 @@ i32 main(ReadOnlySpan<string> args) {
     if command == "check" { return check(in rest, by: in symbols) }
     if command == "types" { return types(in rest, by: in symbols) }
     if command == "--golden" { return golden(in rest) }
+    if command == "--many" && rest.length == 1 { return many(rest[0]) }
+    if command == "--time" && rest.length == 1 { return timed(rest[0], by: in symbols) }
+    if command == "--codes" && rest.length == 0 { return printCodes() }
     return usage()
 }
