@@ -72,7 +72,8 @@ if 'selfhost/semantics/ctx.byn' in changed:
             start = i
         elif start and re.match(r'^\s*(// ──|\})', line):
             spans.append((start, i)); start = None
-    diff = git('diff', '-U0', f'{base}...HEAD', '--', 'selfhost/semantics/ctx.byn') + git('diff', '-U0', '--', 'selfhost/semantics/ctx.byn')
+    # one diff from the merge base to the working tree, numbered as the spans are (as in E)
+    diff = git('diff', '-U0', git('merge-base', base, 'HEAD').strip(), '--', 'selfhost/semantics/ctx.byn')
     for m in re.finditer(r'^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', diff, re.M):
         old_n, at, cnt = int(m.group(1) or 1), int(m.group(2)), int(m.group(3) or 1)
         lo, hi = at, at + max(cnt, 1) - 1
