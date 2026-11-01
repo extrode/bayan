@@ -2,8 +2,9 @@
 # land.sh — the only way a spec 010 task reaches the base branch. Run by the dispatcher, from the repo root, on the base branch.
 #   bash scripts/selfhost/land.sh T13 feat/010-t13
 # Refuses unless: (1) the branch leaves scripts/selfhost/ alone and the base checkout's guard passes on it, (2)
-# docs/specs/010-self-hosted-semantics/reviews/<T>.md exists on that branch, is touched only by its last commit, which
-# touches nothing else, names that commit's parent, says `Verdict: PASS`, and lists no open HIGH finding. Then merges the
+# docs/specs/010-self-hosted-semantics/reviews/<T>.md exists on that branch, the branch's last commit touches only it and is
+# titled `docs(010): <T> review (PASS, …`, the file names that commit's parent, says `Verdict: PASS`, and lists no open HIGH
+# finding (earlier commits may hold earlier review rounds). Then merges the
 # commit it checked (refusing if the branch moved meanwhile) with --no-ff and ticks the task.
 set -eu
 T=$1; BR=$2; N=${T#T}; t=$(echo "$T" | tr '[:upper:]' '[:lower:]')
@@ -24,8 +25,9 @@ trap cleanup EXIT
 
 ( cd "$WT"
   [ -f "$REVIEW" ] || { echo "LAND REFUSED: $REVIEW is missing; run the reviewer (scripts/selfhost/review-brief.py) first"; exit 1; }
-  [ "$(git log --format=%H "$BASE..$SHA" -- "$REVIEW")" = "$SHA" ] && [ "$(git diff --name-only "$SHA^" "$SHA")" = "$REVIEW" ] \
-    || { echo "LAND REFUSED: $REVIEW must be added by the branch's last commit alone, and by no earlier commit"; exit 1; }
+  # earlier review rounds may touch the file; the last commit is the PASS round alone (writer auto-commits are chore(worker))
+  [ "$(git diff --name-only "$SHA^" "$SHA")" = "$REVIEW" ] && git log -1 --format=%s "$SHA" | grep -qE "^docs\(010\): $T review \(PASS" \
+    || { echo "LAND REFUSED: the branch's last commit must touch only $REVIEW, with the subject 'docs(010): $T review (PASS, …)'"; exit 1; }
   parent=$(git rev-parse "$SHA^")
   rc=$(grep -m1 -oE '^Commit: [0-9a-f]{7,40}' "$REVIEW" | cut -d' ' -f2 || true)
   [ -n "$rc" ] && [[ $parent == $rc* ]] \

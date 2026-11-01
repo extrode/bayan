@@ -1,7 +1,7 @@
 #!/bin/bash
-# land.sh on a fixture repo with a stub wave-brief.py and guard.sh, run by /bin/bash (3.2 on macOS): it refuses a review
-# file an earlier commit touched, a branch that changes scripts/selfhost/, and a branch that moves while it is checked; it
-# runs the base checkout's guard by absolute path and lands a well-reviewed branch.
+# land.sh on a fixture repo with a stub wave-brief.py and guard.sh, run by /bin/bash (3.2 on macOS): it refuses a last
+# commit that is not a lone `docs(010): T99 review (PASS` commit, a branch that changes scripts/selfhost/, and a branch that
+# moves while it is checked; it runs the base checkout's guard by absolute path and lands a two-round reviewed branch.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/land-test"; aux="$root/tmp/land-test-aux"
@@ -19,19 +19,24 @@ printf -- '- [ ] T99 fixture\n' > docs/specs/010-self-hosted-semantics/010-tasks
 git add -A && git commit -qm "test: base"
 export AUX=$aux
 REV=docs/specs/010-self-hosted-semantics/reviews/T99.md
-review() { mkdir -p ${REV%/*}; printf '# T99 review\nCommit: %s\nVerdict: PASS\n' "$(git rev-parse HEAD)" > $REV; git add $REV; git commit -qm "test: review"; }
+# review [verdict [subject]]: commit a review of HEAD
+review() { mkdir -p ${REV%/*}; printf '# T99 review\nCommit: %s\nVerdict: %s\n' "$(git rev-parse HEAD)" "${1:-PASS}" > $REV; git add $REV
+  git commit -qm "${2:-docs(010): T99 review (${1:-PASS}, round 1)}"; }
 code() { git switch -q -c "$1" base; echo "$1" > "$1.txt"; git add -A; git commit -qm "test: code"; }
 land() { /bin/bash "$root/scripts/selfhost/land.sh" T99 "$1" 2>&1 || true; }
-code feat-forged; review; echo x >> feat-forged.txt; git commit -qam "test: code again"; review; git switch -q base
+code feat-chore; review PASS "chore(worker): T99 review (PASS, round 1)"; git switch -q base
+code feat-extra; mkdir -p ${REV%/*}; printf '# T99 review\nCommit: %s\nVerdict: PASS\n' "$(git rev-parse HEAD)" > $REV; echo x >> feat-extra.txt
+git add -A; git commit -qm "docs(010): T99 review (PASS, round 1)"; git switch -q base
 code feat-guard; echo '# rewritten' >> scripts/selfhost/guard.sh; git commit -qam "test: guard"; review; git switch -q base
 code feat-move; review; git switch -q base
-code feat-ok; review; git switch -q base
-forged=$(land feat-forged); guard=$(land feat-guard)
+code feat-ok; review FAIL; echo fix >> feat-ok.txt; git commit -qam "test: fix"; review PASS "docs(010): T99 review (PASS, round 2)"; git switch -q base
+chore=$(land feat-chore); extra=$(land feat-extra); guard=$(land feat-guard)
 touch $aux/move; moved=$(land feat-move); rm $aux/move; moved_in=$(git log --format=%s base | grep -c unchecked || true)
 rm -f $aux/guard-ran.txt; ok=$(land feat-ok); ran=$(cat $aux/guard-ran.txt 2>/dev/null || true); ticked=$(grep -c '^- \[x\] T99 ' docs/specs/010-self-hosted-semantics/010-tasks.md || true)
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
-echo "$forged" | grep -q 'LAND REFUSED: .*by no earlier commit' || fail "a review file an earlier commit touched was accepted" "$forged"
+echo "$chore" | grep -q "LAND REFUSED: the branch's last commit must" || fail "a chore(worker) review commit was accepted" "$chore"
+echo "$extra" | grep -q "LAND REFUSED: the branch's last commit must" || fail "a review commit touching another file was accepted" "$extra"
 echo "$guard" | grep -q 'LAND REFUSED: feat-guard changes scripts/selfhost/' || fail "a branch that changes scripts/selfhost/ was accepted" "$guard"
 echo "$moved" | grep -q 'LAND REFUSED: feat-move moved' || fail "a branch that moved during the guard was not refused" "$moved"
 [ "$moved_in" = 0 ] || fail "the commit added during the guard was merged unchecked" "$moved"
