@@ -19,6 +19,17 @@ check coverage "$scratch/cov.json" "$here/fixtures/coverage.expected.json"
 python3 -I "$here/stryker_to_quality.py" "$scratch/mut.json" /repo 2 10 "$here/fixtures/stryker.json" >/dev/null
 check mutation "$scratch/mut.json" "$here/fixtures/mutation.expected.json"
 
+# a line in two classes with (1/4) and (2/2) branches keeps all 4 branches, 2 covered
+cat > "$scratch/shared.xml" <<'XML'
+<coverage><packages><package name="P"><classes>
+  <class name="A" filename="/repo/src/A.cs"><lines><line number="1" hits="1" branch="True" condition-coverage="25% (1/4)" /></lines></class>
+  <class name="A/Inner" filename="/repo/src/A.cs"><lines><line number="1" hits="1" branch="True" condition-coverage="100% (2/2)" /></lines></class>
+</classes></package></packages></coverage>
+XML
+python3 -I "$here/cobertura_to_quality.py" "$scratch/shared.xml" /repo "$scratch/shared.json" 0 0 >/dev/null
+if python3 -I -c 'import json, sys; b = json.load(open(sys.argv[1]))["totals"]["branches"]; sys.exit(b != {"covered": 2, "total": 4})' "$scratch/shared.json"
+then echo "ok: shared-line-branches"; else echo "FAIL: shared-line-branches: (1/4)+(2/2) is not 2/4"; fail=1; fi
+
 expect_failure() { # name command...
   local name="$1"; shift
   if "$@" >"$scratch/out" 2>"$scratch/err"; then echo "FAIL: $name exited 0"; fail=1

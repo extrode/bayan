@@ -20,7 +20,7 @@ for t in sys.argv[2:]:
     assert block, t
     head = re.sub(r'\([^()]*(\([^()]*\)[^()]*)*\)', '', re.search(r'files: (.*?) — covers', block[0]).group(1))
     files = re.findall(r'`([^`]+\.(?:byn|cs))`', head)
-    byns = [f'selfhost/semantics/{f}' for f in files if f.endswith('.byn')]
+    byns = [f if f.startswith('selfhost/') else f'selfhost/semantics/{f}' for f in files if f.endswith('.byn')]
     tests = [f'tests/Bayan.Tests/{f}' for f in files if f.endswith('.cs')]
     own_api = [l for l in api if re.match(rf'^- {t} ', l)]
     q = re.search(r'Q(\d{3})–Q(\d{3})', ' '.join(block))

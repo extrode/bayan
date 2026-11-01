@@ -34,9 +34,10 @@ def convert(path, root, build_s, total_s):
                     raise ValueError("bad condition-coverage on line %d: %r" % (n, cov))
                 cond = (int(m.group(1)), int(m.group(2)))
             old = entries.get(n)
-            # a line shared by several classes is hit when any class hits it; keep the better branch tally
+            # a line shared by several classes is hit when any class hits it; keep the most branches and the most
+            # covered separately, so (1/4) and (2/2) give 2/4 and no uncovered branch is dropped
             if old is not None:
-                hits, cond = max(hits, old[0]), max(cond, old[1])
+                hits, cond = max(hits, old[0]), (max(cond[0], old[1][0]), max(cond[1], old[1][1]))
             entries[n] = (hits, cond)
     files = []
     tot = {"lines": [0, 0], "branches": [0, 0]}
