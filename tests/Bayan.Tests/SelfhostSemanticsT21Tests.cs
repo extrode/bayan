@@ -154,7 +154,7 @@ public sealed class SelfhostSemanticsT21Tests
         "move-with-parenthesized",
     ];
 
-    /// <summary>The codes <c>calls2.byn</c> reports and no other T-file does.</summary>
+    /// <summary>The codes <c>calls2.byn</c> reports. BYN2783 is also reported by C# <c>CheckWritable</c> (T39, stubbed in calls4.byn), Q624.</summary>
     private static readonly string[] T21Codes =
     [
         "BYN2112", "BYN2602", "BYN2787", "BYN2789", "BYN2782", "BYN2783", "BYN2784", "BYN2785", "BYN3207",
