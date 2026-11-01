@@ -199,7 +199,7 @@ public sealed class SelfhostSemanticsCorpusParityTests(ITestOutputHelper output)
     /// R6: every valid and faulty program, each alone under <c>tmp/semantics-corpus/parity/seeds/&lt;name&gt;/</c>, gets the same
     /// exit code, stdout (minus the timed <c>◆ checked</c> summary) and stderr from <c>bayan-check</c> and <c>bayan check</c>.
     /// </summary>
-    [Fact(Skip = "T28 enables the corpus comparison once bayan-check runs the passes (T26 CLI)")]
+    [Fact]
     public void GeneratedSeedsAgree()
     {
         foreach (var (_, path) in SelfhostSemanticsGeneratorTests.WriteCorpus(CorpusDir))
@@ -214,7 +214,7 @@ public sealed class SelfhostSemanticsCorpusParityTests(ITestOutputHelper output)
     }
 
     /// <summary>R7: on <see cref="OneMegabyte"/>, the median of 5 <c>bayan-check</c> runs is at most 10 times <c>bayan check</c>'s.</summary>
-    [Fact(Skip = "T28 enables the 1 MB speed bound once bayan-check runs the passes (T26 CLI)")]
+    [Fact]
     public void OneMegabyteWithinTenTimes()
     {
         if (Environment.GetEnvironmentVariable("BAYAN_SKIP_TIMING") == "1") return;

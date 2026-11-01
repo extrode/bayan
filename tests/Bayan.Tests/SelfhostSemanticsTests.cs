@@ -570,17 +570,17 @@ public sealed class SelfhostSemanticsParityTests
 {
     public static TheoryData<string> TypedCases => Golden.Cases("typed");
 
-    [Theory(Skip = "T28 enables typed parity: state-types needs the binder's typestate (BYN2202), Q649")]
+    [Theory]
     [MemberData(nameof(TypedCases))]
     public void TypesParity(string name) => SelfhostSemanticsTests.SameAsCli(name, "types", SelfhostSemanticsTests.Isolated(name));
 
     public static TheoryData<string> DiagCases => Golden.Cases("diag");
 
-    [Theory(Skip = "T28 enables diag parity: the binder, regions (T25/T37) and stand-ins are not all real yet, Q649")]
+    [Theory]
     [MemberData(nameof(DiagCases))]
     public void GoldenParity(string name) => SelfhostSemanticsTests.GoldenSame(name);
 
-    [Theory(Skip = "T28 enables check parity: the binder, regions (T25/T37) and stand-ins are not all real yet, Q649")]
+    [Theory]
     [MemberData(nameof(DiagCases))]
     public void CheckParity(string name) => SelfhostSemanticsTests.CheckSame(name);
 }
