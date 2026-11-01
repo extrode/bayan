@@ -41,7 +41,7 @@ public sealed partial class OutputTests
         var sb = new System.Text.StringBuilder();
         foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
                                       .Select(f => Path.GetRelativePath(dir, f).Replace('\\', '/'))
-                                      .Select(f => OperatingSystem.IsWindows() && f.EndsWith(".exe", StringComparison.Ordinal) ? f[..^4] : f) // the golden tree names the host's executables bare
+                                      .Select(f => maskHost && OperatingSystem.IsWindows() && ("/" + f).Contains("/" + Targets.Host! + "/", StringComparison.Ordinal) && f.EndsWith(".exe", StringComparison.Ordinal) ? f[..^4] : f) // the <host> golden trees name the host's executables bare; dist trees keep .exe
                                       .Order(StringComparer.Ordinal))
         {
             sb.Append("=== ").Append(maskHost ? file.Replace(Targets.Host!, "<host>") : file).Append('\n');
