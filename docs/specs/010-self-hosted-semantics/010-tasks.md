@@ -102,7 +102,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
   - every Question raised by T1–T32 is listed in order; readiness names what the port needed and did not get; spec status done; Q664–Q668.
   - Size: about 120 lines of docs.
 - [ ] T34 Call binding C — files: `calls3.byn` (`BinderCalls.cs` ~999–1577: try/catch, switch expressions, patterns, guard, resolve step), `SelfhostSemanticsT34Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T35–T39 — done when:
-  - method-for-method port; pattern and assignment diag forms named as passing after rebase; Q669–Q673 as needed.
+  - method-for-method port; pattern and assignment diag forms named as passing after rebase; Q669–Q673 as needed. T34's bindCatch also fills c.catchVariantSpans for every catch with a variant (Q632, read by flow.byn BYN2228).
   - Size: about 840 lines.
 - [ ] T39 Assignments and writability — files: `calls4.byn` (`BinderCalls.cs` ~1578–1956: exhaustiveness, assignment, inc/dec, writability), `SelfhostSemanticsT39Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34, T35–T38 — done when:
   - exhaustiveness, assignment, inc/dec and writability match the C# cases; Q694–Q698 as needed.
