@@ -555,6 +555,9 @@ struct Ctx {
     // ── T39 state
     /// C# `Compilation.ThisWrites`: the first write to `this` in each method not declared `ref this` (Q694).
     Map<FuncId, T39ThisWrite> thisWrites = []
+    // ── T40 state
+    /// The C# span of each `for try` synthetic name (Binder.cs:1110-1115, `f.Iterable.Span`), beside `syntheticNames`.
+    List<TextSpan> syntheticSpans = List<TextSpan>()
 }
 
 // ── The binder's cursors ──────────────────────────────────────────────────────

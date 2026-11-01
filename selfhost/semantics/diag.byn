@@ -32,13 +32,19 @@ void report(ref Ctx c, for SemaCode code, from FileId f, at TextSpan span, by (s
 }
 
 /// Appends an already-built diagnostic to the innermost sink (the C# `ReportHeld`/`Add`), or drops
-/// it while `c.quiet`.
+/// it while `c.quiet`. A `for try` synthetic name's span becomes the C# span it stands for (Q739).
 void addDiag(ref Ctx c, by move Diag d) {
     if c.quiet { return }
+    var m = move d
+    m.span = t40RealSpan(in c, for: m.span)
+    m.fixSpan = t40RealSpan(in c, for: m.fixSpan)
+    for i in 0..m.related.length {
+        m.related[i].span = t40RealSpan(in c, for: m.related[i].span)
+    }
     if c.sink >= 0 {
-        c.bags[c.sink].items.append(move d)
+        c.bags[c.sink].items.append(move m)
     } else {
-        c.diagnostics.append(move d)
+        c.diagnostics.append(move m)
     }
 }
 
@@ -55,6 +61,10 @@ i64 pushBag(ref Ctx c) {
 void popBag(ref Ctx c, to i64 previous) {
     c.sink = previous
 }
+
+/// The span `span` stands for: a `for try` synthetic name's (negative start, `t28SyntheticName`) is the iterable's
+/// (Binder.cs:1110-1115); any other span is itself (Q739).
+TextSpan t40RealSpan(in Ctx c, for TextSpan span) => span.start < 0 ? c.syntheticSpans[-1 - span.start] : span
 
 /// Drops each diagnostic that repeats an earlier one's code, file, span and message, keeping the
 /// first (the C# `DiagnosticBag.RemoveRepeats`).
