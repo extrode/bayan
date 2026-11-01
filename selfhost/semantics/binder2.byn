@@ -418,12 +418,18 @@ BStmt bindAssertFails(ref Binder b, through ref Ctx c, for in parser.AssertStmt 
             report(ref b, through: ref c, for: .nothingToHandle, at: parser.exprSpan(in a.condition), by: ("assert … fails", "", "", "", ""))
         }
         return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
-    } // mutation-exempt: Q599 through 357 (reached only after T20's bindCall binds a call)
+    }
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     let sets = errorSetsOf(ref c, for: c.bCalls[boundIndex(operand)].function)
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     let errorType = errorUnionOf(ref c, for: in sets, as: in List<VariantId>())
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     var boundSet: BExpr = -1
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     var caseName: TextSpan? = null
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     var setSpan = a.span
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     switch a.failsKeyword {
         case .memberExpr(let m):
             boundSet = bindExprOrType(ref b, through: ref c, for: in m.value.target)
@@ -433,13 +439,17 @@ BStmt bindAssertFails(ref Binder b, through ref Ctx c, for in parser.AssertStmt 
             boundSet = bindExprOrType(ref b, through: ref c, for: in a.failsKeyword)
             setSpan = parser.exprSpan(in a.failsKeyword)
     }
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     if boundKind(boundSet) != .typeRef || kindOf(c.bTypeRefs[boundIndex(boundSet)].referenced) != .errorSet {
         report(ref b, through: ref c, for: .patternMismatch, at: setSpan,
             by: ($"`{t15Text(in c, from: b.file, at: setSpan)}`", typeDisplay(ref c, by: errorType), "", "", ""))
         return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
     }
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     let set = typeIndex(c.bTypeRefs[boundIndex(boundSet)].referenced)
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     var variant: VariantId = -1
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     if (caseName is { } cn) {
         variant = findErrorVariant(ref c, by: set, for: t15Text(in c, from: b.file, at: cn))
         if variant == -1 {
@@ -453,15 +463,19 @@ BStmt bindAssertFails(ref Binder b, through ref Ctx c, for in parser.AssertStmt 
             return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
         }
     }
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     var listed = false
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     for s in sets {
         if s == set { listed = true }
     }
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     if sets.length > 0 && !listed {
         report(ref b, through: ref c, for: .patternMismatch, at: setSpan,
             by: ($"`{typeDisplay(ref c, by: errorSetTypeOf(set))}`", typeDisplay(ref c, by: errorType), "", "", ""))
         return addErrorStmt(ref c, from: BErrorStmt { span: a.span })
     }
+    @unobservable because "Q599: bindCall is a stub; add assert … fails cases (void g() fails E, assert g() fails E.bad) when T20 lands"
     return addAssert(ref c, from: BAssert {
         span: a.span,
         condition: operand,
@@ -650,8 +664,10 @@ BStmt bindLocalDecl(ref Binder b, through ref Ctx c, for in parser.LocalDecl d) 
     var type: Type = -1
     if declared != -1 {
         type = declared
-    } else if init != -1 { // mutation-exempt: Q599 through 542 (init is -1 until T22 ports built)
+    } else if init != -1 {
+        @unobservable because "Q599: built is a stub; add untyped local cases (let i = 1, var j = null, let k = p) when T22 lands"
         type = defaultType(ref b, through: ref c, for: init, from: in d.init)
+        @unobservable because "Q599: built is a stub; add untyped local cases (let i = 1, var j = null, let k = p) when T22 lands"
         init = convert(ref b, through: ref c, for: init, to: type, at: parser.exprSpan(in d.init))
     } else {
         type = errorType()
@@ -834,7 +850,7 @@ BStmt bindFor(ref Binder b, through ref Ctx c, for in parser.ForStmt f, to JumpT
     }
     var user: UserIteration? = null
     let itType = exprType(in c, for: iterable)
-    var element = userElement(ref b, through: ref c, for: in f, by: iterable, to: ref user) // mutation-exempt: Q599 (the switch's element goes only to T36's declaredElement)
+    var element = userElement(ref b, through: ref c, for: in f, by: iterable, to: ref user)
     if element == -1 {
         switch kindOf(itType) {
             case .range:

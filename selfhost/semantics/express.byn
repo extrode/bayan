@@ -152,7 +152,7 @@ BExpr convert(ref Binder b, through ref Ctx c, for BExpr value, to Type target, 
     if (implicit(ref c, from: vt, to: target, argument: argument) is { } kind) {
         if kind == .identity { return value }
         if kind == .nullToOptional { return t17SameSyntax(ref c, for: addDefault(ref c, from: BDefault { span: at, type: target }), from: value) }
-    // mutation-exempt: Q600 through 156
+        @unobservable because "Q600: checkWritable is a stub; add a writable dyn ref conversion case when it lands"
         if kind == .toDynRef && kindOf(target) == .dynRef && !c.dynRefTypes[typeIndex(target)].readOnly {
             let _ = checkWritable(ref b, through: ref c, for: value, at: span, by: $"it is borrowed as `{typeDisplay(ref c, by: target)}`")
         }
@@ -540,7 +540,7 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
             return bindTargetMember(ref b, through: ref c, for: in t.value, to: expected)
         case .callExpr(let call):
             let errNew = bindErrorNew(ref b, through: ref c, for: in call.value, to: expected)
-    // mutation-exempt: Q600 through 544
+            @unobservable because "Q600: bindErrorNew and bindCall are stubs; add an error-constructor call case when they land"
             if errNew != -1 { return errNew }
             return bindCall(ref b, through: ref c, for: in call.value, from: e, to: expected)
         case .indexExpr(let i):
@@ -604,10 +604,11 @@ BExpr bindExprOrType(ref Binder b, through ref Ctx c, for in parser.Expr e, to T
             return addErrorExpr(ref c, from: BErrorExpr { span: pat.value.span })
         case .lambdaExpr(let l):
             var fExpected = expected
-            // mutation-exempt: Q600 through 611
+            @unobservable because "Q600: bindLambda is a stub; add a lambda expected-type case when T35 lands"
             if fExpected != -1 && kindOf(fExpected) == .optional {
                 fExpected = c.optionalTypes[typeIndex(fExpected)]
             }
+            @unobservable because "Q600: bindLambda is a stub; add a lambda expected-type case when T35 lands"
             if fExpected != -1 && kindOf(fExpected) != .function { fExpected = -1 }
             switch l.value.block {
                 case .blockStmt(let bs):
@@ -809,8 +810,9 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
         // A default cloned onto a struct sees only the interface's members through `this`.
         var visible = true
         if host != -1 && c.functions[host].template != -1 && c.functions[c.functions[host].template].iface != -1 {
-            // mutation-exempt: Q600 through 814
+            @unobservable because "Q600: declare2.byn is a stub; add a function cloned from an interface default when T38 lands"
             let cloneOf = c.functions[c.functions[host].template].iface
+            @unobservable because "Q600: declare2.byn is a stub; add a function cloned from an interface default when T38 lands"
             visible = lookupMember(ref c, for: t15InterfaceSelf(ref c, for: cloneOf), by: name).kind != .none
         }
         if visible {
@@ -821,12 +823,13 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
         }
     }
 
-    // mutation-exempt: Q600 through 826
     if b.thisType != -1 && kindOf(b.thisType) == .structType && host != -1 && !c.functions[host].isStatic {
+        @unobservable because "Q600: statesOf is a stub; add a state-union variant field read through this when T38 lands"
         let st = statesOf(ref c, for: typeIndex(b.thisType))
         if st != -1 {
-            // mutation-exempt: Q600 through 845
+            @unobservable because "Q600: statesOf is a stub; add a state-union variant field read through this when T38 lands"
             var foundVariantField = false
+            @unobservable because "Q600: statesOf is a stub; add a state-union variant field read through this when T38 lands"
             for vId in c.unions[st].variants {
                 for fId in c.unionVariants[vId].fields {
                     if c.locals[fId].name == name {
@@ -836,6 +839,7 @@ BExpr bindName(ref Binder b, through ref Ctx c, for in parser.NameExpr n) {
                 }
                 if foundVariantField { break }
             }
+            @unobservable because "Q600: statesOf is a stub; add a state-union variant field read through this when T38 lands"
             if foundVariantField {
                 if inLambda(ref b, through: ref c, at: n.span, for: name, by: "it is read through `this`, which a lambda does not capture") {
                     return addErrorExpr(ref c, from: BErrorExpr { span: n.span })

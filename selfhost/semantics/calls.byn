@@ -88,10 +88,11 @@ BExpr bindCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, fro
         let receiver = c.bMethodGroups[i].receiver
         let explicit = c.bMethodGroups[i].typeArgs.length > 0
         switch c.functions[fn].builtin {
-            // mutation-exempt: Q616 through 95
             case .ownedNew:
+                @unobservable because "Q616: bindOwned and bindUntrusted are stubs; add Owned and Untrusted constructor cases when T21 lands"
                 return bindOwned(ref b, through: ref c, for: in call, as: expected != -1 && kindOf(expected) == .owned ? c.ownedTypes[typeIndex(expected)] : -1)
             case .untrustedNew:
+                @unobservable because "Q616: bindOwned and bindUntrusted are stubs; add Owned and Untrusted constructor cases when T21 lands"
                 return bindUntrusted(ref b, through: ref c, for: in call, as: expected != -1 && kindOf(expected) == .untrusted ? c.untrustedTypes[typeIndex(expected)] : -1)
             case .trust:
                 return bindTrust(ref b, through: ref c, for: in call)
@@ -237,7 +238,7 @@ BExpr bindTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call,
     ps.append(newLocal(ref c, by: LocalSymbol { name: "text", type: prim(.string), kind: .parameter, isParameter: true, modifier: .none, ordinal: 0 }))
     let asParam = newLocal(ref c, by: LocalSymbol { name: "as", type: radixType, kind: .parameter, isParameter: true, modifier: .none, ordinal: 1 })
     if call.args.length >= 2 { ps.append(asParam) }
-    // mutation-exempt: Q619
+    @unobservable because "Q619: enforceNames reads only a parameter's Param syntax or a bool type, which these parameters lack; the mutant is equivalent"
     let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: $"{typeDisplay(ref c, by: prim(target))}.tryParse")
     if args.length == 0 { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
     for a in args {
@@ -257,7 +258,7 @@ BExpr bindTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call,
 BExpr bindFloatTryParse(ref Binder b, through ref Ctx c, for in parser.CallExpr call, to PrimitiveKind target) {
     var ps = List<LocalId>()
     ps.append(newLocal(ref c, by: LocalSymbol { name: "text", type: prim(.string), kind: .parameter, isParameter: true, modifier: .none, ordinal: 0 }))
-    // mutation-exempt: Q619
+    @unobservable because "Q619: enforceNames reads only a parameter's Param syntax or a bool type, which these parameters lack; the mutant is equivalent"
     let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: $"{typeDisplay(ref c, by: prim(target))}.tryParse")
     if args.length == 0 { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
     for a in args {
@@ -315,8 +316,8 @@ void bindArgumentListForRecovery(ref Binder b, through ref Ctx c, for in List<pa
         let _ = bindExprOrType(ref b, through: ref c, for: in a.value)
     }
 }
-// mutation-exempt: Q732 through 320
 bool t20IsLambda(parser.Expr e) {
+    @unobservable because "Q732: bindLambda is a stub; add lambda argument cases when T35 lands"
     switch e {
         case .lambdaExpr(_): return true
         default: return false
@@ -332,7 +333,8 @@ bool t20IsInterpolated(parser.Expr e) {
 
 /// BinderCalls.cs:198 BindFunctionCall.
 BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by FuncId fn, from BExpr receiver, at parser.Expr syntax, in List<parser.TypeSyntax>? typeArgs = null) {
-    var target = fn // mutation-exempt: Q619
+    var target = fn
+    @unobservable because "Q619: typeArgs is non-null only when non-empty, so the && in explicit is an equivalent mutant"
     let explicit = (typeArgs is { } ta) && ta.length > 0
     if c.functions[fn].typeParams.length > 0 || explicit {
         var instance: FuncId = -1
@@ -371,7 +373,7 @@ BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr c
     // A call that `becomes` changes the receiver's state; a statement learns the new state after it (`LearnBecomes`). A call
     // without `becomes` leaves it as it was (revision 0010).
     let facts = t20DeclFacts(c, for: target)
-    // mutation-exempt: Q616 through 380
+    @unobservable because "Q616: checkBecomesCall and declareSignature are stubs; add a becomes call case when T22 and T38 land"
     if recv != -1 && (facts.becomes is { } to) {
         if (subject(ref b, through: ref c, for: recv) is { } changed) { forgetState(ref b, for: changed.key) }
         if boundKind(recv) == .thisRef && b.fn != -1 {
@@ -383,7 +385,7 @@ BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr c
         }
     }
     // A `ref this` call on `map[key]` changes the stored value in place.
-    // mutation-exempt: Q616
+    @unobservable because "Q616: declareSignature is a stub, so isMutating is never set; add a ref this call on map[key] when T38 lands"
     if recv != -1 && c.functions[target].isMutating { recv = mapWriteTarget(ref c, for: recv) }
     // A `dyn ref` writes through the borrow, not into the local holding it; `dyn ref readonly` is BYN2813.
     if recv != -1 && functionHasThis(ref c, by: target) && kindOf(exprType(in c, for: recv)) != .dynRef {
@@ -399,20 +401,20 @@ BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr c
         // A default is bound in the callee's file (`parameterDefault`), a written argument in the caller's (Q582).
         var files = List<FileId>()
         for i in 0..args.length {
-            // mutation-exempt: Q619
+            @unobservable because "Q619: isDefault only picks between the callee's file and b.file, equal in a single-file test; add a callee with requires in a second file"
             let isDefault =args[i] != -1 && args[i] == c.locals[ps[i]].defaultValue
             files.append(isDefault ? c.functions[target].file : b.file)
         }
         c.requiresChecks.append(RequiresCheck { source: b.file, callSpan: call.span, callArgs: move written, callee: target, arguments: copyIds(in args), argumentFiles: move files })
     }
     if c.functions[target].hasFails && !((b.handled is { } h) && h == call.span) { t20Unhandled(ref b, through: ref c, at: call.span, by: name) }
-    // mutation-exempt: Q616
+    @unobservable because "Q616: declareInterfaceMembers is a stub; add an interface method returning an associated type through a type parameter when T38 lands"
     let type = recv == -1 ? c.functions[target].returnType : returnTypeThrough(ref b, through: ref c, for: exprType(in c, for: recv), by: target)
     return addCall(ref c, from: BCall { span: call.span, function: target, receiver: recv, arguments: move args, type: type })
 }
 
 /// C# `fn.Decl`'s `Requires.Length > 0` (`expects`) and `Becomes`, read from the function's declaration where `t12Params` finds it.
-struct T20DeclFacts { // mutation-exempt: Q619
+struct T20DeclFacts {
     bool expects = false
     TextSpan? becomes = null
 }
@@ -795,9 +797,10 @@ BExpr t20BindArgument(ref Binder b, through ref Ctx c, for parser.Argument arg, 
         } else {
             place = bindExpr(ref b, through: ref c, for: in arg.value, to: ptype)
         }
-        if isError(exprType(in c, for: place)) { return place } // mutation-exempt: Q616 through 796
+        if isError(exprType(in c, for: place)) { return place }
         // A local whose state is known is passed as its declared type. A `ref` callee keeps the state (revision 0010); an `out`
         // callee supplies a new value, so its state is no longer known.
+        @unobservable because "Q616: knownState and forgetState are stubs; add a ref and out argument of a known state when T22 lands"
         if boundKind(place) == .local && knownState(ref b, for: c.bLocals[boundIndex(place)].local) != -1 {
             let local = c.bLocals[boundIndex(place)].local
             place = addLocal(ref c, from: BLocal { span: c.bLocals[boundIndex(place)].span, local: local })
@@ -813,12 +816,16 @@ BExpr t20BindArgument(ref Binder b, through ref Ctx c, for parser.Argument arg, 
             return addErrorExpr(ref c, from: BErrorExpr { span: valueSpan })
         }
         // An `out` argument writes a whole value: a `ref` parameter or `this` keeps its state only when its type names one (BYN7012).
-        // mutation-exempt: Q616 through 814
+        @unobservable because "Q616: statesOf is a stub, so named is always false; add an out argument of a state type when T38 lands"
         let isLocal = boundKind(place) == .local
+        @unobservable because "Q616: statesOf is a stub, so named is always false; add an out argument of a state type when T38 lands"
         let refParam = isLocal && c.locals[c.bLocals[boundIndex(place)].local].isParameter && c.locals[c.bLocals[boundIndex(place)].local].modifier == .refKeyword
+        @unobservable because "Q616: statesOf is a stub, so named is always false; add an out argument of a state type when T38 lands"
         let mutatingThis = boundKind(place) == .thisRef && b.fn != -1 && c.functions[b.fn].isMutating
+        @unobservable because "Q616: statesOf is a stub, so named is always false; add an out argument of a state type when T38 lands"
         let named = (kindOf(placeType) == .state && c.stateTypes[typeIndex(placeType)].states.length > 1)
             || (kindOf(placeType) == .structType && statesOf(ref c, for: typeIndex(placeType)) != -1)
+        @unobservable because "Q616: statesOf is a stub, so named is always false; add an out argument of a state type when T38 lands"
         if wanted == .outKeyword && (refParam || mutatingThis) && named {
             report(ref b, through: ref c, for: .assignmentChangesState, at: arg.span, by: (isLocal ? c.locals[c.bLocals[boundIndex(place)].local].name : "this", "", "", "", ""),
                 help: "assign a value in the same state, or move the transition into a `becomes` method")
@@ -836,9 +843,11 @@ BExpr t20BindArgumentValue(ref Binder b, through ref Ctx c, for parser.Argument 
     var value: BExpr = -1
     if (early is { } e) {
         let _ = b.prebound.remove(arg.span.start)
-        value = e // mutation-exempt: Q732 through 831
+        @unobservable because "Q732: bindLambda is a stub; add lambda argument cases when T35 lands"
+        value = e
     } else if type != -1 && kindOf(type) == .function && c.functionTypes[typeIndex(type)].parameters.length == 1 && !t20IsLambda(arg.value)
         && (t20MentionedIt(c, from: b.file, for: arg.value) is { } it) {
+        @unobservable because "Q732: bindLambda is a stub; add lambda argument cases when T35 lands"
         value = t20BindIt(ref b, through: ref c, for: arg.value, by: it, as: type)
     } else {
         let bound = bindExprFor(ref b, through: ref c, for: in arg.value, to: type)
@@ -856,19 +865,26 @@ BExpr t20BindArgumentValue(ref Binder b, through ref Ctx c, for parser.Argument 
 /// BinderCalls.cs:547 BindIt: an argument that mentions `it` where a one-parameter function type is expected: a lambda
 /// whose parameter is `it`. Inside another, or inside a `requires` rule where `it` is the checked value, it is BYN2029 (R7, Q361).
 BExpr t20BindIt(ref Binder b, through ref Ctx c, for parser.Expr e, by TextSpan it, as Type type) {
-    // mutation-exempt: Q732 through 861
+    @unobservable because "Q732: bindLambda is a stub; add lambda argument cases when T35 lands"
     if b.itDepth > 0 {
         // Outside any lambda, the `it` in scope is a `requires` rule's checked value.
         report(ref b, through: ref c, for: .nestedIt, at: it, by: ("", "", "", "", ""),
             help: b.lambdas.length == 0 ? "name the lambda's parameter: `x => …`" : "name the inner lambda's parameter: `x => …`")
         return addErrorExpr(ref c, from: BErrorExpr { span: parser.exprSpan(in e) })
     }
+    @unobservable because "Q732: bindLambda is a stub; add lambda argument cases when T35 lands"
     b.itDepth += 1
+    @unobservable because "Q732: bindLambda is a stub; add lambda argument cases when T35 lands"
     var ps = List<TextSpan>()
+    @unobservable because "Q732: bindLambda is a stub; add lambda argument cases when T35 lands"
     ps.append(it)
+    @unobservable because "Q732: bindLambda is a stub; add lambda argument cases when T35 lands"
     let noBlock: parser.BlockStmt? = null
+    @unobservable because "Q732: bindLambda is a stub; add lambda argument cases when T35 lands"
     let lambda = bindLambda(ref b, through: ref c, at: parser.exprSpan(in e), for: in ps, from: in e, by: in noBlock, to: type)
+    @unobservable because "Q732: bindLambda is a stub; add lambda argument cases when T35 lands"
     b.itDepth -= 1
+    @unobservable because "Q732: bindLambda is a stub; add lambda argument cases when T35 lands"
     return lambda
 }
 
