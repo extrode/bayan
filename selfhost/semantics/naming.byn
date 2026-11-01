@@ -340,9 +340,13 @@ List<string> endingReplacements(string ending) => ending switch {
 /// lowered; empty without one. The C# caches it per compilation; this reads it per `checkMembers` (Q657).
 Grammar grammarOf(ref Ctx c) {
     let path = t11Combine(c.displayRoot, by: "package.byn")
-    // `File.Exists(path) ? Manifest.Read(path)`: a directory or an unreadable path is no file.
+    // `File.Exists(path) ? Manifest.Read(path)`: a directory or a missing path is no file; a file `Manifest.Read`
+    // cannot read throws out of the C# compiler, a panic here (as `t11ReadAllBytes`, Q571).
     if t11DirectoryExists(path) { return Grammar {} }
-    let bytes = Io.readFile(path) catch return Grammar {}
+    let bytes = Io.readFile(path) catch switch {
+        IoError.notFound => return Grammar {},
+        IoError e => panic($"cannot read `{path}`"),
+    }
     let manifest = manifestParse(lexer.SourceText.create("package.byn", from: move bytes))
     return lowerGrammar(in manifest.grammar)
 }

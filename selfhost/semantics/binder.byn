@@ -5,12 +5,10 @@
 import parser
 import lexer
 
-type T28CallExpr = parser.CallExpr
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// The C# `Source.GetText(span)` of the file being bound.
-string t15Text(in Ctx c, from FileId f, at TextSpan span) => $"{getText(c.files[f].text.span, at: span)}"
+string t15Text(in Ctx c, from FileId f, at TextSpan span) => span.start < 0 ? c.syntheticNames[-1 - span.start] : $"{getText(c.files[f].text.span, at: span)}"
 
 /// A copy of a held diagnostic (`Diag` is unique, so `held.Items` cannot be handed over by value).
 Diag t15CloneDiag(in Diag d) {
@@ -36,47 +34,6 @@ bool t15ContainsLocal(in List<LocalId> list, for LocalId id) {
         if x == id { return true }
     }
     return false
-}
-
-/// The C# `Expr.Span`, one arm per variant (Q466).
-TextSpan t15ExprSpan(in parser.Expr e) {
-    switch e {
-        case .literalExpr(let n): return n.value.span
-        case .interpolatedExpr(let n): return n.value.span
-        case .nameExpr(let n): return n.value.span
-        case .thisExpr(let n): return n.value.span
-        case .memberExpr(let n): return n.value.span
-        case .targetMemberExpr(let n): return n.value.span
-        case .callExpr(let n): return n.value.span
-        case .indexExpr(let n): return n.value.span
-        case .unaryExpr(let n): return n.value.span
-        case .binaryExpr(let n): return n.value.span
-        case .rangeExpr(let n): return n.value.span
-        case .conditionalExpr(let n): return n.value.span
-        case .castExpr(let n): return n.value.span
-        case .isExpr(let n): return n.value.span
-        case .exceptExpr(let n): return n.value.span
-        case .inExpr(let n): return n.value.span
-        case .switchExpr(let n): return n.value.span
-        case .tryExpr(let n): return n.value.span
-        case .moveExpr(let n): return n.value.span
-        case .catchExpr(let n): return n.value.span
-        case .caughtErrorExpr(let n): return n.value.span
-        case .jumpExpr(let n): return n.value.span
-        case .blockExpr(let n): return n.value.span
-        case .structLiteralExpr(let n): return n.value.span
-        case .withExpr(let n): return n.value.span
-        case .spreadExpr(let n): return n.value.span
-        case .mapEntryExpr(let n): return n.value.span
-        case .collectionExpr(let n): return n.value.span
-        case .tupleExpr(let n): return n.value.span
-        case .parenExpr(let n): return n.value.span
-        case .lambdaExpr(let n): return n.value.span
-        case .stackallocExpr(let n): return n.value.span
-        case .patternExpr(let n): return n.value.span
-        case .errorExpr(let n): return n.value.span
-        case .none: return TextSpan { start: 0, length: 0 }
-    }
 }
 
 /// The C# `Stmt.Span`, one arm per variant.
@@ -357,7 +314,7 @@ void bindFunctionBody(ref Binder b, through ref Ctx c, for in parser.FunctionDec
     }
     if decl.expressionBody is not .none {
         checks.append(bindExpressionBody(ref b, through: ref c, for: in decl.expressionBody))
-        c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: t15ExprSpan(in decl.expressionBody), statements: move checks })
+        c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: parser.exprSpan(in decl.expressionBody), statements: move checks })
     } else {
         // The parser already reported the missing body.
         c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: decl.span })
@@ -369,7 +326,7 @@ List<BStmt> t15BindRequires(ref Binder b, through ref Ctx c, for in parser.Funct
     var conditions = List<BExpr>()
     var checks = List<BStmt>()
     for r in decl.requiresKeyword {
-        let span = t15ExprSpan(in r)
+        let span = parser.exprSpan(in r)
         let condition = bindExpr(ref b, through: ref c, for: in r, to: prim(.bool))
         let type = exprType(in c, for: condition)
         if !isBool(type) {
@@ -514,7 +471,7 @@ void bindChecks(ref Binder b, through ref Ctx c, for in StructChecks checks) {
         c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: node, statements: move statements })
         return
     }
-    var noArguments = List<BExpr>()
+    let noArguments = List<BExpr>()
     let isEmpty = addBuiltinCall(ref c, from: BBuiltinCall { span: node, member: .listIsEmpty, receiver: addLocalNode(ref c, at: node, for: list), arguments: move noArguments, type: prim(.bool) })
     let any = addUnary(ref c, from: BUnary { span: node, op: .notKeyword, operand: isEmpty, type: prim(.bool) })
     var payload = List<BExpr>()
@@ -710,14 +667,14 @@ BExpr t15BindDefault(ref Binder b, through ref Ctx c, for in parser.Expr d, as T
     let value = bindConverted(ref b, through: ref c, for: in d, to: type)
     let kind = boundKind(value)
     if exprConstant(in c, for: value) is null && kind != .errorExpr && kind != .defaultValue {
-        report(ref b, through: ref c, for: .notConstant, at: t15ExprSpan(in d), by: ("a parameter default", "", "", "", ""))
+        report(ref b, through: ref c, for: .notConstant, at: parser.exprSpan(in d), by: ("a parameter default", "", "", "", ""))
     }
     return value
 }
 
 BStmt bindExpressionBody(ref Binder b, through ref Ctx c, for in parser.Expr e) {
     t15CaptureTypes(ref b, through: ref c)
-    let span = t15ExprSpan(in e)
+    let span = parser.exprSpan(in e)
     if isVoid(c.functions[b.fn].returnType) {
         return addExprStmt(ref c, from: BExprStmt { span: span, expr: bindStatementExpression(ref b, through: ref c, for: in e) })
     }
@@ -733,7 +690,7 @@ void bindGetter(ref Binder b, through ref Ctx c, for in parser.PropertyDecl d) {
         default:
             break
     }
-    let span = t15ExprSpan(in d.body)
+    let span = parser.exprSpan(in d.body)
     var statements = List<BStmt>()
     statements.append(addReturn(ref c, from: BReturn { span: span, value: bindConverted(ref b, through: ref c, for: in d.body, to: c.functions[b.fn].returnType) }))
     c.functions[b.fn].body = addBlock(ref c, from: BBlock { span: span, statements: move statements })
@@ -833,7 +790,7 @@ BExpr bindFieldDefault(ref Binder b, through ref Ctx c, for FieldId f) {
 }
 
 /// The arguments of each member of a data enum, matched like call arguments; each must be a constant (BYN2723).
-/// The C# parameters are new locals (Q619); the C# `CallExpr` is `t28EnumMemberCall`'s (Q594).
+/// The C# parameters are new locals (Q619).
 void bindEnumArguments(ref Binder b, through ref Ctx c, for EnumId e) {
     t15CaptureTypes(ref b, through: ref c)
     var ps = List<LocalId>()
@@ -849,7 +806,14 @@ void bindEnumArguments(ref Binder b, through ref Ctx c, for EnumId e) {
                 if member == -1 || c.enumMembers[member].values.length != 0 { continue }
                 if m.args is null && d.value.params is null { continue }
                 let name = $"{c.enums[e].name}.{c.enumMembers[member].name}"
-                let args = t28BindEnumMemberArguments(ref b, through: ref c, for: in m, by: in ps, as: name)
+                // C# `BindArguments(new CallExpr(d.Span, …, d.Args ?? []), …)`: `bindArgumentList` reads only the arguments and the span.
+                var args = List<BExpr>()
+                if (m.args is { } given) {
+                    args = bindArgumentList(ref b, through: ref c, for: in given, at: m.span, by: in ps, as: -1, enforceNames: false, displayName: name)
+                } else {
+                    let none = List<parser.Argument>()
+                    args = bindArgumentList(ref b, through: ref c, for: in none, at: m.span, by: in ps, as: -1, enforceNames: false, displayName: name)
+                }
                 var values = List<Constant?>()
                 for i in 0..args.length { values.append(null) }
                 c.enumMembers[member].values = move values
@@ -870,44 +834,6 @@ void bindEnumArguments(ref Binder b, through ref Ctx c, for EnumId e) {
         default:
             break
     }
-}
-
-/// The C# `BindArguments(new CallExpr(d.Span, new NameExpr(d.Name.Span, d.Name, []), d.Args ?? []), ps, null,
-/// enforceNames: false, displayName: name)`. A member's `Argument`s cannot be moved out of the tree (Q471), so a
-/// member with arguments is parsed again from its own text at its own offsets, which gives the same `CallExpr`.
-List<BExpr> t28BindEnumMemberArguments(ref Binder b, through ref Ctx c, for in parser.EnumMember m, by in List<LocalId> ps, as string name) {
-    if m.args is null {
-        var typeArgs = List<parser.TypeSyntax>()
-        let call = T28CallExpr {
-            span: m.span,
-            callee: .nameExpr(Owned(NameExpr { span: m.name, name: m.name, typeArgs: move typeArgs })),
-            args: List<parser.Argument>(),
-        }
-        return bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: name)
-    }
-    var bytes = List<u8>()
-    let text = c.files[b.file].text.span
-    for i in 0..m.span.start { bytes.append(32) }
-    for i in m.span.start..m.span.start + m.span.length { bytes.append(text[i]) }
-    var p = parser.Parser.create(lexer.lex(lexer.SourceText.create("<enum member>", from: move bytes), by: lexer.Keywords.build()))
-    let unit = parser.parseCompilationUnit(ref p)
-    switch unit.members[0] {
-        case .globalStatement(let g):
-            switch g.value.statement {
-                case .exprStmt(let s):
-                    switch s.value.expr {
-                        case .callExpr(let call):
-                            return bindArguments(ref b, through: ref c, for: in call.value, by: in ps, as: -1, enforceNames: false, displayName: name)
-                        default:
-                            break
-                    }
-                default:
-                    break
-            }
-        default:
-            break
-    }
-    panic("internal error: an enum member's arguments did not parse as a call")
 }
 
 void bindModuleConstant(ref Binder b, through ref Ctx c, for ConstId k) {
@@ -940,7 +866,7 @@ void t15BindConstant(ref Binder b, through ref Ctx c, for ConstId k, by in parse
     var value = declared == -1 ? built(ref b, through: ref c, for: bindExpr(ref b, through: ref c, for: in decl.init), from: in decl.init) : bindConverted(ref b, through: ref c, for: in decl.init, to: declared)
     if declared == -1 {
         c.consts[k].type = defaultType(ref b, through: ref c, for: value, from: in decl.init)
-        value = convert(ref b, through: ref c, for: value, to: c.consts[k].type, at: t15ExprSpan(in decl.init))
+        value = convert(ref b, through: ref c, for: value, to: c.consts[k].type, at: parser.exprSpan(in decl.init))
     } else {
         c.consts[k].type = declared
     }
@@ -950,7 +876,7 @@ void t15BindConstant(ref Binder b, through ref Ctx c, for ConstId k, by in parse
         return
     }
     if !checkUniqueConst(ref b, through: ref c, for: in decl, as: type) && exprConstant(in c, for: value) is null && !isError(exprType(in c, for: value)) {
-        report(ref b, through: ref c, for: .notConstant, at: t15ExprSpan(in decl.init), by: ("a `const`", "", "", "", ""))
+        report(ref b, through: ref c, for: .notConstant, at: parser.exprSpan(in decl.init), by: ("a `const`", "", "", "", ""))
     }
     c.consts[k].value = exprConstant(in c, for: value)
     c.consts[k].bound = value
@@ -966,12 +892,12 @@ void t15BindStaticArray(ref Binder b, through ref Ctx c, for ConstId k, by in pa
     var element: Type = -1
     if kindOf(type) == .array { element = c.arrayTypes[typeIndex(type)].element }
     if !(isNumeric(element) || element == prim(.bool) || element == prim(.char) || element == prim(.string)) {
-        let span = decl.type is not .none ? typeSyntaxSpan(in decl.type) : t15ExprSpan(in decl.init)
+        let span = decl.type is not .none ? typeSyntaxSpan(in decl.type) : parser.exprSpan(in decl.init)
         report(ref b, through: ref c, for: .invalidConstArray, at: span, by: (name, "", "", "", ""), help: help)
         return
     }
     if boundKind(value) != .collection {
-        report(ref b, through: ref c, for: .invalidConstArray, at: t15ExprSpan(in decl.init), by: (name, "", "", "", ""), help: help)
+        report(ref b, through: ref c, for: .invalidConstArray, at: parser.exprSpan(in decl.init), by: (name, "", "", "", ""), help: help)
         return
     }
     var elements = List<BExpr>()
@@ -996,7 +922,7 @@ i64 bindArraySize(ref Binder b, through ref Ctx c, for in parser.Expr size) {
     t15CaptureTypes(ref b, through: ref c)
     let value = bindConverted(ref b, through: ref c, for: in size, to: prim(.i64))
     if isError(exprType(in c, for: value)) { return -1 }
-    let span = t15ExprSpan(in size)
+    let span = parser.exprSpan(in size)
     if (exprConstant(in c, for: value) is { } k) {
         if k.kind == .integer {
             if bigIsNeg(k.integer) {

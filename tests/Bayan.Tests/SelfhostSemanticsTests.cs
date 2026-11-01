@@ -560,6 +560,169 @@ public sealed class SelfhostSemanticsTests
         Assert.Contains("expected: b", e.Message);
         Assert.Contains("actual: B", e.Message);
     }
+
+    // ── T28: `@unobservable` marks against Compilation.Unobservable ─────────────────────────────────
+
+    private const string UnobservableSource = """
+        i32 f(i32 x) {
+            @unobservable because "all"
+            return x
+        }
+
+        i64 count<T>(in T x) {
+            @unobservable(boundary) because "first"
+            @unobservable(boundary) because "second"
+            @unobservable(relational) because "third"
+            return 1
+        }
+
+        void main() {
+            @unobservable(bogus) because "unknown"
+            let a = f(1)
+            let b = count(a)
+            let s = count("s")
+            print($"{b} {s}")
+        }
+
+        """;
+
+    /// <summary>
+    /// <c>c.unobservable</c> after a whole check, against the C# <c>Compilation.Unobservable</c> (Compilation.cs:35-38): binding
+    /// order, a null operator (printed <c>*</c>), one mark per (file, span, operator) across a repeated attribute and the
+    /// generic instances, and an unknown operator reported (BYN3219) and not recorded.
+    /// </summary>
+    [Fact]
+    public void UnobservableMarksMatchCompilation()
+    {
+        var dir = Fixture("unobservable", ("marks.byn", UnobservableSource));
+        var path = Path.Combine(dir, "marks.byn");
+        var c = Compilation.FromPath(path, new CompilationOptions(), wholeDirectory: false);
+        var marks = c.Unobservable.Select(m => $"{m.File} {m.Span.Start} {m.Span.Length} {m.Operator ?? "*"} {m.Reason}").ToList();
+        var diags = c.Diagnostics.Items.Select(d =>
+        {
+            var (line, col) = d.Source!.GetLinePosition(d.Span.Start);
+            return $"{d.Code} {line}:{col} {d.Message}";
+        }).ToList();
+        var main = $$"""
+            i32 main() {
+                let options = CompilationOptions {}
+                let c = fromPath("{{path}}", by: in options, wholeDirectory: false)
+                print("== marks")
+                for m in c.unobservable { print($"{m.file} {m.span.start} {m.span.length} {m.op ?? "*"} {m.reason}") }
+                print("== diags")
+                for d in c.diagnostics {
+                    let pos = linePosition(c.files[d.file].text.span, at: d.span.start)
+                    print($"{d.code} {pos.line}:{pos.column} {d.message}")
+                }
+                return 0
+            }
+            """;
+        var actual = SelfhostSemanticsHarness.RunSections(main);
+        // The fixture reaches both cases: a null operator, and a (file, span, operator) given twice and bound twice.
+        Assert.Contains(c.Unobservable, m => m.Operator is null);
+        Assert.Single(c.Unobservable, m => m.Operator == "boundary");
+        SelfhostSemanticsHarness.AssertSection(actual, "marks", marks);
+        SelfhostSemanticsHarness.AssertSection(actual, "diags", diags);
+    }
+
+    // ── T28: `for try` stepping (Binder.cs:1090-1115) against CliApp ────────────────────────────────
+
+    private const string ForTrySource = """
+        union error ReadError { broken }
+
+        struct Rows {
+            i64 at
+            i64 limit
+
+            i64? next(ref this) fails ReadError {
+                if at >= limit { return null }
+                at += 1
+                return at
+            }
+        }
+
+        i64 copied(i64 limit) fails ReadError {
+            var sum = 0
+            for try row in (Rows { at: 0, limit: limit }) { sum += row }
+            return sum
+        }
+
+        i64 inPlace() fails ReadError {
+            var rows = Rows { at: 0, limit: 3 }
+            var sum = 0
+            for try row: i64 in rows {
+                sum += row
+                break if row == 2
+            }
+            return sum + rows.at
+        }
+
+        i64 fromLet() fails ReadError {
+            let rows = Rows { at: 0, limit: 2 }
+            var sum = 0
+            for try row in rows { sum += row }
+            return sum + rows.at
+        }
+
+        i64 byRef(ref Rows rows) fails ReadError {
+            var sum = 0
+            for try row in (rows) { sum += row }
+            return sum
+        }
+
+        var rows = Rows { at: 0, limit: 2 }
+        print($"{try copied(3)} {try inPlace()} {try fromLet()} {try byRef(ref rows)}")
+
+        """;
+
+    /// <summary>
+    /// A valid <c>for try</c> whose body reports: the hidden <c>&lt;sequence N&gt;</c> copy and the in-place <c>var</c>, the
+    /// step's span at the iterable, and a declared type that is not the step's.
+    /// </summary>
+    [Fact]
+    public void ForTryBodyReports()
+    {
+        var source = """
+            union error ReadError { broken }
+
+            struct Rows {
+                i64 at
+
+                i64? next(ref this) fails ReadError {
+                    at += 1
+                    return at > 2 ? null : at
+                }
+            }
+
+            void copied() fails ReadError {
+                for try row in (Rows { at: 0 }) {
+                    let s: string = row
+                }
+            }
+
+            void inPlace() fails ReadError {
+                var rows = Rows { at: 0 }
+                for try row: string in rows {
+                    let n: i64 = "x"
+                }
+            }
+
+            try copied()
+            try inPlace()
+
+            """;
+        var dir = Fixture("for-try-reports", ("reports.byn", source));
+        SameAsCli("for try reports", "check", Path.Combine(dir, "reports.byn"));
+    }
+
+    /// <summary>The typed dump of the hidden copy (of a temporary and of a <c>let</c>), the in-place <c>var</c> and a <c>ref</c> parameter in parentheses.</summary>
+    [Fact]
+    public void ForTryTypes()
+    {
+        var dir = Fixture("for-try-types", ("steps.byn", ForTrySource));
+        SameAsCli("for try types", "types", Path.Combine(dir, "steps.byn"));
+        SameAsCli("for try check", "check", Path.Combine(dir, "steps.byn"));
+    }
 }
 
 /// <summary>

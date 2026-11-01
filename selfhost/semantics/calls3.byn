@@ -631,7 +631,6 @@ void guardBindings(ref Ctx c, for BPattern p, at TextSpan guard) {
 bool checkGuardWrite(ref Binder b, through ref Ctx c, for BExpr target, at TextSpan span, by string why) {
     let l = writtenLocal(ref c, for: target)
     if l == -1 { return false }
-    // mutation-exempt: Q671 through 641
     if (c.locals[l].guardSpan is { } g) {
         if span.start < g.start || span.end > g.end { return false }
         report(ref b, through: ref c, for: .owningBindingMutatedInGuard, at: span, by: (c.locals[l].name, "", "", "", ""), label: why,
