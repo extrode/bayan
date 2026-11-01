@@ -1,5 +1,5 @@
 # 010 — Self-hosting step 4: semantics in Bayan
-Status: draft
+Status: done
 Created: 2026-10-26
 
 ## Problem
