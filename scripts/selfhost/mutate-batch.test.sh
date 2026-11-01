@@ -5,7 +5,10 @@
 # directory default, an unknown directory fails naming it; files sharing a filter share one recording; --shard k/n and --files
 # limit the groups; the reports land in tmp/mutate-batch/<group>/; an empty baseline is filled, a higher score replaces a lower
 # one, a drop fails naming the file with old and new score and leaves the baseline unchanged; a failed mutant 0, a missing CLI
-# and a manifest-less recording fail naming the group, the other groups still raising the baseline.
+# and a manifest-less recording fail naming the group, the other groups still raising the baseline; the copied reports' absolute
+# paths (as bayan mutate writes them) are rewritten repo-root-relative, a path outside the root fails the group naming the
+# report; .github/workflows/mutation.yml: read-only permissions, no persisted credentials, a concurrency group, shards upload
+# reports and not the baseline, a final job needing the shards merges all reports in one update.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/mutate-batch-test"; aux="$root/tmp/mutate-batch-test-aux"
@@ -42,10 +45,10 @@ chmod +x $aux/dotnet src/Bayan.Cli/bin/Debug/net10.0/bayan; export AUX=$aux
 # rep <file> <killed> <survived> <marked>: the stub report and summary of the build recorded for <file>
 rep() { local bn; bn=$(basename "$1")
   echo "mutation: $2 killed, $3 survived, 0 timeout, $4 marked, 0 not reached, 0 not emitted" > $aux/rep/$bn.txt
-  python3 -I -c 'import json, sys
+  python3 -I -c 'import json, os, sys
 f, k, s, m = sys.argv[1], *map(int, sys.argv[2:])
 ms = [{"site": {"file": f}, "status": st} for st, n in (("killed", k), ("survived", s), ("marked", m)) for _ in range(n)]
-print(json.dumps({"version": 1, "kind": "mutation", "files": [{"path": f, "mutants": ms}]}))' "$1" "$2" "$3" "$4" > $aux/rep/$bn.json; }
+print(json.dumps({"version": 1, "kind": "mutation", "files": [{"path": os.environ.get("REPPATH", os.getcwd() + "/" + f), "mutants": ms}]}))' "$1" "$2" "$3" "$4" > $aux/rep/$bn.json; }
 rep_all() { rep selfhost/semantics/a.byn "$@"; rep selfhost/semantics/b.byn "$@"; rep selfhost/parser/p.byn "$@"; }
 b() { PATH="$aux:$PATH" bash "$root/scripts/selfhost/mutate-batch.sh" --tasks tasks.md "$@" 2>&1 || true; }
 score() { python3 -I -c 'import json, sys; print(json.load(open("tests/quality-baseline.json"))["files"].get(sys.argv[1], {}).get("mutation"))' "$1"; }
@@ -56,6 +59,7 @@ touch selfhost/semantics/z.byn; mkdir selfhost/other; echo > selfhost/other/z.by
 # fill: an empty baseline gets an entry for every file
 rep_all 3 1 1; fill=$(b); rec=$(sort $aux/record.txt); fa=$(score selfhost/semantics/a.byn); fb=$(score selfhost/semantics/b.byn); fp=$(score selfhost/parser/p.byn)
 [ -f tmp/mutate-batch/semantics-a/quality-1-prog.json ] && report=1 || report=0
+relpath=$(python3 -I -c 'import json; print(json.load(open("tmp/mutate-batch/semantics-a/quality-1-prog.json"))["files"][0]["path"])')
 # rise: a higher score replaces a lower one, and a lower one fails
 printf '{ "version": 1, "files": { "selfhost/semantics/a.byn": { "mutation": 0.5, "coverage": null, "branches": null } } }\n' > tests/quality-baseline.json
 rep_all 4 0 0; rm $aux/record.txt; rise=$(b --files selfhost/semantics/a.byn); ra=$(score selfhost/semantics/a.byn); rrec=$(cat $aux/record.txt)
@@ -70,8 +74,10 @@ badshard=$(b --shard 3/2)
 # a failed mutant 0 names its group; the other groups still raise the baseline
 cp $aux/empty.json tests/quality-baseline.json; touch $aux/rep/b.byn.mismatch; set +e; PATH="$aux:$PATH" bash "$root/scripts/selfhost/mutate-batch.sh" --tasks tasks.md > $aux/m0.txt 2>&1; m0x=$?; set -e; m0=$(cat $aux/m0.txt); rm $aux/rep/b.byn.mismatch
 m0a=$(score selfhost/semantics/a.byn); m0b=$(score selfhost/semantics/b.byn)
+REPPATH=/elsewhere/p.byn rep selfhost/parser/p.byn 1 0 0; outside=$(b --files selfhost/parser/p.byn); rep selfhost/parser/p.byn 1 0 0
 touch $aux/nomanifest; nomanifest=$(b --files selfhost/parser/p.byn); rm $aux/nomanifest
 mv src/Bayan.Cli/bin/Debug/net10.0/bayan $aux/bayan; nocli=$(b --files selfhost/parser/p.byn); cd "$root"
+wf=$(cat .github/workflows/mutation.yml)
 rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
 want="selfhost/parser/p.byn -> FullyQualifiedName~SelfhostParser
@@ -96,4 +102,14 @@ echo "$badshard" | grep -q 'want k/n' || fail "a bad --shard was accepted" "$bad
 echo "$m0" | grep -q '^group semantics-b: mutation: the recording does not replay on the unmutated build' || fail "a failed mutant 0 did not name its group" "$m0"
 echo "$nomanifest" | grep -q '^group parser-p: mutation: the recording wrote no tmp/mutate-batch/parser-p/snap/manifest.json' || fail "a manifest-less recording did not name its group" "$nomanifest"
 echo "$nocli" | grep -q '^group parser-p: mutation: src/Bayan.Cli/bin/Debug/net10.0/bayan is missing' || fail "a missing CLI did not name its group" "$nocli"
+[ "$relpath" = selfhost/semantics/a.byn ] || fail "the copied report's path was not rewritten repo-root-relative (got $relpath)" "$fill"
+echo "$outside" | grep -q '^group parser-p: report: .*quality-1-prog.json: path /elsewhere/p.byn is not under the repo root' || fail "a report path outside the repo root did not fail the group naming the report" "$outside"
+has() { echo "$wf" | grep -qE "$1" || fail "mutation.yml: $2" ""; }
+has '^permissions:' "no workflow-level permissions"; has '^  contents: read$' "permissions are not contents: read"
+[ "$(echo "$wf" | grep -c 'persist-credentials: false')" = 2 ] || fail "mutation.yml: every checkout needs persist-credentials: false" ""
+has '^concurrency:' "no concurrency group"; has 'group: mutation-\$\{\{ github.ref \}\}' "the concurrency group is not mutation-\${{ github.ref }}"
+has 'cancel-in-progress: false' "concurrency cancels runs in progress"
+[ "$(echo "$wf" | grep -c 'name: quality-baseline-')" = 0 ] || fail "mutation.yml: a shard uploads its own tests/quality-baseline.json" ""
+has '^    needs: mutate$' "no merge job needing the shard job"
+has 'quality-baseline.py update tests/quality-baseline.json \. \$\(find reports' "the merge job runs no single update over all reports"
 echo PASS

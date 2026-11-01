@@ -7,6 +7,7 @@
 # score; marked and not-reached mutants are left out), its coverage the covered / total lines of a coverage report and its branches the covered / total branches (null when it reports none).
 # check: prints one line per file whose score fell below its baseline entry and exits 1 if any did; a null on either side
 # never fails. update: writes each reported file's score when it has none or it is equal or higher; a lower one is kept.
+# A report path that is absolute or `..` and lands outside <root> exits non-zero naming the report: no `../..` key is written.
 import json, os, sys
 
 
@@ -17,6 +18,8 @@ def scores(root, reports):
             report = json.load(f)
         for entry in report['files']:
             path = os.path.relpath(os.path.realpath(os.path.join(root, entry['path'])), os.path.realpath(root))
+            if path == '..' or path.startswith('../'):
+                sys.exit(f'quality-baseline: {name}: path {entry["path"]} is outside the root {root}; a key would not be root-relative')
             c = counts.setdefault(path, [0, 0, 0, 0, False, 0, 0])
             for m in entry.get('mutants', []):
                 if m['status'] in ('killed', 'timeout'):
