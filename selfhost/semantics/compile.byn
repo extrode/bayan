@@ -726,6 +726,8 @@ void declareFile(ref Ctx c, for FileId file) {
         switch c.files[file].unit.members[d] {
             case .structDecl(let s):
                 let name = t11Text(in c, from: file, at: s.value.name)
+                var attributes = List<string>()
+                for a in s.value.attributes { attributes.append(t11Text(in c, from: file, at: a.name)) }
                 let sym = newStruct(ref c, by: StructSymbol {
                     name: name,
                     nameSpan: s.value.name,
@@ -736,6 +738,7 @@ void declareFile(ref Ctx c, for FileId file) {
                     access: accessOf(s.value.modifiers),
                     modifiers: i64(s.value.modifiers),
                     doc: s.value.doc,
+                    attributes: move attributes,
                 })
                 if addType(ref c, from: file, at: s.value.name, as: structTypeOf(sym)) { c.modules[module].structs.append(sym) }
                 checkType(ref c, from: file, at: s.value.name)

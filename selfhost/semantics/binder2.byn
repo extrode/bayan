@@ -119,7 +119,26 @@ void bindUnobservable(ref Binder b, through ref Ctx c, at TextSpan stmt, for in 
             return
         }
     }
-    // stub: T28 `_c.AddUnobservable(new UnobservableMark(Source.Path, stmt.Span, op, attribute.Because?.Reason ?? ""))` (blocked: Q655)
+    var reason = ""
+    if (attribute.becauseKeyword is { } r) { reason = r.reason }
+    t28AddUnobservable(ref c, by: UnobservableMark { file: c.files[b.file].path, span: stmt, op: op, reason: reason })
+}
+
+/// C# `UnobservableMark`: one `@unobservable` mark; `op` null means every operator.
+struct UnobservableMark {
+    string file
+    TextSpan span
+    string? op
+    string reason
+}
+
+/// The C# `Compilation.AddUnobservable`: keeps the first mark per file, span and operator (`*` keys a null operator,
+/// which no operator name spells).
+void t28AddUnobservable(ref Ctx c, by UnobservableMark mark) {
+    let key = $"{mark.file}|{mark.span.start}|{mark.span.length}|{mark.op ?? "*"}"
+    if c.unobservableSeen.contains(key) { return }
+    c.unobservableSeen[key] = 1
+    c.unobservable.append(mark)
 }
 
 /// The C# `foreach (var attribute in stmt.Attributes) BindUnobservable(stmt, attribute)`, one arm per variant.

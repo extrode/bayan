@@ -531,6 +531,9 @@ struct Ctx {
     Manifest? manifest = null
     // ── T27 state
     // ── T28 state
+    /// C# `_unobservable` and `_unobservableSeen` (a set): `file|start|length|op` of each mark kept.
+    List<UnobservableMark> unobservable = List<UnobservableMark>()
+    Map<string, i64> unobservableSeen = []
     // ── T29 state
     // ── T30 state
     // ── T31 state
