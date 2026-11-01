@@ -14,8 +14,8 @@ BExpr bindSwitchExpr(ref Binder b, through ref Ctx c, for in parser.SwitchExpr s
 // stub: T34 ports BinderCalls.cs:1187 BindPattern
 BPattern bindPattern(ref Binder b, through ref Ctx c, for in parser.Pattern p, as Type input) => -1
 
-// stub: T34 ports BinderCalls.cs:1365 CheckGuardWrite
-bool checkGuardWrite(ref Binder b, through ref Ctx c, for BExpr target, at TextSpan span, by string why) => true
+// stub: T34 ports BinderCalls.cs:1365 CheckGuardWrite (neutral default false: C# returns false when nothing is reported, BinderCalls.cs:1367; Q733)
+bool checkGuardWrite(ref Binder b, through ref Ctx c, for BExpr target, at TextSpan span, by string why) => false
 
 // stub: T34 ports BinderCalls.cs:1278 CheckOwningOverlap
 void checkOwningOverlap(ref Binder b, through ref Ctx c, for BPattern p) {}

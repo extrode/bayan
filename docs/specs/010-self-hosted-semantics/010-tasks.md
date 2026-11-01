@@ -65,7 +65,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [ ] T21 Call binding B — files: `calls2.byn` (`BinderCalls.cs` ~588–998: construction, builtin calls, move, switch subject), `SelfhostSemanticsT21Tests.cs` — covers: R4 — after: T4; parallel with: T6–T20, T22–T27, T34–T39 — done when:
   - method-for-method port; construction, builtin-call and move cases named as passing after rebase; Q620–Q624 as needed.
   - Size: about 596 lines.
-- [ ] T22 Typestate and error cases — files: `states.byn` (`BinderStates.cs`), `errorcases.byn` (`BinderErrors.cs`), `SelfhostSemanticsT22Tests.cs` — covers: R4 — after: T4; parallel with: T6–T21, T23–T27, T34–T39 — done when:
+- [x] T22 Typestate and error cases — files: `states.byn` (`BinderStates.cs`), `errorcases.byn` (`BinderErrors.cs`), `SelfhostSemanticsT22Tests.cs` — covers: R4 — after: T4; parallel with: T6–T21, T23–T27, T34–T39 — done when:
   - every `become`, state-narrowing and error-payload rule is ported; Q625–Q629 as needed.
   - Size: about 610 lines.
 - [ ] T23 Flow and effects — files: `flow.byn` (`FlowAnalysis.cs`), `effects.byn` (`EffectAnalysis.cs`, `ErrorFlow.cs`), `SelfhostSemanticsT23Tests.cs` — covers: R4 — after: T4; parallel with: T6–T22, T24–T27, T34–T39 — done when:
