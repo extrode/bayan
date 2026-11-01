@@ -14,8 +14,6 @@ namespace Bayan.Tests;
 /// DeclareCheck), <c>s</c> DeclareSignature of each free function, <c>i</c> DeclareInterfaceMembers, <c>t</c>
 /// CheckStateNames, <c>h</c> CheckStructShape then CheckUnionShape. The oracle calls the same private methods by
 /// reflection and prints the same lines. Diagnostics print as <c>code line:col message | label | help | fix</c>.
-/// A struct with a <c>states</c> block reaches T12's <c>declareUnionVariants</c>, which reads only a
-/// <c>UnionDecl</c> (Q689), so no case declares one.
 /// </summary>
 public sealed class SelfhostSemanticsT38Tests
 {
@@ -162,6 +160,44 @@ public sealed class SelfhostSemanticsT38Tests
             }
             void vf() fails ValidationError<S>, ValidationError<R> { }
             """),
+        // StatesOf and CheckStateNames on structs with states: a state named like a static method and a static
+        // property, unknown receiver and `becomes` states, a repeated state, a generic struct with a `requires`
+        // whose instance (from a parameter type) gets no check of its own, and a struct without states.
+        ("states/main.byn", """
+            struct Cart {
+                i64 count
+                states {
+                    empty
+                    full
+                }
+                static Cart.empty empty() => Cart.empty { count: 0 }
+                static i64 full => 1
+                void fill(ref this is .empty) becomes .full { }
+                void bad(ref this is .gone) becomes .lost { }
+                void drop(this is .full) becomes .empty { }
+            }
+            struct Dup {
+                i64 n
+                states {
+                    on
+                    on
+                    Off
+                }
+            }
+            struct Gen<T> {
+                T v requires it > 0
+                states {
+                    on
+                    off
+                    on
+                }
+                void flip(ref this is .on) becomes .nope { }
+            }
+            struct Plain {
+                void x(ref this) becomes .on { }
+            }
+            void use(Gen<i64> h) { }
+            """),
     ];
 
     private static readonly (string Name, string Flags)[] Runs =
@@ -169,6 +205,7 @@ public sealed class SelfhostSemanticsT38Tests
         ("sigs", "es"),
         ("ifaces", "i"),
         ("structs", "umsth"),
+        ("states", "umst"),
     ];
 
     private static string DirOf(string run) => Path.Combine(CasesDir, run.Split('-')[0]);
@@ -291,7 +328,9 @@ public sealed class SelfhostSemanticsT38Tests
                 var check = (FunctionSymbol)checks[s]!.GetType().GetProperty("Check")!.GetValue(checks[s])!;
                 lines.Add($"  check {Fn(check)}");
             }
+            if (c.States.TryGetValue(s, out var states)) lines.Add($"  states {string.Join(",", states.Variants.Select(v => v.Name))}");
         }
+        lines.Add($"states {c.States.Count}");
         foreach (var f in m.AllFunctions) lines.Add($"all {Fn(f)}");
         return lines;
     }
@@ -501,7 +540,18 @@ public sealed class SelfhostSemanticsT38Tests
                     let line = fnLine(ref c, for: c.checks[ci].check)
                     print($"  check {line}")
                 }
+                if (c.states.tryGet(at: s) is { } u) {
+                    var names = StrBuf()
+                    var first = true
+                    for v in copyIds(in c.unions[u].variants) {
+                        if !first { names.append(",") }
+                        first = false
+                        names.append(c.unionVariants[v].name)
+                    }
+                    print($"  states {names.finish()}")
+                }
             }
+            print($"states {c.states.length}")
             for f in copyIds(in c.modules[m].allFunctions) {
                 let line = fnLine(ref c, for: f)
                 print($"all {line}")
