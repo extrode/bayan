@@ -555,6 +555,7 @@ struct Ctx {
     // ── T39 state
     /// C# `Compilation.ThisWrites`: the first write to `this` in each method not declared `ref this` (Q694).
     Map<FuncId, T39ThisWrite> thisWrites = []
+    // ── T40 state
 }
 
 // ── The binder's cursors ──────────────────────────────────────────────────────
@@ -683,4 +684,5 @@ struct Binder {
     // ── T37 state
     // ── T38 state
     // ── T39 state
+    // ── T40 state
 }
