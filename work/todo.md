@@ -332,3 +332,5 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - guard.sh `run_limited` (:72): perl setpgrp child survives INT, so an interrupted guard leaves `dotnet test` running (pre-existing; review c1ebcac33983..9eef3ece, loop 2).
 - land.sh (:28-34): the PASS review commit's shape is checked, not its origin; a writer can forge it (pre-existing; an author check would not stop it either; review c1ebcac33983..9eef3ece, loop 2).
 - CliApp.cs:801-804 `ListingName`: `../x.byn` and `_/x.byn` share a listing name (pre-existing, A7 choice; review c1ebcac33983..9eef3ece, loop 2).
+- 010 follow-up (T28 review round 2, LOW 12): `t28CloneLocalName` (binder3.byn:216-225) rebuilds the in-place `for try` receiver for `nameExpr`/`parenExpr` only and panics otherwise; C# reuses `f.Iterable` (Binder.cs:1114). Unreachable today.
+- 010 follow-up (T28 review round 2, LOW 13): synthetic names are negative-start spans read back only by `t15Text`/`t18Text`; `t11Text`, `t12Text` and `getText` would index with a negative start, and `c.syntheticNames` grows per bind (binder3.byn:210-213; Q679).
