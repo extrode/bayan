@@ -66,7 +66,7 @@ for t in sys.argv[2:]:
 
 Guard (run before you finish):
 ```
-bash scripts/selfhost/guard.sh --base {BASE} --allow '{allow}' --filter 'FullyQualifiedName~{test_class}'
+bash scripts/selfhost/guard.sh --base {BASE} --allow '{allow}' --filter 'FullyQualifiedName~{test_class}' --task {t}
 ```
 Do not commit, merge, checkout, reset or stash; the dispatcher commits for you.
 
