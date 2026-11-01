@@ -13,10 +13,21 @@ SHA=$(git rev-parse "$BR")
 [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "LAND REFUSED: the base worktree has uncommitted changes"; exit 1; }
 PATH="/usr/bin:$PATH" python3 -I scripts/selfhost/wave-brief.py . "$T" > /dev/null
 # the base checkout's guard, by absolute path: a branch cannot run a guard it rewrote
-GUARD=$(grep -m1 '^bash scripts/selfhost/guard.sh' "tmp/010-$t/prompt.md" | sed -e "s|--base [^ ]*|--base $BASE|" -e 's| --mutate [^ ]*||; s| --mutations [^ ]*||' \
-  -e "s|^bash scripts/selfhost/guard.sh|bash '$PWD/scripts/selfhost/guard.sh'|")
+LINE=$(grep -m1 '^bash scripts/selfhost/guard.sh' "tmp/010-$t/prompt.md")
+# the prompt's words (single quotes stripped) become array elements; --mutate/--mutations and their values are dropped, --base is the base
+# branch; nothing is re-parsed by a shell, so a path with & | ' runs the right guard
+read -ra W <<< "${LINE#bash scripts/selfhost/guard.sh}"
+GUARD=(bash "$PWD/scripts/selfhost/guard.sh"); i=0
+while [ $i -lt ${#W[@]} ]; do
+  case "${W[$i]}" in
+    --base) GUARD+=(--base "$BASE"); i=$((i+2));;
+    --mutate|--mutations) i=$((i+2));;
+    *) w=${W[$i]}; w=${w#\'}; GUARD+=("${w%\'}"); i=$((i+1));;
+  esac
+done
 REVIEW=docs/specs/010-self-hosted-semantics/reviews/$T.md
-[ -z "$(git diff --name-only "$BASE...$SHA" -- scripts/selfhost/)" ] || { echo "LAND REFUSED: $BR changes scripts/selfhost/; the guard and the landing scripts change only on the base"; exit 1; }
+CHANGED=$(git diff --name-only "$BASE...$SHA" -- scripts/selfhost/) || { echo "LAND REFUSED: cannot diff $BR against $BASE (no merge base?)"; exit 1; }
+[ -z "$CHANGED" ] || { echo "LAND REFUSED: $BR changes scripts/selfhost/; the guard and the landing scripts change only on the base"; exit 1; }
 
 WT=tmp/land-$t; rm -rf "$WT"; git worktree prune
 git worktree add -q --detach "$WT" "$SHA"
@@ -35,7 +46,7 @@ trap cleanup EXIT
   grep -q '^Verdict: PASS' "$REVIEW" || { echo "LAND REFUSED: $REVIEW does not say 'Verdict: PASS'"; exit 1; }
   if grep -E '^\| *[0-9]+ *\| *HIGH *\|' "$REVIEW" | grep -vqE '\| *(fixed|resolved: Q[0-9]{3}) *\|? *$'; then
     echo "LAND REFUSED: $REVIEW lists a HIGH finding that is neither fixed nor resolved by a Question"; exit 1; fi
-  eval "$GUARD" | tail -25 | tee "../guard-land-$t.txt"
+  "${GUARD[@]}" | tail -25 | tee "../guard-land-$t.txt"
   grep -q '^GUARD PASS' "../guard-land-$t.txt" || { echo "LAND REFUSED: guard failed"; exit 1; }
 )
 

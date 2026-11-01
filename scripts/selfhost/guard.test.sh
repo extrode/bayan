@@ -37,6 +37,13 @@ touch $AUX/term; g --mutations 2 --seed 7 > /dev/null; rm $AUX/term
 cmp -s selfhost/semantics/a.byn $AUX/orig.byn && termok=1 || termok=0; [ -f tmp/guard-run/mutate-orig.txt ] && termok=0
 cp selfhost/semantics/a.byn tmp/guard-run/mutate-orig.txt; echo '// changed' >> tmp/guard-run/mutate-orig.txt; rm -f $AUX/mutants.txt
 left=$(g --mutations 2 --seed 7); [ -f $AUX/mutants.txt ] && left="$left (mutants ran)"
+# a TERM during the cp of the second --mutate file must not restore a truncated copy over it (stub cp truncates, then signals)
+printf 'fn g() -> int {\n    return 1 + 1\n}\n' > selfhost/semantics/b.byn
+printf '#!/bin/bash\nif [ -f $AUX/cpkill ] && [ "$1" = selfhost/semantics/b.byn ]; then rm $AUX/cpkill; head -c 3 "$1" > "$2"; kill -TERM $PPID; sleep 1; exit 1; fi\nexec /bin/cp "$@"\n' > $aux/cp; chmod +x $aux/cp
+cp selfhost/semantics/b.byn $aux/b.orig; touch $aux/cpkill; rm -f tmp/guard-run/mutate-orig.txt
+PATH="$aux:$PATH" GUARD_MUTANT_TIMEOUT_MIN=2 bash "$root/scripts/selfhost/guard.sh" --base base --allow 'selfhost/semantics/*,tmp/*' \
+  --filter 'FullyQualifiedName~SelfhostSemanticsT99Tests' --mutate selfhost/semantics/a.byn,selfhost/semantics/b.byn --mutations 1 --seed 7 > /dev/null 2>&1 || true
+cmp -s selfhost/semantics/b.byn $aux/b.orig && cpok=1 || cpok=0
 rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$out"; exit 1; }
 echo "$out" | grep -q '^mutation seed: 5$' || fail "seed not printed"
@@ -45,5 +52,6 @@ echo "$out" | grep -q '^mutation timeout: selfhost/semantics/a.byn:2' || fail "t
 echo "$out" | grep -q 'mutation survived: selfhost/semantics/a.byn:3' || fail "survivor on line 3 not reported"
 [ "$one" = "$two" ] || { echo "FAIL: same seed, different mutants"; exit 1; }
 [ $termok = 1 ] || { echo "FAIL: a guard killed mid-mutant left the file mutated or mutate-orig.txt behind"; exit 1; }
+[ $cpok = 1 ] || { echo "FAIL: a signal during the second file's backup copy restored a truncated copy over it"; exit 1; }
 echo "$left" | grep -q 'left from an interrupted run' && ! echo "$left" | grep -q 'mutants ran' || { echo "FAIL: a leftover mutate-orig.txt did not stop the mutations"; echo "$left"; exit 1; }
 echo PASS
