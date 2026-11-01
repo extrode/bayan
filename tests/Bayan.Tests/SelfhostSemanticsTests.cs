@@ -560,6 +560,70 @@ public sealed class SelfhostSemanticsTests
         Assert.Contains("expected: b", e.Message);
         Assert.Contains("actual: B", e.Message);
     }
+
+    // ── T28: `@unobservable` marks against Compilation.Unobservable ─────────────────────────────────
+
+    private const string UnobservableSource = """
+        i32 f(i32 x) {
+            @unobservable because "all"
+            return x
+        }
+
+        i64 count<T>(in T x) {
+            @unobservable(boundary) because "first"
+            @unobservable(boundary) because "second"
+            @unobservable(relational) because "third"
+            return 1
+        }
+
+        void main() {
+            @unobservable(bogus) because "unknown"
+            let a = f(1)
+            let b = count(a)
+            let s = count("s")
+            print($"{b} {s}")
+        }
+
+        """;
+
+    /// <summary>
+    /// <c>c.unobservable</c> after a whole check, against the C# <c>Compilation.Unobservable</c> (Compilation.cs:35-38): binding
+    /// order, a null operator (printed <c>*</c>), one mark per (file, span, operator) across a repeated attribute and the
+    /// generic instances, and an unknown operator reported (BYN3219) and not recorded.
+    /// </summary>
+    [Fact]
+    public void UnobservableMarksMatchCompilation()
+    {
+        var dir = Fixture("unobservable", ("marks.byn", UnobservableSource));
+        var path = Path.Combine(dir, "marks.byn");
+        var c = Compilation.FromPath(path, new CompilationOptions(), wholeDirectory: false);
+        var marks = c.Unobservable.Select(m => $"{m.File} {m.Span.Start} {m.Span.Length} {m.Operator ?? "*"} {m.Reason}").ToList();
+        var diags = c.Diagnostics.Items.Select(d =>
+        {
+            var (line, col) = d.Source!.GetLinePosition(d.Span.Start);
+            return $"{d.Code} {line}:{col} {d.Message}";
+        }).ToList();
+        var main = $$"""
+            i32 main() {
+                let options = CompilationOptions {}
+                let c = fromPath("{{path}}", by: in options, wholeDirectory: false)
+                print("== marks")
+                for m in c.unobservable { print($"{m.file} {m.span.start} {m.span.length} {m.op ?? "*"} {m.reason}") }
+                print("== diags")
+                for d in c.diagnostics {
+                    let pos = linePosition(c.files[d.file].text.span, at: d.span.start)
+                    print($"{d.code} {pos.line}:{pos.column} {d.message}")
+                }
+                return 0
+            }
+            """;
+        var actual = SelfhostSemanticsHarness.RunSections(main);
+        // The fixture reaches both cases: a null operator, and a (file, span, operator) given twice and bound twice.
+        Assert.Contains(c.Unobservable, m => m.Operator is null);
+        Assert.Single(c.Unobservable, m => m.Operator == "boundary");
+        SelfhostSemanticsHarness.AssertSection(actual, "marks", marks);
+        SelfhostSemanticsHarness.AssertSection(actual, "diags", diags);
+    }
 }
 
 /// <summary>
