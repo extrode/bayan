@@ -542,6 +542,8 @@ struct Ctx {
     /// C# `_inReportedCycle`: structs and unions already reported as part of a cycle.
     List<Type> inReportedCycle = List<Type>()
     // ── T39 state
+    /// C# `Compilation.ThisWrites`: the first write to `this` in each method not declared `ref this` (Q694).
+    Map<FuncId, T39ThisWrite> thisWrites = []
 }
 
 // ── The binder's cursors ──────────────────────────────────────────────────────
