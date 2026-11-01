@@ -95,7 +95,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T31 prove L023 via /prove: no checker panic — files: `SelfhostSemanticsNoPanicLawTests.cs` [Trait Law L023], `docs/laws/023-no-checker-panic.md`, `compile.byn` (Q661 fix, dispatcher 2026-11-01: `t11DeclareTest` gives the test function C#'s default `void` return type, Symbols.cs:207), `main.byn` (`--many` reports each input's exit) — covers: L023 — after: T28; parallel with: T29 — done when:
   - over every golden, seed corpus and random byte/token mutation (nesting bounded as in L018), exits are 0 or 1 and `--spans` prints nothing; a span mutation fails it; Q661–Q662.
   - Size: about 200 lines of C# and the law page.
-- [ ] T32 enact L023 "No checker panic" — files: `docs/laws/023-no-checker-panic.md` — covers: L023 — after: T31 — done when:
+- [x] T32 enact L023 "No checker panic" — files: `docs/laws/023-no-checker-panic.md` — covers: L023 — after: T31 — done when:
   - `status: enacted` lands with T31's passing proof, unless a C# counterexample keeps it `proposed` (Q663).
   - Size: one status line and recorded measurements.
 - [ ] T33 Docs — files: `docs/bayan-handoff.md` (Q520+, spend, Road row 010, readiness), `CHANGELOG.md`, `work/todo.md`, `010-spec.md` status — covers: R8, R9 — after: T28, T30, T32 — done when:
