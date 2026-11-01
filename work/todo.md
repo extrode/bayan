@@ -416,3 +416,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - review 9da9c6d..29ef0b1 LOW: SelfhostSemanticsGeneratorTests.cs:194 the serial ToolchainEnvironment collection also serialises GeneratedSeedsAgree (suite wall time); the comment at :197 ("they run in parallel") is stale for this class.
 - review 9da9c6d..29ef0b1 LOW: TestSetup.cs:68 PanicExit.Portable maps only 0xC0000409; a Windows build on legacy msvcrt abort() (exit 3) would fail RunTests/CoverageTests/MutantSchemataTests/L008. (unverified on Windows)
 - Full-suite runs under heavy machine load fail 2-3 tests intermittently (names not logged; 2026-11-01/02, CI fix branches); clean re-runs pass 6032/6032. Run with --logger "console;verbosity=normal" to name them next time.
+- ctx.byn mutation score 0.2627 (57/217) on the T28 trial run (2026-11-02); builds 1, 5, 7 kill 0 of 31: check whether any test in its filter reaches them (spec 013 T28, owner: 010 coverage work)
+- mutate-batch.sh:89: a group whose manifest lists zero builds passes the unexpanded `quality-*.json` glob to quality-baseline.py and fails with a generic message instead of naming the group (T28 gate, LOW)
+- mutate-batch.sh: only ctx.byn was run for real; other parser/lexer files may hit "matches no compiled source" with a family class that does not compile them (T28)
