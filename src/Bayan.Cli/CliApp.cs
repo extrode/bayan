@@ -601,6 +601,11 @@ public static class CliApp
             stderr.WriteLine(Messages.UnexpectedArgument.Text("--run"));
             return ExitUsage;
         }
+        if (o.Mutate && (o.Coverage || o.TestJson))
+        {
+            stderr.WriteLine(Messages.UnexpectedArgument.Text(o.Coverage ? "--coverage" : "--json"));
+            return ExitUsage;
+        }
         if (o.Mutate) return MutateTests(o, compiled, stdout, stderr);
         // Debug runs carry probes for the one-line summary unless `summary: false` (spec 013 R17); a future sanitize run must skip probes unless `--coverage` is given.
         var probes = o.Coverage || o.Mode == BuildMode.Debug && (compiled.Manifest?.Summary ?? true);
@@ -629,122 +634,150 @@ public static class CliApp
         var buildSeconds = built.Elapsed.TotalSeconds;
         string? coverageDir = null, coveragePrefix = null;
         var hits = new Dictionary<int, ulong>();
-        var timedOut = false;
+        // A strict subset (`--only`, `--changed`) leaves counters no selected test could reach: unknown, not missed, and no gate applies.
+        var partial = selected.Count < program.Tests.Count;
+        var unknown = partial;
         if (map is not null)
         {
             coverageDir = Directory.CreateTempSubdirectory("bayan-coverage-").FullName;
             coveragePrefix = Path.Combine(coverageDir, "BAYAN_COVERAGE");
             Testing.CoverageInstrumenter.DeleteStale(coveragePrefix);
         }
-        var count = selected.Count;
-        var human = o.TestJson ? TextWriter.Null : stdout;
-        var symbols = (s_styleOut ?? Style.Plain).Symbols;
-        var modules = selected.Select(i => ModuleOf(compiled, program.Tests[i].Test)).Distinct().Count();
-        human.WriteLine(Messages.TestRunning.Text(
-            (count == 1 ? Messages.TestCountOne : Messages.TestCountMany).Text(count),
-            (modules == 1 ? Messages.TestModuleCountOne : Messages.TestModuleCountMany).Text(modules),
-            o.Changed ? Messages.TestSkipped.Text(unchanged) : ""));
-        var results = new List<TestResult>();
-        var failures = new List<(string Name, bool Selectable)>();
-        var total = System.Diagnostics.Stopwatch.StartNew();
-        foreach (var i in selected)
+        try
         {
-            var test = program.Tests[i].Test;
-            var progress = StartProgress(o.Json || o.TestJson, stderr, Messages.TestProgress.Text(test.Name));
-            var outcome = RunTest(executable, i, coveragePrefix);
-            progress.Done();
-            if (coveragePrefix is not null)
+            var count = selected.Count;
+            var human = o.TestJson ? TextWriter.Null : stdout;
+            var symbols = (s_styleOut ?? Style.Plain).Symbols;
+            var modules = selected.Select(i => ModuleOf(compiled, program.Tests[i].Test)).Distinct().Count();
+            human.WriteLine(Messages.TestRunning.Text(
+                (count == 1 ? Messages.TestCountOne : Messages.TestCountMany).Text(count),
+                (modules == 1 ? Messages.TestModuleCountOne : Messages.TestModuleCountMany).Text(modules),
+                o.Changed ? Messages.TestSkipped.Text(unchanged) : ""));
+            var results = new List<TestResult>();
+            var failures = new List<(string Name, bool Selectable)>();
+            var total = System.Diagnostics.Stopwatch.StartNew();
+            foreach (var i in selected)
             {
-                // A killed test's counters are lost: what no other test hit is unknown, not missed.
-                var counterFile = coveragePrefix + "." + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                if (outcome.TimedOut) timedOut = true;
-                else if (File.Exists(counterFile))
-                    foreach (var (id, n) in Testing.CoverageInstrumenter.Read(counterFile))
-                        hits[id] = hits.GetValueOrDefault(id) + n;
+                var test = program.Tests[i].Test;
+                var progress = StartProgress(o.Json || o.TestJson, stderr, Messages.TestProgress.Text(test.Name));
+                var outcome = RunTest(executable, i, coveragePrefix);
+                progress.Done();
+                if (coveragePrefix is not null)
+                {
+                    // A killed test's counters are lost, as are those of an unreadable counter file: what no other test hit is unknown, not missed.
+                    var counterFile = coveragePrefix + "." + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    if (outcome.TimedOut || !MergeCounters(counterFile, hits)) unknown = true;
+                }
+                var status = outcome.TimedOut ? TestStatus.Timeout : outcome.ExitCode switch
+                {
+                    0 => TestStatus.Pass,
+                    1 => TestStatus.Fail,
+                    4 => TestStatus.Pending,
+                    _ => TestStatus.Panic,
+                };
+                var details = outcome.TimedOut ? Messages.TestTimedOut.Text(TestTimeout.TotalSeconds) : (outcome.Stdout + outcome.Stderr).TrimEnd();
+                var (file, line) = test.Location is { } at ? (at.Source.Path, at.Source.GetLinePosition(at.Span.Start).Line) : ("", 0);
+                results.Add(new TestResult(test.Name, file, line, status, outcome.Elapsed, status == TestStatus.Pass ? "" : details));
+                var module = Path.GetFileName(ModuleOf(compiled, test));
+                var name = TerminalStyle.Visible(test.Name);
+                if (status == TestStatus.Pass)
+                {
+                    if (!o.Verbose) continue;
+                    human.WriteLine(Messages.TestPassLine.Text(Paint(Role.Success, symbols.Dot), module, name));
+                    // Each test runs in its own process, so its captured `console` output is its own (J67).
+                    if (details.Length > 0)
+                        foreach (var l in details.Split('\n'))
+                            human.WriteLine(Messages.TestDetail.Text(TerminalStyle.Visible(l.TrimEnd('\r'))));
+                    continue;
+                }
+                if (status == TestStatus.Pending)
+                {
+                    if (o.Verbose) human.WriteLine(Messages.TestPendingLine.Text(Paint(Role.Warning, symbols.Dot), module, name));
+                    continue;
+                }
+                failures.Add((name, name == test.Name));
+                human.WriteLine();
+                human.WriteLine(Messages.TestFailureLine.Text(Paint(Role.Error, symbols.Cross, bold: true), module, name));
+                foreach (var l in FailureDetail(details, o.Verbose, symbols, (s_styleOut ?? Style.Plain).Width - Messages.TestDetail.Text("").Length))
+                    human.WriteLine(Messages.TestDetail.Text(TerminalStyle.Visible(l)));
             }
-            var status = outcome.TimedOut ? TestStatus.Timeout : outcome.ExitCode switch
-            {
-                0 => TestStatus.Pass,
-                1 => TestStatus.Fail,
-                4 => TestStatus.Pending,
-                _ => TestStatus.Panic,
-            };
-            var details = outcome.TimedOut ? Messages.TestTimedOut.Text(TestTimeout.TotalSeconds) : (outcome.Stdout + outcome.Stderr).TrimEnd();
-            var (file, line) = test.Location is { } at ? (at.Source.Path, at.Source.GetLinePosition(at.Span.Start).Line) : ("", 0);
-            results.Add(new TestResult(test.Name, file, line, status, outcome.Elapsed, status == TestStatus.Pass ? "" : details));
-            var module = Path.GetFileName(ModuleOf(compiled, test));
-            var name = TerminalStyle.Visible(test.Name);
-            if (status == TestStatus.Pass)
-            {
-                if (!o.Verbose) continue;
-                human.WriteLine(Messages.TestPassLine.Text(Paint(Role.Success, symbols.Dot), module, name));
-                // Each test runs in its own process, so its captured `console` output is its own (J67).
-                if (details.Length > 0)
-                    foreach (var l in details.Split('\n'))
-                        human.WriteLine(Messages.TestDetail.Text(TerminalStyle.Visible(l.TrimEnd('\r'))));
-                continue;
-            }
-            if (status == TestStatus.Pending)
-            {
-                if (o.Verbose) human.WriteLine(Messages.TestPendingLine.Text(Paint(Role.Warning, symbols.Dot), module, name));
-                continue;
-            }
-            failures.Add((name, name == test.Name));
+            total.Stop();
+            var report = new TestReport(compiled.Manifest?.Name, ModeName(o.Mode), HostTarget, results, total.Elapsed, unchanged);
+            int passed = report.Count(TestStatus.Pass), pending = report.Count(TestStatus.Pending);
+            var failed = count - passed - pending;
+            var seconds = Messages.TestSeconds.Text(total.Elapsed.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+            var dot = Paint(Role.Success, symbols.Dot);
             human.WriteLine();
-            human.WriteLine(Messages.TestFailureLine.Text(Paint(Role.Error, symbols.Cross, bold: true), module, name));
-            foreach (var l in FailureDetail(details, o.Verbose, symbols, (s_styleOut ?? Style.Plain).Width - Messages.TestDetail.Text("").Length))
-                human.WriteLine(Messages.TestDetail.Text(TerminalStyle.Visible(l)));
-        }
-        total.Stop();
-        var report = new TestReport(compiled.Manifest?.Name, ModeName(o.Mode), HostTarget, results, total.Elapsed, unchanged);
-        int passed = report.Count(TestStatus.Pass), pending = report.Count(TestStatus.Pending);
-        var failed = count - passed - pending;
-        var seconds = Messages.TestSeconds.Text(total.Elapsed.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
-        var dot = Paint(Role.Success, symbols.Dot);
-        human.WriteLine();
-        human.WriteLine(failed > 0 ? Messages.TestSummaryFailed.Text(dot, passed, symbols.Separator, Paint(Role.Error, symbols.Cross), failed, pending, seconds)
-            : pending > 0 ? Messages.TestSummaryPending.Text(dot, passed, symbols.Separator, pending, seconds)
-            : Messages.TestSummaryPassed.Text(dot, passed, symbols.Separator, seconds));
-        if (failures.Count is > 0 and <= 3)
-        {
-            var selectable = failures.Where(f => f.Selectable).ToList();
-            if (selectable.Count > 0)
+            human.WriteLine(failed > 0 ? Messages.TestSummaryFailed.Text(dot, passed, symbols.Separator, Paint(Role.Error, symbols.Cross), failed, pending, seconds)
+                : pending > 0 ? Messages.TestSummaryPending.Text(dot, passed, symbols.Separator, pending, seconds)
+                : Messages.TestSummaryPassed.Text(dot, passed, symbols.Separator, seconds));
+            if (failures.Count is > 0 and <= 3)
             {
-                var command = "bayan test" + string.Concat(selectable.Select(f => Messages.TestRerunOnly.Text(ShellQuote(f.Name))));
-                human.WriteLine((selectable.Count == 1 ? Messages.TestRerunOne : Messages.TestRerunMany).Text(command));
+                var selectable = failures.Where(f => f.Selectable).ToList();
+                if (selectable.Count > 0)
+                {
+                    var command = "bayan test" + string.Concat(selectable.Select(f => Messages.TestRerunOnly.Text(ShellQuote(f.Name))));
+                    human.WriteLine((selectable.Count == 1 ? Messages.TestRerunOne : Messages.TestRerunMany).Text(command));
+                }
+                if (selectable.Count < failures.Count) human.WriteLine(Messages.TestRerunUnselectable.Text());
             }
-            if (selectable.Count < failures.Count) human.WriteLine(Messages.TestRerunUnselectable.Text());
+            var json = report.ToJson();
+            if (o.TestJson) stdout.Write(json);
+            if (compiled.ProjectRoot is { } root)
+            {
+                var testDir = Path.Combine(root, "out", "test");
+                Directory.CreateDirectory(testDir);
+                Toolchain.ReplaceFile(Path.Combine(testDir, "results.json"), temp => File.WriteAllText(temp, json));
+            }
+            var gated = map is not null && WriteCoverage(o, compiled, map, hits, unknown, partial, buildSeconds, total.Elapsed.TotalSeconds, human, stderr);
+            return failed > 0 || gated ? ExitTestFailure : ExitOk;
         }
-        var json = report.ToJson();
-        if (o.TestJson) stdout.Write(json);
-        if (compiled.ProjectRoot is { } root)
+        finally
         {
-            var testDir = Path.Combine(root, "out", "test");
-            Directory.CreateDirectory(testDir);
-            Toolchain.ReplaceFile(Path.Combine(testDir, "results.json"), temp => File.WriteAllText(temp, json));
+            if (coverageDir is not null) Directory.Delete(coverageDir, recursive: true);
         }
-        var gated = map is not null && WriteCoverage(o, compiled, map, hits, timedOut, buildSeconds, total.Elapsed.TotalSeconds, coverageDir!, human, stdout, stderr);
-        return failed > 0 || gated ? ExitTestFailure : ExitOk;
+    }
+
+    /// <summary>
+    /// Adds a test's counter file to <paramref name="hits"/>; false when the file is unreadable (empty or truncated), so its
+    /// counters are unknown. A missing file adds nothing.
+    /// </summary>
+    internal static bool MergeCounters(string counterFile, Dictionary<int, ulong> hits)
+    {
+        if (!File.Exists(counterFile)) return true;
+        Dictionary<int, ulong> counts;
+        try
+        {
+            counts = Testing.CoverageInstrumenter.Read(counterFile);
+        }
+        catch (Exception e) when (e is InvalidDataException or IndexOutOfRangeException or FormatException or OverflowException)
+        {
+            return false;
+        }
+        foreach (var (id, n) in counts)
+            hits[id] = hits.GetValueOrDefault(id) + n;
+        return true;
     }
 
     /// <summary>
     /// <c>bayan test --coverage</c> (spec 013 R9, R12): prints the summary and writes <c>out/test/bayan-quality.json</c> and a
-    /// <c>&lt;file&gt;.cov.txt</c> per file beside it, under the project root (or the directory of the file given).
+    /// <c>&lt;file&gt;.cov.txt</c> per file beside it, under the project root (or the directory of the file given). A
+    /// <paramref name="partial"/> run prints no percentages and applies no gate.
     /// </summary>
-    private static bool WriteCoverage(BuildOptions o, Compiled compiled, Testing.CoverageMap map, Dictionary<int, ulong> hits, bool timedOut,
-        double buildSeconds, double totalSeconds, string coverageDir, TextWriter human, TextWriter stdout, TextWriter stderr)
+    private static bool WriteCoverage(BuildOptions o, Compiled compiled, Testing.CoverageMap map, Dictionary<int, ulong> hits, bool unknown,
+        bool partial, double buildSeconds, double totalSeconds, TextWriter human, TextWriter stderr)
     {
-        Directory.Delete(coverageDir, recursive: true);
-        var report = Testing.QualityReport.Coverage("bayan test --coverage", map, hits, timedOut, buildSeconds, totalSeconds);
+        var report = Testing.QualityReport.Coverage("bayan test --coverage", map, hits, unknown, buildSeconds, totalSeconds);
         if (!o.Coverage)
         {
+            if (partial) return false;
             // The default Debug summary: one line, no files.
             var t = report.CoverageTotals!;
             static string Part(Testing.Tally x) => $"{x.Covered}/{x.Total} ({(x.Total == 0 ? "100" : Testing.Gates.Fmt(100.0 * x.Covered / x.Total))}%)";
             human.WriteLine(Messages.TestCoverageSummary.Text(Part(t.Lines), Part(t.Branches), Part(t.ErrorPaths)));
             return false;
         }
-        stdout.Write(report.CoverageSummary());
+        if (!partial) human.Write(report.CoverageSummary());
         var root = compiled.ProjectRoot ?? Path.GetDirectoryName(Path.GetFullPath(o.Path))!;
         var dir = Path.Combine(root, "out", "test");
         Directory.CreateDirectory(dir);
@@ -753,13 +786,22 @@ public static class CliApp
         {
             var path = Path.GetFullPath(f.Path, root);
             if (!File.Exists(path)) continue;
-            var listing = Path.Combine(dir, Path.GetRelativePath(root, path).Replace("..", "_") + ".cov.txt");
+            var listing = Path.Combine(dir, ListingName(Path.GetRelativePath(root, path)) + ".cov.txt");
             Directory.CreateDirectory(Path.GetDirectoryName(listing)!);
             File.WriteAllText(listing, Testing.QualityReport.Listing(f.Coverage!, File.ReadAllLines(path)));
         }
         var m = compiled.Manifest;
-        return m is not null && ReportGates(Testing.Gates.Coverage(report, m.MinLines, m.MinBranches, m.MinErrorPaths), stderr);
+        return !partial && m is not null && ReportGates(Testing.Gates.Coverage(report, m.MinLines, m.MinBranches, m.MinErrorPaths), stderr);
     }
+
+    /// <summary>
+    /// The path under <c>out/test</c> of a source's listing, from its path relative to the root: each <c>..</c> segment becomes
+    /// <c>_</c>, and a rooted path (another drive) keeps only its file name, so no listing lands outside <c>out/test</c>.
+    /// </summary>
+    internal static string ListingName(string relative) =>
+        Path.IsPathRooted(relative)
+            ? Path.GetFileName(relative)
+            : string.Join(Path.DirectorySeparatorChar, relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Select(s => s == ".." ? "_" : s));
 
     /// <summary>
     /// <c>bayan test --mutate</c> (spec 013 R1): one schemata build, then every mutant run against the tests that reach it.

@@ -128,6 +128,73 @@ public sealed class ExternalModeTests
     }
 
     [Fact]
+    public void ASiteMapThatIsNotJsonOrHasTheWrongShapeIsAUsageError()
+    {
+        foreach (var (name, sites) in new[]
+        {
+            ("external-notjson", "not json"),
+            ("external-shape-sites", "{ \"version\": 1, \"sites\": 3 }"),
+            ("external-shape-field", "{ \"version\": 1, \"sites\": [ { \"id\": \"one\" } ] }"),
+            ("external-shape-missing", "{ \"version\": 1, \"sites\": [ { \"id\": 1 } ] }"),
+            ("external-shape-version", "{ \"version\": 1.5, \"sites\": [] }"),
+        })
+        {
+            var r = Mutate(name, "exit 0", sites);
+            Assert.Equal(2, r.Exit);
+            Assert.Contains("is not a version 1 site map", r.Err);
+        }
+    }
+
+    [Fact]
+    public void ACommandThatCannotStartReportsTheBaselineFailure()
+    {
+        var dir = Fresh("external-nosuchcmd");
+        var binary = Path.Combine(dir, "prog");
+        File.WriteAllText(binary, "");
+        File.WriteAllText(binary + ".sites.json", Sites);
+        var r = Cli(dir, "mutate", "--binary", binary, "--sites", binary + ".sites.json", "--", "nosuchcmd-xyz");
+        Assert.Equal(1, r.Exit);
+        Assert.Contains("does not exit 0 on the unmutated binary", r.Err);
+    }
+
+    [Fact]
+    public void APendingTestIsLeftOutOfMutateWithoutAWarning()
+    {
+        var dir = Fresh("external-pending");
+        File.WriteAllText(Path.Combine(dir, "a.test.byn"), """
+            i64 inc(i64 n) {
+                return n + 1
+            }
+
+            test "inc" {
+                assert inc(1) == 2
+            }
+
+            test "later" {
+                todo("x")
+            }
+
+            """);
+        var r = Cli(dir, "test", "--mutate", dir);
+        Assert.True(r.Exit == 0, r.Err + r.Out);
+        Assert.DoesNotContain("does not pass unmutated", r.Err);
+        Assert.Contains(" killed, ", r.Out);
+    }
+
+    [Fact]
+    public void MutateWithCoverageOrJsonIsAUsageError()
+    {
+        var dir = Fresh("external-mutate-flags");
+        File.WriteAllText(Path.Combine(dir, "a.test.byn"), "test \"one\" {\n    assert(true)\n}\n");
+        foreach (var flag in new[] { "--coverage", "--json" })
+        {
+            var r = Cli(dir, "test", "--mutate", flag, dir);
+            Assert.Equal(CliApp.ExitUsage, r.Exit);
+            Assert.Contains($"unexpected argument `{flag}`", r.Err);
+        }
+    }
+
+    [Fact]
     public void TheSiteMapReaderRoundTripsSitesJson()
     {
         var dir = Fresh("external-roundtrip");

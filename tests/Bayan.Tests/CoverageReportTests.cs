@@ -120,4 +120,58 @@ public sealed class CoverageReportTests
         Assert.True(file.GetProperty("lines").GetProperty("unknown").GetArrayLength() > 0);
         Assert.True(file.GetProperty("errorPaths").EnumerateArray().Single(e => e.GetProperty("variant").GetString() == "E.b").GetProperty("unknown").GetBoolean());
     }
+
+    [Fact]
+    public void JsonCoverageStdoutIsOneJsonDocument()
+    {
+        var app = Project("json", Main);
+        var r = Run("test", "--json", "--coverage", app);
+        Assert.True(r.Exit == CliApp.ExitOk, r.Out + r.Err);
+        using var json = JsonDocument.Parse(r.Out);
+        Assert.Equal(JsonValueKind.Object, json.RootElement.ValueKind);
+    }
+
+    [Fact]
+    public void ASubsetRunSkipsTheCoverageGateAndPrintsNoPercentages()
+    {
+        var app = Project("subset", Main + "\ntest \"other\" {\n    let r = f(5) catch switch {\n        E.a => 1,\n        E.b => 2\n    }\n    assert(r == 5)\n}\n");
+        var manifest = Path.Combine(app, "package.byn");
+        var text = File.ReadAllText(manifest);
+        var at = text.LastIndexOf('}');
+        File.WriteAllText(manifest, text[..at].TrimEnd().TrimEnd(',') + ",\n    test: Tests { lines: 100, branches: 100, errorPaths: 100 }\n}\n");
+        var r = Run("test", "--coverage", "--only", "negative", app);
+        Assert.True(r.Exit == CliApp.ExitOk, r.Out + r.Err);
+        Assert.DoesNotContain("%", r.Out + r.Err);
+        var rows = File.ReadAllText(Directory.EnumerateFiles(Path.Combine(app, "out", "test"), "main.byn.cov.txt", SearchOption.AllDirectories).Single()).Split('\n');
+        Assert.Contains("~     return 7", rows);
+    }
+
+    [Fact]
+    public void AnEmptyOrTruncatedCounterFileMakesCountersUnknown()
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "coverage-report", "counters");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "BAYAN_COVERAGE.0");
+        foreach (var bad in new[] { "", "bayan-coverage 1\n3", "bayan-coverage 1\n3 x\n", "bayan-c" })
+        {
+            File.WriteAllText(path, bad);
+            var hits = new Dictionary<int, ulong>();
+            Assert.False(CliApp.MergeCounters(path, hits), bad);
+            Assert.Empty(hits);
+        }
+        File.WriteAllText(path, "bayan-coverage 1\n3 2\n");
+        var good = new Dictionary<int, ulong> { [3] = 1 };
+        Assert.True(CliApp.MergeCounters(path, good));
+        Assert.Equal(3UL, good[3]);
+        Assert.True(CliApp.MergeCounters(Path.Combine(dir, "missing"), good));
+    }
+
+    [Fact]
+    public void ListingNamesReplaceOnlyParentSegmentsAndStayUnderOutTest()
+    {
+        Assert.Equal("a..b.byn", CliApp.ListingName("a..b.byn"));
+        Assert.NotEqual(CliApp.ListingName("a..b.byn"), CliApp.ListingName("a_b.byn"));
+        Assert.Equal(Path.Combine("_", "_", "lib", "x.byn"), CliApp.ListingName(Path.Combine("..", "..", "lib", "x.byn")));
+        Assert.Equal("x.byn", CliApp.ListingName(Path.Combine(Path.GetTempPath(), "elsewhere", "x.byn")));
+    }
 }
