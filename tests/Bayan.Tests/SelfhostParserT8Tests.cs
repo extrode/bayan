@@ -26,7 +26,7 @@ public sealed class SelfhostParserT8Tests(ITestOutputHelper output)
 
     private static (int Exit, string Out, string Err) Run(string program, params string[] args)
     {
-        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
+        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();

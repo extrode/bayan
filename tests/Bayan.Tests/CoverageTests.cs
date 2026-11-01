@@ -28,8 +28,8 @@ public sealed class CoverageTests
         var psi = new ProcessStartInfo(exe)
         {
             RedirectStandardInput = true,
-            RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false),
-            RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
             UseShellExecute = false,
         };
         if (work is not null) psi.WorkingDirectory = work;

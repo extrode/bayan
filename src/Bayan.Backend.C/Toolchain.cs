@@ -393,7 +393,9 @@ public static class Toolchain
         var psi = new ProcessStartInfo(file)
         {
             RedirectStandardOutput = true,
+            StandardOutputEncoding = new UTF8Encoding(false),
             RedirectStandardError = true,
+            StandardErrorEncoding = new UTF8Encoding(false),
             UseShellExecute = false,
             WorkingDirectory = workingDirectory,
         };

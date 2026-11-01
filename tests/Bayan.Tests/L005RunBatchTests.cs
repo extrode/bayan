@@ -257,7 +257,7 @@ public sealed class L005RunBatchTests
         Assert.True(build.Succeeded, build.Errors);
         var psi = new ProcessStartInfo(build.ExecutablePath!)
         {
-            RedirectStandardInput = true, RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false,
+            RedirectStandardInput = true, RedirectStandardOutput = true, UseShellExecute = false,
         };
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();

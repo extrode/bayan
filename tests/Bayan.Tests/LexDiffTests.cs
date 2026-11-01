@@ -25,7 +25,7 @@ public sealed class LexDiffTests
 
     private static (int Exit, string Out, string Err) Run(params string[] args)
     {
-        var psi = new ProcessStartInfo(LexDiff.Value) { RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
+        var psi = new ProcessStartInfo(LexDiff.Value) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();

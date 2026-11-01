@@ -284,8 +284,8 @@ public sealed class MapModelTests
         Directory.CreateDirectory(work);
         var psi = new ProcessStartInfo(build.ExecutablePath!)
         {
-            RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false),
-            RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
             UseShellExecute = false,
             WorkingDirectory = work,
         };

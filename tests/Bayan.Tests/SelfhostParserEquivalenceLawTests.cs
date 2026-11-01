@@ -187,7 +187,7 @@ public sealed class SelfhostParserEquivalenceLawTests(ITestOutputHelper output)
     /// <summary>The single-file <c>bayan-parse</c> exit code, with its dump drained.</summary>
     private static async Task<int> ExitCode(string path)
     {
-        var psi = new ProcessStartInfo(Built) { RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
+        var psi = new ProcessStartInfo(Built) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         psi.ArgumentList.Add(path);
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.BaseStream.CopyToAsync(Stream.Null);

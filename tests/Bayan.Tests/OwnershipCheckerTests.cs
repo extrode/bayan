@@ -89,7 +89,7 @@ public sealed class OwnershipCheckerTests
         Assert.False(c.Diagnostics.HasErrors);
         var build = Toolchain.Build(CliApp.EmitC(c, BuildMode.Debug), BuildMode.Debug);
         Assert.True(build.Succeeded, build.Errors);
-        var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
+        var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         using var p = Process.Start(psi)!;
         var stderrTask = p.StandardError.ReadToEndAsync();
         var actual = p.StandardOutput.ReadToEnd();
@@ -371,12 +371,12 @@ public sealed class OwnershipCheckerTests
             File.WriteAllText(Path.Combine(dir, "bayan-rt.c"), Toolchain.RuntimeSource);
             File.WriteAllText(Path.Combine(dir, "bayan-rt.h"), Toolchain.RuntimeHeader);
             var exe = Path.Combine(dir, OperatingSystem.IsWindows() ? "out.exe" : "out");
-            var cc = new ProcessStartInfo(compiler[0]) { WorkingDirectory = dir, RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
+            var cc = new ProcessStartInfo(compiler[0]) { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
             foreach (var a in compiler[1..]) cc.ArgumentList.Add(a);
             foreach (var a in new[] { "-std=c11", "out.c", "bayan-rt.c", "-I.", "-o", exe, OperatingSystem.IsWindows() ? "-lshell32" : "-lm" }) cc.ArgumentList.Add(a);
             var (ccCode, ccOut, ccErr) = Exec(cc);
             Assert.True(ccCode == 0, ccOut + ccErr);
-            return Exec(new ProcessStartInfo(exe) { RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false });
+            return Exec(new ProcessStartInfo(exe) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false });
         }
         finally
         {
@@ -408,7 +408,7 @@ public sealed class OwnershipCheckerTests
     {
         var build = Toolchain.Build(cSource, mode);
         Assert.True(build.Succeeded, build.Errors);
-        var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
+        var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         using var p = Process.Start(psi)!;
         var stderrTask = p.StandardError.ReadToEndAsync();
         var stdout = await p.StandardOutput.ReadToEndAsync();
@@ -432,7 +432,7 @@ public sealed class OwnershipCheckerTests
     {
         var build = Toolchain.Build(CliApp.EmitC(Compile(program, skip: true), BuildMode.Debug), BuildMode.Debug);
         Assert.True(build.Succeeded, build.Errors);
-        var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, StandardOutputEncoding = new System.Text.UTF8Encoding(false), RedirectStandardError = true, StandardErrorEncoding = new System.Text.UTF8Encoding(false), UseShellExecute = false };
+        var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         using var p = Process.Start(psi)!;
         var stdoutTask = p.StandardOutput.ReadToEndAsync();
         var actual = p.StandardError.ReadToEnd();
