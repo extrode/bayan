@@ -537,6 +537,8 @@ struct Ctx {
     // ── T36 state
     // ── T37 state
     // ── T38 state
+    /// C# `_inReportedCycle`: structs and unions already reported as part of a cycle.
+    List<Type> inReportedCycle = List<Type>()
     // ── T39 state
 }
 
