@@ -4,10 +4,13 @@
 # `bayan mutate --binary` with replay.py per build of the manifest and prints its summary. A survivor fails with its site,
 # all killed passes (marked sites included), each build of a two-build manifest replays with its own --binary, a mutant-0 mismatch fails, a bayan error
 # with only an earlier run's report beside the binary fails, a score below tests/quality-baseline.json fails, a
-# null baseline passes, a failed recording, a missing CLI or manifest fails with a message, and no --mutate records nothing and leaves no report.
-# Coverage (T26): with a.byn changed the tests run under BAYAN_COVERAGE with it; 100% passes and leaves quality-coverage.json,
-# each missed or unknown line and branch fails by file:line, a line or branch drop below the baseline fails, no report fails, and a red test run
-# is not checked for coverage.
+# null baseline passes, a failed recording, a missing CLI or manifest fails with a message, a malformed manifest or baseline
+# fails naming it, and no --mutate records nothing and leaves no report.
+# Coverage (T26): with a.byn changed the tests run under BAYAN_COVERAGE with it. a.byn's base function f is untouched and the
+# branch adds g: g fully covered passes with f uncovered (f an info line); each missed or unknown line and branch of g fails by
+# file:line, none of f's; a deleted line in f makes f gated, and a file new since --base is gated throughout; no coverage
+# baseline check runs and no quality-coverage.json is left (F2); no report fails, a malformed report fails naming it, and a
+# red test run is not checked for coverage.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/guard-test"; aux="$root/tmp/guard-test-aux"  # stubs and logs live outside the fixture repo
@@ -31,10 +34,11 @@ if [ -n "${BAYAN_SNAPSHOT:-}" ]; then
   b=$(printf '{"binary": "%s", "sites": "%s"}' $AUX/bin/prog $AUX/bin/prog.sites.json)
   [ -f $AUX/two ] && b="$b, $(printf '{"binary": "%s", "sites": "%s"}' $AUX/bin2/prog2 $AUX/bin2/prog2.sites.json)"
   [ -f $AUX/nomanifest ] || { mkdir -p "$BAYAN_SNAPSHOT"; echo "{\"version\": 1, \"builds\": [$b]}" > "$BAYAN_SNAPSHOT/manifest.json"; }
+  [ -f $AUX/badmanifest ] && echo '{"version": 1, "builds": [' > "$BAYAN_SNAPSHOT/manifest.json"
 fi
 if [ -n "${BAYAN_COVERAGE:-}" ]; then
   echo "$BAYAN_COVERAGE_FILES" > $AUX/cover.txt
-  [ -f $AUX/nocov ] || { mkdir -p "$BAYAN_COVERAGE"; cp $AUX/cov.json "$BAYAN_COVERAGE/bayan-quality.json"; }
+  [ -f $AUX/nocov ] || { mkdir -p "$BAYAN_COVERAGE"; cp $AUX/cov.json "$BAYAN_COVERAGE/bayan-quality.json"; cp $AUX/fns.json "$BAYAN_COVERAGE/functions.json"; }
 fi
 [ -f $AUX/testfail ] && { printf '  Failed T99\n  Error Message:\n   oracle differs\n'; exit 1; }
 exit 0
@@ -72,6 +76,9 @@ touch $aux/usage; usage=$(g --mutate selfhost/semantics/a.byn); rm $aux/usage
 printf '{ "version": 1, "files": { "selfhost/semantics/a.byn": { "mutation": null, "coverage": null } } }\n' > tests/quality-baseline.json
 nullbase=$(ALLOWX=,tests/quality-baseline.json g --mutate selfhost/semantics/a.byn); git show HEAD:tests/quality-baseline.json > tests/quality-baseline.json
 touch $aux/nomanifest; nomanifest=$(g --mutate selfhost/semantics/a.byn); rm $aux/nomanifest
+touch $aux/badmanifest; badmanifest=$(g --mutate selfhost/semantics/a.byn); rm $aux/badmanifest
+result 2 0 1; printf '{ "version": 1, "files": ' > tests/quality-baseline.json
+badbase=$(ALLOWX=,tests/quality-baseline.json g --mutate selfhost/semantics/a.byn); git show HEAD:tests/quality-baseline.json > tests/quality-baseline.json
 touch $aux/recordfail; recordfail=$(g --mutate selfhost/semantics/a.byn); rm $aux/recordfail
 rm $aux/record.txt; plain=$(g); [ -f $aux/record.txt ] && plainrec=1 || plainrec=0; ls tmp/guard-run/quality-*.json > /dev/null 2>&1 && plainrep=1 || plainrep=0
 mv src/Bayan.Cli/bin/Debug/net10.0/bayan $aux/bayan; nocli=$(g --mutate selfhost/semantics/a.byn)
@@ -82,15 +89,32 @@ br = {"covered": sum(b[3] == "hit" for b in branches), "total": len(branches)}
 for s in ("missed", "unknown"): br[s] = [{"line": b[0], "column": b[1], "outcome": b[2]} for b in branches if b[3] == s]
 lines = {"covered": covered, "total": total, "missed": missed, "unknown": unknown}
 print(json.dumps({"version": 1, "kind": "coverage", "files": [{"path": f, "lines": lines, "branches": br, "errorPaths": []}]}))' "$a" "$@" > $aux/cov.json; }
-printf '    return a + 2\n' >> selfhost/semantics/a.byn
-cov 3 3 '[]' '[]' '[[2, 10, true, "hit"], [2, 10, false, "hit"]]'; covpass=$(g); covfiles=$(cat $aux/cover.txt)
-[ -f tmp/guard-run/quality-coverage.json ] && covrep=1 || covrep=0
-cov 1 3 '[3]' '[5]' '[[2, 10, true, "missed"], [2, 10, false, "hit"], [3, 5, false, "unknown"]]'; covmiss=$(g)
+# fns <f's [covered, total] lines> <f's branches> <g's lines> <g's branches>: functions.json for a.byn (f 1-4, a blank line, g 6-9)
+fns() { printf '{"version": 1, "files": {"%s": [{"span": [1, 4], "lines": %s, "branches": %s}, {"span": [6, 9], "lines": %s, "branches": %s}]}}\n' "$a" "$@" > $aux/fns.json; }
+printf '\nfn g(a: int) -> int {\n    if a > 2 { return 2 }\n    return a\n}\n' >> selfhost/semantics/a.byn
+# f uncovered (line 3, branch 2:10 never true), g covered; the blank line opens the hunk adding g
+cov 3 4 '[3]' '[]' '[[2, 10, true, "missed"], [2, 10, false, "hit"], [7, 10, true, "hit"], [7, 10, false, "hit"]]'; fns '[1, 2]' '[1, 2]' '[2, 2]' '[2, 2]'
+covpass=$(g); covfiles=$(cat $aux/cover.txt); [ -f tmp/guard-run/quality-coverage.json ] && covrep=1 || covrep=0
+# f and g both short: only g's are items
+cov 1 4 '[3, 8]' '[7]' '[[2, 10, true, "missed"], [7, 10, true, "missed"], [7, 10, false, "hit"], [8, 5, false, "unknown"]]'; fns '[1, 2]' '[0, 1]' '[0, 2]' '[1, 3]'
+covmiss=$(g)
 touch $aux/testfail; covred=$(g); rm $aux/testfail
+# a coverage baseline above the run's is not checked
 printf '{ "version": 1, "files": { "selfhost/semantics/a.byn": { "mutation": null, "coverage": 1.0, "branches": 1.0 } } }\n' > tests/quality-baseline.json
-cov 2 3 '[3]' '[]' '[[2, 10, true, "hit"], [2, 10, false, "hit"]]'; covdrop=$(ALLOWX=,tests/quality-baseline.json g)
-cov 3 3 '[]' '[]' '[[2, 10, true, "missed"], [2, 10, false, "hit"]]'; brdrop=$(ALLOWX=,tests/quality-baseline.json g); git show HEAD:tests/quality-baseline.json > tests/quality-baseline.json
+cov 3 4 '[3]' '[]' '[[2, 10, true, "missed"], [2, 10, false, "hit"], [7, 10, true, "hit"], [7, 10, false, "hit"]]'; fns '[1, 2]' '[1, 2]' '[2, 2]' '[2, 2]'
+covbase=$(ALLOWX=,tests/quality-baseline.json g); git show HEAD:tests/quality-baseline.json > tests/quality-baseline.json
 touch $aux/nocov; covnone=$(g); rm $aux/nocov
+printf '{"version": 1, "files": [' > $aux/cov.json; covbad=$(g)
+# deleting f's line 2 makes f (then 1-3) gated: a deletion touches the lines on either side of it
+sed -i.bak 2d selfhost/semantics/a.byn; rm selfhost/semantics/a.byn.bak
+cov 2 3 '[2]' '[]' '[[6, 10, true, "hit"], [6, 10, false, "hit"]]'
+printf '{"version": 1, "files": {"%s": [{"span": [1, 3], "lines": [0, 1], "branches": [0, 0]}, {"span": [5, 8], "lines": [2, 2], "branches": [2, 2]}]}}\n' "$a" > $aux/fns.json
+covtouch=$(g)
+# a file new since base is touched throughout
+printf 'fn h() -> int {\n    return 1\n}\n' > selfhost/semantics/b.byn
+a=$r/selfhost/semantics/b.byn cov 0 1 '[2]' '[]' '[]'
+printf '{"version": 1, "files": {"%s": [{"span": [1, 3], "lines": [0, 1], "branches": [0, 0]}]}}\n' "$r/selfhost/semantics/b.byn" > $aux/fns.json
+covnew=$(ALLOWX=,selfhost/semantics/b.byn g)
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
 echo "$pass" | grep -q '^GUARD PASS$' || fail "all killed (one marked) did not pass" "$pass"
@@ -109,21 +133,28 @@ echo "$usage" | grep -q "^- mutation: bayan mutate exited 2 on $aux/bin/prog wit
 echo "$nullbase" | grep -q 'fell from' && fail "a null baseline failed" "$nullbase"
 echo "$nullbase" | grep -q '^- mutation survived' || fail "the null-baseline run did not run mutation" "$nullbase"
 echo "$nomanifest" | grep -q '^- mutation: the recording wrote no tmp/guard-run/snap/manifest.json' || fail "a missing manifest did not fail with a message" "$nomanifest"
+echo "$badmanifest" | grep -q '^GUARD FAIL' && echo "$badmanifest" | grep -q '^- mutation: tmp/guard-run/snap/manifest.json is unreadable — ' || fail "a malformed manifest did not fail naming it" "$badmanifest"
+echo "$badbase" | grep -q '^GUARD FAIL' && echo "$badbase" | grep -q '^- baseline: quality-baseline.py check failed on tests/quality-baseline.json and tmp/guard-run/quality-\*.json — ' || fail "a malformed baseline did not fail naming it" "$badbase"
 echo "$recordfail" | grep -q '^- mutation: recording the tests under BAYAN_SNAPSHOT failed (tmp/guard-run/record.txt) — .*recording broke' || fail "a failed recording did not fail with its message" "$recordfail"
 echo "$nocli" | grep -q '^- mutation: src/Bayan.Cli/bin/Debug/net10.0/bayan is missing' || fail "a missing CLI did not fail with a message" "$nocli"
 echo "$plain" | grep -q '^GUARD PASS$' && [ $plainrec = 0 ] && [ $plainrep = 0 ] || fail "a guard without --mutate recorded or left a report" "$plain"
-echo "$covpass" | grep -q '^GUARD PASS$' && echo "$covpass" | grep -q '^coverage: selfhost/semantics/a.byn: lines 3/3, branches 2/2 (listing: tmp/guard-run/coverage/selfhost/semantics/a.byn.cov.txt)$' \
-  || fail "full coverage did not pass with its summary" "$covpass"
+L='(listing: tmp/guard-run/coverage/selfhost/semantics/a.byn.cov.txt)'
+echo "$covpass" | grep -q '^GUARD PASS$' || fail "an uncovered untouched function failed the guard" "$covpass"
+echo "$covpass" | grep -qF "coverage: selfhost/semantics/a.byn: touched functions: lines 2/2, branches 2/2 $L" \
+  && echo "$covpass" | grep -qF "coverage: selfhost/semantics/a.byn: other functions, not gated (no line of theirs changed): lines 1/2, branches 1/2 $L" \
+  || fail "the touched and other functions' summary lines are missing" "$covpass"
 [ "$covfiles" = selfhost/semantics/a.byn ] || fail "the tests ran under BAYAN_COVERAGE_FILES='$covfiles', not the changed a.byn" "$covpass"
-[ $covrep = 1 ] || fail "the coverage report was not copied to tmp/guard-run/quality-coverage.json" "$covpass"
-echo "$covmiss" | grep -q '^- coverage: missed line selfhost/semantics/a.byn:3; no test under --filter runs it' || fail "a missed line was not a FAIL item with file:line" "$covmiss"
-echo "$covmiss" | grep -q '^- coverage: unknown line selfhost/semantics/a.byn:5; a counter file was unreadable' || fail "an unknown line was not a FAIL item" "$covmiss"
-echo "$covmiss" | grep -q '^- coverage: missed branch selfhost/semantics/a.byn:2:10 never true; ' || fail "a missed branch was not a FAIL item with file:line" "$covmiss"
-echo "$covmiss" | grep -q '^- coverage: unknown branch selfhost/semantics/a.byn:3:5 never false; ' || fail "an unknown branch was not a FAIL item" "$covmiss"
+[ $covrep = 0 ] || fail "the coverage report was copied to tmp/guard-run/quality-coverage.json (land.sh would record it)" "$covpass"
+echo "$covmiss" | grep -q '^- coverage: missed line selfhost/semantics/a.byn:8; no test under --filter runs it' || fail "a missed line of a touched function was not a FAIL item with file:line" "$covmiss"
+echo "$covmiss" | grep -q '^- coverage: unknown line selfhost/semantics/a.byn:7; a counter file was unreadable' || fail "an unknown line was not a FAIL item" "$covmiss"
+echo "$covmiss" | grep -q '^- coverage: missed branch selfhost/semantics/a.byn:7:10 never true; ' || fail "a missed branch was not a FAIL item with file:line" "$covmiss"
+echo "$covmiss" | grep -q '^- coverage: unknown branch selfhost/semantics/a.byn:8:5 never false; ' || fail "an unknown branch was not a FAIL item" "$covmiss"
+echo "$covmiss" | grep -qE '^- coverage: .* selfhost/semantics/a.byn:(3|2:10)' && fail "an untouched function's miss was a FAIL item" "$covmiss"
 echo "$covred" | grep -q '^- tests: FAIL' && ! echo "$covred" | grep -q '^- coverage:' || fail "a red test run was checked for coverage" "$covred"
-echo "$covdrop" | grep -q '^- baseline: coverage score of selfhost/semantics/a.byn fell from 1.0 to 0.6667 (tests/quality-baseline.json)$' || fail "a coverage drop below the baseline was not a FAIL item" "$covdrop"
-echo "$covdrop" | grep -q 'branches score' && fail "an unchanged branch score was a drop item" "$covdrop"
-echo "$brdrop" | grep -q '^- baseline: branches score of selfhost/semantics/a.byn fell from 1.0 to 0.5 (tests/quality-baseline.json)$' || fail "a branch coverage drop below the baseline was not a FAIL item" "$brdrop"
+echo "$covbase" | grep -q '^GUARD PASS$' || fail "the guard checked coverage against the baseline" "$covbase"
+echo "$covbad" | grep -q '^GUARD FAIL' && echo "$covbad" | grep -q "^- coverage: coverage-gate.py: $r/tmp/guard-run/coverage/bayan-quality.json is unreadable: " || fail "a malformed coverage report did not fail naming it" "$covbad"
+echo "$covtouch" | grep -q '^- coverage: missed line selfhost/semantics/a.byn:2; ' || fail "a deleted line in f did not make f gated" "$covtouch"
+echo "$covnew" | grep -q '^- coverage: missed line selfhost/semantics/b.byn:2; ' || fail "a function of a file new since --base was not gated" "$covnew"
 echo "$covnone" | grep -q "^- coverage: the tests wrote no tmp/guard-run/coverage/bayan-quality.json: no test under --filter 'FullyQualifiedName~SelfhostSemanticsT99Tests' builds a selfhost program with selfhost/semantics/a.byn$" \
   || fail "a coverage run without a report (an earlier run's left in place) did not fail" "$covnone"
 echo PASS
