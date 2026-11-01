@@ -2,13 +2,16 @@
 # guard.sh — run in a writer worktree before finishing. Prints GUARD PASS or GUARD FAIL + the items to fix.
 #   bash guard.sh --base <branch> --allow '<glob>[,<glob>…]' --filter '<dotnet test filter>' [--task T<n>] [--mutate <file.byn>[,…]]
 # Checks: 1 scope (changed files match --allow, plus handoff/todo/tasks), 2 no junk (binary or extensionless files),
-# 3 build 0 warnings, 4 tests pass with 0 skipped, 5 banned C#-isms in changed .byn, 6 mutation (spec 013 R14): every
+# 3 build 0 warnings, 4 tests pass with 0 skipped, and coverage (spec 013 T26): when the branch changes selfhost .byn files the
+# tests run under BAYAN_COVERAGE with those files, every line and branch of them must be covered (each missed one is named),
+# and no file's line coverage may fall below tests/quality-baseline.json; the report is copied to tmp/guard-run/quality-coverage.json, 5 banned C#-isms in changed .byn, 6 mutation (spec 013 R14): every
 # mutation site of the --mutate files must make the filtered tests fail (`bayan mutate --binary` over a BAYAN_SNAPSHOT
 # recording; a survivor = an untested change; `@unobservable because "…"` marks a statement whose mutants no test can see),
 # and no file's score may fall below tests/quality-baseline.json,
 # 7 content checks from guard-checks.py (C# oracle in the tests, no stubs or empty bodies left, ctx.byn only in the
 # task's own section, no open gating Question, docs: progress log entry and Question line citations that hold).
-# Per-task landing runs no mutation (land.sh drops --mutate, user decision 2026-11-01): it runs in batches and CI.
+# Per-task landing runs no mutation (land.sh drops --mutate, user decision 2026-11-01): it runs in batches and CI; coverage
+# runs on every guard, landing included.
 set -u
 BASE=""; ALLOW=""; FILTER=""; TASK=""; MUTATE=""
 while [ $# -gt 0 ]; do case "$1" in
@@ -27,6 +30,10 @@ for f in $CHANGED; do
   b=$(basename "$f"); [[ "$b" != *.* ]] && note "junk: $f has no extension (stray run-case output?); delete it"
   [ -f "$f" ] && ! grep -Iq . "$f" 2>/dev/null && [ -s "$f" ] && note "junk: $f is binary; delete it"
 done
+# the changed selfhost .byn files still present: the files coverage is measured over
+COVER=$(for f in $CHANGED; do case "$f" in selfhost/*.byn) [ -f "$f" ] && echo "$f";; esac; done | tr '\n' ',' | sed 's/,$//')
+rm -f $LOG/quality-*.json  # a report left by an earlier run must not reach land.sh's baseline update
+COV=$LOG/coverage; rm -f "$COV/bayan-quality.json"; TX=1
 
 # 3 build
 dotnet build -v q > $LOG/build.txt 2>&1
@@ -35,11 +42,30 @@ W=$(grep -cE ' warning [A-Z]+[0-9]+' $LOG/build.txt); E=$(grep -cE ' error [A-Z]
 
 # 4 tests
 if [ "$E" = 0 ]; then
-  dotnet test --no-build --filter "$FILTER" --logger "console;verbosity=normal" > $LOG/test.txt 2>&1; TX=$?
+  ( [ -n "$COVER" ] && export BAYAN_COVERAGE=$COV BAYAN_COVERAGE_FILES=$COVER
+    dotnet test --no-build --filter "$FILTER" --logger "console;verbosity=normal" ) > $LOG/test.txt 2>&1; TX=$?
   R=$(grep -E 'Total tests:|^ *(Passed|Failed|Skipped): *[0-9]+' $LOG/test.txt | tr -s ' \n' ' ')
   [ $TX = 0 ] || note "tests: FAIL ($R) — first failure: $(grep -m1 -A8 'Error Message' $LOG/test.txt | grep -v '^\s*$' | tr '\n' ' ' | cut -c1-400)"
   grep -qE 'No test matches|Total tests: 0' $LOG/test.txt && note "tests: filter '$FILTER' matched no tests"
   echo "$R" | grep -qE 'Skipped: [1-9]' && note "tests: skipped tests present ($R)"
+fi
+
+# 4 coverage of the changed selfhost .byn files (a red run's coverage proves nothing): 100% of lines and branches, no baseline drop
+if [ $TX = 0 ] && [ -n "$COVER" ]; then
+  if [ ! -f "$COV/bayan-quality.json" ]; then
+    note "coverage: the tests wrote no tmp/guard-run/coverage/bayan-quality.json: no test under --filter '$FILTER' builds a selfhost program with $COVER"
+  else
+    cp "$COV/bayan-quality.json" $LOG/quality-coverage.json
+    while read -r l; do case "$l" in "- "*) note "${l#- }";; *) echo "$l";; esac; done < <(python3 -I -c 'import json, os, sys
+why = {"missed": "no test under --filter runs it; add a C# oracle case that does", "unknown": "a counter file was unreadable; run the guard again"}
+for f in json.load(open(sys.argv[1]))["files"]:
+    p, l, b = os.path.relpath(f["path"]), f["lines"], f["branches"]
+    print("coverage: %s: lines %d/%d, branches %d/%d (listing: tmp/guard-run/coverage/%s.cov.txt)" % (p, l["covered"], l["total"], b["covered"], b["total"], p))
+    for s in ("missed", "unknown"):
+        for n in l[s]: print("- coverage: %s line %s:%d; %s" % (s, p, n, why[s]))
+        for x in b[s]: print("- coverage: %s branch %s:%d:%d never %s; %s" % (s, p, x["line"], x["column"], "true" if x["outcome"] else "false", why[s]))' "$COV/bayan-quality.json")
+    while read -r l; do [ -n "$l" ] && note "$l"; done < <(python3 -I "$(dirname "$0")/quality-baseline.py" check tests/quality-baseline.json . $LOG/quality-coverage.json)
+  fi
 fi
 
 # 5 banned C#-isms (Bayan has none of these; see scripts/selfhost/bayan-cheatsheet.md)
@@ -60,7 +86,6 @@ else note "checks: no --task and --filter names no SelfhostSemanticsT<n>Tests cl
 # the filtered tests are recorded once (BAYAN_SNAPSHOT) against schemata builds whose sites lie only in the --mutate files,
 # then `bayan mutate --binary` runs every site of each build, replaying the recording per mutant (replay.py); sites under
 # `@unobservable because "…"` come back marked, not survived. The reports are copied to tmp/guard-run/ as quality-<n>-<binary>.json.
-rm -f $LOG/quality-*.json  # a report left by an earlier run must not reach land.sh's baseline update
 if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
   BAYAN=src/Bayan.Cli/bin/Debug/net10.0/bayan; SNAP=$LOG/snap; REPLAY=$(dirname "$0")/replay.py
   if [ ! -x "$BAYAN" ]; then note "mutation: $BAYAN is missing; build src/Bayan.Cli (dotnet build) and run the guard again"

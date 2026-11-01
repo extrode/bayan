@@ -58,15 +58,29 @@ public static class SelfhostSemanticsHarness
     public static string? SnapshotDir =>
         Environment.GetEnvironmentVariable("BAYAN_SNAPSHOT") is { Length: > 0 } dir ? Path.GetFullPath(dir, Golden.RepoRoot) : null;
 
+    /// <summary>The coverage directory (spec 013 T26) when <c>BAYAN_COVERAGE</c> is set, else null; a relative path is
+    /// taken from the repo root. The test host's own <c>BAYAN_COVERAGE</c> is never a counter prefix: each covered build
+    /// runs through a wrapper that sets its own.</summary>
+    public static string? CoverageDir =>
+        Environment.GetEnvironmentVariable("BAYAN_COVERAGE") is { Length: > 0 } dir ? Path.GetFullPath(dir, Golden.RepoRoot) : null;
+
     /// <summary>
     /// <paramref name="c"/> built in fast mode. Under <c>BAYAN_SNAPSHOT</c> it is a schemata build without sites in
     /// <paramref name="generated"/> (harness-generated files), and with <c>BAYAN_SNAPSHOT_FILES</c> (comma-separated,
     /// relative to the repo root) only with sites in those files; its site map is written beside the binary and both are
-    /// listed in <c>manifest.json</c>.
+    /// listed in <c>manifest.json</c>. Under <c>BAYAN_COVERAGE</c> it is a coverage build (see <see cref="BuildCovered"/>).
     /// </summary>
-    internal static NativeBuild BuildFast(Compilation c, IReadOnlySet<string> generated)
+    internal static NativeBuild BuildFast(Compilation c, IReadOnlySet<string> generated) =>
+        BuildFast(c, generated, SnapshotDir, CoverageDir, Environment.GetEnvironmentVariable("BAYAN_COVERAGE_FILES"));
+
+    /// <summary><see cref="BuildFast(Compilation, IReadOnlySet{string})"/> with the snapshot and coverage directories and
+    /// <c>BAYAN_COVERAGE_FILES</c> given; both directories at once throw (one mode per run).</summary>
+    internal static NativeBuild BuildFast(Compilation c, IReadOnlySet<string> generated, string? snapshot, string? coverage, string? coverageFiles)
     {
-        if (SnapshotDir is not { } dir) return Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
+        if (snapshot is not null && coverage is not null)
+            throw new InvalidOperationException("BAYAN_SNAPSHOT and BAYAN_COVERAGE are both set: one mode per run; unset one");
+        if (coverage is not null) return BuildCovered(c, generated, coverage, coverageFiles);
+        if (snapshot is not { } dir) return Toolchain.Build(CliApp.EmitC(c, BuildMode.Fast), BuildMode.Fast);
         var compiled = c.Modules.SelectMany(m => m.AllFunctions).Select(f => f.File?.Source.Path).OfType<string>();
         var skip = SnapshotSkip(compiled, generated, Environment.GetEnvironmentVariable("BAYAN_SNAPSHOT_FILES"));
         var schema = Bayan.Testing.Schemata.Build(c, skip);
@@ -82,8 +96,8 @@ public static class SelfhostSemanticsHarness
 
     /// <summary>The files a snapshot build carries no sites in: <paramref name="generated"/>, and with
     /// <paramref name="files"/> (<c>BAYAN_SNAPSHOT_FILES</c>) every <paramref name="compiled"/> file it does not list;
-    /// an entry matching no compiled file throws.</summary>
-    internal static HashSet<string> SnapshotSkip(IEnumerable<string> compiled, IReadOnlySet<string> generated, string? files)
+    /// an entry matching no compiled file throws, naming <paramref name="variable"/>.</summary>
+    internal static HashSet<string> SnapshotSkip(IEnumerable<string> compiled, IReadOnlySet<string> generated, string? files, string variable = "BAYAN_SNAPSHOT_FILES")
     {
         var skip = new HashSet<string>(generated, StringComparer.Ordinal);
         if (files is not { Length: > 0 }) return skip;
@@ -92,7 +106,7 @@ public static class SelfhostSemanticsHarness
             .Select(f => Path.GetFullPath(f, Golden.RepoRoot)).ToHashSet(StringComparer.Ordinal);
         var all = paths.Select(p => Path.GetFullPath(p)).ToHashSet(StringComparer.Ordinal);
         if (keep.FirstOrDefault(k => !all.Contains(k)) is { } missing)
-            throw new InvalidOperationException($"BAYAN_SNAPSHOT_FILES: {missing} matches no compiled source");
+            throw new InvalidOperationException($"{variable}: {missing} matches no compiled source");
         skip.UnionWith(paths.Where(p => !keep.Contains(Path.GetFullPath(p))));
         return skip;
     }
@@ -124,6 +138,99 @@ public static class SelfhostSemanticsHarness
         if (!SnapshotReset.Add(Path.GetFullPath(dir))) return;
         File.Delete(Path.Combine(dir, "manifest.json"));
         File.Delete(Path.Combine(dir, "runs.jsonl"));
+    }
+
+    private static readonly Lock CoverageLock = new();
+
+    private static readonly List<(string Dir, Bayan.Testing.CoverageMap Map, string Prefix)> CoverageBuilds = [];
+
+    private static readonly Dictionary<string, (Stopwatch Total, double BuildSeconds)> CoverageRuns = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Under <c>BAYAN_COVERAGE</c>: <paramref name="c"/> built with the coverage probes of <c>bayan test --coverage</c>
+    /// (spec 013 T9), without counters in <paramref name="generated"/> and, with <c>BAYAN_COVERAGE_FILES</c>, only with
+    /// counters in the files it lists (as <see cref="SnapshotSkip"/> picks them). The build returned runs through
+    /// <c>&lt;dir&gt;/counters/&lt;n&gt;/run</c>, a script setting the runtime's <c>BAYAN_COVERAGE</c> to this build's
+    /// own counter prefix, so every run of it counts; <see cref="WriteCoverage"/> writes the report when the process exits.
+    /// </summary>
+    private static NativeBuild BuildCovered(Compilation c, IReadOnlySet<string> generated, string dir, string? files)
+    {
+        var clock = Stopwatch.StartNew();
+        var compiled = c.Modules.SelectMany(m => m.AllFunctions).Select(f => f.File?.Source.Path).OfType<string>();
+        var map = Bayan.Testing.CoverageInstrumenter.Instrument(c, SnapshotSkip(compiled, generated, files, "BAYAN_COVERAGE_FILES"));
+        if (OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("BAYAN_COVERAGE: the run wrapper is a POSIX shell script");
+        var build = Toolchain.Build(CEmitter.Emit(Lowerer.Lower(c, coverage: map.Probes), false), BuildMode.Fast);
+        if (build.ExecutablePath is not { } binary) return build;
+        lock (CoverageLock)
+        {
+            if (!CoverageRuns.TryGetValue(dir, out var run))
+            {
+                // This process's first build into dir: an earlier recording's report, listings and counters go.
+                if (CoverageRuns.Count == 0) AppDomain.CurrentDomain.ProcessExit += (_, _) => { foreach (var d in CoverageRuns.Keys) WriteCoverage(d); };
+                Directory.CreateDirectory(dir);
+                File.Delete(Path.Combine(dir, "bayan-quality.json"));
+                foreach (var listing in Directory.EnumerateFiles(dir, "*.cov.txt", SearchOption.AllDirectories)) File.Delete(listing);
+                if (Directory.Exists(Path.Combine(dir, "counters"))) Directory.Delete(Path.Combine(dir, "counters"), recursive: true);
+                run = (Stopwatch.StartNew(), 0);
+            }
+            CoverageRuns[dir] = (run.Total, run.BuildSeconds + clock.Elapsed.TotalSeconds);
+            var counters = Path.Combine(dir, "counters", CoverageBuilds.Count(b => b.Dir == dir).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Directory.CreateDirectory(counters);
+            var prefix = Path.Combine(counters, "BAYAN_COVERAGE");
+            var wrapper = Path.Combine(counters, "run");
+            static string Quote(string s) => "'" + s.Replace("'", "'\\''") + "'";
+            File.WriteAllText(wrapper, $"#!/bin/sh\nBAYAN_COVERAGE={Quote(prefix)} exec {Quote(binary)} \"$@\"\n");
+            File.SetUnixFileMode(wrapper, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            CoverageBuilds.Add((dir, map, prefix));
+            return build with { ExecutablePath = wrapper };
+        }
+    }
+
+    /// <summary>
+    /// Writes <paramref name="dir"/>'s <c>bayan-quality.json</c> (kind coverage, <see cref="Bayan.Testing.QualityReport.Coverage"/>)
+    /// and a <c>&lt;file&gt;.cov.txt</c> listing per file, its path relative to the repo root, as <c>bayan test --coverage</c>
+    /// writes them. The counters of every build into <paramref name="dir"/> are merged by what they count (file, line,
+    /// column, kind, outcome, error path), since counter ids are per build; an unreadable counter file makes what nothing
+    /// hit unknown, as in <c>bayan test</c>.
+    /// </summary>
+    internal static void WriteCoverage(string dir)
+    {
+        lock (CoverageLock)
+        {
+            var builds = CoverageBuilds.Where(b => b.Dir == dir).ToList();
+            if (builds.Count == 0) return;
+            var ids = new Dictionary<Bayan.Testing.CoverageCounter, int>();
+            var counters = new List<Bayan.Testing.CoverageCounter>();
+            var hits = new Dictionary<int, ulong>();
+            var unknown = false;
+            foreach (var (_, map, prefix) in builds)
+            {
+                var counts = new Dictionary<int, ulong>();
+                foreach (var file in Directory.EnumerateFiles(Path.GetDirectoryName(prefix)!, Path.GetFileName(prefix) + ".*"))
+                    if (!CliApp.MergeCounters(file, counts)) unknown = true;
+                foreach (var counter in map.Counters)
+                {
+                    if (!ids.TryGetValue(counter with { Id = 0 }, out var id))
+                    {
+                        ids[counter with { Id = 0 }] = id = counters.Count;
+                        counters.Add(counter with { Id = id });
+                    }
+                    if (counts.TryGetValue(counter.Id, out var n)) hits[id] = hits.GetValueOrDefault(id) + n;
+                }
+            }
+            var (total, buildSeconds) = CoverageRuns[dir];
+            // The report reads only the counters; the probes are the first build's, unused.
+            var report = Bayan.Testing.QualityReport.Coverage("dotnet test (BAYAN_COVERAGE)", new Bayan.Testing.CoverageMap(counters, builds[0].Map.Probes),
+                hits, unknown, buildSeconds, total.Elapsed.TotalSeconds);
+            File.WriteAllText(Path.Combine(dir, "bayan-quality.json"), report.Json());
+            foreach (var f in report.Files)
+            {
+                if (!File.Exists(f.Path)) continue;
+                var listing = Path.Combine(dir, CliApp.ListingName(Path.GetRelativePath(Golden.RepoRoot, f.Path)) + ".cov.txt");
+                Directory.CreateDirectory(Path.GetDirectoryName(listing)!);
+                File.WriteAllText(listing, Bayan.Testing.QualityReport.Listing(f.Coverage!, File.ReadAllLines(f.Path)));
+            }
+        }
     }
 
     /// <summary>

@@ -5,6 +5,9 @@
 # all killed passes (marked sites included), each build of a two-build manifest replays with its own --binary, a mutant-0 mismatch fails, a bayan error
 # with only an earlier run's report beside the binary fails, a score below tests/quality-baseline.json fails, a
 # null baseline passes, a failed recording, a missing CLI or manifest fails with a message, and no --mutate records nothing and leaves no report.
+# Coverage (T26): with a.byn changed the tests run under BAYAN_COVERAGE with it; 100% passes and leaves quality-coverage.json,
+# each missed or unknown line and branch fails by file:line, a drop below the baseline fails, no report fails, and a red test run
+# is not checked for coverage.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/guard-test"; aux="$root/tmp/guard-test-aux"  # stubs and logs live outside the fixture repo
@@ -29,6 +32,11 @@ if [ -n "${BAYAN_SNAPSHOT:-}" ]; then
   [ -f $AUX/two ] && b="$b, $(printf '{"binary": "%s", "sites": "%s"}' $AUX/bin2/prog2 $AUX/bin2/prog2.sites.json)"
   [ -f $AUX/nomanifest ] || { mkdir -p "$BAYAN_SNAPSHOT"; echo "{\"version\": 1, \"builds\": [$b]}" > "$BAYAN_SNAPSHOT/manifest.json"; }
 fi
+if [ -n "${BAYAN_COVERAGE:-}" ]; then
+  echo "$BAYAN_COVERAGE_FILES" > $AUX/cover.txt
+  [ -f $AUX/nocov ] || { mkdir -p "$BAYAN_COVERAGE"; cp $AUX/cov.json "$BAYAN_COVERAGE/bayan-quality.json"; }
+fi
+[ -f $AUX/testfail ] && { printf '  Failed T99\n  Error Message:\n   oracle differs\n'; exit 1; }
 exit 0
 STUB
 # stub bayan: logs its arguments; with $AUX/mismatch it fails as on mutant 0, with $AUX/usage as on bad arguments, else prints $AUX/out.txt and writes $AUX/report.json
@@ -67,6 +75,21 @@ touch $aux/nomanifest; nomanifest=$(g --mutate selfhost/semantics/a.byn); rm $au
 touch $aux/recordfail; recordfail=$(g --mutate selfhost/semantics/a.byn); rm $aux/recordfail
 rm $aux/record.txt; plain=$(g); [ -f $aux/record.txt ] && plainrec=1 || plainrec=0; ls tmp/guard-run/quality-*.json > /dev/null 2>&1 && plainrep=1 || plainrep=0
 mv src/Bayan.Cli/bin/Debug/net10.0/bayan $aux/bayan; nocli=$(g --mutate selfhost/semantics/a.byn)
+# cov <covered> <total> <missed lines> <unknown lines> <branches [line, column, outcome, status]>: the coverage report of a.byn
+cov() { python3 -I -c 'import json, sys
+f, covered, total, missed, unknown, branches = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), *map(json.loads, sys.argv[4:])
+br = {"covered": sum(b[3] == "hit" for b in branches), "total": len(branches)}
+for s in ("missed", "unknown"): br[s] = [{"line": b[0], "column": b[1], "outcome": b[2]} for b in branches if b[3] == s]
+lines = {"covered": covered, "total": total, "missed": missed, "unknown": unknown}
+print(json.dumps({"version": 1, "kind": "coverage", "files": [{"path": f, "lines": lines, "branches": br, "errorPaths": []}]}))' "$a" "$@" > $aux/cov.json; }
+printf '    return a + 2\n' >> selfhost/semantics/a.byn
+cov 3 3 '[]' '[]' '[[2, 10, true, "hit"], [2, 10, false, "hit"]]'; covpass=$(g); covfiles=$(cat $aux/cover.txt)
+[ -f tmp/guard-run/quality-coverage.json ] && covrep=1 || covrep=0
+cov 1 3 '[3]' '[5]' '[[2, 10, true, "missed"], [2, 10, false, "hit"], [3, 5, false, "unknown"]]'; covmiss=$(g)
+touch $aux/testfail; covred=$(g); rm $aux/testfail
+printf '{ "version": 1, "files": { "selfhost/semantics/a.byn": { "mutation": null, "coverage": 1.0 } } }\n' > tests/quality-baseline.json
+cov 2 3 '[3]' '[]' '[[2, 10, true, "hit"], [2, 10, false, "hit"]]'; covdrop=$(ALLOWX=,tests/quality-baseline.json g); git show HEAD:tests/quality-baseline.json > tests/quality-baseline.json
+touch $aux/nocov; covnone=$(g); rm $aux/nocov
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
 echo "$pass" | grep -q '^GUARD PASS$' || fail "all killed (one marked) did not pass" "$pass"
@@ -88,4 +111,16 @@ echo "$nomanifest" | grep -q '^- mutation: the recording wrote no tmp/guard-run/
 echo "$recordfail" | grep -q '^- mutation: recording the tests under BAYAN_SNAPSHOT failed (tmp/guard-run/record.txt) — .*recording broke' || fail "a failed recording did not fail with its message" "$recordfail"
 echo "$nocli" | grep -q '^- mutation: src/Bayan.Cli/bin/Debug/net10.0/bayan is missing' || fail "a missing CLI did not fail with a message" "$nocli"
 echo "$plain" | grep -q '^GUARD PASS$' && [ $plainrec = 0 ] && [ $plainrep = 0 ] || fail "a guard without --mutate recorded or left a report" "$plain"
+echo "$covpass" | grep -q '^GUARD PASS$' && echo "$covpass" | grep -q '^coverage: selfhost/semantics/a.byn: lines 3/3, branches 2/2 (listing: tmp/guard-run/coverage/selfhost/semantics/a.byn.cov.txt)$' \
+  || fail "full coverage did not pass with its summary" "$covpass"
+[ "$covfiles" = selfhost/semantics/a.byn ] || fail "the tests ran under BAYAN_COVERAGE_FILES='$covfiles', not the changed a.byn" "$covpass"
+[ $covrep = 1 ] || fail "the coverage report was not copied to tmp/guard-run/quality-coverage.json" "$covpass"
+echo "$covmiss" | grep -q '^- coverage: missed line selfhost/semantics/a.byn:3; no test under --filter runs it' || fail "a missed line was not a FAIL item with file:line" "$covmiss"
+echo "$covmiss" | grep -q '^- coverage: unknown line selfhost/semantics/a.byn:5; a counter file was unreadable' || fail "an unknown line was not a FAIL item" "$covmiss"
+echo "$covmiss" | grep -q '^- coverage: missed branch selfhost/semantics/a.byn:2:10 never true; ' || fail "a missed branch was not a FAIL item with file:line" "$covmiss"
+echo "$covmiss" | grep -q '^- coverage: unknown branch selfhost/semantics/a.byn:3:5 never false; ' || fail "an unknown branch was not a FAIL item" "$covmiss"
+echo "$covred" | grep -q '^- tests: FAIL' && ! echo "$covred" | grep -q '^- coverage:' || fail "a red test run was checked for coverage" "$covred"
+echo "$covdrop" | grep -q '^- baseline: coverage score of selfhost/semantics/a.byn fell from 1.0 to 0.6667 (tests/quality-baseline.json)$' || fail "a coverage drop below the baseline was not a FAIL item" "$covdrop"
+echo "$covnone" | grep -q "^- coverage: the tests wrote no tmp/guard-run/coverage/bayan-quality.json: no test under --filter 'FullyQualifiedName~SelfhostSemanticsT99Tests' builds a selfhost program with selfhost/semantics/a.byn$" \
+  || fail "a coverage run without a report (an earlier run's left in place) did not fail" "$covnone"
 echo PASS
