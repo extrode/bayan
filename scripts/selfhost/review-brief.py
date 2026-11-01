@@ -28,6 +28,7 @@ for t in sys.argv[2:]:
     test_class = 'SelfhostSemantics' if t == 'T28' else own_tests[0][:-3] if own_tests else f'SelfhostSemantics{t}Tests'
     law = re.findall(r'`docs/laws/(\d{3})-[^`]*\.md`', head)  # a law-enact task's gate is its law's proof
     filt = f'Law=L{law[0]}' if law and not own_tests else f'FullyQualifiedName~{test_class}'
+    if not law and not own_tests and not byns: filt = 'FullyQualifiedName~SelfhostSemanticsApiTests'  # a docs-only task
     own_api = [l for l in api if re.match(rf'^- {t} ', l)]
     q = re.search(r'Q(\d{3})–Q(\d{3})', ' '.join(block))
     s = f"""You are the independent reviewer for task {t} of spec 010 (the Bayan type checker ported from C# `src/Bayan.Semantics/` into Bayan under `selfhost/semantics/`). You did not write this code. Your job is to find where the port is not the C#. Do not edit any file except the review file below; do not run git commands that change state.

@@ -32,5 +32,7 @@ grep -q "guard.sh .* --filter 'Law=L022' --task T30" tmp/010-t30/prompt.md || { 
 grep -q 'filter "Law=L022"`' tmp/010-t30/review.md || { echo "FAIL: a law-enact task's review does not run its law's proof"; exit 1; }
 python3 -I scripts/selfhost/wave-brief.py . T33 > /dev/null
 grep -q "guard.sh --base [^ ]* --allow 'docs/bayan-handoff.md,CHANGELOG.md,work/todo.md,docs/specs/010-self-hosted-semantics/010-spec.md,docs/specs/010-self-hosted-semantics/010-tasks.md' --filter 'FullyQualifiedName~SelfhostSemanticsApiTests' --task T33" tmp/010-t33/prompt.md || { echo "FAIL: a docs task's guard lacks its root and spec files once each, or runs no test"; grep guard.sh tmp/010-t33/prompt.md; exit 1; }
+python3 -I scripts/selfhost/review-brief.py . T33 > /dev/null
+grep -q 'filter "FullyQualifiedName~SelfhostSemanticsApiTests"`' tmp/010-t33/review.md || { echo "FAIL: a docs task's review runs no test"; exit 1; }
 bash -n scripts/selfhost/guard.sh
 echo PASS
