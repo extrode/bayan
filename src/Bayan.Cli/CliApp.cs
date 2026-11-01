@@ -82,6 +82,8 @@ public static class CliApp
                 return RunProgram(rest, stderr);
             case "test":
                 return Test(rest, stdout, stderr);
+            case "mutate":
+                return MutateBinary(rest, stdout, stderr);
             case "new":
                 return Scaffold.New(rest, stdout, stderr);
             case "dist":
@@ -144,14 +146,14 @@ public static class CliApp
         return ExitOk;
     }
 
-    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null);
+    internal sealed record BuildOptions(string Path, BuildMode Mode, string? Output, bool EmitC, bool Json, string[] ProgramArgs, string? Target = null, bool TestJson = false, bool Changed = false, string? Base = null, bool Verbose = false, bool All = false, string[]? Only = null, bool Mutate = false, bool Coverage = false, string? Run = null);
 
     internal static BuildOptions? ParseBuildOptions(string[] args, TextWriter stderr, bool allowOutput, bool allowTestJson = false, bool allowVerbose = false)
     {
         string? path = null, output = null, target = null;
         var mode = BuildMode.Safe;
-        bool emitC = false, json = false, testJson = false, changed = false, all = false, verbose = false;
-        string? baseRef = null;
+        bool emitC = false, json = false, testJson = false, changed = false, all = false, verbose = false, mutate = false, coverage = false;
+        string? baseRef = null, run = null;
         var only = new List<string>();
         var programArgs = Array.Empty<string>();
         for (var i = 0; i < args.Length; i++)
@@ -207,6 +209,15 @@ public static class CliApp
                 case "--json" when allowTestJson:
                     testJson = true;
                     break;
+                case "--mutate" when allowTestJson:
+                    mutate = true;
+                    break;
+                case "--run" when allowTestJson && i + 1 < args.Length:
+                    run = args[++i];
+                    break;
+                case "--coverage" when allowTestJson:
+                    coverage = true;
+                    break;
                 case "--only" when allowTestJson && i + 1 < args.Length:
                     only.Add(args[++i]);
                     break;
@@ -234,7 +245,7 @@ public static class CliApp
             stderr.WriteLine(Messages.NotFound.Text(path));
             return null;
         }
-        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null);
+        return new BuildOptions(path, mode, output, emitC, json, programArgs, target, testJson, changed, baseRef, verbose, all, only.Count > 0 ? [.. only] : null, mutate, coverage, run);
     }
 
     /// <summary>A compiled program, with its manifest and root when it is a project.</summary>
@@ -585,7 +596,16 @@ public static class CliApp
     {
         if (ParseBuildOptions(args, stderr, allowOutput: false, allowTestJson: true, allowVerbose: true) is not { } o) return ExitUsage;
         if (Compile(o, stderr, includeTests: true) is not { } compiled) return ExitFailure;
-        var program = Lowerer.Lower(compiled.Compilation);
+        if (o.Run is not null && !o.Mutate)
+        {
+            stderr.WriteLine(Messages.UnexpectedArgument.Text("--run"));
+            return ExitUsage;
+        }
+        if (o.Mutate) return MutateTests(o, compiled, stdout, stderr);
+        // Debug runs carry probes for the one-line summary unless `summary: false` (spec 013 R17); a future sanitize run must skip probes unless `--coverage` is given.
+        var probes = o.Coverage || o.Mode == BuildMode.Debug && (compiled.Manifest?.Summary ?? true);
+        var map = probes ? Testing.CoverageInstrumenter.Instrument(compiled.Compilation) : null;
+        var program = Lowerer.Lower(compiled.Compilation, coverage: map?.Probes);
         var source = CEmitter.Emit(program, o.Mode == BuildMode.Debug);
         var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
             ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName + "-test", HostTarget))
@@ -604,7 +624,18 @@ public static class CliApp
         var unchanged = program.Tests.Count - selected.Count;
         if (o.Only is { } only)
             selected = selected.Where(i => only.Any(s => program.Tests[i].Test.Name.Contains(s, StringComparison.Ordinal))).ToList();
+        var built = System.Diagnostics.Stopwatch.StartNew();
         if (BuildNative(source, o.Mode, stderr, output, json: o.Json || o.TestJson) is not { } executable) return ExitToolchain;
+        var buildSeconds = built.Elapsed.TotalSeconds;
+        string? coverageDir = null, coveragePrefix = null;
+        var hits = new Dictionary<int, ulong>();
+        var timedOut = false;
+        if (map is not null)
+        {
+            coverageDir = Directory.CreateTempSubdirectory("bayan-coverage-").FullName;
+            coveragePrefix = Path.Combine(coverageDir, "BAYAN_COVERAGE");
+            Testing.CoverageInstrumenter.DeleteStale(coveragePrefix);
+        }
         var count = selected.Count;
         var human = o.TestJson ? TextWriter.Null : stdout;
         var symbols = (s_styleOut ?? Style.Plain).Symbols;
@@ -620,8 +651,17 @@ public static class CliApp
         {
             var test = program.Tests[i].Test;
             var progress = StartProgress(o.Json || o.TestJson, stderr, Messages.TestProgress.Text(test.Name));
-            var outcome = RunTest(executable, i);
+            var outcome = RunTest(executable, i, coveragePrefix);
             progress.Done();
+            if (coveragePrefix is not null)
+            {
+                // A killed test's counters are lost: what no other test hit is unknown, not missed.
+                var counterFile = coveragePrefix + "." + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (outcome.TimedOut) timedOut = true;
+                else if (File.Exists(counterFile))
+                    foreach (var (id, n) in Testing.CoverageInstrumenter.Read(counterFile))
+                        hits[id] = hits.GetValueOrDefault(id) + n;
+            }
             var status = outcome.TimedOut ? TestStatus.Timeout : outcome.ExitCode switch
             {
                 0 => TestStatus.Pass,
@@ -683,7 +723,173 @@ public static class CliApp
             Directory.CreateDirectory(testDir);
             Toolchain.ReplaceFile(Path.Combine(testDir, "results.json"), temp => File.WriteAllText(temp, json));
         }
-        return failed == 0 ? ExitOk : ExitTestFailure;
+        var gated = map is not null && WriteCoverage(o, compiled, map, hits, timedOut, buildSeconds, total.Elapsed.TotalSeconds, coverageDir!, human, stdout, stderr);
+        return failed > 0 || gated ? ExitTestFailure : ExitOk;
+    }
+
+    /// <summary>
+    /// <c>bayan test --coverage</c> (spec 013 R9, R12): prints the summary and writes <c>out/test/bayan-quality.json</c> and a
+    /// <c>&lt;file&gt;.cov.txt</c> per file beside it, under the project root (or the directory of the file given).
+    /// </summary>
+    private static bool WriteCoverage(BuildOptions o, Compiled compiled, Testing.CoverageMap map, Dictionary<int, ulong> hits, bool timedOut,
+        double buildSeconds, double totalSeconds, string coverageDir, TextWriter human, TextWriter stdout, TextWriter stderr)
+    {
+        Directory.Delete(coverageDir, recursive: true);
+        var report = Testing.QualityReport.Coverage("bayan test --coverage", map, hits, timedOut, buildSeconds, totalSeconds);
+        if (!o.Coverage)
+        {
+            // The default Debug summary: one line, no files.
+            var t = report.CoverageTotals!;
+            static string Part(Testing.Tally x) => $"{x.Covered}/{x.Total} ({(x.Total == 0 ? "100" : Testing.Gates.Fmt(100.0 * x.Covered / x.Total))}%)";
+            human.WriteLine(Messages.TestCoverageSummary.Text(Part(t.Lines), Part(t.Branches), Part(t.ErrorPaths)));
+            return false;
+        }
+        stdout.Write(report.CoverageSummary());
+        var root = compiled.ProjectRoot ?? Path.GetDirectoryName(Path.GetFullPath(o.Path))!;
+        var dir = Path.Combine(root, "out", "test");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "bayan-quality.json"), report.Json());
+        foreach (var f in report.Files)
+        {
+            var path = Path.GetFullPath(f.Path, root);
+            if (!File.Exists(path)) continue;
+            var listing = Path.Combine(dir, Path.GetRelativePath(root, path).Replace("..", "_") + ".cov.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(listing)!);
+            File.WriteAllText(listing, Testing.QualityReport.Listing(f.Coverage!, File.ReadAllLines(path)));
+        }
+        var m = compiled.Manifest;
+        return m is not null && ReportGates(Testing.Gates.Coverage(report, m.MinLines, m.MinBranches, m.MinErrorPaths), stderr);
+    }
+
+    /// <summary>
+    /// <c>bayan test --mutate</c> (spec 013 R1): one schemata build, then every mutant run against the tests that reach it.
+    /// Prints a line per mutant and the totals; the site map is written beside the binary.
+    /// </summary>
+    private static int MutateTests(BuildOptions o, Compiled compiled, TextWriter stdout, TextWriter stderr)
+    {
+        var schema = Testing.Schemata.Build(compiled.Compilation);
+        var program = Lowerer.Lower(compiled.Compilation, schema.Switches);
+        var source = CEmitter.Emit(program, o.Mode == BuildMode.Debug);
+        var output = PrepareOut(compiled, o.Mode, HostTarget, source) is { } dir
+            ? Path.Combine(dir, Targets.ExecutableName(compiled.Manifest!.ShortName + "-mutate", HostTarget))
+            : null;
+        var build = System.Diagnostics.Stopwatch.StartNew();
+        if (BuildNative(source, o.Mode, stderr, output, json: o.Json) is not { } executable) return ExitToolchain;
+        File.WriteAllText(Testing.Schemata.SitesPath(executable), schema.SitesJson());
+        if (o.Run is not null)
+            return RunExternal(Testing.ExternalSite.ReadAll(schema.SitesJson())!, ShellCommand(o.Run), executable, "bayan test --mutate --run",
+                Path.Combine(compiled.ProjectRoot ?? (Directory.Exists(o.Path) ? Path.GetFullPath(o.Path) : Path.GetDirectoryName(Path.GetFullPath(o.Path))!), "out", "test"), build.Elapsed.TotalSeconds, stdout, stderr, compiled.Manifest?.MinMutation);
+        var work = Directory.CreateTempSubdirectory("bayan-mutate-");
+        try
+        {
+            var result = Testing.MutationRunner.Run(executable, schema, Enumerable.Range(0, program.Tests.Count).ToList(), work.FullName,
+                TestTimeout, m => stdout.WriteLine(MutantLine(m)));
+            foreach (var t in result.Excluded)
+                stderr.WriteLine(Messages.MutateExcluded.Text(program.Tests[t].Test.Name));
+            var counts = Enum.GetValues<Testing.MutantStatus>().Select(s => (object)result.Mutants.Count(m => m.Status == s)).ToArray();
+            stdout.WriteLine(Messages.MutateTotals.Text(counts));
+            if (compiled.Manifest?.MinMutation is not { } min) return ExitOk;
+            return ReportGates(Testing.Gates.Mutation(Testing.QualityReport.Mutation("bayan test --mutate", result, schema, 0, [], 0), min), stderr) ? ExitTestFailure : ExitOk;
+        }
+        finally
+        {
+            work.Delete(recursive: true);
+        }
+    }
+
+    /// <summary><c>bayan mutate --binary &lt;exe&gt; --sites &lt;map.json&gt; -- &lt;cmd&gt;</c> (spec 013 R3): the command runs once per site of a prebuilt schemata binary.</summary>
+    private static int MutateBinary(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        string? binary = null, sites = null;
+        string[] command = [];
+        for (var i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--binary" when i + 1 < args.Length: binary = args[++i]; break;
+                case "--sites" when i + 1 < args.Length: sites = args[++i]; break;
+                case "--":
+                    command = args[(i + 1)..];
+                    i = args.Length;
+                    break;
+                default:
+                    stderr.WriteLine(Messages.UnexpectedArgument.Text(args[i]));
+                    return ExitUsage;
+            }
+        }
+        if (binary is null || sites is null || command.Length == 0)
+        {
+            stderr.WriteLine(Messages.MutateBinaryUsage.Text());
+            return ExitUsage;
+        }
+        foreach (var path in new[] { binary, sites })
+            if (!File.Exists(path))
+            {
+                stderr.WriteLine(Messages.NotFound.Text(path));
+                return ExitUsage;
+            }
+        if (Testing.ExternalSite.ReadAll(File.ReadAllText(sites)) is not { } map)
+        {
+            stderr.WriteLine(Messages.MutateBadSites.Text(sites));
+            return ExitUsage;
+        }
+        return RunExternal(map, command, Path.GetFullPath(binary), "bayan mutate",
+            Path.GetDirectoryName(Path.GetFullPath(binary))!, 0, stdout, stderr,
+            File.Exists("package.byn") ? Manifest.Read("package.byn").MinMutation : null);
+    }
+
+    private static string[] ShellCommand(string command) =>
+        OperatingSystem.IsWindows() ? ["cmd", "/c", command] : ["/bin/sh", "-c", command];
+
+    /// <summary>Runs the external command over <paramref name="sites"/>, prints a line per site and the report summary, and writes <c>bayan-quality.json</c> to <paramref name="reportDir"/>.</summary>
+    private static int RunExternal(IReadOnlyList<Testing.ExternalSite> sites, IReadOnlyList<string> command, string binary, string tool,
+        string reportDir, double buildSeconds, TextWriter stdout, TextWriter stderr, int? minMutation = null)
+    {
+        var total = System.Diagnostics.Stopwatch.StartNew();
+        var environment = new Dictionary<string, string> { ["BAYAN_BINARY"] = binary };
+        var results = Testing.MutationRunner.RunExternal(sites, command, environment, TestTimeout, r => stdout.WriteLine(ExternalLine(r)));
+        if (results is null)
+        {
+            stderr.WriteLine(Messages.MutateBaselineFailed.Text());
+            return ExitFailure;
+        }
+        var report = Testing.QualityReport.Mutation(tool, results, buildSeconds, total.Elapsed.TotalSeconds);
+        stdout.Write(report.Summary([]));
+        Directory.CreateDirectory(reportDir);
+        File.WriteAllText(Path.Combine(reportDir, "bayan-quality.json"), report.Json());
+        return ReportGates(Testing.Gates.Mutation(report, minMutation), stderr) ? ExitTestFailure : ExitOk;
+    }
+
+    /// <summary>Prints a line per failed gate, each followed by what is missing; whether any gate failed.</summary>
+    private static bool ReportGates(IReadOnlyList<Testing.GateFailure> failures, TextWriter stderr)
+    {
+        foreach (var f in failures)
+        {
+            stderr.WriteLine(Messages.GateBelow.Text(f.Name, Testing.Gates.Fmt(f.Percent), f.Min));
+            foreach (var line in f.Missing) stderr.WriteLine(line);
+        }
+        return failures.Count > 0;
+    }
+
+    private static string ExternalLine(Testing.ExternalResult r) =>
+        Messages.MutateLine.Text(r.Site.File, r.Site.Line, r.Site.Column, r.Site.Operator, r.Site.Original, r.Site.Mutated, StatusName(r.Status))
+            + (r.Status == Testing.MutantStatus.Timeout ? Messages.MutateTimeoutNote.Text() : "");
+
+    private static string StatusName(Testing.MutantStatus s) => s switch
+    {
+        Testing.MutantStatus.Killed => Messages.MutateKilled.Text(),
+        Testing.MutantStatus.Survived => Messages.MutateSurvived.Text(),
+        Testing.MutantStatus.Timeout => Messages.MutateTimeout.Text(),
+        Testing.MutantStatus.NotReached => Messages.MutateNotReached.Text(),
+        Testing.MutantStatus.Marked => Messages.MutateMarked.Text(),
+        _ => Messages.MutateNotEmitted.Text(),
+    };
+
+    private static string MutantLine(Testing.MutantResult m)
+    {
+        var s = m.Site.Site;
+        return Messages.MutateLine.Text(s.File, s.Line, s.Column, s.Operator, s.Original, s.Mutated, StatusName(m.Status))
+            + (m.Status == Testing.MutantStatus.Timeout ? Messages.MutateTimeoutNote.Text() : "");
     }
 
     /// <summary>
@@ -781,7 +987,7 @@ public static class CliApp
         return dir;
     }
 
-    private static TestOutcome RunTest(string executable, int index)
+    private static TestOutcome RunTest(string executable, int index, string? coveragePrefix = null)
     {
         var psi = new System.Diagnostics.ProcessStartInfo(executable)
         {
@@ -791,6 +997,7 @@ public static class CliApp
         };
         psi.ArgumentList.Add("--test");
         psi.ArgumentList.Add(index.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (coveragePrefix is not null) psi.Environment["BAYAN_COVERAGE"] = coveragePrefix;
         var clock = System.Diagnostics.Stopwatch.StartNew();
         using var p = System.Diagnostics.Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();

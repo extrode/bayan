@@ -1,0 +1,11 @@
+i32 f(i32 x) {
+    @inline
+    return x
+}
+
+i32 g(i32 x) {
+    @unobservable because "rounding is invisible"
+    let y = x + 1
+    @allow(unusedValue) because "kept"
+    return y
+}

@@ -247,7 +247,11 @@ public sealed record PointerType(TextSpan Span, TypeSyntax Pointee, bool ReadOnl
 
 // ── Statements ───────────────────────────────────────────────────────────────────
 
-public abstract record Stmt(TextSpan Span) : Node(Span);
+public abstract record Stmt(TextSpan Span) : Node(Span)
+{
+    /// <summary>The <c>@unobservable</c> attributes on the lines before this statement (R7); they apply to it only.</summary>
+    public AttributeSyntax[] Attributes { get; init; } = [];
+}
 
 public sealed record BlockStmt(TextSpan Span, Stmt[] Statements) : Stmt(Span);
 

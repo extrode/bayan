@@ -26,6 +26,9 @@ public sealed class Manifest
     /// <summary>Fields of <c>Package</c>; the first four and <c>capabilities</c> are read, the rest are accepted as written.</summary>
     private static readonly string[] PackageFields = ["name", "version", "edition", "kind", "codes", "capabilities", "deps", "test", "dist", "style", "grammar"];
 
+    /// <summary>Fields of <c>Tests</c> (spec §19.2); <c>diffCoverage</c> and <c>nightly</c> are accepted as written.</summary>
+    private static readonly string[] TestsFields = ["lines", "branches", "errorPaths", "mutation", "summary", "diffCoverage", "nightly"];
+
     private static readonly string[] DistFields = ["targets", "mode"];
 
     /// <summary>Fields of <c>Style</c> (HANDOFF §18); <c>bayan format</c> reads <c>booleans</c> and <c>primitives</c>, the rest are checked only.</summary>
@@ -58,6 +61,21 @@ public sealed class Manifest
 
     /// <summary><c>dist.mode</c>; <c>safe</c> when absent.</summary>
     public string DistMode { get; private set; } = "safe";
+
+    /// <summary><c>test.lines</c>: the minimum line coverage in percent (0–100); null when absent.</summary>
+    public int? MinLines { get; private set; }
+
+    /// <summary><c>test.branches</c>: the minimum branch coverage in percent (0–100); null when absent.</summary>
+    public int? MinBranches { get; private set; }
+
+    /// <summary><c>test.errorPaths</c>: the minimum error-path coverage in percent (0–100); null when absent.</summary>
+    public int? MinErrorPaths { get; private set; }
+
+    /// <summary><c>test.mutation</c>: the minimum mutation score in percent (0–100); null when absent.</summary>
+    public int? MinMutation { get; private set; }
+
+    /// <summary><c>test.summary</c>: print the coverage summary after <c>bayan test</c>; <c>true</c> when absent.</summary>
+    public bool Summary { get; private set; } = true;
 
     /// <summary><c>style.booleans</c>; <c>.symbols</c> when absent.</summary>
     public BooleanStyle Booleans { get; private set; } = BooleanStyle.Symbols;
@@ -126,6 +144,26 @@ public sealed class Manifest
                 Capabilities = list.Items.Cast<EnumValue>().Select(c => c.Name).ToList();
             else
                 Invalid(capabilities, "capabilities", "a list of capabilities, e.g. `[.fs, .net]`");
+        }
+        if (fields.TryGetValue("test", out var test))
+        {
+            if (test is not ObjectValue { Type: "Tests" } t)
+            {
+                Invalid(test, "test", "a `Tests { … }`");
+            }
+            else
+            {
+                var testFields = Fields(t, TestsFields);
+                MinLines = Percent(testFields, "lines");
+                MinBranches = Percent(testFields, "branches");
+                MinErrorPaths = Percent(testFields, "errorPaths");
+                MinMutation = Percent(testFields, "mutation");
+                if (testFields.TryGetValue("summary", out var summary))
+                {
+                    if (summary is BoolValue b) Summary = b.Value;
+                    else Invalid(summary, "test.summary", "`true` or `false`");
+                }
+            }
         }
         if (fields.TryGetValue("style", out var style))
         {
@@ -224,6 +262,14 @@ public sealed class Manifest
                 Report(DiagnosticCodes.ManifestNotData, span, [$"`{name}` only once"]);
         }
         return fields;
+    }
+
+    private int? Percent(Dictionary<string, Value> fields, string name)
+    {
+        if (!fields.TryGetValue(name, out var value)) return null;
+        if (value is IntValue { Value: >= 0 and <= 100 } i) return (int)i.Value;
+        Invalid(value, $"test.{name}", "a percentage from 0 to 100, e.g. `80`");
+        return null;
     }
 
     private Value? Required(Dictionary<string, Value> fields, string name, ObjectValue package)

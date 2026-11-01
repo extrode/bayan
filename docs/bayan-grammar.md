@@ -237,6 +237,8 @@ Enforced by [BYN1040](diagnostics/BYN1040.md) (`;`), [BYN1041](diagnostics/BYN10
 
 Attributes use `@`: `@derive(Json, Row)`, `@allow(BYN5102)`, `@cases(discountCases)`, `@sealed`, `@positional` (revision 0008). Attribute names are camelCase; derivation names stay PascalCase (`Json`, `Row`). `[Attr]` is an input form, since a line starting with `[` is a collection literal (§6).
 
+A statement may be preceded by attributes from an allow-list, which applies to the next statement only. The list is `@unobservable`, with an optional operator argument and a required `because "…"`: `@unobservable(boundary) because "x == hi returns hi either way"`. Any other attribute before a statement is [BYN1069](diagnostics/BYN1069.md).
+
 A **purpose clause** (Arabic mafʿūl li-ajlihi, the object of purpose) states why code bypasses a safety rule. `because "…"` is required on every bypass, and missing it is a compile error:
 
 ```csharp

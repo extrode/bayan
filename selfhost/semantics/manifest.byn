@@ -178,6 +178,9 @@ void t10Bind(ref Manifest m, from in T10Reader r, at i64 package) {
             t10Invalid(ref m, from: in r, at: capabilities, for: "capabilities", as: "a list of capabilities, e.g. `[.fs, .net]`")
         }
     }
+    if fields.contains("test") {
+        t10BindTests(ref m, from: in r, at: fields["test"])
+    }
     if fields.contains("style") {
         t10BindStyle(ref m, from: in r, at: fields["style"])
     }
@@ -186,6 +189,29 @@ void t10Bind(ref Manifest m, from in T10Reader r, at i64 package) {
     }
     if fields.contains("dist") {
         t10BindDist(ref m, from: in r, at: fields["dist"])
+    }
+}
+
+/// The `test` part of `Bind`: the values are checked, nothing is kept yet.
+void t10BindTests(ref Manifest m, from in T10Reader r, at i64 tests) {
+    if r.values[tests].kind != .objectValue || r.values[tests].text != "Tests" {
+        t10Invalid(ref m, from: in r, at: tests, for: "test", as: "a `Tests { … }`")
+        return
+    }
+    let fields = t10Fields(ref m, from: in r, at: tests, by: t10TestsFields())
+    for name in ["lines", "branches", "errorPaths", "mutation"] {
+        if fields.contains(name) {
+            let value = fields[name]
+            if r.values[value].kind != .intValue || r.values[value].number < 0 || r.values[value].number > 100 {
+                t10Invalid(ref m, from: in r, at: value, for: $"test.{name}", as: "a percentage from 0 to 100, e.g. `80`")
+            }
+        }
+    }
+    if fields.contains("summary") {
+        let summary = fields["summary"]
+        if r.values[summary].kind != .boolValue {
+            t10Invalid(ref m, from: in r, at: summary, for: "test.summary", as: "`true` or `false`")
+        }
     }
 }
 
@@ -318,6 +344,8 @@ void t10BindDist(ref Manifest m, from in T10Reader r, at i64 dist) {
 }
 
 List<string> t10PackageFields() => ["name", "version", "edition", "kind", "codes", "capabilities", "deps", "test", "dist", "style", "grammar"]
+
+List<string> t10TestsFields() => ["lines", "branches", "errorPaths", "mutation", "summary", "diffCoverage", "nightly"]
 
 List<string> t10DistFields() => ["targets", "mode"]
 

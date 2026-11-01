@@ -6,6 +6,9 @@
 #ifndef BAYAN_RT_H
 #define BAYAN_RT_H
 
+/* Bumped on every change to the runtime source. */
+#define BYN_RUNTIME_VERSION 1
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -75,6 +78,8 @@ typedef struct byn_panic_handler {
 extern _Thread_local byn_panic_handler* byn_panic_handlers;
 /* Set by `Panic.onPanic = f;`, the first statement of `main`; runs after the handlers and before the trace. */
 extern void (*byn_on_panic)(byn_panic_info);
+/* Null unless an instrumented build sets it; runs once, just before a panic aborts. */
+extern void (*byn_cov_flush)(void);
 
 static inline void byn_panic_push(byn_panic_handler* h) {
     h->prev = byn_panic_handlers;

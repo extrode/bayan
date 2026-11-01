@@ -68,6 +68,7 @@ public enum ParseCode {
     prefixPointerInput
     pointerOutsideExtern
     compactFormatSpec
+    statementAttribute
     duplicateDeclaration
     refThisNotFirst
     requiresMixesFields
@@ -140,6 +141,7 @@ string codeText(ParseCode code) => code switch {
     .prefixPointerInput => "BYN1066",
     .pointerOutsideExtern => "BYN1067",
     .compactFormatSpec => "BYN1068",
+    .statementAttribute => "BYN1069",
     .duplicateDeclaration => "BYN2006",
     .refThisNotFirst => "BYN2117",
     .requiresMixesFields => "BYN3218",
@@ -213,6 +215,7 @@ string messageFormat(ParseCode code) => code switch {
     .prefixPointerInput => "`{0}` is an input form; write `{1}`",
     .pointerOutsideExtern => "pointer types are allowed only in `extern` declarations",
     .compactFormatSpec => "`{0}` is an input form; write `{1}`",
+    .statementAttribute => "attribute `{0}` is not allowed before a statement",
     .duplicateDeclaration => "`{0}` is declared twice",
     .refThisNotFirst => "`ref this` must be the first parameter",
     .requiresMixesFields => "this `requires` reads `it` and other fields",
@@ -234,7 +237,7 @@ bool isInputForm(ParseCode code) => code switch {
     .fatArrowFunctionType or .trustInput or .restInput or .stateLineInput or .interfaceGetInput or
     .receiverWithoutState or .requiresOnFunction or .clauseOrder or .prefixPointerInput or
     .compactFormatSpec or .noallocRemoved or .contextBlockInput or .singleStateInline or
-    .missingBecause => true,
+    .missingBecause or .statementAttribute => true,
     _ => false,
 }
 

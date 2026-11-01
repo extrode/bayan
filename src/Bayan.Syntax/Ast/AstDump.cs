@@ -237,6 +237,7 @@ public static class AstDump
 
         public void Stmt(int depth, Stmt stmt)
         {
+            foreach (var a in stmt.Attributes) Line(depth, "Attribute " + Attribute(a));
             switch (stmt)
             {
                 case BlockStmt s:
