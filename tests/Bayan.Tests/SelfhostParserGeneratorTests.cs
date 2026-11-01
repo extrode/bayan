@@ -48,7 +48,7 @@ public sealed class SelfhostParserGeneratorTests(ITestOutputHelper output)
 
     private static (int Exit, string Out, string Err) Run(string program, params string[] args)
     {
-        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(program) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();

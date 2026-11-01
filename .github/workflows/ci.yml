@@ -26,6 +26,16 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      # The tests cross-compile (OutputTests) and `bayan doctor` expects zig; no runner image has it.
+      - name: Install zig (Linux)
+        if: runner.os == 'Linux'
+        run: sudo snap install zig --classic --beta
+      - name: Install zig (macOS)
+        if: runner.os == 'macOS'
+        run: brew install zig
+      - name: Install zig (Windows)
+        if: runner.os == 'Windows'
+        run: choco install zig -y --no-progress
       - name: Test
         run: dotnet test Bayan.slnx -c Release
       - name: Publish (NativeAOT)

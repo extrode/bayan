@@ -647,7 +647,7 @@ public sealed class CliTests
         const string quoted = "'x $(touch owned) `id` it'\\''s \"hi\" \\ bye'";
         Assert.Contains("  rerun the failure: bayan test --only " + quoted + "\n", stdout.ReplaceLineEndings("\n"));
         if (OperatingSystem.IsWindows()) return;
-        var psi = new System.Diagnostics.ProcessStartInfo("/bin/sh") { RedirectStandardOutput = true, UseShellExecute = false, WorkingDirectory = dir };
+        var psi = new System.Diagnostics.ProcessStartInfo("/bin/sh") { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false, WorkingDirectory = dir };
         psi.ArgumentList.Add("-c");
         psi.ArgumentList.Add("printf '%s' " + quoted);
         using var sh = System.Diagnostics.Process.Start(psi)!;
@@ -735,7 +735,7 @@ public sealed class CliTests
         var output = Path.Combine(Golden.RepoRoot, "tmp", "cli-example-" + example + (OperatingSystem.IsWindows() ? ".exe" : ""));
         var (exit, _, stderr) = Run("build", "-o", output, Example(example));
         Assert.True(exit == CliApp.ExitOk, stderr);
-        var psi = new System.Diagnostics.ProcessStartInfo(output) { RedirectStandardOutput = true, UseShellExecute = false };
+        var psi = new System.Diagnostics.ProcessStartInfo(output) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = System.Diagnostics.Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEnd();
         p.WaitForExit();

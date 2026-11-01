@@ -92,7 +92,9 @@ public sealed class RunTests
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
             RedirectStandardError = true,
+            StandardErrorEncoding = System.Text.Encoding.UTF8,
             UseShellExecute = false,
             WorkingDirectory = work,
         };

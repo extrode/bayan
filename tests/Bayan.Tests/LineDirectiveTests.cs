@@ -115,7 +115,7 @@ public sealed partial class LineDirectiveTests
     {
         var build = Toolchain.Build(Emit(mode), mode);
         Assert.True(build.Succeeded, build.Errors);
-        var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(build.ExecutablePath!) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEnd();
         p.WaitForExit();

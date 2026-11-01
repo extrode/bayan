@@ -16,5 +16,19 @@ internal static class TestSetup
         foreach (var name in (string[])["NO_COLOR", "FORCE_COLOR", "TERM", "COLORTERM", "BAYAN_THEME", "COLORFGBG", "LC_ALL", "LC_CTYPE"])
             Environment.SetEnvironmentVariable(name, null);
         Environment.SetEnvironmentVariable("LANG", "en_US.UTF-8");
+        if (OperatingSystem.IsWindows()) SetConsoleCodePage(65001);
+    }
+
+    /// <summary>Windows picks the Unicode or ASCII symbols by console code page, not locale (TerminalStyle.Utf8); a CI runner's is 437.</summary>
+    internal static void SetConsoleCodePage(int codePage)
+    {
+        try
+        {
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            Console.OutputEncoding = System.Text.Encoding.GetEncoding(codePage);
+        }
+        catch (IOException)
+        {
+        }
     }
 }

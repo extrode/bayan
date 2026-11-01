@@ -52,7 +52,9 @@ public sealed class MutantSchemataTests
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
             RedirectStandardError = true,
+            StandardErrorEncoding = System.Text.Encoding.UTF8,
             UseShellExecute = false,
         };
         if (work is not null) psi.WorkingDirectory = work;

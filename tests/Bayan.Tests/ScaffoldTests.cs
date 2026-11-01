@@ -57,7 +57,7 @@ public sealed class ScaffoldTests
         var stdout = new StringWriter();
         var psiExit = CliApp.Run(["build", "-o", Path.Combine(app, "tally-bin"), app], stdout, stdout);
         Assert.True(psiExit == CliApp.ExitOk, stdout.ToString());
-        var psi = new System.Diagnostics.ProcessStartInfo(Path.Combine(app, "tally-bin")) { RedirectStandardOutput = true, UseShellExecute = false };
+        var psi = new System.Diagnostics.ProcessStartInfo(Path.Combine(app, "tally-bin")) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using (var p = System.Diagnostics.Process.Start(psi)!)
         {
             Assert.Equal("Hello, world!\n", p.StandardOutput.ReadToEnd().ReplaceLineEndings("\n"));

@@ -111,7 +111,7 @@ public sealed class RuntimeNativeTests
     public void CovFlushRunsOnPanic()
     {
         var driver = File.ReadAllText(Path.Combine(Golden.RepoRoot, "tests", "native", "cov-flush.c"));
-        var psi = new ProcessStartInfo(Build(driver)) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(Build(driver)) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEnd();
         p.StandardError.ReadToEnd();
@@ -129,7 +129,7 @@ public sealed class RuntimeNativeTests
 
     private static string Run(string exe, string[] args)
     {
-        var psi = new ProcessStartInfo(exe) { RedirectStandardOutput = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(exe) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEnd();

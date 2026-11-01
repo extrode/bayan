@@ -186,7 +186,9 @@ public sealed class L010Utf8DecodeTests(ITestOutputHelper output)
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
             RedirectStandardError = true,
+            StandardErrorEncoding = System.Text.Encoding.UTF8,
             UseShellExecute = false,
         };
         using var p = Process.Start(psi)!;
