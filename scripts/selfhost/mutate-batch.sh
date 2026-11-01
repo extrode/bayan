@@ -101,7 +101,16 @@ for e in report['files']:
 open(rp, 'w', encoding='utf-8').write(json.dumps(report, indent=2) + '\n')
 PY
     }; done; fi
-  if [ ${#FAIL[@]} = 0 ]; then OK+=("$g"); else BAD=1; for x in "${FAIL[@]}"; do echo "group $g: $x"; done; fi
+  if [ ${#FAIL[@]} = 0 ]; then
+    OK+=("$g")
+  else
+    BAD=1
+    for x in "${FAIL[@]}"; do echo "group $g: $x"; done
+    mkdir -p "$LOG/rejected"
+    for rp in "$LOG"/quality-*.json; do
+      [ -f "$rp" ] && mv "$rp" "$LOG/rejected/rejected-$(basename "$rp")"
+    done
+  fi
 done
 REPORTS=(); for g in ${OK[@]+"${OK[@]}"}; do REPORTS+=("$OUT/$g"/quality-*.json); done
 if [ ${#REPORTS[@]} -gt 0 ]; then
