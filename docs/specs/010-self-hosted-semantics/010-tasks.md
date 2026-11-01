@@ -98,7 +98,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T32 enact L023 "No checker panic" — files: `docs/laws/023-no-checker-panic.md` — covers: L023 — after: T31 — done when:
   - `status: enacted` lands with T31's passing proof, unless a C# counterexample keeps it `proposed` (Q663).
   - Size: one status line and recorded measurements.
-- [ ] T33 Docs — files: `docs/bayan-handoff.md` (Q520+, spend, Road row 010, readiness), `CHANGELOG.md`, `work/todo.md`, `010-spec.md` status — covers: R8, R9 — after: T28, T30, T32 — done when:
+- [x] T33 Docs — files: `docs/bayan-handoff.md` (Q520+, spend, Road row 010, readiness), `CHANGELOG.md`, `work/todo.md`, `010-spec.md` status — covers: R8, R9 — after: T28, T30, T32 — done when:
   - every Question raised by T1–T32 is listed in order; readiness names what the port needed and did not get; spec status done; Q664–Q668.
   - Size: about 120 lines of docs.
 - [x] T34 Call binding C — files: `calls3.byn` (`BinderCalls.cs` ~999–1577: try/catch, switch expressions, patterns, guard, resolve step), `SelfhostSemanticsT34Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T35–T39 — done when:
