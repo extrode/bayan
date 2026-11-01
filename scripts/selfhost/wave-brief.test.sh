@@ -22,5 +22,8 @@ grep -q "selfhost/semantics/selfhost/\|selfhost/semantics/tests/\|tests/Bayan.Te
 grep -q '`tests/cases/diag/generic-guard-mutate-rebind.diag`' tmp/010-t28/review.md || { echo "FAIL: review brief drops a rooted tests/ path"; exit 1; }
 grep -q 'filter FullyQualifiedName~SelfhostSemantics`' tmp/010-t28/review.md || { echo "FAIL: T28 review runs a test class that does not exist"; exit 1; }
 grep -q "allow '[^']*,work/todo.md," tmp/010-t28/prompt.md || { echo "FAIL: T28 guard does not allow work/todo.md"; exit 1; }
+python3 -I scripts/selfhost/review-brief.py . T17 > /dev/null
+grep -q '`selfhost/parser/literals.byn`' tmp/010-t17/review.md || { echo "FAIL: review brief does not keep a selfhost/ path as is"; exit 1; }
+grep -q "selfhost/semantics/selfhost/" tmp/010-t17/review.md && { echo "FAIL: review brief prefixes a selfhost/ path twice"; exit 1; }
 bash -n scripts/selfhost/guard.sh
 echo PASS
