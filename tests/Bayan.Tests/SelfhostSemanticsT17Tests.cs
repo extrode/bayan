@@ -522,7 +522,7 @@ public sealed class SelfhostSemanticsT17Tests
         return $"fn{Camel(fn.Name)}{(i > 0 ? i.ToString() : "")}";
     }
 
-    /// <summary>What T11's stubbed <c>declareSignature</c>/<c>declareParameters</c> would set on <paramref name="fn"/> (declare2.byn:15, :18).</summary>
+    /// <summary>What <c>declareSignature</c> (declare2.byn:417) would set on the free function <paramref name="fn"/>.</summary>
     private static void Signature(StringBuilder sb, FunctionSymbol fn, ref int n)
     {
         var v = FunctionVar(fn);
@@ -542,7 +542,8 @@ public sealed class SelfhostSemanticsT17Tests
     /// Bayan statements that declare the oracle source's types and free functions into module 0 of `c` as T11's declare pass
     /// does: each free function through <c>addFunction</c> (compile.byn:1115) then <c>checkOverloads</c> (declare.byn:571), each
     /// struct's members through <c>declareMembers</c> (declare.byn:13), the union's variants through <c>declareUnionVariants</c>
-    /// (declare.byn:457); only what the stubbed <c>declareSignature</c>/<c>declareParameters</c> would set is filled by hand.
+    /// (declare.byn:457), which since T38 also declares the members' signatures; only the free functions' signatures, which
+    /// <c>declare</c> would set but <c>addFunction</c> does not, are filled by hand.
     /// </summary>
     private static string Symbols(Oracle o)
     {
@@ -577,12 +578,10 @@ public sealed class SelfhostSemanticsT17Tests
             foreach (var ctor in st.Constructors)
             {
                 sb.AppendLine($"    let {FunctionVar(ctor)} = c.structs[s{name}].constructors[0]");
-                Signature(sb, ctor, ref n);
             }
             foreach (var m in st.Methods)
             {
                 sb.AppendLine($"    let {FunctionVar(m)} = tcMethod(in c, for: s{name}, by: \"{m.Name}\")");
-                Signature(sb, m, ref n);
             }
         }
         foreach (var (name, fns) in o.Module.Functions)

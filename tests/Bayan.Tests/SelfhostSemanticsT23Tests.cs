@@ -679,13 +679,17 @@ public sealed class SelfhostSemanticsT23Tests
         public string Function(FunctionSymbol f)
         {
             if (_ids.TryGetValue(f, out var id)) return id;
-            if (declared && f.Interface is null && f.Kind is not (FunctionKind.Builtin or FunctionKind.Invoke or FunctionKind.Lambda))
+            if (declared && f.Kind is not (FunctionKind.Builtin or FunctionKind.Invoke or FunctionKind.Lambda))
             {
                 id = Fresh("f");
-                Line($"let {id} = t23mFn(ref c, by: \"{f.Owner?.Name ?? ""}\", for: \"{f.Name}\")");
-                // The parameters `declareSignature` gives once T38 ports it; effects read their types.
-                var parameters = List("LocalId", f.Parameters.Select(p => Local(p)).ToList());
-                Line($"c.functions[{id}].parameters = move {parameters}");
+                Line($"let {id} = t23mFn(ref c, by: \"{f.Owner?.Name ?? f.Interface?.Name ?? ""}\", for: \"{f.Name}\")");
+                // The body's parameters are the ones `declareSignature` declared.
+                for (var k = 0; k < f.Parameters.Count; k++)
+                {
+                    var l = Fresh("l");
+                    Line($"let {l} = c.functions[{id}].parameters[{k}]");
+                    _ids[f.Parameters[k]] = l;
+                }
                 return _ids[f] = id;
             }
             var ps = Fresh("a");
@@ -704,16 +708,7 @@ public sealed class SelfhostSemanticsT23Tests
             var builtin = f.Kind == FunctionKind.Builtin ? $"builtin: .{Lower(f.Builtin.ToString())}, " : "";
             var at = f.Location is { } loc ? $"TextSpan {{ start: {loc.Span.Start}, length: {loc.Span.Length} }}" : "TextSpan { start: 0, length: 0 }";
             var file = f.File is null ? "-1" : "file";
-            // An interface member, which `declareInterfaceMembers` makes once T38 ports it: effects read its declaration.
-            var member = "";
-            if (f.Interface is { } i && f.File is { } fc && f.Decl is { } decl)
-            {
-                var members = fc.Tree.Root.Members;
-                var d = Array.FindIndex(members, m => m is InterfaceDecl x && x.Members.Contains(decl));
-                var m = Array.IndexOf(((InterfaceDecl)members[d]).Members, decl);
-                member = $"iface: typeIndex(c.modules[c.entryModule].types[\"{i.Name}\"]), declIndex: {d}, memberIndex: {m}, isAbstract: {(f.IsAbstract ? "true" : "false")}, access: .{f.Access switch { Accessibility.Public => "publicKeyword", Accessibility.Private => "privateKeyword", _ => "module" }}, ";
-            }
-            Line($"let {id} = newFunction(ref c, by: FunctionSymbol {{ name: \"{f.Name}\", nameSpan: {at}, module: c.entryModule, kind: .{kind}, {builtin}{member}file: {file}, isStatic: {(f.IsStatic ? "true" : "false")}, parameters: move {ps}, returnType: {Ty(f.ReturnType)}, errorSets: move {sets}, excludedErrors: move {excluded}, hasFails: {(f.Fails ? "true" : "false")}, infersErrors: {(f.InfersErrors ? "true" : "false")}, becomes: {becomes}, refThis: {refThis} }})");
+            Line($"let {id} = newFunction(ref c, by: FunctionSymbol {{ name: \"{f.Name}\", nameSpan: {at}, module: c.entryModule, kind: .{kind}, {builtin}file: {file}, isStatic: {(f.IsStatic ? "true" : "false")}, parameters: move {ps}, returnType: {Ty(f.ReturnType)}, errorSets: move {sets}, excludedErrors: move {excluded}, hasFails: {(f.Fails ? "true" : "false")}, infersErrors: {(f.InfersErrors ? "true" : "false")}, becomes: {becomes}, refThis: {refThis} }})");
             if (f.Kind == FunctionKind.Lambda) Line($"c.modules[c.entryModule].allFunctions.append({id})");
             return _ids[f] = id;
         }
@@ -1084,15 +1079,6 @@ public sealed class SelfhostSemanticsT23Tests
             // Every function first, so a lambda joins `allFunctions` in the C# order.
             var functions = module.AllFunctions.ToList();
             var ids = functions.Select(w.Function).ToList();
-            // The witnesses `conform` records once T38 declares signatures and interface members.
-            foreach (var st in module.Structs)
-                for (var k = 0; k < st.Conformances.Count; k++)
-                    foreach (var pair in st.Conformances[k].Witnesses)
-                    {
-                        var memberId = w.Function(pair.Key);
-                        var witnessId = w.Function(pair.Value);
-                        sb.Append($"    c.conformances[c.structs[typeIndex(c.modules[c.entryModule].types[\"{st.Name}\"])].conformances[{k}]].witnesses[{memberId}] = {witnessId}\n");
-                    }
             for (var i = 0; i < functions.Count; i++)
             {
                 if (functions[i].Body is not { } body) continue;
