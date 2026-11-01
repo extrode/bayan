@@ -126,13 +126,13 @@ public sealed class SelfhostSemanticsGeneratorTests(ITestOutputHelper output)
         return written;
     }
 
-    /// <summary><c>bayan check</c> in-process: exit code, stdout without the timed success summary (CliApp.cs:436), and stderr.</summary>
+    /// <summary><c>bayan check</c> in-process: exit code, stdout without the timed success summary (CliApp.cs:436), and stderr, both with LF line endings like <c>bayan-check</c>'s (Windows writers emit CRLF).</summary>
     internal static (int Exit, string Out, string Err) CliCheck(string path)
     {
         var stdout = new StringWriter();
         var stderr = new StringWriter();
         var exit = CliApp.Run(["check", path], stdout, stderr);
-        return (exit, WithoutSummary(stdout.ToString()), stderr.ToString());
+        return (exit, WithoutSummary(stdout.ToString().ReplaceLineEndings("\n")), stderr.ToString().ReplaceLineEndings("\n"));
     }
 
     internal static string WithoutSummary(string text) =>
