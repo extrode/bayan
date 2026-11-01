@@ -80,7 +80,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [ ] T26 CLI, typed dump and golden harness — files: `main.byn` (the modes; cap line from `Messages.DiagCapped`; footer from `Messages.BuildFailed` with `ErrorsOne`/`ErrorsMany` and `WarningsOne`/`WarningsMany`; `Messages.BuildExplain`; `Messages.CheckSummary` minus timing; `programName`), `typed.byn`, `json.byn`, `SelfhostSemanticsTests.cs` (golden and CLI theories) — covers: R1, R2, R5, L020 (check) — after: T4; parallel with: T6–T25, T27, T34–T39 — done when:
   - modes run on the stub; `--types` emits valid JSON; golden mode takes `--tests`, `--package`, `--include-path`; a failing comparison names the input and first differing line; parity theories are `Skip = "T28 enables …"`; Q645–Q649 as needed.
   - Size: about 508 lines of Bayan and 350 of C#.
-- [ ] T27 Generator and speed — files: `SelfhostSemanticsGenerator.cs` (XorShift seeds, one template per feature, single-fault injection, `OneMegabyte()`), `SelfhostSemanticsGeneratorTests.cs` — covers: R6, R7 — after: T4; parallel with: T6–T26, T34–T39 — done when:
+- [x] T27 Generator and speed — files: `SelfhostSemanticsGenerator.cs` (XorShift seeds, one template per feature, single-fault injection, `OneMegabyte()`), `SelfhostSemanticsGeneratorTests.cs` — covers: R6, R7 — after: T4; parallel with: T6–T26, T34–T39 — done when:
   - corpora are deterministic, every fault kind appears, and the 1 MB input is written; checker comparisons are `Skip = "T28 enables …"`; Q650–Q654 as needed.
   - Size: about 450 lines of C#.
 - [ ] T28 Integration: parity — files: any `selfhost/semantics/*.byn` (stand-ins removed, fixes only), `src/Bayan.*` (only a blocking compiler bug, with a test), `work/todo.md` (removes `t17Host`, `t18Host` and the `t11/t15/t16/t17ExprSpan` copies, Q674) — covers: R1, R2, R4, R5, R6, R7, R8 — after: T6–T27, T34–T39; parallel with: none — done when:
@@ -113,7 +113,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T36 Binder statements C — files: `binder3.byn` (`Binder.cs` ~980–1468: for bodies/iterators, return/fail, break/continue, defer/errdefer/on panic, context, switch statement), `SelfhostSemanticsT36Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34, T35, T37–T39 — done when:
   - method-for-method port; defer and fail diag forms named as passing after rebase; Q679–Q683 as needed.
   - Size: about 708 lines.
-- [ ] T37 Regions B — files: `region2.byn` (`RegionAnalysis.cs` ~418–882: calls, stores, mutations, last-use, reporting), `SelfhostSemanticsT37Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34–T36, T38, T39 — done when:
+- [x] T37 Regions B — files: `region2.byn` (`RegionAnalysis.cs` ~418–882: calls, stores, mutations, last-use, reporting), `SelfhostSemanticsT37Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34–T36, T38, T39 — done when:
   - rules 5–6 and the reporting pass match the region diag cases; Q684–Q688 as needed.
   - Size: about 674 lines.
 - [x] T38 Declaration C — files: `declare2.byn` (`Compilation.cs` ~1038–1362: interface members, signatures and parameters, struct checks, states, validation errors, shapes and recursion), `SelfhostSemanticsT38Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34–T37, T39 — done when:
