@@ -41,7 +41,7 @@ done
 start=$SECONDS
 reports=()
 n=0
-for proj in $(printf '%s\n' "${projects[@]}" | sort -u); do
+while IFS= read -r proj; do
   mutate=()
   i=0
   for f in "${files[@]}"; do
@@ -51,8 +51,8 @@ for proj in $(printf '%s\n' "${projects[@]}" | sort -u); do
   done
   n=$((n + 1))
   (cd "$repo/tests/Bayan.Tests" && dotnet tool run dotnet-stryker --project "$(basename "$proj")" "${mutate[@]}" \
-    --reporter json --output "$work/$n" >&2)
+    --reporter json --output "$work/$n" >&2 </dev/null)
   reports+=("$(find "$work/$n" -name 'mutation-report.json' | head -n 1)")
-done
+done < <(printf '%s\n' "${projects[@]}" | sort -u)
 python3 -I "$here/stryker_to_quality.py" "$out" "$repo" 0 "$((SECONDS - start))" "${reports[@]}"
 echo "wrote $out"
