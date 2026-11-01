@@ -43,6 +43,14 @@ public sealed class SelfhostSemanticsT35Tests
             List<Point> xs
         }
 
+        struct Holder2 {
+            List<i64> ys
+        }
+
+        struct Fl {
+            f64 v
+        }
+
         struct Plain {
             i32 a
             string s
@@ -68,7 +76,7 @@ public sealed class SelfhostSemanticsT35Tests
 
         i64 inc(i64 x) => x + 1
 
-        void probes(i64 n, i32 a, f64 f, string str, rune ch, bool flag, List<i64> xs, i64[3] arr, Span<i64> sp, Point p, Fmt fm, FmtSpec fs, Holder h, Plain pl, Bag bag, List<Point> lp, Owned<Point> op, ref i64 rn, Map<string, i64> m) {
+        void probes(i64 n, i32 a, f64 f, string str, rune ch, bool flag, List<i64> xs, i64[3] arr, Span<i64> sp, Point p, Fmt fm, FmtSpec fs, Holder h, Plain pl, Bag bag, List<Point> lp, Owned<Point> op, ref i64 rn, Map<string, i64> m, Holder2 h2, Fl fl) {
             var vv: i64 = 1
             let k: i64 = 7
             let c1 = [1, 2, 3]
@@ -117,6 +125,7 @@ public sealed class SelfhostSemanticsT35Tests
             let m14: Nope = ["a": 1]
             let m15 = [..xs, "a": 1]
             let m16 = ["a": nothing()]
+            let m17 = [fl: 1]
             let t1 = (1, "a")
             let t2: (i64, string) = (1, "a")
             let t3: (i64 x, i64 y) = (x: 1, z: 2)
@@ -197,6 +206,7 @@ public sealed class SelfhostSemanticsT35Tests
             let i42 = $"{f, digits: f}"
             let i43 = $"{m}"
             let i44 = $"x{n, width: 4, fill: '*', align: .end}y{str}"
+            let i45 = $"{h2, as: .debug}"
             let w1: i64 = 0
             let w2: void = 0
             let w3: Point = 0
@@ -232,11 +242,11 @@ public sealed class SelfhostSemanticsT35Tests
     private static readonly string[] ExprNames =
     [
         .. Enumerable.Range(1, 30).Select(i => $"c{i}"),
-        .. Enumerable.Range(1, 16).Select(i => $"m{i}"),
+        .. Enumerable.Range(1, 17).Select(i => $"m{i}"),
         .. Enumerable.Range(1, 12).Select(i => $"t{i}"),
         .. Enumerable.Range(1, 16).Select(i => $"l{i}"),
         .. Enumerable.Range(1, 8).Select(i => $"s{i}"),
-        .. Enumerable.Range(1, 44).Select(i => i == 32 ? "i32v" : $"i{i}"),
+        .. Enumerable.Range(1, 45).Select(i => i == 32 ? "i32v" : $"i{i}"),
     ];
 
     /// <summary>(op, function, local): run op on the initializer (or declared type) of <c>let local</c> in that function.</summary>
@@ -321,7 +331,6 @@ public sealed class SelfhostSemanticsT35Tests
         var path = Path.Combine(Dir, "main.byn");
         var c = Compilation.Create([SourceText.FromString(path, Source + "\n")], packageRoot: Dir, options: new CompilationOptions(Library: true));
         var file = c.Modules.SelectMany(m => m.Files).First(f => f.Source.Path == path);
-        if (c.Diagnostics.HasErrors) typeof(Compilation).GetMethod("Declare", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(c, null);
         var mark = c.Diagnostics.Items.Count;
         var fd = file.Tree.Root.Members.OfType<FunctionDecl>().First(f => f.Name.Text == fnName);
         var fn = file.Module.Functions[fnName][0];
@@ -376,7 +385,6 @@ public sealed class SelfhostSemanticsT35Tests
     public void CaseMatches(string section)
     {
         var parts = section.Split('.');
-        if (Environment.GetEnvironmentVariable("T35DUMP") is { } dump) File.AppendAllText(dump, $"== {section}\n{string.Join("\n", Expected(parts[0], parts[1], parts[2]))}\n"); // T35DUMP
         SelfhostSemanticsHarness.AssertSection(Sections.Value, section, Expected(parts[0], parts[1], parts[2]));
     }
 
