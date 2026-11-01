@@ -358,7 +358,7 @@ public sealed class OwnershipCheckerTests
         Assert.Equal(0, code);
         Assert.Equal(File.ReadAllText(Path.ChangeExtension(path, ".stdout")).Replace("\r\n", "\n"), stdout.Replace("\r\n", "\n"));
         var (panicCode, _, stderr) = BuildStandalone(compiler, CliApp.EmitC(Compile(SecondOwner, skip: true), BuildMode.Debug));
-        Assert.Equal(134, panicCode);
+        Assert.Equal(PanicExit.Code, panicCode);
         Assert.Equal("panic: second owner of List<i64>: owned since c.byn:3\n  at c.byn:4\n", stderr.Replace("\r\n", "\n"));
     }
 
@@ -438,7 +438,7 @@ public sealed class OwnershipCheckerTests
         var actual = p.StandardError.ReadToEndLf();
         stdoutTask.Wait();
         p.WaitForExit();
-        Assert.Equal(134, p.ExitCode);
+        Assert.Equal(PanicExit.Code, p.ExitCode);
         Assert.Equal(stderr, actual.Replace("\r\n", "\n"));
     }
 
