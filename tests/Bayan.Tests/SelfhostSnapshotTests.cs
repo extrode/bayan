@@ -82,7 +82,7 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
     }
 
     /// <summary>A recording with two builds replays only the runs of the <c>--binary</c> build (site ids are per build);
-    /// without <c>--binary</c> the replay refuses, naming both.</summary>
+    /// without <c>--binary</c> the replay refuses, naming both. Break-test (F1): drop replay.py's <c>--binary</c> filter.</summary>
     [Fact]
     public void ReplayRunsOnlyTheNamedBuild()
     {
@@ -108,7 +108,8 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
     }
 
     /// <summary>A second recording into a directory replaces the first: this process's first write deletes the earlier
-    /// <c>manifest.json</c> and <c>runs.jsonl</c>, later writes add to them.</summary>
+    /// <c>manifest.json</c> and <c>runs.jsonl</c>, later writes add to them. Break-test (F2): drop the deletes in
+    /// <c>ResetOnce</c>.</summary>
     [Fact]
     public void ASecondRecordingReplacesTheFirst()
     {
@@ -128,7 +129,8 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
         Assert.Equal(["one", "two"], runs.Select(r => (string?)r["args"]![0]));
     }
 
-    /// <summary><c>BAYAN_SNAPSHOT_FILES</c> entries are trimmed, and one matching no compiled source throws naming it.</summary>
+    /// <summary><c>BAYAN_SNAPSHOT_FILES</c> entries are trimmed, and one matching no compiled source throws naming it.
+    /// Break-tests (F5): drop <c>TrimEntries</c>; drop the throw in <c>SnapshotSkip</c>.</summary>
     [Fact]
     public void SnapshotFilesAreTrimmedAndMustMatchACompiledSource()
     {
@@ -140,12 +142,25 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
     }
 
     /// <summary>A recording whose <c>dotnet test</c> fails (here every build throws on an unknown
-    /// <c>BAYAN_SNAPSHOT_FILES</c> entry) is not a recording: <see cref="Record"/> fails on the exit code.</summary>
+    /// <c>BAYAN_SNAPSHOT_FILES</c> entry) is not a recording: <see cref="Record"/> fails on the exit code.
+    /// Break-test (F3): drop <see cref="Record"/>'s exit-code assert.</summary>
     [Fact]
     public void AFailedRecordingFailsTheRecordHelper()
     {
         var e = Assert.Throws<Xunit.Sdk.TrueException>(() => Record("selfhost-snapshot-failed", Filter, "selfhost/parser/nope.byn"));
         Assert.Contains("recording exited 1", e.Message);
+    }
+
+    /// <summary>The nested recordings rewrite T13's and T5's fixed input files, so this class is in a collection that
+    /// runs alone, after the parallel ones. Break-test (F4): drop the class's <c>[Collection]</c>, or
+    /// <c>DisableParallelization</c> from its definition.</summary>
+    [Fact]
+    public void RunsAloneAfterTheParallelClasses()
+    {
+        var collection = Assert.Single(typeof(SelfhostSnapshotTests).GetCustomAttributesData(), a => a.AttributeType == typeof(CollectionAttribute));
+        Assert.Equal(nameof(SelfhostSnapshot), (string?)collection.ConstructorArguments[0].Value);
+        var definition = Assert.Single(typeof(SelfhostSnapshot).GetCustomAttributes(typeof(CollectionDefinitionAttribute), false).Cast<CollectionDefinitionAttribute>());
+        Assert.True(definition.DisableParallelization);
     }
 
     /// <summary>Runs the tests matching <paramref name="filter"/> under <c>BAYAN_SNAPSHOT=tmp/&lt;name&gt;</c> with sites only in
