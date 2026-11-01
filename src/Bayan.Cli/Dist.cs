@@ -164,7 +164,7 @@ internal static class Dist
     private static string BuildInfo(Manifest manifest, string mode, List<string> targets, SourceState? source, string inputs)
     {
         var buffer = new System.Buffers.ArrayBufferWriter<byte>();
-        using (var w = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
+        using (var w = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = true, NewLine = "\n", Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
         {
             w.WriteStartObject();
             w.WriteString("package", manifest.Name);

@@ -72,15 +72,14 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
     /// <summary>
     /// C# counterexamples (Q662): the corpus inputs on which the C# checker itself throws, as
     /// <c>&lt;corpus&gt;/&lt;input&gt;</c>. Each is replaced by an empty input; the test asserts the list exactly, so a
-    /// new C# throw fails it.
+    /// new C# throw fails it. The indices follow <see cref="FlatGoldens"/>'s ordinal file order, so they are the same on every file system.
     /// </summary>
     private static readonly string[] KnownCSharpThrows =
     [
-        "random/01145.byn", // Q662: ArgumentOutOfRangeException, SourceText.GetText < Parser.ReportBraceless
-        "random/01358.byn", // Q662: same
-        "random/02510.byn", // Q662: same
-        "random/03889.byn", // Q662: same
-        "random/07234.byn", // Q662: same
+        "random/00189.byn", // Q662: ArgumentOutOfRangeException, SourceText.GetText < Parser.ReportBraceless
+        "random/02199.byn", // Q662: same
+        "random/05136.byn", // Q662: same
+        "random/05466.byn", // Q662: same
     ];
 
     private sealed class Totals
@@ -156,7 +155,7 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
     /// <c>.test.byn</c> suffix (and with it <c>--tests</c>) survives the copy.
     /// </summary>
     private static (string Name, byte[] Bytes)[] FlatGoldens() =>
-        GoldenKinds.SelectMany(k => Directory.GetFiles(Path.Combine(Golden.CasesRoot, k), "*.byn")
+        GoldenKinds.SelectMany(k => Directory.GetFiles(Path.Combine(Golden.CasesRoot, k), "*.byn").Order(StringComparer.Ordinal)
                 .Select(f => (Name: $"{k}-{Path.GetFileName(f)}", Bytes: File.ReadAllBytes(f))))
             .ToArray();
 
@@ -209,7 +208,7 @@ public sealed class SelfhostSemanticsNoPanicLawTests(ITestOutputHelper output)
             var (exit, stdout, stderr) = SelfhostParserTests.Run(BayanCheck, "--many", work);
             var panic = stderr.Contains("panic:", StringComparison.Ordinal);
             var last = stdout.Split('\n').LastOrDefault(l => l.StartsWith("== ", StringComparison.Ordinal))?[3..];
-            Assert.True(exit is 0 or 1 || (exit == 134 && panic && last is not null), $"{kind}: exit {exit} after `{last}` in {work}\n{stderr}");
+            Assert.True(exit is 0 or 1 || (exit == PanicExit.Code && panic && last is not null), $"{kind}: exit {exit} after `{last}` in {work}\n{stderr}");
             if (!panic)
             {
                 foreach (var (name, text) in Sections(stdout, pending)) sections[name] = text;

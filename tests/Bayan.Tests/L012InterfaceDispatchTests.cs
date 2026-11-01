@@ -98,13 +98,13 @@ public sealed class L012InterfaceDispatchTests(ITestOutputHelper output)
                 new[] { "out.o", "rt.o", "-o", exe, OperatingSystem.IsWindows() ? "-lshell32" : "-lm" },
             })
             {
-                var cc = new ProcessStartInfo(compiler[0]) { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+                var cc = new ProcessStartInfo(compiler[0]) { WorkingDirectory = dir, RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
                 foreach (var a in compiler[1..]) cc.ArgumentList.Add(a);
                 foreach (var a in args) cc.ArgumentList.Add(a);
                 var (ccCode, ccOut, ccErr) = Exec(cc);
                 if (ccCode != 0) return (null, "", ccOut + ccErr);
             }
-            var (code, stdout, stderr) = Exec(new ProcessStartInfo(exe) { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false });
+            var (code, stdout, stderr) = Exec(new ProcessStartInfo(exe) { WorkingDirectory = dir, RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false });
             return (code, stdout, stderr);
         }
         finally
@@ -116,8 +116,8 @@ public sealed class L012InterfaceDispatchTests(ITestOutputHelper output)
     private static (int Code, string Stdout, string Stderr) Exec(ProcessStartInfo psi)
     {
         using var p = Process.Start(psi)!;
-        var stderrTask = p.StandardError.ReadToEndAsync();
-        var stdout = p.StandardOutput.ReadToEnd();
+        var stderrTask = p.StandardError.ReadToEndLfAsync();
+        var stdout = p.StandardOutput.ReadToEndLf();
         var stderr = stderrTask.Result;
         p.WaitForExit();
         return (p.ExitCode, stdout, stderr);

@@ -41,6 +41,7 @@ public sealed partial class OutputTests
         var sb = new System.Text.StringBuilder();
         foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
                                       .Select(f => Path.GetRelativePath(dir, f).Replace('\\', '/'))
+                                      .Select(f => OperatingSystem.IsWindows() && f.EndsWith(".exe", StringComparison.Ordinal) ? f[..^4] : f) // the golden tree names the host's executables bare
                                       .Order(StringComparer.Ordinal))
         {
             sb.Append("=== ").Append(maskHost ? file.Replace(Targets.Host!, "<host>") : file).Append('\n');
@@ -50,8 +51,12 @@ public sealed partial class OutputTests
         return sb.ToString();
     }
 
-    private static string Mask(string text, bool maskHost = true) =>
-        Sha().Replace(Duration().Replace(maskHost ? text.Replace(Targets.Host!, "<host>") : text, "\"durationMs\": 0"), "<sha256>  ");
+    /// <summary>On Windows a test's captured output carries the text-mode <c>\r\n</c> (Q742), escaped in the JSON.</summary>
+    private static string Mask(string text, bool maskHost = true)
+    {
+        var masked = Sha().Replace(Duration().Replace(maskHost ? text.Replace(Targets.Host!, "<host>") : text, "\"durationMs\": 0"), "<sha256>  ");
+        return OperatingSystem.IsWindows() ? masked.Replace("\\r\\n", "\\n") : masked;
+    }
 
     private static void Compare(string name, string actual)
     {
@@ -77,9 +82,9 @@ public sealed partial class OutputTests
         Ok(Run("build", p, "--mode", "debug"));
         Ok(Run("build", p, "--target", "linux-x64"));
         Ok(Run("build", p, "--target", "windows-x64"));
-        Assert.True(File.Exists(Path.Combine(p, "out", "debug", Targets.Host!, "tally")));
-        Assert.True(File.Exists(Path.Combine(p, "out", "safe", "linux-x64", "tally")));
-        Assert.True(File.Exists(Path.Combine(p, "out", "safe", "windows-x64", "tally.exe")));
+        Assert.True(File.Exists(Path.Combine(p, "out", "debug", Targets.Host!, Targets.ExecutableName("tally", CliApp.HostTarget))));
+        Assert.True(File.Exists(Path.Combine(p, "out", "safe", "linux-x64", Targets.ExecutableName("tally", "linux-x64"))));
+        Assert.True(File.Exists(Path.Combine(p, "out", "safe", "windows-x64", Targets.ExecutableName("tally", "windows-x64"))));
     }
 
     [Fact]

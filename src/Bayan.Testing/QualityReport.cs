@@ -149,7 +149,7 @@ public sealed record QualityReport(string Kind, string Tool, ReportTiming Timing
     public string Json()
     {
         var buffer = new ArrayBufferWriter<byte>();
-        using (var w = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
+        using (var w = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = true, NewLine = "\n", Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
         {
             w.WriteStartObject();
             w.WriteNumber("version", 1);

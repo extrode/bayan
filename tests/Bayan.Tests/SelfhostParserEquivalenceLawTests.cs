@@ -103,6 +103,7 @@ public sealed class SelfhostParserEquivalenceLawTests(ITestOutputHelper output)
             var actual = SelfhostParserTests.BeforeSpanLines(segment);
 
             var tree = SyntaxTree.Parse(new SourceText(inputs[i].Label, inputs[i].Bytes));
+            // The child's text is already read with its text-mode \r\n as \n (ProcessText.Lf); a \r\n the dump itself prints must stay one.
             var expected = AstDump.Dump(tree);
             if (actual != expected && !IsWrappingOnly(actual, expected, tree))
             {
@@ -187,11 +188,11 @@ public sealed class SelfhostParserEquivalenceLawTests(ITestOutputHelper output)
     /// <summary>The single-file <c>bayan-parse</c> exit code, with its dump drained.</summary>
     private static async Task<int> ExitCode(string path)
     {
-        var psi = new ProcessStartInfo(Built) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(Built) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, RedirectStandardError = true, StandardErrorEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         psi.ArgumentList.Add(path);
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.BaseStream.CopyToAsync(Stream.Null);
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stderr = p.StandardError.ReadToEndLfAsync();
         await p.WaitForExitAsync().ConfigureAwait(false);
         await stdout.ConfigureAwait(false);
         _ = await stderr.ConfigureAwait(false);

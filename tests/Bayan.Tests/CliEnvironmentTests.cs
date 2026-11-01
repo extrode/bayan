@@ -152,6 +152,21 @@ public sealed partial class CliEnvironmentTests
             Assert.DoesNotContain("│", Escape().Replace(ascii, ""), StringComparison.Ordinal);
             Assert.Contains("  3 |     x = 2", Run(["check", file, "--ascii"]).Err, StringComparison.Ordinal);
         });
+        if (OperatingSystem.IsWindows())
+        {
+            // No locale variable decides there: the console code page does.
+            TestSetup.SetConsoleCodePage(437);
+            try
+            {
+                WithTerminalEnv(() => Assert.Contains("  3 |     x = 2", Run(["check", file]).Err, StringComparison.Ordinal));
+            }
+            finally
+            {
+                TestSetup.SetConsoleCodePage(65001);
+            }
+            WithTerminalEnv(() => Assert.Contains("  3 │     x = 2", Run(["check", file]).Err, StringComparison.Ordinal));
+            return;
+        }
         WithTerminalEnv(() => Assert.Contains("  3 |     x = 2", Run(["check", file]).Err, StringComparison.Ordinal), ("LANG", "C"));
         WithTerminalEnv(() => Assert.Contains("  3 │     x = 2", Run(["check", file]).Err, StringComparison.Ordinal), ("LANG", "C"), ("LC_ALL", "en_US.utf8"));
         WithTerminalEnv(() => Assert.Contains("  3 |     x = 2", Run(["check", file]).Err, StringComparison.Ordinal), ("LC_CTYPE", "POSIX"));

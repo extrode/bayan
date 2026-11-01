@@ -92,7 +92,9 @@ public sealed class RunTests
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
             RedirectStandardError = true,
+            StandardErrorEncoding = System.Text.Encoding.UTF8,
             UseShellExecute = false,
             WorkingDirectory = work,
         };
@@ -107,8 +109,8 @@ public sealed class RunTests
             p.StandardInput.BaseStream.Write(bytes);
         }
         p.StandardInput.Close();
-        var stdout = p.StandardOutput.ReadToEndAsync();
-        var stderr = p.StandardError.ReadToEndAsync();
+        var stdout = p.StandardOutput.ReadToEndLfAsync();
+        var stderr = p.StandardError.ReadToEndLfAsync();
         // Generous: after a runtime change every case cold-compiles at once (Warm), and a trivial run can wait 20 s+ for CPU.
         if (!p.WaitForExit(120_000))
         {
@@ -116,7 +118,7 @@ public sealed class RunTests
             return new Outcome("", "", 0, "timed out after 120 s");
         }
         var code = p.ExitCode;
-        if (OperatingSystem.IsWindows() && code == 3) code = 134;
+        code = PanicExit.Portable(code);
         return new Outcome(stdout.Result, stderr.Result, code, null);
     }
 
@@ -130,7 +132,7 @@ public sealed class RunTests
         var stdout = new StringWriter();
         var stderr = new StringWriter();
         var code = CliApp.Run(["test", "-v", work], stdout, stderr);
-        var masked = System.Text.RegularExpressions.Regex.Replace(stdout.ToString(), @"\d+\.\d\ds$", "Ts", System.Text.RegularExpressions.RegexOptions.Multiline);
-        return new Outcome(masked.ReplaceLineEndings("\n"), stderr.ToString(), code, null);
+        var masked = System.Text.RegularExpressions.Regex.Replace(stdout.ToString().ReplaceLineEndings("\n"), @"\d+\.\d\ds$", "Ts", System.Text.RegularExpressions.RegexOptions.Multiline);
+        return new Outcome(masked, stderr.ToString(), code, null);
     }
 }

@@ -50,14 +50,14 @@ public sealed class CacheTests
 
     private static string Output(string executable)
     {
-        var psi = new System.Diagnostics.ProcessStartInfo(executable) { RedirectStandardOutput = true, UseShellExecute = false };
+        var psi = new System.Diagnostics.ProcessStartInfo(executable) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = System.Diagnostics.Process.Start(psi)!;
-        var text = p.StandardOutput.ReadToEnd();
+        var text = p.StandardOutput.ReadToEndLf();
         p.WaitForExit();
         return text;
     }
 
-    private static string Exe(string project, string mode = "safe") => Path.Combine(project, "out", mode, Targets.Host!, "tally");
+    private static string Exe(string project, string mode = "safe") => Path.Combine(project, "out", mode, Targets.Host!, Targets.ExecutableName("tally", CliApp.HostTarget));
 
     private static (int Code, string Out) Git(string dir, params string[] args) =>
         Scaffold.Git(Toolchain.FindOnPath("git")!, dir, ["-c", "core.hooksPath=" + Path.Combine(dir, ".no-hooks"), "-c", "user.name=test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", .. args]);

@@ -399,3 +399,16 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 013 T26 fix gate: guard.sh:121 a non-zero `quality-baseline.py check` exit after partial output is recorded without saying the script failed.
 - 013 T26 fix gate: guard.sh:80 the exit-status check on guard-checks.py has no test.
 - 013 T26 fix gate: coverage-gate.py:45 lines outside any function (top-level code) are never gated even when the diff changes them.
+||||||| 52e2ae0
+- Unsorted `Directory.GetFiles` builds corpora in `SelfhostParserT*Tests` and `SelfhostSemanticsHarness.cs:39`; sort them ordinally as `SelfhostSemanticsNoPanicLawTests.FlatGoldens` now does (file-system order differs on Linux).
+- `Toolchain.ReplaceFile` (and other readers of `out/` files) may hit the same Windows sharing violation as `bayan-rt.h` did (fixed in `CliApp.WriteIfChanged` only).
+- After the next Windows CI run, recheck the `Assert.Equal` "Values differ" cases and `OwnershipCheckerTests.Debug*`, which were judged from their error text only (abort exit code 3 vs 0xC0000409 depends on zig being the compiler).
+- `L005RunBatchTests.cs:276` already sets `Skip` on Windows (`Io.runBatch` runs cmd.exe there); an existing skip, not added by the CI fix.
+- review 13ec1ad..c9cf24d MEDIUM (unverified, Windows): CliApp.cs:436 ReadShared only stops the C# reader blocking the rename of bayan-rt.h/out files; zig cc holding the header or other Toolchain.ReplaceFile users (Toolchain.cs:230) can still hit a sharing violation under concurrent builds. Recheck after the Windows CI rerun.
+- review 13ec1ad..c9cf24d LOW (unverified): TestSetup.cs SetConsoleCodePage swallows IOException; with no console the 437 check in CliEnvironmentTests.cs:155 fails with a misleading message. Report the failed setter instead.
+- review 13ec1ad..c9cf24d LOW (unverified): SelfhostParserEquivalenceLawTests normalises the C# oracle dump with ProcessText.Lf too; on Windows a raw CRLF in a dump that the selfhost drops compares equal. Resolves with Q742.
+- review 13ec1ad..c9cf24d LOW: ci.yml mlugg/setup-zig@v2 is a third-party action on a moving tag; pin to a verified commit SHA.
+- CI 2026-11-01 round 2: src/Bayan.Backend.C/Toolchain.cs:236 `ReplaceFile` (`File.Move` overwrite) throws UnauthorizedAccessException under concurrent replace on Windows; CacheTests.ParallelBuildsNeverCorruptTheCache fails there (unverified fix needed; run 41318084615).
+- CI 2026-11-01 round 2: SelfhostSemanticsCorpusParityTests.OneMegabyteWithinTenTimes exceeds its 10x bound on CI/Linux Docker (25.8x macOS runner, 10.6–14.3x Docker; 3.0x local macOS). User decision 2026-11-01: keep 10x, leave red, until the self-hosted checker is faster.
+- CI 2026-11-01 round 2: the lexer and parser 1 MB timing tests share the parallel-suite timing hazard fixed for the semantics one (serial collection); they passed on CI, untouched.
+- 013 merge of dev (CI round 2): SelfhostParserTests.Run/RunBytes snapshot branch returns RunRecorded output without ProcessText.Lf, unlike the plain branch; Windows-only difference under BAYAN_SNAPSHOT (T19).

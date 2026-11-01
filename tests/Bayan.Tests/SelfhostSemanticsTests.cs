@@ -607,7 +607,7 @@ public sealed class SelfhostSemanticsTests
         var main = $$"""
             i32 main() {
                 let options = CompilationOptions {}
-                let c = fromPath("{{path}}", by: in options, wholeDirectory: false)
+                let c = fromPath("{{path.Replace("\\", "\\\\")}}", by: in options, wholeDirectory: false)
                 print("== marks")
                 for m in c.unobservable { print($"{m.file} {m.span.start} {m.span.length} {m.op ?? "*"} {m.reason}") }
                 print("== diags")
