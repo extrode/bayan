@@ -107,10 +107,10 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [ ] T39 Assignments and writability — files: `calls4.byn` (`BinderCalls.cs` ~1578–1956: exhaustiveness, assignment, inc/dec, writability), `SelfhostSemanticsT39Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34, T35–T38 — done when:
   - exhaustiveness, assignment, inc/dec and writability match the C# cases; Q694–Q698 as needed.
   - Size: about 550 lines.
-- [ ] T35 Expression binding D — files: `express4.byn` (`BinderExpressions.cs` ~1641–2158: collections, map/tuple, spread, lambdas and captures, stackalloc, interpolation and format specs), `SelfhostSemanticsT35Tests.cs` (`host` is pre-ported, Q674: call it, do not rewrite it) — covers: R2, R4 — after: T4; parallel with: T6–T27, T34, T36–T39 — done when:
+- [x] T35 Expression binding D — files: `express4.byn` (`BinderExpressions.cs` ~1641–2158: collections, map/tuple, spread, lambdas and captures, stackalloc, interpolation and format specs), `SelfhostSemanticsT35Tests.cs` (`host` is pre-ported, Q674: call it, do not rewrite it) — covers: R2, R4 — after: T4; parallel with: T6–T27, T34, T36–T39 — done when:
   - lambda naming and captures used by `--types` are correct; method-for-method port; Q674–Q678 as needed.
   - Size: about 751 lines.
-- [ ] T36 Binder statements C — files: `binder3.byn` (`Binder.cs` ~980–1468: for bodies/iterators, return/fail, break/continue, defer/errdefer/on panic, context, switch statement), `SelfhostSemanticsT36Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34, T35, T37–T39 — done when:
+- [x] T36 Binder statements C — files: `binder3.byn` (`Binder.cs` ~980–1468: for bodies/iterators, return/fail, break/continue, defer/errdefer/on panic, context, switch statement), `SelfhostSemanticsT36Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34, T35, T37–T39 — done when:
   - method-for-method port; defer and fail diag forms named as passing after rebase; Q679–Q683 as needed.
   - Size: about 708 lines.
 - [ ] T37 Regions B — files: `region2.byn` (`RegionAnalysis.cs` ~418–882: calls, stores, mutations, last-use, reporting), `SelfhostSemanticsT37Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34–T36, T38, T39 — done when:

@@ -1,4 +1,6 @@
-# Bayan
+# Bayān
+
+*Bayān (ASCII: Bayan). The CLI, package names, URLs and identifiers use `bayan`.*
 
 Bayan (بيان) is a value-oriented, natively compiled language derived from C#: no runtime, no GC, no exceptions. This repo holds the v0.1 bootstrap compiler (C# / .NET 10, NativeAOT) that compiles Bayan to C and then to a native executable via `zig cc`.
 
