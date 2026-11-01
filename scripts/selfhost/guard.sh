@@ -6,7 +6,7 @@
 # tests run under BAYAN_COVERAGE with those files, and every line and branch of each function the branch touches (its span
 # holds a line added or changed against the merge base with --base; a new function counts) must be covered, each missed one
 # named (coverage-gate.py); each file's other functions get one info line, never a FAIL. The guard makes no baseline check of
-# coverage: it leaves the report at tmp/guard-run/coverage/bayan-quality.json, and land.sh checks it against and records it in
+# coverage: it leaves the report at tmp/guard-run/coverage/bayan-quality.json, and land.sh records it (raise-only) in
 # tests/quality-baseline.json. 5 banned C#-isms in changed .byn, 6 mutation (spec 013 R14): every
 # mutation site of the --mutate files must make the filtered tests fail (`bayan mutate --binary` over a BAYAN_SNAPSHOT
 # recording; a survivor = an untested change; `@unobservable because "…"` marks a statement whose mutants no test can see),
