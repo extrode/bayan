@@ -649,6 +649,8 @@ struct Binder {
     Map<LocalId, VariantId> narrowed = []
     // ── T19 state
     // ── T20 state
+    /// The C# `_prebound` (BinderCalls.cs:248), keyed by the argument's span start in `file` for its identity (Q617).
+    Map<i64, BExpr> prebound = []
     /// The C# `_covered` (BinderCalls.cs:14): while a `try` operand is bound, the failing calls it does not handle; null outside one.
     List<CoveredCall>? covered = null
     // ── T21 state
