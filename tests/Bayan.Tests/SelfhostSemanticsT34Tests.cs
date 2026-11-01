@@ -173,7 +173,7 @@ public sealed class SelfhostSemanticsT34Tests
         "t1", "t2", "t3", "t4", "t5", "t6",
         .. Enumerable.Range(1, 18).Select(i => $"c{i}"),
         .. Enumerable.Range(1, 67).Select(i => $"s{i}"),
-        "dt1", "dt2",
+        "dt1", "dt2", "fc6", "fc7",
     ];
 
     private static readonly System.Type BinderType =
@@ -226,7 +226,7 @@ public sealed class SelfhostSemanticsT34Tests
     };
 
     private static string Local(LocalSymbol? l) => l is null ? "-"
-        : $"{l.Name}:{l.Type.DisplayName}:{(l.BorrowsSubject ? "b" : "o")}:{(l.GuardSpan is { } g ? $"{g.Start}:{g.Length}" : "-")}";
+        : $"{l.Name}:{l.Type.DisplayName}:{(l.BorrowsSubject ? "b" : "o")}:{(l.GuardSpan is { } g ? $"{g.Start}:{g.Length}" : "-")}:{(l.IsCatch ? "catch" : "let")}";
 
     private static string Step(BoundMemberStep s) =>
         (s.Field is { } f ? f.Name : s.Property is { } p ? "p." + p.Name : s.TupleIndex >= 0 ? $"#{s.TupleIndex}" : s.Builtin is { } m ? "b." + Camel(m.ToString()) : "?")
@@ -288,15 +288,19 @@ public sealed class SelfhostSemanticsT34Tests
         var file = c.Modules.SelectMany(m => m.Files).First(f => f.Source.Path == path);
         var mark = c.Diagnostics.Items.Count;
         var fd = file.Tree.Root.Members.OfType<FunctionDecl>().First(f => f.Name.Text == "probes");
+        // `fc6` binds `c6` with the binder's function set to `probes`, so the locals it appends are compared.
+        var fn = name.StartsWith('f') ? c.EntryModule.Functions["probes"][0] : null;
+        var had = fn?.Locals.Count ?? 0;
         var b = Activator.CreateInstance(BinderType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
-            [c, file, null, null, null, null], null)!;
+            [c, file, fn, null, null, null], null)!;
         foreach (var p in fd.Params)
             Call(b, "DeclareLocal", p.Name, Call(b, "ResolveType", p.Type), Lets.Contains(p.Name.Text) ? LocalKind.Let : LocalKind.Parameter);
         // `dt1` binds `t1` inside a `defer` (the C# `_deferDepth`).
         if (name.StartsWith('d')) BinderType.GetField("_deferDepth", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(b, 1);
-        var let = name.StartsWith('d') ? name[1..] : name;
+        var let = name.StartsWith('d') || name.StartsWith('f') ? name[1..] : name;
         var init = fd.Body!.Statements.OfType<LocalDecl>().First(l => l.Name.Text == let).Init!;
         var lines = Dump((BoundExpr)Call(b, "BindExpr", init, null)!);
+        if (fn is not null) lines.Add($"fnlocals {string.Join(" ", fn.Locals.Skip(had).Select(l => Local(l)))}");
         var items = c.Diagnostics.Items;
         for (var i = mark; i < items.Count; i++)
             if (!StubCodes.Contains(items[i].Code)) lines.AddRange(Diag(items[i]).Split('\n'));
@@ -349,7 +353,8 @@ public sealed class SelfhostSemanticsT34Tests
             let borrows = c.locals[l].borrowsSubject ? "b" : "o"
             var guard = "-"
             if (c.locals[l].guardSpan is { } g) { guard = $"{g.start}:{g.length}" }
-            return $"{c.locals[l].name}:{typeDisplay(ref c, by: c.locals[l].type)}:{borrows}:{guard}"
+            let catches = c.locals[l].isCatch ? "catch" : "let"
+            return $"{c.locals[l].name}:{typeDisplay(ref c, by: c.locals[l].type)}:{borrows}:{guard}:{catches}"
         }
 
         string tcStep(ref Ctx c, for in BMemberStep s) {
@@ -455,13 +460,17 @@ public sealed class SelfhostSemanticsT34Tests
 
         void runCase(ref Ctx c, by string name) {
             let file = c.modules[c.entryModule].files[0]
-            var b = t13NewBinder(file)
+            var fn: FuncId = -1
+            if name.startsWith("f") { fn = t34Probes(in c) }
+            var b = t13NewBinder(file, fn: fn)
             pushScope(ref b)
             var target = name
             if name.startsWith("d") {
                 b.deferDepth = 1
                 target = name[1..name.length]
             }
+            if fn != -1 { target = name[1..name.length] }
+            let had = fn == -1 ? 0 : c.functions[fn].locals.length
             let start = c.diagnostics.length
             for i in 0..c.files[file].unit.members.length {
                 switch c.files[file].unit.members[i] {
@@ -488,7 +497,22 @@ public sealed class SelfhostSemanticsT34Tests
                     default: {}
                 }
             }
+            if fn != -1 {
+                var shown = StrBuf()
+                for k in had..c.functions[fn].locals.length {
+                    if k > had { shown.append(" ") }
+                    shown.append(tcLocal(ref c, for: c.functions[fn].locals[k]))
+                }
+                print($"fnlocals {shown.finish()}")
+            }
             tcDiags(ref c, from: start)
+        }
+
+        FuncId t34Probes(in Ctx c) {
+            for f in 0..c.functions.length {
+                if c.functions[f].name == "probes" && c.functions[f].module == c.entryModule { return f }
+            }
+            return -1
         }
 
         i32 main(ReadOnlySpan<string> args) {
