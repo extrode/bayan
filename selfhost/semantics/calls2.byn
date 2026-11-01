@@ -2,44 +2,614 @@
 
 import parser
 
+/// The syntax `bindConversion` takes for the C# `c` of `BindConversion(c, p, arg.Value)`, which reads only its span (Q620).
+type T21ErrorExpr = parser.ErrorExpr
+
 // The C# `BindSwitchSubject`'s result and its `out bool owns`.
 struct SwitchSubjectResult {
     BExpr value
     bool owns
 }
 
-// stub: T21 ports BinderCalls.cs:588 BindConstruction
-BExpr bindConstruction(ref Binder b, through ref Ctx c, for in parser.CallExpr call, as Type type) => -1
+/// Whether argument `a` is named `name` (the C# `{ Name.Text: "…" }`).
+bool t21Named(in Ctx c, from FileId f, for in parser.Argument a, by string name) {
+    if (a.name is { } n) { return t15Text(in c, from: f, at: n) == name }
+    return false
+}
 
-// stub: T21 ports BinderCalls.cs:681 BindIntegerText
-BExpr bindIntegerText(ref Binder b, through ref Ctx c, for in parser.CallExpr call) => -1
+/// A parameter with no symbol of its own (the C# `new ParameterSymbol(name, …, ParamModifier.None, ordinal)`), as T20 does (Q619).
+LocalId t21Param(ref Ctx c, by string name, as Type type, at i64 ordinal) =>
+    newLocal(ref c, by: LocalSymbol { name: name, type: type, kind: .parameter, isParameter: true, modifier: .none, ordinal: ordinal })
 
-// stub: T21 ports BinderCalls.cs:706 BindOwned
-BExpr bindOwned(ref Binder b, through ref Ctx c, for in parser.CallExpr call, as Type inner) => -1
+/// BinderCalls.cs:596 BindConstruction.
+BExpr bindConstruction(ref Binder b, through ref Ctx c, for in parser.CallExpr call, as Type type) {
+    let calleeSpan = parser.exprSpan(in call.callee)
+    switch kindOf(type) {
+        case .structType:
+            let s = typeIndex(type)
+            if c.structs[s].constructors.length > 0 {
+                let ctor = c.structs[s].constructors[0]
+                checkAccess(ref b, through: ref c, for: c.functions[ctor].access, from: s, by: c.structs[s].module, at: calleeSpan)
+                let ps = copyIds(in c.functions[ctor].parameters)
+                let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: ctor, enforceNames: true)
+                let built = addCall(ref c, from: BCall { span: call.span, function: ctor, receiver: -1, arguments: move args, type: type })
+                return t21Checked(ref b, through: ref c, at: call.span, structLiteral: false, by: built)
+            }
+            if c.distinct.contains(s) {
+                // `Email(raw)` wraps the value; with `requires`, the wrapper is checked like a literal.
+                let value = c.structs[s].fields[0]
+                var ps = List<LocalId>()
+                ps.append(newLocal(ref c, by: LocalSymbol { name: c.fields[value].name, nameSpan: c.fields[value].nameSpan, span: c.fields[value].nameSpan, type: c.fields[value].type, kind: .parameter, isParameter: true, modifier: .none, ordinal: 0 }))
+                let display = c.structs[s].name
+                let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: display)
+                let built = addStructLiteral(ref c, from: BStructLiteral { span: call.span, structId: s, fields: move args })
+                return t21Checked(ref b, through: ref c, at: call.span, structLiteral: false, by: built)
+            }
+            if c.positional.contains(declKey(c.structs[s].file, at: c.structs[s].declIndex)) {
+                // `Point(3, 4)` is `Point { x: 3, y: 4 }`: every field in declaration order, checked like the literal.
+                var ps = List<LocalId>()
+                let fields = copyIds(in c.structs[s].fields)
+                for i in 0..fields.length {
+                    let f = fields[i]
+                    ps.append(newLocal(ref c, by: LocalSymbol { name: c.fields[f].name, nameSpan: c.fields[f].nameSpan, span: c.fields[f].nameSpan, type: c.fields[f].type, kind: .parameter, isParameter: true, modifier: .none, ordinal: i }))
+                }
+                let display = c.structs[s].name
+                let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: display)
+                let built = addStructLiteral(ref c, from: BStructLiteral { span: call.span, structId: s, fields: move args })
+                return t21Checked(ref b, through: ref c, at: call.span, structLiteral: false, by: built)
+            }
+            let states = statesOf(ref c, for: s)
+            if states != -1 {
+                report(ref b, through: ref c, for: .stateLiteralNeedsState, at: calleeSpan, by: (c.structs[s].name, c.unionVariants[c.unions[states].variants[0]].name, "", "", ""),
+                    help: "name the state the value starts in")
+                bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+                return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+            }
+            let fields = copyIds(in c.structs[s].fields)
+            if call.args.length > 0 {
+                var shown = StrBuf()
+                for i in 0..(fields.length < 2 ? fields.length : 2) {
+                    if i > 0 { shown.append(", ") }
+                    shown.append($"{c.fields[fields[i]].name}: …")
+                }
+                report(ref b, through: ref c, for: .noConstructor, at: calleeSpan, by: (c.structs[s].name, "", "", "", ""),
+                    help: $"set the fields with a struct literal: `{c.structs[s].name} {{ {shown.finish()} }}`")
+                bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+                return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+            }
+            var missing = List<string>()
+            for f in fields {
+                if fieldIsRequired(ref c, by: f) || !c.fields[f].hasDefault { missing.append(c.fields[f].name) }
+            }
+            if missing.length > 0 {
+                var sets = StrBuf()
+                for i in 0..missing.length {
+                    if i > 0 { sets.append(", ") }
+                    sets.append($"{missing[i]}: …")
+                }
+                report(ref b, through: ref c, for: .missingFields, at: call.span, by: (c.structs[s].name, missing.joined(by: "`, `"), "", "", ""),
+                    help: $"set {missing.length == 1 ? "it" : "them"}: `{c.structs[s].name} {{ {sets.finish()} }}`")
+                return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+            }
+            var values = List<BExpr>()
+            for f in fields {
+                let d = fieldDefault(ref c, for: s, by: f, from: b.file, at: call.span)
+                values.append(d != -1 ? d : addErrorExpr(ref c, from: BErrorExpr { span: call.span }))
+            }
+            return addStructLiteral(ref c, from: BStructLiteral { span: call.span, structId: s, fields: move values })
+        case .list or .map:
+            if call.args.length > 0 {
+                report(ref b, through: ref c, for: .tooManyArguments, at: call.args[0].span, by: (typeDisplay(ref c, by: type), "0", "", "", ""))
+                bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+            }
+            return addCollection(ref c, from: BCollection { span: call.span, type: type })
+        case .owned:
+            return bindOwned(ref b, through: ref c, for: in call, as: c.ownedTypes[typeIndex(type)])
+        case .builtin:
+            if type == builtinType(.arena) {
+                let fn = t9Function(ref c, for: "Arena")
+                let ps = copyIds(in c.functions[fn].parameters)
+                let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: fn, enforceNames: false, displayName: "Arena")
+                return addCall(ref c, from: BCall { span: call.span, function: fn, receiver: -1, arguments: move args, type: type })
+            }
+            if type == builtinType(.strBuf) {
+                if call.args.length == 0 {
+                    return addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "StrBuf"), receiver: -1, type: type })
+                }
+                // `StrBuf(capacity: n)` grows from `context.allocator` like `StrBuf()`, starting with room for n bytes.
+                if call.args.length == 1 && t21Named(in c, from: b.file, for: in call.args[0], by: "capacity") {
+                    var ps = List<LocalId>()
+                    ps.append(t21Param(ref c, by: "capacity", as: prim(.i64), at: 0))
+                    let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: "StrBuf")
+                    return addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "StrBuf"), receiver: -1, arguments: move args, type: type })
+                }
+                let fn = t9Function(ref c, for: "StrBuf(buffer)")
+                let ps = copyIds(in c.functions[fn].parameters)
+                let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: fn, enforceNames: false, displayName: "StrBuf")
+                return addCall(ref c, from: BCall { span: call.span, function: fn, receiver: -1, arguments: move args, type: type })
+            }
+        case .error:
+            bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+            return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+        case .primitive:
+            if (isNumeric(type) || type == prim(.char)) && call.args.length == 1 && call.args[0].name is null {
+                let e = parser.Expr.errorExpr(Owned(T21ErrorExpr { span: call.span }))
+                return bindConversion(ref b, through: ref c, for: in e, to: type, from: in call.args[0].value)
+            }
+            if isString(type) && call.args.length > 0 && call.args[0].name is null {
+                return bindIntegerText(ref b, through: ref c, for: in call)
+            }
+        default: {}
+    }
+    report(ref b, through: ref c, for: .notCallable, at: calleeSpan, by: (typeDisplay(ref c, by: type), "", "", "", ""),
+        help: isNumeric(type) || type == prim(.char) ? $"convert one value: `{typeDisplay(ref c, by: type)}(x)`" : "")
+    bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+    return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+}
 
-// stub: T21 ports BinderCalls.cs:726 BindUntrusted
-BExpr bindUntrusted(ref Binder b, through ref Ctx c, for in parser.CallExpr call, as Type inner) => -1
+/// BinderCalls.cs:689 BindIntegerText: `string(n, as: radix)`, an integer as text in a `Radix`, `.decimal` by default (spec §3.2, §6.2).
+BExpr bindIntegerText(ref Binder b, through ref Ctx c, for in parser.CallExpr call) {
+    let value = bindExpr(ref b, through: ref c, for: in call.args[0].value)
+    let vt = exprType(in c, for: value)
+    if isError(vt) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    if kindOf(vt) == .span && c.spanTypes[typeIndex(vt)].element == prim(.u8) && call.args.length == 1 {
+        return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .bytesToString, receiver: value, type: prim(.string) })
+    }
+    if !isInteger(vt) {
+        // `string(x)` as the `Display` conversion of every type is step 5.4a's later chunk.
+        report(ref b, through: ref c, for: .unsupported, at: parser.exprSpan(in call.callee), by: ($"`string(x)` of a `{typeDisplay(ref c, by: vt)}`", "", "", "", ""))
+        bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    }
+    let radixType = t9Type(ref c, for: "Radix")
+    var ps = List<LocalId>()
+    ps.append(t21Param(ref c, by: "value", as: vt, at: 0))
+    let asParam = t21Param(ref c, by: "as", as: radixType, at: 1)
+    if call.args.length >= 2 { ps.append(asParam) }
+    b.prebound[call.args[0].span.start] = value
+    let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: "string")
+    var radix = args.length > 1 ? args[1] : -1
+    if args.length <= 1 {
+        let decimal = findEnumMember(ref c, by: typeIndex(radixType), for: "decimal")
+        radix = addEnumMember(ref c, from: BEnumMember { span: call.span, member: decimal })
+    }
+    return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: .intToString, receiver: args[0], arguments: [radix], type: prim(.string) })
+}
 
-// stub: T21 ports BinderCalls.cs:746 BindTrust
-BExpr bindTrust(ref Binder b, through ref Ctx c, for in parser.CallExpr call) => -1
+/// BinderCalls.cs:714 BindOwned: `Owned(value)` or `Owned<T>(value)`; the value's type comes from `inner`, else from the argument.
+BExpr bindOwned(ref Binder b, through ref Ctx c, for in parser.CallExpr call, as Type inner) {
+    var t = inner
+    var value: BExpr = -1
+    if t == -1 && call.args.length == 1 && call.args[0].name is null && call.args[0].modifier == .none {
+        value = bindExpr(ref b, through: ref c, for: in call.args[0].value)
+        t = defaultType(ref b, through: ref c, for: value, from: in call.args[0].value)
+        if isError(t) || isNever(t) { return value }
+        value = convert(ref b, through: ref c, for: value, to: t, at: parser.exprSpan(in call.args[0].value), argument: true)
+    } else {
+        var ps = List<LocalId>()
+        ps.append(t21Param(ref c, by: "value", as: t != -1 ? t : errorType(), at: 0))
+        value = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: "Owned")[0]
+        if t == -1 || isError(t) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    }
+    return addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "Owned"), receiver: -1, arguments: [value], type: internOwned(ref c, by: t) })
+}
 
-// stub: T21 ports BinderCalls.cs:772 BindTrustUnchecked
-BExpr bindTrustUnchecked(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by in parser.MemberExpr callee) => -1
+/// BinderCalls.cs:734 BindUntrusted: `Untrusted(value)`; the value's type comes from the argument, or from the expected `Untrusted<T>`.
+BExpr bindUntrusted(ref Binder b, through ref Ctx c, for in parser.CallExpr call, as Type inner) {
+    var t = inner
+    var value: BExpr = -1
+    if t == -1 && call.args.length == 1 && call.args[0].name is null && call.args[0].modifier == .none {
+        value = bindExpr(ref b, through: ref c, for: in call.args[0].value)
+        t = defaultType(ref b, through: ref c, for: value, from: in call.args[0].value)
+        if isError(t) || isNever(t) { return value }
+        value = convert(ref b, through: ref c, for: value, to: t, at: parser.exprSpan(in call.args[0].value), argument: true)
+    } else {
+        var ps = List<LocalId>()
+        ps.append(t21Param(ref c, by: "value", as: t != -1 ? t : errorType(), at: 0))
+        value = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: "Untrusted")[0]
+        if t == -1 || isError(t) { return addErrorExpr(ref c, from: BErrorExpr { span: call.span }) }
+    }
+    return addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "Untrusted"), receiver: -1, arguments: [value], type: internUntrusted(ref c, by: t) })
+}
 
-// stub: T21 ports BinderCalls.cs:784 BindBuiltinMethodCall
-BExpr bindBuiltinMethodCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from BExpr receiver, by string name) => -1
+/// BinderCalls.cs:754 BindTrust: `trust(value, reason: "…")`: `Untrusted<T>` to `T`, with a non-empty literal reason.
+BExpr bindTrust(ref Binder b, through ref Ctx c, for in parser.CallExpr call) {
+    let value: BExpr = call.args.length > 0 && call.args[0].name is null ? bindExpr(ref b, through: ref c, for: in call.args[0].value) : -1
+    if value == -1 || call.args.length != 2 || !t21Named(in c, from: b.file, for: in call.args[1], by: "reason") {
+        bindArgumentsForRecovery(ref b, through: ref c, for: in call)
+        report(ref b, through: ref c, for: .trustReason, at: call.span, by: ("", "", "", "", ""), help: "write `x.trustUnchecked() because \"why this value is safe\"`")
+        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    }
+    let _ = bindExpr(ref b, through: ref c, for: in call.args[1].value)
+    var literal = false
+    switch call.args[1].value {
+        case .literalExpr(let l): literal = l.value.kind == .string && l.value.text.length > 0
+        default: {}
+    }
+    if !literal {
+        report(ref b, through: ref c, for: .trustReason, at: parser.exprSpan(in call.args[1].value), by: ("", "", "", "", ""),
+            help: "explain why the value is safe, in a string literal such as `reason: \"validated upstream\"`")
+    }
+    let vt = exprType(in c, for: value)
+    if isError(vt) { return value }
+    if kindOf(vt) != .untrusted {
+        let _ = convert(ref b, through: ref c, for: value, to: internUntrusted(ref c, by: vt), at: parser.exprSpan(in call.args[0].value), argument: true)
+        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    }
+    return addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "trust"), receiver: -1, arguments: [value], type: c.untrustedTypes[typeIndex(vt)] })
+}
 
-// stub: T21 ports BinderCalls.cs:861 BindMove
-BExpr bindMove(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr operand) => -1
+/// BinderCalls.cs:780 BindTrustUnchecked: `x.trustUnchecked() because "…"`: `Untrusted<T>` to `T`, the canonical form of
+/// `trust` (BYN1062); a missing or empty reason is BYN8001 (`bindCall`, the parser).
+BExpr bindTrustUnchecked(ref Binder b, through ref Ctx c, for in parser.CallExpr call, by in parser.MemberExpr callee) {
+    let value = bindExpr(ref b, through: ref c, for: in callee.target)
+    let vt = exprType(in c, for: value)
+    if isError(vt) { return value }
+    if kindOf(vt) != .untrusted {
+        let _ = convert(ref b, through: ref c, for: value, to: internUntrusted(ref c, by: vt), at: parser.exprSpan(in callee.target), argument: true)
+        return addErrorExpr(ref c, from: BErrorExpr { span: call.span })
+    }
+    return addCall(ref c, from: BCall { span: call.span, function: t9Function(ref c, for: "trust"), receiver: -1, arguments: [value], type: c.untrustedTypes[typeIndex(vt)] })
+}
 
-// stub: T21 ports BinderCalls.cs:904 BindSwitchSubject
-SwitchSubjectResult bindSwitchSubject(ref Binder b, through ref Ctx c, for in parser.Expr value) => SwitchSubjectResult { value: -1, owns: false }
+/// BinderCalls.cs:792 BindBuiltinMethodCall.
+BExpr bindBuiltinMethodCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from BExpr receiver, by string name) {
+    var m = method(ref c, for: exprType(in c, for: receiver), by: name) ?? panic("bindBuiltinMethodCall: no method")
+    if m.member == .stringParts && call.args.length > 0 {
+        let sep = bindExpr(ref b, through: ref c, for: in call.args[0].value)
+        b.prebound[call.args[0].span.start] = sep
+        if exprType(in c, for: sep) == prim(.char) {
+            let rest = m.parameters[1]
+            var ps = List<BuiltinParameter>()
+            ps.append(BuiltinParameter { name: "by", type: prim(.char) })
+            ps.append(BuiltinParameter { name: rest.name, type: rest.type })
+            m.member = .stringPartsRune
+            m.parameters = move ps
+        }
+    }
+    // `buf.append(x)` formats any `Display` value straight into the buffer, as the hole `$"{x}"` would.
+    if m.member == .strBufAppend && call.args.length == 1 && !t20IsInterpolated(call.args[0].value) {
+        var value = bindExpr(ref b, through: ref c, for: in call.args[0].value)
+        let vt = exprType(in c, for: value)
+        if !isError(vt) && !isString(vt) {
+            var seen = List<Type>()
+            if (whyNotFormattable(ref c, for: vt, by: ref seen) is { } why) {
+                let at = parser.exprSpan(in call.args[0].value)
+                report(ref b, through: ref c, for: .notFormattable, at: at, by: (typeDisplay(ref c, by: vt), "", "", "", ""), label: why,
+                    help: kindOf(vt) == .structType ? $"add `formatInto(ref StrBuf)` to `{c.structs[typeIndex(vt)].name}`, or use `{{x, as: .debug}}`" : "")
+            }
+            var parts = List<BInterpolationPart>()
+            parts.append(BInterpolationPart { text: null, value: value })
+            value = addInterpolated(ref c, from: BInterpolated { span: parser.exprSpan(in call.args[0].value), parts: move parts })
+        }
+        b.prebound[call.args[0].span.start] = value
+    }
+    // `remove(at:)` takes an index or a range; a range literal or a held `Range<i64>` picks the range form.
+    var removedAt: BExpr = -1
+    var atRange = false
+    if m.member == .listRemoveRange && call.args.length == 1 && t21Named(in c, from: b.file, for: in call.args[0], by: "at") {
+        switch call.args[0].value {
+            case .rangeExpr(_): atRange = true
+            default:
+                removedAt = bindExpr(ref b, through: ref c, for: in call.args[0].value)
+                b.prebound[call.args[0].span.start] = removedAt
+        }
+    }
+    if m.member == .listRemoveRange && (atRange || (removedAt != -1 && kindOf(exprType(in c, for: removedAt)) == .range)) {
+        var ps = List<BuiltinParameter>()
+        ps.append(BuiltinParameter { name: "at", type: internRange(ref c, by: prim(.i64)) })
+        m.member = .listRemoveAtRange
+        m.parameters = move ps
+    } else if m.member == .listRemoveRange && call.args.length == 1 && t21Named(in c, from: b.file, for: in call.args[0], by: "at") {
+        var ps = List<BuiltinParameter>()
+        ps.append(BuiltinParameter { name: "at", type: prim(.i64) })
+        m.member = .listRemoveAt
+        m.parameters = move ps
+    } else if m.member == .listRemoveRange && call.args.length == 2 && t21Named(in c, from: b.file, for: in call.args[1], by: "through") {
+        let first = m.parameters[0]
+        var ps = List<BuiltinParameter>()
+        ps.append(BuiltinParameter { name: first.name, type: first.type })
+        ps.append(BuiltinParameter { name: "through", type: prim(.i64) })
+        m.member = .listRemoveThrough
+        m.parameters = move ps
+    } else if m.member == .stringTrimmed && call.args.length == 1 && t21Named(in c, from: b.file, for: in call.args[0], by: "by") {
+        var ps = List<BuiltinParameter>()
+        ps.append(BuiltinParameter { name: "by", type: internSpan(ref c, by: prim(.char), readOnly: true) })
+        m = BuiltinMethod { member: .stringTrimmedBy, parameters: move ps, returns: prim(.string) }
+    } else if m.member == .stringTrimmed {
+        var ps = List<BuiltinParameter>()
+        ps.append(BuiltinParameter { name: "from", type: t9Type(ref c, for: "Edge") })
+        m.parameters = move ps
+    } else if m.member == .stringEquals {
+        let first = m.parameters[0]
+        var ps = List<BuiltinParameter>()
+        ps.append(BuiltinParameter { name: first.name, type: first.type })
+        ps.append(BuiltinParameter { name: "as", type: t9Type(ref c, for: "Comparison") })
+        m.parameters = move ps
+    }
+    var target = receiver
+    if m.member == .listTake || m.member == .mapTake || m.member == .strBufTake || m.member == .optionalTake {
+        target = mapWriteTarget(ref c, for: target)
+    }
+    let want = m.parameters.length - m.optional
+    let wanted = call.args.length > want ? call.args.length : want
+    let count = wanted < m.parameters.length ? wanted : m.parameters.length
+    var ps = List<LocalId>()
+    for i in 0..count {
+        ps.append(t21Param(ref c, by: m.parameters[i].name, as: m.parameters[i].type, at: i))
+    }
+    let args = bindArguments(ref b, through: ref c, for: in call, by: in ps, as: -1, enforceNames: false, displayName: name)
+    if m.mutating {
+        let _ = checkWritable(ref b, through: ref c, for: target, at: nodeSpan(in c, for: target), by: $"`{name}` modifies it")
+    }
+    if m.member == .mapSlot && !isDefaultable(ref c, for: m.returns) {
+        report(ref b, through: ref c, for: .mapSlotNoDefault, at: call.span, by: (typeDisplay(ref c, by: m.returns), "", "", "", ""),
+            help: "read with `map[key]` or `map.tryGet(at: key) ?? fallback`, and write with `map[key] = value`")
+    }
+    if m.member == .listCopy || m.member == .mapCopy {
+        let rt = exprType(in c, for: target)
+        var held: Type = -1
+        if m.member == .listCopy {
+            held = uniquePart(ref c, for: c.listTypes[typeIndex(rt)])
+        } else {
+            held = uniquePart(ref c, for: c.mapTypes[typeIndex(rt)].key)
+            if held == -1 { held = uniquePart(ref c, for: c.mapTypes[typeIndex(rt)].value) }
+        }
+        if held != -1 {
+            report(ref b, through: ref c, for: .copyUniqueElement, at: call.span, by: (typeDisplay(ref c, by: rt), typeDisplay(ref c, by: held), "", "", ""),
+                help: "build the copy with a loop that copies each element, or share the original by `ref`")
+        }
+    }
+    var returns = m.returns
+    if kindOf(m.returns) == .span && boundKind(target) == .staticArray {
+        returns = internSpan(ref c, by: c.spanTypes[typeIndex(m.returns)].element, readOnly: true)
+    } else if m.member == .ioReadAll {
+        returns = internResult(ref c, by: m.returns, to: t9Type(ref c, for: "IoError"))
+    }
+    return addBuiltinCall(ref c, from: BBuiltinCall { span: call.span, member: m.member, receiver: target, arguments: move args, type: returns })
+}
 
-// stub: T21 ports BinderCalls.cs:957 Checked
-BExpr checkedValue(ref Binder b, through ref Ctx c, for in parser.Expr syntax, by BExpr value, in List<FieldId>? changed = null) => -1
+/// BinderCalls.cs:858 IsDefaultable: whether `map.slot` can insert a default `t`: numbers, `bool`, `rune`, `string`,
+/// `Symbol`, optionals and structs whose fields all have defaults. A private helper of the range (Q621).
+bool isDefaultable(ref Ctx c, for Type t) {
+    if t == prim(.char) || t == builtinType(.symbol) { return true }
+    if kindOf(t) == .optional { return true }
+    if kindOf(t) == .structType { return structIsDefaultable(ref c, by: typeIndex(t)) }
+    return isNumeric(t) || isBool(t) || isString(t)
+}
 
-// stub: T21 ports BinderCalls.cs:949 Handles
-bool handles(in parser.Expr e) => false
+// ── Ownership ────────────────────────────────────────────────────────────────
 
-// stub: T21 ports BinderCalls.cs:944 ReportUnhandled
-void reportUnhandled(ref Binder b, through ref Ctx c, at TextSpan span, by string name, bool structLiteral) {}
+/// BinderCalls.cs:869 BindMove: `move x` (or a `move` argument): only a local or a `move` parameter can be moved (spec §9.3).
+BExpr bindMove(ref Binder b, through ref Ctx c, at TextSpan span, for BExpr operand) {
+    if isError(exprType(in c, for: operand)) { return operand }
+    // a narrowed local moves the underlying optional binding, still typed as the narrowed value
+    if boundKind(operand) == .conversion {
+        let n = c.bConversions[boundIndex(operand)]
+        if n.kind == .narrow && boundKind(n.operand) == .local {
+            let inner = bindMove(ref b, through: ref c, at: span, for: n.operand)
+            return addConversion(ref c, from: BConversion { span: n.span, operand: inner, type: n.type, kind: .narrow })
+        }
+    }
+    if checkGuardWrite(ref b, through: ref c, for: operand, at: span, by: "it is moved") { return addMove(ref c, from: BMove { span: span, operand: operand }) }
+    let k = boundKind(operand)
+    let i = boundIndex(operand)
+    let at = nodeSpan(in c, for: operand)
+    if k == .local {
+        let l = c.bLocals[i].local
+        if c.locals[l].borrowsSubject && isUnique(ref c, for: c.locals[l].type) {
+            report(ref b, through: ref c, for: .mutateBorrow, at: at, by: (c.locals[l].name, "", "", "", ""), label: "moving it would take the value out of what it borrows from",
+                help: "move or copy the value it was bound to instead")
+            return addMove(ref c, from: BMove { span: span, operand: operand })
+        }
+        let lk = c.locals[l].kind
+        if lk == .letKeyword || lk == .varKeyword || lk == .patternVariable || (c.locals[l].isParameter && c.locals[l].modifier == .moveKeyword) || c.locals[l].borrowsSubject {
+            return addMove(ref c, from: BMove { span: span, operand: operand })
+        }
+    }
+    var what = "this expression"
+    var help = "move a local variable or a `move` parameter instead"
+    if k == .local {
+        let l = c.bLocals[i].local
+        if c.locals[l].isParameter && paramIsByRef(ref c, by: l) {
+            let mod = c.locals[l].modifier == .refKeyword ? "ref" : c.locals[l].modifier == .outKeyword ? "out" : "in"
+            what = $"`{mod}` parameter `{c.locals[l].name}`"
+            help = "copy it with `.copy(to: alloc)`; the caller still owns it"
+        } else if c.locals[l].isParameter {
+            what = $"parameter `{c.locals[l].name}`"
+            help = $"declare it `move {c.locals[l].name}` to take ownership; a plain parameter is borrowed from the caller"
+        } else {
+            what = $"`{c.locals[l].name}`"
+        }
+    } else if k == .field {
+        what = $"field `{c.fields[c.bFields[i].field].name}`"
+        help = method(ref c, for: exprType(in c, for: operand), by: "take") is not null ? "take it with `.take()`, or copy it with `.copy(to: alloc)`; its owner keeps it" : "move the whole value, or copy the field with `.copy(to: alloc)`; its owner keeps it"
+    } else if k == .index || (k == .builtinCall && c.bBuiltinCalls[i].member == .mapIndex) {
+        what = "an element"
+        help = method(ref c, for: exprType(in c, for: operand), by: "take") is not null ? "take it with `.take()`, or copy it with `.copy(to: alloc)`; its owner keeps it" : "copy the element with `.copy(to: alloc)`; the collection keeps it"
+    } else if k == .tupleElement {
+        what = "a tuple element"
+        help = "move the whole tuple instead"
+    } else if k == .thisRef {
+        what = "`this`"
+        help = "move a `.copy(to: alloc)` of it instead; a method borrows `this`"
+    } else if k == .call || k == .builtinCall || k == .structLiteral || k == .collection || k == .literal || k == .lambda {
+        what = "a fresh value"
+        help = "remove the `move`; a fresh value needs none"
+    }
+    report(ref b, through: ref c, for: .cannotMove, at: at, by: (what, "", "", "", ""), help: help)
+    return addMove(ref c, from: BMove { span: span, operand: operand })
+}
+
+/// BinderCalls.cs:912 BindSwitchSubject: `move x` moves a local or `move` parameter into the switch, and `owns` says
+/// its bindings own their parts.
+SwitchSubjectResult bindSwitchSubject(ref Binder b, through ref Ctx c, for in parser.Expr value) =>
+    t21SwitchSubject(ref b, through: ref c, for: in value, from: in value)
+
+/// `bindSwitchSubject` with `inner`, the C# `inner` of `while (inner is ParenExpr p) inner = p.Inner`.
+SwitchSubjectResult t21SwitchSubject(ref Binder b, through ref Ctx c, for in parser.Expr value, from in parser.Expr inner) {
+    switch inner {
+        case .parenExpr(let p): return t21SwitchSubject(ref b, through: ref c, for: in value, from: in p.value.inner)
+        case .moveExpr(let m):
+            var operand = bindExpr(ref b, through: ref c, for: in m.value.operand)
+            if isError(exprType(in c, for: operand)) { return SwitchSubjectResult { value: operand, owns: false } }
+            if boundKind(operand) == .conversion {
+                let n = c.bConversions[boundIndex(operand)]
+                if n.kind == .narrow && boundKind(n.operand) == .local { operand = n.operand }
+            }
+            let k = boundKind(operand)
+            let i = boundIndex(operand)
+            if k == .local {
+                let l = c.bLocals[i].local
+                let lk = c.locals[l].kind
+                if lk == .letKeyword || lk == .varKeyword || lk == .patternVariable || (c.locals[l].isParameter && c.locals[l].modifier == .moveKeyword) {
+                    let owns = !c.locals[l].borrowsSubject
+                    return SwitchSubjectResult { value: bindMove(ref b, through: ref c, at: m.value.span, for: operand), owns: owns }
+                }
+            }
+            var what = "this expression"
+            if k == .local {
+                let l = c.bLocals[i].local
+                what = c.locals[l].isParameter ? $"parameter `{c.locals[l].name}`" : $"`{c.locals[l].name}`"
+            } else if k == .field {
+                what = $"field `{c.fields[c.bFields[i].field].name}`"
+            } else if k == .index || (k == .builtinCall && c.bBuiltinCalls[i].member == .mapIndex) {
+                what = "an element"
+            } else if k == .tupleElement {
+                what = "a tuple element"
+            } else if k == .thisRef {
+                what = "`this`"
+            } else if k == .call || k == .builtinCall || k == .structLiteral || k == .collection || k == .literal {
+                what = "a fresh value"
+            }
+            report(ref b, through: ref c, for: .switchMoveSubject, at: parser.exprSpan(in m.value.operand), by: (what, "", "", "", ""),
+                help: "drop `move` so the bindings borrow, declare the parameter `move`, or `.take()` a collection field into a local first")
+            return SwitchSubjectResult { value: operand, owns: false }
+        default: return SwitchSubjectResult { value: bindExpr(ref b, through: ref c, for: in value), owns: false }
+    }
+}
+
+// ── Failure handling ─────────────────────────────────────────────────────────
+
+/// BinderCalls.cs:944 ReportUnhandled; `structLiteral` is the C# `c is StructLiteralExpr`.
+void reportUnhandled(ref Binder b, through ref Ctx c, at TextSpan span, by string name, bool structLiteral) {
+    if structLiteral {
+        report(ref b, through: ref c, for: .literalNeedsTry, at: span, by: (name, "", "", "", ""),
+            help: $"add `try` before the literal and handle the `ValidationError<{name}>`",
+            hasFix: true, fixSpan: TextSpan { start: span.start, length: 0 }, fixReplacement: "try ")
+    } else {
+        report(ref b, through: ref c, for: .unhandledFailure, at: span, by: (name, "", "", "", ""),
+            help: "propagate the error with `try`, or handle it with `catch`",
+            hasFix: true, fixSpan: TextSpan { start: span.start, length: 0 }, fixReplacement: "try ")
+    }
+}
+
+/// BinderCalls.cs:957 Handles: whether a `try` or `catch` can handle `e` itself: a call, or a construction that may run a check.
+bool handles(in parser.Expr e) {
+    switch e {
+        case .callExpr(_) or .structLiteralExpr(_) or .withExpr(_): return true
+        default: return false
+    }
+}
+
+/// BinderCalls.cs:965 Checked.
+BExpr checkedValue(ref Binder b, through ref Ctx c, for in parser.Expr syntax, by BExpr value, in List<FieldId>? changed = null) {
+    var literal = false
+    switch syntax {
+        case .structLiteralExpr(_): literal = true
+        default: {}
+    }
+    return t21Checked(ref b, through: ref c, at: parser.exprSpan(in syntax), structLiteral: literal, by: value, changed: in changed)
+}
+
+/// `checkedValue` on the syntax's span, for `bindConstruction`, which holds a `parser.CallExpr` rather than a
+/// `parser.Expr` (Q620). A value just built of a struct with `requires` runs the struct's check and can fail with
+/// `ValidationError`; `changed` lists the fields a `with` sets (J19); built from constants, the rules are decided here (J38).
+BExpr t21Checked(ref Binder b, through ref Ctx c, at TextSpan span, bool structLiteral, by BExpr value, in List<FieldId>? changed = null) {
+    // A state literal is checked as its struct and keeps its state type.
+    let vt = exprType(in c, for: value)
+    let st = kindOf(vt) == .state ? structTypeOf(c.stateTypes[typeIndex(vt)].s) : vt
+    if kindOf(st) != .structType { return value }
+    let s = typeIndex(st)
+    let ci = c.checksOf.tryGet(at: s) ?? -1
+    if ci == -1 { return value }
+    if (changed is { } ch) {
+        var reads = false
+        for r in c.checks[ci].rules {
+            if r.field != -1 && listContains(in ch, by: r.field) { reads = true }
+            for f in r.reads {
+                if listContains(in ch, by: f) { reads = true }
+            }
+        }
+        if !reads { return value }
+    }
+    if boundKind(value) == .structLiteral {
+        let decided = checkConstant(ref b, through: ref c, at: span, by: value, for: ci)
+        if decided == 1 { return value }
+        if decided == 0 { return addErrorExpr(ref c, from: BErrorExpr { span: span }) }
+    }
+    var handled = false
+    if (b.handled is { } h) { handled = h == span }
+    if !handled {
+        if b.covered is not null {
+            var covered = b.covered.take() ?? List<CoveredCall>()
+            covered.append(CoveredCall { span: span, name: c.structs[s].name, structLiteral: structLiteral })
+            b.covered = move covered
+        } else {
+            let name = c.structs[s].name
+            reportUnhandled(ref b, through: ref c, at: span, by: name, structLiteral: structLiteral)
+        }
+    }
+    return addCall(ref c, from: BCall { span: span, function: c.checks[ci].check, receiver: value, type: vt })
+}
+
+/// BinderCalls.cs:986 CheckConstant (J38): a literal whose fields are all constants is checked now; 1 when every rule
+/// holds, 0 after reporting each broken one (BYN2321), -1 when a rule is left to run time. A struct rule reading a field
+/// whose own rule failed is skipped (J43). A private helper of the range (Q621).
+i64 checkConstant(ref Binder b, through ref Ctx c, at TextSpan span, by BExpr literal, for i64 ci) {
+    let li = boundIndex(literal)
+    let s = c.bStructLiterals[li].structId
+    let values = copyIds(in c.bStructLiterals[li].fields)
+    let fieldIds = copyIds(in c.structs[s].fields)
+    var fields = Map<FieldId, Constant>()
+    for i in 0..values.length {
+        if (exprConstant(in c, for: values[i]) is { } k) { fields[fieldIds[i]] = k } else { return -1 }
+    }
+    let locals = Map<LocalId, Constant>()
+    let rules = c.checks[ci].rules.length
+    var results = List<i64>()
+    for r in 0..rules {
+        let cond = c.checks[ci].rules[r].condition
+        var result: i64 = -1
+        if (evaluate(ref c, for: cond, from: in locals, by: in fields) is { } v) {
+            if v.kind == .flag { result = v.flag ? 1 : 0 }
+        }
+        if result == -1 { return -1 }
+        results.append(result)
+    }
+    var failed = List<FieldId>()
+    var all: i64 = 1
+    for r in 0..rules {
+        let own = c.checks[ci].rules[r].field
+        var skip = results[r] == 1
+        for f in c.checks[ci].rules[r].reads {
+            if listContains(in failed, by: f) { skip = true }
+        }
+        if results[r] != 1 { all = 0 }
+        if skip { continue }
+        if own != -1 { failed.append(own) }
+        var at = span
+        if own != -1 {
+            for i in 0..fieldIds.length {
+                if fieldIds[i] == own {
+                    let v = nodeSpan(in c, for: values[i])
+                    if v.start >= at.start && v.end <= at.end && v != at { at = v }
+                }
+            }
+        }
+        let text = t15Text(in c, from: c.structs[s].file, at: c.checks[ci].rules[r].span)
+        report(ref b, through: ref c, for: .requiresViolated, at: at, by: (t15Text(in c, from: b.file, at: at), text, c.structs[s].name, "", ""),
+            label: "fails the contract", help: $"pass a value that meets `requires {text}`")
+    }
+    return all
+}
