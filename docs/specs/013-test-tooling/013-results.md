@@ -32,3 +32,13 @@ Most of the time goes to the recording (one schemata build per distinct `main.by
 **The cost is in `Schemata.Build`, not the C compile** (stack dump of the site-map run, 2026-11-02). For every site, `Schemata.Rebinds` applies the mutation to the source and calls `Compilation.WithFile`, which re-parses and re-binds the whole package (user decision 2026-10-31: a mutant that does not compile is not emitted). The build is therefore sites × one full compile: about 1.5 s per site over `selfhost/semantics/`, i.e. 763 sites ≈ 19 min and 8087 sites = 2 h 50 min (measured). Finding the 8087 sites alone takes 1 s. The fix (re-bind only the mutated module and its dependents, or cache across sites) changes a user decision, so it is left open.
 
 This is why landing runs no mutation (user decision 2026-11-01) and why CI shards it (`.github/workflows/mutation.yml`, 4 shards).
+
+## T19 cross-platform (R16), tree cabca7d
+
+| Platform | `dotnet test -v q` | `scripts/selfhost/*.test.sh` | Notes |
+|---|---|---|---|
+| Linux, Debian arm64 in Docker (`mcr.microsoft.com/dotnet/sdk:10.0` + gcc + zig 0.17.0), non-root user, tree copied into the container | 6043/6043 pass, 16 m 58 s | 8/8 pass | Root on a bind mount fails `FormatTests.AnUnreadableFileIsReportedAndTheRestAreFormatted` (root ignores `chmod 000`); not a defect |
+| macOS (dev machine, loaded, `nice`) | 6042/6043, 16 m 56 s; the 1 failure, `RunGolden(run/assert-fails.test.byn)`, passes on rerun (RunGolden 269/269, 28 s) | 8/8 pass | Known load flake, `work/todo.md` (run/ goldens under load) |
+| Windows (`ssh wp1`) | not run | not run | Host unreachable this session; R16 unmet for Windows |
+
+The suite includes `InstrumentedRunLawTests` (the `run/` cases under `--mutate` and `--coverage`) and the guard's own tests (`guard.test.sh`, `guard-checks.test.sh`).
