@@ -22,8 +22,8 @@ public sealed class SelfhostSemanticsT36Tests
 
     /// <summary>
     /// Golden diag inputs. Dropped (Q680): the T35 <c>propertyType</c> stub (express4.byn:42) types every builtin property
-    /// -1, which panics in <c>typeDisplay</c>; T34's <c>bindTry</c> and T35's <c>bindInterpolated</c> and <c>bindLambda</c>
-    /// stubs change the rest (Q681). ambiguous-variant is dropped because the script <c>main</c> has return type -1
+    /// -1, which panics in <c>typeDisplay</c>. T24's <c>PanicHandlerCheck</c> stub, the flow analysis the harness does not run,
+    /// and T35's <c>bindInterpolated</c> and <c>bindLambda</c> stubs change the rest (Q681). ambiguous-variant is dropped because the script <c>main</c> has return type -1
     /// (compile.byn:965 sets none; C# defaults to <c>void</c>), which panics in <c>bindReturn</c> (Q681).
     /// The <see cref="Inline"/> cases cover their T36 branches without those.
     /// </summary>
@@ -421,6 +421,91 @@ public sealed class SelfhostSemanticsT36Tests
                 }
             }
             """,
+        // bindSwitchStatement's pattern arms on an owning subject: patternOwns, checkOwningOverlap, guardBindings;
+        // `borrowed` is the same arm on a subject that does not own; `guarded` binds a guard on an owning arm.
+        ["x-switch-move"] = """
+            union Box {
+                full(List<i64> items)
+                empty
+            }
+
+            void keep(move List<i64> xs) { }
+
+            bool check(move List<i64> xs) => true
+
+            void owned(move Box b) {
+                switch move b {
+                    case .full(let items):
+                        keep(move items)
+                    default:
+                }
+            }
+
+            void borrowed(Box b) {
+                switch b {
+                    case .full(let items):
+                        keep(move items)
+                    default:
+                }
+            }
+
+            void overlap() {
+                let a = List<i64>()
+                switch move a {
+                    case let x and let y:
+                        keep(move x)
+                    default:
+                }
+            }
+
+            void guarded(move Box b) {
+                switch move b {
+                    case .full(let items) when check(move items):
+                        print("guarded")
+                    default:
+                }
+            }
+            """,
+        // bindSwitchStatement's learnArmState: an unguarded arm narrows the subject's state, a guarded one does not;
+        // `all` has no `default`, so it takes the states-exhaustive path. The subject is `this`: a narrowed local
+        // reads as its declared type on the Bayan side (bound.byn addLocal, Q681).
+        ["x-switch-state"] = """
+            struct Order {
+                i64 id
+                states {
+                    draft
+                    paid(i64 payment)
+                }
+
+                i64 pay() {
+                    switch this {
+                        case .paid:
+                            return payment
+                        default:
+                    }
+                    return 0
+                }
+
+                i64 guarded(bool ok) {
+                    switch this {
+                        case .paid when ok:
+                            return payment
+                        default:
+                    }
+                    return 0
+                }
+
+                i64 all() {
+                    switch this {
+                        case .draft:
+                            return 0
+                        case .paid:
+                            return payment
+                    }
+                    return 1
+                }
+            }
+            """,
     };
 
     private static readonly string[] Cases = [.. Golden, .. Inline.Keys];
@@ -429,7 +514,8 @@ public sealed class SelfhostSemanticsT36Tests
     /// Codes other functions also report, compared only in cases where every report of them comes from T36 code:
     /// <c>declaredElement</c> and <c>bindFail</c> (BYN2202), <c>bindForBody</c> (BYN2411), <c>userElement</c> and
     /// <c>bindContext</c> (BYN2022), <c>bindContext</c> (BYN2301), <c>bindOnPanic</c> (BYN2202); BYN2001 from the arguments
-    /// <c>bindFail</c> binds for recovery.
+    /// <c>bindFail</c> binds for recovery; BYN2783 and BYN2790, which <c>bindSwitchStatement</c>'s <c>patternOwns</c> and
+    /// <c>checkOwningOverlap</c> decide; BYN7002, which its <c>learnArmState</c> decides.
     /// </summary>
     private static readonly Dictionary<string, DiagnosticDescriptor[]> Shared = new()
     {
@@ -441,6 +527,9 @@ public sealed class SelfhostSemanticsT36Tests
         ["x-onpanic"] = [DiagnosticCodes.TypeMismatch],
         ["x-context"] = [DiagnosticCodes.Unsupported, DiagnosticCodes.MissingArgument],
         ["x-payload"] = [DiagnosticCodes.UndefinedName],
+        // BYN2791 is not compared: `guardBindings` marks `items`, but T39's `writtenLocal` stub (calls4.byn:30) hides it (Q681).
+        ["x-switch-move"] = [DiagnosticCodes.MutateBorrow, DiagnosticCodes.OwningPatternOverlap],
+        ["x-switch-state"] = [DiagnosticCodes.PayloadNotInState],
     };
 
     private static string[] CodesOf(string name) => [.. Codes, .. Shared.GetValueOrDefault(name, []).Select(d => d.Code)];
@@ -480,6 +569,7 @@ public sealed class SelfhostSemanticsT36Tests
         ["this"] = "thisRef", ["return"] = "returnStmt", ["fail"] = "failStmt", ["break"] = "breakStmt", ["continue"] = "continueStmt",
         ["if"] = "ifStmt", ["while"] = "whileStmt", ["for"] = "forStmt", ["switch"] = "switchStmt", ["defer"] = "deferStmt",
         ["assert"] = "assertStmt", ["errdefer"] = "errdeferStmt", ["context"] = "contextStmt", ["default"] = "defaultValue",
+        ["move"] = "moveExpr",
     };
 
     private static string KindName(System.Type t)
@@ -505,7 +595,7 @@ public sealed class SelfhostSemanticsT36Tests
         foreach (var ch in BoundTree.Children(n)) Dump(lines, ch, depth + 1);
     }
 
-    /// <summary>The functions whose bodies are dumped: one of their name, declared, not generic, by name.</summary>
+    /// <summary>The functions whose bodies are dumped: one of their name, with a body (generic ones included), by name.</summary>
     private static List<string> Dumped(Compilation c) =>
         [.. c.EntryModule.Functions.Where(kv => kv.Value.Count == 1 && kv.Value[0].Body is not null)
             .Select(kv => kv.Key).Order(StringComparer.Ordinal)];
