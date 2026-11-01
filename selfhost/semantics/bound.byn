@@ -989,7 +989,8 @@ BExpr addDefault(ref Ctx c, from move BDefault n) {
 
 BExpr addLocal(ref Ctx c, from move BLocal n) {
     var m = move n
-    m.type = c.locals[m.local].type
+    // C# `new BoundLocal(n, local) { Type = known }` keeps a narrowed state type (BinderExpressions.cs:526).
+    if m.type == -1 { m.type = c.locals[m.local].type }
     c.bLocals.append(move m)
     return makeBound(.local, at: c.bLocals.length - 1)
 }
@@ -1053,7 +1054,8 @@ BExpr addCoalesce(ref Ctx c, from move BCoalesce n) {
 
 BExpr addStructLiteral(ref Ctx c, from move BStructLiteral n) {
     var m = move n
-    m.type = makeType(.structType, at: m.structId)
+    // A state literal `T.s { … }` is of type `T.s` (`literal with { State = state, Type = stateType }`, BinderExpressions.cs:1609).
+    if m.state == -1 || m.type == -1 { m.type = makeType(.structType, at: m.structId) }
     c.bStructLiterals.append(move m)
     return makeBound(.structLiteral, at: c.bStructLiterals.length - 1)
 }

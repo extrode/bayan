@@ -99,12 +99,29 @@ void t23CheckOutAssigned(ref Flow f, through ref Ctx c, for in FlowState state, 
     }
 }
 
+/// C# `fn.Decl?.Becomes` (its text) and whether `fn.Decl.RefThis` is set.
+struct T28Becomes {
+    string? becomes = null
+    bool refThis = false
+}
+
+/// A function with a declaration reads it (`t22DeclFacts`, Q626), because the declaring code never fills
+/// `FunctionSymbol.becomes`/`refThis` (Q656); one without a declaration index keeps the symbol's fields, which only
+/// the T23 harness fills.
+T28Becomes t28Becomes(ref Ctx c, for FuncId fn) {
+    if c.functions[fn].declIndex < 0 { return T28Becomes { becomes: c.functions[fn].becomes, refThis: c.functions[fn].refThis is not null } }
+    let decl = t22DeclFacts(ref c, for: fn)
+    let at = decl.becomes ?? return T28Becomes { refThis: decl.refThis is not null }
+    return T28Becomes { becomes: t15Text(in c, from: c.functions[fn].file, at: at), refThis: decl.refThis is not null }
+}
+
 /// BYN7009: a normal return from a function that `becomes .s` must follow a `become`; not after BYN7010.
 void t23CheckBecame(ref Flow f, through ref Ctx c, for in FlowState state, at TextSpan span) {
     let fn = f.fn
     if state.became { return }
-    let becomes = c.functions[fn].becomes ?? return
-    if c.functions[fn].kind == .method && !c.functions[fn].isStatic && c.functions[fn].refThis is null { return }
+    let decl = t28Becomes(ref c, for: fn)
+    let becomes = decl.becomes ?? return
+    if c.functions[fn].kind == .method && !c.functions[fn].isStatic && !decl.refThis { return }
     report(ref c, for: .missingBecome, from: f.file, at: span, by: (c.functions[fn].name, becomes, "", "", ""), help: $"add `become .{becomes}(…)` before returning, or fail")
 }
 
@@ -379,7 +396,7 @@ FlowState t23Expr(ref Flow f, through ref Ctx c, for BExpr e, by move FlowState 
             }
             for l in outs { t23Assign(ref state, by: l) }
             // A `becomes` call on `this` counts as `become` (BYN7003's third form makes the caller declare it; revision 0010).
-            if receiver != -1 && boundKind(receiver) == .thisRef && c.functions[function].becomes is not null { state.became = true }
+            if receiver != -1 && boundKind(receiver) == .thisRef && t28Becomes(ref c, for: function).becomes is not null { state.became = true }
             return isNever(c.bCalls[i].type) ? t23Unreachable() : move state
         case .tryExpr:
             let operand = c.bTries[i].operand

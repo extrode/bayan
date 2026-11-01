@@ -654,7 +654,8 @@ BStmt bindSwitchStatement(ref Binder b, through ref Ctx c, for in parser.SwitchS
         if states != -1 {
             var subjectType = valueType
             if (subject(ref b, through: ref c, for: value) is { } found) { subjectType = found.type }
-            exhaustive = checkStatesExhaustive(ref b, through: ref c, at: s.span, as: subjectType, from: states, by: in arms)
+            let lastSection: TextSpan? = s.sections.length > 0 ? s.sections[s.sections.length - 1].span : null
+            exhaustive = checkStatesExhaustive(ref b, through: ref c, at: s.span, as: subjectType, from: states, by: in arms, until: -1, to: lastSection)
         } else {
             exhaustive = checkExhaustive(ref b, through: ref c, at: parser.exprSpan(in s.value), as: valueType, by: in arms, statement: true)
         }
