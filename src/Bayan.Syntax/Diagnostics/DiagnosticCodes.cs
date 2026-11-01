@@ -102,7 +102,6 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor PrefixPointerInput = Error("BYN1066", "`{0}` is an input form; write `{1}`");
     public static readonly DiagnosticDescriptor PointerOutsideExtern = Error("BYN1067", "pointer types are allowed only in `extern` declarations");
     public static readonly DiagnosticDescriptor CompactFormatSpec = Error("BYN1068", "`{0}` is an input form; write `{1}`");
-    // Reserved for design round 4, not reported yet (revision 0016): BYN1070 NegatedIsInput (`!(x is .s)`; round 4's draft says BYN1069, which spec 013 gives StatementAttribute), BYN1071 SwitchExpressionNeedsElse (subjectless `switch`). No descriptor until implemented, so the self-hosted tables stay equal to `All`.
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor UndefinedName = Error("BYN2001", "`{0}` is not defined");
@@ -292,7 +291,6 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor FunctionTypeNotHere = Error("BYN2822", "a function type is not supported as {0} yet");
     public static readonly DiagnosticDescriptor MemberNotLambda = Error("BYN2823", "`.{0}` is a member, not a lambda");
     public static readonly DiagnosticDescriptor NotAFunctionValue = Error("BYN2824", "`{0}` cannot be used as a value: {1}");
-    // Reserved for design round 4, not reported yet (revision 0016): BYN2825 BorrowedClosureStored (closure escape rule). No descriptor until implemented.
     public static readonly DiagnosticDescriptor HashMapNotSupported = Error("BYN2830", "`HashMap` is not supported yet: `Map` hashes the same way and keeps insertion order");
     public static readonly DiagnosticDescriptor KeyPartNotHashable = Error("BYN2831", "`{0}` cannot be a `Map` key: {1} `{2}` is a `{3}`");
     public static readonly DiagnosticDescriptor StringNotSymbol = Error("BYN2832", "a `string` value is not a `Symbol`; only a string literal converts");
@@ -372,9 +370,16 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor BecomesNeedsRef = Error("BYN7010", "`{0}` declares `becomes .{1}` but takes `{2}`; a transition needs `ref this`");
     public static readonly DiagnosticDescriptor BecomesOnRefParameter = Error("BYN7011", "`{0}` changes the state of `{1}`, a `ref` parameter; a state changes in place only through `ref this`");
     public static readonly DiagnosticDescriptor AssignmentChangesState = Error("BYN7012", "`{0}` would change state here; a state changes only through `become`");
-    // Reserved for design round 4, not reported yet (revision 0016): BYN7013 FinalStateNotReached (`final` states; round 4's draft says BYN7010, which is BecomesNeedsRef). No descriptor until implemented.
 
     // ── Security 8000–8999 ───────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor MissingBecause = Error("BYN8001", "`{0}` bypasses a safety rule and needs `because \"…\"`");
     public static readonly DiagnosticDescriptor ExpectsReadsUntrusted = Error("BYN8006", "`expects` reads `{0}`, which is `Untrusted`; a violation would trap on outside data");
+
+    // Reserved: round 4 (revisions 0016, 0017). Not reported yet: no descriptor until implemented, so the self-hosted
+    // tables stay equal to `All`. Each line is `BYN#### Name`, a note, and the round-4 target; DiagnosticCodesTests reads it.
+    // BYN1070 NegatedIsInput: `!(x is .s)`; round 4's draft says BYN1069, which spec 013 gives StatementAttribute. // target: 19xx input form
+    // BYN1071 SwitchExpressionNeedsElse: subjectless `switch`. // target: 41xx switch
+    // BYN2825 BorrowedClosureStored: closure escape rule. // target: 3xxx borrows
+    // BYN7013 FinalStateNotReached: `final` states; round 4's draft says BYN7010, which is BecomesNeedsRef. // target: 7xxx typestate
+    // End reserved: round 4.
 }
