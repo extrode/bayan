@@ -2,8 +2,10 @@
 # land.sh on a fixture repo with a stub wave-brief.py and guard.sh, run by /bin/bash (3.2 on macOS): it refuses a last
 # commit that is not a lone `docs(010): T99 review (PASS` commit, a branch that changes scripts/selfhost/ or edits tests/quality-baseline.json, and a branch that
 # moves while it is checked, one with no merge base, and a prompt with no guard line; the fixture path holds & and ' (the guard must still run); it runs the base checkout's guard by absolute path, without --mutate/--seed,
-# and lands a two-round reviewed branch; tests/quality-baseline.json changes only when the guard run left a mutation report, then in the tick commit,
-# and a coverage report the guard run left (tmp/guard-run/quality-coverage.json) is never recorded (T26 F2: the batch run, T28, records coverage).
+# and lands a two-round reviewed branch; tests/quality-baseline.json changes only when the guard run left its coverage report
+# (tmp/guard-run/coverage/bayan-quality.json, the only place the real guard writes one; no quality-*.json): a landing with
+# none leaves the baseline alone, one fills coverage and branches, one with a higher coverage raises it (both in the tick commit),
+# and one with a lower coverage is refused naming file, old and new value, with the baseline unchanged and the branch not merged.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/land&test'q"; aux="$root/tmp/land-test-aux"
@@ -13,8 +15,7 @@ printf 'import os, sys\nd = "tmp/010-" + sys.argv[2].lower()\nos.makedirs(d, exi
 # the stub guard logs the path it runs as; with $AUX/move it adds a commit to feat-move, as a writer still pushing would
 cat > scripts/selfhost/guard.sh <<'STUB'
 echo "$0" >> "$AUX/guard-ran.txt"; echo "$*" > "$AUX/guard-args.txt"
-[ -f "$AUX/report" ] && mkdir -p tmp/guard-run && cp "$AUX/report" tmp/guard-run/quality-1-prog.json
-[ -f "$AUX/covreport" ] && mkdir -p tmp/guard-run && cp "$AUX/covreport" tmp/guard-run/quality-coverage.json
+[ -f "$AUX/covreport" ] && mkdir -p tmp/guard-run/coverage && cp "$AUX/covreport" tmp/guard-run/coverage/bayan-quality.json
 [ -f "$AUX/move" ] && git branch -f feat-move "$(git commit-tree -p HEAD -m "test: unchecked" 'HEAD^{tree}')"
 echo GUARD PASS
 STUB
@@ -42,19 +43,18 @@ noguard=$(NOGUARD=1 land feat-ok)
 touch $aux/move; moved=$(land feat-move); rm $aux/move; moved_in=$(git log --format=%s base | grep -c unchecked || true)
 rm -f $aux/guard-ran.txt; ok=$(land feat-ok); ran=$(cat $aux/guard-ran.txt 2>/dev/null || true); ticked=$(grep -c '^- \[x\] T99 ' docs/specs/010-self-hosted-semantics/010-tasks.md || true)
 gargs=$(cat $aux/guard-args.txt); cmp -s tests/quality-baseline.json $aux/baseline.json && noreport=1 || noreport=0
-# a second landing on top of the first (its review file then merges cleanly), its guard run leaving a report
-code feat-rep; review; git switch -q base
-printf '{"version": 1, "kind": "mutation", "files": [{"path": "x.byn", "mutants": [{"site": {}, "status": "killed"}]}]}\n' > $aux/report
-rep=$(land feat-rep); raised=$(python3 -I -c 'import json; print(json.load(open("tests/quality-baseline.json"))["files"]["x.byn"]["mutation"])')
-intick=$(git log -1 --format=%s -- tests/quality-baseline.json)
-# a third landing whose guard run left only a coverage report (T99 unticked first, so its tick commit is not empty)
-code feat-cov; review; git switch -q base; rm $aux/report
-perl -i -pe 's/^- \[x\] T99 /- [ ] T99 /' docs/specs/010-self-hosted-semantics/010-tasks.md; git commit -qam "test: untick T99"
-printf '{"version": 1, "kind": "coverage", "files": [{"path": "y.byn", "lines": {"covered": 3, "total": 4, "missed": [2], "unknown": []}}]}\n' > $aux/covreport
-cp tests/quality-baseline.json $aux/before-cov.json
-cov=$(land feat-cov); covered=$(python3 -I -c 'import json; print(json.load(open("tests/quality-baseline.json"))["files"].get("y.byn"))')
-cmp -s tests/quality-baseline.json $aux/before-cov.json && covsame=1 || covsame=0
-rm $aux/covreport; baseline=$(land feat-baseline)  # last: if it were accepted, its merge must not break the cases above
+# further landings on top of the first (T99 unticked first, so each tick commit is not empty), the guard run leaving a coverage report
+next() { code "$1"; review; git switch -q base
+  perl -i -pe 's/^- \[x\] T99 /- [ ] T99 /' docs/specs/010-self-hosted-semantics/010-tasks.md; git commit -qam "test: untick T99"; }
+covrep() { printf '{"version": 1, "kind": "coverage", "files": [{"path": "y.byn", "lines": {"covered": %s, "total": 4, "missed": []}, "branches": {"covered": %s, "total": 2, "missed": []}}]}\n' "$1" "$2" > $aux/covreport; }
+ycov() { python3 -I -c 'import json; print(json.load(open("tests/quality-baseline.json"))["files"].get("y.byn"))'; }
+next feat-fill; covrep 3 1
+fill=$(land feat-fill); filled=$(ycov); intick=$(git log -1 --format=%s -- tests/quality-baseline.json)
+next feat-rise; covrep 4 2; rise=$(land feat-rise); rose=$(ycov)
+next feat-drop; covrep 1 2; cp tests/quality-baseline.json $aux/before-drop.json; head=$(git rev-parse HEAD)
+drop=$(land feat-drop); dropped=$(ycov); [ "$(git rev-parse HEAD)" = "$head" ] && dropsame=1 || dropsame=0
+cmp -s tests/quality-baseline.json $aux/before-drop.json || dropsame=0
+rm -f $aux/covreport; baseline=$(land feat-baseline)  # last: if it were accepted, its merge must not break the cases above
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
 echo "$chore" | grep -q "LAND REFUSED: the branch's last commit must" || fail "a chore(worker) review commit was accepted" "$chore"
@@ -69,8 +69,9 @@ echo "$ok" | grep -q '^LANDED T99$' || fail "a well-reviewed branch did not land
 [ "$ticked" = 1 ] || fail "the task was not ticked" "$ok"
 [ "$ran" = "$r/scripts/selfhost/guard.sh" ] || fail "the guard ran as '$ran', not the base checkout's by absolute path" "$ok"
 [ "$gargs" = "--base base --filter F" ] || fail "the guard ran with '$gargs', not without --mutate and --seed" "$ok"
-[ $noreport = 1 ] || fail "a landing without a mutation report changed tests/quality-baseline.json" "$ok"
-echo "$rep" | grep -q '^LANDED T99$' && [ "$raised" = 1.0 ] || fail "a landing with a mutation report did not raise the baseline to 1.0 (got $raised)" "$rep"
-[ "$intick" = "chore(010): tick T99" ] || fail "the baseline change is not in the tick commit (last commit touching it: $intick)" "$rep"
-echo "$cov" | grep -q '^LANDED T99$' && [ "$covered" = None ] && [ $covsame = 1 ] || fail "a landing recorded the guard run's coverage report (y.byn: $covered)" "$cov"
+[ $noreport = 1 ] || fail "a landing without a coverage report changed tests/quality-baseline.json" "$ok"
+echo "$fill" | grep -q '^LANDED T99$' && [ "$filled" = "{'mutation': None, 'coverage': 0.75, 'branches': 0.5}" ] || fail "a landing with a coverage report did not fill coverage and branches (y.byn: $filled)" "$fill"
+[ "$intick" = "chore(010): tick T99" ] || fail "the baseline change is not in the tick commit (last commit touching it: $intick)" "$fill"
+echo "$rise" | grep -q '^LANDED T99$' && [ "$rose" = "{'mutation': None, 'coverage': 1.0, 'branches': 1.0}" ] || fail "a landing with a higher coverage did not raise the baseline (y.byn: $rose)" "$rise"
+echo "$drop" | grep -q '^LAND REFUSED: baseline: coverage score of y.byn fell from 1.0 to 0.25 ' && ! echo "$drop" | grep -q '^LANDED' && [ $dropsame = 1 ] || fail "a coverage drop was not refused naming y.byn with old and new value, baseline and base unchanged (y.byn: $dropped)" "$drop"
 echo PASS

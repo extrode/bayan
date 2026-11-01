@@ -11,6 +11,8 @@
 # Per group: reports and logs in tmp/mutate-batch/<group>/ (quality-<n>-<binary>.json), bayan mutate's summary printed. A group
 # whose CLI, recording or mutant 0 fails is named and fails the run. Then quality-baseline.py check over the reports: a score
 # below the baseline names the file with old and new score and exits 1 with the baseline untouched; else `update` raises it.
+# Each copied report's `path`s are rewritten relative to the repo root (a path outside it fails the group, naming the report);
+# CI shards (.github/workflows/mutation.yml) upload only the reports, and a final job runs one `update` over all of them.
 set -u
 TASKS=docs/specs/010-self-hosted-semantics/010-tasks.md; LIST=0; FILES=""; SHARD=""
 while [ $# -gt 0 ]; do case "$1" in
@@ -84,6 +86,21 @@ for g in $(cut -f1 <<< "$PLAN" | awk '!s[$0]++'); do
   LOG=$OUT/$g; rm -rf "$LOG"; mkdir -p "$LOG"; FAIL=()
   echo "== group $g ($flt): $mut"
   mutation_step "$LOG" "$flt" "$mut" 0
+  # bayan mutate writes absolute source paths: make each report's paths repo-root-relative, so any machine can read it
+  if [ ${#FAIL[@]} = 0 ]; then for rp in "$LOG"/quality-*.json; do
+    [ -f "$rp" ] && { python3 -I - "$rp" "$PWD" <<'PY' 2> $LOG/relpath.txt || note "report: $(tail -1 $LOG/relpath.txt)"
+import json, os, sys
+rp, root = sys.argv[1:3]
+root = os.path.realpath(root)
+report = json.load(open(rp, encoding='utf-8'))
+for e in report['files']:
+    rel = os.path.relpath(os.path.realpath(os.path.join(root, e['path'])), root)
+    if rel == '..' or rel.startswith('../'):
+        sys.exit(f'{rp}: path {e["path"]} is not under the repo root {root}')
+    e['path'] = rel
+open(rp, 'w', encoding='utf-8').write(json.dumps(report, indent=2) + '\n')
+PY
+    }; done; fi
   if [ ${#FAIL[@]} = 0 ]; then OK+=("$g"); else BAD=1; for x in "${FAIL[@]}"; do echo "group $g: $x"; done; fi
 done
 REPORTS=(); for g in ${OK[@]+"${OK[@]}"}; do REPORTS+=("$OUT/$g"/quality-*.json); done

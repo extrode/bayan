@@ -5,11 +5,11 @@
 # docs/specs/010-self-hosted-semantics/reviews/<T>.md exists on that branch, the branch's last commit touches only it and is
 # titled `docs(010): <T> review (PASS, …`, the file names that commit's parent, says `Verdict: PASS`, and lists no open HIGH
 # finding (earlier commits may hold earlier review rounds). Then merges the
-# commit it checked (refusing if the branch moved meanwhile) with --no-ff and ticks the task. When the guard run left mutation
-# reports (tmp/guard-run/quality-<n>-<binary>.json, from a guard given --mutate), the tick commit also raises
-# tests/quality-baseline.json to their scores (quality-baseline.py update; a lower score never replaces a baseline entry).
-# Coverage is never recorded here: the guard's coverage (on in every run, landing included) is a filtered per-task run, no
-# file-wide measurement; the batch run (013 T28) writes the baseline's coverage.
+# commit it checked (refusing if the branch moved meanwhile) with --no-ff and ticks the task. When the guard run left a coverage
+# report (tmp/guard-run/coverage/bayan-quality.json, written whenever the branch changed a selfhost .byn), quality-baseline.py
+# check refuses the landing if a file's line or branch coverage fell below tests/quality-baseline.json (naming file, old and new
+# value, baseline unchanged), and after the merge the tick commit raises the baseline's coverage and branches (update; a lower
+# value never replaces an entry). No mutation runs here (--mutate is dropped): the mutation scores come from the batch run (013 T28).
 set -eu
 T=$1; BR=$2; N=${T#T}; t=$(echo "$T" | tr '[:upper:]' '[:lower:]')
 BASE=$(git rev-parse --abbrev-ref HEAD)
@@ -57,9 +57,13 @@ trap cleanup EXIT
   grep -q '^GUARD PASS' "../guard-land-$t.txt" || { echo "LAND REFUSED: guard failed"; exit 1; }
 )
 
+COVREPORT=$WT/tmp/guard-run/coverage/bayan-quality.json
+if [ -f "$COVREPORT" ]; then
+  out=$(python3 -I "$(dirname "$0")/quality-baseline.py" check tests/quality-baseline.json "$WT" "$COVREPORT" 2> "tmp/land-$t-baseline.txt") || {
+    echo "LAND REFUSED: ${out:-quality-baseline.py failed on $COVREPORT — $(tail -1 "tmp/land-$t-baseline.txt")}"; exit 1; }
+fi
 [ "$(git rev-parse "$BR")" = "$SHA" ] || { echo "LAND REFUSED: $BR moved from $SHA while it was checked; land again"; exit 1; }
 git merge --no-ff -m "chore(010): land $T" "$SHA"
 perl -i -pe "s/^- \[ \] $T /- [x] $T /" docs/specs/010-self-hosted-semantics/010-tasks.md
-if ls "$WT"/tmp/guard-run/quality-[0-9]*.json > /dev/null 2>&1; then
-  python3 -I "$(dirname "$0")/quality-baseline.py" update tests/quality-baseline.json "$WT" "$WT"/tmp/guard-run/quality-[0-9]*.json; fi
+[ ! -f "$COVREPORT" ] || python3 -I "$(dirname "$0")/quality-baseline.py" update tests/quality-baseline.json "$WT" "$COVREPORT"
 git commit -qam "chore(010): tick $T" && echo "LANDED $T"

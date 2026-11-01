@@ -1,7 +1,9 @@
 #!/bin/bash
 # quality-baseline.py: check fails on a mutation, line coverage or branch coverage score below the baseline and passes on an equal or higher one,
 # a file with no entry, and a null on either side; update creates the file, adds new files, raises a score and keeps a
-# higher one; report paths (absolute, or relative to the root) become root-relative keys.
+# higher one; report paths (absolute, or relative to the root) become root-relative keys; an absolute or `..` path outside the
+# root exits non-zero naming the report and writes no key; two shards' reports merged by one update keep both shards' raises
+# (applying each shard's own updated baseline in turn loses one).
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 d="$root/tmp/quality-baseline-test"; rm -rf "$d" && mkdir -p "$d/w"
@@ -44,5 +46,21 @@ got=$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["files
 q update $d/fresh.json "$d/w" $d/new.json
 got=$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1])))' $d/fresh.json)
 [ "$got" = "{'version': 1, 'files': {'b.byn': {'mutation': 0.5, 'coverage': None, 'branches': None}}}" ] || fail "update did not create a missing baseline" "$got"
+# a path outside the root (absolute, or `..`): refused naming the report, no `../..` key written, in check and in update
+mut /elsewhere/z.byn 1 0 > $d/outabs.json; mut ../z.byn 1 0 > $d/outdot.json; cp $d/fresh.json $d/fresh-before.json
+for r in outabs outdot; do for c in check update; do
+  out=$(q $c $d/fresh.json "$d/w" $d/$r.json 2>&1) && fail "$c accepted the path of $r.json" "$out"
+  echo "$out" | grep -q "$d/$r.json" || fail "$c did not name $r.json" "$out"
+done; done
+cmp -s $d/fresh.json $d/fresh-before.json || fail "a refused path changed the baseline" "$(cat $d/fresh.json)"
+# the two-shard loss: shard 1 raises a.byn, shard 2 raises b.byn; the baseline each uploads misses the other's raise, one update over both reports keeps both
+printf '{ "version": 1, "files": { "a.byn": { "mutation": 0.5 }, "b.byn": { "mutation": 0.5 } } }\n' > $d/base.json
+cp $d/base.json $d/s1.json; cp $d/base.json $d/s2.json; mut a.byn 3 1 > $d/r1.json; mut b.byn 4 0 > $d/r2.json
+q update $d/s1.json "$d/w" $d/r1.json; q update $d/s2.json "$d/w" $d/r2.json
+got=$(python3 -I -c 'import json, sys; f = json.load(open(sys.argv[1]))["files"]; print(f["a.byn"]["mutation"], f["b.byn"]["mutation"])' $d/s2.json)
+[ "$got" = "0.5 1.0" ] || fail "the last shard's own baseline was not missing the other raise (setup)" "$got"
+q update $d/base.json "$d/w" $d/r1.json $d/r2.json
+got=$(python3 -I -c 'import json, sys; f = json.load(open(sys.argv[1]))["files"]; print(f["a.byn"]["mutation"], f["b.byn"]["mutation"])' $d/base.json)
+[ "$got" = "0.75 1.0" ] || fail "one update over both shards' reports lost a raise" "$got"
 rm -rf "$d"
 echo PASS
