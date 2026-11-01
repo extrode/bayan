@@ -13,9 +13,8 @@ namespace Bayan.Tests;
 /// T25: <c>selfhost/semantics/region.byn</c> against the C# <c>RegionAnalysis</c> (RegionAnalysis.cs 1-416). The C# class and
 /// its records are private, so the oracle drives them by reflection: <c>Borrow.Union</c>/<c>Lent</c> on borrows both sides build
 /// from one spec; <c>Run</c> on whole programs, compared on the state T25 code alone writes (<c>_depthOf</c>, <c>_declaredAt</c>,
-/// <c>_restTails</c> and the rest parameters' <c>_locals</c>); <c>Compute</c> on expressions whose result needs no T37 function.
-/// Every T37 function (<c>Store</c>, <c>MayBorrow</c>, <c>RootLocal</c>, <c>Line</c>, …) is still a stub, so the cases are picked
-/// where its default does not change those fields (Q641).
+/// <c>_restTails</c> and the rest parameters' <c>_locals</c>); <c>Compute</c> on probe expressions; and <c>Analyze</c> against
+/// <c>analyzeRegions</c> on every region diag golden, compared on the diagnostics it reports (Q641).
 /// </summary>
 public sealed class SelfhostSemanticsT25Tests
 {
@@ -133,8 +132,7 @@ public sealed class SelfhostSemanticsT25Tests
     // ── runRegions: whole programs, the state T25 alone writes ─────────────────────
 
     /// <summary>
-    /// Programs for <c>Run</c>. No local is declared inside a call's arguments, a <c>Call</c> or a <c>Store</c> (T37 stubs that do
-    /// not walk them), and each function has at most one capturing lambda, whose environment name holds T37's <c>Line</c>.
+    /// Programs for <c>Run</c>. Each function has at most one capturing lambda; environments are compared on depth only.
     /// </summary>
     private static readonly Dictionary<string, string> Programs = new()
     {
@@ -368,6 +366,7 @@ public sealed class SelfhostSemanticsT25Tests
         var sb = new StringBuilder();
         sb.AppendLine("string tcSource(string name) {");
         foreach (var (k, v) in Programs) sb.AppendLine($"    if name == \"{k}\" {{ return \"{Escape(v + "\n")}\" }}");
+        foreach (var k in DiagCases) sb.AppendLine($"    if name == \"{k}\" {{ return \"{Escape(DiagSource(k) + "\n")}\" }}");
         sb.AppendLine($"    if name == \"compute\" {{ return \"{Escape(ComputeProgram + "\n")}\" }}");
         sb.AppendLine("    return \"\"");
         sb.AppendLine("}");
@@ -471,6 +470,65 @@ public sealed class SelfhostSemanticsT25Tests
         sections["compute"] = [.. sections["compute"].Select(Canon)];
         SelfhostSemanticsHarness.AssertSection(sections, "compute", ExpectedCompute());
     }
+
+    // ── analyzeRegions on the region diag goldens: every case whose .diag has a code RegionAnalysis reports ──────
+
+    private static readonly string[] RegionCodes = ["BYN3002", "BYN3003", "BYN3004", "BYN3005", "BYN3006", "BYN3214"];
+
+    private static string DiagDir => Path.Combine(Golden.RepoRoot, "tests", "cases", "diag");
+
+    private static readonly string[] DiagCases =
+        [.. Directory.GetFiles(DiagDir, "*.diag").Where(p => RegionCodes.Any(File.ReadAllText(p).Contains))
+            .Select(p => Path.GetFileNameWithoutExtension(p)!).Order(StringComparer.Ordinal)];
+
+    private static string DiagSource(string name) => File.ReadAllText(Path.Combine(DiagDir, name + ".byn")).TrimEnd('\n');
+
+    public static TheoryData<string> DiagCaseNames() => [.. DiagCases];
+
+    /// <summary>Compilation.cs:1405-1413 runs `RegionAnalysis.Analyze` on every bodied template; only what it reports is kept.</summary>
+    private static bool Analyzed(FunctionSymbol fn) => fn.Body is not null && !fn.IsGeneric && !fn.IsInstance;
+
+    private static string Diag(Bayan.Syntax.Diagnostics.Diagnostic d)
+    {
+        var (line, col) = d.Source!.GetLinePosition(d.Span.Start);
+        return $"{d.Code} {line}:{col} {d.Message} |{d.Label}|{d.Help}|{(d.Fix is null ? "" : $"fix {d.Fix.Span.Start}..{d.Fix.Span.End} {d.Fix.Replacement}")}";
+    }
+
+    private static List<string> ExpectedDiag(string name)
+    {
+        var c = Compile(name, DiagSource(name));
+        var mark = c.Diagnostics.Items.Count;
+        foreach (var fn in c.EntryModule.AllFunctions.Where(Analyzed))
+            Analysis.GetMethod("Analyze", Any)!.Invoke(null, [c, fn]);
+        var lines = new List<string>();
+        for (var i = mark; i < c.Diagnostics.Items.Count; i++) lines.AddRange(Diag(c.Diagnostics.Items[i]).Split('\n'));
+        return lines;
+    }
+
+    private static string DiagFunction() => """
+        void tcDiag(string name) {
+            var c = tcLoad(name)
+            print($"== {name}")
+            let mark = c.diagnostics.length
+            let fns = copyIds(in c.modules[c.entryModule].allFunctions)
+            for fn in fns {
+                if c.functions[fn].body != -1 && !functionIsGeneric(ref c, by: fn) && !functionIsInstance(ref c, by: fn) { analyzeRegions(ref c, for: fn) }
+            }
+            for i in mark..c.diagnostics.length {
+                let pos = linePosition(c.files[c.diagnostics[i].file].text.span, at: c.diagnostics[i].span.start)
+                let fixText = c.diagnostics[i].hasFix ? $"fix {c.diagnostics[i].fixSpan.start}..{c.diagnostics[i].fixSpan.end} {c.diagnostics[i].fixReplacement}" : ""
+                print($"{c.diagnostics[i].code} {pos.line}:{pos.column} {c.diagnostics[i].message} |{c.diagnostics[i].label}|{c.diagnostics[i].help}|{fixText}")
+            }
+        }
+        """;
+
+    private static readonly Lazy<Dictionary<string, List<string>>> DiagSections = new(RunDiag);
+
+    private static Dictionary<string, List<string>> RunDiag() => SelfhostSemanticsHarness.RunSections(Main.Value, ["diag", .. DiagCases]);
+
+    [Theory]
+    [MemberData(nameof(DiagCaseNames))]
+    public void DiagMatches(string name) => SelfhostSemanticsHarness.AssertSection(DiagSections.Value, name, ExpectedDiag(name));
 
     // ── The generated main ──────────────────────────────────────────────────────
     private static readonly Lazy<string> Main = new(MainSource);
@@ -602,12 +660,16 @@ public sealed class SelfhostSemanticsT25Tests
         PURE
 
         i32 main(ReadOnlySpan<string> args) {
+            if args.length > 0 && args[0] == "diag" {
+                for k in 1..args.length { tcDiag(args[k]) }
+                return 0
+            }
             for name in args {
                 if name == "pure" { tcPure() } else if name == "compute" { tcCompute() } else { tcRun(name) }
             }
             return 0
         }
-        """.Replace("PURE", PureMain()).Replace("RUN", RunFunctions() + ComputeFunction());
+        """.Replace("PURE", PureMain()).Replace("RUN", RunFunctions() + ComputeFunction() + DiagFunction());
 
     /// <summary>The Bayan line with each bracketed list and the lends sorted, as <see cref="Show"/> sorts the C# one.</summary>
     private static string Canon(string line)

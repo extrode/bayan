@@ -265,7 +265,7 @@ void stmtRegions(ref Regions r, through ref Ctx c, for BStmt s) {
                 let pattern = c.bSwitches[i].sections[k].pattern
                 let guard = c.bSwitches[i].sections[k].guard
                 let body = copyIds(in c.bSwitches[i].sections[k].body)
-                if pattern != -1 { t25BindPattern(ref r, through: ref c, for: pattern, by: in value) }
+                if pattern != -1 { t37BindPattern(ref r, through: ref c, for: pattern, by: in value) }
                 if guard != -1 { let _ = exprRegions(ref r, through: ref c, for: guard) }
                 for st in body { stmtRegions(ref r, through: ref c, for: st) }
                 r.depth -= 1
@@ -463,7 +463,7 @@ Borrow computeBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
         case .isExpr:
             let pattern = c.bIses[i].pattern
             let value = exprRegions(ref r, through: ref c, for: c.bIses[i].value)
-            t25BindPattern(ref r, through: ref c, for: pattern, by: in value)
+            t37BindPattern(ref r, through: ref c, for: pattern, by: in value)
             return t25None()
         case .switchExpr:
             let value = exprRegions(ref r, through: ref c, for: c.bSwitchExprs[i].value)
@@ -472,7 +472,7 @@ Borrow computeBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
                 let pattern = c.bSwitchExprs[i].arms[k].pattern
                 let guard = c.bSwitchExprs[i].arms[k].guard
                 let armValue = c.bSwitchExprs[i].arms[k].value
-                t25BindPattern(ref r, through: ref c, for: pattern, by: in value)
+                t37BindPattern(ref r, through: ref c, for: pattern, by: in value)
                 if guard != -1 { let _ = exprRegions(ref r, through: ref c, for: guard) }
                 let b = exprRegions(ref r, through: ref c, for: armValue)
                 result = unionBorrow(in result, by: in b)
@@ -576,24 +576,5 @@ Borrow builtinBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
             var acc = t25Copy(receiver)
             for a in args { acc = unionBorrow(in acc, by: in a) }
             return move acc
-    }
-}
-
-// ── RegionAnalysis.cs:512 BindPattern (T37's range, no stub: Q642) ─────────────
-
-void t25BindPattern(ref Regions r, through ref Ctx c, for BPattern pattern, by in Borrow value) {
-    for node in descendants(in c, for: pattern) {
-        let i = boundIndex(node)
-        var local: LocalId = -1
-        switch boundKind(node) {
-            case .bindPattern: local = c.bBindPatterns[i].local
-            case .propertyPattern: local = c.bPropertyPatterns[i].designation
-            case .unionPattern: local = c.bUnionPatterns[i].designation
-            default: local = -1
-        }
-        if local == -1 { continue }
-        let span = nodeSpan(in c, for: node)
-        declareBorrow(ref r, through: ref c, for: local, at: span.start)
-        storeBorrow(ref r, through: ref c, for: local, by: in value, at: span)
     }
 }
