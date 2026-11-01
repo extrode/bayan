@@ -587,7 +587,7 @@ public sealed class CliTests
     {
         var dir = TestSuite("cli-test-todo", "test \"one\" {\n    assert(true)\n}\n\ntest \"later\" {\n    todo(\"x\")\n}\n");
         var (exit, json, _) = Run("test", "--json", dir);
-        var stdout = json.Replace("\\r\\n", "\\n"); // the program's stderr, JSON-escaped, ends its lines in CRLF where stderr is in text mode
+        var stdout = OperatingSystem.IsWindows() ? json.Replace("\\r\\n", "\\n") : json; // Windows text-mode stderr ends lines in CRLF (Q742), JSON-escaped here
         Assert.Equal(CliApp.ExitOk, exit);
         Assert.Contains("\"status\": \"pending\"", stdout);
         Assert.Contains("\"output\": \"pending: x\\n  at main.test.byn:6\"", stdout);
