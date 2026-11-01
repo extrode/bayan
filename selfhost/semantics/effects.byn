@@ -1,10 +1,580 @@
 // T23: EffectAnalysis.cs and ErrorFlow.cs.
+//
+// Effects (spec §14). A function with `uses` declares its set, a public function without one is pure, and every
+// other function infers its set from its body by fixed point, as error sets do. A body that uses an effect its
+// declaration lacks is BYN6002 (the entry function is exempt), an unknown name in `uses` or `effect` is BYN6003, an
+// effect the package `capabilities` lack is BYN6004, and a witness beyond its interface method's bound is BYN6005.
+// An instance has its template's effects. The C# dictionaries keyed by symbols are `Map`s keyed by ids, and its
+// hash sets are lists searched in order (Q630); `fn.Decl` is the declaration `t23DeclOf` finds (Q633).
 
-// stub: T23 ports EffectAnalysis.cs:23 Analyze
-void analyzeEffects(ref Ctx c) {}
+import parser
 
-// stub: T23 ports ErrorFlow.cs:8 Propagated
-List<ErrorSetId> propagated(ref Ctx c, for BStmt body) => []
+/// One effect a body uses, at the first place that uses it; `direct` marks a built-in source, not a call of a user function.
+struct T23Use {
+    string effect
+    TextSpan span
+    bool direct = false
+}
+
+/// A C# `HashSet<string>?`: `has` is false for null.
+struct T23Set {
+    bool has = false
+    List<string> effects = List<string>()
+}
+
+/// The C# `Analyze` locals `declared`, `used` and `aliases`; `used` is indexed by the function's place in `functions`.
+struct T23Effects {
+    List<FuncId> functions
+    Map<FuncId, List<string>> declared = []
+    Map<FuncId, i64> index = []
+    List<List<T23Use>> used = List<List<T23Use>>()
+    List<Map<string, List<string>>> aliases
+}
+
+/// C# `fn.Decl`'s parts the effect analysis reads; `found` is false where C# `Decl` is null.
+struct T23Decl {
+    bool found = false
+    FileId file = -1
+    TextSpan name = TextSpan { start: 0, length: 0 }
+    bool hasUses = false
+    TextSpan usesSpan = TextSpan { start: 0, length: 0 }
+    List<TextSpan> usesEffects = List<TextSpan>()
+    /// `decl.Params[^1].Span.End`, or `decl.ParamsStart` without parameters.
+    i64 closeFrom = 0
+    /// `decl.Fails?.Span.End ?? 0`, `decl.Becomes?.Span.End ?? 0`, `decl.Where[^1].Span.End` or 0.
+    i64 failsEnd = 0
+    i64 becomesEnd = 0
+    i64 whereEnd = 0
+}
+
+/// A C# `Fix?`: `has` is false for null.
+struct T23Fix {
+    bool has = false
+    TextSpan span = TextSpan { start: 0, length: 0 }
+    string text = ""
+}
+
+/// One `effect name = a, b` declaration.
+struct T23Alias {
+    FileId file
+    List<TextSpan> effects
+}
+
+/// The C# `ResolveAliases` locals: `decls` (with its insertion order), `resolved`, and the `visiting` set of one expansion.
+struct T23Aliases {
+    Map<string, T23Alias> decls = []
+    List<string> order = List<string>()
+    Map<string, List<string>> resolved = []
+    List<string> visiting = List<string>()
+}
+
+/// C# `(BoundExpr Value, FunctionSymbol Function)` from `Passed`.
+struct T23Passed {
+    BExpr value
+    FuncId function
+}
+
+/// The closed effect list, in spec order.
+List<string> t23Primitives() => ["alloc", "suspend", "net", "fs", "clock", "random", "env", "process", "console"]
+
+/// The effects that need a package capability; the others are always allowed.
+List<string> t23Capabilities() => ["net", "fs", "process", "env"]
+
+void analyzeEffects(ref Ctx c) {
+    var aliases = List<Map<string, List<string>>>()
+    for m in 0..c.modules.length { aliases.append(t23ResolveAliases(ref c, for: m)) }
+
+    var functions = List<FuncId>()
+    for m in 0..c.modules.length {
+        for f in c.modules[m].allFunctions { functions.append(f) }
+    }
+    var e = T23Effects { functions: copyIds(in functions), aliases: move aliases }
+    var reported = List<string>()
+    for fn in functions {
+        let set = t23Declared(ref c, for: fn, from: in e.aliases, to: ref reported)
+        if set.has { e.declared[fn] = copyStrings(in set.effects) }
+    }
+
+    for k in 0..functions.length {
+        e.index[functions[k]] = k
+        e.used.append(List<T23Use>())
+    }
+    var changed = true
+    while changed {
+        changed = false
+        for k in 0..functions.length {
+            let fn = functions[k]
+            if functionIsInstance(ref c, by: fn) || c.functions[fn].body == -1 { continue }
+            var sinks = List<BNode>()
+            let nodes = descendants(in c, for: c.functions[fn].body)
+            for node in nodes {
+                let kind = boundKind(node)
+                let i = boundIndex(node)
+                // Interpolation written straight into an output is formatted on the stack; anywhere else it grows a `StrBuf`.
+                if kind == .call {
+                    let b = c.functions[c.bCalls[i].function].builtin
+                    if (b == .print || b == .log || b == .panic) && c.bCalls[i].arguments.length > 0 && boundKind(c.bCalls[i].arguments[0]) == .interpolated {
+                        sinks.append(c.bCalls[i].arguments[0])
+                    }
+                }
+                if kind == .builtinCall && c.bBuiltinCalls[i].member == .strBufAppend && c.bBuiltinCalls[i].arguments.length == 1 && boundKind(c.bBuiltinCalls[i].arguments[0]) == .interpolated {
+                    sinks.append(c.bBuiltinCalls[i].arguments[0])
+                }
+                var sources = List<string>()
+                var direct = false
+                if kind == .interpolated {
+                    if !listContains(in sinks, by: node) {
+                        sources.append("alloc")
+                        direct = true
+                    }
+                } else if kind == .call {
+                    let callee = c.bCalls[i].function
+                    let receiver = c.bCalls[i].receiver
+                    let calleeKind = c.functions[callee].kind
+                    if calleeKind == .builtin {
+                        sources = t23Builtin(c.functions[callee].builtin)
+                        direct = true
+                    } else if calleeKind == .invoke && receiver != -1 && boundKind(receiver) == .local && c.locals[c.bLocals[boundIndex(receiver)].local].isParameter {
+                        // A call through a function-typed parameter adds nothing: whoever passed the value is charged (R16).
+                        // Its arguments are still charged here like any call's.
+                        sources = t23PassedEffects(ref c, by: in e, for: i)
+                    } else if calleeKind == .invoke && receiver != -1 && kindOf(exprType(in c, for: receiver)) == .function {
+                        sources = copyStrings(in c.functionTypes[typeIndex(exprType(in c, for: receiver))].effects)
+                        for x in t23PassedEffects(ref c, by: in e, for: i) { sources.append(x) }
+                    } else {
+                        sources = t23Visible(ref c, by: in e, for: callee)
+                        for x in t23PassedEffects(ref c, by: in e, for: i) { sources.append(x) }
+                    }
+                } else if kind == .builtinCall {
+                    sources = t23Member(c.bBuiltinCalls[i].member)
+                    direct = true
+                } else if kind == .collection {
+                    let t = c.bCollections[i].type
+                    if kindOf(t) == .list || kindOf(t) == .map {
+                        sources.append("alloc")
+                        direct = true
+                    }
+                }
+                for effect in sources {
+                    if t23HasUse(in e.used[k], by: effect) { continue }
+                    e.used[k].append(T23Use { effect: effect, span: nodeSpan(in c, for: node), direct: direct })
+                    changed = true
+                }
+            }
+        }
+    }
+
+    for k in 0..functions.length {
+        let fn = functions[k]
+        if functionIsInstance(ref c, by: fn) || c.functions[fn].body == -1 || c.functions[fn].file == -1 { continue }
+        let decl = t23DeclOf(ref c, for: fn)
+        if t23IsCheck(ref c, for: fn, by: in decl) { continue }
+        let file = c.functions[fn].file
+        let name = c.functions[fn].name
+        if e.declared.contains(fn) {
+            let set = copyStrings(in e.declared[fn])
+            var missing = List<T23Use>()
+            for u in e.used[k] {
+                if !listContainsString(in set, by: u.effect) { missing.append(T23Use { effect: u.effect, span: u.span, direct: u.direct }) }
+            }
+            t23SortBySpan(ref missing)
+            // One fix declares every missing effect, so the fixes of one function's reports are the same edit.
+            var fix = T23Fix {}
+            if missing.length > 0 && decl.found {
+                var names = List<string>()
+                for p in t23Primitives() {
+                    if t23HasUse(in missing, by: p) { names.append(p) }
+                }
+                fix = t23DeclareFix(ref c, from: file, for: in decl, by: in names)
+            }
+            for u in missing {
+                report(ref c, for: .effectNotDeclared, from: file, at: u.span, by: (name, u.effect, "", "", ""), label: $"uses `{u.effect}`", help: $"add `{u.effect}` to the `uses` clause, or remove the call", hasFix: fix.has, fixSpan: fix.span, fixReplacement: fix.text)
+            }
+        }
+        var bounded = false
+        var allowed = List<string>()
+        if (c.capabilities is { } caps) {
+            bounded = true
+            allowed = copyStrings(in caps)
+        }
+        if bounded {
+            // At the `uses` clause; a function that infers its effects has none, so its name stands in.
+            var hasAt = false
+            var at = TextSpan { start: 0, length: 0 }
+            if decl.found {
+                hasAt = true
+                at = decl.hasUses ? decl.usesSpan : decl.name
+            }
+            var over = List<T23Use>()
+            for u in e.used[k] {
+                if u.direct && listContainsString(in t23Capabilities(), by: u.effect) && !listContainsString(in allowed, by: u.effect) {
+                    over.append(T23Use { effect: u.effect, span: u.span, direct: u.direct })
+                }
+            }
+            t23SortBySpan(ref over)
+            let package = c.packageName == "" ? "main" : c.packageName
+            for u in over {
+                report(ref c, for: .capabilityExceeded, from: file, at: hasAt ? at : u.span, by: (name, u.effect, package, "", ""), label: $"uses `{u.effect}`", help: $"add `.{u.effect}` to `capabilities`, or remove the use")
+            }
+        }
+    }
+
+    // Outside a parameter, a function type's `uses` bounds what converts to it (R16, Q359).
+    for k in 0..functions.length {
+        let fn = functions[k]
+        if functionIsInstance(ref c, by: fn) || c.functions[fn].body == -1 || c.functions[fn].file == -1 { continue }
+        let file = c.functions[fn].file
+        var passed = List<BNode>()
+        let nodes = descendants(in c, for: c.functions[fn].body)
+        for node in nodes {
+            let kind = boundKind(node)
+            let i = boundIndex(node)
+            if kind == .call {
+                for p in t23Passed(ref c, for: i) { passed.append(p.value) }
+            }
+            var function: FuncId = -1
+            var type: Type = -1
+            if kind == .lambda {
+                function = c.bLambdas[i].lambda
+                type = c.bLambdas[i].functionType
+            } else if kind == .functionRef {
+                function = c.bFunctionRefs[i].function
+                type = c.bFunctionRefs[i].functionType
+            }
+            if function == -1 || type == -1 || listContains(in passed, by: node) { continue }
+            let effects = t23Visible(ref c, by: in e, for: function)
+            let bound = copyStrings(in c.functionTypes[typeIndex(type)].effects)
+            for effect in t23Primitives() {
+                if !listContainsString(in effects, by: effect) || listContainsString(in bound, by: effect) { continue }
+                let limit = bound.length == 0 ? "pure" : $"uses {t23JoinText(in bound, by: ", ")}"
+                report(ref c, for: .effectBoundExceeded, from: file, at: nodeSpan(in c, for: node), by: (c.functions[function].name, effect, limit, typeDisplay(ref c, by: type), ""), label: $"uses `{effect}`", help: $"add `{effect}` to the function type's `uses`, or pass a function without it")
+            }
+        }
+    }
+
+    for m in 0..c.modules.length {
+        for s in copyIds(in c.modules[m].structs) {
+            if c.structs[s].template != -1 { continue }
+            for conformance in copyIds(in c.structs[s].conformances) {
+                var members = List<FuncId>()
+                var witnesses = List<FuncId>()
+                for w in c.conformances[conformance].witnesses {
+                    members.append(w.key)
+                    witnesses.append(w.value)
+                }
+                let iface = c.interfaces[c.conformances[conformance].iface].name
+                for j in 0..members.length {
+                    let member = members[j]
+                    let witness = witnesses[j]
+                    // A cloned default is checked against its own interface's declaration, not here.
+                    if c.functions[witness].owner != s || c.functions[witness].file == -1 || c.functions[member].kind == .getter { continue }
+                    let bound = t23Visible(ref c, by: in e, for: member)
+                    var shown = List<string>()
+                    for p in t23Primitives() {
+                        if listContainsString(in bound, by: p) { shown.append(p) }
+                    }
+                    let memberName = c.functions[member].name
+                    for effect in t23Visible(ref c, by: in e, for: witness) {
+                        if listContainsString(in bound, by: effect) { continue }
+                        let limit = bound.length == 0 ? "pure" : $"uses {t23JoinText(in shown, by: ", ")}"
+                        report(ref c, for: .effectBoundExceeded, from: c.functions[witness].file, at: c.functions[witness].nameSpan, by: (c.functions[witness].name, effect, limit, $"{iface}.{memberName}", ""), label: $"uses `{effect}`", help: $"declare `{effect}` on `{iface}.{memberName}`, or pass a function without it")
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// C# `Visible`: an instance's template's effects, the declared set, the inferred set, or the `uses` clause.
+List<string> t23Visible(ref Ctx c, by in T23Effects e, for FuncId f) {
+    var callee = f
+    if functionIsInstance(ref c, by: callee) {
+        if (templateOf(ref c, for: callee) is { } template) { callee = template }
+    }
+    if e.declared.contains(callee) { return copyStrings(in e.declared[callee]) }
+    if e.index.contains(callee) {
+        var inferred = List<string>()
+        for u in e.used[e.index[callee]] { inferred.append(u.effect) }
+        return inferred
+    }
+    // Interface members of a built-in interface, and clones of a default member, are bounded like a declaration.
+    let decl = t23DeclOf(ref c, for: callee)
+    if !decl.found || !decl.hasUses { return [] }
+    var none = List<string>()
+    return t23Resolve(ref c, for: callee, by: in decl, from: in e.aliases, to: ref none, as: false)
+}
+
+bool t23HasUse(in List<T23Use> list, by string effect) {
+    for u in list {
+        if u.effect == effect { return true }
+    }
+    return false
+}
+
+/// C# `OrderBy(e => e.Value.Span.Start)`, which is stable.
+void t23SortBySpan(ref List<T23Use> list) {
+    for k in 1..list.length {
+        var j = k
+        while j > 0 && list[j - 1].span.start > list[j].span.start {
+            let a = T23Use { effect: list[j - 1].effect, span: list[j - 1].span, direct: list[j - 1].direct }
+            list[j - 1] = T23Use { effect: list[j].effect, span: list[j].span, direct: list[j].direct }
+            list[j] = a
+            j -= 1
+        }
+    }
+}
+
+/// C# `Passed`: the functions and lambdas a call passes to function-typed parameters, which charge their effects to the caller (R16).
+List<T23Passed> t23Passed(ref Ctx c, for i64 call) {
+    var result = List<T23Passed>()
+    let arguments = copyIds(in c.bCalls[call].arguments)
+    let parameters = copyIds(in c.functions[c.bCalls[call].function].parameters)
+    var k: i64 = 0
+    while k < arguments.length && k < parameters.length {
+        if kindOf(c.locals[parameters[k]].type) == .function {
+            var value = arguments[k]
+            while boundKind(value) == .conversion { value = c.bConversions[boundIndex(value)].operand }
+            if boundKind(value) == .lambda {
+                result.append(T23Passed { value: value, function: c.bLambdas[boundIndex(value)].lambda })
+            } else if boundKind(value) == .functionRef {
+                result.append(T23Passed { value: value, function: c.bFunctionRefs[boundIndex(value)].function })
+            }
+        }
+        k += 1
+    }
+    return result
+}
+
+/// C# `PassedValues`: the declared effects of function-typed values other than lambdas, functions and forwarded
+/// parameters that a call passes to function-typed parameters, such as a local holding a lambda (R16).
+List<string> t23PassedValues(ref Ctx c, for i64 call) {
+    var result = List<string>()
+    let arguments = copyIds(in c.bCalls[call].arguments)
+    let parameters = copyIds(in c.functions[c.bCalls[call].function].parameters)
+    var k: i64 = 0
+    while k < arguments.length && k < parameters.length {
+        if kindOf(c.locals[parameters[k]].type) == .function {
+            var value = arguments[k]
+            while boundKind(value) == .conversion { value = c.bConversions[boundIndex(value)].operand }
+            let vk = boundKind(value)
+            let forwarded = vk == .local && c.locals[c.bLocals[boundIndex(value)].local].isParameter
+            if vk != .lambda && vk != .functionRef && !forwarded {
+                let t = exprType(in c, for: value)
+                if kindOf(t) == .function {
+                    for effect in c.functionTypes[typeIndex(t)].effects { result.append(effect) }
+                }
+            }
+        }
+        k += 1
+    }
+    return result
+}
+
+/// C# `Passed(call).SelectMany(p => Visible(p.Function)).Concat(PassedValues(call))`.
+List<string> t23PassedEffects(ref Ctx c, by in T23Effects e, for i64 call) {
+    var result = List<string>()
+    for p in t23Passed(ref c, for: call) {
+        for x in t23Visible(ref c, by: in e, for: p.function) { result.append(x) }
+    }
+    for x in t23PassedValues(ref c, for: call) { result.append(x) }
+    return result
+}
+
+/// A struct's `requires` check is pure to its callers: the violations it collects on failure come from
+/// `context.allocator` like any error payload (Question 338).
+bool t23IsCheck(ref Ctx c, for FuncId fn, by in T23Decl decl) => c.functions[fn].name == "requires" && c.functions[fn].owner != -1 && !decl.found
+
+/// C# `Declared`: the `uses` clause, or pure for a public function or an abstract method; `has` false when inferred.
+T23Set t23Declared(ref Ctx c, for FuncId fn, from in List<Map<string, List<string>>> aliases, to ref List<string> reported) {
+    if functionIsInstance(ref c, by: fn) { return T23Set {} }
+    let decl = t23DeclOf(ref c, for: fn)
+    if t23IsCheck(ref c, for: fn, by: in decl) { return T23Set { has: true } }
+    var set = T23Set {}
+    if decl.found && decl.hasUses {
+        set.has = true
+        for x in t23Resolve(ref c, for: fn, by: in decl, from: in aliases, to: ref reported, as: true) {
+            if !listContainsString(in set.effects, by: x) { set.effects.append(x) }
+        }
+    }
+    // A getter or constructor has no `uses` clause to write (§14 bounds interface methods, not properties), so it infers.
+    let kind = c.functions[fn].kind
+    let entryMain = c.entryModule >= 0 && fn == c.modules[c.entryModule].main
+    if entryMain || kind == .main || kind == .testKeyword || kind == .getter || kind == .constructor { return T23Set {} }
+    if set.has { return move set }
+    if c.functions[fn].access == .publicKeyword || c.functions[fn].isAbstract { return T23Set { has: true } }
+    return T23Set {}
+}
+
+/// C# `Resolve`: the primitives a `uses` clause names, aliases expanded; BYN6003 for an unknown name, reported once
+/// per clause. `track` false is the C# `reported: null`; a clause is keyed by its file and start.
+List<string> t23Resolve(ref Ctx c, for FuncId fn, by in T23Decl decl, from in List<Map<string, List<string>>> aliases, to ref List<string> reported, as bool track) {
+    var doReport = false
+    if track && c.functions[fn].file != -1 {
+        let key = $"{decl.file}:{decl.usesSpan.start}"
+        if !listContainsString(in reported, by: key) {
+            reported.append(key)
+            doReport = true
+        }
+    }
+    let module = c.functions[fn].module
+    let primitives = t23Primitives()
+    var result = List<string>()
+    for name in decl.usesEffects {
+        let text = t15Text(in c, from: decl.file, at: name)
+        if listContainsString(in primitives, by: text) {
+            result.append(text)
+        } else if module >= 0 && module < aliases.length && aliases[module].contains(text) {
+            for x in aliases[module][text] { result.append(x) }
+        } else if doReport {
+            reportUnknown(ref c, from: c.functions[fn].file, at: name)
+        }
+    }
+    return result
+}
+
+/// C# `ResolveAliases`: each `effect name = a, b` of the module, expanded to primitives.
+Map<string, List<string>> t23ResolveAliases(ref Ctx c, for ModId module) {
+    var a = T23Aliases {}
+    let primitives = t23Primitives()
+    for f in copyIds(in c.modules[module].files) {
+        let count = c.files[f].unit.members.length
+        for k in 0..count {
+            var found = false
+            var name = TextSpan { start: 0, length: 0 }
+            var effects = List<TextSpan>()
+            switch c.files[f].unit.members[k] {
+                case .effectDecl(let d):
+                    found = true
+                    name = d.value.name
+                    for x in d.value.effects { effects.append(x) }
+                default: {}
+            }
+            if !found { continue }
+            let text = t15Text(in c, from: f, at: name)
+            let primitive = listContainsString(in primitives, by: text)
+            if primitive || a.decls.contains(text) {
+                report(ref c, for: .duplicateDeclaration, from: f, at: name, by: (text, "", "", "", ""), label: primitive ? "already an effect" : "")
+            } else {
+                a.decls[text] = T23Alias { file: f, effects: move effects }
+                a.order.append(text)
+            }
+            checkValue(ref c, from: f, at: name)
+        }
+    }
+    for name in copyStrings(in a.order) {
+        a.visiting = List<string>()
+        let _ = t23Expand(ref a, through: ref c, for: name)
+    }
+    var resolved: Map<string, List<string>> = []
+    for name in copyStrings(in a.order) { resolved[name] = copyStrings(in a.resolved[name]) }
+    return resolved
+}
+
+/// C# `Expand` inside `ResolveAliases`.
+List<string> t23Expand(ref T23Aliases a, through ref Ctx c, for string name) {
+    if a.resolved.contains(name) { return copyStrings(in a.resolved[name]) }
+    let file = a.decls[name].file
+    var effects = List<TextSpan>()
+    for x in a.decls[name].effects { effects.append(x) }
+    a.visiting.append(name)
+    let primitives = t23Primitives()
+    var result = List<string>()
+    for e in effects {
+        let text = t15Text(in c, from: file, at: e)
+        if listContainsString(in primitives, by: text) {
+            result.append(text)
+        } else if listContainsString(in a.visiting, by: text) {
+            report(ref c, for: .unknownEffect, from: file, at: e, by: (text, "", "", "", ""), label: "the alias refers to itself", help: t23UnknownEffectHelp)
+        } else if a.decls.contains(text) {
+            for x in t23Expand(ref a, through: ref c, for: text) { result.append(x) }
+        } else {
+            reportUnknown(ref c, from: file, at: e)
+        }
+    }
+    var still = List<string>()
+    for v in a.visiting {
+        if v != name { still.append(v) }
+    }
+    a.visiting = move still
+    var distinct = List<string>()
+    for x in result {
+        if !listContainsString(in distinct, by: x) { distinct.append(x) }
+    }
+    a.resolved[name] = copyStrings(in distinct)
+    return distinct
+}
+
+const t23UnknownEffectHelp: string = "choose one of `alloc`, `suspend`, `net`, `fs`, `clock`, `random`, `env`, `process`, `console`, or a declared effect alias"
+
+void reportUnknown(ref Ctx c, from FileId f, at TextSpan name) {
+    report(ref c, for: .unknownEffect, from: f, at: name, by: (t15Text(in c, from: f, at: name), "", "", "", ""), label: "not an effect or an `effect` alias of this module", help: t23UnknownEffectHelp)
+}
+
+/// C# `DeclareFix`: adds the effects to the `uses` clause, or writes one after the rest of the signature (clause order §5).
+T23Fix t23DeclareFix(ref Ctx c, from FileId f, for in T23Decl decl, by in List<string> effects) {
+    let list = t23JoinText(in effects, by: ", ")
+    if decl.hasUses { return T23Fix { has: true, span: TextSpan { start: decl.usesSpan.end, length: 0 }, text: $", {list}" } }
+    let length = c.files[f].text.length
+    var close = decl.closeFrom
+    while close < length && c.files[f].text[close] != 41 { close += 1 }
+    var end = close + 1
+    if decl.failsEnd > end { end = decl.failsEnd }
+    if decl.becomesEnd > end { end = decl.becomesEnd }
+    if decl.whereEnd > end { end = decl.whereEnd }
+    return T23Fix { has: true, span: TextSpan { start: end, length: 0 }, text: $" uses {list}" }
+}
+
+List<string> t23Builtin(BuiltinFunction f) {
+    if f == .print || f == .ioStdout || f == .ioStderr || f == .ioStdin { return ["console"] }
+    if f == .ioReadFile || f == .ioReadText || f == .ioListDir { return ["fs", "alloc"] }
+    if f == .ioWriteFile { return ["fs"] }
+    if f == .ioRun || f == .ioRunBatch { return ["process", "alloc"] }
+    if f == .ioMonotonicNanos { return ["clock"] }
+    if f == .listNew || f == .ownedNew || f == .strBufGrow || f == .strBufOver || f == .arenaNew || f == .utf8Decode || f == .utf8TryDecode || f == .utf8DecodeReplace || f == .hexEncode || f == .hexDecode || f == .symbolIntern { return ["alloc"] }
+    return []
+}
+
+List<string> t23Member(BuiltinMember m) {
+    if m == .ioWrite { return ["console"] }
+    if m == .ioReadAll { return ["console", "alloc"] }
+    if m == .spanCopy || m == .stringCopy || m == .listCopy || m == .mapCopy || m == .strBufCopy || m == .intToString || m == .listAdd || m == .listReplace || m == .mapSlot || m == .mapIndexSet || m == .stringLowercased || m == .stringUppercased || m == .stringReplaced || m == .stringRepeated || m == .stringPadded || m == .bytesToString || m == .stringJoined || m == .utf16Copy { return ["alloc"] }
+    return []
+}
+
+/// Which error sets a body can fail with: `try`, partial `catch`, and `return .variant`.
+List<ErrorSetId> propagated(ref Ctx c, for BStmt body) {
+    var sets = List<ErrorSetId>()
+    let nodes = descendants(in c, for: body)
+    for node in nodes {
+        let i = boundIndex(node)
+        switch boundKind(node) {
+            case .tryExpr:
+                let operand = c.bTries[i].operand
+                if boundKind(operand) == .call {
+                    for s in copyIds(in c.functions[c.bCalls[boundIndex(operand)].function].errorSets) { sets.append(s) }
+                }
+            case .catchExpr:
+                let operand = c.bCatches[i].operand
+                let variant = c.bCatches[i].variant
+                if boundKind(operand) == .call && variant != -1 {
+                    for s in uncaught(ref c, for: c.bCalls[boundIndex(operand)].function, by: variant) { sets.append(s) }
+                }
+            case .failStmt:
+                let t = exprType(in c, for: c.bFails[i].error)
+                if kindOf(t) == .errorSet {
+                    sets.append(typeIndex(t))
+                } else if kindOf(t) == .errorUnion {
+                    for s in copyIds(in c.errorUnionTypes[typeIndex(t)].sets) { sets.append(s) }
+                }
+            default: {}
+        }
+    }
+    var distinct = List<ErrorSetId>()
+    for s in sets {
+        if !listContains(in distinct, by: s) { distinct.append(s) }
+    }
+    return distinct
+}
 
 /// The sets still propagated after `catch (Set.variant)` handles one variant.
 List<ErrorSetId> uncaught(ref Ctx c, for FuncId callee, by VariantId caught) {
@@ -16,5 +586,49 @@ List<ErrorSetId> uncaught(ref Ctx c, for FuncId callee, by VariantId caught) {
     return result
 }
 
-// stub: T23 ports EffectAnalysis.cs:244 ReportUnknown
-void reportUnknown(ref Ctx c, from FileId f, at TextSpan name) {}
+/// `fn.Decl`'s effect parts from the function's declaration, found by `declIndex`/`memberIndex` as `t22DeclFacts` does.
+T23Decl t23DeclOf(ref Ctx c, for FuncId fn) {
+    let f = c.functions[fn].file
+    let d = c.functions[fn].declIndex
+    let m = c.functions[fn].memberIndex
+    if d < 0 || f == -1 { return T23Decl {} }
+    switch c.files[f].unit.members[d] {
+        case .functionDecl(let n): return t23FactsOf(in n.value, from: f)
+        default: break
+    }
+    if m < 0 { return T23Decl {} }
+    switch c.files[f].unit.members[d] {
+        case .structDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let x): return t23FactsOf(in x.value, from: f)
+                default: break
+            }
+        case .interfaceDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let x): return t23FactsOf(in x.value, from: f)
+                default: break
+            }
+        case .extensionDecl(let n):
+            switch n.value.members[m] {
+                case .functionDecl(let x): return t23FactsOf(in x.value, from: f)
+                default: break
+            }
+        default:
+            break
+    }
+    return T23Decl {}
+}
+
+T23Decl t23FactsOf(in parser.FunctionDecl d, from FileId f) {
+    var r = T23Decl { found: true, file: f, name: d.name }
+    if (d.usesKeyword is { } u) {
+        r.hasUses = true
+        r.usesSpan = u.span
+        for x in u.effects { r.usesEffects.append(x) }
+    }
+    r.closeFrom = d.params.length > 0 ? d.params[d.params.length - 1].span.end : d.paramsStart
+    if (d.failsKeyword is { } fk) { r.failsEnd = fk.span.end }
+    if (d.becomes is { } b) { r.becomesEnd = b.end }
+    if d.where.length > 0 { r.whereEnd = d.where[d.where.length - 1].span.end }
+    return move r
+}

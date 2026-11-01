@@ -286,7 +286,162 @@ public sealed class SelfhostSemanticsT23Tests
             }
             x = 1
         }
+
+        i32 swExpr(i32 k, bool b) {
+            var x: i32
+            return k switch {
+                1 when b => 1,
+                _ => x,
+            }
+        }
+
+        bool isRange(i32 k) {
+            var x: i32
+            return k is 1..x
+        }
         """;
+
+    /// <summary>The effect programs, each compiled alone: aliases and declared sets, lambdas, witnesses, capabilities.</summary>
+    private static readonly (string Name, string Source, string[]? Capabilities)[] EffectCases =
+    [
+        ("declared", """
+            union error NetError {
+                timeout
+            }
+
+            effect db = net, fs
+            effect loop = loop, fs
+            effect store = db, disk
+            effect alloc = fs
+            effect db = clock
+
+            void save() uses disk, db { }
+
+            void load() uses store { }
+
+            public void greet(string name) {
+                print($"hello {name}")
+            }
+
+            public i64 measure(string path) uses console {
+                print(path)
+                return Io.monotonicNanos()
+            }
+
+            void helper() {
+                print("inferred")
+            }
+
+            public void callsHelper() {
+                helper()
+            }
+
+            public i32 fixFails(i32 a) fails NetError {
+                print("x")
+                return a
+            }
+
+            public void sinks(i64 n) {
+                log($"n {n}")
+                var sb = StrBuf()
+                sb.append($"n {n}")
+            }
+
+            public void allocs() {
+                var xs: List<i64> = [1, 2]
+                xs.append(3)
+                let s = "ab".uppercased()
+            }
+            """, null),
+        ("lambdas", """
+            public void each(List<i64> xs, by (i64 -> void) f) {
+                for x in xs {
+                    f(x)
+                }
+            }
+
+            public void forward(List<i64> xs, by (i64 -> void) f) {
+                each(xs, by: f)
+            }
+
+            public void quiet(List<i64> xs) {
+                each(xs, by: x => print($"{x}"))
+            }
+
+            public void loud(List<i64> xs) uses console {
+                each(xs, by: x => print($"{x}"))
+            }
+
+            public void stored() uses console {
+                let f: i64 -> void = x => print($"{x}")
+                f(1)
+                let g: i64 -> void uses console = x => print($"{x}")
+                g(2)
+            }
+
+            void run(by (() -> void uses console) f) { f() }
+
+            public void undeclared() {
+                let g: () -> void uses console = () => print("x")
+                run(by: g)
+            }
+
+            public void through() {
+                let h: (i64 -> void) -> void = f => f(1)
+                h(x => print($"leak {x}"))
+            }
+
+            public void inner(((i64 -> void) -> void) p) {
+                p(x => print($"leak2 {x}"))
+            }
+
+            void shout(i64 x) {
+                print($"{x}")
+            }
+
+            public void refs(List<i64> xs) {
+                let f: i64 -> void = shout
+                each(xs, by: shout)
+            }
+            """, null),
+        ("witness", """
+            interface IPricer {
+                i64 price(i64 cents)
+            }
+
+            interface ILogged {
+                void note(string text) uses console
+            }
+
+            struct Logged : IPricer, ILogged {
+                i64 price(i64 cents) {
+                    print($"pricing {cents}")
+                    return cents
+                }
+
+                public void note(string text) uses console {
+                    print(text)
+                }
+            }
+            """, null),
+        ("caps", """
+            void readAll() {
+                let text = Io.readText("report.txt") catch { return }
+                print(text)
+                let result = Io.run("ls", []) catch { return }
+            }
+
+            void save(string text) uses fs {
+                Io.writeFile("report.txt", text) catch { return }
+            }
+            """, ["net"]),
+    ];
+
+    /// <summary>The flow functions whose bodies <c>ErrorFlow.Propagated</c> is run on.</summary>
+    public static readonly string[] PropagatedCases =
+    [
+        "failing", "partial", "infallible", "undeclared", "caught", "caughtWrong", "catchFalls", "caughtExcluded", "exceptCaller",
+    ];
 
     /// <summary>The case functions: <c>Type.member</c> for a method, else the top-level name.</summary>
     public static readonly string[] FlowCases =
@@ -296,6 +451,7 @@ public sealed class SelfhostSemanticsT23Tests
         "infallible", "undeclared", "declared", "caught", "caughtWrong", "catchFalls", "catchLeaves",
         "loopBreak", "loopMaybe", "doLoop", "constantIf", "afterNever", "logic", "sw", "swPartial", "deferred",
         "caughtExcluded", "exceptCaller", "loopContinue", "forLoop", "cond", "asserted",
+        "swExpr", "isRange",
     ];
 
     private static readonly System.Type FlowType =
@@ -339,6 +495,49 @@ public sealed class SelfhostSemanticsT23Tests
         }
     }
 
+    private static readonly System.Type EffectType =
+        typeof(Compilation).Assembly.GetType("Bayan.Semantics.Binding.EffectAnalysis") ?? throw new InvalidOperationException("EffectAnalysis");
+
+    private static readonly System.Type ErrorFlowType =
+        typeof(Compilation).Assembly.GetType("Bayan.Semantics.Binding.ErrorFlow") ?? throw new InvalidOperationException("ErrorFlow");
+
+    /// <summary>The C# line for one propagated case: the set names <c>ErrorFlow.Propagated</c> gives the function's body.</summary>
+    private static List<string> ExpectedPropagated(string name)
+    {
+        var c = Compiled.Value;
+        lock (c)
+        {
+            var sets = (IEnumerable<ErrorSetSymbol>)ErrorFlowType.GetMethod("Propagated", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!.Invoke(null, [Function(c, name).Body!])!;
+            var names = sets.Select(s => s.Name).ToList();
+            return [names.Count == 0 ? "none" : string.Join(", ", names)];
+        }
+    }
+
+    private static readonly Dictionary<string, Lazy<Compilation>> EffectCompiled = EffectCases.ToDictionary(e => e.Name, e => new Lazy<Compilation>(() =>
+    {
+        Directory.CreateDirectory(Dir);
+        var c = Compilation.Create([SourceText.FromString(Path.Combine(Dir, "main.byn"), e.Source + "\n")], packageRoot: Dir,
+            options: new CompilationOptions(Library: true, Capabilities: e.Capabilities));
+        var parse = c.Diagnostics.Items.Where(d => d.Code.StartsWith("BYN1", StringComparison.Ordinal)).ToList();
+        if (parse.Count > 0) throw new InvalidOperationException(string.Join("\n", parse.Select(Diag)));
+        return c;
+    }));
+
+    /// <summary>The C# lines for one effect program: the diagnostics <c>EffectAnalysis.Analyze</c> reports when rerun on it.</summary>
+    private static List<string> ExpectedEffects(string name)
+    {
+        var c = EffectCompiled[name].Value;
+        lock (c)
+        {
+            var mark = c.Diagnostics.Items.Count;
+            EffectType.GetMethod("Analyze", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!.Invoke(null, [c]);
+            var lines = new List<string>();
+            for (var i = mark; i < c.Diagnostics.Items.Count; i++) lines.AddRange(Diag(c.Diagnostics.Items[i]).Split('\n'));
+            if (lines.Count == 0) lines.Add("ok");
+            return lines;
+        }
+    }
+
     private static readonly Lazy<Dictionary<string, List<string>>> Sections = new(() =>
     {
         Directory.CreateDirectory(Dir);
@@ -357,12 +556,40 @@ public sealed class SelfhostSemanticsT23Tests
     public void FlowCaseMatches(string name) =>
         SelfhostSemanticsHarness.AssertSection(Sections.Value, $"flow.{name}", ExpectedFlow(name));
 
+    public static TheoryData<string> PropagatedCaseNames()
+    {
+        var data = new TheoryData<string>();
+        foreach (var k in PropagatedCases) data.Add(k);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(PropagatedCaseNames))]
+    public void PropagatedCaseMatches(string name) =>
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, $"propagated.{name}", ExpectedPropagated(name));
+
+    public static TheoryData<string> EffectCaseNames()
+    {
+        var data = new TheoryData<string>();
+        foreach (var e in EffectCases) data.Add(e.Name);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(EffectCaseNames))]
+    public void EffectCaseMatches(string name) =>
+        SelfhostSemanticsHarness.AssertSection(Sections.Value, $"effects.{name}", ExpectedEffects(name));
+
     private static string Escape(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n");
 
     // ── The C# bound tree written out as Bayan ───────────────────────────────────
 
     /// <summary>Writes one function's bound body and the symbols it reaches as Bayan statements building them.</summary>
-    private sealed class Writer(StringBuilder sb)
+    /// <summary>
+    /// With <paramref name="declared"/>, a function the Bayan <c>declare</c> made is looked up by owner and name; a lambda,
+    /// a built-in and an invoke are made here, as the C# binder makes them.
+    /// </summary>
+    private sealed class Writer(StringBuilder sb, bool declared = false)
     {
         private readonly Dictionary<object, string> _ids = new(ReferenceEqualityComparer.Instance);
         private int _n;
@@ -375,15 +602,35 @@ public sealed class SelfhostSemanticsT23Tests
 
         private static string Lower(string s) => char.ToLowerInvariant(s[0]) + s[1..];
 
-        private static string Ty(TypeSymbol t) => t switch
+        private string Ty(TypeSymbol t)
         {
-            PrimitiveType p when p.IsNever => "prim(.neverKind)",
-            PrimitiveType p => $"prim(.{Lower(p.Kind.ToString())})",
-            ErrorType => "errorType()",
-            ErrorSetSymbol s => $"errorSetTypeOf(t23mSet(ref c, by: \"{s.Name}\"))",
-            // Flow reads a type only for never, void, error and a missing return's display; the cases return primitives.
-            _ => "prim(.i32)",
-        };
+            switch (t)
+            {
+                case PrimitiveType p when p.IsNever: return "prim(.neverKind)";
+                case PrimitiveType p: return $"prim(.{Lower(p.Kind.ToString())})";
+                case ErrorType: return "errorType()";
+                case ErrorSetSymbol s: return $"errorSetTypeOf(t23mSet(ref c, by: \"{s.Name}\"))";
+                case ErrorUnionType u:
+                {
+                    var sets = List("ErrorSetId", u.Sets.Select(Set).ToList());
+                    var excluded = List("VariantId", u.Excluded.Select(Variant).ToList());
+                    return $"errorUnionOf(ref c, for: in {sets}, as: in {excluded})";
+                }
+                // Effects read a function type's parameters and `uses`, a collection's list or map kind, and a display.
+                case FunctionType f:
+                {
+                    var ps = List("Type", f.Parameters.Select(Ty).ToList());
+                    var ret = Ty(f.Return);
+                    var sets = List("ErrorSetId", f.Fails.Select(Set).ToList());
+                    var uses = List("string", f.Uses.Select(u => $"\"{u}\"").ToList());
+                    return $"internFunction(ref c, for: in {ps}, to: {ret}, by: in {sets}, as: in {uses})";
+                }
+                case ListType l: return $"internList(ref c, by: {Ty(l.Element)})";
+                case MapType m: return $"internMap(ref c, by: {Ty(m.KeyType)}, to: {Ty(m.ValueType)})";
+                // Flow reads a type only for never, void, error and a missing return's display; the cases return primitives.
+                default: return "prim(.i32)";
+            }
+        }
 
         private string Set(ErrorSetSymbol s)
         {
@@ -432,6 +679,15 @@ public sealed class SelfhostSemanticsT23Tests
         public string Function(FunctionSymbol f)
         {
             if (_ids.TryGetValue(f, out var id)) return id;
+            if (declared && f.Interface is null && f.Kind is not (FunctionKind.Builtin or FunctionKind.Invoke or FunctionKind.Lambda))
+            {
+                id = Fresh("f");
+                Line($"let {id} = t23mFn(ref c, by: \"{f.Owner?.Name ?? ""}\", for: \"{f.Name}\")");
+                // The parameters `declareSignature` gives once T38 ports it; effects read their types.
+                var parameters = List("LocalId", f.Parameters.Select(p => Local(p)).ToList());
+                Line($"c.functions[{id}].parameters = move {parameters}");
+                return _ids[f] = id;
+            }
             var ps = Fresh("a");
             Line($"{(f.Parameters.Count > 0 ? "var" : "let")} {ps} = List<LocalId>()");
             foreach (var p in f.Parameters) Line($"{ps}.append({Local(p)})");
@@ -445,7 +701,20 @@ public sealed class SelfhostSemanticsT23Tests
             var kind = f.Kind == FunctionKind.Test ? "testKeyword" : Lower(f.Kind.ToString());
             var becomes = f.Decl?.Becomes is { } b ? $"\"{b.Text}\"" : "null";
             var refThis = f.Decl?.RefThis is { } r ? $"TextSpan {{ start: {r.Start}, length: {r.Length} }}" : "null";
-            Line($"let {id} = newFunction(ref c, by: FunctionSymbol {{ name: \"{f.Name}\", kind: .{kind}, file: file, isStatic: {(f.IsStatic ? "true" : "false")}, parameters: move {ps}, returnType: {Ty(f.ReturnType)}, errorSets: move {sets}, excludedErrors: move {excluded}, hasFails: {(f.Fails ? "true" : "false")}, infersErrors: {(f.InfersErrors ? "true" : "false")}, becomes: {becomes}, refThis: {refThis} }})");
+            var builtin = f.Kind == FunctionKind.Builtin ? $"builtin: .{Lower(f.Builtin.ToString())}, " : "";
+            var at = f.Location is { } loc ? $"TextSpan {{ start: {loc.Span.Start}, length: {loc.Span.Length} }}" : "TextSpan { start: 0, length: 0 }";
+            var file = f.File is null ? "-1" : "file";
+            // An interface member, which `declareInterfaceMembers` makes once T38 ports it: effects read its declaration.
+            var member = "";
+            if (f.Interface is { } i && f.File is { } fc && f.Decl is { } decl)
+            {
+                var members = fc.Tree.Root.Members;
+                var d = Array.FindIndex(members, m => m is InterfaceDecl x && x.Members.Contains(decl));
+                var m = Array.IndexOf(((InterfaceDecl)members[d]).Members, decl);
+                member = $"iface: typeIndex(c.modules[c.entryModule].types[\"{i.Name}\"]), declIndex: {d}, memberIndex: {m}, isAbstract: {(f.IsAbstract ? "true" : "false")}, access: .{f.Access switch { Accessibility.Public => "publicKeyword", Accessibility.Private => "privateKeyword", _ => "module" }}, ";
+            }
+            Line($"let {id} = newFunction(ref c, by: FunctionSymbol {{ name: \"{f.Name}\", nameSpan: {at}, module: c.entryModule, kind: .{kind}, {builtin}{member}file: {file}, isStatic: {(f.IsStatic ? "true" : "false")}, parameters: move {ps}, returnType: {Ty(f.ReturnType)}, errorSets: move {sets}, excludedErrors: move {excluded}, hasFails: {(f.Fails ? "true" : "false")}, infersErrors: {(f.InfersErrors ? "true" : "false")}, becomes: {becomes}, refThis: {refThis} }})");
+            if (f.Kind == FunctionKind.Lambda) Line($"c.modules[c.entryModule].allFunctions.append({id})");
             return _ids[f] = id;
         }
 
@@ -557,6 +826,79 @@ public sealed class SelfhostSemanticsT23Tests
                 case BoundErrorExpr:
                     Line($"let {id} = addErrorExpr(ref c, from: BErrorExpr {{ span: {sp} }})");
                     break;
+                case BoundSwitchExpr w:
+                {
+                    var value = Expr(w.Value);
+                    var built = new List<string>();
+                    foreach (var arm in w.Arms)
+                    {
+                        // Flow reads only an arm's guard and value.
+                        var guard = Opt(arm.Guard);
+                        var armValue = Expr(arm.Value);
+                        built.Add($"BSwitchArm {{ span: {Span(arm.Syntax)}, pattern: -1, guard: {guard}, value: {armValue} }}");
+                    }
+                    var arms = List("BSwitchArm", built);
+                    Line($"let {id} = addSwitchExpr(ref c, from: BSwitchExpr {{ span: {sp}, value: {value}, arms: move {arms}, type: {Ty(w.Type)} }})");
+                    break;
+                }
+                case BoundIs i:
+                {
+                    var value = Expr(i.Value);
+                    var pattern = "-1";
+                    // Flow walks only a range pattern's bounds.
+                    if (i.Pattern is BoundRangePattern r)
+                    {
+                        var start = Expr(r.Start);
+                        var end = Expr(r.End);
+                        pattern = Fresh("p");
+                        Line($"let {pattern} = addRangePattern(ref c, from: BRangePattern {{ span: {Span(r.Syntax)}, inputType: {Ty(r.InputType)}, start: {start}, end: {end}, inclusive: {(r.Inclusive ? "true" : "false")} }})");
+                    }
+                    Line($"let {id} = addIs(ref c, from: BIs {{ span: {sp}, value: {value}, pattern: {pattern} }})");
+                    break;
+                }
+                case BoundInterpolated n:
+                {
+                    var parts = List("BInterpolationPart", n.Parts.Select(part => part.Value is null
+                        ? $"BInterpolationPart {{ text: \"{Escape(part.Text ?? "")}\" }}"
+                        : $"BInterpolationPart {{ value: {Expr(part.Value)} }}").ToList());
+                    Line($"let {id} = addInterpolated(ref c, from: BInterpolated {{ span: {sp}, parts: move {parts} }})");
+                    break;
+                }
+                case BoundBuiltinCall b:
+                {
+                    var receiver = Expr(b.Receiver);
+                    var args = List("BExpr", b.Arguments.Select(Expr).ToList());
+                    Line($"let {id} = addBuiltinCall(ref c, from: BBuiltinCall {{ span: {sp}, member: .{Lower(b.Member.ToString())}, receiver: {receiver}, arguments: move {args}, type: {Ty(b.Type)} }})");
+                    break;
+                }
+                case BoundCollection k:
+                {
+                    var elements = List("BExpr", k.Elements.Select(Expr).ToList());
+                    Line($"let {id} = addCollection(ref c, from: BCollection {{ span: {sp}, type: {Ty(k.Type)}, elements: move {elements} }})");
+                    break;
+                }
+                case BoundConversion k:
+                {
+                    var operand = Expr(k.Operand);
+                    Line($"let {id} = addConversion(ref c, from: BConversion {{ span: {sp}, operand: {operand}, type: {Ty(k.Type)}, kind: .{Lower(k.Kind.ToString())} }})");
+                    break;
+                }
+                case BoundLambda l:
+                {
+                    var fn = Function(l.Lambda);
+                    var captures = List("BExpr", l.Captures.Select(x => Expr(x)).ToList());
+                    Line($"let {id} = addLambda(ref c, from: BLambda {{ span: {sp}, lambda: {fn}, captures: move {captures}, functionType: {Ty(l.FunctionType)} }})");
+                    break;
+                }
+                case BoundEnumMember m:
+                    Line($"let {id} = addEnumMember(ref c, from: BEnumMember {{ span: {sp}, member: t23mEnumMember(ref c, by: \"{m.Member.Enum.Name}\", for: \"{m.Member.Name}\") }})");
+                    break;
+                case BoundFunctionRef r:
+                {
+                    var fn = Function(r.Function);
+                    Line($"let {id} = addFunctionRef(ref c, from: BFunctionRef {{ span: {sp}, function: {fn}, functionType: {Ty(r.FunctionType)} }})");
+                    break;
+                }
                 default:
                     throw new NotSupportedException(e.GetType().Name);
             }
@@ -711,6 +1053,67 @@ public sealed class SelfhostSemanticsT23Tests
         return sb.ToString();
     }
 
+    private static string PropagatedCase(Compilation c, int index, string name)
+    {
+        var sb = new StringBuilder();
+        sb.Append($"void t23mPropagated{index}(ref Ctx c, for FileId file) {{\n");
+        var w = new Writer(sb);
+        var body = w.Stmt(Function(c, name).Body!);
+        sb.Append($"    let sets = propagated(ref c, for: {body})\n");
+        sb.Append($"    print(\"== propagated.{name}\")\n");
+        sb.Append($"    t23mSets(in c, by: in sets)\n");
+        sb.Append("}\n\n");
+        return sb.ToString();
+    }
+
+    /// <summary>One effect program: its functions' bound bodies on the Bayan declarations, then <c>analyzeEffects</c>.</summary>
+    private static string EffectCase(int index)
+    {
+        var name = EffectCases[index].Name;
+        var capabilities = EffectCases[index].Capabilities;
+        var c = EffectCompiled[name].Value;
+        var sb = new StringBuilder();
+        sb.Append($"const effects{index}: string = \"{Escape(EffectCases[index].Source + "\n")}\"\n\n");
+        sb.Append($"void t23mEffects{index}() {{\n");
+        sb.Append($"    var c = t23mCtx(effects{index})\n");
+        sb.Append("    let file = c.modules[c.entryModule].files[0]\n");
+        var w = new Writer(sb, declared: true);
+        lock (c)
+        {
+            var module = c.Modules.First(m => m.Files.Any(f => f.Source.Path == Path.Combine(Dir, "main.byn")));
+            // Every function first, so a lambda joins `allFunctions` in the C# order.
+            var functions = module.AllFunctions.ToList();
+            var ids = functions.Select(w.Function).ToList();
+            // The witnesses `conform` records once T38 declares signatures and interface members.
+            foreach (var st in module.Structs)
+                for (var k = 0; k < st.Conformances.Count; k++)
+                    foreach (var pair in st.Conformances[k].Witnesses)
+                    {
+                        var memberId = w.Function(pair.Key);
+                        var witnessId = w.Function(pair.Value);
+                        sb.Append($"    c.conformances[c.structs[typeIndex(c.modules[c.entryModule].types[\"{st.Name}\"])].conformances[{k}]].witnesses[{memberId}] = {witnessId}\n");
+                    }
+            for (var i = 0; i < functions.Count; i++)
+            {
+                if (functions[i].Body is not { } body) continue;
+                var b = w.Stmt(body);
+                sb.Append($"    c.functions[{ids[i]}].body = {b}\n");
+            }
+        }
+        if (capabilities is not null)
+        {
+            sb.Append("    var caps = List<string>()\n");
+            foreach (var cap in capabilities) sb.Append($"    caps.append(\"{cap}\")\n");
+            sb.Append("    c.capabilities = move caps\n");
+        }
+        sb.Append("    let start = c.diagnostics.length\n");
+        sb.Append("    analyzeEffects(ref c)\n");
+        sb.Append($"    print(\"== effects.{name}\")\n");
+        sb.Append("    t23mDiags(ref c, from: start)\n");
+        sb.Append("}\n\n");
+        return sb.ToString();
+    }
+
     // ── The generated main ──────────────────────────────────────────────────────
     private static string MainSource()
     {
@@ -724,6 +1127,16 @@ public sealed class SelfhostSemanticsT23Tests
                 cases.Append(FlowCase(c, i, FlowCases[i]));
                 calls.Append($"    t23mFlow{i}(ref c, for: file)\n");
             }
+            for (var i = 0; i < PropagatedCases.Length; i++)
+            {
+                cases.Append(PropagatedCase(c, i, PropagatedCases[i]));
+                calls.Append($"    t23mPropagated{i}(ref c, for: file)\n");
+            }
+        }
+        for (var i = 0; i < EffectCases.Length; i++)
+        {
+            cases.Append(EffectCase(i));
+            calls.Append($"    t23mEffects{i}()\n");
         }
         return """
             import lexer
@@ -742,13 +1155,64 @@ public sealed class SelfhostSemanticsT23Tests
                 if !any { print("ok") }
             }
 
-            ErrorSetId t23mSet(ref Ctx c, by string name) => typeIndex(c.modules[c.entryModule].types[name])
+            ErrorSetId t23mSet(ref Ctx c, by string name) {
+                for k in 0..c.errorSets.length {
+                    if c.errorSets[k].name == name { return ErrorSetId(k) }
+                }
+                panic($"no error set {name}")
+            }
 
             VariantId t23mVariant(ref Ctx c, from ErrorSetId s, by string name) {
                 for v in c.errorSets[s].variants {
                     if c.errorVariants[v].name == name { return v }
                 }
                 return -1
+            }
+
+            void t23mSets(in Ctx c, by in List<ErrorSetId> sets) {
+                var names = ""
+                for s in sets { names = names == "" ? c.errorSets[s].name : $"{names}, {c.errorSets[s].name}" }
+                print(names == "" ? "none" : names)
+            }
+
+            FuncId t23mFn(ref Ctx c, by string owner, for string name) {
+                for k in 0..c.functions.length {
+                    if c.functions[k].name != name || c.functions[k].file == -1 { continue }
+                    let o = c.functions[k].owner
+                    let i = c.functions[k].iface
+                    let ownerName = o != -1 ? c.structs[o].name : (i != -1 ? c.interfaces[i].name : "")
+                    if ownerName == owner { return FuncId(k) }
+                }
+                panic($"no function {owner}.{name}")
+            }
+
+            EnumMemberId t23mEnumMember(ref Ctx c, by string owner, for string name) {
+                for k in 0..c.enumMembers.length {
+                    if c.enumMembers[k].name == name && c.enums[c.enumMembers[k].owner].name == owner { return EnumMemberId(k) }
+                }
+                panic($"no enum member {owner}.{name}")
+            }
+
+            Ctx t23mCtx(string text) {
+                var bytes = List<u8>()
+                for x in text.bytes { bytes.append(x) }
+                var sources = List<lexer.SourceText>()
+                sources.append(lexer.SourceText.create("tmp/t23-cases/main.byn", from: move bytes))
+                var c = Ctx {
+                    files: List<SourceFile>(),
+                    modules: List<Mod>(),
+                    diagnostics: List<Diag>(),
+                    bags: List<DiagBag>(),
+                    library: true,
+                    packageRoot: "tmp/t23-cases",
+                    displayRoot: "tmp/t23-cases",
+                }
+                c.entryModule = loadModule(ref c, for: "main", at: "tmp/t23-cases", from: move sources, by: -1)
+                buildLexicon(ref c)
+                declare(ref c)
+                // `bindAll` conforms first (generics.byn); the witnesses are read by the effect bound.
+                checkConformances(ref c)
+                return move c
             }
 
             CASES
