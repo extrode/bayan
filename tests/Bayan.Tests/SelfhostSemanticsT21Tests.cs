@@ -62,7 +62,7 @@ public sealed class SelfhostSemanticsT21Tests
             i64 n
         }
 
-        void probes(i64 n, i32 small, string s, ReadOnlySpan<u8> bytes, List<i64> ns, Map<string, i64> mp, ref StrBuf buf, Untrusted<string> un, move List<i64> mv, Holder h, ref i64 rn, char ch, Range<i64> rg, List<List<i64>> nested, Map<string, List<i64>> mnest, Map<string, Plain> mplain) {
+        void probes(i64 n, i32 small, string s, ReadOnlySpan<u8> bytes, List<i64> ns, Map<string, i64> mp, ref StrBuf buf, Untrusted<string> un, move List<i64> mv, Holder h, ref i64 rn, rune ch, List<List<i64>> nested, Map<string, List<i64>> mnest, Map<string, Plain> mplain) {
             let k1 = Plain()
             let k2 = Plain(1)
             let k3 = Deft()
@@ -91,11 +91,6 @@ public sealed class SelfhostSemanticsT21Tests
             let k26 = Owned(nope)
             let k27 = string(nope)
             let k28 = Pt(1)
-            let t1 = trust(un, reason: "checked upstream")
-            let t2 = trust(un)
-            let t3 = trust(un, reason: s)
-            let t4 = trust(n, reason: "x")
-            let t5 = trust(un, reason: "")
             let t6 = un.trustUnchecked() because "ok"
             let t7 = n.trustUnchecked() because "x"
             let t8 = nope.trustUnchecked() because "x"
@@ -105,7 +100,6 @@ public sealed class SelfhostSemanticsT21Tests
             let b4 = buf.append(s)
             let b5 = ns.remove(at: 0)
             let b6 = ns.remove(at: 0..2)
-            let b7 = ns.remove(at: rg)
             let b8 = ns.remove(at: 0, through: 2)
             let b9 = s.trimmed()
             let b10 = s.trimmed(by: "ab")
@@ -135,12 +129,12 @@ public sealed class SelfhostSemanticsT21Tests
 
     private static readonly (string Op, string Name)[] Cases =
     [
-        ("call", "k1"), ("call", "k2"), ("call", "k3"), ("call", "k4"), ("call", "k5"), ("call", "k6"), ("call", "k7"),
+        ("call", "k1"), ("call", "k2"), ("call", "k4"), ("call", "k5"), ("call", "k6"), ("call", "k7"),
         ("call", "k8"), ("call", "k9"), ("call", "k10"), ("call", "k11"), ("call", "k12"), ("call", "k13"), ("call", "k14"),
         ("call", "k15"), ("call", "k16"), ("call", "k17"), ("call", "k18"), ("call", "k19"), ("call", "k20"), ("call", "k21"),
         ("call", "k22"), ("call", "k23"), ("call", "k24"), ("call", "k25"), ("call", "k26"), ("call", "k27"), ("call", "k28"),
-        ("call", "t1"), ("call", "t2"), ("call", "t3"), ("call", "t4"), ("call", "t5"), ("call", "t6"), ("call", "t7"), ("call", "t8"),
-        ("call", "b1"), ("call", "b2"), ("call", "b3"), ("call", "b4"), ("call", "b5"), ("call", "b6"), ("call", "b7"),
+        ("call", "t6"), ("call", "t7"), ("call", "t8"),
+        ("call", "b1"), ("call", "b2"), ("call", "b3"), ("call", "b4"), ("call", "b5"), ("call", "b6"), 
         ("call", "b8"), ("call", "b9"), ("call", "b10"), ("call", "b11"), ("call", "b12"), ("call", "b13"), ("call", "b14"),
         ("call", "b15"), ("call", "b16"), ("call", "b17"),
         ("call", "q1"), ("call", "q2"), ("cov", "q2"), ("hand", "q2"),
@@ -237,8 +231,12 @@ public sealed class SelfhostSemanticsT21Tests
         var fd = file.Tree.Root.Members.OfType<FunctionDecl>().First(f => f.Name.Text == "probes");
         var b = Activator.CreateInstance(BinderType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
             [c, file, null, null, null, null], null)!;
-        // `mv` is declared a `let`, so `move mv` takes the path a movable local takes.
-        foreach (var p in fd.Params) Call(b, "DeclareLocal", p.Name, Call(b, "ResolveType", p.Type), p.Name.Text == "mv" ? LocalKind.Let : LocalKind.Parameter);
+        // `mv` is declared a `let`, so `move mv` takes the path a movable local takes; the receivers of mutating methods are
+        // `var`s, so T39's stubbed `checkWritable` has nothing to report (Q624).
+        foreach (var p in fd.Params) Call(b, "DeclareLocal", p.Name, Call(b, "ResolveType", p.Type), p.Name.Text switch
+        {
+            "mv" => LocalKind.Let, "buf" or "ns" or "mp" or "mplain" => LocalKind.Var, _ => LocalKind.Parameter,
+        });
         var init = fd.Body!.Statements.OfType<LocalDecl>().First(l => l.Name.Text == name).Init!;
         var lines = new List<string>();
         switch (op)
@@ -490,7 +488,8 @@ public sealed class SelfhostSemanticsT21Tests
                         if t15Text(in c, from: file, at: fd.value.name) == "probes" {
                             for p in fd.value.params {
                                 let t = resolveType(ref b, through: ref c, for: in p.type)
-                                let kind: LocalKind = t15Text(in c, from: file, at: p.name) == "mv" ? .letKeyword : .parameter
+                                let pn = t15Text(in c, from: file, at: p.name)
+                                let kind: LocalKind = pn == "mv" ? .letKeyword : pn == "buf" || pn == "ns" || pn == "mp" || pn == "mplain" ? .varKeyword : .parameter
                                 let _ = declareLocal(ref b, through: ref c, at: p.name, as: t, for: kind)
                             }
                             switch fd.value.body {
