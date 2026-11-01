@@ -1,7 +1,7 @@
 #!/bin/bash
 # mutate-batch.sh on a tiny fixture with a stub `dotnet` and a stub `bayan` CLI at the repo's build path (no dotnet needed),
 # the way guard.test.sh stubs them, and a fixture tasks file: --list derives each file's filter from the *Tests.cs classes of
-# the tasks naming it (sorted union, a glob class skipped, a bare basename when unique, a {a,b} path) and falls back to the
+# the tasks naming it (sorted union, a glob class skipped, a class of another family dropped, the family default when none is left, a bare basename when unique, a {a,b} path) and falls back to the
 # directory default, an unknown directory fails naming it; files sharing a filter share one recording; --shard k/n and --files
 # limit the groups; the reports land in tmp/mutate-batch/<group>/; an empty baseline is filled, a higher score replaces a lower
 # one, a drop fails naming the file with old and new score and leaves the baseline unchanged; a failed mutant 0, a missing CLI
@@ -13,9 +13,10 @@ rm -rf "$r" "$aux" && mkdir -p "$r/selfhost/semantics" "$r/selfhost/parser" "$r/
 for f in semantics/a semantics/b semantics/c parser/p; do printf 'fn f() -> int {\n    return 1\n}\n' > selfhost/$f.byn; done
 cat > tasks.md <<'T'
 # Tasks
-- [x] T1 One — files: `a.byn`, `selfhost/semantics/c.byn`, `ATests.cs` (not `Other.cs`) — covers: R1 — after: none
+- [x] T1 One — files: `a.byn`, `selfhost/semantics/c.byn`, `SelfhostSemanticsATests.cs`, `SelfhostParserXTests.cs` (not `Other.cs`) — covers: R1 — after: none
   - files: `selfhost/parser/p.byn` and `ZTests.cs` here is a detail line, not a task line
-- [x] T2 Two — files: `selfhost/semantics/{b,c}.byn`, `CTests.cs`, `BTests.cs`, `ATests.cs`, `SelfhostSemanticsT*Tests.cs` — covers: R1
+- [x] T2 Two — files: `selfhost/semantics/{b,c}.byn`, `SelfhostSemanticsCTests.cs`, `SelfhostSemanticsBTests.cs`, `SelfhostSemanticsATests.cs`, `SelfhostSemanticsT*Tests.cs` — covers: R1
+- [x] T3 Three — files: `selfhost/parser/p.byn`, `SelfhostSemanticsATests.cs` — covers: R1
 T
 printf '{ "version": 1, "files": {} }\n' > tests/quality-baseline.json
 cp tests/quality-baseline.json "$aux/empty.json"
@@ -49,7 +50,7 @@ rep_all() { rep selfhost/semantics/a.byn "$@"; rep selfhost/semantics/b.byn "$@"
 b() { PATH="$aux:$PATH" bash "$root/scripts/selfhost/mutate-batch.sh" --tasks tasks.md "$@" 2>&1 || true; }
 score() { python3 -I -c 'import json, sys; print(json.load(open("tests/quality-baseline.json"))["files"].get(sys.argv[1], {}).get("mutation"))' "$1"; }
 list=$(b --list)
-A='FullyQualifiedName~ATests'; B="$A|FullyQualifiedName~BTests|FullyQualifiedName~CTests"
+A='FullyQualifiedName~SelfhostSemanticsATests'; B="$A|FullyQualifiedName~SelfhostSemanticsBTests|FullyQualifiedName~SelfhostSemanticsCTests"
 touch selfhost/semantics/z.byn; mkdir selfhost/other; echo > selfhost/other/z.byn; badlist=$(b --list); rm -r selfhost/other selfhost/semantics/z.byn
 [ -f $aux/record.txt ] && listran=1 || listran=0
 # fill: an empty baseline gets an entry for every file
@@ -77,8 +78,8 @@ want="selfhost/parser/p.byn -> FullyQualifiedName~SelfhostParser
 selfhost/semantics/a.byn -> $A
 selfhost/semantics/b.byn -> $B
 selfhost/semantics/c.byn -> $B"
-[ "$list" = "$want" ] || fail "--list mapping differs (want a: ATests; b, c: A|B|C sorted, glob class skipped; p: directory default)" "$list"
-echo "$badlist" | grep -q 'selfhost/other/z.byn' && echo "$badlist" | grep -q 'no filter' || fail "an unknown directory was not a FAIL naming it" "$badlist"
+[ "$list" = "$want" ] || fail "--list mapping differs (want a: SelfhostSemanticsATests; b, c: A|B|C sorted, glob class skipped; p: directory default)" "$list"
+echo "$badlist" | grep -q 'selfhost/other/z.byn' && echo "$badlist" | grep -q 'no test family' || fail "an unknown directory was not a FAIL naming it" "$badlist"
 [ $listran = 0 ] || fail "--list ran dotnet" ""
 [ "$(echo "$rec" | wc -l | tr -d ' ')" = 3 ] || fail "files sharing a filter did not share one recording (want 3 recordings)" "$rec"
 echo "$rec" | grep -qxF "selfhost/semantics/b.byn,selfhost/semantics/c.byn ($B)&Snapshot!=skip" || fail "b and c were not recorded together with their filter" "$rec"

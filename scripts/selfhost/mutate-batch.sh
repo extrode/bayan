@@ -4,7 +4,9 @@
 #   bash scripts/selfhost/mutate-batch.sh [--list] [--files a.byn,b.byn] [--shard k/n] [--tasks <tasks.md>]
 # A file's filter is derived from --tasks (default docs/specs/010-self-hosted-semantics/010-tasks.md): every task line whose
 # `files:` list names the file contributes the *Tests.cs classes of that same list, as FullyQualifiedName~<Class> joined by `|`;
-# (a glob class name such as SelfhostSemanticsT*Tests.cs is skipped: no FQN substring) a file with none uses its directory default (selfhost/semantics|parser|lexer; another directory fails). Files sharing a
+# a glob class name such as SelfhostSemanticsT*Tests.cs is skipped (no FQN substring), and only classes of the file's own family are kept
+# (selfhost/semantics: SelfhostSemantics*, parser: SelfhostParser*, lexer: SelfhostLexer*: another build does not contain the file); a file with none left
+# uses SelfhostSemantics, SelfhostParser or SelfhostLexer; another directory fails. Files sharing a
 # filter share one recording (a group). --list prints file -> filter and runs nothing; --shard k/n takes every n-th group.
 # Per group: reports and logs in tmp/mutate-batch/<group>/ (quality-<n>-<binary>.json), bayan mutate's summary printed. A group
 # whose CLI, recording or mutant 0 fails is named and fails the run. Then quality-baseline.py check over the reports: a score
@@ -44,12 +46,10 @@ def names(f, p):
     return fnmatch.fnmatchcase(os.path.basename(f), p) and sum(os.path.basename(g) == os.path.basename(f) for g in files) == 1
 rows = []
 for f in files:
-    cls = {c for pats, classes in entries if any(names(f, p) for p in pats) for c in classes}
     d = os.path.dirname(f)
-    if not cls:
-        if d not in defaults:
-            sys.exit(f'mutate-batch: {f}: no filter, and the directory {d}/ has no default (selfhost/semantics, parser, lexer)')
-        cls = {defaults[d]}
+    if d not in defaults:
+        sys.exit(f'mutate-batch: {f}: the directory {d}/ has no test family (selfhost/semantics, parser, lexer)')
+    cls = {c for pats, classes in entries if any(names(f, p) for p in pats) for c in classes if c.startswith(defaults[d])} or {defaults[d]}
     rows.append((f, '|'.join('FullyQualifiedName~' + c for c in sorted(cls))))
 groups = {}  # filter -> files, in first-seen order
 for f, flt in rows:
