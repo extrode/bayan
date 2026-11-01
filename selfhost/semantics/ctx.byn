@@ -540,6 +540,8 @@ struct Ctx {
     // ── T35 state
     // ── T36 state
     // ── T37 state
+    /// C# `Compilation.ChangedFields`: the fields each `ref this` method changes structurally, as a set in insertion order.
+    Map<FuncId, List<FieldId>> changedFields = []
     // ── T38 state
     /// C# `_inReportedCycle`: structs and unions already reported as part of a cycle.
     List<Type> inReportedCycle = List<Type>()

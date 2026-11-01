@@ -113,7 +113,7 @@ Depends on: `dev` with specs 006–009 merged. Serial order is T1, T2, T5, T3, T
 - [x] T36 Binder statements C — files: `binder3.byn` (`Binder.cs` ~980–1468: for bodies/iterators, return/fail, break/continue, defer/errdefer/on panic, context, switch statement), `SelfhostSemanticsT36Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34, T35, T37–T39 — done when:
   - method-for-method port; defer and fail diag forms named as passing after rebase; Q679–Q683 as needed.
   - Size: about 708 lines.
-- [ ] T37 Regions B — files: `region2.byn` (`RegionAnalysis.cs` ~418–882: calls, stores, mutations, last-use, reporting), `SelfhostSemanticsT37Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34–T36, T38, T39 — done when:
+- [x] T37 Regions B — files: `region2.byn` (`RegionAnalysis.cs` ~418–882: calls, stores, mutations, last-use, reporting), `SelfhostSemanticsT37Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34–T36, T38, T39 — done when:
   - rules 5–6 and the reporting pass match the region diag cases; Q684–Q688 as needed.
   - Size: about 674 lines.
 - [x] T38 Declaration C — files: `declare2.byn` (`Compilation.cs` ~1038–1362: interface members, signatures and parameters, struct checks, states, validation errors, shapes and recursion), `SelfhostSemanticsT38Tests.cs` — covers: R4 — after: T4; parallel with: T6–T27, T34–T37, T39 — done when:
