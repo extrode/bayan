@@ -1,7 +1,7 @@
 #!/bin/bash
 # land.sh — the only way a spec 010 task reaches the base branch. Run by the dispatcher, from the repo root, on the base branch.
 #   bash scripts/selfhost/land.sh T13 feat/010-t13
-# Refuses unless: (1) the branch leaves scripts/selfhost/ alone and the base checkout's guard passes on it, (2)
+# Refuses unless: (1) the branch leaves scripts/selfhost/ and tests/quality-baseline.json (only land.sh writes it) alone and the base checkout's guard passes on it, (2)
 # docs/specs/010-self-hosted-semantics/reviews/<T>.md exists on that branch, the branch's last commit touches only it and is
 # titled `docs(010): <T> review (PASS, …`, the file names that commit's parent, says `Verdict: PASS`, and lists no open HIGH
 # finding (earlier commits may hold earlier review rounds). Then merges the
@@ -31,6 +31,8 @@ done
 REVIEW=docs/specs/010-self-hosted-semantics/reviews/$T.md
 CHANGED=$(git diff --name-only "$BASE...$SHA" -- scripts/selfhost/) || { echo "LAND REFUSED: cannot diff $BR against $BASE (no merge base?)"; exit 1; }
 [ -z "$CHANGED" ] || { echo "LAND REFUSED: $BR changes scripts/selfhost/; the guard and the landing scripts change only on the base"; exit 1; }
+[ -z "$(git diff --name-only "$BASE...$SHA" -- tests/quality-baseline.json)" ] \
+  || { echo "LAND REFUSED: $BR edits tests/quality-baseline.json; only land.sh writes it (revert the edit on the branch)"; exit 1; }
 
 WT=tmp/land-$t; rm -rf "$WT"; git worktree prune
 git worktree add -q --detach "$WT" "$SHA"

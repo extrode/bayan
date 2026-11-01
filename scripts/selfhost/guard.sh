@@ -75,9 +75,10 @@ if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
     n=0
     while IFS=$'\t' read -r bin sites; do
       n=$((n+1)); name=$n-$(basename "$bin"); rm -f "$(dirname "$bin")/bayan-quality.json"
-      "$BAYAN" mutate --binary "$bin" --sites "$sites" -- python3 -I "$REPLAY" "$SNAP" > $LOG/mutate-$name.txt 2>&1; MX=$?
+      # site ids are per build: the replay runs only this build's recorded runs
+      "$BAYAN" mutate --binary "$bin" --sites "$sites" -- python3 -I "$REPLAY" --binary "$bin" "$SNAP" > $LOG/mutate-$name.txt 2>&1; MX=$?
       if [ $MX = 1 ] && grep -q 'unmutated binary' $LOG/mutate-$name.txt; then
-        note "mutation: the recording does not replay on the unmutated build $bin (mutant 0) — $(BAYAN_MUTANT=0 python3 -I "$REPLAY" "$SNAP" 2>&1 | tail -3 | tr '\n' ' ' | cut -c1-400)"; continue; fi
+        note "mutation: the recording does not replay on the unmutated build $bin (mutant 0) — $(BAYAN_MUTANT=0 python3 -I "$REPLAY" --binary "$bin" "$SNAP" 2>&1 | tail -3 | tr '\n' ' ' | cut -c1-400)"; continue; fi
       [ -f "$(dirname "$bin")/bayan-quality.json" ] || { note "mutation: bayan mutate exited $MX on $bin without a report — $(tail -3 $LOG/mutate-$name.txt | tr '\n' ' ')"; continue; }
       cp "$(dirname "$bin")/bayan-quality.json" $LOG/quality-$name.json
       echo "mutation build $name (per site: tmp/guard-run/mutate-$name.txt, report: tmp/guard-run/quality-$name.json):"

@@ -1,6 +1,6 @@
 #!/bin/bash
 # land.sh on a fixture repo with a stub wave-brief.py and guard.sh, run by /bin/bash (3.2 on macOS): it refuses a last
-# commit that is not a lone `docs(010): T99 review (PASS` commit, a branch that changes scripts/selfhost/, and a branch that
+# commit that is not a lone `docs(010): T99 review (PASS` commit, a branch that changes scripts/selfhost/ or edits tests/quality-baseline.json, and a branch that
 # moves while it is checked, one with no merge base, and a prompt with no guard line; the fixture path holds & and ' (the guard must still run); it runs the base checkout's guard by absolute path, without --mutate/--seed,
 # and lands a two-round reviewed branch; tests/quality-baseline.json changes only when the guard run left a mutation report, then in the tick commit.
 set -e
@@ -31,6 +31,7 @@ code feat-chore; review PASS "chore(worker): T99 review (PASS, round 1)"; git sw
 code feat-extra; mkdir -p ${REV%/*}; printf '# T99 review\nCommit: %s\nVerdict: PASS\n' "$(git rev-parse HEAD)" > $REV; echo x >> feat-extra.txt
 git add -A; git commit -qm "docs(010): T99 review (PASS, round 1)"; git switch -q base
 code feat-guard; echo '# rewritten' >> scripts/selfhost/guard.sh; git commit -qam "test: guard"; review; git switch -q base
+code feat-baseline; echo '{}' > tests/quality-baseline.json; git commit -qam "test: baseline"; review; git switch -q base
 code feat-move; review; git switch -q base
 git switch -q --orphan feat-orphan; echo o > o.txt; git add -A; git commit -qm "test: orphan"; review; git switch -q -f base
 code feat-ok; review FAIL; echo fix >> feat-ok.txt; git commit -qam "test: fix"; review PASS "docs(010): T99 review (PASS, round 2)"; git switch -q base
@@ -44,11 +45,13 @@ code feat-rep; review; git switch -q base
 printf '{"version": 1, "kind": "mutation", "files": [{"path": "x.byn", "mutants": [{"site": {}, "status": "killed"}]}]}\n' > $aux/report
 rep=$(land feat-rep); raised=$(python3 -I -c 'import json; print(json.load(open("tests/quality-baseline.json"))["files"]["x.byn"]["mutation"])')
 intick=$(git log -1 --format=%s -- tests/quality-baseline.json)
+baseline=$(land feat-baseline)  # last: if it were accepted, its merge must not break the cases above
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
 echo "$chore" | grep -q "LAND REFUSED: the branch's last commit must" || fail "a chore(worker) review commit was accepted" "$chore"
 echo "$extra" | grep -q "LAND REFUSED: the branch's last commit must" || fail "a review commit touching another file was accepted" "$extra"
 echo "$guard" | grep -q 'LAND REFUSED: feat-guard changes scripts/selfhost/' || fail "a branch that changes scripts/selfhost/ was accepted" "$guard"
+echo "$baseline" | grep -q 'LAND REFUSED: feat-baseline edits tests/quality-baseline.json; only land.sh writes it' || fail "a branch that edits tests/quality-baseline.json was accepted" "$baseline"
 echo "$orphan" | grep -q 'LAND REFUSED: cannot diff feat-orphan' || fail "a branch with no merge base was not refused" "$orphan"
 echo "$noguard" | grep -q "LAND REFUSED: tmp/010-t99/prompt.md has no line starting 'bash scripts/selfhost/guard.sh'" || fail "a prompt with no guard line did not refuse with a message" "$noguard"
 echo "$moved" | grep -q 'LAND REFUSED: feat-move moved' || fail "a branch that moved during the guard was not refused" "$moved"
