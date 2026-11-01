@@ -152,7 +152,6 @@ BExpr convert(ref Binder b, through ref Ctx c, for BExpr value, to Type target, 
     if (implicit(ref c, from: vt, to: target, argument: argument) is { } kind) {
         if kind == .identity { return value }
         if kind == .nullToOptional { return t17SameSyntax(ref c, for: addDefault(ref c, from: BDefault { span: at, type: target }), from: value) }
-        @unobservable because "Q600: checkWritable is a stub; add a writable dyn ref conversion case when it lands"
         if kind == .toDynRef && kindOf(target) == .dynRef && !c.dynRefTypes[typeIndex(target)].readOnly {
             let _ = checkWritable(ref b, through: ref c, for: value, at: span, by: $"it is borrowed as `{typeDisplay(ref c, by: target)}`")
         }

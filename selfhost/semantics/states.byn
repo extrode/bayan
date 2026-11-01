@@ -191,18 +191,13 @@ Type receiverStates(ref Binder b, through ref Ctx c, for FuncId fn) {
     let owner = c.functions[fn].owner
     if owner == -1 { return -1 }
     let states = statesOf(ref c, for: owner)
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     if states == -1 { return -1 }
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     var found = List<VariantId>()
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     for n in decl.receiverStates {
         let v = findUnionVariant(ref c, by: states, for: t15Text(in c, from: c.functions[fn].file, at: n))
         if v != -1 { found.append(v) }
     }
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     if found.length == 0 { return -1 }
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     return internState(ref c, by: owner, for: in found)
 }
 
@@ -484,7 +479,6 @@ void learnArmState(ref Binder b, through ref Ctx c, for BExpr subject, by BPatte
         default: return
     }
     let narrowed = narrow(ref c, for: type, by: pattern, matched: true)
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     if narrowed != -1 { learnState(ref b, for: key, as: narrowed) }
 }
 
@@ -492,32 +486,22 @@ void learnArmState(ref Binder b, through ref Ctx c, for BExpr subject, by BPatte
 Type narrow(ref Ctx c, for Type type, by BPattern pattern, bool matched) {
     if kindOf(type) == .optional { return -1 }
     let states = statesUnion(ref c, for: type)
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     if states == -1 { return -1 }
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     let possible = possibleStates(ref c, for: type, by: states)
     // A match proves the tag even when a payload subpattern also had to hold; a failed match proves it only for a bare tag test.
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     var tested = List<VariantId>()
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     if !t22StatesOf(ref c, for: pattern, by: states, exact: !matched, to: ref tested) { return -1 }
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     var left = List<VariantId>()
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     for v in possible {
         if listContains(in tested, by: v) == matched { left.append(v) }
     }
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     if left.length == 0 || left.length == possible.length { return -1 }
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     let s = kindOf(type) == .state ? c.stateTypes[typeIndex(type)].s : typeIndex(type)
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     return internState(ref c, by: s, for: in left)
 }
 
 /// C# `Narrow`'s local function `StatesOf` (BinderStates.cs:286): false for null, else the states in `into`.
 bool t22StatesOf(ref Ctx c, for BPattern p, by UnionId states, bool exact, to ref List<VariantId> into) {
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     switch boundKind(p) {
         case .unionPattern:
             var all = true
@@ -562,7 +546,6 @@ void learnBecomes(ref Binder b, through ref Ctx c, for BExpr e) {
     let owner = c.functions[fn].owner
     if !c.functions[fn].isMutating || owner == -1 { return }
     let decl = t22DeclFacts(ref c, for: fn)
-    @unobservable because "Q627: statesOf is a stub; add cases on a struct with states when T38 lands"
     if (decl.becomes is { } to) {
         if c.functions[fn].hasFails && !isTry { return }
         let states = statesOf(ref c, for: owner)

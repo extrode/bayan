@@ -187,7 +187,6 @@ void bindAll(ref Ctx c) {
         let instance = c.instantiationWork[0].instance
         let target = c.instantiationWork[0].memberIndex
         // C#'s `work.Instance`: a `bindFunction`'s `memberIndex`, set only by `instantiateFunction` (Q721).
-        @unobservable because "Q721: the BYN7012 call binders are stubs; add a drainInstanceMethods case with a state-changing assignment when T20 or T39 lands"
         let workInstance = kind == .bindFunction ? target : -1
         let subject = c.instantiationWork[0].subject
         c.instantiationWork.remove(at: 0)

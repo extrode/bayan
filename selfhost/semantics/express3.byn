@@ -613,9 +613,10 @@ BExpr bindStructLiteral(ref Binder b, through ref Ctx c, for in parser.StructLit
             help: $"call the constructor: `{stName}({parameters.finish()})`")
         return addErrorExpr(ref c, from: BErrorExpr { span: s.span })
     }
-    @unobservable because "Q613: statesOf is a stub; add a struct literal of a states struct when T38 lands"
     if state == -1 {
+        @unobservable because "Q613: statesOf is a stub; add a struct literal of a states struct when T38 lands"
         let states = statesOf(ref c, for: st)
+        @unobservable because "Q613: statesOf is a stub; add a struct literal of a states struct when T38 lands"
         if states != -1 {
             var at = s.span
             switch s.type {

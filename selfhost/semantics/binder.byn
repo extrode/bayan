@@ -292,7 +292,6 @@ void bindFunctionBody(ref Binder b, through ref Ctx c, for in parser.FunctionDec
     t15DeclareParameters(ref b, through: ref c)
     // `this` starts in the states its receiver declares; a `become` or a `becomes` call on it may change that.
     let own = receiverStates(ref b, through: ref c, for: b.fn)
-    @unobservable because "Q594: receiverStates and learnState are stubs; add a T15 case whose receiver declares states when T22 lands"
     if own != -1 { learnState(ref b, for: t15ThisFacts(ref b, through: ref c), as: own) }
     t15BindParameterDefaults(ref b, through: ref c)
     var checks = t15BindRequires(ref b, through: ref c, for: in decl)

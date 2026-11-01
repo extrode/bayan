@@ -117,7 +117,6 @@ Borrow callBorrow(ref Regions r, through ref Ctx c, for BExpr call) {
     // A function value's environment is not one, since no function type can be returned (BYN2822); what its captures borrow is (spec 007 R10).
     let builtin = c.functions[fn].builtin
     var result = Borrow { regions: [], owners: [] }
-    @unobservable because "Q684: exprRegions, unionBorrow and lent are T25 stubs; add callBorrow and lendBorrow cases when T25 lands"
     let fresh = builtin == .ioReadFile || builtin == .ioReadText || builtin == .ioListDir || builtin == .ioRun || builtin == .ioRunBatch
         || builtin == .utf8Decode || builtin == .utf8TryDecode || builtin == .utf8DecodeReplace || builtin == .stringInvalidUtf8At || builtin == .hexEncode || builtin == .hexDecode
         || builtin == .symbolIntern
