@@ -58,8 +58,6 @@ next feat-bad; echo '{' > $aux/covreport; badbase=$(git rev-parse HEAD)
 bad=$(land feat-bad); badhead=$(git rev-parse HEAD); badtree=$(git status --porcelain --untracked-files=no)
 cmp -s tests/quality-baseline.json $aux/before-drop.json && badsame=1 || badsame=0
 rm -f $aux/covreport; baseline=$(land feat-baseline)  # last: if it were accepted, its merge must not break the cases above
-echo "$bad" | grep -q '^LAND REFUSED: quality-baseline.py failed on ' && [ "$badhead" = "$badbase" ] && [ -z "$badtree" ] && [ $badsame = 1 ] \
-  || fail "a malformed coverage report was not refused before the merge (head moved: $([ "$badhead" = "$badbase" ] && echo no || echo yes); dirty: $badtree)" "$bad"
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
 echo "$chore" | grep -q "LAND REFUSED: the branch's last commit must" || fail "a chore(worker) review commit was accepted" "$chore"
@@ -79,4 +77,6 @@ echo "$fill" | grep -q '^LANDED T99$' && [ "$filled" = "{'mutation': None, 'cove
 [ "$intick" = "chore(010): tick T99" ] || fail "the baseline change is not in the tick commit (last commit touching it: $intick)" "$fill"
 echo "$rise" | grep -q '^LANDED T99$' && [ "$rose" = "{'mutation': None, 'coverage': 1.0, 'branches': 1.0}" ] || fail "a landing with a higher coverage did not raise the baseline (y.byn: $rose)" "$rise"
 echo "$drop" | grep -q '^LANDED T99$' && [ "$dropped" = "{'mutation': None, 'coverage': 1.0, 'branches': 1.0}" ] && [ $dropsame = 1 ] || fail "a lower filtered coverage did not land leaving the recorded value unchanged (y.byn: $dropped)" "$drop"
+echo "$bad" | grep -q '^LAND REFUSED: quality-baseline.py failed on ' && [ "$badhead" = "$badbase" ] && [ -z "$badtree" ] && [ $badsame = 1 ] \
+  || fail "a malformed coverage report was not refused before the merge (head moved: $([ "$badhead" = "$badbase" ] && echo no || echo yes); dirty: $badtree)" "$bad"
 echo PASS
