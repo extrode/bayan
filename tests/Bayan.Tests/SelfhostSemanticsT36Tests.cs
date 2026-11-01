@@ -19,14 +19,313 @@ public sealed class SelfhostSemanticsT36Tests
 {
     private const string Dir = "tmp/t36-cases";
 
-    private static readonly string[] Cases =
+    /// <summary>
+    /// Golden diag inputs. Dropped (Q680): the T35 <c>propertyType</c> stub (express4.byn:42) types every builtin property
+    /// -1, which panics in <c>typeDisplay</c>; T34's <c>bindTry</c> and T35's <c>bindInterpolated</c> stubs change the rest.
+    /// The <see cref="Inline"/> cases cover their T36 branches without those.
+    /// </summary>
+    private static readonly string[] Golden =
     [
-        "not-iterable", "for-try-iterable", "jump-out-of-defer", "fail-in-defer", "missing-return-value", "return-error-input",
-        "return-value-in-void", "continue-switch", "unknown-label", "jump-outside-loop", "errdefer-without-fails",
-        "defer-failing-without-fails", "panic-on-panic-renamed", "on-panic-not-entry", "on-panic-not-first", "on-panic-twice",
-        "panic-handler-restricted", "unknown-handler", "duplicate-default", "ambiguous-variant", "unknown-variant",
-        "fail-from-infallible", "propagate-from-infallible", "fail-undeclared-case", "undeclared-error",
+        "not-iterable", "jump-out-of-defer", "fail-in-defer", "missing-return-value", "return-value-in-void", "continue-switch",
+        "unknown-label", "jump-outside-loop", "errdefer-without-fails", "defer-failing-without-fails", "unknown-handler",
+        "duplicate-default", "ambiguous-variant", "unknown-variant",
     ];
+
+    /// <summary>Inputs written for T36: each reaches the branches named, with no builtin property, `try` or interpolation.</summary>
+    private static readonly Dictionary<string, string> Inline = new()
+    {
+        // bindReturn: returnErrorInput (target member and `Set.x`), a case of the return type, missingReturnValue,
+        // returnValueInVoid in a function and in `main`, a never value in a void function.
+        ["x-return"] = """
+            union error ParseError {
+                empty
+                tooLong
+            }
+
+            enum Outcome {
+                empty
+                full
+            }
+
+            i64 parse(bool e, bool l) fails ParseError {
+                if e { return .empty }
+                if l { return ParseError.tooLong }
+                return 3
+            }
+
+            Outcome classify(bool l) fails ParseError {
+                if l { fail .tooLong }
+                return .empty
+            }
+
+            i64 none() {
+                return
+            }
+
+            void v(bool b) {
+                if b { return panic("x") }
+                return 5
+            }
+
+            void main() {
+                return 1
+            }
+            """,
+        // bindFail: propagateFromInfallible (member and value), undeclared case, ambiguous case, undeclared set,
+        // a value that is not an error, an inferred set, `fail` in `main`, an excluded case.
+        ["x-fail"] = """
+            union error ParseError {
+                empty
+            }
+
+            union error Other {
+                empty
+                gone
+            }
+
+            union error MoneyError {
+                invalid
+            }
+
+            union error Narrow = Other except .gone
+
+            i64 f(bool e) {
+                if e { fail ParseError.empty }
+                return 1
+            }
+
+            i64 g(bool e) {
+                if e { fail .empty }
+                return 1
+            }
+
+            i64 h(bool e) fails ParseError {
+                if e { fail .missing }
+                return 1
+            }
+
+            i64 k(bool e) fails ParseError, Other {
+                if e { fail .empty }
+                return 1
+            }
+
+            i64 m(bool e) fails ParseError {
+                if e { fail MoneyError.invalid }
+                return 1
+            }
+
+            i64 n(bool e) fails ParseError {
+                if e { fail 5 }
+                return 1
+            }
+
+            i64 q(bool e) fails {
+                if e { fail .empty }
+                return 1
+            }
+
+            i64 r(bool e) fails Narrow {
+                if e { fail .gone }
+                return 1
+            }
+
+            i64 s(bool e) fails ParseError {
+                if e { fail ParseError.empty }
+                return 1
+            }
+
+            void main() {
+                fail .empty
+            }
+            """,
+        // findTarget, bindBreak, bindContinue: labels, `continue` to a switch, unknown label, outside a loop, out of a defer.
+        ["x-jump"] = """
+            void main() {
+                outer: for i in 0..3 {
+                    for j in 0..3 {
+                        if j == 1 { continue outer }
+                        if j == 2 { break outer }
+                        break
+                    }
+                    defer {
+                        break
+                    }
+                    continue
+                }
+                pick: switch 2 {
+                    default:
+                        if true { break pick }
+                        continue pick
+                }
+                while true {
+                    break nowhere
+                }
+                continue
+            }
+            """,
+        // bindErrdefer, bindPanicDefer, inPanicHandler, bindOnPanic.
+        ["x-defer"] = """
+            union error E {
+                bad
+            }
+
+            i64 work(bool b) fails E {
+                defer failing (e) {
+                    print("failed")
+                }
+                defer panicking (p) {
+                    print("panicking")
+                    return 0
+                }
+                for i in 0..3 {
+                    defer panicking {
+                        break
+                    }
+                }
+                if b { fail .bad }
+                return 1
+            }
+
+            void plain() {
+                defer failing {
+                    print("never")
+                }
+                defer panicking {
+                    fail .bad
+                }
+            }
+
+            void onCrash(Panic p) {
+                print("crash")
+            }
+
+            void twoArgs(Panic p, i64 n) {
+            }
+
+            void setUp() {
+                Panic.handler = onCrash
+            }
+
+            void main() {
+                Panic.onPanic = onCrash
+                Panic.handler = onCrash
+                Panic.handler = twoArgs
+                setUp()
+            }
+            """,
+        // bindOnPanic not first, a handler that is not a function.
+        ["x-onpanic"] = """
+            void onCrash(Panic p) {
+                print("crash")
+            }
+
+            void main() {
+                print("starting")
+                Panic.handler = 5
+            }
+            """,
+        // bindContext: an unsupported handler, `allocator`, no handler at all is not writable, so only names and values.
+        ["x-context"] = """
+            void main() {
+                let arena = Arena()
+                provide net: arena {
+                    print("a")
+                }
+                provide allocator: arena {
+                    print("b")
+                }
+                provide alloc: 5 {
+                    print("c")
+                }
+            }
+            """,
+        // userElement (IIndexable, IEnumerator from a place and from a temporary), declaredElement, notIterable with a
+        // failing `next()`, bindForTry over a value with no failing `next()`, bindForBody's tuple names.
+        ["x-for"] = """
+            union error ReadError {
+                broken
+            }
+
+            struct Rows : IIndexable {
+                type Item = i64
+
+                i64 count => 2
+
+                i64 get(i64 index) => index
+            }
+
+            struct Countdown : IEnumerator {
+                type Item = i64
+
+                i64 left
+
+                bool moveNext(ref this) {
+                    left -= 1
+                    return left >= 0
+                }
+
+                i64 current => left
+            }
+
+            struct Lines {
+                i64 at
+
+                i64? next(ref this) fails ReadError {
+                    at += 1
+                    return null
+                }
+            }
+
+            Countdown from(i64 n) => Countdown { left: n }
+
+            void take(i64 x) {
+            }
+
+            void takeMaybe(i64? x) {
+            }
+
+            void main2(List<i64> xs) fails ReadError {
+                let rows = Rows {}
+                for r in rows {
+                    take(r)
+                }
+                var steps = Countdown { left: 3 }
+                for n in steps {
+                    take(n)
+                }
+                for n: i64? in from(2) {
+                    takeMaybe(n)
+                }
+                for n: bool in rows {
+                    print("b")
+                }
+                let lines = Lines { at: 0 }
+                for line in lines {
+                    print("l")
+                }
+                for try x in xs {
+                    print("x")
+                }
+                for (a, b) in xs {
+                    take(a)
+                }
+            }
+            """,
+        // bindSwitchStatement: default arms only, a duplicate default, a guard-free default with statements.
+        ["x-switch"] = """
+            void main() {
+                let x = 1
+                switch x {
+                    default:
+                        print("a")
+                    default:
+                        print("b")
+                }
+            }
+            """,
+    };
+
+    private static readonly string[] Cases = [.. Golden, .. Inline.Keys];
 
     /// <summary>The codes only the T36 functions report (BYN2022, BYN2202, BYN2301, BYN2411 have other reporters).</summary>
     private static readonly string[] Codes =
@@ -43,7 +342,8 @@ public sealed class SelfhostSemanticsT36Tests
     ];
 
     private static string CaseSource(string name) =>
-        File.ReadAllText(Path.Combine(Golden.CasesRoot, "diag", name + ".byn")).Replace("\r\n", "\n");
+        Inline.TryGetValue(name, out var text) ? text + "\n"
+            : File.ReadAllText(Path.Combine(Bayan.Tests.Golden.CasesRoot, "diag", name + ".byn")).Replace("\r\n", "\n");
 
     private static Compilation Compile(string name)
     {
@@ -103,8 +403,8 @@ public sealed class SelfhostSemanticsT36Tests
         return lines;
     }
 
-    private static readonly Lazy<Dictionary<string, List<string>>> Sections = new(() =>
-        SelfhostSemanticsHarness.RunSections(MainSource(), [.. Cases]));
+    /// <summary>One program run per case, so a panic in one case fails only that case.</summary>
+    private static readonly Lazy<string> Main = new(MainSource);
 
     public static TheoryData<string> CaseNames()
     {
@@ -116,7 +416,7 @@ public sealed class SelfhostSemanticsT36Tests
     [Theory]
     [MemberData(nameof(CaseNames))]
     public void CaseMatches(string name) =>
-        SelfhostSemanticsHarness.AssertSection(Sections.Value, name, Expected(name));
+        SelfhostSemanticsHarness.AssertSection(SelfhostSemanticsHarness.RunSections(Main.Value, name), name, Expected(name));
 
     private static string Escape(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n");
 
@@ -163,6 +463,8 @@ public sealed class SelfhostSemanticsT36Tests
 
         /// Every function of the entry module bound, as the C# `BindAll` does (generics.byn:163).
         void tcBindAll(ref Ctx c) {
+            // Compilation.cs BindAll checks conformances first; `userElement` reads their witnesses.
+            checkConformances(ref c)
             let fns = copyIds(in c.modules[c.entryModule].allFunctions)
             for fn in fns {
                 if !functionIsInstance(ref c, by: fn) { bindFunction(ref c, for: fn) }
@@ -207,7 +509,6 @@ public sealed class SelfhostSemanticsT36Tests
                 buildLexicon(ref c)
                 declare(ref c)
                 print($"== {name}")
-                tcSignatures(ref c, by: name)
                 tcBindAll(ref c)
                 tcT36Diags(ref c)
                 tcBodies(ref c, for: in tcDumped(name))
@@ -230,67 +531,6 @@ public sealed class SelfhostSemanticsT36Tests
             foreach (var f in Dumped(Compile(d))) sb.AppendLine($"    if name == \"{d}\" {{ names.append(\"{f}\") }}");
         sb.AppendLine("    return names");
         sb.AppendLine("}");
-        sb.AppendLine("void tcSignatures(ref Ctx c, by string name) {");
-        for (var i = 0; i < Cases.Length; i++) sb.AppendLine($"    if name == \"{Cases[i]}\" {{ tcSigs{i}(ref c) }}");
-        sb.AppendLine("}");
-        for (var i = 0; i < Cases.Length; i++)
-        {
-            sb.AppendLine($"void tcSigs{i}(ref Ctx c) {{");
-            sb.Append(Signatures(Compile(Cases[i])));
-            sb.AppendLine("}");
-        }
-        return sb.ToString();
-    }
-
-    private static string Lower(bool b) => b ? "true" : "false";
-
-    /// <summary>The Bayan expression for type <paramref name="t"/>.</summary>
-    private static string BayanType(TypeSymbol t) => t switch
-    {
-        PrimitiveType p => $"prim(.{(p.DisplayName == "never" ? "neverKind" : p.DisplayName)})",
-        BuiltinType { Kind: BuiltinKind.Panic } => "builtinType(.panic)",
-        Bayan.Semantics.Symbols.OptionalType o => $"internOptional(ref c, by: {BayanType(o.Inner)})",
-        ListType l => $"internList(ref c, by: {BayanType(l.Element)})",
-        SpanType sp => $"internSpan(ref c, by: {BayanType(sp.Element)}, readOnly: {Lower(sp.ReadOnly)})",
-        ErrorSetSymbol or StructSymbol or EnumSymbol or UnionSymbol => $"c.modules[c.entryModule].types[\"{t.DisplayName}\"]",
-        _ => throw new InvalidOperationException(t.DisplayName),
-    };
-
-    /// <summary>
-    /// What T38's stubbed <c>declareSignature</c>/<c>declareParameters</c> (declare2.byn:15, :18) would set on each
-    /// declared function, generated from the C# symbols as SelfhostSemanticsT20Tests.Signatures does (Q618).
-    /// </summary>
-    private static string Signatures(Compilation c)
-    {
-        var sb = new StringBuilder();
-        var n = 0;
-        foreach (var (name, fns) in c.EntryModule.Functions)
-        {
-            if (fns.All(f => f.Decl is null)) continue;
-            for (var i = 0; i < fns.Count; i++)
-            {
-                var fn = fns[i];
-                var v = $"f{n++}";
-                sb.AppendLine($"    let {v} = tcNth(in c, by: \"{name}\", at: {i})");
-                sb.AppendLine($"    c.functions[{v}].returnType = {BayanType(fn.ReturnType)}");
-                sb.AppendLine($"    c.functions[{v}].hasFails = {Lower(fn.Fails)}");
-                sb.AppendLine($"    c.functions[{v}].infersErrors = {Lower(fn.InfersErrors)}");
-                foreach (var s in fn.ErrorSets)
-                    sb.AppendLine($"    c.functions[{v}].errorSets.append(typeIndex(c.modules[c.entryModule].types[\"{s.Name}\"]))");
-                foreach (var x in fn.ExcludedErrors)
-                    sb.AppendLine($"    c.functions[{v}].excludedErrors.append(findErrorVariant(ref c, by: typeIndex(c.modules[c.entryModule].types[\"{x.Set.Name}\"]), for: \"{x.Name}\"))");
-                foreach (var p in fn.Parameters)
-                {
-                    var span = p.Location!.Value.Span;
-                    var modifier = p.Modifier switch
-                    {
-                        ParamModifier.None => "none", ParamModifier.Ref => "refKeyword", ParamModifier.Move => "moveKeyword",
-                        ParamModifier.Out => "outKeyword", _ => "inKeyword",
-                    };
-                    sb.AppendLine($"    tcParam(ref c, for: {v}, by: \"{p.Name}\", at: TextSpan {{ start: {span.Start}, length: {span.Length} }}, as: {BayanType(p.Type)}, to: .{modifier})");
-                }
-            }
-        }
         return sb.ToString();
     }
 }
