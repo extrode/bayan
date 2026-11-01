@@ -1,4 +1,4 @@
-# HANDOFF — Bayan v0.1 bootstrap compiler
+# HANDOFF — Bayān v0.1 bootstrap compiler
 
 You're picking up a language that has been designed but not yet built. **Read `SPEC.md` first.** This file says what to build for v0.1, in what order, and how to know each step is done.
 
@@ -402,8 +402,8 @@ Spec order (numbers are provisional; a spec may split):
 | 003 | **Done 2026-10-21.** Ownership verification: ownership program generator, debug runtime ownership checker, `take()`, `switch (move x)`; L006 `take()` row back as an amendment; prove L008 |
 | 004 | **Done 2026-10-21.** Port friction: implied and swapped argument names, contextual declaration keywords, integer literal inference, returning borrows from a method's own fields, fallible bytes→string decode, `catch { block }`, `const` string arrays, `List.removeRange`, `toHex()` (format specifiers stay deferred, Appendix B) |
 | 005 | **Done 2026-10-22.** Terminal style (remaining work of M12 — CLI completeness and machine-readable output), before any renderer is ported again |
-| 006 | Interfaces and iterators (subset above) |
-| 007 | Lambdas and function types (non-capturing and capture by copy) |
+| 006 | **Done 2026-10-23.** Interfaces and iterators (subset above) |
+| 007 | **Done 2026-10-25.** Lambdas and function types (non-capturing and capture by copy) |
 | 008 | **Done 2026-10-25.** `Symbol` interning (§3.3) and `Map` keys (§3.5): `Symbol` with compile-time literals and `Symbol.intern`, composite tuple and struct keys hashed field by field; `HashMap` is BYN2830 with a fix to `Map` (revision 0013, Questions 371–381); L015 "Interning is identity on text", L016 "Equal keys are one entry" |
 | 009 | **Done 2026-10-26.** Parser in Bayan (`selfhost/parser/`), checked against `bayan parse --ast` on every parse golden; L017 "Parser equivalence" enacted; L018 "No parser panic" proved but kept proposed (C# counterexamples, Q509–Q510) |
 | 010 | Semantics in Bayan (binder, flow, ownership), checked against every `diag/` golden and, through spec 004's typed dump, a binder-equivalence law (C# and Bayan dumps identical on every input) |
