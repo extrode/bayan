@@ -256,6 +256,7 @@ public sealed class SelfhostSemanticsT35Tests
         .. Enumerable.Range(1, 25).Select(i => ("fmt", "probes", $"w{i}")),
         ("prop", "probes", "p1"), ("prop", "probes", "p2"), ("prop", "probes", "p3"),
         ("inl", "probes", "n1"),
+        ("isf", "probes", "w1"), ("isf", "probes", "w3"), ("isf", "probes", "w4"), ("isf", "probes", "w6"),
     ];
 
     private static readonly System.Type BinderType =
@@ -351,6 +352,7 @@ public sealed class SelfhostSemanticsT35Tests
         {
             case "expr": lines.Add(Dump((BoundNode?)Call(b, "BindExpr", init, expected))); break;
             case "fmt": lines.Add((string?)Call(null, "WhyNotFormattable", expected, new HashSet<TypeSymbol>()) is { } why ? $"[{why}]" : "null"); break;
+            case "isf": lines.Add(B((bool)Call(null, "IsFormattable", expected)!)); break;
             case "prop":
                 var member = name switch { "p1" => BuiltinMember.FormatSpecRadix, "p2" => BuiltinMember.FormatSpecAlign, _ => BuiltinMember.FormatSpecWidth };
                 lines.Add(((TypeSymbol)Call(b, "PropertyType", member, expected)!).DisplayName);
@@ -493,6 +495,7 @@ public sealed class SelfhostSemanticsT35Tests
                 let why = whyNotFormattable(ref c, for: expected, by: ref seen)
                 print(why is null ? "null" : $"[{why ?? ""}]")
             }
+            if op == "isf" { print($"{isFormattable(ref c, for: expected)}") }
             if op == "prop" {
                 let member: BuiltinMember = name == "p1" ? .formatSpecRadix : name == "p2" ? .formatSpecAlign : .formatSpecWidth
                 print(typeDisplay(ref c, by: propertyType(ref b, through: ref c, for: member, as: expected)))

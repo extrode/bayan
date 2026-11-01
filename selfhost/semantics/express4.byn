@@ -603,6 +603,12 @@ BFormatSpec bindFormatSpec(ref Binder b, through ref Ctx c, for in List<parser.A
     return spec
 }
 
+/// BinderExpressions.cs:2087 IsFormattable.
+bool isFormattable(ref Ctx c, for Type t) {
+    var seen = List<Type>()
+    return whyNotFormattable(ref c, for: t, by: ref seen) is null
+}
+
 /// BinderExpressions.cs:2093 WhyNotFormattable: null when `t` formats; otherwise the part that does not ("" for `t` itself).
 /// `Owned` formats the value it points to; a type reached again is assumed formattable.
 string? whyNotFormattable(ref Ctx c, for Type t, by ref List<Type> seen) {
@@ -687,25 +693,17 @@ Type propertyType(ref Binder b, through ref Ctx c, for BuiltinMember member, as 
     }
 }
 
-/// The C# `formatInto` shape test shared by HasFormatInto and TakesFormatSpec (BinderExpressions.cs:2136-2144) for one method:
-/// `withSpec` false accepts one or two parameters, true exactly two.
-bool t35FormatIntoMethod(ref Ctx c, for FuncId m, bool withSpec) {
-    if c.functions[m].name != "formatInto" || c.functions[m].isStatic || c.functions[m].hasFails { return false }
-    let n = c.functions[m].parameters.length
-    if withSpec ? n != 2 : !(n == 1 || n == 2) { return false }
-    let p0 = c.functions[m].parameters[0]
-    if !(paramIsByRef(ref c, by: p0) && c.locals[p0].type == builtinType(.strBuf)) { return false }
-    if n == 1 { return true }
-    let p1 = c.functions[m].parameters[1]
-    return !paramIsByRef(ref c, by: p1) && c.locals[p1].type == builtinType(.formatSpec)
-}
-
 /// BinderExpressions.cs:2135 HasFormatInto: matches the C emitter's `formatInto` lookup.
 bool t35HasFormatInto(ref Ctx c, for StructId s) {
     var methods = List<FuncId>()
     for m in c.structs[s].methods { methods.append(m) }
     for m in methods {
-        if t35FormatIntoMethod(ref c, for: m, withSpec: false) { return true }
+        let n = c.functions[m].parameters.length
+        if c.functions[m].name == "formatInto" && !c.functions[m].isStatic && !c.functions[m].hasFails && (n == 1 || n == 2)
+            && paramIsByRef(ref c, by: c.functions[m].parameters[0]) && c.locals[c.functions[m].parameters[0]].type == builtinType(.strBuf)
+            && (n == 1 || (!paramIsByRef(ref c, by: c.functions[m].parameters[1]) && c.locals[c.functions[m].parameters[1]].type == builtinType(.formatSpec))) {
+            return true
+        }
     }
     return false
 }
@@ -716,7 +714,11 @@ bool t35TakesFormatSpec(ref Ctx c, for Type t) {
     var methods = List<FuncId>()
     for m in c.structs[typeIndex(t)].methods { methods.append(m) }
     for m in methods {
-        if t35FormatIntoMethod(ref c, for: m, withSpec: true) { return true }
+        if c.functions[m].name == "formatInto" && !c.functions[m].isStatic && !c.functions[m].hasFails && c.functions[m].parameters.length == 2
+            && paramIsByRef(ref c, by: c.functions[m].parameters[0]) && c.locals[c.functions[m].parameters[0]].type == builtinType(.strBuf)
+            && !paramIsByRef(ref c, by: c.functions[m].parameters[1]) && c.locals[c.functions[m].parameters[1]].type == builtinType(.formatSpec) {
+            return true
+        }
     }
     return false
 }
