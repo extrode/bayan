@@ -55,6 +55,13 @@ if [ -n "$TASK" ]; then
 else note "checks: no --task and --filter names no SelfhostSemanticsT<n>Tests class, so the content checks cannot run"; fi
 
 # 6 mutations (only when everything above passed: a mutation run on a red tree proves nothing)
+# a mutate-orig.txt left by a killed run that matches no --mutate file means a file may still hold a mutant: refuse
+IFS=',' read -ra MF <<< "$MUTATE"
+if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ] && [ -f $LOG/mutate-orig.txt ]; then
+  same=0; for f in "${MF[@]}"; do cmp -s $LOG/mutate-orig.txt "$f" && same=1; done
+  if [ $same = 1 ]; then rm -f $LOG/mutate-orig.txt
+  else note "mutation: tmp/guard-run/mutate-orig.txt is left from an interrupted run and differs from $MUTATE; copy it back over the mutated file, then delete it"; fi
+fi
 if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
   . "$(dirname "$0")/mutant-outcome.sh"
   [ -n "$SEED" ] || SEED=$RANDOM$RANDOM; echo "mutation seed: $SEED"
@@ -63,16 +70,18 @@ if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
   LIMIT=$((5 * TT)); MINT=${GUARD_MUTANT_TIMEOUT_MIN:-60}; [ $LIMIT -ge $MINT ] || LIMIT=$MINT
   # portable timeout (no GNU coreutils): the child leads its own process group, killed whole on expiry; exit 124
   run_limited() { perl -e '$t = shift; $p = fork; if (!$p) { setpgrp(0, 0); exec @ARGV or exit 127 } $SIG{ALRM} = sub { kill "KILL", -$p; waitpid($p, 0); exit 124 }; alarm $t; waitpid($p, 0); exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$@"; }
-  IFS=',' read -ra MF <<< "$MUTATE"
+  # the file holds a mutant during the loop: put the original back however the guard ends
+  restore() { cp $LOG/mutate-orig.txt "$f" && rm -f $LOG/mutate-orig.txt; }
   for f in "${MF[@]}"; do
     cp "$f" $LOG/mutate-orig.txt
+    trap restore EXIT; trap 'exit 130' INT TERM
     # candidates are (line, operator) pairs: comparison, boolean, +/- 1, &&/||, outside comment lines and strings
     SITES=(); while read -r s; do SITES+=("$s"); done < <(OPS="$OPS" perl -ne 'BEGIN { @o = eval $ENV{OPS} } next if m{^\s*//}; for $i (0..$#o) { print "$.:$i\n" if /$o[$i][0]/ }' "$f")
     # lines whose only observable effect goes through an unported sibling may be exempted: `// mutation-exempt: Qnnn`
     # on the line above (or `… through N` for a span), the Question citing a line of the span (mutation-exempt.py)
     EX=(); while read -r k v; do case "$k" in skip) EX+=("$v");; note) note "$v";; esac; done < <(python3 -I "$(dirname "$0")/mutation-exempt.py" "$f" docs/bayan-handoff.md)
     KEEP=(); for s in "${SITES[@]}"; do skip=0; for e in ${EX[@]+"${EX[@]}"}; do [ "${s%%:*}" = "$e" ] && skip=1; done; [ $skip = 0 ] && KEEP+=("$s"); done; SITES=(${KEEP[@]+"${KEEP[@]}"})
-    total=${#SITES[@]}; [ "$total" = 0 ] && { note "mutation: $f has no mutable lines"; continue; }
+    total=${#SITES[@]}; [ "$total" = 0 ] && { note "mutation: $f has no mutable lines"; restore; continue; }
     PICK=(); while read -r s; do PICK+=("$s"); done < <(printf '%s\n' "${SITES[@]}" | perl -e 'srand(shift); @a = <STDIN>; for ($i = @a; --$i > 0;) { $j = int rand($i + 1); @a[$i, $j] = @a[$j, $i] } print @a' "$SEED")
     killed=0; tried=0
     for s in "${PICK[@]}"; do
@@ -88,9 +97,11 @@ if [ ${#FAIL[@]} = 0 ] && [ -n "$MUTATE" ]; then
         killed=$((killed+1)); [ "$outcome" = timeout ] && echo "mutation timeout: $f:$ln killed after ${LIMIT}s"; fi
       cp $LOG/mutate-orig.txt "$f"
     done
+    restore
     [ $tried -lt $N ] && [ $tried -lt $total ] && note "mutation: only $tried of $N mutants of $f compiled; add tests until enough distinct sites are covered"
     echo "mutation $f: $killed/$tried killed"
   done
+  trap - EXIT INT TERM
   dotnet build -v q > /dev/null 2>&1
 fi
 

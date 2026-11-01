@@ -42,15 +42,19 @@ def table(name, pairs):
     return "\n".join(lines)
 
 
+def cached_ucd():
+    directory = os.path.join(ROOT, "tmp", f"ucd-{UNICODE_VERSION}")
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, "UnicodeData.txt")
+    if not os.path.exists(path):
+        # download beside the cache and move it in whole, so an interrupted download is never taken for the file
+        urllib.request.urlretrieve(f"https://www.unicode.org/Public/{UNICODE_VERSION}/ucd/UnicodeData.txt", path + ".part")
+        os.replace(path + ".part", path)
+    return path
+
+
 def main():
-    if len(sys.argv) > 1:
-        path = sys.argv[1]
-    else:
-        directory = os.path.join(ROOT, "tmp", f"ucd-{UNICODE_VERSION}")
-        os.makedirs(directory, exist_ok=True)
-        path = os.path.join(directory, "UnicodeData.txt")
-        if not os.path.exists(path):
-            urllib.request.urlretrieve(f"https://www.unicode.org/Public/{UNICODE_VERSION}/ucd/UnicodeData.txt", path)
+    path = sys.argv[1] if len(sys.argv) > 1 else cached_ucd()
     lower, upper = load(path)
     generated = "\n".join([
         f"{BEGIN} from UnicodeData.txt {UNICODE_VERSION}; do not edit. */",
