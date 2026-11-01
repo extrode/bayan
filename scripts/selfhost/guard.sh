@@ -4,7 +4,7 @@
 # Checks: 1 scope (changed files match --allow, plus handoff/todo/tasks), 2 no junk (binary or extensionless files),
 # 3 build 0 warnings, 4 tests pass with 0 skipped, and coverage (spec 013 T26): when the branch changes selfhost .byn files the
 # tests run under BAYAN_COVERAGE with those files, every line and branch of them must be covered (each missed one is named),
-# and no file's line coverage may fall below tests/quality-baseline.json; the report is copied to tmp/guard-run/quality-coverage.json, 5 banned C#-isms in changed .byn, 6 mutation (spec 013 R14): every
+# and no file's line or branch coverage may fall below tests/quality-baseline.json; the report is copied to tmp/guard-run/quality-coverage.json, 5 banned C#-isms in changed .byn, 6 mutation (spec 013 R14): every
 # mutation site of the --mutate files must make the filtered tests fail (`bayan mutate --binary` over a BAYAN_SNAPSHOT
 # recording; a survivor = an untested change; `@unobservable because "…"` marks a statement whose mutants no test can see),
 # and no file's score may fall below tests/quality-baseline.json,

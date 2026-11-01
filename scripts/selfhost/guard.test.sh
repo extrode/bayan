@@ -6,7 +6,7 @@
 # with only an earlier run's report beside the binary fails, a score below tests/quality-baseline.json fails, a
 # null baseline passes, a failed recording, a missing CLI or manifest fails with a message, and no --mutate records nothing and leaves no report.
 # Coverage (T26): with a.byn changed the tests run under BAYAN_COVERAGE with it; 100% passes and leaves quality-coverage.json,
-# each missed or unknown line and branch fails by file:line, a drop below the baseline fails, no report fails, and a red test run
+# each missed or unknown line and branch fails by file:line, a line or branch drop below the baseline fails, no report fails, and a red test run
 # is not checked for coverage.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -87,8 +87,9 @@ cov 3 3 '[]' '[]' '[[2, 10, true, "hit"], [2, 10, false, "hit"]]'; covpass=$(g);
 [ -f tmp/guard-run/quality-coverage.json ] && covrep=1 || covrep=0
 cov 1 3 '[3]' '[5]' '[[2, 10, true, "missed"], [2, 10, false, "hit"], [3, 5, false, "unknown"]]'; covmiss=$(g)
 touch $aux/testfail; covred=$(g); rm $aux/testfail
-printf '{ "version": 1, "files": { "selfhost/semantics/a.byn": { "mutation": null, "coverage": 1.0 } } }\n' > tests/quality-baseline.json
-cov 2 3 '[3]' '[]' '[[2, 10, true, "hit"], [2, 10, false, "hit"]]'; covdrop=$(ALLOWX=,tests/quality-baseline.json g); git show HEAD:tests/quality-baseline.json > tests/quality-baseline.json
+printf '{ "version": 1, "files": { "selfhost/semantics/a.byn": { "mutation": null, "coverage": 1.0, "branches": 1.0 } } }\n' > tests/quality-baseline.json
+cov 2 3 '[3]' '[]' '[[2, 10, true, "hit"], [2, 10, false, "hit"]]'; covdrop=$(ALLOWX=,tests/quality-baseline.json g)
+cov 3 3 '[]' '[]' '[[2, 10, true, "missed"], [2, 10, false, "hit"]]'; brdrop=$(ALLOWX=,tests/quality-baseline.json g); git show HEAD:tests/quality-baseline.json > tests/quality-baseline.json
 touch $aux/nocov; covnone=$(g); rm $aux/nocov
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
@@ -121,6 +122,8 @@ echo "$covmiss" | grep -q '^- coverage: missed branch selfhost/semantics/a.byn:2
 echo "$covmiss" | grep -q '^- coverage: unknown branch selfhost/semantics/a.byn:3:5 never false; ' || fail "an unknown branch was not a FAIL item" "$covmiss"
 echo "$covred" | grep -q '^- tests: FAIL' && ! echo "$covred" | grep -q '^- coverage:' || fail "a red test run was checked for coverage" "$covred"
 echo "$covdrop" | grep -q '^- baseline: coverage score of selfhost/semantics/a.byn fell from 1.0 to 0.6667 (tests/quality-baseline.json)$' || fail "a coverage drop below the baseline was not a FAIL item" "$covdrop"
+echo "$covdrop" | grep -q 'branches score' && fail "an unchanged branch score was a drop item" "$covdrop"
+echo "$brdrop" | grep -q '^- baseline: branches score of selfhost/semantics/a.byn fell from 1.0 to 0.5 (tests/quality-baseline.json)$' || fail "a branch coverage drop below the baseline was not a FAIL item" "$brdrop"
 echo "$covnone" | grep -q "^- coverage: the tests wrote no tmp/guard-run/coverage/bayan-quality.json: no test under --filter 'FullyQualifiedName~SelfhostSemanticsT99Tests' builds a selfhost program with selfhost/semantics/a.byn$" \
   || fail "a coverage run without a report (an earlier run's left in place) did not fail" "$covnone"
 echo PASS

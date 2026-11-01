@@ -94,6 +94,40 @@ public sealed class SelfhostCoverageTests
         Assert.Equal((0, 1), (file["lines"]!["missed"]!.AsArray().Count, file["lines"]!["unknown"]!.AsArray().Count));
     }
 
+    /// <summary>
+    /// Spec 013 T26 C7: the report is built from the coverage map, so a function no run calls (<c>h</c>, beside the called
+    /// <c>f</c>) and a file nothing calls into (<c>other.byn</c>) show as missed lines and branches, never absent.
+    /// Break-tests: report only the counters a counter file lists; drop the counters of a file no counter file mentions.
+    /// </summary>
+    [Fact]
+    public void AFunctionNoRunCallsIsMissedNotAbsent()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", "selfhost-coverage-unreached");
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        Directory.CreateDirectory(Path.Combine(dir, "src"));
+        var lib = Path.Combine(dir, "src", "lib.byn");
+        var other = Path.Combine(dir, "src", "other.byn");
+        File.WriteAllText(lib, "i64 f(i64 a) {\n    return a\n}\ni64 h(i64 a) {\n    if a > 9 {\n        return 0\n    }\n    return a\n}\n");
+        File.WriteAllText(other, "i64 g() {\n    return 5\n}\n");
+        var main = SourceText.FromString(Path.Combine(dir, "src", "main.byn"), "print($\"{f(2)}\")\n");
+        var c = Compilation.Create([SourceText.FromFile(lib), SourceText.FromFile(other), main], Path.Combine(dir, "src"));
+        Assert.False(c.Diagnostics.HasErrors, string.Join("\n", c.Diagnostics.Items.Select(d => d.Message)));
+        var outDir = Path.Combine(dir, "out");
+        var build = SelfhostSemanticsHarness.BuildFast(c, new HashSet<string>(StringComparer.Ordinal) { main.Path }, null, outDir, null);
+        Assert.True(build.Succeeded, build.Errors);
+        Assert.Equal("2\n", SelfhostParserTests.Run(build.ExecutablePath!).Out);
+        SelfhostSemanticsHarness.WriteCoverage(outDir);
+        var files = JsonNode.Parse(File.ReadAllText(Path.Combine(outDir, "bayan-quality.json")))!["files"]!.AsArray().ToDictionary(f => (string)f!["path"]!);
+        Assert.Equal([lib, other], files.Keys.Order(StringComparer.Ordinal));
+        var file = files[lib]!;
+        Assert.Equal([5, 6, 8], file["lines"]!["missed"]!.AsArray().Select(n => (int)n!));
+        Assert.Equal((1, 4), ((int)file["lines"]!["covered"]!, (int)file["lines"]!["total"]!));
+        Assert.Equal((0, 2), ((int)file["branches"]!["covered"]!, (int)file["branches"]!["total"]!));
+        Assert.Equal([(5, true), (5, false)], file["branches"]!["missed"]!.AsArray().Select(b => ((int)b!["line"]!, (bool)b["outcome"]!)));
+        Assert.Equal([2], files[other]!["lines"]!["missed"]!.AsArray().Select(n => (int)n!));
+    }
+
     /// <summary>A <c>BAYAN_COVERAGE_FILES</c> entry matching no compiled source throws, as <c>BAYAN_SNAPSHOT_FILES</c> does;
     /// <c>BAYAN_SNAPSHOT</c> with <c>BAYAN_COVERAGE</c> is refused. Break-tests: drop the <c>variable</c> argument; drop
     /// the both-set check.</summary>
