@@ -235,6 +235,126 @@ public sealed class SelfhostSemanticsT24Tests
             return
         }
 
+        union Slot {
+            empty
+            full(List<i64> items)
+        }
+
+        List<i64> make() {
+            return List<i64>()
+        }
+
+        Slot fill() {
+            return Slot.full(List<i64>())
+        }
+
+        Bag pack() {
+            return Bag { items: List<i64>(), n: 1 }
+        }
+
+        void drop(move Slot s) {
+            print("dropped")
+        }
+
+        void stash(move Bag b) {
+            print($"{b.n}")
+        }
+
+        i64 keep(move List<i64> xs) => xs.length
+
+        i64 drops(move Slot s) => 1
+
+        void fillOut(out i64 x) {
+            x = 1
+        }
+
+        void switchBind() {
+            for i in 0..2 {
+                let xs = make()
+                switch move xs {
+                    case let x:
+                        sink(move x)
+                }
+                let slot = fill()
+                switch move slot {
+                    case .full whole:
+                        drop(move whole)
+                    default:
+                        print("empty")
+                }
+                let bag = pack()
+                switch move bag {
+                    case Bag { n: 1 } b:
+                        stash(move b)
+                    default:
+                        print("other")
+                }
+            }
+        }
+
+        i64 armBind() {
+            var n = 0
+            for i in 0..2 {
+                let xs = make()
+                n += (move xs) switch {
+                    let x => keep(move x),
+                }
+                let slot = fill()
+                n += (move slot) switch {
+                    .full whole => drops(move whole),
+                    .empty => 0,
+                }
+            }
+            return n
+        }
+
+        void fillList(out List<i64> xs) {
+            xs = List<i64>()
+        }
+
+        i64 flows(i64? maybe, bool ok, Arena arena) fails E {
+            var xs = List<i64>()
+            do {
+                sink(move xs)
+            } while ok
+            let a = make()
+            assert keep(move a) > 0
+            print($"{a.length}")
+            let b = make()
+            provide allocator: arena {
+                sink(move b)
+            }
+            print($"{b.length}")
+            let d = make()
+            let v = maybe ?? keep(move d)
+            print($"{d.length}")
+            let e = make()
+            let k = step() catch (.bad) keep(move e)
+            print($"{e.length}")
+            let g = make()
+            if false {
+                sink(move g)
+            }
+            print($"{g.length}")
+            let h = make()
+            while false {
+                sink(move h)
+            }
+            print($"{h.length}")
+            var r = make()
+            sink(move r)
+            fillList(out r)
+            print($"{r.length}")
+            let w = maybe ?? return 0
+            let j = step() catch {
+                return 2
+            }
+            if !ok {
+                fail .bad
+            }
+            return v + w + k + j
+        }
+
         void main() {
             Panic.handler = onCrash
             print($"{restricted() catch -1}")
@@ -245,7 +365,7 @@ public sealed class SelfhostSemanticsT24Tests
     [
         "copyParam", "copyLocals", "storeInto", "withCopy", "returns", "useAfterMove", "loopMove", "branches", "deferMove",
         "errdeferMove", "readsMoved", "captures", "vars", "total", "zero", "bumpFirst", "forward", "viaReadOnly", "sum",
-        "handlers", "restricted", "onCrash",
+        "handlers", "restricted", "onCrash", "switchBind", "armBind", "flows",
     ];
 
     private static readonly (string Type, string Name)[] Analyses =
@@ -363,6 +483,7 @@ public sealed class SelfhostSemanticsT24Tests
                 case BuiltinType b: return $"builtinType(.{Lower(b.Kind.ToString())})";
                 case StructSymbol s: return $"structTypeOf(t24mStruct(ref c, by: \"{s.Name}\"))";
                 case EnumSymbol n: return $"enumTypeOf(t24mEnum(ref c, by: \"{n.Name}\"))";
+                case UnionSymbol u: return $"unionTypeOf(t24mUnion(ref c, by: \"{u.Name}\"))";
                 default: throw new NotSupportedException(t.GetType().Name);
             }
         }
@@ -460,6 +581,26 @@ public sealed class SelfhostSemanticsT24Tests
                 {
                     var value = Expr(k.Value);
                     Line($"let {id} = addConstantPattern(ref c, from: BConstantPattern {{ span: {sp}, inputType: {Ty(k.InputType)}, value: {value} }})");
+                    break;
+                }
+                case BoundPropertyPattern pp:
+                {
+                    var subs = List("BSubpattern", pp.Subpatterns.Select(x =>
+                    {
+                        var path = List("BMemberStep", x.Path.Select(m => m.Field is { } f
+                            ? $"BMemberStep {{ field: {Field(f)}, type: {Ty(m.Type)} }}"
+                            : throw new NotSupportedException("member step without a field")).ToList());
+                        return $"BSubpattern {{ path: move {path}, pattern: {Pattern(x.Pattern)} }}";
+                    }).ToList());
+                    var designation = pp.Designation is null ? "-1" : Local(pp.Designation);
+                    Line($"let {id} = addPropertyPattern(ref c, from: BPropertyPattern {{ span: {sp}, inputType: {Ty(pp.InputType)}, valueType: {Ty(pp.ValueType)}, subpatterns: move {subs}, designation: {designation} }})");
+                    break;
+                }
+                case BoundUnionPattern up:
+                {
+                    var subs = List("BPattern", up.Subpatterns.Select(Pattern).ToList());
+                    var designation = up.Designation is null ? "-1" : Local(up.Designation);
+                    Line($"let {id} = addUnionPattern(ref c, from: BUnionPattern {{ span: {sp}, inputType: {Ty(up.InputType)}, variant: t24mVariant(ref c, by: \"{up.Variant.Union.Name}\", for: \"{up.Variant.Name}\"), subpatterns: move {subs}, designation: {designation} }})");
                     break;
                 }
                 default:
@@ -609,11 +750,11 @@ public sealed class SelfhostSemanticsT24Tests
                 }
                 case BoundCatch k:
                 {
-                    if (k.Variant is not null) throw new NotSupportedException("catch variant");
                     var operand = Expr(k.Operand);
                     var binding = k.Binding is null ? "-1" : Local(k.Binding);
+                    var variant = k.Variant is null ? "-1" : $"t24mErrorVariant(ref c, by: \"{k.Variant.Set.Name}\", for: \"{k.Variant.Name}\")";
                     var handler = Expr(k.Handler);
-                    Line($"let {id} = addCatch(ref c, from: BCatch {{ span: {sp}, operand: {operand}, binding: {binding}, handler: {handler}, type: {Ty(k.Type)} }})");
+                    Line($"let {id} = addCatch(ref c, from: BCatch {{ span: {sp}, operand: {operand}, binding: {binding}, variant: {variant}, handler: {handler}, type: {Ty(k.Type)} }})");
                     break;
                 }
                 case BoundLambda l:
@@ -630,6 +771,37 @@ public sealed class SelfhostSemanticsT24Tests
                 case BoundErrorExpr:
                     Line($"let {id} = addErrorExpr(ref c, from: BErrorExpr {{ span: {sp} }})");
                     break;
+                case BoundErrorVariant v:
+                {
+                    var payload = List("BExpr", v.Payload.Select(Expr).ToList());
+                    Line($"let {id} = addErrorVariant(ref c, from: BErrorVariant {{ span: {sp}, variant: t24mErrorVariant(ref c, by: \"{v.Variant.Set.Name}\", for: \"{v.Variant.Name}\"), payload: move {payload}, type: {Ty(v.Type)} }})");
+                    break;
+                }
+                case BoundSwitchExpr x:
+                {
+                    var value = Expr(x.Value);
+                    var arms = List("BSwitchArm", x.Arms.Select(arm =>
+                    {
+                        var pattern = Pattern(arm.Pattern);
+                        var guard = Opt(arm.Guard);
+                        var result = Expr(arm.Value);
+                        return $"BSwitchArm {{ span: {Span(arm.Syntax)}, pattern: {pattern}, guard: {guard}, value: {result} }}";
+                    }).ToList());
+                    Line($"let {id} = addSwitchExpr(ref c, from: BSwitchExpr {{ span: {sp}, value: {value}, arms: move {arms}, type: {Ty(x.Type)} }})");
+                    break;
+                }
+                case BoundJump j:
+                {
+                    var jump = Stmt(j.Jump);
+                    Line($"let {id} = addJump(ref c, from: BJump {{ span: {sp}, jump: {jump} }})");
+                    break;
+                }
+                case BoundBlockExpr b:
+                {
+                    var block = Stmt(b.Block);
+                    Line($"let {id} = addBlockExpr(ref c, from: BBlockExpr {{ span: {sp}, block: {block}, type: {Ty(b.Type)} }})");
+                    break;
+                }
                 default:
                     throw new NotSupportedException(e.GetType().Name);
             }
@@ -729,6 +901,48 @@ public sealed class SelfhostSemanticsT24Tests
                 case BoundErrorStmt:
                     Line($"let {id} = addErrorStmt(ref c, from: BErrorStmt {{ span: {sp} }})");
                     break;
+                case BoundSwitch x:
+                {
+                    var target = Target(x.Target);
+                    var value = Expr(x.Value);
+                    var sections = List("BSwitchSection", x.Sections.Select(section =>
+                    {
+                        var pattern = section.Pattern is null ? "-1" : Pattern(section.Pattern);
+                        var guard = Opt(section.Guard);
+                        var body = List("BStmt", section.Body.Select(Stmt).ToList());
+                        return $"BSwitchSection {{ span: {Span(section.Syntax)}, pattern: {pattern}, guard: {guard}, body: move {body} }}";
+                    }).ToList());
+                    Line($"let {id} = addSwitch(ref c, from: BSwitch {{ span: {sp}, value: {value}, sections: move {sections}, target: {target}, exhaustive: {(x.Exhaustive ? "true" : "false")} }})");
+                    break;
+                }
+                case BoundAssert x:
+                {
+                    if (x.FailsWith is not null) throw new NotSupportedException("assert fails");
+                    var cond = Expr(x.Condition);
+                    Line($"let {id} = addAssert(ref c, from: BAssert {{ span: {sp}, condition: {cond} }})");
+                    break;
+                }
+                case BoundFail x:
+                {
+                    var error = Expr(x.Error);
+                    Line($"let {id} = addFail(ref c, from: BFail {{ span: {sp}, error: {error} }})");
+                    break;
+                }
+                case BoundDoWhile x:
+                {
+                    var target = Target(x.Target);
+                    var body = Stmt(x.Body);
+                    var cond = Expr(x.Condition);
+                    Line($"let {id} = addDoWhile(ref c, from: BDoWhile {{ span: {sp}, body: {body}, condition: {cond}, target: {target} }})");
+                    break;
+                }
+                case BoundContext x:
+                {
+                    var allocator = Expr(x.Allocator);
+                    var body = Stmt(x.Body);
+                    Line($"let {id} = addContext(ref c, from: BContext {{ span: {sp}, allocator: {allocator}, body: {body} }})");
+                    break;
+                }
                 default:
                     throw new NotSupportedException(s.GetType().Name);
             }
@@ -821,6 +1035,27 @@ public sealed class SelfhostSemanticsT24Tests
                     if c.enumMembers[k].name == name && c.enums[c.enumMembers[k].owner].name == owner { return EnumMemberId(k) }
                 }
                 panic($"no enum member {owner}.{name}")
+            }
+
+            UnionId t24mUnion(ref Ctx c, by string name) {
+                for k in 0..c.unions.length {
+                    if c.unions[k].name == name { return UnionId(k) }
+                }
+                panic($"no union {name}")
+            }
+
+            VariantId t24mVariant(ref Ctx c, by string owner, for string name) {
+                for k in 0..c.unionVariants.length {
+                    if c.unionVariants[k].name == name && c.unions[c.unionVariants[k].owner].name == owner { return VariantId(k) }
+                }
+                panic($"no variant {owner}.{name}")
+            }
+
+            VariantId t24mErrorVariant(ref Ctx c, by string set, for string name) {
+                for k in 0..c.errorVariants.length {
+                    if c.errorVariants[k].name == name && c.errorSets[c.errorVariants[k].set].name == set { return VariantId(k) }
+                }
+                panic($"no error variant {set}.{name}")
             }
 
             FieldId t24mField(ref Ctx c, by string owner, for string name) {

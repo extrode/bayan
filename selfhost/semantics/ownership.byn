@@ -122,13 +122,6 @@ void t24Report(ref Ownership a, through ref Ctx c, for SemaCode code, at TextSpa
     report(ref c, for: code, from: a.file, at: span, by: (arg, "", "", "", ""), label: label, help: help, hasFix: hasFix, fixSpan: fixSpan, fixReplacement: fixReplacement)
 }
 
-/// C# `Constant?.Value as bool?`.
-bool? t24ConstantBool(in Ctx c, for BExpr e) {
-    let k = exprConstant(in c, for: e) ?? return null
-    if k.kind != .flag { return null }
-    return k.flag
-}
-
 i64 t24Line(in Ctx c, for FileId file, at i64 offset) => linePosition(c.files[file].text.span, at: offset).line
 
 // ── Statements ───────────────────────────────────────────────────────────────
@@ -205,7 +198,7 @@ OwnState t24Statement(ref Ownership a, through ref Ctx c, for BStmt s, by move O
             let thenBranch = c.bIfs[i].then
             let elseBranch = c.bIfs[i].elseBranch
             state = t24Expr(ref a, through: ref c, for: condition, by: move state)
-            let constant = t24ConstantBool(in c, for: condition)
+            let constant = t23ConstantBool(in c, for: condition)
             let thenStart = constant == false ? t24Unreachable() : t24Clone(in state)
             let thenState = t24Statement(ref a, through: ref c, for: thenBranch, by: move thenStart)
             var otherwise = t24Unreachable()
@@ -226,7 +219,7 @@ OwnState t24Statement(ref Ownership a, through ref Ctx c, for BStmt s, by move O
             var entry = t24Clone(in state)
             while true {
                 let head = t24Expr(ref a, through: ref c, for: condition, by: t24Clone(in entry))
-                let bodyStart = t24ConstantBool(in c, for: condition) == false ? t24Unreachable() : t24Clone(in head)
+                let bodyStart = t23ConstantBool(in c, for: condition) == false ? t24Unreachable() : t24Clone(in head)
                 var bodyState = t24Statement(ref a, through: ref c, for: body, by: move bodyStart)
                 if a.continues.contains(target) {
                     bodyState = t24Join(in bodyState, by: in a.continues[target])
@@ -234,7 +227,7 @@ OwnState t24Statement(ref Ownership a, through ref Ctx c, for BStmt s, by move O
                 }
                 let next = t24Join(in state, by: in bodyState)
                 if t24SameAs(in next, by: in entry) {
-                    let after = t24ConstantBool(in c, for: condition) == true ? t24Unreachable() : move head
+                    let after = t23ConstantBool(in c, for: condition) == true ? t24Unreachable() : move head
                     return t24Exit(ref a, for: target, by: move after)
                 }
                 entry = move next
@@ -254,7 +247,7 @@ OwnState t24Statement(ref Ownership a, through ref Ctx c, for BStmt s, by move O
                 let afterCondition = t24Expr(ref a, through: ref c, for: condition, by: move bodyState)
                 let next = t24Join(in state, by: in afterCondition)
                 if t24SameAs(in next, by: in entry) {
-                    let after = t24ConstantBool(in c, for: condition) == true ? t24Unreachable() : move afterCondition
+                    let after = t23ConstantBool(in c, for: condition) == true ? t24Unreachable() : move afterCondition
                     return t24Exit(ref a, for: target, by: move after)
                 }
                 entry = move next
