@@ -26,9 +26,9 @@ Most of the time goes to the recording (one schemata build per distinct `main.by
 |---|---|---|
 | one CheckParity case (T27 C4) | `generics.byn` | 19 min 27 s |
 | one CheckParity case (T27 C4) | the 10 T27 files | > 90 min (timed out twice, at 25 and 90 min) |
-| site map only, no tests, no C compile | the 10 T27 files (8087 sites) | ~3.4 h estimated (1.5 s per site) |
+| site map only, no tests, no C compile | the 10 T27 files (8087 sites, 536 marked) | 2 h 50 min measured (1.27 s per site) |
 | ctx.byn filter (above) | `ctx.byn` | 4 min 35 s |
 
-**The cost is in `Schemata.Build`, not the C compile** (stack dump of the site-map run, 2026-11-02). For every site, `Schemata.Rebinds` applies the mutation to the source and calls `Compilation.WithFile`, which re-parses and re-binds the whole package (user decision 2026-10-31: a mutant that does not compile is not emitted). The build is therefore sites × one full compile: about 1.5 s per site over `selfhost/semantics/`, i.e. 763 sites ≈ 19 min and 8087 sites ≈ 3.4 h. Finding the 8087 sites alone takes 1 s. The fix (re-bind only the mutated module and its dependents, or cache across sites) changes a user decision, so it is left open.
+**The cost is in `Schemata.Build`, not the C compile** (stack dump of the site-map run, 2026-11-02). For every site, `Schemata.Rebinds` applies the mutation to the source and calls `Compilation.WithFile`, which re-parses and re-binds the whole package (user decision 2026-10-31: a mutant that does not compile is not emitted). The build is therefore sites × one full compile: about 1.5 s per site over `selfhost/semantics/`, i.e. 763 sites ≈ 19 min and 8087 sites = 2 h 50 min (measured). Finding the 8087 sites alone takes 1 s. The fix (re-bind only the mutated module and its dependents, or cache across sites) changes a user decision, so it is left open.
 
 This is why landing runs no mutation (user decision 2026-11-01) and why CI shards it (`.github/workflows/mutation.yml`, 4 shards).
