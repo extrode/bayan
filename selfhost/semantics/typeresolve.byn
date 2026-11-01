@@ -81,9 +81,8 @@ Binder t8Binder(in TypeResolver r) => Binder {
     errorNarrowed: [],
 }
 
-/// The C# `Compilation.MembersDeclared`: `Ctx` has no such flag (Q556), so a struct or tuple key's
-/// check is always handed to `afterMembersDeclared`.
-bool t8MembersDeclared(in Ctx c) => false
+/// The C# `Compilation.MembersDeclared`.
+bool t8MembersDeclared(in Ctx c) => c.membersDeclared
 
 /// The C# `Builtins.IoError`/`Utf8Error`/`ParseError`: the set of that name from a `<builtin>` file (Q557).
 Type t8BuiltinSet(in Ctx c, for string name) {
