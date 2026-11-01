@@ -332,5 +332,3 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - guard.sh `run_limited` (:72): perl setpgrp child survives INT, so an interrupted guard leaves `dotnet test` running (pre-existing; review c1ebcac33983..9eef3ece, loop 2).
 - land.sh (:28-34): the PASS review commit's shape is checked, not its origin; a writer can forge it (pre-existing; an author check would not stop it either; review c1ebcac33983..9eef3ece, loop 2).
 - CliApp.cs:801-804 `ListingName`: `../x.byn` and `_/x.byn` share a listing name (pre-existing, A7 choice; review c1ebcac33983..9eef3ece, loop 2).
-- guard.sh:76-77 (+ note at :63): a signal during the backup `cp` leaves a truncated `tmp/guard-run/mutate-orig.txt`, and the next run's note advises copying it over the intact file; write the backup to a temp name and `mv` it into place (review c1ebcac33983..9eef3ece, loop 3, left after the 3-loop cap).
-- land.sh:16: `LINE=$(grep -m1 …)` under `set -e` exits 1 silently when prompt.md has no guard line; print "LAND REFUSED: no guard line in tmp/010-<t>/prompt.md" (review c1ebcac33983..9eef3ece, loop 3).
