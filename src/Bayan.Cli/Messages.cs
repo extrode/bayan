@@ -47,6 +47,10 @@ public static class Messages
                                [--changed [--base <ref>]: only modules with files changed since HEAD or <ref>]
                                [--only <text>: only tests whose name contains <text>; repeatable]
                                [-v: also list the passing and pending tests]
+                               [--mutate: run every mutant against the tests that reach it; with --run <cmd>, run <cmd> once
+                               per mutant instead, with BAYAN_MUTANT set (exit 0 survived, non-zero killed)]
+          mutate --binary <exe> --sites <map.json> -- <cmd>
+                               run <cmd> once per mutant site of a prebuilt --mutate binary, as test --mutate --run does
           dist [<dir>]         build release binaries into dist/<version>/ [--target <t>|all] [--mode m]
                                [--force: rebuild an existing version] [--allow-dirty: build from a dirty git tree]
           clean [<dir>]        remove out/ [--dist: also dist/] [--cache: also the global build cache]
@@ -80,7 +84,7 @@ public static class Messages
           0  success
           1  compile errors
           2  usage errors (unknown command or option, missing path)
-          3  test failures
+          3  test failures, or a coverage or mutation score below its minimum
           4  toolchain problems (no C compiler, unwritable cache, C compiler failure)
 
         `bayan run` exits 1 when compilation fails and otherwise passes the program's own exit code
@@ -158,6 +162,20 @@ public static class Messages
     public static readonly Message TestModuleCountOne = Register("test.module-count.one", "{0} module");
     public static readonly Message TestModuleCountMany = Register("test.module-count.many", "{0} modules");
     public static readonly Message TestSkipped = Register("test.skipped", " ({0} in unchanged modules skipped)");
+    public static readonly Message MutateLine = Register("mutate.line", "{0}:{1}:{2} {3} `{4}` -> `{5}`: {6}");
+    public static readonly Message MutateTimeoutNote = Register("mutate.timeout-note", " (counted as killed)");
+    public static readonly Message MutateTotals = Register("mutate.totals", "{0} killed, {1} survived, {2} timeout, {3} not reached, {4} marked, {5} not emitted");
+    public static readonly Message MutateExcluded = Register("mutate.excluded", "test {0} does not pass unmutated; left out");
+    public static readonly Message MutateBinaryUsage = Register("mutate.binary-usage", "bayan: usage: bayan mutate --binary <exe> --sites <map.json> -- <command>");
+    public static readonly Message MutateBadSites = Register("mutate.bad-sites", "bayan: `{0}` is not a version 1 site map");
+    public static readonly Message MutateBaselineFailed = Register("mutate.baseline-failed", "bayan: the command does not exit 0 on the unmutated binary");
+    public static readonly Message GateBelow = Register("gate.below", "bayan: {0} {1}% < {2}%");
+    public static readonly Message MutateKilled = Register("mutate.killed", "killed");
+    public static readonly Message MutateSurvived = Register("mutate.survived", "survived");
+    public static readonly Message MutateTimeout = Register("mutate.timeout", "timeout");
+    public static readonly Message MutateNotReached = Register("mutate.not-reached", "not reached");
+    public static readonly Message MutateMarked = Register("mutate.marked", "marked");
+    public static readonly Message MutateNotEmitted = Register("mutate.not-emitted", "not emitted");
     public static readonly Message TestOnlyNoMatch = Register("test.only.no-match", "bayan: no test name contains {0}");
     public static readonly Message TestProgress = Register("test.progress", "testing {0}");
     public static readonly Message TestTimedOut = Register("test.timed-out", "timed out after {0:0} s");
@@ -167,6 +185,7 @@ public static class Messages
     public static readonly Message TestDetail = Register("test.detail", "      {0}");
     public static readonly Message TestSummaryPassed = Register("test.summary.passed", "{0} {1} passed {2} {3}");
     public static readonly Message TestSummaryPending = Register("test.summary.pending", "{0} {1} passed {2} {3} pending {2} {4}");
+    public static readonly Message TestCoverageSummary = Register("test.summary.coverage", "coverage: lines {0}, branches {1}, error paths {2}");
     public static readonly Message TestSummaryFailed = Register("test.summary.failed", "{0} {1} passed {2} {3} {4} failed {2} {5} pending {2} {6}");
     public static readonly Message TestSeconds = Register("test.seconds", "{0}s");
     public static readonly Message TestRerunOne = Register("test.rerun.one", "  rerun the failure: {0}");

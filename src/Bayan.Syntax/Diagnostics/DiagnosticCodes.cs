@@ -102,6 +102,7 @@ public static class DiagnosticCodes
     public static readonly DiagnosticDescriptor PrefixPointerInput = Error("BYN1066", "`{0}` is an input form; write `{1}`");
     public static readonly DiagnosticDescriptor PointerOutsideExtern = Error("BYN1067", "pointer types are allowed only in `extern` declarations");
     public static readonly DiagnosticDescriptor CompactFormatSpec = Error("BYN1068", "`{0}` is an input form; write `{1}`");
+    public static readonly DiagnosticDescriptor StatementAttribute = Error("BYN1069", "attribute `{0}` is not allowed before a statement");
 
     // ── Semantics 2000–3999 ──────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor UndefinedName = Error("BYN2001", "`{0}` is not defined");
@@ -316,6 +317,7 @@ public static class DiagnosticCodes
     // BYN3217 is reserved: v0.1 has no fibers. Its help, once reported: "copy the data first, or spawn the fiber in a scope that ends before `{1}`".
     public static readonly DiagnosticDescriptor BorrowCrossesFiber = Error("BYN3217", "`{0}` holds a reference into `{1}` and cannot be passed to a fiber that may outlive it");
     public static readonly DiagnosticDescriptor RequiresMixesFields = Error("BYN3218", "this `requires` reads `it` and other fields");
+    public static readonly DiagnosticDescriptor UnknownMutationOperator = Error("BYN3219", "`{0}` is not a mutation operator");
 
     // ── Manifest (`package.byn`) 3100–3199 ───────────────────────────────────────────
     public static readonly DiagnosticDescriptor ManifestNotData = Error("BYN3100", "`package.byn` is data only: expected {0}");

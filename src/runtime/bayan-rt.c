@@ -47,6 +47,13 @@ static _Thread_local const char* byn_panic_file;
 static _Thread_local int byn_panic_line;
 _Thread_local byn_panic_handler* byn_panic_handlers;
 void (*byn_on_panic)(byn_panic_info);
+void (*byn_cov_flush)(void);
+
+static void byn_cov_flush_once(void) {
+    void (*flush)(void) = byn_cov_flush;
+    byn_cov_flush = NULL;
+    if (flush) flush();
+}
 
 static void byn_panic_print(const char* prefix, const uint8_t* msg, size_t len, const char* file, int line) {
     fputs(prefix, stderr);
@@ -61,6 +68,7 @@ static BYN_NORETURN void byn_panic_raise(const uint8_t* msg, size_t len, const c
         byn_panic_print("panic: ", byn_panic_now.message.ptr, (size_t)byn_panic_now.message.len, byn_panic_file, byn_panic_line);
         byn_panic_print("panic in a panic handler: ", msg, len, file, line);
         fflush(stderr);
+        byn_cov_flush_once();
         abort();
     }
     byn_panicking = true;
@@ -92,6 +100,7 @@ void byn_panic_resume(void) {
     byn_stdout_flush();
     byn_panic_print("panic: ", byn_panic_now.message.ptr, (size_t)byn_panic_now.message.len, byn_panic_file, byn_panic_line);
     fflush(stderr);
+    byn_cov_flush_once();
     abort();
 }
 

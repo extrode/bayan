@@ -557,8 +557,28 @@ internal sealed partial class Binder
         return s;
     }
 
+    /// <summary>Records an <c>@unobservable</c> mark (R7). A statement is bound more than once (first pass, generic instances); <see cref="Compilation"/> keeps one mark per statement and operator.</summary>
+    private void BindUnobservable(Stmt stmt, AttributeSyntax attribute)
+    {
+        if (attribute.Name.Text != "unobservable") return;
+        string? op = null;
+        if (attribute.Args.Length > 0)
+        {
+            var value = attribute.Args[0].Value;
+            op = value is NameExpr n ? n.Name.Text : Source.GetText(value.Span);
+            if (!Compilation.MutationOperators.Contains(op))
+            {
+                Report(DiagnosticCodes.UnknownMutationOperator, value.Span, [op], label: "not an operator",
+                    help: "use one of " + string.Join(", ", Compilation.MutationOperators.Select(o => $"`{o}`")) + ", or no argument for all");
+                return;
+            }
+        }
+        _c.AddUnobservable(new UnobservableMark(Source.Path, stmt.Span, op, attribute.Because?.Reason ?? ""));
+    }
+
     private BoundStmt BindStatement(Stmt stmt, JumpTarget? labelTarget = null)
     {
+        foreach (var attribute in stmt.Attributes) BindUnobservable(stmt, attribute);
         switch (stmt)
         {
             case BlockStmt b:

@@ -130,6 +130,7 @@ public sealed class Parser
         DiagnosticCodes.RestInput, DiagnosticCodes.StateLineInput, DiagnosticCodes.InterfaceGetInput, DiagnosticCodes.ReceiverWithoutState,
         DiagnosticCodes.RequiresOnFunction, DiagnosticCodes.ClauseOrder, DiagnosticCodes.PrefixPointerInput,
         DiagnosticCodes.CompactFormatSpec, DiagnosticCodes.SingleStateInline, DiagnosticCodes.FatArrowFunctionType,
+        DiagnosticCodes.StatementAttribute,
     ];
 
     private Diagnostic? Report(DiagnosticDescriptor descriptor, TextSpan span, object?[]? args = null,
@@ -579,6 +580,30 @@ public sealed class Parser
         var reason = LiteralDecoder.DecodeString(Text(Advance()));
         if (string.IsNullOrWhiteSpace(reason)) ReportMissingBecause(construct, constructSpan);
         return new BecauseClause(SpanFrom(start), reason);
+    }
+
+    /// <summary>
+    /// Attributes before a statement (R7): <c>@unobservable because "…"</c> or <c>@unobservable(operator) because "…"</c>,
+    /// applying to the next statement only. Any other attribute is BYN1069 and is kept so parsing continues.
+    /// </summary>
+    private AttributeSyntax[] ParseStatementAttributes()
+    {
+        var attributes = new List<AttributeSyntax>();
+        while (Kind == TokenKind.At && IsName(Peek(1)))
+        {
+            var start = Advance().Start;
+            var name = ExpectName("an attribute name");
+            var args = Kind == TokenKind.OpenParen && !BreaksLine(_pos) ? ParseArguments() : [];
+            var attribute = new AttributeSyntax(SpanFrom(start), name, args);
+            var because = ParseBecause("@" + name.Text, attribute.Span);
+            if (name.Text != "unobservable")
+                Report(DiagnosticCodes.StatementAttribute, attribute.Span, ["@" + name.Text], label: "before a statement",
+                    help: "remove the attribute; only `@unobservable` may come before a statement");
+            else if (because is null)
+                ReportMissingBecause("@" + name.Text, attribute.Span);
+            attributes.Add(attribute with { Because = because });
+        }
+        return attributes.ToArray();
     }
 
     private void ReportMissingBecause(string construct, TextSpan span) =>
@@ -2136,6 +2161,16 @@ public sealed class Parser
     private Stmt ParseStatement()
     {
         var start = Current.Start;
+        if (Kind == TokenKind.At && IsName(Peek(1)))
+        {
+            var attributes = ParseStatementAttributes();
+            if (AtEnd || Kind == TokenKind.CloseBrace)
+            {
+                Report(DiagnosticCodes.Expected, Current.Span, ["a statement after the attribute", Describe(Current)]);
+                return new ErrorStmt(SpanFrom(start)) { Attributes = attributes };
+            }
+            return ParseStatement() with { Span = SpanFrom(start), Attributes = attributes };
+        }
         switch (Kind)
         {
             case TokenKind.OpenBrace:

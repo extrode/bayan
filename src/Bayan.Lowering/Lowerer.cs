@@ -10,7 +10,12 @@ namespace Bayan.Lowering;
 /// <summary>Turns a bound, error-free compilation into a <see cref="LoweredProgram"/>.</summary>
 public static class Lowerer
 {
-    public static LoweredProgram Lower(Compilation c)
+    /// <summary>
+    /// Lowers <paramref name="c"/>. A <c>--mutate</c> build passes <paramref name="mutants"/>, the mutant switch of each
+    /// bound node a mutant replaces (keyed by reference); a <c>--coverage</c> build passes <paramref name="coverage"/>, its
+    /// probes. Without them the program is the plain one.
+    /// </summary>
+    public static LoweredProgram Lower(Compilation c, IReadOnlyDictionary<BoundNode, BoundMutantSwitch>? mutants = null, CoverageProbes? coverage = null)
     {
         if (c.Diagnostics.HasErrors) throw new InvalidOperationException("cannot lower a compilation with errors");
         var functions = new List<LoweredFunction>();
@@ -20,19 +25,26 @@ public static class Lowerer
             foreach (var fn in module.AllFunctions)
             {
                 if (fn.Body is null || fn.Kind == FunctionKind.Test || fn.IsGeneric) continue;
-                functions.Add(new FunctionLowerer(fn, c.Builtins).Lower());
+                functions.Add(new FunctionLowerer(fn, c.Builtins, mutants, coverage).Lower());
             }
             foreach (var t in module.Tests)
-                tests.Add((t, new FunctionLowerer(t.Function, c.Builtins).Lower()));
+                tests.Add((t, new FunctionLowerer(t.Function, c.Builtins, mutants, coverage).Lower()));
         }
-        return new LoweredProgram(c, functions, c.EntryModule.Main, tests);
+        return new LoweredProgram(c, functions, c.EntryModule.Main, tests, mutants is not null, coverage);
     }
 }
 
-internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
+internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins, IReadOnlyDictionary<BoundNode, BoundMutantSwitch>? mutants = null,
+    CoverageProbes? coverage = null)
 {
     private readonly FunctionSymbol _fn = fn;
     private readonly Builtins _builtins = builtins;
+    private readonly IReadOnlyDictionary<BoundNode, BoundMutantSwitch>? _mutants = mutants;
+    /// <summary>The nodes whose mutant switch is being lowered: inside it they lower as written (a mutant may contain its original).</summary>
+    private readonly HashSet<BoundNode> _plain = new(ReferenceEqualityComparer.Instance);
+    private readonly CoverageProbes? _coverage = coverage;
+    /// <summary>The conditions whose branch probe is being lowered: inside it they lower as written.</summary>
+    private readonly HashSet<BoundNode> _probing = new(ReferenceEqualityComparer.Instance);
     private readonly List<LocalSymbol> _locals = new();
     private readonly HashSet<LocalSymbol> _seen = new();
     private readonly List<Scope> _scopes = new();
@@ -341,6 +353,13 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private void Statement(BoundStmt s)
     {
+        if (_coverage?.Statements.GetValueOrDefault(s) is { } probe && !_plain.Contains(s))
+            Emit(new BoundExprStmt(probe.Syntax, new LCount(probe.Syntax, probe.Id)));
+        if (MutantSwitch(s) is { } mutants)
+        {
+            MutantStatement(mutants);
+            return;
+        }
         switch (s)
         {
             case BoundBlock b:
@@ -377,6 +396,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
                 var error = NewTemp(f.Error.Type);
                 EmitAssign(Local(f.Syntax, error), code);
                 EmitCleanups(0, error);
+                CountError(f, error);
                 Emit(new LReturnError(f.Syntax, Local(f.Syntax, error)));
                 break;
             }
@@ -887,6 +907,8 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
 
     private BoundExpr LowerExpr(BoundExpr e)
     {
+        if (MutantSwitch(e) is { } mutants) return MutantExpr(mutants);
+        if (_coverage?.Branches.GetValueOrDefault(e) is { } branch && _probing.Add(e)) return BranchProbe(e, branch);
         switch (e)
         {
             case BoundErrorVariant { Payload.Length: > 0 } v:
@@ -1061,6 +1083,90 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
             }
             default:
                 throw new InvalidOperationException($"cannot lower {e.GetType().Name}");
+        }
+    }
+
+    // ── Mutant schemata ──────────────────────────────────────────────────────────
+
+    private BoundMutantSwitch? MutantSwitch(BoundNode node) =>
+        _mutants is not null && !_plain.Contains(node) && _mutants.TryGetValue(node, out var s) ? s : null;
+
+    /// <summary>
+    /// <c>(byn_mutant == id ? mutated : original)</c> when no arm needs statements first; otherwise, so only the selected
+    /// arm's prelude runs, <c>if (byn_mutant == id) { pre_m; t = m } else { pre_o; t = o }</c>.
+    /// </summary>
+    private BoundExpr MutantExpr(BoundMutantSwitch s)
+    {
+        var original = (BoundExpr)s.Original;
+        _plain.Add(original);
+        try
+        {
+            var arms = s.Mutants.Select(m => (m.Id, Arm: CaptureExpr((BoundExpr)m.Node))).ToList();
+            var plain = CaptureExpr(original);
+            if (plain.Pre.Count == 0 && !IsNever(plain.Value) && !original.Type.IsNever
+                && arms.All(a => a.Arm.Pre.Count == 0 && !IsNever(a.Arm.Value)))
+            {
+                var value = plain.Value;
+                for (var i = arms.Count - 1; i >= 0; i--)
+                    value = new BoundConditional(s.Syntax, new LMutantIs(s.Syntax, arms[i].Id), arms[i].Arm.Value, value, original.Type);
+                return value;
+            }
+            var result = NewTemp(original.Type);
+            var target = Local(s.Syntax, result);
+            List<BoundStmt> Assign((BoundExpr Value, List<BoundStmt> Pre) arm) =>
+                Capture(() => { _out.AddRange(arm.Pre); EmitAssign(target, arm.Value); });
+            BoundStmt chain = Block(s.Syntax, Assign(plain));
+            for (var i = arms.Count - 1; i >= 0; i--)
+                chain = new BoundIf(s.Syntax, new LMutantIs(s.Syntax, arms[i].Id), Block(s.Syntax, Assign(arms[i].Arm)), Block(s.Syntax, [chain]));
+            Emit(chain);
+            return original.Type.IsNever ? new LNever(s.Syntax, original.Type) : target;
+        }
+        finally { _plain.Remove(original); }
+    }
+
+    /// <summary><c>if (byn_mutant == id) { mutated } else { original }</c>, each arm lowered on its own.</summary>
+    private void MutantStatement(BoundMutantSwitch s)
+    {
+        var original = (BoundStmt)s.Original;
+        _plain.Add(original);
+        try
+        {
+            BoundStmt chain = Block(s.Syntax, Capture(() => Statement(original)));
+            for (var i = s.Mutants.Length - 1; i >= 0; i--)
+            {
+                var mutant = (BoundStmt)s.Mutants[i].Node;
+                chain = new BoundIf(s.Syntax, new LMutantIs(s.Syntax, s.Mutants[i].Id), Block(s.Syntax, Capture(() => Statement(mutant))), Block(s.Syntax, [chain]));
+            }
+            Emit(chain);
+        }
+        finally { _plain.Remove(original); }
+    }
+
+    // ── Coverage ─────────────────────────────────────────────────────────────────
+
+    /// <summary><c>(c ? (byn_cov[t]++, true) : (byn_cov[f]++, false))</c>: the condition counts its outcome.</summary>
+    private BoundExpr BranchProbe(BoundExpr e, BoundBranchProbe probe)
+    {
+        try
+        {
+            var value = LowerExpr(e);
+            if (IsNever(value)) return value;
+            BoundExpr Outcome(int id, bool outcome) => new LSequence(e.Syntax, [new LCount(e.Syntax, id)], Bool(e.Syntax, outcome));
+            return new BoundConditional(e.Syntax, value, Outcome(probe.WhenTrue, true), Outcome(probe.WhenFalse, false), PrimitiveType.Bool);
+        }
+        finally { _probing.Remove(e); }
+    }
+
+    /// <summary>On the error-return edge of <paramref name="origin"/>: the counter of the variant in <paramref name="error"/>.</summary>
+    private void CountError(BoundNode origin, LocalSymbol error)
+    {
+        if (_coverage?.Errors.GetValueOrDefault(origin) is not { } probe) return;
+        var syntax = probe.Syntax;
+        foreach (var (variant, id) in probe.Variants)
+        {
+            var code = new ConstantValue((Int128)variant.Code);
+            var test = Equal(syntax, new LErrorCode(syntax, Local(syntax, error)), new BoundLiteral(syntax, PrimitiveType.U32, code) { Constant = code });
+            Emit(new BoundIf(syntax, test, Block(syntax, [new BoundExprStmt(syntax, new LCount(syntax, id))]), null));
         }
     }
 
@@ -1647,16 +1753,18 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         new BoundBinary(syntax, BinaryOp.Ne, new LErrorCode(syntax, Local(syntax, error)), new BoundLiteral(syntax, PrimitiveType.U32, new ConstantValue((Int128)0)), PrimitiveType.Bool);
 
     /// <summary>Runs the cleanups (errdefers included) and fails the function with <paramref name="error"/>.</summary>
-    private List<BoundStmt> Propagate(Node syntax, LocalSymbol error) => Capture(() =>
+    private List<BoundStmt> Propagate(BoundExpr origin, LocalSymbol error) => Capture(() =>
     {
+        var syntax = origin.Syntax;
         EmitCleanups(0, error);
+        CountError(origin, error);
         Emit(new LReturnError(syntax, Local(syntax, error)));
     });
 
     private BoundExpr Try(BoundTry t)
     {
         if (FailingCall(t.Operand) is not var (error, result)) return new LNever(t.Syntax, t.Type);
-        Emit(new BoundIf(t.Syntax, Failed(t.Syntax, error), Block(t.Syntax, Propagate(t.Syntax, error)), null));
+        Emit(new BoundIf(t.Syntax, Failed(t.Syntax, error), Block(t.Syntax, Propagate(t, error)), null));
         return result;
     }
 
@@ -1679,7 +1787,7 @@ internal sealed class FunctionLowerer(FunctionSymbol fn, Builtins builtins)
         {
             var other = new BoundBinary(c.Syntax, BinaryOp.Ne, Local(c.Syntax, error),
                 new BoundErrorVariant(c.Syntax, variant), PrimitiveType.Bool);
-            handler.Insert(0, new BoundIf(c.Syntax, other, Block(c.Syntax, Propagate(c.Syntax, error)), null));
+            handler.Insert(0, new BoundIf(c.Syntax, other, Block(c.Syntax, Propagate(c, error)), null));
         }
         Emit(new BoundIf(c.Syntax, Failed(c.Syntax, error), Block(c.Syntax, handler), null));
         return result;

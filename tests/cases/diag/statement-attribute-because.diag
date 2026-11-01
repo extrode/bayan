@@ -1,0 +1,13 @@
+error BYN8001: `@unobservable` bypasses a safety rule and needs `because "…"`
+
+  2 │     @unobservable
+    │     ^^^^^^^^^^^^^ bypasses a safety rule
+    │
+  help: explain the bypass in a `because` clause
+
+error BYN8001: `@unobservable` bypasses a safety rule and needs `because "…"`
+
+  7 │     @unobservable(boundary) because ""
+    │     ^^^^^^^^^^^^^^^^^^^^^^^ bypasses a safety rule
+    │
+  help: explain the bypass in a `because` clause

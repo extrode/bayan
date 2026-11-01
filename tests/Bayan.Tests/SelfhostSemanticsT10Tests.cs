@@ -26,7 +26,7 @@ public sealed class SelfhostSemanticsT10Tests
                 edition: 2_027,
                 kind: .lib,
                 capabilities: [.fs, .net],
-                test: .async,
+                test: Tests { lines: 100, summary: false, diffCoverage: 80, nightly: [.fuzz] },
                 style: Style { indent: 4, braces: .nextLine, maxLine: 100, trailingCommas: true, booleans: .words, primitives: .csharp },
                 grammar: Grammar { verbs: ["upsert", "upsert", "regrind"], nouns: ["SKU"], adjectives: ["idempotent"], forms: ["regrind": "reground", "a": "b", "a": "c"] },
                 dist: Dist { targets: [.host, .linuxX64, .macosArm64], mode: .fast },

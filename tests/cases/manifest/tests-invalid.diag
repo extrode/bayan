@@ -1,0 +1,32 @@
+error BYN3102: `test.lines` must be a percentage from 0 to 100, e.g. `80`
+
+  4 │     test: Tests { lines: 101, branches: "all", errorPaths: 150, mutation: true, summary: 1, speed: 3 },
+    │                          ^^^
+
+error BYN3102: `test.branches` must be a percentage from 0 to 100, e.g. `80`
+
+  4 │     test: Tests { lines: 101, branches: "all", errorPaths: 150, mutation: true, summary: 1, speed: 3 },
+    │                                         ^^^^^
+
+error BYN3102: `test.errorPaths` must be a percentage from 0 to 100, e.g. `80`
+
+  4 │     test: Tests { lines: 101, branches: "all", errorPaths: 150, mutation: true, summary: 1, speed: 3 },
+    │                                                            ^^^
+
+error BYN3102: `test.mutation` must be a percentage from 0 to 100, e.g. `80`
+
+  4 │     test: Tests { lines: 101, branches: "all", errorPaths: 150, mutation: true, summary: 1, speed: 3 },
+    │                                                                           ^^^^
+
+error BYN3102: `test.summary` must be `true` or `false`
+
+  4 │     test: Tests { lines: 101, branches: "all", errorPaths: 150, mutation: true, summary: 1, speed: 3 },
+    │                                                                                          ^
+
+error BYN3101: `speed` is not a field of `Tests`
+
+  4 │     test: Tests { lines: 101, branches: "all", errorPaths: 150, mutation: true, summary: 1, speed: 3 },
+    │                                                                                             ^^^^^
+    │
+  help: use one of the fields `lines`, `branches`, `errorPaths`, `mutation`, `summary`,
+        `diffCoverage`, `nightly`

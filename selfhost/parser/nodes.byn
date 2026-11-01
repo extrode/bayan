@@ -593,6 +593,7 @@ public union Stmt {
 public struct BlockStmt {
     public TextSpan span
     public List<Stmt> statements
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public enum BindingKind {
@@ -609,11 +610,13 @@ public struct LocalDecl {
     public TypeSyntax type
     public TextSpan name
     public Expr init
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public struct ExprStmt {
     public TextSpan span
     public Expr expr
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public enum AssignOp {
@@ -636,33 +639,39 @@ public struct AssignStmt {
     public Expr target
     public AssignOp op
     public Expr value
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public struct IncDecStmt {
     public TextSpan span
     public Expr target
     public bool increment
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public struct ReturnStmt {
     public TextSpan span
     public Expr value
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `fail .x`.
 public struct FailStmt {
     public TextSpan span
     public Expr error
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public struct BreakStmt {
     public TextSpan span
     public TextSpan? label
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public struct ContinueStmt {
     public TextSpan span
     public TextSpan? label
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `become .s(…)`.
@@ -670,6 +679,7 @@ public struct BecomeStmt {
     public TextSpan span
     public TextSpan state
     public List<Argument> args
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// The word after `if`: `if unlikely` or `if never`.
@@ -685,12 +695,14 @@ public struct IfStmt {
     public Stmt then
     public Stmt elseKeyword
     public Likelihood likelihood = .none
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public struct UnlessStmt {
     public TextSpan span
     public Expr condition
     public Stmt body
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// A simple statement with a postfix `if`/`unless` (spec §7.3).
@@ -700,18 +712,21 @@ public struct GuardedStmt {
     public bool unlessKeyword
     public Expr condition
     public bool unlikely = false
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public struct WhileStmt {
     public TextSpan span
     public Expr condition
     public Stmt body
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public struct DoWhileStmt {
     public TextSpan span
     public Stmt body
     public Expr condition
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `while let x = e { … }`.
@@ -720,6 +735,7 @@ public struct WhileLetStmt {
     public TextSpan variable
     public Expr value
     public Stmt body
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `for x in e`, `for (k, v) in e`, `for try x in e`, or the input form `for (let x in e)`.
@@ -732,12 +748,14 @@ public struct ForStmt {
     public Stmt body
     public bool tryKeyword = false
     public List<TextSpan> names = List<TextSpan>()
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public struct LabeledStmt {
     public TextSpan span
     public TextSpan label
     public Stmt statement
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// One `case` label: a pattern and optional `when` guard. A `none` pattern is `default`.
@@ -757,6 +775,7 @@ public struct SwitchStmt {
     public TextSpan span
     public Expr value
     public List<SwitchSection> sections
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public enum DeferKind {
@@ -771,6 +790,7 @@ public struct DeferStmt {
     public DeferKind kind
     public TextSpan? binding
     public Stmt body
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// `assert expr;`; `failsKeyword` is the error of `assert f() fails E.x`, `none` for a plain assert.
@@ -778,6 +798,7 @@ public struct AssertStmt {
     public TextSpan span
     public Expr condition
     public Expr failsKeyword = .none
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public struct NamedArg {
@@ -791,15 +812,18 @@ public struct ContextStmt {
     public TextSpan span
     public List<NamedArg> values
     public Stmt body
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 public struct EmptyStmt {
     public TextSpan span
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 /// Placeholder after a parse error.
 public struct ErrorStmt {
     public TextSpan span
+    public List<AttributeSyntax> attributes = List<AttributeSyntax>()
 }
 
 // ── Expressions ──────────────────────────────────────────────────────────────────

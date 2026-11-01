@@ -302,6 +302,22 @@ public sealed class FormatTests
         Assert.Equal(once, File.ReadAllText(file));
     }
 
+    [Fact]
+    public void StatementAttributesRoundTrip()
+    {
+        var file = Path.Combine(Fresh("statement-attributes"), "main.byn");
+        const string source =
+            "i32 clamp(i32 x) {\n    @unobservable because \"the caller never passes 0\"\n    if x <= 0 {\n        return 0\n    }\n" +
+            "    @unobservable(boundary) because \"x is at most 100\"\n    return x\n}\n";
+        File.WriteAllText(file, source);
+        var (exit, _, stderr) = Run("format", file);
+        Assert.True(exit == CliApp.ExitOk, stderr);
+        Assert.Equal(source, File.ReadAllText(file));
+        var (again, stdout, _) = Run("format", "--check", file);
+        Assert.Equal(CliApp.ExitOk, again);
+        Assert.Empty(stdout);
+    }
+
     /// <summary>One of each round-3 input form (BYN1040–1053, 1062, 6001, 6006).</summary>
     private const string Round3InputForms =
         "/* Shapes. */\nunion Shape { circle(f64 r), square(f64 side) }\nenum Size { /* small */ s, m /* medium */, l }\n" +
