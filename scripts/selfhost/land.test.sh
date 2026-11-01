@@ -5,7 +5,7 @@
 # and lands a two-round reviewed branch; tests/quality-baseline.json changes only when the guard run left its coverage report
 # (tmp/guard-run/coverage/bayan-quality.json, the only place the real guard writes one; no quality-*.json): a landing with
 # none leaves the baseline alone, one fills coverage and branches, one with a higher coverage raises it (both in the tick commit),
-# and a lower filtered coverage lands and leaves the recorded value unchanged.
+# a lower filtered coverage lands and leaves the recorded value unchanged, and a malformed report is refused before the merge.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/land&test'q"; aux="$root/tmp/land-test-aux"
@@ -54,7 +54,12 @@ next feat-rise; covrep 4 2; rise=$(land feat-rise); rose=$(ycov)
 next feat-drop; covrep 1 2; cp tests/quality-baseline.json $aux/before-drop.json
 drop=$(land feat-drop); dropped=$(ycov)
 cmp -s tests/quality-baseline.json $aux/before-drop.json && dropsame=1 || dropsame=0
+next feat-bad; echo '{' > $aux/covreport; badbase=$(git rev-parse HEAD)
+bad=$(land feat-bad); badhead=$(git rev-parse HEAD); badtree=$(git status --porcelain --untracked-files=no)
+cmp -s tests/quality-baseline.json $aux/before-drop.json && badsame=1 || badsame=0
 rm -f $aux/covreport; baseline=$(land feat-baseline)  # last: if it were accepted, its merge must not break the cases above
+echo "$bad" | grep -q '^LAND REFUSED: quality-baseline.py failed on ' && [ "$badhead" = "$badbase" ] && [ -z "$badtree" ] && [ $badsame = 1 ] \
+  || fail "a malformed coverage report was not refused before the merge (head moved: $([ "$badhead" = "$badbase" ] && echo no || echo yes); dirty: $badtree)" "$bad"
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
 echo "$chore" | grep -q "LAND REFUSED: the branch's last commit must" || fail "a chore(worker) review commit was accepted" "$chore"

@@ -58,6 +58,12 @@ trap cleanup EXIT
 )
 
 COVREPORT=$WT/tmp/guard-run/coverage/bayan-quality.json
+# the update after the merge must not fail half-way (merge done, tick uncommitted): try it on a copy first
+if [ -f "$COVREPORT" ]; then
+  mkdir -p tmp; cp tests/quality-baseline.json "tmp/land-$t-baseline.json"
+  python3 -I "$(dirname "$0")/quality-baseline.py" update "tmp/land-$t-baseline.json" "$WT" "$COVREPORT" 2> "tmp/land-$t-baseline.txt" \
+    || { echo "LAND REFUSED: quality-baseline.py failed on $COVREPORT — $(tail -1 "tmp/land-$t-baseline.txt")"; exit 1; }
+fi
 [ "$(git rev-parse "$BR")" = "$SHA" ] || { echo "LAND REFUSED: $BR moved from $SHA while it was checked; land again"; exit 1; }
 git merge --no-ff -m "chore(010): land $T" "$SHA"
 perl -i -pe "s/^- \[ \] $T /- [x] $T /" docs/specs/010-self-hosted-semantics/010-tasks.md
