@@ -35,7 +35,7 @@ mkdir -p src/Bayan.Cli/bin/Debug/net10.0
 cat > src/Bayan.Cli/bin/Debug/net10.0/bayan <<'STUB'
 #!/bin/bash
 echo "$@" > $AUX/mutate-args.txt; echo "$@" >> $AUX/mutate-args-all.txt
-[ -f $AUX/mismatch ] && { echo "bayan: the command does not exit 0 on the unmutated binary" >&2; exit 1; }
+[ -f $AUX/mismatch ] && { echo "bayan: (any text: the guard keys on the exit code)" >&2; exit 1; }
 [ -f $AUX/usage ] && { echo "bayan: usage" >&2; exit 2; }
 cat $AUX/out.txt; cp $AUX/report.json "$(dirname "$3")/bayan-quality.json"
 grep -q ': survived$' $AUX/out.txt && exit 3 || exit 0

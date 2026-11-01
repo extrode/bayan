@@ -385,5 +385,4 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - [ ] T14 review LOW: the site map sits beside the binary in shared `tmp/cache`, so evicting the cache breaks a recording (`SelfhostSemanticsHarness.cs:81,89`); copy it into the snapshot dir (rv-013-t14).
 - [ ] T14 review LOW: only `SelfhostParserTests.Run/RunBytes` record; Lexer, ParserT3/T10/T11/T12, Generator, EquivalenceLaw still spawn their own non-schemata builds, so a broad recording filter records none of them (rv-013-t14).
 - [ ] T14 review LOW: `scripts/selfhost/replay.py:36` has no per-run timeout; a looping mutant hangs a hand-run replay (rv-013-t14).
-- 013 T15: bayan mutate treats a mutant-0 mismatch by matching English text in the replay output; key it on exit code instead (src/Bayan.Testing/MutationRunner.cs).
 - 013 T15: replay.py exit 2 (unreadable recording) is counted as killed by bayan mutate (src/Bayan.Testing/MutationRunner.cs:124); it should stop the run.
