@@ -393,3 +393,9 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 013 T26: switch statements get no branch counters (CoverageInstrumenter, T9), short of R9 "each outcome of each condition"; e.g. selfhost/semantics/ctx.byn:582.
 - 013 T26: a changed .byn with no functions (struct-only) gets no coverage line from the guard; print an info line.
 - 013 T26 gate: guard.sh:34 COVER takes every changed selfhost/*.byn; a filter whose builds don't compile one throws "matches no compiled source", reported as a test failure, not a coverage message.
+- 013 T26 review LOW: the coverage report is written only at ProcessExit; a test host killed mid-run leaves no report. (rv-013-t26, unverified)
+- 013 T26 review LOW: with BAYAN_COVERAGE set the guard runs only the instrumented build, never the plain one, so a counter that changes behaviour goes unnoticed. (rv-013-t26, unverified)
+- 013 T26 review LOW: coverage counter files are keyed by pid; a reused pid in one run overwrites an earlier file. (rv-013-t26, unverified)
+- 013 T26 fix gate: guard.sh:121 a non-zero `quality-baseline.py check` exit after partial output is recorded without saying the script failed.
+- 013 T26 fix gate: guard.sh:80 the exit-status check on guard-checks.py has no test.
+- 013 T26 fix gate: coverage-gate.py:45 lines outside any function (top-level code) are never gated even when the diff changes them.
