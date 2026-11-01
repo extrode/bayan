@@ -294,6 +294,7 @@ public sealed class MutantSchemataTests
 
     /// <summary>R11: a build without <c>--mutate</c> emits the same C as before T5; the hashes were taken from the merge-base build.</summary>
     [Fact]
+    [Trait("Law", "L020")]
     public void PlainBuildEmitsTheSameC()
     {
         var lines = new StringBuilder();
