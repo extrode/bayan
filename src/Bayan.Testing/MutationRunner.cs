@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 
@@ -40,6 +41,8 @@ public static class MutationRunner
             File.Delete(path);
             var outcome = Exec(executable, t, 0, path, baselineTimeout);
             processes++;
+            // A pending test (exit 4) is left out without a warning; it is not meant to pass yet.
+            if (outcome.ExitCode == 4 && !outcome.TimedOut) continue;
             if (outcome.ExitCode != 0 || outcome.TimedOut)
             {
                 excluded.Add(t);
@@ -98,7 +101,16 @@ public static class MutationRunner
             psi.Environment["BAYAN_MUTANT"] = mutant.ToString(CultureInfo.InvariantCulture);
             return Exec(psi, limit);
         }
-        var baseline = Run(0, baselineTimeout);
+        Outcome baseline;
+        try
+        {
+            baseline = Run(0, baselineTimeout);
+        }
+        catch (Win32Exception)
+        {
+            // The command could not be started (not found, not executable).
+            return null;
+        }
         if (baseline.TimedOut || baseline.ExitCode != 0) return null;
         var timeout = TimeSpan.FromTicks(Math.Max(TimeSpan.TicksPerSecond, 5 * baseline.Elapsed.Ticks));
         var results = new List<ExternalResult>();

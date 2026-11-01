@@ -11,17 +11,24 @@ public sealed record ExternalSite(int Id, string File, int Line, int Column, str
     /// <summary>Reads a site map; null when it is not one this version understands.</summary>
     public static IReadOnlyList<ExternalSite>? ReadAll(string json)
     {
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("version", out var v) || v.GetInt32() != 1
-            || !root.TryGetProperty("sites", out var sites)) return null;
-        var list = new List<ExternalSite>();
-        foreach (var s in sites.EnumerateArray())
-            list.Add(new ExternalSite(s.GetProperty("id").GetInt32(), s.GetProperty("file").GetString()!, s.GetProperty("line").GetInt32(),
-                s.GetProperty("column").GetInt32(), s.GetProperty("operator").GetString()!, s.GetProperty("original").GetString()!,
-                s.GetProperty("mutated").GetString()!, !s.TryGetProperty("emitted", out var e) || e.GetBoolean(),
-                s.TryGetProperty("unobservable", out var u) ? u.GetString() : null));
-        return list;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("version", out var v) || v.GetInt32() != 1
+                || !root.TryGetProperty("sites", out var sites)) return null;
+            var list = new List<ExternalSite>();
+            foreach (var s in sites.EnumerateArray())
+                list.Add(new ExternalSite(s.GetProperty("id").GetInt32(), s.GetProperty("file").GetString()!, s.GetProperty("line").GetInt32(),
+                    s.GetProperty("column").GetInt32(), s.GetProperty("operator").GetString()!, s.GetProperty("original").GetString()!,
+                    s.GetProperty("mutated").GetString()!, !s.TryGetProperty("emitted", out var e) || e.GetBoolean(),
+                    s.TryGetProperty("unobservable", out var u) ? u.GetString() : null));
+            return list;
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
+        {
+            return null;
+        }
     }
 }
 
