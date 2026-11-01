@@ -391,3 +391,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - 013 T15 review LOW: land.sh:59-63 runs quality-baseline.py update after merge and tick edit but before commit; a failure leaves the base dirty. Run it before the merge or roll back. (rv-013-t15)
 - 013 T15 review LOW: quality-baseline.py:18 keys report paths with relpath and no inside-root check; an outside path becomes a ../ key. (rv-013-t15, unverified)
 - 013 T15: scripts/selfhost/mutant-outcome.sh and its test are unused after T15 (cleanup candidate).
+- 013 T26: switch statements get no branch counters (CoverageInstrumenter, T9), short of R9 "each outcome of each condition"; e.g. selfhost/semantics/ctx.byn:582.
+- 013 T26: a changed .byn with no functions (struct-only) gets no coverage line from the guard; print an info line.
+- 013 T26 gate: guard.sh:34 COVER takes every changed selfhost/*.byn; a filter whose builds don't compile one throws "matches no compiled source", reported as a test failure, not a coverage message.
