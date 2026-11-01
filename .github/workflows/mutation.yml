@@ -1,0 +1,42 @@
+# Nightly and on-demand batch mutation run (spec 013 T28): scripts/selfhost/mutate-batch.sh over the selfhost .byn files,
+# split into SHARDS parallel jobs (--shard k/4). It only measures: it never commits or pushes. Each shard uploads its reports
+# (tmp/mutate-batch/) and its updated tests/quality-baseline.json as artifacts. The baseline reaches dev by a dispatcher that
+# applies the artifacts on a `chore/` branch merged --no-ff (land.sh refuses branches that edit scripts/selfhost or the baseline).
+name: mutation
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  mutate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]  # n = 4: --shard k/4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      # The tests cross-compile (OutputTests) and `bayan doctor` expects zig; no runner image has it.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - name: Build
+        run: dotnet build Bayan.slnx
+      - name: Mutate
+        run: bash scripts/selfhost/mutate-batch.sh --shard ${{ matrix.shard }}/4
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-reports-${{ matrix.shard }}
+          path: tmp/mutate-batch/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quality-baseline-${{ matrix.shard }}
+          path: tests/quality-baseline.json
