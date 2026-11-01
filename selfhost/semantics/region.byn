@@ -66,25 +66,25 @@ Borrow t25Region(i64 depth, as string name) {
 }
 
 /// C# `Borrow.IsEmpty`.
-bool t25IsEmpty(in Borrow b) => b.regions.length == 0 && b.owners.length == 0
+bool t25IsEmpty(Borrow b) => b.regions.length == 0 && b.owners.length == 0
 
 /// A copy of `b`: the C# records are immutable, so sharing one is copying it here.
-Borrow t25Copy(in Borrow b) {
+Borrow t25Copy(Borrow b) {
     var regions = List<Region>()
     for x in b.regions { regions.append(x) }
     var owners = List<LocalId>()
     for o in b.owners { owners.append(o) }
-    return Borrow { regions: move regions, owners: move owners, lends: t25CopyLends(in b.lends) }
+    return Borrow { regions: move regions, owners: move owners, lends: t25CopyLends(b.lends) }
 }
 
 /// C# `b with { Owners = [] }`.
-Borrow t25WithoutOwners(in Borrow b) {
+Borrow t25WithoutOwners(Borrow b) {
     var regions = List<Region>()
     for x in b.regions { regions.append(x) }
-    return Borrow { regions: move regions, owners: [], lends: t25CopyLends(in b.lends) }
+    return Borrow { regions: move regions, owners: [], lends: t25CopyLends(b.lends) }
 }
 
-Map<LocalId, i64>? t25CopyLends(in Map<LocalId, i64>? lends) {
+Map<LocalId, i64>? t25CopyLends(Map<LocalId, i64>? lends) {
     if (lends is { } l) {
         var m: Map<LocalId, i64> = []
         for (k, v) in l { m[k] = v }
@@ -112,15 +112,15 @@ void t25AddOwner(to ref List<LocalId> owners, by LocalId x) {
 // ── RegionAnalysis.cs:31 Borrow.Union, :35 Lent, :38 Merge ──────────────────────
 
 Borrow unionBorrow(in Borrow a, by in Borrow b) {
-    if t25IsEmpty(in b) { return t25Copy(in a) }
-    if t25IsEmpty(in a) { return t25Copy(in b) }
+    if t25IsEmpty(b) { return t25Copy(a) }
+    if t25IsEmpty(a) { return t25Copy(b) }
     var regions = List<Region>()
     for x in a.regions { regions.append(x) }
     for x in b.regions { t25AddRegion(to: ref regions, by: x) }
     var owners = List<LocalId>()
     for o in a.owners { owners.append(o) }
     for o in b.owners { t25AddOwner(to: ref owners, by: o) }
-    return Borrow { regions: move regions, owners: move owners, lends: t25Merge(in a.lends, by: in b.lends) }
+    return Borrow { regions: move regions, owners: move owners, lends: t25Merge(a.lends, by: b.lends) }
 }
 
 Borrow lent(in Borrow b, for LocalId owner, at i64 at) {
@@ -132,12 +132,12 @@ Borrow lent(in Borrow b, for LocalId owner, at i64 at) {
     var one: Map<LocalId, i64> = []
     one[owner] = at
     let added: Map<LocalId, i64>? = move one
-    return Borrow { regions: move regions, owners: move owners, lends: t25Merge(in b.lends, by: in added) }
+    return Borrow { regions: move regions, owners: move owners, lends: t25Merge(b.lends, by: added) }
 }
 
-Map<LocalId, i64>? t25Merge(in Map<LocalId, i64>? a, by in Map<LocalId, i64>? b) {
-    if a is null { return t25CopyLends(in b) }
-    if b is null { return t25CopyLends(in a) }
+Map<LocalId, i64>? t25Merge(Map<LocalId, i64>? a, by Map<LocalId, i64>? b) {
+    if a is null { return t25CopyLends(b) }
+    if b is null { return t25CopyLends(a) }
     var result: Map<LocalId, i64> = []
     if (a is { } x) {
         for (k, v) in x { result[k] = v }
@@ -317,13 +317,13 @@ void t25For(ref Regions r, through ref Ctx c, for BStmt s) {
     let iterableSpan = nodeSpan(in c, for: iterableExpr)
     var item = t25None()
     if !dynRef {
-        item = t25WithoutOwners(in iterable)
+        item = t25WithoutOwners(iterable)
     } else if kind == .list || kind == .array {
         item = lendBorrow(ref r, through: ref c, for: iterableExpr, by: in iterable, at: iterableSpan.end)
     } else if kind == .span {
-        item = t25Copy(in iterable)
+        item = t25Copy(iterable)
     } else {
-        item = t25WithoutOwners(in iterable)
+        item = t25WithoutOwners(iterable)
     }
     storeBorrow(ref r, through: ref c, for: variable, by: in item, at: iterableSpan)
     if dynRef {
@@ -367,7 +367,7 @@ Borrow computeBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
     switch boundKind(e) {
         case .local:
             let local = c.bLocals[i].local
-            if r.locals.contains(local) { return t25Copy(in r.locals[local]) }
+            if r.locals.contains(local) { return t25Copy(r.locals[local]) }
             return t25None()
         case .literal or .defaultValue or .thisRef or .errorVariant or .enumMember or .enumValues or .staticArray:
             return t25None()
@@ -418,11 +418,11 @@ Borrow computeBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
             let index = c.bIndexes[i].index
             let target = exprRegions(ref r, through: ref c, for: c.bIndexes[i].target)
             let _ = exprRegions(ref r, through: ref c, for: index)
-            return t25WithoutOwners(in target)
+            return t25WithoutOwners(target)
         case .spread:
             // Like an index: the elements are copies of what the sequence holds.
             let operand = exprRegions(ref r, through: ref c, for: c.bSpreads[i].operand)
-            return t25WithoutOwners(in operand)
+            return t25WithoutOwners(operand)
         case .stackalloc:
             let span = c.bStackallocs[i].span
             return t25Region(r.depth, as: $"the `stackalloc` buffer on line {lineOf(ref r, through: ref c, at: span)}")
@@ -452,7 +452,7 @@ Borrow computeBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
                 if part.value != -1 { values.append(part.value) }
             }
             for v in values { let _ = exprRegions(ref r, through: ref c, for: v) }
-            if r.contexts.length > 0 { return t25Copy(in r.contexts[r.contexts.length - 1]) }
+            if r.contexts.length > 0 { return t25Copy(r.contexts[r.contexts.length - 1]) }
             return t25None()
         case .jump:
             stmtRegions(ref r, through: ref c, for: c.bJumps[i].jump)
@@ -540,7 +540,7 @@ Borrow builtinBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
             or .stringReplaced or .stringRepeated or .stringJoined or .utf16Copy
             or .stringPadded or .bytesToString or .spanCopy or .listCopy:
             // Fresh text from `context.allocator`, like `Io.readText`.
-            if r.contexts.length > 0 { return t25Copy(in r.contexts[r.contexts.length - 1]) }
+            if r.contexts.length > 0 { return t25Copy(r.contexts[r.contexts.length - 1]) }
             return t25None()
         case .listReplace:
             storeIntoBorrow(ref r, through: ref c, for: receiverExpr, by: in args[1], at: nodeSpan(in c, for: argExprs[1]))
@@ -553,15 +553,15 @@ Borrow builtinBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
         case .mapIndexSet or .mapSlot:
             storeIntoBorrow(ref r, through: ref c, for: receiverExpr, by: in args[0], at: nodeSpan(in c, for: argExprs[0]))
             mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span)
-            return t25WithoutOwners(in receiver)
+            return t25WithoutOwners(receiver)
         case .listTake or .mapTake or .strBufTake or .optionalTake:
             mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span, moved: true)
             return move receiver
         case .listRemoveLast:
             mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span)
-            return t25WithoutOwners(in receiver)
+            return t25WithoutOwners(receiver)
         case .mapIndex or .mapTryGet or .listTryGet:
-            return t25WithoutOwners(in receiver)
+            return t25WithoutOwners(receiver)
         // An interned `Symbol`'s text lives until exit, like a literal.
         case .mapLength or .mapContains or .symbolText:
             return t25None()
@@ -573,7 +573,7 @@ Borrow builtinBorrow(ref Regions r, through ref Ctx c, for BExpr e) {
             mutateBorrow(ref r, through: ref c, for: receiverExpr, at: span)
             return t25None()
         default:
-            var acc = t25Copy(in receiver)
+            var acc = t25Copy(receiver)
             for a in args { acc = unionBorrow(in acc, by: in a) }
             return move acc
     }

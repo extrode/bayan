@@ -389,6 +389,11 @@ public sealed class SelfhostSemanticsT25Tests
             let xs: List<i64> = [1, 2]
             let n = a
             let lit = 5
+            let low = s.lowercased()
+            let cp = s.copy()
+            let t = string(a)
+            let m: Map<i64, i64> = [1: 2]
+            let has = m.contains(1)
         }
         """;
 
@@ -397,6 +402,9 @@ public sealed class SelfhostSemanticsT25Tests
     [
         ("interp-ctx", 1, false, true), ("interp-none", 1, false, false), ("list-ctx", 2, false, true), ("list-none", 2, false, false),
         ("local-set", 3, true, false), ("local-unset", 3, false, false), ("literal", 4, true, true),
+        // builtinBorrow: the fresh-text arm, `copy()` with no argument falling to it, and a `None` arm.
+        ("lower-ctx", 5, false, true), ("lower-none", 5, false, false), ("copy-ctx", 6, false, true),
+        ("to-string-ctx", 7, false, true), ("contains-ctx", 9, false, true),
     ];
 
     private static List<string> ExpectedCompute()
@@ -576,9 +584,14 @@ public sealed class SelfhostSemanticsT25Tests
                 runRegions(ref r, through: ref c)
                 for (l, d) in r.depthOf { print($"{fname} depth {c.locals[l].name} {d} {r.declaredAt[l]}") }
                 for t in r.restTails { print($"{fname} rest {t.region.depth}:{t.region.name} {t.tail}") }
-                // Every key of `locals` is a declared local or parameter, so `declaredAt` lists them all.
-                for (l, d) in r.declaredAt {
-                    if r.locals.contains(l) { print($"{fname} local {c.locals[l].name} {tcShowNames(ref c, by: in r.locals[l])}") }
+                // Only a rest parameter's entry, as on the C# side: every other entry comes from T37's `mayBorrow` or `storeBorrow`.
+                let ps = copyIds(in c.functions[f].parameters)
+                let syntax = t12Params(in c, for: f)
+                for i in 0..ps.length {
+                    let l = ps[i]
+                    if (syntax[i].syntax is { } x) && x.isRest && r.locals.contains(l) {
+                        print($"{fname} local {c.locals[l].name} {tcShowNames(ref c, by: in r.locals[l])}")
+                    }
                 }
                 for env in r.environments { print($"{fname} env {env.depth}") }
             }
