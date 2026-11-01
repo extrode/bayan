@@ -109,6 +109,9 @@ void declareMembers(ref Ctx c, for StructId s) {
                                 if !typeMap.contains(k) { typeMap[k] = v }
                             }
                         }
+                        // C# `Decl = m`: the symbol keeps its `becomes`, `ref this` and `move this` scalars (Q656 (e)).
+                        var becomes: string? = null
+                        if (m.value.becomes is { } becomesAt) { becomes = t12Text(in c, from: file, at: becomesAt) }
                         let fn = newFunction(ref c, by: FunctionSymbol {
                             name: mText,
                             nameSpan: mName,
@@ -122,6 +125,9 @@ void declareMembers(ref Ctx c, for StructId s) {
                             declIndex: dIdx,
                             memberIndex: mIdx,
                             typeMap: t11CopyMap(in typeMap),
+                            becomes: becomes,
+                            refThis: m.value.refThis,
+                            moveThis: m.value.moveThis,
                         })
                         if c.structs[s].template < 0 {
                             // C#'s `typeMap` is null when the struct and the method have no type parameters.
@@ -428,7 +434,7 @@ void declareEnumFields(ref Ctx c, for EnumId e) {
                     if ps[pIdx].modifier != .none {
                         report(ref c, for: .invalidEnumParameter, from: file, at: ps[pIdx].span, by: (text, "", "", "", ""), label: $"`{t12ModifierName(ps[pIdx].modifier)}` is not allowed here", help: help)
                     } else if ps[pIdx].defaultKeyword is not .none {
-                        report(ref c, for: .invalidEnumParameter, from: file, at: t11ExprSpan(in ps[pIdx].defaultKeyword), by: (text, "", "", "", ""), label: "a default value is not allowed here", help: help)
+                        report(ref c, for: .invalidEnumParameter, from: file, at: parser.exprSpan(in ps[pIdx].defaultKeyword), by: (text, "", "", "", ""), label: "a default value is not allowed here", help: help)
                     } else if !isError(type) && !isNumeric(type) && !isBool(type) && type != prim(.char) && !isString(type) && !(kindOf(type) == .enumType && t12PlainEnum(in c, for: typeIndex(type))) {
                         report(ref c, for: .invalidEnumParameter, from: file, at: t8TypeSpan(in ps[pIdx].type), by: (text, "", "", "", ""), label: $"`{typeDisplay(ref c, by: type)}` has no static form", help: help)
                     } else if findEnumField(ref c, by: e, for: text) >= 0 {
@@ -484,7 +490,7 @@ void declareVariantList(ref Ctx c, for UnionId u, from List<parser.UnionVariant>
         }
         let hasValue = variants[vIdx].value is not .none
         if hasValue {
-            let valueSpan = t11ExprSpan(in variants[vIdx].value)
+            let valueSpan = parser.exprSpan(in variants[vIdx].value)
             if variants[vIdx].fields.length > 0 {
                 report(ref c, for: .unionValueOnPayload, from: file, at: valueSpan, by: (vText, "", "", "", ""), label: "only a case without data can have a value", help: "remove the value")
             } else if (t12UnionValue(in variants[vIdx].value) is { } value) {
@@ -505,7 +511,7 @@ void declareVariantList(ref Ctx c, for UnionId u, from List<parser.UnionVariant>
             doc: variants[vIdx].doc,
         })
         if (values.tryGet(at: tag) is { } same) {
-            let at = hasValue ? t11ExprSpan(in variants[vIdx].value) : vName
+            let at = hasValue ? parser.exprSpan(in variants[vIdx].value) : vName
             let last = c.unions[u].variants[c.unions[u].variants.length - 1]
             let label = hasValue ? "already used" : $"follows `{c.unionVariants[last].name}`, so it is {tag}"
             report(ref c, for: .duplicateUnionValue, from: file, at: at, by: (c.unionVariants[same].name, vText, $"{tag}", "", ""), label: label, help: "give each case its own value")

@@ -20,8 +20,15 @@ for t in sys.argv[2:]:
     assert block, t
     head = re.sub(r'\([^()]*(\([^()]*\)[^()]*)*\)', '', re.search(r'files: (.*?) — covers', block[0]).group(1))
     files = re.findall(r'`([^`]+\.(?:byn|cs))`', head)
-    byns = [f if f.startswith('selfhost/') else f'selfhost/semantics/{f}' for f in files if f.endswith('.byn')]
-    tests = [f'tests/Bayan.Tests/{f}' for f in files if f.endswith('.cs')]
+    # tests/, docs/ and src/ paths are written from the repo root; selfhost/ paths keep their own directory
+    rooted = [f for f in files if f.startswith(('tests/', 'docs/', 'src/', 'work/'))]
+    byns = [f if f.startswith('selfhost/') else f'selfhost/semantics/{f}' for f in files if f.endswith('.byn') and f not in rooted]
+    tests = [f'tests/Bayan.Tests/{f}' for f in files if f.endswith('.cs') and f not in rooted] + rooted
+    own_tests = [f for f in files if f.endswith('.cs') and f not in rooted]
+    test_class = 'SelfhostSemantics' if t == 'T28' else own_tests[0][:-3] if own_tests else f'SelfhostSemantics{t}Tests'
+    law = re.findall(r'`docs/laws/(\d{3})-[^`]*\.md`', head)  # a law-enact task's gate is its law's proof
+    filt = f'Law=L{law[0]}' if law and not own_tests else f'FullyQualifiedName~{test_class}'
+    if not law and not own_tests and not byns: filt = 'FullyQualifiedName~SelfhostSemanticsApiTests'  # a docs-only task
     own_api = [l for l in api if re.match(rf'^- {t} ', l)]
     q = re.search(r'Q(\d{3})–Q(\d{3})', ' '.join(block))
     s = f"""You are the independent reviewer for task {t} of spec 010 (the Bayan type checker ported from C# `src/Bayan.Semantics/` into Bayan under `selfhost/semantics/`). You did not write this code. Your job is to find where the port is not the C#. Do not edit any file except the review file below; do not run git commands that change state.
@@ -41,7 +48,7 @@ Read: `AGENTS.md`, `scripts/selfhost/bayan-cheatsheet.md`, the task below, the C
 4. **Oracle tests.** Every ported function has a test whose expected lines come from running the C# implementation in-process on the same input (see `SelfhostSemanticsT10Tests.Expected`), including a failure/diagnostic path; diagnostics compare as `code line:col message`. Hand-typed expectations, or expectations that hold only because a sibling is a stub, are MEDIUM each (HIGH if they encode behaviour that differs from the C#).
 5. **True docs.** Each Question in the task's range says what the code does; each break-test line citation points at the line it names. A false claim is MEDIUM.
 
-Verify each finding in the code before you write it: name the Bayan `file:line` and the C# `file:line`. Run the task's tests (`dotnet test -v q --filter FullyQualifiedName~SelfhostSemantics{t}Tests`) once; you may add a probe under `tmp/review-{t.lower()}/` to confirm a behaviour.
+Verify each finding in the code before you write it: name the Bayan `file:line` and the C# `file:line`. Run the task's tests (`dotnet test -v q --filter "{filt}"`) once; you may add a probe under `tmp/review-{t.lower()}/` to confirm a behaviour.
 
 ## Write `docs/specs/010-self-hosted-semantics/reviews/{t}.md`, exactly this shape
 ```

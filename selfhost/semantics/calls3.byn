@@ -289,11 +289,10 @@ BExpr bindSwitchExpr(ref Binder b, through ref Ctx c, for in parser.SwitchExpr s
     var states: UnionId = -1
     if kindOf(valueType) != .optional { states = statesUnion(ref c, for: valueType) }
     if states != -1 {
-        // mutation-exempt: Q672 through 296
         let found = subject(ref b, through: ref c, for: value)
         var subjectType = valueType
         if (found is { } f) { subjectType = f.type }
-        let _ = checkStatesExhaustive(ref b, through: ref c, at: s.span, as: subjectType, from: states, by: in cases)
+        let _ = checkStatesExhaustive(ref b, through: ref c, at: s.span, as: subjectType, from: states, by: in cases, until: parser.exprSpan(in s.value).end, to: null)
     } else {
         let _ = checkExhaustive(ref b, through: ref c, at: parser.exprSpan(in s.value), as: valueType, by: in cases, statement: false)
     }
@@ -632,7 +631,6 @@ void guardBindings(ref Ctx c, for BPattern p, at TextSpan guard) {
 bool checkGuardWrite(ref Binder b, through ref Ctx c, for BExpr target, at TextSpan span, by string why) {
     let l = writtenLocal(ref c, for: target)
     if l == -1 { return false }
-    // mutation-exempt: Q671 through 641
     if (c.locals[l].guardSpan is { } g) {
         if span.start < g.start || span.end > g.end { return false }
         report(ref b, through: ref c, for: .owningBindingMutatedInGuard, at: span, by: (c.locals[l].name, "", "", "", ""), label: why,

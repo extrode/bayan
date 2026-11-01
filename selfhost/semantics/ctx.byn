@@ -531,6 +531,13 @@ struct Ctx {
     Manifest? manifest = null
     // ── T27 state
     // ── T28 state
+    /// The text of each name `for try` synthesizes (Binder.cs:1113-1115), by `-1 - span.start` (Q679).
+    List<string> syntheticNames = List<string>()
+    /// C# `_unobservable` and `_unobservableSeen` (a set): `file|start|length|op` of each mark kept.
+    List<UnobservableMark> unobservable = List<UnobservableMark>()
+    Map<string, i64> unobservableSeen = []
+    /// C# `Compilation.MutationChecks`: calls of methods through a receiver, checked once every body is bound.
+    List<MutationCheck> mutationChecks = List<MutationCheck>()
     // ── T29 state
     // ── T30 state
     // ── T31 state
@@ -548,6 +555,9 @@ struct Ctx {
     // ── T39 state
     /// C# `Compilation.ThisWrites`: the first write to `this` in each method not declared `ref this` (Q694).
     Map<FuncId, T39ThisWrite> thisWrites = []
+    // ── T40 state
+    /// The C# span of each `for try` synthetic name (Binder.cs:1110-1115, `f.Iterable.Span`), beside `syntheticNames`.
+    List<TextSpan> syntheticSpans = List<TextSpan>()
 }
 
 // ── The binder's cursors ──────────────────────────────────────────────────────
@@ -676,4 +686,5 @@ struct Binder {
     // ── T37 state
     // ── T38 state
     // ── T39 state
+    // ── T40 state
 }

@@ -1,0 +1,7 @@
+error BYN2005: `next` is not visible here
+  --> main.byn:5:18
+
+  5 │     for try x in r { print($"{x}") }
+    │                  ^ not `public`
+    │
+  help: mark `next` `public` to use it from another module

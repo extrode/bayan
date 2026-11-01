@@ -25,6 +25,15 @@ struct FirstPass {
     List<Diag> errors
 }
 
+/// The C# `MutationCheck(Binder, Callee, Receiver)`. The binder is what `checkMutation` reads of it: its file and
+/// its constructor's function (C# `Binder.Function`, the host of any lambda being bound), or -1 for none (Q657).
+struct MutationCheck {
+    FileId source
+    FuncId function
+    FuncId callee
+    BExpr receiver
+}
+
 /// The C# `RequiresCheck(Source, Call, Callee, Arguments)`. `Call` is its span and the file and span
 /// of each argument value written in it; `argumentFiles` is the file of each argument's syntax (Q582).
 struct RequiresCheck {
@@ -416,6 +425,10 @@ FuncId instantiateFunction(ref Ctx c, for FuncId template, by in List<Type> args
         template: template,
         typeArgs: move typeArgs,
         typeMap: move typeMap,
+        // C# `Decl = template.Decl` (Q656 (e)).
+        becomes: c.functions[template].becomes,
+        refThis: c.functions[template].refThis,
+        moveThis: c.functions[template].moveThis,
     })
     c.instanceKeys[key] = fn
     c.modules[module].allFunctions.append(fn)
@@ -799,7 +812,7 @@ FuncId t13Outermost(in Ctx c, for FuncId f) {
 /// Compilation.cs:1716 BindFunction: binds a body; when an untyped `var` literal in it meets another
 /// integer type first (spec R4), binds it again with that type, discarding the first pass.
 void bindFunction(ref Ctx c, for FuncId fn) {
-    // `MutationChecks` has no home yet (Q582), so it is not rolled back here.
+    let checkCount = c.mutationChecks.length
     let requireCount = c.requiresChecks.length
     let locals = c.functions[fn].locals.length
     let outer = c.firstPass
@@ -842,6 +855,7 @@ void bindFunction(ref Ctx c, for FuncId fn) {
         }
     }
     c.instantiationWork = move work
+    while c.mutationChecks.length > checkCount { c.mutationChecks.remove(at: c.mutationChecks.length - 1) }
     var checks = List<RequiresCheck>()
     for i in 0..requireCount {
         var args = List<Location>()
@@ -1013,8 +1027,30 @@ i64? t13Find(in List<i64> xs, for i64 x) {
 
 bool t13Contains(in List<i64> xs, for i64 x) => t13Find(in xs, for: x) is not null
 
-// stub: T13 ports Compilation.cs:1847 CheckMutation (blocked: Q582)
-void checkMutation(ref Ctx c) {}
+/// Compilation.cs:1885 CheckMutation: a method is mutating when it is declared `ref this`. Every call of one needs a
+/// writable receiver, and a method that writes `this` without `ref this` is BYN2115.
+void checkMutation(ref Ctx c) {
+    for i in 0..c.mutationChecks.length {
+        let callee = c.mutationChecks[i].callee
+        if !c.functions[callee].isMutating { continue }
+        let fn = c.mutationChecks[i].function
+        let receiver = c.mutationChecks[i].receiver
+        var b = t13NewBinder(c.mutationChecks[i].source, fn: fn)
+        let why = $"`{c.functions[callee].name}` modifies it"
+        if !(fn != -1 && functionIsInstance(ref c, by: fn)) {
+            let _ = checkWritable(ref b, through: ref c, for: receiver, at: nodeSpan(in c, for: receiver), by: why)
+        } else {
+            let _ = checkGuardWrite(ref b, through: ref c, for: receiver, at: nodeSpan(in c, for: receiver), by: why)
+        }
+    }
+    var writes = List<(FuncId, TextSpan)>()
+    for (fn, w) in c.thisWrites { writes.append((fn, w.span)) }
+    for w in writes {
+        switch w {
+            case (let fn, let span): reportMutatesWithoutRefThis(ref c, for: fn, at: span)
+        }
+    }
+}
 
 /// Compilation.cs:1862 CheckRequires: a `requires` clause that the call's constant arguments make
 /// false is BYN2321 at the argument.

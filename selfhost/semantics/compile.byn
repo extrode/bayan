@@ -605,7 +605,7 @@ List<i64> t11CheckCases(ref Ctx c, from FileId file, for in parser.TestDecl t, b
     }
     let joined = $"{names.finish()}"
     for ai in 0..a.args.length {
-        let value = t11ExprSpan(in a.args[ai].value)
+        let value = parser.exprSpan(in a.args[ai].value)
         var named = false
         switch a.args[ai].value {
             case .nameExpr(_) or .memberExpr(_):
@@ -649,8 +649,8 @@ i64 t11CaseValueCount(in parser.Expr e) {
 /// The span of the C# `values[k]` of a case: a tuple's element `k`, else the case itself.
 TextSpan t11CaseValueSpan(in parser.Expr e, at i64 k) {
     switch e {
-        case .tupleExpr(let t): return t11ExprSpan(in t.value.elements[k].value)
-        default: return t11ExprSpan(in e)
+        case .tupleExpr(let t): return parser.exprSpan(in t.value.elements[k].value)
+        default: return parser.exprSpan(in e)
     }
 }
 
@@ -686,7 +686,8 @@ bool t11IsCaseLiteral(in parser.Expr e) {
 /// A test function titled `title`; `attribute`/`arg` name its case's values (-1 for none).
 void t11DeclareTest(ref Ctx c, from FileId file, at i64 declIndex, by TextSpan span, for string title, as i64 attribute, to i64 arg) {
     let module = c.files[file].module
-    let fn = newFunction(ref c, by: FunctionSymbol { name: "test", span: span, module: module, kind: .testKeyword, file: file, declIndex: declIndex })
+    // Symbols.cs:207: `ReturnType` defaults to `PrimitiveType.Void`, which DeclareTest never changes.
+    let fn = newFunction(ref c, by: FunctionSymbol { name: "test", span: span, module: module, kind: .testKeyword, file: file, declIndex: declIndex, returnType: prim(.void) })
     let testId = newTest(ref c, by: TestSymbol { title: title, span: span, function: fn, file: file, declIndex: declIndex })
     c.modules[module].tests.append(testId)
     c.modules[module].allFunctions.append(fn)
@@ -726,6 +727,8 @@ void declareFile(ref Ctx c, for FileId file) {
         switch c.files[file].unit.members[d] {
             case .structDecl(let s):
                 let name = t11Text(in c, from: file, at: s.value.name)
+                var attributes = List<string>()
+                for a in s.value.attributes { attributes.append(t11Text(in c, from: file, at: a.name)) }
                 let sym = newStruct(ref c, by: StructSymbol {
                     name: name,
                     nameSpan: s.value.name,
@@ -736,6 +739,7 @@ void declareFile(ref Ctx c, for FileId file) {
                     access: accessOf(s.value.modifiers),
                     modifiers: i64(s.value.modifiers),
                     doc: s.value.doc,
+                    attributes: move attributes,
                 })
                 if addType(ref c, from: file, at: s.value.name, as: structTypeOf(sym)) { c.modules[module].structs.append(sym) }
                 checkType(ref c, from: file, at: s.value.name)
@@ -891,6 +895,9 @@ void declareFile(ref Ctx c, for FileId file) {
                 checkType(ref c, from: file, at: s.value.name)
             case .functionDecl(let f):
                 let name = t11Text(in c, from: file, at: f.value.name)
+                // C# `Decl = f`: the symbol keeps its `becomes`, `ref this` and `move this` scalars (Q656 (e)).
+                var becomes: string? = null
+                if (f.value.becomes is { } becomesAt) { becomes = t11Text(in c, from: file, at: becomesAt) }
                 let sym = newFunction(ref c, by: FunctionSymbol {
                     name: name,
                     nameSpan: f.value.name,
@@ -901,6 +908,9 @@ void declareFile(ref Ctx c, for FileId file) {
                     modifiers: i64(f.value.modifiers),
                     file: file,
                     declIndex: d,
+                    becomes: becomes,
+                    refThis: f.value.refThis,
+                    moveThis: f.value.moveThis,
                 })
                 checkValue(ref c, from: file, at: f.value.name)
                 var into = List<TypeParamId>()
@@ -1237,46 +1247,6 @@ void t11RunWhere(ref Ctx c, for in Work work) {
 /// The source text at `span` of `f` (the C# `Name.Text` / `SourceText.GetText`).
 string t11Text(in Ctx c, from FileId f, at TextSpan span) => $"{getText(c.files[f].text.span, at: span)}"
 
-/// The C# span of an expression (`Expr.Span`); the parser's `exprSpan` is not public (Q431).
-TextSpan t11ExprSpan(in parser.Expr e) {
-    switch e {
-        case .literalExpr(let n): return n.value.span
-        case .interpolatedExpr(let n): return n.value.span
-        case .nameExpr(let n): return n.value.span
-        case .thisExpr(let n): return n.value.span
-        case .memberExpr(let n): return n.value.span
-        case .targetMemberExpr(let n): return n.value.span
-        case .callExpr(let n): return n.value.span
-        case .indexExpr(let n): return n.value.span
-        case .unaryExpr(let n): return n.value.span
-        case .binaryExpr(let n): return n.value.span
-        case .rangeExpr(let n): return n.value.span
-        case .conditionalExpr(let n): return n.value.span
-        case .castExpr(let n): return n.value.span
-        case .isExpr(let n): return n.value.span
-        case .exceptExpr(let n): return n.value.span
-        case .inExpr(let n): return n.value.span
-        case .switchExpr(let n): return n.value.span
-        case .tryExpr(let n): return n.value.span
-        case .moveExpr(let n): return n.value.span
-        case .catchExpr(let n): return n.value.span
-        case .caughtErrorExpr(let n): return n.value.span
-        case .jumpExpr(let n): return n.value.span
-        case .blockExpr(let n): return n.value.span
-        case .structLiteralExpr(let n): return n.value.span
-        case .withExpr(let n): return n.value.span
-        case .spreadExpr(let n): return n.value.span
-        case .mapEntryExpr(let n): return n.value.span
-        case .collectionExpr(let n): return n.value.span
-        case .tupleExpr(let n): return n.value.span
-        case .parenExpr(let n): return n.value.span
-        case .lambdaExpr(let n): return n.value.span
-        case .stackallocExpr(let n): return n.value.span
-        case .patternExpr(let n): return n.value.span
-        case .errorExpr(let n): return n.value.span
-        case .none: return TextSpan { start: 0, length: 0 }
-    }
-}
 
 /// The C# `File.ReadAllBytes`; an unreadable file is an exception out of the C# compiler, a panic here (Q571).
 List<u8> t11ReadAllBytes(string path) {

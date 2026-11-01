@@ -82,8 +82,63 @@ Fix? t22BecomesFixOf(ref Binder b, through ref Ctx c, for FuncId fn, by string s
     return fix
 }
 
-// stub: T22 ports BinderStates.cs:12 BindBecome (blocked: Q625)
-BStmt bindBecome(ref Binder b, through ref Ctx c, for in parser.BecomeStmt s) => -1
+/// C# `BindBecome` (BinderStates.cs:12). C# binds `b.Args` as a `CallExpr` spanning `b.Span`; `bindArgumentList` takes
+/// those two (Q656).
+BStmt bindBecome(ref Binder b, through ref Ctx c, for in parser.BecomeStmt s) {
+    let stateText = t15Text(in c, from: b.file, at: s.state)
+    let owner = b.fn != -1 ? c.functions[b.fn].owner : -1
+    let states = owner != -1 ? statesOf(ref c, for: owner) : -1
+    let state = states != -1 ? findUnionVariant(ref c, by: states, for: stateText) : -1
+    if state == -1 {
+        let name = owner != -1 ? c.structs[owner].name : b.fn != -1 ? c.functions[b.fn].name : "?"
+        report(ref b, through: ref c, for: .unknownState, at: s.state, by: (name, stateText, "", "", ""), help: $"check the states declared in `{name}`")
+        bindArgumentListForRecovery(ref b, through: ref c, for: in s.args)
+        return addErrorStmt(ref c, from: BErrorStmt { span: s.span })
+    }
+    let fn = b.fn
+    let fnName = c.functions[fn].name
+    let stateName = c.unionVariants[state].name
+    let fields = copyIds(in c.unionVariants[state].fields)
+    let decl = t22DeclFacts(ref c, for: fn)
+    // A `becomes` without `ref this` is BYN7010 at the signature; its `become` reports nothing more (revision 0010).
+    if !c.functions[fn].isStatic && decl.found && decl.becomes is not null && decl.refThis is null {
+        let _ = bindArgumentList(ref b, through: ref c, for: in s.args, at: s.span, by: in fields, as: -1, enforceNames: false, displayName: $".{stateName}")
+        return addErrorStmt(ref c, from: BErrorStmt { span: s.span })
+    }
+    let keyword = TextSpan { start: s.span.start, length: "become".length }
+    // A static method has no `this` to change; one that takes neither `ref this` nor `move this` is BYN2115 (Question 297).
+    if c.functions[fn].isStatic {
+        report(ref b, through: ref c, for: .unsupported, at: keyword, by: ("`become` in a static method", "", "", "", ""),
+            help: "remove `become`; only an instance method has a `this` to change")
+    } else if decl.moveThis is null {
+        let thisExpr = addThis(ref c, from: BThis { span: s.span, type: structTypeOf(owner) })
+        let _ = checkWritable(ref b, through: ref c, for: thisExpr, at: keyword, by: "`become` changes its state")
+    }
+    if (decl.becomes is { } becomes) {
+        let becomesText = t15Text(in c, from: c.functions[fn].file, at: becomes)
+        if becomesText != stateName {
+            report(ref b, through: ref c, for: .becomeOtherState, at: s.state, by: (stateName, fnName, becomesText, "", ""),
+                help: $"change the target to `.{becomesText}`, or declare `becomes .{stateName}`")
+        }
+    } else {
+        let help = $"add `becomes .{stateName}` to the signature of `{fnName}`"
+        let fix = decl.found ? t22BecomesFixOf(ref b, through: ref c, for: fn, by: stateName) : null
+        if (fix is { } x) {
+            report(ref b, through: ref c, for: .becomeUndeclared, at: keyword, by: (stateName, fnName, "", "", ""),
+                help: help, hasFix: true, fixSpan: x.span, fixReplacement: x.replacement)
+        } else {
+            report(ref b, through: ref c, for: .becomeUndeclared, at: keyword, by: (stateName, fnName, "", "", ""), help: help)
+        }
+    }
+    let payload = bindArgumentList(ref b, through: ref c, for: in s.args, at: s.span, by: in fields, as: -1, enforceNames: false, displayName: $".{stateName}")
+    // The payload reads the old state; after it, `this` is in the new one.
+    let facts = t15ThisFacts(ref b, through: ref c)
+    forgetState(ref b, for: facts)
+    var one = List<VariantId>()
+    one.append(state)
+    learnState(ref b, for: facts, as: internState(ref c, by: owner, for: in one))
+    return addBecome(ref c, from: BBecome { span: s.span, state: state, payload: move payload })
+}
 
 void checkBecomesCall(ref Binder b, through ref Ctx c, for in parser.CallExpr call, from FuncId caller, by FuncId fn, to TextSpan state) {
     // `to` is a name in the callee's declaration (Q626).
@@ -263,8 +318,46 @@ BExpr bindPayloadField(ref Binder b, through ref Ctx c, at TextSpan span, for BE
     return addErrorExpr(ref c, from: BErrorExpr { span: span })
 }
 
-// stub: T22 ports BinderStates.cs:160 CheckStatesExhaustive (blocked: Q625)
-bool checkStatesExhaustive(ref Binder b, through ref Ctx c, at TextSpan span, as Type type, from UnionId states, by in List<(BPattern, BExpr)> arms) => true
+/// C# `CheckStatesExhaustive` (BinderStates.cs:160). `span` is the switch's; C# `s is SwitchExpr e` is `valueEnd` (the end of
+/// `e.Value.Span`, -1 for a statement), and `st.Sections[^1]` is `lastSection` (null for an expression or no section; Q656).
+bool checkStatesExhaustive(ref Binder b, through ref Ctx c, at TextSpan span, as Type type, from UnionId states, by in List<(BPattern, BExpr)> arms, until i64 valueEnd, to TextSpan? lastSection) {
+    var covered = List<string>()
+    for arm in arms {
+        let pattern = arm.item1
+        let guard = arm.item2
+        if pattern == -1 { return true }
+        if guard != -1 { continue }
+        if irrefutable(ref c, for: pattern) { return true }
+        collect(ref c, for: pattern, as: type, to: ref covered)
+    }
+    var missing = List<VariantId>()
+    for v in possibleStates(ref c, for: type, by: states) {
+        if !listContainsString(in covered, by: $".{c.unionVariants[v].name}") { missing.append(v) }
+    }
+    if missing.length == 0 { return true }
+    let length = c.files[b.file].text.length
+    var keyword = span.start
+    if valueEnd >= 0 {
+        let rest = t15Text(in c, from: b.file, at: TextSpan.fromBounds(valueEnd, until: length))
+        keyword = valueEnd + (rest.position("switch") ?? -1)
+    }
+    var indent: i64 = 0
+    if (lastSection is { } section) {
+        while section.start - indent > 0 && (c.files[b.file].text[section.start - indent - 1] == 32 || c.files[b.file].text[section.start - indent - 1] == 9) { indent += 1 }
+    }
+    for v in missing {
+        let name = c.unionVariants[v].name
+        let at = TextSpan { start: keyword, length: "switch".length }
+        if (lastSection is { } last) {
+            let lead = t15Text(in c, from: b.file, at: TextSpan { start: last.start - indent, length: indent })
+            report(ref b, through: ref c, for: .stateSwitchNotExhaustive, at: at, by: (name, "", "", "", ""), help: $"add a `case .{name}` arm",
+                hasFix: true, fixSpan: TextSpan { start: last.end, length: 0 }, fixReplacement: $"\n{lead}case .{name}:")
+        } else {
+            report(ref b, through: ref c, for: .stateSwitchNotExhaustive, at: at, by: (name, "", "", "", ""), help: $"add a `case .{name}` arm")
+        }
+    }
+    return false
+}
 
 // ── What a local is known to be (spec §3.17) ─────────────────────────────────
 
