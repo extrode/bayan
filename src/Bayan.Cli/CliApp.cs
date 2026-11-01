@@ -433,7 +433,14 @@ public static class CliApp
 
     private static void WriteIfChanged(string path, string text)
     {
-        if (!File.Exists(path) || File.ReadAllText(path) != text) Toolchain.ReplaceFile(path, temp => File.WriteAllText(temp, text));
+        if (!File.Exists(path) || ReadShared(path) != text) Toolchain.ReplaceFile(path, temp => File.WriteAllText(temp, text));
+    }
+
+    /// <summary>Reads without blocking a concurrent build's rename over the file, which Windows refuses while it is open without FileShare.Delete.</summary>
+    private static string ReadShared(string path)
+    {
+        using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete));
+        return reader.ReadToEnd();
     }
 
     internal static string HostTarget => Targets.Host ?? "host";
@@ -1035,6 +1042,8 @@ public static class CliApp
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
+            StandardErrorEncoding = System.Text.Encoding.UTF8,
             UseShellExecute = false,
         };
         psi.ArgumentList.Add("--test");

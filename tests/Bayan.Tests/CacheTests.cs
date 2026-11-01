@@ -50,9 +50,9 @@ public sealed class CacheTests
 
     private static string Output(string executable)
     {
-        var psi = new System.Diagnostics.ProcessStartInfo(executable) { RedirectStandardOutput = true, UseShellExecute = false };
+        var psi = new System.Diagnostics.ProcessStartInfo(executable) { RedirectStandardOutput = true, StandardOutputEncoding = System.Text.Encoding.UTF8, UseShellExecute = false };
         using var p = System.Diagnostics.Process.Start(psi)!;
-        var text = p.StandardOutput.ReadToEnd();
+        var text = p.StandardOutput.ReadToEndLf();
         p.WaitForExit();
         return text;
     }

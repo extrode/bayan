@@ -202,7 +202,8 @@ public sealed partial class StyleTests
     {
         text = text.ReplaceLineEndings("\n")
             .Replace(dir + Path.DirectorySeparatorChar, "<dir>/")
-            .Replace(dir, "<dir>")
+            .Replace(dir, "<dir>");
+        text = Regex.Replace(text, @"<dir>/\S*", m => m.Value.Replace('\\', '/'))
             .Replace(Toolchain.CacheDirectory, "<cache>")
             .Replace(CliApp.HostTarget, "<host>")
             .Replace(CliApp.Version, "<version>")
