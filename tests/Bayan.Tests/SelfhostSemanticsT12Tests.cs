@@ -142,6 +142,27 @@ public sealed class SelfhostSemanticsT12Tests
                 d
             }
             """),
+        // DeclareUnionVariants of a struct's `states` block (flag `t`): a valid list, a duplicate name, a payload with
+        // a duplicate field and an unknown type, a non-lower-case name. The syntax has no `= value`, so no state carries one.
+        ("states/main.byn", """
+            struct Cart {
+                i64 n
+                states {
+                    empty
+                    full(List<i64> items)
+                }
+            }
+            struct Order {
+                i64 id
+                states {
+                    draft
+                    paid(i64 payment, string payment, Missing q)
+                    draft
+                    Shipped
+                }
+            }
+            struct Plain { }
+            """),
         // DeclareMembers.
         ("structs/main.byn", """
             interface IShape { }
@@ -225,6 +246,7 @@ public sealed class SelfhostSemanticsT12Tests
         ("compose", "c"),
         ("enums", "e"),
         ("unions", "u"),
+        ("states", "t"),
         ("structs", "m"),
         ("distinct", "m"),
         ("overloads", "o"),
@@ -290,6 +312,8 @@ public sealed class SelfhostSemanticsT12Tests
         }
         if (flags.Contains('e')) foreach (var e in m.Enums) Call(c, "DeclareEnumMembers", e);
         if (flags.Contains('u')) foreach (var u in m.Unions) Call(c, "DeclareUnionVariants", u);
+        // `StatesOf` declares the states union on first use (T38's `statesOf` is a stub, so the port is driven directly).
+        if (flags.Contains('t')) foreach (var s in m.Structs) Call(c, "StatesOf", s);
         if (flags.Contains('p')) foreach (var set in m.ErrorSets) Call(c, "DeclarePayloads", set);
         if (flags.Contains('m')) foreach (var s in m.Structs) Call(c, "DeclareMembers", s);
         if (flags.Contains('s'))
@@ -360,6 +384,11 @@ public sealed class SelfhostSemanticsT12Tests
             lines.Add($"union {u.Name}");
             foreach (var v in u.Variants) lines.Add($"  variant {v.Name} tag={v.Tag} at={At(v.Location)} ({Params(v.Fields)})");
         }
+        foreach (var (s, u) in c.States)
+        {
+            lines.Add($"states {s.Name}");
+            foreach (var v in u.Variants) lines.Add($"  variant {v.Name} tag={v.Tag} at={At(v.Location)} ({Params(v.Fields)})");
+        }
         var baseSpans = (System.Collections.IDictionary)typeof(Compilation).GetField("_baseSpans", Any)!.GetValue(c)!;
         foreach (var s in m.Structs)
         {
@@ -393,6 +422,7 @@ public sealed class SelfhostSemanticsT12Tests
                 let dir = args[i + 1]
                 let flags = args[i + 2]
                 print($"== {name}")
+                var stateUnions = List<UnionId>()
                 var c = loadOnly(dir)
                 let m = c.entryModule
                 for f in copyIds(in c.modules[m].files) { declareFile(ref c, for: f) }
@@ -416,6 +446,19 @@ public sealed class SelfhostSemanticsT12Tests
                 if flags.contains("u") {
                     for u in copyIds(in c.modules[m].unions) { declareUnionVariants(ref c, for: u) }
                 }
+                if flags.contains("t") {
+                    for s in copyIds(in c.modules[m].structs) {
+                        switch c.files[c.structs[s].file].unit.members[c.structs[s].declIndex] {
+                            case .structDecl(let d):
+                                if d.value.states.length == 0 { continue }
+                            default:
+                                continue
+                        }
+                        let u = newUnion(ref c, by: UnionSymbol { name: c.structs[s].name, module: c.structs[s].module, file: c.structs[s].file, declIndex: c.structs[s].declIndex })
+                        declareUnionVariants(ref c, for: u)
+                        stateUnions.append(u)
+                    }
+                }
                 if flags.contains("p") {
                     for set in copyIds(in c.modules[m].errorSets) { declarePayloads(ref c, for: set) }
                 }
@@ -424,7 +467,7 @@ public sealed class SelfhostSemanticsT12Tests
                 }
                 if flags.contains("s") { t12Signatures(ref c, for: m) }
                 if flags.contains("o") { checkOverloads(ref c, for: m) }
-                dump(ref c, for: m)
+                dump(ref c, for: m, by: stateUnions)
                 i += 3
             }
             return 0
@@ -509,7 +552,7 @@ public sealed class SelfhostSemanticsT12Tests
             return $"{c.functions[f].name} {lowerKind(kind)} {lowerAccess(c.functions[f].access)} static={truth(on: c.functions[f].isStatic)} at={spot(in c, from: file, by: c.functions[f].span)}{fileName} map=[{keyList}]{signature}"
         }
 
-        void dump(ref Ctx c, for ModId m) {
+        void dump(ref Ctx c, for ModId m, by List<UnionId> stateUnions) {
             for d in c.diagnostics {
                 let pos = linePosition(c.files[d.file].text.span, at: d.span.start)
                 print($"diag {d.code} {pos.line}:{pos.column} {d.message} | {d.label} | {d.help}")
@@ -556,6 +599,14 @@ public sealed class SelfhostSemanticsT12Tests
             for u in copyIds(in c.modules[m].unions) {
                 let f = c.unions[u].file
                 print($"union {c.unions[u].name}")
+                for v in copyIds(in c.unions[u].variants) {
+                    let ps = paramList(ref c, for: in copyIds(in c.unionVariants[v].fields), from: f)
+                    print($"  variant {c.unionVariants[v].name} tag={c.unionVariants[v].tag} at={spot(in c, from: f, by: c.unionVariants[v].span)} ({ps})")
+                }
+            }
+            for u in stateUnions {
+                let f = c.unions[u].file
+                print($"states {c.unions[u].name}")
                 for v in copyIds(in c.unions[u].variants) {
                     let ps = paramList(ref c, for: in copyIds(in c.unionVariants[v].fields), from: f)
                     print($"  variant {c.unionVariants[v].name} tag={c.unionVariants[v].tag} at={spot(in c, from: f, by: c.unionVariants[v].span)} ({ps})")
