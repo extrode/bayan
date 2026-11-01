@@ -4,6 +4,7 @@
 # `bayan mutate --binary <exe> --sites <map.json> -- python3 -I scripts/selfhost/replay.py <dir>` does per mutant.
 # Exit 0 when each run's exit code, stdout and stderr match the recording (those listed in its `compare`),
 # 1 at the first mismatch (named on stderr), 2 when the recording cannot be read or a program cannot start.
+# Input files are read at replay time, so a recorded test must use unique input paths (one rewritten between runs cannot replay).
 import base64, json, os, subprocess, sys
 
 if len(sys.argv) != 2:

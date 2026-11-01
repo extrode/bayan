@@ -10,8 +10,9 @@ namespace Bayan.Tests;
 /// </summary>
 public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
 {
-    /// <summary>The recorded tests: <c>bayan-parse</c>'s CLI modes, one of them a timing.</summary>
-    private const string Filter = "FullyQualifiedName~SelfhostParserT13Tests";
+    /// <summary>The recorded tests: <c>bayan-parse</c>'s CLI modes but the timing, whose microsecond output can repeat
+    /// across the two recording runs and then be compared.</summary>
+    private const string Filter = "FullyQualifiedName~SelfhostParserT13Tests&FullyQualifiedName!~TimePrintsANumber";
 
     /// <summary>The file whose sites the schemata build carries: the CLI those tests drive (a whole-module schemata
     /// build re-binds the module once per site, over ten minutes for the parser).</summary>
@@ -20,21 +21,9 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
     [Fact]
     public void ReplayMatchesMutantZeroAndFailsOnAKilledMutant()
     {
-        var dir = Path.Combine(Golden.RepoRoot, "tmp", "selfhost-snapshot");
-        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         var clock = Stopwatch.StartNew();
-        var dotnet = new ProcessStartInfo("dotnet") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        foreach (var a in new[] { "test", typeof(SelfhostSnapshotTests).Assembly.Location, "--filter", Filter }) dotnet.ArgumentList.Add(a);
-        dotnet.Environment["BAYAN_SNAPSHOT"] = dir;
-        dotnet.Environment["BAYAN_SNAPSHOT_FILES"] = Scope;
-        var (recordExit, recordOut) = Exec(dotnet, TimeSpan.FromMinutes(10));
-        Assert.True(recordExit == 0, $"recording exited {recordExit}:\n{recordOut}");
+        var (dir, runs) = Record("selfhost-snapshot", Filter, Scope);
         output.WriteLine($"record {clock.Elapsed.TotalSeconds:F1} s");
-
-        var runs = File.ReadAllLines(Path.Combine(dir, "runs.jsonl")).Select(l => JsonNode.Parse(l)!).ToList();
-        Assert.NotEmpty(runs);
-        var time = Assert.Single(runs, r => r["args"]!.AsArray().Any(a => (string?)a == "--time"));
-        Assert.DoesNotContain("stdout", time["compare"]!.AsArray().Select(c => (string?)c));
         var build = Assert.Single(JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "manifest.json")))!["builds"]!.AsArray());
         Assert.All(runs, r => Assert.Equal((string?)build!["binary"], (string?)r["program"]));
 
@@ -56,6 +45,42 @@ public sealed class SelfhostSnapshotTests(ITestOutputHelper output)
             return;
         }
         Assert.Fail("none of the first 50 mutants was killed by the recorded runs");
+    }
+
+    /// <summary>A test whose class builds its own program (T5's generated main) records against a schemata build:
+    /// the manifest lists one build whose sites are all in <c>ctx.byn</c> (the module file with the fewest sites, so the
+    /// per-site re-binding stays under a minute), every run used it, and mutant 0 replays.</summary>
+    [Fact]
+    public void OwnBuildCallerRecordsAgainstASchemataBuild()
+    {
+        const string scope = "selfhost/semantics/ctx.byn";
+        var clock = Stopwatch.StartNew();
+        var (dir, runs) = Record("selfhost-snapshot-t5", "FullyQualifiedName~SelfhostSemanticsT5Tests", scope);
+        output.WriteLine($"record {clock.Elapsed.TotalSeconds:F1} s");
+        var build = Assert.Single(JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "manifest.json")))!["builds"]!.AsArray());
+        var sites = JsonNode.Parse(File.ReadAllText((string)build!["sites"]!))!["sites"]!.AsArray();
+        Assert.NotEmpty(sites);
+        Assert.All(sites, s => Assert.Equal(Path.GetFullPath(scope, Golden.RepoRoot), Path.GetFullPath((string)s!["file"]!, Golden.RepoRoot)));
+        Assert.All(runs, r => Assert.Equal((string?)build["binary"], (string?)r["program"]));
+        var (exit, text) = Replay(dir, 0);
+        Assert.True(exit == 0, text);
+    }
+
+    /// <summary>Runs the tests matching <paramref name="filter"/> under <c>BAYAN_SNAPSHOT=tmp/&lt;name&gt;</c> with sites only in
+    /// <paramref name="scope"/>; the directory and its recorded runs (at least one).</summary>
+    private static (string Dir, List<JsonNode> Runs) Record(string name, string filter, string scope)
+    {
+        var dir = Path.Combine(Golden.RepoRoot, "tmp", name);
+        if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        var dotnet = new ProcessStartInfo("dotnet") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        foreach (var a in new[] { "test", typeof(SelfhostSnapshotTests).Assembly.Location, "--filter", filter }) dotnet.ArgumentList.Add(a);
+        dotnet.Environment["BAYAN_SNAPSHOT"] = dir;
+        dotnet.Environment["BAYAN_SNAPSHOT_FILES"] = scope;
+        var (exit, text) = Exec(dotnet, TimeSpan.FromMinutes(10));
+        Assert.True(exit == 0, $"recording exited {exit}:\n{text}");
+        var runs = File.ReadAllLines(Path.Combine(dir, "runs.jsonl")).Select(l => JsonNode.Parse(l)!).ToList();
+        Assert.NotEmpty(runs);
+        return (dir, runs);
     }
 
     private static (int Exit, string Text) Replay(string dir, int mutant)
