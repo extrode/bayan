@@ -624,6 +624,105 @@ public sealed class SelfhostSemanticsTests
         SelfhostSemanticsHarness.AssertSection(actual, "marks", marks);
         SelfhostSemanticsHarness.AssertSection(actual, "diags", diags);
     }
+
+    // ── T28: `for try` stepping (Binder.cs:1090-1115) against CliApp ────────────────────────────────
+
+    private const string ForTrySource = """
+        union error ReadError { broken }
+
+        struct Rows {
+            i64 at
+            i64 limit
+
+            i64? next(ref this) fails ReadError {
+                if at >= limit { return null }
+                at += 1
+                return at
+            }
+        }
+
+        i64 copied(i64 limit) fails ReadError {
+            var sum = 0
+            for try row in (Rows { at: 0, limit: limit }) { sum += row }
+            return sum
+        }
+
+        i64 inPlace() fails ReadError {
+            var rows = Rows { at: 0, limit: 3 }
+            var sum = 0
+            for try row: i64 in rows {
+                sum += row
+                break if row == 2
+            }
+            return sum + rows.at
+        }
+
+        i64 fromLet() fails ReadError {
+            let rows = Rows { at: 0, limit: 2 }
+            var sum = 0
+            for try row in rows { sum += row }
+            return sum + rows.at
+        }
+
+        i64 byRef(ref Rows rows) fails ReadError {
+            var sum = 0
+            for try row in (rows) { sum += row }
+            return sum
+        }
+
+        var rows = Rows { at: 0, limit: 2 }
+        print($"{try copied(3)} {try inPlace()} {try fromLet()} {try byRef(ref rows)}")
+
+        """;
+
+    /// <summary>
+    /// A valid <c>for try</c> whose body reports: the hidden <c>&lt;sequence N&gt;</c> copy and the in-place <c>var</c>, the
+    /// step's span at the iterable, and a declared type that is not the step's.
+    /// </summary>
+    [Fact]
+    public void ForTryBodyReports()
+    {
+        var source = """
+            union error ReadError { broken }
+
+            struct Rows {
+                i64 at
+
+                i64? next(ref this) fails ReadError {
+                    at += 1
+                    return at > 2 ? null : at
+                }
+            }
+
+            void copied() fails ReadError {
+                for try row in (Rows { at: 0 }) {
+                    let s: string = row
+                }
+            }
+
+            void inPlace() fails ReadError {
+                var rows = Rows { at: 0 }
+                for try row: string in rows {
+                    let n: i64 = "x"
+                }
+            }
+
+            try copied()
+            try inPlace()
+
+            """;
+        var dir = Fixture("for-try-reports", ("reports.byn", source));
+        SameAsCli("for try reports", "check", Path.Combine(dir, "reports.byn"));
+    }
+
+    /// <summary>The typed dump of the hidden copy (of a temporary and of a <c>let</c>), the in-place <c>var</c> and a <c>ref</c> parameter in parentheses.</summary>
+    [Fact]
+    public void ForTryTypes()
+    {
+        var dir = Fixture("for-try-types", ("steps.byn", ForTrySource));
+        SameAsCli("for try types", "types", Path.Combine(dir, "steps.byn"));
+        SameAsCli("for try check", "check", Path.Combine(dir, "steps.byn"));
+    }
 }
 
 /// <summary>

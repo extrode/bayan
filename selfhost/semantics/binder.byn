@@ -8,7 +8,7 @@ import lexer
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// The C# `Source.GetText(span)` of the file being bound.
-string t15Text(in Ctx c, from FileId f, at TextSpan span) => $"{getText(c.files[f].text.span, at: span)}"
+string t15Text(in Ctx c, from FileId f, at TextSpan span) => span.start < 0 ? c.syntheticNames[-1 - span.start] : $"{getText(c.files[f].text.span, at: span)}"
 
 /// A copy of a held diagnostic (`Diag` is unique, so `held.Items` cannot be handed over by value).
 Diag t15CloneDiag(in Diag d) {
