@@ -22,6 +22,11 @@ public sealed class SelfhostSemanticsEquivalenceLawTests(ITestOutputHelper outpu
     private static string BayanCheck =>
         SelfhostSemanticsHarness.Build(File.ReadAllText(Path.Combine(SelfhostSemanticsHarness.SemanticsDir, "main.byn")));
 
+    /// <summary>The measured domain: diag cases that parse clean, and those outside L022 (Q658).</summary>
+    private const int PinnedClean = 434;
+
+    private const int PinnedExcluded = 90;
+
     private static string Root => Path.Combine(Golden.RepoRoot, "tmp", "l022");
 
     /// <summary>Law L022: every clean-parsing program checks, dumps and exits like the C# checker.</summary>
@@ -32,9 +37,23 @@ public sealed class SelfhostSemanticsEquivalenceLawTests(ITestOutputHelper outpu
         var clock = Stopwatch.StartNew();
         var diag = Write("diag", SelfhostSemanticsParityTests.DiagCases.Cast<object[]>().Select(row => Case((string)row[0])).ToList());
         var clean = diag.Where(p => ParsesClean(p.Path)).ToList();
+        var excluded = diag.Except(clean).ToList();
         output.WriteLine($"diag: {clean.Count} of {diag.Count} parse without errors; the rest are outside L022: " +
-            string.Join(" ", diag.Except(clean).Select(p => p.Label)));
-        Assert.True(clean.Count >= diag.Count * 3 / 4, $"only {clean.Count} of {diag.Count} diag cases parse clean");
+            string.Join(" ", excluded.Select(p => p.Label)));
+        // Per parse error code, the number of excluded cases holding it (a case with two codes counts under both).
+        output.WriteLine("diag excluded by parse error code: " + string.Join(", ", excluded
+            .SelectMany(p => ParseErrors(p.Path).Distinct())
+            .GroupBy(code => code).OrderBy(g => g.Key, StringComparer.Ordinal).Select(g => $"{g.Key} {g.Count()}")));
+        output.WriteLine("diag excluded by code family: " + string.Join(", ", excluded
+            .SelectMany(p => ParseErrors(p.Path).Select(code => code[..4] + "xxx").Distinct())
+            .GroupBy(family => family).OrderBy(g => g.Key, StringComparer.Ordinal).Select(g => $"{g.Key} {g.Count()}"))
+            + $"; with no BYN1xxx code {excluded.Count(p => !ParseErrors(p.Path).Any(code => code.StartsWith("BYN1", StringComparison.Ordinal)))}");
+        output.WriteLine("diag excluded outside BYN1xxx: " + string.Join(", ", excluded
+            .Select(p => (p.Label, Codes: ParseErrors(p.Path).Distinct().Where(code => !code.StartsWith("BYN1", StringComparison.Ordinal)).ToList()))
+            .Where(p => p.Codes.Count > 0).Select(p => $"{p.Label} {string.Join("/", p.Codes)}")));
+        // The domain is pinned: a parser or corpus change that moves a case in or out fails here (Q658).
+        Assert.True(clean.Count == PinnedClean && excluded.Count == PinnedExcluded,
+            $"{clean.Count} diag cases parse clean and {excluded.Count} do not, pinned {PinnedClean} and {PinnedExcluded} (Q658)");
         await CheckCorpus("diag", clean);
 
         var typed = Write("typed", SelfhostSemanticsParityTests.TypedCases.Cast<object[]>().Select(row => Case((string)row[0])).ToList());
@@ -92,13 +111,18 @@ public sealed class SelfhostSemanticsEquivalenceLawTests(ITestOutputHelper outpu
     /// <c>package.byn</c>, the manifest (FromPath parses it as a module file, with errors). Parse diagnostics are
     /// <c>SyntaxTree.Diagnostics</c> (Compilation.cs:169-170), not a code range: BYN8001 is the parser's, BYN1016 the binder's.
     /// </summary>
-    private static bool ParsesClean(string path) =>
+    private static bool ParsesClean(string path) => !ParseErrors(path).Any();
+
+    /// <summary>The code of every parse error <see cref="ParsesClean"/> looks at, in file order.</summary>
+    private static IEnumerable<string> ParseErrors(string path) =>
         Directory.EnumerateFiles(Path.GetDirectoryName(path)!, "*.byn", SearchOption.AllDirectories)
             .Where(f => Path.GetFileName(f) != "package.byn")
-            .All(f => !SyntaxTree.Parse(SourceText.FromFile(f)).Diagnostics.Any(d => d.IsError))
-        && Compilation.FromPath(path).Modules.SelectMany(m => m.Files)
-            .Where(f => Path.GetFileName(f.Source.Path) != "package.byn")
-            .All(f => !f.Tree.Diagnostics.Any(d => d.IsError));
+            .SelectMany(f => SyntaxTree.Parse(SourceText.FromFile(f)).Diagnostics)
+            .Concat(Compilation.FromPath(path).Modules.SelectMany(m => m.Files)
+                .Where(f => Path.GetFileName(f.Source.Path) != "package.byn")
+                .SelectMany(f => f.Tree.Diagnostics))
+            .Where(d => d.IsError)
+            .Select(d => d.Code);
 
     /// <summary>
     /// Runs <c>bayan-check</c> and <c>bayan-check --types</c> on every input (one shell per corpus) and compares
