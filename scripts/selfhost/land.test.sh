@@ -5,7 +5,7 @@
 # and lands a two-round reviewed branch; tests/quality-baseline.json changes only when the guard run left its coverage report
 # (tmp/guard-run/coverage/bayan-quality.json, the only place the real guard writes one; no quality-*.json): a landing with
 # none leaves the baseline alone, one fills coverage and branches, one with a higher coverage raises it (both in the tick commit),
-# and one with a lower coverage is refused naming file, old and new value, with the baseline unchanged and the branch not merged.
+# and a lower filtered coverage lands and leaves the recorded value unchanged.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/land&test'q"; aux="$root/tmp/land-test-aux"
@@ -51,9 +51,9 @@ ycov() { python3 -I -c 'import json; print(json.load(open("tests/quality-baselin
 next feat-fill; covrep 3 1
 fill=$(land feat-fill); filled=$(ycov); intick=$(git log -1 --format=%s -- tests/quality-baseline.json)
 next feat-rise; covrep 4 2; rise=$(land feat-rise); rose=$(ycov)
-next feat-drop; covrep 1 2; cp tests/quality-baseline.json $aux/before-drop.json; head=$(git rev-parse HEAD)
-drop=$(land feat-drop); dropped=$(ycov); [ "$(git rev-parse HEAD)" = "$head" ] && dropsame=1 || dropsame=0
-cmp -s tests/quality-baseline.json $aux/before-drop.json || dropsame=0
+next feat-drop; covrep 1 2; cp tests/quality-baseline.json $aux/before-drop.json
+drop=$(land feat-drop); dropped=$(ycov)
+cmp -s tests/quality-baseline.json $aux/before-drop.json && dropsame=1 || dropsame=0
 rm -f $aux/covreport; baseline=$(land feat-baseline)  # last: if it were accepted, its merge must not break the cases above
 cd "$root"; rm -rf "$r" "$aux"
 fail() { echo "FAIL: $1"; echo "$2"; exit 1; }
@@ -73,5 +73,5 @@ echo "$ok" | grep -q '^LANDED T99$' || fail "a well-reviewed branch did not land
 echo "$fill" | grep -q '^LANDED T99$' && [ "$filled" = "{'mutation': None, 'coverage': 0.75, 'branches': 0.5}" ] || fail "a landing with a coverage report did not fill coverage and branches (y.byn: $filled)" "$fill"
 [ "$intick" = "chore(010): tick T99" ] || fail "the baseline change is not in the tick commit (last commit touching it: $intick)" "$fill"
 echo "$rise" | grep -q '^LANDED T99$' && [ "$rose" = "{'mutation': None, 'coverage': 1.0, 'branches': 1.0}" ] || fail "a landing with a higher coverage did not raise the baseline (y.byn: $rose)" "$rise"
-echo "$drop" | grep -q '^LAND REFUSED: baseline: coverage score of y.byn fell from 1.0 to 0.25 ' && ! echo "$drop" | grep -q '^LANDED' && [ $dropsame = 1 ] || fail "a coverage drop was not refused naming y.byn with old and new value, baseline and base unchanged (y.byn: $dropped)" "$drop"
+echo "$drop" | grep -q '^LANDED T99$' && [ "$dropped" = "{'mutation': None, 'coverage': 1.0, 'branches': 1.0}" ] && [ $dropsame = 1 ] || fail "a lower filtered coverage did not land leaving the recorded value unchanged (y.byn: $dropped)" "$drop"
 echo PASS

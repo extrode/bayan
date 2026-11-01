@@ -6,10 +6,10 @@
 # titled `docs(010): <T> review (PASS, …`, the file names that commit's parent, says `Verdict: PASS`, and lists no open HIGH
 # finding (earlier commits may hold earlier review rounds). Then merges the
 # commit it checked (refusing if the branch moved meanwhile) with --no-ff and ticks the task. When the guard run left a coverage
-# report (tmp/guard-run/coverage/bayan-quality.json, written whenever the branch changed a selfhost .byn), quality-baseline.py
-# check refuses the landing if a file's line or branch coverage fell below tests/quality-baseline.json (naming file, old and new
-# value, baseline unchanged), and after the merge the tick commit raises the baseline's coverage and branches (update; a lower
-# value never replaces an entry). No mutation runs here (--mutate is dropped): the mutation scores come from the batch run (013 T28).
+# report (tmp/guard-run/coverage/bayan-quality.json, written whenever the branch changed a selfhost .byn), after the merge the
+# tick commit raises the baseline's coverage and branches (update; a lower value never replaces an entry): a filtered per-task run
+# can only raise the recorded coverage, and the drop check waits for a full-suite measurement (work/todo.md).
+# No mutation runs here (--mutate is dropped): the mutation scores come from the batch run (013 T28).
 set -eu
 T=$1; BR=$2; N=${T#T}; t=$(echo "$T" | tr '[:upper:]' '[:lower:]')
 BASE=$(git rev-parse --abbrev-ref HEAD)
@@ -58,10 +58,6 @@ trap cleanup EXIT
 )
 
 COVREPORT=$WT/tmp/guard-run/coverage/bayan-quality.json
-if [ -f "$COVREPORT" ]; then
-  out=$(python3 -I "$(dirname "$0")/quality-baseline.py" check tests/quality-baseline.json "$WT" "$COVREPORT" 2> "tmp/land-$t-baseline.txt") || {
-    echo "LAND REFUSED: ${out:-quality-baseline.py failed on $COVREPORT — $(tail -1 "tmp/land-$t-baseline.txt")}"; exit 1; }
-fi
 [ "$(git rev-parse "$BR")" = "$SHA" ] || { echo "LAND REFUSED: $BR moved from $SHA while it was checked; land again"; exit 1; }
 git merge --no-ff -m "chore(010): land $T" "$SHA"
 perl -i -pe "s/^- \[ \] $T /- [x] $T /" docs/specs/010-self-hosted-semantics/010-tasks.md

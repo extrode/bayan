@@ -5,10 +5,11 @@
 # directory default, an unknown directory fails naming it; files sharing a filter share one recording; --shard k/n and --files
 # limit the groups; the reports land in tmp/mutate-batch/<group>/; an empty baseline is filled, a higher score replaces a lower
 # one, a drop fails naming the file with old and new score and leaves the baseline unchanged; a failed mutant 0, a missing CLI
-# and a manifest-less recording fail naming the group, the other groups still raising the baseline; the copied reports' absolute
+# and a manifest-less recording fail naming the group, the other groups still raise the baseline; a failed group's reports are
+# moved to rejected/ and not matched by the merge job's glob; the copied reports' absolute
 # paths (as bayan mutate writes them) are rewritten repo-root-relative, a path outside the root fails the group naming the
 # report; .github/workflows/mutation.yml: read-only permissions, no persisted credentials, a concurrency group, shards upload
-# reports and not the baseline, a final job needing the shards merges all reports in one update.
+# reports and not the baseline, a final job needing the shards merges all reports in one update, uploads the accepted reports, and documents applying the run.
 set -e
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 r="$root/tmp/mutate-batch-test"; aux="$root/tmp/mutate-batch-test-aux"
@@ -30,6 +31,7 @@ echo "Total tests: 1  Passed: 1"
 echo "$BAYAN_SNAPSHOT_FILES ${@: -3:1}" >> $AUX/record.txt
 bn=$(basename "${BAYAN_SNAPSHOT_FILES%%,*}")
 [ -f $AUX/nomanifest ] || { mkdir -p "$BAYAN_SNAPSHOT" $AUX/bin/$bn; b=$(printf '{"binary": "%s", "sites": "%s"}' $AUX/bin/$bn/prog $AUX/bin/$bn/prog.sites.json)
+  [ -f $AUX/twobuilds ] && b="$b, $(printf '{"binary": "%s", "sites": "%s"}' $AUX/bin/$bn/prog2 $AUX/bin/$bn/prog2.sites.json)"
   echo "{\"version\": 1, \"builds\": [$b]}" > "$BAYAN_SNAPSHOT/manifest.json"; }
 exit 0
 STUB
@@ -37,7 +39,8 @@ mkdir -p src/Bayan.Cli/bin/Debug/net10.0
 cat > src/Bayan.Cli/bin/Debug/net10.0/bayan <<'STUB'
 #!/bin/bash
 bn=$(basename "$(dirname "$3")")
-[ -f $AUX/rep/$bn.mismatch ] && { echo "bayan: mutant 0 differs" >&2; exit 1; }
+prog=$(basename "$3")
+[ -f $AUX/rep/$bn-$prog.mismatch ] || [ -f $AUX/rep/$bn.mismatch ] && { echo "bayan: mutant 0 differs" >&2; exit 1; }
 cat $AUX/rep/$bn.txt; cp $AUX/rep/$bn.json "$(dirname "$3")/bayan-quality.json"
 exit 0
 STUB
@@ -74,6 +77,11 @@ badshard=$(b --shard 3/2)
 # a failed mutant 0 names its group; the other groups still raise the baseline
 cp $aux/empty.json tests/quality-baseline.json; touch $aux/rep/b.byn.mismatch; set +e; PATH="$aux:$PATH" bash "$root/scripts/selfhost/mutate-batch.sh" --tasks tasks.md > $aux/m0.txt 2>&1; m0x=$?; set -e; m0=$(cat $aux/m0.txt); rm $aux/rep/b.byn.mismatch
 m0a=$(score selfhost/semantics/a.byn); m0b=$(score selfhost/semantics/b.byn)
+touch $aux/twobuilds $aux/rep/b.byn-prog2.mismatch; set +e
+PATH="$aux:$PATH" bash "$root/scripts/selfhost/mutate-batch.sh" --tasks tasks.md --files selfhost/semantics/b.byn > $aux/m0_2.txt 2>&1
+m0_2x=$?; set -e; m0_2=$(cat $aux/m0_2.txt); rm -f $aux/twobuilds $aux/rep/b.byn-prog2.mismatch
+fail_matches=$(find tmp/mutate-batch/semantics-b -name 'quality-[0-9]*.json')
+fail_rej=$(find tmp/mutate-batch/semantics-b/rejected -name 'rejected-quality-[0-9]*.json' 2>/dev/null || true)
 REPPATH=/elsewhere/p.byn rep selfhost/parser/p.byn 1 0 0; outside=$(b --files selfhost/parser/p.byn); rep selfhost/parser/p.byn 1 0 0
 touch $aux/nomanifest; nomanifest=$(b --files selfhost/parser/p.byn); rm $aux/nomanifest
 mv src/Bayan.Cli/bin/Debug/net10.0/bayan $aux/bayan; nocli=$(b --files selfhost/parser/p.byn); cd "$root"
@@ -104,6 +112,7 @@ echo "$nomanifest" | grep -q '^group parser-p: mutation: the recording wrote no 
 echo "$nocli" | grep -q '^group parser-p: mutation: src/Bayan.Cli/bin/Debug/net10.0/bayan is missing' || fail "a missing CLI did not name its group" "$nocli"
 [ "$relpath" = selfhost/semantics/a.byn ] || fail "the copied report's path was not rewritten repo-root-relative (got $relpath)" "$fill"
 echo "$outside" | grep -q '^group parser-p: report: .*quality-1-prog.json: path /elsewhere/p.byn is not under the repo root' || fail "a report path outside the repo root did not fail the group naming the report" "$outside"
+[ "$m0_2x" != 0 ] && [ -z "$fail_matches" ] && [ -n "$fail_rej" ] || fail "a failed group's report was matched by the merge job's glob ($fail_matches)" "$m0_2"
 has() { echo "$wf" | grep -qE "$1" || fail "mutation.yml: $2" ""; }
 has '^permissions:' "no workflow-level permissions"; has '^  contents: read$' "permissions are not contents: read"
 [ "$(echo "$wf" | grep -c 'persist-credentials: false')" = 2 ] || fail "mutation.yml: every checkout needs persist-credentials: false" ""
@@ -112,4 +121,8 @@ has 'cancel-in-progress: false' "concurrency cancels runs in progress"
 [ "$(echo "$wf" | grep -c 'name: quality-baseline-')" = 0 ] || fail "mutation.yml: a shard uploads its own tests/quality-baseline.json" ""
 has '^    needs: mutate$' "no merge job needing the shard job"
 has 'quality-baseline.py update tests/quality-baseline.json \. \$\(find reports' "the merge job runs no single update over all reports"
+has 'Apply the run by `python3 -I scripts/selfhost/quality-baseline.py update <reports\.\.\.>`' "the header does not document applying the run by updating from the reports"
+has 'on a chore/ branch off current dev, never by copying the baseline file' "the header does not warn against copying the baseline file"
+has 'name: accepted-reports' "the merge job does not upload the accepted reports artifact"
+has 'path: reports/\*\*/quality-\[0-9\]\*\.json' "the merge job reports upload path is not the accepted reports"
 echo PASS
