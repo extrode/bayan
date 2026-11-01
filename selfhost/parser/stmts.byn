@@ -882,7 +882,7 @@ bool isNoType(in TypeSyntax t) {
 // The C# `Node.Span` of a union child. No task owns these in the plan (Q460); `.none` has no span in
 // C# (a `null` child) and gives an empty one here.
 
-TextSpan stmtSpan(in Stmt s) => s switch {
+public TextSpan stmtSpan(in Stmt s) => s switch {
     .blockStmt(let n) => n.value.span,
     .localDecl(let n) => n.value.span,
     .exprStmt(let n) => n.value.span,
@@ -910,7 +910,7 @@ TextSpan stmtSpan(in Stmt s) => s switch {
     .none => TextSpan { start: 0, length: 0 },
 }
 
-TextSpan typeSpan(in TypeSyntax t) => t switch {
+public TextSpan typeSpan(in TypeSyntax t) => t switch {
     .namedType(let n) => n.value.span,
     .optionalType(let n) => n.value.span,
     .arrayType(let n) => n.value.span,

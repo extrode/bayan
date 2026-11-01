@@ -962,7 +962,7 @@ void declareFile(ref Ctx c, for FileId file) {
             let line = lineIndex(c.files[c.functions[main].file].text.span, at: c.functions[main].span.start) + 1
             report(ref c, for: .duplicateMain, from: file, at: first, by: ("", "", "", "", ""), label: $"`main` is also declared on line {line}")
         } else if main < 0 {
-            let sym = newFunction(ref c, by: FunctionSymbol { name: "main", span: first, module: module, kind: .main, file: file, declIndex: mainStatements[0].declIndex })
+            let sym = newFunction(ref c, by: FunctionSymbol { name: "main", span: first, module: module, kind: .main, file: file, declIndex: mainStatements[0].declIndex, returnType: prim(.void) })
             c.modules[module].main = sym
             c.modules[module].allFunctions.append(sym)
             c.mainStatementsFn = sym

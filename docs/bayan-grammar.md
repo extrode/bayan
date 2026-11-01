@@ -1,4 +1,4 @@
-# Bayan grammar guide
+# Bayān grammar guide
 
 How to name things the way the standard library does. This is the developer-facing companion to [SPEC §5](bayan-spec.md) (naming and morphology). SPEC §5.2 holds the full pattern table and contracts; this guide tells you which pattern to pick.
 

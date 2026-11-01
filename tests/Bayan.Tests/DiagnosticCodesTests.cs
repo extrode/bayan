@@ -48,4 +48,20 @@ public sealed class DiagnosticCodesTests
             .ToList();
         Assert.True(missing.Count == 0, "no golden case for " + string.Join(", ", missing));
     }
+
+    [Fact]
+    public void NoLiveCodeReusesAReservedNumber()
+    {
+        var lines = File.ReadAllLines(Path.Combine(Golden.RepoRoot, "src", "Bayan.Syntax", "Diagnostics", "DiagnosticCodes.cs"))
+            .Select(l => l.Trim()).ToList();
+        var start = lines.FindIndex(l => l.StartsWith("// Reserved: round 4", StringComparison.Ordinal));
+        var end = lines.FindIndex(l => l == "// End reserved: round 4.");
+        Assert.True(start >= 0 && end > start, "no `// Reserved: round 4` block");
+        var entries = lines.Skip(start + 1).Take(end - start - 1).Where(l => l.StartsWith("// BYN", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(entries);
+        Assert.All(entries, l => Assert.Matches("^// BYN[0-9]{4} .*// target: \\S", l));
+        var reserved = entries.Select(l => l[3..10]).ToList();
+        Assert.Equal(reserved.Count, reserved.Distinct().Count());
+        Assert.Empty(DiagnosticCodes.All.Select(d => d.Code).Intersect(reserved));
+    }
 }

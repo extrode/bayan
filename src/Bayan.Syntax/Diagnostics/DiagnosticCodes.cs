@@ -376,4 +376,12 @@ public static class DiagnosticCodes
     // ── Security 8000–8999 ───────────────────────────────────────────────────────────
     public static readonly DiagnosticDescriptor MissingBecause = Error("BYN8001", "`{0}` bypasses a safety rule and needs `because \"…\"`");
     public static readonly DiagnosticDescriptor ExpectsReadsUntrusted = Error("BYN8006", "`expects` reads `{0}`, which is `Untrusted`; a violation would trap on outside data");
+
+    // Reserved: round 4 (revisions 0016, 0017). Not reported yet: no descriptor until implemented, so the self-hosted
+    // tables stay equal to `All`. Each line is `BYN#### Name`, a note, and the round-4 target; DiagnosticCodesTests reads it.
+    // BYN1070 NegatedIsInput: `!(x is .s)`; round 4's draft says BYN1069, which spec 013 gives StatementAttribute. // target: 19xx input form
+    // BYN1071 SwitchExpressionNeedsElse: subjectless `switch`. // target: 41xx switch
+    // BYN2825 BorrowedClosureStored: closure escape rule. // target: 3xxx borrows
+    // BYN7013 FinalStateNotReached: `final` states; round 4's draft says BYN7010, which is BecomesNeedsRef. // target: 7xxx typestate
+    // End reserved: round 4.
 }
