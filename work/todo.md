@@ -140,7 +140,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - diag/renamed-member also shows a BYN2311 warning (round 2 §11).
 - 007 Q346 makes a stored function type such as `(Line -> Money uses net) pricer` BYN2822; Sūq and SPEC §3.16 use one (round 3, Sūq brief).
 - HANDOFF round 3 §11 (~`:204-210`) still says `on .field` and §13 (~`:259`) has `Order => void`; superseded by their resolved paragraphs, not rewritten.
-- No `docs/diagnostics/BYN1056.md`, `BYN1057.md`, `BYN7005.md` pages yet; GRAMMAR §3 links the first two (round 3, Sūq brief).
 - SPEC has no `T.zero` (friction F-31); the F-30 user-cleanup member name is open, conservative `dispose(ref this)` (round 3, Sūq brief).
 - SPEC `:389` `return .forbidden unless …` snippet has no signature; borderline under A2 (`fail` vs response value).
 - J54: Sūq checker `type-first binding` rule only catches capitalised types (`i32 n = 3` unflagged); parameter lists spanning lines are only partly handled.
@@ -227,7 +226,6 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - r3-53h: `RegionAnalysis.cs:236` and `OwnershipAnalysis` treat `BoundErrorVariant` as a leaf, so moves and borrows in an error payload are not checked.
 - r3-53h: `return .case(…)` is not BYN1056; the `return .x` check (5.3f) sees only a bare `.x`.
 - r3-53h: error-case payload fields are not dropped or moved: a `List` or other owned payload leaks, and a unique one is not tracked (Question 311).
-- End of round 3: run `/code-review --fix 8fedd073f425..dev` (545965c49391..ef66c140da9f, which holds the partial round-3 merge ef66c14, was reviewed and fixed 2026-10-24 at 8fedd07; not `dev...feat`).
 - r3-54a: the parser's particle list is private (`Parser.cs`), so `Lexicon.Particles` repeats it; expose one list.
 - r3-54a: the BYN5001, BYN5101 and BYN5102 page examples still end field lines with `;`.
 - r3-54a: the manifest's invalid-value help does not mention the `[key: value]` map form that `grammar.forms` now uses.

@@ -1,4 +1,6 @@
-# Bayan style guide
+# Bayān style guide
+
+*Bayān (ASCII: Bayan). The CLI, package names, URLs and identifiers use `bayan`.*
 
 Style is guidance: never compiler-enforced, configurable per project, applied by `bayan format`. Grammar rules ([GRAMMAR](bayan-grammar.md)) are not style and cannot be configured away.
 
