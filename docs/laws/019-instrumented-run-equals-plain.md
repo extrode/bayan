@@ -4,8 +4,8 @@ title: An instrumented run's output and exit code equal the plain run's
 status: enacted
 kind: property
 scope: src/Bayan.Backend.C, src/Bayan.Lowering (coverage counters, mutant schemata)
-proof: none yet (T21, /prove after T9)
-check: none yet
+proof: tests/Bayan.Tests/InstrumentedRunLawTests.cs
+check: dotnet test -v q --filter "Law=L019"
 enacted: 2026-10-31
 ---
 
@@ -17,3 +17,4 @@ A `tests/cases/run/` program whose stdout, stderr or exit code differs between `
 
 ## Proof notes
 Enacted by the agent on the user's instruction ("Enact on my behalf", 2026-10-31). Proof owed by spec 013 T21.
+Proof 2026-11-01: broke it by making the coverage counter writer print a byte to stdout; the test failed with `run/arithmetic.byn, --coverage, BAYAN_COVERAGE set: differs from the plain run in stdout`.

@@ -37,7 +37,7 @@ public sealed class MutantSchemataTests
     }
 
     /// <summary>The C of a <c>--mutate</c> build.</summary>
-    private static string EmitSchemata(Compilation c, BuildMode mode, out Schema schema)
+    internal static string EmitSchemata(Compilation c, BuildMode mode, out Schema schema)
     {
         schema = Schemata.Build(c);
         return CEmitter.Emit(Lowerer.Lower(c, schema.Switches), mode == BuildMode.Debug);
@@ -294,6 +294,7 @@ public sealed class MutantSchemataTests
 
     /// <summary>R11: a build without <c>--mutate</c> emits the same C as before T5; the hashes were taken from the merge-base build.</summary>
     [Fact]
+    [Trait("Law", "L020")]
     public void PlainBuildEmitsTheSameC()
     {
         var lines = new StringBuilder();

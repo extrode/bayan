@@ -4,8 +4,8 @@ title: A mutant that does not type-check is never counted as killed or survived
 status: enacted
 kind: property
 scope: src/Bayan.Testing
-proof: none yet (T25, /prove after T4 and T6)
-check: none yet
+proof: tests/Bayan.Tests/NotEmittedLawTests.cs
+check: dotnet test -v q --filter "Law=L021"
 enacted: 2026-10-31
 ---
 
@@ -17,3 +17,4 @@ A mutation report that lists a mutant as killed or survived whose mutated statem
 
 ## Proof notes
 Enacted by the agent on the user's instruction ("Enact on my behalf", 2026-10-31). Proof owed by spec 013 T25.
+Proof 2026-11-01: broke it by making Schemata.Rebinds return true, failing with `seed 1: ... does not type-check but is emitted`; and by deleting the `!site.Emitted` line in MutationRunner, failing with `... is not emitted but reported NotReached`.
