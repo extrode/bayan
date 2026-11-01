@@ -162,7 +162,8 @@ public sealed class SelfhostSemanticsT38Tests
             """),
         // StatesOf and CheckStateNames on structs with states: a state named like a static method and a static
         // property, unknown receiver and `becomes` states, a repeated state, a generic struct with a `requires`
-        // whose instance (from a parameter type) gets no check of its own, and a struct without states.
+        // whose instance (from a parameter type) gets no check of its own and whose states, named by
+        // `Gen.on<i64>` and `Gen.nope<i64>`, are declared without repeating the template's reports, and a struct without states.
         ("states/main.byn", """
             struct Cart {
                 i64 count
@@ -196,7 +197,7 @@ public sealed class SelfhostSemanticsT38Tests
             struct Plain {
                 void x(ref this) becomes .on { }
             }
-            void use(Gen<i64> h) { }
+            void use(Gen<i64> h, by Gen.on<i64> s, for Gen.nope<i64> n) { }
             """),
     ];
 
@@ -291,8 +292,14 @@ public sealed class SelfhostSemanticsT38Tests
     private static string Params(IEnumerable<LocalSymbol> ps) =>
         string.Join(",", ps.Select(p => $"{p.Name}:{p.Type.DisplayName}@{At(p.Location!.Value.Source, p.Location!.Value.Span.Start)}{(p is ParameterSymbol q ? $"#{q.Ordinal}:{Lower(q.Modifier)}" : "")}"));
 
+    /// <summary>The fields of each payload that is a list of structs (a <c>Violation&lt;T&gt;</c>), as <c>[name:Type@l:c,…]</c>.</summary>
+    private static string ListFields(IEnumerable<LocalSymbol> ps) =>
+        string.Concat(ps.Select(p => p.Type is ListType { Element: StructSymbol w }
+            ? $"[{string.Join(",", w.Fields.Select(f => $"{f.Name}:{f.Type.DisplayName}@{At(f.Location!.Value.Source, f.Location!.Value.Span.Start)}"))}]"
+            : ""));
+
     private static string Set(ErrorSetSymbol set) =>
-        $"{set.Name}{{{string.Join(",", set.Variants.Select(v => $"{v.Name}({Params(v.Fields)})"))}}}";
+        $"{set.Name}{{{string.Join(",", set.Variants.Select(v => $"{v.Name}({Params(v.Fields)}){ListFields(v.Fields)}"))}}}";
 
     private static string Fn(FunctionSymbol f)
     {
@@ -466,6 +473,20 @@ public sealed class SelfhostSemanticsT38Tests
                 first = false
                 let ps = paramList(ref c, for: in copyIds(in c.errorVariants[v].fields), from: c.errorVariants[v].file)
                 sb.append($"{c.errorVariants[v].name}({ps})")
+                for p in copyIds(in c.errorVariants[v].fields) {
+                    let t = c.locals[p].type
+                    if kindOf(t) != .list || kindOf(c.listTypes[typeIndex(t)]) != .structType { continue }
+                    let w = typeIndex(c.listTypes[typeIndex(t)])
+                    sb.append("[")
+                    var firstField = true
+                    for f in copyIds(in c.structs[w].fields) {
+                        if !firstField { sb.append(",") }
+                        firstField = false
+                        let type = typeDisplay(ref c, by: c.fields[f].type)
+                        sb.append($"{c.fields[f].name}:{type}@{spot(in c, from: c.fields[f].file, by: c.fields[f].span)}")
+                    }
+                    sb.append("]")
+                }
             }
             sb.append("}")
             return $"{sb.finish()}"
