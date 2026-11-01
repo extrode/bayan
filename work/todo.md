@@ -386,3 +386,8 @@ Not doing, with the reason. Kept so the same idea does not get re-raised every q
 - [ ] T14 review LOW: only `SelfhostParserTests.Run/RunBytes` record; Lexer, ParserT3/T10/T11/T12, Generator, EquivalenceLaw still spawn their own non-schemata builds, so a broad recording filter records none of them (rv-013-t14).
 - [ ] T14 review LOW: `scripts/selfhost/replay.py:36` has no per-run timeout; a looping mutant hangs a hand-run replay (rv-013-t14).
 - 013 T15: replay.py exit 2 (unreadable recording) is counted as killed by bayan mutate (src/Bayan.Testing/MutationRunner.cs:124); it should stop the run.
+- 013 T15 review LOW: guard.sh:89 swallows a failing manifest read (process substitution), so a corrupt snap/manifest.json gives GUARD PASS with no mutants run; fail on it. (review rv-013-t15, 27e7d99..a7d6034)
+- 013 T15 review LOW: guard.sh:77,83 deletes/reads bayan-quality.json beside the binary in the shared program cache (Toolchain.cs:220); parallel guards across worktrees can take each other's report. Pass an output path or copy under a per-run lock. (rv-013-t15)
+- 013 T15 review LOW: land.sh:59-63 runs quality-baseline.py update after merge and tick edit but before commit; a failure leaves the base dirty. Run it before the merge or roll back. (rv-013-t15)
+- 013 T15 review LOW: quality-baseline.py:18 keys report paths with relpath and no inside-root check; an outside path becomes a ../ key. (rv-013-t15, unverified)
+- 013 T15: scripts/selfhost/mutant-outcome.sh and its test are unused after T15 (cleanup candidate).
