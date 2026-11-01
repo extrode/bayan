@@ -534,6 +534,8 @@ struct Ctx {
     /// C# `_unobservable` and `_unobservableSeen` (a set): `file|start|length|op` of each mark kept.
     List<UnobservableMark> unobservable = List<UnobservableMark>()
     Map<string, i64> unobservableSeen = []
+    /// C# `Compilation.MutationChecks`: calls of methods through a receiver, checked once every body is bound.
+    List<MutationCheck> mutationChecks = List<MutationCheck>()
     // ── T29 state
     // ── T30 state
     // ── T31 state

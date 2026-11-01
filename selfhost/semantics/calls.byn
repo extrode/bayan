@@ -385,8 +385,10 @@ BExpr bindFunctionCall(ref Binder b, through ref Ctx c, for in parser.CallExpr c
     // A `ref this` call on `map[key]` changes the stored value in place.
     // mutation-exempt: Q616
     if recv != -1 && c.functions[target].isMutating { recv = mapWriteTarget(ref c, for: recv) }
-    // C# `_c.MutationChecks.Add(new MutationCheck(this, fn, receiver))` when `fn.HasThis` and the receiver is not a `dyn ref`:
-    // blocked until T28 designs a binder-free `MutationCheck` (Q582, Q730).
+    // A `dyn ref` writes through the borrow, not into the local holding it; `dyn ref readonly` is BYN2813.
+    if recv != -1 && functionHasThis(ref c, by: target) && kindOf(exprType(in c, for: recv)) != .dynRef {
+        c.mutationChecks.append(MutationCheck { source: b.file, function: host(b, through: c), callee: target, receiver: recv })
+    }
     var anyConstant = false
     for a in args {
         if exprConstant(in c, for: a) is not null { anyConstant = true }
